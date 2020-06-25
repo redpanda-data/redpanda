@@ -47,7 +47,7 @@ make_get_leadership_reply(const metadata_cache& cache) {
     for (auto& [tp_ns, md] : all_md) {
         for (auto& p : md.partitions) {
             leaders.emplace_back(ntp_leader{
-              model::ntp(tp_ns.ns, tp_ns.tp, p.p_md.id),
+              .ntp = model::ntp(tp_ns.ns, tp_ns.tp, p.p_md.id),
               .term = p.term_id,
               .leader_id = p.p_md.leader_node});
         }
