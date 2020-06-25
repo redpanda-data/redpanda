@@ -46,7 +46,8 @@ public:
       : _default_num_windows(config::shard_local_cfg().default_num_windows())
       , _default_window_width(config::shard_local_cfg().default_window_sec())
       , _target_tp_rate(config::shard_local_cfg().target_quota_byte_rate())
-      , _gc_freq(config::shard_local_cfg().quota_manager_gc_sec()) {
+      , _gc_freq(config::shard_local_cfg().quota_manager_gc_sec())
+      , _max_delay(config::shard_local_cfg().max_kafka_throttle_delay_ms()) {
         auto full_window = _default_num_windows * _default_window_width;
         _gc_timer.set_callback([this, full_window] { gc(full_window); });
     }
@@ -86,6 +87,7 @@ private:
 
     ss::timer<> _gc_timer;
     const clock::duration _gc_freq;
+    const clock::duration _max_delay;
 };
 
 } // namespace kafka
