@@ -418,9 +418,19 @@ FIXTURE_TEST(index_filtered_copy_tests, compacted_topic_fixture) {
           ss::default_priority_class(),
           32_KiB);
         final_rdr.verify_integrity().get();
-        auto vec = compaction_index_reader_to_memory(final_rdr).get0();
-        BOOST_REQUIRE_EQUAL(vec.size(), 2);
-        BOOST_REQUIRE_EQUAL(vec[0].offset, model::offset(98));
-        BOOST_REQUIRE_EQUAL(vec[1].offset, model::offset(99));
+        {
+            auto vec = compaction_index_reader_to_memory(final_rdr).get0();
+            BOOST_REQUIRE_EQUAL(vec.size(), 2);
+            BOOST_REQUIRE_EQUAL(vec[0].offset, model::offset(98));
+            BOOST_REQUIRE_EQUAL(vec[1].offset, model::offset(99));
+        }
+        {
+            auto offset_list = storage::internal::generate_compacted_list(
+                                 model::offset(0), final_rdr)
+                                 .get0();
+
+            BOOST_REQUIRE(offset_list.contains(model::offset(98)));
+            BOOST_REQUIRE(offset_list.contains(model::offset(99)));
+        }
     }
 }
