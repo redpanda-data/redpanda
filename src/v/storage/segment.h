@@ -6,6 +6,7 @@
 #include "storage/segment_index.h"
 #include "storage/segment_reader.h"
 #include "storage/types.h"
+#include "storage/version.h"
 
 #include <seastar/core/file.hh>
 #include <seastar/core/rwlock.hh>
@@ -13,6 +14,9 @@
 #include <optional>
 
 namespace storage {
+
+constexpr size_t default_segment_readahead_size = 128 * 1024;
+
 class segment {
 public:
     struct offset_tracker {
@@ -152,5 +156,37 @@ private:
 
     friend std::ostream& operator<<(std::ostream&, const segment&);
 };
+
+/**
+ * \brief Create a segment reader for the specified file.
+ *
+ * Returns an exceptional future if the segment cannot be opened.
+ * This may occur due to many reasons such as a file system error, or
+ * because the segment is corrupt or is stored in an unsupported
+ * format.
+ *
+ * Returns a ready future containing a nullptr value if the specified
+ * file is not a segment file.
+ *
+ * Returns an open segment if the segment was successfully opened.
+ * Including a valid index and recovery for the index if one does not
+ * exist
+ */
+ss::future<ss::lw_shared_ptr<segment>> open_segment(
+  const std::filesystem::path& path,
+  debug_sanitize_files sanitize_fileops,
+  std::optional<batch_cache_index> batch_cache,
+  size_t buf_size = default_segment_readahead_size);
+
+ss::future<ss::lw_shared_ptr<segment>> make_segment(
+  const ntp_config& ntpc,
+  model::offset base_offset,
+  model::term_id term,
+  ss::io_priority_class pc,
+  record_version_type version,
+  size_t buf_size,
+  const ss::sstring& base_dir,
+  debug_sanitize_files sanitize_fileops,
+  std::optional<batch_cache_index> batch_cache);
 
 } // namespace storage

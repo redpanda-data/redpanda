@@ -1,10 +1,17 @@
 #include "storage/segment.h"
 
+#include "storage/fs_utils.h"
 #include "storage/logger.h"
 #include "storage/segment_appender_utils.h"
+#include "storage/segment_set.h"
+#include "storage/segment_utils.h"
+#include "storage/types.h"
+#include "storage/version.h"
+#include "utils/file_sanitizer.h"
 #include "vassert.h"
 #include "vlog.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/future-util.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/reactor.hh>
@@ -287,6 +294,172 @@ std::ostream& operator<<(std::ostream& o, const segment& h) {
     }
     return o << ", closed=" << h._closed << ", tombstone=" << h._tombstone
              << ", index=" << h.index() << "}";
+}
+
+template<typename Func>
+auto with_segment(ss::lw_shared_ptr<segment> s, Func&& f) {
+    return f(s).then_wrapped([s](
+                               ss::future<ss::lw_shared_ptr<segment>> new_seg) {
+        try {
+            auto ptr = new_seg.get0();
+            return ss::make_ready_future<ss::lw_shared_ptr<segment>>(ptr);
+        } catch (...) {
+            return s->close()
+              .then_wrapped([e = std::current_exception()](ss::future<>) {
+                  return ss::make_exception_future<ss::lw_shared_ptr<segment>>(
+                    e);
+              })
+              .finally([s] {});
+        }
+    });
+}
+
+ss::future<ss::lw_shared_ptr<segment>> open_segment(
+  const std::filesystem::path& path,
+  debug_sanitize_files sanitize_fileops,
+  std::optional<batch_cache_index> batch_cache,
+  size_t buf_size) {
+    auto const meta = segment_path::parse_segment_filename(
+      path.filename().string());
+    if (!meta || meta->version != record_version_type::v1) {
+        return ss::make_exception_future<ss::lw_shared_ptr<segment>>(
+          std::runtime_error(fmt::format(
+            "Segment has invalid version {} != {} path {}",
+            meta->version,
+            record_version_type::v1,
+            path)));
+    }
+    // note: this file _must_ be open in `ro` mode only. Seastar uses dma
+    // files with no shared buffer cache around them. When we use a writer
+    // w/ dma at the same time as the reader, we need a way to synchronize
+    // filesytem metadata. In order to prevent expensive synchronization
+    // primitives fsyncing both *reads* and *writes* we open this file in ro
+    // mode and if raft requires truncation, we open yet-another handle w/
+    // rw mode just for the truncation which gives us all the benefits of
+    // preventing x-file synchronization This is fine, because truncation to
+    // sealed segments are supposed to be very rare events. The hotpath of
+    // truncating the appender, is optimized.
+    return internal::make_reader_handle(path, sanitize_fileops)
+      .then([](ss::file f) {
+          return f.stat().then([f](struct stat s) {
+              return ss::make_ready_future<uint64_t, ss::file>(s.st_size, f);
+          });
+      })
+      .then([buf_size, path](uint64_t size, ss::file fd) {
+          return std::make_unique<segment_reader>(
+            path.string(), std::move(fd), size, buf_size);
+      })
+      .then([batch_cache = std::move(batch_cache), meta, sanitize_fileops](
+              std::unique_ptr<segment_reader> rdr) mutable {
+          auto ptr = rdr.get();
+          auto index_name = std::filesystem::path(ptr->filename().c_str())
+                              .replace_extension("base_index")
+                              .string();
+          return ss::open_file_dma(
+                   index_name, ss::open_flags::create | ss::open_flags::rw)
+            .then_wrapped([batch_cache = std::move(batch_cache),
+                           ptr,
+                           sanitize_fileops,
+                           rdr = std::move(rdr),
+                           index_name,
+                           meta](ss::future<ss::file> f) mutable {
+                ss::file fd;
+                try {
+                    fd = f.get0();
+                } catch (...) {
+                    return ptr->close().then(
+                      [rdr = std::move(rdr), e = std::current_exception()] {
+                          return ss::make_exception_future<
+                            ss::lw_shared_ptr<segment>>(e);
+                      });
+                }
+                if (sanitize_fileops) {
+                    fd = ss::file(
+                      ss::make_shared(file_io_sanitizer(std::move(fd))));
+                }
+                auto idx = segment_index(
+                  index_name,
+                  fd,
+                  meta->base_offset,
+                  segment_index::default_data_buffer_step);
+                return ss::make_ready_future<ss::lw_shared_ptr<segment>>(
+                  ss::make_lw_shared<segment>(
+                    segment::offset_tracker(meta->term, meta->base_offset),
+                    std::move(*rdr),
+                    std::move(idx),
+                    std::nullopt,
+                    std::nullopt,
+                    std::move(batch_cache)));
+            });
+      });
+}
+
+ss::future<ss::lw_shared_ptr<segment>> make_segment(
+  const ntp_config& ntpc,
+  model::offset base_offset,
+  model::term_id term,
+  ss::io_priority_class pc,
+  record_version_type version,
+  size_t buf_size,
+  const ss::sstring& base_dir,
+  debug_sanitize_files sanitize_fileops,
+  std::optional<batch_cache_index> batch_cache) {
+    auto path = segment_path::make_segment_path(
+      base_dir, ntpc.ntp(), base_offset, term, version);
+    vlog(stlog.info, "Creating new segment {}", path.string());
+    return open_segment(
+             path, sanitize_fileops, std::move(batch_cache), buf_size)
+      .then([path, &ntpc, sanitize_fileops, pc](
+              ss::lw_shared_ptr<segment> seg) {
+          return with_segment(
+            seg,
+            [path, &ntpc, sanitize_fileops, pc](
+              ss::lw_shared_ptr<segment> seg) {
+                return internal::make_segment_appender(
+                         path,
+                         sanitize_fileops,
+                         internal::number_of_chunks_from_config(ntpc),
+                         pc)
+                  .then([seg](segment_appender_ptr a) {
+                      return ss::make_ready_future<ss::lw_shared_ptr<segment>>(
+                        ss::make_lw_shared<segment>(
+                          seg->offsets(),
+                          std::move(seg->reader()),
+                          std::move(seg->index()),
+                          std::move(*a),
+                          std::nullopt,
+                          seg->has_cache()
+                            ? std::optional(std::move(seg->cache()))
+                            : std::nullopt));
+                  });
+            });
+      })
+      .then([path, &ntpc, sanitize_fileops, pc](
+              ss::lw_shared_ptr<segment> seg) {
+          if (!(ntpc.has_overrides()
+                && ntpc.get_overrides().compaction_strategy)) {
+              return ss::make_ready_future<ss::lw_shared_ptr<segment>>(seg);
+          }
+          return with_segment(
+            seg, [path, sanitize_fileops, pc](ss::lw_shared_ptr<segment> seg) {
+                auto compacted_path = path;
+                compacted_path.replace_extension(".compaction_index");
+                return internal::make_compacted_index_writer(
+                         compacted_path, sanitize_fileops, pc)
+                  .then([seg](compacted_index_writer compact) {
+                      return ss::make_ready_future<ss::lw_shared_ptr<segment>>(
+                        ss::make_lw_shared<segment>(
+                          seg->offsets(),
+                          std::move(seg->reader()),
+                          std::move(seg->index()),
+                          std::move(seg->appender()),
+                          std::move(compact),
+                          seg->has_cache()
+                            ? std::optional(std::move(seg->cache()))
+                            : std::nullopt));
+                  });
+            });
+      });
 }
 
 } // namespace storage

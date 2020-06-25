@@ -1,7 +1,14 @@
 #include "storage/segment_set.h"
 
+#include "storage/fs_utils.h"
+#include "storage/log_replayer.h"
 #include "storage/logger.h"
+#include "utils/directory_walker.h"
 #include "vassert.h"
+#include "vlog.h"
+
+#include <seastar/core/seastar.hh>
+#include <seastar/core/thread.hh>
 
 #include <fmt/format.h>
 
@@ -125,4 +132,158 @@ std::ostream& operator<<(std::ostream& o, const segment_set& s) {
     }
     return o << "]}";
 }
+
+// Recover the last segment. Whenever we close a segment, we will likely
+// open a new one to which we will direct new writes. That new segment
+// might be empty. To optimize log replay, implement #140.
+static ss::future<segment_set>
+do_recover(segment_set&& segments, ss::abort_source& as) {
+    return ss::async([segments = std::move(segments), &as]() mutable {
+        if (segments.empty() || as.abort_requested()) {
+            return std::move(segments);
+        }
+        segment_set::underlying_t good = std::move(segments).release();
+        segment_set::underlying_t to_recover;
+        to_recover.push_back(std::move(good.back()));
+        good.pop_back(); // always recover last segment
+        auto good_end = std::partition(
+          good.begin(), good.end(), [](ss::lw_shared_ptr<segment>& ss) {
+              auto& s = *ss;
+              try {
+                  // use the segment materialize instead of going through
+                  // the index directly to hydrate the max_offset state
+                  return s.materialize_index().get0();
+              } catch (...) {
+                  vlog(
+                    stlog.info,
+                    "Error materializing index:{}. Recovering parent "
+                    "segment:{}. Details:{}",
+                    s.index().filename(),
+                    s.reader().filename(),
+                    std::current_exception());
+              }
+              return false;
+          });
+        std::move(
+          std::move_iterator(good_end),
+          std::move_iterator(good.end()),
+          std::back_inserter(to_recover));
+        good.erase(
+          good_end,
+          good.end()); // remove all the ones we copied into recover
+
+        for (auto& s : to_recover) {
+            // check for abort
+            if (unlikely(as.abort_requested())) {
+                return segment_set(std::move(good));
+            }
+            auto stat = s->reader().stat().get0();
+            if (stat.st_size == 0) {
+                vlog(stlog.info, "Removing empty segment: {}", s);
+                s->close().get();
+                ss::remove_file(s->reader().filename()).get();
+                ss::remove_file(s->index().filename()).get();
+                continue;
+            }
+            auto replayer = log_replayer(*s);
+            auto recovered = replayer.recover_in_thread(
+              ss::default_priority_class());
+            if (!recovered) {
+                vlog(stlog.info, "Unable to recover segment: {}", s);
+                s->close().get();
+                ss::rename_file(
+                  s->reader().filename(),
+                  s->reader().filename() + ".cannotrecover")
+                  .get();
+                continue;
+            }
+            s->truncate(
+               recovered.last_offset.value(),
+               recovered.truncate_file_pos.value())
+              .get();
+            // persist index
+            s->index().flush().get();
+            vlog(stlog.info, "Recovered: {}", s);
+            good.emplace_back(std::move(s));
+        }
+        return segment_set(std::move(good));
+    });
+}
+
+/**
+ * \brief Open all segments in a directory.
+ *
+ * Returns an exceptional future if any error occured opening a
+ * segment. Otherwise all open segment readers are returned.
+ */
+static ss::future<segment_set::underlying_t> open_segments(
+  ss::sstring dir,
+  debug_sanitize_files sanitize_fileops,
+  std::function<std::optional<batch_cache_index>()> cache_factory,
+  ss::abort_source& as) {
+    using segs_type = segment_set::underlying_t;
+    return ss::do_with(
+      segs_type{},
+      [&as, cache_factory, sanitize_fileops, dir = std::move(dir)](
+        segs_type& segs) {
+          auto f = directory_walker::walk(
+            dir,
+            [&as, cache_factory, dir, sanitize_fileops, &segs](
+              ss::directory_entry seg) {
+                // abort if requested
+                if (as.abort_requested()) {
+                    return ss::now();
+                }
+                /*
+                 * Skip non-regular files (including links)
+                 */
+                if (
+                  !seg.type || *seg.type != ss::directory_entry_type::regular) {
+                    return ss::make_ready_future<>();
+                }
+                auto path = std::filesystem::path(
+                  fmt::format("{}/{}", dir, seg.name));
+                try {
+                    auto is_valid = segment_path::parse_segment_filename(
+                      path.filename().string());
+                    if (!is_valid) {
+                        return ss::make_ready_future<>();
+                    }
+                } catch (...) {
+                    // not a reader filename
+                    return ss::make_ready_future<>();
+                }
+                return open_segment(
+                         std::move(path), sanitize_fileops, cache_factory())
+                  .then([&segs](ss::lw_shared_ptr<segment> p) {
+                      segs.push_back(std::move(p));
+                  });
+            });
+          /*
+           * if the directory walker returns an exceptional future then all
+           * the segment readers that were created are cleaned up by
+           * ss::do_with.
+           */
+          return f.then([&segs]() mutable {
+              return ss::make_ready_future<segs_type>(std::move(segs));
+          });
+      });
+}
+
+ss::future<segment_set> recover_segments(
+  std::filesystem::path path,
+  debug_sanitize_files sanitize_fileops,
+  std::function<std::optional<batch_cache_index>()> cache_factory,
+  ss::abort_source& as) {
+    return ss::recursive_touch_directory(path.string())
+      .then([&as, cache_factory, sanitize_fileops, path = std::move(path)] {
+          return open_segments(
+            path.string(), sanitize_fileops, cache_factory, as);
+      })
+      .then([&as](segment_set::underlying_t segs) {
+          auto segments = segment_set(std::move(segs));
+          return do_recover(std::move(segments), as);
+      });
+}
+
 } // namespace storage
