@@ -299,6 +299,8 @@ configuration::configuration()
       "Fail-safe maximum throttle delay on kafka requests",
       required::no,
       60'000ms)
+  , raft_io_timeout_ms(
+      *this, "raft_io_timeout_ms", "Raft I/O timeout", required::no, 10'000ms)
   , _advertised_kafka_api(
       *this,
       "advertised_kafka_api",
