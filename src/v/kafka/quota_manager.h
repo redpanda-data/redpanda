@@ -52,6 +52,11 @@ public:
         _gc_timer.set_callback([this, full_window] { gc(full_window); });
     }
 
+    quota_manager(const quota_manager&) = delete;
+    quota_manager& operator=(const quota_manager&) = delete;
+    quota_manager(quota_manager&&) = delete;
+    quota_manager& operator=(quota_manager&&) = delete;
+
     ~quota_manager();
 
     ss::future<> stop();
