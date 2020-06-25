@@ -23,6 +23,8 @@ public:
 
     ss::future<compacted_index::footer> load_footer() final;
 
+    ss::future<> verify_integrity() final;
+
     void reset() final;
 
     void print(std::ostream&) const final;
