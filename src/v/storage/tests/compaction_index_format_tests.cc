@@ -215,6 +215,9 @@ FIXTURE_TEST(truncation_reducer_with_key_reducer, compacted_topic_fixture) {
       ss::file(ss::make_shared(iobuf_file(index_data))),
       ss::default_priority_class(),
       32_KiB);
+
+    rdr.verify_integrity().get();
+    rdr.reset();
     auto truncate_bitmap = rdr
                              .consume(
                                storage::internal::truncation_offset_reducer(),
@@ -317,6 +320,7 @@ FIXTURE_TEST(key_reducer_max_mem, compacted_topic_fixture) {
       ss::default_priority_class(),
       32_KiB);
 
+    rdr.verify_integrity().get();
     rdr.reset();
     auto small_mem_bitmap = rdr
                               .consume(
@@ -378,6 +382,7 @@ FIXTURE_TEST(index_filtered_copy_tests, compacted_topic_fixture) {
       ss::default_priority_class(),
       32_KiB);
 
+    rdr.verify_integrity().get();
     auto bitmap = storage::internal::index_of_index_of_entries(rdr).get0();
     {
         auto vec = compaction_index_reader_to_memory(rdr).get0();
@@ -411,6 +416,7 @@ FIXTURE_TEST(index_filtered_copy_tests, compacted_topic_fixture) {
           ss::file(ss::make_shared(iobuf_file(final_data))),
           ss::default_priority_class(),
           32_KiB);
+        final_rdr.verify_integrity().get();
         auto vec = compaction_index_reader_to_memory(final_rdr).get0();
         BOOST_REQUIRE_EQUAL(vec.size(), 2);
         BOOST_REQUIRE_EQUAL(vec[0].offset, model::offset(98));

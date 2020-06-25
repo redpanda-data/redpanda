@@ -31,6 +31,8 @@ public:
         impl(const impl&) = delete;
         impl& operator=(const impl&) = delete;
 
+        virtual ss::future<> verify_integrity() = 0;
+
         virtual ss::future<> close() = 0;
 
         virtual ss::future<compacted_index::footer> load_footer() = 0;
@@ -96,6 +98,8 @@ public:
       : _impl(std::move(i)) {}
 
     ss::future<> close() { return _impl->close(); }
+
+    ss::future<> verify_integrity() { return _impl->verify_integrity(); }
 
     ss::future<compacted_index::footer> load_footer() {
         return _impl->load_footer();
