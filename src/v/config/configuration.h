@@ -73,6 +73,7 @@ struct configuration final : public config_store {
     property<bool> enable_pid_file;
     property<std::chrono::milliseconds> kvstore_flush_interval;
     property<size_t> kvstore_max_segment_size;
+    property<std::chrono::milliseconds> max_kafka_throttle_delay_ms;
 
     configuration();
 

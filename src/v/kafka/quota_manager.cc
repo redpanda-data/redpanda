@@ -1,5 +1,6 @@
 #include "kafka/quota_manager.h"
 
+#include "config/configuration.h"
 #include "kafka/logger.h"
 #include "vlog.h"
 
@@ -59,8 +60,7 @@ throttle_delay quota_manager::record_tp_and_throttle(
                 .count();
         delay_ms = static_cast<uint64_t>(delay);
     }
-    constexpr std::chrono::milliseconds max_delay = std::chrono::minutes(1);
-    if (delay_ms > max_delay.count()) {
+    if (delay_ms > (uint64_t)_max_delay.count()) {
         vlog(
           klog.info,
           "Found data rate for window of: {} bytes. Client:{}, Estimated "
@@ -68,8 +68,8 @@ throttle_delay quota_manager::record_tp_and_throttle(
           rate,
           cid,
           delay_ms,
-          max_delay.count());
-        delay_ms = max_delay.count();
+          _max_delay.count());
+        delay_ms = _max_delay.count();
     }
 
     auto prev = it->second.delay;
