@@ -383,7 +383,8 @@ FIXTURE_TEST(index_filtered_copy_tests, compacted_topic_fixture) {
       32_KiB);
 
     rdr.verify_integrity().get();
-    auto bitmap = storage::internal::index_of_index_of_entries(rdr).get0();
+    auto bitmap
+      = storage::internal::natural_index_of_entries_to_keep(rdr).get0();
     {
         auto vec = compaction_index_reader_to_memory(rdr).get0();
         BOOST_REQUIRE_EQUAL(vec.size(), 100);

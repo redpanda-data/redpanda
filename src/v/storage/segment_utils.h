@@ -49,7 +49,7 @@ size_t number_of_chunks_from_config(const ntp_config&);
 /// \brief this is a 0-based index (i.e.: i++) of the entries we need to
 /// save starting at 0 on a *new* `.compacted_index` file this represents
 /// the fully dedupped entries, clean of truncations, etc
-ss::future<Roaring> index_of_index_of_entries(compacted_index_reader);
+ss::future<Roaring> natural_index_of_entries_to_keep(compacted_index_reader);
 
 ss::future<> copy_filtered_entries(
   compacted_index_reader input,
