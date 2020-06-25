@@ -2,6 +2,7 @@
 #include "storage/compacted_index.h"
 #include "storage/compacted_index_reader.h"
 #include "storage/compacted_index_writer.h"
+#include "storage/compacted_offset_list.h"
 #include "storage/segment.h"
 #include "storage/segment_appender.h"
 
@@ -61,20 +62,11 @@ ss::future<> copy_filtered_entries(
 ss::future<>
   write_clean_compacted_index(compacted_index_reader, compaction_config);
 
-struct offset_compaction_list {
-    using relative = std::pair<uint32_t, int32_t>;
-
-    explicit offset_compaction_list(model::offset base)
-      : base_offset(base) {}
-    model::offset base_offset;
-    ss::circular_buffer<relative> relative_delta;
-};
-
-ss::future<offset_compaction_list>
-  generate_compacted_list(compacted_index_reader);
+ss::future<compacted_offset_list>
+  generate_compacted_list(model::offset, compacted_index_reader);
 
 // TODO: needs to look over on the locking mechanics
 ss::future<> write_compacted_segment(
-  ss::lw_shared_ptr<segment>, segment_appender_ptr, offset_compaction_list);
+  ss::lw_shared_ptr<segment>, segment_appender_ptr, compacted_offset_list);
 
 } // namespace storage::internal
