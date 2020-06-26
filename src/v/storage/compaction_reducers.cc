@@ -91,4 +91,12 @@ index_filtered_copy_reducer::operator()(compacted_index::entry&& e) {
     return ss::make_ready_future<stop_t>(stop_t::no);
 }
 
+ss::future<ss::stop_iteration>
+compacted_offset_list_reducer::operator()(compacted_index::entry&& e) {
+    using stop_t = ss::stop_iteration;
+    const model::offset o = e.offset + model::offset(e.delta);
+    _list.add(o);
+    return ss::make_ready_future<stop_t>(stop_t::no);
+}
+
 } // namespace storage::internal

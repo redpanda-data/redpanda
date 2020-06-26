@@ -383,7 +383,8 @@ FIXTURE_TEST(index_filtered_copy_tests, compacted_topic_fixture) {
       32_KiB);
 
     rdr.verify_integrity().get();
-    auto bitmap = storage::internal::index_of_index_of_entries(rdr).get0();
+    auto bitmap
+      = storage::internal::natural_index_of_entries_to_keep(rdr).get0();
     {
         auto vec = compaction_index_reader_to_memory(rdr).get0();
         BOOST_REQUIRE_EQUAL(vec.size(), 100);
@@ -417,9 +418,19 @@ FIXTURE_TEST(index_filtered_copy_tests, compacted_topic_fixture) {
           ss::default_priority_class(),
           32_KiB);
         final_rdr.verify_integrity().get();
-        auto vec = compaction_index_reader_to_memory(final_rdr).get0();
-        BOOST_REQUIRE_EQUAL(vec.size(), 2);
-        BOOST_REQUIRE_EQUAL(vec[0].offset, model::offset(98));
-        BOOST_REQUIRE_EQUAL(vec[1].offset, model::offset(99));
+        {
+            auto vec = compaction_index_reader_to_memory(final_rdr).get0();
+            BOOST_REQUIRE_EQUAL(vec.size(), 2);
+            BOOST_REQUIRE_EQUAL(vec[0].offset, model::offset(98));
+            BOOST_REQUIRE_EQUAL(vec[1].offset, model::offset(99));
+        }
+        {
+            auto offset_list = storage::internal::generate_compacted_list(
+                                 model::offset(0), final_rdr)
+                                 .get0();
+
+            BOOST_REQUIRE(offset_list.contains(model::offset(98)));
+            BOOST_REQUIRE(offset_list.contains(model::offset(99)));
+        }
     }
 }
