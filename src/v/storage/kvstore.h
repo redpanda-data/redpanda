@@ -1,13 +1,15 @@
 #pragma once
 #include "bytes/iobuf.h"
 #include "seastarx.h"
-#include "storage/log_manager.h"
 #include "storage/parser.h"
+#include "storage/segment_set.h"
 #include "storage/snapshot.h"
+#include "storage/types.h"
 #include "utils/mutex.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>
+#include <seastar/core/gate.hh>
 #include <seastar/core/semaphore.hh>
 #include <seastar/core/timer.hh>
 
@@ -62,6 +64,8 @@ static constexpr const model::record_batch_type kvstore_batch_type(4);
 struct kvstore_config {
     size_t max_segment_size;
     std::chrono::milliseconds commit_interval;
+    ss::sstring base_dir;
+    debug_sanitize_files sanitize_fileops;
 };
 
 class kvstore {
@@ -72,7 +76,7 @@ public:
         /* your sub-system here */
     };
 
-    kvstore(kvstore_config kv_conf, storage::log_config log_conf);
+    explicit kvstore(kvstore_config kv_conf);
 
     ss::future<> start();
     ss::future<> stop();
@@ -88,7 +92,6 @@ public:
 
 private:
     kvstore_config _conf;
-    log_config _log_conf;
     ntp_config _ntpc;
     ss::gate _gate;
     ss::abort_source _as;
