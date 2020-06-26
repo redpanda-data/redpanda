@@ -253,8 +253,7 @@ static ss::future<segment_set::underlying_t> open_segments(
                     // not a reader filename
                     return ss::make_ready_future<>();
                 }
-                return open_segment(
-                         path, sanitize_fileops, cache_factory())
+                return open_segment(path, sanitize_fileops, cache_factory())
                   .then([&segs](ss::lw_shared_ptr<segment> p) {
                       segs.push_back(std::move(p));
                   });
