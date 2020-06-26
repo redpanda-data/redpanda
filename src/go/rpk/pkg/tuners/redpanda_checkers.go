@@ -143,17 +143,6 @@ func NewIOConfigFileExistanceChecker(fs afero.Fs, filePath string) Checker {
 		filePath)
 }
 
-func NewTransparentHugePagesChecker(fs afero.Fs) Checker {
-	return NewEqualityChecker(
-		TransparentHugePagesChecker,
-		"Transparent huge pages active",
-		Warning,
-		true,
-		func() (interface{}, error) {
-			return system.GetTransparentHugePagesActive(fs)
-		})
-}
-
 func NewNTPSyncChecker(timeout time.Duration, fs afero.Fs) Checker {
 	return NewEqualityChecker(
 		NtpChecker,
