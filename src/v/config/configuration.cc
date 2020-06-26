@@ -293,6 +293,12 @@ configuration::configuration()
       "Key-value maximum segment size (bytes)",
       required::no,
       16_MiB)
+  , max_kafka_throttle_delay_ms(
+      *this,
+      "max_kafka_throttle_delay_ms",
+      "Fail-safe maximum throttle delay on kafka requests",
+      required::no,
+      60'000ms)
   , _advertised_kafka_api(
       *this,
       "advertised_kafka_api",
