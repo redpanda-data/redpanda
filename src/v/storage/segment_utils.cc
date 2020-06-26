@@ -126,7 +126,8 @@ size_t number_of_chunks_from_config(const ntp_config& ntpc) {
     return segment_appender::chunks_no_buffer;
 }
 
-ss::future<Roaring> index_of_index_of_entries(compacted_index_reader reader) {
+ss::future<Roaring>
+natural_index_of_entries_to_keep(compacted_index_reader reader) {
     reader.reset();
     return reader.consume(truncation_offset_reducer{}, model::no_timeout)
       .then([reader](Roaring to_keep) mutable {
@@ -160,8 +161,8 @@ ss::future<> copy_filtered_entries(
 
 static ss::future<> do_write_clean_compacted_index(
   compacted_index_reader reader, compaction_config cfg) {
-    return index_of_index_of_entries(reader).then([reader,
-                                                   cfg](Roaring bitmap) {
+    return natural_index_of_entries_to_keep(reader).then([reader,
+                                                          cfg](Roaring bitmap) {
         const auto tmpname = std::filesystem::path(
           fmt::format("{}.staging", reader.filename()));
         return make_handle(
@@ -210,14 +211,15 @@ ss::future<> write_clean_compacted_index(
       });
 }
 
-ss::future<offset_compaction_list>
-generate_compacted_list(compacted_index_reader) {
-    return ss::make_ready_future<offset_compaction_list>(
-      offset_compaction_list(model::offset{}));
+ss::future<compacted_offset_list>
+generate_compacted_list(model::offset o, compacted_index_reader reader) {
+    reader.reset();
+    return reader.consume(compacted_offset_list_reducer(o), model::no_timeout)
+      .finally([reader] {});
 }
 
 ss::future<> write_compacted_segment(
-  ss::lw_shared_ptr<segment>, segment_appender_ptr, offset_compaction_list) {
+  ss::lw_shared_ptr<segment>, segment_appender_ptr, compacted_offset_list) {
     return ss::now();
 }
 
@@ -237,19 +239,19 @@ self_compact_segment(ss::lw_shared_ptr<segment> s, compaction_config cfg) {
             compacted_path.string(), std::move(f), cfg.iopc, 64_KiB);
           return write_clean_compacted_index(reader, cfg);
       })
-      .then([compacted_path, cfg] {
+      .then([s, compacted_path, cfg] {
           /// re-open the index *after* we have written it clean above
           return make_reader_handle(compacted_path, cfg.sanitize)
-            .then([cfg, compacted_path](ss::file f) {
+            .then([s, cfg, compacted_path](ss::file f) {
                 auto reader = make_file_backed_compacted_reader(
                   compacted_path.string(), std::move(f), cfg.iopc, 64_KiB);
-                return generate_compacted_list(reader).finally(
-                  [reader]() mutable {
+                return generate_compacted_list(s->offsets().base_offset, reader)
+                  .finally([reader]() mutable {
                       return reader.close().then_wrapped([](ss::future<>) {});
                   });
             });
       })
-      .then([cfg, s](offset_compaction_list list) {
+      .then([cfg, s](compacted_offset_list list) {
           const auto tmpname = std::filesystem::path(
             fmt::format("{}.staging", s->reader().filename()));
           return make_segment_appender(
