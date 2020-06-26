@@ -26,19 +26,20 @@ func getValidConfig() *Config {
 		},
 	}
 	conf.Rpk = &RpkConfig{
-		EnableUsageStats:    true,
-		TuneNetwork:         true,
-		TuneDiskScheduler:   true,
-		TuneNomerges:        true,
-		TuneDiskIrq:         true,
-		TuneCpu:             true,
-		TuneAioEvents:       true,
-		TuneClocksource:     true,
-		TuneSwappiness:      true,
-		EnableMemoryLocking: true,
-		TuneCoredump:        true,
-		CoredumpDir:         "/var/lib/redpanda/coredumps",
-		WellKnownIo:         "vendor:vm:storage",
+		EnableUsageStats:         true,
+		TuneNetwork:              true,
+		TuneDiskScheduler:        true,
+		TuneNomerges:             true,
+		TuneDiskIrq:              true,
+		TuneCpu:                  true,
+		TuneAioEvents:            true,
+		TuneClocksource:          true,
+		TuneSwappiness:           true,
+		TuneTransparentHugePages: true,
+		EnableMemoryLocking:      true,
+		TuneCoredump:             true,
+		CoredumpDir:              "/var/lib/redpanda/coredumps",
+		WellKnownIo:              "vendor:vm:storage",
 	}
 	return &conf
 }
@@ -93,18 +94,19 @@ func TestSet(t *testing.T) {
 			value:  `tune_disk_irq: false`,
 			format: "yaml",
 			expected: map[string]interface{}{
-				"enable_usage_stats":    true,
-				"tune_network":          true,
-				"tune_disk_scheduler":   true,
-				"tune_disk_nomerges":    true,
-				"tune_disk_irq":         false,
-				"tune_cpu":              true,
-				"tune_aio_events":       true,
-				"tune_clocksource":      true,
-				"tune_swappiness":       true,
-				"enable_memory_locking": false,
-				"tune_coredump":         false,
-				"coredump_dir":          "/var/lib/redpanda/coredump",
+				"enable_usage_stats":         true,
+				"tune_network":               true,
+				"tune_disk_scheduler":        true,
+				"tune_disk_nomerges":         true,
+				"tune_disk_irq":              false,
+				"tune_cpu":                   true,
+				"tune_aio_events":            true,
+				"tune_clocksource":           true,
+				"tune_swappiness":            true,
+				"tune_transparent_hugepages": false,
+				"enable_memory_locking":      false,
+				"tune_coredump":              false,
+				"coredump_dir":               "/var/lib/redpanda/coredump",
 			},
 		},
 		{
@@ -193,18 +195,19 @@ func TestDefaultConfig(t *testing.T) {
 			SeedServers: []*SeedServer{},
 		},
 		Rpk: &RpkConfig{
-			EnableUsageStats:    true,
-			TuneNetwork:         true,
-			TuneDiskScheduler:   true,
-			TuneNomerges:        true,
-			TuneDiskIrq:         true,
-			TuneCpu:             true,
-			TuneAioEvents:       true,
-			TuneClocksource:     true,
-			TuneSwappiness:      true,
-			EnableMemoryLocking: false,
-			TuneCoredump:        false,
-			CoredumpDir:         "/var/lib/redpanda/coredump",
+			EnableUsageStats:         true,
+			TuneNetwork:              true,
+			TuneDiskScheduler:        true,
+			TuneNomerges:             true,
+			TuneDiskIrq:              true,
+			TuneCpu:                  true,
+			TuneAioEvents:            true,
+			TuneClocksource:          true,
+			TuneSwappiness:           true,
+			TuneTransparentHugePages: false,
+			EnableMemoryLocking:      false,
+			TuneCoredump:             false,
+			CoredumpDir:              "/var/lib/redpanda/coredump",
 		},
 	}
 	require.Exactly(t, expected, defaultConfig)
@@ -353,6 +356,7 @@ rpk:
   tune_disk_scheduler: true
   tune_network: true
   tune_swappiness: true
+  tune_transparent_hugepages: true
   well_known_io: vendor:vm:storage
 `,
 		},
@@ -426,6 +430,7 @@ rpk:
   tune_disk_scheduler: true
   tune_network: true
   tune_swappiness: true
+  tune_transparent_hugepages: true
   well_known_io: vendor:vm:storage
 unrecognized_top_field:
   child: true
@@ -656,7 +661,7 @@ func TestReadAsJSON(t *testing.T) {
 				return WriteConfig(fs, &conf, conf.ConfigFile)
 			},
 			path:     DefaultConfig().ConfigFile,
-			expected: `{"config_file":"/etc/redpanda/redpanda.yaml","redpanda":{"admin":{"address":"0.0.0.0","port":9644},"data_directory":"/var/lib/redpanda/data","kafka_api":{"address":"0.0.0.0","port":9092},"node_id":0,"rpc_server":{"address":"0.0.0.0","port":33145},"seed_servers":[]},"rpk":{"coredump_dir":"/var/lib/redpanda/coredump","enable_memory_locking":false,"enable_usage_stats":true,"tune_aio_events":true,"tune_clocksource":true,"tune_coredump":false,"tune_cpu":true,"tune_disk_irq":true,"tune_disk_nomerges":true,"tune_disk_scheduler":true,"tune_network":true,"tune_swappiness":true}}`,
+			expected: `{"config_file":"/etc/redpanda/redpanda.yaml","redpanda":{"admin":{"address":"0.0.0.0","port":9644},"data_directory":"/var/lib/redpanda/data","kafka_api":{"address":"0.0.0.0","port":9092},"node_id":0,"rpc_server":{"address":"0.0.0.0","port":33145},"seed_servers":[]},"rpk":{"coredump_dir":"/var/lib/redpanda/coredump","enable_memory_locking":false,"enable_usage_stats":true,"tune_aio_events":true,"tune_clocksource":true,"tune_coredump":false,"tune_cpu":true,"tune_disk_irq":true,"tune_disk_nomerges":true,"tune_disk_scheduler":true,"tune_network":true,"tune_swappiness":true,"tune_transparent_hugepages":false}}`,
 		},
 		{
 			name:           "it should fail if the the config isn't found",
