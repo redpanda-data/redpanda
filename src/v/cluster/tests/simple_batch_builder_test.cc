@@ -16,8 +16,7 @@ cluster::partition_assignment create_test_assignment(uint32_t p, uint16_t rf) {
 
     return cluster::partition_assignment{
       .group = raft::group_id(p),
-      .ntp = model::ntp(
-        model::ns("test"), model::topic("a_topic"), model::partition_id(p)),
+      .id = model::partition_id(p),
       .replicas = std::move(replicas)};
 }
 
