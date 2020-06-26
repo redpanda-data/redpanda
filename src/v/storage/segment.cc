@@ -412,9 +412,9 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
       .then([path, &ntpc, sanitize_fileops, pc](
               ss::lw_shared_ptr<segment> seg) {
           return with_segment(
-            seg,
+            std::move(seg),
             [path, &ntpc, sanitize_fileops, pc](
-              ss::lw_shared_ptr<segment> seg) {
+              const ss::lw_shared_ptr<segment>& seg) {
                 return internal::make_segment_appender(
                          path,
                          sanitize_fileops,
@@ -441,7 +441,7 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
               return ss::make_ready_future<ss::lw_shared_ptr<segment>>(seg);
           }
           return with_segment(
-            seg, [path, sanitize_fileops, pc](ss::lw_shared_ptr<segment> seg) {
+            seg, [path, sanitize_fileops, pc](const ss::lw_shared_ptr<segment>& seg) {
                 auto compacted_path = path;
                 compacted_path.replace_extension(".compaction_index");
                 return internal::make_compacted_index_writer(

@@ -254,7 +254,7 @@ static ss::future<segment_set::underlying_t> open_segments(
                     return ss::make_ready_future<>();
                 }
                 return open_segment(
-                         std::move(path), sanitize_fileops, cache_factory())
+                         path, sanitize_fileops, cache_factory())
                   .then([&segs](ss::lw_shared_ptr<segment> p) {
                       segs.push_back(std::move(p));
                   });
