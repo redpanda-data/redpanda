@@ -47,11 +47,11 @@ struct join_reply {
 /// The replicas are hold in vector of broker_shard.
 struct partition_assignment {
     raft::group_id group;
-    model::ntp ntp;
+    model::partition_id id;
     std::vector<model::broker_shard> replicas;
 
     model::partition_metadata create_partition_metadata() const {
-        auto p_md = model::partition_metadata(ntp.tp.partition);
+        auto p_md = model::partition_metadata(id);
         p_md.replicas = replicas;
         return p_md;
     }

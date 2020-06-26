@@ -66,9 +66,7 @@ struct cmd_test_fixture {
         ret.reserve(cfg.partition_count);
         for (int i = 0; i < cfg.partition_count; i++) {
             ret.push_back(cluster::partition_assignment{
-              raft::group_id(0),
-              model::ntp(cfg.tp_ns.ns, cfg.tp_ns.tp, model::partition_id(i)),
-              {}});
+              raft::group_id(0), model::partition_id(i), {}});
         }
         return {};
     }
