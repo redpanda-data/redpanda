@@ -19,10 +19,9 @@ static ss::logger lg("kvstore");
 
 namespace storage {
 
-kvstore::kvstore(kvstore_config kv_conf, storage::log_config log_conf)
+kvstore::kvstore(kvstore_config kv_conf)
   : _conf(kv_conf)
-  , _log_conf(log_conf)
-  , _ntpc(cluster::kvstore_ntp(ss::this_shard_id()), _log_conf.base_dir)
+  , _ntpc(cluster::kvstore_ntp(ss::this_shard_id()), _conf.base_dir)
   , _snap(
       std::filesystem::path(_ntpc.work_directory()),
       ss::default_priority_class())
@@ -246,8 +245,8 @@ ss::future<> kvstore::roll() {
                  ss::default_priority_class(),
                  record_version_type::v1,
                  default_segment_readahead_size,
-                 _log_conf.base_dir,
-                 _log_conf.sanitize_fileops,
+                 _conf.base_dir,
+                 _conf.sanitize_fileops,
                  std::nullopt)
           .then([this](ss::lw_shared_ptr<segment> seg) {
               _segment = std::move(seg);
@@ -287,8 +286,8 @@ ss::future<> kvstore::roll() {
                        ss::default_priority_class(),
                        record_version_type::v1,
                        default_segment_readahead_size,
-                       _log_conf.base_dir,
-                       _log_conf.sanitize_fileops,
+                       _conf.base_dir,
+                       _conf.sanitize_fileops,
                        std::nullopt)
                 .then([this](ss::lw_shared_ptr<segment> seg) {
                     _segment = std::move(seg);
