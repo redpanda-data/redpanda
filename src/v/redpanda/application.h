@@ -66,8 +66,6 @@ private:
     void validate_arguments(const po::variables_map&);
     void hydrate_config(const po::variables_map&);
 
-    void configure_kvstore();
-
     template<typename Service, typename... Args>
     ss::future<> construct_service(ss::sharded<Service>& s, Args&&... args) {
         auto f = s.start(std::forward<Args>(args)...);
