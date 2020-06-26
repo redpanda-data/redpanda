@@ -143,7 +143,6 @@ FIXTURE_TEST(truncation_reducer_drop_all, compacted_topic_fixture) {
       ss::file(ss::make_shared(iobuf_file(index_data))),
       ss::default_priority_class(),
       32_KiB);
-    auto footer = rdr.load_footer().get0();
     auto bitmap = rdr
                     .consume(
                       storage::internal::truncation_offset_reducer(),
@@ -171,7 +170,6 @@ FIXTURE_TEST(truncation_reducer_drop_some, compacted_topic_fixture) {
       ss::file(ss::make_shared(iobuf_file(index_data))),
       ss::default_priority_class(),
       32_KiB);
-    auto footer = rdr.load_footer().get0();
     auto bitmap = rdr
                     .consume(
                       storage::internal::truncation_offset_reducer(),
@@ -181,7 +179,6 @@ FIXTURE_TEST(truncation_reducer_drop_some, compacted_topic_fixture) {
     BOOST_REQUIRE_EQUAL(bitmap.cardinality(), 50);
 
     rdr.reset();
-    rdr.load_footer().get();
     auto vec = compaction_index_reader_to_memory(rdr).get0();
     for (auto bit : bitmap) {
         const auto& e = vec[bit];
@@ -218,7 +215,9 @@ FIXTURE_TEST(truncation_reducer_with_key_reducer, compacted_topic_fixture) {
       ss::file(ss::make_shared(iobuf_file(index_data))),
       ss::default_priority_class(),
       32_KiB);
-    auto footer = rdr.load_footer().get0();
+
+    rdr.verify_integrity().get();
+    rdr.reset();
     auto truncate_bitmap = rdr
                              .consume(
                                storage::internal::truncation_offset_reducer(),
@@ -228,14 +227,11 @@ FIXTURE_TEST(truncation_reducer_with_key_reducer, compacted_topic_fixture) {
     BOOST_REQUIRE_EQUAL(truncate_bitmap.cardinality(), 50);
 
     // get all keys
-    rdr.reset();
-    rdr.load_footer().get();
     auto vec = compaction_index_reader_to_memory(rdr).get0();
     BOOST_REQUIRE_EQUAL(vec.size(), 101 /*100 entries + 1 truncation*/);
 
     // final entry bitmap
     rdr.reset();
-    rdr.load_footer().get();
     auto key_bitmap = rdr
                         .consume(
                           storage::internal::compaction_key_reducer(
@@ -278,7 +274,6 @@ FIXTURE_TEST(key_reducer_no_truncate_filter, compacted_topic_fixture) {
       ss::file(ss::make_shared(iobuf_file(index_data))),
       ss::default_priority_class(),
       32_KiB);
-    rdr.load_footer().get();
     auto key_bitmap = rdr
                         .consume(
                           storage::internal::compaction_key_reducer(
@@ -287,8 +282,6 @@ FIXTURE_TEST(key_reducer_no_truncate_filter, compacted_topic_fixture) {
                         .get0();
 
     // get all keys
-    rdr.reset();
-    rdr.load_footer().get();
     auto vec = compaction_index_reader_to_memory(rdr).get0();
     BOOST_REQUIRE_EQUAL(vec.size(), 100);
 
@@ -327,8 +320,8 @@ FIXTURE_TEST(key_reducer_max_mem, compacted_topic_fixture) {
       ss::default_priority_class(),
       32_KiB);
 
+    rdr.verify_integrity().get();
     rdr.reset();
-    rdr.load_footer().get();
     auto small_mem_bitmap = rdr
                               .consume(
                                 storage::internal::compaction_key_reducer(
@@ -342,7 +335,6 @@ FIXTURE_TEST(key_reducer_max_mem, compacted_topic_fixture) {
       We need 2KB + 1 byte to ensure it fits in the memory map
      */
     rdr.reset();
-    rdr.load_footer().get();
     auto exact_mem_bitmap = rdr
                               .consume(
                                 storage::internal::compaction_key_reducer(
@@ -351,8 +343,6 @@ FIXTURE_TEST(key_reducer_max_mem, compacted_topic_fixture) {
                               .get0();
 
     // get all keys
-    rdr.reset();
-    rdr.load_footer().get();
     auto vec = compaction_index_reader_to_memory(rdr).get0();
     BOOST_REQUIRE_EQUAL(vec.size(), 100);
 
@@ -392,6 +382,7 @@ FIXTURE_TEST(index_filtered_copy_tests, compacted_topic_fixture) {
       ss::default_priority_class(),
       32_KiB);
 
+    rdr.verify_integrity().get();
     auto bitmap = storage::internal::index_of_index_of_entries(rdr).get0();
     {
         auto vec = compaction_index_reader_to_memory(rdr).get0();
@@ -412,7 +403,6 @@ FIXTURE_TEST(index_filtered_copy_tests, compacted_topic_fixture) {
       1_KiB);
 
     rdr.reset();
-    rdr.load_footer().get();
     rdr
       .consume(
         storage::internal::index_filtered_copy_reducer(
@@ -426,6 +416,7 @@ FIXTURE_TEST(index_filtered_copy_tests, compacted_topic_fixture) {
           ss::file(ss::make_shared(iobuf_file(final_data))),
           ss::default_priority_class(),
           32_KiB);
+        final_rdr.verify_integrity().get();
         auto vec = compaction_index_reader_to_memory(final_rdr).get0();
         BOOST_REQUIRE_EQUAL(vec.size(), 2);
         BOOST_REQUIRE_EQUAL(vec[0].offset, model::offset(98));
