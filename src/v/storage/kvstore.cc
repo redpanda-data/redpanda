@@ -7,6 +7,7 @@
 #include "reflection/adl.h"
 #include "storage/record_batch_builder.h"
 #include "storage/segment_set.h"
+#include "storage/types.h"
 #include "vlog.h"
 
 #include <seastar/core/metrics.hh>
@@ -18,10 +19,9 @@ static ss::logger lg("kvstore");
 
 namespace storage {
 
-kvstore::kvstore(kvstore_config kv_conf, storage::log_config log_conf)
+kvstore::kvstore(kvstore_config kv_conf)
   : _conf(kv_conf)
-  , _mgr(std::move(log_conf))
-  , _ntpc(cluster::kvstore_ntp(ss::this_shard_id()), _mgr.config().base_dir)
+  , _ntpc(cluster::kvstore_ntp(ss::this_shard_id()), _conf.base_dir)
   , _snap(
       std::filesystem::path(_ntpc.work_directory()),
       ss::default_priority_class())
@@ -92,6 +92,8 @@ ss::future<> kvstore::start() {
 
 ss::future<> kvstore::stop() {
     vlog(lg.info, "Stopping kvstore: dir {}", _ntpc.work_directory());
+
+    _as.request_abort();
 
     // prevent new ops, signal flusher to exit
     auto f = _gate.close();
@@ -236,14 +238,16 @@ ss::future<> kvstore::flush_and_apply_ops() {
 
 ss::future<> kvstore::roll() {
     if (!_segment) {
-        return _mgr
-          .do_make_log_segment(
-            _ntpc,
-            model::offset(_next_offset),
-            model::term_id(0),
-            ss::default_priority_class(),
-            record_version_type::v1,
-            default_read_buffer_size)
+        return make_segment(
+                 _ntpc,
+                 model::offset(_next_offset),
+                 model::term_id(0),
+                 ss::default_priority_class(),
+                 record_version_type::v1,
+                 default_segment_readahead_size,
+                 _conf.base_dir,
+                 _conf.sanitize_fileops,
+                 std::nullopt)
           .then([this](ss::lw_shared_ptr<segment> seg) {
               _segment = std::move(seg);
           });
@@ -275,14 +279,16 @@ ss::future<> kvstore::roll() {
               });
           })
           .then([this] {
-              return _mgr
-                .do_make_log_segment(
-                  _ntpc,
-                  model::offset(_next_offset),
-                  model::term_id(0),
-                  ss::default_priority_class(),
-                  record_version_type::v1,
-                  default_read_buffer_size)
+              return make_segment(
+                       _ntpc,
+                       model::offset(_next_offset),
+                       model::term_id(0),
+                       ss::default_priority_class(),
+                       record_version_type::v1,
+                       default_segment_readahead_size,
+                       _conf.base_dir,
+                       _conf.sanitize_fileops,
+                       std::nullopt)
                 .then([this](ss::lw_shared_ptr<segment> seg) {
                     _segment = std::move(seg);
                 });
@@ -356,7 +362,12 @@ ss::future<> kvstore::recover() {
         load_snapshot_in_thread();
 
         auto dir = std::filesystem::path(_ntpc.work_directory());
-        auto segments = _mgr.recover_segments(std::move(dir)).get0();
+        auto segments = recover_segments(
+                          std::move(dir),
+                          debug_sanitize_files::yes,
+                          [] { return std::nullopt; },
+                          _as)
+                          .get0();
 
         replay_segments_in_thread(std::move(segments));
     });

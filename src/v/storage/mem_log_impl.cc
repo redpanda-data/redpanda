@@ -116,8 +116,6 @@ public:
       , _min_offset(min_offset)
       , _cur_offset(min_offset) {}
 
-    ss::future<> initialize() final { return ss::make_ready_future<>(); }
-
     inline ss::future<ss::stop_iteration>
     operator()(model::record_batch&) final;
 

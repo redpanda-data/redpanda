@@ -73,20 +73,14 @@ struct raft_node {
         // init cache
         cache.start().get();
 
-        // configure and start kvstore
-        storage::log_config kv_log_conf(
-          storage::log_config::storage_type::disk,
-          log.config().work_directory(),
-          1_MiB,
-          storage::debug_sanitize_files::yes,
-          storage::log_config::with_cache::no);
-
         storage::kvstore_config kv_conf{
           .max_segment_size = 8192,
           .commit_interval = std::chrono::milliseconds(10),
+          .base_dir = log.config().work_directory(),
+          .sanitize_fileops = storage::debug_sanitize_files::yes,
         };
 
-        kvstore.start(kv_conf, kv_log_conf).get();
+        kvstore.start(kv_conf).get();
 
         // setup consensus
         consensus = ss::make_lw_shared<raft::consensus>(

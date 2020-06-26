@@ -102,19 +102,14 @@ public:
         set_configuration("raft_heartbeat_interval_ms", 75ms);
 
         // configure and start kvstore
-        storage::log_config kv_log_conf(
-          storage::log_config::storage_type::disk,
-          data_dir_path.as_sstring(),
-          1_MiB,
-          storage::debug_sanitize_files::yes,
-          storage::log_config::with_cache::no);
-
         storage::kvstore_config kv_conf{
           .max_segment_size = 8192,
           .commit_interval = std::chrono::milliseconds(10),
+          .base_dir = data_dir_path.as_sstring(),
+          .sanitize_fileops = storage::debug_sanitize_files::yes,
         };
 
-        _kvstore.start(kv_conf, kv_log_conf).get();
+        _kvstore.start(kv_conf).get();
         _kvstore.invoke_on_all(&storage::kvstore::start).get();
 
         using namespace std::chrono_literals;

@@ -8,6 +8,7 @@
 #include "raft/service.h"
 #include "rpc/simple_protocol.h"
 #include "storage/directories.h"
+#include "storage/kvstore.h"
 #include "syschecks/syschecks.h"
 #include "test_utils/logs.h"
 #include "utils/file_io.h"
@@ -180,7 +181,7 @@ void application::configure_admin_server() {
     vlog(_log.info, "Started HTTP admin service listening at {}", conf.admin());
 }
 
-void application::configure_kvstore() {
+static storage::kvstore_config kvstore_config_from_global_config() {
     /*
      * The key-value store is rooted at the configured data directory, and the
      * internal kvstore topic-namespace results in a storage layout of:
@@ -190,28 +191,16 @@ void application::configure_kvstore() {
      *           - 0
      *           - 1
      *           - ... #cores
-     *
-     * The log manager is used internally to the key-value store because it
-     * contains reusable functionality for operating on segments, bu the log
-     * config here is only used to communicate the directory and storage type.
-     * For instance, the segment size here is ignored.
      */
-    storage::log_config kv_log_conf(
-      storage::log_config::storage_type::disk,
-      config::shard_local_cfg().data_directory().as_sstring(),
-      1_MiB, // ignored in the context of key-value store
-      storage::debug_sanitize_files::yes,
-      storage::log_config::with_cache::no);
-
-    storage::kvstore_config kv_conf{
+    return storage::kvstore_config{
       .max_segment_size = config::shard_local_cfg().kvstore_max_segment_size(),
       .commit_interval = config::shard_local_cfg().kvstore_flush_interval(),
+      .base_dir = config::shard_local_cfg().data_directory().as_sstring(),
+      .sanitize_fileops = storage::debug_sanitize_files::no,
     };
-
-    construct_service(_kvstore, kv_conf, kv_log_conf).get();
 }
 
-storage::log_config manager_config_from_global_config() {
+static storage::log_config manager_config_from_global_config() {
     return storage::log_config(
       storage::log_config::storage_type::disk,
       config::shard_local_cfg().data_directory().as_sstring(),
@@ -240,12 +229,12 @@ void application::wire_up_services() {
     syschecks::systemd_message("Intializing log manager");
     construct_service(log_manager, manager_config_from_global_config()).get();
 
-    configure_kvstore();
+    construct_service(_kvstore, kvstore_config_from_global_config()).get();
 
     construct_service(
       raft_group_manager,
       model::node_id(config::shard_local_cfg().node_id()),
-      std::chrono::seconds(10),
+      config::shard_local_cfg().raft_io_timeout_ms(),
       config::shard_local_cfg().raft_heartbeat_interval_ms(),
       std::ref(_raft_connection_cache),
       std::ref(_kvstore))

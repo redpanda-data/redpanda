@@ -26,8 +26,6 @@
 
 namespace storage {
 
-static constexpr size_t default_read_buffer_size = 128 * 1024;
-
 struct log_config {
     enum class storage_type { memory, disk };
     using with_cache = ss::bool_class<struct log_cache_tag>;
@@ -149,7 +147,7 @@ public:
       model::term_id,
       ss::io_priority_class pc,
       record_version_type = record_version_type::v1,
-      size_t buffer_size = default_read_buffer_size);
+      size_t buffer_size = default_segment_readahead_size);
 
     size_t max_segment_size() const { return _config.max_segment_size; }
     const log_config& config() const { return _config; }
@@ -165,48 +163,10 @@ public:
         return std::nullopt;
     }
 
-    ss::future<segment_set> recover_segments(std::filesystem::path);
-
-    ss::future<ss::lw_shared_ptr<segment>> do_make_log_segment(
-      const ntp_config&,
-      model::offset,
-      model::term_id,
-      ss::io_priority_class pc,
-      record_version_type,
-      size_t buffer_size);
-
 private:
     using logs_type = absl::flat_hash_map<model::ntp, log_housekeeping_meta>;
 
     ss::future<log> do_manage(ntp_config);
-
-    /**
-     * \brief Create a segment reader for the specified file.
-     *
-     * Returns an exceptional future if the segment cannot be opened.
-     * This may occur due to many reasons such as a file system error, or
-     * because the segment is corrupt or is stored in an unsupported
-     * format.
-     *
-     * Returns a ready future containing a nullptr value if the specified
-     * file is not a segment file.
-     *
-     * Returns an open segment if the segment was successfully opened.
-     * Including a valid index and recovery for the index if one does not
-     * exist
-     */
-    ss::future<ss::lw_shared_ptr<segment>> open_segment(
-      const std::filesystem::path& path,
-      size_t buf_size = default_read_buffer_size);
-
-    /**
-     * \brief Open all segments in a directory.
-     *
-     * Returns an exceptional future if any error occured opening a
-     * segment. Otherwise all open segment readers are returned.
-     */
-    ss::future<ss::circular_buffer<ss::lw_shared_ptr<segment>>>
-    open_segments(ss::sstring path);
 
     /**
      * \brief delete old segments and trigger compacted segments
