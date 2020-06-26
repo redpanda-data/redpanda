@@ -128,17 +128,11 @@ size_t number_of_chunks_from_config(const ntp_config& ntpc) {
 
 ss::future<Roaring> index_of_index_of_entries(compacted_index_reader reader) {
     reader.reset();
-    return reader.load_footer()
-      .then([reader](compacted_index::footer) mutable {
-          return reader.consume(truncation_offset_reducer{}, model::no_timeout);
-      })
+    return reader.consume(truncation_offset_reducer{}, model::no_timeout)
       .then([reader](Roaring to_keep) mutable {
           reader.reset();
-          return reader.load_footer().then([reader, keep = std::move(to_keep)](
-                                             compacted_index::footer) mutable {
-              return reader.consume(
-                compaction_key_reducer(std::move(keep)), model::no_timeout);
-          });
+          return reader.consume(
+            compaction_key_reducer(std::move(to_keep)), model::no_timeout);
       });
 }
 
@@ -146,18 +140,15 @@ ss::future<> copy_filtered_entries(
   compacted_index_reader reader,
   Roaring to_copy_index,
   compacted_index_writer writer) {
-    reader.reset();
     return ss::do_with(
       std::move(writer),
       [bm = std::move(to_copy_index),
        reader](compacted_index_writer& writer) mutable {
-          return reader.load_footer()
-            .then([](compacted_index::footer) {})
-            .then([reader, bm = std::move(bm), &writer]() mutable {
-                return reader.consume(
-                  index_filtered_copy_reducer(std::move(bm), writer),
-                  model::no_timeout);
-            })
+          reader.reset();
+          return reader
+            .consume(
+              index_filtered_copy_reducer(std::move(bm), writer),
+              model::no_timeout)
             // must be last
             .finally([&writer] {
                 writer.set_flag(compacted_index::footer_flags::self_compaction);
@@ -165,6 +156,38 @@ ss::future<> copy_filtered_entries(
                 return writer.close();
             });
       });
+}
+
+static ss::future<> do_write_clean_compacted_index(
+  compacted_index_reader reader, compaction_config cfg) {
+    return index_of_index_of_entries(reader).then([reader,
+                                                   cfg](Roaring bitmap) {
+        const auto tmpname = std::filesystem::path(
+          fmt::format("{}.staging", reader.filename()));
+        return make_handle(
+                 tmpname,
+                 ss::open_flags::rw | ss::open_flags::truncate
+                   | ss::open_flags::create,
+                 writer_opts(),
+                 cfg.sanitize)
+          .then(
+            [tmpname, cfg, reader, bm = std::move(bitmap)](ss::file f) mutable {
+                auto writer = make_file_backed_compacted_index(
+                  tmpname.string(),
+                  std::move(f),
+                  cfg.iopc,
+                  // TODO: pass this memory from the cfg
+                  segment_appender::write_behind_memory / 2);
+                return copy_filtered_entries(
+                  reader, std::move(bm), std::move(writer));
+            })
+          .then([old_name = tmpname.string(), new_name = reader.filename()] {
+              // from glibc: If oldname is not a directory, then any
+              // existing file named newname is removed during the
+              // renaming operation
+              return ss::rename_file(old_name, new_name);
+          });
+    });
 }
 
 ss::future<> write_clean_compacted_index(
@@ -177,35 +200,9 @@ ss::future<> write_clean_compacted_index(
             (footer.flags & flags::self_compaction) == flags::self_compaction) {
               return ss::now();
           }
-          return reader
-            .consume(compaction_key_reducer(std::nullopt), model::no_timeout)
-            .then([reader, cfg](Roaring bitmap) {
-                const auto tmpname = std::filesystem::path(
-                  fmt::format("{}.staging", reader.filename()));
-                return make_handle(
-                         tmpname,
-                         ss::open_flags::rw | ss::open_flags::truncate,
-                         writer_opts(),
-                         cfg.sanitize)
-                  .then([tmpname, cfg, reader, bm = std::move(bitmap)](
-                          ss::file f) mutable {
-                      auto writer = make_file_backed_compacted_index(
-                        tmpname.string(),
-                        std::move(f),
-                        cfg.iopc,
-                        // TODO: pass this memory from the cfg
-                        segment_appender::write_behind_memory / 2);
-                      return copy_filtered_entries(
-                        reader, std::move(bm), std::move(writer));
-                  })
-                  .then([old_name = tmpname.string(),
-                         new_name = reader.filename()] {
-                      // from glibc: If oldname is not a directory, then any
-                      // existing file named newname is removed during the
-                      // renaming operation
-                      return ss::rename_file(old_name, new_name);
-                  });
-            });
+          return reader.verify_integrity().then([reader, cfg] {
+              return do_write_clean_compacted_index(reader, cfg);
+          });
       })
       .finally([reader]() mutable {
           return reader.close().then_wrapped(
