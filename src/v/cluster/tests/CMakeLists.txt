@@ -87,3 +87,10 @@ rp_test(
   LIBRARIES v::seastar_testing_main v::application
   DEFINITIONS SEASTAR_TESTING_MAIN
 )
+rp_test(
+  UNIT_TEST
+  BINARY_NAME commands_serialization_test
+  SOURCES commands_serialization_test.cc
+  LIBRARIES v::seastar_testing_main v::application
+  DEFINITIONS SEASTAR_TESTING_MAIN
+)
