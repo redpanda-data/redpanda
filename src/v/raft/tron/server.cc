@@ -12,7 +12,7 @@
 #include "raft/types.h"
 #include "rpc/connection_cache.h"
 #include "rpc/simple_protocol.h"
-#include "storage/log_manager.h"
+#include "storage/api.h"
 #include "storage/logger.h"
 #include "syschecks/syschecks.h"
 #include "utils/hdr_hist.h"
@@ -32,6 +32,8 @@
 #include <cctype>
 #include <cstdint>
 #include <string>
+
+using namespace std::chrono_literals; // NOLINT
 
 auto& tronlog = raft::tron::tronlog;
 namespace po = boost::program_options; // NOLINT
@@ -72,12 +74,15 @@ public:
       std::chrono::milliseconds raft_heartbeat_interval,
       ss::sharded<rpc::connection_cache>& clients)
       : _self(self)
-      , _mngr(storage::log_config(
-          storage::log_config::storage_type::disk,
-          std::move(directory),
-          1_GiB,
-          storage::debug_sanitize_files::yes))
       , _consensus_client_protocol(raft::make_rpc_client_protocol(clients))
+      , _storage(
+          storage::kvstore_config(
+            1_MiB, 10ms, directory, storage::debug_sanitize_files::yes),
+          storage::log_config(
+            storage::log_config::storage_type::disk,
+            std::move(directory),
+            1_GiB,
+            storage::debug_sanitize_files::yes))
       , _hbeats(raft_heartbeat_interval, _consensus_client_protocol, self) {}
 
     ss::lw_shared_ptr<raft::consensus> consensus_for(raft::group_id) {
@@ -85,46 +90,54 @@ public:
     }
 
     ss::future<> start(raft::group_configuration init_cfg) {
-        return _mngr.manage(storage::ntp_config(_ntp, _mngr.config().base_dir))
-          .then([this, cfg = std::move(init_cfg)](storage::log log) mutable {
-              ss::sharded<storage::kvstore> kvstore;
-              _consensus = ss::make_lw_shared<raft::consensus>(
-                _self,
-                raft::group_id(66),
-                std::move(cfg),
-                raft::timeout_jitter(
-                  config::shard_local_cfg().raft_election_timeout_ms()),
-                log,
-                ss::default_priority_class(),
-                std::chrono::seconds(1),
-                _consensus_client_protocol,
-                [this](raft::leadership_status st) {
-                    if (!st.current_leader) {
-                        vlog(tronlog.info, "No leader in group {}", st.group);
-                        return;
-                    }
-                    vlog(
-                      tronlog.info,
-                      "New leader {} elected in group {}",
-                      st.current_leader.value(),
-                      st.group);
-                },
-                kvstore);
-              return _consensus->start().then(
-                [this] { return _hbeats.register_group(_consensus); });
+        return _storage.start()
+          .then([this, init_cfg = std::move(init_cfg)]() mutable {
+              return _storage.log_mgr()
+                .manage(storage::ntp_config(
+                  _ntp, _storage.log_mgr().config().base_dir))
+                .then(
+                  [this, cfg = std::move(init_cfg)](storage::log log) mutable {
+                      _consensus = ss::make_lw_shared<raft::consensus>(
+                        _self,
+                        raft::group_id(66),
+                        std::move(cfg),
+                        raft::timeout_jitter(
+                          config::shard_local_cfg().raft_election_timeout_ms()),
+                        log,
+                        ss::default_priority_class(),
+                        std::chrono::seconds(1),
+                        _consensus_client_protocol,
+                        [this](raft::leadership_status st) {
+                            if (!st.current_leader) {
+                                vlog(
+                                  tronlog.info,
+                                  "No leader in group {}",
+                                  st.group);
+                                return;
+                            }
+                            vlog(
+                              tronlog.info,
+                              "New leader {} elected in group {}",
+                              st.current_leader.value(),
+                              st.group);
+                        },
+                        _storage);
+                      return _consensus->start().then(
+                        [this] { return _hbeats.register_group(_consensus); });
+                  });
           })
           .then([this] { return _hbeats.start(); });
     }
     ss::future<> stop() {
         return _consensus->stop()
           .then([this] { return _hbeats.stop(); })
-          .then([this] { return _mngr.stop(); });
+          .then([this] { return _storage.stop(); });
     }
 
 private:
     model::node_id _self;
     raft::consensus_client_protocol _consensus_client_protocol;
-    storage::log_manager _mngr;
+    storage::api _storage;
     raft::heartbeat_manager _hbeats;
     model::ntp _ntp{
       model::ns("master_control_program"),

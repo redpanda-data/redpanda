@@ -66,6 +66,16 @@ struct kvstore_config {
     std::chrono::milliseconds commit_interval;
     ss::sstring base_dir;
     debug_sanitize_files sanitize_fileops;
+
+    kvstore_config(
+      size_t max_segment_size,
+      std::chrono::milliseconds commit_interval,
+      ss::sstring base_dir,
+      debug_sanitize_files sanitize_fileops)
+      : max_segment_size(max_segment_size)
+      , commit_interval(commit_interval)
+      , base_dir(std::move(base_dir))
+      , sanitize_fileops(sanitize_fileops) {}
 };
 
 class kvstore {

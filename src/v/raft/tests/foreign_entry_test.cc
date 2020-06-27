@@ -16,15 +16,26 @@
 
 #include <seastar/core/future-util.hh>
 
+using namespace std::chrono_literals; // NOLINT
+
 struct foreign_entry_fixture {
     static constexpr int active_nodes = 3;
+    ss::sstring test_dir = "test.data."
+                           + random_generators::gen_alphanum_string(10);
+
     foreign_entry_fixture()
-      : _mngr(storage::log_config(
-        storage::log_config::storage_type::disk,
-        "test.dir",
-        1_GiB,
-        storage::debug_sanitize_files::yes)) {
-        (void)_mngr.manage(storage::ntp_config(_ntp, "test.dir")).get0();
+      : _storage(
+        storage::kvstore_config(
+          1_MiB, 10ms, test_dir, storage::debug_sanitize_files::yes),
+        storage::log_config(
+          storage::log_config::storage_type::disk,
+          test_dir,
+          1_GiB,
+          storage::debug_sanitize_files::yes)) {
+        _storage.start().get();
+        (void)_storage.log_mgr()
+          .manage(storage::ntp_config(_ntp, "test.dir"))
+          .get0();
     }
 
     std::vector<storage::append_result> write_n(const std::size_t n) {
@@ -87,10 +98,10 @@ struct foreign_entry_fixture {
         return raft::group_configuration{
           .nodes = std::move(nodes), .learners = std::move(learners)};
     }
-    ~foreign_entry_fixture() { _mngr.stop().get(); }
+    ~foreign_entry_fixture() { _storage.stop().get(); }
     model::offset _base_offset{0};
-    storage::log get_log() { return _mngr.get(_ntp).value(); }
-    storage::log_manager _mngr;
+    storage::api _storage;
+    storage::log get_log() { return _storage.log_mgr().get(_ntp).value(); }
     model::ntp _ntp{
       model::ns("test.bootstrap." + random_generators::gen_alphanum_string(8)),
       model::topic(random_generators::gen_alphanum_string(6)),

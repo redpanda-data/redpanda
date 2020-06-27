@@ -1,9 +1,9 @@
 #include "model/fundamental.h"
 #include "model/record_utils.h"
 #include "random/generators.h"
+#include "storage/api.h"
 #include "storage/directories.h"
 #include "storage/disk_log_appender.h"
-#include "storage/log_manager.h"
 #include "storage/segment_appender.h"
 #include "storage/segment_appender_utils.h"
 #include "storage/segment_reader.h"
@@ -14,7 +14,8 @@
 #include <seastar/testing/thread_test_case.hh>
 #include <seastar/util/defer.hh>
 
-using namespace storage; // NOLINT
+using namespace std::chrono_literals; // NOLINT
+using namespace storage;              // NOLINT
 
 void write_garbage(segment_appender& ptr) {
     auto b = random_generators::get_bytes(100);
@@ -46,8 +47,14 @@ ntp_config config_from_ntp(const model::ntp& ntp) {
 }
 
 SEASTAR_THREAD_TEST_CASE(test_can_load_logs) {
-    log_manager m(make_config());
-    auto stop_manager = ss::defer([&m] { m.stop().get(); });
+    auto conf = make_config();
+    storage::api store(
+      storage::kvstore_config(
+        1_MiB, 10ms, conf.base_dir, storage::debug_sanitize_files::yes),
+      conf);
+    store.start().get();
+    auto stop_kvstore = ss::defer([&store] { store.stop().get(); });
+    auto& m = store.log_mgr();
     std::vector<storage::ntp_config> ntps;
     ntps.reserve(4);
     for (size_t i = 0; i < 4; ++i) {
