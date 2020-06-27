@@ -11,17 +11,20 @@ static void set_configuration(ss::sstring p_name, T v) {
     }).get0();
 }
 
+static storage::kvstore_config get_conf(ss::sstring dir) {
+    return storage::kvstore_config(
+      8192,
+      std::chrono::milliseconds(10),
+      dir,
+      storage::debug_sanitize_files::yes);
+}
+
 SEASTAR_THREAD_TEST_CASE(key_space) {
     set_configuration("disable_metrics", true);
 
     auto dir = fmt::format("kvstore_test_{}", random_generators::get_int(4000));
 
-    storage::kvstore_config conf{
-      .max_segment_size = 8192,
-      .commit_interval = std::chrono::milliseconds(10),
-      .base_dir = dir,
-      .sanitize_fileops = storage::debug_sanitize_files::yes,
-    };
+    auto conf = get_conf(dir);
 
     // empty started then stopped
     auto kvs = std::make_unique<storage::kvstore>(conf);
@@ -79,12 +82,7 @@ SEASTAR_THREAD_TEST_CASE(kvstore_empty) {
 
     auto dir = fmt::format("kvstore_test_{}", random_generators::get_int(4000));
 
-    storage::kvstore_config conf{
-      .max_segment_size = 8192,
-      .commit_interval = std::chrono::milliseconds(10),
-      .base_dir = dir,
-      .sanitize_fileops = storage::debug_sanitize_files::yes,
-    };
+    auto conf = get_conf(dir);
 
     // empty started then stopped
     auto kvs = std::make_unique<storage::kvstore>(conf);
@@ -150,12 +148,7 @@ SEASTAR_THREAD_TEST_CASE(kvstore) {
 
     auto dir = fmt::format("kvstore_test_{}", random_generators::get_int(4000));
 
-    storage::kvstore_config conf{
-      .max_segment_size = 8192,
-      .commit_interval = std::chrono::milliseconds(10),
-      .base_dir = dir,
-      .sanitize_fileops = storage::debug_sanitize_files::yes,
-    };
+    auto conf = get_conf(dir);
 
     std::unordered_map<bytes, iobuf> truth;
 

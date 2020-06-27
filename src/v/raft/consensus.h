@@ -12,7 +12,7 @@
 #include "raft/types.h"
 #include "rpc/connection_cache.h"
 #include "seastarx.h"
-#include "storage/kvstore.h"
+#include "storage/api.h"
 #include "storage/log.h"
 #include "utils/mutex.h"
 
@@ -52,7 +52,7 @@ public:
       model::timeout_clock::duration disk_timeout,
       consensus_client_protocol,
       leader_cb_t,
-      ss::sharded<storage::kvstore>& kvstore);
+      storage::api&);
 
     /// Initial call. Allow for internal state recovery
     ss::future<> start();
@@ -252,7 +252,7 @@ private:
     std::chrono::milliseconds _recovery_append_timeout;
     ss::metrics::metric_groups _metrics;
     ss::abort_source _as;
-    ss::sharded<storage::kvstore>& _kvstore;
+    storage::api& _storage;
 
     friend std::ostream& operator<<(std::ostream&, const consensus&);
 };

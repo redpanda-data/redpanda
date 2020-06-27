@@ -7,7 +7,7 @@
 #include "raft/consensus_client_protocol.h"
 #include "raft/group_manager.h"
 #include "raft/heartbeat_manager.h"
-#include "storage/log_manager.h"
+#include "storage/api.h"
 #include "utils/named_type.h"
 
 #include <absl/container/flat_hash_map.h>
@@ -16,7 +16,7 @@ namespace cluster {
 class partition_manager {
 public:
     partition_manager(
-      ss::sharded<storage::log_manager>&, ss::sharded<raft::group_manager>&);
+      ss::sharded<storage::api>&, ss::sharded<raft::group_manager>&);
 
     using manage_cb_t
       = ss::noncopyable_function<void(ss::lw_shared_ptr<partition>)>;
@@ -52,7 +52,7 @@ public:
     ss::future<> remove(const model::ntp& ntp);
 
     std::optional<storage::log> log(const model::ntp& ntp) {
-        return _mngr.get(ntp);
+        return _storage.log_mgr().get(ntp);
     }
 
     /*
@@ -88,7 +88,7 @@ public:
     }
 
 private:
-    storage::log_manager& _mngr;
+    storage::api& _storage;
     /// used to wait for concurrent recoveries
     ss::sharded<raft::group_manager>& _raft_manager;
 

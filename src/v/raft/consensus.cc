@@ -34,7 +34,7 @@ consensus::consensus(
   model::timeout_clock::duration disk_timeout,
   consensus_client_protocol client,
   consensus::leader_cb_t cb,
-  ss::sharded<storage::kvstore>& kvstore)
+  storage::api& storage)
   : _self(std::move(nid))
   , _group(group)
   , _jit(std::move(jit))
@@ -52,7 +52,7 @@ consensus::consensus(
       config::shard_local_cfg().replicate_append_timeout_ms())
   , _recovery_append_timeout(
       config::shard_local_cfg().recovery_append_timeout_ms())
-  , _kvstore(kvstore) {
+  , _storage(storage) {
     setup_metrics();
     update_follower_stats(_conf);
     _vote_timeout.set_callback([this] {
@@ -481,7 +481,7 @@ ss::future<>
 consensus::write_voted_for(consensus::voted_for_configuration config) {
     auto key = voted_for_key();
     iobuf val = reflection::to_iobuf(config);
-    return _kvstore.local().put(
+    return _storage.kvs().put(
       storage::kvstore::key_space::consensus, std::move(key), std::move(val));
 }
 
@@ -491,7 +491,7 @@ ss::future<> consensus::read_voted_for() {
      * voted_for file, if it exists.
      */
     const auto key = voted_for_key();
-    auto value = _kvstore.local().get(
+    auto value = _storage.kvs().get(
       storage::kvstore::key_space::consensus, key);
     if (value) {
         auto config = reflection::adl<consensus::voted_for_configuration>{}

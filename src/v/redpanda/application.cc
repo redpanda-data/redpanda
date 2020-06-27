@@ -8,7 +8,6 @@
 #include "raft/service.h"
 #include "rpc/simple_protocol.h"
 #include "storage/directories.h"
-#include "storage/kvstore.h"
 #include "syschecks/syschecks.h"
 #include "test_utils/logs.h"
 #include "utils/file_io.h"
@@ -192,12 +191,11 @@ static storage::kvstore_config kvstore_config_from_global_config() {
      *           - 1
      *           - ... #cores
      */
-    return storage::kvstore_config{
-      .max_segment_size = config::shard_local_cfg().kvstore_max_segment_size(),
-      .commit_interval = config::shard_local_cfg().kvstore_flush_interval(),
-      .base_dir = config::shard_local_cfg().data_directory().as_sstring(),
-      .sanitize_fileops = storage::debug_sanitize_files::no,
-    };
+    return storage::kvstore_config(
+      config::shard_local_cfg().kvstore_max_segment_size(),
+      config::shard_local_cfg().kvstore_flush_interval(),
+      config::shard_local_cfg().data_directory().as_sstring(),
+      storage::debug_sanitize_files::no);
 }
 
 static storage::log_config manager_config_from_global_config() {
@@ -226,23 +224,27 @@ void application::wire_up_services() {
     construct_service(_raft_connection_cache).get();
     syschecks::systemd_message("Building shard-lookup tables");
     construct_service(shard_table).get();
-    syschecks::systemd_message("Intializing log manager");
-    construct_service(log_manager, manager_config_from_global_config()).get();
 
-    construct_service(_kvstore, kvstore_config_from_global_config()).get();
+    syschecks::systemd_message("Intializing storage services");
+    construct_service(
+      storage,
+      kvstore_config_from_global_config(),
+      manager_config_from_global_config())
+      .get();
 
+    syschecks::systemd_message("Intializing raft group manager");
     construct_service(
       raft_group_manager,
       model::node_id(config::shard_local_cfg().node_id()),
       config::shard_local_cfg().raft_io_timeout_ms(),
       config::shard_local_cfg().raft_heartbeat_interval_ms(),
       std::ref(_raft_connection_cache),
-      std::ref(_kvstore))
+      std::ref(storage))
       .get();
 
     syschecks::systemd_message("Adding partition manager");
     construct_service(
-      partition_manager, std::ref(log_manager), std::ref(raft_group_manager))
+      partition_manager, std::ref(storage), std::ref(raft_group_manager))
       .get();
     vlog(_log.info, "Partition manager started");
 
@@ -323,8 +325,8 @@ void application::wire_up_services() {
 }
 
 void application::start() {
-    syschecks::systemd_message("Staring key-value store");
-    _kvstore.invoke_on_all(&storage::kvstore::start).get();
+    syschecks::systemd_message("Staring storage services");
+    storage.invoke_on_all(&storage::api::start).get();
 
     syschecks::systemd_message("Starting the partition manager");
     partition_manager.invoke_on_all(&cluster::partition_manager::start).get();

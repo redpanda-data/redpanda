@@ -39,8 +39,9 @@
 namespace storage {
 using logs_type = absl::flat_hash_map<model::ntp, log_housekeeping_meta>;
 
-log_manager::log_manager(log_config config) noexcept
+log_manager::log_manager(log_config config, kvstore& kvstore) noexcept
   : _config(std::move(config))
+  , _kvstore(kvstore)
   , _jitter(_config.compaction_interval)
   , _batch_cache(config.reclaim_opts) {
     _compaction_timer.set_callback([this] { trigger_housekeeping(); });

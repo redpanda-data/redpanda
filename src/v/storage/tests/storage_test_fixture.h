@@ -17,6 +17,8 @@
 #include <boost/test/tools/old/interface.hpp>
 #include <fmt/core.h>
 
+using namespace std::chrono_literals; // NOLINT
+
 static ss::logger tlog{"test_log"};
 
 struct random_batches_generator {
@@ -28,21 +30,33 @@ struct random_batches_generator {
 
 class storage_test_fixture {
 public:
-    ss::sstring test_dir = "test.data."
-                           + random_generators::gen_alphanum_string(10);
+    ss::sstring test_dir;
+    storage::kvstore kvstore;
 
-    storage_test_fixture() { configure_unit_test_logging(); }
+    storage_test_fixture()
+      : test_dir("test.data." + random_generators::gen_alphanum_string(10))
+      , kvstore(storage::kvstore_config(
+          1_MiB, 10ms, test_dir, storage::debug_sanitize_files::yes)) {
+        configure_unit_test_logging();
+        // avoid double metric registrations
+        ss::smp::invoke_on_all([] {
+            config::shard_local_cfg().get("disable_metrics").set_value(true);
+        }).get0();
+        kvstore.start().get();
+    }
+
+    ~storage_test_fixture() { kvstore.stop().get(); }
 
     void configure_unit_test_logging() { std::cout.setf(std::ios::unitbuf); }
 
     /// Creates a log manager in test directory
     storage::log_manager make_log_manager(storage::log_config cfg) {
-        return storage::log_manager(std::move(cfg));
+        return storage::log_manager(std::move(cfg), kvstore);
     }
 
     /// Creates a log manager in test directory with default config
     storage::log_manager make_log_manager() {
-        return storage::log_manager(default_log_config(test_dir));
+        return storage::log_manager(default_log_config(test_dir), kvstore);
     }
 
     /// \brief randomizes the configuration options
