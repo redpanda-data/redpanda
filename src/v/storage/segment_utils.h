@@ -3,6 +3,7 @@
 #include "storage/compacted_index_reader.h"
 #include "storage/compacted_index_writer.h"
 #include "storage/compacted_offset_list.h"
+#include "storage/probe.h"
 #include "storage/segment.h"
 #include "storage/segment_appender.h"
 
@@ -17,7 +18,9 @@ namespace storage::internal {
 /// \brief, this method will acquire it's own locks on the segment
 ///
 ss::future<> self_compact_segment(
-  ss::lw_shared_ptr<storage::segment>, storage::compaction_config);
+  ss::lw_shared_ptr<storage::segment>,
+  storage::compaction_config,
+  storage::probe&);
 
 /// make file handle with default opts
 ss::future<ss::file>
