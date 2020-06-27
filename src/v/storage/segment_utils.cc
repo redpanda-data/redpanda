@@ -13,6 +13,7 @@
 #include <seastar/core/file-types.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/reactor.hh>
+#include <seastar/core/rwlock.hh>
 #include <seastar/core/seastar.hh>
 
 #include <absl/container/btree_map.h>
@@ -224,12 +225,9 @@ ss::future<> write_compacted_segment(
 }
 
 ss::future<>
-self_compact_segment(ss::lw_shared_ptr<segment> s, compaction_config cfg) {
-    if (s->has_appender()) {
-        return ss::make_exception_future<>(std::runtime_error(fmt::format(
-          "Cannot compact an active segment. cfg:{} - segment:{}", cfg, s)));
-    }
-
+do_compact_segment_index(ss::lw_shared_ptr<segment> s, compaction_config cfg) {
+    // TODO: add exception safety to this method
+    // TODO: regenerate the index if missing
     auto compacted_path = std::filesystem::path(s->reader().filename());
     compacted_path.replace_extension(".compaction_index");
     vlog(stlog.trace, "compacting index:{}", compacted_path);
@@ -238,17 +236,20 @@ self_compact_segment(ss::lw_shared_ptr<segment> s, compaction_config cfg) {
           auto reader = make_file_backed_compacted_reader(
             compacted_path.string(), std::move(f), cfg.iopc, 64_KiB);
           return write_clean_compacted_index(reader, cfg);
-      })
-      .then([s, compacted_path, cfg] {
-          /// re-open the index *after* we have written it clean above
-          return make_reader_handle(compacted_path, cfg.sanitize)
-            .then([s, cfg, compacted_path](ss::file f) {
-                auto reader = make_file_backed_compacted_reader(
-                  compacted_path.string(), std::move(f), cfg.iopc, 64_KiB);
-                return generate_compacted_list(s->offsets().base_offset, reader)
-                  .finally([reader]() mutable {
-                      return reader.close().then_wrapped([](ss::future<>) {});
-                  });
+      });
+}
+ss::future<>
+do_compact_segment_data(ss::lw_shared_ptr<segment> s, compaction_config cfg) {
+    auto compacted_path = std::filesystem::path(s->reader().filename());
+    compacted_path.replace_extension(".compaction_index");
+    vlog(stlog.trace, "compacting index:{}", compacted_path);
+    return make_reader_handle(compacted_path, cfg.sanitize)
+      .then([s, cfg, compacted_path](ss::file f) {
+          auto reader = make_file_backed_compacted_reader(
+            compacted_path.string(), std::move(f), cfg.iopc, 64_KiB);
+          return generate_compacted_list(s->offsets().base_offset, reader)
+            .finally([reader]() mutable {
+                return reader.close().then_wrapped([](ss::future<>) {});
             });
       })
       .then([cfg, s](compacted_offset_list list) {
@@ -265,4 +266,28 @@ self_compact_segment(ss::lw_shared_ptr<segment> s, compaction_config cfg) {
             });
       });
 }
+
+ss::future<>
+self_compact_segment(ss::lw_shared_ptr<segment> s, compaction_config cfg) {
+    if (s->has_appender()) {
+        return ss::make_exception_future<>(std::runtime_error(fmt::format(
+          "Cannot compact an active segment. cfg:{} - segment:{}", cfg, s)));
+    }
+    return s->read_lock()
+      .then([cfg, s](ss::rwlock::holder h) {
+          if (s->is_closed()) {
+              return ss::make_exception_future<>(segment_closed_exception());
+          }
+          return do_compact_segment_index(s, cfg).finally(
+            [h = std::move(h)] {});
+      })
+      .then([s] { return s->write_lock(); })
+      .then([cfg, s](ss::rwlock::holder h) {
+          if (s->is_closed()) {
+              return ss::make_exception_future<>(segment_closed_exception());
+          }
+          return do_compact_segment_data(s, cfg).finally([h = std::move(h)] {});
+      });
+}
+
 } // namespace storage::internal
