@@ -267,8 +267,8 @@ do_compact_segment_data(ss::lw_shared_ptr<segment> s, compaction_config cfg) {
       });
 }
 
-ss::future<>
-self_compact_segment(ss::lw_shared_ptr<segment> s, compaction_config cfg) {
+ss::future<> self_compact_segment(
+  ss::lw_shared_ptr<segment> s, compaction_config cfg, storage::probe&) {
     if (s->has_appender()) {
         return ss::make_exception_future<>(std::runtime_error(fmt::format(
           "Cannot compact an active segment. cfg:{} - segment:{}", cfg, s)));
