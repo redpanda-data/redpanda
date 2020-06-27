@@ -134,6 +134,7 @@ public:
 
     void tombstone() { _tombstone = true; }
     bool has_outstanding_locks() const { return _destructive_ops.locked(); }
+    bool is_closed() const { return _closed; }
 
 private:
     void cache_truncate(model::offset offset);
