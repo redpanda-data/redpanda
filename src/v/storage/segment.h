@@ -11,9 +11,15 @@
 #include <seastar/core/file.hh>
 #include <seastar/core/rwlock.hh>
 
+#include <exception>
 #include <optional>
 
 namespace storage {
+struct segment_closed_exception final : std::exception {
+    const char* what() const noexcept final {
+        return "segment_closed exception";
+    }
+};
 
 constexpr size_t default_segment_readahead_size = 128 * 1024;
 
