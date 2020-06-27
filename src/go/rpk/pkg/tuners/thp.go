@@ -14,7 +14,7 @@ import (
 
 const enabledFile = "enabled"
 
-type tuner struct {
+type thpTuner struct {
 	fs       afero.Fs
 	executor executors.Executor
 }
@@ -48,10 +48,10 @@ func getTHPDir(fs afero.Fs) (string, error) {
 / Create a new tuner to enable Transparent Huge Pages
 */
 func NewEnableTHPTuner(fs afero.Fs, executor executors.Executor) Tunable {
-	return &tuner{fs: fs, executor: executor}
+	return &thpTuner{fs: fs, executor: executor}
 }
 
-func (t *tuner) CheckIfSupported() (bool, string) {
+func (t *thpTuner) CheckIfSupported() (bool, string) {
 	dir, err := getTHPDir(t.fs)
 	if err != nil {
 		return false, err.Error()
@@ -59,7 +59,7 @@ func (t *tuner) CheckIfSupported() (bool, string) {
 	return dir != "", ""
 }
 
-func (t *tuner) Tune() TuneResult {
+func (t *thpTuner) Tune() TuneResult {
 	dir, err := getTHPDir(t.fs)
 	if err != nil {
 		return NewTuneError(err)
