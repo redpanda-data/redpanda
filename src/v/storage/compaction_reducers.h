@@ -1,9 +1,11 @@
 #pragma once
 
+#include "model/record_batch_reader.h"
 #include "storage/compacted_index.h"
 #include "storage/compacted_index_writer.h"
 #include "storage/compacted_offset_list.h"
 #include "storage/logger.h"
+#include "storage/segment_appender.h"
 #include "units.h"
 
 #include <absl/container/btree_map.h>
@@ -88,6 +90,27 @@ public:
 
 private:
     compacted_offset_list _list;
+};
+
+class copy_data_segment_reducer : public compaction_reducer {
+public:
+    copy_data_segment_reducer(compacted_offset_list l, segment_appender_ptr a)
+      : _list(std::move(l))
+      , _appender(std::move(a)) {}
+
+    ss::future<ss::stop_iteration> operator()(model::record_batch&&);
+    ss::future<> end_of_stream() { return _appender->close(); }
+
+private:
+    bool should_keep(const model::record_batch&) const;
+    bool should_keep(model::offset base, int32_t delta) const {
+        const auto o = base + model::offset(delta);
+        return _list.contains(o);
+    }
+    std::vector<model::record_batch> filter(model::record_batch&&);
+
+    compacted_offset_list _list;
+    segment_appender_ptr _appender;
 };
 
 } // namespace storage::internal
