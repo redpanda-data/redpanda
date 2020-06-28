@@ -192,7 +192,7 @@ func prestart(
 	checkPayloads := []api.CheckPayload{}
 	tunerPayloads := []api.TunerPayload{}
 	if prestartCfg.checkEnabled {
-		checkPayloads, err = check(fs, configFile, conf, timeout, checkFailedActions(args))
+		checkPayloads, err = check(fs, configFile, conf, timeout)
 		if err != nil {
 			return checkPayloads, tunerPayloads, err
 		}
@@ -371,25 +371,8 @@ func tuneAll(
 	return tunerPayloads, nil
 }
 
-type checkFailedAction func(*tuners.CheckResult)
-
-func checkFailedActions(
-	args *redpanda.RedpandaArgs,
-) map[tuners.CheckerID]checkFailedAction {
-	return map[tuners.CheckerID]checkFailedAction{
-		tuners.SwapChecker: func(*tuners.CheckResult) {
-			// Do not set --lock-memory flag when swap is disabled
-			args.SeastarFlags["lock-memory"] = "false"
-		},
-	}
-}
-
 func check(
-	fs afero.Fs,
-	configFile string,
-	conf *config.Config,
-	timeout time.Duration,
-	checkFailedActions map[tuners.CheckerID]checkFailedAction,
+	fs afero.Fs, configFile string, conf *config.Config, timeout time.Duration,
 ) ([]api.CheckPayload, error) {
 	payloads := make([]api.CheckPayload, 0)
 	results, err := tuners.Check(fs, configFile, conf, timeout)
@@ -407,9 +390,6 @@ func check(
 		}
 		payloads = append(payloads, payload)
 		if !result.IsOk {
-			if action, exists := checkFailedActions[result.CheckerId]; exists {
-				action(&result)
-			}
 			msg := fmt.Sprintf("System check '%s' failed. Required: %v, Current %v",
 				result.Desc, result.Required, result.Current)
 			if result.Severity == tuners.Fatal {
