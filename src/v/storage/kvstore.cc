@@ -25,42 +25,41 @@ kvstore::kvstore(kvstore_config kv_conf)
   , _snap(
       std::filesystem::path(_ntpc.work_directory()),
       ss::default_priority_class())
-  , _timer([this] { _sem.signal(); }) {
-    if (config::shard_local_cfg().disable_metrics()) {
-        return;
-    }
-    _probe.metrics.add_group(
-      prometheus_sanitize::metrics_name("storage:kvstore"),
-      {
-        ss::metrics::make_total_operations(
-          "segments_rolled",
-          [this] { return _probe.segments_rolled; },
-          ss::metrics::description("Number of segments rolled")),
-        ss::metrics::make_total_operations(
-          "entries_fetched",
-          [this] { return _probe.entries_fetched; },
-          ss::metrics::description("Number of entries fetched")),
-        ss::metrics::make_total_operations(
-          "entries_written",
-          [this] { return _probe.entries_written; },
-          ss::metrics::description("Number of entries written")),
-        ss::metrics::make_total_operations(
-          "entries_removed",
-          [this] { return _probe.entries_removed; },
-          ss::metrics::description("Number of entries removaled")),
-        ss::metrics::make_current_bytes(
-          "cached_bytes",
-          [this] { return _probe.cached_bytes; },
-          ss::metrics::description("Size of the database in memory")),
-        ss::metrics::make_derive(
-          "key_count",
-          [this] { return _db.size(); },
-          ss::metrics::description("Number of keys in the database")),
-      });
-}
+  , _timer([this] { _sem.signal(); }) {}
 
 ss::future<> kvstore::start() {
     vlog(lg.info, "Starting kvstore: dir {}", _ntpc.work_directory());
+
+    if (!config::shard_local_cfg().disable_metrics()) {
+        _probe.metrics.add_group(
+          prometheus_sanitize::metrics_name("storage:kvstore"),
+          {
+            ss::metrics::make_total_operations(
+              "segments_rolled",
+              [this] { return _probe.segments_rolled; },
+              ss::metrics::description("Number of segments rolled")),
+            ss::metrics::make_total_operations(
+              "entries_fetched",
+              [this] { return _probe.entries_fetched; },
+              ss::metrics::description("Number of entries fetched")),
+            ss::metrics::make_total_operations(
+              "entries_written",
+              [this] { return _probe.entries_written; },
+              ss::metrics::description("Number of entries written")),
+            ss::metrics::make_total_operations(
+              "entries_removed",
+              [this] { return _probe.entries_removed; },
+              ss::metrics::description("Number of entries removaled")),
+            ss::metrics::make_current_bytes(
+              "cached_bytes",
+              [this] { return _probe.cached_bytes; },
+              ss::metrics::description("Size of the database in memory")),
+            ss::metrics::make_derive(
+              "key_count",
+              [this] { return _db.size(); },
+              ss::metrics::description("Number of keys in the database")),
+          });
+    }
 
     return recover()
       .then([this] {
