@@ -29,10 +29,12 @@
           {% if hostvars[inventory_hostname].id > 1 %}
               seed_servers:
           {% for host in ansible_play_batch%}
+          {% if hostvars[host].id != hostvars[inventory_hostname].id %}
                 - node_id: {{ hostvars[host].id }}
                   host:
                     address: "{{ hostvars[host].private_ip }}"
                     port: 33145
+          {% endif %}
           {% endfor %}
           {% endif %}
 

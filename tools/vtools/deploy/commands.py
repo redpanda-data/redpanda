@@ -173,7 +173,7 @@ def destroy_deployment(vconfig, provider, module):
         logging.fatal(
             f'No deployment found for module {module} in provider {provider}.')
     tf_out = tf.get_tf_outputs(vconfig, provider, module)
-    if tf_out:
+    if tf_out and 'ip' in tf_out:
         # Remove the ansible cache in case previous deployed VMs shared the same
         # public IPs
         _rm_ansible_cache(vconfig, tf_out['ip']['value'])
