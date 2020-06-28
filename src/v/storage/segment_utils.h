@@ -1,4 +1,5 @@
 #pragma once
+#include "model/record_batch_reader.h"
 #include "storage/compacted_index.h"
 #include "storage/compacted_index_reader.h"
 #include "storage/compacted_index_writer.h"
@@ -67,10 +68,22 @@ ss::future<> write_clean_compacted_index(
 ss::future<compacted_offset_list>
   generate_compacted_list(model::offset, storage::compacted_index_reader);
 
-// TODO: needs to look over on the locking mechanics
-ss::future<> write_compacted_segment(
+/// \brief creates a model::record_batch_reader from segment meta
+///
+model::record_batch_reader create_segment_full_reader(
   ss::lw_shared_ptr<storage::segment>,
-  storage::segment_appender_ptr,
-  compacted_offset_list);
+  storage::compaction_config,
+  storage::probe&,
+  ss::rwlock::holder);
+
+ss::future<> do_copy_segment_data(
+  ss::lw_shared_ptr<storage::segment>,
+  storage::compaction_config,
+  model::record_batch_reader);
+
+ss::future<> do_swap_data_file_handles(
+  std::filesystem::path compacted,
+  ss::lw_shared_ptr<storage::segment>,
+  storage::compaction_config);
 
 } // namespace storage::internal
