@@ -114,13 +114,6 @@ struct topic_result {
     friend std::ostream& operator<<(std::ostream& o, const topic_result& r);
 };
 
-/// Structure representing difference between two set of brokers.
-/// It is used to represent changes that have to be applied to raft client cache
-struct brokers_diff {
-    std::vector<broker_ptr> updated;
-    std::vector<broker_ptr> removed;
-};
-
 struct create_topics_request {
     std::vector<topic_configuration> topics;
     model::timeout_clock::duration timeout;

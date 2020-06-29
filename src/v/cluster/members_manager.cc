@@ -47,7 +47,7 @@ ss::future<> members_manager::start() {
     return handle_raft0_cfg_update(_raft0->config());
 }
 
-cluster::brokers_diff
+cluster::patch<broker_ptr>
 calculate_brokers_diff(members_table& m, const raft::group_configuration& cfg) {
     std::vector<broker_ptr> new_list;
     cfg.for_each([&new_list](const model::broker& br) {
@@ -99,16 +99,16 @@ ss::future<> members_manager::stop() {
     return _gate.close();
 }
 
-ss::future<> members_manager::update_connections(brokers_diff diff) {
-    return ss::do_with(std::move(diff), [this](brokers_diff& diff) {
+ss::future<> members_manager::update_connections(patch<broker_ptr> diff) {
+    return ss::do_with(std::move(diff), [this](patch<broker_ptr>& diff) {
         return ss::do_for_each(
-                 diff.removed,
+                 diff.deletions,
                  [this](broker_ptr removed) {
                      return remove_broker_client(
                        _connection_cache, removed->id());
                  })
           .then([this, &diff] {
-              return ss::do_for_each(diff.updated, [this](broker_ptr b) {
+              return ss::do_for_each(diff.additions, [this](broker_ptr b) {
                   if (b->id() == _self.id()) {
                       // Do not create client to local broker
                       return ss::make_ready_future<>();
