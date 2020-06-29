@@ -132,6 +132,14 @@ struct create_topics_reply {
     std::vector<topic_configuration> configs;
 };
 
+template<typename T>
+struct patch {
+    std::vector<T> additions;
+    std::vector<T> deletions;
+
+    bool empty() const { return additions.empty() && deletions.empty(); }
+};
+
 // generic type used for various registration handles such as in ntp_callbacks.h
 using notification_id_type = named_type<int32_t, struct notification_id>;
 
