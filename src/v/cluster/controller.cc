@@ -1066,7 +1066,7 @@ ss::future<> controller::update_clients_cache(
   std::vector<broker_ptr> new_list, std::vector<broker_ptr> old_list) {
     return ss::do_with(
       calculate_changed_brokers(std::move(new_list), std::move(old_list)),
-      [this](brokers_diff& diff) {
+      [this](patch<broker_ptr>& diff) {
           return ss::do_for_each(
                    diff.removed,
                    [this](broker_ptr removed) {

@@ -55,7 +55,7 @@ private:
 
     // Raft 0 config updates
     ss::future<> handle_raft0_cfg_update(raft::group_configuration);
-    ss::future<> update_connections(brokers_diff);
+    ss::future<> update_connections(patch<broker_ptr>);
 
     std::vector<config::seed_server> _seed_servers;
     model::broker _self;

@@ -15,7 +15,7 @@ namespace cluster {
 class metadata_cache;
 /// This method calculates the machine nodes that were updated/added
 /// and removed
-brokers_diff calculate_changed_brokers(
+patch<broker_ptr> calculate_changed_brokers(
   std::vector<broker_ptr> new_list, std::vector<broker_ptr> old_list);
 
 /// Creates the same topic_result for all requests

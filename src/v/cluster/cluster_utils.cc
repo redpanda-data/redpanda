@@ -12,9 +12,9 @@
 #include <chrono>
 
 namespace cluster {
-brokers_diff calculate_changed_brokers(
+patch<broker_ptr> calculate_changed_brokers(
   std::vector<broker_ptr> new_list, std::vector<broker_ptr> old_list) {
-    brokers_diff diff;
+    patch<broker_ptr> patch;
     auto compare_by_id = [](const broker_ptr& lhs, const broker_ptr& rhs) {
         return *lhs < *rhs;
     };
@@ -26,7 +26,7 @@ brokers_diff calculate_changed_brokers(
       std::cend(new_list),
       std::cbegin(old_list),
       std::cend(old_list),
-      std::back_inserter(diff.updated),
+      std::back_inserter(patch.additions),
       [](const broker_ptr& lhs, const broker_ptr& rhs) {
           return *lhs != *rhs;
       });
@@ -36,10 +36,10 @@ brokers_diff calculate_changed_brokers(
       std::cend(old_list),
       std::cbegin(new_list),
       std::cend(new_list),
-      std::back_inserter(diff.removed),
+      std::back_inserter(patch.deletions),
       compare_by_id);
 
-    return diff;
+    return patch;
 }
 
 std::vector<model::broker> get_replica_set_brokers(
