@@ -16,16 +16,16 @@
 namespace cluster {
 
 partition_manager::partition_manager(
-  ss::sharded<storage::log_manager>& log_mngr,
-  ss::sharded<raft::group_manager>& raft)
-  : _mngr(log_mngr.local())
+  ss::sharded<storage::api>& storage, ss::sharded<raft::group_manager>& raft)
+  : _storage(storage.local())
   , _raft_manager(raft) {}
 
 ss::future<consensus_ptr> partition_manager::manage(
   storage::ntp_config ntp_cfg,
   raft::group_id group,
   std::vector<model::broker> initial_nodes) {
-    return _mngr.manage(std::move(ntp_cfg))
+    return _storage.log_mgr()
+      .manage(std::move(ntp_cfg))
       .then([this, group, nodes = std::move(initial_nodes)](
               storage::log&& log) mutable {
           return _raft_manager.local()
@@ -57,12 +57,13 @@ ss::future<> partition_manager::remove(const model::ntp& ntp) {
 
     return _raft_manager.local()
       .stop_group(partition->raft())
-      .then([this, ntp] { return _mngr.remove(ntp); })
+      .then([this, ntp] { return _storage.log_mgr().remove(ntp); })
       .finally([partition] {}); // in the end remove partition
 }
 
 std::ostream& operator<<(std::ostream& o, const partition_manager& pm) {
-    return o << "{shard:" << ss::this_shard_id() << ", mngr:{}" << pm._mngr
+    return o << "{shard:" << ss::this_shard_id() << ", mngr:{}"
+             << pm._storage.log_mgr()
              << ", ntp_table.size:" << pm._ntp_table.size()
              << ", raft_table.size:" << pm._raft_table.size() << "}";
 }

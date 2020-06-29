@@ -4,8 +4,8 @@
 #include "model/record_batch_reader.h"
 #include "random/generators.h"
 #include "seastarx.h"
+#include "storage/api.h"
 #include "storage/disk_log_impl.h"
-#include "storage/log_manager.h"
 #include "storage/tests/utils/random_batch.h"
 #include "units.h"
 #include "vassert.h"
@@ -122,7 +122,7 @@ public:
     ~disk_log_builder() noexcept = default;
     disk_log_builder(const disk_log_builder&) = delete;
     disk_log_builder& operator=(const disk_log_builder&) = delete;
-    disk_log_builder(disk_log_builder&&) noexcept = default;
+    disk_log_builder(disk_log_builder&&) noexcept = delete;
     disk_log_builder& operator=(disk_log_builder&&) noexcept = delete;
 
     // Syntactic sugar for pipes
@@ -292,7 +292,8 @@ private:
       ss::circular_buffer<model::record_batch> buff,
       const log_append_config& config);
 
-    log_manager _mgr;
+    storage::log_config _log_config;
+    storage::api _storage;
     std::optional<log> _log;
     std::vector<std::vector<model::record_batch>> _batches;
     ss::abort_source _abort_source;

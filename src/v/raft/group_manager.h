@@ -5,6 +5,7 @@
 #include "raft/heartbeat_manager.h"
 #include "raft/rpc_client_protocol.h"
 #include "raft/types.h"
+#include "storage/api.h"
 
 #include <seastar/core/metrics_registration.hh>
 
@@ -25,7 +26,7 @@ public:
       model::timeout_clock::duration disk_timeout,
       std::chrono::milliseconds heartbeat_interval,
       ss::sharded<rpc::connection_cache>& clients,
-      ss::sharded<storage::kvstore>& kvstore);
+      ss::sharded<storage::api>& storage);
 
     ss::future<> start();
     ss::future<> stop();
@@ -68,7 +69,7 @@ private:
     std::vector<std::pair<cluster::notification_id_type, leader_cb_t>>
       _notifications;
     ss::metrics::metric_groups _metrics;
-    ss::sharded<storage::kvstore>& _kvstore;
+    storage::api& _storage;
 };
 
 } // namespace raft

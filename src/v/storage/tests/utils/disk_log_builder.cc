@@ -3,11 +3,19 @@
 #include "storage/types.h"
 
 #include <seastar/core/file.hh>
+#include <seastar/core/thread.hh>
+
+using namespace std::chrono_literals; // NOLINT
+
 // util functions to be moved from storage_fixture
 // make_ntp, make_dir etc
 namespace storage {
 disk_log_builder::disk_log_builder(storage::log_config config)
-  : _mgr(std::move(config)) {}
+  : _log_config(std::move(config))
+  , _storage(
+      kvstore_config(
+        1_MiB, 10ms, _log_config.base_dir, debug_sanitize_files::yes),
+      _log_config) {}
 
 // Batch generation
 ss::future<> disk_log_builder::add_random_batch(
@@ -43,8 +51,11 @@ ss::future<> disk_log_builder::add_batch(
 }
 // Log managment
 ss::future<> disk_log_builder::start(model::ntp ntp) {
-    return _mgr.manage(ntp_config(std::move(ntp), get_log_config().base_dir))
-      .then([this](log l) { _log = std::move(l); });
+    return _storage.start().then([this, ntp = std::move(ntp)]() mutable {
+        return _storage.log_mgr()
+          .manage(ntp_config(std::move(ntp), get_log_config().base_dir))
+          .then([this](storage::log log) { _log = log; });
+    });
 }
 
 ss::future<> disk_log_builder::truncate(model::offset o) {
@@ -62,7 +73,8 @@ ss::future<> disk_log_builder::gc(
       _abort_source));
 }
 
-ss::future<> disk_log_builder::stop() { return _mgr.stop(); }
+ss::future<> disk_log_builder::stop() { return _storage.stop(); }
+
 // Low lever interface access
 // Access log impl
 log& disk_log_builder::get_log() {
@@ -99,7 +111,7 @@ ss::future<> disk_log_builder::add_segment(
 
 // Configuration getters
 const log_config& disk_log_builder::get_log_config() const {
-    return _mgr.config();
+    return _log_config;
 }
 
 // Common interface for appending batches

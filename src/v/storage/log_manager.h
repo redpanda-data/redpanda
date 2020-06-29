@@ -4,6 +4,7 @@
 #include "random/simple_time_jitter.h"
 #include "seastarx.h"
 #include "storage/batch_cache.h"
+#include "storage/kvstore.h"
 #include "storage/log.h"
 #include "storage/log_housekeeping_meta.h"
 #include "storage/segment.h"
@@ -134,7 +135,7 @@ struct log_config {
  */
 class log_manager {
 public:
-    explicit log_manager(log_config) noexcept;
+    explicit log_manager(log_config, kvstore& kvstore) noexcept;
 
     ss::future<log> manage(ntp_config);
     ss::future<> remove(model::ntp);
@@ -179,6 +180,7 @@ private:
     std::optional<batch_cache_index> create_cache();
 
     log_config _config;
+    kvstore& _kvstore;
     simple_time_jitter<ss::lowres_clock> _jitter;
     ss::timer<ss::lowres_clock> _compaction_timer;
     logs_type _logs;
