@@ -18,19 +18,19 @@ cluster::broker_ptr test_broker(int32_t id) {
 
 SEASTAR_THREAD_TEST_CASE(test_group_cfg_difference) {
     auto broker_1 = test_broker(1); // intact
-    auto broker_2 = test_broker(2); // updated
-    auto broker_3 = test_broker(3); // removed
+    auto broker_2 = test_broker(2); // additions
+    auto broker_3 = test_broker(3); // deletions
     auto broker_4 = test_broker(4); // new
-    auto broker_5 = test_broker(5); // updated
+    auto broker_5 = test_broker(5); // additions
 
-    cluster::broker_ptr broker_2_updated = ss::make_lw_shared<model::broker>(
+    cluster::broker_ptr broker_2_additions = ss::make_lw_shared<model::broker>(
       model::node_id{2},
       unresolved_address("127.0.0.1", 9092),
       unresolved_address("172.168.1.1", 1234),
       std::nullopt,
       model::broker_properties{.cores = 32});
 
-    cluster::broker_ptr broker_5_updated = ss::make_lw_shared<model::broker>(
+    cluster::broker_ptr broker_5_additions = ss::make_lw_shared<model::broker>(
       model::node_id{5},
       unresolved_address("127.0.0.1", 9092),
       unresolved_address("127.0.0.1", 6060),
@@ -38,15 +38,15 @@ SEASTAR_THREAD_TEST_CASE(test_group_cfg_difference) {
       model::broker_properties{.cores = 32});
 
     auto diff = cluster::calculate_changed_brokers(
-      {broker_1, broker_2_updated, broker_4, broker_5_updated},
+      {broker_1, broker_2_additions, broker_4, broker_5_additions},
       {broker_1, broker_2, broker_3, broker_5});
 
-    BOOST_REQUIRE_EQUAL(diff.removed.size(), 1);
-    BOOST_REQUIRE_EQUAL(diff.removed[0]->id(), model::node_id(3));
-    BOOST_REQUIRE_EQUAL(diff.updated.size(), 3);
-    BOOST_REQUIRE_EQUAL(diff.updated[0]->id(), model::node_id(2));
-    BOOST_REQUIRE_EQUAL(diff.updated[1]->id(), model::node_id(4));
-    BOOST_REQUIRE_EQUAL(diff.updated[2]->id(), model::node_id(5));
-    BOOST_REQUIRE_EQUAL(diff.updated[0]->rpc_address().host(), "172.168.1.1");
-    BOOST_REQUIRE_EQUAL(diff.updated[2]->rpc_address().port(), 6060);
+    BOOST_REQUIRE_EQUAL(diff.deletions.size(), 1);
+    BOOST_REQUIRE_EQUAL(diff.deletions[0]->id(), model::node_id(3));
+    BOOST_REQUIRE_EQUAL(diff.additions.size(), 3);
+    BOOST_REQUIRE_EQUAL(diff.additions[0]->id(), model::node_id(2));
+    BOOST_REQUIRE_EQUAL(diff.additions[1]->id(), model::node_id(4));
+    BOOST_REQUIRE_EQUAL(diff.additions[2]->id(), model::node_id(5));
+    BOOST_REQUIRE_EQUAL(diff.additions[0]->rpc_address().host(), "172.168.1.1");
+    BOOST_REQUIRE_EQUAL(diff.additions[2]->rpc_address().port(), 6060);
 }
