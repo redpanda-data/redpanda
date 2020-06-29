@@ -15,19 +15,28 @@
 #include <seastar/core/print.hh>
 #include <seastar/util/log.hh>
 
-using namespace raft; // NOLINT
+using namespace raft;                 // NOLINT
+using namespace std::chrono_literals; // NOLINT
+
 struct bootstrap_fixture : raft::simple_record_fixture {
     using raft::simple_record_fixture::active_nodes;
     bootstrap_fixture()
-      : _mngr(storage::log_config(
-        storage::log_config::storage_type::disk,
-        "test.dir",
-        1_GiB,
-        storage::debug_sanitize_files::yes,
-        storage::log_config::with_cache::no)) {
+      : _storage(
+        storage::kvstore_config(
+          1_MiB, 10ms, "test.dir", storage::debug_sanitize_files::yes),
+        storage::log_config(
+          storage::log_config::storage_type::disk,
+          "test.dir",
+          1_GiB,
+          storage::debug_sanitize_files::yes,
+          storage::log_config::with_cache::no)) {
+        _storage.start().get();
         // ignore the get_log()
-        (void)_mngr.manage(storage::ntp_config(_ntp, "test.dir")).get0();
+        (void)_storage.log_mgr()
+          .manage(storage::ntp_config(_ntp, "test.dir"))
+          .get0();
     }
+
     std::vector<storage::append_result> write_n(const std::size_t n) {
         const auto cfg = storage::log_append_config{
           storage::log_append_config::fsync::no,
@@ -43,10 +52,10 @@ struct bootstrap_fixture : raft::simple_record_fixture {
         get_log().flush().get();
         return res;
     }
-    storage::log get_log() { return _mngr.get(_ntp).value(); }
+    storage::log get_log() { return _storage.log_mgr().get(_ntp).value(); }
 
-    ~bootstrap_fixture() { _mngr.stop().get(); }
-    storage::log_manager _mngr;
+    ~bootstrap_fixture() { _storage.stop().get(); }
+    storage::api _storage;
     ss::abort_source _as;
 };
 

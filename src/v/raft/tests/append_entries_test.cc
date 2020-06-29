@@ -123,13 +123,12 @@ FIXTURE_TEST(test_empty_node_recovery, raft_test_fixture) {
         // disable one of the non leader nodes
         if (leader_id != id) {
             disabled_id = id;
-            auto log = m.log;
-            gr.disable_node(id);
             // truncate the node log
-            log
-              .truncate(storage::truncate_config(
+            m.log
+              ->truncate(storage::truncate_config(
                 model::offset(0), ss::default_priority_class()))
               .get();
+            gr.disable_node(id);
             break;
         }
     }
@@ -299,7 +298,7 @@ FIXTURE_TEST(
       1s,
       [this, &gr] {
           auto& node = gr.get_members().begin()->second;
-          auto lstats = node.log.offsets();
+          auto lstats = node.log->offsets();
           return lstats.committed_offset == lstats.dirty_offset
                  && node.consensus->committed_offset()
                       == lstats.committed_offset;

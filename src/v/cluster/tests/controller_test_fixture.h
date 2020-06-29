@@ -75,11 +75,10 @@ public:
         _metadata_dissemination_service.stop().get0();
         _pm.stop().get0();
         _gm.stop().get0();
-        _lm.stop().get0();
+        _storage.stop().get0();
         st.stop().get0();
         _md_cache.stop().get0();
         _cli_cache.stop().get0();
-        _kvstore.stop().get();
     }
 
     void
@@ -101,35 +100,28 @@ public:
         set_configuration("election_timeout_ms", 500ms);
         set_configuration("raft_heartbeat_interval_ms", 75ms);
 
-        // configure and start kvstore
-        storage::kvstore_config kv_conf{
-          .max_segment_size = 8192,
-          .commit_interval = std::chrono::milliseconds(10),
-          .base_dir = data_dir_path.as_sstring(),
-          .sanitize_fileops = storage::debug_sanitize_files::yes,
-        };
-
-        _kvstore.start(kv_conf).get();
-        _kvstore.invoke_on_all(&storage::kvstore::start).get();
-
         using namespace std::chrono_literals;
+        _storage
+          .start(
+            storage::kvstore_config(
+              1_MiB, 10ms, _base_dir, storage::debug_sanitize_files::yes),
+            storage::log_config(
+              storage::log_config::storage_type::disk,
+              _base_dir,
+              1024_MiB,
+              storage::debug_sanitize_files::yes))
+          .get();
+        _storage.invoke_on_all(&storage::api::start).get();
         _gm
           .start(
             model::node_id(config::shard_local_cfg().node_id()),
             model::timeout_clock::duration(2s),
             config::shard_local_cfg().raft_heartbeat_interval_ms(),
             std::ref(_cli_cache),
-            std::ref(_kvstore))
+            std::ref(_storage))
           .get0();
         _gm.invoke_on_all(&raft::group_manager::start).get();
-        _lm
-          .start(storage::log_config(
-            storage::log_config::storage_type::disk,
-            _base_dir,
-            1024_MiB,
-            storage::debug_sanitize_files::yes))
-          .get();
-        _pm.start(std::ref(_lm), std::ref(_gm)).get0();
+        _pm.start(std::ref(_storage), std::ref(_gm)).get0();
         _metadata_dissemination_service
           .start(
             std::ref(_gm),
@@ -307,7 +299,7 @@ private:
     ss::sharded<rpc::connection_cache> _cli_cache;
     ss::sharded<cluster::metadata_cache> _md_cache;
     ss::sharded<cluster::shard_table> st;
-    ss::sharded<storage::log_manager> _lm;
+    ss::sharded<storage::api> _storage;
     ss::sharded<raft::group_manager> _gm;
     ss::sharded<cluster::partition_manager> _pm;
     ss::sharded<rpc::server> _rpc;
@@ -315,7 +307,6 @@ private:
     ss::sharded<cluster::metadata_dissemination_service>
       _metadata_dissemination_service;
     ss::sharded<cluster::controller> _controller;
-    ss::sharded<storage::kvstore> _kvstore;
 };
 // Waits for controller to become a leader it poll every 200ms
 void wait_for_leadership(cluster::controller& cntrl) {

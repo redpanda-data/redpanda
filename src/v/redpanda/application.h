@@ -17,8 +17,7 @@
 #include "resource_mgmt/smp_groups.h"
 #include "rpc/server.h"
 #include "seastarx.h"
-#include "storage/kvstore.h"
-#include "storage/log_manager.h"
+#include "storage/api.h"
 
 #include <seastar/core/app-template.hh>
 #include <seastar/core/sharded.hh>
@@ -48,7 +47,7 @@ public:
     ss::sharded<group_router_type> group_router;
     ss::sharded<kafka::controller_dispatcher> cntrl_dispatcher;
     ss::sharded<cluster::shard_table> shard_table;
-    ss::sharded<storage::log_manager> log_manager;
+    ss::sharded<storage::api> storage;
     ss::sharded<cluster::partition_manager> partition_manager;
     ss::sharded<raft::group_manager> raft_group_manager;
     ss::sharded<cluster::metadata_dissemination_service>
@@ -78,8 +77,6 @@ private:
     smp_groups _smp_groups;
     ss::logger _log{"redpanda::main"};
 
-    // ss::sharded services
-    ss::sharded<storage::kvstore> _kvstore;
     ss::sharded<rpc::connection_cache> _raft_connection_cache;
     ss::sharded<kafka::group_manager> _group_manager;
     ss::sharded<rpc::server> _rpc;

@@ -61,26 +61,36 @@ struct raft_node {
       = ss::noncopyable_function<void(raft::leadership_status)>;
 
     raft_node(
+      model::ntp ntp,
       model::broker broker,
       raft::group_id gr_id,
       raft::group_configuration cfg,
       raft::timeout_jitter jit,
-      storage::log log,
+      ss::sstring storage_dir,
+      storage::log_config::storage_type storage_type,
       leader_clb_t l_clb)
       : broker(std::move(broker))
-      , log(log)
       , leader_callback(std::move(l_clb)) {
-        // init cache
         cache.start().get();
 
-        storage::kvstore_config kv_conf{
-          .max_segment_size = 8192,
-          .commit_interval = std::chrono::milliseconds(10),
-          .base_dir = log.config().work_directory(),
-          .sanitize_fileops = storage::debug_sanitize_files::yes,
-        };
+        storage
+          .start(
+            storage::kvstore_config(
+              1_MiB, 10ms, storage_dir, storage::debug_sanitize_files::yes),
+            storage::log_config(
+              storage_type,
+              storage_dir,
+              100_MiB,
+              storage::debug_sanitize_files::yes))
+          .get();
+        storage.invoke_on_all(&storage::api::start).get();
 
-        kvstore.start(kv_conf).get();
+        log = std::make_unique<storage::log>(
+          storage.local()
+            .log_mgr()
+            .manage(storage::ntp_config(
+              ntp, storage.local().log_mgr().config().base_dir))
+            .get0());
 
         // setup consensus
         consensus = ss::make_lw_shared<raft::consensus>(
@@ -88,12 +98,12 @@ struct raft_node {
           gr_id,
           std::move(cfg),
           std::move(jit),
-          log,
+          *log,
           seastar::default_priority_class(),
           std::chrono::seconds(10),
           raft::make_rpc_client_protocol(cache),
           [this](raft::leadership_status st) { leader_callback(st); },
-          kvstore);
+          storage.local());
 
         // create connections to initial nodes
         consensus->config().for_each([this](const model::broker& broker) {
@@ -108,7 +118,6 @@ struct raft_node {
 
     void start() {
         tstlog.info("Starting node {} stack ", id());
-        kvstore.invoke_on_all(&storage::kvstore::start).get();
         // start rpc
         server
           .start(rpc::server_configuration{
@@ -169,7 +178,7 @@ struct raft_node {
               return raft_manager.stop();
           })
           .then([this] { return cache.stop(); })
-          .then([this] { return kvstore.stop(); })
+          .then([this] { return storage.stop(); })
           .then([this] {
               tstlog.info("Node {} stopped", broker.id());
               started = false;
@@ -184,13 +193,13 @@ struct raft_node {
         auto max_offset = model::offset(consensus->committed_offset());
         storage::log_reader_config cfg(
           model::offset(0), max_offset, ss::default_priority_class());
-        return log.make_reader(cfg).then(
+        return log->make_reader(cfg).then(
           [this, max_offset](model::record_batch_reader rdr) {
               tstlog.debug(
                 "Reading logs from {} max offset {}, log offsets {}",
                 id(),
                 max_offset,
-                log.offsets());
+                log->offsets());
               return std::move(rdr).consume(
                 consume_to_vector{}, model::no_timeout);
           });
@@ -226,14 +235,14 @@ struct raft_node {
 
     bool started = false;
     model::broker broker;
-    storage::log log;
+    ss::sharded<storage::api> storage;
+    std::unique_ptr<storage::log> log;
     ss::sharded<rpc::connection_cache> cache;
     ss::sharded<rpc::server> server;
     ss::sharded<test_raft_manager> raft_manager;
     std::unique_ptr<raft::heartbeat_manager> hbeats;
     consensus_ptr consensus;
     leader_clb_t leader_callback;
-    ss::sharded<storage::kvstore> kvstore;
 };
 
 model::ntp node_ntp(raft::group_id gr_id, model::node_id n_id) {
@@ -253,14 +262,8 @@ struct raft_group {
       storage::log_config::storage_type storage_type
       = storage::log_config::storage_type::disk)
       : _id(id)
-      , _storage_type(storage_type) {
-        _log_manager
-          .start(storage::log_config(
-            _storage_type,
-            "test.raft." + random_generators::gen_alphanum_string(6),
-            100_MiB,
-            storage::debug_sanitize_files::yes))
-          .get0();
+      , _storage_type(storage_type)
+      , _storage_dir("test.raft." + random_generators::gen_alphanum_string(6)) {
         std::vector<model::broker> brokers;
         for (auto i : boost::irange(0, size)) {
             _initial_brokers.push_back(make_broker(model::node_id(i)));
@@ -284,25 +287,18 @@ struct raft_group {
 
     void enable_node(model::node_id node_id) {
         auto ntp = node_ntp(_id, node_id);
-        auto log_optional = _log_manager.local().get(ntp);
-        if (!log_optional) {
-            log_optional.emplace(
-              _log_manager.local()
-                .manage(storage::ntp_config(
-                  ntp, _log_manager.local().config().base_dir))
-                .get0());
-        }
-
         tstlog.info("Enabling node {} in group {}", node_id, _id);
         auto [it, _] = _members.try_emplace(
           node_id,
+          ntp,
           make_broker(node_id),
           _id,
           raft::group_configuration{
             .nodes = _initial_brokers,
           },
           raft::timeout_jitter(heartbeat_interval * 2),
-          *log_optional,
+          fmt::format("{}/{}", _storage_dir, node_id()),
+          _storage_type,
           [this, node_id](raft::leadership_status st) {
               election_callback(node_id, st);
           });
@@ -311,26 +307,19 @@ struct raft_group {
 
     model::broker create_new_node(model::node_id node_id) {
         auto ntp = node_ntp(_id, node_id);
-        auto log_optional = _log_manager.local().get(ntp);
-        if (!log_optional) {
-            log_optional.emplace(
-              _log_manager.local()
-                .manage(storage::ntp_config(
-                  ntp, _log_manager.local().config().base_dir))
-                .get0());
-        }
-
         auto broker = make_broker(node_id);
         tstlog.info("Enabling node {} in group {}", node_id, _id);
         auto [it, _] = _members.try_emplace(
           node_id,
+          ntp,
           broker,
           _id,
           raft::group_configuration{
             .nodes = {},
           },
           raft::timeout_jitter(heartbeat_interval * 2),
-          *log_optional,
+          fmt::format("{}/{}", _storage_dir, node_id()),
+          _storage_type,
           [this, node_id](raft::leadership_status st) {
               election_callback(node_id, st);
           });
@@ -403,7 +392,6 @@ struct raft_group {
             close_futures.push_back(m.stop_node());
         }
         ss::when_all(close_futures.begin(), close_futures.end()).get0();
-        _log_manager.stop().get0();
     }
 
     members_t& get_members() { return _members; }
@@ -414,7 +402,6 @@ struct raft_group {
 
 private:
     uint16_t base_port = 35000;
-    ss::sharded<storage::log_manager> _log_manager;
     raft::group_id _id;
     members_t _members;
     std::vector<model::broker> _initial_brokers;
@@ -422,6 +409,7 @@ private:
     ss::semaphore _election_sem{0};
     uint32_t _elections_count{0};
     storage::log_config::storage_type _storage_type;
+    ss::sstring _storage_dir;
 };
 
 struct raft_test_fixture {
@@ -489,7 +477,7 @@ struct raft_test_fixture {
           = gr.get_members().begin()->second.consensus->committed_offset();
         for (auto& [id, m] : gr.get_members()) {
             auto current = model::offset(m.consensus->committed_offset());
-            auto log_offset = m.log.offsets().dirty_offset;
+            auto log_offset = m.log->offsets().dirty_offset;
             tstlog.debug(
               "Node {} commit index {}, log offset {}",
               id,
