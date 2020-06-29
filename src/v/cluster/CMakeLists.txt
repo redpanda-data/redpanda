@@ -30,6 +30,7 @@ v_cc_library(
     types.cc
     notification_latch.cc
     topic_table.cc
+    topic_updates_dispatcher.cc
   DEPS
     Seastar::seastar
     controller_rpc
