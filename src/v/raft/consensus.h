@@ -162,8 +162,6 @@ private:
 
     model::term_id get_term(model::offset);
 
-    ss::sstring voted_for_filename() const;
-
     /// used for timer callback to dispatch the vote_stm
     void dispatch_vote();
     /// Replicates configuration to other nodes,
@@ -196,7 +194,7 @@ private:
     void setup_metrics();
 
     bytes voted_for_key() const;
-    ss::future<> read_voted_for();
+    void read_voted_for();
     ss::future<> write_voted_for(consensus::voted_for_configuration);
 
     // args

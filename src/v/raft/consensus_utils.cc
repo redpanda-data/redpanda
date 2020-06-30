@@ -26,74 +26,7 @@
 #include <algorithm>
 #include <iterator>
 
-namespace YAML {
-template<>
-struct convert<::raft::consensus::voted_for_configuration> {
-    static bool
-    decode(const Node& node, ::raft::consensus::voted_for_configuration& c) {
-        for (auto ref : {"term", "voted_for"}) {
-            if (!node[ref]) {
-                return false;
-            }
-        }
-        c.voted_for = model::node_id(
-          node["voted_for"].as<model::node_id::type>());
-        c.term = model::term_id(node["term"].as<model::term_id::type>());
-        return true;
-    }
-};
-} // namespace YAML
-
 namespace raft::details {
-ss::future<ss::temporary_buffer<char>> readfile(ss::sstring name) {
-    return ss::open_file_dma(
-             std::move(name), ss::open_flags::ro | ss::open_flags::create)
-      .then([](ss::file f) {
-          return f.size()
-            .then([f](uint64_t size) mutable {
-                return f.dma_read_bulk<char>(0, size);
-            })
-            .then([f](ss::temporary_buffer<char> b) mutable {
-                return f.close().then(
-                  [f, b = std::move(b)]() mutable { return std::move(b); });
-            });
-      });
-}
-
-ss::future<consensus::voted_for_configuration>
-legacy_read_voted_for(ss::sstring filename) {
-    return readfile(filename).then([](ss::temporary_buffer<char> buf) {
-        if (buf.empty()) {
-            return consensus::voted_for_configuration{};
-        }
-        // unfort it uses a std::string override
-        // XXX update when YAML::Load supports string_view()'s
-        // see https://github.com/jbeder/yaml-cpp/issues/765
-        std::string s(buf.get(), buf.size());
-        auto node = YAML::Load(s);
-        return node.as<consensus::voted_for_configuration>();
-    });
-}
-
-ss::future<result<consensus::voted_for_configuration>>
-read_voted_for(ss::sstring filename) {
-    using ret_t = result<consensus::voted_for_configuration>;
-    return utils::state_crc_file(filename)
-      .read<consensus::voted_for_configuration>()
-      .then([f = std::move(filename)](ret_t r) mutable {
-          if (r) {
-              return ss::make_ready_future<ret_t>(std::move(r));
-          }
-          raftlog.info(
-            "Unable to read raft state. Falling back to old format - {}",
-            r.error().message());
-          return legacy_read_voted_for(std::move(f))
-            .then([](consensus::voted_for_configuration cfg) {
-                return result<consensus::voted_for_configuration>(cfg);
-            });
-      });
-}
-
 [[gnu::cold]] void throw_out_of_range() {
     throw std::out_of_range("consensus_utils copy out of bounds");
 }

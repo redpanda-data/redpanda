@@ -93,10 +93,6 @@ ss::future<> consensus::stop() {
     return _event_manager.stop().then([this] { return _bg.close(); });
 }
 
-ss::sstring consensus::voted_for_filename() const {
-    return _log.config().work_directory() + "/voted_for";
-}
-
 consensus::success_reply consensus::update_follower_index(
   model::node_id node, result<append_entries_reply> r, follower_req_seq seq) {
     if (!r) {
@@ -435,8 +431,8 @@ ss::future<> consensus::add_group_member(model::broker node) {
 ss::future<> consensus::start() {
     vlog(_ctxlog.info, "Starting");
     return _op_lock.with([this] {
-        return read_voted_for()
-          .then([this] { return details::read_bootstrap_state(_log, _as); })
+        read_voted_for();
+        return details::read_bootstrap_state(_log, _as)
           .then([this](configuration_bootstrap_state st) {
               if (st.config_batches_seen() > 0) {
                   _last_seen_config_offset = st.prev_log_index();
@@ -485,7 +481,13 @@ consensus::write_voted_for(consensus::voted_for_configuration config) {
       storage::kvstore::key_space::consensus, std::move(key), std::move(val));
 }
 
-ss::future<> consensus::read_voted_for() {
+void consensus::read_voted_for() {
+    /*
+     * Initial values
+     */
+    _voted_for = model::node_id{};
+    _term = model::term_id(0);
+
     /*
      * decode the metadata from the key-value store, and delete the old
      * voted_for file, if it exists.
@@ -505,85 +507,7 @@ ss::future<> consensus::read_voted_for() {
           "Recovered persistent state from kvstore: voted for: {}, term: {}",
           _voted_for,
           _term);
-
-        return ss::file_exists(voted_for_filename())
-          .then([this](bool exists) {
-              if (exists) {
-                  return ss::remove_file(voted_for_filename()).then([this] {
-                      vlog(
-                        _ctxlog.debug,
-                        "Removed voted_for file {}: key-value store migration",
-                        voted_for_filename());
-                  });
-              }
-              vlog(
-                _ctxlog.trace,
-                "Voted for file {} does not exist",
-                voted_for_filename());
-              return ss::now();
-          })
-          .handle_exception([this](const std::exception_ptr& e) {
-              vlog(
-                _ctxlog.trace,
-                "Error removing voted_for file {}: {}",
-                voted_for_filename(),
-                e);
-          });
     }
-
-    /*
-     * otherwise, read metadata from old voted_for file. there are three
-     * scenarios that exist:
-     *
-     *   1. file doesn't exist (e.g. new group)
-     *   2. file exists, but can't be read (e.g. corruption)
-     *   3. file exists, and is read correctly
-     *
-     *     In the first two cases, the term is initialized to zero (the same as
-     *     was done before). once a real vote takes place the metadata will be
-     *     written into the key-value store and the voted_for removed at the
-     *     next reboot.
-     */
-    return details::read_voted_for(voted_for_filename())
-      .then([this](result<voted_for_configuration> r) {
-          if (!r) {
-              if (r.error() == utils::state_crc_file_errc::file_not_found) {
-                  vlog(
-                    _ctxlog.debug,
-                    "Persistent state file not present. Initializing term "
-                    "to zero.");
-              }
-
-              if (r.error() == utils::state_crc_file_errc::crc_mismatch) {
-                  // FIXME: make sure that we are safe to operate when voted
-                  //        for state is corrupted
-                  vlog(
-                    _ctxlog.error,
-                    "Persistent state CRC mismatch. Initializing term to "
-                    "zero.");
-              }
-
-              _term = model::term_id(0);
-              return;
-          }
-
-          vlog(
-            _ctxlog.info,
-            "Recovered persistent state: voted for: {}, term: {}",
-            r.value().voted_for,
-            r.value().term);
-
-          _voted_for = r.value().voted_for;
-          _term = r.value().term;
-      })
-      .handle_exception([this](const std::exception_ptr& e) {
-          vlog(
-            _ctxlog.warn,
-            "Error reading raft persistent state - {}. Initializing term "
-            "to zero.",
-            e);
-          _term = model::term_id(0);
-      });
 }
 
 ss::future<vote_reply> consensus::vote(vote_request&& r) {
