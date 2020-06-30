@@ -81,7 +81,7 @@ public:
     }
 
     ss::future<model::record_batch_reader> make_reader(log_reader_config cfg) {
-        return _impl->make_reader(std::move(cfg));
+        return _impl->make_reader(cfg);
     }
 
     log_appender make_appender(log_append_config cfg) {
