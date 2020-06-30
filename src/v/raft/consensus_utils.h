@@ -9,24 +9,6 @@
 #include <seastar/core/sstring.hh>
 
 namespace raft::details {
-
-/// reads all into the tmpbuf to file
-// clang-format off
-[[deprecated("switched to reflection::adl serialized state")]] 
-ss::future<ss::temporary_buffer<char>> readfile(ss::sstring name);
-// clang-format on
-
-/// reads the filename and returns voted_for and term of the vote
-// clang-format off
-[[deprecated("switched to reflection::adl serialized state")]] 
-ss::future<consensus::voted_for_configuration>
-legacy_read_voted_for(ss::sstring filename);
-// clang-format on
-
-/// reads the filename and returns voted_for and term of the vote
-ss::future<result<consensus::voted_for_configuration>>
-read_voted_for(ss::sstring filename);
-
 /// copy all record batch readers into N containers using the
 /// record_batch::share()
 ss::future<std::vector<model::record_batch_reader>>

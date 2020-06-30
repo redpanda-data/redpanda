@@ -8,14 +8,6 @@ rp_test(
  )
 rp_test(
   UNIT_TEST
-  BINARY_NAME voted_for_config_tests
-  SOURCES voted_for_config_tests.cc
-  LIBRARIES v::seastar_testing_main v::raft v::storage_test_utils
-  LABELS raft
-  ARGS "-- -c 1"
- )
-rp_test(
-  UNIT_TEST
   BINARY_NAME log_bootstrap_parsing
   SOURCES bootstrap_configuration_test.cc
   LIBRARIES v::seastar_testing_main v::raft
