@@ -46,11 +46,15 @@ def _parse_redpanda_host_line(l):
     return node
 
 
+class KafkaArgs:
+    def __init__(self, ips, topic=None):
+        self.ips = ips
+        self.topic = topic
+
+
 class RemoteExecutor:
     def __init__(self, nodes, host_key):
         self.nodes = nodes
-        self.kafka_ips = ",".join(
-            map(lambda x: f"{x[1]['private_ip']}:9092", self.nodes.items()))
         self.clients = {}
         self.host_key = host_key
 
@@ -71,11 +75,14 @@ class RemoteExecutor:
         client.connect(node['ip'], pkey=k, username=node['ansible_user'])
         return client
 
-    def execute_on_node(self, id, func):
+    def execute_on_node(self, id, func, kafka_args=None):
         client = self.clients[id]
         if not client.get_transport().is_active():
             self.clients[id] = self._create_node_ssh_client(self.nodes[id])
-        return func(self.nodes[id], self.clients[id], self.kafka_ips)
+        if kafka_args:
+            return func(self.nodes[id], self.clients[id], kafka_args)
+        else:
+            return func(self.nodes[id], self.clients[id])
 
     def execute_on_all(self, func):
         results = {}
@@ -84,7 +91,7 @@ class RemoteExecutor:
         return results
 
 
-def _is_running(node, client, kips):
+def _is_running(node, client):
     private_ip = node['private_ip']
     stdin, stdout, strerr = client.exec_command(
         f'curl http://{private_ip}:9644/metrics')
@@ -94,75 +101,88 @@ def _is_running(node, client, kips):
 
 def _remote_execute(client, cmd):
     logging.info(f"Executing {cmd}")
-    return client.exec_command(cmd, timeout=3)
+    return client.exec_command(cmd, timeout=30)
 
 
-def _kafka_create_topic(node, client, kips):
+def _kafka_delete_topic(node, client, kafka_args):
+    return _remote_execute(client, ("/opt/kafka-dev/bin/kafka-topics.sh "
+                                    f"--bootstrap-server {kafka_args.ips} "
+                                    f"--delete --topic {kafka_args.topic}"))
+
+
+def _kafka_create_topic(node, client, kafka_args):
     cleanup_type = random.choice(["delete", "compact", "delete,compact"])
-    _remote_execute(client, ("/opt/kafka-dev/bin/kafka-topics.sh "
-                             f"--bootstrap-server {kips} "
-                             "--create --topic sfo --partitions 36 "
-                             "--replication-factor 3 "
-                             f"--config cleanup.policy={cleanup_type} "
-                             "| systemd-cat -t punisher -p info "))
+    return _remote_execute(
+        client, ("/opt/kafka-dev/bin/kafka-topics.sh "
+                 f"--bootstrap-server {kafka_args.ips} "
+                 f"--create --topic {kafka_args.topic} --partitions 36 "
+                 "--replication-factor 3 "
+                 f"--config cleanup.policy={cleanup_type} "
+                 "| systemd-cat -t punisher -p info "))
 
 
-def _kafka_produce_topic(node, client, kips):
+def _kafka_list_topic(node, client, kafka_args):
+    return _remote_execute(client, ("/opt/kafka-dev/bin/kafka-topics.sh "
+                                    f"--bootstrap-server {kafka_args.ips} "
+                                    "--list"))
+
+
+def _kafka_produce_topic(node, client, kafka_args):
     compression_type = random.choice(["zstd", "snappy", "none", "gzip", "lz4"])
-    _remote_execute(client, ("/opt/kafka-dev/bin/kafka-run-class.sh "
-                             "org.apache.kafka.tools.ProducerPerformance "
-                             "--record-size 1024 "
-                             "--topic sfo "
-                             "--num-records 1024 "
-                             "--throughput 65535 "
-                             "--producer-props acks=1 "
-                             "client.id=vectorized.punisher.producer "
-                             f"bootstrap.servers={kips} "
-                             "batch.size=81960 "
-                             f"compression.type={compression_type} "
-                             "buffer.memory=1048576 "
-                             "| systemd-cat -t punisher -p info "))
+    return _remote_execute(client,
+                           ("/opt/kafka-dev/bin/kafka-run-class.sh "
+                            "org.apache.kafka.tools.ProducerPerformance "
+                            "--record-size 1024 "
+                            f"--topic {kafka_args.topic} "
+                            "--num-records 1024 "
+                            "--throughput 65535 "
+                            "--producer-props acks=1 "
+                            "client.id=vectorized.punisher.producer "
+                            f"bootstrap.servers={kafka_args.ips} "
+                            "batch.size=81960 "
+                            f"compression.type={compression_type} "
+                            "buffer.memory=1048576"))
 
 
-def _kafka_consume_topic(node, client, kips):
+def _kafka_consume_topic(node, client, kafka_args):
     # NOTE: The --timeout option is artificially set to 10ms because
     # we do not want to block the consumer, we just want to trigger
     # the lookup api in redpanda. Usually this reads around 2-300 records
-    _remote_execute(client, ("/opt/kafka-dev/bin/kafka-consumer-perf-test.sh "
-                             f"--broker-list={kips} "
-                             "--fetch-size=1048576 "
-                             "--timeout=10 "
-                             "--messages=1024 "
-                             "--group=vectorized.pusher.consumer "
-                             "--topic=sfo "
-                             "--threads 1 "
-                             "| systemd-cat -t punisher -p info "))
+    return _remote_execute(client,
+                           ("/opt/kafka-dev/bin/kafka-consumer-perf-test.sh "
+                            f"--broker-list={kafka_args.ips} "
+                            "--fetch-size=1048576 "
+                            "--timeout=10 "
+                            "--messages=1024 "
+                            "--group=vectorized.pusher.consumer "
+                            f"--topic={kafka_args.topic} "
+                            "--threads 1 "))
 
 
-def _transient_kill(node, client, ips):
+def _transient_kill(node, client):
     _remote_execute(
         client, 'cat /var/lib/redpanda/data/pid.lock | xargs sudo kill -9')
 
 
-def _perm_kill(node, client, ips):
-    _transient_kill(node, client, ips)
+def _perm_kill(node, client):
+    _transient_kill(node, client)
     _remote_execute(client, 'sudo systemctl stop redpanda')
 
 
-def _stop(node, client, ips):
+def _stop(node, client):
     _remote_execute(client, 'sudo systemctl stop redpanda')
 
 
-def _start(node, client, ips):
+def _start(node, client):
     _remote_execute(client, 'sudo systemctl start redpanda')
 
 
-def _reboot(node, client, ips):
+def _reboot(node, client):
     _remote_execute(client, 'sudo systemctl reboot')
 
 
 def _get_logs(lines):
-    def get(node, client, ips):
+    def get(node, client):
         stdin, stdout, strerr = client.exec_command(
             f'journalctl -u redpanda -n {lines}')
         return map(lambda l: l.strip(), stdout)
@@ -173,11 +193,25 @@ def _get_logs(lines):
 class RemoteCluster:
     def __init__(self, executor):
         self.executor = executor
+        self.kafka_ips = ",".join(
+            map(lambda x: f"{x[1]['private_ip']}:9092",
+                self.executor.nodes.items()))
         self.up = set({})
         self.down = set({})
+        self.topics = []
 
     def update_state(self):
         logging.info("Updating cluster state")
+        _, out, err = self.executor.execute_on_node(
+            1, _kafka_list_topic, KafkaArgs(ips=self.kafka_ips))
+        lines = out.readlines()
+        self.topics.clear()
+
+        for l in lines:
+            stripped = l.strip()
+            if stripped != "":
+                self.topics.append(stripped)
+
         res = self.executor.execute_on_all(_is_running)
         for [id, r] in res.items():
             if r == True:
@@ -193,6 +227,20 @@ class RemoteCluster:
     def get_detailed_log(self, id):
         return self.executor.execute_on_node(id, _get_logs(1000))
 
+    def execute_kafka(self, command, id, kafka_args):
+        if command == 'create-topic':
+            return self.executor.execute_on_node(id, _kafka_create_topic,
+                                                 kafka_args)
+        if command == 'delete-topic':
+            return self.executor.execute_on_node(id, _kafka_delete_topic,
+                                                 kafka_args)
+        if command == 'produce':
+            return self.executor.execute_on_node(id, _kafka_produce_topic,
+                                                 kafka_args)
+        if command == 'consume':
+            return self.executor.execute_on_node(id, _kafka_consume_topic,
+                                                 kafka_args)
+
     def execute(self, command, id):
         if command == 'transient_kill':
             return self.executor.execute_on_node(id, _transient_kill)
@@ -202,16 +250,11 @@ class RemoteCluster:
             return self.executor.execute_on_node(id, _perm_kill)
         if command == 'start':
             return self.executor.execute_on_node(id, _start)
-        if command == 'create':
-            return self.executor.execute_on_node(id, _kafka_create_topic)
-        if command == 'produce':
-            return self.executor.execute_on_node(id, _kafka_produce_topic)
-        if command == 'consume':
-            return self.executor.execute_on_node(id, _kafka_consume_topic)
         if command == 'reboot':
             return self.executor.execute_on_node(id, _reboot)
 
     def print_status(self):
+        logging.info("Topics: {}".format(self.topics))
         for [id, node] in self.executor.nodes.items():
             state = 'started' if id in self.up else 'stopped'
             logging.info(
@@ -220,9 +263,10 @@ class RemoteCluster:
 
 
 class ClusterStateVerifier():
-    def __init__(self, up, down):
+    def __init__(self, up, down, topics):
         self.up = set(up)
         self.down = set(down)
+        self.topics = set(topics)
 
     def execute(self, command, id):
         if command == 'transient_kill' or command == 'reboot':
@@ -233,6 +277,12 @@ class ClusterStateVerifier():
         if command == 'start':
             self.down.discard(id)
             self.up.add(id)
+
+    def execute_kafka(self, command, id, kafka_args):
+        if command == 'create-topic':
+            self.topics.add(kafka_args.topic)
+        if command == 'delete-topic':
+            self.topics.remove(kafka_args.topic)
 
 
 def _write_op(f, cl, id, msg):
@@ -273,14 +323,14 @@ class PunisherCommand():
         self.weight = weight
 
 
+def _topic_name():
+    return f'punisher-tp-{random.randint(0,10000)}'
+
+
 def _punisher_loop(cl, allow_minority, sleep_time, failed_log_dir):
     cl.update_state()
-    verifier = ClusterStateVerifier(cl.up, cl.down)
+    verifier = ClusterStateVerifier(cl.up, cl.down, cl.topics)
     with open(os.path.join(failed_log_dir, 'operations.log'), 'w') as op_log:
-        # first create the kafka topic
-        if len(cl.up) > 0:
-            id = random.choice(list(cl.up))
-            cl.execute('create', id)
         while True:
             logging.info(
                 f'Cluster state - running: {cl.up}, stopped: {cl.down}')
@@ -298,8 +348,10 @@ def _punisher_loop(cl, allow_minority, sleep_time, failed_log_dir):
                 PunisherCommand('start', 95)
             ]
             kafka_commands = [
-                PunisherCommand('produce', 50),
-                PunisherCommand('consume', 50)
+                PunisherCommand('produce', 25),
+                PunisherCommand('consume', 25),
+                PunisherCommand('create-topic', 25),
+                PunisherCommand('delete-topic', 25),
             ]
             count = len(cl.executor.nodes)
             majority = (count / 2) + 1
@@ -309,7 +361,28 @@ def _punisher_loop(cl, allow_minority, sleep_time, failed_log_dir):
             # always execute kafka command first
             if len(cl.up) > 0:
                 id = random.choice(list(cl.up))
-                cl.execute(_weighted_choice(kafka_commands), id)
+
+                if len(cl.topics) == 0:
+                    cmd = 'create-topic'
+                else:
+                    cmd = _weighted_choice(kafka_commands)
+
+                if cmd == 'create-topic':
+                    kafka_args = KafkaArgs(ips=cl.kafka_ips,
+                                           topic=_topic_name())
+                else:
+                    kafka_args = KafkaArgs(ips=cl.kafka_ips,
+                                           topic=random.choice(cl.topics))
+
+                _, out, err = cl.execute_kafka(cmd, id, kafka_args)
+                status = out.channel.recv_exit_status()
+                logging.info(
+                    f'{cmd} - {kafka_args.topic} - success: {status == 0}')
+                _write_op(
+                    op_log, cl, id,
+                    f'{cmd} - {kafka_args.topic} - success: {status == 0}')
+                if status == 0:
+                    verifier.execute_kafka(cmd, id, kafka_args)
 
             if can_stop:
                 id = random.choice(list(cl.up))
@@ -354,6 +427,14 @@ def _punisher_loop(cl, allow_minority, sleep_time, failed_log_dir):
                         _write_op(op_log, cl, id, "expected to be stopped")
                         _store_detailed_logs(cl, n, failed_log_dir,
                                              "stop-failed")
+            expected = verifier.topics
+            have = set(cl.topics)
+            should_be_created = expected.difference(have)
+            should_be_removed = have.difference(expected)
+            if len(should_be_created) > 0:
+                logging.error(f'Topics {should_be_created} should exists')
+            if len(should_be_created) > 0:
+                logging.error(f'Topics {should_be_removed} should not exists')
 
 
 @punisher.command(short_help='Simulate local cluster crashes')
