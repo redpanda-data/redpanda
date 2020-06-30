@@ -41,7 +41,6 @@ func Execute() {
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose",
 		"v", false, "enable verbose logging (default false)")
 	rootCmd.AddCommand(NewTuneCommand(fs))
-	rootCmd.AddCommand(NewSandboxCommand(fs))
 	rootCmd.AddCommand(NewCheckCommand(fs))
 	rootCmd.AddCommand(NewIoTuneCmd(fs))
 	rootCmd.AddCommand(NewStartCommand(fs))
