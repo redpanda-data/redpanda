@@ -1,8 +1,10 @@
 #pragma once
+#include "model/record_batch_reader.h"
 #include "storage/compacted_index.h"
 #include "storage/compacted_index_reader.h"
 #include "storage/compacted_index_writer.h"
 #include "storage/compacted_offset_list.h"
+#include "storage/probe.h"
 #include "storage/segment.h"
 #include "storage/segment_appender.h"
 
@@ -13,12 +15,13 @@
 #include <roaring/roaring.hh>
 
 namespace storage::internal {
-using namespace storage; // NOLINT
 
 /// \brief, this method will acquire it's own locks on the segment
 ///
-ss::future<>
-  self_compact_segment(ss::lw_shared_ptr<segment>, compaction_config);
+ss::future<> self_compact_segment(
+  ss::lw_shared_ptr<storage::segment>,
+  storage::compaction_config,
+  storage::probe&);
 
 /// make file handle with default opts
 ss::future<ss::file>
@@ -29,16 +32,16 @@ make_reader_handle(const std::filesystem::path&, storage::debug_sanitize_files);
 
 ss::future<compacted_index_writer> make_compacted_index_writer(
   const std::filesystem::path& path,
-  debug_sanitize_files debug,
+  storage::debug_sanitize_files debug,
   ss::io_priority_class iopc);
 
 ss::future<segment_appender_ptr> make_segment_appender(
   const std::filesystem::path& path,
-  debug_sanitize_files debug,
+  storage::debug_sanitize_files debug,
   size_t number_of_chunks,
   ss::io_priority_class iopc);
 
-size_t number_of_chunks_from_config(const ntp_config&);
+size_t number_of_chunks_from_config(const storage::ntp_config&);
 
 /*
 1. if footer.flags == truncate write new .compacted_index file
@@ -53,20 +56,34 @@ size_t number_of_chunks_from_config(const ntp_config&);
 ss::future<Roaring> natural_index_of_entries_to_keep(compacted_index_reader);
 
 ss::future<> copy_filtered_entries(
-  compacted_index_reader input,
+  storage::compacted_index_reader input,
   Roaring to_copy_index_filter,
-  compacted_index_writer output);
+  storage::compacted_index_writer output);
 
 /// \brief writes a new `*.compacted_index` file and *closes* the
 /// input compacted_index_reader file
-ss::future<>
-  write_clean_compacted_index(compacted_index_reader, compaction_config);
+ss::future<> write_clean_compacted_index(
+  storage::compacted_index_reader, storage::compaction_config);
 
 ss::future<compacted_offset_list>
-  generate_compacted_list(model::offset, compacted_index_reader);
+  generate_compacted_list(model::offset, storage::compacted_index_reader);
 
-// TODO: needs to look over on the locking mechanics
-ss::future<> write_compacted_segment(
-  ss::lw_shared_ptr<segment>, segment_appender_ptr, compacted_offset_list);
+/// \brief creates a model::record_batch_reader from segment meta
+///
+model::record_batch_reader create_segment_full_reader(
+  ss::lw_shared_ptr<storage::segment>,
+  storage::compaction_config,
+  storage::probe&,
+  ss::rwlock::holder);
+
+ss::future<> do_copy_segment_data(
+  ss::lw_shared_ptr<storage::segment>,
+  storage::compaction_config,
+  model::record_batch_reader);
+
+ss::future<> do_swap_data_file_handles(
+  std::filesystem::path compacted,
+  ss::lw_shared_ptr<storage::segment>,
+  storage::compaction_config);
 
 } // namespace storage::internal

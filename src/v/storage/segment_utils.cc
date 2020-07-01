@@ -4,7 +4,10 @@
 #include "storage/compacted_index.h"
 #include "storage/compacted_index_writer.h"
 #include "storage/compaction_reducers.h"
+#include "storage/lock_manager.h"
+#include "storage/log_reader.h"
 #include "storage/logger.h"
+#include "storage/segment.h"
 #include "units.h"
 #include "utils/file_sanitizer.h"
 #include "vassert.h"
@@ -13,6 +16,7 @@
 #include <seastar/core/file-types.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/reactor.hh>
+#include <seastar/core/rwlock.hh>
 #include <seastar/core/seastar.hh>
 
 #include <absl/container/btree_map.h>
@@ -22,6 +26,12 @@
 
 namespace storage::internal {
 using namespace storage; // NOLINT
+
+inline std::filesystem::path
+data_segment_staging_name(const ss::lw_shared_ptr<segment>& s) {
+    return std::filesystem::path(
+      fmt::format("{}.staging", s->reader().filename()));
+}
 
 static inline ss::file wrap_handle(ss::file f, debug_sanitize_files debug) {
     if (debug) {
@@ -218,18 +228,10 @@ generate_compacted_list(model::offset o, compacted_index_reader reader) {
       .finally([reader] {});
 }
 
-ss::future<> write_compacted_segment(
-  ss::lw_shared_ptr<segment>, segment_appender_ptr, compacted_offset_list) {
-    return ss::now();
-}
-
 ss::future<>
-self_compact_segment(ss::lw_shared_ptr<segment> s, compaction_config cfg) {
-    if (s->has_appender()) {
-        return ss::make_exception_future<>(std::runtime_error(fmt::format(
-          "Cannot compact an active segment. cfg:{} - segment:{}", cfg, s)));
-    }
-
+do_compact_segment_index(ss::lw_shared_ptr<segment> s, compaction_config cfg) {
+    // TODO: add exception safety to this method
+    // TODO: regenerate the index if missing
     auto compacted_path = std::filesystem::path(s->reader().filename());
     compacted_path.replace_extension(".compaction_index");
     vlog(stlog.trace, "compacting index:{}", compacted_path);
@@ -238,31 +240,123 @@ self_compact_segment(ss::lw_shared_ptr<segment> s, compaction_config cfg) {
           auto reader = make_file_backed_compacted_reader(
             compacted_path.string(), std::move(f), cfg.iopc, 64_KiB);
           return write_clean_compacted_index(reader, cfg);
-      })
-      .then([s, compacted_path, cfg] {
-          /// re-open the index *after* we have written it clean above
-          return make_reader_handle(compacted_path, cfg.sanitize)
-            .then([s, cfg, compacted_path](ss::file f) {
-                auto reader = make_file_backed_compacted_reader(
-                  compacted_path.string(), std::move(f), cfg.iopc, 64_KiB);
-                return generate_compacted_list(s->offsets().base_offset, reader)
-                  .finally([reader]() mutable {
-                      return reader.close().then_wrapped([](ss::future<>) {});
-                  });
+      });
+}
+ss::future<> do_copy_segment_data(
+  ss::lw_shared_ptr<segment> s,
+  compaction_config cfg,
+  model::record_batch_reader reader) {
+    auto idx_path = std::filesystem::path(s->reader().filename());
+    idx_path.replace_extension(".compaction_index");
+    return make_reader_handle(idx_path, cfg.sanitize)
+      .then([s, cfg, idx_path](ss::file f) {
+          auto reader = make_file_backed_compacted_reader(
+            idx_path.string(), std::move(f), cfg.iopc, 64_KiB);
+          return generate_compacted_list(s->offsets().base_offset, reader)
+            .finally([reader]() mutable {
+                return reader.close().then_wrapped([](ss::future<>) {});
             });
       })
       .then([cfg, s](compacted_offset_list list) {
-          const auto tmpname = std::filesystem::path(
-            fmt::format("{}.staging", s->reader().filename()));
+          const auto tmpname = data_segment_staging_name(s);
           return make_segment_appender(
                    tmpname,
                    cfg.sanitize,
                    segment_appender::chunks_no_buffer,
                    cfg.iopc)
-            .then([s, list = std::move(list)](segment_appender_ptr w) mutable {
-                return write_compacted_segment(
-                  s, std::move(w), std::move(list));
+            .then([l = std::move(list)](segment_appender_ptr w) mutable {
+                return copy_data_segment_reducer(std::move(l), std::move(w));
+            });
+      })
+      .then([r = std::move(reader)](copy_data_segment_reducer red) mutable {
+          return std::move(r).consume(std::move(red), model::no_timeout);
+      });
+}
+
+model::record_batch_reader create_segment_full_reader(
+  ss::lw_shared_ptr<storage::segment> s,
+  storage::compaction_config cfg,
+  storage::probe& pb,
+  ss::rwlock::holder h) {
+    auto o = s->offsets();
+    auto reader_cfg = log_reader_config(
+      o.base_offset,
+      o.dirty_offset,
+      0,
+      s->size_bytes(),
+      cfg.iopc,
+      std::nullopt,
+      std::nullopt,
+      std::nullopt);
+    segment_set::underlying_t set;
+    set.reserve(1);
+    set.push_back(s);
+    auto lease = std::make_unique<lock_manager::lease>(
+      segment_set(std::move(set)));
+    lease->locks.push_back(std::move(h));
+    return model::make_record_batch_reader<log_reader>(
+      std::move(lease), reader_cfg, pb);
+}
+
+ss::future<> do_swap_data_file_handles(
+  std::filesystem::path compacted,
+  ss::lw_shared_ptr<storage::segment> s,
+  storage::compaction_config cfg) {
+    return s->reader()
+      .close()
+      .then([compacted, s] {
+          ss::sstring old_name = compacted.string();
+          return ss::rename_file(old_name, s->reader().filename());
+      })
+      .then([s, cfg] {
+          auto to_open = std::filesystem::path(s->reader().filename().c_str());
+          return make_reader_handle(to_open, cfg.sanitize);
+      })
+      .then([s](ss::file f) mutable {
+          return f.stat()
+            .then([f](struct stat s) {
+                return ss::make_ready_future<uint64_t, ss::file>(s.st_size, f);
+            })
+            .then([s](uint64_t size, ss::file fd) {
+                auto r = segment_reader(
+                  s->reader().filename(),
+                  std::move(fd),
+                  size,
+                  default_segment_readahead_size);
+                std::swap(s->reader(), r);
             });
       });
 }
+
+ss::future<> self_compact_segment(
+  ss::lw_shared_ptr<segment> s, compaction_config cfg, storage::probe& pb) {
+    if (s->has_appender()) {
+        return ss::make_exception_future<>(std::runtime_error(fmt::format(
+          "Cannot compact an active segment. cfg:{} - segment:{}", cfg, s)));
+    }
+    return s->read_lock()
+      .then([cfg, s, &pb](ss::rwlock::holder h) {
+          if (s->is_closed()) {
+              return ss::make_exception_future<>(segment_closed_exception());
+          }
+          auto reader = create_segment_full_reader(s, cfg, pb, std::move(h));
+          return do_compact_segment_index(s, cfg)
+            // copy the bytes after segment is good - note that we
+            // need to do it with the READ-lock, not the write lock
+            .then([reader = std::move(reader), cfg, s]() mutable {
+                return do_copy_segment_data(s, cfg, std::move(reader));
+            });
+      })
+      .then([s] { return s->write_lock(); })
+      .then([cfg, s](ss::rwlock::holder h) {
+          if (s->is_closed()) {
+              return ss::make_exception_future<>(segment_closed_exception());
+          }
+          auto compacted_file = data_segment_staging_name(s);
+          return do_swap_data_file_handles(compacted_file, s, cfg)
+            // Nothing can happen in between this lock
+            .finally([h = std::move(h)] {});
+      });
+}
+
 } // namespace storage::internal

@@ -11,9 +11,15 @@
 #include <seastar/core/file.hh>
 #include <seastar/core/rwlock.hh>
 
+#include <exception>
 #include <optional>
 
 namespace storage {
+struct segment_closed_exception final : std::exception {
+    const char* what() const noexcept final {
+        return "segment_closed exception";
+    }
+};
 
 constexpr size_t default_segment_readahead_size = 128 * 1024;
 
@@ -134,6 +140,7 @@ public:
 
     void tombstone() { _tombstone = true; }
     bool has_outstanding_locks() const { return _destructive_ops.locked(); }
+    bool is_closed() const { return _closed; }
 
 private:
     void cache_truncate(model::offset offset);
