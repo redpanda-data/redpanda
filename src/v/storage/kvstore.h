@@ -83,6 +83,7 @@ public:
     enum class key_space : int8_t {
         testing = 0,
         consensus = 1,
+        storage = 2,
         /* your sub-system here */
     };
 

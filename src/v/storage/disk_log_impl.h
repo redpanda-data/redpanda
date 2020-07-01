@@ -2,6 +2,7 @@
 
 #include "storage/disk_log_appender.h"
 #include "storage/failure_probes.h"
+#include "storage/kvstore.h"
 #include "storage/lock_manager.h"
 #include "storage/log.h"
 #include "storage/log_reader.h"
@@ -25,7 +26,7 @@ public:
         self_compacted = 1U,
     };
 
-    disk_log_impl(ntp_config, log_manager&, segment_set);
+    disk_log_impl(ntp_config, log_manager&, segment_set, kvstore&);
     ~disk_log_impl() override;
     disk_log_impl(disk_log_impl&&) noexcept = default;
     disk_log_impl& operator=(disk_log_impl&&) noexcept = delete;
@@ -94,6 +95,7 @@ private:
     bool _closed{false};
     log_manager& _manager;
     segment_set _segs;
+    kvstore& _kvstore;
     absl::flat_hash_map<model::offset, segment_bitflags> _segbits;
     lock_manager _lock_mngr;
     storage::probe _probe;

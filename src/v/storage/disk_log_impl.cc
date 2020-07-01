@@ -29,10 +29,11 @@
 namespace storage {
 
 disk_log_impl::disk_log_impl(
-  ntp_config cfg, log_manager& manager, segment_set segs)
+  ntp_config cfg, log_manager& manager, segment_set segs, kvstore& kvstore)
   : log::impl(std::move(cfg))
   , _manager(manager)
   , _segs(std::move(segs))
+  , _kvstore(kvstore)
   , _lock_mngr(_segs) {
     const bool is_compacted = config().is_compacted();
     for (auto& s : segs) {
@@ -576,9 +577,9 @@ std::ostream& operator<<(std::ostream& o, const disk_log_impl& d) {
 }
 
 log make_disk_backed_log(
-  ntp_config cfg, log_manager& manager, segment_set segs) {
+  ntp_config cfg, log_manager& manager, segment_set segs, kvstore& kvstore) {
     auto ptr = ss::make_shared<disk_log_impl>(
-      std::move(cfg), manager, std::move(segs));
+      std::move(cfg), manager, std::move(segs), kvstore);
     return log(ptr);
 }
 
