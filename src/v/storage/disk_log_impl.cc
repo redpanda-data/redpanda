@@ -147,8 +147,8 @@ ss::future<> disk_log_impl::do_compact(compaction_config cfg) {
             return ss::now();
         }
         // compact
-        return storage::internal::self_compact_segment(seg, cfg).then(
-          [this, seg] {
+        return storage::internal::self_compact_segment(seg, cfg, _probe)
+          .then([this, seg] {
               // find it again, do not capture the iterator
               auto& flags = _segbits[seg->offsets().base_offset];
               flags |= segment_bitflags::self_compacted;
