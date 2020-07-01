@@ -120,7 +120,8 @@ inline std::ostream& operator<<(std::ostream& o, const storage::log& lg) {
 
 class log_manager;
 class segment_set;
+class kvstore;
 log make_memory_backed_log(ntp_config);
-log make_disk_backed_log(ntp_config, log_manager&, segment_set);
+log make_disk_backed_log(ntp_config, log_manager&, segment_set, kvstore&);
 
 } // namespace storage
