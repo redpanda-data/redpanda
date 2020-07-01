@@ -436,8 +436,7 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
       })
       .then([path, &ntpc, sanitize_fileops, pc](
               ss::lw_shared_ptr<segment> seg) {
-          if (!(ntpc.has_overrides()
-                && ntpc.get_overrides().compaction_strategy)) {
+          if (!ntpc.is_compacted()) {
               return ss::make_ready_future<ss::lw_shared_ptr<segment>>(seg);
           }
           return with_segment(

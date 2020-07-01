@@ -49,7 +49,12 @@ public:
     bool has_overrides() const { return _overrides != nullptr; }
 
     bool is_compacted() const {
-        return _overrides && _overrides->compaction_strategy;
+        if (_overrides && _overrides->cleanup_policy_bitflags) {
+            return (_overrides->cleanup_policy_bitflags.value()
+                    & model::cleanup_policy_bitflags::compaction)
+                   == model::cleanup_policy_bitflags::compaction;
+        }
+        return false;
     }
 
     ss::sstring work_directory() const {
