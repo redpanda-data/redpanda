@@ -13,7 +13,7 @@ iobuf compressor::compress(const iobuf& io, type t) {
     case type::gzip:
         return internal::gzip::compress(io);
     case type::snappy:
-        return internal::snappy::compress(io);
+        return internal::snappy_compressor::compress(io);
     case type::lz4:
         return internal::lz4::compress(io);
     case type::zstd:
@@ -29,7 +29,7 @@ iobuf compressor::uncompress(const iobuf& io, type t) {
     case type::gzip:
         return internal::gzip::uncompress(io);
     case type::snappy:
-        return internal::snappy::uncompress(io);
+        return internal::snappy_compressor::uncompress(io);
     case type::lz4:
         return internal::lz4::uncompress(io);
     case type::zstd:
