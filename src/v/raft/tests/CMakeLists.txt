@@ -99,3 +99,10 @@ rp_test(
   LIBRARIES v::seastar_testing_main v::raft v::storage_test_utils
   LABELS raft
 )
+rp_test(
+  UNIT_TEST
+  BINARY_NAME mux_state_machine_test
+  SOURCES mux_state_machine_test.cc
+  LIBRARIES v::seastar_testing_main v::raft v::storage_test_utils
+  DEFINITIONS SEASTAR_TESTING_MAIN
+)
