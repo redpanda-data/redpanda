@@ -23,7 +23,14 @@ using bytes_opt = std::optional<bytes>;
 
 struct bytes_type_hash {
     using is_transparent = std::true_type;
-    size_t operator()(const iobuf& k) const;
+    // NOTE: you hash a fragmented buffer with a linearized buffer
+    //       unless you make a copy and linearize first. Our fragmented buffer
+    //       correctly implements boost::hash_combine between fragments which
+    //       would be missing altogether from a linearize buffer which is simply
+    //       the std::hash<std::string_view>()
+    //
+    //   size_t operator()(const iobuf& k) const;
+    //
     size_t operator()(const bytes& k) const;
     size_t operator()(const bytes_view&) const;
 };
@@ -75,9 +82,7 @@ std::ostream& operator<<(std::ostream& os, const bytes_view& b);
 inline size_t bytes_type_hash::operator()(const bytes_view& k) const {
     return absl::Hash<bytes_view>{}(k);
 }
-inline size_t bytes_type_hash::operator()(const iobuf& k) const {
-    return absl::Hash<iobuf>{}(k);
-}
+
 inline size_t bytes_type_hash::operator()(const bytes& k) const {
     return absl::Hash<bytes>{}(k);
 }

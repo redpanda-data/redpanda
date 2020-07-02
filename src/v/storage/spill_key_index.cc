@@ -72,16 +72,20 @@ ss::future<> spill_key_index::add_key(bytes b, value_type v) {
 }
 ss::future<> spill_key_index::index(
   const iobuf& key, model::offset base_offset, int32_t delta) {
-    if (auto it = _midx.find(key); it != _midx.end()) {
-        auto& pair = it->second;
-        if (base_offset > pair.base_offset) {
-            pair.base_offset = base_offset;
-            pair.delta = delta;
-        }
-        return ss::now();
-    }
-    // not found
-    return add_key(iobuf_to_bytes(key), value_type{base_offset, delta});
+    // makes a copy, but we need deterministic keys.
+    return ss::do_with(
+      iobuf_to_bytes(key), [this, base_offset, delta](bytes& b) {
+          if (auto it = _midx.find(b); it != _midx.end()) {
+              auto& pair = it->second;
+              if (base_offset > pair.base_offset) {
+                  pair.base_offset = base_offset;
+                  pair.delta = delta;
+              }
+              return ss::now();
+          }
+          // not found
+          return add_key(std::move(b), value_type{base_offset, delta});
+      });
 }
 
 /// format is:
