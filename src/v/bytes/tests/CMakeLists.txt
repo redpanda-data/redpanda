@@ -10,5 +10,5 @@ rp_test(
   UNIT_TEST
   BINARY_NAME iobuf_utils_test
   SOURCES iobuf_utils_tests.cc
-  LIBRARIES v::seastar_testing_main v::bytes
+  LIBRARIES v::seastar_testing_main v::bytes absl::hash
 )
