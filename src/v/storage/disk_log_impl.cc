@@ -1,7 +1,9 @@
 #include "storage/disk_log_impl.h"
 
+#include "model/adl_serde.h"
 #include "model/fundamental.h"
 #include "model/timeout_clock.h"
+#include "reflection/adl.h"
 #include "storage/disk_log_appender.h"
 #include "storage/log_manager.h"
 #include "storage/logger.h"
@@ -34,6 +36,7 @@ disk_log_impl::disk_log_impl(
   , _manager(manager)
   , _segs(std::move(segs))
   , _kvstore(kvstore)
+  , _start_offset(read_start_offset())
   , _lock_mngr(_segs) {
     const bool is_compacted = config().is_compacted();
     for (auto& s : segs) {
@@ -67,6 +70,10 @@ ss::future<> disk_log_impl::remove() {
              permanent_delete.begin(), permanent_delete.end())
       .then([this]() {
           vlog(stlog.info, "Finished removing all segments:{}", config());
+      })
+      .then([this] {
+          return _kvstore.remove(
+            kvstore::key_space::storage, start_offset_key());
       });
 }
 ss::future<> disk_log_impl::close() {
@@ -228,7 +235,13 @@ model::term_id disk_log_impl::term() const {
 
 offset_stats disk_log_impl::offsets() const {
     if (_segs.empty()) {
-        return offset_stats{};
+        offset_stats ret;
+        ret.start_offset = _start_offset;
+        if (ret.start_offset > model::offset(0)) {
+            ret.dirty_offset = ret.start_offset - model::offset(1);
+            ret.committed_offset = ret.dirty_offset;
+        }
+        return ret;
     }
     // NOTE: we have to do this because ss::circular_buffer<> does not provide
     // with reverse iterators, so we manually find the iterator
@@ -248,7 +261,13 @@ offset_stats disk_log_impl::offsets() const {
         }
     }
     if (!end) {
-        return offset_stats{};
+        offset_stats ret;
+        ret.start_offset = _start_offset;
+        if (ret.start_offset > model::offset(0)) {
+            ret.dirty_offset = ret.start_offset - model::offset(1);
+            ret.committed_offset = ret.dirty_offset;
+        }
+        return ret;
     }
     // we have valid begin and end
     const auto& bof = _segs.front()->offsets();
@@ -256,9 +275,11 @@ offset_stats disk_log_impl::offsets() const {
     // term start
     const auto term_start_offset = term_start->offsets().base_offset;
 
+    const auto start_offset = _start_offset() >= 0 ? _start_offset
+                                                   : bof.base_offset;
+
     return storage::offset_stats{
-      .start_offset = bof.base_offset,
-      .start_offset_term = bof.term,
+      .start_offset = start_offset,
 
       .committed_offset = eof.committed_offset,
       .committed_offset_term = eof.term,
@@ -294,9 +315,22 @@ log_appender disk_log_impl::make_appender(log_append_config cfg) {
     auto ofs = offsets();
     auto next_offset = ofs.dirty_offset;
     if (next_offset() >= 0) {
+        // when dirty offset >= 0 it is implicity encoding the state of a
+        // non-empty log (see offsets()). for a non-empty log, the offset of the
+        // next batch to be applied is one past the last batch (dirty + 1).
         next_offset++;
+
     } else {
-        next_offset = model::offset{0};
+        // otherwise, the log is empty. in this case the offset of the next
+        // batch to be appended is the starting offset of the log, which may be
+        // explicitly set via operations like prefix truncation.
+        next_offset = ofs.start_offset;
+
+        // but, in the case of a brand new log, no starting offset has been
+        // explicitly set, so it is defined implicitly to be 0.
+        if (next_offset() < 0) {
+            next_offset = model::offset(0);
+        }
     }
     return log_appender(
       std::make_unique<disk_log_appender>(*this, cfg, now, next_offset));
@@ -348,7 +382,7 @@ ss::future<> disk_log_impl::maybe_roll(
 }
 
 ss::future<model::record_batch_reader>
-disk_log_impl::make_reader(log_reader_config config) {
+disk_log_impl::make_unchecked_reader(log_reader_config config) {
     vassert(!_closed, "make_reader on closed log - {}", *this);
     return _lock_mngr.range_lock(config).then(
       [this, cfg = config](std::unique_ptr<lock_manager::lease> lease) {
@@ -358,14 +392,31 @@ disk_log_impl::make_reader(log_reader_config config) {
 }
 
 ss::future<model::record_batch_reader>
+disk_log_impl::make_reader(log_reader_config config) {
+    vassert(!_closed, "make_reader on closed log - {}", *this);
+    if (config.start_offset < _start_offset) {
+        return ss::make_exception_future<model::record_batch_reader>(
+          std::runtime_error(fmt::format(
+            "Reader cannot read before start of the log {} < {}",
+            config.start_offset,
+            _start_offset)));
+    }
+    return make_unchecked_reader(config);
+}
+
+ss::future<model::record_batch_reader>
 disk_log_impl::make_reader(timequery_config config) {
     vassert(!_closed, "make_reader on closed log - {}", *this);
     return _lock_mngr.range_lock(config).then(
       [this, cfg = config](std::unique_ptr<lock_manager::lease> lease) {
+          auto start_offset = _start_offset;
+          if (!lease->range.empty()) {
+              // adjust for partial visibility of segment prefix
+              start_offset = std::max(
+                start_offset, (*lease->range.begin())->offsets().base_offset);
+          }
           log_reader_config config(
-            lease->range.empty()
-              ? model::offset{}
-              : (*lease->range.begin())->offsets().base_offset,
+            start_offset,
             cfg.max_offset,
             0,
             2048, // We just need one record batch
@@ -380,7 +431,7 @@ disk_log_impl::make_reader(timequery_config config) {
 
 std::optional<model::term_id> disk_log_impl::get_term(model::offset o) const {
     auto it = _segs.lower_bound(o);
-    if (it != _segs.end()) {
+    if (it != _segs.end() && o >= _start_offset) {
         return (*it)->offsets().term;
     }
 
@@ -436,7 +487,9 @@ ss::future<> disk_log_impl::remove_segment_permanently(
 ss::future<> disk_log_impl::remove_full_segments(model::offset o) {
     return ss::do_until(
       [this, o] {
-          return _segs.empty() || _segs.back()->offsets().base_offset < o;
+          return _segs.empty()
+                 || std::max(_segs.back()->offsets().base_offset, _start_offset)
+                      < o;
       },
       [this] {
           auto ptr = _segs.back();
@@ -449,7 +502,7 @@ disk_log_impl::remove_prefix_full_segments(truncate_prefix_config cfg) {
     return ss::do_until(
       [this, cfg] {
           return _segs.empty()
-                 || _segs.front()->offsets().dirty_offset < cfg.start_offset;
+                 || _segs.front()->offsets().dirty_offset >= cfg.start_offset;
       },
       [this] {
           auto ptr = _segs.front();
@@ -467,27 +520,68 @@ ss::future<> disk_log_impl::truncate_prefix(truncate_prefix_config cfg) {
 }
 
 ss::future<> disk_log_impl::do_truncate_prefix(truncate_prefix_config cfg) {
-    auto stats = offsets();
-    if (cfg.start_offset < stats.start_offset) {
+    if (cfg.start_offset <= _start_offset) {
         return ss::make_ready_future<>();
     }
-    if (_segs.empty()) {
-        return ss::make_ready_future<>();
-    }
-    if (_segs.front()->offsets().dirty_offset >= cfg.start_offset) {
-        return remove_prefix_full_segments(cfg).then([this, cfg] {
-            // recurse
-            return do_truncate_prefix(cfg);
-        });
-    }
-    auto begin = _segs.front();
-    if (begin->has_appender()) {
-        // we don't truncate active appenders
-        return ss::make_ready_future<>();
-    }
-    // NOTE: at the moment we don't support mid segment truncation
-    // since it requires index invalidation
-    return ss::make_ready_future<>();
+
+    /*
+     * Persist the desired starting offset
+     */
+    return _kvstore
+      .put(
+        kvstore::key_space::storage,
+        start_offset_key(),
+        reflection::to_iobuf(cfg.start_offset))
+      .then([this, cfg] {
+          /*
+           * Then delete all segments (potentially including the active segment)
+           * whose max offset falls below the new starting offset.
+           */
+          return remove_prefix_full_segments(cfg);
+      })
+      .then([this, cfg] {
+          /*
+           * The two salient scenarios that can result are:
+           *
+           * (1) The log was initially empty, or the new starting offset fell
+           * beyond the end of the log's dirty offset in which case all segments
+           * have been deleted, and the log is now empty.
+           *
+           *     In this case the log will be rolled at the next append,
+           *     creating a new segment beginning at the new starting offset.
+           *     see `make_appender` for how the next offset is determined.
+           *
+           * (2) Zero or more full segments are removed whose ending offset is
+           * ordered before the new starting offset. The new offset may have
+           * fallen within an existing segment.
+           *
+           *     Segments below the new starting offset can be garbage
+           *     collected. In this case when the new starting offset has fallen
+           *     within an existing segment, the enforcement of the new offset
+           *     is only logical, e.g. verify reader offset ranges.  Reclaiming
+           *     the space corresponding to the non-visible prefix of the
+           *     segment would require either (1) file hole punching or (2)
+           *     rewriting the segment.  The overhead is never more than one
+           *     segment, and this optimization is left as future work.
+           */
+          _start_offset = cfg.start_offset;
+
+          /*
+           * We want to maintain the following relationship for consistency:
+           *
+           *     start offset <= committed offset <= dirty offset
+           *
+           * However, it might be that the new starting offset is ordered
+           * between the commited and dirty offsets. When this occurs we pay a
+           * small penalty to resolve the inconsistency by flushing the log and
+           * advancing the committed offset to be the same as the dirty offset.
+           */
+          auto ofs = offsets();
+          if (_start_offset >= ofs.committed_offset) {
+              return flush();
+          }
+          return ss::now();
+      });
 }
 
 ss::future<> disk_log_impl::truncate(truncate_config cfg) {
@@ -506,9 +600,12 @@ ss::future<> disk_log_impl::do_truncate(truncate_config cfg) {
     if (_segs.empty()) {
         return ss::make_ready_future<>();
     }
+    cfg.base_offset = std::max(cfg.base_offset, _start_offset);
     // Note different from the stats variable above because
     // we want to delete even empty segments.
-    if (_segs.back()->offsets().base_offset >= cfg.base_offset) {
+    if (
+      cfg.base_offset
+      < std::max(_segs.back()->offsets().base_offset, _start_offset)) {
         return remove_full_segments(cfg.base_offset).then([this, cfg] {
             // recurse
             return do_truncate(cfg);
@@ -527,7 +624,10 @@ ss::future<> disk_log_impl::do_truncate(truncate_config cfg) {
     }
     return last.flush()
       .then([this, cfg, start, initial_size] {
-          return make_reader(
+          // an unchecked reader is created which does not enforce the logical
+          // starting offset. this is needed because we really do want to read
+          // all the data in the segment to find the correct physical offset.
+          return make_unchecked_reader(
                    log_reader_config(start, cfg.base_offset, cfg.prio))
             .then([cfg, initial_size](model::record_batch_reader reader) {
                 return std::move(reader).consume(
@@ -566,6 +666,22 @@ ss::future<> disk_log_impl::do_truncate(truncate_config cfg) {
                   *this);
             });
       });
+}
+
+bytes disk_log_impl::start_offset_key() const {
+    iobuf buf;
+    auto ntp = config().ntp();
+    reflection::serialize(buf, kvstore_key_type::start_offset, std::move(ntp));
+    return iobuf_to_bytes(buf);
+}
+
+model::offset disk_log_impl::read_start_offset() const {
+    auto value = _kvstore.get(kvstore::key_space::storage, start_offset_key());
+    if (value) {
+        auto offset = reflection::adl<model::offset>{}.from(std::move(*value));
+        return offset;
+    }
+    return model::offset{};
 }
 
 std::ostream& disk_log_impl::print(std::ostream& o) const {
