@@ -449,7 +449,7 @@ disk_log_impl::remove_prefix_full_segments(truncate_prefix_config cfg) {
     return ss::do_until(
       [this, cfg] {
           return _segs.empty()
-                 || _segs.front()->offsets().dirty_offset < cfg.max_offset;
+                 || _segs.front()->offsets().dirty_offset < cfg.start_offset;
       },
       [this] {
           auto ptr = _segs.front();
@@ -467,19 +467,14 @@ ss::future<> disk_log_impl::truncate_prefix(truncate_prefix_config cfg) {
 }
 
 ss::future<> disk_log_impl::do_truncate_prefix(truncate_prefix_config cfg) {
-    vassert(
-      cfg.sloppy == truncate_prefix_config::sloppy_prefix::yes,
-      "We don't support exact prefix truncation yet. Config: {} - {}",
-      cfg,
-      *this);
     auto stats = offsets();
-    if (cfg.max_offset < stats.start_offset) {
+    if (cfg.start_offset < stats.start_offset) {
         return ss::make_ready_future<>();
     }
     if (_segs.empty()) {
         return ss::make_ready_future<>();
     }
-    if (_segs.front()->offsets().dirty_offset >= cfg.max_offset) {
+    if (_segs.front()->offsets().dirty_offset >= cfg.start_offset) {
         return remove_prefix_full_segments(cfg).then([this, cfg] {
             // recurse
             return do_truncate_prefix(cfg);
