@@ -109,5 +109,5 @@ bytes_type_eq::operator()(const bytes& lhs, const iobuf& rhs) const {
         ++bytes_idx;
         ++iobuf_it;
     }
-    return false;
+    return true;
 }
