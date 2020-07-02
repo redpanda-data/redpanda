@@ -1,5 +1,6 @@
 #include "storage/compaction_reducers.h"
 
+#include "model/record_utils.h"
 #include "random/generators.h"
 #include "storage/logger.h"
 #include "storage/segment_appender_utils.h"
@@ -7,6 +8,8 @@
 
 #include <absl/algorithm/container.h>
 #include <absl/container/flat_hash_map.h>
+
+#include <algorithm>
 
 namespace storage::internal {
 ss::future<ss::stop_iteration>
@@ -100,10 +103,44 @@ compacted_offset_list_reducer::operator()(compacted_index::entry&& e) {
     return ss::make_ready_future<stop_t>(stop_t::no);
 }
 
-std::vector<model::record_batch>
-copy_data_segment_reducer::filter(model::record_batch&&) {
-    std::vector<model::record_batch> ret;
-    return ret;
+std::optional<model::record_batch>
+copy_data_segment_reducer::filter(model::record_batch&& batch) {
+    // 1. compute which records to keep
+    const auto base = batch.base_offset();
+    std::vector<int32_t> offset_deltas;
+    offset_deltas.reserve(batch.record_count());
+    for (auto& r : batch) {
+        if (should_keep(base, r.offset_delta())) {
+            offset_deltas.push_back(r.offset_delta());
+        }
+    }
+
+    // 2. no record to keep
+    if (offset_deltas.empty()) {
+        return std::nullopt;
+    }
+
+    // 3. keep all records
+    if (offset_deltas.size() == static_cast<size_t>(batch.record_count())) {
+        return std::move(batch);
+    }
+
+    // 4. filter
+    model::record_batch::uncompressed_records ret;
+    for (auto& record : batch) {
+        // contains the key
+        if (std::count(
+              offset_deltas.begin(),
+              offset_deltas.end(),
+              record.offset_delta())) {
+            ret.push_back(record.share());
+        }
+    }
+    auto new_batch = model::record_batch(batch.header(), std::move(ret));
+    new_batch.header().crc = model::crc_record_batch(new_batch);
+    new_batch.header().header_crc = model::internal_header_only_crc(
+      new_batch.header());
+    return new_batch;
 }
 
 ss::future<ss::stop_iteration>
@@ -119,27 +156,15 @@ copy_data_segment_reducer::operator()(model::record_batch&& b) {
           b.header());
         return ss::make_ready_future<stop_t>(stop_t::no);
     }
-    if (!should_keep(b)) {
+    auto to_copy = filter(std::move(b));
+    if (to_copy == std::nullopt) {
         return ss::make_ready_future<stop_t>(stop_t::no);
     }
     return ss::do_with(
-             filter(std::move(b)),
-             [this](std::vector<model::record_batch>& batches) {
-                 return ss::do_for_each(
-                   batches, [this](model::record_batch& b) {
-                       return storage::write(*_appender, b);
-                   });
+             std::move(to_copy.value()),
+             [this](model::record_batch& batch) {
+                 return storage::write(*_appender, batch);
              })
       .then([] { return ss::make_ready_future<stop_t>(stop_t::no); });
-}
-bool copy_data_segment_reducer::should_keep(
-  const model::record_batch& b) const {
-    const auto base = b.base_offset();
-    for (auto& r : b) {
-        if (should_keep(base, r.offset_delta())) {
-            return true;
-        }
-    }
-    return false;
 }
 } // namespace storage::internal
