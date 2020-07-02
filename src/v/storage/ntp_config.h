@@ -57,6 +57,17 @@ public:
         return false;
     }
 
+    bool is_collectable() const {
+        // has no overrides
+        if (!_overrides || !_overrides->cleanup_policy_bitflags) {
+            return true;
+        }
+        // check if deletion bitflag is set
+        return (_overrides->cleanup_policy_bitflags.value()
+                & model::cleanup_policy_bitflags::deletion)
+               == model::cleanup_policy_bitflags::deletion;
+    }
+
     ss::sstring work_directory() const {
         return fmt::format("{}/{}", _base_dir, _ntp.path());
     }

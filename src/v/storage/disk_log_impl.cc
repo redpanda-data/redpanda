@@ -163,7 +163,10 @@ ss::future<> disk_log_impl::do_compact(compaction_config cfg) {
     return ss::now();
 }
 ss::future<> disk_log_impl::compact(compaction_config cfg) {
-    auto f = gc(cfg);
+    ss::future<> f = ss::now();
+    if (config().is_collectable()) {
+        f = gc(cfg);
+    }
     if (unlikely(
           config().has_overrides()
           && config().get_overrides().cleanup_policy_bitflags
