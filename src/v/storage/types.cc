@@ -71,8 +71,7 @@ std::ostream& operator<<(std::ostream& o, const truncate_config& cfg) {
     return o;
 }
 std::ostream& operator<<(std::ostream& o, const truncate_prefix_config& cfg) {
-    fmt::print(
-      o, "{{max_offset:{}, sloppy_prefix:{}}}", cfg.max_offset, cfg.sloppy);
+    fmt::print(o, "{{start_offset:{}}}", cfg.start_offset);
     return o;
 }
 

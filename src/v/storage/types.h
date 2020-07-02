@@ -94,15 +94,21 @@ struct truncate_config {
     friend std::ostream& operator<<(std::ostream&, const truncate_config&);
 };
 
+/**
+ * Prefix truncation configuration.
+ *
+ * Set start_offset to be the new starting offset of the log. It is required to
+ * be a base offset of a record batch if that particular offset is contained in
+ * the new log offset range. All offsets below the starting offset become
+ * eligible for garbage collection, and are longer be accessible. If the
+ * starting offset is contained in the log is not removed.
+ */
 struct truncate_prefix_config {
-    using sloppy_prefix = ss::bool_class<struct sloppy_prefix_truncation>;
-
     truncate_prefix_config(model::offset o, ss::io_priority_class p)
-      : max_offset(o)
+      : start_offset(o)
       , prio(p) {}
-    model::offset max_offset;
+    model::offset start_offset;
     ss::io_priority_class prio;
-    sloppy_prefix sloppy = sloppy_prefix::yes;
 
     friend std::ostream&
     operator<<(std::ostream&, const truncate_prefix_config&);

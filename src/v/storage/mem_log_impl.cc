@@ -176,12 +176,12 @@ struct mem_log_impl final : log::impl {
         auto it = std::lower_bound(
           std::begin(_data),
           std::end(_data),
-          cfg.max_offset,
+          cfg.start_offset,
           entries_ordering{});
         if (it == _data.end()) {
             return ss::make_ready_future<>();
         }
-        if (it->last_offset() > cfg.max_offset) {
+        if (it->last_offset() > cfg.start_offset) {
             it = std::prev(it);
         }
         if (it == _data.end()) {
