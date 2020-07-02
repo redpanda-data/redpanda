@@ -1,9 +1,9 @@
 #include "raft/state_machine.h"
 
+#include "model/record_batch_reader.h"
 #include "raft/consensus.h"
 #include "storage/log.h"
-
-#include <seastar/core/gate.hh>
+#include "storage/record_batch_builder.h"
 
 namespace raft {
 
@@ -30,6 +30,9 @@ ss::future<> state_machine::stop() {
 
 ss::future<> state_machine::wait(
   model::offset offset, model::timeout_clock::time_point timeout) {
+    if (offset < _next) {
+        return ss::now();
+    }
     return ss::with_gate(_gate, [this, timeout, offset] {
         return _waiters.wait(offset, timeout, std::nullopt);
     });
@@ -54,6 +57,32 @@ state_machine::batch_applicator::operator()(model::record_batch batch) {
 }
 
 bool state_machine::stop_batch_applicator() { return _gate.is_closed(); }
+
+model::record_batch_reader make_checkpoint() {
+    storage::record_batch_builder builder(
+      state_machine::checkpoint_batch_type, model::offset(0));
+    builder.add_raw_kv(iobuf(), iobuf());
+    return model::make_memory_record_batch_reader(std::move(builder).build());
+}
+
+// FIXME: implement linearizable reads in a way similar to Logcabin
+// implementation. For now we replicate single record to make sure leader is up
+// to date
+ss::future<result<replicate_result>> state_machine::quorum_write_empty_batch(
+  model::timeout_clock::time_point timeout) {
+    using ret_t = result<replicate_result>;
+    // replicate checkpoint batch
+    return _raft
+      ->replicate(
+        make_checkpoint(), replicate_options(consistency_level::quorum_ack))
+      .then([this, timeout](ret_t r) {
+          if (!r) {
+              return ss::make_ready_future<ret_t>(r);
+          }
+          return wait(r.value().last_offset, timeout)
+            .then([r = std::move(r)]() mutable { return std::move(r); });
+      });
+}
 
 ss::future<> state_machine::apply() {
     // wait until consensus commit index is >= _next
