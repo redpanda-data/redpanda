@@ -17,6 +17,7 @@
 #include <seastar/core/smp.hh>
 #include <seastar/core/temporary_buffer.hh>
 
+#include <boost/container_hash/hash.hpp> // hash_combine
 #include <fmt/format.h>
 
 #include <cstddef>
