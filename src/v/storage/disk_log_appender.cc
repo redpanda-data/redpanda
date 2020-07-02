@@ -15,22 +15,12 @@ disk_log_appender::disk_log_appender(
   disk_log_impl& log,
   log_append_config config,
   log_clock::time_point append_time,
-  model::offset dirty_offset) noexcept
+  model::offset next_offset) noexcept
   : _log(log)
   , _config(config)
   , _append_time(append_time)
-  , _idx(dirty_offset)
-  , _base_offset(dirty_offset)
-  , _last_offset(dirty_offset) {
-    if (_idx() < 0) {
-        // empty log
-        _idx = _base_offset = model::offset{0};
-    } else {
-        // first batch
-        _idx++;
-        _base_offset++;
-    }
-}
+  , _idx(next_offset)
+  , _base_offset(next_offset) {}
 
 ss::future<> disk_log_appender::initialize() {
     if (_log._segs.empty()) {
