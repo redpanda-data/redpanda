@@ -22,7 +22,6 @@ using debug_sanitize_files = ss::bool_class<struct debug_sanitize_files_tag>;
 /// returns base_offset's from batches. Not max_offsets
 struct offset_stats {
     model::offset start_offset;
-    model::term_id start_offset_term;
 
     model::offset committed_offset;
     model::term_id committed_offset_term;

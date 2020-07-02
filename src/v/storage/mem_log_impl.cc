@@ -292,7 +292,6 @@ struct mem_log_impl final : log::impl {
 
         return storage::offset_stats{
           .start_offset = b.base_offset(),
-          .start_offset_term = b.term(),
           .committed_offset = e.last_offset(),
           .committed_offset_term = e.term(),
           .dirty_offset = e.last_offset(),
