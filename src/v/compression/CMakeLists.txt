@@ -10,6 +10,7 @@ v_cc_library(
   SRCS
     "compression.cc"
     "stream_zstd.cc"
+    "internal/snappy_compressor.cc"
   DEPS
     v::bytes
     Zstd::zstd
