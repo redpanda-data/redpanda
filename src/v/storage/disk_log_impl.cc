@@ -292,8 +292,14 @@ log_appender disk_log_impl::make_appender(log_append_config cfg) {
     vassert(!_closed, "make_appender on closed log - {}", *this);
     auto now = log_clock::now();
     auto ofs = offsets();
+    auto next_offset = ofs.dirty_offset;
+    if (next_offset() >= 0) {
+        next_offset++;
+    } else {
+        next_offset = model::offset{0};
+    }
     return log_appender(
-      std::make_unique<disk_log_appender>(*this, cfg, now, ofs.dirty_offset));
+      std::make_unique<disk_log_appender>(*this, cfg, now, next_offset));
 }
 
 ss::future<> disk_log_impl::flush() {
