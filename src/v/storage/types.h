@@ -16,6 +16,13 @@
 #include <vector>
 
 namespace storage {
+/**
+ * ghost record batch type, used by raft recovery to deliver gapless stream of
+ * batches to follower, ghost batches aren't appended to the log
+ */
+constexpr model::record_batch_type ghost_record_batch_type
+  = model::well_known_record_batch_types[7];
+
 using log_clock = ss::lowres_clock;
 using debug_sanitize_files = ss::bool_class<struct debug_sanitize_files_tag>;
 
