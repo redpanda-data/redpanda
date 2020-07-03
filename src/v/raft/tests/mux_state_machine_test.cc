@@ -158,9 +158,9 @@ struct simple_kv {
 ss::logger kvlog{"kv-test"};
 
 template<typename T>
-model::record_batch serialize_cmd(T t, int8_t type) {
-    storage::record_batch_builder b(
-      model::record_batch_type(type), model::offset(0));
+model::record_batch
+serialize_cmd(T t, int8_t type, model::offset o = model::offset(0)) {
+    storage::record_batch_builder b(model::record_batch_type(type), o);
     iobuf key_buf;
     reflection::adl<uint8_t>{}.to(key_buf, T::record_key);
     iobuf v_buf;
@@ -285,26 +285,26 @@ FIXTURE_TEST(test_stm_recovery, mux_state_machine_fixture) {
         auto cfg = storage::log_builder_config();
         cfg.base_dir = _data_dir;
         storage::disk_log_builder builder(cfg);
-
+        model::offset offset(0);
         builder | storage::start(_ntp) | storage::add_segment(0)
-          | storage::add_batch(
-            serialize_cmd(set_cmd{"test", 1}, batch_type_1)) // -> test = 1
-          | storage::add_batch(
-            serialize_cmd(set_cmd{"test", 2}, batch_type_1)) // -> failed
-          | storage::add_batch(
-            serialize_cmd(set_cmd{"test", 3}, batch_type_1)) // -> failed
-          | storage::add_batch(
-            serialize_cmd(cas_cmd{"test", 1, 10}, batch_type_1)) // -> test =10
-          | storage::add_batch(
-            serialize_cmd(set_cmd{"test-1", 2}, batch_type_1)) // -> failed
           | storage::add_batch(serialize_cmd(
-            set_cmd{"test-2", 15}, batch_type_1)) // -> test-2 = 15
+            set_cmd{"test", 1}, batch_type_1, offset++)) // -> test = 1
           | storage::add_batch(serialize_cmd(
-            cas_cmd{"test-2", 15, 1}, batch_type_1)) // -> test-2 = 1
-          | storage::add_batch(
-            serialize_cmd(cas_cmd{"test-2", 15, 2}, batch_type_1)) // -> failed
+            set_cmd{"test", 2}, batch_type_1, offset++)) // -> failed
           | storage::add_batch(serialize_cmd(
-            delete_cmd{"test-1"}, batch_type_1)) // -> test-1 deleted
+            set_cmd{"test", 3}, batch_type_1, offset++)) // -> failed
+          | storage::add_batch(serialize_cmd(
+            cas_cmd{"test", 1, 10}, batch_type_1, offset++)) // -> test =10
+          | storage::add_batch(serialize_cmd(
+            set_cmd{"test-1", 2}, batch_type_1, offset++)) // -> failed
+          | storage::add_batch(serialize_cmd(
+            set_cmd{"test-2", 15}, batch_type_1, offset++)) // -> test-2 = 15
+          | storage::add_batch(serialize_cmd(
+            cas_cmd{"test-2", 15, 1}, batch_type_1, offset++)) // -> test-2 = 1
+          | storage::add_batch(serialize_cmd(
+            cas_cmd{"test-2", 15, 2}, batch_type_1, offset++)) // -> failed
+          | storage::add_batch(serialize_cmd(
+            delete_cmd{"test-1"}, batch_type_1, offset++)) // -> test-1 deleted
           | storage::stop();
     }
     // Correct state:

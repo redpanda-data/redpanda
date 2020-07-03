@@ -12,13 +12,13 @@
 FIXTURE_TEST(kitchen_sink, log_builder_fixture) {
     using namespace storage; // NOLINT
 
-    auto batch = test::make_random_batch(model::offset(107), 1, false);
+    auto batch = test::make_random_batch(model::offset(104), 1, false);
 
     b | start() | add_segment(0)
       | add_random_batch(0, 100, maybe_compress_batches::yes)
       | add_random_batch(100, 2, maybe_compress_batches::yes) | add_segment(102)
       | add_random_batch(102, 2, maybe_compress_batches::yes) | add_segment(104)
-      | add_random_batches(104, 3) | add_batch(std::move(batch));
+      | add_batch(std::move(batch)) | add_random_batches(105, 3);
 
     auto stats = get_stats().get0();
 
