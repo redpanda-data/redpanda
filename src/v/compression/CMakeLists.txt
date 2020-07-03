@@ -11,6 +11,7 @@ v_cc_library(
     "compression.cc"
     "stream_zstd.cc"
     "internal/snappy_compressor.cc"
+    "internal/lz4_frame_compressor.cc"
   DEPS
     v::bytes
     Zstd::zstd

@@ -1,7 +1,7 @@
 #include "compression/compression.h"
 
 #include "compression/internal/gzip_compressor.h"
-#include "compression/internal/lz4_compressor.h"
+#include "compression/internal/lz4_frame_compressor.h"
 #include "compression/internal/snappy_compressor.h"
 #include "compression/internal/zstd_compressor.h"
 
@@ -15,7 +15,7 @@ iobuf compressor::compress(const iobuf& io, type t) {
     case type::snappy:
         return internal::snappy_compressor::compress(io);
     case type::lz4:
-        return internal::lz4::compress(io);
+        return internal::lz4_frame_compressor::compress(io);
     case type::zstd:
         return internal::zstd::compress(io);
     }
@@ -35,7 +35,7 @@ iobuf compressor::uncompress(const iobuf& io, type t) {
     case type::snappy:
         return internal::snappy_compressor::uncompress(io);
     case type::lz4:
-        return internal::lz4::uncompress(io);
+        return internal::lz4_frame_compressor::uncompress(io);
     case type::zstd:
         return internal::zstd::uncompress(io);
     }
