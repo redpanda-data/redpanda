@@ -47,11 +47,7 @@ stream_zstd::zstd_decompress_ctx& stream_zstd::decompressor() {
 }
 
 iobuf stream_zstd::compress(iobuf x) {
-    if (unlikely(x.empty())) {
-        return iobuf();
-    }
     reset_compressor();
-
     auto ifragment = x.begin();
     ZSTD_CCtx* ctx = compressor().get();
     // NOTE: always enable content size. **decompression** depends on this
@@ -109,7 +105,8 @@ static size_t find_zstd_size(const iobuf& x) {
 
 iobuf stream_zstd::uncompress(iobuf x) {
     if (unlikely(x.empty())) {
-        return iobuf();
+        throw std::runtime_error(
+          "Asked to stream_zstd::uncompress empty buffer");
     }
     reset_decompressor();
     const size_t decompressed_size = find_zstd_size(x);
