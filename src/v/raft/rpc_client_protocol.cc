@@ -45,4 +45,17 @@ ss::future<result<heartbeat_reply>> rpc_client_protocol::heartbeat(
       });
 }
 
+ss::future<result<install_snapshot_reply>>
+rpc_client_protocol::install_snapshot(
+  model::node_id n, install_snapshot_request&& r, rpc::client_opts opts) {
+    return _connection_cache.local().with_node_client<raftgen_client_protocol>(
+      ss::this_shard_id(),
+      n,
+      [r = std::move(r),
+       opts = std::move(opts)](raftgen_client_protocol client) mutable {
+          return client.install_snapshot(std::move(r), std::move(opts))
+            .then(&rpc::get_ctx_data<install_snapshot_reply>);
+      });
+}
+
 } // namespace raft

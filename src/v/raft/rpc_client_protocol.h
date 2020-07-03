@@ -28,6 +28,9 @@ public:
     ss::future<result<heartbeat_reply>>
     heartbeat(model::node_id, heartbeat_request&&, rpc::client_opts) final;
 
+    ss::future<result<install_snapshot_reply>> install_snapshot(
+      model::node_id, install_snapshot_request&&, rpc::client_opts) final;
+
 private:
     ss::sharded<rpc::connection_cache>& _connection_cache;
 };
