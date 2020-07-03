@@ -13,7 +13,9 @@
 #include "rpc/simple_protocol.h"
 #include "rpc/types.h"
 #include "storage/log_manager.h"
+#include "storage/ntp_config.h"
 #include "storage/tests/utils/random_batch.h"
+#include "storage/types.h"
 #include "test_utils/fixture.h"
 
 #include <seastar/core/shared_ptr.hh>
@@ -31,7 +33,6 @@ inline static ss::logger tstlog("raft_test");
 using namespace std::chrono_literals; // NOLINT
 
 inline static auto heartbeat_interval = 40ms;
-
 inline static const raft::replicate_options
   default_replicate_opts(raft::consistency_level::quorum_ack);
 
@@ -68,7 +69,9 @@ struct raft_node {
       raft::timeout_jitter jit,
       ss::sstring storage_dir,
       storage::log_config::storage_type storage_type,
-      leader_clb_t l_clb)
+      leader_clb_t l_clb,
+      model::cleanup_policy_bitflags cleanup_policy,
+      size_t segment_size)
       : broker(std::move(broker))
       , leader_callback(std::move(l_clb)) {
         cache.start().get();
@@ -80,17 +83,24 @@ struct raft_node {
             storage::log_config(
               storage_type,
               storage_dir,
-              100_MiB,
+              segment_size,
               storage::debug_sanitize_files::yes))
           .get();
         storage.invoke_on_all(&storage::api::start).get();
 
+        storage::ntp_config::default_overrides overrides;
+
+        overrides.cleanup_policy_bitflags = cleanup_policy;
+        overrides.compaction_strategy = model::compaction_strategy::offset;
+
+        storage::ntp_config ntp_cfg = storage::ntp_config(
+          std::move(ntp),
+          storage.local().log_mgr().config().base_dir,
+          std::make_unique<storage::ntp_config::default_overrides>(
+            std::move(overrides)));
+
         log = std::make_unique<storage::log>(
-          storage.local()
-            .log_mgr()
-            .manage(storage::ntp_config(
-              ntp, storage.local().log_mgr().config().base_dir))
-            .get0());
+          storage.local().log_mgr().manage(std::move(ntp_cfg)).get0());
 
         // setup consensus
         consensus = ss::make_lw_shared<raft::consensus>(
@@ -149,9 +159,9 @@ struct raft_node {
           raft::make_rpc_client_protocol(cache),
           broker.id());
         hbeats->start().get0();
-        consensus->start().get0();
         hbeats->register_group(consensus).get();
         started = true;
+        consensus->start().get0();
     }
 
     ss::future<> stop_node() {
@@ -260,10 +270,15 @@ struct raft_group {
       raft::group_id id,
       int size,
       storage::log_config::storage_type storage_type
-      = storage::log_config::storage_type::disk)
+      = storage::log_config::storage_type::disk,
+      model::cleanup_policy_bitflags cleanup_policy
+      = model::cleanup_policy_bitflags::deletion,
+      size_t segment_size = 100_MiB)
       : _id(id)
       , _storage_type(storage_type)
-      , _storage_dir("test.raft." + random_generators::gen_alphanum_string(6)) {
+      , _storage_dir("test.raft." + random_generators::gen_alphanum_string(6))
+      , _cleanup_policy(cleanup_policy)
+      , _segment_size(segment_size) {
         std::vector<model::broker> brokers;
         for (auto i : boost::irange(0, size)) {
             _initial_brokers.push_back(make_broker(model::node_id(i)));
@@ -301,7 +316,9 @@ struct raft_group {
           _storage_type,
           [this, node_id](raft::leadership_status st) {
               election_callback(node_id, st);
-          });
+          },
+          _cleanup_policy,
+          _segment_size);
         it->second.start();
     }
 
@@ -322,7 +339,9 @@ struct raft_group {
           _storage_type,
           [this, node_id](raft::leadership_status st) {
               election_callback(node_id, st);
-          });
+          },
+          _cleanup_policy,
+          _segment_size);
         it->second.start();
 
         for (auto& [_, n] : _members) {
@@ -400,6 +419,8 @@ struct raft_group {
 
     uint32_t get_elections_count() const { return _elections_count; }
 
+    const ss::sstring& get_data_dir() const { return _storage_dir; }
+
 private:
     uint16_t base_port = 35000;
     raft::group_id _id;
@@ -410,6 +431,8 @@ private:
     uint32_t _elections_count{0};
     storage::log_config::storage_type _storage_type;
     ss::sstring _storage_dir;
+    model::cleanup_policy_bitflags _cleanup_policy;
+    size_t _segment_size;
 };
 
 struct raft_test_fixture {
