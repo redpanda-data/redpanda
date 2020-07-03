@@ -19,8 +19,9 @@ batch_consumer::consume_result skipping_consumer::consume_batch_start(
   size_t /*physical_base_offset*/,
   size_t /*size_on_disk*/) {
     // check for holes in the offset range on disk
+    // skip check for compacted logs
     if (unlikely(
-          _expected_next_batch() >= 0
+          !_reader._seg.is_compacted_segment() && _expected_next_batch() >= 0
           && header.base_offset != _expected_next_batch)) {
         throw std::runtime_error(fmt::format(
           "hole encountered reading from disk log: "
