@@ -1,8 +1,10 @@
 #include "storage/tests/utils/disk_log_builder.h"
 
+#include "storage/disk_log_appender.h"
 #include "storage/types.h"
 
 #include <seastar/core/file.hh>
+#include <seastar/core/future-util.hh>
 #include <seastar/core/thread.hh>
 
 using namespace std::chrono_literals; // NOLINT
@@ -118,9 +120,17 @@ const log_config& disk_log_builder::get_log_config() const {
 ss::future<> disk_log_builder::write(
   ss::circular_buffer<model::record_batch> buff,
   const log_append_config& config) {
+    if (buff.empty()) {
+        return ss::now();
+    }
+    auto base_offset = buff.front().base_offset();
     auto reader = model::make_memory_record_batch_reader(std::move(buff));
+    // we do not use the log::make_appender method to be able to controll the
+    // appender base offset and insert holes into the log
+    disk_log_appender appender(
+      get_disk_log_impl(), config, log_clock::now(), base_offset);
     return std::move(reader)
-      .for_each_ref(_log->make_appender(config), config.timeout)
+      .for_each_ref(std::move(appender), config.timeout)
       .then([this](auto) { return _log->flush(); });
 }
 
