@@ -136,7 +136,7 @@ public:
             if constexpr (size == 1) {
                 start().get();
             } else if constexpr (size == 2) {
-                start(std::get<1>(args)).get();
+                start(std::move(std::get<1>(args))).get();
             }
         } else if constexpr (std::is_same_v<type, stop_tag>) {
             stop().get();
@@ -235,6 +235,7 @@ public:
       model::record_batch batch, log_append_config config = append_config());
     //  Log managment
     ss::future<> start(model::ntp ntp = log_builder_ntp());
+    ss::future<> start(storage::ntp_config);
     ss::future<> stop();
 
     // Low lever interface access

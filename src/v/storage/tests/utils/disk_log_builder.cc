@@ -53,9 +53,13 @@ ss::future<> disk_log_builder::add_batch(
 }
 // Log managment
 ss::future<> disk_log_builder::start(model::ntp ntp) {
-    return _storage.start().then([this, ntp = std::move(ntp)]() mutable {
+    return start(ntp_config(std::move(ntp), get_log_config().base_dir));
+}
+
+ss::future<> disk_log_builder::start(storage::ntp_config cfg) {
+    return _storage.start().then([this, cfg = std::move(cfg)]() mutable {
         return _storage.log_mgr()
-          .manage(ntp_config(std::move(ntp), get_log_config().base_dir))
+          .manage(std::move(cfg))
           .then([this](storage::log log) { _log = log; });
     });
 }
