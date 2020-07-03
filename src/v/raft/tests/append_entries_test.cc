@@ -380,3 +380,103 @@ FIXTURE_TEST(test_compacted_log_recovery, raft_test_fixture) {
 
     validate_logs_replication(gr);
 };
+
+/**
+ * Makes compactible batches, having one record per batch
+ */
+model::record_batch_reader make_compactible_batches(int keys, size_t batches) {
+    ss::circular_buffer<model::record_batch> ret;
+    for (size_t b = 0; b < batches; b++) {
+        int k = random_generators::get_int(0, keys);
+        storage::record_batch_builder builder(
+          raft::data_batch_type, model::offset(0));
+        iobuf k_buf;
+        iobuf v_buf;
+        ss::sstring k_str = fmt::format("key-{}", k);
+        ss::sstring v_str = fmt::format("key-{}-value-{}", k, b);
+        reflection::serialize(k_buf, k_str);
+        reflection::serialize(v_buf, v_str);
+        builder.add_raw_kv(std::move(k_buf), std::move(v_buf));
+        ret.push_back(std::move(builder).build());
+    }
+    return model::make_memory_record_batch_reader(std::move(ret));
+}
+
+// TODO: enable when we fix recovery of prefix truncated logs
+#if 0
+/**
+ *
+ * This test is testing a case where there is a gap between start of leader log
+ * and end of the follower log.
+ *
+ * Example situation:
+ *
+ * Leader log: |-------------gap------------|[53,60][61,70][71,100]...
+ *
+ * Follower log: [0,10][11,20][21,40]
+ *
+ * Expected outcome:
+ *
+ * Follower log gets prefix truncated and recovered with leader log
+ *
+ */
+FIXTURE_TEST(test_collected_log_recovery, raft_test_fixture) {
+    raft_group gr = raft_group(
+      raft::group_id(0),
+      3,
+      storage::log_config::storage_type::disk,
+      model::cleanup_policy_bitflags::deletion,
+      1_KiB);
+
+    gr.enable_all();
+    auto leader_id = wait_for_group_leader(gr);
+    model::node_id disabled_id;
+    auto leader_raft = gr.get_member(leader_id).consensus;
+    ss::abort_source as;
+
+    // append some entries
+    auto res = leader_raft
+                 ->replicate(
+                   make_compactible_batches(3, 50), default_replicate_opts)
+                 .get0();
+
+    // disable one of the non leader nodes
+    for (auto& [id, _] : gr.get_members()) {
+        if (leader_id != id) {
+            disabled_id = id;
+            gr.disable_node(id);
+            break;
+        }
+    }
+    auto ts = model::timestamp::now();
+    // append some more entries
+    res = leader_raft
+            ->replicate(make_compactible_batches(3, 20), default_replicate_opts)
+            .get0();
+
+    validate_logs_replication(gr);
+
+    // compact log at the leader
+    info("Compacting log of node: {}", leader_id);
+    gr.get_member(leader_id)
+      .log
+      ->compact(storage::compaction_config(
+        ts,
+        100_MiB,
+        ss::default_priority_class(),
+        as,
+        storage::debug_sanitize_files::yes))
+      .get0();
+
+    gr.enable_node(disabled_id);
+
+    validate_logs_replication(gr);
+
+    wait_for(
+      10s,
+      [this, &gr] { return are_all_commit_indexes_the_same(gr); },
+      "After recovery state is consistent");
+
+    validate_logs_replication(gr);
+};
+#endif
