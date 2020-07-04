@@ -85,7 +85,7 @@ partition_allocator::allocate_replicas(int16_t replication_factor) {
 }
 
 // FIXME: take into account broker.rack diversity & other constraints
-std::optional<std::vector<partition_assignment>>
+std::optional<partition_allocator::allocation_units>
 partition_allocator::allocate(const topic_configuration& cfg) {
     if (_available_machines.empty()) {
         return std::nullopt;
@@ -108,8 +108,6 @@ partition_allocator::allocate(const topic_configuration& cfg) {
     std::vector<partition_assignment> ret;
     ret.reserve(cfg.partition_count);
     for (int32_t i = 0; i < cfg.partition_count; ++i) {
-        auto ntp = model::ntp(
-          cfg.tp_ns.ns, cfg.tp_ns.tp, model::partition_id(i));
         // all replicas must belong to the same raft group
         raft::group_id partition_group = raft::group_id(_highest_group() + 1);
         auto replicas_assignment = allocate_replicas(cfg.replication_factor);
@@ -120,12 +118,12 @@ partition_allocator::allocate(const topic_configuration& cfg) {
 
         partition_assignment p_as{
           .group = partition_group,
-          .ntp = std::move(ntp),
+          .id = model::partition_id(i),
           .replicas = std::move(*replicas_assignment)};
         ret.push_back(std::move(p_as));
         _highest_group = partition_group;
     }
-    return ret;
+    return allocation_units(ret, this);
 }
 
 void partition_allocator::deallocate(const model::broker_shard& bs) {
@@ -143,7 +141,7 @@ void partition_allocator::deallocate(const model::broker_shard& bs) {
 }
 
 void partition_allocator::update_allocation_state(
-  std::vector<model::topic_metadata> metadata) {
+  std::vector<model::topic_metadata> metadata, raft::group_id gid) {
     if (metadata.empty()) {
         return;
     }
@@ -157,9 +155,17 @@ void partition_allocator::update_allocation_state(
               std::back_inserter(shards));
         }
     }
+    update_allocation_state(shards, gid);
+}
 
-    // We can use non stable sort algorithm as we do not need to preserver the
-    // order of shards
+void partition_allocator::update_allocation_state(
+  std::vector<model::broker_shard> shards, raft::group_id group_id) {
+    if (shards.empty()) {
+        return;
+    }
+    _highest_group = std::max(_highest_group, group_id);
+    // We can use non stable sort algorithm as we do not need to preserver
+    // the order of shards
     std::sort(
       shards.begin(),
       shards.end(),

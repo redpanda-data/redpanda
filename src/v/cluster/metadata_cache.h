@@ -1,5 +1,8 @@
 #pragma once
 
+#include "cluster/members_table.h"
+#include "cluster/partition_leaders_table.h"
+#include "cluster/topic_table.h"
 #include "cluster/types.h"
 #include "model/metadata.h"
 #include "model/timestamp.h"
@@ -7,46 +10,43 @@
 #include "utils/expiring_promise.h"
 
 #include <seastar/core/future.hh>
+#include <seastar/core/sharded.hh>
 
 #include <absl/container/flat_hash_map.h>
 
 namespace cluster {
 
-/// The metadata cache keep tracks of all topics and brokers metadata in the
-/// system it is updated by the controller basing on raft-0 state updates
-/// delivered through append entries & leadership notifications. The metadata
-/// cache never expires. Metadata are removed from the cache every time the
-/// topic is removed or cluster member is decommissioned. In current
-/// architecture metada cache contains the *whole copy* of metadata on *every
-/// core*
+/// Metadata cache provides all informationrequired to fill Kafka metadata
+/// response. metadata dissemination service. MetadataCache is the facade over
+/// cluster state distributed in separate components. The metadata cache
+/// core-affinity is independent from the actual state location as the Metadata
+/// cache facade, for simplicity, is instantiated on every core.
+/// MetadaCache itself does not hold any state
+///```plain
 ///
-/// +-Core 0-------------+  +-Core 1-------------+     +-Core n-------------+
-/// |  +--------------+  |  |  +--------------+  |     |  +--------------+  |
-/// |  |   Metadata   |  |  |  |   Metadata   |  | ... |  |   Metadata   |  |
-/// |  |    Cache     |  |  |  |    Cache     |  |     |  |    Cache     |  |
-/// |  +--------------+  |  |  +--------------+  |     |  +--------------+  |
-/// +--------------------+  +--------------------+     +--------------------+
-
+///   Kafka API                  Kafka Proxy
+///       +                           +
+///       |                           |
+///       |                           |
+///       |                           |
+///       |                           |
+/// +-----v---------------------------v--------+
+/// |                                          |
+/// |         Metadata Cache (facade)          |
+/// |                                          |
+/// +----+-------------+----------------+------+
+///      |             |                |
+/// +----v----+   +----v-----+    +-----v------+
+/// | Members |   |  Topics  |    |  Leaders   |
+/// +---------+   +----------+    +------------+
 class metadata_cache {
 public:
-    // struct holding the cache content
-    struct partition {
-        model::partition_metadata p_md;
-        model::term_id term_id{};
-    };
-    struct topic_metadata {
-        topic_configuration configuration;
-        std::vector<partition> partitions;
-    };
-    using broker_cache_t = absl::flat_hash_map<model::node_id, broker_ptr>;
-    using cache_t = absl::flat_hash_map<
-      model::topic_namespace,
-      topic_metadata,
-      model::topic_namespace_hash,
-      model::topic_namespace_eq>;
+    metadata_cache(
+      ss::sharded<topic_table>&,
+      ss::sharded<members_table>&,
+      ss::sharded<partition_leaders_table>&);
 
-    metadata_cache() = default;
-    ss::future<> stop();
+    ss::future<> stop() { return ss::now(); }
 
     /// Returns list of all topics that exists in the cluster.
     std::vector<model::topic_namespace> all_topics() const;
@@ -82,41 +82,10 @@ public:
     /// broker can change
     std::optional<broker_ptr> get_broker(model::node_id) const;
 
-    /// Constructs the cache from the content of vector containing available
-    /// brokers
-    void update_brokers_cache(std::vector<model::broker>&&);
-
-    ///\brief Add empty model::topic_metadata entry to cache
-    ///
-    /// This api is used when controller is recovering (or is notified)
-    /// topic_configuration record type
-    void add_topic(cluster::topic_configuration);
-
-    ///\brief Removes the topic from cache
-    ///
-    /// Not yet used by the controller as removing topics is not yet supported
-    void remove_topic(model::topic_namespace_view);
-
-    ///\brief Updates the assignment of topic partion
-    ///
-    /// It is used by the controller when processing partition_assignment record
-    /// types
-    void update_partition_assignment(const partition_assignment&);
-
-    ///\brief Updates leader of topic partition.
-    ///
-    /// It is not yet used by the controller, it will be used when controller
-    /// will process leadership change notifications
-    void update_partition_leader(
-      const model::ntp& ntp, model::term_id, std::optional<model::node_id>);
-
     bool contains(model::topic_namespace_view, model::partition_id) const;
 
     /// Returns metadata of all topics in cache internal format
-    const cache_t& all_metadata() const { return _cache; }
-
-    /// Directly inserts topic_metadata
-    void insert_topic(model::topic_metadata, topic_configuration);
+    // const cache_t& all_metadata() const { return _cache; }
 
     /**
      * Return the leader of a partition with a timeout.
@@ -130,24 +99,12 @@ public:
       ss::lowres_clock::time_point,
       std::optional<std::reference_wrapper<ss::abort_source>> = std::nullopt);
 
+    /// If present returns a leader of raft0 group
+    std::optional<model::node_id> get_controller_leader_id();
+
 private:
-    broker_cache_t _brokers_cache;
-    cache_t _cache;
-    cache_t::iterator find_topic_metadata(model::topic_namespace_view);
-
-    // per-ntp notifications for leadership election. note that the namespace is
-    // currently ignored pending an update to the metadata cache that attaches a
-    // namespace to all topics partition references.
-    absl::
-      flat_hash_map<model::ntp, std::vector<expiring_promise<model::node_id>>>
-        _leader_promises;
+    ss::sharded<topic_table>& _topics_state;
+    ss::sharded<members_table>& _members_table;
+    ss::sharded<partition_leaders_table>& _leaders;
 };
-
-model::topic_metadata
-create_topic_metadata(const metadata_cache::cache_t::value_type&);
-
-/// Looks for partition with requested id in topic_metadata type.
-metadata_cache::partition*
-find_partition(metadata_cache::topic_metadata&, model::partition_id);
-
 } // namespace cluster

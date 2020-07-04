@@ -1,29 +1,34 @@
 #include "cluster/service.h"
 
-#include "cluster/controller.h"
+#include "cluster/members_manager.h"
 #include "cluster/metadata_cache.h"
+#include "cluster/topics_frontend.h"
 #include "cluster/types.h"
+
+#include <seastar/core/sharded.hh>
 
 namespace cluster {
 service::service(
   ss::scheduling_group sg,
   ss::smp_service_group ssg,
-  ss::sharded<controller>& c,
+  ss::sharded<topics_frontend>& tf,
+  ss::sharded<members_manager>& mm,
   ss::sharded<metadata_cache>& cache)
   : controller_service(sg, ssg)
-  , _controller(c)
+  , _topics_frontend(tf)
+  , _members_manager(mm)
   , _md_cache(cache) {}
 
 ss::future<join_reply>
 service::join(join_request&& req, rpc::streaming_context&) {
     return ss::with_scheduling_group(
       get_scheduling_group(), [this, broker = std::move(req.node)]() mutable {
-          return _controller
+          return _members_manager
             .invoke_on(
-              controller::shard,
+              members_manager::shard,
               get_smp_service_group(),
-              [broker = std::move(broker)](controller& c) mutable {
-                  return c.process_join_request(std::move(broker));
+              [broker = std::move(broker)](members_manager& mm) mutable {
+                  return mm.handle_join_request(std::move(broker));
               })
             .then([](result<join_reply> r) {
                 if (!r) {
@@ -37,22 +42,17 @@ service::join(join_request&& req, rpc::streaming_context&) {
 ss::future<create_topics_reply>
 service::create_topics(create_topics_request&& r, rpc::streaming_context&) {
     return ss::with_scheduling_group(
-      get_scheduling_group(), [this, r = std::move(r)]() mutable {
-          return _controller
-            .invoke_on(
-              controller::shard,
-              get_smp_service_group(),
-              [r = std::move(r)](controller& c) mutable {
-                  return c.create_topics(
-                    std::move(r.topics),
-                    model::timeout_clock::now() + r.timeout);
-              })
-            .then([this](std::vector<topic_result> res) {
-                // Fetch metadata for successfully created topics
-                auto [md, cfg] = fetch_metadata_and_cfg(res);
-                return create_topics_reply{
-                  std::move(res), std::move(md), std::move(cfg)};
-            });
+             get_scheduling_group(),
+             [this, r = std::move(r)]() mutable {
+                 return _topics_frontend.local().create_topics(
+                   std::move(r.topics),
+                   model::timeout_clock::now() + r.timeout);
+             })
+      .then([this](std::vector<topic_result> res) {
+          // Fetch metadata for successfully created topics
+          auto [md, cfg] = fetch_metadata_and_cfg(res);
+          return create_topics_reply{
+            std::move(res), std::move(md), std::move(cfg)};
       });
 }
 

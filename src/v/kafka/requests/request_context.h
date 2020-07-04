@@ -1,6 +1,6 @@
 #pragma once
 #include "bytes/iobuf.h"
-#include "cluster/controller.h"
+#include "cluster/topics_frontend.h"
 #include "kafka/groups/coordinator_ntp_mapper.h"
 #include "kafka/groups/group_manager.h"
 #include "kafka/groups/group_router.h"
@@ -22,8 +22,6 @@ class metadata_cache;
 
 namespace kafka {
 using group_router_type = kafka::group_router<kafka::group_manager>;
-
-class controller_dispatcher;
 
 // Fields may not be byte-aligned since we work
 // with the underlying network buffer.
@@ -56,7 +54,7 @@ class request_context {
 public:
     request_context(
       ss::sharded<cluster::metadata_cache>& metadata_cache,
-      controller_dispatcher& cntrl_dispatcher,
+      cluster::topics_frontend& topics_frontend,
       request_header&& header,
       iobuf&& request,
       ss::lowres_clock::duration throttle_delay,
@@ -65,7 +63,7 @@ public:
       ss::sharded<cluster::partition_manager>& partition_manager,
       ss::sharded<coordinator_ntp_mapper>& coordinator_mapper) noexcept
       : _metadata_cache(&metadata_cache)
-      , _cntrl_dispatcher(&cntrl_dispatcher)
+      , _topics_frontend(&topics_frontend)
       , _header(std::move(header))
       , _reader(std::move(request))
       , _throttle_delay(throttle_delay)
@@ -78,7 +76,7 @@ public:
     ~request_context() noexcept = default;
     request_context(request_context&& o) noexcept
       : _metadata_cache(o._metadata_cache)
-      , _cntrl_dispatcher(o._cntrl_dispatcher)
+      , _topics_frontend(o._topics_frontend)
       , _header(std::move(o._header))
       , _reader(std::move(o._reader))
       , _throttle_delay(o._throttle_delay)
@@ -108,8 +106,8 @@ public:
         return _metadata_cache->local();
     }
 
-    controller_dispatcher& cntrl_dispatcher() const {
-        return *_cntrl_dispatcher;
+    cluster::topics_frontend& topics_frontend() const {
+        return *_topics_frontend;
     }
 
     int32_t throttle_delay_ms() const {
@@ -151,7 +149,7 @@ public:
 
 private:
     ss::sharded<cluster::metadata_cache>* _metadata_cache;
-    controller_dispatcher* _cntrl_dispatcher;
+    cluster::topics_frontend* _topics_frontend;
     request_header _header;
     request_reader _reader;
     ss::lowres_clock::duration _throttle_delay;

@@ -1,5 +1,6 @@
 #pragma once
 #include "cluster/controller_service.h"
+#include "cluster/topics_frontend.h"
 #include "cluster/types.h"
 
 #include <seastar/core/sharded.hh>
@@ -7,7 +8,8 @@
 #include <vector>
 
 namespace cluster {
-class controller;
+class members_manager;
+class topics_frontend;
 class metadata_cache;
 
 class service : public controller_service {
@@ -15,7 +17,8 @@ public:
     service(
       ss::scheduling_group,
       ss::smp_service_group,
-      ss::sharded<controller>&,
+      ss::sharded<topics_frontend>&,
+      ss::sharded<members_manager>&,
       ss::sharded<metadata_cache>&);
 
     virtual ss::future<join_reply>
@@ -29,7 +32,8 @@ private:
       pair<std::vector<model::topic_metadata>, std::vector<topic_configuration>>
       fetch_metadata_and_cfg(const std::vector<topic_result>&);
 
-    ss::sharded<controller>& _controller;
+    ss::sharded<topics_frontend>& _topics_frontend;
+    ss::sharded<members_manager>& _members_manager;
     ss::sharded<metadata_cache>& _md_cache;
 };
 } // namespace cluster

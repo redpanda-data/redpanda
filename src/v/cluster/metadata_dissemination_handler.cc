@@ -4,6 +4,7 @@
 #include "cluster/logger.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/metadata_dissemination_types.h"
+#include "cluster/partition_leaders_table.h"
 #include "likely.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -14,9 +15,9 @@ namespace cluster {
 metadata_dissemination_handler::metadata_dissemination_handler(
   ss::scheduling_group sg,
   ss::smp_service_group ssg,
-  ss::sharded<metadata_cache>& mc)
+  ss::sharded<partition_leaders_table>& leaders)
   : metadata_dissemination_rpc_service(sg, ssg)
-  , _md_cache(mc) {}
+  , _leaders(leaders) {}
 
 ss::future<update_leadership_reply>
 metadata_dissemination_handler::update_leadership(
@@ -30,29 +31,32 @@ metadata_dissemination_handler::update_leadership(
 ss::future<update_leadership_reply>
 metadata_dissemination_handler::do_update_leadership(
   update_leadership_request&& req) {
-    return _md_cache
-      .invoke_on_all([req = std::move(req)](metadata_cache& cache) mutable {
-          for (auto& leader : req.leaders) {
-              cache.update_partition_leader(
-                leader.ntp, leader.term, leader.leader_id);
-          }
-      })
+    return _leaders
+      .invoke_on_all(
+        [req = std::move(req)](partition_leaders_table& pl) mutable {
+            for (auto& leader : req.leaders) {
+                pl.update_partition_leader(
+                  leader.ntp, leader.term, leader.leader_id);
+            }
+        })
       .then([] { return ss::make_ready_future<update_leadership_reply>(); });
 }
 
 static get_leadership_reply
-make_get_leadership_reply(const metadata_cache& cache) {
-    auto all_md = cache.all_metadata();
-    ntp_leaders leaders;
-    for (auto& [tp_ns, md] : all_md) {
-        for (auto& p : md.partitions) {
-            leaders.emplace_back(ntp_leader{
-              .ntp = model::ntp(tp_ns.ns, tp_ns.tp, p.p_md.id),
-              .term = p.term_id,
-              .leader_id = p.p_md.leader_node});
-        }
-    }
-    return get_leadership_reply{std::move(leaders)};
+make_get_leadership_reply(const partition_leaders_table& leaders) {
+    ntp_leaders ret;
+    leaders.for_each_leader([&ret](
+                              model::topic_namespace_view tp_ns,
+                              model::partition_id pid,
+                              std::optional<model::node_id> leader,
+                              model::term_id term) mutable {
+        ret.emplace_back(ntp_leader{
+          .ntp = model::ntp(tp_ns.ns, tp_ns.tp, pid),
+          .term = term,
+          .leader_id = leader});
+    });
+
+    return get_leadership_reply{std::move(ret)};
 }
 
 ss::future<get_leadership_reply> metadata_dissemination_handler::get_leadership(
@@ -60,7 +64,7 @@ ss::future<get_leadership_reply> metadata_dissemination_handler::get_leadership(
     return ss::with_scheduling_group(
       get_scheduling_group(), [this, req = std::move(req)]() mutable {
           return ss::make_ready_future<get_leadership_reply>(
-            make_get_leadership_reply(_md_cache.local()));
+            make_get_leadership_reply(_leaders.local()));
       });
 }
 
