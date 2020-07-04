@@ -2,7 +2,7 @@
 
 #include "cluster/partition_manager.h"
 #include "cluster/shard_table.h"
-#include "kafka/controller_dispatcher.h"
+#include "cluster/topics_frontend.h"
 #include "kafka/groups/group_router.h"
 #include "kafka/quota_manager.h"
 #include "kafka/requests/request_context.h"
@@ -29,7 +29,6 @@ class metadata_cache;
 
 namespace kafka {
 struct request_header;
-class controller_dispatcher;
 } // namespace kafka
 
 namespace kafka {
@@ -46,7 +45,7 @@ public:
     protocol(
       ss::smp_service_group,
       ss::sharded<cluster::metadata_cache>&,
-      ss::sharded<controller_dispatcher>&,
+      ss::sharded<cluster::topics_frontend>&,
       ss::sharded<quota_manager>&,
       ss::sharded<kafka::group_router_type>&,
       ss::sharded<cluster::shard_table>&,
@@ -107,7 +106,7 @@ private:
     ss::smp_service_group _smp_group;
 
     // services needed by kafka proto
-    ss::sharded<controller_dispatcher>& _cntrl_dispatcher;
+    ss::sharded<cluster::topics_frontend>& _topics_frontend;
     ss::sharded<cluster::metadata_cache>& _metadata_cache;
     ss::sharded<quota_manager>& _quota_mgr;
     ss::sharded<kafka::group_router_type>& _group_router;

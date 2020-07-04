@@ -2,7 +2,9 @@
 #include "cluster/namespace.h"
 #include "cluster/types.h"
 #include "kafka/client.h"
+#include "kafka/requests/topics/topic_utils.h"
 #include "model/metadata.h"
+#include "model/timeout_clock.h"
 #include "redpanda/application.h"
 #include "storage/directories.h"
 #include "storage/tests/utils/disk_log_builder.h"
@@ -54,8 +56,13 @@ public:
     }
 
     ss::future<> wait_for_controller_leadership() {
-        return app.cntrl_dispatcher.local().dispatch_to_controller(
-          [](cluster::controller& c) { return c.wait_for_leadership(); });
+        return app.controller->get_partition_leaders()
+          .local()
+          .wait_for_leader(
+            cluster::controller_ntp,
+            ss::lowres_clock::now() + std::chrono::seconds(10),
+            {})
+          .discard_result();
     }
 
     ss::future<kafka::client> make_kafka_client() {
@@ -84,8 +91,15 @@ public:
     ss::future<> add_topic(model::topic_namespace_view tp_ns) {
         std::vector<cluster::topic_configuration> cfgs{
           cluster::topic_configuration(tp_ns.ns, tp_ns.tp, 1, 1)};
-        return app.controller.local()
+        return app.controller->get_topics_frontend()
+          .local()
           .create_topics(std::move(cfgs), model::no_timeout)
+          .then([this](std::vector<cluster::topic_result> results) {
+              return kafka::wait_for_leaders(
+                app.metadata_cache.local(),
+                std::move(results),
+                model::no_timeout);
+          })
           .discard_result();
     }
 

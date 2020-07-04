@@ -63,7 +63,7 @@ get_request_context(application& app, ss::input_stream<char>&& input) {
                              */
                             return kafka::request_context(
                               app.metadata_cache,
-                              app.cntrl_dispatcher.local(),
+                              app.controller->get_topics_frontend().local(),
                               std::move(header),
                               std::move(buf),
                               std::chrono::milliseconds(0),

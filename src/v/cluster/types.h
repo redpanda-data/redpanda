@@ -21,16 +21,6 @@ namespace cluster {
 static constexpr model::record_batch_type controller_record_batch_type{3};
 using consensus_ptr = ss::lw_shared_ptr<raft::consensus>;
 using broker_ptr = ss::lw_shared_ptr<model::broker>;
-struct log_record_key {
-    enum class type : int8_t {
-        partition_assignment,
-        topic_configuration,
-        checkpoint,
-        topic_deletion,
-    };
-
-    type record_type;
-};
 
 /// Join request sent by node to join raft-0
 struct join_request {
@@ -47,11 +37,11 @@ struct join_reply {
 /// The replicas are hold in vector of broker_shard.
 struct partition_assignment {
     raft::group_id group;
-    model::ntp ntp;
+    model::partition_id id;
     std::vector<model::broker_shard> replicas;
 
     model::partition_metadata create_partition_metadata() const {
-        auto p_md = model::partition_metadata(ntp.tp.partition);
+        auto p_md = model::partition_metadata(id);
         p_md.replicas = replicas;
         return p_md;
     }
@@ -93,6 +83,18 @@ struct topic_configuration {
     friend std::ostream& operator<<(std::ostream&, const topic_configuration&);
 };
 
+struct topic_configuration_assignment {
+    topic_configuration_assignment(
+      topic_configuration cfg, std::vector<partition_assignment> pas)
+      : cfg(std::move(cfg))
+      , assignments(std::move(pas)) {}
+
+    topic_configuration cfg;
+    std::vector<partition_assignment> assignments;
+
+    model::topic_metadata get_metadata() const;
+};
+
 struct topic_result {
     explicit topic_result(model::topic_namespace t, errc ec = errc::success)
       : tp_ns(std::move(t))
@@ -100,13 +102,6 @@ struct topic_result {
     model::topic_namespace tp_ns;
     errc ec;
     friend std::ostream& operator<<(std::ostream& o, const topic_result& r);
-};
-
-/// Structure representing difference between two set of brokers.
-/// It is used to represent changes that have to be applied to raft client cache
-struct brokers_diff {
-    std::vector<broker_ptr> updated;
-    std::vector<broker_ptr> removed;
 };
 
 struct create_topics_request {
@@ -118,6 +113,14 @@ struct create_topics_reply {
     std::vector<topic_result> results;
     std::vector<model::topic_metadata> metadata;
     std::vector<topic_configuration> configs;
+};
+
+template<typename T>
+struct patch {
+    std::vector<T> additions;
+    std::vector<T> deletions;
+
+    bool empty() const { return additions.empty() && deletions.empty(); }
 };
 
 // generic type used for various registration handles such as in ntp_callbacks.h
@@ -167,6 +170,11 @@ struct adl<cluster::create_topics_reply> {
     void to(iobuf&, cluster::create_topics_reply&&);
     cluster::create_topics_reply from(iobuf);
     cluster::create_topics_reply from(iobuf_parser&);
+};
+template<>
+struct adl<cluster::topic_configuration_assignment> {
+    void to(iobuf&, cluster::topic_configuration_assignment&&);
+    cluster::topic_configuration_assignment from(iobuf_parser&);
 };
 
 } // namespace reflection

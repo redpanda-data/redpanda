@@ -142,7 +142,7 @@ static kafka::request_context make_request_context(application& app) {
     kafka::request_header header;
     auto encoder_context = kafka::request_context(
       app.metadata_cache,
-      app.cntrl_dispatcher.local(),
+      app.controller->get_topics_frontend().local(),
       std::move(header),
       iobuf(),
       std::chrono::milliseconds(0),
@@ -158,7 +158,7 @@ static kafka::request_context make_request_context(application& app) {
 
     return kafka::request_context(
       app.metadata_cache,
-      app.cntrl_dispatcher.local(),
+      app.controller->get_topics_frontend().local(),
       std::move(header),
       std::move(buf),
       std::chrono::milliseconds(0),

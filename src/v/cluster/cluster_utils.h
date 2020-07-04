@@ -15,7 +15,7 @@ namespace cluster {
 class metadata_cache;
 /// This method calculates the machine nodes that were updated/added
 /// and removed
-brokers_diff calculate_changed_brokers(
+patch<broker_ptr> calculate_changed_brokers(
   std::vector<broker_ptr> new_list, std::vector<broker_ptr> old_list);
 
 /// Creates the same topic_result for all requests
@@ -39,9 +39,6 @@ std::vector<topic_result> create_topic_results(
 
 std::vector<topic_result> create_topic_results(
   const std::vector<model::topic_namespace>& topics, errc error_code);
-
-std::vector<model::broker> get_replica_set_brokers(
-  const metadata_cache& md_cache, std::vector<model::broker_shard> replicas);
 
 ss::future<> update_broker_client(
   ss::sharded<rpc::connection_cache>&,
@@ -67,9 +64,6 @@ auto with_client(
             ss::this_shard_id(), id, std::forward<Func>(f));
       });
 }
-
-model::record_batch_reader
-make_deletion_batches(const std::vector<model::topic_namespace>&);
 
 /// Creates current broker instance using its configuration.
 model::broker make_self_broker(const config::configuration& cfg);

@@ -39,6 +39,26 @@ storage::ntp_config topic_configuration::make_ntp_config(
     return storage::ntp_config(model::ntp(tp_ns.ns, tp_ns.tp, p_id), work_dir);
 }
 
+model::topic_metadata topic_configuration_assignment::get_metadata() const {
+    model::topic_metadata ret(cfg.tp_ns);
+    ret.partitions.reserve(assignments.size());
+    std::transform(
+      std::cbegin(assignments),
+      std::cend(assignments),
+      std::back_inserter(ret.partitions),
+      [](const partition_assignment& pd) {
+          return pd.create_partition_metadata();
+      });
+
+    std::sort(
+      ret.partitions.begin(),
+      ret.partitions.begin(),
+      [](
+        const model::partition_metadata& a,
+        const model::partition_metadata& b) { return a.id < b.id; });
+    return ret;
+}
+
 std::ostream& operator<<(std::ostream& o, const topic_configuration& cfg) {
     fmt::print(
       o,
@@ -181,5 +201,20 @@ adl<model::timeout_clock::duration>::from(iobuf_parser& in) {
     // auto rp = adl<rep>{}.from(in);
     auto rp = adl<uint64_t>{}.from(in);
     return duration(rp);
+}
+
+void adl<cluster::topic_configuration_assignment>::to(
+  iobuf& b, cluster::topic_configuration_assignment&& assigned_cfg) {
+    reflection::serialize(
+      b, std::move(assigned_cfg.cfg), std::move(assigned_cfg.assignments));
+}
+
+cluster::topic_configuration_assignment
+adl<cluster::topic_configuration_assignment>::from(iobuf_parser& in) {
+    auto cfg = adl<cluster::topic_configuration>{}.from(in);
+    auto assignments = adl<std::vector<cluster::partition_assignment>>{}.from(
+      in);
+    return cluster::topic_configuration_assignment(
+      std::move(cfg), std::move(assignments));
 }
 } // namespace reflection

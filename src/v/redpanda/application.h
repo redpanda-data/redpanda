@@ -5,7 +5,6 @@
 #include "cluster/metadata_dissemination_service.h"
 #include "cluster/partition_manager.h"
 #include "config/configuration.h"
-#include "kafka/controller_dispatcher.h"
 #include "kafka/groups/coordinator_ntp_mapper.h"
 #include "kafka/groups/group_manager.h"
 #include "kafka/groups/group_router.h"
@@ -45,15 +44,14 @@ public:
 
     ss::sharded<cluster::metadata_cache> metadata_cache;
     ss::sharded<group_router_type> group_router;
-    ss::sharded<kafka::controller_dispatcher> cntrl_dispatcher;
     ss::sharded<cluster::shard_table> shard_table;
     ss::sharded<storage::api> storage;
     ss::sharded<cluster::partition_manager> partition_manager;
     ss::sharded<raft::group_manager> raft_group_manager;
     ss::sharded<cluster::metadata_dissemination_service>
       md_dissemination_service;
-    ss::sharded<cluster::controller> controller;
     ss::sharded<kafka::coordinator_ntp_mapper> coordinator_ntp_mapper;
+    std::unique_ptr<cluster::controller> controller;
 
 private:
     using deferred_actions
@@ -72,6 +70,11 @@ private:
         return f;
     }
 
+    template<typename Service, typename... Args>
+    void construct_single_service(std::unique_ptr<Service>& s, Args&&... args) {
+        s = std::make_unique<Service>(std::forward<Args>(args)...);
+        _deferred.emplace_back([&s] { s->stop().get(); });
+    }
     std::unique_ptr<ss::app_template> _app;
     scheduling_groups _scheduling_groups;
     smp_groups _smp_groups;
@@ -83,7 +86,6 @@ private:
     ss::sharded<ss::http_server> _admin;
     ss::sharded<kafka::quota_manager> _quota_mgr;
     ss::sharded<rpc::server> _kafka_server;
-
     // run these first on destruction
     deferred_actions _deferred;
 };

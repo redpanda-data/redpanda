@@ -33,13 +33,6 @@ rp_test(
 )
 rp_test(
   UNIT_TEST
-  BINARY_NAME metadata_cache_tests
-  SOURCES metadata_cache_tests.cc
-  LIBRARIES v::seastar_testing_main v::cluster
-  DEFINITIONS SEASTAR_TESTING_MAIN
-)
-rp_test(
-  UNIT_TEST
   BINARY_NAME cluster_utils_tests
   SOURCES cluster_utils_tests.cc
   LIBRARIES v::seastar_testing_main v::cluster
@@ -84,6 +77,27 @@ rp_test(
   UNIT_TEST
   BINARY_NAME controller_state_test
   SOURCES controller_state_test.cc
+  LIBRARIES v::seastar_testing_main v::application
+  DEFINITIONS SEASTAR_TESTING_MAIN
+)
+rp_test(
+  UNIT_TEST
+  BINARY_NAME commands_serialization_test
+  SOURCES commands_serialization_test.cc
+  LIBRARIES v::seastar_testing_main v::application
+  DEFINITIONS SEASTAR_TESTING_MAIN
+)
+rp_test(
+  UNIT_TEST
+  BINARY_NAME topic_table_test
+  SOURCES topic_table_test.cc
+  LIBRARIES v::seastar_testing_main v::application
+  DEFINITIONS SEASTAR_TESTING_MAIN
+)
+rp_test(
+  UNIT_TEST
+  BINARY_NAME topic_updates_dispatcher_test
+  SOURCES topic_updates_dispatcher_test.cc
   LIBRARIES v::seastar_testing_main v::application
   DEFINITIONS SEASTAR_TESTING_MAIN
 )

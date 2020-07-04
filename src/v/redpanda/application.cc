@@ -3,7 +3,10 @@
 #include "cluster/metadata_dissemination_handler.h"
 #include "cluster/metadata_dissemination_service.h"
 #include "cluster/service.h"
+#include "config/configuration.h"
+#include "config/seed_server.h"
 #include "kafka/protocol.h"
+#include "model/metadata.h"
 #include "platform/stop_signal.h"
 #include "raft/service.h"
 #include "rpc/simple_protocol.h"
@@ -17,12 +20,14 @@
 #include <seastar/core/prometheus.hh>
 #include <seastar/core/thread.hh>
 #include <seastar/http/api_docs.hh>
+#include <seastar/util/defer.hh>
 
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/writer.h>
 #include <sys/utsname.h>
 
 #include <chrono>
+#include <vector>
 
 int application::run(int ac, char** av) {
     init_env();
@@ -249,24 +254,29 @@ void application::wire_up_services() {
     vlog(_log.info, "Partition manager started");
 
     // controller
+
+    syschecks::systemd_message("Creating cluster::controller");
+
+    construct_single_service(
+      controller, _raft_connection_cache, partition_manager, shard_table);
+
+    controller->wire_up().get0();
     syschecks::systemd_message("Creating kafka metadata cache");
-    construct_service(metadata_cache).get();
+    construct_service(
+      metadata_cache,
+      std::ref(controller->get_topics_state()),
+      std::ref(controller->get_members_table()),
+      std::ref(controller->get_partition_leaders()))
+      .get();
+
     syschecks::systemd_message("Creating metadata dissemination service");
     construct_service(
       md_dissemination_service,
       std::ref(raft_group_manager),
       std::ref(partition_manager),
-      std::ref(metadata_cache),
-      std::ref(_raft_connection_cache))
-      .get();
-
-    syschecks::systemd_message("Creating cluster::controller");
-    construct_service(
-      controller,
-      std::ref(raft_group_manager),
-      std::ref(partition_manager),
-      std::ref(shard_table),
-      std::ref(metadata_cache),
+      std::ref(controller->get_partition_leaders()),
+      std::ref(controller->get_members_table()),
+      std::ref(controller->get_topics_state()),
       std::ref(_raft_connection_cache))
       .get();
 
@@ -293,15 +303,6 @@ void application::wire_up_services() {
     // metrics and quota management
     syschecks::systemd_message("Adding kafka quota manager");
     construct_service(_quota_mgr).get();
-
-    syschecks::systemd_message("Building kafka controller dispatcher");
-    construct_service(
-      cntrl_dispatcher,
-      std::ref(controller),
-      _smp_groups.kafka_smp_sg(),
-      _scheduling_groups.kafka_sg())
-      .get();
-
     // rpc
     rpc::server_configuration rpc_cfg;
     rpc_cfg.max_service_memory_per_core = memory_groups::rpc_total_memory();
@@ -338,7 +339,7 @@ void application::start() {
     _group_manager.invoke_on_all(&kafka::group_manager::start).get();
 
     syschecks::systemd_message("Starting controller");
-    controller.invoke_on_all(&cluster::controller::start).get();
+    controller->start().get0();
 
     // FIXME: in first patch explain why this is started after the controller so
     // the broker set will be available. Then next patch fix.
@@ -360,12 +361,13 @@ void application::start() {
           proto->register_service<cluster::service>(
             _scheduling_groups.cluster_sg(),
             _smp_groups.cluster_smp_sg(),
-            std::ref(controller),
+            std::ref(controller->get_topics_frontend()),
+            std::ref(controller->get_members_manager()),
             std::ref(metadata_cache));
           proto->register_service<cluster::metadata_dissemination_handler>(
             _scheduling_groups.cluster_sg(),
             _smp_groups.cluster_smp_sg(),
-            std::ref(metadata_cache));
+            std::ref(controller->get_partition_leaders()));
           s.set_protocol(std::move(proto));
       })
       .get();
@@ -381,7 +383,7 @@ void application::start() {
           auto proto = std::make_unique<kafka::protocol>(
             _smp_groups.kafka_smp_sg(),
             metadata_cache,
-            cntrl_dispatcher,
+            controller->get_topics_frontend(),
             _quota_mgr,
             group_router,
             shard_table,

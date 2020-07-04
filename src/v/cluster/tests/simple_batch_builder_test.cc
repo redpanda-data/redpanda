@@ -8,6 +8,17 @@
 
 #include <boost/test/unit_test.hpp>
 
+struct log_record_key {
+    enum class type : int8_t {
+        partition_assignment,
+        topic_configuration,
+        checkpoint,
+        topic_deletion,
+    };
+
+    type record_type;
+};
+
 cluster::partition_assignment create_test_assignment(uint32_t p, uint16_t rf) {
     std::vector<model::broker_shard> replicas;
     for (int i = 0; i < rf; i++) {
@@ -16,26 +27,23 @@ cluster::partition_assignment create_test_assignment(uint32_t p, uint16_t rf) {
 
     return cluster::partition_assignment{
       .group = raft::group_id(p),
-      .ntp = model::ntp(
-        model::ns("test"), model::topic("a_topic"), model::partition_id(p)),
+      .id = model::partition_id(p),
       .replicas = std::move(replicas)};
 }
 
 SEASTAR_THREAD_TEST_CASE(simple_batch_builder_batch_test) {
-    auto pa_key = cluster::log_record_key{
-      cluster::log_record_key::type::partition_assignment};
-    auto batch = std::move(
-                   cluster::simple_batch_builder(
-                     model::record_batch_type(3), model::offset(0))
-                     .add_kv(
-                       cluster::log_record_key{
-                         cluster::log_record_key::type::topic_configuration},
-                       cluster::topic_configuration(
-                         model::ns("test"), model::topic{"a_topic"}, 3, 1))
-                     .add_kv(pa_key, create_test_assignment(0, 1))
-                     .add_kv(pa_key, create_test_assignment(1, 1))
-                     .add_kv(pa_key, create_test_assignment(2, 1)))
-                   .build();
+    auto pa_key = log_record_key{log_record_key::type::partition_assignment};
+    auto batch
+      = std::move(cluster::simple_batch_builder(
+                    model::record_batch_type(3), model::offset(0))
+                    .add_kv(
+                      log_record_key{log_record_key::type::topic_configuration},
+                      cluster::topic_configuration(
+                        model::ns("test"), model::topic{"a_topic"}, 3, 1))
+                    .add_kv(pa_key, create_test_assignment(0, 1))
+                    .add_kv(pa_key, create_test_assignment(1, 1))
+                    .add_kv(pa_key, create_test_assignment(2, 1)))
+          .build();
 
     BOOST_REQUIRE_EQUAL(batch.record_count(), 4);
     BOOST_REQUIRE_EQUAL(batch.header().last_offset_delta, 3);
@@ -43,20 +51,18 @@ SEASTAR_THREAD_TEST_CASE(simple_batch_builder_batch_test) {
     BOOST_REQUIRE_EQUAL(batch.header().crc, model::crc_record_batch(batch));
 }
 SEASTAR_THREAD_TEST_CASE(round_trip_test) {
-    auto pa_key = cluster::log_record_key{
-      cluster::log_record_key::type::partition_assignment};
-    auto batch = std::move(
-                   cluster::simple_batch_builder(
-                     model::record_batch_type(3), model::offset(0))
-                     .add_kv(
-                       cluster::log_record_key{
-                         cluster::log_record_key::type::topic_configuration},
-                       cluster::topic_configuration(
-                         model::ns("test"), model::topic{"a_topic"}, 3, 1))
-                     .add_kv(pa_key, create_test_assignment(0, 1))
-                     .add_kv(pa_key, create_test_assignment(1, 1))
-                     .add_kv(pa_key, create_test_assignment(2, 1)))
-                   .build();
+    auto pa_key = log_record_key{log_record_key::type::partition_assignment};
+    auto batch
+      = std::move(cluster::simple_batch_builder(
+                    model::record_batch_type(3), model::offset(0))
+                    .add_kv(
+                      log_record_key{log_record_key::type::topic_configuration},
+                      cluster::topic_configuration(
+                        model::ns("test"), model::topic{"a_topic"}, 3, 1))
+                    .add_kv(pa_key, create_test_assignment(0, 1))
+                    .add_kv(pa_key, create_test_assignment(1, 1))
+                    .add_kv(pa_key, create_test_assignment(2, 1)))
+          .build();
     int32_t current_crc = batch.header().crc;
     ss::sstring base_dir = "test.dir_"
                            + random_generators::gen_alphanum_string(4);

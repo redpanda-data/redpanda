@@ -71,17 +71,15 @@ SEASTAR_THREAD_TEST_CASE(broker_metadata_rt_test) {
 }
 
 SEASTAR_THREAD_TEST_CASE(partition_assignment_rt_test) {
-    model::ntp test_ntp(
-      model::ns("test"), model::topic("topic"), model::partition_id(3));
     cluster::partition_assignment p_as{
       .group = raft::group_id(2),
-      .ntp = test_ntp,
+      .id = model::partition_id(3),
       .replicas = {{.node_id = model::node_id(0), .shard = 1}}};
 
     auto d = serialize_roundtrip_rpc(std::move(p_as));
 
     BOOST_REQUIRE_EQUAL(d.group, raft::group_id(2));
-    BOOST_REQUIRE_EQUAL(d.ntp, test_ntp);
+    BOOST_REQUIRE_EQUAL(d.id, model::partition_id(3));
     BOOST_REQUIRE_EQUAL(d.replicas.size(), 1);
     BOOST_REQUIRE_EQUAL(d.replicas[0].node_id(), 0);
     BOOST_REQUIRE_EQUAL(d.replicas[0].shard, 1);

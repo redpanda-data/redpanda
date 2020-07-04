@@ -7,6 +7,7 @@
 #include "cluster/metadata_dissemination_types.h"
 #include "cluster/metadata_dissemination_utils.h"
 #include "cluster/namespace.h"
+#include "cluster/partition_leaders_table.h"
 #include "config/configuration.h"
 #include "likely.h"
 #include "model/fundamental.h"
@@ -19,6 +20,7 @@
 #include "vlog.h"
 
 #include <seastar/core/abort_source.hh>
+#include <seastar/core/future-util.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/sleep.hh>
 
@@ -31,11 +33,15 @@ namespace cluster {
 metadata_dissemination_service::metadata_dissemination_service(
   ss::sharded<raft::group_manager>& raft_manager,
   ss::sharded<cluster::partition_manager>& partition_manager,
-  ss::sharded<metadata_cache>& mc,
+  ss::sharded<partition_leaders_table>& leaders,
+  ss::sharded<members_table>& members,
+  ss::sharded<topic_table>& topics,
   ss::sharded<rpc::connection_cache>& clients)
   : _raft_manager(raft_manager)
   , _partition_manager(partition_manager)
-  , _md_cache(mc)
+  , _leaders(leaders)
+  , _members_table(members)
+  , _topics(topics)
   , _clients(clients)
   , _self(config::shard_local_cfg().node_id)
   , _dissemination_interval(
@@ -84,7 +90,7 @@ ss::future<> metadata_dissemination_service::start() {
         return ss::make_ready_future<>();
     }
     // poll either seed servers or configuration
-    auto ids = _md_cache.local().all_broker_ids();
+    auto ids = _members_table.local().all_broker_ids();
     // use hash set to deduplicate ids
     absl::flat_hash_set<model::node_id> all_broker_ids;
     all_broker_ids.reserve(ids.size() + _seed_server_ids.size());
@@ -118,14 +124,6 @@ ss::future<> metadata_dissemination_service::start() {
 
 void metadata_dissemination_service::handle_leadership_notification(
   model::ntp ntp, model::term_id term, std::optional<model::node_id> lid) {
-    // this is a temporary solution to deal with the fact that we receive
-    // leadership notifications for partitions we do not register with the
-    // metadata cache.
-    //
-    // https://app.clubhouse.io/vectorized/story/435/create-kafka-only-metadata-cache
-    if (ntp == cluster::controller_ntp) {
-        return;
-    }
     (void)ss::with_gate(_bg, [this, ntp = std::move(ntp), lid, term]() mutable {
         return container().invoke_on(
           0,
@@ -143,9 +141,10 @@ ss::future<> metadata_dissemination_service::apply_leadership_notification(
       _bg, [this, ntp = std::move(ntp), lid, term]() mutable {
           // the lock sequences the updates from raft
           return _lock.with([this, ntp = std::move(ntp), lid, term]() mutable {
-              auto f = _md_cache.invoke_on_all(
-                [ntp, lid, term](metadata_cache& md) {
-                    md.update_partition_leader(ntp, term, lid);
+              // update partition leaders
+              auto f = _leaders.invoke_on_all(
+                [ntp, lid, term](partition_leaders_table& leaders) {
+                    leaders.update_partition_leader(ntp, term, lid);
                 });
               if (lid == _self) {
                   // only disseminate from current leader
@@ -216,11 +215,11 @@ ss::future<> metadata_dissemination_service::process_get_update_reply(
         return ss::make_ready_future<>();
     }
     // Update all NTP leaders
-    return _md_cache
+    return _leaders
       .invoke_on_all([reply = std::move(reply_result.value())](
-                       metadata_cache& cache) mutable {
+                       partition_leaders_table& leaders) mutable {
           for (auto& l : reply.leaders) {
-              cache.update_partition_leader(l.ntp, l.term, l.leader_id);
+              leaders.update_partition_leader(l.ntp, l.term, l.leader_id);
           }
       })
       .then([&meta] { meta.success = true; });
@@ -245,17 +244,13 @@ metadata_dissemination_service::dispatch_get_metadata_update(
 }
 
 void metadata_dissemination_service::collect_pending_updates() {
-    auto brokers = _md_cache.local().all_broker_ids();
+    auto brokers = _members_table.local().all_broker_ids();
     for (auto& ntp_leader : _requests) {
-        auto tp_md = _md_cache.local().get_topic_metadata(
+        auto tp_md = _topics.local().get_topic_metadata(
           model::topic_namespace_view(ntp_leader.ntp));
 
         if (!tp_md) {
             // Topic metadata is not there anymore, partition was removed
-            clusterlog.debug(
-              "Ignoring leadership dissemination for {}, metadata does not "
-              "exists",
-              ntp_leader.ntp);
             continue;
         }
         auto non_overlapping = calculate_non_overlapping_nodes(
