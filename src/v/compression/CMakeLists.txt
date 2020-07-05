@@ -1,6 +1,8 @@
 find_package(Zstd REQUIRED)
 find_package(LZ4 REQUIRED)
 find_package(Snappy REQUIRED)
+find_package(ZLIB REQUIRED)
+
 v_cc_library(
   NAME
     compression
@@ -12,11 +14,13 @@ v_cc_library(
     "stream_zstd.cc"
     "internal/snappy_compressor.cc"
     "internal/lz4_frame_compressor.cc"
+    "internal/gzip_compressor.cc"
   DEPS
     v::bytes
     Zstd::zstd
     LZ4::LZ4
     Snappy::snappy
+    ZLIB::ZLIB
   DEFINES
     -DZSTD_STATIC_LINKING_ONLY
 )

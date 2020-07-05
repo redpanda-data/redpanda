@@ -11,7 +11,7 @@ iobuf compressor::compress(const iobuf& io, type t) {
     case type::none:
         throw std::runtime_error("compressor: nothing to compress for 'none'");
     case type::gzip:
-        return internal::gzip::compress(io);
+        return internal::gzip_compressor::compress(io);
     case type::snappy:
         return internal::snappy_compressor::compress(io);
     case type::lz4:
@@ -31,7 +31,7 @@ iobuf compressor::uncompress(const iobuf& io, type t) {
         throw std::runtime_error(
           "compressor: nothing to uncompress for 'none'");
     case type::gzip:
-        return internal::gzip::uncompress(io);
+        return internal::gzip_compressor::uncompress(io);
     case type::snappy:
         return internal::snappy_compressor::uncompress(io);
     case type::lz4:
