@@ -17,10 +17,15 @@ public:
       // wrap ZSTD C API
       static_sized_deleter_fn<ZSTD_DCtx, &ZSTD_freeDCtx>>;
 
-    iobuf compress(iobuf);
-    iobuf uncompress(iobuf);
+    iobuf compress(const iobuf& b) { return do_compress(b); }
+    iobuf uncompress(const iobuf& b) { return do_uncompress(b); }
+    iobuf compress(iobuf&& b) { return do_compress(b); }
+    iobuf uncompress(iobuf&& b) { return do_uncompress(b); }
 
 private:
+    iobuf do_compress(const iobuf&);
+    iobuf do_uncompress(const iobuf&);
+
     void reset_compressor();
     void reset_decompressor();
     zstd_compress_ctx& compressor();
