@@ -1,3 +1,4 @@
+#include "compression/internal/gzip_compressor.h"
 #include "compression/internal/lz4_frame_compressor.h"
 #include "compression/internal/snappy_compressor.h"
 #include "compression/internal/zstd_compressor.h"
@@ -64,5 +65,9 @@ SEASTAR_THREAD_TEST_CASE(snapy_test) {
 }
 SEASTAR_THREAD_TEST_CASE(zstd_forward_test) {
     using fn = compression::internal::zstd_compressor;
+    roundtrip_compression(fn::compress, fn::uncompress);
+}
+SEASTAR_THREAD_TEST_CASE(gzip_test) {
+    using fn = compression::internal::gzip_compressor;
     roundtrip_compression(fn::compress, fn::uncompress);
 }
