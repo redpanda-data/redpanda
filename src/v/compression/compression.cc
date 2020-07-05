@@ -17,7 +17,7 @@ iobuf compressor::compress(const iobuf& io, type t) {
     case type::lz4:
         return internal::lz4_frame_compressor::compress(io);
     case type::zstd:
-        return internal::zstd::compress(io);
+        return internal::zstd_compressor::compress(io);
     }
     __builtin_unreachable();
 }
@@ -37,7 +37,7 @@ iobuf compressor::uncompress(const iobuf& io, type t) {
     case type::lz4:
         return internal::lz4_frame_compressor::uncompress(io);
     case type::zstd:
-        return internal::zstd::uncompress(io);
+        return internal::zstd_compressor::uncompress(io);
     }
     __builtin_unreachable();
 }

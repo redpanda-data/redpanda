@@ -1,13 +1,16 @@
 #pragma once
 #include "bytes/iobuf.h"
+#include "compression/stream_zstd.h"
 namespace compression::internal {
 
-struct zstd {
-    static iobuf compress(const iobuf&) {
-        throw std::runtime_error("not implemented");
+struct zstd_compressor {
+    static iobuf compress(const iobuf& b) {
+        stream_zstd fn;
+        return fn.compress(b);
     }
-    static iobuf uncompress(const iobuf&) {
-        throw std::runtime_error("not implemented");
+    static iobuf uncompress(const iobuf& b) {
+        stream_zstd fn;
+        return fn.uncompress(b);
     }
 };
 

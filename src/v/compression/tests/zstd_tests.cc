@@ -1,5 +1,6 @@
 #include "compression/internal/lz4_frame_compressor.h"
 #include "compression/internal/snappy_compressor.h"
+#include "compression/internal/zstd_compressor.h"
 #include "compression/stream_zstd.h"
 #include "random/generators.h"
 #include "units.h"
@@ -45,4 +46,8 @@ SEASTAR_THREAD_TEST_CASE(snapy_test) {
         auto dbuf = fn::uncompress(cbuf);
         BOOST_CHECK_EQUAL(dbuf, buf);
     }
+}
+SEASTAR_THREAD_TEST_CASE(zstd_forward_test) {
+    using fn = compression::internal::zstd_compressor;
+    roundtrip_compression(fn::compress, fn::uncompress);
 }
