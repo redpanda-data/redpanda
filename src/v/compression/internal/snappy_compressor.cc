@@ -19,9 +19,6 @@ inline iobuf do_compress(const char* src, size_t src_size) {
 }
 
 iobuf snappy_compressor::compress(const iobuf& b) {
-    if (b.empty()) {
-        return iobuf{};
-    }
     if (std::distance(b.begin(), b.end()) == 1) {
         return do_compress(b.begin()->get(), b.size_bytes());
     }
@@ -52,9 +49,6 @@ inline iobuf do_uncompressed(const char* src, size_t src_size) {
 }
 
 iobuf snappy_compressor::uncompress(const iobuf& b) {
-    if (b.empty()) {
-        return iobuf{};
-    }
     if (std::distance(b.begin(), b.end()) == 1) {
         return do_uncompressed(b.begin()->get(), b.size_bytes());
     }
