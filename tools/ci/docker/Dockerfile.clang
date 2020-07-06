@@ -1,0 +1,13 @@
+ARG BASE_SHA=latest
+FROM gcr.io/redpandaci/base:${BASE_SHA}
+
+# clang is always built with gcc and is not affected by build-type
+COPY tools/ci/vtools-clang-release.yml /v/.vtools.yml
+
+COPY cmake/caches/llvm.cmake /v/cmake/caches/
+
+COPY /tools/ /v/
+
+RUN pip install /v && \
+    vtools install clang && \
+    rm -r /v
