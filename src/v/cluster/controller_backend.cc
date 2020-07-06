@@ -61,12 +61,15 @@ void controller_backend::start_topics_reconciliation_loop() {
               return _topics.local()
                 .wait_for_changes(_as.local())
                 .then([this](std::vector<topic_table::delta> deltas) {
-                    return ss::with_semaphore(_topics_sem, 1, [this, deltas = std::move(deltas)]() mutable {
-                        for (auto& d : deltas) {
-                            _topic_deltas.emplace_back(std::move(d));
-                        }
-                        return reconcile_topics();
-                    });
+                    return ss::with_semaphore(
+                      _topics_sem,
+                      1,
+                      [this, deltas = std::move(deltas)]() mutable {
+                          for (auto& d : deltas) {
+                              _topic_deltas.emplace_back(std::move(d));
+                          }
+                          return reconcile_topics();
+                      });
                 })
                 .handle_exception_type([](
                                          const ss::abort_requested_exception&) {
@@ -79,9 +82,8 @@ void controller_backend::start_topics_reconciliation_loop() {
 void controller_backend::housekeeping() {
     if (!_topic_deltas.empty() && _topics_sem.available_units() > 0) {
         (void)ss::with_gate(_gate, [this] {
-            return ss::with_semaphore(_topics_sem, 1, [this] {
-                return reconcile_topics();
-            });
+            return ss::with_semaphore(
+              _topics_sem, 1, [this] { return reconcile_topics(); });
         });
     }
 }
@@ -89,21 +91,21 @@ void controller_backend::housekeeping() {
 // caller must hold _topics_sem lock
 ss::future<> controller_backend::reconcile_topics() {
     using meta_t = task_meta<topic_table::delta>;
-        return ss::parallel_for_each(
-                 std::begin(_topic_deltas),
-                 std::end(_topic_deltas),
-                 [this](meta_t& task) {
-                     return do_reconcile_topic(task).then(
-                       [&task]() { task.finished = true; });
-                 })
-          .then([this] {
-              // remove finished tasks
-              auto it = std::stable_partition(
-                std::begin(_topic_deltas),
-                std::end(_topic_deltas),
-                [](meta_t& task) { return task.finished; });
-              _topic_deltas.erase(it, _topic_deltas.end());
-          });
+    return ss::parallel_for_each(
+             std::begin(_topic_deltas),
+             std::end(_topic_deltas),
+             [this](meta_t& task) {
+                 return do_reconcile_topic(task).then(
+                   [&task]() { task.finished = true; });
+             })
+      .then([this] {
+          // remove finished tasks
+          auto it = std::stable_partition(
+            std::begin(_topic_deltas),
+            std::end(_topic_deltas),
+            [](meta_t& task) { return task.finished; });
+          _topic_deltas.erase(it, _topic_deltas.end());
+      });
 }
 
 bool has_local_replicas(
