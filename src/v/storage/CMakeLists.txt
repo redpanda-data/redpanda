@@ -29,6 +29,7 @@ v_cc_library(
     kvstore.cc
     segment_utils.cc
     compaction_reducers.cc
+    parser_utils.cc
   DEPS
     Seastar::seastar
     v::bytes
