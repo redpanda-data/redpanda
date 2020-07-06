@@ -285,6 +285,14 @@ public:
         // clang-format on
         return *this;
     }
+    void remove_compression() {
+        // 1. invert compression
+        uint16_t flag = ~static_cast<uint16_t>(compression());
+        // 2. filter only compression bits
+        flag &= record_batch_attributes::compression_mask;
+        // 3. keep the rest
+        _attributes &= flag;
+    }
 
     record_batch_attributes& operator|=(model::timestamp_type ts_t) {
         _attributes |= (static_cast<uint64_t>(ts_t) << uint64_t(3))
