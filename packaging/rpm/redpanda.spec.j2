@@ -18,7 +18,8 @@ AutoReqProv:    no
 # https://github.com/rpm-software-management/rpm/issues/367#issuecomment-350363895
 %global _missing_build_ids_terminate_build 0
 
-# Prevent find-debuginfo.sh from tempering build-ids (#5881)
+# Prevent find-debuginfo.sh from tempering build-ids
+# https://github.com/rpm-software-management/rpm/blob/master/scripts/find-debuginfo.sh
 %undefine _unique_build_ids
 %global _no_recompute_build_ids 1
 
