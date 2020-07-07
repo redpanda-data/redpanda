@@ -73,7 +73,6 @@ ExternalProject_Add(zlib
     <SOURCE_DIR>/configure
     --prefix=<INSTALL_DIR>
     --libdir=<INSTALL_DIR>/lib
-    --static
   BUILD_COMMAND ${make_command}
   INSTALL_COMMAND ${make_command} install)
 
