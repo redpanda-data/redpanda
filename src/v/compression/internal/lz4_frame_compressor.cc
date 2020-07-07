@@ -65,8 +65,8 @@ iobuf lz4_frame_compressor::compress(const iobuf& b) {
     /* Required by Kafka */
     LZ4F_preferences_t prefs;
     std::memset(&prefs, 0, sizeof(prefs));
-    prefs.frameInfo = {
-      .blockMode = LZ4F_blockIndependent, .contentSize = b.size_bytes()};
+    prefs.frameInfo = {.blockMode = LZ4F_blockIndependent,
+                       .contentSize = b.size_bytes()};
 
     // TODO: kafka uses lz4f_compressbound but folly uses
     // lz4f_compressframebound
@@ -155,10 +155,10 @@ static iobuf do_uncompressed(const char* src, const size_t src_size) {
           estimated_output_size,
           consumed_bytes + step_output_bytes);
         vassert(
-          bytes_remaining + in_sz <= src_size,
+          bytes_remaining <= src_size,
           "Consumed more bytes than input. Max:{}, consumed:{}",
           src_size,
-          bytes_remaining + in_sz);
+          bytes_remaining);
         consumed_bytes += step_output_bytes;
         bytes_remaining += step_remaining_bytes;
         if (code == 0) {
