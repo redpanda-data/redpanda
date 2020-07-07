@@ -12,10 +12,20 @@ AutoReqProv:    no
 {{desc}}
 %prep
 
+# RPM fails by default if any of the packaged bins doesn not have a GNU-generated
+# build-id, which is the case for rpk (built with Go), so we have to tell it to
+# ignore it.
+# https://github.com/rpm-software-management/rpm/issues/367#issuecomment-350363895
+%global _missing_build_ids_terminate_build 0
+
+# Prevent find-debuginfo.sh from tempering build-ids (#5881)
+%undefine _unique_build_ids
+%global _no_recompute_build_ids 1
+
 %global _debugsource_template %{nil}
-%global debug_package %{nil}
 %global _debuginfo_subpackages %{nil}
 %global _build_id_links alldebug
+
 %setup -c
 
 %undefine _find_debuginfo_dwz_opts
