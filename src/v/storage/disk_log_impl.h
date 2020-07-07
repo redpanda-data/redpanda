@@ -2,6 +2,7 @@
 
 #include "storage/disk_log_appender.h"
 #include "storage/failure_probes.h"
+#include "storage/kvstore.h"
 #include "storage/lock_manager.h"
 #include "storage/log.h"
 #include "storage/log_reader.h"
@@ -25,7 +26,7 @@ public:
         self_compacted = 1U,
     };
 
-    disk_log_impl(ntp_config, log_manager&, segment_set);
+    disk_log_impl(ntp_config, log_manager&, segment_set, kvstore&);
     ~disk_log_impl() override;
     disk_log_impl(disk_log_impl&&) noexcept = default;
     disk_log_impl& operator=(disk_log_impl&&) noexcept = delete;
@@ -65,6 +66,17 @@ private:
     friend class disk_log_builder;  // for tests
     friend std::ostream& operator<<(std::ostream& o, const disk_log_impl& d);
 
+    // key types used to store data in key-value store
+    enum class kvstore_key_type : int8_t {
+        start_offset = 0,
+    };
+
+    ss::future<model::record_batch_reader>
+      make_unchecked_reader(log_reader_config);
+
+    bytes start_offset_key() const;
+    model::offset read_start_offset() const;
+
     ss::future<> do_compact(compaction_config);
     ss::future<> gc(compaction_config);
 
@@ -94,6 +106,8 @@ private:
     bool _closed{false};
     log_manager& _manager;
     segment_set _segs;
+    kvstore& _kvstore;
+    model::offset _start_offset;
     absl::flat_hash_map<model::offset, segment_bitflags> _segbits;
     lock_manager _lock_mngr;
     storage::probe _probe;
