@@ -12,10 +12,21 @@ AutoReqProv:    no
 {{desc}}
 %prep
 
+# RPM fails by default if any of the packaged bins doesn not have a GNU-generated
+# build-id, which is the case for rpk (built with Go), so we have to tell it to
+# ignore it.
+# https://github.com/rpm-software-management/rpm/issues/367#issuecomment-350363895
+%global _missing_build_ids_terminate_build 0
+
+# Prevent find-debuginfo.sh from tempering build-ids
+# https://github.com/rpm-software-management/rpm/blob/master/scripts/find-debuginfo.sh
+%undefine _unique_build_ids
+%global _no_recompute_build_ids 1
+
 %global _debugsource_template %{nil}
-%global debug_package %{nil}
 %global _debuginfo_subpackages %{nil}
 %global _build_id_links alldebug
+
 %setup -c
 
 %undefine _find_debuginfo_dwz_opts
@@ -42,16 +53,16 @@ install -m 0755 -d "%{buildroot}/etc/redpanda/admin-api-doc"
 install -m 0755  -d "%{buildroot}/opt/redpanda/bin"
 install -m 0755  -d "%{buildroot}/opt/redpanda/lib"
 install -m 0755  -d "%{buildroot}/opt/redpanda/libexec"
-install -m 0755  -d "%{buildroot}/opt/redpanda/libexec"
 
 install -m755 -d "%{buildroot}"/var/lib/redpanda/
 install -m755 -d "%{buildroot}"/var/lib/redpanda/data
 install -m755 -d "%{buildroot}"/var/lib/redpanda/coredump
 
 # install files
-install -m755 bin/* -Dt "%{buildroot}/opt/redpanda/bin"
-install -m755 libexec/*.bin -Dt "%{buildroot}/opt/redpanda/libexec"
-install -m755 lib/* -Dt "%{buildroot}/opt/redpanda/lib"
+install -m755 lib/*.so* -Dt "%{buildroot}/opt/redpanda/lib"
+
+cp -P bin/* "%{buildroot}/opt/redpanda/bin/"
+
 install -m644 %{_topdir}/common/systemd/50-redpanda.preset -Dt "%{buildroot}%{_prefix}/lib/systemd/system-preset"
 install -m644 %{_topdir}/common/systemd/redpanda.slice -Dt "%{buildroot}%{_prefix}/lib/systemd/system"
 install -m644 %{_topdir}/common/systemd/redpanda.service -Dt "%{buildroot}%{_prefix}/lib/systemd/system"
@@ -61,19 +72,16 @@ install -m644 %{_topdir}/common/systemd/redpanda-status.timer -Dt "%{buildroot}%
 install -m644 %{_topdir}/common/redpanda.d/*.conf -Dt "%{buildroot}/etc/redpanda.d"
 install -m644 %{_topdir}/common/sysconfig/redpanda -Dt "%{buildroot}/etc/sysconfig"
 install -m644 %{_topdir}/common/sysctl.d/*  -Dt "%{buildroot}%{_prefix}/lib/sysctl.d"
+
 # use cp to preserve the symbolic links
-cp -P libexec/redpanda "%{buildroot}/opt/redpanda/libexec"
-cp -P libexec/rpk "%{buildroot}/opt/redpanda/libexec"
-cp -P libexec/iotune-redpanda "%{buildroot}/opt/redpanda/libexec"
-cp -P libexec/hwloc-calc-redpanda "%{buildroot}/opt/redpanda/libexec"
-cp -P libexec/hwloc-distrib-redpanda "%{buildroot}/opt/redpanda/libexec"
+cp -P libexec/* "%{buildroot}/opt/redpanda/libexec/"
+
 install -m644 conf/redpanda.yaml -Dt "%{buildroot}/etc/redpanda"
 install -m644 etc/redpanda/admin-api-doc/config.json -Dt "%{buildroot}/etc/redpanda/admin-api-doc"
 install -m644 etc/redpanda/admin-api-doc/header.json -Dt "%{buildroot}/etc/redpanda/admin-api-doc"
 # bin links
 ln -srf "%{buildroot}/opt/redpanda/bin/redpanda" "%{buildroot}%{_prefix}/bin/redpanda"
 ln -srf "%{buildroot}/opt/redpanda/bin/rpk" "%{buildroot}%{_prefix}/bin/rpk"
-ln -srf "%{buildroot}/opt/redpanda/bin/iotune" "%{buildroot}%{_prefix}/bin/iotune"
 # scripts
 install -m755 %{_topdir}/common/scripts/* -Dt "%{buildroot}/%{_prefix}/lib/redpanda"
 %files
@@ -92,7 +100,6 @@ install -m755 %{_topdir}/common/scripts/* -Dt "%{buildroot}/%{_prefix}/lib/redpa
 /opt/redpanda/libexec/*
 %{_bindir}/redpanda
 %{_bindir}/rpk
-%{_bindir}/iotune
 %{_prefix}/lib/systemd/system-preset/50-redpanda.preset
 %{_prefix}/lib/systemd/system/redpanda.slice
 %{_prefix}/lib/systemd/system/redpanda.service

@@ -61,51 +61,48 @@ def _get_dependencies(binary, vconfig):
 
 
 def _relocable_tar_package(dest, execs, configs, admin_api_swag, vconfig):
-    logging.info(f"Creating relocable tar package {dest}")
+    rp_root = '/opt/redpanda'
+    logging.info(f"Creating relocatable tar package {dest}")
     gzip_process = subprocess.Popen(f"pigz -f > {dest}",
                                     shell=True,
                                     env=vconfig.environ,
                                     stdin=subprocess.PIPE)
-    thunk = b'''\
-#!/usr/bin/env bash
-
-command="$(readlink -f "$0")"
-basename="$(basename "$command")"
-directory="$(dirname "$command")/.."
-ldso="$directory/libexec/$basename"
-realexe="$directory/libexec/$basename.bin"
-binpath="$directory/bin"
-export LD_LIBRARY_PATH="$directory/lib"
-export PATH="${binpath}:${PATH}"
-exec -a "$0" "$ldso" "$realexe" "$@"
-'''
 
     ar = tarfile.open(fileobj=gzip_process.stdin, mode='w|')
     all_libs = {}
     for exe, suffix in execs:
+        # Make a copy of the exe and patch it.
+        patched_exe = f'{exe}.patched'
+        shutil.copy(exe, patched_exe)
+        # We need to patch the executable, overwriting its requested interpreter
+        # with the one shipped with redpanda (/opt/redpanda/lib/ld.so),
+        # so that gdb can load the debug symbols when debugging redpanda.
+        # https://github.com/scylladb/scylla/issues/4673
+        _patch_exe(rp_root, patched_exe, vconfig.environ)
+
         basename = os.path.basename(exe)
         name = f'{basename}-{suffix}' if suffix else basename
         logging.debug(f"Adding '{exe}' executable to relocable tar as {name}")
-        ar.add(exe, arcname=f'libexec/{name}.bin')
+        ar.add(patched_exe, arcname=f'libexec/{name}')
+        thunk = _render_thunk(rp_root, name)
         ti = tarfile.TarInfo(name=f'bin/{name}')
         ti.size = len(thunk)
         ti.mode = 0o755
-        ti.mtime = os.stat(exe).st_mtime
-        ar.addfile(ti, fileobj=io.BytesIO(thunk))
-        ti = tarfile.TarInfo(name=f'libexec/{name}')
-        ti.type = tarfile.SYMTYPE
-        ti.linkname = '../lib/ld.so'
-        ti.mtime = os.stat(exe).st_mtime
-        ar.addfile(ti)
+        ti.mtime = os.stat(patched_exe).st_mtime
+        ar.addfile(ti, fileobj=io.BytesIO(thunk.encode()))
         all_libs.update(_get_dependencies(exe, vconfig))
+
     for lib, location in all_libs.items():
-        logging.debug(f"Adding '{location}' lib to relocable tar")
+        logging.debug(f"Adding '{location}' lib to relocatable tar")
         ar.add(location, arcname=f'lib/{lib}')
+
     for conf in configs:
         ar.add(conf, arcname=f"conf/{os.path.basename(conf)}")
+
     for swag in admin_api_swag:
         arcname = f"etc/redpanda/admin-api-doc/{os.path.basename(swag)}"
         ar.add(swag, arcname=arcname)
+
     ar.close()
     gzip_process.communicate()
 
@@ -237,9 +234,10 @@ def create_packages(vconfig, formats, build_type):
         RELEASE = "dev"
 
     suffix = 'redpanda'
+
     execs = [
-        (f'{vconfig.build_dir}/bin/redpanda', ''),
-        (f'{vconfig.go_out_dir}/rpk', ''),
+        (f'{vconfig.build_dir}/bin/redpanda', None),
+        (f'{vconfig.go_out_dir}/rpk', None),
         (f'{vconfig.external_path}/bin/hwloc-calc', suffix),
         (f'{vconfig.external_path}/bin/hwloc-distrib', suffix),
         (f'{vconfig.external_path}/bin/iotune', suffix),
@@ -263,3 +261,18 @@ def create_packages(vconfig, formats, build_type):
     if 'rpm' in formats:
         red_panda_rpm(tar_path, dist_path, vconfig.src_dir, vconfig.environ)
     os.remove(tar_path)
+
+
+def _patch_exe(root, exe, env):
+    shell.run_subprocess(f'patchelf --set-interpreter {root}/lib/ld.so {exe}',
+                         env=env)
+
+
+def _render_thunk(root, bin_name):
+    return f'''\
+#!/usr/bin/env bash
+set -e
+export LD_LIBRARY_PATH="{root}/lib"
+export PATH="{root}/bin:${{PATH}}"
+exec -a "$0" "{root}/libexec/{bin_name}" "$@"
+'''
