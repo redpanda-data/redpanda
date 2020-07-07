@@ -15,9 +15,7 @@ var redpandaInstallDirContent = []string{
 	"bin/redpanda",
 	"lib",
 	"libexec/rpk",
-	"libexec/rpk.bin",
 	"libexec/redpanda",
-	"libexec/redpanda.bin",
 }
 
 type pathProvider func() ([]string, error)
