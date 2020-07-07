@@ -136,10 +136,61 @@ copy_data_segment_reducer::filter(model::record_batch&& batch) {
             ret.push_back(record.share());
         }
     }
-    auto new_batch = model::record_batch(batch.header(), std::move(ret));
-    new_batch.header().crc = model::crc_record_batch(new_batch);
-    new_batch.header().header_crc = model::internal_header_only_crc(
-      new_batch.header());
+    // From: DefaultRecordBatch.java
+    // On Compaction: Unlike the older message formats, magic v2 and above
+    // preserves the first and last offset/sequence numbers from the
+    // original batch when the log is cleaned. This is required in order to
+    // be able to restore the producer's state when the log is reloaded. If
+    // we did not retain the last sequence number, then following a
+    // partition leader failure, once the new leader has rebuilt the
+    // producer state from the log, the next sequence expected number would
+    // no longer be in sync with what was written by the client. This would
+    // cause an unexpected OutOfOrderSequence error, which is typically
+    // fatal. The base sequence number must be preserved for duplicate
+    // checking: the broker checks incoming Produce requests for duplicates
+    // by verifying that the first and last sequence numbers of the incoming
+    // batch match the last from that producer.
+    //
+    if (ret.empty()) {
+        // TODO:agallego - implement
+        //
+        // Note that if all of the records in a batch are removed during
+        // compaction, the broker may still retain an empty batch header in
+        // order to preserve the producer sequence information as described
+        // above. These empty batches are retained only until either a new
+        // sequence number is written by the corresponding producer or the
+        // producerId is expired from lack of activity.
+        return std::nullopt;
+    }
+
+    // There is no similar need to preserve the timestamp from the original
+    // batch after compaction. The FirstTimestamp field therefore always
+    // reflects the timestamp of the first record in the batch. If the batch is
+    // empty, the FirstTimestamp will be set to -1 (NO_TIMESTAMP).
+    //
+    // Similarly, the MaxTimestamp field reflects the maximum timestamp of the
+    // current records if the timestamp type is CREATE_TIME. For
+    // LOG_APPEND_TIME, on the other hand, the MaxTimestamp field reflects the
+    // timestamp set by the broker and is preserved after compaction.
+    // Additionally, the MaxTimestamp of an empty batch always retains the
+    // previous value prior to becoming empty.
+    //
+    const int32_t rec_count = ret.size();
+    const auto& oldh = batch.header();
+    const auto first_time = model::timestamp(
+      oldh.first_timestamp() + ret.front().timestamp_delta());
+    auto last_time = oldh.max_timestamp;
+    if (oldh.attrs.timestamp_type() == model::timestamp_type::create_time) {
+        last_time = model::timestamp(
+          first_time() + ret.back().timestamp_delta());
+    }
+    auto new_batch = model::record_batch(oldh, std::move(ret));
+    auto& h = new_batch.header();
+    h.first_timestamp = first_time;
+    h.max_timestamp = last_time;
+    h.record_count = rec_count;
+    h.crc = model::crc_record_batch(new_batch);
+    h.header_crc = model::internal_header_only_crc(h);
     return new_batch;
 }
 
