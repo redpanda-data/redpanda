@@ -29,10 +29,18 @@ struct append_offsets_validator {
       storage::log* log, size_t record_count, bool is_flushed)
       : log(log) {
         auto lstats = log->offsets();
-        auto first = lstats.dirty_offset < model::offset(0)
-                       ? model::offset(-1)
-                       : lstats.dirty_offset;
-        expected_dirty = first + model::offset(record_count);
+
+        model::offset next = lstats.dirty_offset;
+        if (next() < 0) {
+            if (lstats.start_offset() < 0) {
+                next = model::offset(0);
+            } else {
+                next = lstats.start_offset;
+            }
+        } else {
+            next++;
+        }
+        expected_dirty = next + model::offset(record_count) - model::offset(1);
         start_seg_count = log->segment_count();
         if (is_flushed) {
             expected_committed = expected_dirty;
@@ -204,7 +212,9 @@ struct truncate_op final : opfuzz::op {
     ss::future<> invoke(opfuzz::op_context ctx) final {
         auto lstats = ctx.log->offsets();
         storage::log_reader_config cfg(
-          model::offset(0), lstats.dirty_offset, ss::default_priority_class());
+          lstats.start_offset,
+          lstats.dirty_offset,
+          ss::default_priority_class());
         vlog(fuzzlogger.info, "collect base offsets {} - {}", cfg, *ctx.log);
         return ctx.log->make_reader(cfg)
           .then([](model::record_batch_reader reader) {
@@ -218,7 +228,7 @@ struct truncate_op final : opfuzz::op {
                   to = ofs[random_generators::get_int<size_t>(
                     0, ofs.size() - 1)];
               }
-              vlog(fuzzlogger.info, "Truncating log at offset: {}", to);
+              vlog(fuzzlogger.info, "Truncating log at suffix offset: {}", to);
               return ctx.log
                 ->truncate(
                   storage::truncate_config(to, ss::default_priority_class()))
@@ -226,8 +236,20 @@ struct truncate_op final : opfuzz::op {
           })
           .then([ctx](model::offset to) {
               auto loffsets = ctx.log->offsets();
-              auto expected = to == model::offset(0) ? model::offset{}
-                                                     : to - model::offset(1);
+              /*
+               * in the normal case, the new dirty offset is `to - 1`. however,
+               * there are some special cases. if to <= start, then the new
+               * dirty offset is `start - 1`, unless start is uninitialized or
+               * 0, and `to` is 0. then new dirty offset is uninitialized.
+               */
+              auto expected = to - model::offset(1);
+              if (to <= std::max(loffsets.start_offset, model::offset(0))) {
+                  if (loffsets.start_offset() > 0) {
+                      expected = loffsets.start_offset - model::offset(1);
+                  } else {
+                      expected = model::offset{};
+                  }
+              }
               vassert(
                 loffsets.dirty_offset == expected,
                 "Truncate failed - expected offset {}, "
@@ -256,7 +278,9 @@ struct truncate_prefix_op final : opfuzz::op {
     ss::future<> invoke(opfuzz::op_context ctx) final {
         auto lstats = ctx.log->offsets();
         storage::log_reader_config cfg(
-          model::offset(0), lstats.dirty_offset, ss::default_priority_class());
+          lstats.start_offset,
+          lstats.dirty_offset,
+          ss::default_priority_class());
         vlog(
           fuzzlogger.info,
           "collect header::max_offsets {} - {}",
@@ -273,8 +297,9 @@ struct truncate_prefix_op final : opfuzz::op {
               if (!ofs.empty()) {
                   to = ofs[random_generators::get_int<size_t>(
                     0, ofs.size() - 1)];
+                  to++;
               }
-              vlog(fuzzlogger.info, "Truncating log at offset: {}", to);
+              vlog(fuzzlogger.info, "Truncating log at prefix offset: {}", to);
               return ctx.log->truncate_prefix(storage::truncate_prefix_config(
                 to, ss::default_priority_class()));
           });
@@ -303,12 +328,12 @@ struct read_op final : opfuzz::op {
     const char* name() const final { return "read"; }
     ss::future<> invoke(opfuzz::op_context ctx) final {
         auto lstats = ctx.log->offsets();
-        model::offset start{0};
+        model::offset start = lstats.start_offset;
         model::offset end{0};
         if (lstats.dirty_offset > start) {
             start = model::offset(
               random_generators::get_int<model::offset::type>(
-                0, lstats.dirty_offset()));
+                start(), lstats.dirty_offset()));
         }
         if (start > end) {
             end = model::offset(random_generators::get_int<model::offset::type>(

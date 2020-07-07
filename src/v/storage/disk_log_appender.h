@@ -15,10 +15,15 @@ public:
       disk_log_impl& log,
       log_append_config config,
       log_clock::time_point append_time,
-      model::offset dirty_offset) noexcept;
+      model::offset next_offset) noexcept;
 
     ss::future<ss::stop_iteration> operator()(model::record_batch&) final;
 
+    /*
+     * if no batches are appended then ret.last_offset will be equal to the
+     * default value of model::offset(), otherwise it is the offset of the last
+     * record of the last batch appended.
+     */
     ss::future<append_result> end_of_stream() final;
 
 private:

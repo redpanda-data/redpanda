@@ -71,19 +71,17 @@ std::ostream& operator<<(std::ostream& o, const truncate_config& cfg) {
     return o;
 }
 std::ostream& operator<<(std::ostream& o, const truncate_prefix_config& cfg) {
-    fmt::print(
-      o, "{{max_offset:{}, sloppy_prefix:{}}}", cfg.max_offset, cfg.sloppy);
+    fmt::print(o, "{{start_offset:{}}}", cfg.start_offset);
     return o;
 }
 
 std::ostream& operator<<(std::ostream& o, const offset_stats& s) {
     fmt::print(
       o,
-      "{{start_offset:{}, start_offset_term:{}, committed_offset:{}, "
+      "{{start_offset:{}, committed_offset:{}, "
       "committed_offset_term:{}, dirty_offset:{}, dirty_offset_term:{}, "
       "last_term_start_offset:{}}}",
       s.start_offset,
-      s.start_offset_term,
       s.committed_offset,
       s.committed_offset_term,
       s.dirty_offset,

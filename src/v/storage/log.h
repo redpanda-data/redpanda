@@ -69,19 +69,35 @@ public:
     ss::future<> flush() { return _impl->flush(); }
 
     /**
-     * \brief Truncate log at base offset
+     * \brief Truncate the suffix of log at a base offset
+     *
      * Having a segment:
      * segment: {[10,10][11,30][31,100][101,103]}
      * Truncate at offset (31) will result in
      * segment: {[10,10][11,30]}
      */
     ss::future<> truncate(truncate_config cfg) { return _impl->truncate(cfg); }
+
+    /**
+     * \brief Truncate the prefix of a log at a base offset
+     *
+     * Having a segment:
+     * segment: {[10,10][11,30][31,100][101,103]}
+     * Truncate prefix at offset (31) will result in
+     * segment: {[31,100][101,103]}
+     *
+     * The typical use case is installing a snapshot. In this case the snapshot
+     * covers a section of the log up to and including a position X (generally
+     * would be a batch's last offset). To prepare a log for a snapshot it would
+     * be prefix truncated at offset X+1, so that the next element in the log to
+     * be replayed against the snapshot is X+1.
+     */
     ss::future<> truncate_prefix(truncate_prefix_config cfg) {
         return _impl->truncate_prefix(cfg);
     }
 
     ss::future<model::record_batch_reader> make_reader(log_reader_config cfg) {
-        return _impl->make_reader(std::move(cfg));
+        return _impl->make_reader(cfg);
     }
 
     log_appender make_appender(log_append_config cfg) {
@@ -120,7 +136,8 @@ inline std::ostream& operator<<(std::ostream& o, const storage::log& lg) {
 
 class log_manager;
 class segment_set;
+class kvstore;
 log make_memory_backed_log(ntp_config);
-log make_disk_backed_log(ntp_config, log_manager&, segment_set);
+log make_disk_backed_log(ntp_config, log_manager&, segment_set, kvstore&);
 
 } // namespace storage

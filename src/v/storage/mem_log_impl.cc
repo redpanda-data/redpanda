@@ -176,12 +176,12 @@ struct mem_log_impl final : log::impl {
         auto it = std::lower_bound(
           std::begin(_data),
           std::end(_data),
-          cfg.max_offset,
+          cfg.start_offset,
           entries_ordering{});
         if (it == _data.end()) {
             return ss::make_ready_future<>();
         }
-        if (it->last_offset() > cfg.max_offset) {
+        if (it->last_offset() > cfg.start_offset) {
             it = std::prev(it);
         }
         if (it == _data.end()) {
@@ -292,7 +292,6 @@ struct mem_log_impl final : log::impl {
 
         return storage::offset_stats{
           .start_offset = b.base_offset(),
-          .start_offset_term = b.term(),
           .committed_offset = e.last_offset(),
           .committed_offset_term = e.term(),
           .dirty_offset = e.last_offset(),
