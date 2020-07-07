@@ -55,23 +55,12 @@ SEASTAR_THREAD_TEST_CASE(stream_zstd_test) {
 }
 
 SEASTAR_THREAD_TEST_CASE(lz4_block_tests) {
-    std::cout.setf(std::ios::unitbuf);
     using fn = compression::internal::lz4_frame_compressor;
-    for (size_t i = 1_KiB; i < 10_KiB; i += 1_KiB) {
-        iobuf buf = gen(i);
-        auto cbuf = fn::compress(buf.share(0, i));
-        auto dbuf = fn::uncompress(cbuf);
-        BOOST_CHECK_EQUAL(dbuf, buf);
-    }
+    roundtrip_compression(fn::compress, fn::uncompress);
 }
 SEASTAR_THREAD_TEST_CASE(snapy_test) {
     using fn = compression::internal::snappy_compressor;
-    for (size_t i = 1024; i < 1024 + 100; ++i) {
-        iobuf buf = gen(i);
-        auto cbuf = fn::compress(buf.share(0, i));
-        auto dbuf = fn::uncompress(cbuf);
-        BOOST_CHECK_EQUAL(dbuf, buf);
-    }
+    roundtrip_compression(fn::compress, fn::uncompress);
 }
 SEASTAR_THREAD_TEST_CASE(zstd_forward_test) {
     using fn = compression::internal::zstd_compressor;
