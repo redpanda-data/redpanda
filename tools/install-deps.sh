@@ -33,7 +33,8 @@ function debs() {
     python3-jinja2 \
     python3-pip \
     python3-venv \
-    python3-dev
+    python3-dev \
+    patchelf
   update-alternatives \
     --install /usr/bin/gcc gcc /usr/bin/gcc-9 60 \
     --slave /usr/bin/g++ g++ /usr/bin/g++-9
@@ -90,7 +91,8 @@ function rpms() {
     systemd-devel \
     python3-jinja2 \
     python3-pip \
-    python3-devel
+    python3-devel \
+    patchelf
 }
 
 source /etc/os-release
