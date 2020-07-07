@@ -41,6 +41,10 @@ inline iobuf do_uncompressed(const char* src, size_t src_size) {
           src_size));
     }
     iobuf ret;
+    if (output_size == 0) {
+        // empty frame
+        return ret;
+    }
     auto ph = ret.reserve(output_size);
     char* output = ph.mutable_index();
     ::snappy::RawUncompress(src, src_size, output);
