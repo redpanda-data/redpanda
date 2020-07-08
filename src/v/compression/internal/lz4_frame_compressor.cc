@@ -71,12 +71,8 @@ iobuf lz4_frame_compressor::compress(const iobuf& b) {
     std::memset(&prefs, 0, sizeof(prefs));
     prefs.frameInfo = {.blockMode = LZ4F_blockIndependent,
                        .contentSize = b.size_bytes()};
-
-    // TODO: kafka uses lz4f_compressbound but folly uses
-    // lz4f_compressframebound
-    const size_t output_buffer_size = LZ4F_compressBound(
-                                        b.size_bytes(), nullptr)
-                                      + 1_KiB;
+    const size_t output_buffer_size = LZ4F_compressBound(b.size_bytes(), &prefs)
+                                      + lz4f_footer_size + lz4f_header_size;
     check_lz4_error("lz4_compressbound erorr:{}", output_buffer_size);
     ss::temporary_buffer<char> obuf(output_buffer_size);
     char* out = obuf.get_write();
