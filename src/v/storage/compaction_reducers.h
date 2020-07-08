@@ -102,12 +102,11 @@ public:
     ss::future<> end_of_stream() { return _appender->close(); }
 
 private:
-    bool should_keep(const model::record_batch&) const;
     bool should_keep(model::offset base, int32_t delta) const {
         const auto o = base + model::offset(delta);
         return _list.contains(o);
     }
-    std::vector<model::record_batch> filter(model::record_batch&&);
+    std::optional<model::record_batch> filter(model::record_batch&&);
 
     compacted_offset_list _list;
     segment_appender_ptr _appender;

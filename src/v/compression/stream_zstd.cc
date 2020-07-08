@@ -46,13 +46,8 @@ stream_zstd::zstd_decompress_ctx& stream_zstd::decompressor() {
     return _decompress;
 }
 
-iobuf stream_zstd::compress(iobuf x) {
-    if (unlikely(x.empty())) {
-        return iobuf();
-    }
+iobuf stream_zstd::do_compress(const iobuf& x) {
     reset_compressor();
-
-    auto ifragment = x.begin();
     ZSTD_CCtx* ctx = compressor().get();
     // NOTE: always enable content size. **decompression** depends on this
     throw_if_error(ZSTD_CCtx_setPledgedSrcSize(ctx, x.size_bytes()));
@@ -61,26 +56,16 @@ iobuf stream_zstd::compress(iobuf x) {
     ZSTD_outBuffer out = {
       .dst = obuf.get_write(), .size = obuf.size(), .pos = 0};
 
-    while (ifragment != x.end()) {
-        auto& ibuf = *ifragment;
-        ZSTD_inBuffer in = {.src = ibuf.get(), .size = ibuf.size(), .pos = 0};
+    for (auto& frag : x) {
+        ZSTD_inBuffer in = {.src = frag.get(), .size = frag.size(), .pos = 0};
         auto mode = ZSTD_e_flush;
-        if (std::next(ifragment) == x.end()) {
-            // emit a frame & mark as the end
-            mode = ZSTD_e_end;
-        }
         throw_if_error(ZSTD_compressStream2(ctx, &out, &in, mode));
-        ifragment++;
     }
+    // Must happen outside of loop to encode empty-buffer sizes
+    ZSTD_endStream(ctx, &out);
     iobuf ret;
-    if (out.pos < obuf.size() / 2) {
-        // we got excellent compression, copy it to new scratch buffer and
-        // release the giant linearized input
-        ret.append(obuf.get(), out.pos);
-    } else {
-        obuf.trim(out.pos);
-        ret.append(std::move(obuf));
-    }
+    obuf.trim(out.pos);
+    ret.append(std::move(obuf));
     return ret;
 }
 
@@ -100,30 +85,25 @@ static size_t find_zstd_size(const iobuf& x) {
         throw std::runtime_error(
           fmt::format("Cannot decompress. Unknown payload size. iobuf:{}", x));
     }
-    if (zstd_size == 0) {
-        throw std::runtime_error(
-          fmt::format("Cannot have empty size in frame: iobuf:{}", x));
-    }
+    // Note: if (zstd_size == 0) {} is legal for empty buffers
     return zstd_size;
 }
 
-iobuf stream_zstd::uncompress(iobuf x) {
+iobuf stream_zstd::do_uncompress(const iobuf& x) {
     if (unlikely(x.empty())) {
-        return iobuf();
+        throw std::runtime_error(
+          "Asked to stream_zstd::uncompress empty buffer");
     }
     reset_decompressor();
     const size_t decompressed_size = find_zstd_size(x);
-    auto ifragment = x.begin();
     ZSTD_DCtx* dctx = decompressor().get();
     // zstd requires linearized memory
     ss::temporary_buffer<char> obuf(decompressed_size);
     ZSTD_outBuffer out = {
       .dst = obuf.get_write(), .size = obuf.size(), .pos = 0};
-    while (ifragment != x.end()) {
-        auto& ibuf = *ifragment;
+    for (auto& ibuf : x) {
         ZSTD_inBuffer in = {.src = ibuf.get(), .size = ibuf.size(), .pos = 0};
         throw_if_error(ZSTD_decompressStream(dctx, &out, &in));
-        ifragment++;
     }
     iobuf ret;
     obuf.trim(out.pos);
