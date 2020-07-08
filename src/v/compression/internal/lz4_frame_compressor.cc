@@ -25,47 +25,39 @@ static inline void check_lz4_error(const char* fmt, LZ4F_errorCode_t code) {
     }
 }
 
-struct lz4_ctx {
-    lz4_ctx() noexcept = default;
-    lz4_ctx(const lz4_ctx&) = delete;
-    lz4_ctx& operator=(const lz4_ctx&) = delete;
-    lz4_ctx(lz4_ctx&&) = delete;
-    lz4_ctx& operator=(lz4_ctx&&) = delete;
-    ~lz4_ctx() {
-        if (dctx) {
-            // always returns success just calls free()
-            (void)LZ4F_freeDecompressionContext(dctx);
-        }
-        if (cctx) {
-            // always returns success just calls free()
-            (void)LZ4F_freeCompressionContext(cctx);
-        }
-    }
-    void reset_dctx() {
-        if (dctx) {
-            // always returns success just calls free()
-            (void)LZ4F_freeDecompressionContext(dctx);
-        }
-        LZ4F_errorCode_t code = LZ4F_createDecompressionContext(
-          &dctx, LZ4F_VERSION);
-        check_lz4_error("LZ4F_createDecompressionContext error: {}", code);
-    }
-    void reset_cctx() {
-        if (cctx) {
-            // always returns success just calls free()
-            (void)LZ4F_freeCompressionContext(cctx);
-        }
-        LZ4F_errorCode_t code = LZ4F_createCompressionContext(
-          &cctx, LZ4F_VERSION);
-        check_lz4_error("LZ4F_createCompressionContext error: {}", code);
-    }
-    LZ4F_decompressionContext_t dctx{nullptr};
-    LZ4F_compressionContext_t cctx{nullptr};
-};
+using lz4_compression_ctx = std::unique_ptr<
+  LZ4F_cctx,
+  // wrap ZSTD C API
+  static_retval_deleter_fn<
+    LZ4F_cctx,
+    LZ4F_errorCode_t,
+    &LZ4F_freeCompressionContext>>;
+
+static lz4_compression_ctx make_compression_context() {
+    LZ4F_cctx* c = nullptr;
+    LZ4F_errorCode_t code = LZ4F_createCompressionContext(&c, LZ4F_VERSION);
+    check_lz4_error("LZ4F_createCompressionContext error: {}", code);
+    return lz4_compression_ctx(c);
+}
+
+using lz4_decompression_ctx = std::unique_ptr<
+  LZ4F_dctx,
+  // wrap ZSTD C API
+  static_retval_deleter_fn<
+    LZ4F_dctx,
+    LZ4F_errorCode_t,
+    &LZ4F_freeDecompressionContext>>;
+
+static lz4_decompression_ctx make_decompression_context() {
+    LZ4F_dctx* c = nullptr;
+    LZ4F_errorCode_t code = LZ4F_createDecompressionContext(&c, LZ4F_VERSION);
+    check_lz4_error("LZ4F_createDecompressionContext error: {}", code);
+    return lz4_decompression_ctx(c);
+}
 
 iobuf lz4_frame_compressor::compress(const iobuf& b) {
-    lz4_ctx ctx;
-    ctx.reset_cctx();
+    auto ctx_ptr = make_compression_context();
+    LZ4F_compressionContext_t ctx = ctx_ptr.get();
     /* Required by Kafka */
     LZ4F_preferences_t prefs;
     std::memset(&prefs, 0, sizeof(prefs));
@@ -78,14 +70,14 @@ iobuf lz4_frame_compressor::compress(const iobuf& b) {
     ss::temporary_buffer<char> obuf(output_buffer_size);
     char* out = obuf.get_write();
     LZ4F_errorCode_t code = LZ4F_compressBegin(
-      ctx.cctx, out, output_buffer_size, &prefs);
+      ctx, out, output_buffer_size, &prefs);
     check_lz4_error("lz4f_compressbegin error:{}", code);
 
     // start after the bytes from compressBegin
     size_t consumed_bytes = code;
     for (auto& frag : b) {
         code = LZ4F_compressUpdate(
-          ctx.cctx,
+          ctx,
           // NOLINTNEXTLINE
           out + consumed_bytes,
           output_buffer_size - consumed_bytes,
@@ -96,7 +88,7 @@ iobuf lz4_frame_compressor::compress(const iobuf& b) {
         consumed_bytes += code;
     }
     code = LZ4F_compressEnd(
-      ctx.cctx,
+      ctx,
       // NOLINTNEXTLINE
       out + consumed_bytes,
       output_buffer_size - consumed_bytes,
@@ -118,15 +110,14 @@ compute_frame_uncompressed_size(size_t frame_size, size_t original) {
 }
 
 static iobuf do_uncompressed(const char* src, const size_t src_size) {
-    lz4_ctx ctx;
-    ctx.reset_dctx();
+    auto ctx_ptr = make_decompression_context();
+    LZ4F_decompressionContext_t ctx = ctx_ptr.get();
     LZ4F_frameInfo_t fi;
     size_t in_sz = src_size;
-    LZ4F_errorCode_t code = LZ4F_getFrameInfo(ctx.dctx, &fi, src, &in_sz);
+    LZ4F_errorCode_t code = LZ4F_getFrameInfo(ctx, &fi, src, &in_sz);
     check_lz4_error("lz4f_getframeinfo error: {}", code);
     size_t estimated_output_size = compute_frame_uncompressed_size(
       fi.contentSize, src_size);
-
     ss::temporary_buffer<char> obuf(estimated_output_size);
     char* out = obuf.get_write();
     /* Decompress input buffer t o output buffer until input is exhausted. */
@@ -141,7 +132,7 @@ static iobuf do_uncompressed(const char* src, const size_t src_size) {
         size_t step_output_bytes = estimated_output_size - consumed_bytes;
         size_t step_remaining_bytes = src_size - bytes_remaining;
         code = LZ4F_decompress(
-          ctx.dctx,
+          ctx,
           // NOLINTNEXTLINE
           out + consumed_bytes,
           &step_output_bytes,
