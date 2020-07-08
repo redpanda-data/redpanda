@@ -11,6 +11,10 @@
 #include <lz4frame.h>
 
 namespace compression::internal {
+// from frameCompress.c
+static constexpr size_t lz4f_header_size = 19;
+static constexpr size_t lz4f_footer_size = 4;
+
 [[noreturn]] [[gnu::cold]] static void
 throw_lz4_error(const char* fmt, LZ4F_errorCode_t err) {
     throw std::runtime_error(fmt::format(fmt, LZ4F_getErrorName(err)));
