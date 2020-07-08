@@ -67,8 +67,8 @@ ss::future<std::optional<size_t>> parse_size(ss::input_stream<char>& src) {
       });
 }
 
-ss::scattered_message<char>
-response_as_scattered(response_ptr response, correlation_id correlation) {
+ss::scattered_message<char> response_as_scattered(response_ptr response) {
+    auto correlation = response->correlation();
     auto header = ss::temporary_buffer<char>(sizeof(raw_response_header));
     // NOLINTNEXTLINE
     auto* raw_header = reinterpret_cast<raw_response_header*>(

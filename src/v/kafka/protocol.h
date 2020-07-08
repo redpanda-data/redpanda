@@ -64,7 +64,7 @@ public:
     ss::future<> apply(rpc::server::resources) final;
 
 private:
-    using map_t = absl::flat_hash_map<sequence_id, ss::scattered_message<char>>;
+    using map_t = absl::flat_hash_map<sequence_id, response_ptr>;
 
     class connection_context final
       : public ss::enable_lw_shared_from_this<connection_context> {

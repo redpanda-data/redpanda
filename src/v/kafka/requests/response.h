@@ -21,7 +21,21 @@ public:
     iobuf& buf() { return _buf; }
     iobuf release() && { return std::move(_buf); }
 
+    correlation_id correlation() const { return _correlation; }
+    void set_correlation(correlation_id c) { _correlation = c; }
+
+    /*
+     * Marking a response as a noop means that it will be processed like any
+     * other response (e.g. quota accounting) but the response won't written to
+     * the connection. This is used by kafka producer with acks=0 in which the
+     * client does not expect the broker to respond.
+     */
+    bool is_noop() const { return _noop; }
+    void mark_noop() { _noop = true; }
+
 private:
+    bool _noop{false};
+    correlation_id _correlation;
     iobuf _buf;
     response_writer _writer;
 };

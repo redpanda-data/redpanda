@@ -17,6 +17,7 @@
 #include "vlog.h"
 
 #include <seastar/core/execution_stage.hh>
+#include <seastar/core/future.hh>
 #include <seastar/util/log.hh>
 
 #include <fmt/ostream.h>
@@ -420,11 +421,47 @@ produce_api::process(request_context&& ctx, ss::smp_service_group ssg) {
           // dispatch produce requests for each topic
           auto topics = produce_topics(octx);
 
-          // collect topic responses and build the final response message
+          // collect topic responses
           return when_all_succeed(topics.begin(), topics.end())
             .then([&octx](std::vector<produce_response::topic> topics) {
                 octx.response.topics = std::move(topics);
-                return octx.rctx.respond(std::move(octx.response));
+            })
+            .then([&octx] {
+                // send response immediately
+                if (octx.request.acks != 0) {
+                    return octx.rctx.respond(std::move(octx.response));
+                }
+
+                // acks = 0 is handled separately. first, check for errors
+                bool has_error = false;
+                for (const auto& topic : octx.response.topics) {
+                    for (const auto& p : topic.partitions) {
+                        if (p.error != error_code::none) {
+                            has_error = true;
+                            break;
+                        }
+                    }
+                }
+
+                // in the absense of errors, acks = 0 results in the response
+                // being dropped, as the client does not expect a response. here
+                // we mark the response as noop, but let it flow back so that it
+                // can be accounted for in quota and stats tracking. it is
+                // dropped later during processing.
+                if (!has_error) {
+                    return octx.rctx.respond(std::move(octx.response))
+                      .then([](response_ptr resp) {
+                          resp->mark_noop();
+                          return resp;
+                      });
+                }
+
+                // errors in a response from an acks=0 produce request result in
+                // the connection being dropped to signal an issue to the client
+                return ss::make_exception_future<response_ptr>(
+                  std::runtime_error(fmt::format(
+                    "Closing connection due to error in produce response: {}",
+                    octx.response)));
             });
       });
 }
