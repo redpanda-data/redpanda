@@ -12,6 +12,10 @@ template<typename T, size_t (*f)(T*)>
 struct static_sized_deleter_fn {
     void operator()(T* t) const { (void)f(t); }
 };
+template<typename T, typename R, R (*f)(T*)>
+struct static_retval_deleter_fn {
+    void operator()(T* t) const { (void)f(t); }
+};
 
 namespace internal {
 static inline void static_deleter_noop(void*) {}
