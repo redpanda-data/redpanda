@@ -1,8 +1,9 @@
 #pragma once
 #include "bytes/iobuf.h"
+#include "model/compression.h"
 namespace compression {
 
-enum class type { none, gzip, snappy, lz4, zstd };
+using type = model::compression;
 // a very simple compressor. Exposes virtually no knobs and uses
 // the defaults for all compressors. In the future, we can make these
 // a virtual interface so we can instantiate them

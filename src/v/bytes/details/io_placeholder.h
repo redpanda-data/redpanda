@@ -31,10 +31,10 @@ public:
     // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
     const char* index() const { return _iter->get() + _byte_index; }
 
-private:
     // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
     char* mutable_index() { return _iter->get_write() + _byte_index; }
 
+private:
     iterator _iter;
     size_t _byte_index{0};
     size_t _remaining_size{0};
