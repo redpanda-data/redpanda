@@ -287,14 +287,16 @@ ExternalProject_Add(gnutls
   DEPENDS gmp nettle ${default_depends})
 
 ExternalProject_Add(lz4
-  URL https://storage.googleapis.com/vectorizedio-public/dependencies/lz4-v1.8.3.tar.gz
-  URL_MD5 d5ce78f7b1b76002bbfffa6f78a5fc4e
+  GIT_REPOSITORY https://github.com/vectorizedio/lz4
+  GIT_TAG 6b12fde42a3156441a994153997018940c5d8142
   DEPENDS ${default_depends}
   INSTALL_DIR   @V_DEPS_INSTALL_DIR@
   SOURCE_SUBDIR contrib/cmake_unofficial
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   CMAKE_ARGS
-    ${common_cmake_args})
+    ${common_cmake_args}
+    -DBUILD_STATIC_LIBS=ON
+  )
 
 ExternalProject_Add(numactl
   URL https://storage.googleapis.com/vectorizedio-public/dependencies/numactl-2.0.12.tar.gz
