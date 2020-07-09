@@ -26,8 +26,8 @@ namespace raft {
 // clang-format off
 CONCEPT(
     template<typename T>
-    concept State = requires(T s, 
-                             model::record_batch batch, 
+    concept State = requires(T s,
+                             model::record_batch batch,
                              const model::record_batch& const_batch) {
         { s.is_batch_applicable(const_batch) } -> bool;
         { s.apply_update(std::move(batch)) } -> ss::future<std::error_code>;
