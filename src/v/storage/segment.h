@@ -150,6 +150,7 @@ private:
     ss::future<> do_flush();
     ss::future<> remove_thombsones();
     ss::future<> compaction_index_batch(const model::record_batch&);
+    ss::future<> do_compaction_index_batch(const model::record_batch&);
 
     offset_tracker _tracker;
     segment_reader _reader;
