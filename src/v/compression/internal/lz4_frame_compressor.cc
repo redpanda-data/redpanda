@@ -27,7 +27,7 @@ static inline void check_lz4_error(const char* fmt, LZ4F_errorCode_t code) {
 
 using lz4_compression_ctx = std::unique_ptr<
   LZ4F_cctx,
-  // wrap ZSTD C API
+  // wrap lz4f C API
   static_retval_deleter_fn<
     LZ4F_cctx,
     LZ4F_errorCode_t,
@@ -42,7 +42,7 @@ static lz4_compression_ctx make_compression_context() {
 
 using lz4_decompression_ctx = std::unique_ptr<
   LZ4F_dctx,
-  // wrap ZSTD C API
+  // wrap lz4f C API
   static_retval_deleter_fn<
     LZ4F_dctx,
     LZ4F_errorCode_t,
