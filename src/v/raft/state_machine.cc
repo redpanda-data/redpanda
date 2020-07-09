@@ -80,8 +80,9 @@ ss::future<result<replicate_result>> state_machine::quorum_write_empty_batch(
           if (!r) {
               return ss::make_ready_future<ret_t>(r);
           }
-          return wait(r.value().last_offset, timeout)
-            .then([r = std::move(r)]() mutable { return std::move(r); });
+          return wait(r.value().last_offset, timeout).then([r]() mutable {
+              return r;
+          });
       });
 }
 
