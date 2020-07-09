@@ -13,6 +13,7 @@
     "include": [
         "modules/rpc",
         "modules/hashing",
+        "modules/utilities",
         "test"
     ],
     "exclude": [
