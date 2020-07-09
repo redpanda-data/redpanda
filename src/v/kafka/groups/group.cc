@@ -567,7 +567,7 @@ ss::future<join_group_response> group::add_member_and_rebalance(
     // now since the promise may be invalidated before we return.
     auto response = add_member(member);
     klog.trace("added member {} to group {}", member, *this);
-    _pending_members.erase(member_id);
+    _pending_members.erase(member->id());
 
     // <kafka>The session timeout does not affect new members since they do not
     // have their memberId and cannot send heartbeats. Furthermore, we cannot
