@@ -1193,7 +1193,7 @@ group::store_offsets(offset_commit_request&& r) {
               .metadata = p.committed_metadata.value_or(""),
             };
 
-            offset_commits.push_back(std::make_pair(tp, md));
+            offset_commits.emplace_back(std::make_pair(tp, md));
 
             // record the offset commits as pending commits which will be
             // inspected after the append to catch concurrent updates.
