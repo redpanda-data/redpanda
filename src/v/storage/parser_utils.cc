@@ -52,4 +52,13 @@ model::record parse_one_record_from_buffer(iobuf_parser& parser) {
       std::move(value),
       std::move(headers));
 }
+
+model::record
+parse_one_record_from_buffer_using_kafka_format(iobuf_parser& parser) {
+    // NOTE: today they are the same, but will not be in the future
+    //       mostly because record attributes, still unused in kafka as of
+    //       July 6 2020
+    return parse_one_record_from_buffer(parser);
+}
+
 } // namespace storage::internal
