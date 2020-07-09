@@ -74,8 +74,7 @@ set(BASE_C_FLAGS_LIST -fPIC)
 if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
     list(APPEND BASE_LD_FLAGS_LIST
         -stdlib=libc++
-        -fuse-ld=lld
-        -lc++experimental)
+        -fuse-ld=lld)
     if (V_MANAGE_DEPS)
       set(LLVM_LIBCPP_INCLUDE_FLAG "-I${V_DEPS_INSTALL_DIR}/include/c++/v1")
     endif()
@@ -171,9 +170,11 @@ if ("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
   set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} -fsanitize=undefined -fsanitize=address")
 endif()
 
+# for clang, link with c++experimental for clang (needed by seastar)
 # Look for libc++ only if we are using Clang
 if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
     find_package(LibCxx)
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -lc++experimental")
 endif()
 
 # from seastar/CMakeLists.txt. unfortunately this snippet doesn't appear to be
