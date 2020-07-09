@@ -1,5 +1,6 @@
 #include "storage/parser_utils.h"
 
+#include "model/record.h"
 #include "model/record_utils.h"
 #include "reflection/adl.h"
 
@@ -59,6 +60,56 @@ parse_one_record_from_buffer_using_kafka_format(iobuf_parser& parser) {
     //       mostly because record attributes, still unused in kafka as of
     //       July 6 2020
     return parse_one_record_from_buffer(parser);
+}
+
+static inline void append_vint_to_iobuf(iobuf& b, vint::value_type v) {
+    auto vb = vint::to_bytes(v);
+    b.append(vb.data(), vb.size());
+}
+void append_record_using_kafka_format(iobuf& a, const model::record& r) {
+    a.reserve_memory(vint::max_length * 6);
+    append_vint_to_iobuf(a, r.size_bytes());
+
+    // NOTE: kafka record attributes are unused and set to 0
+    static const constexpr std::
+      array<char, sizeof(model::record_attributes::type)>
+        attrs{0};
+    a.append(attrs.data(), attrs.size());
+
+    append_vint_to_iobuf(a, r.timestamp_delta());
+    append_vint_to_iobuf(a, r.offset_delta());
+
+    a.reserve_memory(r.key_size() + r.value_size());
+    append_vint_to_iobuf(a, r.key_size());
+    if (r.key_size() > 0) {
+        for (auto& f : r.key()) {
+            a.append(f.get(), f.size());
+        }
+    }
+    append_vint_to_iobuf(a, r.value_size());
+    if (r.value_size() > 0) {
+        for (auto& f : r.value()) {
+            a.append(f.get(), f.size());
+        }
+    }
+
+    auto& hdrs = r.headers();
+    append_vint_to_iobuf(a, hdrs.size());
+    for (auto& h : hdrs) {
+        append_vint_to_iobuf(a, h.key_size());
+        a.reserve_memory(h.memory_usage());
+        if (h.key_size() > 0) {
+            for (auto& f : h.key()) {
+                a.append(f.get(), f.size());
+            }
+        }
+        append_vint_to_iobuf(a, h.value_size());
+        if (h.value_size() > 0) {
+            for (auto& f : h.value()) {
+                a.append(f.get(), f.size());
+            }
+        }
+    }
 }
 
 } // namespace storage::internal
