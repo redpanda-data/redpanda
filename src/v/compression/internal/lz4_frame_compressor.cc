@@ -62,8 +62,8 @@ iobuf lz4_frame_compressor::compress(const iobuf& b) {
     LZ4F_preferences_t prefs;
     std::memset(&prefs, 0, sizeof(prefs));
     prefs.compressionLevel = 1; // default
-    prefs.frameInfo = {.blockMode = LZ4F_blockIndependent,
-                       .contentSize = b.size_bytes()};
+    prefs.frameInfo = {
+      .blockMode = LZ4F_blockIndependent, .contentSize = b.size_bytes()};
     const size_t output_buffer_size = LZ4F_compressBound(b.size_bytes(), &prefs)
                                       + lz4f_footer_size + lz4f_header_size;
     check_lz4_error("lz4_compressbound erorr:{}", output_buffer_size);
