@@ -7,6 +7,7 @@ namespace storage::internal {
 std::vector<model::record_header> parse_record_headers(iobuf_parser& parser) {
     std::vector<model::record_header> headers;
     auto [header_count, _] = parser.read_varlong();
+    headers.reserve(header_count);
     for (int i = 0; i < header_count; ++i) {
         auto [key_length, kv] = parser.read_varlong();
         iobuf key;
