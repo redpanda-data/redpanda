@@ -77,7 +77,7 @@ bool group::valid_previous_state(group_state s) const {
 
     switch (s) {
     case g::empty:
-        return _state == g::preparing_rebalance;
+        [[fallthrough]];
     case g::completing_rebalance:
         return _state == g::preparing_rebalance;
     case g::preparing_rebalance:
