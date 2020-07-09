@@ -6,6 +6,7 @@
 #include "likely.h"
 #include "model/record.h"
 #include "raft/types.h"
+#include "storage/parser_utils.h"
 #include "vassert.h"
 
 #include <seastar/core/smp.hh>
@@ -80,58 +81,14 @@ model::record_batch_header kafka_batch_adapter::read_header(iobuf_parser& in) {
     return header;
 }
 
-static std::vector<model::record_header>
-read_record_headers(iobuf_parser& parser, int32_t num_headers) {
-    std::vector<model::record_header> headers;
-    for (int i = 0; i < num_headers; ++i) {
-        auto [key_length, kv] = parser.read_varlong();
-        iobuf key;
-        if (key_length > 0) {
-            key = parser.share(key_length);
-        }
-        auto [val_length, vv] = parser.read_varlong();
-        iobuf val;
-        if (val_length > 0) {
-            val = parser.share(val_length);
-        }
-        headers.emplace_back(model::record_header(
-          key_length, std::move(key), val_length, std::move(val)));
-    }
-    return headers;
-}
-
 static model::record_batch::uncompressed_records
 read_records(iobuf_parser& parser, size_t num_records) {
     auto rs = model::record_batch::uncompressed_records();
     rs.reserve(num_records);
     for (unsigned i = 0; i < num_records; ++i) {
-        auto [length, length_size] = parser.read_varlong();
-        auto attributes = model::record_attributes(
-          parser.consume_type<int8_t>());
-        auto [timestamp_delta, timestamp_delta_size] = parser.read_varlong();
-        auto [offset_delta, offset_delta_size] = parser.read_varlong();
-        auto [key_length, key_length_size] = parser.read_varlong();
-        iobuf key;
-        if (key_length > 0) {
-            key = parser.share(key_length);
-        }
-        auto [val_length, val_length_size] = parser.read_varlong();
-        iobuf val;
-        if (val_length > 0) {
-            val = parser.share(val_length);
-        }
-        auto [num_headers, _] = parser.read_varlong();
-        auto headers = read_record_headers(parser, num_headers);
         rs.emplace_back(
-          length,
-          attributes,
-          timestamp_delta,
-          offset_delta,
-          key_length,
-          std::move(key),
-          val_length,
-          std::move(val),
-          std::move(headers));
+          storage::internal::parse_one_record_from_buffer_using_kafka_format(
+            parser));
     }
     return rs;
 }
