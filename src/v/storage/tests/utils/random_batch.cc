@@ -1,11 +1,13 @@
 #include "storage/tests/utils/random_batch.h"
 
 #include "bytes/iobuf.h"
+#include "compression/compression.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "model/record_utils.h"
 #include "random/generators.h"
+#include "storage/parser_utils.h"
 #include "utils/vint.h"
 
 #include <seastar/core/smp.hh>
@@ -70,7 +72,7 @@ model::record_batch make_random_batch(
   int num_records,
   bool allow_compression,
   model::record_batch_type bt) {
-    auto ts = model::timestamp::now();
+    auto ts = model::timestamp::now()() - (num_records - 1);
     auto header = model::record_batch_header{
       .size_bytes = 0, // computed later
       .base_offset = o,
@@ -79,8 +81,8 @@ model::record_batch make_random_batch(
       .attrs = model::record_batch_attributes(
         get_int<int16_t>(0, allow_compression ? 4 : 0)),
       .last_offset_delta = num_records - 1,
-      .first_timestamp = ts,
-      .max_timestamp = ts,
+      .first_timestamp = model::timestamp(ts),
+      .max_timestamp = model::timestamp(ts + num_records - 1),
       .producer_id = 0,
       .producer_epoch = 0,
       .base_sequence = 0,
@@ -88,17 +90,24 @@ model::record_batch make_random_batch(
 
     auto size = model::packed_record_batch_header_size;
     model::record_batch::records_type records;
+    auto rs = model::record_batch::uncompressed_records();
+    rs.reserve(num_records);
+    for (int i = 0; i < num_records; ++i) {
+        rs.emplace_back(make_random_record(i));
+    }
     if (header.attrs.compression() != model::compression::none) {
-        auto blob = make_iobuf(get_int(1024, 4096));
-        size += blob.size_bytes();
-        records = std::move(blob);
+        iobuf body;
+        for (auto& r : rs) {
+            internal::append_record_using_kafka_format(body, r);
+        }
+        rs.clear();
+        records = compression::compressor::compress(
+          body, header.attrs.compression());
+        size += std::get<iobuf>(records).size_bytes();
     } else {
-        auto rs = model::record_batch::uncompressed_records();
-        for (int i = 0; i < num_records; ++i) {
-            auto r = make_random_record(i);
+        for (auto& r : rs) {
             size += r.size_bytes();
             size += vint::vint_size(r.size_bytes());
-            rs.push_back(std::move(r));
         }
         records = std::move(rs);
     }
