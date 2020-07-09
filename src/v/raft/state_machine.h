@@ -46,10 +46,10 @@ class consensus;
 class state_machine {
 public:
     static constexpr model::record_batch_type checkpoint_batch_type{5};
-    state_machine(ss::logger& log, ss::io_priority_class io_prio);
+    state_machine(consensus*, ss::logger& log, ss::io_priority_class io_prio);
 
     // start after ready to receive batches through apply upcall.
-    ss::future<> start(consensus*);
+    ss::future<> start();
 
     ss::future<> stop();
 
