@@ -83,7 +83,7 @@ public:
     explicit mux_state_machine(ss::logger&, consensus*, T&...);
 
     // Lifecycle management
-    ss::future<> start() { return raft::state_machine::start(_c); }
+    ss::future<> start() { return raft::state_machine::start(); }
 
     /// Replicates record batch
     ss::future<result<raft::replicate_result>> replicate(model::record_batch&&);
@@ -152,7 +152,7 @@ private:
 template<typename... T>
 mux_state_machine<T...>::mux_state_machine(
   ss::logger& logger, consensus* c, T&... state)
-  : raft::state_machine(logger, ss::default_priority_class())
+  : raft::state_machine(c, logger, ss::default_priority_class())
   , _c(c)
   , _state(state...) {}
 
