@@ -33,10 +33,13 @@ set(cmake_build_env
   CXXFLAGS=-std=c++17\ ${cxx_flags}
   CPPFLAGS=-std=c++17\ ${cxx_flags}
   )
-# seastar needs explicit -g
+# seastar needs explicit -g and -lc++experimental on clang
+if (@CMAKE_CXX_COMPILER_ID@ MATCHES "Clang")
+  set(seastar_cpp_experimental_linker_flag "-lc++experimental")
+endif()
 set(seastar_build_env
   PKG_CONFIG_PATH=@PKG_CONFIG_PATH@
-  LDFLAGS=${ld_flags}
+  LDFLAGS=${ld_flags}\ ${seastar_cpp_experimental_linker_flag}
   CFLAGS=${c_flags}
   CXXFLAGS=-std=c++17\ ${cxx_flags}\ -g
   CPPFLAGS=-std=c++17\ ${cxx_flags}\ -g
