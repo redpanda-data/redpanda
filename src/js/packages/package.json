@@ -18,6 +18,7 @@
     "mocha": "7.1.1",
     "@types/mocha": "7.0.2",
     "typescript-formatter": "7.2.2",
-    "rewire": "5.0.0"
+    "rewire": "5.0.0",
+    "inotifywait": "1.8.3"
   }
 }
