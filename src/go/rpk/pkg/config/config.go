@@ -83,20 +83,7 @@ func DefaultConfig() Config {
 			SeedServers: []*SeedServer{},
 		},
 		Rpk: &RpkConfig{
-			EnableUsageStats:         true,
-			TuneNetwork:              true,
-			TuneDiskScheduler:        true,
-			TuneNomerges:             true,
-			TuneDiskIrq:              true,
-			TuneFstrim:               true,
-			TuneCpu:                  true,
-			TuneAioEvents:            true,
-			TuneClocksource:          true,
-			TuneSwappiness:           true,
-			TuneTransparentHugePages: false,
-			EnableMemoryLocking:      false,
-			TuneCoredump:             false,
-			CoredumpDir:              "/var/lib/redpanda/coredump",
+			CoredumpDir: "/var/lib/redpanda/coredump",
 		},
 	}
 }

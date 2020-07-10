@@ -24,11 +24,6 @@ func TestInteractive(t *testing.T) {
 			input: "n\n",
 		},
 		{
-			name:           "it should run the tuner if the user enters 'y'",
-			input:          "y\n",
-			expectedOutput: "Running 'swappiness' tuner...",
-		},
-		{
 			name:           "it should exit if the user enters 'q'",
 			input:          "q\n",
 			expectedOutput: "user exited",
