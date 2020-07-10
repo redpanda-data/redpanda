@@ -9,6 +9,7 @@
 #include "storage/version.h"
 
 #include <seastar/core/file.hh>
+#include <seastar/core/gate.hh>
 #include <seastar/core/rwlock.hh>
 
 #include <exception>
@@ -148,6 +149,10 @@ private:
     ss::future<> do_truncate(model::offset prev_last_offset, size_t physical);
     ss::future<> do_close();
     ss::future<> do_flush();
+    ss::future<> do_release_appender(
+      std::optional<segment_appender>,
+      std::optional<batch_cache_index>,
+      std::optional<compacted_index_writer>);
     ss::future<> remove_thombsones();
     ss::future<> compaction_index_batch(const model::record_batch&);
 
@@ -160,6 +165,7 @@ private:
     ss::rwlock _destructive_ops;
     bool _tombstone = false;
     bool _closed = false;
+    ss::gate _gate;
 
     friend std::ostream& operator<<(std::ostream&, const segment&);
 };
