@@ -7,14 +7,15 @@
 
 namespace raft {
 
-state_machine::state_machine(ss::logger& log, ss::io_priority_class io_prio)
-  : _io_prio(io_prio)
+state_machine::state_machine(
+  consensus* raft, ss::logger& log, ss::io_priority_class io_prio)
+  : _raft(raft)
+  , _io_prio(io_prio)
   , _log(log)
   , _next(0) {}
 
-ss::future<> state_machine::start(consensus* raft) {
+ss::future<> state_machine::start() {
     vlog(_log.info, "Starting state machine");
-    _raft = raft;
     (void)ss::with_gate(_gate, [this] {
         return ss::do_until(
           [this] { return _gate.is_closed(); }, [this] { return apply(); });
@@ -79,8 +80,9 @@ ss::future<result<replicate_result>> state_machine::quorum_write_empty_batch(
           if (!r) {
               return ss::make_ready_future<ret_t>(r);
           }
-          return wait(r.value().last_offset, timeout)
-            .then([r = std::move(r)]() mutable { return std::move(r); });
+          return wait(r.value().last_offset, timeout).then([r]() mutable {
+              return r;
+          });
       });
 }
 
