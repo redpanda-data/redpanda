@@ -7,7 +7,8 @@
             "buffer": ["@types/node/"],
             "mocha": ["@types/mocha/"]
         },
-        "newLine": "lf"
+        "newLine": "lf",
+        "downlevelIteration": true
     },
     "include": [
         "modules/rpc",
