@@ -11,6 +11,7 @@
 - [ ] [Setup AWS cloud account](https://vectorizedio.signin.aws.amazon.com/console)
 - [ ] Laptop (strong suggest: fedora:30)
 - [ ] [Setup clubhouse.io](https://clubhouse.io)
+- [ ] [Join our slack](https://join.slack.com/t/vectorizedio/signup)
 
 ## Day 1
 
