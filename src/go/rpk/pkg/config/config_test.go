@@ -510,6 +510,79 @@ func TestInitConfig(t *testing.T) {
 	}
 }
 
+func TestSetMode(t *testing.T) {
+	fillRpkConfig := func(mode string) Config {
+		conf := DefaultConfig()
+		val := mode == ModeProd
+		conf.Rpk = &RpkConfig{
+			EnableUsageStats:    val,
+			TuneNetwork:         val,
+			TuneDiskScheduler:   val,
+			TuneNomerges:        val,
+			TuneDiskIrq:         val,
+			TuneFstrim:          val,
+			TuneCpu:             val,
+			TuneAioEvents:       val,
+			TuneClocksource:     val,
+			TuneSwappiness:      val,
+			EnableMemoryLocking: val,
+			CoredumpDir:         conf.Rpk.CoredumpDir,
+		}
+		return conf
+	}
+
+	tests := []struct {
+		name           string
+		mode           string
+		expectedConfig Config
+		expectedErrMsg string
+	}{
+		{
+			name:           "it should disable all tuners for dev mode",
+			mode:           ModeDev,
+			expectedConfig: fillRpkConfig(ModeDev),
+		},
+		{
+			name:           "it should disable all tuners for dev mode ('development')",
+			mode:           "development",
+			expectedConfig: fillRpkConfig(ModeDev),
+		},
+		{
+			name:           "it should disable all tuners for dev mode ('')",
+			mode:           "",
+			expectedConfig: fillRpkConfig(ModeDev),
+		},
+		{
+			name:           "it should enable all the default tuners for prod mode",
+			mode:           ModeProd,
+			expectedConfig: fillRpkConfig(ModeProd),
+		},
+		{
+			name:           "it should enable all the default tuners for prod mode ('production')",
+			mode:           ModeProd,
+			expectedConfig: fillRpkConfig(ModeProd),
+		},
+		{
+			name:           "it should return an error for invalid modes",
+			mode:           "winning",
+			expectedErrMsg: "'winning' is not a supported mode. Available modes: dev, development, prod, production",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(st *testing.T) {
+			defaultConf := DefaultConfig()
+			conf, err := SetMode(tt.mode, &defaultConf)
+			if tt.expectedErrMsg != "" {
+				require.EqualError(t, err, tt.expectedErrMsg)
+				return
+			}
+			require.NoError(t, err)
+			require.Exactly(t, tt.expectedConfig, *conf)
+		})
+	}
+}
+
 func TestCheckConfig(t *testing.T) {
 	tests := []struct {
 		name     string
