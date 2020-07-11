@@ -20,6 +20,11 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+const (
+	ModeDev  = "dev"
+	ModeProd = "prod"
+)
+
 type Config struct {
 	NodeUuid     string          `yaml:"node_uuid,omitempty" json:"nodeUuid"`
 	Organization string          `yaml:"organization,omitempty" json:"organization"`
@@ -303,6 +308,85 @@ func ReadAsJSON(fs afero.Fs, path string) (string, error) {
 		return "", err
 	}
 	return string(confJSON), nil
+}
+
+func SetMode(mode string, conf *Config) (*Config, error) {
+	m, err := NormalizeMode(mode)
+	if err != nil {
+		return nil, err
+	}
+	switch m {
+	case ModeDev:
+		return setDevelopment(conf), nil
+
+	case ModeProd:
+		return setProduction(conf), nil
+
+	default:
+		err := fmt.Errorf(
+			"'%s' is not a supported mode. Available modes: %s",
+			mode,
+			strings.Join(AvailableModes(), ", "),
+		)
+		return nil, err
+	}
+}
+
+func setDevelopment(conf *Config) *Config {
+	// Defaults to setting all tuners to false
+	conf.Rpk = &RpkConfig{
+		CoredumpDir: conf.Rpk.CoredumpDir,
+	}
+	return conf
+}
+
+func setProduction(conf *Config) *Config {
+	rpk := conf.Rpk
+	rpk.EnableUsageStats = true
+	rpk.TuneNetwork = true
+	rpk.TuneDiskScheduler = true
+	rpk.TuneNomerges = true
+	rpk.TuneDiskIrq = true
+	rpk.TuneFstrim = true
+	rpk.TuneCpu = true
+	rpk.TuneAioEvents = true
+	rpk.TuneClocksource = true
+	rpk.TuneSwappiness = true
+	rpk.EnableMemoryLocking = true
+	return conf
+}
+
+func AvailableModes() []string {
+	return []string{
+		ModeDev,
+		"development",
+		ModeProd,
+		"production",
+	}
+}
+
+func NormalizeMode(mode string) (string, error) {
+	switch mode {
+	case "":
+		fallthrough
+	case "development":
+		fallthrough
+	case ModeDev:
+		return ModeDev, nil
+
+	case "production":
+		fallthrough
+	case ModeProd:
+		return ModeProd, nil
+
+	default:
+		err := fmt.Errorf(
+			"'%s' is not a supported mode. Available modes: %s",
+			mode,
+			strings.Join(AvailableModes(), ", "),
+		)
+		return "", err
+	}
 }
 
 func write(fs afero.Fs, conf map[string]interface{}, path string) error {
