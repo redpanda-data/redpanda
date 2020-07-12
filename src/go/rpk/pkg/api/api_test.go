@@ -35,7 +35,7 @@ func TestSendMetrics(t *testing.T) {
 		}))
 	defer ts.Close()
 
-	err = SendMetricsToUrl(body, ts.URL)
+	err = sendMetricsToUrl(body, ts.URL)
 	require.NoError(t, err)
 }
 
@@ -98,6 +98,6 @@ func TestSendEnvironment(t *testing.T) {
 			w.WriteHeader(http.StatusOK)
 		}))
 	defer ts.Close()
-	err = SendEnvironmentToUrl(body, ts.URL)
+	err = sendEnvironmentToUrl(body, ts.URL)
 	require.NoError(t, err)
 }
