@@ -168,7 +168,7 @@ func getMetrics(
 			[]string{"Free Space  (MB)", fmt.Sprintf("%0.3f", m.FreeSpaceMB)},
 		)
 	}
-	if conf.Rpk.EnableUsageStats && send {
+	if send {
 		if conf.NodeUuid == "" {
 			c, err := config.GenerateAndWriteNodeUuid(fs, &conf)
 			if err != nil {

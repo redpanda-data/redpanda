@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"time"
 	"vectorized/pkg/config"
+
+	log "github.com/sirupsen/logrus"
 )
 
 const defaultUrl = "https://m.rp.vectorized.io"
@@ -65,7 +67,7 @@ func SendMetrics(p MetricsPayload, conf config.Config) error {
 		conf.ClusterId,
 		conf.Redpanda.Id,
 	}
-	return sendMetricsToUrl(b, defaultUrl)
+	return sendMetricsToUrl(b, defaultUrl, conf)
 }
 
 func SendEnvironment(
@@ -83,40 +85,37 @@ func SendEnvironment(
 	return sendEnvironmentToUrl(
 		b,
 		fmt.Sprintf("%s%s", defaultUrl, "/env"),
+		conf,
 	)
 }
 
-func sendMetricsToUrl(b metricsBody, url string) error {
+func sendMetricsToUrl(b metricsBody, url string, conf config.Config) error {
 	bs, err := json.Marshal(b)
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(bs))
-	if err != nil {
-		return err
-	}
-	client := &http.Client{}
-	res, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer res.Body.Close()
-
-	if res.StatusCode != 200 {
-		return fmt.Errorf("metrics request failed. Status: %d", res.StatusCode)
-	}
-	return nil
+	return sendRequest(bs, http.MethodPost, url, conf)
 }
 
-func sendEnvironmentToUrl(body environmentBody, url string) error {
+func sendEnvironmentToUrl(
+	body environmentBody, url string, conf config.Config,
+) error {
 	bs, err := json.Marshal(body)
 	if err != nil {
 		return err
 	}
+	return sendRequest(bs, http.MethodPost, url, conf)
+}
+
+func sendRequest(body []byte, method, url string, conf config.Config) error {
+	if !conf.Rpk.EnableUsageStats {
+		log.Debug("Sending usage stats is disabled.")
+		return nil
+	}
 	req, err := http.NewRequest(
 		http.MethodPost,
 		url,
-		bytes.NewBuffer(bs),
+		bytes.NewBuffer(body),
 	)
 	if err != nil {
 		return err

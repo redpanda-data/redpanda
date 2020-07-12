@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+	"vectorized/pkg/config"
 
 	"github.com/stretchr/testify/require"
 )
@@ -35,7 +36,26 @@ func TestSendMetrics(t *testing.T) {
 		}))
 	defer ts.Close()
 
-	err = sendMetricsToUrl(body, ts.URL)
+	conf := config.DefaultConfig()
+	conf.Rpk.EnableUsageStats = true
+	err = sendMetricsToUrl(body, ts.URL, conf)
+	require.NoError(t, err)
+}
+
+func TestSkipSendMetrics(t *testing.T) {
+	ts := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			require.FailNow(
+				t,
+				"The request shouldn't have been sent if metrics collection is disabled",
+			)
+		}),
+	)
+	defer ts.Close()
+
+	conf := config.DefaultConfig()
+	conf.Rpk.EnableUsageStats = false
+	err := sendMetricsToUrl(metricsBody{}, ts.URL, conf)
 	require.NoError(t, err)
 }
 
@@ -96,8 +116,29 @@ func TestSendEnvironment(t *testing.T) {
 			require.NoError(t, err)
 			require.Exactly(t, bs, b)
 			w.WriteHeader(http.StatusOK)
-		}))
+		}),
+	)
 	defer ts.Close()
-	err = sendEnvironmentToUrl(body, ts.URL)
+
+	conf := config.DefaultConfig()
+	conf.Rpk.EnableUsageStats = true
+	err = sendEnvironmentToUrl(body, ts.URL, conf)
+	require.NoError(t, err)
+}
+
+func TestSkipSendEnvironment(t *testing.T) {
+	ts := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			require.FailNow(
+				t,
+				"The request shouldn't have been sent if metrics collection is disabled",
+			)
+		}),
+	)
+	defer ts.Close()
+
+	conf := config.DefaultConfig()
+	conf.Rpk.EnableUsageStats = false
+	err := sendEnvironmentToUrl(environmentBody{}, ts.URL, conf)
 	require.NoError(t, err)
 }
