@@ -29,7 +29,9 @@ std::vector<model::record_header> parse_record_headers(iobuf_parser& parser) {
 }
 
 model::record do_parse_one_record_from_buffer(
-  iobuf_parser& parser, int32_t record_size, model::record_attributes::type attr) {
+  iobuf_parser& parser,
+  int32_t record_size,
+  model::record_attributes::type attr) {
     auto [timestamp_delta, tv] = parser.read_varlong();
     auto [offset_delta, ov] = parser.read_varlong();
     auto [key_length, kv] = parser.read_varlong();
