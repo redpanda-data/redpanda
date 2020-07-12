@@ -65,7 +65,7 @@ func SendMetrics(p MetricsPayload, conf config.Config) error {
 		conf.ClusterId,
 		conf.Redpanda.Id,
 	}
-	return SendMetricsToUrl(b, defaultUrl)
+	return sendMetricsToUrl(b, defaultUrl)
 }
 
 func SendEnvironment(
@@ -80,13 +80,13 @@ func SendEnvironment(
 		ClusterId:    conf.ClusterId,
 		NodeId:       conf.Redpanda.Id,
 	}
-	return SendEnvironmentToUrl(
+	return sendEnvironmentToUrl(
 		b,
 		fmt.Sprintf("%s%s", defaultUrl, "/env"),
 	)
 }
 
-func SendMetricsToUrl(b metricsBody, url string) error {
+func sendMetricsToUrl(b metricsBody, url string) error {
 	bs, err := json.Marshal(b)
 	if err != nil {
 		return err
@@ -108,7 +108,7 @@ func SendMetricsToUrl(b metricsBody, url string) error {
 	return nil
 }
 
-func SendEnvironmentToUrl(body environmentBody, url string) error {
+func sendEnvironmentToUrl(body environmentBody, url string) error {
 	bs, err := json.Marshal(body)
 	if err != nil {
 		return err
