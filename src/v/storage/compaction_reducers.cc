@@ -4,6 +4,7 @@
 #include "random/generators.h"
 #include "storage/logger.h"
 #include "storage/segment_appender_utils.h"
+#include "storage/segment_utils.h"
 #include "vlog.h"
 
 #include <absl/algorithm/container.h>
@@ -193,20 +194,9 @@ copy_data_segment_reducer::filter(model::record_batch&& batch) {
     h.header_crc = model::internal_header_only_crc(h);
     return new_batch;
 }
-
 ss::future<ss::stop_iteration>
-copy_data_segment_reducer::operator()(model::record_batch&& b) {
-    // NOTE: since we do not have transaction support. we don't special case
-    // the idempotent producer/transactions
+copy_data_segment_reducer::do_compaction(model::record_batch&& b) {
     using stop_t = ss::stop_iteration;
-    if (b.compressed()) {
-        // TODO / FIXME
-        vlog(
-          stlog.error,
-          "compacted reducer cannot handle compressed batches yet - {}",
-          b.header());
-        return ss::make_ready_future<stop_t>(stop_t::no);
-    }
     auto to_copy = filter(std::move(b));
     if (to_copy == std::nullopt) {
         return ss::make_ready_future<stop_t>(stop_t::no);
@@ -217,5 +207,15 @@ copy_data_segment_reducer::operator()(model::record_batch&& b) {
                  return storage::write(*_appender, batch);
              })
       .then([] { return ss::make_ready_future<stop_t>(stop_t::no); });
+}
+
+ss::future<ss::stop_iteration>
+copy_data_segment_reducer::operator()(model::record_batch&& b) {
+    if (!b.compressed()) {
+        return do_compaction(std::move(b));
+    }
+    return decompress_batch(std::move(b)).then([this](model::record_batch&& b) {
+        return do_compaction(std::move(b));
+    });
 }
 } // namespace storage::internal

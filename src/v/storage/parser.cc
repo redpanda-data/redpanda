@@ -8,6 +8,7 @@
 #include "reflection/adl.h"
 #include "storage/logger.h"
 #include "storage/parser.h"
+#include "storage/parser_utils.h"
 #include "vlog.h"
 
 #include <seastar/core/smp.hh>
@@ -182,27 +183,6 @@ ss::future<result<stop_parser>> continuous_batch_parser::consume_one() {
         return consume_records();
     });
 }
-static std::vector<model::record_header>
-parse_record_headers(iobuf_parser& parser) {
-    std::vector<model::record_header> headers;
-    auto [header_count, _] = parser.read_varlong();
-    for (int i = 0; i < header_count; ++i) {
-        auto [key_length, kv] = parser.read_varlong();
-        iobuf key;
-        if (key_length > 0) {
-            key = parser.share(key_length);
-        }
-        auto [value_length, vv] = parser.read_varlong();
-        iobuf value;
-        if (value_length > 0) {
-            value = parser.share(value_length);
-        }
-        headers.emplace_back(model::record_header(
-          key_length, std::move(key), value_length, std::move(value)));
-    }
-    return headers;
-}
-
 ss::future<result<stop_parser>> continuous_batch_parser::consume_records() {
     auto sz = _header.size_bytes - model::packed_record_batch_header_size;
     return verify_read_iobuf(_input, sz, "parser::consume_records")
@@ -212,32 +192,8 @@ ss::future<result<stop_parser>> continuous_batch_parser::consume_records() {
           }
           iobuf_parser parser(std::move(b.value()));
           for (int i = 0; i < _header.record_count; ++i) {
-              auto [record_size, rv] = parser.read_varlong();
-              auto attr = reflection::adl<model::record_attributes::type>{}
-                            .from(parser);
-              auto [timestamp_delta, tv] = parser.read_varlong();
-              auto [offset_delta, ov] = parser.read_varlong();
-              auto [key_length, kv] = parser.read_varlong();
-              iobuf key;
-              if (key_length > 0) {
-                  key = parser.share(key_length);
-              }
-              auto [value_length, vv] = parser.read_varlong();
-              iobuf value;
-              if (value_length > 0) {
-                  value = parser.share(value_length);
-              }
-              auto headers = parse_record_headers(parser);
-              auto ret = _consumer->consume_record(model::record(
-                record_size,
-                model::record_attributes(attr),
-                static_cast<int32_t>(timestamp_delta),
-                static_cast<int32_t>(offset_delta),
-                key_length,
-                std::move(key),
-                value_length,
-                std::move(value),
-                std::move(headers)));
+              auto ret = _consumer->consume_record(
+                internal::parse_one_record_from_buffer(parser));
               if (std::holds_alternative<skip_batch>(ret)) {
                   if (std::get<skip_batch>(ret)) {
                       return result<stop_parser>(stop_parser::no);

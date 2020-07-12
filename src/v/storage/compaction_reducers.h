@@ -102,6 +102,8 @@ public:
     ss::future<> end_of_stream() { return _appender->close(); }
 
 private:
+    ss::future<ss::stop_iteration> do_compaction(model::record_batch&&);
+
     bool should_keep(model::offset base, int32_t delta) const {
         const auto o = base + model::offset(delta);
         return _list.contains(o);

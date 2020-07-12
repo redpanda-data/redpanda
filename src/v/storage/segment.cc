@@ -1,7 +1,9 @@
 #include "storage/segment.h"
 
+#include "compression/compression.h"
 #include "storage/fs_utils.h"
 #include "storage/logger.h"
+#include "storage/parser_utils.h"
 #include "storage/segment_appender_utils.h"
 #include "storage/segment_set.h"
 #include "storage/segment_utils.h"
@@ -185,22 +187,41 @@ void segment::cache_truncate(model::offset offset) {
         _cache->truncate(offset);
     }
 }
-
-ss::future<> segment::compaction_index_batch(const model::record_batch& b) {
-    if (b.compressed()) {
-        vlog(
-          stlog.error,
-          "Ignoring indexing on compacted topic for compressed batch. "
-          "Currently unsupported. {}",
-          b.header());
-        return ss::now();
-    }
+ss::future<> segment::do_compaction_index_batch(const model::record_batch& b) {
+    vassert(!b.compressed(), "wrong method. Call compact_index_batch. {}", b);
     auto& w = compaction_index();
     return ss::do_for_each(
       b.begin(), b.end(), [o = b.base_offset(), &w](const model::record& r) {
           return w.index(r.key(), o, r.offset_delta());
       });
 }
+ss::future<> segment::compaction_index_batch(const model::record_batch& b) {
+    if (!has_compacion_index()) {
+        return ss::now();
+    }
+    if (!b.compressed()) {
+        return do_compaction_index_batch(b);
+    }
+    iobuf body_buf = compression::compressor::uncompress(
+      b.get_compressed_records(), b.header().attrs.compression());
+    return ss::do_with(
+      iobuf_parser(std::move(body_buf)),
+      [this, header = b.header()](iobuf_parser& parser) {
+          auto begin = boost::make_counting_iterator(uint32_t(0));
+          auto end = boost::make_counting_iterator(
+            uint32_t(header.record_count));
+          const model::offset o = header.base_offset;
+          return ss::do_for_each(begin, end, [this, o, &parser](uint32_t) {
+              auto rec
+                = internal::parse_one_record_from_buffer_using_kafka_format(
+                  parser);
+              auto k = iobuf_to_bytes(rec.key());
+              return compaction_index().index(
+                std::move(k), o, rec.offset_delta());
+          });
+      });
+}
+
 ss::future<append_result> segment::append(const model::record_batch& b) {
     check_segment_not_closed("append()");
     vassert(
@@ -217,32 +238,62 @@ ss::future<append_result> segment::append(const model::record_batch& b) {
       "Shard not set when writing to: {} - header: {}",
       *this,
       b.header());
-
+    if (unlikely(b.compressed() && !b.header().attrs.is_valid_compression())) {
+        return ss::make_exception_future<
+          append_result>(std::runtime_error(fmt::format(
+          "record batch marked as compressed, but has no valid compression:{}",
+          b.header())));
+    }
     const auto start_physical_offset = _appender->file_byte_offset();
     // proxy serialization to segment_appender_utils
-    return write(*_appender, b).then([this, &b, start_physical_offset] {
-        _tracker.dirty_offset = b.last_offset();
-        const auto end_physical_offset = _appender->file_byte_offset();
-        const auto expected_end_physical = start_physical_offset
-                                           + b.header().size_bytes;
-        vassert(
-          end_physical_offset == expected_end_physical,
-          "size must be deterministic: end_offset:{}, expected:{}",
-          end_physical_offset,
-          expected_end_physical);
-        // index the write
-        _idx.maybe_track(b.header(), start_physical_offset);
-        auto ret = append_result{
-          .base_offset = b.base_offset(),
-          .last_offset = b.last_offset(),
-          .byte_size = (size_t)b.size_bytes()};
-        // cache always copies the batch
-        cache_put(b);
-        if (_compaction_index) {
-            return compaction_index_batch(b).then([ret] { return ret; });
-        }
-        return ss::make_ready_future<append_result>(ret);
-    });
+    auto write_fut
+      = write(*_appender, b).then([this, &b, start_physical_offset] {
+            _tracker.dirty_offset = b.last_offset();
+            const auto end_physical_offset = _appender->file_byte_offset();
+            const auto expected_end_physical = start_physical_offset
+                                               + b.header().size_bytes;
+            vassert(
+              end_physical_offset == expected_end_physical,
+              "size must be deterministic: end_offset:{}, expected:{}",
+              end_physical_offset,
+              expected_end_physical);
+            // index the write
+            _idx.maybe_track(b.header(), start_physical_offset);
+            auto ret = append_result{
+              .base_offset = b.base_offset(),
+              .last_offset = b.last_offset(),
+              .byte_size = (size_t)b.size_bytes()};
+            // cache always copies the batch
+            cache_put(b);
+            return ret;
+        });
+    auto index_fut = compaction_index_batch(b);
+    return ss::when_all(std::move(write_fut), std::move(index_fut))
+      .then([](std::tuple<ss::future<append_result>, ss::future<>> p) {
+          auto& [append_fut, index_fut] = p;
+          const bool has_error = append_fut.failed() || index_fut.failed();
+          if (!has_error) {
+              index_fut.get();
+              return std::move(append_fut);
+          }
+          if (append_fut.failed()) {
+              auto append_err = std::move(append_fut).get_exception();
+              vlog(stlog.error, "segment::append failed: {}", append_err);
+              if (index_fut.failed()) {
+                  auto index_err = std::move(index_fut).get_exception();
+                  vlog(stlog.error, "segment::append index: {}", index_err);
+              }
+              return ss::make_exception_future<append_result>(append_err);
+          }
+          auto ret = append_fut.get0();
+          auto index_err = std::move(index_fut).get_exception();
+          vlog(
+            stlog.error,
+            "segment::append index: {}. ignorning append: {}",
+            index_err,
+            ret);
+          return ss::make_exception_future<append_result>(index_err);
+      });
 }
 ss::future<append_result> segment::append(model::record_batch&& b) {
     return ss::do_with(std::move(b), [this](model::record_batch& b) mutable {
