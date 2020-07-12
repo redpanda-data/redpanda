@@ -29,7 +29,7 @@ std::vector<model::record_header> parse_record_headers(iobuf_parser& parser) {
 }
 
 model::record do_parse_one_record_from_buffer(
-  iobuf_parser& parser, int32_t record_size, int16_t attr) {
+  iobuf_parser& parser, int32_t record_size, model::record_attributes::type attr) {
     auto [timestamp_delta, tv] = parser.read_varlong();
     auto [offset_delta, ov] = parser.read_varlong();
     auto [key_length, kv] = parser.read_varlong();
@@ -66,7 +66,7 @@ parse_one_record_from_buffer_using_kafka_format(iobuf_parser& parser) {
     auto [record_size, rv] = parser.read_varlong();
     // NOTE: this is the main difference between our batch format and kafka
     // at the record level. At the batch level we have many differences
-    auto attr = parser.consume_be_type<int16_t>();
+    auto attr = parser.consume_be_type<model::record_attributes::type>();
     return do_parse_one_record_from_buffer(parser, record_size, attr);
 }
 
@@ -78,7 +78,7 @@ void append_record_using_kafka_format(iobuf& a, const model::record& r) {
     a.reserve_memory(vint::max_length * 6);
     append_vint_to_iobuf(a, r.size_bytes());
 
-    const int16_t attrs = ss::cpu_to_be(r.attributes().value());
+    const auto attrs = ss::cpu_to_be(r.attributes().value());
     // NOLINTNEXTLINE
     a.append(reinterpret_cast<const char*>(&attrs), sizeof(attrs));
 
