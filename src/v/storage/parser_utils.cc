@@ -4,6 +4,8 @@
 #include "model/record_utils.h"
 #include "reflection/adl.h"
 
+#include <seastar/core/byteorder.hh>
+
 namespace storage::internal {
 std::vector<model::record_header> parse_record_headers(iobuf_parser& parser) {
     std::vector<model::record_header> headers;
@@ -26,9 +28,8 @@ std::vector<model::record_header> parse_record_headers(iobuf_parser& parser) {
     return headers;
 }
 
-model::record parse_one_record_from_buffer(iobuf_parser& parser) {
-    auto [record_size, rv] = parser.read_varlong();
-    auto attr = reflection::adl<model::record_attributes::type>{}.from(parser);
+model::record do_parse_one_record_from_buffer(
+  iobuf_parser& parser, int32_t record_size, int16_t attr) {
     auto [timestamp_delta, tv] = parser.read_varlong();
     auto [offset_delta, ov] = parser.read_varlong();
     auto [key_length, kv] = parser.read_varlong();
@@ -54,12 +55,19 @@ model::record parse_one_record_from_buffer(iobuf_parser& parser) {
       std::move(headers));
 }
 
+model::record parse_one_record_from_buffer(iobuf_parser& parser) {
+    auto [record_size, rv] = parser.read_varlong();
+    auto attr = reflection::adl<model::record_attributes::type>{}.from(parser);
+    return do_parse_one_record_from_buffer(parser, record_size, attr);
+}
+
 model::record
 parse_one_record_from_buffer_using_kafka_format(iobuf_parser& parser) {
-    // NOTE: today they are the same, but will not be in the future
-    //       mostly because record attributes, still unused in kafka as of
-    //       July 6 2020
-    return parse_one_record_from_buffer(parser);
+    auto [record_size, rv] = parser.read_varlong();
+    // NOTE: this is the main difference between our batch format and kafka
+    // at the record level. At the batch level we have many differences
+    auto attr = parser.consume_be_type<int16_t>();
+    return do_parse_one_record_from_buffer(parser, record_size, attr);
 }
 
 static inline void append_vint_to_iobuf(iobuf& b, vint::value_type v) {
@@ -70,11 +78,9 @@ void append_record_using_kafka_format(iobuf& a, const model::record& r) {
     a.reserve_memory(vint::max_length * 6);
     append_vint_to_iobuf(a, r.size_bytes());
 
-    // NOTE: kafka record attributes are unused and set to 0
-    static const constexpr std::
-      array<char, sizeof(model::record_attributes::type)>
-        attrs{0};
-    a.append(attrs.data(), attrs.size());
+    const int16_t attrs = ss::cpu_to_be(r.attributes().value());
+    // NOLINTNEXTLINE
+    a.append(reinterpret_cast<const char*>(&attrs), sizeof(attrs));
 
     append_vint_to_iobuf(a, r.timestamp_delta());
     append_vint_to_iobuf(a, r.offset_delta());
