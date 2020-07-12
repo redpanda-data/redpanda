@@ -53,6 +53,12 @@ public:
           int32_t offset_delta)
           = 0;
 
+        virtual ss::future<> index(
+          bytes&& key, // default format in record batch
+          model::offset base_offset,
+          int32_t offset_delta)
+          = 0;
+
         virtual ss::future<> truncate(model::offset) = 0;
 
         virtual void set_flag(compacted_index::footer_flags) = 0;
@@ -72,6 +78,7 @@ public:
 
     ss::future<> index(bytes_view, model::offset, int32_t);
     ss::future<> index(const iobuf& key, model::offset, int32_t);
+    ss::future<> index(bytes&&, model::offset, int32_t);
     ss::future<> truncate(model::offset);
     ss::future<> close();
     void set_flag(compacted_index::footer_flags);
@@ -107,6 +114,10 @@ inline ss::future<> compacted_index_writer::index(
 inline ss::future<> compacted_index_writer::index(
   bytes_view b, model::offset base_offset, int32_t delta) {
     return _impl->index(b, base_offset, delta);
+}
+inline ss::future<> compacted_index_writer::index(
+  bytes&& b, model::offset base_offset, int32_t delta) {
+    return _impl->index(std::move(b), base_offset, delta);
 }
 inline ss::future<> compacted_index_writer::truncate(model::offset o) {
     return _impl->truncate(o);

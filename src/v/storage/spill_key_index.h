@@ -38,6 +38,7 @@ public:
 
     ss::future<> index(const iobuf& key, model::offset, int32_t) final;
     ss::future<> index(bytes_view, model::offset, int32_t) final;
+    ss::future<> index(bytes&&, model::offset, int32_t) final;
     ss::future<> truncate(model::offset) final;
     ss::future<> close() final;
     void print(std::ostream&) const final;
