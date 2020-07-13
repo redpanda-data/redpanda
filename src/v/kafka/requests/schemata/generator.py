@@ -350,6 +350,9 @@ class Field:
         self._nullable_versions = self._field.get("nullableVersions", None)
         if self._nullable_versions is not None:
             self._nullable_versions = VersionRange(self._nullable_versions)
+        self._default_value = self._field.get("default", "")
+        if self._default_value == "null":
+            self._default_value = ""
         assert len(self._path)
 
     @staticmethod
@@ -365,6 +368,9 @@ class Field:
 
     def versions(self):
         return self._versions
+
+    def default_value(self):
+        return self._default_value
 
     def about(self):
         return self._field.get("about", "<no description>")
@@ -511,7 +517,7 @@ struct {{ struct.name }} {
     {%- if info[1] != None %}
     {{ info[0] }} {{ field.name }}{{'{'}}{{info[1]}}{{'}'}};
     {%- else %}
-    {{ info[0] }} {{ field.name }};
+    {{ info[0] }} {{ field.name }}{ {{- field.default_value() -}} };
     {%- endif %}
 {%- endfor %}
 {% endmacro %}
