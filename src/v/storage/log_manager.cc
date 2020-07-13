@@ -184,6 +184,7 @@ ss::future<log> log_manager::do_manage(ntp_config cfg) {
     return recover_segments(
              std::filesystem::path(path),
              _config.sanitize_fileops,
+             cfg.is_compacted(),
              [this] { return create_cache(); },
              _abort_source)
       .then([this, cfg = std::move(cfg)](segment_set segments) mutable {

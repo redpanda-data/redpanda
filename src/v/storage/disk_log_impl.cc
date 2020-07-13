@@ -45,6 +45,7 @@ disk_log_impl::disk_log_impl(
             // keeps track of metadata operations perform on each segment
             // for compaction, etc.
             _segbits[s->offsets().base_offset] = segment_bitflags::none;
+            s->mark_compacted_segment();
         }
     }
     _probe.setup_metrics(this->config().ntp());
@@ -301,6 +302,7 @@ ss::future<> disk_log_impl::new_segment(
                 vassert(!_closed, "cannot add log segment to closed log");
                 if (config().is_compacted()) {
                     _segbits[h->offsets().base_offset] = segment_bitflags::none;
+                    h->mark_compacted_segment();
                 }
                 _segs.add(std::move(h));
                 _probe.segment_created();
