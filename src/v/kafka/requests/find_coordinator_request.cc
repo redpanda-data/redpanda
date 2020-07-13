@@ -110,6 +110,9 @@ ss::future<response_ptr> find_coordinator_api::process(
             config::shard_local_cfg().group_topic_partitions(),
             config::shard_local_cfg().default_topic_replication()};
 
+          topic.cleanup_policy_bitflags
+            = model::cleanup_policy_bitflags::compaction;
+
           return create_topic(ctx, std::move(topic))
             .then([&ctx, request = std::move(request)](error_code error) {
                 /*
