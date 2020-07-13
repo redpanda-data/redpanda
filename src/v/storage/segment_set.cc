@@ -272,6 +272,7 @@ static ss::future<segment_set::underlying_t> open_segments(
 ss::future<segment_set> recover_segments(
   std::filesystem::path path,
   debug_sanitize_files sanitize_fileops,
+  bool is_compaction_enabled,
   std::function<std::optional<batch_cache_index>()> cache_factory,
   ss::abort_source& as) {
     return ss::recursive_touch_directory(path.string())
@@ -279,8 +280,15 @@ ss::future<segment_set> recover_segments(
           return open_segments(
             path.string(), sanitize_fileops, cache_factory, as);
       })
-      .then([&as](segment_set::underlying_t segs) {
+      .then([&as, is_compaction_enabled](segment_set::underlying_t segs) {
           auto segments = segment_set(std::move(segs));
+          // we have to mark compacted segments before recovery to allow reading
+          // gaps introduced by compaction
+          if (is_compaction_enabled) {
+              for (auto& s : segments) {
+                  s->mark_compacted_segment();
+              }
+          }
           return do_recover(std::move(segments), as);
       });
 }

@@ -104,6 +104,10 @@ public:
     bool has_compacion_index() const {
         return _compaction_index != std::nullopt;
     }
+
+    void mark_compacted_segment() { _is_compacted_segment = true; }
+    bool is_compacted_segment() const { return _is_compacted_segment; }
+
     batch_cache_index& cache() { return *_cache; }
     const batch_cache_index& cache() const { return *_cache; }
     bool has_cache() const { return _cache != std::nullopt; }
@@ -167,6 +171,7 @@ private:
     bool _tombstone = false;
     bool _closed = false;
     ss::gate _gate;
+    bool _is_compacted_segment = false;
 
     friend std::ostream& operator<<(std::ostream&, const segment&);
 };

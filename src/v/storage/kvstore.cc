@@ -364,6 +364,7 @@ ss::future<> kvstore::recover() {
         auto segments = recover_segments(
                           std::move(dir),
                           debug_sanitize_files::yes,
+                          _ntpc.is_compacted(),
                           [] { return std::nullopt; },
                           _as)
                           .get0();
