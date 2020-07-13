@@ -155,9 +155,6 @@ https://www.kernel.org/doc/html/v4.19/process/submitting-patches.html
 
 ## Configuring git
 
-Run `tools/git.py --check-config=y` to setup the .gitorderfile and
-configure commit messages to always include the "Signed-off-by" tag.
-
 Configure your name and email address:
 
 ```
@@ -172,7 +169,19 @@ output easier to review:
 git config --global diff.renames copies
 ```
 
-## Commiting your changes
+Configure git to add `signed-off-by` with:
+
+```
+git config format.signoff true
+```
+
+To verify the git username ends in vectorized.io, use:
+
+```sh
+build/bin/vtools git verify
+```
+
+## Committing your changes
 
 Your modifications are made under your own fork and private branch.
 
@@ -190,7 +199,40 @@ Please prepare a commit message for every commit:
 
 http://tbaggery.com/2008/04/19/a-note-about-git-commit-messages.html
 
-## Preparing the patches
+## Configuring git to send patches to the mailing list
+
+You can find information on how to configure git to use gmail here: [Configuring
+git send-email to use Gmail SMTP](http://morefedora.blogspot.com/2009/02/configuring-git-send-email-to-use-gmail.html).
+
+You can copy paste the following to ``.git/config``:
+
+```
+[sendemail]
+    smtpserver = smtp.gmail.com
+    smtpuser = <you>@vectorized.io
+    smtpencryption = tls
+    chainreplyto = false
+    smtpserverport = 587
+```
+
+You can configure ad-hoc app passwords [here](https://myaccount.google.com/apppasswords).
+
+Copy the ad-hoc password and modify git configuration as follows:
+
+```
+$ git config sendemail.smtppass "<password>"
+```
+
+## Preparing and sending patches using vtools
+
+To prepare and send patches to the mailing list, you can use:
+
+1) `git remote add upstream git@github.com:vectorizedio/v.git`
+2) `build/bin/vtools git pr -u upstream/dev`
+
+See `build/bin/vtools git pr --help` for more info
+
+## Manually preparing the patches
 
 Once you have commits you want to send out, use ``git format-patch`` to
 generate them.
@@ -217,7 +259,7 @@ For a single patch, do:
 $ git format-patch -v1 -1
 ```
 
-## Sending the patches
+## Manually sending the patches
 
 Verify the generated patch files and then use git send-email to send them out:
 
@@ -231,28 +273,6 @@ Alternatively, to send patches in a directory:
 $ git send-email --suppress-cc=self --to v-dev@vectorized.io patches/
 ```
 
-You can find information on how to configure git to use gmail here: [Configuring
-git send-email to use Gmail SMTP](http://morefedora.blogspot.com/2009/02/configuring-git-send-email-to-use-gmail.html).
-
-You can copy paste the following to ``.git/config``:
-
-```
-[sendemail]
-    from = <your name>
-    smtpserver = smtp.gmail.com
-    smtpuser = <you>@vectorized.io
-    smtpencryption = tls
-    chainreplyto = false
-    smtpserverport = 587
-```
-
-You can configure ad-hoc app passwords [here](https://myaccount.google.com/apppasswords).
-
-Copy the ad-hoc password and modify git configuration as follows:
-
-```
-$ git config sendemail.smtppass "<password>"
-```
 
 ## Revisions
 
