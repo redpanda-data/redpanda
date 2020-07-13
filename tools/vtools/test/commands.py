@@ -78,14 +78,6 @@ def cpp(build_type, conf, clang, args):
     if vconfig.environ['CI'] != 0:
         shell.run_oneline("sysctl -w fs.aio-max-nr=1048576")
 
-    if vconfig.compiler == 'clang':
-        # define LD_LIBRARY_PATH for clang builds
-        ld_path = (f'/lib:/lib64:/usr/local/lib:/usr/local/lib64:'
-                   f'{vconfig.external_path}/lib:'
-                   f'{vconfig.external_path}/lib64')
-        logging.info(f'Setting LD_LIBRARY_PATH={ld_path}')
-        vconfig.environ['LD_LIBRARY_PATH'] = ld_path
-
     args = f' {args}' if args else '-R \".*_rp(unit|bench|int)$\"'
     shell.run_subprocess(f'cd {vconfig.build_dir} && '
                          f'ctest '
