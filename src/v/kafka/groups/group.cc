@@ -77,7 +77,7 @@ bool group::valid_previous_state(group_state s) const {
 
     switch (s) {
     case g::empty:
-        return _state == g::preparing_rebalance;
+        [[fallthrough]];
     case g::completing_rebalance:
         return _state == g::preparing_rebalance;
     case g::preparing_rebalance:
@@ -567,7 +567,7 @@ ss::future<join_group_response> group::add_member_and_rebalance(
     // now since the promise may be invalidated before we return.
     auto response = add_member(member);
     klog.trace("added member {} to group {}", member, *this);
-    _pending_members.erase(member_id);
+    _pending_members.erase(member->id());
 
     // <kafka>The session timeout does not affect new members since they do not
     // have their memberId and cannot send heartbeats. Furthermore, we cannot
@@ -1193,7 +1193,7 @@ group::store_offsets(offset_commit_request&& r) {
               .metadata = p.committed_metadata.value_or(""),
             };
 
-            offset_commits.push_back(std::make_pair(tp, md));
+            offset_commits.emplace_back(std::make_pair(tp, md));
 
             // record the offset commits as pending commits which will be
             // inspected after the append to catch concurrent updates.
