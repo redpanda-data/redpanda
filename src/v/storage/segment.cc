@@ -55,11 +55,16 @@ ss::future<> segment::close() {
      * close() is considered a destructive operation. All future IO on this
      * segment is unsafe. write_lock() ensures that we want for any active
      * readers and writers to finish before performing a destructive operation
+     *
+     * the gate should be closed without the write lock because there may be a
+     * pending background roll operation that requires the write lock.
      */
-    return write_lock().then([this](ss::rwlock::holder h) {
-        return do_close()
-          .then([this] { return remove_thombsones(); })
-          .finally([h = std::move(h)] {});
+    return _gate.close().then([this] {
+        return write_lock().then([this](ss::rwlock::holder h) {
+            return do_close()
+              .then([this] { return remove_thombsones(); })
+              .finally([h = std::move(h)] {});
+        });
     });
 }
 
@@ -98,25 +103,83 @@ ss::future<> segment::do_close() {
     return f;
 }
 
+ss::future<> segment::do_release_appender(
+  std::optional<segment_appender> appender,
+  std::optional<batch_cache_index> cache,
+  std::optional<compacted_index_writer> compacted_index) {
+    return ss::do_with(
+      std::move(appender),
+      std::move(compacted_index),
+      [this, cache = std::move(cache)](
+        std::optional<segment_appender>& appender,
+        std::optional<compacted_index_writer>& compacted_index) {
+          return appender->close()
+            .then([this] { return _idx.flush(); })
+            .then([&compacted_index] {
+                if (compacted_index) {
+                    return compacted_index->close();
+                }
+                return ss::now();
+            });
+      });
+}
+
 ss::future<> segment::release_appender() {
     vassert(_appender, "cannot release a null appender");
-    return write_lock().then([this](ss::rwlock::holder h) {
-        return do_flush()
-          .then([this] { return _appender->close(); })
-          .then([this] { return _idx.flush(); })
-          .then([this] {
-              if (_compaction_index) {
-                  return _compaction_index->close();
-              }
-              return ss::now();
-          })
-          .then([this] {
-              _appender = std::nullopt;
-              _cache = std::nullopt;
-              _compaction_index = std::nullopt;
-          })
-          .finally([h = std::move(h)] {});
-    });
+    /*
+     * If we are able to get the write lock then proceed with the normal
+     * appender release process.  Otherwise, schedule the destructive operations
+     * that require the write lock to be run in the background in order to avoid
+     * blocking segment rolling.
+     *
+     * An exception safe variant of try write lock is simulated since seastar
+     * does not have such primitives available on the semaphore. The fast path
+     * of try_write_lock is combined with immediately releasing the lock (which
+     * will not also not signal any waiters--there cannot be any!) to guarnatee
+     * that the blocking get_units version will find the lock uncontested.
+     *
+     * TODO: we should upstream get_units try-variants for semaphore and rwlock.
+     */
+    if (_destructive_ops.try_write_lock()) {
+        _destructive_ops.write_unlock();
+        return write_lock().then([this](ss::rwlock::holder h) {
+            return do_flush()
+              .then([this] {
+                  auto a = std::exchange(_appender, std::nullopt);
+                  auto c = std::exchange(_cache, std::nullopt);
+                  auto i = std::exchange(_compaction_index, std::nullopt);
+                  return do_release_appender(
+                    std::move(a), std::move(c), std::move(i));
+              })
+              .finally([h = std::move(h)] {});
+        });
+    } else {
+        return read_lock().then([this](ss::rwlock::holder h) {
+            return do_flush()
+              .then([this] {
+                  auto a = std::exchange(_appender, std::nullopt);
+                  auto c = std::exchange(_cache, std::nullopt);
+                  auto i = std::exchange(_compaction_index, std::nullopt);
+                  (void)ss::with_gate(
+                    _gate,
+                    [this,
+                     a = std::move(a),
+                     c = std::move(c),
+                     i = std::move(i)]() mutable {
+                        return write_lock().then(
+                          [this,
+                           a = std::move(a),
+                           c = std::move(c),
+                           i = std::move(i)](ss::rwlock::holder h) mutable {
+                              return do_release_appender(
+                                       std::move(a), std::move(c), std::move(i))
+                                .finally([h = std::move(h)] {});
+                          });
+                    });
+              })
+              .finally([h = std::move(h)] {});
+        });
+    }
 }
 
 ss::future<> segment::flush() {
