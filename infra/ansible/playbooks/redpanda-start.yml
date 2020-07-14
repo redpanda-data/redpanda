@@ -1,57 +1,34 @@
 - hosts: redpanda
   tasks:
+
   - name: ensure /etc/redpanda exists
     file:
       path: /etc/redpanda
       state: directory
-  - name: create default config
+
+  - name: configure redpanda
     notify:
       - restart redpanda-tuner
       - restart redpanda
-    copy:
-        dest: "/etc/redpanda/redpanda.yaml"
-        content: |
-          organization: "vectorized-test"
-          cluster_id: "vectorized-cluster"
+    vars:
+      seed_private_ip: '{{ hostvars[groups["redpanda"][0]].private_ip }}'
+    shell: |
+      rpk config set cluster_id 'test'
+      rpk config set organization 'vectorized.io'
+      rpk mode production
 
-          redpanda:
-              data_directory: "/var/lib/redpanda/data"
-              node_id: {{ hostvars[inventory_hostname].id }}
-              rpc_server:
-                  address: "{{ hostvars[inventory_hostname].private_ip }}"
-                  port: 33145
-              kafka_api:
-                  address: "{{ hostvars[inventory_hostname].private_ip }}"
-                  port: 9092
-              admin:
-                  address: "{{ hostvars[inventory_hostname].private_ip }}"
-                  port: 9644
-          {% if hostvars[inventory_hostname].id > 1 %}
-              seed_servers:
-          {% for host in ansible_play_batch%}
-          {% if hostvars[host].id != hostvars[inventory_hostname].id %}
-                - node_id: {{ hostvars[host].id }}
-                  host:
-                    address: "{{ hostvars[host].private_ip }}"
-                    port: 33145
-          {% endif %}
-          {% endfor %}
-          {% endif %}
+      {% if hostvars[groups['redpanda'][0]].id == hostvars[inventory_hostname].id %}
+      sudo rpk config bootstrap \
+        --id {{ hostvars[inventory_hostname].id }} \
+        --self {{ hostvars[inventory_hostname].private_ip }}
 
-          rpk:
-              enable_usage_stats: false
-              tune_network: true
-              tune_disk_scheduler: true
-              tune_disk_nomerges: true
-              tune_disk_irq: true
-              tune_cpu: true
-              tune_aio_events: true
-              tune_clocksource: true
-              tune_swappiness: true
-              enable_memory_locking: true
-              tune_coredump: false
+      {% else %}
 
-              coredump_dir: "/var/lib/redpanda/coredump"
+      sudo rpk config bootstrap \
+        --id {{ hostvars[inventory_hostname].id }} \
+        --self {{ hostvars[inventory_hostname].private_ip }} \
+        --ips {{ seed_private_ip }}
+      {% endif %}
 
   handlers:
   - name: restart redpanda-tuner
