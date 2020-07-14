@@ -44,7 +44,7 @@ SEASTAR_THREAD_TEST_CASE(reader_verifies_header_crc) {
     }
 
     auto writer = mgr.start_snapshot().get0();
-    writer.write_metadata(storage::snapshot_metadata()).get0();
+    writer.write_metadata(iobuf()).get0();
     writer.close().get();
     mgr.finish_snapshot(writer).get();
 
@@ -77,7 +77,8 @@ SEASTAR_THREAD_TEST_CASE(reader_verifies_metadata_crc) {
     }
 
     auto writer = mgr.start_snapshot().get0();
-    writer.write_metadata(storage::snapshot_metadata()).get0();
+    auto metadata = bytes_to_iobuf(random_generators::get_bytes(10));
+    writer.write_metadata(std::move(metadata)).get0();
     writer.close().get();
     mgr.finish_snapshot(writer).get();
 
@@ -110,15 +111,12 @@ SEASTAR_THREAD_TEST_CASE(read_write) {
     } catch (...) {
     }
 
-    storage::snapshot_metadata metadata{
-      .last_included_index = model::offset(9),
-      .last_included_term = model::term_id(33),
-    };
+    auto metadata_orig = bytes_to_iobuf(random_generators::get_bytes(33));
 
     const auto blob = random_generators::gen_alphanum_string(1234);
 
     auto writer = mgr.start_snapshot().get0();
-    writer.write_metadata(metadata).get();
+    writer.write_metadata(metadata_orig.copy()).get();
     writer.output().write(blob).get();
     writer.close().get();
     mgr.finish_snapshot(writer).get();
@@ -126,9 +124,7 @@ SEASTAR_THREAD_TEST_CASE(read_write) {
     auto reader = mgr.open_snapshot().get0();
     BOOST_REQUIRE(reader);
     auto read_metadata = reader->read_metadata().get0();
-    BOOST_TEST(
-      read_metadata.last_included_index == metadata.last_included_index);
-    BOOST_TEST(read_metadata.last_included_term == metadata.last_included_term);
+    BOOST_TEST(read_metadata == metadata_orig);
     auto blob_read = reader->input().read_exactly(blob.size()).get0();
     BOOST_TEST(blob_read.size() == 1234);
     BOOST_TEST(blob == ss::to_sstring(std::move(blob_read)));
