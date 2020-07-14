@@ -7,11 +7,14 @@
             "buffer": ["@types/node/"],
             "mocha": ["@types/mocha/"]
         },
-        "newLine": "lf"
+        "newLine": "lf",
+        "downlevelIteration": true
     },
     "include": [
         "modules/rpc",
         "modules/hashing",
+        "modules/utilities",
+        "modules/supervisors",
         "test"
     ],
     "exclude": [
