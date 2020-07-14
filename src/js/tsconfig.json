@@ -14,6 +14,7 @@
         "modules/rpc",
         "modules/hashing",
         "modules/utilities",
+        "modules/supervisors",
         "test"
     ],
     "exclude": [
