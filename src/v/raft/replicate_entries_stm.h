@@ -90,10 +90,8 @@ private:
       append_entries_request,
       ss::lw_shared_ptr<std::vector<ss::semaphore_units<>>>);
 
-    ss::future<result<append_entries_reply>> send_append_entries_request(
-      model::node_id,
-      append_entries_request,
-      ss::lw_shared_ptr<std::vector<ss::semaphore_units<>>>);
+    ss::future<result<append_entries_reply>>
+      send_append_entries_request(model::node_id, append_entries_request);
     result<replicate_result> process_result(model::offset, model::term_id);
     bool is_follower_recovering(model::node_id);
     clock_type::time_point append_entries_timeout();
