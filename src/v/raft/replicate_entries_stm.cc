@@ -59,7 +59,7 @@ ss::future<result<append_entries_reply>> replicate_entries_stm::do_dispatch_one(
         _dispatch_sem.signal();
         return f;
     }
-    return send_append_entries_request(n, std::move(req), std::move(units));
+    return send_append_entries_request(n, std::move(req));
 }
 
 clock_type::time_point replicate_entries_stm::append_entries_timeout() {
@@ -68,9 +68,7 @@ clock_type::time_point replicate_entries_stm::append_entries_timeout() {
 
 ss::future<result<append_entries_reply>>
 replicate_entries_stm::send_append_entries_request(
-  model::node_id n,
-  append_entries_request req,
-  ss::lw_shared_ptr<std::vector<ss::semaphore_units<>>> units) {
+  model::node_id n, append_entries_request req) {
     _ptr->update_node_hbeat_timestamp(n);
     vlog(_ctxlog.trace, "Sending append entries request {} to {}", req.meta, n);
 
