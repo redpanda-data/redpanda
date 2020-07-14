@@ -335,10 +335,12 @@ ss::future<> kvstore::save_snapshot() {
             std::move(writer),
             [this, data = std::move(data)](snapshot_writer& wr) mutable {
                 // the last log offset represented in the snapshot
-                snapshot_metadata meta;
-                meta.last_included_index = _next_offset - model::offset(1);
+                auto last_offset = _next_offset - model::offset(1);
 
-                return wr.write_metadata(meta)
+                iobuf meta;
+                reflection::serialize(meta, last_offset);
+
+                return wr.write_metadata(std::move(meta))
                   .then([&wr, data = std::move(data)]() mutable {
                       auto& os = wr.output(); // kept alive by do_with above
                       return write_iobuf_to_output_stream(std::move(data), os);
@@ -387,10 +389,13 @@ void kvstore::load_snapshot_in_thread() {
 
     // the snapshot metadata contains the last offset represented
     auto snap_meta = reader->read_metadata().get0();
+    iobuf_parser parser(std::move(snap_meta));
+    auto last_offset = model::offset(
+      reflection::adl<model::offset::type>{}.from(parser));
     vlog(
       lg.debug,
       "Load snapshot: loading snapshot with last offset {}",
-      snap_meta.last_included_index);
+      last_offset);
 
     // read and restore db from snapshot
     auto buf = read_iobuf_exactly(reader->input(), sizeof(int32_t)).get0();
@@ -439,7 +444,7 @@ void kvstore::load_snapshot_in_thread() {
           res.first->second);
     }
 
-    _next_offset = snap_meta.last_included_index + model::offset(1);
+    _next_offset = last_offset + model::offset(1);
 }
 
 void kvstore::replay_segments_in_thread(segment_set segs) {
