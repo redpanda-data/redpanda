@@ -107,7 +107,7 @@ def ansible(conf, playbook, ssh_key, provider, module, log, var):
             if i + 1 == len(ips):
                 f.write('[monitor]\n')
             f.write(f'{ip} ansible_user={ssh_user} ansible_become=True '
-                    f'private_ip={pip} id={i+1}\n')
+                    f'private_ip={pip} id={i}\n')
 
     # create extra vars flags
     evar = f'-e {" -e ".join(var)}' if var else ''

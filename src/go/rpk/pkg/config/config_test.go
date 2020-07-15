@@ -92,21 +92,21 @@ func TestSet(t *testing.T) {
 		{
 			name:   "it should partially set map fields (yaml)",
 			key:    "rpk",
-			value:  `tune_disk_irq: false`,
+			value:  `tune_disk_irq: true`,
 			format: "yaml",
 			expected: map[string]interface{}{
-				"enable_usage_stats":         true,
-				"tune_network":               true,
-				"tune_disk_scheduler":        true,
-				"tune_disk_nomerges":         true,
-				"tune_disk_irq":              false,
-				"tune_cpu":                   true,
-				"tune_aio_events":            true,
-				"tune_clocksource":           true,
-				"tune_swappiness":            true,
+				"enable_usage_stats":         false,
+				"tune_network":               false,
+				"tune_disk_scheduler":        false,
+				"tune_disk_nomerges":         false,
+				"tune_disk_irq":              true,
+				"tune_cpu":                   false,
+				"tune_aio_events":            false,
+				"tune_clocksource":           false,
+				"tune_swappiness":            false,
 				"tune_transparent_hugepages": false,
 				"enable_memory_locking":      false,
-				"tune_fstrim":                true,
+				"tune_fstrim":                false,
 				"tune_coredump":              false,
 				"coredump_dir":               "/var/lib/redpanda/coredump",
 			},
@@ -197,20 +197,7 @@ func TestDefaultConfig(t *testing.T) {
 			SeedServers: []*SeedServer{},
 		},
 		Rpk: &RpkConfig{
-			EnableUsageStats:         true,
-			TuneNetwork:              true,
-			TuneDiskScheduler:        true,
-			TuneNomerges:             true,
-			TuneDiskIrq:              true,
-			TuneFstrim:               true,
-			TuneCpu:                  true,
-			TuneAioEvents:            true,
-			TuneClocksource:          true,
-			TuneSwappiness:           true,
-			TuneTransparentHugePages: false,
-			EnableMemoryLocking:      false,
-			TuneCoredump:             false,
-			CoredumpDir:              "/var/lib/redpanda/coredump",
+			CoredumpDir: "/var/lib/redpanda/coredump",
 		},
 	}
 	require.Exactly(t, expected, defaultConfig)
@@ -523,6 +510,79 @@ func TestInitConfig(t *testing.T) {
 	}
 }
 
+func TestSetMode(t *testing.T) {
+	fillRpkConfig := func(mode string) Config {
+		conf := DefaultConfig()
+		val := mode == ModeProd
+		conf.Rpk = &RpkConfig{
+			EnableUsageStats:    val,
+			TuneNetwork:         val,
+			TuneDiskScheduler:   val,
+			TuneNomerges:        val,
+			TuneDiskIrq:         val,
+			TuneFstrim:          val,
+			TuneCpu:             val,
+			TuneAioEvents:       val,
+			TuneClocksource:     val,
+			TuneSwappiness:      val,
+			EnableMemoryLocking: val,
+			CoredumpDir:         conf.Rpk.CoredumpDir,
+		}
+		return conf
+	}
+
+	tests := []struct {
+		name           string
+		mode           string
+		expectedConfig Config
+		expectedErrMsg string
+	}{
+		{
+			name:           "it should disable all tuners for dev mode",
+			mode:           ModeDev,
+			expectedConfig: fillRpkConfig(ModeDev),
+		},
+		{
+			name:           "it should disable all tuners for dev mode ('development')",
+			mode:           "development",
+			expectedConfig: fillRpkConfig(ModeDev),
+		},
+		{
+			name:           "it should disable all tuners for dev mode ('')",
+			mode:           "",
+			expectedConfig: fillRpkConfig(ModeDev),
+		},
+		{
+			name:           "it should enable all the default tuners for prod mode",
+			mode:           ModeProd,
+			expectedConfig: fillRpkConfig(ModeProd),
+		},
+		{
+			name:           "it should enable all the default tuners for prod mode ('production')",
+			mode:           ModeProd,
+			expectedConfig: fillRpkConfig(ModeProd),
+		},
+		{
+			name:           "it should return an error for invalid modes",
+			mode:           "winning",
+			expectedErrMsg: "'winning' is not a supported mode. Available modes: dev, development, prod, production",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(st *testing.T) {
+			defaultConf := DefaultConfig()
+			conf, err := SetMode(tt.mode, &defaultConf)
+			if tt.expectedErrMsg != "" {
+				require.EqualError(t, err, tt.expectedErrMsg)
+				return
+			}
+			require.NoError(t, err)
+			require.Exactly(t, tt.expectedConfig, *conf)
+		})
+	}
+}
+
 func TestCheckConfig(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -666,7 +726,7 @@ func TestReadAsJSON(t *testing.T) {
 				return WriteConfig(fs, &conf, conf.ConfigFile)
 			},
 			path:     DefaultConfig().ConfigFile,
-			expected: `{"config_file":"/etc/redpanda/redpanda.yaml","redpanda":{"admin":{"address":"0.0.0.0","port":9644},"data_directory":"/var/lib/redpanda/data","kafka_api":{"address":"0.0.0.0","port":9092},"node_id":0,"rpc_server":{"address":"0.0.0.0","port":33145},"seed_servers":[]},"rpk":{"coredump_dir":"/var/lib/redpanda/coredump","enable_memory_locking":false,"enable_usage_stats":true,"tune_aio_events":true,"tune_clocksource":true,"tune_coredump":false,"tune_cpu":true,"tune_disk_irq":true,"tune_disk_nomerges":true,"tune_disk_scheduler":true,"tune_fstrim":true,"tune_network":true,"tune_swappiness":true,"tune_transparent_hugepages":false}}`,
+			expected: `{"config_file":"/etc/redpanda/redpanda.yaml","redpanda":{"admin":{"address":"0.0.0.0","port":9644},"data_directory":"/var/lib/redpanda/data","kafka_api":{"address":"0.0.0.0","port":9092},"node_id":0,"rpc_server":{"address":"0.0.0.0","port":33145},"seed_servers":[]},"rpk":{"coredump_dir":"/var/lib/redpanda/coredump","enable_memory_locking":false,"enable_usage_stats":false,"tune_aio_events":false,"tune_clocksource":false,"tune_coredump":false,"tune_cpu":false,"tune_disk_irq":false,"tune_disk_nomerges":false,"tune_disk_scheduler":false,"tune_fstrim":false,"tune_network":false,"tune_swappiness":false,"tune_transparent_hugepages":false}}`,
 		},
 		{
 			name:           "it should fail if the the config isn't found",
