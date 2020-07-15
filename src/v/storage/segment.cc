@@ -272,7 +272,7 @@ ss::future<> segment::compaction_index_batch(const model::record_batch& b) {
       [this, header = b.header()](iobuf_parser& parser) {
           auto begin = boost::make_counting_iterator(uint32_t(0));
           auto end = boost::make_counting_iterator(
-            uint32_t(header.record_count));
+            uint32_t(header.record_count - 1));
           const model::offset o = header.base_offset;
           return ss::do_for_each(begin, end, [this, o, &parser](uint32_t) {
               auto rec
