@@ -17,6 +17,10 @@ ss::future<> offset_monitor::wait(
   model::offset offset,
   model::timeout_clock::time_point timeout,
   std::optional<std::reference_wrapper<ss::abort_source>> as) {
+    // the offset has already been applied
+    if (offset <= _last_applied) {
+        return ss::now();
+    }
     auto w = std::make_unique<waiter>(this, timeout, as);
     auto f = w->done.get_future();
     if (!f.available()) {
@@ -28,6 +32,8 @@ ss::future<> offset_monitor::wait(
 }
 
 void offset_monitor::notify(model::offset offset) {
+    _last_applied = std::max(offset, _last_applied);
+
     while (true) {
         auto it = _waiters.begin();
         if (it == _waiters.end() || offset < it->first) {

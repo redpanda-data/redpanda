@@ -76,6 +76,7 @@ private:
       = absl::btree_multimap<model::offset, std::unique_ptr<waiter>>;
 
     waiters_type _waiters;
+    model::offset _last_applied;
 };
 
 } // namespace raft
