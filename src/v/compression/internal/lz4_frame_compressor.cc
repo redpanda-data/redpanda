@@ -1,9 +1,11 @@
 #include "compression/internal/lz4_frame_compressor.h"
 
 #include "bytes/bytes.h"
+#include "compression/logger.h"
 #include "static_deleter_fn.h"
 #include "units.h"
 #include "vassert.h"
+#include "vlog.h"
 
 #include <seastar/core/temporary_buffer.hh>
 
@@ -122,10 +124,6 @@ static iobuf do_uncompressed(const char* src, const size_t src_size) {
     char* out = obuf.get_write();
     /* Decompress input buffer t o output buffer until input is exhausted. */
 
-    // Select decompression options
-    LZ4F_decompressOptions_t options;
-    options.stableDst = 1;
-
     size_t bytes_remaining = in_sz;
     size_t consumed_bytes = 0;
     while (bytes_remaining < src_size) {
@@ -139,7 +137,7 @@ static iobuf do_uncompressed(const char* src, const size_t src_size) {
           // NOLINTNEXTLINE
           src + bytes_remaining,
           &step_remaining_bytes,
-          &options);
+          nullptr);
         check_lz4_error("lz4f_decompress error: {}", code);
         vassert(
           consumed_bytes + step_output_bytes <= estimated_output_size,
@@ -157,13 +155,24 @@ static iobuf do_uncompressed(const char* src, const size_t src_size) {
             break;
         }
         /* Need to grow output buffer, this shouldn't happen if
-         * contentSize was properly set. */
-        if (unlikely(consumed_bytes == estimated_output_size)) {
-            throw std::runtime_error(fmt::format(
-              "Could not decompress buffer because of insufficient bytes. "
-              "Input size:{}, scratch space:{}",
-              src_size,
-              compute_frame_uncompressed_size(fi.contentSize, src_size)));
+         * contentSize was properly set. Happens all of the time with the
+         * console producer 2.3.1 and below*/
+        if (consumed_bytes == estimated_output_size) {
+            // TODO: add probes for re-growth
+            const size_t next_size = 1_KiB /*slack*/
+                                     + ((estimated_output_size * 3) + 1) / 2;
+            vlog(
+              complog.trace,
+              "Consumed bytes:{} has reached preallocated size. Growing to "
+              "size:{}",
+              consumed_bytes,
+              next_size);
+            ss::temporary_buffer<char> tmpo(next_size);
+            std::copy_n(obuf.get(), consumed_bytes, tmpo.get_write());
+            obuf = std::move(tmpo);
+            // update the pointer back to the original position
+            out = obuf.get_write();
+            estimated_output_size = next_size;
         }
     }
 
