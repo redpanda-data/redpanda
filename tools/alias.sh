@@ -9,14 +9,31 @@ function vtools_reinstall() {
   deactivate
 }
 
+function bamboo_reinstall() {
+  tld=$(git rev-parse --show-toplevel 2>/dev/null)
+  mkdir -p "${tld}/build/bamboo/venv/"
+  python3 -mvenv "${tld}/build/bamboo/venv/v/"
+  source "${tld}/build/bamboo/venv/v/bin/activate"
+  pip install -e "${tld}/src/bamboo"
+  deactivate
+}
+
+function bamboo() {
+  tld=$(git rev-parse --show-toplevel 2>/dev/null)
+  bamboo_bin="${tld}/build/bamboo/venv/v/bin/bamboo"
+  if [[ ! -e ${bamboo_bin} ]]; then
+    bamboo_reinstall
+  fi
+  "${bamboo_bin}" $@
+}
+
 function vtools() {
   tld=$(git rev-parse --show-toplevel 2>/dev/null)
   vtools_bin="${tld}/build/bin/vtools"
-  if [[ -e ${vtools_bin} ]]; then
-    "${vtools_bin}" $@
-  else
+  if [[ ! -e ${vtools_bin} ]]; then
     vtools_reinstall
   fi
+  "${vtools_bin}" $@
 }
 
 function bootstrap() {
