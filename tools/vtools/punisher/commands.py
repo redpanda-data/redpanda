@@ -98,14 +98,17 @@ def _remote_execute(client, cmd):
 
 
 def _kafka_create_topic(node, client, kips):
+    cleanup_type = random.choice(["delete", "compact", "delete,compact"])
     _remote_execute(client, ("/opt/kafka-dev/bin/kafka-topics.sh "
                              f"--bootstrap-server {kips} "
                              "--create --topic sfo --partitions 36 "
                              "--replication-factor 3 "
+                             f"--config cleanup.policy={cleanup_type} "
                              "| systemd-cat -t punisher -p info "))
 
 
 def _kafka_produce_topic(node, client, kips):
+    compression_type = random.choice(["zstd", "snappy", "none", "gzip", "lz4"])
     _remote_execute(client, ("/opt/kafka-dev/bin/kafka-run-class.sh "
                              "org.apache.kafka.tools.ProducerPerformance "
                              "--record-size 1024 "
@@ -116,6 +119,7 @@ def _kafka_produce_topic(node, client, kips):
                              "client.id=vectorized.punisher.producer "
                              f"bootstrap.servers={kips} "
                              "batch.size=81960 "
+                             f"compression.type={compression_type} "
                              "buffer.memory=1048576 "
                              "| systemd-cat -t punisher -p info "))
 
