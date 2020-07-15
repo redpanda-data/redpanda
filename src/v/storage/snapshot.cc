@@ -1,6 +1,7 @@
 #include "storage/snapshot.h"
 
 #include "bytes/iobuf_parser.h"
+#include "bytes/utils.h"
 #include "hashing/crc32c.h"
 #include "random/generators.h"
 #include "reflection/adl.h"
@@ -9,15 +10,6 @@
 #include <regex>
 
 namespace storage {
-
-std::ostream& operator<<(std::ostream& os, const snapshot_metadata& meta) {
-    fmt::print(
-      os,
-      "last_index {} last_term {}",
-      meta.last_included_index(),
-      meta.last_included_term());
-    return os;
-}
 
 ss::future<std::optional<snapshot_reader>> snapshot_manager::open_snapshot() {
     auto path = _dir / snapshot_filename;
@@ -84,28 +76,6 @@ ss::future<> snapshot_manager::remove_partial_snapshots() {
       });
 }
 
-snapshot_metadata snapshot_reader::parse_metadata(iobuf buf) {
-    iobuf_parser parser(std::move(buf));
-
-    // integral types automatically converted from le
-    auto last_included_index = model::offset(
-      reflection::adl<model::offset::type>{}.from(parser));
-
-    auto last_included_term = model::term_id(
-      reflection::adl<model::term_id::type>{}.from(parser));
-
-    vassert(
-      parser.bytes_consumed() == snapshot_metadata::ondisk_size,
-      "Error parsing snapshot metadata. Consumed {} bytes expected {}",
-      parser.bytes_consumed(),
-      snapshot_metadata::ondisk_size);
-
-    return snapshot_metadata{
-      .last_included_index = last_included_index,
-      .last_included_term = last_included_term,
-    };
-}
-
 ss::future<snapshot_header> snapshot_reader::read_header() {
     return read_iobuf_exactly(_input, snapshot_header::ondisk_size)
       .then([this](iobuf buf) {
@@ -120,7 +90,7 @@ ss::future<snapshot_header> snapshot_reader::read_header() {
           hdr.header_crc = reflection::adl<uint32_t>{}.from(parser);
           hdr.metadata_crc = reflection::adl<uint32_t>{}.from(parser);
           hdr.version = reflection::adl<int8_t>{}.from(parser);
-          hdr.size = reflection::adl<int32_t>{}.from(parser);
+          hdr.metadata_size = reflection::adl<int32_t>{}.from(parser);
 
           vassert(
             parser.bytes_consumed() == snapshot_header::ondisk_size,
@@ -128,12 +98,15 @@ ss::future<snapshot_header> snapshot_reader::read_header() {
             parser.bytes_consumed(),
             snapshot_header::ondisk_size);
 
-          vassert(hdr.size > 0, "Invalid metadata size {}", hdr.size);
+          vassert(
+            hdr.metadata_size >= 0,
+            "Invalid metadata size {}",
+            hdr.metadata_size);
 
           crc32 crc;
           crc.extend(ss::cpu_to_le(hdr.metadata_crc));
           crc.extend(ss::cpu_to_le(hdr.version));
-          crc.extend(ss::cpu_to_le(hdr.size));
+          crc.extend(ss::cpu_to_le(hdr.metadata_size));
 
           if (hdr.header_crc != crc.value()) {
               return ss::make_exception_future<snapshot_header>(
@@ -157,24 +130,21 @@ ss::future<snapshot_header> snapshot_reader::read_header() {
       });
 }
 
-ss::future<snapshot_metadata> snapshot_reader::read_metadata() {
+ss::future<iobuf> snapshot_reader::read_metadata() {
     return read_header().then([this](snapshot_header header) {
-        return read_iobuf_exactly(_input, snapshot_metadata::ondisk_size)
+        return read_iobuf_exactly(_input, header.metadata_size)
           .then([this, header](iobuf buf) {
-              if (buf.size_bytes() != snapshot_metadata::ondisk_size) {
-                  return ss::make_exception_future<snapshot_metadata>(
+              if ((int32_t)buf.size_bytes() != header.metadata_size) {
+                  return ss::make_exception_future<iobuf>(
                     std::runtime_error(fmt::format(
                       "Corrupt snapshot. Failed to read metadata: {}", _path)));
               }
 
-              auto metadata = parse_metadata(std::move(buf));
-
               crc32 crc;
-              crc.extend(ss::cpu_to_le(metadata.last_included_index()));
-              crc.extend(ss::cpu_to_le(metadata.last_included_term()));
+              crc_extend_iobuf(crc, buf);
 
               if (header.metadata_crc != crc.value()) {
-                  return ss::make_exception_future<snapshot_metadata>(
+                  return ss::make_exception_future<iobuf>(
                     std::runtime_error(fmt::format(
                       "Corrupt snapshot. Failed to verify metadata crc: {} != "
                       "{}: {}",
@@ -183,8 +153,7 @@ ss::future<snapshot_metadata> snapshot_reader::read_metadata() {
                       _path)));
               }
 
-              return ss::make_ready_future<snapshot_metadata>(
-                std::move(metadata));
+              return ss::make_ready_future<iobuf>(std::move(buf));
           });
     });
 }
@@ -195,33 +164,19 @@ ss::future<> snapshot_reader::close() {
       .then([this] { return _file.close(); });
 }
 
-ss::future<>
-snapshot_writer::write_metadata(const snapshot_metadata& metadata) {
+ss::future<> snapshot_writer::write_metadata(iobuf buf) {
     snapshot_header header;
     header.version = snapshot_header::supported_version;
+    header.metadata_size = buf.size_bytes();
 
-    // integral types auto serialize to le
-    iobuf buf;
-    reflection::serialize(
-      buf, metadata.last_included_index, metadata.last_included_term);
-    header.size = buf.size_bytes();
-
-    vassert(
-      buf.size_bytes() == snapshot_metadata::ondisk_size,
-      "Unexpected snapshot metadata serialization size {} != {}",
-      buf.size_bytes(),
-      snapshot_metadata::ondisk_size);
-
-    // crc computed over le bytes
     crc32 meta_crc;
-    meta_crc.extend(ss::cpu_to_le(metadata.last_included_index()));
-    meta_crc.extend(ss::cpu_to_le(metadata.last_included_term()));
+    crc_extend_iobuf(meta_crc, buf);
     header.metadata_crc = meta_crc.value();
 
     crc32 header_crc;
     header_crc.extend(ss::cpu_to_le(header.metadata_crc));
     header_crc.extend(ss::cpu_to_le(header.version));
-    header_crc.extend(ss::cpu_to_le(header.size));
+    header_crc.extend(ss::cpu_to_le(header.metadata_size));
     header.header_crc = header_crc.value();
 
     iobuf header_buf;
@@ -230,7 +185,7 @@ snapshot_writer::write_metadata(const snapshot_metadata& metadata) {
       header.header_crc,
       header.metadata_crc,
       header.version,
-      header.size);
+      header.metadata_size);
 
     vassert(
       header_buf.size_bytes() == snapshot_header::ondisk_size,

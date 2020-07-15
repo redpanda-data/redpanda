@@ -38,15 +38,15 @@ class snapshot_writer;
  *    NOTE: the footer crc is not yet implemented.
  *
  * The version and crc are contained in snapshot_header, and are followed by
- * snapshot_metadata that contains information about the snapshot like the
- * index, term, and latest configuration. The crc covers everything from the
- * beginning of the snapshot file up to the snapshot blob. This is all managed
- * by the consensus and the state machine middleare.  The blob is written by the
- * state machine itself. For example, a state machine may write a small
- * serialized blob, or stream data to the snapshot file. Streaming may be useful
- * in cases where the data structure permits determistic iteration such as a
- * pre-order tree travseral. The snapshot file contains a footer that records a
- * crc of the snapshot blob itself.
+ * snapshot metadata that can be used to store information about the snapshot
+ * and is accessible independent of the full snapshot data.  The crc covers
+ * everything from the beginning of the snapshot file up to the snapshot blob.
+ * This is all managed by the consensus and the state machine middleare.  The
+ * blob is written by the state machine itself. For example, a state machine may
+ * write a small serialized blob, or stream data to the snapshot file. Streaming
+ * may be useful in cases where the data structure permits determistic iteration
+ * such as a pre-order tree travseral. The snapshot file contains a footer that
+ * records a crc of the snapshot blob itself.
  *
  * Usage:
  *
@@ -116,32 +116,12 @@ struct snapshot_header {
     uint32_t header_crc;
     uint32_t metadata_crc;
     int8_t version;
-    int32_t size;
+    int32_t metadata_size;
 
     static constexpr const size_t ondisk_size = sizeof(header_crc)
                                                 + sizeof(metadata_crc)
                                                 + sizeof(version)
-                                                + sizeof(size);
-};
-
-/**
- * Snapshot metadata.
- *
- * TODO:
- *   - Store the latest configuration for each snapshot. This will be added when
- *   configuration tracking is added into consensus.
- *
- *   - Store the cluster time associated with snapshot. This is a piece of
- *   metadata that is useful when implementing sessions for linearizability.
- */
-struct snapshot_metadata {
-    model::offset last_included_index;
-    model::term_id last_included_term;
-
-    static constexpr const size_t ondisk_size = sizeof(last_included_index)
-                                                + sizeof(last_included_term);
-
-    friend std::ostream& operator<<(std::ostream&, const snapshot_header&);
+                                                + sizeof(metadata_size);
 };
 
 /**
@@ -172,12 +152,11 @@ public:
       , _path(std::move(path))
       , _input(std::move(input)) {}
 
-    ss::future<snapshot_metadata> read_metadata();
+    ss::future<iobuf> read_metadata();
     ss::input_stream<char>& input() { return _input; }
     ss::future<> close();
 
 private:
-    static snapshot_metadata parse_metadata(iobuf);
     ss::future<snapshot_header> read_header();
 
     ss::file _file;
@@ -212,7 +191,7 @@ public:
       : _path(std::move(path))
       , _output(std::move(output)) {}
 
-    ss::future<> write_metadata(const snapshot_metadata&);
+    ss::future<> write_metadata(iobuf);
     ss::output_stream<char>& output() { return _output; }
     ss::future<> close();
 
