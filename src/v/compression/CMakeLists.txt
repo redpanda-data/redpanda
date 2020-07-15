@@ -12,6 +12,7 @@ v_cc_library(
   SRCS
     "compression.cc"
     "stream_zstd.cc"
+    "logger.cc"
     "internal/snappy_compressor.cc"
     "internal/lz4_frame_compressor.cc"
     "internal/gzip_compressor.cc"
