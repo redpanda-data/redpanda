@@ -10,13 +10,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var availableModes []string = []string{
-	"dev",
-	"prod",
-	"development",
-	"production",
-}
-
 func NewModeCommand(fs afero.Fs) *cobra.Command {
 	var configFile string
 	command := &cobra.Command{
@@ -25,15 +18,7 @@ func NewModeCommand(fs afero.Fs) *cobra.Command {
 		Long:  "",
 		Args: func(_ *cobra.Command, args []string) error {
 			if len(args) < 1 {
-				return fmt.Errorf("requires a mode [%s]", strings.Join(availableModes, ", "))
-			}
-			mode := strings.ToLower(args[0])
-			if !checkSupported(mode) {
-				return fmt.Errorf(
-					"%v is not a supported mode. Available modes: %s",
-					mode,
-					strings.Join(availableModes, ", "),
-				)
+				return fmt.Errorf("requires a mode [%s]", strings.Join(config.AvailableModes(), ", "))
 			}
 			return nil
 		},
@@ -57,41 +42,10 @@ func executeMode(fs afero.Fs, configFile string, mode string) error {
 	if err != nil {
 		return err
 	}
-	switch mode {
-	case "development", "dev":
-		conf = setDevelopment(conf)
-	case "production", "prod":
-		conf = setProduction(conf)
+	conf, err = config.SetMode(mode, conf)
+	if err != nil {
+		return err
 	}
 	log.Infof("Writing '%s' mode defaults to '%s'", mode, configFile)
 	return config.WriteConfig(fs, conf, configFile)
-}
-
-func setDevelopment(conf *config.Config) *config.Config {
-	// Defaults to setting all tuners to false
-	conf.Rpk = &config.RpkConfig{CoredumpDir: conf.Rpk.CoredumpDir}
-	return conf
-}
-
-func setProduction(conf *config.Config) *config.Config {
-	rpk := conf.Rpk
-	rpk.EnableUsageStats = true
-	rpk.TuneNetwork = true
-	rpk.TuneDiskScheduler = true
-	rpk.TuneNomerges = true
-	rpk.TuneDiskIrq = true
-	rpk.TuneCpu = true
-	rpk.TuneAioEvents = true
-	rpk.TuneClocksource = true
-	rpk.EnableMemoryLocking = false
-	return conf
-}
-
-func checkSupported(mode string) bool {
-	for _, m := range availableModes {
-		if mode == m {
-			return true
-		}
-	}
-	return false
 }

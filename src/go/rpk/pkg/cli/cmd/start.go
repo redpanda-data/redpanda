@@ -424,10 +424,6 @@ func check(
 func sendEnv(
 	fs afero.Fs, env api.EnvironmentPayload, conf *config.Config, err error,
 ) {
-	if !conf.Rpk.EnableUsageStats {
-		log.Debug("Sending usage stats is disabled")
-		return
-	}
 	if err != nil {
 		env.ErrorMsg = err.Error()
 	}
