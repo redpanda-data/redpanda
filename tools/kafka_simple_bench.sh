@@ -64,10 +64,25 @@ client_names=(
   BENTO
 )
 client_id=${client_names[$(date +%s) % ${#client_names[@]}]}
+compression_types=(
+  lz4
+  zstd
+  none
+  gzip
+  snappy
+)
+compression_id=${compression_types[$(date +%s) % ${#compression_types[@]}]}
+cleanup_types=(
+  compact
+  delete
+  "compact,delete"
+)
+cleanup_id=${cleanup_types[$(date +%s) % ${#cleanup_types[@]}]}
 
 if [[ $1 == "create" ]]; then
   bin/kafka-topics.sh --bootstrap-server ${servers} \
     --create --topic ${topic} --partitions ${partitions} \
+    --config cleanup.policy="${cleanup_id}" \
     --replication-factor ${replication} "${@:2:99}"
 fi
 
@@ -81,6 +96,7 @@ if [[ $1 == "produce" ]]; then
     "client.id=${client_id}" \
     bootstrap.servers=${servers} \
     batch.size=${batch_size} \
+    compression.type=${compression_id} \
     buffer.memory=$((1024 * 1024)) "${@:2:99}"
 fi
 
