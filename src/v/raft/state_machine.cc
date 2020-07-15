@@ -31,9 +31,6 @@ ss::future<> state_machine::stop() {
 
 ss::future<> state_machine::wait(
   model::offset offset, model::timeout_clock::time_point timeout) {
-    if (offset < _next) {
-        return ss::now();
-    }
     return ss::with_gate(_gate, [this, timeout, offset] {
         return _waiters.wait(offset, timeout, std::nullopt);
     });
