@@ -95,12 +95,13 @@ func deviceFromSystemPath(syspath string, fs afero.Fs) (BlockDevice, error) {
 }
 
 func readSyspath(major, minor int) (string, error) {
-	path := fmt.Sprintf("/sys/dev/block/%d:%d", major, minor)
+	blockBasePath := "/sys/dev/block"
+	path := fmt.Sprintf("%s/%d:%d", blockBasePath, major, minor)
 	linkpath, err := os.Readlink(path)
 	if err != nil {
 		return "", err
 	}
-	return filepath.Abs(filepath.Join("/sys/dev/block", linkpath))
+	return filepath.Abs(filepath.Join(blockBasePath, linkpath))
 }
 
 func parseUeventFile(lines []string) (map[string]string, error) {
