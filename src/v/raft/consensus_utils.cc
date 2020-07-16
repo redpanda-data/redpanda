@@ -2,6 +2,7 @@
 
 #include "likely.h"
 #include "model/record.h"
+#include "model/timestamp.h"
 #include "raft/logger.h"
 #include "random/generators.h"
 #include "resource_mgmt/io_priority.h"
@@ -175,6 +176,51 @@ serialize_configuration_as_batches(group_configuration cfg) {
 model::record_batch_reader serialize_configuration(group_configuration cfg) {
     return model::make_memory_record_batch_reader(
       serialize_configuration_as_batches(std::move(cfg)));
+}
+
+model::record_batch
+make_ghost_batch(model::offset start_offset, model::offset end_offset) {
+    auto delta = end_offset - start_offset;
+    auto now = model::timestamp::now();
+    model::record_batch_header header = {
+      .size_bytes = model::packed_record_batch_header_size,
+      .base_offset = start_offset,
+      .type = storage::ghost_record_batch_type,
+      .crc = 0, // crc computed later
+      .attrs = model::record_batch_attributes{} |= model::compression::none,
+      .last_offset_delta = static_cast<int32_t>(delta),
+      .first_timestamp = now,
+      .max_timestamp = now,
+      .producer_id = -1,
+      .producer_epoch = -1,
+      .base_sequence = -1,
+      .record_count = static_cast<int32_t>(delta() + 1),
+      .ctx = model::record_batch_header::context(
+        model::term_id(0), ss::this_shard_id())};
+
+    model::record_batch batch(
+      std::move(header), model::record_batch::compressed_records{});
+
+    batch.header().crc = model::crc_record_batch(batch);
+    batch.header().header_crc = model::internal_header_only_crc(batch.header());
+    return batch;
+}
+
+ss::circular_buffer<model::record_batch> make_ghost_batches_in_gaps(
+  model::offset expected_start,
+  ss::circular_buffer<model::record_batch>&& batches) {
+    ss::circular_buffer<model::record_batch> res;
+    res.reserve(batches.size());
+    for (auto& b : batches) {
+        // gap
+        if (b.base_offset() > expected_start) {
+            res.push_back(
+              make_ghost_batch(expected_start, prev_offset(b.base_offset())));
+        }
+        expected_start = next_offset(b.last_offset());
+        res.push_back(std::move(b));
+    }
+    return res;
 }
 
 } // namespace raft::details

@@ -1,5 +1,6 @@
 #include "raft/recovery_stm.h"
 
+#include "model/fundamental.h"
 #include "model/record_batch_reader.h"
 #include "outcome_future_utils.h"
 #include "raft/consensus_utils.h"
@@ -31,9 +32,14 @@ ss::future<> recovery_stm::do_one_read() {
         _stop_requested = true;
         return ss::make_ready_future<>();
     }
+
     auto lstats = _ptr->_log.offsets();
+    // TODO: add snapshots recovery
+    model::offset start_offset = std::max(
+      meta.value()->next_index, lstats.start_offset);
+
     storage::log_reader_config cfg(
-      meta.value()->next_index,
+      start_offset,
       lstats.dirty_offset,
       1,
       // 32KB is a modest estimate. It has good batching and it also prevents an
@@ -46,31 +52,41 @@ ss::future<> recovery_stm::do_one_read() {
       std::nullopt,
       _ptr->_as);
 
+    vlog(
+      _ctxlog.trace,
+      "Reading batches in range [{},{}] for node {} recovery",
+      start_offset,
+      lstats.dirty_offset,
+      _node_id);
+
     // TODO: add timeout of maybe 1minute?
     return _ptr->_log.make_reader(cfg)
       .then([](model::record_batch_reader reader) {
           return model::consume_reader_to_memory(
             std::move(reader), model::no_timeout);
       })
-      .then([this](ss::circular_buffer<model::record_batch> batches) {
-          // wrap in a foreign core destructor
-          vlog(
-            _ctxlog.trace,
-            "Read {} batches for {} node recovery",
-            batches.size(),
-            _node_id);
-          if (batches.empty()) {
-              _stop_requested = true;
-              return ss::make_ready_future<>();
-          }
-          _base_batch_offset = batches.begin()->base_offset();
-          _last_batch_offset = batches.back().last_offset();
+      .then(
+        [this, start_offset](ss::circular_buffer<model::record_batch> batches) {
+            vlog(
+              _ctxlog.trace,
+              "Read {} batches for {} node recovery",
+              batches.size(),
+              _node_id);
+            if (batches.empty()) {
+                _stop_requested = true;
+                return ss::make_ready_future<>();
+            }
+            auto gap_filled_batches = details::make_ghost_batches_in_gaps(
+              start_offset, std::move(batches));
+            _base_batch_offset = gap_filled_batches.begin()->base_offset();
+            _last_batch_offset = gap_filled_batches.back().last_offset();
 
-          auto f_reader = model::make_foreign_record_batch_reader(
-            model::make_memory_record_batch_reader(std::move(batches)));
+            auto f_reader = model::make_foreign_record_batch_reader(
+              model::make_memory_record_batch_reader(
+                std::move(gap_filled_batches)));
 
-          return replicate(std::move(f_reader));
-      });
+            return replicate(std::move(f_reader));
+        });
 }
 
 ss::future<> recovery_stm::replicate(model::record_batch_reader&& reader) {

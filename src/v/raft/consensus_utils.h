@@ -6,6 +6,7 @@
 #include "raft/consensus.h"
 
 #include <seastar/core/abort_source.hh>
+#include <seastar/core/circular_buffer.hh>
 #include <seastar/core/sstring.hh>
 
 namespace raft::details {
@@ -35,6 +36,9 @@ model::record_batch_reader serialize_configuration(group_configuration cfg);
 /// returns a fully parsed config state from a given storage log
 ss::future<raft::configuration_bootstrap_state>
 read_bootstrap_state(storage::log, ss::abort_source&);
+
+ss::circular_buffer<model::record_batch> make_ghost_batches_in_gaps(
+  model::offset, ss::circular_buffer<model::record_batch>&&);
 
 /// looks up for the broker with request id in a vector of brokers
 template<typename Iterator>
