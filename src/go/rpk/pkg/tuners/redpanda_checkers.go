@@ -172,28 +172,28 @@ func RedpandaCheckers(
 	irqDeviceInfo := irq.NewDeviceInfo(fs, irqProcFile)
 	blockDevices := disk.NewBlockDevices(fs, irqDeviceInfo, irqProcFile, proc, timeout)
 	schedulerInfo := disk.NewSchedulerInfo(fs, blockDevices)
-	schdulerCheckers, err := NewDirectorySchedulerCheckers(fs,
-		config.Redpanda.Directory, schedulerInfo, blockDevices)
-	if err != nil {
-		return nil, err
-	}
-	nomergesCheckers, err := NewDirectoryNomergesCheckers(fs,
-		config.Redpanda.Directory, schedulerInfo, blockDevices)
-	if err != nil {
-		return nil, err
-	}
+	schedulerChecker := NewDirectorySchedulerChecker(
+		fs,
+		config.Redpanda.Directory,
+		schedulerInfo,
+		blockDevices,
+	)
+	nomergesChecker := NewDirectoryNomergesChecker(
+		fs,
+		config.Redpanda.Directory,
+		schedulerInfo,
+		blockDevices,
+	)
 	balanceService := irq.NewBalanceService(fs, proc, executor, timeout)
 	cpuMasks := irq.NewCpuMasks(fs, hwloc.NewHwLocCmd(proc, timeout), executor)
-	dirIRQAffinityChecker, err := NewDirectoryIRQAffinityChecker(
+	dirIRQAffinityChecker := NewDirectoryIRQAffinityChecker(
 		fs, config.Redpanda.Directory, "all", irq.Default, blockDevices, cpuMasks)
-	if err != nil {
-		return nil, err
-	}
-	dirIRQAffinityStaticChecker, err := NewDirectoryIRQsAffinityStaticChecker(
-		fs, config.Redpanda.Directory, blockDevices, balanceService)
-	if err != nil {
-		return nil, err
-	}
+	dirIRQAffinityStaticChecker := NewDirectoryIRQsAffinityStaticChecker(
+		fs,
+		config.Redpanda.Directory,
+		blockDevices,
+		balanceService,
+	)
 	interfaces, err := net.GetInterfacesByIps(config.Redpanda.KafkaApi.Address, config.Redpanda.RPCServer.Address)
 	if err != nil {
 		return nil, err
@@ -210,8 +210,8 @@ func RedpandaCheckers(
 		FsTypeChecker:                 []Checker{NewFilesystemTypeChecker(config.Redpanda.Directory)},
 		TransparentHugePagesChecker:   []Checker{NewTransparentHugePagesChecker(fs)},
 		NtpChecker:                    []Checker{NewNTPSyncChecker(timeout, fs)},
-		SchedulerChecker:              schdulerCheckers,
-		NomergesChecker:               nomergesCheckers,
+		SchedulerChecker:              []Checker{schedulerChecker},
+		NomergesChecker:               []Checker{nomergesChecker},
 		DiskIRQsAffinityChecker:       []Checker{dirIRQAffinityChecker},
 		DiskIRQsAffinityStaticChecker: []Checker{dirIRQAffinityStaticChecker},
 		FstrimChecker:                 []Checker{NewFstrimChecker()},

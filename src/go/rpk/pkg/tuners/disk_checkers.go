@@ -30,33 +30,50 @@ func NewDeviceNomergesChecker(
 ) Checker {
 	return NewEqualityChecker(
 		NomergesChecker,
-		fmt.Sprintf("Disk %s nomerges tuned", device),
+		fmt.Sprintf("Disk '%s' nomerges tuned", device),
 		Warning,
 		true,
 		func() (interface{}, error) {
-			nomerges, err := schedulerInfo.GetNomerges(device)
-			if err != nil {
-				return false, err
-			}
-			return nomerges == 2, nil
+			return checkDeviceNomerges(schedulerInfo, device)
 		},
 	)
 }
 
-func NewDirectoryNomergesCheckers(
+func NewDirectoryNomergesChecker(
 	fs afero.Fs,
 	dir string,
 	schedulerInfo disk.SchedulerInfo,
 	blockDevices disk.BlockDevices,
-) ([]Checker, error) {
-	return CreateDirectoryCheckers(
-		fs,
-		dir,
-		blockDevices,
-		func(device string) Checker {
-			return NewDeviceNomergesChecker(fs, device, schedulerInfo)
+) Checker {
+	return NewEqualityChecker(
+		NomergesChecker,
+		fmt.Sprintf("Dir '%s' nomerges tuned", dir),
+		Warning,
+		true,
+		func() (interface{}, error) {
+			devices, err := blockDevices.GetDirectoryDevices(dir)
+			if err != nil {
+				return false, err
+			}
+			tuned := true
+			for _, device := range devices {
+				ok, err := checkDeviceNomerges(schedulerInfo, device)
+				if err != nil {
+					return false, err
+				}
+				tuned = tuned && ok
+			}
+			return tuned, nil
 		},
 	)
+}
+
+func checkDeviceNomerges(schedulerInfo disk.SchedulerInfo, device string) (bool, error) {
+	nomerges, err := schedulerInfo.GetNomerges(device)
+	if err != nil {
+		return false, err
+	}
+	return nomerges == 2, nil
 }
 
 func NewDeviceSchedulerChecker(
@@ -64,36 +81,50 @@ func NewDeviceSchedulerChecker(
 ) Checker {
 	return NewEqualityChecker(
 		SchedulerChecker,
-		fmt.Sprintf("Disk %s scheduler tuned", device),
+		fmt.Sprintf("Disk '%s' scheduler tuned", device),
 		Warning,
 		true,
 		func() (interface{}, error) {
-			scheduler, err := schedulerInfo.GetScheduler(device)
-			if err != nil {
-				return false, err
-			}
-			if scheduler == "none" || scheduler == "noop" {
-				return true, nil
-			}
-			return false, nil
+			return checkScheduler(schedulerInfo, device)
 		},
 	)
 }
 
-func NewDirectorySchedulerCheckers(
+func NewDirectorySchedulerChecker(
 	fs afero.Fs,
 	dir string,
 	schedulerInfo disk.SchedulerInfo,
 	blockDevices disk.BlockDevices,
-) ([]Checker, error) {
-	return CreateDirectoryCheckers(
-		fs,
-		dir,
-		blockDevices,
-		func(device string) Checker {
-			return NewDeviceSchedulerChecker(fs, device, schedulerInfo)
+) Checker {
+	return NewEqualityChecker(
+		SchedulerChecker,
+		fmt.Sprintf("Dir '%s' scheduler tuned", dir),
+		Warning,
+		true,
+		func() (interface{}, error) {
+			devices, err := blockDevices.GetDirectoryDevices(dir)
+			if err != nil {
+				return nil, err
+			}
+			tuned := true
+			for _, device := range devices {
+				ok, err := checkScheduler(schedulerInfo, device)
+				if err != nil {
+					return false, err
+				}
+				tuned = tuned && ok
+			}
+			return tuned, nil
 		},
 	)
+}
+
+func checkScheduler(schedulerInfo disk.SchedulerInfo, device string) (bool, error) {
+	scheduler, err := schedulerInfo.GetScheduler(device)
+	if err != nil {
+		return false, err
+	}
+	return scheduler == "none" || scheduler == "noop", nil
 }
 
 func NewDisksIRQAffinityStaticChecker(
@@ -108,31 +139,50 @@ func NewDisksIRQAffinityStaticChecker(
 		Warning,
 		true,
 		func() (interface{}, error) {
-			diskInfoByType, err := blockDevices.GetDiskInfoByType(devices)
-			if err != nil {
-				return false, err
-			}
-			var IRQs []int
-			for _, diskInfo := range diskInfoByType {
-				IRQs = append(IRQs, diskInfo.Irqs...)
-			}
-			return irq.AreIRQsStaticallyAssigned(IRQs, balanceService)
+			return checkDisksIRQsAffinity(blockDevices, balanceService, devices)
 		},
 	)
 }
 
 func NewDirectoryIRQsAffinityStaticChecker(
 	fs afero.Fs,
-	directory string,
+	dir string,
 	blockDevices disk.BlockDevices,
 	balanceService irq.BalanceService,
-) (Checker, error) {
-	devices, err := blockDevices.GetDirectoryDevices(directory)
+) Checker {
+	return NewEqualityChecker(
+		DiskIRQsAffinityStaticChecker,
+		fmt.Sprintf("Dir '%s' IRQs affinity static", dir),
+		Warning,
+		true,
+		func() (interface{}, error) {
+			devices, err := blockDevices.GetDirectoryDevices(dir)
+			if err != nil {
+				return nil, err
+			}
+			return checkDisksIRQsAffinity(
+				blockDevices,
+				balanceService,
+				devices,
+			)
+		},
+	)
+}
+
+func checkDisksIRQsAffinity(
+	blockDevices disk.BlockDevices,
+	balanceService irq.BalanceService,
+	devices []string,
+) (bool, error) {
+	diskInfoByType, err := blockDevices.GetDiskInfoByType(devices)
 	if err != nil {
-		return nil, err
+		return false, err
 	}
-	return NewDisksIRQAffinityStaticChecker(
-		fs, devices, blockDevices, balanceService), nil
+	var IRQs []int
+	for _, diskInfo := range diskInfoByType {
+		IRQs = append(IRQs, diskInfo.Irqs...)
+	}
+	return irq.AreIRQsStaticallyAssigned(IRQs, balanceService)
 }
 
 func NewDisksIRQAffinityChecker(
@@ -149,41 +199,70 @@ func NewDisksIRQAffinityChecker(
 		Warning,
 		true,
 		func() (interface{}, error) {
-			expectedDistribution, err := GetExpectedIRQsDistribution(
+			return areDevicesIRQsDistributed(
 				devices,
-				blockDevices,
-				mode,
 				cpuMask,
-				cpuMasks)
-			if err != nil {
-				return false, err
-			}
-			for IRQ, mask := range expectedDistribution {
-				readMask, err := cpuMasks.ReadIRQMask(IRQ)
-				if err != nil {
-					return false, err
-				}
-				if !irq.MasksEqual(mask, readMask) {
-					return false, nil
-				}
-			}
-			return true, nil
+				mode,
+				blockDevices,
+				cpuMasks,
+			)
 		},
 	)
 }
 
 func NewDirectoryIRQAffinityChecker(
 	fs afero.Fs,
-	directory string,
+	dir string,
 	cpuMask string,
 	mode irq.Mode,
 	blockDevices disk.BlockDevices,
 	cpuMasks irq.CpuMasks,
-) (Checker, error) {
-	devices, err := blockDevices.GetDirectoryDevices(directory)
+) Checker {
+	return NewEqualityChecker(
+		DiskIRQsAffinityChecker,
+		fmt.Sprintf("Dir '%s' IRQs affinity set", dir),
+		Warning,
+		true,
+		func() (interface{}, error) {
+			devices, err := blockDevices.GetDirectoryDevices(dir)
+			if err != nil {
+				return false, err
+			}
+			return areDevicesIRQsDistributed(
+				devices,
+				cpuMask,
+				mode,
+				blockDevices,
+				cpuMasks,
+			)
+		},
+	)
+}
+
+func areDevicesIRQsDistributed(
+	devices []string,
+	cpuMask string,
+	mode irq.Mode,
+	blockDevices disk.BlockDevices,
+	cpuMasks irq.CpuMasks,
+) (bool, error) {
+	expectedDistribution, err := GetExpectedIRQsDistribution(
+		devices,
+		blockDevices,
+		mode,
+		cpuMask,
+		cpuMasks)
 	if err != nil {
-		return nil, err
+		return false, err
 	}
-	return NewDisksIRQAffinityChecker(
-		fs, devices, cpuMask, mode, blockDevices, cpuMasks), nil
+	for IRQ, mask := range expectedDistribution {
+		readMask, err := cpuMasks.ReadIRQMask(IRQ)
+		if err != nil {
+			return false, err
+		}
+		if !irq.MasksEqual(mask, readMask) {
+			return false, nil
+		}
+	}
+	return true, nil
 }
