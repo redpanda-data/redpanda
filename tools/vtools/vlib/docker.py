@@ -39,6 +39,7 @@ def _get_toolchain_image_metadata(vconfig):
             'gcr.io/redpandaci/clang',
             'files': [
                 f'{vconfig.src_dir}/tools/vtools/vlib/clang.py',
+                f'{vconfig.src_dir}/tools/ci/vtools-clang-release.yml',
                 f'{vconfig.src_dir}/cmake/caches/llvm.cmake',
             ],
             'dockerfile':
@@ -53,6 +54,7 @@ def _get_toolchain_image_metadata(vconfig):
                 f'{vconfig.src_dir}/src/go/rpk/go.sum',
                 f'{vconfig.src_dir}/src/go/metrics/go.mod',
                 f'{vconfig.src_dir}/src/go/metrics/go.sum',
+                f'{vconfig.src_dir}/tools/ci/vtools-gcc-release.yml',
             ],
             'dockerfile':
             f'{vconfig.src_dir}/tools/ci/docker/Dockerfile.golang',
@@ -65,6 +67,7 @@ def _get_toolchain_image_metadata(vconfig):
                 f'{vconfig.src_dir}/tools/vtools/vlib/cmake.py',
                 f'{vconfig.src_dir}/3rdparty.cmake.in',
                 f'{vconfig.src_dir}/CMakeLists.txt',
+                f'{vconfig.src_dir}/tools/ci/vtools-{vconfig.compiler}-{vconfig.build_type}.yml',
             ],
             'dockerfile':
             f'{vconfig.src_dir}/tools/ci/docker/Dockerfile.builder',
