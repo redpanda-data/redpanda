@@ -2,11 +2,12 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
-#include "model/record_batch_reader.h"
-#include "model/timeout_clock.h"
+#include "model/timestamp.h"
 #include "raft/consensus_utils.h"
 #include "raft/tests/raft_group_fixture.h"
 #include "raft/types.h"
+#include "storage/record_batch_builder.h"
+#include "storage/tests/utils/disk_log_builder.h"
 
 #include <system_error>
 
@@ -305,3 +306,177 @@ FIXTURE_TEST(
       },
       "Commit index is advanced ");
 };
+
+/**
+ *
+ * This test tests recovery of log with gaps
+ *
+ * Example situation:
+ *
+ * Leader log: [0,10]|--gap--|[21,40]|--gap--|[45,59][60,73]
+ *
+ *
+ * Expected outcome:
+ *
+ * Follower log has exactly the same set of batches as leader
+ *
+ */
+FIXTURE_TEST(test_compacted_log_recovery, raft_test_fixture) {
+    raft_group gr = raft_group(
+      raft::group_id(0),
+      3,
+      storage::log_config::storage_type::disk,
+      model::cleanup_policy_bitflags::compaction,
+      10_MiB);
+
+    auto cfg = storage::log_builder_config();
+    cfg.base_dir = fmt::format("{}/{}", gr.get_data_dir(), 0);
+
+    // for now, as compaction isn't yet ready we simulate it with log builder
+    auto ntp = node_ntp(raft::group_id(0), model::node_id(0));
+    storage::ntp_config::default_overrides overrides;
+    overrides.cleanup_policy_bitflags
+      = model::cleanup_policy_bitflags::compaction;
+    storage::ntp_config ntp_config(
+      ntp,
+      cfg.base_dir,
+      std::make_unique<storage::ntp_config::default_overrides>(
+        std::move(overrides)));
+    storage::disk_log_builder builder(std::move(cfg));
+
+    builder | storage::start(std::move(ntp_config)) | storage::add_segment(0)
+      | storage::add_random_batch(0, 1, storage::maybe_compress_batches::no)
+      | storage::add_random_batch(1, 5, storage::maybe_compress_batches::no)
+      // gap from 6 to 19
+      | storage::add_random_batch(20, 30, storage::maybe_compress_batches::no)
+      // gap from 50 to 67
+      | storage::add_random_batch(68, 11, storage::maybe_compress_batches::no)
+      | storage::stop();
+
+    gr.enable_all();
+    auto leader_id = wait_for_group_leader(gr);
+    model::node_id disabled_id;
+    auto leader_raft = gr.get_member(leader_id).consensus;
+    ss::abort_source as;
+
+    // disable one of the non leader nodes
+    for (auto& [id, _] : gr.get_members()) {
+        if (leader_id != id) {
+            disabled_id = id;
+            gr.disable_node(id);
+            break;
+        }
+    }
+    validate_logs_replication(gr);
+
+    gr.enable_node(disabled_id);
+
+    validate_logs_replication(gr);
+
+    wait_for(
+      3s,
+      [this, &gr] { return are_all_commit_indexes_the_same(gr); },
+      "After recovery state is consistent");
+
+    validate_logs_replication(gr);
+};
+
+/**
+ * Makes compactible batches, having one record per batch
+ */
+model::record_batch_reader make_compactible_batches(int keys, size_t batches) {
+    ss::circular_buffer<model::record_batch> ret;
+    for (size_t b = 0; b < batches; b++) {
+        int k = random_generators::get_int(0, keys);
+        storage::record_batch_builder builder(
+          raft::data_batch_type, model::offset(0));
+        iobuf k_buf;
+        iobuf v_buf;
+        ss::sstring k_str = fmt::format("key-{}", k);
+        ss::sstring v_str = fmt::format("key-{}-value-{}", k, b);
+        reflection::serialize(k_buf, k_str);
+        reflection::serialize(v_buf, v_str);
+        builder.add_raw_kv(std::move(k_buf), std::move(v_buf));
+        ret.push_back(std::move(builder).build());
+    }
+    return model::make_memory_record_batch_reader(std::move(ret));
+}
+
+// TODO: enable when we fix recovery of prefix truncated logs
+#if 0
+/**
+ *
+ * This test is testing a case where there is a gap between start of leader log
+ * and end of the follower log.
+ *
+ * Example situation:
+ *
+ * Leader log: |-------------gap------------|[53,60][61,70][71,100]...
+ *
+ * Follower log: [0,10][11,20][21,40]
+ *
+ * Expected outcome:
+ *
+ * Follower log gets prefix truncated and recovered with leader log
+ *
+ */
+FIXTURE_TEST(test_collected_log_recovery, raft_test_fixture) {
+    raft_group gr = raft_group(
+      raft::group_id(0),
+      3,
+      storage::log_config::storage_type::disk,
+      model::cleanup_policy_bitflags::deletion,
+      1_KiB);
+
+    gr.enable_all();
+    auto leader_id = wait_for_group_leader(gr);
+    model::node_id disabled_id;
+    auto leader_raft = gr.get_member(leader_id).consensus;
+    ss::abort_source as;
+
+    // append some entries
+    auto res = leader_raft
+                 ->replicate(
+                   make_compactible_batches(3, 50), default_replicate_opts)
+                 .get0();
+
+    // disable one of the non leader nodes
+    for (auto& [id, _] : gr.get_members()) {
+        if (leader_id != id) {
+            disabled_id = id;
+            gr.disable_node(id);
+            break;
+        }
+    }
+    auto ts = model::timestamp::now();
+    // append some more entries
+    res = leader_raft
+            ->replicate(make_compactible_batches(3, 20), default_replicate_opts)
+            .get0();
+
+    validate_logs_replication(gr);
+
+    // compact log at the leader
+    info("Compacting log of node: {}", leader_id);
+    gr.get_member(leader_id)
+      .log
+      ->compact(storage::compaction_config(
+        ts,
+        100_MiB,
+        ss::default_priority_class(),
+        as,
+        storage::debug_sanitize_files::yes))
+      .get0();
+
+    gr.enable_node(disabled_id);
+
+    validate_logs_replication(gr);
+
+    wait_for(
+      10s,
+      [this, &gr] { return are_all_commit_indexes_the_same(gr); },
+      "After recovery state is consistent");
+
+    validate_logs_replication(gr);
+};
+#endif

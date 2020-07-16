@@ -29,6 +29,8 @@ public:
 private:
     bool needs_to_roll_log(model::term_id) const;
     void release_lock();
+    ss::future<ss::stop_iteration>
+    append_batch_to_segment(const model::record_batch&);
     ss::future<> initialize();
 
     disk_log_impl& _log;

@@ -86,28 +86,37 @@ disk_log_appender::operator()(model::record_batch& batch) {
           });
     }
     return f
-      .then([this, &batch]() mutable {
-          return _seg->append(batch).then([this](append_result r) {
-              _idx = r.last_offset + model::offset(1); // next base offset
-              _byte_size += r.byte_size;
-              // do not track base_offset, only the last one
-              _last_offset = r.last_offset;
-              auto& p = _log.get_probe();
-              p.add_bytes_written(r.byte_size);
-              p.batch_written();
-              // substract the bytes from the append
-              // take the min because _bytes_left_in_segment is optimistic
-              _bytes_left_in_segment -= std::min(
-                _bytes_left_in_segment, r.byte_size);
-              return ss::stop_iteration::no;
-          });
-      })
+      .then([this, &batch]() mutable { return append_batch_to_segment(batch); })
       .handle_exception([this](std::exception_ptr e) {
           release_lock();
           vlog(stlog.info, "Could not append batch: {} - {}", e, *this);
           _log.get_probe().batch_write_error(e);
           return ss::make_exception_future<ss::stop_iteration>(e);
       });
+}
+
+ss::future<ss::stop_iteration>
+disk_log_appender::append_batch_to_segment(const model::record_batch& batch) {
+    // ghost batch handling, it doesn't happen often so we can use unlikely
+    if (unlikely(batch.header().type == storage::ghost_record_batch_type)) {
+        _idx = batch.last_offset() + model::offset(1); // next base offset
+        _last_offset = batch.last_offset();
+        return ss::make_ready_future<ss::stop_iteration>(
+          ss::stop_iteration::no);
+    }
+    return _seg->append(batch).then([this](append_result r) {
+        _idx = r.last_offset + model::offset(1); // next base offset
+        _byte_size += r.byte_size;
+        // do not track base_offset, only the last one
+        _last_offset = r.last_offset;
+        auto& p = _log.get_probe();
+        p.add_bytes_written(r.byte_size);
+        p.batch_written();
+        // substract the bytes from the append
+        // take the min because _bytes_left_in_segment is optimistic
+        _bytes_left_in_segment -= std::min(_bytes_left_in_segment, r.byte_size);
+        return ss::stop_iteration::no;
+    });
 }
 
 ss::future<append_result> disk_log_appender::end_of_stream() {
