@@ -288,11 +288,12 @@ create_topic(request_context& ctx, model::topic&& topic) {
       .then([&md_cache = ctx.metadata_cache()](
               std::vector<cluster::topic_result> res) {
           vassert(res.size() == 1, "expected single result");
-          metadata_response::topic t;
-          t.name = std::move(res[0].tp_ns.tp);
+
           // error, neither success nor topic exists
           if (!(res[0].ec == cluster::errc::success
                 || res[0].ec == cluster::errc::topic_already_exists)) {
+              metadata_response::topic t;
+              t.name = std::move(res[0].tp_ns.tp);
               t.err_code = map_topic_error_code(res[0].ec);
               return ss::make_ready_future<metadata_response::topic>(t);
           }
@@ -302,12 +303,12 @@ create_topic(request_context& ctx, model::topic&& topic) {
                    res,
                    model::timeout_clock::now()
                      + config::shard_local_cfg().create_topic_timeout_ms())
-            .then(
-              [tp_ns = res[0].tp_ns, &md_cache](std::vector<model::node_id>) {
-                  auto tp_md = md_cache.get_topic_metadata(tp_ns);
-                  return metadata_response::topic::make_from_topic_metadata(
-                    std::move(tp_md.value()));
-              });
+            .then([tp_ns = std::move(res[0].tp_ns),
+                   &md_cache](std::vector<model::node_id>) {
+                auto tp_md = md_cache.get_topic_metadata(tp_ns);
+                return metadata_response::topic::make_from_topic_metadata(
+                  std::move(tp_md.value()));
+            });
       })
       .handle_exception([topic = std::move(topic)](
                           [[maybe_unused]] std::exception_ptr e) mutable {
