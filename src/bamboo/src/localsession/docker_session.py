@@ -7,6 +7,7 @@ from typing import List
 
 # 3rd party
 import docker
+from docker.models.containers import Container
 from docker.types import IPAMConfig, IPAMPool
 
 import petname
@@ -104,8 +105,11 @@ class DockerSessionState:
     def add_node(self, redpanda_node: RedpandaNode) -> None:
         self.nodes[redpanda_node.node_id] = redpanda_node
 
-    def add_container(self, container):
-        self.containers[container["Id"]] = container
+    def add_container(self, container: Container) -> None:
+        self.containers[container.id] = container
+        if not self.contains(container.labels["node_id"]):
+            self.add_node(
+                RedpandaNode(container.labels["node_id"], container.ip))
 
     def size(self) -> int:
         return len(self.nodes)
@@ -118,6 +122,9 @@ class DockerSessionState:
 
     def nodelist(self) -> List[RedpandaNode]:
         return list(self.nodes.values())
+
+    def containerlist(self) -> List[Container]:
+        return list(self.containers.values())
 
 
 class DockerSession(session.Session):
@@ -167,7 +174,9 @@ class DockerSession(session.Session):
             logging.info(
                 f"building image with tag:{self._docker_image_tag(node_id)}")
             image = self._client.images.build(
-                path=dirname, tag=self._docker_image_tag(node_id))
+                path=dirname,
+                tag=self._docker_image_tag(node_id),
+                labels={"node_id": str(node_id)})
 
             self._add_node(node_id)
         self._run_container(node_id)
@@ -180,6 +189,30 @@ class DockerSession(session.Session):
 
     def tcp_traffic_control(self, node_id):
         pass
+
+    def destroy(self, node_id):
+        if node_id is None:
+            for c in self._state.containerlist():
+                self._destroy_one(c)
+            net = self._client.networks.get(self._network_id)
+            logging.info(f"removing network: id={self._network_id}"
+                         f" name={self._state.network_name}")
+            net.remove()
+            return
+
+        snode_id = str(node_id)
+        for c in self._state.containerlist():
+            if c.labesl["node_id"] == snode_id:
+                self._destroy_one(c)
+                return
+        # nothing to do
+        logging.error(f"Could not find node:{snode_id}")
+
+    def _destroy_one(self, container):
+        logging.info(f"destroying id={container.short_id},"
+                     f"ip={container.ip}")
+        container.stop()
+        container.remove()
 
     def _round_node_id(self, node_id):
         n = node_id % 255

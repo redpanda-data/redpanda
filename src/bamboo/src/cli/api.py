@@ -27,3 +27,12 @@ def add_node(sname, node_id, package):
         node_id = random.randint(1, 2**31)
     s = docker_session.generate_docker_session(sname)
     s.add_node(node_id, package)
+
+
+@session.command(
+    short_help='destroy a container, or all containers if --node-id=None')
+@click.option('--sname', help="name of the session")
+@click.option('--node-id', help="id of node", default=None)
+def destroy(sname, node_id):
+    s = docker_session.generate_docker_session(sname)
+    s.destroy(node_id)
