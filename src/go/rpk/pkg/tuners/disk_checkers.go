@@ -68,7 +68,9 @@ func NewDirectoryNomergesChecker(
 	)
 }
 
-func checkDeviceNomerges(schedulerInfo disk.SchedulerInfo, device string) (bool, error) {
+func checkDeviceNomerges(
+	schedulerInfo disk.SchedulerInfo, device string,
+) (bool, error) {
 	nomerges, err := schedulerInfo.GetNomerges(device)
 	if err != nil {
 		return false, err
@@ -119,7 +121,9 @@ func NewDirectorySchedulerChecker(
 	)
 }
 
-func checkScheduler(schedulerInfo disk.SchedulerInfo, device string) (bool, error) {
+func checkScheduler(
+	schedulerInfo disk.SchedulerInfo, device string,
+) (bool, error) {
 	scheduler, err := schedulerInfo.GetScheduler(device)
 	if err != nil {
 		return false, err
