@@ -203,10 +203,12 @@ func getConf(fs afero.Fs, configFile string, out chan<- [][]string) {
 }
 
 func getKafkaInfo(conf config.Config, out chan<- [][]string) {
-	client, err := kafka.InitClient(
+	addr := fmt.Sprintf(
+		"%s:%d",
 		conf.Redpanda.KafkaApi.Address,
 		conf.Redpanda.KafkaApi.Port,
 	)
+	client, err := kafka.InitClient(addr)
 	if err != nil {
 		log.Infof("Error initializing redpanda client: %s", err)
 		out <- [][]string{}
