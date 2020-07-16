@@ -11,6 +11,8 @@
 
 #include <absl/container/flat_hash_map.h>
 
+#include <tuple>
+
 namespace raft {
 
 /*
@@ -39,7 +41,11 @@ public:
     cluster::notification_id_type
     register_leadership_notification(leader_cb_t cb) {
         auto id = _notification_id++;
-        _notifications.push_back(std::make_pair(id, std::move(cb)));
+        // call notification for all the groups
+        for (auto& gr : _groups) {
+            cb(gr->group(), gr->term(), gr->get_leader_id());
+        }
+        _notifications.emplace_back(id, std::move(cb));
         return id;
     }
 
