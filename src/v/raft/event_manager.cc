@@ -30,9 +30,6 @@ ss::future<> event_manager::wait(
   model::offset offset,
   model::timeout_clock::time_point timeout,
   ss::abort_source& as) {
-    if (offset <= _consensus->committed_offset()) {
-        return ss::now();
-    }
     return _commit_index.wait(offset, timeout, as);
 }
 
