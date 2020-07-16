@@ -190,12 +190,14 @@ class DockerSession(session.Session):
         # not necessary, but verifies we have correct internal state
         n = self._get_node(node_id)
         logging.info(f"attempting to run node: id={n.node_id},ip={n.ip}")
-        container = self._client.containers.run(
-            self._docker_image_tag(n.node_id))
+        container = self._client.containers.run(self._docker_image_tag(
+            n.node_id),
+                                                detach=True)
         self._state.add_container(container)
-        self._client.connect_container_to_network(container, self._network_id)
+        net = self._client.networks.get(self._network_id)
+        net.connect(container)
         logging.info(f"starting container: {container.short_id} detached=True")
-        self._client.start(container, detached=True)
+        container.start()
 
     def _get_node(self, node_id):
         if not self._state.contains(node_id):
