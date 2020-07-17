@@ -7,6 +7,7 @@ from typing import List
 
 # 3rd party
 import docker
+from docker.models.containers import Container
 from docker.types import IPAMConfig, IPAMPool
 
 import petname
@@ -50,13 +51,13 @@ redpanda:
   data_directory: "/var/lib/redpanda/data"
   node_id: {{node_id}}
   rpc_server:
-    address: "0.0.0.0"
+    address: "{{node_ip}}"
     port: 33145
   kafka_api:
-    address: "0.0.0.0"
+    address: "{{node_ip}}"
     port: 9092
   admin:
-    address: "0.0.0.0"
+    address: "{{node_ip}}"
     port: 9644
 
   # The initial cluster nodes addresses
@@ -89,6 +90,10 @@ rpk:
 """
 
 
+def _ip_for_node_id(node_id):
+    return f"172.16.5.{node_id}"
+
+
 class RedpandaNode:
     def __init__(self, node_id, ip):
         self.node_id = node_id
@@ -104,8 +109,11 @@ class DockerSessionState:
     def add_node(self, redpanda_node: RedpandaNode) -> None:
         self.nodes[redpanda_node.node_id] = redpanda_node
 
-    def add_container(self, container):
-        self.containers[container["Id"]] = container
+    def add_container(self, container: Container) -> None:
+        self.containers[container.id] = container
+        node_id = int(container.labels["node_id"])
+        if not self.contains(node_id):
+            self.add_node(RedpandaNode(node_id, _ip_for_node_id(node_id)))
 
     def size(self) -> int:
         return len(self.nodes)
@@ -118,6 +126,9 @@ class DockerSessionState:
 
     def nodelist(self) -> List[RedpandaNode]:
         return list(self.nodes.values())
+
+    def containerlist(self) -> List[Container]:
+        return list(self.containers.values())
 
 
 class DockerSession(session.Session):
@@ -167,7 +178,9 @@ class DockerSession(session.Session):
             logging.info(
                 f"building image with tag:{self._docker_image_tag(node_id)}")
             image = self._client.images.build(
-                path=dirname, tag=self._docker_image_tag(node_id))
+                path=dirname,
+                tag=self._docker_image_tag(node_id),
+                labels={"node_id": str(node_id)})
 
             self._add_node(node_id)
         self._run_container(node_id)
@@ -181,6 +194,31 @@ class DockerSession(session.Session):
     def tcp_traffic_control(self, node_id):
         pass
 
+    def destroy(self, node_id):
+        if node_id is None:
+            for c in self._state.containerlist():
+                self._destroy_one(c)
+            net = self._client.networks.get(self._network_id)
+            logging.info(f"removing network: id={self._network_id}"
+                         f" name={self._state.network_name}")
+            net.remove()
+            return
+
+        snode_id = str(node_id)
+        for c in self._state.containerlist():
+            if c.labesl["node_id"] == snode_id:
+                self._destroy_one(c)
+                return
+        # nothing to do
+        logging.error(f"Could not find node:{snode_id}")
+
+    def _destroy_one(self, container):
+        logging.info(
+            f"destroying container id={container.short_id} name={container.name}"
+        )
+        container.stop()
+        container.remove()
+
     def _round_node_id(self, node_id):
         n = node_id % 255
         if n == 0: return 1
@@ -190,12 +228,14 @@ class DockerSession(session.Session):
         # not necessary, but verifies we have correct internal state
         n = self._get_node(node_id)
         logging.info(f"attempting to run node: id={n.node_id},ip={n.ip}")
-        container = self._client.containers.run(
-            self._docker_image_tag(n.node_id))
+        container = self._client.containers.run(self._docker_image_tag(
+            n.node_id),
+                                                detach=True)
         self._state.add_container(container)
-        self._client.connect_container_to_network(container, self._network_id)
+        net = self._client.networks.get(self._network_id)
+        net.connect(container, ipv4_address=_ip_for_node_id(node_id))
         logging.info(f"starting container: {container.short_id} detached=True")
-        self._client.start(container, detached=True)
+        container.start()
 
     def _get_node(self, node_id):
         if not self._state.contains(node_id):
@@ -203,7 +243,7 @@ class DockerSession(session.Session):
         return self._state.nodes[node_id]
 
     def _add_node(self, node_id):
-        self._state.add_node(RedpandaNode(node_id, f"172.28.5.{node_id}"))
+        self._state.add_node(RedpandaNode(node_id, _ip_for_node_id(node_id)))
         logging.info(f"udpating ORM with new node configuration for {node_id}")
 
     def _docker_image_tag(self, node_id) -> str:
@@ -241,6 +281,7 @@ class DockerSession(session.Session):
     def _render_config(self, node_id):
         tpl = Template(_JINJA_CONFIG_TEMPLATE)
         return tpl.render(node_id=node_id,
+                          node_ip=_ip_for_node_id(node_id),
                           cluster=self._state.network_name,
                           seed_servers=self._state.nodelist())
 
