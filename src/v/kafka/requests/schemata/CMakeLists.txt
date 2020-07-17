@@ -22,7 +22,9 @@ set(schemata
   find_coordinator_request.json
   find_coordinator_response.json
   list_offset_request.json
-  list_offset_response.json)
+  list_offset_response.json
+  alter_configs_request.json
+  alter_configs_response.json)
 
 set(srcs)
 foreach(schema ${schemata})

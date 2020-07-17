@@ -1,5 +1,6 @@
 #include "kafka/requests/requests.h"
 
+#include "kafka/requests/alter_configs_request.h"
 #include "kafka/requests/api_versions_request.h"
 #include "kafka/requests/create_topics_request.h"
 #include "kafka/requests/delete_topics_request.h"
@@ -109,6 +110,8 @@ process_request(request_context&& ctx, ss::smp_service_group g) {
         return do_process<create_topics_api>(std::move(ctx), std::move(g));
     case describe_configs_api::key:
         return do_process<describe_configs_api>(std::move(ctx), std::move(g));
+    case alter_configs_api::key:
+        return do_process<alter_configs_api>(std::move(ctx), std::move(g));
     case delete_topics_api::key:
         return do_process<delete_topics_api>(std::move(ctx), std::move(g));
     };
