@@ -286,26 +286,44 @@ FIXTURE_TEST(test_stm_recovery, mux_state_machine_fixture) {
         cfg.base_dir = _data_dir;
         storage::disk_log_builder builder(cfg);
         model::offset offset(0);
-        builder | storage::start(_ntp) | storage::add_segment(0)
-          | storage::add_batch(serialize_cmd(
-            set_cmd{"test", 1}, batch_type_1, offset++)) // -> test = 1
-          | storage::add_batch(serialize_cmd(
-            set_cmd{"test", 2}, batch_type_1, offset++)) // -> failed
-          | storage::add_batch(serialize_cmd(
-            set_cmd{"test", 3}, batch_type_1, offset++)) // -> failed
-          | storage::add_batch(serialize_cmd(
-            cas_cmd{"test", 1, 10}, batch_type_1, offset++)) // -> test =10
-          | storage::add_batch(serialize_cmd(
-            set_cmd{"test-1", 2}, batch_type_1, offset++)) // -> failed
-          | storage::add_batch(serialize_cmd(
-            set_cmd{"test-2", 15}, batch_type_1, offset++)) // -> test-2 = 15
-          | storage::add_batch(serialize_cmd(
-            cas_cmd{"test-2", 15, 1}, batch_type_1, offset++)) // -> test-2 = 1
-          | storage::add_batch(serialize_cmd(
-            cas_cmd{"test-2", 15, 2}, batch_type_1, offset++)) // -> failed
-          | storage::add_batch(serialize_cmd(
-            delete_cmd{"test-1"}, batch_type_1, offset++)) // -> test-1 deleted
-          | storage::stop();
+        std::vector<model::record_batch> batches;
+
+        builder | storage::start(_ntp) | storage::add_segment(0);
+
+        builder
+          .add_batch(serialize_cmd(set_cmd{"test", 1}, batch_type_1, offset++))
+          .get0(); // -> test = 1
+        builder
+          .add_batch(serialize_cmd(set_cmd{"test", 2}, batch_type_1, offset++))
+          .get0(); // -> failed
+        builder
+          .add_batch(serialize_cmd(set_cmd{"test", 3}, batch_type_1, offset++))
+          .get0(); // -> failed
+        builder
+          .add_batch(
+            serialize_cmd(cas_cmd{"test", 1, 10}, batch_type_1, offset++))
+          .get0(); // -> test =10
+        builder
+          .add_batch(
+            serialize_cmd(set_cmd{"test-1", 2}, batch_type_1, offset++))
+          .get0(); // -> failed
+        builder
+          .add_batch(
+            serialize_cmd(set_cmd{"test-2", 15}, batch_type_1, offset++))
+          .get0(); // -> test-2 = 15
+        builder
+          .add_batch(
+            serialize_cmd(cas_cmd{"test-2", 15, 1}, batch_type_1, offset++))
+          .get0(); // -> test-2 = 1
+        builder
+          .add_batch(
+            serialize_cmd(cas_cmd{"test-2", 15, 2}, batch_type_1, offset++))
+          .get0(); // -> failed
+        builder
+          .add_batch(
+            serialize_cmd(delete_cmd{"test-1"}, batch_type_1, offset++))
+          .get0(); // -> test-1 deleted
+        builder.stop().get0();
     }
     // Correct state:
     // test = 10
