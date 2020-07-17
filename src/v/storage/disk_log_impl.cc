@@ -134,6 +134,10 @@ static inline ss::lw_shared_ptr<segment> find_reverse_not_compacted(
     int i = static_cast<int>(s.size()) - 1;
     while (i >= 0) {
         auto ret = s[i--];
+        if (ret->has_appender()) {
+            // cannot compact active segments
+            continue;
+        }
         const auto flags = bits.find(ret->offsets().base_offset);
         if (
           flags != bits.end()
