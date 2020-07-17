@@ -351,7 +351,9 @@ size_t disk_log_impl::bytes_left_before_roll() const {
         return 0;
     }
     auto fo = back->appender().file_byte_offset();
-    auto max = _manager.max_segment_size();
+    auto max = config().is_compacted()
+                 ? _manager.config().max_compacted_segment_size
+                 : _manager.config().max_segment_size;
     if (fo >= max) {
         return 0;
     }
@@ -369,9 +371,14 @@ ss::future<> disk_log_impl::maybe_roll(
     if (!ptr->has_appender()) {
         return new_segment(next_offset, t, iopc);
     }
-    if (
-      t != term()
-      || ptr->appender().file_byte_offset() > _manager.max_segment_size()) {
+    bool size_should_roll = false;
+    const auto max = config().is_compacted()
+                       ? _manager.config().max_compacted_segment_size
+                       : _manager.config().max_segment_size;
+    if (ptr->appender().file_byte_offset() >= max) {
+        size_should_roll = true;
+    }
+    if (t != term() || size_should_roll) {
         return ptr->release_appender().then([this, next_offset, t, iopc] {
             return new_segment(next_offset, t, iopc);
         });
