@@ -42,6 +42,7 @@ func NewTopicCommand(fs afero.Fs) *cobra.Command {
 	)
 	root.AddCommand(createTopic(&admin))
 	root.AddCommand(deleteTopic(&admin))
+	root.AddCommand(setTopicConfig(&admin))
 
 	return root
 }
@@ -133,6 +134,43 @@ func deleteTopic(admin *sarama.ClusterAdmin) *cobra.Command {
 				return err
 			}
 			log.Infof("Deleted topic '%s'.", topicName)
+			return nil
+		},
+	}
+	return cmd
+}
+
+func setTopicConfig(admin *sarama.ClusterAdmin) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "set-config <topic> <key> [<value>]",
+		Short: "Set the topic's config key/value pairs",
+		Args:  cobra.ExactArgs(3),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if admin == nil {
+				return errors.New("uninitialized API client")
+			}
+			adm := *admin
+			defer adm.Close()
+
+			topicName := args[0]
+			key := args[1]
+			value := args[2]
+
+			err := adm.AlterConfig(
+				sarama.TopicResource,
+				topicName,
+				map[string]*string{key: &value},
+				false,
+			)
+			if err != nil {
+				return err
+			}
+			log.Infof(
+				"Added config '%s'='%s' to topic '%s'.",
+				key,
+				value,
+				topicName,
+			)
 			return nil
 		},
 	}

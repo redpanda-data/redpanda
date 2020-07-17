@@ -18,6 +18,7 @@ type mockAdmin struct {
 	// add the specific funcs we'll need
 	createTopic func(string, *sarama.TopicDetail, bool) error
 	deleteTopic func(string) error
+	alterConfig func(sarama.ConfigResourceType, string, map[string]*string, bool) error
 }
 
 func (a *mockAdmin) CreateTopic(
@@ -32,6 +33,18 @@ func (a *mockAdmin) CreateTopic(
 func (a *mockAdmin) DeleteTopic(topic string) error {
 	if a.deleteTopic != nil {
 		return a.deleteTopic(topic)
+	}
+	return nil
+}
+
+func (a *mockAdmin) AlterConfig(
+	resType sarama.ConfigResourceType,
+	topic string,
+	config map[string]*string,
+	validate bool,
+) error {
+	if a.alterConfig != nil {
+		return a.alterConfig(resType, topic, config, validate)
 	}
 	return nil
 }
@@ -100,6 +113,46 @@ func TestTopicCmd(t *testing.T) {
 			cmd:         deleteTopic,
 			args:        []string{},
 			expectedErr: "accepts 1 arg(s), received 0",
+		},
+		{
+			name:           "set-config should output the given config key-value pair",
+			cmd:            setTopicConfig,
+			args:           []string{"Panama", "somekey", "somevalue"},
+			expectedOutput: "Added config 'somekey'='somevalue' to topic 'Panama'.",
+		},
+		{
+			name: "set-config should fail if the req fails",
+			cmd:  setTopicConfig,
+			args: []string{"Chiriqui", "k", "v"},
+			admin: &mockAdmin{
+				alterConfig: func(
+					sarama.ConfigResourceType,
+					string,
+					map[string]*string,
+					bool,
+				) error {
+					return errors.New("can't set the config for some reason")
+				},
+			},
+			expectedErr: "can't set the config for some reason",
+		},
+		{
+			name:        "set-config should fail if no topic is passed",
+			cmd:         setTopicConfig,
+			args:        []string{},
+			expectedErr: "accepts 3 arg(s), received 0",
+		},
+		{
+			name:        "set-config should fail if no key is passed",
+			cmd:         setTopicConfig,
+			args:        []string{"Chepo"},
+			expectedErr: "accepts 3 arg(s), received 1",
+		},
+		{
+			name:        "set-config should fail if no value is passed",
+			cmd:         setTopicConfig,
+			args:        []string{"Chepo", "key"},
+			expectedErr: "accepts 3 arg(s), received 2",
 		},
 	}
 
