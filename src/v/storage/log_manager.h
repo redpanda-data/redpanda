@@ -54,6 +54,7 @@ struct log_config {
       storage_type type,
       ss::sstring directory,
       size_t segment_size,
+      size_t compacted_segment_size,
       debug_sanitize_files should,
       std::optional<size_t> ret_bytes,
       std::chrono::milliseconds compaction_ival,
@@ -63,6 +64,7 @@ struct log_config {
       : stype(type)
       , base_dir(std::move(directory))
       , max_segment_size(segment_size)
+      , max_compacted_segment_size(compacted_segment_size)
       , sanitize_fileops(should)
       , retention_bytes(ret_bytes)
       , compaction_interval(compaction_ival)
@@ -82,6 +84,8 @@ struct log_config {
     ss::sstring base_dir;
     size_t max_segment_size;
 
+    // compacted segment size
+    size_t max_compacted_segment_size = 256_MiB;
     // used for testing: keeps a backtrace of operations for debugging
     debug_sanitize_files sanitize_fileops = debug_sanitize_files::no;
     // same as retention.bytes in kafka
@@ -150,7 +154,6 @@ public:
       record_version_type = record_version_type::v1,
       size_t buffer_size = default_segment_readahead_size);
 
-    size_t max_segment_size() const { return _config.max_segment_size; }
     const log_config& config() const { return _config; }
 
     /// Returns the number of managed logs.
