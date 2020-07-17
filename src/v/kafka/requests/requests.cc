@@ -43,7 +43,7 @@ struct process_dispatch {
                 ctx.header().version,
                 Request::name)));
         }
-        return Request::process(std::move(ctx), std::move(g));
+        return Request::process(std::move(ctx), g);
     }
 };
 
@@ -58,7 +58,7 @@ template<>
 struct process_dispatch<api_versions_api> {
     static ss::future<response_ptr>
     process(request_context&& ctx, ss::smp_service_group g) {
-        return api_versions_api::process(std::move(ctx), std::move(g));
+        return api_versions_api::process(std::move(ctx), g);
     }
 };
 
@@ -74,46 +74,46 @@ ss::future<response_ptr> do_process(
       ctx.header().version,
       ctx.header().client_id.value_or(std::string_view("unset-client-id")));
 
-    return process_dispatch<Request>::process(std::move(ctx), std::move(g));
+    return process_dispatch<Request>::process(std::move(ctx), g);
 }
 
 ss::future<response_ptr>
 process_request(request_context&& ctx, ss::smp_service_group g) {
     switch (ctx.header().key) {
     case api_versions_api::key:
-        return do_process<api_versions_api>(std::move(ctx), std::move(g));
+        return do_process<api_versions_api>(std::move(ctx), g);
     case metadata_api::key:
-        return do_process<metadata_api>(std::move(ctx), std::move(g));
+        return do_process<metadata_api>(std::move(ctx), g);
     case list_groups_api::key:
-        return do_process<list_groups_api>(std::move(ctx), std::move(g));
+        return do_process<list_groups_api>(std::move(ctx), g);
     case find_coordinator_api::key:
-        return do_process<find_coordinator_api>(std::move(ctx), std::move(g));
+        return do_process<find_coordinator_api>(std::move(ctx), g);
     case offset_fetch_api::key:
-        return do_process<offset_fetch_api>(std::move(ctx), std::move(g));
+        return do_process<offset_fetch_api>(std::move(ctx), g);
     case produce_api::key:
-        return do_process<produce_api>(std::move(ctx), std::move(g));
+        return do_process<produce_api>(std::move(ctx), g);
     case list_offsets_api::key:
-        return do_process<list_offsets_api>(std::move(ctx), std::move(g));
+        return do_process<list_offsets_api>(std::move(ctx), g);
     case offset_commit_api::key:
-        return do_process<offset_commit_api>(std::move(ctx), std::move(g));
+        return do_process<offset_commit_api>(std::move(ctx), g);
     case fetch_api::key:
-        return do_process<fetch_api>(std::move(ctx), std::move(g));
+        return do_process<fetch_api>(std::move(ctx), g);
     case join_group_api::key:
-        return do_process<join_group_api>(std::move(ctx), std::move(g));
+        return do_process<join_group_api>(std::move(ctx), g);
     case heartbeat_api::key:
-        return do_process<heartbeat_api>(std::move(ctx), std::move(g));
+        return do_process<heartbeat_api>(std::move(ctx), g);
     case leave_group_api::key:
-        return do_process<leave_group_api>(std::move(ctx), std::move(g));
+        return do_process<leave_group_api>(std::move(ctx), g);
     case sync_group_api::key:
-        return do_process<sync_group_api>(std::move(ctx), std::move(g));
+        return do_process<sync_group_api>(std::move(ctx), g);
     case create_topics_api::key:
-        return do_process<create_topics_api>(std::move(ctx), std::move(g));
+        return do_process<create_topics_api>(std::move(ctx), g);
     case describe_configs_api::key:
-        return do_process<describe_configs_api>(std::move(ctx), std::move(g));
+        return do_process<describe_configs_api>(std::move(ctx), g);
     case alter_configs_api::key:
-        return do_process<alter_configs_api>(std::move(ctx), std::move(g));
+        return do_process<alter_configs_api>(std::move(ctx), g);
     case delete_topics_api::key:
-        return do_process<delete_topics_api>(std::move(ctx), std::move(g));
+        return do_process<delete_topics_api>(std::move(ctx), g);
     };
     return ss::make_exception_future<response_ptr>(
       std::runtime_error(fmt::format("Unsupported API {}", ctx.header().key)));
