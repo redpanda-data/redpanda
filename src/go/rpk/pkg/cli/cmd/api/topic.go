@@ -41,6 +41,7 @@ func NewTopicCommand(fs afero.Fs) *cobra.Command {
 		"Comma-separated list of broker ip:port pairs",
 	)
 	root.AddCommand(createTopic(&admin))
+	root.AddCommand(deleteTopic(&admin))
 
 	return root
 }
@@ -111,5 +112,29 @@ func createTopic(admin *sarama.ClusterAdmin) *cobra.Command {
 		false,
 		"Enable topic compaction",
 	)
+	return cmd
+}
+
+func deleteTopic(admin *sarama.ClusterAdmin) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "delete <topic name>",
+		Short: "Delete a topic",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if admin == nil {
+				return errors.New("uninitialized API client")
+			}
+			adm := *admin
+			defer adm.Close()
+
+			topicName := args[0]
+			err := adm.DeleteTopic(topicName)
+			if err != nil {
+				return err
+			}
+			log.Infof("Deleted topic '%s'.", topicName)
+			return nil
+		},
+	}
 	return cmd
 }

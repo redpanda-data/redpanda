@@ -17,6 +17,7 @@ type mockAdmin struct {
 	sarama.ClusterAdmin
 	// add the specific funcs we'll need
 	createTopic func(string, *sarama.TopicDetail, bool) error
+	deleteTopic func(string) error
 }
 
 func (a *mockAdmin) CreateTopic(
@@ -24,6 +25,13 @@ func (a *mockAdmin) CreateTopic(
 ) error {
 	if a.createTopic != nil {
 		return a.createTopic(topic, detail, validateOnly)
+	}
+	return nil
+}
+
+func (a *mockAdmin) DeleteTopic(topic string) error {
+	if a.deleteTopic != nil {
+		return a.deleteTopic(topic)
 	}
 	return nil
 }
@@ -69,6 +77,29 @@ func TestTopicCmd(t *testing.T) {
 				},
 			},
 			expectedErr: "no bueno error",
+		},
+		{
+			name:           "delete should output the name of the deleted topic",
+			cmd:            deleteTopic,
+			args:           []string{"Medellin"},
+			expectedOutput: "Deleted topic 'Medellin'.",
+		},
+		{
+			name: "delete should fail if the topic deletion req fails",
+			cmd:  deleteTopic,
+			args: []string{"Leticia"},
+			admin: &mockAdmin{
+				deleteTopic: func(string) error {
+					return errors.New("that topic don't exist, yo")
+				},
+			},
+			expectedErr: "that topic don't exist, yo",
+		},
+		{
+			name:        "delete should fail if no topic is passed",
+			cmd:         deleteTopic,
+			args:        []string{},
+			expectedErr: "accepts 1 arg(s), received 0",
 		},
 	}
 
