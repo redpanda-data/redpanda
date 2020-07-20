@@ -5,8 +5,7 @@ import { find } from "../utilities/Map";
  * CoprocessorsRepository is a container for CoprocessorHandles.
  */
 class CoprocessorRepository {
-  constructor(folder: string) {
-    this.folder = folder;
+  constructor() {
     this.coprocessors = new Map();
   }
 
@@ -48,7 +47,6 @@ class CoprocessorRepository {
    */
   getCoprocessors = () => this.coprocessors;
 
-  private readonly folder;
   private readonly coprocessors: Map<number, CoprocessorHandle>;
 }
 
