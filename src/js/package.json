@@ -28,6 +28,8 @@
     "@typescript-eslint/eslint-plugin": "^3.7.0",
     "@typescript-eslint/parser": "^3.7.0",
     "eslint": "^7.5.0",
-    "eslint-config-prettier": "^6.11.0"
+    "eslint-config-prettier": "^6.11.0",
+    "sinon": "^9.0.2",
+    "@types/sinon": "^9.0.4"
   }
 }
