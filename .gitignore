@@ -194,3 +194,6 @@ infra/modules/**/ssh_config*
 
 # VSCode Java
 .project
+
+# Node js dev dependencies
+src/js/node_modules
