@@ -1,4 +1,4 @@
-import {Coprocessor} from "../public/Coprocessor";
+import { Coprocessor } from "../public/Coprocessor";
 
 /**
  * CoprocessorHandle interface represents a coprocessor loaded into memory
@@ -7,7 +7,7 @@ import {Coprocessor} from "../public/Coprocessor";
  * @checksum: is the the file's content checksum
  */
 export interface CoprocessorHandle {
-  coprocessor: Coprocessor,
-  filename: string,
-  checksum: string
+  coprocessor: Coprocessor;
+  filename: string;
+  checksum: string;
 }

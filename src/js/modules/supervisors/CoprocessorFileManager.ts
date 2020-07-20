@@ -1,9 +1,9 @@
-import * as Inotify from 'inotifywait';
-import { rename, readdir} from "fs";
-import {promisify} from "util"
+import * as Inotify from "inotifywait";
+import { rename, readdir } from "fs";
+import { promisify } from "util";
 import CoprocessorRepository from "./CoprocessorRepository";
-import {CoprocessorHandle} from "../domain/CoprocessorManager";
-import {getChecksumFromFile} from "../utilities/Checksum";
+import { CoprocessorHandle } from "../domain/CoprocessorManager";
+import { getChecksumFromFile } from "../utilities/Checksum";
 
 /**
  * CoprocessorFileManager class is an inotify implementation, it receives a
@@ -15,13 +15,14 @@ class CoprocessorFileManager {
     private coprocessorRepository: CoprocessorRepository,
     private submitDir: string,
     private activeDir: string,
-    private inactiveDir: string) {
-    try{
-      this.watcher = new Inotify(this.submitDir)
-      this.readActiveCoprocessor(coprocessorRepository)
-      this.updateRepositoryOnNewFile(coprocessorRepository)
+    private inactiveDir: string
+  ) {
+    try {
+      this.watcher = new Inotify(this.submitDir);
+      this.readActiveCoprocessor(coprocessorRepository);
+      this.updateRepositoryOnNewFile(coprocessorRepository);
     } catch (e) {
-      console.error(e)
+      console.error(e);
       //TODO: implement winston for loggin information and error handler
     }
   }
@@ -42,65 +43,72 @@ class CoprocessorFileManager {
     validatePrevCoprocessor: boolean = true
   ): Promise<CoprocessorHandle> =>
     this.getCoprocessor(filePath).then((coprocessor) => {
-      const preCoprocessor = coprocessorRepository.findByGlobalId(coprocessor)
+      const preCoprocessor = coprocessorRepository.findByGlobalId(coprocessor);
       if (preCoprocessor && validatePrevCoprocessor) {
         if (preCoprocessor.checksum === coprocessor.checksum) {
-          return this.moveCoprocessorFile(coprocessor, this.inactiveDir)
+          return this.moveCoprocessorFile(coprocessor, this.inactiveDir);
         } else {
           return this.moveCoprocessorFile(preCoprocessor, this.inactiveDir)
-            .then( () => coprocessorRepository.remove(preCoprocessor))
-            .then( () => this.moveCoprocessorFile(coprocessor, this.activeDir))
-            .then( (newCoprocessor) => {
-              coprocessorRepository.add(newCoprocessor)
-              return newCoprocessor
-            })
+            .then(() => coprocessorRepository.remove(preCoprocessor))
+            .then(() => this.moveCoprocessorFile(coprocessor, this.activeDir))
+            .then((newCoprocessor) => {
+              coprocessorRepository.add(newCoprocessor);
+              return newCoprocessor;
+            });
         }
       } else {
-        return this.moveCoprocessorFile(coprocessor, this.activeDir)
-          .then((newCoprocessor) => {
-            coprocessorRepository.add(newCoprocessor)
-            return newCoprocessor
-          })
+        return this.moveCoprocessorFile(coprocessor, this.activeDir).then(
+          (newCoprocessor) => {
+            coprocessorRepository.add(newCoprocessor);
+            return newCoprocessor;
+          }
+        );
       }
-    })
+    });
 
   /**
    * reads the files in the "active" folder, loads them as CoprocessorHandles and
    * adds them to the given CoprocessorRepository
    * @param coprocessorRepository
    */
-  readActiveCoprocessor = (coprocessorRepository: CoprocessorRepository): void => {
-    const readdirPromise = promisify(readdir)
-    readdirPromise(this.activeDir).then((files) => {
-      files.forEach(file =>
-        this.addCoprocessor(
-          `${this.activeDir}/${file}`,
-          coprocessorRepository,
-          false)
-      )
-    }).catch(console.error)
+  readActiveCoprocessor = (
+    coprocessorRepository: CoprocessorRepository
+  ): void => {
+    const readdirPromise = promisify(readdir);
+    readdirPromise(this.activeDir)
+      .then((files) => {
+        files.forEach((file) =>
+          this.addCoprocessor(
+            `${this.activeDir}/${file}`,
+            coprocessorRepository,
+            false
+          )
+        );
+      })
+      .catch(console.error);
     //TODO: implement winston for loggin information and error handler
-  }
+  };
 
   /**
    * Updates the given CoprocessorRepository instance when a new coprocessor
    * file is added.
    * @param coprocessorRepository, is a coprocessor container
    */
-  updateRepositoryOnNewFile = (coprocessorRepository: CoprocessorRepository) => {
-    this.watcher.on("add", filePath => {
-      this.addCoprocessor(filePath, coprocessorRepository)
-        .catch(console.error)
+  updateRepositoryOnNewFile = (
+    coprocessorRepository: CoprocessorRepository
+  ) => {
+    this.watcher.on("add", (filePath) => {
+      this.addCoprocessor(filePath, coprocessorRepository).catch(console.error);
       //TODO: implement winston for logging information and error handler
-    })
-  }
+    });
+  };
 
   /**
    * allow closing the inotify process
    */
   close = () => {
-    this.watcher.close()
-  }
+    this.watcher.close();
+  };
 
   /**
    * receives a path and it gets the js file and create a checksum for content path file.
@@ -110,18 +118,20 @@ class CoprocessorFileManager {
     return new Promise<CoprocessorHandle>((resolve, reject) => {
       try {
         const script = require(filename);
-        delete require.cache[filename]
-        const fileChecksum = getChecksumFromFile(filename)
-        fileChecksum.then(checksum => ({
-          coprocessor: new script.default(),
-          checksum,
-          filename
-        })).catch(reject)
+        delete require.cache[filename];
+        const fileChecksum = getChecksumFromFile(filename);
+        fileChecksum
+          .then((checksum) => ({
+            coprocessor: new script.default(),
+            checksum,
+            filename,
+          }))
+          .catch(reject);
       } catch (e) {
-        reject(e)
+        reject(e);
       }
-    })
-  }
+    });
+  };
 
   /**
    * moveCoprocessorFile moves coprocessor from the current filepath to destination path, also changes the
@@ -129,14 +139,19 @@ class CoprocessorFileManager {
    * @param coprocessor, is a coprocessor loaded in memory
    * @param destination, destination path
    */
-  private moveCoprocessorFile = (coprocessor: CoprocessorHandle, destination: string): Promise<CoprocessorHandle> => {
-    const renamePromise = promisify(rename)
-    const newFileName = `${destination}/sha265-${coprocessor.checksum}.js`
-    return renamePromise(coprocessor.filename, newFileName)
-      .then(_ => ({...coprocessor, filename: newFileName}))
-  }
+  private moveCoprocessorFile = (
+    coprocessor: CoprocessorHandle,
+    destination: string
+  ): Promise<CoprocessorHandle> => {
+    const renamePromise = promisify(rename);
+    const newFileName = `${destination}/sha265-${coprocessor.checksum}.js`;
+    return renamePromise(coprocessor.filename, newFileName).then((_) => ({
+      ...coprocessor,
+      filename: newFileName,
+    }));
+  };
 
-  private watcher: Inotify
+  private watcher: Inotify;
 }
 
-export default CoprocessorFileManager
+export default CoprocessorFileManager;
