@@ -37,6 +37,22 @@ class CoprocessorRepository {
   };
 
   /**
+   * Given a Coprocessor, try to find one with the same global ID and return it
+   * if it exists, returns undefined otherwise
+   * @param coprocessor
+   */
+  findByCoprocessor = (
+    coprocessor: Coprocessor
+  ): CoprocessorHandle | undefined => {
+    const foundCoprocessor = find(
+      this.coprocessors,
+      (key, value) => coprocessor.globalId === value.coprocessor.globalId
+    );
+    // find method return a Tuple, where 1 position is the CoprocessorHandle value
+    return foundCoprocessor ? foundCoprocessor[1] : undefined;
+  };
+
+  /**
    * removeCoprocessor method remove a coprocessor from the coprocessor map
    * @param coprocessor
    */
