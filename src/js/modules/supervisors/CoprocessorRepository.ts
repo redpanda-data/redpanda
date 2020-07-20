@@ -1,5 +1,6 @@
 import { CoprocessorHandle } from "../domain/CoprocessorManager";
 import { find } from "../utilities/Map";
+import { Coprocessor } from "../public/Coprocessor";
 
 /**
  * CoprocessorsRepository is a container for CoprocessorHandles.
@@ -43,9 +44,21 @@ class CoprocessorRepository {
     this.coprocessors.delete(coprocessor.coprocessor.globalId);
 
   /**
-   * getCoprocessors returns the map of CoprocessorHandles indexed by their global ID
+   * getCoprocessors returns the map of CoprocessorHandles indexed by their topics
    */
-  getCoprocessors = () => this.coprocessors;
+  getCoprocessorsByTopics(): Map<string, Coprocessor[]> {
+    const coprocessorByTopic = new Map<string, Coprocessor[]>();
+    for (const [_, value] of this.coprocessors) {
+      value.coprocessor.inputTopics.reduce((prev, topic) => {
+        const previousCoprocessors = coprocessorByTopic.get(topic) || [];
+        return coprocessorByTopic.set(topic, [
+          ...previousCoprocessors,
+          value.coprocessor,
+        ]);
+      }, coprocessorByTopic);
+    }
+    return coprocessorByTopic;
+  }
 
   private readonly coprocessors: Map<number, CoprocessorHandle>;
 }
