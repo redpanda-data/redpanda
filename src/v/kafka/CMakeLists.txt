@@ -19,6 +19,7 @@ set(request_srcs
   requests/create_topics_request.cc
   requests/offset_commit_request.cc
   requests/delete_topics_request.cc
+  requests/alter_configs_request.cc
   requests/topics/types.cc
   requests/topics/topic_utils.cc)
 

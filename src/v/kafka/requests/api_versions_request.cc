@@ -1,5 +1,6 @@
 #include "kafka/requests/api_versions_request.h"
 
+#include "kafka/requests/alter_configs_request.h"
 #include "kafka/requests/create_topics_request.h"
 #include "kafka/requests/delete_topics_request.h"
 #include "kafka/requests/describe_configs_request.h"
@@ -50,6 +51,7 @@ using request_types = make_request_types<
   create_topics_api,
   offset_commit_api,
   describe_configs_api,
+  alter_configs_api,
   delete_topics_api>;
 
 template<typename RequestType>
