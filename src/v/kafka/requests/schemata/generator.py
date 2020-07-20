@@ -191,6 +191,9 @@ STRUCT_TYPES = [
     "ListOffsetTopicResponse",
     "ListOffsetPartitionResponse",
     "ListOffsetPartition",
+    "AlterConfigsResource",
+    "AlterableConfig",
+    "AlterConfigsResourceResponse",
 ]
 
 SCALAR_TYPES = list(basic_type_map.keys())
