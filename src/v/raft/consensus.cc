@@ -98,7 +98,7 @@ consensus::success_reply consensus::update_follower_index(
     if (!r) {
         vlog(
           _ctxlog.trace,
-          "Error response from {}, {}",
+          "Error append entries response from {}, {}",
           node,
           r.error().message());
         // add stats to group
@@ -119,6 +119,7 @@ consensus::success_reply consensus::update_follower_index(
 
     follower_index_metadata& idx = _fstats.get(node);
     append_entries_reply& reply = r.value();
+    vlog(_ctxlog.trace, "Append entries response: {}", reply);
     if (unlikely(
           reply.result == append_entries_reply::status::group_unavailable)) {
         // ignore this response since group is not yet bootstrapped at the
@@ -129,9 +130,9 @@ consensus::success_reply consensus::update_follower_index(
     if (unlikely(reply.group != _group)) {
         // logic bug
         throw std::runtime_error(fmt::format(
-          "update_follower_index was sent wrong group: {}", reply.group));
+          "Append entries response send to wrong group: {}, current group: {}",
+          reply.group));
     }
-    vlog(_ctxlog.trace, "append entries reply {}", reply);
     if (seq < idx.last_received_seq) {
         vlog(
           _ctxlog.trace,
@@ -163,7 +164,7 @@ consensus::success_reply consensus::update_follower_index(
     if (!idx.is_recovering) {
         vlog(
           _ctxlog.trace,
-          "Updated node {} last log idx: {}",
+          "Updated node {} last committed log index: {}",
           idx.node_id,
           reply.last_committed_log_index);
         idx.last_dirty_log_index = reply.last_dirty_log_index;
@@ -229,7 +230,7 @@ void consensus::dispatch_recovery(
         // try to send last batch that leader have
         vlog(
           _ctxlog.trace,
-          "Follower {} is ahead of leader setting next offset to {}",
+          "Follower {} is ahead of the leader setting next offset to {}",
           idx.next_index,
           log_max_offset);
         idx.next_index = log_max_offset;
@@ -400,7 +401,7 @@ void consensus::dispatch_vote() {
                 return ss::make_ready_future<>();
             })
           .handle_exception([this](const std::exception_ptr& e) {
-              vlog(_ctxlog.warn, "Exception while voting - {}", e);
+              vlog(_ctxlog.warn, "Exception thrown while voting - {}", e);
           })
           .finally([this] { arm_vote_timeout(); });
     });
@@ -442,10 +443,9 @@ ss::future<> consensus::start() {
               auto lstats = _log.offsets();
               vlog(
                 _ctxlog.info,
-                "Log offsets: {}, term:{}, commit index: {}",
+                "Recovered, log offsets: {}, term:{}",
                 lstats,
-                _term,
-                _commit_index);
+                _term);
           })
           .then([this] {
               // arm immediate election for first node in the configuration
@@ -524,7 +524,7 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
     auto last_log_index = lstats.dirty_offset;
     auto last_entry_term = lstats.dirty_offset_term;
     _probe.vote_request();
-    vlog(_ctxlog.trace, "Vote requested {}, voted for {}", r, _voted_for);
+    vlog(_ctxlog.trace, "Vote request: {}", r, _voted_for);
     /// set to true if the caller's log is as up to date as the recipient's
     /// - extension on raft. see Diego's phd dissertation, section 9.6
     /// - "Preventing disruptions when a server rejoins the cluster"
@@ -547,7 +547,10 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
     // duration
     auto prev_election = clock_type::now() - _jit.base_duration();
     if (_hbeat > prev_election) {
-        vlog(_ctxlog.trace, "We already heard from the leader");
+        vlog(
+          _ctxlog.trace,
+          "Already heard from the leader, not granting vote to node {}",
+          r.node_id);
         reply.granted = false;
         return ss::make_ready_future<vote_reply>(std::move(reply));
     }
@@ -555,7 +558,7 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
     if (r.term > _term) {
         vlog(
           _ctxlog.info,
-          "received vote response with larger term from node {}, received {}, "
+          "Received vote request with larger term from node {}, received {}, "
           "current {}",
           r.node_id,
           r.term,
@@ -617,15 +620,7 @@ consensus::do_append_entries(append_entries_request&& r) {
 
     // no need to trigger timeout
     _hbeat = clock_type::now();
-    vlog(
-      _ctxlog.trace,
-      "Append batches, request {}, term {}, commit_index: {}, prev_log_idx: "
-      "{}, prev_log_term: {}",
-      r.meta,
-      _term,
-      _commit_index,
-      lstats.dirty_offset,
-      lstats.dirty_offset_term);
+    vlog(_ctxlog.trace, "Append entries request: {}", r.meta);
 
     // raft.pdf: Reply false if term < currentTerm (§5.1)
     if (r.meta.term < _term) {
@@ -636,7 +631,8 @@ consensus::do_append_entries(append_entries_request&& r) {
     if (r.meta.term > _term) {
         vlog(
           _ctxlog.debug,
-          "append_entries request::term:{}  > ours: {}. Setting new term",
+          "Append entries request term:{} is greater than current: {}. Setting "
+          "new term",
           r.meta.term,
           _term);
         _term = r.meta.term;
@@ -662,7 +658,10 @@ consensus::do_append_entries(append_entries_request&& r) {
         if (!r.batches.is_end_of_stream()) {
             vlog(
               _ctxlog.debug,
-              "rejecting append_entries. would leave gap in log");
+              "Rejecting append entries. Would leave gap in log, last log "
+              "offset: {} request previous log offset: {}",
+              last_log_offset,
+              r.meta.prev_log_index);
         }
         return ss::make_ready_future<append_entries_reply>(std::move(reply));
     }
@@ -681,10 +680,11 @@ consensus::do_append_entries(append_entries_request&& r) {
     if (r.meta.prev_log_term != last_log_term) {
         vlog(
           _ctxlog.debug,
-          "rejecting append_entries missmatching entry at previous log term {} "
-          "at offset {}",
+          "Rejecting append entries. missmatching entry term at offset: {}, "
+          "current term: {} request term: {}",
+          r.meta.prev_log_index,
           last_log_term,
-          r.meta.prev_log_index);
+          r.meta.prev_log_term);
         reply.result = append_entries_reply::status::failure;
         return ss::make_ready_future<append_entries_reply>(std::move(reply));
     }
@@ -693,7 +693,6 @@ consensus::do_append_entries(append_entries_request&& r) {
     // we need to handle it early (before executing truncation)
     // as timeouts are asynchronous to append calls and can have stall data
     if (r.batches.is_end_of_stream()) {
-        vlog(_ctxlog.trace, "Empty append entries, meta {}", r.meta);
         if (r.meta.prev_log_index < last_log_offset) {
             // do not tuncate on heartbeat just response with false
             reply.result = append_entries_reply::status::failure;
@@ -715,8 +714,8 @@ consensus::do_append_entries(append_entries_request&& r) {
             reply.result = append_entries_reply::status::success;
             vlog(
               _ctxlog.info,
-              "Stale append entries request processed, entry is "
-              "already present");
+              "Stale append entries request processed, entry is already "
+              "present");
             return ss::make_ready_future<append_entries_reply>(
               std::move(reply));
         }
@@ -724,7 +723,7 @@ consensus::do_append_entries(append_entries_request&& r) {
           model::offset(r.meta.prev_log_index));
         vlog(
           _ctxlog.debug,
-          "truncate log: request for the same term:{}. Request offset:{} is "
+          "Truncate log, request for the same term:{}. Request offset:{} is "
           "earlier than what we have:{}. Truncating to: {}",
           r.meta.term,
           r.meta.prev_log_index,
@@ -796,7 +795,7 @@ consensus::install_snapshot(install_snapshot_request&& r) {
 
 ss::future<install_snapshot_reply>
 consensus::do_install_snapshot(install_snapshot_request&& r) {
-    vlog(_ctxlog.trace, "Install snapshot request {}", r);
+    vlog(_ctxlog.trace, "Install snapshot request: {}", r);
 
     install_snapshot_reply reply;
     reply.success = false;
@@ -833,11 +832,6 @@ ss::future<> consensus::notify_entries_commited(
   [[maybe_unused]] model::offset start_offset, model::offset end_offset) {
     auto cfg_reader_start_offset = details::next_offset(
       _last_seen_config_offset);
-    vlog(
-      _ctxlog.trace,
-      "Process configurations range [{},{}]",
-      cfg_reader_start_offset,
-      end_offset);
     return _log
       .make_reader(storage::log_reader_config(
         cfg_reader_start_offset,
@@ -861,7 +855,7 @@ ss::future<> consensus::process_configurations(
           if (cfg) {
               update_follower_stats(*cfg);
               _conf = std::move(*cfg);
-              vlog(_ctxlog.info, "configuration updated {}", _conf);
+              vlog(_ctxlog.info, "Configuration updated: {}", _conf);
               _probe.configuration_update();
           }
       });
@@ -991,7 +985,7 @@ ss::future<> consensus::do_maybe_update_leader_commit_idx() {
         auto range_start = details::next_offset(model::offset(old_commit_idx));
         vlog(
           _ctxlog.trace,
-          "Committing entries from {} to {}",
+          "Applying entries from {} to {}",
           range_start,
           _commit_index);
         _commit_index_updated.broadcast();
