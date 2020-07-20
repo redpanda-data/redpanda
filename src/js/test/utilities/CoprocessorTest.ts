@@ -1,13 +1,17 @@
-import {Coprocessor, CoprocessorRecordBatch, PolicyError} from "../../modules/public/Coprocessor";
+import {
+  Coprocessor,
+  CoprocessorRecordBatch,
+  PolicyError,
+} from "../../modules/public/Coprocessor";
 
 class CoprocessorTest implements Coprocessor {
   globalId = 1;
   inputTopics = ["topicA"];
-  policyError =  PolicyError.Deregister;
+  policyError = PolicyError.Deregister;
 
   apply(record: CoprocessorRecordBatch): CoprocessorRecordBatch {
     return record;
   }
 }
 
-export default CoprocessorTest
+export default CoprocessorTest;
