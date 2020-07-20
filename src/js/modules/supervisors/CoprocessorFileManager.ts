@@ -104,8 +104,15 @@ class CoprocessorFileManager {
   /**
    * allow closing the inotify process
    */
-  close = () => {
-    this.watcher.close();
+  close = (): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      try {
+        this.watcher.close();
+        return resolve();
+      } catch (e) {
+        reject(e);
+      }
+    });
   };
 
   /**
