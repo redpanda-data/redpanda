@@ -4,6 +4,7 @@ import { promisify } from "util";
 import CoprocessorRepository from "./CoprocessorRepository";
 import { CoprocessorHandle } from "../domain/CoprocessorManager";
 import { getChecksumFromFile } from "../utilities/Checksum";
+import { Coprocessor } from "../public/Coprocessor";
 
 /**
  * CoprocessorFileManager class is an inotify implementation, it receives a
@@ -114,6 +115,31 @@ class CoprocessorFileManager {
       }
     });
   };
+
+  /**
+   * Deregister the given Coprocessor and move the file where it's defined to the
+   * 'inactive' directory.
+   * @param coprocessor is a Coprocessor implementation.
+   */
+  deregisterCoprocessor(coprocessor: Coprocessor): Promise<CoprocessorHandle> {
+    const coprocessorHandle = this.coprocessorRepository.findByCoprocessor(
+      coprocessor
+    );
+    if (coprocessorHandle) {
+      return this.moveCoprocessorFile(coprocessorHandle, this.inactiveDir).then(
+        (coprocessor) => {
+          this.coprocessorRepository.remove(coprocessor);
+          return coprocessor;
+        }
+      );
+    } else {
+      return Promise.reject(
+        new Error(
+          `The given coprocessor with ID ${coprocessor.globalId} hasn't been loaded`
+        )
+      );
+    }
+  }
 
   /**
    * receives a path and it gets the js file and create a checksum for content path file.
