@@ -71,9 +71,7 @@ class CoprocessorFileManager {
    * adds them to the given CoprocessorRepository
    * @param coprocessorRepository
    */
-  readActiveCoprocessor = (
-    coprocessorRepository: CoprocessorRepository
-  ): void => {
+  readActiveCoprocessor(coprocessorRepository: CoprocessorRepository): void {
     const readdirPromise = promisify(readdir);
     readdirPromise(this.activeDir)
       .then((files) => {
@@ -87,7 +85,7 @@ class CoprocessorFileManager {
       })
       .catch(console.error);
     //TODO: implement winston for loggin information and error handler
-  };
+  }
 
   /**
    * Updates the given CoprocessorRepository instance when a new coprocessor
@@ -121,11 +119,13 @@ class CoprocessorFileManager {
         delete require.cache[filename];
         const fileChecksum = getChecksumFromFile(filename);
         fileChecksum
-          .then((checksum) => ({
-            coprocessor: new script.default(),
-            checksum,
-            filename,
-          }))
+          .then((checksum) =>
+            resolve({
+              coprocessor: new script.default(),
+              checksum,
+              filename,
+            })
+          )
           .catch(reject);
       } catch (e) {
         reject(e);
