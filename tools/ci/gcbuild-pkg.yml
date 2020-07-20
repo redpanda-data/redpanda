@@ -74,7 +74,7 @@ steps:
   name: 'gcr.io/redpandaci/builder'
   args: ['./build/venv/v/bin/vtools', 'test', 'cpp', '--conf=tools/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml']
 
-- id: 'create and publish distro packages'
+- id: 'create distro packages'
   name: 'gcr.io/redpandaci/builder'
   entrypoint: bash
   args:
@@ -82,11 +82,9 @@ steps:
   - |
     ./build/venv/v/bin/vtools build go --conf=tools/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml
     ./build/venv/v/bin/vtools build pkg --conf=tools/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml --format=rpm --format=deb --format=tar
-    ./build/venv/v/bin/vtools publish --conf=tools/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml
   env:
   - SHORT_SHA=$SHORT_SHA
   - TAG_NAME=$TAG_NAME
-  - PACKAGECLOUD_TOKEN=$_PACKAGECLOUD_TOKEN
 
 timeout: 3600s
 
