@@ -7,57 +7,57 @@
  *             the function batch, it won't apply to any next records
  */
 export enum PolicyError {
-    SkipOnFailure,
-    Deregister
+  SkipOnFailure,
+  Deregister,
 }
 
 interface CoprocessorRecordHeader {
-    keySize: number;
-    key: Buffer;
-    valSize: number;
-    value: Buffer;
+  keySize: number;
+  key: Buffer;
+  valSize: number;
+  value: Buffer;
 }
 
 interface CoprocessorRecordsHeader {
-    attributes: number;
-    lastOffsetDelta: number;
-    firstTimestamp: bigint;
-    maxTimestamp: bigint;
-    producerId: bigint;
-    producerEpoch: number;
-    baseSequence: number;
-    recordCount: number;
+  attributes: number;
+  lastOffsetDelta: number;
+  firstTimestamp: bigint;
+  maxTimestamp: bigint;
+  producerId: bigint;
+  producerEpoch: number;
+  baseSequence: number;
+  recordCount: number;
 }
 
 interface CoprocessorRecord {
-    sizeBytes: number;
-    recordAttributes: number;
-    timestampDelta: number;
-    offsetDelta: number;
-    keySize: number;
-    key: Buffer;
-    valSize: number;
-    value: Buffer;
-    headers: Array<CoprocessorRecordHeader>;
-    size(): number
+  sizeBytes: number;
+  recordAttributes: number;
+  timestampDelta: number;
+  offsetDelta: number;
+  keySize: number;
+  key: Buffer;
+  valSize: number;
+  value: Buffer;
+  headers: Array<CoprocessorRecordHeader>;
+  size(): number;
 }
 
 interface CoprocessorRecordBatch {
-    records: CoprocessorRecord[]
-    header: CoprocessorRecordsHeader
+  records: CoprocessorRecord[];
+  header: CoprocessorRecordsHeader;
 }
 
 interface Coprocessor {
-    inputTopics: string[]
-    policyError: PolicyError
-    globalId: number
-    apply(record: CoprocessorRecordBatch): CoprocessorRecordBatch
+  inputTopics: string[];
+  policyError: PolicyError;
+  globalId: number;
+  apply(record: CoprocessorRecordBatch): CoprocessorRecordBatch;
 }
 
 export {
-    CoprocessorRecordsHeader,
-    CoprocessorRecordHeader,
-    CoprocessorRecord,
-    CoprocessorRecordBatch,
-    Coprocessor
-}
+  CoprocessorRecordsHeader,
+  CoprocessorRecordHeader,
+  CoprocessorRecord,
+  CoprocessorRecordBatch,
+  Coprocessor,
+};

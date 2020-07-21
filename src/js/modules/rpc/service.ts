@@ -1,4 +1,4 @@
-import { Server } from './server'
+import { Server } from "./server";
 
 const port: number = 8124;
 const service = new Server();
