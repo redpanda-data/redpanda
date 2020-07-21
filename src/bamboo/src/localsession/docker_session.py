@@ -12,7 +12,6 @@ from docker.models.containers import Container
 from docker.types import IPAMConfig, IPAMPool
 
 import petname
-import jsonpickle
 from jinja2 import Template
 from absl import logging
 
