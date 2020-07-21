@@ -49,6 +49,7 @@ func NewTopicCommand(fs afero.Fs) *cobra.Command {
 	root.AddCommand(createTopic(&admin))
 	root.AddCommand(deleteTopic(&admin))
 	root.AddCommand(setTopicConfig(&admin))
+	root.AddCommand(listTopics(&admin))
 	root.AddCommand(describeTopic(&client, &admin))
 
 	return root
@@ -349,6 +350,62 @@ func describeTopic(
 		true,
 		"If enabled, will display the topic's partitions' high watermarks",
 	)
+	return cmd
+}
+
+func listTopics(admin *sarama.ClusterAdmin) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:     "list",
+		Aliases: []string{"ls"},
+		Short:   "List topics",
+		Args:    cobra.ExactArgs(0),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if admin == nil {
+				return errors.New("uninitialized API client")
+			}
+			adm := *admin
+			defer adm.Close()
+
+			topics, err := adm.ListTopics()
+			if err != nil {
+				return err
+			}
+			if len(topics) == 0 {
+				log.Info("No topics found.")
+				return nil
+			}
+
+			sortedTopics := make(
+				[]struct {
+					name string
+					sarama.TopicDetail
+				}, len(topics))
+
+			i := 0
+			for name, topic := range topics {
+				sortedTopics[i].name = name
+				sortedTopics[i].TopicDetail = topic
+				i++
+			}
+
+			sort.Slice(sortedTopics, func(i int, j int) bool {
+				return sortedTopics[i].name < sortedTopics[j].name
+			})
+
+			t := ui.NewRpkTable(log.StandardLogger().Out)
+			t.Append([]string{"Name", "Partitions", "Replicas"})
+
+			for _, topic := range sortedTopics {
+				t.Append([]string{
+					topic.name,
+					strconv.Itoa(int(topic.NumPartitions)),
+					strconv.Itoa(int(topic.ReplicationFactor)),
+				})
+			}
+			t.Render()
+			return nil
+		},
+	}
 	return cmd
 }
 
