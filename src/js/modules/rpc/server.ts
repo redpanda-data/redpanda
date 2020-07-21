@@ -1,18 +1,28 @@
 import { Socket, createServer, Server as NetServer } from "net";
-import { Deserializer, Serializer } from "./parser";
-import { RecordBatch } from "./types";
-import { RpcXxhash64 } from "../hashing/xxhash";
-import { RpcHeaderCrc32 } from "../hashing/crc32";
-import "buffer";
+import { CoprocessorRequest } from "../domain/CoprocessorRequest";
+import CoprocessorRepository from "../supervisors/CoprocessorRepository";
+import CoprocessorFileManager from "../supervisors/CoprocessorFileManager";
+import {
+  Coprocessor,
+  CoprocessorRecordBatch,
+  PolicyError,
+} from "../public/Coprocessor";
 
 export class Server {
-  public constructor() {
-    this.server = createServer((socket: Socket) => {
-      this.do_on_data(socket);
-      this.do_on_disconnect(socket);
-    });
-    this.toBytes = new Serializer();
-    this.fromBytes = new Deserializer();
+  public constructor(
+    activeDir: string,
+    inactiveDir: string,
+    submitDir: string
+  ) {
+    this.applyCoprocessor = this.applyCoprocessor.bind(this);
+    this.coprocessorRepository = new CoprocessorRepository();
+    this.coprocessorFileManager = new CoprocessorFileManager(
+      this.coprocessorRepository,
+      submitDir,
+      activeDir,
+      inactiveDir
+    );
+    this.server = createServer(this.executeCoprocessorOnRequest);
   }
 
   /**
@@ -145,6 +155,6 @@ export class Server {
     );
   }
   private server: NetServer;
-  private toBytes: Serializer;
-  private fromBytes: Deserializer;
+  private readonly coprocessorRepository: CoprocessorRepository;
+  private coprocessorFileManager: CoprocessorFileManager;
 }
