@@ -20,6 +20,7 @@ type mockAdmin struct {
 	deleteTopic    func(string) error
 	alterConfig    func(sarama.ConfigResourceType, string, map[string]*string, bool) error
 	describeTopics func([]string) ([]*sarama.TopicMetadata, error)
+	listTopics     func() (map[string]sarama.TopicDetail, error)
 	describeConfig func(sarama.ConfigResource) ([]sarama.ConfigEntry, error)
 }
 
@@ -64,6 +65,13 @@ func (a *mockAdmin) DescribeTopics(
 		return a.describeTopics(topics)
 	}
 	return []*sarama.TopicMetadata{&sarama.TopicMetadata{}}, nil
+}
+
+func (a *mockAdmin) ListTopics() (map[string]sarama.TopicDetail, error) {
+	if a.listTopics != nil {
+		return a.listTopics()
+	}
+	return map[string]sarama.TopicDetail{}, nil
 }
 
 func (a *mockAdmin) DescribeConfig(
@@ -206,6 +214,55 @@ func TestTopicCmd(t *testing.T) {
 			args:        []string{"Chepo", "key"},
 			expectedErr: "accepts 3 arg(s), received 2",
 		},
+		{
+			name: "list should output the list of topics",
+			cmd:  listTopics,
+			admin: &mockAdmin{
+				listTopics: func() (map[string]sarama.TopicDetail, error) {
+					return map[string]sarama.TopicDetail{
+						"tokyo": sarama.TopicDetail{
+							NumPartitions:     2,
+							ReplicationFactor: 3,
+						},
+						"kyoto": sarama.TopicDetail{
+							NumPartitions:     10,
+							ReplicationFactor: 2,
+						},
+						"fukushima": sarama.TopicDetail{
+							NumPartitions:     7,
+							ReplicationFactor: 3,
+						},
+					}, nil
+				},
+			},
+			args: []string{},
+			expectedOutput: `  Name       Partitions  Replicas  
+  fukushima  7           3         
+  kyoto      10          2         
+  tokyo      2           3         
+`,
+		},
+		{
+			name: "list should fail if the req fails",
+			cmd:  listTopics,
+			args: []string{},
+			admin: &mockAdmin{
+				listTopics: func() (map[string]sarama.TopicDetail, error) {
+					return nil, errors.New("an error happened :(")
+				},
+			},
+			expectedErr: "an error happened :(",
+		},
+		{
+			name: "list should output a message if there are no topics",
+			cmd:  listTopics,
+			admin: &mockAdmin{
+				listTopics: func() (map[string]sarama.TopicDetail, error) {
+					return map[string]sarama.TopicDetail{}, nil
+				},
+			},
+			expectedOutput: "No topics found.",
+		},
 	}
 
 	for _, tt := range tests {
@@ -224,9 +281,7 @@ func TestTopicCmd(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
-			if tt.expectedOutput != "" {
-				require.Contains(t, out.String(), tt.expectedOutput)
-			}
+			require.Contains(t, out.String(), tt.expectedOutput)
 		})
 	}
 }
