@@ -104,7 +104,7 @@ ss::future<> controller_backend::reconcile_topics() {
             std::begin(_topic_deltas),
             std::end(_topic_deltas),
             [](meta_t& task) { return task.finished; });
-          _topic_deltas.erase(it, _topic_deltas.end());
+          _topic_deltas.erase(_topic_deltas.begin(), it);
       });
 }
 
