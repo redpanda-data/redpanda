@@ -28,26 +28,41 @@ export class Server {
       }
     });
   }
-  private do_on_data(socket: Socket) {
-    socket.on("data", (data: Buffer) => {
-      let header = this.fromBytes.rpcHeader(data);
-      let payload = data.subarray(26);
-      this.fromBytes.verifyPayload(payload, header.payloadChecksum);
-      let input: Array<RecordBatch> = this.fromBytes.recordBatchReader(payload);
-      let output: Array<Array<RecordBatch>> = [input];
 
-      let bytes = this.toBytes.materializedRecordBatchReader(output);
-      header.payload = header.payload + 4;
-      header.payloadChecksum = RpcXxhash64(bytes);
-      let hbytes = this.toBytes.rpcHeader(header);
-
-      let crc = RpcHeaderCrc32(hbytes);
-      header.headerChecksum = crc;
-      hbytes = this.toBytes.rpcHeader(header);
-
-      socket.write(Buffer.concat([hbytes, bytes]));
-    });
+  /**
+   * Close server connection
+   */
+  public close(): Promise<void> {
+    return new Promise((resolve, reject) =>
+      this.server.close((err) => {
+        err && reject(err);
+        this.coprocessorFileManager.close().then(resolve).catch(reject);
+      })
+    );
   }
+
+  /**
+   * Close coprocessor filesystem watcher process
+   */
+  public closeCoprocessorManager() {
+    return this.coprocessorFileManager.close();
+  }
+
+  /**
+   * Apply Coprocessors to CoprocessorRequest when it arrives
+   * @param socket
+   */
+  private executeCoprocessorOnRequest = (socket: Socket) => {
+    socket.on("readable", (data: Buffer) => {
+      /**
+       * TODO: https://app.clubhouse.io/vectorized/story/959
+       */
+      // @ts-ignore
+      this.applyCoprocessor(data)
+        .then(() => socket.write(""))
+        .catch((e) => console.error("error: ", e));
+    });
+  };
 
   /**
    * Given a CoprocessorRequest, it'll find and execute Coprocessor by its
