@@ -28,7 +28,7 @@
 - [ ] Access to [`v-dev`](https://groups.google.com/a/vectorized.io/forum/#!forum/v-dev) and archives
 - [ ] [Development process](https://github.com/vectorizedio/v/blob/master/CONTRIBUTING.md)
 - [ ] Deploy a cluster as if you were a customer
-- [ ] Scan our Request For Comment process - [RFC](./rfc/README.md)
+- [ ] Scan our Request For Comment process - [RFC](./rfcs/README.md)
 - [ ] Scan our [dev design document folder](https://drive.google.com/drive/folders/1eXsW_ldmziIuLHtk5riB02peCQyDbtYP
 )
 - [ ] See our pre-recorded [pandachat discussions](https://drive.google.com/drive/u/0/folders/1GvuNZzPn7FmXB5OOLM1NA5Du5SQ63cw4)
