@@ -49,6 +49,86 @@ export class Server {
     });
   }
 
+  /**
+   * Given a CoprocessorRequest, it'll find and execute Coprocessor by its
+   * CoprocessorRequest's topic, if there is an exception when applying the
+   * coprocessor function it handles the error by its ErrorPolicy
+   * @param coprocessorRequest
+   */
+  private applyCoprocessor(
+    coprocessorRequest: CoprocessorRequest
+  ): Promise<CoprocessorRecordBatch[]> {
+    const coprocessors =
+      this.coprocessorRepository
+        .getCoprocessorsByTopics()
+        .get(coprocessorRequest.getTopic()) || [];
+    const results = coprocessors.map((coprocessor) => {
+      try {
+        return Promise.resolve(
+        coprocessorRequest
+          .getRecords()
+          .map(coprocessor.apply)
+        );
+      } catch (e) {
+        return this.handleErrorByCoprocessorPolicy(
+          coprocessor,
+          coprocessorRequest,
+          e
+        );
+      }
+    });
+    // @ts-ignore
+    return Promise.allSettled(results).then((coprocessorResults) => {
+      const array = [];
+      coprocessorResults.forEach((result) => {
+        if (result.status === "rejected") {
+          console.error(result.reason);
+        } else {
+          array.push(result.value);
+        }
+      });
+      return array;
+    });
+  }
+
+  /**
+   * Handle an error using the given Coprocessor's ErrorPolicy
+   * @param coprocessor
+   * @param coprocessorRequest
+   * @param error
+   */
+  private handleErrorByCoprocessorPolicy(
+    coprocessor: Coprocessor,
+    coprocessorRequest: CoprocessorRequest,
+    error: Error
+  ): Promise<CoprocessorRecordBatch> {
+    const errorMessage = this.createMessageError(
+      coprocessor,
+      coprocessorRequest,
+      error
+    );
+    switch (coprocessor.policyError) {
+      case PolicyError.Deregister:
+        return this.coprocessorFileManager
+          .deregisterCoprocessor(coprocessor)
+          .then((_) => Promise.reject(errorMessage));
+      case PolicyError.SkipOnFailure:
+        return Promise.reject(errorMessage);
+      default:
+        return Promise.reject(errorMessage);
+    }
+  }
+
+  private createMessageError(
+    coprocessor: Coprocessor,
+    coprocessorRequest: CoprocessorRequest,
+    error: Error
+  ): string {
+    return (
+      `Failed to apply coprocessor ${coprocessor.globalId} to request's id ` +
+      `${coprocessorRequest.getId()}: ${error.message}`
+    );
+  }
   private server: NetServer;
   private toBytes: Serializer;
   private fromBytes: Deserializer;
