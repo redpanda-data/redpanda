@@ -90,9 +90,7 @@ export class Server {
     const results = coprocessors.map((coprocessor) => {
       try {
         return Promise.resolve(
-        coprocessorRequest
-          .getRecords()
-          .map(coprocessor.apply)
+          coprocessorRequest.getRecords().map(coprocessor.apply)
         );
       } catch (e) {
         return this.handleErrorByCoprocessorPolicy(
