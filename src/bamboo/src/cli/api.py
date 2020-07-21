@@ -20,7 +20,7 @@ def init(sname):
 
 @session.command(short_help='add new node to session')
 @click.option('--sname', help="name of the session")
-@click.option('--node-id', help="id of node", default=None)
+@click.option('--node-id', type=int, help="id of node", default=None)
 @click.option('--package', help="id of node")
 def add_node(sname, node_id, package):
     if node_id is None:
