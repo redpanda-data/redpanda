@@ -14,14 +14,18 @@ export class Server {
     this.toBytes = new Serializer();
     this.fromBytes = new Deserializer();
   }
-  public listen(port: number) {
-    this.server.listen(port, () => {
-      console.log("Server listening");
-    });
-  }
-  private do_on_disconnect(socket: Socket) {
-    socket.on("end", () => {
-      console.log("Roundtrip succeed");
+
+  /**
+   * Starts the server on the given port.
+   * @param port
+   */
+  public listen(port: number): Promise<void> {
+    return new Promise((resolve, reject) => {
+      try {
+        this.server.listen(port, "127.0.0.1", null, resolve);
+      } catch (e) {
+        reject(e);
+      }
     });
   }
   private do_on_data(socket: Socket) {
