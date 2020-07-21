@@ -1,13 +1,13 @@
-import {CoprocessorHandle} from "../domain/CoprocessorManager";
-import {find} from "../utilities/Map";
+import { CoprocessorHandle } from "../domain/CoprocessorManager";
+import { find } from "../utilities/Map";
 
 /**
  * CoprocessorsRepository is a container for CoprocessorHandles.
  */
 class CoprocessorRepository {
   constructor(folder: string) {
-    this.folder = folder
-    this.coprocessors = new Map()
+    this.folder = folder;
+    this.coprocessors = new Map();
   }
 
   /**
@@ -15,7 +15,7 @@ class CoprocessorRepository {
    * @param coprocessor
    */
   add(coprocessor: CoprocessorHandle): void {
-    this.coprocessors.set(coprocessor.coprocessor.globalId, coprocessor)
+    this.coprocessors.set(coprocessor.coprocessor.globalId, coprocessor);
   }
 
   /**
@@ -25,26 +25,31 @@ class CoprocessorRepository {
    * undefined otherwise.
    * @param coprocessor
    */
-  findByGlobalId = (coprocessor: CoprocessorHandle): CoprocessorHandle | undefined => {
-    const coprocessorFound = find(this.coprocessors, ((key, value) =>
-      coprocessor.coprocessor.globalId === value.coprocessor.globalId))
-    return coprocessorFound ? coprocessorFound[1] : undefined
-  }
+  findByGlobalId = (
+    coprocessor: CoprocessorHandle
+  ): CoprocessorHandle | undefined => {
+    const coprocessorFound = find(
+      this.coprocessors,
+      (key, value) =>
+        coprocessor.coprocessor.globalId === value.coprocessor.globalId
+    );
+    return coprocessorFound ? coprocessorFound[1] : undefined;
+  };
 
   /**
    * removeCoprocessor method remove a coprocessor from the coprocessor map
    * @param coprocessor
    */
   remove = (coprocessor: CoprocessorHandle): boolean =>
-    this.coprocessors.delete(coprocessor.coprocessor.globalId)
-  
+    this.coprocessors.delete(coprocessor.coprocessor.globalId);
+
   /**
    * getCoprocessors returns the map of CoprocessorHandles indexed by their global ID
    */
-  getCoprocessors = () => this.coprocessors
+  getCoprocessors = () => this.coprocessors;
 
-  private readonly folder
+  private readonly folder;
   private readonly coprocessors: Map<number, CoprocessorHandle>;
 }
 
-export default CoprocessorRepository
+export default CoprocessorRepository;
