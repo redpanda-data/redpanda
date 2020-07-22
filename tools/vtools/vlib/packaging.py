@@ -62,7 +62,7 @@ def _get_dependencies(binary, vconfig):
 
 def _relocable_tar_package(dest, execs, configs, admin_api_swag, vconfig):
     rp_root = '/opt/redpanda'
-    logging.info(f"Creating relocatable tar package {dest}")
+    logging.info(f"staging relocatable tar package {dest}")
     gzip_process = subprocess.Popen(f"pigz -f > {dest}",
                                     shell=True,
                                     env=vconfig.environ,
@@ -113,6 +113,7 @@ def red_panda_tar(input_tar, dest_path):
     os.makedirs(tar_dir, exist_ok=True)
     tar_name = f'redpanda-{VERSION}-{RELEASE}_{REVISION}.tar.gz'
     tar_file = os.path.join(tar_dir, tar_name)
+    logging.info(f"Final tarball: {tar_file}")
     shutil.copy(input_tar, tar_file)
 
 
