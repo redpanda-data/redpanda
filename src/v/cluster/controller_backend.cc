@@ -4,6 +4,7 @@
 #include "cluster/cluster_utils.h"
 #include "cluster/logger.h"
 #include "cluster/members_table.h"
+#include "cluster/partition_leaders_table.h"
 #include "cluster/shard_table.h"
 #include "cluster/topic_table.h"
 #include "cluster/types.h"
@@ -32,11 +33,13 @@ controller_backend::controller_backend(
   ss::sharded<shard_table>& st,
   ss::sharded<partition_manager>& pm,
   ss::sharded<members_table>& members,
+  ss::sharded<partition_leaders_table>& leaders,
   ss::sharded<ss::abort_source>& as)
   : _topics(tp_state)
   , _shard_table(st)
   , _partition_manager(pm)
   , _members_table(members)
+  , _partition_leaders_table(leaders)
   , _self(model::node_id(config::shard_local_cfg().node_id))
   , _data_directory(config::shard_local_cfg().data_directory().as_sstring())
   , _as(as) {}
@@ -104,7 +107,7 @@ ss::future<> controller_backend::reconcile_topics() {
             std::begin(_topic_deltas),
             std::end(_topic_deltas),
             [](meta_t& task) { return task.finished; });
-          _topic_deltas.erase(it, _topic_deltas.end());
+          _topic_deltas.erase(_topic_deltas.begin(), it);
       });
 }
 
@@ -218,6 +221,12 @@ ss::future<> controller_backend::delete_partition(model::ntp ntp) {
     return _shard_table
       .invoke_on_all(
         [ntp, group_id](shard_table& st) mutable { st.erase(ntp, group_id); })
+      .then([this, ntp] {
+          return _partition_leaders_table.invoke_on_all(
+            [ntp](partition_leaders_table& leaders) {
+                leaders.remove_leader(ntp);
+            });
+      })
       .then([this, ntp = std::move(ntp)] {
           // remove partition
           return _partition_manager.local().remove(ntp);
