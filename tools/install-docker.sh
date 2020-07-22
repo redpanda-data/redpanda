@@ -1,6 +1,10 @@
 #!/bin/bash
 set -ex
 
+fedora_os_version=$(grep VERSION_ID /etc/os-release | cut -d '=' -f 2)
+
+this_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/" && pwd)"
+
 if ! command -v docker; then
 
   # add docker repo
@@ -8,10 +12,15 @@ if ! command -v docker; then
   dnf config-manager -y --add-repo https://download.docker.com/linux/fedora/docker-ce.repo
 
   # install docker-ce
-  dnf install -y docker-ce docker-ce-cli containerd.io
+  if [ "${fedora_os_version}" -ge 31 ]; then
+    # Error out if systemd.unified_cgroup_hierarcy != 0
+    "${this_dir}"/cgroups-hierarchy-test.sh
 
-  # docker doesn't work with cgroups v2
-  grubby --update-kernel=ALL --args="systemd.unified_cgroup_hierarchy=0"
+    # Install via this repository
+    dnf install -y --enablerepo=docker-ce-stable --releasever=31 docker-ce-cli docker-ce
+  else
+    dnf install -y docker-ce docker-ce-cli containerd.io
+  fi
 
   # start daemon
   systemctl start docker
