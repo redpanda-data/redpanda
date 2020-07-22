@@ -252,11 +252,15 @@ class DockerSession(session.Session):
                                                     detach=True)
             for line in container.logs(stream=True):
                 logging.info(f"{tag} test: {line.strip()}")
-            container.wait()
+            res = container.wait()
+            exit_code = res["StatusCode"]
+            if exit_code == 0:
+                logging.info("PASS")
+            else:
+                logging.info(f"FAIL exit_code {exit_code}")
         except:
             logging.info("FAIL")
             raise
-        logging.info("PASS")
 
     def _round_node_id(self, node_id):
         n = node_id % 255
