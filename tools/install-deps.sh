@@ -42,6 +42,7 @@ function debs() {
 
 function rpms() {
   yumdnf="yum"
+  f32_deps=""
   if command -v dnf >/dev/null; then
     yumdnf="dnf"
   fi
@@ -54,6 +55,12 @@ function rpms() {
       $SUDO yum install --nogpgcheck -y epel-release
       $SUDO rpm --import /etc/pki/rpm-gpg/RPM-GPG-KEY-EPEL-$MAJOR_VERSION
       $SUDO rm -f /etc/yum.repos.d/dl.fedoraproject.org*
+      ;;
+    Fedora)
+      MAJOR_VERSION=$(lsb_release -rs | cut -f1 -d.)
+      if [ "$MAJOR_VERSION" -ge 31 ]; then
+        f32_deps="texinfo-tex"
+      fi
       ;;
   esac
   cmake="cmake"
@@ -68,6 +75,7 @@ function rpms() {
 
   ${yumdnf} install -y \
     ${cmake} \
+    ${f32_deps} \
     binutils-devel \
     gcc-c++ \
     ninja-build \
