@@ -37,6 +37,23 @@ void validate_topic_metadata(cluster::metadata_cache& cache) {
     }
 }
 
+void wait_for_leaders(
+  cluster::partition_leaders_table& leader_table,
+  const model::topic_metadata md) {
+    std::vector<ss::future<>> f;
+    f.reserve(md.partitions.size());
+    for (const auto& p : md.partitions) {
+        model::ntp ntp(md.tp_ns.ns, md.tp_ns.tp, p.id);
+
+        f.push_back(leader_table
+                      .wait_for_leader(
+                        ntp, model::timeout_clock::now() + 5s, std::nullopt)
+                      .discard_result());
+    }
+
+    ss::when_all_succeed(f.begin(), f.end()).get();
+}
+
 FIXTURE_TEST(
   recover_single_topic_test_at_current_broker, controller_tests_fixture) {
     auto cntrl = get_controller();
@@ -54,7 +71,9 @@ FIXTURE_TEST(
     for (auto& r : results) {
         BOOST_REQUIRE_EQUAL(r.ec, cluster::errc::success);
         auto md = get_local_cache().get_topic_metadata(r.tp_ns);
+
         BOOST_REQUIRE_EQUAL(md.has_value(), true);
+        wait_for_leaders(cntrl->get_partition_leaders().local(), *md);
         BOOST_REQUIRE_EQUAL(md.value().tp_ns, r.tp_ns);
     }
 }
@@ -94,6 +113,7 @@ FIXTURE_TEST(test_autocreate_on_non_leader, cluster_test_fixture) {
         BOOST_REQUIRE_EQUAL(r.ec, cluster::errc::success);
         auto md = get_local_cache(0).get_topic_metadata(r.tp_ns);
         BOOST_REQUIRE_EQUAL(md.has_value(), true);
+        wait_for_leaders(cntrl_0->get_partition_leaders().local(), *md);
         BOOST_REQUIRE_EQUAL(md.value().tp_ns, r.tp_ns);
     }
     // Make sure caches are the same
