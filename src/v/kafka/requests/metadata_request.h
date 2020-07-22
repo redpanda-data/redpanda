@@ -56,6 +56,7 @@ struct metadata_response {
         model::node_id leader;
         int32_t leader_epoch; // version >= 7
         std::vector<model::node_id> replica_nodes;
+        std::vector<model::node_id> isr_nodes;
         std::vector<model::node_id> offline_replicas; // version >= 5
         void encode(api_version version, response_writer& rw) const;
     };
