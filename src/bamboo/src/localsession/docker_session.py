@@ -227,13 +227,17 @@ class DockerSession(session.Session):
         self._client.images.build(path=path, tag=tag)
 
         # broker list from session
+        env = dict()
         brokers = ",".join(
             map(lambda n: f"{n.ip}:9092", self._state.nodelist()))
         args = f"--brokers {brokers}"
+        env["BAMBOO_BROKERS"] = brokers
+        env["BAMBOO_BROKER_COUNT"] = len(self._state.nodelist())
 
         # unique test namespace
         ns = f"bamboo-{tag}-{time.time()}"
         args = f"{args} --namespace {ns}"
+        env["BAMBOO_NAMESPACE"] = ns
 
         # mount v read-only for convenience such as accessing scripts
         mounts = [Mount("/opt/v", str(v_path), type="bind", read_only=True)]
@@ -243,6 +247,7 @@ class DockerSession(session.Session):
                                                     command=args,
                                                     network=self._network_id,
                                                     mounts=mounts,
+                                                    environment=env,
                                                     stderr=True,
                                                     detach=True)
             for line in container.logs(stream=True):
