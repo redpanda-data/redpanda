@@ -159,11 +159,12 @@ def pkg(build_type, clang, conf, format):
                     'file is searched recursively starting from the current '
                     'working directory'),
               default=None)
-@click.option('--targets',
-              help="target to build ('kafka-verifier').",
-              multiple=True)
+@click.option(
+    '--targets',
+    help="target to build ('kafka-verifier', 'compacted-log-verifier').",
+    multiple=True)
 def java(conf, targets):
-    allowed_targets = ['kafka-verifier']
+    allowed_targets = ['kafka-verifier', 'compacted-log-verifier']
     vconfig = config.VConfig(conf)
     os.makedirs(vconfig.java_build_dir, exist_ok=True)
     os.makedirs(vconfig.java_bin_dir, exist_ok=True)
