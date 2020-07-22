@@ -235,7 +235,7 @@ class DockerSession(session.Session):
         env["BAMBOO_BROKER_COUNT"] = len(self._state.nodelist())
 
         # unique test namespace
-        ns = f"bamboo-{tag}-{time.time()}"
+        ns = f"bamboo-{tag}-{int(time.time())}"
         args = f"{args} --namespace {ns}"
         env["BAMBOO_NAMESPACE"] = ns
 
