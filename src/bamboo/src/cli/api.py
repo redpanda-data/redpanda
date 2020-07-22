@@ -20,7 +20,7 @@ def init(sname):
 
 @session.command(short_help='add new node to session')
 @click.option('--sname', help="name of the session")
-@click.option('--node-id', help="id of node", default=None)
+@click.option('--node-id', type=int, help="id of node", default=None)
 @click.option('--package', help="id of node")
 def add_node(sname, node_id, package):
     if node_id is None:
@@ -36,3 +36,11 @@ def add_node(sname, node_id, package):
 def destroy(sname, node_id):
     s = docker_session.generate_docker_session(sname)
     s.destroy(node_id)
+
+
+@session.command(short_help='run a test')
+@click.option('--sname', help="name of the session")
+@click.option('--path', help="test path", required=True)
+def run_test(sname, path):
+    s = docker_session.generate_docker_session(sname)
+    s.run_test(path)
