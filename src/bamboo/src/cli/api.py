@@ -36,3 +36,11 @@ def add_node(sname, node_id, package):
 def destroy(sname, node_id):
     s = docker_session.generate_docker_session(sname)
     s.destroy(node_id)
+
+
+@session.command(short_help='run a test')
+@click.option('--sname', help="name of the session")
+@click.option('--path', help="test path", required=True)
+def run_test(sname, path):
+    s = docker_session.generate_docker_session(sname)
+    s.run_test(path)

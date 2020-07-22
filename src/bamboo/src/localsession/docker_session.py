@@ -2,6 +2,7 @@ import io
 import os
 import tempfile
 import shutil
+import time
 from urllib.parse import urlparse
 from typing import List
 
@@ -218,6 +219,36 @@ class DockerSession(session.Session):
         )
         container.stop()
         container.remove()
+
+    def run_test(self, path):
+        # simple heuristic test name
+        path = os.path.abspath(path)
+        tag = os.path.basename(path)
+
+        self._client.images.build(path=path, tag=tag)
+
+        # broker list from session
+        brokers = ",".join(
+            map(lambda n: f"{n.ip}:9092", self._state.nodelist()))
+        args = f"--brokers {brokers}"
+
+        # unique test namespace
+        ns = f"bamboo-{tag}-{time.time()}"
+        args = f"{args} --namespace {ns}"
+
+        try:
+            container = self._client.containers.run(tag,
+                                                    command=args,
+                                                    network=self._network_id,
+                                                    stderr=True,
+                                                    detach=True)
+            for line in container.logs(stream=True):
+                logging.info(f"{tag} test: {line.strip()}")
+            container.wait()
+        except:
+            logging.info("FAIL")
+            raise
+        logging.info("PASS")
 
     def _round_node_id(self, node_id):
         n = node_id % 255
