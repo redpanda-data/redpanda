@@ -124,9 +124,9 @@ void metadata_response::partition::encode(
       replica_nodes,
       [](const model::node_id& n, response_writer& rw) { rw.write(n); });
     // isr nodes
-    rw.write_array(
-      replica_nodes,
-      [](const model::node_id& n, response_writer& rw) { rw.write(n); });
+    rw.write_array(isr_nodes, [](const model::node_id& n, response_writer& rw) {
+        rw.write(n);
+    });
 
     if (version >= api_version(5)) {
         rw.write_array(
@@ -182,6 +182,10 @@ void metadata_response::decode(iobuf buf, api_version version) {
             p.replica_nodes = reader.read_array([](request_reader& reader) {
                 return model::node_id(reader.read_int32());
             });
+
+            p.isr_nodes = reader.read_array([](request_reader& reader) {
+                return model::node_id(reader.read_int32());
+            });
             if (version >= api_version(5)) {
                 p.offline_replicas = reader.read_array(
                   [](request_reader& reader) {
@@ -225,6 +229,7 @@ metadata_response::topic metadata_response::topic::make_from_topic_metadata(
           p.leader = p_md.leader_node.value_or(model::node_id(-1));
           p.leader_epoch = 0;
           p.replica_nodes = std::move(replicas);
+          p.isr_nodes = p.replica_nodes;
           p.offline_replicas = {};
           return p;
       });

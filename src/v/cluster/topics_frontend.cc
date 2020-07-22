@@ -141,25 +141,6 @@ ss::future<topic_result> topics_frontend::replicate_create_topic(
       topic_configuration_assignment(std::move(cfg), units.get_assignments()));
 
     return replicate_and_wait(std::move(cmd), timeout)
-      .then([this, units = std::move(units), timeout, tp_ns](
-              std::error_code ec) mutable {
-          if (ec != errc::success) {
-              return ss::make_ready_future<std::error_code>(ec);
-          }
-
-          std::vector<ss::future<model::node_id>> futures;
-          futures.reserve(units.get_assignments().size());
-          std::transform(
-            units.get_assignments().cbegin(),
-            units.get_assignments().cend(),
-            std::back_inserter(futures),
-            [this, timeout, tp_ns](const partition_assignment& pas) {
-                return _leaders.local().wait_for_leader(
-                  model::ntp(tp_ns.ns, tp_ns.tp, pas.id), timeout, _as.local());
-            });
-          return ss::when_all_succeed(futures.begin(), futures.end())
-            .then([ec](std::vector<model::node_id>) { return ec; });
-      })
       .then_wrapped([tp_ns, units = std::move(units)](
                       ss::future<std::error_code> f) mutable {
           try {
