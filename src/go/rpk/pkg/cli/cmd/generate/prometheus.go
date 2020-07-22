@@ -137,7 +137,8 @@ func renderConfig(jobName string, targets []string) ([]byte, error) {
 
 func discoverHosts(url string, port int) ([]string, error) {
 	hosts := []string{}
-	client, err := kafka.InitClient(url, port)
+	addr := fmt.Sprintf("%s:%d", url, port)
+	client, err := kafka.InitClient(addr)
 	if err != nil {
 		return hosts, err
 	}
