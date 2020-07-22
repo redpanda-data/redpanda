@@ -9,7 +9,7 @@ from typing import List
 # 3rd party
 import docker
 from docker.models.containers import Container
-from docker.types import IPAMConfig, IPAMPool
+from docker.types import IPAMConfig, IPAMPool, Mount
 
 import petname
 from jinja2 import Template
@@ -219,9 +219,9 @@ class DockerSession(session.Session):
         container.stop()
         container.remove()
 
-    def run_test(self, path):
+    def run_test(self, v_path, test_path):
         # simple heuristic test name
-        path = os.path.abspath(path)
+        path = os.path.abspath(test_path)
         tag = os.path.basename(path)
 
         self._client.images.build(path=path, tag=tag)
@@ -235,10 +235,14 @@ class DockerSession(session.Session):
         ns = f"bamboo-{tag}-{time.time()}"
         args = f"{args} --namespace {ns}"
 
+        # mount v read-only for convenience such as accessing scripts
+        mounts = [Mount("/opt/v", str(v_path), type="bind", read_only=True)]
+
         try:
             container = self._client.containers.run(tag,
                                                     command=args,
                                                     network=self._network_id,
+                                                    mounts=mounts,
                                                     stderr=True,
                                                     detach=True)
             for line in container.logs(stream=True):
