@@ -197,3 +197,5 @@ infra/modules/**/ssh_config*
 
 # Node js dev dependencies
 src/js/node_modules
+#intelij
+*.iml
