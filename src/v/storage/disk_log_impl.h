@@ -97,6 +97,10 @@ private:
     garbage_collect_max_partition_size(size_t max_bytes, ss::abort_source*);
     ss::future<>
     garbage_collect_oldest_segments(model::timestamp, ss::abort_source*);
+    ss::future<> garbage_collect_segments(
+      model::offset, ss::abort_source*, std::string_view);
+    model::offset size_based_gc_max_offset(size_t);
+    model::offset time_based_gc_max_offset(model::timestamp);
 
 private:
     bool _closed{false};
