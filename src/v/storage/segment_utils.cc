@@ -6,6 +6,7 @@
 #include "storage/compacted_index.h"
 #include "storage/compacted_index_writer.h"
 #include "storage/compaction_reducers.h"
+#include "storage/index_state.h"
 #include "storage/lock_manager.h"
 #include "storage/log_reader.h"
 #include "storage/logger.h"
@@ -245,7 +246,7 @@ do_compact_segment_index(ss::lw_shared_ptr<segment> s, compaction_config cfg) {
           return write_clean_compacted_index(reader, cfg);
       });
 }
-ss::future<> do_copy_segment_data(
+ss::future<storage::index_state> do_copy_segment_data(
   ss::lw_shared_ptr<segment> s,
   compaction_config cfg,
   model::record_batch_reader reader) {
@@ -340,7 +341,8 @@ ss::future<> self_compact_segment(
     return s->read_lock()
       .then([cfg, s, &pb](ss::rwlock::holder h) {
           if (s->is_closed()) {
-              return ss::make_exception_future<>(segment_closed_exception());
+              return ss::make_exception_future<index_state>(
+                segment_closed_exception());
           }
           auto reader = create_segment_full_reader(s, cfg, pb, std::move(h));
           return do_compact_segment_index(s, cfg)
@@ -350,15 +352,26 @@ ss::future<> self_compact_segment(
                 return do_copy_segment_data(s, cfg, std::move(reader));
             });
       })
-      .then([s] { return s->write_lock(); })
-      .then([cfg, s](ss::rwlock::holder h) {
-          if (s->is_closed()) {
-              return ss::make_exception_future<>(segment_closed_exception());
-          }
+      .then([s](storage::index_state idx) {
+          return s->write_lock().then(
+            [s, idx = std::move(idx)](ss::rwlock::holder h) mutable {
+                using type = std::tuple<index_state, ss::rwlock::holder>;
+                if (s->is_closed()) {
+                    return ss::make_exception_future<type>(
+                      segment_closed_exception());
+                }
+                return ss::make_ready_future<type>(
+                  std::make_tuple(std::move(idx), std::move(h)));
+            });
+      })
+      .then([cfg, s](std::tuple<index_state, ss::rwlock::holder> h) {
           auto compacted_file = data_segment_staging_name(s);
           return do_swap_data_file_handles(compacted_file, s, cfg)
-            // Nothing can happen in between this lock
-            .finally([h = std::move(h)] {});
+            .then([h = std::move(h), s]() mutable {
+                auto&& [idx, lock] = std::move(h);
+                s->index().swap_index_state(std::move(idx));
+                return s->index().flush().finally([l = std::move(lock)] {});
+            });
       });
 }
 
