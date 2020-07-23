@@ -112,6 +112,26 @@ def py(conf, ref, check):
     _yapf(vconfig, ref, check)
 
 
+@fmt.command(short_help='runs npm fmt on v/js')
+@click.option('--conf',
+              help=('Path to configuration file. If not given, a .vtools.yml '
+                    'file is searched recursively starting from the current '
+                    'working directory'),
+              default=None)
+@click.option('--check',
+              help=('Do not format in-place; instead, check whether files are '
+                    'properly formatted and throw an error if they are not'),
+              is_flag=True)
+@click.option('--ref',
+              help=('Obtain list of files to process by comparing the current '
+                    'state of the repository and compare it against the given '
+                    'gitref.'),
+              default=None)
+def js(conf, ref, check):
+    vconfig = config.VConfig(conf)
+    _jsfmt(vconfig, ref, check)
+
+
 @fmt.command(short_help='shortcut for applying all formatters.')
 @click.option('--conf',
               help=('Path to configuration file. If not given, a .vtools.yml '
@@ -138,6 +158,7 @@ def all_changed(conf, ref=None, check=True):
     _yapf(vconfig, ref, check)
     _shfmt(vconfig, ref, check)
     _tffmt(vconfig, ref, check)
+    _jsfmt(vconfig, ref, check)
 
 
 @fmt.command(short_help='runs clang-tidy against redpanda for clang builds.')
@@ -169,6 +190,12 @@ def _crlfmt(vconfig, ref, check):
     logging.debug("Running crlfmt")
     args = f'-wrap=80 {"" if check else "-diff=false -w"}'
     _fmt(vconfig, ['.go'], 'crlfmt', args, ref, check)
+
+
+def _jsfmt(vconfig, ref, check):
+    logging.debug("Running Prettier")
+    args = f'--write'
+    _fmt(vconfig, ['.ts'], 'npx prettier', args, ref, check)
 
 
 def _yapf(vconfig, ref, check):
@@ -242,17 +269,3 @@ def _git_files(vconfig, exts, ref):
         for e in exts:
             if f.endswith(e) and f not in objective_c_not:
                 yield f
-
-
-@fmt.command(short_help='runs npm fmt on v/js')
-@click.option('--conf',
-              help=('Path to configuration file. If not given, a .vtools.yml '
-                    'file is searched recursively starting from the current '
-                    'working directory'),
-              default=None)
-def js(conf):
-    vconfig = config.VConfig(conf)
-
-    shell.run_subprocess(f'cd {vconfig.node_build_dir} && '
-                         f'npm run fmt',
-                         env=vconfig.environ)
