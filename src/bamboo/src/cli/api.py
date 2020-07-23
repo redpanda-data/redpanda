@@ -1,4 +1,5 @@
 import random
+import pathlib
 
 # 3rd party
 import click
@@ -40,7 +41,12 @@ def destroy(sname, node_id):
 
 @session.command(short_help='run a test')
 @click.option('--sname', help="name of the session")
+@click.option('--vpath', help="path of v", default=None)
 @click.option('--path', help="test path", required=True)
-def run_test(sname, path):
+def run_test(sname, vpath, path):
+    if vpath is None:
+        # generate absolute path to root of `v` source tree
+        vpath = pathlib.Path(__file__).parent.absolute()
+        vpath = vpath / "../../../.."
     s = docker_session.generate_docker_session(sname)
-    s.run_test(path)
+    s.run_test(vpath, path)

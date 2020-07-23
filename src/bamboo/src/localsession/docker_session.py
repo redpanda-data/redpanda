@@ -9,7 +9,7 @@ from typing import List
 # 3rd party
 import docker
 from docker.models.containers import Container
-from docker.types import IPAMConfig, IPAMPool
+from docker.types import IPAMConfig, IPAMPool, Mount
 
 import petname
 from jinja2 import Template
@@ -219,35 +219,48 @@ class DockerSession(session.Session):
         container.stop()
         container.remove()
 
-    def run_test(self, path):
+    def run_test(self, v_path, test_path):
         # simple heuristic test name
-        path = os.path.abspath(path)
+        path = os.path.abspath(test_path)
         tag = os.path.basename(path)
 
         self._client.images.build(path=path, tag=tag)
 
         # broker list from session
+        env = dict()
         brokers = ",".join(
             map(lambda n: f"{n.ip}:9092", self._state.nodelist()))
         args = f"--brokers {brokers}"
+        env["BAMBOO_BROKERS"] = brokers
+        env["BAMBOO_BROKER_COUNT"] = len(self._state.nodelist())
 
         # unique test namespace
-        ns = f"bamboo-{tag}-{time.time()}"
+        ns = f"bamboo-{tag}-{int(time.time())}"
         args = f"{args} --namespace {ns}"
+        env["BAMBOO_NAMESPACE"] = ns
+
+        # mount v read-only for convenience such as accessing scripts
+        mounts = [Mount("/opt/v", str(v_path), type="bind", read_only=True)]
 
         try:
             container = self._client.containers.run(tag,
                                                     command=args,
                                                     network=self._network_id,
+                                                    mounts=mounts,
+                                                    environment=env,
                                                     stderr=True,
                                                     detach=True)
             for line in container.logs(stream=True):
                 logging.info(f"{tag} test: {line.strip()}")
-            container.wait()
+            res = container.wait()
+            exit_code = res["StatusCode"]
+            if exit_code == 0:
+                logging.info("PASS")
+            else:
+                logging.info(f"FAIL exit_code {exit_code}")
         except:
             logging.info("FAIL")
             raise
-        logging.info("PASS")
 
     def _round_node_id(self, node_id):
         n = node_id % 255
