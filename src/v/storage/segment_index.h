@@ -61,6 +61,7 @@ public:
     /// \brief resets the state to 0, except for base_offset
     /// a destructive operation. Needed for node bootstrap
     void reset();
+    void swap_index_state(index_state&&);
     bool needs_persistence() const { return _needs_persistence; }
 
 private:

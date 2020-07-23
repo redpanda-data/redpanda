@@ -204,9 +204,23 @@ copy_data_segment_reducer::do_compaction(model::record_batch&& b) {
     return ss::do_with(
              std::move(to_copy.value()),
              [this](model::record_batch& batch) {
+                 _acc += batch.size_bytes();
+                 _idx.maybe_index(
+                   _acc,
+                   32_KiB,
+                   _starting_file_pos,
+                   batch.base_offset(),
+                   batch.last_offset(),
+                   batch.header().first_timestamp,
+                   batch.header().max_timestamp);
+                 _starting_file_pos += batch.size_bytes();
                  return storage::write(*_appender, batch);
              })
       .then([] { return ss::make_ready_future<stop_t>(stop_t::no); });
+}
+
+ss::future<storage::index_state> copy_data_segment_reducer::end_of_stream() {
+    return _appender->close().then([this] { return std::move(_idx); });
 }
 
 ss::future<ss::stop_iteration>

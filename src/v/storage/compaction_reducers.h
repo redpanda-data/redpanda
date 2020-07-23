@@ -4,6 +4,7 @@
 #include "storage/compacted_index.h"
 #include "storage/compacted_index_writer.h"
 #include "storage/compacted_offset_list.h"
+#include "storage/index_state.h"
 #include "storage/logger.h"
 #include "storage/segment_appender.h"
 #include "units.h"
@@ -99,7 +100,7 @@ public:
       , _appender(std::move(a)) {}
 
     ss::future<ss::stop_iteration> operator()(model::record_batch&&);
-    ss::future<> end_of_stream() { return _appender->close(); }
+    ss::future<storage::index_state> end_of_stream();
 
 private:
     ss::future<ss::stop_iteration> do_compaction(model::record_batch&&);
@@ -112,6 +113,9 @@ private:
 
     compacted_offset_list _list;
     segment_appender_ptr _appender;
+    index_state _idx;
+    size_t _acc{0};
+    size_t _starting_file_pos{0};
 };
 
 } // namespace storage::internal
