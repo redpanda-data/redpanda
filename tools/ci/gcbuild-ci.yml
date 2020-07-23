@@ -59,7 +59,7 @@ steps:
   - -c
   - |
     if [[ "$_COMPILER" == "clang" ]]; then
-      ./build/venv/v/bin/vtools fmt all --check --conf=tools/ci/vtools-clang-release.yml
+      ./build/venv/v/bin/vtools fmt all --check --conf=tools/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml
     fi
 
 - id: 'test rpk'

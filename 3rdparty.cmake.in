@@ -253,8 +253,8 @@ ExternalProject_Add(gmp
   INSTALL_COMMAND ${make_command} install)
 
 ExternalProject_Add(nettle
-  URL https://storage.googleapis.com/vectorizedio-public/dependencies/nettle_3.4_release_20171119.tar.gz
-  URL_MD5 84747a2a1468bf9345e3e94bfb938169
+  URL https://storage.googleapis.com/vectorizedio-public/dependencies/nettle-3.6.tar.gz
+  URL_MD5 c45ee24ed7361dcda152a035d396fe8a
   INSTALL_DIR @V_DEPS_INSTALL_DIR@
   PATCH_COMMAND
     <SOURCE_DIR>/.bootstrap
@@ -268,8 +268,8 @@ ExternalProject_Add(nettle
   DEPENDS gmp ${default_depends})
 
 ExternalProject_Add(gnutls
-  URL https://storage.googleapis.com/vectorizedio-public/dependencies/gnutls-3.5.18.tar.xz
-  URL_MD5 c2d93d305ecbc55939bc2a8ed4a76a3d
+  URL https://storage.googleapis.com/vectorizedio-public/dependencies/gnutls-3.6.14.tar.xz
+  URL_MD5 bf70632d420e421baff482247f01dbfe
   INSTALL_DIR @V_DEPS_INSTALL_DIR@
   CONFIGURE_COMMAND
    ${CMAKE_COMMAND} -E env ${build_env}
