@@ -101,8 +101,9 @@ operator<<(std::ostream& o, const produce_request::partition& p) {
     if (p.adapter.batch) {
         return ss::fmt_print(
           o,
-          "id {} payload batch size {}",
+          "id {} records {} size {}",
           p.id,
+          p.adapter.batch->record_count(),
           p.adapter.batch->size_bytes());
     }
     return ss::fmt_print(o, "id {} payload {}", p.id, p.data);
