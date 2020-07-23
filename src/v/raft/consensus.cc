@@ -423,6 +423,26 @@ void consensus::arm_vote_timeout() {
         _vote_timeout.rearm(_jit());
     }
 }
+
+ss::future<std::error_code>
+consensus::update_group_member(model::broker broker) {
+    return _op_lock.get_units().then(
+      [this, broker = std::move(broker)](ss::semaphore_units<> u) mutable {
+          auto cfg = _configuration_manager.get_latest();
+          if (!cfg.contains_broker(broker.id())) {
+              vlog(
+                _ctxlog.warn,
+                "Node with id {} does not exists in current configuration");
+              return ss::make_ready_future<std::error_code>(
+                errc::node_does_not_exists);
+          }
+          // update broker information
+          cfg.update_broker(std::move(broker));
+
+          return replicate_configuration(std::move(u), std::move(cfg));
+      });
+}
+
 ss::future<std::error_code> consensus::add_group_member(model::broker node) {
     return _op_lock.get_units().then(
       [this, node = std::move(node)](ss::semaphore_units<> u) mutable {
