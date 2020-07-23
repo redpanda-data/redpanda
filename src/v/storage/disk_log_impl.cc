@@ -77,6 +77,11 @@ ss::future<> disk_log_impl::remove() {
 ss::future<> disk_log_impl::close() {
     vassert(!_closed, "Invalid double closing of log - {}", *this);
     _closed = true;
+    if (
+      _eviction_monitor
+      && !_eviction_monitor->promise.get_future().available()) {
+        _eviction_monitor->promise.set_exception(segment_closed_exception());
+    }
     return ss::parallel_for_each(_segs, [](ss::lw_shared_ptr<segment>& h) {
         return h->close().handle_exception([h](std::exception_ptr e) {
             vlog(stlog.error, "Error closing segment:{} - {}", e, h);
@@ -127,22 +132,72 @@ model::offset disk_log_impl::time_based_gc_max_offset(model::timestamp time) {
     return (*it)->offsets().committed_offset;
 }
 
+ss::future<eviction_range_lock>
+disk_log_impl::monitor_eviction(ss::abort_source& as) {
+    if (_eviction_monitor) {
+        throw std::logic_error("Eviction promise already registered. Eviction "
+                               "can not be monitored twice.");
+    }
+
+    auto opt_sub = as.subscribe([this] {
+        _eviction_monitor->promise.set_exception(
+          ss::abort_requested_exception());
+        _eviction_monitor.reset();
+    });
+    // already aborted
+    if (!opt_sub) {
+        return ss::make_exception_future<eviction_range_lock>(
+          ss::abort_requested_exception());
+    }
+
+    return _eviction_monitor
+      .emplace(eviction_monitor{
+        ss::promise<eviction_range_lock>{}, std::move(*opt_sub)})
+      .promise.get_future();
+}
+
+ss::future<eviction_range_lock>
+get_eviction_range_lock(const segment_set& segs, model::offset max_offset) {
+    std::vector<ss::future<ss::rwlock::holder>> lock_futures;
+    auto it = segs.begin();
+    while (it != segs.end() && (*it)->offsets().base_offset < max_offset) {
+        lock_futures.push_back((*it)->read_lock());
+        ++it;
+    }
+
+    return ss::when_all_succeed(lock_futures.begin(), lock_futures.end())
+      .then([max_offset](std::vector<ss::rwlock::holder> locks) {
+          return eviction_range_lock(max_offset, std::move(locks));
+      });
+}
+
 ss::future<> disk_log_impl::garbage_collect_segments(
   model::offset max_offset, ss::abort_source* as, std::string_view ctx) {
-    return ss::do_until(
-      [this, as, max_offset] {
-          return _segs.empty() || as->abort_requested()
-                 || _segs.front()->offsets().base_offset > max_offset;
-      },
-      [this, ctx] {
-          auto ptr = _segs.front();
-          //  Grab segment write lock before poping it from segments set.
-          return ptr->write_lock().then(
-            [this, ptr, ctx]([[maybe_unused]] ss::rwlock::holder h) {
-                _segs.pop_front();
-                return remove_segment_permanently(ptr, ctx);
-            });
-      });
+    auto f = ss::now();
+    if (_eviction_monitor) {
+        f = get_eviction_range_lock(_segs, max_offset)
+              .then([this](eviction_range_lock lock) {
+                  _eviction_monitor->promise.set_value(std::move(lock));
+                  _eviction_monitor.reset();
+              });
+    }
+
+    return f.then([this, as, max_offset, ctx] {
+        return ss::do_until(
+          [this, as, max_offset] {
+              return _segs.empty() || as->abort_requested()
+                     || _segs.front()->offsets().base_offset > max_offset;
+          },
+          [this, ctx] {
+              auto ptr = _segs.front();
+              //  Grab segment write lock before poping it from segments set.
+              return ptr->write_lock().then(
+                [this, ptr, ctx]([[maybe_unused]] ss::rwlock::holder h) {
+                    _segs.pop_front();
+                    return remove_segment_permanently(ptr, ctx);
+                });
+          });
+    });
 }
 
 ss::future<> disk_log_impl::garbage_collect_max_partition_size(
