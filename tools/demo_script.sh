@@ -21,7 +21,10 @@ RECORD_COUNT=${RECORD_COUNT:-$((1 << 31))}
 RECORD_SIZE=${RECORD_SIZE:-1024}
 # produce acks settings
 ACKS=${ACKS:-1}
-
+# producer count
+PRODUCER_COUNT=${PRODUCER_COUNT:-10}
+# determine if launching producer count should be in background
+BACKGROUND_PRODUCE=${BACKGROUND_PRODUCE:-1}
 # path to folder containing kafka
 KAFKA_PATH=${KAFKA_PATH:-/opt/kafka-dev}
 
@@ -47,22 +50,33 @@ function delete_topic() {
     --topic ${TOPIC}
 }
 
-# first prepare topic
-create_topic
-delete_topic
-create_topic
-
-# produce to topic immediately
-for i in {1..10}; do
-  export demo_id="harpoon.demo.${i}"
-  (${producer_performance} \
+function launch_one_producer() {
+  local clientid=$1
+  ${producer_performance} \
     --record-size ${RECORD_SIZE} \
     --topic ${TOPIC} \
     --num-records ${RECORD_COUNT} \
     --throughput -1 \
     --producer-props acks=${ACKS} \
     bootstrap.servers="${SERVERS}" \
-    client.id="${demo_id}" \
+    client.id="${clientid}" \
     batch.size=81960 \
-    buffer.memory=$((1024 * 1024)) &)
+    buffer.memory=$((1024 * 1024))
+}
+
+# first prepare topic
+create_topic
+delete_topic
+create_topic
+
+# produce to topic immediately
+i=1
+while [[ ${i} -le ${PRODUCER_COUNT} ]]; do
+  export demo_id="harpoon.demo.${i}"
+  ((i = i + 1))
+  if [[ ${BACKGROUND_PRODUCE} == "1" ]]; then
+    launch_one_producer $demo_id &
+  else
+    launch_one_producer $demo_id
+  fi
 done
