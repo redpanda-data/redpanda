@@ -93,19 +93,24 @@ func TestSendEnvironment(t *testing.T) {
 		NodeId:       1,
 		Organization: "test.vectorized.io",
 		SentAt:       time.Now(),
-		Config: `{
-  "nodeUuid": "abc123-hu234-234kh",
-  "clusterId": "cluster 1",
-  "redpanda": {
-    "directory": "/var/lib/redpanda/",
-    "rpcServer": {"0.0.0.0", 33145},
-    "kafkaAPI": {"0.0.0.0", 9092},
-  },
-  rpk: {
-    enableUsageStats: true,
-  },
-}
-`,
+		Config: map[string]interface{}{
+			"nodeUuid":  "abc123-hu234-234kh",
+			"clusterId": "cluster 1",
+			"redpanda": map[string]interface{}{
+				"directory": "/var/lib/redpanda/",
+				"rpcServer": map[string]interface{}{
+					"address": "0.0.0.0",
+					"port":    33145,
+				},
+				"kafkaAPI": map[string]interface{}{
+					"address": "0.0.0.0",
+					"port":    9092,
+				},
+			},
+			"rpk": map[string]interface{}{
+				"enableUsageStats": true,
+			},
+		},
 	}
 	bs, err := json.Marshal(body)
 	require.NoError(t, err)
