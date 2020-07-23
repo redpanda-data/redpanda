@@ -3,6 +3,7 @@
 #include "model/compression.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "test_utils/randoms.h"
 #include "test_utils/rpc.h"
 #include "units.h"
 
@@ -162,4 +163,19 @@ SEASTAR_THREAD_TEST_CASE(config_invariants_test) {
     BOOST_REQUIRE_EQUAL(res.core_count, 64);
     BOOST_REQUIRE_EQUAL(res.node_id, model::node_id(12));
     BOOST_REQUIRE_EQUAL(res.version, 0);
+}
+
+SEASTAR_THREAD_TEST_CASE(config_update_req_resp_test) {
+    auto req_broker = tests::random_broker(0, 10);
+    auto target_node = model::node_id(23);
+
+    cluster::configuration_update_request req(req_broker, target_node);
+
+    auto req_res = serialize_roundtrip_rpc(std::move(req));
+    BOOST_REQUIRE_EQUAL(req_broker, req_res.node);
+    BOOST_REQUIRE_EQUAL(target_node, req_res.target_node);
+
+    cluster::configuration_update_reply reply{true};
+    auto reply_res = serialize_roundtrip_rpc(std::move(reply));
+    BOOST_REQUIRE_EQUAL(reply_res.success, true);
 }
