@@ -194,7 +194,7 @@ def _crlfmt(vconfig, ref, check):
 
 def _jsfmt(vconfig, ref, check):
     logging.debug("Running Prettier")
-    args = f'--write'
+    args = f'--check' if check else f'--write'
     _fmt(vconfig, ['.ts'], 'npx prettier', args, ref, check)
 
 
