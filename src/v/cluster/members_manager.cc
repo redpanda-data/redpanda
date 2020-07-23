@@ -6,7 +6,9 @@
 #include "cluster/partition_allocator.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
+#include "raft/errc.h"
 #include "raft/types.h"
+#include "random/generators.h"
 #include "reflection/adl.h"
 
 #include <seastar/core/do_with.hh>
@@ -72,7 +74,32 @@ ss::future<> members_manager::start_config_changes_watcher() {
     }).handle_exception_type([](const ss::gate_closed_exception&) {});
 
     // handle initial configuration
-    return handle_raft0_cfg_update(_raft0->config());
+    return handle_raft0_cfg_update(_raft0->config()).then([this] {
+        if (is_already_member()) {
+            return maybe_update_current_node_configuration();
+        }
+        return ss::now();
+    });
+} // namespace cluster
+
+ss::future<> members_manager::maybe_update_current_node_configuration() {
+    auto active_configuration = _members_table.local().get_broker(_self.id());
+    vassert(
+      active_configuration.has_value(),
+      "Current broker is expected to be present in members configuration");
+
+    // configuration is up to date, do nothing
+    if (*active_configuration.value() == _self) {
+        return ss::now();
+    }
+
+    return dispatch_configuration_update(_self)
+      .then([] {
+          vlog(clusterlog.info, "Node configuration updated successfully");
+      })
+      .handle_exception([](const std::exception_ptr& e) {
+          vlog(clusterlog.error, "Unable to update node configuration - {}", e);
+      });
 }
 
 cluster::patch<broker_ptr>
@@ -336,5 +363,134 @@ ss::future<> members_manager::validate_configuration_invariants() {
     }
     return ss::now();
 }
+
+ss::future<result<configuration_update_reply>>
+members_manager::do_dispatch_configuration_update(
+  const model::broker& target, model::broker updated_cfg) {
+    if (target.id() == _self.id()) {
+        return handle_configuration_update_request(
+          configuration_update_request(std::move(updated_cfg), _self.id()));
+    }
+
+    return with_client<controller_client_protocol>(
+      _connection_cache,
+      target.id(),
+      target.rpc_address(),
+      [broker = std::move(updated_cfg),
+       tout = rpc::clock_type::now() + _join_timeout,
+       target_id = target.id()](controller_client_protocol c) mutable {
+          return c
+            .update_node_configuration(
+              configuration_update_request(std::move(broker), target_id),
+              rpc::client_opts(tout))
+            .then(&rpc::get_ctx_data<configuration_update_reply>);
+      });
+}
+
+ss::future<>
+members_manager::dispatch_configuration_update(model::broker broker) {
+    // right after start current node has no information about the current
+    // leader (it may never receive one as its addres might have been changed),
+    // dispatch request to any cluster node, it will eventually forward it to
+    // current leader
+
+    return ss::do_with(
+      _members_table.local().all_brokers(),
+      [this, broker](std::vector<broker_ptr>& all_brokers) mutable {
+          return ss::repeat([this, &all_brokers, broker]() mutable {
+              // shuffle brokers
+              std::shuffle(
+                all_brokers.begin(),
+                all_brokers.end(),
+                random_generators::internal::gen);
+              // pick one
+              auto it = std::find_if(
+                std::cbegin(all_brokers),
+                std::cend(all_brokers),
+                [this](const broker_ptr& ptr) {
+                    return ptr->id() != _self.id();
+                });
+
+              // if current node is the only node in the cluster, handle locally
+              auto& target = it != std::cend(all_brokers) ? *it->get() : _self;
+
+              return do_dispatch_configuration_update(target, broker)
+                .then([](result<configuration_update_reply> r) {
+                    if (r.has_error()) {
+                        return ss::make_ready_future<ss::stop_iteration>(
+                          ss::stop_iteration::no);
+                    }
+                    return ss::make_ready_future<ss::stop_iteration>(
+                      ss::stop_iteration::yes);
+                });
+          });
+      });
+}
+
+ss::future<result<configuration_update_reply>>
+members_manager::handle_configuration_update_request(
+  configuration_update_request req) {
+    using ret_t = result<configuration_update_reply>;
+    if (req.target_node != _self.id()) {
+        vlog(
+          clusterlog.warn,
+          "Current node id {} is different than requested target: {}. Ignoring "
+          "configuration update.",
+          _self,
+          req.target_node);
+        return ss::make_ready_future<ret_t>(configuration_update_reply{false});
+    }
+    vlog(
+      clusterlog.info, "Handling node {} configuration update", req.node.id());
+    auto node_ptr = ss::make_lw_shared(std::move(req.node));
+    patch<broker_ptr> broker_update_patch{
+      .additions = {node_ptr}, .deletions = {}};
+    auto f = update_connections(std::move(broker_update_patch));
+    // Current node is not the leader have to send an RPC to leader
+    // controller
+    std::optional<model::node_id> leader_id = _raft0->get_leader_id();
+    if (!leader_id) {
+        return ss::make_ready_future<ret_t>(errc::no_leader_controller);
+    }
+    // curent node is a leader
+    if (leader_id == _self.id()) {
+        // Just update raft0 configuration
+        return _raft0->update_group_member(*node_ptr).then(
+          [node_ptr](std::error_code ec) {
+              if (ec) {
+                  return ss::make_ready_future<ret_t>(ec);
+              }
+              return ss::make_ready_future<ret_t>(
+                configuration_update_reply{true});
+          });
+    }
+
+    auto leader = _members_table.local().get_broker(*leader_id);
+    if (!leader) {
+        return ss::make_ready_future<ret_t>(errc::no_leader_controller);
+    }
+
+    auto tout = ss::lowres_clock::now() + _join_timeout;
+    return with_client<controller_client_protocol>(
+             _connection_cache,
+             *leader_id,
+             (*leader)->rpc_address(),
+             [tout, node = *node_ptr, target = *leader_id](
+               controller_client_protocol c) mutable {
+                 return c
+                   .update_node_configuration(
+                     configuration_update_request(std::move(node), target),
+                     rpc::client_opts(tout))
+                   .then(&rpc::get_ctx_data<configuration_update_reply>);
+             })
+      .handle_exception([](const std::exception_ptr& e) {
+          vlog(
+            clusterlog.warn,
+            "Error while dispatching configuration update request - {}",
+            e);
+          return ss::make_ready_future<ret_t>(
+            errc::join_request_dispatch_error);
+      });
+} // namespace cluster
 
 } // namespace cluster
