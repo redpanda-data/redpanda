@@ -26,7 +26,10 @@ class cluster_test_fixture {
 public:
     using fixture_ptr = std::unique_ptr<controller_tests_fixture>;
 
-    cluster_test_fixture() { set_configuration("disable_metrics", true); }
+    cluster_test_fixture()
+      : _base_dir("cluster_test." + random_generators::gen_alphanum_string(6)) {
+        set_configuration("disable_metrics", true);
+    }
 
     void add_controller(
       model::node_id node_id,
