@@ -31,6 +31,7 @@ KAFKA_PATH=${KAFKA_PATH:-/opt/kafka-dev}
 kafka_topics=${KAFKA_PATH}/bin/kafka-topics.sh
 
 producer_performance="${KAFKA_PATH}/bin/kafka-producer-perf-test.sh"
+consumer_performance="${KAFKA_PATH}/bin/kafka-consumer-perf-test.sh"
 
 function create_topic() {
   echo "creating topic '${TOPIC}' with ${PARTITIONS} partitions and replication factor ${REPLICATION_FACTOR}"
@@ -64,6 +65,16 @@ function launch_one_producer() {
     buffer.memory=$((1024 * 1024))
 }
 
+function consume() {
+  ${consumer_performance} \
+    --broker-list=${SERVERS} \
+    --fetch-size=1048576 \
+    --timeout=1000 \
+    --messages=$((RECORD_COUNT * PRODUCER_COUNT)) \
+    --group=harpoon.consumer \
+    --topic=${TOPIC} \
+    --threads 1
+}
 # first prepare topic
 create_topic
 delete_topic
@@ -80,3 +91,6 @@ while [[ ${i} -le ${PRODUCER_COUNT} ]]; do
     launch_one_producer $demo_id
   fi
 done
+
+# consume them all
+consume
