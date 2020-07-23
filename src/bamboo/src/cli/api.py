@@ -40,7 +40,7 @@ def destroy(sname, node_id):
 
 
 @session.command(short_help='run a test')
-@click.option('--sname', help="name of the session")
+@click.option('--sname', help="name of the session", required=True)
 @click.option('--vpath', help="path of v", default=None)
 @click.option('--path', help="test path", required=True)
 def run_test(sname, vpath, path):
