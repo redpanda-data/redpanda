@@ -261,12 +261,6 @@ $ git format-patch -v1 -1
 
 ## Manually sending the patches
 
-First ensure you have `git send-email` installed:
-
-```
-$ sudo dnf install git-email
-```
-
 Verify the generated patch files and then use git send-email to send them out:
 
 ```
