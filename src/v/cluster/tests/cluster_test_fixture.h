@@ -3,9 +3,13 @@
 #include "cluster/partition_manager.h"
 #include "cluster/tests/controller_test_fixture.h"
 #include "config/seed_server.h"
+#include "random/generators.h"
 
 #include <seastar/core/metrics_api.hh>
 #include <seastar/core/sharded.hh>
+#include <seastar/core/sstring.hh>
+
+#include <absl/container/flat_hash_map.h>
 
 // clang-format off
 template<typename Pred>
@@ -37,19 +41,22 @@ public:
       int16_t kafka_port,
       int16_t rpc_port,
       std::vector<config::seed_server> seeds) {
-        _instances.push_back(std::make_unique<controller_tests_fixture>(
-          node_id, cores, kafka_port, rpc_port, seeds));
+        _instances.emplace(
+          node_id,
+          std::make_unique<controller_tests_fixture>(
+            node_id, cores, kafka_port, rpc_port, seeds, _base_dir));
     }
 
-    cluster::controller* get_controller(int idx) {
-        return _instances[idx]->get_controller();
+    cluster::controller* get_controller(model::node_id id) {
+        return _instances[id]->get_controller();
     }
 
-    cluster::metadata_cache& get_local_cache(int idx) {
-        return _instances[idx]->get_local_cache();
+    cluster::metadata_cache& get_local_cache(model::node_id id) {
+        return _instances[id]->get_local_cache();
     }
 
-    cluster::controller* create_controller(model::node_id node_id) {
+    cluster::controller* create_controller(
+      model::node_id node_id, int kafka_port = 9092, int rpc_port = 11000) {
         std::vector<config::seed_server> seeds = {};
         if (node_id != 0) {
             seeds.push_back(
@@ -59,13 +66,18 @@ public:
         add_controller(
           node_id,
           ss::smp::count,
-          9092 + node_id(),
-          11000 + node_id(),
+          kafka_port + node_id(),
+          rpc_port + node_id(),
           std::move(seeds));
 
-        return get_controller(node_id());
+        return get_controller(node_id);
+    }
+
+    void remove_controller(model::node_id node_id) {
+        _instances.erase(node_id);
     }
 
 private:
-    std::vector<fixture_ptr> _instances;
+    absl::flat_hash_map<model::node_id, fixture_ptr> _instances;
+    ss::sstring _base_dir;
 };
