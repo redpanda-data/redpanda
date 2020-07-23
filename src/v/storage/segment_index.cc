@@ -41,33 +41,17 @@ void segment_index::reset() {
 
 void segment_index::maybe_track(
   const model::record_batch_header& hdr, size_t filepos) {
-    vassert(
-      hdr.base_offset >= _state.base_offset,
-      "cannot track offsets that are lower than our base, o:{}, "
-      "_state.base_offset:{} - index: {}",
-      hdr.base_offset,
-      _state.base_offset,
-      *this);
-
-    _needs_persistence = true;
     _acc += hdr.size_bytes;
-    // index_state
-    const bool is_empty = _state.empty();
-    if (is_empty) {
-        _state.base_timestamp = hdr.first_timestamp;
-    }
-    // NOTE: we don't need the 'max()' trick below because we controll the
-    // offsets ourselves and it would be a bug otherwise - see assert above
-    _state.max_offset = hdr.last_offset();
-    _state.max_timestamp = std::max(hdr.max_timestamp, _state.max_timestamp);
-    // always saving the first batch simplifies a lot of book keeping
-    if (_acc >= _step || is_empty) {
+    if (_state.maybe_index(
+          _acc,
+          _step,
+          filepos,
+          hdr.base_offset,
+          hdr.last_offset(),
+          hdr.first_timestamp,
+          hdr.max_timestamp)) {
         _acc = 0;
-        // We know that a segment cannot be > 4GB
-        _state.add_entry(
-          hdr.base_offset() - _state.base_offset(),
-          hdr.max_timestamp() - _state.base_timestamp(),
-          filepos);
+        _needs_persistence = true;
     }
 }
 
