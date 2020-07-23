@@ -149,6 +149,18 @@ cluster::join_request adl<cluster::join_request>::from(iobuf_parser& in) {
     return cluster::join_request(adl<model::broker>().from(in));
 }
 
+void adl<cluster::configuration_update_request>::to(
+  iobuf& out, cluster::configuration_update_request&& r) {
+    serialize(out, r.node, r.target_node);
+}
+
+cluster::configuration_update_request
+adl<cluster::configuration_update_request>::from(iobuf_parser& in) {
+    auto broker = adl<model::broker>().from(in);
+    auto target_id = adl<model::node_id>().from(in);
+    return cluster::configuration_update_request(broker, target_id);
+}
+
 void adl<cluster::topic_result>::to(iobuf& out, cluster::topic_result&& t) {
     reflection::serialize(out, std::move(t.tp_ns), t.ec);
 }

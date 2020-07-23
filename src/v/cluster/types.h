@@ -33,6 +33,18 @@ struct join_reply {
     bool success;
 };
 
+struct configuration_update_request {
+    explicit configuration_update_request(model::broker b, model::node_id tid)
+      : node(std::move(b))
+      , target_node(tid) {}
+    model::broker node;
+    model::node_id target_node;
+};
+
+struct configuration_update_reply {
+    bool success;
+};
+
 /// Partition assignment describes an assignment of all replicas for single NTP.
 /// The replicas are hold in vector of broker_shard.
 struct partition_assignment {
@@ -182,6 +194,12 @@ struct adl<cluster::join_request> {
     void to(iobuf&, cluster::join_request&&);
     cluster::join_request from(iobuf);
     cluster::join_request from(iobuf_parser&);
+};
+
+template<>
+struct adl<cluster::configuration_update_request> {
+    void to(iobuf&, cluster::configuration_update_request&&);
+    cluster::configuration_update_request from(iobuf_parser&);
 };
 
 template<>
