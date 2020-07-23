@@ -42,6 +42,23 @@ bool operator==(const group_configuration& a, const group_configuration& b) {
     return a.nodes == b.nodes && a.learners == b.learners;
 }
 
+void group_configuration::update_broker(model::broker broker) {
+    auto joined_range = boost::join(nodes, learners);
+
+    auto it = std::find_if(
+      std::cbegin(joined_range),
+      std::cend(joined_range),
+      [id = broker.id()](const model::broker& b) { return b.id() == id; });
+
+    if (it != std::cend(joined_range)) {
+        *it = std::move(broker);
+        return;
+    }
+
+    throw std::invalid_argument(
+      fmt::format("node with id {} not found in configuration", broker.id()));
+}
+
 std::ostream& operator<<(std::ostream& o, const append_entries_reply& r) {
     return o << "{node_id: " << r.node_id << ", group: " << r.group
              << ", term:" << r.term

@@ -69,6 +69,8 @@ public:
 
     /// This method adds a member to the group and performs configuration update
     ss::future<std::error_code> add_group_member(model::broker node);
+    /// Updates given member configuration
+    ss::future<std::error_code> update_group_member(model::broker);
 
     bool is_leader() const { return _vstate == vote_state::leader; }
     std::optional<model::node_id> get_leader_id() const { return _leader_id; }
