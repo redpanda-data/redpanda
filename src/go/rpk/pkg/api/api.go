@@ -49,13 +49,13 @@ type metricsBody struct {
 }
 
 type environmentBody struct {
-	Payload      EnvironmentPayload `json:"payload"`
-	Config       string             `json:"config"`
-	SentAt       time.Time          `json:"sentAt"`
-	NodeUuid     string             `json:"nodeUuid"`
-	Organization string             `json:"organization"`
-	ClusterId    string             `json:"clusterId"`
-	NodeId       int                `json:"nodeId"`
+	Payload      EnvironmentPayload     `json:"payload"`
+	Config       map[string]interface{} `json:"config"`
+	SentAt       time.Time              `json:"sentAt"`
+	NodeUuid     string                 `json:"nodeUuid"`
+	Organization string                 `json:"organization"`
+	ClusterId    string                 `json:"clusterId"`
+	NodeId       int                    `json:"nodeId"`
 }
 
 func SendMetrics(p MetricsPayload, conf config.Config) error {
@@ -73,9 +73,14 @@ func SendMetrics(p MetricsPayload, conf config.Config) error {
 func SendEnvironment(
 	env EnvironmentPayload, conf config.Config, confJSON string,
 ) error {
+	confMap := map[string]interface{}{}
+	err := json.Unmarshal([]byte(confJSON), &confMap)
+	if err != nil {
+		return err
+	}
 	b := environmentBody{
 		Payload:      env,
-		Config:       confJSON,
+		Config:       confMap,
 		SentAt:       time.Now(),
 		NodeUuid:     conf.NodeUuid,
 		Organization: conf.Organization,
@@ -120,6 +125,7 @@ func sendRequest(body []byte, method, url string, conf config.Config) error {
 	if err != nil {
 		return err
 	}
+	log.Debugf("%s '%s' body='%s'", method, url, body)
 	client := &http.Client{}
 	res, err := client.Do(req)
 	if err != nil {
