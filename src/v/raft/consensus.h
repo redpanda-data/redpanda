@@ -128,6 +128,10 @@ public:
 
     event_manager& events() { return _event_manager; }
 
+    ss::future<storage::eviction_range_lock> monitor_log_eviction() {
+        return _log.monitor_eviction(_as);
+    }
+
 private:
     // key types used to store data in key-value store
     enum class metadata_key : int8_t {
