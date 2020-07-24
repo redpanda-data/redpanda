@@ -264,6 +264,7 @@ ExternalProject_Add(nettle
     --prefix=<INSTALL_DIR>
     --srcdir=<SOURCE_DIR>
     --libdir=<INSTALL_DIR>/lib
+    --disable-documentation
   INSTALL_COMMAND ${make_command} install
   DEPENDS gmp ${default_depends})
 
