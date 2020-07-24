@@ -88,7 +88,7 @@ void consensus::do_step_down() {
 ss::future<> consensus::stop() {
     vlog(_ctxlog.info, "Stopping");
     _vote_timeout.cancel();
-    _as.abort_requested();
+    _as.request_abort();
     _commit_index_updated.broken();
     return _event_manager.stop().then([this] { return _bg.close(); });
 }
