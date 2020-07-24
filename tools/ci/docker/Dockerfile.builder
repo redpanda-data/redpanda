@@ -13,6 +13,7 @@ RUN pip install /v/tools && \
     cp tools/ci/vtools-${COMPILER}-${BUILD_TYPE}.yml /v/.vtools.yml && \
     vtools install clang --fetch && \
     vtools install cpp-deps && \
+    vtools install js && \
     pip uninstall -y vtools && \
     rm -r /v
 
