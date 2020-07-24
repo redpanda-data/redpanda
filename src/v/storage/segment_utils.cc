@@ -207,21 +207,30 @@ static ss::future<> do_write_clean_compacted_index(
 
 ss::future<> write_clean_compacted_index(
   compacted_index_reader reader, compaction_config cfg) {
-    using flags = compacted_index::footer_flags;
-
-    return reader.load_footer()
-      .then([cfg, reader](compacted_index::footer footer) mutable {
-          if (
-            (footer.flags & flags::self_compaction) == flags::self_compaction) {
-              return ss::now();
-          }
-          return reader.verify_integrity().then([reader, cfg] {
-              return do_write_clean_compacted_index(reader, cfg);
-          });
-      })
+    return reader.verify_integrity()
+      .then(
+        [reader, cfg] { return do_write_clean_compacted_index(reader, cfg); })
       .finally([reader]() mutable {
           return reader.close().then_wrapped(
             [reader](ss::future<>) { /*ignore*/ });
+      });
+}
+
+ss::future<bool> detect_if_segment_already_compacted(
+  std::filesystem::path p, compaction_config cfg) {
+    using flags = compacted_index::footer_flags;
+    return make_reader_handle(p, cfg.sanitize)
+      .then([cfg, p](ss::file f) {
+          return make_file_backed_compacted_reader(
+            p.string(), std::move(f), cfg.iopc, 64_KiB);
+      })
+      .then([](compacted_index_reader reader) {
+          return reader.load_footer()
+            .then([](compacted_index::footer footer) {
+                return (footer.flags & flags::self_compaction)
+                       == flags::self_compaction;
+            })
+            .finally([reader]() mutable { return reader.close(); });
       });
 }
 
@@ -332,12 +341,8 @@ ss::future<> do_swap_data_file_handles(
       });
 }
 
-ss::future<> self_compact_segment(
+ss::future<> do_self_compact_segment(
   ss::lw_shared_ptr<segment> s, compaction_config cfg, storage::probe& pb) {
-    if (s->has_appender()) {
-        return ss::make_exception_future<>(std::runtime_error(fmt::format(
-          "Cannot compact an active segment. cfg:{} - segment:{}", cfg, s)));
-    }
     return s->read_lock()
       .then([cfg, s, &pb](ss::rwlock::holder h) {
           if (s->is_closed()) {
@@ -372,6 +377,28 @@ ss::future<> self_compact_segment(
                 s->index().swap_index_state(std::move(idx));
                 return s->index().flush().finally([l = std::move(lock)] {});
             });
+      });
+}
+
+ss::future<> self_compact_segment(
+  ss::lw_shared_ptr<segment> s, compaction_config cfg, storage::probe& pb) {
+    if (s->has_appender()) {
+        return ss::make_exception_future<>(std::runtime_error(fmt::format(
+          "Cannot compact an active segment. cfg:{} - segment:{}", cfg, s)));
+    }
+    if (s->finished_self_compaction()) {
+        return ss::now();
+    }
+    auto idx_path = std::filesystem::path(s->reader().filename());
+    idx_path.replace_extension(".compaction_index");
+    return detect_if_segment_already_compacted(idx_path, cfg)
+      .then([idx_path, s, cfg, &pb](bool already_compacted) mutable {
+          if (already_compacted) {
+              vlog(stlog.info, "detected {} is already compacted", idx_path);
+              s->mark_as_finished_self_compaction();
+              return ss::now();
+          }
+          return do_self_compact_segment(s, cfg, pb);
       });
 }
 
