@@ -971,6 +971,54 @@ ss::future<install_snapshot_reply> consensus::finish_snapshot(
       });
 }
 
+ss::future<> consensus::write_snapshot(write_snapshot_cfg cfg) {
+    return _op_lock.with([this, cfg = std::move(cfg)]() mutable {
+        return do_write_snapshot(cfg.last_included_index, std::move(cfg.data))
+          .then([this, should_truncate = cfg.should_truncate] {
+              if (!should_truncate) {
+                  return ss::now();
+              }
+              return truncate_to_latest_snapshot();
+          });
+    });
+}
+
+ss::future<>
+consensus::do_write_snapshot(model::offset last_included_index, iobuf&& data) {
+    vassert(
+      last_included_index <= _commit_index,
+      "Can not take snapshot that contains not commited batches, requested "
+      "offset: {}, commit_index: {}",
+      last_included_index,
+      _commit_index);
+    vlog(
+      _ctxlog.trace,
+      "Persisting snapshot with last included offset {} of size {}",
+      last_included_index,
+      data.size_bytes());
+
+    auto last_included_term = _log.get_term(last_included_index);
+    vassert(
+      last_included_term.has_value(),
+      "Unable to get term for snapshot last included offset {}",
+      last_included_index);
+
+    snapshot_metadata md{
+      .last_included_index = last_included_index,
+      .last_included_term = last_included_term.value(),
+      .latest_configuration = _conf, // TODO: use cfg manager
+      .cluster_time = clock_type::time_point::min(),
+    };
+
+    return details::persist_snapshot(
+             _snapshot_mgr, std::move(md), std::move(data))
+      .then([this, last_included_index, term = *last_included_term] {
+          // update consensus state
+          _last_snapshot_index = last_included_index;
+          _last_snapshot_term = term;
+      });
+}
+
 ss::future<> consensus::notify_entries_commited(
   [[maybe_unused]] model::offset start_offset, model::offset end_offset) {
     auto cfg_reader_start_offset = details::next_offset(
