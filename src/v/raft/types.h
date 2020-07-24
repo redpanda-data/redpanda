@@ -338,6 +338,33 @@ struct install_snapshot_reply {
     operator<<(std::ostream&, const install_snapshot_reply&);
 };
 
+/**
+ * Configuration describing snapshot that is going to be taken at current node.
+ */
+struct write_snapshot_cfg {
+    using should_prefix_truncate = ss::bool_class<struct prefix_truncate_tag>;
+
+    write_snapshot_cfg(model::offset last_included_index, iobuf data)
+      : write_snapshot_cfg(
+        last_included_index, std::move(data), should_prefix_truncate::yes) {}
+
+    write_snapshot_cfg(
+      model::offset last_included_index,
+      iobuf data,
+      should_prefix_truncate truncate)
+      : last_included_index(last_included_index)
+      , data(std::move(data))
+      , should_truncate(truncate) {}
+
+    // last applied offset
+    model::offset last_included_index;
+    // snapshot content
+    iobuf data;
+    // are we going to prefix truncate the log right after persisting the
+    // snapshot
+    should_prefix_truncate should_truncate;
+};
+
 std::ostream& operator<<(std::ostream& o, const consistency_level& l);
 std::ostream& operator<<(std::ostream& o, const protocol_metadata& m);
 std::ostream& operator<<(std::ostream& o, const vote_reply& r);

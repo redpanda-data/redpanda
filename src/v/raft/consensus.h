@@ -88,6 +88,14 @@ public:
     clock_type::time_point last_heartbeat() const { return _hbeat; };
 
     clock_type::time_point last_hbeat_timestamp(model::node_id);
+    /**
+     * \brief Persist snapshot with given data and start offset
+     *
+     * The write snaphot API is called by the state machine implementation
+     * whenever it decides to take a snapshot. Write snapshot is executed under
+     * consensus operations lock.
+     */
+    ss::future<> write_snapshot(write_snapshot_cfg);
 
     /// Increment and returns next append_entries order tracking sequence for
     /// follower with given node id
@@ -152,6 +160,8 @@ private:
     ss::future<> truncate_to_latest_snapshot();
     ss::future<install_snapshot_reply>
       finish_snapshot(install_snapshot_request, install_snapshot_reply);
+
+    ss::future<> do_write_snapshot(model::offset, iobuf&&);
     append_entries_reply make_append_entries_reply(storage::append_result);
 
     ss::future<> notify_entries_commited(
