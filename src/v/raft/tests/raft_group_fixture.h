@@ -4,6 +4,7 @@
 #include "raft/consensus.h"
 #include "raft/consensus_client_protocol.h"
 #include "raft/heartbeat_manager.h"
+#include "raft/log_eviction_stm.h"
 #include "raft/rpc_client_protocol.h"
 #include "raft/service.h"
 #include "random/generators.h"
@@ -162,6 +163,11 @@ struct raft_node {
         hbeats->register_group(consensus).get();
         started = true;
         consensus->start().get0();
+        if (log->config().is_collectable()) {
+            _nop_stm = std::make_unique<raft::log_eviction_stm>(
+              consensus.get(), tstlog);
+            _nop_stm->start().get0();
+        }
     }
 
     ss::future<> stop_node() {
@@ -182,6 +188,12 @@ struct raft_node {
           .then([this] {
               tstlog.info("Stopping raft at {}", broker.id());
               return consensus->stop();
+          })
+          .then([this] {
+              if (_nop_stm != nullptr) {
+                  return _nop_stm->stop();
+              }
+              return ss::now();
           })
           .then([this] {
               tstlog.info("Raft stopped at node {}", broker.id());
@@ -255,6 +267,7 @@ struct raft_node {
     ss::sharded<test_raft_manager> raft_manager;
     std::unique_ptr<raft::heartbeat_manager> hbeats;
     consensus_ptr consensus;
+    std::unique_ptr<raft::log_eviction_stm> _nop_stm;
     leader_clb_t leader_callback;
 };
 
@@ -580,5 +593,13 @@ struct raft_test_fixture {
         ss::smp::invoke_on_all([] {
             config::shard_local_cfg().get("disable_metrics").set_value(true);
         }).get();
+    }
+
+    consensus_ptr get_leader_raft(raft_group& gr) {
+        auto leader_id = gr.get_leader_id();
+        if (!leader_id) {
+            leader_id.emplace(wait_for_group_leader(gr));
+        }
+        return gr.get_member(*leader_id).consensus;
     }
 };
