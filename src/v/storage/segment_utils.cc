@@ -375,6 +375,7 @@ ss::future<> do_self_compact_segment(
             .then([h = std::move(h), s]() mutable {
                 auto&& [idx, lock] = std::move(h);
                 s->index().swap_index_state(std::move(idx));
+                s->force_set_commit_offset_from_index();
                 return s->index().flush().finally([l = std::move(lock)] {});
             });
       });

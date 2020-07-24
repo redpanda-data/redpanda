@@ -94,7 +94,8 @@ public:
     bool is_compacted_segment() const;
     void mark_as_finished_self_compaction();
     bool finished_self_compaction() const;
-
+    /// \brief used for compaction, to reset the tracker from index
+    void force_set_commit_offset_from_index();
     // low level api's are discouraged and might be deprecated
     // please use higher level API's when possible
     segment_reader& reader();
@@ -297,4 +298,10 @@ inline void segment::set_close() { _flags |= bitflags::closed; }
 inline bool segment::is_tombstone() const {
     return (_flags & bitflags::mark_tombstone) == bitflags::mark_tombstone;
 }
+/// \brief used for compaction, to reset the tracker from index
+inline void segment::force_set_commit_offset_from_index() {
+    _tracker.committed_offset = _idx.max_offset();
+    _tracker.dirty_offset = _idx.max_offset();
+}
+
 } // namespace storage
