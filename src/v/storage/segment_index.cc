@@ -39,35 +39,25 @@ void segment_index::reset() {
     _acc = 0;
 }
 
+void segment_index::swap_index_state(index_state&& o) {
+    _needs_persistence = true;
+    _acc = 0;
+    std::swap(_state, o);
+}
+
 void segment_index::maybe_track(
   const model::record_batch_header& hdr, size_t filepos) {
-    vassert(
-      hdr.base_offset >= _state.base_offset,
-      "cannot track offsets that are lower than our base, o:{}, "
-      "_state.base_offset:{} - index: {}",
-      hdr.base_offset,
-      _state.base_offset,
-      *this);
-
-    _needs_persistence = true;
     _acc += hdr.size_bytes;
-    // index_state
-    const bool is_empty = _state.empty();
-    if (is_empty) {
-        _state.base_timestamp = hdr.first_timestamp;
-    }
-    // NOTE: we don't need the 'max()' trick below because we controll the
-    // offsets ourselves and it would be a bug otherwise - see assert above
-    _state.max_offset = hdr.last_offset();
-    _state.max_timestamp = std::max(hdr.max_timestamp, _state.max_timestamp);
-    // always saving the first batch simplifies a lot of book keeping
-    if (_acc >= _step || is_empty) {
+    if (_state.maybe_index(
+          _acc,
+          _step,
+          filepos,
+          hdr.base_offset,
+          hdr.last_offset(),
+          hdr.first_timestamp,
+          hdr.max_timestamp)) {
         _acc = 0;
-        // We know that a segment cannot be > 4GB
-        _state.add_entry(
-          hdr.base_offset() - _state.base_offset(),
-          hdr.max_timestamp() - _state.base_timestamp(),
-          filepos);
+        _needs_persistence = true;
     }
 }
 
@@ -94,13 +84,7 @@ segment_index::find_nearest(model::timestamp t) {
 
 std::optional<segment_index::entry>
 segment_index::find_nearest(model::offset o) {
-    vassert(
-      o >= _state.base_offset,
-      "index::find_nearest cannot find offset:{} below:{} - index:{}",
-      o,
-      _state.base_offset,
-      *this);
-    if (_state.empty()) {
+    if (o < _state.base_offset || _state.empty()) {
         return std::nullopt;
     }
     const uint32_t needle = o() - _state.base_offset();
@@ -124,12 +108,9 @@ segment_index::find_nearest(model::offset o) {
 }
 
 ss::future<> segment_index::truncate(model::offset o) {
-    vassert(
-      o >= _state.base_offset,
-      "segment_index::truncate cannot find offset:{} below:{} - index: {}",
-      o,
-      _state.base_offset,
-      *this);
+    if (o < _state.base_offset) {
+        return ss::now();
+    }
     const uint32_t i = o() - _state.base_offset();
     auto it = std::lower_bound(
       std::begin(_state.relative_offset_index),

@@ -40,7 +40,7 @@ segment::segment(
   , _cache(std::move(c)) {}
 
 void segment::check_segment_not_closed(const char* msg) {
-    if (unlikely(_closed)) {
+    if (unlikely(is_closed())) {
         throw std::runtime_error(fmt::format(
           "Attempted to perform operation: '{}' on a closed segment: {}",
           msg,
@@ -50,7 +50,7 @@ void segment::check_segment_not_closed(const char* msg) {
 
 ss::future<> segment::close() {
     check_segment_not_closed("closed()");
-    _closed = true;
+    set_close();
     /**
      * close() is considered a destructive operation. All future IO on this
      * segment is unsafe. write_lock() ensures that we want for any active
@@ -69,7 +69,7 @@ ss::future<> segment::close() {
 }
 
 ss::future<> segment::remove_thombsones() {
-    if (!_tombstone) {
+    if (!is_tombstone()) {
         return ss::make_ready_future<>();
     }
     std::vector<ss::sstring> rm;
@@ -267,6 +267,9 @@ ss::future<> segment::compaction_index_batch(const model::record_batch& b) {
     }
     iobuf body_buf = compression::compressor::uncompress(
       b.get_compressed_records(), b.header().attrs.compression());
+    // NOTE: if you change this, make sure to recompute the header.size_bytes
+    // with model::recompute_record_batch_size(). Only if you need the
+    // record_batch
     return ss::do_with(
       iobuf_parser(std::move(body_buf)),
       [this, header = b.header()](iobuf_parser& parser) {
@@ -387,8 +390,10 @@ std::ostream& operator<<(std::ostream& o, const segment::offset_tracker& t) {
 }
 
 std::ostream& operator<<(std::ostream& o, const segment& h) {
-    o << "{offset_tracker:" << h._tracker << ", reader=" << h._reader
-      << ", writer=";
+    o << "{offset_tracker:" << h._tracker
+      << ", compacted_segment=" << h.is_compacted_segment()
+      << ", finished_self_compaction=" << h.finished_self_compaction()
+      << ", reader=" << h._reader << ", writer=";
     if (h.has_appender()) {
         o << *h._appender;
     } else {
@@ -406,8 +411,9 @@ std::ostream& operator<<(std::ostream& o, const segment& h) {
     } else {
         o << "nullopt";
     }
-    return o << ", closed=" << h._closed << ", tombstone=" << h._tombstone
-             << ", index=" << h.index() << "}";
+    return o << ", closed=" << h.is_closed()
+             << ", tombstone=" << h.is_tombstone() << ", index=" << h.index()
+             << "}";
 }
 
 template<typename Func>

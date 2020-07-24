@@ -36,6 +36,45 @@ uint64_t index_state::checksum_state(const index_state& r) {
     }
     return xx.digest();
 }
+bool index_state::maybe_index(
+  size_t accumulator,
+  size_t step,
+  size_t starting_position_in_file,
+  model::offset batch_base_offset,
+  model::offset batch_max_offset,
+  model::timestamp first_timestamp,
+  model::timestamp last_timestamp) {
+    vassert(
+      batch_base_offset >= base_offset,
+      "cannot track offsets that are lower than our base, o:{}, "
+      "_state.base_offset:{} - index: {}",
+      batch_base_offset,
+      base_offset,
+      *this);
+
+    bool retval = false;
+    // index_state
+    if (empty()) {
+        base_timestamp = first_timestamp;
+        max_timestamp = first_timestamp;
+        retval = true;
+    }
+    // NOTE: we don't need the 'max()' trick below because we controll the
+    // offsets ourselves and it would be a bug otherwise - see assert above
+    max_offset = batch_max_offset;
+    max_timestamp = std::max(max_timestamp, last_timestamp);
+    // always saving the first batch simplifies a lot of book keeping
+    if (accumulator >= step || retval) {
+        // We know that a segment cannot be > 4GB
+        add_entry(
+          batch_base_offset() - base_offset(),
+          last_timestamp() - base_timestamp(),
+          starting_position_in_file);
+
+        retval = true;
+    }
+    return retval;
+}
 
 std::ostream& operator<<(std::ostream& o, const index_state& s) {
     return o << "{version:" << (int)s.version << ", header_size:" << s.size

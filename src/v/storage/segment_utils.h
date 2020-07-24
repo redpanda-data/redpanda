@@ -68,6 +68,9 @@ ss::future<> write_clean_compacted_index(
 ss::future<compacted_offset_list>
   generate_compacted_list(model::offset, storage::compacted_index_reader);
 
+ss::future<bool>
+  detect_if_segment_already_compacted(std::filesystem::path, compaction_config);
+
 /// \brief creates a model::record_batch_reader from segment meta
 ///
 model::record_batch_reader create_segment_full_reader(
@@ -76,7 +79,7 @@ model::record_batch_reader create_segment_full_reader(
   storage::probe&,
   ss::rwlock::holder);
 
-ss::future<> do_copy_segment_data(
+ss::future<storage::index_state> do_copy_segment_data(
   ss::lw_shared_ptr<storage::segment>,
   storage::compaction_config,
   model::record_batch_reader);

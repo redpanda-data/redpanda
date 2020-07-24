@@ -63,6 +63,15 @@ struct index_state {
     }
     iobuf checksum_and_serialize();
 
+    bool maybe_index(
+      size_t accumulator,
+      size_t step,
+      size_t starting_position_in_file,
+      model::offset base_offset,
+      model::offset batch_max_offset,
+      model::timestamp first_timestamp,
+      model::timestamp last_timestamp);
+
     static std::optional<index_state> hydrate_from_buffer(iobuf);
     static uint64_t checksum_state(const index_state&);
     friend std::ostream& operator<<(std::ostream&, const index_state&);

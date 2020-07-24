@@ -286,7 +286,7 @@ ss::future<segment_set> recover_segments(
           // gaps introduced by compaction
           if (is_compaction_enabled) {
               for (auto& s : segments) {
-                  s->mark_compacted_segment();
+                  s->mark_as_compacted_segment();
               }
           }
           return do_recover(std::move(segments), as);

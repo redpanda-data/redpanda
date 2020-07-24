@@ -104,4 +104,17 @@ int32_t crc_record_batch(const record_batch& b) {
     crc_record_batch(c, b);
     return c.value();
 }
+
+int32_t recompute_record_batch_size(const record_batch& b) {
+    int32_t retval = model::packed_record_batch_header_size;
+    if (b.compressed()) {
+        return retval + b.get_compressed_records().size_bytes();
+    }
+    for (auto& r : b) {
+        retval += r.size_bytes();
+        retval += vint::vint_size(r.size_bytes());
+    }
+    return retval;
+}
+
 } // namespace model

@@ -42,10 +42,7 @@ disk_log_impl::disk_log_impl(
     for (auto& s : segs) {
         _probe.add_initial_segment(*s);
         if (is_compacted) {
-            // keeps track of metadata operations perform on each segment
-            // for compaction, etc.
-            _segbits[s->offsets().base_offset] = segment_bitflags::none;
-            s->mark_compacted_segment();
+            s->mark_as_compacted_segment();
         }
     }
     _probe.setup_metrics(this->config().ntp());
@@ -127,41 +124,17 @@ ss::future<> disk_log_impl::garbage_collect_oldest_segments(
       });
 }
 
-static inline ss::lw_shared_ptr<segment> find_reverse_not_compacted(
-  segment_set& s,
-  const absl::flat_hash_map<model::offset, disk_log_impl::segment_bitflags>&
-    bits) {
-    int i = static_cast<int>(s.size()) - 1;
-    while (i >= 0) {
-        auto ret = s[i--];
-        if (ret->has_appender()) {
-            // cannot compact active segments
-            continue;
-        }
-        const auto flags = bits.find(ret->offsets().base_offset);
-        if (
-          flags != bits.end()
-          && (flags->second & disk_log_impl::segment_bitflags::self_compacted)
-               == disk_log_impl::segment_bitflags::none) {
-            return ret;
-        }
-    }
-    return nullptr;
-}
 ss::future<> disk_log_impl::do_compact(compaction_config cfg) {
     // use signed type
-    auto seg = find_reverse_not_compacted(_segs, _segbits);
-    if (seg) {
+    auto segit = std::find_if(
+      _segs.begin(), _segs.end(), [](ss::lw_shared_ptr<segment>& s) {
+          return !s->has_appender() && s->is_compacted_segment()
+                 && !s->finished_self_compaction();
+      });
+    if (segit != _segs.end()) {
+        auto seg = *segit;
         return storage::internal::self_compact_segment(seg, cfg, _probe)
-          .then([this, seg] {
-              // find it again, do not capture the iterator
-              auto& flags = _segbits[seg->offsets().base_offset];
-              flags |= segment_bitflags::self_compacted;
-              vlog(
-                stlog.debug,
-                "Finished self compacting: {}",
-                seg->reader().filename());
-          });
+          .finally([seg] { seg->mark_as_finished_self_compaction(); });
     }
     // all segments are self-compacted
     // do cross segment compaction
@@ -297,8 +270,7 @@ ss::future<> disk_log_impl::new_segment(
             [this, h = std::move(handles)]() mutable {
                 vassert(!_closed, "cannot add log segment to closed log");
                 if (config().is_compacted()) {
-                    _segbits[h->offsets().base_offset] = segment_bitflags::none;
-                    h->mark_compacted_segment();
+                    h->mark_as_compacted_segment();
                 }
                 _segs.add(std::move(h));
                 _probe.segment_created();
@@ -475,7 +447,6 @@ ss::future<> disk_log_impl::remove_segment_permanently(
     _probe.delete_segment(*s);
     // background close
     s->tombstone();
-    _segbits.erase(s->offsets().base_offset);
     if (s->has_outstanding_locks()) {
         vlog(
           stlog.info,
