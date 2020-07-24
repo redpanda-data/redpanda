@@ -14,6 +14,7 @@
 #include "seastarx.h"
 #include "storage/api.h"
 #include "storage/log.h"
+#include "storage/snapshot.h"
 #include "utils/mutex.h"
 
 #include <seastar/core/abort_source.hh>
@@ -251,6 +252,7 @@ private:
     ss::metrics::metric_groups _metrics;
     ss::abort_source _as;
     storage::api& _storage;
+    storage::snapshot_manager _snapshot_mgr;
 
     friend std::ostream& operator<<(std::ostream&, const consensus&);
 };
