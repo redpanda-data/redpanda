@@ -115,7 +115,6 @@ private:
     segment_appender_ptr _appender;
     index_state _idx;
     size_t _acc{0};
-    size_t _starting_file_pos{0};
 };
 
 } // namespace storage::internal
