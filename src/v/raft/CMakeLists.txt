@@ -26,6 +26,7 @@ v_cc_library(
     offset_monitor.cc
     event_manager.cc
     state_machine.cc
+    log_eviction_stm.cc
   DEPS
     v::storage
     raft_rpc
