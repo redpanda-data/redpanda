@@ -42,6 +42,13 @@ public:
         model::offset dirty_offset;
         friend std::ostream& operator<<(std::ostream&, const offset_tracker&);
     };
+    enum class bitflags : uint32_t {
+        none = 0,
+        is_compacted_segment = 1,
+        finished_self_compaction = 1U << 1U,
+        mark_tombstone = 1U << 2U,
+        closed = 1U << 3U,
+    };
 
 public:
     segment(
@@ -76,78 +83,50 @@ public:
       offset_data_stream(model::offset, ss::io_priority_class);
 
     const offset_tracker& offsets() const { return _tracker; }
-    bool empty() const {
-        if (_appender) {
-            return _appender->file_byte_offset() == 0;
-        }
-        return _reader.empty();
-    }
-    size_t size_bytes() const {
-        if (_appender) {
-            return _appender->file_byte_offset();
-        }
-        return _reader.file_size();
-    }
+    bool empty() const;
+    size_t size_bytes() const;
+    void tombstone();
+    bool is_tombstone() const;
+    bool has_outstanding_locks() const;
+    bool is_closed() const;
+    bool has_compacion_index() const;
+    void mark_as_compacted_segment();
+    bool is_compacted_segment() const;
+    void mark_as_finished_self_compaction();
+    bool finished_self_compaction() const;
+
     // low level api's are discouraged and might be deprecated
     // please use higher level API's when possible
-    segment_reader& reader() { return _reader; }
-    const segment_reader& reader() const { return _reader; }
-    segment_index& index() { return _idx; }
-    const segment_index& index() const { return _idx; }
-    segment_appender& appender() { return *_appender; }
-    const segment_appender& appender() const { return *_appender; }
-    bool has_appender() const { return _appender != std::nullopt; }
-    compacted_index_writer& compaction_index() { return *_compaction_index; }
-    const compacted_index_writer& compaction_index() const {
-        return *_compaction_index;
-    }
-    bool has_compacion_index() const {
-        return _compaction_index != std::nullopt;
-    }
+    segment_reader& reader();
+    const segment_reader& reader() const;
+    segment_index& index();
+    const segment_index& index() const;
+    segment_appender& appender();
+    const segment_appender& appender() const;
+    bool has_appender() const;
+    compacted_index_writer& compaction_index();
+    const compacted_index_writer& compaction_index() const;
 
-    void mark_compacted_segment() { _is_compacted_segment = true; }
-    bool is_compacted_segment() const { return _is_compacted_segment; }
-
-    batch_cache_index& cache() { return *_cache; }
-    const batch_cache_index& cache() const { return *_cache; }
-    bool has_cache() const { return _cache != std::nullopt; }
-
+    /** Cache methods */
+    batch_cache_index& cache();
+    const batch_cache_index& cache() const;
+    bool has_cache() const;
     batch_cache_index::read_result cache_get(
       model::offset offset,
       model::offset max_offset,
       std::optional<model::record_batch_type> type_filter,
       std::optional<model::timestamp> first_ts,
-      size_t max_bytes) {
-        if (likely(bool(_cache))) {
-            return _cache->read(
-              offset, max_offset, type_filter, first_ts, max_bytes);
-        }
-        return batch_cache_index::read_result{
-          .next_batch = offset,
-        };
-    }
-
-    void cache_put(const model::record_batch& batch) {
-        if (likely(bool(_cache))) {
-            _cache->put(batch);
-        }
-    }
+      size_t max_bytes);
+    void cache_put(const model::record_batch& batch);
 
     ss::future<ss::rwlock::holder> read_lock(
-      ss::semaphore::time_point timeout = ss::semaphore::time_point::max()) {
-        return _destructive_ops.hold_read_lock(timeout);
-    }
+      ss::semaphore::time_point timeout = ss::semaphore::time_point::max());
 
     ss::future<ss::rwlock::holder> write_lock(
-      ss::semaphore::time_point timeout = ss::semaphore::time_point::max()) {
-        return _destructive_ops.hold_write_lock(timeout);
-    }
-
-    void tombstone() { _tombstone = true; }
-    bool has_outstanding_locks() const { return _destructive_ops.locked(); }
-    bool is_closed() const { return _closed; }
+      ss::semaphore::time_point timeout = ss::semaphore::time_point::max());
 
 private:
+    void set_close();
     void cache_truncate(model::offset offset);
     void check_segment_not_closed(const char* msg);
     ss::future<> do_truncate(model::offset prev_last_offset, size_t physical);
@@ -164,14 +143,12 @@ private:
     offset_tracker _tracker;
     segment_reader _reader;
     segment_index _idx;
+    bitflags _flags{bitflags::none};
     std::optional<segment_appender> _appender;
     std::optional<compacted_index_writer> _compaction_index;
     std::optional<batch_cache_index> _cache;
     ss::rwlock _destructive_ops;
-    bool _tombstone = false;
-    bool _closed = false;
     ss::gate _gate;
-    bool _is_compacted_segment = false;
 
     friend std::ostream& operator<<(std::ostream&, const segment&);
 };
@@ -208,4 +185,116 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
   debug_sanitize_files sanitize_fileops,
   std::optional<batch_cache_index> batch_cache);
 
+// bitflags operators
+[[gnu::always_inline]] inline segment::bitflags
+operator|(segment::bitflags a, segment::bitflags b) {
+    return segment::bitflags(
+      std::underlying_type_t<segment::bitflags>(a)
+      | std::underlying_type_t<segment::bitflags>(b));
+}
+
+[[gnu::always_inline]] inline void
+operator|=(segment::bitflags& a, segment::bitflags b) {
+    a = (a | b);
+}
+
+[[gnu::always_inline]] inline segment::bitflags operator~(segment::bitflags a) {
+    return segment::bitflags(~std::underlying_type_t<segment::bitflags>(a));
+}
+
+[[gnu::always_inline]] inline segment::bitflags
+operator&(segment::bitflags a, segment::bitflags b) {
+    return segment::bitflags(
+      std::underlying_type_t<segment::bitflags>(a)
+      & std::underlying_type_t<segment::bitflags>(b));
+}
+
+[[gnu::always_inline]] inline void
+operator&=(segment::bitflags& a, segment::bitflags b) {
+    a = (a & b);
+}
+
+inline bool segment::empty() const {
+    if (_appender) {
+        return _appender->file_byte_offset() == 0;
+    }
+    return _reader.empty();
+}
+inline size_t segment::size_bytes() const {
+    if (_appender) {
+        return _appender->file_byte_offset();
+    }
+    return _reader.file_size();
+}
+inline bool segment::has_compacion_index() const {
+    return _compaction_index != std::nullopt;
+}
+inline void segment::mark_as_compacted_segment() {
+    _flags |= bitflags::is_compacted_segment;
+}
+inline bool segment::is_compacted_segment() const {
+    return (_flags & bitflags::is_compacted_segment)
+           == bitflags::is_compacted_segment;
+}
+inline void segment::mark_as_finished_self_compaction() {
+    _flags |= bitflags::finished_self_compaction;
+}
+inline bool segment::finished_self_compaction() const {
+    return (_flags & bitflags::finished_self_compaction)
+           == bitflags::finished_self_compaction;
+}
+inline batch_cache_index& segment::cache() { return *_cache; }
+inline const batch_cache_index& segment::cache() const { return *_cache; }
+inline bool segment::has_cache() const { return _cache != std::nullopt; }
+inline batch_cache_index::read_result segment::cache_get(
+  model::offset offset,
+  model::offset max_offset,
+  std::optional<model::record_batch_type> type_filter,
+  std::optional<model::timestamp> first_ts,
+  size_t max_bytes) {
+    if (likely(bool(_cache))) {
+        return _cache->read(
+          offset, max_offset, type_filter, first_ts, max_bytes);
+    }
+    return batch_cache_index::read_result{
+      .next_batch = offset,
+    };
+}
+inline void segment::cache_put(const model::record_batch& batch) {
+    if (likely(bool(_cache))) {
+        _cache->put(batch);
+    }
+}
+inline ss::future<ss::rwlock::holder>
+segment::read_lock(ss::semaphore::time_point timeout) {
+    return _destructive_ops.hold_read_lock(timeout);
+}
+inline ss::future<ss::rwlock::holder>
+segment::write_lock(ss::semaphore::time_point timeout) {
+    return _destructive_ops.hold_write_lock(timeout);
+}
+inline void segment::tombstone() { _flags |= bitflags::mark_tombstone; }
+inline bool segment::has_outstanding_locks() const {
+    return _destructive_ops.locked();
+}
+inline bool segment::is_closed() const {
+    return (_flags & bitflags::closed) == bitflags::closed;
+}
+inline segment_reader& segment::reader() { return _reader; }
+inline const segment_reader& segment::reader() const { return _reader; }
+inline segment_index& segment::index() { return _idx; }
+inline const segment_index& segment::index() const { return _idx; }
+inline segment_appender& segment::appender() { return *_appender; }
+inline const segment_appender& segment::appender() const { return *_appender; }
+inline bool segment::has_appender() const { return _appender != std::nullopt; }
+inline compacted_index_writer& segment::compaction_index() {
+    return *_compaction_index;
+}
+inline const compacted_index_writer& segment::compaction_index() const {
+    return *_compaction_index;
+}
+inline void segment::set_close() { _flags |= bitflags::closed; }
+inline bool segment::is_tombstone() const {
+    return (_flags & bitflags::mark_tombstone) == bitflags::mark_tombstone;
+}
 } // namespace storage

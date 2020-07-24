@@ -21,10 +21,6 @@ namespace storage {
 class disk_log_impl final : public log::impl {
 public:
     using failure_probes = storage::log_failure_probes;
-    enum class segment_bitflags : uint32_t {
-        none = 0,
-        self_compacted = 1U,
-    };
 
     disk_log_impl(ntp_config, log_manager&, segment_set, kvstore&);
     ~disk_log_impl() override;
@@ -108,40 +104,9 @@ private:
     segment_set _segs;
     kvstore& _kvstore;
     model::offset _start_offset;
-    absl::flat_hash_map<model::offset, segment_bitflags> _segbits;
     lock_manager _lock_mngr;
     storage::probe _probe;
     failure_probes _failure_probes;
 };
-
-[[gnu::always_inline]] inline disk_log_impl::segment_bitflags operator|(
-  disk_log_impl::segment_bitflags a, disk_log_impl::segment_bitflags b) {
-    return disk_log_impl::segment_bitflags(
-      std::underlying_type_t<disk_log_impl::segment_bitflags>(a)
-      | std::underlying_type_t<disk_log_impl::segment_bitflags>(b));
-}
-
-[[gnu::always_inline]] inline void operator|=(
-  disk_log_impl::segment_bitflags& a, disk_log_impl::segment_bitflags b) {
-    a = (a | b);
-}
-
-[[gnu::always_inline]] inline disk_log_impl::segment_bitflags
-operator~(disk_log_impl::segment_bitflags a) {
-    return disk_log_impl::segment_bitflags(
-      ~std::underlying_type_t<disk_log_impl::segment_bitflags>(a));
-}
-
-[[gnu::always_inline]] inline disk_log_impl::segment_bitflags operator&(
-  disk_log_impl::segment_bitflags a, disk_log_impl::segment_bitflags b) {
-    return disk_log_impl::segment_bitflags(
-      std::underlying_type_t<disk_log_impl::segment_bitflags>(a)
-      & std::underlying_type_t<disk_log_impl::segment_bitflags>(b));
-}
-
-[[gnu::always_inline]] inline void operator&=(
-  disk_log_impl::segment_bitflags& a, disk_log_impl::segment_bitflags b) {
-    a = (a & b);
-}
 
 } // namespace storage
