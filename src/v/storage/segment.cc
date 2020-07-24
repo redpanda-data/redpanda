@@ -267,6 +267,9 @@ ss::future<> segment::compaction_index_batch(const model::record_batch& b) {
     }
     iobuf body_buf = compression::compressor::uncompress(
       b.get_compressed_records(), b.header().attrs.compression());
+    // NOTE: if you change this, make sure to recompute the header.size_bytes
+    // with model::recompute_record_batch_size(). Only if you need the
+    // record_batch
     return ss::do_with(
       iobuf_parser(std::move(body_buf)),
       [this, header = b.header()](iobuf_parser& parser) {

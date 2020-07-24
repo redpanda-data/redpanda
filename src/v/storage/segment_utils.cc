@@ -429,6 +429,7 @@ ss::future<model::record_batch> decompress_batch(model::record_batch&& b) {
             .then([h, &recs] {
                 auto b = model::record_batch(h, std::move(recs));
                 auto& hdr = b.header();
+                hdr.size_bytes = model::recompute_record_batch_size(b);
                 hdr.attrs.remove_compression();
                 hdr.crc = model::crc_record_batch(b);
                 hdr.header_crc = model::internal_header_only_crc(hdr);

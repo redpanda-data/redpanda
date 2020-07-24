@@ -190,6 +190,7 @@ copy_data_segment_reducer::filter(model::record_batch&& batch) {
     h.first_timestamp = first_time;
     h.max_timestamp = last_time;
     h.record_count = rec_count;
+    h.size_bytes = model::recompute_record_batch_size(new_batch);
     h.crc = model::crc_record_batch(new_batch);
     h.header_crc = model::internal_header_only_crc(h);
     return new_batch;
@@ -204,17 +205,28 @@ copy_data_segment_reducer::do_compaction(model::record_batch&& b) {
     return ss::do_with(
              std::move(to_copy.value()),
              [this](model::record_batch& batch) {
-                 _acc += batch.size_bytes();
-                 _idx.maybe_index(
-                   _acc,
-                   32_KiB,
-                   _starting_file_pos,
-                   batch.base_offset(),
-                   batch.last_offset(),
-                   batch.header().first_timestamp,
-                   batch.header().max_timestamp);
-                 _starting_file_pos += batch.size_bytes();
-                 return storage::write(*_appender, batch);
+                 auto const start_offset = _appender->file_byte_offset();
+                 auto const header_size = batch.header().size_bytes;
+                 _acc += header_size;
+                 if (_idx.maybe_index(
+                       _acc,
+                       32_KiB,
+                       start_offset,
+                       batch.base_offset(),
+                       batch.last_offset(),
+                       batch.header().first_timestamp,
+                       batch.header().max_timestamp)) {
+                     _acc = 0;
+                 }
+                 return storage::write(*_appender, batch)
+                   .then([this, start_offset, header_size] {
+                       vassert(
+                         _appender->file_byte_offset()
+                           == start_offset + header_size,
+                         "Size must be deterministic. Expected:{} == {}",
+                         _appender->file_byte_offset(),
+                         start_offset + header_size);
+                   });
              })
       .then([] { return ss::make_ready_future<stop_t>(stop_t::no); });
 }
