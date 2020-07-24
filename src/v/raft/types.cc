@@ -518,4 +518,27 @@ async_adl<raft::heartbeat_reply>::from(iobuf_parser& in) {
 
     return ss::make_ready_future<raft::heartbeat_reply>(std::move(reply));
 }
+
+raft::snapshot_metadata adl<raft::snapshot_metadata>::from(iobuf_parser& in) {
+    auto last_included_index = adl<model::offset>{}.from(in);
+    auto last_included_term = adl<model::term_id>{}.from(in);
+    auto cfg = adl<raft::group_configuration>{}.from(in);
+    ss::lowres_clock::time_point cluster_time{
+      adl<ss::lowres_clock::duration>{}.from(in)};
+    return raft::snapshot_metadata{
+      .last_included_index = last_included_index,
+      .last_included_term = last_included_term,
+      .latest_configuration = std::move(cfg),
+      .cluster_time = cluster_time};
+}
+
+void adl<raft::snapshot_metadata>::to(
+  iobuf& out, raft::snapshot_metadata&& request) {
+    reflection::serialize(
+      out,
+      request.last_included_index,
+      request.last_included_term,
+      request.latest_configuration,
+      request.cluster_time.time_since_epoch());
+}
 } // namespace reflection

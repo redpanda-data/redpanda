@@ -264,6 +264,13 @@ struct replicate_options {
     consistency_level consistency;
 };
 
+struct snapshot_metadata {
+    model::offset last_included_index;
+    model::term_id last_included_term;
+    group_configuration latest_configuration;
+    ss::lowres_clock::time_point cluster_time;
+};
+
 struct install_snapshot_request {
     // leader’s term
     model::term_id term;
@@ -365,4 +372,11 @@ struct async_adl<raft::heartbeat_reply> {
     ss::future<> to(iobuf& out, raft::heartbeat_reply&& request);
     ss::future<raft::heartbeat_reply> from(iobuf_parser& in);
 };
+
+template<>
+struct adl<raft::snapshot_metadata> {
+    void to(iobuf& out, raft::snapshot_metadata&& request);
+    raft::snapshot_metadata from(iobuf_parser& in);
+};
+
 } // namespace reflection
