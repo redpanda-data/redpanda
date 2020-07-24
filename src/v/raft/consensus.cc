@@ -693,7 +693,6 @@ consensus::do_append_entries(append_entries_request&& r) {
 
     // section 2
     // must come from the same term
-
     // if prev log index from request is the same as current we can use
     // prev_log_term as an optimization
     auto last_log_term
@@ -701,13 +700,16 @@ consensus::do_append_entries(append_entries_request&& r) {
           ? lstats.dirty_offset_term // use term from lstats
           : get_term(model::offset(
             r.meta.prev_log_index)); // lookup for request term in log
-
-    if (r.meta.prev_log_term != last_log_term) {
+    // We can only check prev_log_term for entries that are present in the
+    // log. When leader installed snapshot on the follower we may require to
+    // skip the term check as term of prev_log_idx may not be available.
+    if (
+      r.meta.prev_log_index >= lstats.start_offset
+      && r.meta.prev_log_term != last_log_term) {
         vlog(
           _ctxlog.debug,
           "Rejecting append entries. missmatching entry term at offset: "
-          "{}, "
-          "current term: {} request term: {}",
+          "{}, current term: {} request term: {}",
           r.meta.prev_log_index,
           last_log_term,
           r.meta.prev_log_term);

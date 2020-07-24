@@ -22,7 +22,7 @@ recovery_stm::recovery_stm(
   , _prio(prio)
   , _ctxlog(_ptr->_self, _ptr->group()) {}
 
-ss::future<> recovery_stm::do_one_read() {
+ss::future<> recovery_stm::do_recover() {
     // We have to send all the records that leader have, event those that are
     // beyond commit index, thanks to that after majority have recovered
     // leader can update its commit index
@@ -34,13 +34,21 @@ ss::future<> recovery_stm::do_one_read() {
     }
 
     auto lstats = _ptr->_log.offsets();
-    // TODO: add snapshots recovery
-    model::offset start_offset = std::max(
-      meta.value()->next_index, lstats.start_offset);
+    // follower last index was already evicted at the leader, use snapshot
+    if (meta.value()->next_index < lstats.start_offset) {
+        return install_snapshot();
+    }
 
+    // read & replicate log entries
+    return read_range_for_recovery(
+      meta.value()->next_index, lstats.dirty_offset);
+}
+
+ss::future<> recovery_stm::read_range_for_recovery(
+  model::offset start_offset, model::offset end_offset) {
     storage::log_reader_config cfg(
       start_offset,
-      lstats.dirty_offset,
+      end_offset,
       1,
       // 32KB is a modest estimate. It has good batching and it also prevents an
       // OOM situation where we have a lot of raft groups recovering at the same
@@ -56,7 +64,7 @@ ss::future<> recovery_stm::do_one_read() {
       _ctxlog.trace,
       "Reading batches in range [{},{}] for node {} recovery",
       start_offset,
-      lstats.dirty_offset,
+      end_offset,
       _node_id);
 
     // TODO: add timeout of maybe 1minute?
@@ -89,13 +97,121 @@ ss::future<> recovery_stm::do_one_read() {
         });
 }
 
+ss::future<> recovery_stm::open_snapshot_reader() {
+    return _ptr->_snapshot_mgr.open_snapshot().then(
+      [this](std::optional<storage::snapshot_reader> rdr) {
+          if (rdr) {
+              _snapshot_reader = std::make_unique<storage::snapshot_reader>(
+                std::move(*rdr));
+              return _snapshot_reader->get_snapshot_size().then(
+                [this](size_t sz) { _snapshot_size = sz; });
+          }
+          return ss::now();
+      });
+}
+
+ss::future<> recovery_stm::send_install_snapshot_request() {
+    // send 32KB at a time
+    return read_iobuf_exactly(_snapshot_reader->input(), 32_KiB)
+      .then([this](iobuf chunk) mutable {
+          auto chunk_size = chunk.size_bytes();
+          install_snapshot_request req{
+            .term = _ptr->term(),
+            .group = _ptr->group(),
+            .node_id = _ptr->_self,
+            .last_included_index = _ptr->_last_snapshot_index,
+            .file_offset = _sent_snapshot_bytes,
+            .chunk = std::move(chunk),
+            .done = (_sent_snapshot_bytes + chunk_size) == _snapshot_size};
+
+          vlog(
+            _ctxlog.trace,
+            "Sending install snapshot request to {}, last included index: {}",
+            _node_id,
+            req.last_included_index);
+          return _ptr->_client_protocol
+            .install_snapshot(
+              _node_id,
+              std::move(req),
+              rpc::client_opts(append_entries_timeout()))
+            .then([this](result<install_snapshot_reply> reply) {
+                return handle_install_snapshot_reply(reply);
+            });
+      });
+}
+
+ss::future<> recovery_stm::close_snapshot_reader() {
+    return _snapshot_reader->close().then([this] {
+        _snapshot_reader.reset();
+        _snapshot_size = 0;
+        _sent_snapshot_bytes = 0;
+    });
+}
+
+ss::future<> recovery_stm::handle_install_snapshot_reply(
+  result<install_snapshot_reply> reply) {
+    // snapshot delivery failed
+    if (reply.has_error() || !reply.value().success) {
+        return close_snapshot_reader();
+    }
+    if (reply.value().term > _ptr->_term) {
+        return close_snapshot_reader().then(
+          [this, term = reply.value().term] { return _ptr->step_down(term); });
+    }
+    _sent_snapshot_bytes = reply.value().bytes_stored;
+
+    // we will send next chunk as a part of recovery loop
+    if (_sent_snapshot_bytes != _snapshot_size) {
+        return ss::now();
+    }
+
+    auto meta = get_follower_meta();
+    if (!meta) {
+        // stop recovery when node was removed
+        _stop_requested = true;
+        return ss::make_ready_future<>();
+    }
+
+    // snapshot received by the follower, continue with recovery
+    (*meta)->match_index = _ptr->_last_snapshot_index;
+    (*meta)->next_index = details::next_offset(_ptr->_last_snapshot_index);
+    return close_snapshot_reader();
+}
+
+ss::future<> recovery_stm::install_snapshot() {
+    // open reader if not yet available
+    auto f = _snapshot_reader != nullptr ? ss::now() : open_snapshot_reader();
+
+    // we are outside of raft operation lock if snapshot isn't yet ready we have
+    // to wait for it till next recovery loop
+    if (_snapshot_reader) {
+        _stop_requested = true;
+        return ss::now();
+    }
+
+    return f.then([this]() mutable { return send_install_snapshot_request(); });
+}
+
 ss::future<> recovery_stm::replicate(model::record_batch_reader&& reader) {
     // collect metadata for append entries request
     // last persisted offset is last_offset of batch before the first one in the
     // reader
     auto prev_log_idx = details::prev_offset(_base_batch_offset);
+    model::term_id prev_log_term;
+    auto lstats = _ptr->_log.offsets();
+
     // get term for prev_log_idx batch
-    auto prev_log_term = _ptr->get_term(prev_log_idx);
+    if (prev_log_idx >= lstats.start_offset) {
+        prev_log_term = *_ptr->_log.get_term(prev_log_idx);
+    } else if (prev_log_idx < model::offset(0)) {
+        prev_log_term = model::term_id{};
+    } else if (prev_log_idx == _ptr->_last_snapshot_index) {
+        prev_log_term = _ptr->_last_snapshot_term;
+    } else {
+        // no entry for prev_log_idx, fallback to install snapshot
+        return install_snapshot();
+    }
+
     // calculate commit index for follower to update immediately
     auto commit_idx = std::min(_last_batch_offset, _ptr->committed_offset());
     // build request
@@ -191,10 +307,10 @@ ss::future<> recovery_stm::apply() {
     return ss::with_gate(
              _ptr->_bg,
              [this] {
-                 return do_one_read().then([this] {
+                 return do_recover().then([this] {
                      return ss::do_until(
                        [this] { return is_recovery_finished(); },
-                       [this] { return do_one_read(); });
+                       [this] { return do_recover(); });
                  });
              })
       .finally([this] {
@@ -203,6 +319,10 @@ ss::future<> recovery_stm::apply() {
           if (meta) {
               meta.value()->is_recovering = false;
           }
+          if (_snapshot_reader != nullptr) {
+              return close_snapshot_reader();
+          }
+          return ss::now();
       });
 }
 
