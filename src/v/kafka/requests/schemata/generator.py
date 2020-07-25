@@ -138,6 +138,15 @@ path_type_map = {
             },
         },
     },
+    "DescribeGroupsResponseData": {
+        "Groups": {
+            "ProtocolType": ("kafka::protocol_type", "string"),
+            "Members": {
+                "MemberId": ("kafka::member_id", "string"),
+                "GroupInstanceId": ("kafka::group_instance_id", "string"),
+            },
+        },
+    },
 }
 
 # a few kafka field types specify an entity type
@@ -195,6 +204,8 @@ STRUCT_TYPES = [
     "AlterableConfig",
     "AlterConfigsResourceResponse",
     "ListedGroup",
+    "DescribedGroup",
+    "DescribedGroupMember",
 ]
 
 SCALAR_TYPES = list(basic_type_map.keys())
