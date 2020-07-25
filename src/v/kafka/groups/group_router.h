@@ -1,6 +1,7 @@
 #pragma once
 #include "cluster/shard_table.h"
 #include "kafka/groups/coordinator_ntp_mapper.h"
+#include "kafka/requests/describe_groups_request.h"
 #include "kafka/requests/heartbeat_request.h"
 #include "kafka/requests/join_group_request.h"
 #include "kafka/requests/leave_group_request.h"
@@ -26,6 +27,8 @@ template <typename T>
 concept GroupManager =
 requires(
   T m,
+  const model::ntp& ntp,
+  const kafka::group_id& group_id,
   join_group_request&& join_request,
   sync_group_request&& sync_request,
   heartbeat_request&& heartbeat_request,
@@ -52,6 +55,8 @@ requires(
         ss::future<offset_fetch_response>;
 
     { m.list_groups() } -> std::pair<bool, std::vector<listed_group>>;
+
+    { m.describe_group(ntp, group_id) } -> described_group;
 };
 )
 // clang-format on
@@ -115,6 +120,25 @@ public:
               a.first = a.first || b.first;
               a.second.insert(a.second.end(), b.second.begin(), b.second.end());
               return a;
+          });
+    }
+
+    ss::future<described_group> describe_group(kafka::group_id g) {
+        auto m = shard_for(g);
+        if (!m) {
+            return ss::make_ready_future<described_group>(
+              describe_groups_response::make_empty_described_group(
+                std::move(g), error_code::not_coordinator));
+        }
+        return with_scheduling_group(
+          _sg, [this, g = std::move(g), m = std::move(m)]() mutable {
+              return _group_manager.invoke_on(
+                m->second,
+                _ssg,
+                [g = std::move(g),
+                 ntp = std::move(m->first)](GroupMgr& mgr) mutable {
+                    return mgr.describe_group(ntp, g);
+                });
           });
     }
 

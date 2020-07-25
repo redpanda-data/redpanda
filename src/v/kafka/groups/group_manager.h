@@ -6,6 +6,7 @@
 #include "kafka/errors.h"
 #include "kafka/groups/group.h"
 #include "kafka/groups/member.h"
+#include "kafka/requests/describe_groups_request.h"
 #include "kafka/requests/heartbeat_request.h"
 #include "kafka/requests/join_group_request.h"
 #include "kafka/requests/leave_group_request.h"
@@ -135,6 +136,8 @@ public:
     // partition is actively recovering, which can be used to signal to the
     // caller that the returned set of groups may be incomplete.
     std::pair<bool, std::vector<listed_group>> list_groups() const;
+
+    described_group describe_group(const model::ntp&, const kafka::group_id&);
 
 public:
     error_code validate_group_status(
