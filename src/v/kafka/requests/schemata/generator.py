@@ -194,6 +194,7 @@ STRUCT_TYPES = [
     "AlterConfigsResource",
     "AlterableConfig",
     "AlterConfigsResourceResponse",
+    "ListedGroup",
 ]
 
 SCALAR_TYPES = list(basic_type_map.keys())
