@@ -554,8 +554,24 @@ std::pair<bool, std::vector<listed_group>> group_manager::list_groups() const {
     return std::make_pair(loading, groups);
 }
 
+described_group
+group_manager::describe_group(const model::ntp& ntp, const kafka::group_id& g) {
+    auto error = validate_group_status(ntp, g, describe_groups_api::key);
+    if (error != error_code::none) {
+        return describe_groups_response::make_empty_described_group(g, error);
+    }
+
+    auto group = get_group(g);
+    if (!group) {
+        return describe_groups_response::make_dead_described_group(g);
+    }
+
+    return group->describe();
+}
+
 bool group_manager::valid_group_id(const group_id& group, api_key api) {
     switch (api) {
+    case describe_groups_api::key:
     case offset_commit_api::key:
         [[fallthrough]];
     case offset_fetch_api::key:
@@ -566,8 +582,6 @@ bool group_manager::valid_group_id(const group_id& group, api_key api) {
         return true;
 
     // currently unsupported apis
-    case describe_groups_api::key:
-        [[fallthrough]];
     case delete_groups_api::key:
         return false;
 
