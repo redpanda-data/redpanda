@@ -81,4 +81,20 @@ std::ostream& operator<<(std::ostream& o, const group_member& m) {
       m._state.protocols);
 }
 
+described_group_member
+group_member::describe(const kafka::protocol_name& protocol) const {
+    auto desc = describe_without_metadata();
+    desc.member_metadata = get_protocol_metadata(protocol);
+    desc.member_assignment = assignment();
+    return desc;
+}
+
+described_group_member group_member::describe_without_metadata() const {
+    described_group_member desc{
+      .member_id = id(),
+      .group_instance_id = group_instance_id(),
+    };
+    return desc;
+}
+
 } // namespace kafka
