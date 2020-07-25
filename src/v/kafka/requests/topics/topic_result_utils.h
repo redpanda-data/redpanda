@@ -28,6 +28,16 @@ static inline kafka::response_ptr encode_topic_results(
               wr.write(r.err_msg);
           }
       });
+    /*
+     * this is nvro, but clang can't do the conversion to foreign_ptr without a
+     * copy, while gcc does but also fires off a warning that it is unncessary
+     * for the move.
+     *
+     * The solution si probably to add a foreign_ptr(PtrType&&) overload.
+     */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wredundant-move"
     return std::move(resp);
+#pragma GCC diagnostic pop
 }
 } // namespace kafka
