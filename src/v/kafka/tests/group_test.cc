@@ -444,7 +444,7 @@ SEASTAR_THREAD_TEST_CASE(group_output) {
 
 SEASTAR_THREAD_TEST_CASE(group_state_output) {
     auto s = fmt::format("{}", group_state::preparing_rebalance);
-    BOOST_TEST(s == "preparing_rebalance");
+    BOOST_TEST(s == "PreparingRebalance");
 }
 
 } // namespace kafka

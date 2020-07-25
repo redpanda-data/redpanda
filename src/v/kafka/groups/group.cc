@@ -1359,17 +1359,23 @@ std::ostream& operator<<(std::ostream& o, const group& g) {
 }
 
 std::ostream& operator<<(std::ostream& o, group_state gs) {
+    return o << group_state_to_kafka_name(gs);
+}
+
+ss::sstring group_state_to_kafka_name(group_state gs) {
+    // State names are written in camel case to match the formatting of kafka
+    // since these states are returned through the kafka describe groups api.
     switch (gs) {
     case group_state::empty:
-        return o << "empty";
+        return "Empty";
     case group_state::preparing_rebalance:
-        return o << "preparing_rebalance";
+        return "PreparingRebalance";
     case group_state::completing_rebalance:
-        return o << "completing_rebalance";
+        return "CompletingRebalance";
     case group_state::stable:
-        return o << "stable";
+        return "Stable";
     case group_state::dead:
-        return o << "dead";
+        return "Dead";
     default:
         std::terminate(); // make gcc happy
     }
