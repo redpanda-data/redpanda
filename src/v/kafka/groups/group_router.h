@@ -4,6 +4,7 @@
 #include "kafka/requests/heartbeat_request.h"
 #include "kafka/requests/join_group_request.h"
 #include "kafka/requests/leave_group_request.h"
+#include "kafka/requests/list_groups_request.h"
 #include "kafka/requests/offset_commit_request.h"
 #include "kafka/requests/offset_fetch_request.h"
 #include "kafka/requests/sync_group_request.h"
@@ -49,6 +50,8 @@ requires(
 
     { m.offset_fetch(std::move(offset_fetch_request)) } ->
         ss::future<offset_fetch_response>;
+
+    { m.list_groups() } -> std::pair<bool, std::vector<listed_group>>;
 };
 )
 // clang-format on
@@ -99,6 +102,20 @@ public:
 
     auto offset_fetch(offset_fetch_request&& request) {
         return route(std::move(request), &GroupMgr::offset_fetch);
+    }
+
+    // return groups from across all shards, and if any core was still loading
+    ss::future<std::pair<bool, std::vector<listed_group>>> list_groups() {
+        using type = std::pair<bool, std::vector<listed_group>>;
+        return _group_manager.map_reduce0(
+          [](GroupMgr& mgr) { return mgr.list_groups(); },
+          type{},
+          [](type a, type b) {
+              // reduce into `a` and retain any affirmitive loading state
+              a.first = a.first || b.first;
+              a.second.insert(a.second.end(), b.second.begin(), b.second.end());
+              return a;
+          });
     }
 
 private:
