@@ -1,29 +1,30 @@
 #include "kafka/requests/list_groups_request.h"
 
 #include "kafka/errors.h"
+#include "kafka/requests/request_context.h"
 #include "model/metadata.h"
-
-#include <seastar/util/log.hh>
-
-#include <fmt/ostream.h>
-
-#include <string_view>
 
 namespace kafka {
 
 ss::future<response_ptr> list_groups_api::process(
   request_context&& ctx, [[maybe_unused]] ss::smp_service_group g) {
-    auto resp = std::make_unique<response>();
-    if (ctx.header().version >= api_version(1)) {
-        resp->writer().write(int32_t(0));
-    }
-    resp->writer().write(error_code::none);
-    resp->writer().write_array(
-      std::vector<int>{0}, []([[maybe_unused]] int v, response_writer& wr) {
-          wr.write("fake_group_id");
-          wr.write("fake_protocol_type");
-      });
-    return ss::make_ready_future<response_ptr>(std::move(resp));
+    list_groups_request request{};
+    request.decode(ctx.reader(), ctx.header().version);
+    klog.trace("Handling request {}", request);
+
+    return ss::do_with(std::move(ctx), [](request_context& ctx) mutable {
+        return ctx.groups().list_groups().then(
+          [&ctx](std::pair<bool, std::vector<listed_group>> g) {
+              // group listing is still returned even if some partitions are
+              // still in the process of loading/recovering.
+              list_groups_response resp;
+              resp.data.error_code
+                = g.first ? error_code::coordinator_load_in_progress
+                          : error_code::none;
+              resp.data.groups = std::move(g.second);
+              return ctx.respond(std::move(resp));
+          });
+    });
 }
 
 } // namespace kafka
