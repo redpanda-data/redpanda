@@ -4,6 +4,7 @@
 #include "kafka/requests/create_topics_request.h"
 #include "kafka/requests/delete_topics_request.h"
 #include "kafka/requests/describe_configs_request.h"
+#include "kafka/requests/describe_groups_request.h"
 #include "kafka/requests/fetch_request.h"
 #include "kafka/requests/find_coordinator_request.h"
 #include "kafka/requests/heartbeat_request.h"
@@ -52,7 +53,8 @@ using request_types = make_request_types<
   offset_commit_api,
   describe_configs_api,
   alter_configs_api,
-  delete_topics_api>;
+  delete_topics_api,
+  describe_groups_api>;
 
 template<typename RequestType>
 static auto make_api() {

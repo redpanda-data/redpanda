@@ -9,6 +9,7 @@
 #include "kafka/requests/leave_group_request.h"
 #include "kafka/requests/offset_commit_request.h"
 #include "kafka/requests/offset_fetch_request.h"
+#include "kafka/requests/schemata/describe_groups_response.h"
 #include "kafka/requests/sync_group_request.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
@@ -83,6 +84,8 @@ enum class group_state {
 };
 
 std::ostream& operator<<(std::ostream&, group_state gs);
+
+ss::sstring group_state_to_kafka_name(group_state);
 
 /// \brief A Kafka group.
 ///
@@ -394,6 +397,9 @@ public:
     void insert_offset(model::topic_partition tp, offset_metadata md) {
         _offsets[std::move(tp)] = std::move(md);
     }
+
+    // helper for the kafka api: describe groups
+    described_group describe() const;
 
 private:
     using member_map = absl::flat_hash_map<kafka::member_id, member_ptr>;

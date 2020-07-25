@@ -138,6 +138,15 @@ path_type_map = {
             },
         },
     },
+    "DescribeGroupsResponseData": {
+        "Groups": {
+            "ProtocolType": ("kafka::protocol_type", "string"),
+            "Members": {
+                "MemberId": ("kafka::member_id", "string"),
+                "GroupInstanceId": ("kafka::group_instance_id", "string"),
+            },
+        },
+    },
 }
 
 # a few kafka field types specify an entity type
@@ -194,6 +203,9 @@ STRUCT_TYPES = [
     "AlterConfigsResource",
     "AlterableConfig",
     "AlterConfigsResourceResponse",
+    "ListedGroup",
+    "DescribedGroup",
+    "DescribedGroupMember",
 ]
 
 SCALAR_TYPES = list(basic_type_map.keys())
@@ -541,11 +553,11 @@ class response;
 
 {{ render_struct(struct) }}
 {%- if op_type == "request" %}
-    void encode(response_writer& writer, api_version version);
-    void decode(request_reader& reader, api_version version);
+    void encode(response_writer&, api_version);
+    void decode(request_reader&, api_version);
 {%- else %}
-    void encode(const request_context& ctx, response& resp);
-    void decode(iobuf buf, api_version version);
+    void encode(const request_context&, response&);
+    void decode(iobuf, api_version);
 {%- endif %}
 
     friend std::ostream& operator<<(std::ostream&, const {{ struct.name }}&);
@@ -658,6 +670,7 @@ writer.write({{ fname }});
 
 namespace kafka {
 
+{%- if struct.fields %}
 {%- if op_type == "request" %}
 void {{ struct.name }}::encode(response_writer& writer, api_version version) {
 {{- struct_serde(struct, field_encoder) | indent }}
@@ -680,9 +693,19 @@ void {{ struct.name }}::decode(iobuf buf, api_version version) {
 {{- struct_serde(struct, field_decoder) | indent }}
 }
 {%- endif %}
+{%- else %}
+{%- if op_type == "request" %}
+void {{ struct.name }}::encode(response_writer&, api_version) {}
+void {{ struct.name }}::decode(request_reader&, api_version) {}
+{%- else %}
+void {{ struct.name }}::encode(const request_context&, response&) {}
+void {{ struct.name }}::decode(iobuf, api_version) {}
+{%- endif %}
+{%- endif %}
 
 {% set structs = struct.structs() + [struct] %}
 {% for struct in structs %}
+{%- if struct.fields %}
 std::ostream& operator<<(std::ostream& o, const {{ struct.name }}& v) {
     fmt::print(o,
       "{{'{{' + struct.format + '}}'}}",
@@ -692,6 +715,11 @@ std::ostream& operator<<(std::ostream& o, const {{ struct.name }}& v) {
     );
     return o;
 }
+{%- else %}
+std::ostream& operator<<(std::ostream& o, const {{ struct.name }}&) {
+    return o << "{}";
+}
+{%- endif %}
 {% endfor %}
 }
 """

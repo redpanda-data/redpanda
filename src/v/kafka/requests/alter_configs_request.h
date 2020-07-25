@@ -42,7 +42,7 @@ struct alter_configs_request final {
     }
 };
 
-static inline std::ostream&
+inline std::ostream&
 operator<<(std::ostream& os, const alter_configs_request& r) {
     return os << r.data;
 }
@@ -61,7 +61,7 @@ struct alter_configs_response final {
     }
 };
 
-static inline std::ostream&
+inline std::ostream&
 operator<<(std::ostream& os, const alter_configs_response& r) {
     return os << r.data;
 }

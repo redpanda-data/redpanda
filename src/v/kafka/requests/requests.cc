@@ -5,6 +5,7 @@
 #include "kafka/requests/create_topics_request.h"
 #include "kafka/requests/delete_topics_request.h"
 #include "kafka/requests/describe_configs_request.h"
+#include "kafka/requests/describe_groups_request.h"
 #include "kafka/requests/fetch_request.h"
 #include "kafka/requests/find_coordinator_request.h"
 #include "kafka/requests/heartbeat_request.h"
@@ -114,6 +115,8 @@ process_request(request_context&& ctx, ss::smp_service_group g) {
         return do_process<alter_configs_api>(std::move(ctx), g);
     case delete_topics_api::key:
         return do_process<delete_topics_api>(std::move(ctx), g);
+    case describe_groups_api::key:
+        return do_process<describe_groups_api>(std::move(ctx), g);
     };
     return ss::make_exception_future<response_ptr>(
       std::runtime_error(fmt::format("Unsupported API {}", ctx.header().key)));

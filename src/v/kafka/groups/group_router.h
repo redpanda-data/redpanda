@@ -1,9 +1,11 @@
 #pragma once
 #include "cluster/shard_table.h"
 #include "kafka/groups/coordinator_ntp_mapper.h"
+#include "kafka/requests/describe_groups_request.h"
 #include "kafka/requests/heartbeat_request.h"
 #include "kafka/requests/join_group_request.h"
 #include "kafka/requests/leave_group_request.h"
+#include "kafka/requests/list_groups_request.h"
 #include "kafka/requests/offset_commit_request.h"
 #include "kafka/requests/offset_fetch_request.h"
 #include "kafka/requests/sync_group_request.h"
@@ -25,6 +27,8 @@ template <typename T>
 concept GroupManager =
 requires(
   T m,
+  const model::ntp& ntp,
+  const kafka::group_id& group_id,
   join_group_request&& join_request,
   sync_group_request&& sync_request,
   heartbeat_request&& heartbeat_request,
@@ -49,6 +53,10 @@ requires(
 
     { m.offset_fetch(std::move(offset_fetch_request)) } ->
         ss::future<offset_fetch_response>;
+
+    { m.list_groups() } -> std::pair<bool, std::vector<listed_group>>;
+
+    { m.describe_group(ntp, group_id) } -> described_group;
 };
 )
 // clang-format on
@@ -99,6 +107,39 @@ public:
 
     auto offset_fetch(offset_fetch_request&& request) {
         return route(std::move(request), &GroupMgr::offset_fetch);
+    }
+
+    // return groups from across all shards, and if any core was still loading
+    ss::future<std::pair<bool, std::vector<listed_group>>> list_groups() {
+        using type = std::pair<bool, std::vector<listed_group>>;
+        return _group_manager.map_reduce0(
+          [](GroupMgr& mgr) { return mgr.list_groups(); },
+          type{},
+          [](type a, type b) {
+              // reduce into `a` and retain any affirmitive loading state
+              a.first = a.first || b.first;
+              a.second.insert(a.second.end(), b.second.begin(), b.second.end());
+              return a;
+          });
+    }
+
+    ss::future<described_group> describe_group(kafka::group_id g) {
+        auto m = shard_for(g);
+        if (!m) {
+            return ss::make_ready_future<described_group>(
+              describe_groups_response::make_empty_described_group(
+                std::move(g), error_code::not_coordinator));
+        }
+        return with_scheduling_group(
+          _sg, [this, g = std::move(g), m = std::move(m)]() mutable {
+              return _group_manager.invoke_on(
+                m->second,
+                _ssg,
+                [g = std::move(g),
+                 ntp = std::move(m->first)](GroupMgr& mgr) mutable {
+                    return mgr.describe_group(ntp, g);
+                });
+          });
     }
 
 private:

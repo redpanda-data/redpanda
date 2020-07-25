@@ -2,6 +2,7 @@
 #include "bytes/bytes.h"
 #include "bytes/iobuf.h"
 #include "kafka/requests/join_group_request.h"
+#include "kafka/requests/schemata/describe_groups_response.h"
 #include "kafka/requests/sync_group_request.h"
 #include "kafka/types.h"
 #include "utils/concepts-enabled.h"
@@ -210,6 +211,10 @@ public:
     }
 
     ss::timer<clock_type>& expire_timer() { return _expire_timer; }
+
+    // helper for kafka api: describe groups
+    described_group_member describe(const kafka::protocol_name&) const;
+    described_group_member describe_without_metadata() const;
 
 private:
     using join_promise = ss::promise<join_group_response>;
