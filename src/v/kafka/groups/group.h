@@ -84,6 +84,8 @@ enum class group_state {
 
 std::ostream& operator<<(std::ostream&, group_state gs);
 
+ss::sstring group_state_to_kafka_name(group_state);
+
 /// \brief A Kafka group.
 ///
 /// Container of members.
