@@ -535,6 +535,25 @@ group_manager::offset_fetch(offset_fetch_request&& r) {
     return group->handle_offset_fetch(std::move(r));
 }
 
+std::pair<bool, std::vector<listed_group>> group_manager::list_groups() const {
+    auto loading = std::any_of(
+      _partitions.cbegin(),
+      _partitions.cend(),
+      [](const std::
+           pair<const model::ntp, ss::lw_shared_ptr<attached_partition>>& p) {
+          return p.second->loading;
+      });
+
+    std::vector<listed_group> groups;
+    for (const auto& it : _groups) {
+        const auto& g = it.second;
+        groups.push_back(
+          {g->id(), g->protocol_type().value_or(protocol_type())});
+    }
+
+    return std::make_pair(loading, groups);
+}
+
 bool group_manager::valid_group_id(const group_id& group, api_key api) {
     switch (api) {
     case offset_commit_api::key:

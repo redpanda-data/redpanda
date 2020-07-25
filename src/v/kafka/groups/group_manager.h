@@ -9,6 +9,7 @@
 #include "kafka/requests/heartbeat_request.h"
 #include "kafka/requests/join_group_request.h"
 #include "kafka/requests/leave_group_request.h"
+#include "kafka/requests/list_groups_request.h"
 #include "kafka/requests/offset_commit_request.h"
 #include "kafka/requests/offset_fetch_request.h"
 #include "kafka/requests/sync_group_request.h"
@@ -129,6 +130,11 @@ public:
     /// \brief Handle a OffsetFetch request
     ss::future<offset_fetch_response>
     offset_fetch(offset_fetch_request&& request);
+
+    // returns the set of registered groups, and a flag indicating if any
+    // partition is actively recovering, which can be used to signal to the
+    // caller that the returned set of groups may be incomplete.
+    std::pair<bool, std::vector<listed_group>> list_groups() const;
 
 public:
     error_code validate_group_status(
