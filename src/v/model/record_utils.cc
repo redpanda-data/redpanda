@@ -5,7 +5,7 @@
 #include "utils/vint.h"
 
 namespace model {
-static inline void crc_extend_vint(crc32& crc, vint::value_type v) {
+static inline void crc_extend_vint(crc32& crc, int64_t v) {
     auto b = vint::to_bytes(v);
     crc.extend(b.data(), b.size());
 }

@@ -72,7 +72,7 @@ parse_one_record_from_buffer_using_kafka_format(iobuf_parser& parser) {
     return do_parse_one_record_from_buffer(parser, record_size, attr);
 }
 
-static inline void append_vint_to_iobuf(iobuf& b, vint::value_type v) {
+static inline void append_vint_to_iobuf(iobuf& b, int64_t v) {
     auto vb = vint::to_bytes(v);
     b.append(vb.data(), vb.size());
 }
