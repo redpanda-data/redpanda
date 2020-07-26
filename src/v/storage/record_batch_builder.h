@@ -17,7 +17,7 @@ public:
     virtual ~record_batch_builder();
 
 private:
-    static constexpr vint::value_type zero_vint_size = vint::vint_size(0);
+    static constexpr int64_t zero_vint_size = vint::vint_size(0);
     struct serialized_record {
         serialized_record(iobuf k, iobuf v)
           : key(std::move(k))

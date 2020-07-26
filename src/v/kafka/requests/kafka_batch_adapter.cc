@@ -29,7 +29,7 @@ model::record_batch_header kafka_batch_adapter::read_header(iobuf_parser& in) {
     auto magic = in.consume_type<int8_t>(); /*magic - IGNORED*/
     v2_format = magic == 2;
     if (unlikely(!v2_format)) {
-        return {};
+        return {}; // verified  in the adapt() call
     }
     auto crc = in.consume_be_type<int32_t>();
 
@@ -132,14 +132,16 @@ void kafka_batch_adapter::adapt(iobuf&& kbatch) {
 
     auto header = read_header(parser);
     if (unlikely(!v2_format)) {
+        vlog(
+          klog.error,
+          "cann only parse magic.version2 format messages. ignoring");
         return;
     }
-
     verify_crc(header.crc, std::move(crcparser));
     if (unlikely(!valid_crc)) {
+        vlog(klog.error, "batch has invlaid CRC: {}", header);
         return;
     }
-
     model::record_batch::records_type records;
     if (header.attrs.compression() != model::compression::none) {
         auto records_size = header.size_bytes
@@ -151,7 +153,8 @@ void kafka_batch_adapter::adapt(iobuf&& kbatch) {
 
     // Kafka guarantees - exactly one batch on the wire
     if (unlikely(parser.bytes_left())) {
-        klog.error(
+        vlog(
+          klog.error,
           "Could not consume full record_batch. Bytes left on the wire:{}",
           parser.bytes_left());
         return;
