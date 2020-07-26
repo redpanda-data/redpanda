@@ -52,7 +52,7 @@ write(segment_appender& out, T i) {
     return out.append(p, sizeof(T));
 }
 
-ss::future<> write_vint(segment_appender& out, vint::value_type v) {
+ss::future<> write_vint(segment_appender& out, int64_t v) {
     auto encoding_buffer
       = std::make_unique<std::array<bytes::value_type, vint::max_length>>();
     auto p = encoding_buffer->data();

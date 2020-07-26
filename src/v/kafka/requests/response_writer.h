@@ -32,13 +32,10 @@ class response_writer {
         return sizeof(nval);
     }
 
-    template<typename VintType>
-    uint32_t serialize_vint(typename VintType::value_type val) {
-        std::array<bytes::value_type, vint::max_length> encoding_buffer;
-        const auto size = VintType::serialize(val, encoding_buffer.begin());
-        _out->append(
-          reinterpret_cast<const char*>(encoding_buffer.data()), size);
-        return size;
+    uint32_t serialize_vint(int64_t val) {
+        auto x = vint::to_bytes(val);
+        _out->append(x.data(), x.size());
+        return x.size();
     }
 
 public:
@@ -69,9 +66,9 @@ public:
 
     uint32_t write(const model::timestamp ts) { return write(ts()); }
 
-    uint32_t write_varint(int32_t v) { return serialize_vint<vint>(v); }
+    uint32_t write_varint(int32_t v) { return serialize_vint(v); }
 
-    uint32_t write_varlong(int64_t v) { return serialize_vint<vint>(v); }
+    uint32_t write_varlong(int64_t v) { return serialize_vint(v); }
 
     uint32_t write(std::string_view v) {
         auto size = serialize_int<int16_t>(v.size()) + v.size();
