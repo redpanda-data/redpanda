@@ -169,7 +169,7 @@ FIXTURE_TEST(error_delete_topics_request, delete_topics_request_fixture) {
     create_topic("timeout-topic", 1, 1);
     auto tp = model::topic("timeout-topic");
     validate_error_delete_topic_request(
-      make_delete_topics_request({tp}, 1ms),
+      make_delete_topics_request({tp}, 0ms),
       {{tp, kafka::error_code::request_timed_out}});
 
     tests::cooperative_spin_wait_with_timeout(5s, [this, tp] {
