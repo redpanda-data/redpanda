@@ -6,7 +6,18 @@
 // class is actually zigzag vint; always signed ints
 // matches exactly the kafka encoding which uses protobuf
 namespace vint {
-inline constexpr size_t max_length = sizeof(int64_t) + 1;
+// Go language implementation details it nicely:
+// https://golang.org/src/encoding/binary/varint.go
+//
+// Design note: At most 10 bytes are needed for 64-bit values. The encoding
+// could be more dense: a full
+// 64-bit value needs an extra byte just to hold bit 63. Instead, the msb of the
+// previous byte could be used to hold bit 63 since we know there can't be more
+// than 64 bits. This is a trivial improvement and would reduce the maximum
+// encoding length to 9 bytes. However, it breaks the invariant that the msb is
+// always the "continuation bit" and thus makes the format incompatible with a
+// varint encoding for larger numbers (say 128-bit).
+inline constexpr size_t max_length = 10;
 inline constexpr uint64_t encode_zigzag(int64_t v) noexcept {
     // Note:  the right-shift must be arithmetic
     // Note:  left shift must be unsigned because of overflow
