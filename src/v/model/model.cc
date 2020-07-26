@@ -92,9 +92,10 @@ std::ostream& operator<<(std::ostream& o, const record& r) {
     o << "{record: size_bytes=" << r.size_bytes()
       << ", attributes=" << r.attributes()
       << ", timestamp_delta=" << r._timestamp_delta
-      << ", offset_delta=" << r._offset_delta << ", key_size= " << r._key_size
-      << ", key=" << r.key() << ", value_size=" << r.value()
-      << ", header_size:" << r.headers().size() << ", headers=[";
+      << ", offset_delta=" << r._offset_delta << ", key_size=" << r._key_size
+      << ", key=" << r.key() << ", value_size=" << r.value_size()
+      << ", value=" << r.value() << ", header_size:" << r.headers().size()
+      << ", headers=[";
 
     for (auto& h : r.headers()) {
         o << h;
@@ -116,7 +117,7 @@ operator<<(std::ostream& o, const record_batch_attributes& attrs) {
 
 std::ostream& operator<<(std::ostream& o, const record_batch_header& h) {
     o << "{header_crc:" << h.header_crc << ", size_bytes:" << h.size_bytes
-      << ", base_offset:" << h.base_offset << ", type:" << h.type
+      << ", base_offset:" << h.base_offset << ", type:" << (int)h.type()
       << ", crc:" << h.crc << ", attrs:" << h.attrs
       << ", last_offset_delta:" << h.last_offset_delta
       << ", first_timestamp:" << h.first_timestamp
