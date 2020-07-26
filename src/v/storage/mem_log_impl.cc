@@ -9,10 +9,12 @@
 #include "storage/types.h"
 #include "vlog.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/circular_buffer.hh>
 #include <seastar/core/future-util.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/lowres_clock.hh>
+#include <seastar/core/rwlock.hh>
 
 #include <boost/container/flat_map.hpp>
 #include <boost/intrusive/list_hook.hpp>
@@ -137,8 +139,14 @@ struct mem_log_impl final : log::impl {
     mem_log_impl(const mem_log_impl&) = delete;
     mem_log_impl& operator=(const mem_log_impl&) = delete;
     mem_log_impl(mem_log_impl&&) noexcept = default;
-    mem_log_impl& operator=(mem_log_impl&&) noexcept = default;
-    ss::future<> close() final { return ss::make_ready_future<>(); }
+    mem_log_impl& operator=(mem_log_impl&&) noexcept = delete;
+    ss::future<> close() final {
+        if (_eviction_monitor) {
+            _eviction_monitor->promise.set_exception(
+              std::runtime_error("log closed"));
+        }
+        return ss::make_ready_future<>();
+    }
     ss::future<> remove() final { return ss::make_ready_future<>(); }
     ss::future<> flush() final { return ss::make_ready_future<>(); }
     ss::future<> compact(compaction_config cfg) final {
@@ -228,16 +236,70 @@ struct mem_log_impl final : log::impl {
       std::optional<size_t> max_partition_retention_size) {
         const size_t max = max_partition_retention_size.value_or(
           std::numeric_limits<size_t>::max());
+        size_t reclaimed = 0;
+        model::offset max_offset;
         for (const model::record_batch& b : _data) {
             if (
               b.header().max_timestamp <= eviction_time
-              || _probe.partition_bytes > max) {
-                _probe.remove_bytes_written(_data.front().size_bytes());
-                _data.pop_front();
+              || (_probe.partition_bytes - reclaimed) > max) {
+                max_offset = b.last_offset();
+                reclaimed += b.size_bytes();
+                continue;
             }
+
+            break;
         }
-        _data.shrink_to_fit();
-        return ss::make_ready_future<>();
+        auto f = ss::now();
+        if (_eviction_monitor) {
+            f = _eviction_lock.hold_read_lock().then(
+              [this, max_offset](ss::rwlock::holder h) {
+                  std::vector<ss::rwlock::holder> holders;
+                  holders.push_back(std::move(h));
+                  _eviction_monitor->promise.set_value(
+                    eviction_range_lock(max_offset, std::move(holders)));
+                  _eviction_monitor.reset();
+              });
+        }
+        return f.then([this, max_offset] {
+            return ss::with_lock(
+              _eviction_lock.for_write(), [this, max_offset] {
+                  std::cout << "max offset " << max_offset << std::endl;
+                  auto it = _data.begin();
+                  while (it != _data.end() && it->last_offset() <= max_offset) {
+                      _probe.remove_bytes_written(it->size_bytes());
+                      it++;
+                  }
+
+                  if (it != _data.begin()) {
+                      _data.erase(_data.begin(), it);
+                      _data.shrink_to_fit();
+                  }
+              });
+        });
+    }
+
+    ss::future<eviction_range_lock>
+    monitor_eviction(ss::abort_source& as) final {
+        if (_eviction_monitor) {
+            throw std::logic_error("Eviction promise already registered. "
+                                   "Eviction can not be monitored twice.");
+        }
+
+        auto opt_sub = as.subscribe([this] {
+            _eviction_monitor->promise.set_exception(
+              ss::abort_requested_exception());
+        });
+
+        // already aborted
+        if (!opt_sub) {
+            return ss::make_exception_future<eviction_range_lock>(
+              ss::abort_requested_exception());
+        }
+
+        return _eviction_monitor
+          .emplace(eviction_monitor{
+            ss::promise<eviction_range_lock>{}, std::move(*opt_sub)})
+          .promise.get_future();
     }
 
     ss::future<model::record_batch_reader>
@@ -298,10 +360,14 @@ struct mem_log_impl final : log::impl {
           .dirty_offset_term = e.term(),
           .last_term_start_offset = last_term_base_offset};
     }
-
+    struct eviction_monitor {
+        ss::promise<eviction_range_lock> promise;
+        ss::abort_source::subscription subscription;
+    };
     boost::intrusive::list<mem_iter_reader> _readers;
     underlying_t _data;
-
+    std::optional<eviction_monitor> _eviction_monitor;
+    ss::rwlock _eviction_lock;
     mem_probe _probe;
 };
 

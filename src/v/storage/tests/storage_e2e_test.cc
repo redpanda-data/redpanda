@@ -7,6 +7,7 @@
 #include "storage/tests/utils/random_batch.h"
 #include "storage/types.h"
 
+#include <seastar/core/sleep.hh>
 #include <seastar/util/defer.hh>
 #include <seastar/util/log.hh>
 
@@ -295,3 +296,123 @@ FIXTURE_TEST(test_append_batches_from_multiple_terms, storage_test_fixture) {
         next = next + c;
     }
 }
+
+FIXTURE_TEST(test_time_based_eviction, storage_test_fixture) {
+    auto cfg = default_log_config(test_dir);
+    cfg.max_segment_size = 10;
+    cfg.stype = storage::log_config::storage_type::disk;
+    ss::abort_source as;
+    storage::log_manager mgr = make_log_manager(cfg);
+    info("Configuration: {}", mgr.config());
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    auto ntp = model::ntp("default", "test", 0);
+
+    storage::ntp_config ntp_cfg(ntp, mgr.config().base_dir);
+    auto log = mgr.manage(std::move(ntp_cfg)).get0();
+    auto headers = append_random_batches(log, 10);
+    log.flush().get0();
+    model::timestamp gc_ts = headers.back().max_timestamp;
+    auto lstats = log.offsets();
+    info("Offsets to be evicted {}", lstats);
+    headers = append_random_batches(log, 10);
+    storage::compaction_config ccfg(
+      gc_ts, std::nullopt, ss::default_priority_class(), as);
+
+    log.compact(ccfg).get0();
+
+    auto new_lstats = log.offsets();
+    info("Final offsets {}", new_lstats);
+    BOOST_REQUIRE_EQUAL(
+      new_lstats.start_offset, lstats.dirty_offset + model::offset(1));
+};
+
+FIXTURE_TEST(test_size_based_eviction, storage_test_fixture) {
+    auto cfg = default_log_config(test_dir);
+    cfg.max_segment_size = 10;
+    cfg.stype = storage::log_config::storage_type::disk;
+    ss::abort_source as;
+    storage::log_manager mgr = make_log_manager(cfg);
+    info("Configuration: {}", mgr.config());
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    auto ntp = model::ntp("default", "test", 0);
+
+    storage::ntp_config ntp_cfg(ntp, mgr.config().base_dir);
+    auto log = mgr.manage(std::move(ntp_cfg)).get0();
+    auto headers = append_random_batches(log, 10);
+    log.flush().get0();
+    auto all_batches = read_and_validate_all_batches(log);
+    size_t first_size = std::accumulate(
+      all_batches.begin(),
+      all_batches.end(),
+      size_t(0),
+      [](size_t acc, model::record_batch& b) { return acc + b.size_bytes(); });
+
+    auto lstats = log.offsets();
+    info("Offsets to be evicted {}", lstats);
+    headers = append_random_batches(log, 10);
+    auto new_batches = read_and_validate_all_batches(log);
+    size_t total_size = std::accumulate(
+      new_batches.begin(),
+      new_batches.end(),
+      size_t(0),
+      [](size_t acc, model::record_batch& b) { return acc + b.size_bytes(); });
+
+    storage::compaction_config ccfg(
+      model::timestamp::min(),
+      (total_size - first_size) + 1,
+      ss::default_priority_class(),
+      as);
+
+    log.compact(ccfg).get0();
+
+    auto new_lstats = log.offsets();
+    info("Final offsets {}", new_lstats);
+    BOOST_REQUIRE_EQUAL(
+      new_lstats.start_offset, lstats.dirty_offset + model::offset(1));
+};
+
+FIXTURE_TEST(test_eviction_notification, storage_test_fixture) {
+    ss::promise<storage::eviction_range_lock> ev_range_lock;
+    auto cfg = default_log_config(test_dir);
+    cfg.max_segment_size = 10;
+    cfg.stype = storage::log_config::storage_type::disk;
+    ss::abort_source as;
+    storage::log_manager mgr = make_log_manager(cfg);
+    info("Configuration: {}", mgr.config());
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    auto ntp = model::ntp("default", "test", 0);
+
+    storage::ntp_config ntp_cfg(ntp, mgr.config().base_dir);
+    auto log = mgr.manage(std::move(ntp_cfg)).get0();
+    (void)log.monitor_eviction(as).then(
+      [&ev_range_lock](storage::eviction_range_lock lock) mutable {
+          ev_range_lock.set_value(std::move(lock));
+      });
+
+    auto headers = append_random_batches(log, 10);
+    log.flush().get0();
+    model::timestamp gc_ts = headers.back().max_timestamp;
+    auto lstats_before = log.offsets();
+    info("Offsets to be evicted {}", lstats_before);
+    headers = append_random_batches(log, 10);
+    storage::compaction_config ccfg(
+      gc_ts, std::nullopt, ss::default_priority_class(), as);
+
+    auto compaction_future = log.compact(ccfg);
+    auto lock = ev_range_lock.get_future().get0();
+
+    auto lstats_after = log.offsets();
+
+    ss::sleep(100ms).get0(); // sleep so that compaction could be scheduled
+    BOOST_REQUIRE_EQUAL(lstats_before.start_offset, lstats_after.start_offset);
+    // release lock
+    lock.locks.clear();
+    // wait for compaction
+    compaction_future.get0();
+    auto compacted_lstats = log.offsets();
+    info("Compacted offsets {}", compacted_lstats);
+    // check if compaction happend
+    BOOST_REQUIRE_EQUAL(
+      compacted_lstats.start_offset,
+      lstats_before.dirty_offset + model::offset(1));
+};

@@ -8,6 +8,7 @@
 #include "storage/segment_reader.h"
 #include "storage/types.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/shared_ptr.hh>
 
 #include <utility>
@@ -56,6 +57,9 @@ public:
         virtual storage::offset_stats offsets() const = 0;
         virtual std::ostream& print(std::ostream& o) const = 0;
         virtual std::optional<model::term_id> get_term(model::offset) const = 0;
+
+        virtual ss::future<eviction_range_lock>
+        monitor_eviction(ss::abort_source&) = 0;
 
     private:
         ntp_config _config;
@@ -119,6 +123,25 @@ public:
     }
 
     ss::future<> compact(compaction_config cfg) { return _impl->compact(cfg); }
+
+    /**
+     * \brief Returns a future that resolves when log eviction is scheduled
+     *
+     * This method allows user to hold the lock preventing garbadge collection.
+     * The lock is released as soon as eviction_range_lock is deleted. Eviction
+     * range lock contains RAII read lock holders and last offset of the last
+     * batch that is going to be evicted during garbadge collection. The garbage
+     * collection is a mechanism that is responsible to evict old log segments
+     * according to size and time based retention policies.
+     *
+     * Important note: The api may throw ss::abort_requested_exception when
+     * passed in abort source was triggered or storage::segment_closed_exception
+     * when log was closed while waiting for eviction to happen.
+     *
+     */
+    ss::future<eviction_range_lock> monitor_eviction(ss::abort_source& as) {
+        return _impl->monitor_eviction(as);
+    }
 
     std::ostream& print(std::ostream& o) const { return _impl->print(o); }
 

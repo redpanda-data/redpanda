@@ -10,6 +10,7 @@
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/file.hh> //io_priority
+#include <seastar/core/rwlock.hh>
 #include <seastar/util/bool_class.hh>
 
 #include <optional>
@@ -215,6 +216,22 @@ struct compaction_config {
     ss::abort_source* asrc;
 
     friend std::ostream& operator<<(std::ostream&, const compaction_config&);
+};
+
+struct eviction_range_lock {
+    eviction_range_lock(
+      model::offset offset, std::vector<ss::rwlock::holder> locks)
+      : last_evicted(offset)
+      , locks(std::move(locks)) {}
+    /**
+     * Last offset of last evicted batch, after eviction log start offset will
+     * be equal to" `last_evictied + model::offset(1)`
+     */
+    model::offset last_evicted;
+    /**
+     * Read locks of segments that are going to be removed
+     */
+    std::vector<ss::rwlock::holder> locks;
 };
 
 } // namespace storage

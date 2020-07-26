@@ -77,6 +77,11 @@ ss::future<> disk_log_impl::remove() {
 ss::future<> disk_log_impl::close() {
     vassert(!_closed, "Invalid double closing of log - {}", *this);
     _closed = true;
+    if (
+      _eviction_monitor
+      && !_eviction_monitor->promise.get_future().available()) {
+        _eviction_monitor->promise.set_exception(segment_closed_exception());
+    }
     return ss::parallel_for_each(_segs, [](ss::lw_shared_ptr<segment>& h) {
         return h->close().handle_exception([h](std::exception_ptr e) {
             vlog(stlog.error, "Error closing segment:{} - {}", e, h);
@@ -84,22 +89,21 @@ ss::future<> disk_log_impl::close() {
     });
 }
 
-ss::future<> disk_log_impl::garbage_collect_max_partition_size(
-  size_t max_bytes, ss::abort_source* as) {
-    return ss::do_until(
-      [this, max_bytes, as] {
-          return _segs.empty() || _probe.partition_size() <= max_bytes
-                 || as->abort_requested();
-      },
-      [this] {
-          auto ptr = _segs.front();
-          _segs.pop_front();
-          return remove_segment_permanently(ptr, "gc[size_based_retention]");
-      });
+model::offset disk_log_impl::size_based_gc_max_offset(size_t max_size) {
+    size_t reclaimed_size = 0;
+    model::offset ret;
+    // size based retention
+    for (const auto& segment : _segs) {
+        reclaimed_size += segment->size_bytes();
+        if (_probe.partition_size() - reclaimed_size <= max_size) {
+            ret = segment->offsets().committed_offset;
+            break;
+        }
+    }
+    return ret;
 }
 
-ss::future<> disk_log_impl::garbage_collect_oldest_segments(
-  model::timestamp time, ss::abort_source* as) {
+model::offset disk_log_impl::time_based_gc_max_offset(model::timestamp time) {
     // The following compaction has a Kafka behavior compatibility bug. for
     // which we defer do nothing at the moment, possibly crashing the machine
     // and running out of disk. Kafka uses the same logic below as of
@@ -112,16 +116,100 @@ ss::future<> disk_log_impl::garbage_collect_oldest_segments(
     // files so that size-based retention eventually evicts the problematic
     // segment, preventing a crash.
     //
-    return ss::do_until(
-      [this, time, as] {
-          return _segs.empty() || _segs.front()->index().max_timestamp() > time
-                 || as->abort_requested();
-      },
-      [this] {
-          auto ptr = _segs.front();
-          _segs.pop_front();
-          return remove_segment_permanently(ptr, "gc[time_based_retention]");
+    auto it = std::find_if(
+      std::cbegin(_segs),
+      std::cend(_segs),
+      [time](const ss::lw_shared_ptr<segment>& s) {
+          // first that is not going to be collected
+          return s->index().max_timestamp() > time;
       });
+
+    if (it == _segs.cbegin()) {
+        return model::offset{};
+    }
+
+    it = std::prev(it);
+    return (*it)->offsets().committed_offset;
+}
+
+ss::future<eviction_range_lock>
+disk_log_impl::monitor_eviction(ss::abort_source& as) {
+    if (_eviction_monitor) {
+        throw std::logic_error("Eviction promise already registered. Eviction "
+                               "can not be monitored twice.");
+    }
+
+    auto opt_sub = as.subscribe([this] {
+        _eviction_monitor->promise.set_exception(
+          ss::abort_requested_exception());
+        _eviction_monitor.reset();
+    });
+    // already aborted
+    if (!opt_sub) {
+        return ss::make_exception_future<eviction_range_lock>(
+          ss::abort_requested_exception());
+    }
+
+    return _eviction_monitor
+      .emplace(eviction_monitor{
+        ss::promise<eviction_range_lock>{}, std::move(*opt_sub)})
+      .promise.get_future();
+}
+
+ss::future<eviction_range_lock>
+get_eviction_range_lock(const segment_set& segs, model::offset max_offset) {
+    std::vector<ss::future<ss::rwlock::holder>> lock_futures;
+    auto it = segs.begin();
+    while (it != segs.end() && (*it)->offsets().base_offset < max_offset) {
+        lock_futures.push_back((*it)->read_lock());
+        ++it;
+    }
+
+    return ss::when_all_succeed(lock_futures.begin(), lock_futures.end())
+      .then([max_offset](std::vector<ss::rwlock::holder> locks) {
+          return eviction_range_lock(max_offset, std::move(locks));
+      });
+}
+
+ss::future<> disk_log_impl::garbage_collect_segments(
+  model::offset max_offset, ss::abort_source* as, std::string_view ctx) {
+    auto f = ss::now();
+    if (_eviction_monitor) {
+        f = get_eviction_range_lock(_segs, max_offset)
+              .then([this](eviction_range_lock lock) {
+                  _eviction_monitor->promise.set_value(std::move(lock));
+                  _eviction_monitor.reset();
+              });
+    }
+
+    return f.then([this, as, max_offset, ctx] {
+        return ss::do_until(
+          [this, as, max_offset] {
+              return _segs.empty() || as->abort_requested()
+                     || _segs.front()->offsets().base_offset > max_offset;
+          },
+          [this, ctx] {
+              auto ptr = _segs.front();
+              //  Grab segment write lock before poping it from segments set.
+              return ptr->write_lock().then(
+                [this, ptr, ctx]([[maybe_unused]] ss::rwlock::holder h) {
+                    _segs.pop_front();
+                    return remove_segment_permanently(ptr, ctx);
+                });
+          });
+    });
+}
+
+ss::future<> disk_log_impl::garbage_collect_max_partition_size(
+  size_t max_bytes, ss::abort_source* as) {
+    model::offset max_offset = size_based_gc_max_offset(max_bytes);
+    return garbage_collect_segments(max_offset, as, "gc[size_based_retention]");
+}
+
+ss::future<> disk_log_impl::garbage_collect_oldest_segments(
+  model::timestamp time, ss::abort_source* as) {
+    model::offset max_offset = time_based_gc_max_offset(time);
+    return garbage_collect_segments(max_offset, as, "gc[time_based_retention]");
 }
 
 ss::future<> disk_log_impl::do_compact(compaction_config cfg) {
