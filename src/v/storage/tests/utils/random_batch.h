@@ -5,7 +5,11 @@
 #include <seastar/core/circular_buffer.hh>
 
 namespace storage::test {
-
+/**
+ * Makes random batch starting at requested offset.
+ *
+ * Note: it can create batches with timestamps from the past.
+ */
 model::record_batch make_random_batch(
   model::offset o,
   int num_records,

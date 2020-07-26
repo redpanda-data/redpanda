@@ -1,6 +1,7 @@
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
+#include "model/timestamp.h"
 #include "random/generators.h"
 #include "storage/log_manager.h"
 #include "storage/tests/storage_test_fixture.h"
@@ -297,6 +298,25 @@ FIXTURE_TEST(test_append_batches_from_multiple_terms, storage_test_fixture) {
     }
 }
 
+struct custom_ts_batch_generator {
+    explicit custom_ts_batch_generator(model::timestamp start_ts)
+      : _start_ts(start_ts) {}
+
+    ss::circular_buffer<model::record_batch> operator()() {
+        auto batches = storage::test::make_random_batches(
+          model::offset(0), random_generators::get_int(1, 10));
+
+        for (auto& b : batches) {
+            b.header().first_timestamp = _start_ts;
+            _start_ts = model::timestamp(_start_ts() + b.record_count());
+            b.header().max_timestamp = _start_ts;
+            _start_ts = model::timestamp(_start_ts() + 1);
+        }
+        return batches;
+    }
+    model::timestamp _start_ts;
+};
+
 FIXTURE_TEST(test_time_based_eviction, storage_test_fixture) {
     auto cfg = default_log_config(test_dir);
     cfg.max_segment_size = 10;
@@ -309,12 +329,22 @@ FIXTURE_TEST(test_time_based_eviction, storage_test_fixture) {
 
     storage::ntp_config ntp_cfg(ntp, mgr.config().base_dir);
     auto log = mgr.manage(std::move(ntp_cfg)).get0();
-    auto headers = append_random_batches(log, 10);
+    auto headers = append_random_batches(
+      log,
+      10,
+      model::term_id(0),
+      custom_ts_batch_generator(model::timestamp::now()));
+
     log.flush().get0();
     model::timestamp gc_ts = headers.back().max_timestamp;
     auto lstats = log.offsets();
     info("Offsets to be evicted {}", lstats);
-    headers = append_random_batches(log, 10);
+    headers = append_random_batches(
+      log,
+      10,
+      model::term_id(0),
+      custom_ts_batch_generator(model::timestamp(gc_ts() + 10)));
+
     storage::compaction_config ccfg(
       gc_ts, std::nullopt, ss::default_priority_class(), as);
 
@@ -389,12 +419,20 @@ FIXTURE_TEST(test_eviction_notification, storage_test_fixture) {
           ev_range_lock.set_value(std::move(lock));
       });
 
-    auto headers = append_random_batches(log, 10);
+    auto headers = append_random_batches(
+      log,
+      10,
+      model::term_id(0),
+      custom_ts_batch_generator(model::timestamp::now()));
     log.flush().get0();
     model::timestamp gc_ts = headers.back().max_timestamp;
     auto lstats_before = log.offsets();
     info("Offsets to be evicted {}", lstats_before);
-    headers = append_random_batches(log, 10);
+    headers = append_random_batches(
+      log,
+      10,
+      model::term_id(0),
+      custom_ts_batch_generator(model::timestamp(gc_ts() + 10)));
     storage::compaction_config ccfg(
       gc_ts, std::nullopt, ss::default_priority_class(), as);
 
