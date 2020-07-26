@@ -100,6 +100,24 @@ private:
     iobuf _value;
 };
 
+/// \brief
+// DefaultRecord(int sizeInBytes,
+//               byte attributes,
+//               long offset,
+//               long timestamp,
+//               int sequence,
+//               ByteBuffer key,
+//               ByteBuffer value,
+//               Header[] headers) {
+//     this.sizeInBytes = sizeInBytes;
+//     this.attributes = attributes;
+//     this.offset = offset;
+//     this.timestamp = timestamp;
+//     this.sequence = sequence;
+//     this.key = key;
+//     this.value = value;
+//     this.headers = headers;
+// }
 class record {
 public:
     record() = default;
@@ -111,7 +129,7 @@ public:
     record(
       int32_t size_bytes,
       record_attributes attributes,
-      int32_t timestamp_delta,
+      int64_t timestamp_delta,
       int32_t offset_delta,
       int32_t key_size,
       iobuf key,
@@ -146,7 +164,7 @@ public:
 
     record_attributes attributes() const { return _attributes; }
 
-    int32_t timestamp_delta() const { return _timestamp_delta; }
+    int64_t timestamp_delta() const { return _timestamp_delta; }
 
     int32_t offset_delta() const { return _offset_delta; }
 
@@ -211,7 +229,7 @@ public:
 private:
     int32_t _size_bytes{0};
     record_attributes _attributes;
-    int32_t _timestamp_delta{0};
+    int64_t _timestamp_delta{0};
     int32_t _offset_delta{0};
     int32_t _key_size{0};
     iobuf _key;
