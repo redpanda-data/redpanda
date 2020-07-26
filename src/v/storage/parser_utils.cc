@@ -48,7 +48,7 @@ model::record do_parse_one_record_from_buffer(
     return model::record(
       record_size,
       model::record_attributes(attr),
-      static_cast<int32_t>(timestamp_delta),
+      static_cast<int64_t>(timestamp_delta),
       static_cast<int32_t>(offset_delta),
       key_length,
       std::move(key),
