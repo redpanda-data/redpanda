@@ -12,6 +12,7 @@
 #include "storage/types.h"
 
 #include <seastar/core/abort_source.hh>
+#include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
 
 #include <absl/container/flat_hash_map.h>
@@ -35,6 +36,8 @@ public:
     ss::future<> truncate(truncate_config) final;
     ss::future<> truncate_prefix(truncate_prefix_config) final;
     ss::future<> compact(compaction_config) final;
+
+    ss::future<eviction_range_lock> monitor_eviction(ss::abort_source&) final;
 
     ss::future<model::record_batch_reader> make_reader(log_reader_config) final;
     ss::future<model::record_batch_reader> make_reader(timequery_config);
@@ -97,8 +100,16 @@ private:
     garbage_collect_max_partition_size(size_t max_bytes, ss::abort_source*);
     ss::future<>
     garbage_collect_oldest_segments(model::timestamp, ss::abort_source*);
+    ss::future<> garbage_collect_segments(
+      model::offset, ss::abort_source*, std::string_view);
+    model::offset size_based_gc_max_offset(size_t);
+    model::offset time_based_gc_max_offset(model::timestamp);
 
 private:
+    struct eviction_monitor {
+        ss::promise<eviction_range_lock> promise;
+        ss::abort_source::subscription subscription;
+    };
     bool _closed{false};
     log_manager& _manager;
     segment_set _segs;
@@ -107,6 +118,7 @@ private:
     lock_manager _lock_mngr;
     storage::probe _probe;
     failure_probes _failure_probes;
+    std::optional<eviction_monitor> _eviction_monitor;
 };
 
 } // namespace storage
