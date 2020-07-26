@@ -54,7 +54,7 @@ public:
     consume_result consume_record(
       size_t size_bytes,
       model::record_attributes attributes,
-      int32_t timestamp_delta,
+      int64_t timestamp_delta,
       int32_t offset_delta,
       iobuf&& key,
       iobuf&& value_and_headers) override {
@@ -97,7 +97,7 @@ private:
     size_t _num_records;
     size_t _record_size_bytes;
     model::record_attributes _record_attributes;
-    int32_t _record_timestamp_delta;
+    int64_t _record_timestamp_delta;
     int32_t _record_offset_delta;
     iobuf _record_key;
     model::record_batch::records_type _records;

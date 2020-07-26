@@ -123,7 +123,7 @@ model::record adl<model::record>::from(iobuf_parser& in) {
     auto sz_bytes = adl<uint32_t>{}.from(in);
     using attr_t = model::record_attributes::type;
     auto attributes = model::record_attributes(adl<attr_t>{}.from(in));
-    auto timestamp = adl<int32_t>{}.from(in);
+    auto timestamp = adl<int64_t>{}.from(in);
     auto offset_data = adl<int32_t>{}.from(in);
     auto key_len = adl<int32_t>{}.from(in);
     auto key = adl<iobuf>{}.from(in);
