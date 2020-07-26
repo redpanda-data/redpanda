@@ -320,9 +320,12 @@ ss::future<append_result> segment::append(const model::record_batch& b) {
                                                + b.header().size_bytes;
             vassert(
               end_physical_offset == expected_end_physical,
-              "size must be deterministic: end_offset:{}, expected:{}",
+              "size must be deterministic: end_offset:{}, expected:{}, "
+              "batch.header:{} - {}",
               end_physical_offset,
-              expected_end_physical);
+              expected_end_physical,
+              b.header(),
+              *this);
             // index the write
             _idx.maybe_track(b.header(), start_physical_offset);
             auto ret = append_result{
