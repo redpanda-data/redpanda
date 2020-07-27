@@ -3,4 +3,5 @@ build:
   root: ./build
   src: ./
   gopath: ./build
+  node_build_dir: ./build
   default_type: release

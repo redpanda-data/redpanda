@@ -4,5 +4,6 @@ build:
   src: .
   gopath: /vectorized
   external: /vectorized
+  node_build_dir: /vectorized
   clang: /vectorized/llvm/
   default_type: release

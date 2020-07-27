@@ -60,6 +60,19 @@ def _get_toolchain_image_metadata(vconfig):
             f'{vconfig.src_dir}/tools/ci/docker/Dockerfile.golang',
             'needs': ['base'],
         },
+        'node': {
+            'name':
+            'gcr.io/redpandaci/node',
+            'files': [
+                f'{vconfig.node_src_dir}/package.json',
+                f'{vconfig.node_src_dir}/package-lock.json',
+                f'{vconfig.src_dir}/tools/ci/docker/Dockerfile.node',
+                f'{vconfig.src_dir}/tools/ci/vtools-gcc-release.yml',
+            ],
+            'dockerfile':
+            f'{vconfig.src_dir}/tools/ci/docker/Dockerfile.node',
+            'needs': ['base'],
+        },
         'builder': {
             'name':
             'gcr.io/redpandaci/builder',
@@ -68,10 +81,11 @@ def _get_toolchain_image_metadata(vconfig):
                 f'{vconfig.src_dir}/3rdparty.cmake.in',
                 f'{vconfig.src_dir}/CMakeLists.txt',
                 f'{vconfig.src_dir}/tools/ci/vtools-{vconfig.compiler}-{vconfig.build_type}.yml',
+                f'{vconfig.src_dir}/tools/ci/docker/Dockerfile.builder',
             ],
             'dockerfile':
             f'{vconfig.src_dir}/tools/ci/docker/Dockerfile.builder',
-            'needs': ['clang', 'golang'],
+            'needs': ['clang', 'golang', 'node'],
         },
     }
 
@@ -82,6 +96,8 @@ def _get_toolchain_image_metadata(vconfig):
         {'sha': _get_sha('clang', toolchain_images)})
     toolchain_images['golang'].update(
         {'sha': _get_sha('golang', toolchain_images)})
+    toolchain_images['node'].update(
+        {'sha': _get_sha('node', toolchain_images)})
     toolchain_images['builder'].update(
         {'sha': _get_sha('builder', toolchain_images)})
 
@@ -105,12 +121,20 @@ def _get_toolchain_image_metadata(vconfig):
             f'--build-arg BASE_SHA={toolchain_images["base"]["sha"]}',
         ],
     })
+    toolchain_images['node'].update({
+        'name_tag':
+        f'{toolchain_images["node"]["name"]}:{toolchain_images["node"]["sha"]}',
+        'build_args': [
+            f'--build-arg BASE_SHA={toolchain_images["base"]["sha"]}',
+        ],
+    })
     toolchain_images['builder'].update({
         'name_tag':
         f'{toolchain_images["builder"]["name"]}:{vconfig.compiler}-{vconfig.build_type}-{toolchain_images["builder"]["sha"]}',
         'build_args': ([
             f'--build-arg CLANG_SHA={toolchain_images["clang"]["sha"]}',
             f'--build-arg GOLANG_SHA={toolchain_images["golang"]["sha"]}',
+            f'--build-arg NODE_SHA={toolchain_images["node"]["sha"]}',
             f'--build-arg COMPILER={vconfig.compiler}',
             f'--build-arg BUILD_TYPE={vconfig.build_type}',
         ]),

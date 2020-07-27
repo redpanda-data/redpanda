@@ -1,6 +1,8 @@
 ARG GOLANG_SHA=latest
 ARG CLANG_SHA=latest
+ARG NODE_SHA=latest
 FROM gcr.io/redpandaci/golang:${GOLANG_SHA} as godeps
+FROM gcr.io/redpandaci/node:${NODE_SHA} as vnode
 FROM gcr.io/redpandaci/clang:${CLANG_SHA} as clang
 
 ARG COMPILER=gcc
@@ -17,3 +19,4 @@ RUN pip install /v/tools && \
     rm -r /v
 
 COPY --from=godeps /vectorized/go /vectorized/go
+COPY --from=vnode /vectorized/node /vectorized/node

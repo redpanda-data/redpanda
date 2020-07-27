@@ -27,3 +27,6 @@
 # rp
 !/CMakeLists.txt
 
+# node
+!/src/js/package.json
+!/src/js/package-lock.json
