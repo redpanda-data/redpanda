@@ -1,12 +1,12 @@
 import { CoprocessorHandle } from "../domain/CoprocessorManager";
 import { find } from "../utilities/Map";
+import { Coprocessor } from "../public/Coprocessor";
 
 /**
  * CoprocessorsRepository is a container for CoprocessorHandles.
  */
 class CoprocessorRepository {
-  constructor(folder: string) {
-    this.folder = folder;
+  constructor() {
     this.coprocessors = new Map();
   }
 
@@ -37,6 +37,22 @@ class CoprocessorRepository {
   };
 
   /**
+   * Given a Coprocessor, try to find one with the same global ID and return it
+   * if it exists, returns undefined otherwise
+   * @param coprocessor
+   */
+  findByCoprocessor = (
+    coprocessor: Coprocessor
+  ): CoprocessorHandle | undefined => {
+    const foundCoprocessor = find(
+      this.coprocessors,
+      (key, value) => coprocessor.globalId === value.coprocessor.globalId
+    );
+    // find method return a Tuple, where 1 position is the CoprocessorHandle value
+    return foundCoprocessor ? foundCoprocessor[1] : undefined;
+  };
+
+  /**
    * removeCoprocessor method remove a coprocessor from the coprocessor map
    * @param coprocessor
    */
@@ -44,11 +60,22 @@ class CoprocessorRepository {
     this.coprocessors.delete(coprocessor.coprocessor.globalId);
 
   /**
-   * getCoprocessors returns the map of CoprocessorHandles indexed by their global ID
+   * getCoprocessors returns the map of CoprocessorHandles indexed by their topics
    */
-  getCoprocessors = () => this.coprocessors;
+  getCoprocessorsByTopics(): Map<string, Coprocessor[]> {
+    const coprocessorByTopic = new Map<string, Coprocessor[]>();
+    for (const [_, value] of this.coprocessors) {
+      value.coprocessor.inputTopics.reduce((prev, topic) => {
+        const previousCoprocessors = coprocessorByTopic.get(topic) || [];
+        return coprocessorByTopic.set(topic, [
+          ...previousCoprocessors,
+          value.coprocessor,
+        ]);
+      }, coprocessorByTopic);
+    }
+    return coprocessorByTopic;
+  }
 
-  private readonly folder;
   private readonly coprocessors: Map<number, CoprocessorHandle>;
 }
 

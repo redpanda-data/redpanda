@@ -4,6 +4,7 @@ import { promisify } from "util";
 import CoprocessorRepository from "./CoprocessorRepository";
 import { CoprocessorHandle } from "../domain/CoprocessorManager";
 import { getChecksumFromFile } from "../utilities/Checksum";
+import { Coprocessor } from "../public/Coprocessor";
 
 /**
  * CoprocessorFileManager class is an inotify implementation, it receives a
@@ -71,9 +72,7 @@ class CoprocessorFileManager {
    * adds them to the given CoprocessorRepository
    * @param coprocessorRepository
    */
-  readActiveCoprocessor = (
-    coprocessorRepository: CoprocessorRepository
-  ): void => {
+  readActiveCoprocessor(coprocessorRepository: CoprocessorRepository): void {
     const readdirPromise = promisify(readdir);
     readdirPromise(this.activeDir)
       .then((files) => {
@@ -87,7 +86,7 @@ class CoprocessorFileManager {
       })
       .catch(console.error);
     //TODO: implement winston for loggin information and error handler
-  };
+  }
 
   /**
    * Updates the given CoprocessorRepository instance when a new coprocessor
@@ -106,9 +105,41 @@ class CoprocessorFileManager {
   /**
    * allow closing the inotify process
    */
-  close = () => {
-    this.watcher.close();
+  close = (): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      try {
+        this.watcher.close();
+        return resolve();
+      } catch (e) {
+        reject(e);
+      }
+    });
   };
+
+  /**
+   * Deregister the given Coprocessor and move the file where it's defined to the
+   * 'inactive' directory.
+   * @param coprocessor is a Coprocessor implementation.
+   */
+  deregisterCoprocessor(coprocessor: Coprocessor): Promise<CoprocessorHandle> {
+    const coprocessorHandle = this.coprocessorRepository.findByCoprocessor(
+      coprocessor
+    );
+    if (coprocessorHandle) {
+      return this.moveCoprocessorFile(coprocessorHandle, this.inactiveDir).then(
+        (coprocessor) => {
+          this.coprocessorRepository.remove(coprocessor);
+          return coprocessor;
+        }
+      );
+    } else {
+      return Promise.reject(
+        new Error(
+          `The given coprocessor with ID ${coprocessor.globalId} hasn't been loaded`
+        )
+      );
+    }
+  }
 
   /**
    * receives a path and it gets the js file and create a checksum for content path file.
@@ -121,11 +152,13 @@ class CoprocessorFileManager {
         delete require.cache[filename];
         const fileChecksum = getChecksumFromFile(filename);
         fileChecksum
-          .then((checksum) => ({
-            coprocessor: new script.default(),
-            checksum,
-            filename,
-          }))
+          .then((checksum) =>
+            resolve({
+              coprocessor: new script.default(),
+              checksum,
+              filename,
+            })
+          )
           .catch(reject);
       } catch (e) {
         reject(e);
