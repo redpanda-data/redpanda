@@ -81,7 +81,7 @@ class VConfig(object):
         self._gopath = os.path.abspath(f"{self._cfg['build']['gopath']}/go")
         self._src_dir = os.path.abspath(self._cfg['build']['src'])
         self._node_build_dir = os.path.abspath(
-            f"{self._cfg['build']['root']}/node")
+            f"{self._cfg['build']['node_build_dir']}/node")
 
         # paths to dev utility binary folders (llvm, formatters, ansible, etc.)
         v_path = (f"{self._gopath}/bin:"
@@ -90,7 +90,7 @@ class VConfig(object):
                   f"{self.build_root}/infra/v2/current/bin:"
                   f"{self.java_home_dir}/bin:"
                   f"{self.maven_home_dir}/bin:"
-                  f"{self._node_build_dir}/bin:"
+                  f"{self.node_build_dir}/bin:"
                   "/bin:/usr/bin:/usr/local/bin:")
         if self.compiler == 'clang':
             v_path = f":{self.clang_path}/bin:{v_path}"
@@ -264,4 +264,4 @@ class VConfig(object):
     @property
     def node_src_dir(self):
         """Source folder for typescript/javascript programs."""
-        return f"{self._cfg['build']['src']}src/js"
+        return f"{self._cfg['build']['src']}/src/js"
