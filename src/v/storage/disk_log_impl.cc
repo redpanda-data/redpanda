@@ -160,7 +160,7 @@ ss::future<eviction_range_lock>
 get_eviction_range_lock(const segment_set& segs, model::offset max_offset) {
     std::vector<ss::future<ss::rwlock::holder>> lock_futures;
     auto it = segs.begin();
-    while (it != segs.end() && (*it)->offsets().base_offset < max_offset) {
+    while (it != segs.end() && (*it)->offsets().dirty_offset <= max_offset) {
         lock_futures.push_back((*it)->read_lock());
         ++it;
     }
