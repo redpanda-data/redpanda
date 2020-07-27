@@ -10,6 +10,7 @@
 #include "cluster/types.h"
 #include "raft/errc.h"
 #include "raft/types.h"
+#include "random/generators.h"
 #include "rpc/errc.h"
 #include "rpc/types.h"
 
@@ -144,7 +145,12 @@ ss::future<topic_result> topics_frontend::replicate_create_topic(
     create_topic_cmd cmd(
       tp_ns,
       topic_configuration_assignment(std::move(cfg), units.get_assignments()));
-
+    for (auto& p_as : cmd.value.assignments) {
+        std::shuffle(
+          p_as.replicas.begin(),
+          p_as.replicas.end(),
+          random_generators::internal::gen);
+    }
     return replicate_and_wait(std::move(cmd), timeout)
       .then_wrapped([tp_ns, units = std::move(units)](
                       ss::future<std::error_code> f) mutable {
