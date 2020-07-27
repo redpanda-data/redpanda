@@ -49,7 +49,7 @@ struct offset_commit_request final {
     }
 };
 
-static inline std::ostream&
+inline std::ostream&
 operator<<(std::ostream& os, const offset_commit_request& r) {
     return os << r.data;
 }
@@ -84,7 +84,7 @@ struct offset_commit_response final {
     }
 };
 
-static inline std::ostream&
+inline std::ostream&
 operator<<(std::ostream& os, const offset_commit_response& r) {
     return os << r.data;
 }
