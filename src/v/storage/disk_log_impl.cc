@@ -177,6 +177,10 @@ ss::future<> disk_log_impl::garbage_collect_segments(
     if (_eviction_monitor) {
         f = get_eviction_range_lock(_segs, max_offset)
               .then([this](eviction_range_lock lock) {
+                  // do not trigger monitor when there are no evictions
+                  if (lock.locks.empty()) {
+                      return;
+                  }
                   _eviction_monitor->promise.set_value(std::move(lock));
                   _eviction_monitor.reset();
               });
