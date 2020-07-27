@@ -18,7 +18,6 @@ func fillRpkConfig(path, mode string) config.Config {
 	conf := config.DefaultConfig()
 	val := mode == config.ModeProd
 	conf.Rpk = &config.RpkConfig{
-		EnableUsageStats:    val,
 		TuneNetwork:         val,
 		TuneDiskScheduler:   val,
 		TuneNomerges:        val,

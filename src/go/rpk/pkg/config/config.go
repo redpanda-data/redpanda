@@ -335,14 +335,14 @@ func SetMode(mode string, conf *Config) (*Config, error) {
 func setDevelopment(conf *Config) *Config {
 	// Defaults to setting all tuners to false
 	conf.Rpk = &RpkConfig{
-		CoredumpDir: conf.Rpk.CoredumpDir,
+		EnableUsageStats: conf.Rpk.EnableUsageStats,
+		CoredumpDir:      conf.Rpk.CoredumpDir,
 	}
 	return conf
 }
 
 func setProduction(conf *Config) *Config {
 	rpk := conf.Rpk
-	rpk.EnableUsageStats = true
 	rpk.TuneNetwork = true
 	rpk.TuneDiskScheduler = true
 	rpk.TuneNomerges = true
