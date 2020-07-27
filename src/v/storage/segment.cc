@@ -273,18 +273,17 @@ ss::future<> segment::compaction_index_batch(const model::record_batch& b) {
     return ss::do_with(
       iobuf_parser(std::move(body_buf)),
       [this, header = b.header()](iobuf_parser& parser) {
-          auto begin = boost::make_counting_iterator(uint32_t(0));
-          auto end = boost::make_counting_iterator(
-            uint32_t(header.record_count - 1));
+          const auto r = boost::irange(0, header.record_count - 1);
           const model::offset o = header.base_offset;
-          return ss::do_for_each(begin, end, [this, o, &parser](uint32_t) {
-              auto rec
-                = internal::parse_one_record_from_buffer_using_kafka_format(
-                  parser);
-              auto k = iobuf_to_bytes(rec.key());
-              return compaction_index().index(
-                std::move(k), o, rec.offset_delta());
-          });
+          return ss::do_for_each(
+            r.begin(), r.end(), [this, o, &parser](int32_t) {
+                auto rec
+                  = internal::parse_one_record_from_buffer_using_kafka_format(
+                    parser);
+                auto k = iobuf_to_bytes(rec.key());
+                return compaction_index().index(
+                  std::move(k), o, rec.offset_delta());
+            });
       });
 }
 

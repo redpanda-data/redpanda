@@ -117,4 +117,17 @@ private:
     size_t _acc{0};
 };
 
+class index_rebuilder_reducer : public compaction_reducer {
+public:
+    explicit index_rebuilder_reducer(compacted_index_writer* w) noexcept
+      : _w(w) {}
+    ss::future<ss::stop_iteration> operator()(model::record_batch&&);
+    void end_of_stream() {}
+
+private:
+    ss::future<> do_streaming_index(model::record_batch&&);
+
+    compacted_index_writer* _w;
+};
+
 } // namespace storage::internal
