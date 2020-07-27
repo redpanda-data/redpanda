@@ -515,7 +515,6 @@ func TestSetMode(t *testing.T) {
 		conf := DefaultConfig()
 		val := mode == ModeProd
 		conf.Rpk = &RpkConfig{
-			EnableUsageStats:    val,
 			TuneNetwork:         val,
 			TuneDiskScheduler:   val,
 			TuneNomerges:        val,
