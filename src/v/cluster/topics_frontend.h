@@ -59,6 +59,9 @@ private:
       std::vector<topic_configuration>,
       model::timeout_clock::duration);
 
+    // returns true if the topic name is valid
+    static bool validate_topic_name(const model::topic_namespace&);
+
     model::node_id _self;
     ss::sharded<controller_stm>& _stm;
     ss::sharded<partition_allocator>& _allocator;
