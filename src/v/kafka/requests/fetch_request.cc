@@ -272,6 +272,7 @@ static ss::future<fetch_response::partition_response> read_from_partition(
                  * return path will fill in other response fields.
                  */
                 return fetch_response::partition_response{
+                  .error = error_code::none,
                   .record_set = std::move(res),
                 };
             });
@@ -337,7 +338,6 @@ handle_ntp_fetch(op_context& octx, model::ntp ntp, fetch_config config) {
           try {
               auto response = f.get0();
               response.id = p_id;
-              response.error = error_code::none;
               octx.add_partition_response(std::move(response));
           } catch (...) {
               /*
