@@ -299,8 +299,7 @@ read_from_ntp(op_context& octx, model::ntp ntp, fetch_config config) {
     return octx.rctx.partition_manager().invoke_on(
       *shard,
       octx.ssg,
-      [ntp = std::move(ntp),
-       config = std::move(config)](cluster::partition_manager& mgr) {
+      [ntp = std::move(ntp), config](cluster::partition_manager& mgr) {
           /*
            * lookup the ntp's partition
            */
@@ -333,7 +332,7 @@ static ss::future<>
 handle_ntp_fetch(op_context& octx, model::ntp ntp, fetch_config config) {
     using read_response_type = ss::future<fetch_response::partition_response>;
     auto p_id = ntp.tp.partition;
-    return read_from_ntp(octx, std::move(ntp), std::move(config))
+    return read_from_ntp(octx, std::move(ntp), config)
       .then_wrapped([&octx, p_id](read_response_type&& f) {
           try {
               auto response = f.get0();
