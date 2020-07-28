@@ -51,6 +51,9 @@ class KafkaArgs:
         self.ips = ips
         self.topic = topic
 
+    def __str__(self):
+        return f'kafka_args: [ips: {self.ips}, topic: {self.topic}]'
+
 
 class RemoteExecutor:
     def __init__(self, nodes, host_key):
@@ -101,7 +104,7 @@ def _is_running(node, client):
 
 def _remote_execute(client, cmd):
     logging.info(f"Executing {cmd}")
-    return client.exec_command(cmd, timeout=30)
+    return client.exec_command(cmd, timeout=90)
 
 
 def _kafka_delete_topic(node, client, kafka_args):
@@ -361,8 +364,10 @@ def _punisher_loop(cl, allow_minority, sleep_time, failed_log_dir):
             # always execute kafka command first
             if len(cl.up) > 0:
                 id = random.choice(list(cl.up))
+                available_topics = list(
+                    filter(lambda tp: tp.startswith("punisher"), cl.topics))
 
-                if len(cl.topics) == 0:
+                if len(available_topics) == 0:
                     cmd = 'create-topic'
                 else:
                     cmd = _weighted_choice(kafka_commands)
@@ -371,9 +376,10 @@ def _punisher_loop(cl, allow_minority, sleep_time, failed_log_dir):
                     kafka_args = KafkaArgs(ips=cl.kafka_ips,
                                            topic=_topic_name())
                 else:
-                    kafka_args = KafkaArgs(ips=cl.kafka_ips,
-                                           topic=random.choice(cl.topics))
-
+                    kafka_args = KafkaArgs(
+                        ips=cl.kafka_ips,
+                        topic=random.choice(available_topics))
+                logging.info(f"Executing {cmd} on {id} with args {kafka_args}")
                 _, out, err = cl.execute_kafka(cmd, id, kafka_args)
                 status = out.channel.recv_exit_status()
                 logging.info(
