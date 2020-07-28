@@ -84,6 +84,7 @@ public:
         testing = 0,
         consensus = 1,
         storage = 2,
+        controller = 3,
         /* your sub-system here */
     };
 
