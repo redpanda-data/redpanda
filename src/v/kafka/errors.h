@@ -235,6 +235,8 @@ constexpr error_code map_topic_error_code(cluster::errc code) {
         return error_code::unknown_topic_or_partition;
     case cluster::errc::timeout:
         return error_code::request_timed_out;
+    case cluster::errc::invalid_topic_name:
+        return error_code::invalid_topic_exception;
     default:
         return error_code::unknown_server_error;
     }
