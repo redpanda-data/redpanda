@@ -142,6 +142,22 @@ struct configuration_invariants {
     operator<<(std::ostream&, const configuration_invariants&);
 };
 
+class configuration_invariants_changed final : public std::exception {
+public:
+    explicit configuration_invariants_changed(
+      const configuration_invariants& expected,
+      const configuration_invariants& current)
+      : _msg(fmt::format(
+        "Configuration invariants changed. Expected: {}, current: {}",
+        expected,
+        current)) {}
+
+    const char* what() const noexcept final { return _msg.c_str(); }
+
+private:
+    ss::sstring _msg;
+};
+
 } // namespace cluster
 
 namespace reflection {
