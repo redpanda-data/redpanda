@@ -26,6 +26,7 @@ members_manager::members_manager(
   ss::sharded<members_table>& members_table,
   ss::sharded<rpc::connection_cache>& connections,
   ss::sharded<partition_allocator>& allocator,
+  ss::sharded<storage::api>& storage,
   ss::sharded<ss::abort_source>& as)
   : _seed_servers(config::shard_local_cfg().seed_servers())
   , _self(make_self_broker(config::shard_local_cfg()))
@@ -34,17 +35,22 @@ members_manager::members_manager(
   , _members_table(members_table)
   , _connection_cache(connections)
   , _allocator(allocator)
+  , _storage(storage)
   , _as(as) {}
 
 ss::future<> members_manager::start() {
     vlog(clusterlog.info, "starting cluster::members_manager...");
-    // join raft0
-    if (!is_already_member()) {
-        join_raft0();
-    }
 
-    // handle initial configuration
-    return handle_raft0_cfg_update(_raft0->config());
+    // validate node id change
+    return validate_configuration_invariants().then([this] {
+        // join raft0
+        if (!is_already_member()) {
+            join_raft0();
+        }
+
+        // handle initial configuration
+        return handle_raft0_cfg_update(_raft0->config());
+    });
 }
 
 cluster::patch<broker_ptr>
@@ -255,6 +261,48 @@ members_manager::handle_join_request(model::broker broker) {
           return ss::make_ready_future<ret_t>(
             errc::join_request_dispatch_error);
       });
+}
+
+ss::future<> members_manager::validate_configuration_invariants() {
+    static const bytes invariants_key("configuration_invariants");
+    auto invariants_buf = _storage.local().kvs().get(
+      storage::kvstore::key_space::controller, invariants_key);
+
+    if (!invariants_buf) {
+        // store configuration invariants
+        return _storage.local().kvs().put(
+          storage::kvstore::key_space::controller,
+          invariants_key,
+          reflection::to_iobuf(
+            configuration_invariants(_self.id(), ss::smp::count)));
+    }
+    auto current = configuration_invariants(_self.id(), ss::smp::count);
+    auto invariants = reflection::from_iobuf<configuration_invariants>(
+      std::move(*invariants_buf));
+    // node id changed
+
+    if (invariants.node_id != current.node_id) {
+        vlog(
+          clusterlog.error,
+          "Detected node id change from {} to {}. Node id change is not "
+          "supported",
+          invariants.node_id,
+          current.node_id);
+        return ss::make_exception_future(
+          configuration_invariants_changed(invariants, current));
+    }
+    if (invariants.core_count > current.core_count) {
+        vlog(
+          clusterlog.error,
+          "Detected change in number of cores dedicated to run redpanda."
+          "Decreasing redpanda core count is not allowed. Expected core count "
+          "{}, currently have {} cores.",
+          invariants.core_count,
+          ss::smp::count);
+        return ss::make_exception_future(
+          configuration_invariants_changed(invariants, current));
+    }
+    return ss::now();
 }
 
 } // namespace cluster
