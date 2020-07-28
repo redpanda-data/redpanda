@@ -125,7 +125,7 @@ public:
         _gm.invoke_on_all(&raft::group_manager::start).get();
         _pm.start(std::ref(_storage), std::ref(_gm)).get0();
         _controller = std::make_unique<cluster::controller>(
-          _cli_cache, _pm, st);
+          _cli_cache, _pm, st, _storage);
         _metadata_dissemination_service
           .start(
             std::ref(_gm),
