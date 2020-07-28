@@ -448,19 +448,27 @@ ss::future<> consensus::start() {
                 _term);
           })
           .then([this] {
-              // arm immediate election for first node in the configuration
+              auto next_election = clock_type::now();
+              // set last heartbeat timestamp to prevent skipping first election
+              _hbeat = clock_type::time_point::min();
               if (!_conf.nodes.empty() && _self == _conf.nodes.begin()->id()) {
+                  // for single node scenarios arm immediate election, use
+                  // standard election timeout otherwise.
+                  if (_conf.nodes.size() > 1) {
+                      next_election += _jit.next_duration();
+                  }
                   if (!_bg.is_closed()) {
-                      // trigger immediate election
-                      _hbeat = clock_type::time_point::min();
-                      _vote_timeout.arm(raft::clock_type::now());
+                      _vote_timeout.arm(next_election);
                   }
                   return;
               }
-              // for all other nodes use jitter
+              // current node is not a preselected leader, add 2x jitter to
+              // give opportunity to the preselected leader to win the first
+              // round
+              next_election += _jit.base_duration()
+                               + 2 * _jit.next_jitter_duration();
               if (!_bg.is_closed()) {
-                  _vote_timeout.rearm(
-                    clock_type::now() + _jit.next_jitter_duration());
+                  _vote_timeout.rearm(next_election);
               }
           })
           .then([this] { return _event_manager.start(); });
