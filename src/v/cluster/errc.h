@@ -20,6 +20,7 @@ enum class errc {
     auto_create_topics_exception,
     timeout,
     topic_not_exists,
+    invalid_topic_name,
 };
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "cluster::errc"; }
@@ -62,6 +63,8 @@ struct errc_category final : public std::error_category {
             return "Timeout occurred while processing request";
         case errc::topic_not_exists:
             return "Topic does not exists";
+        case errc::invalid_topic_name:
+            return "Invalid topic name";
         default:
             return "cluster::errc::unknown";
         }
