@@ -13,6 +13,7 @@
 #include "cluster/topics_frontend.h"
 #include "cluster/types.h"
 #include "rpc/connection_cache.h"
+#include "storage/api.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/sharded.hh>
@@ -25,7 +26,8 @@ public:
     controller(
       ss::sharded<rpc::connection_cache>& ccache,
       ss::sharded<partition_manager>& pm,
-      ss::sharded<shard_table>& st);
+      ss::sharded<shard_table>& st,
+      ss::sharded<storage::api>& storage);
 
     ss::sharded<topics_frontend>& get_topics_frontend() { return _tp_frontend; }
     ss::sharded<members_manager>& get_members_manager() {
@@ -58,6 +60,7 @@ private:
     ss::sharded<rpc::connection_cache>& _connections;
     ss::sharded<partition_manager>& _partition_manager;
     ss::sharded<shard_table>& _shard_table;
+    ss::sharded<storage::api>& _storage;
     topic_updates_dispatcher _tp_updates_dispatcher;
     consensus_ptr _raft0;
 };
