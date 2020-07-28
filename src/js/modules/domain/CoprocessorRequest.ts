@@ -15,7 +15,7 @@ export class CoprocessorRequest {
     private id: string
   ) {}
 
-  getId = () => this.id;
-  getTopic = () => this.ntp.topic;
-  getRecords = () => this.recordBatchReader.records;
+  getId = (): string => this.id;
+  getTopic = (): string => this.ntp.topic;
+  getRecords = (): CoprocessorRecordBatch[] => this.recordBatchReader.records;
 }

@@ -9,7 +9,9 @@
     "build": "./node_modules/typescript/bin/tsc --build ../../src/js/tsconfig.json",
     "test": "./node_modules/mocha/bin/mocha --recursive \"./output/test\"",
     "prettier:format": "npx prettier --write .",
-    "eslint:check": "eslint . --ext .ts"
+    "prettier:check": "npx prettier --list-different .",
+    "eslint:check": "eslint . --ext .ts",
+    "code:ckeck": "npm run prettier:check && npm run eslint:check"
   },
   "requires": true,
   "dependencies": {

@@ -54,7 +54,7 @@ export class Server {
   /**
    * Close coprocessor filesystem watcher process
    */
-  public closeCoprocessorManager() {
+  public closeCoprocessorManager(): Promise<void> {
     return this.coprocessorFileManager.close();
   }
 
@@ -67,6 +67,7 @@ export class Server {
       /**
        * TODO: https://app.clubhouse.io/vectorized/story/959
        */
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
       // @ts-ignore
       this.applyCoprocessor(data)
         .then(() => socket.write(""))
@@ -100,6 +101,7 @@ export class Server {
         );
       }
     });
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-ignore
     return Promise.allSettled(results).then((coprocessorResults) => {
       const array = [];
@@ -134,7 +136,7 @@ export class Server {
       case PolicyError.Deregister:
         return this.coprocessorFileManager
           .deregisterCoprocessor(coprocessor)
-          .then((_) => Promise.reject(errorMessage));
+          .then(() => Promise.reject(errorMessage));
       case PolicyError.SkipOnFailure:
         return Promise.reject(errorMessage);
       default:
