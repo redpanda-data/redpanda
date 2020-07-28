@@ -19,6 +19,7 @@ public:
     struct op_context {
         model::term_id* term;
         storage::log* log;
+        ss::abort_source* _as;
     };
     struct op {
         op() noexcept = default;
@@ -38,6 +39,8 @@ public:
         append = 0,
         append_with_multiple_terms,
         append_op_foreign,
+        compact,
+        remove_all_compacted_indices,
         truncate,
         truncate_prefix,
         read,
@@ -66,5 +69,6 @@ private:
     model::term_id _term = model::term_id(0);
     std::vector<std::unique_ptr<op>> _workload;
     storage::log _log;
+    ss::abort_source _as;
 };
 } // namespace storage
