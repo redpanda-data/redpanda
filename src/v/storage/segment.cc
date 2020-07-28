@@ -82,8 +82,8 @@ ss::future<> segment::remove_thombsones() {
     return ss::do_with(std::move(rm), [](std::vector<ss::sstring>& to_remove) {
         return ss::do_for_each(to_remove, [](const ss::sstring& name) {
             return ss::remove_file(name).handle_exception(
-              [](std::exception_ptr e) {
-                  vlog(stlog.info, "error removing segment files: {}", e);
+              [name](std::exception_ptr e) {
+                  vlog(stlog.info, "error removing {}: {}", name, e);
               });
         });
     });
