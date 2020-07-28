@@ -369,14 +369,10 @@ func NormalizeMode(mode string) (string, error) {
 	switch mode {
 	case "":
 		fallthrough
-	case "development":
-		fallthrough
-	case ModeDev:
+	case "development", ModeDev:
 		return ModeDev, nil
 
-	case "production":
-		fallthrough
-	case ModeProd:
+	case "production", ModeProd:
 		return ModeProd, nil
 
 	default:
