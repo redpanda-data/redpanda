@@ -10,7 +10,8 @@
     "test": "./node_modules/mocha/bin/mocha --recursive \"./output/test\"",
     "prettier:format": "npx prettier --write .",
     "prettier:check": "npx prettier --list-different .",
-    "eslint:check": "eslint . --ext .ts"
+    "eslint:check": "eslint . --ext .ts",
+    "code:ckeck": "npm run prettier:check && npm run eslint:check"
   },
   "requires": true,
   "dependencies": {
