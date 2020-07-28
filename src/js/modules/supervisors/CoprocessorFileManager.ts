@@ -8,8 +8,9 @@ import { Coprocessor } from "../public/Coprocessor";
 
 /**
  * CoprocessorFileManager class is an inotify implementation, it receives a
- * CoprocessorRepository and updates this object when to  add a new file in submit directory
- * and read previous files from the active directory when this class is instanced
+ * CoprocessorRepository and updates this object when to  add a new file in
+ * submit directory and read previous files from the active directory when
+ * this class is instanced
  */
 class CoprocessorFileManager {
   constructor(
@@ -29,19 +30,20 @@ class CoprocessorFileManager {
   }
 
   /**
-   * AddCoprocessor gets coprocessor from filePath and decides if the coprocessor is
-   * moving between active and inactive directories
-   * @param filePath, path of a coprocessor that we want to load and add to CoprocessorRepository
+   * AddCoprocessor gets coprocessor from filePath and decides if the
+   * coprocessor is moving between active and inactive directories
+   * @param filePath, path of a coprocessor that we want to load and add to
+   *        CoprocessorRepository
    * @param coprocessorRepository, coprocessor container
-   * @param validatePrevCoprocessor, this flag is used for validation or not, if there is a
-   *              coprocessor in CoprocessorRepository with the same global Id and
-   *              different checksum, it will decide if id should update coprocessor or move the
-   *              file to the inactive folder.
+   * @param validatePrevCoprocessor, this flag is used for validation or not, if
+   *              there is a coprocessor in CoprocessorRepository with the same
+   *              global Id and different checksum, it will decide if id should
+   *              update coprocessor or move the file to the inactive folder.
    */
   addCoprocessor = (
     filePath: string,
     coprocessorRepository: CoprocessorRepository,
-    validatePrevCoprocessor: boolean = true
+    validatePrevCoprocessor = true
   ): Promise<CoprocessorHandle> =>
     this.getCoprocessor(filePath).then((coprocessor) => {
       const preCoprocessor = coprocessorRepository.findByGlobalId(coprocessor);
@@ -68,8 +70,8 @@ class CoprocessorFileManager {
     });
 
   /**
-   * reads the files in the "active" folder, loads them as CoprocessorHandles and
-   * adds them to the given CoprocessorRepository
+   * reads the files in the "active" folder, loads them as CoprocessorHandles
+   * and adds them to the given CoprocessorRepository
    * @param coprocessorRepository
    */
   readActiveCoprocessor(coprocessorRepository: CoprocessorRepository): void {
@@ -95,7 +97,7 @@ class CoprocessorFileManager {
    */
   updateRepositoryOnNewFile = (
     coprocessorRepository: CoprocessorRepository
-  ) => {
+  ): void => {
     this.watcher.on("add", (filePath) => {
       this.addCoprocessor(filePath, coprocessorRepository).catch(console.error);
       //TODO: implement winston for logging information and error handler
@@ -117,8 +119,8 @@ class CoprocessorFileManager {
   };
 
   /**
-   * Deregister the given Coprocessor and move the file where it's defined to the
-   * 'inactive' directory.
+   * Deregister the given Coprocessor and move the file where it's defined to
+   * the 'inactive' directory.
    * @param coprocessor is a Coprocessor implementation.
    */
   deregisterCoprocessor(coprocessor: Coprocessor): Promise<CoprocessorHandle> {
@@ -135,15 +137,17 @@ class CoprocessorFileManager {
     } else {
       return Promise.reject(
         new Error(
-          `The given coprocessor with ID ${coprocessor.globalId} hasn't been loaded`
+          `A coprocessor with ID ${coprocessor.globalId} hasn't been loaded`
         )
       );
     }
   }
 
   /**
-   * receives a path and it gets the js file and create a checksum for content path file.
-   * @param filename, path of the file that we need to get coprocessor information
+   * receives a path, and it gets the js file and create a checksum for content
+   * path file.
+   * @param filename, path of the file that we need to get coprocessor
+   *                  information.
    */
   private getCoprocessor = (filename: string): Promise<CoprocessorHandle> => {
     return new Promise<CoprocessorHandle>((resolve, reject) => {
@@ -167,8 +171,9 @@ class CoprocessorFileManager {
   };
 
   /**
-   * moveCoprocessorFile moves coprocessor from the current filepath to destination path, also changes the
-   * name of the file for its checksum value and adds its SHA hash as a prefix.
+   * moveCoprocessorFile moves coprocessor from the current filepath to
+   * destination path, also changes the name of the file for its checksum value
+   * and adds its SHA hash as a prefix.
    * @param coprocessor, is a coprocessor loaded in memory
    * @param destination, destination path
    */
@@ -178,7 +183,7 @@ class CoprocessorFileManager {
   ): Promise<CoprocessorHandle> => {
     const renamePromise = promisify(rename);
     const newFileName = `${destination}/sha265-${coprocessor.checksum}.js`;
-    return renamePromise(coprocessor.filename, newFileName).then((_) => ({
+    return renamePromise(coprocessor.filename, newFileName).then(() => ({
       ...coprocessor,
       filename: newFileName,
     }));
