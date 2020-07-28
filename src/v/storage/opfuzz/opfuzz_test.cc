@@ -14,6 +14,14 @@
 #include <iterator>
 #include <optional>
 
+inline model::cleanup_policy_bitflags randcompaction() {
+    auto c = model::cleanup_policy_bitflags::compaction;
+    if (random_generators::get_int(0, 100) > 50) {
+        c |= model::cleanup_policy_bitflags::deletion;
+    }
+    return c;
+}
+
 FIXTURE_TEST(test_random_workload, storage_test_fixture) {
     // BLOCK on logging so that we can make sense of the logs
     std::cout.setf(std::ios::unitbuf);
@@ -39,9 +47,7 @@ FIXTURE_TEST(test_random_workload, storage_test_fixture) {
         auto overrides
           = std::make_unique<storage::ntp_config::default_overrides>(
             storage::ntp_config::default_overrides{
-              .cleanup_policy_bitflags
-              = model::cleanup_policy_bitflags::compaction
-                | model::cleanup_policy_bitflags::deletion,
+              .cleanup_policy_bitflags = randcompaction(),
               .compaction_strategy = model::compaction_strategy::offset,
             });
 
