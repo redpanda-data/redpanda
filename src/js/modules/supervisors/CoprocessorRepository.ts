@@ -20,9 +20,9 @@ class CoprocessorRepository {
 
   /**
    *
-   * findByGlobalId method receives a coprocessor and returns a CoprocessorHandle if
-   * there exists one with the same global ID as the given coprocessor. Returns
-   * undefined otherwise.
+   * findByGlobalId method receives a coprocessor and returns a
+   * CoprocessorHandle if there exists one with the same global ID as the given
+   * coprocessor. Returns undefined otherwise.
    * @param coprocessor
    */
   findByGlobalId = (
@@ -48,7 +48,8 @@ class CoprocessorRepository {
       this.coprocessors,
       (key, value) => coprocessor.globalId === value.coprocessor.globalId
     );
-    // find method return a Tuple, where 1 position is the CoprocessorHandle value
+    // find method return a Tuple, where 1 position is the CoprocessorHandle
+    // value
     return foundCoprocessor ? foundCoprocessor[1] : undefined;
   };
 
@@ -60,11 +61,12 @@ class CoprocessorRepository {
     this.coprocessors.delete(coprocessor.coprocessor.globalId);
 
   /**
-   * getCoprocessors returns the map of CoprocessorHandles indexed by their topics
+   * getCoprocessors returns the map of CoprocessorHandles indexed by their
+   * topics
    */
   getCoprocessorsByTopics(): Map<string, Coprocessor[]> {
     const coprocessorByTopic = new Map<string, Coprocessor[]>();
-    for (const [_, value] of this.coprocessors) {
+    for (const [, value] of this.coprocessors) {
       value.coprocessor.inputTopics.reduce((prev, topic) => {
         const previousCoprocessors = coprocessorByTopic.get(topic) || [];
         return coprocessorByTopic.set(topic, [

@@ -11,6 +11,7 @@
     "prettier"
   ],
   "rules": {
-    "max-len": [2, 80]
+    "max-len": ["error", { "ignorePattern": "(import .*|.*require.*)" }],
+    "@typescript-eslint/no-var-requires": "off"
   }
 }
