@@ -36,7 +36,16 @@ struct compacted_index {
         // version *must* be the last value
         int8_t version{0};
     };
-
+    enum class recovery_state {
+        // happens during a crash
+        missing,
+        // needs rebuilding - when user 'touch' a file or during a crash
+        needsrebuild,
+        // already recovered - nothing to do - after a reboot
+        recovered,
+        // we need to compact next
+        nonrecovered
+    };
     static constexpr size_t footer_size = sizeof(footer::size)
                                           + sizeof(footer::keys)
                                           + sizeof(footer::flags)

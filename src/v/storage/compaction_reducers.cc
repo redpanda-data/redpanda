@@ -1,14 +1,17 @@
 #include "storage/compaction_reducers.h"
 
+#include "compression/compression.h"
 #include "model/record_utils.h"
 #include "random/generators.h"
 #include "storage/logger.h"
+#include "storage/parser_utils.h"
 #include "storage/segment_appender_utils.h"
 #include "storage/segment_utils.h"
 #include "vlog.h"
 
 #include <absl/algorithm/container.h>
 #include <absl/container/flat_hash_map.h>
+#include <boost/range/irange.hpp>
 
 #include <algorithm>
 
@@ -243,5 +246,41 @@ copy_data_segment_reducer::operator()(model::record_batch&& b) {
     return decompress_batch(std::move(b)).then([this](model::record_batch&& b) {
         return do_compaction(std::move(b));
     });
+}
+
+ss::future<ss::stop_iteration>
+index_rebuilder_reducer::operator()(model::record_batch&& b) {
+    using stop_t = ss::stop_iteration;
+    auto f = ss::now();
+    if (!b.compressed()) {
+        f = ss::do_with(std::move(b), [this](model::record_batch& b) {
+            return ss::do_for_each(
+              b, [this, o = b.base_offset()](model::record& r) {
+                  return _w->index(r.key(), o, r.offset_delta());
+              });
+        });
+    } else {
+        f = do_streaming_index(std::move(b));
+    }
+    return f.then([] { return ss::make_ready_future<stop_t>(stop_t::no); });
+}
+
+ss::future<>
+index_rebuilder_reducer::do_streaming_index(model::record_batch&& b) {
+    iobuf body_buf = compression::compressor::uncompress(
+      b.get_compressed_records(), b.header().attrs.compression());
+    return ss::do_with(
+      iobuf_parser(std::move(body_buf)),
+      [this, header = b.header()](iobuf_parser& parser) {
+          const model::offset o = header.base_offset;
+          const auto r = boost::irange(0, header.record_count - 1);
+          return ss::do_for_each(
+            r.begin(), r.end(), [this, o, &parser](int32_t) {
+                auto rec = parse_one_record_from_buffer_using_kafka_format(
+                  parser);
+                auto k = iobuf_to_bytes(rec.key());
+                return _w->index(std::move(k), o, rec.offset_delta());
+            });
+      });
 }
 } // namespace storage::internal

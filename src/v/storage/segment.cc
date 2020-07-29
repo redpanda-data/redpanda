@@ -82,8 +82,8 @@ ss::future<> segment::remove_thombsones() {
     return ss::do_with(std::move(rm), [](std::vector<ss::sstring>& to_remove) {
         return ss::do_for_each(to_remove, [](const ss::sstring& name) {
             return ss::remove_file(name).handle_exception(
-              [](std::exception_ptr e) {
-                  vlog(stlog.info, "error removing segment files: {}", e);
+              [name](std::exception_ptr e) {
+                  vlog(stlog.info, "error removing {}: {}", name, e);
               });
         });
     });
@@ -273,18 +273,17 @@ ss::future<> segment::compaction_index_batch(const model::record_batch& b) {
     return ss::do_with(
       iobuf_parser(std::move(body_buf)),
       [this, header = b.header()](iobuf_parser& parser) {
-          auto begin = boost::make_counting_iterator(uint32_t(0));
-          auto end = boost::make_counting_iterator(
-            uint32_t(header.record_count - 1));
+          const auto r = boost::irange(0, header.record_count - 1);
           const model::offset o = header.base_offset;
-          return ss::do_for_each(begin, end, [this, o, &parser](uint32_t) {
-              auto rec
-                = internal::parse_one_record_from_buffer_using_kafka_format(
-                  parser);
-              auto k = iobuf_to_bytes(rec.key());
-              return compaction_index().index(
-                std::move(k), o, rec.offset_delta());
-          });
+          return ss::do_for_each(
+            r.begin(), r.end(), [this, o, &parser](int32_t) {
+                auto rec
+                  = internal::parse_one_record_from_buffer_using_kafka_format(
+                    parser);
+                auto k = iobuf_to_bytes(rec.key());
+                return compaction_index().index(
+                  std::move(k), o, rec.offset_delta());
+            });
       });
 }
 
