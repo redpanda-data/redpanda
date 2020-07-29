@@ -173,6 +173,7 @@ export class Deserializer {
   record(bytes: Buffer) {
     const sizeBytes = bytes.readInt32LE(rcId.sizeBytes);
     const attributes = bytes.readInt8(rcId.attributes);
+    // @ts-ignore
     const timestampDelta = bytes.readInt64LE(rcId.timestampDelta);
     const offsetDelta = bytes.readInt32LE(rcId.offsetDelta);
     const keySize = bytes.readInt32LE(rcId.keySize);
@@ -336,6 +337,7 @@ export class Serializer {
     let buf1: Buffer = Buffer.allocUnsafe(rcId.size);
     buf1.writeInt32LE(header.sizeBytes, rcId.sizeBytes);
     buf1.writeInt8(header.recordAttributes, rcId.attributes);
+    // @ts-ignore
     buf1.writeInt64LE(header.timestampDelta, rcId.timestampDelta);
     buf1.writeInt32LE(header.offsetDelta, rcId.offsetDelta);
     buf1.writeInt32LE(header.keySize, rcId.keySize);
