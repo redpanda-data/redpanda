@@ -272,6 +272,7 @@ static ss::future<fetch_response::partition_response> read_from_partition(
                  * return path will fill in other response fields.
                  */
                 return fetch_response::partition_response{
+                  .error = error_code::none,
                   .record_set = std::move(res),
                 };
             });
@@ -298,8 +299,7 @@ read_from_ntp(op_context& octx, model::ntp ntp, fetch_config config) {
     return octx.rctx.partition_manager().invoke_on(
       *shard,
       octx.ssg,
-      [ntp = std::move(ntp),
-       config = std::move(config)](cluster::partition_manager& mgr) {
+      [ntp = std::move(ntp), config](cluster::partition_manager& mgr) {
           /*
            * lookup the ntp's partition
            */
@@ -312,7 +312,19 @@ read_from_ntp(op_context& octx, model::ntp ntp, fetch_config config) {
               return make_ready_partition_response_error(
                 error_code::not_leader_for_partition);
           }
-          return read_from_partition(partition, std::move(config))
+          if (
+            config.start_offset < partition->start_offset()
+            || config.start_offset > partition->last_stable_offset()) {
+              return ss::make_ready_future<fetch_response::partition_response>(
+                fetch_response::partition_response{
+                  .error = error_code::offset_out_of_range,
+                  .high_watermark = model::offset(-1),
+                  .last_stable_offset = model::offset(-1),
+                  .log_start_offset = model::offset(-1),
+                  .record_set = iobuf(),
+                });
+          }
+          return read_from_partition(partition, config)
             .then([partition](fetch_response::partition_response&& resp) {
                 resp.last_stable_offset = partition->last_stable_offset();
                 resp.high_watermark = partition->last_stable_offset();
@@ -332,12 +344,11 @@ static ss::future<>
 handle_ntp_fetch(op_context& octx, model::ntp ntp, fetch_config config) {
     using read_response_type = ss::future<fetch_response::partition_response>;
     auto p_id = ntp.tp.partition;
-    return read_from_ntp(octx, std::move(ntp), std::move(config))
+    return read_from_ntp(octx, std::move(ntp), config)
       .then_wrapped([&octx, p_id](read_response_type&& f) {
           try {
               auto response = f.get0();
               response.id = p_id;
-              response.error = error_code::none;
               octx.add_partition_response(std::move(response));
           } catch (...) {
               /*
