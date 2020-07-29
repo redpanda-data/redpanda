@@ -154,8 +154,9 @@ controller_backend::do_reconcile_topic(task_meta<topic_table::delta>& task) {
           if (!has_local_replicas(_self, p.second.replicas)) {
               return ss::now();
           }
+          model::ntp ntp(p.first.ns, p.first.tp, p.second.id);
           return create_partition(
-            model::ntp(p.first.ns, p.first.tp, p.second.id),
+            ntp,
             p.second.group,
             create_brokers_set(p.second.replicas, _members_table.local()));
       });
