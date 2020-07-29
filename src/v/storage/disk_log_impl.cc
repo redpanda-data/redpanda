@@ -160,7 +160,7 @@ ss::future<eviction_range_lock>
 get_eviction_range_lock(const segment_set& segs, model::offset max_offset) {
     std::vector<ss::future<ss::rwlock::holder>> lock_futures;
     auto it = segs.begin();
-    while (it != segs.end() && (*it)->offsets().base_offset < max_offset) {
+    while (it != segs.end() && (*it)->offsets().dirty_offset <= max_offset) {
         lock_futures.push_back((*it)->read_lock());
         ++it;
     }
@@ -177,6 +177,10 @@ ss::future<> disk_log_impl::garbage_collect_segments(
     if (_eviction_monitor) {
         f = get_eviction_range_lock(_segs, max_offset)
               .then([this](eviction_range_lock lock) {
+                  // do not trigger monitor when there are no evictions
+                  if (lock.locks.empty()) {
+                      return;
+                  }
                   _eviction_monitor->promise.set_value(std::move(lock));
                   _eviction_monitor.reset();
               });
