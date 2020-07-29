@@ -2,13 +2,17 @@ import { Server } from "../../modules/rpc/server";
 import { join } from "path";
 import CoprocessorRepository from "../../modules/supervisors/CoprocessorRepository";
 import {
-  Coprocessor,
   CoprocessorRecordBatch,
   PolicyError,
 } from "../../modules/public/Coprocessor";
 import { CoprocessorRequest } from "../../modules/domain/CoprocessorRequest";
 import CoprocessorFileManager from "../../modules/supervisors/CoprocessorFileManager";
 import assert = require("assert");
+import {
+  createHandle,
+  createMockCoprocessor,
+  createHandleTable,
+} from "../testUtilities";
 
 const sinon = require("sinon");
 const net = require("net");
@@ -39,18 +43,6 @@ const createFakeServer = (afterApply?: (value) => void, fileManagerStub?) => {
   const fakeServer = new Server(fakeFolder, fakeFolder, fakeFolder);
   return [fakeServer, fakeSocket];
 };
-
-const createMockCoprocessor = (
-  globalId: Coprocessor["globalId"] = 1,
-  inputTopics: Coprocessor["inputTopics"] = ["topicA"],
-  policyError: Coprocessor["policyError"] = PolicyError.SkipOnFailure,
-  apply: Coprocessor["apply"] = () => undefined
-): Coprocessor => ({
-  globalId,
-  inputTopics,
-  policyError,
-  apply,
-});
 
 describe("Server", function () {
   describe("Given a CoprocessorRequest", function () {
@@ -114,7 +106,7 @@ describe("Server", function () {
           CoprocessorRepository.prototype,
           "getCoprocessorsByTopics"
         );
-        repository.returns(new Map().set("topicA", [createMockCoprocessor()]));
+        repository.returns(new Map().set("topicA", createHandleTable()));
         const apply = sinon.spy(Server.prototype, "applyCoprocessor");
         const coprocessorRequest = createCoprocessorRequest("topicA");
         const [, fakeSocket] = createFakeServer(() => {
@@ -147,9 +139,19 @@ describe("Server", function () {
             // @ts-ignore
             record.bad.attribute;
           repository.returns(
-            new Map().set("topicA", [
-              createMockCoprocessor(undefined, null, null, badApplyCoprocessor),
-            ])
+            new Map().set(
+              "topicA",
+              createHandleTable(
+                createHandle(
+                  createMockCoprocessor(
+                    undefined,
+                    null,
+                    null,
+                    badApplyCoprocessor
+                  )
+                )
+              )
+            )
           );
           const apply = sinon.spy(Server.prototype, "applyCoprocessor");
           const handle = sinon.spy(
@@ -186,14 +188,19 @@ describe("Server", function () {
             // @ts-ignore
             record.bad.attribute;
           repository.returns(
-            new Map().set("topicA", [
-              createMockCoprocessor(
-                undefined,
-                null,
-                PolicyError.Deregister,
-                badApplyCoprocessor
-              ),
-            ])
+            new Map().set(
+              "topicA",
+              createHandleTable(
+                createHandle(
+                  createMockCoprocessor(
+                    undefined,
+                    null,
+                    PolicyError.Deregister,
+                    badApplyCoprocessor
+                  )
+                )
+              )
+            )
           );
           const apply = sinon.spy(Server.prototype, "applyCoprocessor");
           const handle = sinon.spy(
