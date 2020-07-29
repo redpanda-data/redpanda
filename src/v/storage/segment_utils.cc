@@ -207,16 +207,14 @@ static ss::future<> do_write_clean_compacted_index(
 
 ss::future<> write_clean_compacted_index(
   compacted_index_reader reader, compaction_config cfg) {
-    return reader.verify_integrity()
-      .then(
-        [reader, cfg] { return do_write_clean_compacted_index(reader, cfg); })
+    // integrity verified in `do_detect_compaction_index_state`
+    return do_write_clean_compacted_index(reader, cfg)
       .finally([reader]() mutable {
           return reader.close().then_wrapped(
             [reader](ss::future<>) { /*ignore*/ });
       });
 }
-
-ss::future<bool> detect_if_segment_already_compacted(
+ss::future<compacted_index::recovery_state> do_detect_compaction_index_state(
   std::filesystem::path p, compaction_config cfg) {
     using flags = compacted_index::footer_flags;
     return make_reader_handle(p, cfg.sanitize)
@@ -225,13 +223,35 @@ ss::future<bool> detect_if_segment_already_compacted(
             p.string(), std::move(f), cfg.iopc, 64_KiB);
       })
       .then([](compacted_index_reader reader) {
-          return reader.load_footer()
+          return reader.verify_integrity()
+            .then([reader]() mutable { return reader.load_footer(); })
             .then([](compacted_index::footer footer) {
-                return (footer.flags & flags::self_compaction)
-                       == flags::self_compaction;
+                if (bool(footer.flags & flags::self_compaction)) {
+                    return compacted_index::recovery_state::recovered;
+                }
+                return compacted_index::recovery_state::nonrecovered;
             })
             .finally([reader]() mutable { return reader.close(); });
+      })
+      .handle_exception([](std::exception_ptr e) {
+          vlog(
+            stlog.warn,
+            "detected error while attempting recovery, {}. marking as 'needs "
+            "rebuild'. Common situation during crashes or hard shutdowns.",
+            e);
+          return compacted_index::recovery_state::needsrebuild;
       });
+}
+
+ss::future<compacted_index::recovery_state>
+detect_compaction_index_state(std::filesystem::path p, compaction_config cfg) {
+    return ss::file_exists(p.string()).then([p, cfg](bool exists) {
+        if (exists) {
+            return do_detect_compaction_index_state(p, cfg);
+        }
+        return ss::make_ready_future<compacted_index::recovery_state>(
+          compacted_index::recovery_state::missing);
+    });
 }
 
 ss::future<compacted_offset_list>
@@ -243,8 +263,6 @@ generate_compacted_list(model::offset o, compacted_index_reader reader) {
 
 ss::future<>
 do_compact_segment_index(ss::lw_shared_ptr<segment> s, compaction_config cfg) {
-    // TODO: add exception safety to this method
-    // TODO: regenerate the index if missing
     auto compacted_path = std::filesystem::path(s->reader().filename());
     compacted_path.replace_extension(".compaction_index");
     vlog(stlog.trace, "compacting index:{}", compacted_path);
@@ -381,6 +399,26 @@ ss::future<> do_self_compact_segment(
       });
 }
 
+ss::future<> rebuild_compaction_index(
+  model::record_batch_reader rdr,
+  std::filesystem::path p,
+  compaction_config cfg) {
+    return make_compacted_index_writer(p, cfg.sanitize, cfg.iopc)
+      .then([r = std::move(rdr)](compacted_index_writer w) mutable {
+          auto u = std::make_unique<compacted_index_writer>(std::move(w));
+          auto ptr = u.get();
+          return std::move(r)
+            .consume(index_rebuilder_reducer(ptr), model::no_timeout)
+            .finally([x = std::move(u)]() mutable {
+                return x->close()
+                  .handle_exception([](std::exception_ptr e) {
+                      vlog(stlog.warn, "error closing compacted index:{}", e);
+                  })
+                  .finally([x = std::move(x)] {});
+            });
+      });
+}
+
 ss::future<> self_compact_segment(
   ss::lw_shared_ptr<segment> s, compaction_config cfg, storage::probe& pb) {
     if (s->has_appender()) {
@@ -392,15 +430,43 @@ ss::future<> self_compact_segment(
     }
     auto idx_path = std::filesystem::path(s->reader().filename());
     idx_path.replace_extension(".compaction_index");
-    return detect_if_segment_already_compacted(idx_path, cfg)
-      .then([idx_path, s, cfg, &pb](bool already_compacted) mutable {
-          if (already_compacted) {
-              vlog(stlog.info, "detected {} is already compacted", idx_path);
-              s->mark_as_finished_self_compaction();
-              return ss::now();
-          }
-          return do_self_compact_segment(s, cfg, pb);
-      });
+    return detect_compaction_index_state(idx_path, cfg)
+      .then(
+        [idx_path, s, cfg, &pb](compacted_index::recovery_state state) mutable {
+            switch (state) {
+            case compacted_index::recovery_state::recovered: {
+                vlog(stlog.info, "detected {} is already compacted", idx_path);
+                s->mark_as_finished_self_compaction();
+                return ss::now();
+            }
+            case compacted_index::recovery_state::nonrecovered:
+                return do_self_compact_segment(s, cfg, pb);
+            case compacted_index::recovery_state::missing:
+                [[fallthrough]];
+            case compacted_index::recovery_state::needsrebuild: {
+                vlog(
+                  stlog.warn,
+                  "Detected corrupt or missing index file:{}, recovering...",
+                  idx_path);
+                return s->read_lock()
+                  .then([s, cfg, &pb, idx_path](ss::rwlock::holder h) {
+                      return rebuild_compaction_index(
+                        create_segment_full_reader(s, cfg, pb, std::move(h)),
+                        idx_path,
+                        cfg);
+                  })
+                  .then([s, cfg, &pb, idx_path] {
+                      vlog(
+                        stlog.info,
+                        "recovered index: {}, attempting compaction again",
+                        idx_path);
+                      return self_compact_segment(s, cfg, pb);
+                  });
+            }
+            default:
+                __builtin_unreachable();
+            }
+        });
 }
 
 ss::future<model::record_batch> decompress_batch(model::record_batch&& b) {

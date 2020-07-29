@@ -1,11 +1,18 @@
 #include "storage/opfuzz/opfuzz.h"
 
 #include "model/record.h"
+#include "model/timestamp.h"
 #include "random/generators.h"
+#include "units.h"
+#include "utils/directory_walker.h"
 #include "vassert.h"
 #include "vlog.h"
 
+#include <seastar/core/file.hh>
+#include <seastar/core/seastar.hh>
 #include <seastar/util/backtrace.hh>
+
+#include <boost/algorithm/string/predicate.hpp>
 
 #include <memory>
 
@@ -365,11 +372,49 @@ struct term_roll_op final : opfuzz::op {
     }
 };
 
+struct remove_all_compacted_indices_op final : opfuzz::op {
+    ~remove_all_compacted_indices_op() noexcept override = default;
+    const char* name() const final { return "remove_all_compacted_indices_op"; }
+    ss::future<> invoke(opfuzz::op_context ctx) final {
+        ss::sstring dir = ctx.log->config().work_directory();
+        return directory_walker::walk(dir, [dir](ss::directory_entry de) {
+            if (boost::algorithm::ends_with(de.name, ".compaction_index")) {
+                vlog(
+                  fuzzlogger.info,
+                  "[COMPACTION_INDEX] removing: {}/{}",
+                  dir,
+                  de.name);
+                return ss::remove_file(fmt::format("{}/{}", dir, de.name));
+            }
+            return ss::now();
+        });
+    }
+};
+
+struct compact_op final : opfuzz::op {
+    ~compact_op() noexcept override = default;
+    const char* name() const final { return "compact_op"; }
+    ss::future<> invoke(opfuzz::op_context ctx) final {
+        compaction_config cfg(
+          model::timestamp::max(),
+          std::nullopt,
+          ss::default_priority_class(),
+          *(ctx._as),
+          debug_sanitize_files::yes);
+        if (random_generators::get_int(0, 100) > 70) {
+            cfg.eviction_time = model::timestamp::now();
+            cfg.max_bytes = 10_MiB;
+        }
+        vlog(fuzzlogger.info, "COMPACT: {} - {}", cfg, *ctx.log);
+        return ctx.log->compact(cfg);
+    }
+};
+
 ss::future<> opfuzz::execute() {
     // execute commands in sequence
     return ss::do_for_each(_workload, [this](std::unique_ptr<op>& c) {
         vlog(fuzzlogger.info, "Executing: {}", c->name());
-        return c->invoke(op_context{&_term, &_log});
+        return c->invoke(op_context{&_term, &_log, &_as});
     });
 }
 
@@ -391,6 +436,10 @@ std::unique_ptr<opfuzz::op> opfuzz::random_operation() {
         return std::make_unique<read_op>();
     case op_name::flush:
         return std::make_unique<flush_op>();
+    case op_name::compact:
+        return std::make_unique<compact_op>();
+    case op_name::remove_all_compacted_indices:
+        return std::make_unique<remove_all_compacted_indices_op>();
     case op_name::term_roll:
         return std::make_unique<term_roll_op>();
     }
