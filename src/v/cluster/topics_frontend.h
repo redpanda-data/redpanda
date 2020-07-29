@@ -39,6 +39,8 @@ public:
       std::vector<topic_configuration>, model::timeout_clock::duration);
 
 private:
+    using ntp_leader = std::pair<model::ntp, model::node_id>;
+
     ss::future<topic_result>
       do_create_topic(topic_configuration, model::timeout_clock::time_point);
 
@@ -59,6 +61,7 @@ private:
       std::vector<topic_configuration>,
       model::timeout_clock::duration);
 
+    ss::future<> update_leaders_with_estimates(std::vector<ntp_leader>);
     // returns true if the topic name is valid
     static bool validate_topic_name(const model::topic_namespace&);
 
