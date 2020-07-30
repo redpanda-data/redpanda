@@ -47,7 +47,6 @@ cluster_id: "{{cluster}}"
 
 redpanda:
   developer_mode: true
-  auto_create_topics_enabled: true
   data_directory: "/var/lib/redpanda/data"
   node_id: {{node_id}}
   rpc_server:
@@ -59,6 +58,10 @@ redpanda:
   admin:
     address: "{{node_ip}}"
     port: 9644
+
+  # for librdkafka
+  auto_create_topics_enabled: true
+  default_topic_partitions: 4
 
   # The initial cluster nodes addresses
 {% if seed_servers is defined and seed_servers|length > 0 %}
