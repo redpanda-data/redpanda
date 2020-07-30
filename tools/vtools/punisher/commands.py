@@ -310,7 +310,7 @@ def _weighted_choice(command_list):
         # cmd,range tuple
         ranges.append((cmd.name, range(prev, cmd.weight + prev)))
         prev += cmd.weight
-    v = random.randint(0, prev)
+    v = random.randint(0, prev - 1)
     # choice from ranges
     for cmd_name, r in ranges:
         if v in r:
