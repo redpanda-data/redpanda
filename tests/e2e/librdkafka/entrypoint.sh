@@ -9,7 +9,6 @@ echo "metadata.broker.list=${BAMBOO_BROKERS}" >test.conf
 
 skipped_tests=(
   19 # segfault in group membership https://app.clubhouse.io/vectorized/story/963/dereferencing-null-pointer-in-kafka-group-membership
-  30 # fix in v-dev: https://app.clubhouse.io/vectorized/story/928/offset-commit-reporting-success-for-non-existent-topic
   52 # https://app.clubhouse.io/vectorized/story/997/librdkafka-tests-failing-due-to-consumer-out-of-range-timestamps
   54 # timequery issues: https://app.clubhouse.io/vectorized/story/995/librdkafka-offset-time-query
   63 # cluster-id: https://app.clubhouse.io/vectorized/story/939/generate-cluster-id-uuid-on-bootstrap-and-expose-through-metadata-request
