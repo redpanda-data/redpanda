@@ -54,10 +54,11 @@ class CoprocessorFileManager {
           return this.moveCoprocessorFile(preCoprocessor, this.inactiveDir)
             .then(() => coprocessorRepository.remove(preCoprocessor))
             .then(() => this.moveCoprocessorFile(coprocessor, this.activeDir))
-            .then((newCoprocessor) => {
-              coprocessorRepository.add(newCoprocessor);
-              return newCoprocessor;
-            });
+            .then((newCoprocessor) =>
+              coprocessorRepository
+                .add(newCoprocessor)
+                .then(() => newCoprocessor)
+            );
         }
       } else {
         return this.moveCoprocessorFile(coprocessor, this.activeDir).then(

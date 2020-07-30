@@ -1,6 +1,6 @@
 import { CoprocessorHandle } from "../domain/CoprocessorManager";
-import { find } from "../utilities/Map";
 import { Coprocessor } from "../public/Coprocessor";
+import { HandleTable } from "./HandleTable";
 
 /**
  * CoprocessorsRepository is a container for CoprocessorHandles.
@@ -14,8 +14,24 @@ class CoprocessorRepository {
    * this method adds a new CoprocessorHandle to the repository
    * @param coprocessor
    */
-  add(coprocessor: CoprocessorHandle): void {
-    this.coprocessors.set(coprocessor.coprocessor.globalId, coprocessor);
+  add(coprocessor: CoprocessorHandle): Promise<void> {
+    const addHandle = () => {
+      coprocessor.coprocessor.inputTopics.forEach((topic) => {
+        const currentHandleTable = this.coprocessors.get(topic);
+        if (currentHandleTable) {
+          currentHandleTable.registerHandle(coprocessor);
+        } else {
+          this.coprocessors.set(topic, new HandleTable());
+          this.coprocessors.get(topic).registerHandle(coprocessor);
+        }
+      });
+    };
+
+    if (this.findByGlobalId(coprocessor)) {
+      return this.remove(coprocessor).then(addHandle);
+    } else {
+      return Promise.resolve(addHandle());
+    }
   }
 
   /**
@@ -23,17 +39,17 @@ class CoprocessorRepository {
    * findByGlobalId method receives a coprocessor and returns a
    * CoprocessorHandle if there exists one with the same global ID as the given
    * coprocessor. Returns undefined otherwise.
-   * @param coprocessor
+   * @param handle
    */
   findByGlobalId = (
-    coprocessor: CoprocessorHandle
+    handle: CoprocessorHandle
   ): CoprocessorHandle | undefined => {
-    const coprocessorFound = find(
-      this.coprocessors,
-      (key, value) =>
-        coprocessor.coprocessor.globalId === value.coprocessor.globalId
-    );
-    return coprocessorFound ? coprocessorFound[1] : undefined;
+    for (const [, tableHandle] of this.coprocessors) {
+      const existingHandle = tableHandle.findHandleById(handle);
+      if (existingHandle) {
+        return existingHandle;
+      }
+    }
   };
 
   /**
@@ -44,41 +60,44 @@ class CoprocessorRepository {
   findByCoprocessor = (
     coprocessor: Coprocessor
   ): CoprocessorHandle | undefined => {
-    const foundCoprocessor = find(
-      this.coprocessors,
-      (key, value) => coprocessor.globalId === value.coprocessor.globalId
-    );
-    // find method return a Tuple, where 1 position is the CoprocessorHandle
-    // value
-    return foundCoprocessor ? foundCoprocessor[1] : undefined;
+    for (const [, tableHandle] of this.coprocessors) {
+      const existingHandle = tableHandle.findHandleByCoprocessor(coprocessor);
+      if (existingHandle) {
+        return existingHandle;
+      }
+    }
   };
 
   /**
    * removeCoprocessor method remove a coprocessor from the coprocessor map
-   * @param coprocessor
+   * @param handle
    */
-  remove = (coprocessor: CoprocessorHandle): boolean =>
-    this.coprocessors.delete(coprocessor.coprocessor.globalId);
-
+  remove = (handle: CoprocessorHandle): Promise<void> => {
+    return new Promise((resolve, reject) => {
+      try {
+        for (const [, handleTable] of this.coprocessors) {
+          handleTable.deregisterHandle(handle);
+        }
+        resolve();
+      } catch (e) {
+        reject(
+          new Error(
+            "Error removing coprocessor with ID " +
+              `${handle.coprocessor.globalId}: ${e.message}`
+          )
+        );
+      }
+    });
+  };
   /**
    * getCoprocessors returns the map of CoprocessorHandles indexed by their
    * topics
    */
-  getCoprocessorsByTopics(): Map<string, Coprocessor[]> {
-    const coprocessorByTopic = new Map<string, Coprocessor[]>();
-    for (const [, value] of this.coprocessors) {
-      value.coprocessor.inputTopics.reduce((prev, topic) => {
-        const previousCoprocessors = coprocessorByTopic.get(topic) || [];
-        return coprocessorByTopic.set(topic, [
-          ...previousCoprocessors,
-          value.coprocessor,
-        ]);
-      }, coprocessorByTopic);
-    }
-    return coprocessorByTopic;
+  getCoprocessorsByTopics(): Map<string, HandleTable> {
+    return this.coprocessors;
   }
 
-  private readonly coprocessors: Map<number, CoprocessorHandle>;
+  private readonly coprocessors: Map<string, HandleTable>;
 }
 
 export default CoprocessorRepository;
