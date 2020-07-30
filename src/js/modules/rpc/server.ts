@@ -84,36 +84,30 @@ export class Server {
   private applyCoprocessor(
     coprocessorRequest: CoprocessorRequest
   ): Promise<CoprocessorRecordBatch[]> {
-    const coprocessors =
-      this.coprocessorRepository
-        .getCoprocessorsByTopics()
-        .get(coprocessorRequest.getTopic()) || [];
-    const results = coprocessors.map((coprocessor) => {
-      try {
-        return Promise.resolve(
-          coprocessorRequest.getRecords().map(coprocessor.apply)
-        );
-      } catch (e) {
-        return this.handleErrorByCoprocessorPolicy(
-          coprocessor,
-          coprocessorRequest,
-          e
-        );
-      }
-    });
-    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    // @ts-ignore
-    return Promise.allSettled(results).then((coprocessorResults) => {
-      const array = [];
-      coprocessorResults.forEach((result) => {
-        if (result.status === "rejected") {
-          console.error(result.reason);
-        } else {
-          array.push(result.value);
-        }
+    const handleTable = this.coprocessorRepository
+      .getCoprocessorsByTopics()
+      .get(coprocessorRequest.getTopic());
+    if (handleTable) {
+      const results = handleTable.apply(
+        coprocessorRequest,
+        this.handleErrorByCoprocessorPolicy.bind(this)
+      );
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+      // @ts-ignore
+      return Promise.allSettled(results).then((coprocessorResults) => {
+        const array = [];
+        coprocessorResults.forEach((result) => {
+          if (result.status === "rejected") {
+            console.error(result.reason);
+          } else {
+            array.push(result.value);
+          }
+        });
+        return array;
       });
-      return array;
-    });
+    } else {
+      return Promise.resolve([]);
+    }
   }
 
   /**
