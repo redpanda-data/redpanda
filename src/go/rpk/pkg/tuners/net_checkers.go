@@ -3,10 +3,10 @@ package tuners
 import (
 	"fmt"
 	"strconv"
-	"strings"
 	"vectorized/pkg/tuners/ethtool"
 	"vectorized/pkg/tuners/irq"
 	"vectorized/pkg/tuners/network"
+	"vectorized/pkg/utils"
 
 	"github.com/lorenzosaino/go-sysctl"
 	log "github.com/sirupsen/logrus"
@@ -179,7 +179,7 @@ func (f *netCheckersFactory) NewNicRfsChecker(nic network.Nic) Checker {
 					return false, err
 				}
 				for _, limitFile := range limits {
-					setLimit, err := readIntFromFile(f.fs, limitFile)
+					setLimit, err := utils.ReadIntFromFile(f.fs, limitFile)
 					if err != nil {
 						return false, err
 					}
@@ -256,15 +256,6 @@ func (f *netCheckersFactory) NewNicXpsChecker(nic network.Nic) Checker {
 			})
 		},
 	)
-}
-
-func readIntFromFile(fs afero.Fs, file string) (int, error) {
-	content, err := afero.ReadFile(fs, file)
-	if err != nil {
-		return 0, nil
-	}
-	return strconv.Atoi(strings.TrimSpace(string(content)))
-
 }
 
 func (f *netCheckersFactory) NewRfsTableSizeChecker() Checker {

@@ -2,8 +2,6 @@ package tuners
 
 import (
 	"fmt"
-	"strconv"
-	"strings"
 	"vectorized/pkg/tuners/executors"
 	"vectorized/pkg/tuners/executors/commands"
 	"vectorized/pkg/utils"
@@ -27,7 +25,7 @@ func NewMaxAIOEventsChecker(fs afero.Fs) Checker {
 			return fmt.Sprintf(">= %d", maxAIOEvents)
 		},
 		func() (int, error) {
-			return currentMaxAIOEvents(fs)
+			return utils.ReadIntFromFile(fs, maxAIOEventsFile)
 		},
 	)
 }
@@ -54,13 +52,4 @@ func NewMaxAIOEventsTuner(fs afero.Fs, executor executors.Executor) Tunable {
 		},
 		executor.IsLazy(),
 	)
-}
-
-func currentMaxAIOEvents(fs afero.Fs) (int, error) {
-	content, err := utils.ReadEnsureSingleLine(fs, maxAIOEventsFile)
-	if err != nil {
-		return 0, err
-	}
-	return strconv.Atoi(strings.TrimSpace(string(content)))
-
 }
