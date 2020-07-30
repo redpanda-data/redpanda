@@ -288,20 +288,33 @@ ss::future<storage::index_state> do_copy_segment_data(
                 return reader.close().then_wrapped([](ss::future<>) {});
             });
       })
-      .then([cfg, s](compacted_offset_list list) {
-          const auto tmpname = data_segment_staging_name(s);
-          return make_segment_appender(
-                   tmpname,
-                   cfg.sanitize,
-                   segment_appender::chunks_no_buffer,
-                   cfg.iopc)
-            .then([l = std::move(list)](segment_appender_ptr w) mutable {
-                return copy_data_segment_reducer(std::move(l), std::move(w));
-            });
-      })
-      .then([r = std::move(reader)](copy_data_segment_reducer red) mutable {
-          return std::move(r).consume(std::move(red), model::no_timeout);
-      });
+      .then(
+        [cfg, s, r = std::move(reader)](compacted_offset_list list) mutable {
+            const auto tmpname = data_segment_staging_name(s);
+            return make_segment_appender(
+                     tmpname,
+                     cfg.sanitize,
+                     segment_appender::chunks_no_buffer,
+                     cfg.iopc)
+              .then([l = std::move(list),
+                     r = std::move(r)](segment_appender_ptr w) mutable {
+                  auto raw = w.get();
+                  auto red = copy_data_segment_reducer(std::move(l), raw);
+
+                  return std::move(r)
+                    .consume(std::move(red), model::no_timeout)
+                    .finally([raw, w = std::move(w)]() mutable {
+                        return raw->close()
+                          .handle_exception([](std::exception_ptr e) {
+                              vlog(
+                                stlog.error,
+                                "Error copying index to new segment:{}",
+                                e);
+                          })
+                          .finally([w = std::move(w)] {});
+                    });
+              });
+        });
 }
 
 model::record_batch_reader create_segment_full_reader(

@@ -3,6 +3,7 @@
 #include "compression/compression.h"
 #include "model/record_utils.h"
 #include "random/generators.h"
+#include "storage/index_state.h"
 #include "storage/logger.h"
 #include "storage/parser_utils.h"
 #include "storage/segment_appender_utils.h"
@@ -14,6 +15,7 @@
 #include <boost/range/irange.hpp>
 
 #include <algorithm>
+#include <exception>
 
 namespace storage::internal {
 ss::future<ss::stop_iteration>
@@ -234,10 +236,6 @@ copy_data_segment_reducer::do_compaction(model::record_batch&& b) {
       .then([] { return ss::make_ready_future<stop_t>(stop_t::no); });
 }
 
-ss::future<storage::index_state> copy_data_segment_reducer::end_of_stream() {
-    return _appender->close().then([this] { return std::move(_idx); });
-}
-
 ss::future<ss::stop_iteration>
 copy_data_segment_reducer::operator()(model::record_batch&& b) {
     if (!b.compressed()) {
@@ -275,11 +273,23 @@ index_rebuilder_reducer::do_streaming_index(model::record_batch&& b) {
           const model::offset o = header.base_offset;
           const auto r = boost::irange(0, header.record_count - 1);
           return ss::do_for_each(
-            r.begin(), r.end(), [this, o, &parser](int32_t) {
-                auto rec = parse_one_record_from_buffer_using_kafka_format(
-                  parser);
-                auto k = iobuf_to_bytes(rec.key());
-                return _w->index(std::move(k), o, rec.offset_delta());
+            r.begin(), r.end(), [this, o, &parser, header](int32_t i) {
+                try {
+                    auto rec = parse_one_record_from_buffer_using_kafka_format(
+                      parser);
+                    auto k = iobuf_to_bytes(rec.key());
+                    return _w->index(std::move(k), o, rec.offset_delta());
+                } catch (...) {
+                    auto str = fmt::format(
+                      "Could not decode record:{}, header:{}, error:{}, "
+                      "parser state:{}",
+                      i,
+                      header,
+                      std::current_exception(),
+                      parser);
+                    vlog(stlog.error, "{}", str);
+                    return ss::make_exception_future<>(std::runtime_error(str));
+                }
             });
       });
 }
