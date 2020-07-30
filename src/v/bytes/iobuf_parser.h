@@ -74,3 +74,8 @@ private:
     /// needed to compute bytes_left()
     size_t _original_size;
 };
+
+inline std::ostream& operator<<(std::ostream& o, const iobuf_parser& p) {
+    return o << "{bytes_left:" << p.bytes_left()
+             << ", bytes_consumed:" << p.bytes_consumed() << "}";
+}
