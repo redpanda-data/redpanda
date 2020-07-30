@@ -3,6 +3,7 @@
 #include "cluster/types.h"
 #include "model/record_batch_reader.h"
 #include "raft/consensus.h"
+#include "raft/log_eviction_stm.h"
 #include "raft/types.h"
 #include "storage/types.h"
 
@@ -13,11 +14,12 @@ class partition_manager;
 /// all raft logic is proxied transparently
 class partition {
 public:
-    explicit partition(consensus_ptr r)
-      : _raft(r) {}
+    explicit partition(consensus_ptr r);
+    partition(consensus_ptr, raft::log_eviction_stm);
+
     raft::group_id group() const { return _raft->group(); }
-    ss::future<> start() { return _raft->start(); }
-    ss::future<> stop() { return _raft->stop(); }
+    ss::future<> start();
+    ss::future<> stop();
 
     ss::future<result<raft::replicate_result>>
     replicate(model::record_batch_reader&& r, raft::replicate_options opts) {
@@ -71,10 +73,7 @@ public:
     const model::ntp& ntp() const { return _raft->ntp(); }
 
     ss::future<std::optional<storage::timequery_result>>
-    timequery(model::timestamp t, ss::io_priority_class p) {
-        storage::timequery_config cfg(t, _raft->committed_offset(), p);
-        return _raft->timequery(cfg);
-    }
+      timequery(model::timestamp, ss::io_priority_class);
 
     bool is_leader() const { return _raft->is_leader(); }
 
@@ -85,10 +84,8 @@ private:
 
 private:
     consensus_ptr _raft;
-
-    friend std::ostream& operator<<(std::ostream& o, const partition& x) {
-        return o << x._raft;
-    }
+    std::unique_ptr<raft::log_eviction_stm> _nop_stm;
+    friend std::ostream& operator<<(std::ostream& o, const partition& x);
 };
 } // namespace cluster
 namespace std {
