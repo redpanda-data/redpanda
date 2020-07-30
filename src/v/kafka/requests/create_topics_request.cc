@@ -158,16 +158,9 @@ ss::future<response_ptr> create_topics_api::process(
                    results = std::move(results),
                    tout = to_timeout(request.timeout)](
                     std::vector<cluster::topic_result> c_res) mutable {
-                // wait for leaders
-                return wait_for_leaders(ctx.metadata_cache(), c_res, tout)
-                  .then([&ctx,
-                         results = std::move(results),
-                         c_res = std::move(c_res)](
-                          std::vector<model::node_id>) mutable {
-                      // Append controller results to validation errors
-                      append_cluster_results(c_res, results);
-                      return encode_response(ctx, std::move(results));
-                  });
+                // Append controller results to validation errors
+                append_cluster_results(c_res, results);
+                return encode_response(ctx, std::move(results));
             });
       });
 }
