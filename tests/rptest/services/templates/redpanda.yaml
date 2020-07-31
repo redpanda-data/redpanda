@@ -1,0 +1,43 @@
+organization: "vectorized"
+cluster_id: "{{cluster}}"
+
+redpanda:
+  developer_mode: true
+  data_directory: "{{data_dir}}"
+  node_id: {{node_id}}
+  rpc_server:
+    address: "{{node.account.hostname}}"
+    port: 33145
+  kafka_api:
+    address: "{{node.account.hostname}}"
+    port: 9092
+  admin:
+    address: "{{node.account.hostname}}"
+    port: 9644
+
+  # for librdkafka
+  auto_create_topics_enabled: true
+  default_topic_partitions: 4
+
+{% if node_id > 1 %}
+  seed_servers:
+    - host:
+        address: {{nodes[1].account.hostname}}
+        port: 33145
+      node_id: 1
+{% endif %}
+
+rpk:
+  enable_usage_stats: false
+  tune_network: false
+  tune_disk_scheduler: false
+  tune_disk_nomerges: false
+  tune_disk_irq: false
+  tune_fstrim: false
+  tune_cpu: false
+  tune_aio_events: false
+  tune_clocksource: false
+  tune_swappiness: false
+  enable_memory_locking: false
+  tune_coredump: false
+  coredump_dir: "/var/lib/redpanda/coredump"
