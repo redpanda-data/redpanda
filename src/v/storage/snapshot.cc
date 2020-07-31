@@ -179,6 +179,8 @@ ss::future<iobuf> snapshot_reader::read_metadata() {
     });
 }
 
+ss::future<size_t> snapshot_reader::get_snapshot_size() { return _file.size(); }
+
 ss::future<> snapshot_reader::close() {
     return _input
       .close() // finishes read-ahead work

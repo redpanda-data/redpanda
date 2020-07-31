@@ -159,6 +159,7 @@ public:
     snapshot_reader& operator=(snapshot_reader&&) noexcept;
 
     ss::future<iobuf> read_metadata();
+    ss::future<size_t> get_snapshot_size();
     ss::input_stream<char>& input() { return _input; }
     ss::future<> close();
 
