@@ -435,145 +435,141 @@ private:
     size_t _segment_size;
 };
 
+static model::record_batch_reader random_batches_entry(int max_batches) {
+    auto batches = storage::test::make_random_batches(
+      model::offset(0), max_batches);
+    return model::make_memory_record_batch_reader(std::move(batches));
+}
+
+template<typename Rep, typename Period, typename Pred>
+static void wait_for(
+  std::chrono::duration<Rep, Period> timeout, Pred&& p, ss::sstring msg) {
+    using clock_t = std::chrono::system_clock;
+    auto start = clock_t::now();
+    auto res = p();
+    while (!res) {
+        auto elapsed = clock_t::now() - start;
+        if (elapsed > timeout) {
+            BOOST_FAIL(
+              fmt::format("Timeout elapsed while wating for: {}", msg));
+        }
+        res = p();
+        ss::sleep(std::chrono::milliseconds(400)).get0();
+    }
+}
+
+static void assert_at_most_one_leader(raft_group& gr) {
+    std::unordered_map<long, int> leaders_per_term;
+    for (auto& [_, m] : gr.get_members()) {
+        auto term = static_cast<long>(m.consensus->term());
+        if (auto it = leaders_per_term.find(term);
+            it == leaders_per_term.end()) {
+            leaders_per_term.try_emplace(term, 0);
+        }
+        auto it = leaders_per_term.find(m.consensus->term());
+        it->second += m.consensus->is_leader();
+    }
+    for (auto& [term, leaders] : leaders_per_term) {
+        BOOST_REQUIRE_LE(leaders, 1);
+    }
+}
+
+static bool are_logs_the_same_length(const raft_group::logs_t& logs) {
+    auto size = logs.begin()->second.size();
+    if (size == 0) {
+        return false;
+    }
+    for (auto& [id, l] : logs) {
+        tstlog.debug("Node {} log has {} batches", id, l.size());
+        if (size != l.size()) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool are_all_commit_indexes_the_same(raft_group& gr) {
+    auto c_idx = gr.get_members().begin()->second.consensus->committed_offset();
+    for (auto& [id, m] : gr.get_members()) {
+        auto current = model::offset(m.consensus->committed_offset());
+        auto log_offset = m.log->offsets().dirty_offset;
+        tstlog.debug(
+          "Node {} commit index {}, log offset {}", id, current, log_offset);
+        if (c_idx != current || log_offset != c_idx) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static void assert_all_logs_are_the_same(const raft_group::logs_t& logs) {
+    auto it = logs.begin();
+    auto& reference = logs.begin()->second;
+    it++;
+    while (it != logs.end()) {
+        if (reference.size() != it->second.size()) {
+            auto r_size = reference.size() != it->second.size();
+            auto it_sz = it->second.size();
+            tstlog.error("Different length {}, {}", r_size, it_sz);
+        }
+        for (int i = 0; i < reference.size(); ++i) {
+            BOOST_REQUIRE_EQUAL(reference[i], it->second[i]);
+        }
+        it++;
+    }
+}
+
+static bool are_logs_the_same(const raft_group::logs_t& logs) {
+    auto prev = logs.begin()->second.size();
+    for (auto& [_, l] : logs) {
+        if (prev != l.size()) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+void validate_logs_replication(raft_group& gr) {
+    auto logs = gr.read_all_logs();
+    wait_for(
+      10s,
+      [&gr, &logs] {
+          logs = gr.read_all_logs();
+          return are_logs_the_same_length(logs);
+      },
+      "Logs are replicated");
+
+    assert_all_logs_are_the_same(logs);
+}
+
+static model::node_id wait_for_group_leader(raft_group& gr) {
+    gr.wait_for_next_election();
+    assert_at_most_one_leader(gr);
+    auto leader_id = gr.get_leader_id();
+    while (!leader_id) {
+        assert_at_most_one_leader(gr);
+        gr.wait_for_next_election();
+        assert_at_most_one_leader(gr);
+        leader_id = gr.get_leader_id();
+    }
+
+    return leader_id.value();
+}
+
+static void
+assert_stable_leadership(const raft_group& gr, int number_of_intervals = 5) {
+    auto before = gr.get_elections_count();
+    ss::sleep(heartbeat_interval * number_of_intervals).get0();
+    BOOST_TEST(
+      before = gr.get_elections_count(),
+      "Group leadership is required to be stable");
+}
+
 struct raft_test_fixture {
     raft_test_fixture() {
         ss::smp::invoke_on_all([] {
             config::shard_local_cfg().get("disable_metrics").set_value(true);
         }).get();
-    }
-
-    model::record_batch_reader random_batches_entry(int max_batches) {
-        auto batches = storage::test::make_random_batches(
-          model::offset(0), max_batches);
-        return model::make_memory_record_batch_reader(std::move(batches));
-    }
-
-    template<typename Rep, typename Period, typename Pred>
-    void wait_for(
-      std::chrono::duration<Rep, Period> timeout, Pred&& p, ss::sstring msg) {
-        using clock_t = std::chrono::system_clock;
-        auto start = clock_t::now();
-        auto res = p();
-        while (!res) {
-            auto elapsed = clock_t::now() - start;
-            if (elapsed > timeout) {
-                BOOST_FAIL(
-                  fmt::format("Timeout elapsed while wating for: {}", msg));
-            }
-            res = p();
-            ss::sleep(std::chrono::milliseconds(400)).get0();
-        }
-    }
-
-    void assert_at_most_one_leader(raft_group& gr) {
-        std::unordered_map<long, int> leaders_per_term;
-        for (auto& [_, m] : gr.get_members()) {
-            auto term = static_cast<long>(m.consensus->term());
-            if (auto it = leaders_per_term.find(term);
-                it == leaders_per_term.end()) {
-                leaders_per_term.try_emplace(term, 0);
-            }
-            auto it = leaders_per_term.find(m.consensus->term());
-            it->second += m.consensus->is_leader();
-        }
-        for (auto& [term, leaders] : leaders_per_term) {
-            BOOST_REQUIRE_LE(leaders, 1);
-        }
-    }
-
-    bool are_logs_the_same_length(const raft_group::logs_t& logs) {
-        auto size = logs.begin()->second.size();
-        if (size == 0) {
-            return false;
-        }
-        for (auto& [id, l] : logs) {
-            tstlog.debug("Node {} log has {} batches", id, l.size());
-            if (size != l.size()) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    bool are_all_commit_indexes_the_same(raft_group& gr) {
-        auto c_idx
-          = gr.get_members().begin()->second.consensus->committed_offset();
-        for (auto& [id, m] : gr.get_members()) {
-            auto current = model::offset(m.consensus->committed_offset());
-            auto log_offset = m.log->offsets().dirty_offset;
-            tstlog.debug(
-              "Node {} commit index {}, log offset {}",
-              id,
-              current,
-              log_offset);
-            if (c_idx != current || log_offset != c_idx) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    void assert_all_logs_are_the_same(const raft_group::logs_t& logs) {
-        auto it = logs.begin();
-        auto& reference = logs.begin()->second;
-        it++;
-        while (it != logs.end()) {
-            if (reference.size() != it->second.size()) {
-                auto r_size = reference.size() != it->second.size();
-                auto it_sz = it->second.size();
-                tstlog.error("Different length {}, {}", r_size, it_sz);
-            }
-            for (int i = 0; i < reference.size(); ++i) {
-                BOOST_REQUIRE_EQUAL(reference[i], it->second[i]);
-            }
-            it++;
-        }
-    }
-
-    bool are_logs_the_same(const raft_group::logs_t& logs) {
-        auto prev = logs.begin()->second.size();
-        for (auto& [_, l] : logs) {
-            if (prev != l.size()) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    void validate_logs_replication(raft_group& gr) {
-        auto logs = gr.read_all_logs();
-        wait_for(
-          10s,
-          [this, &gr, &logs] {
-              logs = gr.read_all_logs();
-              return are_logs_the_same_length(logs);
-          },
-          "Logs are replicated");
-
-        assert_all_logs_are_the_same(logs);
-    }
-
-    model::node_id wait_for_group_leader(raft_group& gr) {
-        gr.wait_for_next_election();
-        assert_at_most_one_leader(gr);
-        auto leader_id = gr.get_leader_id();
-        while (!leader_id) {
-            assert_at_most_one_leader(gr);
-            gr.wait_for_next_election();
-            assert_at_most_one_leader(gr);
-            leader_id = gr.get_leader_id();
-        }
-
-        return leader_id.value();
-    }
-
-    void assert_stable_leadership(
-      const raft_group& gr, int number_of_intervals = 5) {
-        auto before = gr.get_elections_count();
-        ss::sleep(heartbeat_interval * number_of_intervals).get0();
-        BOOST_TEST(
-          before = gr.get_elections_count(),
-          "Group leadership is required to be stable");
     }
 };
