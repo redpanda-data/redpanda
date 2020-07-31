@@ -1,118 +1,177 @@
 import os
-import time
-import yaml
+import signal
 
+import yaml
 from ducktape.services.service import Service
+from ducktape.cluster.remoteaccount import RemoteCommandError
+from ducktape.utils.util import wait_until
+
+from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.clients.kafka_cat import KafkaCat
+from rptest.services.storage import ClusterStorage, NodeStorage
 
 
 class RedpandaService(Service):
-    def __init__(self, context, num_nodes=3):
-        super(RedpandaService, self).__init__(context, num_nodes=num_nodes)
+    PERSISTENT_ROOT = "/mnt/redpanda"
+    DATA_DIR = os.path.join(PERSISTENT_ROOT, "data")
+    CONFIG_FILE = os.path.join(PERSISTENT_ROOT, "redpanda.yaml")
+    STDOUT_STDERR_CAPTURE = os.path.join(PERSISTENT_ROOT, "redpanda.log")
+    CLUSTER_NAME = "my_cluster"
+    READY_TIMEOUT_SEC = 10
 
-        self.extra_config = {}
-        extra_config_file = os.environ.get('RP_EXTRA_CONF', None)
-        if extra_config_file:
-            if not os.path.exists(extra_config_file):
-                raise Exception("{} doesn't exist".format(extra_config_file))
-            with open(extra_config_file, 'r') as f:
-                self.extra_config = yaml.load(f)
+    logs = {
+        "redpanda_start_stdout_stderr": {
+            "path": STDOUT_STDERR_CAPTURE,
+            "collect_default": True
+        },
+    }
+
+    def __init__(self, context, num_brokers, extra_rp_conf=None, topics=None):
+        super(RedpandaService, self).__init__(context, num_nodes=num_brokers)
+        self._extra_rp_conf = extra_rp_conf
+        self._topics = topics or dict()
+
+    def start(self):
+        super(RedpandaService, self).start()
+        self.logger.info("Waiting for all brokers to join cluster")
+
+        expected = set(self.nodes)
+        wait_until(lambda: {n
+                            for n in self.nodes
+                            if self.registered(n)} == expected,
+                   timeout_sec=30,
+                   backoff_sec=1,
+                   err_msg="Cluster membership did not stabilize")
+
+        kafka_tools = KafkaCliTools(self)
+        for topic, cfg in self._topics.items():
+            self.logger.debug("Creating initial topic %s / %s", topic, cfg)
+            kafka_tools.create_topic(topic, **cfg)
 
     def start_node(self, node):
-        rpk_config = self.get_config(node)
-        self.logger.debug('Using config: {}'.format(rpk_config))
+        node.account.mkdirs(RedpandaService.DATA_DIR)
+        self.write_conf_file(node)
 
-        node.account.create_file('/etc/redpanda/redpanda.yaml',
-                                 yaml.dump(rpk_config))
+        cmd = "nohup {} ".format(self.redpanda_binary())
+        cmd += "--redpanda-cfg {} ".format(RedpandaService.CONFIG_FILE)
+        cmd += ">> {0} 2>&1 &".format(RedpandaService.STDOUT_STDERR_CAPTURE)
 
-        # wipe data directory
-        node.account.ssh('rm -fr /var/lib/redpanda/*')
+        self.logger.info(
+            "Starting Redpanda service on {} with command: {}".format(
+                node.account, cmd))
 
-        rpk_flags = '--check=false --config=/etc/redpanda/redpanda.yaml'
-        cmd = ('nohup rpk start --tune {} `</dev/null` > '
-               '/var/lib/redpanda/stdouterr 2>&1 &').format(rpk_flags)
-
-        node.account.ssh('sysctl -w fs.aio-max-nr=1048576')
-        node.account.ssh(cmd)
-
-        time.sleep(2)
-
-        self.pid = node.account.ssh_output('cat /var/run/redpanda.pid')
-
-        if not self.pid:
-            out = node.account.ssh_output('cat /var/lib/redpanda/stdouterr')
-            raise Exception('Unable to obtain PID of redpanda process. '
-                            '\nstdouterr:\n{}' + out)
-
-        if self.is_running(node):
-            out = node.account.ssh_output('cat /var/lib/redpanda/stdouterr')
-            raise Exception('Redpanda failed to start: {}.'.format(out))
-
-    def is_running(self, node):
-        ret = node.account.ssh('kill -0 {}'.format(self.pid), allow_fail=True)
-        return ret != 0
-
-    def get_config(self, node):
-        node_idx = self.idx(node)
-        kafka_port = 9092
-        rpc_port = 33145
-
-        seed_servers = []
-        for n in self.nodes:
-            seed_servers.append({
-                'host': {
-                    'address': str(n.account.hostname),
-                    'port': rpc_port,
-                },
-                'node_id': self.idx(n)
-            })
-
-        cfg = {
-            'pid_file': '/var/run/redpanda.pid',
-            'redpanda': {
-                'data_directory': "/var/lib/redpanda",
-                'node_id': node_idx,
-                'raft_heartbeat_interval': 2000,
-                'rpc_server': {
-                    'address': "0.0.0.0",
-                    'port': rpc_port,
-                },
-                'advertised_rpc_api': {
-                    'address': str(node.account.ssh_hostname),
-                    'port': rpc_port,
-                },
-                'kafka_api': {
-                    'address': "0.0.0.0",
-                    'port': kafka_port,
-                },
-                'advertised_kafka_api': {
-                    'address': str(node.account.ssh_hostname),
-                    'port': kafka_port,
-                },
-            },
-            'rpk': {
-                'coredump_dir': '/var/lib/redpanda/coredump',
-                'additional_start_flags': [
-                    "--default-log-level=trace",
-                ]
-            }
-        }
-        # Node 1 will be the root node, so it has an empty seed_servers list.
-        if node_idx > 1:
-            cfg['seed_servers'] = seed_servers
-
-        # extra config
-        cfg.update(self.extra_config)
-
-        return cfg
+        # wait until redpanda has finished booting up
+        with node.account.monitor_log(
+                RedpandaService.STDOUT_STDERR_CAPTURE) as mon:
+            node.account.ssh(cmd)
+            mon.wait_until(
+                "Successfully started Redpanda!",
+                timeout_sec=RedpandaService.READY_TIMEOUT_SEC,
+                backoff_sec=0.5,
+                err_msg="Redpanda didn't finish startup in {} seconds".format(
+                    RedpandaService.READY_TIMEOUT_SEC))
 
     def stop_node(self, node):
-        if self.is_running(node):
-            node.account.ssh('kill -15 {}'.format(self.pid))
+        pids = self.pids(node)
 
-    def bootstrap_servers(self,
-                          protocol='PLAINTEXT',
-                          validate=True,
-                          offline_nodes=[]):
-        """Comma-separated list of nodes in this cluster: HOST1:PORT1,...
+        for pid in pids:
+            node.account.signal(pid, signal.SIGTERM, allow_fail=False)
+
+        timeout_sec = 30
+        wait_until(lambda: len(self.pids(node)) == 0,
+                   timeout_sec=timeout_sec,
+                   err_msg="Redpanda node failed to stop in %d seconds" %
+                   timeout_sec)
+
+    def clean_node(self, node):
+        node.account.kill_process("redpanda", clean_shutdown=False)
+        node.account.remove(RedpandaService.PERSISTENT_ROOT)
+
+    def redpanda_binary(self):
+        # TODO: i haven't yet figured out what the blessed way of getting
+        # parameters into the test are to control which build we use. but they
+        # are all available under the /opt/v/build directory.
+        return "/opt/v/build/debug/clang/dist/local/bin/redpanda"
+
+    def pids(self, node):
+        """Return process ids associated with running processes on the given node."""
+        try:
+            cmd = "ps ax | grep -i redpanda | grep -v grep | awk '{print $1}'"
+            pid_arr = [
+                pid for pid in node.account.ssh_capture(
+                    cmd, allow_fail=True, callback=int)
+            ]
+            return pid_arr
+        except (RemoteCommandError, ValueError):
+            return []
+
+    def write_conf_file(self, node):
+        node_info = {self.idx(n): n for n in self.nodes}
+
+        conf = self.render("redpanda.yaml",
+                           node=node,
+                           data_dir=RedpandaService.DATA_DIR,
+                           cluster=RedpandaService.CLUSTER_NAME,
+                           nodes=node_info,
+                           node_id=self.idx(node))
+
+        if self._extra_rp_conf:
+            doc = yaml.load(conf)
+            self.logger.debug(
+                "Setting custom Redpanda configuration options: {}".format(
+                    self._extra_rp_conf))
+            doc["redpanda"].update(self._extra_rp_conf)
+            conf = yaml.dump(doc)
+
+        self.logger.info("Writing Redpanda config file: {}".format(
+            RedpandaService.CONFIG_FILE))
+        self.logger.debug(conf)
+        node.account.create_file(RedpandaService.CONFIG_FILE, conf)
+
+    def registered(self, node):
+        idx = self.idx(node)
+        self.logger.debug("Checking if broker %d/%s is registered", idx, node)
+        kc = KafkaCat(self)
+        brokers = kc.metadata()["brokers"]
+        brokers = {b["id"]: b for b in brokers}
+        broker = brokers.get(idx, None)
+        self.logger.debug("Found broker info: %s", broker)
+        return broker is not None
+
+    def controller(self):
+        kc = KafkaCat(self)
+        cid = kc.metadata()["controllerid"]
+        self.logger.debug("Controller reported with id: {}".format(cid))
+        if cid != -1:
+            node = self.get_node(cid)
+            self.logger.debug("Controller node found: {}".format(node))
+            return node
+
+    def node_storage(self, node):
         """
-        return '{}:9092'.format(self.nodes[0].account.hostname)
+        Retrieve a summary of storage on a node.
+        """
+        def listdir(path, only_dirs=False):
+            ents = node.account.sftp_client.listdir(path)
+            if not only_dirs:
+                return ents
+            paths = map(lambda fn: (fn, os.path.join(path, fn)), ents)
+            return [p[0] for p in paths if node.account.isdir(p[1])]
+
+        store = NodeStorage(RedpandaService.DATA_DIR)
+        for ns in listdir(store.data_dir, True):
+            ns = store.add_namespace(ns, os.path.join(store.data_dir, ns))
+            for topic in listdir(ns.path):
+                topic = ns.add_topic(topic, os.path.join(ns.path, topic))
+                for num in listdir(topic.path):
+                    partition = topic.add_partition(
+                        num, node, os.path.join(topic.path, num))
+                    partition.add_files(listdir(partition.path))
+        return store
+
+    def storage(self):
+        store = ClusterStorage()
+        for node in self.nodes:
+            s = self.node_storage(node)
+            store.add_node(s)
+        return store
