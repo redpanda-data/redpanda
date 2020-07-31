@@ -201,8 +201,11 @@ struct raft_node {
 
     ss::future<log_t> read_log() {
         auto max_offset = model::offset(consensus->committed_offset());
+        auto lstats = log->offsets();
+
         storage::log_reader_config cfg(
-          model::offset(0), max_offset, ss::default_priority_class());
+          lstats.start_offset, max_offset, ss::default_priority_class());
+
         return log->make_reader(cfg).then(
           [this, max_offset](model::record_batch_reader rdr) {
               tstlog.debug(
@@ -475,62 +478,68 @@ static void assert_at_most_one_leader(raft_group& gr) {
 }
 
 static bool are_logs_the_same_length(const raft_group::logs_t& logs) {
-    auto size = logs.begin()->second.size();
-    if (size == 0) {
+    // if one of the logs is empty all of them have to be empty
+    auto empty = std::all_of(
+      logs.cbegin(), logs.cend(), [](const raft_group::logs_t::value_type& p) {
+          return p.second.empty();
+      });
+
+    if (empty) {
+        return true;
+    }
+    if (logs.begin()->second.empty()) {
         return false;
     }
-    for (auto& [id, l] : logs) {
-        tstlog.debug("Node {} log has {} batches", id, l.size());
-        if (size != l.size()) {
-            return false;
-        }
-    }
-    return true;
+    auto last_offset = logs.begin()->second.back().last_offset();
+
+    return std::all_of(logs.begin(), logs.end(), [last_offset](auto& p) {
+        return !p.second.empty()
+               && p.second.back().last_offset() == last_offset;
+    });
 }
 
 static bool are_all_commit_indexes_the_same(raft_group& gr) {
     auto c_idx = gr.get_members().begin()->second.consensus->committed_offset();
-    for (auto& [id, m] : gr.get_members()) {
-        auto current = model::offset(m.consensus->committed_offset());
-        auto log_offset = m.log->offsets().dirty_offset;
-        tstlog.debug(
-          "Node {} commit index {}, log offset {}", id, current, log_offset);
-        if (c_idx != current || log_offset != c_idx) {
-            return false;
-        }
-    }
-    return true;
+    return std::all_of(
+      gr.get_members().begin(),
+      gr.get_members().end(),
+      [c_idx](raft_group::members_t::value_type& n) {
+          auto current = model::offset(n.second.consensus->committed_offset());
+          auto log_offset = n.second.log->offsets().dirty_offset;
+          return c_idx == current && log_offset == c_idx;
+      });
 }
 
-static void assert_all_logs_are_the_same(const raft_group::logs_t& logs) {
+static bool are_logs_equivalent(
+  const std::vector<model::record_batch>& a,
+  const std::vector<model::record_batch>& b) {
+    // both logs are empty - this is ok
+    if (a.empty() && b.empty()) {
+        return true;
+    }
+    // one of the logs is empty while second has batches
+    if (a.empty() || b.empty()) {
+        return false;
+    }
+    auto [a_it, b_it] = std::mismatch(
+      a.rbegin(), a.rend(), b.rbegin(), b.rend());
+
+    return a_it == a.rbegin() || b_it == b.rbegin();
+}
+
+static bool assert_all_logs_are_the_same(const raft_group::logs_t& logs) {
     auto it = logs.begin();
     auto& reference = logs.begin()->second;
-    it++;
-    while (it != logs.end()) {
-        if (reference.size() != it->second.size()) {
-            auto r_size = reference.size() != it->second.size();
-            auto it_sz = it->second.size();
-            tstlog.error("Different length {}, {}", r_size, it_sz);
-        }
-        for (int i = 0; i < reference.size(); ++i) {
-            BOOST_REQUIRE_EQUAL(reference[i], it->second[i]);
-        }
-        it++;
-    }
+
+    return std::all_of(
+      std::next(logs.cbegin()),
+      logs.cend(),
+      [&reference](const raft_group::logs_t::value_type& p) {
+          return !are_logs_equivalent(reference, p.second);
+      });
 }
 
-static bool are_logs_the_same(const raft_group::logs_t& logs) {
-    auto prev = logs.begin()->second.size();
-    for (auto& [_, l] : logs) {
-        if (prev != l.size()) {
-            return false;
-        }
-    }
-
-    return true;
-}
-
-void validate_logs_replication(raft_group& gr) {
+static void validate_logs_replication(raft_group& gr) {
     auto logs = gr.read_all_logs();
     wait_for(
       10s,
