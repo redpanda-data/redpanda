@@ -280,19 +280,25 @@ func (f *netCheckersFactory) NewListenBacklogChecker() Checker {
 		Warning,
 		network.ListenBacklogSize,
 		func() (interface{}, error) {
-			return readIntFromFile(f.fs, network.ListenBacklogFile)
+			return utils.ReadIntFromFile(f.fs, network.ListenBacklogFile)
 		})
 }
 
 func (f *netCheckersFactory) NewSynBacklogChecker() Checker {
-	return NewEqualityChecker(
+	return NewIntChecker(
 		SynBacklogChecker,
 		"Max syn backlog size",
 		Warning,
-		network.SynBacklogSize,
-		func() (interface{}, error) {
-			return readIntFromFile(f.fs, network.SynBacklogFile)
-		})
+		func(current int) bool {
+			return current >= network.SynBacklogSize
+		},
+		func() string {
+			return fmt.Sprintf(">= %d", network.SynBacklogSize)
+		},
+		func() (int, error) {
+			return utils.ReadIntFromFile(f.fs, network.SynBacklogFile)
+		},
+	)
 }
 
 func isSet(
