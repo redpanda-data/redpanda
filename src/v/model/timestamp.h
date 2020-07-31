@@ -58,7 +58,7 @@ private:
 
 using timestamp_clock = std::chrono::system_clock;
 
-static inline timestamp new_timestamp() {
+inline timestamp new_timestamp() {
     // This mimics System.currentTimeMillis() which needs a duration_cast<>
     // around the current timestamp computed from epoch.
     return timestamp(std::chrono::duration_cast<std::chrono::milliseconds>(
