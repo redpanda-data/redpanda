@@ -5,6 +5,7 @@
 #include "cluster/types.h"
 #include "model/fundamental.h"
 #include "model/timeout_clock.h"
+#include "test_utils/async.h"
 #include "test_utils/fixture.h"
 
 #include <boost/test/tools/old/interface.hpp>
@@ -54,7 +55,21 @@ void wait_for_leaders(
     ss::when_all_succeed(f.begin(), f.end()).get();
 }
 
+void wait_for_metadata(
+  cluster::metadata_cache& md_cache,
+  const std::vector<cluster::topic_result>& results) {
+    tests::cooperative_spin_wait_with_timeout(2s, [&results, &md_cache] {
+        return std::all_of(
+          results.begin(),
+          results.end(),
+          [&md_cache](const cluster::topic_result& r) {
+              return md_cache.get_topic_metadata(r.tp_ns);
+          });
+    }).get0();
+}
+
 FIXTURE_TEST(
+
   recover_single_topic_test_at_current_broker, controller_tests_fixture) {
     auto cntrl = get_controller();
     cntrl->start().get0();
@@ -67,7 +82,7 @@ FIXTURE_TEST(
                      .get0();
 
     BOOST_REQUIRE_EQUAL(results.size(), 3);
-
+    wait_for_metadata(get_local_cache(), results);
     for (auto& r : results) {
         BOOST_REQUIRE_EQUAL(r.ec, cluster::errc::success);
         auto md = get_local_cache().get_topic_metadata(r.tp_ns);
@@ -109,6 +124,8 @@ FIXTURE_TEST(test_autocreate_on_non_leader, cluster_test_fixture) {
                    test_topics_configuration(), std::chrono::seconds(10))
                  .get0();
 
+    wait_for_metadata(get_local_cache(0), res);
+    wait_for_metadata(get_local_cache(1), res);
     for (auto& r : res) {
         BOOST_REQUIRE_EQUAL(r.ec, cluster::errc::success);
         auto md = get_local_cache(0).get_topic_metadata(r.tp_ns);

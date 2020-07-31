@@ -9,6 +9,7 @@
 #include "storage/directories.h"
 #include "storage/tests/utils/disk_log_builder.h"
 #include "storage/tests/utils/random_batch.h"
+#include "test_utils/async.h"
 #include "test_utils/fixture.h"
 #include "test_utils/logs.h"
 
@@ -95,12 +96,27 @@ public:
           .local()
           .create_topics(std::move(cfgs), model::no_timeout)
           .then([this](std::vector<cluster::topic_result> results) {
-              return kafka::wait_for_leaders(
-                app.metadata_cache.local(),
-                std::move(results),
-                model::no_timeout);
-          })
-          .discard_result();
+              return tests::cooperative_spin_wait_with_timeout(
+                2s, [this, results = std::move(results)] {
+                    return std::all_of(
+                      results.begin(),
+                      results.end(),
+                      [this](const cluster::topic_result& r) {
+                          auto md = app.metadata_cache.local()
+                                      .get_topic_metadata(r.tp_ns);
+                          return md
+                                 && std::all_of(
+                                   md->partitions.begin(),
+                                   md->partitions.end(),
+                                   [this,
+                                    &r](const model::partition_metadata& p) {
+                                       return app.shard_table.local().shard_for(
+                                         model::ntp(
+                                           r.tp_ns.ns, r.tp_ns.tp, p.id));
+                                   });
+                      });
+                });
+          });
     }
 
     model::ntp make_data() {
