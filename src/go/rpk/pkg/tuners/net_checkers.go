@@ -259,29 +259,41 @@ func (f *netCheckersFactory) NewNicXpsChecker(nic network.Nic) Checker {
 }
 
 func (f *netCheckersFactory) NewRfsTableSizeChecker() Checker {
-	return NewEqualityChecker(
+	return NewIntChecker(
 		RfsTableEntriesChecker,
 		"RFS Table entries",
 		Warning,
-		network.RfsTableSize,
-		func() (interface{}, error) {
+		func(current int) bool {
+			return current >= network.RfsTableSize
+		},
+		func() string {
+			return fmt.Sprintf(">= %d", network.RfsTableSize)
+		},
+		func() (int, error) {
 			value, err := sysctl.Get(network.RfsTableSizeProperty)
 			if err != nil {
-				return false, err
+				return 0, err
 			}
 			return strconv.Atoi(value)
-		})
+		},
+	)
 }
 
 func (f *netCheckersFactory) NewListenBacklogChecker() Checker {
-	return NewEqualityChecker(
+	return NewIntChecker(
 		ListenBacklogChecker,
-		"Socket listen() backlog size",
+		"Max syn backlog size",
 		Warning,
-		network.ListenBacklogSize,
-		func() (interface{}, error) {
+		func(current int) bool {
+			return current >= network.ListenBacklogSize
+		},
+		func() string {
+			return fmt.Sprintf(">= %d", network.ListenBacklogSize)
+		},
+		func() (int, error) {
 			return utils.ReadIntFromFile(f.fs, network.ListenBacklogFile)
-		})
+		},
+	)
 }
 
 func (f *netCheckersFactory) NewSynBacklogChecker() Checker {
