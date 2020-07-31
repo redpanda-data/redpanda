@@ -95,12 +95,12 @@ private:
 
 class copy_data_segment_reducer : public compaction_reducer {
 public:
-    copy_data_segment_reducer(compacted_offset_list l, segment_appender_ptr a)
+    copy_data_segment_reducer(compacted_offset_list l, segment_appender* a)
       : _list(std::move(l))
-      , _appender(std::move(a)) {}
+      , _appender(a) {}
 
     ss::future<ss::stop_iteration> operator()(model::record_batch&&);
-    ss::future<storage::index_state> end_of_stream();
+    storage::index_state end_of_stream() { return std::move(_idx); }
 
 private:
     ss::future<ss::stop_iteration> do_compaction(model::record_batch&&);
@@ -112,7 +112,7 @@ private:
     std::optional<model::record_batch> filter(model::record_batch&&);
 
     compacted_offset_list _list;
-    segment_appender_ptr _appender;
+    segment_appender* _appender;
     index_state _idx;
     size_t _acc{0};
 };
