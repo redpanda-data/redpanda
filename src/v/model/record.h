@@ -94,9 +94,9 @@ public:
     friend std::ostream& operator<<(std::ostream&, const record_header&);
 
 private:
-    int32_t _key_size;
+    int32_t _key_size{-1};
     iobuf _key;
-    int32_t _val_size;
+    int32_t _val_size{-1};
     iobuf _value;
 };
 
@@ -231,11 +231,11 @@ private:
     record_attributes _attributes;
     int64_t _timestamp_delta{0};
     int32_t _offset_delta{0};
-    int32_t _key_size{0};
+    int32_t _key_size{-1};
     iobuf _key;
-    int32_t _val_size{0};
+    int32_t _val_size{-1};
     iobuf _value;
-    std::vector<record_header> _headers;
+    std::vector<record_header> _headers{};
 };
 
 class record_batch_attributes final {
