@@ -89,10 +89,10 @@ ss::future<> controller::start() {
 }
 ss::future<> controller::stop() {
     return _as.invoke_on_all(&ss::abort_source::request_abort)
+      .then([this] { return _stm.stop(); })
       .then([this] { return _members_manager.stop(); })
       .then([this] { return _tp_frontend.stop(); })
       .then([this] { return _backend.stop(); })
-      .then([this] { return _stm.stop(); })
       .then([this] { return _tp_state.stop(); })
       .then([this] { return _partition_allocator.stop(); })
       .then([this] { return _partition_leaders.stop(); })
