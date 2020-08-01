@@ -1,12 +1,17 @@
 #include "compression/stream_zstd.h"
 
+#include "bytes/bytes.h"
 #include "bytes/details/io_allocation_size.h"
+#include "compression/logger.h"
 #include "likely.h"
+#include "units.h"
+#include "vlog.h"
 
 #include <fmt/format.h>
 
 #include <array>
 #include <zstd.h>
+#include <zstd_errors.h>
 
 namespace compression {
 [[gnu::cold]] static void throw_zstd_err(size_t rc) {
@@ -69,24 +74,49 @@ iobuf stream_zstd::do_compress(const iobuf& x) {
     return ret;
 }
 
-static size_t find_zstd_size(const iobuf& x) {
+size_t find_zstd_size(const iobuf& x) {
     auto consumer = iobuf::iterator_consumer(x.cbegin(), x.cend());
     // defined in zstd.h ONLY under static allocation - sigh
     // our v::compression defines that public define
     std::array<char, ZSTD_FRAMEHEADERSIZE_MAX> sz_arr{};
     consumer.consume_to(std::min(sz_arr.size(), x.size_bytes()), sz_arr.data());
-    auto zstd_size = ZSTD_getDecompressedSize(
+    auto zstd_size = ZSTD_getFrameContentSize(
       static_cast<const void*>(sz_arr.data()), x.size_bytes());
     if (zstd_size == ZSTD_CONTENTSIZE_ERROR) {
         throw std::runtime_error(fmt::format(
           "Cannot decompress. Not compressed by zstd. iobuf:{}", x));
     }
-    if (zstd_size == ZSTD_CONTENTSIZE_UNKNOWN) {
-        throw std::runtime_error(
-          fmt::format("Cannot decompress. Unknown payload size. iobuf:{}", x));
+    if (
+      zstd_size == ZSTD_CONTENTSIZE_UNKNOWN || (!x.empty() && zstd_size == 0)) {
+        return 0;
     }
-    // Note: if (zstd_size == 0) {} is legal for empty buffers
     return zstd_size;
+}
+size_t decompression_step(const iobuf& x) {
+    size_t ret = find_zstd_size(x);
+    if (ret == 0) {
+        // Note that this is a similar algorithm that kafka uses. Turns out that
+        // the library that kafka uses (JNI) to load up Zstd doesn't set the
+        // frame content size :
+        // https://github.com/luben/zstd-jni/blob/master/src/main/java/com/github/luben/zstd/ZstdOutputStream.java
+        // ZSTD_CCtx_setPledgedSrcSize(ctx, x.size_bytes())
+        //
+        // See kafka JNI Loaders:
+        // static class ZstdConstructors {
+        //     static final MethodHandle INPUT = findConstructor(
+        //       "com.github.luben.zstd.ZstdInputStream",
+        //       MethodType.methodType(void.class, InputStream.class));
+        //     static final MethodHandle OUTPUT = findConstructor(
+        //       "com.github.luben.zstd.ZstdOutputStream",
+        //       MethodType.methodType(void.class, OutputStream.class));
+        // }
+        //
+        // which means that every single zstd encoded message that comes from
+        // kafka regrows!
+        //
+        return 64_KiB;
+    }
+    return std::min(64_KiB, ret);
 }
 
 iobuf stream_zstd::do_uncompress(const iobuf& x) {
@@ -95,17 +125,24 @@ iobuf stream_zstd::do_uncompress(const iobuf& x) {
           "Asked to stream_zstd::uncompress empty buffer");
     }
     reset_decompressor();
-    const size_t decompressed_size = find_zstd_size(x);
     ZSTD_DCtx* dctx = decompressor().get();
-    // zstd requires linearized memory
-    ss::temporary_buffer<char> obuf(decompressed_size);
+    iobuf ret;
+    ss::temporary_buffer<char> obuf(decompression_step(x));
     ZSTD_outBuffer out = {
       .dst = obuf.get_write(), .size = obuf.size(), .pos = 0};
     for (auto& ibuf : x) {
         ZSTD_inBuffer in = {.src = ibuf.get(), .size = ibuf.size(), .pos = 0};
-        throw_if_error(ZSTD_decompressStream(dctx, &out, &in));
+        while (in.pos != in.size) {
+            auto err = ZSTD_decompressStream(dctx, &out, &in);
+            if (in.pos != in.size && out.pos == out.size) {
+                ret.append(obuf.get(), obuf.size());
+                out.size = obuf.size();
+                out.pos = 0;
+            } else {
+                throw_if_error(err);
+            }
+        }
     }
-    iobuf ret;
     obuf.trim(out.pos);
     ret.append(std::move(obuf));
     return ret;
