@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"strconv"
+	"strings"
 
 	"github.com/spf13/afero"
 )
@@ -115,4 +117,12 @@ func BackupFile(fs afero.Fs, filePath string) (string, error) {
 		return "", fmt.Errorf("unable to create backup of %s", filePath)
 	}
 	return bkFilePath, nil
+}
+
+func ReadIntFromFile(fs afero.Fs, file string) (int, error) {
+	content, err := ReadEnsureSingleLine(fs, file)
+	if err != nil {
+		return 0, err
+	}
+	return strconv.Atoi(strings.TrimSpace(string(content)))
 }
