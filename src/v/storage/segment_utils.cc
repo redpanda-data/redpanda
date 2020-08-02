@@ -494,7 +494,7 @@ ss::future<model::record_batch> decompress_batch(model::record_batch&& b) {
       iobuf_parser(std::move(body_buf)),
       recs_t{},
       [h](iobuf_parser& parser, recs_t& recs) {
-          const auto r = boost::irange(0, h.record_count - 1);
+          const auto r = boost::irange(0, h.record_count);
           return ss::do_for_each(
                    r,
                    [&recs, &parser, h](int32_t i) {
@@ -515,12 +515,18 @@ ss::future<model::record_batch> decompress_batch(model::record_batch&& b) {
                            throw std::runtime_error(str);
                        }
                    })
-            .then([h, &parser] {
-                if (parser.bytes_left()) {
-                    auto err = fmt::format(
-                      "Could not parse: {} - {} bytes left to parse",
-                      h,
-                      parser);
+            .then([h, &parser, &recs] {
+                if (
+                  parser.bytes_left()
+                  || recs.size() != size_t(h.record_count)) {
+                    auto err = fmt_with_ctx(
+                      fmt::format,
+                      "Partial parsing of records {}/{}: {} bytes left to "
+                      "parse - Header:{}",
+                      recs.size(),
+                      h.record_count,
+                      parser,
+                      h);
                     throw std::runtime_error(err);
                 }
             })
