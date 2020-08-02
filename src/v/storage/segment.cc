@@ -312,9 +312,10 @@ ss::future<append_result> segment::append(const model::record_batch& b) {
               *this);
             // index the write
             _idx.maybe_track(b.header(), start_physical_offset);
-            auto ret = append_result{.base_offset = b.base_offset(),
-                                     .last_offset = b.last_offset(),
-                                     .byte_size = (size_t)b.size_bytes()};
+            auto ret = append_result{
+              .base_offset = b.base_offset(),
+              .last_offset = b.last_offset(),
+              .byte_size = (size_t)b.size_bytes()};
             // cache always copies the batch
             cache_put(b);
             return ret;
