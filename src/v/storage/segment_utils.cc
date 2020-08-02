@@ -494,17 +494,36 @@ ss::future<model::record_batch> decompress_batch(model::record_batch&& b) {
       iobuf_parser(std::move(body_buf)),
       recs_t{},
       [h](iobuf_parser& parser, recs_t& recs) {
-          auto begin = boost::make_counting_iterator(int32_t(0));
-          auto end = boost::make_counting_iterator(h.record_count);
+          const auto r = boost::irange(0, h.record_count - 1);
           return ss::do_for_each(
-                   begin,
-                   end,
-                   [&recs, &parser](int32_t) {
-                       recs.emplace_back(
-                         internal::
-                           parse_one_record_from_buffer_using_kafka_format(
-                             parser));
+                   r,
+                   [&recs, &parser, h](int32_t i) {
+                       try {
+                           recs.emplace_back(
+                             internal::
+                               parse_one_record_from_buffer_using_kafka_format(
+                                 parser));
+                       } catch (...) {
+                           auto str = fmt::format(
+                             "Could not decode record:{}, header:{}, error:{}, "
+                             "parser state:{}",
+                             i,
+                             h,
+                             std::current_exception(),
+                             parser);
+                           vlog(stlog.error, "{}", str);
+                           throw std::runtime_error(str);
+                       }
                    })
+            .then([h, &parser] {
+                if (parser.bytes_left()) {
+                    auto err = fmt::format(
+                      "Could not parse: {} - {} bytes left to parse",
+                      h,
+                      parser);
+                    throw std::runtime_error(err);
+                }
+            })
             .then([h, &recs] {
                 auto b = model::record_batch(h, std::move(recs));
                 auto& hdr = b.header();
