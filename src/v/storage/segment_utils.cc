@@ -483,9 +483,20 @@ ss::future<> self_compact_segment(
 }
 
 ss::future<model::record_batch> decompress_batch(model::record_batch&& b) {
-    using recs_t = model::record_batch::uncompressed_records;
     if (!b.compressed()) {
         return ss::make_ready_future<model::record_batch>(std::move(b));
+    }
+    return decompress_batch(b);
+}
+
+ss::future<model::record_batch> decompress_batch(const model::record_batch& b) {
+    using recs_t = model::record_batch::uncompressed_records;
+    if (unlikely(!b.compressed())) {
+        return ss::make_exception_future<model::record_batch>(
+          std::runtime_error(fmt_with_ctx(
+            fmt::format,
+            "Asked to decompressed a non-compressed batch:{}",
+            b.header())));
     }
     auto h = b.header();
     iobuf body_buf = compression::compressor::uncompress(
@@ -504,7 +515,8 @@ ss::future<model::record_batch> decompress_batch(model::record_batch&& b) {
                                parse_one_record_from_buffer_using_kafka_format(
                                  parser));
                        } catch (...) {
-                           auto str = fmt::format(
+                           auto str = fmt_with_ctx(
+                             fmt::format,
                              "Could not decode record:{}, header:{}, error:{}, "
                              "parser state:{}",
                              i,
