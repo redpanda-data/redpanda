@@ -89,6 +89,4 @@ ss::future<> do_swap_data_file_handles(
   ss::lw_shared_ptr<storage::segment>,
   storage::compaction_config);
 
-ss::future<model::record_batch> decompress_batch(model::record_batch&&);
-
 } // namespace storage::internal

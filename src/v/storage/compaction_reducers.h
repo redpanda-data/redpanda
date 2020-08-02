@@ -125,7 +125,7 @@ public:
     void end_of_stream() {}
 
 private:
-    ss::future<> do_streaming_index(model::record_batch&&);
+    ss::future<> do_index(model::record_batch&&);
 
     compacted_index_writer* _w;
 };

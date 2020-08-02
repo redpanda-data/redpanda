@@ -1,7 +1,6 @@
 #include "storage/segment_utils.h"
 
 #include "bytes/iobuf_parser.h"
-#include "compression/compression.h"
 #include "model/timeout_clock.h"
 #include "storage/compacted_index.h"
 #include "storage/compacted_index_writer.h"
@@ -482,57 +481,4 @@ ss::future<> self_compact_segment(
         });
 }
 
-ss::future<model::record_batch> decompress_batch(model::record_batch&& b) {
-    using recs_t = model::record_batch::uncompressed_records;
-    if (!b.compressed()) {
-        return ss::make_ready_future<model::record_batch>(std::move(b));
-    }
-    auto h = b.header();
-    iobuf body_buf = compression::compressor::uncompress(
-      b.get_compressed_records(), b.header().attrs.compression());
-    return ss::do_with(
-      iobuf_parser(std::move(body_buf)),
-      recs_t{},
-      [h](iobuf_parser& parser, recs_t& recs) {
-          const auto r = boost::irange(0, h.record_count - 1);
-          return ss::do_for_each(
-                   r,
-                   [&recs, &parser, h](int32_t i) {
-                       try {
-                           recs.emplace_back(
-                             internal::
-                               parse_one_record_from_buffer_using_kafka_format(
-                                 parser));
-                       } catch (...) {
-                           auto str = fmt::format(
-                             "Could not decode record:{}, header:{}, error:{}, "
-                             "parser state:{}",
-                             i,
-                             h,
-                             std::current_exception(),
-                             parser);
-                           vlog(stlog.error, "{}", str);
-                           throw std::runtime_error(str);
-                       }
-                   })
-            .then([h, &parser] {
-                if (parser.bytes_left()) {
-                    auto err = fmt::format(
-                      "Could not parse: {} - {} bytes left to parse",
-                      h,
-                      parser);
-                    throw std::runtime_error(err);
-                }
-            })
-            .then([h, &recs] {
-                auto b = model::record_batch(h, std::move(recs));
-                auto& hdr = b.header();
-                hdr.size_bytes = model::recompute_record_batch_size(b);
-                hdr.attrs.remove_compression();
-                hdr.crc = model::crc_record_batch(b);
-                hdr.header_crc = model::internal_header_only_crc(hdr);
-                return b;
-            });
-      });
-}
 } // namespace storage::internal
