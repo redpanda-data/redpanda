@@ -16,4 +16,7 @@ parse_one_record_from_buffer_using_kafka_format(iobuf_parser& parser);
 
 void append_record_using_kafka_format(iobuf& a, const model::record& r);
 
+ss::future<model::record_batch> decompress_batch(model::record_batch&&);
+ss::future<model::record_batch> decompress_batch(const model::record_batch&);
+
 } // namespace storage::internal

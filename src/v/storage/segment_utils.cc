@@ -1,7 +1,6 @@
 #include "storage/segment_utils.h"
 
 #include "bytes/iobuf_parser.h"
-#include "compression/compression.h"
 #include "model/timeout_clock.h"
 #include "storage/compacted_index.h"
 #include "storage/compacted_index_writer.h"
@@ -482,75 +481,4 @@ ss::future<> self_compact_segment(
         });
 }
 
-ss::future<model::record_batch> decompress_batch(model::record_batch&& b) {
-    if (!b.compressed()) {
-        return ss::make_ready_future<model::record_batch>(std::move(b));
-    }
-    return decompress_batch(b);
-}
-
-ss::future<model::record_batch> decompress_batch(const model::record_batch& b) {
-    using recs_t = model::record_batch::uncompressed_records;
-    if (unlikely(!b.compressed())) {
-        return ss::make_exception_future<model::record_batch>(
-          std::runtime_error(fmt_with_ctx(
-            fmt::format,
-            "Asked to decompressed a non-compressed batch:{}",
-            b.header())));
-    }
-    auto h = b.header();
-    iobuf body_buf = compression::compressor::uncompress(
-      b.get_compressed_records(), b.header().attrs.compression());
-    return ss::do_with(
-      iobuf_parser(std::move(body_buf)),
-      recs_t{},
-      [h](iobuf_parser& parser, recs_t& recs) {
-          const auto r = boost::irange(0, h.record_count);
-          return ss::do_for_each(
-                   r,
-                   [&recs, &parser, h](int32_t i) {
-                       try {
-                           recs.emplace_back(
-                             internal::
-                               parse_one_record_from_buffer_using_kafka_format(
-                                 parser));
-                       } catch (...) {
-                           auto str = fmt_with_ctx(
-                             fmt::format,
-                             "Could not decode record:{}, header:{}, error:{}, "
-                             "parser state:{}",
-                             i,
-                             h,
-                             std::current_exception(),
-                             parser);
-                           vlog(stlog.error, "{}", str);
-                           throw std::runtime_error(str);
-                       }
-                   })
-            .then([h, &parser, &recs] {
-                if (
-                  parser.bytes_left()
-                  || recs.size() != size_t(h.record_count)) {
-                    auto err = fmt_with_ctx(
-                      fmt::format,
-                      "Partial parsing of records {}/{}: {} bytes left to "
-                      "parse - Header:{}",
-                      recs.size(),
-                      h.record_count,
-                      parser,
-                      h);
-                    throw std::runtime_error(err);
-                }
-            })
-            .then([h, &recs] {
-                auto b = model::record_batch(h, std::move(recs));
-                auto& hdr = b.header();
-                hdr.size_bytes = model::recompute_record_batch_size(b);
-                hdr.attrs.remove_compression();
-                hdr.crc = model::crc_record_batch(b);
-                hdr.header_crc = model::internal_header_only_crc(hdr);
-                return b;
-            });
-      });
-}
 } // namespace storage::internal
