@@ -251,46 +251,22 @@ index_rebuilder_reducer::operator()(model::record_batch&& b) {
     using stop_t = ss::stop_iteration;
     auto f = ss::now();
     if (!b.compressed()) {
-        f = ss::do_with(std::move(b), [this](model::record_batch& b) {
-            return ss::do_for_each(
-              b, [this, o = b.base_offset()](model::record& r) {
-                  return _w->index(r.key(), o, r.offset_delta());
-              });
-        });
+        f = do_index(std::move(b));
     } else {
-        f = do_streaming_index(std::move(b));
+        f = internal::decompress_batch(std::move(b))
+              .then([this](model::record_batch&& b) {
+                  return do_index(std::move(b));
+              });
     }
     return f.then([] { return ss::make_ready_future<stop_t>(stop_t::no); });
 }
 
-ss::future<>
-index_rebuilder_reducer::do_streaming_index(model::record_batch&& b) {
-    iobuf body_buf = compression::compressor::uncompress(
-      b.get_compressed_records(), b.header().attrs.compression());
-    return ss::do_with(
-      iobuf_parser(std::move(body_buf)),
-      [this, header = b.header()](iobuf_parser& parser) {
-          const model::offset o = header.base_offset;
-          const auto r = boost::irange(0, header.record_count - 1);
-          return ss::do_for_each(
-            r.begin(), r.end(), [this, o, &parser, header](int32_t i) {
-                try {
-                    auto rec = parse_one_record_from_buffer_using_kafka_format(
-                      parser);
-                    auto k = iobuf_to_bytes(rec.key());
-                    return _w->index(std::move(k), o, rec.offset_delta());
-                } catch (...) {
-                    auto str = fmt::format(
-                      "Could not decode record:{}, header:{}, error:{}, "
-                      "parser state:{}",
-                      i,
-                      header,
-                      std::current_exception(),
-                      parser);
-                    vlog(stlog.error, "{}", str);
-                    return ss::make_exception_future<>(std::runtime_error(str));
-                }
-            });
-      });
+ss::future<> index_rebuilder_reducer::do_index(model::record_batch&& b) {
+    return ss::do_with(std::move(b), [this](model::record_batch& b) {
+        return ss::do_for_each(
+          b, [this, o = b.base_offset()](model::record& r) {
+              return _w->index(r.key(), o, r.offset_delta());
+          });
+    });
 }
 } // namespace storage::internal
