@@ -265,26 +265,11 @@ ss::future<> segment::compaction_index_batch(const model::record_batch& b) {
     if (!b.compressed()) {
         return do_compaction_index_batch(b);
     }
-    iobuf body_buf = compression::compressor::uncompress(
-      b.get_compressed_records(), b.header().attrs.compression());
-    // NOTE: if you change this, make sure to recompute the header.size_bytes
-    // with model::recompute_record_batch_size(). Only if you need the
-    // record_batch
-    return ss::do_with(
-      iobuf_parser(std::move(body_buf)),
-      [this, header = b.header()](iobuf_parser& parser) {
-          const auto r = boost::irange(0, header.record_count - 1);
-          const model::offset o = header.base_offset;
-          return ss::do_for_each(
-            r.begin(), r.end(), [this, o, &parser](int32_t) {
-                auto rec
-                  = internal::parse_one_record_from_buffer_using_kafka_format(
-                    parser);
-                auto k = iobuf_to_bytes(rec.key());
-                return compaction_index().index(
-                  std::move(k), o, rec.offset_delta());
-            });
-      });
+    return internal::decompress_batch(b).then([this](model::record_batch&& b) {
+        return ss::do_with(std::move(b), [this](model::record_batch& b) {
+            return do_compaction_index_batch(b);
+        });
+    });
 }
 
 ss::future<append_result> segment::append(const model::record_batch& b) {
@@ -327,10 +312,9 @@ ss::future<append_result> segment::append(const model::record_batch& b) {
               *this);
             // index the write
             _idx.maybe_track(b.header(), start_physical_offset);
-            auto ret = append_result{
-              .base_offset = b.base_offset(),
-              .last_offset = b.last_offset(),
-              .byte_size = (size_t)b.size_bytes()};
+            auto ret = append_result{.base_offset = b.base_offset(),
+                                     .last_offset = b.last_offset(),
+                                     .byte_size = (size_t)b.size_bytes()};
             // cache always copies the batch
             cache_put(b);
             return ret;
