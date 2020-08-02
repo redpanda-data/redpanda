@@ -25,10 +25,13 @@ struct log_basename_start {
 } // namespace vlog_internal
 
 // NOLINTNEXTLINE
-#define vlog(method, fmt, args...)                                             \
+#define fmt_with_ctx(method, fmt, args...)                                     \
     method(                                                                    \
       "{}:{} - " fmt,                                                          \
       (const char*)&__FILE__[vlog_internal::log_basename_start<                \
         vlog_internal::basename_index(__FILE__)>::value],                      \
       __LINE__,                                                                \
       ##args)
+
+// NOLINTNEXTLINE
+#define vlog(method, fmt, args...) fmt_with_ctx(method, fmt, ##args)
