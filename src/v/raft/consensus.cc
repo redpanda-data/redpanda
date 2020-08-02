@@ -446,46 +446,45 @@ ss::future<> consensus::start() {
     return _op_lock.with([this] {
         read_voted_for();
         return hydrate_snapshot().then([this] {
-        return details::read_bootstrap_state(_log, _as)
-          .then([this](configuration_bootstrap_state st) {
-              if (st.config_batches_seen() > 0) {
-                  _last_seen_config_offset = st.prev_log_index();
-                  _conf = std::move(st.release_config());
-                  update_follower_stats(_conf);
-              }
-              auto lstats = _log.offsets();
-              vlog(
-                _ctxlog.info,
-                "Recovered, log offsets: {}, term:{}",
-                lstats,
-                _term);
-          })
-          .then([this] {
-              auto next_election = clock_type::now();
-              // set last heartbeat timestamp to prevent skipping first election
-              _hbeat = clock_type::time_point::min();
-              if (!_conf.nodes.empty() && _self == _conf.nodes.begin()->id()) {
-                  // for single node scenarios arm immediate election, use
-                  // standard election timeout otherwise.
-                  if (_conf.nodes.size() > 1) {
-                      next_election += _jit.next_duration();
+            return details::read_bootstrap_state(_log, _as)
+              .then([this](configuration_bootstrap_state st) {
+                  if (st.config_batches_seen() > 0) {
+                      _last_seen_config_offset = st.prev_log_index();
+                      _conf = std::move(st.release_config());
+                      update_follower_stats(_conf);
                   }
+                  auto lstats = _log.offsets();
+                  vlog(
+                    _ctxlog.info,
+                    "Recovered, log offsets: {}, term:{}",
+                    lstats,
+                    _term);
+              })
+              .then([this] {
+                  auto next_election = clock_type::now();
+                  // set last heartbeat timestamp to prevent skipping first
+                  // election
+                  _hbeat = clock_type::time_point::min();
+                  if (
+                    !_conf.nodes.empty()
+                    && _self == _conf.nodes.begin()->id()) {
+                      // for single node scenarios arm immediate election, use
+                      // standard election timeout otherwise.
+                      if (_conf.nodes.size() > 1) {
+                          next_election += _jit.next_duration();
+                      }
+                  }
+                  // current node is not a preselected leader, add 2x jitter
+                  // to give opportunity to the preselected leader to win
+                  // the first round
+                  next_election += _jit.base_duration()
+                                   + 2 * _jit.next_jitter_duration();
                   if (!_bg.is_closed()) {
-                      _vote_timeout.arm(next_election);
+                      _vote_timeout.rearm(next_election);
                   }
-                  return;
-              }
-              // current node is not a preselected leader, add 2x jitter to
-              // give opportunity to the preselected leader to win the first
-              // round
-              next_election += _jit.base_duration()
-                               + 2 * _jit.next_jitter_duration();
-              if (!_bg.is_closed()) {
-                  _vote_timeout.rearm(next_election);
-              }
-          })
-          .then([this] { return _event_manager.start(); });
-    });
+              })
+              .then([this] { return _event_manager.start(); });
+        });
     });
 }
 
@@ -526,7 +525,8 @@ void consensus::read_voted_for() {
 
         vlog(
           _ctxlog.info,
-          "Recovered persistent state from kvstore: voted for: {}, term: {}",
+          "Recovered persistent state from kvstore: voted for: {}, term: "
+          "{}",
           _voted_for,
           _term);
     }
@@ -561,12 +561,12 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
 
     /// Stable leadership optimization
     ///
-    /// When current node is a leader (we set _hbeat to max after successfull
-    /// election) or already processed request from active leader  do not grant
-    /// a vote to follower. This will prevent restarted nodes to disturb all
-    /// groups leadership
-    // Check if we updated the heartbeat timepoint in the last election timeout
-    // duration
+    /// When current node is a leader (we set _hbeat to max after
+    /// successfull election) or already processed request from active
+    /// leader  do not grant a vote to follower. This will prevent restarted
+    /// nodes to disturb all groups leadership
+    // Check if we updated the heartbeat timepoint in the last election
+    // timeout duration
     auto prev_election = clock_type::now() - _jit.base_duration();
     if (_hbeat > prev_election) {
         vlog(
@@ -580,7 +580,8 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
     if (r.term > _term) {
         vlog(
           _ctxlog.info,
-          "Received vote request with larger term from node {}, received {}, "
+          "Received vote request with larger term from node {}, received "
+          "{}, "
           "current {}",
           r.node_id,
           r.term,
@@ -601,7 +602,8 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
               .handle_exception([this](const std::exception_ptr& e) {
                   vlog(
                     _ctxlog.warn,
-                    "Unable to persist raft group state, vote not granted - {}",
+                    "Unable to persist raft group state, vote not granted "
+                    "- {}",
                     e);
                   _voted_for = {};
               });
@@ -653,7 +655,8 @@ consensus::do_append_entries(append_entries_request&& r) {
     if (r.meta.term > _term) {
         vlog(
           _ctxlog.debug,
-          "Append entries request term:{} is greater than current: {}. Setting "
+          "Append entries request term:{} is greater than current: {}. "
+          "Setting "
           "new term",
           r.meta.term,
           _term);
@@ -702,7 +705,8 @@ consensus::do_append_entries(append_entries_request&& r) {
     if (r.meta.prev_log_term != last_log_term) {
         vlog(
           _ctxlog.debug,
-          "Rejecting append entries. missmatching entry term at offset: {}, "
+          "Rejecting append entries. missmatching entry term at offset: "
+          "{}, "
           "current term: {} request term: {}",
           r.meta.prev_log_index,
           last_log_term,
@@ -745,7 +749,8 @@ consensus::do_append_entries(append_entries_request&& r) {
           model::offset(r.meta.prev_log_index));
         vlog(
           _ctxlog.debug,
-          "Truncate log, request for the same term:{}. Request offset:{} is "
+          "Truncate log, request for the same term:{}. Request offset:{} "
+          "is "
           "earlier than what we have:{}. Truncating to: {}",
           r.meta.term,
           r.meta.prev_log_index,
@@ -759,7 +764,8 @@ consensus::do_append_entries(append_entries_request&& r) {
               if (unlikely(lstats.dirty_offset != r.meta.prev_log_index)) {
                   vlog(
                     _ctxlog.error,
-                    "Log truncation error, expected offset: {}, log offsets: "
+                    "Log truncation error, expected offset: {}, log "
+                    "offsets: "
                     "{}, requested truncation at {}",
                     r.meta.prev_log_index,
                     lstats,
