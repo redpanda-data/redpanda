@@ -116,7 +116,8 @@ describe("Server", function () {
           assert(apply.called);
           apply.firstCall.returnValue
             .then((values) => {
-              assert.deepStrictEqual(values, [[undefined]]);
+              // TODO: https://app.clubhouse.io/vectorized/story/1031
+              assert.deepStrictEqual(values, [undefined]);
               done();
             })
             .catch(done);
