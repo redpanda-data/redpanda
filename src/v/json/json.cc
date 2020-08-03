@@ -38,8 +38,8 @@ void rjson_serialize(rapidjson::Writer<rapidjson::StringBuffer>& w, double v) {
 }
 
 void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w, const ss::sstring& v) {
-    w.String(v.c_str());
+  rapidjson::Writer<rapidjson::StringBuffer>& w, std::string_view v) {
+    w.String(v.data(), v.size());
 }
 
 void rjson_serialize(
@@ -81,16 +81,6 @@ void rjson_serialize(
   const std::chrono::milliseconds& v) {
     uint64_t _tmp = v.count();
     rjson_serialize(w, _tmp);
-}
-
-void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
-  const std::vector<ss::sstring>& v) {
-    w.StartArray();
-    for (const auto& e : v) {
-        rjson_serialize(w, e);
-    }
-    w.EndArray();
 }
 
 } // namespace json
