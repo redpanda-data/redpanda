@@ -177,7 +177,7 @@ std::istream& operator>>(std::istream& i, compression& c) {
 std::ostream& operator<<(std::ostream& o, const model::broker_properties& b) {
     return ss::fmt_print(
       o,
-      "{cores {}, mem_available {}, disk_available {}}",
+      "{{cores {}, mem_available {}, disk_available {}}}",
       b.cores,
       b.available_memory,
       b.available_disk,
