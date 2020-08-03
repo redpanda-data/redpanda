@@ -154,3 +154,12 @@ SEASTAR_THREAD_TEST_CASE(create_topics_reply) {
     BOOST_REQUIRE_EQUAL(
       res.metadata[0].partitions[0].replicas[2].shard, pmd1.replicas[2].shard);
 }
+
+SEASTAR_THREAD_TEST_CASE(config_invariants_test) {
+    auto invariants = cluster::configuration_invariants(model::node_id(12), 64);
+
+    auto res = serialize_roundtrip_rpc(std::move(invariants));
+    BOOST_REQUIRE_EQUAL(res.core_count, 64);
+    BOOST_REQUIRE_EQUAL(res.node_id, model::node_id(12));
+    BOOST_REQUIRE_EQUAL(res.version, 0);
+}

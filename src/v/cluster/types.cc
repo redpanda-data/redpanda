@@ -84,6 +84,16 @@ std::ostream& operator<<(std::ostream& o, const topic_result& r) {
     fmt::print(o, "topic: {}, result: {}", r.tp_ns, r.ec);
     return o;
 }
+
+std::ostream& operator<<(std::ostream& o, const configuration_invariants& c) {
+    fmt::print(
+      o,
+      "{{version: {}, node_id: {}, core_count: {}}",
+      c.version,
+      c.node_id,
+      c.core_count);
+    return o;
+}
 } // namespace cluster
 
 namespace reflection {
@@ -216,5 +226,25 @@ adl<cluster::topic_configuration_assignment>::from(iobuf_parser& in) {
       in);
     return cluster::topic_configuration_assignment(
       std::move(cfg), std::move(assignments));
+}
+
+void adl<cluster::configuration_invariants>::to(
+  iobuf& out, cluster::configuration_invariants&& r) {
+    reflection::serialize(out, r.version, r.node_id, r.core_count);
+}
+
+cluster::configuration_invariants
+adl<cluster::configuration_invariants>::from(iobuf_parser& parser) {
+    auto version = adl<uint8_t>{}.from(parser);
+    vassert(
+      version == cluster::configuration_invariants::current_version,
+      "Currently only version 0 of configuration invariants is supported");
+
+    auto node_id = adl<model::node_id>{}.from(parser);
+    auto core_count = adl<uint16_t>{}.from(parser);
+
+    cluster::configuration_invariants ret(node_id, core_count);
+
+    return ret;
 }
 } // namespace reflection
