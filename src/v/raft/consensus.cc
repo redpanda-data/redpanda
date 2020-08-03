@@ -92,7 +92,17 @@ ss::future<> consensus::stop() {
     _vote_timeout.cancel();
     _as.request_abort();
     _commit_index_updated.broken();
-    return _event_manager.stop().then([this] { return _bg.close(); });
+
+    return _event_manager.stop()
+      .then([this] { return _bg.close(); })
+      .then([this] {
+          // close writer if we have to
+          if (likely(!_snapshot_writer)) {
+              return ss::now();
+          }
+          return _snapshot_writer->close().then(
+            [this] { _snapshot_writer.reset(); });
+      });
 }
 
 consensus::success_reply consensus::update_follower_index(
@@ -435,6 +445,7 @@ ss::future<> consensus::start() {
     vlog(_ctxlog.info, "Starting");
     return _op_lock.with([this] {
         read_voted_for();
+        return hydrate_snapshot().then([this] {
         return details::read_bootstrap_state(_log, _as)
           .then([this](configuration_bootstrap_state st) {
               if (st.config_batches_seen() > 0) {
@@ -474,6 +485,7 @@ ss::future<> consensus::start() {
               }
           })
           .then([this] { return _event_manager.start(); });
+    });
     });
 }
 
@@ -803,39 +815,154 @@ consensus::install_snapshot(install_snapshot_request&& r) {
     });
 }
 
+ss::future<> consensus::hydrate_snapshot() {
+    // Read snapshot, reset state machine using snapshot contents (and load
+    // snapshot’s cluster configuration) (§7.8)
+    return _snapshot_mgr.open_snapshot().then(
+      [this](std::optional<storage::snapshot_reader> reader) {
+          // no snapshot do nothing
+          if (!reader) {
+              return ss::now();
+          }
+          return ss::do_with(
+            std::move(*reader), [this](storage::snapshot_reader& reader) {
+                return do_hydrate_snapshot(reader).finally(
+                  [&reader] { return reader.close(); });
+            });
+      });
+}
+
+ss::future<> consensus::truncate_to_latest_snapshot() {
+    auto lstats = _log.offsets();
+    if (lstats.start_offset > _last_snapshot_index) {
+        return ss::now();
+    }
+    return _log.truncate_prefix(storage::truncate_prefix_config(
+      details::next_offset(_last_snapshot_index), _io_priority));
+}
+
+ss::future<> consensus::do_hydrate_snapshot(storage::snapshot_reader& reader) {
+    return reader.read_metadata().then([this](iobuf buf) {
+        auto parser = iobuf_parser(std::move(buf));
+        auto metadata = reflection::adl<snapshot_metadata>{}.from(parser);
+        vassert(
+          metadata.last_included_index >= _last_snapshot_index,
+          "Tried to load stale snapshot. Loaded snapshot last "
+          "index {}, current snapshot last index {}",
+          metadata.last_included_index,
+          _last_snapshot_index);
+
+        _last_snapshot_index = metadata.last_included_index;
+        _last_snapshot_term = metadata.last_included_term;
+
+        // TODO: add applying snapshot content to state machine
+        _commit_index = std::max(_last_snapshot_index, _commit_index);
+
+        update_follower_stats(metadata.latest_configuration);
+        _conf = std::move(metadata.latest_configuration);
+        vlog(_ctxlog.info, "configuration updated with snapshot {}", _conf);
+        _probe.configuration_update();
+
+        return truncate_to_latest_snapshot();
+    });
+}
+
 ss::future<install_snapshot_reply>
 consensus::do_install_snapshot(install_snapshot_request&& r) {
     vlog(_ctxlog.trace, "Install snapshot request: {}", r);
 
-    install_snapshot_reply reply;
-    reply.success = false;
-    reply.bytes_stored = 0;
-    reply.term = _term;
+    install_snapshot_reply reply{
+      .term = _term, .bytes_stored = r.chunk.size_bytes(), .success = false};
 
+    bool is_done = r.done;
     // Raft paper: Reply immediately if term < currentTerm (§7.1)
     if (r.term < _term) {
-        return ss::make_ready_future<install_snapshot_reply>(std::move(reply));
+        return ss::make_ready_future<install_snapshot_reply>(reply);
     }
-    // FIXME: Provide an implementation. Missing parts (from raft paper):
 
+    // no need to trigger timeout
+    _hbeat = clock_type::now();
+
+    // request received from new leader
+    if (r.term > _term) {
+        _term = r.term;
+        do_step_down();
+        return do_install_snapshot(std::move(r));
+    }
+
+    auto f = ss::now();
     // Create new snapshot file if first chunk (offset is 0) (§7.2)
+    if (r.file_offset == 0) {
+        // discard old chunks, previous snaphost wasn't finished
+        if (_snapshot_writer) {
+            f = _snapshot_writer->close().then(
+              [this] { return _snapshot_mgr.remove_partial_snapshots(); });
+        }
+        f = f.then([this] {
+            return _snapshot_mgr.start_snapshot().then(
+              [this](storage::snapshot_writer w) {
+                  _snapshot_writer.emplace(std::move(w));
+              });
+        });
+    }
 
     // Write data into snapshot file at given offset (§7.3)
+    f = f.then([this, chunk = std::move(r.chunk)]() mutable {
+        return write_iobuf_to_output_stream(
+          std::move(chunk), _snapshot_writer->output());
+    });
 
     // Reply and wait for more data chunks if done is false (§7.4)
+    if (!is_done) {
+        return f.then([reply]() mutable {
+            reply.success = true;
+            return reply;
+        });
+    }
+    // Last chunk, finish storing snapshot
+    return f.then([this, r = std::move(r), reply]() mutable {
+        return finish_snapshot(std::move(r), reply);
+    });
+}
 
-    // Save snapshot file, discard any existing or partial snapshot
-    // with a smaller index (§7.5)
+ss::future<install_snapshot_reply> consensus::finish_snapshot(
+  install_snapshot_request r, install_snapshot_reply reply) {
+    if (!_snapshot_writer) {
+        reply.bytes_stored = 0;
+        return ss::make_ready_future<install_snapshot_reply>(reply);
+    }
 
-    // If existing log entry has same index and term as snapshot’s
-    // last included entry, retain log entries following it and reply (§7.6)
+    auto f = _snapshot_writer->close();
+    // discard any existing or partial snapshot with a smaller index (§7.5)
+    if (r.last_included_index < _last_snapshot_index) {
+        vlog(
+          _ctxlog.warn,
+          "Stale snapshot with last index {} received. Previously "
+          "received snapshot last included index {}",
+          r.last_included_index,
+          _last_snapshot_index);
 
-    // Discard the entire log (§7.7)
-
-    // Reset state machine using snapshot contents (and load
-    // snapshot’s cluster configuration) (§7.8)
-
-    return ss::make_ready_future<install_snapshot_reply>();
+        return f
+          .then([this] { return _snapshot_mgr.remove_partial_snapshots(); })
+          .then([this, reply]() mutable {
+              _snapshot_writer.reset();
+              reply.bytes_stored = 0;
+              reply.success = false;
+              return reply;
+          });
+    }
+    // success case
+    return f
+      .then([this] {
+          return _snapshot_mgr.finish_snapshot(_snapshot_writer.value());
+      })
+      .then([this, reply]() mutable {
+          _snapshot_writer.reset();
+          return hydrate_snapshot().then([reply]() mutable {
+              reply.success = true;
+              return reply;
+          });
+      });
 }
 
 ss::future<> consensus::notify_entries_commited(

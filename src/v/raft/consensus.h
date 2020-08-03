@@ -140,6 +140,18 @@ private:
     do_append_entries(append_entries_request&&);
     ss::future<install_snapshot_reply>
     do_install_snapshot(install_snapshot_request&& r);
+    /**
+     * Hydrate the consensus state with the data from the snapshot
+     */
+    ss::future<> hydrate_snapshot();
+    ss::future<> do_hydrate_snapshot(storage::snapshot_reader&);
+
+    /**
+     * Truncates the log up the last offset stored in the snapshot
+     */
+    ss::future<> truncate_to_latest_snapshot();
+    ss::future<install_snapshot_reply>
+      finish_snapshot(install_snapshot_request, install_snapshot_reply);
     append_entries_reply make_append_entries_reply(storage::append_result);
 
     ss::future<> notify_entries_commited(
@@ -253,6 +265,9 @@ private:
     ss::abort_source _as;
     storage::api& _storage;
     storage::snapshot_manager _snapshot_mgr;
+    std::optional<storage::snapshot_writer> _snapshot_writer;
+    model::offset _last_snapshot_index;
+    model::term_id _last_snapshot_term;
 
     friend std::ostream& operator<<(std::ostream&, const consensus&);
 };
