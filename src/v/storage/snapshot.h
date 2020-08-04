@@ -152,6 +152,12 @@ public:
       , _path(std::move(path))
       , _input(std::move(input)) {}
 
+    ~snapshot_reader() noexcept;
+    snapshot_reader(const snapshot_reader&) = delete;
+    snapshot_reader(snapshot_reader&&) noexcept;
+    snapshot_reader& operator=(const snapshot_reader&) = delete;
+    snapshot_reader& operator=(snapshot_reader&&) noexcept;
+
     ss::future<iobuf> read_metadata();
     ss::input_stream<char>& input() { return _input; }
     ss::future<> close();
@@ -162,6 +168,7 @@ private:
     ss::file _file;
     std::filesystem::path _path;
     ss::input_stream<char> _input;
+    bool _closed = false;
 };
 
 /**
@@ -191,6 +198,12 @@ public:
       : _path(std::move(path))
       , _output(std::move(output)) {}
 
+    ~snapshot_writer() noexcept;
+    snapshot_writer(const snapshot_writer&) = delete;
+    snapshot_writer(snapshot_writer&&) noexcept;
+    snapshot_writer& operator=(const snapshot_writer&) = delete;
+    snapshot_writer& operator=(snapshot_writer&&) noexcept;
+
     ss::future<> write_metadata(iobuf);
     ss::output_stream<char>& output() { return _output; }
     ss::future<> close();
@@ -200,6 +213,7 @@ public:
 private:
     std::filesystem::path _path;
     ss::output_stream<char> _output;
+    bool _closed = false;
 };
 
 } // namespace storage
