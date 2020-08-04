@@ -123,7 +123,7 @@ def go(conf, targets):
 
 @build.command(short_help='build tar, deb or rpm packages.')
 @click.option('--format',
-              help="format to build ('rpm', 'deb' and 'tar').",
+              help="format to build ('rpm', 'deb', 'tar', and 'dir').",
               multiple=True,
               required=True)
 @click.option('--build-type',
@@ -147,7 +147,7 @@ def pkg(build_type, clang, conf, format):
                              clang=clang)
 
     for f in format:
-        if f not in ['tar', 'deb', 'rpm']:
+        if f not in ['tar', 'deb', 'rpm', 'dir']:
             logging.fatal(f'Unknown format {format}')
 
     packaging.create_packages(vconfig, format, vconfig.build_type)

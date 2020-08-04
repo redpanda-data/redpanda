@@ -60,6 +60,110 @@ def _get_dependencies(binary, vconfig):
     return libs
 
 
+def _relocatable_dir(dest_dir, execs, configs, admin_api_swag, vconfig):
+    """
+    Create a directory containing package artifacts suitable for relocation on
+    the local machine, including within a docker container. This primarily used
+    by test harnesses, and the goal is to be a fast operation.
+
+       1. Executables are patched and copied into the staging directory
+       2. System libraries are copied into the staging directory
+       3. All other dependencies under the build root are symlinked
+       4. Executables and libraries are copied only if they have changed
+
+    Together this reduces from scratch packaging times to around a couple
+    seconds compared to around ten for building a tarball. When no changes have
+    been detected the command runs in less than one second.
+
+    The resulting directory can be run from any location within the docker
+    container provided that the original build root path is preserved in the
+    container to resolve symlinks.
+    """
+    logging.info(f"staging relocatable local dir at {dest_dir}")
+
+    for name in [
+            "lib", "libexec", "conf", "bin", "etc/redpanda/admin-api-doc"
+    ]:
+        os.makedirs(os.path.join(dest_dir, name), exist_ok=True)
+
+    def do_if_newer(action, src, dest, extra=None):
+        # perform action if destination doesn't exist or source is newer. the
+        # action is also executed if the file extra doesn't exist, which is used
+        # to deal with derived files like thunks.
+        src_mtime = os.stat(src).st_mtime
+        dest_mtime = 0
+        try:
+            if extra:
+                os.stat(extra)
+            dest_mtime = os.stat(dest).st_mtime
+            if src_mtime <= dest_mtime:
+                return
+        except FileNotFoundError:
+            pass
+        logging.debug("Newer %s (%d) found. Applying %s with %s (%d)", src,
+                      src_mtime, action.__name__, dest, dest_mtime)
+        action(src, dest)
+
+    def maybe_symlink(target, link):
+        exists = os.path.exists(link)
+        if not exists or not os.path.samefile(target, os.path.realpath(link)):
+            logging.debug("Creating symlink %s -> %s", link, target)
+            if exists:
+                os.remove(link)
+            os.symlink(target, link)
+
+    def thunk_path(exe):
+        return os.path.join(dest_dir, "bin", os.path.basename(exe))
+
+    def patch_exe(src, dest):
+        shutil.copy2(src, dest)
+        _patch_exe(dest_dir, dest, vconfig.environ)
+        path = thunk_path(dest)
+        with open(path, 'w') as f:
+            thunk = _render_thunk(dest_dir, os.path.basename(dest))
+            f.write(thunk)
+        os.chmod(path, 0o755)
+
+    libs = {}
+    manifest = set()
+
+    for exe, suffix in execs:
+        basename = os.path.basename(exe)
+        name = f'{basename}-{suffix}' if suffix else basename
+        dest_exe = os.path.join(dest_dir, "libexec", name)
+        thunk = thunk_path(name)
+        do_if_newer(patch_exe, exe, dest_exe, thunk)
+        libs.update(_get_dependencies(exe, vconfig))
+        manifest.add(dest_exe)
+        manifest.add(thunk)
+
+    for name, path in libs.items():
+        basedir = os.path.commonpath((path, vconfig.build_root))
+        if not os.path.samefile(basedir, vconfig.build_root):
+            dest_lib = os.path.join(dest_dir, "lib", name)
+            do_if_newer(shutil.copy2, path, dest_lib)
+            manifest.add(dest_lib)
+
+    for conf in configs:
+        dest_path = os.path.join(dest_dir, "conf", os.path.basename(conf))
+        manifest.add(dest_path)
+        maybe_symlink(conf, dest_path)
+
+    for swag in admin_api_swag:
+        dest_path = os.path.join(dest_dir, "etc/redpanda/admin-api-doc",
+                                 os.path.basename(swag))
+        manifest.add(dest_path)
+        maybe_symlink(swag, dest_path)
+
+    # remove old staged files, if any
+    for root, _, files in os.walk(dest_dir):
+        for filename in files:
+            path = os.path.join(root, filename)
+            if path not in manifest:
+                logging.debug("Removing staged file not in manifest: %s", path)
+                os.remove(path)
+
+
 def _relocable_tar_package(dest, execs, configs, admin_api_swag, vconfig):
     rp_root = '/opt/redpanda'
     logging.info(f"staging relocatable tar package {dest}")
@@ -251,8 +355,19 @@ def create_packages(vconfig, formats, build_type):
         os.path.join(vconfig.src_dir, "src/v/redpanda/admin/api-doc/*.json"))
     os.makedirs(dist_path, exist_ok=True)
 
+    formats = set(formats)
+
+    if "dir" in formats:
+        local_dir = os.path.join(dist_path, "local")
+        _relocatable_dir(local_dir, execs, configs, admin_api_swag,
+                               vconfig)
+
+    if formats.isdisjoint({"tar", "deb", "rpm"}):
+        return
+
     tar_name = 'redpanda.tar.gz'
     tar_path = f"{dist_path}/{tar_name}"
+
     _relocable_tar_package(tar_path, execs, configs, admin_api_swag, vconfig)
 
     if 'tar' in formats:
