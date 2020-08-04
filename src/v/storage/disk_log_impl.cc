@@ -427,7 +427,6 @@ size_t disk_log_impl::bytes_left_before_roll() const {
 ss::future<> disk_log_impl::maybe_roll(
   model::term_id t, model::offset next_offset, ss::io_priority_class iopc) {
     vassert(t >= term(), "Term:{} must be greater than base:{}", t, term());
-    _probe.maybe_roll();
     if (_segs.empty()) {
         return new_segment(next_offset, t, iopc);
     }
