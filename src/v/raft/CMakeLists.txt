@@ -34,3 +34,4 @@ v_cc_library(
   )
 add_subdirectory(tests)
 add_subdirectory(tron)
+add_subdirectory(kvelldb)
