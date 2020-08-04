@@ -30,7 +30,7 @@ iobuf snappy_compressor::compress(const iobuf& b) {
       linearized.size());
 }
 
-inline iobuf do_uncompressed(const char* src, size_t src_size) {
+iobuf do_uncompressed(const char* src, size_t src_size) {
     size_t output_size = 0;
     if (!::snappy::GetUncompressedLength(src, src_size, &output_size)) {
         throw std::runtime_error(fmt::format(
@@ -44,7 +44,12 @@ inline iobuf do_uncompressed(const char* src, size_t src_size) {
     }
     auto ph = ret.reserve(output_size);
     char* output = ph.mutable_index();
-    ::snappy::RawUncompress(src, src_size, output);
+    if (!::snappy::RawUncompress(src, src_size, output)) {
+        throw std::runtime_error(fmt::format(
+          "snappy: Could not decompress input size: {}, to output size:{}",
+          src_size,
+          output_size));
+    }
     return ret;
 }
 
