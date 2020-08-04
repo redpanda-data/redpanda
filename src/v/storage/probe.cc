@@ -59,9 +59,15 @@ void probe::setup_metrics(const model::ntp& ntp) {
           sm::description("Number of batch write errors"),
           labels),
         sm::make_derive(
-          "log_maybe_roll",
-          [this] { return _log_maybe_roll; },
-          sm::description("Number of times rolls were attempted"),
+          "corrupted_compaction_indices",
+          [this] { return _corrupted_compaction_index; },
+          sm::description("Number of times we had to re-construct the "
+                          ".compaction index on a segment"),
+          labels),
+        sm::make_derive(
+          "compacted_segment",
+          [this] { return _segment_compacted; },
+          sm::description("Number of compacted segments"),
           labels),
         sm::make_total_bytes(
           "partition_size",

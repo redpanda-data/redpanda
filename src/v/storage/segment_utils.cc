@@ -460,6 +460,7 @@ ss::future<> self_compact_segment(
                   stlog.warn,
                   "Detected corrupt or missing index file:{}, recovering...",
                   idx_path);
+                pb.corrupted_compaction_index();
                 return s->read_lock()
                   .then([s, cfg, &pb, idx_path](ss::rwlock::holder h) {
                       return rebuild_compaction_index(
@@ -478,7 +479,8 @@ ss::future<> self_compact_segment(
             default:
                 __builtin_unreachable();
             }
-        });
+        })
+      .finally([&pb] { pb.segment_compacted(); });
 }
 
 } // namespace storage::internal
