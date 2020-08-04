@@ -34,6 +34,7 @@ SEASTAR_THREAD_TEST_CASE(reading_from_empty_snapshot_is_error) {
                    "Snapshot file does not contain full header")
                  != std::string::npos;
       });
+    reader->close().get0();
 }
 
 SEASTAR_THREAD_TEST_CASE(reader_verifies_header_crc) {
@@ -67,6 +68,7 @@ SEASTAR_THREAD_TEST_CASE(reader_verifies_header_crc) {
           return std::string(e.what()).find("Failed to verify header crc")
                  != std::string::npos;
       });
+    reader->close().get0();
 }
 
 SEASTAR_THREAD_TEST_CASE(reader_verifies_metadata_crc) {
@@ -102,6 +104,7 @@ SEASTAR_THREAD_TEST_CASE(reader_verifies_metadata_crc) {
           return std::string(e.what()).find("Failed to verify metadata crc")
                  != std::string::npos;
       });
+    reader->close().get0();
 }
 
 SEASTAR_THREAD_TEST_CASE(read_write) {
@@ -126,6 +129,7 @@ SEASTAR_THREAD_TEST_CASE(read_write) {
     auto read_metadata = reader->read_metadata().get0();
     BOOST_TEST(read_metadata == metadata_orig);
     auto blob_read = reader->input().read_exactly(blob.size()).get0();
+    reader->close().get0();
     BOOST_TEST(blob_read.size() == 1234);
     BOOST_TEST(blob == ss::to_sstring(std::move(blob_read)));
 }

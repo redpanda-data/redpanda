@@ -76,6 +76,27 @@ ss::future<> snapshot_manager::remove_partial_snapshots() {
       });
 }
 
+snapshot_reader::~snapshot_reader() noexcept {
+    vassert(_closed, "snapshot reader has to be closed before destruction");
+}
+
+snapshot_reader::snapshot_reader(snapshot_reader&& o) noexcept
+  : _file(std::move(o._file))
+  , _path(std::move(o._path))
+  , _input(std::move(o._input))
+  , _closed(o._closed) {
+    o._closed = true;
+}
+
+snapshot_reader& snapshot_reader::operator=(snapshot_reader&& o) noexcept {
+    if (this != &o) {
+        this->_closed = true;
+        this->~snapshot_reader();
+        new (this) snapshot_reader(std::move(o));
+    }
+    return *this;
+}
+
 ss::future<snapshot_header> snapshot_reader::read_header() {
     return read_iobuf_exactly(_input, snapshot_header::ondisk_size)
       .then([this](iobuf buf) {
@@ -161,7 +182,30 @@ ss::future<iobuf> snapshot_reader::read_metadata() {
 ss::future<> snapshot_reader::close() {
     return _input
       .close() // finishes read-ahead work
-      .then([this] { return _file.close(); });
+      .then([this] {
+          _closed = true;
+          return _file.close();
+      });
+}
+
+snapshot_writer::~snapshot_writer() noexcept {
+    vassert(_closed, "snapshot writer has to be closed before destruction");
+}
+
+snapshot_writer::snapshot_writer(snapshot_writer&& o) noexcept
+  : _path(std::move(o._path))
+  , _output(std::move(o._output))
+  , _closed(o._closed) {
+    o._closed = true;
+}
+
+snapshot_writer& snapshot_writer::operator=(snapshot_writer&& o) noexcept {
+    if (this != &o) {
+        this->_closed = true;
+        this->~snapshot_writer();
+        new (this) snapshot_writer(std::move(o));
+    }
+    return *this;
 }
 
 ss::future<> snapshot_writer::write_metadata(iobuf buf) {
@@ -198,7 +242,10 @@ ss::future<> snapshot_writer::write_metadata(iobuf buf) {
 }
 
 ss::future<> snapshot_writer::close() {
-    return _output.flush().then([this] { return _output.close(); });
+    return _output.flush().then([this] {
+        _closed = true;
+        return _output.close();
+    });
 }
 
 } // namespace storage
