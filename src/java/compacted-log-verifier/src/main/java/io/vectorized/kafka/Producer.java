@@ -8,6 +8,7 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.LongStream;
 import org.apache.commons.lang3.time.StopWatch;
@@ -28,6 +29,10 @@ public class Producer {
   Producer(final ProducerConfig config) {
     this.config = config;
     this.properties = config.parseProperties();
+    properties.put(
+        org.apache.kafka.clients.producer.ProducerConfig
+            .COMPRESSION_TYPE_CONFIG,
+        Producer.getRandomCompression());
     properties.put(
         org.apache.kafka.clients.producer.ProducerConfig
             .KEY_SERIALIZER_CLASS_CONFIG,
@@ -114,7 +119,10 @@ public class Producer {
       stats.printTotal();
     }
   }
-
+  static String getRandomCompression() {
+    String[] compression = {"snappy", "gzip", "lz4", "zstd"};
+    return compression[ThreadLocalRandom.current().nextInt(compression.length)];
+  }
   private final Stats stats;
   private final RecordsGenerator generator;
   private final ProducerConfig config;
