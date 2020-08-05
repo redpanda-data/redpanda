@@ -4,6 +4,7 @@
 #include "raft/consensus.h"
 #include "raft/consensus_client_protocol.h"
 #include "raft/heartbeat_manager.h"
+#include "raft/log_eviction_stm.h"
 #include "raft/rpc_client_protocol.h"
 #include "raft/service.h"
 #include "random/generators.h"
@@ -162,6 +163,11 @@ struct raft_node {
         hbeats->register_group(consensus).get();
         started = true;
         consensus->start().get0();
+        if (log->config().is_collectable()) {
+            _nop_stm = std::make_unique<raft::log_eviction_stm>(
+              consensus.get(), tstlog);
+            _nop_stm->start().get0();
+        }
     }
 
     ss::future<> stop_node() {
@@ -184,6 +190,12 @@ struct raft_node {
               return consensus->stop();
           })
           .then([this] {
+              if (_nop_stm != nullptr) {
+                  return _nop_stm->stop();
+              }
+              return ss::now();
+          })
+          .then([this] {
               tstlog.info("Raft stopped at node {}", broker.id());
               return raft_manager.stop();
           })
@@ -201,8 +213,11 @@ struct raft_node {
 
     ss::future<log_t> read_log() {
         auto max_offset = model::offset(consensus->committed_offset());
+        auto lstats = log->offsets();
+
         storage::log_reader_config cfg(
-          model::offset(0), max_offset, ss::default_priority_class());
+          lstats.start_offset, max_offset, ss::default_priority_class());
+
         return log->make_reader(cfg).then(
           [this, max_offset](model::record_batch_reader rdr) {
               tstlog.debug(
@@ -252,6 +267,7 @@ struct raft_node {
     ss::sharded<test_raft_manager> raft_manager;
     std::unique_ptr<raft::heartbeat_manager> hbeats;
     consensus_ptr consensus;
+    std::unique_ptr<raft::log_eviction_stm> _nop_stm;
     leader_clb_t leader_callback;
 };
 
@@ -435,6 +451,143 @@ private:
     size_t _segment_size;
 };
 
+static model::record_batch_reader random_batches_entry(int max_batches) {
+    auto batches = storage::test::make_random_batches(
+      model::offset(0), max_batches);
+    return model::make_memory_record_batch_reader(std::move(batches));
+}
+
+template<typename Rep, typename Period, typename Pred>
+static void wait_for(
+  std::chrono::duration<Rep, Period> timeout, Pred&& p, ss::sstring msg) {
+    using clock_t = std::chrono::system_clock;
+    auto start = clock_t::now();
+    auto res = p();
+    while (!res) {
+        auto elapsed = clock_t::now() - start;
+        if (elapsed > timeout) {
+            BOOST_FAIL(
+              fmt::format("Timeout elapsed while wating for: {}", msg));
+        }
+        res = p();
+        ss::sleep(std::chrono::milliseconds(400)).get0();
+    }
+}
+
+static void assert_at_most_one_leader(raft_group& gr) {
+    std::unordered_map<long, int> leaders_per_term;
+    for (auto& [_, m] : gr.get_members()) {
+        auto term = static_cast<long>(m.consensus->term());
+        if (auto it = leaders_per_term.find(term);
+            it == leaders_per_term.end()) {
+            leaders_per_term.try_emplace(term, 0);
+        }
+        auto it = leaders_per_term.find(m.consensus->term());
+        it->second += m.consensus->is_leader();
+    }
+    for (auto& [term, leaders] : leaders_per_term) {
+        BOOST_REQUIRE_LE(leaders, 1);
+    }
+}
+
+static bool are_logs_the_same_length(const raft_group::logs_t& logs) {
+    // if one of the logs is empty all of them have to be empty
+    auto empty = std::all_of(
+      logs.cbegin(), logs.cend(), [](const raft_group::logs_t::value_type& p) {
+          return p.second.empty();
+      });
+
+    if (empty) {
+        return true;
+    }
+    if (logs.begin()->second.empty()) {
+        return false;
+    }
+    auto last_offset = logs.begin()->second.back().last_offset();
+
+    return std::all_of(logs.begin(), logs.end(), [last_offset](auto& p) {
+        return !p.second.empty()
+               && p.second.back().last_offset() == last_offset;
+    });
+}
+
+static bool are_all_commit_indexes_the_same(raft_group& gr) {
+    auto c_idx = gr.get_members().begin()->second.consensus->committed_offset();
+    return std::all_of(
+      gr.get_members().begin(),
+      gr.get_members().end(),
+      [c_idx](raft_group::members_t::value_type& n) {
+          auto current = model::offset(n.second.consensus->committed_offset());
+          auto log_offset = n.second.log->offsets().dirty_offset;
+          return c_idx == current && log_offset == c_idx;
+      });
+}
+
+static bool are_logs_equivalent(
+  const std::vector<model::record_batch>& a,
+  const std::vector<model::record_batch>& b) {
+    // both logs are empty - this is ok
+    if (a.empty() && b.empty()) {
+        return true;
+    }
+    // one of the logs is empty while second has batches
+    if (a.empty() || b.empty()) {
+        return false;
+    }
+    auto [a_it, b_it] = std::mismatch(
+      a.rbegin(), a.rend(), b.rbegin(), b.rend());
+
+    return a_it == a.rbegin() || b_it == b.rbegin();
+}
+
+static bool assert_all_logs_are_the_same(const raft_group::logs_t& logs) {
+    auto it = logs.begin();
+    auto& reference = logs.begin()->second;
+
+    return std::all_of(
+      std::next(logs.cbegin()),
+      logs.cend(),
+      [&reference](const raft_group::logs_t::value_type& p) {
+          return !are_logs_equivalent(reference, p.second);
+      });
+}
+
+static void validate_logs_replication(raft_group& gr) {
+    auto logs = gr.read_all_logs();
+    wait_for(
+      10s,
+      [&gr, &logs] {
+          logs = gr.read_all_logs();
+          return are_logs_the_same_length(logs);
+      },
+      "Logs are replicated");
+
+    assert_all_logs_are_the_same(logs);
+}
+
+static model::node_id wait_for_group_leader(raft_group& gr) {
+    gr.wait_for_next_election();
+    assert_at_most_one_leader(gr);
+    auto leader_id = gr.get_leader_id();
+    while (!leader_id) {
+        assert_at_most_one_leader(gr);
+        gr.wait_for_next_election();
+        assert_at_most_one_leader(gr);
+        leader_id = gr.get_leader_id();
+    }
+
+    return leader_id.value();
+}
+
+static void
+assert_stable_leadership(const raft_group& gr, int number_of_intervals = 5) {
+    auto before = gr.get_elections_count();
+    ss::sleep(heartbeat_interval * number_of_intervals).get0();
+    BOOST_TEST(
+      before = gr.get_elections_count(),
+      "Group leadership is required to be stable");
+}
+
 struct raft_test_fixture {
     raft_test_fixture() {
         ss::smp::invoke_on_all([] {
@@ -442,138 +595,11 @@ struct raft_test_fixture {
         }).get();
     }
 
-    model::record_batch_reader random_batches_entry(int max_batches) {
-        auto batches = storage::test::make_random_batches(
-          model::offset(0), max_batches);
-        return model::make_memory_record_batch_reader(std::move(batches));
-    }
-
-    template<typename Rep, typename Period, typename Pred>
-    void wait_for(
-      std::chrono::duration<Rep, Period> timeout, Pred&& p, ss::sstring msg) {
-        using clock_t = std::chrono::system_clock;
-        auto start = clock_t::now();
-        auto res = p();
-        while (!res) {
-            auto elapsed = clock_t::now() - start;
-            if (elapsed > timeout) {
-                BOOST_FAIL(
-                  fmt::format("Timeout elapsed while wating for: {}", msg));
-            }
-            res = p();
-            ss::sleep(std::chrono::milliseconds(400)).get0();
-        }
-    }
-
-    void assert_at_most_one_leader(raft_group& gr) {
-        std::unordered_map<long, int> leaders_per_term;
-        for (auto& [_, m] : gr.get_members()) {
-            auto term = static_cast<long>(m.consensus->term());
-            if (auto it = leaders_per_term.find(term);
-                it == leaders_per_term.end()) {
-                leaders_per_term.try_emplace(term, 0);
-            }
-            auto it = leaders_per_term.find(m.consensus->term());
-            it->second += m.consensus->is_leader();
-        }
-        for (auto& [term, leaders] : leaders_per_term) {
-            BOOST_REQUIRE_LE(leaders, 1);
-        }
-    }
-
-    bool are_logs_the_same_length(const raft_group::logs_t& logs) {
-        auto size = logs.begin()->second.size();
-        if (size == 0) {
-            return false;
-        }
-        for (auto& [id, l] : logs) {
-            tstlog.debug("Node {} log has {} batches", id, l.size());
-            if (size != l.size()) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    bool are_all_commit_indexes_the_same(raft_group& gr) {
-        auto c_idx
-          = gr.get_members().begin()->second.consensus->committed_offset();
-        for (auto& [id, m] : gr.get_members()) {
-            auto current = model::offset(m.consensus->committed_offset());
-            auto log_offset = m.log->offsets().dirty_offset;
-            tstlog.debug(
-              "Node {} commit index {}, log offset {}",
-              id,
-              current,
-              log_offset);
-            if (c_idx != current || log_offset != c_idx) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    void assert_all_logs_are_the_same(const raft_group::logs_t& logs) {
-        auto it = logs.begin();
-        auto& reference = logs.begin()->second;
-        it++;
-        while (it != logs.end()) {
-            if (reference.size() != it->second.size()) {
-                auto r_size = reference.size() != it->second.size();
-                auto it_sz = it->second.size();
-                tstlog.error("Different length {}, {}", r_size, it_sz);
-            }
-            for (int i = 0; i < reference.size(); ++i) {
-                BOOST_REQUIRE_EQUAL(reference[i], it->second[i]);
-            }
-            it++;
-        }
-    }
-
-    bool are_logs_the_same(const raft_group::logs_t& logs) {
-        auto prev = logs.begin()->second.size();
-        for (auto& [_, l] : logs) {
-            if (prev != l.size()) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    void validate_logs_replication(raft_group& gr) {
-        auto logs = gr.read_all_logs();
-        wait_for(
-          10s,
-          [this, &gr, &logs] {
-              logs = gr.read_all_logs();
-              return are_logs_the_same_length(logs);
-          },
-          "Logs are replicated");
-
-        assert_all_logs_are_the_same(logs);
-    }
-
-    model::node_id wait_for_group_leader(raft_group& gr) {
-        gr.wait_for_next_election();
-        assert_at_most_one_leader(gr);
+    consensus_ptr get_leader_raft(raft_group& gr) {
         auto leader_id = gr.get_leader_id();
-        while (!leader_id) {
-            assert_at_most_one_leader(gr);
-            gr.wait_for_next_election();
-            assert_at_most_one_leader(gr);
-            leader_id = gr.get_leader_id();
+        if (!leader_id) {
+            leader_id.emplace(wait_for_group_leader(gr));
         }
-
-        return leader_id.value();
-    }
-
-    void assert_stable_leadership(
-      const raft_group& gr, int number_of_intervals = 5) {
-        auto before = gr.get_elections_count();
-        ss::sleep(heartbeat_interval * number_of_intervals).get0();
-        BOOST_TEST(
-          before = gr.get_elections_count(),
-          "Group leadership is required to be stable");
+        return gr.get_member(*leader_id).consensus;
     }
 };

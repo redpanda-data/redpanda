@@ -14,6 +14,7 @@
 #include "seastarx.h"
 #include "storage/api.h"
 #include "storage/log.h"
+#include "storage/snapshot.h"
 #include "utils/mutex.h"
 
 #include <seastar/core/abort_source.hh>
@@ -87,6 +88,14 @@ public:
     clock_type::time_point last_heartbeat() const { return _hbeat; };
 
     clock_type::time_point last_hbeat_timestamp(model::node_id);
+    /**
+     * \brief Persist snapshot with given data and start offset
+     *
+     * The write snaphot API is called by the state machine implementation
+     * whenever it decides to take a snapshot. Write snapshot is executed under
+     * consensus operations lock.
+     */
+    ss::future<> write_snapshot(write_snapshot_cfg);
 
     /// Increment and returns next append_entries order tracking sequence for
     /// follower with given node id
@@ -119,6 +128,10 @@ public:
 
     event_manager& events() { return _event_manager; }
 
+    ss::future<storage::eviction_range_lock> monitor_log_eviction() {
+        return _log.monitor_eviction(_as);
+    }
+
 private:
     // key types used to store data in key-value store
     enum class metadata_key : int8_t {
@@ -139,6 +152,20 @@ private:
     do_append_entries(append_entries_request&&);
     ss::future<install_snapshot_reply>
     do_install_snapshot(install_snapshot_request&& r);
+    /**
+     * Hydrate the consensus state with the data from the snapshot
+     */
+    ss::future<> hydrate_snapshot();
+    ss::future<> do_hydrate_snapshot(storage::snapshot_reader&);
+
+    /**
+     * Truncates the log up the last offset stored in the snapshot
+     */
+    ss::future<> truncate_to_latest_snapshot();
+    ss::future<install_snapshot_reply>
+      finish_snapshot(install_snapshot_request, install_snapshot_reply);
+
+    ss::future<> do_write_snapshot(model::offset, iobuf&&);
     append_entries_reply make_append_entries_reply(storage::append_result);
 
     ss::future<> notify_entries_commited(
@@ -251,6 +278,10 @@ private:
     ss::metrics::metric_groups _metrics;
     ss::abort_source _as;
     storage::api& _storage;
+    storage::snapshot_manager _snapshot_mgr;
+    std::optional<storage::snapshot_writer> _snapshot_writer;
+    model::offset _last_snapshot_index;
+    model::term_id _last_snapshot_term;
 
     friend std::ostream& operator<<(std::ostream&, const consensus&);
 };

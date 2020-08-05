@@ -40,6 +40,10 @@ read_bootstrap_state(storage::log, ss::abort_source&);
 ss::circular_buffer<model::record_batch> make_ghost_batches_in_gaps(
   model::offset, ss::circular_buffer<model::record_batch>&&);
 
+/// writes snapshot with given data to disk
+ss::future<>
+persist_snapshot(storage::snapshot_manager&, snapshot_metadata, iobuf&&);
+
 /// looks up for the broker with request id in a vector of brokers
 template<typename Iterator>
 Iterator find_machine(Iterator begin, Iterator end, model::node_id id) {

@@ -52,7 +52,9 @@ consensus::consensus(
       config::shard_local_cfg().replicate_append_timeout_ms())
   , _recovery_append_timeout(
       config::shard_local_cfg().recovery_append_timeout_ms())
-  , _storage(storage) {
+  , _storage(storage)
+  , _snapshot_mgr(
+      std::filesystem::path(_log.config().work_directory()), _io_priority) {
     setup_metrics();
     update_follower_stats(_conf);
     _vote_timeout.set_callback([this] {
@@ -90,7 +92,17 @@ ss::future<> consensus::stop() {
     _vote_timeout.cancel();
     _as.request_abort();
     _commit_index_updated.broken();
-    return _event_manager.stop().then([this] { return _bg.close(); });
+
+    return _event_manager.stop()
+      .then([this] { return _bg.close(); })
+      .then([this] {
+          // close writer if we have to
+          if (likely(!_snapshot_writer)) {
+              return ss::now();
+          }
+          return _snapshot_writer->close().then(
+            [this] { _snapshot_writer.reset(); });
+      });
 }
 
 consensus::success_reply consensus::update_follower_index(
@@ -433,45 +445,46 @@ ss::future<> consensus::start() {
     vlog(_ctxlog.info, "Starting");
     return _op_lock.with([this] {
         read_voted_for();
-        return details::read_bootstrap_state(_log, _as)
-          .then([this](configuration_bootstrap_state st) {
-              if (st.config_batches_seen() > 0) {
-                  _last_seen_config_offset = st.prev_log_index();
-                  _conf = std::move(st.release_config());
-                  update_follower_stats(_conf);
-              }
-              auto lstats = _log.offsets();
-              vlog(
-                _ctxlog.info,
-                "Recovered, log offsets: {}, term:{}",
-                lstats,
-                _term);
-          })
-          .then([this] {
-              auto next_election = clock_type::now();
-              // set last heartbeat timestamp to prevent skipping first election
-              _hbeat = clock_type::time_point::min();
-              if (!_conf.nodes.empty() && _self == _conf.nodes.begin()->id()) {
-                  // for single node scenarios arm immediate election, use
-                  // standard election timeout otherwise.
-                  if (_conf.nodes.size() > 1) {
-                      next_election += _jit.next_duration();
+        return hydrate_snapshot().then([this] {
+            return details::read_bootstrap_state(_log, _as)
+              .then([this](configuration_bootstrap_state st) {
+                  if (st.config_batches_seen() > 0) {
+                      _last_seen_config_offset = st.prev_log_index();
+                      _conf = std::move(st.release_config());
+                      update_follower_stats(_conf);
                   }
+                  auto lstats = _log.offsets();
+                  vlog(
+                    _ctxlog.info,
+                    "Recovered, log offsets: {}, term:{}",
+                    lstats,
+                    _term);
+              })
+              .then([this] {
+                  auto next_election = clock_type::now();
+                  // set last heartbeat timestamp to prevent skipping first
+                  // election
+                  _hbeat = clock_type::time_point::min();
+                  if (
+                    !_conf.nodes.empty()
+                    && _self == _conf.nodes.begin()->id()) {
+                      // for single node scenarios arm immediate election, use
+                      // standard election timeout otherwise.
+                      if (_conf.nodes.size() > 1) {
+                          next_election += _jit.next_duration();
+                      }
+                  }
+                  // current node is not a preselected leader, add 2x jitter
+                  // to give opportunity to the preselected leader to win
+                  // the first round
+                  next_election += _jit.base_duration()
+                                   + 2 * _jit.next_jitter_duration();
                   if (!_bg.is_closed()) {
-                      _vote_timeout.arm(next_election);
+                      _vote_timeout.rearm(next_election);
                   }
-                  return;
-              }
-              // current node is not a preselected leader, add 2x jitter to
-              // give opportunity to the preselected leader to win the first
-              // round
-              next_election += _jit.base_duration()
-                               + 2 * _jit.next_jitter_duration();
-              if (!_bg.is_closed()) {
-                  _vote_timeout.rearm(next_election);
-              }
-          })
-          .then([this] { return _event_manager.start(); });
+              })
+              .then([this] { return _event_manager.start(); });
+        });
     });
 }
 
@@ -512,7 +525,8 @@ void consensus::read_voted_for() {
 
         vlog(
           _ctxlog.info,
-          "Recovered persistent state from kvstore: voted for: {}, term: {}",
+          "Recovered persistent state from kvstore: voted for: {}, term: "
+          "{}",
           _voted_for,
           _term);
     }
@@ -547,12 +561,12 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
 
     /// Stable leadership optimization
     ///
-    /// When current node is a leader (we set _hbeat to max after successfull
-    /// election) or already processed request from active leader  do not grant
-    /// a vote to follower. This will prevent restarted nodes to disturb all
-    /// groups leadership
-    // Check if we updated the heartbeat timepoint in the last election timeout
-    // duration
+    /// When current node is a leader (we set _hbeat to max after
+    /// successfull election) or already processed request from active
+    /// leader  do not grant a vote to follower. This will prevent restarted
+    /// nodes to disturb all groups leadership
+    // Check if we updated the heartbeat timepoint in the last election
+    // timeout duration
     auto prev_election = clock_type::now() - _jit.base_duration();
     if (_hbeat > prev_election) {
         vlog(
@@ -566,7 +580,8 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
     if (r.term > _term) {
         vlog(
           _ctxlog.info,
-          "Received vote request with larger term from node {}, received {}, "
+          "Received vote request with larger term from node {}, received "
+          "{}, "
           "current {}",
           r.node_id,
           r.term,
@@ -587,7 +602,8 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
               .handle_exception([this](const std::exception_ptr& e) {
                   vlog(
                     _ctxlog.warn,
-                    "Unable to persist raft group state, vote not granted - {}",
+                    "Unable to persist raft group state, vote not granted "
+                    "- {}",
                     e);
                   _voted_for = {};
               });
@@ -639,7 +655,8 @@ consensus::do_append_entries(append_entries_request&& r) {
     if (r.meta.term > _term) {
         vlog(
           _ctxlog.debug,
-          "Append entries request term:{} is greater than current: {}. Setting "
+          "Append entries request term:{} is greater than current: {}. "
+          "Setting "
           "new term",
           r.meta.term,
           _term);
@@ -676,7 +693,6 @@ consensus::do_append_entries(append_entries_request&& r) {
 
     // section 2
     // must come from the same term
-
     // if prev log index from request is the same as current we can use
     // prev_log_term as an optimization
     auto last_log_term
@@ -684,12 +700,16 @@ consensus::do_append_entries(append_entries_request&& r) {
           ? lstats.dirty_offset_term // use term from lstats
           : get_term(model::offset(
             r.meta.prev_log_index)); // lookup for request term in log
-
-    if (r.meta.prev_log_term != last_log_term) {
+    // We can only check prev_log_term for entries that are present in the
+    // log. When leader installed snapshot on the follower we may require to
+    // skip the term check as term of prev_log_idx may not be available.
+    if (
+      r.meta.prev_log_index >= lstats.start_offset
+      && r.meta.prev_log_term != last_log_term) {
         vlog(
           _ctxlog.debug,
-          "Rejecting append entries. missmatching entry term at offset: {}, "
-          "current term: {} request term: {}",
+          "Rejecting append entries. missmatching entry term at offset: "
+          "{}, current term: {} request term: {}",
           r.meta.prev_log_index,
           last_log_term,
           r.meta.prev_log_term);
@@ -731,7 +751,8 @@ consensus::do_append_entries(append_entries_request&& r) {
           model::offset(r.meta.prev_log_index));
         vlog(
           _ctxlog.debug,
-          "Truncate log, request for the same term:{}. Request offset:{} is "
+          "Truncate log, request for the same term:{}. Request offset:{} "
+          "is "
           "earlier than what we have:{}. Truncating to: {}",
           r.meta.term,
           r.meta.prev_log_index,
@@ -745,7 +766,8 @@ consensus::do_append_entries(append_entries_request&& r) {
               if (unlikely(lstats.dirty_offset != r.meta.prev_log_index)) {
                   vlog(
                     _ctxlog.error,
-                    "Log truncation error, expected offset: {}, log offsets: "
+                    "Log truncation error, expected offset: {}, log "
+                    "offsets: "
                     "{}, requested truncation at {}",
                     r.meta.prev_log_index,
                     lstats,
@@ -801,39 +823,202 @@ consensus::install_snapshot(install_snapshot_request&& r) {
     });
 }
 
+ss::future<> consensus::hydrate_snapshot() {
+    // Read snapshot, reset state machine using snapshot contents (and load
+    // snapshot’s cluster configuration) (§7.8)
+    return _snapshot_mgr.open_snapshot().then(
+      [this](std::optional<storage::snapshot_reader> reader) {
+          // no snapshot do nothing
+          if (!reader) {
+              return ss::now();
+          }
+          return ss::do_with(
+            std::move(*reader), [this](storage::snapshot_reader& reader) {
+                return do_hydrate_snapshot(reader).finally(
+                  [&reader] { return reader.close(); });
+            });
+      });
+}
+
+ss::future<> consensus::truncate_to_latest_snapshot() {
+    auto lstats = _log.offsets();
+    if (lstats.start_offset > _last_snapshot_index) {
+        return ss::now();
+    }
+    return _log.truncate_prefix(storage::truncate_prefix_config(
+      details::next_offset(_last_snapshot_index), _io_priority));
+}
+
+ss::future<> consensus::do_hydrate_snapshot(storage::snapshot_reader& reader) {
+    return reader.read_metadata().then([this](iobuf buf) {
+        auto parser = iobuf_parser(std::move(buf));
+        auto metadata = reflection::adl<snapshot_metadata>{}.from(parser);
+        vassert(
+          metadata.last_included_index >= _last_snapshot_index,
+          "Tried to load stale snapshot. Loaded snapshot last "
+          "index {}, current snapshot last index {}",
+          metadata.last_included_index,
+          _last_snapshot_index);
+
+        _last_snapshot_index = metadata.last_included_index;
+        _last_snapshot_term = metadata.last_included_term;
+
+        // TODO: add applying snapshot content to state machine
+        _commit_index = std::max(_last_snapshot_index, _commit_index);
+
+        update_follower_stats(metadata.latest_configuration);
+        _conf = std::move(metadata.latest_configuration);
+        vlog(_ctxlog.info, "configuration updated with snapshot {}", _conf);
+        _probe.configuration_update();
+
+        return truncate_to_latest_snapshot();
+    });
+}
+
 ss::future<install_snapshot_reply>
 consensus::do_install_snapshot(install_snapshot_request&& r) {
     vlog(_ctxlog.trace, "Install snapshot request: {}", r);
 
-    install_snapshot_reply reply;
-    reply.success = false;
-    reply.bytes_stored = 0;
-    reply.term = _term;
+    install_snapshot_reply reply{
+      .term = _term, .bytes_stored = r.chunk.size_bytes(), .success = false};
 
+    bool is_done = r.done;
     // Raft paper: Reply immediately if term < currentTerm (§7.1)
     if (r.term < _term) {
-        return ss::make_ready_future<install_snapshot_reply>(std::move(reply));
+        return ss::make_ready_future<install_snapshot_reply>(reply);
     }
-    // FIXME: Provide an implementation. Missing parts (from raft paper):
 
+    // no need to trigger timeout
+    _hbeat = clock_type::now();
+
+    // request received from new leader
+    if (r.term > _term) {
+        _term = r.term;
+        do_step_down();
+        return do_install_snapshot(std::move(r));
+    }
+
+    auto f = ss::now();
     // Create new snapshot file if first chunk (offset is 0) (§7.2)
+    if (r.file_offset == 0) {
+        // discard old chunks, previous snaphost wasn't finished
+        if (_snapshot_writer) {
+            f = _snapshot_writer->close().then(
+              [this] { return _snapshot_mgr.remove_partial_snapshots(); });
+        }
+        f = f.then([this] {
+            return _snapshot_mgr.start_snapshot().then(
+              [this](storage::snapshot_writer w) {
+                  _snapshot_writer.emplace(std::move(w));
+              });
+        });
+    }
 
     // Write data into snapshot file at given offset (§7.3)
+    f = f.then([this, chunk = std::move(r.chunk)]() mutable {
+        return write_iobuf_to_output_stream(
+          std::move(chunk), _snapshot_writer->output());
+    });
 
     // Reply and wait for more data chunks if done is false (§7.4)
+    if (!is_done) {
+        return f.then([reply]() mutable {
+            reply.success = true;
+            return reply;
+        });
+    }
+    // Last chunk, finish storing snapshot
+    return f.then([this, r = std::move(r), reply]() mutable {
+        return finish_snapshot(std::move(r), reply);
+    });
+}
 
-    // Save snapshot file, discard any existing or partial snapshot
-    // with a smaller index (§7.5)
+ss::future<install_snapshot_reply> consensus::finish_snapshot(
+  install_snapshot_request r, install_snapshot_reply reply) {
+    if (!_snapshot_writer) {
+        reply.bytes_stored = 0;
+        return ss::make_ready_future<install_snapshot_reply>(reply);
+    }
 
-    // If existing log entry has same index and term as snapshot’s
-    // last included entry, retain log entries following it and reply (§7.6)
+    auto f = _snapshot_writer->close();
+    // discard any existing or partial snapshot with a smaller index (§7.5)
+    if (r.last_included_index < _last_snapshot_index) {
+        vlog(
+          _ctxlog.warn,
+          "Stale snapshot with last index {} received. Previously "
+          "received snapshot last included index {}",
+          r.last_included_index,
+          _last_snapshot_index);
 
-    // Discard the entire log (§7.7)
+        return f
+          .then([this] { return _snapshot_mgr.remove_partial_snapshots(); })
+          .then([this, reply]() mutable {
+              _snapshot_writer.reset();
+              reply.bytes_stored = 0;
+              reply.success = false;
+              return reply;
+          });
+    }
+    // success case
+    return f
+      .then([this] {
+          return _snapshot_mgr.finish_snapshot(_snapshot_writer.value());
+      })
+      .then([this, reply]() mutable {
+          _snapshot_writer.reset();
+          return hydrate_snapshot().then([reply]() mutable {
+              reply.success = true;
+              return reply;
+          });
+      });
+}
 
-    // Reset state machine using snapshot contents (and load
-    // snapshot’s cluster configuration) (§7.8)
+ss::future<> consensus::write_snapshot(write_snapshot_cfg cfg) {
+    return _op_lock.with([this, cfg = std::move(cfg)]() mutable {
+        return do_write_snapshot(cfg.last_included_index, std::move(cfg.data))
+          .then([this, should_truncate = cfg.should_truncate] {
+              if (!should_truncate) {
+                  return ss::now();
+              }
+              return truncate_to_latest_snapshot();
+          });
+    });
+}
 
-    return ss::make_ready_future<install_snapshot_reply>();
+ss::future<>
+consensus::do_write_snapshot(model::offset last_included_index, iobuf&& data) {
+    vassert(
+      last_included_index <= _commit_index,
+      "Can not take snapshot that contains not commited batches, requested "
+      "offset: {}, commit_index: {}",
+      last_included_index,
+      _commit_index);
+    vlog(
+      _ctxlog.trace,
+      "Persisting snapshot with last included offset {} of size {}",
+      last_included_index,
+      data.size_bytes());
+
+    auto last_included_term = _log.get_term(last_included_index);
+    vassert(
+      last_included_term.has_value(),
+      "Unable to get term for snapshot last included offset {}",
+      last_included_index);
+
+    snapshot_metadata md{
+      .last_included_index = last_included_index,
+      .last_included_term = last_included_term.value(),
+      .latest_configuration = _conf, // TODO: use cfg manager
+      .cluster_time = clock_type::time_point::min(),
+    };
+
+    return details::persist_snapshot(
+             _snapshot_mgr, std::move(md), std::move(data))
+      .then([this, last_included_index, term = *last_included_term] {
+          // update consensus state
+          _last_snapshot_index = last_included_index;
+          _last_snapshot_term = term;
+      });
 }
 
 ss::future<> consensus::notify_entries_commited(
