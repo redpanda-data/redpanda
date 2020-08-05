@@ -146,10 +146,7 @@ describe("Server", function () {
             )
           );
           const apply = sinon.spy(Server.prototype, "applyCoprocessor");
-          const handle = sinon.spy(
-            Server.prototype,
-            "handleErrorByCoprocessorPolicy"
-          );
+          const handle = sinon.spy(Server.prototype, "handleErrorByPolicy");
           const deregister = sinon.spy(
             FileManager.prototype,
             "deregisterCoprocessor"
@@ -195,10 +192,7 @@ describe("Server", function () {
             )
           );
           const apply = sinon.spy(Server.prototype, "applyCoprocessor");
-          const handle = sinon.spy(
-            Server.prototype,
-            "handleErrorByCoprocessorPolicy"
-          );
+          const handle = sinon.spy(Server.prototype, "handleErrorByPolicy");
           const deregister = sinon.stub(
             FileManager.prototype,
             "deregisterCoprocessor"
