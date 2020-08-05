@@ -30,6 +30,7 @@ members_manager::members_manager(
   ss::sharded<ss::abort_source>& as)
   : _seed_servers(config::shard_local_cfg().seed_servers())
   , _self(make_self_broker(config::shard_local_cfg()))
+  , _join_retry_jitter(config::shard_local_cfg().join_retry_timeout_ms())
   , _join_timeout(std::chrono::seconds(2))
   , _raft0(raft0)
   , _members_table(members_table)
@@ -147,10 +148,14 @@ ss::future<> members_manager::update_connections(patch<broker_ptr> diff) {
     });
 }
 
-static inline ss::future<> wait_for_next_join_retry(ss::abort_source& as) {
+static inline ss::future<>
+wait_for_next_join_retry(std::chrono::milliseconds tout, ss::abort_source& as) {
     using namespace std::chrono_literals; // NOLINT
-    vlog(clusterlog.info, "Next cluster join attempt in 5 seconds");
-    return ss::sleep_abortable(5s, as).handle_exception_type(
+    vlog(
+      clusterlog.info,
+      "Next cluster join attempt in {} milliseconds",
+      tout.count());
+    return ss::sleep_abortable(tout, as).handle_exception_type(
       [](const ss::sleep_aborted&) {
           vlog(clusterlog.debug, "Aborting join sequence");
       });
@@ -190,9 +195,9 @@ void members_manager::join_raft0() {
                         ss::stop_iteration::yes);
                   }
 
-                  return wait_for_next_join_retry(_as.local()).then([] {
-                      return ss::stop_iteration::no;
-                  });
+                  return wait_for_next_join_retry(
+                           _join_retry_jitter.next_duration(), _as.local())
+                    .then([] { return ss::stop_iteration::no; });
               });
         });
     });

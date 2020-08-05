@@ -75,6 +75,7 @@ struct configuration final : public config_store {
     property<size_t> kvstore_max_segment_size;
     property<std::chrono::milliseconds> max_kafka_throttle_delay_ms;
     property<std::chrono::milliseconds> raft_io_timeout_ms;
+    property<std::chrono::milliseconds> join_retry_timeout_ms;
 
     configuration();
 
