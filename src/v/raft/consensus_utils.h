@@ -21,11 +21,6 @@ share_n(model::record_batch_reader&&, std::size_t);
 ss::future<std::vector<model::record_batch_reader>>
 foreign_share_n(model::record_batch_reader&&, std::size_t);
 
-/// parses the configuration out of the record_batch_reader
-// if there are some configuration batch types
-ss::future<std::optional<raft::group_configuration>>
-extract_configuration(model::record_batch_reader&&);
-
 /// serialize group configuration as config-type batch
 ss::circular_buffer<model::record_batch>
 serialize_configuration_as_batches(group_configuration cfg);

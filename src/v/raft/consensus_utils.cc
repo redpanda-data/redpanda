@@ -131,35 +131,6 @@ ss::future<configuration_bootstrap_state> read_bootstrap_state(
       });
 }
 
-ss::future<std::optional<raft::group_configuration>>
-extract_configuration(model::record_batch_reader&& reader) {
-    using cfg_t = std::optional<raft::group_configuration>;
-    return ss::do_with(
-      std::move(reader),
-      cfg_t{},
-      [](model::record_batch_reader& reader, cfg_t& cfg) {
-          return reader
-            .consume(
-              do_for_each_batch_consumer([&cfg](model::record_batch b) mutable {
-                  // reader may contain different batches, skip the ones that
-                  // does not have configuration
-                  if (b.header().type != raft::configuration_batch_type) {
-                      return ss::make_ready_future<>();
-                  }
-                  if (b.compressed()) {
-                      return ss::make_exception_future(std::runtime_error(
-                        "Compressed configuration records are "
-                        "unsupported"));
-                  }
-                  auto it = std::prev(b.end());
-                  cfg = reflection::adl<raft::group_configuration>{}.from(
-                    it->share_value());
-                  return ss::make_ready_future<>();
-              }),
-              model::no_timeout)
-            .then([&cfg]() mutable { return std::move(cfg); });
-      });
-}
 ss::circular_buffer<model::record_batch>
 serialize_configuration_as_batches(group_configuration cfg) {
     auto batch = std::move(
