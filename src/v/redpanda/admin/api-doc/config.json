@@ -1,6 +1,6 @@
 "/v1/config": {
   "get": {
-    "summary": "red panda server configuration",
+    "summary": "redpanda server configuration",
     "operationId": "get_config",
     "produces": [
       "application/json"
