@@ -12,6 +12,9 @@ namespace model {
 enum class compression : uint8_t {
     none = 0,
     gzip = 1,
+    // NOTE: This is *NOT* standard snappy compression. It uses the java-snappy
+    // framing compression which is fundamentally not compatible with upstream
+    // google snappy
     snappy = 2,
     lz4 = 3,
     zstd = 4
