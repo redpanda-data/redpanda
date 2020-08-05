@@ -48,7 +48,7 @@ Vectorized e-mail address.
 
 ## Background reading
 
-> All of the Red Panda (and other) design documents related to Vectorized software
+> All of the Redpanda (and other) design documents related to Vectorized software
 > can be found in the shared folder:
 > https://drive.google.com/drive/folders/1eXsW_ldmziIuLHtk5riB02peCQyDbtYP
 
@@ -59,7 +59,7 @@ Quick introduction to logs and Kafka.
 3. https://kafka.apache.org/documentation/#uses
 4. (stretch goal) https://kafka.apache.org/documentation/#design
 
-Vectorized is building a _Kafka API_-compatible system (Red Panda) to address
+Vectorized is building a _Kafka API_-compatible system (Redpanda) to address
 limitations in the Kafka implementation related to performance, manageability,
 and safety.
 
