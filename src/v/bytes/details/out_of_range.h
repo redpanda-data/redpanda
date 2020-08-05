@@ -4,7 +4,7 @@
 #include <fmt/format.h>
 
 namespace details {
-[[noreturn]] [[gnu::cold]] static void
+[[maybe_unused]] [[noreturn]] [[gnu::cold]] static void
 throw_out_of_range(const char* fmt, size_t A, size_t B) {
     throw std::out_of_range(fmt::format(fmt, A, B));
 }
