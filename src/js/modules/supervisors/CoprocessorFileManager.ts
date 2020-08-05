@@ -2,7 +2,7 @@ import * as Inotify from "inotifywait";
 import { rename, readdir } from "fs";
 import { promisify } from "util";
 import Repository from "./Repository";
-import { CoprocessorHandle } from "../domain/CoprocessorManager";
+import { Handle } from "../domain/Handle";
 import { getChecksumFromFile } from "../utilities/Checksum";
 import { Coprocessor } from "../public/Coprocessor";
 
@@ -44,7 +44,7 @@ class CoprocessorFileManager {
     filePath: string,
     repository: Repository,
     validatePrevCoprocessor = true
-  ): Promise<CoprocessorHandle> =>
+  ): Promise<Handle> =>
     this.getCoprocessor(filePath).then((coprocessor) => {
       const preCoprocessor = repository.findByGlobalId(coprocessor);
       if (preCoprocessor && validatePrevCoprocessor) {
@@ -69,7 +69,7 @@ class CoprocessorFileManager {
     });
 
   /**
-   * reads the files in the "active" folder, loads them as CoprocessorHandles
+   * reads the files in the "active" folder, loads them as Handles
    * and adds them to the given Repository
    * @param repository
    */
@@ -116,10 +116,10 @@ class CoprocessorFileManager {
    * the 'inactive' directory.
    * @param coprocessor is a Coprocessor implementation.
    */
-  deregisterCoprocessor(coprocessor: Coprocessor): Promise<CoprocessorHandle> {
-    const coprocessorHandle = this.repository.findByCoprocessor(coprocessor);
-    if (coprocessorHandle) {
-      return this.moveCoprocessorFile(coprocessorHandle, this.inactiveDir).then(
+  deregisterCoprocessor(coprocessor: Coprocessor): Promise<Handle> {
+    const handle = this.repository.findByCoprocessor(coprocessor);
+    if (handle) {
+      return this.moveCoprocessorFile(handle, this.inactiveDir).then(
         (coprocessor) => {
           this.repository.remove(coprocessor);
           return coprocessor;
@@ -140,8 +140,8 @@ class CoprocessorFileManager {
    * @param filename, path of the file that we need to get coprocessor
    *                  information.
    */
-  private getCoprocessor = (filename: string): Promise<CoprocessorHandle> => {
-    return new Promise<CoprocessorHandle>((resolve, reject) => {
+  private getCoprocessor = (filename: string): Promise<Handle> => {
+    return new Promise<Handle>((resolve, reject) => {
       try {
         const script = require(filename);
         delete require.cache[filename];
@@ -169,9 +169,9 @@ class CoprocessorFileManager {
    * @param destination, destination path
    */
   private moveCoprocessorFile = (
-    coprocessor: CoprocessorHandle,
+    coprocessor: Handle,
     destination: string
-  ): Promise<CoprocessorHandle> => {
+  ): Promise<Handle> => {
     const renamePromise = promisify(rename);
     const newFileName = `${destination}/sha265-${coprocessor.checksum}.js`;
     return renamePromise(coprocessor.filename, newFileName).then(() => ({

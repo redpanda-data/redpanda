@@ -100,27 +100,27 @@ describe("Repository", function () {
     });
   });
 
-  it("should find a coprocessor by another CoprocessorHandle", function () {
+  it("should find a coprocessor by another Handle", function () {
     const repository = new Repository();
-    const coprocessorHandleA = createHandle();
-    const coprocessorHandleB = createHandle({
+    const handleA = createHandle();
+    const handleB = createHandle({
       globalId: 2,
       inputTopics: ["topicB"],
     });
-    repository.add(coprocessorHandleA);
-    assert(repository.findByGlobalId(coprocessorHandleA));
-    assert(!repository.findByGlobalId(coprocessorHandleB));
+    repository.add(handleA);
+    assert(repository.findByGlobalId(handleA));
+    assert(!repository.findByGlobalId(handleB));
   });
 
   it("should find a coprocessor by another Coprocessor", function () {
     const repository = new Repository();
-    const coprocessorHandleA = createHandle();
-    const coprocessorHandleB = createHandle({
+    const handleA = createHandle();
+    const handleB = createHandle({
       globalId: 2,
       inputTopics: ["topicB"],
     });
-    repository.add(coprocessorHandleA);
-    assert(repository.findByCoprocessor(coprocessorHandleA.coprocessor));
-    assert(!repository.findByCoprocessor(coprocessorHandleB.coprocessor));
+    repository.add(handleA);
+    assert(repository.findByCoprocessor(handleA.coprocessor));
+    assert(!repository.findByCoprocessor(handleB.coprocessor));
   });
 });

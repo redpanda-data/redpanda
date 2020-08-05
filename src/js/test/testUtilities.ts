@@ -1,5 +1,5 @@
 import { Coprocessor, PolicyError } from "../modules/public/Coprocessor";
-import { CoprocessorHandle } from "../modules/domain/CoprocessorManager";
+import { Handle } from "../modules/domain/Handle";
 import { HandleTable } from "../modules/supervisors/HandleTable";
 
 export const createMockCoprocessor = (
@@ -14,9 +14,7 @@ export const createMockCoprocessor = (
   apply,
 });
 
-export const createHandle = (
-  coprocessor?: Partial<Coprocessor>
-): CoprocessorHandle => ({
+export const createHandle = (coprocessor?: Partial<Coprocessor>): Handle => ({
   coprocessor: createMockCoprocessor(
     coprocessor?.globalId,
     coprocessor?.inputTopics,
@@ -28,7 +26,7 @@ export const createHandle = (
 });
 
 export const createHandleTable = (
-  handle: Partial<CoprocessorHandle> = createHandle()
+  handle: Partial<Handle> = createHandle()
 ): HandleTable => {
   const handleTable = new HandleTable();
   handleTable.registerHandle({ ...createHandle(), ...handle });
