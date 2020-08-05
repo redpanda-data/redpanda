@@ -1,22 +1,22 @@
 import * as assert from "assert";
-import CoprocessorRepository from "../../modules/supervisors/CoprocessorRepository";
+import Repository from "../../modules/supervisors/Repository";
 
 import { createHandle, createMockCoprocessor } from "../testUtilities";
 
-describe("CoprocessorRepository", function () {
+describe("Repository", function () {
   it("should initialize with an empty map", function () {
-    const repository = new CoprocessorRepository();
+    const repository = new Repository();
     assert(repository.getCoprocessorsByTopics().size === 0);
   });
 
   it("should add a coprocessor to the repository", function () {
-    const repository = new CoprocessorRepository();
+    const repository = new Repository();
     repository.add(createHandle());
     assert(repository.getCoprocessorsByTopics().size === 1);
   });
 
   it("should add a coprocessor for each topic in coprocessor", function () {
-    const repository = new CoprocessorRepository();
+    const repository = new Repository();
     const topics = ["topicA", "topicB"];
     repository.add(createHandle({ inputTopics: topics }));
     assert(repository.getCoprocessorsByTopics().size === 2);
@@ -33,7 +33,7 @@ describe("CoprocessorRepository", function () {
       const topicB = "topicB";
       const coprocessorA = createMockCoprocessor(1, [topicA]);
       const coprocessorB = createMockCoprocessor(1, [topicB]);
-      const repository = new CoprocessorRepository();
+      const repository = new Repository();
       repository.add(createHandle(coprocessorA));
       const result1 = repository.getCoprocessorsByTopics();
       assert(result1.get(topicA).size() === 1);
@@ -62,7 +62,7 @@ describe("CoprocessorRepository", function () {
     const topicA = "topicA";
     const topicB = "topicB";
     const topicC = "topicC";
-    const repository = new CoprocessorRepository();
+    const repository = new Repository();
     const handleCoprocessorA = createHandle({
       inputTopics: [topicA, topicB, topicC],
     });
@@ -101,7 +101,7 @@ describe("CoprocessorRepository", function () {
   });
 
   it("should find a coprocessor by another CoprocessorHandle", function () {
-    const repository = new CoprocessorRepository();
+    const repository = new Repository();
     const coprocessorHandleA = createHandle();
     const coprocessorHandleB = createHandle({
       globalId: 2,
@@ -113,7 +113,7 @@ describe("CoprocessorRepository", function () {
   });
 
   it("should find a coprocessor by another Coprocessor", function () {
-    const repository = new CoprocessorRepository();
+    const repository = new Repository();
     const coprocessorHandleA = createHandle();
     const coprocessorHandleB = createHandle({
       globalId: 2,

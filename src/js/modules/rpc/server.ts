@@ -1,6 +1,6 @@
 import { Socket, createServer, Server as NetServer } from "net";
 import { Request } from "../domain/Request";
-import CoprocessorRepository from "../supervisors/CoprocessorRepository";
+import Repository from "../supervisors/Repository";
 import CoprocessorFileManager from "../supervisors/CoprocessorFileManager";
 import {
   Coprocessor,
@@ -15,9 +15,9 @@ export class Server {
     submitDir: string
   ) {
     this.applyCoprocessor = this.applyCoprocessor.bind(this);
-    this.coprocessorRepository = new CoprocessorRepository();
+    this.repository = new Repository();
     this.coprocessorFileManager = new CoprocessorFileManager(
-      this.coprocessorRepository,
+      this.repository,
       submitDir,
       activeDir,
       inactiveDir
@@ -84,7 +84,7 @@ export class Server {
   private applyCoprocessor(
     request: Request
   ): Promise<CoprocessorRecordBatch[]> {
-    const handleTable = this.coprocessorRepository
+    const handleTable = this.repository
       .getCoprocessorsByTopics()
       .get(request.getTopic());
     if (handleTable) {
@@ -145,6 +145,6 @@ export class Server {
     );
   }
   private server: NetServer;
-  private readonly coprocessorRepository: CoprocessorRepository;
+  private readonly repository: Repository;
   private coprocessorFileManager: CoprocessorFileManager;
 }

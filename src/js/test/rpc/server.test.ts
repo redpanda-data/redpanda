@@ -1,6 +1,6 @@
 import { Server } from "../../modules/rpc/server";
 import { join } from "path";
-import CoprocessorRepository from "../../modules/supervisors/CoprocessorRepository";
+import Repository from "../../modules/supervisors/Repository";
 import {
   CoprocessorRecordBatch,
   PolicyError,
@@ -52,7 +52,7 @@ describe("Server", function () {
       "shouldn't apply any coprocessor if the repository is " + "empty",
       function (done) {
         const repository = sinon.spy(
-          CoprocessorRepository.prototype,
+          Repository.prototype,
           "getCoprocessorsByTopics"
         );
         const apply = sinon.spy(Server.prototype, "applyCoprocessor");
@@ -74,7 +74,7 @@ describe("Server", function () {
         " the Request's topic",
       function (done) {
         const repository = sinon.stub(
-          CoprocessorRepository.prototype,
+          Repository.prototype,
           "getCoprocessorsByTopics"
         );
         repository.returns(new Map().set("topicB", [createMockCoprocessor()]));
@@ -98,7 +98,7 @@ describe("Server", function () {
       "should apply the right Coprocessor for the Request's " + "topic",
       function (done) {
         const repository = sinon.stub(
-          CoprocessorRepository.prototype,
+          Repository.prototype,
           "getCoprocessorsByTopics"
         );
         repository.returns(new Map().set("topicA", createHandleTable()));
@@ -126,7 +126,7 @@ describe("Server", function () {
         "should skip the Request, if ErrorPolicy is " + "SkipOnFailure",
         function (done) {
           const repository = sinon.stub(
-            CoprocessorRepository.prototype,
+            Repository.prototype,
             "getCoprocessorsByTopics"
           );
           const badApplyCoprocessor = (record: CoprocessorRecordBatch) =>
@@ -175,7 +175,7 @@ describe("Server", function () {
         "should deregister the Coprocessor, if ErrorPolicy is " + "Deregister",
         function (done) {
           const repository = sinon.stub(
-            CoprocessorRepository.prototype,
+            Repository.prototype,
             "getCoprocessorsByTopics"
           );
           const badApplyCoprocessor = (record: CoprocessorRecordBatch) =>
