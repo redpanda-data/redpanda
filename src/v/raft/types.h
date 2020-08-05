@@ -374,6 +374,14 @@ struct offset_configuration {
     group_configuration cfg;
     friend std::ostream& operator<<(std::ostream&, const offset_configuration&);
 };
+
+// key types used to store data in key-value store
+enum class metadata_key : int8_t {
+    voted_for = 0,
+    config_map = 1,
+    config_latest_known_offset = 2,
+};
+
 std::ostream& operator<<(std::ostream& o, const consistency_level& l);
 std::ostream& operator<<(std::ostream& o, const protocol_metadata& m);
 std::ostream& operator<<(std::ostream& o, const vote_reply& r);
