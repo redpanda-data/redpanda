@@ -69,7 +69,7 @@ static std::vector<heartbeat_manager::node_heartbeat> requests_for_range(
             pending_beats[n.id()].emplace_back(ptr->meta(), seq_id);
         };
 
-        auto& group = ptr->config();
+        auto group = ptr->config();
         // collect voters
         std::for_each(
           std::cbegin(group.nodes),

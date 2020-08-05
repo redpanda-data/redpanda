@@ -57,8 +57,7 @@ ss::future<> controller::start() {
           return _stm.start_single(
             std::ref(clusterlog),
             _raft0.get(),
-            std::ref(_tp_updates_dispatcher),
-            std ::ref(_members_manager));
+            std::ref(_tp_updates_dispatcher));
       })
       .then([this] {
           return _backend.start(

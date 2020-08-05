@@ -4,6 +4,7 @@
 #include "cluster/partition_allocator.h"
 #include "cluster/types.h"
 #include "config/seed_server.h"
+#include "model/fundamental.h"
 #include "raft/consensus.h"
 #include "raft/types.h"
 #include "rpc/connection_cache.h"
@@ -59,7 +60,9 @@ private:
     ss::future<> handle_raft0_cfg_update(raft::group_configuration);
     ss::future<> update_connections(patch<broker_ptr>);
     ss::future<> validate_configuration_invariants();
+    ss::future<> start_config_changes_watcher();
 
+    model::offset _last_seen_configuration_offset;
     std::vector<config::seed_server> _seed_servers;
     model::broker _self;
     std::chrono::milliseconds _join_timeout;
