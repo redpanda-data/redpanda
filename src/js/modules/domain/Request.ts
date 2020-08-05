@@ -8,7 +8,7 @@ interface RecordBatchReader {
   records: CoprocessorRecordBatch[];
 }
 
-export class CoprocessorRequest {
+export class Request {
   constructor(
     private ntp: NamespacedTopicPartition,
     private recordBatchReader: RecordBatchReader,

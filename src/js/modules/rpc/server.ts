@@ -1,5 +1,5 @@
 import { Socket, createServer, Server as NetServer } from "net";
-import { CoprocessorRequest } from "../domain/CoprocessorRequest";
+import { Request } from "../domain/Request";
 import CoprocessorRepository from "../supervisors/CoprocessorRepository";
 import CoprocessorFileManager from "../supervisors/CoprocessorFileManager";
 import {
@@ -59,7 +59,7 @@ export class Server {
   }
 
   /**
-   * Apply Coprocessors to CoprocessorRequest when it arrives
+   * Apply Coprocessors to Request when it arrives
    * @param socket
    */
   private executeCoprocessorOnRequest = (socket: Socket) => {
@@ -76,20 +76,20 @@ export class Server {
   };
 
   /**
-   * Given a CoprocessorRequest, it'll find and execute Coprocessor by its
-   * CoprocessorRequest's topic, if there is an exception when applying the
+   * Given a Request, it'll find and execute Coprocessor by its
+   * Request's topic, if there is an exception when applying the
    * coprocessor function it handles the error by its ErrorPolicy
-   * @param coprocessorRequest
+   * @param request
    */
   private applyCoprocessor(
-    coprocessorRequest: CoprocessorRequest
+    request: Request
   ): Promise<CoprocessorRecordBatch[]> {
     const handleTable = this.coprocessorRepository
       .getCoprocessorsByTopics()
-      .get(coprocessorRequest.getTopic());
+      .get(request.getTopic());
     if (handleTable) {
       const results = handleTable.apply(
-        coprocessorRequest,
+        request,
         this.handleErrorByCoprocessorPolicy.bind(this)
       );
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
@@ -113,19 +113,15 @@ export class Server {
   /**
    * Handle an error using the given Coprocessor's ErrorPolicy
    * @param coprocessor
-   * @param coprocessorRequest
+   * @param request
    * @param error
    */
   private handleErrorByCoprocessorPolicy(
     coprocessor: Coprocessor,
-    coprocessorRequest: CoprocessorRequest,
+    request: Request,
     error: Error
   ): Promise<CoprocessorRecordBatch> {
-    const errorMessage = this.createMessageError(
-      coprocessor,
-      coprocessorRequest,
-      error
-    );
+    const errorMessage = this.createMessageError(coprocessor, request, error);
     switch (coprocessor.policyError) {
       case PolicyError.Deregister:
         return this.coprocessorFileManager
@@ -140,12 +136,12 @@ export class Server {
 
   private createMessageError(
     coprocessor: Coprocessor,
-    coprocessorRequest: CoprocessorRequest,
+    request: Request,
     error: Error
   ): string {
     return (
       `Failed to apply coprocessor ${coprocessor.globalId} to request's id ` +
-      `${coprocessorRequest.getId()}: ${error.message}`
+      `${request.getId()}: ${error.message}`
     );
   }
   private server: NetServer;
