@@ -365,6 +365,15 @@ struct write_snapshot_cfg {
     should_prefix_truncate should_truncate;
 };
 
+struct offset_configuration {
+    offset_configuration(model::offset o, group_configuration c)
+      : offset(o)
+      , cfg(std::move(c)) {}
+
+    model::offset offset;
+    group_configuration cfg;
+    friend std::ostream& operator<<(std::ostream&, const offset_configuration&);
+};
 std::ostream& operator<<(std::ostream& o, const consistency_level& l);
 std::ostream& operator<<(std::ostream& o, const protocol_metadata& m);
 std::ostream& operator<<(std::ostream& o, const vote_reply& r);
