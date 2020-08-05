@@ -182,14 +182,16 @@ ss::future<> recovery_stm::install_snapshot() {
     // open reader if not yet available
     auto f = _snapshot_reader != nullptr ? ss::now() : open_snapshot_reader();
 
-    // we are outside of raft operation lock if snapshot isn't yet ready we have
-    // to wait for it till next recovery loop
-    if (_snapshot_reader) {
-        _stop_requested = true;
-        return ss::now();
-    }
+    return f.then([this]() mutable {
+        // we are outside of raft operation lock if snapshot isn't yet ready we
+        // have to wait for it till next recovery loop
+        if (!_snapshot_reader) {
+            _stop_requested = true;
+            return ss::now();
+        }
 
-    return f.then([this]() mutable { return send_install_snapshot_request(); });
+        return send_install_snapshot_request();
+    });
 }
 
 ss::future<> recovery_stm::replicate(model::record_batch_reader&& reader) {
