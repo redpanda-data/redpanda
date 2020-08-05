@@ -301,6 +301,12 @@ configuration::configuration()
       60'000ms)
   , raft_io_timeout_ms(
       *this, "raft_io_timeout_ms", "Raft I/O timeout", required::no, 10'000ms)
+  , join_retry_timeout_ms(
+      *this,
+      "join_retry_timeout_ms",
+      "Time between cluster join retries in milliseconds",
+      required::no,
+      5s)
   , _advertised_kafka_api(
       *this,
       "advertised_kafka_api",
