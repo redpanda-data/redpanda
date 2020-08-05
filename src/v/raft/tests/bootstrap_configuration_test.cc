@@ -59,16 +59,6 @@ struct bootstrap_fixture : raft::simple_record_fixture {
     ss::abort_source _as;
 };
 
-FIXTURE_TEST(serde_config, bootstrap_fixture) {
-    auto rdr = configs(1);
-    auto cfg = raft::details::extract_configuration(std::move(rdr)).get0();
-    for (auto& n : cfg->nodes) {
-        BOOST_REQUIRE(n.id() >= 0 && n.id() <= bootstrap_fixture::active_nodes);
-    }
-    for (auto& n : cfg->learners) {
-        BOOST_REQUIRE(n.id() > bootstrap_fixture::active_nodes);
-    }
-}
 FIXTURE_TEST(write_configs, bootstrap_fixture) {
     auto replies = write_n(10);
     for (auto& i : replies) {
