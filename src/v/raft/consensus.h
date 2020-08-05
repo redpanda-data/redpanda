@@ -2,6 +2,7 @@
 
 #include "hashing/crc32c.h"
 #include "model/fundamental.h"
+#include "raft/configuration_manager.h"
 #include "raft/consensus_client_protocol.h"
 #include "raft/event_manager.h"
 #include "raft/follower_stats.h"
@@ -67,7 +68,7 @@ public:
     install_snapshot(install_snapshot_request&& r);
 
     /// This method adds a member to the group and performs configuration update
-    ss::future<> add_group_member(model::broker node);
+    ss::future<std::error_code> add_group_member(model::broker node);
 
     bool is_leader() const { return _vstate == vote_state::leader; }
     std::optional<model::node_id> get_leader_id() const { return _leader_id; }
@@ -83,7 +84,7 @@ public:
     }
     raft::group_id group() const { return _group; }
     model::term_id term() const { return _term; }
-    const group_configuration& config() const { return _conf; }
+    group_configuration config() const;
     const model::ntp& ntp() const { return _log.config().ntp(); }
     clock_type::time_point last_heartbeat() const { return _hbeat; };
 
@@ -111,6 +112,11 @@ public:
     make_reader(storage::log_reader_config config);
 
     model::offset committed_offset() const { return _commit_index; }
+
+    ss::future<offset_configuration>
+    wait_for_config_change(model::offset last_seen, ss::abort_source& as) {
+        return _configuration_manager.wait_for_change(last_seen, as);
+    }
 
     ss::future<> step_down(model::term_id term) {
         return _op_lock.with([this, term] {
@@ -163,9 +169,6 @@ private:
     ss::future<> do_write_snapshot(model::offset, iobuf&&);
     append_entries_reply make_append_entries_reply(storage::append_result);
 
-    ss::future<> notify_entries_commited(
-      model::offset start_offset, model::offset end_offset);
-
     ss::future<result<replicate_result>>
     do_replicate(model::record_batch_reader&&);
 
@@ -190,10 +193,6 @@ private:
     //  caller have to pass in _op_sem semaphore units
     ss::future<>
     replicate_configuration(ss::semaphore_units<> u, group_configuration);
-    /// After we append on disk, we must consume the entries
-    /// to update our leader_id, nodes & learners configuration
-    ss::future<>
-    process_configurations(model::record_batch_reader&&, model::offset);
 
     ss::future<> maybe_update_follower_commit_idx(model::offset);
 
@@ -228,10 +227,6 @@ private:
     model::timeout_clock::duration _disk_timeout;
     consensus_client_protocol _client_protocol;
     leader_cb_t _leader_notification;
-    model::offset _last_seen_config_offset;
-    // _conf is set *both* in ctor with initial configuration
-    // and it is overriden to the last one found the in the last log segment
-    group_configuration _conf;
 
     // consensus state
     model::offset _commit_index;
@@ -277,6 +272,7 @@ private:
     std::optional<storage::snapshot_writer> _snapshot_writer;
     model::offset _last_snapshot_index;
     model::term_id _last_snapshot_term;
+    configuration_manager _configuration_manager;
 
     friend std::ostream& operator<<(std::ostream&, const consensus&);
 };

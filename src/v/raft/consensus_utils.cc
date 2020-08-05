@@ -108,13 +108,13 @@ share_n(model::record_batch_reader&& r, std::size_t ncopies) {
     return share_reader(std::move(r), ncopies, false);
 }
 
-ss::future<configuration_bootstrap_state>
-read_bootstrap_state(storage::log log, ss::abort_source& as) {
+ss::future<configuration_bootstrap_state> read_bootstrap_state(
+  storage::log log, model::offset start_offset, ss::abort_source& as) {
     // TODO(agallego, michal) - iterate the log in reverse
     // as an optimization
     auto lstats = log.offsets();
     auto rcfg = storage::log_reader_config(
-      lstats.start_offset, lstats.dirty_offset, raft_priority(), as);
+      start_offset, lstats.dirty_offset, raft_priority(), as);
     auto cfg_state = std::make_unique<configuration_bootstrap_state>();
     return log.make_reader(rcfg).then(
       [state = std::move(cfg_state)](
