@@ -115,26 +115,6 @@ SEASTAR_THREAD_TEST_CASE(group_configuration) {
     BOOST_REQUIRE_EQUAL(deser.learners, expected.learners);
 }
 
-SEASTAR_THREAD_TEST_CASE(serialize_configuration) {
-    std::vector<model::broker> nodes;
-    std::vector<model::broker> learners;
-    for (int i = 0; i < 10; ++i) {
-        nodes.push_back(create_test_broker());
-        learners.push_back(create_test_broker());
-    }
-
-    raft::group_configuration cfg{
-      .nodes = std::move(nodes), .learners = std::move(learners)};
-    auto expected = cfg;
-
-    auto batch_reader = raft::details::serialize_configuration(std::move(cfg));
-    auto deser = raft::details::extract_configuration(std::move(batch_reader))
-                   .get0()
-                   .value();
-    BOOST_REQUIRE_EQUAL(deser.nodes, expected.nodes);
-    BOOST_REQUIRE_EQUAL(deser.learners, expected.learners);
-}
-
 SEASTAR_THREAD_TEST_CASE(heartbeat_request_roundtrip) {
     static constexpr int64_t one_k = 1'000;
     raft::heartbeat_request req;

@@ -19,10 +19,15 @@ SEASTAR_THREAD_TEST_CASE(roundtrip_raft_configuration_entry) {
     raft::group_configuration cfg = {.nodes = voters, .learners = learners};
 
     // serialize to entry
-    auto entry = raft::details::serialize_configuration(std::move(cfg));
+    auto batches = raft::details::serialize_configuration_as_batches(
+      std::move(cfg));
     // extract from entry
-    auto new_cfg
-      = raft::details::extract_configuration(std::move(entry)).get0();
+    auto new_cfg = reflection::adl<raft::group_configuration>{}.from(
+      batches.begin()->begin()->release_value());
+
+    BOOST_REQUIRE_EQUAL(voters, new_cfg.nodes);
+    BOOST_REQUIRE_EQUAL(learners, new_cfg.learners);
+}
 
     BOOST_REQUIRE_EQUAL(voters, new_cfg->nodes);
     BOOST_REQUIRE_EQUAL(learners, new_cfg->learners);
