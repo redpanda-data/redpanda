@@ -1,5 +1,5 @@
 import { Handle } from "../domain/Handle";
-import { Coprocessor, CoprocessorRecordBatch } from "../public/Coprocessor";
+import { Coprocessor, RecordBatch } from "../public/Coprocessor";
 import { Request } from "../domain/Request";
 import { Server } from "../rpc/server";
 
@@ -38,7 +38,7 @@ export class HandleTable {
   apply(
     request: Request,
     handleError: Server["handleErrorByCoprocessorPolicy"]
-  ): Promise<CoprocessorRecordBatch>[] {
+  ): Promise<RecordBatch>[] {
     return request.getRecords().flatMap((recordBatch) =>
       [...this.coprocessors.values()].map((handle) => {
         try {

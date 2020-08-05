@@ -42,7 +42,7 @@ interface CoprocessorRecord {
   size(): number;
 }
 
-interface CoprocessorRecordBatch {
+interface RecordBatch {
   records: CoprocessorRecord[];
   header: CoprocessorRecordsHeader;
 }
@@ -51,13 +51,13 @@ interface Coprocessor {
   inputTopics: string[];
   policyError: PolicyError;
   globalId: number;
-  apply(record: CoprocessorRecordBatch): CoprocessorRecordBatch;
+  apply(record: RecordBatch): RecordBatch;
 }
 
 export {
   CoprocessorRecordsHeader,
   CoprocessorRecordHeader,
   CoprocessorRecord,
-  CoprocessorRecordBatch,
+  RecordBatch,
   Coprocessor,
 };
