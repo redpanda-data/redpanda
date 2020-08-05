@@ -156,6 +156,11 @@ std::ostream& operator<<(std::ostream& o, const install_snapshot_reply& r) {
     return o;
 }
 
+std::ostream& operator<<(std::ostream& o, const offset_configuration& c) {
+    fmt::print(o, "{{offset: {}, group_configuration: {}}}", c.offset, c.cfg);
+    return o;
+}
+
 } // namespace raft
 
 namespace reflection {
