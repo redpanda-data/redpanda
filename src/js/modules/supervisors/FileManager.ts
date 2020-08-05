@@ -7,12 +7,12 @@ import { getChecksumFromFile } from "../utilities/Checksum";
 import { Coprocessor } from "../public/Coprocessor";
 
 /**
- * CoprocessorFileManager class is an inotify implementation, it receives a
+ * FileManager class is an inotify implementation, it receives a
  * Repository and updates this object when to  add a new file in
  * submit directory and read previous files from the active directory when
  * this class is instanced
  */
-class CoprocessorFileManager {
+class FileManager {
   constructor(
     private repository: Repository,
     private submitDir: string,
@@ -183,4 +183,4 @@ class CoprocessorFileManager {
   private watcher: Inotify;
 }
 
-export default CoprocessorFileManager;
+export default FileManager;

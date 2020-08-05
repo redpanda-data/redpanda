@@ -1,7 +1,7 @@
 import { Socket, createServer, Server as NetServer } from "net";
 import { Request } from "../domain/Request";
 import Repository from "../supervisors/Repository";
-import CoprocessorFileManager from "../supervisors/CoprocessorFileManager";
+import FileManager from "../supervisors/FileManager";
 import {
   Coprocessor,
   CoprocessorRecordBatch,
@@ -16,7 +16,7 @@ export class Server {
   ) {
     this.applyCoprocessor = this.applyCoprocessor.bind(this);
     this.repository = new Repository();
-    this.coprocessorFileManager = new CoprocessorFileManager(
+    this.fileManager = new FileManager(
       this.repository,
       submitDir,
       activeDir,
@@ -46,7 +46,7 @@ export class Server {
     return new Promise((resolve, reject) =>
       this.server.close((err) => {
         err && reject(err);
-        this.coprocessorFileManager.close().then(resolve).catch(reject);
+        this.fileManager.close().then(resolve).catch(reject);
       })
     );
   }
@@ -55,7 +55,7 @@ export class Server {
    * Close coprocessor filesystem watcher process
    */
   public closeCoprocessorManager(): Promise<void> {
-    return this.coprocessorFileManager.close();
+    return this.fileManager.close();
   }
 
   /**
@@ -124,7 +124,7 @@ export class Server {
     const errorMessage = this.createMessageError(coprocessor, request, error);
     switch (coprocessor.policyError) {
       case PolicyError.Deregister:
-        return this.coprocessorFileManager
+        return this.fileManager
           .deregisterCoprocessor(coprocessor)
           .then(() => Promise.reject(errorMessage));
       case PolicyError.SkipOnFailure:
@@ -146,5 +146,5 @@ export class Server {
   }
   private server: NetServer;
   private readonly repository: Repository;
-  private coprocessorFileManager: CoprocessorFileManager;
+  private fileManager: FileManager;
 }
