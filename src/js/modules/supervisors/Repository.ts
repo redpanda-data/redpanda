@@ -3,9 +3,9 @@ import { Coprocessor } from "../public/Coprocessor";
 import { HandleTable } from "./HandleTable";
 
 /**
- * CoprocessorsRepository is a container for CoprocessorHandles.
+ * Repository is a container for CoprocessorHandles.
  */
-class CoprocessorRepository {
+class Repository {
   constructor() {
     this.coprocessors = new Map();
   }
@@ -100,4 +100,4 @@ class CoprocessorRepository {
   private readonly coprocessors: Map<string, HandleTable>;
 }
 
-export default CoprocessorRepository;
+export default Repository;
