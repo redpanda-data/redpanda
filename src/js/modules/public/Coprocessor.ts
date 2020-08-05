@@ -11,14 +11,14 @@ export enum PolicyError {
   Deregister,
 }
 
-interface CoprocessorRecordHeader {
+interface RecordHeader {
   keySize: number;
   key: Buffer;
   valSize: number;
   value: Buffer;
 }
 
-interface CoprocessorRecordsHeader {
+interface RecordsHeader {
   attributes: number;
   lastOffsetDelta: number;
   firstTimestamp: bigint;
@@ -29,7 +29,7 @@ interface CoprocessorRecordsHeader {
   recordCount: number;
 }
 
-interface CoprocessorRecord {
+interface Record {
   sizeBytes: number;
   recordAttributes: number;
   timestampDelta: number;
@@ -38,13 +38,13 @@ interface CoprocessorRecord {
   key: Buffer;
   valSize: number;
   value: Buffer;
-  headers: Array<CoprocessorRecordHeader>;
+  headers: Array<RecordHeader>;
   size(): number;
 }
 
 interface RecordBatch {
-  records: CoprocessorRecord[];
-  header: CoprocessorRecordsHeader;
+  records: Record[];
+  header: RecordsHeader;
 }
 
 interface Coprocessor {
@@ -54,10 +54,4 @@ interface Coprocessor {
   apply(record: RecordBatch): RecordBatch;
 }
 
-export {
-  CoprocessorRecordsHeader,
-  CoprocessorRecordHeader,
-  CoprocessorRecord,
-  RecordBatch,
-  Coprocessor,
-};
+export { RecordsHeader, RecordHeader, Record, RecordBatch, Coprocessor };
