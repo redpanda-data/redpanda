@@ -1,6 +1,6 @@
 import { CoprocessorHandle } from "../domain/CoprocessorManager";
 import { Coprocessor, CoprocessorRecordBatch } from "../public/Coprocessor";
-import { CoprocessorRequest } from "../domain/CoprocessorRequest";
+import { Request } from "../domain/Request";
 import { Server } from "../rpc/server";
 
 export class HandleTable {
@@ -38,7 +38,7 @@ export class HandleTable {
    * typescript-2-1.html#keyof-and-lookup-types
    */
   apply(
-    request: CoprocessorRequest,
+    request: Request,
     handleError: Server["handleErrorByCoprocessorPolicy"]
   ): Promise<CoprocessorRecordBatch>[] {
     return request.getRecords().flatMap((recordBatch) =>
