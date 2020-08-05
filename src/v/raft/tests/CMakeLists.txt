@@ -41,7 +41,7 @@ rp_test(
   UNIT_TEST
   BINARY_NAME configuration_serialization_test
   SOURCES configuration_serialization_test.cc
-  LIBRARIES v::seastar_testing_main v::raft
+  LIBRARIES v::seastar_testing_main v::raft v::storage_test_utils
   LABELS raft
 )
 rp_test(

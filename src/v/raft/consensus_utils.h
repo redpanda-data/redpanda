@@ -129,4 +129,43 @@ public:
     Func _f;
 };
 
+/**
+ * Extracts all configurations from underlying reader. Configuration are stored
+ * in a vector passed as a reference to reader. The reader can will
+ * automatically assing offsets to following batches using provided base offset
+ * as a staring point
+ */
+model::record_batch_reader make_config_extracting_reader(
+  model::offset,
+  std::vector<offset_configuration>&,
+  model::record_batch_reader&&);
+
+/**
+ * Function that allow consuming batches with given consumer while lazily
+ * extracting raft::group_configuration from the reader.
+ *
+ * returns tuple<consumer_result, std::vector<offset_configuration>>
+ */
+template<typename ReferenceConsumer>
+auto for_each_ref_extract_configuration(
+  model::offset base_offset,
+  model::record_batch_reader&& rdr,
+  ReferenceConsumer c,
+  model::timeout_clock::time_point tm) {
+    using conf_t = std::vector<offset_configuration>;
+
+    return ss::do_with(
+      conf_t{},
+      [tm, c = std::move(c), base_offset, rdr = std::move(rdr)](
+        conf_t& configurations) mutable {
+          return make_config_extracting_reader(
+                   base_offset, configurations, std::move(rdr))
+            .for_each_ref(std::move(c), tm)
+            .then([&configurations](auto res) {
+                return std::make_tuple(
+                  std::move(res), std::move(configurations));
+            });
+      });
+}
+
 } // namespace raft::details
