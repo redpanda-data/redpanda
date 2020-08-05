@@ -2,11 +2,7 @@ import { Socket, createServer, Server as NetServer } from "net";
 import { Request } from "../domain/Request";
 import Repository from "../supervisors/Repository";
 import FileManager from "../supervisors/FileManager";
-import {
-  Coprocessor,
-  CoprocessorRecordBatch,
-  PolicyError,
-} from "../public/Coprocessor";
+import { Coprocessor, RecordBatch, PolicyError } from "../public/Coprocessor";
 
 export class Server {
   public constructor(
@@ -81,9 +77,7 @@ export class Server {
    * coprocessor function it handles the error by its ErrorPolicy
    * @param request
    */
-  private applyCoprocessor(
-    request: Request
-  ): Promise<CoprocessorRecordBatch[]> {
+  private applyCoprocessor(request: Request): Promise<RecordBatch[]> {
     const handleTable = this.repository
       .getCoprocessorsByTopics()
       .get(request.getTopic());
@@ -120,7 +114,7 @@ export class Server {
     coprocessor: Coprocessor,
     request: Request,
     error: Error
-  ): Promise<CoprocessorRecordBatch> {
+  ): Promise<RecordBatch> {
     const errorMessage = this.createMessageError(coprocessor, request, error);
     switch (coprocessor.policyError) {
       case PolicyError.Deregister:

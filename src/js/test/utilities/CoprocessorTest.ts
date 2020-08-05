@@ -1,6 +1,6 @@
 import {
   Coprocessor,
-  CoprocessorRecordBatch,
+  RecordBatch,
   PolicyError,
 } from "../../modules/public/Coprocessor";
 
@@ -9,7 +9,7 @@ class CoprocessorTest implements Coprocessor {
   inputTopics = ["topicA"];
   policyError = PolicyError.Deregister;
 
-  apply(record: CoprocessorRecordBatch): CoprocessorRecordBatch {
+  apply(record: RecordBatch): RecordBatch {
     return record;
   }
 }

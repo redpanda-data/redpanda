@@ -1,10 +1,7 @@
 import { Server } from "../../modules/rpc/server";
 import { join } from "path";
 import Repository from "../../modules/supervisors/Repository";
-import {
-  CoprocessorRecordBatch,
-  PolicyError,
-} from "../../modules/public/Coprocessor";
+import { RecordBatch, PolicyError } from "../../modules/public/Coprocessor";
 import { Request } from "../../modules/domain/Request";
 import FileManager from "../../modules/supervisors/FileManager";
 import assert = require("assert");
@@ -24,7 +21,7 @@ const createRequest = (topic?: string): Request => {
       records: [{ value: Buffer.from("Example") }],
       header: {},
     },
-  ] as CoprocessorRecordBatch[];
+  ] as RecordBatch[];
   return new Request(
     { topic: topic || "topicA" },
     { records: coprocessorRecordBatch },
@@ -129,7 +126,7 @@ describe("Server", function () {
             Repository.prototype,
             "getCoprocessorsByTopics"
           );
-          const badApplyCoprocessor = (record: CoprocessorRecordBatch) =>
+          const badApplyCoprocessor = (record: RecordBatch) =>
             // eslint-disable-next-line @typescript-eslint/ban-ts-comment
             // @ts-ignore
             record.bad.attribute;
@@ -178,7 +175,7 @@ describe("Server", function () {
             Repository.prototype,
             "getCoprocessorsByTopics"
           );
-          const badApplyCoprocessor = (record: CoprocessorRecordBatch) =>
+          const badApplyCoprocessor = (record: RecordBatch) =>
             // eslint-disable-next-line @typescript-eslint/ban-ts-comment
             // @ts-ignore
             record.bad.attribute;
