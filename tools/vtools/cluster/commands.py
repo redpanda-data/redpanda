@@ -49,8 +49,6 @@ def start(log_level, cores_per_node, mem_per_node, build_type, clang, nodes):
                                  cores_per_node=cores_per_node,
                                  mem_per_node=mem_per_node,
                                  vconfig=vconfig)
-        # workaround remove when we will have new raft config management
-        time.sleep(1)
 
 
 @cluster.command(short_help='Stop local cluster')
