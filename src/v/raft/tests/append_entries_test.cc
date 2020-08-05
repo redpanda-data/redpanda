@@ -384,7 +384,8 @@ FIXTURE_TEST(test_compacted_log_recovery, raft_test_fixture) {
 /**
  * Makes compactible batches, having one record per batch
  */
-model::record_batch_reader make_compactible_batches(int keys, size_t batches) {
+model::record_batch_reader
+make_compactible_batches(int keys, size_t batches, model::timestamp ts) {
     ss::circular_buffer<model::record_batch> ret;
     for (size_t b = 0; b < batches; b++) {
         int k = random_generators::get_int(0, keys);
@@ -399,11 +400,13 @@ model::record_batch_reader make_compactible_batches(int keys, size_t batches) {
         builder.add_raw_kv(std::move(k_buf), std::move(v_buf));
         ret.push_back(std::move(builder).build());
     }
+    for (auto& b : ret) {
+        b.header().first_timestamp = ts;
+        b.header().max_timestamp = ts;
+    }
     return model::make_memory_record_batch_reader(std::move(ret));
 }
 
-// TODO: enable when we fix recovery of prefix truncated logs
-#if 0
 /**
  *
  * This test is testing a case where there is a gap between start of leader log
@@ -431,14 +434,7 @@ FIXTURE_TEST(test_collected_log_recovery, raft_test_fixture) {
     gr.enable_all();
     auto leader_id = wait_for_group_leader(gr);
     model::node_id disabled_id;
-    auto leader_raft = gr.get_member(leader_id).consensus;
     ss::abort_source as;
-
-    // append some entries
-    auto res = leader_raft
-                 ->replicate(
-                   make_compactible_batches(3, 50), default_replicate_opts)
-                 .get0();
 
     // disable one of the non leader nodes
     for (auto& [id, _] : gr.get_members()) {
@@ -448,10 +444,21 @@ FIXTURE_TEST(test_collected_log_recovery, raft_test_fixture) {
             break;
         }
     }
-    auto ts = model::timestamp::now();
+    auto first_ts = model::timestamp::now();
+    // append some entries
+    auto res = get_leader_raft(gr)
+                 ->replicate(
+                   make_compactible_batches(3, 50, first_ts),
+                   default_replicate_opts)
+                 .get0();
+
+    auto second_ts = model::timestamp(first_ts() + 100);
+    info("Triggerring log collection with timestamp {}", first_ts);
     // append some more entries
-    res = leader_raft
-            ->replicate(make_compactible_batches(3, 20), default_replicate_opts)
+    res = get_leader_raft(gr)
+            ->replicate(
+              make_compactible_batches(3, 20, second_ts),
+              default_replicate_opts)
             .get0();
 
     validate_logs_replication(gr);
@@ -461,7 +468,7 @@ FIXTURE_TEST(test_collected_log_recovery, raft_test_fixture) {
     gr.get_member(leader_id)
       .log
       ->compact(storage::compaction_config(
-        ts,
+        first_ts,
         100_MiB,
         ss::default_priority_class(),
         as,
@@ -479,4 +486,47 @@ FIXTURE_TEST(test_collected_log_recovery, raft_test_fixture) {
 
     validate_logs_replication(gr);
 };
-#endif
+
+FIXTURE_TEST(test_snapshot_recovery, raft_test_fixture) {
+    raft_group gr = raft_group(raft::group_id(0), 3);
+    gr.enable_all();
+    auto leader_id = wait_for_group_leader(gr);
+    model::node_id disabled_id;
+    for (auto& [id, _] : gr.get_members()) {
+        // disable one of the non leader nodes
+        if (leader_id != id) {
+            disabled_id = id;
+            gr.disable_node(id);
+            break;
+        }
+    }
+    // append some entries
+    for (int i = 0; i < 5; ++i) {
+        auto res = get_leader_raft(gr)
+                     ->replicate(
+                       random_batches_entry(5), default_replicate_opts)
+                     .get0();
+    }
+    validate_logs_replication(gr);
+    // store snapshot
+    for (auto& [_, member] : gr.get_members()) {
+        member.consensus
+          ->write_snapshot(raft::write_snapshot_cfg(
+            get_leader_raft(gr)->committed_offset(),
+            iobuf{},
+            raft::write_snapshot_cfg::should_prefix_truncate::no))
+          .get0();
+    }
+    gr.enable_node(disabled_id);
+    auto res = get_leader_raft(gr)
+                 ->replicate(random_batches_entry(5), default_replicate_opts)
+                 .get0();
+    validate_logs_replication(gr);
+
+    wait_for(
+      10s,
+      [this, &gr] { return are_all_commit_indexes_the_same(gr); },
+      "After recovery state is consistent");
+
+    validate_logs_replication(gr);
+};

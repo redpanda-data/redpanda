@@ -7,6 +7,7 @@
 #include "random/generators.h"
 #include "storage/record_batch_builder.h"
 #include "storage/tests/utils/random_batch.h"
+#include "test_utils/randoms.h"
 #include "test_utils/rpc.h"
 
 #include <seastar/core/future.hh>
@@ -244,4 +245,29 @@ SEASTAR_THREAD_TEST_CASE(heartbeat_response_roundtrip) {
           result.meta[i].last_dirty_log_index);
         BOOST_REQUIRE_EQUAL(expected[gr].result, result.meta[i].result);
     }
+}
+
+SEASTAR_THREAD_TEST_CASE(snapshot_metadata_roundtrip) {
+    auto n1 = tests::random_broker(0, 100);
+    auto n2 = tests::random_broker(0, 100);
+    auto n3 = tests::random_broker(0, 100);
+    std::vector<model::broker> nodes{n1, n2};
+    std::vector<model::broker> learners{n3};
+
+    auto ct = ss::lowres_clock::now();
+    raft::snapshot_metadata metadata{
+      .last_included_index = model::offset(123),
+      .last_included_term = model::term_id(32),
+      .latest_configuration
+      = raft::group_configuration{.nodes = nodes, .learners = learners},
+      .cluster_time = ct,
+    };
+
+    auto d = serialize_roundtrip_rpc(std::move(metadata));
+
+    BOOST_REQUIRE_EQUAL(d.last_included_index, model::offset(123));
+    BOOST_REQUIRE_EQUAL(d.last_included_term, model::term_id(32));
+    BOOST_REQUIRE(d.cluster_time == ct);
+    BOOST_REQUIRE_EQUAL(d.latest_configuration.nodes, nodes);
+    BOOST_REQUIRE_EQUAL(d.latest_configuration.learners, learners);
 }

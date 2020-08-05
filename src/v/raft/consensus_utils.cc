@@ -223,4 +223,29 @@ ss::circular_buffer<model::record_batch> make_ghost_batches_in_gaps(
     return res;
 }
 
+ss::future<> persist_snapshot(
+  storage::snapshot_manager& snapshot_manager,
+  snapshot_metadata md,
+  iobuf&& data) {
+    return snapshot_manager.start_snapshot().then(
+      [&snapshot_manager, md = std::move(md), data = std::move(data)](
+        storage::snapshot_writer writer) mutable {
+          return ss::do_with(
+            std::move(writer),
+            [&snapshot_manager, md = std::move(md), data = std::move(data)](
+              storage::snapshot_writer& writer) mutable {
+                return writer
+                  .write_metadata(reflection::to_iobuf(std::move(md)))
+                  .then([&writer, data = std::move(data)]() mutable {
+                      return write_iobuf_to_output_stream(
+                        std::move(data), writer.output());
+                  })
+                  .finally([&writer] { return writer.close(); })
+                  .then([&snapshot_manager, &writer] {
+                      return snapshot_manager.finish_snapshot(writer);
+                  });
+            });
+      });
+}
+
 } // namespace raft::details
