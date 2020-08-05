@@ -6,7 +6,7 @@ import {
   PolicyError,
 } from "../../modules/public/Coprocessor";
 import { Request } from "../../modules/domain/Request";
-import CoprocessorFileManager from "../../modules/supervisors/CoprocessorFileManager";
+import FileManager from "../../modules/supervisors/FileManager";
 import assert = require("assert");
 import {
   createHandle,
@@ -16,7 +16,7 @@ import {
 
 const sinon = require("sinon");
 const net = require("net");
-const fakeFileManager = require("../../modules/supervisors/CoprocessorFileManager");
+const fakeFileManager = require("../../modules/supervisors/FileManager");
 
 const createRequest = (topic?: string): Request => {
   const coprocessorRecordBatch = [
@@ -154,11 +154,11 @@ describe("Server", function () {
             "handleErrorByCoprocessorPolicy"
           );
           const deregister = sinon.spy(
-            CoprocessorFileManager.prototype,
+            FileManager.prototype,
             "deregisterCoprocessor"
           );
           sinon
-            .stub(CoprocessorFileManager.prototype, "readActiveCoprocessor")
+            .stub(FileManager.prototype, "readActiveCoprocessor")
             .returns(Promise.resolve(true));
           const [fakeServer, fakeSocket] = createFakeServer(() => {
             assert(apply.called);
@@ -203,12 +203,12 @@ describe("Server", function () {
             "handleErrorByCoprocessorPolicy"
           );
           const deregister = sinon.stub(
-            CoprocessorFileManager.prototype,
+            FileManager.prototype,
             "deregisterCoprocessor"
           );
           deregister.returns(Promise.resolve(true));
           sinon
-            .stub(CoprocessorFileManager.prototype, "readActiveCoprocessor")
+            .stub(FileManager.prototype, "readActiveCoprocessor")
             .returns(Promise.resolve(true));
           const [fakeServer, fakeSocket] = createFakeServer(() => {
             assert(apply.called);
