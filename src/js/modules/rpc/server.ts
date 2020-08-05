@@ -84,7 +84,7 @@ export class Server {
     if (handleTable) {
       const results = handleTable.apply(
         request,
-        this.handleErrorByCoprocessorPolicy.bind(this)
+        this.handleErrorByPolicy.bind(this)
       );
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
       // @ts-ignore
@@ -110,7 +110,7 @@ export class Server {
    * @param request
    * @param error
    */
-  private handleErrorByCoprocessorPolicy(
+  private handleErrorByPolicy(
     coprocessor: Coprocessor,
     request: Request,
     error: Error

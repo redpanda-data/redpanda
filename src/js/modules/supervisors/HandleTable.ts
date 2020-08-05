@@ -30,14 +30,14 @@ export class HandleTable {
    * @param request, Request instance
    * @param handleError, function that handle error on when apply coprocessor
    *
-   * Note: Server["handleErrorByCoprocessorPolicy"] is a ts helper to specify
+   * Note: Server["handleErrorByPolicy"] is a ts helper to specify
    * an object's property type.
    * https://www.typescriptlang.org/docs/handbook/release-notes/
    * typescript-2-1.html#keyof-and-lookup-types
    */
   apply(
     request: Request,
-    handleError: Server["handleErrorByCoprocessorPolicy"]
+    handleError: Server["handleErrorByPolicy"]
   ): Promise<RecordBatch>[] {
     return request.getRecords().flatMap((recordBatch) =>
       [...this.coprocessors.values()].map((handle) => {
