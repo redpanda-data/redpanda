@@ -133,11 +133,6 @@ public:
     }
 
 private:
-    // key types used to store data in key-value store
-    enum class metadata_key : int8_t {
-        voted_for = 0,
-    };
-
     friend replicate_entries_stm;
     friend vote_stm;
     friend recovery_stm;
