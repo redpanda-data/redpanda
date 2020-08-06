@@ -400,6 +400,7 @@ void application::start() {
     _kafka_server.invoke_on_all(&rpc::server::start).get();
     vlog(
       _log.info, "Started Kafka API server listening at {}", conf.kafka_api());
-    syschecks::systemd_message("redpanda ready!");
+
+    vlog(_log.info, "Successfully started Redpanda!");
     syschecks::systemd_notify_ready();
 }
