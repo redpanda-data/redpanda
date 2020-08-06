@@ -1,7 +1,8 @@
 #include "compression/internal/gzip_compressor.h"
 #include "compression/internal/lz4_frame_compressor.h"
-#include "compression/internal/snappy_compressor.h"
+#include "compression/internal/snappy_java_compressor.h"
 #include "compression/internal/zstd_compressor.h"
+#include "compression/snappy_standard_compressor.h"
 #include "compression/stream_zstd.h"
 #include "random/generators.h"
 #include "units.h"
@@ -59,8 +60,12 @@ SEASTAR_THREAD_TEST_CASE(lz4_block_tests) {
     using fn = compression::internal::lz4_frame_compressor;
     roundtrip_compression(fn::compress, fn::uncompress);
 }
-SEASTAR_THREAD_TEST_CASE(snapy_test) {
-    using fn = compression::internal::snappy_compressor;
+SEASTAR_THREAD_TEST_CASE(snapy_java_test) {
+    using fn = compression::internal::snappy_java_compressor;
+    roundtrip_compression(fn::compress, fn::uncompress);
+}
+SEASTAR_THREAD_TEST_CASE(snapy_std_test) {
+    using fn = compression::snappy_standard_compressor;
     roundtrip_compression(fn::compress, fn::uncompress);
 }
 SEASTAR_THREAD_TEST_CASE(zstd_forward_test) {
