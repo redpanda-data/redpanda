@@ -13,7 +13,8 @@ v_cc_library(
     "compression.cc"
     "stream_zstd.cc"
     "logger.cc"
-    "internal/snappy_compressor.cc"
+    "snappy_standard_compressor.cc"
+    "internal/snappy_java_compressor.cc"
     "internal/lz4_frame_compressor.cc"
     "internal/gzip_compressor.cc"
   DEPS
