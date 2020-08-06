@@ -53,7 +53,7 @@ batch_consumer::consume_result skipping_consumer::consume_batch_start(
     if (
       (_reader._config.strict_max_bytes || _reader._config.bytes_consumed)
       && (_reader._config.bytes_consumed + header.size_bytes)
-           >= _reader._config.max_bytes) {
+           > _reader._config.max_bytes) {
         // signal to log reader to stop (see log_reader::is_done)
         _reader._config.over_budget = true;
         return stop_parser::yes;
