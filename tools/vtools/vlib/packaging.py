@@ -359,8 +359,7 @@ def create_packages(vconfig, formats, build_type):
 
     if "dir" in formats:
         local_dir = os.path.join(dist_path, "local")
-        _relocatable_dir(local_dir, execs, configs, admin_api_swag,
-                               vconfig)
+        _relocatable_dir(local_dir, execs, configs, admin_api_swag, vconfig)
 
     if formats.isdisjoint({"tar", "deb", "rpm"}):
         return
