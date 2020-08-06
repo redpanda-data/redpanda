@@ -259,7 +259,11 @@ void application::wire_up_services() {
     syschecks::systemd_message("Creating cluster::controller");
 
     construct_single_service(
-      controller, _raft_connection_cache, partition_manager, shard_table);
+      controller,
+      _raft_connection_cache,
+      partition_manager,
+      shard_table,
+      storage);
 
     controller->wire_up().get0();
     syschecks::systemd_message("Creating kafka metadata cache");

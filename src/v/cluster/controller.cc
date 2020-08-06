@@ -15,10 +15,12 @@ namespace cluster {
 controller::controller(
   ss::sharded<rpc::connection_cache>& ccache,
   ss::sharded<partition_manager>& pm,
-  ss::sharded<shard_table>& st)
+  ss::sharded<shard_table>& st,
+  ss::sharded<storage::api>& storage)
   : _connections(ccache)
   , _partition_manager(pm)
   , _shard_table(st)
+  , _storage(storage)
   , _tp_updates_dispatcher(_partition_allocator, _tp_state) {}
 
 ss::future<> controller::wire_up() {
@@ -48,6 +50,7 @@ ss::future<> controller::start() {
             std::ref(_members_table),
             std::ref(_connections),
             std::ref(_partition_allocator),
+            std::ref(_storage),
             std::ref(_as));
       })
       .then([this] {
