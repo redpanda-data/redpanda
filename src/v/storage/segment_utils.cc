@@ -323,14 +323,7 @@ model::record_batch_reader create_segment_full_reader(
   ss::rwlock::holder h) {
     auto o = s->offsets();
     auto reader_cfg = log_reader_config(
-      o.base_offset,
-      o.dirty_offset,
-      0,
-      s->size_bytes(),
-      cfg.iopc,
-      std::nullopt,
-      std::nullopt,
-      std::nullopt);
+      o.base_offset, o.dirty_offset, cfg.iopc);
     segment_set::underlying_t set;
     set.reserve(1);
     set.push_back(s);
