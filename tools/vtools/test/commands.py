@@ -76,7 +76,11 @@ def cpp(build_type, conf, clang, args):
                              clang=clang)
 
     if vconfig.environ['CI'] != 0:
-        shell.run_oneline("sysctl -w fs.aio-max-nr=1048576")
+        REQUIRED_AIO_MAX = 1048576
+        current_aio_max = int(shell.run_oneline("sysctl -nb fs.aio-max-nr"))
+
+        if current_aio_max < REQUIRED_AIO_MAX:
+            shell.run_oneline(f"sysctl -w fs.aio-max-nr={REQUIRED_AIO_MAX}")
 
     args = f' {args}' if args else '-R \".*_rp(unit|bench|int)$\"'
     shell.run_subprocess(f'cd {vconfig.build_dir} && '
