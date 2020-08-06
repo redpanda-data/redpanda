@@ -14,7 +14,6 @@ skipped_tests=(
   63 # cluster-id: https://app.clubhouse.io/vectorized/story/939/generate-cluster-id-uuid-on-bootstrap-and-expose-through-metadata-request
   67 # empty topic offset edge case: https://app.clubhouse.io/vectorized/story/940/consuming-from-empty-topic-should-return-eof
   77 # topic compaction settings: https://app.clubhouse.io/vectorized/story/999/support-create-topic-configurations-for-compaction-retention-policies
-  82 # looks like corrupt fetch response: https://app.clubhouse.io/vectorized/story/998/librdkafka-test-appears-to-cause-fetch-to-return-corrupt-message-data
   92 # no support for v2 -> v1 message version conversion in the broker
   44 # we do not support runtime changes to topic partition count
   69 # we do not support runtime changes to topic partition count
