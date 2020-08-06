@@ -15,6 +15,14 @@
     shell: |
       rpk config set cluster_id 'test'
       rpk config set organization 'vectorized.io'
+      rpk config set redpanda.advertised_kafka_api '{
+        address: {{ inventory_hostname }},
+        port: 9092
+      }' --format yaml
+      rpk config set redpanda.advertised_rpc_api '{
+        address: {{ inventory_hostname }},
+        port: 33145
+      }' --format yaml
       rpk mode production
 
       {% if hostvars[groups['redpanda'][0]].id == hostvars[inventory_hostname].id %}
