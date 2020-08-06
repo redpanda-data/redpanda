@@ -152,6 +152,15 @@ struct log_reader_config {
     // used by log reader
     size_t bytes_consumed{0};
 
+    // skipping consumer sets this bit if a read would cause max_bytes to be
+    // violated.  its used to signal to the log reader that even though consumed
+    // bytes hasn't reached max bytes that reading should still stop.
+    bool over_budget{false};
+
+    // do not let the reader go over budget even when that means that the reader
+    // will return no batches.
+    bool strict_max_bytes{false};
+
     log_reader_config(
       model::offset start_offset,
       model::offset max_offset,

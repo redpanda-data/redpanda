@@ -49,6 +49,16 @@ batch_consumer::consume_result skipping_consumer::consume_batch_start(
         _reader._config.start_offset = header.last_offset() + model::offset(1);
         return skip_batch::yes;
     }
+
+    if (
+      (_reader._config.strict_max_bytes || _reader._config.bytes_consumed)
+      && (_reader._config.bytes_consumed + header.size_bytes)
+           >= _reader._config.max_bytes) {
+        // signal to log reader to stop (see log_reader::is_done)
+        _reader._config.over_budget = true;
+        return stop_parser::yes;
+    }
+
     if (header.attrs.compression() == model::compression::none) {
         // Reset the variant.
         auto r = model::record_batch::uncompressed_records();
@@ -289,7 +299,7 @@ bool log_reader::is_done() {
     return is_end_of_stream()
            || is_finished_offset(_lease->range, _config.start_offset)
            || _config.start_offset > _config.max_offset
-           || _config.bytes_consumed > _config.max_bytes;
+           || _config.bytes_consumed > _config.max_bytes || _config.over_budget;
 }
 
 } // namespace storage
