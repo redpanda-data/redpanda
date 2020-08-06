@@ -82,6 +82,19 @@ public:
           .list_all_topics = false};
         return client.dispatch(md_req).get0();
     }
+
+    void restart() {
+        app.shutdown();
+        ss::smp::invoke_on_all([this] {
+            auto& config = config::shard_local_cfg();
+            config.get("disable_metrics").set_value(false);
+        }).get0();
+        app.initialize();
+        app.check_environment();
+        app.configure_admin_server();
+        app.wire_up_services();
+        app.start();
+    }
 };
 
 FIXTURE_TEST(test_topic_recreation, recreate_test_fixture) {
@@ -94,6 +107,46 @@ FIXTURE_TEST(test_topic_recreation, recreate_test_fixture) {
     auto md = get_topic_metadata(test_tp);
     BOOST_REQUIRE_EQUAL(md.topics.size(), 1);
     BOOST_REQUIRE_EQUAL(md.topics.begin()->partitions.size(), 6);
+
+    for (auto& p : md.topics.begin()->partitions) {
+        BOOST_REQUIRE_EQUAL(p.leader, model::node_id{1});
+    }
+}
+
+FIXTURE_TEST(test_topic_recreation_recovery, recreate_test_fixture) {
+    wait_for_controller_leadership().get();
+    model::topic test_tp{"topic-1"};
+    // flow frim [ch1061]
+    info("Creating {} with {} partitions", test_tp, 6);
+    create_topic(test_tp(), 6, 1);
+    info("Deleting {}", test_tp);
+    delete_topics({test_tp});
+    info("Restarting redpanda, first time");
+    restart();
+    wait_for_controller_leadership().get();
+    info("Creating {} with {} partitions", test_tp, 3);
+    create_topic(test_tp(), 3, 1);
+    info("Deleting {}", test_tp);
+    delete_topics({test_tp});
+    info("Creating {} with {} partitions", test_tp, 3);
+    create_topic(test_tp(), 3, 1);
+    info("Restarting redpanda, second time");
+    restart();
+    info("Waiting for recovery");
+    wait_for_controller_leadership().get();
+    tests::cooperative_spin_wait_with_timeout(
+      std::chrono::seconds(5),
+      [this, test_tp] {
+          auto tp_md = app.metadata_cache.local().get_topic_metadata(
+            model::topic_namespace(cluster::kafka_namespace, test_tp));
+          return tp_md && tp_md->partitions.size() == 3 && tp_md
+                 && tp_md->partitions[0].leader_node == model::node_id(1);
+      })
+      .get();
+
+    auto md = get_topic_metadata(test_tp);
+    BOOST_REQUIRE_EQUAL(md.topics.size(), 1);
+    BOOST_REQUIRE_EQUAL(md.topics.begin()->partitions.size(), 3);
 
     for (auto& p : md.topics.begin()->partitions) {
         BOOST_REQUIRE_EQUAL(p.leader, model::node_id{1});
