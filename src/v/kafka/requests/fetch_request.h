@@ -276,6 +276,7 @@ struct fetch_config {
     model::offset start_offset;
     size_t max_bytes;
     model::timeout_clock::time_point timeout;
+    bool strict_max_bytes{false};
 };
 
 ss::future<fetch_response::partition_response>

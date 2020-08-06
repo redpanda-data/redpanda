@@ -262,6 +262,8 @@ static ss::future<fetch_response::partition_response> read_from_partition(
       std::nullopt,
       std::nullopt);
 
+    reader_config.strict_max_bytes = config.strict_max_bytes;
+
     return partition->make_reader(reader_config)
       .then([timeout = config.timeout](model::record_batch_reader reader) {
           vlog(klog.trace, "fetch reader {}", reader);
@@ -417,6 +419,7 @@ static ss::future<> fetch_topic_partitions(op_context& octx) {
             .max_bytes = std::min(
               octx.bytes_left, size_t(part.partition_max_bytes)),
             .timeout = octx.deadline,
+            .strict_max_bytes = octx.response_size > 0,
           };
 
           return handle_ntp_fetch(octx, std::move(ntp), config);
