@@ -94,7 +94,9 @@ void controller_backend::housekeeping() {
 // caller must hold _topics_sem lock
 ss::future<> controller_backend::reconcile_topics() {
     using meta_t = task_meta<topic_table::delta>;
-    return ss::parallel_for_each(
+    // _topic_deltas are chronologically ordered, we cannot reorder applying
+    // them, hence we have to use `ss::do_for_each`
+    return ss::do_for_each(
              std::begin(_topic_deltas),
              std::end(_topic_deltas),
              [this](meta_t& task) {
