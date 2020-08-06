@@ -15,7 +15,8 @@ namespace cluster {
 // This class receives updates from controller STM. It reacts only on raft
 // configuration batch types. All the updates are propagated to core local
 // cluster::members instances. There is only one instance of members manager
-// running on core-0
+// running on core-0. The member manager is also responsible for validation of
+// node configuration invariants.
 class members_manager {
 public:
     static constexpr ss::shard_id shard = 0;
@@ -24,6 +25,7 @@ public:
       ss::sharded<members_table>&,
       ss::sharded<rpc::connection_cache>&,
       ss::sharded<partition_allocator>&,
+      ss::sharded<storage::api>&,
       ss::sharded<ss::abort_source>&);
 
     ss::future<> start();
@@ -56,6 +58,7 @@ private:
     // Raft 0 config updates
     ss::future<> handle_raft0_cfg_update(raft::group_configuration);
     ss::future<> update_connections(patch<broker_ptr>);
+    ss::future<> validate_configuration_invariants();
 
     std::vector<config::seed_server> _seed_servers;
     model::broker _self;
@@ -64,6 +67,7 @@ private:
     ss::sharded<members_table>& _members_table;
     ss::sharded<rpc::connection_cache>& _connection_cache;
     ss::sharded<partition_allocator>& _allocator;
+    ss::sharded<storage::api>& _storage;
     ss::sharded<ss::abort_source>& _as;
     ss::gate _gate;
 };

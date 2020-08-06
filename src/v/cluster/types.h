@@ -126,6 +126,38 @@ struct patch {
 // generic type used for various registration handles such as in ntp_callbacks.h
 using notification_id_type = named_type<int32_t, struct notification_id>;
 
+struct configuration_invariants {
+    static constexpr uint8_t current_version = 0;
+    // version 0: node_id, core_count
+    explicit configuration_invariants(model::node_id nid, uint16_t core_count)
+      : node_id(nid)
+      , core_count(core_count) {}
+
+    uint8_t version = current_version;
+
+    model::node_id node_id;
+    uint16_t core_count;
+
+    friend std::ostream&
+    operator<<(std::ostream&, const configuration_invariants&);
+};
+
+class configuration_invariants_changed final : public std::exception {
+public:
+    explicit configuration_invariants_changed(
+      const configuration_invariants& expected,
+      const configuration_invariants& current)
+      : _msg(fmt::format(
+        "Configuration invariants changed. Expected: {}, current: {}",
+        expected,
+        current)) {}
+
+    const char* what() const noexcept final { return _msg.c_str(); }
+
+private:
+    ss::sstring _msg;
+};
+
 } // namespace cluster
 
 namespace reflection {
@@ -175,6 +207,12 @@ template<>
 struct adl<cluster::topic_configuration_assignment> {
     void to(iobuf&, cluster::topic_configuration_assignment&&);
     cluster::topic_configuration_assignment from(iobuf_parser&);
+};
+
+template<>
+struct adl<cluster::configuration_invariants> {
+    void to(iobuf&, cluster::configuration_invariants&&);
+    cluster::configuration_invariants from(iobuf_parser&);
 };
 
 } // namespace reflection
