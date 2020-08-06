@@ -515,17 +515,16 @@ func TestSetMode(t *testing.T) {
 		conf := DefaultConfig()
 		val := mode == ModeProd
 		conf.Rpk = &RpkConfig{
-			TuneNetwork:         val,
-			TuneDiskScheduler:   val,
-			TuneNomerges:        val,
-			TuneDiskIrq:         val,
-			TuneFstrim:          val,
-			TuneCpu:             val,
-			TuneAioEvents:       val,
-			TuneClocksource:     val,
-			TuneSwappiness:      val,
-			EnableMemoryLocking: val,
-			CoredumpDir:         conf.Rpk.CoredumpDir,
+			TuneNetwork:       val,
+			TuneDiskScheduler: val,
+			TuneNomerges:      val,
+			TuneDiskIrq:       val,
+			TuneFstrim:        val,
+			TuneCpu:           val,
+			TuneAioEvents:     val,
+			TuneClocksource:   val,
+			TuneSwappiness:    val,
+			CoredumpDir:       conf.Rpk.CoredumpDir,
 		}
 		return conf
 	}

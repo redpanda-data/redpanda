@@ -352,7 +352,6 @@ func setProduction(conf *Config) *Config {
 	rpk.TuneAioEvents = true
 	rpk.TuneClocksource = true
 	rpk.TuneSwappiness = true
-	rpk.EnableMemoryLocking = true
 	return conf
 }
 
