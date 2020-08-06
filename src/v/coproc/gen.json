@@ -1,0 +1,19 @@
+{
+    "namespace": "coproc",
+    "service_name": "liaison",
+    "includes": [
+        "coproc/types.h"
+    ],
+    "methods": [
+        {
+            "name": "enable_topics",
+            "input_type": "metadata_info",
+            "output_type": "enable_topics_reply"
+        },
+        {
+            "name": "disable_topics",
+            "input_type": "metadata_info",
+            "output_type": "disable_topics_reply"
+        }
+    ]
+}
