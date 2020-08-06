@@ -419,7 +419,7 @@ static ss::future<> fetch_topic_partitions(op_context& octx) {
             .timeout = octx.deadline,
           };
 
-          return handle_ntp_fetch(octx, std::move(ntp), std::move(config));
+          return handle_ntp_fetch(octx, std::move(ntp), config);
       });
 }
 
