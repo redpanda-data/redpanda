@@ -199,3 +199,8 @@ infra/modules/**/ssh_config*
 src/js/node_modules
 #intelij
 *.iml
+
+# ducktape
+results
+.ducktape
+tests/docker/build
