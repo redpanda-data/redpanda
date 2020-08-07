@@ -249,6 +249,11 @@ void application::wire_up_services() {
     syschecks::systemd_message("Building shard-lookup tables");
     construct_service(shard_table).get();
 
+    if (coproc_enabled()) {
+        syschecks::systemd_message("Building coproc mapping tables");
+        construct_service(mappings).get();
+    }
+
     syschecks::systemd_message("Intializing storage services");
     construct_service(
       storage,
@@ -335,6 +340,18 @@ void application::wire_up_services() {
     syschecks::systemd_message("Starting internal RPC {}", rpc_cfg);
     construct_service(_rpc, rpc_cfg).get();
 
+    // coproc rpc
+    if (coproc_enabled()) {
+        rpc::server_configuration cp_rpc_cfg;
+        cp_rpc_cfg.max_service_memory_per_core
+          = memory_groups::rpc_total_memory();
+        cp_rpc_cfg.addrs.emplace_back(
+          ss::socket_address(ss::ipv4_addr("127.0.0.1", 43188)));
+        syschecks::systemd_message(
+          "Starting coprocessor internal RPC {}", cp_rpc_cfg);
+        construct_service(_coproc_rpc, cp_rpc_cfg).get();
+    }
+
     rpc::server_configuration kafka_cfg;
     kafka_cfg.max_service_memory_per_core = memory_groups::kafka_total_memory();
     auto kafka_addr = config::shard_local_cfg().kafka_api().resolve().get0();
@@ -397,6 +414,24 @@ void application::start() {
     auto& conf = config::shard_local_cfg();
     _rpc.invoke_on_all(&rpc::server::start).get();
     vlog(_log.info, "Started RPC server listening at {}", conf.rpc_server());
+
+    if (coproc_enabled()) {
+        syschecks::systemd_message("Starting coproc RPC");
+        _coproc_rpc
+          .invoke_on_all([this](rpc::server& s) {
+              auto proto = std::make_unique<rpc::simple_protocol>();
+              proto->register_service<coproc::service>(
+                _scheduling_groups.coproc_sg(),
+                _smp_groups.coproc_smp_sg(),
+                std::ref(mappings),
+                std::ref(storage));
+              s.set_protocol(std::move(proto));
+          })
+          .get();
+        _coproc_rpc.invoke_on_all(&rpc::server::start).get();
+        vlog(
+          _log.info, "Started coproc RPC server listening at 127.0.0.1:43188");
+    }
 
     _quota_mgr.invoke_on_all(&kafka::quota_manager::start).get();
 
