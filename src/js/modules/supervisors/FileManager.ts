@@ -1,28 +1,28 @@
 import * as Inotify from "inotifywait";
 import { rename, readdir } from "fs";
 import { promisify } from "util";
-import CoprocessorRepository from "./CoprocessorRepository";
-import { CoprocessorHandle } from "../domain/CoprocessorManager";
+import Repository from "./Repository";
+import { Handle } from "../domain/Handle";
 import { getChecksumFromFile } from "../utilities/Checksum";
 import { Coprocessor } from "../public/Coprocessor";
 
 /**
- * CoprocessorFileManager class is an inotify implementation, it receives a
- * CoprocessorRepository and updates this object when to  add a new file in
+ * FileManager class is an inotify implementation, it receives a
+ * Repository and updates this object when to  add a new file in
  * submit directory and read previous files from the active directory when
  * this class is instanced
  */
-class CoprocessorFileManager {
+class FileManager {
   constructor(
-    private coprocessorRepository: CoprocessorRepository,
+    private repository: Repository,
     private submitDir: string,
     private activeDir: string,
     private inactiveDir: string
   ) {
     try {
       this.watcher = new Inotify(this.submitDir);
-      this.readActiveCoprocessor(coprocessorRepository);
-      this.updateRepositoryOnNewFile(coprocessorRepository);
+      this.readActiveCoprocessor(repository);
+      this.updateRepositoryOnNewFile(repository);
     } catch (e) {
       console.error(e);
       //TODO: implement winston for loggin information and error handler
@@ -33,37 +33,35 @@ class CoprocessorFileManager {
    * AddCoprocessor gets coprocessor from filePath and decides if the
    * coprocessor is moving between active and inactive directories
    * @param filePath, path of a coprocessor that we want to load and add to
-   *        CoprocessorRepository
-   * @param coprocessorRepository, coprocessor container
+   *        Repository
+   * @param repository, coprocessor container
    * @param validatePrevCoprocessor, this flag is used for validation or not, if
-   *              there is a coprocessor in CoprocessorRepository with the same
+   *              there is a coprocessor in Repository with the same
    *              global Id and different checksum, it will decide if id should
    *              update coprocessor or move the file to the inactive folder.
    */
   addCoprocessor = (
     filePath: string,
-    coprocessorRepository: CoprocessorRepository,
+    repository: Repository,
     validatePrevCoprocessor = true
-  ): Promise<CoprocessorHandle> =>
+  ): Promise<Handle> =>
     this.getCoprocessor(filePath).then((coprocessor) => {
-      const preCoprocessor = coprocessorRepository.findByGlobalId(coprocessor);
+      const preCoprocessor = repository.findByGlobalId(coprocessor);
       if (preCoprocessor && validatePrevCoprocessor) {
         if (preCoprocessor.checksum === coprocessor.checksum) {
           return this.moveCoprocessorFile(coprocessor, this.inactiveDir);
         } else {
           return this.moveCoprocessorFile(preCoprocessor, this.inactiveDir)
-            .then(() => coprocessorRepository.remove(preCoprocessor))
+            .then(() => repository.remove(preCoprocessor))
             .then(() => this.moveCoprocessorFile(coprocessor, this.activeDir))
             .then((newCoprocessor) =>
-              coprocessorRepository
-                .add(newCoprocessor)
-                .then(() => newCoprocessor)
+              repository.add(newCoprocessor).then(() => newCoprocessor)
             );
         }
       } else {
         return this.moveCoprocessorFile(coprocessor, this.activeDir).then(
           (newCoprocessor) => {
-            coprocessorRepository.add(newCoprocessor);
+            repository.add(newCoprocessor);
             return newCoprocessor;
           }
         );
@@ -71,20 +69,16 @@ class CoprocessorFileManager {
     });
 
   /**
-   * reads the files in the "active" folder, loads them as CoprocessorHandles
-   * and adds them to the given CoprocessorRepository
-   * @param coprocessorRepository
+   * reads the files in the "active" folder, loads them as Handles
+   * and adds them to the given Repository
+   * @param repository
    */
-  readActiveCoprocessor(coprocessorRepository: CoprocessorRepository): void {
+  readActiveCoprocessor(repository: Repository): void {
     const readdirPromise = promisify(readdir);
     readdirPromise(this.activeDir)
       .then((files) => {
         files.forEach((file) =>
-          this.addCoprocessor(
-            `${this.activeDir}/${file}`,
-            coprocessorRepository,
-            false
-          )
+          this.addCoprocessor(`${this.activeDir}/${file}`, repository, false)
         );
       })
       .catch(console.error);
@@ -92,15 +86,13 @@ class CoprocessorFileManager {
   }
 
   /**
-   * Updates the given CoprocessorRepository instance when a new coprocessor
+   * Updates the given Repository instance when a new coprocessor
    * file is added.
-   * @param coprocessorRepository, is a coprocessor container
+   * @param repository, is a coprocessor container
    */
-  updateRepositoryOnNewFile = (
-    coprocessorRepository: CoprocessorRepository
-  ): void => {
+  updateRepositoryOnNewFile = (repository: Repository): void => {
     this.watcher.on("add", (filePath) => {
-      this.addCoprocessor(filePath, coprocessorRepository).catch(console.error);
+      this.addCoprocessor(filePath, repository).catch(console.error);
       //TODO: implement winston for logging information and error handler
     });
   };
@@ -124,14 +116,12 @@ class CoprocessorFileManager {
    * the 'inactive' directory.
    * @param coprocessor is a Coprocessor implementation.
    */
-  deregisterCoprocessor(coprocessor: Coprocessor): Promise<CoprocessorHandle> {
-    const coprocessorHandle = this.coprocessorRepository.findByCoprocessor(
-      coprocessor
-    );
-    if (coprocessorHandle) {
-      return this.moveCoprocessorFile(coprocessorHandle, this.inactiveDir).then(
+  deregisterCoprocessor(coprocessor: Coprocessor): Promise<Handle> {
+    const handle = this.repository.findByCoprocessor(coprocessor);
+    if (handle) {
+      return this.moveCoprocessorFile(handle, this.inactiveDir).then(
         (coprocessor) => {
-          this.coprocessorRepository.remove(coprocessor);
+          this.repository.remove(coprocessor);
           return coprocessor;
         }
       );
@@ -150,8 +140,8 @@ class CoprocessorFileManager {
    * @param filename, path of the file that we need to get coprocessor
    *                  information.
    */
-  private getCoprocessor = (filename: string): Promise<CoprocessorHandle> => {
-    return new Promise<CoprocessorHandle>((resolve, reject) => {
+  private getCoprocessor = (filename: string): Promise<Handle> => {
+    return new Promise<Handle>((resolve, reject) => {
       try {
         const script = require(filename);
         delete require.cache[filename];
@@ -179,9 +169,9 @@ class CoprocessorFileManager {
    * @param destination, destination path
    */
   private moveCoprocessorFile = (
-    coprocessor: CoprocessorHandle,
+    coprocessor: Handle,
     destination: string
-  ): Promise<CoprocessorHandle> => {
+  ): Promise<Handle> => {
     const renamePromise = promisify(rename);
     const newFileName = `${destination}/sha265-${coprocessor.checksum}.js`;
     return renamePromise(coprocessor.filename, newFileName).then(() => ({
@@ -193,4 +183,4 @@ class CoprocessorFileManager {
   private watcher: Inotify;
 }
 
-export default CoprocessorFileManager;
+export default FileManager;

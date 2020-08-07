@@ -1,28 +1,26 @@
-import { CoprocessorHandle } from "../domain/CoprocessorManager";
-import { Coprocessor, CoprocessorRecordBatch } from "../public/Coprocessor";
-import { CoprocessorRequest } from "../domain/CoprocessorRequest";
+import { Handle } from "../domain/Handle";
+import { Coprocessor, RecordBatch } from "../public/Coprocessor";
+import { Request } from "../domain/Request";
 import { Server } from "../rpc/server";
 
 export class HandleTable {
   constructor() {
-    this.coprocessors = new Map<number, CoprocessorHandle>();
+    this.coprocessors = new Map<number, Handle>();
   }
 
-  registerHandle(handle: CoprocessorHandle): void {
+  registerHandle(handle: Handle): void {
     this.coprocessors.set(handle.coprocessor.globalId, handle);
   }
 
-  deregisterHandle(handle: CoprocessorHandle): void {
+  deregisterHandle(handle: Handle): void {
     this.coprocessors.delete(handle.coprocessor.globalId);
   }
 
-  findHandleById(handle: CoprocessorHandle): CoprocessorHandle | undefined {
+  findHandleById(handle: Handle): Handle | undefined {
     return this.coprocessors.get(handle.coprocessor.globalId);
   }
 
-  findHandleByCoprocessor(
-    coprocessor: Coprocessor
-  ): CoprocessorHandle | undefined {
+  findHandleByCoprocessor(coprocessor: Coprocessor): Handle | undefined {
     return this.coprocessors.get(coprocessor.globalId);
   }
 
@@ -32,15 +30,15 @@ export class HandleTable {
    * @param request, Request instance
    * @param handleError, function that handle error on when apply coprocessor
    *
-   * Note: Server["handleErrorByCoprocessorPolicy"] is a ts helper to specify
+   * Note: Server["handleErrorByPolicy"] is a ts helper to specify
    * an object's property type.
    * https://www.typescriptlang.org/docs/handbook/release-notes/
    * typescript-2-1.html#keyof-and-lookup-types
    */
   apply(
-    request: CoprocessorRequest,
-    handleError: Server["handleErrorByCoprocessorPolicy"]
-  ): Promise<CoprocessorRecordBatch>[] {
+    request: Request,
+    handleError: Server["handleErrorByPolicy"]
+  ): Promise<RecordBatch>[] {
     return request.getRecords().flatMap((recordBatch) =>
       [...this.coprocessors.values()].map((handle) => {
         try {
@@ -54,5 +52,5 @@ export class HandleTable {
   size(): number {
     return this.coprocessors.size;
   }
-  private readonly coprocessors: Map<number, CoprocessorHandle>;
+  private readonly coprocessors: Map<number, Handle>;
 }

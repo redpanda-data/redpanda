@@ -1,14 +1,14 @@
-import { CoprocessorRecordBatch } from "../public/Coprocessor";
+import { RecordBatch } from "../public/Coprocessor";
 
 interface NamespacedTopicPartition {
   topic: string;
 }
 
 interface RecordBatchReader {
-  records: CoprocessorRecordBatch[];
+  records: RecordBatch[];
 }
 
-export class CoprocessorRequest {
+export class Request {
   constructor(
     private ntp: NamespacedTopicPartition,
     private recordBatchReader: RecordBatchReader,
@@ -17,5 +17,5 @@ export class CoprocessorRequest {
 
   getId = (): string => this.id;
   getTopic = (): string => this.ntp.topic;
-  getRecords = (): CoprocessorRecordBatch[] => this.recordBatchReader.records;
+  getRecords = (): RecordBatch[] => this.recordBatchReader.records;
 }

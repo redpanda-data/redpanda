@@ -1,12 +1,9 @@
 import { Server } from "../../modules/rpc/server";
 import { join } from "path";
-import CoprocessorRepository from "../../modules/supervisors/CoprocessorRepository";
-import {
-  CoprocessorRecordBatch,
-  PolicyError,
-} from "../../modules/public/Coprocessor";
-import { CoprocessorRequest } from "../../modules/domain/CoprocessorRequest";
-import CoprocessorFileManager from "../../modules/supervisors/CoprocessorFileManager";
+import Repository from "../../modules/supervisors/Repository";
+import { RecordBatch, PolicyError } from "../../modules/public/Coprocessor";
+import { Request } from "../../modules/domain/Request";
+import FileManager from "../../modules/supervisors/FileManager";
 import assert = require("assert");
 import {
   createHandle,
@@ -16,16 +13,16 @@ import {
 
 const sinon = require("sinon");
 const net = require("net");
-const fakeFileManager = require("../../modules/supervisors/CoprocessorFileManager");
+const fakeFileManager = require("../../modules/supervisors/FileManager");
 
-const createCoprocessorRequest = (topic?: string): CoprocessorRequest => {
+const createRequest = (topic?: string): Request => {
   const coprocessorRecordBatch = [
     {
       records: [{ value: Buffer.from("Example") }],
       header: {},
     },
-  ] as CoprocessorRecordBatch[];
-  return new CoprocessorRequest(
+  ] as RecordBatch[];
+  return new Request(
     { topic: topic || "topicA" },
     { records: coprocessorRecordBatch },
     "1"
@@ -45,14 +42,14 @@ const createFakeServer = (afterApply?: (value) => void, fileManagerStub?) => {
 };
 
 describe("Server", function () {
-  describe("Given a CoprocessorRequest", function () {
+  describe("Given a Request", function () {
     afterEach(sinon.restore);
 
     it(
       "shouldn't apply any coprocessor if the repository is " + "empty",
       function (done) {
         const repository = sinon.spy(
-          CoprocessorRepository.prototype,
+          Repository.prototype,
           "getCoprocessorsByTopics"
         );
         const apply = sinon.spy(Server.prototype, "applyCoprocessor");
@@ -65,16 +62,16 @@ describe("Server", function () {
           });
         };
         const [, fakeSocket] = createFakeServer(afterApplyCoprocessor);
-        fakeSocket.emit("readable", createCoprocessorRequest());
+        fakeSocket.emit("readable", createRequest());
       }
     );
 
     it(
       "shouldn't apply any Coprocessor if there isn't one defined for" +
-        " the CoprocessorRequest's topic",
+        " the Request's topic",
       function (done) {
         const repository = sinon.stub(
-          CoprocessorRepository.prototype,
+          Repository.prototype,
           "getCoprocessorsByTopics"
         );
         repository.returns(new Map().set("topicB", [createMockCoprocessor()]));
@@ -82,33 +79,28 @@ describe("Server", function () {
         const [, fakeSocket] = createFakeServer(() => {
           assert(repository.called);
           assert(repository.getCall(0).returnValue.size > 0);
-          assert(
-            !repository
-              .getCall(0)
-              .returnValue.has(coprocessorRequest.getTopic())
-          );
+          assert(!repository.getCall(0).returnValue.has(request.getTopic()));
           assert(apply.called);
           apply.firstCall.returnValue.then((values) => {
             assert.deepStrictEqual(values, []);
             done();
           });
         });
-        const coprocessorRequest = createCoprocessorRequest();
-        fakeSocket.emit("readable", coprocessorRequest);
+        const request = createRequest();
+        fakeSocket.emit("readable", request);
       }
     );
 
     it(
-      "should apply the right Coprocessor for the CoprocessorRequest's " +
-        "topic",
+      "should apply the right Coprocessor for the Request's " + "topic",
       function (done) {
         const repository = sinon.stub(
-          CoprocessorRepository.prototype,
+          Repository.prototype,
           "getCoprocessorsByTopics"
         );
         repository.returns(new Map().set("topicA", createHandleTable()));
         const apply = sinon.spy(Server.prototype, "applyCoprocessor");
-        const coprocessorRequest = createCoprocessorRequest("topicA");
+        const request = createRequest("topicA");
         const [, fakeSocket] = createFakeServer(() => {
           assert(repository.called);
           assert.deepStrictEqual(repository.getCall(0).args, []);
@@ -122,20 +114,19 @@ describe("Server", function () {
             })
             .catch(done);
         });
-        fakeSocket.emit("readable", coprocessorRequest);
+        fakeSocket.emit("readable", request);
       }
     );
 
     describe("Given an Error when applying the Coprocessor", function () {
       it(
-        "should skip the CoprocessorRequest, if ErrorPolicy is " +
-          "SkipOnFailure",
+        "should skip the Request, if ErrorPolicy is " + "SkipOnFailure",
         function (done) {
           const repository = sinon.stub(
-            CoprocessorRepository.prototype,
+            Repository.prototype,
             "getCoprocessorsByTopics"
           );
-          const badApplyCoprocessor = (record: CoprocessorRecordBatch) =>
+          const badApplyCoprocessor = (record: RecordBatch) =>
             // eslint-disable-next-line @typescript-eslint/ban-ts-comment
             // @ts-ignore
             record.bad.attribute;
@@ -155,16 +146,13 @@ describe("Server", function () {
             )
           );
           const apply = sinon.spy(Server.prototype, "applyCoprocessor");
-          const handle = sinon.spy(
-            Server.prototype,
-            "handleErrorByCoprocessorPolicy"
-          );
+          const handle = sinon.spy(Server.prototype, "handleErrorByPolicy");
           const deregister = sinon.spy(
-            CoprocessorFileManager.prototype,
+            FileManager.prototype,
             "deregisterCoprocessor"
           );
           sinon
-            .stub(CoprocessorFileManager.prototype, "readActiveCoprocessor")
+            .stub(FileManager.prototype, "readActiveCoprocessor")
             .returns(Promise.resolve(true));
           const [fakeServer, fakeSocket] = createFakeServer(() => {
             assert(apply.called);
@@ -172,8 +160,8 @@ describe("Server", function () {
             assert(!deregister.called);
             fakeServer.closeCoprocessorManager().then(done).catch(done);
           }, true);
-          const coprocessorRequest = createCoprocessorRequest("topicA");
-          fakeSocket.emit("readable", coprocessorRequest);
+          const request = createRequest("topicA");
+          fakeSocket.emit("readable", request);
         }
       );
 
@@ -181,10 +169,10 @@ describe("Server", function () {
         "should deregister the Coprocessor, if ErrorPolicy is " + "Deregister",
         function (done) {
           const repository = sinon.stub(
-            CoprocessorRepository.prototype,
+            Repository.prototype,
             "getCoprocessorsByTopics"
           );
-          const badApplyCoprocessor = (record: CoprocessorRecordBatch) =>
+          const badApplyCoprocessor = (record: RecordBatch) =>
             // eslint-disable-next-line @typescript-eslint/ban-ts-comment
             // @ts-ignore
             record.bad.attribute;
@@ -204,17 +192,14 @@ describe("Server", function () {
             )
           );
           const apply = sinon.spy(Server.prototype, "applyCoprocessor");
-          const handle = sinon.spy(
-            Server.prototype,
-            "handleErrorByCoprocessorPolicy"
-          );
+          const handle = sinon.spy(Server.prototype, "handleErrorByPolicy");
           const deregister = sinon.stub(
-            CoprocessorFileManager.prototype,
+            FileManager.prototype,
             "deregisterCoprocessor"
           );
           deregister.returns(Promise.resolve(true));
           sinon
-            .stub(CoprocessorFileManager.prototype, "readActiveCoprocessor")
+            .stub(FileManager.prototype, "readActiveCoprocessor")
             .returns(Promise.resolve(true));
           const [fakeServer, fakeSocket] = createFakeServer(() => {
             assert(apply.called);
@@ -222,8 +207,8 @@ describe("Server", function () {
             assert(deregister.called);
             fakeServer.closeCoprocessorManager().then(done).catch(done);
           }, true);
-          const coprocessorRequest = createCoprocessorRequest("topicA");
-          fakeSocket.emit("readable", coprocessorRequest);
+          const request = createRequest("topicA");
+          fakeSocket.emit("readable", request);
         }
       );
     });
