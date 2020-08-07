@@ -98,6 +98,13 @@ ss::future<>
 configuration_manager::add(model::offset offset, group_configuration cfg) {
     vlog(_ctxlog.trace, "Adding configuration: {}, offset: {}", cfg, offset);
     return _lock.with([this, cfg = std::move(cfg), offset]() mutable {
+        auto it = _configurations.find(offset);
+        // we already have this configuration, do nothing
+        // this may happen if configuration is the last batch of the snapshot
+        if (it != _configurations.end() && it->second == cfg) {
+            return ss::now();
+        }
+
         add_configuration(offset, std::move(cfg));
         _highest_known_offset = std::max(offset, _highest_known_offset);
         _config_changed.broadcast();
