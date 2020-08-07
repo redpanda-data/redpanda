@@ -19,6 +19,7 @@
 #include "storage/api.h"
 
 #include <seastar/core/app-template.hh>
+#include <seastar/core/metrics_registration.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/http/httpd.hh>
 #include <seastar/util/defer.hh>
@@ -75,6 +76,7 @@ private:
         s = std::make_unique<Service>(std::forward<Args>(args)...);
         _deferred.emplace_back([&s] { s->stop().get(); });
     }
+    void setup_metrics();
     std::unique_ptr<ss::app_template> _app;
     scheduling_groups _scheduling_groups;
     smp_groups _smp_groups;
@@ -86,6 +88,7 @@ private:
     ss::sharded<ss::http_server> _admin;
     ss::sharded<kafka::quota_manager> _quota_mgr;
     ss::sharded<rpc::server> _kafka_server;
+    ss::metrics::metric_groups _metrics;
     // run these first on destruction
     deferred_actions _deferred;
 };

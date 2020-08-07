@@ -17,6 +17,7 @@
 #include "version.h"
 #include "vlog.h"
 
+#include <seastar/core/metrics.hh>
 #include <seastar/core/prometheus.hh>
 #include <seastar/core/thread.hh>
 #include <seastar/http/api_docs.hh>
@@ -58,6 +59,7 @@ int application::run(int ac, char** av) {
                 hydrate_config(cfg);
                 initialize();
                 check_environment();
+                setup_metrics();
                 configure_admin_server();
                 wire_up_services();
                 start();
@@ -84,6 +86,21 @@ void application::initialize() {
       [this] { _scheduling_groups.destroy_groups().get(); });
     _smp_groups.create_groups().get();
     _deferred.emplace_back([this] { _smp_groups.destroy_groups().get(); });
+}
+
+void application::setup_metrics() {
+    if (!config::shard_local_cfg().disable_metrics()) {
+        _metrics.add_group(
+          "application",
+          {ss::metrics::make_gauge(
+            "uptime",
+            [] {
+                return std::chrono::duration_cast<std::chrono::milliseconds>(
+                         ss::engine().uptime())
+                  .count();
+            },
+            ss::metrics::description("Redpanda uptime in milliseconds"))});
+    }
 }
 
 void application::validate_arguments(const po::variables_map& cfg) {
@@ -121,7 +138,8 @@ void application::hydrate_config(const po::variables_map& cfg) {
     }).get0();
     vlog(
       _log.info,
-      "Use `rpk config set redpanda.<cfg> <value>` to change values below:");
+      "Use `rpk config set redpanda.<cfg> <value>` to change values "
+      "below:");
     config::shard_local_cfg().for_each(
       [this](const config::base_property& item) {
           std::stringstream val;
@@ -187,8 +205,8 @@ void application::configure_admin_server() {
 
 static storage::kvstore_config kvstore_config_from_global_config() {
     /*
-     * The key-value store is rooted at the configured data directory, and the
-     * internal kvstore topic-namespace results in a storage layout of:
+     * The key-value store is rooted at the configured data directory, and
+     * the internal kvstore topic-namespace results in a storage layout of:
      *
      *    /var/lib/redpanda/data/
      *       - redpanda/kvstore/
@@ -346,8 +364,8 @@ void application::start() {
     syschecks::systemd_message("Starting controller");
     controller->start().get0();
 
-    // FIXME: in first patch explain why this is started after the controller so
-    // the broker set will be available. Then next patch fix.
+    // FIXME: in first patch explain why this is started after the
+    // controller so the broker set will be available. Then next patch fix.
     syschecks::systemd_message("Starting metadata dissination service");
     md_dissemination_service
       .invoke_on_all(&cluster::metadata_dissemination_service::start)
