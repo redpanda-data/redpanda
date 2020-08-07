@@ -211,9 +211,36 @@ ss::future<> log_manager::remove(model::ntp ntp) {
         // waiting for all of them to be closed before actually removing the
         // underlying log. If there is a background operation like
         // compaction or so, it will block correctly.
-        return lg.remove().finally([lg] {});
+        const auto ntp_dir = lg.config().work_directory();
+        const auto topic_dir = lg.config().topic_directory().string();
+        return lg.remove()
+          .then([ntp_dir] { return ss::remove_file(ntp_dir); })
+          .then([topic_dir] { return directory_walker::empty(topic_dir); })
+          .then([topic_dir](bool empty) {
+              if (!empty) {
+                  return ss::now();
+              }
+              /*
+               * Attempt to remove the topic directory if there are now no
+               * partitions. If an error occurs it is most likely a race with
+               * another partition deletion where both observed the directory as
+               * being empty. In this case, ignore the error if the topic
+               * directory is actually gone.
+               */
+              return ss::remove_file(topic_dir).handle_exception_type(
+                [topic_dir](const std::filesystem::filesystem_error& e) {
+                    return ss::file_exists(topic_dir).then([e](bool exists) {
+                        if (exists) {
+                            return ss::make_exception_future<>(e);
+                        }
+                        return ss::now();
+                    });
+                });
+          })
+          .finally([lg] {});
     });
 }
+
 std::ostream& operator<<(std::ostream& o, log_config::storage_type t) {
     switch (t) {
     case log_config::storage_type::memory:
