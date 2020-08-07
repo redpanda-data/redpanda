@@ -132,6 +132,7 @@ struct ntp {
     bool operator!=(const ntp& other) const { return !(*this == other); }
 
     ss::sstring path() const;
+    std::filesystem::path topic_path() const;
 
     friend std::ostream& operator<<(std::ostream&, const ntp&);
 };
