@@ -1,20 +1,20 @@
-import { CoprocessorHandle } from "../domain/CoprocessorManager";
+import { Handle } from "../domain/Handle";
 import { Coprocessor } from "../public/Coprocessor";
 import { HandleTable } from "./HandleTable";
 
 /**
- * CoprocessorsRepository is a container for CoprocessorHandles.
+ * Repository is a container for Handles.
  */
-class CoprocessorRepository {
+class Repository {
   constructor() {
     this.coprocessors = new Map();
   }
 
   /**
-   * this method adds a new CoprocessorHandle to the repository
+   * this method adds a new Handle to the repository
    * @param coprocessor
    */
-  add(coprocessor: CoprocessorHandle): Promise<void> {
+  add(coprocessor: Handle): Promise<void> {
     const addHandle = () => {
       coprocessor.coprocessor.inputTopics.forEach((topic) => {
         const currentHandleTable = this.coprocessors.get(topic);
@@ -37,13 +37,11 @@ class CoprocessorRepository {
   /**
    *
    * findByGlobalId method receives a coprocessor and returns a
-   * CoprocessorHandle if there exists one with the same global ID as the given
+   * Handle if there exists one with the same global ID as the given
    * coprocessor. Returns undefined otherwise.
    * @param handle
    */
-  findByGlobalId = (
-    handle: CoprocessorHandle
-  ): CoprocessorHandle | undefined => {
+  findByGlobalId = (handle: Handle): Handle | undefined => {
     for (const [, tableHandle] of this.coprocessors) {
       const existingHandle = tableHandle.findHandleById(handle);
       if (existingHandle) {
@@ -57,9 +55,7 @@ class CoprocessorRepository {
    * if it exists, returns undefined otherwise
    * @param coprocessor
    */
-  findByCoprocessor = (
-    coprocessor: Coprocessor
-  ): CoprocessorHandle | undefined => {
+  findByCoprocessor = (coprocessor: Coprocessor): Handle | undefined => {
     for (const [, tableHandle] of this.coprocessors) {
       const existingHandle = tableHandle.findHandleByCoprocessor(coprocessor);
       if (existingHandle) {
@@ -72,7 +68,7 @@ class CoprocessorRepository {
    * removeCoprocessor method remove a coprocessor from the coprocessor map
    * @param handle
    */
-  remove = (handle: CoprocessorHandle): Promise<void> => {
+  remove = (handle: Handle): Promise<void> => {
     return new Promise((resolve, reject) => {
       try {
         for (const [, handleTable] of this.coprocessors) {
@@ -90,7 +86,7 @@ class CoprocessorRepository {
     });
   };
   /**
-   * getCoprocessors returns the map of CoprocessorHandles indexed by their
+   * getCoprocessors returns the map of Handles indexed by their
    * topics
    */
   getCoprocessorsByTopics(): Map<string, HandleTable> {
@@ -100,4 +96,4 @@ class CoprocessorRepository {
   private readonly coprocessors: Map<string, HandleTable>;
 }
 
-export default CoprocessorRepository;
+export default Repository;
