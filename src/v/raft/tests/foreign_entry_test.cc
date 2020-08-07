@@ -1,8 +1,11 @@
 #include "model/adl_serde.h"
 #include "model/fundamental.h"
 #include "model/record.h"
+#include "model/record_batch_reader.h"
+#include "model/timeout_clock.h"
 #include "raft/configuration_bootstrap_state.h"
 #include "raft/consensus_utils.h"
+#include "raft/types.h"
 #include "random/generators.h"
 #include "resource_mgmt/io_priority.h"
 #include "storage/log.h"
@@ -14,7 +17,13 @@
 // testing
 #include "test_utils/fixture.h"
 
+#include <seastar/core/circular_buffer.hh>
+#include <seastar/core/do_with.hh>
 #include <seastar/core/future-util.hh>
+
+#include <boost/test/tools/old/interface.hpp>
+
+#include <optional>
 
 using namespace std::chrono_literals; // NOLINT
 
@@ -108,6 +117,22 @@ struct foreign_entry_fixture {
       model::partition_id(random_generators::get_int(0, 24))};
 };
 
+ss::future<raft::group_configuration>
+extract_configuration(model::record_batch_reader&& rdr) {
+    using cfgs_t = std::vector<raft::offset_configuration>;
+    return ss::do_with(cfgs_t{}, [rdr = std::move(rdr)](cfgs_t& cfgs) mutable {
+        auto wrapping_rdr = raft::details::make_config_extracting_reader(
+          model::offset(0), cfgs, std::move(rdr));
+
+        return model::consume_reader_to_memory(
+                 std::move(wrapping_rdr), model::no_timeout)
+          .then([&cfgs](ss::circular_buffer<model::record_batch>) {
+              BOOST_REQUIRE(!cfgs.empty());
+              return cfgs.begin()->cfg;
+          });
+    });
+}
+
 FIXTURE_TEST(sharing_one_reader, foreign_entry_fixture) {
     std::vector<model::record_batch_reader> copies =
       // clang-format off
@@ -120,14 +145,10 @@ FIXTURE_TEST(sharing_one_reader, foreign_entry_fixture) {
         info("Submitting shared reader to shard:{}", shard);
         auto cfg =
           // MUST return the config; otherwise thread exception
-          ss::smp::submit_to(
-            shard,
-            [e = std::move(copies[shard])]() mutable {
-                info("extracting configuration");
-                return raft::details::extract_configuration(std::move(e));
-            })
-            .get0()
-            .value();
+          ss::smp::submit_to(shard, [e = std::move(copies[shard])]() mutable {
+              info("extracting configuration");
+              return extract_configuration(std::move(e));
+          }).get0();
 
         for (auto& n : cfg.nodes) {
             BOOST_REQUIRE(
@@ -181,12 +202,10 @@ FIXTURE_TEST(copy_lots_of_readers, foreign_entry_fixture) {
                      [es = std::move(share_copies[shard])]() mutable {
                          return ss::do_with(
                            std::move(es), [](model::record_batch_reader& es) {
-                               return raft::details::extract_configuration(
-                                 std::move(es));
+                               return extract_configuration(std::move(es));
                            });
                      })
-                     .get0()
-                     .value();
+                     .get0();
 
         for (auto& n : cfg.nodes) {
             BOOST_REQUIRE(

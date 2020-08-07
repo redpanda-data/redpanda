@@ -30,6 +30,7 @@ members_manager::members_manager(
   ss::sharded<ss::abort_source>& as)
   : _seed_servers(config::shard_local_cfg().seed_servers())
   , _self(make_self_broker(config::shard_local_cfg()))
+  , _join_retry_jitter(config::shard_local_cfg().join_retry_timeout_ms())
   , _join_timeout(std::chrono::seconds(2))
   , _raft0(raft0)
   , _members_table(members_table)
@@ -40,7 +41,6 @@ members_manager::members_manager(
 
 ss::future<> members_manager::start() {
     vlog(clusterlog.info, "starting cluster::members_manager...");
-
     // validate node id change
     return validate_configuration_invariants().then([this] {
         // join raft0
@@ -48,9 +48,31 @@ ss::future<> members_manager::start() {
             join_raft0();
         }
 
-        // handle initial configuration
-        return handle_raft0_cfg_update(_raft0->config());
+        return start_config_changes_watcher();
     });
+}
+
+ss::future<> members_manager::start_config_changes_watcher() {
+    (void)ss::with_gate(_gate, [this] {
+        return ss::do_until(
+          [this] { return _as.local().abort_requested(); },
+          [this]() {
+              return _raft0
+                ->wait_for_config_change(
+                  _last_seen_configuration_offset, _as.local())
+                .then([this](raft::offset_configuration oc) {
+                    return handle_raft0_cfg_update(std::move(oc.cfg))
+                      .then([this, offset = oc.offset] {
+                          _last_seen_configuration_offset = offset;
+                      });
+                })
+                .handle_exception_type(
+                  [](const ss::abort_requested_exception&) {});
+          });
+    }).handle_exception_type([](const ss::gate_closed_exception&) {});
+
+    // handle initial configuration
+    return handle_raft0_cfg_update(_raft0->config());
 }
 
 cluster::patch<broker_ptr>
@@ -126,10 +148,14 @@ ss::future<> members_manager::update_connections(patch<broker_ptr> diff) {
     });
 }
 
-static inline ss::future<> wait_for_next_join_retry(ss::abort_source& as) {
+static inline ss::future<>
+wait_for_next_join_retry(std::chrono::milliseconds tout, ss::abort_source& as) {
     using namespace std::chrono_literals; // NOLINT
-    vlog(clusterlog.info, "Next cluster join attempt in 5 seconds");
-    return ss::sleep_abortable(5s, as).handle_exception_type(
+    vlog(
+      clusterlog.info,
+      "Next cluster join attempt in {} milliseconds",
+      tout.count());
+    return ss::sleep_abortable(tout, as).handle_exception_type(
       [](const ss::sleep_aborted&) {
           vlog(clusterlog.debug, "Aborting join sequence");
       });
@@ -169,9 +195,9 @@ void members_manager::join_raft0() {
                         ss::stop_iteration::yes);
                   }
 
-                  return wait_for_next_join_retry(_as.local()).then([] {
-                      return ss::stop_iteration::no;
-                  });
+                  return wait_for_next_join_retry(
+                           _join_retry_jitter.next_duration(), _as.local())
+                    .then([] { return ss::stop_iteration::no; });
               });
         });
     });
@@ -239,9 +265,14 @@ members_manager::handle_join_request(model::broker broker) {
     // curent node is a leader
     if (_raft0->is_leader()) {
         // Just update raft0 configuration
-        return _raft0->add_group_member(std::move(broker)).then([] {
-            return ss::make_ready_future<ret_t>(join_reply{true});
-        });
+        return _raft0->add_group_member(std::move(broker))
+          .then([](std::error_code ec) {
+              if (!ec) {
+                  return ret_t(join_reply{true});
+              }
+
+              return ret_t(ec);
+          });
     }
     // Current node is not the leader have to send an RPC to leader
     // controller
@@ -295,7 +326,8 @@ ss::future<> members_manager::validate_configuration_invariants() {
         vlog(
           clusterlog.error,
           "Detected change in number of cores dedicated to run redpanda."
-          "Decreasing redpanda core count is not allowed. Expected core count "
+          "Decreasing redpanda core count is not allowed. Expected core "
+          "count "
           "{}, currently have {} cores.",
           invariants.core_count,
           ss::smp::count);

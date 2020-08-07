@@ -101,6 +101,7 @@ public:
         set_configuration("disable_metrics", true);
         set_configuration("election_timeout_ms", 500ms);
         set_configuration("raft_heartbeat_interval_ms", 75ms);
+        set_configuration("join_retry_timeout_ms", 500ms);
 
         using namespace std::chrono_literals;
         _storage

@@ -21,11 +21,6 @@ share_n(model::record_batch_reader&&, std::size_t);
 ss::future<std::vector<model::record_batch_reader>>
 foreign_share_n(model::record_batch_reader&&, std::size_t);
 
-/// parses the configuration out of the record_batch_reader
-// if there are some configuration batch types
-ss::future<std::optional<raft::group_configuration>>
-extract_configuration(model::record_batch_reader&&);
-
 /// serialize group configuration as config-type batch
 ss::circular_buffer<model::record_batch>
 serialize_configuration_as_batches(group_configuration cfg);
@@ -33,9 +28,10 @@ serialize_configuration_as_batches(group_configuration cfg);
 /// serialize group configuration to the record_batch_reader
 model::record_batch_reader serialize_configuration(group_configuration cfg);
 
-/// returns a fully parsed config state from a given storage log
+/// returns a fully parsed config state from a given storage log, starting at
+/// given offset
 ss::future<raft::configuration_bootstrap_state>
-read_bootstrap_state(storage::log, ss::abort_source&);
+read_bootstrap_state(storage::log, model::offset, ss::abort_source&);
 
 ss::circular_buffer<model::record_batch> make_ghost_batches_in_gaps(
   model::offset, ss::circular_buffer<model::record_batch>&&);
@@ -128,5 +124,44 @@ public:
 
     Func _f;
 };
+
+/**
+ * Extracts all configurations from underlying reader. Configuration are stored
+ * in a vector passed as a reference to reader. The reader can will
+ * automatically assing offsets to following batches using provided base offset
+ * as a staring point
+ */
+model::record_batch_reader make_config_extracting_reader(
+  model::offset,
+  std::vector<offset_configuration>&,
+  model::record_batch_reader&&);
+
+/**
+ * Function that allow consuming batches with given consumer while lazily
+ * extracting raft::group_configuration from the reader.
+ *
+ * returns tuple<consumer_result, std::vector<offset_configuration>>
+ */
+template<typename ReferenceConsumer>
+auto for_each_ref_extract_configuration(
+  model::offset base_offset,
+  model::record_batch_reader&& rdr,
+  ReferenceConsumer c,
+  model::timeout_clock::time_point tm) {
+    using conf_t = std::vector<offset_configuration>;
+
+    return ss::do_with(
+      conf_t{},
+      [tm, c = std::move(c), base_offset, rdr = std::move(rdr)](
+        conf_t& configurations) mutable {
+          return make_config_extracting_reader(
+                   base_offset, configurations, std::move(rdr))
+            .for_each_ref(std::move(c), tm)
+            .then([&configurations](auto res) {
+                return std::make_tuple(
+                  std::move(res), std::move(configurations));
+            });
+      });
+}
 
 } // namespace raft::details
