@@ -16,11 +16,11 @@
       rpk config set cluster_id 'test'
       rpk config set organization 'vectorized.io'
       rpk config set redpanda.advertised_kafka_api '{
-        address: {{ inventory_hostname }},
+        address: {{ hostvars[inventory_hostname].private_ip }},
         port: 9092
       }' --format yaml
       rpk config set redpanda.advertised_rpc_api '{
-        address: {{ inventory_hostname }},
+        address: {{ hostvars[inventory_hostname].private_ip }},
         port: 33145
       }' --format yaml
       rpk mode production
