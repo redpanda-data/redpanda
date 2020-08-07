@@ -14,12 +14,21 @@ from . import shell
 from . import templates
 
 VENDOR = "Vectorized Inc."
-REDPANDA_NAME = "redpanda"
-REDPANDA_DESCRIPTION = 'Redpanda, the fastest queue in the West'
-REDPANDA_CATEGORY = "Applications/Misc"
-REDPANDA_URL = "https://vectorized.io/product"
+PRODUCT = {
+    "redpanda": {
+        "DESCRIPTION": "Redpanda, the fastest queue in the West",
+        "CATEGORY": "Applications/Misc",
+        "URL": "https://vectorized.io/product",
+        "CODENAME": "pandacub"
+    },
+    "pandaproxy": {
+        "DESCRIPTION": "Pandaproxy, a REST API for Kafka",
+        "CATEGORY": "Applications/Misc",
+        "URL": "https://vectorized.io/product",
+        "CODENAME": "sleepycub"
+    }
+}
 LICENSE = 'Proprietary and confidential'
-CODENAME = "pandacub"
 VERSION = "0.0"
 REVISION = "0000000"
 RELEASE = "1"
@@ -60,7 +69,8 @@ def _get_dependencies(binary, vconfig):
     return libs
 
 
-def _relocatable_dir(dest_dir, execs, configs, admin_api_swag, vconfig):
+def _relocatable_dir(dest_dir, execs, configs, admin_api_swag, api_swag,
+                     vconfig):
     """
     Create a directory containing package artifacts suitable for relocation on
     the local machine, including within a docker container. This primarily used
@@ -82,7 +92,9 @@ def _relocatable_dir(dest_dir, execs, configs, admin_api_swag, vconfig):
     logging.info(f"staging relocatable local dir at {dest_dir}")
 
     for name in [
-            "lib", "libexec", "conf", "bin", "etc/redpanda/admin-api-doc"
+            "lib", "libexec", "conf", "bin",
+            "etc/{vconfig.product}/admin-api-doc",
+            "etc/{vconfig.product}/api-doc"
     ]:
         os.makedirs(os.path.join(dest_dir, name), exist_ok=True)
 
@@ -150,7 +162,14 @@ def _relocatable_dir(dest_dir, execs, configs, admin_api_swag, vconfig):
         maybe_symlink(conf, dest_path)
 
     for swag in admin_api_swag:
-        dest_path = os.path.join(dest_dir, "etc/redpanda/admin-api-doc",
+        dest_path = os.path.join(dest_dir,
+                                 "etc/{vconfig.product}/admin-api-doc",
+                                 os.path.basename(swag))
+        manifest.add(dest_path)
+        maybe_symlink(swag, dest_path)
+
+    for swag in api_swag:
+        dest_path = os.path.join(dest_dir, "etc/{vconfig.product}/api-doc",
                                  os.path.basename(swag))
         manifest.add(dest_path)
         maybe_symlink(swag, dest_path)
@@ -164,8 +183,9 @@ def _relocatable_dir(dest_dir, execs, configs, admin_api_swag, vconfig):
                 os.remove(path)
 
 
-def _relocable_tar_package(dest, execs, configs, admin_api_swag, vconfig):
-    rp_root = '/opt/redpanda'
+def _relocable_tar_package(dest, execs, configs, admin_api_swag, api_swag,
+                           vconfig):
+    rp_root = f'/opt/{vconfig.product}'
     logging.info(f"staging relocatable tar package {dest}")
     gzip_process = subprocess.Popen(f"pigz -f > {dest}",
                                     shell=True,
@@ -204,18 +224,22 @@ def _relocable_tar_package(dest, execs, configs, admin_api_swag, vconfig):
         ar.add(conf, arcname=f"conf/{os.path.basename(conf)}")
 
     for swag in admin_api_swag:
-        arcname = f"etc/redpanda/admin-api-doc/{os.path.basename(swag)}"
+        arcname = f"etc/{vconfig.product}/admin-api-doc/{os.path.basename(swag)}"
+        ar.add(swag, arcname=arcname)
+
+    for swag in api_swag:
+        arcname = f"etc/{vconfig.product}/api-doc/{os.path.basename(swag)}"
         ar.add(swag, arcname=arcname)
 
     ar.close()
     gzip_process.communicate()
 
 
-def red_panda_tar(input_tar, dest_path):
+def product_tar(product, input_tar, dest_path):
     logging.info("Creating tarball package")
     tar_dir = os.path.join(dest_path, "tar")
     os.makedirs(tar_dir, exist_ok=True)
-    tar_name = f'redpanda-{VERSION}-{RELEASE}_{REVISION}.tar.gz'
+    tar_name = f'{product}-{VERSION}-{RELEASE}_{REVISION}.tar.gz'
     tar_file = os.path.join(tar_dir, tar_name)
     logging.info(f"Final tarball: {tar_file}")
     shutil.copy(input_tar, tar_file)
@@ -226,16 +250,16 @@ def _rpm_tree(dest):
         os.makedirs(f"{dest}/{dir}", exist_ok=True)
 
 
-def _pkg_context():
+def _pkg_context(product):
     return {
-        "name": REDPANDA_NAME,
+        "name": product,
         "version": VERSION,
-        "summary": REDPANDA_DESCRIPTION,
-        "desc": REDPANDA_DESCRIPTION,
+        "summary": PRODUCT[product]["DESCRIPTION"],
+        "desc": PRODUCT[product]["DESCRIPTION"],
         "release": RELEASE,
         "license": LICENSE,
         "revision": REVISION,
-        "codename": CODENAME
+        "codename": PRODUCT[product]["CODENAME"]
     }
 
 
@@ -251,7 +275,7 @@ def red_panda_rpm(input_tar, dest_path, src_dir, env):
                     os.path.join(dest_path, "rpm/common"),
                     ignore=_is_template)
     # render templates
-    package_ctx = _pkg_context()
+    package_ctx = _pkg_context("redpanda")
     package_ctx['source_tar'] = "redpanda.tar"
     spec_template = f"{src_dir}/packaging/rpm/redpanda.spec.j2"
     spec = os.path.join(dest_path, "rpm/SPECS/redpanda.spec")
@@ -280,7 +304,7 @@ def red_panda_deb(input_tar, dest_path, src_dir, env):
                     ignore=_is_template)
 
     # render templates
-    package_ctx = _pkg_context()
+    package_ctx = _pkg_context("redpanda")
     chglog_tmpl = f"{src_dir}/packaging/debian/changelog.j2"
     control_tmpl = f"{src_dir}/packaging/debian/control.j2"
     _render_systemd_templates(common_path, {"debian": True}, src_dir)
@@ -319,7 +343,7 @@ def _render_systemd_templates(dest_path, ctx, src_dir):
                 os.path.join(dest_path, "systemd"))
 
 
-def create_packages(vconfig, formats, build_type):
+def create_packages(vconfig, formats):
     global VERSION
     global REVISION
     global RELEASE
@@ -338,10 +362,10 @@ def create_packages(vconfig, formats, build_type):
     else:
         RELEASE = "dev"
 
-    suffix = 'redpanda'
+    suffix = vconfig.product
 
     execs = [
-        (f'{vconfig.build_dir}/bin/redpanda', None),
+        (f'{vconfig.build_dir}/bin/{vconfig.product}', None),
         (f'{vconfig.go_out_dir}/rpk', None),
         (f'{vconfig.external_path}/bin/hwloc-calc', suffix),
         (f'{vconfig.external_path}/bin/hwloc-distrib', suffix),
@@ -350,27 +374,36 @@ def create_packages(vconfig, formats, build_type):
 
     dist_path = os.path.join(vconfig.build_dir, "dist")
 
-    configs = [os.path.join(vconfig.src_dir, "conf/redpanda.yaml")]
+    configs = [
+        os.path.join(vconfig.src_dir, f"conf/{vconfig.product}.yaml"),
+    ]
     admin_api_swag = glob.glob(
-        os.path.join(vconfig.src_dir, "src/v/redpanda/admin/api-doc/*.json"))
+        os.path.join(vconfig.src_dir,
+                     f"src/v/{vconfig.product}/admin/api-doc/*.json"))
+    api_swag = glob.glob(
+        os.path.join(vconfig.src_dir,
+                     f"src/v/{vconfig.product}/api/api-doc/*.json"))
+
     os.makedirs(dist_path, exist_ok=True)
 
     formats = set(formats)
 
     if "dir" in formats:
         local_dir = os.path.join(dist_path, "local")
-        _relocatable_dir(local_dir, execs, configs, admin_api_swag, vconfig)
+        _relocatable_dir(local_dir, execs, configs, admin_api_swag, api_swag,
+                         vconfig)
 
     if formats.isdisjoint({"tar", "deb", "rpm"}):
         return
 
-    tar_name = 'redpanda.tar.gz'
+    tar_name = f'{vconfig.product}.tar.gz'
     tar_path = f"{dist_path}/{tar_name}"
 
-    _relocable_tar_package(tar_path, execs, configs, admin_api_swag, vconfig)
+    _relocable_tar_package(tar_path, execs, configs, admin_api_swag, api_swag,
+                           vconfig)
 
     if 'tar' in formats:
-        red_panda_tar(tar_path, dist_path)
+        product_tar(vconfig.product, tar_path, dist_path)
     if 'deb' in formats:
         red_panda_deb(tar_path, dist_path, vconfig.src_dir, vconfig.environ)
     if 'rpm' in formats:

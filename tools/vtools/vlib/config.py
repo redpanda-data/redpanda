@@ -21,7 +21,11 @@ class VConfig(object):
       external: <path> # [optional] external deps installed out of build dir
     ```
     """
-    def __init__(self, config_file=None, build_type=None, clang=None):
+    def __init__(self,
+                 config_file=None,
+                 product=None,
+                 build_type=None,
+                 clang=None):
         """Reads configuration and populates internal properties of the object
         based on contents of the file. If `config_file` is `None`, it
         recursively looks for a `.vtools.yml` file. The search is done from
@@ -168,6 +172,15 @@ class VConfig(object):
     def build_dir(self):
         """Path to build directory, which is the root plus build_type."""
         return f'{self.build_root}/{self.build_type}/{self.compiler}'
+
+    @property
+    def product(self):
+        """Product."""
+        return self._product
+
+    @product.setter
+    def product(self, value):
+        self._product = value
 
     @property
     def build_type(self):
