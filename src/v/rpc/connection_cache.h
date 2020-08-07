@@ -38,6 +38,8 @@ public:
     /// fibers and they need to be synchronized
     ss::future<>
     emplace(model::node_id n, rpc::transport_configuration c, backoff_policy);
+
+    /// \brief removes the node *and* closes the connection
     ss::future<> remove(model::node_id n);
 
     /// \brief closes all connections

@@ -31,7 +31,24 @@ ss::future<> connection_cache::emplace(
       });
 }
 ss::future<> connection_cache::remove(model::node_id n) {
-    return with_semaphore(_sem, 1, [this, n] { _cache.erase(n); });
+    return ss::with_semaphore(
+             _sem,
+             1,
+             [this, n]() -> transport_ptr {
+                 auto it = _cache.find(n);
+                 if (it == _cache.end()) {
+                     return nullptr;
+                 }
+                 auto ptr = it->second;
+                 _cache.erase(it);
+                 return ptr;
+             })
+      .then([](transport_ptr ptr) {
+          if (!ptr) {
+              return ss::now();
+          }
+          return ptr->stop().finally([ptr] {});
+      });
 }
 
 /// \brief closes all client connections
