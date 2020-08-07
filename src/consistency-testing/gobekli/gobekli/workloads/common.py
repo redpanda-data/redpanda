@@ -1,0 +1,172 @@
+import asyncio
+import uuid
+
+from gobekli.kvapi import RequestCanceled, RequestTimedout
+from gobekli.consensus import LinearizabilityRegisterChecker, Violation
+
+
+class Stat:
+    def __init__(self):
+        self.counters = dict()
+
+    def inc(self, key):
+        if key not in self.counters:
+            self.counters[key] = 0
+        self.counters[key] += 1
+
+    def reset(self):
+        copy = self.counters
+        self.counters = dict()
+        return copy
+
+
+class StatDumper:
+    def __init__(self, stat, keys):
+        self.stat = stat
+        self.keys = keys
+        self.is_active = True
+
+    async def start(self):
+        while self.is_active:
+            counters = self.stat.reset()
+            line = ""
+            for key in self.keys:
+                if key in counters:
+                    line += str(counters[key]) + "\t"
+                else:
+                    line += str(0) + "\t"
+            print(line)
+            await asyncio.sleep(1)
+
+    def stop(self):
+        self.is_active = False
+
+
+class LinearizabilityHashmapChecker:
+    def __init__(self):
+        self.checkers = dict()
+        self.is_valid = True
+        self.error = None
+
+    def init(self, write_id, key, version, value):
+        if key in self.checkers:
+            raise Exception(f"Key {key} is already known, use cas to update")
+
+        self.checkers[key] = LinearizabilityRegisterChecker()
+        self.checkers[key].init(write_id, version, value)
+
+    def cas_started(self, write_id, key, prev_write_id, version, value):
+        if not self.is_valid:
+            return
+        if key not in self.checkers:
+            raise Exception(f"Key {key} must be put first")
+
+        self.checkers[key].write_started(prev_write_id, write_id, version,
+                                         value)
+
+    def cas_ended(self, write_id, key):
+        if not self.is_valid:
+            return
+        if key not in self.checkers:
+            raise Exception(f"Key {key} must be put first")
+
+        try:
+            self.checkers[key].write_ended(write_id)
+        except Violation as e:
+            self.error = e.message
+            self.is_valid = False
+            raise e
+
+    def cas_canceled(self, write_id, key):
+        if not self.is_valid:
+            return
+        if key not in self.checkers:
+            raise Exception(f"Key {key} must be put first")
+
+        try:
+            self.checkers[key].write_canceled(write_id)
+        except Violation as e:
+            self.error = e.message
+            self.is_valid = False
+            raise e
+
+    def cas_timeouted(self, write_id, key):
+        if not self.is_valid:
+            return
+        if key not in self.checkers:
+            raise Exception(f"Key {key} must be put first")
+
+        self.checkers[key].write_timeouted(write_id)
+
+    def read_started(self, pid, key):
+        if not self.is_valid:
+            return
+        if key not in self.checkers:
+            raise Exception(f"Key {key} must be put first")
+
+        self.checkers[key].read_started(pid)
+
+    def read_none(self, pid, key):
+        if not self.is_valid:
+            return
+        if key not in self.checkers:
+            raise Exception(f"Key {key} must be put first")
+        self.is_valid = False
+        self.error = f"key {key} can't be null"
+        raise Violation(self.error)
+
+    def read_ended(self, pid, key, write_id, value):
+        if not self.is_valid:
+            return
+        if key not in self.checkers:
+            raise Exception(f"Key {key} must be put first")
+
+        try:
+            self.checkers[key].read_ended(pid, write_id, value)
+        except Violation as e:
+            self.error = e.message
+            self.is_valid = False
+            raise e
+
+    def read_canceled(self, pid, key):
+        if not self.is_valid:
+            return
+        if key not in self.checkers:
+            raise Exception(f"Key {key} must be put first")
+
+        self.checkers[key].read_canceled(pid)
+
+
+class ReaderClient:
+    def __init__(self, stat, checker, name, node, key):
+        self.stat = stat
+        self.node = node
+        self.name = name
+        self.key = key
+        self.checker = checker
+        self.pid = str(uuid.uuid1())
+        self.is_active = True
+
+    def stop(self):
+        self.is_active = False
+
+    async def start(self):
+        while self.is_active and self.checker.is_valid:
+            try:
+                self.checker.read_started(self.pid, self.key)
+                read = await self.node.get_aio(self.key)
+                if read == None:
+                    self.checker.read_none(self.pid, self.key)
+                else:
+                    self.checker.read_ended(self.pid, self.key, read.write_id,
+                                            read.value)
+                self.stat.inc(self.name + ":ok")
+            except RequestTimedout:
+                self.stat.inc(self.name + ":out")
+                self.checker.read_canceled(self.pid, self.key)
+            except RequestCanceled:
+                self.stat.inc(self.name + ".err")
+                self.checker.read_canceled(self.pid, self.key)
+            except Violation as e:
+                print(f"violation: {e.message}")
+                break

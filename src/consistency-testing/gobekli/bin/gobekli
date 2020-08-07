@@ -1,0 +1,30 @@
+#!/usr/bin/env python
+
+import asyncio
+import sys
+import argparse
+
+from gobekli.kvapi import KVNode
+from gobekli.workloads import symmetrical_mrsw
+
+async def mrsw_aio(kvs, writers, readers, duration):
+    nodes = []
+    for i in range(0, len(kvs)):
+        nodes.append(KVNode(f"n{i}", kvs[i]))
+    
+    await symmetrical_mrsw.start_mrsw_workload_aio(nodes, writers, readers, duration)
+    
+    for kv in nodes:
+        await kv.close_aio()
+
+parser = argparse.ArgumentParser(description='Process some integers.')
+parser.add_argument('workload', choices=['mrsw'])
+parser.add_argument('--kv', action='append', required=True)
+parser.add_argument('--duration', type=int, default=120, required=False, help="duration")
+parser.add_argument('--writers', type=int, default=3, required=False, help="writers per kv")
+parser.add_argument('--readers', type=int, default=3, required=False, help="readers per writer per kv")
+
+args = parser.parse_args()
+
+if args.workload == "mrsw":
+    asyncio.run(mrsw_aio(args.kv, args.writers, args.readers, args.duration))
