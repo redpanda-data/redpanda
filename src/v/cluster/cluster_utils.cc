@@ -59,11 +59,7 @@ ss::future<> remove_broker_client(
       std::move(shards), [id, &clients](std::vector<ss::shard_id>& i) {
           return ss::do_for_each(i, [id, &clients](ss::shard_id i) {
               return clients.invoke_on(i, [id](rpc::connection_cache& cache) {
-                  if (cache.contains(id)) {
-                      return cache.get(id)->stop().then(
-                        [&cache, id] { return cache.remove(id); });
-                  }
-                  return ss::now();
+                  return cache.remove(id);
               });
           });
       });
