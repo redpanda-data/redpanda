@@ -20,6 +20,7 @@
 #include <seastar/net/ip.hh>
 #include <seastar/net/socket_defs.hh>
 
+#include <rapidjson/document.h>
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/writer.h>
 

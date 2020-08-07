@@ -15,21 +15,21 @@ namespace raft::kvelldb {
 class kvrsm : public state_machine {
 public:
     struct cmd_result {
-        cmd_result(int32_t ver, int32_t val)
-          : version(ver)
+        cmd_result(ss::sstring wid, ss::sstring val)
+          : write_id(wid)
           , value(val) {}
         cmd_result(
-          int32_t ver,
-          int32_t val,
+          ss::sstring wid,
+          ss::sstring val,
           std::error_code rsm_err,
           std::error_code raft_err)
-          : version(ver)
+          : write_id(wid)
           , value(val)
           , rsm_status(rsm_err)
           , raft_status(raft_err) {}
 
-        int32_t version{-1};
-        int32_t value{-1};
+        ss::sstring write_id;
+        ss::sstring value;
         std::error_code rsm_status{raft::kvelldb::errc::success};
         std::error_code raft_status{raft::errc::success};
     };
@@ -38,37 +38,39 @@ public:
 
     ss::future<cmd_result> set_and_wait(
       ss::sstring key,
-      int value,
-      model::timeout_clock::time_point timeout,
-      ss::abort_source& as);
+      ss::sstring value,
+      ss::sstring write_id,
+      model::timeout_clock::time_point timeout);
+
     ss::future<cmd_result> cas_and_wait(
       ss::sstring key,
-      int version,
-      int value,
-      model::timeout_clock::time_point timeout,
-      ss::abort_source& as);
-    ss::future<cmd_result> get_and_wait(
-      ss::sstring key,
-      model::timeout_clock::time_point timeout,
-      ss::abort_source& as);
+      ss::sstring prev_write_id,
+      ss::sstring value,
+      ss::sstring write_id,
+      model::timeout_clock::time_point timeout);
+
+    ss::future<cmd_result>
+    get_and_wait(ss::sstring key, model::timeout_clock::time_point timeout);
 
 private:
     struct record {
-        int32_t version{-1};
-        int32_t value{-1};
+        ss::sstring value;
+        ss::sstring write_id;
     };
 
     struct set_cmd {
         static constexpr uint8_t record_key = 0;
         ss::sstring key;
-        int32_t value{-1};
+        ss::sstring value;
+        ss::sstring write_id;
     };
 
     struct cas_cmd {
         static constexpr uint8_t record_key = 1;
         ss::sstring key;
-        int32_t version{-1};
-        int32_t value{-1};
+        ss::sstring prev_write_id;
+        ss::sstring value;
+        ss::sstring write_id;
     };
 
     struct get_cmd {
@@ -84,9 +86,7 @@ private:
     ss::future<> apply(model::record_batch b) override;
     ss::future<result<raft::replicate_result>> replicate(model::record_batch&&);
     ss::future<cmd_result> replicate_and_wait(
-      model::record_batch&& b,
-      model::timeout_clock::time_point timeout,
-      ss::abort_source& as);
+      model::record_batch&& b, model::timeout_clock::time_point timeout);
 
     consensus* _c;
     absl::flat_hash_map<model::offset, expiring_promise<cmd_result>> _promises;
