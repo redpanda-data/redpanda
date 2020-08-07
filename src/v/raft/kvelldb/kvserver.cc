@@ -2,6 +2,7 @@
 #include "raft/consensus.h"
 #include "raft/consensus_client_protocol.h"
 #include "raft/heartbeat_manager.h"
+#include "raft/kvelldb/httpkvrsm.h"
 #include "raft/kvelldb/kvrsm.h"
 #include "raft/kvelldb/logger.h"
 #include "raft/logger.h"
@@ -48,7 +49,12 @@ void cli_opts(po::options_description_easy_init o) {
     o("peers",
       po::value<std::vector<ss::sstring>>()->multitoken(),
       "--peers 1,127.0.0.1:11215 \n --peers 2,127.0.0.0.1:11216");
-    o("port", po::value<uint16_t>()->default_value(20776), "port for service");
+    o("port",
+      po::value<uint16_t>()->default_value(20776),
+      "port for raft service");
+    o("httpport",
+      po::value<uint16_t>()->default_value(20775),
+      "port for http service");
     o("heartbeat-timeout-ms",
       po::value<int32_t>()->default_value(100),
       "raft heartbeat timeout in milliseconds");
@@ -313,31 +319,28 @@ int main(int args, char** argv, char** env) {
 
             vlog(kvelldblog.info, "Starting kvrsm");
 
-            ss::smp::submit_to(core, [&group_manager]() {
+            ss::smp::submit_to(core, [&app_signal, &group_manager, &cfg]() {
                 return ss::async([&] {
                     auto raft = group_manager.local().consensus_for(
                       raft::group_id(66));
-                    raft::kvelldb::kvrsm kvrsm(kvelldblog, raft.get());
-                    kvrsm.start().get0();
+
+                    ss::lw_shared_ptr<raft::kvelldb::kvrsm> kvrsm
+                      = ss::make_lw_shared<raft::kvelldb::kvrsm>(
+                        kvelldblog, raft.get());
+                    kvrsm->start().get0();
                     vlog(kvelldblog.info, "kvrsm started");
 
-                    while (true) {
-                        ss::abort_source as;
-                        auto result = kvrsm
-                                        .set_and_wait(
-                                          "key1",
-                                          42,
-                                          model::timeout_clock::now() + 5s,
-                                          as)
-                                        .get0();
-                        vlog(
-                          kvelldblog.info, "{}", result.rsm_status.message());
-                        ss::sleep(1s).get0();
-                    }
+                    ss::sstring name = "httpkvrsm";
+                    ss::socket_address address(
+                      ss::net::inet_address(cfg["ip"].as<ss::sstring>()),
+                      cfg["httpport"].as<uint16_t>());
+                    raft::kvelldb::httpkvrsm http(kvrsm, name, address);
+                    http.start().get0();
+                    vlog(kvelldblog.info, "http started");
+
+                    app_signal.wait().get();
                 });
             }).get();
-
-            app_signal.wait().get();
         });
     });
 }

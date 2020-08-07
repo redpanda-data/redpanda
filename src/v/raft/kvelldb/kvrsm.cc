@@ -24,31 +24,29 @@ kvrsm::kvrsm(ss::logger& logger, consensus* c)
 
 ss::future<kvrsm::cmd_result> kvrsm::set_and_wait(
   ss::sstring key,
-  int value,
-  model::timeout_clock::time_point timeout,
-  ss::abort_source& as) {
+  ss::sstring value,
+  ss::sstring write_id,
+  model::timeout_clock::time_point timeout) {
     return replicate_and_wait(
-      serialize_cmd(set_cmd{key, value}, kvrsm_batch_type), timeout, as);
+      serialize_cmd(set_cmd{key, value, write_id}, kvrsm_batch_type), timeout);
 }
 
 ss::future<kvrsm::cmd_result> kvrsm::cas_and_wait(
   ss::sstring key,
-  int version,
-  int value,
-  model::timeout_clock::time_point timeout,
-  ss::abort_source& as) {
+  ss::sstring prev_write_id,
+  ss::sstring value,
+  ss::sstring write_id,
+  model::timeout_clock::time_point timeout) {
     return replicate_and_wait(
-      serialize_cmd(cas_cmd{key, version, value}, kvrsm_batch_type),
-      timeout,
-      as);
+      serialize_cmd(
+        cas_cmd{key, prev_write_id, value, write_id}, kvrsm_batch_type),
+      timeout);
 }
 
-ss::future<kvrsm::cmd_result> kvrsm::get_and_wait(
-  ss::sstring key,
-  model::timeout_clock::time_point timeout,
-  ss::abort_source& as) {
+ss::future<kvrsm::cmd_result>
+kvrsm::get_and_wait(ss::sstring key, model::timeout_clock::time_point timeout) {
     return replicate_and_wait(
-      serialize_cmd(get_cmd{key}, kvrsm_batch_type), timeout, as);
+      serialize_cmd(get_cmd{key}, kvrsm_batch_type), timeout);
 }
 
 ss::future<> kvrsm::apply(model::record_batch b) {
@@ -78,69 +76,67 @@ kvrsm::cmd_result kvrsm::process(model::record_batch&& b) {
           reflection::adl<cas_cmd>{}.from(b.begin()->release_value()));
     } else {
         return kvrsm::cmd_result(
-          -1, -1, raft::kvelldb::errc::unknown_command, raft::errc::success);
+          "", "", raft::kvelldb::errc::unknown_command, raft::errc::success);
     }
 }
 
 kvrsm::cmd_result kvrsm::execute(set_cmd c) {
     if (kv_map.contains(c.key)) {
         auto& record = kv_map[c.key];
-        record.version += 1;
+        record.write_id = c.write_id;
         record.value = c.value;
-        return kvrsm::cmd_result(record.version, record.value);
+        return kvrsm::cmd_result(record.write_id, record.value);
     } else {
         kvrsm::record record;
-        record.version = 1;
+        record.write_id = c.write_id;
         record.value = c.value;
         kv_map.emplace(c.key, record);
-        return kvrsm::cmd_result(record.version, record.value);
+        return kvrsm::cmd_result(record.write_id, record.value);
     }
 }
 
 kvrsm::cmd_result kvrsm::execute(get_cmd c) {
     if (kv_map.contains(c.key)) {
         return kvrsm::cmd_result(
-          kv_map.find(c.key)->second.version, kv_map.find(c.key)->second.value);
+          kv_map.find(c.key)->second.write_id,
+          kv_map.find(c.key)->second.value);
     }
     return kvrsm::cmd_result(
-      -1, -1, raft::kvelldb::errc::not_found, raft::errc::success);
+      "", "", raft::kvelldb::errc::not_found, raft::errc::success);
 }
 
 kvrsm::cmd_result kvrsm::execute(cas_cmd c) {
     if (kv_map.contains(c.key)) {
         auto& record = kv_map[c.key];
 
-        if (record.version == c.version) {
-            record.version += 1;
+        if (record.write_id == c.prev_write_id) {
+            record.write_id = c.write_id;
             record.value = c.value;
-            return kvrsm::cmd_result(record.version, record.value);
+            return kvrsm::cmd_result(record.write_id, record.value);
         } else {
             return kvrsm::cmd_result(
-              record.version,
+              record.write_id,
               record.value,
               raft::kvelldb::errc::conflict,
               raft::errc::success);
         }
     } else {
         return kvrsm::cmd_result(
-          -1, -1, raft::kvelldb::errc::not_found, raft::errc::success);
+          "", "", raft::kvelldb::errc::not_found, raft::errc::success);
     }
 }
 
 ss::future<kvrsm::cmd_result> kvrsm::replicate_and_wait(
-  model::record_batch&& b,
-  model::timeout_clock::time_point timeout,
-  ss::abort_source& as) {
+  model::record_batch&& b, model::timeout_clock::time_point timeout) {
     using ret_t = kvrsm::cmd_result;
     return replicate(std::move(b))
-      .then([this, timeout, &as](result<raft::replicate_result> r) {
+      .then([this, timeout](result<raft::replicate_result> r) {
           if (!r) {
               return ss::make_ready_future<ret_t>(kvrsm::cmd_result(
-                -1, -1, raft::kvelldb::errc::raft_error, r.error()));
+                "", "", raft::kvelldb::errc::raft_error, r.error()));
           }
 
           auto last_offset = r.value().last_offset;
-
           auto [it, insterted] = _promises.emplace(
             last_offset, expiring_promise<ret_t>{});
           vassert(
@@ -152,9 +148,8 @@ ss::future<kvrsm::cmd_result> kvrsm::replicate_and_wait(
               timeout,
               [] {
                   return kvrsm::cmd_result(
-                    -1, -1, raft::kvelldb::errc::timeout, raft::errc::success);
-              },
-              as)
+                    "", "", raft::kvelldb::errc::timeout, raft::errc::timeout);
+              })
             .then_wrapped([this, last_offset](ss::future<ret_t> ec) {
                 _promises.erase(last_offset);
                 return ec;
