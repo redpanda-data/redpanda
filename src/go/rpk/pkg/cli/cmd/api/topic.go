@@ -15,11 +15,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewTopicCommand(fs afero.Fs) *cobra.Command {
+func NewTopicCommand(fs afero.Fs, brokers func() []string) *cobra.Command {
 	var admin sarama.ClusterAdmin
 	var client sarama.Client
-
-	var brokers []string
 
 	root := &cobra.Command{
 		Use:              "topic",
@@ -27,12 +25,9 @@ func NewTopicCommand(fs afero.Fs) *cobra.Command {
 		TraverseChildren: true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			var err error
-			if len(brokers) == 0 {
-				brokers = []string{"127.0.0.1:9092"}
-			}
-			client, err = kafka.InitClient(
-				brokers...,
-			)
+			bs := brokers()
+			log.Errorf("BROKERS: %v", bs)
+			client, err = kafka.InitClient(bs...)
 			if err != nil {
 				return err
 			}
@@ -40,12 +35,6 @@ func NewTopicCommand(fs afero.Fs) *cobra.Command {
 			return err
 		},
 	}
-	root.PersistentFlags().StringSliceVar(
-		&brokers,
-		"brokers",
-		[]string{},
-		"Comma-separated list of broker ip:port pairs",
-	)
 	root.AddCommand(createTopic(&admin))
 	root.AddCommand(deleteTopic(&admin))
 	root.AddCommand(setTopicConfig(&admin))
