@@ -1,0 +1,19 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "Pandaproxy API",
+    "version": "0.0.1"
+  },
+  "host": "{{Host}}",
+  "basePath": "/v1",
+  "schemes": [
+    "http"
+  ],
+  "consumes": [
+    "application/vnd.kafka.json.v2+json"
+  ],
+  "produces": [
+    "application/vnd.kafka.json.v2+json"
+  ],
+  "paths": {
+    
