@@ -18,6 +18,13 @@
 struct directory_walker {
     using walker_type = std::function<ss::future<>(ss::directory_entry)>;
 
+    class stop_walk final : public std::exception {
+    public:
+        const char* what() const noexcept final {
+            return "stop directory walk signal";
+        }
+    };
+
     static ss::future<> walk(ss::sstring dirname, walker_type walker_func) {
         return open_directory(std::move(dirname))
           .then([walker_func = std::move(walker_func)](ss::file f) mutable {
@@ -28,5 +35,17 @@ struct directory_walker {
                     return f.close().finally([f = std::move(f)] {});
                 });
           });
+    }
+
+    static ss::future<bool> empty(const std::filesystem::path& dir) {
+        return directory_walker::walk(
+                 dir.string(),
+                 [](const ss::directory_entry&) {
+                     return ss::make_exception_future<>(
+                       directory_walker::stop_walk());
+                 })
+          .then([] { return true; })
+          .handle_exception_type(
+            [](const directory_walker::stop_walk&) { return false; });
     }
 };
