@@ -18,4 +18,10 @@ v_cc_library(
     coproc_gen
   )
 
-
+rp_test(
+  UNIT_TEST
+  BINARY_NAME registration_test
+  SOURCES tests/registration_test.cc
+  DEFINITIONS BOOST_TEST_DYN_LINK
+  LIBRARIES v::seastar_testing_main v::coproc
+  )
