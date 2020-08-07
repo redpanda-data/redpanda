@@ -68,6 +68,8 @@ struct group_configuration {
           std::forward<Func>(f));
     }
 
+    friend bool
+    operator==(const group_configuration&, const group_configuration&);
     // data
     brokers_t nodes;
     brokers_t learners;
