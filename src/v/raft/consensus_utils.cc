@@ -108,13 +108,13 @@ share_n(model::record_batch_reader&& r, std::size_t ncopies) {
     return share_reader(std::move(r), ncopies, false);
 }
 
-ss::future<configuration_bootstrap_state>
-read_bootstrap_state(storage::log log, ss::abort_source& as) {
+ss::future<configuration_bootstrap_state> read_bootstrap_state(
+  storage::log log, model::offset start_offset, ss::abort_source& as) {
     // TODO(agallego, michal) - iterate the log in reverse
     // as an optimization
     auto lstats = log.offsets();
     auto rcfg = storage::log_reader_config(
-      lstats.start_offset, lstats.dirty_offset, raft_priority(), as);
+      start_offset, lstats.dirty_offset, raft_priority(), as);
     auto cfg_state = std::make_unique<configuration_bootstrap_state>();
     return log.make_reader(rcfg).then(
       [state = std::move(cfg_state)](
@@ -131,35 +131,6 @@ read_bootstrap_state(storage::log log, ss::abort_source& as) {
       });
 }
 
-ss::future<std::optional<raft::group_configuration>>
-extract_configuration(model::record_batch_reader&& reader) {
-    using cfg_t = std::optional<raft::group_configuration>;
-    return ss::do_with(
-      std::move(reader),
-      cfg_t{},
-      [](model::record_batch_reader& reader, cfg_t& cfg) {
-          return reader
-            .consume(
-              do_for_each_batch_consumer([&cfg](model::record_batch b) mutable {
-                  // reader may contain different batches, skip the ones that
-                  // does not have configuration
-                  if (b.header().type != raft::configuration_batch_type) {
-                      return ss::make_ready_future<>();
-                  }
-                  if (b.compressed()) {
-                      return ss::make_exception_future(std::runtime_error(
-                        "Compressed configuration records are "
-                        "unsupported"));
-                  }
-                  auto it = std::prev(b.end());
-                  cfg = reflection::adl<raft::group_configuration>{}.from(
-                    it->share_value());
-                  return ss::make_ready_future<>();
-              }),
-              model::no_timeout)
-            .then([&cfg]() mutable { return std::move(cfg); });
-      });
-}
 ss::circular_buffer<model::record_batch>
 serialize_configuration_as_batches(group_configuration cfg) {
     auto batch = std::move(
@@ -246,6 +217,82 @@ ss::future<> persist_snapshot(
                   });
             });
       });
+}
+
+model::record_batch_reader make_config_extracting_reader(
+  model::offset base_offset,
+  std::vector<offset_configuration>& target,
+  model::record_batch_reader&& source) {
+    class extracting_reader final : public model::record_batch_reader::impl {
+    private:
+        using storage_t = model::record_batch_reader::storage_t;
+        using data_t = model::record_batch_reader::data_t;
+        using foreign_t = model::record_batch_reader::foreign_data_t;
+
+    public:
+        explicit extracting_reader(
+          model::offset o,
+          std::vector<offset_configuration>& target,
+          std::unique_ptr<model::record_batch_reader::impl> src)
+          : _next_offset(
+            o < model::offset(0) ? model::offset(0) : o + model::offset(1))
+          , _configurations(target)
+          , _ptr(std::move(src)) {}
+        extracting_reader(const extracting_reader&) = delete;
+        extracting_reader& operator=(const extracting_reader&) = delete;
+        extracting_reader(extracting_reader&&) = delete;
+        extracting_reader& operator=(extracting_reader&&) = delete;
+        ~extracting_reader() override = default;
+
+        bool is_end_of_stream() const final {
+            // ok to copy a bool
+            return _ptr->is_end_of_stream();
+        }
+
+        void print(std::ostream& os) final {
+            fmt::print(os, "configuration extracting reader, proxy for ");
+            _ptr->print(os);
+        }
+
+        data_t& get_batches(storage_t& st) {
+            if (std::holds_alternative<data_t>(st)) {
+                return std::get<data_t>(st);
+            } else {
+                return *std::get<foreign_t>(st).buffer;
+            }
+        }
+
+        ss::future<storage_t>
+        do_load_slice(model::timeout_clock::time_point t) final {
+            return _ptr->do_load_slice(t).then([this](storage_t recs) {
+                for (auto& batch : get_batches(recs)) {
+                    if (batch.header().type == configuration_batch_type) {
+                        extract_configuration(batch);
+                    }
+                    // calculate next offset
+                    _next_offset += model::offset(
+                                      batch.header().last_offset_delta)
+                                    + model::offset(1);
+                }
+                return recs;
+            });
+        }
+
+        void extract_configuration(model::record_batch& batch) {
+            auto cfg = reflection::adl<raft::group_configuration>{}.from(
+              batch.begin()->value().copy());
+            _configurations.emplace_back(_next_offset, std::move(cfg));
+        }
+
+    private:
+        model::offset _next_offset;
+        std::vector<offset_configuration>& _configurations;
+        std::unique_ptr<model::record_batch_reader::impl> _ptr;
+    };
+    auto reader = std::make_unique<extracting_reader>(
+      base_offset, target, std::move(source).release());
+
+    return model::record_batch_reader(std::move(reader));
 }
 
 } // namespace raft::details

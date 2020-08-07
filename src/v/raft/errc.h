@@ -15,7 +15,8 @@ enum class errc {
     replicated_entry_truncated,
     leader_flush_failed,
     leader_append_failed,
-    timeout
+    timeout,
+    configuration_change_in_progress
 };
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "raft::errc"; }
@@ -44,6 +45,8 @@ struct errc_category final : public std::error_category {
             return "raft::errc::leader_append_failed";
         case errc::timeout:
             return "raft::errc::timeout";
+        case errc::configuration_change_in_progress:
+            return "raft::errc::configuration_change_in_progress";
         default:
             return "raft::errc::unknown";
         }

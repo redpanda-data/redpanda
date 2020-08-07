@@ -25,7 +25,7 @@ std::ostream& operator<<(std::ostream& o, const vote_stm::vmeta& m) {
 }
 vote_stm::vote_stm(consensus* p)
   : _ptr(p)
-  , _sem(_ptr->_conf.nodes.size())
+  , _sem(_ptr->config().nodes.size())
   , _ctxlog(_ptr->_self, _ptr->group()) {}
 
 vote_stm::~vote_stm() {
@@ -99,7 +99,7 @@ ss::future<> vote_stm::vote() {
           _ptr->_term += model::term_id(1);
 
           // vote is the only method under _op_sem
-          for (auto& n : _ptr->_conf.nodes) {
+          for (auto& n : _ptr->config().nodes) {
               _replies.emplace_back(vmeta(n.id()));
           }
           auto lstats = _ptr->_log.offsets();
@@ -122,7 +122,7 @@ ss::future<> vote_stm::vote() {
       });
 }
 ss::future<> vote_stm::do_vote() {
-    auto& cfg = _ptr->_conf;
+    auto cfg = _ptr->config();
 
     // 5.2.1. 3
     vote_reply reply;
@@ -164,14 +164,14 @@ ss::future<> vote_stm::do_vote() {
 ss::future<> vote_stm::wait() { return _vote_bg.close(); }
 
 ss::future<> vote_stm::process_replies(ss::semaphore_units<> u) {
-    const size_t majority = _ptr->_conf.majority();
+    const size_t majority = _ptr->config().majority();
     auto [success, failure] = partition_count();
     if (_ptr->_vstate != consensus::vote_state::candidate) {
         vlog(
           _ctxlog.info,
           "No longer a candidate, ignoring vote replies: {}/{}",
           success,
-          _ptr->_conf.nodes.size());
+          _ptr->config().nodes.size());
         return ss::make_ready_future<>();
     }
     if (success < majority) {
@@ -179,7 +179,7 @@ ss::future<> vote_stm::process_replies(ss::semaphore_units<> u) {
           _ctxlog.info,
           "Majority vote failed. {}/{} votes, need:{}",
           success,
-          _ptr->_conf.nodes.size(),
+          _ptr->config().nodes.size(),
           majority);
         _ptr->_vstate = consensus::vote_state::follower;
         return ss::make_ready_future<>();
@@ -206,7 +206,7 @@ ss::future<> vote_stm::process_replies(ss::semaphore_units<> u) {
 
 void vote_stm::replicate_config_as_new_leader(ss::semaphore_units<> u) {
     (void)ss::with_gate(_ptr->_bg, [this, u = std::move(u)]() mutable {
-        return _ptr->replicate_configuration(std::move(u), _ptr->_conf);
+        return _ptr->replicate_configuration(std::move(u), _ptr->config());
     });
 }
 
