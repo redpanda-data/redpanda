@@ -530,3 +530,51 @@ FIXTURE_TEST(test_snapshot_recovery, raft_test_fixture) {
 
     validate_logs_replication(gr);
 };
+
+FIXTURE_TEST(test_snapshot_recovery_last_config, raft_test_fixture) {
+    raft_group gr = raft_group(raft::group_id(0), 3);
+    gr.enable_all();
+    auto leader_id = wait_for_group_leader(gr);
+    model::node_id disabled_id;
+    for (auto& [id, _] : gr.get_members()) {
+        // disable one of the non leader nodes
+        if (leader_id != id) {
+            disabled_id = id;
+            gr.disable_node(id);
+            break;
+        }
+    }
+    // append some entries
+    for (int i = 0; i < 5; ++i) {
+        auto res = get_leader_raft(gr)
+                     ->replicate(
+                       random_batches_entry(5), default_replicate_opts)
+                     .get0();
+    }
+    // step down so last entry in snapshot will be a configuration
+    auto leader_raft = get_leader_raft(gr);
+    leader_raft->step_down(leader_raft->term() + model::term_id(1)).get0();
+
+    validate_logs_replication(gr);
+    // store snapshot
+    for (auto& [_, member] : gr.get_members()) {
+        member.consensus
+          ->write_snapshot(raft::write_snapshot_cfg(
+            get_leader_raft(gr)->committed_offset(),
+            iobuf{},
+            raft::write_snapshot_cfg::should_prefix_truncate::yes))
+          .get0();
+    }
+    gr.enable_node(disabled_id);
+    auto res = get_leader_raft(gr)
+                 ->replicate(random_batches_entry(5), default_replicate_opts)
+                 .get0();
+    validate_logs_replication(gr);
+
+    wait_for(
+      10s,
+      [this, &gr] { return are_all_commit_indexes_the_same(gr); },
+      "After recovery state is consistent");
+
+    validate_logs_replication(gr);
+};
