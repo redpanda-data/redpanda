@@ -6,7 +6,6 @@ cmake_policy(SET CMP0065 OLD)
 
 set(CMAKE_VERBOSE_MAKEFILE ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--build-id=sha1")
 
 #ninja  1161.66s user 64.94s system 658% cpu 3:06.18 total
 #ninja  825.41s user 49.15s system 586% cpu 2:29.21 total
@@ -49,7 +48,7 @@ option (RP_ENABLE_DPDK "Enable DPDK support" OFF)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-set(BASE_LD_FLAGS_LIST ${RP_MARCH})
+set(BASE_LD_FLAGS_LIST "${RP_MARCH} -Wl,--build-id=sha1")
 if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "GNU")
   list(APPEND BASE_LD_FLAGS_LIST -fuse-ld=gold)
 endif()
