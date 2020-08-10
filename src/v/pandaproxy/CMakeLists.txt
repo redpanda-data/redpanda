@@ -26,6 +26,7 @@ v_cc_library(
     configuration.cc
     handlers.cc
     logger.cc
+    probe.cc
     proxy.cc
     server.cc
   DEPS

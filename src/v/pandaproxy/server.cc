@@ -1,6 +1,7 @@
 #include "pandaproxy/server.h"
 
 #include "pandaproxy/logger.h"
+#include "pandaproxy/probe.h"
 
 #include <seastar/http/function_handlers.hh>
 
@@ -61,10 +62,12 @@ struct handler_adaptor : ss::httpd::handler_base {
     handler_adaptor(
       ss::gate& pending_requests,
       server::context_t& ctx,
-      server::function_handler&& handler)
+      server::function_handler&& handler,
+      ss::httpd::path_description& path_desc)
       : _pending_requests(pending_requests)
       , _ctx(ctx)
-      , _handler(std::move(handler)) {}
+      , _handler(std::move(handler))
+      , _probe(path_desc) {}
 
     ss::future<std::unique_ptr<ss::reply>> handle(
       const ss::sstring&,
@@ -72,32 +75,37 @@ struct handler_adaptor : ss::httpd::handler_base {
       std::unique_ptr<ss::reply> rep) final {
         return ss::with_gate(
           _pending_requests,
-          [this, req{std::move(req)}, rep{std::move(rep)}]() mutable {
+          [this,
+           req{std::move(req)},
+           rep{std::move(rep)},
+           m = _probe.hist().auto_measure()]() mutable {
               server::request_t rq{std::move(req), this->_ctx};
               server::reply_t rp{std::move(rep)};
 
               return ss::with_semaphore(
-                _ctx.mem_sem,
-                get_request_size(*rq.req),
-                [this, rq{std::move(rq)}, rp{std::move(rp)}]() mutable {
-                    if (_ctx.as.abort_requested()) {
-                        set_reply_unavailable(*rp.rep);
-                        return ss::make_ready_future<
-                          std::unique_ptr<ss::reply>>(std::move(rp.rep));
-                    }
-                    return _handler(std::move(rq), std::move(rp))
-                      .then([](server::reply_t rp) {
-                          rp.rep->set_mime_type(
-                            "application/vnd.kafka.json.v2+json");
-                          return std::move(rp.rep);
-                      });
-                });
+                       _ctx.mem_sem,
+                       get_request_size(*rq.req),
+                       [this, rq{std::move(rq)}, rp{std::move(rp)}]() mutable {
+                           if (_ctx.as.abort_requested()) {
+                               set_reply_unavailable(*rp.rep);
+                               return ss::make_ready_future<
+                                 std::unique_ptr<ss::reply>>(std::move(rp.rep));
+                           }
+                           return _handler(std::move(rq), std::move(rp))
+                             .then([](server::reply_t rp) {
+                                 rp.rep->set_mime_type(
+                                   "application/vnd.kafka.json.v2+json");
+                                 return std::move(rp.rep);
+                             });
+                       })
+                .finally([m{std::move(m)}]() {});
           });
     }
 
     ss::gate& _pending_requests;
     server::context_t& _ctx;
     server::function_handler _handler;
+    probe _probe;
 };
 
 server::server(
@@ -132,7 +140,7 @@ void server::route(server::route_t r) {
     // NOTE: this pointer will be owned by data member _routes of
     // ss::httpd:server. seastar didn't use any unique ptr to express that.
     auto* handler = new handler_adaptor(
-      _pending_reqs, _ctx, std::move(r.handler));
+      _pending_reqs, _ctx, std::move(r.handler), r.path_desc);
     r.path_desc.set(_server._routes, handler);
 }
 
