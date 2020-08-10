@@ -56,8 +56,6 @@ vtools install clang
 
 vtools build cpp
 vtools build cpp --clang
-vtools build cpp --build-type dev
-vtools build cpp --build-type dev --clang
 vtools build cpp --build-type debug
 vtools build cpp --build-type debug --clang
 
