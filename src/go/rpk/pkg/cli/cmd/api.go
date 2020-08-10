@@ -4,7 +4,10 @@ import (
 	"fmt"
 	"vectorized/pkg/cli/cmd/api"
 	"vectorized/pkg/config"
+	"vectorized/pkg/kafka"
 
+	"github.com/Shopify/sarama"
+	"github.com/burdiyan/kafkautil"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
@@ -50,8 +53,12 @@ func NewApiCommand(fs afero.Fs) *cobra.Command {
 	// path, the list of brokers passed through --brokers) to deduce the
 	// actual brokers list to be used.
 	brokersClosure := deduceBrokers(fs, &configFile, &brokers)
+	producerClosure := createProducer(brokersClosure)
 	command.AddCommand(
 		api.NewTopicCommand(fs, brokersClosure),
+	)
+	command.AddCommand(
+		api.NewProduceCommand(producerClosure),
 	)
 	return command
 }
@@ -93,5 +100,22 @@ func deduceBrokers(
 			conf.Redpanda.KafkaApi.Port,
 		)
 		return append(bs, selfAddr)
+	}
+}
+
+func createProducer(
+	brokers func() []string,
+) func(bool, int32) (sarama.SyncProducer, error) {
+	return func(jvmPartitioner bool, partition int32) (sarama.SyncProducer, error) {
+		cfg := kafka.DefaultConfig()
+		if jvmPartitioner {
+			cfg.Producer.Partitioner = kafkautil.NewJVMCompatiblePartitioner
+		}
+
+		if partition > -1 {
+			cfg.Producer.Partitioner = sarama.NewManualPartitioner
+		}
+
+		return sarama.NewSyncProducer(brokers(), cfg)
 	}
 }
