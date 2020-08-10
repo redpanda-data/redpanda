@@ -74,10 +74,10 @@ public:
 
         BOOST_TEST(
           std::all_of(
-            std::cbegin(resp.topics),
-            std::cend(resp.topics),
-            [](const kafka::create_topics_response::topic& t) {
-                return t.error == kafka::error_code::none;
+            std::cbegin(resp.data.topics),
+            std::cend(resp.data.topics),
+            [](const kafka::creatable_topic_result& t) {
+                return t.error_code == kafka::error_code::none;
             }),
           fmt::format("expected no errors. received response: {}", resp));
 

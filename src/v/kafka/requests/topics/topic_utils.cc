@@ -1,18 +1,19 @@
 #include "kafka/requests/topics/topic_utils.h"
 
 #include "cluster/errc.h"
+#include "kafka/errors.h"
 
 namespace kafka {
 
 void append_cluster_results(
   const std::vector<cluster::topic_result>& cluster_results,
-  std::vector<topic_op_result>& kafka_results) {
+  std::vector<creatable_topic_result>& kafka_results) {
     std::transform(
       cluster_results.begin(),
       cluster_results.end(),
       std::back_inserter(kafka_results),
       [](const cluster::topic_result& res) {
-          return topic_op_result::from_cluster_topic_result(res);
+          return from_cluster_topic_result(res);
       });
 }
 

@@ -36,9 +36,6 @@ private:
       replication_factor_must_be_positive,
       replication_factor_must_be_odd,
       unsupported_configuration_entries>;
-
-    static response_ptr
-    encode_response(request_context&, std::vector<topic_op_result> errs);
 };
 
 struct create_topics_request final {
@@ -61,18 +58,22 @@ operator<<(std::ostream& os, const create_topics_request& r) {
 }
 
 struct create_topics_response final {
-    struct topic {
-        model::topic name;
-        error_code error;
-        std::optional<ss::sstring> error_message; // >= v1
-    };
+    using api_type = create_topics_api;
 
-    std::chrono::milliseconds throttle = std::chrono::milliseconds(0); // >= v2
-    std::vector<topic> topics;
+    create_topics_response_data data;
 
-    void decode(iobuf buf, api_version version);
+    void encode(const request_context& ctx, response& resp) {
+        data.encode(resp.writer(), ctx.header().version);
+    }
+
+    void decode(iobuf buf, api_version version) {
+        data.decode(std::move(buf), version);
+    }
 };
 
-std::ostream& operator<<(std::ostream&, const create_topics_response&);
+inline std::ostream&
+operator<<(std::ostream& os, const create_topics_response& r) {
+    return os << r.data;
+}
 
 } // namespace kafka
