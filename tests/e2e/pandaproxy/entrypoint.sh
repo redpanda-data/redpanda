@@ -50,5 +50,8 @@ swagger-cli validate swagger20.json
 # Validate Content-Type
 curl -s -D - -o /dev/null http://127.0.0.1:8082/topics | tr -d '\r' | grep '^Content-Type: application/vnd.kafka.json.v2+json$'
 
-# Test GET /topics
+# Test GET /topics (get_topics_names)
 curl -s 'http://127.0.0.1:8082/topics' | jq -e '(. | sort) == (["'"$NAMESPACE-0"'","'"$NAMESPACE-1"'"] | sort)'
+
+# Test Metrics
+curl -s 'http://127.0.0.1:9645/metrics' | grep 'vectorized_pandaproxy_request_latency_count{operation="get_topics_names",shard="0",type="histogram"}'
