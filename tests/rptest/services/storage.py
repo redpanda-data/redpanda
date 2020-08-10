@@ -69,7 +69,7 @@ class Partition:
                 (kv[1] for kv in self.segments.items())))
 
     def __repr__(self):
-        return "part-{}-{}".format(self.num, self.segments)
+        return "part-{}-{}-{}".format(self.node.name, self.num, self.segments)
 
 
 class Topic:

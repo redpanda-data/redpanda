@@ -43,6 +43,12 @@ class RedpandaService(Service):
                    backoff_sec=1,
                    err_msg="Cluster membership did not stabilize")
 
+        # verify storage is in an expected initial state
+        storage = self.storage()
+        for node in storage.nodes:
+            assert set(node.ns) == {"redpanda"}
+            assert set(node.ns["redpanda"].topics) == {"controller", "kvstore"}
+
         kafka_tools = KafkaCliTools(self)
         for topic, cfg in self._topics.items():
             self.logger.debug("Creating initial topic %s / %s", topic, cfg)
