@@ -1,6 +1,7 @@
 #include "kafka/errors.h"
 #include "kafka/requests/delete_topics_request.h"
 #include "kafka/requests/metadata_request.h"
+#include "kafka/requests/schemata/create_topics_request.h"
 #include "kafka/requests/topics/types.h"
 #include "kafka/types.h"
 #include "redpanda/application.h"
@@ -24,19 +25,19 @@ using namespace std::chrono_literals; // NOLINT
 class delete_topics_request_fixture : public redpanda_thread_fixture {
 public:
     void create_topic(ss::sstring tp, uint32_t partitions, uint16_t rf) {
-        kafka::new_topic_configuration topic;
+        kafka::creatable_topic topic;
 
-        topic.topic = model::topic(tp);
-        topic.partition_count = partitions;
+        topic.name = model::topic(tp);
+        topic.num_partitions = partitions;
         topic.replication_factor = rf;
 
-        std::vector<kafka::new_topic_configuration> topics;
+        std::vector<kafka::creatable_topic> topics;
         topics.push_back(std::move(topic));
-        auto req = kafka::create_topics_request{
+        auto req = kafka::create_topics_request{.data{
           .topics = std::move(topics),
-          .timeout = 10s,
+          .timeout_ms = 10s,
           .validate_only = false,
-        };
+        }};
 
         auto client = make_kafka_client().get0();
         client.connect().get0();

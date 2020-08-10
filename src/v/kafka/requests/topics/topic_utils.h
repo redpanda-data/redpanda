@@ -22,7 +22,7 @@ namespace kafka {
 CONCEPT(
 template<typename T> 
 concept TopicRequestItem = requires(T item) {
-    { item.topic } -> model::topic_view;
+    { item.name } -> model::topic_view;
 };)
 CONCEPT(
 template<typename Iterator> 
@@ -37,18 +37,14 @@ template<typename T>
 CONCEPT(requires TopicRequestItem<T>)
 topic_op_result
   generate_error(T item, error_code code, const ss::sstring& msg) {
-    return topic_op_result{
-      .topic = model::topic{ss::sstring(item.topic())},
-      .ec = code,
-      .err_msg = msg};
+    return topic_op_result{.topic = item.name, .ec = code, .err_msg = msg};
 }
 
 /// Generates successfull topic_op_result for single topic request item
 template<typename T>
 CONCEPT(requires TopicRequestItem<T>)
 topic_op_result generate_successfull_result(T item) {
-    return topic_op_result{
-      .topic = model::topic{ss::sstring(item.topic())}, .ec = error_code::none};
+    return topic_op_result{.topic = item.name, .ec = error_code::none};
 }
 
 /// Validates topic requests items in range with predicate,
@@ -114,20 +110,20 @@ template<typename KafkaApiTypeIter>
 CONCEPT(
     requires TopicRequestItem<typename KafkaApiTypeIter::value_type> &&
     requires(KafkaApiTypeIter it) { 
-        it->to_cluster_type(); 
+        to_cluster_type(*it); 
     }
 )
 // clang-format on
 auto to_cluster_type(KafkaApiTypeIter begin, KafkaApiTypeIter end)
-  -> std::vector<decltype(begin->to_cluster_type())> {
-    std::vector<decltype(begin->to_cluster_type())> cluster_types;
+  -> std::vector<decltype(to_cluster_type(*begin))> {
+    std::vector<decltype(to_cluster_type(*begin))> cluster_types;
     cluster_types.reserve(std::distance(begin, end));
     std::transform(
       begin,
       end,
       std::back_inserter(cluster_types),
       [](const typename KafkaApiTypeIter::value_type& kafka_type) {
-          return kafka_type.to_cluster_type();
+          return to_cluster_type(kafka_type);
       });
     return cluster_types;
 }
@@ -145,10 +141,10 @@ Iter validate_range_duplicates(Iter begin, Iter end, ErrIter out_it) {
     boost::container::flat_map<model::topic_view, uint32_t> freq;
     freq.reserve(std::distance(begin, end));
     for (auto const& r : boost::make_iterator_range(begin, end)) {
-        freq[r.topic]++;
+        freq[r.name]++;
     }
     auto valid_range_end = std::partition(
-      begin, end, [&freq](const type& item) { return freq[item.topic] == 1; });
+      begin, end, [&freq](const type& item) { return freq[item.name] == 1; });
     std::transform(valid_range_end, end, out_it, [](const type& item) {
         return generate_error(
           item, error_code::invalid_request, "Duplicated topic");
