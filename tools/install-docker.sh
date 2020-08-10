@@ -7,19 +7,25 @@ this_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/" && pwd)"
 
 if ! command -v docker; then
 
-  # add docker repo
-  dnf -y install dnf-plugins-core
-  dnf config-manager -y --add-repo https://download.docker.com/linux/fedora/docker-ce.repo
-
-  # install docker-ce
   if [ "${fedora_os_version}" -ge 31 ]; then
     # Error out if systemd.unified_cgroup_hierarcy != 0
     "${this_dir}"/cgroups-hierarchy-test.sh
+  fi
 
-    # Install via this repository
-    dnf install -y --enablerepo=docker-ce-stable --releasever=31 docker-ce-cli docker-ce
+  if [ "${fedora_os_version}" -ge 32 ]; then
+    dnf install -y moby-engine docker-compose
   else
-    dnf install -y docker-ce docker-ce-cli containerd.io
+    # add docker repo
+    dnf -y install dnf-plugins-core
+    dnf config-manager -y --add-repo https://download.docker.com/linux/fedora/docker-ce.repo
+
+    # install docker-ce
+    if [ "${fedora_os_version}" -eq 31 ]; then
+      # Install via this repository
+      dnf install -y --enablerepo=docker-ce-stable --releasever=31 docker-ce-cli docker-ce
+    else
+      dnf install -y docker-ce docker-ce-cli containerd.io
+    fi
   fi
 
   # start daemon
