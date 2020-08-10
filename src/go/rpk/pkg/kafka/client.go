@@ -8,16 +8,29 @@ import (
 	"github.com/Shopify/sarama"
 )
 
-func InitClient(brokers ...string) (sarama.Client, error) {
-	saramaConf := sarama.NewConfig()
-	saramaConf.Version = sarama.V2_4_0_0
-	saramaConf.Producer.Return.Successes = true
+func DefaultConfig() *sarama.Config {
 	timeout := 1 * time.Second
-	saramaConf.ClientID = "rpk"
-	saramaConf.Admin.Timeout = timeout
-	saramaConf.Metadata.Timeout = timeout
+	conf := sarama.NewConfig()
+
+	conf.Version = sarama.V2_4_0_0
+	conf.ClientID = "rpk"
+
+	conf.Admin.Timeout = timeout
+
+	conf.Metadata.Timeout = timeout
+
+	conf.Producer.RequiredAcks = sarama.WaitForAll
+	conf.Producer.Retry.Backoff = 2 * time.Second
+	conf.Producer.Retry.Max = 3
+	conf.Producer.Return.Successes = true
+	conf.Producer.Timeout = timeout
+
+	return conf
+}
+
+func InitClient(brokers ...string) (sarama.Client, error) {
 	// sarama shuffles the addresses, so there's no need to do it.
-	return sarama.NewClient(brokers, saramaConf)
+	return sarama.NewClient(brokers, DefaultConfig())
 }
 
 /*
@@ -78,7 +91,6 @@ func HighWatermarks(
 			wg.Done()
 
 		}(leader, req)
-
 	}
 
 	wg.Wait()
