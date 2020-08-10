@@ -1,3 +1,4 @@
+#include "kafka/requests/schemata/create_topics_response.h"
 #define BOOST_TEST_MODULE utils
 #include "kafka/requests/topics/topic_utils.h"
 #include "model/fundamental.h"
@@ -115,7 +116,7 @@ using test_validators = make_validator_types<
 BOOST_AUTO_TEST_CASE(
   shall_fill_vector_with_errors_and_return_iterator_to_end_of_valid_range) {
     auto requests = mixed_requests();
-    std::vector<topic_op_result> errs;
+    std::vector<creatable_topic_result> errs;
     auto valid_range_end = validate_requests_range(
       requests.begin(),
       requests.end(),
@@ -126,8 +127,9 @@ BOOST_AUTO_TEST_CASE(
     BOOST_REQUIRE_EQUAL(errs.size(), 2);
     for (auto const& e : errs) {
         BOOST_TEST(
-          (int8_t)e.ec == (int8_t)kafka::error_code::invalid_partitions);
-        BOOST_REQUIRE_EQUAL(*(e.err_msg), "Partitions count is invalid");
+          (int8_t)e.error_code
+          == (int8_t)kafka::error_code::invalid_partitions);
+        BOOST_REQUIRE_EQUAL(*(e.error_message), "Partitions count is invalid");
     }
 
     BOOST_REQUIRE_EQUAL(std::distance(requests.begin(), valid_range_end), 3);
@@ -140,7 +142,7 @@ BOOST_AUTO_TEST_CASE(
 
 BOOST_AUTO_TEST_CASE(shall_return_no_errors) {
     auto requests = valid_requests();
-    std::vector<topic_op_result> errs;
+    std::vector<creatable_topic_result> errs;
     auto valid_range_end = validate_requests_range(
       requests.begin(),
       requests.end(),
@@ -154,7 +156,7 @@ BOOST_AUTO_TEST_CASE(shall_return_no_errors) {
 
 BOOST_AUTO_TEST_CASE(shall_generate_errors_for_duplicated_topics) {
     auto requests = duplicated_requests();
-    std::vector<topic_op_result> errs;
+    std::vector<creatable_topic_result> errs;
     auto valid_range_end = validate_range_duplicates(
       requests.begin(), requests.end(), std::back_inserter(errs));
 
@@ -169,7 +171,7 @@ BOOST_AUTO_TEST_CASE(shall_generate_errors_for_duplicated_topics) {
 
 BOOST_AUTO_TEST_CASE(shall_validate_requests_with_all_validators) {
     auto requests = mixed_requests();
-    std::vector<topic_op_result> errs;
+    std::vector<creatable_topic_result> errs;
     auto valid_range_end = validate_requests_range(
       requests.begin(),
       requests.end(),
@@ -188,7 +190,7 @@ BOOST_AUTO_TEST_CASE(shall_validate_requests_with_all_validators) {
 
 BOOST_AUTO_TEST_CASE(shall_return_errors_for_all_requests) {
     auto requests = invalid_requests();
-    std::vector<topic_op_result> errs;
+    std::vector<creatable_topic_result> errs;
     auto valid_range_end = validate_requests_range(
       requests.begin(),
       requests.end(),
