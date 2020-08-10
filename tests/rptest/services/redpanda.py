@@ -26,9 +26,15 @@ class RedpandaService(Service):
         },
     }
 
-    def __init__(self, context, num_brokers, extra_rp_conf=None, topics=None):
+    def __init__(self,
+                 context,
+                 num_brokers,
+                 extra_rp_conf=None,
+                 topics=None,
+                 log_level='info'):
         super(RedpandaService, self).__init__(context, num_nodes=num_brokers)
         self._extra_rp_conf = extra_rp_conf
+        self._log_level = log_level
         self._topics = topics or dict()
 
     def start(self):
@@ -60,6 +66,8 @@ class RedpandaService(Service):
 
         cmd = "nohup {} ".format(self.redpanda_binary())
         cmd += "--redpanda-cfg {} ".format(RedpandaService.CONFIG_FILE)
+        cmd += "--default-log-level {} ".format(self._log_level)
+        cmd += "--logger-log-level=exception=debug "
         cmd += ">> {0} 2>&1 &".format(RedpandaService.STDOUT_STDERR_CAPTURE)
 
         self.logger.info(
