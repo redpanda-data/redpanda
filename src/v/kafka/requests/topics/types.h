@@ -2,6 +2,7 @@
 #include "cluster/namespace.h"
 #include "cluster/types.h"
 #include "kafka/errors.h"
+#include "kafka/requests/schemata/create_topics_request.h"
 #include "model/fundamental.h"
 
 #include <absl/container/flat_hash_map.h>
@@ -23,29 +24,8 @@ struct topic_op_result {
     }
 };
 
-/// \brief Partition assignment used in Kafka protocol.
-/// It maps the partition id to node_id
-struct partition_assignment {
-    model::partition_id partition;
-    std::vector<model::node_id> assignments;
-};
+absl::flat_hash_map<ss::sstring, ss::sstring>
+config_map(const std::vector<createable_topic_config>& config);
+cluster::topic_configuration to_cluster_type(const creatable_topic& t);
 
-struct config_entry {
-    ss::sstring name;
-    ss::sstring value;
-};
-
-/// \brief Part of CreateTopics request from Kafka API
-/// that describes single topic configuration
-struct new_topic_configuration {
-    model::topic topic;
-    int32_t partition_count;
-    int16_t replication_factor;
-    std::vector<partition_assignment> assignments;
-    std::vector<config_entry> config;
-
-    absl::flat_hash_map<ss::sstring, ss::sstring> config_map() const;
-
-    cluster::topic_configuration to_cluster_type() const;
-};
 } // namespace kafka

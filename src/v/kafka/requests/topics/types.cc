@@ -22,11 +22,13 @@
 namespace kafka {
 
 absl::flat_hash_map<ss::sstring, ss::sstring>
-new_topic_configuration::config_map() const {
+config_map(const std::vector<createable_topic_config>& config) {
     absl::flat_hash_map<ss::sstring, ss::sstring> ret;
     ret.reserve(config.size());
     for (const auto& c : config) {
-        ret.emplace(c.name, c.value);
+        if (c.value) {
+            ret.emplace(c.name, *c.value);
+        }
     }
     return ret;
 }
@@ -61,14 +63,11 @@ static tristate<T> get_tristate_value(
     return tristate<T>(std::make_optional<T>(*v));
 }
 
-cluster::topic_configuration new_topic_configuration::to_cluster_type() const {
+cluster::topic_configuration to_cluster_type(const creatable_topic& t) {
     auto cfg = cluster::topic_configuration(
-      cluster::kafka_namespace,
-      model::topic{ss::sstring(topic())},
-      partition_count,
-      replication_factor);
+      cluster::kafka_namespace, t.name, t.num_partitions, t.replication_factor);
 
-    auto config_entries = config_map();
+    auto config_entries = config_map(t.configs);
     // Parse topic configuration
     cfg.compression = get_config_value<model::compression>(
       config_entries, "compression.type");

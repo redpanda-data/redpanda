@@ -8,79 +8,79 @@
 using namespace kafka; // NOLINT
 namespace {
 struct test_request {
-    model::topic_view topic;
-    int32_t partitions;
+    model::topic_view name;
+    int32_t num_partitions;
     int16_t replication_factor;
 };
 std::vector<test_request> valid_requests() {
     return {
-      {.topic = model::topic_view{"tp_1"},
-       .partitions = 2,
+      {.name = model::topic_view{"tp_1"},
+       .num_partitions = 2,
        .replication_factor = 3},
-      {.topic = model::topic_view{"tp_2"},
-       .partitions = 8,
+      {.name = model::topic_view{"tp_2"},
+       .num_partitions = 8,
        .replication_factor = 5},
-      {.topic = model::topic_view{"tp_3"},
-       .partitions = 6,
+      {.name = model::topic_view{"tp_3"},
+       .num_partitions = 6,
        .replication_factor = 3},
-      {.topic = model::topic_view{"tp_4"},
-       .partitions = 4,
+      {.name = model::topic_view{"tp_4"},
+       .num_partitions = 4,
        .replication_factor = 1},
     };
 }
 
 std::vector<test_request> mixed_requests() {
     return {
-      {.topic = model::topic_view{"tp_1"},
-       .partitions = -2,
+      {.name = model::topic_view{"tp_1"},
+       .num_partitions = -2,
        .replication_factor = 3}, // invalid partition
-      {.topic = model::topic_view{"tp_2"},
-       .partitions = 8,
+      {.name = model::topic_view{"tp_2"},
+       .num_partitions = 8,
        .replication_factor = 5},
-      {.topic = model::topic_view{"tp_3"},
-       .partitions = 8,
+      {.name = model::topic_view{"tp_3"},
+       .num_partitions = 8,
        .replication_factor = 0}, // invalid replication_factor
-      {.topic = model::topic_view{"tp_4"},
-       .partitions = 0,
+      {.name = model::topic_view{"tp_4"},
+       .num_partitions = 0,
        .replication_factor = 1}, // invalid partition
-      {.topic = model::topic_view{"tp_5"},
-       .partitions = 7,
+      {.name = model::topic_view{"tp_5"},
+       .num_partitions = 7,
        .replication_factor = 3},
     };
 }
 std::vector<test_request> invalid_requests() {
     return {
-      {.topic = model::topic_view{"tp_1"},
-       .partitions = -2,
+      {.name = model::topic_view{"tp_1"},
+       .num_partitions = -2,
        .replication_factor = 3},
-      {.topic = model::topic_view{"tp_2"},
-       .partitions = 0,
+      {.name = model::topic_view{"tp_2"},
+       .num_partitions = 0,
        .replication_factor = 5},
-      {.topic = model::topic_view{"tp_3"},
-       .partitions = 8,
+      {.name = model::topic_view{"tp_3"},
+       .num_partitions = 8,
        .replication_factor = 0},
     };
 }
 
 std::vector<test_request> duplicated_requests() {
     return {
-      {.topic = model::topic_view{"tp_1"},
-       .partitions = 2,
+      {.name = model::topic_view{"tp_1"},
+       .num_partitions = 2,
        .replication_factor = 3},
-      {.topic = model::topic_view{"tp_2"},
-       .partitions = 8,
+      {.name = model::topic_view{"tp_2"},
+       .num_partitions = 8,
        .replication_factor = 5},
-      {.topic = model::topic_view{"tp_3"},
-       .partitions = 6,
+      {.name = model::topic_view{"tp_3"},
+       .num_partitions = 6,
        .replication_factor = 3},
-      {.topic = model::topic_view{"tp_4"},
-       .partitions = 4,
+      {.name = model::topic_view{"tp_4"},
+       .num_partitions = 4,
        .replication_factor = 1},
-      {.topic = model::topic_view{"tp_1"},
-       .partitions = 2,
+      {.name = model::topic_view{"tp_1"},
+       .num_partitions = 2,
        .replication_factor = 3},
-      {.topic = model::topic_view{"tp_2"},
-       .partitions = 8,
+      {.name = model::topic_view{"tp_2"},
+       .num_partitions = 8,
        .replication_factor = 5},
     };
 }
@@ -91,7 +91,7 @@ struct partitions_validator {
     static constexpr const char* error_message = "Partitions count is invalid";
 
     static bool is_valid(const test_request& r) {
-        return r.partitions > 0 && r.partitions < 10;
+        return r.num_partitions > 0 && r.num_partitions < 10;
     }
 };
 
@@ -133,8 +133,8 @@ BOOST_AUTO_TEST_CASE(
     BOOST_REQUIRE_EQUAL(std::distance(requests.begin(), valid_range_end), 3);
     for (auto r :
          boost::make_iterator_range(requests.begin(), valid_range_end)) {
-        BOOST_REQUIRE_NE(r.topic, "tp_1");
-        BOOST_REQUIRE_NE(r.topic, "tp_4");
+        BOOST_REQUIRE_NE(r.name, "tp_1");
+        BOOST_REQUIRE_NE(r.name, "tp_4");
     }
 };
 
@@ -162,8 +162,8 @@ BOOST_AUTO_TEST_CASE(shall_generate_errors_for_duplicated_topics) {
     BOOST_REQUIRE_EQUAL(std::distance(requests.begin(), valid_range_end), 2);
     for (auto r :
          boost::make_iterator_range(requests.begin(), valid_range_end)) {
-        BOOST_REQUIRE_NE(r.topic, "tp_1");
-        BOOST_REQUIRE_NE(r.topic, "tp_2");
+        BOOST_REQUIRE_NE(r.name, "tp_1");
+        BOOST_REQUIRE_NE(r.name, "tp_2");
     }
 };
 
@@ -180,9 +180,9 @@ BOOST_AUTO_TEST_CASE(shall_validate_requests_with_all_validators) {
     BOOST_REQUIRE_EQUAL(std::distance(requests.begin(), valid_range_end), 2);
     for (auto r :
          boost::make_iterator_range(requests.begin(), valid_range_end)) {
-        BOOST_REQUIRE_NE(r.topic, "tp_1");
-        BOOST_REQUIRE_NE(r.topic, "tp_3");
-        BOOST_REQUIRE_NE(r.topic, "tp_4");
+        BOOST_REQUIRE_NE(r.name, "tp_1");
+        BOOST_REQUIRE_NE(r.name, "tp_3");
+        BOOST_REQUIRE_NE(r.name, "tp_4");
     }
 };
 

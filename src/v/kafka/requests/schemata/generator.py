@@ -118,6 +118,14 @@ path_type_map = {
     "DeleteTopicsRequestData": {
         "TimeoutMs": ("std::chrono::milliseconds", "int32"),
     },
+    "CreateTopicsRequestData": {
+        "timeoutMs": ("std::chrono::milliseconds", "int32"),
+        "Topics": {
+            "Assignments": {
+                "PartitionIndex": ("model::partition_id", "int32"),
+            },
+        },
+    },
     "FindCoordinatorRequestData": {
         "KeyType": ("kafka::coordinator_type", "int8"),
     },
