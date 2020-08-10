@@ -29,6 +29,12 @@ class KafkaCliTools:
             args += ["--config", "cleanup.policy={}".format(cleanup_policy)]
         return self._run("kafka-topics.sh", args)
 
+    def delete_topic(self, topic):
+        self._redpanda.logger.debug("Deleting topic: %s", topic)
+        args = ["--delete"]
+        args += ["--topic", topic]
+        return self._run("kafka-topics.sh", args)
+
     def list_topics(self):
         self._redpanda.logger.debug("Listing topics")
         args = ["--list"]
