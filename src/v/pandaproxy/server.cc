@@ -80,6 +80,11 @@ struct handler_adaptor : ss::httpd::handler_base {
                 _ctx.mem_sem,
                 get_request_size(*rq.req),
                 [this, rq{std::move(rq)}, rp{std::move(rp)}]() mutable {
+                    if (_ctx.as.abort_requested()) {
+                        set_reply_unavailable(*rp.rep);
+                        return ss::make_ready_future<
+                          std::unique_ptr<ss::reply>>(std::move(rp.rep));
+                    }
                     return _handler(std::move(rq), std::move(rp))
                       .then([](server::reply_t rp) {
                           rp.rep->set_mime_type(
@@ -143,8 +148,9 @@ ss::future<> server::start() {
 }
 
 ss::future<> server::stop() {
-    return _pending_reqs.close().finally(
-      [this]() mutable { return _server.stop(); });
+    return _pending_reqs.close()
+      .finally([this]() { return _ctx.as.request_abort(); })
+      .finally([this]() mutable { return _server.stop(); });
 }
 
 } // namespace pandaproxy
