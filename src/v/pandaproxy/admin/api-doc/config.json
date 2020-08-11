@@ -1,0 +1,14 @@
+"/v1/config": {
+  "get": {
+    "summary": "pandaproxy server configuration",
+    "operationId": "get_config",
+    "produces": [
+      "application/json"
+    ],
+    "responses": {
+      "200": {
+        "description": "Configuration"
+      }
+    }
+  }
+}

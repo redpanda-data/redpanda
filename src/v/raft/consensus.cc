@@ -441,8 +441,7 @@ ss::future<std::error_code> consensus::add_group_member(model::broker node) {
               cfg.nodes.push_back(std::move(node));
 
               // append new configuration to log
-              return replicate_configuration(std::move(u), std::move(cfg))
-                .then([] { return std::error_code(errc::success); });
+              return replicate_configuration(std::move(u), std::move(cfg));
           }
           return ss::make_ready_future<std::error_code>(errc::success);
       });
@@ -1061,9 +1060,12 @@ consensus::do_write_snapshot(model::offset last_included_index, iobuf&& data) {
       });
 }
 
-ss::future<> consensus::replicate_configuration(
+ss::future<std::error_code> consensus::replicate_configuration(
   ss::semaphore_units<> u, group_configuration cfg) {
     // under the _op_sem lock
+    if (!is_leader()) {
+        return ss::make_ready_future<std::error_code>(errc::not_leader);
+    }
     vlog(_ctxlog.debug, "Replicating group configuration {}", cfg);
     auto batches = details::serialize_configuration_as_batches(std::move(cfg));
     for (auto& b : batches) {
@@ -1074,7 +1076,8 @@ ss::future<> consensus::replicate_configuration(
       _self,
       meta(),
       model::make_memory_record_batch_reader(std::move(batches)));
-    return _batcher.do_flush({}, std::move(req), std::move(u), std::move(seqs));
+    return _batcher.do_flush({}, std::move(req), std::move(u), std::move(seqs))
+      .then([] { return std::error_code(errc::success); });
 }
 
 append_entries_reply

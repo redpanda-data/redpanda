@@ -43,6 +43,12 @@ class RedpandaService(Service):
                    backoff_sec=1,
                    err_msg="Cluster membership did not stabilize")
 
+        # verify storage is in an expected initial state
+        storage = self.storage()
+        for node in storage.nodes:
+            assert set(node.ns) == {"redpanda"}
+            assert set(node.ns["redpanda"].topics) == {"controller", "kvstore"}
+
         kafka_tools = KafkaCliTools(self)
         for topic, cfg in self._topics.items():
             self.logger.debug("Creating initial topic %s / %s", topic, cfg)
@@ -91,7 +97,7 @@ class RedpandaService(Service):
         # TODO: i haven't yet figured out what the blessed way of getting
         # parameters into the test are to control which build we use. but they
         # are all available under the /opt/v/build directory.
-        return "/opt/v/build/debug/clang/dist/local/bin/redpanda"
+        return "/opt/v/build/debug/clang/dist/local/redpanda/bin/redpanda"
 
     def pids(self, node):
         """Return process ids associated with running processes on the given node."""
