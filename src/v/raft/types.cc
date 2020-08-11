@@ -32,10 +32,11 @@ group_configuration::find_in_learners(model::node_id id) {
 }
 
 bool group_configuration::contains_broker(model::node_id id) const {
-    auto find_by_id = [id](const model::broker b) { return b.id() == id; };
-    return std::any_of(std::cbegin(nodes), std::cend(nodes), find_by_id)
-           || std::any_of(
-             std::cbegin(learners), std::cend(learners), find_by_id);
+    auto joined_range = boost::join(nodes, learners);
+    return std::any_of(
+      std::cbegin(joined_range),
+      std::cend(joined_range),
+      [id](const model::broker& b) { return b.id() == id; });
 }
 
 bool operator==(const group_configuration& a, const group_configuration& b) {
