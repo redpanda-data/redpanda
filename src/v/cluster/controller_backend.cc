@@ -74,9 +74,11 @@ void controller_backend::start_topics_reconciliation_loop() {
                           return reconcile_topics();
                       });
                 })
-                .handle_exception_type([](
-                                         const ss::abort_requested_exception&) {
-                    vlog(clusterlog.info, "Waiting for topic changes aborted");
+                .handle_exception([](const std::exception_ptr& e) {
+                    vlog(
+                      clusterlog.error,
+                      "Error while reconciling topics - {}",
+                      e);
                 });
           });
     });
