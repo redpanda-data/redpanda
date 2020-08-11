@@ -3,6 +3,7 @@
 #include "kafka/client.h"
 #include "seastarx.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/semaphore.hh>
@@ -28,6 +29,7 @@ class server {
 public:
     struct context_t {
         ss::semaphore mem_sem;
+        ss::abort_source as;
         kafka::client& client;
     };
 
@@ -73,7 +75,6 @@ public:
 private:
     ss::httpd::http_server _server;
     ss::gate _pending_reqs;
-
     ss::socket_address _addr;
     ss::api_registry_builder20 _api20;
     bool _has_routes;
