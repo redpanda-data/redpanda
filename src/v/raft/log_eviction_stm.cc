@@ -48,7 +48,13 @@ log_eviction_stm::handle_deletion_notification(model::offset last_evicted) {
     // in an abort source
     _previous_eviction_offset = last_evicted;
 
-    return _raft->write_snapshot(write_snapshot_cfg(
-      last_evicted, iobuf(), write_snapshot_cfg::should_prefix_truncate::no));
+    return _raft->events()
+      .wait(last_evicted, model::no_timeout, _as)
+      .then([this, last_evicted]() mutable {
+          return _raft->write_snapshot(write_snapshot_cfg(
+            last_evicted,
+            iobuf(),
+            write_snapshot_cfg::should_prefix_truncate::no));
+      });
 }
 } // namespace raft
