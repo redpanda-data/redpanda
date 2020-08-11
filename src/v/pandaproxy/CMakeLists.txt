@@ -13,10 +13,10 @@ seastar_generate_swagger(
 )
 
 seastar_generate_swagger(
-  TARGET api_topics_swagger
-  VAR api_topics_swagger_file
-  IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/api/api-doc/topics.json
-  OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/api/api-doc/topics.json.h
+  TARGET get_topics_names_swagger
+  VAR get_topics_names_swagger_file
+  IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/api/api-doc/get_topics_names.json
+  OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/api/api-doc/get_topics_names.json.h
 )
 
 find_package(Base64)
@@ -46,7 +46,7 @@ set_property(TARGET pandaproxy PROPERTY POSITION_INDEPENDENT_CODE ON)
 add_dependencies(v_rest_application
   admin_config_swagger
   api_health_swagger
-  api_topics_swagger
+  get_topics_names_swagger
 )
 
 if(CMAKE_BUILD_TYPE MATCHES Release)
