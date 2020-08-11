@@ -152,7 +152,7 @@ def pkg(build_type, clang, conf, format):
 
     vconfig.product = "redpanda"
     packaging.create_packages(vconfig, format)
-    if f == "tar":
+    if f == "tar" or f == 'dir':
         vconfig.product = "pandaproxy"
         packaging.create_packages(vconfig, format)
 

@@ -97,7 +97,7 @@ class RedpandaService(Service):
         # TODO: i haven't yet figured out what the blessed way of getting
         # parameters into the test are to control which build we use. but they
         # are all available under the /opt/v/build directory.
-        return "/opt/v/build/debug/clang/dist/local/bin/redpanda"
+        return "/opt/v/build/debug/clang/dist/local/redpanda/bin/redpanda"
 
     def pids(self, node):
         """Return process ids associated with running processes on the given node."""

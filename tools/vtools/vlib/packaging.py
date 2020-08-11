@@ -389,7 +389,7 @@ def create_packages(vconfig, formats):
     formats = set(formats)
 
     if "dir" in formats:
-        local_dir = os.path.join(dist_path, "local")
+        local_dir = os.path.join(dist_path, f"local/{vconfig.product}")
         _relocatable_dir(local_dir, execs, configs, admin_api_swag, api_swag,
                          vconfig)
 

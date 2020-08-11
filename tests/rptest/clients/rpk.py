@@ -55,4 +55,4 @@ class RpkTool:
         # TODO: i haven't yet figured out what the blessed way of getting
         # parameters into the test are to control which build we use. but they
         # are all available under the /opt/v/build directory.
-        return "/opt/v/build/debug/clang/dist/local/bin/rpk"
+        return "/opt/v/build/debug/clang/dist/local/redpanda/bin/rpk"
