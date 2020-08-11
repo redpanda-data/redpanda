@@ -4,6 +4,7 @@
 
 #include <seastar/http/function_handlers.hh>
 
+#include <charconv>
 #include <exception>
 
 namespace pandaproxy {
@@ -29,6 +30,32 @@ std::unique_ptr<ss::httpd::reply> exception_reply(std::exception_ptr e) {
     }
 }
 
+/**
+ * Search for the first header of a given name
+ * @param name the header name
+ * @return a string_view to the header value, if it exists or empty string_view
+ */
+std::string_view
+get_header(const ss::httpd::request& req, const ss::sstring& name) {
+    auto res = req._headers.find(name);
+    if (res == req._headers.end()) {
+        return std::string_view();
+    }
+    return res->second;
+}
+
+size_t get_request_size(const ss::httpd::request& req) {
+    const size_t fixed_overhead{1024};
+
+    auto content_length_hdr{get_header(req, "Content-Length")};
+    size_t content_length{0};
+    // Ignore failure, content_length is unchanged
+    std::from_chars(
+      content_length_hdr.begin(), content_length_hdr.end(), content_length);
+
+    return fixed_overhead + content_length;
+}
+
 // server::function_handler to seastar::httpd::handler
 struct handler_adaptor : ss::httpd::handler_base {
     handler_adaptor(
@@ -49,10 +76,16 @@ struct handler_adaptor : ss::httpd::handler_base {
               server::request_t rq{std::move(req), this->_ctx};
               server::reply_t rp{std::move(rep)};
 
-              return _handler(std::move(rq), std::move(rp))
-                .then([](server::reply_t rp) {
-                    rp.rep->set_mime_type("application/vnd.kafka.json.v2+json");
-                    return std::move(rp.rep);
+              return ss::with_semaphore(
+                _ctx.mem_sem,
+                get_request_size(*rq.req),
+                [this, rq{std::move(rq)}, rp{std::move(rp)}]() mutable {
+                    return _handler(std::move(rq), std::move(rp))
+                      .then([](server::reply_t rp) {
+                          rp.rep->set_mime_type(
+                            "application/vnd.kafka.json.v2+json");
+                          return std::move(rp.rep);
+                      });
                 });
           });
     }
@@ -72,7 +105,7 @@ server::server(
   , _addr(addr)
   , _api20(std::move(api20))
   , _has_routes(false)
-  , _ctx(ctx) {
+  , _ctx(std::move(ctx)) {
     _api20.set_api_doc(_server._routes);
     _api20.register_api_file(_server._routes, "header");
 }

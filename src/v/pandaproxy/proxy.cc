@@ -6,6 +6,7 @@
 #include "pandaproxy/handlers.h"
 
 #include <seastar/core/future-util.hh>
+#include <seastar/core/memory.hh>
 #include <seastar/http/api_docs.hh>
 
 namespace pandaproxy {
@@ -28,7 +29,7 @@ std::vector<server::route_t> get_proxy_routes() {
 }
 
 static server::context_t make_context(kafka::client& client) {
-    return server::context_t{client};
+    return server::context_t{ss::memory::stats().free_memory(), client};
 }
 
 proxy::proxy(
