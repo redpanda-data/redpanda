@@ -72,6 +72,10 @@ public:
         return fmt::format("{}/{}", _base_dir, _ntp.path());
     }
 
+    std::filesystem::path topic_directory() const {
+        return std::filesystem::path(_base_dir) / _ntp.topic_path();
+    }
+
 private:
     model::ntp _ntp;
     /// \brief currently this is the basedir. In the future

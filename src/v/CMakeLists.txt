@@ -3,6 +3,7 @@ include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
 # libraries
 add_subdirectory(test_utils)
+add_subdirectory(ssx)
 add_subdirectory(finjector)
 add_subdirectory(hashing)
 add_subdirectory(random)
@@ -19,6 +20,7 @@ add_subdirectory(raft)
 add_subdirectory(cluster)
 add_subdirectory(kafka)
 add_subdirectory(reflection)
+add_subdirectory(pandaproxy)
 
 include(GetGitRevisionDescription)
 get_git_head_revision(GIT_REFSPEC GIT_SHA1)

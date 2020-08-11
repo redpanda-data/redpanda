@@ -49,7 +49,7 @@ void rjson_serialize(
 void rjson_serialize(rapidjson::Writer<rapidjson::StringBuffer>& w, double v);
 
 void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w, const ss::sstring& v);
+  rapidjson::Writer<rapidjson::StringBuffer>& w, std::string_view s);
 
 void rjson_serialize(
   rapidjson::Writer<rapidjson::StringBuffer>& w, const ss::socket_address& v);
@@ -77,8 +77,14 @@ void rjson_serialize(
     rjson_serialize(w, v());
 }
 
+template<typename T, typename A>
 void rjson_serialize(
-  rapidjson::Writer<rapidjson::StringBuffer>& w,
-  const std::vector<ss::sstring>& v);
+  rapidjson::Writer<rapidjson::StringBuffer>& w, const std::vector<T, A>& v) {
+    w.StartArray();
+    for (const auto& e : v) {
+        rjson_serialize(w, e);
+    }
+    w.EndArray();
+}
 
 } // namespace json

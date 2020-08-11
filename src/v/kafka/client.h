@@ -1,3 +1,5 @@
+#pragma once
+
 #include "kafka/protocol_utils.h"
 #include "kafka/requests/api_versions_request.h"
 #include "kafka/requests/create_topics_request.h"
@@ -52,7 +54,7 @@ private:
               [this](std::optional<size_t> sz) {
                   auto size = sz.value();
                   return _in.read_exactly(sizeof(correlation_id))
-                    .then([this, size](ss::temporary_buffer<char> buf) {
+                    .then([this, size](ss::temporary_buffer<char>) {
                         // drops the correlation id on the floor
                         auto remaining = size - sizeof(correlation_id);
                         return read_iobuf_exactly(_in, remaining);

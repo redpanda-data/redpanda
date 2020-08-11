@@ -191,7 +191,7 @@ private:
     void dispatch_vote();
     /// Replicates configuration to other nodes,
     //  caller have to pass in _op_sem semaphore units
-    ss::future<>
+    ss::future<std::error_code>
     replicate_configuration(ss::semaphore_units<> u, group_configuration);
 
     ss::future<> maybe_update_follower_commit_idx(model::offset);

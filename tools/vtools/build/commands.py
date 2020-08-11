@@ -150,7 +150,11 @@ def pkg(build_type, clang, conf, format):
         if f not in ['tar', 'deb', 'rpm', 'dir']:
             logging.fatal(f'Unknown format {format}')
 
-    packaging.create_packages(vconfig, format, vconfig.build_type)
+    vconfig.product = "redpanda"
+    packaging.create_packages(vconfig, format)
+    if f == "tar" or f == 'dir':
+        vconfig.product = "pandaproxy"
+        packaging.create_packages(vconfig, format)
 
 
 @build.command(short_help='build vectorized java applications')
