@@ -4,6 +4,7 @@
 
 #include <iterator>
 
+// See io_iterator_consumer for iterator validity notes.
 namespace details {
 class io_byte_iterator {
 public:

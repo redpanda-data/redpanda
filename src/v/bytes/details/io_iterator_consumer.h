@@ -10,6 +10,29 @@
 
 #include <algorithm>
 
+/*
+ * It is common for an io_iterator_consumer to be initialized with the begin and
+ * end iterator of an iobuf (e.g. see iobuf_parser). However, care must be taken
+ * to maintain iterator validity. If the associated iobuf moves, then iterators
+ * that point at container elements are not invalided, but the saved
+ * iobuf::end() will be invalidated. The solution used in iobuf_parser is to
+ * wrap the iobuf and iterator consumer in a heap allocated state structure
+ * which can be moved without altering the saved iobuf::end() iterator.
+ *
+ * Alteratives:
+ *
+ * - Store std::distance(begin, end) instead of end. This would eliminate the
+ *   issue, but requires o(n) operations in the general case. we could switch to
+ *   a constant-size operation intrusive list, and special case of iterating
+ *   over the entire iobuf and thus avoid std::distance in most cases.
+ *
+ * - Another option would be to add an interface for changing the end iterator
+ *   that could be used by the moving context.
+ *
+ * - Both cases would need to be integrated transitively with io_byte_iterator
+ *   since instances of this are built by io_iterator_consumer::end() and leak
+ *   out the underlying stored iobuf::end() iterator.
+ */
 namespace details {
 class io_iterator_consumer {
 public:
