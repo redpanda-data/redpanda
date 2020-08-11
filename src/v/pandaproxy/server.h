@@ -5,6 +5,7 @@
 
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
+#include <seastar/core/semaphore.hh>
 #include <seastar/http/api_docs.hh>
 #include <seastar/http/handlers.hh>
 #include <seastar/http/httpd.hh>
@@ -26,6 +27,7 @@ namespace pandaproxy {
 class server {
 public:
     struct context_t {
+        ss::semaphore mem_sem;
         kafka::client& client;
     };
 
