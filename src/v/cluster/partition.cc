@@ -1,13 +1,16 @@
 #include "cluster/partition.h"
 
+#include "cluster/logger.h"
+
 namespace cluster {
 
 partition::partition(consensus_ptr r)
-  : _raft(r) {}
-
-partition::partition(consensus_ptr r, raft::log_eviction_stm stm)
-  : _raft(r)
-  , _nop_stm(std::make_unique<raft::log_eviction_stm>(std::move(stm))) {}
+  : _raft(r) {
+    if (_raft->log_config().is_collectable()) {
+        _nop_stm = std::make_unique<raft::log_eviction_stm>(
+          _raft.get(), clusterlog);
+    }
+}
 
 ss::future<> partition::start() {
     auto f = _raft->start();

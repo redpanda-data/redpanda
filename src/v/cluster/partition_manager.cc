@@ -32,10 +32,6 @@ ss::future<consensus_ptr> partition_manager::manage(
           return _raft_manager.local()
             .create_group(group, std::move(nodes), log)
             .then([this, log, group](ss::lw_shared_ptr<raft::consensus> c) {
-                if (log.config().is_collectable()) {
-                    auto p = ss::make_lw_shared<partition>(
-                      c, raft::log_eviction_stm(c.get(), clusterlog));
-                }
                 auto p = ss::make_lw_shared<partition>(c);
                 _ntp_table.emplace(log.config().ntp(), p);
                 _raft_table.emplace(group, p);
