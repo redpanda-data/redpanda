@@ -28,7 +28,9 @@ set(schemata
   list_groups_request.json
   list_groups_response.json
   describe_groups_request.json
-  describe_groups_response.json)
+  describe_groups_response.json
+  create_topics_request.json
+  create_topics_response.json)
 
 set(srcs)
 foreach(schema ${schemata})

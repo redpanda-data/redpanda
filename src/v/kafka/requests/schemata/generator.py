@@ -206,6 +206,11 @@ STRUCT_TYPES = [
     "ListedGroup",
     "DescribedGroup",
     "DescribedGroupMember",
+    "CreatableTopic",
+    "CreatableTopicResult",
+    "CreatableReplicaAssignment",
+    "CreateableTopicConfig",
+    "CreatableTopicConfigs",
 ]
 
 SCALAR_TYPES = list(basic_type_map.keys())
@@ -259,7 +264,6 @@ class VersionRange:
 
 def snake_case(name):
     """Convert camel to snake case"""
-    assert name[0].isupper(), name
     return name[0].lower() + "".join(
         [f"_{c.lower()}" if c.isupper() else c for c in name[1:]])
 
@@ -756,6 +760,8 @@ SCHEMA = {
                     "enum": ALLOWED_TYPES,
                 },
                 "versions": {"$ref": "#/definitions/versions"},
+                "taggedVersions": {"$ref": "#/definitions/versions"},
+                "tag": {"type": "integer"},
                 "nullableVersions": {"$ref": "#/definitions/versions"},
                 "entityType": {
                     "type": "string",
