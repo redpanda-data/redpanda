@@ -41,6 +41,11 @@ ss::future<consensus_ptr> partition_manager::manage(
       });
 }
 
+ss::future<> partition_manager::stop() {
+    return ss::parallel_for_each(
+      _ntp_table, [](auto& p) { return p.second->stop(); });
+}
+
 ss::future<> partition_manager::remove(const model::ntp& ntp) {
     auto partition = get(ntp);
 
@@ -58,6 +63,7 @@ ss::future<> partition_manager::remove(const model::ntp& ntp) {
 
     return _raft_manager.local()
       .stop_group(partition->raft())
+      .then([partition] { return partition->stop(); })
       .then([this, ntp] { return _storage.log_mgr().remove(ntp); })
       .finally([partition] {}); // in the end remove partition
 }
