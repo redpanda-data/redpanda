@@ -1,7 +1,9 @@
 #include "kafka/requests/produce_request.h"
 
 #include "bytes/iobuf.h"
+#include "cluster/metadata_cache.h"
 #include "cluster/namespace.h"
+#include "cluster/partition_manager.h"
 #include "kafka/errors.h"
 #include "kafka/requests/kafka_batch_adapter.h"
 #include "kafka/requests/response_writer_utils.h"

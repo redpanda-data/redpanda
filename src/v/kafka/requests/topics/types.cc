@@ -1,5 +1,6 @@
 #include "kafka/requests/topics/types.h"
 
+#include "cluster/namespace.h"
 #include "config/configuration.h"
 #include "model/compression.h"
 #include "model/fundamental.h"

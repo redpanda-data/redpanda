@@ -1,6 +1,7 @@
 #pragma once
 #include "kafka/errors.h"
-#include "kafka/requests/fwd.h"
+#include "kafka/requests/request_context.h"
+#include "kafka/requests/response.h"
 #include "kafka/requests/schemata/heartbeat_request.h"
 #include "kafka/requests/schemata/heartbeat_response.h"
 #include "kafka/types.h"
@@ -56,7 +57,7 @@ struct heartbeat_response final {
       : heartbeat_response(error) {}
 
     void encode(const request_context& ctx, response& resp) {
-        data.encode(ctx, resp);
+        data.encode(resp.writer(), ctx.header().version);
     }
 };
 

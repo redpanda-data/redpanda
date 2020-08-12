@@ -3,6 +3,8 @@
 #include "kafka/requests/request_context.h"
 #include "kafka/requests/response.h"
 #include "likely.h"
+#include "model/metadata.h"
+#include "model/timeout_clock.h"
 #include "seastarx.h"
 
 #include <seastar/core/future.hh>

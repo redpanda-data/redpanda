@@ -1,6 +1,7 @@
 #include "kafka/requests/metadata_request.h"
 
 #include "cluster/metadata_cache.h"
+#include "cluster/topics_frontend.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "kafka/errors.h"

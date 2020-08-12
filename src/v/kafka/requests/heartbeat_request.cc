@@ -1,5 +1,7 @@
 #include "kafka/requests/heartbeat_request.h"
 
+#include "kafka/groups/group_manager.h"
+#include "kafka/groups/group_router.h"
 #include "kafka/requests/request_context.h"
 #include "kafka/requests/response.h"
 #include "utils/remote.h"
