@@ -21,14 +21,15 @@ ss::future<> partition::start() {
 
     return f;
 }
+
 ss::future<> partition::stop() {
-    auto f = _raft->stop();
+    _as.request_abort();
     // no state machine
     if (_nop_stm == nullptr) {
-        return f;
+        return ss::now();
     }
 
-    return f.then([this] { return _nop_stm->stop(); });
+    return _nop_stm->stop();
 }
 
 ss::future<std::optional<storage::timequery_result>>
