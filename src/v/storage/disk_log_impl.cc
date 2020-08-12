@@ -92,11 +92,15 @@ ss::future<> disk_log_impl::close() {
 model::offset disk_log_impl::size_based_gc_max_offset(size_t max_size) {
     size_t reclaimed_size = 0;
     model::offset ret;
-    // size based retention
+    // do nothing
+    if (_probe.partition_size() <= max_size) {
+        return ret;
+    }
+
     for (const auto& segment : _segs) {
         reclaimed_size += segment->size_bytes();
+        ret = segment->offsets().dirty_offset;
         if (_probe.partition_size() - reclaimed_size <= max_size) {
-            ret = segment->offsets().committed_offset;
             break;
         }
     }
