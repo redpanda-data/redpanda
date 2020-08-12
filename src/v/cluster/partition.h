@@ -15,7 +15,6 @@ class partition_manager;
 class partition {
 public:
     explicit partition(consensus_ptr r);
-    partition(consensus_ptr, raft::log_eviction_stm);
 
     raft::group_id group() const { return _raft->group(); }
     ss::future<> start();

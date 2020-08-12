@@ -139,6 +139,8 @@ public:
         return _log.monitor_eviction(_as);
     }
 
+    const storage::ntp_config& log_config() const { return _log.config(); }
+
 private:
     friend replicate_entries_stm;
     friend vote_stm;
