@@ -84,6 +84,7 @@ private:
 private:
     consensus_ptr _raft;
     std::unique_ptr<raft::log_eviction_stm> _nop_stm;
+    ss::abort_source _as;
     friend std::ostream& operator<<(std::ostream& o, const partition& x);
 };
 } // namespace cluster
