@@ -198,11 +198,23 @@ ss::future<> disk_log_impl::garbage_collect_segments(
           },
           [this, ctx] {
               auto ptr = _segs.front();
-              //  Grab segment write lock before poping it from segments set.
               return ptr->write_lock().then(
                 [this, ptr, ctx]([[maybe_unused]] ss::rwlock::holder h) {
-                    _segs.pop_front();
-                    return remove_segment_permanently(ptr, ctx);
+                    // update start offset before removing the segment
+                    // to make sure
+                    // that all opertions will update the start offset
+                    // correctly
+                    _start_offset = ptr->offsets().dirty_offset
+                                    + model::offset(1);
+                    return _kvstore
+                      .put(
+                        kvstore::key_space::storage,
+                        start_offset_key(),
+                        reflection::to_iobuf(_start_offset))
+                      .then([this, ptr, ctx] {
+                          _segs.pop_front();
+                          return remove_segment_permanently(ptr, ctx);
+                      });
                 });
           });
     });
