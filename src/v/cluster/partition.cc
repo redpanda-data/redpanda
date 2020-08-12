@@ -8,7 +8,7 @@ partition::partition(consensus_ptr r)
   : _raft(r) {
     if (_raft->log_config().is_collectable()) {
         _nop_stm = std::make_unique<raft::log_eviction_stm>(
-          _raft.get(), clusterlog);
+          _raft.get(), clusterlog, _as);
     }
 }
 

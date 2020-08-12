@@ -135,8 +135,8 @@ public:
 
     event_manager& events() { return _event_manager; }
 
-    ss::future<model::offset> monitor_log_eviction() {
-        return _log.monitor_eviction(_as);
+    ss::future<model::offset> monitor_log_eviction(ss::abort_source& as) {
+        return _log.monitor_eviction(as);
     }
 
     const storage::ntp_config& log_config() const { return _log.config(); }
