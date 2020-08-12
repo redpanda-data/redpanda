@@ -7,9 +7,11 @@
 
 namespace raft {
 
-log_eviction_stm::log_eviction_stm(consensus* raft, ss::logger& logger)
+log_eviction_stm::log_eviction_stm(
+  consensus* raft, ss::logger& logger, ss::abort_source& as)
   : _raft(raft)
-  , _logger(logger) {}
+  , _logger(logger)
+  , _as(as) {}
 
 ss::future<> log_eviction_stm::start() {
     monitor_log_eviction();
@@ -23,7 +25,7 @@ void log_eviction_stm::monitor_log_eviction() {
         return ss::do_until(
           [this] { return _gate.is_closed(); },
           [this] {
-              return _raft->monitor_log_eviction()
+              return _raft->monitor_log_eviction(_as)
                 .then([this](model::offset last_evicted) {
                     return handle_deletion_notification(last_evicted);
                 })
