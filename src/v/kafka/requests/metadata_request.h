@@ -2,6 +2,7 @@
 
 #include "kafka/requests/request_context.h"
 #include "kafka/requests/response.h"
+#include "model/metadata.h"
 #include "seastarx.h"
 
 #include <seastar/core/future.hh>

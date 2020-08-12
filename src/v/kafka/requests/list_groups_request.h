@@ -1,5 +1,5 @@
 #pragma once
-#include "kafka/requests/fwd.h"
+#include "kafka/requests/request_context.h"
 #include "kafka/requests/response.h"
 #include "kafka/requests/schemata/list_groups_request.h"
 #include "kafka/requests/schemata/list_groups_response.h"
@@ -50,7 +50,7 @@ struct list_groups_response final {
     list_groups_response_data data;
 
     void encode(const request_context& ctx, response& resp) {
-        data.encode(ctx, resp);
+        data.encode(resp.writer(), ctx.header().version);
     }
 
     void decode(iobuf buf, api_version version) {

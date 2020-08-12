@@ -1,6 +1,7 @@
 #pragma once
 #include "kafka/errors.h"
-#include "kafka/requests/fwd.h"
+#include "kafka/requests/request_context.h"
+#include "kafka/requests/response.h"
 #include "kafka/requests/schemata/join_group_request.h"
 #include "kafka/requests/schemata/join_group_response.h"
 #include "kafka/types.h"
@@ -107,7 +108,7 @@ struct join_group_response final {
     }
 
     void encode(const request_context& ctx, response& resp) {
-        data.encode(ctx, resp);
+        data.encode(resp.writer(), ctx.header().version);
     }
 };
 

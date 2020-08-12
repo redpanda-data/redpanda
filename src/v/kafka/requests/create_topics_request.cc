@@ -1,5 +1,6 @@
 #include "kafka/requests/create_topics_request.h"
 
+#include "cluster/topics_frontend.h"
 #include "kafka/errors.h"
 #include "kafka/requests/fwd.h"
 #include "kafka/requests/timeout.h"

@@ -260,8 +260,8 @@ class VersionRange:
 def snake_case(name):
     """Convert camel to snake case"""
     assert name[0].isupper(), name
-    return name[0].lower() + "".join([f"_{c.lower()}" \
-            if c.isupper() else c for c in name[1:]])
+    return name[0].lower() + "".join(
+        [f"_{c.lower()}" if c.isupper() else c for c in name[1:]])
 
 
 class FieldType:
@@ -520,6 +520,7 @@ HEADER_TEMPLATE = """
 
 #include <seastar/core/sstring.hh>
 
+#include <chrono>
 #include <cstdint>
 #include <optional>
 #include <vector>
@@ -552,11 +553,10 @@ class response;
 {% endfor %}
 
 {{ render_struct(struct) }}
-{%- if op_type == "request" %}
     void encode(response_writer&, api_version);
+{%- if op_type == "request" %}
     void decode(request_reader&, api_version);
 {%- else %}
-    void encode(const request_context&, response&);
     void decode(iobuf, api_version);
 {%- endif %}
 
@@ -569,12 +569,13 @@ class response;
 SOURCE_TEMPLATE = """
 #include "kafka/requests/schemata/{{ header }}"
 
-#include "kafka/requests/request_context.h"
-#include "kafka/requests/response.h"
+#include "cluster/types.h"
 #include "kafka/requests/response_writer.h"
-#include "seastarx.h"
+#include "kafka/requests/request_reader.h"
 
-#include <chrono>
+#include <fmt/core.h>
+#include <fmt/format.h>
+#include <fmt/ostream.h>
 
 {% macro version_guard(field) %}
 {%- set cond = field.versions().guard() %}
@@ -671,22 +672,15 @@ writer.write({{ fname }});
 namespace kafka {
 
 {%- if struct.fields %}
-{%- if op_type == "request" %}
 void {{ struct.name }}::encode(response_writer& writer, api_version version) {
 {{- struct_serde(struct, field_encoder) | indent }}
 }
 
+{%- if op_type == "request" %}
 void {{ struct.name }}::decode(request_reader& reader, api_version version) {
 {{- struct_serde(struct, field_decoder) | indent }}
 }
 {%- else %}
-void {{ struct.name }}::encode(const request_context& ctx, response& resp) {
-    auto& writer = resp.writer();
-    auto version = ctx.header().version;
-
-{{- struct_serde(struct, field_encoder) | indent }}
-}
-
 void {{ struct.name }}::decode(iobuf buf, api_version version) {
     request_reader reader(std::move(buf));
 
@@ -761,8 +755,8 @@ SCHEMA = {
                     "type": "string",
                     "enum": ALLOWED_TYPES,
                 },
-                "versions": { "$ref": "#/definitions/versions" },
-                "nullableVersions": { "$ref": "#/definitions/versions" },
+                "versions": {"$ref": "#/definitions/versions"},
+                "nullableVersions": {"$ref": "#/definitions/versions"},
                 "entityType": {
                     "type": "string",
                     "enum": ENTITY_TYPES,
@@ -778,7 +772,7 @@ SCHEMA = {
                 "ignorable": {"type": "boolean"},
                 "fields": {
                     "type": "array",
-                    "items": { "$ref": "#/definitions/field" },
+                    "items": {"$ref": "#/definitions/field"},
                 },
             },
             "required": [
@@ -790,7 +784,7 @@ SCHEMA = {
         },
         "fields": {
             "type": "array",
-            "items": { "$ref": "#/definitions/field" },
+            "items": {"$ref": "#/definitions/field"},
         },
     },
     "type": "object",
@@ -801,17 +795,17 @@ SCHEMA = {
             "enum": ["request", "response"],
         },
         "name": {"type": "string"},
-        "validVersions": { "$ref": "#/definitions/versions" },
+        "validVersions": {"$ref": "#/definitions/versions"},
         "flexibleVersions": {
             "oneOf": [
                 {
                     "type": "string",
                     "enum": ["none"],
                 },
-                {"$ref": "#/definitions/versions" },
+                {"$ref": "#/definitions/versions"},
             ],
         },
-        "fields": { "$ref": "#/definitions/fields" },
+        "fields": {"$ref": "#/definitions/fields"},
     },
     "required": [
         "apiKey",

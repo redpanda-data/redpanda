@@ -1,5 +1,7 @@
 #include "kafka/requests/delete_topics_request.h"
 
+#include "cluster/namespace.h"
+#include "cluster/topics_frontend.h"
 #include "kafka/errors.h"
 #include "kafka/requests/request_context.h"
 #include "kafka/requests/response.h"

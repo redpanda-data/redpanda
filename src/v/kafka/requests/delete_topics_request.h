@@ -2,7 +2,8 @@
 
 #include "bytes/iobuf.h"
 #include "kafka/errors.h"
-#include "kafka/requests/fwd.h"
+#include "kafka/requests/request_context.h"
+#include "kafka/requests/response.h"
 #include "kafka/requests/schemata/delete_topics_request.h"
 #include "kafka/requests/schemata/delete_topics_response.h"
 #include "kafka/types.h"
@@ -53,7 +54,7 @@ struct delete_topics_response final {
     delete_topics_response_data data;
 
     void encode(const request_context& ctx, response& resp) {
-        data.encode(ctx, resp);
+        data.encode(resp.writer(), ctx.header().version);
     }
 
     void decode(iobuf buf, api_version version) {
