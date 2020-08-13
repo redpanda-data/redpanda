@@ -28,12 +28,10 @@ struct directory_walker {
     static ss::future<> walk(ss::sstring dirname, walker_type walker_func) {
         return open_directory(std::move(dirname))
           .then([walker_func = std::move(walker_func)](ss::file f) mutable {
-              auto s = std::make_unique<ss::subscription<ss::directory_entry>>(
-                f.list_directory(std::move(walker_func)));
-              return s->done().finally(
-                [f = std::move(f), s = std::move(s)]() mutable {
-                    return f.close().finally([f = std::move(f)] {});
-                });
+              auto s = f.list_directory(std::move(walker_func));
+              return s.done().finally([f = std::move(f)]() mutable {
+                  return f.close().finally([f = std::move(f)] {});
+              });
           });
     }
 
