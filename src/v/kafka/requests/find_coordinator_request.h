@@ -77,7 +77,7 @@ struct find_coordinator_response final {
       : find_coordinator_response(error, model::node_id(-1), "", -1) {}
 
     void encode(const request_context& ctx, response& resp) {
-        data.encode(ctx, resp);
+        data.encode(resp.writer(), ctx.header().version);
     }
 
     void decode(iobuf buf, api_version version) {

@@ -1,6 +1,7 @@
 #include "kafka/requests/fetch_request.h"
 
 #include "cluster/namespace.h"
+#include "cluster/partition_manager.h"
 #include "kafka/errors.h"
 #include "kafka/requests/batch_consumer.h"
 #include "likely.h"

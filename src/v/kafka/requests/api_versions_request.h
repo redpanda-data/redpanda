@@ -44,7 +44,7 @@ struct api_versions_response final {
     api_versions_response_data data;
 
     void encode(const request_context& ctx, response& resp) {
-        data.encode(ctx, resp);
+        data.encode(resp.writer(), ctx.header().version);
     }
 
     void decode(iobuf buf, api_version version) {

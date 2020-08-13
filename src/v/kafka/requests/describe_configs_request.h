@@ -1,7 +1,8 @@
 #pragma once
 #include "bytes/iobuf.h"
 #include "kafka/errors.h"
-#include "kafka/requests/fwd.h"
+#include "kafka/requests/request_context.h"
+#include "kafka/requests/response.h"
 #include "kafka/requests/schemata/describe_configs_request.h"
 #include "kafka/requests/schemata/describe_configs_response.h"
 #include "kafka/types.h"
@@ -56,7 +57,7 @@ struct describe_configs_response final {
       : data({.throttle_time_ms = std::chrono::milliseconds(0)}) {}
 
     void encode(const request_context& ctx, response& resp) {
-        data.encode(ctx, resp);
+        data.encode(resp.writer(), ctx.header().version);
     }
 
     void decode(iobuf buf, api_version version) {

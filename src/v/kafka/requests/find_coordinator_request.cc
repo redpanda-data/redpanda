@@ -1,5 +1,6 @@
 #include "kafka/requests/find_coordinator_request.h"
 
+#include "cluster/topics_frontend.h"
 #include "config/configuration.h"
 #include "kafka/errors.h"
 #include "kafka/groups/coordinator_ntp_mapper.h"

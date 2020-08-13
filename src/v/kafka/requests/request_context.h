@@ -1,12 +1,10 @@
 #pragma once
 #include "bytes/iobuf.h"
-#include "cluster/topics_frontend.h"
-#include "kafka/groups/coordinator_ntp_mapper.h"
-#include "kafka/groups/group_manager.h"
-#include "kafka/groups/group_router.h"
 #include "kafka/logger.h"
 #include "kafka/requests/request_reader.h"
+#include "kafka/types.h"
 #include "seastarx.h"
+#include "vlog.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/reactor.hh>
@@ -18,9 +16,19 @@
 
 namespace cluster {
 class metadata_cache;
-}
+class partition_manager;
+class shard_table;
+class topics_frontend;
+} // namespace cluster
 
 namespace kafka {
+class coordinator_ntp_mapper;
+
+template<typename T>
+class group_router;
+
+class group_manager;
+
 using group_router_type = kafka::group_router<kafka::group_manager>;
 
 // Fields may not be byte-aligned since we work

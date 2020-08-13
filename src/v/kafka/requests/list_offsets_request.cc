@@ -1,6 +1,8 @@
 #include "kafka/requests/list_offsets_request.h"
 
+#include "cluster/metadata_cache.h"
 #include "cluster/namespace.h"
+#include "cluster/partition_manager.h"
 #include "kafka/errors.h"
 #include "kafka/requests/request_context.h"
 #include "kafka/requests/response.h"
@@ -36,7 +38,7 @@ void list_offsets_response::encode(const request_context& ctx, response& resp) {
             }
         }
     }
-    data.encode(ctx, resp);
+    data.encode(resp.writer(), ctx.header().version);
 }
 
 struct list_offsets_ctx {
