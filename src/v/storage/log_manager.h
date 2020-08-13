@@ -11,6 +11,7 @@
 #include "storage/types.h"
 #include "storage/version.h"
 #include "units.h"
+#include "utils/mutex.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/circular_buffer.hh>
@@ -200,6 +201,8 @@ private:
     batch_cache _batch_cache;
     ss::gate _open_gate;
     ss::abort_source _abort_source;
+
+    mutex _fs_lock;
 
     friend std::ostream& operator<<(std::ostream&, const log_manager&);
 };
