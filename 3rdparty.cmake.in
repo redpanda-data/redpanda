@@ -11,7 +11,8 @@ set(cxx_flags "@BASE_CXX_FLAGS@")
 set(ld_flags "@BASE_LD_FLAGS@")
 set(default_depends "")
 
-set(base_cmake_args_no_standard
+set(common_cmake_args
+  -DCMAKE_CXX_STANDARD=@CMAKE_CXX_STANDARD@
   -DCMAKE_BUILD_TYPE=@CMAKE_BUILD_TYPE@
   -DCMAKE_PREFIX_PATH=@V_DEPS_INSTALL_DIR@
   -DCMAKE_INSTALL_PREFIX=@V_DEPS_INSTALL_DIR@
@@ -19,10 +20,6 @@ set(base_cmake_args_no_standard
   -DCMAKE_SKIP_BUILD_RPATH=OFF
   -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON
   -DCMAKE_POSITION_INDEPENDENT_CODE=@CMAKE_POSITION_INDEPENDENT_CODE@
-)
-set(common_cmake_args
-    -DCMAKE_CXX_STANDARD=@CMAKE_CXX_STANDARD@
-    ${base_cmake_args_no_standard}
 )
 
 
@@ -57,12 +54,6 @@ set(build_env
   CPPFLAGS=${cxx_flags}
   LDFLAGS=${ld_flags}
   PKG_CONFIG_PATH=@PKG_CONFIG_PATH@)
-# cryptopp does not build with C++17
-set(cryptopp_build_env
-  LDFLAGS=${ld_flags}
-  CXXFLAGS=${cxx_flags}
-  CPPFLAGS=${cxx_flags}
-  )
 # nettle needs explicit path to headers
 set(nettle_build_env
   CFLAGS=${c_flags}\ -I@V_DEPS_INSTALL_DIR@/include
@@ -385,13 +376,13 @@ ExternalProject_Add(xml2
   DEPENDS ${default_depends} xz zlib)
 
 ExternalProject_Add(cryptopp
-  URL https://storage.googleapis.com/vectorizedio-public/dependencies/CRYPTOPP_5_6_5.tar.gz
-  URL_MD5 88224d9c0322f63aa1fb5b8ae78170f0
+  URL https://storage.googleapis.com/vectorizedio-public/dependencies/CRYPTOPP_8_2_0.tar.gz
+  URL_MD5 7b6f8cd8f4d9f5f6d1c018fc35db604e
   INSTALL_DIR @V_DEPS_INSTALL_DIR@
-  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cryptopp_build_env} ${CMAKE_COMMAND}
+  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   DEPENDS ${default_depends}
   CMAKE_ARGS
-     ${base_cmake_args_no_standard}
+     ${common_cmake_args}
     -DBUILD_TESTING=OFF)
 
 ExternalProject_Add(lksctp-tools
