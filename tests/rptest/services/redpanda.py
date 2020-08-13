@@ -18,6 +18,15 @@ class RedpandaService(Service):
     STDOUT_STDERR_CAPTURE = os.path.join(PERSISTENT_ROOT, "redpanda.log")
     CLUSTER_NAME = "my_cluster"
     READY_TIMEOUT_SEC = 10
+    V_DEV_MOUNT = "/opt/v"
+
+    # ducktape `--globals` for selecting build
+    BUILD_TYPE_KEY = "redpanda_build_type"
+    DEFAULT_BUILD_TYPE = "release"
+    COMPILER_KEY = "redpanda_compiler"
+    DEFAULT_COMPILER = "clang"
+    PACKAGING_KEY = "redpanda_packaging"
+    DEFAULT_PACKAGING = "dir"
 
     logs = {
         "redpanda_start_stdout_stderr": {
@@ -28,6 +37,7 @@ class RedpandaService(Service):
 
     def __init__(self, context, num_brokers, extra_rp_conf=None, topics=None):
         super(RedpandaService, self).__init__(context, num_nodes=num_brokers)
+        self._context = context
         self._extra_rp_conf = extra_rp_conf
         self._topics = topics or dict()
 
@@ -58,7 +68,7 @@ class RedpandaService(Service):
         node.account.mkdirs(RedpandaService.DATA_DIR)
         self.write_conf_file(node)
 
-        cmd = "nohup {} ".format(self.redpanda_binary())
+        cmd = "nohup {} ".format(self.find_binary("redpanda"))
         cmd += "--redpanda-cfg {} ".format(RedpandaService.CONFIG_FILE)
         cmd += ">> {0} 2>&1 &".format(RedpandaService.STDOUT_STDERR_CAPTURE)
 
@@ -93,11 +103,23 @@ class RedpandaService(Service):
         node.account.kill_process("redpanda", clean_shutdown=False)
         node.account.remove(RedpandaService.PERSISTENT_ROOT)
 
-    def redpanda_binary(self):
-        # TODO: i haven't yet figured out what the blessed way of getting
-        # parameters into the test are to control which build we use. but they
-        # are all available under the /opt/v/build directory.
-        return "/opt/v/build/debug/clang/dist/local/redpanda/bin/redpanda"
+    def find_binary(self, name):
+        build_type = self._context.globals.get(
+            RedpandaService.BUILD_TYPE_KEY, RedpandaService.DEFAULT_BUILD_TYPE)
+        compiler = self._context.globals.get(RedpandaService.COMPILER_KEY,
+                                             RedpandaService.DEFAULT_COMPILER)
+        packaging = self._context.globals.get(
+            RedpandaService.PACKAGING_KEY, RedpandaService.DEFAULT_PACKAGING)
+
+        if packaging not in {"dir"}:
+            raise RuntimeError("Packaging type %s not supported" % packaging)
+
+        path = os.path.join(RedpandaService.V_DEV_MOUNT, "build", build_type,
+                            compiler, "dist/local/redpanda/bin", name)
+
+        self.logger.debug("Found binary %s: %s", name, path)
+
+        return path
 
     def pids(self, node):
         """Return process ids associated with running processes on the given node."""
