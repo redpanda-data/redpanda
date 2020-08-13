@@ -54,12 +54,14 @@ ss::future<> kvrsm::apply(model::record_batch b) {
         auto last_offset = b.last_offset();
         auto result = process(std::move(b));
 
-        if (auto it = _promises.find(last_offset); it != _promises.end()) {
-            it->second.set_value(result);
-        }
+        return _mutex.with([this, last_offset, result] {
+            if (auto it = _promises.find(last_offset); it != _promises.end()) {
+                it->second.set_value(result);
+            }
+        });
+    } else {
+        return ss::now();
     }
-
-    return ss::now();
 }
 
 kvrsm::cmd_result kvrsm::process(model::record_batch&& b) {
@@ -76,7 +78,7 @@ kvrsm::cmd_result kvrsm::process(model::record_batch&& b) {
           reflection::adl<cas_cmd>{}.from(b.begin()->release_value()));
     } else {
         return kvrsm::cmd_result(
-          "", "", raft::kvelldb::errc::unknown_command, raft::errc::success);
+          raft::kvelldb::errc::unknown_command, raft::errc::success);
     }
 }
 
@@ -102,7 +104,7 @@ kvrsm::cmd_result kvrsm::execute(get_cmd c) {
           kv_map.find(c.key)->second.value);
     }
     return kvrsm::cmd_result(
-      "", "", raft::kvelldb::errc::not_found, raft::errc::success);
+      raft::kvelldb::errc::not_found, raft::errc::success);
 }
 
 kvrsm::cmd_result kvrsm::execute(cas_cmd c) {
@@ -122,37 +124,42 @@ kvrsm::cmd_result kvrsm::execute(cas_cmd c) {
         }
     } else {
         return kvrsm::cmd_result(
-          "", "", raft::kvelldb::errc::not_found, raft::errc::success);
+          raft::kvelldb::errc::not_found, raft::errc::success);
     }
 }
 
 ss::future<kvrsm::cmd_result> kvrsm::replicate_and_wait(
   model::record_batch&& b, model::timeout_clock::time_point timeout) {
     using ret_t = kvrsm::cmd_result;
-    return replicate(std::move(b))
-      .then([this, timeout](result<raft::replicate_result> r) {
-          if (!r) {
-              return ss::make_ready_future<ret_t>(kvrsm::cmd_result(
-                "", "", raft::kvelldb::errc::raft_error, r.error()));
-          }
 
-          auto last_offset = r.value().last_offset;
-          auto [it, insterted] = _promises.emplace(
-            last_offset, expiring_promise<ret_t>{});
-          vassert(
-            insterted,
-            "Prosmise for offset {} already registered",
-            last_offset);
-          return it->second
-            .get_future_with_timeout(
-              timeout,
-              [] {
-                  return kvrsm::cmd_result(
-                    "", "", raft::kvelldb::errc::timeout, raft::errc::timeout);
-              })
-            .then_wrapped([this, last_offset](ss::future<ret_t> ec) {
-                _promises.erase(last_offset);
-                return ec;
+    return _mutex.get_units().then(
+      [this, b = std::move(b), timeout](ss::semaphore_units<> u) mutable {
+          return replicate(std::move(b))
+            .then([this, timeout, u = std::move(u)](
+                    result<raft::replicate_result> r) {
+                if (!r) {
+                    return ss::make_ready_future<ret_t>(kvrsm::cmd_result(
+                      raft::kvelldb::errc::raft_error, r.error()));
+                }
+
+                auto last_offset = r.value().last_offset;
+                auto [it, insterted] = _promises.emplace(
+                  last_offset, expiring_promise<ret_t>{});
+                vassert(
+                  insterted,
+                  "Prosmise for offset {} already registered",
+                  last_offset);
+                return it->second
+                  .get_future_with_timeout(
+                    timeout,
+                    [] {
+                        return kvrsm::cmd_result(
+                          raft::kvelldb::errc::timeout, raft::errc::timeout);
+                    })
+                  .then_wrapped([this, last_offset](ss::future<ret_t> ec) {
+                      _promises.erase(last_offset);
+                      return ec;
+                  });
             });
       });
 }
