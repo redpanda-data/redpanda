@@ -18,6 +18,11 @@ public:
         cmd_result(ss::sstring wid, ss::sstring val)
           : write_id(wid)
           , value(val) {}
+        cmd_result(std::error_code rsm_err, std::error_code raft_err)
+          : write_id("")
+          , value("")
+          , rsm_status(rsm_err)
+          , raft_status(raft_err) {}
         cmd_result(
           ss::sstring wid,
           ss::sstring val,
@@ -88,6 +93,7 @@ private:
     ss::future<cmd_result> replicate_and_wait(
       model::record_batch&& b, model::timeout_clock::time_point timeout);
 
+    mutex _mutex;
     consensus* _c;
     absl::flat_hash_map<model::offset, expiring_promise<cmd_result>> _promises;
     absl::flat_hash_map<ss::sstring, kvrsm::record> kv_map;
