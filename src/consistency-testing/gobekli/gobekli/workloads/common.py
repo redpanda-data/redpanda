@@ -3,6 +3,9 @@ import uuid
 
 from gobekli.kvapi import RequestCanceled, RequestTimedout
 from gobekli.consensus import LinearizabilityRegisterChecker, Violation
+from gobekli.logging import (log_read_ended, log_read_failed, log_read_started,
+                             log_read_none, log_read_timeouted, log_violation,
+                             log_latency)
 
 
 class Stat:
@@ -138,7 +141,8 @@ class LinearizabilityHashmapChecker:
 
 
 class ReaderClient:
-    def __init__(self, stat, checker, name, node, key):
+    def __init__(self, started_at, stat, checker, name, node, key):
+        self.started_at = started_at
         self.stat = stat
         self.node = node
         self.name = name
@@ -151,22 +155,40 @@ class ReaderClient:
         self.is_active = False
 
     async def start(self):
+        loop = asyncio.get_running_loop()
         while self.is_active and self.checker.is_valid:
+            op_started = None
             try:
+                log_read_started(self.node.name, self.pid, self.key)
                 self.checker.read_started(self.pid, self.key)
+                op_started = loop.time()
                 read = await self.node.get_aio(self.key)
+                op_ended = loop.time()
+                log_latency("o", op_started - self.started_at,
+                            op_ended - op_started)
                 if read == None:
+                    log_read_none(self.node.name, self.pid, self.key)
                     self.checker.read_none(self.pid, self.key)
                 else:
+                    log_read_ended(self.node.name, self.pid, self.key,
+                                   read.write_id, read.value)
                     self.checker.read_ended(self.pid, self.key, read.write_id,
                                             read.value)
                 self.stat.inc(self.name + ":ok")
             except RequestTimedout:
+                op_ended = loop.time()
+                log_latency("t", op_started - self.started_at,
+                            op_ended - op_started)
                 self.stat.inc(self.name + ":out")
+                log_read_timeouted(self.node.name, self.pid, self.key)
                 self.checker.read_canceled(self.pid, self.key)
             except RequestCanceled:
+                op_ended = loop.time()
+                log_latency("e", op_started - self.started_at,
+                            op_ended - op_started)
                 self.stat.inc(self.name + ".err")
+                log_read_failed(self.node.name, self.pid, self.key)
                 self.checker.read_canceled(self.pid, self.key)
             except Violation as e:
-                print(f"violation: {e.message}")
+                log_violation(self.pid, e.message)
                 break
