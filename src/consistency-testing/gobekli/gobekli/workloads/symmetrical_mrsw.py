@@ -34,6 +34,7 @@ class WriterClient:
             curr_version = self.last_version + 1
             op_started = None
             try:
+                self.stat.assign("size", self.checker.size())
                 log_write_started(self.node.name, self.pid, curr_write_id,
                                   self.key, prev, curr_version,
                                   f"42:{curr_version}")
@@ -45,7 +46,7 @@ class WriterClient:
                                                f"42:{curr_version}",
                                                curr_write_id)
                 op_ended = loop.time()
-                log_latency("o", op_started - self.started_at,
+                log_latency("ok", op_started - self.started_at,
                             op_ended - op_started)
                 log_write_ended(self.node.name, self.pid, self.key,
                                 data.write_id, data.value)
@@ -64,7 +65,7 @@ class WriterClient:
             except RequestTimedout:
                 self.stat.inc(self.name + ":out")
                 op_ended = loop.time()
-                log_latency("t", op_started - self.started_at,
+                log_latency("out", op_started - self.started_at,
                             op_ended - op_started)
                 log_write_timeouted(self.node.name, self.pid, self.key)
                 self.checker.read_canceled(self.pid, self.key)
@@ -72,7 +73,7 @@ class WriterClient:
             except RequestCanceled:
                 self.stat.inc(self.name + ":err")
                 op_ended = loop.time()
-                log_latency("e", op_started - self.started_at,
+                log_latency("err", op_started - self.started_at,
                             op_ended - op_started)
                 log_write_failed(self.node.name, self.pid, self.key)
                 self.checker.read_canceled(self.pid, self.key)
@@ -110,6 +111,7 @@ async def start_mrsw_workload_aio(kv_nodes, numOfKeys, numOfReaders, timeout):
         dims.append(kv.name + ":ok")
         dims.append(kv.name + ":out")
         dims.append(kv.name + ":err")
+    dims.append("size")
     dumper = StatDumper(stat, dims)
     clients = []
 
