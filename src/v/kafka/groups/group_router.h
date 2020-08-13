@@ -11,7 +11,6 @@
 #include "kafka/requests/sync_group_request.h"
 #include "kafka/types.h"
 #include "seastarx.h"
-#include "utils/concepts-enabled.h"
 
 #include <seastar/core/reactor.hh>
 #include <seastar/core/scheduling.hh>
@@ -20,46 +19,6 @@
 #include <type_traits>
 
 namespace kafka {
-
-// clang-format off
-CONCEPT(
-template <typename T>
-concept GroupManager =
-requires(
-  T m,
-  const model::ntp& ntp,
-  const kafka::group_id& group_id,
-  join_group_request&& join_request,
-  sync_group_request&& sync_request,
-  heartbeat_request&& heartbeat_request,
-  leave_group_request&& leave_request,
-  offset_commit_request&& offset_commit_request,
-  offset_fetch_request&& offset_fetch_request) {
-
-    { m.join_group(std::move(join_request)) } ->
-        ss::future<join_group_response>;
-
-    { m.sync_group(std::move(sync_request)) } ->
-        ss::future<sync_group_response>;
-
-    { m.heartbeat(std::move(heartbeat_request)) } ->
-        ss::future<heartbeat_response>;
-
-    { m.leave_group(std::move(leave_request)) } ->
-        ss::future<leave_group_response>;
-
-    { m.offset_commit(std::move(offset_commit_request)) } ->
-        ss::future<offset_commit_response>;
-
-    { m.offset_fetch(std::move(offset_fetch_request)) } ->
-        ss::future<offset_fetch_response>;
-
-    { m.list_groups() } -> std::pair<bool, std::vector<listed_group>>;
-
-    { m.describe_group(ntp, group_id) } -> described_group;
-};
-)
-// clang-format on
 
 /**
  * \brief Forward group operations the owning core.
@@ -70,7 +29,6 @@ requires(
  * operation on the destination shard's group manager is invoked.
  */
 template<typename GroupMgr>
-CONCEPT(requires GroupManager<GroupMgr>)
 class group_router final {
 public:
     group_router(
