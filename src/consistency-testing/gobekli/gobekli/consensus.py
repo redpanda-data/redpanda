@@ -54,6 +54,24 @@ class LinearizabilityRegisterChecker:
         self.history_by_write_id = dict()
         self.reads = dict()
 
+    def size(self):
+        return len(self.pending_writes) + len(self.applied) + len(
+            self.history_by_idx) + len(self.history_by_write_id) + len(
+                self.reads)
+
+    def gc(self):
+        midx = self.head.idx
+        for key in self.reads:
+            midx = min(self.reads[key], midx)
+        for idx in list(filter(lambda x: x < midx,
+                               self.history_by_idx.keys())):
+            write = self.history_by_idx[idx]
+            del self.history_by_write_id[write.write_id]
+            del self.history_by_idx[idx]
+        for key in list(self.pending_writes.keys()):
+            if self.pending_writes[key].version < self.head.version:
+                del self.pending_writes[key]
+
     # set an initial value of a register
     # value consists of an actual value, write_id and version
     #
@@ -93,6 +111,8 @@ class LinearizabilityRegisterChecker:
 
         self.observe(write_id)
         del self.applied[write_id]
+
+        self.gc()
 
     def observe(self, write_id):
         write = self.pending_writes[write_id]
@@ -174,5 +194,9 @@ class LinearizabilityRegisterChecker:
         else:
             raise Violation(f"Stale or phantom read {write_id}")
 
+        self.gc()
+
     def read_canceled(self, pid):
         del self.reads[pid]
+
+        self.gc()
