@@ -217,11 +217,17 @@ ss::future<> log_manager::remove(model::ntp ntp) {
           .then([dir = std::move(ntp_dir)] { return ss::remove_file(dir); })
           .then([this, dir = std::move(topic_dir)]() mutable {
               return _fs_lock.with([dir = std::move(dir)] {
-                  return directory_walker::empty(dir).then([dir](bool empty) {
-                      if (!empty) {
+                  return ss::file_exists(dir).then([dir](bool exists) {
+                      if (!exists) {
                           return ss::now();
                       }
-                      return ss::remove_file(dir);
+                      return directory_walker::empty(dir).then(
+                        [dir](bool empty) {
+                            if (!empty) {
+                                return ss::now();
+                            }
+                            return ss::remove_file(dir);
+                        });
                   });
               });
           })
