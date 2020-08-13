@@ -158,8 +158,8 @@ ExternalProject_Add(boost
     dll-path=@V_DEPS_INSTALL_DIR@/lib)
 
 ExternalProject_Add(fmt
-  URL https://storage.googleapis.com/vectorizedio-public/dependencies/fmt-9e55499.tar.gz
-  URL_MD5 e2869a5032a6cc35b4d14008b6125ed9
+  URL https://storage.googleapis.com/vectorizedio-public/dependencies/fmt-7.0.3.tar.gz
+  URL_MD5 57392b7ea09592a2b237a02950f35bb0
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   DEPENDS ${default_depends}
