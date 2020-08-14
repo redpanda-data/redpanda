@@ -113,6 +113,9 @@ public:
     ss::future<offset_configuration>
     wait_for_change(model::offset, ss::abort_source&);
 
+    friend std::ostream&
+    operator<<(std::ostream&, const configuration_manager&);
+
 private:
     // using ordered map in here to execute truncations and being able to
     // efficiently search for configurations with offset smaller or equal than
