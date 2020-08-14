@@ -26,7 +26,10 @@ service::update_cache(metadata_info&& req, Func&& fn) {
       boost::irange((size_t)0, req.inputs.size()),
       [fn = std::forward<Func>(fn), req = std::move(req)](unsigned i) mutable {
           auto topic = std::move(req.inputs[i]);
-          if (model::validate_kafka_topic_name(topic).value() != 0) {
+          if (is_materialized_topic(topic)) {
+              return ss::make_ready_future<std::tuple<unsigned, T>>(
+                std::make_tuple(i, T::materialized_topic));
+          } else if (model::validate_kafka_topic_name(topic).value() != 0) {
               return ss::make_ready_future<std::tuple<unsigned, T>>(
                 std::make_tuple(i, T::invalid_topic));
           }

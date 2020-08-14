@@ -9,6 +9,7 @@ rpcgen(
 v_cc_library(
   NAME coproc
   SRCS
+    types.cc
     logger.cc
     service.cc
   DEPS
@@ -20,8 +21,11 @@ v_cc_library(
 
 rp_test(
   UNIT_TEST
-  BINARY_NAME registration_test
-  SOURCES tests/registration_test.cc
+  BINARY_NAME registration_tests
+  SOURCES
+    tests/registration_test.cc
+    tests/materialized_type_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES v::seastar_testing_main v::coproc
   )
+
