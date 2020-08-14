@@ -1,5 +1,5 @@
 import collections
-
+from ducktape.mark import matrix
 from ducktape.mark.resource import cluster
 from ducktape.utils.util import wait_until
 
@@ -30,9 +30,10 @@ class PrefixTruncateRecoveryTest(RedpandaTest):
         self.kafka_tools = KafkaCliTools(self.redpanda)
 
     @cluster(num_node=3)
-    def test_prefix_truncate_recovery(self):
+    @matrix(acks=[-1, 1])
+    def test_prefix_truncate_recovery(self, acks):
         # produce a little data
-        self.kafka_tools.produce("topic", 1024, 1024)
+        self.kafka_tools.produce("topic", 1024, 1024, acks=acks)
 
         # stop one of the nodes
         node = self.redpanda.controller()

@@ -165,7 +165,7 @@ struct raft_node {
         consensus->start().get0();
         if (log->config().is_collectable()) {
             _nop_stm = std::make_unique<raft::log_eviction_stm>(
-              consensus.get(), tstlog);
+              consensus.get(), tstlog, _as);
             _nop_stm->start().get0();
         }
     }
@@ -176,6 +176,7 @@ struct raft_node {
         }
 
         tstlog.info("Stopping node stack {}", broker.id());
+        _as.request_abort();
         return server.stop()
           .then([this] {
               if (hbeats) {
@@ -269,6 +270,7 @@ struct raft_node {
     consensus_ptr consensus;
     std::unique_ptr<raft::log_eviction_stm> _nop_stm;
     leader_clb_t leader_callback;
+    ss::abort_source _as;
 };
 
 model::ntp node_ntp(raft::group_id gr_id, model::node_id n_id) {

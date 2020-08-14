@@ -32,10 +32,6 @@ ss::future<consensus_ptr> partition_manager::manage(
           return _raft_manager.local()
             .create_group(group, std::move(nodes), log)
             .then([this, log, group](ss::lw_shared_ptr<raft::consensus> c) {
-                if (log.config().is_collectable()) {
-                    auto p = ss::make_lw_shared<partition>(
-                      c, raft::log_eviction_stm(c.get(), clusterlog));
-                }
                 auto p = ss::make_lw_shared<partition>(c);
                 _ntp_table.emplace(log.config().ntp(), p);
                 _raft_table.emplace(group, p);
@@ -43,6 +39,11 @@ ss::future<consensus_ptr> partition_manager::manage(
                 return p->start().then([c] { return c; });
             });
       });
+}
+
+ss::future<> partition_manager::stop() {
+    return ss::parallel_for_each(
+      _ntp_table, [](auto& p) { return p.second->stop(); });
 }
 
 ss::future<> partition_manager::remove(const model::ntp& ntp) {
@@ -62,6 +63,7 @@ ss::future<> partition_manager::remove(const model::ntp& ntp) {
 
     return _raft_manager.local()
       .stop_group(partition->raft())
+      .then([partition] { return partition->stop(); })
       .then([this, ntp] { return _storage.log_mgr().remove(ntp); })
       .finally([partition] {}); // in the end remove partition
 }

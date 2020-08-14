@@ -1,5 +1,6 @@
 #pragma once
 
+#include "model/fundamental.h"
 #include "storage/disk_log_appender.h"
 #include "storage/failure_probes.h"
 #include "storage/kvstore.h"
@@ -37,7 +38,8 @@ public:
     ss::future<> truncate_prefix(truncate_prefix_config) final;
     ss::future<> compact(compaction_config) final;
 
-    ss::future<eviction_range_lock> monitor_eviction(ss::abort_source&) final;
+    ss::future<model::offset> monitor_eviction(ss::abort_source&) final;
+    void set_collectible_offset(model::offset) final;
 
     ss::future<model::record_batch_reader> make_reader(log_reader_config) final;
     ss::future<model::record_batch_reader> make_reader(timequery_config);
@@ -107,7 +109,7 @@ private:
 
 private:
     struct eviction_monitor {
-        ss::promise<eviction_range_lock> promise;
+        ss::promise<model::offset> promise;
         ss::abort_source::subscription subscription;
     };
     bool _closed{false};
@@ -119,6 +121,7 @@ private:
     storage::probe _probe;
     failure_probes _failure_probes;
     std::optional<eviction_monitor> _eviction_monitor;
+    model::offset _max_collectible_offset;
 };
 
 } // namespace storage

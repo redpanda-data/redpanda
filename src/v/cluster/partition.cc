@@ -1,13 +1,16 @@
 #include "cluster/partition.h"
 
+#include "cluster/logger.h"
+
 namespace cluster {
 
 partition::partition(consensus_ptr r)
-  : _raft(r) {}
-
-partition::partition(consensus_ptr r, raft::log_eviction_stm stm)
-  : _raft(r)
-  , _nop_stm(std::make_unique<raft::log_eviction_stm>(std::move(stm))) {}
+  : _raft(r) {
+    if (_raft->log_config().is_collectable()) {
+        _nop_stm = std::make_unique<raft::log_eviction_stm>(
+          _raft.get(), clusterlog, _as);
+    }
+}
 
 ss::future<> partition::start() {
     auto f = _raft->start();
@@ -18,14 +21,15 @@ ss::future<> partition::start() {
 
     return f;
 }
+
 ss::future<> partition::stop() {
-    auto f = _raft->stop();
+    _as.request_abort();
     // no state machine
     if (_nop_stm == nullptr) {
-        return f;
+        return ss::now();
     }
 
-    return f.then([this] { return _nop_stm->stop(); });
+    return _nop_stm->stop();
 }
 
 ss::future<std::optional<storage::timequery_result>>
