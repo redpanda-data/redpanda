@@ -2,10 +2,20 @@
 
 #include "model/adl_serde.h"
 #include "model/fundamental.h"
+#include "utils/named_type.h"
 
+#include <optional>
+#include <string_view>
 #include <vector>
 
 namespace coproc {
+
+/// \brief View wrapper for a materialized topic format
+/// The format for a materialized_topic will not pass kafka topic validators
+struct materialized_topic {
+    model::topic_view src;
+    model::topic_view dest;
+};
 
 /// \brief per topic a client will recieve a response code on the
 /// registration status of the topic
@@ -44,5 +54,15 @@ struct enable_topics_reply {
 struct disable_topics_reply {
     std::vector<disable_response_code> acks;
 };
+
+/// Parses a topic formatted as a materialized topic
+/// \return materialized_topic view or std::nullopt if parameter fails to be
+/// parsed correctly
+std::optional<materialized_topic> make_materialized_topic(const model::topic&);
+
+/// \brief Returns true if the schema obeys the $<src>.<dest>$ pattern
+inline bool is_materialized_topic(const model::topic& t) {
+    return make_materialized_topic(t).has_value();
+}
 
 } // namespace coproc
