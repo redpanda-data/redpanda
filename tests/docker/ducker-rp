@@ -252,7 +252,7 @@ docker_run() {
     must_do -v docker run --privileged \
         -d -t -h "${node}" --network ducknet "${expose_ports}" \
         --memory=${docker_run_memory_limit} --memory-swappiness=1 \
-        -v "${v_dir}/build:${v_dir}/build:z,ro" -v "${v_dir}:/opt/v:z" \
+        -v "${v_dir}/build:${v_dir}/build:ro" -v "${v_dir}:/opt/v" \
         --name "${node}" -- "${image_name}"
 }
 
