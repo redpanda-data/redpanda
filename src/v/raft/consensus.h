@@ -112,7 +112,8 @@ public:
     make_reader(storage::log_reader_config config);
 
     model::offset committed_offset() const { return _commit_index; }
-
+    model::offset last_stable_offset() const;
+    
     ss::future<offset_configuration>
     wait_for_config_change(model::offset last_seen, ss::abort_source& as) {
         return _configuration_manager.wait_for_change(last_seen, as);
