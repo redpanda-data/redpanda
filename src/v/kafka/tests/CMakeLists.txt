@@ -36,7 +36,6 @@ set(srcs
   member_test.cc
   group_test.cc
   read_write_roundtrip_test.cc
-  topic_result_utils_tests.cc
   metadata_test.cc
   fetch_test.cc
   delete_topics_test.cc
