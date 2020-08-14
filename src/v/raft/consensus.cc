@@ -1045,6 +1045,13 @@ consensus::do_write_snapshot(model::offset last_included_index, iobuf&& data) {
       "Unable to get term for snapshot last included offset {}",
       last_included_index);
     auto config = _configuration_manager.get(last_included_index);
+    vassert(
+      config.has_value(),
+      "Configuration for offset {} must be available in configuration manager: "
+      "{}",
+      last_included_index,
+      _configuration_manager);
+
     snapshot_metadata md{
       .last_included_index = last_included_index,
       .last_included_term = last_included_term.value(),
