@@ -296,4 +296,13 @@ ss::future<offset_configuration> configuration_manager::wait_for_change(
             offset_configuration(get_latest_offset(), get_latest()));
       });
 }
+std::ostream& operator<<(std::ostream& o, const configuration_manager& m) {
+    o << "{configurations: ";
+    for (const auto& p : m._configurations) {
+        o << "{ offset: " << p.first << " cfg: " << p.second << " } ";
+    }
+
+    return o << " }";
+}
+
 } // namespace raft
