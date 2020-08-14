@@ -175,10 +175,11 @@ class ReaderClient:
                 log_read_started(self.node.name, self.pid, self.key)
                 self.checker.read_started(self.pid, self.key)
                 op_started = loop.time()
-                read = await self.node.get_aio(self.key)
+                response = await self.node.get_aio(self.key)
+                read = response.record
                 op_ended = loop.time()
                 log_latency("ok", op_started - self.started_at,
-                            op_ended - op_started)
+                            op_ended - op_started, response.metrics)
                 if read == None:
                     log_read_none(self.node.name, self.pid, self.key)
                     self.checker.read_none(self.pid, self.key)

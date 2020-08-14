@@ -42,12 +42,13 @@ class WriterClient:
                 self.checker.cas_started(curr_write_id, self.key, prev,
                                          curr_version, f"42:{curr_version}")
                 op_started = loop.time()
-                data = await self.node.cas_aio(self.key, prev,
-                                               f"42:{curr_version}",
-                                               curr_write_id)
+                response = await self.node.cas_aio(self.key, prev,
+                                                   f"42:{curr_version}",
+                                                   curr_write_id)
+                data = response.record
                 op_ended = loop.time()
                 log_latency("ok", op_started - self.started_at,
-                            op_ended - op_started)
+                            op_ended - op_started, response.metrics)
                 log_write_ended(self.node.name, self.pid, self.key,
                                 data.write_id, data.value)
                 if data.write_id == curr_write_id:
@@ -87,7 +88,8 @@ class WriterClient:
                 break
 
 
-async def start_mrsw_workload_aio(kv_nodes, numOfKeys, numOfReaders, timeout):
+async def start_mrsw_workload_aio(kv_nodes, numOfKeys, numOfReaders, timeout,
+                                  ss_metrics):
     keys = list(map(lambda x: f"key{x}", range(0, numOfKeys)))
 
     checker = LinearizabilityHashmapChecker()
