@@ -33,6 +33,8 @@ public:
         impl& operator=(const impl&) = delete;
         virtual ~impl() noexcept = default;
 
+        // it shouldn't block for a long time as it will block other logs
+        // eviction
         virtual ss::future<> compact(compaction_config) = 0;
         virtual ss::future<> truncate(truncate_config) = 0;
         virtual ss::future<> truncate_prefix(truncate_prefix_config) = 0;
@@ -58,8 +60,9 @@ public:
         virtual std::ostream& print(std::ostream& o) const = 0;
         virtual std::optional<model::term_id> get_term(model::offset) const = 0;
 
-        virtual ss::future<eviction_range_lock>
+        virtual ss::future<model::offset>
         monitor_eviction(ss::abort_source&) = 0;
+        virtual void set_collectible_offset(model::offset) = 0;
 
     private:
         ntp_config _config;
@@ -127,21 +130,20 @@ public:
     /**
      * \brief Returns a future that resolves when log eviction is scheduled
      *
-     * This method allows user to hold the lock preventing garbadge collection.
-     * The lock is released as soon as eviction_range_lock is deleted. Eviction
-     * range lock contains RAII read lock holders and last offset of the last
-     * batch that is going to be evicted during garbadge collection. The garbage
-     * collection is a mechanism that is responsible to evict old log segments
-     * according to size and time based retention policies.
-     *
      * Important note: The api may throw ss::abort_requested_exception when
      * passed in abort source was triggered or storage::segment_closed_exception
      * when log was closed while waiting for eviction to happen.
      *
      */
-    ss::future<eviction_range_lock> monitor_eviction(ss::abort_source& as) {
+    ss::future<model::offset> monitor_eviction(ss::abort_source& as) {
         return _impl->monitor_eviction(as);
     }
+    /**
+     * Controlls the max offset that may be evicted by log retention policy
+     */
+    void set_collectible_offset(model::offset o) {
+        return _impl->set_collectible_offset(o);
+    };
 
     std::ostream& print(std::ostream& o) const { return _impl->print(o); }
 

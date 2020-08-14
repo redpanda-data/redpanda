@@ -16,20 +16,21 @@ class consensus;
  */
 class log_eviction_stm {
 public:
-    log_eviction_stm(consensus*, ss::logger&);
+    log_eviction_stm(consensus*, ss::logger&, ss::abort_source&);
 
     ss::future<> start();
 
     ss::future<> stop();
 
 private:
-    ss::future<> handle_deletion_notification(storage::eviction_range_lock);
+    ss::future<> handle_deletion_notification(model::offset);
     void monitor_log_eviction();
 
     consensus* _raft;
     ss::logger& _logger;
+    ss::abort_source& _as;
     ss::gate _gate;
-    ss::abort_source _as;
+    model::offset _previous_eviction_offset;
 };
 
 } // namespace raft

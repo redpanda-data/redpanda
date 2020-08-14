@@ -1,9 +1,11 @@
+#include "bytes/bytes.h"
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "model/timestamp.h"
 #include "random/generators.h"
 #include "storage/log_manager.h"
+#include "storage/record_batch_builder.h"
 #include "storage/tests/storage_test_fixture.h"
 #include "storage/tests/utils/random_batch.h"
 #include "storage/types.h"
@@ -297,7 +299,6 @@ FIXTURE_TEST(test_append_batches_from_multiple_terms, storage_test_fixture) {
         next = next + c;
     }
 }
-
 struct custom_ts_batch_generator {
     explicit custom_ts_batch_generator(model::timestamp start_ts)
       : _start_ts(start_ts) {}
@@ -316,7 +317,6 @@ struct custom_ts_batch_generator {
     }
     model::timestamp _start_ts;
 };
-
 FIXTURE_TEST(test_time_based_eviction, storage_test_fixture) {
     auto cfg = default_log_config(test_dir);
     cfg.max_segment_size = 10;
@@ -347,7 +347,7 @@ FIXTURE_TEST(test_time_based_eviction, storage_test_fixture) {
 
     storage::compaction_config ccfg(
       gc_ts, std::nullopt, ss::default_priority_class(), as);
-
+    log.set_collectible_offset(log.offsets().dirty_offset);
     log.compact(ccfg).get0();
 
     auto new_lstats = log.offsets();
@@ -392,7 +392,7 @@ FIXTURE_TEST(test_size_based_eviction, storage_test_fixture) {
       (total_size - first_size) + 1,
       ss::default_priority_class(),
       as);
-
+    log.set_collectible_offset(log.offsets().dirty_offset);
     log.compact(ccfg).get0();
 
     auto new_lstats = log.offsets();
@@ -402,7 +402,7 @@ FIXTURE_TEST(test_size_based_eviction, storage_test_fixture) {
 };
 
 FIXTURE_TEST(test_eviction_notification, storage_test_fixture) {
-    ss::promise<storage::eviction_range_lock> ev_range_lock;
+    ss::promise<model::offset> last_evicted_offset;
     auto cfg = default_log_config(test_dir);
     cfg.max_segment_size = 10;
     cfg.stype = storage::log_config::storage_type::disk;
@@ -415,8 +415,8 @@ FIXTURE_TEST(test_eviction_notification, storage_test_fixture) {
     storage::ntp_config ntp_cfg(ntp, mgr.config().base_dir);
     auto log = mgr.manage(std::move(ntp_cfg)).get0();
     (void)log.monitor_eviction(as).then(
-      [&ev_range_lock](storage::eviction_range_lock lock) mutable {
-          ev_range_lock.set_value(std::move(lock));
+      [&last_evicted_offset](model::offset o) mutable {
+          last_evicted_offset.set_value(o);
       });
 
     auto headers = append_random_batches(
@@ -436,21 +436,106 @@ FIXTURE_TEST(test_eviction_notification, storage_test_fixture) {
     storage::compaction_config ccfg(
       gc_ts, std::nullopt, ss::default_priority_class(), as);
 
-    auto compaction_future = log.compact(ccfg);
-    auto lock = ev_range_lock.get_future().get0();
+    log.compact(ccfg).get0();
 
+    auto offset = last_evicted_offset.get_future().get0();
+    log.compact(ccfg).get0();
     auto lstats_after = log.offsets();
 
-    ss::sleep(100ms).get0(); // sleep so that compaction could be scheduled
     BOOST_REQUIRE_EQUAL(lstats_before.start_offset, lstats_after.start_offset);
-    // release lock
-    lock.locks.clear();
+    // set max evictable offset
+    log.set_collectible_offset(offset);
     // wait for compaction
-    compaction_future.get0();
+    log.compact(ccfg).get0();
     auto compacted_lstats = log.offsets();
     info("Compacted offsets {}", compacted_lstats);
     // check if compaction happend
     BOOST_REQUIRE_EQUAL(
       compacted_lstats.start_offset,
       lstats_before.dirty_offset + model::offset(1));
+};
+
+ss::future<storage::append_result>
+append_exactly(storage::log log, size_t batch_count, size_t batch_sz) {
+    vassert(
+      batch_sz > model::packed_record_batch_header_size,
+      "Batch size must be greater than {}, requested {}",
+      model::packed_record_batch_header_size,
+      batch_sz);
+    storage::log_append_config append_cfg{
+      storage::log_append_config::fsync::no,
+      ss::default_priority_class(),
+      model::no_timeout};
+
+    ss::circular_buffer<model::record_batch> batches;
+    auto val_sz = batch_sz - model::packed_record_batch_header_size;
+    for (int i = 0; i < batch_count; ++i) {
+        storage::record_batch_builder builder(
+          model::record_batch_type(1), model::offset{});
+        builder.add_raw_kv(
+          iobuf{}, bytes_to_iobuf(random_generators::get_bytes(val_sz)));
+
+        batches.push_back(std::move(builder).build());
+    }
+
+    auto rdr = model::make_memory_record_batch_reader(std::move(batches));
+    auto expected_last_offset = log.offsets().dirty_offset
+                                + model::offset(batch_count);
+
+    return std::move(rdr).for_each_ref(
+      log.make_appender(append_cfg), model::no_timeout);
+}
+
+FIXTURE_TEST(write_concurrently_with_gc, storage_test_fixture) {
+    auto cfg = default_log_config(test_dir);
+    // make sure segments are small
+    cfg.max_segment_size = 1000;
+    cfg.stype = storage::log_config::storage_type::disk;
+    ss::abort_source as;
+    storage::log_manager mgr = make_log_manager(cfg);
+
+    info("Configuration: {}", mgr.config());
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    auto ntp = model::ntp("default", "test", 0);
+
+    storage::ntp_config ntp_cfg(ntp, mgr.config().base_dir);
+    auto log = mgr.manage(std::move(ntp_cfg)).get0();
+
+    auto result = append_exactly(log, 10, 100).get0();
+    BOOST_REQUIRE_EQUAL(log.offsets().dirty_offset, model::offset(9));
+
+    std::vector<ss::future<>> futures;
+
+    ss::semaphore _sem{1};
+    int appends = 100;
+    int batches_per_append = 5;
+
+    auto compact = [log, &_sem, &as]() mutable {
+        storage::compaction_config ccfg(
+          model::timestamp::min(), 500, ss::default_priority_class(), as);
+        return ss::with_semaphore(
+          _sem, 1, [&log, ccfg]() mutable { return log.compact(ccfg); });
+    };
+
+    auto append = [log, &_sem, &as, batches_per_append]() mutable {
+        return ss::with_semaphore(
+          _sem, 1, [&log, batches_per_append]() mutable {
+              return append_exactly(log, batches_per_append, 100)
+                .discard_result();
+          });
+    };
+
+    futures.push_back(compact());
+    for (int i = 0; i < appends; ++i) {
+        futures.push_back(append());
+        futures.push_back(compact());
+    }
+
+    ss::when_all(futures.begin(), futures.end()).get0();
+    compact().get0();
+    as.request_abort();
+    auto lstats_after = log.offsets();
+    BOOST_REQUIRE_EQUAL(
+      lstats_after.dirty_offset,
+      model::offset(9 + appends * batches_per_append));
 };

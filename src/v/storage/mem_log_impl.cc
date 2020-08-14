@@ -1,4 +1,5 @@
 #include "likely.h"
+#include "model/fundamental.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
@@ -249,37 +250,28 @@ struct mem_log_impl final : log::impl {
 
             break;
         }
-        auto f = ss::now();
         if (_eviction_monitor) {
-            f = _eviction_lock.hold_read_lock().then(
-              [this, max_offset](ss::rwlock::holder h) {
-                  std::vector<ss::rwlock::holder> holders;
-                  holders.push_back(std::move(h));
-                  _eviction_monitor->promise.set_value(
-                    eviction_range_lock(max_offset, std::move(holders)));
-                  _eviction_monitor.reset();
-              });
+            _eviction_monitor->promise.set_value(max_offset);
+            _eviction_monitor.reset();
         }
-        return f.then([this, max_offset] {
-            return ss::with_lock(
-              _eviction_lock.for_write(), [this, max_offset] {
-                  std::cout << "max offset " << max_offset << std::endl;
-                  auto it = _data.begin();
-                  while (it != _data.end() && it->last_offset() <= max_offset) {
-                      _probe.remove_bytes_written(it->size_bytes());
-                      it++;
-                  }
+        if (max_offset > _max_collectible_offset) {
+            return ss::now();
+        }
 
-                  if (it != _data.begin()) {
-                      _data.erase(_data.begin(), it);
-                      _data.shrink_to_fit();
-                  }
-              });
-        });
+        auto it = _data.begin();
+        while (it != _data.end() && it->last_offset() <= max_offset) {
+            _probe.remove_bytes_written(it->size_bytes());
+            it++;
+        }
+
+        if (it != _data.begin()) {
+            _data.erase(_data.begin(), it);
+            _data.shrink_to_fit();
+        }
+        return ss::now();
     }
 
-    ss::future<eviction_range_lock>
-    monitor_eviction(ss::abort_source& as) final {
+    ss::future<model::offset> monitor_eviction(ss::abort_source& as) final {
         if (_eviction_monitor) {
             throw std::logic_error("Eviction promise already registered. "
                                    "Eviction can not be monitored twice.");
@@ -292,14 +284,18 @@ struct mem_log_impl final : log::impl {
 
         // already aborted
         if (!opt_sub) {
-            return ss::make_exception_future<eviction_range_lock>(
+            return ss::make_exception_future<model::offset>(
               ss::abort_requested_exception());
         }
 
         return _eviction_monitor
-          .emplace(eviction_monitor{
-            ss::promise<eviction_range_lock>{}, std::move(*opt_sub)})
+          .emplace(
+            eviction_monitor{ss::promise<model::offset>{}, std::move(*opt_sub)})
           .promise.get_future();
+    }
+
+    void set_collectible_offset(model::offset o) final {
+        _max_collectible_offset = o;
     }
 
     ss::future<model::record_batch_reader>
@@ -361,7 +357,7 @@ struct mem_log_impl final : log::impl {
           .last_term_start_offset = last_term_base_offset};
     }
     struct eviction_monitor {
-        ss::promise<eviction_range_lock> promise;
+        ss::promise<model::offset> promise;
         ss::abort_source::subscription subscription;
     };
     boost::intrusive::list<mem_iter_reader> _readers;
@@ -369,6 +365,7 @@ struct mem_log_impl final : log::impl {
     std::optional<eviction_monitor> _eviction_monitor;
     ss::rwlock _eviction_lock;
     mem_probe _probe;
+    model::offset _max_collectible_offset;
 };
 
 ss::future<ss::stop_iteration>

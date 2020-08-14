@@ -22,7 +22,8 @@ FIXTURE_TEST(retention_test_time, gc_fixture) {
       | storage::add_segment(102)
       | storage::add_random_batch(102, 2, storage::maybe_compress_batches::yes)
       | storage::add_segment(104) | storage::add_random_batches(104, 3);
-
+    builder.get_log().set_collectible_offset(
+      builder.get_log().offsets().dirty_offset);
     BOOST_TEST_MESSAGE(
       "Should not collect segments with timestamp older than 1");
     BOOST_CHECK_EQUAL(builder.get_log().segment_count(), 3);
@@ -51,7 +52,8 @@ FIXTURE_TEST(retention_test_size, gc_fixture) {
       | storage::add_segment(102)
       | storage::add_random_batch(102, 2, storage::maybe_compress_batches::yes)
       | storage::add_segment(104) | storage::add_random_batches(104, 3);
-
+    builder.get_log().set_collectible_offset(
+      builder.get_log().offsets().dirty_offset);
     BOOST_TEST_MESSAGE("Should not collect segments because size equal to "
                        "current partition size");
     builder
@@ -79,6 +81,8 @@ FIXTURE_TEST(retention_test_after_truncation, gc_fixture) {
       | storage::truncate_log(model::offset(0))
       | storage::garbage_collect(model::timestamp::now(), std::nullopt)
       | storage::stop();
+    builder.get_log().set_collectible_offset(
+      builder.get_log().offsets().dirty_offset);
     BOOST_CHECK_EQUAL(builder.get_log().segment_count(), 0);
     BOOST_CHECK_EQUAL(
       builder.get_disk_log_impl().get_probe().partition_size(), 0);
