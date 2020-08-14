@@ -27,4 +27,4 @@ die() {
 if "${SCRIPT_DIR}"/ducker-rp ssh | grep -q '(none)'; then
   "${SCRIPT_DIR}"/ducker-rp up -n "${RP_NUM_CONTAINERS}" || die "ducker-rp up failed"
 fi
-"${SCRIPT_DIR}"/ducker-rp test "${TC_PATHS}" "${_DUCKTAPE_OPTIONS}" || die "ducker-rp test failed"
+"${SCRIPT_DIR}"/ducker-rp test ${TC_PATHS} ${_DUCKTAPE_OPTIONS} || die "ducker-rp test failed"
