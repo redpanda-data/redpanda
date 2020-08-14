@@ -29,20 +29,20 @@ using namespace std::chrono_literals; // NOLINT
 
 class recreate_test_fixture : public redpanda_thread_fixture {
 public:
-    void create_topic(ss::sstring tp, uint32_t partitions, uint16_t rf) {
-        kafka::new_topic_configuration topic;
-
-        topic.topic = model::topic(tp);
-        topic.partition_count = partitions;
-        topic.replication_factor = rf;
-
-        std::vector<kafka::new_topic_configuration> topics;
-        topics.push_back(std::move(topic));
-        auto req = kafka::create_topics_request{
-          .topics = std::move(topics),
-          .timeout = 10s,
-          .validate_only = false,
+    void create_topic(ss::sstring tp, int32_t partitions, int16_t rf) {
+        kafka::creatable_topic topic{
+          .name = model::topic(tp),
+          .num_partitions = partitions,
+          .replication_factor = rf,
         };
+
+        std::vector<kafka::creatable_topic> topics;
+        topics.push_back(std::move(topic));
+        auto req = kafka::create_topics_request{.data{
+          .topics = std::move(topics),
+          .timeout_ms = 10s,
+          .validate_only = false,
+        }};
 
         auto client = make_kafka_client().get0();
         client.connect().get0();

@@ -2,6 +2,8 @@
 #include "model/metadata.h"
 #define BOOST_TEST_MODULE utils
 #include "cluster/types.h"
+#include "kafka/requests/schemata/create_topics_request.h"
+#include "kafka/requests/topics/topic_utils.h"
 #include "kafka/requests/topics/types.h"
 
 #include <boost/test/unit_test.hpp>
@@ -9,26 +11,26 @@
 using namespace kafka; // NOLINT
 
 BOOST_AUTO_TEST_CASE(test_no_additional_options) {
-    new_topic_configuration no_options = {
-      .topic = model::topic_view{"test_tp"},
-      .partition_count = 5,
+    creatable_topic no_options = {
+      .name = model::topic_view{"test_tp"},
+      .num_partitions = 5,
       .replication_factor = 5};
 
-    auto cluster_tp_config = no_options.to_cluster_type();
+    auto cluster_tp_config = to_cluster_type(no_options);
     BOOST_REQUIRE_EQUAL(
-      cluster_tp_config.tp_ns.tp, ss::sstring(no_options.topic()));
+      cluster_tp_config.tp_ns.tp, ss::sstring(no_options.name()));
     BOOST_REQUIRE_EQUAL(
-      cluster_tp_config.partition_count, no_options.partition_count);
+      cluster_tp_config.partition_count, no_options.num_partitions);
     BOOST_REQUIRE_EQUAL(
       cluster_tp_config.replication_factor, no_options.replication_factor);
 }
 
 BOOST_AUTO_TEST_CASE(test_all_additional_options) {
-    new_topic_configuration all_options = {
-      .topic = model::topic_view{"test_tp"},
-      .partition_count = 5,
+    creatable_topic all_options = {
+      .name = model::topic_view{"test_tp"},
+      .num_partitions = 5,
       .replication_factor = 5,
-      .config = {
+      .configs = {
         {"compression.type", "snappy"},
         {"cleanup.policy", "compact,delete"},
         {"retention.bytes", "-1"},
@@ -36,11 +38,11 @@ BOOST_AUTO_TEST_CASE(test_all_additional_options) {
         {"compaction.strategy", "header"},
       }};
 
-    auto cluster_tp_config = all_options.to_cluster_type();
+    auto cluster_tp_config = to_cluster_type(all_options);
     BOOST_REQUIRE_EQUAL(
-      cluster_tp_config.tp_ns.tp, ss::sstring(all_options.topic()));
+      cluster_tp_config.tp_ns.tp, ss::sstring(all_options.name()));
     BOOST_REQUIRE_EQUAL(
-      cluster_tp_config.partition_count, all_options.partition_count);
+      cluster_tp_config.partition_count, all_options.num_partitions);
     BOOST_REQUIRE_EQUAL(
       cluster_tp_config.replication_factor, all_options.replication_factor);
     BOOST_REQUIRE_EQUAL(

@@ -12,33 +12,31 @@
 class create_topic_fixture : public redpanda_thread_fixture {
 public:
     kafka::create_topics_request make_req(
-      std::vector<kafka::new_topic_configuration> topics,
-      int timeout = 10000,
-      bool validate_only = false) {
-        return kafka::create_topics_request{
+      std::vector<kafka::creatable_topic> topics, bool validate_only = false) {
+        return kafka::create_topics_request{.data{
           .topics = std::move(topics),
-          .timeout = std::chrono::milliseconds(timeout),
+          .timeout_ms = 10s,
           .validate_only = validate_only,
-        };
+        }};
     }
 
-    kafka::new_topic_configuration make_topic(
+    kafka::creatable_topic make_topic(
       ss::sstring name,
       std::optional<int> num_partitions = std::nullopt,
       std::optional<int> replication_factor = std::nullopt,
       std::optional<std::map<ss::sstring, ss::sstring>> config = std::nullopt,
       std::optional<std::map<int, std::vector<int>>> assignment
       = std::nullopt) {
-        kafka::new_topic_configuration topic;
+        kafka::creatable_topic topic;
 
-        topic.topic = model::topic(name);
+        topic.name = model::topic(name);
 
         if (num_partitions) {
-            topic.partition_count = *num_partitions;
+            topic.num_partitions = *num_partitions;
         } else if (assignment) {
-            topic.partition_count = -1;
+            topic.num_partitions = -1;
         } else {
-            topic.partition_count = 1;
+            topic.num_partitions = 1;
         }
 
         if (replication_factor) {
@@ -51,16 +49,16 @@ public:
 
         if (config) {
             for (auto& c : *config) {
-                topic.config.push_back({c.first, c.second});
+                topic.configs.push_back({c.first, c.second});
             }
         }
 
         if (assignment) {
             for (auto& a : *assignment) {
-                kafka::partition_assignment pa;
-                pa.partition = model::partition_id(a.first);
+                kafka::creatable_replica_assignment pa;
+                pa.partition_index = model::partition_id(a.first);
                 for (auto& b : a.second) {
-                    pa.assignments.push_back(model::node_id(b));
+                    pa.broker_ids.push_back(model::node_id(b));
                 }
                 topic.assignments.push_back(std::move(pa));
             }
@@ -76,14 +74,14 @@ public:
 
         BOOST_TEST(
           std::all_of(
-            std::cbegin(resp.topics),
-            std::cend(resp.topics),
-            [](const kafka::create_topics_response::topic& t) {
-                return t.error == kafka::error_code::none;
+            std::cbegin(resp.data.topics),
+            std::cend(resp.data.topics),
+            [](const kafka::creatable_topic_result& t) {
+                return t.error_code == kafka::error_code::none;
             }),
           fmt::format("expected no errors. received response: {}", resp));
 
-        for (auto& topic : req.topics) {
+        for (auto& topic : req.data.topics) {
             verify_metadata(client, req, topic);
             // TODO: one we combine the cluster fixture with the redpanda
             // fixture and enable multiple RP instances to run at the same time
@@ -99,11 +97,11 @@ public:
     void verify_metadata(
       kafka::client& client,
       kafka::create_topics_request& create_req,
-      kafka::new_topic_configuration& request_topic) {
+      kafka::creatable_topic& request_topic) {
         // query the server for this topic's metadata
         kafka::metadata_request metadata_req;
         metadata_req.topics = std::make_optional<std::vector<model::topic>>();
-        metadata_req.topics->push_back(request_topic.topic);
+        metadata_req.topics->push_back(request_topic.name);
         auto metadata_resp
           = client.dispatch(metadata_req, kafka::api_version(1)).get0();
 
@@ -112,7 +110,7 @@ public:
           metadata_resp.topics.cbegin(),
           metadata_resp.topics.cend(),
           [&request_topic](const kafka::metadata_response::topic& topic) {
-              return topic.name == request_topic.topic;
+              return topic.name == request_topic.name;
           });
 
         BOOST_TEST_REQUIRE(
@@ -123,23 +121,23 @@ public:
         if (!request_topic.assignments.empty()) {
             partitions = request_topic.assignments.size();
         } else {
-            partitions = request_topic.partition_count;
+            partitions = request_topic.num_partitions;
         }
 
         int replication;
         if (!request_topic.assignments.empty()) {
-            replication = request_topic.assignments[0].assignments.size();
+            replication = request_topic.assignments[0].broker_ids.size();
         } else {
             replication = request_topic.replication_factor;
         }
 
-        if (create_req.validate_only) {
+        if (create_req.data.validate_only) {
             BOOST_TEST(
               topic_metadata->err_code != kafka::error_code::none,
               fmt::format(
                 "error {} for topic {}",
                 topic_metadata->err_code,
-                request_topic.topic));
+                request_topic.name));
             BOOST_TEST(
               topic_metadata->partitions.empty(),
               "topic should have no partitions");

@@ -2,6 +2,8 @@
 
 #include "kafka/requests/request_context.h"
 #include "kafka/requests/response.h"
+#include "kafka/requests/schemata/create_topics_request.h"
+#include "kafka/requests/schemata/create_topics_response.h"
 #include "kafka/requests/topics/types.h"
 #include "kafka/requests/topics/validators.h"
 #include "seastarx.h"
@@ -28,51 +30,50 @@ public:
 
 private:
     using validators = make_validator_types<
-      new_topic_configuration,
+      creatable_topic,
       no_custom_partition_assignment,
       partition_count_must_be_positive,
       replication_factor_must_be_positive,
       replication_factor_must_be_odd,
       unsupported_configuration_entries>;
-
-    static response_ptr
-    encode_response(request_context&, std::vector<topic_op_result> errs);
 };
 
-struct create_topics_request {
+struct create_topics_request final {
     using api_type = create_topics_api;
 
-    static create_topics_request decode(request_context&);
+    create_topics_request_data data;
 
-    static new_topic_configuration read_topic_configuration(request_reader&);
+    void encode(response_writer& writer, api_version version) {
+        data.encode(writer, version);
+    }
 
-    static std::vector<partition_assignment>
-    read_partiton_assignments(request_reader&);
-
-    static partition_assignment read_partiton_assignment(request_reader&);
-
-    static model::node_id read_node_id(request_reader&);
-
-    std::vector<new_topic_configuration> topics;
-    std::chrono::milliseconds timeout;
-    bool validate_only; // >= v1
-
-    void encode(response_writer& writer, api_version version);
+    void decode(request_reader& reader, api_version version) {
+        data.decode(reader, version);
+    }
 };
+
+inline std::ostream&
+operator<<(std::ostream& os, const create_topics_request& r) {
+    return os << r.data;
+}
 
 struct create_topics_response final {
-    struct topic {
-        model::topic name;
-        error_code error;
-        std::optional<ss::sstring> error_message; // >= v1
-    };
+    using api_type = create_topics_api;
 
-    std::chrono::milliseconds throttle = std::chrono::milliseconds(0); // >= v2
-    std::vector<topic> topics;
+    create_topics_response_data data;
 
-    void decode(iobuf buf, api_version version);
+    void encode(const request_context& ctx, response& resp) {
+        data.encode(resp.writer(), ctx.header().version);
+    }
+
+    void decode(iobuf buf, api_version version) {
+        data.decode(std::move(buf), version);
+    }
 };
 
-std::ostream& operator<<(std::ostream&, const create_topics_response&);
+inline std::ostream&
+operator<<(std::ostream& os, const create_topics_response& r) {
+    return os << r.data;
+}
 
 } // namespace kafka
