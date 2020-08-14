@@ -1014,6 +1014,11 @@ ss::future<install_snapshot_reply> consensus::finish_snapshot(
 
 ss::future<> consensus::write_snapshot(write_snapshot_cfg cfg) {
     return _op_lock.with([this, cfg = std::move(cfg)]() mutable {
+        // do nothing, we already have snapshot for this offset
+        // MUST be checked under the _op_lock
+        if (cfg.last_included_index <= _last_snapshot_index) {
+            return ss::now();
+        }
         return do_write_snapshot(cfg.last_included_index, std::move(cfg.data))
           .then([this, should_truncate = cfg.should_truncate] {
               if (!should_truncate) {
