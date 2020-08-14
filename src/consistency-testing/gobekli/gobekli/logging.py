@@ -3,6 +3,8 @@ import time
 import logging
 import logging.handlers
 
+latency_metrics = []
+
 
 def setup_logger(logger_name,
                  log_file,
@@ -20,7 +22,9 @@ def setup_logger(logger_name,
     logger.addHandler(fileHandler)
 
 
-def init_logs(cmd_log_file, latency_file):
+def init_logs(cmd_log_file, latency_file, ss_metrics):
+    global latency_metrics
+    latency_metrics = ss_metrics
     setup_logger("cmd", cmd_log_file, 2 * 1024 * 1024, 5)
     setup_logger("latency", latency_file, 10 * 1024 * 1024, 5)
 
@@ -156,6 +160,12 @@ def log_violation(pid, message):
         }))
 
 
-def log_latency(type, time_s, latency_s):
+def log_latency(type, time_s, latency_s, metrics=None):
     log = logging.getLogger("latency")
-    log.info(f"{int(time_s)}\t{int(latency_s*1000)}\t{type}")
+    message = f"{int(time_s)}\t{int(latency_s*1000)}\t{type}"
+    if metrics != None:
+        for key in latency_metrics:
+            message += "\t"
+            if key in metrics:
+                message += str(metrics[key])
+    log.info(message)
