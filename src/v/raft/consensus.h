@@ -135,7 +135,7 @@ public:
 
     event_manager& events() { return _event_manager; }
 
-    ss::future<storage::eviction_range_lock> monitor_log_eviction() {
+    ss::future<model::offset> monitor_log_eviction() {
         return _log.monitor_eviction(_as);
     }
 

@@ -24,8 +24,8 @@ void log_eviction_stm::monitor_log_eviction() {
           [this] { return _gate.is_closed(); },
           [this] {
               return _raft->monitor_log_eviction()
-                .then([this](storage::eviction_range_lock lock) {
-                    return handle_deletion_notification(std::move(lock));
+                .then([this](model::offset last_evicted) {
+                    return handle_deletion_notification(last_evicted);
                 })
                 .handle_exception([this](std::exception_ptr e) {
                     vlog(_logger.trace, "Error handling log eviction - {}", e);
@@ -34,18 +34,21 @@ void log_eviction_stm::monitor_log_eviction() {
     });
 }
 
-ss::future<> log_eviction_stm::handle_deletion_notification(
-  storage::eviction_range_lock lock) {
+ss::future<>
+log_eviction_stm::handle_deletion_notification(model::offset last_evicted) {
     vlog(
       _logger.trace,
       "Handling log deletion notification for offset: {}",
-      lock.last_evicted);
-    // persist empty snapshot
-    return _raft
-      ->write_snapshot(write_snapshot_cfg(
-        lock.last_evicted,
-        iobuf(),
-        write_snapshot_cfg::should_prefix_truncate::no))
-      .finally([lock = std::move(lock)] {});
+      last_evicted);
+    // do nothing, we already taken the snapshot
+    if (last_evicted <= _previous_eviction_offset) {
+        return ss::now();
+    }
+    // persist empty snapshot, we can have no timeout in here as we are passing
+    // in an abort source
+    _previous_eviction_offset = last_evicted;
+
+    return _raft->write_snapshot(write_snapshot_cfg(
+      last_evicted, iobuf(), write_snapshot_cfg::should_prefix_truncate::no));
 }
 } // namespace raft

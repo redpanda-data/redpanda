@@ -23,13 +23,14 @@ public:
     ss::future<> stop();
 
 private:
-    ss::future<> handle_deletion_notification(storage::eviction_range_lock);
+    ss::future<> handle_deletion_notification(model::offset);
     void monitor_log_eviction();
 
     consensus* _raft;
     ss::logger& _logger;
     ss::gate _gate;
     ss::abort_source _as;
+    model::offset _previous_eviction_offset;
 };
 
 } // namespace raft
