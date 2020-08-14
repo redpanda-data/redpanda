@@ -1,6 +1,6 @@
 {
     "namespace": "coproc",
-    "service_name": "liaison",
+    "service_name": "registration",
     "includes": [
         "coproc/types.h"
     ],
