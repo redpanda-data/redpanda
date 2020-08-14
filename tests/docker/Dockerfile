@@ -94,6 +94,9 @@ RUN mkdir /opt/librdkafka && \
 RUN cd /opt/librdkafka && ./configure && make -j$(nproc)
 RUN cd /opt/librdkafka/tests && make build -j$(nproc)
 
+# Install kaf tool
+RUN curl https://raw.githubusercontent.com/birdayz/kaf/master/godownloader.sh | BINDIR=/usr/bin sudo bash
+
 # Set up the ducker user.
 RUN useradd -ms /bin/bash ducker && \
     mkdir -p /home/ducker/ && rsync -aiq /root/.ssh/ /home/ducker/.ssh && \
