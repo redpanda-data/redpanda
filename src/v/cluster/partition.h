@@ -67,7 +67,7 @@ public:
      * kafka clients, simply report the next offset.
      */
     model::offset last_stable_offset() const {
-        return committed_offset() + model::offset(1);
+        return _raft->last_stable_offset() + model::offset(1);
     }
 
     const model::ntp& ntp() const { return _raft->ntp(); }

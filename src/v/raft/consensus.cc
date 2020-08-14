@@ -323,6 +323,15 @@ void consensus::dispatch_flush_with_lock() {
     });
 }
 
+model::offset consensus::last_stable_offset() const {
+    // for quroum acks level, limit reads to fully replicated entries.
+    if (_last_replicate_consistency == consistency_level::quorum_ack) {
+        return _commit_index;
+    }
+    // for relaxed consistency we can read up to commited offset
+    return _log.offsets().committed_offset;
+}
+
 ss::future<model::record_batch_reader>
 consensus::make_reader(storage::log_reader_config config) {
     auto lstats = _log.offsets();
