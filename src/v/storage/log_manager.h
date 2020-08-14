@@ -178,6 +178,9 @@ public:
         return std::nullopt;
     }
 
+    /// Returns the logs that match a model::topic_namespace
+    absl::flat_hash_map<model::ntp, log> get(const model::topic_namespace&);
+
 private:
     using logs_type = absl::flat_hash_map<model::ntp, log_housekeeping_meta>;
 
