@@ -136,7 +136,7 @@ model::offset disk_log_impl::time_based_gc_max_offset(model::timestamp time) {
     return (*it)->offsets().committed_offset;
 }
 
-ss::future<eviction_range_lock>
+ss::future<model::offset>
 disk_log_impl::monitor_eviction(ss::abort_source& as) {
     if (_eviction_monitor) {
         throw std::logic_error("Eviction promise already registered. Eviction "
@@ -150,74 +150,56 @@ disk_log_impl::monitor_eviction(ss::abort_source& as) {
     });
     // already aborted
     if (!opt_sub) {
-        return ss::make_exception_future<eviction_range_lock>(
+        return ss::make_exception_future<model::offset>(
           ss::abort_requested_exception());
     }
 
     return _eviction_monitor
-      .emplace(eviction_monitor{
-        ss::promise<eviction_range_lock>{}, std::move(*opt_sub)})
+      .emplace(
+        eviction_monitor{ss::promise<model::offset>{}, std::move(*opt_sub)})
       .promise.get_future();
 }
 
-ss::future<eviction_range_lock>
-get_eviction_range_lock(const segment_set& segs, model::offset max_offset) {
-    std::vector<ss::future<ss::rwlock::holder>> lock_futures;
-    auto it = segs.begin();
-    while (it != segs.end() && (*it)->offsets().dirty_offset <= max_offset) {
-        lock_futures.push_back((*it)->read_lock());
-        ++it;
-    }
-
-    return ss::when_all_succeed(lock_futures.begin(), lock_futures.end())
-      .then([max_offset](std::vector<ss::rwlock::holder> locks) {
-          return eviction_range_lock(max_offset, std::move(locks));
-      });
+void disk_log_impl::set_collectible_offset(model::offset o) {
+    _max_collectible_offset = o;
 }
 
 ss::future<> disk_log_impl::garbage_collect_segments(
   model::offset max_offset, ss::abort_source* as, std::string_view ctx) {
-    auto f = ss::now();
-    if (_eviction_monitor) {
-        f = get_eviction_range_lock(_segs, max_offset)
-              .then([this](eviction_range_lock lock) {
-                  // do not trigger monitor when there are no evictions
-                  if (lock.locks.empty()) {
-                      return;
-                  }
-                  _eviction_monitor->promise.set_value(std::move(lock));
-                  _eviction_monitor.reset();
-              });
+    // we only notify eviction monitor if there are segments to evict
+    auto have_segments_to_evict = !_segs.empty()
+                                  && _segs.front()->offsets().base_offset
+                                       < max_offset;
+
+    if (_eviction_monitor && have_segments_to_evict) {
+        _eviction_monitor->promise.set_value(max_offset);
+        _eviction_monitor.reset();
     }
 
-    return f.then([this, as, max_offset, ctx] {
-        return ss::do_until(
-          [this, as, max_offset] {
-              return _segs.empty() || as->abort_requested()
-                     || _segs.front()->offsets().base_offset > max_offset;
-          },
-          [this, ctx] {
-              auto ptr = _segs.front();
-              return ptr->write_lock().then(
-                [this, ptr, ctx]([[maybe_unused]] ss::rwlock::holder h) {
-                    // update start offset before removing the segment
-                    // to make sure
-                    // that all opertions will update the start offset
-                    // correctly
-                    _start_offset = ptr->offsets().dirty_offset
-                                    + model::offset(1);
-                    return _kvstore
-                      .put(
-                        kvstore::key_space::storage,
-                        start_offset_key(),
-                        reflection::to_iobuf(_start_offset))
-                      .then([this, ptr, ctx] {
-                          _segs.pop_front();
-                          return remove_segment_permanently(ptr, ctx);
-                      });
-                });
-          });
-    });
+    max_offset = std::min(max_offset, _max_collectible_offset);
+
+    return ss::do_until(
+      [this, as, max_offset] {
+          return _segs.empty() || as->abort_requested()
+                 || _segs.front()->offsets().base_offset > max_offset;
+      },
+      [this, ctx] {
+          auto ptr = _segs.front();
+          // update start offset before removing the segment
+          // to make sure
+          // that all opertions will update the start offset
+          // correctly
+          _start_offset = ptr->offsets().dirty_offset + model::offset(1);
+          return _kvstore
+            .put(
+              kvstore::key_space::storage,
+              start_offset_key(),
+              reflection::to_iobuf(_start_offset))
+            .then([this, ptr, ctx] {
+                _segs.pop_front();
+                return remove_segment_permanently(ptr, ctx);
+            });
+      });
 }
 
 ss::future<> disk_log_impl::garbage_collect_max_partition_size(

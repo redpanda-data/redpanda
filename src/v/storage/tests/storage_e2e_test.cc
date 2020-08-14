@@ -347,7 +347,7 @@ FIXTURE_TEST(test_time_based_eviction, storage_test_fixture) {
 
     storage::compaction_config ccfg(
       gc_ts, std::nullopt, ss::default_priority_class(), as);
-
+    log.set_collectible_offset(log.offsets().dirty_offset);
     log.compact(ccfg).get0();
 
     auto new_lstats = log.offsets();
@@ -392,7 +392,7 @@ FIXTURE_TEST(test_size_based_eviction, storage_test_fixture) {
       (total_size - first_size) + 1,
       ss::default_priority_class(),
       as);
-
+    log.set_collectible_offset(log.offsets().dirty_offset);
     log.compact(ccfg).get0();
 
     auto new_lstats = log.offsets();
@@ -402,7 +402,7 @@ FIXTURE_TEST(test_size_based_eviction, storage_test_fixture) {
 };
 
 FIXTURE_TEST(test_eviction_notification, storage_test_fixture) {
-    ss::promise<storage::eviction_range_lock> ev_range_lock;
+    ss::promise<model::offset> last_evicted_offset;
     auto cfg = default_log_config(test_dir);
     cfg.max_segment_size = 10;
     cfg.stype = storage::log_config::storage_type::disk;
@@ -415,8 +415,8 @@ FIXTURE_TEST(test_eviction_notification, storage_test_fixture) {
     storage::ntp_config ntp_cfg(ntp, mgr.config().base_dir);
     auto log = mgr.manage(std::move(ntp_cfg)).get0();
     (void)log.monitor_eviction(as).then(
-      [&ev_range_lock](storage::eviction_range_lock lock) mutable {
-          ev_range_lock.set_value(std::move(lock));
+      [&last_evicted_offset](model::offset o) mutable {
+          last_evicted_offset.set_value(o);
       });
 
     auto headers = append_random_batches(
@@ -436,17 +436,17 @@ FIXTURE_TEST(test_eviction_notification, storage_test_fixture) {
     storage::compaction_config ccfg(
       gc_ts, std::nullopt, ss::default_priority_class(), as);
 
-    auto compaction_future = log.compact(ccfg);
-    auto lock = ev_range_lock.get_future().get0();
+    log.compact(ccfg).get0();
 
+    auto offset = last_evicted_offset.get_future().get0();
+    log.compact(ccfg).get0();
     auto lstats_after = log.offsets();
 
-    ss::sleep(100ms).get0(); // sleep so that compaction could be scheduled
     BOOST_REQUIRE_EQUAL(lstats_before.start_offset, lstats_after.start_offset);
-    // release lock
-    lock.locks.clear();
+    // set max evictable offset
+    log.set_collectible_offset(offset);
     // wait for compaction
-    compaction_future.get0();
+    log.compact(ccfg).get0();
     auto compacted_lstats = log.offsets();
     info("Compacted offsets {}", compacted_lstats);
     // check if compaction happend

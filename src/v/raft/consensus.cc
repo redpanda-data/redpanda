@@ -908,6 +908,7 @@ ss::future<> consensus::do_hydrate_snapshot(storage::snapshot_reader& reader) {
           .add(_last_snapshot_index, std::move(metadata.latest_configuration))
           .then([this] {
               _probe.configuration_update();
+              _log.set_collectible_offset(_last_snapshot_index);
               return truncate_to_latest_snapshot();
           });
     });
@@ -1019,7 +1020,8 @@ ss::future<> consensus::write_snapshot(write_snapshot_cfg cfg) {
                   return ss::now();
               }
               return truncate_to_latest_snapshot();
-          });
+          })
+          .then([this] { _log.set_collectible_offset(_last_snapshot_index); });
     });
 }
 
