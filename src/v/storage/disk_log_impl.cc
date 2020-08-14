@@ -39,7 +39,7 @@ disk_log_impl::disk_log_impl(
   , _start_offset(read_start_offset())
   , _lock_mngr(_segs) {
     const bool is_compacted = config().is_compacted();
-    for (auto& s : segs) {
+    for (auto& s : _segs) {
         _probe.add_initial_segment(*s);
         if (is_compacted) {
             s->mark_as_compacted_segment();
