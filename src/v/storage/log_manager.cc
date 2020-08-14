@@ -49,18 +49,14 @@ log_manager::log_manager(log_config config, kvstore& kvstore) noexcept
 }
 void log_manager::trigger_housekeeping() {
     (void)ss::with_gate(_open_gate, [this] {
-        auto begin_housekeeping = _jitter();
-        return housekeeping().finally([this, begin_housekeeping] {
+        auto next_housekeeping = _jitter();
+        return housekeeping().finally([this, next_housekeeping] {
             // all of these *MUST* be in the finally
             if (_open_gate.is_closed()) {
                 return;
             }
-            const auto next = _jitter();
-            auto duration = std::chrono::milliseconds(0);
-            if (next > begin_housekeeping) {
-                duration = next - begin_housekeeping;
-            }
-            _compaction_timer.rearm(ss::lowres_clock::now() + duration);
+
+            _compaction_timer.rearm(next_housekeeping);
         });
     }).handle_exception([](std::exception_ptr e) {
         vlog(stlog.info, "Error processing housekeeping(): {}", e);
