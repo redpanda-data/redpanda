@@ -191,5 +191,16 @@ std::ostream& operator<<(std::ostream& o, const segment_index_ptr& i) {
     }
     return o << "{ptr=nullptr}";
 }
+std::ostream&
+operator<<(std::ostream& o, const std::optional<segment_index::entry>& e) {
+    if (e) {
+        return o << *e;
+    }
+    return o << "{empty segment_index::entry}";
+}
+std::ostream& operator<<(std::ostream& o, const segment_index::entry& e) {
+    return o << "{offset:" << e.offset << ", time:" << e.timestamp
+             << ", filepos:" << e.filepos << "}";
+}
 
 } // namespace storage

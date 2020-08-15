@@ -31,6 +31,7 @@ public:
         model::offset offset;
         model::timestamp timestamp;
         size_t filepos;
+        friend std::ostream& operator<<(std::ostream&, const entry&);
     };
 
     // 32KB - a well known number as a sweet spot for fetching data from disk
@@ -77,4 +78,7 @@ private:
 
 using segment_index_ptr = std::unique_ptr<segment_index>;
 std::ostream& operator<<(std::ostream&, const segment_index_ptr&);
+std::ostream&
+operator<<(std::ostream&, const std::optional<segment_index::entry>&);
+
 } // namespace storage
