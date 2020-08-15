@@ -203,3 +203,9 @@ class RedpandaService(Service):
             s = self.node_storage(node)
             store.add_node(s)
         return store
+
+    def brokers(self, limit=None):
+        brokers = ",".join(
+            map(lambda n: "{}:9092".format(n.account.hostname),
+                self.nodes[:limit]))
+        return brokers
