@@ -33,7 +33,10 @@ class RpkTool:
         assert False, "Unexpected output format"
 
     def _run_api(self, cmd):
-        cmd = [self._rpk_binary(), "api", "--brokers", self._brokers()] + cmd
+        cmd = [
+            self._rpk_binary(), "api", "--brokers",
+            self._redpanda.brokers(1)
+        ] + cmd
         return self._execute(cmd)
 
     def _execute(self, cmd):
@@ -45,11 +48,6 @@ class RpkTool:
         except subprocess.CalledProcessError as e:
             self._redpanda.logger.debug("Error (%d) executing command: %s",
                                         e.returncode, e.output)
-
-    def _brokers(self):
-        return ",".join(
-            map(lambda n: "{}:9092".format(n.account.hostname),
-                self._redpanda.nodes[0:1]))
 
     def _rpk_binary(self):
         return self._redpanda.find_binary("rpk")

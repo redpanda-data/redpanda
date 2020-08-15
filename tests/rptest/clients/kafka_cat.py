@@ -16,13 +16,11 @@ class KafkaCat:
         return self._cmd(["-L"])
 
     def _cmd(self, cmd):
-        brokers = ",".join(
-            map(lambda n: "{}:9092".format(n.account.hostname),
-                self._redpanda.nodes))
         for retry in reversed(range(10)):
             try:
                 res = subprocess.check_output(
-                    ["kafkacat", "-b", brokers, "-J"] + cmd,
+                    ["kafkacat", "-b",
+                     self._redpanda.brokers(), "-J"] + cmd,
                     stderr=subprocess.STDOUT)
                 res = json.loads(res)
                 self._redpanda.logger.debug(json.dumps(res, indent=2))
