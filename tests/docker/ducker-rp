@@ -21,6 +21,7 @@
 # Note: this should be compatible with the version of bash that ships on most
 # Macs, bash 3.2.57.
 #
+DOCKER=docker
 
 script_path="${0}"
 
@@ -220,7 +221,7 @@ ducker_build() {
     SECONDS=0
 
     must_pushd "${ducker_dir}"
-    must_do -v -o docker build --memory="${docker_build_memory_limit}" \
+    must_do -v -o ${DOCKER} build --memory="${docker_build_memory_limit}" \
         --build-arg "ducker_creator=${user_name}" -t "${image_name}" \
         -f "${ducker_dir}/Dockerfile" ${docker_args} -- .
     docker_status=$?
@@ -249,7 +250,7 @@ docker_run() {
 
     # Invoke docker-run. We need privileged mode to be able to run iptables
     # inside the container.
-    must_do -v docker run --privileged \
+    must_do -v ${DOCKER} run --privileged \
         -d -t -h "${node}" --network ducknet "${expose_ports}" \
         --memory=${docker_run_memory_limit} --memory-swappiness=1 \
         -v "${v_dir}/build:${v_dir}/build:ro" -v "${v_dir}:/opt/v" \
@@ -264,12 +265,12 @@ setup_custom_ducktape() {
         die "You must supply a valid ducktape directory to --custom-ducktape"
     docker_run ducker01 "${image_name}"
     local running_container="$(docker ps -f=network=ducknet -q)"
-    must_do -v -o docker cp "${custom_ducktape}" "${running_container}:/opt/ducktape"
-    docker exec --user=root ducker01 bash -c 'set -x && cd /opt/v/tests && sudo python ./setup.py develop install && cd /opt/ducktape && sudo python ./setup.py develop install'
+    must_do -v -o ${DOCKER} cp "${custom_ducktape}" "${running_container}:/opt/ducktape"
+    ${DOCKER} exec --user=root ducker01 bash -c 'set -x && cd /opt/v/tests && sudo python ./setup.py develop install && cd /opt/ducktape && sudo python ./setup.py develop install'
     [[ $? -ne 0 ]] && die "failed to install the new ducktape."
-    must_do -v -o docker commit ducker01 "${image_name}"
-    must_do -v docker kill "${running_container}"
-    must_do -v docker rm ducker01
+    must_do -v -o ${DOCKER} commit ducker01 "${image_name}"
+    must_do -v ${DOCKER} kill "${running_container}"
+    must_do -v ${DOCKER} rm ducker01
 }
 
 ducker_up() {
@@ -297,11 +298,11 @@ use only ${num_nodes}."
         fi
     fi
 
-    docker ps >/dev/null || die "ducker_up: failed to run docker.  Please check that the daemon is started."
+    ${DOCKER} ps >/dev/null || die "ducker_up: failed to run docker.  Please check that the daemon is started."
 
     ducker_build "${image_name}"
 
-    docker inspect --format='{{.Config.Labels}}' --type=image "${image_name}" | grep -q 'ducker.type'
+    ${DOCKER} inspect --format='{{.Config.Labels}}' --type=image "${image_name}" | grep -q 'ducker.type'
     local docker_status=${PIPESTATUS[0]}
     local grep_status=${PIPESTATUS[1]}
     [[ "${docker_status}" -eq 0 ]] || die "ducker_up: failed to inspect image ${image_name}.  \
@@ -323,10 +324,10 @@ attempting to start new ones."
     fi
 
     echo "ducker_up: Bringing up ${image_name} with ${num_nodes} nodes..."
-    if docker network inspect ducknet &>/dev/null; then
-        must_do -v docker network rm ducknet
+    if ${DOCKER} network inspect ducknet &>/dev/null; then
+        must_do -v ${DOCKER} network rm ducknet
     fi
-    must_do -v docker network create ducknet
+    must_do -v ${DOCKER} network create ducknet
     if [[ -n "${custom_ducktape}" ]]; then
         setup_custom_ducktape "${custom_ducktape}" "${image_name}"
     fi
@@ -338,13 +339,13 @@ attempting to start new ones."
     exec 3<> "${ducker_dir}/build/node_hosts"
     for n in $(seq -f %02g 1 ${num_nodes}); do
         local node="ducker${n}"
-        docker exec --user=root "${node}" grep "${node}" /etc/hosts >&3
+        ${DOCKER} exec --user=root "${node}" grep "${node}" /etc/hosts >&3
         [[ $? -ne 0 ]] && die "failed to find the /etc/hosts entry for ${node}"
     done
     exec 3>&-
     for n in $(seq -f %02g 1 ${num_nodes}); do
         local node="ducker${n}"
-        docker exec --user=root "${node}" \
+        ${DOCKER} exec --user=root "${node}" \
             bash -c "grep -v ${node} /opt/v/tests/docker/build/node_hosts >> /etc/hosts"
         [[ $? -ne 0 ]] && die "failed to append to the /etc/hosts file on ${node}"
     done
@@ -413,7 +414,7 @@ EOF
 
 ducker_test() {
     require_commands docker
-    docker inspect ducker01 &>/dev/null || \
+    ${DOCKER} inspect ducker01 &>/dev/null || \
         die "ducker_test: the ducker01 instance appears to be down. Did you run 'ducker up'?"
     [[ $# -lt 1 ]] && \
         die "ducker_test: you must supply at least one system test to run. Type --help for help."
@@ -429,7 +430,7 @@ ducker_test() {
     done
     cmd="cd /opt/v && ducktape --cluster-file /opt/v/tests/docker/build/cluster.json $args"
     echo "docker exec ducker01 bash -c \"${cmd}\""
-    exec docker exec --user=ducker ducker01 bash -c "${cmd}"
+    exec ${DOCKER} exec --user=ducker ducker01 bash -c "${cmd}"
 }
 
 ducker_ssh() {
@@ -458,14 +459,14 @@ Currently active containers: $(echo_running_container_names)"
         local nodes=$(echo_running_container_names)
         [[ "${nodes}" == "(none)" ]] && die "ducker_ssh: can't locate any running ducker nodes."
         for node in ${nodes}; do
-            docker exec --user=${user_name} -i ${docker_flags} "${node}" \
+            ${DOCKER} exec --user=${user_name} -i ${docker_flags} "${node}" \
                 ${guest_command_prefix} "${guest_command}" || die "docker exec ${node} failed"
         done
     else
-        docker inspect --type=container -- "${node_name}" &>/dev/null || \
+        ${DOCKER} inspect --type=container -- "${node_name}" &>/dev/null || \
             die "ducker_ssh: can't locate node ${node_name}. Currently running nodes: \
 $(echo_running_container_names)"
-        exec docker exec --user=${user_name} -i ${docker_flags} "${node_name}" \
+        exec ${DOCKER} exec --user=${user_name} -i ${docker_flags} "${node_name}" \
             ${guest_command_prefix} "${guest_command}"
     fi
 }
@@ -493,7 +494,7 @@ ducker_down() {
     done
     local running_containers
     running_containers="$(docker ps -f=network=ducknet -q)"
-    [[ $? -eq 0 ]]  || die "ducker_down: docker command failed.  Is the docker daemon running?"
+    [[ $? -eq 0 ]]  || die "ducker_down: ${DOCKER} command failed.  Is the docker daemon running?"
     running_containers=${running_containers//$'\n'/ }
     local all_containers="$(docker ps -a -f=network=ducknet -q)"
     all_containers=${all_containers//$'\n'/ }
@@ -506,12 +507,12 @@ ducker_down() {
         verbose_flag="-v"
     fi
     if [[ -n "${running_containers}" ]]; then
-        must_do ${verbose_flag} docker kill "${running_containers}"
+        must_do ${verbose_flag} ${DOCKER} kill "${running_containers}"
     fi
-    must_do ${verbose_flag} docker rm ${force_str} "${all_containers}"
+    must_do ${verbose_flag} ${DOCKER} rm ${force_str} "${all_containers}"
     must_do ${verbose_flag} -o rm -f -- "${ducker_dir}/build/node_hosts" "${ducker_dir}/build/cluster.json"
-    if docker network inspect ducknet &>/dev/null; then
-        must_do -v docker network rm ducknet
+    if ${DOCKER} network inspect ducknet &>/dev/null; then
+        must_do -v ${DOCKER} network rm ducknet
     fi
     maybe_echo "${verbose}" "ducker_down: removed $(count ${all_containers}) containers."
 }
@@ -538,12 +539,12 @@ ducker_purge() {
     echo "** ducker_purge: images to delete:"
     for image in ${images}; do
         echo -n "${image} "
-        docker inspect --format='{{.Config.Labels}} {{.Created}}' --type=image "${image}"
+        ${DOCKER} inspect --format='{{.Config.Labels}} {{.Created}}' --type=image "${image}"
         [[ $? -ne 0 ]] && die "docker inspect ${image} failed"
     done
-    ask_yes_no "Delete these docker images? [y/n]"
+    ask_yes_no "Delete these ${DOCKER} images? [y/n]"
     [[ "${_return}" -eq 0 ]] && exit 0
-    must_do -v -o docker rmi ${force_str} ${images}
+    must_do -v -o ${DOCKER} rmi ${force_str} ${images}
 }
 
 # Parse command-line arguments
