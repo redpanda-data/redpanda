@@ -143,7 +143,7 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
    "links": null,
    "span": 1,
    "error": false,
-   "content": "\u003ch1 style=\"color:#CB3805; border-bottom: 3px solid #CB3805;\"\u003eRedpanda Summary\u003c/h1\u003e",
+   "content": "\u003ch1 style=\"color:#87CEEB; border-bottom: 3px solid #87CEEB;\"\u003eRedpanda Summary\u003c/h1\u003e",
    "mode": "html"
   },
   {
@@ -337,7 +337,7 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
    "links": null,
    "span": 1,
    "error": false,
-   "content": "\u003ch1 style=\"color:#CB3805; border-bottom: 3px solid #CB3805;\"\u003eInternal RPC Latency\u003c/h1\u003e",
+   "content": "\u003ch1 style=\"color:#87CEEB; border-bottom: 3px solid #87CEEB;\"\u003eInternal RPC Latency\u003c/h1\u003e",
    "mode": "html"
   },
   {
@@ -499,7 +499,7 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
    "links": null,
    "span": 1,
    "error": false,
-   "content": "\u003ch1 style=\"color:#CB3805; border-bottom: 3px solid #CB3805;\"\u003eThroughput\u003c/h1\u003e",
+   "content": "\u003ch1 style=\"color:#87CEEB; border-bottom: 3px solid #87CEEB;\"\u003eThroughput\u003c/h1\u003e",
    "mode": "html"
   },
   {
