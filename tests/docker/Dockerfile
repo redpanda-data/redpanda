@@ -71,7 +71,8 @@ RUN pip install --upgrade \
     pywinrm \
     ipaddress \
     enum34 \
-    pyyaml
+    pyyaml \
+    requests
 RUN pip install --upgrade ducktape==0.7.8
 
 # Set up ssh
