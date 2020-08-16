@@ -93,8 +93,8 @@ def _relocatable_dir(dest_dir, execs, configs, admin_api_swag, api_swag,
 
     for name in [
             "lib", "libexec", "conf", "bin",
-            "etc/{vconfig.product}/admin-api-doc",
-            "etc/{vconfig.product}/api-doc"
+            f"etc/{vconfig.product}/admin-api-doc",
+            f"etc/{vconfig.product}/api-doc"
     ]:
         os.makedirs(os.path.join(dest_dir, name), exist_ok=True)
 
@@ -163,13 +163,13 @@ def _relocatable_dir(dest_dir, execs, configs, admin_api_swag, api_swag,
 
     for swag in admin_api_swag:
         dest_path = os.path.join(dest_dir,
-                                 "etc/{vconfig.product}/admin-api-doc",
+                                 f"etc/{vconfig.product}/admin-api-doc",
                                  os.path.basename(swag))
         manifest.add(dest_path)
         maybe_symlink(swag, dest_path)
 
     for swag in api_swag:
-        dest_path = os.path.join(dest_dir, "etc/{vconfig.product}/api-doc",
+        dest_path = os.path.join(dest_dir, f"etc/{vconfig.product}/api-doc",
                                  os.path.basename(swag))
         manifest.add(dest_path)
         maybe_symlink(swag, dest_path)
