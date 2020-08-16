@@ -503,7 +503,7 @@ func subtype(m *dto.MetricFamily) string {
 
 func htmlHeader(str string) string {
 	return fmt.Sprintf(
-		"<h1 style=\"color:#CB3805; border-bottom: 3px solid #CB3805;\">%s</h1>",
+		"<h1 style=\"color:#87CEEB; border-bottom: 3px solid #87CEEB;\">%s</h1>",
 		str,
 	)
 }
