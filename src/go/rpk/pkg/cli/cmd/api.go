@@ -66,7 +66,7 @@ func deduceBrokers(
 		}
 		conf, err := config.ReadConfigFromPath(fs, *configFile)
 		if err != nil {
-			log.Info(
+			log.Trace(
 				"Couldn't read the config at '%s'."+
 					" Assuming 127.0.0.1:9092",
 				*configFile,
