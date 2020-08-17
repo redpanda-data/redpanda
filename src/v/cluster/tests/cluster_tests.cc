@@ -6,11 +6,11 @@ using namespace std::chrono_literals; // NOLINT
 
 FIXTURE_TEST(test_join_single_node, cluster_test_fixture) {
     add_controller(model::node_id{1}, ss::smp::count, 9092, 11000, {});
-    auto cntrl = get_controller(0);
+    auto cntrl = get_controller(model::node_id{1});
     cntrl->start().get0();
     wait_for_leadership(cntrl->get_partition_leaders().local());
 
-    auto brokers = get_local_cache(0).all_brokers();
+    auto brokers = get_local_cache(model::node_id{1}).all_brokers();
 
     // single broker
     BOOST_REQUIRE_EQUAL(brokers.size(), 1);

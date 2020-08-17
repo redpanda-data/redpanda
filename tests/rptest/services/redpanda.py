@@ -35,10 +35,16 @@ class RedpandaService(Service):
         },
     }
 
-    def __init__(self, context, num_brokers, extra_rp_conf=None, topics=None):
+    def __init__(self,
+                 context,
+                 num_brokers,
+                 extra_rp_conf=None,
+                 topics=None,
+                 log_level='info'):
         super(RedpandaService, self).__init__(context, num_nodes=num_brokers)
         self._context = context
         self._extra_rp_conf = extra_rp_conf
+        self._log_level = log_level
         self._topics = topics or dict()
 
     def start(self):
@@ -64,12 +70,14 @@ class RedpandaService(Service):
             self.logger.debug("Creating initial topic %s / %s", topic, cfg)
             kafka_tools.create_topic(topic, **cfg)
 
-    def start_node(self, node):
+    def start_node(self, node, override_cfg_params=None):
         node.account.mkdirs(RedpandaService.DATA_DIR)
-        self.write_conf_file(node)
+        self.write_conf_file(node, override_cfg_params)
 
         cmd = "nohup {} ".format(self.find_binary("redpanda"))
         cmd += "--redpanda-cfg {} ".format(RedpandaService.CONFIG_FILE)
+        cmd += "--default-log-level {} ".format(self._log_level)
+        cmd += "--logger-log-level=exception=debug "
         cmd += ">> {0} 2>&1 &".format(RedpandaService.STDOUT_STDERR_CAPTURE)
 
         self.logger.info(
@@ -133,7 +141,7 @@ class RedpandaService(Service):
         except (RemoteCommandError, ValueError):
             return []
 
-    def write_conf_file(self, node):
+    def write_conf_file(self, node, override_cfg_params):
         node_info = {self.idx(n): n for n in self.nodes}
 
         conf = self.render("redpanda.yaml",
@@ -149,6 +157,14 @@ class RedpandaService(Service):
                 "Setting custom Redpanda configuration options: {}".format(
                     self._extra_rp_conf))
             doc["redpanda"].update(self._extra_rp_conf)
+            conf = yaml.dump(doc)
+
+        if override_cfg_params:
+            doc = yaml.load(conf)
+            self.logger.debug(
+                "Setting custom Redpanda node configuration options: {}".
+                format(override_cfg_params))
+            doc["redpanda"].update(override_cfg_params)
             conf = yaml.dump(doc)
 
         self.logger.info("Writing Redpanda config file: {}".format(

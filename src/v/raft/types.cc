@@ -32,14 +32,32 @@ group_configuration::find_in_learners(model::node_id id) {
 }
 
 bool group_configuration::contains_broker(model::node_id id) const {
-    auto find_by_id = [id](const model::broker b) { return b.id() == id; };
-    return std::any_of(std::cbegin(nodes), std::cend(nodes), find_by_id)
-           || std::any_of(
-             std::cbegin(learners), std::cend(learners), find_by_id);
+    auto joined_range = boost::join(nodes, learners);
+    return std::any_of(
+      std::cbegin(joined_range),
+      std::cend(joined_range),
+      [id](const model::broker& b) { return b.id() == id; });
 }
 
 bool operator==(const group_configuration& a, const group_configuration& b) {
     return a.nodes == b.nodes && a.learners == b.learners;
+}
+
+void group_configuration::update_broker(model::broker broker) {
+    auto joined_range = boost::join(nodes, learners);
+
+    auto it = std::find_if(
+      std::cbegin(joined_range),
+      std::cend(joined_range),
+      [id = broker.id()](const model::broker& b) { return b.id() == id; });
+
+    if (it != std::cend(joined_range)) {
+        *it = std::move(broker);
+        return;
+    }
+
+    throw std::invalid_argument(
+      fmt::format("node with id {} not found in configuration", broker.id()));
 }
 
 std::ostream& operator<<(std::ostream& o, const append_entries_reply& r) {

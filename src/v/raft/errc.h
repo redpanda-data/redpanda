@@ -16,7 +16,8 @@ enum class errc {
     leader_flush_failed,
     leader_append_failed,
     timeout,
-    configuration_change_in_progress
+    configuration_change_in_progress,
+    node_does_not_exists
 };
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "raft::errc"; }
@@ -47,6 +48,8 @@ struct errc_category final : public std::error_category {
             return "raft::errc::timeout";
         case errc::configuration_change_in_progress:
             return "raft::errc::configuration_change_in_progress";
+        case errc::node_does_not_exists:
+            return "Node does not exists in configuration";
         default:
             return "raft::errc::unknown";
         }

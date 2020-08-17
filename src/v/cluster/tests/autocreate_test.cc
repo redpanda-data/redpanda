@@ -4,6 +4,7 @@
 #include "cluster/tests/controller_test_fixture.h"
 #include "cluster/types.h"
 #include "model/fundamental.h"
+#include "model/metadata.h"
 #include "model/timeout_clock.h"
 #include "test_utils/async.h"
 #include "test_utils/fixture.h"
@@ -95,9 +96,12 @@ FIXTURE_TEST(
 
 FIXTURE_TEST(test_autocreate_on_non_leader, cluster_test_fixture) {
     // root cluster node
-    add_controller(model::node_id{1}, ss::smp::count, 9092, 11000, {});
+    model::node_id n_1(1);
+    model::node_id n_2(2);
+
+    add_controller(n_1, ss::smp::count, 9092, 11000, {});
     add_controller(
-      model::node_id{2},
+      n_2,
       ss::smp::count,
       9093,
       11001,
@@ -105,17 +109,17 @@ FIXTURE_TEST(test_autocreate_on_non_leader, cluster_test_fixture) {
         .addr = unresolved_address("127.0.0.1", 11000)}});
 
     // first controller
-    auto cntrl_0 = get_controller(0);
+    auto cntrl_0 = get_controller(n_1);
     cntrl_0->start().get0();
     wait_for_leadership(cntrl_0->get_partition_leaders().local());
 
-    auto cntrl_1 = get_controller(1);
+    auto cntrl_1 = get_controller(n_2);
     cntrl_1->start().get0();
 
     // Wait for cluster to reach stable state
     tests::cooperative_spin_wait_with_timeout(10s, [this] {
-        return get_local_cache(0).all_brokers().size() == 2
-               && get_local_cache(1).all_brokers().size() == 2;
+        return get_local_cache(model::node_id(1)).all_brokers().size() == 2
+               && get_local_cache(model::node_id(2)).all_brokers().size() == 2;
     }).get();
 
     auto res = cntrl_1->get_topics_frontend()
@@ -124,16 +128,16 @@ FIXTURE_TEST(test_autocreate_on_non_leader, cluster_test_fixture) {
                    test_topics_configuration(), std::chrono::seconds(10))
                  .get0();
 
-    wait_for_metadata(get_local_cache(0), res);
-    wait_for_metadata(get_local_cache(1), res);
+    wait_for_metadata(get_local_cache(n_1), res);
+    wait_for_metadata(get_local_cache(n_2), res);
     for (auto& r : res) {
         BOOST_REQUIRE_EQUAL(r.ec, cluster::errc::success);
-        auto md = get_local_cache(0).get_topic_metadata(r.tp_ns);
+        auto md = get_local_cache(n_1).get_topic_metadata(r.tp_ns);
         BOOST_REQUIRE_EQUAL(md.has_value(), true);
         wait_for_leaders(cntrl_0->get_partition_leaders().local(), *md);
         BOOST_REQUIRE_EQUAL(md.value().tp_ns, r.tp_ns);
     }
     // Make sure caches are the same
-    validate_topic_metadata(get_local_cache(0));
-    validate_topic_metadata(get_local_cache(1));
+    validate_topic_metadata(get_local_cache(n_1));
+    validate_topic_metadata(get_local_cache(n_2));
 }

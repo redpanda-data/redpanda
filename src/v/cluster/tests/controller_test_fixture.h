@@ -42,15 +42,21 @@ public:
 
     controller_tests_fixture()
       : controller_tests_fixture(
-        model::node_id{1}, ss::smp::count, 9092, 9090, {}) {}
+        model::node_id{1},
+        ss::smp::count,
+        9092,
+        9090,
+        {},
+        "test_dir." + random_generators::gen_alphanum_string(6)) {}
 
     controller_tests_fixture(
       model::node_id node_id,
       int32_t cores,
       int32_t kafka_port,
       int32_t rpc_port,
-      std::vector<config::seed_server> seeds)
-      : _base_dir("test.dir_" + random_generators::gen_alphanum_string(4))
+      std::vector<config::seed_server> seeds,
+      const ss::sstring& base_dir)
+      : _base_dir(fmt::format("{}_{}", base_dir, node_id))
       , _current_node(
           model::node_id(node_id),
           unresolved_address("127.0.0.1", kafka_port),

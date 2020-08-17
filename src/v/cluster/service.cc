@@ -74,4 +74,24 @@ service::fetch_metadata_and_cfg(const std::vector<topic_result>& res) {
     return {std::move(md), std::move(cfg)};
 }
 
+ss::future<configuration_update_reply> service::update_node_configuration(
+  configuration_update_request&& req, rpc::streaming_context&) {
+    return ss::with_scheduling_group(
+      get_scheduling_group(), [this, req = std::move(req)]() mutable {
+          return _members_manager
+            .invoke_on(
+              members_manager::shard,
+              get_smp_service_group(),
+              [req = std::move(req)](members_manager& mm) mutable {
+                  return mm.handle_configuration_update_request(std::move(req));
+              })
+            .then([](result<configuration_update_reply> r) {
+                if (!r) {
+                    return configuration_update_reply{false};
+                }
+                return r.value();
+            });
+      });
+}
+
 } // namespace cluster

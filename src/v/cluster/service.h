@@ -27,6 +27,9 @@ public:
     virtual ss::future<create_topics_reply>
     create_topics(create_topics_request&&, rpc::streaming_context&) override;
 
+    ss::future<configuration_update_reply> update_node_configuration(
+      configuration_update_request&&, rpc::streaming_context&) final;
+
 private:
     std::
       pair<std::vector<model::topic_metadata>, std::vector<topic_configuration>>
