@@ -222,6 +222,7 @@ private:
     bytes voted_for_key() const;
     void read_voted_for();
     ss::future<> write_voted_for(consensus::voted_for_configuration);
+    model::term_id get_last_entry_term(const storage::offset_stats&) const;
 
     // args
     model::node_id _self;
