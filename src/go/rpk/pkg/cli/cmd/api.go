@@ -81,7 +81,7 @@ func deduceBrokers(
 				addr := fmt.Sprintf(
 					"%s:%d",
 					b.Host.Address,
-					b.Host.Port,
+					conf.Redpanda.KafkaApi.Port,
 				)
 				bs = append(bs, addr)
 			}
