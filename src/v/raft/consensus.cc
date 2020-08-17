@@ -587,14 +587,32 @@ ss::future<vote_reply> consensus::vote(vote_request&& r) {
     });
 }
 
+model::term_id
+consensus::get_last_entry_term(const storage::offset_stats& lstats) const {
+    if (lstats.dirty_offset >= lstats.start_offset) {
+        return lstats.dirty_offset_term;
+    }
+    // prefix truncated whole log, last term must come from snapshot, as last
+    // entry is included into the snapshot
+    vassert(
+      _last_snapshot_index == lstats.dirty_offset,
+      "Last log offset is smaller than its start offset, snapshot is "
+      "required to have last included offset that is equal to log dirty "
+      "offset. Log offsets: {}. Last snapshot index: {}",
+      lstats,
+      _last_snapshot_index);
+
+    return _last_snapshot_term;
+}
+
 ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
     vote_reply reply;
     reply.term = _term;
     auto lstats = _log.offsets();
     auto last_log_index = lstats.dirty_offset;
-    auto last_entry_term = lstats.dirty_offset_term;
     _probe.vote_request();
-    vlog(_ctxlog.trace, "Vote request: {}", r, _voted_for);
+    auto last_entry_term = get_last_entry_term(lstats);
+    vlog(_ctxlog.trace, "Vote request: {}", r);
     /// set to true if the caller's log is as up to date as the recipient's
     /// - extension on raft. see Diego's phd dissertation, section 9.6
     /// - "Preventing disruptions when a server rejoins the cluster"
