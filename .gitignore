@@ -93,6 +93,7 @@ wheels/
 *.egg
 MANIFEST
 docs.md
+src/consistency-testing/gobekli/build
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
