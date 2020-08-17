@@ -236,8 +236,10 @@ func describeTopic(
 			t.AppendBulk([][]string{
 				{"Name", detail.Name},
 				{"Internal", fmt.Sprintf("%t", detail.IsInternal)},
-				{"Cleanup policy", cleanupPolicy},
 			})
+			if cleanupPolicy != "" {
+				t.Append([]string{"Cleanup policy", cleanupPolicy})
+			}
 
 			if len(nonDefaultCfg) > 0 {
 				t.Append([]string{"Config:"})
