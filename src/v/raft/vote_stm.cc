@@ -103,12 +103,14 @@ ss::future<> vote_stm::vote() {
               _replies.emplace_back(vmeta(n.id()));
           }
           auto lstats = _ptr->_log.offsets();
+          auto last_entry_term = _ptr->get_last_entry_term(lstats);
+
           _req = vote_request{
             _ptr->_self,
             _ptr->group(),
             _ptr->term(),
             lstats.dirty_offset,
-            lstats.dirty_offset_term};
+            last_entry_term};
           // we have to self vote before dispatching vote request to
           // other nodes, this vote has to be done under op semaphore as
           // it changes voted_for state
