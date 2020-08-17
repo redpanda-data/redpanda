@@ -657,9 +657,14 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
         do_step_down();
     }
 
+    // do not grant vote if log isn't ok
+    if (!reply.log_ok) {
+        return ss::make_ready_future<vote_reply>(reply);
+    }
+
     auto f = ss::make_ready_future<>();
 
-    if (reply.log_ok && _voted_for() < 0) {
+    if (_voted_for() < 0) {
         _voted_for = model::node_id(r.node_id);
         _hbeat = clock_type::now();
         vlog(_ctxlog.trace, "Voting for {} in term {}", r.node_id, _term);
