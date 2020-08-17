@@ -26,7 +26,7 @@ func NewTopicCommand(fs afero.Fs, brokers func() []string) *cobra.Command {
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			var err error
 			bs := brokers()
-			log.Tracef("Seed brokers: %v", bs)
+			log.Debugf("Seed brokers: %v", bs)
 			client, err = kafka.InitClient(bs...)
 			if err != nil {
 				return err
