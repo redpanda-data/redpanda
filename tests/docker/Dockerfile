@@ -53,6 +53,12 @@ RUN apt update && apt install -y \
     iperf \
     traceroute \
     kafkacat \
+    libsnappy1v5 \
+    libsnappy-dev \
+    libzstd1 \
+    libzstd-dev \
+    zlib1g \
+    zlib1g-dev \
     && apt-get -y clean
 
 RUN python -m pip install -U pip
@@ -65,7 +71,8 @@ RUN pip install --upgrade \
     pywinrm \
     ipaddress \
     enum34 \
-    pyyaml
+    pyyaml \
+    requests
 RUN pip install --upgrade ducktape==0.7.8
 
 # Set up ssh
@@ -80,10 +87,21 @@ RUN mkdir -p "/opt/kafka-2.3.1" && chmod a+rw /opt/kafka-2.3.1 && curl -s "$KAFK
 RUN mkdir -p "/opt/kafka-2.4.1" && chmod a+rw /opt/kafka-2.4.1 && curl -s "$KAFKA_MIRROR/kafka_2.12-2.4.1.tgz" | tar xz --strip-components=1 -C "/opt/kafka-2.4.1"
 RUN mkdir -p "/opt/kafka-2.5.0" && chmod a+rw /opt/kafka-2.5.0 && curl -s "$KAFKA_MIRROR/kafka_2.12-2.5.0.tgz" | tar xz --strip-components=1 -C "/opt/kafka-2.5.0"
 
+# Build librdkafka and its test suite
+ENV LIBRDKAFKA_VER 1.5.0
+ENV LIBRDKAFKA_URL https://github.com/edenhill/librdkafka/archive/v${LIBRDKAFKA_VER}.tar.gz
+RUN mkdir /opt/librdkafka && \
+    curl -SL ${LIBRDKAFKA_URL} | tar -xz --strip-components=1 -C /opt/librdkafka
+RUN cd /opt/librdkafka && ./configure && make -j$(nproc)
+RUN cd /opt/librdkafka/tests && make build -j$(nproc)
+
+# Install kaf tool
+RUN curl https://raw.githubusercontent.com/birdayz/kaf/master/godownloader.sh | BINDIR=/usr/bin sudo bash
+
 # Set up the ducker user.
 RUN useradd -ms /bin/bash ducker && \
     mkdir -p /home/ducker/ && rsync -aiq /root/.ssh/ /home/ducker/.ssh && \
-    chown -R ducker /home/ducker/ /mnt/ /var/log/ && \
+    chown -R ducker /home/ducker/ /mnt/ /var/log/ /opt/librdkafka && \
     echo "PATH=$(runuser -l ducker -c 'echo $PATH'):$JAVA_HOME/bin" >> /home/ducker/.ssh/environment && \
     echo 'PATH=$PATH:'"$JAVA_HOME/bin" >> /home/ducker/.profile && \
     echo 'ducker ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers
