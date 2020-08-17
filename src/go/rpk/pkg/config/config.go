@@ -14,6 +14,7 @@ import (
 	vyaml "vectorized/pkg/yaml"
 
 	"github.com/google/uuid"
+	"github.com/mitchellh/mapstructure"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/spf13/viper"
@@ -291,9 +292,51 @@ func ReadFlat(fs afero.Fs, path string) (map[string]string, error) {
 	}
 	keys := v.AllKeys()
 	flatMap := map[string]string{}
+	compactAddrFields := []string{
+		"redpanda.kafka_api",
+		"redpanda.rpc_server",
+		"redpanda.admin",
+	}
+	unmarshalKey := func(key string, val interface{}) error {
+		return v.UnmarshalKey(
+			key,
+			val,
+			func(c *mapstructure.DecoderConfig) {
+				c.TagName = "yaml"
+			},
+		)
+	}
 	for _, k := range keys {
-		v := v.GetString(k)
-		flatMap[k] = v
+		if k == "redpanda.seed_servers" {
+			seeds := &[]SeedServer{}
+			err := unmarshalKey(k, seeds)
+			if err != nil {
+				return nil, err
+			}
+			for _, s := range *seeds {
+				key := fmt.Sprintf("%s.%d", k, s.Id)
+				flatMap[key] = fmt.Sprintf("%s:%d", s.Host.Address, s.Host.Port)
+			}
+			continue
+		}
+		// These fields are added later on as <address>:<port>
+		// instead of
+		// field.address <address>
+		// field.port    <port>
+		if strings.HasSuffix(k, ".port") || strings.HasSuffix(k, ".address") {
+			continue
+		}
+
+		s := v.GetString(k)
+		flatMap[k] = s
+	}
+	for _, k := range compactAddrFields {
+		sa := &SocketAddress{}
+		err := unmarshalKey(k, sa)
+		if err != nil {
+			return nil, err
+		}
+		flatMap[k] = fmt.Sprintf("%s:%d", sa.Address, sa.Port)
 	}
 	return flatMap, nil
 }
@@ -544,6 +587,21 @@ func GenerateAndWriteNodeUuid(fs afero.Fs, conf *Config) (*Config, error) {
 		return nil, err
 	}
 	return conf, nil
+}
+
+func stringifyMap(m map[interface{}]interface{}) map[string]interface{} {
+	new := map[string]interface{}{}
+	for k, v := range m {
+		sk := fmt.Sprintf("%v", k)
+		sub, ok := v.(map[interface{}]interface{})
+		if ok {
+			newSub := stringifyMap(sub)
+			new[sk] = newSub
+			continue
+		}
+		new[sk] = v
+	}
+	return new
 }
 
 func base58Encode(s string) string {
