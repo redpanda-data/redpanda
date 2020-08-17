@@ -709,7 +709,6 @@ consensus::do_append_entries(append_entries_request&& r) {
     _probe.append_request();
 
     // no need to trigger timeout
-    _hbeat = clock_type::now();
     vlog(_ctxlog.trace, "Append entries request: {}", r.meta);
 
     // raft.pdf: Reply false if term < currentTerm (§5.1)
@@ -718,6 +717,7 @@ consensus::do_append_entries(append_entries_request&& r) {
         return ss::make_ready_future<append_entries_reply>(std::move(reply));
     }
 
+    do_step_down();
     if (r.meta.term > _term) {
         vlog(
           _ctxlog.debug,
