@@ -168,10 +168,12 @@ ss::future<> heartbeat_manager::do_heartbeat(node_heartbeat&& r) {
       rpc::client_opts(
         next_heartbeat_timeout(), rpc::compression_type::zstd, 512));
     _dispatch_sem.signal();
-    return f.then([node = r.target, groups = std::move(r.sequence_map), this](
-                    result<heartbeat_reply> ret) mutable {
-        process_reply(node, std::move(groups), std::move(ret));
-    });
+    return f
+      .then([node = r.target, groups = std::move(r.sequence_map), this](
+              result<heartbeat_reply> ret) mutable {
+          process_reply(node, std::move(groups), std::move(ret));
+      })
+      .handle_exception_type([](const ss::gate_closed_exception&) {});
 }
 
 void heartbeat_manager::process_reply(
