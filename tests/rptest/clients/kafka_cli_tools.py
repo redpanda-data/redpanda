@@ -60,13 +60,13 @@ class KafkaCliTools:
             "--producer-props",
             "acks=%d" % acks, "client.id=ducktape",
             "batch.size=%d" % batch_size,
-            "bootstrap.servers=%s" % self._brokers()
+            "bootstrap.servers=%s" % self._redpanda.brokers()
         ]
         self._execute(cmd)
 
     def _run(self, script, args):
         cmd = [self._script(script)]
-        cmd += ["--bootstrap-server", self._brokers()]
+        cmd += ["--bootstrap-server", self._redpanda.brokers()]
         cmd += args
         return self._execute(cmd)
 
@@ -83,8 +83,3 @@ class KafkaCliTools:
     def _script(self, script):
         version = self._version or KafkaCliTools.VERSIONS[0]
         return "/opt/kafka-{}/bin/{}".format(version, script)
-
-    def _brokers(self):
-        return ",".join(
-            map(lambda n: "{}:9092".format(n.account.hostname),
-                self._redpanda.nodes))

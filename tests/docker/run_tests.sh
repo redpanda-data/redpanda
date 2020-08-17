@@ -16,7 +16,7 @@
 # limitations under the License.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-RP_NUM_CONTAINERS=${RP_NUM_CONTAINERS:-4}
+RP_NUM_CONTAINERS=${RP_NUM_CONTAINERS:-6}
 TC_PATHS=${TC_PATHS:-./rptest/}
 
 die() {
