@@ -13,6 +13,7 @@ func InitClient(brokers ...string) (sarama.Client, error) {
 	saramaConf.Version = sarama.V2_4_0_0
 	saramaConf.Producer.Return.Successes = true
 	timeout := 1 * time.Second
+	saramaConf.ClientID = "rpk"
 	saramaConf.Admin.Timeout = timeout
 	saramaConf.Metadata.Timeout = timeout
 	// sarama shuffles the addresses, so there's no need to do it.
