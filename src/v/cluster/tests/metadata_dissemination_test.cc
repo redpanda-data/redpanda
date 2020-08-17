@@ -46,20 +46,23 @@ wait_for_leaders_updates(int id, cluster::metadata_cache& cache) {
 
 FIXTURE_TEST(
   test_metadata_dissemination_from_single_partition, cluster_test_fixture) {
-    auto cntrl_0 = create_controller(model::node_id{0});
+    model::node_id n_1(0);
+    model::node_id n_2(1);
+    model::node_id n_3(2);
+    auto cntrl_0 = create_controller(n_1);
 
     cntrl_0->start().get();
     wait_for_leadership(cntrl_0->get_partition_leaders().local());
 
-    auto cntrl_1 = create_controller(model::node_id{1});
+    auto cntrl_1 = create_controller(n_2);
     cntrl_1->start().get0();
 
-    auto cntrl_2 = create_controller(model::node_id{2});
+    auto cntrl_2 = create_controller(n_3);
     cntrl_2->start().get0();
 
-    auto& cache_0 = get_local_cache(0);
-    auto& cache_1 = get_local_cache(1);
-    auto& cache_2 = get_local_cache(2);
+    auto& cache_0 = get_local_cache(n_1);
+    auto& cache_1 = get_local_cache(n_2);
+    auto& cache_2 = get_local_cache(n_3);
 
     tests::cooperative_spin_wait_with_timeout(
       std::chrono::seconds(10),
@@ -91,15 +94,17 @@ FIXTURE_TEST(
 }
 
 FIXTURE_TEST(test_metadata_dissemination_joining_node, cluster_test_fixture) {
-    auto cntrl_0 = create_controller(model::node_id{0});
+    model::node_id n_1(0);
+    model::node_id n_2(1);
+    auto cntrl_0 = create_controller(n_1);
     cntrl_0->start().get();
     wait_for_leadership(cntrl_0->get_partition_leaders().local());
 
-    auto cntrl_1 = create_controller(model::node_id{1});
+    auto cntrl_1 = create_controller(n_2);
     cntrl_1->start().get0();
 
-    auto& cache_0 = get_local_cache(0);
-    auto& cache_1 = get_local_cache(1);
+    auto& cache_0 = get_local_cache(n_1);
+    auto& cache_1 = get_local_cache(n_2);
 
     tests::cooperative_spin_wait_with_timeout(
       std::chrono::seconds(10),
@@ -120,7 +125,7 @@ FIXTURE_TEST(test_metadata_dissemination_joining_node, cluster_test_fixture) {
     // Add new now to the cluster
     auto cntrl_2 = create_controller(model::node_id{2});
     cntrl_2->start().get0();
-    auto& cache_2 = get_local_cache(2);
+    auto& cache_2 = get_local_cache(model::node_id{2});
     // Wait for node to join the cluster
     tests::cooperative_spin_wait_with_timeout(
       std::chrono::seconds(10),

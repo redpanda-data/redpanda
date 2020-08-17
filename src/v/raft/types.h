@@ -58,6 +58,7 @@ struct group_configuration {
     iterator find_in_learners(model::node_id id);
     const_iterator find_in_learners(model::node_id id) const;
     bool contains_broker(model::node_id id) const;
+    void update_broker(model::broker);
 
     template<typename Func>
     void for_each(Func&& f) const {

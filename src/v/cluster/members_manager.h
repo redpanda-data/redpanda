@@ -12,13 +12,13 @@
 
 namespace cluster {
 
-// Members manager class is responsible for updating information about cluster
-// members, joining the cluster and creating inter cluster connections.
-// This class receives updates from controller STM. It reacts only on raft
-// configuration batch types. All the updates are propagated to core local
-// cluster::members instances. There is only one instance of members manager
-// running on core-0. The member manager is also responsible for validation of
-// node configuration invariants.
+// Members manager class is responsible for updating information about
+// cluster members, joining the cluster and creating inter cluster
+// connections. This class receives updates from controller STM. It reacts
+// only on raft configuration batch types. All the updates are propagated to
+// core local cluster::members instances. There is only one instance of
+// members manager running on core-0. The member manager is also responsible
+// for validation of node configuration invariants.
 class members_manager {
 public:
     static constexpr ss::shard_id shard = 0;
@@ -35,6 +35,9 @@ public:
 
     ss::future<result<join_reply>> handle_join_request(model::broker);
     ss::future<std::error_code> apply_update(model::record_batch);
+
+    ss::future<result<configuration_update_reply>>
+      handle_configuration_update_request(configuration_update_request);
 
     bool is_batch_applicable(const model::record_batch& b) {
         return b.header().type == raft::configuration_batch_type;
@@ -62,6 +65,11 @@ private:
     ss::future<> update_connections(patch<broker_ptr>);
     ss::future<> validate_configuration_invariants();
     ss::future<> start_config_changes_watcher();
+
+    ss::future<> maybe_update_current_node_configuration();
+    ss::future<> dispatch_configuration_update(model::broker);
+    ss::future<result<configuration_update_reply>>
+    do_dispatch_configuration_update(const model::broker&, model::broker);
 
     model::offset _last_seen_configuration_offset;
     std::vector<config::seed_server> _seed_servers;

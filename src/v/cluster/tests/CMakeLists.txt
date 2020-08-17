@@ -101,3 +101,10 @@ rp_test(
   LIBRARIES v::seastar_testing_main v::application
   DEFINITIONS SEASTAR_TESTING_MAIN
 )
+rp_test(
+  UNIT_TEST
+  BINARY_NAME configuration_change_test
+  SOURCES configuration_change_test.cc
+  LIBRARIES v::seastar_testing_main v::application
+  DEFINITIONS SEASTAR_TESTING_MAIN
+)
