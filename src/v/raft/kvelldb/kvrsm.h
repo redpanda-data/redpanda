@@ -1,5 +1,6 @@
 #pragma once
 
+#include "model/fundamental.h"
 #include "model/record.h"
 #include "raft/consensus.h"
 #include "raft/errc.h"
@@ -14,29 +15,47 @@ namespace raft::kvelldb {
 
 class kvrsm : public state_machine {
 public:
+    using sequence_id = named_type<uint64_t, struct kvrsm_sequence_id>;
+
     struct cmd_result {
-        cmd_result(ss::sstring wid, ss::sstring val)
-          : write_id(wid)
+        cmd_result(sequence_id seq, ss::sstring wid, ss::sstring val)
+          : seq(seq)
+          , write_id(wid)
           , value(val) {}
+
         cmd_result(std::error_code rsm_err, std::error_code raft_err)
-          : write_id("")
+          : seq(sequence_id(0))
+          , write_id("")
           , value("")
           , rsm_status(rsm_err)
           , raft_status(raft_err) {}
+
         cmd_result(
+          sequence_id seq, std::error_code rsm_err, std::error_code raft_err)
+          : seq(seq)
+          , write_id("")
+          , value("")
+          , rsm_status(rsm_err)
+          , raft_status(raft_err) {}
+
+        cmd_result(
+          sequence_id seq,
           ss::sstring wid,
           ss::sstring val,
           std::error_code rsm_err,
           std::error_code raft_err)
-          : write_id(wid)
+          : seq(seq)
+          , write_id(wid)
           , value(val)
           , rsm_status(rsm_err)
           , raft_status(raft_err) {}
 
+        sequence_id seq;
         ss::sstring write_id;
         ss::sstring value;
         std::error_code rsm_status{raft::kvelldb::errc::success};
         std::error_code raft_status{raft::errc::success};
+        model::offset offset;
     };
 
     explicit kvrsm(ss::logger&, consensus*);
@@ -65,6 +84,7 @@ private:
 
     struct set_cmd {
         static constexpr uint8_t record_key = 0;
+        sequence_id seq;
         ss::sstring key;
         ss::sstring value;
         ss::sstring write_id;
@@ -72,6 +92,7 @@ private:
 
     struct cas_cmd {
         static constexpr uint8_t record_key = 1;
+        sequence_id seq;
         ss::sstring key;
         ss::sstring prev_write_id;
         ss::sstring value;
@@ -80,6 +101,7 @@ private:
 
     struct get_cmd {
         static constexpr uint8_t record_key = 2;
+        sequence_id seq;
         ss::sstring key;
     };
 
@@ -91,11 +113,14 @@ private:
     ss::future<> apply(model::record_batch b) override;
     ss::future<result<raft::replicate_result>> replicate(model::record_batch&&);
     ss::future<cmd_result> replicate_and_wait(
-      model::record_batch&& b, model::timeout_clock::time_point timeout);
+      model::record_batch&& b,
+      model::timeout_clock::time_point timeout,
+      sequence_id seq);
 
-    mutex _mutex;
+    sequence_id _last_applied_seq;
+    sequence_id _last_generated_seq;
     consensus* _c;
-    absl::flat_hash_map<model::offset, expiring_promise<cmd_result>> _promises;
+    absl::flat_hash_map<sequence_id, expiring_promise<cmd_result>> _promises;
     absl::flat_hash_map<ss::sstring, kvrsm::record> kv_map;
 
     static inline constexpr model::record_batch_type kvrsm_batch_type
