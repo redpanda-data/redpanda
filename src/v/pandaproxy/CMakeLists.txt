@@ -19,6 +19,13 @@ seastar_generate_swagger(
   OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/api/api-doc/get_topics_names.json.h
 )
 
+seastar_generate_swagger(
+  TARGET post_topics_name_swagger
+  VAR post_topics_name_swagger_file
+  IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/api/api-doc/post_topics_name.json
+  OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/api/api-doc/post_topics_name.json.h
+)
+
 find_package(Base64)
 
 v_cc_library(
@@ -47,6 +54,7 @@ add_dependencies(v_rest_application
   admin_config_swagger
   api_health_swagger
   get_topics_names_swagger
+  post_topics_name_swagger
 )
 
 if(CMAKE_BUILD_TYPE MATCHES Release)

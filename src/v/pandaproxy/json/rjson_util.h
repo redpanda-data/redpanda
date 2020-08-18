@@ -10,6 +10,8 @@
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/writer.h>
 
+#include <stdexcept>
+
 namespace pandaproxy::json {
 
 class parse_error final : public std::exception {
