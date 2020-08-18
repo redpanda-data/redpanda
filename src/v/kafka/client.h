@@ -91,13 +91,13 @@ public:
     CONCEPT(requires(KafkaRequest<typename T::api_type>))
     ss::future<typename T::api_type::response_type> dispatch(
       T r, api_version ver) {
-        return dispatch(r, ver, ver);
+        return dispatch(std::move(r), ver, ver);
     }
 
     template<typename T>
     CONCEPT(requires(KafkaRequest<typename T::api_type>))
     ss::future<typename T::api_type::response_type> dispatch(T r) {
-        return dispatch(r, T::api_type::max_supported);
+        return dispatch(std::move(r), T::api_type::max_supported);
     }
 
 private:
