@@ -208,26 +208,35 @@ ss::future<> log_manager::remove(model::ntp ntp) {
         // underlying log. If there is a background operation like
         // compaction or so, it will block correctly.
         auto ntp_dir = lg.config().work_directory();
-        auto topic_dir = lg.config().topic_directory().string();
+        ss::sstring topic_dir = lg.config().topic_directory().string();
         return lg.remove()
           .then([dir = std::move(ntp_dir)] { return ss::remove_file(dir); })
           .then([this, dir = std::move(topic_dir)]() mutable {
-              return _fs_lock.with([dir = std::move(dir)] {
-                  return ss::file_exists(dir).then([dir](bool exists) {
-                      if (!exists) {
-                          return ss::now();
-                      }
-                      return directory_walker::empty(dir).then(
-                        [dir](bool empty) {
-                            if (!empty) {
-                                return ss::now();
-                            }
-                            return ss::remove_file(dir);
-                        });
-                  });
-              });
+              // We always dispatch topic directory deletion to core 0 as
+              // requests may come from different cores
+              return dispatch_topic_dir_deletion(std::move(dir));
           })
           .finally([lg] {});
+    });
+}
+
+ss::future<> log_manager::dispatch_topic_dir_deletion(ss::sstring dir) {
+    return ss::smp::submit_to(0, [dir = std::move(dir)]() mutable {
+        static thread_local mutex fs_lock;
+        return fs_lock.with([dir = std::move(dir)] {
+            return ss::file_exists(dir).then([dir](bool exists) {
+                if (!exists) {
+                    return ss::now();
+                }
+                return directory_walker::empty(std::filesystem::path(dir))
+                  .then([dir](bool empty) {
+                      if (!empty) {
+                          return ss::now();
+                      }
+                      return ss::remove_file(dir);
+                  });
+            });
+        });
     });
 }
 
