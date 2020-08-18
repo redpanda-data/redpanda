@@ -1,7 +1,6 @@
 package config
 
 import (
-	"bytes"
 	"path/filepath"
 	"testing"
 	"vectorized/pkg/utils"
@@ -750,27 +749,48 @@ func TestReadAsJSON(t *testing.T) {
 }
 
 func TestReadFlat(t *testing.T) {
+	expected := map[string]string{
+		"config_file":                    "/etc/redpanda/redpanda.yaml",
+		"redpanda.admin":                 "0.0.0.0:9644",
+		"redpanda.data_directory":        "/var/lib/redpanda/data",
+		"redpanda.kafka_api":             "0.0.0.0:9092",
+		"redpanda.node_id":               "0",
+		"redpanda.rpc_server":            "0.0.0.0:33145",
+		"redpanda.seed_servers.1000":     "192.168.167.0:1337",
+		"redpanda.seed_servers.1001":     "192.168.167.1:1337",
+		"rpk.coredump_dir":               "/var/lib/redpanda/coredump",
+		"rpk.enable_memory_locking":      "false",
+		"rpk.enable_usage_stats":         "false",
+		"rpk.tune_aio_events":            "false",
+		"rpk.tune_clocksource":           "false",
+		"rpk.tune_coredump":              "false",
+		"rpk.tune_cpu":                   "false",
+		"rpk.tune_disk_irq":              "false",
+		"rpk.tune_disk_nomerges":         "false",
+		"rpk.tune_disk_scheduler":        "false",
+		"rpk.tune_fstrim":                "false",
+		"rpk.tune_network":               "false",
+		"rpk.tune_swappiness":            "false",
+		"rpk.tune_transparent_hugepages": "false",
+	}
 	fs := afero.NewMemMapFs()
 	conf := DefaultConfig()
+	conf.Redpanda.SeedServers = []*SeedServer{
+		&SeedServer{
+			1000,
+			SocketAddress{"192.168.167.0", 1337},
+		}, &SeedServer{
+			1001,
+			SocketAddress{"192.168.167.1", 1337},
+		},
+	}
 	err := WriteConfig(fs, &conf, conf.ConfigFile)
 	require.NoError(t, err)
 	props, err := ReadFlat(fs, conf.ConfigFile)
 	require.NoError(t, err)
 	require.NotEqual(t, 0, len(props))
 
-	bs, err := yaml.Marshal(conf)
-	require.NoError(t, err)
-	buf := bytes.NewBuffer(bs)
-
-	v := viper.New()
-	v.SetConfigType("yaml")
-	err = v.ReadConfig(buf)
-	require.NoError(t, err)
-	keys := v.AllKeys()
-	require.Equal(t, len(keys), len(props))
-	for _, k := range keys {
-		require.Equal(t, v.GetString(k), props[k])
-	}
+	require.Exactly(t, expected, props)
 }
 
 func TestWriteAndGenerateNodeUuid(t *testing.T) {
