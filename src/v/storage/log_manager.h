@@ -193,6 +193,8 @@ private:
 
     std::optional<batch_cache_index> create_cache();
 
+    ss::future<> dispatch_topic_dir_deletion(ss::sstring dir);
+
     log_config _config;
     kvstore& _kvstore;
     simple_time_jitter<ss::lowres_clock> _jitter;
@@ -201,8 +203,6 @@ private:
     batch_cache _batch_cache;
     ss::gate _open_gate;
     ss::abort_source _abort_source;
-
-    mutex _fs_lock;
 
     friend std::ostream& operator<<(std::ostream&, const log_manager&);
 };
