@@ -80,7 +80,6 @@ func executeStatus(
 	t := ui.NewRpkTable(log.StandardLogger().Out)
 	t.SetColWidth(80)
 	t.SetAutoWrapText(true)
-	t.SetAutoMergeCells(true)
 	t.Append(getVersion())
 
 	providerInfoRowsCh := make(chan [][]string)
