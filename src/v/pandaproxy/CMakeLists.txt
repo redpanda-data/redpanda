@@ -19,6 +19,8 @@ seastar_generate_swagger(
   OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/api/api-doc/topics.json.h
 )
 
+find_package(Base64)
+
 v_cc_library(
   NAME rest_application
   SRCS
@@ -29,6 +31,7 @@ v_cc_library(
     probe.cc
     proxy.cc
     server.cc
+    $<TARGET_OBJECTS:Base64>
   DEPS
     v::syschecks
     v::kafka
@@ -54,3 +57,5 @@ if(CMAKE_BUILD_TYPE MATCHES Release)
   endif()
 endif()
 install(TARGETS pandaproxy DESTINATION bin)
+
+add_subdirectory(json)
