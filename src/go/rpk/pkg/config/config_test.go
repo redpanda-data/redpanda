@@ -777,11 +777,11 @@ func TestReadFlat(t *testing.T) {
 	conf := DefaultConfig()
 	conf.Redpanda.SeedServers = []*SeedServer{
 		&SeedServer{
-			1000,
 			SocketAddress{"192.168.167.0", 1337},
+			1000,
 		}, &SeedServer{
-			1001,
 			SocketAddress{"192.168.167.1", 1337},
+			1001,
 		},
 	}
 	err := WriteConfig(fs, &conf, conf.ConfigFile)
