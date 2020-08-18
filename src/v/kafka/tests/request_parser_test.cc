@@ -147,7 +147,7 @@ static iobuf handle_request(kafka::request_context&& ctx) {
         // TODO: once we have a tool/utility for rebuilding the
         // batch blob after decoding, swap that in here for extra
         // testing.
-        r.encode(ctx, writer);
+        r.encode(writer, ctx.header().version);
         break;
     }
 
