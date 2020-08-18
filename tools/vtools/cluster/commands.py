@@ -89,14 +89,11 @@ def status():
               help=('Nodes to stop'),
               default=['1', '2', '3'])
 def clear(nodes):
+    vconfig = config.VConfig()
     for id in nodes:
         logging.info(f'removing node {id} data')
-        shutil.rmtree(os.path.join(pathlib.Path.home(),
-                                   f'.cluster.redpanda/n{id}'),
-                      ignore_errors=True)
-        os.makedirs(os.path.join(pathlib.Path.home(),
-                                 f'.cluster.redpanda/n{id}'),
-                    exist_ok=True),
+        data_dir = utils._get_data_dir(id, vconfig)
+        shutil.rmtree(data_dir, ignore_errors=True)
 
 
 @cluster.command(short_help='Simulate local cluster crashes')

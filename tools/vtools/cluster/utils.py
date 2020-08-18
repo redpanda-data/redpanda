@@ -23,13 +23,19 @@ def _get_running_nodes():
     return running
 
 
+def _get_data_dir(id, vconfig):
+    return os.path.join(vconfig.build_root, 'cluster', 'data', f'n{id}')
+
+
 def _start_single_node(id, cores_per_node, mem_per_node, log_level, vconfig):
     src_cfg_dir = os.path.join(vconfig.src_dir, 'conf', 'local_multi_node')
     exe = os.path.join(vconfig.build_root, 'go', 'bin', 'rpk')
     install_dir = os.path.join(vconfig.build_dir)
     cluster_dir = os.path.join(vconfig.build_root, 'cluster')
     cfg_dir = os.path.join(cluster_dir, 'cfg')
+    data_dir = _get_data_dir(id, vconfig)
     os.makedirs(cfg_dir, exist_ok=True)
+    os.makedirs(data_dir, exist_ok=True)
     cfg_file = f'{cfg_dir}/n{id}.yaml'
 
     # copy config file if doesn't exists
@@ -54,6 +60,10 @@ def _start_single_node(id, cores_per_node, mem_per_node, log_level, vconfig):
         '--config', cfg_file, f'[{flags_str}]'
     ]).wait()
 
+    subprocess.Popen([
+        exe, 'config', 'set', 'redpanda.data_directory', '--config', cfg_file,
+        data_dir
+    ]).wait()
     # start redpanda
     cmd = [exe, 'start', '--config', cfg_file, '--install-dir', install_dir]
 
