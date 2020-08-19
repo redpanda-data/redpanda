@@ -56,7 +56,7 @@ std::ostream& operator<<(std::ostream& os, const topic_partition& tp) {
 }
 
 std::ostream& operator<<(std::ostream& os, const ntp& n) {
-    fmt::print(os, "{{ntp: {}:{}:{}}}", n.ns, n.tp.topic, n.tp.partition);
+    fmt::print(os, "{{{}/{}/{}}}", n.ns(), n.tp.topic(), n.tp.partition());
     return os;
 }
 

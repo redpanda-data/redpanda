@@ -137,8 +137,6 @@ struct ntp {
     friend std::ostream& operator<<(std::ostream&, const ntp&);
 };
 
-std::ostream& operator<<(std::ostream&, const ntp&);
-
 } // namespace model
 
 namespace std {
