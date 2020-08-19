@@ -102,11 +102,11 @@ func (*hwLocCmd) IsSupported() bool {
 	_, calcErr := exec.LookPath(CalcBin)
 	_, distribErr := exec.LookPath(DistribBin)
 	if calcErr != nil {
-		log.Warnf("Unable to find '%s'", CalcBin)
+		log.Debugf("Unable to find '%s'", CalcBin)
 		return false
 	}
 	if distribErr != nil {
-		log.Warnf("Unable to find '%s'", DistribBin)
+		log.Debugf("Unable to find '%s'", DistribBin)
 		return false
 	}
 	return true
