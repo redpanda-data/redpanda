@@ -20,6 +20,12 @@ void probe::setup_metrics(const model::ntp& ntp) {
       topic_label(ntp.tp.topic()),
       partition_label(ntp.tp.partition()),
     };
+
+    std::vector<sm::label_instance> partition_size_labels;
+    partition_size_labels.reserve(labels.size() + 1);
+    partition_size_labels.insert(
+      partition_size_labels.begin(), std::cbegin(labels), std::cend(labels));
+    partition_size_labels.push_back(sm::type_label("bytes"));
     _metrics.add_group(
       prometheus_sanitize::metrics_name("storage:log"),
       {
@@ -69,11 +75,11 @@ void probe::setup_metrics(const model::ntp& ntp) {
           [this] { return _segment_compacted; },
           sm::description("Number of compacted segments"),
           labels),
-        sm::make_total_bytes(
+        sm::make_gauge(
           "partition_size",
           [this] { return _partition_bytes; },
           sm::description("Current size of partition in bytes"),
-          labels),
+          std::move(partition_size_labels)),
       });
 }
 
