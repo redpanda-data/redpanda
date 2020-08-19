@@ -259,12 +259,17 @@ func areDevicesIRQsDistributed(
 	if err != nil {
 		return false, err
 	}
+
 	for IRQ, mask := range expectedDistribution {
 		readMask, err := cpuMasks.ReadIRQMask(IRQ)
 		if err != nil {
 			return false, err
 		}
-		if !irq.MasksEqual(mask, readMask) {
+		eq, err := irq.MasksEqual(mask, readMask)
+		if err != nil {
+			return false, err
+		}
+		if !eq {
 			return false, nil
 		}
 	}
