@@ -237,10 +237,11 @@ func MasksEqual(a, b string) (bool, error) {
 	return true, nil
 }
 
-func parseMask(mask string) (int, error) {
+func parseMask(mask string) (uint, error) {
 	if mask == "" {
 		return 0, nil
 	}
-	maskNum, err := strconv.ParseInt(strings.ReplaceAll(mask, "0x", ""), 16, 32)
-	return int(maskNum), err
+	s := strings.ReplaceAll(mask, "0x", "")
+	num, err := strconv.ParseUint(s, 16, 32)
+	return uint(num), err
 }
