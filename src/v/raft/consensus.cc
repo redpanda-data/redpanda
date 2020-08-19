@@ -1090,8 +1090,9 @@ consensus::do_write_snapshot(model::offset last_included_index, iobuf&& data) {
     auto last_included_term = _log.get_term(last_included_index);
     vassert(
       last_included_term.has_value(),
-      "Unable to get term for snapshot last included offset {}",
-      last_included_index);
+      "Unable to get term for snapshot last included offset: {}, log: {}",
+      last_included_index,
+      _log);
     auto config = _configuration_manager.get(last_included_index);
     vassert(
       config.has_value(),
