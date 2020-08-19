@@ -5,8 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
+	"vectorized/pkg/cli/ui"
 	"vectorized/pkg/config"
 	"vectorized/pkg/tuners/factory"
 	"vectorized/pkg/tuners/hwloc"
@@ -17,6 +21,14 @@ import (
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
+
+type result struct {
+	name      string
+	applied   bool
+	enabled   bool
+	supported bool
+	errMsg    string
+}
 
 func NewTuneCommand(fs afero.Fs) *cobra.Command {
 	tunerParams := factory.TunerParams{}
@@ -221,28 +233,38 @@ func tune(
 		return err
 	}
 	rebootRequired := false
+
+	results := []result{}
+	includeErr := false
 	for _, tunerName := range tunerNames {
-		if !factory.IsTunerEnabled(tunerName, conf.Rpk) {
-			log.Infof("Skipping disabled tuner %s", tunerName)
+		enabled := factory.IsTunerEnabled(tunerName, conf.Rpk)
+		tuner := tunersFactory.CreateTuner(tunerName, params)
+		supported, reason := tuner.CheckIfSupported()
+		if !enabled || !supported {
+			includeErr = includeErr || !supported
+			results = append(results, result{tunerName, false, enabled, supported, reason})
 			continue
 		}
-		tuner := tunersFactory.CreateTuner(tunerName, params)
-		if supported, reason := tuner.CheckIfSupported(); supported {
-			log.Debugf("Tuner paramters %+v", params)
-			log.Infof("Running '%s' tuner...", tunerName)
-			result := tuner.Tune()
-			if result.IsFailed() {
-				return result.Error()
-			}
-			rebootRequired = rebootRequired || result.IsRebootRequired()
-		} else {
-			log.Infof("Tuner '%s' is not supported - %s", tunerName, reason)
+		log.Debugf("Tuner parameters %+v", params)
+		res := tuner.Tune()
+		includeErr = includeErr || res.IsFailed()
+		rebootRequired = rebootRequired || res.IsRebootRequired()
+		errMsg := ""
+		if res.IsFailed() {
+			errMsg = res.Error().Error()
 		}
+		results = append(results, result{tunerName, !res.IsFailed(), enabled, supported, errMsg})
 	}
+
+	printTuneResult(results, includeErr)
+
 	if rebootRequired {
 		red := color.New(color.FgRed).SprintFunc()
-		log.Infof("%s: Reboot system and run 'rpk tune <tuner>' again",
-			red("IMPORTANT"))
+		log.Infof(
+			"%s: Reboot system and run 'rpk tune %s' again",
+			red("IMPORTANT"),
+			strings.Join(tunerNames, ","),
+		)
 	}
 	return nil
 }
@@ -251,6 +273,57 @@ func tunerParamsEmpty(params *factory.TunerParams) bool {
 	return len(params.Directories) == 0 &&
 		len(params.Disks) == 0 &&
 		len(params.Nics) == 0
+}
+
+func printTuneResult(results []result, includeErr bool) {
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].name < results[j].name
+	})
+	headers := []string{
+		"Tuner",
+		"Applied",
+		"Enabled",
+		"Supported",
+	}
+	if includeErr {
+		headers = append(headers, "Error")
+	}
+
+	t := ui.NewRpkTable(os.Stdout)
+	t.SetHeader(headers)
+	red := color.New(color.FgRed).SprintFunc()
+	yellow := color.New(color.FgYellow).SprintFunc()
+	green := color.New(color.FgGreen).SprintFunc()
+	white := color.New(color.FgHiWhite).SprintFunc()
+
+	for _, res := range results {
+		c := white
+		row := []string{
+			res.name,
+			strconv.FormatBool(res.applied),
+			strconv.FormatBool(res.enabled),
+			strconv.FormatBool(res.supported),
+		}
+		if includeErr {
+			row = append(row, res.errMsg)
+		}
+		if !res.supported {
+			c = yellow
+		} else if res.errMsg != "" {
+			c = red
+		} else if res.applied {
+			c = green
+		}
+		t.Append(colorRow(c, row))
+	}
+	t.Render()
+}
+
+func colorRow(c func(...interface{}) string, row []string) []string {
+	for i, s := range row {
+		row[i] = c(s)
+	}
+	return row
 }
 
 const cpuTunerHelp = `
