@@ -226,7 +226,7 @@ replicate_entries_stm::replicate_entries_stm(
   , _req(std::move(r))
   , _followers_seq(std::move(seqs))
   , _share_sem(1)
-  , _ctxlog(_ptr->_self, _ptr->group()) {}
+  , _ctxlog(_ptr->group(), _ptr->ntp()) {}
 
 replicate_entries_stm::~replicate_entries_stm() {
     auto gate_not_closed = _req_bg.get_count() > 0 && !_req_bg.is_closed();
