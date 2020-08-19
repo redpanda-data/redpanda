@@ -500,11 +500,24 @@ ss::future<> consensus::start() {
                 "Recovered, log offsets: {}, term:{}",
                 lstats,
                 _term);
+              /**
+               * The configuration manager state may be divereged from the log
+               * state, as log is flushed lazily, we have to make sure that the
+               * log and configuration manager has exactly the same offsets
+               * range
+               */
+              auto f = _configuration_manager.truncate(
+                details::next_offset(lstats.dirty_offset));
+
               if (st.config_batches_seen() == 0) {
-                  return ss::now();
+                  return f;
               }
-              return _configuration_manager
-                .add(st.prev_log_index(), st.release_config())
+
+              return f
+                .then([this, st = std::move(st)]() mutable {
+                    return _configuration_manager.add(
+                      st.prev_log_index(), st.release_config());
+                })
                 .then([this] {
                     update_follower_stats(_configuration_manager.get_latest());
                 });
