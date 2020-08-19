@@ -20,7 +20,7 @@ recovery_stm::recovery_stm(
   : _ptr(p)
   , _node_id(node_id)
   , _prio(prio)
-  , _ctxlog(_ptr->_self, _ptr->group()) {}
+  , _ctxlog(_ptr->group(), _ptr->ntp()) {}
 
 ss::future<> recovery_stm::do_recover() {
     // We have to send all the records that leader have, event those that are

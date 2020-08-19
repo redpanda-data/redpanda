@@ -1,5 +1,6 @@
 #pragma once
 
+#include "model/fundamental.h"
 #include "model/metadata.h"
 #include "raft/types.h"
 #include "seastarx.h"
@@ -11,9 +12,9 @@ extern ss::logger raftlog;
 
 class ctx_log {
 public:
-    ctx_log(model::node_id n, raft::group_id gr)
-      : _node_id(n)
-      , _group_id(gr) {}
+    ctx_log(raft::group_id gr, model::ntp ntp)
+      : _group_id(gr)
+      , _ntp(std::move(ntp)) {}
 
     template<typename... Args>
     void error(const char* format, Args&&... args) {
@@ -43,15 +44,15 @@ public:
     void log(ss::log_level lvl, const char* format, Args&&... args) {
         if (raftlog.is_enabled(lvl)) {
             auto line_fmt = fmt::format(
-              "[node_id:{}, group:{}] {}", _node_id, _group_id, format);
+              "[group_id:{}, {}] {}", _group_id, _ntp, format);
 
             raftlog.log(lvl, line_fmt.c_str(), std::forward<Args>(args)...);
         }
     }
 
 private:
-    model::node_id _node_id;
     raft::group_id _group_id;
+    model::ntp _ntp;
 };
 
 } // namespace raft

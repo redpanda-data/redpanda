@@ -34,7 +34,9 @@ struct config_manager_fixture {
           base_dir,
           100_MiB,
           storage::debug_sanitize_files::yes))))
-      , _logger(model::node_id(0), raft::group_id(1))
+      , _logger(
+          raft::group_id(1),
+          model::ntp(model::ns("t"), model::topic("t"), model::partition_id(0)))
       , _cfg_mgr(
           raft::group_configuration{}, raft::group_id(1), _storage, _logger) {
         _storage.start().get0();

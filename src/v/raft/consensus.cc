@@ -46,7 +46,7 @@ consensus::consensus(
   , _fstats({})
   , _batcher(this)
   , _event_manager(this)
-  , _ctxlog(_self, group)
+  , _ctxlog(group, _log.config().ntp())
   , _replicate_append_timeout(
       config::shard_local_cfg().replicate_append_timeout_ms())
   , _recovery_append_timeout(
