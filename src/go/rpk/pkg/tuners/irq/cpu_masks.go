@@ -2,6 +2,7 @@ package irq
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"vectorized/pkg/tuners/executors"
 	"vectorized/pkg/tuners/executors/commands"
@@ -212,18 +213,35 @@ func (masks *cpuMasks) GetAllCpusMask() (string, error) {
 	return masks.hwloc.All()
 }
 
-func MasksEqual(a, b string) bool {
+func MasksEqual(a, b string) (bool, error) {
 	aParts := strings.Split(a, ",")
 	bParts := strings.Split(b, ",")
 
 	if len(aParts) != len(bParts) {
-		return false
+		return false, nil
 	}
 	for i, aPart := range aParts {
 		bPart := bParts[i]
-		if aPart != bPart {
-			return false
+		aNumeric, err := parseMask(aPart)
+		if err != nil {
+			return false, err
+		}
+		bNumeric, err := parseMask(bPart)
+		if err != nil {
+			return false, err
+		}
+		if aNumeric != bNumeric {
+			return false, nil
 		}
 	}
-	return true
+	return true, nil
+}
+
+func parseMask(mask string) (uint, error) {
+	if mask == "" {
+		return 0, nil
+	}
+	s := strings.ReplaceAll(mask, "0x", "")
+	num, err := strconv.ParseUint(s, 16, 32)
+	return uint(num), err
 }
