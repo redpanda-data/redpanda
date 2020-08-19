@@ -500,11 +500,24 @@ ss::future<> consensus::start() {
                 "Recovered, log offsets: {}, term:{}",
                 lstats,
                 _term);
+              /**
+               * The configuration manager state may be divereged from the log
+               * state, as log is flushed lazily, we have to make sure that the
+               * log and configuration manager has exactly the same offsets
+               * range
+               */
+              auto f = _configuration_manager.truncate(
+                details::next_offset(lstats.dirty_offset));
+
               if (st.config_batches_seen() == 0) {
-                  return ss::now();
+                  return f;
               }
-              return _configuration_manager
-                .add(st.prev_log_index(), st.release_config())
+
+              return f
+                .then([this, st = std::move(st)]() mutable {
+                    return _configuration_manager.add(
+                      st.prev_log_index(), st.release_config());
+                })
                 .then([this] {
                     update_follower_stats(_configuration_manager.get_latest());
                 });
@@ -1090,8 +1103,9 @@ consensus::do_write_snapshot(model::offset last_included_index, iobuf&& data) {
     auto last_included_term = _log.get_term(last_included_index);
     vassert(
       last_included_term.has_value(),
-      "Unable to get term for snapshot last included offset {}",
-      last_included_index);
+      "Unable to get term for snapshot last included offset: {}, log: {}",
+      last_included_index,
+      _log);
     auto config = _configuration_manager.get(last_included_index);
     vassert(
       config.has_value(),
