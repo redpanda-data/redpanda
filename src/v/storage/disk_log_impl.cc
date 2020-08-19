@@ -189,16 +189,17 @@ ss::future<> disk_log_impl::garbage_collect_segments(
           // to make sure
           // that all opertions will update the start offset
           // correctly
-          _start_offset = ptr->offsets().dirty_offset + model::offset(1);
+          auto start_offset = ptr->offsets().dirty_offset + model::offset(1);
           return _kvstore
             .put(
               kvstore::key_space::storage,
               start_offset_key(),
-              reflection::to_iobuf(_start_offset))
+              reflection::to_iobuf(start_offset))
             .then([this, ptr, ctx] {
                 _segs.pop_front();
                 return remove_segment_permanently(ptr, ctx);
-            });
+            })
+            .then([this, start_offset] { _start_offset = start_offset; });
       });
 }
 
@@ -754,8 +755,10 @@ model::offset disk_log_impl::read_start_offset() const {
 }
 
 std::ostream& disk_log_impl::print(std::ostream& o) const {
-    return o << "{offsets:" << offsets() << ", closed:" << _closed
-             << ", config:" << config() << ", logs:" << _segs << "}";
+    return o << "{offsets:" << offsets()
+             << ", max_collectible_offset: " << _max_collectible_offset
+             << ", closed:" << _closed << ", config:" << config()
+             << ", logs:" << _segs << "}";
 }
 
 std::ostream& operator<<(std::ostream& o, const disk_log_impl& d) {
