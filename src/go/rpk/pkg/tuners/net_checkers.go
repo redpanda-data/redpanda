@@ -100,7 +100,11 @@ func (f *netCheckersFactory) NewNicIRQAffinityChecker(
 					if err != nil {
 						return false, err
 					}
-					if !irq.MasksEqual(readMask, mask) {
+					eq, err := irq.MasksEqual(readMask, mask)
+					if err != nil {
+						return false, err
+					}
+					if !eq {
 						return false, nil
 					}
 				}
@@ -151,7 +155,11 @@ func (f *netCheckersFactory) NewNicRpsSetChecker(
 					if err != nil {
 						return false, err
 					}
-					if !irq.MasksEqual(readMask, rfsMask) {
+					eq, err := irq.MasksEqual(readMask, rfsMask)
+					if err != nil {
+						return false, err
+					}
+					if !eq {
 						return false, nil
 					}
 				}
@@ -248,7 +256,11 @@ func (f *netCheckersFactory) NewNicXpsChecker(nic network.Nic) Checker {
 					if err != nil {
 						continue
 					}
-					if !irq.MasksEqual(readMask, mask) {
+					eq, err := irq.MasksEqual(readMask, mask)
+					if err != nil {
+						return false, err
+					}
+					if !eq {
 						return false, nil
 					}
 				}
