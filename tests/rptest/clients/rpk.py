@@ -1,4 +1,6 @@
 import subprocess
+import tempfile
+import time
 
 
 class RpkTool:
@@ -32,19 +34,46 @@ class RpkTool:
 
         assert False, "Unexpected output format"
 
-    def _run_api(self, cmd):
+    def _run_api(self, cmd, stdin=None, timeout=30):
         cmd = [
             self._rpk_binary(), "api", "--brokers",
             self._redpanda.brokers(1)
         ] + cmd
-        return self._execute(cmd)
+        return self._execute(cmd, stdin=stdin, timeout=timeout)
 
-    def _execute(self, cmd):
+    def _execute(self, cmd, stdin=None, timeout=30):
         self._redpanda.logger.debug("Executing command: %s", cmd)
         try:
-            res = subprocess.check_output(cmd, stderr=subprocess.STDOUT)
-            self._redpanda.logger.debug(res)
-            return res
+            output = None
+            f = subprocess.PIPE
+
+            if stdin:
+                f = tempfile.TemporaryFile()
+                f.write(stdin)
+                f.seek(0)
+
+            # rpk logs everything on STDERR by default
+            p = subprocess.Popen(cmd, stderr=subprocess.PIPE, stdin=f)
+            start_time = time.time()
+
+            ret = None
+            while time.time() < start_time + timeout:
+                ret = p.poll()
+                if ret != None:
+                    break
+                time.sleep(0.5)
+
+            if ret is None:
+                p.terminate()
+
+            if p.returncode:
+                raise Exception('command %s returned %d' %
+                                (' '.join(cmd), p.returncode))
+
+            output = p.stderr.read()
+
+            self._redpanda.logger.debug(output)
+            return output
         except subprocess.CalledProcessError as e:
             self._redpanda.logger.debug("Error (%d) executing command: %s",
                                         e.returncode, e.output)
