@@ -63,6 +63,9 @@ func NewApiCommand(fs afero.Fs) *cobra.Command {
 	command.AddCommand(
 		api.NewProduceCommand(producerClosure),
 	)
+	command.AddCommand(
+		api.NewConsumeCommand(clientClosure),
+	)
 	return command
 }
 
