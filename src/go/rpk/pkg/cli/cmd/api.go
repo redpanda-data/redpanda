@@ -126,3 +126,16 @@ func createProducer(
 		return sarama.NewSyncProducer(brokers(), cfg)
 	}
 }
+
+func createClient(brokers func() []string) func() (sarama.Client, error) {
+	return func() (sarama.Client, error) {
+		bs := brokers()
+		return kafka.InitClient(bs...)
+	}
+}
+
+func createAdmin(brokers func() []string) func() (sarama.ClusterAdmin, error) {
+	return func() (sarama.ClusterAdmin, error) {
+		return sarama.NewClusterAdmin(brokers(), kafka.DefaultConfig())
+	}
+}
