@@ -55,8 +55,10 @@ func NewApiCommand(fs afero.Fs) *cobra.Command {
 	// actual brokers list to be used.
 	brokersClosure := deduceBrokers(fs, &configFile, &brokers)
 	producerClosure := createProducer(brokersClosure)
+	clientClosure := createClient(brokersClosure)
+	adminClosure := createAdmin(brokersClosure)
 	command.AddCommand(
-		api.NewTopicCommand(fs, brokersClosure),
+		api.NewTopicCommand(fs, clientClosure, adminClosure),
 	)
 	command.AddCommand(
 		api.NewProduceCommand(producerClosure),
