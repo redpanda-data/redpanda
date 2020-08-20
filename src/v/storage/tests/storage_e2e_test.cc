@@ -7,6 +7,7 @@
 #include "storage/log_manager.h"
 #include "storage/record_batch_builder.h"
 #include "storage/tests/storage_test_fixture.h"
+#include "storage/tests/utils/disk_log_builder.h"
 #include "storage/tests/utils/random_batch.h"
 #include "storage/types.h"
 
@@ -539,3 +540,102 @@ FIXTURE_TEST(write_concurrently_with_gc, storage_test_fixture) {
       lstats_after.dirty_offset,
       model::offset(9 + appends * batches_per_append));
 };
+
+FIXTURE_TEST(empty_segment_recovery, storage_test_fixture) {
+    auto cfg = default_log_config(test_dir);
+    cfg.stype = storage::log_config::storage_type::disk;
+    auto ntp = model::ntp("default", "test", 0);
+    using overrides_t = storage::ntp_config::default_overrides;
+    overrides_t ov;
+    ov.cleanup_policy_bitflags = model::cleanup_policy_bitflags::compaction;
+
+    /**
+     * 1) add segment
+     * 2) append some batches (no flush)
+     * 3) truncate
+     * 4) add empty segment
+     */
+
+    storage::disk_log_builder builder(cfg);
+    model::record_batch_type bt = model::record_batch_type(1);
+    using should_flush_t = storage::disk_log_builder::should_flush_after;
+    storage::log_append_config appender_cfg{
+      .should_fsync = storage::log_append_config::fsync::no,
+      .io_priority = ss::default_priority_class(),
+      .timeout = model::no_timeout};
+    builder | storage::start(ntp) | storage::add_segment(0)
+      | storage::add_random_batch(
+        0,
+        1,
+        storage::maybe_compress_batches::yes,
+        bt,
+        appender_cfg,
+        should_flush_t::no)
+      | storage::add_random_batch(
+        1,
+        5,
+        storage::maybe_compress_batches::yes,
+        bt,
+        appender_cfg,
+        should_flush_t::no)
+      | storage::add_random_batch(
+        6,
+        140,
+        storage::maybe_compress_batches::yes,
+        bt,
+        appender_cfg,
+        should_flush_t::no);
+
+    builder.get_log()
+      .truncate(storage::truncate_config(
+        model::offset(6), ss::default_priority_class()))
+      .get0();
+
+    builder | storage::add_segment(6);
+    builder.stop().get();
+
+    /**
+     * Log state after setup
+     *
+     * 1) after append
+     *
+     *          {segment #1: [0,0][1,5][6,145]}
+     *
+     * 2) after truncate
+     *
+     *          {segment #1: [0,0][1,5]}
+     *
+     * 3) after adding new segment
+     *
+     *          {segment #1: [0,0][1,5]}{segment #2: }
+     */
+
+    ss::abort_source as;
+    storage::log_manager mgr = make_log_manager(cfg);
+    storage::ntp_config ntp_cfg(
+      ntp, mgr.config().base_dir, std::make_unique<overrides_t>(ov));
+    auto log = mgr.manage(std::move(ntp_cfg)).get0();
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+
+    auto offsets_after_recovery = log.offsets();
+
+    // Append single batch
+    storage::log_appender appender = log.make_appender(
+      storage::log_append_config{
+        .should_fsync = storage::log_append_config::fsync::no,
+        .io_priority = ss::default_priority_class(),
+        .timeout = model::no_timeout});
+    ss::circular_buffer<model::record_batch> batches;
+    batches.push_back(
+      storage::test::make_random_batch(model::offset(0), 1, false));
+
+    auto rdr = model::make_memory_record_batch_reader(std::move(batches));
+    auto ret = rdr.for_each_ref(std::move(appender), model::no_timeout).get0();
+
+    // we truncate at {6} so we expect dirty offset equal {5}
+    BOOST_REQUIRE_EQUAL(offsets_after_recovery.dirty_offset, model::offset(5));
+
+    // after append we expect offset to be equal to {6} as one record was
+    // appended
+    BOOST_REQUIRE_EQUAL(log.offsets().dirty_offset, model::offset(6));
+}
