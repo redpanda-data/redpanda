@@ -34,6 +34,17 @@ class RpkTool:
 
         assert False, "Unexpected output format"
 
+    def produce(self, topic, key, msg, headers=[], partition=None):
+        cmd = [
+            'produce', '--brokers',
+            self._redpanda.brokers(), '--key', key, topic
+        ]
+        if headers:
+            cmd += ['-H ' + h for h in headers]
+        if partition:
+            cmd += ['-p', str(partition)]
+        return self._run_api(cmd, stdin=msg)
+
     def _run_api(self, cmd, stdin=None, timeout=30):
         cmd = [
             self._rpk_binary(), "api", "--brokers",
