@@ -1,0 +1,14 @@
+{
+    "namespace": "coproc",
+    "service_name": "supervisor",
+    "includes": [
+        "coproc/types.h"
+    ],
+    "methods": [
+        {
+            "name": "process_batch",
+            "input_type": "process_batch_request",
+            "output_type": "process_batch_reply"
+        }
+    ]
+}
