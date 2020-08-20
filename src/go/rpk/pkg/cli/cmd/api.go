@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 	"vectorized/pkg/cli/cmd/api"
 	"vectorized/pkg/config"
 	"vectorized/pkg/kafka"
@@ -69,6 +70,7 @@ func deduceBrokers(
 	return func() []string {
 		bs := *brokers
 		if len(bs) != 0 {
+			log.Debugf("Using --brokers: %s", strings.Join(bs, ", "))
 			return bs
 		}
 		conf, err := config.ReadConfigFromPath(fs, *configFile)
@@ -99,7 +101,12 @@ func deduceBrokers(
 			conf.Redpanda.KafkaApi.Address,
 			conf.Redpanda.KafkaApi.Port,
 		)
-		return append(bs, selfAddr)
+		bs = append(bs, selfAddr)
+		log.Debugf(
+			"Using brokers from config: %s",
+			strings.Join(bs, ", "),
+		)
+		return bs
 	}
 }
 
