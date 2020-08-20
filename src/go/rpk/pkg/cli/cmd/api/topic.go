@@ -1,7 +1,6 @@
 package api
 
 import (
-	"errors"
 	"fmt"
 	"math"
 	"sort"
@@ -15,36 +14,25 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewTopicCommand(fs afero.Fs, brokers func() []string) *cobra.Command {
-	var admin sarama.ClusterAdmin
-	var client sarama.Client
-
+func NewTopicCommand(
+	fs afero.Fs,
+	client func() (sarama.Client, error),
+	admin func() (sarama.ClusterAdmin, error),
+) *cobra.Command {
 	root := &cobra.Command{
-		Use:              "topic",
-		Short:            "Create, delete or update topics",
-		TraverseChildren: true,
-		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-			var err error
-			bs := brokers()
-			log.Debugf("Seed brokers: %v", bs)
-			client, err = kafka.InitClient(bs...)
-			if err != nil {
-				return err
-			}
-			admin, err = sarama.NewClusterAdminFromClient(client)
-			return err
-		},
+		Use:   "topic",
+		Short: "Create, delete or update topics",
 	}
-	root.AddCommand(createTopic(&admin))
-	root.AddCommand(deleteTopic(&admin))
-	root.AddCommand(setTopicConfig(&admin))
-	root.AddCommand(listTopics(&admin))
-	root.AddCommand(describeTopic(&client, &admin))
+	root.AddCommand(createTopic(admin))
+	root.AddCommand(deleteTopic(admin))
+	root.AddCommand(setTopicConfig(admin))
+	root.AddCommand(listTopics(admin))
+	root.AddCommand(describeTopic(client, admin))
 
 	return root
 }
 
-func createTopic(admin *sarama.ClusterAdmin) *cobra.Command {
+func createTopic(admin func() (sarama.ClusterAdmin, error)) *cobra.Command {
 	var (
 		partitions int32
 		replicas   int16
@@ -55,17 +43,18 @@ func createTopic(admin *sarama.ClusterAdmin) *cobra.Command {
 		Short: "Create a topic",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if admin == nil {
-				return errors.New("uninitialized API client")
+			adm, err := admin()
+			if err != nil {
+				log.Error("Couldn't initialize API admin")
+				return err
 			}
-			adm := *admin
 			defer adm.Close()
 			topicName := args[0]
 			cleanupPolicy := "delete"
 			if compact {
 				cleanupPolicy = "compact"
 			}
-			err := adm.CreateTopic(
+			err = adm.CreateTopic(
 				topicName,
 				&sarama.TopicDetail{
 					NumPartitions:     partitions,
@@ -113,20 +102,21 @@ func createTopic(admin *sarama.ClusterAdmin) *cobra.Command {
 	return cmd
 }
 
-func deleteTopic(admin *sarama.ClusterAdmin) *cobra.Command {
+func deleteTopic(admin func() (sarama.ClusterAdmin, error)) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "delete <topic name>",
 		Short: "Delete a topic",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if admin == nil {
-				return errors.New("uninitialized API client")
+			adm, err := admin()
+			if err != nil {
+				log.Error("Couldn't initialize API admin")
+				return err
 			}
-			adm := *admin
 			defer adm.Close()
 
 			topicName := args[0]
-			err := adm.DeleteTopic(topicName)
+			err = adm.DeleteTopic(topicName)
 			if err != nil {
 				return err
 			}
@@ -137,23 +127,24 @@ func deleteTopic(admin *sarama.ClusterAdmin) *cobra.Command {
 	return cmd
 }
 
-func setTopicConfig(admin *sarama.ClusterAdmin) *cobra.Command {
+func setTopicConfig(admin func() (sarama.ClusterAdmin, error)) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "set-config <topic> <key> [<value>]",
 		Short: "Set the topic's config key/value pairs",
 		Args:  cobra.ExactArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if admin == nil {
-				return errors.New("uninitialized API client")
+			adm, err := admin()
+			if err != nil {
+				log.Error("Couldn't initialize API admin")
+				return err
 			}
-			adm := *admin
 			defer adm.Close()
 
 			topicName := args[0]
 			key := args[1]
 			value := args[2]
 
-			err := adm.AlterConfig(
+			err = adm.AlterConfig(
 				sarama.TopicResource,
 				topicName,
 				map[string]*string{key: &value},
@@ -175,7 +166,8 @@ func setTopicConfig(admin *sarama.ClusterAdmin) *cobra.Command {
 }
 
 func describeTopic(
-	client *sarama.Client, admin *sarama.ClusterAdmin,
+	client func() (sarama.Client, error),
+	admin func() (sarama.ClusterAdmin, error),
 ) *cobra.Command {
 	var (
 		page              int
@@ -188,11 +180,18 @@ func describeTopic(
 		Long:  "Describe a topic. Default values of the configuration are omitted.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if admin == nil || client == nil {
-				return errors.New("uninitialized API client")
+			cl, err := client()
+			if err != nil {
+				log.Error("Couldn't initialize API client")
+				return err
 			}
-			adm := *admin
-			cl := *client
+			defer cl.Close()
+
+			adm, err := admin()
+			if err != nil {
+				log.Error("Couldn't initialize API admin")
+				return err
+			}
 			defer adm.Close()
 
 			topicName := args[0]
@@ -344,17 +343,18 @@ func describeTopic(
 	return cmd
 }
 
-func listTopics(admin *sarama.ClusterAdmin) *cobra.Command {
+func listTopics(admin func() (sarama.ClusterAdmin, error)) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "list",
 		Aliases: []string{"ls"},
 		Short:   "List topics",
 		Args:    cobra.ExactArgs(0),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if admin == nil {
-				return errors.New("uninitialized API client")
+			adm, err := admin()
+			if err != nil {
+				log.Error("Couldn't initialize API admin")
+				return err
 			}
-			adm := *admin
 			defer adm.Close()
 
 			topics, err := adm.ListTopics()
