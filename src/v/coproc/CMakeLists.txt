@@ -20,6 +20,7 @@ v_cc_library(
     types.cc
     logger.cc
     service.cc
+    router.cc
   DEPS
     v::rpc
     v::model
