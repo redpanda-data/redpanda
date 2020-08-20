@@ -25,31 +25,36 @@ ss::future<> disk_log_builder::add_random_batch(
   int num_records,
   maybe_compress_batches comp,
   model::record_batch_type bt,
-  log_append_config config) {
+  log_append_config config,
+  should_flush_after flush) {
     auto buff = ss::circular_buffer<model::record_batch>();
     buff.push_back(
       test::make_random_batch(offset, num_records, bool(comp), bt));
-    return write(std::move(buff), config);
+    return write(std::move(buff), config, flush);
 }
 
 ss::future<> disk_log_builder::add_random_batches(
   model::offset offset,
   int count,
   maybe_compress_batches comp,
-  log_append_config config) {
-    return write(test::make_random_batches(offset, count, bool(comp)), config);
+  log_append_config config,
+  should_flush_after flush) {
+    return write(
+      test::make_random_batches(offset, count, bool(comp)), config, flush);
 }
 
 ss::future<> disk_log_builder::add_random_batches(
-  model::offset offset, log_append_config config) {
-    return write(test::make_random_batches(offset), config);
+  model::offset offset, log_append_config config, should_flush_after flush) {
+    return write(test::make_random_batches(offset), config, flush);
 }
 
 ss::future<> disk_log_builder::add_batch(
-  model::record_batch batch, log_append_config config) {
+  model::record_batch batch,
+  log_append_config config,
+  should_flush_after flush) {
     auto buf = ss::circular_buffer<model::record_batch>();
     buf.push_back(std::move(batch));
-    return write(std::move(buf), config);
+    return write(std::move(buf), config, flush);
 }
 // Log managment
 ss::future<> disk_log_builder::start(model::ntp ntp) {
@@ -123,7 +128,8 @@ const log_config& disk_log_builder::get_log_config() const {
 // Common interface for appending batches
 ss::future<> disk_log_builder::write(
   ss::circular_buffer<model::record_batch> buff,
-  const log_append_config& config) {
+  const log_append_config& config,
+  should_flush_after flush) {
     if (buff.empty()) {
         return ss::now();
     }
@@ -135,7 +141,12 @@ ss::future<> disk_log_builder::write(
       get_disk_log_impl(), config, log_clock::now(), base_offset);
     return std::move(reader)
       .for_each_ref(std::move(appender), config.timeout)
-      .then([this](auto) { return _log->flush(); });
+      .then([this, flush](storage::append_result) {
+          if (flush) {
+              return _log->flush();
+          }
+          return ss::now();
+      });
 }
 
 } // namespace storage
