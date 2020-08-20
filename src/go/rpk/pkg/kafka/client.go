@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/Shopify/sarama"
+	"github.com/avast/retry-go"
+	log "github.com/sirupsen/logrus"
 )
 
 func DefaultConfig() *sarama.Config {
@@ -108,4 +110,30 @@ func HighWatermarks(
 	}
 
 	return watermarks, nil
+}
+
+// Tries sending a message, and retries `retries` times waiting `backoff` time
+// in between.
+// sarama implements retries and backoff, but only for some errors.
+func RetrySend(
+	producer sarama.SyncProducer,
+	message *sarama.ProducerMessage,
+	retries uint,
+	backoff time.Duration,
+) (part int32, offset int64, err error) {
+	err = retry.Do(
+		func() error {
+			part, offset, err = producer.SendMessage(message)
+			return err
+		},
+		retry.Attempts(retries),
+		retry.DelayType(retry.FixedDelay),
+		retry.Delay(backoff),
+		retry.LastErrorOnly(true),
+		retry.OnRetry(func(n uint, err error) {
+			log.Debugf("Sending message failed: %v", err)
+			log.Debugf("Retrying (%d retries left)", retries-n)
+		}),
+	)
+	return part, offset, err
 }
