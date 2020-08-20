@@ -146,7 +146,8 @@ do_recover(segment_set&& segments, ss::abort_source& as) {
         segment_set::underlying_t to_recover;
         to_recover.push_back(std::move(good.back()));
         good.pop_back(); // always recover last segment
-        auto good_end = std::partition(
+        // keep segments sorted
+        auto good_end = std::stable_partition(
           good.begin(), good.end(), [](ss::lw_shared_ptr<segment>& ss) {
               auto& s = *ss;
               try {
@@ -172,18 +173,34 @@ do_recover(segment_set&& segments, ss::abort_source& as) {
           good_end,
           good.end()); // remove all the ones we copied into recover
 
+        // remove empty segments
+        auto non_empty_end = std::stable_partition(
+          to_recover.begin(),
+          to_recover.end(),
+          [](ss::lw_shared_ptr<segment>& segment) {
+              auto stat = segment->reader().stat().get0();
+              if (stat.st_size != 0) {
+                  return true;
+              }
+              vlog(stlog.info, "Removing empty segment: {}", segment);
+              segment->close().get();
+              ss::remove_file(segment->reader().filename()).get();
+              ss::remove_file(segment->index().filename()).get();
+              return false;
+          });
+        // remove empty from to recover set
+        to_recover.erase(non_empty_end, to_recover.end());
+        // we left with nothing to recover, take the last good segment if
+        // available
+        if (to_recover.empty() && !good.empty()) {
+            to_recover.push_back(std::move(good.back()));
+            good.pop_back();
+        }
+
         for (auto& s : to_recover) {
             // check for abort
             if (unlikely(as.abort_requested())) {
                 return segment_set(std::move(good));
-            }
-            auto stat = s->reader().stat().get0();
-            if (stat.st_size == 0) {
-                vlog(stlog.info, "Removing empty segment: {}", s);
-                s->close().get();
-                ss::remove_file(s->reader().filename()).get();
-                ss::remove_file(s->index().filename()).get();
-                continue;
             }
             auto replayer = log_replayer(*s);
             auto recovered = replayer.recover_in_thread(

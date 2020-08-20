@@ -12,6 +12,7 @@
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/sstring.hh>
+#include <seastar/util/bool_class.hh>
 
 #include <optional>
 #include <tuple>
@@ -85,19 +86,19 @@ inline constexpr auto add_segment = [](auto&&... args) {
 };
 
 inline constexpr auto add_random_batch = [](auto&&... args) {
-    arg_3_way_assert<sizeof...(args), 1, 5>();
+    arg_3_way_assert<sizeof...(args), 1, 6>();
     return std::make_tuple(
       add_random_batch_tag(), std::forward<decltype(args)>(args)...);
 };
 
 inline constexpr auto add_random_batches = [](auto&&... args) {
-    arg_3_way_assert<sizeof...(args), 1, 3>();
+    arg_3_way_assert<sizeof...(args), 1, 4>();
     return std::make_tuple(
       add_random_batches_tag(), std::forward<decltype(args)>(args)...);
 };
 
 inline constexpr auto add_batch = [](auto&&... args) {
-    arg_3_way_assert<sizeof...(args), 1, 3>();
+    arg_3_way_assert<sizeof...(args), 1, 4>();
     return std::make_tuple(
       add_batch_tag(), std::forward<decltype(args)>(args)...);
 };
@@ -116,6 +117,7 @@ inline constexpr auto truncate_log = [](auto&&... args) {
 
 class disk_log_builder {
 public:
+    using should_flush_after = ss::bool_class<struct flush_after_tag>;
     // Constructors
     explicit disk_log_builder(
       storage::log_config config = log_builder_config());
@@ -187,6 +189,15 @@ public:
                   std::get<4>(args),
                   std::get<5>(args))
                   .get();
+            } else if constexpr (size == 7) {
+                add_random_batch(
+                  model::offset(std::get<1>(args)),
+                  std::get<2>(args),
+                  std::get<3>(args),
+                  std::get<4>(args),
+                  std::get<5>(args),
+                  std::get<6>(args))
+                  .get();
             }
 
         } else if constexpr (std::is_same_v<type, add_batch_tag>) {
@@ -194,6 +205,12 @@ public:
                 add_batch(std::move(std::get<1>(args))).get();
             } else if constexpr (size == 3) {
                 add_batch(std::move(std::get<1>(args)), std::get<2>(args))
+                  .get();
+            } else if constexpr (size == 4) {
+                add_batch(
+                  std::move(std::get<1>(args)),
+                  std::get<2>(args),
+                  std::get<3>(args))
                   .get();
             }
         } else if constexpr (std::is_same_v<type, add_random_batches_tag>) {
@@ -209,6 +226,13 @@ public:
                   std::get<2>(args),
                   std::get<3>(args))
                   .get();
+            } else if constexpr (size == 5) {
+                add_random_batches(
+                  model::offset(std::get<1>(args)),
+                  std::get<2>(args),
+                  std::get<3>(args),
+                  std::get<4>(args))
+                  .get();
             }
         }
         return *this;
@@ -219,20 +243,26 @@ public:
       int num_records,
       maybe_compress_batches comp = maybe_compress_batches::yes,
       model::record_batch_type bt = model::record_batch_type(1), // data
-      log_append_config config = append_config());
+      log_append_config config = append_config(),
+      should_flush_after flush = should_flush_after::yes);
     ss::future<> add_random_batches(
       model::offset offset,
       int count,
       maybe_compress_batches comp = maybe_compress_batches::yes,
-      log_append_config config = append_config());
+      log_append_config config = append_config(),
+      should_flush_after flush = should_flush_after::yes);
     ss::future<> add_random_batches(
-      model::offset offset, log_append_config config = append_config());
+      model::offset offset,
+      log_append_config config = append_config(),
+      should_flush_after flush = should_flush_after::yes);
     ss::future<> truncate(model::offset);
     ss::future<> gc(
       model::timestamp collection_upper_bound,
       std::optional<size_t> max_partition_retention_size);
     ss::future<> add_batch(
-      model::record_batch batch, log_append_config config = append_config());
+      model::record_batch batch,
+      log_append_config config = append_config(),
+      should_flush_after flush = should_flush_after::yes);
     //  Log managment
     ss::future<> start(model::ntp ntp = log_builder_ntp());
     ss::future<> start(storage::ntp_config);
@@ -291,7 +321,8 @@ private:
 
     ss::future<> write(
       ss::circular_buffer<model::record_batch> buff,
-      const log_append_config& config);
+      const log_append_config& config,
+      should_flush_after flush);
 
     storage::log_config _log_config;
     storage::api _storage;
