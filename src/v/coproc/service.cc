@@ -1,159 +1,190 @@
 #include "service.h"
 
+#include "cluster/namespace.h"
 #include "coproc/logger.h"
 #include "coproc/types.h"
+#include "ssx/future-util.h"
+#include "vassert.h"
 #include "vlog.h"
 
+#include <seastar/core/loop.hh>
+
 namespace coproc {
+
+using erc = enable_response_code;
 
 service::service(
   ss::scheduling_group sg,
   ss::smp_service_group ssg,
-  ss::sharded<active_mappings>& mappings,
-  ss::sharded<storage::api>& storage)
-  : registration_service(sg, ssg)
-  , _mappings(mappings)
-  , _storage(storage) {}
-
-/// Generic method that iterates over all of the requests
-/// and properly assembles a response, leaving the details left
-/// to the 'fn' argument
-template<typename T, typename Func>
-ss::future<std::vector<T>> update_cache(metadata_info&& req, Func&& fn) {
-    std::vector<T> responses;
-    responses.resize(req.inputs.size());
-    const auto size = req.inputs.size();
-    return ss::map_reduce(
-      boost::irange<unsigned>(0, size),
-      [fn = std::forward<Func>(fn), req = std::move(req)](unsigned i) mutable {
-          auto topic = std::move(req.inputs[i]);
-          if (is_materialized_topic(topic)) {
-              return ss::make_ready_future<std::tuple<unsigned, T>>(
-                std::make_tuple(i, T::materialized_topic));
-          } else if (model::validate_kafka_topic_name(topic).value() != 0) {
-              return ss::make_ready_future<std::tuple<unsigned, T>>(
-                std::make_tuple(i, T::invalid_topic));
-          }
-          return fn(model::topic_namespace(
-                      cluster::kafka_namespace, std::move(topic)))
-            .then([i](T ack) { return std::make_tuple(i, ack); });
-      },
-      std::move(responses),
-      [](std::vector<T> acc, std::tuple<unsigned, T> x) {
-          // Match responses to requests by the index used in the mapper
-          auto [idx, response] = x;
-          acc[idx] = response;
-          return acc;
-      });
-}
+  ss::sharded<router>& router)
+  : management_service(sg, ssg)
+  , _router(router) {}
 
 enable_response_code
 assemble_response(std::vector<enable_response_code> codes) {
-    using erc = enable_response_code;
-    const bool all_dne = std::all_of(codes.begin(), codes.end(), [](auto x) {
+    const bool any_dne = std::all_of(codes.begin(), codes.end(), [](auto x) {
         return x == erc::topic_does_not_exist;
     });
-    if (all_dne) {
-        return erc::topic_does_not_exist;
-    }
-    const bool any_ae = std::any_of(codes.begin(), codes.end(), [](auto x) {
-        return x == erc::topic_already_enabled;
+    vassert(!any_dne, "Topic was expected to not have existed");
+
+    const bool any_err = std::any_of(codes.begin(), codes.end(), [](auto x) {
+        return x == erc::internal_error;
     });
+
+    if (any_err) {
+        return erc::internal_error;
+    }
+
+    const bool any_double_id = std::any_of(
+      codes.begin(), codes.end(), [](auto x) {
+          return x == erc::script_id_already_exists;
+      });
     const bool any_success = std::any_of(
       codes.begin(), codes.end(), [](auto x) { return x == erc::success; });
+    if (!any_success && any_double_id) {
+        // An attempt to re-register was made
+        return erc::script_id_already_exists;
+    }
+    vassert(any_success, "At least one core should have inserted the source");
+    return erc::success;
+}
 
-    if (any_ae && any_success) {
-        vlog(
-          coproclog.error,
-          "Upon insertion of coproc tracked ntps inconsistey detected within "
-          "ntp store");
+enable_response_code map_code(const coproc::errc error_code) {
+    switch (error_code) {
+    case errc::success:
+        return erc::success;
+    case errc::script_id_already_exists:
+        return erc::script_id_already_exists;
+    case errc::topic_does_not_exist:
+        return erc::topic_does_not_exist;
+    default:
         return erc::internal_error;
-    } else if (any_ae) {
-        return erc::topic_already_enabled;
+    };
+}
+
+ss::future<enable_response_code> service::insert(
+  script_id id, model::topic_namespace&& tn, topic_ingestion_policy p) {
+    return _router
+      .map([id, p, tn = std::move(tn)](router& r) {
+          return map_code(r.add_source(id, tn, p));
+      })
+      .then(&assemble_response);
+}
+
+enable_response_code
+enable_validator(const model::topic& topic, topic_ingestion_policy p) {
+    if (is_materialized_topic(topic)) {
+        return erc::materialized_topic;
+    } else if (model::validate_kafka_topic_name(topic).value() != 0) {
+        return erc::invalid_topic;
+    } else if (!is_valid_ingestion_policy(p)) {
+        return erc::invalid_ingestion_policy;
     }
     return erc::success;
 }
 
-ss::future<enable_response_code> service::insert(model::topic_namespace tn) {
-    using erc = enable_response_code;
-    return _mappings
-      .map_reduce0(
-        [this, tn = std::move(tn)](active_mappings& ams) {
-            auto ntps = _storage.local().log_mgr().get(tn);
-            if (ntps.empty()) {
-                return erc::topic_does_not_exist;
-            }
-            const auto size = ams.size();
-            ams.merge(ntps);
-            return size == ams.size() ? erc::topic_already_enabled
-                                      : erc::success;
-        },
-        std::vector<erc>(),
-        [](std::vector<erc> acc, erc x) {
-            acc.push_back(x);
-            return acc;
-        })
-      .then(&assemble_response)
-      .then([this, tn](erc code) {
-          if (code == erc::internal_error) {
-              return remove(tn).then(
-                [](auto /*drc*/) { return erc::internal_error; });
-          }
-          return ss::make_ready_future<erc>(code);
-      });
+ss::future<enable_copros_reply::ack_id_pair> service::evaluate_topics(
+  const script_id id,
+  std::vector<enable_copros_request::data::topic_mode> topics) {
+    vlog(
+      coproclog.info,
+      "Incoming request to enable new coprocessor with script_id {} and "
+      "topics: {}",
+      id,
+      topics);
+    return copro_exists(id).then([this, id, topics = std::move(topics)](
+                                   bool exists) mutable {
+        if (exists) {
+            std::vector<enable_response_code> id_dne(
+              topics.size(), erc::script_id_already_exists);
+            return ss::make_ready_future<enable_copros_reply::ack_id_pair>(
+              std::make_pair(id, std::move(id_dne)));
+        }
+        return ss::do_with(
+          std::move(topics),
+          [this,
+           id](std::vector<enable_copros_request::data::topic_mode>& topics) {
+              return ssx::async_transform(
+                       topics.begin(),
+                       topics.end(),
+                       [this, id](enable_copros_request::data::topic_mode tm) {
+                           const auto v = enable_validator(tm.first, tm.second);
+                           if (v != erc::success) {
+                               return ss::make_ready_future<erc>(v);
+                           }
+                           return insert(
+                             id,
+                             model::topic_namespace(
+                               cluster::kafka_namespace, std::move(tm.first)),
+                             tm.second);
+                       })
+                .then([id](auto erc_vec) {
+                    return std::make_pair(id, std::move(erc_vec));
+                });
+          });
+    });
 }
 
-ss::future<enable_topics_reply>
-service::enable_topics(metadata_info&& req, rpc::streaming_context&) {
+ss::future<enable_copros_reply>
+service::enable_copros(enable_copros_request&& req, rpc::streaming_context&) {
     return ss::with_scheduling_group(
       get_scheduling_group(), [this, req = std::move(req)]() mutable {
-          return update_cache<enable_response_code>(
-                   std::move(req),
-                   [this](model::topic_namespace tn) {
-                       return insert(std::move(tn));
-                   })
-            .then([](std::vector<enable_response_code> acks) {
-                return enable_topics_reply{.acks = std::move(acks)};
+          return ss::do_with(
+            std::move(req.inputs),
+            [this](std::vector<enable_copros_request::data>& inputs) {
+                return ssx::async_transform(
+                         inputs.begin(),
+                         inputs.end(),
+                         [this](enable_copros_request::data rich_topics) {
+                             return evaluate_topics(
+                               rich_topics.id, std::move(rich_topics.topics));
+                         })
+                  .then([](std::vector<enable_copros_reply::ack_id_pair> acks) {
+                      return enable_copros_reply{.acks = std::move(acks)};
+                  });
             });
       });
 }
 
-ss::future<disable_response_code> service::remove(model::topic_namespace tn) {
-    return _mappings
+ss::future<disable_response_code> service::remove(script_id id) {
+    vlog(
+      coproclog.info,
+      "Incoming request to disable coprocessor with script_id {}",
+      id);
+    using drc = disable_response_code;
+    return _router
       .map_reduce0(
-        [tn = std::move(tn)](active_mappings& ams) {
-            bool erased = false;
-            for (auto it = ams.cbegin(); it != ams.cend();) {
-                if (it->first.ns == tn.ns && it->first.tp.topic == tn.tp) {
-                    ams.erase(it++);
-                    erased = true;
-                } else {
-                    ++it;
-                }
-            }
-            return erased;
-        },
+        [id](router& r) { return r.remove_source(id); },
         false,
         std::logical_or<>())
       .then([](bool r) {
-          return r ? disable_response_code::success
-                   : disable_response_code::topic_never_enabled;
+          return r ? drc::success : drc::script_id_does_not_exist;
       });
 }
 
-ss::future<disable_topics_reply>
-service::disable_topics(metadata_info&& req, rpc::streaming_context&) {
+ss::future<disable_copros_reply>
+service::disable_copros(disable_copros_request&& req, rpc::streaming_context&) {
     return ss::with_scheduling_group(
       get_scheduling_group(), [this, req = std::move(req)]() mutable {
-          return update_cache<disable_response_code>(
-                   std::move(req),
-                   [this](model::topic_namespace tn) {
-                       return remove(std::move(tn));
-                   })
-            .then([](std::vector<disable_response_code> acks) {
-                return disable_topics_reply{.acks = std::move(acks)};
+          return ss::do_with(
+            std::move(req.ids),
+            [this](const std::vector<script_id>& script_ids) {
+                return ssx::async_transform(
+                         script_ids.begin(),
+                         script_ids.end(),
+                         [this](script_id id) { return remove(id); })
+                  .then([](std::vector<disable_response_code> acks) {
+                      return disable_copros_reply{.acks = std::move(acks)};
+                  });
             });
       });
+}
+
+ss::future<bool> service::copro_exists(const script_id id) {
+    return _router.map_reduce0(
+      [id](const router& r) { return r.script_id_exists(id); },
+      false,
+      std::logical_or<>());
 }
 
 } // namespace coproc
