@@ -5,6 +5,7 @@
 #include "cluster/metadata_dissemination_service.h"
 #include "cluster/partition_manager.h"
 #include "config/configuration.h"
+#include "coproc/service.h"
 #include "kafka/groups/coordinator_ntp_mapper.h"
 #include "kafka/groups/group_manager.h"
 #include "kafka/groups/group_router.h"
@@ -47,6 +48,7 @@ public:
     ss::sharded<group_router_type> group_router;
     ss::sharded<cluster::shard_table> shard_table;
     ss::sharded<storage::api> storage;
+    ss::sharded<coproc::active_mappings> mappings;
     ss::sharded<cluster::partition_manager> partition_manager;
     ss::sharded<raft::group_manager> raft_group_manager;
     ss::sharded<cluster::metadata_dissemination_service>
@@ -63,6 +65,11 @@ private:
     ss::app_template setup_app_template();
     void validate_arguments(const po::variables_map&);
     void hydrate_config(const po::variables_map&);
+
+    bool coproc_enabled() {
+        const auto& cfg = config::shard_local_cfg();
+        return cfg.developer_mode() && cfg.enable_coproc();
+    }
 
     template<typename Service, typename... Args>
     ss::future<> construct_service(ss::sharded<Service>& s, Args&&... args) {
@@ -82,6 +89,7 @@ private:
     smp_groups _smp_groups;
     ss::logger _log{"redpanda::main"};
 
+    ss::sharded<rpc::server> _coproc_rpc;
     ss::sharded<rpc::connection_cache> _raft_connection_cache;
     ss::sharded<kafka::group_manager> _group_manager;
     ss::sharded<rpc::server> _rpc;
