@@ -639,3 +639,79 @@ FIXTURE_TEST(empty_segment_recovery, storage_test_fixture) {
     // appended
     BOOST_REQUIRE_EQUAL(log.offsets().dirty_offset, model::offset(6));
 }
+
+FIXTURE_TEST(test_compation_preserve_state, storage_test_fixture) {
+    auto cfg = default_log_config(test_dir);
+    cfg.stype = storage::log_config::storage_type::disk;
+    auto ntp = model::ntp("default", "test", 0);
+    // compacted topic
+    using overrides_t = storage::ntp_config::default_overrides;
+    overrides_t ov;
+    ov.cleanup_policy_bitflags = model::cleanup_policy_bitflags::compaction;
+    ss::abort_source as;
+
+    storage::disk_log_builder builder(cfg);
+    model::record_batch_type bt = model::record_batch_type(2);
+    using should_flush_t = storage::disk_log_builder::should_flush_after;
+    storage::log_append_config appender_cfg{
+      .should_fsync = storage::log_append_config::fsync::no,
+      .io_priority = ss::default_priority_class(),
+      .timeout = model::no_timeout};
+
+    // single segment
+    builder | storage::start(ntp) | storage::add_segment(0)
+      | storage::add_random_batch(
+        0,
+        1,
+        storage::maybe_compress_batches::no,
+        bt,
+        appender_cfg,
+        should_flush_t::no)
+      | storage::add_random_batch(
+        1,
+        1,
+        storage::maybe_compress_batches::no,
+        bt,
+        appender_cfg,
+        should_flush_t::no);
+
+    builder.stop().get();
+    // recover
+    storage::log_manager mgr = make_log_manager(cfg);
+    storage::ntp_config ntp_cfg(
+      ntp, mgr.config().base_dir, std::make_unique<overrides_t>(ov));
+
+    storage::compaction_config compaction_cfg(
+      model::timestamp::min(), 1, ss::default_priority_class(), as);
+    auto log = mgr.manage(std::move(ntp_cfg)).get0();
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    auto offsets_after_recovery = log.offsets();
+
+    // trigger compaction
+    log.compact(compaction_cfg).get0();
+    auto offsets_after_compact = log.offsets();
+    info("log compacted, offsets: {}", offsets_after_compact);
+
+    // Append single batch
+    storage::log_appender appender = log.make_appender(
+      storage::log_append_config{
+        .should_fsync = storage::log_append_config::fsync::no,
+        .io_priority = ss::default_priority_class(),
+        .timeout = model::no_timeout});
+
+    ss::circular_buffer<model::record_batch> batches;
+    batches.push_back(
+      storage::test::make_random_batch(model::offset(0), 1, false));
+
+    auto rdr = model::make_memory_record_batch_reader(std::move(batches));
+    auto ret = std::move(rdr)
+                 .for_each_ref(std::move(appender), model::no_timeout)
+                 .get0();
+
+    // before append offsets should be equal to {1}, as we stopped there
+    BOOST_REQUIRE_EQUAL(offsets_after_recovery.dirty_offset, model::offset(1));
+    BOOST_REQUIRE_EQUAL(offsets_after_compact.dirty_offset, model::offset(1));
+
+    // after append we expect offset to be equal to {2}
+    BOOST_REQUIRE_EQUAL(log.offsets().dirty_offset, model::offset(2));
+}
