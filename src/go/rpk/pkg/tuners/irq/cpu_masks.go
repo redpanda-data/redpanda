@@ -120,7 +120,7 @@ func (masks *cpuMasks) SetMask(path string, mask string) error {
 		formattedMask = strings.Replace(formattedMask, ",,", ",0,", -1)
 	}
 
-	log.Infof("Setting mask '%s' in '%s'", formattedMask, path)
+	log.Debugf("Setting mask '%s' in '%s'", formattedMask, path)
 	err := masks.executor.Execute(
 		commands.NewWriteFileModeCmd(masks.fs, path, formattedMask, 0555))
 	if err != nil {
@@ -148,7 +148,7 @@ func (masks *cpuMasks) GetIRQsDistributionMasks(
 }
 
 func (masks *cpuMasks) DistributeIRQs(irqsDistribution map[int]string) {
-	log.Infof("Distributing IRQs '%v' ", irqsDistribution)
+	log.Debugf("Distributing IRQs '%v' ", irqsDistribution)
 	errMsg := "An IRQ's affinity couldn't be set. This might be because the" +
 		" IRQ isn't IO-APIC compatible, or because the IRQ is managed" +
 		" by the kernel, and can be safely ignored."
@@ -162,7 +162,7 @@ func (masks *cpuMasks) DistributeIRQs(irqsDistribution map[int]string) {
 		// are logged but otherwise ignored.
 		if err != nil {
 			log.Debug(err)
-			log.Info(errMsg)
+			log.Debug(errMsg)
 		}
 	}
 }
