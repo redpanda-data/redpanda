@@ -42,7 +42,7 @@ func NewCpuTuner(
 
 func (tuner *tuner) Tune() tuners.TuneResult {
 	grubUpdated := false
-	log.Info("Running CPU tuner...")
+	log.Debug("Running CPU tuner...")
 	allCpusMask, err := tuner.cpuMasks.GetAllCpusMask()
 	if err != nil {
 		return tuners.NewTuneError(err)
@@ -167,7 +167,7 @@ func (tuner *tuner) setupCPUGovernors() error {
 			return err
 		}
 	} else {
-		log.Infof("CPU frequency boost is not available in this system")
+		log.Debugf("CPU frequency boost is not available in this system")
 	}
 	for i := uint(0); i < tuner.cores; i = i + 1 {
 		policyPath := fmt.Sprintf(
@@ -179,7 +179,7 @@ func (tuner *tuner) setupCPUGovernors() error {
 				return err
 			}
 		} else {
-			log.Warnf("Unable to set CPU governor policy for CPU %d", i)
+			log.Debugf("Unable to set CPU governor policy for CPU %d", i)
 		}
 	}
 	return nil
