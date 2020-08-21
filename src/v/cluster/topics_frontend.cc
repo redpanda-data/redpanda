@@ -8,6 +8,8 @@
 #include "cluster/namespace.h"
 #include "cluster/partition_allocator.h"
 #include "cluster/types.h"
+#include "model/errc.h"
+#include "model/validation.h"
 #include "raft/errc.h"
 #include "raft/types.h"
 #include "random/generators.h"
@@ -291,35 +293,11 @@ topics_frontend::dispatch_create_to_leader(
 
 bool topics_frontend::validate_topic_name(const model::topic_namespace& topic) {
     if (topic.ns == cluster::kafka_namespace) {
-        static constexpr size_t kafka_max_topic_name_length = 249;
-        const auto& name = topic.tp();
-        if (name.empty()) {
-            vlog(clusterlog.info, "Invalid topic name: cannot be empty.");
+        const auto errc = model::validate_kafka_topic_name(topic.tp);
+        if (static_cast<model::errc>(errc.value()) != model::errc::success) {
+            vlog(clusterlog.info, "{} {}", errc.message(), topic.tp());
             return false;
         }
-        if (name == "." || name == "..") {
-            vlog(clusterlog.info, "Invalid topic name: {}", name);
-            return false;
-        }
-        if (name.length() > kafka_max_topic_name_length) {
-            vlog(
-              clusterlog.info,
-              "Invalid topic name: max length {} exeeded for {}",
-              kafka_max_topic_name_length,
-              name);
-            return false;
-        }
-        for (char c : name) {
-            if (!std::isalnum(c) && !(c == '.' || c == '-' || c == '_')) {
-                vlog(
-                  clusterlog.info,
-                  "Invalid topic name: validation pattern {} failed for {}",
-                  "[a-zA-Z0-9_\\.\\-]",
-                  name);
-                return false;
-            }
-        }
-        return true;
     }
     return true;
 }

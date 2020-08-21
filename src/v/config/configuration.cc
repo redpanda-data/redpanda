@@ -37,6 +37,8 @@ configuration::configuration()
       "IpAddress and port for RPC server",
       required::no,
       unresolved_address("127.0.0.1", 33145))
+  , enable_coproc(
+      *this, "enable_coproc", "Enable coprocessing mode", required::no, false)
   , node_id(
       *this,
       "node_id",
