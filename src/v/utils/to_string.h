@@ -15,7 +15,7 @@ std::ostream& operator<<(std::ostream& os, const std::optional<T>& opt) {
     if (opt) {
         return ss::fmt_print(os, "{{{}}}", *opt);
     }
-    return os << "{}";
+    return os << "{nullopt}";
 }
 
 static inline std::ostream&
