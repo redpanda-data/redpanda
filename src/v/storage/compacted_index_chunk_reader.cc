@@ -153,7 +153,7 @@ compacted_index_chunk_reader::load_footer() {
 void compacted_index_chunk_reader::print(std::ostream& o) const { o << *this; }
 
 bool compacted_index_chunk_reader::is_end_of_stream() const {
-    return _end_of_stream || _byte_index == _footer->size
+    return _end_of_stream || (_footer && _byte_index == _footer->size)
            || (_cursor && _cursor->eof());
 }
 
