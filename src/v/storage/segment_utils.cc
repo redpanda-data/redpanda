@@ -396,7 +396,7 @@ ss::future<> do_self_compact_segment(
           auto compacted_file = data_segment_staging_name(s);
           return do_swap_data_file_handles(compacted_file, s, cfg)
             .then([h = std::move(h), s]() mutable {
-                auto&& [idx, lock] = std::move(h);
+                auto& [idx, lock] = h;
                 s->index().swap_index_state(std::move(idx));
                 s->force_set_commit_offset_from_index();
                 return s->index().flush().finally([l = std::move(lock)] {});
