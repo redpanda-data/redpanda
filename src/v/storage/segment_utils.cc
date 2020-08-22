@@ -414,12 +414,14 @@ ss::future<> rebuild_compaction_index(
           auto ptr = u.get();
           return std::move(r)
             .consume(index_rebuilder_reducer(ptr), model::no_timeout)
-            .finally([x = std::move(u)]() mutable {
+            .then_wrapped([x = std::move(u)](ss::future<> fut) mutable {
                 return x->close()
                   .handle_exception([](std::exception_ptr e) {
                       vlog(stlog.warn, "error closing compacted index:{}", e);
                   })
-                  .finally([x = std::move(x)] {});
+                  .then([f = std::move(fut), x = std::move(x)]() mutable {
+                      return std::move(f);
+                  });
             });
       });
 }
