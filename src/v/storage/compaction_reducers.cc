@@ -83,7 +83,7 @@ Roaring compaction_key_reducer::end_of_stream() {
         _inverted.add(e.second.natural_index);
     }
     _inverted.shrinkToFit();
-    return _inverted;
+    return std::move(_inverted);
 }
 
 ss::future<ss::stop_iteration>
