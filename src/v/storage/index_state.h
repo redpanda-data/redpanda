@@ -23,6 +23,13 @@ namespace storage {
    [] position_index
  */
 struct index_state {
+    index_state() noexcept = default;
+    index_state(index_state&&) noexcept = default;
+    index_state& operator=(index_state&&) noexcept = default;
+    index_state(const index_state&) = delete;
+    index_state& operator=(const index_state&) = delete;
+    ~index_state() noexcept = default;
+
     int8_t version{1};
     /// \brief sizeof the index in bytes
     uint32_t size{0};
