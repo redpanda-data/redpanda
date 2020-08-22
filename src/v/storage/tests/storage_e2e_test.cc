@@ -676,6 +676,7 @@ FIXTURE_TEST(test_compation_preserve_state, storage_test_fixture) {
         should_flush_t::no);
 
     builder.stop().get();
+    info("Before recovery: {}", builder.get_log());
     // recover
     storage::log_manager mgr = make_log_manager(cfg);
     storage::ntp_config ntp_cfg(
@@ -686,11 +687,11 @@ FIXTURE_TEST(test_compation_preserve_state, storage_test_fixture) {
     auto log = mgr.manage(std::move(ntp_cfg)).get0();
     auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
     auto offsets_after_recovery = log.offsets();
-
+    info("After recovery: {}", log);
     // trigger compaction
     log.compact(compaction_cfg).get0();
     auto offsets_after_compact = log.offsets();
-    info("log compacted, offsets: {}", offsets_after_compact);
+    info("After compaction, offsets: {}, {}", offsets_after_compact, log);
 
     // Append single batch
     storage::log_appender appender = log.make_appender(
