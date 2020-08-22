@@ -30,29 +30,21 @@ public:
           })
           .then([this](ss::smp_service_group sg) {
               _cluster = std::make_unique<ss::smp_service_group>(sg);
-          })
-          .then([smp_sg_config] {
-              return ss::create_smp_service_group(smp_sg_config);
-          })
-          .then([this](ss::smp_service_group sg) {
-              _coproc = std::make_unique<ss::smp_service_group>(sg);
           });
+        ;
     }
     ss::smp_service_group raft_smp_sg() { return *_raft; }
     ss::smp_service_group kafka_smp_sg() { return *_kafka; }
     ss::smp_service_group cluster_smp_sg() { return *_cluster; }
-    ss::smp_service_group coproc_smp_sg() { return *_coproc; }
 
     ss::future<> destroy_groups() {
         return destroy_smp_service_group(*_kafka)
           .then([this] { return destroy_smp_service_group(*_raft); })
-          .then([this] { return destroy_smp_service_group(*_cluster); })
-          .then([this] { return destroy_smp_service_group(*_coproc); });
+          .then([this] { return destroy_smp_service_group(*_cluster); });
     }
 
 private:
     std::unique_ptr<ss::smp_service_group> _raft;
     std::unique_ptr<ss::smp_service_group> _kafka;
     std::unique_ptr<ss::smp_service_group> _cluster;
-    std::unique_ptr<ss::smp_service_group> _coproc;
 };

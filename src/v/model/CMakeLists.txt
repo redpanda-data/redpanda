@@ -5,7 +5,6 @@ v_cc_library(
     record_batch_reader.cc
     record_utils.cc
     adl_serde.cc
-    validation.cc
   DEPS
     v::bytes
     v::rphashing
