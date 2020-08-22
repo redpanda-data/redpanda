@@ -6,6 +6,7 @@
 #include "storage/compacted_index.h"
 #include "storage/compacted_index_reader.h"
 #include "storage/logger.h"
+#include "utils/to_string.h"
 
 #include <seastar/core/file.hh>
 #include <seastar/core/fstream.hh>
@@ -222,8 +223,8 @@ operator<<(std::ostream& o, const compacted_index_chunk_reader& r) {
       "_file_size:{}, _footer:{}, active_cursor:{}, end_of_stream:{}, "
       "_byte_index:{}}}",
       r._max_chunk_memory,
-      r._file_size.value_or(0),
-      r._footer.value_or(compacted_index::footer{}),
+      r._file_size,
+      r._footer,
       (r._cursor ? "yes" : "no"),
       r.is_end_of_stream(),
       r._byte_index);
