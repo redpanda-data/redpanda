@@ -61,7 +61,8 @@ ss::future<> segment::close() {
      */
     return _gate.close().then([this] {
         return write_lock().then([this](ss::rwlock::holder h) {
-            return do_close()
+            return do_flush()
+              .then([this] { return do_close(); })
               .then([this] { return remove_thombsones(); })
               .finally([h = std::move(h)] {});
         });
@@ -183,12 +184,12 @@ ss::future<> segment::release_appender() {
 }
 
 ss::future<> segment::flush() {
+    check_segment_not_closed("flush()");
     return read_lock().then([this](ss::rwlock::holder h) {
         return do_flush().finally([h = std::move(h)] {});
     });
 }
 ss::future<> segment::do_flush() {
-    check_segment_not_closed("flush()");
     if (!_appender) {
         return ss::make_ready_future<>();
     }
