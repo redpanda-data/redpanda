@@ -79,34 +79,27 @@ struct echo_impl final : echo::echo_service {
     uint64_t cnt = 0;
 };
 
-class rpc_base_integration_fixture {
+class rpc_integration_fixture {
 public:
-    explicit rpc_base_integration_fixture(uint16_t port)
-      : _listen_address(ss::net::inet_address("127.0.0.1"), port)
+    rpc_integration_fixture()
+      : _listen_address(ss::net::inet_address("127.0.0.1"), 32147)
       , _ssg(ss::create_smp_service_group({5000}).get0()) {
         _sg = ss::create_scheduling_group("rpc scheduling group", 200).get0();
-    }
-
-    void start_server() {
-        check_server();
-        _server->set_protocol(std::move(_proto));
-        _server->start();
-    }
-
-    virtual ~rpc_base_integration_fixture() {
-        if (_server) {
-            _server->stop().get();
-        }
-        destroy_smp_service_group(_ssg).get0();
-        destroy_scheduling_group(_sg).get0();
     }
 
     rpc::transport_configuration client_config(
       std::optional<ss::tls::credentials_builder> credentials
       = std::nullopt) const {
         return rpc::transport_configuration{
-          .server_addr = _listen_address,
-          .credentials = std::move(credentials)};
+          .server_addr = _listen_address, .credentials = credentials};
+    }
+
+    void register_services() {
+        check_server();
+        auto proto = std::make_unique<rpc::simple_protocol>();
+        proto->register_service<movistar>(_sg, _ssg);
+        proto->register_service<echo_impl>(_sg, _ssg);
+        _server->set_protocol(std::move(proto));
     }
 
     void configure_server(
@@ -116,39 +109,29 @@ public:
           .max_service_memory_per_core = static_cast<int64_t>(
             ss::memory::stats().total_memory() / 10),
           .credentials = std::move(credentials)});
-        _proto = std::make_unique<rpc::simple_protocol>();
     }
 
-    template<typename Service, typename... Args>
-    void register_service(Args&&... args) {
+    void start_server() {
         check_server();
-        _proto->register_service<Service>(
-          _sg, _ssg, std::forward<Args>(args)...);
+        _server->start();
+    }
+
+    ~rpc_integration_fixture() {
+        if (_server) {
+            _server->stop().get();
+        }
+        destroy_smp_service_group(_ssg).get0();
+        destroy_scheduling_group(_sg).get0();
     }
 
 private:
     void check_server() {
-        if (!_server || !_proto) {
+        if (!_server) {
             throw std::runtime_error("Configure server first!!!");
         }
     }
-
     ss::smp_service_group _ssg;
     ss::scheduling_group _sg;
     ss::socket_address _listen_address;
-    std::unique_ptr<rpc::simple_protocol> _proto;
     std::unique_ptr<rpc::server> _server;
-};
-
-class rpc_integration_fixture : public rpc_base_integration_fixture {
-public:
-    explicit rpc_integration_fixture()
-      : rpc_base_integration_fixture(redpanda_rpc_port) {}
-
-    void register_services() {
-        register_service<movistar>();
-        register_service<echo_impl>();
-    }
-
-    static constexpr uint16_t redpanda_rpc_port = 32147;
 };
