@@ -23,7 +23,7 @@ namespace storage {
    [] position_index
  */
 struct index_state {
-    index_state() noexcept = default;
+    index_state() = default;
     index_state(index_state&&) noexcept = default;
     index_state& operator=(index_state&&) noexcept = default;
     index_state(const index_state&) = delete;
