@@ -20,13 +20,23 @@ def setup_logger(logger_name,
     fileHandler.setFormatter(formatter)
     logger.setLevel(level)
     logger.addHandler(fileHandler)
+    return logger
 
 
-def init_logs(cmd_log_file, latency_file, ss_metrics):
+def init_logs(cmd_log_file, latency_file, stat_file, ss_metrics):
     global latency_metrics
     latency_metrics = ss_metrics
     setup_logger("cmd", cmd_log_file, 2 * 1024 * 1024, 5)
     setup_logger("latency", latency_file, 10 * 1024 * 1024, 5)
+    stat_logger = setup_logger("stat", stat_file, 10 * 1024 * 1024, 5)
+
+    # adding console handler
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.INFO)
+    formatter = logging.Formatter('%(message)s')
+    ch.setFormatter(formatter)
+
+    stat_logger.addHandler(ch)
 
 
 def strtime():
@@ -162,10 +172,15 @@ def log_violation(pid, message):
 
 def log_latency(type, time_s, latency_s, metrics=None):
     log = logging.getLogger("latency")
-    message = f"{int(time_s)}\t{int(latency_s*1000)}\t{type}"
+    message = f"{int(time_s)}\t{int(latency_s*1000*1000)}\t{type}"
     if metrics != None:
         for key in latency_metrics:
             message += "\t"
             if key in metrics:
                 message += str(metrics[key])
+    log.info(message)
+
+
+def log_stat(message):
+    log = logging.getLogger("stat")
     log.info(message)
