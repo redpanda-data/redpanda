@@ -65,6 +65,7 @@ class WriterClient:
                 self.last_write_id = data.write_id
                 self.last_version = int(data.value.split(":")[1])
                 self.stat.inc(self.name + ":ok")
+                self.stat.inc("all:ok")
             except RequestTimedout:
                 self.stat.inc(self.name + ":out")
                 op_ended = loop.time()
@@ -111,6 +112,7 @@ async def start_mrsw_workload_aio(kv_nodes, numOfKeys, numOfReaders, timeout,
 
     stat = Stat()
     dims = []
+    dims.append("all:ok")
     for kv in kv_nodes:
         dims.append(kv.name + ":ok")
         dims.append(kv.name + ":out")

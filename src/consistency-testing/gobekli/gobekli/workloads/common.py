@@ -6,7 +6,7 @@ from gobekli.kvapi import RequestCanceled, RequestTimedout
 from gobekli.consensus import LinearizabilityRegisterChecker, Violation
 from gobekli.logging import (log_read_ended, log_read_failed, log_read_started,
                              log_read_none, log_read_timeouted, log_violation,
-                             log_latency)
+                             log_latency, log_stat)
 
 
 class Stat:
@@ -37,16 +37,18 @@ class StatDumper:
         self.is_active = True
 
     async def start(self):
+        duration_s = 0
         while self.is_active:
             counters = self.stat.reset()
-            line = ""
+            line = f"{duration_s}"
             for key in self.keys:
                 if key in counters:
-                    line += str(counters[key]) + "\t"
+                    line += "\t" + str(counters[key])
                 else:
-                    line += str(0) + "\t"
-            print(line)
+                    line += "\t" + str(0)
+            log_stat(line)
             await asyncio.sleep(1)
+            duration_s += 1
 
     def stop(self):
         self.is_active = False
@@ -191,6 +193,7 @@ class ReaderClient:
                     self.checker.read_ended(self.pid, self.key, read.write_id,
                                             read.value)
                 self.stat.inc(self.name + ":ok")
+                self.stat.inc("all:ok")
             except RequestTimedout:
                 op_ended = loop.time()
                 log_latency("out", op_started - self.started_at,
