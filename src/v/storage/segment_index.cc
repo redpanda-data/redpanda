@@ -5,6 +5,7 @@
 #include "vassert.h"
 
 #include <seastar/core/fstream.hh>
+#include <seastar/core/iostream.hh>
 
 #include <bits/stdint-uintn.h>
 #include <boost/container/container_fwd.hpp>
@@ -160,22 +161,24 @@ ss::future<> segment_index::flush() {
         return ss::make_ready_future<>();
     }
     _needs_persistence = false;
-    return _out.truncate(0).then([this] {
-        auto b = _state.checksum_and_serialize();
-        auto out = ss::make_file_output_stream(ss::file(_out.dup()));
-        return do_with(
-          std::move(b),
-          std::move(out),
-          [](iobuf& buff, ss::output_stream<char>& out) {
-              return ss::do_for_each(
-                       buff,
-                       [&out](const iobuf::fragment& f) {
-                           return out.write(f.get(), f.size());
-                       })
-                .then([&out] { return out.flush(); })
-                .then([&out] { return out.close(); });
-          });
-    });
+    return _out.truncate(0)
+      .then(
+        [this] { return ss::make_file_output_stream(ss::file(_out.dup())); })
+      .then([this](ss::output_stream<char> out) {
+          auto b = _state.checksum_and_serialize();
+          return do_with(
+            std::move(b),
+            std::move(out),
+            [](iobuf& buff, ss::output_stream<char>& out) {
+                return ss::do_for_each(
+                         buff,
+                         [&out](const iobuf::fragment& f) {
+                             return out.write(f.get(), f.size());
+                         })
+                  .then([&out] { return out.flush(); })
+                  .then([&out] { return out.close(); });
+            });
+      });
 }
 ss::future<> segment_index::close() {
     return flush().then([this] { return _out.close(); });

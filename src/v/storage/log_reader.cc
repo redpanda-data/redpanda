@@ -188,7 +188,7 @@ log_reader::log_reader(
   , _probe(probe) {
     if (config.abort_source) {
         auto op_sub = config.abort_source.value().get().subscribe(
-          [this] { set_end_of_stream(); });
+          [this]() noexcept { set_end_of_stream(); });
 
         if (op_sub) {
             _as_sub = std::move(*op_sub);

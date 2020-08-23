@@ -70,15 +70,18 @@ struct state_crc_file_fixture {
                 .then([fd](ss::temporary_buffer<char> buf) {
                     // distrub single byte
                     buf.get_write()[20] = buf.get_write()[20] + 1;
-                    return ss::do_with(
-                      ss::make_file_output_stream(std::move(fd)),
-                      std::move(buf),
-                      [](
-                        ss::output_stream<char>& os,
-                        ss::temporary_buffer<char>& buf) {
-                          return os.write(buf.get(), buf.size()).then([&os] {
-                              return os.close();
-                          });
+                    return ss::make_file_output_stream(std::move(fd))
+                      .then([buf = std::move(buf)](
+                              ss::output_stream<char> out) mutable {
+                          return ss::do_with(
+                            std::move(out),
+                            std::move(buf),
+                            [](
+                              ss::output_stream<char>& os,
+                              ss::temporary_buffer<char>& buf) {
+                                return os.write(buf.get(), buf.size())
+                                  .then([&os] { return os.close(); });
+                            });
                       });
                 });
           });

@@ -52,7 +52,8 @@ offset_monitor::waiter::waiter(
   std::optional<std::reference_wrapper<ss::abort_source>> as)
   : mon(mon) {
     if (as) {
-        auto opt_sub = as->get().subscribe([this] { handle_abort(); });
+        auto opt_sub = as->get().subscribe(
+          [this]() noexcept { handle_abort(); });
         if (opt_sub) {
             sub = std::move(*opt_sub);
         } else {

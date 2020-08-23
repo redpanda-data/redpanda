@@ -351,9 +351,11 @@ ss::future<> do_swap_data_file_handles(
       .then([s](ss::file f) mutable {
           return f.stat()
             .then([f](struct stat s) {
-                return ss::make_ready_future<uint64_t, ss::file>(s.st_size, f);
+                return ss::make_ready_future<std::tuple<uint64_t, ss::file>>(
+                  std::make_tuple(s.st_size, f));
             })
-            .then([s](uint64_t size, ss::file fd) {
+            .then([s](std::tuple<uint64_t, ss::file> t) {
+                auto& [size, fd] = t;
                 auto r = segment_reader(
                   s->reader().filename(),
                   std::move(fd),

@@ -143,7 +143,7 @@ disk_log_impl::monitor_eviction(ss::abort_source& as) {
                                "can not be monitored twice.");
     }
 
-    auto opt_sub = as.subscribe([this] {
+    auto opt_sub = as.subscribe([this]() noexcept {
         _eviction_monitor->promise.set_exception(
           ss::abort_requested_exception());
         _eviction_monitor.reset();

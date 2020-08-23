@@ -83,16 +83,17 @@ topic_table::wait_for_changes(ss::abort_source& as) {
         return ss::make_ready_future<ret_t>(std::move(ret));
     }
     auto w = std::make_unique<waiter>(_waiter_id++);
-    auto opt_sub = as.subscribe([this, &pr = w->promise, id = w->id]() {
-        pr.set_exception(ss::abort_requested_exception{});
-        auto it = std::find_if(
-          _waiters.begin(), _waiters.end(), [id](std::unique_ptr<waiter>& ptr) {
-              return ptr->id == id;
-          });
-        if (it != _waiters.end()) {
-            _waiters.erase(it);
-        }
-    });
+    auto opt_sub = as.subscribe(
+      [this, &pr = w->promise, id = w->id]() noexcept {
+          pr.set_exception(ss::abort_requested_exception{});
+          auto it = std::find_if(
+            _waiters.begin(),
+            _waiters.end(),
+            [id](std::unique_ptr<waiter>& ptr) { return ptr->id == id; });
+          if (it != _waiters.end()) {
+              _waiters.erase(it);
+          }
+      });
 
     if (unlikely(!opt_sub)) {
         return ss::make_exception_future<ret_t>(
