@@ -19,7 +19,7 @@ public:
       = std::nullopt) {
         // handle abort source
         if (as) {
-            auto opt_sub = as.value().get().subscribe([this] {
+            auto opt_sub = as.value().get().subscribe([this]() noexcept {
                 if (_timer.cancel()) {
                     _promise.set_exception(ss::abort_requested_exception{});
                 }

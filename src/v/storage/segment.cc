@@ -450,10 +450,12 @@ ss::future<ss::lw_shared_ptr<segment>> open_segment(
     return internal::make_reader_handle(path, sanitize_fileops)
       .then([](ss::file f) {
           return f.stat().then([f](struct stat s) {
-              return ss::make_ready_future<uint64_t, ss::file>(s.st_size, f);
+              return ss::make_ready_future<std::tuple<uint64_t, ss::file>>(
+                std::make_tuple(s.st_size, f));
           });
       })
-      .then([buf_size, path](uint64_t size, ss::file fd) {
+      .then([buf_size, path](std::tuple<uint64_t, ss::file> t) {
+          auto& [size, fd] = t;
           return std::make_unique<segment_reader>(
             path.string(), std::move(fd), size, buf_size);
       })

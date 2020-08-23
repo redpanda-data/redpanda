@@ -151,14 +151,12 @@ void server::setup_metrics() {
          "max_service_mem_bytes",
          [this] { return cfg.max_service_memory_per_core; },
          sm::description(
-           fmt::format("{}: Maximum memory allowed for RPC", _proto->name())),
-         {sm::type_label("total_bytes")}),
+           fmt::format("{}: Maximum memory allowed for RPC", _proto->name()))),
        sm::make_total_bytes(
          "consumed_mem_bytes",
          [this] { return cfg.max_service_memory_per_core - _memory.current(); },
          sm::description(fmt::format(
-           "{}: Memory consumed by request processing", _proto->name())),
-         {sm::type_label("total_bytes")}),
+           "{}: Memory consumed by request processing", _proto->name()))),
        sm::make_histogram(
          "dispatch_handler_latency",
          [this] { return _hist.seastar_histogram_logform(); },
