@@ -112,9 +112,9 @@ void application::hydrate_config(
     auto workaround = ss::uninitialized_string(buf.size_bytes());
     auto in = iobuf::iterator_consumer(buf.cbegin(), buf.cend());
     in.consume_to(buf.size_bytes(), workaround.begin());
-    YAML::Node config = YAML::Load(workaround);
+    const YAML::Node config = YAML::Load(workaround);
     vlog(_log.info, "Configuration:\n\n{}\n\n", config);
-    ss::smp::invoke_on_all([config] {
+    ss::smp::invoke_on_all([&config] {
         shard_local_cfg().read_yaml(config);
     }).get0();
     vlog(
@@ -169,7 +169,9 @@ void application::configure_admin_server() {
       .admin_api()
       .resolve()
       .then([this](ss::socket_address addr) mutable {
-          return _admin.invoke_on_all(&ss::http_server::listen, addr)
+          return _admin
+            .invoke_on_all<ss::future<> (ss::http_server::*)(
+              ss::socket_address)>(&ss::http_server::listen, addr)
             .handle_exception([this](auto ep) {
                 _log.error("Exception on http admin server: {}", ep);
                 return ss::make_exception_future<>(ep);

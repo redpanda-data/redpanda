@@ -65,7 +65,7 @@ struct context {
                     name, ss::open_flags::create | ss::open_flags::rw)
                     .get0();
         fd = ss::file(ss::make_shared(file_io_sanitizer(std::move(fd))));
-        auto out = ss::make_file_output_stream(std::move(fd));
+        auto out = ss::make_file_output_stream(std::move(fd)).get0();
         const auto b = random_generators::gen_alphanum_string(100);
         out.write(b.data(), b.size()).get();
         out.flush().get();

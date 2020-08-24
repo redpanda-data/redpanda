@@ -32,7 +32,7 @@ static void do_write_zeroes(ss::sstring name) {
     auto fd = ss::open_file_dma(
                 name, ss::open_flags::create | ss::open_flags::rw)
                 .get0();
-    auto out = ss::make_file_output_stream(std::move(fd));
+    auto out = ss::make_file_output_stream(std::move(fd)).get0();
     ss::temporary_buffer<char> b(4096);
     std::memset(b.get_write(), 0, 4096);
     out.write(b.get(), b.size()).get();
@@ -44,7 +44,7 @@ static void do_write_garbage(ss::sstring name) {
     auto fd = ss::open_file_dma(
                 name, ss::open_flags::create | ss::open_flags::rw)
                 .get0();
-    auto out = ss::make_file_output_stream(std::move(fd));
+    auto out = ss::make_file_output_stream(std::move(fd)).get0();
     const auto b = random_generators::gen_alphanum_string(100);
     out.write(b.data(), b.size()).get();
     out.flush().get();

@@ -7,6 +7,7 @@
 #include <seastar/core/file.hh>
 #include <seastar/core/fstream.hh>
 #include <seastar/core/future-util.hh>
+#include <seastar/core/iostream.hh>
 #include <seastar/core/seastar.hh>
 #include <seastar/core/sstring.hh>
 
@@ -50,10 +51,13 @@ ss::future<> state_crc_file::write_file(iobuf buf) {
                  | ss::open_flags::truncate;
 
     return ss::open_file_dma(_filename, flags)
-      .then([b = std::move(buf)](ss::file f) mutable {
+      .then([](ss::file f) {
+          return ss::make_file_output_stream(std::move(f), buf_size);
+      })
+      .then([b = std::move(buf)](ss::output_stream<char> out) mutable {
           return ss::do_with(
             std::move(b),
-            ss::make_file_output_stream(std::move(f), buf_size),
+            std::move(out),
             [](iobuf& buf, ss::output_stream<char>& ofs) mutable {
                 return seastar::do_for_each(
                          buf.begin(),

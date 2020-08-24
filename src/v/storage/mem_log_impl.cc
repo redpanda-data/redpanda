@@ -277,7 +277,7 @@ struct mem_log_impl final : log::impl {
                                    "Eviction can not be monitored twice.");
         }
 
-        auto opt_sub = as.subscribe([this] {
+        auto opt_sub = as.subscribe([this]() noexcept {
             _eviction_monitor->promise.set_exception(
               ss::abort_requested_exception());
         });

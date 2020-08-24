@@ -274,7 +274,7 @@ ss::future<offset_configuration> configuration_manager::wait_for_change(
     }
     // we can wake up all waiters as they will check the predicate and continue
     // waiting
-    auto sub = as.subscribe([this] { _config_changed.broadcast(); });
+    auto sub = as.subscribe([this]() noexcept { _config_changed.broadcast(); });
     if (!sub) {
         // already aborted
         return ss::make_exception_future<offset_configuration>(

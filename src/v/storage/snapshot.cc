@@ -7,6 +7,8 @@
 #include "reflection/adl.h"
 #include "utils/directory_walker.h"
 
+#include <seastar/core/iostream.hh>
+
 #include <regex>
 
 namespace storage {
@@ -49,7 +51,9 @@ ss::future<snapshot_writer> snapshot_manager::start_snapshot() {
       .then([this, path](ss::file file) {
           ss::file_output_stream_options options;
           options.io_priority_class = _io_prio;
-          auto output = ss::make_file_output_stream(file, options);
+          return ss::make_file_output_stream(std::move(file), options);
+      })
+      .then([path](ss::output_stream<char> output) {
           return snapshot_writer(std::move(output), path);
       });
 }

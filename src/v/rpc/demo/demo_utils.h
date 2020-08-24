@@ -11,14 +11,16 @@ inline ss::future<>
 force_write_ptr(ss::sstring filename, const char* ptr, std::size_t len) {
     auto flags = ss::open_flags::rw | ss::open_flags::create
                  | ss::open_flags::truncate;
-    return open_file_dma(filename, flags).then([ptr, len](ss::file f) mutable {
-        auto out = ss::make_lw_shared<ss::output_stream<char>>(
-          make_file_output_stream(std::move(f)));
-        return out->write(ptr, len)
-          .then([out] { return out->flush(); })
-          .then([out] { return out->close(); })
-          .finally([out] {});
-    });
+    return open_file_dma(filename, flags)
+      .then(
+        [](ss::file f) { return ss::make_file_output_stream(std::move(f)); })
+      .then([ptr, len](ss::output_stream<char> o) mutable {
+          auto out = ss::make_lw_shared<ss::output_stream<char>>(std::move(o));
+          return out->write(ptr, len)
+            .then([out] { return out->flush(); })
+            .then([out] { return out->close(); })
+            .finally([out] {});
+      });
 }
 
 inline ss::future<>

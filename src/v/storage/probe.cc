@@ -15,17 +15,12 @@ void probe::setup_metrics(const model::ntp& ntp) {
     auto ns_label = sm::label("namespace");
     auto topic_label = sm::label("topic");
     auto partition_label = sm::label("partition");
-    std::vector<sm::label_instance> labels = {
+    const std::vector<sm::label_instance> labels = {
       ns_label(ntp.ns()),
       topic_label(ntp.tp.topic()),
       partition_label(ntp.tp.partition()),
     };
 
-    std::vector<sm::label_instance> partition_size_labels;
-    partition_size_labels.reserve(labels.size() + 1);
-    partition_size_labels.insert(
-      partition_size_labels.begin(), std::cbegin(labels), std::cend(labels));
-    partition_size_labels.push_back(sm::type_label("bytes"));
     _metrics.add_group(
       prometheus_sanitize::metrics_name("storage:log"),
       {
@@ -79,7 +74,7 @@ void probe::setup_metrics(const model::ntp& ntp) {
           "partition_size",
           [this] { return _partition_bytes; },
           sm::description("Current size of partition in bytes"),
-          std::move(partition_size_labels)),
+          labels),
       });
 }
 
