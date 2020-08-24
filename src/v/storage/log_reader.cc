@@ -272,6 +272,15 @@ log_reader::do_load_slice(model::timeout_clock::time_point timeout) {
               return do_load_slice(timeout);
           }
           _probe.add_batches_read(recs.value().size());
+          auto f = ss::now();
+          // we have to close the reader if this is going to be last call to
+          // do load slice
+          if (is_done()) {
+              f = _iterator.close();
+          }
+          return f.then([v = std::move(recs.value())]() mutable {
+              return storage_t(std::move(v));
+          });
           return ss::make_ready_future<storage_t>(std::move(recs.value()));
       })
       .handle_exception([this](std::exception_ptr e) {
