@@ -61,6 +61,11 @@ void rjson_serialize(
   rapidjson::Writer<rapidjson::StringBuffer>& w,
   const std::chrono::milliseconds& v);
 
+template<typename T, typename = std::enable_if_t<std::is_enum_v<T>>>
+void rjson_serialize(rapidjson::Writer<rapidjson::StringBuffer>& w, T v) {
+    rjson_serialize(w, static_cast<std::underlying_type_t<T>>(v));
+}
+
 template<typename T>
 void rjson_serialize(
   rapidjson::Writer<rapidjson::StringBuffer>& w, const std::optional<T>& v) {
