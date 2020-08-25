@@ -20,15 +20,21 @@ model::record_batch serialize_cmd(T t, model::record_batch_type type) {
 
 kvrsm::kvrsm(ss::logger& logger, consensus* c)
   : raft::state_machine(c, logger, ss::default_priority_class())
-  , _c(c) {}
+  , _c(c) {
+    _last_applied_seq = sequence_id(0);
+    _last_generated_seq = sequence_id(0);
+}
 
 ss::future<kvrsm::cmd_result> kvrsm::set_and_wait(
   ss::sstring key,
   ss::sstring value,
   ss::sstring write_id,
   model::timeout_clock::time_point timeout) {
+    sequence_id seq = ++_last_generated_seq;
     return replicate_and_wait(
-      serialize_cmd(set_cmd{key, value, write_id}, kvrsm_batch_type), timeout);
+      serialize_cmd(set_cmd{seq, key, value, write_id}, kvrsm_batch_type),
+      timeout,
+      seq);
 }
 
 ss::future<kvrsm::cmd_result> kvrsm::cas_and_wait(
@@ -37,31 +43,33 @@ ss::future<kvrsm::cmd_result> kvrsm::cas_and_wait(
   ss::sstring value,
   ss::sstring write_id,
   model::timeout_clock::time_point timeout) {
+    sequence_id seq = ++_last_generated_seq;
     return replicate_and_wait(
       serialize_cmd(
-        cas_cmd{key, prev_write_id, value, write_id}, kvrsm_batch_type),
-      timeout);
+        cas_cmd{seq, key, prev_write_id, value, write_id}, kvrsm_batch_type),
+      timeout,
+      seq);
 }
 
 ss::future<kvrsm::cmd_result>
 kvrsm::get_and_wait(ss::sstring key, model::timeout_clock::time_point timeout) {
+    sequence_id seq = ++_last_generated_seq;
     return replicate_and_wait(
-      serialize_cmd(get_cmd{key}, kvrsm_batch_type), timeout);
+      serialize_cmd(get_cmd{seq, key}, kvrsm_batch_type), timeout, seq);
 }
 
 ss::future<> kvrsm::apply(model::record_batch b) {
     if (b.header().type == kvrsm::kvrsm_batch_type) {
         auto last_offset = b.last_offset();
         auto result = process(std::move(b));
+        result.offset = last_offset;
 
-        return _mutex.with([this, last_offset, result] {
-            if (auto it = _promises.find(last_offset); it != _promises.end()) {
-                it->second.set_value(result);
-            }
-        });
-    } else {
-        return ss::now();
+        if (auto it = _promises.find(result.seq); it != _promises.end()) {
+            it->second.set_value(result);
+        }
     }
+
+    return ss::now();
 }
 
 kvrsm::cmd_result kvrsm::process(model::record_batch&& b) {
@@ -83,40 +91,75 @@ kvrsm::cmd_result kvrsm::process(model::record_batch&& b) {
 }
 
 kvrsm::cmd_result kvrsm::execute(set_cmd c) {
+    if (c.seq <= _last_applied_seq) {
+        return kvrsm::cmd_result(
+          c.seq,
+          raft::kvelldb::errc::raft_error,
+          raft::errc::leader_append_failed);
+    }
+    _last_applied_seq = c.seq;
+    if (c.seq > _last_generated_seq) {
+        _last_generated_seq = c.seq;
+    }
+
     if (kv_map.contains(c.key)) {
         auto& record = kv_map[c.key];
         record.write_id = c.write_id;
         record.value = c.value;
-        return kvrsm::cmd_result(record.write_id, record.value);
+        return kvrsm::cmd_result(c.seq, record.write_id, record.value);
     } else {
         kvrsm::record record;
         record.write_id = c.write_id;
         record.value = c.value;
         kv_map.emplace(c.key, record);
-        return kvrsm::cmd_result(record.write_id, record.value);
+        return kvrsm::cmd_result(c.seq, record.write_id, record.value);
     }
 }
 
 kvrsm::cmd_result kvrsm::execute(get_cmd c) {
+    if (c.seq <= _last_applied_seq) {
+        return kvrsm::cmd_result(
+          c.seq,
+          raft::kvelldb::errc::raft_error,
+          raft::errc::leader_append_failed);
+    }
+    _last_applied_seq = c.seq;
+    if (c.seq > _last_generated_seq) {
+        _last_generated_seq = c.seq;
+    }
+
     if (kv_map.contains(c.key)) {
         return kvrsm::cmd_result(
+          c.seq,
           kv_map.find(c.key)->second.write_id,
           kv_map.find(c.key)->second.value);
     }
     return kvrsm::cmd_result(
-      raft::kvelldb::errc::not_found, raft::errc::success);
+      c.seq, raft::kvelldb::errc::not_found, raft::errc::success);
 }
 
 kvrsm::cmd_result kvrsm::execute(cas_cmd c) {
+    if (c.seq <= _last_applied_seq) {
+        return kvrsm::cmd_result(
+          c.seq,
+          raft::kvelldb::errc::raft_error,
+          raft::errc::leader_append_failed);
+    }
+    _last_applied_seq = c.seq;
+    if (c.seq > _last_generated_seq) {
+        _last_generated_seq = c.seq;
+    }
+
     if (kv_map.contains(c.key)) {
         auto& record = kv_map[c.key];
 
         if (record.write_id == c.prev_write_id) {
             record.write_id = c.write_id;
             record.value = c.value;
-            return kvrsm::cmd_result(record.write_id, record.value);
+            return kvrsm::cmd_result(c.seq, record.write_id, record.value);
         } else {
             return kvrsm::cmd_result(
+              c.seq,
               record.write_id,
               record.value,
               raft::kvelldb::errc::conflict,
@@ -124,42 +167,52 @@ kvrsm::cmd_result kvrsm::execute(cas_cmd c) {
         }
     } else {
         return kvrsm::cmd_result(
-          raft::kvelldb::errc::not_found, raft::errc::success);
+          c.seq, raft::kvelldb::errc::not_found, raft::errc::success);
     }
 }
 
 ss::future<kvrsm::cmd_result> kvrsm::replicate_and_wait(
-  model::record_batch&& b, model::timeout_clock::time_point timeout) {
+  model::record_batch&& b,
+  model::timeout_clock::time_point timeout,
+  sequence_id seq) {
     using ret_t = kvrsm::cmd_result;
 
-    return _mutex.get_units().then(
-      [this, b = std::move(b), timeout](ss::semaphore_units<> u) mutable {
-          return replicate(std::move(b))
-            .then([this, timeout, u = std::move(u)](
-                    result<raft::replicate_result> r) {
-                if (!r) {
-                    return ss::make_ready_future<ret_t>(kvrsm::cmd_result(
-                      raft::kvelldb::errc::raft_error, r.error()));
-                }
+    _promises.emplace(seq, expiring_promise<ret_t>{});
 
-                auto last_offset = r.value().last_offset;
-                auto [it, insterted] = _promises.emplace(
-                  last_offset, expiring_promise<ret_t>{});
-                vassert(
-                  insterted,
-                  "Prosmise for offset {} already registered",
-                  last_offset);
-                return it->second
-                  .get_future_with_timeout(
-                    timeout,
-                    [] {
-                        return kvrsm::cmd_result(
-                          raft::kvelldb::errc::timeout, raft::errc::timeout);
-                    })
-                  .then_wrapped([this, last_offset](ss::future<ret_t> ec) {
-                      _promises.erase(last_offset);
-                      return ec;
-                  });
+    return replicate(std::move(b))
+      .then([this, seq, timeout](result<raft::replicate_result> r) {
+          if (!r) {
+              _promises.erase(seq);
+              return ss::make_ready_future<ret_t>(
+                kvrsm::cmd_result(raft::kvelldb::errc::raft_error, r.error()));
+          }
+
+          auto last_offset = r.value().last_offset;
+
+          auto it = _promises.find(seq);
+
+          return it->second
+            .get_future_with_timeout(
+              timeout,
+              [seq, last_offset] {
+                  auto result = kvrsm::cmd_result(
+                    raft::kvelldb::errc::timeout, raft::errc::timeout);
+                  result.seq = seq;
+                  result.offset = last_offset;
+                  return result;
+              })
+            .then_wrapped([this, seq, last_offset](ss::future<ret_t> ec) {
+                _promises.erase(seq);
+
+                return ec.then([last_offset](kvrsm::cmd_result result) {
+                    if (result.offset != last_offset) {
+                        result = kvrsm::cmd_result(
+                          raft::kvelldb::errc::raft_error,
+                          raft::errc::leader_append_failed);
+                    }
+
+                    return ss::make_ready_future<ret_t>(result);
+                });
             });
       });
 }
