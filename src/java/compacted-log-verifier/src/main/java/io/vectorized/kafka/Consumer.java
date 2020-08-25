@@ -1,7 +1,6 @@
 package io.vectorized.kafka;
 
 import java.io.IOException;
-import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.time.Duration;
@@ -9,11 +8,7 @@ import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
 import org.apache.commons.lang3.time.StopWatch;
-import org.apache.kafka.clients.consumer.ConsumerConfig;
-import org.apache.kafka.clients.consumer.ConsumerRebalanceListener;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.apache.kafka.clients.consumer.ConsumerRecords;
-import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.consumer.*;
 import org.apache.kafka.common.TopicPartition;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -62,8 +57,13 @@ public class Consumer implements ConsumerRebalanceListener {
         if (records.isEmpty()) {
           final Map<TopicPartition, Long> partitionEnds
               = consumer.endOffsets(assignedPartitions);
-
           boolean finished = true;
+          /// empty subscriptions, retry consumer.poll()
+          if (partitionEnds.isEmpty()
+              && emptySubscriptionsCnt < MAX_EMPTY_SUB_RETRIES) {
+            emptySubscriptionsCnt++;
+            continue;
+          }
           for (Map.Entry<TopicPartition, Long> partitionLastOffset :
                partitionEnds.entrySet()) {
 
@@ -116,7 +116,8 @@ public class Consumer implements ConsumerRebalanceListener {
   /**
    * Validates the expected and currently consumed state
    *
-   * @return true when there were no validation errors or state file wasn't available
+   * @return true when there were no validation errors or state file wasn't
+   *     available
    */
   public boolean maybeValidateState() {
     return config.statePath()
@@ -166,4 +167,6 @@ public class Consumer implements ConsumerRebalanceListener {
   final StateMap consumedState = new StateMap();
   final Map<TopicPartition, PartitionMeta> consumerPartitions;
   private int cnt = 0;
+  int emptySubscriptionsCnt = 0;
+  private static final int MAX_EMPTY_SUB_RETRIES = 10;
 }
