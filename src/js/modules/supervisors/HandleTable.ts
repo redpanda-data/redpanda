@@ -1,7 +1,7 @@
 import { Handle } from "../domain/Handle";
-import { Coprocessor, RecordBatch } from "../public/Coprocessor";
-import { Request } from "../domain/Request";
+import { Coprocessor } from "../public/Coprocessor";
 import { Server } from "../rpc/server";
+import { ProcessBatchRequest } from "../domain/generatedRpc/generatedClasses";
 
 export class HandleTable {
   constructor() {
@@ -27,7 +27,7 @@ export class HandleTable {
   /**
    * Given a Request, apply every coprocessor on handleTable defined for each
    * RecordBatch's topic
-   * @param request, Request instance
+   * @param processBatchRequest, Request instance
    * @param handleError, function that handle error on when apply coprocessor
    *
    * Note: Server["handleErrorByPolicy"] is a ts helper to specify
@@ -36,21 +36,37 @@ export class HandleTable {
    * typescript-2-1.html#keyof-and-lookup-types
    */
   apply(
-    request: Request,
+    processBatchRequest: ProcessBatchRequest,
     handleError: Server["handleErrorByPolicy"]
-  ): Promise<RecordBatch>[] {
-    return request.getRecords().flatMap((recordBatch) =>
-      [...this.coprocessors.values()].map((handle) => {
-        try {
-          return Promise.resolve(handle.coprocessor.apply(recordBatch));
-        } catch (e) {
-          return handleError(handle.coprocessor, request, e);
-        }
-      })
-    );
+  ): Promise<ProcessBatchRequest>[] {
+    return [...this.coprocessors.values()].map((handle) => {
+      // Convert int16 to uint16 and check if have an unexpected compression
+      if (((processBatchRequest.recordBatch.header.attrs >>> 0) & 0x7) != 0) {
+        throw (
+          "Record Batch has an unexpect compression value: baseOffset" +
+          processBatchRequest.recordBatch.header.baseOffset
+        );
+      }
+      try {
+        //TODO: https://app.clubhouse.io/vectorized/story/1257
+        //pass functor to apply function
+        const resultRecordBatch = handle.coprocessor.apply(
+          processBatchRequest.recordBatch
+        );
+
+        return Promise.resolve({
+          ...processBatchRequest,
+          recordBatch: resultRecordBatch,
+        });
+      } catch (e) {
+        return handleError(handle.coprocessor, processBatchRequest, e);
+      }
+    });
   }
+
   size(): number {
     return this.coprocessors.size;
   }
+
   private readonly coprocessors: Map<number, Handle>;
 }
