@@ -6,12 +6,15 @@
   "author": "hi@vectorized.io",
   "scripts": {
     "fmt": "./node_modules/typescript-formatter/bin/tsfmt --baseDir ../../src/js/ -r",
-    "build": "./node_modules/typescript/bin/tsc --build ../../src/js/tsconfig.json",
+    "build:ts": "npx tsc --build ../../src/js/tsconfig.json",
+    "build": "npm run generate:serialization && npm run build:ts",
     "test": "./node_modules/mocha/bin/mocha --recursive \"./output/test\"",
     "prettier:format": "npx prettier --write .",
     "prettier:check": "npx prettier --list-different .",
     "eslint:check": "eslint . --ext .ts",
-    "code:ckeck": "npm run prettier:check && npm run eslint:check"
+    "code:ckeck": "npm run prettier:check && npm run eslint:check",
+    "generate:serialization": "./generate-entries.sh",
+    "postinstall": "npm run generate:serialization"
   },
   "requires": true,
   "dependencies": {
