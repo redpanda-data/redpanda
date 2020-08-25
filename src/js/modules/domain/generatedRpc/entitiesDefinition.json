@@ -1,0 +1,199 @@
+{
+  "classes": [
+    {
+      "className": "RpcHeader",
+      "fields": [
+        {
+          "name": "version",
+          "type": "uint8"
+        },
+        {
+          "name": "headerChecksum",
+          "type": "uint32"
+        },
+        {
+          "name": "compression",
+          "type": "int8"
+        },
+        {
+          "name": "payloadSize",
+          "type": "uint32"
+        },
+        {
+          "name": "meta",
+          "type": "uint32"
+        },
+        {
+          "name": "correlationId",
+          "type": "uint32"
+        },
+        {
+          "name": "payloadChecksum",
+          "type": "uint64"
+        }
+      ]
+    },
+    {
+      "className": "ProcessBatchRequest",
+      "fields": [
+        {
+          "name": "npt",
+          "type": "Ntp"
+        },
+        {
+          "name": "recordBatch",
+          "type": "RecordBatch"
+        }
+      ]
+    },
+    {
+      "className": "Ntp",
+      "fields": [
+        {
+          "name": "namespace",
+          "type": "string"
+        },
+        {
+          "name": "topic",
+          "type": "string"
+        },
+        {
+          "name": "partition",
+          "type": "int32"
+        }
+      ]
+    },
+    {
+      "className": "RecordBatch",
+      "fields": [
+        {
+          "name": "header",
+          "type": "RecordBatchHeader"
+        },
+        {
+          "name": "records",
+          "type": "Array<Record>"
+        }
+      ]
+    },
+    {
+      "className": "RecordBatchHeader",
+      "fields": [
+        {
+          "name": "headerCrc",
+          "type": "int32"
+        },
+        {
+          "name": "sizeBytes",
+          "type": "int32"
+        },
+        {
+          "name": "baseOffset",
+          "type": "int64"
+        },
+        {
+          "name": "recordBatchType",
+          "type": "int8"
+        },
+        {
+          "name": "crc",
+          "type": "int32"
+        },
+        {
+          "name": "attrs",
+          "type": "int16"
+        },
+        {
+          "name": "lastOffsetDelta",
+          "type": "int32"
+        },
+        {
+          "name": "firstTimestamp",
+          "type": "int64"
+        },
+        {
+          "name": "maxTimestamp",
+          "type": "int64"
+        },
+        {
+          "name": "producerId",
+          "type": "int64"
+        },
+        {
+          "name": "producerEpoch",
+          "type": "int16"
+        },
+        {
+          "name": "baseSequence",
+          "type": "int32"
+        },
+        {
+          "name": "recordCount",
+          "type": "int32"
+        }
+      ]
+    },
+    {
+      "className": "Record",
+      "fields": [
+        {
+          "name": "length",
+          "type": "varint"
+        },
+        {
+          "name": "attributes",
+          "type": "int8"
+        },
+        {
+          "name": "timestampDelta",
+          "type": "varint"
+        },
+        {
+          "name": "offsetDelta",
+          "type": "varint"
+        },
+        {
+          "name": "keyLength",
+          "type": "varint"
+        },
+        {
+          "name": "key",
+          "type": "buffer"
+        },
+        {
+          "name": "valueLen",
+          "type": "varint"
+        },
+        {
+          "name": "value",
+          "type": "buffer"
+        },
+        {
+          "name": "headers",
+          "type": "Array<RecordHeader>"
+        }
+      ]
+    },
+    {
+      "className": "RecordHeader",
+      "fields": [
+        {
+          "name": "headerKeyLength",
+          "type": "varint"
+        },
+        {
+          "name": "headerKey",
+          "type": "string"
+        },
+        {
+          "name": "headerValueLength",
+          "type": "varint"
+        },
+        {
+          "name": "value",
+          "type": "buffer"
+        }
+      ]
+    }
+  ]
+}
