@@ -57,15 +57,6 @@ def configure_build(vconfig, build_external=True, build_external_only=False):
     shell.run_subprocess(f"sh {vconfig.build_dir}/rebuild.sh",
                          env=vconfig.environ)
 
-    # FIXME https://app.asana.com/0/1149841353291489/1153763539998305
-    if build_external:
-        src = (f'{vconfig.build_dir}/v_deps_build/seastar-prefix/'
-               f'src/seastar-build/apps/iotune/iotune')
-        dst = f'{vconfig.external_path}/bin/iotune'
-        if os.path.isfile(dst):
-            os.remove(dst)
-        shutil.move(src, dst)
-
 
 def _cache_file(vconfig):
     return f'{vconfig.build_dir}/CMakeCache.txt'
