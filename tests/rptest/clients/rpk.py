@@ -1,6 +1,19 @@
 import subprocess
 import tempfile
 import time
+import re
+
+
+class RpkPartition:
+    def __init__(self, id, leader, replicas, hw):
+        self.id = id
+        self.leader = leader
+        self.replicas = replicas
+        self.high_watermark = hw
+
+    def __str__(self):
+        return "id: {}, leader: {}, replicas: {}, hw: {}".format(
+            self.id, self.leader, self.replicas, self.high_watermark)
 
 
 class RpkTool:
@@ -44,6 +57,27 @@ class RpkTool:
         if partition:
             cmd += ['-p', str(partition)]
         return self._run_api(cmd, stdin=msg)
+
+    def describe_topic(self, topic):
+        cmd = ['topic', 'describe', topic]
+        output = self._run_api(cmd)
+        if "not found" in output:
+            return None
+        lines = output.splitlines()
+
+        def partition_line(line):
+            m = re.match(
+                r" *(?P<id>\d+) +(?P<leader>\d+) +\[(?P<replicas>.+?)\] + \[.+\] +(?P<hw>\d+) *",
+                line)
+            if m == None:
+                return None
+            replicas = map(lambda r: int(r), m.group('replicas').split())
+            return RpkPartition(id=int(m.group('id')),
+                                leader=int(m.group('leader')),
+                                replicas=replicas,
+                                hw=int(m.group('hw')))
+
+        return filter(lambda p: p != None, map(partition_line, lines))
 
     def _run_api(self, cmd, stdin=None, timeout=30):
         cmd = [
