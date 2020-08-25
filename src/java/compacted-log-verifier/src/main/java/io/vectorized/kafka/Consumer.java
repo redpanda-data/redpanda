@@ -113,8 +113,13 @@ public class Consumer implements ConsumerRebalanceListener {
     }
   }
 
-  public void maybeValidateState() {
-    config.statePath()
+  /**
+   * Validates the expected and currently consumed state
+   *
+   * @return true when there were no validation errors or state file wasn't available
+   */
+  public boolean maybeValidateState() {
+    return config.statePath()
         .map(Paths::get)
         .map(p -> {
           if (Files.exists(p)) {
@@ -126,8 +131,8 @@ public class Consumer implements ConsumerRebalanceListener {
           }
           return null;
         })
-        .ifPresent(
-            expected -> { StateMap.compareStates(expected, consumedState); });
+        .map(expected -> StateMap.compareStates(expected, consumedState))
+        .orElse(true);
   }
 
   @Override

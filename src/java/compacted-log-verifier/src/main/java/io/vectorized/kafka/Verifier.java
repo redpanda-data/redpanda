@@ -24,7 +24,13 @@ class Verifier {
         final Consumer consumer
             = new Consumer(configuration.getConsumerConfig());
         consumer.startConsumer();
-        consumer.maybeValidateState();
+        if (!consumer.maybeValidateState()) {
+          // exit with error when validation failed
+          logger.error("is_success: false");
+          System.exit(1);
+        }
+        logger.info("is_success: true");
+        System.exit(0);
       }
     } catch (final ArgumentParserException e) {
       configuration.handleError(args, e);

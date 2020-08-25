@@ -22,9 +22,10 @@ public class StateMap implements Serializable {
     return (StateMap)fst.asObject(content);
   }
 
-  public static void compareStates(StateMap ref, StateMap have) {
+  public static boolean compareStates(StateMap ref, StateMap have) {
     long refUpdates = 0;
     long consumedUpdates = 0;
+    boolean success = true;
     for (Map.Entry<Long, KeyStats> e : ref.keys.entrySet()) {
       final KeyStats consumedKeyStat = have.keys.get(e.getKey());
       final KeyStats refKeyStat = e.getValue();
@@ -32,6 +33,7 @@ public class StateMap implements Serializable {
         logger.warn(
             "Key {} exists in reference state but it does not in recovered state",
             e.getKey());
+        success = false;
         continue;
       }
 
@@ -39,6 +41,7 @@ public class StateMap implements Serializable {
         logger.warn(
             "Key {} values are different. Expected value {} != recovered value {}",
             e.getKey(), refKeyStat.latestValue, consumedKeyStat.latestValue);
+        success = false;
       }
 
       if (consumedKeyStat.latestValue != refKeyStat.latestValue) {
@@ -46,6 +49,7 @@ public class StateMap implements Serializable {
             "Key {} value offsets are different. Expected value offset {} != recovered value offset {}",
             e.getKey(), refKeyStat.latestValueOffset,
             consumedKeyStat.latestValueOffset);
+        success = false;
       }
 
       refUpdates += refKeyStat.updates;
@@ -56,6 +60,7 @@ public class StateMap implements Serializable {
     logger.info(
         "Produced records {}, consumed records {}", refUpdates,
         consumedUpdates);
+    return success;
   }
 
   public void updateRecord(byte[] key, byte[] value, long offset) {
