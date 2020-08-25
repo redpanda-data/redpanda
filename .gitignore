@@ -200,7 +200,8 @@ infra/modules/**/ssh_config*
 src/js/node_modules
 #intelij
 *.iml
-
+# Node dependecies ts-generated
+tools/ts-generator/node_modules
 # ducktape
 results
 .ducktape
