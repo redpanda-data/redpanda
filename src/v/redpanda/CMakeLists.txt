@@ -13,6 +13,7 @@ v_cc_library(
     v::cluster
     v::syschecks
     v::kafka
+    v::coproc
   )
 
 add_executable(redpanda

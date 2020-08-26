@@ -240,6 +240,17 @@ ss::future<> log_manager::dispatch_topic_dir_deletion(ss::sstring dir) {
     });
 }
 
+absl::flat_hash_map<model::ntp, log>
+log_manager::get(const model::topic_namespace& tn) {
+    absl::flat_hash_map<model::ntp, log> r;
+    for (const auto& p : _logs) {
+        if (p.first.ns == tn.ns && p.first.tp.topic == tn.tp) {
+            r.emplace(p.first, p.second.handle);
+        }
+    }
+    return r;
+}
+
 std::ostream& operator<<(std::ostream& o, log_config::storage_type t) {
     switch (t) {
     case log_config::storage_type::memory:
