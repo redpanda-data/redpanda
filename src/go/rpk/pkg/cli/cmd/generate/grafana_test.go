@@ -40,10 +40,10 @@ vectorized_vectorized_internal_rpc_protocol_dispatch_handler_latency_sum{shard="
 vectorized_vectorized_internal_rpc_protocol_dispatch_handler_latency_count{shard="0",type="histogram"} 0
 vectorized_vectorized_internal_rpc_protocol_dispatch_handler_latency_bucket{le="10.000000",shard="0",type="histogram"} 0
 vectorized_vectorized_internal_rpc_protocol_dispatch_handler_latency_bucket{le="20.000000",shard="0",type="histogram"} 0
-# HELP vectorized_memory_allocated_memory Allocated memory size in bytes
-# TYPE vectorized_memory_allocated_memory counter
-vectorized_memory_allocated_memory{shard="0",type="bytes"} 40837120
-vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
+# HELP vectorized_memory_allocated_memory_bytes Allocated memory size in bytes
+# TYPE vectorized_memory_allocated_memory_bytes counter
+vectorized_memory_allocated_memory_bytes{shard="0",type="bytes"} 40837120
+vectorized_memory_allocated_memory_bytes{shard="1",type="bytes"} 36986880
 `
 	expected := `{
  "title": "Redpanda",
@@ -539,7 +539,7 @@ vectorized_memory_allocated_memory{shard="1",type="bytes"} 36986880
      "targets": [
       {
        "refId": "",
-       "expr": "sum(irate(vectorized_memory_allocated_memory{instance=~\"[[node]]\",shard=~\"[[node_shard]]\"}[1m])) by ([[aggr_criteria]])",
+       "expr": "sum(irate(vectorized_memory_allocated_memory_bytes{instance=~\"[[node]]\",shard=~\"[[node_shard]]\"}[1m])) by ([[aggr_criteria]])",
        "intervalFactor": 2,
        "step": 10,
        "legendFormat": "node: {{instance}}, shard: {{shard}}",
