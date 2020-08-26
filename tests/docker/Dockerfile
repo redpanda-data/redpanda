@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM ubuntu:eoan
+FROM ubuntu:focal
 
 MAINTAINER Vectorized
 VOLUME ["/opt/v"]
@@ -44,8 +44,8 @@ RUN apt update && apt install -y \
     openssh-server \
     net-tools \
     vim \
-    python-pip \
-    python-dev \
+    python3-pip \
+    python3-dev \
     libffi-dev \
     libssl-dev \
     cmake \
@@ -59,10 +59,10 @@ RUN apt update && apt install -y \
     libzstd-dev \
     zlib1g \
     zlib1g-dev \
+    git \
     && apt-get -y clean
 
-RUN python -m pip install -U pip
-RUN pip install --upgrade \
+RUN pip3 install --upgrade \
     cffi \
     virtualenv \
     pyasn1 \
@@ -73,7 +73,7 @@ RUN pip install --upgrade \
     enum34 \
     pyyaml \
     requests
-RUN pip install --upgrade ducktape==0.7.8
+RUN pip3 install --upgrade git+https://github.com/confluentinc/ducktape@ecaf7173c6909d36f7ee4a2f6656b128212f8865
 
 # Set up ssh
 COPY ./ssh-config /root/.ssh/config
