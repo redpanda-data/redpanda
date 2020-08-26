@@ -16,6 +16,7 @@ namespace raft::kvelldb {
 class kvrsm : public state_machine {
 public:
     using sequence_id = named_type<uint64_t, struct kvrsm_sequence_id>;
+    using us = std::chrono::microseconds;
 
     struct cmd_result {
         cmd_result(sequence_id seq, ss::sstring wid, ss::sstring val)
@@ -56,6 +57,8 @@ public:
         std::error_code rsm_status{raft::kvelldb::errc::success};
         std::error_code raft_status{raft::errc::success};
         model::offset offset;
+        us replicated_us;
+        us executed_us;
     };
 
     explicit kvrsm(ss::logger&, consensus*);
