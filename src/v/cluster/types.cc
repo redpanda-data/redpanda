@@ -88,7 +88,7 @@ std::ostream& operator<<(std::ostream& o, const topic_result& r) {
 std::ostream& operator<<(std::ostream& o, const configuration_invariants& c) {
     fmt::print(
       o,
-      "{{version: {}, node_id: {}, core_count: {}}",
+      "{{ version: {}, node_id: {}, core_count: {} }}",
       c.version,
       c.node_id,
       c.core_count);
