@@ -1,5 +1,6 @@
 import asyncio
 import uuid
+import random
 
 from gobekli.kvapi import RequestCanceled, RequestTimedout
 from gobekli.consensus import LinearizabilityRegisterChecker, Violation
@@ -169,6 +170,7 @@ class ReaderClient:
     async def start(self):
         loop = asyncio.get_running_loop()
         while self.is_active and self.checker.is_valid:
+            await asyncio.sleep(random.uniform(0, 0.05))
             op_started = None
             try:
                 self.stat.assign("size", self.checker.size())

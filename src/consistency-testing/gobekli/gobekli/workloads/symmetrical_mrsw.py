@@ -1,5 +1,6 @@
 import asyncio
 import uuid
+import random
 
 from gobekli.kvapi import RequestCanceled, RequestTimedout
 from gobekli.consensus import Violation
@@ -29,6 +30,7 @@ class WriterClient:
     async def start(self):
         loop = asyncio.get_running_loop()
         while self.is_active and self.checker.is_valid:
+            await asyncio.sleep(random.uniform(0, 0.05))
             prev = self.last_write_id
             curr_write_id = str(uuid.uuid1())
             curr_version = self.last_version + 1

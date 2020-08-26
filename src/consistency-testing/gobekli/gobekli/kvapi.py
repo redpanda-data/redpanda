@@ -18,7 +18,8 @@ Response = namedtuple('Response', ['record', 'metrics'])
 
 class KVNode:
     def __init__(self, name, address):
-        self.session = aiohttp.ClientSession()
+        timeout = aiohttp.ClientTimeout(total=10)
+        self.session = aiohttp.ClientSession(timeout=timeout)
         self.address = address
         self.name = name
 
@@ -32,6 +33,10 @@ class KVNode:
         except aiohttp.client_exceptions.ClientConnectorError:
             raise RequestTimedout()
         except aiohttp.client_exceptions.ClientOSError:
+            raise RequestTimedout()
+        except ConnectionResetError:
+            raise RequestTimedout()
+        except asyncio.TimeoutError:
             raise RequestTimedout()
         if resp.status == 200:
             data = await resp.read()
@@ -61,6 +66,10 @@ class KVNode:
         except aiohttp.client_exceptions.ClientConnectorError:
             raise RequestTimedout()
         except aiohttp.client_exceptions.ClientOSError:
+            raise RequestTimedout()
+        except ConnectionResetError:
+            raise RequestTimedout()
+        except asyncio.TimeoutError:
             raise RequestTimedout()
         if resp.status == 200:
             data = await resp.read()
@@ -95,6 +104,10 @@ class KVNode:
         except aiohttp.client_exceptions.ClientConnectorError:
             raise RequestTimedout()
         except aiohttp.client_exceptions.ClientOSError:
+            raise RequestTimedout()
+        except ConnectionResetError:
+            raise RequestTimedout()
+        except asyncio.TimeoutError:
             raise RequestTimedout()
         if resp.status == 200:
             data = await resp.read()
