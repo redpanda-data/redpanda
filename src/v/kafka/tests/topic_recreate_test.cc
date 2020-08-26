@@ -70,17 +70,45 @@ public:
 
         return client.dispatch(std::move(req), kafka::api_version(2)).get0();
     }
+    template<typename Func>
+    auto do_with_client(Func&& f) {
+        return make_kafka_client().then(
+          [f = std::forward<Func>(f)](kafka::client client) mutable {
+              return ss::do_with(
+                std::move(client),
+                [f = std::forward<Func>(f)](kafka::client& client) mutable {
+                    return client.connect().then(
+                      [&client, f = std::forward<Func>(f)]() mutable {
+                          return f(client);
+                      });
+                });
+          });
+    }
 
-    kafka::metadata_response get_topic_metadata(const model::topic& tp) {
-        auto client = make_kafka_client().get0();
-        client.connect().get0();
-        std::vector<model::topic> topics;
-        topics.push_back(tp);
-        kafka::metadata_request md_req{
-          .topics = topics,
-          .allow_auto_topic_creation = false,
-          .list_all_topics = false};
-        return client.dispatch(md_req).get0();
+    ss::future<kafka::metadata_response>
+    get_topic_metadata(const model::topic& tp) {
+        return do_with_client([tp](kafka::client& client) {
+            std::vector<model::topic> topics;
+            topics.push_back(tp);
+            kafka::metadata_request md_req{
+              .topics = topics,
+              .allow_auto_topic_creation = false,
+              .list_all_topics = false};
+            return client.dispatch(md_req);
+        });
+    }
+
+    ss::future<>
+    wait_until_topic_status(const model::topic& tp, kafka::error_code ec) {
+        return tests::cooperative_spin_wait_with_timeout(3s, [this, tp, ec] {
+            return get_topic_metadata(tp).then(
+              [ec](kafka::metadata_response md) {
+                  if (md.topics.empty()) {
+                      return false;
+                  }
+                  return md.topics.begin()->err_code == ec;
+              });
+        });
     }
 
     void restart() {
@@ -101,10 +129,33 @@ FIXTURE_TEST(test_topic_recreation, recreate_test_fixture) {
     wait_for_controller_leadership().get();
     model::topic test_tp{"topic-1"};
     create_topic(test_tp(), 6, 1);
+    // wait until created
+    wait_until_topic_status(test_tp, kafka::error_code::none).get0();
+
     delete_topics({test_tp});
+    // wait until deleted
+    wait_until_topic_status(
+      test_tp, kafka::error_code::unknown_topic_or_partition)
+      .get0();
     create_topic(test_tp(), 6, 1);
 
-    auto md = get_topic_metadata(test_tp);
+    tests::cooperative_spin_wait_with_timeout(3s, [this, test_tp] {
+        return ss::async([this, test_tp] {
+            auto md = get_topic_metadata(test_tp).get0();
+            if (md.topics.size() != 1) {
+                return false;
+            }
+            auto& partitions = md.topics.begin()->partitions;
+            return std::all_of(
+              partitions.begin(),
+              partitions.end(),
+              [](kafka::metadata_response::partition& p) {
+                  return p.leader == model::node_id{1};
+              });
+        });
+    }).get0();
+
+    auto md = get_topic_metadata(test_tp).get0();
     BOOST_REQUIRE_EQUAL(md.topics.size(), 1);
     BOOST_REQUIRE_EQUAL(md.topics.begin()->partitions.size(), 6);
 
@@ -119,8 +170,12 @@ FIXTURE_TEST(test_topic_recreation_recovery, recreate_test_fixture) {
     // flow frim [ch1061]
     info("Creating {} with {} partitions", test_tp, 6);
     create_topic(test_tp(), 6, 1);
+    wait_until_topic_status(test_tp, kafka::error_code::none).get0();
     info("Deleting {}", test_tp);
     delete_topics({test_tp});
+    wait_until_topic_status(
+      test_tp, kafka::error_code::unknown_topic_or_partition)
+      .get0();
     info("Restarting redpanda, first time");
     restart();
     wait_for_controller_leadership().get();
@@ -128,27 +183,34 @@ FIXTURE_TEST(test_topic_recreation_recovery, recreate_test_fixture) {
     create_topic(test_tp(), 3, 1);
     info("Deleting {}", test_tp);
     delete_topics({test_tp});
+    wait_until_topic_status(
+      test_tp, kafka::error_code::unknown_topic_or_partition)
+      .get0();
     info("Creating {} with {} partitions", test_tp, 3);
     create_topic(test_tp(), 3, 1);
+    wait_until_topic_status(test_tp, kafka::error_code::none).get0();
     info("Restarting redpanda, second time");
     restart();
     info("Waiting for recovery");
     wait_for_controller_leadership().get();
-    tests::cooperative_spin_wait_with_timeout(
-      std::chrono::seconds(5),
-      [this, test_tp] {
-          auto tp_md = app.metadata_cache.local().get_topic_metadata(
-            model::topic_namespace(cluster::kafka_namespace, test_tp));
-          return tp_md && tp_md->partitions.size() == 3 && tp_md
-                 && tp_md->partitions[0].leader_node == model::node_id(1);
-      })
-      .get();
+    wait_until_topic_status(test_tp, kafka::error_code::none).get0();
 
-    auto md = get_topic_metadata(test_tp);
-    BOOST_REQUIRE_EQUAL(md.topics.size(), 1);
-    BOOST_REQUIRE_EQUAL(md.topics.begin()->partitions.size(), 3);
-
-    for (auto& p : md.topics.begin()->partitions) {
-        BOOST_REQUIRE_EQUAL(p.leader, model::node_id{1});
-    }
+    return tests::cooperative_spin_wait_with_timeout(
+             5s,
+             [test_tp, this] {
+                 return get_topic_metadata(test_tp).then(
+                   [](kafka::metadata_response md) {
+                       auto& partitions = md.topics.begin()->partitions;
+                       if (partitions.size() != 3) {
+                           return false;
+                       }
+                       return std::all_of(
+                         partitions.begin(),
+                         partitions.end(),
+                         [](kafka::metadata_response::partition& p) {
+                             return p.leader == model::node_id{1};
+                         });
+                   });
+             })
+      .get0();
 }
