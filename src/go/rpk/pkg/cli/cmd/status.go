@@ -307,14 +307,31 @@ func getKafkaInfoRows(
 	for _, nodeID := range nodeIDs {
 		node := nodePartitions[nodeID]
 		broker := idToBroker[nodeID]
+
+		if nodeID < 0 {
+			// A negative node ID means the partitions haven't
+			// been assigned a leader
+			leaderlessRow := []string{
+				"(Leaderless)",
+				formatTopicsAndPartitions(node.leaderParts),
+			}
+			rows = append(
+				rows,
+				leaderlessRow,
+				spacingRow,
+			)
+			continue
+		}
 		nodeInfo := fmt.Sprintf("%d (%s)", nodeID, broker.Addr())
+		leaderParts := formatTopicsAndPartitions(node.leaderParts)
 		leaderRow := []string{
 			nodeInfo,
-			"Leader: " + formatTopicsAndPartitions(node.leaderParts),
+			"Leader: " + leaderParts,
 		}
+		replicaParts := formatTopicsAndPartitions(node.replicaParts)
 		replicaRow := []string{
 			"",
-			"Replica: " + formatTopicsAndPartitions(node.replicaParts),
+			"Replica: " + replicaParts,
 		}
 		rows = append(
 			rows,
