@@ -20,7 +20,14 @@ public:
     }
 
     ss::future<> stop() {
-        return _log_mgr->stop().then([this] { return _kvstore->stop(); });
+        auto f = ss::now();
+        if (_log_mgr) {
+            f = _log_mgr->stop();
+        }
+        if (_kvstore) {
+            return f.then([this] { return _kvstore->stop(); });
+        }
+        return f;
     }
 
     kvstore& kvs() { return *_kvstore; }
