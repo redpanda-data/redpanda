@@ -78,7 +78,7 @@ class PrefixTruncateRecoveryTest(RedpandaTest):
             }
 
         orig_segments = make_segment_sets(partitions)
-        self.logger.debug("Original segments: %s", orig_segments)
+        self.logger.debug(f"Original segments: {orig_segments}")
 
         #
         # Continue producing until the original segments above have been deleted
