@@ -3,6 +3,9 @@
 #include "seastarx.h"
 #include "utils/to_string.h"
 
+#include <seastar/core/do_with.hh>
+#include <seastar/core/future.hh>
+#include <seastar/core/shared_ptr.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/net/tls.hh>
 
@@ -28,8 +31,8 @@ public:
       std::optional<ss::sstring> truststore,
       bool require_client_auth)
       : _enabled(enabled)
-      , _key_cert(key_cert)
-      , _truststore_file(truststore)
+      , _key_cert(std::move(key_cert))
+      , _truststore_file(std::move(truststore))
       , _require_client_auth(require_client_auth) {}
 
     bool is_enabled() const { return _enabled; }
@@ -45,34 +48,42 @@ public:
     bool get_require_client_auth() const { return _require_client_auth; }
 
     ss::future<std::optional<ss::tls::credentials_builder>>
-    get_credentials_builder() const {
+    get_credentials_builder() const& {
         if (_enabled) {
-            auto builder = ss::make_lw_shared<ss::tls::credentials_builder>();
-            builder->set_dh_level(ss::tls::dh_params::level::MEDIUM);
-            if (_require_client_auth) {
-                builder->set_client_auth(ss::tls::client_auth::REQUIRE);
-            }
-            auto f = builder->set_system_trust();
-            if (_key_cert) {
-                f = f.then([this, builder] {
-                    return builder->set_x509_key_file(
-                      (*_key_cert).cert_file,
-                      (*_key_cert).key_file,
-                      ss::tls::x509_crt_format::PEM);
-                });
-            }
+            return ss::do_with(
+              ss::tls::credentials_builder{},
+              [this](ss::tls::credentials_builder& builder) {
+                  builder.set_dh_level(ss::tls::dh_params::level::MEDIUM);
+                  if (_require_client_auth) {
+                      builder.set_client_auth(ss::tls::client_auth::REQUIRE);
+                  }
 
-            if (_truststore_file) {
-                f = f.then([this, builder]() {
-                    return builder->set_x509_trust_file(
-                      *_truststore_file, ss::tls::x509_crt_format::PEM);
-                });
-            }
+                  auto f = _truststore_file ? builder.set_x509_trust_file(
+                             *_truststore_file, ss::tls::x509_crt_format::PEM)
+                                            : builder.set_system_trust();
+                  if (_key_cert) {
+                      f = f.then([this, &builder] {
+                          return builder.set_x509_key_file(
+                            (*_key_cert).cert_file,
+                            (*_key_cert).key_file,
+                            ss::tls::x509_crt_format::PEM);
+                      });
+                  }
 
-            return f.then([builder]() { return std::make_optional(*builder); });
+                  return f.then([&builder]() {
+                      return std::make_optional(std::move(builder));
+                  });
+              });
         }
+
         return ss::make_ready_future<
           std::optional<ss::tls::credentials_builder>>(std::nullopt);
+    }
+
+    ss::future<std::optional<ss::tls::credentials_builder>>
+    get_credentials_builder() && {
+        auto ptr = ss::make_lw_shared(std::move(*this));
+        return ptr->get_credentials_builder().finally([ptr] {});
     }
 
     static std::optional<ss::sstring> validate(const tls_config& c) {
@@ -91,8 +102,7 @@ private:
     bool _require_client_auth{false};
 };
 
-}; // namespace config
-
+} // namespace config
 namespace std {
 static inline ostream& operator<<(ostream& o, const config::key_cert& c) {
     o << "{ "
