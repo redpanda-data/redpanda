@@ -404,7 +404,7 @@ func newCounterPanel(m *dto.MetricFamily) *graf.GraphPanel {
 		IntervalFactor: 2,
 	}
 	format := "ops"
-	if strings.Contains(subtype(m), "bytes") {
+	if strings.Contains(m.GetName(), "bytes") {
 		format = "Bps"
 	}
 	panel := newGraphPanel("Rate - "+m.GetHelp(), target, format)
