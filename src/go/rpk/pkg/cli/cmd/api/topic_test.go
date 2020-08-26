@@ -30,6 +30,10 @@ type mockClient struct {
 	sarama.Client
 }
 
+func (_ *mockClient) Close() error {
+	return nil
+}
+
 func (a *mockAdmin) CreateTopic(
 	topic string, detail *sarama.TopicDetail, validateOnly bool,
 ) error {
@@ -117,7 +121,7 @@ func TestTopicCmd(t *testing.T) {
 	tests := []struct {
 		name           string
 		admin          *mockAdmin
-		cmd            func(*sarama.ClusterAdmin) *cobra.Command
+		cmd            func(func() (sarama.ClusterAdmin, error)) *cobra.Command
 		args           []string
 		expectedOutput string
 		expectedErr    string
@@ -267,12 +271,14 @@ func TestTopicCmd(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var admin sarama.ClusterAdmin = &mockAdmin{}
-			if tt.admin != nil {
-				admin = tt.admin
+			admin := func() (sarama.ClusterAdmin, error) {
+				if tt.admin != nil {
+					return tt.admin, nil
+				}
+				return &mockAdmin{}, nil
 			}
 			var out bytes.Buffer
-			cmd := tt.cmd(&admin)
+			cmd := tt.cmd(admin)
 			cmd.SetArgs(tt.args)
 			logrus.SetOutput(&out)
 			err := cmd.Execute()
@@ -515,13 +521,17 @@ func TestDescribeTopic(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var admin sarama.ClusterAdmin = &mockAdmin{}
-			var client sarama.Client = &mockClient{}
-			if tt.admin != nil {
-				admin = tt.admin
+			client := func() (sarama.Client, error) {
+				return &mockClient{}, nil
+			}
+			admin := func() (sarama.ClusterAdmin, error) {
+				if tt.admin != nil {
+					return tt.admin, nil
+				}
+				return &mockAdmin{}, nil
 			}
 			var out bytes.Buffer
-			cmd := describeTopic(&client, &admin)
+			cmd := describeTopic(client, admin)
 			// Disable watermarks so that the function doesn't call
 			// kafka.HighWatermarks (kafka/client.go), which uses
 			// an un-mockable function in sarama.Broker.

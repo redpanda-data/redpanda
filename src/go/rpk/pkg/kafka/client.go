@@ -6,18 +6,33 @@ import (
 	"time"
 
 	"github.com/Shopify/sarama"
+	"github.com/avast/retry-go"
+	log "github.com/sirupsen/logrus"
 )
 
-func InitClient(brokers ...string) (sarama.Client, error) {
-	saramaConf := sarama.NewConfig()
-	saramaConf.Version = sarama.V2_4_0_0
-	saramaConf.Producer.Return.Successes = true
+func DefaultConfig() *sarama.Config {
 	timeout := 1 * time.Second
-	saramaConf.ClientID = "rpk"
-	saramaConf.Admin.Timeout = timeout
-	saramaConf.Metadata.Timeout = timeout
+	conf := sarama.NewConfig()
+
+	conf.Version = sarama.V2_4_0_0
+	conf.ClientID = "rpk"
+
+	conf.Admin.Timeout = timeout
+
+	conf.Metadata.Timeout = timeout
+
+	conf.Producer.RequiredAcks = sarama.WaitForAll
+	conf.Producer.Retry.Backoff = 2 * time.Second
+	conf.Producer.Retry.Max = 3
+	conf.Producer.Return.Successes = true
+	conf.Producer.Timeout = timeout
+
+	return conf
+}
+
+func InitClient(brokers ...string) (sarama.Client, error) {
 	// sarama shuffles the addresses, so there's no need to do it.
-	return sarama.NewClient(brokers, saramaConf)
+	return sarama.NewClient(brokers, DefaultConfig())
 }
 
 /*
@@ -78,7 +93,6 @@ func HighWatermarks(
 			wg.Done()
 
 		}(leader, req)
-
 	}
 
 	wg.Wait()
@@ -96,4 +110,30 @@ func HighWatermarks(
 	}
 
 	return watermarks, nil
+}
+
+// Tries sending a message, and retries `retries` times waiting `backoff` time
+// in between.
+// sarama implements retries and backoff, but only for some errors.
+func RetrySend(
+	producer sarama.SyncProducer,
+	message *sarama.ProducerMessage,
+	retries uint,
+	backoff time.Duration,
+) (part int32, offset int64, err error) {
+	err = retry.Do(
+		func() error {
+			part, offset, err = producer.SendMessage(message)
+			return err
+		},
+		retry.Attempts(retries),
+		retry.DelayType(retry.FixedDelay),
+		retry.Delay(backoff),
+		retry.LastErrorOnly(true),
+		retry.OnRetry(func(n uint, err error) {
+			log.Debugf("Sending message failed: %v", err)
+			log.Debugf("Retrying (%d retries left)", retries-n)
+		}),
+	)
+	return part, offset, err
 }
