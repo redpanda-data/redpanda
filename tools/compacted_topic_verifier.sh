@@ -49,6 +49,8 @@ REPLICATION=${REPLICATION:-1}
 PARTITIONS=${PARTITIONS:-1}
 # topic segment size
 SEGMENT_SIZE=${SEGMENT_SIZE:-$((10 * 1024 * 1024))}
+# properties file containing security settings
+SECURITY_PROPERTIES=${SECURITY_PROPERTIES:-}
 
 # brokers to connect to
 SERVERS=${SERVERS:-localhost:9092}
@@ -72,6 +74,12 @@ cmd="${java_path} -jar ${jar_path} \
     --topic ${TOPIC} \
     --broker ${SERVERS} \
     --state-file ${STATE_FILE}"
+
+if [ -n "${SECURITY_PROPERTIES}" ]; then
+  cmd="${cmd} \
+         --security-properties=${SECURITY_PROPERTIES}"
+fi
+
 case $1 in
   produce)
     ${cmd} \

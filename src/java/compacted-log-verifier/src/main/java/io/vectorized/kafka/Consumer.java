@@ -34,6 +34,8 @@ public class Consumer implements ConsumerRebalanceListener {
     properties.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
     properties.put(ConsumerConfig.GROUP_ID_CONFIG, config.consumerGroup());
     properties.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, config.brokers());
+    consumerConfig.securityProperties().ifPresent(properties::putAll);
+
     this.stats = new Stats(100_000_000, 2000, "consumer");
     this.consumerPartitions = new HashMap<>();
   }

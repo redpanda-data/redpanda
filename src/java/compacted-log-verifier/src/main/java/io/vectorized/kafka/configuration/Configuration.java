@@ -5,6 +5,13 @@ import static net.sourceforge.argparse4j.impl.Arguments.store;
 import io.vectorized.kafka.Mode;
 import io.vectorized.kafka.configuration.ImmutableConsumerConfig;
 import io.vectorized.kafka.configuration.ImmutableProducerConfig;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.OpenOption;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.List;
 import java.util.Optional;
 import java.util.Properties;
@@ -33,6 +40,13 @@ public class Configuration {
   }
 
   private void initParser() {
+    parser.addArgument("--security-properties")
+        .action(store())
+        .required(false)
+        .type(String.class)
+        .metavar("SECURITY_PROPS")
+        .dest("securityProperties")
+        .help("properties file containing securing configuration");
 
     parser.addArgument("--broker")
         .action(store())
@@ -164,40 +178,63 @@ public class Configuration {
     return Mode.PRODUCER;
   }
 
-  public ProducerConfig getProducerConfig() {
+  private Properties readSecurityProperties(String file) {
+    Path path = Paths.get(file);
+    try (final InputStream is = Files.newInputStream(path)) {
+      Properties properties = new Properties();
+      properties.load(is);
+      return properties;
+    } catch (IOException e) {
+      throw new UncheckedIOException(e);
+    }
+  }
 
-    return ImmutableProducerConfig.builder()
-        .brokers(argsNs.getString("broker"))
-        .topic(argsNs.getString("topic"))
-        .statePath(argsNs.getString("stateFile"))
-        .addAllProperties(
-            Optional.ofNullable(argsNs.<String>getList("producerConfig"))
-                .orElseGet(List::of))
-        .replicationFactor(argsNs.getShort("replicationFactor"))
-        .partitions(argsNs.getInt("partitions"))
-        .recordsCount(argsNs.getLong("numRecords"))
-        .payloadSize(argsNs.getInt("payloadSize"))
-        .keySize(argsNs.getInt("keySize"))
-        .keyCardinality(argsNs.getInt("keyCardinality"))
-        .segmentSize(argsNs.getInt("segmentSize"))
-        .build();
+  public ProducerConfig getProducerConfig() {
+    var builder
+        = ImmutableProducerConfig.builder()
+              .brokers(argsNs.getString("broker"))
+              .topic(argsNs.getString("topic"))
+              .statePath(argsNs.getString("stateFile"))
+              .addAllProperties(
+                  Optional.ofNullable(argsNs.<String>getList("producerConfig"))
+                      .orElseGet(List::of))
+              .replicationFactor(argsNs.getShort("replicationFactor"))
+              .partitions(argsNs.getInt("partitions"))
+              .recordsCount(argsNs.getLong("numRecords"))
+              .payloadSize(argsNs.getInt("payloadSize"))
+              .keySize(argsNs.getInt("keySize"))
+              .keyCardinality(argsNs.getInt("keyCardinality"))
+              .segmentSize(argsNs.getInt("segmentSize"));
+
+    Optional.ofNullable(argsNs.getString("securityProperties"))
+        .map(this::readSecurityProperties)
+        .ifPresent(builder::securityProperties);
+
+    return builder.build();
   }
 
   public ConsumerConfig getConsumerConfig() {
-    return ImmutableConsumerConfig.builder()
-        .brokers(argsNs.getString("broker"))
-        .topic(argsNs.getString("topic"))
-        .statePath(argsNs.getString("stateFile"))
-        .consumerGroup(
-            Optional.ofNullable(argsNs.getString("consumerGroup"))
-                .orElseGet(
-                    ()
-                        -> "consumer-gr-"
-                               + RandomStringUtils.randomAlphabetic(6)))
-        .addAllProperties(
-            Optional.ofNullable(argsNs.<String>getList("producerConfig"))
-                .orElseGet(List::of))
-        .build();
+    var builder
+        = ImmutableConsumerConfig.builder()
+              .brokers(argsNs.getString("broker"))
+              .topic(argsNs.getString("topic"))
+
+              .statePath(argsNs.getString("stateFile"))
+              .consumerGroup(
+                  Optional.ofNullable(argsNs.getString("consumerGroup"))
+                      .orElseGet(
+                          ()
+                              -> "consumer-gr-"
+                                     + RandomStringUtils.randomAlphabetic(6)))
+              .addAllProperties(
+                  Optional.ofNullable(argsNs.<String>getList("producerConfig"))
+                      .orElseGet(List::of));
+
+    Optional.ofNullable(argsNs.getString("securityProperties"))
+        .map(this::readSecurityProperties)
+        .ifPresent(builder::securityProperties);
+
+    return builder.build();
   }
 
   public void handleError(String[] args, ArgumentParserException e) {
