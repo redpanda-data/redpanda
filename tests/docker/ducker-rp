@@ -22,6 +22,7 @@
 # Macs, bash 3.2.57.
 #
 DOCKER=docker
+PYTHON=python3
 
 script_path="${0}"
 
@@ -266,7 +267,7 @@ setup_custom_ducktape() {
     docker_run ducker01 "${image_name}"
     local running_container="$(docker ps -f=network=ducknet -q)"
     must_do -v -o ${DOCKER} cp "${custom_ducktape}" "${running_container}:/opt/ducktape"
-    ${DOCKER} exec --user=root ducker01 bash -c 'set -x && cd /opt/v/tests && sudo python ./setup.py develop install && cd /opt/ducktape && sudo python ./setup.py develop install'
+    ${DOCKER} exec --user=root ducker01 bash -c 'set -x && cd /opt/v/tests && sudo ${PYTHON} ./setup.py develop install && cd /opt/ducktape && sudo ${PYTHON} ./setup.py develop install'
     [[ $? -ne 0 ]] && die "failed to install the new ducktape."
     must_do -v -o ${DOCKER} commit ducker01 "${image_name}"
     must_do -v ${DOCKER} kill "${running_container}"

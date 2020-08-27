@@ -37,7 +37,7 @@ class WaitForLocalConsumerTest(RedpandaTest):
                 return False
             curr = self._consumer.offset
             consumed = [curr[p] - o for p, o in start.items()]
-            self.logger.debug("Consumer progress: %s", consumed)
+            self.logger.debug(f"Consumer progress: {consumed}")
             return all(c > WaitForLocalConsumerTest.NUM_RECORDS
                        for c in consumed)
 
