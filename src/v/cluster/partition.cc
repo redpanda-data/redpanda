@@ -1,6 +1,7 @@
 #include "cluster/partition.h"
 
 #include "cluster/logger.h"
+#include "prometheus/prometheus_sanitize.h"
 
 namespace cluster {
 
@@ -13,6 +14,42 @@ partition::partition(consensus_ptr r)
 }
 
 ss::future<> partition::start() {
+    if (!config::shard_local_cfg().disable_metrics()) {
+        namespace sm = ss::metrics;
+
+        auto ns_label = sm::label("namespace");
+        auto topic_label = sm::label("topic");
+        auto partition_label = sm::label("partition");
+        auto ntp = _raft->ntp();
+
+        const std::vector<sm::label_instance> labels = {
+          ns_label(ntp.ns()),
+          topic_label(ntp.tp.topic()),
+          partition_label(ntp.tp.partition()),
+        };
+
+        _metrics.add_group(
+          prometheus_sanitize::metrics_name("cluster:partition"),
+          {
+            sm::make_gauge(
+              "leader",
+              [this] { return is_leader() ? 1 : 0; },
+              sm::description(
+                "Flag indicating if this partition instance is a leader"),
+              labels),
+            sm::make_gauge(
+              "last_stable_offset",
+              [this] { return last_stable_offset(); },
+              sm::description("Last stable offset"),
+              labels),
+            sm::make_gauge(
+              "committed_offset",
+              [this] { return committed_offset(); },
+              sm::description("Committed offset"),
+              labels),
+          });
+    }
+
     auto f = _raft->start();
 
     if (_nop_stm != nullptr) {
