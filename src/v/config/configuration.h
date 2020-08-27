@@ -24,6 +24,7 @@ struct configuration final : public config_store {
     property<uint64_t> compacted_log_segment_size;
     // Network
     property<unresolved_address> rpc_server;
+    property<tls_config> rpc_server_tls;
     // Coproc
     property<bool> enable_coproc;
     // Raft
