@@ -3,6 +3,7 @@
 #include "cluster/errc.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
+#include "config/tls_config.h"
 #include "outcome_future_utils.h"
 #include "rpc/connection_cache.h"
 
@@ -43,7 +44,8 @@ std::vector<topic_result> create_topic_results(
 ss::future<> update_broker_client(
   ss::sharded<rpc::connection_cache>&,
   model::node_id node,
-  unresolved_address addr);
+  unresolved_address addr,
+  config::tls_config);
 ss::future<>
 remove_broker_client(ss::sharded<rpc::connection_cache>&, model::node_id);
 
@@ -57,8 +59,10 @@ auto with_client(
   ss::sharded<rpc::connection_cache>& cache,
   model::node_id id,
   unresolved_address addr,
+  config::tls_config tls_config,
   Func&& f) {
-    return update_broker_client(cache, id, std::move(addr))
+    return update_broker_client(
+             cache, id, std::move(addr), std::move(tls_config))
       .then([id, &cache, f = std::forward<Func>(f)]() mutable {
           return cache.local().with_node_client<Proto, Func>(
             ss::this_shard_id(), id, std::forward<Func>(f));
