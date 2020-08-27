@@ -37,6 +37,13 @@ configuration::configuration()
       "IpAddress and port for RPC server",
       required::no,
       unresolved_address("127.0.0.1", 33145))
+  , rpc_server_tls(
+      *this,
+      "rpc_server_tls",
+      "TLS configuration for RPC server",
+      required::no,
+      tls_config(),
+      tls_config::validate)
   , enable_coproc(
       *this, "enable_coproc", "Enable coprocessing mode", required::no, false)
   , node_id(
