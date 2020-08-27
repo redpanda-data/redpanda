@@ -26,7 +26,7 @@ setup(
         'absl-py', 'ansible', 'click', 'crc32c', 'docker', 'docker-compose',
         'gitpython', 'google-cloud-build', 'Jinja2', 'jmespath', 'paramiko',
         'peewee', 'pylddwrap', 'pyyaml', 'requests', 'selinux', 'yapf',
-        'peewee', 'psutil'
+        'peewee', 'psutil', 'pyjks'
     ],
     scripts=[],
     entry_points={
