@@ -339,6 +339,10 @@ void application::wire_up_services() {
     auto rpc_server_addr
       = config::shard_local_cfg().rpc_server().resolve().get0();
     rpc_cfg.addrs.push_back(rpc_server_addr);
+    rpc_cfg.credentials = config::shard_local_cfg()
+                            .rpc_server_tls()
+                            .get_credentials_builder()
+                            .get0();
     syschecks::systemd_message("Starting internal RPC {}", rpc_cfg);
     construct_service(_rpc, rpc_cfg).get();
 

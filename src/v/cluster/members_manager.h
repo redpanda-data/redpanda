@@ -82,6 +82,7 @@ private:
     ss::sharded<partition_allocator>& _allocator;
     ss::sharded<storage::api>& _storage;
     ss::sharded<ss::abort_source>& _as;
+    config::tls_config _rpc_tls_config;
     ss::gate _gate;
 };
 } // namespace cluster
