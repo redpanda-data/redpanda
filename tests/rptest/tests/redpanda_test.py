@@ -10,13 +10,15 @@ class RedpandaTest(Test):
                  test_context,
                  num_brokers=3,
                  extra_rp_conf=dict(),
-                 topics=None):
+                 topics=None,
+                 log_level='info'):
         super(RedpandaTest, self).__init__(test_context)
 
         self.redpanda = RedpandaService(test_context,
                                         num_brokers=num_brokers,
                                         extra_rp_conf=extra_rp_conf,
-                                        topics=topics)
+                                        topics=topics,
+                                        log_level=log_level)
 
     def setUp(self):
         self.redpanda.start()
