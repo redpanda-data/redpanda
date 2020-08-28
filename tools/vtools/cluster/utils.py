@@ -144,12 +144,23 @@ def _start_single_node(id, cores_per_node, mem_per_node, log_level, vconfig,
         cfg = {'rpc_server_tls': tls_cfg}
         rpk.set_config_json('redpanda', cfg)
 
+        admin_api_tls = {
+            'cert_file': cert_file,
+            'enabled': True,
+            'key_file': key_file,
+            'require_client_auth': False
+        }
+
+        cfg = {'admin_api_tls': admin_api_tls}
+        rpk.set_config_json('redpanda', cfg)
     else:
         tls_cfg = {'enabled': False}
 
         cfg = {'kafka_api_tls': tls_cfg}
         rpk.set_config_json('redpanda', cfg)
         cfg = {'rpc_server_tls': tls_cfg}
+        rpk.set_config_json('redpanda', cfg)
+        cfg = {'admin_api_tls': tls_cfg}
         rpk.set_config_json('redpanda', cfg)
 
     log_dir = os.path.join(cluster_dir, 'logs')
