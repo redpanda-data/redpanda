@@ -1,5 +1,7 @@
 import os
 import signal
+import tempfile
+import shutil
 
 import yaml
 from ducktape.services.service import Service
@@ -219,6 +221,16 @@ class RedpandaService(Service):
             s = self.node_storage(node)
             store.add_node(s)
         return store
+
+    def copy_data(self, dest, node):
+        # after copying, move all files up a directory level so the caller does
+        # not need to know what the name of the storage directory is.
+        with tempfile.TemporaryDirectory() as d:
+            node.account.copy_from(RedpandaService.DATA_DIR, d)
+            data_dir = os.path.basename(RedpandaService.DATA_DIR)
+            data_dir = os.path.join(d, data_dir)
+            for fn in os.listdir(data_dir):
+                shutil.move(os.path.join(data_dir, fn), dest)
 
     def brokers(self, limit=None):
         brokers = ",".join(
