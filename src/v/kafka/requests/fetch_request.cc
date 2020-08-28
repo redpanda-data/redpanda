@@ -239,6 +239,7 @@ make_partition_response_error(error_code error) {
       .error = error,
       .high_watermark = model::offset(0),
       .last_stable_offset = model::offset(0),
+      .record_set = iobuf(),
     };
 }
 
