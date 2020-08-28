@@ -64,6 +64,10 @@ class Batch:
         data = f.read(HEADER_SIZE)
         if len(data) == HEADER_SIZE:
             header = Header(*struct.unpack(HDR_FMT_RP, data))
+            # it appears that we may have hit a truncation point if all of the
+            # fields in the header are zeros
+            if all(map(lambda v: v == 0, header)):
+                return
             records_size = header.batch_size - HEADER_SIZE
             data = f.read(records_size)
             assert len(data) == records_size
