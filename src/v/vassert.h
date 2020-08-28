@@ -33,6 +33,6 @@ static dummyassert g_assert_log;
               ##args);                                                         \
             ::detail::g_assert_log.l.error(                                    \
               "Backtrace below:\n{}", ss::current_backtrace());                \
-            std::terminate();                                                  \
+            __builtin_trap();                                                  \
         }                                                                      \
     } while (0)
