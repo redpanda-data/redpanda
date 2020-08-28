@@ -1,6 +1,7 @@
 import asyncio
 import uuid
 import random
+import time
 
 from gobekli.kvapi import RequestCanceled, RequestTimedout
 from gobekli.consensus import LinearizabilityRegisterChecker, Violation
@@ -37,10 +38,10 @@ class StatDumper:
         self.is_active = True
 
     async def start(self):
-        duration_s = 0
+        started = time.time()
         while self.is_active:
             counters = self.stat.reset()
-            line = f"{duration_s}"
+            line = str(int(time.time() - started))
             for key in self.keys:
                 if key in counters:
                     line += "\t" + str(counters[key])
@@ -48,7 +49,6 @@ class StatDumper:
                     line += "\t" + str(0)
             log_stat(line)
             await asyncio.sleep(1)
-            duration_s += 1
 
     def stop(self):
         self.is_active = False
