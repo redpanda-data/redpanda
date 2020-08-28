@@ -98,7 +98,10 @@ class RpkTool:
                 f.seek(0)
 
             # rpk logs everything on STDERR by default
-            p = subprocess.Popen(cmd, stderr=subprocess.PIPE, stdin=f, text=True)
+            p = subprocess.Popen(cmd,
+                                 stderr=subprocess.PIPE,
+                                 stdin=f,
+                                 text=True)
             start_time = time.time()
 
             ret = None
