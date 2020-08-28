@@ -1,10 +1,14 @@
+import os
 import collections
+import tempfile
 from ducktape.mark import matrix
 from ducktape.mark.resource import cluster
 from ducktape.utils.util import wait_until
 
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.kafka_cli_tools import KafkaCliTools
+
+from vtools.vlib import storage as vstorage
 
 
 class PrefixTruncateRecoveryTest(RedpandaTest):
@@ -107,4 +111,17 @@ class PrefixTruncateRecoveryTest(RedpandaTest):
         #  1. collect segment files from quroum members
         #  2. verify byte-for-byte equivalence of common range
         #  3. success
-        pass
+        with tempfile.TemporaryDirectory() as d:
+            self.redpanda.copy_data(d, node)
+            store = vstorage.Store(d)
+            for ntp in store.ntps:
+                for path in ntp.segments:
+                    try:
+                        s = vstorage.Segment(path)
+                    except vstorage.CorruptBatchError as e:
+                        print("corruption detected in batch {} of segment: {}".
+                              format(e.batch.index, path))
+                        print("header of corrupt batch: {}".format(
+                            e.batch.header))
+                        continue
+                    print("successfully decoded segment: {}".format(path))
