@@ -495,6 +495,12 @@ ss::future<> consensus::start() {
           })
           .then([this](configuration_bootstrap_state st) {
               auto lstats = _log.offsets();
+              // if log term is newer than the one comming from voted_for state,
+              // we reset voted_for state
+              if (lstats.dirty_offset_term > _term) {
+                  _term = lstats.dirty_offset_term;
+                  _voted_for = {};
+              }
               vlog(
                 _ctxlog.info,
                 "Recovered, log offsets: {}, term:{}",
