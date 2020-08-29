@@ -2,11 +2,13 @@ import os
 import signal
 import tempfile
 import shutil
+import requests
 
 import yaml
 from ducktape.services.service import Service
 from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.utils.util import wait_until
+from prometheus_client.parser import text_string_to_metric_families
 
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.kafka_cat import KafkaCat
@@ -237,3 +239,10 @@ class RedpandaService(Service):
             map(lambda n: "{}:9092".format(n.account.hostname),
                 self.nodes[:limit]))
         return brokers
+
+    def metrics(self, node):
+        assert node in self.nodes
+        url = f"http://{node.account.hostname}:9644/metrics"
+        resp = requests.get(url)
+        assert resp.status_code == 200
+        return text_string_to_metric_families(resp.text)
