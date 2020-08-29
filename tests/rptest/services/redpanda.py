@@ -9,6 +9,7 @@ import yaml
 from ducktape.services.service import Service
 from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.utils.util import wait_until
+from ducktape.cluster.cluster import ClusterNode
 from prometheus_client.parser import text_string_to_metric_families
 
 from rptest.clients.kafka_cli_tools import KafkaCliTools
@@ -179,6 +180,13 @@ class RedpandaService(Service):
             RedpandaService.CONFIG_FILE))
         self.logger.debug(conf)
         node.account.create_file(RedpandaService.CONFIG_FILE, conf)
+
+    def restart_nodes(self, nodes):
+        nodes = [nodes] if isinstance(nodes, ClusterNode) else nodes
+        for node in nodes:
+            self.stop_node(node)
+        for node in nodes:
+            self.start_node(node)
 
     def registered(self, node):
         idx = self.idx(node)
