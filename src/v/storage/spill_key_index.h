@@ -32,7 +32,7 @@ public:
     spill_key_index& operator=(const spill_key_index&) = delete;
     spill_key_index(spill_key_index&&) noexcept = default;
     spill_key_index& operator=(spill_key_index&&) noexcept = delete;
-    ~spill_key_index() override = default;
+    ~spill_key_index() override;
 
     // public
 

@@ -6,6 +6,7 @@
 #include "storage/compacted_index_writer.h"
 #include "storage/logger.h"
 #include "utils/vint.h"
+#include "vassert.h"
 #include "vlog.h"
 
 #include <seastar/core/file.hh>
@@ -27,6 +28,13 @@ spill_key_index::spill_key_index(
   : compacted_index_writer::impl(std::move(name))
   , _appender(std::move(index_file), segment_appender::options(p, 1))
   , _max_mem(max_memory) {}
+
+spill_key_index::~spill_key_index() {
+    vassert(
+      _midx.empty(),
+      "must drain all keys before destroy spill_key_index, keys left:{}",
+      _midx.size());
+}
 
 ss::future<>
 spill_key_index::index(bytes_view v, model::offset base_offset, int32_t delta) {
@@ -75,7 +83,11 @@ ss::future<>
 spill_key_index::index(bytes&& b, model::offset base_offset, int32_t delta) {
     if (auto it = _midx.find(b); it != _midx.end()) {
         auto& pair = it->second;
-        if (base_offset > pair.base_offset) {
+        // must use both base+delta, since we only want to keep the latest
+        // which might be inserted into the batch multiple times by client
+        const auto record = base_offset + model::offset(delta);
+        const auto current = pair.base_offset + model::offset(pair.delta);
+        if (record > current) {
             pair.base_offset = base_offset;
             pair.delta = delta;
         }
