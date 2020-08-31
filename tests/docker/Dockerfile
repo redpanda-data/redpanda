@@ -72,7 +72,8 @@ RUN pip3 install --upgrade \
     ipaddress \
     enum34 \
     pyyaml \
-    requests
+    requests \
+    prometheus_client
 RUN pip3 install --upgrade git+https://github.com/confluentinc/ducktape@ecaf7173c6909d36f7ee4a2f6656b128212f8865
 
 # Set up ssh

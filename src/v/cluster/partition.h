@@ -7,6 +7,8 @@
 #include "raft/types.h"
 #include "storage/types.h"
 
+#include <seastar/core/metrics_registration.hh>
+
 namespace cluster {
 class partition_manager;
 
@@ -85,6 +87,8 @@ private:
     consensus_ptr _raft;
     std::unique_ptr<raft::log_eviction_stm> _nop_stm;
     ss::abort_source _as;
+    ss::metrics::metric_groups _metrics;
+
     friend std::ostream& operator<<(std::ostream& o, const partition& x);
 };
 } // namespace cluster
