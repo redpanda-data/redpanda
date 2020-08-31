@@ -515,18 +515,20 @@ ss::future<> consensus::start() {
               auto f = _configuration_manager.truncate(
                 details::next_offset(lstats.dirty_offset));
 
-              if (st.config_batches_seen() == 0) {
-                  return f;
+              /**
+               * We read some batches from the log and have to update the
+               * configuration manager.
+               */
+              if (st.config_batches_seen() > 0) {
+                  f = f.then([this, st = std::move(st)]() mutable {
+                      return _configuration_manager.add(
+                        st.prev_log_index(), st.release_config());
+                  });
               }
 
-              return f
-                .then([this, st = std::move(st)]() mutable {
-                    return _configuration_manager.add(
-                      st.prev_log_index(), st.release_config());
-                })
-                .then([this] {
-                    update_follower_stats(_configuration_manager.get_latest());
-                });
+              return f.then([this] {
+                  update_follower_stats(_configuration_manager.get_latest());
+              });
           })
           .then([this] {
               auto next_election = clock_type::now();
