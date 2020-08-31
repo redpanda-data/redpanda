@@ -129,6 +129,29 @@ disk_log_appender::append_batch_to_segment(const model::record_batch& batch) {
     });
 ```
 
+### Term handling
+
+The ghost batches may fill gap that spans across batches coming from different 
+terms.
+
+Consider an example:
+
+```plain
+              |- term 1 --|                       |- term 3 ...
+Leader log:   [0,10][11,20]<--gap from 21 to 32-->[33,40]
+```
+
+In this example batches in range `[0,20]` come from term `1` while batches in
+range `[33,...]` from term 3. We are unable to determine what was the term of
+that were removed during compaction process.
+In order to guarantee correctness we assume that the gap has term of batch that
+immediately follows it in the log. (In current example ghost batch in range
+`[21,32]` would have term `3`). An alternative would be to use term of a batch
+immediately preceding the gap in log, however the ghost batch may be the first
+batch in the range of batches, then it term couldn't be established.
+This problem do not exists for the proposed approach as the gap will never exist
+as a last element in a series of batches delivered for recovery.
+
 ## Drawbacks
 
 The main drawback of the solution is an overhead introduced by gap filling
