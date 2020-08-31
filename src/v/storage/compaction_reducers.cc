@@ -89,8 +89,8 @@ Roaring compaction_key_reducer::end_of_stream() {
 ss::future<ss::stop_iteration>
 index_filtered_copy_reducer::operator()(compacted_index::entry&& e) {
     using stop_t = ss::stop_iteration;
-    const bool should_add = _bm.contains(_i);
-    ++_i;
+    const bool should_add = _bm.contains(_natural_index);
+    ++_natural_index;
     if (should_add) {
         bytes_view bv = e.key;
         return _writer->index(bv, e.offset, e.delta)
@@ -195,55 +195,56 @@ copy_data_segment_reducer::filter(model::record_batch&& batch) {
     h.first_timestamp = first_time;
     h.max_timestamp = last_time;
     h.record_count = rec_count;
-    h.size_bytes = model::recompute_record_batch_size(new_batch);
-    h.crc = model::crc_record_batch(new_batch);
-    h.header_crc = model::internal_header_only_crc(h);
+    reset_size_checksum_metadata(new_batch);
     return new_batch;
 }
-ss::future<ss::stop_iteration>
-copy_data_segment_reducer::do_compaction(model::record_batch&& b) {
+ss::future<ss::stop_iteration> copy_data_segment_reducer::do_compaction(
+  model::compression original, model::record_batch&& b) {
     using stop_t = ss::stop_iteration;
     auto to_copy = filter(std::move(b));
     if (to_copy == std::nullopt) {
         return ss::make_ready_future<stop_t>(stop_t::no);
     }
-    return ss::do_with(
-             std::move(to_copy.value()),
-             [this](model::record_batch& batch) {
-                 auto const start_offset = _appender->file_byte_offset();
-                 auto const header_size = batch.header().size_bytes;
-                 _acc += header_size;
-                 if (_idx.maybe_index(
-                       _acc,
-                       32_KiB,
-                       start_offset,
-                       batch.base_offset(),
-                       batch.last_offset(),
-                       batch.header().first_timestamp,
-                       batch.header().max_timestamp)) {
-                     _acc = 0;
-                 }
-                 return storage::write(*_appender, batch)
-                   .then([this, start_offset, header_size] {
-                       vassert(
-                         _appender->file_byte_offset()
-                           == start_offset + header_size,
-                         "Size must be deterministic. Expected:{} == {}",
-                         _appender->file_byte_offset(),
-                         start_offset + header_size);
-                   });
-             })
+    return compress_batch(original, std::move(to_copy.value()))
+      .then([this](model::record_batch&& b) {
+          return ss::do_with(std::move(b), [this](model::record_batch& batch) {
+              auto const start_offset = _appender->file_byte_offset();
+              auto const header_size = batch.header().size_bytes;
+              _acc += header_size;
+              if (_idx.maybe_index(
+                    _acc,
+                    32_KiB,
+                    start_offset,
+                    batch.base_offset(),
+                    batch.last_offset(),
+                    batch.header().first_timestamp,
+                    batch.header().max_timestamp)) {
+                  _acc = 0;
+              }
+              return storage::write(*_appender, batch)
+                .then([this, start_offset, header_size] {
+                    vassert(
+                      _appender->file_byte_offset()
+                        == start_offset + header_size,
+                      "Size must be deterministic. Expected:{} == {}",
+                      _appender->file_byte_offset(),
+                      start_offset + header_size);
+                });
+          });
+      })
       .then([] { return ss::make_ready_future<stop_t>(stop_t::no); });
 }
 
 ss::future<ss::stop_iteration>
 copy_data_segment_reducer::operator()(model::record_batch&& b) {
+    const auto comp = b.header().attrs.compression();
     if (!b.compressed()) {
-        return do_compaction(std::move(b));
+        return do_compaction(comp, std::move(b));
     }
-    return decompress_batch(std::move(b)).then([this](model::record_batch&& b) {
-        return do_compaction(std::move(b));
-    });
+    return decompress_batch(std::move(b))
+      .then([comp, this](model::record_batch&& b) {
+          return do_compaction(comp, std::move(b));
+      });
 }
 
 ss::future<ss::stop_iteration>
