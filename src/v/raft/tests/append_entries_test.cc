@@ -8,6 +8,7 @@
 #include "raft/types.h"
 #include "storage/record_batch_builder.h"
 #include "storage/tests/utils/disk_log_builder.h"
+#include "storage/tests/utils/random_batch.h"
 
 #include <system_error>
 
@@ -344,14 +345,26 @@ FIXTURE_TEST(test_compacted_log_recovery, raft_test_fixture) {
         std::move(overrides)));
     storage::disk_log_builder builder(std::move(cfg));
 
-    builder | storage::start(std::move(ntp_config)) | storage::add_segment(0)
-      | storage::add_random_batch(0, 1, storage::maybe_compress_batches::no)
-      | storage::add_random_batch(1, 5, storage::maybe_compress_batches::no)
-      // gap from 6 to 19
-      | storage::add_random_batch(20, 30, storage::maybe_compress_batches::no)
-      // gap from 50 to 67
-      | storage::add_random_batch(68, 11, storage::maybe_compress_batches::no)
-      | storage::stop();
+    builder | storage::start(std::move(ntp_config)) | storage::add_segment(0);
+    auto batch = storage::test::make_random_batch(model::offset(0), 1, false);
+    builder.add_batch(std::move(batch)).get0();
+    // roll term - this was triggering ch1284 (ghost batches influencing
+    // segments roll)
+    builder.add_segment(model::offset(1), model::term_id(1)).get0();
+    batch = storage::test::make_random_batch(model::offset(1), 5, false);
+    batch.set_term(model::term_id(1));
+    builder.add_batch(std::move(batch)).get0();
+    // gap from 6 to 19
+    batch = storage::test::make_random_batch(model::offset(20), 30, false);
+    batch.set_term(model::term_id(1));
+    builder.add_batch(std::move(batch)).get0();
+    // gap from 50 to 67, at term boundary
+    builder.add_segment(model::offset(68), model::term_id(2)).get0();
+    batch = storage::test::make_random_batch(model::offset(68), 11, false);
+    batch.set_term(model::term_id(2));
+    builder.add_batch(std::move(batch)).get0();
+    builder.get_log().flush().get0();
+    builder.stop().get0();
 
     gr.enable_all();
     auto leader_id = wait_for_group_leader(gr);
