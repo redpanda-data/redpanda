@@ -395,12 +395,18 @@ ss::future<> do_self_compact_segment(
             });
       })
       .then([cfg, s](std::tuple<index_state, ss::rwlock::holder> h) {
-          auto compacted_file = data_segment_staging_name(s);
-          return do_swap_data_file_handles(compacted_file, s, cfg)
+          return s->index()
+            .drop_all_data()
+            .then([s, cfg] {
+                auto compacted_file = data_segment_staging_name(s);
+                return do_swap_data_file_handles(compacted_file, s, cfg);
+            })
             .then([h = std::move(h), s]() mutable {
                 auto& [idx, lock] = h;
                 s->index().swap_index_state(std::move(idx));
                 s->force_set_commit_offset_from_index();
+                // FIXME(noah): crashes if we evic the cache
+                // s->cache().purge();
                 return s->index().flush().finally([l = std::move(lock)] {});
             });
       });
