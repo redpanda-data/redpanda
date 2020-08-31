@@ -65,53 +65,80 @@ ss::future<> remove_broker_client(
       });
 }
 
+ss::future<> maybe_create_tcp_client(
+  rpc::connection_cache& cache,
+  model::node_id node,
+  unresolved_address rpc_address,
+  config::tls_config tls_config) {
+    return rpc_address.resolve().then([node,
+                                       &cache,
+                                       tls_config = std::move(tls_config)](
+                                        ss::socket_address new_addr) mutable {
+        auto f = ss::now();
+        if (cache.contains(node)) {
+            // client is already there, check if configuration changed
+            if (cache.get(node)->server_address() == new_addr) {
+                // If configuration did not changed, do nothing
+                return f;
+            }
+            // configuration changed, first remove the client
+            f = cache.remove(node);
+        }
+        // there is no client in cache, create new
+        return f.then([&cache,
+                       node,
+                       new_addr,
+                       tls_config = std::move(tls_config)]() mutable {
+            return std::move(tls_config)
+              .get_credentials_builder()
+              .then([&cache, node, new_addr](
+                      std::optional<ss::tls::credentials_builder> credentials) {
+                  return cache.emplace(
+                    node,
+                    rpc::transport_configuration{
+                      .server_addr = new_addr,
+                      .credentials = std::move(credentials),
+                      .disable_metrics = rpc::metrics_disabled(
+                        config::shard_local_cfg().disable_metrics)},
+                    rpc::make_exponential_backoff_policy<rpc::clock_type>(
+                      std::chrono::seconds(1), std::chrono::seconds(60)));
+              });
+        });
+    });
+}
+
 ss::future<> add_one_tcp_client(
   ss::shard_id owner,
   ss::sharded<rpc::connection_cache>& clients,
   model::node_id node,
-  unresolved_address addr) {
+  unresolved_address addr,
+  config::tls_config tls_config) {
     return clients.invoke_on(
       owner,
-      [node, rpc_address = std::move(addr)](rpc::connection_cache& cache) {
-          return rpc_address.resolve().then(
-            [node, &cache](ss::socket_address new_addr) {
-                auto f = ss::make_ready_future<>();
-                if (cache.contains(node)) {
-                    // client is already there, check if configuration changed
-                    if (cache.get(node)->server_address() == new_addr) {
-                        // If configuration did not changed, do nothing
-                        return f;
-                    }
-                    // configuration changed, first remove the client
-                    f = cache.remove(node);
-                }
-                // there is no client in cache, create new
-                return f.then([&cache, node, new_addr = std::move(new_addr)]() {
-                    return cache.emplace(
-                      node,
-                      rpc::transport_configuration{
-                        .server_addr = new_addr,
-                        .disable_metrics = rpc::metrics_disabled(
-                          config::shard_local_cfg().disable_metrics)},
-                      rpc::make_exponential_backoff_policy<rpc::clock_type>(
-                        std::chrono::seconds(1), std::chrono::seconds(60)));
-                });
-            });
+      [node, rpc_address = std::move(addr), tls_config = std::move(tls_config)](
+        rpc::connection_cache& cache) mutable {
+          return maybe_create_tcp_client(
+            cache, node, std::move(rpc_address), std::move(tls_config));
       });
 }
 
 ss::future<> update_broker_client(
   ss::sharded<rpc::connection_cache>& clients,
   model::node_id node,
-  unresolved_address addr) {
+  unresolved_address addr,
+  config::tls_config tls_config) {
     auto shards = virtual_nodes(node);
     vlog(clusterlog.debug, "Adding {} TCP client on shards:{}", node, shards);
     return ss::do_with(
       std::move(shards),
-      [&clients, node, addr](std::vector<ss::shard_id>& shards) {
+      [&clients, node, addr, tls_config = std::move(tls_config)](
+        std::vector<ss::shard_id>& shards) mutable {
           return ss::do_for_each(
-            shards, [node, addr, &clients](ss::shard_id shard) {
-                return add_one_tcp_client(shard, clients, node, addr);
+            shards,
+            [node, addr, &clients, tls_config = std::move(tls_config)](
+              ss::shard_id shard) mutable {
+                return add_one_tcp_client(
+                  shard, clients, node, addr, tls_config);
             });
       });
 }
