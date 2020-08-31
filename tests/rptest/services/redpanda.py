@@ -2,15 +2,22 @@ import os
 import signal
 import tempfile
 import shutil
+import requests
+import collections
 
 import yaml
 from ducktape.services.service import Service
 from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.utils.util import wait_until
+from ducktape.cluster.cluster import ClusterNode
+from prometheus_client.parser import text_string_to_metric_families
 
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.services.storage import ClusterStorage, NodeStorage
+
+Partition = collections.namedtuple('Partition',
+                                   ['index', 'leader', 'replicas'])
 
 
 class RedpandaService(Service):
@@ -174,6 +181,13 @@ class RedpandaService(Service):
         self.logger.debug(conf)
         node.account.create_file(RedpandaService.CONFIG_FILE, conf)
 
+    def restart_nodes(self, nodes):
+        nodes = [nodes] if isinstance(nodes, ClusterNode) else nodes
+        for node in nodes:
+            self.stop_node(node)
+        for node in nodes:
+            self.start_node(node)
+
     def registered(self, node):
         idx = self.idx(node)
         self.logger.debug("Checking if broker %d/%s is registered", idx, node)
@@ -237,3 +251,27 @@ class RedpandaService(Service):
             map(lambda n: "{}:9092".format(n.account.hostname),
                 self.nodes[:limit]))
         return brokers
+
+    def metrics(self, node):
+        assert node in self.nodes
+        url = f"http://{node.account.hostname}:9644/metrics"
+        resp = requests.get(url)
+        assert resp.status_code == 200
+        return text_string_to_metric_families(resp.text)
+
+    def partitions(self, topic):
+        """
+        Return partition metadata for the topic.
+        """
+        kc = KafkaCat(self)
+        md = kc.metadata()
+        topic = next(filter(lambda t: t["topic"] == topic, md["topics"]))
+
+        def make_partition(p):
+            index = p["partition"]
+            leader_id = p["leader"]
+            leader = None if leader_id == -1 else self.get_node(leader_id)
+            replicas = map(lambda r: self.get_node(r["id"]), p["replicas"])
+            return Partition(index, leader, replicas)
+
+        return map(make_partition, topic["partitions"])
