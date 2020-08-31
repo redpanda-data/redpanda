@@ -432,7 +432,8 @@ ducker_test() {
     # Give ducktape access to our vtools library
     extra_python_path="/opt/v/build/venv/v/lib/python3.8/site-packages/:/opt/v/build/venv/v/lib64/python3.8/site-packages/:/opt/v/tools"
 
-    cmd="env && cd /opt/v && ducktape --cluster-file /opt/v/tests/docker/build/cluster.json $args"
+    cmd="cd /opt/v && ducktape --cluster-file /opt/v/tests/docker/build/cluster.json \
+         --results-root ${v_dir}/build/ducktape-results $args"
     echo "docker exec -e PYTHONPATH=${extra_python_path} ducker01 bash -c \"${cmd}\""
     exec ${DOCKER} exec -e PYTHONPATH=${extra_python_path} --user=ducker ducker01 bash -c "${cmd}"
 }
