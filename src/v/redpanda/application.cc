@@ -164,6 +164,24 @@ void application::configure_admin_server() {
     }
     syschecks::systemd_message("constructing http server");
     construct_service(_admin, ss::sstring("admin")).get();
+    // configure admin API TLS
+    if (conf.admin_api_tls().is_enabled()) {
+        _admin
+          .invoke_on_all([](ss::http_server& server) {
+              return config::shard_local_cfg()
+                .admin_api_tls()
+                .get_credentials_builder()
+                .then([&server](
+                        std::optional<ss::tls::credentials_builder> builder) {
+                    if (!builder) {
+                        return;
+                    }
+                    server.set_tls_credentials(
+                      builder->build_server_credentials());
+                });
+          })
+          .get0();
+    }
     ss::prometheus::config metrics_conf;
     metrics_conf.metric_help = "redpanda metrics";
     metrics_conf.prefix = "vectorized";
@@ -339,6 +357,10 @@ void application::wire_up_services() {
     auto rpc_server_addr
       = config::shard_local_cfg().rpc_server().resolve().get0();
     rpc_cfg.addrs.push_back(rpc_server_addr);
+    rpc_cfg.credentials = config::shard_local_cfg()
+                            .rpc_server_tls()
+                            .get_credentials_builder()
+                            .get0();
     syschecks::systemd_message("Starting internal RPC {}", rpc_cfg);
     construct_service(_rpc, rpc_cfg).get();
 

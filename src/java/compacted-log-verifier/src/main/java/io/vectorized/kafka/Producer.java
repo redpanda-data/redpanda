@@ -46,6 +46,7 @@ public class Producer {
             .BOOTSTRAP_SERVERS_CONFIG,
         config.brokers());
 
+    config.securityProperties().ifPresent(properties::putAll);
     this.stats = new Stats(config.recordsCount(), 2000, "producer");
     this.generator = new RecordsGenerator(
         config.keyCardinality(), config.payloadSize(), config.keySize());
@@ -57,6 +58,7 @@ public class Producer {
     final Properties adminProperties = new Properties();
     adminProperties.setProperty(
         AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, config.brokers());
+    config.securityProperties().ifPresent(adminProperties::putAll);
 
     try (AdminClient admin = AdminClient.create(adminProperties)) {
       admin.listTopics()

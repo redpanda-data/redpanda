@@ -8,6 +8,7 @@ import shutil
 import pathlib
 import random
 
+from ..vlib import tls
 from ..vlib import config
 
 from absl import logging
@@ -32,23 +33,31 @@ def cluster():
 @click.option('--clang',
               help='Build clang and install in <build-root>/llvm/llvm-bin.',
               is_flag=True)
+@click.option('--secured', help='Enable TLS ', is_flag=True)
 @click.option('--nodes',
               multiple=True,
               help=('Nodes to start'),
               default=['1', '2', '3'])
-def start(log_level, cores_per_node, mem_per_node, build_type, clang, nodes):
+def start(log_level, cores_per_node, mem_per_node, build_type, clang, secured,
+          nodes):
     vconfig = config.VConfig(build_type=build_type, clang=clang)
     running = utils._get_running_nodes()
+    secrets_provider = None
+    if secured:
+        secrets_provider = tls.SecretsProvider(logging)
+        utils._create_common_secrets(secrets_provider, vconfig)
     for id in nodes:
         if id in running:
             logging.info(f"node {id} is already running")
             return
+
         logging.info(f"starting node local redpanda - {id}")
         utils._start_single_node(id=id,
                                  log_level=log_level,
                                  cores_per_node=cores_per_node,
                                  mem_per_node=mem_per_node,
-                                 vconfig=vconfig)
+                                 vconfig=vconfig,
+                                 secrets_provider=secrets_provider)
 
 
 @cluster.command(short_help='Stop local cluster')

@@ -24,6 +24,7 @@ struct configuration final : public config_store {
     property<uint64_t> compacted_log_segment_size;
     // Network
     property<unresolved_address> rpc_server;
+    property<tls_config> rpc_server_tls;
     // Coproc
     property<bool> enable_coproc;
     // Raft
@@ -38,6 +39,7 @@ struct configuration final : public config_store {
     property<tls_config> kafka_api_tls;
     property<bool> use_scheduling_groups;
     property<unresolved_address> admin;
+    property<tls_config> admin_api_tls;
     property<bool> enable_admin_api;
     property<ss::sstring> admin_api_doc_dir;
     property<int16_t> default_num_windows;

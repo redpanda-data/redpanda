@@ -37,6 +37,13 @@ configuration::configuration()
       "IpAddress and port for RPC server",
       required::no,
       unresolved_address("127.0.0.1", 33145))
+  , rpc_server_tls(
+      *this,
+      "rpc_server_tls",
+      "TLS configuration for RPC server",
+      required::no,
+      tls_config(),
+      tls_config::validate)
   , enable_coproc(
       *this, "enable_coproc", "Enable coprocessing mode", required::no, false)
   , node_id(
@@ -93,6 +100,13 @@ configuration::configuration()
       "Address and port of admin server",
       required::no,
       unresolved_address("127.0.0.1", 9644))
+  , admin_api_tls(
+      *this,
+      "admin_api_tls",
+      "TLS configuration for admin HTTP server",
+      required::no,
+      tls_config(),
+      tls_config::validate)
   , enable_admin_api(
       *this, "enable_admin_api", "Enable the admin API", required::no, true)
   , admin_api_doc_dir(
