@@ -89,8 +89,8 @@ Roaring compaction_key_reducer::end_of_stream() {
 ss::future<ss::stop_iteration>
 index_filtered_copy_reducer::operator()(compacted_index::entry&& e) {
     using stop_t = ss::stop_iteration;
-    const bool should_add = _bm.contains(_i);
-    ++_i;
+    const bool should_add = _bm.contains(_natural_index);
+    ++_natural_index;
     if (should_add) {
         bytes_view bv = e.key;
         return _writer->index(bv, e.offset, e.delta)

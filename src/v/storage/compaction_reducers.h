@@ -76,7 +76,7 @@ public:
     void end_of_stream() {}
 
 private:
-    uint32_t _i = 0;
+    uint32_t _natural_index = 0;
     Roaring _bm;
     compacted_index_writer* _writer;
 };
