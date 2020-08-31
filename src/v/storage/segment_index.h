@@ -59,6 +59,12 @@ public:
     ss::future<> close();
     ss::future<> flush();
     ss::future<> truncate(model::offset);
+
+    /// \brief erases the underlying file and resets the index
+    /// this is used during compacted index recovery, as we must first
+    /// invalidate all indices, before we swap the data file
+    ss::future<> drop_all_data();
+
     /// \brief resets the state to 0, except for base_offset
     /// a destructive operation. Needed for node bootstrap
     void reset();

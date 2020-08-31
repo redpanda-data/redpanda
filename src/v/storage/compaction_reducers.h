@@ -76,7 +76,7 @@ public:
     void end_of_stream() {}
 
 private:
-    uint32_t _i = 0;
+    uint32_t _natural_index = 0;
     Roaring _bm;
     compacted_index_writer* _writer;
 };
@@ -103,7 +103,8 @@ public:
     storage::index_state end_of_stream() { return std::move(_idx); }
 
 private:
-    ss::future<ss::stop_iteration> do_compaction(model::record_batch&&);
+    ss::future<ss::stop_iteration>
+    do_compaction(model::compression, model::record_batch&&);
 
     bool should_keep(model::offset base, int32_t delta) const {
         const auto o = base + model::offset(delta);

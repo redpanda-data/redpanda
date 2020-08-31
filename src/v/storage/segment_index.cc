@@ -156,6 +156,11 @@ ss::future<bool> segment_index::materialize_index() {
       });
 }
 
+ss::future<> segment_index::drop_all_data() {
+    reset();
+    return _out.truncate(0);
+}
+
 ss::future<> segment_index::flush() {
     if (!_needs_persistence) {
         return ss::make_ready_future<>();

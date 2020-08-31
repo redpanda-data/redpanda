@@ -1,6 +1,7 @@
 #include "storage/parser_utils.h"
 
 #include "compression/compression.h"
+#include "model/compression.h"
 #include "model/record.h"
 #include "model/record_utils.h"
 #include "reflection/adl.h"
@@ -184,12 +185,63 @@ ss::future<model::record_batch> decompress_batch(const model::record_batch& b) {
             .then([h, &recs] {
                 auto b = model::record_batch(h, std::move(recs));
                 auto& hdr = b.header();
-                hdr.size_bytes = model::recompute_record_batch_size(b);
+                // must remove compression first!
                 hdr.attrs.remove_compression();
-                hdr.crc = model::crc_record_batch(b);
-                hdr.header_crc = model::internal_header_only_crc(hdr);
+                reset_size_checksum_metadata(b);
                 return b;
             });
       });
 }
+
+ss::future<model::record_batch>
+compress_batch(model::compression c, model::record_batch&& b) {
+    if (c == model::compression::none) {
+        vassert(
+          b.header().attrs.compression() == model::compression::none,
+          "Asked to compress a batch with `none` compression, but header "
+          "metadata is incorrect: {}",
+          b.header());
+        return ss::make_ready_future<model::record_batch>(std::move(b));
+    }
+    return ss::do_with(std::move(b), [c](model::record_batch& b) {
+        return compress_batch(c, b);
+    });
+}
+ss::future<model::record_batch>
+compress_batch(model::compression c, const model::record_batch& b) {
+    vassert(
+      c != model::compression::none,
+      "Asked to compress a batch with type `none`: {} - {}",
+      c,
+      b.header());
+    return ss::do_with(
+             iobuf{},
+             [c, &b](iobuf& buf) {
+                 return ss::do_for_each(
+                          b,
+                          [&buf](const model::record& r) {
+                              append_record_using_kafka_format(buf, r);
+                          })
+                   .then([c, &buf] {
+                       return compression::compressor::compress(buf, c);
+                   });
+             })
+      .then([c, &b](model::record_batch::records_type&& payload) {
+          auto ret = model::record_batch(b.header(), std::move(payload));
+          auto& hdr = ret.header();
+          // compression bit must be set first!
+          hdr.attrs |= c;
+          reset_size_checksum_metadata(ret);
+          return ret;
+      });
+}
+
+/// \brief resets the size, header crc and payload crc
+void reset_size_checksum_metadata(model::record_batch& ret) {
+    auto& hdr = ret.header();
+    hdr.size_bytes = model::recompute_record_batch_size(ret);
+    hdr.crc = model::crc_record_batch(ret);
+    hdr.header_crc = model::internal_header_only_crc(hdr);
+}
+
 } // namespace storage::internal
