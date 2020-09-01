@@ -1,6 +1,7 @@
 #include "raft/consensus_utils.h"
 
 #include "likely.h"
+#include "model/fundamental.h"
 #include "model/record.h"
 #include "model/timestamp.h"
 #include "raft/logger.h"
@@ -149,8 +150,8 @@ model::record_batch_reader serialize_configuration(group_configuration cfg) {
       serialize_configuration_as_batches(std::move(cfg)));
 }
 
-model::record_batch
-make_ghost_batch(model::offset start_offset, model::offset end_offset) {
+model::record_batch make_ghost_batch(
+  model::offset start_offset, model::offset end_offset, model::term_id term) {
     auto delta = end_offset - start_offset;
     auto now = model::timestamp::now();
     model::record_batch_header header = {
@@ -166,8 +167,7 @@ make_ghost_batch(model::offset start_offset, model::offset end_offset) {
       .producer_epoch = -1,
       .base_sequence = -1,
       .record_count = static_cast<int32_t>(delta() + 1),
-      .ctx = model::record_batch_header::context(
-        model::term_id(0), ss::this_shard_id())};
+      .ctx = model::record_batch_header::context(term, ss::this_shard_id())};
 
     model::record_batch batch(
       std::move(header), model::record_batch::compressed_records{});
@@ -185,8 +185,8 @@ ss::circular_buffer<model::record_batch> make_ghost_batches_in_gaps(
     for (auto& b : batches) {
         // gap
         if (b.base_offset() > expected_start) {
-            res.push_back(
-              make_ghost_batch(expected_start, prev_offset(b.base_offset())));
+            res.push_back(make_ghost_batch(
+              expected_start, prev_offset(b.base_offset()), b.term()));
         }
         expected_start = next_offset(b.last_offset());
         res.push_back(std::move(b));
