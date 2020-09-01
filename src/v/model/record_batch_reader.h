@@ -189,7 +189,9 @@ public:
       ReferenceConsumer consumer, timeout_clock::time_point timeout) && {
         auto raw = _impl.get();
         return raw->for_each_ref(std::move(consumer), timeout)
-          .finally([i = std::move(_impl)] {});
+          .finally([raw, i = std::move(_impl)]() mutable {
+              return raw->finally().finally([i = std::move(i)] {});
+          });
     }
 
     // Stops when consumer returns stop_iteration::yes or end of stream is
