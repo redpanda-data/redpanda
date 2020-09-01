@@ -70,6 +70,8 @@ public:
               });
         }
 
+        virtual ss::future<> finally() noexcept { return ss::now(); }
+
         /// Meant for non-owning iteration of the data. If you need to own the
         /// batches, please use consume() below
         template<typename ReferenceConsumer>
@@ -229,7 +231,9 @@ public:
          */
         auto raw = _impl.get();
         return raw->consume(std::move(consumer), timeout)
-          .finally([i = std::move(_impl)] {});
+          .finally([raw, i = std::move(_impl)]() mutable {
+              return raw->finally().finally([i = std::move(i)] {});
+          });
     }
 
     std::unique_ptr<impl> release() && { return std::move(_impl); }
