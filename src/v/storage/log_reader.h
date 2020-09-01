@@ -121,11 +121,17 @@ public:
     log_reader(
       std::unique_ptr<lock_manager::lease>, log_reader_config, probe&) noexcept;
 
+    ~log_reader() final {
+        vassert(!_iterator.reader, "log reader destroyed with live reader");
+    }
+
     bool is_end_of_stream() const final {
         return _iterator.next_seg == _lease->range.end();
     }
 
     ss::future<storage_t> do_load_slice(model::timeout_clock::time_point) final;
+
+    ss::future<> finally() noexcept final { return _iterator.close(); }
 
     void print(std::ostream& os) final {
         fmt::print(os, "storage::log_reader. config {}", _config);
