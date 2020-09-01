@@ -10,10 +10,10 @@
     "http"
   ],
   "consumes": [
-    "application/vnd.kafka.json.v2+json"
+    "application/vnd.kafka.binary.v2+json"
   ],
   "produces": [
-    "application/vnd.kafka.json.v2+json"
+    "application/vnd.kafka.binary.v2+json"
   ],
   "paths": {
     

@@ -95,7 +95,7 @@ struct handler_adaptor : ss::httpd::handler_base {
                            return _handler(std::move(rq), std::move(rp))
                              .then([](server::reply_t rp) {
                                  rp.rep->set_mime_type(
-                                   "application/vnd.kafka.json.v2+json");
+                                   "application/vnd.kafka.binary.v2+json");
                                  return std::move(rp.rep);
                              });
                        })
