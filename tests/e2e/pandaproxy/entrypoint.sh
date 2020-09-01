@@ -48,7 +48,7 @@ jq -e '.paths["/topics"]["get"]["operationId"] == "get_topics_names"' swagger20.
 swagger-cli validate swagger20.json
 
 # Validate Content-Type
-curl -s -D - -o /dev/null http://127.0.0.1:8082/topics | tr -d '\r' | grep '^Content-Type: application/vnd.kafka.json.v2+json$'
+curl -s -D - -o /dev/null http://127.0.0.1:8082/topics | tr -d '\r' | grep '^Content-Type: application/vnd.kafka.binary.v2+json$'
 
 # Test GET /topics (get_topics_names)
 curl -s 'http://127.0.0.1:8082/topics' | jq -e '(. | sort) == (["'"$NAMESPACE-0"'","'"$NAMESPACE-1"'"] | sort)'
