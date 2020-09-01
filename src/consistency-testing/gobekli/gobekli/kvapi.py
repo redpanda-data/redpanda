@@ -13,11 +13,13 @@ class RequestCanceled(Exception):
 
 
 Record = namedtuple('Record', ['write_id', 'value'])
+Response = namedtuple('Response', ['record', 'metrics'])
 
 
 class KVNode:
     def __init__(self, name, address):
-        self.session = aiohttp.ClientSession()
+        timeout = aiohttp.ClientTimeout(total=10)
+        self.session = aiohttp.ClientSession(timeout=timeout)
         self.address = address
         self.name = name
 
@@ -32,20 +34,24 @@ class KVNode:
             raise RequestTimedout()
         except aiohttp.client_exceptions.ClientOSError:
             raise RequestTimedout()
+        except ConnectionResetError:
+            raise RequestTimedout()
+        except asyncio.TimeoutError:
+            raise RequestTimedout()
         if resp.status == 200:
             data = await resp.read()
             data = json.loads(data)
+            record = None
             if data["status"] == "ok":
                 if data["hasData"]:
-                    return Record(data["writeID"], data["value"])
-                else:
-                    return None
+                    record = Record(data["writeID"], data["value"])
             elif data["status"] == "unknown":
                 raise RequestTimedout()
             elif data["status"] == "fail":
                 raise RequestCanceled()
             else:
                 raise Exception(f"Unknown status: {data['status']}")
+            return Response(record, data["metrics"])
         else:
             raise RequestTimedout()
 
@@ -61,20 +67,24 @@ class KVNode:
             raise RequestTimedout()
         except aiohttp.client_exceptions.ClientOSError:
             raise RequestTimedout()
+        except ConnectionResetError:
+            raise RequestTimedout()
+        except asyncio.TimeoutError:
+            raise RequestTimedout()
         if resp.status == 200:
             data = await resp.read()
             data = json.loads(data)
+            record = None
             if data["status"] == "ok":
                 if data["hasData"]:
-                    return Record(data["writeID"], data["value"])
-                else:
-                    return None
+                    record = Record(data["writeID"], data["value"])
             elif data["status"] == "unknown":
                 raise RequestTimedout()
             elif data["status"] == "fail":
                 raise RequestCanceled()
             else:
                 raise Exception(f"Unknown status: {data['status']}")
+            return Response(record, data["metrics"])
         else:
             raise RequestTimedout()
 
@@ -95,20 +105,24 @@ class KVNode:
             raise RequestTimedout()
         except aiohttp.client_exceptions.ClientOSError:
             raise RequestTimedout()
+        except ConnectionResetError:
+            raise RequestTimedout()
+        except asyncio.TimeoutError:
+            raise RequestTimedout()
         if resp.status == 200:
             data = await resp.read()
             data = json.loads(data)
+            record = None
             if data["status"] == "ok":
                 if data["hasData"]:
-                    return Record(data["writeID"], data["value"])
-                else:
-                    return None
+                    record = Record(data["writeID"], data["value"])
             elif data["status"] == "unknown":
                 raise RequestTimedout()
             elif data["status"] == "fail":
                 raise RequestCanceled()
             else:
                 raise Exception(f"Unknown status: {data['status']}")
+            return Response(record, data["metrics"])
         else:
             raise RequestTimedout()
 

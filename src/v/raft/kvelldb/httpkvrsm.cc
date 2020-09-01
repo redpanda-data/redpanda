@@ -95,6 +95,13 @@ ss::sstring cmd_result_as_json(raft::kvelldb::kvrsm::cmd_result result) {
     } else {
         writer.String("unknown");
     }
+    writer.Key("metrics");
+    writer.StartObject();
+    writer.Key("replicated_us");
+    writer.Int64(result.replicated_us.count());
+    writer.Key("executed_us");
+    writer.Int64(result.executed_us.count());
+    writer.EndObject();
     writer.EndObject();
 
     ss::sstring serialized{buffer.GetString()};
