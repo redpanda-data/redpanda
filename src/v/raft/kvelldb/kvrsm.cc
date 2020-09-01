@@ -177,14 +177,22 @@ ss::future<kvrsm::cmd_result> kvrsm::replicate_and_wait(
   sequence_id seq) {
     using ret_t = kvrsm::cmd_result;
 
+    auto started = std::chrono::steady_clock::now();
+
     _promises.emplace(seq, expiring_promise<ret_t>{});
 
     return replicate(std::move(b))
-      .then([this, seq, timeout](result<raft::replicate_result> r) {
+      .then([this, seq, timeout, started](result<raft::replicate_result> r) {
+          auto replicated_us
+            = std::chrono::duration_cast<std::chrono::microseconds>(
+              std::chrono::steady_clock::now() - started);
+
           if (!r) {
               _promises.erase(seq);
-              return ss::make_ready_future<ret_t>(
-                kvrsm::cmd_result(raft::kvelldb::errc::raft_error, r.error()));
+              auto result = kvrsm::cmd_result(
+                raft::kvelldb::errc::raft_error, r.error());
+              result.replicated_us = replicated_us;
+              return ss::make_ready_future<ret_t>(result);
           }
 
           auto last_offset = r.value().last_offset;
@@ -201,16 +209,23 @@ ss::future<kvrsm::cmd_result> kvrsm::replicate_and_wait(
                   result.offset = last_offset;
                   return result;
               })
-            .then_wrapped([this, seq, last_offset](ss::future<ret_t> ec) {
+            .then_wrapped([this, seq, last_offset, started, replicated_us](
+                            ss::future<ret_t> ec) {
+                auto executed_us
+                  = std::chrono::duration_cast<std::chrono::microseconds>(
+                    std::chrono::steady_clock::now() - started);
                 _promises.erase(seq);
 
-                return ec.then([last_offset](kvrsm::cmd_result result) {
+                return ec.then([last_offset, replicated_us, executed_us](
+                                 kvrsm::cmd_result result) {
                     if (result.offset != last_offset) {
                         result = kvrsm::cmd_result(
                           raft::kvelldb::errc::raft_error,
                           raft::errc::leader_append_failed);
                     }
 
+                    result.replicated_us = replicated_us;
+                    result.executed_us = executed_us;
                     return ss::make_ready_future<ret_t>(result);
                 });
             });

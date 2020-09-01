@@ -1,11 +1,13 @@
 import asyncio
 import uuid
+import random
+import time
 
 from gobekli.kvapi import RequestCanceled, RequestTimedout
 from gobekli.consensus import LinearizabilityRegisterChecker, Violation
 from gobekli.logging import (log_read_ended, log_read_failed, log_read_started,
                              log_read_none, log_read_timeouted, log_violation,
-                             log_latency)
+                             log_latency, log_stat)
 
 
 class Stat:
@@ -36,15 +38,16 @@ class StatDumper:
         self.is_active = True
 
     async def start(self):
+        started = time.time()
         while self.is_active:
             counters = self.stat.reset()
-            line = ""
+            line = str(int(time.time() - started))
             for key in self.keys:
                 if key in counters:
-                    line += str(counters[key]) + "\t"
+                    line += "\t" + str(counters[key])
                 else:
-                    line += str(0) + "\t"
-            print(line)
+                    line += "\t" + str(0)
+            log_stat(line)
             await asyncio.sleep(1)
 
     def stop(self):
@@ -169,16 +172,18 @@ class ReaderClient:
     async def start(self):
         loop = asyncio.get_running_loop()
         while self.is_active and self.checker.is_valid:
+            await asyncio.sleep(random.uniform(0, 0.05))
             op_started = None
             try:
                 self.stat.assign("size", self.checker.size())
                 log_read_started(self.node.name, self.pid, self.key)
                 self.checker.read_started(self.pid, self.key)
                 op_started = loop.time()
-                read = await self.node.get_aio(self.key)
+                response = await self.node.get_aio(self.key)
+                read = response.record
                 op_ended = loop.time()
                 log_latency("ok", op_started - self.started_at,
-                            op_ended - op_started)
+                            op_ended - op_started, response.metrics)
                 if read == None:
                     log_read_none(self.node.name, self.pid, self.key)
                     self.checker.read_none(self.pid, self.key)
@@ -188,6 +193,7 @@ class ReaderClient:
                     self.checker.read_ended(self.pid, self.key, read.write_id,
                                             read.value)
                 self.stat.inc(self.name + ":ok")
+                self.stat.inc("all:ok")
             except RequestTimedout:
                 op_ended = loop.time()
                 log_latency("out", op_started - self.started_at,
