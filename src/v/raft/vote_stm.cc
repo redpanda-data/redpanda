@@ -10,7 +10,7 @@
 
 namespace raft {
 std::ostream& operator<<(std::ostream& o, const vote_stm::vmeta& m) {
-    o << "{node: " << m.node << ", value: ";
+    o << "{value: ";
     if (m.value) {
         if (m.value->has_error()) {
             auto& e = m.value->error();
@@ -25,7 +25,7 @@ std::ostream& operator<<(std::ostream& o, const vote_stm::vmeta& m) {
 }
 vote_stm::vote_stm(consensus* p)
   : _ptr(p)
-  , _sem(_ptr->config().nodes.size())
+  , _sem(_ptr->config().unique_voters_count())
   , _ctxlog(_ptr->group(), _ptr->ntp()) {}
 
 vote_stm::~vote_stm() {
@@ -52,18 +52,20 @@ ss::future<> vote_stm::dispatch_one(model::node_id n) {
             }
             return do_dispatch_one(n).then_wrapped(
               [this, n](ss::future<result<vote_reply>> f) {
-                  auto voter_reply = std::find_if(
-                    _replies.begin(), _replies.end(), [n](vmeta& mi) {
-                        return mi.node == n;
-                    });
+                  auto voter_reply = _replies.find(n);
                   try {
                       auto r = f.get0();
-                      voter_reply->set_value(std::move(r));
+                      vlog(
+                        _ctxlog.info, "vote reply from {} - {}", n, r.value());
+                      voter_reply->second.set_value(r);
                   } catch (...) {
-                      voter_reply->set_value(errc::vote_dispatch_error);
+                      voter_reply->second.set_value(errc::vote_dispatch_error);
                   }
-                  if (!voter_reply->value) {
-                      vlog(_ctxlog.info, "error voting: {}", *voter_reply);
+                  if (!voter_reply->second.value) {
+                      vlog(
+                        _ctxlog.info,
+                        "error voting: {}",
+                        voter_reply->second.value);
                   }
               });
         });
@@ -73,7 +75,7 @@ ss::future<> vote_stm::dispatch_one(model::node_id n) {
 std::pair<uint32_t, uint32_t> vote_stm::partition_count() const {
     uint32_t success = 0;
     uint32_t failure = 0;
-    for (auto& m : _replies) {
+    for (auto& [id, m] : _replies) {
         auto voting_state = m.get_state();
         if (voting_state == vmeta::state::vote_granted) {
             ++success;
@@ -100,7 +102,7 @@ ss::future<> vote_stm::vote() {
 
           // vote is the only method under _op_sem
           for (auto& n : _ptr->config().nodes) {
-              _replies.emplace_back(vmeta(n.id()));
+              _replies.emplace(n.id(), vmeta{});
           }
           auto lstats = _ptr->_log.offsets();
           auto last_entry_term = _ptr->get_last_entry_term(lstats);
@@ -123,6 +125,7 @@ ss::future<> vote_stm::vote() {
           return do_vote();
       });
 }
+
 ss::future<> vote_stm::do_vote() {
     auto cfg = _ptr->config();
 
@@ -130,67 +133,91 @@ ss::future<> vote_stm::do_vote() {
     vote_reply reply;
     reply.term = _req.term;
     reply.log_ok = true;
+    // dispatch requests to all voters
+    cfg.for_each_voter(
+      [this](const model::broker& voter) { (void)dispatch_one(voter.id()); });
 
-    for (auto& n : cfg.nodes) {
-        (void)dispatch_one(n.id()); // background
-    }
-    // wait until majority or all
-    const size_t majority = cfg.majority();
-    const size_t all = cfg.nodes.size();
+    // wait until majority
+    const size_t majority = cfg.voters_majority();
+
     return _sem.wait(majority)
-      .then([this, majority, all] {
-          return ss::do_until(
-            [this, majority, all] {
-                auto [success, failure] = partition_count();
-                vlog(
-                  _ctxlog.trace,
-                  "Vote results [success:{}, failures:{}, majority: {}]",
-                  success,
-                  failure,
-                  majority);
-                return success >= majority || failure >= majority
-                       || (success + failure) >= all;
-            },
-            [this] {
-                return with_gate(_vote_bg, [this] { return _sem.wait(1); });
-            });
+      .then([this, cfg = std::move(cfg)]() mutable {
+          return process_replies(std::move(cfg));
       })
       // porcess results
       .then([this]() {
           return _ptr->_op_lock.get_units().then(
             [this](ss::semaphore_units<> u) {
-                return process_replies(std::move(u));
+                update_vote_state(std::move(u));
             });
       });
 }
+
+ss::future<> vote_stm::process_replies(group_configuration cfg) {
+    return ss::repeat([this, cfg = std::move(cfg)] {
+        // majority votes granted
+        bool majority_granted = cfg.majority([this](const model::broker& br) {
+            return _replies.find(br.id())->second.get_state()
+                   == vmeta::state::vote_granted;
+        });
+
+        if (majority_granted) {
+            _success = true;
+            return ss::make_ready_future<ss::stop_iteration>(
+              ss::stop_iteration::yes);
+        }
+
+        // majority votes not granted, election not successfull
+        bool majority_failed = cfg.majority([this](const model::broker& br) {
+            auto state = _replies.find(br.id())->second.get_state();
+            // vote not granted and not in progress, it is failed
+            return state != vmeta::state::vote_granted
+                   && state != vmeta::state::in_progress;
+        });
+
+        if (majority_failed) {
+            _success = false;
+            return ss::make_ready_future<ss::stop_iteration>(
+              ss::stop_iteration::yes);
+        }
+        // neither majority votes granted nor failed, check if we have all
+        // replies (is there any vote request in progress)
+
+        auto has_request_in_progress = std::any_of(
+          std::cbegin(_replies), std::cend(_replies), [](const auto& p) {
+              return p.second.get_state() == vmeta::state::in_progress;
+          });
+
+        if (!has_request_in_progress) {
+            _success = false;
+            return ss::make_ready_future<ss::stop_iteration>(
+              ss::stop_iteration::yes);
+        }
+
+        return with_gate(_vote_bg, [this] { return _sem.wait(1); }).then([] {
+            return ss::stop_iteration::no;
+        });
+    });
+}
+
 ss::future<> vote_stm::wait() { return _vote_bg.close(); }
 
-ss::future<> vote_stm::process_replies(ss::semaphore_units<> u) {
-    const size_t majority = _ptr->config().majority();
-    auto [success, failure] = partition_count();
+void vote_stm::update_vote_state(ss::semaphore_units<> u) {
     if (_ptr->_vstate != consensus::vote_state::candidate) {
-        vlog(
-          _ctxlog.info,
-          "No longer a candidate, ignoring vote replies: {}/{}",
-          success,
-          _ptr->config().nodes.size());
-        return ss::make_ready_future<>();
+        vlog(_ctxlog.info, "No longer a candidate, ignoring vote replies");
+        return;
     }
-    if (success < majority) {
-        vlog(
-          _ctxlog.info,
-          "Majority vote failed. {}/{} votes, need:{}",
-          success,
-          _ptr->config().nodes.size(),
-          majority);
+
+    if (!_success) {
+        vlog(_ctxlog.info, "Vote failed");
         _ptr->_vstate = consensus::vote_state::follower;
-        return ss::make_ready_future<>();
+        return;
     }
+
     std::vector<model::node_id> acks;
-    acks.reserve(success);
-    for (auto& r : _replies) {
+    for (auto& [id, r] : _replies) {
         if (r.get_state() == vmeta::state::vote_granted) {
-            acks.emplace_back(r.node);
+            acks.emplace_back(id);
         }
     }
     vlog(_ctxlog.trace, "vote acks in term {} from: {}", _ptr->term(), acks);
@@ -203,7 +230,6 @@ ss::future<> vote_stm::process_replies(ss::semaphore_units<> u) {
 
     _ptr->trigger_leadership_notification();
     replicate_config_as_new_leader(std::move(u));
-    return ss::make_ready_future<>();
 }
 
 void vote_stm::replicate_config_as_new_leader(ss::semaphore_units<> u) {
@@ -221,12 +247,9 @@ ss::future<> vote_stm::self_vote() {
     vlog(_ctxlog.trace, "Voting for self in term {}", _req.term);
     _ptr->_voted_for = _ptr->_self;
     return _ptr->write_voted_for({_ptr->_self, model::term_id(_req.term)})
-      .then([this, reply = std::move(reply)] {
-          auto m = std::find_if(
-            _replies.begin(), _replies.end(), [this](vmeta& mi) {
-                return mi.node == _ptr->_self;
-            });
-          m->set_value(std::move(reply));
+      .then([this, reply] {
+          auto m = _replies.find(_ptr->self());
+          m->second.set_value(reply);
       });
 }
 } // namespace raft

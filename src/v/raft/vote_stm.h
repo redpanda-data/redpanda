@@ -3,8 +3,11 @@
 #include "outcome.h"
 #include "raft/consensus.h"
 #include "raft/logger.h"
+#include "raft/types.h"
 
 #include <seastar/core/semaphore.hh>
+
+#include <absl/container/flat_hash_map.h>
 
 #include <variant>
 #include <vector>
@@ -36,8 +39,6 @@ public:
 
 private:
     struct vmeta {
-        vmeta(model::node_id n)
-          : node(n) {}
         enum class state {
             in_progress,
             vote_granted,
@@ -63,8 +64,6 @@ private:
             // it is an error
             return state::error;
         }
-
-        model::node_id node;
         std::unique_ptr<result<vote_reply>> value;
     };
 
@@ -75,18 +74,19 @@ private:
     ss::future<> dispatch_one(model::node_id);
     ss::future<result<vote_reply>> do_dispatch_one(model::node_id);
     std::pair<uint32_t, uint32_t> partition_count() const;
-    ss::future<> process_replies(ss::semaphore_units<>);
+    void update_vote_state(ss::semaphore_units<>);
+    ss::future<> process_replies(group_configuration cfg);
     void replicate_config_as_new_leader(ss::semaphore_units<>);
     // args
     consensus* _ptr;
     // make sure to always make a copy; never move() this struct
     vote_request _req;
-
+    bool _success = false;
     // for sequentiality/progress
     ss::semaphore _sem;
     // for safety to wait for all bg ops
     ss::gate _vote_bg;
-    std::vector<vmeta> _replies;
+    absl::flat_hash_map<model::node_id, vmeta> _replies;
     ctx_log _ctxlog;
 };
 
