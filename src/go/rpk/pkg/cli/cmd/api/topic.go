@@ -258,7 +258,7 @@ func describeTopic(
 			pagedPartitions := detail.Partitions
 			beginning := 0
 			end := len(detail.Partitions)
-			if pageSize >= 0 {
+			if page >= 0 {
 				pagedPartitions, beginning, end = pagePartitions(
 					detail.Partitions,
 					page,
@@ -325,7 +325,7 @@ func describeTopic(
 	cmd.Flags().IntVar(
 		&page,
 		"page",
-		0,
+		-1,
 		"The partitions page to display. If negative, all partitions will be shown",
 	)
 	cmd.Flags().IntVar(
