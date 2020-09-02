@@ -28,6 +28,7 @@ v_cc_library(
     state_machine.cc
     log_eviction_stm.cc
     configuration_manager.cc
+    configuration.cc
   DEPS
     v::storage
     raft_rpc
