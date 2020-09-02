@@ -79,20 +79,20 @@ func NewTuneCommand(fs afero.Fs) *cobra.Command {
 			tunerParams.CpuMask = cpuMask
 			conf, err := config.ReadOrGenerate(fs, configFile)
 			if err != nil {
-				log.Debug(err)
-				if interactive {
-					msg := fmt.Sprintf(
-						`Couldn't read or generate the config at %s.
+				if !interactive {
+					return err
+				}
+				msg := fmt.Sprintf(
+					`Couldn't read or generate the config at %s.
 Would you like to continue with the default configuration?`,
-						configFile,
-					)
-					confirmed, cerr := promptConfirmation(msg, cmd.InOrStdin())
-					if cerr != nil {
-						return cerr
-					}
-					if !confirmed {
-						return nil
-					}
+					configFile,
+				)
+				confirmed, cerr := promptConfirmation(msg, cmd.InOrStdin())
+				if cerr != nil {
+					return cerr
+				}
+				if !confirmed {
+					return nil
 				}
 				defaultConf := config.DefaultConfig()
 				conf = &defaultConf
