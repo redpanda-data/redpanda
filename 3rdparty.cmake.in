@@ -60,6 +60,15 @@ set(nettle_build_env
   CFLAGS=${c_flags}\ -I@V_DEPS_INSTALL_DIR@/include
   LDFLAGS=${ld_flags}
 )
+set(base64_build_env
+  SSSE3_CFLAGS=-mssse3
+  SSE41_CFLAGS=-msse4.1
+  SSE42_CFLAGS=-msse4.2
+  AVX_CFLAGS=-mavx
+  AVX2_CFLAGS=-mavx2
+  CFLAGS=${c_flags}
+  LDFLAGS=${ld_flags}
+)
 
 # define make command in terms of cmake
 set(make_command make ${build_env} -j${build_concurrency_factor} )
@@ -642,4 +651,19 @@ ExternalProject_Add(kafka-codegen-pex
     COMMAND ${CMAKE_COMMAND} -E chdir <SOURCE_DIR> python3 -m venv env
     COMMAND <SOURCE_DIR>/env/bin/pip install pex
     COMMAND <SOURCE_DIR>/env/bin/pex jsonschema jinja2 -o <INSTALL_DIR>/bin/kafka-codegen-venv
+)
+
+ExternalProject_Add(base64_ext
+  URL https://storage.googleapis.com/vectorizedio-public/dependencies/base64-eaebee8.tar.xz
+  URL_MD5 1fd5d4d053cc08c11f20e48188a28063
+  INSTALL_DIR @V_DEPS_INSTALL_DIR@
+  DEPENDS ${default_depends}
+  CONFIGURE_COMMAND ""
+  BUILD_COMMAND
+    ${CMAKE_COMMAND} -E env ${base64_build_env}
+    make all -j${build_concurrency_factor}
+  BUILD_IN_SOURCE true
+  INSTALL_COMMAND
+    COMMAND ${CMAKE_COMMAND} -E copy <SOURCE_DIR>/include/libbase64.h <INSTALL_DIR>/include/libbase64.h
+    COMMAND ${CMAKE_COMMAND} -E copy <SOURCE_DIR>/lib/libbase64.o <INSTALL_DIR>/lib/libbase64.o
 )

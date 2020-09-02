@@ -40,6 +40,7 @@ please keep this up to date with every new library use.
 | rapidjson       | MIT                                |
 | crc32c          | BSD 3                              |
 | CRoaring        | Apache License 2                   |
+| base64          | BSD 2                              |
  
 # Golang deps _used_ in production (exclude all test dependencies)
 
