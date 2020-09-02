@@ -1,7 +1,10 @@
 #pragma once
 #include "model/metadata.h"
+#include "utils/concepts-enabled.h"
 
 #include <boost/range/join.hpp>
+
+#include <numeric>
 
 namespace raft {
 struct group_configuration {
@@ -18,7 +21,8 @@ struct group_configuration {
 
     bool has_voters() const { return !nodes.empty(); }
     bool has_learners() const { return !learners.empty(); }
-    size_t majority() const { return (nodes.size() / 2) + 1; }
+    size_t voters_majority() const { return (nodes.size() / 2) + 1; }
+    size_t unique_voters_count() const { return nodes.size(); }
     iterator find_in_nodes(model::node_id id);
     const_iterator find_in_nodes(model::node_id id) const;
     iterator find_in_learners(model::node_id id);
@@ -33,6 +37,35 @@ struct group_configuration {
           std::cbegin(joined_range),
           std::cend(joined_range),
           std::forward<Func>(f));
+    }
+
+    template<typename Func>
+    void for_each_voter(Func&& f) const {
+        std::for_each(
+          std::cbegin(nodes), std::cend(nodes), std::forward<Func>(f));
+    }
+
+
+    /**
+     * Returns true if for majority of nodes predicate returns true
+     */
+    // clang-format off
+    template<typename Predicate>
+    CONCEPT(requires requires(Predicate f, const model::broker& broker) {
+        { f(broker) } -> bool;
+    })
+    // clang-format on
+    bool majority(Predicate&& f) const {
+        if (nodes.empty()) {
+            return true;
+        }
+
+        auto cnt = std::count_if(
+          std::cbegin(nodes),
+          std::cend(nodes),
+          std::forward<Predicate>(f));
+
+        return cnt >= voters_majority();
     }
 
     friend bool
