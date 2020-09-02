@@ -501,7 +501,7 @@ func TestDescribeTopic(t *testing.T) {
 					}, nil
 				},
 			},
-			args: []string{"Cologne", "--page-size", "-1", "--page", "4"},
+			args: []string{"Cologne", "--page", "-1", "--page-size", "4"},
 			expectedOutput: `  Name            Cologne  
   Internal        false    
   Cleanup policy  compact  
