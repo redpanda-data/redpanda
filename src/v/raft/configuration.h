@@ -4,7 +4,9 @@
 
 #include <boost/range/join.hpp>
 
+#include <algorithm>
 #include <numeric>
+#include <type_traits>
 
 namespace raft {
 struct group_configuration {
@@ -45,6 +47,46 @@ struct group_configuration {
           std::cbegin(nodes), std::cend(nodes), std::forward<Func>(f));
     }
 
+    /**
+     * Return largest value for which every server in a quorum (majority) has a
+     * value greater than or equal to.
+     *
+     *
+     * This method is used to find an offset that was replicated by majority of
+     * nodes.
+     */
+    // clang-format off
+    template<
+      typename ValueProvider,
+      typename Ret = std::invoke_result_t<ValueProvider, const model::broker&>>
+    CONCEPT(requires requires(
+        ValueProvider f, const model::broker& broker, Ret ret_a, Ret ret_b) {
+        {f(broker)};
+        { ret_a < ret_b } -> bool;
+    })
+    // clang-format on
+    auto quorum_match(ValueProvider&& f) const {
+        using ret_t = std::invoke_result_t<ValueProvider, const model::broker&>;
+        if (nodes.empty()) {
+            return ret_t{};
+        }
+
+        std::vector<ret_t> values;
+        values.reserve(nodes.size());
+        std::transform(
+          std::cbegin(nodes),
+          std::cend(nodes),
+          std::back_inserter(values),
+          std::forward<ValueProvider>(f));
+
+        size_t majority_match_idx = (values.size() - 1) / 2;
+        std::nth_element(
+          values.begin(),
+          std::next(values.begin(), majority_match_idx),
+          values.end());
+
+        return values[majority_match_idx];
+    }
 
     /**
      * Returns true if for majority of nodes predicate returns true
@@ -60,10 +102,8 @@ struct group_configuration {
             return true;
         }
 
-        auto cnt = std::count_if(
-          std::cbegin(nodes),
-          std::cend(nodes),
-          std::forward<Predicate>(f));
+        size_t cnt = std::count_if(
+          std::cbegin(nodes), std::cend(nodes), std::forward<Predicate>(f));
 
         return cnt >= voters_majority();
     }
