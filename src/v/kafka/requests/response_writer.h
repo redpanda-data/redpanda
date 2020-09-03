@@ -64,6 +64,17 @@ public:
         return serialize_int<underlying>(static_cast<underlying>(t));
     }
 
+    uint32_t write(kafka::config_resource_type t) {
+        using underlying = std::underlying_type_t<kafka::config_resource_type>;
+        return serialize_int<underlying>(static_cast<underlying>(t));
+    }
+
+    uint32_t write(kafka::describe_configs_source s) {
+        using underlying
+          = std::underlying_type_t<kafka::describe_configs_source>;
+        return serialize_int<underlying>(static_cast<underlying>(s));
+    }
+
     uint32_t write(const model::timestamp ts) { return write(ts()); }
 
     uint32_t write_varint(int32_t v) { return serialize_vint(v); }
