@@ -34,9 +34,27 @@ func DefaultConfig() *sarama.Config {
 	return conf
 }
 
+// Overrides the default config with the redpanda config values, such as TLS.
+func LoadConfig(conf *config.Config) (*sarama.Config, error) {
+	c := DefaultConfig()
+	return configureTLS(c, conf)
+}
+
 func InitClient(brokers ...string) (sarama.Client, error) {
 	// sarama shuffles the addresses, so there's no need to do it.
 	return sarama.NewClient(brokers, DefaultConfig())
+}
+
+// Initializes a client using values from the configuration when possible.
+func InitClientWithConf(
+	conf *config.Config, brokers ...string,
+) (sarama.Client, error) {
+	c, err := LoadConfig(conf)
+	if err != nil {
+		return nil, err
+	}
+	// sarama shuffles the addresses, so there's no need to do it.
+	return sarama.NewClient(brokers, c)
 }
 
 /*
