@@ -155,6 +155,19 @@ path_type_map = {
             },
         },
     },
+    "DescribeConfigsRequestData": {
+        "Resources": {
+            "ResourceType": ("kafka::config_resource_type", "int8"),
+        },
+    },
+    "DescribeConfigsResponseData": {
+        "Results": {
+            "ResourceType": ("kafka::config_resource_type", "int8"),
+            "Configs": {
+                "ConfigSource": ("kafka::describe_configs_source", "int8"),
+            },
+        },
+    },
 }
 
 # a few kafka field types specify an entity type
