@@ -202,15 +202,15 @@ static model::broker broker_from_arg(ss::sstring peer) {
 
 static raft::group_configuration
 group_cfg_from_args(const po::variables_map& opts) {
-    raft::group_configuration cfg;
+    std::vector<model::broker> brokers;
     if (opts.find("peers") != opts.end()) {
         auto peers = opts["peers"].as<std::vector<ss::sstring>>();
         for (auto& arg : peers) {
-            cfg.nodes.push_back(broker_from_arg(arg));
+            brokers.push_back(broker_from_arg(arg));
         }
     }
     // add self
-    cfg.nodes.push_back(model::broker(
+    brokers.push_back(model::broker(
       model::node_id(opts["node-id"].as<int32_t>()),
       unresolved_address(
         opts["ip"].as<ss::sstring>(), opts["port"].as<uint16_t>()),
@@ -220,7 +220,7 @@ group_cfg_from_args(const po::variables_map& opts) {
       model::broker_properties{
         .cores = ss::smp::count,
       }));
-    return cfg;
+    return raft::group_configuration(std::move(brokers));
 }
 
 int main(int args, char** argv, char** env) {

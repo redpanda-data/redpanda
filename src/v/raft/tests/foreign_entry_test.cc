@@ -3,6 +3,7 @@
 #include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
+#include "raft/configuration.h"
 #include "raft/configuration_bootstrap_state.h"
 #include "raft/consensus_utils.h"
 #include "raft/types.h"
@@ -104,8 +105,7 @@ struct foreign_entry_fixture {
             learners.push_back(tests::random_broker(
               active_nodes + 1, active_nodes * active_nodes));
         }
-        return raft::group_configuration{
-          .nodes = std::move(nodes), .learners = std::move(learners)};
+        return raft::group_configuration(std::move(nodes));
     }
     ~foreign_entry_fixture() { _storage.stop().get(); }
     model::offset _base_offset{0};
@@ -150,12 +150,11 @@ FIXTURE_TEST(sharing_one_reader, foreign_entry_fixture) {
               return extract_configuration(std::move(e));
           }).get0();
 
-        for (auto& n : cfg.nodes) {
-            BOOST_REQUIRE(
-              n.id() >= 0 && n.id() <= foreign_entry_fixture::active_nodes);
+        for (auto& id : cfg.current_config().voters) {
+            BOOST_REQUIRE(id >= 0 && id <= foreign_entry_fixture::active_nodes);
         }
-        for (auto& n : cfg.learners) {
-            BOOST_REQUIRE(n.id() > foreign_entry_fixture::active_nodes);
+        for (auto& id : cfg.current_config().learners) {
+            BOOST_REQUIRE(id > foreign_entry_fixture::active_nodes);
         }
     }
 }
@@ -207,12 +206,12 @@ FIXTURE_TEST(copy_lots_of_readers, foreign_entry_fixture) {
                      })
                      .get0();
 
-        for (auto& n : cfg.nodes) {
-            BOOST_REQUIRE(
-              n.id() >= 0 && n.id() <= foreign_entry_fixture::active_nodes);
-        }
-        for (auto& n : cfg.learners) {
-            BOOST_REQUIRE(n.id() > foreign_entry_fixture::active_nodes);
-        }
+        cfg.for_each_voter([](model::node_id id) {
+            BOOST_REQUIRE(id >= 0 && id <= foreign_entry_fixture::active_nodes);
+        });
+
+        cfg.for_each_learner([](model::node_id id) {
+            BOOST_REQUIRE(id > foreign_entry_fixture::active_nodes);
+        });
     }
 }

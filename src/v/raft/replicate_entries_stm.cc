@@ -150,7 +150,7 @@ replicate_entries_stm::apply(ss::semaphore_units<> u) {
           auto units = ss::make_lw_shared<std::vector<ss::semaphore_units<>>>(
             std::move(vec));
           uint16_t requests_count = 0;
-          _ptr->config().for_each(
+          _ptr->config().for_each_broker(
             [this, &requests_count, units](const model::broker& n) {
                 // We are not dispatching request to followers that are
                 // recovering

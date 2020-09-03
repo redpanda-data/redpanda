@@ -1,5 +1,6 @@
 #include "model/adl_serde.h"
 #include "model/fundamental.h"
+#include "model/metadata.h"
 #include "model/record.h"
 #include "raft/configuration_bootstrap_state.h"
 #include "raft/consensus_utils.h"
@@ -75,12 +76,14 @@ FIXTURE_TEST(write_configs, bootstrap_fixture) {
       cfg.data_batches_seen(),
       cfg.config_batches_seen());
 
-    for (auto& n : cfg.config().nodes) {
-        BOOST_REQUIRE(n.id() >= 0 && n.id() <= bootstrap_fixture::active_nodes);
-    }
-    for (auto& n : cfg.config().learners) {
-        BOOST_REQUIRE(n.id() > bootstrap_fixture::active_nodes);
-    }
+    cfg.config().for_each_voter([](model::node_id id) {
+        BOOST_REQUIRE(id >= 0 && id <= bootstrap_fixture::active_nodes);
+    });
+
+    cfg.config().for_each_learner([](model::node_id id) {
+        BOOST_REQUIRE(id > bootstrap_fixture::active_nodes);
+    });
+
     BOOST_REQUIRE_EQUAL(cfg.data_batches_seen(), 10);
     BOOST_REQUIRE_EQUAL(cfg.config_batches_seen(), 10);
 }

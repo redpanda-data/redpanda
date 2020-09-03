@@ -1,3 +1,4 @@
+#include "raft/configuration.h"
 #include "raft/consensus_utils.h"
 #include "random/generators.h"
 #include "storage/tests/utils/random_batch.h"
@@ -13,21 +14,43 @@ std::vector<model::broker> random_brokers() {
     return ret;
 }
 
-SEASTAR_THREAD_TEST_CASE(roundtrip_raft_configuration_entry) {
-    auto voters = random_brokers();
-    auto learners = random_brokers();
-    auto leader = model::node_id(random_generators::get_int(1, 10));
-    raft::group_configuration cfg = {.nodes = voters, .learners = learners};
+raft::group_configuration random_configuration() {
+    auto brokers = random_brokers();
+    raft::group_nodes current;
+    for (auto& b : brokers) {
+        if (random_generators::get_int(0, 100) > 50) {
+            current.voters.push_back(b.id());
+        } else {
+            current.learners.push_back(b.id());
+        }
+    }
 
+    if (random_generators::get_int(0, 100) > 50) {
+        raft::group_nodes old;
+        for (auto& b : brokers) {
+            if (random_generators::get_int(0, 100) > 50) {
+                old.voters.push_back(b.id());
+            } else {
+                old.learners.push_back(b.id());
+            }
+        }
+        return raft::group_configuration(
+          std::move(brokers), std::move(current), std::move(old));
+    } else {
+        return raft::group_configuration(
+          std::move(brokers), std::move(current));
+    }
+}
+
+SEASTAR_THREAD_TEST_CASE(roundtrip_raft_configuration_entry) {
+    auto cfg = random_configuration();
     // serialize to entry
-    auto batches = raft::details::serialize_configuration_as_batches(
-      std::move(cfg));
+    auto batches = raft::details::serialize_configuration_as_batches(cfg);
     // extract from entry
-    auto new_cfg = reflection::adl<raft::group_configuration>{}.from(
+    auto new_cfg = reflection::from_iobuf<raft::group_configuration>(
       batches.begin()->begin()->release_value());
 
-    BOOST_REQUIRE_EQUAL(voters, new_cfg.nodes);
-    BOOST_REQUIRE_EQUAL(learners, new_cfg.learners);
+    BOOST_REQUIRE_EQUAL(new_cfg, cfg);
 }
 
 struct test_consumer {
@@ -53,10 +76,8 @@ struct test_consumer {
 };
 
 SEASTAR_THREAD_TEST_CASE(test_config_extracting_reader) {
-    raft::group_configuration cfg_1 = {
-      .nodes = random_brokers(), .learners = random_brokers()};
-    raft::group_configuration cfg_2 = {
-      .nodes = random_brokers(), .learners = random_brokers()};
+    auto cfg_1 = random_configuration();
+    auto cfg_2 = random_configuration();
     using batches_t = ss::circular_buffer<model::record_batch>;
     ss::circular_buffer<model::record_batch> all_batches;
 
@@ -89,11 +110,10 @@ SEASTAR_THREAD_TEST_CASE(test_config_extracting_reader) {
           auto& [offsets, configurations] = res;
           BOOST_REQUIRE_EQUAL(offsets[0], model::offset(101));
           BOOST_REQUIRE_EQUAL(configurations[0].offset, model::offset(101));
-          BOOST_REQUIRE_EQUAL(configurations[0].cfg.nodes, cfg_1.nodes);
-          BOOST_REQUIRE_EQUAL(configurations[0].cfg.learners, cfg_1.learners);
+          BOOST_REQUIRE_EQUAL(configurations[0].cfg, cfg_1);
+
           BOOST_REQUIRE_EQUAL(configurations[1].offset, offsets[1]);
-          BOOST_REQUIRE_EQUAL(configurations[1].cfg.nodes, cfg_2.nodes);
-          BOOST_REQUIRE_EQUAL(configurations[1].cfg.learners, cfg_2.learners);
+          BOOST_REQUIRE_EQUAL(configurations[1].cfg, cfg_2);
       })
       .get0();
 }
