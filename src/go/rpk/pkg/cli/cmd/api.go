@@ -54,9 +54,9 @@ func NewApiCommand(fs afero.Fs) *cobra.Command {
 	// path, the list of brokers passed through --brokers) to deduce the
 	// actual brokers list to be used.
 	brokersClosure := deduceBrokers(fs, &configFile, &brokers)
-	producerClosure := createProducer(brokersClosure)
-	clientClosure := createClient(brokersClosure)
-	adminClosure := createAdmin(brokersClosure)
+	producerClosure := createProducer(fs, brokersClosure, &configFile)
+	clientClosure := createClient(fs, brokersClosure, &configFile)
+	adminClosure := createAdmin(fs, brokersClosure, &configFile)
 	command.AddCommand(
 		api.NewTopicCommand(fs, clientClosure, adminClosure),
 	)
@@ -116,10 +116,17 @@ func deduceBrokers(
 }
 
 func createProducer(
-	brokers func() []string,
+	fs afero.Fs, brokers func() []string, configFile *string,
 ) func(bool, int32) (sarama.SyncProducer, error) {
 	return func(jvmPartitioner bool, partition int32) (sarama.SyncProducer, error) {
-		cfg := kafka.DefaultConfig()
+		conf, err := config.ReadConfigFromPath(fs, *configFile)
+		if err != nil {
+			return nil, err
+		}
+		cfg, err := kafka.LoadConfig(conf)
+		if err != nil {
+			return nil, err
+		}
 		if jvmPartitioner {
 			cfg.Producer.Partitioner = kafkautil.NewJVMCompatiblePartitioner
 		}
@@ -132,15 +139,31 @@ func createProducer(
 	}
 }
 
-func createClient(brokers func() []string) func() (sarama.Client, error) {
+func createClient(
+	fs afero.Fs, brokers func() []string, configFile *string,
+) func() (sarama.Client, error) {
 	return func() (sarama.Client, error) {
+		conf, err := config.ReadConfigFromPath(fs, *configFile)
+		if err != nil {
+			return nil, err
+		}
 		bs := brokers()
-		return kafka.InitClient(bs...)
+		return kafka.InitClientWithConf(conf, bs...)
 	}
 }
 
-func createAdmin(brokers func() []string) func() (sarama.ClusterAdmin, error) {
+func createAdmin(
+	fs afero.Fs, brokers func() []string, configFile *string,
+) func() (sarama.ClusterAdmin, error) {
 	return func() (sarama.ClusterAdmin, error) {
-		return sarama.NewClusterAdmin(brokers(), kafka.DefaultConfig())
+		conf, err := config.ReadConfigFromPath(fs, *configFile)
+		if err != nil {
+			return nil, err
+		}
+		cfg, err := kafka.LoadConfig(conf)
+		if err != nil {
+			return nil, err
+		}
+		return sarama.NewClusterAdmin(brokers(), cfg)
 	}
 }
