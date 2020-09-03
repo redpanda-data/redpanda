@@ -39,6 +39,7 @@ type RedpandaConfig struct {
 	Directory   string        `yaml:"data_directory" json:"dataDirectory"`
 	RPCServer   SocketAddress `yaml:"rpc_server" json:"rpcServer"`
 	KafkaApi    SocketAddress `yaml:"kafka_api" json:"kafkaApi"`
+	KafkaApiTLS ServerTLS     `yaml:"kafka_api_tls" json:"kafkaApiTls"`
 	AdminApi    SocketAddress `yaml:"admin" json:"admin"`
 	Id          int           `yaml:"node_id" json:"id"`
 	SeedServers []*SeedServer `yaml:"seed_servers" json:"seedServers"`
@@ -54,7 +55,21 @@ type SocketAddress struct {
 	Port    int    `yaml:"port" json:"port"`
 }
 
+type TLS struct {
+	KeyFile        string `yaml:"key_file" json:"keyFile"`
+	CertFile       string `yaml:"cert_file" json:"certFile"`
+	TruststoreFile string `yaml:"truststore_file" json:"truststoreFile"`
+}
+
+type ServerTLS struct {
+	KeyFile        string `yaml:"key_file" json:"keyFile"`
+	CertFile       string `yaml:"cert_file" json:"certFile"`
+	TruststoreFile string `yaml:"truststore_file" json:"truststoreFile"`
+	Enabled        bool   `yaml:"enabled" json:"enabled"`
+}
+
 type RpkConfig struct {
+	TLS                      TLS      `yaml:"tls" json:"tls"`
 	AdditionalStartFlags     []string `yaml:"additional_start_flags,omitempty" json:"additionalStartFlags"`
 	EnableUsageStats         bool     `yaml:"enable_usage_stats" json:"enableUsageStats"`
 	TuneNetwork              bool     `yaml:"tune_network" json:"tuneNetwork"`
