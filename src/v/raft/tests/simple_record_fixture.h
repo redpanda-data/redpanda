@@ -51,8 +51,7 @@ struct simple_record_fixture {
             learners.push_back(tests::random_broker(
               active_nodes + 1, active_nodes * active_nodes));
         }
-        return raft::group_configuration{
-          .nodes = std::move(nodes), .learners = std::move(learners)};
+        return raft::group_configuration(std::move(nodes));
     }
     model::offset _base_offset{0};
     model::ntp _ntp{

@@ -6,6 +6,7 @@
 #include "model/timestamp.h"
 #include "raft/logger.h"
 #include "random/generators.h"
+#include "reflection/adl.h"
 #include "resource_mgmt/io_priority.h"
 #include "storage/record_batch_builder.h"
 #include "utils/state_crc_file.h"
@@ -279,7 +280,7 @@ model::record_batch_reader make_config_extracting_reader(
         }
 
         void extract_configuration(model::record_batch& batch) {
-            auto cfg = reflection::adl<raft::group_configuration>{}.from(
+            auto cfg = reflection::from_iobuf<group_configuration>(
               batch.begin()->value().copy());
             _configurations.emplace_back(_next_offset, std::move(cfg));
         }

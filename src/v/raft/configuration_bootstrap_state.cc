@@ -24,8 +24,8 @@ void configuration_bootstrap_state::process_configuration(
         _log_config_offset_tracker = last_offset;
         process_offsets(b.base_offset(), last_offset);
         for (model::record& rec : b) {
-            _config = reflection::adl<group_configuration>{}.from(
-              rec.share_value());
+            _config = reflection::from_iobuf<raft::group_configuration>(
+              rec.release_value());
         }
     }
 }

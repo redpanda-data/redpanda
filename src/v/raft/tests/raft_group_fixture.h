@@ -117,9 +117,10 @@ struct raft_node {
           storage.local());
 
         // create connections to initial nodes
-        consensus->config().for_each([this](const model::broker& broker) {
-            create_connection_to(broker);
-        });
+        consensus->config().for_each_broker(
+          [this](const model::broker& broker) {
+              create_connection_to(broker);
+          });
     }
 
     raft_node(const raft_node&) = delete;
@@ -324,9 +325,7 @@ struct raft_group {
           ntp,
           make_broker(node_id),
           _id,
-          raft::group_configuration{
-            .nodes = _initial_brokers,
-          },
+          raft::group_configuration(_initial_brokers),
           raft::timeout_jitter(heartbeat_interval * 2),
           fmt::format("{}/{}", _storage_dir, node_id()),
           _storage_type,
@@ -347,9 +346,7 @@ struct raft_group {
           ntp,
           broker,
           _id,
-          raft::group_configuration{
-            .nodes = {},
-          },
+          raft::group_configuration({}),
           raft::timeout_jitter(heartbeat_interval * 2),
           fmt::format("{}/{}", _storage_dir, node_id()),
           _storage_type,

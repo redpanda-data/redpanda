@@ -13,7 +13,7 @@ FIXTURE_TEST(add_one_node_to_single_node_cluster, raft_test_fixture) {
     leader_raft->add_group_member(new_node).get0();
     validate_logs_replication(gr);
 
-    BOOST_REQUIRE_EQUAL(leader_raft->config().nodes.size(), 2);
+    BOOST_REQUIRE_EQUAL(leader_raft->config().brokers().size(), 2);
 };
 
 FIXTURE_TEST(
@@ -31,5 +31,5 @@ FIXTURE_TEST(
     leader_raft->add_group_member(new_node_2).get0();
 
     validate_logs_replication(gr);
-    BOOST_REQUIRE_EQUAL(leader_raft->config().nodes.size(), 3);
+    BOOST_REQUIRE_EQUAL(leader_raft->config().brokers().size(), 3);
 };
