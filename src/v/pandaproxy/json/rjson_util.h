@@ -12,6 +12,16 @@
 
 namespace pandaproxy::json {
 
+class parse_error final : public std::exception {
+public:
+    explicit parse_error(size_t offset)
+      : _what(fmt::format("parse error at offset {}", offset)) {}
+    const char* what() const noexcept final { return _what.data(); }
+
+private:
+    std::string _what;
+};
+
 template<typename T>
 ss::sstring rjson_serialize(const T& v) {
     rapidjson::StringBuffer str_buf;
@@ -32,7 +42,9 @@ typename Handler::rjson_parse_result
   rjson_parse(const char* const s, Handler&& handler) {
     rapidjson::Reader reader;
     rapidjson::StringStream ss(s);
-    reader.Parse(ss, handler);
+    if (!reader.Parse(ss, handler)) {
+        throw parse_error(reader.GetErrorOffset());
+    }
     return std::move(handler.result);
 }
 
