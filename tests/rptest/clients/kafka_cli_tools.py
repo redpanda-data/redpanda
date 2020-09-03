@@ -73,7 +73,9 @@ class KafkaCliTools:
     def _execute(self, cmd):
         self._redpanda.logger.debug("Executing command: %s", cmd)
         try:
-            res = subprocess.check_output(cmd, stderr=subprocess.STDOUT)
+            res = subprocess.check_output(cmd,
+                                          stderr=subprocess.STDOUT,
+                                          text=True)
             self._redpanda.logger.debug(res)
             return res
         except subprocess.CalledProcessError as e:
