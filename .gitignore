@@ -198,9 +198,12 @@ infra/modules/**/ssh_config*
 
 # Node js dev dependencies
 src/js/node_modules
+# ts generated for coprocessor serializables
+src/js/modules/domain/generatedRpc/*.ts
 #intelij
 *.iml
-
+# Node dependecies ts-generated
+tools/ts-generator/node_modules
 # ducktape
 results
 .ducktape
