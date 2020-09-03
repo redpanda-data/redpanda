@@ -1,8 +1,12 @@
 import { Socket, createServer, Server as NetServer } from "net";
-import { Request } from "../domain/Request";
 import Repository from "../supervisors/Repository";
 import FileManager from "../supervisors/FileManager";
-import { Coprocessor, RecordBatch, PolicyError } from "../public/Coprocessor";
+import { Coprocessor, PolicyError } from "../public/Coprocessor";
+import {
+  ProcessBatchRequest,
+  RpcHeader,
+} from "../domain/generatedRpc/generatedClasses";
+import BF from "../domain/generatedRpc/functions";
 
 export class Server {
   public constructor(
@@ -59,15 +63,35 @@ export class Server {
    * @param socket
    */
   private executeCoprocessorOnRequest = (socket: Socket) => {
-    socket.on("readable", (data: Buffer) => {
-      /**
-       * TODO: https://app.clubhouse.io/vectorized/story/959
-       */
-      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-      // @ts-ignore
-      this.applyCoprocessor(data)
-        .then(() => socket.write(""))
-        .catch((e) => console.error("error: ", e));
+    socket.on("readable", () => {
+      if (socket.readableLength > 26) {
+        const [rpcHeader] = RpcHeader.fromBytes(socket.read(26));
+        const [processBatchRequests] = BF.readArray(
+          socket.read(rpcHeader.payloadSize),
+          0,
+          (auxBuffer, auxOffset) =>
+            BF.readObject(auxBuffer, auxOffset, ProcessBatchRequest)
+        );
+        if (rpcHeader.compression != 0) {
+          throw "Rpc Header has an unexpect compression value:";
+        }
+        Promise.all(processBatchRequests.map(this.applyCoprocessor)).then(
+          (result) => {
+            // TODO: https://app.clubhouse.io/vectorized/story/1255
+            // TODO: Implement ioBuf here
+            const iobuf = Buffer.alloc(300);
+            const offsetAfterRpcHeader = RpcHeader.toBytes(rpcHeader, iobuf);
+            BF.writeArray(
+              result.flat(),
+              iobuf,
+              offsetAfterRpcHeader,
+              (item, auxBuffer, auxOffset) =>
+                BF.writeObject(auxBuffer, auxOffset, ProcessBatchRequest, item)
+            );
+            socket.write(iobuf);
+          }
+        );
+      }
     });
   };
 
@@ -75,15 +99,17 @@ export class Server {
    * Given a Request, it'll find and execute Coprocessor by its
    * Request's topic, if there is an exception when applying the
    * coprocessor function it handles the error by its ErrorPolicy
-   * @param request
+   * @param processBatchRequest
    */
-  private applyCoprocessor(request: Request): Promise<RecordBatch[]> {
+  private applyCoprocessor(
+    processBatchRequest: ProcessBatchRequest
+  ): Promise<ProcessBatchRequest[]> {
     const handleTable = this.repository
       .getCoprocessorsByTopics()
-      .get(request.getTopic());
+      .get(processBatchRequest.npt.topic);
     if (handleTable) {
       const results = handleTable.apply(
-        request,
+        processBatchRequest,
         this.handleErrorByPolicy.bind(this)
       );
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
@@ -107,15 +133,19 @@ export class Server {
   /**
    * Handle an error using the given Coprocessor's ErrorPolicy
    * @param coprocessor
-   * @param request
+   * @param processBatchRequest
    * @param error
    */
   private handleErrorByPolicy(
     coprocessor: Coprocessor,
-    request: Request,
+    processBatchRequest: ProcessBatchRequest,
     error: Error
-  ): Promise<RecordBatch> {
-    const errorMessage = this.createMessageError(coprocessor, request, error);
+  ): Promise<ProcessBatchRequest> {
+    const errorMessage = this.createMessageError(
+      coprocessor,
+      processBatchRequest,
+      error
+    );
     switch (coprocessor.policyError) {
       case PolicyError.Deregister:
         return this.fileManager
@@ -130,14 +160,15 @@ export class Server {
 
   private createMessageError(
     coprocessor: Coprocessor,
-    request: Request,
+    processBatchRequest: ProcessBatchRequest,
     error: Error
   ): string {
     return (
       `Failed to apply coprocessor ${coprocessor.globalId} to request's id ` +
-      `${request.getId()}: ${error.message}`
+      `${processBatchRequest.recordBatch.header.baseOffset}: ${error.message}`
     );
   }
+
   private server: NetServer;
   private readonly repository: Repository;
   private fileManager: FileManager;
