@@ -1,9 +1,13 @@
 package kafka
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
+	"io/ioutil"
 	"sync"
 	"time"
+	"vectorized/pkg/config"
 
 	"github.com/Shopify/sarama"
 	"github.com/avast/retry-go"
@@ -136,4 +140,80 @@ func RetrySend(
 		}),
 	)
 	return part, offset, err
+}
+
+// Configures TLS for the Redpanda API IF either rpk.tls or
+// redpanda.kafka_api_tls are set in the configuration. Doesn't modify the
+// configuration otherwise.
+func configureTLS(
+	saramaConf *sarama.Config, rpConf *config.Config,
+) (*sarama.Config, error) {
+	rpkTls := rpConf.Rpk.TLS
+
+	if rpkTls.CertFile != "" &&
+		rpkTls.KeyFile != "" &&
+		rpkTls.TruststoreFile != "" {
+
+		tlsConf, err := tlsConfig(
+			rpkTls.TruststoreFile,
+			rpkTls.CertFile,
+			rpkTls.KeyFile,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		saramaConf.Net.TLS.Config = tlsConf
+		saramaConf.Net.TLS.Enable = true
+
+		log.Debug("API TLS auth enabled using rpk.tls")
+		return saramaConf, nil
+	}
+	rpTls := rpConf.Redpanda.KafkaApiTLS
+	if rpTls.Enabled &&
+		rpTls.CertFile != "" &&
+		rpTls.KeyFile != "" &&
+		rpTls.TruststoreFile != "" {
+
+		tlsConf, err := tlsConfig(
+			rpTls.TruststoreFile,
+			rpTls.CertFile,
+			rpTls.KeyFile,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		saramaConf.Net.TLS.Config = tlsConf
+		saramaConf.Net.TLS.Enable = true
+
+		log.Debug("API TLS auth enabled using redpanda.kafka_api_tls")
+		return saramaConf, nil
+	}
+	log.Debug(
+		"Skipping API TLS auth config. Set The cert" +
+			" file, key file and truststore file" +
+			" to enable it",
+	)
+	return saramaConf, nil
+}
+
+func tlsConfig(truststoreFile, certFile, keyFile string) (*tls.Config, error) {
+	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+	if err != nil {
+		return nil, err
+	}
+	caCert, err := ioutil.ReadFile(truststoreFile)
+	if err != nil {
+		return nil, err
+	}
+	caCertPool := x509.NewCertPool()
+	caCertPool.AppendCertsFromPEM(caCert)
+
+	tlsConf := &tls.Config{}
+
+	tlsConf.RootCAs = caCertPool
+	tlsConf.Certificates = []tls.Certificate{cert}
+	tlsConf.BuildNameToCertificate()
+	return tlsConf, nil
 }
