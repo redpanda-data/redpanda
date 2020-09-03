@@ -81,10 +81,11 @@ struct handler_adaptor : ss::httpd::handler_base {
            m = _probe.hist().auto_measure()]() mutable {
               server::request_t rq{std::move(req), this->_ctx};
               server::reply_t rp{std::move(rep)};
+              auto req_size = get_request_size(*rq.req);
 
               return ss::with_semaphore(
                        _ctx.mem_sem,
-                       get_request_size(*rq.req),
+                       req_size,
                        [this, rq{std::move(rq)}, rp{std::move(rp)}]() mutable {
                            if (_ctx.as.abort_requested()) {
                                set_reply_unavailable(*rp.rep);
