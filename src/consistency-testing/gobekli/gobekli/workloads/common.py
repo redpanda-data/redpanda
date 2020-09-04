@@ -31,7 +31,7 @@ class Stat:
         return copy
 
 
-class StatDumper:
+class AvailabilityStatLogger:
     def __init__(self, stat, keys):
         self.stat = stat
         self.keys = keys
