@@ -209,7 +209,7 @@ class DockerSession(session.Session):
 
         snode_id = str(node_id)
         for c in self._state.containerlist():
-            if c.labesl["node_id"] == snode_id:
+            if c.labels["node_id"] == snode_id:
                 self._destroy_one(c)
                 return
         # nothing to do
