@@ -49,7 +49,7 @@ class WriterClient:
                                                    curr_write_id)
                 data = response.record
                 op_ended = loop.time()
-                log_latency("ok", op_started - self.started_at,
+                log_latency("ok", op_ended - self.started_at,
                             op_ended - op_started, response.metrics)
                 log_write_ended(self.node.name, self.pid, self.key,
                                 data.write_id, data.value)
@@ -69,7 +69,7 @@ class WriterClient:
             except RequestTimedout:
                 self.stat.inc(self.name + ":out")
                 op_ended = loop.time()
-                log_latency("out", op_started - self.started_at,
+                log_latency("out", op_ended - self.started_at,
                             op_ended - op_started)
                 log_write_timeouted(self.node.name, self.pid, self.key)
                 self.checker.read_canceled(self.pid, self.key)
@@ -77,7 +77,7 @@ class WriterClient:
             except RequestCanceled:
                 self.stat.inc(self.name + ":err")
                 op_ended = loop.time()
-                log_latency("err", op_started - self.started_at,
+                log_latency("err", op_ended - self.started_at,
                             op_ended - op_started)
                 log_write_failed(self.node.name, self.pid, self.key)
                 self.checker.read_canceled(self.pid, self.key)
