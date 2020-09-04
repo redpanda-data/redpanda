@@ -166,13 +166,19 @@ func RetrySend(
 func configureTLS(
 	saramaConf *sarama.Config, rpConf *config.Config,
 ) (*sarama.Config, error) {
+	var tlsConf *tls.Config
+	var err error
 	rpkTls := rpConf.Rpk.TLS
+	rpTls := rpConf.Redpanda.KafkaApiTLS
 
-	if rpkTls.CertFile != "" &&
+	// Try to configure TLS from the available config
+	switch {
+	// Enable client auth if the cert & key files are set for rpk
+	case rpkTls.CertFile != "" &&
 		rpkTls.KeyFile != "" &&
-		rpkTls.TruststoreFile != "" {
+		rpkTls.TruststoreFile != "":
 
-		tlsConf, err := tlsConfig(
+		tlsConf, err = loadTLSConfig(
 			rpkTls.TruststoreFile,
 			rpkTls.CertFile,
 			rpkTls.KeyFile,
@@ -180,20 +186,25 @@ func configureTLS(
 		if err != nil {
 			return nil, err
 		}
-
-		saramaConf.Net.TLS.Config = tlsConf
-		saramaConf.Net.TLS.Enable = true
-
 		log.Debug("API TLS auth enabled using rpk.tls")
-		return saramaConf, nil
-	}
-	rpTls := rpConf.Redpanda.KafkaApiTLS
-	if rpTls.Enabled &&
+
+	// Enable TLS (no auth) if only the CA cert file is set for rpk
+	case rpkTls.TruststoreFile != "":
+		caCertPool, err := loadRootCACert(rpkTls.TruststoreFile)
+		if err != nil {
+			return nil, err
+		}
+		tlsConf = &tls.Config{RootCAs: caCertPool}
+		log.Debug("API TLS enabled using rpk.tls")
+
+	// Enable client auth if the cert & key files are set for the redpanda
+	// API
+	case rpTls.Enabled &&
 		rpTls.CertFile != "" &&
 		rpTls.KeyFile != "" &&
-		rpTls.TruststoreFile != "" {
+		rpTls.TruststoreFile != "":
 
-		tlsConf, err := tlsConfig(
+		tlsConf, err = loadTLSConfig(
 			rpTls.TruststoreFile,
 			rpTls.CertFile,
 			rpTls.KeyFile,
@@ -201,37 +212,64 @@ func configureTLS(
 		if err != nil {
 			return nil, err
 		}
+		log.Debug("API TLS auth enabled using redpanda.kafka_api_tls")
 
+	// Enable TLS (no auth) if only the CA cert file is set for the
+	// redpanda API
+	case rpTls.Enabled && rpTls.TruststoreFile != "":
+		caCertPool, err := loadRootCACert(rpTls.TruststoreFile)
+		if err != nil {
+			return nil, err
+		}
+		tlsConf = &tls.Config{RootCAs: caCertPool}
+		log.Debug("API TLS enabled using redpanda.kafka_api_tls")
+
+	default:
+		log.Debug(
+			"Skipping API TLS auth config. Set The cert" +
+				" file, key file and truststore file" +
+				" to enable it",
+		)
+	}
+	if tlsConf != nil {
 		saramaConf.Net.TLS.Config = tlsConf
 		saramaConf.Net.TLS.Enable = true
-
-		log.Debug("API TLS auth enabled using redpanda.kafka_api_tls")
-		return saramaConf, nil
 	}
-	log.Debug(
-		"Skipping API TLS auth config. Set The cert" +
-			" file, key file and truststore file" +
-			" to enable it",
-	)
+
 	return saramaConf, nil
 }
 
-func tlsConfig(truststoreFile, certFile, keyFile string) (*tls.Config, error) {
-	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+func loadTLSConfig(
+	truststoreFile, certFile, keyFile string,
+) (*tls.Config, error) {
+	caCertPool, err := loadRootCACert(truststoreFile)
 	if err != nil {
 		return nil, err
 	}
+	certs, err := loadCert(certFile, keyFile)
+	if err != nil {
+		return nil, err
+	}
+	tlsConf := &tls.Config{RootCAs: caCertPool, Certificates: certs}
+
+	tlsConf.BuildNameToCertificate()
+	return tlsConf, nil
+}
+
+func loadRootCACert(truststoreFile string) (*x509.CertPool, error) {
 	caCert, err := ioutil.ReadFile(truststoreFile)
 	if err != nil {
 		return nil, err
 	}
 	caCertPool := x509.NewCertPool()
 	caCertPool.AppendCertsFromPEM(caCert)
+	return caCertPool, nil
+}
 
-	tlsConf := &tls.Config{}
-
-	tlsConf.RootCAs = caCertPool
-	tlsConf.Certificates = []tls.Certificate{cert}
-	tlsConf.BuildNameToCertificate()
-	return tlsConf, nil
+func loadCert(certFile, keyFile string) ([]tls.Certificate, error) {
+	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+	if err != nil {
+		return nil, err
+	}
+	return []tls.Certificate{cert}, nil
 }
