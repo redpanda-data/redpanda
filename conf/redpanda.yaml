@@ -32,7 +32,7 @@ redpanda:
   auto_create_topics_enabled: true
 
 rpk:
-  # TLS configuration. Only effective if all cert & key file paths are set.
+  # TLS configuration.
   tls:
     # The path to the root CA certificate (PEM)
     truststore_file: ""
