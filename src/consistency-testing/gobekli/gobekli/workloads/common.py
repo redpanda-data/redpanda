@@ -7,7 +7,7 @@ from gobekli.kvapi import RequestCanceled, RequestTimedout
 from gobekli.consensus import LinearizabilityRegisterChecker, Violation
 from gobekli.logging import (log_read_ended, log_read_failed, log_read_started,
                              log_read_none, log_read_timeouted, log_violation,
-                             log_latency, log_stat)
+                             log_latency, log_stat, log_console)
 
 
 class Stat:
@@ -35,20 +35,45 @@ class AvailabilityStatLogger:
     def __init__(self, stat, keys):
         self.stat = stat
         self.keys = keys
+        self.started = None
         self.is_active = True
 
     async def start(self):
-        started = time.time()
+        self.started = time.time()
         while self.is_active:
             counters = self.stat.reset()
-            line = str(int(time.time() - started))
+            entry = dict()
+            entry["type"] = "stat"
+            entry["tick"] = int(time.time() - self.started)
+            line = str(entry["tick"])
             for key in self.keys:
                 if key in counters:
+                    entry[key] = counters[key]
                     line += "\t" + str(counters[key])
                 else:
+                    entry[key] = 0
                     line += "\t" + str(0)
-            log_stat(line)
+            log_console(line)
+            log_stat(entry)
             await asyncio.sleep(1)
+
+    def log_fault(self, message):
+        entry = dict()
+        entry["type"] = "fault"
+        entry["tick"] = int((time.time() - self.started) * 1000000)
+        entry["message"] = message
+        line = str(entry["tick"]) + "\t" + entry["message"]
+        log_console(line)
+        log_stat(entry)
+
+    def log_recovery(self, message):
+        entry = dict()
+        entry["type"] = "recovery"
+        entry["tick"] = int((time.time() - self.started) * 1000000)
+        entry["message"] = message
+        line = str(entry["tick"]) + "\t" + entry["message"]
+        log_console(line)
+        log_stat(entry)
 
     def stop(self):
         self.is_active = False
