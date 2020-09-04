@@ -383,7 +383,8 @@ bool consensus::should_skip_vote(bool ignore_heartbeat) {
     }
 
     skip_vote |= _vstate == vote_state::leader; // already a leader
-    skip_vote |= !_configuration_manager.get_latest().has_voters(); // no voters
+    skip_vote |= !_configuration_manager.get_latest().is_voter(
+      _self); // not a voter
 
     return skip_vote;
 }
@@ -457,25 +458,37 @@ consensus::update_group_member(model::broker broker) {
       });
 }
 
-ss::future<std::error_code> consensus::add_group_member(model::broker node) {
-    return _op_lock.get_units().then([this, node = std::move(node)](
-                                       ss::semaphore_units<> u) mutable {
-        // we still haven't commited latest configuration change
-        if (_configuration_manager.get_latest_offset() > _commit_index) {
-            return ss::make_ready_future<std::error_code>(
-              errc::configuration_change_in_progress);
-        }
-        auto latest_cfg = _configuration_manager.get_latest();
-        // check once again under the lock
-        if (!latest_cfg.contains_broker(node.id())) {
-            latest_cfg.add(std::move(node));
-            // append new configuration to log
-            return replicate_configuration(std::move(u), std::move(latest_cfg));
-        }
-        return ss::make_ready_future<std::error_code>(errc::success);
-    });
+template<typename Func>
+ss::future<std::error_code> consensus::change_configuration(Func&& f) {
+    return _op_lock.get_units().then(
+      [this, f = std::forward<Func>(f)](ss::semaphore_units<> u) mutable {
+          auto latest_cfg = _configuration_manager.get_latest();
+          // latest configuration is of joint type
+          if (latest_cfg.type() == configuration_type::joint) {
+              return ss::make_ready_future<std::error_code>(
+                errc::configuration_change_in_progress);
+          }
+
+          result<group_configuration> res = f(std::move(latest_cfg));
+          if (res) {
+              return replicate_configuration(
+                std::move(u), std::move(res.value()));
+          }
+          return ss::make_ready_future<std::error_code>(res.error());
+      });
 }
 
+ss::future<std::error_code> consensus::add_group_member(model::broker node) {
+    return change_configuration([node = std::move(node)](
+                                  group_configuration current) {
+        if (current.contains_broker(node.id())) {
+            return result<group_configuration>(errc::non_majority_replication);
+        }
+        current.add(node);
+
+        return result<group_configuration>(std::move(current));
+    });
+}
 ss::future<> consensus::start() {
     vlog(_ctxlog.info, "Starting");
     return _op_lock.with([this] {
@@ -1261,14 +1274,61 @@ consensus::next_followers_request_seq() {
 
 void consensus::maybe_update_leader_commit_idx() {
     (void)with_gate(_bg, [this] {
-        return _op_lock.with(
-          [this]() mutable { return do_maybe_update_leader_commit_idx(); });
+        return _op_lock.get_units().then(
+          [this](ss::semaphore_units<> u) mutable {
+              return do_maybe_update_leader_commit_idx(std::move(u));
+          });
     }).handle_exception([this](const std::exception_ptr& e) {
         vlog(_ctxlog.warn, "Error updating leader commit index", e);
     });
 }
 
-ss::future<> consensus::do_maybe_update_leader_commit_idx() {
+ss::future<> consensus::maybe_commit_configuration(
+  model::offset previous_commit_index, ss::semaphore_units<> u) {
+    // we already have all configurations commited do nothing
+    auto latest_offset = _configuration_manager.get_latest_offset();
+
+    if (latest_offset <= previous_commit_index) {
+        return ss::now();
+    }
+    // no configurations were committed
+    if (latest_offset > _commit_index) {
+        return ss::now();
+    }
+    // we are not a leader, do nothing
+    if (_vstate != vote_state::leader) {
+        return ss::now();
+    }
+
+    auto latest_cfg = _configuration_manager.get_latest();
+    // as a leader replicate new simple configuration
+    if (latest_cfg.type() == configuration_type::joint) {
+        latest_cfg.discard_old_config();
+        vlog(
+          _ctxlog.trace,
+          "leaving joint consensus, new simple configuration {}",
+          latest_cfg);
+        return replicate_configuration(std::move(u), std::move(latest_cfg))
+          .then([this](std::error_code ec) {
+              if (ec) {
+                  vlog(
+                    _ctxlog.error,
+                    "unable to replicate simple configuration  - {}",
+                    ec);
+              }
+          });
+    }
+
+    // leader was removed, step down.
+    if (!latest_cfg.contains_broker(_self)) {
+        do_step_down();
+    }
+
+    return ss::now();
+}
+
+ss::future<>
+consensus::do_maybe_update_leader_commit_idx(ss::semaphore_units<> u) {
     auto lstats = _log.offsets();
     // Raft paper:
     //
@@ -1297,8 +1357,9 @@ ss::future<> consensus::do_maybe_update_leader_commit_idx() {
           _commit_index);
         _commit_index_updated.broadcast();
         _event_manager.notify_commit_index(_commit_index);
+        return maybe_commit_configuration(old_commit_idx, std::move(u));
     }
-    return ss::make_ready_future<>();
+    return ss::now();
 }
 ss::future<>
 consensus::maybe_update_follower_commit_idx(model::offset request_commit_idx) {

@@ -199,7 +199,7 @@ private:
     bool needs_recovery(const follower_index_metadata&);
     void dispatch_recovery(follower_index_metadata&);
     void maybe_update_leader_commit_idx();
-    ss::future<> do_maybe_update_leader_commit_idx();
+    ss::future<> do_maybe_update_leader_commit_idx(ss::semaphore_units<>);
 
     model::term_id get_term(model::offset);
 
@@ -240,6 +240,11 @@ private:
     ss::future<> write_voted_for(consensus::voted_for_configuration);
     model::term_id get_last_entry_term(const storage::offset_stats&) const;
 
+    template<typename Func>
+    ss::future<std::error_code> change_configuration(Func&&);
+
+    ss::future<>
+      maybe_commit_configuration(model::offset, ss::semaphore_units<>);
     // args
     model::node_id _self;
     raft::group_id _group;
