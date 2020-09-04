@@ -4,8 +4,8 @@ import random
 
 from gobekli.kvapi import RequestCanceled, RequestTimedout
 from gobekli.consensus import Violation
-from gobekli.workloads.common import (Stat, StatDumper, ReaderClient,
-                                      LinearizabilityHashmapChecker)
+from gobekli.workloads.common import (ReaderClient, AvailabilityStatLogger,
+                                      Stat, LinearizabilityHashmapChecker)
 from gobekli.logging import (log_write_started, log_write_ended,
                              log_write_timeouted, log_write_failed,
                              log_violation, log_latency)
@@ -91,62 +91,105 @@ class WriterClient:
                 break
 
 
+class ValidationResult:
+    def __init__(self, is_valid, error):
+        self.is_valid = is_valid
+        self.error = error
+
+
+class MRSWWorkload:
+    def __init__(self, kv_nodes, numOfKeys, numOfReaders, ss_metrics):
+        self.kv_nodes = kv_nodes
+        self.numOfKeys = numOfKeys
+        self.numOfReaders = numOfReaders
+        self.ss_metrics = ss_metrics
+        self.is_active = True
+        self.validation_result = None
+        self.availability_logger = None
+
+    def stop(self):
+        self.is_active = False
+
+    async def dispose(self):
+        for kv_node in self.kv_nodes:
+            await kv_node.close_aio()
+
+    async def start(self):
+        keys = list(map(lambda x: f"key{x}", range(0, self.numOfKeys)))
+
+        checker = LinearizabilityHashmapChecker()
+
+        for key in keys:
+            wasSet = False
+            for kv in self.kv_nodes:
+                try:
+                    await kv.put_aio(key, "42:0", "0")
+                    checker.init("0", key, 0, "42:0")
+                    wasSet = True
+                    break
+                except:
+                    pass
+            if not wasSet:
+                self.is_active = False
+                raise Exception("all kv_nodes rejected init write")
+
+        stat = Stat()
+        dims = []
+        dims.append("all:ok")
+        for kv in self.kv_nodes:
+            dims.append(kv.name + ":ok")
+            dims.append(kv.name + ":out")
+            dims.append(kv.name + ":err")
+        dims.append("size")
+        self.availability_logger = AvailabilityStatLogger(stat, dims)
+        clients = []
+
+        loop = asyncio.get_running_loop()
+        started_at = loop.time()
+
+        for key in keys:
+            for kv in self.kv_nodes:
+                clients.append(
+                    WriterClient(started_at, stat, checker, kv.name, kv, key))
+                for _ in range(0, self.numOfReaders):
+                    clients.append(
+                        ReaderClient(started_at, stat, checker, kv.name, kv,
+                                     key))
+        tasks = []
+        for client in clients:
+            tasks.append(asyncio.create_task(client.start()))
+        tasks.append(asyncio.create_task(self.availability_logger.start()))
+
+        while checker.is_valid and self.is_active:
+            await asyncio.sleep(2)
+
+        self.validation_result = ValidationResult(checker.is_valid,
+                                                  checker.error)
+        self.is_active = False
+
+        for client in clients:
+            client.stop()
+        self.availability_logger.stop()
+        for task in tasks:
+            await task
+
+        return self.validation_result
+
+
 async def start_mrsw_workload_aio(kv_nodes, numOfKeys, numOfReaders, timeout,
                                   ss_metrics):
-    keys = list(map(lambda x: f"key{x}", range(0, numOfKeys)))
-
-    checker = LinearizabilityHashmapChecker()
-
-    for key in keys:
-        wasSet = False
-        for kv in kv_nodes:
-            try:
-                await kv.put_aio(key, "42:0", "0")
-                checker.init("0", key, 0, "42:0")
-                wasSet = True
-                break
-            except:
-                pass
-        if not wasSet:
-            raise Exception("all kv_nodes rejected init write")
-
-    stat = Stat()
-    dims = []
-    dims.append("all:ok")
-    for kv in kv_nodes:
-        dims.append(kv.name + ":ok")
-        dims.append(kv.name + ":out")
-        dims.append(kv.name + ":err")
-    dims.append("size")
-    dumper = StatDumper(stat, dims)
-    clients = []
+    workload = MRSWWorkload(kv_nodes, numOfKeys, numOfReaders, ss_metrics)
+    task = asyncio.create_task(workload.start())
 
     loop = asyncio.get_running_loop()
-    started_at = loop.time()
-
-    for key in keys:
-        for kv in kv_nodes:
-            clients.append(
-                WriterClient(started_at, stat, checker, kv.name, kv, key))
-            for _ in range(0, numOfReaders):
-                clients.append(
-                    ReaderClient(started_at, stat, checker, kv.name, kv, key))
-    tasks = []
-    for client in clients:
-        tasks.append(asyncio.create_task(client.start()))
-    tasks.append(asyncio.create_task(dumper.start()))
-
     end_time = loop.time() + timeout
-    while checker.is_valid:
+    while workload.is_active:
         if (loop.time() + 2) >= end_time:
+            workload.stop()
             break
         await asyncio.sleep(2)
 
-    print(checker.is_valid)
-    print(checker.error)
-
-    for client in clients:
-        client.stop()
-    dumper.stop()
-    for task in tasks:
-        await task
+    result = await task
+    await workload.dispose()
+    print(result.is_valid)
+    print(result.error)
