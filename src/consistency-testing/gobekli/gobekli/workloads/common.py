@@ -182,7 +182,7 @@ class ReaderClient:
                 response = await self.node.get_aio(self.key)
                 read = response.record
                 op_ended = loop.time()
-                log_latency("ok", op_started - self.started_at,
+                log_latency("ok", op_ended - self.started_at,
                             op_ended - op_started, response.metrics)
                 if read == None:
                     log_read_none(self.node.name, self.pid, self.key)
@@ -196,14 +196,14 @@ class ReaderClient:
                 self.stat.inc("all:ok")
             except RequestTimedout:
                 op_ended = loop.time()
-                log_latency("out", op_started - self.started_at,
+                log_latency("out", op_ended - self.started_at,
                             op_ended - op_started)
                 self.stat.inc(self.name + ":out")
                 log_read_timeouted(self.node.name, self.pid, self.key)
                 self.checker.read_canceled(self.pid, self.key)
             except RequestCanceled:
                 op_ended = loop.time()
-                log_latency("err", op_started - self.started_at,
+                log_latency("err", op_ended - self.started_at,
                             op_ended - op_started)
                 self.stat.inc(self.name + ".err")
                 log_read_failed(self.node.name, self.pid, self.key)
