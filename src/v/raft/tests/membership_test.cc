@@ -10,7 +10,7 @@ FIXTURE_TEST(add_one_node_to_single_node_cluster, raft_test_fixture) {
                  ->replicate(random_batches_entry(1), default_replicate_opts)
                  .get0();
     auto new_node = gr.create_new_node(model::node_id(2));
-    leader_raft->add_group_member(new_node).get0();
+    leader_raft->add_group_members({new_node}).get0();
     validate_logs_replication(gr);
 
     BOOST_REQUIRE_EQUAL(leader_raft->config().brokers().size(), 2);
@@ -27,8 +27,7 @@ FIXTURE_TEST(
                  .get0();
     auto new_node_1 = gr.create_new_node(model::node_id(2));
     auto new_node_2 = gr.create_new_node(model::node_id(3));
-    leader_raft->add_group_member(new_node_1).get0();
-    leader_raft->add_group_member(new_node_2).get0();
+    leader_raft->add_group_members({new_node_1, new_node_2}).get0();
 
     validate_logs_replication(gr);
     BOOST_REQUIRE_EQUAL(leader_raft->config().brokers().size(), 3);

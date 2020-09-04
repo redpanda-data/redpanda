@@ -69,10 +69,16 @@ public:
 
     ss::future<timeout_now_reply> timeout_now(timeout_now_request&& r);
 
-    /// This method adds a member to the group and performs configuration update
-    ss::future<std::error_code> add_group_member(model::broker node);
+    /// This method adds multiple members to the group and performs
+    /// configuration update
+    ss::future<std::error_code> add_group_members(std::vector<model::broker>);
     /// Updates given member configuration
     ss::future<std::error_code> update_group_member(model::broker);
+    // Removes members from group
+    ss::future<std::error_code> remove_members(std::vector<model::node_id>);
+    // Replace configuration of raft group with given set of nodes
+    ss::future<std::error_code>
+      replace_configuration(std::vector<model::broker>);
 
     bool is_leader() const { return _vstate == vote_state::leader; }
     std::optional<model::node_id> get_leader_id() const { return _leader_id; }

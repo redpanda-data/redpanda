@@ -298,7 +298,7 @@ members_manager::handle_join_request(model::broker broker) {
     // curent node is a leader
     if (_raft0->is_leader()) {
         // Just update raft0 configuration
-        return _raft0->add_group_member(std::move(broker))
+        return _raft0->add_group_members({std::move(broker)})
           .then([](std::error_code ec) {
               if (!ec) {
                   return ret_t(join_reply{true});
