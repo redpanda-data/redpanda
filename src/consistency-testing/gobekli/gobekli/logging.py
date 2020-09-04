@@ -3,6 +3,21 @@ import time
 import logging
 import logging.handlers
 
+
+class m:
+    def __init__(self, message=None, **kwargs):
+        self.kwargs = kwargs
+        if message is not None:
+            self.kwargs["message"] = message
+
+    def with_time(self):
+        self.kwargs["time"] = int(time.time())
+        return self
+
+    def __str__(self):
+        return json.dumps(self.kwargs)
+
+
 latency_metrics = []
 
 
