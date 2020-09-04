@@ -359,6 +359,7 @@ struct raft_group {
 
         for (auto& [_, n] : _members) {
             n.create_connection_to(broker);
+            it->second.create_connection_to(n.broker);
         }
 
         return broker;
