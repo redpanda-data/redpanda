@@ -51,6 +51,32 @@ enum class coordinator_type : int8_t {
 
 std::ostream& operator<<(std::ostream& os, coordinator_type t);
 
+enum class config_resource_type : int8_t {
+    topic = 2,
+    broker = 4,
+    broker_logger = 8,
+};
+
+std::ostream& operator<<(std::ostream& os, config_resource_type);
+
+/*
+ * From where config values are sourced. For instance, a value might exist
+ * because it is a default or because it was an override at the broker level.
+ *
+ * As our configuration becomes more sophisticated these should be taken into
+ * account. Right now we only report a couple basic topic configs.
+ */
+enum class describe_configs_source : int8_t {
+    topic = 1,
+    // DYNAMIC_BROKER_CONFIG((byte) 2),
+    // DYNAMIC_DEFAULT_BROKER_CONFIG((byte) 3),
+    // STATIC_BROKER_CONFIG((byte) 4),
+    // DEFAULT_CONFIG((byte) 5),
+    // DYNAMIC_BROKER_LOGGER_CONFIG((byte) 6);
+};
+
+std::ostream& operator<<(std::ostream& os, describe_configs_source);
+
 /// \brief A protocol configuration supported by a group member.
 ///
 /// NOTE: for efficiency this structure is shared between kafka request
