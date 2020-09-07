@@ -198,5 +198,6 @@ def js(conf):
     shell.run_subprocess(
         f'cp {vconfig.node_src_dir}/package.json {vconfig.node_build_dir} && '
         f'cp {vconfig.node_src_dir}/package-lock.json {vconfig.node_build_dir} && '
+        f'cp {vconfig.node_src_dir}/generate-entries.sh {vconfig.node_build_dir} && '
         f'cd {vconfig.node_build_dir} && npm install',
         env=vconfig.environ)
