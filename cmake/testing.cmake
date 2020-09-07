@@ -79,7 +79,7 @@ function (rp_test)
   add_executable(
     ${RP_TEST_BINARY_NAME} "${RP_TEST_SOURCES}")
   target_link_libraries(
-    ${RP_TEST_BINARY_NAME} PUBLIC "${RP_TEST_LIBRARIES}" $<TARGET_NAME_IF_EXISTS:Libcxx::libcxx>)
+    ${RP_TEST_BINARY_NAME} PUBLIC "${RP_TEST_LIBRARIES}")
 
   foreach(i ${RP_TEST_INCLUDES})
     target_include_directories(${RP_TEST_BINARY_NAME} PUBLIC ${i})
