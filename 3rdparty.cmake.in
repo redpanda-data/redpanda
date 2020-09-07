@@ -129,6 +129,15 @@ elseif (@CMAKE_CXX_COMPILER_ID@ STREQUAL "GNU")
     set(boost_user_config_jam "using gcc : : @CMAKE_CXX_COMPILER@ : $<SEMICOLON>")
 endif()
 
+# ----------- build-type specific build configuration
+
+if ("@CMAKE_BUILD_TYPE@" MATCHES "Debug" OR "@CMAKE_BUILD_TYPE@" MATCHES "Dev")
+  set(BOOST_BUILD_VARIANT debug)
+else ()
+  set(BOOST_BUILD_VARIANT release)
+endif()
+
+
 # ----------- dependencies below
 
 ExternalProject_Add(zlib
@@ -164,7 +173,7 @@ ExternalProject_Add(boost
     --layout=system
     --build-dir=<BINARY_DIR>
     install
-    variant=release
+    variant=${BOOST_BUILD_VARIANT}
     cflags=${c_flags}
     cxxflags=${cxx_flags}
     linkflags=${ld_flags}
