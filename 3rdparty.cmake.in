@@ -133,6 +133,12 @@ endif()
 
 # ----------- dependencies below
 
+if ("@CMAKE_BUILD_TYPE@" MATCHES "Debug" OR "@CMAKE_BUILD_TYPE@" MATCHES "Dev")
+  set(BOOST_BUILD_VARIANT debug)
+else ()
+  set(BOOST_BUILD_VARIANT release)
+endif()
+
 ExternalProject_Add(boost
   # The 1.67.0 release has a bug in Boost Lockfree around a missing header.
   URL https://storage.googleapis.com/vectorizedio-public/dependencies/boost_1_71_0.tar.gz
@@ -157,7 +163,7 @@ ExternalProject_Add(boost
     --layout=system
     --build-dir=<BINARY_DIR>
     install
-    variant=release
+    variant=${BOOST_BUILD_VARIANT}
     cflags=${c_flags}
     cxxflags=${cxx_flags}
     linkflags=${ld_flags}
