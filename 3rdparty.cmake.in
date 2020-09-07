@@ -1,5 +1,4 @@
 cmake_minimum_required(VERSION 3.9.0)
-set(CMAKE_MODULE_PATH @CMAKE_MODULE_PATH@)
 project(build-deps NONE)
 cmake_host_system_information(
   RESULT build_concurrency_factor
@@ -7,16 +6,14 @@ cmake_host_system_information(
 set(info_dir --infodir=@V_DEPS_INSTALL_DIR@/share/info)
 include(ExternalProject)
 
-set(c_flags "@BASE_C_FLAGS@ @CMAKE_C_FLAGS_BUILD_TYPE@")
-set(cxx_flags "@BASE_CXX_FLAGS@ @CMAKE_CXX_FLAGS_BUILD_TYPE@ -std=c++17")
+set(c_flags "@BASE_C_FLAGS@")
+set(cxx_flags "@BASE_CXX_FLAGS@")
 set(ld_flags "@BASE_LD_FLAGS@")
 set(default_depends "")
 
-# Needed for building clang libs with local compiler
-# TODO: Install clang libs when installing clang
-set(base_cmake_args
+set(common_cmake_args
   -DCMAKE_CXX_STANDARD=@CMAKE_CXX_STANDARD@
-  -DCMAKE_CXX_EXTENSIONS=@CMAKE_CXX_EXTENSIONS@
+  -DCMAKE_C_FLAGS=@CMAKE_C_FLAGS@
   -DCMAKE_BUILD_TYPE=@CMAKE_BUILD_TYPE@
   -DCMAKE_PREFIX_PATH=@V_DEPS_INSTALL_DIR@
   -DCMAKE_INSTALL_PREFIX=@V_DEPS_INSTALL_DIR@
@@ -24,52 +21,42 @@ set(base_cmake_args
   -DCMAKE_SKIP_BUILD_RPATH=OFF
   -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON
   -DCMAKE_POSITION_INDEPENDENT_CODE=@CMAKE_POSITION_INDEPENDENT_CODE@
-  -DCMAKE_VERBOSE_MAKEFILE=@CMAKE_VERBOSE_MAKEFILE@
 )
 
-set(common_cmake_args
-  ${base_cmake_args}
-  -DCMAKE_C_COMPILER=@CMAKE_C_COMPILER@
-  -DCMAKE_CXX_COMPILER=@CMAKE_CXX_COMPILER@
-  "-DCMAKE_C_FLAGS=@BASE_C_FLAGS@"
-  "-DCMAKE_C_FLAGS_@BUILD_TYPE@=@CMAKE_C_FLAGS_BUILD_TYPE@"
-  "-DCMAKE_CXX_FLAGS=@BASE_CXX_FLAGS@ -std=c++17"
-  "-DCMAKE_CXX_FLAGS_@BUILD_TYPE@=@CMAKE_CXX_FLAGS_BUILD_TYPE@"
-)
 
 # build environment variables
 
 # pkgconfig
 set(ENV{PKG_CONFIG_PATH}  @PKG_CONFIG_PATH@)
 
-# CCACHE_DIR is initially provided by rebuild.sh
-set(CCACHE_DIR $ENV{CCACHE_DIR} CACHE PATH "ccache directory")
-set(ENV{CCACHE_DIR} ${CCACHE_DIR})
-include(ccache)
-
 # cmake build environment
 set(cmake_build_env
-  CCACHE_DIR=$ENV{CCACHE_DIR}}
-)
-
+  PKG_CONFIG_PATH=@PKG_CONFIG_PATH@
+  LDFLAGS=${ld_flags}
+  CFLAGS=${c_flags}
+  CXXFLAGS=-std=c++17\ ${cxx_flags}
+  CPPFLAGS=-std=c++17\ ${cxx_flags}
+  )
 # seastar needs explicit -g and -lc++experimental on clang
 if (@CMAKE_CXX_COMPILER_ID@ MATCHES "Clang")
-  set(seastar_ld_flags "${ld_flags} -lc++experimental")
-else ()
-  set(seastar_ld_flags "${ld_flags}")
+  set(seastar_cpp_experimental_linker_flag "-lc++experimental")
 endif()
+set(seastar_build_env
+  PKG_CONFIG_PATH=@PKG_CONFIG_PATH@
+  LDFLAGS=${ld_flags}\ ${seastar_cpp_experimental_linker_flag}
+  CFLAGS=${c_flags}
+  CXXFLAGS=-std=c++17\ ${cxx_flags}\ -g
+  CPPFLAGS=-std=c++17\ ${cxx_flags}\ -g
+  )
 # autotools
 set(build_env
-  CC=@CMAKE_C_COMPILER@
-  CXX=@CMAKE_CXX_COMPILER@
   CFLAGS=${c_flags}
   CXXFLAGS=${cxx_flags}
+  CPPFLAGS=${cxx_flags}
   LDFLAGS=${ld_flags}
   PKG_CONFIG_PATH=@PKG_CONFIG_PATH@)
 # nettle needs explicit path to headers
 set(nettle_build_env
-  CC=@CMAKE_C_COMPILER@
-  CXX=@CMAKE_CXX_COMPILER@
   CFLAGS=${c_flags}\ -I@V_DEPS_INSTALL_DIR@/include
   LDFLAGS=${ld_flags}
 )
@@ -99,20 +86,19 @@ if (@CMAKE_CXX_COMPILER_ID@ MATCHES "Clang")
     ExternalProject_Add(libcxxabi
         SOURCE_DIR @CMAKE_BINARY_DIR@/../../llvm/llvm-src/libcxxabi
         INSTALL_DIR @V_DEPS_INSTALL_DIR@
-          CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
-          CMAKE_ARGS
-            ${base_cmake_args}
+        CMAKE_ARGS
+            ${common_cmake_args}
             -DLLVM_PATH=@CMAKE_BINARY_DIR@/../../llvm/llvm-src/llvm
             -DLIBCXXABI_LIBCXX_PATH=@CMAKE_BINARY_DIR@/../../llvm/llvm-src/libcxx
             -DLIBCXXABI_C_FLAGS=${c_flags}
             -DLIBCXXABI_CXX_FLAGS=${cxx_flags}
-            -DLIBCXXABI_LINK_FLAGS=${ld_flags})
+            -DLIBCXXABI_LINK_FLAGS=${ld_flags}
+        DEPENDS zlib)
     ExternalProject_Add(libcxx
         SOURCE_DIR @CMAKE_BINARY_DIR@/../../llvm/llvm-src/libcxx
         INSTALL_DIR @V_DEPS_INSTALL_DIR@
-          CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
-          CMAKE_ARGS
-            ${base_cmake_args}
+        CMAKE_ARGS
+            ${common_cmake_args}
             -DLLVM_PATH=@CMAKE_BINARY_DIR@/../../llvm/llvm-src/llvm
             -DLIBCXX_CXX_ABI=libcxxabi
             -DLIBCXX_CXX_ABI_INCLUDE_PATHS=@CMAKE_BINARY_DIR@/../../llvm/llvm-src/libcxxabi/include
@@ -132,12 +118,6 @@ elseif (@CMAKE_CXX_COMPILER_ID@ STREQUAL "GNU")
 endif()
 
 # ----------- dependencies below
-
-if ("@CMAKE_BUILD_TYPE@" MATCHES "Debug" OR "@CMAKE_BUILD_TYPE@" MATCHES "Dev")
-  set(BOOST_BUILD_VARIANT debug)
-else ()
-  set(BOOST_BUILD_VARIANT release)
-endif()
 
 ExternalProject_Add(boost
   # The 1.67.0 release has a bug in Boost Lockfree around a missing header.
@@ -163,7 +143,7 @@ ExternalProject_Add(boost
     --layout=system
     --build-dir=<BINARY_DIR>
     install
-    variant=${BOOST_BUILD_VARIANT}
+    variant=release
     cflags=${c_flags}
     cxxflags=${cxx_flags}
     linkflags=${ld_flags}
@@ -300,7 +280,7 @@ ExternalProject_Add(gnutls
     # https://lists.gnupg.org/pipermail/gnutls-help/2016-February/004085.html
     --disable-non-suiteb-curves
     --disable-doc
-    --disable-tests
+    ${build_env}
   BUILD_COMMAND ${make_command}
   INSTALL_COMMAND ${make_command} install
   DEPENDS gmp nettle ${default_depends})
@@ -434,7 +414,7 @@ ExternalProject_Add(seastar
   GIT_REPOSITORY https://github.com/vectorizedio/seastar.git
   GIT_TAG 094cd884c2c1e15133bbdd7c977e880049a9b47c
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
-  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
+  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${seastar_build_env} ${CMAKE_COMMAND}
   CMAKE_ARGS
     ${common_cmake_args}
     -DBoost_USE_STATIC_LIBS=OFF
@@ -448,7 +428,7 @@ ExternalProject_Add(seastar
     -DSeastar_DOCS=OFF
     -DSeastar_TESTING=OFF
     -DSeastar_CXX_FLAGS=-Wno-error
-    "-DSeastar_LD_FLAGS=${seastar_ld_flags}"
+    -DSeastar_LD_FLAGS=-pthread
     -DSeastar_API_LEVEL=3
     -DSeastar_CXX_DIALECT=c++17
     -DSeastar_UNUSED_RESULT_ERROR=ON

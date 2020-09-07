@@ -33,17 +33,12 @@ def configure_build(vconfig, build_external=True, build_external_only=False):
         clang_path = clang.find_or_install_clang(vconfig)
         vconfig.environ['CC'] = clang_path
         vconfig.environ['CXX'] = f'{clang_path}++'
-    else:
-        vconfig.environ['CC'] = 'gcc'
-        vconfig.environ['CXX'] = 'g++'
 
     logging.info(f"Configuring '{vconfig.build_type}' build.")
 
     cmake_flags = [
         f'-DV_DEPS_INSTALL_DIR={vconfig.external_path}',
-        f'-DCMAKE_BUILD_TYPE={vconfig.build_type.capitalize()} ',
-        f'-DCMAKE_C_COMPILER={vconfig.environ["CC"]} ',
-        f'-DCMAKE_CXX_COMPILER={vconfig.environ["CXX"]} '
+        f'-DCMAKE_BUILD_TYPE={vconfig.build_type.capitalize()} '
     ]
 
     # change value of default cmake config options based on given args. Form
