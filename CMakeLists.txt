@@ -75,16 +75,12 @@ if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
     list(APPEND BASE_C_FLAGS_LIST -fuse-ld=lld)
     list(APPEND BASE_CXX_FLAGS_LIST -fuse-ld=lld)
     list(APPEND BASE_LD_FLAGS_LIST -stdlib=libc++)
-    if (V_MANAGE_DEPS)
-      set(LLVM_LIBCPP_INCLUDE_FLAG "-I${V_DEPS_INSTALL_DIR}/include/c++/v1")
-    endif()
     list(APPEND BASE_CXX_FLAGS_LIST
         -Wno-unused-lambda-capture
         -Wno-unused-command-line-argument
         -D_LIBCPP_ENABLE_CXX17_REMOVED_AUTO_PTR
         -DSEASTAR_USE_STD_OPTIONAL_VARIANT_STRINGVIEW
-        ${LLVM_LIBCPP_INCLUDE_FLAG}
-        --stdlib=libc++)
+        -stdlib=libc++)
 elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
     if ("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
         # Add gdb-index option only for GCC and Debug build
@@ -145,8 +141,23 @@ endif()
 # for clang, link with c++experimental for clang (needed by seastar)
 # Look for libc++ only if we are using Clang
 if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
-    find_package(LibCxx)
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -lc++experimental")
+  get_filename_component(CLANG_DIR ${CMAKE_CXX_COMPILER} DIRECTORY CACHE)
+  set(CLANG_LIBS
+    libc++.a
+    libc++.so
+    libc++.so.1
+    libc++.so.1.0
+    libc++abi.a
+    libc++abi.so
+    libc++abi.so.1
+    libc++abi.so.1.0
+    libc++experimental.a
+  )
+  foreach(LIB ${CLANG_LIBS})
+    configure_file(${CLANG_DIR}/../lib/${LIB} ${V_DEPS_INSTALL_DIR}/lib/${LIB} COPYONLY)
+  endforeach()
+
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -lc++experimental")
 endif()
 
 if(V_MANAGE_DEPS)

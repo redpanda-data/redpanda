@@ -2,6 +2,7 @@ import hashlib
 import io
 import os
 import requests
+import shutil
 import tarfile
 
 from absl import logging
@@ -64,10 +65,15 @@ def _build_clang(src_dir, build_dir, llvm_cache_file, install_prefix, env):
         f'cmake -G Ninja '
         f'  -C {llvm_cache_file} '
         f'  -DCMAKE_INSTALL_PREFIX={install_prefix}'
+        f'  -DLIBCXX_CXX_ABI_INCLUDE_PATHS={src_dir}/libcxxabi/include'
+        f'  -DLIBCXX_CXX_ABI_LIBRARY_PATH={install_prefix}/lib'
         f' {src_dir}/llvm',
         env=env)
     logging.info("Building LLVM...")
-    shell.run_subprocess(f'cd {build_dir} && ninja && ninja install', env=env)
+    shell.run_subprocess(
+        f'cd {build_dir} && ninja install-cxxabi && ninja install', env=env)
+    shutil.copyfile(f'{build_dir}/lib/libc++experimental.a',
+                    f'{install_prefix}/lib/libc++experimental.a')
 
 
 def _download_checksum_and_extract_llvm_sources(src_dir):

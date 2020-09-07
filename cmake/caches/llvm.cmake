@@ -14,11 +14,12 @@ set(CLANG_PLUGIN_SUPPORT OFF CACHE BOOL "")
 set(COMPILER_RT_ENABLE_IOS OFF CACHE BOOL "")
 set(COMPILER_RT_ENABLE_WATCHOS OFF CACHE BOOL "")
 set(COMPILER_RT_ENABLE_TVOS OFF CACHE BOOL "")
-set(LLVM_ENABLE_PROJECTS compiler-rt clang lld clang-tools-extra CACHE STRING "")
+set(LLVM_ENABLE_PROJECTS compiler-rt clang lld clang-tools-extra libcxx libcxxabi CACHE STRING "")
 set(LLVM_USE_LINKER gold CACHE STRING "")
 set(LLVM_BUILD_TOOLS ON CACHE BOOL "")
 set(LLVM_CCACHE_BUILD ON CACHE BOOL "")
 set(LLVM_BINUTILS_INCDIR ON CACHE BOOL "")
+set(LIBCXX_CXX_ABI libcxxabi CACHE STRING "")
 
 # Linking LLVM binaries need lots of memory.
 # In order to make it possible on commodity hardware it is critical
