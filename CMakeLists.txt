@@ -7,6 +7,10 @@ cmake_policy(SET CMP0065 OLD)
 set(CMAKE_VERBOSE_MAKEFILE ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
 
+# CCACHE_DIR is initially provided by vtools
+set(CCACHE_DIR $ENV{CCACHE_DIR} CACHE PATH "ccache directory")
+set(ENV{CCACHE_DIR} ${CCACHE_DIR})
+
 #ninja  1161.66s user 64.94s system 658% cpu 3:06.18 total
 #ninja  825.41s user 49.15s system 586% cpu 2:29.21 total
 set(CMAKE_CXX_FLAGS_DEBUG "-O0 -gsplit-dwarf")

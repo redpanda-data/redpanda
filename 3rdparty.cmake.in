@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.9.0)
+set(CMAKE_MODULE_PATH @CMAKE_MODULE_PATH@)
 project(build-deps NONE)
 cmake_host_system_information(
   RESULT build_concurrency_factor
@@ -29,8 +30,14 @@ set(common_cmake_args
 # pkgconfig
 set(ENV{PKG_CONFIG_PATH}  @PKG_CONFIG_PATH@)
 
+# CCACHE_DIR is initially provided by rebuild.sh
+set(CCACHE_DIR $ENV{CCACHE_DIR} CACHE PATH "ccache directory")
+set(ENV{CCACHE_DIR} ${CCACHE_DIR})
+include(ccache)
+
 # cmake build environment
 set(cmake_build_env
+  CCACHE_DIR=$ENV{CCACHE_DIR}}
   PKG_CONFIG_PATH=@PKG_CONFIG_PATH@
   LDFLAGS=${ld_flags}
   CFLAGS=${c_flags}
