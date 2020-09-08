@@ -9,7 +9,7 @@ variable "owner" {
 }
 
 variable "distro" {
-  default = "debian-stretch"
+  default = "debian-buster"
 }
 
 variable instance_type {
@@ -21,8 +21,8 @@ variable "public_key_path" {}
 variable "distro_ami" {
   type = map(string)
   default = {
-    # https://wiki.debian.org/Cloud/AmazonEC2Image/Stretch
-    "debian-stretch" = "ami-0d270a69ac13b22c3"
+    # https://wiki.debian.org/Cloud/AmazonEC2Image/Buster
+    "debian-buster" = "ami-0f7939d313699273c"
 
     # https://alt.fedoraproject.org/cloud/
     "fedora-31" = "ami-0e82cc6ce8f393d4b"
@@ -39,7 +39,7 @@ variable "distro_ami" {
 variable "distro_ssh_user" {
   type = map(string)
   default = {
-    "debian-stretch" = "admin"
+    "debian-buster"  = "admin"
     "fedora-31"      = "fedora"
     "ubuntu-bionic"  = "ubuntu"
     "rhel-8"         = "ec2-user"
