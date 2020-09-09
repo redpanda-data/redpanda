@@ -88,6 +88,7 @@ func deduceBrokers(
 			log.Debug(err)
 			return []string{"127.0.0.1:9092"}
 		}
+		config.CheckAndPrintNotice(conf.LicenseKey)
 
 		// Add the seed servers' Kafka addrs.
 		if len(conf.Redpanda.SeedServers) > 0 {
@@ -123,6 +124,7 @@ func createProducer(
 		if err != nil {
 			return nil, err
 		}
+		config.CheckAndPrintNotice(conf.LicenseKey)
 		cfg, err := kafka.LoadConfig(conf)
 		if err != nil {
 			return nil, err
@@ -160,6 +162,7 @@ func createAdmin(
 		if err != nil {
 			return nil, err
 		}
+		config.CheckAndPrintNotice(conf.LicenseKey)
 		cfg, err := kafka.LoadConfig(conf)
 		if err != nil {
 			return nil, err

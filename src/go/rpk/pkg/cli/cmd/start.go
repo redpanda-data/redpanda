@@ -75,6 +75,7 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			config.CheckAndPrintNotice(conf.LicenseKey)
 			env := api.EnvironmentPayload{}
 			installDirectory, err := cli.GetOrFindInstallDir(fs, installDirFlag)
 			if err != nil {
