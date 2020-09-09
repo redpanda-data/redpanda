@@ -29,6 +29,7 @@ const (
 type Config struct {
 	NodeUuid     string          `yaml:"node_uuid,omitempty" json:"nodeUuid"`
 	Organization string          `yaml:"organization,omitempty" json:"organization"`
+	LicenseKey   string          `yaml:"license_key,omitempty" json:"licenseKey"`
 	ClusterId    string          `yaml:"cluster_id,omitempty" json:"clusterId"`
 	ConfigFile   string          `yaml:"config_file,omitempty" json:"configFile"`
 	Redpanda     *RedpandaConfig `json:"redpanda"`
