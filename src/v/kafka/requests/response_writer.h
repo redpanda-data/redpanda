@@ -54,25 +54,10 @@ public:
 
     uint32_t write(uint32_t v) { return serialize_int<uint32_t>(v); }
 
-    uint32_t write(kafka::error_code v) {
-        using underlying = std::underlying_type_t<kafka::error_code>;
+    template<typename T, typename = std::enable_if_t<std::is_enum_v<T>>>
+    uint32_t write(T v) {
+        using underlying = std::underlying_type_t<T>;
         return serialize_int<underlying>(static_cast<underlying>(v));
-    }
-
-    uint32_t write(kafka::coordinator_type t) {
-        using underlying = std::underlying_type_t<kafka::coordinator_type>;
-        return serialize_int<underlying>(static_cast<underlying>(t));
-    }
-
-    uint32_t write(kafka::config_resource_type t) {
-        using underlying = std::underlying_type_t<kafka::config_resource_type>;
-        return serialize_int<underlying>(static_cast<underlying>(t));
-    }
-
-    uint32_t write(kafka::describe_configs_source s) {
-        using underlying
-          = std::underlying_type_t<kafka::describe_configs_source>;
-        return serialize_int<underlying>(static_cast<underlying>(s));
     }
 
     uint32_t write(const model::timestamp ts) { return write(ts()); }
