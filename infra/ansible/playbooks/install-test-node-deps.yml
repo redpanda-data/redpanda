@@ -1,4 +1,7 @@
 - hosts: redpanda
+  roles:
+  - cloudalchemy.node-exporter
+  
   tasks:
 
   - name: fedora setup

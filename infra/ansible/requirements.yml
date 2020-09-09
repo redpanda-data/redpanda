@@ -1,3 +1,4 @@
 - src: mrlesmithjr.mdadm
 - src: cloudalchemy.prometheus
 - src: cloudalchemy.grafana
+- src: cloudalchemy.node-exporter
