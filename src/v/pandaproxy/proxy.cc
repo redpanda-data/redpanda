@@ -1,7 +1,8 @@
 #include "pandaproxy/proxy.h"
 
+#include "pandaproxy/api/api-doc/get_topics_names.json.h"
 #include "pandaproxy/api/api-doc/health.json.h"
-#include "pandaproxy/api/api-doc/topics.json.h"
+#include "pandaproxy/api/api-doc/post_topics_name.json.h"
 #include "pandaproxy/configuration.h"
 #include "pandaproxy/handlers.h"
 
@@ -23,7 +24,14 @@ std::vector<server::route_t> get_proxy_routes() {
       }});
 
     routes.emplace_back(server::route_t{
-      "topics", ss::httpd::topics_json::get_topics_names, get_topics_names});
+      "get_topics_names",
+      ss::httpd::get_topics_names_json::get_topics_names,
+      get_topics_names});
+
+    routes.emplace_back(server::route_t{
+      "post_topics_name",
+      ss::httpd::post_topics_name_json::post_topics_name,
+      post_topics_name});
 
     return routes;
 }

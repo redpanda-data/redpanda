@@ -13,11 +13,20 @@ seastar_generate_swagger(
 )
 
 seastar_generate_swagger(
-  TARGET api_topics_swagger
-  VAR api_topics_swagger_file
-  IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/api/api-doc/topics.json
-  OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/api/api-doc/topics.json.h
+  TARGET get_topics_names_swagger
+  VAR get_topics_names_swagger_file
+  IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/api/api-doc/get_topics_names.json
+  OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/api/api-doc/get_topics_names.json.h
 )
+
+seastar_generate_swagger(
+  TARGET post_topics_name_swagger
+  VAR post_topics_name_swagger_file
+  IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/api/api-doc/post_topics_name.json
+  OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/api/api-doc/post_topics_name.json.h
+)
+
+find_package(Base64)
 
 v_cc_library(
   NAME rest_application
@@ -29,6 +38,7 @@ v_cc_library(
     probe.cc
     proxy.cc
     server.cc
+    $<TARGET_OBJECTS:Base64>
   DEPS
     v::syschecks
     v::kafka
@@ -43,7 +53,8 @@ set_property(TARGET pandaproxy PROPERTY POSITION_INDEPENDENT_CODE ON)
 add_dependencies(v_rest_application
   admin_config_swagger
   api_health_swagger
-  api_topics_swagger
+  get_topics_names_swagger
+  post_topics_name_swagger
 )
 
 if(CMAKE_BUILD_TYPE MATCHES Release)
@@ -54,3 +65,5 @@ if(CMAKE_BUILD_TYPE MATCHES Release)
   endif()
 endif()
 install(TARGETS pandaproxy DESTINATION bin)
+
+add_subdirectory(json)

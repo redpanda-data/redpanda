@@ -2,6 +2,7 @@
 
 #include "pandaproxy/logger.h"
 #include "pandaproxy/probe.h"
+#include "pandaproxy/reply.h"
 
 #include <seastar/http/function_handlers.hh>
 
@@ -9,27 +10,6 @@
 #include <exception>
 
 namespace pandaproxy {
-ss::httpd::reply& set_reply_unavailable(ss::httpd::reply& rep) {
-    return rep.set_status(ss::httpd::reply::status_type::service_unavailable)
-      .add_header("Retry-After", "0");
-}
-
-std::unique_ptr<ss::httpd::reply> reply_unavailable() {
-    auto rep = std::make_unique<ss::httpd::reply>(ss::httpd::reply{});
-    set_reply_unavailable(*rep);
-    return rep;
-}
-
-std::unique_ptr<ss::httpd::reply> exception_reply(std::exception_ptr e) {
-    try {
-        std::rethrow_exception(e);
-    } catch (const ss::gate_closed_exception& e) {
-        return reply_unavailable();
-    } catch (...) {
-        vlog(plog.error, "{}", std::current_exception());
-        throw;
-    }
-}
 
 /**
  * Search for the first header of a given name
@@ -81,10 +61,11 @@ struct handler_adaptor : ss::httpd::handler_base {
            m = _probe.hist().auto_measure()]() mutable {
               server::request_t rq{std::move(req), this->_ctx};
               server::reply_t rp{std::move(rep)};
+              auto req_size = get_request_size(*rq.req);
 
               return ss::with_semaphore(
                        _ctx.mem_sem,
-                       get_request_size(*rq.req),
+                       req_size,
                        [this, rq{std::move(rq)}, rp{std::move(rp)}]() mutable {
                            if (_ctx.as.abort_requested()) {
                                set_reply_unavailable(*rp.rep);
@@ -94,7 +75,7 @@ struct handler_adaptor : ss::httpd::handler_base {
                            return _handler(std::move(rq), std::move(rp))
                              .then([](server::reply_t rp) {
                                  rp.rep->set_mime_type(
-                                   "application/vnd.kafka.json.v2+json");
+                                   "application/vnd.kafka.binary.v2+json");
                                  return std::move(rp.rep);
                              });
                        })

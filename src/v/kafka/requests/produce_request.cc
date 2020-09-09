@@ -28,8 +28,7 @@
 
 namespace kafka {
 
-void produce_request::encode(
-  [[maybe_unused]] const request_context& ctx, response_writer& writer) {
+void produce_request::encode(response_writer& writer, api_version) {
     writer.write(transactional_id);
     writer.write(int16_t(acks));
     writer.write(int32_t(timeout.count()));
@@ -88,7 +87,8 @@ produce_response produce_request::make_error_response(error_code error) const {
 
         t.partitions.reserve(topic.partitions.size());
         for (const auto& partition : topic.partitions) {
-            t.partitions.emplace_back(partition.id, error);
+            t.partitions.emplace_back(
+              produce_response::partition{.id = partition.id, .error = error});
         }
 
         response.topics.push_back(std::move(t));
@@ -159,6 +159,24 @@ void produce_response::encode(const request_context& ctx, response& resp) {
     writer.write(int32_t(throttle.count()));
 }
 
+void produce_response::decode(iobuf buf, api_version version) {
+    request_reader reader(std::move(buf));
+    topics = reader.read_array([version](request_reader& reader) {
+        return topic{
+          .name = model::topic(reader.read_string()),
+          .partitions = reader.read_array([version](request_reader& reader) {
+              return partition{
+                .id = model::partition_id(reader.read_int32()),
+                .error = error_code(reader.read_int16()),
+                .base_offset = model::offset(reader.read_int64()),
+                .log_append_time = model::timestamp(reader.read_int64()),
+                .log_start_offset = model::offset(
+                  version >= api_version(5) ? reader.read_int64() : -1)};
+          })};
+    });
+    throttle = std::chrono::milliseconds(reader.read_int32());
+}
+
 static std::ostream&
 operator<<(std::ostream& os, const produce_response::partition& p) {
     fmt::print(
@@ -214,15 +232,16 @@ static raft::replicate_options acks_to_replicate_options(int16_t acks) {
 static inline model::record_batch_reader
 reader_from_lcore_batch(model::record_batch&& batch) {
     /*
-     * The remainder of work for this partition is handled on its home core.
+     * The remainder of work for this partition is handled on its home
+     * core.
      */
     return model::make_foreign_record_batch_reader(
       model::make_memory_record_batch_reader(std::move(batch)));
 }
 
 /*
- * Caller is expected to catch errors that may be thrown while the kafka batch
- * is being deserialized (see reader_from_kafka_batch).
+ * Caller is expected to catch errors that may be thrown while the kafka
+ * batch is being deserialized (see reader_from_kafka_batch).
  */
 static ss::future<produce_response::partition> partition_append(
   model::partition_id id,
@@ -234,12 +253,12 @@ static ss::future<produce_response::partition> partition_append(
       ->replicate(std::move(reader), acks_to_replicate_options(acks))
       .then_wrapped([id, num_records = num_records](
                       ss::future<result<raft::replicate_result>> f) {
-          produce_response::partition p(id);
+          produce_response::partition p{.id = id};
           try {
               auto r = f.get0();
               if (r) {
-                  // have to subtract num_of_records - 1 as base_offset is
-                  // inclusive
+                  // have to subtract num_of_records - 1 as base_offset
+                  // is inclusive
                   p.base_offset = model::offset(
                     r.value().last_offset() - (num_records - 1));
                   p.error = error_code::none;
@@ -263,22 +282,24 @@ static ss::future<produce_response::partition> produce_topic_partition(
     auto ntp = model::ntp(cluster::kafka_namespace, topic.name, part.id);
 
     /*
-     * A single produce request may contain record batches for many different
-     * partitions that are managed different cores.
+     * A single produce request may contain record batches for many
+     * different partitions that are managed different cores.
      */
     auto shard = octx.rctx.shards().shard_for(ntp);
 
     if (!shard) {
         return ss::make_ready_future<produce_response::partition>(
-          produce_response::partition(
-            ntp.tp.partition, error_code::unknown_topic_or_partition));
+          produce_response::partition{
+            .id = ntp.tp.partition,
+            .error = error_code::unknown_topic_or_partition});
     }
 
     // steal the batch from the adapter
     auto batch = std::move(part.adapter.batch.value());
     /*
-     * grab timestamp type topic configuration option out of the metadata
-     * cache. For append time setting we have to recalculate the CRC.
+     * grab timestamp type topic configuration option out of the
+     * metadata cache. For append time setting we have to recalculate
+     * the CRC.
      */
     auto timestamp_type = octx.rctx.metadata_cache().get_topic_timestamp_type(
       model::topic_namespace_view(cluster::kafka_namespace, topic.name));
@@ -303,13 +324,15 @@ static ss::future<produce_response::partition> produce_topic_partition(
           auto partition = mgr.get(ntp);
           if (!partition) {
               return ss::make_ready_future<produce_response::partition>(
-                produce_response::partition(
-                  ntp.tp.partition, error_code::unknown_topic_or_partition));
+                produce_response::partition{
+                  .id = ntp.tp.partition,
+                  .error = error_code::unknown_topic_or_partition});
           }
           if (unlikely(!partition->is_leader())) {
               return ss::make_ready_future<produce_response::partition>(
-                produce_response::partition(
-                  ntp.tp.partition, error_code::not_leader_for_partition));
+                produce_response::partition{
+                  .id = ntp.tp.partition,
+                  .error = error_code::not_leader_for_partition});
           }
           return partition_append(
             ntp.tp.partition, partition, std::move(reader), acks, num_records);
@@ -330,26 +353,28 @@ produce_topic(produce_ctx& octx, produce_request::topic& topic) {
               part.id)) {
             partitions.push_back(
               ss::make_ready_future<produce_response::partition>(
-                produce_response::partition(
-                  part.id, error_code::unknown_topic_or_partition)));
+                produce_response::partition{
+                  .id = part.id,
+                  .error = error_code::unknown_topic_or_partition}));
             continue;
         }
 
         if (unlikely(!part.adapter.valid_crc)) {
             partitions.push_back(
               ss::make_ready_future<produce_response::partition>(
-                produce_response::partition(
-                  part.id, error_code::corrupt_message)));
+                produce_response::partition{
+                  .id = part.id, .error = error_code::corrupt_message}));
             continue;
         }
 
-        // produce version >= 3 (enforced for all produce requests) requires
-        // exactly one record batch per request and it must use the v2 format.
+        // produce version >= 3 (enforced for all produce requests)
+        // requires exactly one record batch per request and it must use
+        // the v2 format.
         if (unlikely(!part.adapter.v2_format || !part.adapter.batch)) {
             partitions.push_back(
               ss::make_ready_future<produce_response::partition>(
-                produce_response::partition(
-                  part.id, error_code::invalid_record)));
+                produce_response::partition{
+                  .id = part.id, .error = error_code::invalid_record}));
             continue;
         }
 
@@ -391,9 +416,10 @@ produce_api::process(request_context&& ctx, ss::smp_service_group ssg) {
     /*
      * Authorization
      *
-     * Note that in kafka authorization is performed based on transactional id,
-     * producer id, and idempotency. Redpanda does not yet support these
-     * features, so we reject all such requests as if authorization failed.
+     * Note that in kafka authorization is performed based on
+     * transactional id, producer id, and idempotency. Redpanda does not
+     * yet support these features, so we reject all such requests as if
+     * authorization failed.
      */
     if (request.has_transactional) {
         return ctx.respond(request.make_error_response(
@@ -404,12 +430,13 @@ produce_api::process(request_context&& ctx, ss::smp_service_group ssg) {
           error_code::cluster_authorization_failed));
 
     } else if (request.acks < -1 || request.acks > 1) {
-        // from kafka source: "if required.acks is outside accepted range,
-        // something is wrong with the client Just return an error and don't
-        // handle the request at all"
+        // from kafka source: "if required.acks is outside accepted
+        // range, something is wrong with the client Just return an
+        // error and don't handle the request at all"
         klog.error(
           "unsupported acks {} see "
-          "https://docs.confluent.io/current/installation/configuration/"
+          "https://docs.confluent.io/current/installation/"
+          "configuration/"
           "producer-configs.html",
           request.acks);
         return ctx.respond(
@@ -435,7 +462,8 @@ produce_api::process(request_context&& ctx, ss::smp_service_group ssg) {
                     return octx.rctx.respond(std::move(octx.response));
                 }
 
-                // acks = 0 is handled separately. first, check for errors
+                // acks = 0 is handled separately. first, check for
+                // errors
                 bool has_error = false;
                 for (const auto& topic : octx.response.topics) {
                     for (const auto& p : topic.partitions) {
@@ -446,11 +474,12 @@ produce_api::process(request_context&& ctx, ss::smp_service_group ssg) {
                     }
                 }
 
-                // in the absense of errors, acks = 0 results in the response
-                // being dropped, as the client does not expect a response. here
-                // we mark the response as noop, but let it flow back so that it
-                // can be accounted for in quota and stats tracking. it is
-                // dropped later during processing.
+                // in the absense of errors, acks = 0 results in the
+                // response being dropped, as the client does not expect
+                // a response. here we mark the response as noop, but
+                // let it flow back so that it can be accounted for in
+                // quota and stats tracking. it is dropped later during
+                // processing.
                 if (!has_error) {
                     return octx.rctx.respond(std::move(octx.response))
                       .then([](response_ptr resp) {
@@ -459,11 +488,13 @@ produce_api::process(request_context&& ctx, ss::smp_service_group ssg) {
                       });
                 }
 
-                // errors in a response from an acks=0 produce request result in
-                // the connection being dropped to signal an issue to the client
+                // errors in a response from an acks=0 produce request
+                // result in the connection being dropped to signal an
+                // issue to the client
                 return ss::make_exception_future<response_ptr>(
                   std::runtime_error(fmt::format(
-                    "Closing connection due to error in produce response: {}",
+                    "Closing connection due to error in produce "
+                    "response: {}",
                     octx.response)));
             });
       });
