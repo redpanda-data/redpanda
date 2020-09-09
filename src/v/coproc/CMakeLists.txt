@@ -32,7 +32,7 @@ v_cc_library(
 
 rp_test(
   UNIT_TEST
-  BINARY_NAME coproc_tests
+  BINARY_NAME coproc_unit_tests
   SOURCES
     tests/materialized_type_test.cc
     tests/management_service_test.cc
@@ -41,5 +41,5 @@ rp_test(
     tests/router_test.cc
     tests/utils.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
-  LIBRARIES v::seastar_testing_main v::coproc
+  LIBRARIES v::seastar_testing_main v::coproc v::storage_test_utils
   )
