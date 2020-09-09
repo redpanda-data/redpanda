@@ -4,6 +4,8 @@
 organization: ""
 cluster_id: ""
 
+license_key: ""
+
 redpanda:
   # Data directory where all the files will be stored. 
   # This directory MUST resides on xfs partion.
