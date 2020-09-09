@@ -38,7 +38,6 @@ rp_test(
     tests/management_service_test.cc
     tests/supervisor.cc
     tests/coproc_fixture_base.cc
-    tests/router_test.cc
     tests/utils.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES v::seastar_testing_main v::coproc v::storage_test_utils
