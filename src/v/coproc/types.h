@@ -109,6 +109,11 @@ inline bool is_materialized_topic(const model::topic& t) {
     return make_materialized_topic(t).has_value();
 }
 
+inline model::topic
+to_materialized_topic(const model::topic& src, const model::topic& dest) {
+    return model::topic(fmt::format("{}.${}$", src(), dest()));
+}
+
 std::ostream&
 operator<<(std::ostream& os, enable_copros_request::data::topic_mode);
 
