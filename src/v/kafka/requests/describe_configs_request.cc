@@ -38,6 +38,7 @@ ss::future<response_ptr> describe_configs_api::process(
     klog.trace("Handling request {}", request);
 
     describe_configs_response response;
+    response.data.results.reserve(request.data.resources.size());
 
     for (auto& resource : request.data.resources) {
         response.data.results.push_back(describe_configs_result{
