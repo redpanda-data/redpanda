@@ -1,13 +1,18 @@
 #pragma once
 
+#include "kafka/errors.h"
 #include "kafka/requests/kafka_batch_adapter.h"
 #include "kafka/requests/request_context.h"
 #include "kafka/requests/response.h"
+#include "kafka/types.h"
+#include "model/timestamp.h"
 #include "seastarx.h"
 
 #include <seastar/core/future.hh>
 
 namespace kafka {
+
+struct produce_response;
 
 /**
  * Support starts at version 3 because this is the first version that supports
@@ -15,6 +20,8 @@ namespace kafka {
  */
 class produce_api final {
 public:
+    using response_type = produce_response;
+
     static constexpr const char* name = "produce";
     static constexpr api_key key = api_key(0);
     static constexpr api_version min_supported = api_version(3);
@@ -27,6 +34,8 @@ public:
 struct produce_response;
 
 struct produce_request final {
+    using api_type = produce_api;
+
     struct partition {
         model::partition_id id;
         // the wire format encodes batch data as a nullable byte array. this
@@ -45,13 +54,20 @@ struct produce_request final {
     std::chrono::milliseconds timeout;
     std::vector<topic> topics;
 
+    produce_request(
+      std::optional<ss::sstring> t_id, int16_t acks, std::vector<topic> topics)
+      : transactional_id(std::move(t_id))
+      , acks(acks)
+      , timeout()
+      , topics(std::move(topics)) {}
+
     produce_request(const produce_request&) = delete;
     produce_request& operator=(const produce_request&) = delete;
     produce_request(produce_request&&) = default;
     produce_request& operator=(produce_request&&) = delete;
-    produce_request(request_context& ctx) { decode(ctx); }
+    explicit produce_request(request_context& ctx) { decode(ctx); }
 
-    void encode(const request_context& ctx, response_writer& writer);
+    void encode(response_writer& writer, api_version version);
     void decode(request_context& ctx);
 
     /**
@@ -73,23 +89,10 @@ struct produce_response final {
 
     struct partition {
         model::partition_id id;
-        error_code error;
-        model::offset base_offset;
-        model::timestamp log_append_time;
-        model::offset log_start_offset; // >= v5
-
-        explicit partition(model::partition_id id)
-          : id(id)
-          , base_offset(-1)
-          , log_append_time(-1)
-          , log_start_offset(-1) {}
-
-        partition(model::partition_id id, error_code error)
-          : id(id)
-          , error(error)
-          , base_offset(-1)
-          , log_append_time(-1)
-          , log_start_offset(-1) {}
+        error_code error{kafka::error_code::none};
+        model::offset base_offset{-1};
+        model::timestamp log_append_time{-1};
+        model::offset log_start_offset{-1}; // >= v5
     };
 
     struct topic {
@@ -101,6 +104,7 @@ struct produce_response final {
     std::chrono::milliseconds throttle = std::chrono::milliseconds(0);
 
     void encode(const request_context& ctx, response& resp);
+    void decode(iobuf buf, api_version version);
 };
 
 std::ostream& operator<<(std::ostream&, const produce_response&);
