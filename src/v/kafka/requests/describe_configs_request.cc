@@ -81,7 +81,10 @@ ss::future<response_ptr> describe_configs_api::process(
             break;
         }
 
-        default:
+        // resource types not yet handled
+        case config_resource_type::broker:
+            [[fallthrough]];
+        case config_resource_type::broker_logger:
             result.error_code = error_code::invalid_request;
         }
     }
