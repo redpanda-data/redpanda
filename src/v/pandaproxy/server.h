@@ -1,12 +1,10 @@
 #pragma once
 
-#include "kafka/client.h"
+#include "pandaproxy/context.h"
 #include "seastarx.h"
 
-#include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
-#include <seastar/core/semaphore.hh>
 #include <seastar/http/api_docs.hh>
 #include <seastar/http/handlers.hh>
 #include <seastar/http/httpd.hh>
@@ -27,11 +25,7 @@ namespace pandaproxy {
 /// e.g., logging, serialisation, metrics, rate-limiting.
 class server {
 public:
-    struct context_t {
-        ss::semaphore mem_sem;
-        ss::abort_source as;
-        kafka::client& client;
-    };
+    using context_t = pandaproxy::context_t;
 
     struct request_t {
         std::unique_ptr<ss::httpd::request> req;
