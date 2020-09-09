@@ -38,6 +38,7 @@ ss::future<response_ptr> describe_configs_api::process(
     klog.trace("Handling request {}", request);
 
     describe_configs_response response;
+    response.data.results.reserve(request.data.resources.size());
 
     for (auto& resource : request.data.resources) {
         response.data.results.push_back(describe_configs_result{
@@ -80,7 +81,10 @@ ss::future<response_ptr> describe_configs_api::process(
             break;
         }
 
-        default:
+        // resource types not yet handled
+        case config_resource_type::broker:
+            [[fallthrough]];
+        case config_resource_type::broker_logger:
             result.error_code = error_code::invalid_request;
         }
     }

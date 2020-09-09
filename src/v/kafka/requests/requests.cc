@@ -148,20 +148,20 @@ std::ostream& operator<<(std::ostream& os, config_resource_type t) {
     switch (t) {
     case config_resource_type::topic:
         return os << "{topic}";
-    default:
-        return os << "{unknown type}";
+    case config_resource_type::broker:
+        [[fallthrough]];
+    case config_resource_type::broker_logger:
+        break;
     }
-    return os;
+    return os << "{unknown type}";
 }
 
 std::ostream& operator<<(std::ostream& os, describe_configs_source s) {
     switch (s) {
     case describe_configs_source::topic:
         return os << "{topic}";
-    default:
-        return os << "{unknown type}";
     }
-    return os;
+    return os << "{unknown type}";
 }
 
 } // namespace kafka
