@@ -1,3 +1,5 @@
+add_subdirectory(client)
+
 seastar_generate_swagger(
   TARGET admin_config_swagger
   VAR admin_config_swagger_file
@@ -40,14 +42,15 @@ v_cc_library(
     server.cc
     $<TARGET_OBJECTS:Base64>
   DEPS
+    v::pandaproxy_client
     v::syschecks
     v::kafka
     v::ssx
   )
 
 add_executable(pandaproxy
-    main.cc
-  )
+  main.cc
+)
 target_link_libraries(pandaproxy PUBLIC v::rest_application)
 set_property(TARGET pandaproxy PROPERTY POSITION_INDEPENDENT_CODE ON)
 add_dependencies(v_rest_application

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "kafka/client.h"
+#include "pandaproxy/client/client.h"
 #include "seastarx.h"
 
 #include <seastar/core/abort_source.hh>
@@ -11,7 +11,7 @@ namespace pandaproxy {
 struct context_t {
     ss::semaphore mem_sem;
     ss::abort_source as;
-    kafka::client& client;
+    pandaproxy::client::client& client;
 };
 
 } // namespace pandaproxy
