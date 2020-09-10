@@ -111,11 +111,12 @@ public:
 
     void configure_server(
       std::optional<ss::tls::credentials_builder> credentials = std::nullopt) {
-        _server = std::make_unique<rpc::server>(rpc::server_configuration{
-          .addrs = {_listen_address},
-          .max_service_memory_per_core = static_cast<int64_t>(
-            ss::memory::stats().total_memory() / 10),
-          .credentials = std::move(credentials)});
+        rpc::server_configuration scfg("unit_test_rpc");
+        scfg.addrs = {_listen_address};
+        scfg.max_service_memory_per_core = static_cast<int64_t>(
+          ss::memory::stats().total_memory() / 10);
+        scfg.credentials = std::move(credentials);
+        _server = std::make_unique<rpc::server>(std::move(scfg));
         _proto = std::make_unique<rpc::simple_protocol>();
     }
 
