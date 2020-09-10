@@ -17,7 +17,8 @@ enum class errc {
     leader_append_failed,
     timeout,
     configuration_change_in_progress,
-    node_does_not_exists
+    node_does_not_exists,
+    leadership_transfer_in_progress,
 };
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "raft::errc"; }
@@ -50,6 +51,8 @@ struct errc_category final : public std::error_category {
             return "raft::errc::configuration_change_in_progress";
         case errc::node_does_not_exists:
             return "Node does not exists in configuration";
+        case errc::leadership_transfer_in_progress:
+            return "Node is currently transferring leadership";
         default:
             return "raft::errc::unknown";
         }

@@ -145,6 +145,13 @@ public:
 
     const storage::ntp_config& log_config() const { return _log.config(); }
 
+    /*
+     * Attempt to transfer leadership to another node in this raft group. If no
+     * node is specified, the most up-to-date node will be selected.
+     */
+    ss::future<std::error_code>
+      transfer_leadership(std::optional<model::node_id>);
+
 private:
     friend replicate_entries_stm;
     friend vote_stm;
@@ -250,6 +257,7 @@ private:
     // read at `ss::future<> start()`
     model::node_id _voted_for;
     std::optional<model::node_id> _leader_id;
+    bool _transferring_leadership{false};
 
     /// useful for when we are not the leader
     clock_type::time_point _hbeat = clock_type::now();
