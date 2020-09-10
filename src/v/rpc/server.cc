@@ -29,7 +29,7 @@ void server::start() {
     vassert(_proto, "must have a registered protocol before starting");
     if (!cfg.disable_metrics) {
         setup_metrics();
-        _probe.setup_metrics(_metrics, _proto->name());
+        _probe.setup_metrics(_metrics, cfg.name.c_str());
     }
     for (auto addr : cfg.addrs) {
         ss::server_socket ss;
@@ -146,20 +146,20 @@ void server::setup_metrics() {
         return;
     }
     _metrics.add_group(
-      prometheus_sanitize::metrics_name(_proto->name()),
+      prometheus_sanitize::metrics_name(cfg.name),
       {sm::make_total_bytes(
          "max_service_mem_bytes",
          [this] { return cfg.max_service_memory_per_core; },
          sm::description(
-           fmt::format("{}: Maximum memory allowed for RPC", _proto->name()))),
+           fmt::format("{}: Maximum memory allowed for RPC", cfg.name))),
        sm::make_total_bytes(
          "consumed_mem_bytes",
          [this] { return cfg.max_service_memory_per_core - _memory.current(); },
-         sm::description(fmt::format(
-           "{}: Memory consumed by request processing", _proto->name()))),
+         sm::description(
+           fmt::format("{}: Memory consumed by request processing", cfg.name))),
        sm::make_histogram(
          "dispatch_handler_latency",
          [this] { return _hist.seastar_histogram_logform(); },
-         sm::description(fmt::format("{}: Latency ", _proto->name())))});
+         sm::description(fmt::format("{}: Latency ", cfg.name)))});
 }
 } // namespace rpc
