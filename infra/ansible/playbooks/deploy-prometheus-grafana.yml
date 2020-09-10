@@ -7,6 +7,10 @@
         metrics_path: "/metrics"
         static_configs:
           - targets: "{{ groups['redpanda'] | map('extract', hostvars, ['ansible_default_ipv4','address']) | map('regex_replace', '^(.*)$','\\1:9644') | list  }}"
+      - job_name: "node"
+        metrics_path: "/metrics"
+        static_configs:
+          - targets: "{{ groups['redpanda'] | map('extract', hostvars, ['ansible_default_ipv4','address']) | map('regex_replace', '^(.*)$','\\1:9100') | list  }}"
 
 - hosts: monitor
   roles:

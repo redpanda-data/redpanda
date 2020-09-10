@@ -9339,7 +9339,7 @@
         "options": [],
         "query": "label_values(instance)",
         "refresh": 1,
-        "regex": null,
+        "regex": "/.*:9644/",
         "sort": 1,
         "tagValuesQuery": null,
         "tagsQuery": null,
