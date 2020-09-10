@@ -273,7 +273,7 @@ void consensus::dispatch_recovery(follower_index_metadata& idx) {
 
 ss::future<result<replicate_result>>
 consensus::replicate(model::record_batch_reader&& rdr, replicate_options opts) {
-    if (!is_leader()) {
+    if (!is_leader() || unlikely(_transferring_leadership)) {
         return seastar::make_ready_future<result<replicate_result>>(
           errc::not_leader);
     }
@@ -1435,6 +1435,165 @@ ss::future<timeout_now_reply> consensus::timeout_now(timeout_now_request&& r) {
       .term = _term,
       .result = timeout_now_reply::status::success,
     });
+}
+
+ss::future<std::error_code>
+consensus::transfer_leadership(std::optional<model::node_id> target) {
+    if (!is_leader()) {
+        vlog(_ctxlog.debug, "Cannot transfer leadership from non-leader");
+        return seastar::make_ready_future<std::error_code>(
+          make_error_code(errc::not_leader));
+    }
+
+    // no explicit node was requested. choose the most up to date follower
+    if (!target) {
+        auto it = std::max_element(
+          _fstats.begin(), _fstats.end(), [](const auto& a, const auto& b) {
+              return a.second.last_dirty_log_index
+                     < b.second.last_dirty_log_index;
+          });
+
+        if (unlikely(it == _fstats.end())) {
+            vlog(
+              _ctxlog.debug,
+              "Cannot transfer leadership. No suitable target node found");
+            return seastar::make_ready_future<std::error_code>(
+              make_error_code(errc::node_does_not_exists));
+        }
+
+        target = it->first;
+    }
+
+    if (*target == _self) {
+        vlog(_ctxlog.debug, "Cannot transfer leadership to self");
+        return seastar::make_ready_future<std::error_code>(
+          make_error_code(errc::not_leader));
+    }
+
+    if (_configuration_manager.get_latest_offset() > _commit_index) {
+        vlog(
+          _ctxlog.debug,
+          "Cannot transfer leadership during configuration change");
+        return ss::make_ready_future<std::error_code>(
+          make_error_code(errc::configuration_change_in_progress));
+    }
+    auto conf = _configuration_manager.get_latest();
+
+    if (!conf.contains_broker(*target)) {
+        vlog(
+          _ctxlog.debug,
+          "Cannot transfer leadership to node {} not found in configuration",
+          *target);
+        return seastar::make_ready_future<std::error_code>(
+          make_error_code(errc::node_does_not_exists));
+    }
+
+    vlog(
+      _ctxlog.info,
+      "Transferring leadership from {} to {} in term {}",
+      _self,
+      *target,
+      _term);
+
+    auto f = ss::with_gate(_bg, [this, target = *target] {
+        if (_transferring_leadership) {
+            vlog(
+              _ctxlog.info,
+              "Cannot transfer leadership. Transfer already in "
+              "progress.");
+            return seastar::make_ready_future<std::error_code>(
+              make_error_code(errc::success));
+        }
+
+        /*
+         * Transferring leadership requires that followers be up to
+         * date. In general that requires a bounded amount of recovery.
+         * Therefore, we stop activity that would cause recovery to not
+         * complete (e.g. appending more data to the log). After
+         * transfer completes this flag is cleared; either transfer was
+         * successful or not, but operations may continue.
+         *
+         * NOTE: for acks=quroum recovery is usually quite fast or
+         * unnecessary because followers are kept up-to-date. but for
+         * asynchronous replication this is not true. a more
+         * sophisticated strategy can be taken from online vm transfer:
+         * slow operations so that recovery can make progress, and once
+         * a threshold has been reached fully stop new activity and
+         * complete the transfer.
+         */
+        _transferring_leadership = true;
+
+        /*
+         * the follower's log needs to be up-to-date so that it will
+         * receive votes when we ask it to trigger an immediate
+         * election. so check if the followers needs some recovery, and
+         * then wait on that process to complete before sending the
+         * election request.
+         */
+        auto& meta = _fstats.get(target);
+        if (!meta.is_recovering && needs_recovery(meta)) {
+            dispatch_recovery(meta); // sets is_recovering flag
+        }
+
+        auto f = ss::now();
+        if (meta.is_recovering) {
+            vlog(
+              _ctxlog.info,
+              "Waiting on node to recover before requesting election");
+            auto timeout = ss::semaphore::clock::duration(
+              config::shard_local_cfg()
+                .raft_transfer_leader_recovery_timeout_ms());
+            f = meta.recovery_finished.wait(timeout);
+        }
+
+        return f.then([this, target] {
+            /*
+             * there are still several scenarios in which we will want
+             * to not complete leadership transfer, all of which might
+             * have occurred during the recovery process.
+             *
+             *   - we might have lost leadership status
+             *   - shutdown may be in progress
+             *   - other: identified by follower not caught-up
+             */
+            if (!is_leader()) {
+                vlog(
+                  _ctxlog.debug, "Cannot transfer leadership from non-leader");
+                return seastar::make_ready_future<std::error_code>(
+                  make_error_code(errc::not_leader));
+            }
+
+            if (_as.abort_requested()) {
+                return seastar::make_ready_future<std::error_code>(
+                  make_error_code(errc::not_leader));
+            }
+
+            auto& meta = _fstats.get(target);
+            if (needs_recovery(meta)) {
+                return seastar::make_ready_future<std::error_code>(
+                  make_error_code(errc::timeout));
+            }
+
+            timeout_now_request req{
+              .node_id = _self,
+              .group = _group,
+              .term = _term,
+            };
+
+            auto timeout
+              = raft::clock_type::now()
+                + config::shard_local_cfg().raft_timeout_now_timeout_ms();
+
+            return _client_protocol
+              .timeout_now(target, std::move(req), rpc::client_opts(timeout))
+              .then([](result<timeout_now_reply>) {
+                  return seastar::make_ready_future<std::error_code>(
+                    make_error_code(errc::success));
+              });
+        });
+    });
+
+    return f.finally([this] { _transferring_leadership = false; });
 }
 
 } // namespace raft
