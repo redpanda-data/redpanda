@@ -1363,4 +1363,16 @@ group_configuration consensus::config() const {
     return _configuration_manager.get_latest();
 }
 
+static std::ostream&
+operator<<(std::ostream& os, const consensus::vote_state& state) {
+    switch (state) {
+    case consensus::vote_state::leader:
+        return os << "{leader}";
+    case consensus::vote_state::follower:
+        return os << "{follower}";
+    case consensus::vote_state::candidate:
+        return os << "{candidate}";
+    }
+}
+
 } // namespace raft
