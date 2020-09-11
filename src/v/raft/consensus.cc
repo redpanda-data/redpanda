@@ -1378,4 +1378,61 @@ operator<<(std::ostream& os, const consensus::vote_state& state) {
     }
 }
 
+ss::future<timeout_now_reply> consensus::timeout_now(timeout_now_request&& r) {
+    if (r.term != _term) {
+        vlog(
+          _ctxlog.debug,
+          "Ignoring timeout request from node {} at term {} != {}",
+          r.node_id,
+          r.term,
+          _term);
+
+        auto f = ss::now();
+        if (r.term > _term) {
+            f = step_down(r.term);
+        }
+
+        return f.then([this] {
+            return ss::make_ready_future<timeout_now_reply>(timeout_now_reply{
+              .term = _term,
+              .result = timeout_now_reply::status::failure,
+            });
+        });
+    }
+
+    if (_vstate != vote_state::follower) {
+        vlog(
+          _ctxlog.debug,
+          "Ignoring timeout request in non-follower state {} from node {} at "
+          "term {}",
+          _vstate,
+          r.node_id,
+          r.term);
+
+        return ss::make_ready_future<timeout_now_reply>(timeout_now_reply{
+          .term = _term,
+          .result = timeout_now_reply::status::failure,
+        });
+    }
+
+    // start an election immediately
+    dispatch_vote(true);
+
+    vlog(
+      _ctxlog.debug,
+      "Timeout request election triggered from node {} at term {}",
+      r.node_id,
+      r.term);
+
+    /*
+     * One optimization that we can investigate is returning _term+1 (despite
+     * the election having not yet started) and allowing the receiver to step
+     * down even before it receives a request vote rpc.
+     */
+    return ss::make_ready_future<timeout_now_reply>(timeout_now_reply{
+      .term = _term,
+      .result = timeout_now_reply::status::success,
+    });
+}
+
 } // namespace raft

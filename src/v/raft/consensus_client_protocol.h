@@ -29,6 +29,10 @@ public:
           model::node_id, install_snapshot_request&&, rpc::client_opts)
           = 0;
 
+        virtual ss::future<result<timeout_now_reply>>
+        timeout_now(model::node_id, timeout_now_request&&, rpc::client_opts)
+          = 0;
+
         virtual ~impl() noexcept = default;
     };
 
@@ -58,6 +62,13 @@ public:
       rpc::client_opts opts) {
         return _impl->install_snapshot(
           target_node, std::move(r), std::move(opts));
+    }
+
+    ss::future<result<timeout_now_reply>> timeout_now(
+      model::node_id target_node,
+      timeout_now_request&& r,
+      rpc::client_opts opts) {
+        return _impl->timeout_now(target_node, std::move(r), std::move(opts));
     }
 
 private:

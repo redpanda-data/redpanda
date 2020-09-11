@@ -142,6 +142,18 @@ public:
         });
     }
 
+    [[gnu::always_inline]] ss::future<timeout_now_reply>
+    timeout_now(timeout_now_request&& r, rpc::streaming_context&) final {
+        return _probe.timeout_now().then([this, r = std::move(r)]() mutable {
+            return dispatch_request(
+              std::move(r),
+              &service::make_failed_timeout_now_reply,
+              [](timeout_now_request&& r, consensus_ptr c) {
+                  return c->timeout_now(std::move(r));
+              });
+        });
+    }
+
 private:
     using consensus_ptr = seastar::lw_shared_ptr<consensus>;
     using hbeats_t = std::vector<append_entries_request>;
@@ -168,6 +180,10 @@ private:
         return ss::make_ready_future<append_entries_reply>(append_entries_reply{
           .group = group,
           .result = append_entries_reply::status::group_unavailable});
+    }
+
+    static ss::future<timeout_now_reply> make_failed_timeout_now_reply() {
+        return ss::make_ready_future<timeout_now_reply>(timeout_now_reply{});
     }
 
     template<typename Req, typename ErrorFactory, typename Func>

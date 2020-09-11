@@ -67,6 +67,8 @@ public:
     ss::future<install_snapshot_reply>
     install_snapshot(install_snapshot_request&& r);
 
+    ss::future<timeout_now_reply> timeout_now(timeout_now_request&& r);
+
     /// This method adds a member to the group and performs configuration update
     ss::future<std::error_code> add_group_member(model::broker node);
     /// Updates given member configuration
