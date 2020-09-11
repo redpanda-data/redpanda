@@ -199,7 +199,12 @@ consensus::success_reply consensus::update_follower_index(
       idx.match_index < lstats.dirty_offset
       || idx.match_index > idx.last_dirty_log_index) {
         // follower match_index is behind, we have to recover it
-        dispatch_recovery(idx, std::move(reply));
+        vlog(
+          _ctxlog.trace,
+          "Starting recovery process for {} - current reply: {}",
+          idx.node_id,
+          reply);
+        dispatch_recovery(idx);
         return success_reply::no;
     }
     return success_reply::no;
@@ -234,7 +239,7 @@ void consensus::successfull_append_entries_reply(
 }
 
 void consensus::dispatch_recovery(
-  follower_index_metadata& idx, append_entries_reply reply) {
+  follower_index_metadata& idx) {
     auto lstats = _log.offsets();
     auto log_max_offset = lstats.dirty_offset;
     if (idx.last_dirty_log_index >= log_max_offset) {
@@ -248,11 +253,6 @@ void consensus::dispatch_recovery(
         idx.next_index = log_max_offset;
     }
     idx.is_recovering = true;
-    vlog(
-      _ctxlog.trace,
-      "Starting recovery process for {} - current reply: {}",
-      idx.node_id,
-      reply);
     // background
     (void)with_gate(_bg, [this, &idx] {
         auto recovery = std::make_unique<recovery_stm>(
