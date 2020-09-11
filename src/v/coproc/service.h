@@ -27,8 +27,6 @@ public:
       ss::sharded<active_mappings>&,
       ss::sharded<storage::api>&);
 
-    ~service() override;
-
     /// coproc client calls this to 'register'
     ///
     /// \param metdata_info list of topics coproc is interested in transforming
