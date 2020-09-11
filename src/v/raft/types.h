@@ -188,6 +188,8 @@ struct vote_request {
     /// \brief used to compare completeness
     model::offset prev_log_index;
     model::term_id prev_log_term;
+    /// \brief true if vote triggered by leadership transfer
+    bool leadership_transfer;
     raft::group_id target_group() const { return group; }
 };
 

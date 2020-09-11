@@ -59,7 +59,7 @@ consensus::consensus(
     update_follower_stats(_configuration_manager.get_latest());
     _vote_timeout.set_callback([this] {
         dispatch_flush_with_lock();
-        dispatch_vote();
+        dispatch_vote(false);
     });
 }
 
@@ -371,12 +371,14 @@ consensus::make_reader(storage::log_reader_config config) {
     });
 }
 
-bool consensus::should_skip_vote() {
-    auto last_election = clock_type::now() - _jit.base_duration();
-
+bool consensus::should_skip_vote(bool ignore_heartbeat) {
     bool skip_vote = false;
 
-    skip_vote |= (_hbeat > last_election);      // nothing to do.
+    if (likely(!ignore_heartbeat)) {
+        auto last_election = clock_type::now() - _jit.base_duration();
+        skip_vote |= (_hbeat > last_election); // nothing to do.
+    }
+
     skip_vote |= _vstate == vote_state::leader; // already a leader
     skip_vote |= !_configuration_manager.get_latest().has_voters(); // no voters
 
@@ -384,20 +386,20 @@ bool consensus::should_skip_vote() {
 }
 
 /// performs no raft-state mutation other than resetting the timer
-void consensus::dispatch_vote() {
+void consensus::dispatch_vote(bool leadership_transfer) {
     // 5.2.1.4 - prepare next timeout
-    if (should_skip_vote()) {
+    if (should_skip_vote(leadership_transfer)) {
         arm_vote_timeout();
         return;
     }
 
     // background, acquire lock, transition state
-    (void)with_gate(_bg, [this] {
+    (void)with_gate(_bg, [this, leadership_transfer] {
         auto vstm = std::make_unique<vote_stm>(this);
         auto p = vstm.get();
 
         // CRITICAL: vote performs locking on behalf of consensus
-        return p->vote()
+        return p->vote(leadership_transfer)
           .then_wrapped(
             [this, p, vstm = std::move(vstm)](ss::future<> vote_f) mutable {
                 try {
@@ -653,9 +655,10 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
     /// leader  do not grant a vote to follower. This will prevent restarted
     /// nodes to disturb all groups leadership
     // Check if we updated the heartbeat timepoint in the last election
-    // timeout duration
+    // timeout duration When the vote was requested because of leadership
+    // transfer grant the vote immediately.
     auto prev_election = clock_type::now() - _jit.base_duration();
-    if (_hbeat > prev_election) {
+    if (_hbeat > prev_election && !r.leadership_transfer) {
         vlog(
           _ctxlog.trace,
           "Already heard from the leader, not granting vote to node {}",

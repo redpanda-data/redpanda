@@ -85,12 +85,12 @@ std::pair<uint32_t, uint32_t> vote_stm::partition_count() const {
     }
     return {success, failure};
 }
-ss::future<> vote_stm::vote() {
+ss::future<> vote_stm::vote(bool leadership_transfer) {
     using skip_vote = ss::bool_class<struct skip_vote_tag>;
     return _ptr->_op_lock
-      .with([this] {
+      .with([this, leadership_transfer] {
           // check again while under op_sem
-          if (_ptr->should_skip_vote()) {
+          if (_ptr->should_skip_vote(leadership_transfer)) {
               return ss::make_ready_future<skip_vote>(skip_vote::yes);
           }
           // 5.2.1
@@ -112,7 +112,8 @@ ss::future<> vote_stm::vote() {
             _ptr->group(),
             _ptr->term(),
             lstats.dirty_offset,
-            last_entry_term};
+            last_entry_term,
+            leadership_transfer};
           // we have to self vote before dispatching vote request to
           // other nodes, this vote has to be done under op semaphore as
           // it changes voted_for state

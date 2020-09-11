@@ -25,7 +25,8 @@ std::ostream& operator<<(std::ostream& o, const append_entries_reply& r) {
 std::ostream& operator<<(std::ostream& o, const vote_request& r) {
     return o << "{node_id: " << r.node_id << ", group: " << r.group
              << ", term:" << r.term << ", prev_log_index:" << r.prev_log_index
-             << ", prev_log_term: " << r.prev_log_term << "}";
+             << ", prev_log_term: " << r.prev_log_term
+             << ", leadership_xfer: " << r.leadership_transfer << "}";
 }
 std::ostream& operator<<(std::ostream& o, const follower_index_metadata& i) {
     return o << "{node_id: " << i.node_id
