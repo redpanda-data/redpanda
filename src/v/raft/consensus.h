@@ -192,8 +192,14 @@ private:
 
     model::term_id get_term(model::offset);
 
-    /// used for timer callback to dispatch the vote_stm
-    void dispatch_vote();
+    /*
+     * Start an election. When leadership transfer is requested, the election is
+     * started immediately, and the vote request will contain a flag that
+     * requests stable leadership optimization to be ignored.
+     */
+    void dispatch_vote(bool leadership_transfer);
+    bool should_skip_vote(bool ignore_heartbeat);
+
     /// Replicates configuration to other nodes,
     //  caller have to pass in _op_sem semaphore units
     ss::future<std::error_code>
@@ -216,7 +222,6 @@ private:
     absl::flat_hash_map<model::node_id, follower_req_seq>
     next_followers_request_seq();
 
-    bool should_skip_vote();
     void setup_metrics();
 
     bytes voted_for_key() const;
