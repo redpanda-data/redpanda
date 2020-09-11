@@ -333,6 +333,21 @@ struct write_snapshot_cfg {
     should_prefix_truncate should_truncate;
 };
 
+struct timeout_now_request {
+    model::node_id node_id;
+    group_id group;
+    model::term_id term;
+
+    raft::group_id target_group() const { return group; }
+};
+
+struct timeout_now_reply {
+    enum class status : uint8_t { success, failure };
+
+    model::term_id term;
+    status result;
+};
+
 // key types used to store data in key-value store
 enum class metadata_key : int8_t {
     voted_for = 0,

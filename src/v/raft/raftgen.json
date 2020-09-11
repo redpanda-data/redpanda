@@ -24,7 +24,11 @@
             "name": "install_snapshot",
             "input_type": "install_snapshot_request",
             "output_type": "install_snapshot_reply"
+        },
+        {
+            "name": "timeout_now",
+            "input_type": "timeout_now_request",
+            "output_type": "timeout_now_reply"
         }
-
     ]
 }

@@ -58,4 +58,16 @@ rpc_client_protocol::install_snapshot(
       });
 }
 
+ss::future<result<timeout_now_reply>> rpc_client_protocol::timeout_now(
+  model::node_id n, timeout_now_request&& r, rpc::client_opts opts) {
+    return _connection_cache.local().with_node_client<raftgen_client_protocol>(
+      ss::this_shard_id(),
+      n,
+      [r = std::move(r),
+       opts = std::move(opts)](raftgen_client_protocol client) mutable {
+          return client.timeout_now(std::move(r), std::move(opts))
+            .then(&rpc::get_ctx_data<timeout_now_reply>);
+      });
+}
+
 } // namespace raft
