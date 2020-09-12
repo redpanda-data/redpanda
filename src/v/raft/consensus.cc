@@ -194,11 +194,7 @@ consensus::success_reply consensus::update_follower_index(
         return success_reply::no;
     }
 
-    auto lstats = _log.offsets();
-    if (
-      idx.match_index < lstats.dirty_offset
-      || idx.match_index > idx.last_dirty_log_index) {
-        // follower match_index is behind, we have to recover it
+    if (needs_recovery(idx)) {
         vlog(
           _ctxlog.trace,
           "Starting recovery process for {} - current reply: {}",
@@ -238,8 +234,14 @@ void consensus::successfull_append_entries_reply(
       idx.next_index);
 }
 
-void consensus::dispatch_recovery(
-  follower_index_metadata& idx) {
+bool consensus::needs_recovery(const follower_index_metadata& idx) {
+    // follower match_index is behind, we have to recover it
+    auto lstats = _log.offsets();
+    return idx.match_index < lstats.dirty_offset
+           || idx.match_index > idx.last_dirty_log_index;
+}
+
+void consensus::dispatch_recovery(follower_index_metadata& idx) {
     auto lstats = _log.offsets();
     auto log_max_offset = lstats.dirty_offset;
     if (idx.last_dirty_log_index >= log_max_offset) {
