@@ -188,7 +188,9 @@ private:
       model::node_id, result<append_entries_reply>, follower_req_seq seq_id);
     void successfull_append_entries_reply(
       follower_index_metadata&, append_entries_reply);
-    void dispatch_recovery(follower_index_metadata&, append_entries_reply);
+
+    bool needs_recovery(const follower_index_metadata&);
+    void dispatch_recovery(follower_index_metadata&);
     void maybe_update_leader_commit_idx();
     ss::future<> do_maybe_update_leader_commit_idx();
 
