@@ -1340,7 +1340,7 @@ void consensus::update_follower_stats(const group_configuration& cfg) {
         }
         auto idx = follower_index_metadata(n.id());
         idx.is_learner = true;
-        _fstats.emplace(n.id(), idx);
+        _fstats.emplace(n.id(), std::move(idx));
     }
 }
 

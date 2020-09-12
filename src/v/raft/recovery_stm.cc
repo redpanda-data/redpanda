@@ -320,6 +320,7 @@ ss::future<> recovery_stm::apply() {
           auto meta = get_follower_meta();
           if (meta) {
               meta.value()->is_recovering = false;
+              meta.value()->recovery_finished.broadcast();
           }
           if (_snapshot_reader != nullptr) {
               return close_snapshot_reader();
