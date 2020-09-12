@@ -323,6 +323,18 @@ configuration::configuration()
       "Time between cluster join retries in milliseconds",
       required::no,
       5s)
+  , raft_timeout_now_timeout_ms(
+      *this,
+      "raft_timeout_now_timeout_ms",
+      "Timeout for a timeout now request",
+      required::no,
+      1s)
+  , raft_transfer_leader_recovery_timeout_ms(
+      *this,
+      "raft_transfer_leader_recovery_timeout_ms",
+      "Timeout waiting for follower recovery when transferring leadership",
+      required::no,
+      10s)
   , _advertised_kafka_api(
       *this,
       "advertised_kafka_api",
