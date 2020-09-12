@@ -17,7 +17,7 @@ public:
 
     explicit follower_stats(std::vector<follower_index_metadata> meta) {
         for (auto& i : meta) {
-            _followers.emplace(i.node_id, i);
+            _followers.emplace(i.node_id, std::move(i));
         }
     }
 
@@ -45,7 +45,7 @@ public:
     }
 
     iterator emplace(model::node_id n, follower_index_metadata m) {
-        auto [it, success] = _followers.insert_or_assign(n, m);
+        auto [it, success] = _followers.insert_or_assign(n, std::move(m));
         vassert(success, "could not insert node:{}", n);
         return it;
     }

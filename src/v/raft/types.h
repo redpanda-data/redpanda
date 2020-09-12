@@ -10,6 +10,7 @@
 #include "reflection/async_adl.h"
 #include "utils/named_type.h"
 
+#include <seastar/core/condition-variable.hh>
 #include <seastar/net/socket_defs.hh>
 #include <seastar/util/bool_class.hh>
 
@@ -45,6 +46,12 @@ using follower_req_seq = named_type<uint64_t, struct follower_req_seq_tag>;
 struct follower_index_metadata {
     explicit follower_index_metadata(model::node_id node)
       : node_id(node) {}
+
+    follower_index_metadata(const follower_index_metadata&) = delete;
+    follower_index_metadata& operator=(const follower_index_metadata&) = delete;
+    follower_index_metadata(follower_index_metadata&&) = default;
+    follower_index_metadata& operator=(follower_index_metadata&&) = default;
+
     model::node_id node_id;
     // index of last known log for this follower
     model::offset last_committed_log_index;
@@ -111,6 +118,12 @@ struct follower_index_metadata {
     follower_req_seq last_received_seq{0};
     bool is_learner = false;
     bool is_recovering = false;
+
+    /*
+     * When is_recovering is true a fiber may wait for recovery to be signaled
+     * on the recovery_finished condition variable.
+     */
+    ss::condition_variable recovery_finished;
 };
 
 struct append_entries_request {
