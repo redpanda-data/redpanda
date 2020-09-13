@@ -35,7 +35,7 @@ private:
     ss::sharded<rpc::connection_cache>& _connection_cache;
 };
 
-static inline consensus_client_protocol
+inline consensus_client_protocol
 make_rpc_client_protocol(ss::sharded<rpc::connection_cache>& clients) {
     return raft::make_consensus_client_protocol<raft::rpc_client_protocol>(
       clients);
