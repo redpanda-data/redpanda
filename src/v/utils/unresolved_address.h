@@ -39,7 +39,7 @@ private:
 
 namespace std {
 static inline ostream& operator<<(ostream& o, const unresolved_address& s) {
-    fmt::print(o, "host: {}, port: {}", s.host(), s.port());
+    fmt::print(o, "{{host: {}, port: {}}}", s.host(), s.port());
     return o;
 }
 

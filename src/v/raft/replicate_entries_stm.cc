@@ -150,19 +150,20 @@ replicate_entries_stm::apply(ss::semaphore_units<> u) {
           auto units = ss::make_lw_shared<std::vector<ss::semaphore_units<>>>(
             std::move(vec));
           uint16_t requests_count = 0;
-          for (auto& n : _ptr->config().nodes) {
-              // We are not dispatching request to followers that are
-              // recovering
-              if (is_follower_recovering(n.id())) {
-                  vlog(
-                    _ctxlog.trace,
-                    "Skipping sending append request to {}, recovering",
-                    n.id());
-                  continue;
-              }
-              ++requests_count;
-              (void)dispatch_one(n.id(), units); // background
-          }
+          _ptr->config().for_each(
+            [this, &requests_count, units](const model::broker& n) {
+                // We are not dispatching request to followers that are
+                // recovering
+                if (is_follower_recovering(n.id())) {
+                    vlog(
+                      _ctxlog.trace,
+                      "Skipping sending append request to {}, recovering",
+                      n.id());
+                    return;
+                }
+                ++requests_count;
+                (void)dispatch_one(n.id(), units); // background
+            });
           // Wait until all RPCs will be dispatched
           return _dispatch_sem.wait(requests_count)
             .then([append_result, units]() mutable { return append_result; });
