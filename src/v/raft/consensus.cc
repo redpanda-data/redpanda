@@ -1274,16 +1274,15 @@ ss::future<> consensus::do_maybe_update_leader_commit_idx() {
     // If there exists an N such that N > commitIndex, a majority
     // of matchIndex[i] ≥ N, and log[N].term == currentTerm:
     // set commitIndex = N (§5.3, §5.4).
-
-    std::vector<model::offset> offsets;
-    // self offsets
-    offsets.push_back(lstats.committed_offset);
-    for (const auto& [_, f_idx] : _fstats) {
-        offsets.push_back(f_idx.match_committed_index());
-    }
-    std::sort(offsets.begin(), offsets.end());
-    size_t majority_match_idx = (offsets.size() - 1) / 2;
-    auto majority_match = offsets[majority_match_idx];
+    auto majority_match = config().quorum_match(
+      [this,
+       committed_offset = lstats.committed_offset](const model::broker& b) {
+          // current node - we just return commited offset
+          if (b.id() == _self) {
+              return committed_offset;
+          }
+          return _fstats.get(b.id()).match_committed_index();
+      });
     if (
       majority_match > _commit_index
       && _log.get_term(majority_match) == _term) {

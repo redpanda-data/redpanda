@@ -71,16 +71,7 @@ static std::vector<heartbeat_manager::node_heartbeat> requests_for_range(
 
         auto group = ptr->config();
         // collect voters
-        std::for_each(
-          std::cbegin(group.nodes),
-          std::cend(group.nodes),
-          maybe_create_follower_request);
-
-        // collect followers
-        std::for_each(
-          std::cbegin(group.learners),
-          std::cend(group.learners),
-          maybe_create_follower_request);
+        group.for_each(maybe_create_follower_request);
     }
 
     std::vector<heartbeat_manager::node_heartbeat> reqs;
