@@ -80,7 +80,9 @@ serializableFunctions = """
     {%- set offset = inOffset | default("offset", True) -%}
     {%- set assignOffset = assign | default(False, True) -%}
     {%- set path = pathParameter | default("value." + field.name, True) -%}
-    {%- if "int8" in field.type -%}
+    {%- if 'Array' in field.type -%}
+    {{ write_array(field, path)}}
+    {%- elif "int8" in field.type -%}
     {{ write_int8(field, path, buffer, offset, assignOffset) }}
     {%- elif "int16" in field.type -%}
     {{ write_int16(field, path, buffer, offset, assignOffset) }}
@@ -96,8 +98,6 @@ serializableFunctions = """
     {{ write_varint(field, path, buffer, offset, assignOffset) }}
     {%- elif field.type == "buffer" -%}
     {{- write_buffer(field, path, buffer, offset, assignOffset) }}
-    {%- elif 'Array' in field.type -%}
-    {{ write_array(field, path)}}
     {%- else -%}
     {{ write_object(field, path, buffer, offset, assignOffset) }}
     {%- endif -%}
@@ -235,7 +235,9 @@ deserializableFunctions = """
     {%- set buffer = inBuffer | default("buffer", True) -%}
     {%- set offset = inOffset | default("offset", True) -%}
     {%- set func = funcStyle | default(False, True) -%}
-    {%- if "int8" in type %}
+    {%- if 'Array' in type %}
+        {{ read_array(type, buffer, offset, func)}}
+    {%- elif "int8" in type %}
         {{ read_int8(buffer, offset, func, type) }}
     {%- elif "int16" in type %}
         {{ read_int16(buffer, offset, func, type) }}
@@ -251,30 +253,28 @@ deserializableFunctions = """
         {{ read_boolean(buffer, offset, func) }}
     {%- elif type == "varint" %}
         {{ read_varint(buffer, offset, func) }}
-    {%- elif 'Array' in type %}
-        {{ read_array(type, buffer, offset, func)}}
     {%- else %}
         {{ read_object(type, buffer, offset, func) }}
     {%- endif %}
 {%- endmacro %}
 
 {%- macro convert_type(type) -%}
-    {%- if type == "varint" -%}
-    bigint
-    {%- elif type == "Array<varint>" -%}
+    {%- if type == "Array<varint>" -%}
     Array<bigint>
-    {%- elif type == "int64" -%}
+    {%- elif type == "varint" -%}
     bigint
     {%- elif type == "Array<int64>" -%}
     Array<bigint>
-    {%- elif type == "uint64" -%}
+    {%- elif type == "int64" -%}
     bigint
     {%- elif type == "Array<uint64>" -%}
     Array<bigint>
-    {%- elif 'int' in type -%}
-    number
+    {%- elif type == "uint64" -%}
+    bigint
     {%- elif 'Array<int' in type -%}
     Array<number>
+    {%- elif 'int' in type -%}
+    number
     {%- elif type == "buffer" -%}
     Buffer
     {%- elif type == "Array<buffer>" -%}
