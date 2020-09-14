@@ -65,7 +65,7 @@ ss::future<> vote_stm::dispatch_one(model::node_id n) {
                       vlog(
                         _ctxlog.info,
                         "error voting: {}",
-                        voter_reply->second.value);
+                        voter_reply->second.value->error());
                   }
               });
         });
