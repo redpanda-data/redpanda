@@ -273,6 +273,8 @@ deserializableFunctions = """
     bigint
     {%- elif 'Array<int' in type -%}
     Array<number>
+    {%- elif 'Array<uint' in type -%}
+    Array<number>
     {%- elif 'int' in type -%}
     number
     {%- elif type == "buffer" -%}
