@@ -114,21 +114,23 @@ CONCEPT(requires requires(Func f, Iterator i) {
     ->bool;
     seastar::futurize_invoke(f, *i);
 })
-inline auto parallel_transform(Iterator begin, Iterator end, Func&& func) {
+inline auto parallel_transform(Iterator begin, Iterator end, Func func) {
     using value_type = typename std::iterator_traits<Iterator>::value_type;
     using future = decltype(
-      seastar::futurize_invoke(std::forward<Func>(func), *begin));
+      seastar::futurize_invoke(std::move(func), std::move(*begin)));
     std::vector<future> res;
     res.reserve(std::distance(begin, end));
     std::transform(
       begin,
       end,
       std::back_inserter(res),
-      [func{std::forward<Func>(func)}](const value_type& val) mutable {
-          return seastar::futurize_invoke(std::forward<Func>(func), val);
+      [func{std::move(func)}](value_type val) mutable {
+          return seastar::futurize_invoke(std::move(func), std::move(val));
       });
     return seastar::do_with(std::move(res), [](std::vector<future>& res) {
-        return seastar::when_all_succeed(res.begin(), res.end());
+        return seastar::when_all_succeed(
+          std::make_move_iterator(res.begin()),
+          std::make_move_iterator(res.end()));
     });
 }
 
@@ -158,10 +160,13 @@ CONCEPT(requires requires(Func f, Rng r) {
     ->bool;
     seastar::futurize_invoke(f, *r.begin());
 })
-inline auto parallel_transform(Rng&& rng, Func&& func) {
+inline auto parallel_transform(Rng rng, Func func) {
     return seastar::do_with(
-      std::forward<Rng>(rng), [func{std::forward<Func>(func)}](Rng& rng) {
-          return parallel_transform(rng.begin(), rng.end(), func);
+      std::move(rng), [func{std::move(func)}](Rng& rng) mutable {
+          return parallel_transform(
+            std::make_move_iterator(rng.begin()),
+            std::make_move_iterator(rng.end()),
+            std::move(func));
       });
 }
 
