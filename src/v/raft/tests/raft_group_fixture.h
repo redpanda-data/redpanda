@@ -130,14 +130,12 @@ struct raft_node {
     void start() {
         tstlog.info("Starting node {} stack ", id());
         // start rpc
-        server
-          .start(rpc::server_configuration{
-            .addrs = {broker.rpc_address().resolve().get0()},
-            .max_service_memory_per_core = 1024 * 1024 * 1024,
-            .credentials = std::nullopt,
-            .disable_metrics = rpc::metrics_disabled::yes,
-          })
-          .get0();
+        rpc::server_configuration scfg("raft_test_rpc");
+        scfg.addrs = {broker.rpc_address().resolve().get0()};
+        scfg.max_service_memory_per_core = 1024 * 1024 * 1024;
+        scfg.credentials = std::nullopt;
+        scfg.disable_metrics = rpc::metrics_disabled::yes;
+        server.start(std::move(scfg)).get0();
         raft_manager.start().get0();
         raft_manager
           .invoke_on(0, [this](test_raft_manager& mgr) { mgr.c = consensus; })
