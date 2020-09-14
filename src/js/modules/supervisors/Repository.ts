@@ -93,6 +93,13 @@ class Repository {
     return this.coprocessors;
   }
 
+  /**
+   * returns the topic list
+   */
+  getTopics(): string[] {
+    return [...this.coprocessors.keys()];
+  }
+
   private readonly coprocessors: Map<string, HandleTable>;
 }
 
