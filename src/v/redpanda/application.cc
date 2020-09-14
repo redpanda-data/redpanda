@@ -352,7 +352,7 @@ void application::wire_up_services() {
     syschecks::systemd_message("Adding kafka quota manager");
     construct_service(_quota_mgr).get();
     // rpc
-    rpc::server_configuration rpc_cfg;
+    rpc::server_configuration rpc_cfg("internal_rpc");
     rpc_cfg.max_service_memory_per_core = memory_groups::rpc_total_memory();
     auto rpc_server_addr
       = config::shard_local_cfg().rpc_server().resolve().get0();
@@ -366,7 +366,7 @@ void application::wire_up_services() {
 
     // coproc rpc
     if (coproc_enabled()) {
-        rpc::server_configuration cp_rpc_cfg;
+        rpc::server_configuration cp_rpc_cfg("coproc_rpc");
         cp_rpc_cfg.max_service_memory_per_core
           = memory_groups::rpc_total_memory();
         cp_rpc_cfg.addrs.emplace_back(
@@ -376,7 +376,7 @@ void application::wire_up_services() {
         construct_service(_coproc_rpc, cp_rpc_cfg).get();
     }
 
-    rpc::server_configuration kafka_cfg;
+    rpc::server_configuration kafka_cfg("kafka_rpc");
     kafka_cfg.max_service_memory_per_core = memory_groups::kafka_total_memory();
     auto kafka_addr = config::shard_local_cfg().kafka_api().resolve().get0();
     kafka_cfg.addrs.push_back(kafka_addr);

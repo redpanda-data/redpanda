@@ -171,6 +171,9 @@ struct server_configuration {
     int64_t max_service_memory_per_core;
     std::optional<ss::tls::credentials_builder> credentials;
     metrics_disabled disable_metrics = metrics_disabled::no;
+    ss::sstring name;
+    explicit server_configuration(ss::sstring n)
+      : name(std::move(n)) {}
 };
 struct transport_configuration {
     ss::socket_address server_addr;

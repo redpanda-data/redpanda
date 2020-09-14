@@ -15,8 +15,6 @@ service::service(
   , _mappings(mappings)
   , _storage(storage) {}
 
-service::~service() { _mappings.stop().get(); }
-
 /// Generic method that iterates over all of the requests
 /// and properly assembles a response, leaving the details left
 /// to the 'fn' argument

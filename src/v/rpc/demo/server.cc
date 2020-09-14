@@ -69,7 +69,7 @@ int main(int args, char** argv, char** env) {
         });
         auto& cfg = app.configuration();
         return ss::async([&] {
-            rpc::server_configuration scfg;
+            rpc::server_configuration scfg("demo_rpc");
             scfg.addrs.push_back(ss::socket_address(ss::ipv4_addr(
               cfg["ip"].as<std::string>(), cfg["port"].as<uint16_t>())));
             scfg.max_service_memory_per_core
