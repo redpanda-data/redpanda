@@ -1,3 +1,16 @@
+- hosts: redpanda[0]
+  tasks:
+  - name: generate the redpanda grafana dashboard
+    shell: |
+      rpk generate grafana-dashboard --datasource prometheus --prometheus-url 'http://{{hostvars[inventory_hostname].private_ip}}:9644/metrics' > '/tmp/redpanda-grafana.json'
+
+  - name: fetch grafana dashboard
+    fetch:
+      src: /tmp/redpanda-grafana.json
+      dest: '{{ playbook_dir }}/grafana_dashboards/redpanda-grafana.json'
+      flat: yes
+
+
 - hosts: monitor
   roles:
   - cloudalchemy.prometheus
@@ -13,8 +26,8 @@
           - targets: "{{ groups['redpanda'] | map('extract', hostvars, ['ansible_default_ipv4','address']) | map('regex_replace', '^(.*)$','\\1:9100') | list  }}"
 
 - hosts: monitor
-  roles:
-  - role: cloudalchemy.grafana
+  roles: 
+  - cloudalchemy.grafana
   vars:
     grafana_version: 6.7.3
     grafana_security:
@@ -27,3 +40,9 @@
       url: 'http://localhost:9090'
       basicAuth: false
     grafana_dashboards_dir: '{{ playbook_dir }}/grafana_dashboards'
+
+- hosts: localhost
+  tasks:
+  - file:
+      path: '{{ playbook_dir }}/grafana_dashboards/redpanda-grafana.json'
+      state: absent
