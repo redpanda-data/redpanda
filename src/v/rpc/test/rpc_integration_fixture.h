@@ -87,19 +87,17 @@ public:
         _sg = ss::create_scheduling_group("rpc scheduling group", 200).get0();
     }
 
-    void start_server() {
-        check_server();
-        _server->set_protocol(std::move(_proto));
-        _server->start();
-    }
-
     virtual ~rpc_base_integration_fixture() {
-        if (_server) {
-            _server->stop().get();
-        }
         destroy_smp_service_group(_ssg).get0();
         destroy_scheduling_group(_sg).get0();
     }
+
+    virtual void start_server() = 0;
+    virtual void stop_server() = 0;
+
+    virtual void configure_server(
+      std::optional<ss::tls::credentials_builder> credentials = std::nullopt)
+      = 0;
 
     rpc::transport_configuration client_config(
       std::optional<ss::tls::credentials_builder> credentials
@@ -109,8 +107,37 @@ public:
           .credentials = std::move(credentials)};
     }
 
+protected:
+    ss::smp_service_group _ssg;
+    ss::scheduling_group _sg;
+    ss::socket_address _listen_address;
+
+private:
+    virtual void check_server() = 0;
+};
+
+class rpc_simple_integration_fixture : public rpc_base_integration_fixture {
+public:
+    explicit rpc_simple_integration_fixture(uint16_t port)
+      : rpc_base_integration_fixture(port) {}
+
+    ~rpc_simple_integration_fixture() override { stop_server(); }
+
+    void start_server() override {
+        check_server();
+        _server->set_protocol(std::move(_proto));
+        _server->start();
+    }
+
+    void stop_server() override {
+        if (_server) {
+            _server->stop().get();
+        }
+    }
+
     void configure_server(
-      std::optional<ss::tls::credentials_builder> credentials = std::nullopt) {
+      std::optional<ss::tls::credentials_builder> credentials
+      = std::nullopt) override {
         rpc::server_configuration scfg("unit_test_rpc");
         scfg.addrs = {_listen_address};
         scfg.max_service_memory_per_core = static_cast<int64_t>(
@@ -128,23 +155,79 @@ public:
     }
 
 private:
-    void check_server() {
+    void check_server() override {
         if (!_server || !_proto) {
             throw std::runtime_error("Configure server first!!!");
         }
     }
 
-    ss::smp_service_group _ssg;
-    ss::scheduling_group _sg;
-    ss::socket_address _listen_address;
     std::unique_ptr<rpc::simple_protocol> _proto;
     std::unique_ptr<rpc::server> _server;
 };
 
-class rpc_integration_fixture : public rpc_base_integration_fixture {
+class rpc_sharded_integration_fixture : public rpc_base_integration_fixture {
 public:
-    explicit rpc_integration_fixture()
-      : rpc_base_integration_fixture(redpanda_rpc_port) {}
+    explicit rpc_sharded_integration_fixture(uint16_t port)
+      : rpc_base_integration_fixture(port) {}
+
+    void start_server() override {
+        check_server();
+        _server.invoke_on_all(&rpc::server::start).get();
+    }
+
+    void stop_server() override { _server.stop().get(); }
+
+    void configure_server(
+      std::optional<ss::tls::credentials_builder> credentials
+      = std::nullopt) override {
+        rpc::server_configuration scfg("unit_test_rpc_sharded");
+        scfg.addrs = {_listen_address};
+        scfg.max_service_memory_per_core = static_cast<int64_t>(
+          ss::memory::stats().total_memory() / 10);
+        scfg.credentials = std::move(credentials);
+        _server.start(std::move(scfg)).get();
+    }
+
+    template<typename Service, typename... Args>
+    void register_service(Args&&... args) {
+        check_server();
+        _server
+          .invoke_on_all(
+            [this, args = std::make_tuple(std::forward<Args>(args)...)](
+              rpc::server& s) mutable {
+                std::apply(
+                  [this, &s](Args&&... args) mutable {
+                      auto proto = std::make_unique<rpc::simple_protocol>();
+                      proto->register_service<Service>(
+                        _sg, _ssg, std::forward<Args>(args)...);
+                      s.set_protocol(std::move(proto));
+                  },
+                  std::move(args));
+            })
+          .get();
+    }
+
+private:
+    void check_server() override {
+        const bool all_initialized
+          = ss::map_reduce(
+              boost::irange<unsigned>(0, ss::smp::count),
+              [this](unsigned /*c*/) { return _server.local_is_initialized(); },
+              true,
+              std::logical_and<>())
+              .get0();
+        if (!all_initialized) {
+            throw std::runtime_error("Configure server first!!!");
+        }
+    }
+
+    ss::sharded<rpc::server> _server;
+};
+
+class rpc_integration_fixture : public rpc_simple_integration_fixture {
+public:
+    rpc_integration_fixture()
+      : rpc_simple_integration_fixture(redpanda_rpc_port) {}
 
     void register_services() {
         register_service<movistar>();
