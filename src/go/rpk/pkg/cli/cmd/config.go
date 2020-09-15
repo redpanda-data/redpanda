@@ -67,8 +67,8 @@ func bootstrap(fs afero.Fs) *cobra.Command {
 		Short: "Initialize the configuration to bootstrap a cluster",
 		Long: "Initialize the configuration to bootstrap a cluster." +
 			" --id is mandatory. bootstrap will expect the machine" +
-			" it's running on to have only one non-loopback IP" +
-			" address associated to it, and use it in the" +
+			" it's running on to have only one private non-" +
+			"loopback IP address associated to it, and use it in the" +
 			" configuration as the node's address. If it has multiple" +
 			" IPs, --self must be specified. In that case, the given" +
 			" IP will be used without checking whether it's among the" +
@@ -79,11 +79,7 @@ func bootstrap(fs afero.Fs) *cobra.Command {
 		Args: cobra.OnlyValidArgs,
 		RunE: func(c *cobra.Command, args []string) error {
 			defaultRpcPort := config.DefaultConfig().Redpanda.RPCServer.Port
-			if len(ips) == 0 && self == "" {
-				return errors.New(
-					"either --ips or --self must be passed.",
-				)
-			}
+
 			conf, err := config.ReadOrGenerate(fs, configPath)
 			if err != nil {
 				return err
@@ -173,20 +169,49 @@ func ownIP() (net.IP, error) {
 
 	filtered := []net.IP{}
 	for _, a := range addrs {
-		if ipnet, ok := a.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+		ipnet, ok := a.(*net.IPNet)
+		if !ok {
+			continue
+		}
+		isV4 := ipnet.IP.To4() != nil
+		private, err := isPrivate(ipnet.IP)
+		if err != nil {
+			return nil, err
+		}
+
+		if isV4 && private && !ipnet.IP.IsLoopback() {
 			filtered = append(filtered, ipnet.IP)
 		}
 	}
 	if len(filtered) > 1 {
 		return nil, errors.New(
-			"found multiple non-loopback IPs for the current node." +
-				" Try setting --self.",
+			"found multiple private non-loopback v4 IPs for the" +
+				" current node. Please set one with --self.",
 		)
 	}
-	if len(filtered) == 1 {
+	if len(filtered) == 0 {
 		return nil, errors.New(
 			"couldn't find any non-loopback IPs for the current node.",
 		)
 	}
 	return filtered[0], nil
+}
+
+func isPrivate(ip net.IP) (bool, error) {
+	// The standard private subnet CIDRS
+	var privateCIDRs = []string{
+		"10.0.0.0/8",
+		"172.16.0.0/12",
+		"192.168.0.0/16",
+	}
+	for _, cidr := range privateCIDRs {
+		_, ipNet, err := net.ParseCIDR(cidr)
+		if err != nil {
+			return false, err
+		}
+		if ipNet.Contains(ip) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
