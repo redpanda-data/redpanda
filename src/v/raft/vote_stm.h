@@ -34,7 +34,7 @@ public:
     /// (2) while processing leadership replies
     /// it _does not_ hold the semaphore for the full vote to allow for
     /// staggering processing/vote interruption
-    ss::future<> vote();
+    ss::future<> vote(bool leadership_transfer);
     ss::future<> wait();
 
 private:

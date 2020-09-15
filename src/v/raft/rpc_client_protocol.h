@@ -31,11 +31,14 @@ public:
     ss::future<result<install_snapshot_reply>> install_snapshot(
       model::node_id, install_snapshot_request&&, rpc::client_opts) final;
 
+    ss::future<result<timeout_now_reply>>
+    timeout_now(model::node_id, timeout_now_request&&, rpc::client_opts) final;
+
 private:
     ss::sharded<rpc::connection_cache>& _connection_cache;
 };
 
-static inline consensus_client_protocol
+inline consensus_client_protocol
 make_rpc_client_protocol(ss::sharded<rpc::connection_cache>& clients) {
     return raft::make_consensus_client_protocol<raft::rpc_client_protocol>(
       clients);

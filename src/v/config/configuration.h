@@ -80,6 +80,9 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> max_kafka_throttle_delay_ms;
     property<std::chrono::milliseconds> raft_io_timeout_ms;
     property<std::chrono::milliseconds> join_retry_timeout_ms;
+    property<std::chrono::milliseconds> raft_timeout_now_timeout_ms;
+    property<std::chrono::milliseconds>
+      raft_transfer_leader_recovery_timeout_ms;
 
     configuration();
 

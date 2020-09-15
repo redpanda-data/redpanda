@@ -67,6 +67,8 @@ public:
     ss::future<install_snapshot_reply>
     install_snapshot(install_snapshot_request&& r);
 
+    ss::future<timeout_now_reply> timeout_now(timeout_now_request&& r);
+
     /// This method adds a member to the group and performs configuration update
     ss::future<std::error_code> add_group_member(model::broker node);
     /// Updates given member configuration
@@ -143,6 +145,13 @@ public:
 
     const storage::ntp_config& log_config() const { return _log.config(); }
 
+    /*
+     * Attempt to transfer leadership to another node in this raft group. If no
+     * node is specified, the most up-to-date node will be selected.
+     */
+    ss::future<std::error_code>
+      transfer_leadership(std::optional<model::node_id>);
+
 private:
     friend replicate_entries_stm;
     friend vote_stm;
@@ -186,14 +195,22 @@ private:
       model::node_id, result<append_entries_reply>, follower_req_seq seq_id);
     void successfull_append_entries_reply(
       follower_index_metadata&, append_entries_reply);
-    void dispatch_recovery(follower_index_metadata&, append_entries_reply);
+
+    bool needs_recovery(const follower_index_metadata&);
+    void dispatch_recovery(follower_index_metadata&);
     void maybe_update_leader_commit_idx();
     ss::future<> do_maybe_update_leader_commit_idx();
 
     model::term_id get_term(model::offset);
 
-    /// used for timer callback to dispatch the vote_stm
-    void dispatch_vote();
+    /*
+     * Start an election. When leadership transfer is requested, the election is
+     * started immediately, and the vote request will contain a flag that
+     * requests stable leadership optimization to be ignored.
+     */
+    void dispatch_vote(bool leadership_transfer);
+    bool should_skip_vote(bool ignore_heartbeat);
+
     /// Replicates configuration to other nodes,
     //  caller have to pass in _op_sem semaphore units
     ss::future<std::error_code>
@@ -216,7 +233,6 @@ private:
     absl::flat_hash_map<model::node_id, follower_req_seq>
     next_followers_request_seq();
 
-    bool should_skip_vote();
     void setup_metrics();
 
     bytes voted_for_key() const;
@@ -241,6 +257,7 @@ private:
     // read at `ss::future<> start()`
     model::node_id _voted_for;
     std::optional<model::node_id> _leader_id;
+    bool _transferring_leadership{false};
 
     /// useful for when we are not the leader
     clock_type::time_point _hbeat = clock_type::now();
