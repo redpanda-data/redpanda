@@ -200,6 +200,8 @@ infra/modules/**/ssh_config*
 src/js/node_modules
 # ts generated for coprocessor serializables
 src/js/modules/domain/generatedRpc/*.ts
+# rpc generated for coprocessor
+src/js/modules/rpc/serverAndClients/*.ts
 #intelij
 *.iml
 # Node dependecies ts-generated
