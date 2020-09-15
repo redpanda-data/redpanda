@@ -194,11 +194,6 @@ func TestBootstrap(t *testing.T) {
 			expectedErr: "www.host.com is not a valid IP.",
 		},
 		{
-			name:        "it should fail if neither --self nor --ips is passed",
-			id:          "1",
-			expectedErr: "either --ips or --self must be passed.",
-		},
-		{
 			name:        "it should fail if --id isn't passed",
 			expectedErr: "required flag(s) \"id\" not set",
 		},
