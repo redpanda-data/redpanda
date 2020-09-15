@@ -9,6 +9,8 @@
 #include "model/metadata.h"
 #include "platform/stop_signal.h"
 #include "raft/service.h"
+#include "redpanda/admin/api-doc/config.json.h"
+#include "redpanda/admin/api-doc/raft.json.h"
 #include "rpc/simple_protocol.h"
 #include "storage/directories.h"
 #include "syschecks/syschecks.h"
@@ -21,6 +23,8 @@
 #include <seastar/core/prometheus.hh>
 #include <seastar/core/thread.hh>
 #include <seastar/http/api_docs.hh>
+#include <seastar/http/exception.hh>
+#include <seastar/json/json_elements.hh>
 #include <seastar/util/defer.hh>
 
 #include <rapidjson/stringbuffer.h>
@@ -192,10 +196,11 @@ void application::configure_admin_server() {
         auto rb = ss::make_shared<ss::api_registry_builder20>(
           conf.admin_api_doc_dir(), "/v1");
         _admin
-          .invoke_on_all([rb](ss::http_server& server) {
+          .invoke_on_all([this, rb](ss::http_server& server) {
               rb->set_api_doc(server._routes);
               rb->register_api_file(server._routes, "header");
               rb->register_api_file(server._routes, "config");
+              rb->register_api_file(server._routes, "raft");
               ss::httpd::config_json::get_config.set(
                 server._routes, []([[maybe_unused]] ss::const_req req) {
                     rapidjson::StringBuffer buf;
@@ -203,6 +208,7 @@ void application::configure_admin_server() {
                     config::shard_local_cfg().to_json(writer);
                     return ss::json::json_return_type(buf.GetString());
                 });
+              admin_register_raft_routes(server);
           })
           .get();
     }
@@ -480,4 +486,66 @@ void application::start() {
 
     vlog(_log.info, "Successfully started Redpanda!");
     syschecks::systemd_notify_ready();
+}
+
+void application::admin_register_raft_routes(ss::http_server& server) {
+    ss::httpd::raft_json::transfer_leadership.set(
+      server._routes, [this](std::unique_ptr<ss::httpd::request> req) {
+          raft::group_id group_id;
+          try {
+              group_id = raft::group_id(std::stoll(req->param["group_id"]));
+          } catch (...) {
+              throw ss::httpd::bad_param_exception(fmt::format(
+                "Raft group id must be an integer: {}",
+                req->param["group_id"]));
+          }
+
+          if (group_id() < 0) {
+              throw ss::httpd::bad_param_exception(
+                fmt::format("Invalid raft group id {}", group_id));
+          }
+
+          if (!shard_table.local().contains(group_id)) {
+              throw ss::httpd::not_found_exception(
+                fmt::format("Raft group {} not found", group_id));
+          }
+
+          std::optional<model::node_id> target;
+          if (auto node = req->get_query_param("target"); !node.empty()) {
+              try {
+                  target = model::node_id(std::stoi(node));
+              } catch (...) {
+                  throw ss::httpd::bad_param_exception(
+                    fmt::format("Target node id must be an integer: {}", node));
+              }
+              if (*target < 0) {
+                  throw ss::httpd::bad_param_exception(
+                    fmt::format("Invalid target node id {}", *target));
+              }
+          }
+
+          vlog(
+            _log.info,
+            "Leadership transfer request for raft group {} to node {}",
+            group_id,
+            target);
+
+          auto shard = shard_table.local().shard_for(group_id);
+
+          return partition_manager.invoke_on(
+            shard, [group_id, target](cluster::partition_manager& pm) mutable {
+                auto consensus = pm.consensus_for(group_id);
+                if (!consensus) {
+                    throw ss::httpd::not_found_exception();
+                }
+                return consensus->transfer_leadership(target).then(
+                  [](std::error_code err) {
+                      if (err) {
+                          throw ss::httpd::server_error_exception(fmt::format(
+                            "Leadership transfer failed: {}", err.message()));
+                      }
+                      return ss::json::json_return_type(ss::json::json_void());
+                  });
+            });
+      });
 }

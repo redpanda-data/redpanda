@@ -11,7 +11,6 @@
 #include "kafka/groups/group_router.h"
 #include "kafka/quota_manager.h"
 #include "raft/group_manager.h"
-#include "redpanda/admin/api-doc/config.json.h"
 #include "resource_mgmt/cpu_scheduling.h"
 #include "resource_mgmt/memory_groups.h"
 #include "resource_mgmt/smp_groups.h"
@@ -65,6 +64,8 @@ private:
     ss::app_template setup_app_template();
     void validate_arguments(const po::variables_map&);
     void hydrate_config(const po::variables_map&);
+
+    void admin_register_raft_routes(ss::http_server& server);
 
     bool coproc_enabled() {
         const auto& cfg = config::shard_local_cfg();

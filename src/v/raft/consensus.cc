@@ -59,7 +59,7 @@ consensus::consensus(
     update_follower_stats(_configuration_manager.get_latest());
     _vote_timeout.set_callback([this] {
         dispatch_flush_with_lock();
-        dispatch_vote();
+        dispatch_vote(false);
     });
 }
 
@@ -194,12 +194,13 @@ consensus::success_reply consensus::update_follower_index(
         return success_reply::no;
     }
 
-    auto lstats = _log.offsets();
-    if (
-      idx.match_index < lstats.dirty_offset
-      || idx.match_index > idx.last_dirty_log_index) {
-        // follower match_index is behind, we have to recover it
-        dispatch_recovery(idx, std::move(reply));
+    if (needs_recovery(idx)) {
+        vlog(
+          _ctxlog.trace,
+          "Starting recovery process for {} - current reply: {}",
+          idx.node_id,
+          reply);
+        dispatch_recovery(idx);
         return success_reply::no;
     }
     return success_reply::no;
@@ -233,8 +234,14 @@ void consensus::successfull_append_entries_reply(
       idx.next_index);
 }
 
-void consensus::dispatch_recovery(
-  follower_index_metadata& idx, append_entries_reply reply) {
+bool consensus::needs_recovery(const follower_index_metadata& idx) {
+    // follower match_index is behind, we have to recover it
+    auto lstats = _log.offsets();
+    return idx.match_index < lstats.dirty_offset
+           || idx.match_index > idx.last_dirty_log_index;
+}
+
+void consensus::dispatch_recovery(follower_index_metadata& idx) {
     auto lstats = _log.offsets();
     auto log_max_offset = lstats.dirty_offset;
     if (idx.last_dirty_log_index >= log_max_offset) {
@@ -248,11 +255,6 @@ void consensus::dispatch_recovery(
         idx.next_index = log_max_offset;
     }
     idx.is_recovering = true;
-    vlog(
-      _ctxlog.trace,
-      "Starting recovery process for {} - current reply: {}",
-      idx.node_id,
-      reply);
     // background
     (void)with_gate(_bg, [this, &idx] {
         auto recovery = std::make_unique<recovery_stm>(
@@ -271,7 +273,7 @@ void consensus::dispatch_recovery(
 
 ss::future<result<replicate_result>>
 consensus::replicate(model::record_batch_reader&& rdr, replicate_options opts) {
-    if (!is_leader()) {
+    if (!is_leader() || unlikely(_transferring_leadership)) {
         return seastar::make_ready_future<result<replicate_result>>(
           errc::not_leader);
     }
@@ -371,12 +373,14 @@ consensus::make_reader(storage::log_reader_config config) {
     });
 }
 
-bool consensus::should_skip_vote() {
-    auto last_election = clock_type::now() - _jit.base_duration();
-
+bool consensus::should_skip_vote(bool ignore_heartbeat) {
     bool skip_vote = false;
 
-    skip_vote |= (_hbeat > last_election);      // nothing to do.
+    if (likely(!ignore_heartbeat)) {
+        auto last_election = clock_type::now() - _jit.base_duration();
+        skip_vote |= (_hbeat > last_election); // nothing to do.
+    }
+
     skip_vote |= _vstate == vote_state::leader; // already a leader
     skip_vote |= !_configuration_manager.get_latest().has_voters(); // no voters
 
@@ -384,20 +388,20 @@ bool consensus::should_skip_vote() {
 }
 
 /// performs no raft-state mutation other than resetting the timer
-void consensus::dispatch_vote() {
+void consensus::dispatch_vote(bool leadership_transfer) {
     // 5.2.1.4 - prepare next timeout
-    if (should_skip_vote()) {
+    if (should_skip_vote(leadership_transfer)) {
         arm_vote_timeout();
         return;
     }
 
     // background, acquire lock, transition state
-    (void)with_gate(_bg, [this] {
+    (void)with_gate(_bg, [this, leadership_transfer] {
         auto vstm = std::make_unique<vote_stm>(this);
         auto p = vstm.get();
 
         // CRITICAL: vote performs locking on behalf of consensus
-        return p->vote()
+        return p->vote(leadership_transfer)
           .then_wrapped(
             [this, p, vstm = std::move(vstm)](ss::future<> vote_f) mutable {
                 try {
@@ -653,9 +657,10 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
     /// leader  do not grant a vote to follower. This will prevent restarted
     /// nodes to disturb all groups leadership
     // Check if we updated the heartbeat timepoint in the last election
-    // timeout duration
+    // timeout duration When the vote was requested because of leadership
+    // transfer grant the vote immediately.
     auto prev_election = clock_type::now() - _jit.base_duration();
-    if (_hbeat > prev_election) {
+    if (_hbeat > prev_election && !r.leadership_transfer) {
         vlog(
           _ctxlog.trace,
           "Already heard from the leader, not granting vote to node {}",
@@ -1335,7 +1340,7 @@ void consensus::update_follower_stats(const group_configuration& cfg) {
         }
         auto idx = follower_index_metadata(n.id());
         idx.is_learner = true;
-        _fstats.emplace(n.id(), idx);
+        _fstats.emplace(n.id(), std::move(idx));
     }
 }
 
@@ -1361,6 +1366,234 @@ std::ostream& operator<<(std::ostream& o, const consensus& c) {
 
 group_configuration consensus::config() const {
     return _configuration_manager.get_latest();
+}
+
+static std::ostream&
+operator<<(std::ostream& os, const consensus::vote_state& state) {
+    switch (state) {
+    case consensus::vote_state::leader:
+        return os << "{leader}";
+    case consensus::vote_state::follower:
+        return os << "{follower}";
+    case consensus::vote_state::candidate:
+        return os << "{candidate}";
+    }
+}
+
+ss::future<timeout_now_reply> consensus::timeout_now(timeout_now_request&& r) {
+    if (r.term != _term) {
+        vlog(
+          _ctxlog.debug,
+          "Ignoring timeout request from node {} at term {} != {}",
+          r.node_id,
+          r.term,
+          _term);
+
+        auto f = ss::now();
+        if (r.term > _term) {
+            f = step_down(r.term);
+        }
+
+        return f.then([this] {
+            return ss::make_ready_future<timeout_now_reply>(timeout_now_reply{
+              .term = _term,
+              .result = timeout_now_reply::status::failure,
+            });
+        });
+    }
+
+    if (_vstate != vote_state::follower) {
+        vlog(
+          _ctxlog.debug,
+          "Ignoring timeout request in non-follower state {} from node {} at "
+          "term {}",
+          _vstate,
+          r.node_id,
+          r.term);
+
+        return ss::make_ready_future<timeout_now_reply>(timeout_now_reply{
+          .term = _term,
+          .result = timeout_now_reply::status::failure,
+        });
+    }
+
+    // start an election immediately
+    dispatch_vote(true);
+
+    vlog(
+      _ctxlog.debug,
+      "Timeout request election triggered from node {} at term {}",
+      r.node_id,
+      r.term);
+
+    /*
+     * One optimization that we can investigate is returning _term+1 (despite
+     * the election having not yet started) and allowing the receiver to step
+     * down even before it receives a request vote rpc.
+     */
+    return ss::make_ready_future<timeout_now_reply>(timeout_now_reply{
+      .term = _term,
+      .result = timeout_now_reply::status::success,
+    });
+}
+
+ss::future<std::error_code>
+consensus::transfer_leadership(std::optional<model::node_id> target) {
+    if (!is_leader()) {
+        vlog(_ctxlog.debug, "Cannot transfer leadership from non-leader");
+        return seastar::make_ready_future<std::error_code>(
+          make_error_code(errc::not_leader));
+    }
+
+    // no explicit node was requested. choose the most up to date follower
+    if (!target) {
+        auto it = std::max_element(
+          _fstats.begin(), _fstats.end(), [](const auto& a, const auto& b) {
+              return a.second.last_dirty_log_index
+                     < b.second.last_dirty_log_index;
+          });
+
+        if (unlikely(it == _fstats.end())) {
+            vlog(
+              _ctxlog.debug,
+              "Cannot transfer leadership. No suitable target node found");
+            return seastar::make_ready_future<std::error_code>(
+              make_error_code(errc::node_does_not_exists));
+        }
+
+        target = it->first;
+    }
+
+    if (*target == _self) {
+        vlog(_ctxlog.debug, "Cannot transfer leadership to self");
+        return seastar::make_ready_future<std::error_code>(
+          make_error_code(errc::not_leader));
+    }
+
+    if (_configuration_manager.get_latest_offset() > _commit_index) {
+        vlog(
+          _ctxlog.debug,
+          "Cannot transfer leadership during configuration change");
+        return ss::make_ready_future<std::error_code>(
+          make_error_code(errc::configuration_change_in_progress));
+    }
+    auto conf = _configuration_manager.get_latest();
+
+    if (!conf.contains_broker(*target)) {
+        vlog(
+          _ctxlog.debug,
+          "Cannot transfer leadership to node {} not found in configuration",
+          *target);
+        return seastar::make_ready_future<std::error_code>(
+          make_error_code(errc::node_does_not_exists));
+    }
+
+    vlog(
+      _ctxlog.info,
+      "Transferring leadership from {} to {} in term {}",
+      _self,
+      *target,
+      _term);
+
+    auto f = ss::with_gate(_bg, [this, target = *target] {
+        if (_transferring_leadership) {
+            vlog(
+              _ctxlog.info,
+              "Cannot transfer leadership. Transfer already in "
+              "progress.");
+            return seastar::make_ready_future<std::error_code>(
+              make_error_code(errc::success));
+        }
+
+        /*
+         * Transferring leadership requires that followers be up to
+         * date. In general that requires a bounded amount of recovery.
+         * Therefore, we stop activity that would cause recovery to not
+         * complete (e.g. appending more data to the log). After
+         * transfer completes this flag is cleared; either transfer was
+         * successful or not, but operations may continue.
+         *
+         * NOTE: for acks=quroum recovery is usually quite fast or
+         * unnecessary because followers are kept up-to-date. but for
+         * asynchronous replication this is not true. a more
+         * sophisticated strategy can be taken from online vm transfer:
+         * slow operations so that recovery can make progress, and once
+         * a threshold has been reached fully stop new activity and
+         * complete the transfer.
+         */
+        _transferring_leadership = true;
+
+        /*
+         * the follower's log needs to be up-to-date so that it will
+         * receive votes when we ask it to trigger an immediate
+         * election. so check if the followers needs some recovery, and
+         * then wait on that process to complete before sending the
+         * election request.
+         */
+        auto& meta = _fstats.get(target);
+        if (!meta.is_recovering && needs_recovery(meta)) {
+            dispatch_recovery(meta); // sets is_recovering flag
+        }
+
+        auto f = ss::now();
+        if (meta.is_recovering) {
+            vlog(
+              _ctxlog.info,
+              "Waiting on node to recover before requesting election");
+            auto timeout = ss::semaphore::clock::duration(
+              config::shard_local_cfg()
+                .raft_transfer_leader_recovery_timeout_ms());
+            f = meta.recovery_finished.wait(timeout);
+        }
+
+        return f.then([this, target] {
+            /*
+             * there are still several scenarios in which we will want
+             * to not complete leadership transfer, all of which might
+             * have occurred during the recovery process.
+             *
+             *   - we might have lost leadership status
+             *   - shutdown may be in progress
+             *   - other: identified by follower not caught-up
+             */
+            if (!is_leader()) {
+                vlog(
+                  _ctxlog.debug, "Cannot transfer leadership from non-leader");
+                return seastar::make_ready_future<std::error_code>(
+                  make_error_code(errc::not_leader));
+            }
+
+            if (_as.abort_requested()) {
+                return seastar::make_ready_future<std::error_code>(
+                  make_error_code(errc::not_leader));
+            }
+
+            auto& meta = _fstats.get(target);
+            if (needs_recovery(meta)) {
+                return seastar::make_ready_future<std::error_code>(
+                  make_error_code(errc::timeout));
+            }
+
+            timeout_now_request req{
+              .node_id = _self,
+              .group = _group,
+              .term = _term,
+            };
+
+            auto timeout
+              = raft::clock_type::now()
+                + config::shard_local_cfg().raft_timeout_now_timeout_ms();
+
+            return _client_protocol
+              .timeout_now(target, std::move(req), rpc::client_opts(timeout))
+              .then([](result<timeout_now_reply>) {
+                  return seastar::make_ready_future<std::error_code>(
+                    make_error_code(errc::success));
+              });
+        });
+    });
+
+    return f.finally([this] { _transferring_leadership = false; });
 }
 
 } // namespace raft

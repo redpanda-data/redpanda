@@ -1,0 +1,27 @@
+"/v1/raft/{group_id}/transfer_leadership": {
+  "post": {
+    "summary": "transfer raft group leadership",
+    "operationId": "transfer_leadership",
+    "parameters": [
+        {
+            "name": "group_id",
+            "in": "path",
+            "required": true,
+            "type": "integer",
+            "allowMultiple":false
+        },
+        {
+            "name":"target",
+            "in":"query",
+            "required":false,
+            "type":"integer",
+            "allowMultiple":false
+        }
+    ],
+    "responses": {
+      "200": {
+        "description": "Raft leadership transfer"
+      }
+    }
+  }
+}

@@ -10,6 +10,7 @@
 #include "reflection/async_adl.h"
 #include "utils/named_type.h"
 
+#include <seastar/core/condition-variable.hh>
 #include <seastar/net/socket_defs.hh>
 #include <seastar/util/bool_class.hh>
 
@@ -45,6 +46,12 @@ using follower_req_seq = named_type<uint64_t, struct follower_req_seq_tag>;
 struct follower_index_metadata {
     explicit follower_index_metadata(model::node_id node)
       : node_id(node) {}
+
+    follower_index_metadata(const follower_index_metadata&) = delete;
+    follower_index_metadata& operator=(const follower_index_metadata&) = delete;
+    follower_index_metadata(follower_index_metadata&&) = default;
+    follower_index_metadata& operator=(follower_index_metadata&&) = default;
+
     model::node_id node_id;
     // index of last known log for this follower
     model::offset last_committed_log_index;
@@ -111,6 +118,12 @@ struct follower_index_metadata {
     follower_req_seq last_received_seq{0};
     bool is_learner = false;
     bool is_recovering = false;
+
+    /*
+     * When is_recovering is true a fiber may wait for recovery to be signaled
+     * on the recovery_finished condition variable.
+     */
+    ss::condition_variable recovery_finished;
 };
 
 struct append_entries_request {
@@ -188,6 +201,8 @@ struct vote_request {
     /// \brief used to compare completeness
     model::offset prev_log_index;
     model::term_id prev_log_term;
+    /// \brief true if vote triggered by leadership transfer
+    bool leadership_transfer;
     raft::group_id target_group() const { return group; }
 };
 
@@ -329,6 +344,21 @@ struct write_snapshot_cfg {
     // are we going to prefix truncate the log right after persisting the
     // snapshot
     should_prefix_truncate should_truncate;
+};
+
+struct timeout_now_request {
+    model::node_id node_id;
+    group_id group;
+    model::term_id term;
+
+    raft::group_id target_group() const { return group; }
+};
+
+struct timeout_now_reply {
+    enum class status : uint8_t { success, failure };
+
+    model::term_id term;
+    status result;
 };
 
 // key types used to store data in key-value store
