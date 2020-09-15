@@ -1378,6 +1378,7 @@ operator<<(std::ostream& os, const consensus::vote_state& state) {
     case consensus::vote_state::candidate:
         return os << "{candidate}";
     }
+    std::terminate(); // make gcc happy
 }
 
 ss::future<timeout_now_reply> consensus::timeout_now(timeout_now_request&& r) {
