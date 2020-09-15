@@ -9,7 +9,7 @@
   - [ ] Get added to the `redpandaci` project
   - [ ] Get added to the `vectorizedio` project
 - [ ] [Setup AWS cloud account](https://vectorizedio.signin.aws.amazon.com/console)
-- [ ] Laptop (strong suggest: fedora:30)
+- [ ] Laptop (strong suggest: fedora:32)
 - [ ] [Setup clubhouse.io](https://clubhouse.io)
 - [ ] [Join our slack](https://join.slack.com/t/vectorizedio/signup)
 
@@ -89,7 +89,7 @@ Some of the technologies Vectorized is using :
   * Display: discrete graphics
   * Secure Boot: disabled
   
-2. Install fedora 31
+2. Install fedora 32
   * Select "Custom" disk partitioning options, click automatically create partitions then change the / and /home partitions to be XFS.
   
 3. Installing nvidia Drivers from rpmfusion
@@ -101,4 +101,10 @@ Some of the technologies Vectorized is using :
     dnf install -y akmod-nvidia'
     ```
   * Then reboot to enable the nvidia driver.
-  
+
+4. After reboot your touchpad might stop working.
+  * To fix this parameter should be added to the kernel command line:
+    ```
+    sudo grubby --update-kernel=ALL --args="psmouse.elantech_smbus=0"
+    ```
+
