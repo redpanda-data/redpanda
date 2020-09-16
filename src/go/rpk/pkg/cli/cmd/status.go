@@ -72,6 +72,7 @@ func executeStatus(
 	if err != nil {
 		return err
 	}
+	config.CheckAndPrintNotice(conf.LicenseKey)
 	if !conf.Rpk.EnableUsageStats && send {
 		log.Warn("Usage stats reporting is disabled, so nothing will" +
 			" be sent. To enable it, run" +
