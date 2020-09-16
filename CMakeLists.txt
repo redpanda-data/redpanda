@@ -131,6 +131,23 @@ if(V_DEPS_ONLY AND NOT V_MANAGE_DEPS)
     "To build managed dependencies V_MANAGE_DEPS must be enabled")
 endif()
 
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${BASE_LD_FLAGS} -pie")
+set(CMAKE_SHARED_LINKER_FLAGS "${BASE_LD_FLAGS}")
+set(CMAKE_MODULE_LINKER_FLAGS "${BASE_LD_FLAGS}")
+
+if ("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=undefined -fsanitize=address")
+  set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fsanitize=undefined -fsanitize=address")
+  set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} -fsanitize=undefined -fsanitize=address")
+endif()
+
+# for clang, link with c++experimental for clang (needed by seastar)
+# Look for libc++ only if we are using Clang
+if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
+    find_package(LibCxx)
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -lc++experimental")
+endif()
+
 if(V_MANAGE_DEPS)
   # don't export() the contents to registry
   set(CMAKE_EXPORT_NO_PACKAGE_REGISTRY ON CACHE INTERNAL "" FORCE)
@@ -157,23 +174,6 @@ if(V_MANAGE_DEPS)
       message(FATAL_ERROR "Build step for v::build failed: ${result}")
     endif()
   endif()
-endif()
-
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${BASE_LD_FLAGS} -pie")
-set(CMAKE_SHARED_LINKER_FLAGS "${BASE_LD_FLAGS}")
-set(CMAKE_MODULE_LINKER_FLAGS "${BASE_LD_FLAGS}")
-
-if ("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
-  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=undefined -fsanitize=address")
-  set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fsanitize=undefined -fsanitize=address")
-  set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} -fsanitize=undefined -fsanitize=address")
-endif()
-
-# for clang, link with c++experimental for clang (needed by seastar)
-# Look for libc++ only if we are using Clang
-if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
-    find_package(LibCxx)
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -lc++experimental")
 endif()
 
 # from seastar/CMakeLists.txt. unfortunately this snippet doesn't appear to be
