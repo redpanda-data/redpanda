@@ -53,7 +53,7 @@ public:
 
 private:
     template<typename Cmd>
-    ss::future<std::error_code> dispatch_updates_to_cores(Cmd);
+    ss::future<std::error_code> dispatch_updates_to_cores(Cmd, model::offset);
 
     void update_allocations(const create_topic_cmd&);
     void deallocate_topic(const model::topic_metadata&);

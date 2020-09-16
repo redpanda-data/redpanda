@@ -75,9 +75,12 @@ struct topic_table_fixture {
         auto cmd_2 = make_create_topic_cmd("test_tp_2", 12, 3);
         auto cmd_3 = make_create_topic_cmd("test_tp_3", 8, 1);
 
-        auto res_1 = table.local().apply(std::move(cmd_1)).get0();
-        auto res_2 = table.local().apply(std::move(cmd_2)).get0();
-        auto res_3 = table.local().apply(std::move(cmd_3)).get0();
+        auto res_1
+          = table.local().apply(std::move(cmd_1), model::offset(0)).get0();
+        auto res_2
+          = table.local().apply(std::move(cmd_2), model::offset(0)).get0();
+        auto res_3
+          = table.local().apply(std::move(cmd_3), model::offset(0)).get0();
 
         BOOST_REQUIRE_EQUAL(res_1, cluster::errc::success);
         BOOST_REQUIRE_EQUAL(res_2, cluster::errc::success);
