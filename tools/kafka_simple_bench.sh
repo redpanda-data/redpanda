@@ -87,6 +87,11 @@ if [[ $1 == "create" ]]; then
     --replication-factor ${replication} "${@:2:99}"
 fi
 
+if [[ $1 == "delete" ]]; then
+  bin/kafka-topics.sh --bootstrap-server ${servers} \
+    --delete --topic ${topic}
+fi
+
 if [[ $1 == "produce" ]]; then
   bin/kafka-run-class.sh org.apache.kafka.tools.ProducerPerformance \
     --record-size ${record_size} \
