@@ -158,7 +158,7 @@ func getMetrics(
 	m, errs := system.GatherMetrics(fs, timeout, conf)
 	if len(errs) != 0 {
 		for _, err := range errs {
-			log.Debugf("Error gathering metrics: ", err)
+			log.Debugf("Error gathering metrics: %v", err)
 		}
 	} else {
 		rows = append(
