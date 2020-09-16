@@ -119,19 +119,22 @@ public:
           });
     }
 
-    model::ntp make_data() {
+    model::ntp make_data(storage::ntp_config::ntp_id version) {
         auto topic_name = fmt::format("my_topic_{}", 0);
-
-        auto batches = storage::test::make_random_batches(
-          model::offset(0), 20, false);
-
-        auto ntp = model::ntp(
+        model::ntp ntp(
           cluster::kafka_namespace,
           model::topic(topic_name),
           model::partition_id(0));
-        tests::persist_log_file(
-          lconf().data_directory().as_sstring(), ntp, std::move(batches))
-          .get();
+
+        storage::ntp_config ntp_cfg(
+          ntp, lconf().data_directory().as_sstring(), nullptr, version);
+
+        storage::disk_log_builder builder(make_default_config());
+        using namespace storage; // NOLINT
+        builder | start(std::move(ntp_cfg)) | add_segment(model::offset(0))
+          | add_random_batches(
+            model::offset(0), 20, maybe_compress_batches::yes)
+          | stop();
 
         add_topic(model::topic_namespace_view(ntp)).get();
 

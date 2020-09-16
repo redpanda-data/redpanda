@@ -1,5 +1,6 @@
 #include "cluster/types.h"
 
+#include "model/fundamental.h"
 #include "model/metadata.h"
 #include "tristate.h"
 #include "utils/to_string.h"
@@ -7,6 +8,8 @@
 #include <fmt/ostream.h>
 
 #include <chrono>
+#include <cstddef>
+#include <memory>
 
 namespace cluster {
 
@@ -17,26 +20,30 @@ topic_configuration::topic_configuration(
   , replication_factor(rf) {}
 
 storage::ntp_config topic_configuration::make_ntp_config(
-  const ss::sstring& work_dir, model::partition_id p_id) const {
+  const ss::sstring& work_dir,
+  model::partition_id p_id,
+  storage::ntp_config::ntp_id version) const {
     auto has_overrides = cleanup_policy_bitflags || compaction_strategy
                          || segment_size || retention_bytes.has_value()
                          || retention_bytes.is_disabled()
                          || retention_duration.has_value()
                          || retention_duration.is_disabled();
+    std::unique_ptr<storage::ntp_config::default_overrides> overrides = nullptr;
 
     if (has_overrides) {
-        return storage::ntp_config(
-          model::ntp(tp_ns.ns, tp_ns.tp, p_id),
-          work_dir,
-          std::make_unique<storage::ntp_config::default_overrides>(
-            storage::ntp_config::default_overrides{
-              .cleanup_policy_bitflags = cleanup_policy_bitflags,
-              .compaction_strategy = compaction_strategy,
-              .segment_size = segment_size,
-              .retention_bytes = retention_bytes,
-              .retention_time = retention_duration}));
+        overrides = std::make_unique<storage::ntp_config::default_overrides>(
+          storage::ntp_config::default_overrides{
+            .cleanup_policy_bitflags = cleanup_policy_bitflags,
+            .compaction_strategy = compaction_strategy,
+            .segment_size = segment_size,
+            .retention_bytes = retention_bytes,
+            .retention_time = retention_duration});
     }
-    return storage::ntp_config(model::ntp(tp_ns.ns, tp_ns.tp, p_id), work_dir);
+    return storage::ntp_config(
+      model::ntp(tp_ns.ns, tp_ns.tp, p_id),
+      work_dir,
+      std::move(overrides),
+      version);
 }
 
 model::topic_metadata topic_configuration_assignment::get_metadata() const {

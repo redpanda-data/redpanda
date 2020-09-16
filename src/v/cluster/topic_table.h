@@ -23,11 +23,14 @@ class topic_table {
 public:
     // delta propagated to backend
     struct delta {
+        explicit delta(model::offset o)
+          : offset(o) {}
         using partition
           = std::pair<model::topic_namespace, partition_assignment>;
 
         patch<partition> partitions;
         patch<topic_configuration> topics;
+        model::offset offset;
 
         bool empty() const;
     };

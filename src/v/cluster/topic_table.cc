@@ -29,7 +29,7 @@ topic_table::apply(create_topic_cmd cmd, model::offset offset) {
           errc::topic_already_exists);
     }
     // calculate delta
-    delta d;
+    delta d(offset);
     d.topics.additions.push_back(cmd.value.cfg);
     for (auto& pas : cmd.value.assignments) {
         d.partitions.additions.emplace_back(cmd.value.cfg.tp_ns, pas);
@@ -51,7 +51,7 @@ ss::future<> topic_table::stop() {
 ss::future<std::error_code>
 topic_table::apply(delete_topic_cmd cmd, model::offset offset) {
     if (auto tp = _topics.find(cmd.value); tp != _topics.end()) {
-        delta d;
+        delta d(offset);
         d.topics.deletions.push_back(tp->second.cfg);
         for (auto& p : tp->second.assignments) {
             d.partitions.deletions.emplace_back(tp->first, p);
@@ -86,7 +86,7 @@ topic_table::apply(move_partition_replicas_cmd cmd, model::offset o) {
     current_assignment_it->replicas = cmd.value;
 
     // calculate deleta for backend
-    delta d;
+    delta d(o);
     d.partitions.updates.emplace_back(tp->first, *current_assignment_it);
     _pending_deltas.push_back(std::move(d));
     notify_waiters();
