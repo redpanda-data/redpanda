@@ -143,7 +143,6 @@ ss::future<ss::lw_shared_ptr<segment>> log_manager::make_log_segment(
             pc,
             version,
             buf_size,
-            _config.base_dir,
             _config.sanitize_fileops,
             create_cache());
       });

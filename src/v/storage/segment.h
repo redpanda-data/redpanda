@@ -182,7 +182,6 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
   ss::io_priority_class pc,
   record_version_type version,
   size_t buf_size,
-  const ss::sstring& base_dir,
   debug_sanitize_files sanitize_fileops,
   std::optional<batch_cache_index> batch_cache);
 
