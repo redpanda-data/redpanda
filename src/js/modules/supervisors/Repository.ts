@@ -100,6 +100,10 @@ class Repository {
     return [...this.coprocessors.keys()];
   }
 
+  getCoprocessorByTopic(topic: string): HandleTable {
+    return this.coprocessors.get(topic);
+  }
+
   private readonly coprocessors: Map<string, HandleTable>;
 }
 

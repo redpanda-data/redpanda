@@ -5,6 +5,7 @@ import Repository from "./Repository";
 import { Handle } from "../domain/Handle";
 import { getChecksumFromFile } from "../utilities/Checksum";
 import { Coprocessor } from "../public/Coprocessor";
+import { ManagementClient } from "../rpc/serverAndClients/server";
 
 /**
  * FileManager class is an inotify implementation, it receives a
@@ -17,7 +18,8 @@ class FileManager {
     private repository: Repository,
     private submitDir: string,
     private activeDir: string,
-    private inactiveDir: string
+    private inactiveDir: string,
+    public managementClient: ManagementClient
   ) {
     try {
       this.watcher = new Inotify(this.submitDir);
@@ -40,33 +42,36 @@ class FileManager {
    *              global Id and different checksum, it will decide if id should
    *              update coprocessor or move the file to the inactive folder.
    */
-  addCoprocessor = (
+  addCoprocessor(
     filePath: string,
     repository: Repository,
     validatePrevCoprocessor = true
-  ): Promise<Handle> =>
-    this.getCoprocessor(filePath).then((coprocessor) => {
-      const preCoprocessor = repository.findByGlobalId(coprocessor);
+  ): Promise<Handle> {
+    return this.getHandle(filePath).then((handle) => {
+      const preCoprocessor = repository.findByGlobalId(handle);
       if (preCoprocessor && validatePrevCoprocessor) {
-        if (preCoprocessor.checksum === coprocessor.checksum) {
-          return this.moveCoprocessorFile(coprocessor, this.inactiveDir);
+        if (preCoprocessor.checksum === handle.checksum) {
+          return this.moveCoprocessorFile(handle, this.inactiveDir);
         } else {
           return this.moveCoprocessorFile(preCoprocessor, this.inactiveDir)
             .then(() => repository.remove(preCoprocessor))
-            .then(() => this.moveCoprocessorFile(coprocessor, this.activeDir))
+            .then(() => this.moveCoprocessorFile(handle, this.activeDir))
             .then((newCoprocessor) =>
               repository.add(newCoprocessor).then(() => newCoprocessor)
             );
         }
       } else {
-        return this.moveCoprocessorFile(coprocessor, this.activeDir).then(
-          (newCoprocessor) => {
-            repository.add(newCoprocessor);
-            return newCoprocessor;
-          }
-        );
+        return this.moveCoprocessorFile(handle, this.activeDir)
+          .then((newHandle) => {
+            repository.add(newHandle);
+            return newHandle;
+          })
+          .then((newHandle) =>
+            this.enableTopic([newHandle.coprocessor]).then(() => newHandle)
+          );
       }
     });
+  }
 
   /**
    * reads the files in the "active" folder, loads them as Handles
@@ -90,12 +95,12 @@ class FileManager {
    * file is added.
    * @param repository, is a coprocessor container
    */
-  updateRepositoryOnNewFile = (repository: Repository): void => {
-    this.watcher.on("add", (filePath) => {
+  updateRepositoryOnNewFile(repository: Repository): void {
+    return this.watcher.on("add", (filePath) => {
       this.addCoprocessor(filePath, repository).catch(console.error);
       //TODO: implement winston for logging information and error handler
     });
-  };
+  }
 
   /**
    * allow closing the inotify process
@@ -119,12 +124,12 @@ class FileManager {
   deregisterCoprocessor(coprocessor: Coprocessor): Promise<Handle> {
     const handle = this.repository.findByCoprocessor(coprocessor);
     if (handle) {
-      return this.moveCoprocessorFile(handle, this.inactiveDir).then(
-        (coprocessor) => {
+      this.disableCoprocessors([handle.coprocessor])
+        .then(() => this.moveCoprocessorFile(handle, this.inactiveDir))
+        .then((coprocessor) => {
           this.repository.remove(coprocessor);
           return coprocessor;
-        }
-      );
+        });
     } else {
       return Promise.reject(
         new Error(
@@ -135,12 +140,104 @@ class FileManager {
   }
 
   /**
-   * receives a path, and it gets the js file and create a checksum for content
-   * path file.
+   * Receives a coprocessor list, and sends a request to Redpanda for disabling
+   * them. The response has the following structure:
+   * [<topic status>]
+   *
+   * Possible coprocessor statuses:
+   *   0 = success
+   *   1 = topic never enabled
+   *   2 = invalid coprocessor
+   *   3 = materialized coprocessor
+   *   4 = internal error
+   * @param coprocessor
+   * @param validateNeverEnabled
+   */
+  disableCoprocessors(
+    coprocessor: Coprocessor[],
+    validateNeverEnabled = true
+  ): Promise<void> {
+    return this.managementClient
+      .disable_copros({ inputs: coprocessor.map((coproc) => coproc.globalId) })
+      .then((disableResponse) => {
+        const isValid = (condition: (n: number) => boolean) =>
+          disableResponse.inputs.find(condition);
+        const condition = validateNeverEnabled
+          ? (coproc) => coproc > 0
+          : (coproc) => coproc > 1;
+        const invalidCoprocessor = isValid(condition);
+        if (invalidCoprocessor > 0) {
+          return Promise.reject(
+            new Error(
+              "Is not possible to disable coprocessors with ids: " +
+                invalidCoprocessor
+            )
+          );
+        } else {
+          return Promise.resolve();
+        }
+      });
+  }
+
+  /**
+   * Receives a coprocessor list, and sends a request to Redpanda for enabling
+   * them. The response has the following structure:
+   * [{<coprocessorId>, [<topic status>]}]
+   *
+   * Possible topic statuses:
+   *   0 = success
+   *   1 = topic already enabled
+   *   2 = topic does not exist
+   *   3 = invalid coprocessor
+   *   4 = materialized coprocessor
+   *   5 = internal error
+   * @param coprocessors
+   * @param validateAlreadyEnabled
+   */
+  enableTopic(
+    coprocessors: Coprocessor[],
+    validateAlreadyEnabled = true
+  ): Promise<void> {
+    if (coprocessors.length == 0) {
+      return Promise.resolve();
+    } else {
+      return this.managementClient
+        .enable_copros({
+          coprocessors: coprocessors.map((coproc) => ({
+            id: coproc.globalId,
+            topics: coproc.inputTopics,
+          })),
+        })
+        .then((enableResponse) => {
+          const isValid = (condition: (n: number) => boolean) =>
+            enableResponse.inputs.filter((coprocessorStatus) =>
+              coprocessorStatus.response.find(condition)
+            );
+          const condition = validateAlreadyEnabled
+            ? (coproc) => coproc > 0
+            : (coproc) => coproc > 1;
+          const invalidCoprocessor = isValid(condition);
+          if (invalidCoprocessor.length > 0) {
+            return Promise.reject(
+              new Error(
+                `Is not possible to enable coprocessors with ids:` +
+                  invalidCoprocessor.join(", ")
+              )
+            );
+          } else {
+            return Promise.resolve();
+          }
+        });
+    }
+  }
+
+  /**
+   * Loads a JS file with the given filename, and returns a Handle for it, which
+   * also contains the file's content's checksum.
    * @param filename, path of the file that we need to get coprocessor
    *                  information.
    */
-  private getCoprocessor = (filename: string): Promise<Handle> => {
+  getHandle(filename: string): Promise<Handle> {
     return new Promise<Handle>((resolve, reject) => {
       try {
         const script = require(filename);
@@ -159,7 +256,7 @@ class FileManager {
         reject(e);
       }
     });
-  };
+  }
 
   /**
    * moveCoprocessorFile moves coprocessor from the current filepath to
@@ -168,17 +265,17 @@ class FileManager {
    * @param coprocessor, is a coprocessor loaded in memory
    * @param destination, destination path
    */
-  private moveCoprocessorFile = (
+  moveCoprocessorFile(
     coprocessor: Handle,
     destination: string
-  ): Promise<Handle> => {
+  ): Promise<Handle> {
     const renamePromise = promisify(rename);
     const newFileName = `${destination}/sha265-${coprocessor.checksum}.js`;
     return renamePromise(coprocessor.filename, newFileName).then(() => ({
       ...coprocessor,
       filename: newFileName,
     }));
-  };
+  }
 
   private watcher: Inotify;
 }
