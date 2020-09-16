@@ -117,6 +117,7 @@ func TestStatus(t *testing.T) {
 			},
 		},
 	}
+	logrus.SetLevel(logrus.DebugLevel)
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			fs := afero.NewMemMapFs()
