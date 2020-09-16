@@ -21,7 +21,8 @@ topic_table::transform_topics(Func&& f) const {
     return ret;
 }
 
-ss::future<std::error_code> topic_table::apply(create_topic_cmd cmd) {
+ss::future<std::error_code>
+topic_table::apply(create_topic_cmd cmd, model::offset offset) {
     if (_topics.contains(cmd.key)) {
         // topic already exists
         return ss::make_ready_future<std::error_code>(
@@ -47,7 +48,8 @@ ss::future<> topic_table::stop() {
     return ss::now();
 }
 
-ss::future<std::error_code> topic_table::apply(delete_topic_cmd cmd) {
+ss::future<std::error_code>
+topic_table::apply(delete_topic_cmd cmd, model::offset offset) {
     if (auto tp = _topics.find(cmd.value); tp != _topics.end()) {
         delta d;
         d.topics.deletions.push_back(tp->second.cfg);
@@ -63,7 +65,7 @@ ss::future<std::error_code> topic_table::apply(delete_topic_cmd cmd) {
 }
 
 ss::future<std::error_code>
-topic_table::apply(move_partition_replicas_cmd cmd) {
+topic_table::apply(move_partition_replicas_cmd cmd, model::offset o) {
     auto tp = _topics.find(model::topic_namespace_view(cmd.key));
     if (tp == _topics.end()) {
         return ss::make_ready_future<std::error_code>(errc::topic_not_exists);

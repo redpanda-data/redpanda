@@ -3,6 +3,7 @@
 #include "cluster/commands.h"
 #include "cluster/partition_allocator.h"
 #include "cluster/types.h"
+#include "model/fundamental.h"
 #include "utils/expiring_promise.h"
 
 #include <absl/container/flat_hash_map.h>
@@ -43,9 +44,10 @@ public:
       move_partition_replicas_cmd>{};
 
     /// State machine applies
-    ss::future<std::error_code> apply(create_topic_cmd);
-    ss::future<std::error_code> apply(delete_topic_cmd);
-    ss::future<std::error_code> apply(move_partition_replicas_cmd);
+    ss::future<std::error_code> apply(create_topic_cmd, model::offset);
+    ss::future<std::error_code> apply(delete_topic_cmd, model::offset);
+    ss::future<std::error_code>
+      apply(move_partition_replicas_cmd, model::offset);
 
     ss::future<> stop();
 
