@@ -486,4 +486,8 @@ ss::future<> self_compact_segment(
       .finally([&pb] { pb.segment_compacted(); });
 }
 
+std::filesystem::path compacted_index_path(std::filesystem::path segment_path) {
+    return segment_path.replace_extension(".compaction_index");
+}
+
 } // namespace storage::internal

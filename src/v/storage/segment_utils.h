@@ -89,4 +89,6 @@ ss::future<> do_swap_data_file_handles(
   ss::lw_shared_ptr<storage::segment>,
   storage::compaction_config);
 
+std::filesystem::path compacted_index_path(std::filesystem::path segment_path);
+
 } // namespace storage::internal
