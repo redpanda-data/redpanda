@@ -7,6 +7,7 @@ import {
   RpcHeader,
 } from "../domain/generatedRpc/generatedClasses";
 import BF from "../domain/generatedRpc/functions";
+import { ManagementClient } from "./serverAndClients/server";
 
 export class Server {
   public constructor(
@@ -14,13 +15,15 @@ export class Server {
     inactiveDir: string,
     submitDir: string
   ) {
+    this.managementClient = new ManagementClient(43188);
     this.applyCoprocessor = this.applyCoprocessor.bind(this);
     this.repository = new Repository();
     this.fileManager = new FileManager(
       this.repository,
       submitDir,
       activeDir,
-      inactiveDir
+      inactiveDir,
+      this.managementClient
     );
     this.server = createServer(this.executeCoprocessorOnRequest);
   }
@@ -172,4 +175,5 @@ export class Server {
   private server: NetServer;
   private readonly repository: Repository;
   private fileManager: FileManager;
+  managementClient: ManagementClient;
 }
