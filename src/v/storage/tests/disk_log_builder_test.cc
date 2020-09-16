@@ -1,5 +1,6 @@
 #include "model/record.h"
 #include "seastarx.h"
+#include "storage/ntp_config.h"
 #include "storage/tests/disk_log_builder_fixture.h"
 #include "storage/tests/utils/random_batch.h"
 #include "test_utils/fixture.h"
@@ -55,8 +56,8 @@ FIXTURE_TEST(test_valid_segment_name_with_zeroes_data, log_builder_fixture) {
     using namespace storage; // NOLINT
     auto ntp = model::ntp(
       model::ns("test.ns"), model::topic("zeroes"), model::partition_id(66));
-    const ss::sstring dir = fmt::format(
-      "{}/{}", b.get_log_config().base_dir, ntp.path());
+    storage::ntp_config ncfg(ntp, b.get_log_config().base_dir);
+    const ss::sstring dir = ncfg.work_directory();
     // 1. write valid segment names in the namespace with 0 data so crc passes
     recursive_touch_directory(dir).get();
     do_write_zeroes(fmt::format("{}/270-1850-v1.log", dir));
