@@ -63,13 +63,13 @@ ss::future<> segment::close() {
         return write_lock().then([this](ss::rwlock::holder h) {
             return do_flush()
               .then([this] { return do_close(); })
-              .then([this] { return remove_thombsones(); })
+              .then([this] { return remove_tombstones(); })
               .finally([h = std::move(h)] {});
         });
     });
 }
 
-ss::future<> segment::remove_thombsones() {
+ss::future<> segment::remove_tombstones() {
     if (!is_tombstone()) {
         return ss::make_ready_future<>();
     }
