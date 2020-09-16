@@ -18,6 +18,8 @@ pandaproxy:
 
   admin_api_doc_dir: {{root}}/etc/pandaproxy/admin-api-doc
   api_doc_dir: {{root}}/etc/pandaproxy/api-doc
+  retries: 10
+  retry_base_backoff_ms: 10
 
 pandaproxy_client:
   # kafka-api compatible brokers
