@@ -84,6 +84,7 @@ func bootstrap(fs afero.Fs) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			config.CheckAndPrintNotice(conf.LicenseKey)
 			ips, err := parseIPs(ips)
 			if err != nil {
 				return err
