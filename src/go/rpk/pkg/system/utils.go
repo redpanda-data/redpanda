@@ -20,7 +20,7 @@ func UnameAndDistro(timeout time.Duration) (string, error) {
 		log.Debugf("%s failed", cmd)
 	}
 	if len(ls) == 0 {
-		log.Errorf("%s didn't return any output", cmd)
+		log.Debugf("%s didn't return any output", cmd)
 	} else {
 		res += " " + ls[0]
 	}

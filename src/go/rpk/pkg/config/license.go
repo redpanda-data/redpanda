@@ -37,6 +37,9 @@ func CheckAndPrintNotice(key string) {
 // Returns true if the exp. date hasn't passed yet. Returns false otherwise.
 // Returns an error if the key isn't base64-encoded or if it's not valid JSON.
 func CheckLicenseKey(key string) (bool, error) {
+	if key == "" {
+		return false, errors.New("Missing license key")
+	}
 	decoded, err := base64.StdEncoding.DecodeString(key)
 	invalidErr := errors.New("Invalid license key")
 	if err != nil {
