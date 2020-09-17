@@ -1,5 +1,6 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "raft/configuration.h"
 #include "raft/configuration_manager.h"
 #include "raft/logger.h"
 #include "raft/types.h"
@@ -38,7 +39,7 @@ struct config_manager_fixture {
           raft::group_id(1),
           model::ntp(model::ns("t"), model::topic("t"), model::partition_id(0)))
       , _cfg_mgr(
-          raft::group_configuration{}, raft::group_id(1), _storage, _logger) {
+          raft::group_configuration({}), raft::group_id(1), _storage, _logger) {
         _storage.start().get0();
     }
 
@@ -61,7 +62,7 @@ struct config_manager_fixture {
         for (auto i = 0; i < 2; ++i) {
             learners.push_back(tests::random_broker(i, i));
         }
-        return raft::group_configuration{std::move(nodes), std::move(learners)};
+        return raft::group_configuration(std::move(nodes));
     }
 
     raft::group_configuration add_random_cfg(model::offset offset) {
@@ -84,7 +85,7 @@ struct config_manager_fixture {
 
     void validate_recovery() {
         raft::configuration_manager recovered(
-          raft::group_configuration{}, raft::group_id(1), _storage, _logger);
+          raft::group_configuration({}), raft::group_id(1), _storage, _logger);
 
         recovered.start().get0();
 
@@ -98,7 +99,7 @@ struct config_manager_fixture {
             auto have = _cfg_mgr.get(model::offset(i));
             BOOST_REQUIRE_EQUAL(expected.has_value(), have.has_value());
             if (expected.has_value()) {
-                BOOST_REQUIRE_EQUAL(expected->nodes, have->nodes);
+                BOOST_REQUIRE_EQUAL(expected, have);
             }
         }
     }
@@ -107,24 +108,17 @@ struct config_manager_fixture {
 FIXTURE_TEST(test_getting_configurations, config_manager_fixture) {
     auto configurations = test_configurations();
 
-    BOOST_REQUIRE_EQUAL(_cfg_mgr.get_latest().nodes, configurations[5].nodes);
+    BOOST_REQUIRE_EQUAL(_cfg_mgr.get_latest(), configurations[5]);
 
+    BOOST_REQUIRE_EQUAL(_cfg_mgr.get(model::offset(0)), configurations[0]);
+    BOOST_REQUIRE_EQUAL(_cfg_mgr.get(model::offset(1)), configurations[0]);
+    BOOST_REQUIRE_EQUAL(_cfg_mgr.get(model::offset(19)), configurations[0]);
+    BOOST_REQUIRE_EQUAL(_cfg_mgr.get(model::offset(20)), configurations[1]);
+    BOOST_REQUIRE_EQUAL(_cfg_mgr.get(model::offset(32)), configurations[1]);
+    BOOST_REQUIRE_EQUAL(_cfg_mgr.get(model::offset(33)), configurations[2]);
+    BOOST_REQUIRE_EQUAL(_cfg_mgr.get(model::offset(34)), configurations[3]);
     BOOST_REQUIRE_EQUAL(
-      _cfg_mgr.get(model::offset(0))->nodes, configurations[0].nodes);
-    BOOST_REQUIRE_EQUAL(
-      _cfg_mgr.get(model::offset(1))->nodes, configurations[0].nodes);
-    BOOST_REQUIRE_EQUAL(
-      _cfg_mgr.get(model::offset(19))->nodes, configurations[0].nodes);
-    BOOST_REQUIRE_EQUAL(
-      _cfg_mgr.get(model::offset(20))->nodes, configurations[1].nodes);
-    BOOST_REQUIRE_EQUAL(
-      _cfg_mgr.get(model::offset(32))->nodes, configurations[1].nodes);
-    BOOST_REQUIRE_EQUAL(
-      _cfg_mgr.get(model::offset(33))->nodes, configurations[2].nodes);
-    BOOST_REQUIRE_EQUAL(
-      _cfg_mgr.get(model::offset(34))->nodes, configurations[3].nodes);
-    BOOST_REQUIRE_EQUAL(
-      _cfg_mgr.get(model::offset(1000000))->nodes, configurations[5].nodes);
+      _cfg_mgr.get(model::offset(1000000)), configurations[5]);
 
     BOOST_REQUIRE_EQUAL(
       _cfg_mgr.get_highest_known_offset(), model::offset(1254));
@@ -146,8 +140,7 @@ FIXTURE_TEST(test_prefix_truncation, config_manager_fixture) {
     _cfg_mgr.prefix_truncate(model::offset(20)).get0();
     _cfg_mgr.prefix_truncate(model::offset(0)).get0();
 
-    BOOST_REQUIRE_EQUAL(
-      _cfg_mgr.get(model::offset(20))->nodes, configurations[1].nodes);
+    BOOST_REQUIRE_EQUAL(_cfg_mgr.get(model::offset(20)), configurations[1]);
     BOOST_REQUIRE(_cfg_mgr.get(model::offset(10)).has_value() == false);
     BOOST_REQUIRE(_cfg_mgr.get(model::offset(19)).has_value() == false);
 
@@ -155,8 +148,7 @@ FIXTURE_TEST(test_prefix_truncation, config_manager_fixture) {
     validate_recovery();
 
     BOOST_REQUIRE_EQUAL(_cfg_mgr.get(model::offset(20)).has_value(), false);
-    BOOST_REQUIRE_EQUAL(
-      _cfg_mgr.get(model::offset(33))->nodes, configurations[2].nodes);
+    BOOST_REQUIRE_EQUAL(_cfg_mgr.get(model::offset(33)), configurations[2]);
 
     validate_recovery();
     // try to truncate whole
@@ -170,22 +162,14 @@ FIXTURE_TEST(test_truncation, config_manager_fixture) {
 
     _cfg_mgr.truncate(model::offset(34)).get0();
     _cfg_mgr.truncate(model::offset(50)).get0();
-    BOOST_REQUIRE_EQUAL(
-      _cfg_mgr.get(model::offset(0))->nodes, configurations[0].nodes);
-    BOOST_REQUIRE_EQUAL(
-      _cfg_mgr.get(model::offset(1))->nodes, configurations[0].nodes);
-    BOOST_REQUIRE_EQUAL(
-      _cfg_mgr.get(model::offset(19))->nodes, configurations[0].nodes);
-    BOOST_REQUIRE_EQUAL(
-      _cfg_mgr.get(model::offset(20))->nodes, configurations[1].nodes);
-    BOOST_REQUIRE_EQUAL(
-      _cfg_mgr.get(model::offset(32))->nodes, configurations[1].nodes);
-    BOOST_REQUIRE_EQUAL(
-      _cfg_mgr.get(model::offset(33))->nodes, configurations[2].nodes);
-    BOOST_REQUIRE_EQUAL(
-      _cfg_mgr.get(model::offset(35))->nodes, configurations[2].nodes);
-    BOOST_REQUIRE_EQUAL(
-      _cfg_mgr.get(model::offset(60))->nodes, configurations[2].nodes);
+    BOOST_REQUIRE_EQUAL(_cfg_mgr.get(model::offset(0)), configurations[0]);
+    BOOST_REQUIRE_EQUAL(_cfg_mgr.get(model::offset(1)), configurations[0]);
+    BOOST_REQUIRE_EQUAL(_cfg_mgr.get(model::offset(19)), configurations[0]);
+    BOOST_REQUIRE_EQUAL(_cfg_mgr.get(model::offset(20)), configurations[1]);
+    BOOST_REQUIRE_EQUAL(_cfg_mgr.get(model::offset(32)), configurations[1]);
+    BOOST_REQUIRE_EQUAL(_cfg_mgr.get(model::offset(33)), configurations[2]);
+    BOOST_REQUIRE_EQUAL(_cfg_mgr.get(model::offset(35)), configurations[2]);
+    BOOST_REQUIRE_EQUAL(_cfg_mgr.get(model::offset(60)), configurations[2]);
 
     validate_recovery();
 
@@ -203,8 +187,8 @@ FIXTURE_TEST(test_waitng_for_change, config_manager_fixture) {
     auto configurations = test_configurations();
     auto res = f.get0();
     BOOST_REQUIRE(res.offset > model::offset(21));
-    BOOST_REQUIRE_EQUAL(res.cfg.nodes, _cfg_mgr.get(res.offset)->nodes);
-    BOOST_REQUIRE_EQUAL(res.cfg.learners, _cfg_mgr.get(res.offset)->learners);
+    BOOST_REQUIRE_EQUAL(res.cfg, _cfg_mgr.get(res.offset));
+    BOOST_REQUIRE_EQUAL(res.cfg, _cfg_mgr.get(res.offset));
     as.request_abort();
     BOOST_CHECK_THROW(
       auto res = not_completed.get0(), ss::abort_requested_exception);
@@ -215,7 +199,7 @@ FIXTURE_TEST(test_start_write_concurrency, config_manager_fixture) {
     auto configurations = test_configurations();
 
     raft::configuration_manager new_cfg_manager(
-      raft::group_configuration{}, raft::group_id(1), _storage, _logger);
+      raft::group_configuration({}), raft::group_id(1), _storage, _logger);
 
     auto start = new_cfg_manager.start();
     auto cfg = random_configuration();
@@ -229,8 +213,8 @@ FIXTURE_TEST(test_start_write_concurrency, config_manager_fixture) {
 
     ss::when_all(futures.begin(), futures.end()).get0();
 
-    BOOST_REQUIRE_EQUAL(new_cfg_manager.get_latest().nodes, cfg.nodes);
-    BOOST_REQUIRE_EQUAL(new_cfg_manager.get_latest().learners, cfg.learners);
+    BOOST_REQUIRE_EQUAL(new_cfg_manager.get_latest(), cfg);
+    BOOST_REQUIRE_EQUAL(new_cfg_manager.get_latest(), cfg);
     BOOST_REQUIRE_EQUAL(
       new_cfg_manager.get_highest_known_offset(), model::offset(3000));
 }

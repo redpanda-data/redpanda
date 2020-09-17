@@ -69,10 +69,16 @@ public:
 
     ss::future<timeout_now_reply> timeout_now(timeout_now_request&& r);
 
-    /// This method adds a member to the group and performs configuration update
-    ss::future<std::error_code> add_group_member(model::broker node);
+    /// This method adds multiple members to the group and performs
+    /// configuration update
+    ss::future<std::error_code> add_group_members(std::vector<model::broker>);
     /// Updates given member configuration
     ss::future<std::error_code> update_group_member(model::broker);
+    // Removes members from group
+    ss::future<std::error_code> remove_members(std::vector<model::node_id>);
+    // Replace configuration of raft group with given set of nodes
+    ss::future<std::error_code>
+      replace_configuration(std::vector<model::broker>);
 
     bool is_leader() const { return _vstate == vote_state::leader; }
     std::optional<model::node_id> get_leader_id() const { return _leader_id; }
@@ -199,7 +205,7 @@ private:
     bool needs_recovery(const follower_index_metadata&);
     void dispatch_recovery(follower_index_metadata&);
     void maybe_update_leader_commit_idx();
-    ss::future<> do_maybe_update_leader_commit_idx();
+    ss::future<> do_maybe_update_leader_commit_idx(ss::semaphore_units<>);
 
     model::term_id get_term(model::offset);
 
@@ -240,6 +246,11 @@ private:
     ss::future<> write_voted_for(consensus::voted_for_configuration);
     model::term_id get_last_entry_term(const storage::offset_stats&) const;
 
+    template<typename Func>
+    ss::future<std::error_code> change_configuration(Func&&);
+
+    ss::future<>
+      maybe_commit_configuration(model::offset, ss::semaphore_units<>);
     // args
     model::node_id _self;
     raft::group_id _group;

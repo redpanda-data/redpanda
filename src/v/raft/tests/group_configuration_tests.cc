@@ -1,3 +1,4 @@
+#include "raft/configuration.h"
 #include "utils/unresolved_address.h"
 #define BOOST_TEST_MODULE raft
 #include "raft/types.h"
@@ -14,24 +15,24 @@ model::broker create_broker(int32_t id) {
 }
 
 BOOST_AUTO_TEST_CASE(should_return_true_as_it_contains_learner) {
-    raft::group_configuration test_grp = {
-      .nodes = {}, .learners = {create_broker(1)}};
+    raft::group_configuration test_grp = raft::group_configuration(
+      {create_broker(1)});
 
     auto contains = test_grp.contains_broker(model::node_id(1));
     BOOST_REQUIRE_EQUAL(contains, true);
 }
 
 BOOST_AUTO_TEST_CASE(should_return_true_as_it_contains_voter) {
-    raft::group_configuration test_grp = {
-      .nodes = {create_broker(1)}, .learners = {}};
+    raft::group_configuration test_grp = raft::group_configuration(
+      {create_broker(1)});
 
     auto contains = test_grp.contains_broker(model::node_id(1));
     BOOST_REQUIRE_EQUAL(contains, true);
 }
 
 BOOST_AUTO_TEST_CASE(should_return_false_as_it_does_not_contain_machine) {
-    raft::group_configuration test_grp = {
-      .nodes = {create_broker(3)}, .learners = {create_broker(4)}};
+    raft::group_configuration test_grp = raft::group_configuration(
+      {create_broker(3)});
 
     auto contains = test_grp.contains_broker(model::node_id(1));
     BOOST_REQUIRE_EQUAL(contains, false);

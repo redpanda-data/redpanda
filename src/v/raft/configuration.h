@@ -1,5 +1,6 @@
 #pragma once
 #include "model/metadata.h"
+#include "reflection/adl.h"
 #include "utils/concepts-enabled.h"
 
 #include <boost/range/join.hpp>
@@ -9,43 +10,84 @@
 #include <type_traits>
 
 namespace raft {
-struct group_configuration {
-    group_configuration() noexcept = default;
-    ~group_configuration() noexcept = default;
-    group_configuration(const group_configuration&) = default;
-    group_configuration& operator=(const group_configuration&) = delete;
+
+enum class configuration_type : uint8_t { simple, joint };
+
+struct group_nodes {
+    std::vector<model::node_id> voters;
+    std::vector<model::node_id> learners;
+
+    friend std::ostream& operator<<(std::ostream&, const group_nodes&);
+    friend bool operator==(const group_nodes&, const group_nodes&);
+};
+
+class group_configuration final {
+public:
+    /**
+     * creates a configuration where all provided brokers are current
+     * configuration voters
+     */
+    explicit group_configuration(std::vector<model::broker>);
+
+    /**
+     * creates joint configuration
+     */
+    group_configuration(
+      std::vector<model::broker>,
+      group_nodes,
+      std::optional<group_nodes> = std::nullopt);
+
+    group_configuration(const group_configuration&) noexcept = default;
     group_configuration(group_configuration&&) noexcept = default;
-    group_configuration& operator=(group_configuration&&) noexcept = default;
+    group_configuration& operator=(const group_configuration&) = delete;
+    group_configuration& operator=(group_configuration&&) = default;
 
-    using brokers_t = std::vector<model::broker>;
-    using iterator = brokers_t::iterator;
-    using const_iterator = brokers_t::const_iterator;
+    bool has_voters();
 
-    bool has_voters() const { return !nodes.empty(); }
-    bool has_learners() const { return !learners.empty(); }
-    size_t voters_majority() const { return (nodes.size() / 2) + 1; }
-    size_t unique_voters_count() const { return nodes.size(); }
-    iterator find_in_nodes(model::node_id id);
-    const_iterator find_in_nodes(model::node_id id) const;
-    iterator find_in_learners(model::node_id id);
-    const_iterator find_in_learners(model::node_id id) const;
+    std::optional<model::broker> find(model::node_id id) const;
     bool contains_broker(model::node_id id) const;
-    void update_broker(model::broker);
+
+    /**
+     * Check if node with given id is allowed to request for votes
+     */
+    bool is_voter(model::node_id) const;
+
+    /**
+     * Configuration manipulation API. Each operation cause the configuration to
+     * become joint configuration.
+     */
+    void add(std::vector<model::broker>);
+    void remove(const std::vector<model::node_id>&);
+    void replace(std::vector<model::broker>);
+
+    /**
+     * Updating broker configuration. This operation does not require entering
+     * joint consensus as it never change majority
+     */
+    void update(model::broker);
+
+    /**
+     * Discards the old configuration, after this operation joint configuration
+     * become simple
+     */
+    void discard_old_config();
+
+    const group_nodes& current_config() const { return _current; }
+    const std::optional<group_nodes>& old_config() const { return _old; }
+    const std::vector<model::broker>& brokers() const { return _brokers; }
+
+    configuration_type type() const;
+
+    size_t unique_voter_count() const { return unique_voter_ids().size(); }
 
     template<typename Func>
-    void for_each(Func&& f) const {
-        auto joined_range = boost::join(nodes, learners);
-        std::for_each(
-          std::cbegin(joined_range),
-          std::cend(joined_range),
-          std::forward<Func>(f));
-    }
+    void for_each_broker(Func&& f) const;
 
     template<typename Func>
-    void for_each_voter(Func&& f) const {
-        std::for_each(
-          std::cbegin(nodes), std::cend(nodes), std::forward<Func>(f));
-    }
+    void for_each_voter(Func&& f) const;
+
+    template<typename Func>
+    void for_each_learner(Func&& f) const;
 
     /**
      * Return largest value for which every server in a quorum (majority) has a
@@ -58,65 +100,116 @@ struct group_configuration {
     // clang-format off
     template<
       typename ValueProvider,
-      typename Ret = std::invoke_result_t<ValueProvider, const model::broker&>>
+      typename Ret = std::invoke_result_t<ValueProvider, model::node_id>>
     CONCEPT(requires requires(
-        ValueProvider f, const model::broker& broker, Ret ret_a, Ret ret_b) {
-        {f(broker)};
+        ValueProvider f,  model::node_id nid, Ret ret_a, Ret ret_b) {
+        {f(nid)};
         { ret_a < ret_b } -> bool;
     })
     // clang-format on
-    auto quorum_match(ValueProvider&& f) const {
-        using ret_t = std::invoke_result_t<ValueProvider, const model::broker&>;
-        if (nodes.empty()) {
-            return ret_t{};
-        }
 
-        std::vector<ret_t> values;
-        values.reserve(nodes.size());
-        std::transform(
-          std::cbegin(nodes),
-          std::cend(nodes),
-          std::back_inserter(values),
-          std::forward<ValueProvider>(f));
-
-        size_t majority_match_idx = (values.size() - 1) / 2;
-        std::nth_element(
-          values.begin(),
-          std::next(values.begin(), majority_match_idx),
-          values.end());
-
-        return values[majority_match_idx];
-    }
+    auto quorum_match(ValueProvider&& f) const;
 
     /**
-     * Returns true if for majority of nodes predicate returns true
+     * Returns true if for majority of group_nodes predicate returns true
      */
     // clang-format off
     template<typename Predicate>
-    CONCEPT(requires requires(Predicate f, const model::broker& broker) {
-        { f(broker) } -> bool;
+    CONCEPT(requires requires(Predicate f, model::node_id id) {
+        { f(id) } -> bool;
     })
     // clang-format on
-    bool majority(Predicate&& f) const {
-        if (nodes.empty()) {
-            return true;
-        }
-
-        size_t cnt = std::count_if(
-          std::cbegin(nodes), std::cend(nodes), std::forward<Predicate>(f));
-
-        return cnt >= voters_majority();
-    }
+    bool majority(Predicate&& f) const;
 
     friend bool
     operator==(const group_configuration&, const group_configuration&);
-    // data
-    brokers_t nodes;
-    brokers_t learners;
 
-    friend std::ostream&
-    operator<<(std::ostream& o, const group_configuration& c);
+    friend std::ostream& operator<<(std::ostream&, const group_configuration&);
+
+private:
+    std::vector<model::node_id> unique_voter_ids() const;
+    std::vector<model::node_id> unique_learner_ids() const;
+
+    std::vector<model::broker> _brokers;
+    group_nodes _current;
+    std::optional<group_nodes> _old;
 };
+
+namespace details {
+
+template<typename ValueProvider, typename Range>
+auto quorum_match(ValueProvider&& f, Range&& range) {
+    using ret_t = std::invoke_result_t<ValueProvider, model::node_id>;
+    if (range.empty()) {
+        return ret_t{};
+    }
+
+    std::vector<ret_t> values;
+    values.reserve(range.size());
+    std::transform(
+      std::cbegin(range),
+      std::cend(range),
+      std::back_inserter(values),
+      std::forward<ValueProvider>(f));
+
+    size_t majority_match_idx = (values.size() - 1) / 2;
+    std::nth_element(
+      values.begin(),
+      std::next(values.begin(), majority_match_idx),
+      values.end());
+
+    return values[majority_match_idx];
+}
+
+template<typename Predicate, typename Range>
+bool majority(Predicate&& f, Range&& range) {
+    if (range.empty()) {
+        return true;
+    }
+
+    size_t cnt = std::count_if(
+      std::cbegin(range), std::cend(range), std::forward<Predicate>(f));
+
+    return cnt >= (range.size() / 2) + 1;
+}
+} // namespace details
+
+template<typename Func>
+void group_configuration::for_each_broker(Func&& f) const {
+    std::for_each(
+      std::cbegin(_brokers), std::cend(_brokers), std::forward<Func>(f));
+}
+
+template<typename Func, typename Ret>
+auto group_configuration::quorum_match(Func&& f) const {
+    if (!_old) {
+        return details::quorum_match(std::forward<Func>(f), _current.voters);
+    }
+    return std::min(
+      details::quorum_match(f, _current.voters),
+      details::quorum_match(f, _old->voters));
+}
+
+template<typename Predicate>
+bool group_configuration::majority(Predicate&& f) const {
+    if (!_old) {
+        return details::majority(std::forward<Predicate>(f), _current.voters);
+    }
+    return details::majority(f, _current.voters)
+           && details::majority(f, _old->voters);
+}
+
+template<typename Func>
+void group_configuration::for_each_voter(Func&& f) const {
+    auto ids = unique_voter_ids();
+    std::for_each(ids.begin(), ids.end(), std::forward<Func>(f));
+}
+
+template<typename Func>
+void group_configuration::for_each_learner(Func&& f) const {
+    auto ids = unique_learner_ids();
+    std::for_each(ids.begin(), ids.end(), std::forward<Func>(f));
+}
 
 struct offset_configuration {
     offset_configuration(model::offset o, group_configuration c)
@@ -128,3 +221,11 @@ struct offset_configuration {
     friend std::ostream& operator<<(std::ostream&, const offset_configuration&);
 };
 } // namespace raft
+
+namespace reflection {
+template<>
+struct adl<raft::group_configuration> {
+    void to(iobuf&, raft::group_configuration);
+    raft::group_configuration from(iobuf_parser&);
+};
+} // namespace reflection
