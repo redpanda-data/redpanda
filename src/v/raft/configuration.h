@@ -39,7 +39,7 @@ public:
 
     group_configuration(const group_configuration&) noexcept = default;
     group_configuration(group_configuration&&) noexcept = default;
-    group_configuration& operator=(const group_configuration&) = delete;
+    group_configuration& operator=(const group_configuration&) = default;
     group_configuration& operator=(group_configuration&&) = default;
 
     bool has_voters();
