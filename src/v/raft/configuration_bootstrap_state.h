@@ -20,8 +20,8 @@ public:
     model::term_id term() const { return _term; }
     model::offset prev_log_index() const { return _prev_log_index; }
     model::term_id prev_log_term() const { return _prev_log_term; }
-    const raft::group_configuration& config() const { return _config; }
-    raft::group_configuration&& release_config() { return std::move(_config); }
+    const raft::group_configuration& config() const { return *_config; }
+    raft::group_configuration&& release_config() { return std::move(*_config); }
     void set_term(model::term_id t) { _term = t; }
     void set_end_of_log() { _end_of_log = true; }
     uint32_t data_batches_seen() const { return _data_batches_seen; }
@@ -38,7 +38,7 @@ private:
     model::term_id _term{0};
     model::offset _prev_log_index{0};
     model::term_id _prev_log_term{0};
-    raft::group_configuration _config;
+    std::optional<raft::group_configuration> _config;
 
     // we need to keep track of what we have processed in case we re-reprocess a
     // multiple segments

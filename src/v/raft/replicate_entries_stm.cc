@@ -137,8 +137,11 @@ inline bool replicate_entries_stm::is_follower_recovering(model::node_id id) {
 ss::future<result<replicate_result>>
 replicate_entries_stm::apply(ss::semaphore_units<> u) {
     // first append lo leader log, no flushing
+
+    // make sure we use current configuration for whole request lifecycle.
+    auto current_cfg = _ptr->config();
     return append_to_self()
-      .then([this, u = std::move(u)](
+      .then([this, u = std::move(u), current_cfg = std::move(current_cfg)](
               result<storage::append_result> append_result) mutable {
           if (!append_result) {
               return ss::make_ready_future<result<storage::append_result>>(
@@ -150,7 +153,7 @@ replicate_entries_stm::apply(ss::semaphore_units<> u) {
           auto units = ss::make_lw_shared<std::vector<ss::semaphore_units<>>>(
             std::move(vec));
           uint16_t requests_count = 0;
-          _ptr->config().for_each(
+          current_cfg.for_each_broker(
             [this, &requests_count, units](const model::broker& n) {
                 // We are not dispatching request to followers that are
                 // recovering

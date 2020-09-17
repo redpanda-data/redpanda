@@ -106,7 +106,7 @@ ss::future<> members_manager::maybe_update_current_node_configuration() {
 cluster::patch<broker_ptr>
 calculate_brokers_diff(members_table& m, const raft::group_configuration& cfg) {
     std::vector<broker_ptr> new_list;
-    cfg.for_each([&new_list](const model::broker& br) {
+    cfg.for_each_broker([&new_list](const model::broker& br) {
         new_list.push_back(ss::make_lw_shared<model::broker>(br));
     });
     std::vector<broker_ptr> old_list = m.all_brokers();
@@ -121,12 +121,12 @@ members_manager::handle_raft0_cfg_update(raft::group_configuration cfg) {
       .invoke_on(
         partition_allocator::shard,
         [cfg](partition_allocator& allocator) {
-            for (auto& n : cfg.nodes) {
+            cfg.for_each_broker([&allocator](const model::broker& n) {
                 if (!allocator.contains_node(n.id())) {
                     allocator.register_node(std::make_unique<allocation_node>(
                       allocation_node(n.id(), n.properties().cores, {})));
                 }
-            }
+            });
         })
       .then([this, cfg = std::move(cfg)]() mutable {
           auto diff = calculate_brokers_diff(_members_table.local(), cfg);
@@ -143,7 +143,7 @@ members_manager::handle_raft0_cfg_update(raft::group_configuration cfg) {
 
 ss::future<std::error_code>
 members_manager::apply_update(model::record_batch b) {
-    auto cfg = reflection::adl<raft::group_configuration>{}.from(
+    auto cfg = reflection::from_iobuf<raft::group_configuration>(
       b.begin()->release_value());
     return handle_raft0_cfg_update(std::move(cfg)).then([] {
         return std::error_code(errc::success);
@@ -277,9 +277,9 @@ auto members_manager::dispatch_rpc_to_leader(Func&& f) {
         return fut_t::convert(errc::no_leader_controller);
     }
 
-    auto leader = _raft0->config().find_in_nodes(*leader_id);
+    auto leader = _raft0->config().find(*leader_id);
 
-    if (leader == _raft0->config().nodes.end()) {
+    if (!leader) {
         return fut_t::convert(errc::no_leader_controller);
     }
 
@@ -298,7 +298,7 @@ members_manager::handle_join_request(model::broker broker) {
     // curent node is a leader
     if (_raft0->is_leader()) {
         // Just update raft0 configuration
-        return _raft0->add_group_member(std::move(broker))
+        return _raft0->add_group_members({std::move(broker)})
           .then([](std::error_code ec) {
               if (!ec) {
                   return ret_t(join_reply{true});

@@ -37,7 +37,7 @@ ss::future<ss::lw_shared_ptr<raft::consensus>> group_manager::create_group(
     auto raft = ss::make_lw_shared<raft::consensus>(
       _self,
       id,
-      raft::group_configuration{.nodes = std::move(nodes)},
+      raft::group_configuration(std::move(nodes)),
       raft::timeout_jitter(
         config::shard_local_cfg().raft_election_timeout_ms()),
       log,

@@ -97,24 +97,6 @@ model::broker create_test_broker() {
       });
 }
 
-SEASTAR_THREAD_TEST_CASE(group_configuration) {
-    std::vector<model::broker> nodes;
-    std::vector<model::broker> learners;
-    for (int i = 0; i < 10; ++i) {
-        nodes.push_back(create_test_broker());
-        learners.push_back(create_test_broker());
-    }
-
-    raft::group_configuration cfg{
-      .nodes = std::move(nodes), .learners = std::move(learners)};
-    auto expected = cfg;
-
-    auto deser = async_serialize_roundtrip_rpc(std::move(cfg)).get0();
-
-    BOOST_REQUIRE_EQUAL(deser.nodes, expected.nodes);
-    BOOST_REQUIRE_EQUAL(deser.learners, expected.learners);
-}
-
 SEASTAR_THREAD_TEST_CASE(heartbeat_request_roundtrip) {
     static constexpr int64_t one_k = 1'000;
     raft::heartbeat_request req;
@@ -231,15 +213,17 @@ SEASTAR_THREAD_TEST_CASE(snapshot_metadata_roundtrip) {
     auto n1 = tests::random_broker(0, 100);
     auto n2 = tests::random_broker(0, 100);
     auto n3 = tests::random_broker(0, 100);
-    std::vector<model::broker> nodes{n1, n2};
-    std::vector<model::broker> learners{n3};
+    std::vector<model::broker> nodes{n1, n2, n3};
+    raft::group_nodes current{
+      .voters = {n1.id(), n3.id()}, .learners = {n2.id()}};
+
+    raft::group_configuration cfg(nodes, current);
 
     auto ct = ss::lowres_clock::now();
     raft::snapshot_metadata metadata{
       .last_included_index = model::offset(123),
       .last_included_term = model::term_id(32),
-      .latest_configuration
-      = raft::group_configuration{.nodes = nodes, .learners = learners},
+      .latest_configuration = cfg,
       .cluster_time = ct,
     };
 
@@ -248,6 +232,5 @@ SEASTAR_THREAD_TEST_CASE(snapshot_metadata_roundtrip) {
     BOOST_REQUIRE_EQUAL(d.last_included_index, model::offset(123));
     BOOST_REQUIRE_EQUAL(d.last_included_term, model::term_id(32));
     BOOST_REQUIRE(d.cluster_time == ct);
-    BOOST_REQUIRE_EQUAL(d.latest_configuration.nodes, nodes);
-    BOOST_REQUIRE_EQUAL(d.latest_configuration.learners, learners);
+    BOOST_REQUIRE_EQUAL(d.latest_configuration, cfg);
 }
