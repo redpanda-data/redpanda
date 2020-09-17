@@ -2,9 +2,9 @@ import { Server } from "../../modules/rpc/server";
 import { join } from "path";
 import Repository from "../../modules/supervisors/Repository";
 import { RecordBatch, PolicyError } from "../../modules/public/Coprocessor";
-import { Request } from "../../modules/domain/Request";
 import FileManager from "../../modules/supervisors/FileManager";
 import assert = require("assert");
+import { ProcessBatchRequest } from "../../modules/domain/generatedRpc/generatedClasses";
 import {
   createHandle,
   createMockCoprocessor,
@@ -15,18 +15,19 @@ const sinon = require("sinon");
 const net = require("net");
 const fakeFileManager = require("../../modules/supervisors/FileManager");
 
-const createRequest = (topic?: string): Request => {
-  const coprocessorRecordBatch = [
-    {
-      records: [{ value: Buffer.from("Example") }],
-      header: {},
+const createRequest = (topic?: string): ProcessBatchRequest => {
+  const coprocessorRecordBatch = {
+    records: [{ value: Buffer.from("Example") }],
+    header: {},
+  } as RecordBatch;
+  return {
+    npt: {
+      topic: topic || "topicA",
+      namespace: "name",
+      partition: 1,
     },
-  ] as RecordBatch[];
-  return new Request(
-    { topic: topic || "topicA" },
-    { records: coprocessorRecordBatch },
-    "1"
-  );
+    recordBatch: coprocessorRecordBatch,
+  } as ProcessBatchRequest;
 };
 
 const createFakeServer = (afterApply?: (value) => void, fileManagerStub?) => {
@@ -79,7 +80,7 @@ describe("Server", function () {
         const [, fakeSocket] = createFakeServer(() => {
           assert(repository.called);
           assert(repository.getCall(0).returnValue.size > 0);
-          assert(!repository.getCall(0).returnValue.has(request.getTopic()));
+          assert(!repository.getCall(0).returnValue.has(request.npt.topic));
           assert(apply.called);
           apply.firstCall.returnValue.then((values) => {
             assert.deepStrictEqual(values, []);
