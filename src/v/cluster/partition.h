@@ -78,6 +78,11 @@ public:
 
     bool is_leader() const { return _raft->is_leader(); }
 
+    ss::future<std::error_code>
+    transfer_leadership(std::optional<model::node_id> target) {
+        return _raft->transfer_leadership(target);
+    }
+
 private:
     friend partition_manager;
 
