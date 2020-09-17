@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strings"
 	"time"
@@ -54,18 +55,18 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 	)
 	sFlags := seastarFlags{}
 	sFlagsMap := map[string]interface{}{
-		"lock-memory":        sFlags.lockMemory,
-		"io-properties-file": sFlags.ioPropertiesFile,
-		"cpuset":             sFlags.cpuSet,
-		"memory":             sFlags.memory,
-		"smp":                sFlags.smp,
-		"reserve-memory":     sFlags.reserveMemory,
-		"hugepages":          sFlags.hugepages,
-		"thread-affinity":    sFlags.threadAffinity,
-		"num-io-queues":      sFlags.numIoQueues,
-		"max-io-requests":    sFlags.maxIoRequests,
-		"io-properties":      sFlags.ioProperties,
-		"mbind":              sFlags.mbind,
+		"lock-memory":        &sFlags.lockMemory,
+		"io-properties-file": &sFlags.ioPropertiesFile,
+		"cpuset":             &sFlags.cpuSet,
+		"memory":             &sFlags.memory,
+		"smp":                &sFlags.smp,
+		"reserve-memory":     &sFlags.reserveMemory,
+		"hugepages":          &sFlags.hugepages,
+		"thread-affinity":    &sFlags.threadAffinity,
+		"num-io-queues":      &sFlags.numIoQueues,
+		"max-io-requests":    &sFlags.maxIoRequests,
+		"io-properties":      &sFlags.ioProperties,
+		"mbind":              &sFlags.mbind,
 	}
 	command := &cobra.Command{
 		Use:   "start",
@@ -110,9 +111,16 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 			// Override all the defaults when flags are explicitly set
 			for flag, val := range sFlagsMap {
 				if ccmd.Flags().Changed(flag) {
-					rpArgs.SeastarFlags[flag] = fmt.Sprint(val)
+					// Reflection is needed since sFlagsMap
+					// is a map[string]interface{} - its
+					// values are pointers to int, bool &
+					// string - and Go doesn't allow
+					// dereferencing interface{}.
+					v := reflect.ValueOf(val).Elem()
+					rpArgs.SeastarFlags[flag] = fmt.Sprint(v)
 				}
 			}
+
 			sendEnv(fs, env, conf, nil)
 			rpArgs.SeastarFlags = mergeFlags(rpArgs.SeastarFlags, conf.Rpk.AdditionalStartFlags)
 			launcher := redpanda.NewLauncher(installDirectory, rpArgs)
