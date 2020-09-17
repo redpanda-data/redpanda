@@ -50,7 +50,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(BASE_LD_FLAGS_LIST "-Wl,--build-id=sha1")
 if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "GNU")
-  list(APPEND BASE_LD_FLAGS_LIST -fuse-ld=gold)
+  list(APPEND BASE_C_FLAGS_LIST -fuse-ld=gold)
+  list(APPEND BASE_CXX_FLAGS_LIST -fuse-ld=gold)
 endif()
 
 if (V_MANAGE_DEPS)
@@ -66,14 +67,14 @@ if (V_MANAGE_DEPS)
   )
 endif()
 
-set(BASE_CXX_FLAGS_LIST -fPIC ${RP_MARCH})
-set(BASE_C_FLAGS_LIST -fPIC ${RP_MARCH})
+list(APPEND BASE_CXX_FLAGS_LIST -fPIC ${RP_MARCH})
+list(APPEND BASE_C_FLAGS_LIST -fPIC ${RP_MARCH})
 
 # compiler specific options
 if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
-    list(APPEND BASE_LD_FLAGS_LIST
-        -stdlib=libc++
-        -fuse-ld=lld)
+    list(APPEND BASE_C_FLAGS_LIST -fuse-ld=lld)
+    list(APPEND BASE_CXX_FLAGS_LIST -fuse-ld=lld)
+    list(APPEND BASE_LD_FLAGS_LIST -stdlib=libc++)
     if (V_MANAGE_DEPS)
       set(LLVM_LIBCPP_INCLUDE_FLAG "-I${V_DEPS_INSTALL_DIR}/include/c++/v1")
     endif()
