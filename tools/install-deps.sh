@@ -34,7 +34,8 @@ function debs() {
     python3-pip \
     python3-venv \
     python3-dev \
-    patchelf
+    patchelf \
+    xutils-dev
   update-alternatives \
     --install /usr/bin/gcc gcc /usr/bin/gcc-9 60 \
     --slave /usr/bin/g++ g++ /usr/bin/g++-9
@@ -92,7 +93,8 @@ function rpms() {
     python3-jinja2 \
     python3-pip \
     python3-devel \
-    patchelf
+    patchelf \
+    xorg-x11-util-macros
 }
 
 source /etc/os-release

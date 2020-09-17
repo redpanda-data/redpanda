@@ -268,12 +268,16 @@ ExternalProject_Add(gmp
   INSTALL_DIR @V_DEPS_INSTALL_DIR@
   DEPENDS ${default_depends}
   CONFIGURE_COMMAND
-    ${CMAKE_COMMAND} -E env ${configure_env}
-    <SOURCE_DIR>/configure
-    --prefix=<INSTALL_DIR>
-    --srcdir=<SOURCE_DIR>
-    --libdir=<INSTALL_DIR>/lib
-    ${info_dir}/gmp
+    COMMAND
+      ${CMAKE_COMMAND} -E env ${configure_env}
+      autoreconf -ivf <SOURCE_DIR>
+    COMMAND
+      ${CMAKE_COMMAND} -E env ${configure_env}
+      <SOURCE_DIR>/configure
+      --prefix=<INSTALL_DIR>
+      --srcdir=<SOURCE_DIR>
+      --libdir=<INSTALL_DIR>/lib
+      ${info_dir}/gmp
   BUILD_COMMAND ${make_command}
   INSTALL_COMMAND ${make_command} install)
 
@@ -284,13 +288,17 @@ ExternalProject_Add(nettle
   PATCH_COMMAND
     <SOURCE_DIR>/.bootstrap
   CONFIGURE_COMMAND
-    ${CMAKE_COMMAND} -E env ${nettle_build_env}
-    <SOURCE_DIR>/configure
-    --prefix=<INSTALL_DIR>
-    --srcdir=<SOURCE_DIR>
-    --libdir=<INSTALL_DIR>/lib
-    --disable-documentation
-    --enable-x86-aesni
+    COMMAND
+      ${CMAKE_COMMAND} -E env ${nettle_build_env}
+      autoreconf -ivf <SOURCE_DIR>
+    COMMAND
+      ${CMAKE_COMMAND} -E env ${nettle_build_env}
+      <SOURCE_DIR>/configure
+      --prefix=<INSTALL_DIR>
+      --srcdir=<SOURCE_DIR>
+      --libdir=<INSTALL_DIR>/lib
+      --disable-documentation
+      --enable-x86-aesni
   INSTALL_COMMAND ${make_command} install
   DEPENDS gmp ${default_depends})
 
@@ -299,19 +307,23 @@ ExternalProject_Add(gnutls
   URL_MD5 bf70632d420e421baff482247f01dbfe
   INSTALL_DIR @V_DEPS_INSTALL_DIR@
   CONFIGURE_COMMAND
-   ${CMAKE_COMMAND} -E env ${configure_env}
-    <SOURCE_DIR>/configure
-    --prefix=<INSTALL_DIR>
-    --srcdir=<SOURCE_DIR>
-    --libdir=<INSTALL_DIR>/lib
-    --with-included-unistring
-    --with-included-libtasn1
-    --without-idn
-    --without-p11-kit
-    # https://lists.gnupg.org/pipermail/gnutls-help/2016-February/004085.html
-    --disable-non-suiteb-curves
-    --disable-doc
-    --disable-tests
+    COMMAND
+      ${CMAKE_COMMAND} -E env ${configure_env}
+      autoreconf -ivf <SOURCE_DIR>
+    COMMAND
+      ${CMAKE_COMMAND} -E env ${configure_env}
+      <SOURCE_DIR>/configure
+      --prefix=<INSTALL_DIR>
+      --srcdir=<SOURCE_DIR>
+      --libdir=<INSTALL_DIR>/lib
+      --with-included-unistring
+      --with-included-libtasn1
+      --without-idn
+      --without-p11-kit
+      # https://lists.gnupg.org/pipermail/gnutls-help/2016-February/004085.html
+      --disable-non-suiteb-curves
+      --disable-doc
+      --disable-tests
   BUILD_COMMAND ${make_command}
   INSTALL_COMMAND ${make_command} install
   DEPENDS gmp nettle ${default_depends})
@@ -334,10 +346,14 @@ ExternalProject_Add(numactl
   INSTALL_DIR @V_DEPS_INSTALL_DIR@
   DEPENDS ${default_depends}
   CONFIGURE_COMMAND
-    ${CMAKE_COMMAND} -E env ${configure_env}
-    <SOURCE_DIR>/configure
-    --prefix=<INSTALL_DIR>
-    --srcdir=<SOURCE_DIR>
+    COMMAND
+      ${CMAKE_COMMAND} -E env ${configure_env}
+      autoreconf -ivf <SOURCE_DIR>
+    COMMAND
+      ${CMAKE_COMMAND} -E env ${configure_env}
+      <SOURCE_DIR>/configure
+      --prefix=<INSTALL_DIR>
+      --srcdir=<SOURCE_DIR>
   BUILD_COMMAND ${make_command}
   INSTALL_COMMAND ${make_command} install)
 
@@ -347,10 +363,14 @@ ExternalProject_Add(libpciaccess
   INSTALL_DIR @V_DEPS_INSTALL_DIR@
   DEPENDS ${default_depends}
   CONFIGURE_COMMAND
-    ${CMAKE_COMMAND} -E env ${configure_env}
-    <SOURCE_DIR>/configure
-    --prefix=<INSTALL_DIR>
-    --srcdir=<SOURCE_DIR>
+    COMMAND
+      ${CMAKE_COMMAND} -E env ${configure_env}
+      autoreconf -ivf <SOURCE_DIR>
+    COMMAND
+      ${CMAKE_COMMAND} -E env ${configure_env}
+      <SOURCE_DIR>/configure
+      --prefix=<INSTALL_DIR>
+      --srcdir=<SOURCE_DIR>
   BUILD_COMMAND ${make_command}
   INSTALL_COMMAND ${make_command} install)
 
@@ -360,8 +380,8 @@ ExternalProject_Add(hwloc
   INSTALL_DIR @V_DEPS_INSTALL_DIR@
   CONFIGURE_COMMAND
     COMMAND
-      ${CMAKE_COMMAND} -E chdir <SOURCE_DIR>
-      autoreconf -ivf
+      ${CMAKE_COMMAND} -E env ${configure_env}
+      autoreconf -ivf <SOURCE_DIR>
     COMMAND
       ${CMAKE_COMMAND} -E env ${configure_env}
       <SOURCE_DIR>/configure
@@ -378,9 +398,13 @@ ExternalProject_Add(xz
   INSTALL_DIR @V_DEPS_INSTALL_DIR@
   DEPENDS ${default_depends}
   CONFIGURE_COMMAND
-    ${CMAKE_COMMAND} -E env ${configure_env}
-    <SOURCE_DIR>/configure
-    --prefix=<INSTALL_DIR>
+    COMMAND
+      ${CMAKE_COMMAND} -E env ${configure_env}
+      autoreconf -ivf <SOURCE_DIR>
+    COMMAND
+      ${CMAKE_COMMAND} -E env ${configure_env}
+      <SOURCE_DIR>/configure
+      --prefix=<INSTALL_DIR>
   BUILD_COMMAND ${make_command}
   INSTALL_COMMAND ${make_command} install)
 
@@ -394,7 +418,10 @@ ExternalProject_Add(xml2
       ${CMAKE_COMMAND} -E env ${configure_env}
         NOCONFIGURE=true ./autogen.sh
     COMMAND
-    ${CMAKE_COMMAND} -E env ${configure_env} LIBS=-ldl
+      ${CMAKE_COMMAND} -E env ${configure_env}
+      autoreconf -ivf <SOURCE_DIR>
+    COMMAND
+      ${CMAKE_COMMAND} -E env ${configure_env} LIBS=-ldl
       <SOURCE_DIR>/configure
       --without-python
       --with-zlib=@V_DEPS_INSTALL_DIR@/lib
@@ -423,10 +450,14 @@ ExternalProject_Add(lksctp-tools
   PATCH_COMMAND ./bootstrap
   DEPENDS ${default_depends}
   CONFIGURE_COMMAND
-    ${CMAKE_COMMAND} -E env ${configure_env}
-    <SOURCE_DIR>/configure
-    --prefix=<INSTALL_DIR>
-    --srcdir=<SOURCE_DIR>
+    COMMAND
+      ${CMAKE_COMMAND} -E env ${configure_env}
+      autoreconf -ivf <SOURCE_DIR>
+    COMMAND
+      ${CMAKE_COMMAND} -E env ${configure_env}
+      <SOURCE_DIR>/configure
+      --prefix=<INSTALL_DIR>
+      --srcdir=<SOURCE_DIR>
   BUILD_COMMAND ${make_command}
   INSTALL_COMMAND ${make_command} install)
 
