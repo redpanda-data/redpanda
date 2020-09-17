@@ -64,8 +64,9 @@ set(base64_build_env
   SSSE3_CFLAGS=-mssse3
   SSE41_CFLAGS=-msse4.1
   SSE42_CFLAGS=-msse4.2
-  AVX_CFLAGS=-mavx
-  AVX2_CFLAGS=-mavx2
+# Not supported on westmere
+#  AVX_CFLAGS=-mavx
+#  AVX2_CFLAGS=-mavx2
   CFLAGS=${c_flags}
   LDFLAGS=${ld_flags}
 )
@@ -661,7 +662,7 @@ ExternalProject_Add(base64_ext
   CONFIGURE_COMMAND ""
   BUILD_COMMAND
     ${CMAKE_COMMAND} -E env ${base64_build_env}
-    make all -j${build_concurrency_factor}
+    make ${base64_build_env} lib/libbase64.o -j${build_concurrency_factor}
   BUILD_IN_SOURCE true
   INSTALL_COMMAND
     COMMAND ${CMAKE_COMMAND} -E copy <SOURCE_DIR>/include/libbase64.h <INSTALL_DIR>/include/libbase64.h
