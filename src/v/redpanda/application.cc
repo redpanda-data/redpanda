@@ -10,6 +10,7 @@
 #include "platform/stop_signal.h"
 #include "raft/service.h"
 #include "redpanda/admin/api-doc/config.json.h"
+#include "redpanda/admin/api-doc/kafka.json.h"
 #include "redpanda/admin/api-doc/raft.json.h"
 #include "rpc/simple_protocol.h"
 #include "storage/directories.h"
@@ -209,6 +210,7 @@ void application::configure_admin_server() {
                     return ss::json::json_return_type(buf.GetString());
                 });
               admin_register_raft_routes(server);
+              admin_register_kafka_routes(server);
           })
           .get();
     }
@@ -539,6 +541,76 @@ void application::admin_register_raft_routes(ss::http_server& server) {
                     throw ss::httpd::not_found_exception();
                 }
                 return consensus->transfer_leadership(target).then(
+                  [](std::error_code err) {
+                      if (err) {
+                          throw ss::httpd::server_error_exception(fmt::format(
+                            "Leadership transfer failed: {}", err.message()));
+                      }
+                      return ss::json::json_return_type(ss::json::json_void());
+                  });
+            });
+      });
+}
+
+void application::admin_register_kafka_routes(ss::http_server& server) {
+    ss::httpd::kafka_json::transfer_leadership.set(
+      server._routes, [this](std::unique_ptr<ss::httpd::request> req) {
+          auto topic = model::topic(req->param["topic"]);
+
+          model::partition_id partition;
+          try {
+              partition = model::partition_id(
+                std::stoll(req->param["partition"]));
+          } catch (...) {
+              throw ss::httpd::bad_param_exception(fmt::format(
+                "Partition id must be an integer: {}",
+                req->param["partition"]));
+          }
+
+          if (partition() < 0) {
+              throw ss::httpd::bad_param_exception(
+                fmt::format("Invalid partition id {}", partition));
+          }
+
+          std::optional<model::node_id> target;
+          if (auto node = req->get_query_param("target"); !node.empty()) {
+              try {
+                  target = model::node_id(std::stoi(node));
+              } catch (...) {
+                  throw ss::httpd::bad_param_exception(
+                    fmt::format("Target node id must be an integer: {}", node));
+              }
+              if (*target < 0) {
+                  throw ss::httpd::bad_param_exception(
+                    fmt::format("Invalid target node id {}", *target));
+              }
+          }
+
+          vlog(
+            _log.info,
+            "Leadership transfer request for leader of topic-partition {}:{} "
+            "to node {}",
+            topic,
+            partition,
+            target);
+
+          model::ntp ntp(cluster::kafka_namespace, topic, partition);
+
+          auto shard = shard_table.local().shard_for(ntp);
+          if (!shard) {
+              throw ss::httpd::not_found_exception(fmt::format(
+                "Topic partition {}:{} not found", topic, partition));
+          }
+
+          return partition_manager.invoke_on(
+            *shard,
+            [ntp = std::move(ntp),
+             target](cluster::partition_manager& pm) mutable {
+                auto partition = pm.get(ntp);
+                if (!partition) {
+                    throw ss::httpd::not_found_exception();
+                }
+                return partition->transfer_leadership(target).then(
                   [](std::error_code err) {
                       if (err) {
                           throw ss::httpd::server_error_exception(fmt::format(
