@@ -3,6 +3,7 @@
 #include "cluster/partition_manager.h"
 #include "cluster/tests/controller_test_fixture.h"
 #include "config/seed_server.h"
+#include "model/metadata.h"
 #include "random/generators.h"
 
 #include <seastar/core/metrics_api.hh>
@@ -53,6 +54,15 @@ public:
 
     cluster::metadata_cache& get_local_cache(model::node_id id) {
         return _instances[id]->get_local_cache();
+    }
+
+    ss::sharded<cluster::partition_manager>&
+    get_partition_manager(model::node_id id) {
+        return _instances.find(id)->second->get_partition_manager();
+    }
+
+    cluster::shard_table& get_shard_table(model::node_id nid) {
+        return _instances.find(nid)->second->get_shard_table();
     }
 
     cluster::controller* create_controller(
