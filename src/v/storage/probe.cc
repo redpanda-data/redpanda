@@ -39,10 +39,20 @@ void probe::setup_metrics(const model::ntp& ntp) {
           [this] { return _bytes_read; },
           sm::description("Total number of bytes read"),
           labels),
+        sm::make_total_bytes(
+          "cached_read_bytes",
+          [this] { return _cached_bytes_read; },
+          sm::description("Total number of cached bytes read"),
+          labels),
         sm::make_derive(
           "batches_read",
           [this] { return _batches_read; },
           sm::description("Total number of batches read"),
+          labels),
+        sm::make_derive(
+          "cached_batches_read",
+          [this] { return _cached_batches_read; },
+          sm::description("Total number of cached batches read"),
           labels),
         sm::make_derive(
           "log_segments_created",

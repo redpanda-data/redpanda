@@ -17,6 +17,7 @@ public:
     }
 
     void add_bytes_read(uint64_t read) { _bytes_read += read; }
+    void add_cached_bytes_read(uint64_t read) { _cached_bytes_read += read; }
 
     void batch_written() { ++_batches_written; }
 
@@ -32,6 +33,9 @@ public:
     }
 
     void add_batches_read(uint32_t batches) { _batches_read += batches; }
+    void add_cached_batches_read(uint32_t batches) {
+        _cached_batches_read += batches;
+    }
 
     void batch_parse_error() { ++_batch_parse_errors; }
 
@@ -47,9 +51,11 @@ private:
     uint64_t _partition_bytes = 0;
     uint64_t _bytes_written = 0;
     uint64_t _bytes_read = 0;
+    uint64_t _cached_bytes_read = 0;
 
     uint64_t _batches_written = 0;
     uint64_t _batches_read = 0;
+    uint64_t _cached_batches_read = 0;
 
     uint32_t _segment_compacted = 0;
     uint32_t _corrupted_compaction_index = 0;
