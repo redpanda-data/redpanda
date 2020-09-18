@@ -4,6 +4,7 @@
 #include "raft/consensus_utils.h"
 
 #include <absl/container/flat_hash_set.h>
+#include <bits/stdint-uintn.h>
 
 #include <algorithm>
 #include <iterator>
@@ -259,11 +260,24 @@ namespace reflection {
 
 void adl<raft::group_configuration>::to(
   iobuf& buf, raft::group_configuration cfg) {
-    serialize(buf, cfg.brokers(), cfg.current_config(), cfg.old_config());
+    serialize(
+      buf,
+      cfg.version(),
+      cfg.brokers(),
+      cfg.current_config(),
+      cfg.old_config());
 }
 
 raft::group_configuration
 adl<raft::group_configuration>::from(iobuf_parser& p) {
+    auto version = adl<uint8_t>{}.from(p);
+    // currently we support only version 1
+    vassert(
+      version == raft::group_configuration::current_version,
+      "Version {} is not supported. We only support version {}",
+      version,
+      raft::group_configuration::current_version);
+
     auto brokers = adl<std::vector<model::broker>>{}.from(p);
     auto current = adl<raft::group_nodes>{}.from(p);
     auto old = adl<std::optional<raft::group_nodes>>{}.from(p);
