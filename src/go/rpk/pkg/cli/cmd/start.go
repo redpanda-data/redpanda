@@ -151,13 +151,15 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 		"When present will enable tuning before starting redpanda")
 	command.Flags().BoolVar(&prestartCfg.checkEnabled, "check", true,
 		"When set to false will disable system checking before starting redpanda")
-	command.Flags().IntVar(&sFlags.smp, "smp", 1, "number of threads (default: one per CPU)")
+	command.Flags().IntVar(&sFlags.smp, "smp", 1, "Restrict redpanda to"+
+		" the given number of CPUs. This option does not mandate a"+
+		" specific placement of CPUs. See --cpuset if you need to do so.")
 	command.Flags().StringVar(&sFlags.reserveMemory, "reserve-memory", "",
-		"memory reserved to OS (if --memory not specified)")
+		"Memory reserved for the OS (if --memory isn't specified)")
 	command.Flags().StringVar(&sFlags.hugepages, "hugepages", "",
-		"path to accessible hugetlbfs mount (typically /dev/hugepages/something)")
+		"Path to accessible hugetlbfs mount (typically /dev/hugepages/something)")
 	command.Flags().BoolVar(&sFlags.threadAffinity, "thread-affinity", true,
-		"pin threads to their cpus (disable for overprovisioning)")
+		"Pin threads to their cpus (disable for overprovisioning)")
 	command.Flags().IntVar(&sFlags.numIoQueues, "num-io-queues", 0,
 		"Number of IO queues. Each IO unit will be responsible for a fraction "+
 			"of the IO requests. Defaults to the number of threads")
@@ -165,9 +167,9 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 		"Maximum amount of concurrent requests to be sent to the disk. "+
 			"Defaults to 128 times the number of IO queues")
 	command.Flags().StringVar(&sFlags.ioPropertiesFile, "io-properties-file", "",
-		"path to a YAML file describing the characteristics of the I/O Subsystem")
+		"Path to a YAML file describing the characteristics of the I/O Subsystem")
 	command.Flags().StringVar(&sFlags.ioProperties, "io-properties", "",
-		"a YAML string describing the characteristics of the I/O Subsystem")
+		"A YAML string describing the characteristics of the I/O Subsystem")
 	command.Flags().StringVar(
 		&wellKnownIo,
 		"well-known-io",
