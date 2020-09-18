@@ -21,6 +21,8 @@ enum class errc {
     timeout,
     topic_not_exists,
     invalid_topic_name,
+    partition_not_exists,
+    not_leader
 };
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "cluster::errc"; }
@@ -65,6 +67,8 @@ struct errc_category final : public std::error_category {
             return "Topic does not exists";
         case errc::invalid_topic_name:
             return "Invalid topic name";
+        case errc::partition_not_exists:
+            return "Requested partition does not exists";
         default:
             return "cluster::errc::unknown";
         }
