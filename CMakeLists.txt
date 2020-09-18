@@ -58,7 +58,6 @@ if (V_MANAGE_DEPS)
   list(APPEND BASE_LD_FLAGS_LIST
     -L${V_DEPS_INSTALL_DIR}/lib
     -L${V_DEPS_INSTALL_DIR}/lib64
-    -I${V_DEPS_INSTALL_DIR}/include
   )
   set(PKG_CONFIG_PATH_LIST
     ${V_DEPS_INSTALL_DIR}/lib64/pkgconfig
@@ -168,6 +167,10 @@ if(V_MANAGE_DEPS)
   # disable user package registry ~/.cmake/*
   set(CMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY ON CACHE INTERNAL "" FORCE)
   set(V_DEPS_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/v_deps_build)
+  # build type specific flags
+  string(TOUPPER ${CMAKE_BUILD_TYPE} BUILD_TYPE)
+  set(CMAKE_C_FLAGS_BUILD_TYPE ${CMAKE_C_FLAGS_${BUILD_TYPE}})
+  set(CMAKE_CXX_FLAGS_BUILD_TYPE ${CMAKE_CXX_FLAGS_${BUILD_TYPE}})
   configure_file(3rdparty.cmake.in ${V_DEPS_BUILD_DIR}/CMakeLists.txt @ONLY)
   # wire up dependency search paths.
   list(APPEND CMAKE_PREFIX_PATH "${V_DEPS_INSTALL_DIR}")

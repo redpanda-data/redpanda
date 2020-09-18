@@ -6,14 +6,23 @@ cmake_host_system_information(
 set(info_dir --infodir=@V_DEPS_INSTALL_DIR@/share/info)
 include(ExternalProject)
 
-set(c_flags "@BASE_C_FLAGS@")
-set(cxx_flags "@BASE_CXX_FLAGS@")
+set(c_flags "@BASE_C_FLAGS@ @CMAKE_C_FLAGS_BUILD_TYPE@")
+set(cxx_flags "@BASE_CXX_FLAGS@ @CMAKE_CXX_FLAGS_BUILD_TYPE@ -std=c++17")
 set(ld_flags "@BASE_LD_FLAGS@")
 set(default_depends "")
 
 set(common_cmake_args
   -DCMAKE_CXX_STANDARD=@CMAKE_CXX_STANDARD@
-  -DCMAKE_C_FLAGS=@CMAKE_C_FLAGS@
+  -DCMAKE_CXX_EXTENSIONS=@CMAKE_CXX_EXTENSIONS@
+  -DCMAKE_C_COMPILER=@CMAKE_C_COMPILER@
+  -DCMAKE_CXX_COMPILER=@CMAKE_CXX_COMPILER@
+  "-DCMAKE_C_FLAGS=@BASE_C_FLAGS@"
+  "-DCMAKE_C_FLAGS_@BUILD_TYPE@=@CMAKE_C_FLAGS_BUILD_TYPE@"
+  "-DCMAKE_CXX_FLAGS=@BASE_CXX_FLAGS@ -std=c++17"
+  "-DCMAKE_CXX_FLAGS_@BUILD_TYPE@=@CMAKE_CXX_FLAGS_BUILD_TYPE@"
+  "-DCMAKE_EXE_LINKER_FLAGS=@CMAKE_EXE_LINKER_FLAGS@"
+  "-DCMAKE_SHARED_LINKER_FLAGS=@CMAKE_SHARED_LINKER_FLAGS@"
+  "-DCMAKE_MODULE_LINKER_FLAGS=@CMAKE_MODULE_LINKER_FLAGS@"
   -DCMAKE_BUILD_TYPE=@CMAKE_BUILD_TYPE@
   -DCMAKE_PREFIX_PATH=@V_DEPS_INSTALL_DIR@
   -DCMAKE_INSTALL_PREFIX=@V_DEPS_INSTALL_DIR@
@@ -21,6 +30,7 @@ set(common_cmake_args
   -DCMAKE_SKIP_BUILD_RPATH=OFF
   -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON
   -DCMAKE_POSITION_INDEPENDENT_CODE=@CMAKE_POSITION_INDEPENDENT_CODE@
+  -DCMAKE_VERBOSE_MAKEFILE=@CMAKE_VERBOSE_MAKEFILE@
 )
 
 
@@ -29,63 +39,84 @@ set(common_cmake_args
 # pkgconfig
 set(ENV{PKG_CONFIG_PATH}  @PKG_CONFIG_PATH@)
 
-# cmake build environment
-set(cmake_build_env
-  PKG_CONFIG_PATH=@PKG_CONFIG_PATH@
-  LDFLAGS=${ld_flags}
-  CFLAGS=${c_flags}
-  CXXFLAGS=-std=c++17\ ${cxx_flags}
-  CPPFLAGS=-std=c++17\ ${cxx_flags}
-  )
+# cmake build environment (nothing currently required)
+set(cmake_build_env)
+
+# Find linker
+execute_process(
+  COMMAND
+    @CMAKE_C_COMPILER@ @BASE_C_FLAGS@ -print-prog-name=ld
+  OUTPUT_VARIABLE
+    LD_PROGRAM
+  OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+
+# Get absolute path
+execute_process(
+  COMMAND
+    bash -c "type -p ${LD_PROGRAM}"
+  OUTPUT_VARIABLE
+    LD_PROGRAM
+  OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+
+# Cache linker
+set(LD ${LD_PROGRAM} CACHE FILEPATH "Linker")
+
+if ("@CMAKE_CXX_COMPILER@" MATCHES "Clang")
+  set(USE_LD lld)
+else()
+  set(USE_LD gold)
+endif()
+
 # seastar needs explicit -g and -lc++experimental on clang
 if (@CMAKE_CXX_COMPILER_ID@ MATCHES "Clang")
-  set(seastar_cpp_experimental_linker_flag "-lc++experimental")
+  set(seastar_ld_flags "${ld_flags} -pthread -lc++experimental")
+else ()
+  set(seastar_ld_flags "${ld_flags} -pthread")
 endif()
-set(seastar_build_env
-  PKG_CONFIG_PATH=@PKG_CONFIG_PATH@
-  LDFLAGS=${ld_flags}\ ${seastar_cpp_experimental_linker_flag}
-  CFLAGS=${c_flags}
-  CXXFLAGS=-std=c++17\ ${cxx_flags}\ -g
-  CPPFLAGS=-std=c++17\ ${cxx_flags}\ -g
-  )
 # autotools
-set(build_env
+set(base_env
+  CC=@CMAKE_C_COMPILER@
+  CXX=@CMAKE_CXX_COMPILER@
+  LD=${LD}
+  PKG_CONFIG_PATH=@PKG_CONFIG_PATH@
+)
+set(configure_env
+  ${base_env}
   CFLAGS=${c_flags}
   CXXFLAGS=${cxx_flags}
-  CPPFLAGS=${cxx_flags}
   LDFLAGS=${ld_flags}
-  PKG_CONFIG_PATH=@PKG_CONFIG_PATH@)
+)
+# For a libtool project
+set(build_env
+  ${base_env}
+  CFLAGS=${c_flags}
+  CXXFLAGS=${cxx_flags}
+  # -Wc is needed for older libtool that doesn't pass -fuse-ld
+  "LDFLAGS=${ld_flags} -Wc,-fuse-ld=${USE_LD}"
+)
 # nettle needs explicit path to headers
 set(nettle_build_env
+  ${base_env}
   CFLAGS=${c_flags}\ -I@V_DEPS_INSTALL_DIR@/include
   LDFLAGS=${ld_flags}
 )
 set(base64_build_env
+  ${build_env}
   SSSE3_CFLAGS=-mssse3
   SSE41_CFLAGS=-msse4.1
   SSE42_CFLAGS=-msse4.2
 # Not supported on westmere
 #  AVX_CFLAGS=-mavx
 #  AVX2_CFLAGS=-mavx2
-  CFLAGS=${c_flags}
-  LDFLAGS=${ld_flags}
 )
 
 # define make command in terms of cmake
 set(make_command make ${build_env} -j${build_concurrency_factor} )
 
-ExternalProject_Add(zlib
-  URL https://storage.googleapis.com/vectorizedio-public/dependencies/zlib-1.2.11.tar.gz
-  URL_MD5 1c9f62f0778697a09d36121ead88e08e
-  INSTALL_DIR @V_DEPS_INSTALL_DIR@
-  DEPENDS ${default_depends}
-  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
-  CMAKE_ARGS
-    ${common_cmake_args}
-  )
 
-
-# ----------- libcxxabi and libcxx for clang
+# ----------- compiler specific build configuration
 
 if ("@CMAKE_CXX_COMPILER_ID@" MATCHES "Clang")
     set(toolset clang)
@@ -99,6 +130,15 @@ elseif (@CMAKE_CXX_COMPILER_ID@ STREQUAL "GNU")
 endif()
 
 # ----------- dependencies below
+
+ExternalProject_Add(zlib
+  URL https://storage.googleapis.com/vectorizedio-public/dependencies/zlib-1.2.11.tar.gz
+  URL_MD5 1c9f62f0778697a09d36121ead88e08e
+  INSTALL_DIR @V_DEPS_INSTALL_DIR@
+  DEPENDS ${default_depends}
+  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
+  CMAKE_ARGS
+    ${common_cmake_args})
 
 ExternalProject_Add(boost
   # The 1.67.0 release has a bug in Boost Lockfree around a missing header.
@@ -219,7 +259,7 @@ ExternalProject_Add(gmp
   INSTALL_DIR @V_DEPS_INSTALL_DIR@
   DEPENDS ${default_depends}
   CONFIGURE_COMMAND
-    ${CMAKE_COMMAND} -E env ${build_env}
+    ${CMAKE_COMMAND} -E env ${configure_env}
     <SOURCE_DIR>/configure
     --prefix=<INSTALL_DIR>
     --srcdir=<SOURCE_DIR>
@@ -250,7 +290,7 @@ ExternalProject_Add(gnutls
   URL_MD5 bf70632d420e421baff482247f01dbfe
   INSTALL_DIR @V_DEPS_INSTALL_DIR@
   CONFIGURE_COMMAND
-   ${CMAKE_COMMAND} -E env ${build_env}
+   ${CMAKE_COMMAND} -E env ${configure_env}
     <SOURCE_DIR>/configure
     --prefix=<INSTALL_DIR>
     --srcdir=<SOURCE_DIR>
@@ -262,7 +302,7 @@ ExternalProject_Add(gnutls
     # https://lists.gnupg.org/pipermail/gnutls-help/2016-February/004085.html
     --disable-non-suiteb-curves
     --disable-doc
-    ${build_env}
+    --disable-tests
   BUILD_COMMAND ${make_command}
   INSTALL_COMMAND ${make_command} install
   DEPENDS gmp nettle ${default_depends})
@@ -285,7 +325,7 @@ ExternalProject_Add(numactl
   INSTALL_DIR @V_DEPS_INSTALL_DIR@
   DEPENDS ${default_depends}
   CONFIGURE_COMMAND
-    ${CMAKE_COMMAND} -E env ${build_env}
+    ${CMAKE_COMMAND} -E env ${configure_env}
     <SOURCE_DIR>/configure
     --prefix=<INSTALL_DIR>
     --srcdir=<SOURCE_DIR>
@@ -298,7 +338,7 @@ ExternalProject_Add(libpciaccess
   INSTALL_DIR @V_DEPS_INSTALL_DIR@
   DEPENDS ${default_depends}
   CONFIGURE_COMMAND
-    ${CMAKE_COMMAND} -E env ${build_env}
+    ${CMAKE_COMMAND} -E env ${configure_env}
     <SOURCE_DIR>/configure
     --prefix=<INSTALL_DIR>
     --srcdir=<SOURCE_DIR>
@@ -314,7 +354,7 @@ ExternalProject_Add(hwloc
       ${CMAKE_COMMAND} -E chdir <SOURCE_DIR>
       autoreconf -ivf
     COMMAND
-      ${CMAKE_COMMAND} -E env ${build_env}
+      ${CMAKE_COMMAND} -E env ${configure_env}
       <SOURCE_DIR>/configure
       --disable-libudev
       --prefix=<INSTALL_DIR>
@@ -329,7 +369,7 @@ ExternalProject_Add(xz
   INSTALL_DIR @V_DEPS_INSTALL_DIR@
   DEPENDS ${default_depends}
   CONFIGURE_COMMAND
-    ${CMAKE_COMMAND} -E env ${build_env}
+    ${CMAKE_COMMAND} -E env ${configure_env}
     <SOURCE_DIR>/configure
     --prefix=<INSTALL_DIR>
   BUILD_COMMAND ${make_command}
@@ -342,10 +382,10 @@ ExternalProject_Add(xml2
   CONFIGURE_COMMAND
     COMMAND
       ${CMAKE_COMMAND} -E chdir <SOURCE_DIR>
-      ${CMAKE_COMMAND} -E env ${build_env}
+      ${CMAKE_COMMAND} -E env ${configure_env}
         NOCONFIGURE=true ./autogen.sh
     COMMAND
-    ${CMAKE_COMMAND} -E env ${build_env} LIBS=-ldl
+    ${CMAKE_COMMAND} -E env ${configure_env} LIBS=-ldl
       <SOURCE_DIR>/configure
       --without-python
       --with-zlib=@V_DEPS_INSTALL_DIR@/lib
@@ -374,7 +414,7 @@ ExternalProject_Add(lksctp-tools
   PATCH_COMMAND ./bootstrap
   DEPENDS ${default_depends}
   CONFIGURE_COMMAND
-    ${CMAKE_COMMAND} -E env ${build_env}
+    ${CMAKE_COMMAND} -E env ${configure_env}
     <SOURCE_DIR>/configure
     --prefix=<INSTALL_DIR>
     --srcdir=<SOURCE_DIR>
@@ -396,7 +436,7 @@ ExternalProject_Add(seastar
   GIT_REPOSITORY https://github.com/vectorizedio/seastar.git
   GIT_TAG 094cd884c2c1e15133bbdd7c977e880049a9b47c
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
-  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${seastar_build_env} ${CMAKE_COMMAND}
+  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   CMAKE_ARGS
     ${common_cmake_args}
     -DBoost_USE_STATIC_LIBS=OFF
@@ -410,7 +450,7 @@ ExternalProject_Add(seastar
     -DSeastar_DOCS=OFF
     -DSeastar_TESTING=OFF
     -DSeastar_CXX_FLAGS=-Wno-error
-    -DSeastar_LD_FLAGS=-pthread
+    "-DSeastar_LD_FLAGS=${seastar_ld_flags}"
     -DSeastar_API_LEVEL=3
     -DSeastar_CXX_DIALECT=c++17
     -DSeastar_UNUSED_RESULT_ERROR=ON
@@ -502,6 +542,7 @@ ExternalProject_Add(pcg
   URL https://storage.googleapis.com/vectorizedio-public/dependencies/pcg-b656278.tar.gz
   URL_MD5 576a4427f2c63ee15e36b5c88585569c
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
+  DEPENDS ${default_depends}
   PATCH_COMMAND ""
   CONFIGURE_COMMAND ""
   BUILD_COMMAND ""
@@ -567,6 +608,7 @@ ExternalProject_Add(alien_thread
   URL https://storage.googleapis.com/vectorizedio-public/dependencies/alien_thread-bdfb56f.tar.gz
   URL_HASH SHA256=28f704566aed21bcc5944b1ad2003ee53cb40e2c424c1c917082d431f50f3911
   INSTALL_DIR @V_DEPS_INSTALL_DIR@
+  DEPENDS ${default_depends}
   PATCH_COMMAND ""
   CONFIGURE_COMMAND ""
   BUILD_COMMAND ""
