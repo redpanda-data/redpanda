@@ -19,6 +19,7 @@ type Launcher interface {
 type RedpandaArgs struct {
 	ConfigFilePath string
 	SeastarFlags   map[string]string
+	ExtraArgs      []string
 }
 
 func NewLauncher(installDir string, args *RedpandaArgs) Launcher {
@@ -78,5 +79,5 @@ func collectRedpandaArgs(args *RedpandaArgs) []string {
 			redpandaArgs = append(redpandaArgs, "--"+flag)
 		}
 	}
-	return redpandaArgs
+	return append(redpandaArgs, args.ExtraArgs...)
 }

@@ -123,6 +123,7 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 
 			sendEnv(fs, env, conf, nil)
 			rpArgs.SeastarFlags = mergeFlags(rpArgs.SeastarFlags, conf.Rpk.AdditionalStartFlags)
+			rpArgs.ExtraArgs = args
 			launcher := redpanda.NewLauncher(installDirectory, rpArgs)
 			log.Info(feedbackMsg)
 			log.Info("Starting redpanda...")
