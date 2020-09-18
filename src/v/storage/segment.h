@@ -137,7 +137,7 @@ private:
       std::optional<segment_appender>,
       std::optional<batch_cache_index>,
       std::optional<compacted_index_writer>);
-    ss::future<> remove_thombsones();
+    ss::future<> remove_tombstones();
     ss::future<> compaction_index_batch(const model::record_batch&);
     ss::future<> do_compaction_index_batch(const model::record_batch&);
 

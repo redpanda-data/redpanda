@@ -63,31 +63,35 @@ ss::future<> segment::close() {
         return write_lock().then([this](ss::rwlock::holder h) {
             return do_flush()
               .then([this] { return do_close(); })
-              .then([this] { return remove_thombsones(); })
+              .then([this] { return remove_tombstones(); })
               .finally([h = std::move(h)] {});
         });
     });
 }
 
-ss::future<> segment::remove_thombsones() {
+ss::future<> segment::remove_tombstones() {
     if (!is_tombstone()) {
         return ss::make_ready_future<>();
     }
-    std::vector<ss::sstring> rm;
-    rm.push_back(reader().filename());
-    rm.push_back(index().filename());
-    if (_compaction_index) {
-        rm.push_back(_compaction_index->filename());
+    std::vector<std::filesystem::path> rm;
+    rm.reserve(3);
+    rm.emplace_back(reader().filename().c_str());
+    rm.emplace_back(index().filename().c_str());
+    if (is_compacted_segment()) {
+        rm.push_back(
+          internal::compacted_index_path(reader().filename().c_str()));
     }
     vlog(stlog.info, "removing: {}", rm);
-    return ss::do_with(std::move(rm), [](std::vector<ss::sstring>& to_remove) {
-        return ss::do_for_each(to_remove, [](const ss::sstring& name) {
-            return ss::remove_file(name).handle_exception(
-              [name](std::exception_ptr e) {
-                  vlog(stlog.info, "error removing {}: {}", name, e);
-              });
-        });
-    });
+    return ss::do_with(
+      std::move(rm), [](const std::vector<std::filesystem::path>& to_remove) {
+          return ss::do_for_each(
+            to_remove, [](const std::filesystem::path& name) {
+                return ss::remove_file(name.c_str())
+                  .handle_exception([name](std::exception_ptr e) {
+                      vlog(stlog.info, "error removing {}: {}", name, e);
+                  });
+            });
+      });
 }
 
 ss::future<> segment::do_close() {
@@ -553,8 +557,7 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
             seg,
             [path, sanitize_fileops, pc](
               const ss::lw_shared_ptr<segment>& seg) {
-                auto compacted_path = path;
-                compacted_path.replace_extension(".compaction_index");
+                auto compacted_path = internal::compacted_index_path(path);
                 return internal::make_compacted_index_writer(
                          compacted_path, sanitize_fileops, pc)
                   .then([seg](compacted_index_writer compact) {
