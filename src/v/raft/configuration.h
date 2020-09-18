@@ -37,8 +37,8 @@ public:
       group_nodes,
       std::optional<group_nodes> = std::nullopt);
 
-    group_configuration(const group_configuration&) noexcept = default;
-    group_configuration(group_configuration&&) noexcept = default;
+    group_configuration(const group_configuration&) = default;
+    group_configuration(group_configuration&&) = default;
     group_configuration& operator=(const group_configuration&) = default;
     group_configuration& operator=(group_configuration&&) = default;
 
