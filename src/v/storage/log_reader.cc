@@ -161,6 +161,8 @@ log_segment_batch_reader::read_some(model::timeout_clock::time_point timeout) {
       || _config.start_offset > _config.max_offset) {
         _config.bytes_consumed += cache_read.memory_usage;
         _probe.add_bytes_read(cache_read.memory_usage);
+        _probe.add_cached_bytes_read(cache_read.memory_usage);
+        _probe.add_cached_batches_read(cache_read.batches.size());
         return ss::make_ready_future<result<records_t>>(
           std::move(cache_read.batches));
     }
