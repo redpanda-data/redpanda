@@ -1,0 +1,20 @@
+{
+  "namespace": "coproc",
+  "service_name": "management",
+  "includes": [
+    "coproc/types.h"
+  ],
+  "js_include": "../../domain/generatedRpc/enableDisableCoprocClasses",
+  "methods": [
+    {
+      "name": "enable_copros",
+      "input_type": "enable_copros_request",
+      "output_type": "enable_copros_response"
+    },
+    {
+      "name": "disable_copros",
+      "input_type": "disable_copros_request",
+      "output_type": "disable_copros_response"
+    }
+  ]
+}
