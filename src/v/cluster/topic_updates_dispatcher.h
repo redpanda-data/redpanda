@@ -42,8 +42,10 @@ public:
 
     ss::future<std::error_code> apply_update(model::record_batch);
 
-    static constexpr auto commands
-      = make_commands_list<create_topic_cmd, delete_topic_cmd>();
+    static constexpr auto commands = make_commands_list<
+      create_topic_cmd,
+      delete_topic_cmd,
+      move_partition_replicas_cmd>();
 
     bool is_batch_applicable(const model::record_batch& batch) const {
         return batch.header().type == topic_batch_type;
@@ -55,6 +57,9 @@ private:
 
     void update_allocations(const create_topic_cmd&);
     void deallocate_topic(const model::topic_metadata&);
+    void reallocate_partition(
+      const std::vector<model::broker_shard>&,
+      const std::vector<model::broker_shard>&);
 
     ss::sharded<partition_allocator>& _partition_allocator;
     ss::sharded<topic_table>& _topic_table;
