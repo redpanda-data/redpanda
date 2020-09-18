@@ -23,6 +23,7 @@ struct group_nodes {
 
 class group_configuration final {
 public:
+    static constexpr int8_t current_version = 0;
     /**
      * creates a configuration where all provided brokers are current
      * configuration voters
@@ -121,6 +122,8 @@ public:
     // clang-format on
     bool majority(Predicate&& f) const;
 
+    int8_t version() const { return _version; }
+
     friend bool
     operator==(const group_configuration&, const group_configuration&);
 
@@ -130,6 +133,7 @@ private:
     std::vector<model::node_id> unique_voter_ids() const;
     std::vector<model::node_id> unique_learner_ids() const;
 
+    uint8_t _version = current_version;
     std::vector<model::broker> _brokers;
     group_nodes _current;
     std::optional<group_nodes> _old;
