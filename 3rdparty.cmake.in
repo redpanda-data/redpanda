@@ -270,6 +270,7 @@ ExternalProject_Add(nettle
     --srcdir=<SOURCE_DIR>
     --libdir=<INSTALL_DIR>/lib
     --disable-documentation
+    --enable-x86-aesni
   INSTALL_COMMAND ${make_command} install
   DEPENDS gmp ${default_depends})
 
