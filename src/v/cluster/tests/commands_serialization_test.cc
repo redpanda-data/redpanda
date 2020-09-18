@@ -56,6 +56,12 @@ struct cmd_test_fixture {
         return cluster::delete_topic_cmd(make_tp_ns(name), make_tp_ns(name));
     }
 
+    cluster::move_partition_replicas_cmd make_move_partition_replicas_cmd(
+      model::ntp ntp, std::vector<model::broker_shard> replica_set) {
+        return cluster::move_partition_replicas_cmd(
+          std::move(ntp), std::move(replica_set));
+    }
+
     model::topic_namespace make_tp_ns(const ss::sstring& tp) {
         return model::topic_namespace(test_ns, model::topic(tp));
     }
@@ -105,5 +111,30 @@ FIXTURE_TEST(test_delete_topic_cmd_serialization, cmd_test_fixture) {
     ss::visit(deser, [&cmd](cluster::delete_topic_cmd c) {
         BOOST_REQUIRE_EQUAL(c.key.tp, cmd.key.tp);
         BOOST_REQUIRE_EQUAL(c.value, cmd.value);
+    });
+}
+
+FIXTURE_TEST(test_reassign_partitions_command, cmd_test_fixture) {
+    auto ntp = model::ntp(test_ns, model::topic("tp"), model::partition_id(20));
+    std::vector<model::broker_shard> replicas{
+      model::broker_shard{.node_id = model::node_id(1), .shard = 1},
+      model::broker_shard{.node_id = model::node_id(2), .shard = 8},
+      model::broker_shard{.node_id = model::node_id(3), .shard = 3},
+    };
+    auto cmd = make_move_partition_replicas_cmd(ntp, replicas);
+
+    auto batch = cluster::serialize_cmd(cmd).get0();
+    auto deser
+      = cluster::deserialize(
+          std::move(batch),
+          cluster::make_commands_list<cluster::move_partition_replicas_cmd>())
+          .get0();
+
+    ss::visit(deser, [&cmd](cluster::move_partition_replicas_cmd c) {
+        BOOST_REQUIRE_EQUAL(c.key, cmd.key);
+        for (int i = 0; i < cmd.value.size(); ++i) {
+            BOOST_REQUIRE_EQUAL(c.value[i].node_id, cmd.value[i].node_id);
+            BOOST_REQUIRE_EQUAL(c.value[i].shard, cmd.value[i].shard);
+        }
     });
 }
