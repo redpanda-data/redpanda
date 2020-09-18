@@ -114,7 +114,7 @@ FIXTURE_TEST(test_delete_topic_cmd_serialization, cmd_test_fixture) {
     });
 }
 
-FIXTURE_TEST(test_reassign_partitions_command, cmd_test_fixture) {
+FIXTURE_TEST(test_move_partition_replicass_command, cmd_test_fixture) {
     auto ntp = model::ntp(test_ns, model::topic("tp"), model::partition_id(20));
     std::vector<model::broker_shard> replicas{
       model::broker_shard{.node_id = model::node_id(1), .shard = 1},
