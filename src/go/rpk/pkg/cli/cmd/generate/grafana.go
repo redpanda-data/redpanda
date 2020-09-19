@@ -36,6 +36,18 @@ var metricGroups = []string{
 	"raft",
 }
 
+type RowSet struct {
+	rowTitles   []string
+	groupPanels map[string]*graf.RowPanel
+}
+
+func newRowSet() *RowSet {
+	return &RowSet{
+		rowTitles:   []string{},
+		groupPanels: map[string]*graf.RowPanel{},
+	}
+}
+
 func NewGrafanaDashboardCmd() *cobra.Command {
 	var prometheusURL string
 	command := &cobra.Command{
@@ -97,7 +109,9 @@ func buildGrafanaDashboard(
 	timeOptions := []string{"5m", "15m", "1h", "6h", "12h", "24h", "2d", "7d", "30d"}
 	summaryPanels := buildSummary(metricFamilies, jobName)
 	lastY := summaryPanels[len(summaryPanels)-1].GetGridPos().Y + panelHeight
-	rows := processRows(metricFamilies, lastY)
+	rowSet := newRowSet()
+	rowSet.processRows(metricFamilies)
+	rows := rowSet.finalize(lastY)
 	return graf.Dashboard{
 		Title:      "Redpanda",
 		Templating: buildTemplating(),
@@ -117,18 +131,33 @@ func buildGrafanaDashboard(
 	}
 }
 
-func processRows(
-	metricFamilies map[string]*dto.MetricFamily, fromY int,
-) []graf.Panel {
+func (rowSet *RowSet) finalize(fromY int) []graf.Panel {
 	panelWidth := 8
-	groupPanels := map[string]*graf.RowPanel{}
 
+	sort.Strings(rowSet.rowTitles)
+	rows := []graf.Panel{}
+
+	y := fromY
+	for _, title := range rowSet.rowTitles {
+		row := rowSet.groupPanels[title]
+		row.GetGridPos().Y = y
+		for i, panel := range row.Panels {
+			panel.GetGridPos().Y = y
+			panel.GetGridPos().X = (i * panelWidth) % 24
+		}
+		rows = append(rows, row)
+		y++
+	}
+
+	return rows
+}
+
+func (rowSet *RowSet) processRows(metricFamilies map[string]*dto.MetricFamily) {
 	names := []string{}
 	for k, _ := range metricFamilies {
 		names = append(names, k)
 	}
 	sort.Strings(names)
-	rowTitles := []string{}
 	for _, name := range names {
 		family := metricFamilies[name]
 		var panel graf.Panel
@@ -145,30 +174,15 @@ func processRows(
 		}
 
 		group := metricGroup(name)
-		row, ok := groupPanels[group]
+		row, ok := rowSet.groupPanels[group]
 		if ok {
 			row.Panels = append(row.Panels, panel)
-			groupPanels[group] = row
+			rowSet.groupPanels[group] = row
 		} else {
-			rowTitles = append(rowTitles, group)
-			groupPanels[group] = graf.NewRowPanel(group, panel)
+			rowSet.rowTitles = append(rowSet.rowTitles, group)
+			rowSet.groupPanels[group] = graf.NewRowPanel(group, panel)
 		}
 	}
-	sort.Strings(rowTitles)
-	rows := []graf.Panel{}
-
-	y := fromY
-	for _, title := range rowTitles {
-		row := groupPanels[title]
-		row.GetGridPos().Y = y
-		for i, panel := range row.Panels {
-			panel.GetGridPos().Y = y
-			panel.GetGridPos().X = (i * panelWidth) % 24
-		}
-		rows = append(rows, row)
-		y++
-	}
-	return rows
 }
 
 func buildTemplating() graf.Templating {
