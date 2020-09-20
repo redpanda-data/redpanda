@@ -7,7 +7,7 @@ from gobekli.kvapi import RequestCanceled, RequestTimedout
 from gobekli.consensus import LinearizabilityRegisterChecker, Violation
 from gobekli.logging import (log_read_ended, log_read_failed, log_read_started,
                              log_read_none, log_read_timeouted, log_violation,
-                             log_latency, log_stat)
+                             log_latency, log_stat, log_console)
 
 
 class Stat:
@@ -31,24 +31,49 @@ class Stat:
         return copy
 
 
-class StatDumper:
+class AvailabilityStatLogger:
     def __init__(self, stat, keys):
         self.stat = stat
         self.keys = keys
+        self.started = None
         self.is_active = True
 
     async def start(self):
-        started = time.time()
+        self.started = time.time()
         while self.is_active:
             counters = self.stat.reset()
-            line = str(int(time.time() - started))
+            entry = dict()
+            entry["type"] = "stat"
+            entry["tick"] = int(time.time() - self.started)
+            line = str(entry["tick"])
             for key in self.keys:
                 if key in counters:
+                    entry[key] = counters[key]
                     line += "\t" + str(counters[key])
                 else:
+                    entry[key] = 0
                     line += "\t" + str(0)
-            log_stat(line)
+            log_console(line)
+            log_stat(entry)
             await asyncio.sleep(1)
+
+    def log_fault(self, message):
+        entry = dict()
+        entry["type"] = "fault"
+        entry["tick"] = int((time.time() - self.started) * 1000000)
+        entry["message"] = message
+        line = str(entry["tick"]) + "\t" + entry["message"]
+        log_console(line)
+        log_stat(entry)
+
+    def log_recovery(self, message):
+        entry = dict()
+        entry["type"] = "recovery"
+        entry["tick"] = int((time.time() - self.started) * 1000000)
+        entry["message"] = message
+        line = str(entry["tick"]) + "\t" + entry["message"]
+        log_console(line)
+        log_stat(entry)
 
     def stop(self):
         self.is_active = False
@@ -182,7 +207,7 @@ class ReaderClient:
                 response = await self.node.get_aio(self.key)
                 read = response.record
                 op_ended = loop.time()
-                log_latency("ok", op_started - self.started_at,
+                log_latency("ok", op_ended - self.started_at,
                             op_ended - op_started, response.metrics)
                 if read == None:
                     log_read_none(self.node.name, self.pid, self.key)
@@ -196,14 +221,14 @@ class ReaderClient:
                 self.stat.inc("all:ok")
             except RequestTimedout:
                 op_ended = loop.time()
-                log_latency("out", op_started - self.started_at,
+                log_latency("out", op_ended - self.started_at,
                             op_ended - op_started)
                 self.stat.inc(self.name + ":out")
                 log_read_timeouted(self.node.name, self.pid, self.key)
                 self.checker.read_canceled(self.pid, self.key)
             except RequestCanceled:
                 op_ended = loop.time()
-                log_latency("err", op_started - self.started_at,
+                log_latency("err", op_ended - self.started_at,
                             op_ended - op_started)
                 self.stat.inc(self.name + ".err")
                 log_read_failed(self.node.name, self.pid, self.key)
