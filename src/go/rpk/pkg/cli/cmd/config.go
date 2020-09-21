@@ -75,7 +75,7 @@ func bootstrap(fs afero.Fs) *cobra.Command {
 			" machine's addresses or not. The elements in --ips must" +
 			" be separated by a comma, no spaces. If omitted, the" +
 			" node will be configured as a root node, that other" +
-			"ones can join later.",
+			" ones can join later.",
 		Args: cobra.OnlyValidArgs,
 		RunE: func(c *cobra.Command, args []string) error {
 			defaultRpcPort := config.DefaultConfig().Redpanda.RPCServer.Port
