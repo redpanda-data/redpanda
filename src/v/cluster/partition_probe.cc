@@ -43,6 +43,16 @@ void partition_probe::setup_metrics(const model::ntp& ntp) {
           [this] { return _partition.committed_offset(); },
           sm::description("Committed offset"),
           labels),
+        sm::make_derive(
+          "records_produced",
+          [this] { return _records_produced; },
+          sm::description("Total number of records produced"),
+          labels),
+        sm::make_derive(
+          "records_fetched",
+          [this] { return _records_fetched; },
+          sm::description("Total number of records fetched"),
+          labels),
       });
 }
 } // namespace cluster
