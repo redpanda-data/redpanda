@@ -21,13 +21,10 @@ type LicenseKey struct {
 
 // Checks the key and prints a warning if the key is invalid.
 func CheckAndPrintNotice(key string) {
-	valid, err := CheckLicenseKey(key)
+	err := CheckLicenseKey(key)
 	if err != nil {
-		log.Warn(err)
+		log.Info(err)
 		return
-	}
-	if !valid {
-		log.Warn("Your license key is invalid.")
 	}
 }
 
@@ -36,19 +33,20 @@ func CheckAndPrintNotice(key string) {
 // concatenation of those fields.
 // Returns true if the exp. date hasn't passed yet. Returns false otherwise.
 // Returns an error if the key isn't base64-encoded or if it's not valid JSON.
-func CheckLicenseKey(key string) (bool, error) {
+func CheckLicenseKey(key string) error {
+	msg := "Please get a new one at https://vectorized.io/download-trial/"
 	if key == "" {
-		return false, errors.New("Missing license key")
+		return errors.New("Missing license key. " + msg)
 	}
 	decoded, err := base64.StdEncoding.DecodeString(key)
-	invalidErr := errors.New("Invalid license key")
+	invalidErr := errors.New("Invalid license key. " + msg)
 	if err != nil {
-		return false, invalidErr
+		return invalidErr
 	}
 	lk := &LicenseKey{}
 	err = json.Unmarshal([]byte(decoded), lk)
 	if err != nil {
-		return false, invalidErr
+		return invalidErr
 	}
 
 	content := fmt.Sprintf(
@@ -62,7 +60,7 @@ func CheckLicenseKey(key string) (bool, error) {
 	checksum := crc32.ChecksumIEEE([]byte(content))
 
 	if lk.Checksum != checksum {
-		return false, invalidErr
+		return invalidErr
 	}
 
 	expDate := time.Date(
@@ -74,7 +72,7 @@ func CheckLicenseKey(key string) (bool, error) {
 	)
 
 	if time.Now().After(expDate) {
-		return false, nil
+		return errors.New("Your license key has expired. " + msg)
 	}
-	return true, nil
+	return nil
 }

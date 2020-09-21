@@ -41,11 +41,11 @@ func makeKey(org string, exp time.Time, overrideHash uint32) (string, error) {
 }
 
 func TestCheckLicenseKey(t *testing.T) {
+	msg := "Please get a new one at https://vectorized.io/download-trial/"
 	tests := []struct {
-		name           string
-		key            func() (string, error)
-		expected       bool
-		expectedErrMsg string
+		name     string
+		key      func() (string, error)
+		expected string
 	}{
 		{
 			name: "key is valid if the hashes match and the expiration date hasn't passed",
@@ -54,7 +54,7 @@ func TestCheckLicenseKey(t *testing.T) {
 				expiresAt := time.Now().Add(48 * time.Hour)
 				return makeKey(organization, expiresAt, 0)
 			},
-			expected: true,
+			expected: "",
 		},
 		{
 			name: "key is invalid if the hashes don't match",
@@ -63,8 +63,7 @@ func TestCheckLicenseKey(t *testing.T) {
 				expiresAt := time.Now().Add(48 * time.Hour)
 				return makeKey(organization, expiresAt, 123)
 			},
-			expected:       false,
-			expectedErrMsg: "Invalid license key",
+			expected: "Invalid license key. " + msg,
 		},
 		{
 			name: "key is invalid if the expiration date has already passed",
@@ -73,15 +72,14 @@ func TestCheckLicenseKey(t *testing.T) {
 				expiresAt := time.Now().Add(-48 * time.Hour)
 				return makeKey(organization, expiresAt, 0)
 			},
-			expected: false,
+			expected: "Your license key has expired. " + msg,
 		},
 		{
 			name: "key is invalid if it's not base64-encoded",
 			key: func() (string, error) {
 				return "this is defs not base 64", nil
 			},
-			expected:       false,
-			expectedErrMsg: "Invalid license key",
+			expected: "Invalid license key. " + msg,
 		},
 		{
 			name: "key is invalid if it's not valid base64-encoded JSON",
@@ -89,8 +87,7 @@ func TestCheckLicenseKey(t *testing.T) {
 				jsonStr := []byte("{\"thisJson\":\"is invalid\"")
 				return base64.StdEncoding.EncodeToString(jsonStr), nil
 			},
-			expected:       false,
-			expectedErrMsg: "Invalid license key",
+			expected: "Invalid license key. " + msg,
 		},
 	}
 
@@ -98,11 +95,12 @@ func TestCheckLicenseKey(t *testing.T) {
 		t.Run(tt.name, func(st *testing.T) {
 			key, err := tt.key()
 			require.NoError(st, err)
-			valid, err := config.CheckLicenseKey(key)
-			if tt.expectedErrMsg != "" {
-				require.EqualError(st, err, tt.expectedErrMsg)
+			err = config.CheckLicenseKey(key)
+			if tt.expected == "" {
+				require.Nil(st, err)
+				return
 			}
-			require.Exactly(st, tt.expected, valid)
+			require.EqualError(st, err, tt.expected)
 		})
 	}
 }
