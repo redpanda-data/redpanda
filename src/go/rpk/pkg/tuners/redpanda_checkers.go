@@ -45,6 +45,7 @@ const (
 	MaxAIOEvents
 	ClockSource
 	Swappiness
+	KernelVersion
 )
 
 func NewConfigChecker(conf *config.Config) Checker {
@@ -226,5 +227,6 @@ func RedpandaCheckers(
 		MaxAIOEvents:                  []Checker{NewMaxAIOEventsChecker(fs)},
 		ClockSource:                   []Checker{NewClockSourceChecker(fs)},
 		Swappiness:                    []Checker{NewSwappinessChecker(fs)},
+		KernelVersion:                 []Checker{NewKernelVersionChecker(GetKernelVersion)},
 	}, nil
 }
