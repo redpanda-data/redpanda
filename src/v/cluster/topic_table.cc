@@ -2,6 +2,7 @@
 #include "cluster/topic_table.h"
 
 #include "cluster/types.h"
+#include "model/metadata.h"
 
 namespace cluster {
 
@@ -59,6 +60,36 @@ ss::future<std::error_code> topic_table::apply(delete_topic_cmd cmd) {
         return ss::make_ready_future<std::error_code>(errc::success);
     }
     return ss::make_ready_future<std::error_code>(errc::topic_not_exists);
+}
+
+ss::future<std::error_code>
+topic_table::apply(move_partition_replicas_cmd cmd) {
+    auto tp = _topics.find(model::topic_namespace_view(cmd.key));
+    if (tp == _topics.end()) {
+        return ss::make_ready_future<std::error_code>(errc::topic_not_exists);
+    }
+
+    auto current_assignment_it = std::find_if(
+      tp->second.assignments.begin(),
+      tp->second.assignments.end(),
+      [p_id = cmd.key.tp.partition](partition_assignment& p_as) {
+          return p_id == p_as.id;
+      });
+
+    if (current_assignment_it == tp->second.assignments.end()) {
+        return ss::make_ready_future<std::error_code>(
+          errc::partition_not_exists);
+    }
+    // replace partition replica set
+    current_assignment_it->replicas = cmd.value;
+
+    // calculate deleta for backend
+    delta d;
+    d.partitions.updates.emplace_back(tp->first, *current_assignment_it);
+    _pending_deltas.push_back(std::move(d));
+    notify_waiters();
+
+    return ss::make_ready_future<std::error_code>(errc::success);
 }
 
 void topic_table::notify_waiters() {

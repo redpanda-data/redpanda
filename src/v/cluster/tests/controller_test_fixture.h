@@ -75,6 +75,12 @@ public:
         return _pm.local();
     }
 
+    ss::sharded<cluster::partition_manager>& get_partition_manager() {
+        return _pm;
+    }
+
+    cluster::shard_table& get_shard_table() { return st.local(); }
+
     ~controller_tests_fixture() {
         _rpc.stop().get0();
         _metadata_dissemination_service.stop().get0();

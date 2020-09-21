@@ -13,6 +13,7 @@
 #include "model/metadata.h"
 #include "outcome.h"
 #include "raft/types.h"
+#include "ssx/future-util.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future-util.hh>
@@ -21,6 +22,8 @@
 #include <seastar/core/semaphore.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/smp.hh>
+
+#include <absl/container/flat_hash_set.h>
 
 /// Class that contains the controller state, for now we will have single
 /// controller backend
@@ -101,10 +104,7 @@ ss::future<> controller_backend::reconcile_topics() {
     return ss::do_for_each(
              std::begin(_topic_deltas),
              std::end(_topic_deltas),
-             [this](meta_t& task) {
-                 return do_reconcile_topic(task).then(
-                   [&task]() { task.finished = true; });
-             })
+             [this](meta_t& task) { return do_reconcile_topic(task); })
       .then([this] {
           // remove finished tasks
           auto it = std::stable_partition(
@@ -146,37 +146,149 @@ std::vector<model::broker> create_brokers_set(
     return brokers;
 }
 
+controller_backend::results_t join_results(
+  controller_backend::results_t prev_results,
+  controller_backend::results_t new_results) {
+    std::move(
+      new_results.begin(), new_results.end(), std::back_inserter(prev_results));
+    return prev_results;
+}
+
 ss::future<>
 controller_backend::do_reconcile_topic(task_meta<topic_table::delta>& task) {
     // new partitions
-    auto f = ss::parallel_for_each(
-      task.delta.partitions.additions.begin(),
-      task.delta.partitions.additions.end(),
-      [this](topic_table::delta::partition& p) {
+    auto f = ssx::parallel_transform(
+      task.delta.partitions.additions, [this](topic_table::delta::partition p) {
           // only create partitions for this backend
           // partitions created on current shard at this node
           if (!has_local_replicas(_self, p.second.replicas)) {
-              return ss::now();
+              return ss::make_ready_future<std::error_code>(errc::success);
           }
-          model::ntp ntp(p.first.ns, p.first.tp, p.second.id);
           return create_partition(
-            ntp,
+            model::ntp(p.first.ns, p.first.tp, p.second.id),
             p.second.group,
             create_brokers_set(p.second.replicas, _members_table.local()));
       });
 
     // delete partitions
-    f = f.then([this, &task] {
-        return ss::parallel_for_each(
-          std::cbegin(task.delta.partitions.deletions),
-          std::cend(task.delta.partitions.deletions),
-          [this](const topic_table::delta::partition& p) {
-              return delete_partition(
-                model::ntp(p.first.ns, p.first.tp, p.second.id));
+    f = f.then([this, &task](results_t results) {
+        return ssx::parallel_transform(
+                 task.delta.partitions.deletions,
+                 [this](const topic_table::delta::partition& p) {
+                     return delete_partition(
+                       model::ntp(p.first.ns, p.first.tp, p.second.id));
+                 })
+          .then([results = std::move(results)](results_t new_results) mutable {
+              return join_results(std::move(results), std::move(new_results));
           });
     });
 
-    return f.then([&task] { task.finished = true; });
+    // partition updates
+    f = f.then([this, &task](results_t results) {
+        return ssx::parallel_transform(
+                 task.delta.partitions.updates,
+                 [this](const topic_table::delta::partition& p) {
+                     return process_partition_update(p);
+                 })
+          .then([results = std::move(results)](results_t new_res) mutable {
+              return join_results(std::move(results), std::move(new_res));
+          });
+    });
+
+    return f.then([&task](results_t all_results) {
+        auto success = std::all_of(
+          std::cbegin(all_results),
+          std::cend(all_results),
+          [](std::error_code ec) { return !ec; });
+        // only mark task as finished if all operations are successfull
+        if (success) {
+            task.finished = true;
+        }
+    });
+}
+
+ss::future<std::error_code> controller_backend::process_partition_update(
+  const topic_table::delta::partition& p) {
+    model::ntp ntp(p.first.ns, p.first.tp, p.second.id);
+    // if there is no local replica in replica set but,
+    // partition with requested ntp exists on this broker core
+    // it has to be removed after new configuration is stable
+    auto partition = _partition_manager.local().get(ntp);
+    if (!has_local_replicas(_self, p.second.replicas)) {
+        // we do not have local replicas and partition does not
+        // exists, it is ok
+        if (!partition) {
+            return ss::make_ready_future<std::error_code>(errc::success);
+        }
+        // this partition has to be removed eventually
+
+        return update_partition_replica_set(ntp, p.second.replicas)
+          .then([this, ntp](std::error_code ec) {
+              if (!ec) {
+                  return delete_partition(ntp);
+              }
+              return ss::make_ready_future<std::error_code>(ec);
+          });
+    }
+
+    // partition already exists, update configuration
+    if (partition) {
+        return update_partition_replica_set(ntp, p.second.replicas);
+    }
+    // create partition with empty configuration. Configuration
+    // will be populated during node recovery
+    return create_partition(ntp, p.second.group, {});
+}
+
+bool is_configuration_up_to_date(
+  const std::vector<model::broker_shard>& bs,
+  const raft::group_configuration& cfg) {
+    absl::flat_hash_set<model::node_id> all_ids;
+    // we are only interested in final configuration
+    if (cfg.old_config()) {
+        return false;
+    }
+    cfg.for_each_voter(
+      [&all_ids](model::node_id nid) { all_ids.emplace(nid); });
+    cfg.for_each_learner(
+      [&all_ids](model::node_id nid) { all_ids.emplace(nid); });
+    // there is different number of brokers in group configuration
+    if (all_ids.size() != bs.size()) {
+        return false;
+    }
+
+    for (auto& b : bs) {
+        all_ids.emplace(b.node_id);
+    }
+    return all_ids.size() == bs.size();
+}
+
+ss::future<std::error_code> controller_backend::update_partition_replica_set(
+  const model::ntp& ntp, const std::vector<model::broker_shard>& replicas) {
+    vlog(
+      clusterlog.trace,
+      "updating partition {} replicas with {}",
+      ntp,
+      replicas);
+    /**
+     * Following scenarios can happen in here:
+     * - node is a leader for current partition => just update config
+     * - node is not a leader for current partition => check if config is
+     * equal to requested, if not return failure
+     */
+    auto partition = _partition_manager.local().get(ntp);
+    // we are the leader, update configuration
+    if (partition->is_leader()) {
+        auto brokers = create_brokers_set(replicas, _members_table.local());
+        return partition->update_replica_set(std::move(brokers));
+    }
+    // not the leader, wait for configuration update, only declare success
+    // when configuration was actually updated
+    if (!is_configuration_up_to_date(
+          replicas, partition->group_configuration())) {
+        return ss::make_ready_future<std::error_code>(errc::not_leader);
+    }
+    return ss::make_ready_future<std::error_code>(errc::success);
 }
 
 ss::future<> controller_backend::add_to_shard_table(
@@ -189,13 +301,13 @@ ss::future<> controller_backend::add_to_shard_table(
       });
 }
 
-ss::future<> controller_backend::create_partition(
+ss::future<std::error_code> controller_backend::create_partition(
   model::ntp ntp, raft::group_id group_id, std::vector<model::broker> members) {
     auto cfg = _topics.local().get_topic_cfg(model::topic_namespace_view(ntp));
 
     if (!cfg) {
         // partition was already removed, do nothing
-        return ss::now();
+        return ss::make_ready_future<std::error_code>(errc::success);
     }
 
     auto f = ss::now();
@@ -209,17 +321,20 @@ ss::future<> controller_backend::create_partition(
               .discard_result();
     }
 
-    return f.then([this, ntp = std::move(ntp), group_id]() mutable {
-        // we create only partitions that belongs to current shard
-        return add_to_shard_table(
-          std::move(ntp), group_id, ss::this_shard_id());
-    });
+    return f
+      .then([this, ntp = std::move(ntp), group_id]() mutable {
+          // we create only partitions that belongs to current shard
+          return add_to_shard_table(
+            std::move(ntp), group_id, ss::this_shard_id());
+      })
+      .then([] { return make_error_code(errc::success); });
 }
 
-ss::future<> controller_backend::delete_partition(model::ntp ntp) {
+ss::future<std::error_code>
+controller_backend::delete_partition(model::ntp ntp) {
     auto part = _partition_manager.local().get(ntp);
     if (unlikely(part.get() == nullptr)) {
-        return ss::now();
+        return ss::make_ready_future<std::error_code>(errc::success);
     }
     auto group_id = part->group();
 
@@ -235,7 +350,8 @@ ss::future<> controller_backend::delete_partition(model::ntp ntp) {
       .then([this, ntp = std::move(ntp)] {
           // remove partition
           return _partition_manager.local().remove(ntp);
-      });
+      })
+      .then([] { return make_error_code(errc::success); });
 }
 
 } // namespace cluster

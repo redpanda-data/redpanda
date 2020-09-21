@@ -2,6 +2,7 @@
 
 #include "cluster/types.h"
 #include "model/record_batch_reader.h"
+#include "raft/configuration.h"
 #include "raft/consensus.h"
 #include "raft/log_eviction_stm.h"
 #include "raft/types.h"
@@ -81,6 +82,15 @@ public:
     ss::future<std::error_code>
     transfer_leadership(std::optional<model::node_id> target) {
         return _raft->transfer_leadership(target);
+    }
+
+    ss::future<std::error_code>
+    update_replica_set(std::vector<model::broker> brokers) {
+        return _raft->replace_configuration(std::move(brokers));
+    }
+
+    raft::group_configuration group_configuration() const {
+        return _raft->config();
     }
 
 private:

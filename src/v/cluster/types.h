@@ -131,8 +131,11 @@ template<typename T>
 struct patch {
     std::vector<T> additions;
     std::vector<T> deletions;
+    std::vector<T> updates;
 
-    bool empty() const { return additions.empty() && deletions.empty(); }
+    bool empty() const {
+        return additions.empty() && deletions.empty() && updates.empty();
+    }
 };
 
 // generic type used for various registration handles such as in ntp_callbacks.h

@@ -9,6 +9,7 @@
 #include "cluster/partition_allocator.h"
 #include "cluster/types.h"
 #include "model/errc.h"
+#include "model/metadata.h"
 #include "model/validation.h"
 #include "raft/errc.h"
 #include "raft/types.h"
@@ -300,6 +301,15 @@ bool topics_frontend::validate_topic_name(const model::topic_namespace& topic) {
         }
     }
     return true;
+}
+
+ss::future<std::error_code> topics_frontend::move_partition_replicas(
+  model::ntp ntp,
+  std::vector<model::broker_shard> new_replica_set,
+  model::timeout_clock::time_point tout) {
+    move_partition_replicas_cmd cmd(std::move(ntp), std::move(new_replica_set));
+
+    return replicate_and_wait(std::move(cmd), tout);
 }
 
 } // namespace cluster

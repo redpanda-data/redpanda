@@ -17,6 +17,7 @@ namespace cluster {
 
 class controller_backend {
 public:
+    using results_t = std::vector<std::error_code>;
     controller_backend(
       ss::sharded<cluster::topic_table>&,
       ss::sharded<shard_table>&,
@@ -42,10 +43,16 @@ private:
     void start_topics_reconciliation_loop();
     ss::future<> reconcile_topics();
     ss::future<> do_reconcile_topic(task_meta<topic_table::delta>&);
-    ss::future<>
+    ss::future<std::error_code>
       create_partition(model::ntp, raft::group_id, std::vector<model::broker>);
     ss::future<> add_to_shard_table(model::ntp, raft::group_id, ss::shard_id);
-    ss::future<> delete_partition(model::ntp);
+    ss::future<std::error_code>
+    process_partition_update(const topic_table::delta::partition&);
+
+    ss::future<std::error_code> delete_partition(model::ntp);
+    ss::future<std::error_code> update_partition_replica_set(
+      const model::ntp&, const std::vector<model::broker_shard>&);
+
     void housekeeping();
 
     ss::sharded<topic_table>& _topics;
