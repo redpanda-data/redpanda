@@ -37,6 +37,7 @@ v_cc_library(
     controller_backend.cc
     controller.cc
     partition.cc
+    partition_probe.cc
   DEPS
     Seastar::seastar
     controller_rpc

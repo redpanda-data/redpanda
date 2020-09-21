@@ -1,5 +1,6 @@
 #pragma once
 
+#include "cluster/partition_probe.h"
 #include "cluster/types.h"
 #include "model/record_batch_reader.h"
 #include "raft/configuration.h"
@@ -7,8 +8,6 @@
 #include "raft/log_eviction_stm.h"
 #include "raft/types.h"
 #include "storage/types.h"
-
-#include <seastar/core/metrics_registration.hh>
 
 namespace cluster {
 class partition_manager;
@@ -102,7 +101,7 @@ private:
     consensus_ptr _raft;
     std::unique_ptr<raft::log_eviction_stm> _nop_stm;
     ss::abort_source _as;
-    ss::metrics::metric_groups _metrics;
+    partition_probe _probe;
 
     friend std::ostream& operator<<(std::ostream& o, const partition& x);
 };
