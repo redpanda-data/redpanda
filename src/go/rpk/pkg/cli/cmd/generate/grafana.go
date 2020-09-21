@@ -36,6 +36,18 @@ var metricGroups = []string{
 	"raft",
 }
 
+type RowSet struct {
+	rowTitles   []string
+	groupPanels map[string]*graf.RowPanel
+}
+
+func newRowSet() *RowSet {
+	return &RowSet{
+		rowTitles:   []string{},
+		groupPanels: map[string]*graf.RowPanel{},
+	}
+}
+
 func NewGrafanaDashboardCmd() *cobra.Command {
 	var prometheusURL string
 	command := &cobra.Command{
@@ -97,7 +109,10 @@ func buildGrafanaDashboard(
 	timeOptions := []string{"5m", "15m", "1h", "6h", "12h", "24h", "2d", "7d", "30d"}
 	summaryPanels := buildSummary(metricFamilies, jobName)
 	lastY := summaryPanels[len(summaryPanels)-1].GetGridPos().Y + panelHeight
-	rows := processRows(metricFamilies, lastY)
+	rowSet := newRowSet()
+	rowSet.processRows(metricFamilies)
+	rowSet.addCachePerformancePanels(metricFamilies)
+	rows := rowSet.finalize(lastY)
 	return graf.Dashboard{
 		Title:      "Redpanda",
 		Templating: buildTemplating(),
@@ -117,18 +132,33 @@ func buildGrafanaDashboard(
 	}
 }
 
-func processRows(
-	metricFamilies map[string]*dto.MetricFamily, fromY int,
-) []graf.Panel {
+func (rowSet *RowSet) finalize(fromY int) []graf.Panel {
 	panelWidth := 8
-	groupPanels := map[string]*graf.RowPanel{}
 
+	sort.Strings(rowSet.rowTitles)
+	rows := []graf.Panel{}
+
+	y := fromY
+	for _, title := range rowSet.rowTitles {
+		row := rowSet.groupPanels[title]
+		row.GetGridPos().Y = y
+		for i, panel := range row.Panels {
+			panel.GetGridPos().Y = y
+			panel.GetGridPos().X = (i * panelWidth) % 24
+		}
+		rows = append(rows, row)
+		y++
+	}
+
+	return rows
+}
+
+func (rowSet *RowSet) processRows(metricFamilies map[string]*dto.MetricFamily) {
 	names := []string{}
 	for k, _ := range metricFamilies {
 		names = append(names, k)
 	}
 	sort.Strings(names)
-	rowTitles := []string{}
 	for _, name := range names {
 		family := metricFamilies[name]
 		var panel graf.Panel
@@ -145,30 +175,50 @@ func processRows(
 		}
 
 		group := metricGroup(name)
-		row, ok := groupPanels[group]
+		row, ok := rowSet.groupPanels[group]
 		if ok {
 			row.Panels = append(row.Panels, panel)
-			groupPanels[group] = row
+			rowSet.groupPanels[group] = row
 		} else {
-			rowTitles = append(rowTitles, group)
-			groupPanels[group] = graf.NewRowPanel(group, panel)
+			rowSet.rowTitles = append(rowSet.rowTitles, group)
+			rowSet.groupPanels[group] = graf.NewRowPanel(group, panel)
 		}
 	}
-	sort.Strings(rowTitles)
-	rows := []graf.Panel{}
+}
 
-	y := fromY
-	for _, title := range rowTitles {
-		row := groupPanels[title]
-		row.GetGridPos().Y = y
-		for i, panel := range row.Panels {
-			panel.GetGridPos().Y = y
-			panel.GetGridPos().X = (i * panelWidth) % 24
-		}
-		rows = append(rows, row)
-		y++
+func (rowSet *RowSet) addRatioPanel(
+	metricFamilies map[string]*dto.MetricFamily, m0, m1, group, help string,
+) {
+	a := metricFamilies[m0]
+	b := metricFamilies[m1]
+	row, _ := rowSet.groupPanels[group]
+	panel := makeRatioPanel(a, b, help)
+	row.Panels = append(row.Panels, panel)
+	rowSet.groupPanels[group] = row
+}
+
+func (rowSet *RowSet) addCachePerformancePanels(
+	metricFamilies map[string]*dto.MetricFamily,
+) {
+
+	// are we generating for a broker that has these stats?
+	if _, ok := metricFamilies["vectorized_storage_log_cached_batches_read"]; !ok {
+		return
 	}
-	return rows
+
+	rowSet.addRatioPanel(
+		metricFamilies,
+		"vectorized_storage_log_cached_batches_read",
+		"vectorized_storage_log_batches_read",
+		"storage",
+		"Batch cache hit ratio - batches")
+
+	rowSet.addRatioPanel(
+		metricFamilies,
+		"vectorized_storage_log_cached_read_bytes",
+		"vectorized_storage_log_read_bytes",
+		"storage",
+		"Batch cache hit ratio - bytes")
 }
 
 func buildTemplating() graf.Templating {
@@ -429,6 +479,27 @@ func newGaugePanel(m *dto.MetricFamily) *graf.GraphPanel {
 		format = "bytes"
 	}
 	panel := newGraphPanel(m.GetHelp(), target, format)
+	panel.Lines = true
+	panel.SteppedLine = true
+	return panel
+}
+
+func makeRatioPanel(m0, m1 *dto.MetricFamily, help string) *graf.GraphPanel {
+	expr := fmt.Sprintf(
+		`sum(irate(%s{instance=~"[[node]]",shard=~"[[node_shard]]"}[1m])) by ([[aggr_criteria]]) / sum(irate(%s{instance=~"[[node]]",shard=~"[[node_shard]]"}[1m])) by ([[aggr_criteria]])`,
+		m0.GetName(), m1.GetName())
+	target := graf.Target{
+		Expr:           expr,
+		LegendFormat:   legendFormat(m0),
+		Format:         "time_series",
+		Step:           10,
+		IntervalFactor: 2,
+	}
+	format := "short"
+	if strings.Contains(subtype(m0), "bytes") {
+		format = "bytes"
+	}
+	panel := newGraphPanel(help, target, format)
 	panel.Lines = true
 	panel.SteppedLine = true
 	return panel
