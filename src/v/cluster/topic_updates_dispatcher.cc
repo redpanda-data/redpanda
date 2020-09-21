@@ -43,6 +43,32 @@ topic_updates_dispatcher::apply_update(model::record_batch b) {
                     }
                     return ec;
                 });
+          },
+          [this](move_partition_replicas_cmd cmd) {
+              auto tp_md = _topic_table.local().get_topic_metadata(
+                model::topic_namespace_view(cmd.key));
+              return dispatch_updates_to_cores(cmd).then(
+                [this, tp_md, cmd](std::error_code ec) {
+                    if (!ec) {
+                        vassert(
+                          tp_md.has_value(),
+                          "Topic had to exist before successful partition "
+                          "reallocation");
+                        auto it = std::find_if(
+                          std::cbegin(tp_md->partitions),
+                          std::cend(tp_md->partitions),
+                          [p_id = cmd.key.tp.partition](
+                            const model::partition_metadata& pmd) {
+                              return pmd.id == p_id;
+                          });
+                        vassert(
+                          it != tp_md->partitions.cend(),
+                          "Reassigned partition must exist");
+
+                        reallocate_partition(it->replicas, cmd.value);
+                    }
+                    return ec;
+                });
           });
     });
 }
@@ -93,6 +119,18 @@ void topic_updates_dispatcher::deallocate_topic(
             _partition_allocator.local().deallocate(r);
         }
     }
+}
+
+void topic_updates_dispatcher::reallocate_partition(
+  const std::vector<model::broker_shard>& previous,
+  const std::vector<model::broker_shard>& current) {
+    for (auto& bs : previous) {
+        _partition_allocator.local().deallocate(bs);
+    }
+    // we do not want to update group id in here as we are changing partition
+    // that already exists, hence group id doesn't have to be updated.
+    _partition_allocator.local().update_allocation_state(
+      current, raft::group_id(0));
 }
 
 void topic_updates_dispatcher::update_allocations(const create_topic_cmd& cmd) {

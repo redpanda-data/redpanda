@@ -38,6 +38,11 @@ public:
     ss::future<std::vector<topic_result>> autocreate_topics(
       std::vector<topic_configuration>, model::timeout_clock::duration);
 
+    ss::future<std::error_code> move_partition_replicas(
+      model::ntp,
+      std::vector<model::broker_shard>,
+      model::timeout_clock::time_point);
+
 private:
     using ntp_leader = std::pair<model::ntp, model::node_id>;
 

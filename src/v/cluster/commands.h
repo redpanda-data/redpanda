@@ -49,6 +49,7 @@ struct controller_command {
 // topic commands
 static constexpr int8_t create_topic_cmd_type = 0;
 static constexpr int8_t delete_topic_cmd_type = 1;
+static constexpr int8_t move_partition_replicas_cmd_type = 2;
 
 using create_topic_cmd = controller_command<
   model::topic_namespace,
@@ -60,6 +61,12 @@ using delete_topic_cmd = controller_command<
   model::topic_namespace,
   model::topic_namespace,
   delete_topic_cmd_type,
+  topic_batch_type()>;
+
+using move_partition_replicas_cmd = controller_command<
+  model::ntp,
+  std::vector<model::broker_shard>,
+  move_partition_replicas_cmd_type,
   topic_batch_type()>;
 
 // typelist utils
