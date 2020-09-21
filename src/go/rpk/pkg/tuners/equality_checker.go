@@ -7,7 +7,7 @@ import (
 
 // NewEqualityChecker creates a checker that will return valid result if value
 // returned by getCurrent function is equal to required value. This checker uses
-// reflect.DeepEqual to comparte the values
+// reflect.DeepEqual to compare the values
 func NewEqualityChecker(
 	id CheckerID,
 	desc string,

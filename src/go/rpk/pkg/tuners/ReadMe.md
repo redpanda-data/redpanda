@@ -1,10 +1,10 @@
-# Read Panda Keeper Performance Tunners
+# Redpanda Keeper Performance Tuners
 
-This package contains all performance tuners that are used by the Red Panda Keeper CLI to adjust Linux machine to achive best performance while using Red Panda Queue
+This package contains all performance tuners that are used by rpk to adjust Linux to achieve the best performance while using Redpanda.
 
 ## Supported Tuners
 
-Currnetly following tuners are supported
+The following tuners are supported
 
 ### Disk IRQs
 

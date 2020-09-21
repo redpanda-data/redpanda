@@ -44,7 +44,7 @@ func Test_intChecker_Check(t *testing.T) {
 			},
 		},
 		{
-			name:           "Shall return result with an error when getCurretn returns an error",
+			name:           "Shall return result with an error when getCurrent returns an error",
 			check:          func(c int) bool { return c == 0 },
 			renderRequired: func() string { return "0" },
 			getCurrent:     func() (int, error) { return 0, errors.New("err") },
