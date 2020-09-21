@@ -294,7 +294,7 @@ func (f *netCheckersFactory) NewRfsTableSizeChecker() Checker {
 func (f *netCheckersFactory) NewListenBacklogChecker() Checker {
 	return NewIntChecker(
 		ListenBacklogChecker,
-		"Max syn backlog size",
+		"Connections listen backlog size",
 		Warning,
 		func(current int) bool {
 			return current >= network.ListenBacklogSize
