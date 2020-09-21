@@ -271,13 +271,13 @@ static ss::future<fetch_response::partition_response> read_from_partition(
           vlog(klog.trace, "fetch reader {}", reader);
           return std::move(reader)
             .consume(kafka_batch_serializer(), timeout)
-            .then([](iobuf res) {
+            .then([](kafka_batch_serializer::result res) {
                 /*
                  * return path will fill in other response fields.
                  */
                 return fetch_response::partition_response{
                   .error = error_code::none,
-                  .record_set = std::move(res),
+                  .record_set = std::move(res.data),
                 };
             });
       });

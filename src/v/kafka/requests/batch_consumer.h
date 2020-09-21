@@ -15,6 +15,11 @@ namespace kafka {
  */
 class kafka_batch_serializer {
 public:
+    struct result {
+        iobuf data;
+        uint32_t record_count;
+    };
+
     kafka_batch_serializer() noexcept
       : _wr(_buf) {}
 
@@ -27,12 +32,18 @@ public:
       , _wr(_buf) {}
 
     ss::future<ss::stop_iteration> operator()(model::record_batch&& batch) {
+        record_count_ += batch.record_count();
         write_batch(std::move(batch));
         return ss::make_ready_future<ss::stop_iteration>(
           ss::stop_iteration::no);
     }
 
-    iobuf end_of_stream() { return std::move(_buf); }
+    result end_of_stream() {
+        return result{
+          .data = std::move(_buf),
+          .record_count = record_count_,
+        };
+    }
 
 private:
     void write_batch(model::record_batch&& batch) {
@@ -42,6 +53,7 @@ private:
 private:
     iobuf _buf;
     response_writer _wr;
+    uint32_t record_count_ = 0;
 };
 
 } // namespace kafka
