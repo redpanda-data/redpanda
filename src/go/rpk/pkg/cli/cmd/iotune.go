@@ -44,14 +44,14 @@ func NewIoTuneCmd(fs afero.Fs) *cobra.Command {
 	command.Flags().StringVar(
 		&configFile,
 		"config",
-		config.DefaultConfig().ConfigFile,
+		filepath.Dir(config.DefaultConfig().ConfigFile),
 		"Redpanda config file, if not set the file will be searched for"+
 			" in the default locations",
 	)
 	command.Flags().StringVar(
 		&outputFile,
 		"out",
-		filepath.Join(config.DefaultConfig().Redpanda.Directory, "io-config.yaml"),
+		filepath.Join(filepath.Dir(config.DefaultConfig().ConfigFile), "io-config.yaml"),
 		"The file path where the IO config will be written",
 	)
 	command.Flags().StringSliceVar(&directories,
