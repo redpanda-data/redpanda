@@ -215,7 +215,7 @@ func newHelpCommand() *cobra.Command {
 		},
 		Run: func(ccmd *cobra.Command, args []string) {
 			tuner := args[0]
-			fmt.Printf("'%s' tuner descrtiption", tuner)
+			fmt.Printf("'%s' tuner description", tuner)
 			fmt.Println()
 			fmt.Print(tunersHelp[tuner])
 		},
