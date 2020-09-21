@@ -267,14 +267,16 @@ static ss::future<fetch_response::partition_response> read_from_partition(
     reader_config.strict_max_bytes = config.strict_max_bytes;
 
     return partition->make_reader(reader_config)
-      .then([timeout = config.timeout](model::record_batch_reader reader) {
+      .then([partition,
+             timeout = config.timeout](model::record_batch_reader reader) {
           vlog(klog.trace, "fetch reader {}", reader);
           return std::move(reader)
             .consume(kafka_batch_serializer(), timeout)
-            .then([](kafka_batch_serializer::result res) {
+            .then([partition](kafka_batch_serializer::result res) {
                 /*
                  * return path will fill in other response fields.
                  */
+                partition->probe().add_records_fetched(res.record_count);
                 return fetch_response::partition_response{
                   .error = error_code::none,
                   .record_set = std::move(res.data),

@@ -251,7 +251,7 @@ static ss::future<produce_response::partition> partition_append(
   int32_t num_records) {
     return partition
       ->replicate(std::move(reader), acks_to_replicate_options(acks))
-      .then_wrapped([id, num_records = num_records](
+      .then_wrapped([partition, id, num_records = num_records](
                       ss::future<result<raft::replicate_result>> f) {
           produce_response::partition p{.id = id};
           try {
@@ -262,6 +262,7 @@ static ss::future<produce_response::partition> partition_append(
                   p.base_offset = model::offset(
                     r.value().last_offset() - (num_records - 1));
                   p.error = error_code::none;
+                  partition->probe().add_records_produced(num_records);
               } else {
                   p.error = error_code::unknown_server_error;
               }

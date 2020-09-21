@@ -92,6 +92,8 @@ public:
         return _raft->config();
     }
 
+    partition_probe& probe() { return _probe; }
+
 private:
     friend partition_manager;
 
