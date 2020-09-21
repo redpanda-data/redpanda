@@ -43,11 +43,11 @@ private:
     void start_topics_reconciliation_loop();
     ss::future<> reconcile_topics();
     ss::future<> do_reconcile_topic(task_meta<topic_table::delta>&);
-    ss::future<std::error_code>
-      create_partition(model::ntp, raft::group_id, std::vector<model::broker>);
+    ss::future<std::error_code> create_partition(
+      model::ntp, raft::group_id, model::offset, std::vector<model::broker>);
     ss::future<> add_to_shard_table(model::ntp, raft::group_id, ss::shard_id);
-    ss::future<std::error_code>
-    process_partition_update(const topic_table::delta::partition&);
+    ss::future<std::error_code> process_partition_update(
+      const topic_table::delta::partition&, model::offset);
 
     ss::future<std::error_code> delete_partition(model::ntp);
     ss::future<std::error_code> update_partition_replica_set(

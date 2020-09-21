@@ -158,7 +158,8 @@ ss::future<>
 controller_backend::do_reconcile_topic(task_meta<topic_table::delta>& task) {
     // new partitions
     auto f = ssx::parallel_transform(
-      task.delta.partitions.additions, [this](topic_table::delta::partition p) {
+      task.delta.partitions.additions,
+      [this, o = task.delta.offset](topic_table::delta::partition p) {
           // only create partitions for this backend
           // partitions created on current shard at this node
           if (!has_local_replicas(_self, p.second.replicas)) {
@@ -167,6 +168,7 @@ controller_backend::do_reconcile_topic(task_meta<topic_table::delta>& task) {
           return create_partition(
             model::ntp(p.first.ns, p.first.tp, p.second.id),
             p.second.group,
+            o,
             create_brokers_set(p.second.replicas, _members_table.local()));
       });
 
@@ -187,8 +189,9 @@ controller_backend::do_reconcile_topic(task_meta<topic_table::delta>& task) {
     f = f.then([this, &task](results_t results) {
         return ssx::parallel_transform(
                  task.delta.partitions.updates,
-                 [this](const topic_table::delta::partition& p) {
-                     return process_partition_update(p);
+                 [this, o = task.delta.offset](
+                   const topic_table::delta::partition& p) {
+                     return process_partition_update(p, o);
                  })
           .then([results = std::move(results)](results_t new_res) mutable {
               return join_results(std::move(results), std::move(new_res));
@@ -208,7 +211,7 @@ controller_backend::do_reconcile_topic(task_meta<topic_table::delta>& task) {
 }
 
 ss::future<std::error_code> controller_backend::process_partition_update(
-  const topic_table::delta::partition& p) {
+  const topic_table::delta::partition& p, model::offset offset) {
     model::ntp ntp(p.first.ns, p.first.tp, p.second.id);
     // if there is no local replica in replica set but,
     // partition with requested ntp exists on this broker core
@@ -237,7 +240,7 @@ ss::future<std::error_code> controller_backend::process_partition_update(
     }
     // create partition with empty configuration. Configuration
     // will be populated during node recovery
-    return create_partition(ntp, p.second.group, {});
+    return create_partition(ntp, p.second.group, offset, {});
 }
 
 bool is_configuration_up_to_date(
@@ -302,7 +305,10 @@ ss::future<> controller_backend::add_to_shard_table(
 }
 
 ss::future<std::error_code> controller_backend::create_partition(
-  model::ntp ntp, raft::group_id group_id, std::vector<model::broker> members) {
+  model::ntp ntp,
+  raft::group_id group_id,
+  model::offset offset,
+  std::vector<model::broker> members) {
     auto cfg = _topics.local().get_topic_cfg(model::topic_namespace_view(ntp));
 
     if (!cfg) {
@@ -313,9 +319,12 @@ ss::future<std::error_code> controller_backend::create_partition(
     auto f = ss::now();
     // handle partially created topic
     if (likely(_partition_manager.local().get(ntp).get() == nullptr)) {
+        // we use offset as an ntp_id as it is always increasing and it
+        // increases while ntp is being created again
+        auto ntp_id = storage::ntp_config::ntp_id(offset());
         f = _partition_manager.local()
               .manage(
-                cfg->make_ntp_config(_data_directory, ntp.tp.partition),
+                cfg->make_ntp_config(_data_directory, ntp.tp.partition, ntp_id),
                 group_id,
                 std::move(members))
               .discard_result();

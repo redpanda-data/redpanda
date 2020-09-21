@@ -515,11 +515,10 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
   ss::io_priority_class pc,
   record_version_type version,
   size_t buf_size,
-  const ss::sstring& base_dir,
   debug_sanitize_files sanitize_fileops,
   std::optional<batch_cache_index> batch_cache) {
     auto path = segment_path::make_segment_path(
-      base_dir, ntpc.ntp(), base_offset, term, version);
+      ntpc, base_offset, term, version);
     vlog(stlog.info, "Creating new segment {}", path.string());
     return open_segment(
              path, sanitize_fileops, std::move(batch_cache), buf_size)
