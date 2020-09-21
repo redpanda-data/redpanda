@@ -312,7 +312,7 @@ func buildSummary(
 	panels = append(panels, partitionCount)
 	y += partitionCount.GridPos.H
 
-	kafkaFamily, kafkaExists := metricFamilies["vectorized_kafka_rpc_protocol_dispatch_handler_latency"]
+	kafkaFamily, kafkaExists := metricFamilies["vectorized_kafka_rpc_dispatch_handler_latency"]
 	if kafkaExists {
 		width := (maxWidth - (singleStatW * 2)) / percentilesNo
 		for i, p := range percentiles {
@@ -332,7 +332,7 @@ func buildSummary(
 	rpcLatencyTitle := graf.NewTextPanel(rpcLatencyText, "html")
 	rpcLatencyTitle.GridPos = graf.GridPos{H: 2, W: maxWidth / 2, X: 0, Y: y}
 	rpcLatencyTitle.Transparent = true
-	rpcFamily, rpcExists := metricFamilies["vectorized_vectorized_internal_rpc_protocol_dispatch_handler_latency"]
+	rpcFamily, rpcExists := metricFamilies["vectorized_internal_rpc_dispatch_handler_latency"]
 	if rpcExists {
 		y += rpcLatencyTitle.GridPos.H
 		panels = append(panels, rpcLatencyTitle)
