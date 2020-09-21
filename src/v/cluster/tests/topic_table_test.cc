@@ -1,4 +1,5 @@
 #include "cluster/tests/topic_table_fixture.h"
+#include "model/fundamental.h"
 
 #include <seastar/testing/thread_test_case.hh>
 
@@ -37,12 +38,16 @@ FIXTURE_TEST(test_happy_path_delete, topic_table_fixture) {
     // discard create delta
     table.local().wait_for_changes(as).get0();
     auto res_1 = table.local()
-                   .apply(cluster::delete_topic_cmd(
-                     make_tp_ns("test_tp_2"), make_tp_ns("test_tp_2")))
+                   .apply(
+                     cluster::delete_topic_cmd(
+                       make_tp_ns("test_tp_2"), make_tp_ns("test_tp_2")),
+                     model::offset(0))
                    .get0();
     auto res_2 = table.local()
-                   .apply(cluster::delete_topic_cmd(
-                     make_tp_ns("test_tp_3"), make_tp_ns("test_tp_3")))
+                   .apply(
+                     cluster::delete_topic_cmd(
+                       make_tp_ns("test_tp_3"), make_tp_ns("test_tp_3")),
+                     model::offset(0))
                    .get0();
 
     auto md = table.local().all_topics_metadata();
@@ -64,13 +69,17 @@ FIXTURE_TEST(test_conflicts, topic_table_fixture) {
     table.local().wait_for_changes(as).get0();
 
     auto res_1 = table.local()
-                   .apply(cluster::delete_topic_cmd(
-                     make_tp_ns("not_exists"), make_tp_ns("not_exists")))
+                   .apply(
+                     cluster::delete_topic_cmd(
+                       make_tp_ns("not_exists"), make_tp_ns("not_exists")),
+                     model::offset(0))
                    .get0();
     BOOST_REQUIRE_EQUAL(res_1, cluster::errc::topic_not_exists);
 
-    auto res_2
-      = table.local().apply(make_create_topic_cmd("test_tp_1", 2, 3)).get0();
+    auto res_2 = table.local()
+                   .apply(
+                     make_create_topic_cmd("test_tp_1", 2, 3), model::offset(0))
+                   .get0();
     BOOST_REQUIRE_EQUAL(res_2, cluster::errc::topic_already_exists);
     BOOST_REQUIRE_EQUAL(table.local().has_pending_changes(), false);
 }

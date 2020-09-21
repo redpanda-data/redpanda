@@ -214,3 +214,85 @@ FIXTURE_TEST(test_topic_recreation_recovery, recreate_test_fixture) {
              })
       .get0();
 }
+
+FIXTURE_TEST(test_recreated_topic_does_not_lose_data, recreate_test_fixture) {
+    wait_for_controller_leadership().get();
+    model::topic test_tp{"topic-1"};
+    // flow from [ch1406]
+    info("Creating {} with {} partitions", test_tp, 1);
+    create_topic(test_tp(), 1, 1);
+    wait_until_topic_status(test_tp, kafka::error_code::none).get0();
+    info("Deleting {}", test_tp);
+    delete_topics({test_tp});
+    wait_until_topic_status(
+      test_tp, kafka::error_code::unknown_topic_or_partition)
+      .get0();
+    info("Creating {} with {} partitions", test_tp, 1);
+    create_topic(test_tp(), 1, 1);
+    wait_until_topic_status(test_tp, kafka::error_code::none).get0();
+    auto ntp = model::ntp(
+      cluster::kafka_namespace,
+      model::topic_partition(test_tp, model::partition_id(0)));
+
+    tests::cooperative_spin_wait_with_timeout(2s, [ntp, this] {
+        auto shard_id = app.shard_table.local().shard_for(ntp);
+        return shard_id.has_value();
+    }).get0();
+
+    auto shard_id = app.shard_table.local().shard_for(ntp);
+    auto wait_for_ntp_leader = [this, shard_id = *shard_id, ntp] {
+        return app.partition_manager.invoke_on(
+          shard_id, [ntp](cluster::partition_manager& pm) {
+              return pm.get(ntp)->is_leader();
+          });
+    };
+    tests::cooperative_spin_wait_with_timeout(2s, wait_for_ntp_leader).get0();
+    model::offset committed_offset
+      = app.partition_manager
+          .invoke_on(
+            *shard_id,
+            [ntp](cluster::partition_manager& pm) {
+                auto batches = storage::test::make_random_batches(
+                  model::offset(0), 5);
+                auto rdr = model::make_memory_record_batch_reader(
+                  std::move(batches));
+                auto result = pm.get(ntp)
+                                ->replicate(
+                                  std::move(rdr),
+                                  raft::replicate_options(
+                                    raft::consistency_level::quorum_ack))
+                                .get0();
+                return pm.get(ntp)->committed_offset();
+            })
+          .get0();
+    info("Restarting redpanda");
+    restart();
+
+    // make sure we can read the same amount of data
+    {
+        info("Expected committed offset {}", committed_offset);
+        wait_for_controller_leadership().get();
+        tests::cooperative_spin_wait_with_timeout(2s, [ntp, this] {
+            auto shard_id = app.shard_table.local().shard_for(ntp);
+            return shard_id.has_value();
+        }).get0();
+
+        auto shard_id = app.shard_table.local().shard_for(ntp);
+        tests::cooperative_spin_wait_with_timeout(2s, wait_for_ntp_leader)
+          .get0();
+        tests::cooperative_spin_wait_with_timeout(2s, [this, shard_id, ntp] {
+            return app.partition_manager.invoke_on(
+              *shard_id, [ntp](cluster::partition_manager& pm) {
+                  return pm.get(ntp)->committed_offset() >= model::offset(0);
+              });
+        }).get0();
+        app.partition_manager
+          .invoke_on(
+            *shard_id,
+            [ntp, committed_offset](cluster::partition_manager& pm) {
+                BOOST_REQUIRE(
+                  pm.get(ntp)->committed_offset() >= committed_offset);
+            })
+          .get0();
+    }
+}

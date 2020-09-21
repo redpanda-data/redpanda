@@ -1,6 +1,7 @@
 #pragma once
 #include "model/fundamental.h"
 #include "seastarx.h"
+#include "storage/ntp_config.h"
 #include "storage/version.h"
 
 #include <seastar/core/print.hh>
@@ -22,15 +23,13 @@ struct segment_path {
 
     /// Construct an absolute path to a segment file.
     static std::filesystem::path make_segment_path(
-      const ss::sstring& base,
-      const model::ntp& ntp,
+      const ntp_config& ntp_config,
       const model::offset& base_offset,
       const model::term_id& term,
       const record_version_type& version) {
         return std::filesystem::path(ss::format(
-          "{}/{}/{}-{}-{}.log",
-          base,
-          ntp.path(),
+          "{}/{}-{}-{}.log",
+          ntp_config.work_directory(),
           base_offset(),
           term(),
           to_string(version)));
