@@ -4,6 +4,13 @@
   
   tasks:
 
+  - name: amazon setup
+    when: ansible_distribution == 'Amazon'
+    block:
+      - name: install java
+        shell: "amazon-linux-extras enable java-openjdk11"
+        become: yes
+
   - name: fedora setup
     when: ansible_os_family == 'RedHat'
     block:

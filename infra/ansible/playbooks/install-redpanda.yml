@@ -23,6 +23,7 @@
       state: present
     when:
     - '".rpm" in rp_pkg'
+    - ansible_os_family == 'RedHat'
 
   - name: install package with apt
     apt:
@@ -30,6 +31,7 @@
       state: present
     when:
     - '".deb" in rp_pkg'
+    - ansible_os_family == 'Debian'
 
   - name: set data dir file perms
     file:
