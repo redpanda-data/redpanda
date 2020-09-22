@@ -39,12 +39,14 @@ func NewTuneCommand(fs afero.Fs) *cobra.Command {
 		timeout           time.Duration
 		interactive       bool
 	)
+	baseMsg := "Sets the OS parameters to tune system performance." +
+		" Available tuners: all, " +
+		strings.Join(factory.AvailableTuners(), ", ")
 	command := &cobra.Command{
-		Use: "tune <list_of_elements_to_tune>",
-		Short: `Sets the OS parameters to tune system performance
-		available tuners: all, ` + fmt.Sprintf("%#q", factory.AvailableTuners()),
-		Long: "In order to get more information about the tuner run: " +
-			"rpk tune <tuner_name> --help",
+		Use:   "tune <list of elements to tune>",
+		Short: baseMsg,
+		Long: baseMsg + ".\n In order to get more information about the" +
+			" tuners, run `rpk tune help <tuner name>`",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) < 1 {
 				return errors.New("requires the list of elements to tune")
@@ -206,10 +208,17 @@ func newHelpCommand() *cobra.Command {
 				return errors.New("requires the tuner name")
 			}
 			tuner := args[0]
+			tunerList := strings.Join(
+				utils.GetKeysFromStringMap(tunersHelp),
+				", ",
+			)
 			if _, contains := tunersHelp[tuner]; !contains {
-				return fmt.Errorf("invalid tuner name '%s' "+
-					"only %s are supported",
-					tuner, utils.GetKeysFromStringMap(tunersHelp))
+				return fmt.Errorf(
+					"No help found for tuner '%s'."+
+						" Available: %s.",
+					tuner,
+					tunerList,
+				)
 			}
 			return nil
 		},
