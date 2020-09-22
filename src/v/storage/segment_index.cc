@@ -128,9 +128,11 @@ ss::future<> segment_index::truncate(model::offset o) {
         }
         if (_state.empty()) {
             _state.max_timestamp = _state.base_timestamp;
+            _state.max_offset = _state.base_offset;
         } else {
             _state.max_timestamp = model::timestamp(
               _state.relative_time_index.back() + _state.base_timestamp());
+            _state.max_offset = o;
         }
     }
     return flush();
