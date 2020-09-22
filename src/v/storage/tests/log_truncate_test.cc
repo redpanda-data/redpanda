@@ -1,6 +1,7 @@
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/timestamp.h"
+#include "storage/disk_log_impl.h"
 #include "storage/log.h"
 #include "storage/log_manager.h"
 #include "storage/tests/storage_test_fixture.h"
@@ -428,4 +429,56 @@ FIXTURE_TEST(truncated_segment_recovery, storage_test_fixture) {
 
     BOOST_REQUIRE_EQUAL(
       offsets_1.dirty_offset, truncate_offset - model::offset(1));
+}
+
+FIXTURE_TEST(test_concurrent_prefix_truncate_and_gc, storage_test_fixture) {
+    auto cfg = default_log_config(test_dir);
+    cfg.stype = storage::log_config::storage_type::disk;
+    storage::log_manager mgr = make_log_manager(cfg);
+    info("config: {}", mgr.config());
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    auto ntp = model::ntp("default", "test", 0);
+
+    auto overrides = std::make_unique<storage::ntp_config::default_overrides>();
+
+    overrides->cleanup_policy_bitflags
+      = model::cleanup_policy_bitflags::deletion;
+    overrides->segment_size = 1024;
+
+    auto log = mgr
+                 .manage(storage::ntp_config(
+                   ntp, mgr.config().base_dir, std::move(overrides)))
+                 .get0();
+
+    append_random_batches(log, 10, model::term_id(0));
+    auto lstats = log.offsets();
+
+    append_random_batches(log, 10, model::term_id(1));
+    log.flush().get0();
+
+    auto ts = model::timestamp::now();
+    auto new_lstats = log.offsets();
+    log.set_collectible_offset(new_lstats.dirty_offset);
+
+    append_random_batches(log, 10, model::term_id(2));
+    log.flush().get0();
+    // garbadge collect first append series
+    ss::abort_source as;
+
+    // truncate at 0, offset earlier then the one present in log
+    auto f1 = log.compact(
+      compaction_config(ts, std::nullopt, ss::default_priority_class(), as));
+
+    auto f2 = log.truncate_prefix(storage::truncate_prefix_config(
+      lstats.dirty_offset, ss::default_priority_class()));
+
+    f1.get0();
+    f2.get0();
+
+    storage::disk_log_impl& impl = *reinterpret_cast<storage::disk_log_impl*>(
+      log.get_impl());
+
+    BOOST_REQUIRE_EQUAL(
+      (*impl.segments().begin())->offsets().base_offset,
+      log.offsets().start_offset);
 }
