@@ -44,7 +44,7 @@ func NewIoTuneCmd(fs afero.Fs) *cobra.Command {
 	command.Flags().StringVar(
 		&configFile,
 		"config",
-		filepath.Dir(config.DefaultConfig().ConfigFile),
+		config.DefaultConfig().ConfigFile,
 		"Redpanda config file, if not set the file will be searched for"+
 			" in the default locations",
 	)
