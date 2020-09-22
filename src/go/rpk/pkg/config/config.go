@@ -121,7 +121,11 @@ func Set(fs afero.Fs, key, value, format, path string) error {
 	switch strings.ToLower(format) {
 	case "single":
 		v.Set(key, parse(value))
-		return checkAndWrite(fs, v.AllSettings(), path)
+		err = checkAndWrite(fs, v.AllSettings(), path)
+		if err == nil {
+			checkAndPrintRestartWarning(key)
+		}
+		return err
 	case "yaml":
 		err := yaml.Unmarshal([]byte(value), &newConfValue)
 		if err != nil {
@@ -139,7 +143,11 @@ func Set(fs afero.Fs, key, value, format, path string) error {
 	newV := viper.New()
 	newV.Set(key, newConfValue)
 	v.MergeConfigMap(newV.AllSettings())
-	return checkAndWrite(fs, v.AllSettings(), path)
+	err = checkAndWrite(fs, v.AllSettings(), path)
+	if err == nil {
+		checkAndPrintRestartWarning(key)
+	}
+	return err
 }
 
 func parse(val string) interface{} {
@@ -452,8 +460,7 @@ func write(fs afero.Fs, conf map[string]interface{}, path string) error {
 		return err
 	}
 	log.Infof(
-		"Configuration written to %s. If redpanda is running, please"+
-			" restart it for the changes to take effect.",
+		"Configuration written to %s.",
 		path,
 	)
 	return nil
@@ -652,4 +659,13 @@ func base58Encode(s string) string {
 	}
 
 	return string(answer)
+}
+
+func checkAndPrintRestartWarning(fieldKey string) {
+	if strings.HasPrefix(fieldKey, "redpanda") {
+		log.Info(
+			"If redpanda is running, please restart it for the" +
+				" changes to take effect.",
+		)
+	}
 }
