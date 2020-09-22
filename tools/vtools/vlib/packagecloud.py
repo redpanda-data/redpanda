@@ -53,7 +53,7 @@ def publish_packages(vconfig, access_token):
         },
         "rpm": {
             "el": ["6", "7", "8"],  # red hat enterprise linux
-            "fedora": ["30", "31"],
+            "fedora": ["30", "31", "32"],
             "ol": ["7"],  # oracle linux
         }
     }
