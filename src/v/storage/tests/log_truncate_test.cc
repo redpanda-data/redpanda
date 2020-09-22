@@ -370,3 +370,62 @@ FIXTURE_TEST(test_truncate, storage_test_fixture) {
       builder.get_log().offsets().dirty_offset, model::offset(219));
     builder | storage::stop();
 }
+
+FIXTURE_TEST(truncated_segment_recovery, storage_test_fixture) {
+    auto cfg = default_log_config(test_dir);
+    cfg.stype = storage::log_config::storage_type::disk;
+    auto ntp = model::ntp("default", "test", 0);
+    model::offset truncate_offset;
+
+    {
+        storage::log_manager mgr = make_log_manager(cfg);
+        info("config: {}", mgr.config());
+        auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+
+        auto log = mgr.manage(storage::ntp_config(ntp, cfg.base_dir)).get0();
+
+        append_random_batches(log, 10, model::term_id(0));
+        log.flush().get0();
+
+        auto all_batches = read_and_validate_all_batches(log);
+        truncate_offset = all_batches[4].base_offset();
+
+        // truncate in the middle
+        info("Truncating at offset:{}", truncate_offset);
+        log
+          .truncate(storage::truncate_config(
+            truncate_offset, ss::default_priority_class()))
+          .get0();
+
+        // force segment roll
+        append_random_batches(log, 3, model::term_id(1));
+        log.flush().get();
+    }
+
+    // recover log
+    storage::log_manager rec_mgr = make_log_manager(cfg);
+
+    auto rec_deferred = ss::defer(
+      [&rec_mgr]() mutable { rec_mgr.stop().get0(); });
+    auto rec_log
+      = rec_mgr.manage(storage::ntp_config(ntp, cfg.base_dir)).get0();
+    auto& impl = *reinterpret_cast<disk_log_impl*>(rec_log.get_impl());
+
+    BOOST_REQUIRE_EQUAL(impl.segment_count(), 2);
+    auto seg_1 = impl.segments().begin();
+    auto offsets_1 = (*seg_1)->offsets();
+    auto seg_2 = std::next(impl.segments().begin());
+    auto offsets_2 = (*seg_2)->offsets();
+
+    info("segment: {}", *seg_1);
+    BOOST_REQUIRE_EQUAL(offsets_1.base_offset, model::offset(0));
+    BOOST_REQUIRE_EQUAL(offsets_1.term, model::term_id(0));
+
+    // first segment commited offset has to be lower than last segment base
+    // offset
+    BOOST_REQUIRE_EQUAL(offsets_2.base_offset, truncate_offset);
+    BOOST_REQUIRE_LT(offsets_1.committed_offset, offsets_2.base_offset);
+
+    BOOST_REQUIRE_EQUAL(
+      offsets_1.dirty_offset, truncate_offset - model::offset(1));
+}
