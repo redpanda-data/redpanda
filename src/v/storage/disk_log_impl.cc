@@ -190,11 +190,14 @@ ss::future<> disk_log_impl::garbage_collect_segments(
       },
       [this, ctx] {
           auto ptr = _segs.front();
-          // update start offset before removing the segment
-          // to make sure
-          // that all opertions will update the start offset
-          // correctly
-          auto start_offset = ptr->offsets().dirty_offset + model::offset(1);
+          // we have to use std::max in here to prevent start_offset from being
+          // `moved backward`. The _kvstore.put calls may be reordered and we do
+          // not want to update kvstore with stall data. We leverage the fact
+          // that start_offsets updates are monotonically increasing.
+          auto start_offset = std::max(
+            ptr->offsets().dirty_offset + model::offset(1),
+            read_start_offset());
+
           return _kvstore
             .put(
               kvstore::key_space::storage,
@@ -207,7 +210,13 @@ ss::future<> disk_log_impl::garbage_collect_segments(
                 _segs.pop_front();
                 return remove_segment_permanently(ptr, ctx);
             })
-            .then([this, start_offset] { _start_offset = start_offset; });
+            .then([this] {
+                // we have to update start offset with the most recent offset as
+                // updates to kv store _start_offset may have been reordered (we
+                // execute then independently from `gc` and `prefix_truncate`
+                // apis)
+                _start_offset = read_start_offset();
+            });
       });
 }
 
@@ -613,7 +622,7 @@ ss::future<> disk_log_impl::do_truncate_prefix(truncate_prefix_config cfg) {
            */
           return remove_prefix_full_segments(cfg);
       })
-      .then([this, cfg] {
+      .then([this] {
           /*
            * The two salient scenarios that can result are:
            *
@@ -638,7 +647,7 @@ ss::future<> disk_log_impl::do_truncate_prefix(truncate_prefix_config cfg) {
            *     rewriting the segment.  The overhead is never more than one
            *     segment, and this optimization is left as future work.
            */
-          _start_offset = cfg.start_offset;
+          _start_offset = read_start_offset();
 
           /*
            * We want to maintain the following relationship for consistency:
