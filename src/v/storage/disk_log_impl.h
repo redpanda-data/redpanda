@@ -107,6 +107,8 @@ private:
     model::offset size_based_gc_max_offset(size_t);
     model::offset time_based_gc_max_offset(model::timestamp);
 
+    bool is_front_segment(const segment_set::type&) const;
+
 private:
     struct eviction_monitor {
         ss::promise<model::offset> promise;

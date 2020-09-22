@@ -164,6 +164,11 @@ void disk_log_impl::set_collectible_offset(model::offset o) {
     _max_collectible_offset = o;
 }
 
+bool disk_log_impl::is_front_segment(const segment_set::type& ptr) const {
+    return !_segs.empty()
+           && ptr->reader().filename() == (*_segs.begin())->reader().filename();
+}
+
 ss::future<> disk_log_impl::garbage_collect_segments(
   model::offset max_offset, ss::abort_source* as, std::string_view ctx) {
     // we only notify eviction monitor if there are segments to evict
@@ -196,6 +201,9 @@ ss::future<> disk_log_impl::garbage_collect_segments(
               start_offset_key(),
               reflection::to_iobuf(start_offset))
             .then([this, ptr, ctx] {
+                if (!is_front_segment(ptr)) {
+                    return ss::now();
+                }
                 _segs.pop_front();
                 return remove_segment_permanently(ptr, ctx);
             })
