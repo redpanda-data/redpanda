@@ -5,9 +5,9 @@ Start a cluster `vtools_dev_cluster --provider aws`
 Let the addresses are:
 
 - public ip / private ip
-- 34.223.65.155 / 172.31.38.96
-- 44.234.116.254 / 172.31.37.22
-- 44.229.42.78 / 172.31.35.89
+- 34.223.65.155 / 172.31.38.96 (2)
+- 44.234.116.254 / 172.31.37.22 (1)
+- 44.229.42.78 / 172.31.35.89 (0)
 
 Stop redpanda there:
 
@@ -19,14 +19,15 @@ Copy `kvelldb-control` and `iofaults` to the kvelldb nodes:
 
     for ip in 34.223.65.155 44.234.116.254 44.229.42.78; do 
       scp -i "~/.ssh/vectorized/deployments/aws-cluster" -r src/consistency-testing/chaostest/kvelldb-control admin@$ip:
+      scp -i "~/.ssh/vectorized/deployments/aws-cluster" -r src/consistency-testing/chaostest/redpanda-control admin@$ip:
       scp -i "~/.ssh/vectorized/deployments/aws-cluster" -r src/consistency-testing/iofaults/iofaults.py admin@$ip:
     done
 
 Install dependencies
 
     for ip in 34.223.65.155 44.234.116.254 44.229.42.78; do 
-      ssh -i "~/.ssh/vectorized/deployments/aws-cluster" admin@$ip sudo apt-get -y install python3-pip
-      ssh -i "~/.ssh/vectorized/deployments/aws-cluster" admin@$ip sudo pip3 install flask fusepy
+      ssh -i "~/.ssh/vectorized/deployments/aws-cluster" admin@$ip sudo apt-get -y install python3-pip kafkacat
+      ssh -i "~/.ssh/vectorized/deployments/aws-cluster" admin@$ip sudo pip3 install flask fusepy kafka-python argparse
     done
 
 Update `example.settings.json`
@@ -54,7 +55,3 @@ Check that control can connect to kvelldb nodes
 Run the tests
 
     ssh ubuntu@34.222.184.68 "cd chaostest; rm -rf results; mkdir results; python3.7 test-kvelldb.py example.settings.json"
-
-    or
-
-    ssh ubuntu@34.222.184.68 "cd chaostest; rm -rf results; mkdir results; python3.7 test-kvelldb.py example.settings.json --verbose"
