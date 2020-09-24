@@ -4,6 +4,7 @@ import sh
 from gobekli.kvapi import KVNode, RequestTimedout, RequestCanceled
 from gobekli.logging import m
 import logging
+import asyncio
 
 chaos_event_log = logging.getLogger("chaos-event")
 
@@ -93,6 +94,9 @@ class KvelldbNode:
         # todo check status code
 
 
+chaos_stdout = logging.getLogger("chaos-stdout")
+
+
 class KvelldbCluster:
     def __init__(self, config):
         self.config = config
@@ -100,6 +104,14 @@ class KvelldbCluster:
             config_node["id"]: KvelldbNode(config, config_node["id"])
             for config_node in config["nodes"]
         }
+
+    async def restart(self):
+        chaos_stdout.info("(re)starting a cluster")
+        self.terminate_wipe_restart()
+        cluster_warmup = self.config["cluster_warmup"]
+        await asyncio.sleep(cluster_warmup)
+        chaos_stdout.info("cluster started")
+        chaos_stdout.info("")
 
     async def is_ok(self):
         is_ok = False
