@@ -72,7 +72,7 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 		Use:   "start",
 		Short: "Start redpanda",
 		RunE: func(ccmd *cobra.Command, args []string) error {
-			conf, err := config.ReadOrGenerate(fs, configFile)
+			conf, err := config.FindOrGenerate(fs, configFile)
 			if err != nil {
 				return err
 			}
@@ -87,7 +87,6 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 				fs,
 				conf,
 				sFlags,
-				configFile,
 				wellKnownIo,
 			)
 			if err != nil {
@@ -97,7 +96,6 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 			checkPayloads, tunerPayloads, err := prestart(
 				fs,
 				rpArgs,
-				configFile,
 				conf,
 				prestartCfg,
 				timeout,
@@ -133,7 +131,7 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 	command.Flags().StringVar(
 		&configFile,
 		"config",
-		config.DefaultConfig().ConfigFile,
+		"",
 		"Redpanda config file, if not set the file will be searched for"+
 			" in the default locations",
 	)
@@ -195,7 +193,6 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 func prestart(
 	fs afero.Fs,
 	args *redpanda.RedpandaArgs,
-	configFile string,
 	conf *config.Config,
 	prestartCfg prestartConfig,
 	timeout time.Duration,
@@ -204,7 +201,7 @@ func prestart(
 	checkPayloads := []api.CheckPayload{}
 	tunerPayloads := []api.TunerPayload{}
 	if prestartCfg.checkEnabled {
-		checkPayloads, err = check(fs, configFile, conf, timeout, checkFailedActions(args))
+		checkPayloads, err = check(fs, conf, timeout, checkFailedActions(args))
 		if err != nil {
 			return checkPayloads, tunerPayloads, err
 		}
@@ -221,24 +218,20 @@ func prestart(
 }
 
 func buildRedpandaFlags(
-	fs afero.Fs,
-	conf *config.Config,
-	sFlags seastarFlags,
-	configFile string,
-	wellKnownIo string,
+	fs afero.Fs, conf *config.Config, sFlags seastarFlags, wellKnownIo string,
 ) (*redpanda.RedpandaArgs, error) {
 	if wellKnownIo != "" && sFlags.ioProperties != "" {
 		return nil, errors.New(
 			"--well-known-io and --io-properties can't be set at the same time",
 		)
 	}
-	ioPropertiesFile := redpanda.GetIOConfigPath(filepath.Dir(configFile))
+	ioPropertiesFile := redpanda.GetIOConfigPath(filepath.Dir(conf.ConfigFile))
 	if exists, _ := afero.Exists(fs, ioPropertiesFile); !exists {
 		ioPropertiesFile = ""
 	}
 	lockMemory := conf.Rpk.EnableMemoryLocking || sFlags.lockMemory
 	rpArgs := &redpanda.RedpandaArgs{
-		ConfigFilePath: configFile,
+		ConfigFilePath: conf.ConfigFile,
 		SeastarFlags: map[string]string{
 			"lock-memory": fmt.Sprintf("%t", lockMemory),
 		},
@@ -398,13 +391,12 @@ func checkFailedActions(
 
 func check(
 	fs afero.Fs,
-	configFile string,
 	conf *config.Config,
 	timeout time.Duration,
 	checkFailedActions map[tuners.CheckerID]checkFailedAction,
 ) ([]api.CheckPayload, error) {
 	payloads := make([]api.CheckPayload, 0)
-	results, err := tuners.Check(fs, configFile, conf, timeout)
+	results, err := tuners.Check(fs, conf.ConfigFile, conf, timeout)
 	if err != nil {
 		return payloads, err
 	}
