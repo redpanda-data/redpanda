@@ -282,8 +282,10 @@ consensus::replicate(model::record_batch_reader&& rdr, replicate_options opts) {
     _last_replicate_consistency = opts.consistency;
     if (opts.consistency == consistency_level::quorum_ack) {
         _probe.replicate_requests_ack_all();
-        return _batcher.replicate(std::move(rdr)).finally([this] {
-            _probe.replicate_done();
+        return ss::with_gate(_bg, [this, rdr = std::move(rdr)]() mutable {
+            return _batcher.replicate(std::move(rdr)).finally([this] {
+                _probe.replicate_done();
+            });
         });
     }
 
@@ -1214,17 +1216,26 @@ ss::future<std::error_code> consensus::replicate_configuration(
         return ss::make_ready_future<std::error_code>(errc::not_leader);
     }
     vlog(_ctxlog.debug, "Replicating group configuration {}", cfg);
-    auto batches = details::serialize_configuration_as_batches(std::move(cfg));
-    for (auto& b : batches) {
-        b.set_term(model::term_id(_term));
-    }
-    auto seqs = next_followers_request_seq();
-    append_entries_request req(
-      _self,
-      meta(),
-      model::make_memory_record_batch_reader(std::move(batches)));
-    return _batcher.do_flush({}, std::move(req), std::move(u), std::move(seqs))
-      .then([] { return std::error_code(errc::success); });
+    return ss::with_gate(
+      _bg, [this, u = std::move(u), cfg = std::move(cfg)]() mutable {
+          auto batches = details::serialize_configuration_as_batches(
+            std::move(cfg));
+          for (auto& b : batches) {
+              b.set_term(model::term_id(_term));
+          }
+          auto seqs = next_followers_request_seq();
+          append_entries_request req(
+            _self,
+            meta(),
+            model::make_memory_record_batch_reader(std::move(batches)));
+          /**
+           * We use replicate_batcher::do_flush directly as we already hold the
+           * _op_lock mutex when replicating configuration
+           */
+          return _batcher
+            .do_flush({}, std::move(req), std::move(u), std::move(seqs))
+            .then([] { return std::error_code(errc::success); });
+      });
 }
 
 append_entries_reply
