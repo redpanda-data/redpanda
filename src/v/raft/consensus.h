@@ -249,8 +249,7 @@ private:
     template<typename Func>
     ss::future<std::error_code> change_configuration(Func&&);
 
-    ss::future<>
-      maybe_commit_configuration(model::offset, ss::semaphore_units<>);
+    ss::future<> maybe_commit_configuration(ss::semaphore_units<>);
     // args
     model::node_id _self;
     raft::group_id _group;
