@@ -19,6 +19,7 @@ func NewHelpCommand() *cobra.Command {
 		"fstrim":                fstrimTunerHelp,
 		"aio_events":            aioEventsTunerHelp,
 		"transparent_hugepages": transparentHugepagesTunerHelp,
+		"clocksource":           clocksourceTunerHelp,
 	}
 
 	return &cobra.Command{
@@ -185,4 +186,12 @@ Enables Transparent Hugepages. This allows the kernel to index larger pages
 (2MB, as opposed to the standard 4KB) in the CPU's TLB (if it supports it, which
 is the case for most current CPUs). This results in fewer cache misses, which
 means less time is spent searching and loading pages.
+`
+
+const clocksourceTunerHelp = `
+Sets the clock source to TSC (Time Stamp Counter) to get the time more
+efficiently via the Virtual Dynamic Shared Object. Most VMs run on Xen, with
+'xen' as the default clock source, which doesn't support reading the time in
+userspace via the vDSO, requiring making an actual syscall with the overhead it
+entails.
 `
