@@ -910,7 +910,10 @@ consensus::do_append_entries(append_entries_request&& r) {
         return _log
           .truncate(storage::truncate_config(truncate_at, _io_priority))
           .then([this, truncate_at] {
-              return _configuration_manager.truncate(truncate_at);
+              return _configuration_manager.truncate(truncate_at).then([this] {
+                  _probe.configuration_update();
+                  update_follower_stats(_configuration_manager.get_latest());
+              });
           })
           .then([this, r = std::move(r), truncate_at]() mutable {
               auto lstats = _log.offsets();
