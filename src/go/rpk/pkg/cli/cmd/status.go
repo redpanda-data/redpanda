@@ -44,7 +44,7 @@ func NewStatusCommand(fs afero.Fs) *cobra.Command {
 	command.Flags().StringVar(
 		&configFile,
 		"config",
-		config.DefaultConfig().ConfigFile,
+		"",
 		"Redpanda config file, if not set the file will be searched for"+
 			" in the default locations",
 	)
@@ -68,7 +68,7 @@ func NewStatusCommand(fs afero.Fs) *cobra.Command {
 func executeStatus(
 	fs afero.Fs, configFile string, timeout time.Duration, send bool,
 ) error {
-	conf, err := config.ReadOrGenerate(fs, configFile)
+	conf, err := config.FindOrGenerate(fs, configFile)
 	if err != nil {
 		return err
 	}
@@ -90,7 +90,7 @@ func executeStatus(
 
 	go getCloudProviderInfo(providerInfoRowsCh)
 	go getMetrics(fs, timeout, *conf, send, metricsRowsCh)
-	go getConf(fs, configFile, confRowsCh)
+	go getConf(fs, conf.ConfigFile, confRowsCh)
 	go getKafkaInfo(*conf, kafkaRowsCh)
 
 	for _, row := range <-providerInfoRowsCh {
