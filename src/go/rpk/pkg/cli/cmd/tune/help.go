@@ -15,6 +15,7 @@ func NewHelpCommand() *cobra.Command {
 		"disk_irq":       diskIrqTunerHelp,
 		"disk_scheduler": diskSchedulerTunerHelp,
 		"net":            netTunerHelp,
+		"swappiness":     swappinessTunerHelp,
 	}
 
 	return &cobra.Command{
@@ -149,3 +150,8 @@ If there isn't any mode given script will use a default mode:
 	- Otherwise, if number of physical CPU cores
 	  is lower than 4 - use the 'sq' mode.
 	- Otherwise use the ‘sq-split’ mode.`
+
+const swappinessTunerHelp = `
+Tunes the kernel to keep process data in-memory for as long as possible, instead
+of swapping it out to disk.
+`
