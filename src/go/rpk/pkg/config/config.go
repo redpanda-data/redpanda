@@ -236,6 +236,30 @@ func ReadOrGenerate(fs afero.Fs, configFile string) (*Config, error) {
 	)
 }
 
+func ReadOrFind(fs afero.Fs, configFile string) (*Config, error) {
+	var err error
+	if configFile == "" {
+		configFile, err = FindConfigFile(fs)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return ReadConfigFromPath(fs, configFile)
+}
+
+// If configFile is empty, tries to find the file in the default locations.
+// Otherwise, it tries to read the file and load it. If the file doesn't
+// exist, it tries to create it with the default configuration.
+func FindOrGenerate(fs afero.Fs, configFile string) (*Config, error) {
+	var err error
+	if configFile == "" {
+		configFile, err = FindConfigFile(fs)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return ReadOrGenerate(fs, configFile)
+}
 func CheckConfig(config *Config) (bool, []error) {
 	configMap, err := toMap(config)
 	if err != nil {
