@@ -15,6 +15,7 @@
 #include "rpc/types.h"
 #include "storage/log_manager.h"
 #include "storage/ntp_config.h"
+#include "storage/record_batch_builder.h"
 #include "storage/tests/utils/random_batch.h"
 #include "storage/types.h"
 #include "test_utils/fixture.h"
@@ -199,8 +200,14 @@ struct raft_node {
               tstlog.info("Raft stopped at node {}", broker.id());
               return raft_manager.stop();
           })
-          .then([this] { return cache.stop(); })
-          .then([this] { return storage.stop(); })
+          .then([this] {
+              tstlog.info("Stopping cache at node {}", broker.id());
+              return cache.stop();
+          })
+          .then([this] {
+              tstlog.info("Stopping storage at node {}", broker.id());
+              return storage.stop();
+          })
           .then([this] {
               tstlog.info("Node {} stopped", broker.id());
               started = false;
@@ -377,17 +384,22 @@ struct raft_group {
         }
     }
 
-    std::optional<model::node_id> get_leader_id() {
-        std::optional<model::node_id> leader_id{std::nullopt};
-        raft::group_id::type leader_term = model::term_id(0);
+    std::optional<model::node_id> get_leader_id() { return _leader_id; }
 
-        for (auto& [id, m] : _members) {
-            if (m.consensus->is_leader() && m.consensus->term() > leader_term) {
-                leader_id.emplace(id);
+    ss::future<model::node_id> wait_for_leader() {
+        if (_leader_id) {
+            auto it = _members.find(*_leader_id);
+            if (it != _members.end() && it->second.consensus->is_leader()) {
+                return ss::make_ready_future<model::node_id>(*_leader_id);
             }
+            _leader_id = std::nullopt;
         }
 
-        return leader_id;
+        return _election_cond
+          .wait(
+            ss::semaphore::clock::now() + 5s,
+            [this] { return _leader_id.has_value(); })
+          .then([this] { return *_leader_id; });
     }
 
     void election_callback(model::node_id src, raft::leadership_status st) {
@@ -397,13 +409,14 @@ struct raft_group {
         }
         tstlog.info(
           "Group {} has new leader {}", st.group, st.current_leader.value());
-        _election_sem.signal();
+
+        _leader_id = st.current_leader;
+        _election_cond.broadcast();
         _elections_count++;
     }
 
-    void wait_for_next_election() {
-        ss::thread::yield();
-        _election_sem.wait().get0();
+    ss::future<> wait_for_election(ss::semaphore::time_point tout) {
+        return _election_cond.wait(tout);
     }
 
     ss::future<std::vector<model::record_batch>>
@@ -440,8 +453,8 @@ private:
     raft::group_id _id;
     members_t _members;
     std::vector<model::broker> _initial_brokers;
-    ss::condition_variable _leader_elected;
-    ss::semaphore _election_sem{0};
+    ss::condition_variable _election_cond;
+    std::optional<model::node_id> _leader_id;
     uint32_t _elections_count{0};
     storage::log_config::storage_type _storage_type;
     ss::sstring _storage_dir;
@@ -449,7 +462,7 @@ private:
     size_t _segment_size;
 };
 
-static model::record_batch_reader random_batches_entry(int max_batches) {
+static model::record_batch_reader random_batches_reader(int max_batches) {
     auto batches = storage::test::make_random_batches(
       model::offset(0), max_batches);
     return model::make_memory_record_batch_reader(std::move(batches));
@@ -563,18 +576,15 @@ static void validate_logs_replication(raft_group& gr) {
     assert_all_logs_are_the_same(logs);
 }
 
-static model::node_id wait_for_group_leader(raft_group& gr) {
-    gr.wait_for_next_election();
-    assert_at_most_one_leader(gr);
-    auto leader_id = gr.get_leader_id();
-    while (!leader_id) {
-        assert_at_most_one_leader(gr);
-        gr.wait_for_next_election();
-        assert_at_most_one_leader(gr);
-        leader_id = gr.get_leader_id();
-    }
+template<typename T>
+static model::timeout_clock::time_point timeout(std::chrono::duration<T> d) {
+    return model::timeout_clock::now() + d;
+}
 
-    return leader_id.value();
+static model::node_id wait_for_group_leader(raft_group& gr) {
+    auto leader_id = gr.wait_for_leader().get0();
+    assert_at_most_one_leader(gr);
+    return leader_id;
 }
 
 static void
@@ -584,6 +594,108 @@ assert_stable_leadership(const raft_group& gr, int number_of_intervals = 5) {
     BOOST_TEST(
       before = gr.get_elections_count(),
       "Group leadership is required to be stable");
+}
+
+template<typename Func>
+ss::future<bool> do_with_leader(
+  raft_group& gr, model::timeout_clock::time_point tout, Func&& f) {
+    return gr.wait_for_leader().then([&gr, f, tout](
+                                       model::node_id leader_id) mutable {
+        auto fut = ss::futurize_invoke(f, gr.get_member(leader_id));
+
+        return ss::with_timeout(tout, std::move(fut))
+          .handle_exception([](const std::exception_ptr& e) { return false; });
+    });
+}
+
+template<typename Func>
+ss::future<bool> retry_with_leader(
+  raft_group& gr,
+  int max_retries,
+  model::timeout_clock::time_point tout,
+  Func&& f) {
+    struct retry_meta {
+        int current_retry = 0;
+        bool success = false;
+    };
+    auto meta = ss::make_lw_shared<retry_meta>();
+
+    return ss::do_until(
+             [meta, max_retries] {
+                 return meta->success || meta->current_retry >= max_retries;
+             },
+             [meta, f, &gr, tout]() mutable {
+                 return do_with_leader(gr, tout, f)
+                   .then([meta](bool success) mutable {
+                       meta->current_retry++;
+                       meta->success = success;
+                   });
+             })
+      .then([meta] { return meta->success; });
+}
+
+static ss::future<bool> replicate_random_batches(
+  raft_group& gr,
+  int count,
+  raft::consistency_level c_lvl = raft::consistency_level::quorum_ack,
+  model::timeout_clock::time_point tout = timeout(1s)) {
+    return retry_with_leader(
+      gr, 5, tout, [count, c_lvl](raft_node& leader_node) {
+          auto rdr = random_batches_reader(count);
+          raft::replicate_options opts(c_lvl);
+
+          return leader_node.consensus->replicate(std::move(rdr), opts)
+            .then([](result<raft::replicate_result> res) {
+                if (!res) {
+                    return false;
+                }
+                return true;
+            });
+      });
+}
+
+/**
+ * Makes compactible batches, having one record per batch
+ */
+model::record_batch_reader
+make_compactible_batches(int keys, size_t batches, model::timestamp ts) {
+    ss::circular_buffer<model::record_batch> ret;
+    for (size_t b = 0; b < batches; b++) {
+        int k = random_generators::get_int(0, keys);
+        storage::record_batch_builder builder(
+          raft::data_batch_type, model::offset(0));
+        iobuf k_buf;
+        iobuf v_buf;
+        ss::sstring k_str = fmt::format("key-{}", k);
+        ss::sstring v_str = fmt::format("key-{}-value-{}", k, b);
+        reflection::serialize(k_buf, k_str);
+        reflection::serialize(v_buf, v_str);
+        builder.add_raw_kv(std::move(k_buf), std::move(v_buf));
+        ret.push_back(std::move(builder).build());
+    }
+    for (auto& b : ret) {
+        b.header().first_timestamp = ts;
+        b.header().max_timestamp = ts;
+    }
+    return model::make_memory_record_batch_reader(std::move(ret));
+}
+
+static ss::future<bool> replicate_compactible_batches(
+  raft_group& gr,
+  model::timestamp ts,
+  model::timeout_clock::time_point tout = timeout(1s)) {
+    return retry_with_leader(gr, 5, tout, [ts](raft_node& leader_node) {
+        auto rdr = make_compactible_batches(5, 30, ts);
+        raft::replicate_options opts(raft::consistency_level::quorum_ack);
+
+        return leader_node.consensus->replicate(std::move(rdr), opts)
+          .then([](result<raft::replicate_result> res) {
+              if (!res) {
+                  return false;
+              }
+              return true;
+          });
+    });
 }
 
 struct raft_test_fixture {
