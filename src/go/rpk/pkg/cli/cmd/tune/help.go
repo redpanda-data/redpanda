@@ -20,6 +20,7 @@ func NewHelpCommand() *cobra.Command {
 		"aio_events":            aioEventsTunerHelp,
 		"transparent_hugepages": transparentHugepagesTunerHelp,
 		"clocksource":           clocksourceTunerHelp,
+		"nomerges":              nomergesTunerHelp,
 	}
 
 	return &cobra.Command{
@@ -194,4 +195,9 @@ efficiently via the Virtual Dynamic Shared Object. Most VMs run on Xen, with
 'xen' as the default clock source, which doesn't support reading the time in
 userspace via the vDSO, requiring making an actual syscall with the overhead it
 entails.
+`
+
+const nomergesTunerHelp = `
+Disables merging adjacent IO requests, which would require checking outstanding
+IO requests to batch them where possible, incurring in some CPU overhead.
 `
