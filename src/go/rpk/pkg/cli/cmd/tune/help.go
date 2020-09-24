@@ -17,6 +17,7 @@ func NewHelpCommand() *cobra.Command {
 		"net":            netTunerHelp,
 		"swappiness":     swappinessTunerHelp,
 		"fstrim":         fstrimTunerHelp,
+		"aio_events":     aioEventsTunerHelp,
 	}
 
 	return &cobra.Command{
@@ -171,4 +172,9 @@ becoming scarce, subsequent writes will trigger a synchronous erasure to be able
 to write the new data.
 
 For more information see 'man fstrim'.
+`
+const aioEventsTunerHelp = `
+Increases the maximum number of outstanding asynchronous IO operations if the
+current value is below a certain threshold. This allows redpanda to make as many
+simultaneous IO requests as possible, increasing throughput.
 `
