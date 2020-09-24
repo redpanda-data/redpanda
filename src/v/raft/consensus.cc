@@ -1339,20 +1339,15 @@ void consensus::maybe_update_leader_commit_idx() {
     });
 }
 
-ss::future<> consensus::maybe_commit_configuration(
-  model::offset previous_commit_index, ss::semaphore_units<> u) {
-    // we already have all configurations commited do nothing
-    auto latest_offset = _configuration_manager.get_latest_offset();
-
-    if (latest_offset <= previous_commit_index) {
-        return ss::now();
-    }
-    // no configurations were committed
-    if (latest_offset > _commit_index) {
-        return ss::now();
-    }
+ss::future<> consensus::maybe_commit_configuration(ss::semaphore_units<> u) {
     // we are not a leader, do nothing
     if (_vstate != vote_state::leader) {
+        return ss::now();
+    }
+
+    auto latest_offset = _configuration_manager.get_latest_offset();
+    // no configurations were committed
+    if (latest_offset > _commit_index) {
         return ss::now();
     }
 
@@ -1364,20 +1359,24 @@ ss::future<> consensus::maybe_commit_configuration(
           _ctxlog.trace,
           "leaving joint consensus, new simple configuration {}",
           latest_cfg);
+        auto contains_current = latest_cfg.contains_broker(_self);
         return replicate_configuration(std::move(u), std::move(latest_cfg))
-          .then([this](std::error_code ec) {
+          .then([this, contains_current](std::error_code ec) {
               if (ec) {
                   vlog(
                     _ctxlog.error,
                     "unable to replicate simple configuration  - {}",
                     ec);
+                  return;
+              }
+              // leader was removed, step down.
+              if (!contains_current) {
+                  vlog(
+                    _ctxlog.trace,
+                    "current node is not longer group member, stepping down");
+                  do_step_down();
               }
           });
-    }
-
-    // leader was removed, step down.
-    if (!latest_cfg.contains_broker(_self)) {
-        do_step_down();
     }
 
     return ss::now();
@@ -1413,7 +1412,7 @@ consensus::do_maybe_update_leader_commit_idx(ss::semaphore_units<> u) {
           _commit_index);
         _commit_index_updated.broadcast();
         _event_manager.notify_commit_index(_commit_index);
-        return maybe_commit_configuration(old_commit_idx, std::move(u));
+        return maybe_commit_configuration(std::move(u));
     }
     return ss::now();
 }
