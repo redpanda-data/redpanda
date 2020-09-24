@@ -11,13 +11,14 @@ import (
 
 func NewHelpCommand() *cobra.Command {
 	tunersHelp := map[string]string{
-		"cpu":            cpuTunerHelp,
-		"disk_irq":       diskIrqTunerHelp,
-		"disk_scheduler": diskSchedulerTunerHelp,
-		"net":            netTunerHelp,
-		"swappiness":     swappinessTunerHelp,
-		"fstrim":         fstrimTunerHelp,
-		"aio_events":     aioEventsTunerHelp,
+		"cpu":                   cpuTunerHelp,
+		"disk_irq":              diskIrqTunerHelp,
+		"disk_scheduler":        diskSchedulerTunerHelp,
+		"net":                   netTunerHelp,
+		"swappiness":            swappinessTunerHelp,
+		"fstrim":                fstrimTunerHelp,
+		"aio_events":            aioEventsTunerHelp,
+		"transparent_hugepages": transparentHugepagesTunerHelp,
 	}
 
 	return &cobra.Command{
@@ -177,4 +178,11 @@ const aioEventsTunerHelp = `
 Increases the maximum number of outstanding asynchronous IO operations if the
 current value is below a certain threshold. This allows redpanda to make as many
 simultaneous IO requests as possible, increasing throughput.
+`
+
+const transparentHugepagesTunerHelp = `
+Enables Transparent Hugepages. This allows the kernel to index larger pages
+(2MB, as opposed to the standard 4KB) in the CPU's TLB (if it supports it, which
+is the case for most current CPUs). This results in fewer cache misses, which
+means less time is spent searching and loading pages.
 `
