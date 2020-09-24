@@ -16,6 +16,7 @@ func NewHelpCommand() *cobra.Command {
 		"disk_scheduler": diskSchedulerTunerHelp,
 		"net":            netTunerHelp,
 		"swappiness":     swappinessTunerHelp,
+		"fstrim":         fstrimTunerHelp,
 	}
 
 	return &cobra.Command{
@@ -154,4 +155,20 @@ If there isn't any mode given script will use a default mode:
 const swappinessTunerHelp = `
 Tunes the kernel to keep process data in-memory for as long as possible, instead
 of swapping it out to disk.
+`
+
+const fstrimTunerHelp = `
+Will start the default 'fstrim' systemd service, which runs in the background on
+a weekly basis and "trims" or "wipes" blocks which are not in use by the
+filesystem. If the current OS doesn't have an 'fstrim' service by default, the
+tuner will install an equivalent one and start it. If systemd isn't available at
+all, it will do nothing.
+
+This is desirable for SSDs - the recommended storage drive for Redpanda - because
+they require wiping the space where new data will be written. Over time this can
+significantly degrade the drive's performance because once free space starts
+becoming scarce, subsequent writes will trigger a synchronous erasure to be able
+to write the new data.
+
+For more information see 'man fstrim'.
 `
