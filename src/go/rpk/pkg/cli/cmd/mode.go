@@ -30,7 +30,7 @@ func NewModeCommand(fs afero.Fs) *cobra.Command {
 	command.Flags().StringVar(
 		&configFile,
 		"config",
-		config.DefaultConfig().ConfigFile,
+		"",
 		"Redpanda config file, if not set the file will be searched for"+
 			" in the default locations",
 	)
@@ -38,7 +38,7 @@ func NewModeCommand(fs afero.Fs) *cobra.Command {
 }
 
 func executeMode(fs afero.Fs, configFile string, mode string) error {
-	conf, err := config.ReadOrGenerate(fs, configFile)
+	conf, err := config.FindOrGenerate(fs, configFile)
 	if err != nil {
 		return err
 	}
@@ -47,6 +47,6 @@ func executeMode(fs afero.Fs, configFile string, mode string) error {
 	if err != nil {
 		return err
 	}
-	log.Infof("Writing '%s' mode defaults to '%s'", mode, configFile)
-	return config.WriteConfig(fs, conf, configFile)
+	log.Infof("Writing '%s' mode defaults to '%s'", mode, conf.ConfigFile)
+	return config.WriteConfig(fs, conf, conf.ConfigFile)
 }
