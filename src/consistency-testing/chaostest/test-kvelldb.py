@@ -76,16 +76,18 @@ async def run(config, n, overrides):
     faults = {fault: known_faults[fault] for fault in config["faults"]}
 
     cluster = KvelldbCluster(config)
-    for _ in range(0, n):
-        chaos_stdout.info("starting a cluster")
-        cluster.terminate_wipe_restart()
-        cluster_warmup = config["cluster_warmup"]
-        await asyncio.sleep(cluster_warmup)
-        chaos_stdout.info("cluster started")
-        chaos_stdout.info("")
-
-        await inject_recover_scenarios_aio(config, cluster, faults,
-                                           lambda: workload_factory(config))
+    try:
+        for _ in range(0, n):
+            if not config["reset_before_test"]:
+                await cluster.restart()
+                if not await cluster.is_ok():
+                    chaos_event_log.info(
+                        m(f"cluster isn't healthy").with_time())
+                    raise Exception(f"cluster isn't healthy")
+            await inject_recover_scenarios_aio(
+                config, cluster, faults, lambda: workload_factory(config))
+    except ViolationInducedExit:
+        pass
 
 
 parser = argparse.ArgumentParser(description='chaos test kvelldb')
