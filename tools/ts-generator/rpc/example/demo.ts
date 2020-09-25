@@ -6,13 +6,23 @@ import {
 } from "./generatedType";
 import * as assert from "assert";
 
+const request: MetadataInfo = {
+  inputs: ["test 1", "test 2", "test 3"],
+  name: "another cool test ".repeat(1e3),
+  isCool: true,
+  data: Buffer.from("RedPanda is cool".repeat(1e3)),
+  age: 3,
+  id: BigInt(123443212384571234),
+};
+
 class ServerImplementation extends RegistrationServer {
   disable_topics(input: MetadataInfo): Promise<DisableTopicsReply> {
-    return Promise.resolve({ inputs: [0] });
+    assert.deepStrictEqual(input, request);
+    return Promise.resolve({ inputs: input.inputs.map(() => 0) });
   }
 
   enable_topics(input: MetadataInfo): Promise<EnableTopicsReply> {
-    return Promise.resolve({ inputs: [1] });
+    return Promise.resolve({ inputs: input.inputs.map(() => 1) });
   }
 }
 
@@ -25,10 +35,16 @@ server.listen(4301);
 const client = new RegistrationClient(4301);
 
 client
-  .enable_topics({ inputs: ["topic1"] })
+  .enable_topics(request)
   .then((response) => {
-    assert.deepStrictEqual(response.inputs, [1]);
+    assert.deepStrictEqual(
+      response.inputs,
+      request.inputs.map(() => 1)
+    );
   })
   .then(() => server.closeConnection())
   .then(() => console.log("close connection"))
-  .catch((e) => console.error("error close connection ", e));
+  .catch((e) => {
+    server.closeConnection();
+    console.error("close connection with error: ", e);
+  });

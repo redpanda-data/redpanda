@@ -4,8 +4,9 @@ import {
   createServer,
   Server as NetServer,
 } from "net";
-import { hash64 } from "xxhash";
+import { XXHash64 } from "xxhash";
 import { calculate } from "fast-crc32c";
+import { IOBuf } from "../../../../src/js/modules/utilities/IOBuf";
 
 import {
   MetadataInfo,
@@ -28,11 +29,20 @@ function validateRpcHeader(
 }
 
 function generateRpcHeader(
-  buffer: Buffer,
+  buffer: IOBuf,
+  reserve: IOBuf,
   size: number,
   meta: number,
   correlationId: number
 ) {
+  const hasher = new XXHash64(0);
+  buffer.forEach((fragment) => {
+    if (fragment.getSize() === 512) {
+      hasher.update(fragment.buffer.slice(26, fragment.used));
+    } else {
+      hasher.update(fragment.buffer.slice(0, fragment.used));
+    }
+  });
   const rpc: RpcHeader = {
     version: 0,
     headerChecksum: 0,
@@ -40,12 +50,12 @@ function generateRpcHeader(
     payloadSize: size,
     meta,
     correlationId,
-    payloadChecksum: BigInt(
-      hash64(buffer.slice(26, 26 + size), 0).readBigUInt64LE()
-    ),
+    payloadChecksum: hasher.digest().readBigUInt64BE(),
   };
-  RpcHeader.toBytes(rpc, buffer, 0);
-  buffer.writeUInt32LE(createCrc32(buffer, 5, 26), 1);
+  const auxHeader = Buffer.alloc(26);
+  RpcHeader.toBytes(rpc, IOBuf.createFromBuffers([auxHeader]));
+  rpc.headerChecksum = createCrc32(auxHeader.slice(0, 26), 5, 26);
+  RpcHeader.toBytes(rpc, reserve);
 }
 
 export class RegistrationServer {
@@ -76,10 +86,17 @@ export class RegistrationServer {
                 socket.read(rpcHeader.payloadSize)
               );
               this.enable_topics(value).then((output: EnableTopicsReply) => {
-                const buffer = Buffer.alloc(100);
-                const size = EnableTopicsReply.toBytes(output, buffer, 26) - 26;
-                generateRpcHeader(buffer, size, 200, rpcHeader.correlationId);
-                socket.write(buffer.slice(0, 26 + size));
+                const buffer = new IOBuf();
+                const rpcHeaderReserve = buffer.getReserve(26);
+                const size = EnableTopicsReply.toBytes(output, buffer);
+                generateRpcHeader(
+                  buffer,
+                  rpcHeaderReserve,
+                  size,
+                  200,
+                  rpcHeader.correlationId
+                );
+                buffer.forEach((fragment) => socket.write(fragment.buffer));
               });
               break;
             }
@@ -88,18 +105,31 @@ export class RegistrationServer {
                 socket.read(rpcHeader.payloadSize)
               );
               this.disable_topics(value).then((output: DisableTopicsReply) => {
-                const buffer = Buffer.alloc(100);
-                const size =
-                  DisableTopicsReply.toBytes(output, buffer, 26) - 26;
-                generateRpcHeader(buffer, size, 200, rpcHeader.correlationId);
-                socket.write(buffer.slice(0, 26 + size));
+                const buffer = new IOBuf();
+                const rpcHeaderReserve = buffer.getReserve(26);
+                const size = DisableTopicsReply.toBytes(output, buffer);
+                generateRpcHeader(
+                  buffer,
+                  rpcHeaderReserve,
+                  size,
+                  200,
+                  rpcHeader.correlationId
+                );
+                buffer.forEach((fragment) => socket.write(fragment.buffer));
               });
               break;
             }
             default: {
-              const buffer = Buffer.alloc(30);
-              generateRpcHeader(buffer, 0, 404, rpcHeader.correlationId);
-              socket.write(buffer);
+              const buffer = new IOBuf();
+              const rpcHeaderReserve = buffer.getReserve(26);
+              generateRpcHeader(
+                buffer,
+                rpcHeaderReserve,
+                0,
+                404,
+                rpcHeader.correlationId
+              );
+              buffer.forEach((fragment) => socket.write(fragment.buffer));
             }
           }
         }
@@ -146,32 +176,41 @@ export class RegistrationServer {
 export class RegistrationClient {
   constructor(port: number) {
     this.client = createConnection({ port }, () => {
-      console.log("connect with Redpanda :)");
+      console.log("Established connection with redpanda");
       this.client.on("data", (data) => {
         const [rpc] = RpcHeader.fromBytes(data, 0);
-        this.requestProcess.get(rpc.correlationId)(data);
+        this.responseHandlers.get(rpc.correlationId)(data);
       });
     });
   }
 
-  send(buffer: Buffer, size: number, meta: number): number {
+  send(
+    buffer: IOBuf,
+    headerReserve: IOBuf,
+    size: number,
+    meta: number
+  ): number {
     const correlationId = ++this.correlationId;
-    generateRpcHeader(buffer, size, meta, correlationId);
-    this.client.write(buffer.slice(0, 26 + size));
+    generateRpcHeader(buffer, headerReserve, size, meta, correlationId);
+    buffer.forEach((fragment) => this.client.write(fragment.buffer));
     return this.correlationId;
   }
 
   enable_topics(input: MetadataInfo): Promise<EnableTopicsReply> {
     return new Promise((resolve, reject) => {
       try {
-        const buffer = Buffer.alloc(100);
-        const size = MetadataInfo.toBytes(input, buffer, 26);
-        const correlationId = this.send(buffer, size, 2473210401);
-        this.requestProcess.set(correlationId, (data: Buffer) => {
+        const buffer = new IOBuf();
+        const rpcHeaderReserve = buffer.getReserve(26);
+        const size = MetadataInfo.toBytes(input, buffer);
+        const correlationId = this.send(
+          buffer,
+          rpcHeaderReserve,
+          size,
+          2473210401
+        );
+        this.responseHandlers.set(correlationId, (data: Buffer) => {
           try {
-            const [rpcHeader, crc32Validation, crc32] = validateRpcHeader(
-              buffer
-            );
+            const [rpcHeader, crc32Validation, crc32] = validateRpcHeader(data);
             if (!crc32Validation) {
               throw (
                 `Crc32 inconsistent, expect: ${rpcHeader.headerChecksum}` +
@@ -193,14 +232,18 @@ export class RegistrationClient {
   disable_topics(input: MetadataInfo): Promise<DisableTopicsReply> {
     return new Promise((resolve, reject) => {
       try {
-        const buffer = Buffer.alloc(100);
-        const size = MetadataInfo.toBytes(input, buffer, 26);
-        const correlationId = this.send(buffer, size, 1680827556);
-        this.requestProcess.set(correlationId, (data: Buffer) => {
+        const buffer = new IOBuf();
+        const rpcHeaderReserve = buffer.getReserve(26);
+        const size = MetadataInfo.toBytes(input, buffer);
+        const correlationId = this.send(
+          buffer,
+          rpcHeaderReserve,
+          size,
+          1680827556
+        );
+        this.responseHandlers.set(correlationId, (data: Buffer) => {
           try {
-            const [rpcHeader, crc32Validation, crc32] = validateRpcHeader(
-              buffer
-            );
+            const [rpcHeader, crc32Validation, crc32] = validateRpcHeader(data);
             if (!crc32Validation) {
               throw (
                 `Crc32 inconsistent, expect: ${rpcHeader.headerChecksum}` +
@@ -219,7 +262,14 @@ export class RegistrationClient {
     });
   }
 
-  requestProcess = new Map<number, (buffer) => void>();
+  close() {
+    this.client.destroy();
+  }
+
+  // Map for indexing the server response handlers, where the key is the
+  // correlationId, and the value is a function that takes a buffer response,
+  // and transform it into the expected output type
+  responseHandlers = new Map<number, (buffer) => void>();
   client: Socket;
   correlationId = 0;
 }

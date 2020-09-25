@@ -19,8 +19,9 @@ import {
   createServer,
   Server as NetServer
 } from "net";
-import { hash64 } from "xxhash";
+import { XXHash64 } from "xxhash";
 import { calculate } from "fast-crc32c";
+import { IOBuf } from "../../utilities/IOBuf";
 
 import {
 {%- for import in js_imports%}
@@ -42,10 +43,19 @@ function validateRpcHeader(
 }
 
 function generateRpcHeader(
-  buffer: Buffer, 
+  buffer: IOBuf,
+  reserve: IOBuf,
   size: number, 
   meta: number, 
   correlationId: number){
+    const hasher = new XXHash64(0)
+    buffer.forEach((fragment) => {
+      if(fragment.getSize() === 512) {
+        hasher.update(fragment.buffer.slice(26, fragment.used))
+      } else {
+        hasher.update(fragment.buffer.slice(0, fragment.used))
+      }
+    })
     const rpc: RpcHeader = {
       version: 0,
       headerChecksum: 0,
@@ -53,11 +63,12 @@ function generateRpcHeader(
       payloadSize: size,
       meta,
       correlationId,
-      payloadChecksum: BigInt(hash64(buffer.slice(26, 26 + size), 0)
-        .readBigUInt64LE())
+      payloadChecksum: hasher.digest().readBigUInt64BE()
     };
-    RpcHeader.toBytes(rpc, buffer, 0);
-    buffer.writeUInt32LE(createCrc32(buffer, 5, 26), 1);
+    const auxHeader = Buffer.alloc(26)
+    RpcHeader.toBytes(rpc, IOBuf.createFromBuffers([auxHeader]));
+    rpc.headerChecksum = createCrc32(auxHeader.slice(0, 26), 5, 26)
+    RpcHeader.toBytes(rpc, reserve);
 }
 
 """
@@ -90,23 +101,33 @@ export class {{service_name.title()}}Server {
                 .fromBytes(socket.read(rpcHeader.payloadSize))
               this.{{method.name}}(value)
                 .then((output: {{method.output_ts}}) => {
-                    const buffer = Buffer.alloc(100)
+                    const buffer = new IOBuf();
+                    const rpcHeaderReserve = buffer.getReserve(26)
                     const size = {{method.output_ts}}
-                      .toBytes(output, buffer, 26) - 26
-                    generateRpcHeader(buffer,
+                      .toBytes(output, buffer)
+                    generateRpcHeader(
+                      buffer,
+                      rpcHeaderReserve,
                       size,
                       200,
                       rpcHeader.correlationId
                     )
-                    socket.write(buffer.slice(0, 26 + size))
+                    buffer.forEach((fragment => socket.write(fragment.buffer)))
                 })
               break;
             }
             {%- endfor %}
             default: {
-              const buffer = Buffer.alloc(30)
-              generateRpcHeader(buffer, 0, 404, rpcHeader.correlationId)
-              socket.write(buffer)
+              const buffer = new IOBuf();
+              const rpcHeaderReserve = buffer.getReserve(26);
+              generateRpcHeader(
+                buffer,
+                rpcHeaderReserve,
+                0,
+                404,
+                rpcHeader.correlationId
+              );
+              buffer.forEach((fragment => socket.write(fragment.buffer)));
             }
           }
         }
@@ -161,23 +182,29 @@ export class {{service_name.title()}}Client {
     })
   }
     
-  send(buffer: Buffer, size: number, meta: number): number {
+  send(buffer: IOBuf, headerReserve: IOBuf, size: number, meta: number): number{
     const correlationId = ++this.correlationId;
-    generateRpcHeader(buffer, size, meta, correlationId)
-    this.client.write(buffer.slice(0, 26 + size));
+    generateRpcHeader(buffer, headerReserve, size, meta, correlationId);
+    buffer.forEach((fragment => this.client.write(fragment.buffer)));
     return this.correlationId;
   }
   {% for method in methods %}
   {{method.name}}(input: {{method.input_ts}}): Promise<{{method.output_ts}}> {
     return new Promise((resolve, reject) => {
       try{
-        const buffer = Buffer.alloc(100);
-        const size = {{method.input_ts}}.toBytes(input, buffer, 26)
-        const correlationId = this.send(buffer, size, {{method.id}});
+        const buffer = new IOBuf();
+        const rpcHeaderReserve = buffer.getReserve(26);
+        const size = {{method.input_ts}}.toBytes(input, buffer)
+        const correlationId = this.send(
+          buffer, 
+          rpcHeaderReserve, 
+          size, 
+          {{method.id}}
+        );
         this.responseHandlers.set(correlationId, (data: Buffer) => {
           try {
             const [rpcHeader, crc32Validation, crc32] =
-              validateRpcHeader(buffer)
+              validateRpcHeader(data)
             if(!crc32Validation){
               throw(`Crc32 inconsistent, expect: ${rpcHeader.headerChecksum}`+
                 `generated: ${crc32}`
