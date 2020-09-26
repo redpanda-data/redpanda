@@ -201,7 +201,7 @@ func TestBootstrap(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			configPath := config.DefaultConfig().ConfigFile
+			configPath := "./redpanda.yaml"
 			fs := afero.NewMemMapFs()
 			err := fs.MkdirAll(
 				filepath.Dir(configPath),
@@ -209,7 +209,7 @@ func TestBootstrap(t *testing.T) {
 			)
 			require.NoError(t, err)
 			c := cmd.NewConfigCommand(fs)
-			args := []string{"bootstrap"}
+			args := []string{"bootstrap", "--config", configPath}
 			if len(tt.ips) != 0 {
 				args = append(
 					args,

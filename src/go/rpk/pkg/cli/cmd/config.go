@@ -33,8 +33,15 @@ func set(fs afero.Fs) *cobra.Command {
 		Short: "Set configuration values, such as the node IDs or the list of seed servers",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(_ *cobra.Command, args []string) error {
+			var err error
 			key := args[0]
 			value := args[1]
+			if configPath == "" {
+				configPath, err = config.FindConfigFile(fs)
+				if err != nil {
+					return err
+				}
+			}
 			return config.Set(fs, key, value, format, configPath)
 		},
 	}
@@ -48,7 +55,7 @@ func set(fs afero.Fs) *cobra.Command {
 	c.Flags().StringVar(
 		&configPath,
 		configFileFlag,
-		config.DefaultConfig().ConfigFile,
+		"",
 		"Redpanda config file, if not set the file will be searched"+
 			" for in the default location",
 	)
@@ -79,10 +86,9 @@ func bootstrap(fs afero.Fs) *cobra.Command {
 		Args: cobra.OnlyValidArgs,
 		RunE: func(c *cobra.Command, args []string) error {
 			defaultRpcPort := config.DefaultConfig().Redpanda.RPCServer.Port
-
-			conf, err := config.ReadOrGenerate(fs, configPath)
+			conf, err := config.FindOrGenerate(fs, configPath)
 			if err != nil {
-				return err
+				return errors.New("YAML")
 			}
 			config.CheckAndPrintNotice(conf.LicenseKey)
 			ips, err := parseIPs(ips)
@@ -118,7 +124,7 @@ func bootstrap(fs afero.Fs) *cobra.Command {
 				seeds = append(seeds, seed)
 			}
 			conf.Redpanda.SeedServers = seeds
-			return config.WriteConfig(fs, conf, configPath)
+			return config.WriteConfig(fs, conf, conf.ConfigFile)
 		},
 	}
 	c.Flags().StringSliceVar(
@@ -130,7 +136,7 @@ func bootstrap(fs afero.Fs) *cobra.Command {
 	c.Flags().StringVar(
 		&configPath,
 		configFileFlag,
-		config.DefaultConfig().ConfigFile,
+		"",
 		"Redpanda config file, if not set the file will be searched"+
 			" for in the default location",
 	)
