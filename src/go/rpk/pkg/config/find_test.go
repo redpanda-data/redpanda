@@ -1,4 +1,4 @@
-package redpanda
+package config
 
 import (
 	"os"
@@ -57,7 +57,7 @@ func TestFindConfig(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			fs := afero.NewMemMapFs()
 			tt.before(fs)
-			got, err := FindConfig(fs)
+			got, err := FindConfigFile(fs)
 			if tt.wantErr {
 				require.Error(t, err)
 				return

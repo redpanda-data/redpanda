@@ -79,13 +79,13 @@ func NewTuneCommand(fs afero.Fs) *cobra.Command {
 				return err
 			}
 			tunerParams.CpuMask = cpuMask
-			conf, err := config.ReadOrGenerate(fs, configFile)
+			conf, err := config.FindOrGenerate(fs, configFile)
 			if err != nil {
 				if !interactive {
 					return err
 				}
 				msg := fmt.Sprintf(
-					`Couldn't read or generate the config at %s.
+					`Couldn't read or generate the config at '%s'.
 Would you like to continue with the default configuration?`,
 					configFile,
 				)
@@ -135,7 +135,7 @@ Would you like to continue with the default configuration?`,
 	command.Flags().StringVar(
 		&configFile,
 		"config",
-		config.DefaultConfig().ConfigFile,
+		"",
 		"Redpanda config file, if not set the file will be searched for"+
 			" in the default locations",
 	)

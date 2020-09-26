@@ -31,7 +31,7 @@ func NewCheckCommand(fs afero.Fs) *cobra.Command {
 	command.Flags().StringVar(
 		&configFile,
 		"config",
-		config.DefaultConfig().ConfigFile,
+		"",
 		"Redpanda config file, if not set the file will be searched for"+
 			" in the default locations",
 	)
@@ -58,7 +58,7 @@ func appendToTable(t *tablewriter.Table, r tuners.CheckResult) {
 }
 
 func executeCheck(fs afero.Fs, configFile string, timeout time.Duration) error {
-	conf, err := config.ReadOrGenerate(fs, configFile)
+	conf, err := config.FindOrGenerate(fs, configFile)
 	if err != nil {
 		return err
 	}

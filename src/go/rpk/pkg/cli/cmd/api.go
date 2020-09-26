@@ -33,7 +33,7 @@ func NewApiCommand(fs afero.Fs) *cobra.Command {
 	command.PersistentFlags().StringVar(
 		&configFile,
 		"config",
-		config.DefaultConfig().ConfigFile,
+		"",
 		"Redpanda config file, if not set the file will be searched for"+
 			" in the default locations",
 	)
@@ -53,10 +53,11 @@ func NewApiCommand(fs afero.Fs) *cobra.Command {
 	// closure with references to the required values (the config file
 	// path, the list of brokers passed through --brokers) to deduce the
 	// actual brokers list to be used.
-	brokersClosure := deduceBrokers(fs, &configFile, &brokers)
-	producerClosure := createProducer(fs, brokersClosure, &configFile)
-	clientClosure := createClient(fs, brokersClosure, &configFile)
-	adminClosure := createAdmin(fs, brokersClosure, &configFile)
+	configClosure := findConfigFile(fs, &configFile)
+	brokersClosure := deduceBrokers(fs, configClosure, &brokers)
+	producerClosure := createProducer(fs, brokersClosure, configClosure)
+	clientClosure := createClient(fs, brokersClosure, configClosure)
+	adminClosure := createAdmin(fs, brokersClosure, configClosure)
 	command.AddCommand(
 		api.NewTopicCommand(fs, clientClosure, adminClosure),
 	)
@@ -69,8 +70,16 @@ func NewApiCommand(fs afero.Fs) *cobra.Command {
 	return command
 }
 
+func findConfigFile(
+	fs afero.Fs, configFile *string,
+) func() (*config.Config, error) {
+	return func() (*config.Config, error) {
+		return config.ReadOrFind(fs, *configFile)
+	}
+}
+
 func deduceBrokers(
-	fs afero.Fs, configFile *string, brokers *[]string,
+	fs afero.Fs, configuration func() (*config.Config, error), brokers *[]string,
 ) func() []string {
 	return func() []string {
 		bs := *brokers
@@ -78,12 +87,11 @@ func deduceBrokers(
 			log.Debugf("Using --brokers: %s", strings.Join(bs, ", "))
 			return bs
 		}
-		conf, err := config.ReadConfigFromPath(fs, *configFile)
+		conf, err := configuration()
 		if err != nil {
 			log.Trace(
-				"Couldn't read the config at '%s'."+
+				"Couldn't read the config file." +
 					" Assuming 127.0.0.1:9092",
-				*configFile,
 			)
 			log.Debug(err)
 			return []string{"127.0.0.1:9092"}
@@ -117,10 +125,12 @@ func deduceBrokers(
 }
 
 func createProducer(
-	fs afero.Fs, brokers func() []string, configFile *string,
+	fs afero.Fs,
+	brokers func() []string,
+	configuration func() (*config.Config, error),
 ) func(bool, int32) (sarama.SyncProducer, error) {
 	return func(jvmPartitioner bool, partition int32) (sarama.SyncProducer, error) {
-		conf, err := config.ReadConfigFromPath(fs, *configFile)
+		conf, err := configuration()
 		if err != nil {
 			return nil, err
 		}
@@ -142,10 +152,12 @@ func createProducer(
 }
 
 func createClient(
-	fs afero.Fs, brokers func() []string, configFile *string,
+	fs afero.Fs,
+	brokers func() []string,
+	configuration func() (*config.Config, error),
 ) func() (sarama.Client, error) {
 	return func() (sarama.Client, error) {
-		conf, err := config.ReadConfigFromPath(fs, *configFile)
+		conf, err := configuration()
 		if err != nil {
 			return nil, err
 		}
@@ -155,10 +167,12 @@ func createClient(
 }
 
 func createAdmin(
-	fs afero.Fs, brokers func() []string, configFile *string,
+	fs afero.Fs,
+	brokers func() []string,
+	configuration func() (*config.Config, error),
 ) func() (sarama.ClusterAdmin, error) {
 	return func() (sarama.ClusterAdmin, error) {
-		conf, err := config.ReadConfigFromPath(fs, *configFile)
+		conf, err := configuration()
 		if err != nil {
 			return nil, err
 		}

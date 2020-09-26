@@ -88,7 +88,7 @@ in a cluster. The port must be the one configured for the nodes' admin API
 	command.Flags().StringVar(
 		&configFile,
 		"config",
-		config.DefaultConfig().ConfigFile,
+		"",
 		"The path to the redpanda config file")
 	return command
 }
@@ -113,7 +113,7 @@ func executePrometheusConfig(
 		}
 		return renderConfig(jobName, hosts)
 	}
-	conf, err := config.ReadOrGenerate(fs, configFile)
+	conf, err := config.FindOrGenerate(fs, configFile)
 	if err != nil {
 		return []byte(""), err
 	}
