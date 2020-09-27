@@ -10,7 +10,7 @@ public:
     record_batch_builder(model::record_batch_type, model::offset);
     record_batch_builder(record_batch_builder&&) = default;
     record_batch_builder(const record_batch_builder&) = delete;
-    record_batch_builder& operator=(record_batch_builder&&) = delete;
+    record_batch_builder& operator=(record_batch_builder&&) = default;
     record_batch_builder& operator=(const record_batch_builder&) = delete;
 
     virtual record_batch_builder& add_raw_kv(iobuf&& key, iobuf&& value) {
