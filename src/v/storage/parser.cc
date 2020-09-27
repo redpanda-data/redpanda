@@ -193,7 +193,7 @@ ss::future<result<stop_parser>> continuous_batch_parser::consume_records() {
           iobuf_parser parser(std::move(b.value()));
           for (int i = 0; i < _header.record_count; ++i) {
               auto ret = _consumer->consume_record(
-                internal::parse_one_record_from_buffer(parser));
+                model::parse_one_record_from_buffer(parser));
               if (std::holds_alternative<skip_batch>(ret)) {
                   if (std::get<skip_batch>(ret)) {
                       return result<stop_parser>(stop_parser::no);

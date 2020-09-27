@@ -5,13 +5,6 @@
 
 namespace storage::internal {
 
-std::vector<model::record_header> parse_record_headers(iobuf_parser& parser);
-
-model::record parse_one_record_from_buffer(iobuf_parser& parser);
-
-/// \brief appends the record @r to buffer @a
-void append_record_using_kafka_format(iobuf& a, const model::record& r);
-
 /// \brief batch decompression
 ss::future<model::record_batch> decompress_batch(model::record_batch&&);
 /// \brief batch decompression

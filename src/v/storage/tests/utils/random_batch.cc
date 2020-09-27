@@ -98,7 +98,7 @@ model::record_batch make_random_batch(
     if (header.attrs.compression() != model::compression::none) {
         iobuf body;
         for (auto& r : rs) {
-            internal::append_record_using_kafka_format(body, r);
+            model::append_record_to_buffer(body, r);
         }
         rs.clear();
         records = compression::compressor::compress(
