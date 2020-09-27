@@ -62,17 +62,16 @@ model::record do_parse_one_record_from_buffer(
 }
 
 model::record parse_one_record_from_buffer(iobuf_parser& parser) {
+    /*
+     * require that record attributes be unaffected by endianness. all of the
+     * other record fields are properly handled by virtue of their types being
+     * either blobs or variable length integers.
+     */
+    static_assert(
+      sizeof(model::record_attributes::type) == 1,
+      "model attributes expected to be one byte");
     auto [record_size, rv] = parser.read_varlong();
-    auto attr = reflection::adl<model::record_attributes::type>{}.from(parser);
-    return do_parse_one_record_from_buffer(parser, record_size, attr);
-}
-
-model::record
-parse_one_record_from_buffer_using_kafka_format(iobuf_parser& parser) {
-    auto [record_size, rv] = parser.read_varlong();
-    // NOTE: this is the main difference between our batch format and kafka
-    // at the record level. At the batch level we have many differences
-    auto attr = parser.consume_be_type<model::record_attributes::type>();
+    auto attr = parser.consume_type<model::record_attributes::type>();
     return do_parse_one_record_from_buffer(parser, record_size, attr);
 }
 
@@ -152,8 +151,7 @@ ss::future<model::record_batch> decompress_batch(const model::record_batch& b) {
                    [&recs, &parser, h](int32_t i) {
                        try {
                            recs.emplace_back(
-                             parse_one_record_from_buffer_using_kafka_format(
-                               parser));
+                             parse_one_record_from_buffer(parser));
                        } catch (...) {
                            auto str = fmt_with_ctx(
                              fmt::format,

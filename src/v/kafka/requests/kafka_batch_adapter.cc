@@ -87,8 +87,7 @@ read_records(iobuf_parser& parser, size_t num_records) {
     rs.reserve(num_records);
     for (unsigned i = 0; i < num_records; ++i) {
         rs.emplace_back(
-          storage::internal::parse_one_record_from_buffer_using_kafka_format(
-            parser));
+          storage::internal::parse_one_record_from_buffer(parser));
     }
     return rs;
 }
