@@ -1,6 +1,7 @@
 from gobekli.kvapi import KVNode
 from gobekli.workloads.symmetrical_mrsw import MRSWWorkload
-from gobekli.chaos.main import (init_output, inject_recover_scenarios_aio)
+from gobekli.chaos.main import (init_output, inject_recover_scenarios_aio,
+                                ViolationInducedExit)
 from gobekli.logging import m
 from chaostest.faults import *
 from chaostest.kvell_cluster import KvelldbCluster
@@ -13,15 +14,15 @@ chaos_event_log = logging.getLogger("chaos-event")
 chaos_stdout = logging.getLogger("chaos-stdout")
 
 
-async def select_leader(cluster):
-    node = await cluster.get_leader()
+def select_leader(cluster):
+    node = cluster.get_leader()
     if node == None:
         chaos_event_log.info(m("can't detect a leader").with_time())
     return node
 
 
-async def select_follower(cluster):
-    leader = await cluster.get_leader()
+def select_follower(cluster):
+    leader = cluster.get_leader()
     for node_id in cluster.nodes.keys():
         if node_id != leader.node_id:
             return cluster.nodes[node_id]

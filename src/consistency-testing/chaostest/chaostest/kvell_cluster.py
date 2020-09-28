@@ -5,6 +5,9 @@ from gobekli.kvapi import KVNode, RequestTimedout, RequestCanceled
 from gobekli.logging import m
 import logging
 import asyncio
+import urllib.request
+import json
+import uuid
 
 chaos_event_log = logging.getLogger("chaos-event")
 
@@ -188,23 +191,21 @@ class KvelldbCluster:
                 return True
         return is_ok
 
-    async def get_leader(self):
-        leader_id = None
+    def get_leader(self):
         for endpoint in self.config["endpoints"]:
             host = endpoint["host"]
             port = endpoint["httpport"]
             address = f"{host}:{port}"
-            kv = KVNode(address, address)
+            read_id = str(uuid.uuid1())
             try:
-                await kv.put_aio("test", "value1", "wid1")
-                leader_id = endpoint["id"]
-            except RequestTimedout:
-                pass
-            except RequestCanceled:
-                pass
-            await kv.close_aio()
-            if leader_id != None:
-                return self.nodes[leader_id]
+                with urllib.request.urlopen(
+                        f"http://{address}/read?key=leader&read_id={read_id}"
+                ) as response:
+                    data = json.loads(response.read())
+                    if data["status"] == "ok":
+                        return self.nodes[endpoint["id"]]
+            except:
+                continue
         return None
 
     def _mount(self):
