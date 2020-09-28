@@ -6,6 +6,8 @@ import json
 import time
 import logging
 import logging.handlers
+import threading
+import traceback
 from datetime import datetime
 
 from gobekli.kvapi import KVNode
@@ -29,6 +31,42 @@ class ExperimentResult:
 
 class ViolationInducedExit(Exception):
     pass
+
+
+class ThreadAsyncWaiter:
+    def __init__(self, action):
+        self.active = True
+        self.has_error = False
+        self.error_type = None
+        self.error_value = None
+        self.error_stacktrace = None
+        self.thread = threading.Thread(
+            target=lambda: self.do_execution(action))
+        self.thread.start()
+
+    async def wait(self, period_ms):
+        while self.active:
+            await asyncio.sleep(float(period_ms) / 1000)
+
+        if self.has_error:
+            msg = m("error on fault injection / recovery",
+                    type=self.error_type,
+                    value=self.error_value,
+                    stacktrace=self.error_stacktrace).with_time()
+            chaos_event_log.info(msg)
+            raise Exception(str(msg))
+
+    def do_execution(self, action):
+        try:
+            action()
+            self.active = False
+        except:
+            self.has_error = True
+            e, v = sys.exc_info()[:2]
+            self.error_type = str(e)
+            self.error_value = str(v)
+            self.error_stacktrace = traceback.format_exc()
+            self.active = False
 
 
 async def inject_recover_scenario_aio(log_dir, config, cluster,
@@ -55,7 +93,9 @@ async def inject_recover_scenario_aio(log_dir, config, cluster,
 
     # inject
     fault = failure_factory()
-    await fault.inject(cluster, workload)
+
+    await ThreadAsyncWaiter(lambda: fault.inject(cluster, workload)).wait(
+        period_ms=500)
 
     end_time = loop.time() + config["exploitation"]
     while workload.is_active:
@@ -64,7 +104,7 @@ async def inject_recover_scenario_aio(log_dir, config, cluster,
         await asyncio.sleep(1)
 
     # recover
-    await fault.recover()
+    await ThreadAsyncWaiter(lambda: fault.recover()).wait(period_ms=500)
 
     end_time = loop.time() + config["cooldown"]
     while workload.is_active:

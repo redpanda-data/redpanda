@@ -16,7 +16,7 @@ chaos_event_log = logging.getLogger("chaos-event")
 chaos_stdout = logging.getLogger("chaos-stdout")
 
 
-async def select_leader(cluster):
+def select_leader(cluster):
     try:
         return cluster.get_leader()
     except:
@@ -24,7 +24,7 @@ async def select_leader(cluster):
         raise
 
 
-async def select_follower(cluster):
+def select_follower(cluster):
     leader = cluster.get_leader()
     for node_id in cluster.nodes.keys():
         if node_id != leader.node_id:

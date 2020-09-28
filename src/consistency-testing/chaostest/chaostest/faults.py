@@ -15,10 +15,10 @@ class StrobeRecoverableFault:
         self.title = f"strobe time ({scope})"
         self.scope = scope
 
-    async def inject(self, cluster, workload):
+    def inject(self, cluster, workload):
         try:
             self.workload = workload
-            self.node = await self.node_selector(cluster)
+            self.node = self.node_selector(cluster)
             if self.node == None:
                 chaos_event_log.info(m("can't select a node").with_time())
                 raise Exception("can't select a node")
@@ -40,7 +40,7 @@ class StrobeRecoverableFault:
                   stacktrace=traceback.format_exc()).with_time())
             raise
 
-    async def recover(self):
+    def recover(self):
         chaos_event_log.info(
             m(f"stopping strobbing on {self.node.node_id}").with_time())
         self.node.strobe_recover()
@@ -58,9 +58,9 @@ class TerminateNodeRecoverableFault:
         self.title = f"terminate service ({scope})"
         self.scope = scope
 
-    async def inject(self, cluster, workload):
+    def inject(self, cluster, workload):
         self.workload = workload
-        self.node = await self.node_selector(cluster)
+        self.node = self.node_selector(cluster)
         if self.node == None:
             chaos_event_log.info(m("can't select a node").with_time())
             raise Exception("can't select a node")
@@ -80,7 +80,7 @@ class TerminateNodeRecoverableFault:
             raise Exception(
                 f"can't terminate a service on {self.node.node_id}")
 
-    async def recover(self):
+    def recover(self):
         chaos_event_log.info(
             m(f"restarting a service on {self.node.node_id}").with_time())
         self.node.start_service()
@@ -114,9 +114,9 @@ class SuspendServiceRecoverableFault:
         self.title = f"pause service ({scope})"
         self.scope = scope
 
-    async def inject(self, cluster, workload):
+    def inject(self, cluster, workload):
         self.workload = workload
-        self.node = await self.node_selector(cluster)
+        self.node = self.node_selector(cluster)
         if self.node == None:
             chaos_event_log.info(m("can't select a node").with_time())
             raise Exception("can't select a node")
@@ -130,7 +130,7 @@ class SuspendServiceRecoverableFault:
         chaos_event_log.info(
             m(f"a service on {self.node.node_id} suspended").with_time())
 
-    async def recover(self):
+    def recover(self):
         chaos_event_log.info(
             m(f"resuming a service on {self.node.node_id}").with_time())
         self.node.continue_service()
@@ -148,9 +148,9 @@ class MakeIOSlowerRecoverableFault:
         self.title = f"introduce 10ms disk delay ({scope})"
         self.scope = scope
 
-    async def inject(self, cluster, workload):
+    def inject(self, cluster, workload):
         self.workload = workload
-        self.node = await self.node_selector(cluster)
+        self.node = self.node_selector(cluster)
         if self.node == None:
             chaos_event_log.info(m("can't select a node").with_time())
             raise Exception("can't select a node")
@@ -164,7 +164,7 @@ class MakeIOSlowerRecoverableFault:
         chaos_event_log.info(
             m(f"10ms disk delay on {self.node.node_id} injected").with_time())
 
-    async def recover(self):
+    def recover(self):
         chaos_event_log.info(
             m(f"removing disk delay on {self.node.node_id}").with_time())
         self.node.io_recover()
@@ -182,9 +182,9 @@ class RuinIORecoverableFault:
         self.title = f"fail every disk operation ({scope})"
         self.scope = scope
 
-    async def inject(self, cluster, workload):
+    def inject(self, cluster, workload):
         self.workload = workload
-        self.node = await self.node_selector(cluster)
+        self.node = self.node_selector(cluster)
         if self.node == None:
             chaos_event_log.info(m("can't select a node").with_time())
             raise Exception("can't select a node")
@@ -200,7 +200,7 @@ class RuinIORecoverableFault:
             m(f"disk error for any op on {self.node.node_id} injected").
             with_time())
 
-    async def recover(self):
+    def recover(self):
         chaos_event_log.info(
             m(f"removing disk fault injection & restarting a service on {self.node.node_id}"
               ).with_time())
@@ -237,12 +237,12 @@ class BaselineRecoverableFault:
         self.title = f"baseline"
         self.name = f"baseline"
 
-    async def inject(self, cluster, workload):
+    def inject(self, cluster, workload):
         self.workload = workload
         self.workload.availability_logger.log_fault("nothing")
         time.sleep(3)
 
-    async def recover(self):
+    def recover(self):
         time.sleep(3)
         self.workload.availability_logger.log_recovery("nothing")
 
@@ -257,9 +257,9 @@ class IsolateNodeRecoverableFault:
         self.title = f"isolate node from all peers ({scope})"
         self.scope = scope
 
-    async def inject(self, cluster, workload):
+    def inject(self, cluster, workload):
         self.workload = workload
-        self.node = await self.node_selector(cluster)
+        self.node = self.node_selector(cluster)
         if self.node == None:
             chaos_event_log.info(m("can't select a node").with_time())
             raise Exception("can't select a node")
@@ -279,7 +279,7 @@ class IsolateNodeRecoverableFault:
         chaos_event_log.info(
             m(f"node {self.node.node_id} isolated from {peers}").with_time())
 
-    async def recover(self):
+    def recover(self):
         peers = ", ".join(self.peers)
         chaos_event_log.info(
             m(f"rejoining node {self.node.node_id} to {peers}").with_time())
