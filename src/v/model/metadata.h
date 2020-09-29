@@ -29,7 +29,11 @@
 
 namespace model {
 using node_id = named_type<int32_t, struct node_id_model_type>;
-
+/**
+ * We use revision_id to identify entities evolution in time. f.e. NTP that was
+ * first created and then removed, raft configuration
+ */
+using revision_id = named_type<int64_t, struct revision_id_model_type>;
 struct broker_properties {
     uint32_t cores;
     uint32_t available_memory;
