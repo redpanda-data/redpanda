@@ -119,7 +119,7 @@ public:
           });
     }
 
-    model::ntp make_data(storage::ntp_config::ntp_id version) {
+    model::ntp make_data(model::revision_id version) {
         auto topic_name = fmt::format("my_topic_{}", 0);
         model::ntp ntp(
           cluster::kafka_namespace,

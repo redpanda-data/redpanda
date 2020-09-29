@@ -71,7 +71,7 @@ struct topic_configuration {
     storage::ntp_config make_ntp_config(
       const ss::sstring&,
       model::partition_id,
-      storage::ntp_config::ntp_id) const;
+      model::revision_id) const;
 
     model::topic_namespace tp_ns;
     // using signed integer because Kafka protocol defines it as signed int

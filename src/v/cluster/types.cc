@@ -22,7 +22,7 @@ topic_configuration::topic_configuration(
 storage::ntp_config topic_configuration::make_ntp_config(
   const ss::sstring& work_dir,
   model::partition_id p_id,
-  storage::ntp_config::ntp_id version) const {
+  model::revision_id rev) const {
     auto has_overrides = cleanup_policy_bitflags || compaction_strategy
                          || segment_size || retention_bytes.has_value()
                          || retention_bytes.is_disabled()
@@ -43,7 +43,7 @@ storage::ntp_config topic_configuration::make_ntp_config(
       model::ntp(tp_ns.ns, tp_ns.tp, p_id),
       work_dir,
       std::move(overrides),
-      version);
+      rev);
 }
 
 model::topic_metadata topic_configuration_assignment::get_metadata() const {

@@ -321,10 +321,10 @@ ss::future<std::error_code> controller_backend::create_partition(
     if (likely(_partition_manager.local().get(ntp).get() == nullptr)) {
         // we use offset as an ntp_id as it is always increasing and it
         // increases while ntp is being created again
-        auto ntp_id = storage::ntp_config::ntp_id(offset());
+        auto rev = model::revision_id(offset());
         f = _partition_manager.local()
               .manage(
-                cfg->make_ntp_config(_data_directory, ntp.tp.partition, ntp_id),
+                cfg->make_ntp_config(_data_directory, ntp.tp.partition, rev),
                 group_id,
                 std::move(members))
               .discard_result();

@@ -1,5 +1,6 @@
 #pragma once
 #include "model/fundamental.h"
+#include "model/metadata.h"
 #include "tristate.h"
 
 #include <seastar/core/sstring.hh>
@@ -9,7 +10,6 @@
 namespace storage {
 class ntp_config {
 public:
-    using ntp_id = named_type<int64_t, struct ntp_id_tag>;
     struct default_overrides {
         // if not set use the log_manager's configuration
         std::optional<model::cleanup_policy_bitflags> cleanup_policy_bitflags;
@@ -35,20 +35,25 @@ public:
       ss::sstring base_dir,
       std::unique_ptr<default_overrides> overrides) noexcept
       : ntp_config(
-        std::move(n), std::move(base_dir), std::move(overrides), ntp_id(0)) {}
+        std::move(n),
+        std::move(base_dir),
+        std::move(overrides),
+        model::revision_id(0)) {}
 
     ntp_config(
       model::ntp n,
       ss::sstring base_dir,
       std::unique_ptr<default_overrides> overrides,
-      ntp_id id) noexcept
+      model::revision_id id) noexcept
       : _ntp(std::move(n))
       , _base_dir(std::move(base_dir))
       , _overrides(std::move(overrides))
-      , _ntp_id(id) {}
+      , _revision_id(id) {}
 
     const model::ntp& ntp() const { return _ntp; }
     model::ntp& ntp() { return _ntp; }
+
+    model::revision_id get_revision() const { return _revision_id; }
 
     const ss::sstring& base_directory() const { return _base_dir; }
     ss::sstring& base_directory() { return _base_dir; }
@@ -79,7 +84,7 @@ public:
     }
 
     ss::sstring work_directory() const {
-        return fmt::format("{}/{}_{}", _base_dir, _ntp.path(), _ntp_id);
+        return fmt::format("{}/{}_{}", _base_dir, _ntp.path(), _revision_id);
     }
 
     std::filesystem::path topic_directory() const {
@@ -99,7 +104,7 @@ private:
      * A number indicating an id of the NTP in case it was created more
      * than once (i.e. created, deleted and then created again)
      */
-    ntp_id _ntp_id{0};
+    model::revision_id _revision_id{0};
 
     // in storage/types.cc
     friend std::ostream& operator<<(std::ostream&, const ntp_config&);
