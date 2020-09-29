@@ -235,7 +235,9 @@ void segment_appender::dispatch_background_head_write() {
     // background write
     h.flush();
     (void)ss::with_semaphore(
-      _concurrent_flushes, 1, [&h, this, start_offset, expected, src] {
+      _concurrent_flushes,
+      1,
+      [&h, this, start_offset, expected, src] {
           return _out.dma_write(start_offset, src, expected, _opts.priority)
             .then([this, &h, expected](size_t got) {
                 if (h.is_full()) {
@@ -248,6 +250,9 @@ void segment_appender::dispatch_background_head_write() {
                 _free_chunks.push_back(h);
                 return ss::make_ready_future<>();
             });
+      })
+      .handle_exception([this](std::exception_ptr e) {
+          vassert(false, "Could not dma_write: {} - {}", e, *this);
       });
 }
 
@@ -259,17 +264,22 @@ ss::future<> segment_appender::flush() {
         dispatch_background_head_write();
     }
     return ss::with_semaphore(
-      _concurrent_flushes, _opts.number_of_chunks, [this]() mutable {
-          return _out.flush().finally([this]() mutable {
-              if (auto it = std::find_if(
-                    _free_chunks.begin(),
-                    _free_chunks.end(),
-                    [](const chunk& c) { return !c.is_empty(); });
-                  it != _free_chunks.end()) {
-                  it->hook.unlink();
-                  _free_chunks.push_front(*it);
-              }
-          });
+             _concurrent_flushes,
+             _opts.number_of_chunks,
+             [this]() mutable {
+                 return _out.flush().finally([this]() mutable {
+                     if (auto it = std::find_if(
+                           _free_chunks.begin(),
+                           _free_chunks.end(),
+                           [](const chunk& c) { return !c.is_empty(); });
+                         it != _free_chunks.end()) {
+                         it->hook.unlink();
+                         _free_chunks.push_front(*it);
+                     }
+                 });
+             })
+      .handle_exception([this](std::exception_ptr e) {
+          vassert(false, "Could not flush: {} - {}", e, *this);
       });
 }
 
