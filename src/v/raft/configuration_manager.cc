@@ -296,6 +296,16 @@ ss::future<offset_configuration> configuration_manager::wait_for_change(
             offset_configuration(get_latest_offset(), get_latest()));
       });
 }
+
+ss::future<> configuration_manager::remove_persistent_state() {
+    return _storage.kvs()
+      .remove(storage::kvstore::key_space::consensus, configurations_map_key())
+      .then([this] {
+          return _storage.kvs().remove(
+            storage::kvstore::key_space::consensus, highest_known_offset_key());
+      });
+}
+
 std::ostream& operator<<(std::ostream& o, const configuration_manager& m) {
     o << "{configurations: ";
     for (const auto& p : m._configurations) {

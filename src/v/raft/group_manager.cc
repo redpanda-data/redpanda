@@ -57,8 +57,9 @@ ss::future<ss::lw_shared_ptr<raft::consensus>> group_manager::create_group(
     });
 }
 
-ss::future<> group_manager::stop_group(ss::lw_shared_ptr<raft::consensus> c) {
+ss::future<> group_manager::remove(ss::lw_shared_ptr<raft::consensus> c) {
     return c->stop()
+      .then([c] { return c->remove_persistent_state(); })
       .then(
         [this, id = c->group()] { return _heartbeats.deregister_group(id); })
       .finally([this, c] {

@@ -1709,4 +1709,15 @@ consensus::transfer_leadership(std::optional<model::node_id> target) {
     return f.finally([this] { _transferring_leadership = false; });
 }
 
+ss::future<> consensus::remove_persistent_state() {
+    return _storage.kvs()
+      .remove(storage::kvstore::key_space::consensus, voted_for_key())
+      .then([this] {
+          return _storage.kvs().remove(
+            storage::kvstore::key_space::consensus, last_applied_key());
+      })
+      .then(
+        [this] { return _configuration_manager.remove_persistent_state(); });
+}
+
 } // namespace raft

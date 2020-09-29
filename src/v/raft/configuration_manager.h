@@ -113,6 +113,11 @@ public:
     ss::future<offset_configuration>
     wait_for_change(model::offset, ss::abort_source&);
 
+    /**
+     * Removes state that configuration manager stores in key value store
+     */
+    ss::future<> remove_persistent_state();
+
     friend std::ostream&
     operator<<(std::ostream&, const configuration_manager&);
 

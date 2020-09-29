@@ -158,6 +158,8 @@ public:
     ss::future<std::error_code>
       transfer_leadership(std::optional<model::node_id>);
 
+    ss::future<> remove_persistent_state();
+
 private:
     friend replicate_entries_stm;
     friend vote_stm;
