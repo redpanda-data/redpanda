@@ -54,7 +54,7 @@ FIXTURE_TEST(pandaproxy_fetch, ppc_test_fixture) {
     }
 
     info("Adding known topic");
-    auto ntp = make_data(storage::ntp_config::ntp_id(2));
+    auto ntp = make_data(model::revision_id(2));
     auto shard = app.shard_table.local().shard_for(ntp);
     {
         info("Waiting for topic leader");

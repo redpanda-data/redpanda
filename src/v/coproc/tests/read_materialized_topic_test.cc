@@ -102,7 +102,7 @@ FIXTURE_TEST(
         using namespace storage;
         storage::disk_log_builder builder(log_config);
         storage::ntp_config ntp_cfg(
-          ntp, log_config.base_dir, nullptr, storage::ntp_config::ntp_id(2));
+          ntp, log_config.base_dir, nullptr, model::revision_id(2));
         builder | start(std::move(ntp_cfg)) | add_segment(model::offset(0))
           | add_random_batch(
             model::offset(0),
