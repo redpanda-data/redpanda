@@ -7,6 +7,10 @@ cmake_policy(SET CMP0065 OLD)
 set(CMAKE_VERBOSE_MAKEFILE ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS 1)
 
+# CCACHE_DIR is initially provided by vtools
+set(CCACHE_DIR $ENV{CCACHE_DIR} CACHE PATH "ccache directory")
+set(ENV{CCACHE_DIR} ${CCACHE_DIR})
+
 #ninja  1161.66s user 64.94s system 658% cpu 3:06.18 total
 #ninja  825.41s user 49.15s system 586% cpu 2:29.21 total
 set(CMAKE_CXX_FLAGS_DEBUG "-O0 -gsplit-dwarf")
@@ -47,17 +51,18 @@ set(V_DEPS_INSTALL_DIR ${CMAKE_CURRENT_BINARY_DIR}/v_deps_install
 option (RP_ENABLE_DPDK "Enable DPDK support" OFF)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(BASE_LD_FLAGS_LIST "-Wl,--build-id=sha1")
 if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "GNU")
-  list(APPEND BASE_LD_FLAGS_LIST -fuse-ld=gold)
+  list(APPEND BASE_C_FLAGS_LIST -fuse-ld=gold)
+  list(APPEND BASE_CXX_FLAGS_LIST -fuse-ld=gold)
 endif()
 
 if (V_MANAGE_DEPS)
   list(APPEND BASE_LD_FLAGS_LIST
     -L${V_DEPS_INSTALL_DIR}/lib
     -L${V_DEPS_INSTALL_DIR}/lib64
-    -I${V_DEPS_INSTALL_DIR}/include
   )
   set(PKG_CONFIG_PATH_LIST
     ${V_DEPS_INSTALL_DIR}/lib64/pkgconfig
@@ -66,24 +71,20 @@ if (V_MANAGE_DEPS)
   )
 endif()
 
-set(BASE_CXX_FLAGS_LIST -fPIC ${RP_MARCH})
-set(BASE_C_FLAGS_LIST -fPIC ${RP_MARCH})
+list(APPEND BASE_CXX_FLAGS_LIST -fPIC ${RP_MARCH})
+list(APPEND BASE_C_FLAGS_LIST -fPIC ${RP_MARCH})
 
 # compiler specific options
 if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
-    list(APPEND BASE_LD_FLAGS_LIST
-        -stdlib=libc++
-        -fuse-ld=lld)
-    if (V_MANAGE_DEPS)
-      set(LLVM_LIBCPP_INCLUDE_FLAG "-I${V_DEPS_INSTALL_DIR}/include/c++/v1")
-    endif()
+    list(APPEND BASE_C_FLAGS_LIST -fuse-ld=lld)
+    list(APPEND BASE_CXX_FLAGS_LIST -fuse-ld=lld)
+    list(APPEND BASE_LD_FLAGS_LIST -stdlib=libc++)
     list(APPEND BASE_CXX_FLAGS_LIST
         -Wno-unused-lambda-capture
         -Wno-unused-command-line-argument
         -D_LIBCPP_ENABLE_CXX17_REMOVED_AUTO_PTR
         -DSEASTAR_USE_STD_OPTIONAL_VARIANT_STRINGVIEW
-        ${LLVM_LIBCPP_INCLUDE_FLAG}
-        --stdlib=libc++)
+        -stdlib=libc++)
 elseif ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
     if ("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
         # Add gdb-index option only for GCC and Debug build
@@ -131,6 +132,38 @@ if(V_DEPS_ONLY AND NOT V_MANAGE_DEPS)
     "To build managed dependencies V_MANAGE_DEPS must be enabled")
 endif()
 
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${BASE_LD_FLAGS} -pie")
+set(CMAKE_SHARED_LINKER_FLAGS "${BASE_LD_FLAGS}")
+set(CMAKE_MODULE_LINKER_FLAGS "${BASE_LD_FLAGS}")
+
+if ("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=undefined -fsanitize=address")
+  set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fsanitize=undefined -fsanitize=address")
+  set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} -fsanitize=undefined -fsanitize=address")
+endif()
+
+# for clang, link with c++experimental for clang (needed by seastar)
+# Look for libc++ only if we are using Clang
+if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
+  get_filename_component(CLANG_DIR ${CMAKE_CXX_COMPILER} DIRECTORY CACHE)
+  set(CLANG_LIBS
+    libc++.a
+    libc++.so
+    libc++.so.1
+    libc++.so.1.0
+    libc++abi.a
+    libc++abi.so
+    libc++abi.so.1
+    libc++abi.so.1.0
+    libc++experimental.a
+  )
+  foreach(LIB ${CLANG_LIBS})
+    configure_file(${CLANG_DIR}/../lib/${LIB} ${V_DEPS_INSTALL_DIR}/lib/${LIB} COPYONLY)
+  endforeach()
+
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -lc++experimental")
+endif()
+
 if(V_MANAGE_DEPS)
   # don't export() the contents to registry
   set(CMAKE_EXPORT_NO_PACKAGE_REGISTRY ON CACHE INTERNAL "" FORCE)
@@ -139,6 +172,10 @@ if(V_MANAGE_DEPS)
   # disable user package registry ~/.cmake/*
   set(CMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY ON CACHE INTERNAL "" FORCE)
   set(V_DEPS_BUILD_DIR ${CMAKE_CURRENT_BINARY_DIR}/v_deps_build)
+  # build type specific flags
+  string(TOUPPER ${CMAKE_BUILD_TYPE} BUILD_TYPE)
+  set(CMAKE_C_FLAGS_BUILD_TYPE ${CMAKE_C_FLAGS_${BUILD_TYPE}})
+  set(CMAKE_CXX_FLAGS_BUILD_TYPE ${CMAKE_CXX_FLAGS_${BUILD_TYPE}})
   configure_file(3rdparty.cmake.in ${V_DEPS_BUILD_DIR}/CMakeLists.txt @ONLY)
   # wire up dependency search paths.
   list(APPEND CMAKE_PREFIX_PATH "${V_DEPS_INSTALL_DIR}")
@@ -157,23 +194,6 @@ if(V_MANAGE_DEPS)
       message(FATAL_ERROR "Build step for v::build failed: ${result}")
     endif()
   endif()
-endif()
-
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${BASE_LD_FLAGS} -pie")
-set(CMAKE_SHARED_LINKER_FLAGS "${BASE_LD_FLAGS}")
-set(CMAKE_MODULE_LINKER_FLAGS "${BASE_LD_FLAGS}")
-
-if ("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
-  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=undefined -fsanitize=address")
-  set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fsanitize=undefined -fsanitize=address")
-  set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} -fsanitize=undefined -fsanitize=address")
-endif()
-
-# for clang, link with c++experimental for clang (needed by seastar)
-# Look for libc++ only if we are using Clang
-if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
-    find_package(LibCxx)
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -lc++experimental")
 endif()
 
 # from seastar/CMakeLists.txt. unfortunately this snippet doesn't appear to be
