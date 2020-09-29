@@ -7,7 +7,7 @@
 
 namespace kafka {
 
-static void
+inline void
 writer_serialize_batch(response_writer& w, model::record_batch&& batch) {
     /*
      * calculate batch size expected by kafka client.
