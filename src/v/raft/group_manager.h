@@ -36,7 +36,7 @@ public:
     ss::future<ss::lw_shared_ptr<raft::consensus>> create_group(
       raft::group_id id, std::vector<model::broker> nodes, storage::log log);
 
-    ss::future<> stop_group(ss::lw_shared_ptr<raft::consensus>);
+    ss::future<> remove(ss::lw_shared_ptr<raft::consensus>);
 
     cluster::notification_id_type
     register_leadership_notification(leader_cb_t cb) {

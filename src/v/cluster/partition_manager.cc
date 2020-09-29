@@ -62,7 +62,7 @@ ss::future<> partition_manager::remove(const model::ntp& ntp) {
     _raft_table.erase(group_id);
 
     return _raft_manager.local()
-      .stop_group(partition->raft())
+      .remove(partition->raft())
       .then([partition] { return partition->stop(); })
       .then([this, ntp] { return _storage.log_mgr().remove(ntp); })
       .finally([partition] {}); // in the end remove partition
