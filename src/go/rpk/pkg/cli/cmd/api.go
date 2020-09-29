@@ -58,6 +58,8 @@ func NewApiCommand(fs afero.Fs) *cobra.Command {
 	producerClosure := createProducer(fs, brokersClosure, configClosure)
 	clientClosure := createClient(fs, brokersClosure, configClosure)
 	adminClosure := createAdmin(fs, brokersClosure, configClosure)
+
+	command.AddCommand(api.NewStatusCommand(adminClosure))
 	command.AddCommand(
 		api.NewTopicCommand(fs, clientClosure, adminClosure),
 	)
