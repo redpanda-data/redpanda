@@ -112,6 +112,9 @@ public:
     void update_partition_leader(
       const model::ntp&, model::term_id, std::optional<model::node_id>);
 
+    std::optional<partition_assignment>
+    get_partition_assignment(const model::ntp&) const;
+
 private:
     struct waiter {
         explicit waiter(uint64_t id)

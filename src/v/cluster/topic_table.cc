@@ -206,6 +206,27 @@ bool topic_table::contains(
     return false;
 }
 
+std::optional<cluster::partition_assignment>
+topic_table::get_partition_assignment(const model::ntp& ntp) const {
+    auto it = _topics.find(model::topic_namespace_view(ntp));
+    if (it == _topics.end()) {
+        return {};
+    }
+
+    auto p_it = std::find_if(
+      it->second.assignments.cbegin(),
+      it->second.assignments.cend(),
+      [&ntp](const partition_assignment& pas) {
+          return pas.id == ntp.tp.partition;
+      });
+
+    if (p_it == it->second.assignments.cend()) {
+        return {};
+    }
+
+    return *p_it;
+}
+
 std::ostream&
 operator<<(std::ostream& o, const topic_table::delta::op_type& tp) {
     switch (tp) {
