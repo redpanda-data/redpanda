@@ -118,6 +118,10 @@ public:
     model::revision_id get_revision_id() const {
         return _raft->log_config().get_revision();
     }
+    
+    model::offset get_latest_configuration_offset() const {
+        return _raft->get_latest_configuration_offset();
+    }
 
     std::unique_ptr<raft::id_allocator_stm>& id_allocator_stm() {
         return _id_allocator_stm;

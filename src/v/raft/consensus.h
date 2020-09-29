@@ -194,6 +194,7 @@ public:
       storage::log_reader_config,
       std::optional<clock_type::time_point> = std::nullopt);
 
+    model::offset get_latest_configuration_offset() const;
     model::offset committed_offset() const { return _commit_index; }
     model::offset last_stable_offset() const;
 
