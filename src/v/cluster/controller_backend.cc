@@ -292,7 +292,11 @@ ss::future<std::error_code> controller_backend::update_partition_replica_set(
     // we are the leader, update configuration
     if (partition->is_leader()) {
         auto brokers = create_brokers_set(replicas, _members_table.local());
-        return partition->update_replica_set(std::move(brokers));
+        // TODO: replace with correct revision_id, this feature is not used yet.
+        //       The `update_partition_replica` set method is never called.
+        //       We have to fix this before enabling partition moving
+        return partition->update_replica_set(
+          std::move(brokers), model::revision_id(0));
     }
     // not the leader, wait for configuration update, only declare success
     // when configuration was actually updated

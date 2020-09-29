@@ -232,7 +232,7 @@ SEASTAR_THREAD_TEST_CASE(snapshot_metadata_roundtrip) {
     raft::group_nodes current{
       .voters = {n1.id(), n3.id()}, .learners = {n2.id()}};
 
-    raft::group_configuration cfg(nodes, current);
+    raft::group_configuration cfg(nodes, current, model::revision_id(0));
 
     auto ct = ss::lowres_clock::now();
     raft::snapshot_metadata metadata{

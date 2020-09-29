@@ -35,7 +35,7 @@ struct group_nodes {
 
 class group_configuration final {
 public:
-    static constexpr int8_t current_version = 0;
+    static constexpr int8_t current_version = 1;
     /**
      * creates a configuration where all provided brokers are current
      * configuration voters
@@ -48,6 +48,7 @@ public:
     group_configuration(
       std::vector<model::broker>,
       group_nodes,
+      model::revision_id,
       std::optional<group_nodes> = std::nullopt);
 
     group_configuration(const group_configuration&) = default;
@@ -102,6 +103,16 @@ public:
     template<typename Func>
     void for_each_learner(Func&& f) const;
 
+    void set_revision(model::revision_id new_revision) {
+        vassert(
+          new_revision >= _revision,
+          "can not set revision to value {} which is smaller than current one "
+          "{}",
+          new_revision,
+          _revision);
+
+        _revision = new_revision;
+    }
     /**
      * Return largest value for which every server in a quorum (majority) has a
      * value greater than or equal to.
@@ -132,6 +143,7 @@ public:
     int8_t version() const { return _version; }
 
     void promote_to_voter(model::node_id id);
+    model::revision_id revision_id() const { return _revision; }
 
     friend bool
     operator==(const group_configuration&, const group_configuration&);
@@ -146,6 +158,7 @@ private:
     std::vector<model::broker> _brokers;
     group_nodes _current;
     std::optional<group_nodes> _old;
+    model::revision_id _revision;
 };
 
 namespace details {

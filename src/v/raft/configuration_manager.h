@@ -123,6 +123,10 @@ public:
      */
     ss::future<offset_configuration>
     wait_for_change(model::offset, ss::abort_source&);
+    /**
+     * Return revision of last known configuration
+     */
+    model::revision_id get_latest_revision() const;
 
     /**
      * Removes state that configuration manager stores in key value store

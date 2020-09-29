@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "model/metadata.h"
 #include "raft/configuration.h"
 #include "raft/consensus_utils.h"
 #include "random/generators.h"
@@ -44,10 +45,13 @@ raft::group_configuration random_configuration() {
             }
         }
         return raft::group_configuration(
-          std::move(brokers), std::move(current), std::move(old));
+          std::move(brokers),
+          std::move(current),
+          model::revision_id(0),
+          std::move(old));
     } else {
         return raft::group_configuration(
-          std::move(brokers), std::move(current));
+          std::move(brokers), std::move(current), model::revision_id(0));
     }
 }
 

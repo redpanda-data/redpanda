@@ -87,14 +87,16 @@ public:
 
     /// This method adds multiple members to the group and performs
     /// configuration update
-    ss::future<std::error_code> add_group_members(std::vector<model::broker>);
+    ss::future<std::error_code>
+      add_group_members(std::vector<model::broker>, model::revision_id);
     /// Updates given member configuration
     ss::future<std::error_code> update_group_member(model::broker);
     // Removes members from group
-    ss::future<std::error_code> remove_members(std::vector<model::node_id>);
+    ss::future<std::error_code>
+      remove_members(std::vector<model::node_id>, model::revision_id);
     // Replace configuration of raft group with given set of nodes
     ss::future<std::error_code>
-      replace_configuration(std::vector<model::broker>);
+      replace_configuration(std::vector<model::broker>, model::revision_id);
 
     bool is_leader() const { return _vstate == vote_state::leader; }
     bool is_candidate() const { return _vstate == vote_state::candidate; }
