@@ -53,7 +53,7 @@ def _run_test(id, duration, interval, n_hogs, use_slice):
 def _start_service(svc_name, duration, use_slice):
     start_cmd = f'''systemd-run {"--slice redpanda.slice" if use_slice else ""} \
     --unit {svc_name} \
-    /usr/bin/iotune --duration {duration} --evaluation-directory ./'''
+    /usr/bin/iotune-redpanda --duration {duration} --evaluation-directory ./'''
     _check_output(start_cmd)
     return _check_output(
         f'systemctl show {svc_name} --property MainPID --value').strip()
