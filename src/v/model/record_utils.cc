@@ -117,8 +117,9 @@ int32_t recompute_record_batch_size(const record_batch& b) {
     return retval;
 }
 
+template<typename Parser, typename ParserData>
 static std::vector<model::record_header>
-parse_record_headers(iobuf_parser& parser) {
+parse_record_headers(Parser& parser, ParserData parser_data) {
     std::vector<model::record_header> headers;
     auto [header_count, _] = parser.read_varlong();
     headers.reserve(header_count);
@@ -126,12 +127,12 @@ parse_record_headers(iobuf_parser& parser) {
         auto [key_length, kv] = parser.read_varlong();
         iobuf key;
         if (key_length > 0) {
-            key = parser.share(key_length);
+            key = parser_data(parser, key_length);
         }
         auto [value_length, vv] = parser.read_varlong();
         iobuf value;
         if (value_length > 0) {
-            value = parser.share(value_length);
+            value = parser_data(parser, value_length);
         }
         headers.emplace_back(model::record_header(
           key_length, std::move(key), value_length, std::move(value)));
@@ -139,23 +140,25 @@ parse_record_headers(iobuf_parser& parser) {
     return headers;
 }
 
+template<typename Parser, typename ParserData>
 static model::record do_parse_one_record_from_buffer(
-  iobuf_parser& parser,
+  Parser& parser,
   int32_t record_size,
-  model::record_attributes::type attr) {
+  model::record_attributes::type attr,
+  ParserData parser_data) {
     auto [timestamp_delta, tv] = parser.read_varlong();
     auto [offset_delta, ov] = parser.read_varlong();
     auto [key_length, kv] = parser.read_varlong();
     iobuf key;
     if (key_length > 0) {
-        key = parser.share(key_length);
+        key = parser_data(parser, key_length);
     }
     auto [value_length, vv] = parser.read_varlong();
     iobuf value;
     if (value_length > 0) {
-        value = parser.share(value_length);
+        value = parser_data(parser, value_length);
     }
-    auto headers = parse_record_headers(parser);
+    auto headers = parse_record_headers(parser, parser_data);
     return model::record(
       record_size,
       model::record_attributes(attr),
@@ -168,7 +171,8 @@ static model::record do_parse_one_record_from_buffer(
       std::move(headers));
 }
 
-model::record parse_one_record_from_buffer(iobuf_parser& parser) {
+static std::pair<int64_t, model::record_attributes::type>
+parse_record_meta_from_buffer(iobuf_parser_base& parser) {
     /*
      * require that record attributes be unaffected by endianness. all of the
      * other record fields are properly handled by virtue of their types being
@@ -179,7 +183,23 @@ model::record parse_one_record_from_buffer(iobuf_parser& parser) {
       "model attributes expected to be one byte");
     auto [record_size, rv] = parser.read_varlong();
     auto attr = parser.consume_type<model::record_attributes::type>();
-    return do_parse_one_record_from_buffer(parser, record_size, attr);
+    return std::make_pair(record_size, attr);
+}
+
+model::record parse_one_record_from_buffer(iobuf_parser& parser) {
+    auto [record_size, attr] = parse_record_meta_from_buffer(parser);
+    return do_parse_one_record_from_buffer(
+      parser, record_size, attr, [](iobuf_parser& parser, int64_t len) {
+          return parser.share(len);
+      });
+}
+
+model::record parse_one_record_copy_from_buffer(iobuf_const_parser& parser) {
+    auto [record_size, attr] = parse_record_meta_from_buffer(parser);
+    return do_parse_one_record_from_buffer(
+      parser, record_size, attr, [](iobuf_const_parser& parser, int64_t len) {
+          return parser.copy(len);
+      });
 }
 
 static inline void append_vint_to_iobuf(iobuf& b, int64_t v) {
