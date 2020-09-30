@@ -108,6 +108,9 @@ class LinearizabilityRegisterChecker:
     #
     def init(self, write_id, version, value):
         self.head = AcceptedWrite(0, write_id, version, value)
+        cmdlog.info(
+            m(type="linearization_point", write_id=write_id,
+              value=value).with_time())
         self.history_by_idx[self.head.idx] = self.head
         self.history_by_write_id[self.head.write_id] = self.head
 
@@ -158,6 +161,10 @@ class LinearizabilityRegisterChecker:
                                               w.version, w.value)
                     self.history_by_idx[self.head.idx] = self.head
                     self.history_by_write_id[self.head.write_id] = self.head
+                    cmdlog.info(
+                        m(type="linearization_point",
+                          write_id=w.write_id,
+                          value=w.value).with_time())
                 break
             elif write.prev_write_id in self.pending_writes:
                 chain.append(write)
