@@ -5,8 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
+	"vectorized/pkg/cli/cmd/version"
+	"vectorized/pkg/cloud"
 	"vectorized/pkg/config"
+	"vectorized/pkg/system"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -56,6 +60,12 @@ type environmentBody struct {
 	Organization string                 `json:"organization"`
 	ClusterId    string                 `json:"clusterId"`
 	NodeId       int                    `json:"nodeId"`
+	CloudVendor  string                 `json:"cloudVendor"`
+	VMType       string                 `json:"vmType"`
+	OSInfo       string                 `json:"osInfo"`
+	CPUModel     string                 `json:"cpuModel"`
+	CPUCores     int                    `json:"cpuCores"`
+	RPVersion    string                 `json:"rpVersion"`
 }
 
 func SendMetrics(p MetricsPayload, conf config.Config) error {
@@ -78,6 +88,38 @@ func SendEnvironment(
 	if err != nil {
 		return err
 	}
+	cloudVendor := "N/A"
+	vmType := "N/A"
+	v, err := cloud.AvailableVendor()
+	if err != nil {
+		log.Debug(err)
+	} else {
+		cloudVendor = v.Name()
+		vt, err := v.VmType()
+		if err != nil {
+			log.Debug("Error retrieving instance type: ", err)
+		} else {
+			vmType = vt
+		}
+	}
+
+	osInfo, err := system.UnameAndDistro(2000 * time.Millisecond)
+	if err != nil {
+		log.Debug("Error querying OS info: ", err)
+		osInfo = "N/A"
+	} else {
+		osInfo = stripCtlFromUTF8(osInfo)
+	}
+	cpuModel := "N/A"
+	cpuCores := 0
+	cpuInfo, err := system.CpuInfo()
+	if err != nil {
+		log.Debug("Error querying CPU info: ", err)
+	} else if len(cpuInfo) > 0 {
+		cpuModel = cpuInfo[0].ModelName
+		cpuCores = int(cpuInfo[0].Cores) * len(cpuInfo)
+	}
+
 	b := environmentBody{
 		Payload:      env,
 		Config:       confMap,
@@ -86,12 +128,27 @@ func SendEnvironment(
 		Organization: conf.Organization,
 		ClusterId:    conf.ClusterId,
 		NodeId:       conf.Redpanda.Id,
+		CloudVendor:  cloudVendor,
+		VMType:       vmType,
+		OSInfo:       osInfo,
+		CPUModel:     cpuModel,
+		CPUCores:     cpuCores,
+		RPVersion:    version.Pretty(),
 	}
 	return sendEnvironmentToUrl(
 		b,
 		fmt.Sprintf("%s%s", defaultUrl, "/env"),
 		conf,
 	)
+}
+
+func stripCtlFromUTF8(str string) string {
+	return strings.Map(func(r rune) rune {
+		if r >= 32 && r != 127 {
+			return r
+		}
+		return -1
+	}, str)
 }
 
 func sendMetricsToUrl(b metricsBody, url string, conf config.Config) error {
