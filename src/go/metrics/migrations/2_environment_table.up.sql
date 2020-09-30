@@ -5,6 +5,17 @@ CREATE TABLE IF NOT EXISTS environment (
   cluster_id     varchar not null,
   node_id        integer not null,
   node_uuid      varchar not null,
+  cloud_vendor   varchar,
+  os_info        varchar,
+  vm_type        varchar,
+  cpu_model      varchar,
+  cpu_cores      varchar,
+  rp_version     varchar,
+  ip             varchar,
+  hostname       varchar,
+  country        varchar,
+  region         varchar,
+  city           varchar,
   payload        jsonb,
   config         jsonb
 );
