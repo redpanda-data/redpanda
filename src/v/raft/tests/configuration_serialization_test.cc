@@ -48,7 +48,7 @@ SEASTAR_THREAD_TEST_CASE(roundtrip_raft_configuration_entry) {
     auto batches = raft::details::serialize_configuration_as_batches(cfg);
     // extract from entry
     auto new_cfg = reflection::from_iobuf<raft::group_configuration>(
-      batches.begin()->begin()->release_value());
+      batches.begin()->copy_records().begin()->release_value());
 
     BOOST_REQUIRE_EQUAL(new_cfg, cfg);
 }

@@ -92,11 +92,10 @@ void crc_record(crc32& crc, const record& r) {
 void crc_record_batch(crc32& crc, const record_batch& b) {
     crc_record_batch_header(crc, b.header());
     if (b.compressed()) {
-        crc_extend_iobuf(crc, b.get_compressed_records());
+        crc_extend_iobuf(crc, b.data());
     } else {
-        for (auto& r : b) {
-            crc_record(crc, r);
-        }
+        b.for_each_record(
+          [&crc](const model::record& r) { crc_record(crc, r); });
     }
 }
 
@@ -109,12 +108,12 @@ int32_t crc_record_batch(const record_batch& b) {
 int32_t recompute_record_batch_size(const record_batch& b) {
     int32_t retval = model::packed_record_batch_header_size;
     if (b.compressed()) {
-        return retval + b.get_compressed_records().size_bytes();
+        return retval + b.data().size_bytes();
     }
-    for (auto& r : b) {
+    b.for_each_record([&retval](const model::record& r) {
         retval += r.size_bytes();
         retval += vint::vint_size(r.size_bytes());
-    }
+    });
     return retval;
 }
 

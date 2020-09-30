@@ -30,7 +30,7 @@ ss::future<model::record_batch> decompress_batch(const model::record_batch& b) {
     }
     auto h = b.header();
     iobuf body_buf = compression::compressor::uncompress(
-      b.get_compressed_records(), b.header().attrs.compression());
+      b.data(), b.header().attrs.compression());
     return ss::do_with(
       iobuf_parser(std::move(body_buf)),
       recs_t{},
@@ -105,7 +105,7 @@ compress_batch(model::compression c, const model::record_batch& b) {
     return ss::do_with(
              iobuf{},
              [c, &b](iobuf& buf) {
-                 return ss::do_for_each(
+                 return model::for_each_record(
                           b,
                           [&buf](const model::record& r) {
                               model::append_record_to_buffer(buf, r);
