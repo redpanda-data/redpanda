@@ -121,9 +121,9 @@ write(segment_appender& appender, const model::record_batch& batch) {
     return write(appender, *ptr)
       .then([&appender, &batch, cpy = std::move(hdrbuf)] {
           if (batch.compressed()) {
-              return write(appender, batch.get_compressed_records());
+              return write(appender, batch.data());
           }
-          return ss::do_for_each(
+          return model::for_each_record(
             batch, [&appender](const model::record& record) {
                 return write(appender, record);
             });

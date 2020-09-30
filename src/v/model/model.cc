@@ -145,13 +145,10 @@ operator<<(std::ostream& os, const record_batch::compressed_records& records) {
 std::ostream& operator<<(std::ostream& os, const record_batch& batch) {
     os << "{record_batch=" << batch.header() << ", records=";
     if (batch.compressed()) {
-        os << "{compressed=" << batch.get_compressed_records().size_bytes()
-           << "bytes}";
+        os << "{compressed=" << batch.data().size_bytes() << " bytes}";
     } else {
         os << "{";
-        for (auto& r : batch) {
-            os << r;
-        }
+        batch.for_each_record([&os](const model::record& r) { os << r; });
         os << "}";
     }
     os << "}";

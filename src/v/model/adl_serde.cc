@@ -1,5 +1,7 @@
 #include "model/adl_serde.h"
 
+#include "model/record.h"
+
 #include <seastar/core/smp.hh>
 
 namespace reflection {
@@ -223,12 +225,11 @@ void adl<model::record_batch>::to(iobuf& out, model::record_batch&& batch) {
       .is_compressed = static_cast<int8_t>(batch.compressed() ? 1 : 0)};
     reflection::serialize(out, hdr);
     if (batch.compressed()) {
-        reflection::serialize(out, std::move(batch).release());
+        reflection::serialize(out, std::move(batch).release_data());
         return;
     }
-    for (model::record& r : batch) {
-        reflection::serialize(out, std::move(r));
-    }
+    batch.for_each_record(
+      [&out](model::record r) { reflection::serialize(out, std::move(r)); });
 }
 
 model::record_batch adl<model::record_batch>::from(iobuf_parser& in) {

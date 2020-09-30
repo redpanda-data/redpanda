@@ -100,20 +100,21 @@ struct simple_kv {
     }
 
     ss::future<std::error_code> do_apply_update(model::record_batch&& b) {
-        auto rk = reflection::adl<uint8_t>{}.from(b.begin()->release_key());
+        auto r = b.copy_records();
+        auto rk = reflection::adl<uint8_t>{}.from(r.begin()->release_key());
         switch (rk) {
         case set_cmd::record_key:
             return apply(
-              reflection::adl<set_cmd>{}.from(b.begin()->release_value()));
+              reflection::adl<set_cmd>{}.from(r.begin()->release_value()));
         case delete_cmd::record_key:
             return apply(
-              reflection::adl<delete_cmd>{}.from(b.begin()->release_value()));
+              reflection::adl<delete_cmd>{}.from(r.begin()->release_value()));
         case cas_cmd::record_key:
             return apply(
-              reflection::adl<cas_cmd>{}.from(b.begin()->release_value()));
+              reflection::adl<cas_cmd>{}.from(r.begin()->release_value()));
         case timeout_cmd::record_key:
             return apply(
-              reflection::adl<timeout_cmd>{}.from(b.begin()->release_value()));
+              reflection::adl<timeout_cmd>{}.from(r.begin()->release_value()));
         default:
             throw std::logic_error("Unknown command type");
         }

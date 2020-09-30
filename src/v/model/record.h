@@ -11,6 +11,7 @@
 #include <seastar/core/smp.hh>
 #include <seastar/util/optimized_optional.hh>
 
+#include <boost/iterator/counting_iterator.hpp>
 #include <boost/range/numeric.hpp>
 
 #include <bitset>
@@ -408,13 +409,27 @@ constexpr uint32_t packed_record_batch_header_size
 
 class record_batch {
 public:
+    /**
+     * Compatability interface. Compression is based on the record type rather
+     * than the header (relevant for ghost batches). Uncompressed records are
+     * automatically encoded into a single iobuf.
+     */
     using uncompressed_records = std::vector<record>;
     using compressed_records = iobuf;
     using records_type = std::variant<uncompressed_records, compressed_records>;
 
-    record_batch(record_batch_header header, records_type&& records) noexcept
+    record_batch(record_batch_header header, records_type&& records)
       : _header(header)
-      , _records(std::move(records)) {}
+      , _compressed(std::holds_alternative<compressed_records>(records)) {
+        if (_compressed) {
+            _records = std::move(std::get<compressed_records>(records));
+        } else {
+            for (auto& r : std::get<uncompressed_records>(records)) {
+                model::append_record_to_buffer(_records, r);
+            }
+        }
+    }
+
     record_batch(const record_batch& o) = delete;
     record_batch& operator=(const record_batch&) = delete;
     record_batch(record_batch&&) noexcept = default;
@@ -423,26 +438,11 @@ public:
 
     bool empty() const { return _header.record_count <= 0; }
 
-    bool compressed() const {
-        return std::holds_alternative<compressed_records>(_records);
-    }
+    bool compressed() const { return _compressed; }
+
     record_batch copy() const {
         // copy sets shard id
-        record_batch_header h = _header.copy();
-        if (compressed()) {
-            auto& recs = std::get<compressed_records>(_records);
-            return record_batch(h, recs.copy());
-        }
-        auto& originals = std::get<uncompressed_records>(_records);
-        uncompressed_records r;
-        r.reserve(originals.size());
-        // share all individual records
-        std::transform(
-          originals.begin(),
-          originals.end(),
-          std::back_inserter(r),
-          [](const record& rec) -> record { return rec.copy(); });
-        return record_batch(h, std::move(r));
+        return record_batch(_header.copy(), _records.copy(), _compressed);
     }
 
     int32_t record_count() const { return _header.record_count; }
@@ -454,18 +454,7 @@ public:
     int32_t size_bytes() const { return _header.size_bytes; }
 
     int32_t memory_usage() const {
-        return sizeof(*this)
-               + ss::visit(
-                 _records,
-                 [](const compressed_records& records) -> int32_t {
-                     return records.size_bytes();
-                 },
-                 [](const uncompressed_records& records) {
-                     return boost::accumulate(
-                       records, int32_t(0), [](int32_t usage, const record& r) {
-                           return usage + r.memory_usage();
-                       });
-                 });
+        return sizeof(*this) + _records.size_bytes();
     }
 
     const record_batch_header& header() const { return _header; }
@@ -476,30 +465,6 @@ public:
                && offset <= _header.last_offset();
     }
 
-    uncompressed_records::const_iterator begin() const {
-        verify_uncompressed_records();
-        return std::get<uncompressed_records>(_records).begin();
-    }
-    uncompressed_records::const_iterator end() const {
-        verify_uncompressed_records();
-        return std::get<uncompressed_records>(_records).end();
-    }
-    uncompressed_records::iterator begin() {
-        verify_uncompressed_records();
-        return std::get<uncompressed_records>(_records).begin();
-    }
-    uncompressed_records::iterator end() {
-        verify_uncompressed_records();
-        return std::get<uncompressed_records>(_records).end();
-    }
-
-    // Can only be called if this holds compressed records.
-    const compressed_records& get_compressed_records() const {
-        return std::get<compressed_records>(_records);
-    }
-    compressed_records&& release() && {
-        return std::move(std::get<compressed_records>(_records));
-    }
     bool operator==(const record_batch& other) const {
         return _header == other._header && _records == other._records;
     }
@@ -510,31 +475,10 @@ public:
 
     friend std::ostream& operator<<(std::ostream&, const record_batch&);
 
-    uncompressed_records& get_uncompressed_records_for_testing() {
-        verify_uncompressed_records();
-        return std::get<uncompressed_records>(_records);
-    }
-
     record_batch share() {
-        record_batch_header h = _header;
-        if (compressed()) {
-            auto& recs = std::get<compressed_records>(_records);
-            return record_batch(h, recs.share(0, recs.size_bytes()));
-        }
-        auto& originals = std::get<uncompressed_records>(_records);
-        uncompressed_records r;
-        r.reserve(originals.size());
-        // share all individual records
-        std::transform(
-          originals.begin(),
-          originals.end(),
-          std::back_inserter(r),
-          [](record& rec) -> record { return rec.share(); });
-
-        return record_batch(h, std::move(r));
+        return record_batch(
+          _header, _records.share(0, _records.size_bytes()), _compressed);
     }
-
-    void clear() { _records = {}; }
 
     /**
      * Set the batch max timestamp and recalculate checksums.
@@ -555,37 +499,93 @@ public:
         _header.header_crc = model::internal_header_only_crc(_header);
     }
 
+    /**
+     * Iterate over records with lazy record materialization.
+     *
+     * Use `model::for_each_record(..)` for futurized version.
+     */
+    template<typename Func>
+    void for_each_record(Func f) const {
+        verify_iterable();
+        iobuf_parser parser(_records.copy());
+        for (auto i = 0; i < _header.record_count; i++) {
+            f(model::parse_one_record_from_buffer(parser));
+        }
+        if (unlikely(parser.bytes_left())) {
+            throw std::out_of_range(fmt::format(
+              "Record iteration stopped with {} bytes remaining",
+              parser.bytes_left()));
+        }
+    }
+
+    /**
+     * Materialize records.
+     *
+     * Prefer lazy record construction via `for_each_record(..)` when accessing
+     * records. However, some users explicitly store a single record in batches
+     * and the looping construct to access that record is quite inconvenient.
+     */
+    std::vector<record> copy_records() const {
+        std::vector<record> ret;
+        ret.reserve(_header.record_count);
+        for_each_record(
+          [&ret](model::record&& r) { ret.push_back(std::move(r)); });
+        return ret;
+    }
+
+    /**
+     * Access raw record data.
+     */
+    const iobuf& data() const { return _records; }
+    iobuf&& release_data() && { return std::move(_records); }
+    void clear() { _records.clear(); }
+
 private:
     record_batch_header _header;
-    records_type _records;
+    iobuf _records;
+    bool _compressed;
+
+    record_batch(record_batch_header header, iobuf&& records, bool compressed)
+      : _header(header)
+      , _records(std::move(records))
+      , _compressed(compressed) {}
 
     record_batch() = default;
-    void verify_uncompressed_records() const {
+
+    void verify_iterable() const {
         vassert(
-          std::holds_alternative<uncompressed_records>(_records),
-          "Iterators can only be called with uncompressed record variant.");
+          !_compressed,
+          "Record iteration is not supported for compressed batches.");
     }
+
     explicit operator bool() const noexcept { return !empty(); }
     friend class ss::optimized_optional<record_batch>;
+
+    template<typename Func>
+    friend ss::future<>
+    for_each_record(const model::record_batch& batch, Func&& f);
 };
 
 using record_batch_opt = ss::optimized_optional<record_batch>;
 
-/// Execute provided async action on each record of record batch
-
-// clang-format off
+/**
+ * Iterate over records with lazy record materialization.
+ */
 template<typename Func>
-CONCEPT(requires requires(Func f, model::record r) {
-    { f(std::move(r)) } -> ss::future<>;
-})
-// clang-format on
-inline ss::future<> consume_records(model::record_batch&& batch, Func&& f) {
+inline ss::future<>
+for_each_record(const model::record_batch& batch, Func&& f) {
+    batch.verify_iterable();
     return ss::do_with(
-      std::move(batch),
-      [f = std::forward<Func>(f)](model::record_batch& batch) mutable {
+      iobuf_parser(batch.data().copy()),
+      record{},
+      [record_count = batch.record_count(), f = std::forward<Func>(f)](
+        iobuf_parser& parser, record& record) mutable {
           return ss::do_for_each(
-            batch, [f = std::forward<Func>(f)](model::record& rec) mutable {
-                return f(std::move(rec));
+            boost::counting_iterator<int32_t>(0),
+            boost::counting_iterator<int32_t>(record_count),
+            [&parser, &record, f = std::forward<Func>(f)](int32_t) {
+                record = model::parse_one_record_from_buffer(parser);
+                return f(record);
             });
       });
 }

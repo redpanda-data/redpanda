@@ -144,7 +144,7 @@ members_manager::handle_raft0_cfg_update(raft::group_configuration cfg) {
 ss::future<std::error_code>
 members_manager::apply_update(model::record_batch b) {
     auto cfg = reflection::from_iobuf<raft::group_configuration>(
-      b.begin()->release_value());
+      b.copy_records().begin()->release_value());
     return handle_raft0_cfg_update(std::move(cfg)).then([] {
         return std::error_code(errc::success);
     });

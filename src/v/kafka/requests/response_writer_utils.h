@@ -45,10 +45,10 @@ writer_serialize_batch(response_writer& w, model::record_batch&& batch) {
 
     if (batch.compressed()) {
         // the records blob size is inferred from the batch size
-        w.write_direct(std::move(batch).release());
+        w.write_direct(std::move(batch).release_data());
         return;
     }
-    for (auto& record : batch) {
+    batch.for_each_record([&w](model::record record) {
         w.write_varint(record.size_bytes());
         w.write(int8_t(record.attributes().value()));
         w.write_varint(record.timestamp_delta());
@@ -64,7 +64,7 @@ writer_serialize_batch(response_writer& w, model::record_batch&& batch) {
             w.write_varint(h.value_size());
             w.write_direct(h.share_value());
         }
-    }
+    });
 }
 
 } // namespace kafka

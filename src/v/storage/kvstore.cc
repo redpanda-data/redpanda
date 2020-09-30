@@ -429,7 +429,7 @@ void kvstore::load_snapshot_in_thread() {
           batch.header().header_crc));
     }
 
-    for (auto& r : batch) {
+    batch.for_each_record([this](model::record r) {
         auto key = iobuf_to_bytes(r.release_key());
         _probe.add_cached_bytes(key.size() + r.value().size_bytes());
         auto res = _db.emplace(std::move(key), r.release_value());
@@ -440,7 +440,7 @@ void kvstore::load_snapshot_in_thread() {
           "Load snapshot: restoring key={} value={}",
           res.first->first,
           res.first->second);
-    }
+    });
 
     _next_offset = last_offset + model::offset(1);
 }
