@@ -5,6 +5,9 @@ namespace coproc {
 
 enum class errc {
     success = 0,
+    invalid_ingestion_policy,
+    script_id_already_exists,
+    script_id_does_not_exist,
     topic_already_enabled,
     topic_does_not_exist,
     topic_never_enabled,
@@ -20,6 +23,12 @@ struct errc_category final : public std::error_category {
         switch (static_cast<errc>(c)) {
         case errc::success:
             return "Success";
+        case errc::invalid_ingestion_policy:
+            return "Ingestion policy not yet supported";
+        case errc::script_id_already_exists:
+            return "Attempted double registration encountered";
+        case errc::script_id_does_not_exist:
+            return "Could not find coprocessor with matching script_id";
         case errc::topic_already_enabled:
             return "Topic already enabled on behalf of a coprocessor";
         case errc::topic_does_not_exist:
