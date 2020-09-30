@@ -92,6 +92,12 @@ func TestSendEnvironment(t *testing.T) {
 		NodeUuid:     "awe-1231-sdfasd-13-saddasdf-as123sdf",
 		NodeId:       1,
 		Organization: "test.vectorized.io",
+		CPUCores:     12,
+		CPUModel:     "AMD Ryzen 9 3900X 12-Core Processor",
+		CloudVendor:  "AWS",
+		RPVersion:    "release-0.99.8 (rev a2b48491)",
+		VMType:       "i3.4xlarge",
+		OSInfo:       "x86_64 5.8.9-200.fc32.x86_64 #1 SMP Mon Sep 14 18:28:45 UTC 2020 \"Fedora release 32 (Thirty Two)\"",
 		SentAt:       time.Now(),
 		Config: map[string]interface{}{
 			"nodeUuid":  "abc123-hu234-234kh",
