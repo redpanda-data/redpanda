@@ -1,10 +1,12 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"metrics/pkg/storage"
+	"net"
 	"net/http"
 	"path"
 	"strings"
@@ -20,8 +22,19 @@ type Environment struct {
 	ClusterId    string                 `json:"clusterId,omitempty"`
 	NodeId       int                    `json:"nodeId,omitempty"`
 	NodeUuid     string                 `json:"nodeUuid,omitempty"`
+	CloudVendor  string                 `json:"cloudVendor,omitempty"`
+	VMType       string                 `json:"vmType,omitempty"`
+	OSInfo       string                 `json:"osInfo,omitempty"`
+	CPUModel     string                 `json:"cpuModel,omitempty"`
+	CPUCores     int                    `json:"cpuCores,omitempty"`
+	RPVersion    string                 `json:"rpVersion,omitempty"`
 	Payload      map[string]interface{} `json:"payload"`
 	Config       map[string]interface{} `json:"config"`
+	Country      string
+	Region       string
+	City         string
+	IP           string
+	Hostname     string
 }
 
 func (e *Environment) toStorageEnv() (*storage.Environment, error) {
@@ -40,8 +53,19 @@ func (e *Environment) toStorageEnv() (*storage.Environment, error) {
 		ClusterId:    e.ClusterId,
 		NodeId:       e.NodeId,
 		NodeUuid:     e.NodeUuid,
+		CloudVendor:  e.CloudVendor,
+		VMType:       e.VMType,
+		OSInfo:       e.OSInfo,
+		CPUModel:     e.CPUModel,
+		CPUCores:     e.CPUCores,
+		RPVersion:    e.RPVersion,
 		Payload:      string(payloadJSON),
 		Config:       string(configJSON),
+		Country:      e.Country,
+		Region:       e.Region,
+		City:         e.City,
+		IP:           e.IP,
+		Hostname:     e.Hostname,
 	}, nil
 }
 
@@ -124,6 +148,10 @@ func (h *EnvHandler) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 		return
 	}
 	env.ReceivedAt = time.Now()
+	env.IP = req.Header.Get("X-Appengine-User-IP")
+	env.Country = req.Header.Get("X-Appengine-Country")
+	env.Region = req.Header.Get("X-Appengine-Region")
+	env.Hostname = resolveIP(env.IP)
 	storageEnv, err := env.toStorageEnv()
 	if err != nil {
 		http.Error(res, "Corrupt body", http.StatusBadRequest)
@@ -150,4 +178,25 @@ func pathHead(p string) (head, tail string) {
 		return p[1:], "/"
 	}
 	return p[1:i], p[i:]
+}
+
+func resolveIP(ip string) (hostname string) {
+	r := &net.Resolver{
+		PreferGo: true,
+		Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+			d := net.Dialer{
+				Timeout: time.Millisecond * time.Duration(10000),
+			}
+			return d.DialContext(ctx, network, "8.8.8.8:53")
+		},
+	}
+
+	host, err := r.LookupAddr(context.Background(), ip)
+
+	if err != nil {
+		log.Error(err.Error())
+		return "N/A"
+	}
+
+	return host[0]
 }
