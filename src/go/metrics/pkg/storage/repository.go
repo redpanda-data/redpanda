@@ -23,6 +23,17 @@ type Environment struct {
 	NodeUuid     string    `json:"nodeUuid,omitempty"`
 	Payload      string    `json:"payload"`
 	Config       string    `json:"config"`
+	CloudVendor  string    `json:"cloudVendor,omitempty"`
+	VMType       string    `json:"vmType,omitempty"`
+	OSInfo       string    `json:"osInfo,omitempty"`
+	CPUModel     string    `json:"cpuModel,omitempty"`
+	CPUCores     int       `json:"cpuCores,omitempty"`
+	RPVersion    string    `json:"rpVersion,omitempty"`
+	IP           string
+	Country      string
+	Region       string
+	City         string
+	Hostname     string
 }
 
 type Repository interface {
