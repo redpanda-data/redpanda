@@ -734,6 +734,10 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
         _term = r.term;
         reply.term = _term;
         do_step_down();
+        // even tough we step down we do not want to update the hbeat as it
+        // would cause subsequent votes to fail (_hbeat is updated by the
+        // leader)
+        _hbeat = clock_type::time_point::min();
     }
 
     // do not grant vote if log isn't ok
@@ -745,7 +749,6 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
 
     if (_voted_for() < 0) {
         _voted_for = model::node_id(r.node_id);
-        _hbeat = clock_type::now();
         vlog(_ctxlog.trace, "Voting for {} in term {}", r.node_id, _term);
         f = f.then([this] {
             return write_voted_for({_voted_for, _term})
