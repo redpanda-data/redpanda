@@ -7,7 +7,7 @@ PartOf=redpanda.service
 [Timer]
 Unit=redpanda-status.service
 OnActiveSec=30s
-OnUnitActiveSec=5min
+OnUnitActiveSec=10min
 Persistent=true
 
 [Install]
