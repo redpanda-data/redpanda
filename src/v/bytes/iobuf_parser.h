@@ -77,6 +77,16 @@ public:
         return _in.consume(n, std::forward<Consumer>(f));
     }
 
+    iobuf copy(size_t len) {
+        iobuf ret;
+        ret.reserve_memory(len);
+        _in.consume(len, [&ret](const char* src, size_t sz) {
+            ret.append(src, sz);
+            return ss::stop_iteration::no;
+        });
+        return ret;
+    }
+
 protected:
     iobuf& ref() { return *std::get<owned_buf>(_buf); }
 
