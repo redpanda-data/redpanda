@@ -44,7 +44,7 @@ func (g *consumerGroupHandler) ConsumeClaim(
 	s sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim,
 ) error {
 	mu := sync.Mutex{} // Synchronizes stdout.
-	consumeMessages(claim.Messages(), &mu, s.Context(), g.prettyPrint)
+	consumeMessages(claim.Messages(), nil, &mu, s.Context(), g.prettyPrint)
 	return nil
 }
 
@@ -195,7 +195,7 @@ func withoutConsumerGroup(
 				return err
 			}
 
-			consumeMessages(pc.Messages(), &mu, ctx, prettyPrint)
+			consumeMessages(pc.Messages(), pc.Errors(), &mu, ctx, prettyPrint)
 
 			return err
 
@@ -206,6 +206,7 @@ func withoutConsumerGroup(
 
 func consumeMessages(
 	msgs <-chan *sarama.ConsumerMessage,
+	errs <-chan *sarama.ConsumerError,
 	mu *sync.Mutex,
 	ctx context.Context,
 	prettyPrint bool,
@@ -216,6 +217,13 @@ func consumeMessages(
 			return
 		case msg := <-msgs:
 			handleMessage(msg, mu, prettyPrint)
+		case err := <-errs:
+			log.Errorf(
+				"Got an error consuming topic '%s', partition %d: %v",
+				err.Topic,
+				err.Partition,
+				err.Err,
+			)
 		}
 	}
 }
@@ -223,6 +231,11 @@ func consumeMessages(
 func handleMessage(
 	msg *sarama.ConsumerMessage, mu *sync.Mutex, prettyPrint bool,
 ) {
+	// Sometimes sarama will send nil messages.
+	if msg == nil {
+		log.Debug("Got a nil message")
+		return
+	}
 	m := message{
 		Headers:   make([]header, 0, len(msg.Headers)),
 		Message:   string(msg.Value),
