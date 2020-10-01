@@ -2,8 +2,8 @@ include(rpcgen)
 rpcgen(
   TARGET coproc_gen
   IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/gen.json
-  OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/registration.h
-  INCLUDES {$CMAKE_BINARY_DIR}/src/v
+  OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/management.h
+  INCLUDES ${CMAKE_BINARY_DIR}/src/v
   )
 
 v_cc_library(
@@ -16,14 +16,14 @@ v_cc_library(
     v::rpc
     v::model
     v::storage
+    v::reflection
     coproc_gen
   )
 
 rp_test(
   UNIT_TEST
-  BINARY_NAME registration_tests
+  BINARY_NAME coproc_tests
   SOURCES
-    tests/registration_test.cc
     tests/materialized_type_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES v::seastar_testing_main v::coproc

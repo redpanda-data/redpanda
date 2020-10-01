@@ -1,19 +1,19 @@
 {
     "namespace": "coproc",
-    "service_name": "registration",
+    "service_name": "management",
     "includes": [
         "coproc/types.h"
     ],
     "methods": [
         {
-            "name": "enable_topics",
-            "input_type": "metadata_info",
-            "output_type": "enable_topics_reply"
+            "name": "enable_copros",
+            "input_type": "enable_copros_request",
+            "output_type": "enable_copros_reply"
         },
         {
-            "name": "disable_topics",
-            "input_type": "metadata_info",
-            "output_type": "disable_topics_reply"
+            "name": "disable_copros",
+            "input_type": "disable_copros_request",
+            "output_type": "disable_copros_reply"
         }
     ]
 }
