@@ -72,8 +72,20 @@ func (r *PostgresRepo) SaveEnvironment(e Environment) error {
 		" node_id," +
 		" node_uuid," +
 		" payload," +
-		" config)" +
-		" VALUES($1, $2, $3, $4, $5, $6, $7, $8);"
+		" config, " +
+		" ip, " +
+		" country, " +
+		" region, " +
+		" city, " +
+		" hostname, " +
+		" cloud_vendor, " +
+		" os_info, " +
+		" vm_type, " +
+		" cpu_model, " +
+		" cpu_cores, " +
+		" rp_version ) " +
+		" VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, " +
+		" $12, $13, $14, $15, $16, $17, $18, $19);"
 	stmt, err := r.Db.Prepare(query)
 	if err != nil {
 		return err
@@ -87,6 +99,17 @@ func (r *PostgresRepo) SaveEnvironment(e Environment) error {
 		e.NodeUuid,
 		e.Payload,
 		e.Config,
+		e.IP,
+		e.Country,
+		e.Region,
+		e.City,
+		e.Hostname,
+		e.CloudVendor,
+		e.OSInfo,
+		e.VMType,
+		e.CPUModel,
+		e.CPUCores,
+		e.RPVersion,
 	)
 	return err
 }
