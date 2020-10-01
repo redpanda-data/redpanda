@@ -25,6 +25,8 @@ func DefaultConfig() *sarama.Config {
 
 	conf.Metadata.Timeout = timeout
 
+	conf.Consumer.Return.Errors = true
+
 	conf.Producer.RequiredAcks = sarama.WaitForAll
 	conf.Producer.Retry.Backoff = 2 * time.Second
 	conf.Producer.Retry.Max = 3
