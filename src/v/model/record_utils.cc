@@ -91,12 +91,7 @@ void crc_record(crc32& crc, const record& r) {
 
 void crc_record_batch(crc32& crc, const record_batch& b) {
     crc_record_batch_header(crc, b.header());
-    if (b.compressed()) {
-        crc_extend_iobuf(crc, b.data());
-    } else {
-        b.for_each_record(
-          [&crc](const model::record& r) { crc_record(crc, r); });
-    }
+    crc_extend_iobuf(crc, b.data());
 }
 
 int32_t crc_record_batch(const record_batch& b) {
