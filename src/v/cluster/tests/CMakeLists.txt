@@ -43,3 +43,12 @@ set_source_files_properties(
     partition_allocator_tests.cc
     allocation_bench.cc
   PROPERTIES SKIP_UNITY_BUILD_INCLUSION 1)
+  
+rp_test(
+  UNIT_TEST
+  BINARY_NAME partition_moving_test
+  SOURCES partition_moving_test.cc
+  LIBRARIES v::seastar_testing_main v::application v::storage_test_utils
+  DEFINITIONS SEASTAR_TESTING_MAIN
+  ARGS "-- -c 1"
+)
