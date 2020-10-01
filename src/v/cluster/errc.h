@@ -22,7 +22,9 @@ enum class errc {
     topic_not_exists,
     invalid_topic_name,
     partition_not_exists,
-    not_leader
+    not_leader,
+    partition_already_exists,
+    waiting_for_recovery,
 };
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "cluster::errc"; }
@@ -69,6 +71,10 @@ struct errc_category final : public std::error_category {
             return "Invalid topic name";
         case errc::partition_not_exists:
             return "Requested partition does not exists";
+        case errc::partition_already_exists:
+            return "Requested partition already exists";
+        case errc::waiting_for_recovery:
+            return "Waiting for partition to recover";
         default:
             return "cluster::errc::unknown";
         }
