@@ -102,14 +102,7 @@ int32_t crc_record_batch(const record_batch& b) {
 
 int32_t recompute_record_batch_size(const record_batch& b) {
     int32_t retval = model::packed_record_batch_header_size;
-    if (b.compressed()) {
-        return retval + b.data().size_bytes();
-    }
-    b.for_each_record([&retval](const model::record& r) {
-        retval += r.size_bytes();
-        retval += vint::vint_size(r.size_bytes());
-    });
-    return retval;
+    return retval + b.data().size_bytes();
 }
 
 template<typename Parser, typename ParserData>
