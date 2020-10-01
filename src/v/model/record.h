@@ -430,6 +430,17 @@ public:
         }
     }
 
+    /**
+     * Build a record batch. The header must have the a compression flag set
+     * which corresponds to the record encoding in the input iobuf.
+     */
+    struct tag_ctor_ng {};
+
+    record_batch(record_batch_header header, iobuf records, tag_ctor_ng)
+      : _header(header)
+      , _records(std::move(records))
+      , _compressed(_header.attrs.compression() != compression::none) {}
+
     record_batch(const record_batch& o) = delete;
     record_batch& operator=(const record_batch&) = delete;
     record_batch(record_batch&&) noexcept = default;
