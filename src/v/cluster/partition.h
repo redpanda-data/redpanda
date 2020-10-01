@@ -116,9 +116,9 @@ public:
     partition_probe& probe() { return _probe; }
 
     model::revision_id get_revision_id() const {
-        return _raft->log_config().get_revision();
+        return _raft->config().revision_id();
     }
-    
+
     model::offset get_latest_configuration_offset() const {
         return _raft->get_latest_configuration_offset();
     }

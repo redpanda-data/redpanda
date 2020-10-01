@@ -27,6 +27,7 @@ set(srcs
     commands_serialization_test.cc
     topic_table_test.cc
     topic_updates_dispatcher_test.cc
+    controller_backend_test.cc
     configuration_change_test.cc)
 
 rp_test(
