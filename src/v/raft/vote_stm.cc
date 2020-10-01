@@ -202,6 +202,16 @@ ss::future<> vote_stm::process_replies(group_configuration cfg) {
 ss::future<> vote_stm::wait() { return _vote_bg.close(); }
 
 void vote_stm::update_vote_state(ss::semaphore_units<> u) {
+    // use reply term to update voter term
+    for (auto& [_, r] : _replies) {
+        if (r.value && r.value->has_value()) {
+            auto term = r.value->value().term;
+            if (term > _ptr->_term) {
+                _ptr->_term = term;
+            }
+        }
+    }
+
     if (_ptr->_vstate != consensus::vote_state::candidate) {
         vlog(_ctxlog.info, "No longer a candidate, ignoring vote replies");
         return;
