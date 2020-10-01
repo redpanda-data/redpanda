@@ -59,7 +59,7 @@ func TestConsumeMessages(t *testing.T) {
 			consumeMessages(msgs, errs, &sync.Mutex{}, ctx, false)
 
 			if tt.err != nil {
-				fmt.Sprintf(
+				errMsg := fmt.Sprintf(
 					"Got an error consuming topic '%s',"+
 						" partition %d: %v",
 					tt.err.Topic,
