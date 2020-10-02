@@ -16,27 +16,18 @@ FIXTURE_TEST(test_entries_are_replicated_to_all_nodes, raft_test_fixture) {
     raft_group gr = raft_group(raft::group_id(0), 3);
     gr.enable_all();
 
-    auto leader_id = wait_for_group_leader(gr);
-    auto leader_raft = gr.get_member(leader_id).consensus;
-    auto res = leader_raft
-                 ->replicate(random_batches_entry(1), default_replicate_opts)
-                 .get0();
+    bool success = replicate_random_batches(gr, 10).get0();
 
+    BOOST_REQUIRE(success);
     validate_logs_replication(gr);
 };
 
 FIXTURE_TEST(test_replicate_multiple_entries_single_node, raft_test_fixture) {
     raft_group gr = raft_group(raft::group_id(0), 1);
     gr.enable_all();
-    auto leader_id = wait_for_group_leader(gr);
-    auto leader_raft = gr.get_member(leader_id).consensus;
     for (int i = 0; i < 5; ++i) {
-        if (leader_raft->is_leader()) {
-            auto res = leader_raft
-                         ->replicate(
-                           random_batches_entry(5), default_replicate_opts)
-                         .get0();
-        }
+        bool success = replicate_random_batches(gr, 5).get0();
+        BOOST_REQUIRE(success);
     }
 
     validate_logs_replication(gr);
@@ -53,12 +44,8 @@ FIXTURE_TEST(test_replicate_multiple_entries, raft_test_fixture) {
     auto leader_id = wait_for_group_leader(gr);
     auto leader_raft = gr.get_member(leader_id).consensus;
     for (int i = 0; i < 5; ++i) {
-        if (leader_raft->is_leader()) {
-            auto res = leader_raft
-                         ->replicate(
-                           random_batches_entry(5), default_replicate_opts)
-                         .get0();
-        }
+        bool success = replicate_random_batches(gr, 5).get0();
+        BOOST_REQUIRE(success);
     }
 
     validate_logs_replication(gr);
@@ -81,16 +68,8 @@ FIXTURE_TEST(test_single_node_recovery, raft_test_fixture) {
             break;
         }
     }
-    auto leader_raft = gr.get_member(leader_id).consensus;
-    // append some entries
-    for (int i = 0; i < 5; ++i) {
-        if (leader_raft->is_leader()) {
-            auto res = leader_raft
-                         ->replicate(
-                           random_batches_entry(5), default_replicate_opts)
-                         .get0();
-        }
-    }
+    bool success = replicate_random_batches(gr, 8).get0();
+    BOOST_REQUIRE(success);
     validate_logs_replication(gr);
 
     gr.enable_node(disabled_id);
@@ -108,22 +87,14 @@ FIXTURE_TEST(test_single_node_recovery, raft_test_fixture) {
 FIXTURE_TEST(test_empty_node_recovery, raft_test_fixture) {
     raft_group gr = raft_group(raft::group_id(0), 3);
     gr.enable_all();
-    auto leader_id = wait_for_group_leader(gr);
-    auto leader_raft = gr.get_member(leader_id).consensus;
-    // append some entries
-    for (int i = 0; i < 5; ++i) {
-        if (leader_raft->is_leader()) {
-            auto res = leader_raft
-                         ->replicate(
-                           random_batches_entry(5), default_replicate_opts)
-                         .get0();
-        }
-    }
+    bool success = replicate_random_batches(gr, 5).get0();
+    BOOST_REQUIRE(success);
+
     validate_logs_replication(gr);
     model::node_id disabled_id;
     for (auto& [id, m] : gr.get_members()) {
         // disable one of the non leader nodes
-        if (leader_id != id) {
+        if (gr.get_leader_id() != id) {
             disabled_id = id;
             // truncate the node log
             m.log
@@ -158,35 +129,24 @@ FIXTURE_TEST(test_single_node_recovery_multi_terms, raft_test_fixture) {
             break;
         }
     }
-    auto leader_raft = gr.get_member(leader_id).consensus;
     // append some entries in current term
-    for (int i = 0; i < 5; ++i) {
-        if (leader_raft->is_leader()) {
-            auto res = leader_raft
-                         ->replicate(
-                           random_batches_entry(5), default_replicate_opts)
-                         .get0();
-        }
-    }
+    auto success = replicate_random_batches(gr, 5).get0();
+    BOOST_REQUIRE(success);
 
     // roll the term
-    leader_raft->step_down(leader_raft->term() + model::term_id(1)).get0();
-    leader_id = wait_for_group_leader(gr);
-    leader_raft = gr.get_member(leader_id).consensus;
+    retry_with_leader(gr, 5, timeout(1s), [](raft_node& leader) {
+        return leader.consensus
+          ->step_down(leader.consensus->term() + model::term_id(1))
+          .then([] { return true; });
+    }).get0();
     // append some entries in next term
-    for (int i = 0; i < 5; ++i) {
-        if (leader_raft->is_leader()) {
-            auto res = leader_raft
-                         ->replicate(
-                           random_batches_entry(5), default_replicate_opts)
-                         .get0();
-        }
-    }
+    success = replicate_random_batches(gr, 5).get0();
+    BOOST_REQUIRE(success);
 
     validate_logs_replication(gr);
 
     gr.enable_node(disabled_id);
-
+    // wait for recovery
     validate_logs_replication(gr);
 
     wait_for(
@@ -208,12 +168,13 @@ FIXTURE_TEST(test_recovery_of_crashed_leader_truncation, raft_test_fixture) {
         }
     }
     for (auto& id : disabled_nodes) {
+        info("disabling node {}", id);
         gr.disable_node(id);
     }
     // append some entries to leader log
     auto leader_raft = gr.get_member(first_leader_id).consensus;
     auto f = leader_raft->replicate(
-      random_batches_entry(2), default_replicate_opts);
+      random_batches_reader(2), default_replicate_opts);
     // since replicate doesn't accept timeout client have to deal with it.
     auto v = ss::with_timeout(model::timeout_clock::now() + 1s, std::move(f))
                .handle_exception_type([](const ss::timed_out_error&) {
@@ -223,21 +184,20 @@ FIXTURE_TEST(test_recovery_of_crashed_leader_truncation, raft_test_fixture) {
                .get0();
 
     // shut down the leader
+    info("shutting down leader {}", first_leader_id);
     gr.disable_node(first_leader_id);
 
     // enable nodes that were disabled before we appended on leader
     for (auto id : disabled_nodes) {
+        info("enabling node {}", id);
         gr.enable_node(model::node_id(id));
     }
     // wait for leader to be elected from enabled nodes
-    auto leader_id = wait_for_group_leader(gr);
-    leader_raft = gr.get_member(leader_id).consensus;
 
     // append some entries via new leader so old one has some data to
     // truncate
-    auto res = leader_raft
-                 ->replicate(random_batches_entry(2), default_replicate_opts)
-                 .get0();
+    bool success = replicate_random_batches(gr, 2).get0();
+    BOOST_REQUIRE(success);
 
     validate_logs_replication(gr);
 
@@ -255,17 +215,12 @@ FIXTURE_TEST(test_recovery_of_crashed_leader_truncation, raft_test_fixture) {
 FIXTURE_TEST(test_append_entries_with_relaxed_consistency, raft_test_fixture) {
     raft_group gr = raft_group(raft::group_id(0), 3);
     gr.enable_all();
-    auto leader_id = wait_for_group_leader(gr);
-    auto leader_raft = gr.get_member(leader_id).consensus;
-    // append some entries
-    auto opts = default_replicate_opts;
-    opts.consistency = raft::consistency_level::leader_ack;
-    for (int i = 0; i < 30; ++i) {
-        if (leader_raft->is_leader()) {
-            auto res
-              = leader_raft->replicate(random_batches_entry(5), opts).get0();
-        }
-    }
+
+    bool success = replicate_random_batches(
+                     gr, 2, raft::consistency_level::leader_ack)
+                     .get0();
+    BOOST_REQUIRE(success);
+
     validate_logs_replication(gr);
 
     wait_for(
@@ -278,17 +233,10 @@ FIXTURE_TEST(
   test_append_entries_with_relaxed_consistency_single_node, raft_test_fixture) {
     raft_group gr = raft_group(raft::group_id(0), 1);
     gr.enable_all();
-    auto leader_id = wait_for_group_leader(gr);
-    auto leader_raft = gr.get_member(leader_id).consensus;
-    // append some entries
-    auto opts = default_replicate_opts;
-    opts.consistency = raft::consistency_level::leader_ack;
-    for (int i = 0; i < 30; ++i) {
-        if (leader_raft->is_leader()) {
-            auto res
-              = leader_raft->replicate(random_batches_entry(5), opts).get0();
-        }
-    }
+    bool success = replicate_random_batches(
+                     gr, 10, raft::consistency_level::leader_ack)
+                     .get0();
+    BOOST_REQUIRE(success);
     validate_logs_replication(gr);
 
     wait_for(
@@ -395,34 +343,9 @@ FIXTURE_TEST(test_compacted_log_recovery, raft_test_fixture) {
 };
 
 /**
- * Makes compactible batches, having one record per batch
- */
-model::record_batch_reader
-make_compactible_batches(int keys, size_t batches, model::timestamp ts) {
-    ss::circular_buffer<model::record_batch> ret;
-    for (size_t b = 0; b < batches; b++) {
-        int k = random_generators::get_int(0, keys);
-        storage::record_batch_builder builder(
-          raft::data_batch_type, model::offset(0));
-        iobuf k_buf;
-        iobuf v_buf;
-        ss::sstring k_str = fmt::format("key-{}", k);
-        ss::sstring v_str = fmt::format("key-{}-value-{}", k, b);
-        reflection::serialize(k_buf, k_str);
-        reflection::serialize(v_buf, v_str);
-        builder.add_raw_kv(std::move(k_buf), std::move(v_buf));
-        ret.push_back(std::move(builder).build());
-    }
-    for (auto& b : ret) {
-        b.header().first_timestamp = ts;
-        b.header().max_timestamp = ts;
-    }
-    return model::make_memory_record_batch_reader(std::move(ret));
-}
-
-/**
  *
- * This test is testing a case where there is a gap between start of leader log
+ * This test is testing a case where there is a gap between start of leader
+ log
  * and end of the follower log.
  *
  * Example situation:
@@ -459,34 +382,27 @@ FIXTURE_TEST(test_collected_log_recovery, raft_test_fixture) {
     }
     auto first_ts = model::timestamp::now();
     // append some entries
-    auto res = get_leader_raft(gr)
-                 ->replicate(
-                   make_compactible_batches(3, 50, first_ts),
-                   default_replicate_opts)
-                 .get0();
+    bool res = replicate_compactible_batches(gr, first_ts).get0();
 
     auto second_ts = model::timestamp(first_ts() + 100);
     info("Triggerring log collection with timestamp {}", first_ts);
     // append some more entries
-    res = get_leader_raft(gr)
-            ->replicate(
-              make_compactible_batches(3, 20, second_ts),
-              default_replicate_opts)
-            .get0();
+    res = replicate_compactible_batches(gr, second_ts).get0();
 
     validate_logs_replication(gr);
 
     // compact log at the leader
     info("Compacting log of node: {}", leader_id);
-    gr.get_member(leader_id)
-      .log
-      ->compact(storage::compaction_config(
-        first_ts,
-        100_MiB,
-        ss::default_priority_class(),
-        as,
-        storage::debug_sanitize_files::yes))
-      .get0();
+    retry_with_leader(gr, 5, timeout(2s), [first_ts, &as](raft_node& n) {
+        return n.log
+          ->compact(storage::compaction_config(
+            first_ts,
+            100_MiB,
+            ss::default_priority_class(),
+            as,
+            storage::debug_sanitize_files::yes))
+          .then([] { return true; });
+    }).get0();
 
     gr.enable_node(disabled_id);
 
@@ -499,9 +415,9 @@ FIXTURE_TEST(test_collected_log_recovery, raft_test_fixture) {
 
     validate_logs_replication(gr);
 };
-/// FIXME: enable those tests back when we figure out how to prevent then from
+/// FIXME: enable those tests back when we figure out how to prevent then
 /// causing build timeout
-#if 0
+
 FIXTURE_TEST(test_snapshot_recovery, raft_test_fixture) {
     raft_group gr = raft_group(raft::group_id(0), 3);
     gr.enable_all();
@@ -515,13 +431,8 @@ FIXTURE_TEST(test_snapshot_recovery, raft_test_fixture) {
             break;
         }
     }
-    // append some entries
-    for (int i = 0; i < 5; ++i) {
-        auto res = get_leader_raft(gr)
-                     ->replicate(
-                       random_batches_entry(5), default_replicate_opts)
-                     .get0();
-    }
+    bool success = replicate_random_batches(gr, 5).get0();
+    BOOST_REQUIRE(success);
     validate_logs_replication(gr);
     // store snapshot
     for (auto& [_, member] : gr.get_members()) {
@@ -533,9 +444,8 @@ FIXTURE_TEST(test_snapshot_recovery, raft_test_fixture) {
           .get0();
     }
     gr.enable_node(disabled_id);
-    auto res = get_leader_raft(gr)
-                 ->replicate(random_batches_entry(5), default_replicate_opts)
-                 .get0();
+    success = replicate_random_batches(gr, 5).get0();
+    BOOST_REQUIRE(success);
     validate_logs_replication(gr);
 
     wait_for(
@@ -560,12 +470,8 @@ FIXTURE_TEST(test_snapshot_recovery_last_config, raft_test_fixture) {
         }
     }
     // append some entries
-    for (int i = 0; i < 5; ++i) {
-        auto res = get_leader_raft(gr)
-                     ->replicate(
-                       random_batches_entry(5), default_replicate_opts)
-                     .get0();
-    }
+    bool success = replicate_random_batches(gr, 5).get0();
+    BOOST_REQUIRE(success);
     // step down so last entry in snapshot will be a configuration
     auto leader_raft = get_leader_raft(gr);
     leader_raft->step_down(leader_raft->term() + model::term_id(1)).get0();
@@ -581,9 +487,8 @@ FIXTURE_TEST(test_snapshot_recovery_last_config, raft_test_fixture) {
           .get0();
     }
     gr.enable_node(disabled_id);
-    auto res = get_leader_raft(gr)
-                 ->replicate(random_batches_entry(5), default_replicate_opts)
-                 .get0();
+    success = replicate_random_batches(gr, 5).get0();
+    BOOST_REQUIRE(success);
     validate_logs_replication(gr);
 
     wait_for(
@@ -593,4 +498,3 @@ FIXTURE_TEST(test_snapshot_recovery_last_config, raft_test_fixture) {
 
     validate_logs_replication(gr);
 };
-#endif
