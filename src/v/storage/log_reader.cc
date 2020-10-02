@@ -59,32 +59,20 @@ batch_consumer::consume_result skipping_consumer::consume_batch_start(
         return stop_parser::yes;
     }
 
-    if (header.attrs.compression() == model::compression::none) {
-        // Reset the variant.
-        auto r = model::record_batch::uncompressed_records();
-        r.reserve(header.record_count);
-        _records = std::move(r);
-    }
     _header = header;
     _header.ctx.term = _reader._seg.offsets().term;
     return skip_batch::no;
 }
 
-batch_consumer::consume_result
-skipping_consumer::consume_record(model::record r) {
-    std::get<model::record_batch::uncompressed_records>(_records).emplace_back(
-      std::move(r));
-    return skip_batch::no;
-}
-
-void skipping_consumer::consume_compressed_records(iobuf&& records) {
+void skipping_consumer::consume_records(iobuf&& records) {
     _records = std::move(records);
 }
 
 batch_consumer::stop_parser skipping_consumer::consume_batch_end() {
     // Note: This is what keeps the train moving. the `_reader.*` transitively
     // updates the next batch to consume
-    _reader.add_one(model::record_batch(_header, std::exchange(_records, {})));
+    _reader.add_one(model::record_batch(
+      _header, std::move(_records), model::record_batch::tag_ctor_ng{}));
     // We keep the batch in the buffer so that the reader can be cached.
     if (
       _header.last_offset() >= _reader._seg.offsets().committed_offset

@@ -166,9 +166,6 @@ ss::future<result<stop_parser>> continuous_batch_parser::consume_header() {
       });
 }
 
-bool continuous_batch_parser::is_compressed_payload() const {
-    return _header.attrs.compression() != model::compression::none;
-}
 ss::future<result<stop_parser>> continuous_batch_parser::consume_one() {
     return consume_header().then([this](result<stop_parser> st) {
         if (!st) {
@@ -177,43 +174,8 @@ ss::future<result<stop_parser>> continuous_batch_parser::consume_one() {
         if (st.value() == stop_parser::yes) {
             return ss::make_ready_future<result<stop_parser>>(st.value());
         }
-        if (is_compressed_payload()) {
-            return consume_compressed_records();
-        }
         return consume_records();
     });
-}
-ss::future<result<stop_parser>> continuous_batch_parser::consume_records() {
-    auto sz = _header.size_bytes - model::packed_record_batch_header_size;
-    return verify_read_iobuf(_input, sz, "parser::consume_records")
-      .then([this](result<iobuf> b) -> result<stop_parser> {
-          if (!b) {
-              return b.error();
-          }
-          iobuf_parser parser(std::move(b.value()));
-          for (int i = 0; i < _header.record_count; ++i) {
-              auto ret = _consumer->consume_record(
-                model::parse_one_record_from_buffer(parser));
-              if (std::holds_alternative<skip_batch>(ret)) {
-                  if (std::get<skip_batch>(ret)) {
-                      return result<stop_parser>(stop_parser::no);
-                  }
-              } else if (std::holds_alternative<stop_parser>(ret)) {
-                  if (std::get<stop_parser>(ret)) {
-                      return result<stop_parser>(stop_parser::yes);
-                  }
-              }
-          }
-          if (unlikely(parser.bytes_left() != 0)) {
-              vlog(
-                stlog.error,
-                "{} bytes left in to parse, but reached end",
-                parser.bytes_left());
-              return storage::parser_errc::
-                not_enough_bytes_in_parser_for_one_record;
-          }
-          return result<stop_parser>(_consumer->consume_batch_end());
-      });
 }
 
 size_t continuous_batch_parser::consumed_batch_bytes() const {
@@ -224,15 +186,14 @@ void continuous_batch_parser::add_bytes_and_reset() {
     _bytes_consumed += consumed_batch_bytes();
     _header = {}; // reset
 }
-ss::future<result<stop_parser>>
-continuous_batch_parser::consume_compressed_records() {
+ss::future<result<stop_parser>> continuous_batch_parser::consume_records() {
     auto sz = _header.size_bytes - model::packed_record_batch_header_size;
-    return verify_read_iobuf(_input, sz, "parser::consume_compressed_records")
+    return verify_read_iobuf(_input, sz, "parser::consume_records")
       .then([this](result<iobuf> record) -> result<stop_parser> {
           if (!record) {
               return record.error();
           }
-          _consumer->consume_compressed_records(std::move(record.value()));
+          _consumer->consume_records(std::move(record.value()));
           return result<stop_parser>(_consumer->consume_batch_end());
       });
 }

@@ -48,11 +48,7 @@ public:
         return skip_batch::no;
     }
 
-    consume_result consume_record(model::record r) override {
-        model::crc_record(_crc, r);
-        return skip_batch::no;
-    }
-    void consume_compressed_records(iobuf&& records) override {
+    void consume_records(iobuf&& records) override {
         crc_extend_iobuf(_crc, records);
     }
 

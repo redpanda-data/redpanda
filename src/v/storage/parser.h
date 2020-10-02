@@ -43,8 +43,7 @@ public:
       size_t size_on_disk)
       = 0;
 
-    virtual consume_result consume_record(model::record) = 0;
-    virtual void consume_compressed_records(iobuf&&) = 0;
+    virtual void consume_records(iobuf&&) = 0;
     virtual stop_parser consume_batch_end() = 0;
 };
 
@@ -75,17 +74,7 @@ private:
     /// \brief parses and _stores_ the header into _header variable
     ss::future<result<batch_consumer::stop_parser>> consume_header();
 
-    /// \brief inspects the cached header to detect which parsing function
-    /// to use
-    bool is_compressed_payload() const;
-
-    /// \brief means that the batch has compressed records.
-    /// one-shot consume
-    ss::future<result<batch_consumer::stop_parser>>
-    consume_compressed_records();
-
-    /// \brief means that the batch is non-compressed, so consume
-    /// one record at a time
+    /// consume the [un]compressed records
     ss::future<result<batch_consumer::stop_parser>> consume_records();
 
     size_t consumed_batch_bytes() const;
