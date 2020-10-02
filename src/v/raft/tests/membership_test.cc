@@ -9,7 +9,7 @@ FIXTURE_TEST(add_one_node_to_single_node_cluster, raft_test_fixture) {
     auto res = replicate_random_batches(gr, 1).get0();
     BOOST_REQUIRE(res);
     auto new_node = gr.create_new_node(model::node_id(2));
-    res = retry_with_leader(gr, 5, timeout(1s), [new_node](raft_node& leader) {
+    res = retry_with_leader(gr, 5, 1s, [new_node](raft_node& leader) {
               return leader.consensus->add_group_members({new_node})
                 .then([](std::error_code ec) { return !ec; });
           }).get0();
@@ -29,7 +29,7 @@ FIXTURE_TEST(add_two_nodes_to_the_cluster, raft_test_fixture) {
     res = retry_with_leader(
             gr,
             5,
-            timeout(1s),
+            1s,
             [new_node_1, new_node_2](raft_node& leader) {
                 return leader.consensus
                   ->add_group_members({new_node_1, new_node_2})
@@ -84,15 +84,10 @@ FIXTURE_TEST(remove_non_leader, raft_test_fixture) {
                                return !p.second.consensus->is_leader();
                            })
                            ->first;
-    res = retry_with_leader(
-            gr,
-            5,
-            timeout(1s),
-            [non_leader_id](raft_node& leader) {
-                return leader.consensus->remove_members({non_leader_id})
-                  .then([](std::error_code ec) { return !ec; });
-            })
-            .get0();
+    res = retry_with_leader(gr, 5, 1s, [non_leader_id](raft_node& leader) {
+              return leader.consensus->remove_members({non_leader_id})
+                .then([](std::error_code ec) { return !ec; });
+          }).get0();
     BOOST_REQUIRE(res);
     tests::cooperative_spin_wait_with_timeout(5s, [&gr] {
         auto leader_id = gr.get_leader_id();
@@ -111,15 +106,10 @@ FIXTURE_TEST(remove_current_leader, raft_test_fixture) {
     gr.enable_all();
     auto res = replicate_random_batches(gr, 2).get0();
     auto old_leader_id = wait_for_group_leader(gr);
-    res = retry_with_leader(
-            gr,
-            5,
-            timeout(1s),
-            [old_leader_id](raft_node& leader) {
-                return leader.consensus->remove_members({old_leader_id})
-                  .then([](std::error_code ec) { return !ec; });
-            })
-            .get0();
+    res = retry_with_leader(gr, 5, 1s, [old_leader_id](raft_node& leader) {
+              return leader.consensus->remove_members({old_leader_id})
+                .then([](std::error_code ec) { return !ec; });
+          }).get0();
 
     tests::cooperative_spin_wait_with_timeout(5s, [&gr, old_leader_id] {
         auto leader_id = gr.get_leader_id();
@@ -153,7 +143,7 @@ FIXTURE_TEST(remove_multiple_members, raft_test_fixture) {
     res = retry_with_leader(
             gr,
             5,
-            timeout(1s),
+            1s,
             [old_leader_id, non_leader_id](raft_node& leader) {
                 return leader.consensus
                   ->remove_members({old_leader_id, non_leader_id})
@@ -205,15 +195,15 @@ FIXTURE_TEST(replace_whole_group, raft_test_fixture) {
     new_members.push_back(gr.get_member(model::node_id(7)).broker);
     bool success = false;
     info("replacing configuration");
-    res
-      = retry_with_leader(gr, 5, timeout(5s), [new_members](raft_node& leader) {
-            return leader.consensus->replace_configuration(new_members)
-              .then([](std::error_code ec) {
-                  info("configuration replace result: {}", ec.message());
-                  return !ec
-                         || ec == raft::errc::configuration_change_in_progress;
-              });
-        }).get0();
+    res = retry_with_leader(gr, 5, 5s, [new_members](raft_node& leader) {
+              return leader.consensus->replace_configuration(new_members)
+                .then([](std::error_code ec) {
+                    info("configuration replace result: {}", ec.message());
+                    return !ec
+                           || ec
+                                == raft::errc::configuration_change_in_progress;
+                });
+          }).get0();
     // if we failed to update configuration do nothing
     if (!res) {
         return;
