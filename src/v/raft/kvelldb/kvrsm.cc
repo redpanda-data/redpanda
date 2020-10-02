@@ -73,17 +73,18 @@ ss::future<> kvrsm::apply(model::record_batch b) {
 }
 
 kvrsm::cmd_result kvrsm::process(model::record_batch&& b) {
-    auto rk = reflection::adl<uint8_t>{}.from(b.begin()->release_key());
+    auto r = b.copy_records();
+    auto rk = reflection::adl<uint8_t>{}.from(r.begin()->release_key());
 
     if (rk == set_cmd::record_key) {
         return execute(
-          reflection::adl<set_cmd>{}.from(b.begin()->release_value()));
+          reflection::adl<set_cmd>{}.from(r.begin()->release_value()));
     } else if (rk == get_cmd::record_key) {
         return execute(
-          reflection::adl<get_cmd>{}.from(b.begin()->release_value()));
+          reflection::adl<get_cmd>{}.from(r.begin()->release_value()));
     } else if (rk == cas_cmd::record_key) {
         return execute(
-          reflection::adl<cas_cmd>{}.from(b.begin()->release_value()));
+          reflection::adl<cas_cmd>{}.from(r.begin()->release_value()));
     } else {
         return kvrsm::cmd_result(
           raft::kvelldb::errc::unknown_command, raft::errc::success);

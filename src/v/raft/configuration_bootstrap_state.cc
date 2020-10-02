@@ -1,6 +1,7 @@
 #include "raft/configuration_bootstrap_state.h"
 
 #include "likely.h"
+#include "model/record.h"
 #include "reflection/adl.h"
 
 #include <fmt/format.h>
@@ -23,10 +24,10 @@ void configuration_bootstrap_state::process_configuration(
         _config_batches_seen++;
         _log_config_offset_tracker = last_offset;
         process_offsets(b.base_offset(), last_offset);
-        for (model::record& rec : b) {
+        b.for_each_record([this](model::record rec) {
             _config = reflection::from_iobuf<raft::group_configuration>(
               rec.release_value());
-        }
+        });
     }
 }
 void configuration_bootstrap_state::process_data_offsets(

@@ -5,6 +5,7 @@
 #include "kafka/requests/describe_groups_request.h"
 #include "kafka/requests/offset_commit_request.h"
 #include "kafka/requests/offset_fetch_request.h"
+#include "model/record.h"
 #include "resource_mgmt/io_priority.h"
 
 namespace kafka {
@@ -266,9 +267,13 @@ recovery_batch_consumer::operator()(model::record_batch batch) {
           ss::stop_iteration::yes);
     }
     batch_base_offset = batch.base_offset();
-    return model::consume_records(
+    return ss::do_with(
              std::move(batch),
-             [this](model::record r) { return handle_record(std::move(r)); })
+             [this](model::record_batch& batch) {
+                 return model::for_each_record(batch, [this](model::record& r) {
+                     return handle_record(std::move(r));
+                 });
+             })
       .then([] { return ss::stop_iteration::no; });
 }
 
