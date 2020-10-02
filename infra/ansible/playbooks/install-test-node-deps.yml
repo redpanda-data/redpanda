@@ -36,8 +36,14 @@
       repo: deb http://deb.debian.org/debian stretch-backports main
       state: present
 
+  - name: update packages - debian
+    apt:
+      update_cache: yes
+      force_apt_get: yes
+    when: ansible_os_family == 'Debian'
+
   - name: install base deps - debian
-    package:
+    apt:
       name:
         - iotop
         - mdadm

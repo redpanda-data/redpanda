@@ -9,7 +9,7 @@ variable "owner" {
 }
 
 variable "distro" {
-  default = "debian-buster"
+  default = "ubuntu-focal"
 }
 
 variable instance_type {
@@ -28,7 +28,7 @@ variable "distro_ami" {
     "fedora-31" = "ami-0e82cc6ce8f393d4b"
 
     # https://cloud-images.ubuntu.com/locator/ec2/
-    "ubuntu-bionic" = "ami-003634241a8fcdec0"
+    "ubuntu-focal" = "ami-02c45ea799467b51b"
 
     # https://us-west-2.console.aws.amazon.com/ec2/v2/home?region=us-west-2#LaunchInstanceWizard:
     "rhel-8"         = "ami-087c2c50437d0b80d"
@@ -41,7 +41,7 @@ variable "distro_ssh_user" {
   default = {
     "debian-buster"  = "admin"
     "fedora-31"      = "fedora"
-    "ubuntu-bionic"  = "ubuntu"
+    "ubuntu-focal"   = "ubuntu"
     "rhel-8"         = "ec2-user"
     "amazon-linux-2" = "ec2-user"
   }
