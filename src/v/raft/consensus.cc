@@ -282,8 +282,10 @@ consensus::replicate(model::record_batch_reader&& rdr, replicate_options opts) {
     _last_replicate_consistency = opts.consistency;
     if (opts.consistency == consistency_level::quorum_ack) {
         _probe.replicate_requests_ack_all();
-        return _batcher.replicate(std::move(rdr)).finally([this] {
-            _probe.replicate_done();
+        return ss::with_gate(_bg, [this, rdr = std::move(rdr)]() mutable {
+            return _batcher.replicate(std::move(rdr)).finally([this] {
+                _probe.replicate_done();
+            });
         });
     }
 
@@ -732,6 +734,10 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
         _term = r.term;
         reply.term = _term;
         do_step_down();
+        // even tough we step down we do not want to update the hbeat as it
+        // would cause subsequent votes to fail (_hbeat is updated by the
+        // leader)
+        _hbeat = clock_type::time_point::min();
     }
 
     // do not grant vote if log isn't ok
@@ -743,7 +749,6 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
 
     if (_voted_for() < 0) {
         _voted_for = model::node_id(r.node_id);
-        _hbeat = clock_type::now();
         vlog(_ctxlog.trace, "Voting for {} in term {}", r.node_id, _term);
         f = f.then([this] {
             return write_voted_for({_voted_for, _term})
@@ -910,7 +915,10 @@ consensus::do_append_entries(append_entries_request&& r) {
         return _log
           .truncate(storage::truncate_config(truncate_at, _io_priority))
           .then([this, truncate_at] {
-              return _configuration_manager.truncate(truncate_at);
+              return _configuration_manager.truncate(truncate_at).then([this] {
+                  _probe.configuration_update();
+                  update_follower_stats(_configuration_manager.get_latest());
+              });
           })
           .then([this, r = std::move(r), truncate_at]() mutable {
               auto lstats = _log.offsets();
@@ -1211,17 +1219,26 @@ ss::future<std::error_code> consensus::replicate_configuration(
         return ss::make_ready_future<std::error_code>(errc::not_leader);
     }
     vlog(_ctxlog.debug, "Replicating group configuration {}", cfg);
-    auto batches = details::serialize_configuration_as_batches(std::move(cfg));
-    for (auto& b : batches) {
-        b.set_term(model::term_id(_term));
-    }
-    auto seqs = next_followers_request_seq();
-    append_entries_request req(
-      _self,
-      meta(),
-      model::make_memory_record_batch_reader(std::move(batches)));
-    return _batcher.do_flush({}, std::move(req), std::move(u), std::move(seqs))
-      .then([] { return std::error_code(errc::success); });
+    return ss::with_gate(
+      _bg, [this, u = std::move(u), cfg = std::move(cfg)]() mutable {
+          auto batches = details::serialize_configuration_as_batches(
+            std::move(cfg));
+          for (auto& b : batches) {
+              b.set_term(model::term_id(_term));
+          }
+          auto seqs = next_followers_request_seq();
+          append_entries_request req(
+            _self,
+            meta(),
+            model::make_memory_record_batch_reader(std::move(batches)));
+          /**
+           * We use replicate_batcher::do_flush directly as we already hold the
+           * _op_lock mutex when replicating configuration
+           */
+          return _batcher
+            .do_flush({}, std::move(req), std::move(u), std::move(seqs))
+            .then([] { return std::error_code(errc::success); });
+      });
 }
 
 append_entries_reply
@@ -1325,20 +1342,15 @@ void consensus::maybe_update_leader_commit_idx() {
     });
 }
 
-ss::future<> consensus::maybe_commit_configuration(
-  model::offset previous_commit_index, ss::semaphore_units<> u) {
-    // we already have all configurations commited do nothing
-    auto latest_offset = _configuration_manager.get_latest_offset();
-
-    if (latest_offset <= previous_commit_index) {
-        return ss::now();
-    }
-    // no configurations were committed
-    if (latest_offset > _commit_index) {
-        return ss::now();
-    }
+ss::future<> consensus::maybe_commit_configuration(ss::semaphore_units<> u) {
     // we are not a leader, do nothing
     if (_vstate != vote_state::leader) {
+        return ss::now();
+    }
+
+    auto latest_offset = _configuration_manager.get_latest_offset();
+    // no configurations were committed
+    if (latest_offset > _commit_index) {
         return ss::now();
     }
 
@@ -1350,20 +1362,24 @@ ss::future<> consensus::maybe_commit_configuration(
           _ctxlog.trace,
           "leaving joint consensus, new simple configuration {}",
           latest_cfg);
+        auto contains_current = latest_cfg.contains_broker(_self);
         return replicate_configuration(std::move(u), std::move(latest_cfg))
-          .then([this](std::error_code ec) {
+          .then([this, contains_current](std::error_code ec) {
               if (ec) {
                   vlog(
                     _ctxlog.error,
                     "unable to replicate simple configuration  - {}",
                     ec);
+                  return;
+              }
+              // leader was removed, step down.
+              if (!contains_current) {
+                  vlog(
+                    _ctxlog.trace,
+                    "current node is not longer group member, stepping down");
+                  do_step_down();
               }
           });
-    }
-
-    // leader was removed, step down.
-    if (!latest_cfg.contains_broker(_self)) {
-        do_step_down();
     }
 
     return ss::now();
@@ -1399,7 +1415,7 @@ consensus::do_maybe_update_leader_commit_idx(ss::semaphore_units<> u) {
           _commit_index);
         _commit_index_updated.broadcast();
         _event_manager.notify_commit_index(_commit_index);
-        return maybe_commit_configuration(old_commit_idx, std::move(u));
+        return maybe_commit_configuration(std::move(u));
     }
     return ss::now();
 }

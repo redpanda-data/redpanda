@@ -109,10 +109,10 @@ rp_test(
   DEFINITIONS SEASTAR_TESTING_MAIN
 )
 
-rp_test(
-  UNIT_TEST
-  BINARY_NAME partition_reassignment_test
-  SOURCES partition_reassignment_test.cc
-  LIBRARIES v::seastar_testing_main v::application v::storage_test_utils
-  DEFINITIONS SEASTAR_TESTING_MAIN
-)
+# rp_test(
+#   UNIT_TEST
+#   BINARY_NAME partition_reassignment_test
+#   SOURCES partition_reassignment_test.cc
+#   LIBRARIES v::seastar_testing_main v::application v::storage_test_utils
+#   DEFINITIONS SEASTAR_TESTING_MAIN
+# )
