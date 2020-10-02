@@ -252,3 +252,26 @@ func TestBootstrap(t *testing.T) {
 		})
 	}
 }
+
+func TestInitNode(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	conf := config.DefaultConfig()
+	err := config.WriteConfig(fs, &conf, conf.ConfigFile)
+	require.NoError(t, err)
+	c := cmd.NewConfigCommand(fs)
+	args := []string{"init"}
+	c.SetArgs(args)
+
+	err = c.Execute()
+	require.NoError(t, err)
+
+	v := viper.New()
+	v.SetFs(fs)
+	v.SetConfigType("yaml")
+	v.SetConfigFile(conf.ConfigFile)
+	err = v.ReadInConfig()
+	require.NoError(t, err)
+
+	val := v.Get("node_uuid")
+	require.NotEmpty(t, val)
+}

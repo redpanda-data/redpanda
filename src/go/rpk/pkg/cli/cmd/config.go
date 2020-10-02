@@ -19,6 +19,7 @@ func NewConfigCommand(fs afero.Fs) *cobra.Command {
 	}
 	root.AddCommand(set(fs))
 	root.AddCommand(bootstrap(fs))
+	root.AddCommand(initNode(fs))
 
 	return root
 }
@@ -153,6 +154,37 @@ func bootstrap(fs afero.Fs) *cobra.Command {
 		"This node's ID (required).",
 	)
 	cobra.MarkFlagRequired(c.Flags(), "id")
+	return c
+}
+
+func initNode(fs afero.Fs) *cobra.Command {
+	var (
+		configPath string
+	)
+	c := &cobra.Command{
+		Use:   "init",
+		Short: "Init the node after install, by setting the node's UUID.",
+		Args:  cobra.OnlyValidArgs,
+		RunE: func(_ *cobra.Command, args []string) error {
+			conf, err := config.FindOrGenerate(fs, configPath)
+			if err != nil {
+				return err
+			}
+			// Don't reset the node's UUID if it has already been set.
+			if conf.NodeUuid == "" {
+				conf, err = config.GenerateAndWriteNodeUuid(fs, conf)
+				return err
+			}
+			return nil
+		},
+	}
+	c.Flags().StringVar(
+		&configPath,
+		configFileFlag,
+		"",
+		"Redpanda config file, if not set the file will be searched"+
+			" for in the default location",
+	)
 	return c
 }
 
