@@ -158,8 +158,9 @@ deserialize(model::record_batch b, commands_type_list<Commands...>) {
     vassert(
       b.record_count() == 1,
       "Currently we expect single command in single batch");
-    iobuf_parser v_parser(b.begin()->release_value());
-    iobuf_parser k_parser(b.begin()->release_key());
+    auto records = b.copy_records();
+    iobuf_parser v_parser(records.begin()->release_value());
+    iobuf_parser k_parser(records.begin()->release_key());
     // chose deserializer
     auto cmd_type = reflection::adl<command_type>{}.from(v_parser);
     std::optional<std::variant<internal::deserializer<Commands>...>> ret;

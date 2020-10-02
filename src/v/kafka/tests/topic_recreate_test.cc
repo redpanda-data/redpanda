@@ -256,13 +256,13 @@ FIXTURE_TEST(test_recreated_topic_does_not_lose_data, recreate_test_fixture) {
                   model::offset(0), 5);
                 auto rdr = model::make_memory_record_batch_reader(
                   std::move(batches));
-                auto result = pm.get(ntp)
-                                ->replicate(
-                                  std::move(rdr),
-                                  raft::replicate_options(
-                                    raft::consistency_level::quorum_ack))
-                                .get0();
-                return pm.get(ntp)->committed_offset();
+                auto p = pm.get(ntp);
+                return p
+                  ->replicate(
+                    std::move(rdr),
+                    raft::replicate_options(
+                      raft::consistency_level::quorum_ack))
+                  .then([p](auto) { return p->committed_offset(); });
             })
           .get0();
     info("Restarting redpanda");

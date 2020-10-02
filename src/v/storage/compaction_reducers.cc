@@ -1,6 +1,7 @@
 #include "storage/compaction_reducers.h"
 
 #include "compression/compression.h"
+#include "model/record.h"
 #include "model/record_utils.h"
 #include "random/generators.h"
 #include "storage/index_state.h"
@@ -115,11 +116,11 @@ copy_data_segment_reducer::filter(model::record_batch&& batch) {
     const auto base = batch.base_offset();
     std::vector<int32_t> offset_deltas;
     offset_deltas.reserve(batch.record_count());
-    for (auto& r : batch) {
+    batch.for_each_record([this, base, &offset_deltas](const model::record& r) {
         if (should_keep(base, r.offset_delta())) {
             offset_deltas.push_back(r.offset_delta());
         }
-    }
+    });
 
     // 2. no record to keep
     if (offset_deltas.empty()) {
@@ -133,7 +134,7 @@ copy_data_segment_reducer::filter(model::record_batch&& batch) {
 
     // 4. filter
     model::record_batch::uncompressed_records ret;
-    for (auto& record : batch) {
+    batch.for_each_record([&ret, &offset_deltas](model::record record) {
         // contains the key
         if (std::count(
               offset_deltas.begin(),
@@ -141,7 +142,7 @@ copy_data_segment_reducer::filter(model::record_batch&& batch) {
               record.offset_delta())) {
             ret.push_back(record.share());
         }
-    }
+    });
     // From: DefaultRecordBatch.java
     // On Compaction: Unlike the older message formats, magic v2 and above
     // preserves the first and last offset/sequence numbers from the
@@ -264,7 +265,7 @@ index_rebuilder_reducer::operator()(model::record_batch&& b) {
 
 ss::future<> index_rebuilder_reducer::do_index(model::record_batch&& b) {
     return ss::do_with(std::move(b), [this](model::record_batch& b) {
-        return ss::do_for_each(
+        return model::for_each_record(
           b, [this, o = b.base_offset()](model::record& r) {
               return _w->index(r.key(), o, r.offset_delta());
           });

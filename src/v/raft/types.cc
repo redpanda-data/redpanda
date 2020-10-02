@@ -131,12 +131,12 @@ struct rpc_model_reader_consumer {
         reflection::serialize(ref, batch.header());
         if (!batch.compressed()) {
             reflection::serialize<int8_t>(ref, 0);
-            for (model::record& r : batch) {
+            batch.for_each_record([this](model::record r) {
                 reflection::serialize(ref, std::move(r));
-            }
+            });
         } else {
             reflection::serialize<int8_t>(ref, 1);
-            reflection::serialize(ref, std::move(batch).release());
+            reflection::serialize(ref, std::move(batch).release_data());
         }
         return ss::make_ready_future<ss::stop_iteration>(
           ss::stop_iteration::no);

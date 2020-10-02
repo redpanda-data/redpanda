@@ -81,18 +81,6 @@ model::record_batch_header kafka_batch_adapter::read_header(iobuf_parser& in) {
     return header;
 }
 
-static model::record_batch::uncompressed_records
-read_records(iobuf_parser& parser, size_t num_records) {
-    auto rs = model::record_batch::uncompressed_records();
-    rs.reserve(num_records);
-    for (unsigned i = 0; i < num_records; ++i) {
-        rs.emplace_back(
-          storage::internal::parse_one_record_from_buffer_using_kafka_format(
-            parser));
-    }
-    return rs;
-}
-
 void kafka_batch_adapter::verify_crc(int32_t expected_crc, iobuf_parser in) {
     auto crc = crc32();
 
@@ -137,30 +125,35 @@ void kafka_batch_adapter::adapt(iobuf&& kbatch) {
           "cann only parse magic.version2 format messages. ignoring");
         return;
     }
+
     verify_crc(header.crc, std::move(crcparser));
     if (unlikely(!valid_crc)) {
         vlog(klog.error, "batch has invlaid CRC: {}", header);
         return;
     }
-    model::record_batch::records_type records;
-    if (header.attrs.compression() != model::compression::none) {
-        auto records_size = header.size_bytes
-                            - model::packed_record_batch_header_size;
-        records = parser.share(records_size);
-    } else {
-        records = read_records(parser, header.record_count);
+
+    auto records_size = header.size_bytes
+                        - model::packed_record_batch_header_size;
+    auto records = parser.share(records_size);
+
+    auto new_batch = model::record_batch(
+      header, std::move(records), model::record_batch::tag_ctor_ng{});
+
+    /**
+     * Perform some type of validation on the uncompressed input. In this case
+     * we make sure that the records can be materialized but we avoid
+     * re-encoding them using the lazy-record optimization.
+     */
+    if (!new_batch.compressed()) {
+        try {
+            new_batch.for_each_record([](model::record r) { (void)r; });
+        } catch (const std::exception& e) {
+            vlog(klog.error, "Parsing uncompressed records: {}", e.what());
+            return;
+        }
     }
 
-    // Kafka guarantees - exactly one batch on the wire
-    if (unlikely(parser.bytes_left())) {
-        vlog(
-          klog.error,
-          "Could not consume full record_batch. Bytes left on the wire:{}",
-          parser.bytes_left());
-        return;
-    }
-
-    batch = model::record_batch(header, std::move(records));
+    batch = std::move(new_batch);
 }
 
 } // namespace kafka
