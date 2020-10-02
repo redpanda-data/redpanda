@@ -597,22 +597,23 @@ assert_stable_leadership(const raft_group& gr, int number_of_intervals = 5) {
 }
 
 template<typename Func>
-ss::future<bool> do_with_leader(
-  raft_group& gr, model::timeout_clock::time_point tout, Func&& f) {
-    return gr.wait_for_leader().then([&gr, f, tout](
-                                       model::node_id leader_id) mutable {
-        auto fut = ss::futurize_invoke(f, gr.get_member(leader_id));
+ss::future<bool>
+do_with_leader(raft_group& gr, model::timeout_clock::duration tout, Func&& f) {
+    return gr.wait_for_leader().then(
+      [&gr, f, tout](model::node_id leader_id) mutable {
+          auto fut = ss::futurize_invoke(f, gr.get_member(leader_id));
 
-        return ss::with_timeout(tout, std::move(fut))
-          .handle_exception([](const std::exception_ptr& e) { return false; });
-    });
+          return ss::with_timeout(
+                   model::timeout_clock::now() + tout, std::move(fut))
+            .handle_exception([](const std::exception_ptr&) { return false; });
+      });
 }
 
 template<typename Func>
 ss::future<bool> retry_with_leader(
   raft_group& gr,
   int max_retries,
-  model::timeout_clock::time_point tout,
+  model::timeout_clock::duration tout,
   Func&& f) {
     struct retry_meta {
         int current_retry = 0;
@@ -625,10 +626,16 @@ ss::future<bool> retry_with_leader(
                  return meta->success || meta->current_retry >= max_retries;
              },
              [meta, f, &gr, tout]() mutable {
+                 tstlog.info(
+                   "Leader action - retry attempt: {}", meta->current_retry);
                  return do_with_leader(gr, tout, f)
                    .then([meta](bool success) mutable {
                        meta->current_retry++;
                        meta->success = success;
+                   })
+                   .handle_exception([meta](const std::exception_ptr&) {
+                       meta->success = false;
+                       meta->current_retry++;
                    });
              })
       .then([meta] { return meta->success; });
@@ -638,7 +645,7 @@ static ss::future<bool> replicate_random_batches(
   raft_group& gr,
   int count,
   raft::consistency_level c_lvl = raft::consistency_level::quorum_ack,
-  model::timeout_clock::time_point tout = timeout(1s)) {
+  model::timeout_clock::duration tout = 1s) {
     return retry_with_leader(
       gr, 5, tout, [count, c_lvl](raft_node& leader_node) {
           auto rdr = random_batches_reader(count);
@@ -683,7 +690,7 @@ make_compactible_batches(int keys, size_t batches, model::timestamp ts) {
 static ss::future<bool> replicate_compactible_batches(
   raft_group& gr,
   model::timestamp ts,
-  model::timeout_clock::time_point tout = timeout(1s)) {
+  model::timeout_clock::duration tout = 1s) {
     return retry_with_leader(gr, 5, tout, [ts](raft_node& leader_node) {
         auto rdr = make_compactible_batches(5, 30, ts);
         raft::replicate_options opts(raft::consistency_level::quorum_ack);

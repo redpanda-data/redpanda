@@ -134,7 +134,7 @@ FIXTURE_TEST(test_single_node_recovery_multi_terms, raft_test_fixture) {
     BOOST_REQUIRE(success);
 
     // roll the term
-    retry_with_leader(gr, 5, timeout(1s), [](raft_node& leader) {
+    retry_with_leader(gr, 5, 1s, [](raft_node& leader) {
         return leader.consensus
           ->step_down(leader.consensus->term() + model::term_id(1))
           .then([] { return true; });
@@ -393,7 +393,7 @@ FIXTURE_TEST(test_collected_log_recovery, raft_test_fixture) {
 
     // compact log at the leader
     info("Compacting log of node: {}", leader_id);
-    retry_with_leader(gr, 5, timeout(2s), [first_ts, &as](raft_node& n) {
+    retry_with_leader(gr, 5, 2s, [first_ts, &as](raft_node& n) {
         return n.log
           ->compact(storage::compaction_config(
             first_ts,
