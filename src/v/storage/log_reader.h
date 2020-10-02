@@ -55,16 +55,14 @@ public:
       size_t physical_base_offset,
       size_t bytes_on_disk) override;
 
-    consume_result consume_record(model::record) override;
-
-    void consume_compressed_records(iobuf&&) override;
+    void consume_records(iobuf&&) override;
 
     stop_parser consume_batch_end() override;
 
 private:
     log_segment_batch_reader& _reader;
     model::record_batch_header _header;
-    model::record_batch::records_type _records;
+    iobuf _records;
     model::timeout_clock::time_point _timeout;
     std::optional<model::offset> _next_cached_batch;
     model::offset _expected_next_batch;
