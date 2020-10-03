@@ -161,7 +161,6 @@ public:
      */
     batch_cache(batch_cache&& o) noexcept
       : _lru(std::move(o._lru))
-      , _pool(std::move(o._pool))
       , _reclaimer(
           [this](reclaimer::request r) { return reclaim(r); },
           reclaim_scope::sync)
@@ -264,7 +263,6 @@ private:
     }
 
     intrusive_list<entry, &entry::_hook> _lru;
-    intrusive_list<entry, &entry::_hook> _pool;
     reclaimer _reclaimer;
     bool _is_reclaiming{false};
     size_t _size_bytes{0};
