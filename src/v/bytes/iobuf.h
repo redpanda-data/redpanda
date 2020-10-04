@@ -103,7 +103,11 @@ public:
 
     /// shares the underlying temporary buffers
     iobuf share(size_t pos, size_t len);
-    /// makes a copy of the data
+
+    /**
+     * Copying an iobuf is optimized for cases where the size of the resulting
+     * iobuf will not be increased (e.g. via iobuf::append).
+     */
     iobuf copy() const;
 
     /// makes a reservation with the internal storage. adds a layer of
@@ -380,6 +384,8 @@ ss::future<iobuf> read_iobuf_exactly(ss::input_stream<char>& in, size_t n);
 ss::scattered_message<char> iobuf_as_scattered(iobuf b);
 
 ss::future<> write_iobuf_to_output_stream(iobuf, ss::output_stream<char>&);
+
+iobuf iobuf_copy(iobuf::iterator_consumer& in, size_t len);
 
 namespace std {
 template<>
