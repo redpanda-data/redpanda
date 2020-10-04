@@ -1,13 +1,21 @@
 #pragma once
+#include "seastarx.h"
+
+#include <seastar/core/bitops.hh>
+
 #include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
+
 namespace details {
 class io_allocation_size {
 public:
     static constexpr size_t max_chunk_size = 128 * 1024;
     static constexpr size_t default_chunk_size = 512;
+
+    // the largest size handled by seastar's small object pool
+    static constexpr size_t ss_max_small_allocation = 16384;
 
 public:
     // >>> x=512
@@ -34,7 +42,18 @@ public:
         99648,
         131072}};
     static size_t next_allocation_size(size_t data_size);
+
+    // if the size falls into the range of seastar's small allocator, allow a
+    // full allocation. otherwise, allocate on lower bound power of 2 size which
+    // aligns with a span bucket in seastar's large allocation pool.
+    static size_t ss_next_allocation_size(size_t size) {
+        if (size <= ss_max_small_allocation) {
+            return size;
+        }
+        return static_cast<size_t>(1) << ss::log2floor(size);
+    }
 };
+
 //   - try to not exceed max_chunk_size
 //   - must be enough for data_size
 //   - uses folly::vector of 1.5 growth without using double conversions
