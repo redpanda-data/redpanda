@@ -160,6 +160,13 @@ public:
 
     ss::future<> remove_persistent_state();
 
+    /**
+     *  Methods exposed for the state machine to speed up recovery
+     */
+    ss::future<> write_last_applied(model::offset);
+
+    model::offset read_last_applied() const;
+
 private:
     friend replicate_entries_stm;
     friend vote_stm;
@@ -252,6 +259,8 @@ private:
     ss::future<std::error_code> change_configuration(Func&&);
 
     ss::future<> maybe_commit_configuration(ss::semaphore_units<>);
+
+    bytes last_applied_key() const;
     // args
     model::node_id _self;
     raft::group_id _group;

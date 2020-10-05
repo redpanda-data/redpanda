@@ -366,6 +366,7 @@ enum class metadata_key : int8_t {
     voted_for = 0,
     config_map = 1,
     config_latest_known_offset = 2,
+    last_applied_offset = 3,
 };
 
 std::ostream& operator<<(std::ostream& o, const consistency_level& l);

@@ -616,6 +616,14 @@ ss::future<> consensus::start() {
                   _vote_timeout.rearm(next_election);
               }
           })
+          .then([this] {
+              auto last_applied = read_last_applied();
+              if (last_applied > _commit_index) {
+                  _commit_index = last_applied;
+                  vlog(
+                    _ctxlog.trace, "Recovered commit_index: {}", _commit_index);
+              }
+          })
           .then([this] { return _event_manager.start(); });
     });
 }
@@ -632,6 +640,31 @@ consensus::write_voted_for(consensus::voted_for_configuration config) {
     iobuf val = reflection::to_iobuf(config);
     return _storage.kvs().put(
       storage::kvstore::key_space::consensus, std::move(key), std::move(val));
+}
+
+bytes consensus::last_applied_key() const {
+    iobuf buf;
+    reflection::serialize(buf, metadata_key::last_applied_offset, _group);
+    return iobuf_to_bytes(buf);
+}
+
+ss::future<> consensus::write_last_applied(model::offset o) {
+    auto key = last_applied_key();
+    iobuf val = reflection::to_iobuf(o);
+    return _storage.kvs().put(
+      storage::kvstore::key_space::consensus, std::move(key), std::move(val));
+}
+
+model::offset consensus::read_last_applied() const {
+    const auto key = last_applied_key();
+    auto value = _storage.kvs().get(
+      storage::kvstore::key_space::consensus, key);
+
+    if (value) {
+        return reflection::adl<model::offset>{}.from(std::move(*value));
+    }
+
+    return model::offset{};
 }
 
 void consensus::read_voted_for() {
