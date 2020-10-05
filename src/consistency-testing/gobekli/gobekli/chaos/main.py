@@ -27,6 +27,10 @@ class ExperimentResult:
         self.analysis = dict()
 
 
+class ViolationInducedExit(Exception):
+    pass
+
+
 async def inject_recover_scenario_aio(log_dir, config, cluster,
                                       workload_factory, failure_factory):
     cmd_log = path.join(log_dir, config["cmd_log"])
@@ -88,11 +92,13 @@ async def inject_recover_scenario_aio(log_dir, config, cluster,
 
 async def inject_recover_scenarios_aio(config, cluster, faults,
                                        workload_factory):
-    if not await cluster.is_ok():
-        chaos_event_log.info(m(f"cluster isn't healthy").with_time())
-        raise Exception(f"cluster isn't healthy")
-
     for fault in faults.keys():
+        if config["reset_before_test"]:
+            await cluster.restart()
+            if not await cluster.is_ok():
+                chaos_event_log.info(m(f"cluster isn't healthy").with_time())
+                raise Exception(f"cluster isn't healthy")
+
         experiment_id = int(time.time())
 
         fault_dir = path.join(config["output"], fault)
@@ -149,10 +155,13 @@ async def inject_recover_scenarios_aio(config, cluster, faults,
                           str(result.analysis["recovery_max_unavailability"]))
         chaos_stdout.info("")
 
+        if config["exit_on_violation"] and not result.is_valid:
+            raise ViolationInducedExit()
+
         if not (await cluster.is_ok()):
             chaos_event_log.info(
                 m(f"cluster hasn't recover after {experiment_id}").with_time())
-            raise Exception(f"cluster hasn't recover after {experiment_id}")
+            await cluster.restart()
 
 
 def init_output(config):

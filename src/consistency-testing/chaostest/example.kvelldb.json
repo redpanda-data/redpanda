@@ -81,6 +81,8 @@
             "umount_script": "sudo /home/admin/kvelldb-control/iofault.umount.sh"
         }
     ],
+    "exit_on_violation": false,
+    "reset_before_test": false,
     "output": "results",
     "writers": 3,
     "readers": 3,
