@@ -9,29 +9,28 @@ this_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/" && pwd)"
 
 if ! command -v docker; then
 
-
   if [ ${distro} = "fedora" ]; then
 
-      if [ "${fedora_os_version}" -ge 31 ]; then
-        # Error out if systemd.unified_cgroup_hierarcy != 0
-        "${this_dir}"/cgroups-hierarchy-test.sh
-      fi
+    if [ "${fedora_os_version}" -ge 31 ]; then
+      # Error out if systemd.unified_cgroup_hierarcy != 0
+      "${this_dir}"/cgroups-hierarchy-test.sh
+    fi
 
-      if [ "${fedora_os_version}" -ge 32 ]; then
-        dnf install -y moby-engine docker-compose
+    if [ "${fedora_os_version}" -ge 32 ]; then
+      dnf install -y moby-engine docker-compose
+    else
+      # add docker repo
+      dnf -y install dnf-plugins-core
+      dnf config-manager -y --add-repo https://download.docker.com/linux/fedora/docker-ce.repo
+
+      # install docker-ce
+      if [ "${fedora_os_version}" -eq 31 ]; then
+        # Install via this repository
+        dnf install -y --enablerepo=docker-ce-stable --releasever=31 docker-ce-cli docker-ce
       else
-        # add docker repo
-        dnf -y install dnf-plugins-core
-        dnf config-manager -y --add-repo https://download.docker.com/linux/fedora/docker-ce.repo
-
-        # install docker-ce
-        if [ "${fedora_os_version}" -eq 31 ]; then
-          # Install via this repository
-          dnf install -y --enablerepo=docker-ce-stable --releasever=31 docker-ce-cli docker-ce
-        else
-          dnf install -y docker-ce docker-ce-cli containerd.io
-        fi
+        dnf install -y docker-ce docker-ce-cli containerd.io
       fi
+    fi
 
   elif [ ${distro} = "ubuntu" ]; then
 
@@ -45,7 +44,7 @@ if ! command -v docker; then
     curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
 
     sudo add-apt-repository \
-     "deb [arch=amd64] https://download.docker.com/linux/ubuntu \
+      "deb [arch=amd64] https://download.docker.com/linux/ubuntu \
      $(lsb_release -cs) \
      stable"
 
