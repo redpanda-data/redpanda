@@ -243,8 +243,10 @@ FIXTURE_TEST(test_recreated_topic_does_not_lose_data, recreate_test_fixture) {
     auto wait_for_ntp_leader = [this, shard_id = *shard_id, ntp] {
         return app.partition_manager.invoke_on(
           shard_id, [ntp](cluster::partition_manager& pm) {
-              auto partition = pm.get(ntp);
-              return partition && partition->is_leader();
+              if (pm.get(ntp)) {
+                  return pm.get(ntp)->is_leader();
+              }
+              return false;
           });
     };
     tests::cooperative_spin_wait_with_timeout(2s, wait_for_ntp_leader).get0();

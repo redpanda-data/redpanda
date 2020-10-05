@@ -7,6 +7,7 @@
 #include "cluster/topics_frontend.h"
 #include "cluster/types.h"
 #include "model/metadata.h"
+#include "model/timeout_clock.h"
 
 #include <seastar/core/thread.hh>
 
@@ -78,17 +79,22 @@ ss::future<> controller::start() {
             std::ref(_partition_leaders),
             std::ref(_as));
       })
-
-      .then(
-        [this] { return _backend.invoke_on_all(&controller_backend::start); })
+      .then([this] {
+          return _stm.invoke_on(controller_stm_shard, &controller_stm::start);
+      })
       .then([this] {
           return _members_manager.invoke_on(
             members_manager::shard, &members_manager::start);
       })
       .then([this] {
-          return _stm.invoke_on(controller_stm_shard, &controller_stm::start);
-      });
-    ;
+          return _stm.invoke_on(controller_stm_shard, [](controller_stm& stm) {
+              // we do not have to use timeout in here as all the batches to
+              // apply have to be accesssible
+              return stm.wait(stm.bootstrap_last_applied(), model::no_timeout);
+          });
+      })
+      .then(
+        [this] { return _backend.invoke_on_all(&controller_backend::start); });
 }
 ss::future<> controller::stop() {
     return _as.invoke_on_all(&ss::abort_source::request_abort)
