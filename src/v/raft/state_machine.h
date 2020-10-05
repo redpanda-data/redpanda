@@ -62,6 +62,17 @@ public:
      * is returned an error is logged and the same batch will be applied again.
      */
     virtual ss::future<> apply(model::record_batch) = 0;
+    /**
+     * Return last applied offset established when STM starts. This can be used
+     * to wait for the entries to be applied when STM is starting.
+     */
+    model::offset bootstrap_last_applied() const;
+    /**
+     * Store last applied offset. If an offset is persisted it will be used by
+     * consensus instance underlying this state machine to recovery committed
+     * index on startup
+     */
+    ss::future<> write_last_applied(model::offset);
 
     ss::future<result<replicate_result>>
       quorum_write_empty_batch(model::timeout_clock::time_point);
@@ -90,6 +101,7 @@ private:
     model::offset _next;
     ss::abort_source _as;
     ss::gate _gate;
+    model::offset _bootstrap_last_applied;
 };
 
 } // namespace raft

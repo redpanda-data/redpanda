@@ -1,5 +1,6 @@
 #include "raft/state_machine.h"
 
+#include "model/fundamental.h"
 #include "model/record_batch_reader.h"
 #include "raft/consensus.h"
 #include "storage/log.h"
@@ -12,7 +13,8 @@ state_machine::state_machine(
   : _raft(raft)
   , _io_prio(io_prio)
   , _log(log)
-  , _next(0) {}
+  , _next(0)
+  , _bootstrap_last_applied(_raft->read_last_applied()) {}
 
 ss::future<> state_machine::start() {
     vlog(_log.info, "Starting state machine");
@@ -34,6 +36,10 @@ ss::future<> state_machine::wait(
     return ss::with_gate(_gate, [this, timeout, offset] {
         return _waiters.wait(offset, timeout, std::nullopt);
     });
+}
+
+model::offset state_machine::bootstrap_last_applied() const {
+    return _bootstrap_last_applied;
 }
 
 state_machine::batch_applicator::batch_applicator(state_machine* machine)
@@ -106,6 +112,10 @@ ss::future<> state_machine::apply() {
       .handle_exception([this](const std::exception_ptr& e) {
           vlog(_log.info, "State machine handles {}", e);
       });
+}
+
+ss::future<> state_machine::write_last_applied(model::offset o) {
+    return _raft->write_last_applied(o);
 }
 
 } // namespace raft
