@@ -1,4 +1,12 @@
+import logging
 from collections import namedtuple
+from gobekli.logging import m
+
+cmdlog = logging.getLogger("gobekli-cmd")
+
+
+def log_assert(message):
+    cmdlog.info(m(message, type="assert_violation").with_time())
 
 
 class Violation(Exception):
@@ -70,6 +78,9 @@ class LinearizabilityRegisterChecker:
             del self.history_by_idx[idx]
         for key in list(self.pending_writes.keys()):
             if self.pending_writes[key].version < self.head.version:
+                cmdlog.info(
+                    m(type="gc", head=self.head.write_id,
+                      garbage=key).with_time())
                 del self.pending_writes[key]
 
     # set an initial value of a register
@@ -101,12 +112,16 @@ class LinearizabilityRegisterChecker:
                                               value)
 
     def write_ended(self, write_id):
+        if write_id not in self.applied:
+            log_assert(f"write_ended: {write_id} not in applied")
         assert write_id in self.applied
 
         if self.applied[write_id]:
             del self.applied[write_id]
             return
 
+        if write_id not in self.pending_writes:
+            log_assert(f"write_ended: {write_id} not in pending_writes")
         assert write_id in self.pending_writes
 
         self.observe(write_id)
@@ -153,6 +168,8 @@ class LinearizabilityRegisterChecker:
                     idstr(self.head))
 
     def write_canceled(self, write_id):
+        if write_id not in self.applied:
+            log_assert(f"write_canceled: {write_id} not in applied")
         assert write_id in self.applied
 
         if write_id in self.pending_writes:
@@ -165,20 +182,30 @@ class LinearizabilityRegisterChecker:
             del self.applied[write_id]
 
     def write_timeouted(self, write_id):
+        if write_id not in self.applied:
+            log_assert(f"write_timeouted: {write_id} not in applied")
         assert write_id in self.applied
         del self.applied[write_id]
 
     def read_started(self, pid):
+        if pid in self.reads:
+            log_assert(f"read_started: {pid} in reads")
         assert pid not in self.reads
         self.reads[pid] = self.head.idx
 
     def read_ended(self, pid, write_id, value):
+        if pid not in self.reads:
+            log_assert(f"read_ended({write_id}): {pid} not in reads")
         assert pid in self.reads
 
         if write_id in self.pending_writes:
             self.observe(write_id)
 
         if write_id in self.history_by_write_id:
+            if self.reads[pid] not in self.history_by_idx:
+                log_assert(
+                    f"read_ended({write_id}): {self.reads[pid]} not in history_by_idx"
+                )
             assert self.reads[pid] in self.history_by_idx
             read_write = self.history_by_write_id[write_id]
             known_write = self.history_by_idx[self.reads[pid]]

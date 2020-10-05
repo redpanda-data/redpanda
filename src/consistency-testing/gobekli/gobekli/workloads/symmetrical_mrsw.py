@@ -1,14 +1,15 @@
 import asyncio
 import uuid
 import random
+import logging
 
 from gobekli.kvapi import RequestCanceled, RequestTimedout
 from gobekli.consensus import Violation
 from gobekli.workloads.common import (ReaderClient, AvailabilityStatLogger,
                                       Stat, LinearizabilityHashmapChecker)
-from gobekli.logging import (log_write_started, log_write_ended,
-                             log_write_timeouted, log_write_failed,
-                             log_violation, log_latency)
+from gobekli.logging import (m, log_violation, log_latency)
+
+cmdlog = logging.getLogger("gobekli-cmd")
 
 
 class WriterClient:
@@ -37,9 +38,15 @@ class WriterClient:
             op_started = None
             try:
                 self.stat.assign("size", self.checker.size())
-                log_write_started(self.node.name, self.pid, curr_write_id,
-                                  self.key, prev, curr_version,
-                                  f"42:{curr_version}")
+                cmdlog.info(
+                    m(type="write_stared",
+                      node=self.node.name,
+                      pid=self.pid,
+                      key=self.key,
+                      write_id=curr_write_id,
+                      prev_write_id=prev,
+                      version=curr_version,
+                      value=f"42:{curr_version}").with_time())
                 self.checker.read_started(self.pid, self.key)
                 self.checker.cas_started(curr_write_id, self.key, prev,
                                          curr_version, f"42:{curr_version}")
@@ -51,8 +58,13 @@ class WriterClient:
                 op_ended = loop.time()
                 log_latency("ok", op_ended - self.started_at,
                             op_ended - op_started, response.metrics)
-                log_write_ended(self.node.name, self.pid, self.key,
-                                data.write_id, data.value)
+                cmdlog.info(
+                    m(type="write_ended",
+                      node=self.node.name,
+                      pid=self.pid,
+                      key=self.key,
+                      write_id=data.write_id,
+                      value=data.value).with_time())
                 if data.write_id == curr_write_id:
                     self.checker.cas_ended(curr_write_id, self.key)
                 else:
@@ -71,7 +83,11 @@ class WriterClient:
                 op_ended = loop.time()
                 log_latency("out", op_ended - self.started_at,
                             op_ended - op_started)
-                log_write_timeouted(self.node.name, self.pid, self.key)
+                cmdlog.info(
+                    m(type="write_timedout",
+                      node=self.node.name,
+                      pid=self.pid,
+                      key=self.key).with_time())
                 self.checker.read_canceled(self.pid, self.key)
                 self.checker.cas_timeouted(curr_write_id, self.key)
             except RequestCanceled:
@@ -79,14 +95,18 @@ class WriterClient:
                 op_ended = loop.time()
                 log_latency("err", op_ended - self.started_at,
                             op_ended - op_started)
-                log_write_failed(self.node.name, self.pid, self.key)
+                cmdlog.info(
+                    m(type="write_canceled",
+                      node=self.node.name,
+                      pid=self.pid,
+                      key=self.key).with_time())
                 self.checker.read_canceled(self.pid, self.key)
                 try:
                     self.checker.cas_canceled(curr_write_id, self.key)
                 except Violation as e:
-                    print(f"violation: {e.message}")
+                    log_violation(self.pid, e.message)
                     break
-            except Violation:
+            except Violation as e:
                 log_violation(self.pid, e.message)
                 break
 

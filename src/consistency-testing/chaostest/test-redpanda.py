@@ -1,27 +1,31 @@
 from gobekli.kvapi import KVNode
 from gobekli.workloads.symmetrical_mrsw import MRSWWorkload
-from gobekli.chaos.main import (init_output, inject_recover_scenarios_aio)
+from gobekli.chaos.main import (init_output, inject_recover_scenarios_aio,
+                                ViolationInducedExit)
 from gobekli.logging import m
 from chaostest.faults import *
-from chaostest.kvell_cluster import KvelldbCluster
+from chaostest.redpanda_cluster import RedpandaCluster
 import logging
 import asyncio
 import argparse
 import json
+import time
+import sys
 
 chaos_event_log = logging.getLogger("chaos-event")
 chaos_stdout = logging.getLogger("chaos-stdout")
 
 
 async def select_leader(cluster):
-    node = await cluster.get_leader()
-    if node == None:
+    try:
+        return cluster.get_leader()
+    except:
         chaos_event_log.info(m("can't detect a leader").with_time())
-    return node
+        raise
 
 
 async def select_follower(cluster):
-    leader = await cluster.get_leader()
+    leader = cluster.get_leader()
     for node_id in cluster.nodes.keys():
         if node_id != leader.node_id:
             return cluster.nodes[node_id]
@@ -75,7 +79,7 @@ async def run(config, n, overrides):
 
     faults = {fault: known_faults[fault] for fault in config["faults"]}
 
-    cluster = KvelldbCluster(config)
+    cluster = RedpandaCluster(config)
     try:
         for _ in range(0, n):
             if not config["reset_before_test"]:
@@ -90,7 +94,7 @@ async def run(config, n, overrides):
         pass
 
 
-parser = argparse.ArgumentParser(description='chaos test kvelldb')
+parser = argparse.ArgumentParser(description='chaos test redpanda')
 parser.add_argument('config')
 parser.add_argument('--override', action='append', required=False)
 parser.add_argument('--repeat', type=int, default=1, required=False)

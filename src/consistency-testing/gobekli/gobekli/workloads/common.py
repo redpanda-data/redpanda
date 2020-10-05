@@ -2,12 +2,16 @@ import asyncio
 import uuid
 import random
 import time
+import json
+import logging
 
 from gobekli.kvapi import RequestCanceled, RequestTimedout
 from gobekli.consensus import LinearizabilityRegisterChecker, Violation
-from gobekli.logging import (log_read_ended, log_read_failed, log_read_started,
-                             log_read_none, log_read_timeouted, log_violation,
-                             log_latency, log_stat, log_console)
+from gobekli.logging import (m, log_violation, log_latency)
+
+cmdlog = logging.getLogger("gobekli-cmd")
+stdout = logging.getLogger("gobekli-stdout")
+statlog = logging.getLogger("gobekli-availability")
 
 
 class Stat:
@@ -53,8 +57,8 @@ class AvailabilityStatLogger:
                 else:
                     entry[key] = 0
                     line += "\t" + str(0)
-            log_console(line)
-            log_stat(entry)
+            stdout.info(line)
+            statlog.info(json.dumps(entry))
             await asyncio.sleep(1)
 
     def log_fault(self, message):
@@ -63,8 +67,8 @@ class AvailabilityStatLogger:
         entry["tick"] = int((time.time() - self.started) * 1000000)
         entry["message"] = message
         line = str(entry["tick"]) + "\t" + entry["message"]
-        log_console(line)
-        log_stat(entry)
+        stdout.info(line)
+        statlog.info(json.dumps(entry))
 
     def log_recovery(self, message):
         entry = dict()
@@ -72,8 +76,8 @@ class AvailabilityStatLogger:
         entry["tick"] = int((time.time() - self.started) * 1000000)
         entry["message"] = message
         line = str(entry["tick"]) + "\t" + entry["message"]
-        log_console(line)
-        log_stat(entry)
+        stdout.info(line)
+        statlog.info(json.dumps(entry))
 
     def stop(self):
         self.is_active = False
@@ -201,7 +205,11 @@ class ReaderClient:
             op_started = None
             try:
                 self.stat.assign("size", self.checker.size())
-                log_read_started(self.node.name, self.pid, self.key)
+                cmdlog.info(
+                    m(type="read_started",
+                      node=self.node.name,
+                      pid=self.pid,
+                      key=self.key).with_time())
                 self.checker.read_started(self.pid, self.key)
                 op_started = loop.time()
                 response = await self.node.get_aio(self.key)
@@ -210,11 +218,20 @@ class ReaderClient:
                 log_latency("ok", op_ended - self.started_at,
                             op_ended - op_started, response.metrics)
                 if read == None:
-                    log_read_none(self.node.name, self.pid, self.key)
+                    cmdlog.info(
+                        m(type="read_404",
+                          node=self.node.name,
+                          pid=self.pid,
+                          key=self.key).with_time())
                     self.checker.read_none(self.pid, self.key)
                 else:
-                    log_read_ended(self.node.name, self.pid, self.key,
-                                   read.write_id, read.value)
+                    cmdlog.info(
+                        m(type="read_ended",
+                          node=self.node.name,
+                          pid=self.pid,
+                          key=self.key,
+                          write_id=read.write_id,
+                          value=read.value).with_time())
                     self.checker.read_ended(self.pid, self.key, read.write_id,
                                             read.value)
                 self.stat.inc(self.name + ":ok")
@@ -224,14 +241,22 @@ class ReaderClient:
                 log_latency("out", op_ended - self.started_at,
                             op_ended - op_started)
                 self.stat.inc(self.name + ":out")
-                log_read_timeouted(self.node.name, self.pid, self.key)
+                cmdlog.info(
+                    m(type="read_timedout",
+                      node=self.node.name,
+                      pid=self.pid,
+                      key=self.key).with_time())
                 self.checker.read_canceled(self.pid, self.key)
             except RequestCanceled:
                 op_ended = loop.time()
                 log_latency("err", op_ended - self.started_at,
                             op_ended - op_started)
                 self.stat.inc(self.name + ".err")
-                log_read_failed(self.node.name, self.pid, self.key)
+                cmdlog.info(
+                    m(type="read_canceled",
+                      node=self.node.name,
+                      pid=self.pid,
+                      key=self.key).with_time())
                 self.checker.read_canceled(self.pid, self.key)
             except Violation as e:
                 log_violation(self.pid, e.message)
