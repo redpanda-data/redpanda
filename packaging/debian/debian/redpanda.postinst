@@ -28,3 +28,21 @@ ln -sfT /etc/redpanda /var/lib/redpanda/conf
 
 sysctl -p/usr/lib/sysctl.d/99-redpanda-sched.conf || :
 sysctl -p/usr/lib/sysctl.d/99-redpanda-aio.conf || :
+
+opt/redpanda/bin/rpk config init >/dev/null 2>&1
+
+__post_install="
+Redpanda is set to run in development mode. To get the most out of the
+fastest queue in the west, enable production mode by running the following:
+
+    sudo rpk mode production
+
+followed by:
+
+    sudo rpk tune all
+    sudo systemctl start redpanda
+
+This will autotune your system to give you the best performance from Redpanda.
+You can get more information on the tunning parameters here:
+https://vectorized.io/documentation/autotune/"
+echo "$__post_install"

@@ -120,6 +120,22 @@ install -m755 %{_topdir}/common/scripts/* -Dt "%{buildroot}/%{_prefix}/lib/redpa
 /usr/lib/systemd/systemd-sysctl 99-redpanda-sched.conf >/dev/null 2>&1 || :
 /usr/lib/systemd/systemd-sysctl 99-redpanda-aio.conf >/dev/null 2>&1 || :
 /usr/bin/systemctl daemon-reload ||:
+%{_bindir}/rpk config init  >/dev/null 2>&1
+__post_install="
+Redpanda is set to run in development mode. To get the most out of the
+fastest queue in the west, enable production mode by running the following:
+
+    sudo rpk mode production
+
+followed by:
+
+    sudo rpk tune all
+    sudo systemctl start redpanda
+
+This will autotune your system to give you the best performance from Redpanda.
+You can get more information on the tunning parameters here:
+https://vectorized.io/documentation/autotune/"
+echo "$__post_install"
 
 %preun
 %systemd_preun redpanda.slice redpanda.service redpanda-tuner.service redpanda-status.timer redpanda-status.service
