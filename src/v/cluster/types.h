@@ -57,6 +57,8 @@ struct partition_assignment {
         p_md.replicas = replicas;
         return p_md;
     }
+
+    friend std::ostream& operator<<(std::ostream&, const partition_assignment&);
 };
 
 // Structure holding topic configuration, optionals will be replaced by broker
@@ -69,9 +71,7 @@ struct topic_configuration {
       int16_t replication_factor);
 
     storage::ntp_config make_ntp_config(
-      const ss::sstring&,
-      model::partition_id,
-      model::revision_id) const;
+      const ss::sstring&, model::partition_id, model::revision_id) const;
 
     model::topic_namespace tp_ns;
     // using signed integer because Kafka protocol defines it as signed int
