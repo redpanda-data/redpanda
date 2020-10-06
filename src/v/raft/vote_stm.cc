@@ -36,7 +36,7 @@ std::ostream& operator<<(std::ostream& o, const vote_stm::vmeta& m) {
 vote_stm::vote_stm(consensus* p)
   : _ptr(p)
   , _sem(0)
-  , _ctxlog(_ptr->group(), _ptr->ntp()) {}
+  , _ctxlog(_ptr->_ctxlog) {}
 
 vote_stm::~vote_stm() {
     vassert(
