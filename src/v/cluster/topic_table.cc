@@ -9,7 +9,9 @@
 
 #include "cluster/topic_table.h"
 
+#include "cluster/logger.h"
 #include "cluster/types.h"
+#include "model/fundamental.h"
 #include "model/metadata.h"
 
 namespace cluster {
@@ -29,6 +31,16 @@ topic_table::transform_topics(Func&& f) const {
     return ret;
 }
 
+topic_table::delta::delta(
+  model::ntp ntp,
+  cluster::partition_assignment p_as,
+  model::offset o,
+  op_type tp)
+  : ntp(std::move(ntp))
+  , p_as(std::move(p_as))
+  , offset(o)
+  , type(tp) {}
+
 ss::future<std::error_code>
 topic_table::apply(create_topic_cmd cmd, model::offset offset) {
     if (_topics.contains(cmd.key)) {
@@ -37,12 +49,11 @@ topic_table::apply(create_topic_cmd cmd, model::offset offset) {
           errc::topic_already_exists);
     }
     // calculate delta
-    delta d(offset);
-    d.topics.additions.push_back(cmd.value.cfg);
     for (auto& pas : cmd.value.assignments) {
-        d.partitions.additions.emplace_back(cmd.value.cfg.tp_ns, pas);
+        auto ntp = model::ntp(cmd.key.ns, cmd.key.tp, pas.id);
+        _pending_deltas.emplace_back(
+          std::move(ntp), pas, offset, delta::op_type::add);
     }
-    _pending_deltas.push_back(std::move(d));
 
     _topics.insert({cmd.key, std::move(cmd.value)});
     notify_waiters();
@@ -59,12 +70,11 @@ ss::future<> topic_table::stop() {
 ss::future<std::error_code>
 topic_table::apply(delete_topic_cmd cmd, model::offset offset) {
     if (auto tp = _topics.find(cmd.value); tp != _topics.end()) {
-        delta d(offset);
-        d.topics.deletions.push_back(tp->second.cfg);
         for (auto& p : tp->second.assignments) {
-            d.partitions.deletions.emplace_back(tp->first, p);
+            auto ntp = model::ntp(cmd.key.ns, cmd.key.tp, p.id);
+            _pending_deltas.emplace_back(
+              std::move(ntp), std::move(p), offset, delta::op_type::del);
         }
-        _pending_deltas.push_back(std::move(d));
         _topics.erase(tp);
         notify_waiters();
         return ss::make_ready_future<std::error_code>(errc::success);
@@ -94,9 +104,10 @@ topic_table::apply(move_partition_replicas_cmd cmd, model::offset o) {
     current_assignment_it->replicas = cmd.value;
 
     // calculate deleta for backend
-    delta d(o);
-    d.partitions.updates.emplace_back(tp->first, *current_assignment_it);
-    _pending_deltas.push_back(std::move(d));
+    model::ntp ntp(tp->first.ns, tp->first.tp, current_assignment_it->id);
+    _pending_deltas.emplace_back(
+      std::move(ntp), *current_assignment_it, o, delta::op_type::update);
+
     notify_waiters();
 
     return ss::make_ready_future<std::error_code>(errc::success);
@@ -148,10 +159,6 @@ topic_table::wait_for_changes(ss::abort_source& as) {
     return f;
 }
 
-bool topic_table::delta::empty() const {
-    return partitions.empty() && topics.empty();
-}
-
 std::vector<model::topic_namespace> topic_table::all_topics() const {
     return transform_topics(
       [](const topic_configuration_assignment& td) { return td.cfg.tp_ns; });
@@ -197,6 +204,31 @@ bool topic_table::contains(
           [&pid](const partition_assignment& pas) { return pas.id == pid; });
     }
     return false;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const topic_table::delta::op_type& tp) {
+    switch (tp) {
+    case topic_table::delta::op_type::add:
+        return o << "addition";
+    case topic_table::delta::op_type::del:
+        return o << "deletion";
+    case topic_table::delta::op_type::update:
+        return o << "update";
+    }
+    __builtin_unreachable();
+}
+
+std::ostream& operator<<(std::ostream& o, const topic_table::delta& d) {
+    fmt::print(
+      o,
+      "{{type: {}, ntp: {}, offset: {}, assignment: {}}}",
+      d.type,
+      d.ntp,
+      d.offset,
+      d.p_as);
+
+    return o;
 }
 
 } // namespace cluster

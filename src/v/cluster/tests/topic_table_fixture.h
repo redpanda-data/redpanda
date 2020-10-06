@@ -23,15 +23,19 @@ create_allocation_node(model::node_id nid, uint32_t cores) {
 }
 
 static void validate_delta(
-  const cluster::topic_table::delta& d,
-  int new_topics,
+  const std::vector<cluster::topic_table::delta>& d,
   int new_partitions,
-  int removed_topics,
   int removed_partitions) {
-    BOOST_REQUIRE_EQUAL(d.partitions.additions.size(), new_partitions);
-    BOOST_REQUIRE_EQUAL(d.partitions.deletions.size(), removed_partitions);
-    BOOST_REQUIRE_EQUAL(d.topics.additions.size(), new_topics);
-    BOOST_REQUIRE_EQUAL(d.topics.deletions.size(), removed_topics);
+    size_t additions = std::count_if(
+      d.begin(), d.end(), [](const cluster::topic_table::delta& d) {
+          return d.type == cluster::topic_table::delta::op_type::add;
+      });
+    size_t deletions = std::count_if(
+      d.begin(), d.end(), [](const cluster::topic_table::delta& d) {
+          return d.type == cluster::topic_table::delta::op_type::del;
+      });
+    BOOST_REQUIRE_EQUAL(additions, new_partitions);
+    BOOST_REQUIRE_EQUAL(deletions, removed_partitions);
 }
 
 struct topic_table_fixture {

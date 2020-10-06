@@ -41,26 +41,26 @@ public:
     ss::future<> start();
 
 private:
-    template<typename T>
-    struct task_meta {
-        explicit task_meta(T t)
-          : delta(std::move(t)) {}
-
-        bool finished = false;
-        T delta;
-    };
-
+    using deltas_t = std::vector<topic_table::delta>;
+    using underlying_t = absl::flat_hash_map<model::ntp, deltas_t>;
     // Topics
     void start_topics_reconciliation_loop();
     ss::future<> reconcile_topics();
-    ss::future<> do_reconcile_topic(task_meta<topic_table::delta>&);
+    ss::future<std::error_code>
+    execute_partitition_op(const topic_table::delta&);
     ss::future<std::error_code> create_partition(
-      model::ntp, raft::group_id, model::offset, std::vector<model::broker>);
+      model::ntp,
+      raft::group_id,
+      model::revision_id,
+      std::vector<model::broker>);
     ss::future<> add_to_shard_table(model::ntp, raft::group_id, ss::shard_id);
     ss::future<std::error_code> process_partition_update(
-      const topic_table::delta::partition&, model::offset);
+      model::ntp, const partition_assignment&, model::revision_id);
+    ss::future<> fetch_deltas();
+    ss::future<> reconcile_ntp(deltas_t&);
 
-    ss::future<std::error_code> delete_partition(model::ntp);
+    ss::future<std::error_code>
+      delete_partition(model::ntp, model::revision_id);
     ss::future<std::error_code> update_partition_replica_set(
       const model::ntp&, const std::vector<model::broker_shard>&);
 
@@ -74,7 +74,7 @@ private:
     model::node_id _self;
     ss::sstring _data_directory;
     ss::sharded<ss::abort_source>& _as;
-    std::vector<task_meta<topic_table::delta>> _topic_deltas;
+    underlying_t _topic_deltas;
     ss::timer<> _housekeeping_timer;
     ss::semaphore _topics_sem{1};
     ss::gate _gate;
