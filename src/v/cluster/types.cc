@@ -110,6 +110,16 @@ std::ostream& operator<<(std::ostream& o, const configuration_invariants& c) {
       c.core_count);
     return o;
 }
+
+std::ostream& operator<<(std::ostream& o, const partition_assignment& p_as) {
+    fmt::print(
+      o,
+      "{{ id: {}, group_id: {}, replicas: {} }}",
+      p_as.id,
+      p_as.group,
+      p_as.replicas);
+    return o;
+}
 } // namespace cluster
 
 namespace reflection {
