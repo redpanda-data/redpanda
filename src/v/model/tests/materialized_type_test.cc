@@ -8,7 +8,7 @@
 
 #include "coproc/types.h"
 #include "model/fundamental.h"
-
+#define BOOST_TEST_MODULE model
 #include <seastar/core/sstring.hh>
 
 #include <boost/test/tools/old/interface.hpp>
@@ -36,7 +36,7 @@ BOOST_AUTO_TEST_CASE(test_valid_materialized_topic) {
     for (const auto& e : test_data) {
         const auto& [src, dest] = e;
         model::topic t(src + "." + dest);
-        auto mat_topic = coproc::make_materialized_topic(t);
+        auto mat_topic = model::make_materialized_topic(t);
         BOOST_REQUIRE(mat_topic.has_value());
         BOOST_REQUIRE_EQUAL(mat_topic->src, src);
         BOOST_REQUIRE_EQUAL(as_dest(mat_topic->dest), dest);
@@ -71,7 +71,7 @@ BOOST_AUTO_TEST_CASE(test_invalid_materialized_topic) {
     for (const auto& e : test_data) {
         const auto& [src, dest] = e;
         model::topic t(src + "." + dest);
-        auto mat_topic = coproc::make_materialized_topic(t);
+        auto mat_topic = model::make_materialized_topic(t);
         BOOST_REQUIRE(!mat_topic.has_value());
     }
 }

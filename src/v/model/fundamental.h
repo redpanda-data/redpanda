@@ -18,6 +18,7 @@
 #include <seastar/util/bool_class.hh>
 
 #include <boost/container_hash/hash.hpp>
+#include <fmt/core.h>
 
 #include <cstdint>
 #include <limits>
@@ -88,6 +89,28 @@ public:
 
     operator topic_view() const { return topic_view(_value); }
 };
+
+/// \brief View wrapper for a materialized topic format
+/// The format for a materialized_topic will not pass kafka topic validators
+struct materialized_topic {
+    model::topic_view src;
+    model::topic_view dest;
+};
+
+/// Parses a topic formatted as a materialized topic
+/// \return materialized_topic view or std::nullopt if parameter fails to be
+/// parsed correctly
+std::optional<materialized_topic> make_materialized_topic(const model::topic&);
+
+/// \brief Returns true if the schema obeys the $<src>.<dest>$ pattern
+inline bool is_materialized_topic(const model::topic& t) {
+    return make_materialized_topic(t).has_value();
+}
+
+inline model::topic
+to_materialized_topic(const model::topic& src, const model::topic& dest) {
+    return model::topic(fmt::format("{}.${}$", src(), dest()));
+}
 
 /// \brief namespace is reserved in c++;  use ns
 using ns = named_type<ss::sstring, struct model_ns_type>;

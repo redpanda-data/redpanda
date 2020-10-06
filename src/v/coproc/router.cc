@@ -153,7 +153,7 @@ void router::bump_offset(const model::ntp& src_ntp, const script_id sid) {
 
 ss::future<> router::process_reply_one(process_batch_reply::data e) {
     // Strip the source/dest topics from the materialized topic
-    const auto mt = make_materialized_topic(e.ntp.tp.topic);
+    const auto mt = model::make_materialized_topic(e.ntp.tp.topic);
     if (!mt) {
         // For now this will signify a null response, which means the
         // record_batch was is to be filtered out of the materialized_topic.

@@ -75,7 +75,7 @@ ss::future<coproc_fixture_base::opt_reader_data_t> coproc_fixture_base::drain(
   const model::ntp& ntp,
   std::size_t limit,
   model::timeout_clock::time_point timeout) {
-    if (!coproc::is_materialized_topic(ntp.tp.topic)) {
+    if (!model::is_materialized_topic(ntp.tp.topic)) {
         return ss::make_ready_future<opt_reader_data_t>(std::nullopt);
     }
     const auto c = hash_scheme(ntp.tp.topic);

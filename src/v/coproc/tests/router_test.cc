@@ -145,7 +145,7 @@ FIXTURE_TEST(test_coproc_router_simple, router_test_fixture) {
     model::ntp input_ntp(default_ns, src_topic, model::partition_id(0));
     model::ntp output_ntp(
       default_ns,
-      coproc::to_materialized_topic(
+      model::to_materialized_topic(
         src_topic, identity_coprocessor::identity_topic),
       model::partition_id(0));
 
@@ -197,11 +197,11 @@ FIXTURE_TEST(test_coproc_router_multi_route, router_test_fixture) {
     for (auto i = 0; i < n_partitions; ++i) {
         model::ntp even(
           default_ns,
-          coproc::to_materialized_topic(tt, model::topic("even")),
+          model::to_materialized_topic(tt, model::topic("even")),
           model::partition_id(i));
         model::ntp odd(
           default_ns,
-          coproc::to_materialized_topic(tt, model::topic("odd")),
+          model::to_materialized_topic(tt, model::topic("odd")),
           model::partition_id(i));
         drains.emplace_back(
           drain(even, twss[i].n_even, timeout).then(&map_stats));

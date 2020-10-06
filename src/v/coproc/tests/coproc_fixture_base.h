@@ -72,7 +72,7 @@ private:
     /// \brief For these tests all ntps are hashed to core in this fashion.
     static ss::shard_id hash_scheme(const model::topic& topic) {
         // NOTE: in prod, this won't be the case
-        if (auto mt = coproc::make_materialized_topic(topic)) {
+        if (auto mt = model::make_materialized_topic(topic)) {
             return std::hash<model::topic>()(mt->src) % ss::smp::count;
         }
         return std::hash<model::topic>()(topic) % ss::smp::count;

@@ -34,7 +34,6 @@ rp_test(
   UNIT_TEST
   BINARY_NAME coproc_unit_tests
   SOURCES
-    tests/materialized_type_test.cc
     tests/script_manager_service_test.cc
     tests/supervisor.cc
     tests/coproc_fixture_base.cc

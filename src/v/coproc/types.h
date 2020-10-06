@@ -24,13 +24,6 @@ namespace coproc {
 
 using script_id = named_type<uint64_t, struct script_id_tag>;
 
-/// \brief View wrapper for a materialized topic format
-/// The format for a materialized_topic will not pass kafka topic validators
-struct materialized_topic {
-    model::topic_view src;
-    model::topic_view dest;
-};
-
 /// \brief per topic a client will recieve a response code on the
 /// registration status of the topic
 enum class enable_response_code : int8_t {
@@ -109,23 +102,8 @@ struct process_batch_reply {
     std::vector<data> resps;
 };
 
-/// Parses a topic formatted as a materialized topic
-/// \return materialized_topic view or std::nullopt if parameter fails to be
-/// parsed correctly
-std::optional<materialized_topic> make_materialized_topic(const model::topic&);
-
-/// \brief Returns true if the schema obeys the $<src>.<dest>$ pattern
-inline bool is_materialized_topic(const model::topic& t) {
-    return make_materialized_topic(t).has_value();
-}
-
-inline model::topic
-to_materialized_topic(const model::topic& src, const model::topic& dest) {
-    return model::topic(fmt::format("{}.${}$", src(), dest()));
-}
-
 std::ostream&
-operator<<(std::ostream& os, enable_copros_request::data::topic_mode);
+operator<<(std::ostream& os, const enable_copros_request::data::topic_mode&);
 
 } // namespace coproc
 
