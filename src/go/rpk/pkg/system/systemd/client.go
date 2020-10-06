@@ -1,13 +1,17 @@
 package systemd
 
-import "github.com/spf13/afero"
+import (
+	"strings"
+
+	"github.com/spf13/afero"
+)
 
 type ActiveState int
 
 // systemctl --state=help
 // https://www.freedesktop.org/software/systemd/man/systemctl.html
 const (
-	ActiveStateActive = iota
+	ActiveStateActive ActiveState = iota
 	ActiveStateReloading
 	ActiveStateInactive
 	ActiveStateFailed
@@ -38,7 +42,7 @@ func (s ActiveState) String() string {
 }
 
 func toActiveState(s string) ActiveState {
-	switch s {
+	switch strings.Trim(s, ` "`) {
 	case "active":
 		return ActiveStateActive
 	case "reloading":
@@ -92,7 +96,7 @@ func (s LoadState) String() string {
 }
 
 func toLoadState(s string) LoadState {
-	switch s {
+	switch strings.Trim(s, ` "`) {
 	case "stub":
 		return LoadStateStub
 	case "loaded":
