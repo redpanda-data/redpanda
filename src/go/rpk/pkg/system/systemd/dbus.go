@@ -35,15 +35,20 @@ func (c *dbusClient) StartUnit(name string) error {
 }
 
 func (c *dbusClient) UnitState(name string) (LoadState, ActiveState, error) {
-	statuses, err := c.conn.ListUnitsByNames([]string{name})
+	loadState, err := c.conn.GetUnitProperty(name, "LoadState")
 	if err != nil {
-		return LoadStateUnknown, ActiveStateUnknown, err
-	}
-	if len(statuses) == 0 {
 		return LoadStateUnknown, ActiveStateUnknown, nil
 	}
-	status := statuses[0]
-	return toLoadState(status.LoadState), toActiveState(status.ActiveState), nil
+	activeState, err := c.conn.GetUnitProperty(name, "ActiveState")
+	if err != nil {
+		return toLoadState(loadState.Value.String()),
+			ActiveStateUnknown,
+			nil
+	}
+
+	return toLoadState(loadState.Value.String()),
+		toActiveState(activeState.Value.String()),
+		nil
 }
 
 func (c *dbusClient) LoadUnit(fs afero.Fs, body, name string) error {
