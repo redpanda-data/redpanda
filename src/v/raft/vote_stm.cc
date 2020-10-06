@@ -26,7 +26,7 @@ std::ostream& operator<<(std::ostream& o, const vote_stm::vmeta& m) {
 vote_stm::vote_stm(consensus* p)
   : _ptr(p)
   , _sem(_ptr->config().unique_voter_count())
-  , _ctxlog(_ptr->group(), _ptr->ntp()) {}
+  , _ctxlog(_ptr->_ctxlog) {}
 
 vote_stm::~vote_stm() {
     if (_vote_bg.get_count() > 0 && !_vote_bg.is_closed()) {
