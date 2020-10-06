@@ -27,10 +27,7 @@ FIXTURE_TEST(test_happy_path_create, topic_table_fixture) {
     // check delta
     auto d = table.local().wait_for_changes(as).get0();
 
-    BOOST_REQUIRE_EQUAL(d.size(), 3);
-    validate_delta(d[0], 1, 1, 0, 0);
-    validate_delta(d[1], 1, 12, 0, 0);
-    validate_delta(d[2], 1, 8, 0, 0);
+    validate_delta(d, 21, 0);
 }
 
 FIXTURE_TEST(test_happy_path_delete, topic_table_fixture) {
@@ -58,9 +55,7 @@ FIXTURE_TEST(test_happy_path_delete, topic_table_fixture) {
     // check delta
     auto d = table.local().wait_for_changes(as).get0();
 
-    BOOST_REQUIRE_EQUAL(d.size(), 2);
-    validate_delta(d[0], 0, 0, 1, 12);
-    validate_delta(d[1], 0, 0, 1, 8);
+    validate_delta(d, 0, 20);
 }
 
 FIXTURE_TEST(test_conflicts, topic_table_fixture) {

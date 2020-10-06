@@ -23,16 +23,21 @@ class topic_table {
 public:
     // delta propagated to backend
     struct delta {
-        explicit delta(model::offset o)
-          : offset(o) {}
-        using partition
-          = std::pair<model::topic_namespace, partition_assignment>;
+        enum class op_type { add, del, update };
 
-        patch<partition> partitions;
-        patch<topic_configuration> topics;
+        delta(
+          model::ntp, cluster::partition_assignment, model::offset, op_type);
+        model::ntp ntp;
+        cluster::partition_assignment p_as;
         model::offset offset;
+        op_type type;
 
-        bool empty() const;
+        model::topic_namespace_view tp_ns() const {
+            return model::topic_namespace_view(ntp);
+        }
+
+        friend std::ostream& operator<<(std::ostream&, const delta&);
+        friend std::ostream& operator<<(std::ostream&, const op_type&);
     };
 
     bool is_batch_applicable(const model::record_batch& b) const {
