@@ -18,6 +18,8 @@ namespace pandaproxy::client {
 struct configuration final : public config::config_store {
     config::property<std::vector<unresolved_address>> brokers;
     config::property<config::tls_config> broker_tls;
+    config::property<size_t> retries;
+    config::property<std::chrono::milliseconds> retry_base_backoff;
 
     configuration();
 

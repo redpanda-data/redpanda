@@ -18,7 +18,19 @@ configuration::configuration()
       "TLS configuration for the brokers",
       config::required::no,
       config::tls_config(),
-      config::tls_config::validate) {}
+      config::tls_config::validate)
+  , retries(
+      *this,
+      "retries",
+      "Number of times to retry a request to a broker",
+      config::required::no,
+      5)
+  , retry_base_backoff(
+      *this,
+      "retry_base_backoff_ms",
+      "Delay (in milliseconds) for initial retry backoff",
+      config::required::no,
+      100ms) {}
 
 void configuration::read_yaml(const YAML::Node& root_node) {
     if (!root_node["pandaproxy_client"]) {
