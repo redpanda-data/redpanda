@@ -165,13 +165,14 @@ private:
 
         consume_result consume_batch_start(
           model::record_batch_header header, size_t, size_t) override;
-        consume_result consume_record(model::record r) override;
-        void consume_compressed_records(iobuf&&) override;
+        void consume_records(iobuf&&) override;
         stop_parser consume_batch_end() override;
 
     private:
         kvstore* _store;
         model::offset _last_offset;
+        model::record_batch_header _header;
+        iobuf _records;
     };
 
     friend replay_consumer;

@@ -15,15 +15,7 @@ batch_cache::entry_ptr batch_cache::put(const model::record_batch& input) {
     // temporary buffers
     auto batch = input.copy();
     _size_bytes += batch.memory_usage();
-    entry* e;
-    if (_pool.empty()) {
-        e = new entry(std::move(batch));
-    } else {
-        e = &_pool.front();
-        _pool.pop_front();
-        _size_bytes -= e->batch.memory_usage();
-        e->batch = std::move(batch);
-    }
+    auto e = new entry(std::move(batch));
 
     // if weak_from_this were to cause an allocation--which it shouldn't--`e`
     // wouldn't be visible to the reclaimer since it isn't on a lru/pool list.
@@ -35,7 +27,7 @@ batch_cache::entry_ptr batch_cache::put(const model::record_batch& input) {
 batch_cache::~batch_cache() noexcept {
     clear();
     vassert(
-      _size_bytes == 0 && _lru.empty() && _pool.empty(),
+      _size_bytes == 0 && _lru.empty(),
       "Detected incorrect batch_cache accounting. {}",
       *this);
 }
@@ -46,11 +38,9 @@ void batch_cache::evict(entry_ptr&& e) {
         // invalidates the caller's entry_ptr. simply interacting with the
         // r-value reference `e` wouldn't do that.
         auto p = std::exchange(e, {});
-        p->_hook.unlink();
         _size_bytes -= p->batch.memory_usage();
-        p->batch.clear();
-        _size_bytes += p->batch.memory_usage();
-        _pool.push_back(*p);
+        _lru.erase_and_dispose(
+          _lru.iterator_to(*p), [](entry* e) { delete e; });
     }
 }
 
@@ -84,17 +74,6 @@ size_t batch_cache::reclaim(size_t size) {
             reclaimed += it->batch.memory_usage();
             // NOLINTNEXTLINE
             it = _lru.erase_and_dispose(it, [](entry* e) { delete e; });
-        } else {
-            it++;
-        }
-    }
-
-    for (auto it = _pool.cbegin();
-         it != _pool.cend() && reclaimed < _reclaim_size;) {
-        if (likely(!it->pinned())) {
-            reclaimed += it->batch.memory_usage();
-            // NOLINTNEXTLINE
-            it = _pool.erase_and_dispose(it, [](entry* e) { delete e; });
         } else {
             it++;
         }
@@ -194,11 +173,10 @@ void batch_cache_index::truncate(model::offset offset) {
 
 std::ostream& operator<<(std::ostream& o, const batch_cache& b) {
     // NOTE: intrusive list have a O(N) for size.
-    // Do _not_ print size of _lru or _pool
+    // Do _not_ print size of _lru
     return o << "{is_reclaiming:" << b.is_memory_reclaiming()
              << ", size_bytes: " << b._size_bytes
-             << ", lru_empty:" << b._lru.empty()
-             << ", pool_empty:" << b._pool.empty() << "}";
+             << ", lru_empty:" << b._lru.empty() << "}";
 }
 std::ostream&
 operator<<(std::ostream& o, const batch_cache_index::read_result& c) {

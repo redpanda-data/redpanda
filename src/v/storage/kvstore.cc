@@ -537,26 +537,33 @@ batch_consumer::consume_result kvstore::replay_consumer::consume_batch_start(
       "Replaying from offset {} expected {}",
       header.base_offset,
       _store->_next_offset);
-    _last_offset = header.last_offset();
+    _header = header;
     return skip_batch::no;
 }
 
-batch_consumer::consume_result
-kvstore::replay_consumer::consume_record(model::record r) {
-    auto key = iobuf_to_bytes(r.release_key());
-    auto value = reflection::from_iobuf<std::optional<iobuf>>(
-      r.release_value());
-    _store->apply_op(std::move(key), std::move(value));
-    _store->_next_offset += model::offset(1);
-    return skip_batch::no;
-}
-
-void kvstore::replay_consumer::consume_compressed_records(iobuf&&) {
-    vassert(false, "Key-value store does not support compressed records");
+void kvstore::replay_consumer::consume_records(iobuf&& records) {
+    vassert(
+      _header.attrs.compression() == model::compression::none,
+      "Key-value store does not support compressed records");
+    _records = std::move(records);
 }
 
 batch_consumer::stop_parser kvstore::replay_consumer::consume_batch_end() {
-    const auto next_batch_offset = _last_offset + model::offset(1);
+    /*
+     * build the batch and then apply all its records to the store
+     */
+    model::record_batch batch(
+      _header, std::move(_records), model::record_batch::tag_ctor_ng{});
+
+    batch.for_each_record([this](model::record r) {
+        auto key = iobuf_to_bytes(r.release_key());
+        auto value = reflection::from_iobuf<std::optional<iobuf>>(
+          r.release_value());
+        _store->apply_op(std::move(key), std::move(value));
+        _store->_next_offset += model::offset(1);
+    });
+
+    const auto next_batch_offset = _header.last_offset() + model::offset(1);
     vassert(
       _store->_next_offset == next_batch_offset,
       "Unexpected next offset {} expected {}",

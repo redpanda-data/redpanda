@@ -1,7 +1,9 @@
 #include "bytes/iobuf.h"
 
+#include "bytes/details/io_allocation_size.h"
 #include "vassert.h"
 
+#include <seastar/core/bitops.hh>
 #include <seastar/core/do_with.hh>
 #include <seastar/core/future-util.hh>
 #include <seastar/core/smp.hh>
@@ -113,15 +115,35 @@ ss::input_stream<char> make_iobuf_input_stream(iobuf io) {
       std::make_unique<iobuf_input_stream>(std::move(io)));
     return ss::input_stream<char>(std::move(ds));
 }
+
 iobuf iobuf::copy() const {
-    iobuf ret;
-    // reduce allocations by starting at the last bucket
-    ret.reserve_memory(last_allocation_size());
     auto in = iobuf::iterator_consumer(cbegin(), cend());
-    in.consume(_size, [&ret](const char* src, size_t sz) {
-        ret.append(src, sz);
-        return ss::stop_iteration::no;
-    });
+    return iobuf_copy(in, _size);
+}
+
+iobuf iobuf_copy(iobuf::iterator_consumer& in, size_t len) {
+    iobuf ret;
+
+    int bytes_left = len;
+    while (bytes_left) {
+        ss::temporary_buffer<char> buf(
+          details::io_allocation_size::ss_next_allocation_size(bytes_left));
+
+        size_t offset = 0;
+        in.consume(buf.size(), [&buf, &offset](const char* src, size_t size) {
+            // NOLINTNEXTLINE
+            std::copy_n(src, size, buf.get_write() + offset);
+            offset += size;
+            return ss::stop_iteration::no;
+        });
+
+        bytes_left -= buf.size();
+
+        auto f = new iobuf::fragment(std::move(buf), iobuf::fragment::full{});
+        ret.append_take_ownership(f);
+    }
+
+    vassert(bytes_left == 0, "Bytes remaining to be copied");
     return ret;
 }
 

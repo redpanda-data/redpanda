@@ -6,10 +6,6 @@
 #include "utils/vint.h"
 
 namespace model {
-static inline void crc_extend_vint(crc32& crc, int64_t v) {
-    auto b = vint::to_bytes(v);
-    crc.extend(b.data(), b.size());
-}
 
 template<typename T, typename = std::enable_if_t<std::is_integral_v<T>, T>>
 void crc_extend_cpu_to_le(crc32& crc, T i) {
@@ -69,24 +65,6 @@ void crc_record_batch_header(crc32& crc, const record_batch_header& header) {
       header.producer_epoch,
       header.base_sequence,
       header.record_count);
-}
-
-void crc_record(crc32& crc, const record& r) {
-    crc_extend_vint(crc, r.size_bytes());
-    crc_extend_vint(crc, r.attributes().value());
-    crc_extend_vint(crc, r.timestamp_delta());
-    crc_extend_vint(crc, r.offset_delta());
-    crc_extend_vint(crc, r.key_size());
-    crc_extend_iobuf(crc, r.key());
-    crc_extend_vint(crc, r.value_size());
-    crc_extend_iobuf(crc, r.value());
-    crc_extend_vint(crc, r.headers().size());
-    for (auto& h : r.headers()) {
-        crc_extend_vint(crc, h.key_size());
-        crc_extend_iobuf(crc, h.key());
-        crc_extend_vint(crc, h.value_size());
-        crc_extend_iobuf(crc, h.value());
-    }
 }
 
 void crc_record_batch(crc32& crc, const record_batch& b) {
