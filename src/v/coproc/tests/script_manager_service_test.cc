@@ -4,6 +4,7 @@
 #include "coproc/tests/coproc_test_fixture.h"
 #include "coproc/tests/utils.h"
 #include "coproc/types.h"
+#include "rpc/test/rpc_integration_fixture.h"
 #include "test_utils/fixture.h"
 
 #include <seastar/util/defer.hh>
@@ -34,12 +35,18 @@ coproc_deregister_topics(
 }
 
 class script_manager_service_fixture
-  : public coproc_test_fixture<rpc_sharded_service_tag> {
+  : public coproc_test_fixture
+  , public rpc_sharded_integration_fixture {
 public:
     script_manager_service_fixture()
-      : coproc_test_fixture<rpc_sharded_service_tag>(43118, false) {
+      : coproc_test_fixture(false)
+      , rpc_sharded_integration_fixture(43118) {
+        configure_server();
         register_service<coproc::service>(std::ref(get_router()));
+        start_server();
     }
+
+    ~script_manager_service_fixture() override { stop_server(); }
 
     // This function ensures that the internals of the coproc::active_mappings
     // caches are laid out how they are expected to be i.e. the right ntps
