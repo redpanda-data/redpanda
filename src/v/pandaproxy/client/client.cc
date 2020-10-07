@@ -53,6 +53,14 @@ ss::future<> client::update_metadata(wait_or_start::tag) {
         return broker
           ->dispatch(kafka::metadata_request{.list_all_topics = true})
           .then([this](kafka::metadata_response res) {
+              // Create new seeds from the returned set of brokers
+              std::vector<unresolved_address> seeds;
+              seeds.reserve(res.brokers.size());
+              for (const auto& b : res.brokers) {
+                  seeds.emplace_back(b.host, b.port);
+              }
+              std::swap(_seeds, seeds);
+
               return _brokers.apply(std::move(res));
           })
           .finally([]() { vlog(ppclog.trace, "updated metadata"); });
