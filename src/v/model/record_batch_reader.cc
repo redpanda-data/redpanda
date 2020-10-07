@@ -62,16 +62,27 @@ record_batch_reader make_foreign_record_batch_reader(record_batch_reader&& r) {
     return record_batch_reader(std::move(frn));
 }
 
-record_batch_reader make_memory_record_batch_reader(data_t batches) {
+record_batch_reader make_memory_record_batch_reader(storage_t batches) {
     class reader final : public record_batch_reader::impl {
     public:
-        explicit reader(data_t batches)
+        explicit reader(storage_t batches)
           : _batches(std::move(batches)) {}
 
-        bool is_end_of_stream() const final { return _batches.empty(); }
+        bool is_end_of_stream() const final {
+            return ss::visit(
+              _batches,
+              [](const data_t& d) { return d.empty(); },
+              [](const foreign_data_t& d) {
+                  return d.index >= d.buffer->size();
+              });
+        }
 
         void print(std::ostream& os) final {
-            fmt::print(os, "memory reader {} batches", _batches.size());
+            auto size = ss::visit(
+              _batches,
+              [](const data_t& d) { return d.size(); },
+              [](const foreign_data_t& d) { return d.buffer->size(); });
+            fmt::print(os, "memory reader {} batches", size);
         }
 
     protected:
@@ -82,9 +93,27 @@ record_batch_reader make_memory_record_batch_reader(data_t batches) {
         }
 
     private:
-        data_t _batches;
+        storage_t _batches;
     };
+
     return make_record_batch_reader<reader>(std::move(batches));
+}
+
+record_batch_reader
+make_foreign_memory_record_batch_reader(record_batch_reader::data_t data) {
+    auto batches = std::make_unique<record_batch_reader::data_t>(
+      std::move(data));
+    return make_memory_record_batch_reader(record_batch_reader::foreign_data_t{
+      .buffer = ss::make_foreign(std::move(batches)),
+      .index = 0,
+    });
+}
+
+record_batch_reader make_foreign_memory_record_batch_reader(record_batch b) {
+    record_batch_reader::data_t data;
+    data.reserve(1);
+    data.push_back(std::move(b));
+    return make_foreign_memory_record_batch_reader(std::move(data));
 }
 
 record_batch_reader make_generating_record_batch_reader(
