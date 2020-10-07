@@ -11,8 +11,6 @@ class record;
 
 void crc_record_batch_header(crc32&, const record_batch_header&);
 
-void crc_record(crc32&, const record& r);
-
 void crc_record_batch(crc32&, const record_batch&);
 
 /// \brief int32_t because that's what kafka uses
