@@ -6,7 +6,7 @@
 //
 // https://github.com/vectorizedio/redpanda/blob/master/licenses/rcl.md
 
-#include "coproc_fixture_base.h"
+#include "coproc_test_fixture.h"
 
 #include "coproc/errc.h"
 #include "coproc/logger.h"
@@ -23,7 +23,7 @@
 
 using namespace std::literals;
 
-void coproc_fixture_base::startup(log_layout_map&& data) {
+void coproc_test_fixture::startup(log_layout_map&& data, active_copros&& cps) {
     _data = to_ntps(std::move(data));
     _api.start(default_kvstorecfg(), default_logcfg()).get0();
     _api.invoke_on_all(&storage::api::start).get();
@@ -33,6 +33,7 @@ void coproc_fixture_base::startup(log_layout_map&& data) {
         std::ref(_api))
       .get();
     expand().get();
+    expand_copros(std::move(cps)).get();
     if (_start_router) {
         // All tests must involve a router or to even compile. A coproc::service
         // takes a router as its main argument. However in some cases its not
@@ -43,7 +44,7 @@ void coproc_fixture_base::startup(log_layout_map&& data) {
     }
 }
 
-coproc_fixture_base::~coproc_fixture_base() {
+coproc_test_fixture::~coproc_test_fixture() {
     _router.stop().get();
     _api.stop().get();
     _data.clear();
@@ -71,7 +72,7 @@ ss::future<> poll_until(
       });
 }
 
-ss::future<coproc_fixture_base::opt_reader_data_t> coproc_fixture_base::drain(
+ss::future<coproc_test_fixture::opt_reader_data_t> coproc_test_fixture::drain(
   const model::ntp& ntp,
   std::size_t limit,
   model::timeout_clock::time_point timeout) {
@@ -105,7 +106,7 @@ ss::future<coproc_fixture_base::opt_reader_data_t> coproc_fixture_base::drain(
     });
 }
 
-ss::future<model::record_batch_reader::data_t> coproc_fixture_base::do_drain(
+ss::future<model::record_batch_reader::data_t> coproc_test_fixture::do_drain(
   storage::log&& log,
   std::size_t limit,
   model::timeout_clock::time_point timeout) {
@@ -140,7 +141,7 @@ ss::future<model::record_batch_reader::data_t> coproc_fixture_base::do_drain(
       });
 }
 
-ss::future<> coproc_fixture_base::push(
+ss::future<> coproc_test_fixture::push(
   const model::ntp& ntp, ss::circular_buffer<model::record_batch>&& data) {
     vlog(
       coproc::coproclog.info,
@@ -161,7 +162,7 @@ ss::future<> coproc_fixture_base::push(
       });
 }
 
-ss::future<> coproc_fixture_base::expand_copros(active_copros&& copros) {
+ss::future<> coproc_test_fixture::expand_copros(active_copros&& copros) {
     return ss::do_with(std::move(copros), [this](auto& copros) {
         return _router.invoke_on_all([&copros](coproc::router& r) {
             return ss::do_for_each(
@@ -186,7 +187,7 @@ ss::future<> coproc_fixture_base::expand_copros(active_copros&& copros) {
     });
 }
 
-ss::future<> coproc_fixture_base::expand() {
+ss::future<> coproc_test_fixture::expand() {
     return _api.invoke_on_all([this](storage::api& api) {
         return ss::do_for_each(
           _data.cbegin(), _data.cend(), [this, &api](const auto& ntp) {
@@ -195,7 +196,7 @@ ss::future<> coproc_fixture_base::expand() {
     });
 }
 
-ss::future<> coproc_fixture_base::maybe_create_log(
+ss::future<> coproc_test_fixture::maybe_create_log(
   storage::api& api, const model::ntp& ntp) {
     if (hash_scheme(ntp.tp.topic) != ss::this_shard_id()) {
         return ss::make_ready_future<>();
