@@ -8,14 +8,14 @@ import logging
 import logging.handlers
 import threading
 import traceback
+import pathlib
 from datetime import datetime
 
 from gobekli.kvapi import KVNode
 from gobekli.workloads.symmetrical_mrsw import MRSWWorkload
 from gobekli.logging import (init_logs, m)
 
-from .analysis import (make_overview_chart,
-                       analyze_inject_recover_availability)
+from .analysis import (analyze_inject_recover_availability)
 
 chaos_event_log = logging.getLogger("chaos-event")
 chaos_stdout = logging.getLogger("chaos-stdout")
@@ -27,6 +27,9 @@ class ExperimentResult:
         self.is_valid = False
         self.error = None
         self.analysis = dict()
+        self.title = None
+        self.latency_log = None
+        self.availability_log = None
 
 
 class ViolationInducedExit(Exception):
@@ -116,22 +119,28 @@ async def inject_recover_scenario_aio(log_dir, config, cluster,
     validation_result = await task
     await workload.dispose()
 
+    scenario = "inject-recover"
+    workload = config["workload"]["name"]
+
     result = ExperimentResult()
     result.is_valid = validation_result.is_valid
     result.error = validation_result.error
-
-    title = f"inject / recover: {fault.title}"
-
-    make_overview_chart(title, log_dir, config["availability_log"],
-                        config["latency_log"])
+    result.title = f"{workload} with {scenario} using {fault.title}"
+    result.availability_log = config["availability_log"]
+    result.latency_log = config["latency_log"]
     result.analysis = analyze_inject_recover_availability(
         log_dir, config["availability_log"], config["latency_log"])
-
     return result
 
 
 async def inject_recover_scenarios_aio(config, cluster, faults,
                                        workload_factory):
+    scenario = "inject-recover"
+    workload = config["workload"]["name"]
+
+    if not path.exists(config["output"]):
+        os.mkdir(config["output"])
+
     for fault in faults.keys():
         if config["reset_before_test"]:
             await cluster.restart()
@@ -141,44 +150,41 @@ async def inject_recover_scenarios_aio(config, cluster, faults,
 
         experiment_id = int(time.time())
 
-        fault_dir = path.join(config["output"], fault)
-        if path.exists(fault_dir):
-            if not (path.isdir(fault_dir)):
-                raise Exception(fault_dir + " must be a directory")
-        else:
-            os.mkdir(fault_dir)
-        log_dir = path.join(fault_dir, str(experiment_id))
-        os.mkdir(log_dir)
+        rel_dir = path.join(workload, scenario, fault, str(experiment_id))
+        log_dir = path.join(config["output"], rel_dir)
+        pathlib.Path(log_dir).mkdir(parents=True, exist_ok=True)
+
         chaos_event_log.info(
             m(f"starting {experiment_id} experiment (inject / recover, {fault})"
               ).with_time())
 
         now = datetime.now().strftime("%H:%M:%S")
         chaos_stdout.info(
-            f"({now}) testing inject / recover with {fault} - {experiment_id}")
+            f"({now}) testing {workload} using {scenario} with {fault} - {experiment_id}"
+        )
 
         result = await inject_recover_scenario_aio(log_dir, config, cluster,
                                                    workload_factory,
                                                    faults[fault])
+        message = m(id=experiment_id,
+                    type="result",
+                    title=result.title,
+                    latency_log=result.latency_log,
+                    availability_log=result.availability_log,
+                    workload=workload,
+                    scenario=scenario,
+                    fault=fault,
+                    path=rel_dir,
+                    metrics=result.analysis).with_time()
         if result.is_valid:
             chaos_stdout.info(f"\tlinearizability testing passed")
-            message = m(id=experiment_id,
-                        type="result",
-                        status="passed",
-                        scenario="inject/recover",
-                        fault=fault,
-                        metrics=result.analysis).with_time()
+            message.kwargs["status"] = "passed"
             chaos_event_log.info(message)
             chaos_results.info(message)
         else:
             chaos_stdout.info(f"\tviolation: {result.error}")
-            message = m(id=experiment_id,
-                        type="result",
-                        status="failed",
-                        error="result.error",
-                        scenario="inject/recover",
-                        fault=fault,
-                        metrics=result.analysis).with_time()
+            message.kwargs["status"] = "failed"
+            message.kwargs["error"] = result.error
             chaos_event_log.info(message)
             chaos_results.info(message)
 
