@@ -7,6 +7,34 @@ import json
 import jinja2
 from pathlib import Path
 
+ALL = """
+set terminal png size 1600,1200
+set output "{{ data }}.png"
+set multiplot
+
+set lmargin 10
+set rmargin 6
+
+set size 1, 0.5
+set origin 0, 0
+
+set yrange [0:{{ maxunava }}]
+set boxwidth 0.5
+plot "{{ data }}.log" using 2:xtic(1) title "unavailability (us)" with boxes fs solid lt rgb "blue"
+
+set yrange [0:{{ maxlat }}]
+set size 1, 0.5
+set origin 0, 0.5
+unset xtics
+
+set title "{{ title }}"
+show title
+
+plot "{{ data }}.log" using 3:xtic(1) title "latency (us)" with boxes fs solid lt rgb "red"
+
+unset multiplot
+"""
+
 PDF_LATENCY = """
 set terminal png size 1600,1200
 set output "pdf.latency.png"
@@ -227,6 +255,58 @@ def analyze_inject_recover_availability(log_dir, availability_log,
         "fault_max_unavailability": maxunava_fault,
         "recovery_max_unavailability": maxunava_recovery,
     }
+
+
+class ExperimentGroup:
+    def __init__(self, workload, scenario, fault):
+        self.scenario = scenario
+        self.workload = workload
+        self.fault = fault
+        self.experiments = []
+
+
+def make_results_chart(result):
+    root = Path(result).parent
+    with open(result, 'r') as result_file:
+        experiments = dict()
+        for line in result_file:
+            info = json.loads(line)
+            kind = info["workload"] + "/" + info["scenario"] + "/" + info[
+                "fault"]
+            if kind not in experiments:
+                experiments[kind] = ExperimentGroup(info["workload"],
+                                                    info["scenario"],
+                                                    info["fault"])
+            experiments[kind].experiments.append(
+                (info["id"], info["metrics"]["max_unavailability"],
+                 info["metrics"]["max_lat"]))
+        for kind in experiments.keys():
+            meid = min(map(lambda x: x[0], experiments[kind].experiments))
+            group = experiments[kind]
+            maxlat = 0
+            maxunava = 0
+            with open(
+                    path.join(root, group.workload, group.scenario,
+                              group.fault, f"all_{meid}.log"),
+                    'w') as all_log_file:
+                for i in range(0, len(group.experiments)):
+                    _, unava, lat = group.experiments[i]
+                    maxlat = max(lat, maxlat)
+                    maxunava = max(lat, maxunava)
+                    all_log_file.write(f"{i}\t{unava}\t{lat}\n")
+            with open(
+                    path.join(root, group.workload, group.scenario,
+                              group.fault, f"all_{meid}.gp"),
+                    'w') as all_gp_file:
+                all_gp_file.write(
+                    jinja2.Template(ALL).render(
+                        data=f"all_{meid}",
+                        maxunava=int(1.2 * maxunava),
+                        maxlat=int(1.2 * maxlat),
+                        title=
+                        f"{group.workload} with {group.scenario} using {group.fault}"
+                    ))
+
 
 def make_latency_chart(title, log_dir, availability_log, latency_log):
     latencies = []
