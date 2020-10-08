@@ -58,6 +58,7 @@ class LinearizabilityRegisterChecker:
         self.head = None
         self.pending_writes = dict()
         self.applied = dict()
+        self.gced = dict()
         self.history_by_idx = dict()
         self.history_by_write_id = dict()
         self.reads = dict()
@@ -65,7 +66,7 @@ class LinearizabilityRegisterChecker:
     def size(self):
         return len(self.pending_writes) + len(self.applied) + len(
             self.history_by_idx) + len(self.history_by_write_id) + len(
-                self.reads)
+                self.reads) + len(self.gced)
 
     def gc(self):
         midx = self.head.idx
@@ -81,6 +82,10 @@ class LinearizabilityRegisterChecker:
                 cmdlog.info(
                     m(type="gc", head=self.head.write_id,
                       garbage=key).with_time())
+                # eventually a client initiated a garbage collected request
+                # observes a timeout or an error invoke write_canceled or
+                # write_timeouted and clean self.applied and self.gced
+                self.gced[key] = True
                 del self.pending_writes[key]
 
     # set an initial value of a register
@@ -112,6 +117,11 @@ class LinearizabilityRegisterChecker:
                                               value)
 
     def write_ended(self, write_id):
+        if write_id in self.gced:
+            raise Violation(
+                f"current head {idstr(self.head)} doesn't lead to {write_id} and has greater version"
+            )
+
         if write_id not in self.applied:
             log_assert(f"write_ended: {write_id} not in applied")
         assert write_id in self.applied
@@ -168,6 +178,11 @@ class LinearizabilityRegisterChecker:
                     idstr(self.head))
 
     def write_canceled(self, write_id):
+        if write_id in self.gced:
+            del self.applied[write_id]
+            del self.gced[write_id]
+            return
+
         if write_id not in self.applied:
             log_assert(f"write_canceled: {write_id} not in applied")
         assert write_id in self.applied
@@ -182,6 +197,11 @@ class LinearizabilityRegisterChecker:
             del self.applied[write_id]
 
     def write_timeouted(self, write_id):
+        if write_id in self.gced:
+            del self.applied[write_id]
+            del self.gced[write_id]
+            return
+
         if write_id not in self.applied:
             log_assert(f"write_timeouted: {write_id} not in applied")
         assert write_id in self.applied
