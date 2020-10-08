@@ -4,6 +4,76 @@ import sys
 import json
 import jinja2
 
+PDF_LATENCY = """
+set terminal png size 1600,1200
+set output "pdf.latency.png"
+set multiplot
+set boxwidth {{ step }}
+has(x) = 1
+
+set xrange [0:{{ xrange }}]
+
+set lmargin 6
+set rmargin 10
+set tmargin 0
+
+set yrange [0:1]
+set size 1, 0.1
+set origin 0, 0
+set border 11
+set xtics nomirror
+unset ytics
+
+plot "pdf.latency.log" using 1:(has($2)) notitle with boxes fs solid
+
+set parametric
+plot [t=0:1] {{ p99 }},t notitle lt rgb "black"
+unset parametric
+
+set tmargin 5
+set bmargin 0
+
+set yrange [0:{{ yrange }}]
+set size 1, 0.9
+set origin 0, 0.1
+set border 15
+unset xtics
+set ytics auto
+
+plot "pdf.latency.log" using 1:2 notitle with boxes
+
+set title "latency (pdf) - {{ title }}"
+show title
+
+set parametric
+set x2tics ("p99={{ p99 }}" {{ p99 }})
+plot [t=0:{{ yrange }}] {{ p99 }},t notitle lt rgb "black"
+unset parametric
+
+unset multiplot
+"""
+
+AVAILABILITY = """
+set terminal png size 1600,1200
+set output "availability.png"
+set multiplot
+
+set xrange [0:{{ xrange }}]
+set yrange [0:{{ yrange }}]
+
+set title "{{ title }}"
+show title
+
+set parametric
+{% for fault in faults %}plot [t=0:{{ yrange }}] {{ fault }},t notitle lt rgb "red"
+{% endfor %}{% for recovery in recoveries %}plot [t=0:{{ yrange }}] {{ recovery }},t notitle lt rgb "blue"
+{% endfor %}unset parametric
+
+plot "availability.log" using ($1/1000000):2 title "unavailability (us)" w p ls 7
+
+unset multiplot
+"""
+
 OVERVIEW = """
 set terminal png size 1600,1200
 set output "overview.png"
@@ -27,7 +97,7 @@ set parametric
 {% endfor %}{% for recovery in recoveries %}plot [t=0:{{ maxminlat }}] {{ recovery }},t notitle lt rgb "blue"
 {% endfor %}unset parametric
 
-plot 'chart.lat.log' using 1:2 title "latency" with points lt rgb "black" pt 7
+plot 'overview.lat.log' using 1:2 title "latency" with points lt rgb "black" pt 7
 
 set yrange [0:{{ maxmaxx }}]
 set pointsize 0.2
@@ -46,7 +116,7 @@ set parametric
 {% endfor %}{% for recovery in recoveries %}plot [t=0:{{ maxmaxx }}] {{ recovery }},t notitle lt rgb "blue"
 {% endfor %}unset parametric
 
-plot 'chart.lat.log' using 1:2 title "latency" with points lt rgb "black" pt 7
+plot 'overview.lat.log' using 1:2 title "latency" with points lt rgb "black" pt 7
 
 set title "{{ title }}"
 show title
@@ -67,7 +137,7 @@ set parametric
 {% endfor %}{% for recovery in recoveries %}plot [t=0:{{ maxthru }}] {{ recovery }},t notitle lt rgb "blue"
 {% endfor %}unset parametric
 
-plot 'chart.1s.log' using 1:2 title "ops per 1s" with line lt rgb "black"
+plot 'overview.1s.log' using 1:2 title "ops per 1s" with line lt rgb "black"
 
 unset multiplot
 """
@@ -153,6 +223,111 @@ def analyze_inject_recover_availability(log_dir, availability_log,
     }
 
 
+def make_latency_chart(title, log_dir, availability_log, latency_log):
+    latencies = []
+
+    with open(path.join(log_dir, latency_log)) as latency_log_file:
+        for line in latency_log_file:
+            if "ok" in line:
+                parts = line.rstrip().split("\t")
+                latencies.append(int(parts[1]))
+
+    latencies = sorted(latencies)
+
+    maxlat = latencies[-1]
+    p99 = latencies[int(len(latencies) * 0.99)]
+    maxfreq = 0
+    step = 1000  #us
+
+    with open(path.join(log_dir, "pdf.latency.log"), "w") as latency_file:
+        offset = 0
+        freq = []
+
+        i = 0
+        mark = offset
+        while True:
+            c = 0
+            while i < len(latencies) and latencies[i] < mark + step:
+                i += 1
+                c += 1
+            freq.append(c)
+            mark += step
+            if i >= len(latencies):
+                break
+        #
+        area = len(list(filter(lambda x: x > 0, freq)))
+        s = sum(freq)
+
+        if 100 < area:
+            step = int((area * step) / 100)
+
+        i = 0
+        mark = offset
+        while True:
+            c = 0
+            while i < len(latencies) and latencies[i] < mark + step:
+                i += 1
+                c += 1
+            c = float(c) / s
+            maxfreq = max(maxfreq, c)
+            if c > 0:
+                latency_file.write(f"{mark}\t{c}\n")
+            mark += step
+            if i >= len(latencies):
+                break
+
+    with open(path.join(log_dir, "pdf.latency.gp"), "w") as latency_file:
+        latency_file.write(
+            jinja2.Template(PDF_LATENCY).render(xrange=maxlat,
+                                                yrange=1.2 * maxfreq,
+                                                p99=p99,
+                                                step=step,
+                                                title=title))
+
+
+def make_availability_chart(title, log_dir, availability_log, latency_log):
+    maxx = 0
+    maxy = 0
+    faults = []
+    recoveries = []
+
+    with open(path.join(log_dir, "availability.log"),
+              "w") as availability_file:
+        with open(path.join(log_dir, latency_log)) as latency_log_file:
+            last = None
+            for line in latency_log_file:
+                if "ok" in line:
+                    parts = line.rstrip().split("\t")
+                    tick = int(parts[0])
+                    maxx = max(tick / 1000000, maxx)
+                    if last == None:
+                        last = int(parts[0])
+                        continue
+                    delta = tick - last
+                    last = tick
+                    maxy = max(maxy, delta)
+                    availability_file.write(f"{tick}\t{delta}\n")
+
+    maxy = int(1.2 * maxy)
+
+    with open(path.join(log_dir, availability_log)) as availability_log_file:
+        for line in availability_log_file:
+            entry = json.loads(line)
+            tick = int(int(entry["tick"]) / 1000000)
+            if entry["type"] == "fault":
+                faults.append(tick)
+            elif entry["type"] == "recovery":
+                recoveries.append(tick)
+
+    with open(path.join(log_dir, "availability.gp"), "w") as availability_file:
+        availability_file.write(
+            jinja2.Template(AVAILABILITY).render(xrange=maxx,
+                                                 yrange=maxy,
+                                                 faults=faults,
+                                                 recoveries=recoveries,
+                                                 title=title))
+
+
 def make_overview_chart(title, log_dir, availability_log, latency_log):
     maxtick = 0
     maxminlat = 0
@@ -163,7 +338,7 @@ def make_overview_chart(title, log_dir, availability_log, latency_log):
     faults = []
     recoveries = []
 
-    with open(path.join(log_dir, "chart.lat.log"), "w") as chart_lat_file:
+    with open(path.join(log_dir, "overview.lat.log"), "w") as chart_lat_file:
         with open(path.join(log_dir, latency_log)) as latency_log_file:
             mn = sys.maxsize
             for line in latency_log_file:
@@ -182,7 +357,7 @@ def make_overview_chart(title, log_dir, availability_log, latency_log):
             minlatstep = mn
             maxmaxx = int(1.2 * maxlat)
 
-    with open(path.join(log_dir, "chart.1s.log"), "w") as chart_ava_file:
+    with open(path.join(log_dir, "overview.1s.log"), "w") as chart_ava_file:
         with open(path.join(log_dir,
                             availability_log)) as availability_log_file:
             should_skip = True
