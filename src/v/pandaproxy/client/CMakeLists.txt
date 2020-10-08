@@ -6,6 +6,7 @@ v_cc_library(
     client.cc
     configuration.cc
     logger.cc
+    producer.cc
   DEPS
     v::kafka
     v::ssx
