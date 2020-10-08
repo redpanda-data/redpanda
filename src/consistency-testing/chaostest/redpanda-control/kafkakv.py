@@ -158,8 +158,8 @@ class KafkaKV:
         self.consumers.append((consumer, tps, cid))
         return state
 
-    def execute(self, cmd, metrics):
-        msg = json.dumps(cmd).encode("utf-8")
+    def execute(self, payload, cmd, metrics):
+        msg = json.dumps(payload).encode("utf-8")
 
         offset = self.offset
         state = copy.deepcopy(self.state)
@@ -250,25 +250,22 @@ class KafkaKV:
         return state
 
     def write(self, key, value, write_id, metrics):
-        state = self.execute({
-            "key": key,
-            "value": value,
-            "writeID": write_id
-        }, metrics)
+        cmd = {"key": key, "value": value, "writeID": write_id}
+        state = self.execute(cmd, cmd, metrics)
         return state[key]
 
-    def read(self, key, metrics):
-        state = self.execute({"key": key}, metrics)
+    def read(self, key, read_id, metrics):
+        state = self.execute({}, {"key": key, "read_id": read_id}, metrics)
         return state[key] if key in state else None
 
     def cas(self, key, prev_write_id, value, write_id, metrics):
-        state = self.execute(
-            {
-                "key": key,
-                "prevWriteID": prev_write_id,
-                "value": value,
-                "writeID": write_id
-            }, metrics)
+        cmd = {
+            "key": key,
+            "prevWriteID": prev_write_id,
+            "value": value,
+            "writeID": write_id
+        }
+        state = self.execute(cmd, cmd, metrics)
         return state[key] if key in state else None
 
 
@@ -308,9 +305,10 @@ app = Flask(__name__)
 def read():
     metrics = {}
     key = request.args.get("key")
+    read_id = request.args.get("read_id")
 
     try:
-        data = kafkakv.read(key, metrics)
+        data = kafkakv.read(key, read_id, metrics)
         if data is None:
             return {"status": "ok", "hasData": False, "metrics": metrics}
         else:

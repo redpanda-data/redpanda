@@ -185,14 +185,13 @@ class LinearizabilityHashmapChecker:
 
 
 class ReaderClient:
-    def __init__(self, started_at, stat, checker, name, node, key):
+    def __init__(self, pid, started_at, stat, checker, node, key):
         self.started_at = started_at
         self.stat = stat
         self.node = node
-        self.name = name
         self.key = key
         self.checker = checker
-        self.pid = str(uuid.uuid1())
+        self.pid = pid
         self.is_active = True
 
     def stop(self):
@@ -203,16 +202,18 @@ class ReaderClient:
         while self.is_active and self.checker.is_valid:
             await asyncio.sleep(random.uniform(0, 0.05))
             op_started = None
+            read_id = str(uuid.uuid1())
             try:
                 self.stat.assign("size", self.checker.size())
                 cmdlog.info(
                     m(type="read_started",
                       node=self.node.name,
                       pid=self.pid,
+                      read_id=read_id,
                       key=self.key).with_time())
                 self.checker.read_started(self.pid, self.key)
                 op_started = loop.time()
-                response = await self.node.get_aio(self.key)
+                response = await self.node.get_aio(self.key, read_id)
                 read = response.record
                 op_ended = loop.time()
                 log_latency("ok", op_ended - self.started_at,
@@ -222,6 +223,7 @@ class ReaderClient:
                         m(type="read_404",
                           node=self.node.name,
                           pid=self.pid,
+                          read_id=read_id,
                           key=self.key).with_time())
                     self.checker.read_none(self.pid, self.key)
                 else:
@@ -229,33 +231,36 @@ class ReaderClient:
                         m(type="read_ended",
                           node=self.node.name,
                           pid=self.pid,
+                          read_id=read_id,
                           key=self.key,
                           write_id=read.write_id,
                           value=read.value).with_time())
                     self.checker.read_ended(self.pid, self.key, read.write_id,
                                             read.value)
-                self.stat.inc(self.name + ":ok")
+                self.stat.inc(self.node.name + ":ok")
                 self.stat.inc("all:ok")
             except RequestTimedout:
                 op_ended = loop.time()
                 log_latency("out", op_ended - self.started_at,
                             op_ended - op_started)
-                self.stat.inc(self.name + ":out")
+                self.stat.inc(self.node.name + ":out")
                 cmdlog.info(
                     m(type="read_timedout",
                       node=self.node.name,
                       pid=self.pid,
+                      read_id=read_id,
                       key=self.key).with_time())
                 self.checker.read_canceled(self.pid, self.key)
             except RequestCanceled:
                 op_ended = loop.time()
                 log_latency("err", op_ended - self.started_at,
                             op_ended - op_started)
-                self.stat.inc(self.name + ".err")
+                self.stat.inc(self.node.name + ".err")
                 cmdlog.info(
                     m(type="read_canceled",
                       node=self.node.name,
                       pid=self.pid,
+                      read_id=read_id,
                       key=self.key).with_time())
                 self.checker.read_canceled(self.pid, self.key)
             except Violation as e:

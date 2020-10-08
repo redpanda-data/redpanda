@@ -13,16 +13,15 @@ cmdlog = logging.getLogger("gobekli-cmd")
 
 
 class WriterClient:
-    def __init__(self, started_at, stat, checker, name, node, key):
+    def __init__(self, pid, started_at, stat, checker, node, key):
         self.started_at = started_at
         self.stat = stat
         self.node = node
-        self.name = name
         self.checker = checker
         self.key = key
         self.last_write_id = str(uuid.uuid1())
         self.last_version = 0
-        self.pid = str(uuid.uuid1())
+        self.pid = pid
         self.is_active = True
 
     def stop(self):
@@ -76,10 +75,10 @@ class WriterClient:
                     self.last_version = curr_version
                 self.last_write_id = data.write_id
                 self.last_version = int(data.value.split(":")[1])
-                self.stat.inc(self.name + ":ok")
+                self.stat.inc(self.node.name + ":ok")
                 self.stat.inc("all:ok")
             except RequestTimedout:
-                self.stat.inc(self.name + ":out")
+                self.stat.inc(self.node.name + ":out")
                 op_ended = loop.time()
                 log_latency("out", op_ended - self.started_at,
                             op_ended - op_started)
@@ -91,7 +90,7 @@ class WriterClient:
                 self.checker.read_canceled(self.pid, self.key)
                 self.checker.cas_timeouted(curr_write_id, self.key)
             except RequestCanceled:
-                self.stat.inc(self.name + ":err")
+                self.stat.inc(self.node.name + ":err")
                 op_ended = loop.time()
                 log_latency("err", op_ended - self.started_at,
                             op_ended - op_started)
@@ -167,14 +166,19 @@ class MRSWWorkload:
         loop = asyncio.get_running_loop()
         started_at = loop.time()
 
+        wid = 0
+        rid = 0
         for key in keys:
             for kv in self.kv_nodes:
+                wpid = "w" + str(wid)
+                wid += 1
                 clients.append(
-                    WriterClient(started_at, stat, checker, kv.name, kv, key))
+                    WriterClient(wpid, started_at, stat, checker, kv, key))
                 for _ in range(0, self.numOfReaders):
+                    rpid = "r" + str(rid)
+                    rid += 1
                     clients.append(
-                        ReaderClient(started_at, stat, checker, kv.name, kv,
-                                     key))
+                        ReaderClient(rpid, started_at, stat, checker, kv, key))
         tasks = []
         for client in clients:
             tasks.append(asyncio.create_task(client.start()))
