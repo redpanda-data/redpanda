@@ -2,8 +2,10 @@ import asyncio
 import uuid
 import random
 import time
+import sys
 import json
 import logging
+import traceback
 
 from gobekli.kvapi import RequestCanceled, RequestTimedout
 from gobekli.consensus import LinearizabilityRegisterChecker, Violation
@@ -87,7 +89,11 @@ class LinearizabilityHashmapChecker:
     def __init__(self):
         self.checkers = dict()
         self.is_valid = True
+        self.is_aborted = False
         self.error = None
+
+    def abort(self):
+        self.is_aborted = True
 
     def size(self):
         result = 0
@@ -240,29 +246,55 @@ class ReaderClient:
                 self.stat.inc(self.node.name + ":ok")
                 self.stat.inc("all:ok")
             except RequestTimedout:
-                op_ended = loop.time()
-                log_latency("out", op_ended - self.started_at,
-                            op_ended - op_started)
-                self.stat.inc(self.node.name + ":out")
-                cmdlog.info(
-                    m(type="read_timedout",
-                      node=self.node.name,
-                      pid=self.pid,
-                      read_id=read_id,
-                      key=self.key).with_time())
-                self.checker.read_canceled(self.pid, self.key)
+                try:
+                    op_ended = loop.time()
+                    log_latency("out", op_ended - self.started_at,
+                                op_ended - op_started)
+                    self.stat.inc(self.node.name + ":out")
+                    cmdlog.info(
+                        m(type="read_timedout",
+                          node=self.node.name,
+                          pid=self.pid,
+                          read_id=read_id,
+                          key=self.key).with_time())
+                    self.checker.read_canceled(self.pid, self.key)
+                except:
+                    e, v = sys.exc_info()[:2]
+
+                    cmdlog.info(
+                        m("unexpected error on handing read timedout exception",
+                          type="error",
+                          error_type=str(e),
+                          error_value=str(v),
+                          stacktrace=traceback.format_exc()).with_time())
+
+                    self.checker.abort()
+                    break
             except RequestCanceled:
-                op_ended = loop.time()
-                log_latency("err", op_ended - self.started_at,
-                            op_ended - op_started)
-                self.stat.inc(self.node.name + ".err")
-                cmdlog.info(
-                    m(type="read_canceled",
-                      node=self.node.name,
-                      pid=self.pid,
-                      read_id=read_id,
-                      key=self.key).with_time())
-                self.checker.read_canceled(self.pid, self.key)
+                try:
+                    op_ended = loop.time()
+                    log_latency("err", op_ended - self.started_at,
+                                op_ended - op_started)
+                    self.stat.inc(self.node.name + ".err")
+                    cmdlog.info(
+                        m(type="read_canceled",
+                          node=self.node.name,
+                          pid=self.pid,
+                          read_id=read_id,
+                          key=self.key).with_time())
+                    self.checker.read_canceled(self.pid, self.key)
+                except:
+                    e, v = sys.exc_info()[:2]
+
+                    cmdlog.info(
+                        m("unexpected error on handing read canceled exception",
+                          type="error",
+                          error_type=str(e),
+                          error_value=str(v),
+                          stacktrace=traceback.format_exc()).with_time())
+
+                    self.checker.abort()
+                    break
             except Violation as e:
                 log_violation(self.pid, e.message)
                 break

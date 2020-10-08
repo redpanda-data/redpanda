@@ -1,7 +1,9 @@
 import asyncio
 import uuid
 import random
+import sys
 import logging
+import traceback
 
 from gobekli.kvapi import RequestCanceled, RequestTimedout
 from gobekli.consensus import Violation
@@ -29,7 +31,7 @@ class WriterClient:
 
     async def start(self):
         loop = asyncio.get_running_loop()
-        while self.is_active and self.checker.is_valid:
+        while self.is_active and self.checker.is_valid and not self.checker.is_aborted:
             await asyncio.sleep(random.uniform(0, 0.05))
             prev = self.last_write_id
             curr_write_id = str(uuid.uuid1())
@@ -78,32 +80,58 @@ class WriterClient:
                 self.stat.inc(self.node.name + ":ok")
                 self.stat.inc("all:ok")
             except RequestTimedout:
-                self.stat.inc(self.node.name + ":out")
-                op_ended = loop.time()
-                log_latency("out", op_ended - self.started_at,
-                            op_ended - op_started)
-                cmdlog.info(
-                    m(type="write_timedout",
-                      node=self.node.name,
-                      pid=self.pid,
-                      key=self.key).with_time())
-                self.checker.read_canceled(self.pid, self.key)
-                self.checker.cas_timeouted(curr_write_id, self.key)
-            except RequestCanceled:
-                self.stat.inc(self.node.name + ":err")
-                op_ended = loop.time()
-                log_latency("err", op_ended - self.started_at,
-                            op_ended - op_started)
-                cmdlog.info(
-                    m(type="write_canceled",
-                      node=self.node.name,
-                      pid=self.pid,
-                      key=self.key).with_time())
-                self.checker.read_canceled(self.pid, self.key)
                 try:
-                    self.checker.cas_canceled(curr_write_id, self.key)
-                except Violation as e:
-                    log_violation(self.pid, e.message)
+                    self.stat.inc(self.node.name + ":out")
+                    op_ended = loop.time()
+                    log_latency("out", op_ended - self.started_at,
+                                op_ended - op_started)
+                    cmdlog.info(
+                        m(type="write_timedout",
+                          node=self.node.name,
+                          pid=self.pid,
+                          key=self.key).with_time())
+                    self.checker.read_canceled(self.pid, self.key)
+                    self.checker.cas_timeouted(curr_write_id, self.key)
+                except:
+                    e, v = sys.exc_info()[:2]
+
+                    cmdlog.info(
+                        m("unexpected error on handing write timedout exception",
+                          type="error",
+                          error_type=str(e),
+                          error_value=str(v),
+                          stacktrace=traceback.format_exc()).with_time())
+
+                    self.checker.abort()
+                    break
+            except RequestCanceled:
+                try:
+                    self.stat.inc(self.node.name + ":err")
+                    op_ended = loop.time()
+                    log_latency("err", op_ended - self.started_at,
+                                op_ended - op_started)
+                    cmdlog.info(
+                        m(type="write_canceled",
+                          node=self.node.name,
+                          pid=self.pid,
+                          key=self.key).with_time())
+                    self.checker.read_canceled(self.pid, self.key)
+                    try:
+                        self.checker.cas_canceled(curr_write_id, self.key)
+                    except Violation as e:
+                        log_violation(self.pid, e.message)
+                        break
+                except:
+                    e, v = sys.exc_info()[:2]
+
+                    cmdlog.info(
+                        m("unexpected error on handing write canceled exception",
+                          type="error",
+                          error_type=str(e),
+                          error_value=str(v),
+                          stacktrace=traceback.format_exc()).with_time())
+
+                    self.checker.abort()
                     break
             except Violation as e:
                 log_violation(self.pid, e.message)
@@ -184,7 +212,7 @@ class MRSWWorkload:
             tasks.append(asyncio.create_task(client.start()))
         tasks.append(asyncio.create_task(self.availability_logger.start()))
 
-        while checker.is_valid and self.is_active:
+        while checker.is_valid and (not checker.is_aborted) and self.is_active:
             await asyncio.sleep(2)
 
         self.validation_result = ValidationResult(checker.is_valid,
