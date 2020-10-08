@@ -5,8 +5,8 @@ import json
 import os
 from pathlib import Path
 
-from gobekli.chaos.analysis import (make_overview_chart, make_latency_chart,
-                                    make_availability_chart)
+from gobekli.chaos.analysis import (make_overview_chart, make_results_chart,
+                                    make_latency_chart, make_availability_chart)
 
 parser = argparse.ArgumentParser(description='Gobekli charts')
 parser.add_argument('--result', action='append', required=True)
@@ -14,8 +14,8 @@ parser.add_argument('--result', action='append', required=True)
 def chart(results):
     for result in results:
         root = Path(result).parent
+        make_results_chart(result)
         with open(result, 'r') as result_file:
-            print(result)
             for line in result_file:
                 info = json.loads(line)
                 path = os.path.join(root, info["path"])
