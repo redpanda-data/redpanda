@@ -1,17 +1,17 @@
 {
     "endpoints": [
         {
-            "host": "172.31.38.96",
+            "host": "172.31.17.252",
             "httpport": 9092,
             "id": "node0"
         },
         {
-            "host": "172.31.37.22",
+            "host": "172.31.17.183",
             "httpport": 9092,
             "id": "node1"
         },
         {
-            "host": "172.31.35.89",
+            "host": "172.31.31.215",
             "httpport": 9092,
             "id": "node2"
         }
@@ -19,7 +19,7 @@
     "nodes": [
         {
             "id": "node0",
-            "host": "172.31.38.96",
+            "host": "172.31.17.252",
             "ioport": 10314,
             "ssh_key": "/home/ubuntu/aws-cluster",
             "ssh_user": "admin",
@@ -27,7 +27,7 @@
             "kill_script": "sudo /home/admin/control/kvelldb/kill-kvelldb.sh",
             "wipeout_script": "sudo /home/admin/control/kvelldb/wipe-out.sh",
             "is_active_script": "sudo /home/admin/control/kvelldb/is-kvelldb-running.sh",
-            "start_script": "sudo -b nohup /home/admin/control/kvelldb/replica.sh 0 1 172.31.37.22 2 172.31.35.89 > /home/admin/kvell.log 2>&1 < /dev/null &",
+            "start_script": "sudo -b nohup /home/admin/control/kvelldb/replica.sh 0 1 172.31.17.183 2 172.31.31.215 > /home/admin/kvell.log 2>&1 < /dev/null &",
             "pause_script": "sudo /home/admin/control/kvelldb/pause-kvelldb.sh",
             "continue_script": "sudo /home/admin/control/kvelldb/continue-kvelldb.sh",
             "isolate_script": "sudo /home/admin/control/kvelldb/isolate-bi.sh",
@@ -44,7 +44,7 @@
         },
         {
             "id": "node1",
-            "host": "172.31.37.22",
+            "host": "172.31.17.183",
             "ioport": 10315,
             "ssh_key": "/home/ubuntu/aws-cluster",
             "ssh_user": "admin",
@@ -52,7 +52,7 @@
             "kill_script": "sudo /home/admin/control/kvelldb/kill-kvelldb.sh",
             "wipeout_script": "sudo /home/admin/control/kvelldb/wipe-out.sh",
             "is_active_script": "sudo /home/admin/control/kvelldb/is-kvelldb-running.sh",
-            "start_script": "sudo -b nohup /home/admin/control/kvelldb/replica.sh 1 0 172.31.38.96 2 172.31.35.89 > /home/admin/kvell.log 2>&1 < /dev/null &",
+            "start_script": "sudo -b nohup /home/admin/control/kvelldb/replica.sh 1 0 172.31.17.252 2 172.31.31.215 > /home/admin/kvell.log 2>&1 < /dev/null &",
             "pause_script": "sudo /home/admin/control/kvelldb/pause-kvelldb.sh",
             "continue_script": "sudo /home/admin/control/kvelldb/continue-kvelldb.sh",
             "isolate_script": "sudo /home/admin/control/kvelldb/isolate-bi.sh",
@@ -69,7 +69,7 @@
         },
         {
             "id": "node2",
-            "host": "172.31.35.89",
+            "host": "172.31.31.215",
             "ioport": 10316,
             "ssh_key": "/home/ubuntu/aws-cluster",
             "ssh_user": "admin",
@@ -77,7 +77,7 @@
             "kill_script": "sudo /home/admin/control/kvelldb/kill-kvelldb.sh",
             "wipeout_script": "sudo /home/admin/control/kvelldb/wipe-out.sh",
             "is_active_script": "sudo /home/admin/control/kvelldb/is-kvelldb-running.sh",
-            "start_script": "sudo -b nohup /home/admin/control/kvelldb/replica.sh 2 0 172.31.38.96 1 172.31.37.22 > /home/admin/kvell.log 2>&1 < /dev/null &",
+            "start_script": "sudo -b nohup /home/admin/control/kvelldb/replica.sh 2 0 172.31.17.252 1 172.31.17.183 > /home/admin/kvell.log 2>&1 < /dev/null &",
             "pause_script": "sudo /home/admin/control/kvelldb/pause-kvelldb.sh",
             "continue_script": "sudo /home/admin/control/kvelldb/continue-kvelldb.sh",
             "isolate_script": "sudo /home/admin/control/kvelldb/isolate-bi.sh",
@@ -95,11 +95,11 @@
     ],
     "workload": {
         "name": "comrmw",
-        "period_s": 0.01
+        "period_s": 0.0034
     },
     "exit_on_violation": false,
     "reset_before_test": false,
-    "output": "results",
+    "output": "kvelldb",
     "writers": 3,
     "readers": 3,
     "warmup": 60,
