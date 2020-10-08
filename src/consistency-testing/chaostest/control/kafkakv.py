@@ -25,6 +25,7 @@ from flask import Flask, request
 ##############################################################
 
 kafkakv_log = logging.getLogger("kafkakv_log")
+kafkakv_err = logging.getLogger("kafkakv_err")
 kafkakv_stdout = logging.getLogger("kafkakv_stdout")
 
 
@@ -58,7 +59,7 @@ class UnknownTopic(Exception):
 
 
 class KafkaKV:
-    def __init__(self, bootstrap_servers, topic):
+    def __init__(self, inflight_limit, bootstrap_servers, topic):
         self.topic = topic
         self.bootstrap_servers = bootstrap_servers
         self.producer = KafkaProducer(
@@ -71,10 +72,13 @@ class KafkaKV:
         self.state = dict()
         self.consumers = []
         self.n_consumers = 0
+        self.inflight_limit = inflight_limit
+        self.inflight_requests = 0
 
     def catchup(self, state, from_offset, to_offset, cmd, metrics):
         consumer = None
         tps = None
+        cid = None
         init_started = time.time()
 
         if len(self.consumers) > 0:
@@ -88,75 +92,76 @@ class KafkaKV:
                     enable_auto_commit=False,
                     auto_offset_reset="earliest")
             except ValueError as e:
-                kafkakv_log.info(
-                    m("Error on creating consumer",
-                      type=str(type(e)),
-                      msg=str(e),
-                      stacktrace=traceback.format_exc()).with_time())
+                msg = m("Error on creating consumer",
+                        type=str(type(e)),
+                        msg=str(e),
+                        stacktrace=traceback.format_exc()).with_time()
+                kafkakv_log.info(msg)
+                kafkakv_err.info(msg)
                 kafkakv_stdout.info("Error on creating consumer")
                 raise RequestTimedout()
-            ps = consumer.partitions_for_topic(self.topic)
-            if ps is None:
-                raise UnknownTopic()
-            tps = [TopicPartition(self.topic, p) for p in ps]
-            if len(tps) != 1:
-                kafkakv_log.info(
-                    m("Topic " + str(self.topic) +
-                      " should have a single partition but got: " +
-                      str(len(tps))).with_time())
-                kafkakv_stdout.info(
-                    "Topic " + str(self.topic) +
-                    " should have a single partition but got: " +
-                    str(len(tps)))
-                raise RequestTimedout()
+            tps = [TopicPartition(self.topic, 0)]
             consumer.assign(tps)
             cid = self.n_consumers
             self.n_consumers += 1
 
-        metrics["init_us"] = int((time.time() - init_started) * 1000000)
-        catchup_started = time.time()
-        if from_offset is None:
-            consumer.seek_to_beginning(tps[0])
-        else:
-            consumer.seek(tps[0], from_offset + 1)
-        processed = 0
-        while consumer.position(tps[0]) <= to_offset:
-            rs = consumer.poll()
-            if tps[0] in rs:
+        try:
+            metrics["init_us"] = int((time.time() - init_started) * 1000000)
+            catchup_started = time.time()
+            if from_offset is None:
+                consumer.seek_to_beginning(tps[0])
+            else:
+                consumer.seek(tps[0], from_offset + 1)
+            processed = 0
+
+            while consumer.position(tps[0]) <= to_offset:
+                rs = consumer.poll()
+
+                if tps[0] not in rs:
+                    continue
+
                 for record in rs[tps[0]]:
-                    if record.offset <= to_offset:
-                        data = json.loads(record.value.decode("utf-8"))
-                        processed += 1
-                        if "writeID" in data:
-                            if "prevWriteID" in data:
-                                if data["key"] in state:
-                                    if state[data["key"]]["writeID"] == data[
-                                            "prevWriteID"]:
-                                        state[data["key"]] = {
-                                            "value": data["value"],
-                                            "writeID": data["writeID"]
-                                        }
-                            else:
-                                state[data["key"]] = {
-                                    "value": data["value"],
-                                    "writeID": data["writeID"]
-                                }
+                    if record.offset > to_offset:
+                        break
 
-        result = None
-        if cmd["key"] in state:
-            result = state[cmd["key"]]
+                    data = json.loads(record.value.decode("utf-8"))
+                    processed += 1
 
-        kafkakv_log.info(
-            m("caught",
-              cmd=cmd,
-              result=result,
-              base_offset=from_offset,
-              sent_offset=to_offset,
-              processed=processed,
-              cid=cid).with_time())
-        metrics["catchup_us"] = int((time.time() - catchup_started) * 1000000)
-        self.consumers.append((consumer, tps, cid))
-        return state
+                    if "writeID" not in data:
+                        continue
+
+                    if "prevWriteID" in data:
+                        if data["key"] not in state:
+                            continue
+
+                        if state[data["key"]]["writeID"] == data["prevWriteID"]:
+                            state[data["key"]] = {
+                                "value": data["value"],
+                                "writeID": data["writeID"]
+                            }
+                    else:
+                        state[data["key"]] = {
+                            "value": data["value"],
+                            "writeID": data["writeID"]
+                        }
+
+            result = None
+            if cmd["key"] in state:
+                result = state[cmd["key"]]
+
+            kafkakv_log.info(
+                m("caught",
+                  cmd=cmd,
+                  result=result,
+                  base_offset=from_offset,
+                  sent_offset=to_offset,
+                  processed=processed,
+                  cid=cid).with_time())
+            metrics["catchup_us"] = int(
+                (time.time() - catchup_started) * 1000000)
+            return state
+        finally:
+            self.consumers.append((consumer, tps, cid))
 
     def execute(self, payload, cmd, metrics):
         msg = json.dumps(payload).encode("utf-8")
@@ -191,23 +196,27 @@ class KafkaKV:
         except RequestTimedOutError:
             raise RequestTimedout()
         except KafkaError as e:
-            kafkakv_log.info(
-                m("Run into an unexpected Kafka error on sending",
-                  type=str(type(e)),
-                  msg=str(e),
-                  stacktrace=traceback.format_exc()).with_time())
+            msg = m("Run into an unexpected Kafka error on sending",
+                    type=str(type(e)),
+                    msg=str(e),
+                    stacktrace=traceback.format_exc()).with_time()
+            kafkakv_log.info(msg)
+            kafkakv_err.info(msg)
             kafkakv_stdout.info("Run into an unexpected Kafka error " +
                                 str(type(e)) + ": " + str(e) + " on sending")
             raise RequestTimedout()
         except:
-            e, v, t = sys.exc_info()
-            kafkakv_log.info(
-                m("Run into an unexpected error on sending",
-                  type=str(e),
-                  msg=str(v),
-                  stacktrace=traceback.format_exc()).with_time())
+            e, v = sys.exc_info()[:2]
+            stacktrace = traceback.format_exc()
+            msg = m("Run into an unexpected error on sending",
+                    type=str(e),
+                    msg=str(v),
+                    stacktrace=stacktrace).with_time()
+            kafkakv_log.info(msg)
+            kafkakv_err.info(msg)
             kafkakv_stdout.info("Run into an unexpected error " + str(e) +
-                                ": " + str(v) + " @ " + str(t) + " on sending")
+                                ": " + str(v) + " @ " + stacktrace +
+                                " on sending")
             raise
 
         metrics["send_us"] = int((time.time() - send_started) * 1000000)
@@ -225,14 +234,16 @@ class KafkaKV:
         except RequestTimedout:
             raise
         except:
-            e, v, t = sys.exc_info()
-            kafkakv_log.info(
-                m("Run into an unexpected error on catching up",
-                  type=str(e),
-                  msg=str(v),
-                  stacktrace=traceback.format_exc()).with_time())
+            e, v = sys.exc_info()[:2]
+            stacktrace = traceback.format_exc()
+            msg = m("Run into an unexpected error on catching up",
+                    type=str(e),
+                    msg=str(v),
+                    stacktrace=stacktrace).with_time()
+            kafkakv_log.info(msg)
+            kafkakv_err.info(msg)
             kafkakv_stdout.info("Run into an unexpected error " + str(e) +
-                                ": " + str(v) + " @ " + str(t) +
+                                ": " + str(v) + " @ " + stacktrace +
                                 " on catching up")
             raise RequestTimedout()
 
@@ -250,44 +261,79 @@ class KafkaKV:
         return state
 
     def write(self, key, value, write_id, metrics):
-        cmd = {"key": key, "value": value, "writeID": write_id}
-        state = self.execute(cmd, cmd, metrics)
-        return state[key]
+        if self.inflight_limit <= self.inflight_requests:
+            raise RequestCanceled()
+        else:
+            try:
+                self.inflight_requests += 1
+                cmd = {"key": key, "value": value, "writeID": write_id}
+                state = self.execute(cmd, cmd, metrics)
+                return state[key]
+            finally:
+                self.inflight_requests -= 1
 
     def read(self, key, read_id, metrics):
-        state = self.execute({}, {"key": key, "read_id": read_id}, metrics)
-        return state[key] if key in state else None
+        if self.inflight_limit <= self.inflight_requests:
+            raise RequestCanceled()
+        else:
+            try:
+                self.inflight_requests += 1
+                state = self.execute({}, {
+                    "key": key,
+                    "read_id": read_id
+                }, metrics)
+                return state[key] if key in state else None
+            finally:
+                self.inflight_requests -= 1
 
     def cas(self, key, prev_write_id, value, write_id, metrics):
-        cmd = {
-            "key": key,
-            "prevWriteID": prev_write_id,
-            "value": value,
-            "writeID": write_id
-        }
-        state = self.execute(cmd, cmd, metrics)
-        return state[key] if key in state else None
+        if self.inflight_limit <= self.inflight_requests:
+            raise RequestCanceled()
+        else:
+            try:
+                self.inflight_requests += 1
+                cmd = {
+                    "key": key,
+                    "prevWriteID": prev_write_id,
+                    "value": value,
+                    "writeID": write_id
+                }
+                state = self.execute(cmd, cmd, metrics)
+                return state[key] if key in state else None
+            finally:
+                self.inflight_requests -= 1
 
 
 #################################################################################################
 
 parser = argparse.ArgumentParser(description='kafka-kvelldb')
 parser.add_argument('--log', required=True)
+parser.add_argument('--err', required=True)
 parser.add_argument('--topic', required=True)
 parser.add_argument('--port', type=int, required=True)
 parser.add_argument('--broker', action='append', required=True)
+parser.add_argument('--inflight-limit', type=int, required=True)
 args = parser.parse_args()
 
 kafkakv_log.setLevel(logging.INFO)
+kafkakv_err.setLevel(logging.INFO)
 kafkakv_stdout.setLevel(logging.INFO)
 
-kafkakv_file_handler = logging.handlers.RotatingFileHandler(args.log,
-                                                            maxBytes=10 *
-                                                            1024 * 1024,
-                                                            backupCount=5,
-                                                            mode='w')
-kafkakv_file_handler.setFormatter(logging.Formatter("%(message)s"))
-kafkakv_log.addHandler(kafkakv_file_handler)
+kafkakv_log_handler = logging.handlers.RotatingFileHandler(args.log,
+                                                           maxBytes=10 * 1024 *
+                                                           1024,
+                                                           backupCount=5,
+                                                           mode='w')
+kafkakv_log_handler.setFormatter(logging.Formatter("%(message)s"))
+kafkakv_log.addHandler(kafkakv_log_handler)
+
+kafkakv_err_handler = logging.handlers.RotatingFileHandler(args.err,
+                                                           maxBytes=10 * 1024 *
+                                                           1024,
+                                                           backupCount=5,
+                                                           mode='w')
+kafkakv_err_handler.setFormatter(logging.Formatter("%(message)s"))
+kafkakv_err.addHandler(kafkakv_err_handler)
 
 # adding console handler
 kafkakv_stdout_handler = logging.StreamHandler()
@@ -296,7 +342,7 @@ kafkakv_stdout_handler.setFormatter(
     logging.Formatter("%(asctime)s - %(message)s"))
 kafkakv_stdout.addHandler(kafkakv_stdout_handler)
 
-kafkakv = KafkaKV(args.broker, args.topic)
+kafkakv = KafkaKV(args.inflight_limit, args.broker, args.topic)
 
 app = Flask(__name__)
 
