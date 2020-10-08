@@ -1,8 +1,11 @@
 from os import path
+from collections import defaultdict
 import os
+from os import path
 import sys
 import json
 import jinja2
+from pathlib import Path
 
 PDF_LATENCY = """
 set terminal png size 1600,1200
@@ -142,6 +145,9 @@ plot 'overview.1s.log' using 1:2 title "ops per 1s" with line lt rgb "black"
 unset multiplot
 """
 
+AVAILABILITY_CUT_OFF_S = 2
+LATENCY_CUT_OFF_US = 2000000
+
 
 def analyze_inject_recover_availability(log_dir, availability_log,
                                         latency_log):
@@ -156,10 +162,11 @@ def analyze_inject_recover_availability(log_dir, availability_log,
         while line:
             entry = json.loads(line)
             tick = entry["tick"]
-            if entry["type"] == "fault":
-                first_fault = min(int(tick), first_fault)
-            elif entry["type"] == "recovery":
-                last_recovery = max(int(tick), last_recovery)
+            if tick >= AVAILABILITY_CUT_OFF_S:
+                if entry["type"] == "fault":
+                    first_fault = min(int(tick), first_fault)
+                elif entry["type"] == "recovery":
+                    last_recovery = max(int(tick), last_recovery)
             line = availability_log_file.readline()
 
     last_ok = None
@@ -170,11 +177,12 @@ def analyze_inject_recover_availability(log_dir, availability_log,
     maxunava_base = 0
 
     with open(path.join(log_dir, latency_log)) as latency_log_file:
-        line = latency_log_file.readline()
-        while line:
+        for line in latency_log_file:
             if "ok" in line:
                 parts = line.rstrip().split("\t")
                 tick = int(parts[0])
+                if tick < LATENCY_CUT_OFF_US:
+                    continue
                 lat = int(parts[1])
                 maxlat = max(maxlat, lat)
                 minlat = min(minlat, lat)
@@ -210,8 +218,6 @@ def analyze_inject_recover_availability(log_dir, availability_log,
                     minunava = min(minunava, tick - last_ok)
                     last_ok = tick
 
-            line = latency_log_file.readline()
-
     return {
         "max_lat": maxlat,
         "min_lat": minlat,
@@ -222,7 +228,6 @@ def analyze_inject_recover_availability(log_dir, availability_log,
         "recovery_max_unavailability": maxunava_recovery,
     }
 
-
 def make_latency_chart(title, log_dir, availability_log, latency_log):
     latencies = []
 
@@ -230,6 +235,9 @@ def make_latency_chart(title, log_dir, availability_log, latency_log):
         for line in latency_log_file:
             if "ok" in line:
                 parts = line.rstrip().split("\t")
+                tick = int(parts[0])
+                if tick < LATENCY_CUT_OFF_US:
+                    continue
                 latencies.append(int(parts[1]))
 
     latencies = sorted(latencies)
@@ -299,6 +307,8 @@ def make_availability_chart(title, log_dir, availability_log, latency_log):
                 if "ok" in line:
                     parts = line.rstrip().split("\t")
                     tick = int(parts[0])
+                    if tick < LATENCY_CUT_OFF_US:
+                        continue
                     maxx = max(tick / 1000000, maxx)
                     if last == None:
                         last = int(parts[0])
@@ -314,10 +324,11 @@ def make_availability_chart(title, log_dir, availability_log, latency_log):
         for line in availability_log_file:
             entry = json.loads(line)
             tick = int(int(entry["tick"]) / 1000000)
-            if entry["type"] == "fault":
-                faults.append(tick)
-            elif entry["type"] == "recovery":
-                recoveries.append(tick)
+            if tick >= AVAILABILITY_CUT_OFF_S:
+                if entry["type"] == "fault":
+                    faults.append(tick)
+                elif entry["type"] == "recovery":
+                    recoveries.append(tick)
 
     with open(path.join(log_dir, "availability.gp"), "w") as availability_file:
         availability_file.write(
@@ -344,7 +355,10 @@ def make_overview_chart(title, log_dir, availability_log, latency_log):
             for line in latency_log_file:
                 if "ok" in line:
                     parts = line.rstrip().split("\t")
-                    tick = int(int(parts[0]) / 1000000)
+                    tick = int(parts[0])
+                    if tick < LATENCY_CUT_OFF_US:
+                        continue
+                    tick = int(tick / 1000000)
                     maxtick = max(maxtick, tick)
                     lat = int(parts[1])
                     out = f"{tick}\t{lat}"
@@ -367,19 +381,24 @@ def make_overview_chart(title, log_dir, availability_log, latency_log):
                 entry = json.loads(line)
                 tick = entry["tick"]
                 if entry["type"] == "stat":
-                    thru = entry["all:ok"]
-                    maxtick = max(maxtick, tick)
-                    mx_thru = max(thru, mx_thru)
-                    if should_skip:
-                        if thru != 0:
-                            should_skip = False
-                    if not (should_skip):
-                        chart_ava_file.write(
-                            str(tick) + "\t" + str(thru) + "\n")
+                    if tick >= AVAILABILITY_CUT_OFF_S:
+                        thru = entry["all:ok"]
+                        maxtick = max(maxtick, tick)
+                        mx_thru = max(thru, mx_thru)
+                        if should_skip:
+                            if thru != 0:
+                                should_skip = False
+                        if not (should_skip):
+                            chart_ava_file.write(
+                                str(tick) + "\t" + str(thru) + "\n")
                 elif entry["type"] == "fault":
-                    faults.append(int(tick / 1000000))
+                    tick = int(tick / 1000000)
+                    if tick >= AVAILABILITY_CUT_OFF_S:
+                        faults.append(tick)
                 elif entry["type"] == "recovery":
-                    recoveries.append(int(tick / 1000000))
+                    tick = int(tick / 1000000)
+                    if tick >= AVAILABILITY_CUT_OFF_S:
+                        recoveries.append(tick)
 
             maxthru = int(1.2 * mx_thru)
 
