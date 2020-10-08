@@ -9,6 +9,8 @@ from gobekli.workloads import symmetrical_mrsw
 from gobekli.logging import init_logs
 
 async def mrsw_aio(kvs, writers, readers, duration, ss_metrics, cmd_log, latency_log, stat_log):
+    if ss_metrics==None:
+        ss_metrics = []
     init_logs(cmd_log, latency_log, stat_log, ss_metrics)
     
     nodes = []
@@ -20,7 +22,7 @@ async def mrsw_aio(kvs, writers, readers, duration, ss_metrics, cmd_log, latency
     for kv in nodes:
         await kv.close_aio()
 
-parser = argparse.ArgumentParser(description='Process some integers.')
+parser = argparse.ArgumentParser(description='Gobekli')
 parser.add_argument('workload', choices=['mrsw'])
 parser.add_argument('--kv', action='append', required=True)
 parser.add_argument('--cmd-log', default="cmd.log", required=False, help="command log")
