@@ -16,8 +16,12 @@ namespace pandaproxy::client {
 client::client(std::vector<unresolved_address> broker_addrs)
   : _seeds{std::move(broker_addrs)}
   , _brokers{}
-  , _wait_or_start_update_metadata{
-      [this](wait_or_start::tag tag) { return update_metadata(tag); }} {}
+  , _wait_or_start_update_metadata{[this](wait_or_start::tag tag) {
+      return update_metadata(tag);
+  }}
+  , _producer{_brokers, [this](std::exception_ptr ex) {
+                  return mitigate_error(std::move(ex));
+              }} {}
 
 ss::future<> client::do_connect(unresolved_address addr) {
     return make_broker(unknown_node_id, addr)
@@ -45,7 +49,9 @@ ss::future<> client::connect() {
     });
 }
 
-ss::future<> client::stop() { return _brokers.stop(); }
+ss::future<> client::stop() {
+    return _producer.stop().then([this]() { return _brokers.stop(); });
+}
 
 ss::future<> client::update_metadata(wait_or_start::tag) {
     vlog(ppclog.debug, "updating metadata");
@@ -101,6 +107,16 @@ ss::future<> client::mitigate_error(std::exception_ptr ex) {
         vlog(ppclog.error, "unknown exception");
     }
     return ss::make_exception_future(std::move(ex));
+}
+
+ss::future<kafka::produce_response::partition> client::produce_record_batch(
+  model::topic_partition tp, model::record_batch&& batch) {
+    vlog(
+      ppclog.debug,
+      "produce record_batch: {}, {{record_count: {}}}",
+      tp,
+      batch.record_count());
+    return _producer.produce(std::move(tp), std::move(batch));
 }
 
 } // namespace pandaproxy::client

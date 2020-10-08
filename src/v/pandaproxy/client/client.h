@@ -4,6 +4,7 @@
 #include "pandaproxy/client/broker.h"
 #include "pandaproxy/client/brokers.h"
 #include "pandaproxy/client/configuration.h"
+#include "pandaproxy/client/producer.h"
 #include "utils/retry.h"
 #include "utils/unresolved_address.h"
 
@@ -60,6 +61,9 @@ public:
           });
     }
 
+    ss::future<kafka::produce_response::partition> produce_record_batch(
+      model::topic_partition tp, model::record_batch&& batch);
+
 private:
     /// \brief Connect and update metdata.
     ss::future<> do_connect(unresolved_address addr);
@@ -82,6 +86,8 @@ private:
     brokers _brokers;
     /// \brief Update metadata, or wait for an existing one.
     wait_or_start _wait_or_start_update_metadata;
+    /// \brief Batching producer.
+    producer _producer;
 };
 
 } // namespace pandaproxy::client
