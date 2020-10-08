@@ -19,6 +19,7 @@ class KvelldbNode:
                 self.node_config = node
         if self.node_config == None:
             raise Exception(f"Unknown node_id: {node_id}")
+        self.ip = self.node_config["host"]
 
     def kill(self):
         try:
@@ -39,6 +40,29 @@ class KvelldbNode:
         ssh("-i", self.node_config["ssh_key"],
             self.node_config["ssh_user"] + "@" + self.node_config["host"],
             self.node_config["wipeout_script"])
+
+    def strobe_start(self):
+        ssh("-i", self.node_config["ssh_key"],
+            self.node_config["ssh_user"] + "@" + self.node_config["host"],
+            self.node_config["strobe_start_api_script"])
+
+    def strobe_kill(self):
+        try:
+            ssh("-i", self.node_config["ssh_key"],
+                self.node_config["ssh_user"] + "@" + self.node_config["host"],
+                self.node_config["strobe_kill_api_script"])
+        except sh.ErrorReturnCode:
+            pass
+
+    def strobe_inject(self):
+        ssh("-i", self.node_config["ssh_key"],
+            self.node_config["ssh_user"] + "@" + self.node_config["host"],
+            self.node_config["strobe_inject_script"])
+
+    def strobe_recover(self):
+        ssh("-i", self.node_config["ssh_key"],
+            self.node_config["ssh_user"] + "@" + self.node_config["host"],
+            self.node_config["strobe_recover_script"])
 
     def mount(self):
         ssh("-i", self.node_config["ssh_key"],
@@ -105,11 +129,42 @@ class KvelldbCluster:
             for config_node in config["nodes"]
         }
 
+    def teardown(self):
+        self._strobe_api_kill()
+
+        for node_id in self.nodes:
+            node = self.nodes[node_id]
+            chaos_event_log.info(
+                m(f"terminating kvelldb on {node_id}").with_time())
+            node.kill()
+
+        for node_id in self.nodes:
+            node = self.nodes[node_id]
+            if node.is_service_running():
+                chaos_event_log.info(
+                    m(f"kvelldb on {node_id} is still running").with_time())
+                raise Exception(f"kvelldb on {node_id} is still running")
+
+        for node_id in self.nodes:
+            node = self.nodes[node_id]
+            chaos_event_log.info(
+                m(f"umount data dir on {node_id}").with_time())
+            node.umount()
+
+        for node_id in self.nodes:
+            node = self.nodes[node_id]
+            chaos_event_log.info(m(f"removing data on {node_id}").with_time())
+            node.wipe_out()
+
     async def restart(self):
         chaos_stdout.info("(re)starting a cluster")
-        self.terminate_wipe_restart()
+        self.teardown()
+        self._mount()
+        self._start_service()
         cluster_warmup = self.config["cluster_warmup"]
         await asyncio.sleep(cluster_warmup)
+        self._strobe_api_start()
+        self._strobe_recover()
         chaos_stdout.info("cluster started")
         chaos_stdout.info("")
 
@@ -152,36 +207,13 @@ class KvelldbCluster:
                 return self.nodes[leader_id]
         return None
 
-    def terminate_wipe_restart(self):
-        for node_id in self.nodes:
-            node = self.nodes[node_id]
-            chaos_event_log.info(
-                m(f"terminating kvelldb on {node_id}").with_time())
-            node.kill()
-
-        for node_id in self.nodes:
-            node = self.nodes[node_id]
-            if node.is_service_running():
-                chaos_event_log.info(
-                    m(f"kvelldb on {node_id} is still running").with_time())
-                raise Exception(f"kvelldb on {node_id} is still running")
-
-        for node_id in self.nodes:
-            node = self.nodes[node_id]
-            chaos_event_log.info(
-                m(f"umount data dir on {node_id}").with_time())
-            node.umount()
-
-        for node_id in self.nodes:
-            node = self.nodes[node_id]
-            chaos_event_log.info(m(f"removing data on {node_id}").with_time())
-            node.wipe_out()
-
+    def _mount(self):
         for node_id in self.nodes:
             node = self.nodes[node_id]
             chaos_event_log.info(m(f"mount data dir on {node_id}").with_time())
             node.mount()
 
+    def _start_service(self):
         for node_id in self.nodes:
             node = self.nodes[node_id]
             chaos_event_log.info(
@@ -194,3 +226,18 @@ class KvelldbCluster:
                 chaos_event_log.info(
                     m(f"kvelldb isn't running on {node_id}").with_time())
                 raise Exception(f"kvelldb on {node_id} isn't running")
+
+    def _strobe_api_kill(self):
+        for node_id in self.nodes:
+            node = self.nodes[node_id]
+            node.strobe_kill()
+
+    def _strobe_api_start(self):
+        for node_id in self.nodes:
+            node = self.nodes[node_id]
+            node.strobe_start()
+
+    def _strobe_recover(self):
+        for node_id in self.nodes:
+            node = self.nodes[node_id]
+            node.strobe_recover()

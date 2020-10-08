@@ -54,7 +54,11 @@ known_faults = {
     "iofail.leader":
     lambda: RuinIORecoverableFault(select_leader, "leader"),
     "iofail.follower":
-    lambda: RuinIORecoverableFault(select_follower, "follower")
+    lambda: RuinIORecoverableFault(select_follower, "follower"),
+    "strobe.leader":
+    lambda: StrobeRecoverableFault(select_leader, "leader"),
+    "strobe.follower":
+    lambda: StrobeRecoverableFault(select_follower, "follower")
 }
 
 
@@ -92,6 +96,7 @@ async def run(config, n, overrides):
                 config, cluster, faults, lambda: workload_factory(config))
     except ViolationInducedExit:
         pass
+    cluster.teardown()
 
 
 parser = argparse.ArgumentParser(description='chaos test redpanda')
