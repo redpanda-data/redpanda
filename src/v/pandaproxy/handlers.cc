@@ -3,6 +3,8 @@
 #include "pandaproxy/json/requests/produce.h"
 #include "pandaproxy/json/rjson_util.h"
 #include "pandaproxy/reply.h"
+#include "raft/types.h"
+#include "ssx/future-util.h"
 #include "storage/record_batch_builder.h"
 
 #include <seastar/core/future.hh>
@@ -85,8 +87,7 @@ post_topics_name(server::request_t rq, server::reply_t rp) {
 
     for (auto& r : raw_records) {
         auto it = partition_builders
-                    .try_emplace(
-                      r.id, model::record_batch_type(3), model::offset(0))
+                    .try_emplace(r.id, raft::data_batch_type, model::offset(0))
                     .first;
         it->second.add_raw_kv(
           std::move(r.key).value_or(iobuf{}),
@@ -105,24 +106,23 @@ post_topics_name(server::request_t rq, server::reply_t rp) {
             .batch = std::move(pb.second).build()}});
     }
 
-    std::vector<kafka::produce_request::topic> topics;
-    topics.emplace_back(kafka::produce_request::topic{
-      .name = model::topic(rq.req->param["topic_name"]),
-      .partitions = std::move(partitions)});
+    auto topic = model::topic(rq.req->param["topic_name"]);
+    return ssx::parallel_transform(
+             std::move(partitions),
+             [topic,
+              rq{std::move(rq)}](kafka::produce_request::partition p) mutable {
+                 return rq.ctx.client.produce_record_batch(
+                   model::topic_partition(topic, p.id),
+                   std::move(*p.adapter.batch));
+             })
+      .then([topic, rp{std::move(rp)}](auto responses) mutable {
+          std::vector<kafka::produce_response::topic> topics;
+          topics.push_back(kafka::produce_response::topic{
+            .name{std::move(topic)}, .partitions{std::move(responses)}});
 
-    std::optional<ss::sstring> t_id;
-    int16_t acks = -1;
-    auto req = kafka::produce_request(t_id, acks, std::move(topics));
-
-    return rq.ctx.client.dispatch(std::move(req))
-      .then([rp = std::move(rp)](
-              kafka::produce_request::api_type::response_type res) mutable {
-          if (res.topics.size() != 1) {
-              // TODO: better error
-              rp.rep->set_status(
-                ss::httpd::reply::status_type::internal_server_error);
-              return std::move(rp);
-          }
+          auto res = kafka::produce_response{
+            .topics{std::move(topics)},
+            .throttle{std::chrono::milliseconds{0}}};
 
           auto json_rslt = ppj::rjson_serialize(res.topics[0]);
           rp.rep->write_body("json", json_rslt);
