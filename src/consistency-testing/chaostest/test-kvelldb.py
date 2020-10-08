@@ -1,5 +1,6 @@
 from gobekli.kvapi import KVNode
 from gobekli.workloads.symmetrical_mrsw import MRSWWorkload
+from gobekli.workloads.symmetrical_comrmw import COMRMWWorkload
 from gobekli.chaos.main import (init_output, inject_recover_scenarios_aio,
                                 ViolationInducedExit)
 from gobekli.logging import m
@@ -62,8 +63,15 @@ def workload_factory(config):
         port = endpoint["httpport"]
         address = f"{host}:{port}"
         nodes.append(KVNode(endpoint["id"], address))
-    return MRSWWorkload(nodes, config["writers"], config["readers"],
-                        config["ss_metrics"])
+    if config["workload"]["name"] == "mrsw":
+        return MRSWWorkload(nodes, config["writers"], config["readers"],
+                            config["ss_metrics"])
+    elif config["workload"]["name"] == "comrmw":
+        return COMRMWWorkload(config["workload"]["period_s"], nodes,
+                              config["writers"], config["readers"],
+                              config["ss_metrics"])
+    else:
+        raise Exception("Unknown workload: " + config["workload"]["name"])
 
 
 async def run(config, n, overrides):

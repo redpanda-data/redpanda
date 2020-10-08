@@ -93,6 +93,9 @@
             "strobe_inject_script": "sudo /home/admin/control/kvelldb/strobe.inject.sh 200000 1000"
         }
     ],
+    "workload": {
+        "name": "mrsw"
+    },
     "exit_on_violation": false,
     "reset_before_test": false,
     "output": "results",
