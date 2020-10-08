@@ -22,4 +22,16 @@ struct broker_error final : std::exception {
     kafka::error_code error;
 };
 
+struct partition_error final : std::exception {
+    partition_error(model::topic_partition tp, kafka::error_code e)
+      : std::exception{}
+      , msg{fmt::format("{}, {}", tp, e)}
+      , tp{std::move(tp)}
+      , error{e} {}
+    const char* what() const noexcept final { return msg.c_str(); }
+    std::string msg;
+    model::topic_partition tp;
+    kafka::error_code error;
+};
+
 } // namespace pandaproxy::client
