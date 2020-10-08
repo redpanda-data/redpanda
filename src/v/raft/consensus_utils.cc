@@ -89,10 +89,10 @@ ss::future<std::vector<model::record_batch_reader>> share_reader(
           std::vector<model::record_batch_reader> retval;
           retval.reserve(ncopies);
           for (auto& b : batches) {
-              auto r = model::make_memory_record_batch_reader(std::move(b));
-              if (use_foreign_share) {
-                  r = model::make_foreign_record_batch_reader(std::move(r));
-              }
+              auto r = use_foreign_share
+                         ? model::make_foreign_memory_record_batch_reader(
+                           std::move(b))
+                         : model::make_memory_record_batch_reader(std::move(b));
               retval.emplace_back(std::move(r));
           }
           check_copy_out_of_range(ncopies, retval.size());

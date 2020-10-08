@@ -142,11 +142,9 @@ struct append_op_foreign final : opfuzz::op {
                          b.set_term(term);
                      }
                      auto cnt = record_count(batches);
-                     auto reader = model::make_memory_record_batch_reader(
-                       std::move(batches));
                      return std::pair<model::record_batch_reader, size_t>(
-                       model::make_foreign_record_batch_reader(
-                         std::move(reader)),
+                       model::make_foreign_memory_record_batch_reader(
+                         std::move(batches)),
                        cnt);
                  })
           .then([ctx](std::pair<model::record_batch_reader, size_t> p) {
