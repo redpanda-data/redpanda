@@ -128,7 +128,9 @@ set parametric
 {% endfor %}{% for recovery in recoveries %}plot [t=0:{{ maxminlat }}] {{ recovery }},t notitle lt rgb "blue"
 {% endfor %}unset parametric
 
-plot 'overview.lat.log' using 1:2 title "latency" with points lt rgb "black" pt 7
+plot 'overview.lat.log' using 1:(strcol(3) eq 'ok' ? $2:1/0) title "latency ok (us)" with points lt rgb "black" pt 7,\
+     'overview.lat.log' using 1:(strcol(3) eq 'err' ? $2:1/0) title "latency err (us)" with points lt rgb "red" pt 7,\
+     'overview.lat.log' using 1:(strcol(3) eq 'out' ? $2:1/0) title "latency timeout (us)" with points lt rgb "blue" pt 7
 
 set yrange [0:{{ maxmaxx }}]
 set pointsize 0.2
@@ -147,7 +149,9 @@ set parametric
 {% endfor %}{% for recovery in recoveries %}plot [t=0:{{ maxmaxx }}] {{ recovery }},t notitle lt rgb "blue"
 {% endfor %}unset parametric
 
-plot 'overview.lat.log' using 1:2 title "latency" with points lt rgb "black" pt 7
+plot 'overview.lat.log' using 1:(strcol(3) eq 'ok' ? $2:1/0) title "latency ok (us)" with points lt rgb "black" pt 7,\
+     'overview.lat.log' using 1:(strcol(3) eq 'err' ? $2:1/0) title "latency err (us)" with points lt rgb "red" pt 7,\
+     'overview.lat.log' using 1:(strcol(3) eq 'out' ? $2:1/0) title "latency timeout (us)" with points lt rgb "blue" pt 7
 
 set title "{{ title }}"
 show title
@@ -433,20 +437,20 @@ def make_overview_chart(title, log_dir, availability_log, latency_log):
         with open(path.join(log_dir, latency_log)) as latency_log_file:
             mn = sys.maxsize
             for line in latency_log_file:
+                parts = line.rstrip().split("\t")
+                tick = int(parts[0])
+                if tick < LATENCY_CUT_OFF_US:
+                    continue
+                tick = int(tick / 1000000)
+                lat = int(parts[1])
                 if "ok" in line:
-                    parts = line.rstrip().split("\t")
-                    tick = int(parts[0])
-                    if tick < LATENCY_CUT_OFF_US:
-                        continue
-                    tick = int(tick / 1000000)
                     maxtick = max(maxtick, tick)
-                    lat = int(parts[1])
-                    out = f"{tick}\t{lat}"
-                    for i in range(3, len(parts)):
-                        out += "\t" + parts[i]
-                    chart_lat_file.write(out + "\n")
                     mn = min(mn, lat)
                     maxlat = max(maxlat, lat)
+                out = f"{tick}\t{lat}"
+                for i in range(2, len(parts)):
+                    out += "\t" + parts[i]
+                chart_lat_file.write(out + "\n")
             maxminlat = mn * 3
             minlatstep = mn
             maxmaxx = int(1.2 * maxlat)
