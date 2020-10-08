@@ -88,6 +88,7 @@ async def run(config, n, overrides):
                 config, cluster, faults, lambda: workload_factory(config))
     except ViolationInducedExit:
         pass
+    cluster.teardown()
 
 
 parser = argparse.ArgumentParser(description='chaos test kvelldb')
