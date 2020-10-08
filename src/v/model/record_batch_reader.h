@@ -260,7 +260,7 @@ record_batch_reader make_record_batch_reader(Args&&... args) {
 }
 
 record_batch_reader
-  make_memory_record_batch_reader(record_batch_reader::data_t);
+  make_memory_record_batch_reader(record_batch_reader::storage_t);
 
 inline record_batch_reader
 make_memory_record_batch_reader(model::record_batch b) {
@@ -269,6 +269,12 @@ make_memory_record_batch_reader(model::record_batch b) {
     batches.push_back(std::move(b));
     return make_memory_record_batch_reader(std::move(batches));
 }
+
+record_batch_reader make_foreign_memory_record_batch_reader(record_batch);
+
+record_batch_reader
+  make_foreign_memory_record_batch_reader(record_batch_reader::data_t);
+
 record_batch_reader make_generating_record_batch_reader(
   ss::noncopyable_function<ss::future<record_batch_opt>()>);
 

@@ -233,10 +233,12 @@ static inline model::record_batch_reader
 reader_from_lcore_batch(model::record_batch&& batch) {
     /*
      * The remainder of work for this partition is handled on its home
-     * core.
+     * core. The foreign memory record batch reader requires that once the
+     * reader is sent to the foreign core that it has exclusive access to the
+     * data in reader. That is true here and is generally trivial with readers
+     * that hold a copy of their data in memory.
      */
-    return model::make_foreign_record_batch_reader(
-      model::make_memory_record_batch_reader(std::move(batch)));
+    return model::make_foreign_memory_record_batch_reader(std::move(batch));
 }
 
 /*

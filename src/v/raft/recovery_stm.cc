@@ -89,9 +89,8 @@ ss::future<> recovery_stm::read_range_for_recovery(
             _base_batch_offset = gap_filled_batches.begin()->base_offset();
             _last_batch_offset = gap_filled_batches.back().last_offset();
 
-            auto f_reader = model::make_foreign_record_batch_reader(
-              model::make_memory_record_batch_reader(
-                std::move(gap_filled_batches)));
+            auto f_reader = model::make_foreign_memory_record_batch_reader(
+              std::move(gap_filled_batches));
 
             return replicate(std::move(f_reader));
         });
