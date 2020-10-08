@@ -132,12 +132,19 @@ struct deserializer {
     ss::future<Cmd> deserialize(iobuf_parser k_parser, iobuf_parser v_parser) {
         using key_t = typename Cmd::key_t;
         using value_t = typename Cmd::value_t;
-        return ss::when_all(
-                 reflection::async_adl<key_t>{}.from(k_parser),
-                 reflection::async_adl<value_t>{}.from(v_parser))
-          .then([](std::tuple<ss::future<key_t>, ss::future<value_t>> res) {
-              // futures are already completed here
-              return Cmd(std::get<0>(res).get0(), std::get<1>(res).get0());
+        return ss::do_with(
+          std::move(k_parser),
+          std::move(v_parser),
+          [](iobuf_parser& k_parser, iobuf_parser& v_parser) {
+              return ss::when_all(
+                       reflection::async_adl<key_t>{}.from(k_parser),
+                       reflection::async_adl<value_t>{}.from(v_parser))
+                .then(
+                  [](std::tuple<ss::future<key_t>, ss::future<value_t>> res) {
+                      // futures are already completed here
+                      return Cmd(
+                        std::get<0>(res).get0(), std::get<1>(res).get0());
+                  });
           });
     }
 };
