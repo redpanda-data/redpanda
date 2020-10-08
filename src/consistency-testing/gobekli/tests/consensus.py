@@ -126,6 +126,19 @@ class TestLinearizabilityRegisterChecker(TestCase):
         checker.write_timeouted("h7h2v")
         checker.write_ended("2hch4")
 
+    def test_cant_commit_gced(self):
+        checker = LinearizabilityRegisterChecker()
+        checker.init("j3qq4", 0, "42")
+        checker.write_started("j3qq4", "h7h2v", 1, "43")
+        checker.write_started("j3qq4", "2hch4", 2, "44")
+        checker.write_ended("2hch4")
+        try:
+            checker.write_ended("h7h2v")
+            raise Exception("should be unreachable")
+        except Violation as e:
+            if e.message != "current head 2hch4:2 doesn't lead to h7h2v and has greater version":
+                raise e
+
     def test_read_ok(self):
         checker = LinearizabilityRegisterChecker()
         checker.init("j3qq4", 0, "42")
@@ -187,7 +200,7 @@ class TestLinearizabilityRegisterChecker(TestCase):
             checker.read_ended("pid1", "h7h2v", "43")
             raise Exception("should be unreachable")
         except Violation as e:
-            if e.message != "Stale read h7h2v:1 while 2hch4:2 was already known when the read started":
+            if e.message != "Stale or phantom read h7h2v":
                 raise e
 
     def test_read_new_after_timeout(self):
