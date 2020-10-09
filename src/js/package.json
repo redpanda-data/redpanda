@@ -14,7 +14,8 @@
     "eslint:check": "eslint . --ext .ts",
     "code:ckeck": "npm run prettier:check && npm run eslint:check",
     "generate:serialization": "./generate-entries.sh",
-    "postinstall": "npm run generate:serialization"
+    "postinstall": "npm run generate:serialization",
+    "build:public": "./compact-public.js"
   },
   "requires": true,
   "dependencies": {
@@ -27,7 +28,9 @@
     "typescript-formatter": "7.2.2",
     "rewire": "5.0.0",
     "inotifywait": "1.8.3",
-    "prettier": "2.0.5"
+    "prettier": "2.0.5",
+    "webpack": "^4.44.2",
+    "ts-loader": "^8.0.4"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^3.7.0",
