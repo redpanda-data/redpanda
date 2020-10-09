@@ -89,7 +89,7 @@ public:
     bool is_tombstone() const;
     bool has_outstanding_locks() const;
     bool is_closed() const;
-    bool has_compacion_index() const;
+    bool has_compaction_index() const;
     void mark_as_compacted_segment();
     bool is_compacted_segment() const;
     void mark_as_finished_self_compaction();
@@ -227,7 +227,7 @@ inline size_t segment::size_bytes() const {
     }
     return _reader.file_size();
 }
-inline bool segment::has_compacion_index() const {
+inline bool segment::has_compaction_index() const {
     return _compaction_index != std::nullopt;
 }
 inline void segment::mark_as_compacted_segment() {
