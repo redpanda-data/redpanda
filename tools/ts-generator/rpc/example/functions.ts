@@ -1,3 +1,5 @@
+import { IOBuf } from "../../../../src/js/modules/utilities/IOBuf";
+
 // receive int64 and return Uint64
 const encodeZigzag = (field: bigint): bigint => {
   // Create Bigint with 64 bytes length and sign 63
@@ -20,133 +22,95 @@ const decodeZigzag = (field: bigint): bigint => {
 /**
  * return a new offset after apply serialization process
  */
-type WriteFn<T> = (field: T, buffer: Buffer, offset: number, object?) => number;
-type ToBytes<T> = (value: T, buffer: Buffer, offset: number) => number;
+type WriteFn<T> = (field: T, buffer: IOBuf, object?) => number;
+type ToBytes<T> = (value: T, buffer: IOBuf) => number;
 
-const writeInt8LE: WriteFn<number> = (field, buffer, offset) => {
-  buffer.writeInt8(field, offset);
-  // 1 bytes is the length of a number in the buffer
-  offset += 1;
-  return offset;
+const writeInt8LE: WriteFn<number> = (field, buffer) => {
+  return buffer.appendInt8(field);
 };
 
-const writeInt16LE: WriteFn<number> = (field, buffer, offset) => {
-  buffer.writeInt16LE(field, offset);
-  // 2 bytes is the length of a number in the buffer
-  offset += 2;
-  return offset;
+const writeInt16LE: WriteFn<number> = (field, buffer) => {
+  return buffer.appendInt16LE(field);
 };
 
-const writeInt32LE: WriteFn<number> = (field, buffer, offset) => {
-  buffer.writeInt32LE(field, offset);
-  // 4 bytes is the length of a number in the buffer
-  offset += 4;
-  return offset;
+const writeInt32LE: WriteFn<number> = (field, buffer) => {
+  return buffer.appendInt32LE(field);
 };
 
-const writeInt64LE: WriteFn<bigint> = (field, buffer, offset) => {
-  buffer.writeBigInt64LE(field, offset);
-  // 8 bytes is the length of a number in the buffer
-  offset += 8;
-  return offset;
+const writeInt64LE: WriteFn<bigint> = (field, buffer) => {
+  return buffer.appendBigInt64LE(field);
 };
 
-const writeUInt8LE: WriteFn<number> = (field, buffer, offset) => {
-  buffer.writeUInt8(field, offset);
-  // 1 bytes is the length of a number in the buffer
-  offset += 1;
-  return offset;
+const writeUInt8LE: WriteFn<number> = (field, buffer) => {
+  return buffer.appendUInt8(field);
 };
 
-const writeUInt16LE: WriteFn<number> = (field, buffer, offset) => {
-  buffer.writeUInt16LE(field, offset);
-  // 2 bytes is the length of a number in the buffer
-  offset += 2;
-  return offset;
+const writeUInt16LE: WriteFn<number> = (field, buffer) => {
+  return buffer.appendUInt16LE(field);
 };
 
-const writeUInt32LE: WriteFn<number> = (field, buffer, offset) => {
-  buffer.writeUInt32LE(field, offset);
-  // 4 bytes is the length of a number in the buffer
-  offset += 4;
-  return offset;
+const writeUInt32LE: WriteFn<number> = (field, buffer) => {
+  return buffer.appendUInt32LE(field);
 };
 
-const writeUInt64LE: WriteFn<bigint> = (field, buffer, offset) => {
-  buffer.writeBigUInt64LE(field, offset);
-  // 8 bytes is the length of a number in the buffer
-  offset += 8;
-  return offset;
+const writeUInt64LE: WriteFn<bigint> = (field, buffer) => {
+  return buffer.appendBigUInt64LE(field);
 };
 
-const writeVarint: WriteFn<bigint> = (field, buffer, offset) => {
+const writeVarint: WriteFn<bigint> = (field, buffer) => {
   let value = encodeZigzag(field);
+  let wroteBytes = 0;
   if (value < 0x80) {
-    buffer.writeUInt8(Number(value), offset);
-    offset += 1;
-    return offset;
+    return buffer.appendUInt8(Number(value));
   }
-  buffer.writeUInt8(Number((value & BigInt(255)) | BigInt(0x80)), offset);
-  offset++;
+  wroteBytes += buffer.appendUInt8(
+    Number((value & BigInt(255)) | BigInt(0x80))
+  );
   value >>= BigInt(7);
   if (value < 0x80) {
-    buffer.writeUInt8(Number(value), offset);
-    offset++;
-    return offset;
+    wroteBytes += buffer.appendUInt8(Number(value));
   }
   do {
-    buffer.writeUInt8(Number((value & BigInt(255)) | BigInt(0x80)), offset);
-    offset++;
+    wroteBytes += buffer.appendUInt8(
+      Number((value & BigInt(255)) | BigInt(0x80))
+    );
     value >>= BigInt(7);
   } while (value >= 0x80);
-  buffer.writeUInt8(Number(value), offset);
-  offset++;
-  return offset;
+  wroteBytes += buffer.appendUInt8(Number(value));
+  return wroteBytes;
 };
 
-const writeBoolean: WriteFn<boolean> = (field, buffer, offset) => {
-  buffer.writeInt8(field ? 1 : 0, offset);
-  offset += 1;
-  return offset;
+const writeBoolean: WriteFn<boolean> = (field, buffer) => {
+  return buffer.appendInt8(field ? 1 : 0);
 };
 
-const writeString: WriteFn<string> = (field, buffer, offset) => {
-  buffer.writeInt32LE(Buffer.byteLength(field), offset);
-  offset += 4;
-  buffer.write(field, offset);
-  offset += Buffer.byteLength(field);
-  return offset;
+const writeString: WriteFn<string> = (field, buffer) => {
+  buffer.appendInt32LE(Buffer.byteLength(field));
+  const stringSize = buffer.appendString(field);
+  return 4 + stringSize;
 };
 
 const writeBuffer: WriteFn<Buffer> = (field, buffer, offset) => {
-  buffer.writeInt32LE(Buffer.byteLength(field), offset);
-  offset += 4;
-  field.copy(buffer, offset);
-  offset += Buffer.byteLength(field);
-  return offset;
+  buffer.appendInt32LE(Buffer.byteLength(field));
+  const bufferBuffer = buffer.appendBuffer(field);
+  return 4 + bufferBuffer;
 };
 
-const writeArray = <T>(
-  fields: T[],
-  buffer: Buffer,
-  offset: number,
-  fn: WriteFn<T>
-): number => {
-  buffer.writeInt32LE(fields.length, offset);
-  offset += 4;
+const writeArray = <T>(fields: T[], buffer: IOBuf, fn: WriteFn<T>): number => {
+  buffer.appendInt32LE(fields.length);
+  let wroteBytes = 4;
   for (const item of fields) {
-    offset = fn(item, buffer, offset);
+    wroteBytes += fn(item, buffer);
   }
-  return offset;
+  return wroteBytes;
 };
 
 const writeObject = <T>(
-  buffer: Buffer,
-  offset: number,
+  buffer: IOBuf,
   type: { toBytes: ToBytes<T> },
   object: T
 ): number => {
-  return type.toBytes(object, buffer, offset);
+  return type.toBytes(object, buffer);
 };
 
 /** Deserializer **/

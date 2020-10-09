@@ -39,6 +39,26 @@
         {
           "name": "inputs",
           "type": "Array<string>"
+        },
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "age",
+          "type": "int8"
+        },
+        {
+          "name": "isCool",
+          "type": "boolean"
+        },
+        {
+          "name": "id",
+          "type": "varint"
+        },
+        {
+          "name": "data",
+          "type": "buffer"
         }
       ]
     },

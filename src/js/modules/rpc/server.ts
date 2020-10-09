@@ -8,6 +8,7 @@ import {
 } from "../domain/generatedRpc/generatedClasses";
 import BF from "../domain/generatedRpc/functions";
 import { ManagementClient } from "./serverAndClients/server";
+import { IOBuf } from "../utilities/IOBuf";
 
 export class Server {
   public constructor(
@@ -80,18 +81,12 @@ export class Server {
         }
         Promise.all(processBatchRequests.map(this.applyCoprocessor)).then(
           (result) => {
-            // TODO: https://app.clubhouse.io/vectorized/story/1255
-            // TODO: Implement ioBuf here
-            const iobuf = Buffer.alloc(300);
-            const offsetAfterRpcHeader = RpcHeader.toBytes(rpcHeader, iobuf);
-            BF.writeArray(
-              result.flat(),
-              iobuf,
-              offsetAfterRpcHeader,
-              (item, auxBuffer, auxOffset) =>
-                BF.writeObject(auxBuffer, auxOffset, ProcessBatchRequest, item)
+            const iobuf = new IOBuf();
+            RpcHeader.toBytes(rpcHeader, iobuf);
+            BF.writeArray(result.flat(), iobuf, (item, auxBuffer) =>
+              BF.writeObject(auxBuffer, ProcessBatchRequest, item)
             );
-            socket.write(iobuf);
+            iobuf.forEach((fragment) => socket.write(fragment.buffer));
           }
         );
       }
