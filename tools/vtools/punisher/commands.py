@@ -205,8 +205,10 @@ class RemoteCluster:
 
     def update_state(self):
         logging.info("Updating cluster state")
+        nodes = list(self.executor.nodes.keys())
         _, out, err = self.executor.execute_on_node(
-            1, _kafka_list_topic, KafkaArgs(ips=self.kafka_ips))
+            random.choice(nodes), _kafka_list_topic,
+            KafkaArgs(ips=self.kafka_ips))
         lines = out.readlines()
         self.topics.clear()
 
