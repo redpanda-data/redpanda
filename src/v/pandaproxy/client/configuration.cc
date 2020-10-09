@@ -30,6 +30,24 @@ configuration::configuration()
       "retry_base_backoff_ms",
       "Delay (in milliseconds) for initial retry backoff",
       config::required::no,
+      100ms)
+  , produce_batch_record_count(
+      *this,
+      "produce_batch_record_count",
+      "Number of records to batch before sending to broker",
+      config::required::no,
+      1000)
+  , produce_batch_size_bytes(
+      *this,
+      "produce_batch_size_bytes",
+      "Number of bytes to batch before sending to broker",
+      config::required::no,
+      1048576)
+  , produce_batch_delay(
+      *this,
+      "produce_batch_delay_ms",
+      "Delay (in milliseconds) to wait before sending batch",
+      config::required::no,
       100ms) {}
 
 void configuration::read_yaml(const YAML::Node& root_node) {

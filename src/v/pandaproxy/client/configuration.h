@@ -20,6 +20,9 @@ struct configuration final : public config::config_store {
     config::property<config::tls_config> broker_tls;
     config::property<size_t> retries;
     config::property<std::chrono::milliseconds> retry_base_backoff;
+    config::property<int32_t> produce_batch_record_count;
+    config::property<int32_t> produce_batch_size_bytes;
+    config::property<std::chrono::milliseconds> produce_batch_delay;
 
     configuration();
 
