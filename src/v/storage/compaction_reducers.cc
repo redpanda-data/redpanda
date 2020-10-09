@@ -208,13 +208,13 @@ copy_data_segment_reducer::filter(model::record_batch&& batch) {
     if (oldh.attrs.timestamp_type() == model::timestamp_type::create_time) {
         last_time = model::timestamp(first_time() + last_timestamp_delta);
     }
-    auto new_batch = model::record_batch(
-      oldh, std::move(ret), model::record_batch::tag_ctor_ng{});
-    auto& h = new_batch.header();
+    auto h = oldh;
     h.first_timestamp = first_time;
     h.max_timestamp = last_time;
     h.record_count = rec_count;
-    reset_size_checksum_metadata(new_batch);
+    reset_size_checksum_metadata(h, ret);
+    auto new_batch = model::record_batch(
+      h, std::move(ret), model::record_batch::tag_ctor_ng{});
     return new_batch;
 }
 ss::future<ss::stop_iteration> copy_data_segment_reducer::do_compaction(
