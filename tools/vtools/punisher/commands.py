@@ -97,7 +97,7 @@ class RemoteExecutor:
 def _is_running(node, client):
     private_ip = node['private_ip']
     stdin, stdout, strerr = client.exec_command(
-        f'curl http://{private_ip}:9644/metrics')
+        f'curl http://{private_ip}:9644/metrics > /dev/null')
 
     return stdout.channel.recv_exit_status() == 0
 
@@ -205,8 +205,10 @@ class RemoteCluster:
 
     def update_state(self):
         logging.info("Updating cluster state")
+        nodes = list(self.executor.nodes.keys())
         _, out, err = self.executor.execute_on_node(
-            1, _kafka_list_topic, KafkaArgs(ips=self.kafka_ips))
+            random.choice(nodes), _kafka_list_topic,
+            KafkaArgs(ips=self.kafka_ips))
         lines = out.readlines()
         self.topics.clear()
 
@@ -330,7 +332,7 @@ def _topic_name():
     return f'punisher-tp-{random.randint(0,10000)}'
 
 
-def _punisher_loop(cl, allow_minority, sleep_time, failed_log_dir):
+def _punisher_loop(cl, allow_minority, sleep_time, failed_log_dir, kill_only):
     cl.update_state()
     verifier = ClusterStateVerifier(cl.up, cl.down, cl.topics)
     with open(os.path.join(failed_log_dir, 'operations.log'), 'w') as op_log:
@@ -341,10 +343,12 @@ def _punisher_loop(cl, allow_minority, sleep_time, failed_log_dir):
             stop_commands = [
                 PunisherCommand('nop', 3),
                 PunisherCommand('transient_kill', 75),
-                PunisherCommand('stop', 10),
-                PunisherCommand('kill', 10),
-                PunisherCommand('reboot', 2),
+                PunisherCommand('reboot', 2)
             ]
+
+            if not kill_only:
+                stop_commands.append(PunisherCommand('stop', 10))
+                stop_commands.append(PunisherCommand('kill', 10))
 
             start_commands = [
                 PunisherCommand('nop', 5),
@@ -454,7 +458,12 @@ def _punisher_loop(cl, allow_minority, sleep_time, failed_log_dir):
 @click.option('--provider',
               required=True,
               type=click.Choice(['aws', 'gcp'], case_sensitive=False))
-def start(step_interval, allow_minority, provider):
+@click.option(
+    '--kill-only',
+    help=('If set punisher will only execute transient kill operations'),
+    is_flag=True,
+    default=True)
+def start(step_interval, allow_minority, provider, kill_only):
     vconfig = config.VConfig()
     repo_path = os.path.join(vconfig.ansible_tmp_dir, 'hosts.ini')
     log_dir = os.path.join(vconfig.build_root, 'punisher')
@@ -464,4 +473,4 @@ def start(step_interval, allow_minority, provider):
     abs_path = os.path.abspath(os.path.expanduser(ssh_key))
     with RemoteExecutor(nodes, abs_path) as exe:
         _punisher_loop(RemoteCluster(exe), allow_minority, step_interval,
-                       log_dir)
+                       log_dir, kill_only)
