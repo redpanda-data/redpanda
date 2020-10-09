@@ -1,15 +1,17 @@
 #pragma once
 #include "coproc/errc.h"
+#include "coproc/logger.h"
 #include "coproc/supervisor.h"
 #include "coproc/types.h"
 #include "model/fundamental.h"
 #include "model/limits.h"
 #include "model/metadata.h"
-#include "rpc/transport.h"
+#include "rpc/reconnect_transport.h"
 #include "rpc/types.h"
 #include "storage/api.h"
 #include "storage/ntp_config.h"
 #include "storage/types.h"
+#include "vlog.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future-util.hh>
@@ -31,17 +33,16 @@ class router {
 public:
     router(ss::socket_address, ss::sharded<storage::api>&);
 
+    /// Begin the loop on the current shard
     ss::future<> start() {
-        (void)ss::with_gate(_gate, [this] {
-            return _client.connect().then([this] { return route(); });
-        });
+        (void)ss::with_gate(_gate, [this] { return route(); });
         return ss::now();
     }
 
+    /// Shut down the loop on the current shard
     ss::future<> stop() {
-        std::vector<int> a;
         _abort_source.request_abort();
-        return _gate.close().then([this]() { return _client.stop(); });
+        return _gate.close().then([this]() { return _transport.stop(); });
     }
 
     errc add_source(
@@ -53,8 +54,32 @@ public:
     }
 
 private:
+    using opt_rbr = std::optional<model::record_batch_reader>;
     using opt_req_data = std::optional<process_batch_request::data>;
     using opt_cfg = std::optional<storage::log_reader_config>;
+
+    ss::future<result<supervisor_client_protocol>> get_client() {
+        return _transport.get_connected().then(
+          [this](result<rpc::transport*> transport)
+            -> result<supervisor_client_protocol> {
+              if (!transport) {
+                  auto err = transport.error();
+                  if (err != rpc::errc::exponential_backoff) {
+                      if (_connection_attempts++ == 5) {
+                          return rpc::errc::disconnected_endpoint;
+                      }
+                  }
+                  vlog(
+                    coproclog.warn,
+                    "Failed attempt to connect to coproc server, attempt "
+                    "number: {}",
+                    _connection_attempts);
+                  return rpc::errc::client_request_timeout;
+              }
+              _connection_attempts = 0;
+              return coproc::supervisor_client_protocol(*transport.value());
+          });
+    }
 
     struct topic_offsets {
         model::offset committed{model::model_limits<model::offset>::min()};
@@ -76,13 +101,11 @@ private:
 
     ss::future<> route();
     ss::future<opt_req_data> route_ntp(const model::ntp&, topic_state&);
-    ss::future<> send_batch(process_batch_request);
+    ss::future<> send_batch(supervisor_client_protocol, process_batch_request);
 
     void bump_offset(const model::ntp&, const script_id);
 
-    ss::future<std::optional<storage::log_reader_config>>
-    make_reader_cfg(storage::log, topic_offsets&);
-
+    ss::future<opt_cfg> make_reader_cfg(storage::log, topic_offsets&);
     storage::log_reader_config reader_cfg(model::offset, model::offset);
 
 private:
@@ -93,13 +116,14 @@ private:
     /// Primitives used to manage the poll loop and close gracefully
     ss::gate _gate;
     ss::abort_source _abort_source;
+    uint8_t _connection_attempts{0};
 
     /// Core in-memory data structure that manages the relationships between
     /// topics and coprocessor scripts
     absl::flat_hash_map<model::ntp, topic_state> _sources;
 
     /// Connection to the coprocessor engine
-    rpc::client<coproc::supervisor_client_protocol> _client;
+    rpc::reconnect_transport _transport;
 };
 
 } // namespace coproc

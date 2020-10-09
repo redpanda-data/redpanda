@@ -1,8 +1,10 @@
 #include "coproc/router.h"
 
 #include "coproc/logger.h"
+#include "coproc/supervisor.h"
 #include "coproc/types.h"
 #include "model/limits.h"
+#include "rpc/backoff_policy.h"
 #include "storage/types.h"
 #include "units.h"
 #include "vassert.h"
@@ -30,8 +32,11 @@ extract_last_offset(model::record_batch_reader reader) {
 
 router::router(ss::socket_address addr, ss::sharded<storage::api>& api)
   : _api(api)
-  , _client({rpc::transport_configuration{
-      .server_addr = addr, .credentials = std::nullopt}}) {}
+  , _transport(
+      {rpc::transport_configuration{
+        .server_addr = addr, .credentials = std::nullopt}},
+      rpc::make_exponential_backoff_policy<rpc::clock_type>(
+        std::chrono::seconds(1), std::chrono::seconds(10))) {}
 
 ss::future<> router::route() {
     return ss::do_until(
@@ -51,11 +56,26 @@ ss::future<> router::route() {
                        return acc;
                    })
             .then([this](std::vector<process_batch_request::data> batch) {
-                if (!batch.empty()) {
-                    process_batch_request r{.reqs = std::move(batch)};
-                    return send_batch(std::move(r));
+                if (batch.empty()) {
+                    return ss::now();
                 }
-                return ss::now();
+                process_batch_request r{.reqs = std::move(batch)};
+                return get_client().then(
+                  [this, r = std::move(r)](
+                    result<supervisor_client_protocol> transport) mutable {
+                      if (!transport) {
+                          const auto err = transport.error();
+                          if (err == rpc::errc::disconnected_endpoint) {
+                              vlog(
+                                coproclog.error,
+                                "Shutting down loop, failed to connect to "
+                                "coproc server");
+                              _abort_source.request_abort();
+                          }
+                          return ss::now();
+                      }
+                      return send_batch(transport.value(), std::move(r));
+                  });
             });
       });
 }
@@ -95,9 +115,10 @@ router::route_ntp(const model::ntp& ntp, topic_state& ts) {
         });
 }
 
-ss::future<> router::send_batch(process_batch_request r) {
+ss::future<> router::send_batch(
+  supervisor_client_protocol transport, process_batch_request r) {
     using reply_type = result<rpc::client_context<process_batch_reply>>;
-    return _client
+    return transport
       .process_batch(std::move(r), rpc::client_opts(model::no_timeout))
       .then_wrapped([this](ss::future<reply_type> f) {
           try {
@@ -226,6 +247,7 @@ errc router::add_source(
     if (logs.empty()) {
         return errc::topic_does_not_exist;
     }
+
     for (auto& [ntp, log] : logs) {
         auto found = _sources.find(ntp);
         if (found == _sources.end()) {
