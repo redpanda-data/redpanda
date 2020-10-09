@@ -67,11 +67,6 @@ void crc_record_batch_header(crc32& crc, const record_batch_header& header) {
       header.record_count);
 }
 
-void crc_record_batch(crc32& crc, const record_batch& b) {
-    crc_record_batch_header(crc, b.header());
-    crc_extend_iobuf(crc, b.data());
-}
-
 int32_t crc_record_batch(const record_batch_header& hdr, const iobuf& records) {
     auto crc = crc32();
     crc_record_batch_header(crc, hdr);
@@ -81,11 +76,6 @@ int32_t crc_record_batch(const record_batch_header& hdr, const iobuf& records) {
 
 int32_t crc_record_batch(const record_batch& b) {
     return crc_record_batch(b.header(), b.data());
-}
-
-int32_t recompute_record_batch_size(const record_batch& b) {
-    int32_t retval = model::packed_record_batch_header_size;
-    return retval + b.data().size_bytes();
 }
 
 template<typename Parser, typename ParserData>
