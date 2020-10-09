@@ -72,10 +72,15 @@ void crc_record_batch(crc32& crc, const record_batch& b) {
     crc_extend_iobuf(crc, b.data());
 }
 
+int32_t crc_record_batch(const record_batch_header& hdr, const iobuf& records) {
+    auto crc = crc32();
+    crc_record_batch_header(crc, hdr);
+    crc_extend_iobuf(crc, records);
+    return crc.value();
+}
+
 int32_t crc_record_batch(const record_batch& b) {
-    auto c = crc32();
-    crc_record_batch(c, b);
-    return c.value();
+    return crc_record_batch(b.header(), b.data());
 }
 
 int32_t recompute_record_batch_size(const record_batch& b) {
