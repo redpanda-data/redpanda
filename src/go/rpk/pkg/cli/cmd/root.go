@@ -63,6 +63,7 @@ func Execute() {
 	rootCmd.AddCommand(NewGenerateCommand(fs))
 	rootCmd.AddCommand(NewVersionCommand())
 	rootCmd.AddCommand(NewApiCommand(fs))
+	rootCmd.AddCommand(NewWasmCommand(fs))
 
 	err := rootCmd.Execute()
 	if len(os.Args) > 1 {
