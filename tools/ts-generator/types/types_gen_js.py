@@ -12,70 +12,70 @@ sys.path.append(os.path.dirname(__file__))
 logger = logging.getLogger('rp')
 
 serializableFunctions = """
-{%- macro write_int8(field, propertyPath, buffer, offset, assign) %}
+{%- macro write_int8(field, propertyPath, buffer, assign) %}
     {% set jsFn = "writeUInt8LE" if 'u' in field.type else "writeInt8LE" -%}
-    {{ "offset = " if assign -}} 
-    BF.{{jsFn}}({{propertyPath}}, {{buffer}}, {{offset}})
+    {{ "wroteBytes += " if assign -}} 
+    BF.{{jsFn}}({{propertyPath}}, {{buffer}})
 {%- endmacro -%}
 
-{%- macro write_int16(field, propertyPath, buffer, offset, assign) %}
+{%- macro write_int16(field, propertyPath, buffer, assign) %}
     {% set jsFn = "writeUInt16LE" if 'u' in field.type else "writeInt16LE" -%}
-    {{ "offset = " if assign -}} 
-    BF.{{jsFn}}({{propertyPath}}, {{buffer}}, {{offset}})
+    {{ "wroteBytes += " if assign -}} 
+    BF.{{jsFn}}({{propertyPath}}, {{buffer}})
 {%- endmacro -%}
 
-{%- macro write_int32(field, propertyPath, buffer, offset, assign) %}
+{%- macro write_int32(field, propertyPath, buffer, assign) %}
     {% set jsFn = "writeUInt32LE" if 'u' in field.type else "writeInt32LE" -%}
-    {{ "offset = " if assign -}} 
-    BF.{{jsFn}}({{propertyPath}}, {{buffer}}, {{offset}})
+    {{ "wroteBytes += " if assign -}} 
+    BF.{{jsFn}}({{propertyPath}}, {{buffer}})
 {%- endmacro -%}
 
-{%- macro write_int64(field, propertyPath, buffer, offset, assign) %}
+{%- macro write_int64(field, propertyPath, buffer, assign) %}
     {% set jsFn = "writeUInt64LE" if 'u' in field.type else "writeInt64LE" -%}
-    {{ "offset = " if assign -}} 
-    BF.{{jsFn}}({{propertyPath}}, {{buffer}}, {{offset}})
+    {{ "wroteBytes += " if assign -}} 
+    BF.{{jsFn}}({{propertyPath}}, {{buffer}})
 {%- endmacro -%}
 
-{%- macro write_string(field, propertyPath, buffer, offset, assign) %}
-    {{ "offset = " if assign -}} 
-    BF.writeString({{propertyPath}}, {{buffer}}, {{offset}})
+{%- macro write_string(field, propertyPath, buffer, assign) %}
+    {{ "wroteBytes += " if assign -}} 
+    BF.writeString({{propertyPath}}, {{buffer}})
 {%- endmacro -%}
 
-{%- macro write_buffer(field, propertyPath, buffer, offset, assign) %}
-    {{ "offset = " if assign -}} 
-    BF.writeBuffer({{propertyPath}}, {{buffer}}, {{offset}})
+{%- macro write_buffer(field, propertyPath, buffer, assign) %}
+    {{ "wroteBytes += " if assign -}} 
+    BF.writeBuffer({{propertyPath}}, {{buffer}})
 {%- endmacro -%}
 
-{%- macro write_boolean(field, propertyPath, buffer, offset, assign) %}
-    {{ "offset = " if assign -}} 
-    BF.writeBoolean({{propertyPath}}, {{buffer}}, {{offset}})
+{%- macro write_boolean(field, propertyPath, buffer, assign) %}
+    {{ "wroteBytes += " if assign -}} 
+    BF.writeBoolean({{propertyPath}}, {{buffer}})
 {%- endmacro -%}
 
-{%- macro write_varint(field, propertyPath, buffer, offset, assign) %}
-    {{ "offset = " if assign -}} 
-    BF.writeVarint({{propertyPath}}, {{buffer}}, {{offset}})
+{%- macro write_varint(field, propertyPath, buffer, assign) %}
+    {{ "wroteBytes += " if assign -}} 
+    BF.writeVarint({{propertyPath}}, {{buffer}})
 {%- endmacro -%}
 
 {%- macro write_array(field, propertyPath) %}
     {# Remove ">" and "Array<" from type, the result is the array type #}
     {%-set subtype = field.type | replace(">","")|replace("Array<", "") %}
-    offset = 
-    BF.writeArray({{propertyPath}}, buffer, offset, 
-        (item, auxBuffer, auxOffset) => {{-serialize_by_field
+    wroteBytes += 
+    BF.writeArray({{propertyPath}}, buffer, 
+        (item, auxBuffer) => {{-serialize_by_field
             ({"name": "", 
               "type": subtype},
               "item", "auxBuffer",
-              "auxOffset", False)
+               False)
               }}
     )
 {%- endmacro -%}
 
-{%- macro write_object(field, propertyPath, buffer, offset, assign) %}
-    {{ "offset = " if assign -}} 
-    BF.writeObject({{buffer}}, {{offset}}, {{field.type}}, {{propertyPath}})
+{%- macro write_object(field, propertyPath, buffer, assign) %}
+    {{ "wroteBytes += " if assign -}} 
+    BF.writeObject({{buffer}}, {{field.type}}, {{propertyPath}})
 {%- endmacro -%}
 
-{%-macro serialize_by_field(field, pathParameter, inBuffer, inOffset, assign)-%}
+{%-macro serialize_by_field(field, pathParameter, inBuffer, assign)-%}
     {%- set buffer = inBuffer | default("buffer", True) -%}
     {%- set offset = inOffset | default("offset", True) -%}
     {%- set assignOffset = assign | default(False, True) -%}
@@ -83,23 +83,23 @@ serializableFunctions = """
     {%- if 'Array' in field.type -%}
     {{ write_array(field, path)}}
     {%- elif "int8" in field.type -%}
-    {{ write_int8(field, path, buffer, offset, assignOffset) }}
+    {{ write_int8(field, path, buffer, assignOffset) }}
     {%- elif "int16" in field.type -%}
-    {{ write_int16(field, path, buffer, offset, assignOffset) }}
+    {{ write_int16(field, path, buffer, assignOffset) }}
     {%- elif "int32" in field.type -%}
-    {{ write_int32(field, path, buffer, offset, assignOffset) }}
+    {{ write_int32(field, path, buffer, assignOffset) }}
     {%- elif "int64" in field.type -%}
-    {{ write_int64(field, path, buffer, offset, assignOffset) }}
+    {{ write_int64(field, path, buffer, assignOffset) }}
     {%- elif field.type == "string" -%}
-    {{- write_string(field, path, buffer, offset, assignOffset) }}
+    {{- write_string(field, path, buffer, assignOffset) }}
     {%- elif field.type == "boolean" -%}
-    {{ write_boolean(field, path, buffer, offset, assignOffset) }}
+    {{ write_boolean(field, path, buffer, assignOffset) }}
     {%- elif field.type == "varint" -%}
-    {{ write_varint(field, path, buffer, offset, assignOffset) }}
+    {{ write_varint(field, path, buffer, assignOffset) }}
     {%- elif field.type == "buffer" -%}
-    {{- write_buffer(field, path, buffer, offset, assignOffset) }}
+    {{- write_buffer(field, path, buffer, assignOffset) }}
     {%- else -%}
-    {{ write_object(field, path, buffer, offset, assignOffset) }}
+    {{ write_object(field, path, buffer, assignOffset) }}
     {%- endif -%}
  {%- endmacro %}
 """
@@ -291,6 +291,7 @@ template = """
 // Code generated by v/tools/ts-generator/rpcgen_js.py
 // import Buffer Functions
 import BF from "./functions";
+import { IOBuf } from "../../utilities/IOBuf";
 {% for class in classes %}
 export class {{class.className}} {
     {# the order of the field definition is important #}
@@ -325,12 +326,13 @@ export class {{class.className}} {
     */
     static toBytes(
         value: {{class.className}},
-        buffer: Buffer, offset = 0
+        buffer: IOBuf
     ): number {
+        let wroteBytes = 0;
         {%- for field in class.fields %}
-            {{- serialize_by_field(field, "", "", "", True) -}}
+            {{- serialize_by_field(field, "", "", True) -}}
         {%- endfor %}
-        return offset
+        return wroteBytes
     }    
 }
 {%- endfor -%}
