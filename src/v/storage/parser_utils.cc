@@ -59,26 +59,14 @@ compress_batch(model::compression c, const model::record_batch& b) {
       "Asked to compress a batch with type `none`: {} - {}",
       c,
       b.header());
-    return ss::do_with(
-             iobuf{},
-             [c, &b](iobuf& buf) {
-                 return model::for_each_record(
-                          b,
-                          [&buf](const model::record& r) {
-                              model::append_record_to_buffer(buf, r);
-                          })
-                   .then([c, &buf] {
-                       return compression::compressor::compress(buf, c);
-                   });
-             })
-      .then([c, &b](model::record_batch::records_type&& payload) {
-          auto ret = model::record_batch(b.header(), std::move(payload));
-          auto& hdr = ret.header();
-          // compression bit must be set first!
-          hdr.attrs |= c;
-          reset_size_checksum_metadata(ret);
-          return ret;
-      });
+    auto payload = compression::compressor::compress(b.data(), c);
+    auto h = b.header();
+    // compression bit must be set first!
+    h.attrs |= c;
+    auto batch = model::record_batch(
+      h, std::move(payload), model::record_batch::tag_ctor_ng{});
+    reset_size_checksum_metadata(batch);
+    return ss::make_ready_future<model::record_batch>(std::move(batch));
 }
 
 /// \brief resets the size, header crc and payload crc
