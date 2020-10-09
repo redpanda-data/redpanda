@@ -97,7 +97,7 @@ class RemoteExecutor:
 def _is_running(node, client):
     private_ip = node['private_ip']
     stdin, stdout, strerr = client.exec_command(
-        f'curl http://{private_ip}:9644/metrics')
+        f'curl http://{private_ip}:9644/metrics > /dev/null')
 
     return stdout.channel.recv_exit_status() == 0
 
