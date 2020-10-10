@@ -18,6 +18,15 @@ static storage::batch_cache::reclaim_options opts = {
   .max_size = 4 << 20,
 };
 
+model::record_batch make_batch(size_t size) {
+    iobuf value;
+    value.append(ss::temporary_buffer<char>(size));
+    cluster::simple_batch_builder builder(
+      raft::data_batch_type, model::offset(0));
+    builder.add_kv(iobuf{}, std::move(value));
+    return std::move(builder).build();
+}
+
 class fixture {};
 
 FIXTURE_TEST(reclaim, fixture) {
@@ -53,9 +62,7 @@ FIXTURE_TEST(reclaim, fixture) {
     // trigger reclaim
     for (auto i = 0; i < (pages_until_reclaim / 2); i++) {
         size_t buf_size = ss::memory::page_size - sizeof(model::record_batch);
-        iobuf buf;
-        buf.append(ss::temporary_buffer<char>(buf_size));
-        model::record_batch batch(model::record_batch_header{}, std::move(buf));
+        auto batch = make_batch(buf_size);
         auto e = cache.put(std::move(batch));
         cache_entries.emplace_back(std::move(e));
     }
@@ -75,9 +82,7 @@ FIXTURE_TEST(reclaim, fixture) {
     // now allocate past what should cause relcaims to trigger
     for (auto i = 0; i < pages_until_reclaim; i++) {
         size_t buf_size = ss::memory::page_size - sizeof(model::record_batch);
-        iobuf buf;
-        buf.append(ss::temporary_buffer<char>(buf_size));
-        model::record_batch batch(model::record_batch_header{}, std::move(buf));
+        auto batch = make_batch(buf_size);
         auto e = cache.put(std::move(batch));
         BOOST_REQUIRE((bool)e);
         cache_entries.emplace_back(std::move(e));
