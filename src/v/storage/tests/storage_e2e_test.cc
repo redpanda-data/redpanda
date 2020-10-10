@@ -716,3 +716,88 @@ FIXTURE_TEST(test_compation_preserve_state, storage_test_fixture) {
     // after append we expect offset to be equal to {2}
     BOOST_REQUIRE_EQUAL(log.offsets().dirty_offset, model::offset(2));
 }
+
+void append_single_record_batch(
+  storage::log log, int cnt, model::term_id term) {
+    for (int i = 0; i < cnt; ++i) {
+        iobuf key = bytes_to_iobuf(bytes("key"));
+        ss::sstring v = fmt::format("v-{}", i);
+        iobuf value = bytes_to_iobuf(bytes(v.c_str()));
+        storage::record_batch_builder builder(
+          model::record_batch_type(1), model::offset(0));
+        builder.add_raw_kv(std::move(key), std::move(value));
+        auto batch = std::move(builder).build();
+        batch.set_term(term);
+        auto reader = model::make_memory_record_batch_reader(
+          {std::move(batch)});
+        storage::log_append_config cfg{
+          .should_fsync = storage::log_append_config::fsync::no,
+          .io_priority = ss::default_priority_class(),
+          .timeout = model::no_timeout,
+        };
+
+        std::move(reader)
+          .for_each_ref(log.make_appender(cfg), cfg.timeout)
+          .get0();
+    }
+}
+
+/**
+ * Test scenario:
+ *   1) append few single record batches in term 1
+ *   2) truncate in the middle of segment
+ *   3) append some more batches to the same segment
+ *   4) roll term by appending to new segment
+ *   5) restart log manager
+ *
+ * NOTE:
+ *  flushing after each operation doesn't influence the test
+ *
+ * Expected outcome:
+ *   Segment offsets should be correctly recovered.
+ */
+FIXTURE_TEST(truncate_and_roll_segment, storage_test_fixture) {
+    auto cfg = default_log_config(test_dir);
+    cfg.stype = storage::log_config::storage_type::disk;
+    cfg.cache = storage::log_config::with_cache::yes;
+
+    {
+        storage::log_manager mgr = make_log_manager(cfg);
+
+        info("config: {}", mgr.config());
+        auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+        auto ntp = model::ntp("default", "test", 0);
+        auto log
+          = mgr.manage(storage::ntp_config(ntp, mgr.config().base_dir)).get0();
+        // 1) append few single record batches in term 1
+        append_single_record_batch(log, 14, model::term_id(1));
+        log.flush().get0();
+        // 2) truncate in the middle of segment
+        model::offset truncate_at(7);
+        info("Truncating at offset:{}", truncate_at);
+        log
+          .truncate(
+            storage::truncate_config(truncate_at, ss::default_priority_class()))
+          .get0();
+        // 3) append some more batches to the same segment
+        append_single_record_batch(log, 10, model::term_id(1));
+        log.flush().get0();
+        //  4) roll term by appending to new segment
+        append_single_record_batch(log, 1, model::term_id(8));
+        log.flush().get0();
+    }
+    // 5) restart log manager
+    {
+        storage::log_manager mgr = make_log_manager(cfg);
+
+        auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+        auto ntp = model::ntp("default", "test", 0);
+        auto log
+          = mgr.manage(storage::ntp_config(ntp, mgr.config().base_dir)).get0();
+        auto read = read_and_validate_all_batches(log);
+
+        for (model::offset o(0); o < log.offsets().committed_offset; ++o) {
+            BOOST_REQUIRE(log.get_term(o).has_value());
+        }
+    }
+}
