@@ -32,7 +32,7 @@ public class Producer {
     properties.put(
         org.apache.kafka.clients.producer.ProducerConfig
             .COMPRESSION_TYPE_CONFIG,
-        Producer.getRandomCompression());
+        config.compression());
     properties.put(
         org.apache.kafka.clients.producer.ProducerConfig
             .KEY_SERIALIZER_CLASS_CONFIG,
@@ -120,10 +120,6 @@ public class Producer {
       state.write(Paths.get(path));
       stats.printTotal();
     }
-  }
-  static String getRandomCompression() {
-    String[] compression = {"snappy", "gzip", "lz4", "zstd"};
-    return compression[ThreadLocalRandom.current().nextInt(compression.length)];
   }
   private final Stats stats;
   private final RecordsGenerator generator;

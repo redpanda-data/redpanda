@@ -23,6 +23,8 @@ public interface ProducerConfig extends CommonConfig {
 
   int segmentSize();
 
+  String compression();
+
   default Properties parseProperties() {
     return Configuration.parseProperties(properties());
   }

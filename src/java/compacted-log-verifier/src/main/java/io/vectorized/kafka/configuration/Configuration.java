@@ -15,6 +15,8 @@ import java.nio.file.Paths;
 import java.util.List;
 import java.util.Optional;
 import java.util.Properties;
+import java.util.Random;
+import java.util.concurrent.ThreadLocalRandom;
 import net.sourceforge.argparse4j.ArgumentParsers;
 import net.sourceforge.argparse4j.inf.*;
 import org.apache.commons.lang3.RandomStringUtils;
@@ -126,6 +128,16 @@ public class Configuration {
         .dest("keySize")
         .help("size of record keys");
 
+    produceParser.addArgument("--compression")
+        .action(store())
+        .required(false)
+        .type(String.class)
+        .metavar("COMPRESSION")
+        .dest("compression")
+        .setDefault("none")
+        .choices("none", "snappy", "gzip", "lz4", "zstd", "random")
+        .help("compression used by producer");
+
     produceParser.addArgument("--producer-props")
         .nargs("+")
         .required(false)
@@ -190,6 +202,9 @@ public class Configuration {
   }
 
   public ProducerConfig getProducerConfig() {
+    var compression = argsNs.getString("compression").equals("random")
+                          ? getRandomCompression()
+                          : argsNs.getString("compression");
     var builder
         = ImmutableProducerConfig.builder()
               .brokers(argsNs.getString("broker"))
@@ -204,6 +219,7 @@ public class Configuration {
               .payloadSize(argsNs.getInt("payloadSize"))
               .keySize(argsNs.getInt("keySize"))
               .keyCardinality(argsNs.getInt("keyCardinality"))
+              .compression(compression)
               .segmentSize(argsNs.getInt("segmentSize"));
 
     Optional.ofNullable(argsNs.getString("securityProperties"))
@@ -244,6 +260,11 @@ public class Configuration {
       produceParser.handleError(e);
       parser.handleError(e);
     }
+  }
+
+  static String getRandomCompression() {
+    String[] compression = {"snappy", "gzip", "lz4", "zstd"};
+    return compression[ThreadLocalRandom.current().nextInt(compression.length)];
   }
 
   private final ArgumentParser parser;

@@ -47,6 +47,8 @@ TOPIC=${TOPIC:-sf-compacted-2}
 REPLICATION=${REPLICATION:-1}
 # number of topic partitions
 PARTITIONS=${PARTITIONS:-1}
+# compression used by producer
+COMPRESSION=${COMPRESSION:-none}
 # topic segment size
 SEGMENT_SIZE=${SEGMENT_SIZE:-$((10 * 1024 * 1024))}
 # properties file containing security settings
@@ -87,6 +89,7 @@ case $1 in
       --num-records ${RECORD_COUNT} \
       --replication-factor ${REPLICATION} \
       --partitions ${PARTITIONS} \
+      --compression ${COMPRESSION} \
       --segment-size ${SEGMENT_SIZE} \
       --payload-size ${PAYLOAD_SIZE} \
       --key-size ${KEY_SIZE} \
