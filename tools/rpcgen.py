@@ -111,6 +111,9 @@ public:
     explicit {{service_name}}_client_protocol(rpc::transport& t)
       : _transport(t) {
     }
+
+    virtual ~{{service_name}}_client_protocol() = default;
+
     {%- for method in methods %}
     virtual inline ss::future<result<rpc::client_context<{{method.output_type}}>>>
     {{method.name}}({{method.input_type}}&& r, rpc::client_opts opts) {
