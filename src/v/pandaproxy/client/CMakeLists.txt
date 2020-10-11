@@ -10,3 +10,5 @@ v_cc_library(
     v::kafka
     v::ssx
   )
+
+add_subdirectory(test)
