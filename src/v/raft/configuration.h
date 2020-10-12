@@ -28,6 +28,7 @@ struct group_nodes {
     std::vector<model::node_id> voters;
     std::vector<model::node_id> learners;
 
+    bool contains(model::node_id id) const;
     friend std::ostream& operator<<(std::ostream&, const group_nodes&);
     friend bool operator==(const group_nodes&, const group_nodes&);
 };
@@ -134,6 +135,8 @@ public:
     bool majority(Predicate&& f) const;
 
     int8_t version() const { return _version; }
+
+    void promote_to_voter(model::node_id id);
 
     friend bool
     operator==(const group_configuration&, const group_configuration&);
