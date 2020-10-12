@@ -474,7 +474,7 @@ ExternalProject_Add(valgrind
 
 ExternalProject_Add(seastar
   GIT_REPOSITORY https://github.com/vectorizedio/seastar.git
-  GIT_TAG 094cd884c2c1e15133bbdd7c977e880049a9b47c
+  GIT_TAG 290f579f8f9dd72531194e5bd4e8a4a0a2ff4efd
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   CMAKE_ARGS
