@@ -58,6 +58,8 @@ func NewApiCommand(fs afero.Fs) *cobra.Command {
 	producerClosure := createProducer(fs, brokersClosure, configClosure)
 	clientClosure := createClient(fs, brokersClosure, configClosure)
 	adminClosure := createAdmin(fs, brokersClosure, configClosure)
+
+	command.AddCommand(api.NewStatusCommand(adminClosure))
 	command.AddCommand(
 		api.NewTopicCommand(fs, clientClosure, adminClosure),
 	)
@@ -73,8 +75,17 @@ func NewApiCommand(fs afero.Fs) *cobra.Command {
 func findConfigFile(
 	fs afero.Fs, configFile *string,
 ) func() (*config.Config, error) {
+	var conf *config.Config
+	var err error
 	return func() (*config.Config, error) {
-		return config.ReadOrFind(fs, *configFile)
+		if conf != nil {
+			return conf, nil
+		}
+		conf, err = config.ReadOrFind(fs, *configFile)
+		if err == nil {
+			config.CheckAndPrintNotice(conf.LicenseKey)
+		}
+		return conf, err
 	}
 }
 
@@ -96,7 +107,6 @@ func deduceBrokers(
 			log.Debug(err)
 			return []string{"127.0.0.1:9092"}
 		}
-		config.CheckAndPrintNotice(conf.LicenseKey)
 
 		// Add the seed servers' Kafka addrs.
 		if len(conf.Redpanda.SeedServers) > 0 {
@@ -134,7 +144,6 @@ func createProducer(
 		if err != nil {
 			return nil, err
 		}
-		config.CheckAndPrintNotice(conf.LicenseKey)
 		cfg, err := kafka.LoadConfig(conf)
 		if err != nil {
 			return nil, err
@@ -176,7 +185,6 @@ func createAdmin(
 		if err != nil {
 			return nil, err
 		}
-		config.CheckAndPrintNotice(conf.LicenseKey)
 		cfg, err := kafka.LoadConfig(conf)
 		if err != nil {
 			return nil, err
