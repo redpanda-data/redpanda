@@ -76,8 +76,8 @@ list(APPEND BASE_C_FLAGS_LIST -fPIC ${RP_MARCH})
 
 # compiler specific options
 if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
-    list(APPEND BASE_C_FLAGS_LIST -fuse-ld=lld)
-    list(APPEND BASE_CXX_FLAGS_LIST -fuse-ld=lld)
+    list(APPEND BASE_C_FLAGS_LIST -fuse-ld=lld -mllvm -inline-threshold=2500)
+    list(APPEND BASE_CXX_FLAGS_LIST -fuse-ld=lld -mllvm -inline-threshold=2500)
     list(APPEND BASE_LD_FLAGS_LIST -stdlib=libc++)
     list(APPEND BASE_CXX_FLAGS_LIST
         -Wno-unused-lambda-capture
