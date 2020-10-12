@@ -216,12 +216,47 @@ consensus::success_reply consensus::update_follower_index(
     // learners to nodes and perform data movement to added replicas
 }
 
+void consensus::maybe_promote_to_voter(model::node_id id) {
+    (void)ss::with_gate(_bg, [this, id] {
+        // is voter already
+        if (config().is_voter(id)) {
+            return ss::now();
+        }
+        auto it = _fstats.find(id);
+
+        // already removed
+        if (it == _fstats.end()) {
+            return ss::now();
+        }
+
+        // do not promote to voter, learner is not up to date
+        if (it->second.match_index < _log.offsets().committed_offset) {
+            return ss::now();
+        }
+
+        vlog(_ctxlog.trace, "promoting node {} to voter", id);
+        return _op_lock.get_units()
+          .then([this, id](ss::semaphore_units<> u) mutable {
+              auto latest_cfg = _configuration_manager.get_latest();
+              latest_cfg.promote_to_voter(id);
+
+              return replicate_configuration(
+                std::move(u), std::move(latest_cfg));
+          })
+          .then([this, id](std::error_code ec) {
+              vlog(
+                _ctxlog.trace, "node {} promotion result {}", id, ec.message());
+          });
+    }).handle_exception_type([](const ss::gate_closed_exception&) {});
+}
+
 void consensus::process_append_entries_reply(
   model::node_id node,
   result<append_entries_reply> r,
   follower_req_seq seq_id) {
     auto is_success = update_follower_index(node, std::move(r), seq_id);
     if (is_success) {
+        maybe_promote_to_voter(node);
         maybe_update_leader_commit_idx();
     }
 }
@@ -1425,7 +1460,9 @@ ss::future<> consensus::maybe_commit_configuration(ss::semaphore_units<> u) {
 
     auto latest_cfg = _configuration_manager.get_latest();
     // as a leader replicate new simple configuration
-    if (latest_cfg.type() == configuration_type::joint) {
+    if (
+      latest_cfg.type() == configuration_type::joint
+      && !latest_cfg.current_config().voters.empty()) {
         latest_cfg.discard_old_config();
         vlog(
           _ctxlog.trace,

@@ -11,6 +11,14 @@
 #include <optional>
 
 namespace raft {
+bool group_nodes::contains(model::node_id id) const {
+    auto v_it = std::find(std::cbegin(voters), std::cend(voters), id);
+    if (v_it != voters.cend()) {
+        return true;
+    }
+    auto l_it = std::find(std::cbegin(learners), std::cend(learners), id);
+    return l_it != learners.cend();
+}
 
 group_configuration::group_configuration(std::vector<model::broker> brokers)
   : _brokers(std::move(brokers)) {
@@ -132,10 +140,9 @@ void group_configuration::add(std::vector<model::broker> brokers) {
         }
     }
 
-    // FIXME: add to learners when we will implement learners promotion
     _old = _current;
     for (auto& b : brokers) {
-        _current.voters.push_back(b.id());
+        _current.learners.push_back(b.id());
         _brokers.push_back(std::move(b));
     }
 }
@@ -167,24 +174,56 @@ void group_configuration::remove(const std::vector<model::node_id>& ids) {
 }
 
 void group_configuration::replace(std::vector<model::broker> brokers) {
-    vassert(
-      !_old, "can not remove broker from joint configuration - {}", *this);
+    vassert(!_old, "can not replace joint configuration - {}", *this);
 
     // add missing brokers, brokers have to contain both the new and old nodes
+
+    if (brokers == _brokers) {
+        bool has_all = std::all_of(
+          brokers.begin(), brokers.end(), [this](model::broker& b) {
+              return _current.contains(b.id());
+          });
+        // configurations are identical, do nothing
+        if (has_all) {
+            return;
+        }
+    }
+
     _old = _current;
     _current.learners.clear();
     _current.voters.clear();
-    std::transform(
-      std::cbegin(brokers),
-      std::cend(brokers),
-      std::back_inserter(_current.voters),
-      [](const model::broker& broker) { return broker.id(); });
+
+    for (auto& br : brokers) {
+        auto was_voter = std::find(
+                           std::cbegin(_old->voters),
+                           std::cend(_old->voters),
+                           br.id())
+                         != std::cend(_old->voters);
+
+        if (was_voter) {
+            _current.voters.push_back(br.id());
+        } else {
+            _current.learners.push_back(br.id());
+        }
+    }
 
     for (auto& b : brokers) {
         if (!contains_broker(b.id())) {
             _brokers.push_back(std::move(b));
         }
     }
+}
+
+void group_configuration::promote_to_voter(model::node_id id) {
+    auto it = std::find(
+      std::cbegin(_current.learners), std::cend(_current.learners), id);
+    // do nothing
+    if (it == _current.learners.end()) {
+        return;
+    }
+    // add to voters
+    _current.learners.erase(it);
+    _current.voters.push_back(id);
 }
 
 void group_configuration::discard_old_config() {

@@ -289,6 +289,7 @@ private:
     ss::future<std::error_code> change_configuration(Func&&);
 
     ss::future<> maybe_commit_configuration(ss::semaphore_units<>);
+    void maybe_promote_to_voter(model::node_id);
 
     bytes last_applied_key() const;
     // args
