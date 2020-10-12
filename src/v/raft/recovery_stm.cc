@@ -39,6 +39,38 @@ ss::future<> recovery_stm::do_recover() {
         return install_snapshot();
     }
 
+    /**
+     * We have to store committed_index before doing read as we perform
+     * recovery without holding consensus op_lock. Storing committed index
+     * to use in append entries request sent during recovery will guarantee
+     * correctness. If we would read data before storing committed index we
+     * could incorrectly advance follower commit index with data that
+     * were actually incorrect.
+     *
+     * Consider following scenario:
+     *
+     * Fiber 1 (f1: recovery) - read some data for follower recovery
+     * Fiber 2 (f2: request handling) - received append entries request from
+     * new
+     *                                  leader.
+     * 1. f1: start recovery
+     * 2. f1: read batches for recovery
+     * 3. f2: received append entries
+     * 4. f2: truncated log
+     * 5. f2: appended to log
+     * 6. f2: updated committed_index
+     * 7. f1: read committed offset
+     * 8. f1: create append entries request
+     * 9. f1: send batches to follower
+     * 10. f1: stop recovery - not longer a leader
+     *
+     * In step 9. follower will receive request that will cause the committed
+     * offset to be update event though the batches were truncated on the node
+     * which sent the request
+     *
+     */
+    _committed_offset = _ptr->committed_offset();
+
     // read & replicate log entries
     return read_range_for_recovery(
       meta.value()->next_index, lstats.dirty_offset);
@@ -214,7 +246,7 @@ ss::future<> recovery_stm::replicate(model::record_batch_reader&& reader) {
     }
 
     // calculate commit index for follower to update immediately
-    auto commit_idx = std::min(_last_batch_offset, _ptr->committed_offset());
+    auto commit_idx = std::min(_last_batch_offset, _committed_offset);
     // build request
     append_entries_request r(
       _ptr->self(),
