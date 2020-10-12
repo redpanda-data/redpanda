@@ -5,6 +5,7 @@
 #include "raft/types.h"
 #include "seastarx.h"
 
+#include <seastar/core/sstring.hh>
 #include <seastar/util/log.hh>
 
 namespace raft {
@@ -43,10 +44,13 @@ public:
     template<typename... Args>
     void log(ss::log_level lvl, const char* format, Args&&... args) {
         if (raftlog.is_enabled(lvl)) {
-            auto line_fmt = fmt::format(
-              "[group_id:{}, {}] {}", _group_id, _ntp, format);
-
-            raftlog.log(lvl, line_fmt.c_str(), std::forward<Args>(args)...);
+            auto line_fmt = ss::sstring("[group_id:{}, {}] ") + format;
+            raftlog.log(
+              lvl,
+              line_fmt.c_str(),
+              _group_id,
+              _ntp,
+              std::forward<Args>(args)...);
         }
     }
 
