@@ -182,7 +182,7 @@ def tidy(conf, check):
 def _clangfmt(vconfig, ref, check):
     logging.debug("Running clang-format")
     args = f'-style=file -fallback-style=none {"" if check else "-i"}'
-    exts = [".cc", ".cpp", ".h", ".hpp", ".proto", ".java", ".js"]
+    exts = [".cc", ".cpp", ".h", ".hpp", ".proto", ".java"]
     _fmt(vconfig, exts, 'clang-format', args, ref, check)
 
 
@@ -195,7 +195,7 @@ def _crlfmt(vconfig, ref, check):
 def _jsfmt(vconfig, ref, check):
     logging.debug("Running Prettier")
     args = f'--list-different' if check else f'--write'
-    _fmt(vconfig, ['.ts'], 'npx prettier', args, ref, check)
+    _fmt(vconfig, [".ts", ".js"], 'npx prettier', args, ref, check)
 
 
 def _yapf(vconfig, ref, check):
