@@ -7,10 +7,14 @@
 #include "vassert.h"
 #include "vlog.h"
 
+#include <seastar/core/future.hh>
+#include <seastar/core/loop.hh>
 #include <seastar/core/seastar.hh>
 #include <seastar/core/thread.hh>
 
 #include <fmt/format.h>
+
+#include <exception>
 
 namespace storage {
 struct segment_ordering {
@@ -137,7 +141,7 @@ std::ostream& operator<<(std::ostream& o, const segment_set& s) {
 // open a new one to which we will direct new writes. That new segment
 // might be empty. To optimize log replay, implement #140.
 static ss::future<segment_set>
-do_recover(segment_set&& segments, ss::abort_source& as) {
+unsafe_do_recover(segment_set&& segments, ss::abort_source& as) {
     return ss::async([segments = std::move(segments), &as]() mutable {
         if (segments.empty() || as.abort_requested()) {
             return std::move(segments);
@@ -225,6 +229,39 @@ do_recover(segment_set&& segments, ss::abort_source& as) {
         }
         return segment_set(std::move(good));
     });
+}
+
+static ss::future<segment_set>
+do_recover(segment_set&& segments, ss::abort_source& as) {
+    // light-weight copy used for clean-up if recovery fails
+    segment_set::underlying_t copy;
+    copy.reserve(segments.size());
+    std::copy(segments.cbegin(), segments.cend(), std::back_inserter(copy));
+
+    // if an exception occurs during recovery close all the segments that are
+    // still open and then return the original exception. the issue we want to
+    // avoid is destroying a segment without first closing it because if there
+    // are any pending io operations on a file associated with the segment
+    // at the time of destruction seastar will complain about the file handle
+    // being destroyed with pending ops.
+    return unsafe_do_recover(std::move(segments), as)
+      .handle_exception(
+        [copy = std::move(copy)](const std::exception_ptr& ex) mutable {
+            return ss::do_with(
+              std::move(copy), [ex](segment_set::underlying_t& segments) {
+                  return ss::parallel_for_each(
+                           segments,
+                           [](segment_set::type& segment) {
+                               if (segment && !segment->is_closed()) {
+                                   return segment->close();
+                               }
+                               return ss::now();
+                           })
+                    .then([ex] {
+                        return ss::make_exception_future<segment_set>(ex);
+                    });
+              });
+        });
 }
 
 /**
