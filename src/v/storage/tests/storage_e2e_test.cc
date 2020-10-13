@@ -801,3 +801,116 @@ FIXTURE_TEST(truncate_and_roll_segment, storage_test_fixture) {
         }
     }
 }
+
+FIXTURE_TEST(compacted_log_truncation, storage_test_fixture) {
+    auto cfg = default_log_config(test_dir);
+    cfg.stype = storage::log_config::storage_type::disk;
+    cfg.cache = storage::log_config::with_cache::yes;
+    storage::ntp_config::default_overrides overrides;
+    overrides.cleanup_policy_bitflags
+      = model::cleanup_policy_bitflags::compaction;
+    ss::abort_source as;
+    {
+        storage::log_manager mgr = make_log_manager(cfg);
+
+        info("config: {}", mgr.config());
+        auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+        auto ntp = model::ntp("default", "test", 0);
+        auto log = mgr
+                     .manage(storage::ntp_config(
+                       ntp,
+                       mgr.config().base_dir,
+                       std::make_unique<storage::ntp_config::default_overrides>(
+                         overrides)))
+                     .get0();
+        // append some batches to first segment (all batches have the same key)
+        append_single_record_batch(log, 14, model::term_id(1));
+
+        storage::compaction_config c_cfg(
+          model::timestamp::min(),
+          std::nullopt,
+          ss::default_priority_class(),
+          as);
+        log.flush().get0();
+        model::offset truncate_at(7);
+        info("Truncating at offset:{}", truncate_at);
+        log
+          .truncate(
+            storage::truncate_config(truncate_at, ss::default_priority_class()))
+          .get0();
+        // roll segment
+        append_single_record_batch(log, 10, model::term_id(2));
+        log.flush().get0();
+
+        // roll segment
+        append_single_record_batch(log, 1, model::term_id(8));
+        // compact log
+        log.compact(c_cfg).get0();
+    }
+
+    // force recovery
+    {
+        BOOST_TEST_MESSAGE("recovering");
+        storage::log_manager mgr = make_log_manager(cfg);
+        auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+        auto ntp = model::ntp("default", "test", 0);
+        auto log
+          = mgr.manage(storage::ntp_config(ntp, mgr.config().base_dir)).get0();
+
+        auto read = read_and_validate_all_batches(log);
+        auto lstats = log.offsets();
+        for (model::offset o = lstats.start_offset; o < lstats.committed_offset;
+             ++o) {
+            BOOST_REQUIRE(log.get_term(o).has_value());
+        }
+    }
+}
+
+FIXTURE_TEST(
+  check_segment_roll_after_compacted_log_truncate, storage_test_fixture) {
+    auto cfg = default_log_config(test_dir);
+    cfg.stype = storage::log_config::storage_type::disk;
+    cfg.cache = storage::log_config::with_cache::yes;
+    storage::ntp_config::default_overrides overrides;
+    overrides.cleanup_policy_bitflags
+      = model::cleanup_policy_bitflags::compaction;
+    ss::abort_source as;
+
+    storage::log_manager mgr = make_log_manager(cfg);
+
+    info("config: {}", mgr.config());
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    auto ntp = model::ntp("default", "test", 0);
+    auto log = mgr
+                 .manage(storage::ntp_config(
+                   ntp,
+                   mgr.config().base_dir,
+                   std::make_unique<storage::ntp_config::default_overrides>(
+                     overrides)))
+                 .get0();
+    // append some batches to first segment (all batches have the same key)
+    append_single_record_batch(log, 14, model::term_id(1));
+
+    storage::compaction_config c_cfg(
+      model::timestamp::min(), std::nullopt, ss::default_priority_class(), as);
+    log.flush().get0();
+    model::offset truncate_at(7);
+    info("Truncating at offset:{}", truncate_at);
+    BOOST_REQUIRE_EQUAL(log.segment_count(), 1);
+    log
+      .truncate(
+        storage::truncate_config(truncate_at, ss::default_priority_class()))
+      .get0();
+    append_single_record_batch(log, 10, model::term_id(1));
+    log.flush().get0();
+
+    // segment should be rolled after truncation
+    BOOST_REQUIRE_EQUAL(log.segment_count(), 2);
+    log.compact(c_cfg).get0();
+
+    auto read = read_and_validate_all_batches(log);
+    BOOST_REQUIRE_EQUAL(read.begin()->base_offset(), model::offset(6));
+    BOOST_REQUIRE_EQUAL(read.begin()->last_offset(), model::offset(6));
+    BOOST_REQUIRE_EQUAL(read[read.size() - 1].base_offset(), model::offset(16));
+    BOOST_REQUIRE_EQUAL(read[read.size() - 1].last_offset(), model::offset(16));
+}
