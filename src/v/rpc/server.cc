@@ -92,7 +92,7 @@ ss::future<> server::accept(ss::server_socket& s) {
                   return ss::make_ready_future<ss::stop_iteration>(
                     ss::stop_iteration::yes);
               }
-              auto [ar] = f_cs_sa.get();
+              auto ar = f_cs_sa.get();
               ar.connection.set_nodelay(true);
               ar.connection.set_keepalive(true);
               auto conn = ss::make_lw_shared<connection>(
