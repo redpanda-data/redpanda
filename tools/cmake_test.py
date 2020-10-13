@@ -38,7 +38,7 @@ class TestRunner():
         if "rpunit" in binary:
             unit_args = [
                 "--overprovisioned", "--unsafe-bypass-fsync 1",
-                "--default-log-level=trace",
+                "--default-log-level=trace", "--logger-log-level='io=debug'",
                 "--logger-log-level='exception=debug'"
             ] + COMMON_TEST_ARGS
             if "--" in args: args = args + unit_args
