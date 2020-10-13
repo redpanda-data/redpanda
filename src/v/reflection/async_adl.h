@@ -1,5 +1,6 @@
 #pragma once
 #include "reflection/adl.h"
+#include "ssx/future-util.h"
 
 #include <boost/range/irange.hpp>
 namespace reflection {
@@ -31,20 +32,9 @@ struct async_adl<std::vector<T>> {
 
     ss::future<std::vector<value_type>> from(iobuf_parser& in) {
         const auto size = adl<int32_t>{}.from(in);
-        std::vector<value_type> result;
-        result.reserve(size);
-        return ss::do_with(std::move(result), [size, &in](auto& result) {
-            const auto r = boost::irange<size_t>(0, size);
-            return ss::do_for_each(
-                     r,
-                     [&result, &in](size_t) {
-                         return async_adl<value_type>{}.from(in).then(
-                           [&result](auto d) {
-                               result.push_back(std::move(d));
-                           });
-                     })
-              .then([&result] { return std::move(result); });
-        });
+        return ssx::async_transform(
+          boost::irange<size_t>(0, size),
+          [&in](size_t) { return async_adl<value_type>{}.from(in); });
     }
 };
 } // namespace reflection

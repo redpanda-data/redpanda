@@ -1,5 +1,6 @@
 #include "types.h"
 
+#include "model/async_adl_serde.h"
 #include "model/validation.h"
 
 #include <boost/range/irange.hpp>
