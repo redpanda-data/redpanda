@@ -58,8 +58,8 @@ void segment_index::maybe_track(
           hdr.first_timestamp,
           hdr.max_timestamp)) {
         _acc = 0;
-        _needs_persistence = true;
     }
+    _needs_persistence = true;
 }
 
 std::optional<segment_index::entry>
