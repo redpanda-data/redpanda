@@ -243,7 +243,8 @@ FIXTURE_TEST(test_recreated_topic_does_not_lose_data, recreate_test_fixture) {
     auto wait_for_ntp_leader = [this, shard_id = *shard_id, ntp] {
         return app.partition_manager.invoke_on(
           shard_id, [ntp](cluster::partition_manager& pm) {
-              return pm.get(ntp)->is_leader();
+              auto partition = pm.get(ntp);
+              return partition && partition->is_leader();
           });
     };
     tests::cooperative_spin_wait_with_timeout(2s, wait_for_ntp_leader).get0();
@@ -283,7 +284,9 @@ FIXTURE_TEST(test_recreated_topic_does_not_lose_data, recreate_test_fixture) {
         tests::cooperative_spin_wait_with_timeout(2s, [this, shard_id, ntp] {
             return app.partition_manager.invoke_on(
               *shard_id, [ntp](cluster::partition_manager& pm) {
-                  return pm.get(ntp)->committed_offset() >= model::offset(0);
+                  auto partition = pm.get(ntp);
+                  return partition
+                         && partition->committed_offset() >= model::offset(0);
               });
         }).get0();
         app.partition_manager
