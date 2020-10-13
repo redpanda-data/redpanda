@@ -118,6 +118,7 @@ ss::future<model::record_batch> serialize_cmd(Cmd cmd) {
           auto key_f = reflection::async_adl<typename Cmd::key_t>{}.to(
             key_buf, std::move(cmd.key));
           return ss::when_all_succeed(std::move(key_f), std::move(value_f))
+            .discard_result()
             .then([&key_buf, &value_buf]() mutable {
                 simple_batch_builder builder(Cmd::batch_type, model::offset(0));
                 builder.add_raw_kv(std::move(key_buf), std::move(value_buf));
