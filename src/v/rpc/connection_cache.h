@@ -53,7 +53,7 @@ public:
       // clang-format on
       auto with_node_client(
         ss::shard_id src_shard, model::node_id node_id, Func&& f) {
-        using ret_t = result_wrap_t<std::result_of_t<Func(Protocol)>>;
+        using ret_t = result_wrap_t<std::invoke_result_t<Func, Protocol>>;
         auto shard = rpc::connection_cache::shard_for(src_shard, node_id);
 
         return container().invoke_on(
