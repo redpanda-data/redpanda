@@ -1,6 +1,7 @@
 #include "storage/segment.h"
 
 #include "compression/compression.h"
+#include "storage/compacted_index_writer.h"
 #include "storage/fs_utils.h"
 #include "storage/logger.h"
 #include "storage/parser_utils.h"
@@ -14,6 +15,7 @@
 #include "vlog.h"
 
 #include <seastar/core/abort_source.hh>
+#include <seastar/core/do_with.hh>
 #include <seastar/core/future-util.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/reactor.hh>
@@ -21,7 +23,9 @@
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/smp.hh>
 
+#include <optional>
 #include <stdexcept>
+#include <utility>
 
 namespace storage {
 
@@ -205,6 +209,14 @@ ss::future<> segment::do_flush() {
     });
 }
 
+ss::future<> remove_compacted_index(const ss::sstring& reader_path) {
+    auto path = internal::compacted_index_path(reader_path.c_str());
+    return ss::remove_file(path.c_str())
+      .handle_exception([path](const std::exception_ptr& e) {
+          vlog(stlog.warn, "error removing compacted index {} - {}", path, e);
+      });
+}
+
 ss::future<>
 segment::truncate(model::offset prev_last_offset, size_t physical) {
     check_segment_not_closed("truncate()");
@@ -220,18 +232,41 @@ segment::do_truncate(model::offset prev_last_offset, size_t physical) {
     _tracker.committed_offset = _tracker.dirty_offset = prev_last_offset;
     _reader.set_file_size(physical);
     cache_truncate(prev_last_offset + model::offset(1));
-    auto f = _idx.truncate(prev_last_offset);
+    auto f = ss::now();
+    if (is_compacted_segment()) {
+        // if compaction index is opened close it
+        if (_compaction_index) {
+            f = ss::do_with(
+              std::exchange(_compaction_index, std::nullopt),
+              [](std::optional<compacted_index_writer>& c) {
+                  return c->close();
+              });
+        }
+        // always remove compaction index when truncating compacted segments
+        f = f.then(
+          [this] { return remove_compacted_index(_reader.filename()); });
+    }
+
+    f = f.then(
+      [this, prev_last_offset] { return _idx.truncate(prev_last_offset); });
+
     // physical file only needs *one* truncation call
     if (_appender) {
         f = f.then([this, physical] { return _appender->truncate(physical); });
+        // release appender to force segment roll
+        if (is_compacted_segment()) {
+            f = f.then([this] {
+                auto appender = std::exchange(_appender, std::nullopt);
+                auto cache = std::exchange(_cache, std::nullopt);
+                auto c_idx = std::exchange(_compaction_index, std::nullopt);
+                return do_release_appender(
+                  std::move(appender), std::move(cache), std::move(c_idx));
+            });
+        }
     } else {
         f = f.then([this, physical] { return _reader.truncate(physical); });
     }
-    if (_compaction_index) {
-        f = f.then([this, prev_last_offset] {
-            return _compaction_index->truncate(prev_last_offset);
-        });
-    }
+
     return f;
 }
 
