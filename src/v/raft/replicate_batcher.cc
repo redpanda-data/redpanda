@@ -20,8 +20,14 @@ replicate_batcher::replicate_batcher(consensus* ptr, size_t cache_size)
   : _ptr(ptr)
   , _max_batch_size(cache_size) {
     _flush_timer.set_callback([this] {
-        // background block further caching too
-        (void)_lock.with([this] { return flush(); });
+        (void)ss::with_gate(_ptr->_bg, [this] {
+            // background block further caching too
+            return _lock.with([this] { return flush(); });
+        }).handle_exception_type([this](const ss::gate_closed_exception&) {
+            vlog(
+              _ptr->_ctxlog.debug,
+              "Gate closed while flushing replicate requests");
+        });
     });
 }
 
@@ -38,21 +44,25 @@ replicate_batcher::replicate(model::record_batch_reader&& r) {
       });
 }
 
-replicate_batcher::~replicate_batcher() noexcept {
+ss::future<> replicate_batcher::stop() {
     _flush_timer.cancel();
-    if (_pending_bytes > 0) {
-        _ptr->_ctxlog.info(
-          "Setting exceptional futures to {} pending writes",
-          _item_cache.size());
-        for (auto& i : _item_cache) {
-            i->_promise.set_exception(
-              std::runtime_error("replicate_batcher destructor called. Cannot "
-                                 "finish replicating pending entries"));
+    // we keep a lock here to make sure that all inflight requests have finished
+    // already
+    return _lock.with([this]() {
+        if (_pending_bytes > 0) {
+            _ptr->_ctxlog.info(
+              "Setting exceptional futures to {} pending writes",
+              _item_cache.size());
+            for (auto& i : _item_cache) {
+                i->_promise.set_exception(std::runtime_error(
+                  "replicate_batcher destructor called. Cannot "
+                  "finish replicating pending entries"));
+            }
+            _item_cache.clear();
+            _data_cache.clear();
+            _pending_bytes = 0;
         }
-        _item_cache.clear();
-        _data_cache.clear();
-        _pending_bytes = 0;
-    }
+    });
 }
 ss::future<replicate_batcher::item_ptr>
 replicate_batcher::do_cache(model::record_batch_reader&& r) {
