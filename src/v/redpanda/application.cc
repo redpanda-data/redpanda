@@ -293,6 +293,8 @@ void application::wire_up_services() {
         construct_service(
           router, coproc_supervisor_server_addr, std::ref(storage))
           .get();
+        // Start the run loop
+        router.invoke_on_all([](coproc::router& r) { return r.start(); }).get();
     }
 
     syschecks::systemd_message("Intializing raft group manager");
