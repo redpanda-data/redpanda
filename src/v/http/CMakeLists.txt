@@ -4,6 +4,7 @@ v_cc_library(
   SRCS
     iobuf_body.cc
     chunk_encoding.cc
+    client.cc
     logger.cc
   DEPS
     Seastar::seastar
