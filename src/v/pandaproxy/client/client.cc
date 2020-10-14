@@ -67,4 +67,40 @@ ss::future<> client::update_metadata(wait_or_start::tag) {
     });
 }
 
+ss::future<> client::mitigate_error(std::exception_ptr ex) {
+    try {
+        std::rethrow_exception(ex);
+    } catch (const broker_error& ex) {
+        // If there are no brokers, reconnect
+        if (ex.node_id == unknown_node_id) {
+            vlog(ppclog.warn, "broker_error: {}", ex.what());
+            return connect();
+        } else {
+            vlog(ppclog.debug, "broker_error: {}", ex.what());
+            return _brokers.erase(ex.node_id).then([this]() {
+                return _wait_or_start_update_metadata();
+            });
+        }
+    } catch (const partition_error& ex) {
+        switch (ex.error) {
+        case kafka::error_code::unknown_topic_or_partition:
+            [[fallthrough]];
+        case kafka::error_code::leader_not_available: {
+            vlog(ppclog.debug, "partition_error: {}", ex.what());
+            return _wait_or_start_update_metadata();
+        }
+        default:
+            // TODO(Ben): Maybe vassert
+            vlog(ppclog.warn, "partition_error: ", ex.what());
+            return ss::make_exception_future(ex);
+        }
+    } catch (const ss::gate_closed_exception&) {
+        vlog(ppclog.debug, "gate_closed_exception");
+    } catch (const std::exception_ptr& ex) {
+        // TODO(Ben): Probably vassert
+        vlog(ppclog.error, "unknown exception");
+    }
+    return ss::make_exception_future(std::move(ex));
+}
+
 } // namespace pandaproxy::client
