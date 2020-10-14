@@ -22,6 +22,7 @@ add_subdirectory(cluster)
 add_subdirectory(kafka)
 add_subdirectory(reflection)
 add_subdirectory(pandaproxy)
+add_subdirectory(http)
 
 include(GetGitRevisionDescription)
 get_git_head_revision(GIT_REFSPEC GIT_SHA1)
