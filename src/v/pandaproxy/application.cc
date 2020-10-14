@@ -77,9 +77,9 @@ int application::run(int ac, char** av) {
 }
 
 void application::initialize() {
-    if (client::shard_local_cfg().brokers.value().size() != 1) {
+    if (client::shard_local_cfg().brokers.value().empty()) {
         throw std::invalid_argument(
-          "Pandaproxy currently supports exactly 1 broker");
+          "Pandaproxy requires at least 1 seed broker");
     }
 }
 
@@ -193,14 +193,10 @@ void application::configure_admin_server() {
 void application::wire_up_services() {
     syschecks::systemd_message("Starting Pandaproxy");
 
-    auto resolve_brokers = ssx::parallel_transform(
-      client::shard_local_cfg().brokers(),
-      [](const unresolved_address& a) { return a.resolve(); });
-
     construct_service(
       _proxy,
       shard_local_cfg().pandaproxy_api().resolve().get0(),
-      resolve_brokers.get0())
+      client::shard_local_cfg().brokers())
       .get();
 }
 
