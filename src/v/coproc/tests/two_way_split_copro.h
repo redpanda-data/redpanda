@@ -10,8 +10,9 @@ struct two_way_split_copro : public coprocessor {
     two_way_split_copro(coproc::script_id sid, input_set input)
       : coprocessor(sid, std::move(input)) {}
 
-    coprocessor::result
-    apply(model::topic, std::vector<model::record_batch> batches) override {
+    coprocessor::result apply(
+      const model::topic&,
+      const std::vector<model::record_batch>& batches) override {
         model::topic even("even");
         model::topic odd("odd");
         coprocessor::result r;
@@ -26,10 +27,10 @@ struct two_way_split_copro : public coprocessor {
               [&even_rbb, &odd_rbb](model::record&& record) {
                   if (record.key_size() % 2 == 0) {
                       even_rbb.add_raw_kv(
-                        record.release_key(), record.release_value());
+                        record.share_key(), record.share_value());
                   } else {
                       odd_rbb.add_raw_kv(
-                        record.release_key(), record.release_value());
+                        record.share_key(), record.share_value());
                   }
               });
             r[even].emplace_back(std::move(even_rbb).build());

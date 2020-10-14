@@ -30,7 +30,9 @@ struct coprocessor {
 
     /// \brief Main method to override, this is the main transform, your logic
     /// goes here
-    virtual result apply(model::topic, std::vector<model::record_batch>) = 0;
+    virtual result
+    apply(const model::topic&, const std::vector<model::record_batch>&)
+      = 0;
 
     /// \brief Input topics are static, they can only be set at copro init phase
     const input_set& get_input_topics() const { return _input_topics; }
@@ -65,8 +67,8 @@ struct null_coprocessor : public coprocessor {
     null_coprocessor(coproc::script_id sid, input_set input)
       : coprocessor(sid, std::move(input)) {}
 
-    coprocessor::result
-    apply(model::topic, std::vector<model::record_batch>) override {
+    coprocessor::result apply(
+      const model::topic&, const std::vector<model::record_batch>&) override {
         return coprocessor::result();
     }
 };
@@ -76,10 +78,17 @@ struct identity_coprocessor : public coprocessor {
     identity_coprocessor(coproc::script_id sid, input_set input)
       : coprocessor(sid, std::move(input)) {}
 
-    coprocessor::result
-    apply(model::topic, std::vector<model::record_batch> batches) override {
+    coprocessor::result apply(
+      const model::topic&,
+      const std::vector<model::record_batch>& batches) override {
         coprocessor::result r;
-        r.emplace(identity_topic, std::move(batches));
+        std::vector<model::record_batch> identity_batches;
+        std::transform(
+          batches.cbegin(),
+          batches.cend(),
+          std::back_inserter(identity_batches),
+          [](const model::record_batch& rb) { return rb.copy(); });
+        r.emplace(identity_topic, std::move(identity_batches));
         return r;
     }
 

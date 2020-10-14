@@ -5,11 +5,16 @@
 #include "model/fundamental.h"
 #include "storage/record_batch_builder.h"
 
+#include <type_traits>
+
 namespace coproc {
 
-std::vector<model::record_batch>
-batch_to_vector(model::record_batch_reader::data_t&& data) {
-    std::vector<model::record_batch> batches;
+template<typename T, typename U>
+CONCEPT(requires requires(T a, U b) {
+    std::is_same_t<T::value_type, U::value_type>;
+})
+T convert_batches(U&& data) {
+    T batches;
     batches.reserve(data.size());
     std::transform(
       std::make_move_iterator(data.begin()),
@@ -20,30 +25,13 @@ batch_to_vector(model::record_batch_reader::data_t&& data) {
 }
 
 std::vector<model::record_batch>
-copy_batch(const std::vector<model::record_batch>& data) {
-    std::vector<model::record_batch> batches;
-    batches.reserve(data.size());
-    std::transform(
-      data.begin(),
-      data.end(),
-      std::back_inserter(batches),
-      [](const model::record_batch& rb) { return rb.copy(); });
-    return batches;
+batch_to_vector(model::record_batch_reader::data_t&& data) {
+    return convert_batches<std::vector<model::record_batch>>(std::move(data));
 }
 
 model::record_batch_reader::data_t
-make_record_batch_data(std::vector<model::record_batch>&& batches) {
-    model::record_batch_reader::data_t data;
-    model::offset offset(0);
-    for (auto& record_batch : batches) {
-        storage::record_batch_builder rbb(model::record_batch_type(0), offset);
-        record_batch.for_each_record([&rbb](model::record&& r) {
-            rbb.add_raw_kv(r.release_key(), r.release_value());
-        });
-        data.push_back(std::move(rbb).build());
-        offset = data.back().last_offset() + model::offset(1);
-    }
-    return data;
+vector_to_batch(std::vector<model::record_batch>&& data) {
+    return convert_batches<model::record_batch_reader::data_t>(std::move(data));
 }
 
 void supervisor::invoke_coprocessor(
@@ -57,7 +45,7 @@ void supervisor::invoke_coprocessor(
         return;
     }
     auto& copro = found->second;
-    auto rmap = copro->apply(ntp.tp.topic, copy_batch(batches));
+    auto rmap = copro->apply(ntp.tp.topic, batches);
     if (rmap.empty()) {
         // Must send at least one response so server can update the offset
         // This can be seen as a type of ack
@@ -71,7 +59,7 @@ void supervisor::invoke_coprocessor(
         return;
     }
     for (auto& p : rmap) {
-        auto data_batch = make_record_batch_data(std::move(p.second));
+        auto data_batch = vector_to_batch(std::move(p.second));
         rs.emplace_back(process_batch_reply::data{
           .id = sid,
           .ntp = model::ntp(
