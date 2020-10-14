@@ -141,7 +141,8 @@ ss::future<> disk_log_builder::write(
       get_disk_log_impl(), config, log_clock::now(), base_offset);
     return std::move(reader)
       .for_each_ref(std::move(appender), config.timeout)
-      .then([this, flush](storage::append_result) {
+      .then([this, flush](storage::append_result ar) {
+          _bytes_written = ar.byte_size;
           if (flush) {
               return _log->flush();
           }

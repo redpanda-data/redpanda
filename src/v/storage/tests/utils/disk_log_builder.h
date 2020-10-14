@@ -92,7 +92,7 @@ inline constexpr auto add_random_batch = [](auto&&... args) {
 };
 
 inline constexpr auto add_random_batches = [](auto&&... args) {
-    arg_3_way_assert<sizeof...(args), 1, 4>();
+    arg_3_way_assert<sizeof...(args), 1, 5>();
     return std::make_tuple(
       add_random_batches_tag(), std::forward<decltype(args)>(args)...);
 };
@@ -310,6 +310,8 @@ public:
     // Configuration getters
     const log_config& get_log_config() const;
 
+    size_t bytes_written() const { return _bytes_written; }
+
 private:
     template<typename Consumer>
     auto consume_impl(Consumer c, log_reader_config config) {
@@ -327,6 +329,7 @@ private:
     storage::log_config _log_config;
     storage::api _storage;
     std::optional<log> _log;
+    size_t _bytes_written{0};
     std::vector<std::vector<model::record_batch>> _batches;
     ss::abort_source _abort_source;
 };
