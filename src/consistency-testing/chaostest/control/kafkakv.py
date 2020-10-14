@@ -321,17 +321,17 @@ kafkakv_err.setLevel(logging.INFO)
 kafkakv_stdout.setLevel(logging.INFO)
 
 kafkakv_log_handler = logging.handlers.RotatingFileHandler(args.log,
-                                                           maxBytes=10 * 1024 *
+                                                           maxBytes=5 * 1024 *
                                                            1024,
-                                                           backupCount=5,
+                                                           backupCount=1,
                                                            mode='w')
 kafkakv_log_handler.setFormatter(logging.Formatter("%(message)s"))
 kafkakv_log.addHandler(kafkakv_log_handler)
 
 kafkakv_err_handler = logging.handlers.RotatingFileHandler(args.err,
-                                                           maxBytes=10 * 1024 *
+                                                           maxBytes=5 * 1024 *
                                                            1024,
-                                                           backupCount=5,
+                                                           backupCount=1,
                                                            mode='w')
 kafkakv_err_handler.setFormatter(logging.Formatter("%(message)s"))
 kafkakv_err.addHandler(kafkakv_err_handler)
@@ -428,4 +428,20 @@ def cas():
         return {"status": "unknown", "metrics": metrics}
 
 
-app.run(host='0.0.0.0', port=args.port, use_reloader=False, threaded=True)
+has_errors = False
+
+
+def started():
+    time.sleep(5)
+    if not has_errors:
+        kafkakv_log.info(m("Successfully started iofaults!"))
+
+
+thread = threading.Thread(target=started)
+thread.start()
+
+try:
+    app.run(host='0.0.0.0', port=args.port, use_reloader=False, threaded=True)
+except:
+    has_errors = True
+    raise
