@@ -161,6 +161,11 @@ struct log_reader_config {
     // will return no batches.
     bool strict_max_bytes{false};
 
+    // allow cache reads, but skip lru promotion and cache insertions on miss.
+    // use this option when a reader shouldn't perturb the cache (e.g.
+    // historical read-once workloads like compaction).
+    bool skip_batch_cache{false};
+
     log_reader_config(
       model::offset start_offset,
       model::offset max_offset,
