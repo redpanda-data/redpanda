@@ -107,7 +107,7 @@ func buildGrafanaDashboard(
 ) graf.Dashboard {
 	intervals := []string{"5s", "10s", "30s", "1m", "5m", "15m", "30m", "1h", "2h", "1d"}
 	timeOptions := []string{"5m", "15m", "1h", "6h", "12h", "24h", "2d", "7d", "30d"}
-	summaryPanels := buildSummary(metricFamilies, jobName)
+	summaryPanels := buildSummary(metricFamilies)
 	lastY := summaryPanels[len(summaryPanels)-1].GetGridPos().Y + panelHeight
 	rowSet := newRowSet()
 	rowSet.processRows(metricFamilies)
@@ -266,9 +266,7 @@ func buildTemplating() graf.Templating {
 	}
 }
 
-func buildSummary(
-	metricFamilies map[string]*dto.MetricFamily, jobName string,
-) []graf.Panel {
+func buildSummary(metricFamilies map[string]*dto.MetricFamily) []graf.Panel {
 	maxWidth := 24
 	singleStatW := 2
 	percentiles := []float32{0.95, 0.99}
@@ -287,7 +285,7 @@ func buildSummary(
 	nodesUp.Datasource = datasource
 	nodesUp.GridPos = graf.GridPos{H: 6, W: singleStatW, X: 0, Y: y}
 	nodesUp.Targets = []graf.Target{graf.Target{
-		Expr:           fmt.Sprintf(`count(up{job="%s"})`, jobName),
+		Expr:           `count by (app) (vectorized_application_uptime)`,
 		Step:           40,
 		IntervalFactor: 1,
 		LegendFormat:   "Nodes Up",
@@ -305,7 +303,7 @@ func buildSummary(
 		Y: y,
 	}
 	partitionCount.Targets = []graf.Target{graf.Target{
-		Expr:         `sum(vectorized_raft_leader_for)`,
+		Expr:         `count(count by (topic,partition) (vectorized_storage_log_partition_size{namespace="kafka"}))`,
 		LegendFormat: "Partition count",
 	}}
 	partitionCount.Transparent = true
