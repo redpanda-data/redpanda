@@ -42,10 +42,16 @@ set(ENV{PKG_CONFIG_PATH}  @PKG_CONFIG_PATH@)
 # cmake build environment (nothing currently required)
 set(cmake_build_env)
 
+if ("@CMAKE_CXX_COMPILER@" MATCHES "Clang")
+    set(LINKER_EXE lld)
+else()
+    set(LINKER_EXE ld)
+endif()
+
 # Find linker
 execute_process(
   COMMAND
-    @CMAKE_C_COMPILER@ @BASE_C_FLAGS@ -print-prog-name=ld
+    @CMAKE_C_COMPILER@ @BASE_C_FLAGS@ -print-prog-name=${LINKER_EXE}
   OUTPUT_VARIABLE
     LD_PROGRAM
   OUTPUT_STRIP_TRAILING_WHITESPACE
