@@ -1,5 +1,5 @@
-#include "coproc/management.h"
 #include "coproc/router.h"
+#include "coproc/script_manager.h"
 #include "coproc/service.h"
 #include "coproc/tests/coproc_test_fixture.h"
 #include "coproc/tests/utils.h"
@@ -10,7 +10,7 @@
 
 ss::future<result<rpc::client_context<coproc::enable_copros_reply>>>
 coproc_register_topics(
-  rpc::client<coproc::management_client_protocol>& client,
+  rpc::client<coproc::script_manager_client_protocol>& client,
   std::vector<coproc::enable_copros_request::data>&& data) {
     coproc::enable_copros_request req{.inputs = std::move(data)};
     return client.enable_copros(
@@ -19,7 +19,7 @@ coproc_register_topics(
 
 ss::future<result<rpc::client_context<coproc::disable_copros_reply>>>
 coproc_deregister_topics(
-  rpc::client<coproc::management_client_protocol>& client,
+  rpc::client<coproc::script_manager_client_protocol>& client,
   std::vector<uint32_t>&& sids) {
     std::vector<coproc::script_id> script_ids;
     script_ids.reserve(sids.size());
@@ -33,10 +33,10 @@ coproc_deregister_topics(
       std::move(req), rpc::client_opts(rpc::no_timeout));
 }
 
-class management_service_fixture
+class script_manager_service_fixture
   : public coproc_test_fixture<rpc_sharded_service_tag> {
 public:
-    management_service_fixture()
+    script_manager_service_fixture()
       : coproc_test_fixture<rpc_sharded_service_tag>(43118, false) {
         register_service<coproc::service>(std::ref(get_router()));
     }
@@ -62,10 +62,10 @@ public:
 };
 
 // This test fixture tests the edge cases, i.e. situations that should fail
-FIXTURE_TEST(test_coproc_invalid_topics, management_service_fixture) {
+FIXTURE_TEST(test_coproc_invalid_topics, script_manager_service_fixture) {
     startup(
       {{make_ts("foo"), 5}, {make_ts("bar"), 3}, {make_ts("baz"), 18}}, {});
-    auto client = rpc::client<coproc::management_client_protocol>(
+    auto client = rpc::client<coproc::script_manager_client_protocol>(
       client_config());
     client.connect().get();
     auto dclient = ss::defer([&client] { client.stop().get(); });
@@ -100,10 +100,11 @@ FIXTURE_TEST(test_coproc_invalid_topics, management_service_fixture) {
     BOOST_CHECK_EQUAL(coproc_validate(to_topic_set({"foo"})).get0(), 5);
 }
 
-FIXTURE_TEST(test_coproc_reg_materialized_topic, management_service_fixture) {
+FIXTURE_TEST(
+  test_coproc_reg_materialized_topic, script_manager_service_fixture) {
     startup(
       {{make_ts("foo"), 6}, {make_ts("bar"), 3}, {make_ts("baz"), 18}}, {});
-    auto client = rpc::client<coproc::management_client_protocol>(
+    auto client = rpc::client<coproc::script_manager_client_protocol>(
       client_config());
     client.connect().get();
     auto dclient = ss::defer([&client] { client.stop().get(); });
@@ -124,13 +125,14 @@ FIXTURE_TEST(test_coproc_reg_materialized_topic, management_service_fixture) {
     BOOST_CHECK_EQUAL(coproc_validate(to_topic_set({"foo.$bar$"})).get0(), 0);
 }
 
-FIXTURE_TEST(test_coproc_script_id_already_exists, management_service_fixture) {
+FIXTURE_TEST(
+  test_coproc_script_id_already_exists, script_manager_service_fixture) {
     const uint32_t script_id = 55431;
     log_layout_map storage_layout = {
       {make_ts("foo"), 5}, {make_ts("bar"), 3}, {make_ts("baz"), 18}};
     active_copros router_layout = {make_enable_req(script_id, {{"foo", l}})};
     startup(std::move(storage_layout), std::move(router_layout));
-    auto client = rpc::client<coproc::management_client_protocol>(
+    auto client = rpc::client<coproc::script_manager_client_protocol>(
       client_config());
     client.connect().get();
     auto dclient = ss::defer([&client] { client.stop().get(); });
@@ -156,10 +158,10 @@ FIXTURE_TEST(test_coproc_script_id_already_exists, management_service_fixture) {
     BOOST_CHECK_EQUAL(coproc_validate(to_topic_set({"foo", "bar"})).get0(), 5);
 }
 
-FIXTURE_TEST(test_coproc_topics, management_service_fixture) {
+FIXTURE_TEST(test_coproc_topics, script_manager_service_fixture) {
     startup(
       {{make_ts("foo"), 8}, {make_ts("bar"), 2}, {make_ts("baz"), 18}}, {});
-    auto client = rpc::client<coproc::management_client_protocol>(
+    auto client = rpc::client<coproc::script_manager_client_protocol>(
       client_config());
     client.connect().get();
     auto dclient = ss::defer([&client] { client.stop().get(); });

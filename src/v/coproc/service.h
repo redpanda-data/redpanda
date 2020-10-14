@@ -1,7 +1,7 @@
 #pragma once
 #include "cluster/namespace.h"
-#include "coproc/management.h"
 #include "coproc/router.h"
+#include "coproc/script_manager.h"
 #include "coproc/types.h"
 #include "model/validation.h"
 #include "rpc/server.h"
@@ -18,7 +18,7 @@ namespace coproc {
 ///
 /// When a new coprocessor comes up or down this service will
 /// be its interface for working with redpanda.
-class service final : public management_service {
+class service final : public script_manager_service {
 public:
     service(ss::scheduling_group, ss::smp_service_group, ss::sharded<router>&);
 
