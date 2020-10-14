@@ -134,7 +134,8 @@ class KafkaKV:
                         if data["key"] not in state:
                             continue
 
-                        if state[data["key"]]["writeID"] == data["prevWriteID"]:
+                        current = state[data["key"]]
+                        if current["writeID"] == data["prevWriteID"]:
                             state[data["key"]] = {
                                 "value": data["value"],
                                 "writeID": data["writeID"]
