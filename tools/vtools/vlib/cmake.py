@@ -28,7 +28,10 @@ set -x
         f.write(tpl)
 
 
-def configure_build(vconfig, build_external=True, build_external_only=False):
+def configure_build(vconfig,
+                    build_external=True,
+                    build_external_only=False,
+                    enable_dpdk=False):
     if vconfig.compiler == 'clang':
         clang_path = clang.find_or_install_clang(vconfig)
         vconfig.environ['CC'] = clang_path
@@ -45,6 +48,8 @@ def configure_build(vconfig, build_external=True, build_external_only=False):
         f'-DCMAKE_C_COMPILER={vconfig.environ["CC"]} ',
         f'-DCMAKE_CXX_COMPILER={vconfig.environ["CXX"]} '
     ]
+    if enable_dpdk:
+        cmake_flags.append("-DRP_ENABLE_DPDK=ON")
 
     # change value of default cmake config options based on given args. Form
     # more on what these do, take a look at /v/CMakeLists.txt

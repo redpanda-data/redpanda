@@ -473,7 +473,7 @@ if(@RP_ENABLE_DPDK@)
     BUILD_COMMAND ""
     INSTALL_COMMAND
       ${CMAKE_COMMAND} -E chdir <SOURCE_DIR> env ${base_env}
-      make ${dpdk_args} install)
+      make -j${build_concurrency_factor} ${dpdk_args} install)
 else()
   add_custom_target(dpdk)
 endif()

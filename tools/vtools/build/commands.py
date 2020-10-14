@@ -42,7 +42,11 @@ def build():
     help=('ninja targets to build, for example, --targets=redpanda '
           'will effectively invoke ninja -C build/<type>/clang redpanda'),
     default=None)
-def cpp(build_type, conf, skip_external, clang, reconfigure, targets):
+@click.option('--enable-dpdk',
+              help='Build redpanda with DPDK support enabled',
+              is_flag=True)
+def cpp(build_type, conf, skip_external, clang, reconfigure, targets,
+        enable_dpdk):
     """
     Build the `redpanda` binary using the system's default compiler. To use
     clang, the `build.clang` YAML configuration option needs to be specified,
@@ -67,7 +71,8 @@ def cpp(build_type, conf, skip_external, clang, reconfigure, targets):
     if not cmake.cache_exists(vconfig) or reconfigure:
         cmake.configure_build(vconfig,
                               build_external=(not skip_external),
-                              build_external_only=False)
+                              build_external_only=False,
+                              enable_dpdk=enable_dpdk)
     else:
         logging.info(f'Found cmake cache, skipping cmake configuration.')
 
