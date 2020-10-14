@@ -100,7 +100,8 @@ batch_cache_index::read_result batch_cache_index::read(
   model::offset max_offset,
   std::optional<model::record_batch_type> type_filter,
   std::optional<model::timestamp> first_ts,
-  size_t max_bytes) {
+  size_t max_bytes,
+  bool skip_lru_promote) {
     read_result ret;
     ret.next_batch = offset;
     if (unlikely(offset > max_offset)) {
@@ -116,7 +117,9 @@ batch_cache_index::read_result batch_cache_index::read(
             batch_cache::entry::lock_guard g(*it->second);
             ret.batches.emplace_back(batch.share());
             ret.memory_usage += batch.memory_usage();
-            _cache->touch(it->second);
+            if (!skip_lru_promote) {
+                _cache->touch(it->second);
+            }
         }
 
         offset = batch.last_offset() + model::offset(1);
