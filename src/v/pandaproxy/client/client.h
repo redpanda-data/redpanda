@@ -72,6 +72,10 @@ private:
     /// Uses round-robin load-balancing strategy.
     ss::future<> update_metadata(wait_or_start::tag);
 
+    /// \brief Handle errors by performing an action that may fix the cause of
+    /// the error
+    ss::future<> mitigate_error(std::exception_ptr ex);
+
     /// \brief Seeds are used when no brokers are connected.
     std::vector<unresolved_address> _seeds;
     /// \brief Broker lookup from topic_partition.
