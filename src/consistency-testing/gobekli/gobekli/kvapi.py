@@ -1,7 +1,14 @@
 import asyncio
 import aiohttp
 import json
+import sys
+import traceback
 from collections import namedtuple
+
+import logging
+from gobekli.logging import m
+
+cmdlog = logging.getLogger("gobekli-cmd")
 
 
 class RequestTimedout(Exception):
@@ -23,11 +30,11 @@ class KVNode:
         self.address = address
         self.name = name
 
-    async def get_aio(self, key):
+    async def get_aio(self, key, read_id):
         data = None
         try:
             resp = await self.session.get(
-                f"http://{self.address}/read?key={key}")
+                f"http://{self.address}/read?key={key}&read_id={read_id}")
             if resp.status == 200:
                 data = await resp.read()
             else:
@@ -43,7 +50,15 @@ class KVNode:
         except asyncio.TimeoutError:
             raise RequestTimedout()
         except:
-            # TODO: log
+            e, v = sys.exc_info()[:2]
+
+            cmdlog.info(
+                m("unexpected kv/get error",
+                  type="error",
+                  error_type=str(e),
+                  error_value=str(v),
+                  stacktrace=traceback.format_exc()).with_time())
+
             raise RequestTimedout()
         data = json.loads(data)
         record = None
@@ -82,7 +97,15 @@ class KVNode:
         except asyncio.TimeoutError:
             raise RequestTimedout()
         except:
-            # TODO: log
+            e, v = sys.exc_info()[:2]
+
+            cmdlog.info(
+                m("unexpected kv/put error",
+                  type="error",
+                  error_type=str(e),
+                  error_value=str(v),
+                  stacktrace=traceback.format_exc()).with_time())
+
             raise RequestTimedout()
         data = json.loads(data)
         record = None
@@ -122,7 +145,15 @@ class KVNode:
         except asyncio.TimeoutError:
             raise RequestTimedout()
         except:
-            # TODO: log
+            e, v = sys.exc_info()[:2]
+
+            cmdlog.info(
+                m("unexpected kv/cas error",
+                  type="error",
+                  error_type=str(e),
+                  error_value=str(v),
+                  stacktrace=traceback.format_exc()).with_time())
+
             raise RequestTimedout()
         data = json.loads(data)
         record = None

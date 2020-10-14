@@ -7,7 +7,7 @@ setup(
     version="0.1",
     packages=find_packages(),
     setup_requires=['setuptools'],
-    scripts=['bin/gobekli'],
+    scripts=['bin/gobekli-run', 'bin/gobekli-chart'],
     install_requires=['aiohttp', 'requests', 'argparse'],
     test_suite="tests",
 )
