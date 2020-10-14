@@ -205,13 +205,6 @@ router::make_reader_cfg(storage::log log, topic_offsets& head) {
               // Signifies materialized log is up-to-date with source, there
               // isn't anything more to read
               return opt_cfg(std::nullopt);
-          } else if (ostats.dirty_offset == model::offset(0)) {
-              // TODO(rob) This is a hack, it avoids the odd issue when the
-              // last committed_offset is 0 and we initiate a read, finding
-              // a batch of length 0. This is bad because the code continues
-              // on the assumption that all batches have a length > 0, so
-              // the last_offset can be calculated.
-              return opt_cfg(std::nullopt);
           }
           const model::offset start
             = (committed == model::model_limits<model::offset>::min())
