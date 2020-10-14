@@ -1,7 +1,53 @@
 from gobekli.logging import m
 import logging
+import sys
+import time
+import traceback
 
 chaos_event_log = logging.getLogger("chaos-event")
+
+
+class StrobeRecoverableFault:
+    def __init__(self, node_selector, scope):
+        self.node_selector = node_selector
+        self.node = None
+        self.workload = None
+        self.title = f"strobe time ({scope})"
+        self.scope = scope
+
+    def inject(self, cluster, workload):
+        try:
+            self.workload = workload
+            self.node = self.node_selector(cluster)
+            if self.node == None:
+                chaos_event_log.info(m("can't select a node").with_time())
+                raise Exception("can't select a node")
+
+            chaos_event_log.info(
+                m(f"starting strobing on {self.node.node_id} ({self.scope})").
+                with_time())
+            self.workload.availability_logger.log_fault(
+                f"starting strobing on {self.node.node_id} ({self.scope})")
+            self.node.strobe_inject()
+            chaos_event_log.info(
+                m(f"strobbing on {self.node.node_id}").with_time())
+        except:
+            e, v = sys.exc_info()[:2]
+            chaos_event_log.info(
+                m("can't inject strobe",
+                  error_type=str(e),
+                  error_value=str(v),
+                  stacktrace=traceback.format_exc()).with_time())
+            raise
+
+    def recover(self):
+        chaos_event_log.info(
+            m(f"stopping strobbing on {self.node.node_id}").with_time())
+        self.node.strobe_recover()
+        chaos_event_log.info(
+            m(f"stopped strobbing on {self.node.node_id}").with_time())
+        self.workload.availability_logger.log_recovery(
+            f"stopped strobbing on {self.node.node_id}")
 
 
 class TerminateNodeRecoverableFault:
@@ -12,9 +58,9 @@ class TerminateNodeRecoverableFault:
         self.title = f"terminate service ({scope})"
         self.scope = scope
 
-    async def inject(self, cluster, workload):
+    def inject(self, cluster, workload):
         self.workload = workload
-        self.node = await self.node_selector(cluster)
+        self.node = self.node_selector(cluster)
         if self.node == None:
             chaos_event_log.info(m("can't select a node").with_time())
             raise Exception("can't select a node")
@@ -34,16 +80,28 @@ class TerminateNodeRecoverableFault:
             raise Exception(
                 f"can't terminate a service on {self.node.node_id}")
 
-    async def recover(self):
+    def recover(self):
         chaos_event_log.info(
             m(f"restarting a service on {self.node.node_id}").with_time())
         self.node.start_service()
         chaos_event_log.info(
             m(f"a service on {self.node.node_id} restarted").with_time())
-        if not self.node.is_service_running():
-            chaos_event_log.info(
-                m(f"can't start a service on {self.node.node_id}").with_time())
-            raise Exception(f"can't start a service on {self.node.node_id}")
+
+        attempts = 2
+        while True:
+            attempts -= 1
+            time.sleep(5)
+            if not self.node.is_service_running():
+                chaos_event_log.info(
+                    m(f"a service on {self.node.node_id} isn't running").
+                    with_time())
+                if attempts < 0:
+                    raise Exception(
+                        f"can't start a service on {self.node.node_id}")
+                else:
+                    continue
+            break
+
         self.workload.availability_logger.log_recovery(
             f"a service on {self.node.node_id} restarted")
 
@@ -56,9 +114,9 @@ class SuspendServiceRecoverableFault:
         self.title = f"pause service ({scope})"
         self.scope = scope
 
-    async def inject(self, cluster, workload):
+    def inject(self, cluster, workload):
         self.workload = workload
-        self.node = await self.node_selector(cluster)
+        self.node = self.node_selector(cluster)
         if self.node == None:
             chaos_event_log.info(m("can't select a node").with_time())
             raise Exception("can't select a node")
@@ -72,7 +130,7 @@ class SuspendServiceRecoverableFault:
         chaos_event_log.info(
             m(f"a service on {self.node.node_id} suspended").with_time())
 
-    async def recover(self):
+    def recover(self):
         chaos_event_log.info(
             m(f"resuming a service on {self.node.node_id}").with_time())
         self.node.continue_service()
@@ -90,9 +148,9 @@ class MakeIOSlowerRecoverableFault:
         self.title = f"introduce 10ms disk delay ({scope})"
         self.scope = scope
 
-    async def inject(self, cluster, workload):
+    def inject(self, cluster, workload):
         self.workload = workload
-        self.node = await self.node_selector(cluster)
+        self.node = self.node_selector(cluster)
         if self.node == None:
             chaos_event_log.info(m("can't select a node").with_time())
             raise Exception("can't select a node")
@@ -106,7 +164,7 @@ class MakeIOSlowerRecoverableFault:
         chaos_event_log.info(
             m(f"10ms disk delay on {self.node.node_id} injected").with_time())
 
-    async def recover(self):
+    def recover(self):
         chaos_event_log.info(
             m(f"removing disk delay on {self.node.node_id}").with_time())
         self.node.io_recover()
@@ -124,9 +182,9 @@ class RuinIORecoverableFault:
         self.title = f"fail every disk operation ({scope})"
         self.scope = scope
 
-    async def inject(self, cluster, workload):
+    def inject(self, cluster, workload):
         self.workload = workload
-        self.node = await self.node_selector(cluster)
+        self.node = self.node_selector(cluster)
         if self.node == None:
             chaos_event_log.info(m("can't select a node").with_time())
             raise Exception("can't select a node")
@@ -142,14 +200,29 @@ class RuinIORecoverableFault:
             m(f"disk error for any op on {self.node.node_id} injected").
             with_time())
 
-    async def recover(self):
+    def recover(self):
         chaos_event_log.info(
             m(f"removing disk fault injection & restarting a service on {self.node.node_id}"
               ).with_time())
         self.node.io_recover()
         self.node.kill()
         self.node.start_service()
-        # TODO: check that a service is started started
+
+        attempts = 2
+        while True:
+            attempts -= 1
+            time.sleep(5)
+            if not self.node.is_service_running():
+                chaos_event_log.info(
+                    m(f"a service on {self.node.node_id} isn't running").
+                    with_time())
+                if attempts < 0:
+                    raise Exception(
+                        f"can't start a service on {self.node.node_id}")
+                else:
+                    continue
+            break
+
         self.workload.availability_logger.log_recovery(
             f"disk fault injection removed & a service on {self.node.node_id} restarted"
         )
@@ -164,11 +237,13 @@ class BaselineRecoverableFault:
         self.title = f"baseline"
         self.name = f"baseline"
 
-    async def inject(self, cluster, workload):
+    def inject(self, cluster, workload):
         self.workload = workload
         self.workload.availability_logger.log_fault("nothing")
+        time.sleep(3)
 
-    async def recover(self):
+    def recover(self):
+        time.sleep(3)
         self.workload.availability_logger.log_recovery("nothing")
 
 
@@ -182,16 +257,16 @@ class IsolateNodeRecoverableFault:
         self.title = f"isolate node from all peers ({scope})"
         self.scope = scope
 
-    async def inject(self, cluster, workload):
+    def inject(self, cluster, workload):
         self.workload = workload
-        self.node = await self.node_selector(cluster)
+        self.node = self.node_selector(cluster)
         if self.node == None:
             chaos_event_log.info(m("can't select a node").with_time())
             raise Exception("can't select a node")
 
         for node_id in cluster.nodes.keys():
             if node_id != self.node.node_id:
-                self.ips.append(cluster.nodes[node_id].node_config["host"])
+                self.ips.append(cluster.nodes[node_id].ip)
                 self.peers.append(node_id)
 
         peers = ", ".join(self.peers)
@@ -204,7 +279,7 @@ class IsolateNodeRecoverableFault:
         chaos_event_log.info(
             m(f"node {self.node.node_id} isolated from {peers}").with_time())
 
-    async def recover(self):
+    def recover(self):
         peers = ", ".join(self.peers)
         chaos_event_log.info(
             m(f"rejoining node {self.node.node_id} to {peers}").with_time())

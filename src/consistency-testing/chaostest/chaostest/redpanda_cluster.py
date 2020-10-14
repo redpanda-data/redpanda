@@ -2,7 +2,10 @@ from sh import ssh
 import sh
 import time
 import json
+import sys
 import asyncio
+import aiohttp
+import uuid
 
 from gobekli.kvapi import KVNode, RequestTimedout, RequestCanceled
 from gobekli.logging import m
@@ -21,6 +24,7 @@ class RedpandaNode:
                 self.node_config = node
         if self.node_config == None:
             raise Exception(f"Unknown node_id: {node_id}")
+        self.ip = self.node_config["host"]
 
     def meta(self):
         return ssh(
@@ -58,12 +62,33 @@ class RedpandaNode:
             self.node_config["ssh_user"] + "@" + self.node_config["host"],
             self.node_config["wipeout_script"])
 
+    def strobe_start(self):
+        ssh("-i", self.node_config["ssh_key"],
+            self.node_config["ssh_user"] + "@" + self.node_config["host"],
+            self.node_config["strobe_start_api_script"])
+
+    def strobe_kill(self):
+        try:
+            ssh("-i", self.node_config["ssh_key"],
+                self.node_config["ssh_user"] + "@" + self.node_config["host"],
+                self.node_config["strobe_kill_api_script"])
+        except sh.ErrorReturnCode:
+            pass
+
+    def strobe_inject(self):
+        ssh("-i", self.node_config["ssh_key"],
+            self.node_config["ssh_user"] + "@" + self.node_config["host"],
+            self.node_config["strobe_inject_script"])
+
+    def strobe_recover(self):
+        ssh("-i", self.node_config["ssh_key"],
+            self.node_config["ssh_user"] + "@" + self.node_config["host"],
+            self.node_config["strobe_recover_script"])
+
     def start_service(self):
         ssh("-i", self.node_config["ssh_key"],
             self.node_config["ssh_user"] + "@" + self.node_config["host"],
             self.node_config["start_script"])
-        # TODO: make something smarted I feel guilty for sleep
-        time.sleep(2)
 
     def pause_service(self):
         ssh("-i", self.node_config["ssh_key"],
@@ -138,11 +163,41 @@ class RedpandaCluster:
             for config_node in config["nodes"]
         }
 
+    def teardown(self):
+        self._kill_api()
+        self._strobe_api_kill()
+        self._rm_api_log()
+
+        for node_id in self.nodes:
+            node = self.nodes[node_id]
+            chaos_event_log.info(
+                m(f"terminating redpanda on {node_id}").with_time())
+            node.kill()
+
+        # TODO: add several checks (kill -9 may be async)
+        for node_id in self.nodes:
+            node = self.nodes[node_id]
+            if node.is_service_running():
+                chaos_event_log.info(
+                    m(f"redpanda on {node_id} is still running").with_time())
+                raise Exception(f"redpanda on {node_id} is still running")
+
+        for node_id in self.nodes:
+            node = self.nodes[node_id]
+            chaos_event_log.info(
+                m(f"umount data dir on {node_id}").with_time())
+            node.umount()
+
+        for node_id in self.nodes:
+            node = self.nodes[node_id]
+            chaos_event_log.info(m(f"removing data on {node_id}").with_time())
+            node.wipe_out()
+
     async def restart(self):
         chaos_stdout.info("(re)starting a cluster")
-        self.kill_api()
-        self.rm_api_log()
-        self.terminate_wipe_restart()
+        self.teardown()
+        self._mount()
+        self._start_service()
         cluster_warmup = self.config["cluster_warmup"]
         await asyncio.sleep(cluster_warmup)
         chaos_stdout.info("cluster started")
@@ -150,9 +205,13 @@ class RedpandaCluster:
         node = self.any_node()
         node.create_topic()
         chaos_stdout.info("topic created")
-        self.start_api()
-        # TODO: make something smarted I feel guilty for sleep
+        self._start_api()
+        self._strobe_api_start()
+        self._strobe_recover()
+        # TODO: Replace sleep with an explicit check waiting for kafkakv & strobe
+        # services to start
         time.sleep(2)
+
         chaos_stdout.info("")
 
     async def is_ok(self):
@@ -197,60 +256,61 @@ class RedpandaCluster:
         for node_id in self.nodes:
             return self.nodes[node_id]
 
-    def terminate_wipe_restart(self):
-        for node_id in self.nodes:
-            node = self.nodes[node_id]
-            chaos_event_log.info(
-                m(f"terminating kvelldb on {node_id}").with_time())
-            node.kill()
-
-        for node_id in self.nodes:
-            node = self.nodes[node_id]
-            if node.is_service_running():
-                chaos_event_log.info(
-                    m(f"kvelldb on {node_id} is still running").with_time())
-                raise Exception(f"kvelldb on {node_id} is still running")
-
-        for node_id in self.nodes:
-            node = self.nodes[node_id]
-            chaos_event_log.info(
-                m(f"umount data dir on {node_id}").with_time())
-            node.umount()
-
-        for node_id in self.nodes:
-            node = self.nodes[node_id]
-            chaos_event_log.info(m(f"removing data on {node_id}").with_time())
-            node.wipe_out()
-
+    def _mount(self):
         for node_id in self.nodes:
             node = self.nodes[node_id]
             chaos_event_log.info(m(f"mount data dir on {node_id}").with_time())
             node.mount()
 
+    def _start_service(self):
         for node_id in self.nodes:
             node = self.nodes[node_id]
             chaos_event_log.info(
-                m(f"starting kvelldb on {node_id}").with_time())
+                m(f"starting redpanda on {node_id}").with_time())
             node.start_service()
 
-        for node_id in self.nodes:
-            node = self.nodes[node_id]
-            if not node.is_service_running():
-                chaos_event_log.info(
-                    m(f"kvelldb isn't running on {node_id}").with_time())
-                raise Exception(f"kvelldb on {node_id} isn't running")
+        attempts = 2
+        while True:
+            attempts -= 1
+            time.sleep(5)
+            running = True
+            for node_id in self.nodes:
+                node = self.nodes[node_id]
+                if not node.is_service_running():
+                    running = False
+                    chaos_event_log.info(
+                        m(f"redpanda on {node_id} isn't running").with_time())
+                    if attempts < 0:
+                        raise Exception(f"redpanda on {node_id} isn't running")
+            if running:
+                break
 
-    def start_api(self):
+    def _start_api(self):
         for node_id in self.nodes:
             node = self.nodes[node_id]
             node.start_api()
 
-    def kill_api(self):
+    def _kill_api(self):
         for node_id in self.nodes:
             node = self.nodes[node_id]
             node.kill_api()
 
-    def rm_api_log(self):
+    def _strobe_api_kill(self):
+        for node_id in self.nodes:
+            node = self.nodes[node_id]
+            node.strobe_kill()
+
+    def _strobe_api_start(self):
+        for node_id in self.nodes:
+            node = self.nodes[node_id]
+            node.strobe_start()
+
+    def _strobe_recover(self):
+        for node_id in self.nodes:
+            node = self.nodes[node_id]
+            node.strobe_recover()
+
+    def _rm_api_log(self):
         for node_id in self.nodes:
             node = self.nodes[node_id]
             node.rm_api_log()
