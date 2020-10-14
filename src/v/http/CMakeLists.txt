@@ -12,3 +12,4 @@ v_cc_library(
     v::rpc
 )
 
+add_subdirectory(tests)
