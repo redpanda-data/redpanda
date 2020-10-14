@@ -211,40 +211,6 @@ ExternalProject_Add(protobuf
     -Dprotobuf_BUILD_TESTS=OFF
     ${common_cmake_args})
 
-if(@RP_ENABLE_DPDK@)
-    set(dpdk_quadruple ${CMAKE_SYSTEM_PROCESSOR}-native-linuxapp-${toolset})
-
-    set (dpdk_args
-      EXTRA_CFLAGS=-Wno-error
-      O=<BINARY_DIR>
-      DESTDIR=@V_DEPS_INSTALL_DIR@
-      T=${dpdk_quadruple})
-
-    ExternalProject_Add(dpdk
-      GIT_REPOSITORY https://github.com/vectorizedio/dpdk.git
-      GIT_TAG 71db32d74
-      INSTALL_DIR @V_DEPS_INSTALL_DIR@
-      DEPENDS ${default_depends}
-      PATCH_COMMAND
-
-      CONFIGURE_COMMAND
-        COMMAND
-          ${CMAKE_COMMAND} -E chdir <SOURCE_DIR>
-          make ${dpdk_args} config
-        COMMAND
-          ${CMAKE_COMMAND}
-          -DSeastar_DPDK_CONFIG_FILE_IN=<BINARY_DIR>/.config
-          -DSeastar_DPDK_CONFIG_FILE_CHANGES=@CMAKE_CURRENT_SOURCE_DIR@/dpdk_config
-          -DSeastar_DPDK_CONFIG_FILE_OUT=<BINARY_DIR>/${dpdk_quadruple}/.config
-          -P @CMAKE_CURRENT_SOURCE_DIR@/cmake/dpdk_configure.cmake
-      BUILD_COMMAND ""
-      INSTALL_COMMAND
-       ${CMAKE_COMMAND} -E chdir <SOURCE_DIR>
-       ${make_command} ${dpdk_args} install)
-else()
-    add_custom_target(dpdk)
-endif()
-
 ExternalProject_Add(c-ares
   URL https://storage.googleapis.com/vectorizedio-public/dependencies/cares-1_14_0.tar.gz
   URL_MD5 79dcc4f2adaff431920755d9cafc9933
@@ -478,6 +444,40 @@ ExternalProject_Add(valgrind
   COMMAND ${CMAKE_COMMAND} -E copy <SOURCE_DIR>/valgrind.h <INSTALL_DIR>/include/valgrind/valgrind.h
   )
 
+if(@RP_ENABLE_DPDK@)
+  set(dpdk_quadruple ${CMAKE_SYSTEM_PROCESSOR}-native-linuxapp-${toolset})
+
+  set (dpdk_args
+    EXTRA_CFLAGS=-fcommon\ -Wno-error\ ${c_flags}\ -isystem\ @V_DEPS_INSTALL_DIR@/include\ -Wl,-L@V_DEPS_INSTALL_DIR@/lib
+    O=<BINARY_DIR>
+    DESTDIR=@V_DEPS_INSTALL_DIR@
+    T=${dpdk_quadruple})
+
+  ExternalProject_Add(dpdk
+    GIT_REPOSITORY https://github.com/vectorizedio/dpdk.git
+    GIT_TAG 71db32d74
+    INSTALL_DIR @V_DEPS_INSTALL_DIR@
+    DEPENDS ${default_depends} numactl
+    PATCH_COMMAND
+
+    CONFIGURE_COMMAND
+      COMMAND
+        ${CMAKE_COMMAND} -E chdir <SOURCE_DIR> env ${base_env}
+        make ${dpdk_args} config
+      COMMAND
+        ${CMAKE_COMMAND}
+        -DSeastar_DPDK_CONFIG_FILE_IN=<BINARY_DIR>/.config
+        -DSeastar_DPDK_CONFIG_FILE_CHANGES=@CMAKE_CURRENT_SOURCE_DIR@/dpdk_config
+        -DSeastar_DPDK_CONFIG_FILE_OUT=<BINARY_DIR>/${dpdk_quadruple}/.config
+        -P @CMAKE_CURRENT_SOURCE_DIR@/cmake/dpdk_configure.cmake
+    BUILD_COMMAND ""
+    INSTALL_COMMAND
+      ${CMAKE_COMMAND} -E chdir <SOURCE_DIR> env ${base_env}
+      make ${dpdk_args} install)
+else()
+  add_custom_target(dpdk)
+endif()
+
 ExternalProject_Add(seastar
   GIT_REPOSITORY https://github.com/vectorizedio/seastar.git
   GIT_TAG 290f579f8f9dd72531194e5bd4e8a4a0a2ff4efd
@@ -508,7 +508,6 @@ ExternalProject_Add(seastar
     fmt
     boost
     protobuf
-    dpdk
     yaml-cpp
     c-ares
     gnutls
