@@ -45,7 +45,7 @@ static server::context_t make_context(client::client& client) {
 }
 
 proxy::proxy(
-  ss::socket_address listen_addr, std::vector<ss::socket_address> broker_addrs)
+  ss::socket_address listen_addr, std::vector<unresolved_address> broker_addrs)
   : _client(std::move(broker_addrs))
   , _ctx(make_context(_client))
   , _server(
@@ -55,7 +55,7 @@ proxy::proxy(
       make_context(_client)) {}
 
 ss::future<> proxy::start() {
-    return seastar::when_all(
+    return seastar::when_all_succeed(
              [this]() {
                  _server.route(get_proxy_routes());
                  return _server.start();

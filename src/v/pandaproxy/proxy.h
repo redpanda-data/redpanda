@@ -15,7 +15,7 @@ class proxy {
 public:
     proxy(
       ss::socket_address listen_addr,
-      std::vector<ss::socket_address> broker_addrs);
+      std::vector<unresolved_address> broker_addrs);
 
     ss::future<> start();
     ss::future<> stop();
