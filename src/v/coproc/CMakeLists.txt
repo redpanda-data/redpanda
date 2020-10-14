@@ -42,3 +42,14 @@ rp_test(
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES v::seastar_testing_main v::coproc v::storage_test_utils
   )
+
+rp_test(
+  UNIT_TEST
+  BINARY_NAME read_materialized_topic_unit_tests
+  SOURCES
+    tests/read_materialized_topic_test.cc
+    tests/utils.cc
+    tests/supervisor.cc
+  DEFINITIONS BOOST_TEST_DYN_LINK
+  LIBRARIES v::seastar_testing_main v::coproc v::kafka v::storage_test_utils v::application
+  )
