@@ -43,6 +43,7 @@ segment_appender::segment_appender(segment_appender&& o) noexcept
   , _opts(o._opts)
   , _closed(o._closed)
   , _committed_offset(o._committed_offset)
+  , _fallocation_offset(o._fallocation_offset)
   , _bytes_flush_pending(o._bytes_flush_pending)
   , _concurrent_flushes(std::move(o._concurrent_flushes))
   , _free_chunks(std::move(o._free_chunks))
