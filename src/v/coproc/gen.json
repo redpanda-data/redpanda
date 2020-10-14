@@ -1,6 +1,6 @@
 {
     "namespace": "coproc",
-    "service_name": "management",
+    "service_name": "script_manager",
     "includes": [
         "coproc/types.h"
     ],

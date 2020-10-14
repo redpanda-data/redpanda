@@ -17,7 +17,7 @@ service::service(
   ss::scheduling_group sg,
   ss::smp_service_group ssg,
   ss::sharded<router>& router)
-  : management_service(sg, ssg)
+  : script_manager_service(sg, ssg)
   , _router(router) {}
 
 enable_response_code

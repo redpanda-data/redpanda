@@ -2,7 +2,7 @@ include(rpcgen)
 rpcgen(
   TARGET coproc_mgmnt_gen
   IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/gen.json
-  OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/management.h
+  OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/script_manager.h
   INCLUDES ${CMAKE_BINARY_DIR}/src/v
   )
 
@@ -35,7 +35,7 @@ rp_test(
   BINARY_NAME coproc_unit_tests
   SOURCES
     tests/materialized_type_test.cc
-    tests/management_service_test.cc
+    tests/script_manager_service_test.cc
     tests/supervisor.cc
     tests/coproc_fixture_base.cc
     tests/router_test.cc
