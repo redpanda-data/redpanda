@@ -60,6 +60,7 @@ RUN apt update && apt install -y \
     zlib1g \
     zlib1g-dev \
     git \
+    fuse \
     && apt-get -y clean
 
 RUN pip3 install --upgrade \
@@ -73,6 +74,10 @@ RUN pip3 install --upgrade \
     enum34 \
     pyyaml \
     requests \
+    flask \
+    fusepy \
+    kafka-python \
+    aiohttp \
     prometheus_client
 RUN pip3 install --upgrade git+https://github.com/confluentinc/ducktape@ecaf7173c6909d36f7ee4a2f6656b128212f8865
 
