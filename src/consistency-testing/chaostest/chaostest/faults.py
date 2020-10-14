@@ -65,15 +65,42 @@ class TerminateNodeRecoverableFault:
             chaos_event_log.info(m("can't select a node").with_time())
             raise Exception("can't select a node")
 
-        chaos_event_log.info(
-            m(f"terminating a service on {self.node.node_id} ({self.scope})").
-            with_time())
-        self.workload.availability_logger.log_fault(
-            f"terminating a service on {self.node.node_id} ({self.scope})")
-        self.node.kill()
-        chaos_event_log.info(
-            m(f"a service on {self.node.node_id} terminated").with_time())
-        if self.node.is_service_running():
+        try:
+            chaos_event_log.info(
+                m(f"terminating a service on {self.node.node_id} ({self.scope})"
+                  ).with_time())
+            self.workload.availability_logger.log_fault(
+                f"terminating a service on {self.node.node_id} ({self.scope})")
+            self.node.kill()
+            chaos_event_log.info(
+                m(f"a service on {self.node.node_id} terminated").with_time())
+        except:
+            e, v = sys.exc_info()[:2]
+            stacktrace = traceback.format_exc()
+            chaos_event_log.info(
+                m("error on terminating a service",
+                  error_type=str(e),
+                  error_value=str(v),
+                  stacktrace=stacktrace).with_time())
+            raise
+
+        is_running = True
+
+        for _ in range(0, 3):
+            time.sleep(1)
+            try:
+                is_running = self.node.is_service_running()
+            except:
+                e, v = sys.exc_info()[:2]
+                stacktrace = traceback.format_exc()
+                chaos_event_log.info(
+                    m("error on checking status of a service",
+                      error_type=str(e),
+                      error_value=str(v),
+                      stacktrace=stacktrace).with_time())
+                raise
+
+        if is_running:
             chaos_event_log.info(
                 m(f"can't terminate a service on {self.node.node_id}").
                 with_time())
