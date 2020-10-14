@@ -324,6 +324,7 @@ model::record_batch_reader create_segment_full_reader(
     auto o = s->offsets();
     auto reader_cfg = log_reader_config(
       o.base_offset, o.dirty_offset, cfg.iopc);
+    reader_cfg.skip_batch_cache = true;
     segment_set::underlying_t set;
     set.reserve(1);
     set.push_back(s);
