@@ -4,6 +4,7 @@
 #include "coproc/supervisor.h"
 #include "coproc/types.h"
 #include "model/limits.h"
+#include "model/record_batch_reader.h"
 #include "rpc/backoff_policy.h"
 #include "storage/types.h"
 #include "units.h"
@@ -17,16 +18,17 @@
 
 namespace coproc {
 
-// Eventually replace this with a nifty consumer impl that can manage
-// keeping track of the highest offset
-ss::future<std::pair<model::offset, model::record_batch_reader>>
-extract_last_offset(model::record_batch_reader reader) {
+ss::future<std::optional<router::offset_rbr_pair>>
+router::extract_offset(model::record_batch_reader reader) {
     return model::consume_reader_to_memory(std::move(reader), model::no_timeout)
-      .then([](ss::circular_buffer<model::record_batch> batches) {
-          vassert(!batches.empty(), "Batches must never be empty");
-          auto offset = batches.back().last_offset();
-          return std::make_pair(
-            offset, model::make_memory_record_batch_reader(std::move(batches)));
+      .then([](model::record_batch_reader::data_t data) {
+          if (data.empty()) {
+              return std::optional<offset_rbr_pair>(std::nullopt);
+          }
+          const auto last_offset = data.back().last_offset();
+          return std::optional<offset_rbr_pair>(std::make_pair(
+            last_offset,
+            model::make_memory_record_batch_reader(std::move(data))));
       });
 }
 
@@ -38,23 +40,61 @@ router::router(ss::socket_address addr, ss::sharded<storage::api>& api)
       rpc::make_exponential_backoff_policy<rpc::clock_type>(
         std::chrono::seconds(1), std::chrono::seconds(10))) {}
 
+ss::future<result<supervisor_client_protocol>> router::get_client() {
+    return _transport.get_connected().then(
+      [this](result<rpc::transport*> transport)
+        -> result<supervisor_client_protocol> {
+          if (!transport) {
+              auto err = transport.error();
+              if (err != rpc::errc::exponential_backoff) {
+                  if (_connection_attempts++ == 5) {
+                      return rpc::errc::disconnected_endpoint;
+                  }
+              }
+              vlog(
+                coproclog.warn,
+                "Failed attempt to connect to coproc server, attempt "
+                "number: {}",
+                _connection_attempts);
+              return rpc::errc::client_request_timeout;
+          }
+          _connection_attempts = 0;
+          return coproc::supervisor_client_protocol(*transport.value());
+      });
+}
+
 ss::future<> router::route() {
+    /**
+     * Main run loop, polls constantly for new data on registered ntps.
+     * New data is defined as the latest offset being greater then the
+     * last observed offset for that ntp.
+     *
+     * Data is consumed from the topic (max 32KiB read) and sent to the
+     * interested topics, the reply is processed as writes to new materialized
+     * topics.
+     *
+     * The loop is broken if the abort_source has been initiated externally or
+     * it can be initiated internally by detection of a failed connection to the
+     * engine (after retry policy expires)
+     */
     return ss::do_until(
       [this] { return _abort_source.abort_requested(); },
       [this] {
+          auto reducer =
+            [](std::vector<process_batch_request::data> acc, opt_req_data x) {
+                if (x.has_value()) {
+                    acc.emplace_back(std::move(*x));
+                }
+                return acc;
+            };
           return ss::map_reduce(
                    _sources.begin(),
                    _sources.end(),
-                   [this](auto& p) { return route_ntp(p.first, p.second); },
+                   [this](std::pair<const model::ntp, topic_state>& p) {
+                       return route_ntp(p.first, p.second);
+                   },
                    std::vector<process_batch_request::data>(),
-                   [](
-                     std::vector<process_batch_request::data> acc,
-                     opt_req_data x) {
-                       if (x.has_value()) {
-                           acc.push_back(std::move(*x));
-                       }
-                       return acc;
-                   })
+                   std::move(reducer))
             .then([this](std::vector<process_batch_request::data> batch) {
                 if (batch.empty()) {
                     return ss::now();
@@ -82,37 +122,45 @@ ss::future<> router::route() {
 
 ss::future<router::opt_req_data>
 router::route_ntp(const model::ntp& ntp, topic_state& ts) {
+    /**
+     * Making a reader will grab a mutual exclusion lock on reading from the
+     * requested log. This is OK for now since the only topic_ingestion_policy
+     * supported will be 'latest'
+     *
+     * The last offset is recorded and the request is prepared and returned.
+     */
     return make_reader_cfg(ts.log, ts.head)
-      .then(
-        [this, ntp, log = ts.log, sids = ts.scripts](opt_cfg config) mutable {
-            if (!config) {
-                return ss::make_ready_future<opt_req_data>(std::nullopt);
-            }
-            return log.make_reader(*config)
-              .then([](model::record_batch_reader rbr) {
-                  return extract_last_offset(std::move(rbr));
-              })
-              .then([this, ntp = std::move(ntp), sids = std::move(sids)](
-                      std::pair<model::offset, model::record_batch_reader>
-                        offset_and_rbr) mutable {
-                  auto found = _sources.find(ntp);
-                  if (found == _sources.end()) {
-                      vlog(
-                        coproclog.info,
-                        "Ntp removed while about to assemble batch: {}",
-                        ntp);
-                      return opt_req_data(std::nullopt);
-                  }
-                  found->second.head.dirty = offset_and_rbr.first;
-                  std::vector<script_id> ids(
-                    std::make_move_iterator(sids.begin()),
-                    std::make_move_iterator(sids.end()));
-                  return opt_req_data(process_batch_request::data{
-                    .ids = std::move(ids),
-                    .ntp = std::move(ntp),
-                    .reader = std::move(offset_and_rbr.second)});
-              });
-        });
+      .then([this, ntp, log = ts.log, sids = ts.scripts](
+              opt_cfg config) mutable {
+          if (!config) {
+              return ss::make_ready_future<opt_req_data>(std::nullopt);
+          }
+          return log.make_reader(*config)
+            .then([this, ntp](model::record_batch_reader reader) {
+                return extract_offset(std::move(reader));
+            })
+            .then([this, ntp, sids = std::move(sids)](
+                    std::optional<offset_rbr_pair> p) {
+                if (!p) {
+                    return opt_req_data(std::nullopt);
+                }
+                auto& [offset, rbr] = *p;
+                auto found = _sources.find(ntp);
+                if (found == _sources.end()) {
+                    vlog(
+                      coproclog.info,
+                      "Ntp removed before batch assemble: {}",
+                      ntp);
+                    return opt_req_data(std::nullopt);
+                }
+                found->second.head.dirty = offset;
+                std::vector<script_id> ids(
+                  std::make_move_iterator(sids.begin()),
+                  std::make_move_iterator(sids.end()));
+                return opt_req_data(process_batch_request::data{
+                  .ids = std::move(ids), .ntp = ntp, .reader = std::move(rbr)});
+            });
+      });
 }
 
 ss::future<> router::send_batch(
@@ -189,7 +237,8 @@ ss::future<> router::process_reply_one(process_batch_reply::data e) {
           return std::move(reader)
             .for_each_ref(log.make_appender(cfg), model::no_timeout)
             .then([this, src_ntp, id, log](storage::append_result) mutable {
-                // Update the offset, as the write was successful
+                /// TODO(rob) NOT ideal to flush on every response.
+                /// Clubhouse ticket 'coprocessor enhancments' filed for this
                 bump_offset(src_ntp, id);
                 return log.flush();
             });
@@ -263,6 +312,7 @@ bool router::remove_source(const script_id sid) {
     std::for_each(_sources.begin(), _sources.end(), [&deleted, sid](auto& p) {
         auto& scripts = p.second.scripts;
         scripts.erase(sid);
+        vlog(coproclog.info, "Deleted script id: {}", sid);
         if (scripts.empty()) {
             deleted.emplace(p.first);
         }
@@ -289,7 +339,7 @@ router::reader_cfg(model::offset start, model::offset end) {
       1,
       32_KiB,
       ss::default_priority_class(),
-      std::nullopt,
+      model::well_known_record_batch_types[1],
       std::nullopt,
       _abort_source);
 }

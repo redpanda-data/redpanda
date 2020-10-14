@@ -1,5 +1,6 @@
 #pragma once
 #include "coproc/tests/coprocessor.h"
+#include "model/record_batch_types.h"
 #include "storage/record_batch_builder.h"
 #include "storage/tests/utils/disk_log_builder.h"
 
@@ -18,9 +19,9 @@ struct two_way_split_copro : public coprocessor {
         r.emplace(odd, std::vector<model::record_batch>());
         for (auto& record_batch : batches) {
             storage::record_batch_builder even_rbb(
-              model::record_batch_type(0), model::offset(0));
+              model::well_known_record_batch_types[1], model::offset(0));
             storage::record_batch_builder odd_rbb(
-              model::record_batch_type(0), model::offset(0));
+              model::well_known_record_batch_types[1], model::offset(0));
             record_batch.for_each_record(
               [&even_rbb, &odd_rbb](model::record&& record) {
                   if (record.key_size() % 2 == 0) {

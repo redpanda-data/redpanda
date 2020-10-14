@@ -54,32 +54,10 @@ public:
     }
 
 private:
-    using opt_rbr = std::optional<model::record_batch_reader>;
+    using offset_rbr_pair
+      = std::pair<model::offset, model::record_batch_reader>;
     using opt_req_data = std::optional<process_batch_request::data>;
     using opt_cfg = std::optional<storage::log_reader_config>;
-
-    ss::future<result<supervisor_client_protocol>> get_client() {
-        return _transport.get_connected().then(
-          [this](result<rpc::transport*> transport)
-            -> result<supervisor_client_protocol> {
-              if (!transport) {
-                  auto err = transport.error();
-                  if (err != rpc::errc::exponential_backoff) {
-                      if (_connection_attempts++ == 5) {
-                          return rpc::errc::disconnected_endpoint;
-                      }
-                  }
-                  vlog(
-                    coproclog.warn,
-                    "Failed attempt to connect to coproc server, attempt "
-                    "number: {}",
-                    _connection_attempts);
-                  return rpc::errc::client_request_timeout;
-              }
-              _connection_attempts = 0;
-              return coproc::supervisor_client_protocol(*transport.value());
-          });
-    }
 
     struct topic_offsets {
         model::offset committed{model::model_limits<model::offset>::min()};
@@ -94,6 +72,7 @@ private:
         absl::flat_hash_set<script_id> scripts;
     };
 
+    ss::future<result<supervisor_client_protocol>> get_client();
     ss::future<storage::log> get_log(const model::ntp& ntp);
 
     ss::future<> process_reply(process_batch_reply);
@@ -103,6 +82,8 @@ private:
     ss::future<opt_req_data> route_ntp(const model::ntp&, topic_state&);
     ss::future<> send_batch(supervisor_client_protocol, process_batch_request);
 
+    ss::future<std::optional<offset_rbr_pair>>
+      extract_offset(model::record_batch_reader);
     void bump_offset(const model::ntp&, const script_id);
 
     ss::future<opt_cfg> make_reader_cfg(storage::log, topic_offsets&);
