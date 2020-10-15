@@ -71,6 +71,10 @@ public:
         return (uint32_t)_header.crc == _crc.value();
     }
 
+    void print(std::ostream& os) const override {
+        fmt::print(os, "storage::checksumming_consumer segment {}", *_seg);
+    }
+
 private:
     model::record_batch_header _header;
     segment* _seg;
