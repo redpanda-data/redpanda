@@ -57,6 +57,7 @@ ss::future<> controller::start() {
           return _stm.start_single(
             std::ref(clusterlog),
             _raft0.get(),
+            raft::persistent_last_applied::yes,
             std::ref(_tp_updates_dispatcher));
       })
       .then([this] {
