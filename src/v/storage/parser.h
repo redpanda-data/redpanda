@@ -45,7 +45,17 @@ public:
 
     virtual void consume_records(iobuf&&) = 0;
     virtual stop_parser consume_batch_end() = 0;
+
+    virtual void print(std::ostream&) const = 0;
+
+private:
+    friend std::ostream& operator<<(std::ostream&, const batch_consumer&);
 };
+
+inline std::ostream& operator<<(std::ostream& os, const batch_consumer& c) {
+    c.print(os);
+    return os;
+}
 
 class continuous_batch_parser {
 public:
