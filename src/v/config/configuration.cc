@@ -335,6 +335,12 @@ configuration::configuration()
       "Timeout waiting for follower recovery when transferring leadership",
       required::no,
       10s)
+  , release_cache_on_segment_roll(
+      *this,
+      "release_cache_on_segment_roll",
+      "Free cache when segments roll",
+      required::no,
+      false)
   , _advertised_kafka_api(
       *this,
       "advertised_kafka_api",

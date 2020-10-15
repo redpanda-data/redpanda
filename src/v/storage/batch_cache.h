@@ -327,13 +327,18 @@ public:
      * the next batch in the log. This value should be used to initialize any
      * iteration over the log, even when no cached results are returned because
      * the type filter may cause cached batches to be skipped.
+     *
+     * When `skip_lru_promote` is true a cache hit doesn't change the position of
+     * the batch in the lru list. This is useful when the read is known to not
+     * be repeated in the near future.
      */
     read_result read(
       model::offset offset,
       model::offset max_offset,
       std::optional<model::record_batch_type> type_filter,
       std::optional<model::timestamp> first_ts,
-      size_t max_bytes);
+      size_t max_bytes,
+      bool skip_lru_promote);
 
     /**
      * Removes all batches that _may_ contain the specified offset.
