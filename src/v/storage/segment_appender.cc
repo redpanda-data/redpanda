@@ -20,7 +20,7 @@ size_missmatch_error(const char* ctx, size_t expected, size_t got) {
 }
 segment_appender::segment_appender(ss::file f, options opts)
   : _out(std::move(f))
-  , _opts(std::move(opts))
+  , _opts(opts)
   , _concurrent_flushes(_opts.number_of_chunks) {
     const auto align = _out.disk_write_dma_alignment();
     for (size_t i = 0; i < _opts.number_of_chunks; ++i) {
@@ -43,6 +43,7 @@ segment_appender::segment_appender(segment_appender&& o) noexcept
   , _opts(o._opts)
   , _closed(o._closed)
   , _committed_offset(o._committed_offset)
+  , _fallocation_offset(o._fallocation_offset)
   , _bytes_flush_pending(o._bytes_flush_pending)
   , _concurrent_flushes(std::move(o._concurrent_flushes))
   , _free_chunks(std::move(o._free_chunks))

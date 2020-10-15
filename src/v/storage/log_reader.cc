@@ -125,7 +125,9 @@ void log_segment_batch_reader::add_one(model::record_batch&& batch) {
     _config.bytes_consumed += size_bytes;
     _state.buffer_size += size_bytes;
     _probe.add_bytes_read(size_bytes);
-    _seg.cache_put(b);
+    if (!_config.skip_batch_cache) {
+        _seg.cache_put(b);
+    }
 }
 ss::future<result<records_t>>
 log_segment_batch_reader::read_some(model::timeout_clock::time_point timeout) {
@@ -138,7 +140,8 @@ log_segment_batch_reader::read_some(model::timeout_clock::time_point timeout) {
       _config.max_offset,
       _config.type_filter,
       _config.first_timestamp,
-      max_buffer_size);
+      max_buffer_size,
+      _config.skip_batch_cache);
 
     // handles cases where the type filter skipped batches. see
     // batch_cache_index::read for more details.

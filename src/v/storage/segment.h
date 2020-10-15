@@ -117,7 +117,8 @@ public:
       model::offset max_offset,
       std::optional<model::record_batch_type> type_filter,
       std::optional<model::timestamp> first_ts,
-      size_t max_bytes);
+      size_t max_bytes,
+      bool skip_lru_promote);
     void cache_put(const model::record_batch& batch);
 
     ss::future<ss::rwlock::holder> read_lock(
@@ -251,10 +252,11 @@ inline batch_cache_index::read_result segment::cache_get(
   model::offset max_offset,
   std::optional<model::record_batch_type> type_filter,
   std::optional<model::timestamp> first_ts,
-  size_t max_bytes) {
+  size_t max_bytes,
+  bool skip_lru_promote) {
     if (likely(bool(_cache))) {
         return _cache->read(
-          offset, max_offset, type_filter, first_ts, max_bytes);
+          offset, max_offset, type_filter, first_ts, max_bytes, skip_lru_promote);
     }
     return batch_cache_index::read_result{
       .next_batch = offset,

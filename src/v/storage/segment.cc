@@ -1,6 +1,7 @@
 #include "storage/segment.h"
 
 #include "compression/compression.h"
+#include "config/configuration.h"
 #include "storage/compacted_index_writer.h"
 #include "storage/fs_utils.h"
 #include "storage/logger.h"
@@ -155,7 +156,10 @@ ss::future<> segment::release_appender() {
             return do_flush()
               .then([this] {
                   auto a = std::exchange(_appender, std::nullopt);
-                  auto c = std::exchange(_cache, std::nullopt);
+                  auto c
+                    = config::shard_local_cfg().release_cache_on_segment_roll()
+                        ? std::exchange(_cache, std::nullopt)
+                        : std::nullopt;
                   auto i = std::exchange(_compaction_index, std::nullopt);
                   return do_release_appender(
                     std::move(a), std::move(c), std::move(i));
@@ -167,7 +171,10 @@ ss::future<> segment::release_appender() {
             return do_flush()
               .then([this] {
                   auto a = std::exchange(_appender, std::nullopt);
-                  auto c = std::exchange(_cache, std::nullopt);
+                  auto c
+                    = config::shard_local_cfg().release_cache_on_segment_roll()
+                        ? std::exchange(_cache, std::nullopt)
+                        : std::nullopt;
                   auto i = std::exchange(_compaction_index, std::nullopt);
                   (void)ss::with_gate(
                     _gate,
