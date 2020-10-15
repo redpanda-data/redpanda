@@ -263,7 +263,8 @@ public:
                   auto& pm = get_partition_manager(leader_id);
                   return pm.invoke_on(
                     *shard, [ntp](cluster::partition_manager& pm) {
-                        return pm.get(ntp)->is_leader();
+                        auto partition = pm.get(ntp);
+                        return partition && partition->is_leader();
                     });
               });
         }).get0();

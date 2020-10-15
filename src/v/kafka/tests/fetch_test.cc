@@ -194,7 +194,8 @@ FIXTURE_TEST(read_from_ntp_max_bytes, redpanda_thread_fixture) {
         return app.partition_manager.invoke_on(
           *shard, [ntp](cluster::partition_manager& mgr) {
               auto partition = mgr.get(ntp);
-              return partition->committed_offset() >= model::offset(1);
+              return partition
+                     && partition->committed_offset() >= model::offset(1);
           });
     }).get();
 
@@ -233,7 +234,8 @@ FIXTURE_TEST(fetch_one, redpanda_thread_fixture) {
         return app.partition_manager.invoke_on(
           *shard, [ntp](cluster::partition_manager& mgr) {
               auto partition = mgr.get(ntp);
-              return partition->committed_offset() >= model::offset(1);
+              return partition
+                     && partition->committed_offset() >= model::offset(1);
           });
     }).get();
 
