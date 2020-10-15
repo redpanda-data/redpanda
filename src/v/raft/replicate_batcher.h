@@ -27,12 +27,13 @@ public:
     replicate_batcher& operator=(replicate_batcher&&) noexcept = delete;
     replicate_batcher(const replicate_batcher&) = delete;
     replicate_batcher& operator=(const replicate_batcher&) = delete;
-    ~replicate_batcher() noexcept;
+    ~replicate_batcher() noexcept = default;
 
     ss::future<result<replicate_result>>
     replicate(model::record_batch_reader&&);
 
     ss::future<> flush();
+    ss::future<> stop();
 
     // it will lock on behalf of caller to append entries to leader log.
     ss::future<> do_flush(

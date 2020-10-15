@@ -96,6 +96,7 @@ ss::future<> consensus::stop() {
 
     return _event_manager.stop()
       .then([this] { return _bg.close(); })
+      .then([this] { return _batcher.stop(); })
       .then([this] {
           // close writer if we have to
           if (likely(!_snapshot_writer)) {
@@ -108,6 +109,11 @@ ss::future<> consensus::stop() {
 
 consensus::success_reply consensus::update_follower_index(
   model::node_id node, result<append_entries_reply> r, follower_req_seq seq) {
+    // do not process replies when stoping
+    if (unlikely(_as.abort_requested())) {
+        return success_reply::no;
+    }
+
     if (!r) {
         vlog(
           _ctxlog.trace,
