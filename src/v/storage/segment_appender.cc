@@ -149,14 +149,16 @@ ss::future<> segment_appender::hydrate_last_half_page() {
 }
 
 ss::future<> segment_appender::do_truncation(size_t n) {
-    return _out.truncate(n).handle_exception([n, this](std::exception_ptr e) {
-        vassert(
-          false,
-          "Could not issue truncation:{} - to offset: {} - {}",
-          e,
-          n,
-          *this);
-    });
+    return _out.truncate(n)
+      .then([this] { return _out.flush(); })
+      .handle_exception([n, this](std::exception_ptr e) {
+          vassert(
+            false,
+            "Could not issue truncation:{} - to offset: {} - {}",
+            e,
+            n,
+            *this);
+      });
 }
 
 ss::future<> segment_appender::truncate(size_t n) {
