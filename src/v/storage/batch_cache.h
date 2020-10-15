@@ -328,9 +328,9 @@ public:
      * iteration over the log, even when no cached results are returned because
      * the type filter may cause cached batches to be skipped.
      *
-     * When `skip_lru_promote` is true a cache hit doesn't change the position of
-     * the batch in the lru list. This is useful when the read is known to not
-     * be repeated in the near future.
+     * When `skip_lru_promote` is true a cache hit doesn't change the position
+     * of the batch in the lru list. This is useful when the read is known to
+     * not be repeated in the near future.
      */
     read_result read(
       model::offset offset,
