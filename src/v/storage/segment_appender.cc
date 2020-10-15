@@ -99,12 +99,11 @@ ss::future<> segment_appender::append(const char* buf, const size_t n) {
         const size_t sz = head().append(buf + written, n - written);
         written += sz;
         _bytes_flush_pending += sz;
-        if (written == n) {
-            break;
-        }
-        // must be last
         if (head().is_full()) {
             dispatch_background_head_write();
+        }
+        if (written == n) {
+            break;
         }
     }
     if (written == n) {
