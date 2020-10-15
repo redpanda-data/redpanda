@@ -13,6 +13,7 @@
 
 #include <seastar/core/semaphore.hh>
 #include <seastar/core/shared_ptr.hh>
+#include <seastar/util/bool_class.hh>
 #include <seastar/util/log.hh>
 
 #include <absl/container/flat_hash_map.h>
@@ -34,6 +35,9 @@ CONCEPT(
     };
 )
 // clang-format on
+
+using persistent_last_applied
+  = ss::bool_class<struct persistent_last_applied_tag>;
 
 // The multiplexing STM allows building multiple state machines on top of
 // single consensus instance. The mux_stm dispatches state
@@ -80,7 +84,8 @@ template<typename... T>
 CONCEPT(requires(State<T>, ...))
 class mux_state_machine : public state_machine {
 public:
-    explicit mux_state_machine(ss::logger&, consensus*, T&...);
+    explicit mux_state_machine(
+      ss::logger&, consensus*, persistent_last_applied, T&...);
 
     // Lifecycle management
     ss::future<> start() { return raft::state_machine::start(); }
@@ -144,6 +149,7 @@ private:
      */
     mutex _mutex;
     consensus* _c;
+    const persistent_last_applied _persist_last_applied;
     // we keep states in a tuple to automatically dispatch updates to correct
     // state
     std::tuple<T&...> _state;
@@ -151,9 +157,13 @@ private:
 
 template<typename... T>
 mux_state_machine<T...>::mux_state_machine(
-  ss::logger& logger, consensus* c, T&... state)
+  ss::logger& logger,
+  consensus* c,
+  persistent_last_applied persist,
+  T&... state)
   : raft::state_machine(c, logger, ss::default_priority_class())
   , _c(c)
+  , _persist_last_applied(persist)
   , _state(state...) {}
 
 template<typename... T>
@@ -240,11 +250,16 @@ ss::future<> mux_state_machine<T...>::apply(model::record_batch b) {
       *state);
 
     return result_f.then([this, last_offset](std::error_code ec) {
-        return _mutex.with([this, last_offset, ec] {
+        auto f = _mutex.with([this, last_offset, ec] {
             if (auto it = _promises.find(last_offset); it != _promises.end()) {
                 it->second.set_value(ec);
             }
         });
+        if (!_persist_last_applied) {
+            return f;
+        }
+        return f.then(
+          [this, last_offset] { return write_last_applied(last_offset); });
     });
 }
 
