@@ -256,7 +256,12 @@ inline batch_cache_index::read_result segment::cache_get(
   bool skip_lru_promote) {
     if (likely(bool(_cache))) {
         return _cache->read(
-          offset, max_offset, type_filter, first_ts, max_bytes, skip_lru_promote);
+          offset,
+          max_offset,
+          type_filter,
+          first_ts,
+          max_bytes,
+          skip_lru_promote);
     }
     return batch_cache_index::read_result{
       .next_batch = offset,
