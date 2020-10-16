@@ -83,7 +83,6 @@ class LibrdkafkaTest(Test):
     def test_librdkafka(self, test_num, num_brokers):
         self._start_redpanda(num_brokers)
         p = subprocess.Popen(["make"],
-                             bufsize=1,
                              stdout=subprocess.PIPE,
                              stderr=subprocess.STDOUT,
                              shell=True,
