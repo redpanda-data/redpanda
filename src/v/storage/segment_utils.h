@@ -82,7 +82,8 @@ model::record_batch_reader create_segment_full_reader(
 ss::future<storage::index_state> do_copy_segment_data(
   ss::lw_shared_ptr<storage::segment>,
   storage::compaction_config,
-  model::record_batch_reader);
+  storage::probe&,
+  ss::rwlock::holder);
 
 ss::future<> do_swap_data_file_handles(
   std::filesystem::path compacted,
