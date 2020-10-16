@@ -95,6 +95,10 @@ batch_consumer::stop_parser skipping_consumer::consume_batch_end() {
     return stop_parser(_reader._state.is_full());
 }
 
+void skipping_consumer::print(std::ostream& os) const {
+    fmt::print(os, "storage::skipping_consumer segment {}", _reader._seg);
+}
+
 log_segment_batch_reader::log_segment_batch_reader(
   segment& seg, log_reader_config& config, probe& p) noexcept
   : _seg(seg)

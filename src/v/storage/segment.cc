@@ -306,7 +306,7 @@ ss::future<> segment::do_compaction_index_batch(const model::record_batch& b) {
       });
 }
 ss::future<> segment::compaction_index_batch(const model::record_batch& b) {
-    if (!has_compacion_index()) {
+    if (!has_compaction_index()) {
         return ss::now();
     }
     if (!b.compressed()) {

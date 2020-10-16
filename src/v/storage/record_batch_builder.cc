@@ -3,6 +3,7 @@
 #include "model/record.h"
 #include "model/record_utils.h"
 #include "model/timeout_clock.h"
+#include "storage/parser_utils.h"
 
 #include <seastar/core/smp.hh>
 
@@ -17,10 +18,7 @@ record_batch_builder::~record_batch_builder() {}
 
 model::record_batch record_batch_builder::build() && {
     int32_t offset_delta = 0;
-    int32_t batch_size = model::packed_record_batch_header_size;
     auto now_ts = model::timestamp::now();
-    std::vector<model::record> records;
-    records.reserve(_records.size());
 
     model::record_batch_header header = {
       .size_bytes = 0,
@@ -38,6 +36,7 @@ model::record_batch record_batch_builder::build() && {
       .ctx = model::record_batch_header::context(
         model::term_id(0), ss::this_shard_id())};
 
+    iobuf records;
     for (auto& sr : _records) {
         auto rec_sz = record_size(offset_delta, sr);
         auto kz = sr.key.size_bytes();
@@ -53,15 +52,12 @@ model::record_batch record_batch_builder::build() && {
           std::move(sr.value),
           std::vector<model::record_header>{});
         ++offset_delta;
-        batch_size += r.size_bytes();
-        batch_size += vint::vint_size(r.size_bytes());
-        records.push_back(std::move(r));
+        model::append_record_to_buffer(records, r);
     }
-    header.size_bytes = batch_size;
-    auto batch = model::record_batch(header, std::move(records));
-    batch.header().crc = model::crc_record_batch(batch);
-    batch.header().header_crc = model::internal_header_only_crc(batch.header());
-    return batch;
+
+    internal::reset_size_checksum_metadata(header, records);
+    return model::record_batch(
+      header, std::move(records), model::record_batch::tag_ctor_ng{});
 }
 
 uint32_t record_batch_builder::record_size(

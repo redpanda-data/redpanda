@@ -424,10 +424,21 @@ public:
         if (_compressed) {
             _records = std::move(std::get<compressed_records>(records));
         } else {
-            for (auto& r : std::get<uncompressed_records>(records)) {
+            const auto& recs = std::get<uncompressed_records>(records);
+            vassert(
+              _header.record_count == static_cast<int32_t>(recs.size()),
+              "Batch header record count does not match payload");
+            for (const auto& r : recs) {
                 model::append_record_to_buffer(_records, r);
             }
         }
+        vassert(
+          _header.size_bytes
+            == static_cast<int32_t>(
+              model::packed_record_batch_header_size + _records.size_bytes()),
+          "Record batch header size {} does not match calculated size {}",
+          _header.size_bytes,
+          model::packed_record_batch_header_size + _records.size_bytes());
     }
 
     /**
@@ -439,7 +450,15 @@ public:
     record_batch(record_batch_header header, iobuf records, tag_ctor_ng)
       : _header(header)
       , _records(std::move(records))
-      , _compressed(_header.attrs.compression() != compression::none) {}
+      , _compressed(_header.attrs.compression() != compression::none) {
+        vassert(
+          _header.size_bytes
+            == static_cast<int32_t>(
+              model::packed_record_batch_header_size + _records.size_bytes()),
+          "Record batch header size {} does not match calculated size {}",
+          _header.size_bytes,
+          model::packed_record_batch_header_size + _records.size_bytes());
+    }
 
     record_batch(const record_batch& o) = delete;
     record_batch& operator=(const record_batch&) = delete;
@@ -549,7 +568,6 @@ public:
      */
     const iobuf& data() const { return _records; }
     iobuf&& release_data() && { return std::move(_records); }
-    void clear() { _records.clear(); }
 
 private:
     record_batch_header _header;

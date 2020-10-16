@@ -71,16 +71,9 @@ SEASTAR_THREAD_TEST_CASE(reclaim_removes_multiple) {
 SEASTAR_THREAD_TEST_CASE(weakness) {
     storage::batch_cache c(opts);
 
-    model::record_batch_header h{
-      .size_bytes = 100,
-    };
-
-    auto b0 = c.put(
-      model::record_batch(h, model::record_batch::uncompressed_records{}));
-    auto b1 = c.put(
-      model::record_batch(h, model::record_batch::uncompressed_records{}));
-    auto b2 = c.put(
-      model::record_batch(h, model::record_batch::uncompressed_records{}));
+    auto b0 = c.put(make_batch(10));
+    auto b1 = c.put(make_batch(10));
+    auto b2 = c.put(make_batch(10));
 
     BOOST_CHECK(!c.empty());
 

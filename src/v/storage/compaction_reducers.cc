@@ -133,14 +133,33 @@ copy_data_segment_reducer::filter(model::record_batch&& batch) {
     }
 
     // 4. filter
-    model::record_batch::uncompressed_records ret;
-    batch.for_each_record([&ret, &offset_deltas](model::record record) {
+    iobuf ret;
+    int32_t rec_count = 0;
+    std::optional<int64_t> first_timestamp_delta;
+    int64_t last_timestamp_delta;
+    batch.for_each_record([&rec_count,
+                           &first_timestamp_delta,
+                           &last_timestamp_delta,
+                           &ret,
+                           &offset_deltas](model::record record) {
         // contains the key
         if (std::count(
               offset_deltas.begin(),
               offset_deltas.end(),
               record.offset_delta())) {
-            ret.push_back(record.share());
+            /*
+             * TODO when we further optimize lazy record materialization ot
+             * make use of views we can avoid this re-encoding by copying or
+             * sharing the view. either way, we were building
+             * record batch with the uncompressed records so they were being
+             * re-encoded.
+             */
+            if (!first_timestamp_delta) {
+                first_timestamp_delta = record.timestamp_delta();
+            }
+            last_timestamp_delta = record.timestamp_delta();
+            model::append_record_to_buffer(ret, record);
+            ++rec_count;
         }
     });
     // From: DefaultRecordBatch.java
@@ -158,7 +177,7 @@ copy_data_segment_reducer::filter(model::record_batch&& batch) {
     // by verifying that the first and last sequence numbers of the incoming
     // batch match the last from that producer.
     //
-    if (ret.empty()) {
+    if (rec_count == 0) {
         // TODO:agallego - implement
         //
         // Note that if all of the records in a batch are removed during
@@ -182,21 +201,20 @@ copy_data_segment_reducer::filter(model::record_batch&& batch) {
     // Additionally, the MaxTimestamp of an empty batch always retains the
     // previous value prior to becoming empty.
     //
-    const int32_t rec_count = ret.size();
     const auto& oldh = batch.header();
     const auto first_time = model::timestamp(
-      oldh.first_timestamp() + ret.front().timestamp_delta());
+      oldh.first_timestamp() + first_timestamp_delta.value());
     auto last_time = oldh.max_timestamp;
     if (oldh.attrs.timestamp_type() == model::timestamp_type::create_time) {
-        last_time = model::timestamp(
-          first_time() + ret.back().timestamp_delta());
+        last_time = model::timestamp(first_time() + last_timestamp_delta);
     }
-    auto new_batch = model::record_batch(oldh, std::move(ret));
-    auto& h = new_batch.header();
+    auto h = oldh;
     h.first_timestamp = first_time;
     h.max_timestamp = last_time;
     h.record_count = rec_count;
-    reset_size_checksum_metadata(new_batch);
+    reset_size_checksum_metadata(h, ret);
+    auto new_batch = model::record_batch(
+      h, std::move(ret), model::record_batch::tag_ctor_ng{});
     return new_batch;
 }
 ss::future<ss::stop_iteration> copy_data_segment_reducer::do_compaction(
