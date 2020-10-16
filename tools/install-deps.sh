@@ -2,11 +2,15 @@
 set -ex
 
 function debs() {
-  if ! command -v add-apt-repository; then
-    apt-get update -y
-    apt-get -y install software-properties-common
+  if [[ $ID == "ubuntu" ]] || [[ $ID_LIKE == *"ubuntu"* ]]; then
+    if [[ ${VERSION_ID:0:2} -lt 20 ]]; then
+      if ! command -v add-apt-repository; then
+        apt-get update -y
+        apt-get -y install software-properties-common
+      fi
+      add-apt-repository ppa:ubuntu-toolchain-r/test -y
+    fi
   fi
-  add-apt-repository ppa:ubuntu-toolchain-r/test -y
   apt update -y
   apt-get install -y \
     build-essential \
