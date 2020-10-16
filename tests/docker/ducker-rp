@@ -255,6 +255,8 @@ docker_run() {
         -d -t -h "${node}" --network ducknet "${expose_ports}" \
         --memory=${docker_run_memory_limit} --memory-swappiness=1 \
         -v "${v_dir}/build:${v_dir}/build" -v "${v_dir}:/opt/v" \
+        -v "${v_dir}/build/release/clang/dist/local/redpanda:/opt/redpanda" \
+        -v "${v_dir}/build/release/clang/dist/local/pandaproxy:/opt/pandaproxy" \
         --name "${node}" -- "${image_name}"
 }
 
