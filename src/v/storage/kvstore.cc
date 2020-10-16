@@ -572,4 +572,8 @@ batch_consumer::stop_parser kvstore::replay_consumer::consume_batch_end() {
     return stop_parser::no;
 }
 
+void kvstore::replay_consumer::print(std::ostream& os) const {
+    os << "storage::kvstore";
+}
+
 } // namespace storage

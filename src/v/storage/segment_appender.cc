@@ -76,21 +76,34 @@ ss::future<> segment_appender::append(const iobuf& io) {
 }
 ss::future<> segment_appender::append(const char* buf, const size_t n) {
     vassert(!_closed, "append() on closed segment: {}", *this);
-    if (_committed_offset + n > _fallocation_offset) {
+
+    // committed offset isn't updated until the background write is dispatched.
+    // however, we must ensure that an fallocation never occurs at an offset
+    // below the committed offset. because truncation can occur at an unaligned
+    // offset, its possible that a chunk offset range overlaps fallocation
+    // offset. if that happens and the chunk fills up and is dispatched before
+    // the next fallocation then fallocation will write zeros to a lower offset
+    // than the commit index. thus, here we must compare fallocation offset to
+    // the eventual committed offset taking into account pending bytes.
+    auto next_committed_offset
+      = _committed_offset
+        + (!_free_chunks.empty() ? head().bytes_pending() : 0);
+
+    if (next_committed_offset + n > _fallocation_offset) {
         return do_next_adaptive_fallocation().then(
           [this, buf, n] { return append(buf, n); });
     }
+
     size_t written = 0;
     while (likely(!_free_chunks.empty())) {
         const size_t sz = head().append(buf + written, n - written);
         written += sz;
         _bytes_flush_pending += sz;
-        if (written == n) {
-            break;
-        }
-        // must be last
         if (head().is_full()) {
             dispatch_background_head_write();
+        }
+        if (written == n) {
+            break;
         }
     }
     if (written == n) {
@@ -149,14 +162,16 @@ ss::future<> segment_appender::hydrate_last_half_page() {
 }
 
 ss::future<> segment_appender::do_truncation(size_t n) {
-    return _out.truncate(n).handle_exception([n, this](std::exception_ptr e) {
-        vassert(
-          false,
-          "Could not issue truncation:{} - to offset: {} - {}",
-          e,
-          n,
-          *this);
-    });
+    return _out.truncate(n)
+      .then([this] { return _out.flush(); })
+      .handle_exception([n, this](std::exception_ptr e) {
+          vassert(
+            false,
+            "Could not issue truncation:{} - to offset: {} - {}",
+            e,
+            n,
+            *this);
+      });
 }
 
 ss::future<> segment_appender::truncate(size_t n) {
@@ -198,6 +213,12 @@ ss::future<> segment_appender::do_next_adaptive_fallocation() {
                      // add left over bytes to a full page
                      step += 4096 - (_fallocation_offset % 4096);
                  }
+                 vassert(
+                   _fallocation_offset >= _committed_offset,
+                   "Attempting to fallocate at {} below the committed offset "
+                   "{}",
+                   _fallocation_offset,
+                   _committed_offset);
                  return _out.allocate(_fallocation_offset, step)
                    .then([this, step] { _fallocation_offset += step; });
              })
