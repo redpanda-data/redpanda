@@ -275,7 +275,8 @@ do_compact_segment_index(ss::lw_shared_ptr<segment> s, compaction_config cfg) {
 ss::future<storage::index_state> do_copy_segment_data(
   ss::lw_shared_ptr<segment> s,
   compaction_config cfg,
-  model::record_batch_reader reader) {
+  storage::probe& pb,
+  ss::rwlock::holder h) {
     auto idx_path = std::filesystem::path(s->reader().filename());
     idx_path.replace_extension(".compaction_index");
     return make_reader_handle(idx_path, cfg.sanitize)
@@ -288,18 +289,18 @@ ss::future<storage::index_state> do_copy_segment_data(
             });
       })
       .then(
-        [cfg, s, r = std::move(reader)](compacted_offset_list list) mutable {
+        [cfg, s, &pb, h = std::move(h)](compacted_offset_list list) mutable {
             const auto tmpname = data_segment_staging_name(s);
             return make_segment_appender(
                      tmpname,
                      cfg.sanitize,
                      segment_appender::chunks_no_buffer,
                      cfg.iopc)
-              .then([l = std::move(list),
-                     r = std::move(r)](segment_appender_ptr w) mutable {
+              .then([l = std::move(list), &pb, h = std::move(h), cfg, s](
+                      segment_appender_ptr w) mutable {
                   auto raw = w.get();
                   auto red = copy_data_segment_reducer(std::move(l), raw);
-
+                  auto r = create_segment_full_reader(s, cfg, pb, std::move(h));
                   return std::move(r)
                     .consume(std::move(red), model::no_timeout)
                     .finally([raw, w = std::move(w)]() mutable {
@@ -375,12 +376,12 @@ ss::future<> do_self_compact_segment(
               return ss::make_exception_future<index_state>(
                 segment_closed_exception());
           }
-          auto reader = create_segment_full_reader(s, cfg, pb, std::move(h));
+
           return do_compact_segment_index(s, cfg)
             // copy the bytes after segment is good - note that we
             // need to do it with the READ-lock, not the write lock
-            .then([reader = std::move(reader), cfg, s]() mutable {
-                return do_copy_segment_data(s, cfg, std::move(reader));
+            .then([cfg, s, h = std::move(h), &pb]() mutable {
+                return do_copy_segment_data(s, cfg, pb, std::move(h));
             });
       })
       .then([s](storage::index_state idx) {
