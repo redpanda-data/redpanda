@@ -118,9 +118,7 @@ private:
           FwdFunc,
           decltype(std::declval<GroupMgr>()),
           Request&&>;
-        using tuple_type = typename return_type::value_type;
-        static_assert(std::tuple_size_v<tuple_type> == 1);
-        using resp_type = typename std::tuple_element_t<0, tuple_type>;
+        using resp_type = typename return_type::value_type;
 
         auto m = shard_for(r.data.group_id);
         if (!m) {
