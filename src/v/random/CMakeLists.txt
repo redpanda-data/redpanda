@@ -3,6 +3,8 @@ v_cc_library(
   HRDS
     fast_prng.h
     generators.h
+  DEPS
+    absl::random_seed_sequences
 )
 rp_test(
   UNIT_TEST
