@@ -30,3 +30,4 @@
 # node
 !/src/js/package.json
 !/src/js/package-lock.json
+!/src/js/generate-entries.sh
