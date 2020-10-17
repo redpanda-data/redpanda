@@ -1,6 +1,5 @@
 #pragma once
 #include "bytes/iobuf.h"
-#include "random/fast_prng.h"
 #include "random/generators.h"
 
 static const constexpr size_t characters_per_append = 10;

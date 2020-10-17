@@ -35,7 +35,6 @@ please keep this up to date with every new library use.
 | HdrHistogram    | BSD 2                              |
 | xxhash          | BSD                                |
 | GSL             | MIT                                |
-| pcg             | Apache License 2                   |
 | abseil          | Apache License 2                   |
 | rapidjson       | MIT                                |
 | crc32c          | BSD 3                              |

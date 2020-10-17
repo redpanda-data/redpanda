@@ -2,7 +2,6 @@
 
 #include "cluster/types.h"
 #include "model/metadata.h"
-#include "random/fast_prng.h"
 #include "utils/intrusive_list_helpers.h"
 #include "vassert.h"
 
