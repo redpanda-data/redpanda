@@ -38,6 +38,7 @@ v_cc_library(
     v::finjector
     v::syschecks
     v::compression
+    v::rprandom
     absl::flat_hash_map
     absl::btree
     Roaring::roaring
