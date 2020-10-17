@@ -66,6 +66,7 @@ def _get_toolchain_image_metadata(vconfig):
             'files': [
                 f'{vconfig.node_src_dir}/package.json',
                 f'{vconfig.node_src_dir}/package-lock.json',
+                f'{vconfig.node_src_dir}/generate-entries.sh',
                 f'{vconfig.src_dir}/tools/ci/docker/Dockerfile.node',
                 f'{vconfig.src_dir}/tools/ci/vtools-gcc-release.yml',
             ],
