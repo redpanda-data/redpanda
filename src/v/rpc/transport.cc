@@ -30,8 +30,8 @@ struct client_context_impl final : streaming_context {
 base_transport::base_transport(configuration c)
   : _server_addr(c.server_addr)
   , _creds(
-      c.credentials ? c.credentials->build_certificate_credentials()
-                    : nullptr) {}
+      c.credentials ? c.credentials->build_certificate_credentials() : nullptr)
+  , _tls_sni_hostname(c.tls_sni_hostname) {}
 
 transport::transport(
   transport_configuration c,
@@ -62,7 +62,10 @@ ss::future<> base_transport::do_connect() {
         ss::transport::TCP)
       .then([this](ss::connected_socket fd) mutable {
           if (_creds) {
-              return ss::tls::wrap_client(_creds, std::move(fd));
+              return ss::tls::wrap_client(
+                _creds,
+                std::move(fd),
+                _tls_sni_hostname ? *_tls_sni_hostname : ss::sstring{});
           }
           return ss::make_ready_future<ss::connected_socket>(std::move(fd));
       })
