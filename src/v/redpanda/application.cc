@@ -277,17 +277,23 @@ void application::wire_up_services() {
     syschecks::systemd_message("Building shard-lookup tables");
     construct_service(shard_table).get();
 
-    if (coproc_enabled()) {
-        syschecks::systemd_message("Building coproc mapping tables");
-        construct_service(mappings).get();
-    }
-
     syschecks::systemd_message("Intializing storage services");
     construct_service(
       storage,
       kvstore_config_from_global_config(),
       manager_config_from_global_config())
       .get();
+
+    if (coproc_enabled()) {
+        auto coproc_supervisor_server_addr = config::shard_local_cfg()
+                                               .coproc_supervisor_server()
+                                               .resolve()
+                                               .get0();
+        syschecks::systemd_message("Building coproc router");
+        construct_service(
+          router, coproc_supervisor_server_addr, std::ref(storage))
+          .get();
+    }
 
     syschecks::systemd_message("Intializing raft group manager");
     construct_service(
@@ -374,11 +380,14 @@ void application::wire_up_services() {
 
     // coproc rpc
     if (coproc_enabled()) {
+        auto coproc_management_server_addr = config::shard_local_cfg()
+                                               .coproc_management_server()
+                                               .resolve()
+                                               .get0();
         rpc::server_configuration cp_rpc_cfg("coproc_rpc");
         cp_rpc_cfg.max_service_memory_per_core
           = memory_groups::rpc_total_memory();
-        cp_rpc_cfg.addrs.emplace_back(
-          ss::socket_address(ss::ipv4_addr("127.0.0.1", 43188)));
+        cp_rpc_cfg.addrs.push_back(coproc_management_server_addr);
         syschecks::systemd_message(
           "Starting coprocessor internal RPC {}", cp_rpc_cfg);
         construct_service(_coproc_rpc, cp_rpc_cfg).get();
@@ -455,8 +464,7 @@ void application::start() {
               proto->register_service<coproc::service>(
                 _scheduling_groups.coproc_sg(),
                 _smp_groups.coproc_smp_sg(),
-                std::ref(mappings),
-                std::ref(storage));
+                std::ref(router));
               s.set_protocol(std::move(proto));
           })
           .get();

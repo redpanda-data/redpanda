@@ -173,8 +173,8 @@ CONCEPT(requires(RpcClientProtocol<Protocol>&&...))
 class client : public Protocol... {
 public:
     explicit client(transport_configuration cfg)
-      : _transport(std::move(cfg))
-      , Protocol(_transport)... {}
+      : Protocol(_transport)...
+      , _transport(std::move(cfg)) {}
 
     ss::future<> connect() { return _transport.connect(); }
     ss::future<> stop() { return _transport.stop(); };
