@@ -1,9 +1,9 @@
 package config
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
@@ -17,6 +17,7 @@ func FindConfigFile(fs afero.Fs) (string, error) {
 		currentDirectoryParents,
 	}
 
+	lookedUpPaths := []string{}
 	for _, provider := range configPathProviders {
 		paths, err := provider()
 		if err != nil {
@@ -24,13 +25,19 @@ func FindConfigFile(fs afero.Fs) (string, error) {
 		}
 		for _, path := range paths {
 			candidate := filepath.Join(path, "redpanda.yaml")
+			lookedUpPaths = append(lookedUpPaths, candidate)
 			log.Debugf("Looking for redpanda config file in '%s'", path)
 			if exists, _ := afero.Exists(fs, candidate); exists {
 				return candidate, nil
 			}
 		}
 	}
-	return "", errors.New("Redpanda config not found")
+	// os.PathError can be checked with os.IsNotExist.
+	return "", &os.PathError{
+		Op:   "Open",
+		Path: strings.Join(lookedUpPaths, ", "),
+		Err:  os.ErrNotExist,
+	}
 }
 
 func sysConfDirectory() ([]string, error) {
