@@ -3,7 +3,6 @@ package system
 import (
 	"github.com/docker/go-units"
 	"github.com/spf13/afero"
-	"golang.org/x/sys/unix"
 )
 
 type MemInfo struct {
@@ -45,24 +44,6 @@ func IsSwapEnabled(fs afero.Fs) (bool, error) {
 		return false, err
 	}
 	return memInfo.SwapTotal != 0, nil
-}
-
-func getMemInfo(fs afero.Fs) (*MemInfo, error) {
-	var si unix.Sysinfo_t
-	err := unix.Sysinfo(&si)
-	if err != nil {
-		return nil, err
-	}
-	cGroupMemLimit, err := ReadCgroupMemLimitBytes(fs)
-	if err != nil {
-		return nil, err
-	}
-	return &MemInfo{
-		MemTotal:       si.Totalram * uint64(si.Unit),
-		MemFree:        si.Freeram * uint64(si.Unit),
-		CGroupMemLimit: cGroupMemLimit,
-		SwapTotal:      si.Totalswap * uint64(si.Unit),
-	}, nil
 }
 
 func min(a, b uint64) uint64 {
