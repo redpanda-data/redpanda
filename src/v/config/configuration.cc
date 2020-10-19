@@ -46,6 +46,18 @@ configuration::configuration()
       tls_config::validate)
   , enable_coproc(
       *this, "enable_coproc", "Enable coprocessing mode", required::no, false)
+  , coproc_management_server(
+      *this,
+      "coproc_management_server",
+      "IpAddress and port for management service",
+      required::no,
+      unresolved_address("127.0.0.1", 43118))
+  , coproc_supervisor_server(
+      *this,
+      "coproc_supervisor_server",
+      "IpAddress and port for supervisor service",
+      required::no,
+      unresolved_address("127.0.0.1", 43189))
   , node_id(
       *this,
       "node_id",

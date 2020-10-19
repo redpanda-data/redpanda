@@ -1,6 +1,7 @@
 #pragma once
 #include "cluster/namespace.h"
-#include "coproc/registration.h"
+#include "coproc/router.h"
+#include "coproc/script_manager.h"
 #include "coproc/types.h"
 #include "model/validation.h"
 #include "rpc/server.h"
@@ -13,19 +14,13 @@
 
 namespace coproc {
 
-using active_mappings = absl::flat_hash_map<model::ntp, storage::log>;
-
 /// Coprocessing rpc registration/deregistration service
 ///
 /// When a new coprocessor comes up or down this service will
 /// be its interface for working with redpanda.
-class service final : public registration_service {
+class service final : public script_manager_service {
 public:
-    service(
-      ss::scheduling_group,
-      ss::smp_service_group,
-      ss::sharded<active_mappings>&,
-      ss::sharded<storage::api>&);
+    service(ss::scheduling_group, ss::smp_service_group, ss::sharded<router>&);
 
     /// coproc client calls this to 'register'
     ///
@@ -33,8 +28,8 @@ public:
     /// \param stgreaming_context rpc context expected at every endpoint
     ///
     /// \return structure representing an ack per topic
-    ss::future<enable_topics_reply>
-    enable_topics(metadata_info&&, rpc::streaming_context&) final;
+    ss::future<enable_copros_reply>
+    enable_copros(enable_copros_request&&, rpc::streaming_context&) final;
 
     /// coproc client calls this to 'deregister'
     ///
@@ -42,20 +37,26 @@ public:
     /// \param streaming_context rpc context expected at every endpoint
     ///
     /// \return structure representing an ack per topic
-    ss::future<disable_topics_reply>
-    disable_topics(metadata_info&&, rpc::streaming_context&) final;
+    ss::future<disable_copros_reply>
+    disable_copros(disable_copros_request&&, rpc::streaming_context&) final;
 
 private:
+    using id_resp_vec_pair = std::vector<enable_copros_reply::ack_id_pair>;
+
+    ss::future<enable_copros_reply::ack_id_pair> evaluate_topics(
+      const script_id, std::vector<enable_copros_request::data::topic_mode>);
+
+    /// Verify if a script_id exists across all shards of the router
+    /// Not called upon the hot path
+    ss::future<bool> copro_exists(const script_id);
+
     /// Different implementation details of update_cache
-    ss::future<enable_response_code> insert(model::topic_namespace);
-    ss::future<disable_response_code> remove(model::topic_namespace);
+    ss::future<enable_response_code>
+    insert(script_id, model::topic_namespace&&, topic_ingestion_policy);
+    ss::future<disable_response_code> remove(script_id);
 
     /// Main mapping for actively tracked coproc topics
-    ss::sharded<active_mappings>& _mappings;
-
-    /// Reference to the underlying storage, for querying active logs
-    /// for an incoming topic_namespace request
-    ss::sharded<storage::api>& _storage;
+    ss::sharded<router>& _router;
 };
 
 } // namespace coproc
