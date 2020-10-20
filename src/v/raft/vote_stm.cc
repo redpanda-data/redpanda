@@ -1,12 +1,16 @@
 #include "raft/vote_stm.h"
 
+#include "model/metadata.h"
 #include "outcome_future_utils.h"
 #include "raft/consensus_utils.h"
 #include "raft/errc.h"
 #include "raft/logger.h"
 #include "raft/raftgen_service.h"
+#include "raft/types.h"
 
 #include <seastar/util/bool_class.hh>
+
+#include <chrono>
 
 namespace raft {
 std::ostream& operator<<(std::ostream& o, const vote_stm::vmeta& m) {
@@ -86,37 +90,46 @@ std::pair<uint32_t, uint32_t> vote_stm::partition_count() const {
     return {success, failure};
 }
 ss::future<> vote_stm::vote(bool leadership_transfer) {
-    using skip_vote = ss::bool_class<struct skip_vote_tag>;
-    return _ptr->_op_lock
-      .with([this, leadership_transfer] {
-          // check again while under op_sem
-          if (_ptr->should_skip_vote(leadership_transfer)) {
-              return ss::make_ready_future<skip_vote>(skip_vote::yes);
+    // based on raft thesis 9.6 - preventing disruptions when a server rejoins
+    // the cluster. We increment caondidate's term only after we learn that a
+    // majority on the cluster are willing to vote for it (their log is up to
+    // date or behind the candidate's log)
+    return do_prevote(leadership_transfer)
+      .then([this, leadership_transfer](skip_vote skip) {
+          if (skip) {
+              return ss::make_ready_future<skip_vote>(skip);
           }
-          // 5.2.1
-          _ptr->_vstate = consensus::vote_state::candidate;
-          _ptr->_leader_id = std::nullopt;
-          _ptr->trigger_leadership_notification();
-          // 5.2.1.2
-          _ptr->_term += model::term_id(1);
 
-          // vote is the only method under _op_sem
-          _ptr->config().for_each_voter(
-            [this](model::node_id id) { _replies.emplace(id, vmeta{}); });
-          auto lstats = _ptr->_log.offsets();
-          auto last_entry_term = _ptr->get_last_entry_term(lstats);
+          return _ptr->_op_lock.with([this, leadership_transfer] {
+              // check again while under op_sem
+              if (_ptr->should_skip_vote(leadership_transfer)) {
+                  return ss::make_ready_future<skip_vote>(skip_vote::yes);
+              }
+              // 5.2.1
+              _ptr->_vstate = consensus::vote_state::candidate;
+              _ptr->_leader_id = std::nullopt;
+              _ptr->trigger_leadership_notification();
+              // 5.2.1.2
+              _ptr->_term += model::term_id(1);
 
-          _req = vote_request{
-            _ptr->_self,
-            _ptr->group(),
-            _ptr->term(),
-            lstats.dirty_offset,
-            last_entry_term,
-            leadership_transfer};
-          // we have to self vote before dispatching vote request to
-          // other nodes, this vote has to be done under op semaphore as
-          // it changes voted_for state
-          return self_vote().then([] { return skip_vote::no; });
+              // vote is the only method under _op_sem
+              _ptr->config().for_each_voter(
+                [this](model::node_id id) { _replies.emplace(id, vmeta{}); });
+              auto lstats = _ptr->_log.offsets();
+              auto last_entry_term = _ptr->get_last_entry_term(lstats);
+
+              _req = vote_request{
+                _ptr->_self,
+                _ptr->group(),
+                _ptr->term(),
+                lstats.dirty_offset,
+                last_entry_term,
+                leadership_transfer};
+              // we have to self vote before dispatching vote request to
+              // other nodes, this vote has to be done under op semaphore as
+              // it changes voted_for state
+              return self_vote().then([] { return skip_vote::no; });
+          });
       })
       .then([this](skip_vote skip) {
           if (skip) {
@@ -124,6 +137,117 @@ ss::future<> vote_stm::vote(bool leadership_transfer) {
           }
           return do_vote();
       });
+}
+
+ss::future<result<vote_reply>> vote_stm::do_dispatch_prevote(model::node_id n) {
+    auto tout_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+      _prevote_timeout.time_since_epoch());
+    vlog(
+      _ctxlog.trace,
+      "Sending prevote request to {} from {} with tout: {}",
+      n,
+      _ptr->_self,
+      tout_ms);
+    auto r = _pre_req;
+    return _ptr->_client_protocol.vote(
+      n, std::move(r), rpc::client_opts(_prevote_timeout));
+}
+
+void vote_stm::try_resolve_prevote_skip_promise() {
+    if (!_prevote_skip.available()) {
+        auto cfg = _ptr->config();
+        bool majority_granted = cfg.majority([this](model::node_id id) {
+            return _prevote_replies.contains(id)
+                   && _prevote_replies.find(id)->second;
+        });
+
+        if (majority_granted) {
+            _prevote_skip.set_value(skip_vote::no);
+            return;
+        }
+
+        bool majority_failed = cfg.majority([this](model::node_id id) {
+            return _prevote_replies.contains(id)
+                   && !_prevote_replies.find(id)->second;
+        });
+
+        if (majority_failed) {
+            _prevote_skip.set_value(skip_vote::yes);
+        }
+    }
+}
+
+ss::future<> vote_stm::dispatch_prevote(model::node_id n) {
+    return with_gate(_vote_bg, [this, n] {
+        if (n == _ptr->_self) {
+            _prevote_replies.emplace(n, true);
+            try_resolve_prevote_skip_promise();
+            return ss::make_ready_future<>();
+        }
+
+        return do_dispatch_prevote(n).then_wrapped([this, n](auto f) {
+            try {
+                if (_prevote_timeout < clock_type::now()) {
+                    vlog(_ctxlog.trace, "prevote ack from {} timed out", n);
+                    _prevote_replies.emplace(n, false);
+                } else {
+                    auto r = f.get0();
+                    if (r.has_value()) {
+                        auto v = r.value();
+                        if (v.log_ok) {
+                            vlog(
+                              _ctxlog.trace,
+                              "prevote ack: node {} caught up with a candidate",
+                              n);
+                            _prevote_replies.emplace(n, true);
+                        } else {
+                            vlog(
+                              _ctxlog.trace,
+                              "prevote ack: node {} is ahead of a candidate",
+                              n);
+                            _prevote_replies.emplace(n, false);
+                        }
+                    } else {
+                        vlog(
+                          _ctxlog.trace,
+                          "prevote ack from {} doesn't have value, error: {}",
+                          n,
+                          r.error().message());
+                        _prevote_replies.emplace(n, false);
+                    }
+                }
+            } catch (...) {
+                vlog(
+                  _ctxlog.trace,
+                  "error on sending prevote to {} exception: {}",
+                  n,
+                  std::current_exception());
+                _prevote_replies.emplace(n, false);
+            }
+            try_resolve_prevote_skip_promise();
+        });
+    });
+}
+
+ss::future<skip_vote> vote_stm::do_prevote(bool leadership_transfer) {
+    auto cfg = _ptr->config();
+
+    auto lstats = _ptr->_log.offsets();
+    auto last_entry_term = _ptr->get_last_entry_term(lstats);
+    // we use an existing vote RPC with "old" term to do the prevoting check
+    _pre_req = vote_request{
+      _ptr->_self,
+      _ptr->group(),
+      _ptr->term(),
+      lstats.dirty_offset,
+      last_entry_term,
+      leadership_transfer};
+
+    _prevote_timeout = clock_type::now() + _ptr->_jit.base_duration();
+
+    cfg.for_each_voter(
+      [this](model::node_id id) { (void)dispatch_prevote(id); });
+    return _prevote_skip.get_shared_future();
 }
 
 ss::future<> vote_stm::do_vote() {
