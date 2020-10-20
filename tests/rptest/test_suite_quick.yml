@@ -1,0 +1,7 @@
+quick:
+    included:
+        - tests/
+
+    excluded:
+        - tests/rpk_test.py
+        - tests/librdkafka_test.py
