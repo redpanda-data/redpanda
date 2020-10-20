@@ -19,34 +19,11 @@
 #include <exception>
 
 namespace storage::internal {
-ss::future<ss::stop_iteration>
-truncation_offset_reducer::operator()(compacted_index::entry&& e) {
-    using stop_t = ss::stop_iteration;
-    const model::offset o = e.offset + model::offset(e.delta);
-    if (e.type == compacted_index::entry_type::truncation) {
-        auto it = _indices.lower_bound(o);
-        _indices.erase(it, _indices.end());
-    } else if (e.type == compacted_index::entry_type::key) {
-        _indices[o] = _natural_index;
-    }
-    ++_natural_index; // MOST important
-    return ss::make_ready_future<stop_t>(stop_t::no);
-}
 
-Roaring truncation_offset_reducer::end_of_stream() {
-    Roaring inverted;
-    for (auto& [_, natural] : _indices) {
-        inverted.add(natural);
-    }
-    inverted.shrinkToFit();
-    return inverted;
-}
 ss::future<ss::stop_iteration>
 compaction_key_reducer::operator()(compacted_index::entry&& e) {
     using stop_t = ss::stop_iteration;
     const model::offset o = e.offset + model::offset(e.delta);
-    const bool skip = _to_keep && !_to_keep->contains(_natural_index);
-    if (!skip) {
         auto it = _indices.find(e.key);
         if (it != _indices.end()) {
             if (o > it->second.offset) {
@@ -73,7 +50,7 @@ compaction_key_reducer::operator()(compacted_index::entry&& e) {
             // 2. do the insertion
             _indices.emplace(std::move(e.key), value_type(o, _natural_index));
         }
-    }
+
     ++_natural_index; // MOST important
     return ss::make_ready_future<stop_t>(stop_t::no);
 }
