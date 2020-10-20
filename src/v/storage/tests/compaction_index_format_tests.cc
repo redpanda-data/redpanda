@@ -3,12 +3,15 @@
 #include "bytes/iobuf_parser.h"
 #include "random/generators.h"
 #include "reflection/adl.h"
+#include "storage/compacted_index.h"
 #include "storage/compacted_index_reader.h"
 #include "storage/compacted_index_writer.h"
 #include "storage/compaction_reducers.h"
 #include "storage/segment_utils.h"
+#include "storage/spill_key_index.h"
 #include "test_utils/fixture.h"
 #include "units.h"
+#include "utils/vint.h"
 
 #include <boost/test/unit_test_suite.hpp>
 
@@ -56,15 +59,26 @@ FIXTURE_TEST(format_verification_max_key, compacted_topic_fixture) {
     idx.close().get();
     info("{}", idx);
 
+    /**
+     * Length of an entry is equal to
+     *
+     * max_key_size + sizeof(uint8_t) + sizeof(uint16_t) + vint(42) + vint(66)
+     */
+
     BOOST_REQUIRE_EQUAL(
       index_data.size_bytes(),
       storage::compacted_index::footer_size
-        + std::numeric_limits<uint16_t>::max());
+        + std::numeric_limits<uint16_t>::max() - 2 * vint::max_length
+        + vint::vint_size(42) + vint::vint_size(66) + 1 + 2);
     iobuf_parser p(index_data.share(0, index_data.size_bytes()));
 
     const size_t entry = p.consume_type<uint16_t>(); // SIZE
+
     BOOST_REQUIRE_EQUAL(
-      entry, std::numeric_limits<uint16_t>::max() - sizeof(uint16_t));
+      entry,
+      std::numeric_limits<uint16_t>::max() - sizeof(uint16_t)
+        - 2 * vint::max_length + vint::vint_size(42) + vint::vint_size(66) + 1
+        + 2);
 }
 FIXTURE_TEST(format_verification_roundtrip, compacted_topic_fixture) {
     iobuf index_data;
@@ -119,8 +133,9 @@ FIXTURE_TEST(
     BOOST_REQUIRE_EQUAL(vec.size(), 1);
     BOOST_REQUIRE_EQUAL(vec[0].offset, model::offset(42));
     BOOST_REQUIRE_EQUAL(vec[0].delta, 66);
-    BOOST_REQUIRE_EQUAL(vec[0].key.size(), 65529);
-    BOOST_REQUIRE_EQUAL(vec[0].key, bytes_view(key.data(), 65529));
+    auto max_sz = storage::internal::spill_key_index::max_key_size;
+    BOOST_REQUIRE_EQUAL(vec[0].key.size(), max_sz);
+    BOOST_REQUIRE_EQUAL(vec[0].key, bytes_view(key.data(), max_sz));
 }
 
 FIXTURE_TEST(key_reducer_no_truncate_filter, compacted_topic_fixture) {
@@ -244,7 +259,7 @@ FIXTURE_TEST(index_filtered_copy_tests, compacted_topic_fixture) {
       // FORCE eviction with every key basically
       1_KiB);
 
-    const auto key1 = random_generators::get_bytes(1_KiB);
+    const auto key1 = random_generators::get_bytes(128_KiB);
     const auto key2 = random_generators::get_bytes(1_KiB);
     for (auto i = 0; i < 100; ++i) {
         bytes_view put_key;
