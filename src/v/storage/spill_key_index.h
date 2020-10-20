@@ -20,6 +20,7 @@ public:
         model::offset base_offset;
         int32_t delta{0};
     };
+    static constexpr auto value_sz = sizeof(value_type);
     using underlying_t
       = absl::flat_hash_map<bytes, value_type, bytes_type_hash, bytes_type_eq>;
 
@@ -45,6 +46,16 @@ public:
     void set_flag(compacted_index::footer_flags) final;
 
 private:
+    /**
+     * returns memory usage of the map structures itself. In order to get total
+     * memory usage of spill key index we have to do:
+     *
+     *    idx_mem_usage() + _keys_mem_usage
+     */
+    size_t idx_mem_usage() {
+        return (
+          (sizeof(std::pair<const bytes, value_type>) + 1) * _midx.capacity());
+    }
     ss::future<> drain_all_keys();
     ss::future<> add_key(bytes b, value_type);
     ss::future<> spill(compacted_index::entry_type, bytes_view, value_type);
@@ -52,7 +63,7 @@ private:
     segment_appender _appender;
     underlying_t _midx;
     size_t _max_mem;
-    size_t _mem_usage{0};
+    size_t _keys_mem_usage{0};
     compacted_index::footer _footer;
     crc32 _crc;
 
