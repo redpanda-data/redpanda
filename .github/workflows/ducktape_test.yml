@@ -1,0 +1,50 @@
+name: ducktape_testing
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Commit ref to run tests against
+        required: true
+jobs:
+  run_ducktape:
+    runs-on: self-hosted
+
+    steps:
+        - name: checkout
+          uses: actions/checkout@v2
+
+        - name: gcloud auth
+          uses: GoogleCloudPlatform/github-actions/setup-gcloud@master
+          with:
+            version: '290.0.1'
+            project_id: 'redpandaci'
+            service_account_key: ${{ secrets.GCR_JSON}}
+            export_default_credentials: true
+
+        - name: fetch latest release from gcloud
+          run: |
+            .github/setup_gcloud_release.sh ${{ github.event.inputs.ref }}
+
+        - name: install vtools
+          run: |
+            mkdir -p build/venv/
+            python3 -mvenv build/venv/v/
+            source build/venv/v/bin/activate
+            pip install wheel
+            pip install -e tools/
+
+        - name: install compacted_topic_verifier
+          run: |
+            build/venv/v/bin/vtools install java
+            build/venv/v/bin/vtools install maven
+            build/venv/v/bin/vtools build java
+
+        - name: drop any previous containers
+          run: tests/docker/ducker-rp down -f || true
+
+        - name: run ducktape tests
+          run: build/venv/v/bin/vtools test ducky --clang --skip-build --test tests/rptest/test_suite_quick.yml
+
+        - name: drop test containers
+          if: ${{ always() }}
+          run: tests/docker/ducker-rp down -f
