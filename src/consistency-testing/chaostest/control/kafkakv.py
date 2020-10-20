@@ -59,7 +59,7 @@ class UnknownTopic(Exception):
 
 
 class KafkaKV:
-    def __init__(self, inflight_limit, bootstrap_servers, topic):
+    def __init__(self, inflight_limit, bootstrap_servers, topic, acks):
         self.topic = topic
         self.bootstrap_servers = bootstrap_servers
         self.producer = KafkaProducer(
@@ -67,7 +67,7 @@ class KafkaKV:
             request_timeout_ms=10000,  #default 30000
             max_block_ms=10000,  # default 60000
             metadata_max_age_ms=30000,  #default 300000
-            acks="all")
+            acks=acks)
         self.offset = None
         self.state = dict()
         self.consumers = []
@@ -311,6 +311,7 @@ parser = argparse.ArgumentParser(description='kafka-kvelldb')
 parser.add_argument('--log', required=True)
 parser.add_argument('--err', required=True)
 parser.add_argument('--topic', required=True)
+parser.add_argument('--acks', required=True)
 parser.add_argument('--port', type=int, required=True)
 parser.add_argument('--broker', action='append', required=True)
 parser.add_argument('--inflight-limit', type=int, required=True)
@@ -343,7 +344,8 @@ kafkakv_stdout_handler.setFormatter(
     logging.Formatter("%(asctime)s - %(message)s"))
 kafkakv_stdout.addHandler(kafkakv_stdout_handler)
 
-kafkakv = KafkaKV(args.inflight_limit, args.broker, args.topic)
+kafkakv = KafkaKV(args.inflight_limit, args.broker, args.topic,
+                  json.loads(args.acks))
 
 app = Flask(__name__)
 
