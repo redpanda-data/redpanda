@@ -161,7 +161,16 @@ async def inject_recover_scenarios_aio(config, cluster, faults,
     for fault in faults.keys():
         if config["reset_before_test"]:
             await cluster.restart()
-            if not await cluster.is_ok():
+            is_healthy = False
+            for _ in range(0, 10):
+                is_healthy = await cluster.is_ok()
+                if is_healthy:
+                    break
+                chaos_event_log.info(
+                    m(f"cluster isn't healthy, retrying").with_time())
+                await asyncio.sleep(5)
+
+            if not is_healthy:
                 chaos_event_log.info(m(f"cluster isn't healthy").with_time())
                 raise Exception(f"cluster isn't healthy")
 
