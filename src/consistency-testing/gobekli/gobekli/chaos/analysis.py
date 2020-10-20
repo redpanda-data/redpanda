@@ -177,12 +177,13 @@ plot 'overview.1s.log' using 1:2 title "ops per 1s" with line lt rgb "black"
 unset multiplot
 """
 
-AVAILABILITY_CUT_OFF_S = 2
-LATENCY_CUT_OFF_US = 2000000
 
-
-def analyze_inject_recover_availability(log_dir, availability_log,
-                                        latency_log):
+def analyze_inject_recover_availability(log_dir,
+                                        availability_log,
+                                        latency_log,
+                                        warmup_s=2):
+    availability_cut_off_s = warmup_s
+    latency_cut_off_us = warmup_s * 1000000
     maxlat = 0
     minlat = sys.maxsize
 
@@ -194,7 +195,7 @@ def analyze_inject_recover_availability(log_dir, availability_log,
         while line:
             entry = json.loads(line)
             tick = entry["tick"]
-            if tick >= AVAILABILITY_CUT_OFF_S:
+            if tick >= availability_cut_off_s:
                 if entry["type"] == "fault":
                     first_fault = min(int(tick), first_fault)
                 elif entry["type"] == "recovery":
@@ -213,7 +214,7 @@ def analyze_inject_recover_availability(log_dir, availability_log,
             if "ok" in line:
                 parts = line.rstrip().split("\t")
                 tick = int(parts[0])
-                if tick < LATENCY_CUT_OFF_US:
+                if tick < latency_cut_off_us:
                     continue
                 lat = int(parts[1])
                 maxlat = max(maxlat, lat)
@@ -269,7 +270,7 @@ class ExperimentGroup:
         self.experiments = []
 
 
-def make_results_chart(result):
+def make_results_chart(result, warmup):
     root = Path(result).parent
     with open(result, 'r') as result_file:
         experiments = dict()
@@ -312,7 +313,9 @@ def make_results_chart(result):
                     ))
 
 
-def make_latency_chart(title, log_dir, availability_log, latency_log):
+def make_latency_chart(title, log_dir, availability_log, latency_log,
+                       warmup_s):
+    latency_cut_off_us = warmup_s * 1000000
     latencies = []
 
     with open(path.join(log_dir, latency_log)) as latency_log_file:
@@ -320,7 +323,7 @@ def make_latency_chart(title, log_dir, availability_log, latency_log):
             if "ok" in line:
                 parts = line.rstrip().split("\t")
                 tick = int(parts[0])
-                if tick < LATENCY_CUT_OFF_US:
+                if tick < latency_cut_off_us:
                     continue
                 latencies.append(int(parts[1]))
 
@@ -377,7 +380,11 @@ def make_latency_chart(title, log_dir, availability_log, latency_log):
                                                 title=title))
 
 
-def make_availability_chart(title, log_dir, availability_log, latency_log):
+def make_availability_chart(title, log_dir, availability_log, latency_log,
+                            warmup_s):
+    latency_cut_off_us = warmup_s * 1000000
+    availability_cut_off_s = warmup_s
+
     maxx = 0
     maxy = 0
     faults = []
@@ -391,7 +398,7 @@ def make_availability_chart(title, log_dir, availability_log, latency_log):
                 if "ok" in line:
                     parts = line.rstrip().split("\t")
                     tick = int(parts[0])
-                    if tick < LATENCY_CUT_OFF_US:
+                    if tick < latency_cut_off_us:
                         continue
                     maxx = max(tick / 1000000, maxx)
                     if last == None:
@@ -408,7 +415,7 @@ def make_availability_chart(title, log_dir, availability_log, latency_log):
         for line in availability_log_file:
             entry = json.loads(line)
             tick = int(int(entry["tick"]) / 1000000)
-            if tick >= AVAILABILITY_CUT_OFF_S:
+            if tick >= availability_cut_off_s:
                 if entry["type"] == "fault":
                     faults.append(tick)
                 elif entry["type"] == "recovery":
@@ -423,7 +430,11 @@ def make_availability_chart(title, log_dir, availability_log, latency_log):
                                                  title=title))
 
 
-def make_overview_chart(title, log_dir, availability_log, latency_log):
+def make_overview_chart(title, log_dir, availability_log, latency_log,
+                        warmup_s):
+    latency_cut_off_us = warmup_s * 1000000
+    availability_cut_off_s = warmup_s
+
     maxtick = 0
     maxminlat = 0
     minlatstep = 0
@@ -439,7 +450,7 @@ def make_overview_chart(title, log_dir, availability_log, latency_log):
             for line in latency_log_file:
                 parts = line.rstrip().split("\t")
                 tick = int(parts[0])
-                if tick < LATENCY_CUT_OFF_US:
+                if tick < latency_cut_off_us:
                     continue
                 tick = int(tick / 1000000)
                 lat = int(parts[1])
@@ -465,7 +476,7 @@ def make_overview_chart(title, log_dir, availability_log, latency_log):
                 entry = json.loads(line)
                 tick = entry["tick"]
                 if entry["type"] == "stat":
-                    if tick >= AVAILABILITY_CUT_OFF_S:
+                    if tick >= availability_cut_off_s:
                         thru = entry["all:ok"]
                         maxtick = max(maxtick, tick)
                         mx_thru = max(thru, mx_thru)
@@ -477,11 +488,11 @@ def make_overview_chart(title, log_dir, availability_log, latency_log):
                                 str(tick) + "\t" + str(thru) + "\n")
                 elif entry["type"] == "fault":
                     tick = int(tick / 1000000)
-                    if tick >= AVAILABILITY_CUT_OFF_S:
+                    if tick >= availability_cut_off_s:
                         faults.append(tick)
                 elif entry["type"] == "recovery":
                     tick = int(tick / 1000000)
-                    if tick >= AVAILABILITY_CUT_OFF_S:
+                    if tick >= availability_cut_off_s:
                         recoveries.append(tick)
 
             maxthru = int(1.2 * mx_thru)
