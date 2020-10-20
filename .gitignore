@@ -202,6 +202,8 @@ src/js/node_modules
 src/js/modules/domain/generatedRpc/*.ts
 # rpc generated for coprocessor
 src/js/modules/rpc/serverAndClients/*.ts
+# vectorized public dependency
+src/js/vectorizedDependency.js
 #intelij
 *.iml
 # Node dependecies ts-generated
