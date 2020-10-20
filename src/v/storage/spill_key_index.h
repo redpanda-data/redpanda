@@ -5,6 +5,7 @@
 #include "storage/compacted_index.h"
 #include "storage/compacted_index_writer.h"
 #include "storage/segment_appender.h"
+#include "utils/vint.h"
 
 #include <seastar/core/file.hh>
 #include <seastar/core/future.hh>
@@ -21,6 +22,8 @@ public:
         int32_t delta{0};
     };
     static constexpr auto value_sz = sizeof(value_type);
+    static constexpr size_t max_key_size = compacted_index::max_entry_size
+                                           - (2 * vint::max_length);
     using underlying_t
       = absl::flat_hash_map<bytes, value_type, bytes_type_hash, bytes_type_eq>;
 

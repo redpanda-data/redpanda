@@ -139,12 +139,8 @@ ss::future<> spill_key_index::spill(
     }
     // []BYTE
     {
-        size_t key_size = b.size();
-        const size_t max = compacted_index::max_entry_size
-                           - payload.size_bytes();
-        if (key_size > max) {
-            key_size = max;
-        }
+        size_t key_size = std::min(max_key_size, b.size());
+
         payload.append(b.data(), key_size);
     }
     const size_t size = payload.size_bytes() - size_reservation;
