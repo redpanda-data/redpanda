@@ -42,7 +42,7 @@ set multiplot
 set boxwidth {{ step }}
 has(x) = 1
 
-set xrange [0:{{ xrange }}]
+set xrange [0:{{ xzrange }}]
 
 set lmargin 6
 set rmargin 10
@@ -80,6 +80,45 @@ set parametric
 set x2tics ("p99={{ p99 }}" {{ p99 }})
 plot [t=0:{{ yrange }}] {{ p99 }},t notitle lt rgb "black"
 unset parametric
+
+################################################################################
+
+set xrange [0:{{ xrange }}]
+unset title
+unset x2tics
+
+set tmargin 0
+set yrange [0:1]
+set size 0.4, 0.04
+set origin 0.5, 0.56
+set border 11
+set xtics ("{{ p99 }}" {{ p99 }}, "{{ xrange }}" {{ xrange }})
+unset ytics
+
+set object 1 rectangle from graph 0, graph 0 to graph 1, graph 1 behind fillcolor rgb 'white' fillstyle solid noborder
+plot "pdf.latency.log" using 1:(has($2)) notitle with boxes fs solid
+unset object 1
+set parametric
+plot [t=0:1] {{ p99 }},t notitle lt rgb "black"
+unset parametric
+
+set yrange [0:{{ yrange }}]
+set size 0.4, 0.35
+set origin 0.5, 0.58
+set border 15
+set tmargin 5
+set bmargin 0
+set ytics auto
+unset xtics
+
+set object 2 rectangle from graph 0, graph 0 to graph 1, graph 1 behind fillcolor rgb 'white' fillstyle solid noborder
+plot "pdf.latency.log" using 1:2 notitle with boxes
+unset object 2
+set parametric
+plot [t=0:{{ yrange }}] {{ p99 }},t notitle lt rgb "black"
+unset parametric
+
+################################################################################
 
 unset multiplot
 """
@@ -313,8 +352,8 @@ def make_results_chart(result, warmup):
                     ))
 
 
-def make_latency_chart(title, log_dir, availability_log, latency_log,
-                       warmup_s):
+def make_latency_chart(title, log_dir, availability_log, latency_log, warmup_s,
+                       zoom_range_us):
     latency_cut_off_us = warmup_s * 1000000
     latencies = []
 
@@ -323,9 +362,10 @@ def make_latency_chart(title, log_dir, availability_log, latency_log,
             if "ok" in line:
                 parts = line.rstrip().split("\t")
                 tick = int(parts[0])
+                latency = int(parts[1])
                 if tick < latency_cut_off_us:
                     continue
-                latencies.append(int(parts[1]))
+                latencies.append(latency)
 
     latencies = sorted(latencies)
 
@@ -374,6 +414,8 @@ def make_latency_chart(title, log_dir, availability_log, latency_log,
     with open(path.join(log_dir, "pdf.latency.gp"), "w") as latency_file:
         latency_file.write(
             jinja2.Template(PDF_LATENCY).render(xrange=maxlat,
+                                                xzrange=min(
+                                                    maxlat, zoom_range_us),
                                                 yrange=1.2 * maxfreq,
                                                 p99=p99,
                                                 step=step,
