@@ -86,34 +86,51 @@ async def inject_recover_scenario_aio(log_dir, config, cluster,
     workload = workload_factory()
     task = asyncio.create_task(workload.start())
 
-    loop = asyncio.get_running_loop()
+    try:
+        loop = asyncio.get_running_loop()
 
-    end_time = loop.time() + config["warmup"]
-    while workload.is_active:
-        if (loop.time() + 1) >= end_time:
-            break
-        await asyncio.sleep(1)
+        end_time = loop.time() + config["warmup"]
+        while workload.is_active:
+            if (loop.time() + 1) >= end_time:
+                break
+            await asyncio.sleep(1)
 
-    # inject
-    fault = failure_factory()
+        # inject
+        fault = failure_factory()
 
-    await ThreadAsyncWaiter(lambda: fault.inject(cluster, workload)).wait(
-        period_ms=500)
+        inject_side_thread = ThreadAsyncWaiter(
+            lambda: fault.inject(cluster, workload))
+        await inject_side_thread.wait(period_ms=500)
 
-    end_time = loop.time() + config["exploitation"]
-    while workload.is_active:
-        if (loop.time() + 1) >= end_time:
-            break
-        await asyncio.sleep(1)
+        end_time = loop.time() + config["exploitation"]
+        while workload.is_active:
+            if (loop.time() + 1) >= end_time:
+                break
+            await asyncio.sleep(1)
 
-    # recover
-    await ThreadAsyncWaiter(lambda: fault.recover()).wait(period_ms=500)
+        # recover
+        await ThreadAsyncWaiter(lambda: fault.recover()).wait(period_ms=500)
 
-    end_time = loop.time() + config["cooldown"]
-    while workload.is_active:
-        if (loop.time() + 1) >= end_time:
-            break
-        await asyncio.sleep(1)
+        end_time = loop.time() + config["cooldown"]
+        while workload.is_active:
+            if (loop.time() + 1) >= end_time:
+                break
+            await asyncio.sleep(1)
+    except:
+        workload.stop()
+
+        try:
+            await task
+        except:
+            e, v = sys.exc_info()[:2]
+            stacktrace = traceback.format_exc()
+            chaos_event_log.info(
+                m("error on waiting for workflow's tast on handling error",
+                  error_type=str(e),
+                  error_value=str(v),
+                  stacktrace=stacktrace).with_time())
+
+        raise
 
     workload.stop()
     validation_result = await task

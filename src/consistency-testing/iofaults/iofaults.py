@@ -183,9 +183,16 @@ def fuse_recover():
     return {"status": "ok"}
 
 
+@app.route('/status', methods=['GET'])
+def status():
+    return {"status": "ok"}
+
+
 fuse_thread = threading.Thread(
     target=lambda: FUSE(bindfs, mountpoint, nothreads=True, foreground=True))
 fuse_thread.start()
+
+print("Successfully started iofaults!")
 
 app.run(host='0.0.0.0', port=port, use_reloader=False)
 fuse_thread.join()

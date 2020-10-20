@@ -162,6 +162,16 @@ class MRSWWorkload:
             await kv_node.close_aio()
 
     async def start(self):
+        stat = Stat()
+        dims = []
+        dims.append("all:ok")
+        for kv in self.kv_nodes:
+            dims.append(kv.name + ":ok")
+            dims.append(kv.name + ":out")
+            dims.append(kv.name + ":err")
+        dims.append("size")
+        self.availability_logger = AvailabilityStatLogger(stat, dims)
+
         keys = list(map(lambda x: f"key{x}", range(0, self.numOfKeys)))
 
         checker = LinearizabilityHashmapChecker()
@@ -175,20 +185,18 @@ class MRSWWorkload:
                     wasSet = True
                     break
                 except:
-                    pass
+                    e, v = sys.exc_info()[:2]
+                    stacktrace = traceback.format_exc()
+                    cmdlog.info(
+                        m(f"Error on initial put using {kv.name}",
+                          type="error",
+                          error_type=str(e),
+                          error_value=str(v),
+                          stacktrace=stacktrace).with_time())
             if not wasSet:
                 self.is_active = False
                 raise Exception("all kv_nodes rejected init write")
 
-        stat = Stat()
-        dims = []
-        dims.append("all:ok")
-        for kv in self.kv_nodes:
-            dims.append(kv.name + ":ok")
-            dims.append(kv.name + ":out")
-            dims.append(kv.name + ":err")
-        dims.append("size")
-        self.availability_logger = AvailabilityStatLogger(stat, dims)
         clients = []
 
         loop = asyncio.get_running_loop()
