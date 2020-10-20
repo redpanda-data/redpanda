@@ -198,22 +198,29 @@ FIXTURE_TEST(key_reducer_max_mem, compacted_topic_fixture) {
 
     rdr.verify_integrity().get();
     rdr.reset();
-    auto small_mem_bitmap
-      = rdr
-          .consume(
-            storage::internal::compaction_key_reducer(1_KiB), model::no_timeout)
-          .get0();
+    auto small_mem_bitmap = rdr
+                              .consume(
+                                storage::internal::compaction_key_reducer(
+                                  1_KiB + 16),
+                                model::no_timeout)
+                              .get0();
 
     /*
       There are 2 keys exactly.
       Each key is exactly 1KB
-      We need 2KB + 1 byte to ensure it fits in the memory map
+      We need 2KB + 2* (capacity * sizeof(std::pair) + 1)
+      memory map
      */
     rdr.reset();
+    auto entry_size
+      = sizeof(
+          std::
+            pair<bytes, storage::internal::compaction_key_reducer::value_type>)
+        + 1;
     auto exact_mem_bitmap = rdr
                               .consume(
                                 storage::internal::compaction_key_reducer(
-                                  2_KiB + 1),
+                                  2_KiB + 2 * entry_size * 2),
                                 model::no_timeout)
                               .get0();
 

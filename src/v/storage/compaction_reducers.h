@@ -38,9 +38,14 @@ public:
     Roaring end_of_stream();
 
 private:
+    size_t idx_mem_usage() {
+        return (
+          (sizeof(std::pair<const bytes, value_type>) + 1)
+          * _indices.capacity());
+    }
     Roaring _inverted;
     underlying_t _indices;
-    size_t _mem_usage{0};
+    size_t _keys_mem_usage{0};
     size_t _max_mem{0};
     uint32_t _natural_index{0};
 };
