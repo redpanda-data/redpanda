@@ -44,7 +44,8 @@ def build():
     default=None)
 @click.option('--enable-dpdk',
               help='Build redpanda with DPDK support enabled',
-              is_flag=True)
+              default=None,
+              type=bool)
 def cpp(build_type, conf, skip_external, clang, reconfigure, targets,
         enable_dpdk):
     """
@@ -64,6 +65,10 @@ def cpp(build_type, conf, skip_external, clang, reconfigure, targets,
     expected to be in the default folder inside the build root (v_deps_install/
     folder).
     """
+    # enable dpdk by default on release builds
+    if enable_dpdk is None:
+        enable_dpdk = (build_type == "release")
+
     vconfig = config.VConfig(config_file=conf,
                              build_type=build_type,
                              clang=clang)

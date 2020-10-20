@@ -35,14 +35,23 @@ def install():
               help=('Build external projects using clang, including libc++ '
                     'and libc++abi.'),
               is_flag=True)
-def cpp_deps(build_type, conf, clang):
+@click.option('--enable-dpdk',
+              help=('Enable DPDK support'),
+              default=None,
+              type=bool)
+def cpp_deps(build_type, conf, clang, enable_dpdk):
+    # enable dpdk by default on release builds
+    if enable_dpdk is None:
+        enable_dpdk = (build_type == "release")
+
     vconfig = config.VConfig(config_file=conf,
                              build_type=build_type,
                              clang=clang)
 
     cmake.configure_build(vconfig,
                           build_external=True,
-                          build_external_only=True)
+                          build_external_only=True,
+                          enable_dpdk=enable_dpdk)
 
 
 @install.command(short_help='install clang from source.')
