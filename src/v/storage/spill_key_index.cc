@@ -63,12 +63,12 @@ ss::future<> spill_key_index::add_key(bytes b, value_type v) {
                    0, _midx.size() - 1);
                  std::advance(mit, n);
                  auto node = _midx.extract(mit);
-                 bytes key = node.key();
-                 value_type o = node.mapped();
-                 _mem_usage -= key.size();
-                 vlog(stlog.trace, "evicting key: {}", key);
+                 _mem_usage -= node.key().size();
+                 vlog(stlog.trace, "evicting key: {}", node.key());
                  return ss::do_with(
-                   std::move(key), o, [this](const bytes& k, value_type o) {
+                   node.key(),
+                   node.mapped(),
+                   [this](const bytes& k, value_type o) {
                        return spill(compacted_index::entry_type::key, k, o);
                    });
              })
@@ -163,11 +163,9 @@ ss::future<> spill_key_index::drain_all_keys() {
       },
       [this] {
           auto node = _midx.extract(_midx.begin());
-          bytes key = node.key();
-          value_type o = node.mapped();
-          _mem_usage -= key.size();
+          _mem_usage -= node.key().size();
           return ss::do_with(
-            std::move(key), o, [this](const bytes& k, value_type o) {
+            node.key(), node.mapped(), [this](const bytes& k, value_type o) {
                 return spill(compacted_index::entry_type::key, k, o);
             });
       });
