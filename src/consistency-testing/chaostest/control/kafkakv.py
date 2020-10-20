@@ -67,7 +67,7 @@ class KafkaKV:
             request_timeout_ms=10000,  #default 30000
             max_block_ms=10000,  # default 60000
             metadata_max_age_ms=30000,  #default 300000
-            acks=-1)
+            acks="all")
         self.offset = None
         self.state = dict()
         self.consumers = []
