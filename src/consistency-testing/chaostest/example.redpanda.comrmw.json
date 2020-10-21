@@ -111,6 +111,7 @@
     },
     "exit_on_violation": false,
     "reset_before_test": true,
+    "destroy_on_exit": true,
     "output": "redpanda",
     "writers": 3,
     "readers": 3,

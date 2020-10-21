@@ -259,6 +259,14 @@ class KafkaCluster:
             for config_node in config["nodes"]
         }
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, type, value, traceback):
+        if self.config["destroy_on_exit"]:
+            self.teardown()
+        return False
+
     def teardown(self):
         self._kill_api()
         self._strobe_api_kill()
