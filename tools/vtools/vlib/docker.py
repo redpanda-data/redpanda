@@ -83,6 +83,7 @@ def _get_toolchain_image_metadata(vconfig):
                 f'{vconfig.src_dir}/CMakeLists.txt',
                 f'{vconfig.src_dir}/tools/ci/vtools-{vconfig.compiler}-{vconfig.build_type}.yml',
                 f'{vconfig.src_dir}/tools/ci/docker/Dockerfile.builder',
+                f'{vconfig.src_dir}/tools/vtools/vlib/cmake.py',
             ],
             'dockerfile':
             f'{vconfig.src_dir}/tools/ci/docker/Dockerfile.builder',
