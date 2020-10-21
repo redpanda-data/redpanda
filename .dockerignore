@@ -23,6 +23,8 @@
 # external projects
 !/3rdparty.cmake.in
 !/tools/vtools/vlib/cmake.py
+!/cmake/dpdk_configure.cmake
+!dpdk_config
 
 # rp
 !/CMakeLists.txt

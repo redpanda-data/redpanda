@@ -8,7 +8,8 @@ FROM gcr.io/redpandaci/clang:${CLANG_SHA}
 ARG COMPILER=gcc
 ARG BUILD_TYPE=release
 
-COPY 3rdparty.cmake.in CMakeLists.txt /v/
+COPY 3rdparty.cmake.in CMakeLists.txt dpdk_config /v/
+COPY cmake/dpdk_configure.cmake /v/cmake/
 COPY tools /v/tools/
 
 COPY --from=godeps /vectorized/go /vectorized/go
