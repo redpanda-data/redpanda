@@ -500,6 +500,7 @@ ExternalProject_Add(seastar
     -DSeastar_API_LEVEL=6
     -DSeastar_CXX_DIALECT=c++17
     -DSeastar_UNUSED_RESULT_ERROR=ON
+    -DSeastar_DPDK_MACHINE=wsm
   INSTALL_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR> --target install
   COMMAND cp -a apps/iotune/iotune @V_DEPS_INSTALL_DIR@/bin
   DEPENDS
