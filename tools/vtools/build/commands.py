@@ -1,12 +1,8 @@
-from os.path import join
-
 import click
 import math
 import os
 
 from absl import logging
-from jinja2 import Template
-
 from ..vlib import cmake
 from ..vlib import config
 from ..vlib import packaging
@@ -101,27 +97,6 @@ def cpp(build_type, conf, skip_external, clang, reconfigure, targets,
     shell.run_subprocess(cmd, env=vconfig.environ)
 
 
-def generate_wasm_dependency(vconfig):
-    # build coprocessor public folder
-    shell.run_subprocess(
-        f'cd {vconfig.node_src_dir} && '
-        f'npm install &&'
-        f'npm run build:public',
-        env=vconfig.environ)
-    # read result file
-    result_path = join(vconfig.node_src_dir, "vectorizedDependency.js")
-    dependency = open(result_path, "r").read()
-    template = f"""package template
-    const vectorizedDependency = `{dependency}`
-    func GetVectorizedDependency() string {{
-        return vectorizedDependency
-    }}
-    """
-    file_path = "rpk/pkg/cli/cmd/wasm/template/vectorized_dependency.go"
-    destination_path = join(vconfig.go_src_dir, file_path)
-    open(destination_path, 'w').write(template)
-
-
 @build.command(short_help='build the rpk binary')
 @click.option('--conf',
               help=('Path to configuration file. If not given, a .vtools.yml '
@@ -146,12 +121,6 @@ def go(conf, targets):
             logging.fatal(f'Unknown target {t}')
 
         if t == "rpk":
-            # TODO (@andres): Publish the wasm engine sdk to the npm registry.
-            # When the sdk becomes more stable, it will be published to the npm
-            # registry.
-            # Until then, the sdk needs to be packaged into a single JS file,
-            # whose contents are injected into the `rpk wasm generate`.
-            generate_wasm_dependency(vconfig)
             tag = git.get_latest_tag(vconfig.src_dir)
             sha = git.get_head_sha(vconfig.src_dir)
             pkg = 'vectorized/pkg/cli/cmd/version'
