@@ -549,8 +549,8 @@ ExternalProject_Add(snappy
       -DSNAPPY_BUILD_TESTS=OFF)
 
 ExternalProject_Add(HdrHistogram
-  URL https://storage.googleapis.com/vectorizedio-public/dependencies/hdrhistogram-7381c1b.tar.gz
-  URL_MD5 7e9776c558fa9385776cb8c1e5ac7d1a
+  URL https://storage.googleapis.com/vectorizedio-public/dependencies/HdrHistogram_c-0.11.2.tar.gz
+  URL_MD5 95970dea64f1a7a8d199aeb9f7c15e60
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   CMAKE_ARGS
