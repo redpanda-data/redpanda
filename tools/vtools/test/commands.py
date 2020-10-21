@@ -1,3 +1,5 @@
+from os.path import join
+
 import click
 import docker
 import glob
@@ -35,6 +37,7 @@ def go(conf):
     with os.scandir(vconfig.go_src_dir) as it:
         for fd in it:
             if not fd.name.startswith('.') and fd.is_dir():
+                vbuild.generate_wasm_dependency(vconfig)
                 shell.run_subprocess(
                     f'cd {vconfig.go_src_dir}/{fd.name}/pkg && go test ./...',
                     env=vconfig.environ)
