@@ -179,3 +179,12 @@ rp_test(
   LIBRARIES v::seastar_testing_main v::storage_test_utils
   ARGS "-- -c 1"
   LABELS storage)
+
+
+rp_test(
+  BENCHMARK_TEST
+  BINARY_NAME compacting_bench
+  SOURCES compaction_idx_bench.cc
+  LIBRARIES Seastar::seastar_perf_testing v::storage
+  LABELS storage
+)
