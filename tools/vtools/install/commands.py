@@ -41,12 +41,12 @@ def install():
               type=bool)
 def cpp_deps(build_type, conf, clang, enable_dpdk):
     # enable dpdk by default on release builds
-    if enable_dpdk is None:
-        enable_dpdk = (build_type == "release")
-
     vconfig = config.VConfig(config_file=conf,
                              build_type=build_type,
                              clang=clang)
+
+    if enable_dpdk is None:
+        enable_dpdk = (vconfig.build_type == "release")
 
     cmake.configure_build(vconfig,
                           build_external=True,

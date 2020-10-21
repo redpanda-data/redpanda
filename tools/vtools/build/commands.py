@@ -65,13 +65,14 @@ def cpp(build_type, conf, skip_external, clang, reconfigure, targets,
     expected to be in the default folder inside the build root (v_deps_install/
     folder).
     """
-    # enable dpdk by default on release builds
-    if enable_dpdk is None:
-        enable_dpdk = (build_type == "release")
 
     vconfig = config.VConfig(config_file=conf,
                              build_type=build_type,
                              clang=clang)
+
+    # enable dpdk by default on release builds
+    if enable_dpdk is None:
+        enable_dpdk = (vconfig.build_type == "release")
 
     if not cmake.cache_exists(vconfig) or reconfigure:
         cmake.configure_build(vconfig,
