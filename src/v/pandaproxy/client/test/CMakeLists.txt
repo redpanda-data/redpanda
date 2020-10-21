@@ -9,3 +9,13 @@ rp_test(
   LIBRARIES v::seastar_testing_main v::pandaproxy_client
   LABELS pandaproxy
 )
+
+rp_test(
+  UNIT_TEST
+  BINARY_NAME pandaproxy_client_fixture
+  SOURCES
+    reconnect.cc
+  DEFINITIONS BOOST_TEST_DYN_LINK
+  LIBRARIES v::seastar_testing_main v::pandaproxy_client v::application
+  LABELS pandaproxy
+)
