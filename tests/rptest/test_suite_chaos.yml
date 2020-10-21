@@ -1,0 +1,3 @@
+chaos:
+    included:
+        - tests/chaos/

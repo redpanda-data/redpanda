@@ -6,6 +6,13 @@ build, the build must be packaged into a staging directory. For example:
 The `dir` packaging format will only operate on files that have changed
 since the last packaging step was run, allowing fast iteration of tests.
 
+compacted topic verifier and its java dependencies have to be built for all tests
+to be able to run:
+
+    vtools install java
+    vtools install maven
+    vtools build java
+
 To run all tests from the root of the source tree invoke:
 
     tests/docker/run_tests.sh
