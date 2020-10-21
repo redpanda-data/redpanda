@@ -161,7 +161,7 @@ class RedpandaService(Service):
                            node_id=self.idx(node))
 
         if self._extra_rp_conf:
-            doc = yaml.load(conf)
+            doc = yaml.full_load(conf)
             self.logger.debug(
                 "Setting custom Redpanda configuration options: {}".format(
                     self._extra_rp_conf))
@@ -169,7 +169,7 @@ class RedpandaService(Service):
             conf = yaml.dump(doc)
 
         if override_cfg_params:
-            doc = yaml.load(conf)
+            doc = yaml.full_load(conf)
             self.logger.debug(
                 "Setting custom Redpanda node configuration options: {}".
                 format(override_cfg_params))

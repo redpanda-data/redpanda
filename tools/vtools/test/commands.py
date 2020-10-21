@@ -109,18 +109,23 @@ def cpp(build_type, conf, clang, args):
 @click.option('--test',
               help='A test case to run. Multiple allowed',
               multiple=True)
+@click.option('--skip-build',
+              help='Skip building test binaries before running tests',
+              is_flag=True,
+              default=False)
 @click.pass_context
-def ducky(ctx, build_type, clang, debug, conf, test):
+def ducky(ctx, build_type, clang, debug, conf, test, skip_build):
     vconfig = config.VConfig(config_file=conf,
                              build_type=build_type,
                              clang=clang)
 
-    # prepare build artifacts via `vtools build pkg`
-    ctx.invoke(vbuild.pkg,
-               build_type=build_type,
-               clang=clang,
-               conf=conf,
-               format=["dir"])
+    if not skip_build:
+        # prepare build artifacts via `vtools build pkg`
+        ctx.invoke(vbuild.pkg,
+                   build_type=build_type,
+                   clang=clang,
+                   conf=conf,
+                   format=["dir"])
 
     # prepare ducktape `--globals` options. these are passed to ducktape as a
     # set of key-value pairs encoded as a shell escaped json dictionary string.

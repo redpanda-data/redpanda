@@ -156,7 +156,7 @@ def maven(version, conf):
         return
 
     topdir = f'apache-maven-{version}/'
-    url = f'http://us.mirrors.quenda.co/apache/maven/maven-3/3.6.3/binaries/apache-maven-{version}-bin.tar.gz'
+    url = f'https://downloads.apache.org/maven/maven-3/3.6.3/binaries/apache-maven-{version}-bin.tar.gz'
     http.download_and_extract(url, 'maven', vconfig.maven_home_dir, topdir)
 
 
