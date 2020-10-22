@@ -51,32 +51,43 @@ spill_key_index::index(bytes_view v, model::offset base_offset, int32_t delta) {
 }
 
 ss::future<> spill_key_index::add_key(bytes b, value_type v) {
-    return ss::do_until(
-             [this, sz = b.size()] {
-                 // stop condition
-                 return _midx.empty() || _mem_usage + sz < _max_mem;
-             },
-             [this] {
-                 // evict random entry
-                 auto mit = _midx.begin();
-                 auto n = random_generators::get_int<size_t>(
-                   0, _midx.size() - 1);
-                 std::advance(mit, n);
-                 auto node = _midx.extract(mit);
-                 bytes key = node.key();
-                 value_type o = node.mapped();
-                 _mem_usage -= key.size();
-                 vlog(stlog.trace, "evicting key: {}", key);
-                 return ss::do_with(
-                   std::move(key), o, [this](const bytes& k, value_type o) {
-                       return spill(compacted_index::entry_type::key, k, o);
-                   });
-             })
-      .then([this, b = std::move(b), v]() mutable {
-          // convert iobuf to key
-          _mem_usage += b.size();
-          _midx.insert({std::move(b), v});
-      });
+    auto f = ss::now();
+    // we use 2 * map usage to prevent the indices map to grow over
+    // the requested memory limit. We keep the load factor of the map
+    // between 0.874 and 0.86 to prevent if from regrowing. We evict
+    // multiple keys at a time to optimize the number of rehashes
+
+    auto const expected_size = 2 * idx_mem_usage() + _keys_mem_usage + b.size();
+
+    if (expected_size >= _max_mem && _midx.load_factor() > 0.874) {
+        f = ss::do_until(
+              [this] {
+                  // stop condition
+                  return _midx.empty() || _midx.load_factor() <= 0.86;
+              },
+              [this] {
+                  // evict random entry
+                  auto n = random_generators::get_int<size_t>(
+                    0, _midx.size() - 1);
+                  auto mit = std::next(_midx.begin(), n);
+                  auto node = _midx.extract(mit);
+
+                  return ss::do_with(
+                    node.key(),
+                    node.mapped(),
+                    [this](const bytes& k, value_type o) {
+                        _keys_mem_usage -= k.size();
+                        return spill(compacted_index::entry_type::key, k, o);
+                    });
+              })
+              .then([this] { _midx.rehash(0); });
+    }
+
+    return f.then([this, b = std::move(b), v]() mutable {
+        // convert iobuf to key
+        _keys_mem_usage += b.size();
+        _midx.insert({std::move(b), v});
+    });
 }
 
 ss::future<>
@@ -128,12 +139,8 @@ ss::future<> spill_key_index::spill(
     }
     // []BYTE
     {
-        size_t key_size = b.size();
-        const size_t max = compacted_index::max_entry_size
-                           - payload.size_bytes();
-        if (key_size > max) {
-            key_size = max;
-        }
+        size_t key_size = std::min(max_key_size, b.size());
+
         payload.append(b.data(), key_size);
     }
     const size_t size = payload.size_bytes() - size_reservation;
@@ -163,11 +170,9 @@ ss::future<> spill_key_index::drain_all_keys() {
       },
       [this] {
           auto node = _midx.extract(_midx.begin());
-          bytes key = node.key();
-          value_type o = node.mapped();
-          _mem_usage -= key.size();
+          _keys_mem_usage -= node.key().size();
           return ss::do_with(
-            std::move(key), o, [this](const bytes& k, value_type o) {
+            node.key(), node.mapped(), [this](const bytes& k, value_type o) {
                 return spill(compacted_index::entry_type::key, k, o);
             });
       });
@@ -196,9 +201,9 @@ ss::future<> spill_key_index::truncate(model::offset o) {
 ss::future<> spill_key_index::close() {
     return drain_all_keys().then([this] {
         vassert(
-          _mem_usage == 0,
+          _keys_mem_usage == 0,
           "Failed to drain all keys, {} bytes left",
-          _mem_usage);
+          _keys_mem_usage);
         _footer.crc = _crc.value();
         return ss::do_with(
                  reflection::to_iobuf(_footer),
@@ -218,11 +223,11 @@ void spill_key_index::print(std::ostream& o) const { o << *this; }
 std::ostream& operator<<(std::ostream& o, const spill_key_index& k) {
     fmt::print(
       o,
-      "{{name:{}, max_mem:{}, mem_usage:{}, persisted_entries:{}, "
+      "{{name:{}, max_mem:{}, key_mem_usage:{}, persisted_entries:{}, "
       "in_memory_entries:{}, file_appender:{}}}",
       k.filename(),
       k._max_mem,
-      k._mem_usage,
+      k._keys_mem_usage,
       k._footer.keys,
       k._midx.size(),
       k._appender);
