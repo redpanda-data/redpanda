@@ -95,6 +95,8 @@ func TestSet(t *testing.T) {
 			format: "yaml",
 			expected: map[string]interface{}{
 				"enable_usage_stats": false,
+				"overprovisioned":    false,
+				"smp":                0,
 				"tls": map[string]interface{}{
 					"cert_file":       "",
 					"key_file":        "",
@@ -351,6 +353,8 @@ rpk:
   coredump_dir: /var/lib/redpanda/coredumps
   enable_memory_locking: true
   enable_usage_stats: true
+  overprovisioned: false
+  smp: 0
   tls:
     cert_file: ""
     key_file: ""
@@ -435,6 +439,8 @@ rpk:
   coredump_dir: /var/lib/redpanda/coredumps
   enable_memory_locking: true
   enable_usage_stats: true
+  overprovisioned: false
+  smp: 0
   tls:
     cert_file: ""
     key_file: ""
@@ -751,7 +757,7 @@ func TestReadAsJSON(t *testing.T) {
 				return WriteConfig(fs, &conf, conf.ConfigFile)
 			},
 			path:     DefaultConfig().ConfigFile,
-			expected: `{"config_file":"/etc/redpanda/redpanda.yaml","redpanda":{"admin":{"address":"0.0.0.0","port":9644},"data_directory":"/var/lib/redpanda/data","kafka_api":{"address":"0.0.0.0","port":9092},"kafka_api_tls":{"cert_file":"","enabled":false,"key_file":"","truststore_file":""},"node_id":0,"rpc_server":{"address":"0.0.0.0","port":33145},"seed_servers":[]},"rpk":{"coredump_dir":"/var/lib/redpanda/coredump","enable_memory_locking":false,"enable_usage_stats":false,"tls":{"cert_file":"","key_file":"","truststore_file":""},"tune_aio_events":false,"tune_clocksource":false,"tune_coredump":false,"tune_cpu":false,"tune_disk_irq":false,"tune_disk_nomerges":false,"tune_disk_scheduler":false,"tune_fstrim":false,"tune_network":false,"tune_swappiness":false,"tune_transparent_hugepages":false}}`,
+			expected: `{"config_file":"/etc/redpanda/redpanda.yaml","redpanda":{"admin":{"address":"0.0.0.0","port":9644},"data_directory":"/var/lib/redpanda/data","kafka_api":{"address":"0.0.0.0","port":9092},"kafka_api_tls":{"cert_file":"","enabled":false,"key_file":"","truststore_file":""},"node_id":0,"rpc_server":{"address":"0.0.0.0","port":33145},"seed_servers":[]},"rpk":{"coredump_dir":"/var/lib/redpanda/coredump","enable_memory_locking":false,"enable_usage_stats":false,"overprovisioned":false,"smp":0,"tls":{"cert_file":"","key_file":"","truststore_file":""},"tune_aio_events":false,"tune_clocksource":false,"tune_coredump":false,"tune_cpu":false,"tune_disk_irq":false,"tune_disk_nomerges":false,"tune_disk_scheduler":false,"tune_fstrim":false,"tune_network":false,"tune_swappiness":false,"tune_transparent_hugepages":false}}`,
 		},
 		{
 			name:           "it should fail if the the config isn't found",
@@ -793,6 +799,8 @@ func TestReadFlat(t *testing.T) {
 		"rpk.coredump_dir":                       "/var/lib/redpanda/coredump",
 		"rpk.enable_memory_locking":              "false",
 		"rpk.enable_usage_stats":                 "false",
+		"rpk.overprovisioned":                    "false",
+		"rpk.smp":                                "0",
 		"rpk.tls.cert_file":                      "",
 		"rpk.tls.key_file":                       "",
 		"rpk.tls.truststore_file":                "",

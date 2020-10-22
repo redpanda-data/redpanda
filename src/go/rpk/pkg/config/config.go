@@ -87,6 +87,8 @@ type RpkConfig struct {
 	TuneCoredump             bool     `yaml:"tune_coredump" json:"tuneCoredump"`
 	CoredumpDir              string   `yaml:"coredump_dir" json:"coredumpDir"`
 	WellKnownIo              string   `yaml:"well_known_io,omitempty" json:"wellKnownIo"`
+	Overprovisioned          bool     `yaml:"overprovisioned", json:"overprovisioned"`
+	SMP                      int      `yaml:"smp", json:"smp"`
 }
 
 func (conf *Config) PIDFile() string {
