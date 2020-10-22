@@ -560,6 +560,7 @@ func TestSetMode(t *testing.T) {
 			TuneSwappiness:    val,
 			CoredumpDir:       conf.Rpk.CoredumpDir,
 			SMP:               1,
+			Overprovisioned:   !val,
 		}
 		return conf
 	}
