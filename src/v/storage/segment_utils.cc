@@ -142,12 +142,7 @@ size_t number_of_chunks_from_config(const ntp_config& ntpc) {
 ss::future<Roaring>
 natural_index_of_entries_to_keep(compacted_index_reader reader) {
     reader.reset();
-    return reader.consume(truncation_offset_reducer{}, model::no_timeout)
-      .then([reader](Roaring to_keep) mutable {
-          reader.reset();
-          return reader.consume(
-            compaction_key_reducer(std::move(to_keep)), model::no_timeout);
-      });
+    return reader.consume(compaction_key_reducer(), model::no_timeout);
 }
 
 ss::future<> copy_filtered_entries(
