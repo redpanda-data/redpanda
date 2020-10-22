@@ -108,6 +108,7 @@ func DefaultConfig() Config {
 		},
 		Rpk: &RpkConfig{
 			CoredumpDir: "/var/lib/redpanda/coredump",
+			SMP:         1,
 		},
 	}
 }
@@ -430,6 +431,7 @@ func setDevelopment(conf *Config) *Config {
 	conf.Rpk = &RpkConfig{
 		EnableUsageStats: conf.Rpk.EnableUsageStats,
 		CoredumpDir:      conf.Rpk.CoredumpDir,
+		SMP:              DefaultConfig().Rpk.SMP,
 	}
 	return conf
 }
