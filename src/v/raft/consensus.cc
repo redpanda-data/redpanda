@@ -1414,12 +1414,12 @@ model::term_id consensus::get_term(model::offset o) {
     return _log.get_term(o).value_or(model::term_id{});
 }
 
-clock_type::time_point consensus::last_hbeat_timestamp(model::node_id id) {
-    return _fstats.get(id).last_hbeat_timestamp;
+clock_type::time_point consensus::last_append_timestamp(model::node_id id) {
+    return _fstats.get(id).last_append_timestamp;
 }
 
-void consensus::update_node_hbeat_timestamp(model::node_id id) {
-    _fstats.get(id).last_hbeat_timestamp = clock_type::now();
+void consensus::update_node_append_timestamp(model::node_id id) {
+    _fstats.get(id).last_append_timestamp = clock_type::now();
     update_node_hschlag_timestamp(id);
 }
 
