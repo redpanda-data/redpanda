@@ -24,6 +24,7 @@ ss::future<ss::stop_iteration>
 compaction_key_reducer::operator()(compacted_index::entry&& e) {
     using stop_t = ss::stop_iteration;
     const model::offset o = e.offset + model::offset(e.delta);
+    auto f = ss::now();
     auto it = _indices.find(e.key);
     if (it != _indices.end()) {
         if (o > it->second.offset) {
@@ -33,25 +34,40 @@ compaction_key_reducer::operator()(compacted_index::entry&& e) {
         }
     } else {
         // not found - insert
-        // 1. compute memory usage
-        while (_mem_usage + e.key.size() >= _max_mem && !_indices.empty()) {
-            auto mit = _indices.begin();
-            auto n = random_generators::get_int<size_t>(0, _indices.size() - 1);
-            std::advance(mit, n);
-            auto node = _indices.extract(mit);
-            bytes key = node.key();
-            _mem_usage -= key.size();
+        auto const expected_size = 2 * idx_mem_usage() + _keys_mem_usage
+                                   + e.key.size();
+        if (expected_size >= _max_mem && _indices.load_factor() >= 0.874) {
+            // remove multiple entries at a time to optimize number of rehashes
+            f = ss::do_until(
+                  [this] {
+                      return _indices.load_factor() < 0.8 || _indices.empty();
+                  },
+                  [this] {
+                      auto n = random_generators::get_int<size_t>(
+                        0, _indices.size() - 1);
+                      auto mit = std::next(_indices.begin(), n);
 
-            // write the entry again - we ran out of scratch space
-            _inverted.add(node.mapped().natural_index);
+                      _keys_mem_usage -= mit->first.size();
+
+                      // write the entry again - we ran out of scratch space
+                      _inverted.add(mit->second.natural_index);
+                      _indices.erase(mit);
+                      return ss::now();
+                  })
+                  .then([this] { _indices.rehash(0); });
         }
-        _mem_usage += e.key.size();
-        // 2. do the insertion
-        _indices.emplace(std::move(e.key), value_type(o, _natural_index));
+
+        f = f.then([this, e = std::move(e), o]() mutable {
+            _keys_mem_usage += e.key.size();
+            // 2. do the insertion
+            _indices.emplace(std::move(e.key), value_type(o, _natural_index));
+        });
     }
 
-    ++_natural_index; // MOST important
-    return ss::make_ready_future<stop_t>(stop_t::no);
+    return f.then([this] {
+        ++_natural_index; // MOST important
+        return stop_t::no;
+    });
 }
 Roaring compaction_key_reducer::end_of_stream() {
     // TODO: optimization - detect if the index does not need compaction
@@ -142,7 +158,7 @@ copy_data_segment_reducer::filter(model::record_batch&& batch) {
     // On Compaction: Unlike the older message formats, magic v2 and above
     // preserves the first and last offset/sequence numbers from the
     // original batch when the log is cleaned. This is required in order to
-    // be able to restore the producer's state when the log is reloaded. If
+    // be able to restore the producer'size() state when the log is reloaded. If
     // we did not retain the last sequence number, then following a
     // partition leader failure, once the new leader has rebuilt the
     // producer state from the log, the next sequence expected number would
