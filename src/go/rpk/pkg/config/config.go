@@ -432,6 +432,7 @@ func setDevelopment(conf *Config) *Config {
 		EnableUsageStats: conf.Rpk.EnableUsageStats,
 		CoredumpDir:      conf.Rpk.CoredumpDir,
 		SMP:              DefaultConfig().Rpk.SMP,
+		Overprovisioned:  true,
 	}
 	return conf
 }
@@ -447,6 +448,7 @@ func setProduction(conf *Config) *Config {
 	rpk.TuneAioEvents = true
 	rpk.TuneClocksource = true
 	rpk.TuneSwappiness = true
+	rpk.Overprovisioned = false
 	return conf
 }
 
