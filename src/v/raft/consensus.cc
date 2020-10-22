@@ -100,7 +100,7 @@ void consensus::maybe_step_down() {
                           return clock_type::now();
                       }
 
-                      return _fstats.get(id).last_hschlag_timestamp;
+                      return _fstats.get(id).last_hbeat_timestamp;
                   });
 
                 if (majority_hbeat < _became_leader_at) {
@@ -205,7 +205,7 @@ consensus::success_reply consensus::update_follower_index(
         return success_reply::no;
     }
 
-    update_node_hschlag_timestamp(node);
+    update_node_hbeat_timestamp(node);
 
     // If recovery is in progress the recovery STM will handle follower index
     // updates
@@ -1420,11 +1420,11 @@ clock_type::time_point consensus::last_append_timestamp(model::node_id id) {
 
 void consensus::update_node_append_timestamp(model::node_id id) {
     _fstats.get(id).last_append_timestamp = clock_type::now();
-    update_node_hschlag_timestamp(id);
+    update_node_hbeat_timestamp(id);
 }
 
-void consensus::update_node_hschlag_timestamp(model::node_id id) {
-    _fstats.get(id).last_hschlag_timestamp = clock_type::now();
+void consensus::update_node_hbeat_timestamp(model::node_id id) {
+    _fstats.get(id).last_hbeat_timestamp = clock_type::now();
 }
 
 follower_req_seq consensus::next_follower_sequence(model::node_id id) {
