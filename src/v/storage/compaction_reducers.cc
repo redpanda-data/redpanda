@@ -24,32 +24,31 @@ ss::future<ss::stop_iteration>
 compaction_key_reducer::operator()(compacted_index::entry&& e) {
     using stop_t = ss::stop_iteration;
     const model::offset o = e.offset + model::offset(e.delta);
-        auto it = _indices.find(e.key);
-        if (it != _indices.end()) {
-            if (o > it->second.offset) {
-                // cannot be std::max() because _natural_index must be preserved
-                it->second.offset = o;
-                it->second.natural_index = _natural_index;
-            }
-        } else {
-            // not found - insert
-            // 1. compute memory usage
-            while (_mem_usage + e.key.size() >= _max_mem && !_indices.empty()) {
-                auto mit = _indices.begin();
-                auto n = random_generators::get_int<size_t>(
-                  0, _indices.size() - 1);
-                std::advance(mit, n);
-                auto node = _indices.extract(mit);
-                bytes key = node.key();
-                _mem_usage -= key.size();
-
-                // write the entry again - we ran out of scratch space
-                _inverted.add(node.mapped().natural_index);
-            }
-            _mem_usage += e.key.size();
-            // 2. do the insertion
-            _indices.emplace(std::move(e.key), value_type(o, _natural_index));
+    auto it = _indices.find(e.key);
+    if (it != _indices.end()) {
+        if (o > it->second.offset) {
+            // cannot be std::max() because _natural_index must be preserved
+            it->second.offset = o;
+            it->second.natural_index = _natural_index;
         }
+    } else {
+        // not found - insert
+        // 1. compute memory usage
+        while (_mem_usage + e.key.size() >= _max_mem && !_indices.empty()) {
+            auto mit = _indices.begin();
+            auto n = random_generators::get_int<size_t>(0, _indices.size() - 1);
+            std::advance(mit, n);
+            auto node = _indices.extract(mit);
+            bytes key = node.key();
+            _mem_usage -= key.size();
+
+            // write the entry again - we ran out of scratch space
+            _inverted.add(node.mapped().natural_index);
+        }
+        _mem_usage += e.key.size();
+        // 2. do the insertion
+        _indices.emplace(std::move(e.key), value_type(o, _natural_index));
+    }
 
     ++_natural_index; // MOST important
     return ss::make_ready_future<stop_t>(stop_t::no);
