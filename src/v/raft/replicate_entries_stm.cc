@@ -69,7 +69,7 @@ clock_type::time_point replicate_entries_stm::append_entries_timeout() {
 ss::future<result<append_entries_reply>>
 replicate_entries_stm::send_append_entries_request(
   model::node_id n, append_entries_request req) {
-    _ptr->update_node_hbeat_timestamp(n);
+    _ptr->update_node_append_timestamp(n);
     vlog(_ctxlog.trace, "Sending append entries request {} to {}", req.meta, n);
 
     auto f = _ptr->_client_protocol.append_entries(
