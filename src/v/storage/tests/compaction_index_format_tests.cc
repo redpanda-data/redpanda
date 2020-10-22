@@ -123,129 +123,6 @@ FIXTURE_TEST(
     BOOST_REQUIRE_EQUAL(vec[0].key, bytes_view(key.data(), 65529));
 }
 
-FIXTURE_TEST(truncation_reducer_drop_all, compacted_topic_fixture) {
-    iobuf index_data;
-    auto idx = storage::make_file_backed_compacted_index(
-      "dummy name",
-      ss::file(ss::make_shared(iobuf_file(index_data))),
-      ss::default_priority_class(),
-      1_MiB);
-    for (auto i = 0; i < 100; ++i) {
-        const auto key = random_generators::get_bytes(1_KiB);
-        idx.index(key, model::offset(i), 0).get();
-    }
-    idx.truncate(model::offset(0)).get();
-    idx.close().get();
-    info("{}", idx);
-
-    auto rdr = storage::make_file_backed_compacted_reader(
-      "dummy name",
-      ss::file(ss::make_shared(iobuf_file(index_data))),
-      ss::default_priority_class(),
-      32_KiB);
-    auto bitmap = rdr
-                    .consume(
-                      storage::internal::truncation_offset_reducer(),
-                      model::no_timeout)
-                    .get0();
-    BOOST_REQUIRE_EQUAL(bitmap.cardinality(), 0);
-}
-FIXTURE_TEST(truncation_reducer_drop_some, compacted_topic_fixture) {
-    iobuf index_data;
-    auto idx = storage::make_file_backed_compacted_index(
-      "dummy name",
-      ss::file(ss::make_shared(iobuf_file(index_data))),
-      ss::default_priority_class(),
-      1_MiB);
-    for (auto i = 0; i < 100; ++i) {
-        const auto key = random_generators::get_bytes(1_KiB);
-        idx.index(key, model::offset(i), 0).get();
-    }
-    idx.truncate(model::offset(50)).get();
-    idx.close().get();
-    info("{}", idx);
-
-    auto rdr = storage::make_file_backed_compacted_reader(
-      "dummy name",
-      ss::file(ss::make_shared(iobuf_file(index_data))),
-      ss::default_priority_class(),
-      32_KiB);
-    auto bitmap = rdr
-                    .consume(
-                      storage::internal::truncation_offset_reducer(),
-                      model::no_timeout)
-                    .get0();
-    info("bitmap: {}", bitmap.toString());
-    BOOST_REQUIRE_EQUAL(bitmap.cardinality(), 50);
-
-    rdr.reset();
-    auto vec = compaction_index_reader_to_memory(rdr).get0();
-    for (auto bit : bitmap) {
-        const auto& e = vec[bit];
-        const model::offset o = e.offset + model::offset(e.delta);
-        BOOST_REQUIRE_LT(o, model::offset(50));
-    }
-}
-FIXTURE_TEST(truncation_reducer_with_key_reducer, compacted_topic_fixture) {
-    iobuf index_data;
-    auto idx = storage::make_file_backed_compacted_index(
-      "dummy name",
-      ss::file(ss::make_shared(iobuf_file(index_data))),
-      ss::default_priority_class(),
-      // FORCE eviction with every key basically
-      1_KiB);
-
-    const auto key1 = random_generators::get_bytes(1_KiB);
-    const auto key2 = random_generators::get_bytes(1_KiB);
-    for (auto i = 0; i < 100; ++i) {
-        bytes_view put_key;
-        if (i % 2) {
-            put_key = key1;
-        } else {
-            put_key = key2;
-        }
-        idx.index(put_key, model::offset(i), 0).get();
-    }
-    idx.truncate(model::offset(50)).get();
-    idx.close().get();
-    info("{}", idx);
-
-    auto rdr = storage::make_file_backed_compacted_reader(
-      "dummy name",
-      ss::file(ss::make_shared(iobuf_file(index_data))),
-      ss::default_priority_class(),
-      32_KiB);
-
-    rdr.verify_integrity().get();
-    rdr.reset();
-    auto truncate_bitmap = rdr
-                             .consume(
-                               storage::internal::truncation_offset_reducer(),
-                               model::no_timeout)
-                             .get0();
-    info("truncate bitmap: {}", truncate_bitmap.toString());
-    BOOST_REQUIRE_EQUAL(truncate_bitmap.cardinality(), 50);
-
-    // get all keys
-    auto vec = compaction_index_reader_to_memory(rdr).get0();
-    BOOST_REQUIRE_EQUAL(vec.size(), 101 /*100 entries + 1 truncation*/);
-
-    // final entry bitmap
-    rdr.reset();
-    auto key_bitmap = rdr
-                        .consume(
-                          storage::internal::compaction_key_reducer(
-                            std::move(truncate_bitmap)),
-                          model::no_timeout)
-                        .get0();
-    info("key bitmap: {}", key_bitmap.toString());
-    BOOST_REQUIRE_EQUAL(key_bitmap.cardinality(), 2);
-    for (auto bit : key_bitmap) {
-        const auto& e = vec[bit];
-        const model::offset o = e.offset + model::offset(e.delta);
-        BOOST_REQUIRE_LT(o, model::offset(50));
-    }
-}
 FIXTURE_TEST(key_reducer_no_truncate_filter, compacted_topic_fixture) {
     iobuf index_data;
     auto idx = storage::make_file_backed_compacted_index(
@@ -276,8 +153,7 @@ FIXTURE_TEST(key_reducer_no_truncate_filter, compacted_topic_fixture) {
       32_KiB);
     auto key_bitmap = rdr
                         .consume(
-                          storage::internal::compaction_key_reducer(
-                            std::nullopt),
+                          storage::internal::compaction_key_reducer(),
                           model::no_timeout)
                         .get0();
 
@@ -322,12 +198,11 @@ FIXTURE_TEST(key_reducer_max_mem, compacted_topic_fixture) {
 
     rdr.verify_integrity().get();
     rdr.reset();
-    auto small_mem_bitmap = rdr
-                              .consume(
-                                storage::internal::compaction_key_reducer(
-                                  std::nullopt, 1_KiB),
-                                model::no_timeout)
-                              .get0();
+    auto small_mem_bitmap
+      = rdr
+          .consume(
+            storage::internal::compaction_key_reducer(1_KiB), model::no_timeout)
+          .get0();
 
     /*
       There are 2 keys exactly.
@@ -338,7 +213,7 @@ FIXTURE_TEST(key_reducer_max_mem, compacted_topic_fixture) {
     auto exact_mem_bitmap = rdr
                               .consume(
                                 storage::internal::compaction_key_reducer(
-                                  std::nullopt, 2_KiB + 1),
+                                  2_KiB + 1),
                                 model::no_timeout)
                               .get0();
 
