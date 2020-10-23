@@ -5,6 +5,7 @@
 #include "pandaproxy/client/brokers.h"
 #include "pandaproxy/client/configuration.h"
 #include "pandaproxy/client/producer.h"
+#include "pandaproxy/client/retry_with_mitigation.h"
 #include "utils/retry.h"
 #include "utils/unresolved_address.h"
 
@@ -55,10 +56,21 @@ public:
     template<typename T>
     CONCEPT(requires(KafkaRequest<typename T::api_type>))
     ss::future<typename T::api_type::response_type> dispatch(T r) {
-        return _brokers.any().then(
-          [r{std::move(r)}](shared_broker_t broker) mutable {
-              return broker->dispatch(std::move(r));
-          });
+        return ss::with_gate(_gate, [this, r{std::move(r)}]() {
+            return retry_with_mitigation(
+              shard_local_cfg().retries(),
+              shard_local_cfg().retry_base_backoff(),
+              [this, r{std::move(r)}]() {
+                  _gate.check();
+                  return _brokers.any().then(
+                    [r{std::move(r)}](shared_broker_t broker) mutable {
+                        return broker->dispatch(std::move(r));
+                    });
+              },
+              [this](std::exception_ptr ex) {
+                  return mitigate_error(std::move(ex));
+              });
+        });
     }
 
     ss::future<kafka::produce_response::partition> produce_record_batch(
@@ -88,6 +100,8 @@ private:
     wait_or_start _wait_or_start_update_metadata;
     /// \brief Batching producer.
     producer _producer;
+    /// \brief Wait for retries.
+    ss::gate _gate;
 };
 
 } // namespace pandaproxy::client
