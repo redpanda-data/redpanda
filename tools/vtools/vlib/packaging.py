@@ -123,9 +123,10 @@ def _relocatable_dir(dest_dir, execs, configs, admin_api_swag, api_swag,
     def thunk_path(exe):
         return os.path.join(dest_dir, "bin", os.path.basename(exe))
 
-    def patch_exe(src, dest):
-        shutil.copy2(src, dest)
-        _patch_exe(dest_dir, dest, vconfig.environ)
+    def patch_exe(exe, dest):
+        shutil.copy2(exe.path, dest)
+        if exe.dynamic:
+            _patch_exe(dest_dir, dest, vconfig.environ)
         path = thunk_path(dest)
         with open(path, 'w') as f:
             thunk = _render_thunk(dest_dir, os.path.basename(dest))
@@ -139,7 +140,7 @@ def _relocatable_dir(dest_dir, execs, configs, admin_api_swag, api_swag,
         dest_exe = os.path.join(dest_dir, "libexec", exe.mangled_name())
         thunk = thunk_path(exe.mangled_name())
         if is_newer(exe.path, dest_exe):
-            patch_exe(exe.path, dest_exe)
+            patch_exe(exe, dest_exe)
         libs.update(_get_dependencies(exe.path, vconfig))
         manifest.add(dest_exe)
         manifest.add(thunk)
@@ -191,25 +192,28 @@ def _relocable_tar_package(dest, execs, configs, admin_api_swag, api_swag,
     ar = tarfile.open(fileobj=gzip_process.stdin, mode='w|')
     all_libs = {}
     for exe in execs:
-        # Make a copy of the exe and patch it.
-        patched_exe = f'{exe.path}.patched'
-        shutil.copy(exe.path, patched_exe)
-        # We need to patch the executable, overwriting its requested interpreter
-        # with the one shipped with redpanda (/opt/redpanda/lib/ld.so),
-        # so that gdb can load the debug symbols when debugging redpanda.
-        # https://github.com/scylladb/scylla/issues/4673
-        _patch_exe(rp_root, patched_exe, vconfig.environ)
+        path = exe.path
+        if exe.dynamic:
+            # Make a copy of the exe and patch it.
+            path = f'{exe.path}.patched'
+            shutil.copy(exe.path, path)
+            # We need to patch the executable, overwriting its requested interpreter
+            # with the one shipped with redpanda (/opt/redpanda/lib/ld.so),
+            # so that gdb can load the debug symbols when debugging redpanda.
+            # https://github.com/scylladb/scylla/issues/4673
+            _patch_exe(rp_root, path, vconfig.environ)
+            all_libs.update(_get_dependencies(exe.path, vconfig))
 
         logging.debug(
-            f"Adding '{exe.path}' executable to relocable tar as {exe.mangled_name()}")
-        ar.add(patched_exe, arcname=f'libexec/{exe.mangled_name()}')
+            f"Adding '{exe.path}' executable to relocable tar as {exe.mangled_name()}"
+        )
+        ar.add(path, arcname=f'libexec/{exe.mangled_name()}')
         thunk = _render_thunk(rp_root, exe.mangled_name())
         ti = tarfile.TarInfo(name=f'bin/{exe.mangled_name()}')
         ti.size = len(thunk)
         ti.mode = 0o755
-        ti.mtime = os.stat(patched_exe).st_mtime
+        ti.mtime = os.stat(path).st_mtime
         ar.addfile(ti, fileobj=io.BytesIO(thunk.encode()))
-        all_libs.update(_get_dependencies(exe.path, vconfig))
 
     for lib, location in all_libs.items():
         logging.debug(f"Adding '{location}' lib to relocatable tar")
