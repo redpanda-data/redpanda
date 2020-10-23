@@ -24,14 +24,16 @@ client::client(std::vector<unresolved_address> broker_addrs)
               }} {}
 
 ss::future<> client::do_connect(unresolved_address addr) {
-    return make_broker(unknown_node_id, addr)
-      .then([this](shared_broker_t broker) {
-          return broker
-            ->dispatch(kafka::metadata_request{.list_all_topics = true})
-            .then([this, broker](kafka::metadata_response res) {
-                return _brokers.apply(std::move(res));
-            });
-      });
+    return ss::with_gate(_gate, [this, addr]() {
+        return make_broker(unknown_node_id, addr)
+          .then([this](shared_broker_t broker) {
+              return broker
+                ->dispatch(kafka::metadata_request{.list_all_topics = true})
+                .then([this, broker](kafka::metadata_response res) {
+                    return _brokers.apply(std::move(res));
+                });
+          });
+    });
 }
 
 ss::future<> client::connect() {
@@ -50,7 +52,9 @@ ss::future<> client::connect() {
 }
 
 ss::future<> client::stop() {
-    return _producer.stop().then([this]() { return _brokers.stop(); });
+    return _gate.close()
+      .then([this]() { return _producer.stop(); })
+      .then([this]() { return _brokers.stop(); });
 }
 
 ss::future<> client::update_metadata(wait_or_start::tag) {
