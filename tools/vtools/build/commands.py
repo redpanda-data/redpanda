@@ -134,9 +134,8 @@ def generate_wasm_dependency(vconfig):
 def go(conf, targets):
     vconfig = config.VConfig(config_file=conf)
     allowed_argets = ['rpk', 'metrics']
-    build_flags = '-buildmode=pie -v -a -tags netgo'
-    vconfig = config.VConfig(conf)
     os.makedirs(vconfig.go_out_dir, exist_ok=True)
+    build_flags = '-v -a'
 
     if len(targets) == 0:
         targets = allowed_argets

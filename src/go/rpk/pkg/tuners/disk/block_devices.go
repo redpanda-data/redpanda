@@ -173,8 +173,8 @@ func (b *blockDevices) getBlockDeviceFromPath(
 	if err != nil {
 		return nil, err
 	}
-	number := devNumExtractor(stat)
-	return NewDevice(int((0xFFFFFFFF00000000&number)>>32), int(number&0xFFFFFFFF), b.fs)
+	devNumber := devNumExtractor(stat)
+	return NewDevice(devNumber, b.fs)
 }
 
 func (b *blockDevices) getDevicesIRQs(
