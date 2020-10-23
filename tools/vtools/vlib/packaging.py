@@ -139,13 +139,11 @@ def _relocatable_dir(dest_dir, execs, configs, admin_api_swag, api_swag,
     libs = {}
     manifest = set()
 
-    for exe, suffix in execs:
-        basename = os.path.basename(exe)
-        name = f'{basename}-{suffix}' if suffix else basename
-        dest_exe = os.path.join(dest_dir, "libexec", name)
-        thunk = thunk_path(name)
-        do_if_newer(patch_exe, exe, dest_exe, thunk)
-        libs.update(_get_dependencies(exe, vconfig))
+    for exe in execs:
+        dest_exe = os.path.join(dest_dir, "libexec", exe.mangled_name())
+        thunk = thunk_path(exe.mangled_name())
+        do_if_newer(patch_exe, exe.path, dest_exe, thunk)
+        libs.update(_get_dependencies(exe.path, vconfig))
         manifest.add(dest_exe)
         manifest.add(thunk)
 
@@ -194,27 +192,26 @@ def _relocable_tar_package(dest, execs, configs, admin_api_swag, api_swag,
 
     ar = tarfile.open(fileobj=gzip_process.stdin, mode='w|')
     all_libs = {}
-    for exe, suffix in execs:
+    for exe in execs:
         # Make a copy of the exe and patch it.
-        patched_exe = f'{exe}.patched'
-        shutil.copy(exe, patched_exe)
+        patched_exe = f'{exe.path}.patched'
+        shutil.copy(exe.path, patched_exe)
         # We need to patch the executable, overwriting its requested interpreter
         # with the one shipped with redpanda (/opt/redpanda/lib/ld.so),
         # so that gdb can load the debug symbols when debugging redpanda.
         # https://github.com/scylladb/scylla/issues/4673
         _patch_exe(rp_root, patched_exe, vconfig.environ)
 
-        basename = os.path.basename(exe)
-        name = f'{basename}-{suffix}' if suffix else basename
-        logging.debug(f"Adding '{exe}' executable to relocable tar as {name}")
-        ar.add(patched_exe, arcname=f'libexec/{name}')
-        thunk = _render_thunk(rp_root, name)
-        ti = tarfile.TarInfo(name=f'bin/{name}')
+        logging.debug(
+            f"Adding '{exe.path}' executable to relocable tar as {exe.mangled_name()}")
+        ar.add(patched_exe, arcname=f'libexec/{exe.mangled_name()}')
+        thunk = _render_thunk(rp_root, exe.mangled_name())
+        ti = tarfile.TarInfo(name=f'bin/{exe.mangled_name()}')
         ti.size = len(thunk)
         ti.mode = 0o755
         ti.mtime = os.stat(patched_exe).st_mtime
         ar.addfile(ti, fileobj=io.BytesIO(thunk.encode()))
-        all_libs.update(_get_dependencies(exe, vconfig))
+        all_libs.update(_get_dependencies(exe.path, vconfig))
 
     for lib, location in all_libs.items():
         logging.debug(f"Adding '{location}' lib to relocatable tar")
@@ -365,11 +362,11 @@ def create_packages(vconfig, formats):
     suffix = vconfig.product
 
     execs = [
-        (f'{vconfig.build_dir}/bin/{vconfig.product}', None),
-        (f'{vconfig.go_out_dir}/rpk', None),
-        (f'{vconfig.external_path}/bin/hwloc-calc', suffix),
-        (f'{vconfig.external_path}/bin/hwloc-distrib', suffix),
-        (f'{vconfig.external_path}/bin/iotune', suffix),
+        Exe(f'{vconfig.build_dir}/bin/{vconfig.product}'),
+        Exe(f'{vconfig.go_out_dir}/rpk', dynamic=False),
+        Exe(f'{vconfig.external_path}/bin/hwloc-calc', suffix),
+        Exe(f'{vconfig.external_path}/bin/hwloc-distrib', suffix),
+        Exe(f'{vconfig.external_path}/bin/iotune', suffix),
     ]
 
     dist_path = os.path.join(vconfig.build_dir, "dist")
@@ -424,3 +421,14 @@ export LD_LIBRARY_PATH="{root}/lib"
 export PATH="{root}/bin:${{PATH}}"
 exec -a "$0" "{root}/libexec/{bin_name}" "$@"
 '''
+
+
+class Exe:
+    def __init__(self, path, suffix=None, dynamic=True):
+        self.path = path
+        self.suffix = suffix
+        self.dynamic = dynamic
+
+    def mangled_name(self):
+        basename = os.path.basename(self.path)
+        return f'{basename}-{self.suffix}' if self.suffix else basename
