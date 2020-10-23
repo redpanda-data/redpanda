@@ -42,7 +42,7 @@ public:
     /// Shut down the loop on the current shard
     ss::future<> stop() {
         _abort_source.request_abort();
-        return _gate.close().then([this]() { return _transport.stop(); });
+        return ss::when_all(_gate.close(), _transport.stop()).discard_result();
     }
 
     errc add_source(
