@@ -141,7 +141,7 @@ def _relocatable_dir(dest_dir, execs, configs, admin_api_swag, api_swag,
         thunk = thunk_path(exe.mangled_name())
         if is_newer(exe.path, dest_exe):
             patch_exe(exe, dest_exe)
-        libs.update(_get_dependencies(exe.path, vconfig))
+            libs.update(_get_dependencies(exe.path, vconfig))
         manifest.add(dest_exe)
         manifest.add(thunk)
 
