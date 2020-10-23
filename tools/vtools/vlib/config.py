@@ -111,6 +111,7 @@ class VConfig(object):
             "HOME": os.environ["HOME"],
             "GOPATH": self._gopath,
             "GOBIN": f'{self._gopath}/bin',
+            "CGO_ENABLED": "0",
             "LC_CTYPE": "C.UTF-8",
             "CI": os.environ.get("CI", "0"),
             "JAVA_HOME": self.java_home_dir,
