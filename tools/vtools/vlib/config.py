@@ -111,6 +111,8 @@ class VConfig(object):
             "HOME": os.environ["HOME"],
             "GOPATH": self._gopath,
             "GOBIN": f'{self._gopath}/bin',
+            'GOOS': 'linux',
+            'GOARCH': 'amd64',
             "CGO_ENABLED": "0",
             "LC_CTYPE": "C.UTF-8",
             "CI": os.environ.get("CI", "0"),
@@ -154,6 +156,12 @@ class VConfig(object):
             return search_vtools(os.path.dirname(thedir))
 
         return search_vtools(curr_dir)
+
+    def go_out_dir(self, target_os=None, target_arch=None):
+        """Output to binary output folder for go programs."""
+        target_os = target_os or self.environ['GOOS']
+        target_arch = target_arch or self.environ['GOARCH']
+        return f"{self._cfg['build']['root']}/go/{target_os}/bin"
 
     @property
     def kv(self):
@@ -214,11 +222,6 @@ class VConfig(object):
     def go_src_dir(self):
         """Source folder for go programs."""
         return f"{self._cfg['build']['src']}/src/go"
-
-    @property
-    def go_out_dir(self):
-        """Output to binary output folder for go programs."""
-        return f"{self._cfg['build']['root']}/go/bin"
 
     @property
     def environ(self):
