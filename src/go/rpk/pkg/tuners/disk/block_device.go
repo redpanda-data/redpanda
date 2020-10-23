@@ -1,22 +1,5 @@
 package disk
 
-/*
-  #include <linux/types.h>
-  #include <stdlib.h>
-  #include <linux/kdev_t.h>
-
-  int go_udev_major(dev_t d) {
-    return MAJOR(d);
-  }
-  int go_udev_minor(dev_t d) {
-    return MINOR(d);
-  }
-  dev_t go_udev_mkdev(int major, int minor) {
-    return MKDEV(major, minor);
-  }
-*/
-import "C"
-
 import (
 	"errors"
 	"fmt"
@@ -27,6 +10,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
+	"golang.org/x/sys/unix"
 )
 
 type BlockDevice interface {
@@ -41,13 +25,11 @@ type blockDevice struct {
 	parent  BlockDevice
 }
 
-func NewDevice(major, minor int, fs afero.Fs) (BlockDevice, error) {
-	dev := C.go_udev_mkdev((C.int)(major), (C.int)(minor))
-
-	udevMajor := int(C.go_udev_major(dev))
-	udevMinor := int(C.go_udev_minor(dev))
-	log.Debugf("Creating block device from number {%d, %d}", udevMajor, udevMinor)
-	syspath, err := readSyspath(udevMajor, udevMinor)
+func NewDevice(dev uint64, fs afero.Fs) (BlockDevice, error) {
+	maj := unix.Major(dev)
+	min := unix.Minor(dev)
+	log.Debugf("Creating block device from number {%d, %d}", maj, min)
+	syspath, err := readSyspath(maj, min)
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +76,7 @@ func deviceFromSystemPath(syspath string, fs afero.Fs) (BlockDevice, error) {
 	}, nil
 }
 
-func readSyspath(major, minor int) (string, error) {
+func readSyspath(major, minor uint32) (string, error) {
 	blockBasePath := "/sys/dev/block"
 	path := fmt.Sprintf("%s/%d:%d", blockBasePath, major, minor)
 	linkpath, err := os.Readlink(path)
