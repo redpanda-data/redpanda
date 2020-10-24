@@ -103,3 +103,7 @@ private:
     // run these first on destruction
     deferred_actions _deferred;
 };
+
+namespace debug {
+extern application* app;
+}
