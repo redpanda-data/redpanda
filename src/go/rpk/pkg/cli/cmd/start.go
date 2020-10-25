@@ -214,6 +214,24 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 	return command
 }
 
+func flagsMap(sFlags seastarFlags) map[string]interface{} {
+	return map[string]interface{}{
+		memoryFlag:           sFlags.memory,
+		lockMemoryFlag:       sFlags.lockMemory,
+		reserveMemoryFlag:    sFlags.reserveMemory,
+		ioPropertiesFileFlag: sFlags.ioPropertiesFile,
+		ioPropertiesFlag:     sFlags.ioProperties,
+		cpuSetFlag:           sFlags.cpuSet,
+		smpFlag:              sFlags.smp,
+		hugepagesFlag:        sFlags.hugepages,
+		threadAffinityFlag:   sFlags.threadAffinity,
+		numIoQueuesFlag:      sFlags.numIoQueues,
+		maxIoRequestsFlag:    sFlags.maxIoRequests,
+		mbindFlag:            sFlags.mbind,
+		overprovisionedFlag:  sFlags.overprovisioned,
+	}
+}
+
 func prestart(
 	fs afero.Fs,
 	args *redpanda.RedpandaArgs,
