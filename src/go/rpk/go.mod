@@ -13,11 +13,12 @@ require (
 	github.com/cockroachdb/crlfmt v0.0.0-20200309141329-97b747f03b21 // indirect
 	github.com/cockroachdb/gostdlib v1.13.0 // indirect
 	github.com/cockroachdb/ttycolor v0.0.0-20180709150743-a1d5aaeb377d // indirect
+	github.com/coreos/etcd v3.3.10+incompatible
 	github.com/coreos/go-etcd v2.0.0+incompatible // indirect
 	github.com/coreos/go-systemd/v22 v22.1.0
 	github.com/cpuguy83/go-md2man v1.0.10 // indirect
 	github.com/docker/distribution v2.7.1+incompatible // indirect
-	github.com/docker/docker v0.7.3-0.20190629173937-e105a74c5419
+	github.com/docker/docker v1.13.1
 	github.com/docker/go-connections v0.4.0
 	github.com/docker/go-units v0.4.0
 	github.com/fatih/color v1.7.0

@@ -6,7 +6,6 @@ import (
 
 	"github.com/docker/go-units"
 	"github.com/spf13/afero"
-	"golang.org/x/sys/unix"
 )
 
 func DirectoryIsWriteable(fs afero.Fs, path string) (bool, error) {
@@ -36,24 +35,4 @@ func GetFreeDiskSpaceGB(path string) (float64, error) {
 		return 0, err
 	}
 	return float64(statFs.Bfree*uint64(statFs.Bsize)) / units.GiB, nil
-}
-
-func GetFilesystemType(path string) (FsType, error) {
-	statFs := syscall.Statfs_t{}
-	err := syscall.Statfs(path, &statFs)
-	if err != nil {
-		return "", err
-	}
-	switch statFs.Type {
-	case unix.EXT4_SUPER_MAGIC:
-		return Ext, nil
-	case unix.XFS_SUPER_MAGIC:
-		return Xfs, nil
-	case unix.TMPFS_MAGIC:
-		return Tmpfs, nil
-	case 0x4244:
-		return Hfs, nil
-	default:
-		return Unknown, nil
-	}
 }

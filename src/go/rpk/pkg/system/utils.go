@@ -1,7 +1,6 @@
 package system
 
 import (
-	"syscall"
 	"time"
 	"vectorized/pkg/os"
 
@@ -25,20 +24,6 @@ func UnameAndDistro(timeout time.Duration) (string, error) {
 		res += " " + ls[0]
 	}
 	return res, nil
-}
-
-func uname() (string, error) {
-	var uname syscall.Utsname
-	err := syscall.Uname(&uname)
-	if err != nil {
-		return "", err
-	}
-	str := ""
-	str += string(int8ToString(uname.Machine)) + " "
-	str += string(int8ToString(uname.Release)) + " "
-	str += string(int8ToString(uname.Version))
-	return str, nil
-
 }
 
 func int8ToString(ints [65]int8) string {

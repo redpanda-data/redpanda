@@ -145,14 +145,6 @@ func (b *blockDevices) getPhysDevices(device BlockDevice) ([]string, error) {
 		"/dev/", "", 1)}, nil
 }
 
-func getDevNumFromDeviceDirectory(stat syscall.Stat_t) uint64 {
-	return stat.Rdev
-}
-
-func getDevNumFromDirectory(stat syscall.Stat_t) uint64 {
-	return stat.Dev
-}
-
 func (b *blockDevices) GetDeviceFromPath(path string) (BlockDevice, error) {
 	return b.getBlockDeviceFromPath(path,
 		getDevNumFromDeviceDirectory)

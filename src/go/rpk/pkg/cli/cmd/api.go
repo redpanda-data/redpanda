@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"vectorized/pkg/cli/cmd/api"
 	"vectorized/pkg/config"
@@ -72,6 +73,9 @@ func NewApiCommand(fs afero.Fs) *cobra.Command {
 	return command
 }
 
+// Try to read the config from the default expected locations, or from the
+// specific path passed with --config. If --config wasn't passed, and the config
+// wasn't found, return the default configuration.
 func findConfigFile(
 	fs afero.Fs, configFile *string,
 ) func() (*config.Config, error) {
@@ -84,6 +88,18 @@ func findConfigFile(
 		conf, err = config.ReadOrFind(fs, *configFile)
 		if err == nil {
 			config.CheckAndPrintNotice(conf.LicenseKey)
+		} else {
+			log.Debug(err)
+			if os.IsNotExist(err) && *configFile == "" {
+				log.Info(
+					"Config file not found and --config" +
+						" wasn't passed, using default" +
+						" config",
+				)
+				defaultConf := config.DefaultConfig()
+				conf = &defaultConf
+				return conf, nil
+			}
 		}
 		return conf, err
 	}
