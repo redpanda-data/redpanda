@@ -32,18 +32,34 @@ type prestartConfig struct {
 
 type seastarFlags struct {
 	memory           string
-	cpuSet           string
-	ioPropertiesFile string
 	lockMemory       bool
-	smp              int
 	reserveMemory    string
 	hugepages        string
+	cpuSet           string
+	ioPropertiesFile string
+	ioProperties     string
+	smp              int
 	threadAffinity   bool
 	numIoQueues      int
 	maxIoRequests    int
-	ioProperties     string
 	mbind            bool
 }
+
+const (
+	memoryFlag           = "memory"
+	lockMemoryFlag       = "lock-memory"
+	reserveMemoryFlag    = "reserve-memory"
+	hugepagesFlag        = "hugepages"
+	cpuSetFlag           = "cpuset"
+	ioPropertiesFileFlag = "io-properties-file"
+	ioPropertiesFlag     = "io-properties"
+	wellKnownIOFlag      = "well-known-io"
+	smpFlag              = "smp"
+	threadAffinityFlag   = "thread-affinity"
+	numIoQueuesFlag      = "num-io-queues"
+	maxIoRequestsFlag    = "max-io-requests"
+	mbindFlag            = "mbind"
+)
 
 func NewStartCommand(fs afero.Fs) *cobra.Command {
 	prestartCfg := prestartConfig{}
@@ -136,11 +152,11 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 			" in the default locations",
 	)
 	command.Flags().StringVar(&sFlags.memory,
-		"memory", "", "Amount of memory for redpanda to use, "+
+		memoryFlag, "", "Amount of memory for redpanda to use, "+
 			"if not specified redpanda will use all available memory")
 	command.Flags().BoolVar(&sFlags.lockMemory,
-		"lock-memory", false, "If set, will prevent redpanda from swapping")
-	command.Flags().StringVar(&sFlags.cpuSet, "cpuset", "",
+		lockMemoryFlag, false, "If set, will prevent redpanda from swapping")
+	command.Flags().StringVar(&sFlags.cpuSet, cpuSetFlag, "",
 		"Set of CPUs for redpanda to use in cpuset(7) format, "+
 			"if not specified redpanda will use all available CPUs")
 	command.Flags().StringVar(&installDirFlag,
@@ -150,31 +166,31 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 		"When present will enable tuning before starting redpanda")
 	command.Flags().BoolVar(&prestartCfg.checkEnabled, "check", true,
 		"When set to false will disable system checking before starting redpanda")
-	command.Flags().IntVar(&sFlags.smp, "smp", 1, "Restrict redpanda to"+
+	command.Flags().IntVar(&sFlags.smp, smpFlag, 1, "Restrict redpanda to"+
 		" the given number of CPUs. This option does not mandate a"+
 		" specific placement of CPUs. See --cpuset if you need to do so.")
-	command.Flags().StringVar(&sFlags.reserveMemory, "reserve-memory", "",
+	command.Flags().StringVar(&sFlags.reserveMemory, reserveMemoryFlag, "",
 		"Memory reserved for the OS (if --memory isn't specified)")
-	command.Flags().StringVar(&sFlags.hugepages, "hugepages", "",
+	command.Flags().StringVar(&sFlags.hugepages, hugepagesFlag, "",
 		"Path to accessible hugetlbfs mount (typically /dev/hugepages/something)")
-	command.Flags().BoolVar(&sFlags.threadAffinity, "thread-affinity", true,
+	command.Flags().BoolVar(&sFlags.threadAffinity, threadAffinityFlag, true,
 		"Pin threads to their cpus (disable for overprovisioning)")
-	command.Flags().IntVar(&sFlags.numIoQueues, "num-io-queues", 0,
+	command.Flags().IntVar(&sFlags.numIoQueues, numIoQueuesFlag, 0,
 		"Number of IO queues. Each IO unit will be responsible for a fraction "+
 			"of the IO requests. Defaults to the number of threads")
-	command.Flags().IntVar(&sFlags.maxIoRequests, "max-io-requests", 0,
+	command.Flags().IntVar(&sFlags.maxIoRequests, maxIoRequestsFlag, 0,
 		"Maximum amount of concurrent requests to be sent to the disk. "+
 			"Defaults to 128 times the number of IO queues")
-	command.Flags().StringVar(&sFlags.ioPropertiesFile, "io-properties-file", "",
+	command.Flags().StringVar(&sFlags.ioPropertiesFile, ioPropertiesFileFlag, "",
 		"Path to a YAML file describing the characteristics of the I/O Subsystem")
-	command.Flags().StringVar(&sFlags.ioProperties, "io-properties", "",
+	command.Flags().StringVar(&sFlags.ioProperties, ioPropertiesFlag, "",
 		"A YAML string describing the characteristics of the I/O Subsystem")
 	command.Flags().StringVar(
 		&wellKnownIo,
-		"well-known-io",
+		wellKnownIOFlag,
 		"",
 		"The cloud vendor and VM type, in the format <vendor>:<vm type>:<storage type>")
-	command.Flags().BoolVar(&sFlags.mbind, "mbind", true, "enable mbind")
+	command.Flags().BoolVar(&sFlags.mbind, mbindFlag, true, "enable mbind")
 	command.Flags().DurationVar(
 		&timeout,
 		"timeout",
@@ -208,7 +224,8 @@ func prestart(
 		log.Info("System check - PASSED")
 	}
 	if prestartCfg.tuneEnabled {
-		tunerPayloads, err = tuneAll(fs, args.SeastarFlags["cpuset"], conf, timeout)
+		cpuset := fmt.Sprint(args.SeastarFlags[cpuSetFlag])
+		tunerPayloads, err = tuneAll(fs, cpuset, conf, timeout)
 		if err != nil {
 			return checkPayloads, tunerPayloads, err
 		}
