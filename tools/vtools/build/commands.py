@@ -131,14 +131,32 @@ def generate_wasm_dependency(vconfig):
 @click.option('--targets',
               help="target to build ('rpk', 'metrics').",
               multiple=True)
-def go(conf, targets):
+@click.option('--target-os',
+              help='target OS to compile for ("linux", "darwin").',
+              default='linux')
+@click.option(
+    '--target-arch',
+    help='target CPU architecture to compile for ("amd64", "arm", "arm64").',
+    default='amd64')
+def go(conf, targets, target_os, target_arch):
     vconfig = config.VConfig(config_file=conf)
     allowed_argets = ['rpk', 'metrics']
-    os.makedirs(vconfig.go_out_dir, exist_ok=True)
+    allowed_oss = ['linux', 'darwin']
+    allowed_archs = ['amd64', 'arm', 'arm64']
     build_flags = '-v -a'
 
     if len(targets) == 0:
         targets = allowed_argets
+
+    if target_os not in allowed_oss:
+        logging.fatal(f'Unsupported OS {target_os}')
+
+    if target_arch not in allowed_archs:
+        logging.fatal(f'Unsupported arch {target_arch}')
+
+    os.makedirs(vconfig.go_out_dir(target_os, target_arch), exist_ok=True)
+    vconfig.environ['GOOS'] = target_os
+    vconfig.environ['GOARCH'] = target_arch
 
     for t in targets:
         if t not in allowed_argets:
@@ -158,7 +176,7 @@ def go(conf, targets):
 
         shell.run_subprocess(
             f'cd {vconfig.go_src_dir}/{t} && '
-            f'go build {build_flags} -o {vconfig.go_out_dir} ./...',
+            f'go build {build_flags} -o {vconfig.go_out_dir(target_os, target_arch)} ./...',
             env=vconfig.environ)
 
 

@@ -365,7 +365,7 @@ def create_packages(vconfig, formats):
 
     execs = [
         Exe(f'{vconfig.build_dir}/bin/{vconfig.product}'),
-        Exe(f'{vconfig.go_out_dir}/rpk', dynamic=False),
+        Exe(f'{vconfig.go_out_dir("linux", "amd64")}/rpk', dynamic=False),
         Exe(f'{vconfig.external_path}/bin/hwloc-calc', suffix),
         Exe(f'{vconfig.external_path}/bin/hwloc-distrib', suffix),
         Exe(f'{vconfig.external_path}/bin/iotune', suffix),
