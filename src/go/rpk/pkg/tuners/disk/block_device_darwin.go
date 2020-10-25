@@ -6,6 +6,6 @@ import (
 	"github.com/spf13/afero"
 )
 
-func NewDevice(_, _ int, _ afero.Fs) (BlockDevice, error) {
+func NewDevice(_ uint64, _ afero.Fs) (BlockDevice, error) {
 	return nil, errors.New("NewDevice not available in MacOS")
 }
