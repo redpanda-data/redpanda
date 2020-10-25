@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
-	"reflect"
 	"regexp"
 	"strings"
 	"time"
@@ -72,20 +71,7 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 		wellKnownIo    string
 	)
 	sFlags := seastarFlags{}
-	sFlagsMap := map[string]interface{}{
-		"lock-memory":        &sFlags.lockMemory,
-		"io-properties-file": &sFlags.ioPropertiesFile,
-		"cpuset":             &sFlags.cpuSet,
-		"memory":             &sFlags.memory,
-		"smp":                &sFlags.smp,
-		"reserve-memory":     &sFlags.reserveMemory,
-		"hugepages":          &sFlags.hugepages,
-		"thread-affinity":    &sFlags.threadAffinity,
-		"num-io-queues":      &sFlags.numIoQueues,
-		"max-io-requests":    &sFlags.maxIoRequests,
-		"io-properties":      &sFlags.ioProperties,
-		"mbind":              &sFlags.mbind,
-	}
+
 	command := &cobra.Command{
 		Use:   "start",
 		Short: "Start redpanda",
@@ -94,6 +80,7 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			conf.Rpk.WellKnownIo = wellKnownIo
 			config.CheckAndPrintNotice(conf.LicenseKey)
 			env := api.EnvironmentPayload{}
 			installDirectory, err := cli.GetOrFindInstallDir(fs, installDirFlag)
@@ -105,7 +92,7 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 				fs,
 				conf,
 				sFlags,
-				wellKnownIo,
+				ccmd.Flags(),
 			)
 			if err != nil {
 				sendEnv(fs, env, conf, err)
@@ -124,21 +111,8 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 				sendEnv(fs, env, conf, err)
 				return err
 			}
-			// Override all the defaults when flags are explicitly set
-			for flag, val := range sFlagsMap {
-				if ccmd.Flags().Changed(flag) {
-					// Reflection is needed since sFlagsMap
-					// is a map[string]interface{} - its
-					// values are pointers to int, bool &
-					// string - and Go doesn't allow
-					// dereferencing interface{}.
-					v := reflect.ValueOf(val).Elem()
-					rpArgs.SeastarFlags[flag] = fmt.Sprint(v)
-				}
-			}
 
 			sendEnv(fs, env, conf, nil)
-			rpArgs.SeastarFlags = mergeFlags(rpArgs.SeastarFlags, conf.Rpk.AdditionalStartFlags)
 			rpArgs.ExtraArgs = args
 			launcher := redpanda.NewLauncher(installDirectory, rpArgs)
 			log.Info(feedbackMsg)
@@ -208,7 +182,7 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 			"fraction and a unit suffix, such as '300ms', '1.5s' or '2h45m'. "+
 			"Valid time units are 'ns', 'us' (or 'µs'), 'ms', 's', 'm', 'h'",
 	)
-	for flag := range sFlagsMap {
+	for flag := range flagsMap(sFlags) {
 		command.Flag(flag).Hidden = true
 	}
 	return command
@@ -261,40 +235,59 @@ func prestart(
 }
 
 func buildRedpandaFlags(
-	fs afero.Fs, conf *config.Config, sFlags seastarFlags, wellKnownIo string,
+	fs afero.Fs, conf *config.Config, sFlags seastarFlags, flags *pflag.FlagSet,
 ) (*redpanda.RedpandaArgs, error) {
-	if wellKnownIo != "" && sFlags.ioProperties != "" {
+	if flags.Changed(wellKnownIOFlag) {
+		conf.Rpk.WellKnownIo, _ = flags.GetString(wellKnownIOFlag)
+	}
+	wellKnownIOSet := conf.Rpk.WellKnownIo != ""
+	ioPropsSet := flags.Changed(ioPropertiesFileFlag) || flags.Changed(ioPropertiesFlag)
+	if wellKnownIOSet && ioPropsSet {
 		return nil, errors.New(
-			"--well-known-io and --io-properties can't be set at the same time",
+			"--well-known-io or (rpk.well_known_io) and" +
+				" --io-properties (or --io-properties-file)" +
+				" can't be set at the same time",
 		)
 	}
-	ioPropertiesFile := redpanda.GetIOConfigPath(filepath.Dir(conf.ConfigFile))
-	if exists, _ := afero.Exists(fs, ioPropertiesFile); !exists {
-		ioPropertiesFile = ""
-	}
-	lockMemory := conf.Rpk.EnableMemoryLocking || sFlags.lockMemory
-	rpArgs := &redpanda.RedpandaArgs{
-		ConfigFilePath: conf.ConfigFile,
-		SeastarFlags: map[string]string{
-			"lock-memory": fmt.Sprintf("%t", lockMemory),
-		},
-	}
-	if ioPropertiesFile != "" {
-		rpArgs.SeastarFlags["io-properties-file"] = ioPropertiesFile
-		return rpArgs, nil
-	}
-	ioProps, err := resolveWellKnownIo(conf, wellKnownIo)
-	if err == nil {
-		yaml, err := iotune.ToYaml(*ioProps)
-		if err != nil {
-			return nil, err
+
+	if !ioPropsSet {
+		// If --io-properties-file and --io-properties weren't set, try
+		// finding an IO props file in the default location.
+		sFlags.ioPropertiesFile = redpanda.GetIOConfigPath(
+			filepath.Dir(conf.ConfigFile),
+		)
+		if exists, _ := afero.Exists(fs, sFlags.ioPropertiesFile); !exists {
+			sFlags.ioPropertiesFile = ""
 		}
-		rpArgs.SeastarFlags["io-properties"] = fmt.Sprintf("'%s'", yaml)
-		return rpArgs, nil
-	} else {
-		log.Warn(err)
+		// Otherwise, try to deduce the IO props.
+		if sFlags.ioPropertiesFile == "" {
+			ioProps, err := resolveWellKnownIo(conf, conf.Rpk.WellKnownIo)
+			if err == nil {
+				yaml, err := iotune.ToYaml(*ioProps)
+				if err != nil {
+					return nil, err
+				}
+				sFlags.ioProperties = fmt.Sprintf("'%s'", yaml)
+			} else {
+				log.Warn(err)
+			}
+		}
 	}
-	return rpArgs, nil
+	flagsMap := flagsMap(sFlags)
+	for flag, _ := range flagsMap {
+		if !flags.Changed(flag) {
+			delete(flagsMap, flag)
+		}
+	}
+	flagsMap = flagsFromConf(conf, flagsMap, flags)
+	finalFlags := parseFlags(conf.Rpk.AdditionalStartFlags)
+	for n, v := range flagsMap {
+		finalFlags[n] = fmt.Sprint(v)
+	}
+	return &redpanda.RedpandaArgs{
+		ConfigFilePath: conf.ConfigFile,
+		SeastarFlags:   finalFlags,
+	}, nil
 }
 
 func flagsFromConf(
@@ -313,8 +306,8 @@ func flagsFromConf(
 }
 
 func mergeFlags(
-	current map[string]string, overrides []string,
-) map[string]string {
+	current map[string]interface{}, overrides []string,
+) map[string]interface{} {
 	overridesMap := map[string]string{}
 	for _, o := range overrides {
 		pattern := regexp.MustCompile(`[\s=]+`)
@@ -442,7 +435,7 @@ func checkFailedActions(
 	return map[tuners.CheckerID]checkFailedAction{
 		tuners.SwapChecker: func(*tuners.CheckResult) {
 			// Do not set --lock-memory flag when swap is disabled
-			args.SeastarFlags["lock-memory"] = "false"
+			args.SeastarFlags[lockMemoryFlag] = "false"
 		},
 	}
 }
