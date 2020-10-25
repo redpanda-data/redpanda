@@ -52,11 +52,7 @@ func Execute() {
 	rootCmd.SilenceUsage = true
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose",
 		"v", false, "enable verbose logging (default false)")
-	rootCmd.AddCommand(NewTuneCommand(fs))
-	rootCmd.AddCommand(NewCheckCommand(fs))
-	rootCmd.AddCommand(NewIoTuneCmd(fs))
-	rootCmd.AddCommand(NewStartCommand(fs))
-	rootCmd.AddCommand(NewStopCommand(fs))
+
 	rootCmd.AddCommand(NewModeCommand(fs))
 	rootCmd.AddCommand(NewConfigCommand(fs))
 	rootCmd.AddCommand(NewStatusCommand(fs))
@@ -65,6 +61,8 @@ func Execute() {
 	rootCmd.AddCommand(NewApiCommand(fs))
 	rootCmd.AddCommand(NewWasmCommand(fs))
 	rootCmd.AddCommand(NewContainerCommand(fs))
+
+	addPlatformDependentCmds(fs, rootCmd)
 
 	err := rootCmd.Execute()
 	if len(os.Args) > 1 {
