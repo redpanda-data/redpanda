@@ -23,6 +23,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 type prestartConfig struct {
@@ -269,6 +270,21 @@ func buildRedpandaFlags(
 		log.Warn(err)
 	}
 	return rpArgs, nil
+}
+
+func flagsFromConf(
+	conf *config.Config, flagsMap map[string]interface{}, flags *pflag.FlagSet,
+) map[string]interface{} {
+	if !flags.Changed(overprovisionedFlag) {
+		flagsMap[overprovisionedFlag] = conf.Rpk.Overprovisioned
+	}
+	if !flags.Changed(smpFlag) {
+		flagsMap[smpFlag] = conf.Rpk.SMP
+	}
+	if !flags.Changed(lockMemoryFlag) {
+		flagsMap[lockMemoryFlag] = conf.Rpk.EnableMemoryLocking
+	}
+	return flagsMap
 }
 
 func mergeFlags(
