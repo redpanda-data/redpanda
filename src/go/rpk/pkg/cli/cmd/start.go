@@ -60,6 +60,7 @@ const (
 	numIoQueuesFlag      = "num-io-queues"
 	maxIoRequestsFlag    = "max-io-requests"
 	mbindFlag            = "mbind"
+	overprovisionedFlag  = "overprovisioned"
 )
 
 func NewStartCommand(fs afero.Fs) *cobra.Command {
@@ -192,6 +193,12 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 		"",
 		"The cloud vendor and VM type, in the format <vendor>:<vm type>:<storage type>")
 	command.Flags().BoolVar(&sFlags.mbind, mbindFlag, true, "enable mbind")
+	command.Flags().BoolVar(
+		&sFlags.overprovisioned,
+		overprovisionedFlag,
+		true,
+		"Enable overprovisioning",
+	)
 	command.Flags().DurationVar(
 		&timeout,
 		"timeout",
