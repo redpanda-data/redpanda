@@ -64,6 +64,7 @@ func Execute() {
 	rootCmd.AddCommand(NewVersionCommand())
 	rootCmd.AddCommand(NewApiCommand(fs))
 	rootCmd.AddCommand(NewWasmCommand(fs))
+	rootCmd.AddCommand(NewContainerCommand(fs))
 
 	err := rootCmd.Execute()
 	if len(os.Args) > 1 {
