@@ -87,6 +87,8 @@ type RpkConfig struct {
 	TuneCoredump             bool     `yaml:"tune_coredump" json:"tuneCoredump"`
 	CoredumpDir              string   `yaml:"coredump_dir" json:"coredumpDir"`
 	WellKnownIo              string   `yaml:"well_known_io,omitempty" json:"wellKnownIo"`
+	Overprovisioned          bool     `yaml:"overprovisioned", json:"overprovisioned"`
+	SMP                      int      `yaml:"smp", json:"smp"`
 }
 
 func (conf *Config) PIDFile() string {
@@ -106,6 +108,7 @@ func DefaultConfig() Config {
 		},
 		Rpk: &RpkConfig{
 			CoredumpDir: "/var/lib/redpanda/coredump",
+			SMP:         1,
 		},
 	}
 }
@@ -428,6 +431,8 @@ func setDevelopment(conf *Config) *Config {
 	conf.Rpk = &RpkConfig{
 		EnableUsageStats: conf.Rpk.EnableUsageStats,
 		CoredumpDir:      conf.Rpk.CoredumpDir,
+		SMP:              DefaultConfig().Rpk.SMP,
+		Overprovisioned:  true,
 	}
 	return conf
 }
@@ -443,6 +448,7 @@ func setProduction(conf *Config) *Config {
 	rpk.TuneAioEvents = true
 	rpk.TuneClocksource = true
 	rpk.TuneSwappiness = true
+	rpk.Overprovisioned = false
 	return conf
 }
 
