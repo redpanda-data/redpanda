@@ -73,15 +73,26 @@ func collectRedpandaArgs(args *RedpandaArgs) []string {
 		args.ConfigFilePath,
 	}
 
-	for flag, value := range args.SeastarFlags {
-		if value != "" {
-			redpandaArgs = append(
-				redpandaArgs,
-				fmt.Sprintf("--%s=%s", flag, value),
-			)
-		} else {
-			redpandaArgs = append(redpandaArgs, "--"+flag)
+	singleFlags := []string{"overprovisioned"}
+
+	isSingle := func(f string) bool {
+		for _, flag := range singleFlags {
+			if flag == f {
+				return true
+			}
 		}
+		return false
+	}
+
+	for flag, value := range args.SeastarFlags {
+		if isSingle(flag) || value == "" {
+			redpandaArgs = append(redpandaArgs, "--"+flag)
+			continue
+		}
+		redpandaArgs = append(
+			redpandaArgs,
+			fmt.Sprintf("--%s=%s", flag, value),
+		)
 	}
 	return append(redpandaArgs, args.ExtraArgs...)
 }
