@@ -296,7 +296,7 @@ func writeNodeConfig(
 	conf := config.DefaultConfig()
 	conf.Redpanda.Id = int(nodeID)
 
-	conf.Rpk.AdditionalStartFlags = []string{"--overprovisioned"}
+	conf.Rpk.Overprovisioned = true
 	conf.Redpanda.DeveloperMode = true
 
 	err := applyPlatformSpecificConf(&conf, kafkaPort, rpcPort, seedRPCPort, ip, seedIP)
