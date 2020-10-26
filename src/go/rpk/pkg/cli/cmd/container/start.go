@@ -215,9 +215,8 @@ func startCluster(fs afero.Fs, c common.Client, n uint) error {
 	}
 	renderClusterInfo(nodes)
 	log.Infof(
-		"\nCluster started! You may use 'rpk api' to interact with"+
-			" the cluster. E.g:\n\nrpk api status --brokers %s\n",
-		seedNode.addr,
+		"\nCluster started! You may use 'rpk api' to interact with" +
+			" the cluster. E.g:\n\nrpk api status\n",
 	)
 
 	return nil
