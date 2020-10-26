@@ -32,7 +32,6 @@ void validate_offsets(
         it++;
     }
 }
-
 FIXTURE_TEST(
   test_assinging_offsets_in_single_segment_log, storage_test_fixture) {
     storage::log_manager mgr = make_log_manager();
@@ -455,7 +454,6 @@ FIXTURE_TEST(test_eviction_notification, storage_test_fixture) {
       compacted_lstats.start_offset,
       lstats_before.dirty_offset + model::offset(1));
 };
-
 ss::future<storage::append_result>
 append_exactly(storage::log log, size_t batch_count, size_t batch_sz) {
     vassert(
@@ -494,12 +492,16 @@ FIXTURE_TEST(write_concurrently_with_gc, storage_test_fixture) {
     cfg.stype = storage::log_config::storage_type::disk;
     ss::abort_source as;
     storage::log_manager mgr = make_log_manager(cfg);
-
+    model::offset last_append_offset{};
+    using overrides_t = storage::ntp_config::default_overrides;
+    overrides_t ov;
+    ov.cleanup_policy_bitflags = model::cleanup_policy_bitflags::deletion;
     info("Configuration: {}", mgr.config());
     auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
     auto ntp = model::ntp("default", "test", 0);
 
-    storage::ntp_config ntp_cfg(ntp, mgr.config().base_dir);
+    storage::ntp_config ntp_cfg(
+      ntp, mgr.config().base_dir, std::make_unique<overrides_t>(ov));
     auto log = mgr.manage(std::move(ntp_cfg)).get0();
 
     auto result = append_exactly(log, 10, 100).get0();
@@ -510,31 +512,40 @@ FIXTURE_TEST(write_concurrently_with_gc, storage_test_fixture) {
     ss::semaphore _sem{1};
     int appends = 100;
     int batches_per_append = 5;
-
-    auto compact = [log, &_sem, &as]() mutable {
+    log.set_collectible_offset(model::offset(10000000));
+    auto compact = [log, &as]() mutable {
         storage::compaction_config ccfg(
-          model::timestamp::min(), 500, ss::default_priority_class(), as);
-        return ss::with_semaphore(
-          _sem, 1, [&log, ccfg]() mutable { return log.compact(ccfg); });
+          model::timestamp::min(), 1000, ss::default_priority_class(), as);
+        return log.compact(ccfg);
     };
 
-    auto append = [log, &_sem, &as, batches_per_append]() mutable {
-        return ss::with_semaphore(
-          _sem, 1, [&log, batches_per_append]() mutable {
-              return append_exactly(log, batches_per_append, 100)
-                .discard_result();
-          });
-    };
+    auto append =
+      [log, &_sem, &as, batches_per_append, &last_append_offset]() mutable {
+          return ss::with_semaphore(
+            _sem, 1, [log, batches_per_append, &last_append_offset]() mutable {
+                return ss::sleep(10ms).then(
+                  [log, batches_per_append, &last_append_offset] {
+                      return append_exactly(log, batches_per_append, 100)
+                        .then([&last_append_offset,
+                               log](storage::append_result result) mutable {
+                            BOOST_REQUIRE_GT(
+                              result.last_offset, last_append_offset);
+                            last_append_offset = result.last_offset;
+                        });
+                  });
+            });
+      };
 
-    futures.push_back(compact());
+    auto loop = ss::do_until([&as] { return as.abort_requested(); }, compact);
+
     for (int i = 0; i < appends; ++i) {
         futures.push_back(append());
-        futures.push_back(compact());
     }
 
     ss::when_all(futures.begin(), futures.end()).get0();
-    compact().get0();
+
     as.request_abort();
+    loop.get0();
     auto lstats_after = log.offsets();
     BOOST_REQUIRE_EQUAL(
       lstats_after.dirty_offset,

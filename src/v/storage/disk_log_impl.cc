@@ -172,9 +172,9 @@ bool disk_log_impl::is_front_segment(const segment_set::type& ptr) const {
 ss::future<> disk_log_impl::garbage_collect_segments(
   model::offset max_offset, ss::abort_source* as, std::string_view ctx) {
     // we only notify eviction monitor if there are segments to evict
-    auto have_segments_to_evict = !_segs.empty()
-                                  && _segs.front()->offsets().base_offset
-                                       < max_offset;
+    auto have_segments_to_evict = _segs.size() > 1
+                                  && _segs.front()->offsets().committed_offset
+                                       <= max_offset;
 
     if (_eviction_monitor && have_segments_to_evict) {
         _eviction_monitor->promise.set_value(max_offset);
@@ -185,8 +185,8 @@ ss::future<> disk_log_impl::garbage_collect_segments(
 
     return ss::do_until(
       [this, as, max_offset] {
-          return _segs.empty() || as->abort_requested()
-                 || _segs.front()->offsets().base_offset > max_offset;
+          return _segs.size() <= 1 || as->abort_requested()
+                 || _segs.front()->offsets().committed_offset > max_offset;
       },
       [this, ctx] {
           auto ptr = _segs.front();
