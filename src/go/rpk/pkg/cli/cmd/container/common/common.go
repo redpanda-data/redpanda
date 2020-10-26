@@ -25,6 +25,7 @@ import (
 
 const (
 	redpandaNetwork = "redpanda"
+	redpandaImage   = "docker.io/vectorized/redpanda"
 
 	defaultDockerClientTimeout = 10 * time.Second
 )
@@ -211,7 +212,7 @@ func CreateNode(
 	}
 	hostname := Name(nodeID)
 	containerConfig := container.Config{
-		Image:    "vectorized/redpanda:latest",
+		Image:    redpandaImage,
 		Hostname: hostname,
 		User:     "redpanda",
 		ExposedPorts: nat.PortSet{
