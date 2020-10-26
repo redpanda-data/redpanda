@@ -5,7 +5,9 @@
 #include "raft/logger.h"
 #include "raft/types.h"
 
+#include <seastar/core/future.hh>
 #include <seastar/core/semaphore.hh>
+#include <seastar/core/shared_future.hh>
 
 #include <absl/container/flat_hash_map.h>
 
@@ -13,6 +15,8 @@
 #include <vector>
 
 namespace raft {
+using skip_vote = ss::bool_class<struct skip_vote_tag>;
+
 /// Section 5.2
 /// 1 start election
 /// 1.2 increment term
@@ -73,6 +77,10 @@ private:
     ss::future<> self_vote();
     ss::future<> dispatch_one(model::node_id);
     ss::future<result<vote_reply>> do_dispatch_one(model::node_id);
+    void try_resolve_prevote_skip_promise();
+    ss::future<skip_vote> do_prevote(bool leadership_transfer);
+    ss::future<> dispatch_prevote(model::node_id);
+    ss::future<result<vote_reply>> do_dispatch_prevote(model::node_id);
     std::pair<uint32_t, uint32_t> partition_count() const;
     void update_vote_state(ss::semaphore_units<>);
     ss::future<> process_replies(group_configuration cfg);
@@ -81,9 +89,13 @@ private:
     consensus* _ptr;
     // make sure to always make a copy; never move() this struct
     vote_request _req;
+    vote_request _pre_req;
     bool _success = false;
     // for sequentiality/progress
     ss::semaphore _sem;
+    ss::shared_promise<skip_vote> _prevote_skip;
+    clock_type::time_point _prevote_timeout;
+    absl::flat_hash_map<model::node_id, bool> _prevote_replies;
     // for safety to wait for all bg ops
     ss::gate _vote_bg;
     absl::flat_hash_map<model::node_id, vmeta> _replies;
