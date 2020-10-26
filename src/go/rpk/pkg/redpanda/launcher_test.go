@@ -82,7 +82,7 @@ func Test_collectRedpandaArgs(t *testing.T) {
 				"redpanda",
 				"--redpanda-cfg",
 				"/etc/redpanda/redpanda.yaml",
-				"--lock-memory",
+				"--lock-memory=true",
 			},
 		},
 	}
