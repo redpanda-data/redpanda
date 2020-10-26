@@ -71,7 +71,7 @@ func TestPurge(t *testing.T) {
 				return fs.MkdirAll(common.ConfDir(2), 0755)
 			},
 			expectedOutput: []string{
-				"Stopped current cluster.",
+				"Stopping node 0",
 				"Deleted data for node 0",
 				"Removed container 'rp-node-0'",
 				"Deleted data for node 1",
