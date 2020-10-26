@@ -21,6 +21,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <utility>
 
 namespace rpc {
@@ -32,6 +33,8 @@ public:
         ss::socket_address server_addr;
         std::optional<ss::tls::credentials_builder> credentials;
         rpc::metrics_disabled disable_metrics = rpc::metrics_disabled::no;
+        /// Optional server name indication (SNI) for TLS connection
+        std::optional<ss::sstring> tls_sni_hostname;
     };
 
     explicit base_transport(configuration c);
@@ -63,6 +66,7 @@ private:
     std::unique_ptr<ss::connected_socket> _fd;
     ss::socket_address _server_addr;
     ss::shared_ptr<ss::tls::certificate_credentials> _creds;
+    std::optional<ss::sstring> _tls_sni_hostname;
 };
 
 class transport final : public base_transport {
