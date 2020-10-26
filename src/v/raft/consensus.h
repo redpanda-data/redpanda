@@ -81,7 +81,6 @@ public:
       replace_configuration(std::vector<model::broker>);
 
     bool is_leader() const { return _vstate == vote_state::leader; }
-    bool is_candidate() const { return _vstate == vote_state::candidate; }
     std::optional<model::node_id> get_leader_id() const { return _leader_id; }
     model::node_id self() const { return _self; }
     protocol_metadata meta() const {
@@ -99,7 +98,7 @@ public:
     const model::ntp& ntp() const { return _log.config().ntp(); }
     clock_type::time_point last_heartbeat() const { return _hbeat; };
 
-    clock_type::time_point last_append_timestamp(model::node_id);
+    clock_type::time_point last_hbeat_timestamp(model::node_id);
     /**
      * \brief Persist snapshot with given data and start offset
      *
@@ -235,7 +234,6 @@ private:
     ss::future<> maybe_update_follower_commit_idx(model::offset);
 
     void arm_vote_timeout();
-    void update_node_append_timestamp(model::node_id);
     void update_node_hbeat_timestamp(model::node_id);
 
     void update_follower_stats(const group_configuration&);
@@ -246,8 +244,6 @@ private:
     /// \brief called by the vote timer, to dispatch a write under
     /// the ops semaphore
     void dispatch_flush_with_lock();
-
-    void maybe_step_down();
 
     absl::flat_hash_map<model::node_id, follower_req_seq>
     next_followers_request_seq();
@@ -286,7 +282,6 @@ private:
 
     /// useful for when we are not the leader
     clock_type::time_point _hbeat = clock_type::now();
-    clock_type::time_point _became_leader_at = clock_type::now();
     /// used to keep track if we are a leader, or transitioning
     vote_state _vstate = vote_state::follower;
     /// used for votes only. heartbeats are done by heartbeat_manager
