@@ -480,7 +480,7 @@ endif()
 
 ExternalProject_Add(seastar
   GIT_REPOSITORY https://github.com/vectorizedio/seastar.git
-  GIT_TAG 290f579f8f9dd72531194e5bd4e8a4a0a2ff4efd
+  GIT_TAG 92c639117d9f32f0b5f23b05b1ca14c39e1df8a7
   INSTALL_DIR    @V_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   CMAKE_ARGS
