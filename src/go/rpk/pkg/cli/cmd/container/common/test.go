@@ -64,6 +64,7 @@ type MockClient struct {
 	MockNetworkInspect func(
 		ctx context.Context,
 		networkID string,
+		options types.NetworkInspectOptions,
 	) (types.NetworkResource, error)
 
 	MockIsErrNotFound func(err error) bool
@@ -159,10 +160,10 @@ func (c *MockClient) NetworkList(
 }
 
 func (c *MockClient) NetworkInspect(
-	ctx context.Context, networkID string,
+	ctx context.Context, networkID string, options types.NetworkInspectOptions,
 ) (types.NetworkResource, error) {
 	if c.MockNetworkInspect != nil {
-		return c.MockNetworkInspect(ctx, networkID)
+		return c.MockNetworkInspect(ctx, networkID, options)
 	}
 	return types.NetworkResource{}, nil
 }

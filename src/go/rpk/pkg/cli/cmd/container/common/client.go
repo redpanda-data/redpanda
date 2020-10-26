@@ -62,6 +62,7 @@ type Client interface {
 	NetworkInspect(
 		ctx context.Context,
 		networkID string,
+		options types.NetworkInspectOptions,
 	) (types.NetworkResource, error)
 
 	IsErrNotFound(err error) bool

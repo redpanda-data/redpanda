@@ -309,7 +309,7 @@ func getHostPort(
 
 func nodeIP(c Client, netID string, id uint) (string, error) {
 	ctx, _ := DefaultCtx()
-	networkResource, err := c.NetworkInspect(ctx, netID)
+	networkResource, err := c.NetworkInspect(ctx, netID, types.NetworkInspectOptions{})
 	if err != nil {
 		return "", err
 	}

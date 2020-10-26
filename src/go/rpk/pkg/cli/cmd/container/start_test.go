@@ -59,6 +59,7 @@ func TestStart(t *testing.T) {
 					MockNetworkInspect: func(
 						_ context.Context,
 						_ string,
+						_ types.NetworkInspectOptions,
 					) (types.NetworkResource, error) {
 						res := types.NetworkResource{}
 						return res, errors.New(
@@ -85,6 +86,7 @@ func TestStart(t *testing.T) {
 					MockNetworkInspect: func(
 						_ context.Context,
 						_ string,
+						_ types.NetworkInspectOptions,
 					) (types.NetworkResource, error) {
 						ipam := network.IPAM{
 							Config: []network.IPAMConfig{},
@@ -116,6 +118,7 @@ func TestStart(t *testing.T) {
 					MockNetworkInspect: func(
 						_ context.Context,
 						_ string,
+						_ types.NetworkInspectOptions,
 					) (types.NetworkResource, error) {
 						ipamConf := network.IPAMConfig{
 							Subnet:  "172.24.1.0/24",
@@ -167,6 +170,7 @@ func TestStart(t *testing.T) {
 					MockNetworkInspect: func(
 						_ context.Context,
 						_ string,
+						_ types.NetworkInspectOptions,
 					) (types.NetworkResource, error) {
 						ipamConf := network.IPAMConfig{
 							Subnet:  "172.24.1.0/24",
@@ -221,6 +225,7 @@ func TestStart(t *testing.T) {
 					MockNetworkInspect: func(
 						_ context.Context,
 						_ string,
+						_ types.NetworkInspectOptions,
 					) (types.NetworkResource, error) {
 						ipamConf := network.IPAMConfig{
 							Subnet:  "172.24.1.0/24",
