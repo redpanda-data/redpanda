@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"testing"
 	"vectorized/pkg/cli/cmd/container/common"
 
@@ -25,6 +26,90 @@ func TestStart(t *testing.T) {
 		before         func(afero.Fs) error
 		check          func(afero.Fs, *testing.T)
 	}{
+		{
+			name: "it should fail if the img can't be pulled and imgs can't be listed",
+			client: func() (common.Client, error) {
+				return &common.MockClient{
+					MockImagePull: func(
+						_ context.Context,
+						_ string,
+						_ types.ImagePullOptions,
+					) (io.ReadCloser, error) {
+						return nil, errors.New("Can't pull")
+					},
+					MockImageList: func(
+						_ context.Context,
+						_ types.ImageListOptions,
+					) ([]types.ImageSummary, error) {
+						return nil, errors.New("Can't list")
+					},
+				}, nil
+			},
+			expectedErrMsg: "Couldn't pull image and a local one" +
+				" wasn't found either.",
+			check: func(fs afero.Fs, st *testing.T) {
+				ok, err := common.CheckFiles(fs, st, false, common.ClusterDir())
+				require.NoError(st, err)
+				require.True(st, ok)
+			},
+		},
+		{
+			name: "it should fail if the img couldn't be pulled bc of internet conn issues",
+			client: func() (common.Client, error) {
+				return &common.MockClient{
+					MockImagePull: func(
+						_ context.Context,
+						_ string,
+						_ types.ImagePullOptions,
+					) (io.ReadCloser, error) {
+						return nil, errors.New("Can't pull")
+					},
+					MockImageList: func(
+						_ context.Context,
+						_ types.ImageListOptions,
+					) ([]types.ImageSummary, error) {
+						return nil, errors.New("Can't list")
+					},
+					MockIsErrConnectionFailed: func(_ error) bool {
+						return true
+					},
+				}, nil
+			},
+			expectedErrMsg: `Couldn't pull image and a local one wasn't found either.
+Please check your internet connection and try again.`,
+			check: func(fs afero.Fs, st *testing.T) {
+				ok, err := common.CheckFiles(fs, st, false, common.ClusterDir())
+				require.NoError(st, err)
+				require.True(st, ok)
+			},
+		},
+		{
+			name: "it should fail if the img can't be pulled and it isn't avail. locally",
+			client: func() (common.Client, error) {
+				return &common.MockClient{
+					MockImagePull: func(
+						_ context.Context,
+						_ string,
+						_ types.ImagePullOptions,
+					) (io.ReadCloser, error) {
+						return nil, errors.New("Can't pull")
+					},
+					MockImageList: func(
+						_ context.Context,
+						_ types.ImageListOptions,
+					) ([]types.ImageSummary, error) {
+						return []types.ImageSummary{}, nil
+					},
+				}, nil
+			},
+			expectedErrMsg: "Couldn't pull image and a local one" +
+				" wasn't found either.",
+			check: func(fs afero.Fs, st *testing.T) {
+				ok, err := common.CheckFiles(fs, st, false, common.ClusterDir())
+				require.NoError(st, err)
+				require.True(st, ok)
+			},
+		},
 		{
 			name: "it should fail if creating the network fails",
 			client: func() (common.Client, error) {

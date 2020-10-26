@@ -66,6 +66,28 @@ func startCluster(fs afero.Fs, c common.Client, nodes uint) error {
 		return nil
 	}
 
+	log.Info("Downloading latest version of Redpanda")
+	err = common.PullImage(c)
+	if err != nil {
+		log.Debugf("Error trying to pull latest image: %v", err)
+
+		msg := "Couldn't pull image and a local one wasn't found either."
+		if c.IsErrConnectionFailed(err) {
+			msg += "\nPlease check your internet connection" +
+				" and try again."
+		}
+
+		present, checkErr := common.CheckIfImgPresent(c)
+
+		if checkErr != nil {
+			log.Debugf("Error trying to list local images: %v", err)
+
+		}
+		if !present {
+			return errors.New(msg)
+		}
+	}
+
 	dir := common.ClusterDir()
 	// If it doesn't exist already, create a directory for the cluster.
 	exists, err := afero.DirExists(fs, dir)
