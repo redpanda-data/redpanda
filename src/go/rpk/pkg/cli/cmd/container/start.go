@@ -129,6 +129,7 @@ func startCluster(fs afero.Fs, c common.Client, nodes uint) error {
 		return err
 	}
 
+	log.Info("Starting cluster")
 	seedIP, seedKafkaPort, err := startNode(
 		fs,
 		c,

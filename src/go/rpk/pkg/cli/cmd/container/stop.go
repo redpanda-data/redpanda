@@ -43,7 +43,18 @@ You may start a new cluster with 'rpk container start'`,
 	wg.Add(len(nodeIDs))
 	for _, nodeID := range nodeIDs {
 		go func(id uint) {
-			log.Debugf("Stopping node %d", id)
+			defer wg.Done()
+			state, err := common.GetState(c, id)
+			if err != nil {
+				log.Errorf("Couldn't get node %d's state", id)
+				return
+			}
+			// If the node was stopped already, do nothing.
+			if !state.Running {
+				log.Infof("Node %d was stopped already.", id)
+				return
+			}
+			log.Infof("Stopping node %d", id)
 			ctx := context.Background()
 			// Redpanda sometimes takes a while to stop, so 20
 			// seconds is a safe estimate
@@ -56,11 +67,10 @@ You may start a new cluster with 'rpk container start'`,
 			if err != nil {
 				log.Errorf("Couldn't stop node %d", id)
 				log.Debug(err)
+				return
 			}
-			wg.Done()
 		}(nodeID)
 	}
 	wg.Wait()
-	log.Info("Stopped current cluster.")
 	return nil
 }
