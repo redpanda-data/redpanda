@@ -37,8 +37,7 @@ func Test_collectRedpandaArgs(t *testing.T) {
 				"redpanda",
 				"--redpanda-cfg",
 				"/etc/redpanda/redpanda.yaml",
-				"--memory",
-				"1G",
+				"--memory=1G",
 			},
 		},
 		{
@@ -53,8 +52,7 @@ func Test_collectRedpandaArgs(t *testing.T) {
 				"redpanda",
 				"--redpanda-cfg",
 				"/etc/redpanda/redpanda.yaml",
-				"--cpuset",
-				"0-1",
+				"--cpuset=0-1",
 			},
 		},
 		{
@@ -69,8 +67,7 @@ func Test_collectRedpandaArgs(t *testing.T) {
 				"redpanda",
 				"--redpanda-cfg",
 				"/etc/redpanda/redpanda.yaml",
-				"--io-properties-file",
-				"/etc/redpanda/io-config.yaml",
+				"--io-properties-file=/etc/redpanda/io-config.yaml",
 			},
 		},
 		{
@@ -85,8 +82,7 @@ func Test_collectRedpandaArgs(t *testing.T) {
 				"redpanda",
 				"--redpanda-cfg",
 				"/etc/redpanda/redpanda.yaml",
-				"--lock-memory",
-				"true",
+				"--lock-memory=true",
 			},
 		},
 	}

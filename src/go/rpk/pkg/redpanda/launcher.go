@@ -2,6 +2,7 @@ package redpanda
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -74,7 +75,10 @@ func collectRedpandaArgs(args *RedpandaArgs) []string {
 
 	for flag, value := range args.SeastarFlags {
 		if value != "" {
-			redpandaArgs = append(redpandaArgs, "--"+flag, value)
+			redpandaArgs = append(
+				redpandaArgs,
+				fmt.Sprintf("--%s=%s", flag, value),
+			)
 		} else {
 			redpandaArgs = append(redpandaArgs, "--"+flag)
 		}
