@@ -43,6 +43,7 @@ type seastarFlags struct {
 	numIoQueues      int
 	maxIoRequests    int
 	mbind            bool
+	overprovisioned  bool
 }
 
 const (
