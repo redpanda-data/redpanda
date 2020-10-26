@@ -17,6 +17,11 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+type node struct {
+	id   uint
+	addr string
+}
+
 func Start(fs afero.Fs) *cobra.Command {
 	var (
 		nodes uint
@@ -55,14 +60,16 @@ func Start(fs afero.Fs) *cobra.Command {
 	return command
 }
 
-func startCluster(fs afero.Fs, c common.Client, nodes uint) error {
+func startCluster(fs afero.Fs, c common.Client, n uint) error {
 	// Check if cluster exists and start it again.
 	restarted, err := restartCluster(fs, c)
 	if err != nil {
 		return err
 	}
 	// If a cluster was restarted, there's nothing else to do.
-	if restarted {
+	if len(restarted) != 0 {
+		log.Info("\nFound an existing cluster:\n")
+		renderClusterInfo(restarted)
 		return nil
 	}
 
@@ -145,15 +152,15 @@ func startCluster(fs afero.Fs, c common.Client, nodes uint) error {
 		return err
 	}
 
-	seedAddr := fmt.Sprintf("%s:%d", seedIP, seedKafkaPort)
+	seedNode := node{0, fmt.Sprintf("%s:%d", seedIP, seedKafkaPort)}
 
-	addrs := []string{seedAddr}
+	nodes := []node{seedNode}
 
 	mu := sync.Mutex{}
 
 	grp, _ := errgroup.WithContext(context.Background())
 
-	for nodeID := uint(1); nodeID < nodes; nodeID++ {
+	for nodeID := uint(1); nodeID < n; nodeID++ {
 		id := nodeID
 		grp.Go(func() error {
 			kafkaPort, err := net.GetFreePort()
@@ -189,11 +196,14 @@ func startCluster(fs afero.Fs, c common.Client, nodes uint) error {
 				return err
 			}
 			mu.Lock()
-			addrs = append(addrs, fmt.Sprintf(
-				"%s:%d",
-				ip,
-				port,
-			))
+			nodes = append(nodes, node{
+				id,
+				fmt.Sprintf(
+					"%s:%d",
+					ip,
+					port,
+				),
+			})
 			mu.Unlock()
 			return nil
 		})
@@ -203,39 +213,29 @@ func startCluster(fs afero.Fs, c common.Client, nodes uint) error {
 	if err != nil {
 		return err
 	}
-
-	t := ui.NewRpkTable(log.StandardLogger().Out)
-	t.SetColWidth(80)
-	t.SetAutoWrapText(true)
-	t.SetHeader([]string{"Node ID", "Address", "Config"})
-	for id, addr := range addrs {
-		t.Append([]string{
-			fmt.Sprint(id),
-			addr,
-			common.ConfPath(uint(id)),
-		})
-	}
-
-	t.Render()
+	renderClusterInfo(nodes)
 	log.Infof(
 		"\nCluster started! You may use 'rpk api' to interact with"+
 			" the cluster. E.g:\n\nrpk api status --brokers %s\n",
-		seedAddr,
+		seedNode.addr,
 	)
+
 	return nil
 }
 
-func restartCluster(fs afero.Fs, c common.Client) (bool, error) {
+func restartCluster(fs afero.Fs, c common.Client) ([]node, error) {
 	// Check if a cluster is running
 	nodeIDs, err := common.GetExistingNodes(fs)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 	// If there isn't an existing cluster, there's nothing to restart.
 	if len(nodeIDs) == 0 {
-		return false, nil
+		return nil, nil
 	}
 	grp, _ := errgroup.WithContext(context.Background())
+	mu := sync.Mutex{}
+	nodes := []node{}
 	for _, nodeID := range nodeIDs {
 		id := nodeID
 		grp.Go(func() error {
@@ -264,13 +264,26 @@ func restartCluster(fs afero.Fs, c common.Client) (bool, error) {
 				if err != nil {
 					return err
 				}
+				state, err = common.GetState(c, id)
+				if err != nil {
+					return err
+				}
 			}
+			mu.Lock()
+			nodes = append(nodes, node{
+				state.ID,
+				fmt.Sprintf(
+					"%s:%d",
+					state.ContainerIP,
+					state.HostKafkaPort,
+				),
+			})
+			mu.Unlock()
 			return nil
 		})
 	}
 	err = grp.Wait()
-	restarted := len(nodeIDs) > 0 && err == nil
-	return restarted, err
+	return nodes, err
 }
 
 func startNode(
@@ -306,4 +319,20 @@ func writeNodeConfig(
 	}
 
 	return &conf, config.WriteConfig(fs, &conf, path)
+}
+
+func renderClusterInfo(nodes []node) {
+	t := ui.NewRpkTable(log.StandardLogger().Out)
+	t.SetColWidth(80)
+	t.SetAutoWrapText(true)
+	t.SetHeader([]string{"Node ID", "Address", "Config"})
+	for _, node := range nodes {
+		t.Append([]string{
+			fmt.Sprint(node.id),
+			node.addr,
+			common.ConfPath(node.id),
+		})
+	}
+
+	t.Render()
 }
