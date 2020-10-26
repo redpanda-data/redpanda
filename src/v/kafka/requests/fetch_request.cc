@@ -10,6 +10,7 @@
 #include "kafka/requests/fetch_request.h"
 
 #include "cluster/namespace.h"
+#include "cluster/partition.h"
 #include "cluster/partition_manager.h"
 #include "kafka/errors.h"
 #include "kafka/requests/batch_consumer.h"
@@ -28,6 +29,28 @@
 #include <string_view>
 
 namespace kafka {
+
+class partition_wrapper {
+public:
+    partition_wrapper(
+      ss::lw_shared_ptr<cluster::partition> partition,
+      std::optional<storage::log> log = std::nullopt)
+      : _partition(partition)
+      , _log(log) {}
+
+    ss::future<model::record_batch_reader> make_reader(
+      storage::log_reader_config config,
+      std::optional<model::timeout_clock::time_point> deadline) {
+        return _log ? _log->make_reader(config)
+                    : _partition->make_reader(config, deadline);
+    }
+
+    cluster::partition_probe& probe() { return _partition->probe(); }
+
+private:
+    ss::lw_shared_ptr<cluster::partition> _partition;
+    std::optional<storage::log> _log;
+};
 
 void fetch_request::encode(response_writer& writer, api_version version) {
     writer.write(replica_id());
@@ -263,7 +286,7 @@ make_ready_partition_response_error(error_code error) {
  * Low-level handler for reading from an ntp. Runs on ntp's home core.
  */
 static ss::future<fetch_response::partition_response> read_from_partition(
-  ss::lw_shared_ptr<cluster::partition> partition,
+  partition_wrapper pw,
   fetch_config config,
   std::optional<model::timeout_clock::time_point> deadline) {
     storage::log_reader_config reader_config(
@@ -278,17 +301,17 @@ static ss::future<fetch_response::partition_response> read_from_partition(
 
     reader_config.strict_max_bytes = config.strict_max_bytes;
 
-    return partition->make_reader(reader_config, deadline)
-      .then([partition,
-             timeout = config.timeout](model::record_batch_reader reader) {
+    return pw.make_reader(reader_config, deadline)
+      .then([pw, timeout = config.timeout](
+              model::record_batch_reader reader) mutable {
           vlog(klog.trace, "fetch reader {}", reader);
           return std::move(reader)
             .consume(kafka_batch_serializer(), timeout)
-            .then([partition](kafka_batch_serializer::result res) {
+            .then([pw](kafka_batch_serializer::result res) mutable {
                 /*
                  * return path will fill in other response fields.
                  */
-                partition->probe().add_records_fetched(res.record_count);
+                pw.probe().add_records_fetched(res.record_count);
                 return fetch_response::partition_response{
                   .error = error_code::none,
                   .record_set = std::move(res.data),
@@ -315,7 +338,9 @@ read_from_ntp(op_context& octx, model::ntp ntp, fetch_config config) {
      * the tp in the metadata cache so that this condition is unlikely
      * to pass.
      */
-    auto shard = octx.rctx.shards().shard_for(ntp);
+    const auto mntpv = model::materialized_ntp(std::move(ntp));
+    auto shard = octx.rctx.shards().shard_for(mntpv.source_ntp());
+
     if (unlikely(!shard)) {
         return make_ready_partition_response_error(
           error_code::unknown_topic_or_partition);
@@ -326,12 +351,12 @@ read_from_ntp(op_context& octx, model::ntp ntp, fetch_config config) {
       octx.ssg,
       [initial_fetch = octx.initial_fetch,
        deadline = octx.deadline,
-       ntp = std::move(ntp),
+       mntpv = std::move(mntpv),
        config](cluster::partition_manager& mgr) {
           /*
            * lookup the ntp's partition
            */
-          auto partition = mgr.get(ntp);
+          auto partition = mgr.get(mntpv.source_ntp());
           if (unlikely(!partition)) {
               return make_ready_partition_response_error(
                 error_code::unknown_topic_or_partition);
@@ -340,6 +365,16 @@ read_from_ntp(op_context& octx, model::ntp ntp, fetch_config config) {
               return make_ready_partition_response_error(
                 error_code::not_leader_for_partition);
           }
+          if (mntpv.is_materialized()) {
+              if (auto log = mgr.log(mntpv.input_ntp())) {
+                  return read_from_partition(
+                    partition_wrapper(partition, log), config, std::nullopt);
+              } else {
+                  return make_ready_partition_response_error(
+                    error_code::unknown_topic_or_partition);
+              }
+          }
+
           auto high_watermark = partition->high_watermark();
           auto max_offset = high_watermark < model::offset(0)
                               ? model::offset(0)
@@ -369,7 +404,9 @@ read_from_ntp(op_context& octx, model::ntp ntp, fetch_config config) {
                           || config.start_offset > high_watermark;
 
           return read_from_partition(
-                   partition, config, can_wait ? deadline : std::nullopt)
+                   partition_wrapper(partition),
+                   config,
+                   can_wait ? deadline : std::nullopt)
             .then([partition](fetch_response::partition_response&& resp) {
                 resp.last_stable_offset = partition->last_stable_offset();
                 resp.high_watermark = partition->high_watermark();
