@@ -1,6 +1,7 @@
 package common
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -286,6 +287,18 @@ func CreateNode(
 		ContainerID:   container.ID,
 		ContainerIP:   ip,
 	}, nil
+}
+
+func PullImage(c Client) error {
+	ctx, _ := DefaultCtx()
+	res, err := c.ImagePull(ctx, redpandaImage, types.ImagePullOptions{})
+	if res != nil {
+		defer res.Close()
+		buf := bytes.Buffer{}
+		buf.ReadFrom(res)
+		log.Debug(buf.String())
+	}
+	return err
 }
 
 func getHostPort(
