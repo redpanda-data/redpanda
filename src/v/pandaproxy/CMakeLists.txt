@@ -70,3 +70,4 @@ endif()
 install(TARGETS pandaproxy DESTINATION bin)
 
 add_subdirectory(json)
+add_subdirectory(test)
