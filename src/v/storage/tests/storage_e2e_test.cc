@@ -5,6 +5,7 @@
 #include "model/timeout_clock.h"
 #include "model/timestamp.h"
 #include "random/generators.h"
+#include "storage/batch_cache.h"
 #include "storage/log_manager.h"
 #include "storage/record_batch_builder.h"
 #include "storage/tests/storage_test_fixture.h"
@@ -973,6 +974,8 @@ FIXTURE_TEST(partition_size_while_cleanup, storage_test_fixture) {
     cfg.max_segment_size = 10_KiB;
     cfg.max_compacted_segment_size = 10_KiB;
     cfg.stype = storage::log_config::storage_type::disk;
+    // we want force reading most recent compacted batches, disable the cache
+    cfg.cache = storage::log_config::with_cache::no;
     ss::abort_source as;
     storage::log_manager mgr = make_log_manager(cfg);
 
