@@ -27,9 +27,10 @@ SEASTAR_THREAD_TEST_CASE(initially_empty) {
 
 SEASTAR_THREAD_TEST_CASE(evict) {
     storage::batch_cache c(opts);
+    storage::batch_cache_index index(c);
 
     auto b = make_batch(100);
-    auto w = c.put(std::move(b));
+    auto w = c.put(index, std::move(b));
     BOOST_CHECK(!c.empty());
     c.evict(std::move(w));
     BOOST_CHECK(c.empty());
@@ -37,11 +38,12 @@ SEASTAR_THREAD_TEST_CASE(evict) {
 
 SEASTAR_THREAD_TEST_CASE(reclaim_rounds_up) {
     storage::batch_cache c(opts);
+    storage::batch_cache_index index(c);
 
     auto b = make_batch(100);
     auto b_size = b.memory_usage();
 
-    c.put(std::move(b));
+    c.put(index, std::move(b));
     BOOST_CHECK(!c.empty());
 
     auto size = c.reclaim(1);
@@ -51,16 +53,17 @@ SEASTAR_THREAD_TEST_CASE(reclaim_rounds_up) {
 
 SEASTAR_THREAD_TEST_CASE(reclaim_removes_multiple) {
     storage::batch_cache c(opts);
+    storage::batch_cache_index index(c);
 
     auto b = make_batch(100);
     auto b_size = b.memory_usage();
 
-    c.put(b.share());
-    c.put(b.share());
-    c.put(b.share());
-    c.put(b.share());
-    c.put(b.share());
-    c.put(b.share());
+    c.put(index, b.share());
+    c.put(index, b.share());
+    c.put(index, b.share());
+    c.put(index, b.share());
+    c.put(index, b.share());
+    c.put(index, b.share());
     BOOST_CHECK(!c.empty());
 
     auto size = c.reclaim(b_size + 1);
@@ -70,10 +73,11 @@ SEASTAR_THREAD_TEST_CASE(reclaim_removes_multiple) {
 
 SEASTAR_THREAD_TEST_CASE(weakness) {
     storage::batch_cache c(opts);
+    storage::batch_cache_index index(c);
 
-    auto b0 = c.put(make_batch(10));
-    auto b1 = c.put(make_batch(10));
-    auto b2 = c.put(make_batch(10));
+    auto b0 = c.put(index, make_batch(10));
+    auto b1 = c.put(index, make_batch(10));
+    auto b2 = c.put(index, make_batch(10));
 
     BOOST_CHECK(!c.empty());
 
@@ -96,9 +100,12 @@ SEASTAR_THREAD_TEST_CASE(touch) {
     };
 
     {
+        std::unique_ptr<storage::batch_cache_index> index;
+
         storage::batch_cache c(opts);
-        auto b0 = c.put(make_batch(10));
-        auto b1 = c.put(make_batch(10));
+        index = std::make_unique<storage::batch_cache_index>(c);
+        auto b0 = c.put(*index, make_batch(10));
+        auto b1 = c.put(*index, make_batch(10));
 
         // first one is invalid, second one still valid
         c.reclaim(1);
@@ -107,10 +114,13 @@ SEASTAR_THREAD_TEST_CASE(touch) {
     }
 
     {
+        std::unique_ptr<storage::batch_cache_index> index;
+
         // build the cache the same way
         storage::batch_cache c(opts);
-        auto b0 = c.put(make_batch(10));
-        auto b1 = c.put(make_batch(10));
+        index = std::make_unique<storage::batch_cache_index>(c);
+        auto b0 = c.put(*index, make_batch(10));
+        auto b1 = c.put(*index, make_batch(10));
 
         // the first one moves to the head
         c.touch(b0);

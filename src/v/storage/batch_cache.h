@@ -17,6 +17,8 @@
 
 namespace storage {
 
+class batch_cache_index;
+
 /**
  * The batch cache system consists of two components. The `batch_cache` is a
  * global (per-shard) LRU cache of batches stored in memory. The second
@@ -117,16 +119,25 @@ public:
             entry& _e;
         };
 
-        explicit entry(model::record_batch&& batch)
-          : batch(std::move(batch)) {}
+        explicit entry(batch_cache_index& index, model::record_batch&& batch)
+          : _batch(std::move(batch))
+          , _index(index) {}
+
         ~entry() noexcept = default;
         entry(entry&&) noexcept = delete;
         entry& operator=(entry&&) noexcept = delete;
         entry(const entry&) = delete;
         entry& operator=(const entry&) = delete;
 
-        // NOLINTNEXTLINE
-        model::record_batch batch;
+        // the entry initially contains a valid batch, but it may transition
+        // into an invalid state where the batch data cannot be accessed.
+        bool valid() const { return _valid; }
+        void invalidate() { _valid = false; }
+
+        model::record_batch& batch() {
+            vassert(_valid, "cannot access invalided batch");
+            return _batch;
+        }
 
         void pin() { _pinned = true; }
         void unpin() { _pinned = false; }
@@ -136,8 +147,15 @@ public:
         friend class batch_cache;
         friend ss::weakly_referencable<entry>;
 
+        // invalidation is logical. we still want the cache to be able to look
+        // at its memory usage and base offset, but the cache index should never
+        // interact with an invalid entry.
+        bool _valid{true};
+        model::record_batch _batch;
+
         bool _pinned{false};
         intrusive_list_hook _hook;
+        batch_cache_index& _index;
     };
 
     using entry_ptr = ss::weak_ptr<entry>;
@@ -186,7 +204,7 @@ public:
      * The returned weak_ptr will be invalidated if its memory is reclaimed. To
      * evict the entry, move it into batch_cache::evict().
      */
-    entry_ptr put(const model::record_batch&);
+    entry_ptr put(batch_cache_index&, const model::record_batch&);
 
     /**
      * \brief Remove a batch from the cache.
@@ -290,6 +308,7 @@ public:
     explicit batch_cache_index(batch_cache& cache)
       : _cache(&cache) {}
     ~batch_cache_index() {
+        lock_guard lk(*this);
         std::for_each(
           _index.begin(), _index.end(), [this](index_type::value_type& e) {
               _cache->evict(std::move(e.second));
@@ -303,9 +322,18 @@ public:
     bool empty() const { return _index.empty(); }
 
     void put(const model::record_batch& batch) {
-        auto offset = batch.header().base_offset();
-        auto p = _cache->put(batch);
-        _index.emplace(offset, std::move(p));
+        lock_guard lk(*this);
+        auto offset = batch.header().base_offset;
+        if (likely(!_index.contains(offset))) {
+            /*
+             * do not allow initial cache entries to be dangling. if the index
+             * is destroyed the cache will contain invalid index reference. once
+             * entries are initialized in the cache and index, clean-up happens
+             * correctly on either side.
+             */
+            auto p = _cache->put(*this, batch);
+            _index.emplace(offset, std::move(p));
+        }
     }
 
     /**
@@ -365,6 +393,45 @@ public:
     }
 
 private:
+    friend class batch_cache;
+
+    class lock_guard {
+    public:
+        explicit lock_guard(batch_cache_index& index) noexcept
+          : _index(index) {
+            _index.lock();
+        }
+
+        lock_guard(lock_guard&&) = delete;
+        lock_guard& operator=(lock_guard&&) = delete;
+        lock_guard(const lock_guard&) = delete;
+        lock_guard& operator=(const lock_guard&) = delete;
+        ~lock_guard() noexcept { _index.unlock(); }
+
+    private:
+        batch_cache_index& _index;
+    };
+
+    bool locked() const { return _locked; }
+
+    void lock() {
+        vassert(!_locked, "batch cache index double lock");
+        _locked = true;
+    }
+
+    void unlock() {
+        vassert(_locked, "batch cache index double unlock");
+        _locked = false;
+    }
+
+    /*
+     * XXX: only safe when invoked by the batch cache reclaimer.
+     */
+    bool remove(model::offset offset) {
+        vassert(!locked(), "attempt to erase from locked index");
+        return _index.erase(offset) == 1;
+    }
+
     /*
      * Return an iterator to the first batch that _may_ contain the specified
      * offset. Since the batch may have been evicted, and we only store the base
@@ -389,13 +456,14 @@ private:
      */
     index_type::iterator find_first_contains(model::offset offset) {
         if (auto it = find_first(offset);
-            it != _index.end() && it->second
-            && it->second->batch.contains(offset)) {
+            it != _index.end() && it->second && it->second->valid()
+            && it->second->batch().contains(offset)) {
             return it;
         }
         return _index.end();
     }
 
+    bool _locked{false};
     batch_cache* _cache;
     index_type _index;
 
