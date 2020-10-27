@@ -568,6 +568,7 @@ public:
      */
     const iobuf& data() const { return _records; }
     iobuf&& release_data() && { return std::move(_records); }
+    void clear_data() { _records.clear(); }
 
 private:
     record_batch_header _header;
