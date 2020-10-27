@@ -301,6 +301,20 @@ func PullImage(c Client) error {
 	return err
 }
 
+func CheckIfImgPresent(c Client) (bool, error) {
+	ctx, _ := DefaultCtx()
+	imgs, err := c.ImageList(ctx, types.ImageListOptions{})
+	if err != nil {
+		return false, err
+	}
+	for _, img := range imgs {
+		if img.ID == redpandaImage {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func getHostPort(
 	containerPort int, containerJSON types.ContainerJSON,
 ) (uint, error) {
