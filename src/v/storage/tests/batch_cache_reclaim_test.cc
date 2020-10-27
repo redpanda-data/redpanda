@@ -19,12 +19,14 @@ static storage::batch_cache::reclaim_options opts = {
 };
 
 model::record_batch make_batch(size_t size) {
+    static model::offset base_offset{0};
     iobuf value;
     value.append(ss::temporary_buffer<char>(size));
-    cluster::simple_batch_builder builder(
-      raft::data_batch_type, model::offset(0));
+    cluster::simple_batch_builder builder(raft::data_batch_type, base_offset);
     builder.add_kv(iobuf{}, std::move(value));
-    return std::move(builder).build();
+    auto batch = std::move(builder).build();
+    base_offset += model::offset(batch.record_count());
+    return batch;
 }
 
 class fixture {};
@@ -33,6 +35,7 @@ FIXTURE_TEST(reclaim, fixture) {
     using namespace std::chrono_literals;
 
     storage::batch_cache cache(opts);
+    storage::batch_cache_index index(cache);
     std::vector<storage::batch_cache::entry_ptr> cache_entries;
     cache_entries.reserve(30);
 
@@ -63,7 +66,7 @@ FIXTURE_TEST(reclaim, fixture) {
     for (auto i = 0; i < (pages_until_reclaim / 2); i++) {
         size_t buf_size = ss::memory::page_size - sizeof(model::record_batch);
         auto batch = make_batch(buf_size);
-        auto e = cache.put(std::move(batch));
+        auto e = cache.put(index, std::move(batch));
         cache_entries.emplace_back(std::move(e));
     }
 
@@ -83,7 +86,7 @@ FIXTURE_TEST(reclaim, fixture) {
     for (auto i = 0; i < pages_until_reclaim; i++) {
         size_t buf_size = ss::memory::page_size - sizeof(model::record_batch);
         auto batch = make_batch(buf_size);
-        auto e = cache.put(std::move(batch));
+        auto e = cache.put(index, std::move(batch));
         BOOST_REQUIRE((bool)e);
         cache_entries.emplace_back(std::move(e));
     }
