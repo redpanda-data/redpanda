@@ -2,6 +2,7 @@ package common
 
 import (
 	"context"
+	"io"
 	"testing"
 	"time"
 
@@ -14,6 +15,12 @@ import (
 
 type MockClient struct {
 	MockClose func() error
+
+	MockImagePull func(
+		ctx context.Context,
+		ref string,
+		options types.ImagePullOptions,
+	) (io.ReadCloser, error)
 
 	MockContainerCreate func(
 		ctx context.Context,
@@ -95,6 +102,15 @@ func (c *MockClient) ContainerCreate(
 		)
 	}
 	return container.ContainerCreateCreatedBody{}, nil
+}
+
+func (c *MockClient) ImagePull(
+	ctx context.Context, ref string, options types.ImagePullOptions,
+) (io.ReadCloser, error) {
+	if c.MockImagePull != nil {
+		return c.MockImagePull(ctx, ref, options)
+	}
+	return nil, nil
 }
 
 func (c *MockClient) ContainerStart(
