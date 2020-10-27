@@ -5,7 +5,7 @@ import {
 } from "../../modules/public/Coprocessor";
 
 class CoprocessorTest implements Coprocessor {
-  globalId = BigInt(1);
+  globalId = 1;
   inputTopics = ["topicA"];
   policyError = PolicyError.Deregister;
 

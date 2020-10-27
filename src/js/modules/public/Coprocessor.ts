@@ -54,7 +54,7 @@ interface RecordBatch {
 interface Coprocessor {
   inputTopics: string[];
   policyError: PolicyError;
-  globalId: bigint;
+  globalId: number;
   apply(record: RecordBatch): RecordBatch;
 }
 

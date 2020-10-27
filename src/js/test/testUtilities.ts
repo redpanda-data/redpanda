@@ -3,7 +3,7 @@ import { Handle } from "../modules/domain/Handle";
 import { HandleTable } from "../modules/supervisors/HandleTable";
 
 export const createMockCoprocessor = (
-  globalId: Coprocessor["globalId"] = BigInt(1),
+  globalId: Coprocessor["globalId"] = 1,
   inputTopics: Coprocessor["inputTopics"] = ["topicA"],
   policyError: Coprocessor["policyError"] = PolicyError.SkipOnFailure,
   apply: Coprocessor["apply"] = () => undefined
