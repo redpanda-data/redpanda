@@ -81,6 +81,8 @@ type MockClient struct {
 	) (types.NetworkResource, error)
 
 	MockIsErrNotFound func(err error) bool
+
+	MockIsErrConnectionFailed func(err error) bool
 }
 
 func (c *MockClient) Close() error {
@@ -202,6 +204,13 @@ func (c *MockClient) NetworkInspect(
 func (c *MockClient) IsErrNotFound(err error) bool {
 	if c.MockIsErrNotFound != nil {
 		return c.MockIsErrNotFound(err)
+	}
+	return false
+}
+
+func (c *MockClient) IsErrConnectionFailed(err error) bool {
+	if c.MockIsErrConnectionFailed != nil {
+		return c.MockIsErrConnectionFailed(err)
 	}
 	return false
 }
