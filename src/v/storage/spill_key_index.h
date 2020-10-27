@@ -10,7 +10,7 @@
 #include <seastar/core/file.hh>
 #include <seastar/core/future.hh>
 
-#include <absl/container/flat_hash_map.h>
+#include <absl/container/node_hash_map.h>
 #include <absl/hash/hash.h>
 
 namespace storage::internal {
@@ -25,7 +25,7 @@ public:
     static constexpr size_t max_key_size = compacted_index::max_entry_size
                                            - (2 * vint::max_length);
     using underlying_t
-      = absl::flat_hash_map<bytes, value_type, bytes_type_hash, bytes_type_eq>;
+      = absl::node_hash_map<bytes, value_type, bytes_type_hash, bytes_type_eq>;
 
     spill_key_index(
       ss::sstring filename,
@@ -56,8 +56,9 @@ private:
      *    idx_mem_usage() + _keys_mem_usage
      */
     size_t idx_mem_usage() {
-        return (
-          (sizeof(std::pair<const bytes, value_type>) + 1) * _midx.capacity());
+        using debug = absl::container_internal::hashtable_debug_internal::
+          HashtableDebugAccess<underlying_t>;
+        return debug::AllocatedByteSize(_midx);
     }
     ss::future<> drain_all_keys();
     ss::future<> add_key(bytes b, value_type);
