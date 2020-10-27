@@ -422,6 +422,17 @@ ss::future<> disk_log_impl::flush() {
     return _segs.back()->flush();
 }
 
+size_t disk_log_impl::max_segment_size() const {
+    // override for segment size
+    if (config().has_overrides() && config().get_overrides().segment_size) {
+        return *config().get_overrides().segment_size;
+    }
+    // no overrides use defaults
+    return config().is_compacted()
+             ? _manager.config().max_compacted_segment_size
+             : _manager.config().max_segment_size;
+}
+
 size_t disk_log_impl::bytes_left_before_roll() const {
     if (_segs.empty()) {
         return 0;
@@ -431,9 +442,7 @@ size_t disk_log_impl::bytes_left_before_roll() const {
         return 0;
     }
     auto fo = back->appender().file_byte_offset();
-    auto max = config().is_compacted()
-                 ? _manager.config().max_compacted_segment_size
-                 : _manager.config().max_segment_size;
+    auto max = max_segment_size();
     if (fo >= max) {
         return 0;
     }
@@ -451,9 +460,7 @@ ss::future<> disk_log_impl::maybe_roll(
         return new_segment(next_offset, t, iopc);
     }
     bool size_should_roll = false;
-    const auto max = config().is_compacted()
-                       ? _manager.config().max_compacted_segment_size
-                       : _manager.config().max_segment_size;
+    const auto max = max_segment_size();
     if (ptr->appender().file_byte_offset() >= max) {
         size_should_roll = true;
     }

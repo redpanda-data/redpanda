@@ -925,3 +925,33 @@ FIXTURE_TEST(
     BOOST_REQUIRE_EQUAL(read[read.size() - 1].base_offset(), model::offset(16));
     BOOST_REQUIRE_EQUAL(read[read.size() - 1].last_offset(), model::offset(16));
 }
+
+storage::disk_log_impl* get_disk_log(storage::log log) {
+    return reinterpret_cast<storage::disk_log_impl*>(log.get_impl());
+}
+
+FIXTURE_TEST(check_max_segment_size, storage_test_fixture) {
+    auto cfg = default_log_config(test_dir);
+
+    // defaults
+    cfg.max_segment_size = 1_GiB;
+    cfg.stype = storage::log_config::storage_type::disk;
+    ss::abort_source as;
+    storage::log_manager mgr = make_log_manager(cfg);
+    using overrides_t = storage::ntp_config::default_overrides;
+
+    // override segment size with ntp_config
+    overrides_t ov;
+    ov.segment_size = 10_KiB;
+
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    auto ntp = model::ntp("default", "test", 0);
+
+    storage::ntp_config ntp_cfg(
+      ntp, mgr.config().base_dir, std::make_unique<overrides_t>(ov));
+    auto log = mgr.manage(std::move(ntp_cfg)).get0();
+    // 101 * 1_KiB batches should yield 10 segments
+    auto result = append_exactly(log, 100, 1_KiB).get0(); // 100*1_KiB
+
+    BOOST_REQUIRE_EQUAL(get_disk_log(log)->segments().size(), 10);
+}
