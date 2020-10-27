@@ -3,7 +3,7 @@
 
 static const model::ns test_ns = model::ns("test-namespace");
 
-cluster::partition_assignment create_test_assignment(
+static cluster::partition_assignment create_test_assignment(
   const ss::sstring& topic,
   int partition_id,
   std::vector<std::pair<uint32_t, uint32_t>> shards_assignment,

@@ -70,8 +70,7 @@ void wait_for_metadata(
 }
 
 FIXTURE_TEST(
-
-  recover_single_topic_test_at_current_broker, controller_tests_fixture) {
+  create_single_topic_test_at_current_broker, controller_tests_fixture) {
     auto cntrl = get_controller();
     cntrl->start().get0();
     wait_for_leadership(cntrl->get_partition_leaders().local());
