@@ -2,6 +2,7 @@ package common
 
 import (
 	"context"
+	"io"
 	"time"
 
 	"github.com/docker/docker/api/types"
@@ -14,6 +15,12 @@ import (
 // used, to make it possible to test the code that uses it.
 type Client interface {
 	Close() error
+
+	ImagePull(
+		ctx context.Context,
+		ref string,
+		options types.ImagePullOptions,
+	) (io.ReadCloser, error)
 
 	ContainerCreate(
 		ctx context.Context,
