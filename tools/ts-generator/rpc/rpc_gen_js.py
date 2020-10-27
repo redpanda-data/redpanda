@@ -63,7 +63,7 @@ function generateRpcHeader(
       payloadSize: size,
       meta,
       correlationId,
-      payloadChecksum: hasher.digest().readBigUInt64BE()
+      payloadChecksum: hasher.digest().readBigUInt64LE()
     };
     const auxHeader = Buffer.alloc(26)
     RpcHeader.toBytes(rpc, IOBuf.createFromBuffers([auxHeader]));
@@ -112,7 +112,9 @@ export class {{service_name.title()}}Server {
                       200,
                       rpcHeader.correlationId
                     )
-                    buffer.forEach((fragment => socket.write(fragment.buffer)))
+                    buffer.forEach((fragment =>
+                        socket.write(fragment.buffer.slice(0, fragment.used))
+                    ));
                 })
               break;
             }
@@ -127,7 +129,9 @@ export class {{service_name.title()}}Server {
                 404,
                 rpcHeader.correlationId
               );
-              buffer.forEach((fragment => socket.write(fragment.buffer)));
+              buffer.forEach((fragment =>
+                socket.write(fragment.buffer.slice(0, fragment.used))
+              ));
             }
           }
         }
@@ -185,7 +189,9 @@ export class {{service_name.title()}}Client {
   send(buffer: IOBuf, headerReserve: IOBuf, size: number, meta: number): number{
     const correlationId = ++this.correlationId;
     generateRpcHeader(buffer, headerReserve, size, meta, correlationId);
-    buffer.forEach((fragment => this.client.write(fragment.buffer)));
+    buffer.forEach((fragment =>
+      this.client.write(fragment.buffer.slice(0, fragment.used))
+    ));
     return this.correlationId;
   }
   {% for method in methods %}

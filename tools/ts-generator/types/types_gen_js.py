@@ -52,7 +52,7 @@ serializableFunctions = """
 {%- endmacro -%}
 
 {%- macro write_varint(field, propertyPath, buffer, assign) %}
-    {{ "wroteBytes += " if assign -}} 
+    {{ "wroteBytes = " if assign -}}
     BF.writeVarint({{propertyPath}}, {{buffer}})
 {%- endmacro -%}
 
@@ -60,8 +60,8 @@ serializableFunctions = """
     {# Remove ">" and "Array<" from type, the result is the array type #}
     {%-set subtype = field.type | replace(">","")|replace("Array<", "") %}
     wroteBytes += 
-    BF.writeArray({{propertyPath}}, buffer, 
-        (item, auxBuffer) => {{-serialize_by_field
+    BF.writeArray({{"false" if field.size else "true"}})({{propertyPath}},
+      buffer, (item, auxBuffer) => {{-serialize_by_field
             ({"name": "", 
               "type": subtype},
               "item", "auxBuffer",
@@ -220,23 +220,24 @@ deserializableFunctions = """
     {%- endif -%}
 {%- endmacro %}
 
-{%- macro read_array(type, buffer, offset, func) -%}
+{%- macro read_array(type, buffer, offset, func, size) -%}
     {# Remove ">" and "Array<" from type, the result is the array type #}
     {%-set subtype = type | replace(">","")|replace("Array<", "") -%}
     (() => {
-        const [array, newOffset] = BF.readArray({{buffer}}, {{offset}}, 
-        {{- deserialize_by_type(subtype, "auxBuffer", "auxOffset", True) -}})
+        const [array, newOffset] = BF.readArray({{size}})({{buffer}}, {{offset}}, 
+        {{- deserialize_by_type({"type": subtype}, "auxBuffer", "auxOffset", True) -}})
         offset = newOffset
         return array;
     })()
 {%- endmacro %}
  
-{%- macro deserialize_by_type(type, inBuffer, inOffset, funcStyle) -%}
+{%- macro deserialize_by_type(field, inBuffer, inOffset, funcStyle) -%}
     {%- set buffer = inBuffer | default("buffer", True) -%}
     {%- set offset = inOffset | default("offset", True) -%}
     {%- set func = funcStyle | default(False, True) -%}
+    {%- set type = field.type -%}
     {%- if 'Array' in type %}
-        {{ read_array(type, buffer, offset, func)}}
+        {{ read_array(type, buffer, offset, func, field.size)}}
     {%- elif "int8" in type %}
         {{ read_int8(buffer, offset, func, type) }}
     {%- elif "int16" in type %}
@@ -259,28 +260,19 @@ deserializableFunctions = """
 {%- endmacro %}
 
 {%- macro convert_type(type) -%}
-    {%- if type == "Array<varint>" -%}
-    Array<bigint>
+    {%- if 'Array<' in type-%}
+    {%-set subtype = type | replace(">","")|replace("Array<", "") -%}
+    Array<{{convert_type(subtype)}}>
     {%- elif type == "varint" -%}
     bigint
-    {%- elif type == "Array<int64>" -%}
-    Array<bigint>
     {%- elif type == "int64" -%}
     bigint
-    {%- elif type == "Array<uint64>" -%}
-    Array<bigint>
     {%- elif type == "uint64" -%}
     bigint
-    {%- elif 'Array<int' in type -%}
-    Array<number>
-    {%- elif 'Array<uint' in type -%}
-    Array<number>
     {%- elif 'int' in type -%}
     number
     {%- elif type == "buffer" -%}
     Buffer
-    {%- elif type == "Array<buffer>" -%}
-    Array<Buffer>
     {%- else -%}
     {{type}}
     {%- endif -%}
@@ -304,14 +296,18 @@ export class {{class.className}} {
     * @param buffer is the place where the binary data is stored
     * @param offset is the position where the function will start to
     *        read into buffer
-    * @return a tuple, where first element is a {{class.className}} and second
-    *        one is the read last position in the buffer
+    * @return a tuple, where first element is a {{class.className}} and 
+    *        second one is the read last position in the buffer
     */
     static fromBytes(buffer: Buffer, offset = 0): [{{class.className}}, number]{
+        {%- for field in class.fields %}
+            const {{field.name}} = {{ deserialize_by_type(field) }}
+        {%- endfor %} 
+        
         return [{
-            {%- for field in class.fields %}
-                {{field.name}}: {{ deserialize_by_type(field.type) }},
-            {%- endfor -%}    
+        {%- for field in class.fields %}
+            {{field.name}},
+        {%- endfor -%}        
         }, offset]
     }
    /**

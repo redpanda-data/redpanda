@@ -70,7 +70,7 @@ export class Server {
     socket.on("readable", () => {
       if (socket.readableLength > 26) {
         const [rpcHeader] = RpcHeader.fromBytes(socket.read(26));
-        const [processBatchRequests] = BF.readArray(
+        const [processBatchRequests] = BF.readArray()(
           socket.read(rpcHeader.payloadSize),
           0,
           (auxBuffer, auxOffset) =>
@@ -83,7 +83,7 @@ export class Server {
           (result) => {
             const iobuf = new IOBuf();
             RpcHeader.toBytes(rpcHeader, iobuf);
-            BF.writeArray(result.flat(), iobuf, (item, auxBuffer) =>
+            BF.writeArray(true)(result.flat(), iobuf, (item, auxBuffer) =>
               BF.writeObject(auxBuffer, ProcessBatchRequest, item)
             );
             iobuf.forEach((fragment) => socket.write(fragment.buffer));
