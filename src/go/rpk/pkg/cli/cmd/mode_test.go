@@ -28,7 +28,6 @@ func fillRpkConfig(path, mode string) config.Config {
 		TuneClocksource:   val,
 		TuneSwappiness:    val,
 		CoredumpDir:       path,
-		SMP:               1,
 		Overprovisioned:   !val,
 	}
 	return conf

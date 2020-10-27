@@ -85,7 +85,13 @@ func collectRedpandaArgs(args *RedpandaArgs) []string {
 	}
 
 	for flag, value := range args.SeastarFlags {
-		if isSingle(flag) || value == "" {
+		single := isSingle(flag)
+		if single && value != "true" {
+			// If it's a 'single'-type flag and it's set to false,
+			// then there's no need to include it.
+			continue
+		}
+		if single || value == "" {
 			redpandaArgs = append(redpandaArgs, "--"+flag)
 			continue
 		}

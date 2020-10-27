@@ -91,7 +91,7 @@ type RpkConfig struct {
 	CoredumpDir              string   `yaml:"coredump_dir" json:"coredumpDir"`
 	WellKnownIo              string   `yaml:"well_known_io,omitempty" json:"wellKnownIo"`
 	Overprovisioned          bool     `yaml:"overprovisioned", json:"overprovisioned"`
-	SMP                      int      `yaml:"smp", json:"smp"`
+	SMP                      *int     `yaml:"smp,omitempty", json:"smp,omitempty"`
 }
 
 func (conf *Config) PIDFile() string {
@@ -113,7 +113,6 @@ func DefaultConfig() Config {
 		},
 		Rpk: &RpkConfig{
 			CoredumpDir: "/var/lib/redpanda/coredump",
-			SMP:         1,
 		},
 	}
 }

@@ -143,7 +143,7 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 		"When present will enable tuning before starting redpanda")
 	command.Flags().BoolVar(&prestartCfg.checkEnabled, "check", true,
 		"When set to false will disable system checking before starting redpanda")
-	command.Flags().IntVar(&sFlags.smp, smpFlag, 1, "Restrict redpanda to"+
+	command.Flags().IntVar(&sFlags.smp, smpFlag, 0, "Restrict redpanda to"+
 		" the given number of CPUs. This option does not mandate a"+
 		" specific placement of CPUs. See --cpuset if you need to do so.")
 	command.Flags().StringVar(&sFlags.reserveMemory, reserveMemoryFlag, "",
@@ -297,8 +297,9 @@ func flagsFromConf(
 	if !flags.Changed(overprovisionedFlag) {
 		flagsMap[overprovisionedFlag] = conf.Rpk.Overprovisioned
 	}
-	if !flags.Changed(smpFlag) {
-		flagsMap[smpFlag] = conf.Rpk.SMP
+	// Setting SMP to 0 doesn't make sense.
+	if !flags.Changed(smpFlag) && conf.Rpk.SMP != nil && *conf.Rpk.SMP != 0 {
+		flagsMap[smpFlag] = *conf.Rpk.SMP
 	}
 	if !flags.Changed(lockMemoryFlag) {
 		flagsMap[lockMemoryFlag] = conf.Rpk.EnableMemoryLocking
