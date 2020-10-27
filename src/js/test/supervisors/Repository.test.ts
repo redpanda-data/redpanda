@@ -31,8 +31,8 @@ describe("Repository", function () {
     function (done) {
       const topicA = "topicA";
       const topicB = "topicB";
-      const coprocessorA = createMockCoprocessor(BigInt(1), [topicA]);
-      const coprocessorB = createMockCoprocessor(BigInt(1), [topicB]);
+      const coprocessorA = createMockCoprocessor(1, [topicA]);
+      const coprocessorB = createMockCoprocessor(1, [topicB]);
       const repository = new Repository();
       repository.add(createHandle(coprocessorA));
       const result1 = repository.getCoprocessorsByTopics();
@@ -67,7 +67,7 @@ describe("Repository", function () {
       inputTopics: [topicA, topicB, topicC],
     });
     const handleCoprocessorB = createHandle({
-      globalId: BigInt(2),
+      globalId: 2,
       inputTopics: [topicC],
     });
     repository.add(handleCoprocessorA);
@@ -104,7 +104,7 @@ describe("Repository", function () {
     const repository = new Repository();
     const handleA = createHandle();
     const handleB = createHandle({
-      globalId: BigInt(2),
+      globalId: 2,
       inputTopics: ["topicB"],
     });
     repository.add(handleA);
@@ -116,7 +116,7 @@ describe("Repository", function () {
     const repository = new Repository();
     const handleA = createHandle();
     const handleB = createHandle({
-      globalId: BigInt(2),
+      globalId: 2,
       inputTopics: ["topicB"],
     });
     repository.add(handleA);

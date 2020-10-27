@@ -5,7 +5,7 @@ import { ProcessBatchRequest } from "../domain/generatedRpc/generatedClasses";
 
 export class HandleTable {
   constructor() {
-    this.coprocessors = new Map<bigint, Handle>();
+    this.coprocessors = new Map<number, Handle>();
   }
 
   registerHandle(handle: Handle): void {
@@ -68,5 +68,5 @@ export class HandleTable {
     return this.coprocessors.size;
   }
 
-  private readonly coprocessors: Map<bigint, Handle>;
+  private readonly coprocessors: Map<number, Handle>;
 }
