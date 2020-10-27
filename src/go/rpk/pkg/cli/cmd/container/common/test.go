@@ -22,6 +22,11 @@ type MockClient struct {
 		options types.ImagePullOptions,
 	) (io.ReadCloser, error)
 
+	MockImageList func(
+		ctx context.Context,
+		options types.ImageListOptions,
+	) ([]types.ImageSummary, error)
+
 	MockContainerCreate func(
 		ctx context.Context,
 		config *container.Config,
@@ -111,6 +116,15 @@ func (c *MockClient) ImagePull(
 		return c.MockImagePull(ctx, ref, options)
 	}
 	return nil, nil
+}
+
+func (c *MockClient) ImageList(
+	ctx context.Context, options types.ImageListOptions,
+) ([]types.ImageSummary, error) {
+	if c.MockImageList != nil {
+		return c.MockImageList(ctx, options)
+	}
+	return []types.ImageSummary{}, nil
 }
 
 func (c *MockClient) ContainerStart(
