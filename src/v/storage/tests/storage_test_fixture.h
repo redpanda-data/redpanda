@@ -102,7 +102,7 @@ public:
     read_and_validate_all_batches(storage::log log) {
         auto lstats = log.offsets();
         storage::log_reader_config cfg(
-          model::offset(0),
+          lstats.start_offset,
           lstats.committed_offset,
           ss::default_priority_class());
         auto reader = log.make_reader(std::move(cfg)).get0();
