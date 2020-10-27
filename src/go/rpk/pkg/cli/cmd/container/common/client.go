@@ -78,6 +78,8 @@ type Client interface {
 	) (types.NetworkResource, error)
 
 	IsErrNotFound(err error) bool
+
+	IsErrConnectionFailed(err error) bool
 }
 
 type dockerClient struct {
@@ -94,4 +96,8 @@ func NewDockerClient() (Client, error) {
 
 func (_ *dockerClient) IsErrNotFound(err error) bool {
 	return client.IsErrNotFound(err)
+}
+
+func (_ *dockerClient) IsErrConnectionFailed(err error) bool {
+	return client.IsErrConnectionFailed(err)
 }
