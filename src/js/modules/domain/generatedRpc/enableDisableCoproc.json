@@ -38,7 +38,7 @@
       "fields": [
         {
           "name": "id",
-          "type": "uint32"
+          "type": "uint64"
         },
         {
           "name": "topics",
@@ -60,7 +60,7 @@
       "fields": [
         {
           "name": "id",
-          "type": "uint32"
+          "type": "uint64"
         },
         {
           "name": "response",
@@ -91,7 +91,7 @@
       "fields": [
         {
           "name": "inputs",
-          "type": "Array<int8>"
+          "type": "Array<uint64>"
         }
       ]
     }
