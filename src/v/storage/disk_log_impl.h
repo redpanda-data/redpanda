@@ -110,6 +110,7 @@ private:
     bool is_front_segment(const segment_set::type&) const;
 
 private:
+    size_t max_segment_size() const;
     struct eviction_monitor {
         ss::promise<model::offset> promise;
         ss::abort_source::subscription subscription;
