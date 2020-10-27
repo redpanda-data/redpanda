@@ -58,7 +58,6 @@ func TestSet(t *testing.T) {
 					"truststore_file": "",
 				},
 				"overprovisioned":            false,
-				"smp":                        1,
 				"tune_network":               false,
 				"tune_disk_scheduler":        false,
 				"tune_disk_nomerges":         false,
