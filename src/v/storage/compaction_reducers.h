@@ -10,7 +10,7 @@
 #include "units.h"
 
 #include <absl/container/btree_map.h>
-#include <absl/container/flat_hash_map.h>
+#include <absl/container/node_hash_map.h>
 #include <fmt/core.h>
 #include <roaring/roaring.hh>
 
@@ -29,7 +29,7 @@ public:
         uint32_t natural_index;
     };
     using underlying_t
-      = absl::flat_hash_map<bytes, value_type, bytes_type_hash, bytes_type_eq>;
+      = absl::node_hash_map<bytes, value_type, bytes_type_hash, bytes_type_eq>;
 
     explicit compaction_key_reducer(size_t max_mem = default_max_memory_usage)
       : _max_mem(max_mem) {}
@@ -39,9 +39,9 @@ public:
 
 private:
     size_t idx_mem_usage() {
-        return (
-          (sizeof(std::pair<const bytes, value_type>) + 1)
-          * _indices.capacity());
+        using debug = absl::container_internal::hashtable_debug_internal::
+          HashtableDebugAccess<underlying_t>;
+        return debug::AllocatedByteSize(_indices);
     }
     Roaring _inverted;
     underlying_t _indices;
