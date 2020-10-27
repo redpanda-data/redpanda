@@ -1,5 +1,6 @@
 #include "bytes/bytes.h"
 #include "model/fundamental.h"
+#include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "model/timestamp.h"
@@ -16,6 +17,9 @@
 #include <seastar/util/log.hh>
 
 #include <boost/test/tools/old/interface.hpp>
+
+#include <algorithm>
+#include <numeric>
 
 void validate_offsets(
   model::offset base,
@@ -454,8 +458,11 @@ FIXTURE_TEST(test_eviction_notification, storage_test_fixture) {
       compacted_lstats.start_offset,
       lstats_before.dirty_offset + model::offset(1));
 };
-ss::future<storage::append_result>
-append_exactly(storage::log log, size_t batch_count, size_t batch_sz) {
+ss::future<storage::append_result> append_exactly(
+  storage::log log,
+  size_t batch_count,
+  size_t batch_sz,
+  std::optional<bytes> key = std::nullopt) {
     vassert(
       batch_sz > model::packed_record_batch_header_size,
       "Batch size must be greater than {}, requested {}",
@@ -468,19 +475,23 @@ append_exactly(storage::log log, size_t batch_count, size_t batch_sz) {
 
     ss::circular_buffer<model::record_batch> batches;
     auto val_sz = batch_sz - model::packed_record_batch_header_size;
+    iobuf key_buf{};
+
+    if (key) {
+        key_buf = bytes_to_iobuf(*key);
+        val_sz -= key_buf.size_bytes();
+    }
+
     for (int i = 0; i < batch_count; ++i) {
         storage::record_batch_builder builder(
           model::record_batch_type(1), model::offset{});
-        builder.add_raw_kv(
-          iobuf{}, bytes_to_iobuf(random_generators::get_bytes(val_sz)));
+        iobuf value = bytes_to_iobuf(random_generators::get_bytes(val_sz));
+        builder.add_raw_kv(key_buf.copy(), std::move(value));
 
         batches.push_back(std::move(builder).build());
     }
 
     auto rdr = model::make_memory_record_batch_reader(std::move(batches));
-    auto expected_last_offset = log.offsets().dirty_offset
-                                + model::offset(batch_count);
-
     return std::move(rdr).for_each_ref(
       log.make_appender(append_cfg), model::no_timeout);
 }
@@ -925,3 +936,89 @@ FIXTURE_TEST(
     BOOST_REQUIRE_EQUAL(read[read.size() - 1].base_offset(), model::offset(16));
     BOOST_REQUIRE_EQUAL(read[read.size() - 1].last_offset(), model::offset(16));
 }
+
+storage::disk_log_impl* get_disk_log(storage::log log) {
+    return reinterpret_cast<storage::disk_log_impl*>(log.get_impl());
+}
+
+FIXTURE_TEST(check_max_segment_size, storage_test_fixture) {
+    auto cfg = default_log_config(test_dir);
+
+    // defaults
+    cfg.max_segment_size = 1_GiB;
+    cfg.stype = storage::log_config::storage_type::disk;
+    ss::abort_source as;
+    storage::log_manager mgr = make_log_manager(cfg);
+    using overrides_t = storage::ntp_config::default_overrides;
+
+    // override segment size with ntp_config
+    overrides_t ov;
+    ov.segment_size = 10_KiB;
+
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    auto ntp = model::ntp("default", "test", 0);
+
+    storage::ntp_config ntp_cfg(
+      ntp, mgr.config().base_dir, std::make_unique<overrides_t>(ov));
+    auto log = mgr.manage(std::move(ntp_cfg)).get0();
+    // 101 * 1_KiB batches should yield 10 segments
+    auto result = append_exactly(log, 100, 1_KiB).get0(); // 100*1_KiB
+
+    BOOST_REQUIRE_EQUAL(get_disk_log(log)->segments().size(), 10);
+}
+
+FIXTURE_TEST(partition_size_while_cleanup, storage_test_fixture) {
+    auto cfg = default_log_config(test_dir);
+    // make sure segments are small
+    cfg.max_segment_size = 10_KiB;
+    cfg.max_compacted_segment_size = 10_KiB;
+    cfg.stype = storage::log_config::storage_type::disk;
+    ss::abort_source as;
+    storage::log_manager mgr = make_log_manager(cfg);
+
+    using overrides_t = storage::ntp_config::default_overrides;
+    overrides_t ov;
+    // enable both deletion and compaction
+    ov.cleanup_policy_bitflags = model::cleanup_policy_bitflags::deletion
+                                 | model::cleanup_policy_bitflags::compaction;
+
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    auto ntp = model::ntp("default", "test", 0);
+
+    storage::ntp_config ntp_cfg(
+      ntp, mgr.config().base_dir, std::make_unique<overrides_t>(ov));
+    auto log = mgr.manage(std::move(ntp_cfg)).get0();
+
+    auto result = append_exactly(log, 100, 1_KiB, "key").get0(); // 100*1_KiB
+
+    auto sz_before = get_disk_log(log)->get_probe().partition_size();
+    log.set_collectible_offset(log.offsets().dirty_offset);
+    storage::compaction_config ccfg(
+      model::timestamp::min(), 60_KiB, ss::default_priority_class(), as);
+
+    for (int i = 0; i < 10; ++i) {
+        log.compact(ccfg).get0();
+    }
+    auto sz_after = get_disk_log(log)->get_probe().partition_size();
+
+    as.request_abort();
+    auto lstats_after = log.offsets();
+
+    auto batches = read_and_validate_all_batches(log);
+    auto total_batch_size = std::accumulate(
+      batches.begin(),
+      batches.end(),
+      0,
+      [](size_t sum, const model::record_batch& b) {
+          return sum + b.size_bytes();
+      });
+
+    BOOST_REQUIRE_EQUAL(batches.size(), 4);
+    // Expected size is equal to size of 4 batches (compacted one) plus batches
+    // being present in active segment that is not compacted
+
+    auto expected_size = total_batch_size
+                         + get_disk_log(log)->segments().back()->size_bytes();
+    BOOST_REQUIRE_EQUAL(
+      get_disk_log(log)->get_probe().partition_size(), expected_size);
+};

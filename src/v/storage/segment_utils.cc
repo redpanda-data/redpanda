@@ -334,7 +334,8 @@ model::record_batch_reader create_segment_full_reader(
 ss::future<> do_swap_data_file_handles(
   std::filesystem::path compacted,
   ss::lw_shared_ptr<storage::segment> s,
-  storage::compaction_config cfg) {
+  storage::compaction_config cfg,
+  probe& pb) {
     return s->reader()
       .close()
       .then([compacted, s] {
@@ -345,20 +346,23 @@ ss::future<> do_swap_data_file_handles(
           auto to_open = std::filesystem::path(s->reader().filename().c_str());
           return make_reader_handle(to_open, cfg.sanitize);
       })
-      .then([s](ss::file f) mutable {
+      .then([s, &pb](ss::file f) mutable {
           return f.stat()
             .then([f](struct stat s) {
                 return ss::make_ready_future<std::tuple<uint64_t, ss::file>>(
                   std::make_tuple(s.st_size, f));
             })
-            .then([s](std::tuple<uint64_t, ss::file> t) {
+            .then([s, &pb](std::tuple<uint64_t, ss::file> t) {
                 auto& [size, fd] = t;
                 auto r = segment_reader(
                   s->reader().filename(),
                   std::move(fd),
                   size,
                   default_segment_readahead_size);
+                // update partition size probe
+                pb.delete_segment(*s.get());
                 std::swap(s->reader(), r);
+                pb.add_initial_segment(*s.get());
             });
       });
 }
@@ -391,12 +395,12 @@ ss::future<> do_self_compact_segment(
                   std::make_tuple(std::move(idx), std::move(h)));
             });
       })
-      .then([cfg, s](std::tuple<index_state, ss::rwlock::holder> h) {
+      .then([cfg, s, &pb](std::tuple<index_state, ss::rwlock::holder> h) {
           return s->index()
             .drop_all_data()
-            .then([s, cfg] {
+            .then([s, cfg, &pb] {
                 auto compacted_file = data_segment_staging_name(s);
-                return do_swap_data_file_handles(compacted_file, s, cfg);
+                return do_swap_data_file_handles(compacted_file, s, cfg, pb);
             })
             .then([h = std::move(h), s]() mutable {
                 auto& [idx, lock] = h;
