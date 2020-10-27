@@ -24,7 +24,7 @@ export class SimpleTransform implements Coprocessor {
     this.apply = applyFunction;
   }
 
-  globalId: number;
+  globalId: bigint;
   inputTopics: string[];
   policyError: PolicyError;
 
