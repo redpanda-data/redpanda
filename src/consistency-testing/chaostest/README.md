@@ -47,9 +47,9 @@ Install dependencies
       ssh -i "~/.ssh/vectorized/deployments/aws-cluster" ubuntu@$ip "cd /opt; sudo wget https://downloads.apache.org/zookeeper/zookeeper-3.6.2/apache-zookeeper-3.6.2-bin.tar.gz"
       ssh -i "~/.ssh/vectorized/deployments/aws-cluster" ubuntu@$ip "cd /opt; sudo tar xzf apache-zookeeper-3.6.2-bin.tar.gz"
       ssh -i "~/.ssh/vectorized/deployments/aws-cluster" ubuntu@$ip "cd /opt; sudo rm apache-zookeeper-3.6.2-bin.tar.gz"
-      ssh -i "~/.ssh/vectorized/deployments/aws-cluster" ubuntu@$ip "cd /opt; sudo wget https://downloads.apache.org/kafka/2.5.0/kafka_2.12-2.5.0.tgz"
-      ssh -i "~/.ssh/vectorized/deployments/aws-cluster" ubuntu@$ip "cd /opt; sudo tar xzf kafka_2.12-2.5.0.tgz"
-      ssh -i "~/.ssh/vectorized/deployments/aws-cluster" ubuntu@$ip "cd /opt; sudo rm kafka_2.12-2.5.0.tgz"
+      ssh -i "~/.ssh/vectorized/deployments/aws-cluster" ubuntu@$ip "cd /opt; sudo wget https://downloads.apache.org/kafka/2.6.0/kafka_2.12-2.6.0.tgz"
+      ssh -i "~/.ssh/vectorized/deployments/aws-cluster" ubuntu@$ip "cd /opt; sudo tar xzf kafka_2.12-2.6.0.tgz"
+      ssh -i "~/.ssh/vectorized/deployments/aws-cluster" ubuntu@$ip "cd /opt; sudo rm kafka_2.12-2.6.0.tgz"
     done
 
 Copy keys to a control node
