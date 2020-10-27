@@ -10,7 +10,6 @@ import (
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
-	"github.com/docker/go-connections/nat"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
@@ -278,48 +277,7 @@ func TestStart(t *testing.T) {
 			name:  "it should do nothing if there's an existing running cluster",
 			nodes: 1,
 			client: func() (common.Client, error) {
-				kafkaNatPort, err := nat.NewPort("tcp", "9092")
-				if err != nil {
-					return nil, err
-				}
-				rpcNatPort, err := nat.NewPort("tcp", "33145")
-				if err != nil {
-					return nil, err
-				}
-				return &common.MockClient{
-					MockContainerInspect: func(
-						_ context.Context,
-						_ string,
-					) (types.ContainerJSON, error) {
-						return types.ContainerJSON{
-							ContainerJSONBase: &types.ContainerJSONBase{
-								State: &types.ContainerState{
-									Running: true,
-									Status:  "Up, I guess?",
-								},
-							},
-							NetworkSettings: &types.NetworkSettings{
-								NetworkSettingsBase: types.NetworkSettingsBase{
-									Ports: map[nat.Port][]nat.PortBinding{
-										kafkaNatPort: []nat.PortBinding{{
-											HostIP: "192.168.78", HostPort: "89080",
-										}},
-										rpcNatPort: []nat.PortBinding{{
-											HostIP: "192.168.78", HostPort: "89081",
-										}},
-									},
-								},
-								Networks: map[string]*network.EndpointSettings{
-									"redpanda": &network.EndpointSettings{
-										IPAMConfig: &network.EndpointIPAMConfig{
-											IPv4Address: "172.24.1.2",
-										},
-									},
-								},
-							},
-						}, nil
-					},
-				}, nil
+				return &common.MockClient{}, nil
 			},
 			before: func(fs afero.Fs) error {
 				return fs.MkdirAll(common.ConfDir(0), 0755)

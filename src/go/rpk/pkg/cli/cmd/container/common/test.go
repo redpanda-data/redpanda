@@ -123,7 +123,7 @@ func (c *MockClient) ContainerInspect(
 	if c.MockContainerInspect != nil {
 		return c.MockContainerInspect(ctx, containerID)
 	}
-	return types.ContainerJSON{}, nil
+	return MockContainerInspect(ctx, containerID)
 }
 
 func (c *MockClient) ContainerRemove(
