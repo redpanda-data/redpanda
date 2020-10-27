@@ -22,6 +22,11 @@ type Client interface {
 		options types.ImagePullOptions,
 	) (io.ReadCloser, error)
 
+	ImageList(
+		ctx context.Context,
+		options types.ImageListOptions,
+	) ([]types.ImageSummary, error)
+
 	ContainerCreate(
 		ctx context.Context,
 		config *container.Config,
