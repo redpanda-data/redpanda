@@ -6,6 +6,8 @@ import { Handle } from "../domain/Handle";
 import { getChecksumFromFile } from "../utilities/Checksum";
 import { Coprocessor } from "../public/Coprocessor";
 import { ManagementClient } from "../rpc/serverAndClients/server";
+import * as path from "path";
+import { hash64 } from "xxhash";
 
 /**
  * FileManager class is an inotify implementation, it receives a
@@ -243,10 +245,14 @@ class FileManager {
         const script = require(filename);
         delete require.cache[filename];
         const fileChecksum = getChecksumFromFile(filename);
+        const name = path.basename(filename, ".js");
+        const id = hash64(Buffer.from(name), 0).readBigUInt64LE();
+        const coprocessor = script.default;
+        coprocessor.globalId = id;
         fileChecksum
           .then((checksum) =>
             resolve({
-              coprocessor: new script.default(),
+              coprocessor,
               checksum,
               filename,
             })
@@ -270,10 +276,22 @@ class FileManager {
     destination: string
   ): Promise<Handle> {
     const renamePromise = promisify(rename);
-    const newFileName = `${destination}/sha265-${coprocessor.checksum}.js`;
-    return renamePromise(coprocessor.filename, newFileName).then(() => ({
+    const name = path.basename(coprocessor.filename, ".js");
+    let destinationPath;
+    /** Each coprocessor needs an ID, which is calculated based on the
+     * coprocessor script filename using xxhash64. When the script is detected
+     * in the /submit folder, the coprocessor engine calculates the hash based
+     * on its filename, minus its extension (e.g.  wasm.js -> hash(wasm)). When
+     * the engine moves a script from /active to /inactive, the filename changes
+     * following this format: `<filename>.js.vectorized.<sha256>.bk **/
+    if (destination == this.activeDir) {
+      destinationPath = `${destination}/${name}.js`;
+    } else {
+      destinationPath = `${destination}/${name}.js.vectorized.${coprocessor.checksum}.bk`;
+    }
+    return renamePromise(coprocessor.filename, destinationPath).then(() => ({
       ...coprocessor,
-      filename: newFileName,
+      filename: destinationPath,
     }));
   }
 
