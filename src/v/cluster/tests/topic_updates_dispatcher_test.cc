@@ -50,7 +50,8 @@ uint64_t node_initial_capacity(uint32_t cores) {
            - cluster::allocation_node::core0_extra_weight;
 }
 
-FIXTURE_TEST(test_happy_path_create, topic_table_updates_dispatcher_fixture) {
+FIXTURE_TEST(
+  test_dispatching_happy_path_create, topic_table_updates_dispatcher_fixture) {
     create_topics();
     auto md = table.local().all_topics_metadata();
 
@@ -104,7 +105,8 @@ FIXTURE_TEST(test_happy_path_create, topic_table_updates_dispatcher_fixture) {
       node_initial_capacity(4) - (1 + 12 + 2));
 }
 
-FIXTURE_TEST(test_happy_path_delete, topic_table_updates_dispatcher_fixture) {
+FIXTURE_TEST(
+  test_dispatching_happy_path_delete, topic_table_updates_dispatcher_fixture) {
     create_topics();
     auto res_1 = dispatcher
                    .apply_update(serialize_cmd(cluster::delete_topic_cmd(
@@ -146,7 +148,8 @@ FIXTURE_TEST(test_happy_path_delete, topic_table_updates_dispatcher_fixture) {
       node_initial_capacity(4) - (1));
 }
 
-FIXTURE_TEST(test_conflicts, topic_table_updates_dispatcher_fixture) {
+FIXTURE_TEST(
+  test_dispatching_conflicts, topic_table_updates_dispatcher_fixture) {
     create_topics();
     // discard create delta
     table.local().wait_for_changes(as).get0();

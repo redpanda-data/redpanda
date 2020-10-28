@@ -5,13 +5,13 @@
 #include "test_utils/fixture.h"
 #include "units.h"
 
-std::unique_ptr<cluster::allocation_node>
+static std::unique_ptr<cluster::allocation_node>
 create_allocation_node(model::node_id nid, uint32_t cores) {
     return std::make_unique<cluster::allocation_node>(
       nid, cores, std::unordered_map<ss::sstring, ss::sstring>{});
 }
 
-void validate_delta(
+static void validate_delta(
   const cluster::topic_table::delta& d,
   int new_topics,
   int new_partitions,

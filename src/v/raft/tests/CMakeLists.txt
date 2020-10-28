@@ -1,20 +1,4 @@
 rp_test(
-  UNIT_TEST
-  BINARY_NAME jitter_tests
-  SOURCES jitter_tests.cc
-  LIBRARIES v::seastar_testing_main v::raft
-  LABELS raft
-  ARGS "-- -c 1"
- )
-rp_test(
-  UNIT_TEST
-  BINARY_NAME log_bootstrap_parsing
-  SOURCES bootstrap_configuration_test.cc
-  LIBRARIES v::seastar_testing_main v::raft
-  LABELS raft
-  ARGS "-- -c 1"
-  )
-rp_test(
     UNIT_TEST
     BINARY_NAME consensus_utils_test
     SOURCES consensus_utils_test.cc
@@ -22,13 +6,7 @@ rp_test(
     LIBRARIES Boost::unit_test_framework v::raft v::storage_test_utils
     LABELS raft
 )
-rp_test(
-  UNIT_TEST
-  BINARY_NAME foreign_entry_sharing
-  SOURCES foreign_entry_test.cc
-  LIBRARIES v::seastar_testing_main v::raft  v::storage_test_utils
-  LABELS raft
-)
+
 rp_test(
     UNIT_TEST
     BINARY_NAME group_configuration_tests
@@ -37,72 +15,26 @@ rp_test(
     LIBRARIES Boost::unit_test_framework v::raft
     LABELS raft
 )
-rp_test(
-  UNIT_TEST
-  BINARY_NAME configuration_serialization_test
-  SOURCES configuration_serialization_test.cc
-  LIBRARIES v::seastar_testing_main v::raft v::storage_test_utils
-  LABELS raft
-)
-rp_test(
-  UNIT_TEST
-  BINARY_NAME type_serialization_tests
-  SOURCES type_serialization_tests.cc
-  LIBRARIES v::seastar_testing_main v::raft v::storage_test_utils
-  LABELS raft
-)
+
+
+set(srcs
+    jitter_tests.cc
+    bootstrap_configuration_test.cc
+    foreign_entry_test.cc
+    configuration_serialization_test.cc
+    type_serialization_tests.cc
+    term_assigning_reader_test.cc
+    membership_test.cc
+    leadership_test.cc
+    append_entries_test.cc
+    offset_monitor_test.cc
+    mux_state_machine_test.cc
+    configuration_manager_test.cc)
 
 rp_test(
   UNIT_TEST
-  BINARY_NAME term_assigning_reader_test
-  SOURCES term_assigning_reader_test.cc
-  LIBRARIES v::seastar_testing_main v::raft v::storage_test_utils
-  LABELS raft
-)
-
-rp_test(
-  UNIT_TEST
-  BINARY_NAME membership_test
-  SOURCES membership_test.cc
-  LIBRARIES v::seastar_testing_main v::raft v::storage_test_utils
-  LABELS raft
-)
-
-rp_test(
-  UNIT_TEST
-  BINARY_NAME leadership_test
-  SOURCES leadership_test.cc
-  LIBRARIES v::seastar_testing_main v::raft v::storage_test_utils
-  LABELS raft
-)
-
-rp_test(
-  UNIT_TEST
-  BINARY_NAME append_entries_test
-  SOURCES append_entries_test.cc
-  LIBRARIES v::seastar_testing_main v::raft v::storage_test_utils
-  LABELS raft
-)
-
-rp_test(
-  UNIT_TEST
-  BINARY_NAME offset_monitor_test
-  SOURCES offset_monitor_test.cc
-  LIBRARIES v::seastar_testing_main v::raft v::storage_test_utils
-  LABELS raft
-)
-
-rp_test(
-  UNIT_TEST
-  BINARY_NAME mux_state_machine_test
-  SOURCES mux_state_machine_test.cc
-  LIBRARIES v::seastar_testing_main v::raft v::storage_test_utils
-  DEFINITIONS SEASTAR_TESTING_MAIN
-)
-rp_test(
-  UNIT_TEST
-  BINARY_NAME configuration_manager_test
-  SOURCES configuration_manager_test.cc
+  BINARY_NAME test_raft
+  SOURCES ${srcs}
   LIBRARIES v::seastar_testing_main v::raft v::storage_test_utils
   LABELS raft
 )
