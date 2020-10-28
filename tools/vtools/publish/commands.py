@@ -1,9 +1,11 @@
 import click
 import os
+import pathlib
 
 from absl import logging
 from ..vlib import config
 from ..vlib import packagecloud as pc
+from ..vlib import shell
 
 
 @click.command(short_help='Publish packages to packagecloud.io.')
@@ -44,3 +46,49 @@ def publish(conf, access_token):
             logging.fatal(f"Could not read 'PACKAGECLOUD_TOKEN' variable.")
 
     pc.publish_packages(vconfig, access_token)
+
+    publish_docker_image(tag_name, f'{vconfig.build_dir}/dist/debian/')
+
+
+def publish_docker_image(tag_name, pkg_dir, image_name="vectorized/redpanda"):
+
+    # Prepare to push image to dockerhub
+    tag = tag_name.lstrip('release-')
+    pattern = f'redpanda_{tag}*_amd64.deb'
+    # find release deb
+    files = pathlib.Path(pkg_dir).glob(pattern)
+    if not files:
+        logging.fatal(
+            f"Could not find any debian packages to install in the docker image"
+        )
+
+    pkg_path = next(files).resolve()
+    build_pkg_path = 'infra/redpanda.deb'
+
+    # Files need to be in the same directory as the Dockerfile
+    os.link(pkg_path, build_pkg_path)
+
+    docker_user = os.environ.get('DOCKER_USERNAME', None)
+    docker_pass = os.environ.get('DOCKER_PASSWORD', None)
+
+    if not (docker_user and docker_pass):
+        logging.fatal('No Dockerhub credentials were found, aborting!')
+
+    shell.run_subprocess(f'docker login -u {docker_user} -p {docker_pass}')
+
+    logging.info(f'Building image {image_name}:v{tag_name} & latest')
+
+    shell.run_subprocess(
+        f'docker build'
+        f'  -t {image_name}:{tag_name}'
+        f'  -t {image_name}:latest'
+        f'  -f infra/Dockerfile'
+        f'  --build-arg redpanda_pkg=redpanda.deb'
+        f'  infra/', )
+
+    os.unlink(build_pkg_path)
+
+    logging.info(f"Pushing {image_name} tags to dockerhub")
+    shell.run_subprocess(f'docker push {image_name}')
+
+    shell.run_subprocess(f'docker logout')
