@@ -3,8 +3,8 @@ import { stub, spy, reset } from "sinon";
 import FileManager from "../../modules/supervisors/FileManager";
 import Repository from "../../modules/supervisors/Repository";
 import {
-  ManagementClient,
-  ManagementServer,
+  Script_ManagerClient as ManagementClient,
+  Script_ManagerServer as ManagementServer,
 } from "../../modules/rpc/serverAndClients/server";
 import * as fs from "fs";
 import { createHandle } from "../testUtilities";
@@ -83,11 +83,7 @@ describe("FileManager", () => {
         assert(getCoprocessor.calledWith("active/file"));
         assert(moveCoprocessor.called);
         assert(moveCoprocessor.calledWith(handle, "active"));
-        assert(repo.getCoprocessorsByTopics().size === 1);
-        assert.deepStrictEqual(
-          [...repo.getCoprocessorsByTopics().keys()],
-          handle.coprocessor.inputTopics
-        );
+        assert(repo.size() === 1);
         done();
       }, 150);
     }
