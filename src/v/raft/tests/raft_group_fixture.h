@@ -30,7 +30,7 @@
 
 #include <chrono>
 
-inline static ss::logger tstlog("raft_test");
+inline ss::logger tstlog("raft_test");
 
 using namespace std::chrono_literals; // NOLINT
 
@@ -279,7 +279,7 @@ struct raft_node {
     ss::abort_source _as;
 };
 
-model::ntp node_ntp(raft::group_id gr_id, model::node_id n_id) {
+static model::ntp node_ntp(raft::group_id gr_id, model::node_id n_id) {
     return model::ntp(
       model::ns("test"),
       model::topic(fmt::format("group_{}", gr_id())),
@@ -664,7 +664,7 @@ static ss::future<bool> replicate_random_batches(
 /**
  * Makes compactible batches, having one record per batch
  */
-model::record_batch_reader
+static model::record_batch_reader
 make_compactible_batches(int keys, size_t batches, model::timestamp ts) {
     ss::circular_buffer<model::record_batch> ret;
     for (size_t b = 0; b < batches; b++) {

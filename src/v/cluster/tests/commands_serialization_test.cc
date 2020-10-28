@@ -23,7 +23,7 @@
 
 using namespace std::chrono_literals;
 
-std::unique_ptr<cluster::allocation_node>
+static std::unique_ptr<cluster::allocation_node>
 create_allocation_node(model::node_id nid, uint32_t cores) {
     return std::make_unique<cluster::allocation_node>(
       nid, cores, std::unordered_map<ss::sstring, ss::sstring>{});
