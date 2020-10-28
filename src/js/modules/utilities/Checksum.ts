@@ -15,7 +15,7 @@ export const getChecksumFromFile = (filePath: string): Promise<string> => {
       });
       readFileIntoMemory.on("end", () => {
         try {
-          const checksum = hash.digest("base64");
+          const checksum = hash.digest("hex");
           resolve(checksum);
         } catch (e) {
           resolve(e);
