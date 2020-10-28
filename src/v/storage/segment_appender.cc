@@ -279,9 +279,6 @@ void segment_appender::dispatch_background_head_write() {
 }
 
 ss::future<> segment_appender::flush() {
-    if (_bytes_flush_pending == 0) {
-        return ss::make_ready_future<>();
-    }
     while (!_free_chunks.empty() && head().bytes_pending()) {
         dispatch_background_head_write();
     }
