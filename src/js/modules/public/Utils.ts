@@ -22,6 +22,8 @@ const createHeader = (
     recordBatchType: 0,
     recordCount: 0,
     sizeBytes: 0,
+    term: BigInt(0),
+    isCompressed: 0,
     ...header,
   };
 };
@@ -43,12 +45,12 @@ const createRecord = (record: Partial<Record>): Record => {
   return {
     attributes: 0,
     key: Buffer.from(""),
-    keyLength: BigInt(0),
-    length: BigInt(0),
-    offsetDelta: BigInt(0),
+    keyLength: 0,
+    length: 0,
+    offsetDelta: 0,
     timestampDelta: BigInt(0),
     value: Buffer.from(""),
-    valueLen: BigInt(0),
+    valueLen: 0,
     ...record,
     headers: headers.map(createRecordHeader),
   };

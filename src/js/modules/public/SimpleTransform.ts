@@ -28,7 +28,7 @@ export class SimpleTransform implements Coprocessor {
   inputTopics: string[];
   policyError: PolicyError;
 
-  apply(record: RecordBatch): RecordBatch {
+  apply = (record: RecordBatch): Map<string, RecordBatch> => {
     throw Error("processRecord isn't implemented yet");
-  }
+  };
 }
