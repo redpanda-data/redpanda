@@ -9,7 +9,8 @@
         },
         "newLine": "lf",
         "downlevelIteration": true,
-        "lib": ["esnext"]
+        "lib": ["esnext"],
+        "skipLibCheck": true
     },
     "include": [
         "modules/rpc",
@@ -19,7 +20,7 @@
         "test"
     ],
     "exclude": [
-        "node_modules/",
+        "node_modules/*",
         "packages/"
     ]
 }
