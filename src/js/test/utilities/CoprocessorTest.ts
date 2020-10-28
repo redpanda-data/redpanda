@@ -9,8 +9,8 @@ class CoprocessorTest implements Coprocessor {
   inputTopics = ["topicA"];
   policyError = PolicyError.Deregister;
 
-  apply(record: RecordBatch): RecordBatch {
-    return record;
+  apply(record: RecordBatch): Map<string, RecordBatch> {
+    return new Map([["test", record]]);
   }
 }
 
