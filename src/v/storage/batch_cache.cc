@@ -4,7 +4,8 @@
 
 namespace storage {
 
-batch_cache::entry_ptr batch_cache::put(const model::record_batch& input) {
+batch_cache::entry_ptr
+batch_cache::put(batch_cache_index& index, const model::record_batch& input) {
 #ifdef SEASTAR_DEFAULT_ALLOCATOR
     static const size_t threshold = ss::memory::stats().total_memory() * .2;
     while (_size_bytes > threshold) {
@@ -15,7 +16,7 @@ batch_cache::entry_ptr batch_cache::put(const model::record_batch& input) {
     // temporary buffers
     auto batch = input.copy();
     _size_bytes += batch.memory_usage();
-    auto e = new entry(std::move(batch));
+    auto e = new entry(index, std::move(batch));
 
     // if weak_from_this were to cause an allocation--which it shouldn't--`e`
     // wouldn't be visible to the reclaimer since it isn't on a lru/pool list.
@@ -38,7 +39,7 @@ void batch_cache::evict(entry_ptr&& e) {
         // invalidates the caller's entry_ptr. simply interacting with the
         // r-value reference `e` wouldn't do that.
         auto p = std::exchange(e, {});
-        _size_bytes -= p->batch.memory_usage();
+        _size_bytes -= p->_batch.memory_usage();
         _lru.erase_and_dispose(
           _lru.iterator_to(*p), [](entry* e) { delete e; });
     }
@@ -67,17 +68,71 @@ size_t batch_cache::reclaim(size_t size) {
     _reclaim_size = std::min(_reclaim_size, _reclaim_opts.max_size);
     _reclaim_size = std::max(size, _reclaim_size);
 
+    /*
+     * reclaiming is a two pass process. given that the entry isn't pinned (in
+     * which case it is skipped), the first step is to reclaim the batch's
+     * record data. at this point, if the entry's owning index is not locked the
+     * entry is added to a temporary list of entries which will be removed.
+     * otherwise if the index is locked, removal is deferred but the entry is
+     * invalidated. invalidation is important because the batch reference in the
+     * index still exists even though the batch data was removed.
+     */
     size_t reclaimed = 0;
-    for (auto it = _lru.cbegin();
-         it != _lru.cend() && reclaimed < _reclaim_size;) {
-        if (likely(!it->pinned())) {
-            reclaimed += it->batch.memory_usage();
-            // NOLINTNEXTLINE
-            it = _lru.erase_and_dispose(it, [](entry* e) { delete e; });
-        } else {
-            it++;
+    intrusive_list<entry, &entry::_hook> reclaimed_entries;
+
+    for (auto it = _lru.begin(); it != _lru.end();) {
+        if (reclaimed >= _reclaim_size) {
+            break;
         }
+
+        // skip any entry that has a live reference.
+        if (unlikely(it->pinned())) {
+            ++it;
+            continue;
+        }
+
+        // reclaim the batch's record data
+        reclaimed += it->_batch.memory_usage();
+        it->_batch.clear_data();
+
+        /*
+         * if the owning index is locked invalidate the entry but leave it on
+         * the lru list for deferred deletion so as to not invalidate any open
+         * iterators on the index.
+         */
+        if (unlikely(it->_index.locked())) {
+            reclaimed -= it->_batch.memory_usage();
+            it->invalidate();
+            ++it;
+            continue;
+        }
+
+        // collect the entries that will be fully removed
+        it = _lru.erase_and_dispose(it, [&reclaimed_entries](entry* e) {
+            reclaimed_entries.push_back(*e);
+        });
     }
+
+    /*
+     * final removal from the index is deferred because there is some chance
+     * that removal allocates, so waiting until the bulk of the reclaims have
+     * occurred reduces the probability of an allocation failure.
+     */
+    reclaimed_entries.clear_and_dispose([](entry* e) {
+        auto offset = e->_batch.base_offset();
+        auto* index = &e->_index;
+        delete e; // NOLINT
+
+        /*
+         * since reclaim may be invoked at any moment and removals may be
+         * deferred if an index is locked, one can imagine races in which a
+         * batch is removed by offset here which is not the same batch that was
+         * reclaimed in a prior pass. at worst this would raise the miss ratio,
+         * but is still generally safe since all batch cache users are prepared
+         * to handle a miss.
+         */
+        index->remove(offset);
+    });
 
     _last_reclaim = ss::lowres_clock::now();
     _size_bytes -= reclaimed;
@@ -86,10 +141,11 @@ size_t batch_cache::reclaim(size_t size) {
 
 std::optional<model::record_batch>
 batch_cache_index::get(model::offset offset) {
+    lock_guard lk(*this);
     if (auto it = find_first_contains(offset); it != _index.end()) {
         batch_cache::entry::lock_guard g(*it->second);
         _cache->touch(it->second);
-        auto ret = it->second->batch.share();
+        auto ret = it->second->batch().share();
         return ret;
     }
     return std::nullopt;
@@ -102,13 +158,14 @@ batch_cache_index::read_result batch_cache_index::read(
   std::optional<model::timestamp> first_ts,
   size_t max_bytes,
   bool skip_lru_promote) {
+    lock_guard lk(*this);
     read_result ret;
     ret.next_batch = offset;
     if (unlikely(offset > max_offset)) {
         return ret;
     }
     for (auto it = find_first_contains(offset); it != _index.end();) {
-        auto& batch = it->second->batch;
+        auto& batch = it->second->batch();
 
         auto take = !type_filter || type_filter == batch.header().type;
         take &= !first_ts || batch.header().first_timestamp >= *first_ts;
@@ -137,14 +194,15 @@ batch_cache_index::read_result batch_cache_index::read(
          * 2. cache miss
          * 3. hole in range
          */
-        if (!it->second || it->first != offset) {
+        if (!it->second || !it->second->valid() || it->first != offset) {
             // compute the base offset of the next cached batch
             auto next_batch = std::find_if(
               it, _index.end(), [](const index_type::value_type& e) {
-                  return bool(e.second);
+                  return e.second && e.second->valid();
               });
             if (next_batch != _index.end()) {
-                ret.next_cached_batch = next_batch->second->batch.base_offset();
+                ret.next_cached_batch
+                  = next_batch->second->batch().base_offset();
             }
             break;
         }
@@ -162,9 +220,12 @@ batch_cache_index::read_result batch_cache_index::read(
 }
 
 void batch_cache_index::truncate(model::offset offset) {
+    lock_guard lk(*this);
     if (auto it = find_first(offset); it != _index.end()) {
         // rule out if possible, otherwise always be pessimistic
-        if (it->second && !it->second->batch.contains(offset)) {
+        if (
+          it->second && it->second->valid()
+          && !it->second->batch().contains(offset)) {
             ++it;
         }
         std::for_each(it, _index.end(), [this](index_type::value_type& e) {
