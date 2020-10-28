@@ -1,217 +1,198 @@
-import { Server } from "../../modules/rpc/server";
-import { join } from "path";
+import { ProcessBatchServer } from "../../modules/rpc/server";
 import Repository from "../../modules/supervisors/Repository";
-import { RecordBatch, PolicyError } from "../../modules/public/Coprocessor";
+import { reset, stub } from "sinon";
+import { SupervisorClient } from "../../modules/rpc/serverAndClients/processBatch";
+import { createRecordBatch } from "../../modules/public";
+import { Script_ManagerServer as ManagementServer } from "../../modules/rpc/serverAndClients/server";
 import FileManager from "../../modules/supervisors/FileManager";
-import assert = require("assert");
 import { ProcessBatchRequest } from "../../modules/domain/generatedRpc/generatedClasses";
-import {
-  createHandle,
-  createMockCoprocessor,
-  createHandleTable,
-} from "../testUtilities";
+import { createHandle } from "../testUtilities";
+import { PolicyError, RecordBatch } from "../../modules/public/Coprocessor";
+import assert = require("assert");
 
+const INotifyWait = require("inotifywait");
 const sinon = require("sinon");
-const net = require("net");
-const fakeFileManager = require("../../modules/supervisors/FileManager");
 
-const createRequest = (topic?: string): ProcessBatchRequest => {
-  const coprocessorRecordBatch = {
-    records: [{ value: Buffer.from("Example") }],
-    header: {},
-  } as RecordBatch;
+let server: ProcessBatchServer;
+let client: SupervisorClient;
+const spyFireExceptionServer = sinon.stub(
+  ProcessBatchServer.prototype,
+  "fireException"
+);
+const spyGetHandles = sinon.stub(
+  Repository.prototype,
+  "getHandlesByCoprocessorIds"
+);
+const spyFindByCoprocessor = sinon.stub(
+  Repository.prototype,
+  "findByCoprocessor"
+);
+const spyMoveHandle = sinon.stub(FileManager.prototype, "moveCoprocessorFile");
+const spyDeregister = sinon.spy(FileManager.prototype, "deregisterCoprocessor");
+let manageServer: ManagementServer;
+
+const createProcessBatchRequest = (
+  ids: bigint[] = [],
+  topic = "topic"
+): ProcessBatchRequest => {
   return {
-    npt: {
-      topic: topic || "topicA",
-      namespace: "name",
-      partition: 1,
-    },
-    recordBatch: coprocessorRecordBatch,
-  } as ProcessBatchRequest;
-};
-
-const createFakeServer = (afterApply?: (value) => void, fileManagerStub?) => {
-  const fakeFolder = join(__dirname);
-  const fakeSocket = net.Socket();
-  // eslint-disable-next-line @typescript-eslint/no-empty-function
-  fakeSocket.write = afterApply || (() => {});
-  fileManagerStub || sinon.stub(fakeFileManager);
-  const createSer = sinon.stub(net, "createServer");
-  createSer.value((fn) => fn(fakeSocket));
-  const fakeServer = new Server(fakeFolder, fakeFolder, fakeFolder);
-  return [fakeServer, fakeSocket];
+    requests: [
+      {
+        recordBatch: [createRecordBatch()],
+        coprocessorIds: ids,
+        ntp: { partition: 1, namespace: "", topic },
+      },
+    ],
+  };
 };
 
 describe("Server", function () {
   describe("Given a Request", function () {
-    afterEach(sinon.restore);
+    stub(FileManager.prototype, "readActiveCoprocessor");
+    stub(FileManager.prototype, "updateRepositoryOnNewFile");
+    stub(INotifyWait.prototype);
+
+    beforeEach(() => {
+      reset();
+      spyFireExceptionServer.reset();
+      spyGetHandles.reset();
+      spyMoveHandle.reset();
+      spyFindByCoprocessor.reset();
+      spyDeregister.resetHistory();
+      manageServer = new ManagementServer();
+      manageServer.disable_copros = () => Promise.resolve({ inputs: [0] });
+      manageServer.listen(43118);
+      server = new ProcessBatchServer("a", "i", "s");
+      server.listen(4300);
+      client = new SupervisorClient(4300);
+    });
+
+    afterEach(async () => {
+      client.close();
+      await server.closeConnection();
+      await manageServer.closeConnection();
+    });
 
     it(
-      "shouldn't apply any coprocessor if the repository is " + "empty",
+      "should fail when the given recordProcessBatch doesn't have " +
+        "coprocessor ids",
       function (done) {
-        const repository = sinon.spy(
-          Repository.prototype,
-          "getCoprocessorsByTopics"
-        );
-        const apply = sinon.spy(Server.prototype, "applyCoprocessor");
-        const afterApplyCoprocessor = () => {
-          assert(repository.calledOnce);
-          assert(apply.calledOnce);
-          apply.firstCall.returnValue.then((result) => {
-            assert.deepStrictEqual(result, []);
-            done();
-          });
-        };
-        const [, fakeSocket] = createFakeServer(afterApplyCoprocessor);
-        fakeSocket.emit("readable", createRequest());
-      }
-    );
-
-    it(
-      "shouldn't apply any Coprocessor if there isn't one defined for" +
-        " the Request's topic",
-      function (done) {
-        const repository = sinon.stub(
-          Repository.prototype,
-          "getCoprocessorsByTopics"
-        );
-        repository.returns(new Map().set("topicB", [createMockCoprocessor()]));
-        const apply = sinon.spy(Server.prototype, "applyCoprocessor");
-        const [, fakeSocket] = createFakeServer(() => {
-          assert(repository.called);
-          assert(repository.getCall(0).returnValue.size > 0);
-          assert(!repository.getCall(0).returnValue.has(request.npt.topic));
-          assert(apply.called);
-          apply.firstCall.returnValue.then((values) => {
-            assert.deepStrictEqual(values, []);
-            done();
-          });
+        spyFireExceptionServer.returns(Promise.resolve({ result: [] }));
+        client.process_batch(createProcessBatchRequest()).then(() => {
+          assert(
+            spyFireExceptionServer.calledWith(
+              "Bad request: request without coprocessor ids"
+            )
+          );
+          done();
         });
-        const request = createRequest();
-        fakeSocket.emit("readable", request);
       }
     );
 
-    it(
-      "should apply the right Coprocessor for the Request's " + "topic",
-      function (done) {
-        const repository = sinon.stub(
-          Repository.prototype,
-          "getCoprocessorsByTopics"
+    it("should fail if there isn't coprocessor that processBatch contain", function (done) {
+      spyGetHandles.returns([]);
+      spyFireExceptionServer.returns(
+        Promise.resolve([
+          {
+            coprocessorId: "",
+            ntp: { namespace: "", topic: "", partition: 1 },
+            resultRecordBatch: [createRecordBatch()],
+          },
+        ])
+      );
+      client.process_batch(createProcessBatchRequest([BigInt(1)])).then(() => {
+        assert(
+          spyFireExceptionServer.calledWith(
+            "Coprocessors don't register in wasm engine: 1"
+          )
         );
-        repository.returns(new Map().set("topicA", createHandleTable()));
-        const apply = sinon.spy(Server.prototype, "applyCoprocessor");
-        const request = createRequest("topicA");
-        const [, fakeSocket] = createFakeServer(() => {
-          assert(repository.called);
-          assert.deepStrictEqual(repository.getCall(0).args, []);
-          assert(repository.getCall(0).returnValue.size === 1);
-          assert(apply.called);
-          apply.firstCall.returnValue
-            .then((values) => {
-              // TODO: https://app.clubhouse.io/vectorized/story/1031
-              assert.deepStrictEqual(values, [undefined]);
-              done();
-            })
-            .catch(done);
+        done();
+      });
+    });
+
+    it("should apply the right Coprocessor for the Request's topic", function (done) {
+      const coprocessorId = BigInt(1);
+      spyGetHandles.returns([
+        createHandle({
+          apply: () =>
+            new Map([
+              [
+                "newTopic",
+                createRecordBatch({
+                  header: { recordCount: 1 },
+                  records: [{ value: Buffer.from("new VALUE") }],
+                }),
+              ],
+            ]),
+        }),
+      ]);
+      client
+        .process_batch(createProcessBatchRequest([coprocessorId], "BaseTopic"))
+        .then((res) => {
+          assert(spyGetHandles.called);
+          assert(spyGetHandles.calledWith([coprocessorId]));
+          const resultBatch = res.result[0];
+          assert.strictEqual(resultBatch.ntp.topic, "BaseTopic.$newTopic$");
+          assert.deepStrictEqual(
+            resultBatch.resultRecordBatch.flatMap(({ records }) =>
+              records.map((r) => r.value.toString())
+            ),
+            ["new VALUE"]
+          );
+          done();
         });
-        fakeSocket.emit("readable", request);
-      }
-    );
+    });
 
     describe("Given an Error when applying the Coprocessor", function () {
-      it(
-        "should skip the Request, if ErrorPolicy is " + "SkipOnFailure",
-        function (done) {
-          const repository = sinon.stub(
-            Repository.prototype,
-            "getCoprocessorsByTopics"
-          );
-          const badApplyCoprocessor = (record: RecordBatch) =>
-            // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-            // @ts-ignore
-            record.bad.attribute;
-          repository.returns(
-            new Map().set(
-              "topicA",
-              createHandleTable(
-                createHandle(
-                  createMockCoprocessor(
-                    undefined,
-                    null,
-                    null,
-                    badApplyCoprocessor
-                  )
-                )
-              )
-            )
-          );
-          const apply = sinon.spy(Server.prototype, "applyCoprocessor");
-          const handle = sinon.spy(Server.prototype, "handleErrorByPolicy");
-          const deregister = sinon.spy(
-            FileManager.prototype,
-            "deregisterCoprocessor"
-          );
-          sinon
-            .stub(FileManager.prototype, "readActiveCoprocessor")
-            .returns(Promise.resolve(true));
-          const [fakeServer, fakeSocket] = createFakeServer(() => {
-            assert(apply.called);
-            assert(handle.called);
-            assert(!deregister.called);
-            fakeServer.closeCoprocessorManager().then(done).catch(done);
-          }, true);
-          const request = createRequest("topicA");
-          fakeSocket.emit("readable", request);
-        }
-      );
+      it("should skip the Request, if ErrorPolicy is SkipOnFailure", function (done) {
+        const badApplyCoprocessor = (record: RecordBatch) =>
+          // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+          // @ts-ignore
+          record.bad.attribute;
 
-      it(
-        "should deregister the Coprocessor, if ErrorPolicy is " + "Deregister",
-        function (done) {
-          const repository = sinon.stub(
-            Repository.prototype,
-            "getCoprocessorsByTopics"
-          );
-          const badApplyCoprocessor = (record: RecordBatch) =>
-            // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-            // @ts-ignore
-            record.bad.attribute;
-          repository.returns(
-            new Map().set(
-              "topicA",
-              createHandleTable(
-                createHandle(
-                  createMockCoprocessor(
-                    undefined,
-                    null,
-                    PolicyError.Deregister,
-                    badApplyCoprocessor
-                  )
-                )
-              )
-            )
-          );
-          const apply = sinon.spy(Server.prototype, "applyCoprocessor");
-          const handle = sinon.spy(Server.prototype, "handleErrorByPolicy");
-          const deregister = sinon.stub(
-            FileManager.prototype,
-            "deregisterCoprocessor"
-          );
-          deregister.returns(Promise.resolve(true));
-          sinon
-            .stub(FileManager.prototype, "readActiveCoprocessor")
-            .returns(Promise.resolve(true));
-          const [fakeServer, fakeSocket] = createFakeServer(() => {
-            assert(apply.called);
-            assert(handle.called);
-            assert(deregister.called);
-            fakeServer.closeCoprocessorManager().then(done).catch(done);
-          }, true);
-          const request = createRequest("topicA");
-          fakeSocket.emit("readable", request);
-        }
-      );
+        spyGetHandles.returns([
+          createHandle({
+            apply: badApplyCoprocessor,
+            policyError: PolicyError.SkipOnFailure,
+            inputTopics: ["topic"],
+          }),
+        ]);
+
+        client
+          .process_batch(createProcessBatchRequest([BigInt(1)]))
+          .then((res) => {
+            assert(!spyDeregister.called);
+            assert.deepStrictEqual(res.result, []);
+            done();
+          });
+      });
+
+      it("should deregister the Coprocessor, if ErrorPolicy is Deregister", function (done) {
+        const badApplyCoprocessor = (record: RecordBatch) =>
+          // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+          // @ts-ignore
+          record.bad.attribute;
+        const handle = createHandle({
+          apply: badApplyCoprocessor,
+          policyError: PolicyError.Deregister,
+          inputTopics: ["topic"],
+        });
+        spyMoveHandle.returns(Promise.resolve(handle));
+        spyFindByCoprocessor.returns(handle);
+        spyGetHandles.returns([handle]);
+
+        client
+          .process_batch(createProcessBatchRequest([BigInt(1)]))
+          .then((res) => {
+            assert(spyDeregister.called);
+            assert(spyGetHandles.called);
+            assert(spyFindByCoprocessor.called);
+            assert(spyMoveHandle.called);
+            assert(spyMoveHandle.calledWith(handle));
+            assert.deepStrictEqual(res.result, []);
+            done();
+          });
+      });
     });
   });
 });
