@@ -5,7 +5,7 @@ import Repository from "./Repository";
 import { Handle } from "../domain/Handle";
 import { getChecksumFromFile } from "../utilities/Checksum";
 import { Coprocessor } from "../public/Coprocessor";
-import { ManagementClient } from "../rpc/serverAndClients/server";
+import { Script_ManagerClient as ManagementClient } from "../rpc/serverAndClients/server";
 import * as path from "path";
 import { hash64 } from "xxhash";
 
@@ -58,18 +58,15 @@ class FileManager {
           return this.moveCoprocessorFile(preCoprocessor, this.inactiveDir)
             .then(() => repository.remove(preCoprocessor))
             .then(() => this.moveCoprocessorFile(handle, this.activeDir))
-            .then((newCoprocessor) =>
-              repository.add(newCoprocessor).then(() => newCoprocessor)
-            );
+            .then((newCoprocessor) => repository.add(newCoprocessor));
         }
       } else {
         return this.moveCoprocessorFile(handle, this.activeDir)
-          .then((newHandle) => {
-            repository.add(newHandle);
-            return newHandle;
-          })
+          .then((newHandle) => repository.add(newHandle))
           .then((newHandle) =>
-            this.enableTopic([newHandle.coprocessor]).then(() => newHandle)
+            this.enableCoprocessor([newHandle.coprocessor]).then(
+              () => newHandle
+            )
           );
       }
     });
@@ -126,7 +123,7 @@ class FileManager {
   deregisterCoprocessor(coprocessor: Coprocessor): Promise<Handle> {
     const handle = this.repository.findByCoprocessor(coprocessor);
     if (handle) {
-      this.disableCoprocessors([handle.coprocessor])
+      return this.disableCoprocessors([handle.coprocessor])
         .then(() => this.moveCoprocessorFile(handle, this.inactiveDir))
         .then((coprocessor) => {
           this.repository.remove(coprocessor);
@@ -196,9 +193,9 @@ class FileManager {
    * @param coprocessors
    * @param validateAlreadyEnabled
    */
-  enableTopic(
+  enableCoprocessor(
     coprocessors: Coprocessor[],
-    validateAlreadyEnabled = true
+    validateAlreadyEnabled = false
   ): Promise<void> {
     if (coprocessors.length == 0) {
       return Promise.resolve();
@@ -207,7 +204,10 @@ class FileManager {
         .enable_copros({
           coprocessors: coprocessors.map((coproc) => ({
             id: coproc.globalId,
-            topics: coproc.inputTopics,
+            topics: coproc.inputTopics.map((topic) => ({
+              topic,
+              injectionPolicy: 2,
+            })),
           })),
         })
         .then((enableResponse) => {
@@ -217,7 +217,7 @@ class FileManager {
             );
           const condition = validateAlreadyEnabled
             ? (coproc) => coproc > 0
-            : (coproc) => coproc > 1;
+            : (coproc) => coproc > 2;
           const invalidCoprocessor = isValid(condition);
           if (invalidCoprocessor.length > 0) {
             return Promise.reject(

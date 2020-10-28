@@ -13,7 +13,7 @@
         },
         {
           "name": "compression",
-          "type": "int8"
+          "type": "uint8"
         },
         {
           "name": "payloadSize",
@@ -34,6 +34,19 @@
       ]
     },
     {
+      "className": "TopicEnableRequest",
+      "fields": [
+        {
+          "name": "topic",
+          "type": "string"
+        },
+        {
+          "name": "injectionPolicy",
+          "type": "int8"
+        }
+      ]
+    },
+    {
       "className": "EnableCoprocRequest",
       "fields": [
         {
@@ -42,7 +55,7 @@
         },
         {
           "name": "topics",
-          "type": "Array<string>"
+          "type": "Array<TopicEnableRequest>"
         }
       ]
     },
@@ -56,7 +69,7 @@
       ]
     },
     {
-      "className": "EnableCoprocResponse",
+      "className": "EnableCoprocReply",
       "fields": [
         {
           "name": "id",
@@ -69,16 +82,16 @@
       ]
     },
     {
-      "className": "EnableCoprosResponse",
+      "className": "EnableCoprosReply",
       "fields": [
         {
           "name": "inputs",
-          "type": "Array<EnableCoprocResponse>"
+          "type": "Array<EnableCoprocReply>"
         }
       ]
     },
     {
-      "className": "DisableCoprosResponse",
+      "className": "DisableCoprosReply",
       "fields": [
         {
           "name": "inputs",

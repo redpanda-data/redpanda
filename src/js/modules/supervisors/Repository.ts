@@ -1,37 +1,31 @@
 import { Handle } from "../domain/Handle";
 import { Coprocessor } from "../public/Coprocessor";
-import { HandleTable } from "./HandleTable";
+import {
+  ProcessBatchReplyItem,
+  ProcessBatchRequestItem,
+} from "../domain/generatedRpc/generatedClasses";
+import { ProcessBatchServer } from "../rpc/server";
+import { createRecordBatch } from "../public";
 
 /**
  * Repository is a container for Handles.
  */
 class Repository {
   constructor() {
-    this.coprocessors = new Map();
+    this.handles = new Map();
   }
 
   /**
    * this method adds a new Handle to the repository
-   * @param coprocessor
+   * @param handle
    */
-  add(coprocessor: Handle): Promise<void> {
-    const addHandle = () => {
-      coprocessor.coprocessor.inputTopics.forEach((topic) => {
-        const currentHandleTable = this.coprocessors.get(topic);
-        if (currentHandleTable) {
-          currentHandleTable.registerHandle(coprocessor);
-        } else {
-          this.coprocessors.set(topic, new HandleTable());
-          this.coprocessors.get(topic).registerHandle(coprocessor);
-        }
-      });
-    };
-
-    if (this.findByGlobalId(coprocessor)) {
-      return this.remove(coprocessor).then(addHandle);
-    } else {
-      return Promise.resolve(addHandle());
+  add(handle: Handle): Handle {
+    const currentHandleTable = this.handles.get(handle.coprocessor.globalId);
+    if (currentHandleTable) {
+      this.remove(handle);
     }
+    this.handles.set(handle.coprocessor.globalId, handle);
+    return handle;
   }
 
   /**
@@ -41,70 +35,103 @@ class Repository {
    * coprocessor. Returns undefined otherwise.
    * @param handle
    */
-  findByGlobalId = (handle: Handle): Handle | undefined => {
-    for (const [, tableHandle] of this.coprocessors) {
-      const existingHandle = tableHandle.findHandleById(handle);
-      if (existingHandle) {
-        return existingHandle;
-      }
-    }
-  };
+  findByGlobalId = (handle: Handle): Handle | undefined =>
+    this.handles.get(handle.coprocessor.globalId);
 
   /**
    * Given a Coprocessor, try to find one with the same global ID and return it
    * if it exists, returns undefined otherwise
    * @param coprocessor
    */
-  findByCoprocessor = (coprocessor: Coprocessor): Handle | undefined => {
-    for (const [, tableHandle] of this.coprocessors) {
-      const existingHandle = tableHandle.findHandleByCoprocessor(coprocessor);
-      if (existingHandle) {
-        return existingHandle;
-      }
-    }
-  };
+  findByCoprocessor(coprocessor: Coprocessor): Handle | undefined {
+    return this.handles.get(coprocessor.globalId);
+  }
 
   /**
-   * removeCoprocessor method remove a coprocessor from the coprocessor map
+   * remove a handle from the handle map
    * @param handle
    */
-  remove = (handle: Handle): Promise<void> => {
-    return new Promise((resolve, reject) => {
-      try {
-        for (const [, handleTable] of this.coprocessors) {
-          handleTable.deregisterHandle(handle);
-        }
-        resolve();
-      } catch (e) {
-        reject(
-          new Error(
-            "Error removing coprocessor with ID " +
-              `${handle.coprocessor.globalId}: ${e.message}`
-          )
-        );
-      }
-    });
+  remove = (handle: Handle): void => {
+    this.handles.delete(handle.coprocessor.globalId);
   };
-  /**
-   * getCoprocessors returns the map of Handles indexed by their
-   * topics
-   */
-  getCoprocessorsByTopics(): Map<string, HandleTable> {
-    return this.coprocessors;
-  }
 
   /**
-   * returns the topic list
+   * returns a handle list by given ids
+   * @param ids
    */
-  getTopics(): string[] {
-    return [...this.coprocessors.keys()];
+  getHandlesByCoprocessorIds(ids: bigint[]): Handle[] {
+    return ids.reduce((prev, id) => {
+      const handle = this.handles.get(id);
+      if (handle) {
+        prev.push(handle);
+      }
+      return prev;
+    }, []);
   }
 
-  getCoprocessorByTopic(topic: string): HandleTable {
-    return this.coprocessors.get(topic);
+  size(): number {
+    return this.handles.size;
   }
 
-  private readonly coprocessors: Map<string, HandleTable>;
+  applyCoprocessor(
+    CoprocessorIds: bigint[],
+    requestItem: ProcessBatchRequestItem,
+    handleError: ProcessBatchServer["handleErrorByPolicy"],
+    createException: ProcessBatchServer["fireException"]
+  ): Promise<ProcessBatchReplyItem[]>[] {
+    const handles = this.getHandlesByCoprocessorIds(requestItem.coprocessorIds);
+    if (handles.length != requestItem.coprocessorIds.length) {
+      const nonExistHandle = requestItem.coprocessorIds.filter(
+        (id) => !handles.find((handle) => handle.coprocessor.globalId === id)
+      );
+      return [
+        createException(
+          "Coprocessors don't register in wasm engine: " + nonExistHandle
+        ),
+      ];
+    } else {
+      return handles.reduce((prev, handle) => {
+        const apply = requestItem.recordBatch.map((recordBatch) => {
+          // Convert int16 to uint16 and check if have an unexpected compression
+          if (((recordBatch.header.attrs >>> 0) & 0x7) != 0) {
+            throw (
+              "Record Batch has an unexpect compression value: baseOffset" +
+              recordBatch.header.baseOffset
+            );
+          }
+          try {
+            //TODO: https://app.clubhouse.io/vectorized/story/1257
+            //pass functor to apply function
+            const resultRecordBatch = handle.coprocessor.apply(
+              createRecordBatch(recordBatch)
+            );
+
+            const results: ProcessBatchReplyItem[] = [];
+            for (const [key, value] of resultRecordBatch) {
+              results.push({
+                coprocessorId: BigInt(handle.coprocessor.globalId),
+                ntp: {
+                  ...requestItem.ntp,
+                  topic: `${requestItem.ntp.topic}.$${key}$`,
+                },
+                resultRecordBatch: [value],
+              });
+            }
+            return Promise.resolve(results);
+          } catch (e) {
+            return handleError(handle.coprocessor, requestItem, e);
+          }
+        });
+        return prev.concat(apply);
+      }, []);
+    }
+  }
+
+  /**
+   * Map with coprocessor ID -> Handle
+   * @private
+   */
+  private readonly handles: Map<bigint, Handle>;
 }
 
 export default Repository;
