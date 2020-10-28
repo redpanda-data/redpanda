@@ -1,5 +1,6 @@
 #include "pandaproxy/application.h"
 
+#include "pandaproxy/client/configuration.h"
 #include "pandaproxy/configuration.h"
 #include "platform/stop_signal.h"
 #include "ssx/future-util.h"
@@ -76,7 +77,7 @@ int application::run(int ac, char** av) {
 }
 
 void application::initialize() {
-    if (shard_local_cfg().brokers.value().size() != 1) {
+    if (client::shard_local_cfg().brokers.value().size() != 1) {
         throw std::invalid_argument(
           "Pandaproxy currently supports exactly 1 broker");
     }
@@ -116,15 +117,18 @@ void application::hydrate_config(
     vlog(_log.info, "Configuration:\n\n{}\n\n", config);
     ss::smp::invoke_on_all([&config] {
         shard_local_cfg().read_yaml(config);
+        client::shard_local_cfg().read_yaml(config);
     }).get0();
     vlog(
       _log.info,
       "Use `rpk config set pandaproxy-cfg <value>` to change values below:");
-    shard_local_cfg().for_each([this](const config::base_property& item) {
+    auto config_printer = [this](const config::base_property& item) {
         std::stringstream val;
         item.print(val);
         vlog(_log.info, "{}\t- {}", val.str(), item.desc());
-    });
+    };
+    shard_local_cfg().for_each(config_printer);
+    client::shard_local_cfg().for_each(config_printer);
 }
 
 void application::check_environment() {
@@ -190,7 +194,7 @@ void application::wire_up_services() {
     syschecks::systemd_message("Starting Pandaproxy");
 
     auto resolve_brokers = ssx::parallel_transform(
-      shard_local_cfg().brokers(),
+      client::shard_local_cfg().brokers(),
       [](const unresolved_address& a) { return a.resolve(); });
 
     construct_service(
