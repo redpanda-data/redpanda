@@ -286,7 +286,7 @@ Please check your internet connection and try again.`,
 					},
 				}, nil
 			},
-			expectedOutput: `Cluster started! You may use 'rpk api' to interact with the cluster. E.g:\n\nrpk api status --brokers 172.24.1.2:9092`,
+			expectedOutput: `Cluster started! You may use 'rpk api' to interact with the cluster. E.g:\n\nrpk api status`,
 			check: func(fs afero.Fs, st *testing.T) {
 				ok, err := common.CheckFiles(
 					fs,
@@ -341,7 +341,7 @@ Please check your internet connection and try again.`,
 					},
 				}, nil
 			},
-			expectedOutput: `Cluster started! You may use 'rpk api' to interact with the cluster. E.g:\n\nrpk api status --brokers 172.24.1.2:9092`,
+			expectedOutput: `Cluster started! You may use 'rpk api' to interact with the cluster. E.g:\n\nrpk api status`,
 			check: func(fs afero.Fs, st *testing.T) {
 				ok, err := common.CheckFiles(
 					fs,
