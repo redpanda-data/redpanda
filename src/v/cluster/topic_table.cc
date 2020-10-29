@@ -7,9 +7,9 @@
 namespace cluster {
 
 template<typename Func>
-std::vector<std::result_of_t<Func(topic_configuration_assignment)>>
+std::vector<std::invoke_result_t<Func, topic_configuration_assignment>>
 topic_table::transform_topics(Func&& f) const {
-    std::vector<std::result_of_t<Func(topic_configuration_assignment)>> ret;
+    std::vector<std::invoke_result_t<Func, topic_configuration_assignment>> ret;
     ret.reserve(_topics.size());
     std::transform(
       std::cbegin(_topics),

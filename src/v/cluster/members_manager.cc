@@ -269,7 +269,7 @@ members_manager::dispatch_join_to_seed_server(seed_iterator it) {
 
 template<typename Func>
 auto members_manager::dispatch_rpc_to_leader(Func&& f) {
-    using inner_t = typename std::result_of_t<Func(controller_client_protocol)>;
+    using inner_t = std::invoke_result_t<Func, controller_client_protocol>;
     using fut_t = ss::futurize<result_wrap_t<inner_t>>;
 
     std::optional<model::node_id> leader_id = _raft0->get_leader_id();

@@ -109,7 +109,7 @@ private:
     void notify_waiters();
 
     template<typename Func>
-    std::vector<std::result_of_t<Func(topic_configuration_assignment)>>
+    std::vector<std::invoke_result_t<Func, topic_configuration_assignment>>
     transform_topics(Func&&) const;
 
     absl::flat_hash_map<
