@@ -20,7 +20,7 @@ CONCEPT(requires ss::ApplyReturns<Predicate, bool> ||
 /// Used to wait for Prediacate to become true
 ss::future<> cooperative_spin_wait_with_timeout(
   std::chrono::duration<Rep, Period> timeout, Predicate p) {
-    using futurator = ss::futurize<std::result_of_t<Predicate()>>;
+    using futurator = ss::futurize<std::invoke_result_t<Predicate>>;
     auto tout = model::timeout_clock::now() + timeout;
     return ss::with_timeout(
       tout, ss::repeat([tout, p = std::forward<Predicate>(p)]() mutable {

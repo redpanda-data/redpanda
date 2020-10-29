@@ -35,7 +35,7 @@ public:
             }
             _timer.set_callback(
               [this, ef = std::forward<ErrorFactory>(err_factory)] {
-                  using err_t = std::result_of_t<ErrorFactory()>;
+                  using err_t = std::invoke_result_t<ErrorFactory>;
 
                   constexpr bool is_result = std::is_same_v<err_t, T>;
                   constexpr bool is_std_error_code
