@@ -620,4 +620,29 @@ for_each_record(const model::record_batch& batch, Func&& f) {
       });
 }
 
+class record_batch_crc_checker {
+public:
+    explicit record_batch_crc_checker(bool verify_internal_header = true)
+      : _verify_internal_header(verify_internal_header) {}
+
+    ss::future<ss::stop_iteration> operator()(const model::record_batch& rb) {
+        bool header_crc_pass = true;
+        if (_verify_internal_header) {
+            header_crc_pass = rb.header().header_crc
+                              == model::internal_header_only_crc(rb.header());
+        }
+        const bool crc_pass = rb.header().crc == crc_record_batch(rb);
+        _crc_parse_success &= (header_crc_pass && crc_pass);
+        return ss::make_ready_future<ss::stop_iteration>(
+          _crc_parse_success ? ss::stop_iteration::no
+                             : ss::stop_iteration::yes);
+    }
+
+    bool end_of_stream() { return _crc_parse_success; }
+
+private:
+    bool _crc_parse_success{true};
+    bool _verify_internal_header{true};
+};
+
 } // namespace model
