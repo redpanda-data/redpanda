@@ -2,6 +2,7 @@ package common
 
 import (
 	"context"
+	"io"
 	"time"
 
 	"github.com/docker/docker/api/types"
@@ -14,6 +15,17 @@ import (
 // used, to make it possible to test the code that uses it.
 type Client interface {
 	Close() error
+
+	ImagePull(
+		ctx context.Context,
+		ref string,
+		options types.ImagePullOptions,
+	) (io.ReadCloser, error)
+
+	ImageList(
+		ctx context.Context,
+		options types.ImageListOptions,
+	) ([]types.ImageSummary, error)
 
 	ContainerCreate(
 		ctx context.Context,
@@ -62,9 +74,12 @@ type Client interface {
 	NetworkInspect(
 		ctx context.Context,
 		networkID string,
+		options types.NetworkInspectOptions,
 	) (types.NetworkResource, error)
 
 	IsErrNotFound(err error) bool
+
+	IsErrConnectionFailed(err error) bool
 }
 
 type dockerClient struct {
@@ -81,4 +96,8 @@ func NewDockerClient() (Client, error) {
 
 func (_ *dockerClient) IsErrNotFound(err error) bool {
 	return client.IsErrNotFound(err)
+}
+
+func (_ *dockerClient) IsErrConnectionFailed(err error) bool {
+	return client.IsErrConnectionFailed(err)
 }

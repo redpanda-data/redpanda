@@ -4,13 +4,13 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"testing"
 	"vectorized/pkg/cli/cmd/container/common"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
-	"github.com/docker/go-connections/nat"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
@@ -26,6 +26,90 @@ func TestStart(t *testing.T) {
 		before         func(afero.Fs) error
 		check          func(afero.Fs, *testing.T)
 	}{
+		{
+			name: "it should fail if the img can't be pulled and imgs can't be listed",
+			client: func() (common.Client, error) {
+				return &common.MockClient{
+					MockImagePull: func(
+						_ context.Context,
+						_ string,
+						_ types.ImagePullOptions,
+					) (io.ReadCloser, error) {
+						return nil, errors.New("Can't pull")
+					},
+					MockImageList: func(
+						_ context.Context,
+						_ types.ImageListOptions,
+					) ([]types.ImageSummary, error) {
+						return nil, errors.New("Can't list")
+					},
+				}, nil
+			},
+			expectedErrMsg: "Couldn't pull image and a local one" +
+				" wasn't found either.",
+			check: func(fs afero.Fs, st *testing.T) {
+				ok, err := common.CheckFiles(fs, st, false, common.ClusterDir())
+				require.NoError(st, err)
+				require.True(st, ok)
+			},
+		},
+		{
+			name: "it should fail if the img couldn't be pulled bc of internet conn issues",
+			client: func() (common.Client, error) {
+				return &common.MockClient{
+					MockImagePull: func(
+						_ context.Context,
+						_ string,
+						_ types.ImagePullOptions,
+					) (io.ReadCloser, error) {
+						return nil, errors.New("Can't pull")
+					},
+					MockImageList: func(
+						_ context.Context,
+						_ types.ImageListOptions,
+					) ([]types.ImageSummary, error) {
+						return nil, errors.New("Can't list")
+					},
+					MockIsErrConnectionFailed: func(_ error) bool {
+						return true
+					},
+				}, nil
+			},
+			expectedErrMsg: `Couldn't pull image and a local one wasn't found either.
+Please check your internet connection and try again.`,
+			check: func(fs afero.Fs, st *testing.T) {
+				ok, err := common.CheckFiles(fs, st, false, common.ClusterDir())
+				require.NoError(st, err)
+				require.True(st, ok)
+			},
+		},
+		{
+			name: "it should fail if the img can't be pulled and it isn't avail. locally",
+			client: func() (common.Client, error) {
+				return &common.MockClient{
+					MockImagePull: func(
+						_ context.Context,
+						_ string,
+						_ types.ImagePullOptions,
+					) (io.ReadCloser, error) {
+						return nil, errors.New("Can't pull")
+					},
+					MockImageList: func(
+						_ context.Context,
+						_ types.ImageListOptions,
+					) ([]types.ImageSummary, error) {
+						return []types.ImageSummary{}, nil
+					},
+				}, nil
+			},
+			expectedErrMsg: "Couldn't pull image and a local one" +
+				" wasn't found either.",
+			check: func(fs afero.Fs, st *testing.T) {
+				ok, err := common.CheckFiles(fs, st, false, common.ClusterDir())
+				require.NoError(st, err)
+				require.True(st, ok)
+			},
+		},
 		{
 			name: "it should fail if creating the network fails",
 			client: func() (common.Client, error) {
@@ -59,6 +143,7 @@ func TestStart(t *testing.T) {
 					MockNetworkInspect: func(
 						_ context.Context,
 						_ string,
+						_ types.NetworkInspectOptions,
 					) (types.NetworkResource, error) {
 						res := types.NetworkResource{}
 						return res, errors.New(
@@ -85,6 +170,7 @@ func TestStart(t *testing.T) {
 					MockNetworkInspect: func(
 						_ context.Context,
 						_ string,
+						_ types.NetworkInspectOptions,
 					) (types.NetworkResource, error) {
 						ipam := network.IPAM{
 							Config: []network.IPAMConfig{},
@@ -116,6 +202,7 @@ func TestStart(t *testing.T) {
 					MockNetworkInspect: func(
 						_ context.Context,
 						_ string,
+						_ types.NetworkInspectOptions,
 					) (types.NetworkResource, error) {
 						ipamConf := network.IPAMConfig{
 							Subnet:  "172.24.1.0/24",
@@ -167,6 +254,7 @@ func TestStart(t *testing.T) {
 					MockNetworkInspect: func(
 						_ context.Context,
 						_ string,
+						_ types.NetworkInspectOptions,
 					) (types.NetworkResource, error) {
 						ipamConf := network.IPAMConfig{
 							Subnet:  "172.24.1.0/24",
@@ -221,6 +309,7 @@ func TestStart(t *testing.T) {
 					MockNetworkInspect: func(
 						_ context.Context,
 						_ string,
+						_ types.NetworkInspectOptions,
 					) (types.NetworkResource, error) {
 						ipamConf := network.IPAMConfig{
 							Subnet:  "172.24.1.0/24",
@@ -273,48 +362,7 @@ func TestStart(t *testing.T) {
 			name:  "it should do nothing if there's an existing running cluster",
 			nodes: 1,
 			client: func() (common.Client, error) {
-				kafkaNatPort, err := nat.NewPort("tcp", "9092")
-				if err != nil {
-					return nil, err
-				}
-				rpcNatPort, err := nat.NewPort("tcp", "33145")
-				if err != nil {
-					return nil, err
-				}
-				return &common.MockClient{
-					MockContainerInspect: func(
-						_ context.Context,
-						_ string,
-					) (types.ContainerJSON, error) {
-						return types.ContainerJSON{
-							ContainerJSONBase: &types.ContainerJSONBase{
-								State: &types.ContainerState{
-									Running: true,
-									Status:  "Up, I guess?",
-								},
-							},
-							NetworkSettings: &types.NetworkSettings{
-								NetworkSettingsBase: types.NetworkSettingsBase{
-									Ports: map[nat.Port][]nat.PortBinding{
-										kafkaNatPort: []nat.PortBinding{{
-											HostIP: "192.168.78", HostPort: "89080",
-										}},
-										rpcNatPort: []nat.PortBinding{{
-											HostIP: "192.168.78", HostPort: "89081",
-										}},
-									},
-								},
-								Networks: map[string]*network.EndpointSettings{
-									"redpanda": &network.EndpointSettings{
-										IPAMConfig: &network.EndpointIPAMConfig{
-											IPv4Address: "172.24.1.2",
-										},
-									},
-								},
-							},
-						}, nil
-					},
-				}, nil
+				return &common.MockClient{}, nil
 			},
 			before: func(fs afero.Fs) error {
 				return fs.MkdirAll(common.ConfDir(0), 0755)

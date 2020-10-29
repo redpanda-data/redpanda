@@ -55,7 +55,7 @@ You may start a new local cluster with 'rpk container start'`,
 					return err
 				}
 			}
-			log.Debugf("Deleted data for node %d", id)
+			log.Infof("Deleted data for node %d", id)
 			ctx, _ := common.DefaultCtx()
 			name := common.Name(id)
 			err = c.ContainerRemove(
@@ -72,6 +72,7 @@ You may start a new local cluster with 'rpk container start'`,
 				}
 				log.Debug(err)
 			}
+			log.Debugf("Removed node '%d'", id)
 			log.Debugf("Removed container '%s'", name)
 			return nil
 		})
