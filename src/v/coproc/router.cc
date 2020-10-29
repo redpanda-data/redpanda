@@ -1,6 +1,7 @@
 #include "coproc/router.h"
 
 #include "coproc/logger.h"
+#include "coproc/reference_window_consumer.hpp"
 #include "coproc/supervisor.h"
 #include "coproc/types.h"
 #include "model/limits.h"
@@ -226,23 +227,39 @@ ss::future<> router::process_reply_one(process_batch_reply::data e) {
     model::ntp src_ntp(e.ntp.ns, mt->src, e.ntp.tp.partition);
     // Create the materialized log, the name of the log will be of the
     // format: <src>.$<destination>$
-    return get_log(e.ntp).then(
-      [this, src_ntp, id = e.id, reader = std::move(e.reader)](
-        storage::log log) mutable {
-          // Append the requested data to the end of the log
-          storage::log_append_config cfg{
-            .should_fsync = storage::log_append_config::fsync::no,
-            .io_priority = ss::default_priority_class(),
-            .timeout = model::no_timeout};
-          return std::move(reader)
-            .for_each_ref(log.make_appender(cfg), model::no_timeout)
-            .then([this, src_ntp, id, log](storage::append_result) mutable {
+    return get_log(e.ntp).then([this,
+                                src_ntp,
+                                id = e.id,
+                                reader = std::move(e.reader)](
+                                 storage::log log) mutable {
+        // Append the requested data to the end of the log
+        storage::log_append_config cfg{
+          .should_fsync = storage::log_append_config::fsync::no,
+          .io_priority = ss::default_priority_class(),
+          .timeout = model::no_timeout};
+        return std::move(reader)
+          .for_each_ref(
+            coproc::reference_window_consumer(
+              model::record_batch_crc_checker(), log.make_appender(cfg)),
+            model::no_timeout)
+          .then(
+            [this, src_ntp, id, log](
+              std::tuple<bool, ss::future<storage::append_result>> t) mutable {
                 /// TODO(rob) NOT ideal to flush on every response.
                 /// Clubhouse ticket 'coprocessor enhancments' filed for this
+                const auto& [crc_parse_success, _] = t;
+                if (!crc_parse_success) {
+                    vlog(
+                      coproclog.warn,
+                      "record_batch failed to pass crc checks, not promoting "
+                      "log offset for source ntp: {}",
+                      src_ntp);
+                    return ss::now();
+                }
                 bump_offset(src_ntp, id);
                 return log.flush();
             });
-      });
+    });
 }
 
 ss::future<router::opt_cfg>
