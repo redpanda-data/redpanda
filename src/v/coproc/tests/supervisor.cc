@@ -9,12 +9,9 @@
 
 namespace coproc {
 
-template<typename T, typename U>
-CONCEPT(requires requires(T a, U b) {
-    std::is_same_t<T::value_type, U::value_type>;
-})
-T convert_batches(U&& data) {
-    T batches;
+std::vector<model::record_batch>
+batch_to_vector(model::record_batch_reader::data_t&& data) {
+    std::vector<model::record_batch> batches;
     batches.reserve(data.size());
     std::transform(
       std::make_move_iterator(data.begin()),
@@ -24,14 +21,20 @@ T convert_batches(U&& data) {
     return batches;
 }
 
-std::vector<model::record_batch>
-batch_to_vector(model::record_batch_reader::data_t&& data) {
-    return convert_batches<std::vector<model::record_batch>>(std::move(data));
-}
-
+/// In this case we must use the record_batch_builder as to ensure that the
+/// record-batch_header header_crc and crc data fields are properly recomputed
 model::record_batch_reader::data_t
 vector_to_batch(std::vector<model::record_batch>&& data) {
-    return convert_batches<model::record_batch_reader::data_t>(std::move(data));
+    model::record_batch_reader::data_t new_batch;
+    for (auto& batch : data) {
+        storage::record_batch_builder rbb(
+          batch.header().type, batch.header().base_offset);
+        batch.for_each_record([&rbb](model::record r) {
+            rbb.add_raw_kv(r.release_key(), r.release_value());
+        });
+        new_batch.push_back(std::move(rbb).build());
+    }
+    return new_batch;
 }
 
 void supervisor::invoke_coprocessor(
