@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"vectorized/pkg/cli/cmd/api"
+	"vectorized/pkg/cli/cmd/container/common"
 	"vectorized/pkg/config"
 	"vectorized/pkg/kafka"
 
@@ -13,6 +15,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
+	"golang.org/x/sync/errgroup"
 )
 
 func NewApiCommand(fs afero.Fs) *cobra.Command {
@@ -110,10 +113,22 @@ func deduceBrokers(
 ) func() []string {
 	return func() []string {
 		bs := *brokers
+		// Prioritize brokers passed through --brokers
 		if len(bs) != 0 {
 			log.Debugf("Using --brokers: %s", strings.Join(bs, ", "))
 			return bs
 		}
+		// Otherwise, try to detect if a local container cluster is
+		// running, and use its brokers' addresses.
+		bs = containerBrokers(fs)
+		if len(bs) > 0 {
+			log.Debugf(
+				"Using container cluster brokers %s",
+				strings.Join(bs, ", "),
+			)
+			return bs
+		}
+		// Otherwise, try to find an existing config file.
 		conf, err := configuration()
 		if err != nil {
 			log.Trace(
@@ -207,4 +222,45 @@ func createAdmin(
 		}
 		return sarama.NewClusterAdmin(brokers(), cfg)
 	}
+}
+
+func containerBrokers(fs afero.Fs) []string {
+	nodeIDs, err := common.GetExistingNodes(fs)
+	if err != nil {
+		log.Debug(err)
+		return []string{}
+	}
+	c, err := common.NewDockerClient()
+	if err != nil {
+		log.Debug(err)
+		return []string{}
+	}
+	grp := errgroup.Group{}
+	mu := sync.Mutex{}
+	addrs := []string{}
+	for _, nodeID := range nodeIDs {
+		id := nodeID
+		grp.Go(func() error {
+			s, err := common.GetState(c, id)
+			if err != nil {
+				return err
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			addrs = append(
+				addrs,
+				fmt.Sprintf(
+					"0.0.0.0:%d",
+					s.HostKafkaPort,
+				),
+			)
+			return nil
+		})
+	}
+	err = grp.Wait()
+	if err != nil {
+		log.Debug(err)
+		return []string{}
+	}
+	return addrs
 }
