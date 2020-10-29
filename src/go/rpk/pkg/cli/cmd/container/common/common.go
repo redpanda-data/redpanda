@@ -1,6 +1,7 @@
 package common
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -25,6 +26,7 @@ import (
 
 const (
 	redpandaNetwork = "redpanda"
+	redpandaImage   = "docker.io/vectorized/redpanda"
 
 	defaultDockerClientTimeout = 10 * time.Second
 )
@@ -211,7 +213,7 @@ func CreateNode(
 	}
 	hostname := Name(nodeID)
 	containerConfig := container.Config{
-		Image:    "vectorized/redpanda:latest",
+		Image:    redpandaImage,
 		Hostname: hostname,
 		User:     "redpanda",
 		ExposedPorts: nat.PortSet{
@@ -287,6 +289,32 @@ func CreateNode(
 	}, nil
 }
 
+func PullImage(c Client) error {
+	ctx, _ := DefaultCtx()
+	res, err := c.ImagePull(ctx, redpandaImage, types.ImagePullOptions{})
+	if res != nil {
+		defer res.Close()
+		buf := bytes.Buffer{}
+		buf.ReadFrom(res)
+		log.Debug(buf.String())
+	}
+	return err
+}
+
+func CheckIfImgPresent(c Client) (bool, error) {
+	ctx, _ := DefaultCtx()
+	imgs, err := c.ImageList(ctx, types.ImageListOptions{})
+	if err != nil {
+		return false, err
+	}
+	for _, img := range imgs {
+		if img.ID == redpandaImage {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func getHostPort(
 	containerPort int, containerJSON types.ContainerJSON,
 ) (uint, error) {
@@ -309,7 +337,7 @@ func getHostPort(
 
 func nodeIP(c Client, netID string, id uint) (string, error) {
 	ctx, _ := DefaultCtx()
-	networkResource, err := c.NetworkInspect(ctx, netID)
+	networkResource, err := c.NetworkInspect(ctx, netID, types.NetworkInspectOptions{})
 	if err != nil {
 		return "", err
 	}

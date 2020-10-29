@@ -14,6 +14,7 @@ import (
 )
 
 func TestStop(t *testing.T) {
+
 	tests := []struct {
 		name           string
 		client         func() (common.Client, error)
@@ -61,7 +62,7 @@ func TestStop(t *testing.T) {
 				return fs.MkdirAll(common.ConfDir(0), 0755)
 			},
 			expectedOutput: []string{
-				"Stopped current cluster.",
+				"Stopping node 0",
 			},
 		},
 	}

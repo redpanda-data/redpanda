@@ -2,17 +2,30 @@ package common
 
 import (
 	"context"
+	"io"
 	"testing"
 	"time"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
+	"github.com/docker/go-connections/nat"
 	"github.com/spf13/afero"
 )
 
 type MockClient struct {
 	MockClose func() error
+
+	MockImagePull func(
+		ctx context.Context,
+		ref string,
+		options types.ImagePullOptions,
+	) (io.ReadCloser, error)
+
+	MockImageList func(
+		ctx context.Context,
+		options types.ImageListOptions,
+	) ([]types.ImageSummary, error)
 
 	MockContainerCreate func(
 		ctx context.Context,
@@ -64,9 +77,12 @@ type MockClient struct {
 	MockNetworkInspect func(
 		ctx context.Context,
 		networkID string,
+		options types.NetworkInspectOptions,
 	) (types.NetworkResource, error)
 
 	MockIsErrNotFound func(err error) bool
+
+	MockIsErrConnectionFailed func(err error) bool
 }
 
 func (c *MockClient) Close() error {
@@ -95,6 +111,24 @@ func (c *MockClient) ContainerCreate(
 	return container.ContainerCreateCreatedBody{}, nil
 }
 
+func (c *MockClient) ImagePull(
+	ctx context.Context, ref string, options types.ImagePullOptions,
+) (io.ReadCloser, error) {
+	if c.MockImagePull != nil {
+		return c.MockImagePull(ctx, ref, options)
+	}
+	return nil, nil
+}
+
+func (c *MockClient) ImageList(
+	ctx context.Context, options types.ImageListOptions,
+) ([]types.ImageSummary, error) {
+	if c.MockImageList != nil {
+		return c.MockImageList(ctx, options)
+	}
+	return []types.ImageSummary{}, nil
+}
+
 func (c *MockClient) ContainerStart(
 	ctx context.Context, containerID string, options types.ContainerStartOptions,
 ) error {
@@ -121,7 +155,7 @@ func (c *MockClient) ContainerInspect(
 	if c.MockContainerInspect != nil {
 		return c.MockContainerInspect(ctx, containerID)
 	}
-	return types.ContainerJSON{}, nil
+	return MockContainerInspect(ctx, containerID)
 }
 
 func (c *MockClient) ContainerRemove(
@@ -159,10 +193,10 @@ func (c *MockClient) NetworkList(
 }
 
 func (c *MockClient) NetworkInspect(
-	ctx context.Context, networkID string,
+	ctx context.Context, networkID string, options types.NetworkInspectOptions,
 ) (types.NetworkResource, error) {
 	if c.MockNetworkInspect != nil {
-		return c.MockNetworkInspect(ctx, networkID)
+		return c.MockNetworkInspect(ctx, networkID, options)
 	}
 	return types.NetworkResource{}, nil
 }
@@ -170,6 +204,13 @@ func (c *MockClient) NetworkInspect(
 func (c *MockClient) IsErrNotFound(err error) bool {
 	if c.MockIsErrNotFound != nil {
 		return c.MockIsErrNotFound(err)
+	}
+	return false
+}
+
+func (c *MockClient) IsErrConnectionFailed(err error) bool {
+	if c.MockIsErrConnectionFailed != nil {
+		return c.MockIsErrConnectionFailed(err)
 	}
 	return false
 }
@@ -187,4 +228,38 @@ func CheckFiles(
 		}
 	}
 	return true, nil
+}
+
+func MockContainerInspect(
+	_ context.Context, _ string,
+) (types.ContainerJSON, error) {
+	kafkaNatPort := nat.Port("tcp/9092")
+	rpcNatPort := nat.Port("tcp/33145")
+	return types.ContainerJSON{
+		ContainerJSONBase: &types.ContainerJSONBase{
+			State: &types.ContainerState{
+				Running: true,
+				Status:  "Up, I guess?",
+			},
+		},
+		NetworkSettings: &types.NetworkSettings{
+			NetworkSettingsBase: types.NetworkSettingsBase{
+				Ports: map[nat.Port][]nat.PortBinding{
+					kafkaNatPort: []nat.PortBinding{{
+						HostIP: "192.168.78.9", HostPort: "89080",
+					}},
+					rpcNatPort: []nat.PortBinding{{
+						HostIP: "192.168.78.9", HostPort: "89081",
+					}},
+				},
+			},
+			Networks: map[string]*network.EndpointSettings{
+				"redpanda": &network.EndpointSettings{
+					IPAMConfig: &network.EndpointIPAMConfig{
+						IPv4Address: "172.24.1.2",
+					},
+				},
+			},
+		},
+	}, nil
 }
