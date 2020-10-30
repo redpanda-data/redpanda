@@ -17,6 +17,7 @@ v_cc_library(
     types.cc
     replicate_entries_stm.cc
     vote_stm.cc
+    prevote_stm.cc
     recovery_stm.cc
     follower_stats.cc
     replicate_batcher.cc
