@@ -8,6 +8,7 @@
 #include "raft/consensus_utils.h"
 #include "raft/errc.h"
 #include "raft/logger.h"
+#include "raft/prevote_stm.h"
 #include "raft/recovery_stm.h"
 #include "raft/rpc_client_protocol.h"
 #include "raft/types.h"
@@ -386,6 +387,37 @@ bool consensus::should_skip_vote(bool ignore_heartbeat) {
     return skip_vote;
 }
 
+ss::future<bool> consensus::dispatch_prevote(bool leadership_transfer) {
+    auto pvstm_p = std::make_unique<prevote_stm>(this);
+    auto pvstm = pvstm_p.get();
+
+    return pvstm->prevote(leadership_transfer)
+      .then_wrapped([this, pvstm_p = std::move(pvstm_p), pvstm](
+                      ss::future<bool> prevote_f) mutable {
+          bool ready = false;
+          try {
+              ready = prevote_f.get();
+          } catch (...) {
+              vlog(
+                _ctxlog.warn,
+                "Error returned from prevoting process {}",
+                std::current_exception());
+          }
+          auto f = pvstm->wait().finally([pvstm_p = std::move(pvstm_p)] {});
+          // make sure we wait for all futures when gate is closed
+          if (_bg.is_closed()) {
+              return f.then([ready] { return ready; });
+          }
+          // background
+          (void)with_gate(
+            _bg, [pvstm_p = std::move(pvstm_p), f = std::move(f)]() mutable {
+                return std::move(f);
+            });
+
+          return ss::make_ready_future<bool>(ready);
+      });
+}
+
 /// performs no raft-state mutation other than resetting the timer
 void consensus::dispatch_vote(bool leadership_transfer) {
     // 5.2.1.4 - prepare next timeout
@@ -396,34 +428,41 @@ void consensus::dispatch_vote(bool leadership_transfer) {
 
     // background, acquire lock, transition state
     (void)with_gate(_bg, [this, leadership_transfer] {
-        auto vstm = std::make_unique<vote_stm>(this);
-        auto p = vstm.get();
+        return dispatch_prevote(leadership_transfer)
+          .then([this, leadership_transfer](bool ready) mutable {
+              if (!ready) {
+                  return ss::make_ready_future<>();
+              }
+              auto vstm = std::make_unique<vote_stm>(this);
+              auto p = vstm.get();
 
-        // CRITICAL: vote performs locking on behalf of consensus
-        return p->vote(leadership_transfer)
-          .then_wrapped(
-            [this, p, vstm = std::move(vstm)](ss::future<> vote_f) mutable {
-                try {
-                    vote_f.get();
-                } catch (...) {
-                    vlog(
-                      _ctxlog.warn,
-                      "Error returned from voting process {}",
-                      std::current_exception());
-                }
-                auto f = p->wait().finally([vstm = std::move(vstm)] {});
-                // make sure we wait for all futures when gate is closed
-                if (_bg.is_closed()) {
-                    return f;
-                }
-                // background
-                (void)with_gate(
-                  _bg, [vstm = std::move(vstm), f = std::move(f)]() mutable {
-                      return std::move(f);
-                  });
+              // CRITICAL: vote performs locking on behalf of consensus
+              return p->vote(leadership_transfer)
+                .then_wrapped([this, p, vstm = std::move(vstm)](
+                                ss::future<> vote_f) mutable {
+                    try {
+                        vote_f.get();
+                    } catch (...) {
+                        vlog(
+                          _ctxlog.warn,
+                          "Error returned from voting process {}",
+                          std::current_exception());
+                    }
+                    auto f = p->wait().finally([vstm = std::move(vstm)] {});
+                    // make sure we wait for all futures when gate is closed
+                    if (_bg.is_closed()) {
+                        return f;
+                    }
+                    // background
+                    (void)with_gate(
+                      _bg,
+                      [vstm = std::move(vstm), f = std::move(f)]() mutable {
+                          return std::move(f);
+                      });
 
-                return ss::make_ready_future<>();
-            })
+                    return ss::make_ready_future<>();
+                });
+          })
           .handle_exception([this](const std::exception_ptr& e) {
               vlog(_ctxlog.warn, "Exception thrown while voting - {}", e);
           })
