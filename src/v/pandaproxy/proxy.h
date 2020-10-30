@@ -1,6 +1,6 @@
 #pragma once
 
-#include "kafka/client.h"
+#include "pandaproxy/client/client.h"
 #include "pandaproxy/server.h"
 #include "seastarx.h"
 
@@ -15,13 +15,13 @@ class proxy {
 public:
     proxy(
       ss::socket_address listen_addr,
-      std::vector<ss::socket_address> broker_addrs);
+      std::vector<unresolved_address> broker_addrs);
 
     ss::future<> start();
     ss::future<> stop();
 
 private:
-    kafka::client _client;
+    client::client _client;
     server::context_t _ctx;
     server _server;
 };

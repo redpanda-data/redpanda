@@ -36,7 +36,7 @@ std::vector<server::route_t> get_proxy_routes() {
     return routes;
 }
 
-static server::context_t make_context(kafka::client& client) {
+static server::context_t make_context(client::client& client) {
     return server::context_t{
       .mem_sem{ss::memory::stats().free_memory()},
       .as{},
@@ -45,10 +45,8 @@ static server::context_t make_context(kafka::client& client) {
 }
 
 proxy::proxy(
-  ss::socket_address listen_addr, std::vector<ss::socket_address> broker_addrs)
-  : _client(rpc::base_transport::configuration{
-    .server_addr = broker_addrs[0], // TODO: Support multiple brokers
-  })
+  ss::socket_address listen_addr, std::vector<unresolved_address> broker_addrs)
+  : _client(std::move(broker_addrs))
   , _ctx(make_context(_client))
   , _server(
       "pandaproxy",
@@ -57,7 +55,7 @@ proxy::proxy(
       make_context(_client)) {}
 
 ss::future<> proxy::start() {
-    return seastar::when_all(
+    return seastar::when_all_succeed(
              [this]() {
                  _server.route(get_proxy_routes());
                  return _server.start();

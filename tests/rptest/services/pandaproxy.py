@@ -35,9 +35,6 @@ class PandaProxyService(Service):
         self._context = context
         self._redpanda = redpanda
 
-        assert len(self._redpanda.nodes
-                   ) == 1, "Pandaproxy currently limited to single broker"
-
     def start_node(self, node):
         node.account.mkdirs(PandaProxyService.PERSISTENT_ROOT)
         self.write_conf_file(node)
