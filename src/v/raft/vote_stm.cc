@@ -129,6 +129,7 @@ ss::future<> vote_stm::vote(bool leadership_transfer) {
 ss::future<> vote_stm::do_vote() {
     auto cfg = _ptr->config();
 
+    // TODO: remove dead code
     // 5.2.1. 3
     vote_reply reply;
     reply.term = _req.term;
