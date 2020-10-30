@@ -171,7 +171,6 @@ consensus::success_reply consensus::update_follower_index(
     // If RPC request or response contains term T > currentTerm:
     // set currentTerm = T, convert to follower (Raft paper: §5.1)
     if (reply.term > _term) {
-        _term = reply.term;
         (void)with_gate(_bg, [this, term = reply.term] {
             return step_down(model::term_id(term));
         });

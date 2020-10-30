@@ -131,8 +131,12 @@ public:
 
     ss::future<> step_down(model::term_id term) {
         return _op_lock.with([this, term] {
-            _term = term;
-            do_step_down();
+            // check again under op_lock semaphore, make sure we do not move
+            // term backward
+            if (term > _term) {
+                _term = term;
+                do_step_down();
+            }
         });
     }
 
