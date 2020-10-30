@@ -1,13 +1,16 @@
 #include "cluster/namespace.h"
 #include "cluster/partition.h"
+#include "coproc/reference_window_consumer.hpp"
 #include "coproc/script_manager.h"
 #include "coproc/tests/coprocessor.h"
 #include "coproc/tests/supervisor_test_fixture.h"
 #include "coproc/tests/utils.h"
 #include "coproc/types.h"
 #include "kafka/client.h"
+#include "kafka/requests/batch_consumer.h"
 #include "kafka/requests/fetch_request.h"
 #include "model/metadata.h"
+#include "model/timeout_clock.h"
 #include "redpanda/tests/fixture.h"
 #include "rpc/types.h"
 #include "storage/tests/utils/random_batch.h"
@@ -58,6 +61,33 @@ public:
                && resp.acks[0].second[0]
                     == coproc::enable_response_code::success;
     }
+
+    ss::future<std::optional<iobuf>> materialized_log_read(
+      const model::materialized_ntp& mntpv, size_t min_bytes) {
+        const auto shard = app.shard_table.local().shard_for(
+          mntpv.source_ntp());
+        if (!shard) {
+            return ss::make_ready_future<std::optional<iobuf>>(std::nullopt);
+        }
+        return app.storage.invoke_on(
+          *shard, [mntpv, min_bytes](storage::api& api) mutable {
+              auto olog = api.log_mgr().get(mntpv.input_ntp());
+              if (!olog) {
+                  return ss::make_ready_future<std::optional<iobuf>>(
+                    std::nullopt);
+              }
+              return olog->make_reader(log_rdr_cfg(min_bytes))
+                .then([](model::record_batch_reader rbr) {
+                    return std::move(rbr)
+                      .consume(
+                        kafka::kafka_batch_serializer{}, model::no_timeout)
+                      .then([](kafka::kafka_batch_serializer::result res) {
+                          /// TODO: Check crc
+                          return std::optional<iobuf>(std::move(res.data));
+                      });
+                });
+          });
+    }
 };
 
 FIXTURE_TEST(
@@ -70,7 +100,7 @@ FIXTURE_TEST(
     model::topic materialized_topic = model::to_materialized_topic(
       topic, identity_coprocessor::identity_topic);
 
-    size_t bytes_written = 0;
+    size_t min_expected_bytes = 0;
     {
         using namespace storage;
         storage::disk_log_builder builder(log_config);
@@ -83,9 +113,10 @@ FIXTURE_TEST(
             maybe_compress_batches::no,
             model::record_batch_type(1))
           | stop();
-        bytes_written = builder.bytes_written();
-        info("Bytes written: {}", bytes_written);
+        min_expected_bytes = builder.bytes_written();
+        info("Bytes written into source topic: {}", min_expected_bytes);
     }
+
     wait_for_controller_leadership().get0();
     add_topic(model::topic_namespace_view(ntp)).get();
 
@@ -96,7 +127,7 @@ FIXTURE_TEST(
     /// Wait until the materialized topic has entered existance
     const auto mntpv = model::materialized_ntp(
       model::ntp(default_ns, materialized_topic, pid));
-    auto origin_shard = app.shard_table.local().shard_for(mntpv.get());
+    auto origin_shard = app.shard_table.local().shard_for(mntpv.source_ntp());
     tests::cooperative_spin_wait_with_timeout(10s, [this, origin_shard, mntpv] {
         return app.partition_manager.invoke_on(
           *origin_shard, [mntpv](cluster::partition_manager& mgr) {
@@ -114,7 +145,7 @@ FIXTURE_TEST(
     // Connect a kafka client to the expected output topic
     kafka::fetch_request req;
     req.max_bytes = std::numeric_limits<int32_t>::max();
-    req.min_bytes = bytes_written;
+    req.min_bytes = min_expected_bytes; // At LEAST 'bytes_written' in src topic
     req.max_wait_time = 2s;
     req.topics = {
       {.name = materialized_topic,
@@ -124,12 +155,15 @@ FIXTURE_TEST(
     client.connect().get();
     auto resp = client.dispatch(req, kafka::api_version(4)).get0();
     client.stop().then([&client] { client.shutdown(); }).get();
+
+    // Manually read the materialized topic from disk
+    const auto data = materialized_log_read(mntpv, min_expected_bytes).get0();
+    BOOST_REQUIRE(data);
     BOOST_REQUIRE_EQUAL(resp.partitions.size(), 1);
     BOOST_REQUIRE_EQUAL(resp.partitions[0].name, materialized_topic);
     BOOST_REQUIRE_EQUAL(
       resp.partitions[0].responses[0].error, kafka::error_code::none);
     BOOST_REQUIRE_EQUAL(resp.partitions[0].responses[0].id, pid);
     BOOST_REQUIRE(resp.partitions[0].responses[0].record_set);
-    BOOST_REQUIRE_EQUAL(
-      resp.partitions[0].responses[0].record_set->size_bytes(), bytes_written);
+    BOOST_REQUIRE_EQUAL(resp.partitions[0].responses[0].record_set, data);
 }

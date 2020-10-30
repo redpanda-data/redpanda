@@ -2,6 +2,7 @@
 #include "coproc/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "model/record_batch_types.h"
 #include "storage/log.h"
 #include "storage/types.h"
 
@@ -28,11 +29,29 @@ inline static storage::log_append_config log_app_cfg() {
       .timeout = model::no_timeout};
 }
 
-inline static storage::log_reader_config log_rdr_cfg(const model::offset& o) {
+inline static storage::log_reader_config
+log_rdr_cfg(const model::offset& min_offset) {
     return storage::log_reader_config(
-      o,
+      min_offset,
       model::model_limits<model::offset>::max(),
-      ss::default_priority_class());
+      0,
+      std::numeric_limits<size_t>::max(),
+      ss::default_priority_class(),
+      model::well_known_record_batch_types[1],
+      std::nullopt,
+      std::nullopt);
+}
+
+inline static storage::log_reader_config log_rdr_cfg(const size_t min_bytes) {
+    return storage::log_reader_config(
+      model::offset(0),
+      model::model_limits<model::offset>::max(),
+      min_bytes,
+      std::numeric_limits<size_t>::max(),
+      ss::default_priority_class(),
+      model::well_known_record_batch_types[1],
+      std::nullopt,
+      std::nullopt);
 }
 
 /// \brief returns the number of records across all batches of batches
