@@ -15,6 +15,12 @@ class KafkaCat:
     def metadata(self):
         return self._cmd(["-L"])
 
+    def consume_one(self, topic, partition, offset):
+        return self._cmd([
+            "-C", "-e", "-t", f"{topic}", "-p", f"{partition}", "-o",
+            f"{offset}", "-c1"
+        ])
+
     def _cmd(self, cmd):
         for retry in reversed(range(10)):
             try:

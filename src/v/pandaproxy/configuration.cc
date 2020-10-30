@@ -13,19 +13,6 @@ configuration::configuration()
     "production use",
     config::required::no,
     false)
-  , brokers(
-      *this,
-      "brokers",
-      "List of address and port of the brokers",
-      config::required::yes,
-      std::vector<unresolved_address>({{"127.0.0.1", 9092}}))
-  , broker_tls(
-      *this,
-      "broker_tls",
-      "TLS configuration for the brokers",
-      config::required::no,
-      config::tls_config(),
-      config::tls_config::validate)
   , pandaproxy_api(
       *this,
       "pandaproxy_api",

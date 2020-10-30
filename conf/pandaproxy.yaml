@@ -5,11 +5,6 @@ organization: ""
 cluster_id: ""
 
 pandaproxy:
-  # kafka-api compatible brokers
-  brokers:
-    - address: "127.0.0.1"
-      port: 9092
-
   # Pandaproxy transport
   pandaproxy_api:
     address: "0.0.0.0"
@@ -21,6 +16,12 @@ pandaproxy:
 
   admin_api_doc_dir: /etc/pandaproxy/admin-api-doc
   api_doc_dir: /etc/pandaproxy/api-doc
+
+pandaproxy_client:
+  # kafka-api compatible brokers
+  brokers:
+    - address: "127.0.0.1"
+      port: 9092
 
 rpk:
   # Enables sending environment and resource usage data to Vectorized.

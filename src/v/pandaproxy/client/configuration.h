@@ -7,20 +7,22 @@
 #include <seastar/net/ip.hh>
 #include <seastar/net/socket_defs.hh>
 
-namespace pandaproxy {
+#include <chrono>
 
-/// Pandaproxy configuration
+namespace pandaproxy::client {
+
+/// Pandaproxy client configuration
 ///
 /// All application modules depend on configuration. The configuration module
 /// can not depend on any other module to prevent cyclic dependencies.
 struct configuration final : public config::config_store {
-    config::property<bool> developer_mode;
-    config::property<unresolved_address> pandaproxy_api;
-    config::property<unresolved_address> admin_api;
-    config::property<bool> enable_admin_api;
-    config::property<ss::sstring> admin_api_doc_dir;
-    config::property<ss::sstring> api_doc_dir;
-    config::property<bool> disable_metrics;
+    config::property<std::vector<unresolved_address>> brokers;
+    config::property<config::tls_config> broker_tls;
+    config::property<size_t> retries;
+    config::property<std::chrono::milliseconds> retry_base_backoff;
+    config::property<int32_t> produce_batch_record_count;
+    config::property<int32_t> produce_batch_size_bytes;
+    config::property<std::chrono::milliseconds> produce_batch_delay;
 
     configuration();
 
@@ -31,4 +33,4 @@ configuration& shard_local_cfg();
 
 using conf_ref = typename std::reference_wrapper<configuration>;
 
-} // namespace pandaproxy
+} // namespace pandaproxy::client
