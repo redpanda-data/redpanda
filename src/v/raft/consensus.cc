@@ -107,7 +107,8 @@ void consensus::maybe_step_down() {
                     majority_hbeat = _became_leader_at;
                 }
 
-                if (majority_hbeat + _jit.base_duration() < clock_type::now()) {
+                if (
+                  majority_hbeat + _jit.base_duration() < clock_type::now()) {
                     do_step_down();
                 }
             }
