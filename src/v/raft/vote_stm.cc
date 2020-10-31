@@ -72,19 +72,6 @@ ss::future<> vote_stm::dispatch_one(model::node_id n) {
     });
 }
 
-std::pair<uint32_t, uint32_t> vote_stm::partition_count() const {
-    uint32_t success = 0;
-    uint32_t failure = 0;
-    for (auto& [id, m] : _replies) {
-        auto voting_state = m.get_state();
-        if (voting_state == vmeta::state::vote_granted) {
-            ++success;
-        } else if (voting_state != vmeta::state::in_progress) {
-            ++failure;
-        }
-    }
-    return {success, failure};
-}
 ss::future<> vote_stm::vote(bool leadership_transfer) {
     using skip_vote = ss::bool_class<struct skip_vote_tag>;
     return _ptr->_op_lock
@@ -129,11 +116,6 @@ ss::future<> vote_stm::vote(bool leadership_transfer) {
 ss::future<> vote_stm::do_vote() {
     auto cfg = _ptr->config();
 
-    // TODO: remove dead code
-    // 5.2.1. 3
-    vote_reply reply;
-    reply.term = _req.term;
-    reply.log_ok = true;
     // dispatch requests to all voters
     cfg.for_each_voter([this](model::node_id id) { (void)dispatch_one(id); });
 
