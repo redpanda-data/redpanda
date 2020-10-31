@@ -73,8 +73,6 @@ private:
     ss::future<> self_vote();
     ss::future<> dispatch_one(model::node_id);
     ss::future<result<vote_reply>> do_dispatch_one(model::node_id);
-    // TODO: remove dead code
-    std::pair<uint32_t, uint32_t> partition_count() const;
     void update_vote_state(ss::semaphore_units<>);
     ss::future<> process_replies(group_configuration cfg);
     void replicate_config_as_new_leader(ss::semaphore_units<>);
