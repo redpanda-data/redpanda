@@ -60,7 +60,6 @@ consensus::consensus(
     setup_metrics();
     update_follower_stats(_configuration_manager.get_latest());
     _vote_timeout.set_callback([this] {
-        maybe_step_down();
         dispatch_flush_with_lock();
         dispatch_vote(false);
     });
@@ -88,32 +87,6 @@ void consensus::do_step_down() {
     _voted_for = {};
     _hbeat = clock_type::now();
     _vstate = vote_state::follower;
-}
-
-void consensus::maybe_step_down() {
-    (void)ss::with_gate(_bg, [this] {
-        return _op_lock.with([this] {
-            if (_vstate == vote_state::leader) {
-                auto majority_hbeat = config().quorum_match(
-                  [this](model::node_id id) {
-                      if (id == _self) {
-                          return clock_type::now();
-                      }
-
-                      return _fstats.get(id).last_hbeat_timestamp;
-                  });
-
-                if (majority_hbeat < _became_leader_at) {
-                    majority_hbeat = _became_leader_at;
-                }
-
-                if (
-                  majority_hbeat + _jit.base_duration() < clock_type::now()) {
-                    do_step_down();
-                }
-            }
-        });
-    });
 }
 
 ss::future<> consensus::stop() {
@@ -204,8 +177,6 @@ consensus::success_reply consensus::update_follower_index(
         });
         return success_reply::no;
     }
-
-    update_node_hbeat_timestamp(node);
 
     // If recovery is in progress the recovery STM will handle follower index
     // updates
@@ -1414,13 +1385,8 @@ model::term_id consensus::get_term(model::offset o) {
     return _log.get_term(o).value_or(model::term_id{});
 }
 
-clock_type::time_point consensus::last_append_timestamp(model::node_id id) {
-    return _fstats.get(id).last_append_timestamp;
-}
-
-void consensus::update_node_append_timestamp(model::node_id id) {
-    _fstats.get(id).last_append_timestamp = clock_type::now();
-    update_node_hbeat_timestamp(id);
+clock_type::time_point consensus::last_hbeat_timestamp(model::node_id id) {
+    return _fstats.get(id).last_hbeat_timestamp;
 }
 
 void consensus::update_node_hbeat_timestamp(model::node_id id) {
