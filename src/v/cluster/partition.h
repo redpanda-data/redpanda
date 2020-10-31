@@ -71,6 +71,14 @@ public:
         return _raft->last_stable_offset() + model::offset(1);
     }
 
+    /**
+     * Greatest offset visible to consumers. Named high_watermark to be
+     * consistent with Kafka nomenclature.
+     */
+    model::offset high_watermark() const {
+        return _raft->max_consumable_offset();
+    }
+
     const model::ntp& ntp() const { return _raft->ntp(); }
 
     ss::future<std::optional<storage::timequery_result>>
