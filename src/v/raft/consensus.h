@@ -124,6 +124,28 @@ public:
     model::offset committed_offset() const { return _commit_index; }
     model::offset last_stable_offset() const;
 
+    /**
+     * Max consumable offset is an offset that is safe to be fetched by the
+     * consumers. This is similar to Kafka's HighWatermark. Max consumable
+     * offset is depends on the consistency level of messages replicated by the
+     * consensus instance and state of the log. Max consumable offset similarly
+     * to HighWaterMark is monotonic and can never move backward. Max consumable
+     * offset is always greater than log start offset and smaller than log dirty
+     * offset.
+     *
+     * Max consumable offset is updated in two scenarios
+     *
+     * - commited offset is updated (consistency_level=quorum)
+     * - when batch with was appended to the leader log with relaxed consistency
+     *
+     * We always update max_consumable offset with std::max(prev,
+     * possible_value) to guarantee its monotonicity.
+     *
+     */
+    model::offset max_consumable_offset() const {
+        return _max_consumable_offset;
+    };
+
     ss::future<offset_configuration>
     wait_for_config_change(model::offset last_seen, ss::abort_source& as) {
         return _configuration_manager.wait_for_change(last_seen, as);
@@ -309,8 +331,6 @@ private:
     ctx_log _ctxlog;
     ss::condition_variable _commit_index_updated;
 
-    consistency_level _last_replicate_consistency{
-      consistency_level::quorum_ack};
     std::chrono::milliseconds _replicate_append_timeout;
     std::chrono::milliseconds _recovery_append_timeout;
     ss::metrics::metric_groups _metrics;
@@ -321,6 +341,7 @@ private:
     model::offset _last_snapshot_index;
     model::term_id _last_snapshot_term;
     configuration_manager _configuration_manager;
+    model::offset _max_consumable_offset;
 
     friend std::ostream& operator<<(std::ostream&, const consensus&);
 };
