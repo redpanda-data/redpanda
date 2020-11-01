@@ -187,7 +187,7 @@ struct transport_configuration {
     /// bytes or expire the (connection).
     duration_type recv_timeout = std::chrono::minutes(1);
     uint32_t max_queued_bytes = std::numeric_limits<uint32_t>::max();
-    std::optional<ss::tls::credentials_builder> credentials;
+    ss::shared_ptr<ss::tls::certificate_credentials> credentials;
     metrics_disabled disable_metrics = metrics_disabled::no;
 };
 

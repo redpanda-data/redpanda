@@ -31,7 +31,7 @@ extract_last_offset(model::record_batch_reader reader) {
 router::router(ss::socket_address addr, ss::sharded<storage::api>& api)
   : _api(api)
   , _client({rpc::transport_configuration{
-      .server_addr = addr, .credentials = std::nullopt}}) {}
+      .server_addr = addr, .credentials = nullptr}}) {}
 
 ss::future<> router::route() {
     return ss::do_until(
