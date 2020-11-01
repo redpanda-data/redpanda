@@ -109,7 +109,10 @@ ss::future<> maybe_create_tcp_client(
                     node,
                     rpc::transport_configuration{
                       .server_addr = new_addr,
-                      .credentials = std::move(credentials),
+                      .credentials
+                      = credentials
+                          ? credentials->build_certificate_credentials()
+                          : nullptr,
                       .disable_metrics = rpc::metrics_disabled(
                         config::shard_local_cfg().disable_metrics)},
                     rpc::make_exponential_backoff_policy<rpc::clock_type>(

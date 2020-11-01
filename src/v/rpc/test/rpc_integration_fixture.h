@@ -115,7 +115,9 @@ public:
       = std::nullopt) const {
         return rpc::transport_configuration{
           .server_addr = _listen_address,
-          .credentials = std::move(credentials)};
+          .credentials = credentials
+                           ? credentials->build_certificate_credentials()
+                           : nullptr};
     }
 
 protected:

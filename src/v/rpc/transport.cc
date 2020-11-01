@@ -38,8 +38,7 @@ struct client_context_impl final : streaming_context {
 
 base_transport::base_transport(configuration c)
   : _server_addr(c.server_addr)
-  , _creds(
-      c.credentials ? c.credentials->build_certificate_credentials() : nullptr)
+  , _creds(c.credentials)
   , _tls_sni_hostname(c.tls_sni_hostname) {}
 
 transport::transport(

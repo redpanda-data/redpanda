@@ -45,7 +45,7 @@ router::router(ss::socket_address addr, ss::sharded<storage::api>& api)
   : _api(api)
   , _transport(
       {rpc::transport_configuration{
-        .server_addr = addr, .credentials = std::nullopt}},
+        .server_addr = addr, .credentials = nullptr}},
       rpc::make_exponential_backoff_policy<rpc::clock_type>(
         std::chrono::seconds(1), std::chrono::seconds(10))) {}
 
