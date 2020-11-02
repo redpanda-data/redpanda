@@ -377,10 +377,12 @@ void application::wire_up_services() {
     auto rpc_server_addr
       = config::shard_local_cfg().rpc_server().resolve().get0();
     rpc_cfg.addrs.push_back(rpc_server_addr);
-    rpc_cfg.credentials = config::shard_local_cfg()
-                            .rpc_server_tls()
-                            .get_credentials_builder()
-                            .get0();
+    auto rpc_builder = config::shard_local_cfg()
+                         .rpc_server_tls()
+                         .get_credentials_builder()
+                         .get0();
+    rpc_cfg.credentials = rpc_builder ? rpc_builder->build_server_credentials()
+                                      : nullptr;
     syschecks::systemd_message("Starting internal RPC {}", rpc_cfg);
     construct_service(_rpc, rpc_cfg).get();
 
@@ -404,10 +406,13 @@ void application::wire_up_services() {
     auto kafka_addr = config::shard_local_cfg().kafka_api().resolve().get0();
     kafka_cfg.addrs.push_back(kafka_addr);
     syschecks::systemd_message("Building TLS credentials for kafka");
-    kafka_cfg.credentials = config::shard_local_cfg()
-                              .kafka_api_tls()
-                              .get_credentials_builder()
-                              .get0();
+    auto kafka_builder = config::shard_local_cfg()
+                           .kafka_api_tls()
+                           .get_credentials_builder()
+                           .get0();
+    kafka_cfg.credentials = kafka_builder
+                              ? kafka_builder->build_server_credentials()
+                              : nullptr;
     syschecks::systemd_message("Starting kafka RPC {}", kafka_cfg);
     construct_service(_kafka_server, kafka_cfg).get();
 }

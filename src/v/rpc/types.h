@@ -169,7 +169,7 @@ using metrics_disabled = ss::bool_class<struct metrics_disabled_tag>;
 struct server_configuration {
     std::vector<ss::socket_address> addrs;
     int64_t max_service_memory_per_core;
-    std::optional<ss::tls::credentials_builder> credentials;
+    ss::shared_ptr<ss::tls::server_credentials> credentials;
     metrics_disabled disable_metrics = metrics_disabled::no;
     ss::sstring name;
     // we use the same default as seastar for load balancing algorithm
