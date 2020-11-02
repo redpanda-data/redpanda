@@ -9,6 +9,8 @@
 #include "rpc/types.h"
 #include "vlog.h"
 
+#include <seastar/core/future.hh>
+
 #include <chrono>
 
 namespace cluster {
@@ -94,16 +96,22 @@ ss::future<> maybe_create_tcp_client(
                        tls_config = std::move(tls_config)]() mutable {
             return std::move(tls_config)
               .get_credentials_builder()
-              .then([&cache, node, new_addr](
+              .then([](
                       std::optional<ss::tls::credentials_builder> credentials) {
+                  if (credentials) {
+                      return credentials
+                        ->build_reloadable_certificate_credentials();
+                  }
+                  return ss::make_ready_future<
+                    ss::shared_ptr<ss::tls::certificate_credentials>>(nullptr);
+              })
+              .then([&cache, node, new_addr](
+                      ss::shared_ptr<ss::tls::certificate_credentials>&& cert) {
                   return cache.emplace(
                     node,
                     rpc::transport_configuration{
                       .server_addr = new_addr,
-                      .credentials
-                      = credentials
-                          ? credentials->build_certificate_credentials()
-                          : nullptr,
+                      .credentials = cert,
                       .disable_metrics = rpc::metrics_disabled(
                         config::shard_local_cfg().disable_metrics)},
                     rpc::make_exponential_backoff_policy<rpc::clock_type>(

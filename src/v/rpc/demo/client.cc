@@ -178,7 +178,8 @@ cfg_from(boost::program_options::variables_map& m, ss::sharded<hdr_hist>* h) {
         vlog(lgr.info, "Using {} as CA root certificate", ca_cert);
         builder.set_x509_trust_file(ca_cert, ss::tls::x509_crt_format::PEM)
           .get0();
-        client_cfg.credentials = builder.build_certificate_credentials();
+        client_cfg.credentials
+          = builder.build_reloadable_certificate_credentials().get0();
     }
     client_cfg.max_queued_bytes = ss::memory::stats().total_memory() * .8;
     return load_gen_cfg{
