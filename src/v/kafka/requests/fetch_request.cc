@@ -5,6 +5,7 @@
 #include "kafka/errors.h"
 #include "kafka/requests/batch_consumer.h"
 #include "likely.h"
+#include "model/fundamental.h"
 #include "model/timeout_clock.h"
 #include "resource_mgmt/io_priority.h"
 #include "utils/to_string.h"
@@ -318,9 +319,12 @@ read_from_ntp(op_context& octx, model::ntp ntp, fetch_config config) {
               return make_ready_partition_response_error(
                 error_code::not_leader_for_partition);
           }
+          auto max_offset = partition->high_watermark() < model::offset(0)
+                              ? model::offset(0)
+                              : partition->high_watermark() + model::offset(1);
           if (
             config.start_offset < partition->start_offset()
-            || config.start_offset > partition->last_stable_offset()) {
+            || config.start_offset > max_offset) {
               return ss::make_ready_future<fetch_response::partition_response>(
                 fetch_response::partition_response{
                   .error = error_code::offset_out_of_range,
@@ -333,7 +337,7 @@ read_from_ntp(op_context& octx, model::ntp ntp, fetch_config config) {
           return read_from_partition(partition, config)
             .then([partition](fetch_response::partition_response&& resp) {
                 resp.last_stable_offset = partition->last_stable_offset();
-                resp.high_watermark = partition->last_stable_offset();
+                resp.high_watermark = partition->high_watermark();
                 return std::move(resp);
             });
       });
