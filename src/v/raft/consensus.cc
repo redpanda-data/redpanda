@@ -780,7 +780,9 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
     // timeout duration When the vote was requested because of leadership
     // transfer grant the vote immediately.
     auto prev_election = clock_type::now() - _jit.base_duration();
-    if (_hbeat > prev_election && !r.leadership_transfer) {
+    if (
+      _hbeat > prev_election && !r.leadership_transfer
+      && r.node_id != _voted_for) {
         vlog(
           _ctxlog.trace,
           "Already heard from the leader, not granting vote to node {}",
