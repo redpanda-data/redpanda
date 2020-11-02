@@ -91,7 +91,7 @@ int main(int args, char** argv, char** env) {
                 builder
                   .set_x509_key_file(cert, key, ss::tls::x509_crt_format::PEM)
                   .get();
-                scfg.credentials = std::move(builder);
+                scfg.credentials = builder.build_server_credentials();
             }
             serv.start(scfg).get();
             vlog(lgr.info, "registering service on all cores");

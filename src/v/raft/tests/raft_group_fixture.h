@@ -147,7 +147,7 @@ struct raft_node {
         rpc::server_configuration scfg("raft_test_rpc");
         scfg.addrs = {broker.rpc_address().resolve().get0()};
         scfg.max_service_memory_per_core = 1024 * 1024 * 1024;
-        scfg.credentials = std::nullopt;
+        scfg.credentials = nullptr;
         scfg.disable_metrics = rpc::metrics_disabled::yes;
         server.start(std::move(scfg)).get0();
         raft_manager.start().get0();

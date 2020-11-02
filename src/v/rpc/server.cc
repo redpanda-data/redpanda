@@ -29,9 +29,7 @@ namespace rpc {
 server::server(server_configuration c)
   : cfg(std::move(c))
   , _memory(cfg.max_service_memory_per_core)
-  , _creds(
-      cfg.credentials ? (*cfg.credentials).build_server_credentials()
-                      : nullptr) {}
+  , _creds(cfg.credentials) {}
 
 server::~server() = default;
 

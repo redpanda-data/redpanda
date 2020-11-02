@@ -279,7 +279,7 @@ int main(int args, char** argv, char** env) {
                 builder
                   .set_x509_key_file(cert, key, ss::tls::x509_crt_format::PEM)
                   .get();
-                scfg.credentials = std::move(builder);
+                scfg.credentials = builder.build_server_credentials();
             }
             auto self_id = cfg["node-id"].as<int32_t>();
             if (cfg.find("peers") != cfg.end()) {
