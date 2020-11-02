@@ -156,8 +156,10 @@ public:
         scfg.addrs = {_listen_address};
         scfg.max_service_memory_per_core = static_cast<int64_t>(
           ss::memory::stats().total_memory() / 10);
-        scfg.credentials = credentials ? credentials->build_server_credentials()
-                                       : nullptr;
+        scfg.credentials
+          = credentials
+              ? credentials->build_reloadable_server_credentials().get0()
+              : nullptr;
         _server = std::make_unique<rpc::server>(std::move(scfg));
         _proto = std::make_unique<rpc::simple_protocol>();
     }
@@ -199,8 +201,10 @@ public:
         scfg.addrs = {_listen_address};
         scfg.max_service_memory_per_core = static_cast<int64_t>(
           ss::memory::stats().total_memory() / 10);
-        scfg.credentials = credentials ? credentials->build_server_credentials()
-                                       : nullptr;
+        scfg.credentials
+          = credentials
+              ? credentials->build_reloadable_server_credentials().get0()
+              : nullptr;
         _server.start(std::move(scfg)).get();
     }
 

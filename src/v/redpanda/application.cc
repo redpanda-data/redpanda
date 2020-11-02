@@ -192,7 +192,7 @@ void application::configure_admin_server() {
                         return;
                     }
                     server.set_tls_credentials(
-                      builder->build_server_credentials());
+                      builder->build_reloadable_server_credentials().get0());
                 });
           })
           .get0();
@@ -397,8 +397,9 @@ void application::wire_up_services() {
                          .rpc_server_tls()
                          .get_credentials_builder()
                          .get0();
-    rpc_cfg.credentials = rpc_builder ? rpc_builder->build_server_credentials()
-                                      : nullptr;
+    rpc_cfg.credentials
+      = rpc_builder ? rpc_builder->build_reloadable_server_credentials().get0()
+                    : nullptr;
     syschecks::systemd_message("Starting internal RPC {}", rpc_cfg);
     construct_service(_rpc, rpc_cfg).get();
 
@@ -426,9 +427,10 @@ void application::wire_up_services() {
                            .kafka_api_tls()
                            .get_credentials_builder()
                            .get0();
-    kafka_cfg.credentials = kafka_builder
-                              ? kafka_builder->build_server_credentials()
-                              : nullptr;
+    kafka_cfg.credentials
+      = kafka_builder
+          ? kafka_builder->build_reloadable_server_credentials().get0()
+          : nullptr;
     syschecks::systemd_message("Starting kafka RPC {}", kafka_cfg);
     construct_service(_kafka_server, kafka_cfg).get();
 }
