@@ -284,7 +284,6 @@ consensus::replicate(model::record_batch_reader&& rdr, replicate_options opts) {
           errc::not_leader);
     }
 
-    _last_replicate_consistency = opts.consistency;
     if (opts.consistency == consistency_level::quorum_ack) {
         _probe.replicate_requests_ack_all();
         return ss::with_gate(_bg, [this, rdr = std::move(rdr)]() mutable {
@@ -311,7 +310,10 @@ consensus::replicate(model::record_batch_reader&& rdr, replicate_options opts) {
           return disk_append(model::make_record_batch_reader<
                                details::term_assigning_reader>(
                                std::move(rdr), model::term_id(_term)))
-            .then([](storage::append_result res) {
+            .then([this](storage::append_result res) {
+                // update max_consumable_offset immediately after append succeed
+                _max_consumable_offset = std::max(
+                  _max_consumable_offset, res.last_offset);
                 return result<replicate_result>(
                   replicate_result{.last_offset = res.last_offset});
             });
@@ -334,25 +336,14 @@ void consensus::dispatch_flush_with_lock() {
 }
 
 model::offset consensus::last_stable_offset() const {
-    // for quroum acks level, limit reads to fully replicated entries.
-    if (_last_replicate_consistency == consistency_level::quorum_ack) {
-        return _commit_index;
-    }
-    // for relaxed consistency we can read up to commited offset
-    return _log.offsets().committed_offset;
+    // TODO: handle transactions, when we implement them, for now LSO is simply
+    // equal to max consumable offset
+    return _max_consumable_offset;
 }
 
 ss::future<model::record_batch_reader>
 consensus::make_reader(storage::log_reader_config config) {
     auto lstats = _log.offsets();
-    // for quroum acks level, limit reads to fully replicated entries. the
-    // covered offset range is guranteed to already be flushed and visible so we
-    // can build the reader immediately.
-    if (_last_replicate_consistency == consistency_level::quorum_ack) {
-        config.max_offset = std::min(
-          config.max_offset, model::offset(_commit_index));
-        return _log.make_reader(config);
-    }
 
     // at relaxed consistency / safety levels we can read immediately if there
     // is no pending writes or we'll read part of the log from an area that
@@ -362,7 +353,7 @@ consensus::make_reader(storage::log_reader_config config) {
     // region or the reader will enounter the end of log adn the reader will
     // flush and retry, making progress.
     if (!_has_pending_flushes || config.start_offset <= lstats.dirty_offset) {
-        config.max_offset = std::min(config.max_offset, lstats.dirty_offset);
+        config.max_offset = std::min(config.max_offset, _max_consumable_offset);
         return _log.make_reader(config);
     }
 
@@ -373,9 +364,8 @@ consensus::make_reader(storage::log_reader_config config) {
             f = flush_log();
         }
         return f.then([this, config = config]() mutable {
-            auto lstats = _log.offsets();
             config.max_offset = std::min(
-              config.max_offset, lstats.dirty_offset);
+              config.max_offset, _max_consumable_offset);
             return _log.make_reader(config);
         });
     });
@@ -1453,6 +1443,8 @@ consensus::do_maybe_update_leader_commit_idx(ss::semaphore_units<> u) {
           _commit_index);
         _commit_index_updated.broadcast();
         _event_manager.notify_commit_index(_commit_index);
+        _max_consumable_offset = std::max(
+          _max_consumable_offset, _commit_index);
         return maybe_commit_configuration(std::move(u));
     }
     return ss::now();
@@ -1473,6 +1465,8 @@ consensus::maybe_update_follower_commit_idx(model::offset request_commit_idx) {
               _ctxlog.trace, "Follower commit index updated {}", _commit_index);
             _commit_index_updated.broadcast();
             _event_manager.notify_commit_index(_commit_index);
+            _max_consumable_offset = std::max(
+              _max_consumable_offset, _commit_index);
         }
     }
     return ss::make_ready_future<>();
