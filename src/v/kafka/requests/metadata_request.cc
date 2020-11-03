@@ -340,9 +340,14 @@ get_topic_metadata(request_context& ctx, metadata_request& request) {
     // request can be served from whatever happens to be in the cache
     if (request.list_all_topics) {
         auto topics = ctx.metadata_cache().all_topics_metadata();
+        // only serve topics from the kafka namespace
+        auto it = std::remove_if(
+          topics.begin(), topics.end(), [](model::topic_metadata& t_md) {
+              return t_md.tp_ns.ns != cluster::kafka_namespace;
+          });
         std::transform(
           topics.begin(),
-          topics.end(),
+          it,
           std::back_inserter(res),
           [](model::topic_metadata& t_md) {
               return metadata_response::topic::make_from_topic_metadata(
