@@ -3,6 +3,9 @@
 [![Slack](https://img.shields.io/badge/slack-purple)](https://vectorized.io/slack)
 [![Twitter](https://img.shields.io/twitter/follow/vectorizedio.svg?style=social&label=Follow)](https://twitter.com/intent/follow?screen_name=vectorizedio)
 
+[<img src="docs/PANDA_sitting.jpg" alt="redpanda sitting" width="400"/>](https://vectorized.io/redpanda)
+
+
 Redpanda is a modern streaming platform for mission critical workloads. Kafka® compatible, 
 No Zookeeper®, no JVM, and no code changes required. Use all your favorite open source tooling - 10x faster.
 
