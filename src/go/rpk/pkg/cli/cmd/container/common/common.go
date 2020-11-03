@@ -290,7 +290,7 @@ func CreateNode(
 }
 
 func PullImage(c Client) error {
-	ctx, _ := DefaultCtx()
+	ctx, _ := context.WithTimeout(context.Background(), 5*time.Minute)
 	res, err := c.ImagePull(ctx, redpandaImage, types.ImagePullOptions{})
 	if res != nil {
 		defer res.Close()
@@ -298,7 +298,10 @@ func PullImage(c Client) error {
 		buf.ReadFrom(res)
 		log.Debug(buf.String())
 	}
-	return err
+	if err != nil {
+		return err
+	}
+	return ctx.Err()
 }
 
 func CheckIfImgPresent(c Client) (bool, error) {
