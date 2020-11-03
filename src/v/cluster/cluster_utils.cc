@@ -42,18 +42,21 @@ patch<broker_ptr> calculate_changed_brokers(
     return patch;
 }
 
-std::vector<ss::shard_id> virtual_nodes(model::node_id node) {
+std::vector<ss::shard_id>
+virtual_nodes(model::node_id self, model::node_id node) {
     std::set<ss::shard_id> owner_shards;
     for (ss::shard_id i = 0; i < ss::smp::count; ++i) {
-        auto shard = rpc::connection_cache::shard_for(i, node);
+        auto shard = rpc::connection_cache::shard_for(self, i, node);
         owner_shards.insert(shard);
     }
     return std::vector<ss::shard_id>(owner_shards.begin(), owner_shards.end());
 }
 
 ss::future<> remove_broker_client(
-  ss::sharded<rpc::connection_cache>& clients, model::node_id id) {
-    auto shards = virtual_nodes(id);
+  model::node_id self,
+  ss::sharded<rpc::connection_cache>& clients,
+  model::node_id id) {
+    auto shards = virtual_nodes(self, id);
     vlog(clusterlog.debug, "Removing {} TCP client from shards {}", id, shards);
     return ss::do_with(
       std::move(shards), [id, &clients](std::vector<ss::shard_id>& i) {
@@ -123,11 +126,12 @@ ss::future<> add_one_tcp_client(
 }
 
 ss::future<> update_broker_client(
+  model::node_id self,
   ss::sharded<rpc::connection_cache>& clients,
   model::node_id node,
   unresolved_address addr,
   config::tls_config tls_config) {
-    auto shards = virtual_nodes(node);
+    auto shards = virtual_nodes(self, node);
     vlog(clusterlog.debug, "Adding {} TCP client on shards:{}", node, shards);
     return ss::do_with(
       std::move(shards),

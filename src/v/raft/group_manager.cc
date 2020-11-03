@@ -14,7 +14,7 @@ group_manager::group_manager(
   ss::sharded<storage::api>& storage)
   : _self(self)
   , _disk_timeout(disk_timeout)
-  , _client(make_rpc_client_protocol(clients))
+  , _client(make_rpc_client_protocol(self, clients))
   , _heartbeats(heartbeat_interval, _client, _self)
   , _storage(storage.local()) {
     setup_metrics();

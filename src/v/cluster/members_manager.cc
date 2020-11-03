@@ -161,7 +161,7 @@ ss::future<> members_manager::update_connections(patch<broker_ptr> diff) {
                  diff.deletions,
                  [this](broker_ptr removed) {
                      return remove_broker_client(
-                       _connection_cache, removed->id());
+                       _self.id(), _connection_cache, removed->id());
                  })
           .then([this, &diff] {
               return ss::do_for_each(diff.additions, [this](broker_ptr b) {
@@ -170,6 +170,7 @@ ss::future<> members_manager::update_connections(patch<broker_ptr> diff) {
                       return ss::make_ready_future<>();
                   }
                   return update_broker_client(
+                    _self.id(),
                     _connection_cache,
                     b->id(),
                     b->rpc_address(),
@@ -201,6 +202,7 @@ ss::future<result<join_reply>> members_manager::dispatch_join_to_remote(
       target.addr);
 
     return with_client<controller_client_protocol>(
+      _self.id(),
       _connection_cache,
       target.id,
       target.addr,
@@ -284,6 +286,7 @@ auto members_manager::dispatch_rpc_to_leader(Func&& f) {
     }
 
     return with_client<controller_client_protocol, Func>(
+      _self.id(),
       _connection_cache,
       *leader_id,
       leader->rpc_address(),
@@ -379,6 +382,7 @@ members_manager::do_dispatch_configuration_update(
     }
 
     return with_client<controller_client_protocol>(
+      _self.id(),
       _connection_cache,
       target.id(),
       target.rpc_address(),
@@ -479,6 +483,7 @@ members_manager::handle_configuration_update_request(
 
     auto tout = ss::lowres_clock::now() + _join_timeout;
     return with_client<controller_client_protocol>(
+             _self.id(),
              _connection_cache,
              *leader_id,
              (*leader)->rpc_address(),

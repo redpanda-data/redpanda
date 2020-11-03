@@ -105,22 +105,23 @@ struct raft_node {
           storage.local().log_mgr().manage(std::move(ntp_cfg)).get0());
 
         // setup consensus
+        auto self_id = broker.id();
         consensus = ss::make_lw_shared<raft::consensus>(
-          broker.id(),
+          self_id,
           gr_id,
           std::move(cfg),
           std::move(jit),
           *log,
           seastar::default_priority_class(),
           std::chrono::seconds(10),
-          raft::make_rpc_client_protocol(cache),
+          raft::make_rpc_client_protocol(self_id, cache),
           [this](raft::leadership_status st) { leader_callback(st); },
           storage.local());
 
         // create connections to initial nodes
         consensus->config().for_each_broker(
-          [this](const model::broker& broker) {
-              create_connection_to(broker);
+          [this, self_id](const model::broker& broker) {
+              create_connection_to(self_id, broker);
           });
     }
 
@@ -157,7 +158,7 @@ struct raft_node {
         server.invoke_on_all(&rpc::server::start).get0();
         hbeats = std::make_unique<raft::heartbeat_manager>(
           heartbeat_interval,
-          raft::make_rpc_client_protocol(cache),
+          raft::make_rpc_client_protocol(broker.id(), cache),
           broker.id());
         hbeats->start().get0();
         hbeats->register_group(consensus).get();
@@ -239,9 +240,10 @@ struct raft_node {
 
     model::node_id id() { return broker.id(); }
 
-    void create_connection_to(const model::broker& broker) {
+    void
+    create_connection_to(model::node_id self, const model::broker& broker) {
         for (ss::shard_id i = 0; i < ss::smp::count; ++i) {
-            auto sh = rpc::connection_cache::shard_for(i, broker.id());
+            auto sh = rpc::connection_cache::shard_for(self, i, broker.id());
             cache
               .invoke_on(
                 sh,
@@ -365,8 +367,8 @@ struct raft_group {
         it->second.start();
 
         for (auto& [_, n] : _members) {
-            n.create_connection_to(broker);
-            it->second.create_connection_to(n.broker);
+            n.create_connection_to(n.id(), broker);
+            it->second.create_connection_to(broker.id(), n.broker);
         }
 
         return broker;

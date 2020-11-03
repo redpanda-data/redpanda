@@ -275,6 +275,7 @@ topics_frontend::dispatch_create_to_leader(
     vlog(clusterlog.trace, "Dispatching create topics to {}", leader);
     return _connections.local()
       .with_node_client<cluster::controller_client_protocol>(
+        _self,
         ss::this_shard_id(),
         leader,
         [topics, timeout](controller_client_protocol cp) mutable {
