@@ -125,6 +125,7 @@ private:
     failure_probes _failure_probes;
     std::optional<eviction_monitor> _eviction_monitor;
     model::offset _max_collectible_offset;
+    size_t _max_segment_size;
 };
 
 } // namespace storage

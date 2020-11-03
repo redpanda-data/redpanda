@@ -37,7 +37,8 @@ disk_log_impl::disk_log_impl(
   , _segs(std::move(segs))
   , _kvstore(kvstore)
   , _start_offset(read_start_offset())
-  , _lock_mngr(_segs) {
+  , _lock_mngr(_segs)
+  , _max_segment_size(internal::jitter_segment_size(max_segment_size())) {
     const bool is_compacted = config().is_compacted();
     for (auto& s : _segs) {
         _probe.add_initial_segment(*s);
