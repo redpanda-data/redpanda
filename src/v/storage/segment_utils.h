@@ -7,6 +7,7 @@
 #include "storage/probe.h"
 #include "storage/segment.h"
 #include "storage/segment_appender.h"
+#include "utils/named_type.h"
 
 #include <seastar/core/circular_buffer.hh>
 #include <seastar/core/rwlock.hh>
@@ -91,5 +92,11 @@ ss::future<> do_swap_data_file_handles(
   storage::compaction_config);
 
 std::filesystem::path compacted_index_path(std::filesystem::path segment_path);
+
+using jitter_percents = named_type<int, struct jitter_percents_tag>;
+static constexpr jitter_percents default_segment_size_jitter(5);
+
+size_t
+  jitter_segment_size(size_t, jitter_percents = default_segment_size_jitter);
 
 } // namespace storage::internal

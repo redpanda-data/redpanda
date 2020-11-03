@@ -15,6 +15,7 @@ rp_test(
   UNIT_TEST
   BINARY_NAME log_segment_appender_test
   SOURCES log_segment_appender_test.cc
+          segment_size_jitter_test.cc
   LIBRARIES v::seastar_testing_main v::storage_test_utils
   LABELS storage
   ARGS "-- -c 1"
