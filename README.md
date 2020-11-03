@@ -1,4 +1,5 @@
 # Redpanda
+[![Twitter](https://img.shields.io/twitter/follow/vectorizedio.svg?style=social&label=Follow)](https://twitter.com/intent/follow?screen_name=vectorizedio)
 
 Redpanda is a modern streaming platform for mission critical workloads. Kafka® compatible, 
 No Zookeeper®, no JVM, and no code changes required. Use all your favorite open source tooling - 10x faster.
@@ -18,7 +19,7 @@ we're pushing the boundaries of what's possible with streaming.
 
 [GitHub Issues](https://github.com/vectorizedio/redpanda/issues) is reserved only for actual issues. Please use the mailing list for discussions.
 
-[Code of conduct](./code-of-conduct.md)
+[Code of conduct](./CODE_OF_CONDUCT.md)
 
 # Getting Started
 
