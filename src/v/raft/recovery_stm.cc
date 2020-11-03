@@ -259,7 +259,7 @@ ss::future<> recovery_stm::replicate(model::record_batch_reader&& reader) {
       std::move(reader),
       append_entries_request::flush_after_append::no);
 
-    _ptr->update_node_append_timestamp(_node_id);
+    _ptr->update_node_hbeat_timestamp(_node_id);
 
     auto seq = _ptr->next_follower_sequence(_node_id);
     return dispatch_append_entries(std::move(r)).then([this, seq](auto r) {
