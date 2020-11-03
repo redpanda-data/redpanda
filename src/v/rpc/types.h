@@ -172,6 +172,10 @@ struct server_configuration {
     std::optional<ss::tls::credentials_builder> credentials;
     metrics_disabled disable_metrics = metrics_disabled::no;
     ss::sstring name;
+    // we use the same default as seastar for load balancing algorithm
+    ss::server_socket::load_balancing_algorithm load_balancing_algo
+      = ss::server_socket::load_balancing_algorithm::connection_distribution;
+
     explicit server_configuration(ss::sstring n)
       : name(std::move(n)) {}
 };

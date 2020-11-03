@@ -11,6 +11,7 @@
 #include <seastar/core/future.hh>
 #include <seastar/core/metrics.hh>
 #include <seastar/core/reactor.hh>
+#include <seastar/net/api.hh>
 
 #include <fmt/format.h>
 
@@ -36,6 +37,8 @@ void server::start() {
         try {
             ss::listen_options lo;
             lo.reuse_address = true;
+            lo.lba = cfg.load_balancing_algo;
+
             if (!_creds) {
                 ss = ss::engine().listen(addr, lo);
             } else {
