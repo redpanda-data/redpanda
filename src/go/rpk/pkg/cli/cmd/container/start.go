@@ -246,9 +246,7 @@ func restartCluster(fs afero.Fs, c common.Client) ([]node, error) {
 						" for node %d was removed.\n" +
 						"Please run 'rpk container" +
 						" purge' to delete all" +
-						" remaining data and create" +
-						" a new cluster with 'rpk" +
-						" container start'."
+						" remaining data."
 					return fmt.Errorf(msg, id)
 				}
 				return err
