@@ -144,9 +144,7 @@ void fetch_response::encode(const request_context& ctx, response& resp) {
     auto& writer = resp.writer();
     auto version = ctx.header().version;
 
-    if (version >= api_version(1)) {
-        writer.write(int32_t(throttle_time.count()));
-    }
+    writer.write(int32_t(throttle_time.count())); // v1
 
     if (version >= api_version(7)) {
         writer.write(error);
@@ -162,21 +160,16 @@ void fetch_response::encode(const request_context& ctx, response& resp) {
                 writer.write(r.id);
                 writer.write(r.error);
                 writer.write(int64_t(r.high_watermark));
-                if (version >= api_version(4)) {
-                    writer.write(int64_t(r.last_stable_offset));
-                }
+                writer.write(int64_t(r.last_stable_offset)); // v4
                 if (version >= api_version(5)) {
                     writer.write(int64_t(r.log_start_offset));
                 }
-                if (version >= api_version(4)) {
-                    writer.write_array(
-                      r.aborted_transactions,
-                      [](
-                        const aborted_transaction& t, response_writer& writer) {
-                          writer.write(t.producer_id);
-                          writer.write(int64_t(t.first_offset));
-                      });
-                }
+                writer.write_array( // v4
+                  r.aborted_transactions,
+                  [](const aborted_transaction& t, response_writer& writer) {
+                      writer.write(t.producer_id);
+                      writer.write(int64_t(t.first_offset));
+                  });
                 writer.write(std::move(r.record_set));
             });
       });
@@ -185,27 +178,31 @@ void fetch_response::encode(const request_context& ctx, response& resp) {
 void fetch_response::decode(iobuf buf, api_version version) {
     request_reader reader(std::move(buf));
 
-    if (version >= api_version(1)) {
-        throttle_time = std::chrono::milliseconds(reader.read_int32());
-    }
+    throttle_time = std::chrono::milliseconds(reader.read_int32()); // v1
 
-    partitions = reader.read_array([](request_reader& reader) {
+    error = version >= api_version(7) ? error_code(reader.read_int16())
+                                      : kafka::error_code::none;
+
+    session_id = version >= api_version(7) ? reader.read_int32() : 0;
+
+    partitions = reader.read_array([version](request_reader& reader) {
         partition p(model::topic(reader.read_string()));
-        p.responses = reader.read_array([](request_reader& reader) {
+        p.responses = reader.read_array([version](request_reader& reader) {
             return partition_response{
               .id = model::partition_id(reader.read_int32()),
               .error = error_code(reader.read_int16()),
               .high_watermark = model::offset(reader.read_int64()),
-              .last_stable_offset = model::offset(reader.read_int64()),
-              .aborted_transactions = reader.read_array(
+              .last_stable_offset = model::offset(reader.read_int64()), // v4
+              .log_start_offset = model::offset(
+                version >= api_version(5) ? reader.read_int64() : -1),
+              .aborted_transactions = reader.read_array( // v4
                 [](request_reader& reader) {
                     return aborted_transaction{
                       .producer_id = reader.read_int64(),
                       .first_offset = model::offset(reader.read_int64()),
                     };
                 }),
-              .record_set = reader.read_fragmented_nullable_bytes(),
-            };
+              .record_set = reader.read_fragmented_nullable_bytes()};
         });
         return p;
     });

@@ -248,29 +248,35 @@ FIXTURE_TEST(fetch_one, redpanda_thread_fixture) {
           });
     }).get();
 
-    kafka::fetch_request req;
-    req.max_bytes = std::numeric_limits<int32_t>::max();
-    req.min_bytes = 1;
-    req.max_wait_time = std::chrono::milliseconds(0);
-    req.topics = {{
-      .name = topic,
-      .partitions = {{
-        .id = pid,
-        .fetch_offset = offset,
-      }},
-    }};
+    for (auto version : boost::irange<uint16_t>(
+           kafka::fetch_response::api_type::min_supported,
+           kafka::fetch_response::api_type::max_supported + int16_t(1))) {
+        info("Checking fetch api v{}", version);
+        kafka::fetch_request req;
+        req.max_bytes = std::numeric_limits<int32_t>::max();
+        req.min_bytes = 1;
+        req.max_wait_time = std::chrono::milliseconds(0);
+        req.topics = {{
+          .name = topic,
+          .partitions = {{
+            .id = pid,
+            .fetch_offset = offset,
+          }},
+        }};
 
-    auto client = make_kafka_client().get0();
-    client.connect().get();
-    auto resp = client.dispatch(req, kafka::api_version(4)).get0();
-    client.stop().then([&client] { client.shutdown(); }).get();
+        auto client = make_kafka_client().get0();
+        client.connect().get();
+        auto resp = client.dispatch(req, kafka::api_version(version)).get0();
+        client.stop().then([&client] { client.shutdown(); }).get();
 
-    BOOST_REQUIRE(resp.partitions.size() == 1);
-    BOOST_REQUIRE(resp.partitions[0].name == topic());
-    BOOST_REQUIRE(resp.partitions[0].responses.size() == 1);
-    BOOST_REQUIRE(
-      resp.partitions[0].responses[0].error == kafka::error_code::none);
-    BOOST_REQUIRE(resp.partitions[0].responses[0].id == pid);
-    BOOST_REQUIRE(resp.partitions[0].responses[0].record_set);
-    BOOST_REQUIRE(resp.partitions[0].responses[0].record_set->size_bytes() > 0);
+        BOOST_REQUIRE(resp.partitions.size() == 1);
+        BOOST_REQUIRE(resp.partitions[0].name == topic());
+        BOOST_REQUIRE(resp.partitions[0].responses.size() == 1);
+        BOOST_REQUIRE(
+          resp.partitions[0].responses[0].error == kafka::error_code::none);
+        BOOST_REQUIRE(resp.partitions[0].responses[0].id == pid);
+        BOOST_REQUIRE(resp.partitions[0].responses[0].record_set);
+        BOOST_REQUIRE(
+          resp.partitions[0].responses[0].record_set->size_bytes() > 0);
+    }
 }
