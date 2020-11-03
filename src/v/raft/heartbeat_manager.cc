@@ -51,9 +51,9 @@ static std::vector<heartbeat_manager::node_heartbeat> requests_for_range(
                 return;
             }
 
-            auto last_append_timestamp = ptr->last_append_timestamp(n.id());
+            auto last_hbeat_timestamp = ptr->last_hbeat_timestamp(n.id());
 
-            if (last_append_timestamp > last_heartbeat) {
+            if (last_hbeat_timestamp > last_heartbeat) {
                 vlog(
                   hbeatlog.trace,
                   "Skipping sending beat to {} gr: {} last hb {}, last append "
@@ -61,7 +61,7 @@ static std::vector<heartbeat_manager::node_heartbeat> requests_for_range(
                   n.id(),
                   ptr->group(),
                   last_heartbeat.time_since_epoch().count(),
-                  last_append_timestamp.time_since_epoch().count());
+                  last_hbeat_timestamp.time_since_epoch().count());
                 // we already sent heartbeat, skip it
                 return;
             }
