@@ -1,4 +1,6 @@
 # Redpanda
+[![Documentation](https://img.shields.io/badge/documentation-black)](https://vectorized.io/documentation)
+[![Slack](https://img.shields.io/badge/slack-purple)](https://vectorized.io/slack)
 [![Twitter](https://img.shields.io/twitter/follow/vectorizedio.svg?style=social&label=Follow)](https://twitter.com/intent/follow?screen_name=vectorizedio)
 
 Redpanda is a modern streaming platform for mission critical workloads. Kafka® compatible, 
