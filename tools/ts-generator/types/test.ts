@@ -117,4 +117,108 @@ describe("Buffer functions test", function () {
     asserts.deepStrictEqual(result, array);
     asserts.strictEqual(offset, 19);
   });
+
+  it("should write varint in buffer", function () {
+    const buffer = Buffer.alloc(8);
+    const size = BF.writeVarintBuffer(BigInt(56000), buffer);
+    const [number, offset] = BF.readVarint(buffer, 0);
+    asserts.deepStrictEqual(number, BigInt(56000));
+    asserts.strictEqual(offset, 3);
+    asserts.strictEqual(size, 3);
+  });
+
+  it("should extend records", function () {
+    const crc = BF.extendRecords([
+      {
+        attributes: 0,
+        key: Buffer.from([]),
+        keyLength: 0,
+        length: 10,
+        offsetDelta: 0,
+        timestampDelta: BigInt(0),
+        value: Buffer.from([54, 65, 73, 74]),
+        valueLen: 4,
+        headers: [],
+      },
+    ]);
+    const expectedCrc = 2892331115;
+    asserts.strictEqual(crc, expectedCrc);
+  });
+
+  it("should extend records with seed", function () {
+    const seed = 321123434;
+    const crc = BF.extendRecords(
+      [
+        {
+          attributes: 0,
+          key: Buffer.from([]),
+          keyLength: 0,
+          length: 10,
+          offsetDelta: 0,
+          timestampDelta: BigInt(0),
+          value: Buffer.from([54, 65, 73, 74]),
+          valueLen: 4,
+          headers: [],
+        },
+      ],
+      seed
+    );
+    const unexpectedCrc = 2892331115;
+    const expectedCrc = 3089006589;
+    asserts.strictEqual(crc, expectedCrc);
+    asserts.notStrictEqual(crc, unexpectedCrc);
+  });
+
+  it(
+    "should record batch encode its attributes and " +
+      "generate crc and crcHeader",
+    function () {
+      const recordBatch = {
+        header: {
+          attrs: 0,
+          baseOffset: BigInt(3),
+          baseSequence: 0,
+          crc: 0,
+          firstTimestamp: BigInt(1604520312708),
+          headerCrc: 0,
+          lastOffsetDelta: 0,
+          maxTimestamp: BigInt(-1),
+          producerEpoch: -1,
+          producerId: BigInt(-1),
+          recordBatchType: 1,
+          recordCount: 1,
+          sizeBytes: 72,
+          term: BigInt(3),
+          isCompressed: 0,
+        },
+        records: [
+          {
+            attributes: 0,
+            key: Buffer.from([]),
+            keyLength: 0,
+            length: 10,
+            offsetDelta: 0,
+            timestampDelta: BigInt(0),
+            value: Buffer.from([54, 65, 73, 74]),
+            valueLen: 4,
+            headers: [],
+          },
+        ],
+      };
+      const iobuf = new IOBuf();
+      BF.recordBatchEncode(recordBatch, iobuf);
+      const iterable = iobuf.getIterable();
+      asserts.strictEqual(iterable.readInt32LE(), 1686771807);
+      asserts.strictEqual(iterable.readInt32LE(), recordBatch.header.sizeBytes);
+      asserts.strictEqual(
+        iterable.readBigInt64LE(),
+        recordBatch.header.baseOffset
+      );
+      asserts.strictEqual(
+        iterable.readInt8(),
+        recordBatch.header.recordBatchType
+      );
+      asserts.strictEqual(iterable.readInt32LE(), 1343530892);
+    }
+  );
 });
