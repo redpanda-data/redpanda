@@ -367,6 +367,12 @@ void application::wire_up_services() {
     construct_service(_quota_mgr).get();
     // rpc
     rpc::server_configuration rpc_cfg("internal_rpc");
+    /**
+     * Use port based load_balancing_algorithm to make connection shard
+     * assignment deterministic.
+     **/
+    rpc_cfg.load_balancing_algo
+      = ss::server_socket::load_balancing_algorithm::port;
     rpc_cfg.max_service_memory_per_core = memory_groups::rpc_total_memory();
     auto rpc_server_addr
       = config::shard_local_cfg().rpc_server().resolve().get0();
