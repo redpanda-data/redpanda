@@ -42,12 +42,14 @@ std::vector<topic_result> create_topic_results(
   const std::vector<model::topic_namespace>& topics, errc error_code);
 
 ss::future<> update_broker_client(
+  model::node_id,
   ss::sharded<rpc::connection_cache>&,
   model::node_id node,
   unresolved_address addr,
   config::tls_config);
-ss::future<>
-remove_broker_client(ss::sharded<rpc::connection_cache>&, model::node_id);
+
+ss::future<> remove_broker_client(
+  model::node_id, ss::sharded<rpc::connection_cache>&, model::node_id);
 
 // clang-format off
 template<typename Proto, typename Func>
@@ -56,16 +58,17 @@ CONCEPT(requires requires(Func&& f, Proto c) {
 })
 // clang-format on
 auto with_client(
+  model::node_id self,
   ss::sharded<rpc::connection_cache>& cache,
   model::node_id id,
   unresolved_address addr,
   config::tls_config tls_config,
   Func&& f) {
     return update_broker_client(
-             cache, id, std::move(addr), std::move(tls_config))
-      .then([id, &cache, f = std::forward<Func>(f)]() mutable {
+             self, cache, id, std::move(addr), std::move(tls_config))
+      .then([id, self, &cache, f = std::forward<Func>(f)]() mutable {
           return cache.local().with_node_client<Proto, Func>(
-            ss::this_shard_id(), id, std::forward<Func>(f));
+            self, ss::this_shard_id(), id, std::forward<Func>(f));
       });
 }
 

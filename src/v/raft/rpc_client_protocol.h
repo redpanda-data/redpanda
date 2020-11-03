@@ -16,8 +16,10 @@ namespace raft {
 /// Raft client protocol implementation underlied by RPC connections cache
 class rpc_client_protocol final : public consensus_client_protocol::impl {
 public:
-    explicit rpc_client_protocol(ss::sharded<rpc::connection_cache>& cache)
-      : _connection_cache(cache) {}
+    explicit rpc_client_protocol(
+      model::node_id self, ss::sharded<rpc::connection_cache>& cache)
+      : _self(self)
+      , _connection_cache(cache) {}
 
     ss::future<result<vote_reply>>
     vote(model::node_id, vote_request&&, rpc::client_opts) final;
@@ -35,13 +37,14 @@ public:
     timeout_now(model::node_id, timeout_now_request&&, rpc::client_opts) final;
 
 private:
+    model::node_id _self;
     ss::sharded<rpc::connection_cache>& _connection_cache;
 };
 
-inline consensus_client_protocol
-make_rpc_client_protocol(ss::sharded<rpc::connection_cache>& clients) {
+inline consensus_client_protocol make_rpc_client_protocol(
+  model::node_id self, ss::sharded<rpc::connection_cache>& clients) {
     return raft::make_consensus_client_protocol<raft::rpc_client_protocol>(
-      clients);
+      self, clients);
 }
 
 } // namespace raft

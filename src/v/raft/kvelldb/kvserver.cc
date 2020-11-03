@@ -1,3 +1,4 @@
+#include "model/metadata.h"
 #include "platform/stop_signal.h"
 #include "raft/consensus.h"
 #include "raft/consensus_client_protocol.h"
@@ -80,7 +81,8 @@ public:
       std::chrono::milliseconds raft_heartbeat_interval,
       ss::sharded<rpc::connection_cache>& clients)
       : _self(self)
-      , _consensus_client_protocol(raft::make_rpc_client_protocol(clients))
+      , _consensus_client_protocol(
+          raft::make_rpc_client_protocol(self, clients))
       , _storage(
           storage::kvstore_config(
             1_MiB, 10ms, directory, storage::debug_sanitize_files::yes),
@@ -170,11 +172,13 @@ extract_peer(ss::sstring peer) {
 }
 
 static void initialize_connection_cache_in_thread(
-  ss::sharded<rpc::connection_cache>& cache, std::vector<ss::sstring> opts) {
+  model::node_id self,
+  ss::sharded<rpc::connection_cache>& cache,
+  std::vector<ss::sstring> opts) {
     for (auto& i : opts) {
         auto [node, cfg] = extract_peer(i);
         for (ss::shard_id i = 0; i < ss::smp::count; ++i) {
-            auto shard = rpc::connection_cache::shard_for(i, node);
+            auto shard = rpc::connection_cache::shard_for(self, i, node);
             ss::smp::submit_to(shard, [&cache, shard, n = node, config = cfg] {
                 return cache.local().emplace(
                   n,
@@ -268,21 +272,21 @@ int main(int args, char** argv, char** env) {
                   .get();
                 scfg.credentials = std::move(builder);
             }
+            auto self_id = cfg["node-id"].as<int32_t>();
             if (cfg.find("peers") != cfg.end()) {
                 initialize_connection_cache_in_thread(
+                  model::node_id(self_id),
                   connection_cache,
                   cfg["peers"].as<std::vector<ss::sstring>>());
             }
             const ss::sstring workdir = fmt::format(
-              "{}/greetings-{}",
-              cfg["workdir"].as<ss::sstring>(),
-              cfg["node-id"].as<int32_t>());
+              "{}/greetings-{}", cfg["workdir"].as<ss::sstring>(), self_id);
             vlog(kvelldblog.info, "Work directory:{}", workdir);
 
             // initialize group_manager
             group_manager
               .start(
-                model::node_id(cfg["node-id"].as<int32_t>()),
+                model::node_id(self_id),
                 workdir,
                 std::chrono::milliseconds(
                   cfg["heartbeat-timeout-ms"].as<int32_t>()),
