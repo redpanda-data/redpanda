@@ -94,7 +94,7 @@ func findConfigFile(
 		} else {
 			log.Debug(err)
 			if os.IsNotExist(err) && *configFile == "" {
-				log.Info(
+				log.Debug(
 					"Config file not found and --config" +
 						" wasn't passed, using default" +
 						" config",
