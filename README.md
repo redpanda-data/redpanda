@@ -20,7 +20,7 @@ we're pushing the boundaries of what's possible with streaming.
 
 [Slack](vectorized.io/slack) is the main way the community interacts with one another in real time :) 
 
-[User mailing list](https://groups.google.com/a/vectorized.io/forum/#!forum/redpanda-users/new) is preferred for longer, async, thoughtful discussions
+[User mailing list](https://groups.google.com/g/redpanda-users) is preferred for longer, async, thoughtful discussions
 
 [GitHub Issues](https://github.com/vectorizedio/redpanda/issues) is reserved only for actual issues. Please use the mailing list for discussions.
 
