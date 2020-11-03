@@ -188,3 +188,11 @@ rp_test(
   LIBRARIES Seastar::seastar_perf_testing v::storage
   LABELS storage
 )
+
+rp_test(
+  UNIT_TEST
+  BINARY_NAME segment_size_jitter
+  SOURCES segment_size_jitter_test.cc
+  DEFINITIONS BOOST_TEST_DYN_LINK
+  LIBRARIES Boost::unit_test_framework v::storage
+)
