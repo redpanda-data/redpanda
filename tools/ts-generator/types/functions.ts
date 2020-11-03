@@ -1,4 +1,10 @@
 import { IOBuf } from "../../utilities/IOBuf";
+import {
+  Record,
+  RecordBatch,
+  RecordBatchHeader,
+} from "../../domain/generatedRpc/generatedClasses";
+import { calculate } from "fast-crc32c";
 
 // receive int64 and return Uint64
 const encodeZigzag = (field: bigint): bigint => {
@@ -77,6 +83,30 @@ const writeVarint: WriteFn<bigint> = (field, buffer) => {
     value >>= BigInt(7);
   } while (value >= 0x80);
   writtenBytes += buffer.appendUInt8(Number(value));
+  return writtenBytes;
+};
+
+const writeVarintBuffer = (field: bigint, buffer: Buffer) => {
+  let value = encodeZigzag(field);
+  let writtenBytes = 0;
+  if (value < 0x80) {
+    return buffer.writeUInt8(Number(value));
+  }
+  writtenBytes = buffer.writeUInt8(
+    Number((value & BigInt(255)) | BigInt(0x80))
+  );
+  value >>= BigInt(7);
+  if (value < 0x80) {
+    writtenBytes = buffer.writeUInt8(Number(value), writtenBytes);
+  }
+  do {
+    writtenBytes = buffer.writeUInt8(
+      Number((value & BigInt(255)) | BigInt(0x80)),
+      writtenBytes
+    );
+    value >>= BigInt(7);
+  } while (value >= 0x80);
+  writtenBytes = buffer.writeUInt8(Number(value), writtenBytes);
   return writtenBytes;
 };
 
@@ -256,6 +286,63 @@ const readObject = <T>(
   return obj.fromBytes(buffer, offset);
 };
 
+const extendRecords = (records: Record[], seed = 0): number => {
+  const auxBuffer = Buffer.alloc(8);
+  return records.reduce((prev, record) => {
+    let size;
+    size = writeVarintBuffer(BigInt(record.length), auxBuffer);
+    const lengthCrc = calculate(auxBuffer.slice(0, size), prev);
+    size = writeVarintBuffer(BigInt(record.attributes), auxBuffer);
+    const attrCrc = calculate(auxBuffer.slice(0, size), lengthCrc);
+    size = writeVarintBuffer(record.timestampDelta, auxBuffer);
+    const timesStampCrc = calculate(auxBuffer.slice(0, size), attrCrc);
+    size = writeVarintBuffer(BigInt(record.offsetDelta), auxBuffer);
+    const offsetDeltaCrc = calculate(auxBuffer.slice(0, size), timesStampCrc);
+    size = writeVarintBuffer(BigInt(record.keyLength), auxBuffer);
+    const keyLengthCrc = calculate(auxBuffer.slice(0, size), offsetDeltaCrc);
+    const keyCrc = calculate(record.key, keyLengthCrc);
+    size = writeVarintBuffer(BigInt(record.valueLen), auxBuffer);
+    const valueLengthCrc = calculate(auxBuffer.slice(0, size), keyCrc);
+    const valueCrc = calculate(record.value, valueLengthCrc);
+    size = writeVarintBuffer(BigInt(record.headers.length), auxBuffer);
+    return calculate(auxBuffer.slice(0, size), valueCrc);
+  }, seed);
+};
+
+const recordBatchEncode = (value: RecordBatch, buffer: IOBuf): number => {
+  let wroteBytes = 0;
+  // write header some attribute on BE format
+  const bufferHeaderCrc = Buffer.allocUnsafe(40);
+  bufferHeaderCrc.writeInt16BE(value.header.attrs, 0);
+  bufferHeaderCrc.writeInt32BE(value.header.lastOffsetDelta, 2);
+  bufferHeaderCrc.writeBigInt64BE(value.header.firstTimestamp, 6);
+  bufferHeaderCrc.writeBigInt64BE(value.header.maxTimestamp, 14);
+  bufferHeaderCrc.writeBigInt64BE(value.header.producerId, 22);
+  bufferHeaderCrc.writeInt16BE(value.header.producerEpoch, 30);
+  bufferHeaderCrc.writeInt32BE(value.header.baseSequence, 32);
+  bufferHeaderCrc.writeInt32BE(value.header.recordCount, 36);
+
+  // reserve record batch header, term, isCompressed.
+  const reserver = buffer.getReserve(70);
+  // create auxiliary iobuf
+  const iheader = new IOBuf();
+
+  wroteBytes += writeObject(iheader, RecordBatchHeader, value.header);
+  wroteBytes += writeArray(false)(value.records, buffer, (item, auxBuffer) =>
+    writeObject(auxBuffer, Record, item)
+  );
+  // Get buffer instance from iobuf
+  const headerBuffer = iheader.getIterable().slice(70);
+  // Calculate header crc, it depends on records and, some header attributes
+  const crc = extendRecords(value.records, calculate(bufferHeaderCrc));
+  headerBuffer.writeUInt32LE(crc, 17);
+  const headerCrc = calculate(headerBuffer.slice(4, 61));
+  headerBuffer.writeUInt32LE(headerCrc, 0);
+  reserver.appendBuffer(headerBuffer);
+
+  return wroteBytes;
+};
+
 export default {
   writeInt8LE,
   writeInt16LE,
@@ -271,6 +358,7 @@ export default {
   writeObject,
   writeVarint,
   writeBuffer,
+  writeVarintBuffer,
   readInt8LE,
   readInt16LE,
   readInt32LE,
@@ -285,4 +373,6 @@ export default {
   readVarint,
   readArray,
   readBuffer,
+  recordBatchEncode,
+  extendRecords,
 };
