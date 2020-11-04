@@ -1,0 +1,8 @@
+---
+build:
+  root: ./build
+  src: ./
+  gopath: /vectorized
+  external: /vectorized
+  node_build_dir: /vectorized
+  default_type: debug

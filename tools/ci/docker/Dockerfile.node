@@ -1,0 +1,13 @@
+ARG BASE_SHA=latest
+FROM gcr.io/redpandaci/base:${BASE_SHA}
+
+# js dependencies are not affected by build-type
+COPY tools/ci/vtools-gcc-release.yml /v/.vtools.yml
+
+COPY src/js/package.json src/js/package-lock.json src/js/generate-entries.sh /v/src/js/
+
+COPY /tools/ /v/
+
+RUN pip install /v && \
+    vtools install js && \
+    rm -r /v

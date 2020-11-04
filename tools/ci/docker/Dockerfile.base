@@ -1,0 +1,9 @@
+FROM gcr.io/redpandaci/fedora:31-python37-docker1903
+
+WORKDIR /v
+
+COPY tools/install-deps.sh /
+
+RUN /install-deps.sh && \
+    rm /install-deps.sh && \
+    dnf clean all
