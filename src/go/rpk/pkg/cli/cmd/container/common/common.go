@@ -25,8 +25,10 @@ import (
 )
 
 const (
-	redpandaNetwork = "redpanda"
-	redpandaImage   = "docker.io/vectorized/redpanda"
+	redpandaNetwork   = "redpanda"
+	registry          = "docker.io"
+	redpandaImageBase = "vectorized/redpanda"
+	redpandaImage     = registry + "/" + redpandaImageBase
 
 	defaultDockerClientTimeout = 10 * time.Second
 )
@@ -213,9 +215,8 @@ func CreateNode(
 	}
 	hostname := Name(nodeID)
 	containerConfig := container.Config{
-		Image:    redpandaImage,
+		Image:    redpandaImageBase,
 		Hostname: hostname,
-		User:     "redpanda",
 		ExposedPorts: nat.PortSet{
 			rPort: {},
 			kPort: {},
@@ -306,16 +307,16 @@ func PullImage(c Client) error {
 
 func CheckIfImgPresent(c Client) (bool, error) {
 	ctx, _ := DefaultCtx()
-	imgs, err := c.ImageList(ctx, types.ImageListOptions{})
+	filters := filters.NewArgs(
+		filters.Arg("reference", redpandaImageBase),
+	)
+	imgs, err := c.ImageList(ctx, types.ImageListOptions{
+		Filters: filters,
+	})
 	if err != nil {
 		return false, err
 	}
-	for _, img := range imgs {
-		if img.ID == redpandaImage {
-			return true, nil
-		}
-	}
-	return false, nil
+	return len(imgs) > 0, nil
 }
 
 func getHostPort(
