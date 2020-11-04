@@ -26,7 +26,7 @@ rp_test(
   BINARY_NAME named_type_test
   SOURCES named_type_tests.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
-  LIBRARIES Boost::unit_test_framework
+  LIBRARIES Boost::unit_test_framework v::utils
   )
 rp_test(
   UNIT_TEST
@@ -35,12 +35,12 @@ rp_test(
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES Boost::unit_test_framework
   )
-  rp_test(
-    UNIT_TEST
-    BINARY_NAME retry_test
-    SOURCES retry_test.cc
-    LIBRARIES v::seastar_testing_main
-    ARGS "-- -c 2"
+rp_test(
+  UNIT_TEST
+  BINARY_NAME retry_test
+  SOURCES retry_test.cc
+  LIBRARIES v::seastar_testing_main
+  ARGS "-- -c 2"
   )
 
 rp_test(
