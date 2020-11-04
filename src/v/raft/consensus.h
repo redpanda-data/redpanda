@@ -159,6 +159,7 @@ public:
             // term backward
             if (term > _term) {
                 _term = term;
+                _voted_for = {};
                 do_step_down();
             }
         });
@@ -307,6 +308,7 @@ private:
 
     // read at `ss::future<> start()`
     model::node_id _voted_for;
+    model::term_id _last_election;
     std::optional<model::node_id> _leader_id;
     bool _transferring_leadership{false};
 
