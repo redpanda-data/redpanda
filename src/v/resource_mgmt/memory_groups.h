@@ -26,7 +26,24 @@ struct memory_groups {
         // 30%
         return ss::memory::stats().total_memory() * .30;
     }
-    static size_t reserved_unused_total_memory() {
-        return ss::memory::stats().total_memory() * .40;
+
+    /**
+     * The target allocation size for the chunk cache. This is a soft target,
+     * and may be expanded as needed by segment appenders, or reclaimed from by
+     * seastar under memory pressure.
+     *
+     * add upper bound of 30 pct of memory as a hard outstanding limit.
+     */
+    static size_t chunk_cache_min_memory() {
+        return ss::memory::stats().total_memory() * .10; // NOLINT
+    }
+
+    /**
+     * Upper bound on the amount of outstanding memory for inflight write
+     * requests. Requests above this limit will wait for an existing chunk to be
+     * returned to the cache.
+     */
+    static size_t chunk_cache_max_memory() {
+        return ss::memory::stats().total_memory() * .30; // NOLINT
     }
 };
