@@ -70,7 +70,7 @@ all built from source. The only thing we do not build yet is the Linux Kernel, b
 For hackers, here is the short and sweet:
 
 ```
-./install-dependencies.sh && ./build.sh
+sudo ./install-dependencies.sh && ./build.sh
 ```
 
 See the [contributing docs](./CONTRIBUTING.md)
