@@ -409,7 +409,7 @@ Please check your internet connection and try again.`,
 				require.True(st, ok)
 			},
 			expectedErrMsg: `Found data for an existing cluster, but the container for node 0 was removed.
-Please run 'rpk container purge' to delete all remaining data and create a new cluster with 'rpk container start'.`,
+Please run 'rpk container purge' to delete all remaining data.`,
 		},
 	}
 
