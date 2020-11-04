@@ -86,6 +86,7 @@ ss::future<> vote_stm::vote(bool leadership_transfer) {
           _ptr->trigger_leadership_notification();
           // 5.2.1.2
           _ptr->_term += model::term_id(1);
+          _ptr->_voted_for = {};
 
           // vote is the only method under _op_sem
           _ptr->config().for_each_voter(
@@ -190,7 +191,12 @@ void vote_stm::update_vote_state(ss::semaphore_units<> u) {
         if (r.value && r.value->has_value()) {
             auto term = r.value->value().term;
             if (term > _ptr->_term) {
+                vlog(
+                  _ctxlog.info, "Vote failed - received larger term: {}", term);
                 _ptr->_term = term;
+                _ptr->_voted_for = {};
+                _ptr->_vstate = consensus::vote_state::follower;
+                return;
             }
         }
     }

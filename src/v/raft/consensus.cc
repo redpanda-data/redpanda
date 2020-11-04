@@ -84,7 +84,6 @@ void consensus::setup_metrics() {
 }
 
 void consensus::do_step_down() {
-    _voted_for = {};
     _hbeat = clock_type::now();
     _vstate = vote_state::follower;
 }
@@ -800,8 +799,9 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
           r.node_id,
           r.term,
           _term);
+        reply.term = r.term;
         _term = r.term;
-        reply.term = _term;
+        _voted_for = {};
         do_step_down();
         // even tough we step down we do not want to update the hbeat as it
         // would cause subsequent votes to fail (_hbeat is updated by the
@@ -814,33 +814,36 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
         return ss::make_ready_future<vote_reply>(reply);
     }
 
-    auto f = ss::make_ready_future<>();
-
     if (_voted_for() < 0) {
-        _voted_for = model::node_id(r.node_id);
-        vlog(_ctxlog.trace, "Voting for {} in term {}", r.node_id, _term);
-        f = f.then([this] {
-            return write_voted_for({_voted_for, _term})
-              .handle_exception([this](const std::exception_ptr& e) {
-                  vlog(
-                    _ctxlog.warn,
-                    "Unable to persist raft group state, vote not granted "
-                    "- {}",
-                    e);
-                  _voted_for = {};
-              });
-        });
-    }
+        return write_voted_for({r.node_id, _term})
+          .then_wrapped(
+            [this, reply = std::move(reply), r = std::move(r)](ss::future<> f) {
+                bool granted = false;
 
-    // vote for the same term, same server_id
-    reply.granted = (r.node_id == _voted_for);
-    if (reply.granted) {
-        _hbeat = clock_type::now();
-    }
+                if (f.failed()) {
+                    vlog(
+                      _ctxlog.warn,
+                      "Unable to persist raft group state, vote not granted "
+                      "- {}",
+                      f.get_exception());
+                } else {
+                    _voted_for = r.node_id;
+                    granted = true;
+                }
 
-    return f.then([reply = std::move(reply)] {
+                vote_reply response;
+                response.term = reply.term;
+                response.log_ok = reply.log_ok;
+                response.granted = granted;
+                return ss::make_ready_future<vote_reply>(std::move(response));
+            });
+    } else {
+        reply.granted = (r.node_id == _voted_for);
+        if (reply.granted) {
+            _hbeat = clock_type::now();
+        }
         return ss::make_ready_future<vote_reply>(std::move(reply));
-    });
+    }
 }
 
 ss::future<append_entries_reply>
@@ -883,6 +886,7 @@ consensus::do_append_entries(append_entries_request&& r) {
           r.meta.term,
           _term);
         _term = r.meta.term;
+        _voted_for = {};
         return do_append_entries(std::move(r));
     }
 
@@ -1130,6 +1134,7 @@ consensus::do_install_snapshot(install_snapshot_request&& r) {
     // request received from new leader
     if (r.term > _term) {
         _term = r.term;
+        _voted_for = {};
         do_step_down();
         return do_install_snapshot(std::move(r));
     }
