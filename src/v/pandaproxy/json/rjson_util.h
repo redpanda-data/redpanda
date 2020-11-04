@@ -33,7 +33,7 @@ ss::sstring rjson_serialize(const T& v) {
     using ::pandaproxy::json::rjson_serialize;
     rjson_serialize(wrt, v);
 
-    return {str_buf.GetString(), str_buf.GetLength()};
+    return ss::sstring(str_buf.GetString(), str_buf.GetSize());
 }
 
 template<typename Handler>
