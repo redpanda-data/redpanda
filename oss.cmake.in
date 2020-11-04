@@ -1,0 +1,205 @@
+cmake_minimum_required(VERSION 3.9.0)
+project(build-deps NONE)
+cmake_host_system_information(
+  RESULT build_concurrency_factor
+  QUERY NUMBER_OF_LOGICAL_CORES)
+set(info_dir --infodir=@REDPANDA_DEPS_INSTALL_DIR@/share/info)
+include(ExternalProject)
+
+set(c_flags "@BASE_C_FLAGS@ @CMAKE_C_FLAGS_BUILD_TYPE@")
+set(cxx_flags "@BASE_CXX_FLAGS@ @CMAKE_CXX_FLAGS_BUILD_TYPE@ -std=c++17")
+set(ld_flags "@BASE_LD_FLAGS@")
+set(default_depends "")
+
+set(common_cmake_args
+  -DCMAKE_CXX_STANDARD=@CMAKE_CXX_STANDARD@
+  -DCMAKE_CXX_EXTENSIONS=@CMAKE_CXX_EXTENSIONS@
+  -DCMAKE_C_COMPILER=@CMAKE_C_COMPILER@
+  -DCMAKE_CXX_COMPILER=@CMAKE_CXX_COMPILER@
+  "-DCMAKE_C_FLAGS=@BASE_C_FLAGS@"
+  "-DCMAKE_C_FLAGS_@BUILD_TYPE@=@CMAKE_C_FLAGS_BUILD_TYPE@"
+  "-DCMAKE_CXX_FLAGS=@BASE_CXX_FLAGS@ -std=c++17"
+  "-DCMAKE_CXX_FLAGS_@BUILD_TYPE@=@CMAKE_CXX_FLAGS_BUILD_TYPE@"
+  "-DCMAKE_EXE_LINKER_FLAGS=@CMAKE_EXE_LINKER_FLAGS@"
+  "-DCMAKE_SHARED_LINKER_FLAGS=@CMAKE_SHARED_LINKER_FLAGS@"
+  "-DCMAKE_MODULE_LINKER_FLAGS=@CMAKE_MODULE_LINKER_FLAGS@"
+  -DCMAKE_BUILD_TYPE=@CMAKE_BUILD_TYPE@
+  -DCMAKE_PREFIX_PATH=@REDPANDA_DEPS_INSTALL_DIR@
+  -DCMAKE_INSTALL_PREFIX=@REDPANDA_DEPS_INSTALL_DIR@
+  -DCMAKE_INSTALL_RPATH=@REDPANDA_DEPS_INSTALL_DIR@/lib
+  -DCMAKE_SKIP_BUILD_RPATH=OFF
+  -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON
+  -DCMAKE_POSITION_INDEPENDENT_CODE=@CMAKE_POSITION_INDEPENDENT_CODE@
+  -DCMAKE_VERBOSE_MAKEFILE=@CMAKE_VERBOSE_MAKEFILE@
+)
+# pkgconfig
+set(ENV{PKG_CONFIG_PATH}  @PKG_CONFIG_PATH@)
+set(cmake_build_env)
+if (@CMAKE_CXX_COMPILER_ID@ MATCHES "GNU")
+  set(seastar_ld_flags "${ld_flags} -pthread")
+endif()
+
+# autotools
+set(base_env
+  CC=@CMAKE_C_COMPILER@
+  CXX=@CMAKE_CXX_COMPILER@
+  PKG_CONFIG_PATH=@PKG_CONFIG_PATH@
+)
+set(configure_env
+  ${base_env}
+  CFLAGS=${c_flags}
+  CXXFLAGS=${cxx_flags}
+  LDFLAGS=${ld_flags}
+)
+# For a libtool project
+set(build_env
+  ${base_env}
+  CFLAGS=${c_flags}
+  CXXFLAGS=${cxx_flags}
+  "LDFLAGS=${ld_flags}"
+)
+
+# define make command in terms of cmake
+set(make_command make ${build_env} -j${build_concurrency_factor} )
+ExternalProject_Add(seastar
+  GIT_REPOSITORY https://github.com/vectorizedio/seastar.git
+  GIT_TAG 92c639117d9f32f0b5f23b05b1ca14c39e1df8a7
+  INSTALL_DIR    @REDPANDA_DEPS_INSTALL_DIR@
+  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
+  CMAKE_ARGS
+    ${common_cmake_args}
+    -DProtobuf_USE_STATIC_LIBS=ON
+    -DSeastar_INSTALL=ON
+    -DSeastar_DPDK=OFF
+    -DSeastar_APPS=OFF
+    -DSeastar_DEMOS=OFF
+    -DSeastar_DOCS=OFF
+    -DSeastar_TESTING=OFF
+    -DSeastar_CXX_FLAGS=-Wno-error
+    "-DSeastar_LD_FLAGS=${seastar_ld_flags}"
+    -DSeastar_API_LEVEL=6
+    -DSeastar_CXX_DIALECT=c++17
+    -DSeastar_UNUSED_RESULT_ERROR=ON
+  INSTALL_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR> --target install
+  DEPENDS ${default_depends})
+
+ExternalProject_Add(HdrHistogram
+  URL https://storage.googleapis.com/vectorizedio-public/dependencies/HdrHistogram_c-0.11.2.tar.gz
+  URL_MD5 95970dea64f1a7a8d199aeb9f7c15e60
+  INSTALL_DIR    @REDPANDA_DEPS_INSTALL_DIR@
+  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
+  CMAKE_ARGS
+    ${common_cmake_args}
+    -DHDR_HISTOGRAM_BUILD_PROGRAMS=OFF
+    -DHDR_HISTOGRAM_BUILD_SHARED=OFF
+  DEPENDS ${default_depends})
+
+ExternalProject_Add(abseil
+  GIT_REPOSITORY https://github.com/vectorizedio/abseil-cpp.git
+  GIT_TAG bcefbdcd
+  INSTALL_DIR    @REDPANDA_DEPS_INSTALL_DIR@
+  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
+  DEPENDS ${default_depends}
+  CMAKE_ARGS
+    ${common_cmake_args}
+    -DABSL_ENABLE_INSTALL=ON)
+
+ExternalProject_Add(crc32c
+  GIT_REPOSITORY https://github.com/vectorizedio/crc32c.git
+  GIT_TAG 47b40d220949c5b013d49c1179643334196ec5a9
+  INSTALL_DIR    @REDPANDA_DEPS_INSTALL_DIR@
+  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
+  DEPENDS ${default_depends}
+  CMAKE_ARGS
+    ${common_cmake_args}
+    -DCRC32C_BUILD_TESTS=0
+    -DCRC32C_BUILD_BENCHMARKS=0
+    -DCRC32C_USE_GLOG=0)
+
+ExternalProject_Add(roaring
+  GIT_REPOSITORY https://github.com/vectorizedio/CRoaring.git
+  GIT_TAG 7b9c83740d4f764941d38144cc8e2122076e38e4
+  INSTALL_DIR    @REDPANDA_DEPS_INSTALL_DIR@
+  DEPENDS ${default_depends}
+  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
+  CMAKE_ARGS
+  ${common_cmake_args}
+  -DENABLE_ROARING_TESTS=OFF
+  -DROARING_BUILD_STATIC=ON)
+
+ExternalProject_Add(alien_thread
+  URL https://storage.googleapis.com/vectorizedio-public/dependencies/alien_thread-bdfb56f.tar.gz
+  URL_HASH SHA256=28f704566aed21bcc5944b1ad2003ee53cb40e2c424c1c917082d431f50f3911
+  INSTALL_DIR @REDPANDA_DEPS_INSTALL_DIR@
+  DEPENDS ${default_depends}
+  PATCH_COMMAND ""
+  CONFIGURE_COMMAND ""
+  BUILD_COMMAND ""
+  INSTALL_COMMAND
+  COMMAND ${CMAKE_COMMAND} -E copy_directory <SOURCE_DIR>/include/v <INSTALL_DIR>/include/v)
+
+ExternalProject_Add(librdkafka
+  URL https://storage.googleapis.com/vectorizedio-public/dependencies/librdkafka-v1.2.2.tar.gz
+  URL_HASH SHA256=c5d6eb6ce080431f2996ee7e8e1f4b8f6c61455a1011b922e325e28e88d01b53
+  INSTALL_DIR @REDPANDA_DEPS_INSTALL_DIR@
+  DEPENDS ${default_depends}
+  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
+  CMAKE_ARGS
+    ${common_cmake_args}
+    -DWITH_ZLIB=OFF
+    -DWITH_ZSTD=OFF
+    -DENABLE_LZ4_EXT=OFF
+    -DRDKAFKA_BUILD_STATIC=ON
+    -DRDKAFKA_BUILD_EXAMPLES=OFF
+    -DRDKAFKA_BUILD_TESTS=OFF)
+
+ExternalProject_Add(cppkafka
+  URL https://storage.googleapis.com/vectorizedio-public/dependencies/cppkafka-c3b4580.tar.gz
+  URL_HASH SHA256=1989ecdab4325cf798db6f33f4ba171ecde46197496dfc1df7ec31a74d313f1d
+  INSTALL_DIR @REDPANDA_DEPS_INSTALL_DIR@
+  DEPENDS librdkafka
+  CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
+  CMAKE_ARGS
+    ${common_cmake_args}
+    -DCPPKAFKA_BUILD_SHARED=OFF
+    -DCPPKAFKA_RDKAFKA_STATIC_LIB=ON
+    -DCPPKAFKA_BOOST_STATIC_LIBS=OFF
+    -DCPPKAFKA_DISABLE_EXAMPLES=OFF
+    -DCPPKAFKA_DISABLE_TESTS=OFF)
+
+ExternalProject_Add(base64_ext
+  URL https://storage.googleapis.com/vectorizedio-public/dependencies/base64-eaebee8.tar.xz
+  URL_MD5 1fd5d4d053cc08c11f20e48188a28063
+  INSTALL_DIR @REDPANDA_DEPS_INSTALL_DIR@
+  DEPENDS ${default_depends}
+  CONFIGURE_COMMAND ""
+  BUILD_COMMAND
+    ${CMAKE_COMMAND} -E env ${build_env}
+    make ${build_env} lib/libbase64.o -j${build_concurrency_factor}
+  BUILD_IN_SOURCE true
+  INSTALL_COMMAND
+    COMMAND ${CMAKE_COMMAND} -E copy <SOURCE_DIR>/include/libbase64.h <INSTALL_DIR>/include/libbase64.h
+    COMMAND ${CMAKE_COMMAND} -E copy <SOURCE_DIR>/lib/libbase64.o <INSTALL_DIR>/lib/libbase64.o)
+
+ExternalProject_Add(kafka-codegen-pex
+  DOWNLOAD_COMMAND ""
+  INSTALL_DIR @REDPANDA_DEPS_INSTALL_DIR@
+  PATCH_COMMAND ""
+  CONFIGURE_COMMAND ""
+  BUILD_COMMAND ""
+  INSTALL_COMMAND
+  COMMAND ${CMAKE_COMMAND} -E chdir <SOURCE_DIR> python3 -m venv env
+  COMMAND <SOURCE_DIR>/env/bin/pip install pex
+  COMMAND <SOURCE_DIR>/env/bin/pex jsonschema jinja2 -o <INSTALL_DIR>/bin/kafka-codegen-venv)
+
+ExternalProject_Add(kafka-python-pex
+  DOWNLOAD_COMMAND ""
+  INSTALL_DIR @REDPANDA_DEPS_INSTALL_DIR@
+  PATCH_COMMAND ""
+  CONFIGURE_COMMAND ""
+  BUILD_COMMAND ""
+  INSTALL_COMMAND
+  COMMAND ${CMAKE_COMMAND} -E chdir <SOURCE_DIR> python3 -m venv env
+  COMMAND <SOURCE_DIR>/env/bin/pip install pex
+  COMMAND <SOURCE_DIR>/env/bin/pex kafka-python -o <INSTALL_DIR>/bin/kafka-python-env
+  )
