@@ -20,10 +20,9 @@ prevote_stm::prevote_stm(consensus* p)
   , _ctxlog(_ptr->group(), _ptr->ntp()) {}
 
 prevote_stm::~prevote_stm() {
-    if (_vote_bg.get_count() > 0 && !_vote_bg.is_closed()) {
-        vlog(_ctxlog.error, "Must call prevote_stm::wait()");
-        std::terminate();
-    }
+    vassert(
+      _vote_bg.get_count() <= 0 || _vote_bg.is_closed(),
+      "Must call vote_stm::wait()");
 }
 
 ss::future<result<vote_reply>>
