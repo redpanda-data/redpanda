@@ -103,7 +103,7 @@ ss::future<> client::mitigate_error(std::exception_ptr ex) {
     } catch (const partition_error& ex) {
         switch (ex.error) {
         case kafka::error_code::unknown_topic_or_partition:
-            [[fallthrough]];
+        case kafka::error_code::not_leader_for_partition:
         case kafka::error_code::leader_not_available: {
             vlog(ppclog.debug, "partition_error: {}", ex);
             return _wait_or_start_update_metadata();
