@@ -64,18 +64,20 @@ public:
     ss::future<> stop();
 
     /// \brief Dispatch a request to any broker.
-    template<typename T>
-    CONCEPT(requires(KafkaRequest<typename T::api_type>))
-    ss::future<typename T::api_type::response_type> dispatch(T r) {
-        return ss::with_gate(_gate, [this, r{std::move(r)}]() {
+    template<typename Func>
+    CONCEPT(
+      requires(typename std::invoke_result_t<Func>::api_type::response_type))
+    ss::future<typename std::invoke_result_t<
+      Func>::api_type::response_type> dispatch(Func func) {
+        return ss::with_gate(_gate, [this, func{std::move(func)}]() {
             return retry_with_mitigation(
               shard_local_cfg().retries(),
               shard_local_cfg().retry_base_backoff(),
-              [this, r{std::move(r)}]() {
+              [this, func{std::move(func)}]() {
                   _gate.check();
                   return _brokers.any().then(
-                    [r{std::move(r)}](shared_broker_t broker) mutable {
-                        return broker->dispatch(std::move(r));
+                    [func{std::move(func)}](shared_broker_t broker) mutable {
+                        return broker->dispatch(func());
                     });
               },
               [this](std::exception_ptr ex) {

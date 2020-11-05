@@ -58,9 +58,10 @@ serialization_format parse_serialization_format(std::string_view accept) {
 ss::future<server::reply_t>
 get_topics_names(server::request_t rq, server::reply_t rp) {
     rq.req.reset();
-    kafka::metadata_request req;
-    req.list_all_topics = true;
-    return rq.ctx.client.dispatch(std::move(req))
+    auto make_list_topics_req = []() {
+        return kafka::metadata_request{.list_all_topics = true};
+    };
+    return rq.ctx.client.dispatch(make_list_topics_req)
       .then([rp = std::move(rp)](
               kafka::metadata_request::api_type::response_type res) mutable {
           std::vector<model::topic_view> names;
