@@ -68,9 +68,10 @@ ss::futurize_t<std::invoke_result_t<Func>> retry_with_backoff(
                              base_backoff]() mutable {
                      attempt++;
                      return f()
-                       .then([&promise](auto... vals) {
+                       .then([&promise](auto&&... vals) {
                            // success case
-                           promise.set_value(vals...);
+                           promise.set_value(
+                             std::forward<decltype(vals)>(vals)...);
                            return ss::make_ready_future<stop_iteration>(
                              stop_iteration::yes);
                        })
@@ -81,7 +82,7 @@ ss::futurize_t<std::invoke_result_t<Func>> retry_with_backoff(
                           &promise,
                           base_backoff](std::exception_ptr e) mutable {
                              if (attempt > max_retries) {
-                                 // out ot attempts
+                                 // out of attempts
                                  promise.set_exception(e);
                                  return ss::make_ready_future<stop_iteration>(
                                    stop_iteration::yes);
