@@ -267,7 +267,7 @@ private:
 
     void arm_vote_timeout();
     void update_node_append_timestamp(model::node_id);
-    void update_node_hschlag_timestamp(model::node_id);
+    void update_node_hbeat_timestamp(model::node_id);
 
     void update_follower_stats(const group_configuration&);
     void trigger_leadership_notification();
