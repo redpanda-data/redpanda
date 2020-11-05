@@ -101,7 +101,7 @@ public:
     const model::ntp& ntp() const { return _log.config().ntp(); }
     clock_type::time_point last_heartbeat() const { return _hbeat; };
 
-    clock_type::time_point last_hbeat_timestamp(model::node_id);
+    clock_type::time_point last_append_timestamp(model::node_id);
     /**
      * \brief Persist snapshot with given data and start offset
      *
@@ -266,7 +266,7 @@ private:
     ss::future<> maybe_update_follower_commit_idx(model::offset);
 
     void arm_vote_timeout();
-    void update_node_hbeat_timestamp(model::node_id);
+    void update_node_append_timestamp(model::node_id);
     void update_node_hschlag_timestamp(model::node_id);
 
     void update_follower_stats(const group_configuration&);
