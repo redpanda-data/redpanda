@@ -42,7 +42,8 @@ public:
           : term(t)
           , base_offset(base)
           , committed_offset(base)
-          , dirty_offset(base) {}
+          , dirty_offset(base)
+          , stable_offset(base) {}
         model::term_id term;
         model::offset base_offset;
 
@@ -51,6 +52,7 @@ public:
         /// but allow us to keep track of the actual last logical offset
         model::offset committed_offset;
         model::offset dirty_offset;
+        model::offset stable_offset;
         friend std::ostream& operator<<(std::ostream&, const offset_tracker&);
     };
     enum class bitflags : uint32_t {
@@ -153,6 +155,21 @@ private:
     ss::future<> compaction_index_batch(const model::record_batch&);
     ss::future<> do_compaction_index_batch(const model::record_batch&);
 
+    struct appender_callbacks : segment_appender::callbacks {
+        explicit appender_callbacks(segment* segment)
+          : _segment(segment) {}
+
+        void committed_physical_offset(size_t offset) final {
+            _segment->advance_stable_offset(offset);
+        }
+
+        segment* _segment;
+    };
+
+    appender_callbacks _appender_callbacks;
+
+    void advance_stable_offset(size_t offset);
+
     offset_tracker _tracker;
     segment_reader _reader;
     segment_index _idx;
@@ -162,6 +179,8 @@ private:
     std::optional<batch_cache_index> _cache;
     ss::rwlock _destructive_ops;
     ss::gate _gate;
+
+    absl::btree_map<size_t, model::offset> _inflight;
 
     friend std::ostream& operator<<(std::ostream&, const segment&);
 };
@@ -318,6 +337,7 @@ inline bool segment::is_tombstone() const {
 /// \brief used for compaction, to reset the tracker from index
 inline void segment::force_set_commit_offset_from_index() {
     _tracker.committed_offset = _idx.max_offset();
+    _tracker.stable_offset = _idx.max_offset();
     _tracker.dirty_offset = _idx.max_offset();
 }
 
