@@ -22,40 +22,40 @@ logger = logging.getLogger('rp')
 serializableFunctions = """
 {%- macro write_int8(field, propertyPath, buffer, assign) %}
     {% set jsFn = "writeUInt8LE" if 'u' in field.type else "writeInt8LE" -%}
-    {{ "writtenBytes += " if assign -}} 
+    {{ "writtenBytes += " if assign -}}
     BF.{{jsFn}}({{propertyPath}}, {{buffer}})
 {%- endmacro -%}
 
 {%- macro write_int16(field, propertyPath, buffer, assign) %}
     {% set jsFn = "writeUInt16LE" if 'u' in field.type else "writeInt16LE" -%}
-    {{ "writtenBytes += " if assign -}} 
+    {{ "writtenBytes += " if assign -}}
     BF.{{jsFn}}({{propertyPath}}, {{buffer}})
 {%- endmacro -%}
 
 {%- macro write_int32(field, propertyPath, buffer, assign) %}
     {% set jsFn = "writeUInt32LE" if 'u' in field.type else "writeInt32LE" -%}
-    {{ "writtenBytes += " if assign -}} 
+    {{ "writtenBytes += " if assign -}}
     BF.{{jsFn}}({{propertyPath}}, {{buffer}})
 {%- endmacro -%}
 
 {%- macro write_int64(field, propertyPath, buffer, assign) %}
     {% set jsFn = "writeUInt64LE" if 'u' in field.type else "writeInt64LE" -%}
-    {{ "writtenBytes += " if assign -}} 
+    {{ "writtenBytes += " if assign -}}
     BF.{{jsFn}}({{propertyPath}}, {{buffer}})
 {%- endmacro -%}
 
 {%- macro write_string(field, propertyPath, buffer, assign) %}
-    {{ "writtenBytes += " if assign -}} 
+    {{ "writtenBytes += " if assign -}}
     BF.writeString({{propertyPath}}, {{buffer}})
 {%- endmacro -%}
 
 {%- macro write_buffer(field, propertyPath, buffer, assign) %}
-    {{ "writtenBytes += " if assign -}} 
+    {{ "writtenBytes += " if assign -}}
     BF.writeBuffer({{propertyPath}}, {{buffer}})
 {%- endmacro -%}
 
 {%- macro write_boolean(field, propertyPath, buffer, assign) %}
-    {{ "writtenBytes += " if assign -}} 
+    {{ "writtenBytes += " if assign -}}
     BF.writeBoolean({{propertyPath}}, {{buffer}})
 {%- endmacro -%}
 
@@ -67,7 +67,7 @@ serializableFunctions = """
 {%- macro write_array(field, propertyPath) %}
     {# Remove ">" and "Array<" from type, the result is the array type #}
     {%-set subtype = field.type | replace(">","")|replace("Array<", "") %}
-    writtenBytes += 
+    writtenBytes +=
     BF.writeArray({{"false" if field.size else "true"}})({{propertyPath}},
       buffer, (item, auxBuffer) => {{-serialize_by_field
             ({"name": "", 
@@ -79,7 +79,7 @@ serializableFunctions = """
 {%- endmacro -%}
 
 {%- macro write_object(field, propertyPath, buffer, assign) %}
-    {{ "writtenBytes += " if assign -}} 
+    {{ "writtenBytes += " if assign -}}
     BF.writeObject({{buffer}}, {{field.type}}, {{propertyPath}})
 {%- endmacro -%}
 
@@ -333,9 +333,14 @@ export class {{class.className}} {
         buffer: IOBuf
     ): number {
         let writtenBytes = 0;
-        {%- for field in class.fields %}
+        {% if class.customEncode is defined %}
+          writtenBytes += {{class.customEncode}}(value, buffer)
+        {%- else -%}
+          {%- for field in class.fields %}
             {{- serialize_by_field(field, "", "", True) -}}
-        {%- endfor %}
+          {%- endfor %}
+        {%- endif %}
+
         return writtenBytes
     }    
 }
