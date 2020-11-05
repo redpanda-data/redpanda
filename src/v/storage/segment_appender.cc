@@ -43,6 +43,7 @@ segment_appender::segment_appender(ss::file f, options opts)
 }
 
 segment_appender::~segment_appender() noexcept {
+    vassert(_inflight.empty(), "not empty flights");
     vassert(
       _bytes_flush_pending == 0 && _closed,
       "Must flush & close before deleting {}",
@@ -60,7 +61,9 @@ segment_appender::segment_appender(segment_appender&& o) noexcept
   , _fallocation_offset(o._fallocation_offset)
   , _bytes_flush_pending(o._bytes_flush_pending)
   , _concurrent_flushes(std::move(o._concurrent_flushes))
-  , _head(std::move(o._head)) {
+  , _head(std::move(o._head))
+  , _inflight(std::move(o._inflight))
+  , _callbacks(std::exchange(o._callbacks, nullptr)) {
     o._closed = true;
 }
 
@@ -248,6 +251,40 @@ ss::future<> segment_appender::do_next_adaptive_fallocation() {
       });
 }
 
+void segment_appender::maybe_advance_stable_offset(
+  const ss::lw_shared_ptr<inflight_write>& write) {
+    /*
+     * ack the largest committed offset such that all smaller
+     * offsets have been written to disk.
+     */
+    vassert(!_inflight.empty(), "expected non-empty inflight set");
+    if (_inflight.front() == write) {
+        auto committed = _inflight.front()->offset;
+        _inflight.pop_front();
+
+        while (!_inflight.empty()) {
+            auto next = _inflight.front();
+            if (next->done) {
+                _inflight.pop_front();
+                vassert(
+                  committed < next->offset,
+                  "invalid committed offset {} >= {}",
+                  committed,
+                  next->offset);
+                committed = next->offset;
+                continue;
+            }
+            break;
+        }
+
+        if (_callbacks) {
+            _callbacks->committed_physical_offset(committed);
+        }
+    } else {
+        write->done = true;
+    }
+}
+
 void segment_appender::dispatch_background_head_write() {
     vassert(_head, "dispatching write requires active chunk");
     auto h = std::exchange(_head, nullptr);
@@ -270,12 +307,15 @@ void segment_appender::dispatch_background_head_write() {
     _bytes_flush_pending -= h->bytes_pending();
     // background write
     h->flush();
+    _inflight.emplace_back(
+      ss::make_lw_shared<inflight_write>(_committed_offset));
+    auto w = _inflight.back();
     (void)ss::with_semaphore(
       _concurrent_flushes,
       1,
-      [h, this, start_offset, expected, src] {
+      [h, w, this, start_offset, expected, src] {
           return _out.dma_write(start_offset, src, expected, _opts.priority)
-            .then([this, h, expected](size_t got) {
+            .then([this, h, w, expected](size_t got) {
                 if (h->is_full()) {
                     h->reset();
                 }
@@ -287,6 +327,7 @@ void segment_appender::dispatch_background_head_write() {
                 if (unlikely(expected != got)) {
                     return size_missmatch_error("chunk::write", expected, got);
                 }
+                maybe_advance_stable_offset(w);
                 return ss::make_ready_future<>();
             });
       })

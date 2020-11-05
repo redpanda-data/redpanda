@@ -74,6 +74,12 @@ public:
     ss::future<> close();
     ss::future<> flush();
 
+    struct callbacks {
+        virtual void committed_physical_offset(size_t) = 0;
+    };
+
+    void set_callbacks(callbacks* callbacks) { _callbacks = callbacks; }
+
 private:
     void dispatch_background_head_write();
     ss::future<> do_next_adaptive_fallocation();
@@ -88,6 +94,19 @@ private:
     size_t _bytes_flush_pending{0};
     ss::semaphore _concurrent_flushes;
     ss::lw_shared_ptr<chunk> _head;
+
+    struct inflight_write {
+        bool done;
+        size_t offset;
+
+        explicit inflight_write(size_t offset)
+          : done(false)
+          , offset(offset) {}
+    };
+
+    ss::chunked_fifo<ss::lw_shared_ptr<inflight_write>> _inflight;
+    callbacks* _callbacks = nullptr;
+    void maybe_advance_stable_offset(const ss::lw_shared_ptr<inflight_write>&);
 
     friend std::ostream& operator<<(std::ostream&, const segment_appender&);
 };
