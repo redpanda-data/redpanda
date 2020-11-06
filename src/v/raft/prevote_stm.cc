@@ -87,21 +87,21 @@ prevote_stm::process_reply(model::node_id n, ss::future<result<vote_reply>> f) {
         voter_reply->second._is_failed = true;
         voter_reply->second._is_pending = false;
     }
+    _sem.signal(1);
     return ss::make_ready_future<>();
 }
 
 ss::future<> prevote_stm::dispatch_prevote(model::node_id n) {
     return with_gate(_vote_bg, [this, n] {
-        return with_semaphore(_sem, 1, [this, n] {
-            if (n == _ptr->_self) {
-                // skip self prevote
-                return ss::make_ready_future<>();
-            }
-            return do_dispatch_prevote(n).then_wrapped(
-              [this, n](ss::future<result<vote_reply>> f) {
-                  return process_reply(n, std::move(f));
-              });
-        });
+        if (n == _ptr->_self) {
+            // skip self prevote
+            _sem.signal(1);
+            return ss::make_ready_future<>();
+        }
+        return do_dispatch_prevote(n).then_wrapped(
+          [this, n](ss::future<result<vote_reply>> f) {
+              return process_reply(n, std::move(f));
+          });
     });
 }
 
@@ -109,7 +109,6 @@ ss::future<bool> prevote_stm::prevote(bool leadership_transfer) {
     return _ptr->_op_lock
       .with([this, leadership_transfer] {
           _config = _ptr->config();
-          _sem.signal(_config->unique_voter_count());
           _config->for_each_voter(
             [this](model::node_id id) { _replies.emplace(id, vmeta{}); });
 

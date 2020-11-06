@@ -45,30 +45,29 @@ ss::future<result<vote_reply>> vote_stm::do_dispatch_one(model::node_id n) {
 
 ss::future<> vote_stm::dispatch_one(model::node_id n) {
     return with_gate(_vote_bg, [this, n] {
-        return with_semaphore(_sem, 1, [this, n] {
-            if (n == _ptr->_self) {
-                // skip self vote
-                return ss::make_ready_future<>();
-            }
-            return do_dispatch_one(n).then_wrapped(
-              [this, n](ss::future<result<vote_reply>> f) {
-                  auto voter_reply = _replies.find(n);
-                  try {
-                      auto r = f.get0();
-                      vlog(
-                        _ctxlog.info, "vote reply from {} - {}", n, r.value());
-                      voter_reply->second.set_value(r);
-                  } catch (...) {
-                      voter_reply->second.set_value(errc::vote_dispatch_error);
-                  }
-                  if (!voter_reply->second.value) {
-                      vlog(
-                        _ctxlog.info,
-                        "error voting: {}",
-                        voter_reply->second.value->error());
-                  }
-              });
-        });
+        if (n == _ptr->_self) {
+            // skip self vote
+            _sem.signal(1);
+            return ss::make_ready_future<>();
+        }
+        return do_dispatch_one(n).then_wrapped(
+          [this, n](ss::future<result<vote_reply>> f) {
+              auto voter_reply = _replies.find(n);
+              try {
+                  auto r = f.get0();
+                  vlog(_ctxlog.info, "vote reply from {} - {}", n, r.value());
+                  voter_reply->second.set_value(r);
+              } catch (...) {
+                  voter_reply->second.set_value(errc::vote_dispatch_error);
+              }
+              _sem.signal(1);
+              if (!voter_reply->second.value) {
+                  vlog(
+                    _ctxlog.info,
+                    "error voting: {}",
+                    voter_reply->second.value->error());
+              }
+          });
     });
 }
 
@@ -77,7 +76,6 @@ ss::future<> vote_stm::vote(bool leadership_transfer) {
     return _ptr->_op_lock
       .with([this, leadership_transfer] {
           _config = _ptr->config();
-          _sem.signal(_config->unique_voter_count());
           // check again while under op_sem
           if (_ptr->should_skip_vote(leadership_transfer)) {
               return ss::make_ready_future<skip_vote>(skip_vote::yes);
