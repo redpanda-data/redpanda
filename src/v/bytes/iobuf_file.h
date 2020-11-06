@@ -11,7 +11,14 @@
 #include <numeric>
 #include <stdexcept>
 
-/// auto fd = file(make_shared(iobuf_file(buf)));
+/**
+ * auto fd = file(make_shared(iobuf_file(buf)));
+ *
+ * XXX: note that this doesn't currently have proper file_impl semantics. for
+ * instance write_dma does not support random writes, and bulk read does not
+ * throw an out of range error when reading past the end of file. these
+ * limitations aren't permanent: fixing this would be welcome :)
+ */
 struct iobuf_file final : public ss::file_impl {
     explicit iobuf_file(iobuf& ref)
       : _ptr(&ref) {}
