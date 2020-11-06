@@ -1457,9 +1457,233 @@ gdb.printing.register_pretty_printer(gdb.current_objfile(),
                                      build_pretty_printer(),
                                      replace=True)
 
+
+class TreeNode(object):
+    def __init__(self, key):
+        self.key = key
+        self.children_by_key = {}
+
+    def get_or_add(self, key):
+        node = self.children_by_key.get(key, None)
+        if not node:
+            node = self.__class__(key)
+            self.add(node)
+        return node
+
+    def add(self, node):
+        self.children_by_key[node.key] = node
+
+    def squash_child(self):
+        assert self.has_only_one_child()
+        self.children_by_key = next(iter(self.children)).children_by_key
+
+    @property
+    def children(self):
+        return self.children_by_key.values()
+
+    def has_only_one_child(self):
+        return len(self.children_by_key) == 1
+
+    def has_children(self):
+        return bool(self.children_by_key)
+
+    def remove_all(self):
+        self.children_by_key.clear()
+
+
+class ProfNode(TreeNode):
+    def __init__(self, key):
+        super(ProfNode, self).__init__(key)
+        self.size = 0
+        self.count = 0
+        self.tail = []
+
+    @property
+    def attributes(self):
+        return {'size': self.size, 'count': self.count}
+
+
+def collapse_similar(node):
+    while node.has_only_one_child():
+        child = next(iter(node.children))
+        if node.attributes == child.attributes:
+            node.squash_child()
+            node.tail.append(child.key)
+        else:
+            break
+
+    for child in node.children:
+        collapse_similar(child)
+
+
+def strip_level(node, level):
+    if level <= 0:
+        node.remove_all()
+    else:
+        for child in node.children:
+            strip_level(child, level - 1)
+
+
+def print_tree(root_node,
+               formatter=attrgetter('key'),
+               order_by=attrgetter('key'),
+               printer=sys.stdout.write,
+               node_filter=None):
+    def print_node(node, is_last_history):
+        stems = (" |   ", "     ")
+        branches = (" |-- ", " \-- ")
+
+        label_lines = formatter(node).rstrip('\n').split('\n')
+        prefix_without_branch = ''.join(
+            map(stems.__getitem__, is_last_history[:-1]))
+
+        if is_last_history:
+            printer(prefix_without_branch)
+            printer(branches[is_last_history[-1]])
+        printer("%s\n" % label_lines[0])
+
+        for line in label_lines[1:]:
+            printer(''.join(map(stems.__getitem__, is_last_history)))
+            printer("%s\n" % line)
+
+        children = sorted(filter(node_filter, node.children), key=order_by)
+        if children:
+            for child in children[:-1]:
+                print_node(child, is_last_history + [False])
+            print_node(children[-1], is_last_history + [True])
+
+        is_last = not is_last_history or is_last_history[-1]
+        if not is_last:
+            printer("%s%s\n" % (prefix_without_branch, stems[False]))
+
+    if not node_filter or node_filter(root_node):
+        print_node(root_node, [])
+
+
+class redpanda_heapprof(gdb.Command):
+    def __init__(self):
+        gdb.Command.__init__(self, 'redpanda heapprof', gdb.COMMAND_USER,
+                             gdb.COMPLETE_COMMAND)
+
+    def invoke(self, arg, from_tty):
+        parser = argparse.ArgumentParser(description="redpanda heapprof")
+        parser.add_argument(
+            "-G",
+            "--inverted",
+            action="store_true",
+            help="Compute caller-first profile instead of callee-first")
+        parser.add_argument(
+            "-a",
+            "--addresses",
+            action="store_true",
+            help="Show raw addresses before resolved symbol names")
+        parser.add_argument("--no-symbols",
+                            action="store_true",
+                            help="Show only raw addresses")
+        parser.add_argument(
+            "--flame",
+            action="store_true",
+            help=
+            "Write flamegraph data to heapprof.stacks instead of showing the profile"
+        )
+        parser.add_argument(
+            "--min",
+            action="store",
+            type=int,
+            default=0,
+            help="Drop branches allocating less than given amount")
+        try:
+            args = parser.parse_args(arg.split())
+        except SystemExit:
+            return
+
+        root = ProfNode(None)
+        cpu_mem = gdb.parse_and_eval('\'seastar::memory::cpu_mem\'')
+        site = cpu_mem['alloc_site_list_head']
+
+        shared_objects = std_vector(
+            gdb.parse_and_eval('\'seastar::shared_objects\''))
+
+        while site:
+            size = int(site['size'])
+            count = int(site['count'])
+            if size:
+                n = root
+                n.size += size
+                n.count += count
+                bt = site['backtrace']['_main']
+                addresses = list(
+                    int(f['addr']) for f in static_vector(bt['_frames']))
+                addresses.pop(0)  # drop memory::get_backtrace()
+                if args.inverted:
+                    seq = reversed(addresses)
+                else:
+                    seq = addresses
+                for addr in seq:
+                    n = n.get_or_add(addr)
+                    n.size += size
+                    n.count += count
+            site = site['next']
+
+        def resolve_relative(addr):
+            for so in shared_objects:
+                sym = resolve(addr + int(so['begin']))
+                if sym:
+                    return sym
+            return None
+
+        def resolver(addr):
+            if args.no_symbols:
+                return '0x%x' % addr
+            if args.addresses:
+                return '0x%x %s' % (addr, resolve_relative(addr) or '')
+            return resolve_relative(addr) or ('0x%x' % addr)
+
+        if args.flame:
+            file_name = 'heapprof.stacks'
+            with open(file_name, 'w') as out:
+                trace = list()
+
+                def print_node(n):
+                    if n.key:
+                        trace.append(n.key)
+                        trace.extend(n.tail)
+                    for c in n.children:
+                        print_node(c)
+                    if not n.has_children():
+                        out.write("%s %d\n" % (';'.join(
+                            map(lambda x: '%s' %
+                                (x), map(resolver, trace))), n.size))
+                    if n.key:
+                        del trace[-1 - len(n.tail):]
+
+                print_node(root)
+            gdb.write('Wrote %s\n' % (file_name))
+        else:
+
+            def node_formatter(n):
+                if n.key is None:
+                    name = "All"
+                else:
+                    name = resolver(n.key)
+                return "%s (%d, #%d)\n%s" % (name, n.size, n.count, '\n'.join(
+                    map(resolver, n.tail)))
+
+            def node_filter(n):
+                return n.size >= args.min
+
+            collapse_similar(root)
+            print_tree(root,
+                       formatter=node_formatter,
+                       order_by=lambda n: -n.size,
+                       node_filter=node_filter,
+                       printer=gdb.write)
+
+
 redpanda()
 redpanda_memory()
 redpanda_task_queues()
 redpanda_smp_queues()
 redpanda_small_objects()
 redpanda_task_histogram()
+redpanda_heapprof()
