@@ -74,7 +74,7 @@ private:
     ss::future<> dispatch_one(model::node_id);
     ss::future<result<vote_reply>> do_dispatch_one(model::node_id);
     void update_vote_state(ss::semaphore_units<>);
-    ss::future<> process_replies(group_configuration cfg);
+    ss::future<> process_replies();
     void replicate_config_as_new_leader(ss::semaphore_units<>);
     // args
     consensus* _ptr;
@@ -83,6 +83,7 @@ private:
     bool _success = false;
     // for sequentiality/progress
     ss::semaphore _sem;
+    std::optional<raft::group_configuration> _config;
     // for safety to wait for all bg ops
     ss::gate _vote_bg;
     absl::flat_hash_map<model::node_id, vmeta> _replies;
