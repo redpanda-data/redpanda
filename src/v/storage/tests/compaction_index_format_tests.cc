@@ -8,7 +8,6 @@
 // by the Apache License, Version 2.0
 
 #include "bytes/bytes.h"
-#include "bytes/iobuf_file.h"
 #include "bytes/iobuf_parser.h"
 #include "random/generators.h"
 #include "reflection/adl.h"
@@ -20,24 +19,27 @@
 #include "storage/spill_key_index.h"
 #include "test_utils/fixture.h"
 #include "units.h"
+#include "utils/tmpbuf_file.h"
 #include "utils/vint.h"
 
 #include <boost/test/unit_test_suite.hpp>
 
 struct compacted_topic_fixture {};
 FIXTURE_TEST(format_verification, compacted_topic_fixture) {
-    iobuf index_data;
+    tmpbuf_file::store_t index_data;
     auto idx = storage::make_file_backed_compacted_index(
       "dummy name",
-      ss::file(ss::make_shared(iobuf_file(index_data))),
+      ss::file(ss::make_shared(tmpbuf_file(index_data))),
       ss::default_priority_class(),
       1_KiB);
     const auto key = random_generators::get_bytes(1024);
     idx.index(key, model::offset(42), 66).get();
     idx.close().get();
     info("{}", idx);
-    BOOST_REQUIRE_EQUAL(index_data.size_bytes(), 1047);
-    iobuf_parser p(index_data.share(0, index_data.size_bytes()));
+
+    iobuf data = std::move(index_data).release_iobuf();
+    BOOST_REQUIRE_EQUAL(data.size_bytes(), 1047);
+    iobuf_parser p(data.share(0, data.size_bytes()));
     (void)p.consume_type<uint16_t>(); // SIZE
     (void)p.consume_type<uint8_t>();  // TYPE
     auto [offset, _1] = p.read_varlong();
@@ -57,10 +59,10 @@ FIXTURE_TEST(format_verification, compacted_topic_fixture) {
     BOOST_REQUIRE(footer.crc != 0);
 }
 FIXTURE_TEST(format_verification_max_key, compacted_topic_fixture) {
-    iobuf index_data;
+    tmpbuf_file::store_t index_data;
     auto idx = storage::make_file_backed_compacted_index(
       "dummy name",
-      ss::file(ss::make_shared(iobuf_file(index_data))),
+      ss::file(ss::make_shared(tmpbuf_file(index_data))),
       ss::default_priority_class(),
       1_MiB);
     const auto key = random_generators::get_bytes(1_MiB);
@@ -73,13 +75,14 @@ FIXTURE_TEST(format_verification_max_key, compacted_topic_fixture) {
      *
      * max_key_size + sizeof(uint8_t) + sizeof(uint16_t) + vint(42) + vint(66)
      */
+    iobuf data = std::move(index_data).release_iobuf();
 
     BOOST_REQUIRE_EQUAL(
-      index_data.size_bytes(),
+      data.size_bytes(),
       storage::compacted_index::footer_size
         + std::numeric_limits<uint16_t>::max() - 2 * vint::max_length
         + vint::vint_size(42) + vint::vint_size(66) + 1 + 2);
-    iobuf_parser p(index_data.share(0, index_data.size_bytes()));
+    iobuf_parser p(data.share(0, data.size_bytes()));
 
     const size_t entry = p.consume_type<uint16_t>(); // SIZE
 
@@ -90,10 +93,10 @@ FIXTURE_TEST(format_verification_max_key, compacted_topic_fixture) {
         + 2);
 }
 FIXTURE_TEST(format_verification_roundtrip, compacted_topic_fixture) {
-    iobuf index_data;
+    tmpbuf_file::store_t index_data;
     auto idx = storage::make_file_backed_compacted_index(
       "dummy name",
-      ss::file(ss::make_shared(iobuf_file(index_data))),
+      ss::file(ss::make_shared(tmpbuf_file(index_data))),
       ss::default_priority_class(),
       1_MiB);
     const auto key = random_generators::get_bytes(20);
@@ -103,7 +106,7 @@ FIXTURE_TEST(format_verification_roundtrip, compacted_topic_fixture) {
 
     auto rdr = storage::make_file_backed_compacted_reader(
       "dummy name",
-      ss::file(ss::make_shared(iobuf_file(index_data))),
+      ss::file(ss::make_shared(tmpbuf_file(index_data))),
       ss::default_priority_class(),
       32_KiB);
     auto footer = rdr.load_footer().get0();
@@ -118,10 +121,10 @@ FIXTURE_TEST(format_verification_roundtrip, compacted_topic_fixture) {
 }
 FIXTURE_TEST(
   format_verification_roundtrip_exceeds_capacity, compacted_topic_fixture) {
-    iobuf index_data;
+    tmpbuf_file::store_t index_data;
     auto idx = storage::make_file_backed_compacted_index(
       "dummy name",
-      ss::file(ss::make_shared(iobuf_file(index_data))),
+      ss::file(ss::make_shared(tmpbuf_file(index_data))),
       ss::default_priority_class(),
       1_MiB);
     const auto key = random_generators::get_bytes(1_MiB);
@@ -131,7 +134,7 @@ FIXTURE_TEST(
 
     auto rdr = storage::make_file_backed_compacted_reader(
       "dummy name",
-      ss::file(ss::make_shared(iobuf_file(index_data))),
+      ss::file(ss::make_shared(tmpbuf_file(index_data))),
       ss::default_priority_class(),
       32_KiB);
     auto footer = rdr.load_footer().get0();
@@ -148,10 +151,10 @@ FIXTURE_TEST(
 }
 
 FIXTURE_TEST(key_reducer_no_truncate_filter, compacted_topic_fixture) {
-    iobuf index_data;
+    tmpbuf_file::store_t index_data;
     auto idx = storage::make_file_backed_compacted_index(
       "dummy name",
-      ss::file(ss::make_shared(iobuf_file(index_data))),
+      ss::file(ss::make_shared(tmpbuf_file(index_data))),
       ss::default_priority_class(),
       // FORCE eviction with every key basically
       1_KiB);
@@ -172,7 +175,7 @@ FIXTURE_TEST(key_reducer_no_truncate_filter, compacted_topic_fixture) {
 
     auto rdr = storage::make_file_backed_compacted_reader(
       "dummy name",
-      ss::file(ss::make_shared(iobuf_file(index_data))),
+      ss::file(ss::make_shared(tmpbuf_file(index_data))),
       ss::default_priority_class(),
       32_KiB);
     auto key_bitmap = rdr
@@ -192,10 +195,10 @@ FIXTURE_TEST(key_reducer_no_truncate_filter, compacted_topic_fixture) {
 }
 
 FIXTURE_TEST(key_reducer_max_mem, compacted_topic_fixture) {
-    iobuf index_data;
+    tmpbuf_file::store_t index_data;
     auto idx = storage::make_file_backed_compacted_index(
       "dummy name",
-      ss::file(ss::make_shared(iobuf_file(index_data))),
+      ss::file(ss::make_shared(tmpbuf_file(index_data))),
       ss::default_priority_class(),
       // FORCE eviction with every key basically
       1_KiB);
@@ -216,7 +219,7 @@ FIXTURE_TEST(key_reducer_max_mem, compacted_topic_fixture) {
 
     auto rdr = storage::make_file_backed_compacted_reader(
       "dummy name",
-      ss::file(ss::make_shared(iobuf_file(index_data))),
+      ss::file(ss::make_shared(tmpbuf_file(index_data))),
       ss::default_priority_class(),
       32_KiB);
 
@@ -260,10 +263,11 @@ FIXTURE_TEST(key_reducer_max_mem, compacted_topic_fixture) {
     BOOST_REQUIRE(exact_mem_bitmap.contains(99));
 }
 FIXTURE_TEST(index_filtered_copy_tests, compacted_topic_fixture) {
-    iobuf index_data;
+    tmpbuf_file::store_t index_data;
+
     auto idx = storage::make_file_backed_compacted_index(
       "dummy name",
-      ss::file(ss::make_shared(iobuf_file(index_data))),
+      ss::file(ss::make_shared(tmpbuf_file(index_data))),
       ss::default_priority_class(),
       // FORCE eviction with every key basically
       1_KiB);
@@ -284,7 +288,7 @@ FIXTURE_TEST(index_filtered_copy_tests, compacted_topic_fixture) {
 
     auto rdr = storage::make_file_backed_compacted_reader(
       "dummy name",
-      ss::file(ss::make_shared(iobuf_file(index_data))),
+      ss::file(ss::make_shared(tmpbuf_file(index_data))),
       ss::default_priority_class(),
       32_KiB);
 
@@ -301,10 +305,10 @@ FIXTURE_TEST(index_filtered_copy_tests, compacted_topic_fixture) {
     BOOST_REQUIRE(bitmap.contains(99));
 
     // the main test
-    iobuf final_data;
+    tmpbuf_file::store_t final_data;
     auto final_idx = storage::make_file_backed_compacted_index(
       "dummy name - final idx",
-      ss::file(ss::make_shared(iobuf_file(final_data))),
+      ss::file(ss::make_shared(tmpbuf_file(final_data))),
       ss::default_priority_class(),
       // FORCE eviction with every key basically
       1_KiB);
@@ -320,7 +324,7 @@ FIXTURE_TEST(index_filtered_copy_tests, compacted_topic_fixture) {
     {
         auto final_rdr = storage::make_file_backed_compacted_reader(
           "dummy name - final ",
-          ss::file(ss::make_shared(iobuf_file(final_data))),
+          ss::file(ss::make_shared(tmpbuf_file(final_data))),
           ss::default_priority_class(),
           32_KiB);
         final_rdr.verify_integrity().get();
