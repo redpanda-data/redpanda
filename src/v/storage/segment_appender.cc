@@ -33,7 +33,7 @@ size_missmatch_error(const char* ctx, size_t expected, size_t got) {
 segment_appender::segment_appender(ss::file f, options opts)
   : _out(std::move(f))
   , _opts(opts)
-  , _concurrent_flushes(_opts.number_of_chunks) {
+  , _concurrent_flushes(ss::semaphore::max_counter()) {
     const auto alignment = _out.disk_write_dma_alignment();
     vassert(
       internal::chunk_cache::alignment % alignment == 0,
@@ -221,7 +221,7 @@ ss::future<> segment_appender::close() {
 ss::future<> segment_appender::do_next_adaptive_fallocation() {
     return ss::with_semaphore(
              _concurrent_flushes,
-             _opts.number_of_chunks,
+             ss::semaphore::max_counter(),
              [this]() mutable {
                  // step - compute step rounded to 4096; this is needed because
                  // during a truncation the follow up fallocation might not be
@@ -342,7 +342,7 @@ ss::future<> segment_appender::flush() {
     }
     return ss::with_semaphore(
              _concurrent_flushes,
-             _opts.number_of_chunks,
+             ss::semaphore::max_counter(),
              [this]() mutable { return _out.flush(); })
       .handle_exception([this](std::exception_ptr e) {
           vassert(false, "Could not flush: {} - {}", e, *this);
