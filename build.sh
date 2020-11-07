@@ -7,10 +7,10 @@ if [[ ! -z ${CCACHE_DIR} && -e /dev/shm ]]; then export CCACHE_DIR=/dev/shm/redp
 
 # Change Debug via  -DCMAKE_BUILD_TYPE=Debug
 cmake -DCMAKE_BUILD_TYPE=Release \
-      -B$root/build \
-      -H$root \
-      -GNinja \
-      -DCMAKE_C_COMPILER=$CC \
-      -DCMAKE_CXX_COMPILER=$CXX
+  -B$root/build \
+  -H$root \
+  -GNinja \
+  -DCMAKE_C_COMPILER=$CC \
+  -DCMAKE_CXX_COMPILER=$CXX
 
 (cd $root/build && ninja && ctest -R _rpunit)
