@@ -1,5 +1,13 @@
 #include "kafka/protocol_utils.h"
 
+#include "bytes/iobuf.h"
+#include "bytes/iobuf_parser.h"
+
+#include <seastar/core/temporary_buffer.hh>
+
+#include <stdexcept>
+#include <vector>
+
 namespace kafka {
 // TODO: move to iobuf_parser
 ss::future<std::optional<request_header>>
@@ -29,6 +37,11 @@ parse_header(ss::input_stream<char>& src) {
           if (client_id_size == no_client_id) {
               return ss::make_ready_future<std::optional<request_header>>(
                 std::move(header));
+          }
+          if (unlikely(client_id_size < 0)) {
+              // header parsing error, force connection shutdown
+              throw std::runtime_error(
+                fmt::format("Invalid client_id size {}", client_id_size));
           }
           return src.read_exactly(client_id_size)
             .then([&src, header = std::move(header)](
