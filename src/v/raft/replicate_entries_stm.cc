@@ -177,9 +177,15 @@ replicate_entries_stm::apply(ss::semaphore_units<> u) {
           // store offset and term of an appended entry
           auto appended_offset = append_result.value().last_offset;
           auto appended_term = append_result.value().last_term;
-
-          auto stop_cond = [this, appended_offset] {
-              return _ptr->committed_offset() >= appended_offset;
+          /**
+           * we have to finish replication when committed offset is greater or
+           * equal to the appended offset or when term have changed after
+           * commit_index update, if that happend it means that entry might
+           * have been either commited or truncated
+           */
+          auto stop_cond = [this, appended_offset, appended_term] {
+              return _ptr->committed_offset() >= appended_offset
+                     || _ptr->term() > appended_term;
           };
           return _ptr->_commit_index_updated.wait(stop_cond).then(
             [this, appended_offset, appended_term] {
