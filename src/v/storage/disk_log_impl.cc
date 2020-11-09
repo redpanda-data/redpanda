@@ -37,7 +37,8 @@ disk_log_impl::disk_log_impl(
   , _segs(std::move(segs))
   , _kvstore(kvstore)
   , _start_offset(read_start_offset())
-  , _lock_mngr(_segs) {
+  , _lock_mngr(_segs)
+  , _max_segment_size(internal::jitter_segment_size(max_segment_size())) {
     const bool is_compacted = config().is_compacted();
     for (auto& s : _segs) {
         _probe.add_initial_segment(*s);
@@ -442,7 +443,7 @@ size_t disk_log_impl::bytes_left_before_roll() const {
         return 0;
     }
     auto fo = back->appender().file_byte_offset();
-    auto max = max_segment_size();
+    auto max = _max_segment_size;
     if (fo >= max) {
         return 0;
     }
@@ -460,8 +461,8 @@ ss::future<> disk_log_impl::maybe_roll(
         return new_segment(next_offset, t, iopc);
     }
     bool size_should_roll = false;
-    const auto max = max_segment_size();
-    if (ptr->appender().file_byte_offset() >= max) {
+
+    if (ptr->appender().file_byte_offset() >= _max_segment_size) {
         size_should_roll = true;
     }
     if (t != term() || size_should_roll) {

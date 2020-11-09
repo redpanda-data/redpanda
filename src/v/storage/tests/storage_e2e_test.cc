@@ -20,6 +20,7 @@
 #include <boost/test/tools/old/interface.hpp>
 
 #include <algorithm>
+#include <iterator>
 #include <numeric>
 
 void validate_offsets(
@@ -1016,7 +1017,6 @@ FIXTURE_TEST(partition_size_while_cleanup, storage_test_fixture) {
           return sum + b.size_bytes();
       });
 
-    BOOST_REQUIRE_EQUAL(batches.size(), 4);
     // Expected size is equal to size of 4 batches (compacted one) plus batches
     // being present in active segment that is not compacted
 
@@ -1025,3 +1025,34 @@ FIXTURE_TEST(partition_size_while_cleanup, storage_test_fixture) {
     BOOST_REQUIRE_EQUAL(
       get_disk_log(log)->get_probe().partition_size(), expected_size);
 };
+
+FIXTURE_TEST(check_segment_size_jitter, storage_test_fixture) {
+    auto cfg = default_log_config(test_dir);
+
+    // defaults
+    cfg.max_segment_size = 100_KiB;
+    cfg.stype = storage::log_config::storage_type::disk;
+    ss::abort_source as;
+    storage::log_manager mgr = make_log_manager(cfg);
+    using overrides_t = storage::ntp_config::default_overrides;
+
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    std::vector<storage::log> logs;
+    for (int i = 0; i < 5; ++i) {
+        auto ntp = model::ntp("default", fmt::format("test-{}", i), 0);
+        storage::ntp_config ntp_cfg(ntp, mgr.config().base_dir);
+        auto log = mgr.manage(std::move(ntp_cfg)).get0();
+        auto result = append_exactly(log, 1000, 100).get0();
+        logs.push_back(log);
+    }
+    std::vector<size_t> sizes;
+    for (auto& l : logs) {
+        auto& segs = get_disk_log(l)->segments();
+        sizes.push_back((*segs.begin())->size_bytes());
+    }
+    std::sort(sizes.begin(), sizes.end());
+    auto end = std::unique(sizes.begin(), sizes.end());
+    auto unique_cnt = std::distance(sizes.begin(), end);
+    // check if all logs have unique segment size
+    BOOST_REQUIRE_EQUAL(unique_cnt, sizes.size());
+}
