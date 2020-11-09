@@ -303,7 +303,7 @@ ss::future<> recovery_stm::replicate(model::record_batch_reader&& reader) {
 }
 
 clock_type::time_point recovery_stm::append_entries_timeout() {
-    return raft::clock_type::now() + _ptr->_replicate_append_timeout;
+    return raft::clock_type::now() + _ptr->_recovery_append_timeout;
 }
 
 ss::future<result<append_entries_reply>>
