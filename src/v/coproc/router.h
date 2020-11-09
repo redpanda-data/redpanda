@@ -21,13 +21,11 @@
 #include "storage/api.h"
 #include "storage/ntp_config.h"
 #include "storage/types.h"
-#include "vlog.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future-util.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
-#include <seastar/core/semaphore.hh>
 #include <seastar/net/inet_address.hh>
 #include <seastar/net/socket_defs.hh>
 
@@ -45,12 +43,14 @@ public:
 
     /// Begin the loop on the current shard
     ss::future<> start() {
-        (void)ss::with_gate(_gate, [this] { return route(); });
+        _loop_timer.set_callback([this] { (void)route(); });
+        _loop_timer.arm(_jitter());
         return ss::now();
     }
 
     /// Shut down the loop on the current shard
     ss::future<> stop() {
+        _loop_timer.cancel();
         _abort_source.request_abort();
         return ss::when_all(_gate.close(), _transport.stop()).discard_result();
     }
@@ -89,7 +89,9 @@ private:
     ss::future<> process_reply_one(process_batch_reply::data);
 
     ss::future<> route();
+    ss::future<> do_route();
     ss::future<opt_req_data> route_ntp(const model::ntp&, topic_state&);
+    ss::future<> process_batch(std::vector<process_batch_request::data>);
     ss::future<> send_batch(supervisor_client_protocol, process_batch_request);
 
     ss::future<std::optional<offset_rbr_pair>>
@@ -108,6 +110,8 @@ private:
     ss::gate _gate;
     ss::abort_source _abort_source;
     uint8_t _connection_attempts{0};
+    simple_time_jitter<ss::lowres_clock> _jitter;
+    ss::timer<ss::lowres_clock> _loop_timer;
 
     /// Core in-memory data structure that manages the relationships between
     /// topics and coprocessor scripts

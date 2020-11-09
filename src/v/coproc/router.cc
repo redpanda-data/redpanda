@@ -12,6 +12,7 @@
 #include "coproc/reference_window_consumer.hpp"
 #include "coproc/supervisor.h"
 #include "coproc/types.h"
+#include "likely.h"
 #include "model/limits.h"
 #include "model/record_batch_reader.h"
 #include "rpc/backoff_policy.h"
@@ -20,6 +21,7 @@
 #include "vassert.h"
 #include "vlog.h"
 
+#include <seastar/core/gate.hh>
 #include <seastar/core/loop.hh>
 #include <seastar/core/map_reduce.hh>
 
@@ -43,6 +45,7 @@ router::extract_offset(model::record_batch_reader reader) {
 
 router::router(ss::socket_address addr, ss::sharded<storage::api>& api)
   : _api(api)
+  , _jitter(std::chrono::milliseconds(10))
   , _transport(
       {rpc::transport_configuration{
         .server_addr = addr, .credentials = std::nullopt}},
@@ -86,46 +89,64 @@ ss::future<> router::route() {
      * it can be initiated internally by detection of a failed connection to the
      * engine (after retry policy expires)
      */
-    return ss::do_until(
-      [this] { return _abort_source.abort_requested(); },
-      [this] {
-          auto reducer =
-            [](std::vector<process_batch_request::data> acc, opt_req_data x) {
-                if (x.has_value()) {
-                    acc.emplace_back(std::move(*x));
-                }
-                return acc;
-            };
-          return ss::map_reduce(
-                   _sources.begin(),
-                   _sources.end(),
-                   [this](std::pair<const model::ntp, topic_state>& p) {
-                       return route_ntp(p.first, p.second);
-                   },
-                   std::vector<process_batch_request::data>(),
-                   std::move(reducer))
-            .then([this](std::vector<process_batch_request::data> batch) {
-                if (batch.empty()) {
-                    return ss::now();
-                }
-                process_batch_request r{.reqs = std::move(batch)};
-                return get_client().then(
-                  [this, r = std::move(r)](
-                    result<supervisor_client_protocol> transport) mutable {
-                      if (!transport) {
-                          const auto err = transport.error();
-                          if (err == rpc::errc::disconnected_endpoint) {
-                              vlog(
-                                coproclog.error,
-                                "Shutting down loop, failed to connect to "
-                                "coproc server");
-                              _abort_source.request_abort();
-                          }
-                          return ss::now();
-                      }
-                      return send_batch(transport.value(), std::move(r));
-                  });
-            });
+    try {
+        return ss::with_gate(_gate, [this] {
+            if (unlikely(_abort_source.abort_requested())) {
+                vlog(
+                  coproclog.info, "Abort source triggered, shutting down loop");
+                return ss::now();
+            }
+            return do_route();
+        });
+    } catch (const ss::gate_closed_exception& gce) {
+        vlog(coproclog.debug, "Gate closed exception encountered: {}", gce);
+        return ss::now();
+    }
+}
+
+ss::future<> router::do_route() {
+    auto reducer =
+      [](std::vector<process_batch_request::data> acc, opt_req_data x) {
+          if (x.has_value()) {
+              acc.emplace_back(std::move(*x));
+          }
+          return acc;
+      };
+    return ss::map_reduce(
+             _sources.begin(),
+             _sources.end(),
+             [this](std::pair<const model::ntp, topic_state>& p) {
+                 return route_ntp(p.first, p.second);
+             },
+             std::vector<process_batch_request::data>(),
+             std::move(reducer))
+      .then([this](std::vector<process_batch_request::data> batch) {
+          return process_batch(std::move(batch));
+      })
+      .then([this, next_loop = _jitter()] { _loop_timer.rearm(next_loop); });
+}
+
+ss::future<>
+router::process_batch(std::vector<process_batch_request::data> batch) {
+    if (batch.empty()) {
+        return ss::now();
+    }
+    return get_client().then(
+      [this, batch = std::move(batch)](
+        result<supervisor_client_protocol> transport) mutable {
+          if (!transport) {
+              const auto err = transport.error();
+              if (err == rpc::errc::disconnected_endpoint) {
+                  vlog(
+                    coproclog.error,
+                    "Shutting down loop, failed to connect to "
+                    "coproc server");
+                  _abort_source.request_abort();
+              }
+              return ss::now();
+          }
+          return send_batch(
+            transport.value(), process_batch_request{.reqs = std::move(batch)});
       });
 }
 
