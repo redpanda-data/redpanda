@@ -30,22 +30,12 @@
 
 #include <filesystem>
 
-struct redpanda_thread_fixture_opts {
-    bool enable_pid_file{false};
-    bool developer_mode{true};
-    bool enable_admin_api{false};
-    bool enable_coproc{false};
-    bool disable_metrics{true};
-    int node_id{1};
-};
-
 class redpanda_thread_fixture {
 public:
     static constexpr const char* rack_name = "i-am-rack";
 
-    redpanda_thread_fixture(
-      redpanda_thread_fixture_opts opts = redpanda_thread_fixture_opts()) {
-        configure(opts);
+    redpanda_thread_fixture() {
+        configure();
         app.initialize();
         app.check_environment();
         app.configure_admin_server();
@@ -60,21 +50,21 @@ public:
 
     config::configuration& lconf() { return config::shard_local_cfg(); }
 
-    void configure(redpanda_thread_fixture_opts opts) {
+    void configure() {
         data_dir = fmt::format("test.dir_{}", time(0));
-        ss::smp::invoke_on_all([this, opts] {
+        ss::smp::invoke_on_all([this] {
             auto& config = config::shard_local_cfg();
-            config.get("enable_pid_file").set_value(opts.enable_pid_file);
-            config.get("developer_mode").set_value(opts.developer_mode);
-            config.get("enable_admin_api").set_value(opts.enable_admin_api);
-            config.get("enable_coproc").set_value(opts.enable_coproc);
+            config.get("enable_pid_file").set_value(false);
+            config.get("developer_mode").set_value(true);
+            config.get("enable_admin_api").set_value(false);
+            config.get("enable_coproc").set_value(true);
             config.get("rack").set_value(std::optional<ss::sstring>(rack_name));
-            config.get("disable_metrics").set_value(opts.disable_metrics);
+            config.get("disable_metrics").set_value(true);
 
             config.get("data_directory")
               .set_value(config::data_directory_path{.path = data_dir});
 
-            config.get("node_id").set_value(opts.node_id);
+            config.get("node_id").set_value(1);
         }).get0();
     }
 

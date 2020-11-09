@@ -1,6 +1,5 @@
 #include "cluster/namespace.h"
 #include "cluster/partition.h"
-#include "coproc/reference_window_consumer.hpp"
 #include "coproc/script_manager.h"
 #include "coproc/tests/coprocessor.h"
 #include "coproc/tests/supervisor_test_fixture.h"
@@ -26,14 +25,8 @@ class redpanda_plus_supervisor_fixture
   , public supervisor_test_fixture {
 public:
     redpanda_plus_supervisor_fixture()
-      : redpanda_thread_fixture(enable_coproc_opts())
+      : redpanda_thread_fixture()
       , supervisor_test_fixture() {}
-
-    redpanda_thread_fixture_opts enable_coproc_opts() {
-        redpanda_thread_fixture_opts opts;
-        opts.enable_coproc = true;
-        return opts;
-    }
 
     template<typename CoprocessorType>
     bool add_and_register_coprocessor(uint32_t sid, simple_input_set&& sis) {
@@ -82,7 +75,11 @@ public:
                       .consume(
                         kafka::kafka_batch_serializer{}, model::no_timeout)
                       .then([](kafka::kafka_batch_serializer::result res) {
-                          /// TODO: Check crc
+                          // TODO(Rob) crc checks
+                          // auto& [res, kafka_crc_check] = result;
+                          // if (!kafka_crc_check) {
+                          //     return std::optional<iobuf>(std::nullopt);
+                          // }
                           return std::optional<iobuf>(std::move(res.data));
                       });
                 });
