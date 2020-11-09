@@ -31,6 +31,10 @@ public:
 
     void setup_metrics(const model::ntp& ntp);
 
+    void heartbeat_request_error() { ++_heartbeat_request_error; };
+    void replicate_request_error() { ++_replicate_request_error; };
+    void recovery_request_error() { ++_recovery_request_error; };
+
 private:
     uint64_t _vote_requests = 0;
     uint64_t _append_requests = 0;
@@ -45,6 +49,9 @@ private:
     uint32_t _configuration_updates = 0;
     uint64_t _recovery_requests = 0;
     uint64_t _leadership_changes = 0;
+    uint64_t _heartbeat_request_error = 0;
+    uint64_t _replicate_request_error = 0;
+    uint64_t _recovery_request_error = 0;
 
     ss::metrics::metric_groups _metrics;
 };

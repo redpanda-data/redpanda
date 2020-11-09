@@ -270,6 +270,7 @@ ss::future<> recovery_stm::replicate(model::record_batch_reader&& reader) {
               r,
               r.error().message());
             _stop_requested = true;
+            _ptr->get_probe().recovery_request_error();
         }
         _ptr->process_append_entries_reply(_node_id, r.value(), seq);
         // If request was reordered we have to stop recovery as follower state

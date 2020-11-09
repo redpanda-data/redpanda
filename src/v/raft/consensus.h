@@ -197,6 +197,8 @@ public:
 
     model::offset read_last_applied() const;
 
+    probe& get_probe() { return _probe; };
+
 private:
     friend replicate_entries_stm;
     friend vote_stm;

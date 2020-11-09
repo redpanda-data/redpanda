@@ -79,6 +79,21 @@ void probe::setup_metrics(const model::ntp& ntp) {
          "leadership_changes",
          [this] { return _leadership_changes; },
          sm::description("Number of leadership changes"),
+         labels),
+       sm::make_derive(
+         "replicate_request_errors",
+         [this] { return _replicate_request_error; },
+         sm::description("Number of failed replicate requests"),
+         labels),
+       sm::make_derive(
+         "heartbeat_requests_errors",
+         [this] { return _heartbeat_request_error; },
+         sm::description("Number of failed heartbeat requests"),
+         labels),
+       sm::make_derive(
+         "recovery_requests_errors",
+         [this] { return _recovery_request_error; },
+         sm::description("Number of failed recovery requests"),
          labels)});
 }
 

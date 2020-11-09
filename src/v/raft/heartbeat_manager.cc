@@ -185,6 +185,7 @@ void heartbeat_manager::process_reply(
                 continue;
             }
             // propagate error
+            (*it)->get_probe().heartbeat_request_error();
             (*it)->process_append_entries_reply(
               n, result<append_entries_reply>(r.error()), seq_id);
         }
