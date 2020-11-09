@@ -21,6 +21,7 @@
 #include "storage/api.h"
 #include "storage/ntp_config.h"
 #include "storage/types.h"
+#include "utils/mutex.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/future-util.hh>
@@ -72,7 +73,7 @@ private:
     struct topic_offsets {
         model::offset committed{model::model_limits<model::offset>::min()};
         model::offset dirty{model::model_limits<model::offset>::min()};
-        ss::semaphore sem_{1};
+        mutex mtx;
     };
 
     struct topic_state {

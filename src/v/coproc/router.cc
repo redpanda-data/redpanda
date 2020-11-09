@@ -293,21 +293,20 @@ ss::future<> router::process_reply_one(process_batch_reply::data e) {
 
 ss::future<router::opt_cfg>
 router::make_reader_cfg(storage::log log, topic_offsets& head) {
-    return ss::get_units(head.sem_, 1)
-      .then([this, log, committed = head.committed](auto /*units*/) {
-          const storage::offset_stats ostats = log.offsets();
-          if (committed >= ostats.committed_offset) {
-              // Signifies materialized log is up-to-date with source, there
-              // isn't anything more to read
-              return opt_cfg(std::nullopt);
-          }
-          const model::offset start
-            = (committed == model::model_limits<model::offset>::min())
-                ? model::offset(0)
-                : committed + model::offset(1);
-          return opt_cfg(
-            reader_cfg(start, model::model_limits<model::offset>::max()));
-      });
+    return head.mtx.with([this, log, committed = head.committed]() {
+        const storage::offset_stats ostats = log.offsets();
+        if (committed >= ostats.committed_offset) {
+            // Signifies materialized log is up-to-date with source, there
+            // isn't anything more to read
+            return opt_cfg(std::nullopt);
+        }
+        const model::offset start
+          = (committed == model::model_limits<model::offset>::min())
+              ? model::offset(0)
+              : committed + model::offset(1);
+        return opt_cfg(
+          reader_cfg(start, model::model_limits<model::offset>::max()));
+    });
 }
 
 ss::future<storage::log> router::get_log(const model::ntp& ntp) {
