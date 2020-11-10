@@ -6,14 +6,19 @@
 #include "rpc/types.h"
 #include "test_utils/fixture.h"
 
+#include <seastar/core/condition-variable.hh>
+#include <seastar/core/seastar.hh>
 #include <seastar/core/semaphore.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/util/defer.hh>
+#include <seastar/util/file.hh>
+#include <seastar/util/tmp_file.hh>
 
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test_log.hpp>
 
 #include <exception>
+#include <filesystem>
 
 using namespace std::chrono_literals; // NOLINT
 
@@ -62,6 +67,123 @@ FIXTURE_TEST(rpcgen_tls_integration, rpc_integration_fixture) {
                    rpc::client_opts(rpc::no_timeout))
                  .get0();
     BOOST_REQUIRE_EQUAL(ret.value().data.x, 66);
+}
+
+class temporary_dir {
+public:
+    temporary_dir()
+      : _tmp_path("/tmp/rpc-test-XXXX") {
+        _dir = ss::make_tmp_dir(_tmp_path).get0();
+    }
+
+    temporary_dir(temporary_dir const&) = delete;
+    temporary_dir& operator=(temporary_dir const&) = delete;
+    temporary_dir(temporary_dir&&) = delete;
+    temporary_dir& operator=(temporary_dir&&) = delete;
+
+    ~temporary_dir() { _dir.remove().get0(); }
+    /// Prefix file name with tmp path
+    std::filesystem::path prefix(const char* name) const {
+        auto res = _dir.get_path();
+        res.append(name);
+        return res;
+    }
+    /// Copy file from current work dir to tmp-dir
+    std::filesystem::path copy_file(const char* src, const char* dst) {
+        auto res = prefix(dst);
+        if (std::filesystem::exists(res)) {
+            ss::remove_file(res.native()).get0();
+        }
+        BOOST_REQUIRE(std::filesystem::copy_file(src, res));
+        return res;
+    }
+
+private:
+    std::filesystem::path _tmp_path;
+    ss::tmp_dir _dir;
+};
+
+FIXTURE_TEST(rpcgen_reload_credentials_integration, rpc_integration_fixture) {
+    // Server starts with bad credentials, files are updated on disk and then
+    // client connects. Expected behavior is that client can connect without
+    // issues. Condition variable is used to wait for credentials to reload.
+    temporary_dir tmp;
+    // client credentials
+    auto client_key = tmp.copy_file("redpanda.key", "client.key");
+    auto client_crt = tmp.copy_file("redpanda.crt", "client.crt");
+    auto client_ca = tmp.copy_file(
+      "root_certificate_authority.chain_cert", "ca_client.pem");
+    auto client_creds_builder = config::tls_config(
+                                  true,
+                                  config::key_cert{
+                                    client_key.native(), client_crt.native()},
+                                  client_ca.native(),
+                                  true)
+                                  .get_credentials_builder()
+                                  .get0();
+    // server credentials
+    auto server_key = tmp.copy_file("redpanda.other.key", "server.key");
+    auto server_crt = tmp.copy_file("redpanda.other.crt", "server.crt");
+    auto server_ca = tmp.copy_file(
+      "root_certificate_authority.other.chain_cert", "ca_server.pem");
+    auto server_creds_builder = config::tls_config(
+                                  true,
+                                  config::key_cert{
+                                    server_key.native(), server_crt.native()},
+                                  server_ca.native(),
+                                  true)
+                                  .get_credentials_builder()
+                                  .get0();
+
+    std::unordered_set<ss::sstring> updated;
+    ss::condition_variable cvar;
+    configure_server(
+      server_creds_builder,
+      [&updated, &cvar](
+        const std::unordered_set<ss::sstring>& delta,
+        std::exception_ptr const& err) {
+          info("server credentials reload event");
+          if (err) {
+              try {
+                  std::rethrow_exception(err);
+              } catch (...) {
+                  // The expection is expected to be triggered when the
+                  // temporary files are deleted at the end of the test
+                  info(
+                    "tls reloadable credentials callback exception: {}",
+                    std::current_exception());
+              }
+          } else {
+              for (auto const& name : delta) {
+                  updated.insert(name);
+              }
+              cvar.signal();
+          }
+      });
+
+    register_services();
+    start_server();
+    info("server started");
+
+    // fix client credentials and reconnect
+    info("replacing files");
+    tmp.copy_file("redpanda.key", "server.key");
+    tmp.copy_file("redpanda.crt", "server.crt");
+    tmp.copy_file("root_certificate_authority.chain_cert", "ca_server.pem");
+
+    cvar.wait([&updated] { return updated.size() == 3; }).get();
+
+    info("client connection attempt");
+    auto cli = rpc::client<cycling::team_movistar_client_protocol>(
+      client_config(client_creds_builder));
+    cli.connect().get();
+    auto okret = cli
+                   .ibis_hakka(
+                     cycling::san_francisco{66},
+                     rpc::client_opts(rpc::no_timeout))
+                   .get0();
+    BOOST_REQUIRE_EQUAL(okret.value().data.x, 66);
+    cli.stop().get0();
 }
 
 FIXTURE_TEST(client_muxing, rpc_integration_fixture) {

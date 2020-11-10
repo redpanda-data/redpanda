@@ -57,6 +57,9 @@ rp_test(
   INPUT_FILES ${CMAKE_CURRENT_SOURCE_DIR}/redpanda.crt
               ${CMAKE_CURRENT_SOURCE_DIR}/redpanda.key
               ${CMAKE_CURRENT_SOURCE_DIR}/root_certificate_authority.chain_cert
+              ${CMAKE_CURRENT_SOURCE_DIR}/redpanda.other.crt
+              ${CMAKE_CURRENT_SOURCE_DIR}/redpanda.other.key
+              ${CMAKE_CURRENT_SOURCE_DIR}/root_certificate_authority.other.chain_cert
   ARGS "-- -c 1"
 )
 
