@@ -23,6 +23,8 @@
 #include <seastar/core/sharded.hh>
 #include <seastar/util/bool_class.hh>
 
+#include <chrono>
+
 namespace raft {
 class replicate_entries_stm;
 class vote_stm;
@@ -361,6 +363,9 @@ private:
     configuration_manager _configuration_manager;
     model::offset _max_consumable_offset;
     offset_monitor _consumable_offset_monitor;
+    ss::timer<clock_type> _flush_timer;
+    clock_type::time_point _last_write;
+    std::chrono::milliseconds _flush_debounce_timeout;
     friend std::ostream& operator<<(std::ostream&, const consensus&);
 };
 
