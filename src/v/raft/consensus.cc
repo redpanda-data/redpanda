@@ -675,6 +675,7 @@ ss::future<> consensus::start() {
               auto last_applied = read_last_applied();
               if (last_applied > _commit_index) {
                   _commit_index = last_applied;
+                  _max_consumable_offset = last_applied;
                   vlog(
                     _ctxlog.trace, "Recovered commit_index: {}", _commit_index);
               }
@@ -1131,6 +1132,8 @@ ss::future<> consensus::do_hydrate_snapshot(storage::snapshot_reader& reader) {
 
         // TODO: add applying snapshot content to state machine
         _commit_index = std::max(_last_snapshot_index, _commit_index);
+        _max_consumable_offset = std::max(
+          _commit_index, _max_consumable_offset);
 
         update_follower_stats(metadata.latest_configuration);
         return _configuration_manager
