@@ -220,7 +220,7 @@ struct raft_node {
     bool contains(raft::group_id) { return true; }
 
     ss::future<log_t> read_log() {
-        auto max_offset = model::offset(consensus->committed_offset());
+        auto max_offset = model::offset(consensus->max_consumable_offset());
         auto lstats = log->offsets();
 
         storage::log_reader_config cfg(
@@ -525,12 +525,14 @@ static bool are_logs_the_same_length(const raft_group::logs_t& logs) {
 }
 
 static bool are_all_commit_indexes_the_same(raft_group& gr) {
-    auto c_idx = gr.get_members().begin()->second.consensus->committed_offset();
+    auto c_idx
+      = gr.get_members().begin()->second.consensus->max_consumable_offset();
     return std::all_of(
       gr.get_members().begin(),
       gr.get_members().end(),
       [c_idx](raft_group::members_t::value_type& n) {
-          auto current = model::offset(n.second.consensus->committed_offset());
+          auto current = model::offset(
+            n.second.consensus->max_consumable_offset());
           auto log_offset = n.second.log->offsets().dirty_offset;
           return c_idx == current && log_offset == c_idx;
       });
