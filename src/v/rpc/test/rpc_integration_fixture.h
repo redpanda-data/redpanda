@@ -25,6 +25,7 @@
 #include <seastar/core/sleep.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/net/inet_address.hh>
+#include <seastar/net/tls.hh>
 
 // Test services
 struct movistar final : cycling::team_movistar_service {
@@ -107,7 +108,8 @@ public:
     virtual void stop_server() = 0;
 
     virtual void configure_server(
-      std::optional<ss::tls::credentials_builder> credentials = std::nullopt)
+      std::optional<ss::tls::credentials_builder> credentials = std::nullopt,
+      ss::tls::reload_callback&& cb = {})
       = 0;
 
     rpc::transport_configuration client_config(
@@ -150,15 +152,16 @@ public:
     }
 
     void configure_server(
-      std::optional<ss::tls::credentials_builder> credentials
-      = std::nullopt) override {
+      std::optional<ss::tls::credentials_builder> credentials = std::nullopt,
+      ss::tls::reload_callback&& cb = {}) override {
         rpc::server_configuration scfg("unit_test_rpc");
         scfg.addrs = {_listen_address};
         scfg.max_service_memory_per_core = static_cast<int64_t>(
           ss::memory::stats().total_memory() / 10);
         scfg.credentials
           = credentials
-              ? credentials->build_reloadable_server_credentials().get0()
+              ? credentials->build_reloadable_server_credentials(std::move(cb))
+                  .get0()
               : nullptr;
         _server = std::make_unique<rpc::server>(std::move(scfg));
         _proto = std::make_unique<rpc::simple_protocol>();
@@ -195,15 +198,16 @@ public:
     void stop_server() override { _server.stop().get(); }
 
     void configure_server(
-      std::optional<ss::tls::credentials_builder> credentials
-      = std::nullopt) override {
+      std::optional<ss::tls::credentials_builder> credentials = std::nullopt,
+      ss::tls::reload_callback&& cb = {}) override {
         rpc::server_configuration scfg("unit_test_rpc_sharded");
         scfg.addrs = {_listen_address};
         scfg.max_service_memory_per_core = static_cast<int64_t>(
           ss::memory::stats().total_memory() / 10);
         scfg.credentials
           = credentials
-              ? credentials->build_reloadable_server_credentials().get0()
+              ? credentials->build_reloadable_server_credentials(std::move(cb))
+                  .get0()
               : nullptr;
         _server.start(std::move(scfg)).get();
     }
