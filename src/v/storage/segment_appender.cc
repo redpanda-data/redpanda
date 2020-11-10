@@ -9,6 +9,7 @@
 
 #include "storage/segment_appender.h"
 
+#include "config/configuration.h"
 #include "likely.h"
 #include "storage/chunk_cache.h"
 #include "storage/logger.h"
@@ -33,7 +34,8 @@ size_missmatch_error(const char* ctx, size_t expected, size_t got) {
 segment_appender::segment_appender(ss::file f, options opts)
   : _out(std::move(f))
   , _opts(opts)
-  , _concurrent_flushes(ss::semaphore::max_counter()) {
+  , _concurrent_flushes(ss::semaphore::max_counter())
+  , _inactive_timer([this] { handle_inactive_timer(); }) {
     const auto alignment = _out.disk_write_dma_alignment();
     vassert(
       internal::chunk_cache::alignment % alignment == 0,
@@ -63,7 +65,9 @@ segment_appender::segment_appender(segment_appender&& o) noexcept
   , _concurrent_flushes(std::move(o._concurrent_flushes))
   , _head(std::move(o._head))
   , _inflight(std::move(o._inflight))
-  , _callbacks(std::exchange(o._callbacks, nullptr)) {
+  , _callbacks(std::exchange(o._callbacks, nullptr))
+  , _inactive_timer([this] { handle_inactive_timer(); })
+  , _previously_inactive(o._previously_inactive) {
     o._closed = true;
 }
 
@@ -80,7 +84,53 @@ ss::future<> segment_appender::append(const iobuf& io) {
 }
 
 ss::future<> segment_appender::append(const char* buf, const size_t n) {
+    // seastar is optimized for timers that never fire. here the timer is
+    // cancelled because it firing may dispatch a background write, which as
+    // currently formulated, is not safe to interlave with append.
+    _inactive_timer.cancel();
+    return do_append(buf, n).then([this] {
+        if (_head && _head->bytes_pending()) {
+            _inactive_timer.arm(
+              config::shard_local_cfg().segment_appender_flush_timeout_ms());
+        }
+    });
+}
+
+ss::future<> segment_appender::do_append(const char* buf, const size_t n) {
     vassert(!_closed, "append() on closed segment: {}", *this);
+
+    /*
+     * if at any point prior to this the inactive timer fired to flush/reclaim
+     * the active chunk, then insert a barrier. this barrier is necessary
+     * because the append interface assumes that all background writes are for
+     * full buffers. non-full buffers, upon write completion, replace the
+     * current head. if the inactive timer dispatches a background write, it may
+     * clobber the head when it finishes if it is racing with append.
+     */
+    if (_previously_inactive) {
+        _previously_inactive = false;
+        return ss::get_units(_concurrent_flushes, ss::semaphore::max_counter())
+          .then([this, buf, n](ss::semaphore_units<>) {
+              return do_append(buf, n);
+          });
+    }
+
+    /*
+     * if there is no current active chunk then we need to rehydrate. this can
+     * happen because of truncation or because the appender had been idle and
+     * its chunk was reclaimed into the chunk cache.
+     */
+    if (unlikely(!_head && _committed_offset > 0)) {
+        return internal::chunks()
+          .get()
+          .then([this](ss::lw_shared_ptr<chunk> chunk) {
+              _head = std::move(chunk);
+          })
+          .then([this, buf, n] {
+              return hydrate_last_half_page().then(
+                [this, buf, n] { return do_append(buf, n); });
+          });
+    }
 
     // committed offset isn't updated until the background write is dispatched.
     // however, we must ensure that an fallocation never occurs at an offset
@@ -95,7 +145,7 @@ ss::future<> segment_appender::append(const char* buf, const size_t n) {
 
     if (next_committed_offset + n > _fallocation_offset) {
         return do_next_adaptive_fallocation().then(
-          [this, buf, n] { return append(buf, n); });
+          [this, buf, n] { return do_append(buf, n); });
     }
 
     size_t written = 0;
@@ -119,9 +169,43 @@ ss::future<> segment_appender::append(const char* buf, const size_t n) {
             [this, next_buf, next_sz](ss::lw_shared_ptr<chunk> chunk) {
                 vassert(!_head, "cannot overwrite existing chunk");
                 _head = std::move(chunk);
-                return append(next_buf, next_sz);
+                return do_append(next_buf, next_sz);
             });
       });
+}
+
+void segment_appender::handle_inactive_timer() {
+    _previously_inactive = true;
+
+    if (_head && _head->bytes_pending()) {
+        /*
+         * this is the why the timer was originally set upon returning from
+         * append: data was sitting in the write back buffer. the segment
+         * appears to be inactive so go ahead and write that data to disk.
+         */
+        dispatch_background_head_write();
+    }
+
+    /*
+     * inactive segment chunk reclaim
+     *
+     * if we can ensure there are no outstanding writes (including the one that
+     * may have been dispatched above in this handler) then we can reclaim the
+     * chunk and return it to the cache. but we need a retry loop because the
+     * background write may take some time and it steals _head until it
+     * completes. it may also return the chunk to the cache if it empty.
+     */
+    if (_concurrent_flushes.try_wait(ss::semaphore::max_counter())) {
+        if (_head && !_head->bytes_pending()) {
+            internal::chunks().add(std::exchange(_head, nullptr));
+            vlog(
+              stlog.debug, "reclaiming inactive chunk from appender {}", *this);
+        }
+        _concurrent_flushes.signal(ss::semaphore::max_counter());
+    } else {
+        _inactive_timer.arm(
+          config::shard_local_cfg().segment_appender_flush_timeout_ms());
+    }
 }
 
 ss::future<> segment_appender::hydrate_last_half_page() {
@@ -154,7 +238,7 @@ ss::future<> segment_appender::hydrate_last_half_page() {
         sz, buff, read_align /*must be full _write_ alignment*/, _opts.priority)
       .then([this, bytes_to_read](size_t actual) {
           vassert(
-            bytes_to_read == actual && bytes_to_read == _head->flushed_pos(),
+            bytes_to_read <= actual && bytes_to_read == _head->flushed_pos(),
             "Could not hydrate partial page bytes: expected:{}, got:{}. "
             "chunk:{} - appender:{}",
             bytes_to_read,
@@ -337,6 +421,7 @@ void segment_appender::dispatch_background_head_write() {
 }
 
 ss::future<> segment_appender::flush() {
+    _inactive_timer.cancel();
     if (_head && _head->bytes_pending()) {
         dispatch_background_head_write();
     }

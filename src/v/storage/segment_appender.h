@@ -85,6 +85,7 @@ private:
     ss::future<> do_next_adaptive_fallocation();
     ss::future<> hydrate_last_half_page();
     ss::future<> do_truncation(size_t);
+    ss::future<> do_append(const char* buf, const size_t n);
 
     ss::file _out;
     options _opts;
@@ -107,6 +108,10 @@ private:
     ss::chunked_fifo<ss::lw_shared_ptr<inflight_write>> _inflight;
     callbacks* _callbacks = nullptr;
     void maybe_advance_stable_offset(const ss::lw_shared_ptr<inflight_write>&);
+
+    ss::timer<ss::lowres_clock> _inactive_timer;
+    void handle_inactive_timer();
+    bool _previously_inactive = false;
 
     friend std::ostream& operator<<(std::ostream&, const segment_appender&);
 };
