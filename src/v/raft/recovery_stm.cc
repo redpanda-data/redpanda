@@ -116,6 +116,7 @@ ss::future<> recovery_stm::read_range_for_recovery(
       })
       .then(
         [this, start_offset](ss::circular_buffer<model::record_batch> batches) {
+            auto lstats = _ptr->_log.offsets();
             vlog(
               _ctxlog.trace,
               "Read {} batches for {} node recovery",
@@ -133,7 +134,16 @@ ss::future<> recovery_stm::read_range_for_recovery(
             auto f_reader = model::make_foreign_memory_record_batch_reader(
               std::move(gap_filled_batches));
 
-            return replicate(std::move(f_reader));
+            /**
+             * We request follower to flush only when we use quorum consistency
+             * level and when we send last batch that will make follower to
+             * be fully caught up.
+             */
+            auto should_flush = append_entries_request::flush_after_append(
+              _last_batch_offset == lstats.dirty_offset
+              && (_ptr->last_visible_index() <= _ptr->committed_offset()));
+
+            return replicate(std::move(f_reader), should_flush);
         });
 }
 
@@ -234,7 +244,9 @@ ss::future<> recovery_stm::install_snapshot() {
     });
 }
 
-ss::future<> recovery_stm::replicate(model::record_batch_reader&& reader) {
+ss::future<> recovery_stm::replicate(
+  model::record_batch_reader&& reader,
+  append_entries_request::flush_after_append flush) {
     // collect metadata for append entries request
     // last persisted offset is last_offset of batch before the first one in the
     // reader
@@ -269,7 +281,7 @@ ss::future<> recovery_stm::replicate(model::record_batch_reader&& reader) {
         .prev_log_term = prev_log_term,
         .last_visible_index = last_visible_idx},
       std::move(reader),
-      append_entries_request::flush_after_append::no);
+      flush);
 
     _ptr->update_node_append_timestamp(_node_id);
 

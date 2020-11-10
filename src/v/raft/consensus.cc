@@ -70,7 +70,6 @@ consensus::consensus(
     update_follower_stats(_configuration_manager.get_latest());
     _vote_timeout.set_callback([this] {
         maybe_step_down();
-        dispatch_flush_with_lock();
         dispatch_vote(false);
     });
 }
@@ -379,32 +378,9 @@ model::offset consensus::last_stable_offset() const {
 
 ss::future<model::record_batch_reader>
 consensus::do_make_reader(storage::log_reader_config config) {
-    auto lstats = _log.offsets();
-
-    // at relaxed consistency / safety levels we can read immediately if there
-    // is no pending writes or we'll read part of the log from an area that
-    // requires no flushing then build the reader immediately. in the later
-    // case, the intention is that the reader will either see the data because
-    // the pending data was flushed before the read made it to that non-flushed
-    // region or the reader will enounter the end of log adn the reader will
-    // flush and retry, making progress.
-    if (!_has_pending_flushes || config.start_offset <= lstats.dirty_offset) {
-        config.max_offset = std::min(config.max_offset, _last_visible_index);
-        return _log.make_reader(config);
-    }
-
-    // otherwise flush the log to make pending writes visible
-    return _op_lock.with([this, config] {
-        auto f = ss::make_ready_future<>();
-        if (_has_pending_flushes) {
-            f = flush_log();
-        }
-        return f.then([this, config = config]() mutable {
-            config.max_offset = std::min(
-              config.max_offset, _last_visible_index);
-            return _log.make_reader(config);
-        });
-    });
+    // limit to last visible index
+    config.max_offset = std::min(config.max_offset, _last_visible_index);
+    return _log.make_reader(config);
 }
 
 ss::future<model::record_batch_reader> consensus::make_reader(
@@ -416,8 +392,7 @@ ss::future<model::record_batch_reader> consensus::make_reader(
     }
 
     return _consumable_offset_monitor
-      .wait(
-        details::next_offset(_last_visible_index), *debounce_timeout, _as)
+      .wait(details::next_offset(_last_visible_index), *debounce_timeout, _as)
       .then([this, config]() mutable { return do_make_reader(config); });
 }
 
