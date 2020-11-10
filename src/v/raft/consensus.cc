@@ -831,10 +831,15 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
         _term = r.term;
         _voted_for = {};
         do_step_down();
-        // even tough we step down we do not want to update the hbeat as it
-        // would cause subsequent votes to fail (_hbeat is updated by the
-        // leader)
-        _hbeat = clock_type::time_point::min();
+
+        // do not grant vote if log isn't ok
+        if (!reply.log_ok) {
+            // even tough we step down we do not want to update the hbeat as it
+            // would cause subsequent votes to fail (_hbeat is updated by the
+            // leader)
+            _hbeat = clock_type::time_point::min();
+            return ss::make_ready_future<vote_reply>(reply);
+        }
     }
 
     // do not grant vote if log isn't ok
@@ -856,6 +861,7 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
                       f.get_exception());
                 } else {
                     _voted_for = r.node_id;
+                    _hbeat = clock_type::now();
                     granted = true;
                 }
 
