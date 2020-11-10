@@ -85,6 +85,7 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> raft_timeout_now_timeout_ms;
     property<std::chrono::milliseconds>
       raft_transfer_leader_recovery_timeout_ms;
+    property<std::chrono::milliseconds> flush_debouncing_timeout_ms;
     property<bool> release_cache_on_segment_roll;
 
     configuration();

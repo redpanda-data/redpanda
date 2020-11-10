@@ -347,6 +347,13 @@ configuration::configuration()
       "Timeout waiting for follower recovery when transferring leadership",
       required::no,
       10s)
+  , flush_debouncing_timeout_ms(
+      *this,
+      "flush_debouncing_timeout_ms",
+      "Maximum time to wait after last write operatation before flushing data "
+      "to disk (only applicable for relaxed consistency writes)",
+      required::no,
+      1s)
   , release_cache_on_segment_roll(
       *this,
       "release_cache_on_segment_roll",
