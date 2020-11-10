@@ -226,11 +226,14 @@ ss::future<> log_reader::find_next_valid_iterator() {
         return ss::make_ready_future<>();
     }
     std::unique_ptr<log_segment_batch_reader> tmp_reader = nullptr;
-    while (_config.start_offset > (**_iterator.next_seg).offsets().dirty_offset
-           && !is_end_of_stream()) {
+    while (_config.start_offset
+           > (**_iterator.next_seg).offsets().dirty_offset) {
         _iterator.next_seg++;
         if (!tmp_reader) {
             tmp_reader = std::move(_iterator.reader);
+        }
+        if (is_end_of_stream()) {
+            break;
         }
     }
     if (_iterator.next_seg != _lease->range.end()) {
