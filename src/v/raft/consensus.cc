@@ -349,8 +349,7 @@ consensus::replicate(model::record_batch_reader&& rdr, replicate_options opts) {
                                std::move(rdr), model::term_id(_term)))
             .then([this](storage::append_result res) {
                 // update max_consumable_offset immediately after append succeed
-                _max_consumable_offset = std::max(
-                  _max_consumable_offset, res.last_offset);
+                maybe_update_max_consumable_offset(res.last_offset);
                 return result<replicate_result>(
                   replicate_result{.last_offset = res.last_offset});
             });
@@ -684,6 +683,7 @@ ss::future<> consensus::start() {
               auto last_applied = read_last_applied();
               if (last_applied > _commit_index) {
                   _commit_index = last_applied;
+                  _max_consumable_offset = last_applied;
                   vlog(
                     _ctxlog.trace, "Recovered commit_index: {}", _commit_index);
               }
@@ -1146,6 +1146,7 @@ ss::future<> consensus::do_hydrate_snapshot(storage::snapshot_reader& reader) {
 
         // TODO: add applying snapshot content to state machine
         _commit_index = std::max(_last_snapshot_index, _commit_index);
+        maybe_update_max_consumable_offset(_commit_index);
 
         update_follower_stats(metadata.latest_configuration);
         return _configuration_manager
@@ -1537,8 +1538,7 @@ consensus::do_maybe_update_leader_commit_idx(ss::semaphore_units<> u) {
           _commit_index);
         _commit_index_updated.broadcast();
         _event_manager.notify_commit_index(_commit_index);
-        _max_consumable_offset = std::max(
-          _max_consumable_offset, _commit_index);
+        maybe_update_max_consumable_offset(_commit_index);
         return maybe_commit_configuration(std::move(u));
     }
     return ss::now();
@@ -1559,8 +1559,7 @@ consensus::maybe_update_follower_commit_idx(model::offset request_commit_idx) {
               _ctxlog.trace, "Follower commit index updated {}", _commit_index);
             _commit_index_updated.broadcast();
             _event_manager.notify_commit_index(_commit_index);
-            _max_consumable_offset = std::max(
-              _max_consumable_offset, _commit_index);
+            maybe_update_max_consumable_offset(_commit_index);
         }
     }
     return ss::make_ready_future<>();
@@ -1838,6 +1837,10 @@ ss::future<> consensus::remove_persistent_state() {
       })
       .then(
         [this] { return _configuration_manager.remove_persistent_state(); });
+}
+
+void consensus::maybe_update_max_consumable_offset(model::offset offset) {
+    _max_consumable_offset = std::max(_max_consumable_offset, offset);
 }
 
 } // namespace raft

@@ -309,6 +309,8 @@ private:
     ss::future<> maybe_commit_configuration(ss::semaphore_units<>);
 
     bytes last_applied_key() const;
+
+    void maybe_update_max_consumable_offset(model::offset);
     // args
     model::node_id _self;
     raft::group_id _group;
