@@ -69,25 +69,25 @@ const writeUInt64LE: WriteFn<bigint> = (field, buffer) => {
 
 const writeVarint: WriteFn<bigint> = (field, buffer) => {
   let value = encodeZigzag(field);
-  let wroteBytes = 0;
+  let writtenBytes = 0;
   if (value < 0x80) {
     return buffer.appendUInt8(Number(value));
   }
-  wroteBytes += buffer.appendUInt8(
+  writtenBytes += buffer.appendUInt8(
     Number((value & BigInt(255)) | BigInt(0x80))
   );
   value >>= BigInt(7);
   if (value < 0x80) {
-    wroteBytes += buffer.appendUInt8(Number(value));
+    writtenBytes += buffer.appendUInt8(Number(value));
   }
   do {
-    wroteBytes += buffer.appendUInt8(
+    writtenBytes += buffer.appendUInt8(
       Number((value & BigInt(255)) | BigInt(0x80))
     );
     value >>= BigInt(7);
   } while (value >= 0x80);
-  wroteBytes += buffer.appendUInt8(Number(value));
-  return wroteBytes;
+  writtenBytes += buffer.appendUInt8(Number(value));
+  return writtenBytes;
 };
 
 const writeBoolean: WriteFn<boolean> = (field, buffer) => {
@@ -114,15 +114,15 @@ const writeArray = (appendSize?: boolean) => <T>(
   buffer: IOBuf,
   fn: WriteFn<T>
 ): number => {
-  let wroteBytes = 0;
+  let writtenBytes = 0;
   if (appendSize) {
     buffer.appendInt32LE(fields.length);
-    wroteBytes += 4;
+    writtenBytes += 4;
   }
   for (const item of fields) {
-    wroteBytes += fn(item, buffer);
+    writtenBytes += fn(item, buffer);
   }
-  return wroteBytes;
+  return writtenBytes;
 };
 
 const writeObject = <T>(
