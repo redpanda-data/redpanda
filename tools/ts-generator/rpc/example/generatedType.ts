@@ -27,47 +27,55 @@ export class RpcHeader {
    * @param buffer is the place where the binary data is stored
    * @param offset is the position where the function will start to
    *        read into buffer
-   * @return a tuple, where first element is a RpcHeader and second
-   *        one is the read last position in the buffer
+   * @return a tuple, where first element is a RpcHeader and
+   *        second one is the read last position in the buffer
    */
   static fromBytes(buffer: Buffer, offset = 0): [RpcHeader, number] {
+    const version = (() => {
+      const [value, newOffset] = BF.readUInt8LE(buffer, offset);
+      offset = newOffset;
+      return value;
+    })();
+    const headerChecksum = (() => {
+      const [value, newOffset] = BF.readUInt32LE(buffer, offset);
+      offset = newOffset;
+      return value;
+    })();
+    const compression = (() => {
+      const [value, newOffset] = BF.readInt8LE(buffer, offset);
+      offset = newOffset;
+      return value;
+    })();
+    const payloadSize = (() => {
+      const [value, newOffset] = BF.readUInt32LE(buffer, offset);
+      offset = newOffset;
+      return value;
+    })();
+    const meta = (() => {
+      const [value, newOffset] = BF.readUInt32LE(buffer, offset);
+      offset = newOffset;
+      return value;
+    })();
+    const correlationId = (() => {
+      const [value, newOffset] = BF.readUInt32LE(buffer, offset);
+      offset = newOffset;
+      return value;
+    })();
+    const payloadChecksum = (() => {
+      const [value, newOffset] = BF.readUInt64LE(buffer, offset);
+      offset = newOffset;
+      return value;
+    })();
+
     return [
       {
-        version: (() => {
-          const [value, newOffset] = BF.readUInt8LE(buffer, offset);
-          offset = newOffset;
-          return value;
-        })(),
-        headerChecksum: (() => {
-          const [value, newOffset] = BF.readUInt32LE(buffer, offset);
-          offset = newOffset;
-          return value;
-        })(),
-        compression: (() => {
-          const [value, newOffset] = BF.readInt8LE(buffer, offset);
-          offset = newOffset;
-          return value;
-        })(),
-        payloadSize: (() => {
-          const [value, newOffset] = BF.readUInt32LE(buffer, offset);
-          offset = newOffset;
-          return value;
-        })(),
-        meta: (() => {
-          const [value, newOffset] = BF.readUInt32LE(buffer, offset);
-          offset = newOffset;
-          return value;
-        })(),
-        correlationId: (() => {
-          const [value, newOffset] = BF.readUInt32LE(buffer, offset);
-          offset = newOffset;
-          return value;
-        })(),
-        payloadChecksum: (() => {
-          const [value, newOffset] = BF.readUInt64LE(buffer, offset);
-          offset = newOffset;
-          return value;
-        })(),
+        version,
+        headerChecksum,
+        compression,
+        payloadSize,
+        meta,
+        correlationId,
+        payloadChecksum,
       },
       offset,
     ];
@@ -109,46 +117,53 @@ export class MetadataInfo {
    * @param buffer is the place where the binary data is stored
    * @param offset is the position where the function will start to
    *        read into buffer
-   * @return a tuple, where first element is a MetadataInfo and second
-   *        one is the read last position in the buffer
+   * @return a tuple, where first element is a MetadataInfo and
+   *        second one is the read last position in the buffer
    */
   static fromBytes(buffer: Buffer, offset = 0): [MetadataInfo, number] {
+    const inputs = (() => {
+      const [array, newOffset] = BF.readArray()(
+        buffer,
+        offset,
+        (auxBuffer, auxOffset) => BF.readString(auxBuffer, auxOffset)
+      );
+      offset = newOffset;
+      return array;
+    })();
+    const name = (() => {
+      const [value, newOffset] = BF.readString(buffer, offset);
+      offset = newOffset;
+      return value;
+    })();
+    const age = (() => {
+      const [value, newOffset] = BF.readInt8LE(buffer, offset);
+      offset = newOffset;
+      return value;
+    })();
+    const isCool = (() => {
+      const [value, newOffset] = BF.readBoolean(buffer, offset);
+      offset = newOffset;
+      return value;
+    })();
+    const id = (() => {
+      const [value, newOffset] = BF.readVarint(buffer, offset);
+      offset = newOffset;
+      return value;
+    })();
+    const data = (() => {
+      const [value, newOffset] = BF.readBuffer(buffer, offset);
+      offset = newOffset;
+      return value;
+    })();
+
     return [
       {
-        inputs: (() => {
-          const [array, newOffset] = BF.readArray(
-            buffer,
-            offset,
-            (auxBuffer, auxOffset) => BF.readString(auxBuffer, auxOffset)
-          );
-          offset = newOffset;
-          return array;
-        })(),
-        name: (() => {
-          const [value, newOffset] = BF.readString(buffer, offset);
-          offset = newOffset;
-          return value;
-        })(),
-        age: (() => {
-          const [value, newOffset] = BF.readInt8LE(buffer, offset);
-          offset = newOffset;
-          return value;
-        })(),
-        isCool: (() => {
-          const [value, newOffset] = BF.readBoolean(buffer, offset);
-          offset = newOffset;
-          return value;
-        })(),
-        id: (() => {
-          const [value, newOffset] = BF.readVarint(buffer, offset);
-          offset = newOffset;
-          return value;
-        })(),
-        data: (() => {
-          const [value, newOffset] = BF.readBuffer(buffer, offset);
-          offset = newOffset;
-          return value;
-        })(),
+        inputs,
+        name,
+        age,
+        isCool,
+        id,
+        data,
       },
       offset,
     ];
@@ -167,7 +182,7 @@ export class MetadataInfo {
   static toBytes(value: MetadataInfo, buffer: IOBuf): number {
     let wroteBytes = 0;
 
-    wroteBytes += BF.writeArray(value.inputs, buffer, (item, auxBuffer) =>
+    wroteBytes += BF.writeArray(true)(value.inputs, buffer, (item, auxBuffer) =>
       BF.writeString(item, auxBuffer)
     );
     wroteBytes += BF.writeString(value.name, buffer);
@@ -187,21 +202,23 @@ export class EnableTopicsReply {
    * @param buffer is the place where the binary data is stored
    * @param offset is the position where the function will start to
    *        read into buffer
-   * @return a tuple, where first element is a EnableTopicsReply and second
-   *        one is the read last position in the buffer
+   * @return a tuple, where first element is a EnableTopicsReply and
+   *        second one is the read last position in the buffer
    */
   static fromBytes(buffer: Buffer, offset = 0): [EnableTopicsReply, number] {
+    const inputs = (() => {
+      const [array, newOffset] = BF.readArray()(
+        buffer,
+        offset,
+        (auxBuffer, auxOffset) => BF.readInt8LE(auxBuffer, auxOffset)
+      );
+      offset = newOffset;
+      return array;
+    })();
+
     return [
       {
-        inputs: (() => {
-          const [array, newOffset] = BF.readArray(
-            buffer,
-            offset,
-            (auxBuffer, auxOffset) => BF.readInt8LE(auxBuffer, auxOffset)
-          );
-          offset = newOffset;
-          return array;
-        })(),
+        inputs,
       },
       offset,
     ];
@@ -220,7 +237,7 @@ export class EnableTopicsReply {
   static toBytes(value: EnableTopicsReply, buffer: IOBuf): number {
     let wroteBytes = 0;
 
-    wroteBytes += BF.writeArray(value.inputs, buffer, (item, auxBuffer) =>
+    wroteBytes += BF.writeArray(true)(value.inputs, buffer, (item, auxBuffer) =>
       BF.writeInt8LE(item, auxBuffer)
     );
     return wroteBytes;
@@ -235,21 +252,23 @@ export class DisableTopicsReply {
    * @param buffer is the place where the binary data is stored
    * @param offset is the position where the function will start to
    *        read into buffer
-   * @return a tuple, where first element is a DisableTopicsReply and second
-   *        one is the read last position in the buffer
+   * @return a tuple, where first element is a DisableTopicsReply and
+   *        second one is the read last position in the buffer
    */
   static fromBytes(buffer: Buffer, offset = 0): [DisableTopicsReply, number] {
+    const inputs = (() => {
+      const [array, newOffset] = BF.readArray()(
+        buffer,
+        offset,
+        (auxBuffer, auxOffset) => BF.readInt8LE(auxBuffer, auxOffset)
+      );
+      offset = newOffset;
+      return array;
+    })();
+
     return [
       {
-        inputs: (() => {
-          const [array, newOffset] = BF.readArray(
-            buffer,
-            offset,
-            (auxBuffer, auxOffset) => BF.readInt8LE(auxBuffer, auxOffset)
-          );
-          offset = newOffset;
-          return array;
-        })(),
+        inputs,
       },
       offset,
     ];
@@ -268,7 +287,7 @@ export class DisableTopicsReply {
   static toBytes(value: DisableTopicsReply, buffer: IOBuf): number {
     let wroteBytes = 0;
 
-    wroteBytes += BF.writeArray(value.inputs, buffer, (item, auxBuffer) =>
+    wroteBytes += BF.writeArray(true)(value.inputs, buffer, (item, auxBuffer) =>
       BF.writeInt8LE(item, auxBuffer)
     );
     return wroteBytes;
