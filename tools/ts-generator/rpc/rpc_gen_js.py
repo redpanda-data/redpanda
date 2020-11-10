@@ -30,6 +30,9 @@ import {
   RpcHeader
 } from "{{js_include}}"
 
+const bytesNoPayload = 26;
+type ApplyFn = (rpcH: RpcHeader, buf: Buffer, socket: Socket) => void
+
 function createCrc32(buffer: Buffer, start, end): number {
   return calculate(buffer.subarray(start, end));
 }
@@ -71,6 +74,97 @@ function generateRpcHeader(
     RpcHeader.toBytes(rpc, reserve);
 }
 
+const getAndValidateRpcHeader = (data: Buffer): RpcHeader => {
+  const [rpcHeader, crc32Validation, crc32] =
+    validateRpcHeader(data.slice(0, 26));
+  if (!crc32Validation) {
+    throw(`Crc32 inconsistent, expect: ${rpcHeader.headerChecksum} ` +
+      `generated: ${crc32}`
+    );
+  } else {
+    return rpcHeader;
+  }
+};
+
+/**
+ * add "data" event listener, when the "data" event is emitted it reads the rpc
+ * header, and read the payload size, and wait n "data" events until have
+ * the complete payload size. this because node js split request when it is
+ * bigger than 65000
+ * @param fn
+ */
+const startReadRequest = (fn: ApplyFn) => (socket: Socket): void => {
+  socket.once("data", (data) => {
+    const rpcHeader = getAndValidateRpcHeader(data);
+    const size = rpcHeader.payloadSize;
+    if ((data.length - bytesNoPayload) >= size) {
+      const bufferResult = data.slice(bytesNoPayload, size + bytesNoPayload);
+      return fn(rpcHeader, bufferResult, socket);
+    } else {
+      const bytesForReading = size - (data.length - bytesNoPayload);
+      return readNextChunk(socket, bytesForReading, fn)
+        .then(nextBuffer => 
+          Buffer.concat([data.slice(bytesNoPayload, size), nextBuffer])
+        ).then(result => fn(rpcHeader, result, socket));
+    }
+  });
+};
+
+/**
+ * given a buffer with request, it read a rpc header and rpc header payload size
+ * if the buffer has a complete payload size it return buffer, Otherwise, it 
+ * waits for n "data" events with necessary data for complete payload size.
+ * @param buffer
+ * @param fn
+ * @param socket
+ */
+const readRequestBuffer = (buffer: Buffer, fn: ApplyFn, socket: Socket) => {
+  const rpcHeader = getAndValidateRpcHeader(buffer);
+  const size = rpcHeader.payloadSize;
+  if ((buffer.length - bytesNoPayload) >= size) {
+    const result = buffer.slice(bytesNoPayload, size + bytesNoPayload);
+    return fn(rpcHeader, result, socket);
+  } else {
+    const bytesForReading = (size - (buffer.length - bytesNoPayload));
+    return readNextChunk(socket, bytesForReading, fn)
+      .then(
+        nextBuffer => Buffer.concat([buffer.slice(bytesNoPayload), nextBuffer])
+      )
+      .then(result => fn(rpcHeader, result, socket));
+  }
+};
+
+/**
+ * given payload size, it waits for n "data" events until have the complete data
+ * size.
+ * @param socket
+ * @param size
+ * @param fn
+ */
+const readNextChunk = (
+  socket: Socket,
+  size: number,
+  fn: ApplyFn
+): Promise<Buffer> => {
+  return new Promise<Buffer>(resolve => {
+    socket.once("data", data => {
+      if (data.length >= size) {
+        if (data.length - size > 0) {
+          readRequestBuffer(data.slice(size), fn, socket);
+        } else {
+          startReadRequest(fn)(socket);
+        }
+        return resolve(data.slice(0, size));
+      } else {
+        return readNextChunk(socket, (size - data.length), fn)
+          .then(
+            nextBuffer => resolve(Buffer.concat([data, nextBuffer]))
+          );
+      }
+    });
+  });
+};
+
 """
 
 server_template = """
@@ -78,65 +172,58 @@ export class {{service_name.title()}}Server {
   constructor() {
     this.server = createServer(this.executeMethod.bind(this));
     this.handleNewConnection()
+    this.process = this.process.bind(this)
   }
   
   listen(port: number){
     this.server.listen(port)
   }
   
-  executeMethod(socket: Socket) {
-    socket.on("readable", () => {
-      if (socket.readableLength > 26) {
-        const [rpcHeader, crc32Validation, crc32] =
-          validateRpcHeader(socket.read(26));
-        if (!crc32Validation){
-          throw(`Crc32 inconsistent, expect: ${rpcHeader.headerChecksum}`+
-            `generated: ${crc32}`
-          )
-        } else {
-          switch (rpcHeader.meta) {
-            {%- for method in methods %}
-            case {{method.id}}: {
-              const [value] = {{method.input_ts}}
-                .fromBytes(socket.read(rpcHeader.payloadSize))
-              this.{{method.name}}(value)
-                .then((output: {{method.output_ts}}) => {
-                    const buffer = new IOBuf();
-                    const rpcHeaderReserve = buffer.getReserve(26)
-                    const size = {{method.output_ts}}
-                      .toBytes(output, buffer)
-                    generateRpcHeader(
-                      buffer,
-                      rpcHeaderReserve,
-                      size,
-                      200,
-                      rpcHeader.correlationId
-                    )
-                    buffer.forEach((fragment =>
-                        socket.write(fragment.buffer.slice(0, fragment.used))
-                    ));
-                })
-              break;
-            }
-            {%- endfor %}
-            default: {
-              const buffer = new IOBuf();
-              const rpcHeaderReserve = buffer.getReserve(26);
-              generateRpcHeader(
-                buffer,
-                rpcHeaderReserve,
-                0,
-                404,
-                rpcHeader.correlationId
-              );
-              buffer.forEach((fragment =>
-                socket.write(fragment.buffer.slice(0, fragment.used))
-              ));
-            }
-          }
+  process(rpcHeader: RpcHeader, payload: Buffer, socket: Socket) {
+      switch (rpcHeader.meta) {
+        {%- for method in methods %}
+        case {{method.id}}: {
+          const [value] = {{method.input_ts}}
+            .fromBytes(payload)
+          this.{{method.name}}(value)
+            .then((output: {{method.output_ts}}) => {
+                const buffer = new IOBuf();
+                const rpcHeaderReserve = buffer.getReserve(26)
+                const size = {{method.output_ts}}
+                  .toBytes(output, buffer)
+                generateRpcHeader(
+                  buffer,
+                  rpcHeaderReserve,
+                  size,
+                  200,
+                  rpcHeader.correlationId
+                )
+                buffer.forEach((fragment =>
+                    socket.write(fragment.buffer.slice(0, fragment.used))
+                ));
+            })
+          break;
         }
-      }
-    })
+        {%- endfor %}
+        default: {
+          const buffer = new IOBuf();
+          const rpcHeaderReserve = buffer.getReserve(26);
+          generateRpcHeader(
+            buffer,
+            rpcHeaderReserve,
+            0,
+            404,
+            rpcHeader.correlationId
+          );
+          buffer.forEach((fragment =>
+            socket.write(fragment.buffer.slice(0, fragment.used))
+          ));
+        }
+        }
+  }
+  
+  executeMethod(socket: Socket) {
+    startReadRequest(this.process)(socket)
   }
   
   {% for method in methods %}
@@ -177,14 +264,16 @@ export class {{service_name.title()}}Server {
 client_template = """
 export class {{service_name.title()}}Client {
   constructor(port: number) {
+    this.process = this.process.bind(this)
     this.client = createConnection({ port }, () => {
     console.log("Established connection with redpanda");
-    this.client.on("data", data => {
-      const [rpc] = RpcHeader.fromBytes(data, 0);
-        this.responseHandlers.get(rpc.correlationId)(data)
-      });
+    startReadRequest(this.process)(this.client);
     })
   }
+  
+  process(rpcHeader: RpcHeader, payload: Buffer, socket: Socket) {
+    this.responseHandlers.get(rpcHeader.correlationId)(payload);
+  }  
     
   send(buffer: IOBuf, headerReserve: IOBuf, size: number, meta: number): number{
     const correlationId = ++this.correlationId;
@@ -209,15 +298,7 @@ export class {{service_name.title()}}Client {
         );
         this.responseHandlers.set(correlationId, (data: Buffer) => {
           try {
-            const [rpcHeader, crc32Validation, crc32] =
-              validateRpcHeader(data)
-            if(!crc32Validation){
-              throw(`Crc32 inconsistent, expect: ${rpcHeader.headerChecksum}`+
-                `generated: ${crc32}`
-              )
-            } else {
-              resolve({{method.output_ts}}.fromBytes(data, 26)[0])
-            }
+              resolve({{method.output_ts}}.fromBytes(data)[0])
             } catch(e) {reject(e)}
           }
         )} catch(e){ reject(e) }
