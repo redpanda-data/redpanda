@@ -34,8 +34,6 @@ namespace storage {
 class segment_appender {
 public:
     using chunk = segment_appender_chunk;
-    using underlying_t = intrusive_list<chunk, &chunk::hook>;
-    using iterator = typename underlying_t::iterator;
 
     static constexpr const size_t write_behind_memory = 1_MiB;
     static constexpr const size_t chunks_no_buffer = write_behind_memory
@@ -77,8 +75,6 @@ public:
     ss::future<> flush();
 
 private:
-    void clear();
-    chunk& head() { return _free_chunks.front(); }
     void dispatch_background_head_write();
     ss::future<> do_next_adaptive_fallocation();
     ss::future<> hydrate_last_half_page();
@@ -91,8 +87,7 @@ private:
     size_t _fallocation_offset{0};
     size_t _bytes_flush_pending{0};
     ss::semaphore _concurrent_flushes;
-    underlying_t _free_chunks;
-    underlying_t _full_chunks;
+    ss::lw_shared_ptr<chunk> _head;
 
     friend std::ostream& operator<<(std::ostream&, const segment_appender&);
 };
