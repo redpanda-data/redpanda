@@ -362,6 +362,12 @@ configuration::configuration()
       "Free cache when segments roll",
       required::no,
       false)
+  , segment_appender_flush_timeout_ms(
+      *this,
+      "segment_appender_flush_timeout_ms",
+      "Maximum delay until buffered data is written",
+      required::no,
+      std::chrono::milliseconds(1s))
   , _advertised_kafka_api(
       *this,
       "advertised_kafka_api",
