@@ -34,19 +34,6 @@
       ]
     },
     {
-      "className": "ProcessBatchRequest",
-      "fields": [
-        {
-          "name": "npt",
-          "type": "Ntp"
-        },
-        {
-          "name": "recordBatch",
-          "type": "RecordBatch"
-        }
-      ]
-    },
-    {
       "className": "Ntp",
       "fields": [
         {
@@ -72,7 +59,8 @@
         },
         {
           "name": "records",
-          "type": "Array<Record>"
+          "type": "Array<Record>",
+          "size": "header.recordCount"
         }
       ]
     },
@@ -130,6 +118,14 @@
         {
           "name": "recordCount",
           "type": "int32"
+        },
+        {
+          "name": "term",
+          "type": "int64"
+        },
+        {
+          "name": "isCompressed",
+          "type": "int8"
         }
       ]
     },
@@ -138,7 +134,7 @@
       "fields": [
         {
           "name": "length",
-          "type": "varint"
+          "type": "uint32"
         },
         {
           "name": "attributes",
@@ -146,15 +142,15 @@
         },
         {
           "name": "timestampDelta",
-          "type": "varint"
+          "type": "int64"
         },
         {
           "name": "offsetDelta",
-          "type": "varint"
+          "type": "int32"
         },
         {
           "name": "keyLength",
-          "type": "varint"
+          "type": "int32"
         },
         {
           "name": "key",
@@ -162,7 +158,7 @@
         },
         {
           "name": "valueLen",
-          "type": "varint"
+          "type": "int32"
         },
         {
           "name": "value",
@@ -192,6 +188,58 @@
         {
           "name": "value",
           "type": "buffer"
+        }
+      ]
+    },
+    {
+      "className": "ProcessBatchRequestItem",
+      "fields": [
+        {
+          "name": "coprocessorIds",
+          "type": "Array<uint64>"
+        },
+        {
+          "name": "ntp",
+          "type": "Ntp"
+        },
+        {
+          "name": "recordBatch",
+          "type": "Array<RecordBatch>"
+        }
+      ]
+    },
+    {
+      "className": "ProcessBatchRequest",
+      "fields": [
+        {
+          "name": "requests",
+          "type": "Array<ProcessBatchRequestItem>"
+        }
+      ]
+    },
+    {
+      "className": "ProcessBatchReplyItem",
+      "fields": [
+        {
+          "name": "coprocessorId",
+          "type": "uint64"
+        },
+        {
+          "name": "ntp",
+          "type": "Ntp"
+        },
+        {
+          "name": "resultRecordBatch",
+          "type": "Array<RecordBatch>"
+        }
+      ]
+    },
+    {
+      "className": "ProcessBatchReply",
+      "fields": [
+        {
+          "name": "result",
+          "type": "Array<ProcessBatchReplyItem>"
         }
       ]
     }

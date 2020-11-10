@@ -1,12 +1,12 @@
 import { Coprocessor, PolicyError } from "../modules/public/Coprocessor";
 import { Handle } from "../modules/domain/Handle";
-import { HandleTable } from "../modules/supervisors/HandleTable";
+import { createRecordBatch } from "../modules/public/";
 
 export const createMockCoprocessor = (
   globalId: Coprocessor["globalId"] = BigInt(1),
   inputTopics: Coprocessor["inputTopics"] = ["topicA"],
   policyError: Coprocessor["policyError"] = PolicyError.SkipOnFailure,
-  apply: Coprocessor["apply"] = () => undefined
+  apply: Coprocessor["apply"] = () => new Map([["result", createRecordBatch()]])
 ): Coprocessor => ({
   globalId,
   inputTopics,
@@ -24,11 +24,3 @@ export const createHandle = (coprocessor?: Partial<Coprocessor>): Handle => ({
   checksum: "check",
   filename: "file",
 });
-
-export const createHandleTable = (
-  handle: Partial<Handle> = createHandle()
-): HandleTable => {
-  const handleTable = new HandleTable();
-  handleTable.registerHandle({ ...createHandle(), ...handle });
-  return handleTable;
-};

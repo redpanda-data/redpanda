@@ -13,24 +13,27 @@
     "prettier:check": "npx prettier --list-different .",
     "eslint:check": "eslint . --ext .ts",
     "code:ckeck": "npm run prettier:check && npm run eslint:check",
-    "generate:serialization": "./generate-entries.sh",
+    "generate:serialization": "./generate-entries.sh && npm run prettier:format",
     "postinstall": "npm run generate:serialization",
-    "build:public": "./compact-public.js"
+    "build:public": "./compact-public.js",
+    "start": "sudo npx ts-node ./modules/rpc/service.ts"
   },
   "requires": true,
   "dependencies": {
-    "typescript": "3.9.6",
+    "@types/mocha": "7.0.2",
     "@types/node": "14.0.23",
     "fast-crc32c": "2.0.0",
-    "xxhash": "0.3.0",
-    "mocha": "7.1.1",
-    "@types/mocha": "7.0.2",
-    "typescript-formatter": "7.2.2",
-    "rewire": "5.0.0",
     "inotifywait": "1.8.3",
+    "mocha": "7.1.1",
     "prettier": "2.0.5",
+    "rewire": "5.0.0",
+    "ts-loader": "^8.0.4",
+    "ts-node": "^9.0.0",
+    "typescript": "3.9.6",
+    "typescript-formatter": "7.2.2",
     "webpack": "^4.44.2",
-    "ts-loader": "^8.0.4"
+    "xxhash": "0.3.0",
+    "js-yaml": "^3.14.0"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^3.7.0",

@@ -11,6 +11,10 @@ export enum PolicyError {
   Deregister,
 }
 
+export enum PolicyInjection {
+  LastOffset = 2,
+}
+
 interface RecordHeader {
   headerKeyLength: bigint;
   headerKey: string;
@@ -32,16 +36,18 @@ interface RecordBatchHeader {
   producerEpoch: number;
   baseSequence: number;
   recordCount: number;
+  term: bigint;
+  isCompressed: number;
 }
 
 interface Record {
-  length: bigint;
+  length: number;
   attributes: number;
   timestampDelta: bigint;
-  offsetDelta: bigint;
-  keyLength: bigint;
+  offsetDelta: number;
+  keyLength: number;
   key: Buffer;
-  valueLen: bigint;
+  valueLen: number;
   value: Buffer;
   headers: Array<RecordHeader>;
 }
@@ -51,11 +57,13 @@ interface RecordBatch {
   header: RecordBatchHeader;
 }
 
+type Topic = string;
+
 interface Coprocessor {
   inputTopics: string[];
   policyError: PolicyError;
   globalId: bigint;
-  apply(record: RecordBatch): RecordBatch;
+  apply: (record: RecordBatch) => Map<Topic, RecordBatch>;
 }
 
 export { RecordBatchHeader, RecordHeader, Record, RecordBatch, Coprocessor };

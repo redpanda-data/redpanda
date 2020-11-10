@@ -1,6 +1,6 @@
 {
   "namespace": "coproc",
-  "service_name": "management",
+  "service_name": "script_manager",
   "includes": [
     "coproc/types.h"
   ],
@@ -9,12 +9,12 @@
     {
       "name": "enable_copros",
       "input_type": "enable_copros_request",
-      "output_type": "enable_copros_response"
+      "output_type": "enable_copros_reply"
     },
     {
       "name": "disable_copros",
       "input_type": "disable_copros_request",
-      "output_type": "disable_copros_response"
+      "output_type": "disable_copros_reply"
     }
   ]
 }
