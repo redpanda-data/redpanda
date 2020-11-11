@@ -94,6 +94,14 @@ func TestWasmCommand(t *testing.T) {
 			},
 			expectedErrMsg: fmt.Sprintf("The directory %s/existFolder/"+
 				" contains files that could conflict: \n package.json", path),
+		}, {
+			name: "should create webpack file with executable permission",
+			args: []string{"generate"},
+			check: func(fs afero.Fs, t *testing.T) {
+				dir := filepath.Join(path, "wasm", "webpack.js")
+				info, _ := fs.Stat(dir)
+				require.True(t, info.Mode() == 0766)
+			},
 		},
 	}
 

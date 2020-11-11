@@ -13,8 +13,9 @@ import (
 )
 
 type genFile struct {
-	name    string
-	content string
+	name       string
+	content    string
+	permission os.FileMode
 }
 
 var manifest = func() map[string][]genFile {
@@ -24,7 +25,7 @@ var manifest = func() map[string][]genFile {
 		"": {
 			genFile{name: "vectorized.js", content: template.GetVectorizedDependency()},
 			genFile{name: "package.json", content: template.GetPackageJson()},
-			genFile{name: "webpack.js", content: template.GetWebpack()},
+			genFile{name: "webpack.js", content: template.GetWebpack(), permission: 0766},
 		},
 	}
 }
@@ -97,6 +98,12 @@ func executeGenerate(fs afero.Fs, path string) error {
 			_, err = utils.WriteBytes(fs, []byte(templateFile.content), filePath)
 			if err != nil {
 				return err
+			}
+			if templateFile.permission > 0 {
+				err = fs.Chmod(filePath, templateFile.permission)
+				if err != nil {
+					return err
+				}
 			}
 		}
 	}
