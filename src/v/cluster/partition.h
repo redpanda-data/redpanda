@@ -32,9 +32,10 @@ public:
      * the minimum of the max offset requested and the committed index of the
      * underlying raft group.
      */
-    ss::future<model::record_batch_reader>
-    make_reader(storage::log_reader_config config) {
-        return _raft->make_reader(std::move(config));
+    ss::future<model::record_batch_reader> make_reader(
+      storage::log_reader_config config,
+      std::optional<model::timeout_clock::time_point> deadline = std::nullopt) {
+        return _raft->make_reader(std::move(config), deadline);
     }
 
     model::offset start_offset() const { return _raft->start_offset(); }
