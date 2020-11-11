@@ -23,11 +23,11 @@ jobs:
 
     - name: Test
       run: go test -v ./...
-      working_directory: src/go/rpk/
+      working-directory: src/go/rpk/
 
     - name: Build
       run: go build -o rpk -v ./...
-      working_directory: src/go/rpk/
+      working-directory: src/go/rpk/
 
     # Lets publish a package on release
     - name: Publish
