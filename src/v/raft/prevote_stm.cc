@@ -16,14 +16,13 @@ namespace raft {
 
 prevote_stm::prevote_stm(consensus* p)
   : _ptr(p)
-  , _sem(_ptr->config().unique_voter_count())
+  , _sem(0)
   , _ctxlog(_ptr->group(), _ptr->ntp()) {}
 
 prevote_stm::~prevote_stm() {
-    if (_vote_bg.get_count() > 0 && !_vote_bg.is_closed()) {
-        vlog(_ctxlog.error, "Must call prevote_stm::wait()");
-        std::terminate();
-    }
+    vassert(
+      _vote_bg.get_count() <= 0 || _vote_bg.is_closed(),
+      "Must call vote_stm::wait()");
 }
 
 ss::future<result<vote_reply>>
@@ -88,29 +87,31 @@ prevote_stm::process_reply(model::node_id n, ss::future<result<vote_reply>> f) {
         voter_reply->second._is_failed = true;
         voter_reply->second._is_pending = false;
     }
+    _sem.signal(1);
     return ss::make_ready_future<>();
 }
 
 ss::future<> prevote_stm::dispatch_prevote(model::node_id n) {
     return with_gate(_vote_bg, [this, n] {
-        return with_semaphore(_sem, 1, [this, n] {
-            if (n == _ptr->_self) {
-                // skip self prevote
-                return ss::make_ready_future<>();
-            }
-            return do_dispatch_prevote(n).then_wrapped(
-              [this, n](ss::future<result<vote_reply>> f) {
-                  return process_reply(n, std::move(f));
-              });
-        });
+        if (n == _ptr->_self) {
+            // skip self prevote
+            _sem.signal(1);
+            return ss::make_ready_future<>();
+        }
+        return do_dispatch_prevote(n).then_wrapped(
+          [this, n](ss::future<result<vote_reply>> f) {
+              return process_reply(n, std::move(f));
+          });
     });
 }
 
 ss::future<bool> prevote_stm::prevote(bool leadership_transfer) {
     return _ptr->_op_lock
       .with([this, leadership_transfer] {
-          _ptr->config().for_each_voter(
+          _config = _ptr->config();
+          _config->for_each_voter(
             [this](model::node_id id) { _replies.emplace(id, vmeta{}); });
+
           auto lstats = _ptr->_log.offsets();
           auto last_entry_term = _ptr->get_last_entry_term(lstats);
 
@@ -132,27 +133,23 @@ ss::future<bool> prevote_stm::prevote(bool leadership_transfer) {
 }
 
 ss::future<bool> prevote_stm::do_prevote() {
-    auto cfg = _ptr->config();
-
     // dispatch requests to all voters
-    cfg.for_each_voter(
+    _config->for_each_voter(
       [this](model::node_id id) { (void)dispatch_prevote(id); });
 
     // wait until majority
-    const size_t majority = (_ptr->config().unique_voter_count() / 2) + 1;
+    const size_t majority = (_config->unique_voter_count() / 2) + 1;
 
     return _sem.wait(majority)
-      .then([this, cfg = std::move(cfg)]() mutable {
-          return process_replies(std::move(cfg));
-      })
+      .then([this] { return process_replies(); })
       // process results
       .then([this]() { return _success; });
 }
 
-ss::future<> prevote_stm::process_replies(group_configuration cfg) {
-    return ss::repeat([this, cfg = std::move(cfg)] {
+ss::future<> prevote_stm::process_replies() {
+    return ss::repeat([this] {
         // majority votes granted
-        bool majority_granted = cfg.majority([this](model::node_id id) {
+        bool majority_granted = _config->majority([this](model::node_id id) {
             return _replies.find(id)->second._is_ok;
         });
 
@@ -163,7 +160,7 @@ ss::future<> prevote_stm::process_replies(group_configuration cfg) {
         }
 
         // majority votes not granted, pre-election not successfull
-        bool majority_failed = cfg.majority([this](model::node_id id) {
+        bool majority_failed = _config->majority([this](model::node_id id) {
             return _replies.find(id)->second._is_failed;
         });
 

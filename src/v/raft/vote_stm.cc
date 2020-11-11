@@ -5,6 +5,7 @@
 #include "raft/errc.h"
 #include "raft/logger.h"
 #include "raft/raftgen_service.h"
+#include "vassert.h"
 
 #include <seastar/util/bool_class.hh>
 
@@ -25,14 +26,13 @@ std::ostream& operator<<(std::ostream& o, const vote_stm::vmeta& m) {
 }
 vote_stm::vote_stm(consensus* p)
   : _ptr(p)
-  , _sem(_ptr->config().unique_voter_count())
+  , _sem(0)
   , _ctxlog(_ptr->group(), _ptr->ntp()) {}
 
 vote_stm::~vote_stm() {
-    if (_vote_bg.get_count() > 0 && !_vote_bg.is_closed()) {
-        vlog(_ctxlog.error, "Must call vote_stm::wait()");
-        std::terminate();
-    }
+    vassert(
+      _vote_bg.get_count() <= 0 || _vote_bg.is_closed(),
+      "Must call vote_stm::wait()");
 }
 ss::future<result<vote_reply>> vote_stm::do_dispatch_one(model::node_id n) {
     vlog(_ctxlog.trace, "Sending vote request to {}", n);
@@ -45,30 +45,29 @@ ss::future<result<vote_reply>> vote_stm::do_dispatch_one(model::node_id n) {
 
 ss::future<> vote_stm::dispatch_one(model::node_id n) {
     return with_gate(_vote_bg, [this, n] {
-        return with_semaphore(_sem, 1, [this, n] {
-            if (n == _ptr->_self) {
-                // skip self vote
-                return ss::make_ready_future<>();
-            }
-            return do_dispatch_one(n).then_wrapped(
-              [this, n](ss::future<result<vote_reply>> f) {
-                  auto voter_reply = _replies.find(n);
-                  try {
-                      auto r = f.get0();
-                      vlog(
-                        _ctxlog.info, "vote reply from {} - {}", n, r.value());
-                      voter_reply->second.set_value(r);
-                  } catch (...) {
-                      voter_reply->second.set_value(errc::vote_dispatch_error);
-                  }
-                  if (!voter_reply->second.value) {
-                      vlog(
-                        _ctxlog.info,
-                        "error voting: {}",
-                        voter_reply->second.value->error());
-                  }
-              });
-        });
+        if (n == _ptr->_self) {
+            // skip self vote
+            _sem.signal(1);
+            return ss::make_ready_future<>();
+        }
+        return do_dispatch_one(n).then_wrapped(
+          [this, n](ss::future<result<vote_reply>> f) {
+              auto voter_reply = _replies.find(n);
+              try {
+                  auto r = f.get0();
+                  vlog(_ctxlog.info, "vote reply from {} - {}", n, r.value());
+                  voter_reply->second.set_value(r);
+              } catch (...) {
+                  voter_reply->second.set_value(errc::vote_dispatch_error);
+              }
+              _sem.signal(1);
+              if (!voter_reply->second.value) {
+                  vlog(
+                    _ctxlog.info,
+                    "error voting: {}",
+                    voter_reply->second.value->error());
+              }
+          });
     });
 }
 
@@ -76,6 +75,7 @@ ss::future<> vote_stm::vote(bool leadership_transfer) {
     using skip_vote = ss::bool_class<struct skip_vote_tag>;
     return _ptr->_op_lock
       .with([this, leadership_transfer] {
+          _config = _ptr->config();
           // check again while under op_sem
           if (_ptr->should_skip_vote(leadership_transfer)) {
               return ss::make_ready_future<skip_vote>(skip_vote::yes);
@@ -89,7 +89,7 @@ ss::future<> vote_stm::vote(bool leadership_transfer) {
           _ptr->_voted_for = {};
 
           // vote is the only method under _op_sem
-          _ptr->config().for_each_voter(
+          _config->for_each_voter(
             [this](model::node_id id) { _replies.emplace(id, vmeta{}); });
           auto lstats = _ptr->_log.offsets();
           auto last_entry_term = _ptr->get_last_entry_term(lstats);
@@ -115,18 +115,15 @@ ss::future<> vote_stm::vote(bool leadership_transfer) {
 }
 
 ss::future<> vote_stm::do_vote() {
-    auto cfg = _ptr->config();
-
     // dispatch requests to all voters
-    cfg.for_each_voter([this](model::node_id id) { (void)dispatch_one(id); });
+    _config->for_each_voter(
+      [this](model::node_id id) { (void)dispatch_one(id); });
 
     // wait until majority
-    const size_t majority = (_ptr->config().unique_voter_count() / 2) + 1;
+    const size_t majority = (_config->unique_voter_count() / 2) + 1;
 
     return _sem.wait(majority)
-      .then([this, cfg = std::move(cfg)]() mutable {
-          return process_replies(std::move(cfg));
-      })
+      .then([this] { return process_replies(); })
       // porcess results
       .then([this]() {
           return _ptr->_op_lock.get_units().then(
@@ -136,10 +133,10 @@ ss::future<> vote_stm::do_vote() {
       });
 }
 
-ss::future<> vote_stm::process_replies(group_configuration cfg) {
-    return ss::repeat([this, cfg = std::move(cfg)] {
+ss::future<> vote_stm::process_replies() {
+    return ss::repeat([this] {
         // majority votes granted
-        bool majority_granted = cfg.majority([this](model::node_id id) {
+        bool majority_granted = _config->majority([this](model::node_id id) {
             return _replies.find(id)->second.get_state()
                    == vmeta::state::vote_granted;
         });
@@ -151,7 +148,7 @@ ss::future<> vote_stm::process_replies(group_configuration cfg) {
         }
 
         // majority votes not granted, election not successfull
-        bool majority_failed = cfg.majority([this](model::node_id id) {
+        bool majority_failed = _config->majority([this](model::node_id id) {
             auto state = _replies.find(id)->second.get_state();
             // vote not granted and not in progress, it is failed
             return state != vmeta::state::vote_granted
@@ -233,7 +230,7 @@ void vote_stm::update_vote_state(ss::semaphore_units<> u) {
 
 void vote_stm::replicate_config_as_new_leader(ss::semaphore_units<> u) {
     (void)ss::with_gate(_ptr->_bg, [this, u = std::move(u)]() mutable {
-        return _ptr->replicate_configuration(std::move(u), _ptr->config());
+        return _ptr->replicate_configuration(std::move(u), _config.value());
     });
 }
 

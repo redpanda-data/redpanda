@@ -239,14 +239,10 @@ replicate_entries_stm::replicate_entries_stm(
   , _ctxlog(_ptr->group(), _ptr->ntp()) {}
 
 replicate_entries_stm::~replicate_entries_stm() {
-    auto gate_not_closed = _req_bg.get_count() > 0 && !_req_bg.is_closed();
-    if (gate_not_closed) {
-        vlog(
-          _ctxlog.error,
-          "Must call replicate_entries_stm::wait(). is_gate_closed:{}",
-          _req_bg.is_closed());
-        std::terminate();
-    }
+    vassert(
+      _req_bg.get_count() <= 0 || _req_bg.is_closed(),
+      "Must call replicate_entries_stm::wait(). is_gate_closed:{}",
+      _req_bg.is_closed());
 }
 
 } // namespace raft
