@@ -109,7 +109,13 @@ ss::future<> maybe_create_tcp_client(
                       std::optional<ss::tls::credentials_builder> credentials) {
                   if (credentials) {
                       return credentials
-                        ->build_reloadable_certificate_credentials();
+                        ->build_reloadable_certificate_credentials(
+                          [](
+                            const std::unordered_set<ss::sstring>& updated,
+                            const std::exception_ptr& eptr) {
+                              log_certificate_reload_event(
+                                clusterlog, "Client TLS", updated, eptr);
+                          });
                   }
                   return ss::make_ready_future<
                     ss::shared_ptr<ss::tls::certificate_credentials>>(nullptr);
@@ -191,6 +197,33 @@ model::broker make_self_broker(const config::configuration& cfg) {
       cfg.rack,
       // FIXME: Fill broker properties with all the information
       model::broker_properties{.cores = ss::smp::count});
+}
+
+void log_certificate_reload_event(
+  ss::logger& log,
+  const char* system_name,
+  const std::unordered_set<ss::sstring>& updated,
+  const std::exception_ptr& eptr) {
+    if (eptr) {
+        try {
+            std::rethrow_exception(eptr);
+        } catch (...) {
+            vlog(
+              log.error,
+              "{} credentials reload error {}",
+              system_name,
+              std::current_exception());
+        }
+    } else {
+        for (const auto& name : updated) {
+            vlog(
+              log.info,
+              "{} key or certificate file "
+              "updated - {}",
+              system_name,
+              name);
+        }
+    }
 }
 
 } // namespace cluster

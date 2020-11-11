@@ -43,6 +43,7 @@
 #include <sys/utsname.h>
 
 #include <chrono>
+#include <exception>
 #include <vector>
 
 int application::run(int ac, char** av) {
@@ -182,17 +183,25 @@ void application::configure_admin_server() {
     // configure admin API TLS
     if (conf.admin_api_tls().is_enabled()) {
         _admin
-          .invoke_on_all([](ss::http_server& server) {
+          .invoke_on_all([this](ss::http_server& server) {
               return config::shard_local_cfg()
                 .admin_api_tls()
                 .get_credentials_builder()
-                .then([&server](
+                .then([this, &server](
                         std::optional<ss::tls::credentials_builder> builder) {
                     if (!builder) {
                         return;
                     }
                     server.set_tls_credentials(
-                      builder->build_reloadable_server_credentials().get0());
+                      builder
+                        ->build_reloadable_server_credentials(
+                          [this](
+                            const std::unordered_set<ss::sstring>& updated,
+                            const std::exception_ptr& eptr) {
+                              cluster::log_certificate_reload_event(
+                                _log, "API TLS", updated, eptr);
+                          })
+                        .get0());
                 });
           })
           .get0();
@@ -398,7 +407,15 @@ void application::wire_up_services() {
                          .get_credentials_builder()
                          .get0();
     rpc_cfg.credentials
-      = rpc_builder ? rpc_builder->build_reloadable_server_credentials().get0()
+      = rpc_builder ? rpc_builder
+                        ->build_reloadable_server_credentials(
+                          [this](
+                            const std::unordered_set<ss::sstring>& updated,
+                            const std::exception_ptr& eptr) {
+                              cluster::log_certificate_reload_event(
+                                _log, "Internal RPC TLS", updated, eptr);
+                          })
+                        .get0()
                     : nullptr;
     syschecks::systemd_message("Starting internal RPC {}", rpc_cfg);
     construct_service(_rpc, rpc_cfg).get();
@@ -428,9 +445,16 @@ void application::wire_up_services() {
                            .get_credentials_builder()
                            .get0();
     kafka_cfg.credentials
-      = kafka_builder
-          ? kafka_builder->build_reloadable_server_credentials().get0()
-          : nullptr;
+      = kafka_builder ? kafka_builder
+                          ->build_reloadable_server_credentials(
+                            [this](
+                              const std::unordered_set<ss::sstring>& updated,
+                              const std::exception_ptr& eptr) {
+                                cluster::log_certificate_reload_event(
+                                  _log, "Kafka RPC TLS", updated, eptr);
+                            })
+                          .get0()
+                      : nullptr;
     syschecks::systemd_message("Starting kafka RPC {}", kafka_cfg);
     construct_service(_kafka_server, kafka_cfg).get();
 }

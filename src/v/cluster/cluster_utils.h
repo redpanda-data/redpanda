@@ -85,4 +85,19 @@ auto with_client(
 
 /// Creates current broker instance using its configuration.
 model::broker make_self_broker(const config::configuration& cfg);
+
+/// \brief Log reload credential event
+/// The function is supposed to be invoked from the callback passed to
+/// 'build_reloadable_*_credentials' methods.
+///
+/// \param log is a ss::logger instance that should be used
+/// \param system_name is a name of the subsystem that uses credentials
+/// \param updated is a set of updated credential names
+/// \param eptr is an exception ptr in case of error
+void log_certificate_reload_event(
+  ss::logger& log,
+  const char* system_name,
+  const std::unordered_set<ss::sstring>& updated,
+  const std::exception_ptr& eptr);
+
 } // namespace cluster
