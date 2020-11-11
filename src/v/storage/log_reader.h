@@ -169,6 +169,8 @@ private:
             }
             return ss::make_ready_future<>();
         }
+
+        const auto& offsets() const { return (*next_seg)->offsets(); }
     };
 
     std::unique_ptr<lock_manager::lease> _lease;
