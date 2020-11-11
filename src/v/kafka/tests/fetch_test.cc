@@ -154,6 +154,7 @@ static kafka::request_context make_request_context(application& app) {
 
     iobuf buf;
     kafka::fetch_request request;
+    request.max_wait_time = std::chrono::milliseconds::zero();
     kafka::response_writer writer(buf);
     request.encode(writer, encoder_context.header().version);
 

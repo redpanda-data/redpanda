@@ -222,13 +222,14 @@ struct op_context {
 
     // operation budgets
     size_t bytes_left;
-    model::timeout_clock::time_point deadline;
+    std::optional<model::timeout_clock::time_point> deadline;
 
     // size of response
     size_t response_size;
     // does the response contain an error
     bool response_error;
 
+    bool initial_fetch = true;
     // decode request and initialize budgets
     op_context(request_context&& ctx, ss::smp_service_group ssg)
       : rctx(std::move(ctx))
@@ -245,8 +246,6 @@ struct op_context {
 
         if (auto delay = request.debounce_delay(); delay) {
             deadline = model::timeout_clock::now() + delay.value();
-        } else {
-            deadline = model::no_timeout;
         }
 
         /*
