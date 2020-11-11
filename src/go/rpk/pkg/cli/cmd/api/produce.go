@@ -1,7 +1,6 @@
 package api
 
 import (
-	"fmt"
 	"io"
 	"io/ioutil"
 	"strings"
@@ -167,22 +166,16 @@ func produce(
 
 func parseHeaders(headers []string) ([]sarama.RecordHeader, error) {
 	var hs []sarama.RecordHeader
-	for _, h := range headers {
-		v := strings.SplitN(h, ":", 2)
-		if len(v) != 2 {
-			err := fmt.Errorf(
-				"'%s' doesn't conform to the <k>:<v> format",
-				h,
-			)
-			return hs, err
-		}
-		key := strings.Trim(v[0], " ")
-		value := strings.Trim(v[1], " ")
+	kvs, err := parseKVs(headers)
+	if err != nil {
+		return hs, err
+	}
+	for k, v := range kvs {
 		hs = append(
 			hs,
 			sarama.RecordHeader{
-				Key:   []byte(key),
-				Value: []byte(value),
+				Key:   []byte(k),
+				Value: []byte(*v),
 			},
 		)
 	}
