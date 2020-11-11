@@ -245,6 +245,20 @@ struct convert<std::chrono::milliseconds> {
     }
 };
 
+inline ss::sstring to_absolute(const ss::sstring& path) {
+    namespace fs = std::filesystem;
+    return fs::absolute(fs::path(path)).native();
+}
+
+inline std::optional<ss::sstring>
+to_absolute(const std::optional<ss::sstring>& path) {
+    namespace fs = std::filesystem;
+    if (path) {
+        return fs::absolute(fs::path(*path)).native();
+    }
+    return std::nullopt;
+}
+
 template<>
 struct convert<config::tls_config> {
     static Node encode(const config::tls_config& rhs) {
@@ -283,13 +297,13 @@ struct convert<config::tls_config> {
 
         auto key_cert = node["key_file"] ? std::make_optional<config::key_cert>(
                           config::key_cert{
-                            node["key_file"].as<ss::sstring>(),
-                            node["cert_file"].as<ss::sstring>()})
+                            to_absolute(node["key_file"].as<ss::sstring>()),
+                            to_absolute(node["cert_file"].as<ss::sstring>())})
                                          : std::nullopt;
         rhs = config::tls_config(
           node["enabled"] && node["enabled"].as<bool>(),
           key_cert,
-          read_optional(node, "truststore_file"),
+          to_absolute(read_optional(node, "truststore_file")),
           node["require_client_auth"]
             && node["require_client_auth"].as<bool>());
         return true;
