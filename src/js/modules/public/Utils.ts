@@ -92,3 +92,42 @@ export const createRecordBatchFunctor = (
   };
   return { ...record, map };
 };
+
+// receive int64 and return Uint64
+const encodeZigzag = (field: bigint): bigint => {
+  // Create Bigint with 64 bytes length and sign 63
+  const digits = BigInt.asUintN(64, BigInt(63));
+  // Create Bigint with 64 bytes length and sign 1
+  const lsb = BigInt.asUintN(64, BigInt(1));
+  return BigInt.asUintN(64, (field << lsb) ^ (field >> digits));
+};
+
+// given a number, it returns number bytes size on varint encode format
+export const varintZigzagSize = (field: bigint): number => {
+  let value = encodeZigzag(field);
+  let size = 1;
+  while (value >= 128) {
+    value >>= BigInt(7);
+    size += 1;
+  }
+  return size;
+};
+
+export const calculateRecordLength = (record: Record): number => {
+  let size = 0;
+  size += varintZigzagSize(BigInt(record.attributes));
+  size += varintZigzagSize(BigInt(record.timestampDelta));
+  size += varintZigzagSize(BigInt(record.offsetDelta));
+  size += varintZigzagSize(BigInt(record.keyLength));
+  size += record.key.length;
+  size += varintZigzagSize(BigInt(record.valueLen));
+  size += record.value.length;
+  size += varintZigzagSize(BigInt(record.headers.length));
+  size += varintZigzagSize(BigInt(size));
+  return size;
+};
+
+export const calculateRecordBatchSize = (records: Record[]): number => {
+  // 61 is the header batch bytes size
+  return 61 + records.reduce((p, r) => p + r.length, 0);
+};
