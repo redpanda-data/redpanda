@@ -132,8 +132,9 @@ public:
     ss::future<result<replicate_result>>
     replicate(model::record_batch_reader&&, replicate_options);
 
-    ss::future<model::record_batch_reader>
-    make_reader(storage::log_reader_config config);
+    ss::future<model::record_batch_reader> make_reader(
+      storage::log_reader_config,
+      std::optional<clock_type::time_point> = std::nullopt);
 
     model::offset committed_offset() const { return _commit_index; }
     model::offset last_stable_offset() const;
@@ -308,6 +309,9 @@ private:
 
     ss::future<> maybe_commit_configuration(ss::semaphore_units<>);
 
+    ss::future<model::record_batch_reader>
+      do_make_reader(storage::log_reader_config);
+
     bytes last_applied_key() const;
 
     void maybe_update_max_consumable_offset(model::offset);
@@ -367,7 +371,7 @@ private:
     model::term_id _last_snapshot_term;
     configuration_manager _configuration_manager;
     model::offset _max_consumable_offset;
-
+    offset_monitor _consumable_offset_monitor;
     friend std::ostream& operator<<(std::ostream&, const consensus&);
 };
 
