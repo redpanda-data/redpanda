@@ -60,6 +60,39 @@ set(build_env
 )
 # define make command in terms of cmake
 set(make_command make ${build_env} -j${build_concurrency_factor} )
+if ("@CMAKE_BUILD_TYPE@" MATCHES "Debug")
+  set(BOOST_BUILD_VARIANT debug)
+else ()
+  set(BOOST_BUILD_VARIANT release)
+endif()
+ExternalProject_Add(boost
+  # Boost outcome is only installed on boost 1.70.0+
+  URL https://storage.googleapis.com/vectorizedio-public/dependencies/boost_1_71_0.tar.gz
+  URL_MD5 5f521b41b79bf8616582c4a8a2c10177
+  INSTALL_DIR    @REDPANDA_DEPS_INSTALL_DIR@
+  PATCH_COMMAND
+    ./bootstrap.sh
+    --prefix=@REDPANDA_DEPS_INSTALL_DIR@
+    --with-libraries=atomic,chrono,date_time,filesystem,program_options,system,test,thread
+  CONFIGURE_COMMAND ""
+  BUILD_COMMAND ""
+  DEPENDS ${default_depends}
+  INSTALL_COMMAND
+    ${CMAKE_COMMAND} -E chdir <SOURCE_DIR>
+    ./b2
+    -j ${build_concurrency_factor}
+    --layout=system
+    --build-dir=<BINARY_DIR>
+    install
+    variant=${BOOST_BUILD_VARIANT}
+    cflags=${c_flags}
+    cxxflags=${cxx_flags}
+    linkflags=${ld_flags}
+    link=shared
+    threading=multi
+    hardcode-dll-paths=true
+    dll-path=@REDPANDA_DEPS_INSTALL_DIR@/lib)
+
 ExternalProject_Add(seastar
   GIT_REPOSITORY https://github.com/vectorizedio/seastar.git
   GIT_TAG 92c639117d9f32f0b5f23b05b1ca14c39e1df8a7
@@ -67,7 +100,9 @@ ExternalProject_Add(seastar
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   CMAKE_ARGS
     ${common_cmake_args}
-    -DProtobuf_USE_STATIC_LIBS=ON
+    -DBoost_USE_STATIC_LIBS=OFF
+    -DBoost_NO_BOOST_CMAKE=ON
+    -DBoost_NO_SYSTEM_PATHS=TRUE
     -DSeastar_INSTALL=ON
     -DSeastar_DPDK=OFF
     -DSeastar_APPS=OFF
@@ -80,7 +115,7 @@ ExternalProject_Add(seastar
     -DSeastar_CXX_DIALECT=c++17
     -DSeastar_UNUSED_RESULT_ERROR=ON
   INSTALL_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR> --target install
-  DEPENDS ${default_depends})
+  DEPENDS ${default_depends} boost)
 
 ExternalProject_Add(HdrHistogram
   URL https://storage.googleapis.com/vectorizedio-public/dependencies/HdrHistogram_c-0.11.2.tar.gz
@@ -137,11 +172,12 @@ ExternalProject_Add(alien_thread
   INSTALL_COMMAND
   COMMAND ${CMAKE_COMMAND} -E copy_directory <SOURCE_DIR>/include/v <INSTALL_DIR>/include/v)
 
-ExternalProject_Add(librdkafka
+ExternalProject_Add(
+  librdkafka
   GIT_REPOSITORY https://github.com/edenhill/librdkafka
   GIT_TAG v1.2.2
   INSTALL_DIR @REDPANDA_DEPS_INSTALL_DIR@
-  DEPENDS ${default_depends}
+  DEPENDS ${default_depends} boost
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   CMAKE_ARGS
     ${common_cmake_args}
