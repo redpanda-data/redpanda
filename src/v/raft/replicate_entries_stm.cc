@@ -90,6 +90,9 @@ ss::future<> replicate_entries_stm::dispatch_one(
                        auto seq = it == _followers_seq.end()
                                     ? follower_req_seq(0)
                                     : it->second;
+                       if (!reply) {
+                           _ptr->get_probe().replicate_request_error();
+                       }
                        _ptr->process_append_entries_reply(id, reply, seq);
                    });
              })
