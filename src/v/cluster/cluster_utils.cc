@@ -100,7 +100,31 @@ ss::future<> maybe_create_tcp_client(
                       std::optional<ss::tls::credentials_builder> credentials) {
                   if (credentials) {
                       return credentials
-                        ->build_reloadable_certificate_credentials();
+                        ->build_reloadable_certificate_credentials(
+                          [](
+                            std::unordered_set<ss::sstring> const& updated,
+                            std::exception_ptr const& eptr) {
+                              static ss::logger certlog("client-tls");
+                              if (eptr) {
+                                  try {
+                                      std::rethrow_exception(eptr);
+                                  } catch (...) {
+                                      vlog(
+                                        certlog.error,
+                                        "Client TLS credentials reload error "
+                                        "{}",
+                                        std::current_exception());
+                                  }
+                              } else {
+                                  for (auto const& name : updated) {
+                                      vlog(
+                                        certlog.info,
+                                        "Client TLS key or certificate file "
+                                        "updated - {}",
+                                        name);
+                                  }
+                              }
+                          });
                   }
                   return ss::make_ready_future<
                     ss::shared_ptr<ss::tls::certificate_credentials>>(nullptr);

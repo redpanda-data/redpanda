@@ -33,6 +33,7 @@
 #include <sys/utsname.h>
 
 #include <chrono>
+#include <exception>
 #include <vector>
 
 int application::run(int ac, char** av) {
@@ -182,7 +183,32 @@ void application::configure_admin_server() {
                         return;
                     }
                     server.set_tls_credentials(
-                      builder->build_reloadable_server_credentials().get0());
+                      builder
+                        ->build_reloadable_server_credentials(
+                          [](
+                            std::unordered_set<ss::sstring> const& updated,
+                            std::exception_ptr const& eptr) {
+                              static ss::logger certlog("api-tls");
+                              if (eptr) {
+                                  try {
+                                      std::rethrow_exception(eptr);
+                                  } catch (...) {
+                                      vlog(
+                                        certlog.error,
+                                        "API TLS credentials reload error {}",
+                                        std::current_exception());
+                                  }
+                              } else {
+                                  for (auto const& name : updated) {
+                                      vlog(
+                                        certlog.info,
+                                        "API TLS key or certificate file "
+                                        "updated - {}",
+                                        name);
+                                  }
+                              }
+                          })
+                        .get0());
                 });
           })
           .get0();
@@ -382,8 +408,34 @@ void application::wire_up_services() {
                          .get_credentials_builder()
                          .get0();
     rpc_cfg.credentials
-      = rpc_builder ? rpc_builder->build_reloadable_server_credentials().get0()
-                    : nullptr;
+      = rpc_builder
+          ? rpc_builder
+              ->build_reloadable_server_credentials(
+                [](
+                  std::unordered_set<ss::sstring> const& updated,
+                  std::exception_ptr const& eptr) {
+                    static ss::logger certlog("rpc-tls");
+                    if (eptr) {
+                        try {
+                            std::rethrow_exception(eptr);
+                        } catch (...) {
+                            vlog(
+                              certlog.error,
+                              "Internal RPC TLS credentials reload error {}",
+                              std::current_exception());
+                        }
+                    } else {
+                        for (auto const& name : updated) {
+                            vlog(
+                              certlog.info,
+                              "Internal RPC TLS key or certificate file "
+                              "updated - {}",
+                              name);
+                        }
+                    }
+                })
+              .get0()
+          : nullptr;
     syschecks::systemd_message("Starting internal RPC {}", rpc_cfg);
     construct_service(_rpc, rpc_cfg).get();
 
@@ -413,7 +465,32 @@ void application::wire_up_services() {
                            .get0();
     kafka_cfg.credentials
       = kafka_builder
-          ? kafka_builder->build_reloadable_server_credentials().get0()
+          ? kafka_builder
+              ->build_reloadable_server_credentials(
+                [](
+                  std::unordered_set<ss::sstring> const& updated,
+                  std::exception_ptr const& eptr) {
+                    static ss::logger certlog("krpc-tls");
+                    if (eptr) {
+                        try {
+                            std::rethrow_exception(eptr);
+                        } catch (...) {
+                            vlog(
+                              certlog.error,
+                              "Kafka RPC TLS credentials reload error {}",
+                              std::current_exception());
+                        }
+                    } else {
+                        for (auto const& name : updated) {
+                            vlog(
+                              certlog.info,
+                              "Kafka RPC TLS key or certificate file updated - "
+                              "{}",
+                              name);
+                        }
+                    }
+                })
+              .get0()
           : nullptr;
     syschecks::systemd_message("Starting kafka RPC {}", kafka_cfg);
     construct_service(_kafka_server, kafka_cfg).get();
