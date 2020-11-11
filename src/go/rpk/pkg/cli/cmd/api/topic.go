@@ -39,12 +39,24 @@ func createTopic(admin func() (sarama.ClusterAdmin, error)) *cobra.Command {
 		partitions int32
 		replicas   int16
 		compact    bool
+		config     []string
 	)
 	cmd := &cobra.Command{
 		Use:   "create <topic name>",
 		Short: "Create a topic",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			configEntries, err := parseKVs(config)
+			if err != nil {
+				return err
+			}
+			if _, ok := configEntries["cleanup.policy"]; !ok {
+				cleanupPolicy := "delete"
+				if compact {
+					cleanupPolicy = "compact"
+				}
+				configEntries["cleanup.policy"] = &cleanupPolicy
+			}
 			adm, err := admin()
 			if err != nil {
 				log.Error("Couldn't initialize API admin")
@@ -52,35 +64,45 @@ func createTopic(admin func() (sarama.ClusterAdmin, error)) *cobra.Command {
 			}
 			defer adm.Close()
 			topicName := args[0]
-			cleanupPolicy := "delete"
-			if compact {
-				cleanupPolicy = "compact"
-			}
 			err = adm.CreateTopic(
 				topicName,
 				&sarama.TopicDetail{
 					NumPartitions:     partitions,
 					ReplicationFactor: replicas,
-					ConfigEntries: map[string]*string{
-						"cleanup.policy": &cleanupPolicy,
-					},
+					ConfigEntries:     configEntries,
 				},
 				false,
 			)
 			if err != nil {
 				return err
 			}
+			configList := []string{}
+			for k, v := range configEntries {
+				configList = append(
+					configList,
+					fmt.Sprintf("'%s':'%s'", k, *v),
+				)
+			}
+			sort.Strings(configList)
 			log.Infof(
 				"Created topic '%s'. Partitions: %d,"+
-					" replicas: %d, cleanup policy: '%s'",
+					" replicas: %d, configuration:\n%s",
 				topicName,
 				partitions,
 				replicas,
-				cleanupPolicy,
+				strings.Join(configList, "\n"),
 			)
 			return nil
 		},
 	}
+	cmd.Flags().StringArrayVarP(
+		&config,
+		"config",
+		"c",
+		[]string{},
+		"Config entries in the format <key>:<value>. May be used multiple times"+
+			" to add more entries.",
+	)
 	cmd.Flags().Int32VarP(
 		&partitions,
 		"partitions",
