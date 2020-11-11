@@ -10,19 +10,21 @@ from gobekli.chaos.analysis import (make_overview_chart, make_results_chart,
 
 parser = argparse.ArgumentParser(description='Gobekli charts')
 parser.add_argument('--result', action='append', required=True)
+parser.add_argument('--warmup', type=int, default=0, required=False)
+parser.add_argument('--zoom_us', type=int, default=100000, required=False)
 
-def chart(results):
+def chart(results, warmup, zoom_us):
     for result in results:
         root = Path(result).parent
-        make_results_chart(result)
+        make_results_chart(result, warmup)
         with open(result, 'r') as result_file:
             for line in result_file:
                 info = json.loads(line)
                 path = os.path.join(root, info["path"])
-                make_overview_chart(info["title"], path, info["availability_log"], info["latency_log"])
-                make_availability_chart(info["title"], path, info["availability_log"], info["latency_log"])
-                make_latency_chart(info["title"], path, info["availability_log"], info["latency_log"])
+                make_overview_chart(info["title"], path, info["availability_log"], info["latency_log"], warmup)
+                make_availability_chart(info["title"], path, info["availability_log"], info["latency_log"], warmup)
+                make_latency_chart(info["title"], path, info["availability_log"], info["latency_log"], warmup, zoom_us)
 
 args = parser.parse_args()
 
-chart(args.result)
+chart(args.result, args.warmup, args.zoom_us)

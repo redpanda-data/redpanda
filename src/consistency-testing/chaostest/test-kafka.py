@@ -5,21 +5,24 @@ from gobekli.chaos.main import (init_output, inject_recover_scenarios_aio,
                                 ViolationInducedExit)
 from gobekli.logging import m
 from chaostest.faults import *
-from chaostest.kvell_cluster import KvelldbCluster
+from chaostest.kafka_cluster import KafkaCluster
 import logging
 import asyncio
 import argparse
 import json
+import time
+import sys
 
 chaos_event_log = logging.getLogger("chaos-event")
 chaos_stdout = logging.getLogger("chaos-stdout")
 
 
 def select_leader(cluster):
-    node = cluster.get_leader()
-    if node == None:
+    try:
+        return cluster.get_leader()
+    except:
         chaos_event_log.info(m("can't detect a leader").with_time())
-    return node
+        raise
 
 
 def select_follower(cluster):
@@ -52,7 +55,11 @@ known_faults = {
     "iofail.leader":
     lambda: RuinIORecoverableFault(select_leader, "leader"),
     "iofail.follower":
-    lambda: RuinIORecoverableFault(select_follower, "follower")
+    lambda: RuinIORecoverableFault(select_follower, "follower"),
+    "strobe.leader":
+    lambda: StrobeRecoverableFault(select_leader, "leader"),
+    "strobe.follower":
+    lambda: StrobeRecoverableFault(select_follower, "follower")
 }
 
 
@@ -84,7 +91,7 @@ async def run(config, n, overrides):
 
     faults = {fault: known_faults[fault] for fault in config["faults"]}
 
-    with KvelldbCluster(config) as cluster:
+    with KafkaCluster(config) as cluster:
         try:
             for _ in range(0, n):
                 if not config["reset_before_test"]:
@@ -99,7 +106,7 @@ async def run(config, n, overrides):
             pass
 
 
-parser = argparse.ArgumentParser(description='chaos test kvelldb')
+parser = argparse.ArgumentParser(description='chaos test kafka')
 parser.add_argument('config')
 parser.add_argument('--override', action='append', required=False)
 parser.add_argument('--repeat', type=int, default=1, required=False)

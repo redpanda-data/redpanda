@@ -59,15 +59,16 @@ class UnknownTopic(Exception):
 
 
 class KafkaKV:
-    def __init__(self, inflight_limit, bootstrap_servers, topic):
+    def __init__(self, inflight_limit, bootstrap_servers, topic, acks):
         self.topic = topic
+        self.acks = acks
         self.bootstrap_servers = bootstrap_servers
         self.producer = KafkaProducer(
             bootstrap_servers=bootstrap_servers,
-            request_timeout_ms=10000,  #default 30000
+            request_timeout_ms=1000,  #default 30000
             max_block_ms=10000,  # default 60000
-            metadata_max_age_ms=30000,  #default 300000
-            acks=-1)
+            metadata_max_age_ms=5000,  #default 300000
+            acks=acks)
         self.offset = None
         self.state = dict()
         self.consumers = []
@@ -88,7 +89,7 @@ class KafkaKV:
                 consumer = KafkaConsumer(
                     client_id=uuid.uuid4(),
                     bootstrap_servers=self.bootstrap_servers,
-                    request_timeout_ms=10000,
+                    request_timeout_ms=1000,
                     enable_auto_commit=False,
                     auto_offset_reset="earliest")
             except ValueError as e:
@@ -160,9 +161,14 @@ class KafkaKV:
                   cid=cid).with_time())
             metrics["catchup_us"] = int(
                 (time.time() - catchup_started) * 1000000)
-            return state
-        finally:
             self.consumers.append((consumer, tps, cid))
+            return state
+        except:
+            try:
+                consumer.close()
+            except:
+                pass
+            raise
 
     def execute(self, payload, cmd, metrics):
         msg = json.dumps(payload).encode("utf-8")
@@ -311,6 +317,7 @@ parser = argparse.ArgumentParser(description='kafka-kvelldb')
 parser.add_argument('--log', required=True)
 parser.add_argument('--err', required=True)
 parser.add_argument('--topic', required=True)
+parser.add_argument('--acks', required=True)
 parser.add_argument('--port', type=int, required=True)
 parser.add_argument('--broker', action='append', required=True)
 parser.add_argument('--inflight-limit', type=int, required=True)
@@ -343,7 +350,8 @@ kafkakv_stdout_handler.setFormatter(
     logging.Formatter("%(asctime)s - %(message)s"))
 kafkakv_stdout.addHandler(kafkakv_stdout_handler)
 
-kafkakv = KafkaKV(args.inflight_limit, args.broker, args.topic)
+kafkakv = KafkaKV(args.inflight_limit, args.broker, args.topic,
+                  json.loads(args.acks))
 
 app = Flask(__name__)
 
