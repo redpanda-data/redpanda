@@ -87,6 +87,20 @@ private:
     ss::future<> do_truncation(size_t);
     ss::future<> do_append(const char* buf, const size_t n);
 
+    /*
+     * committed offset isn't updated until the background write is dispatched.
+     * however, we must ensure that an fallocation never occurs at an offset
+     * below the committed offset. because truncation can occur at an unaligned
+     * offset, its possible that a chunk offset range overlaps fallocation
+     * offset. if that happens and the chunk fills up and is dispatched before
+     * the next fallocation then fallocation will write zeros to a lower offset
+     * than the commit index. thus, here we must compare fallocation offset to
+     * the eventual committed offset taking into account pending bytes.
+     */
+    size_t next_committed_offset() const {
+        return _committed_offset + (_head ? _head->bytes_pending() : 0);
+    }
+
     ss::file _out;
     options _opts;
     bool _closed{false};

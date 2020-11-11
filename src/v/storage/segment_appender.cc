@@ -132,18 +132,7 @@ ss::future<> segment_appender::do_append(const char* buf, const size_t n) {
           });
     }
 
-    // committed offset isn't updated until the background write is dispatched.
-    // however, we must ensure that an fallocation never occurs at an offset
-    // below the committed offset. because truncation can occur at an unaligned
-    // offset, its possible that a chunk offset range overlaps fallocation
-    // offset. if that happens and the chunk fills up and is dispatched before
-    // the next fallocation then fallocation will write zeros to a lower offset
-    // than the commit index. thus, here we must compare fallocation offset to
-    // the eventual committed offset taking into account pending bytes.
-    auto next_committed_offset = _committed_offset
-                                 + (_head ? _head->bytes_pending() : 0);
-
-    if (next_committed_offset + n > _fallocation_offset) {
+    if (next_committed_offset() + n > _fallocation_offset) {
         return do_next_adaptive_fallocation().then(
           [this, buf, n] { return do_append(buf, n); });
     }
