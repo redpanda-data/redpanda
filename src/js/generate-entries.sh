@@ -7,23 +7,40 @@
 #
 # https://github.com/vectorizedio/redpanda/blob/master/licenses/rcl.md
 
+py="python3"
+
+command -v python3 >/dev/null 2>&1
+
+if [[ $? -ne 0 ]]; then
+    # python3 isn't installed. Check for python -v.
+    version=$(python -V)
+    if [[ $? -ne 0 ]]; then
+        echo "python is not installed"
+        exit 1
+    fi
+
+    if [[ $version =~ "Python 3" ]]; then
+        $py="python"
+    else
+        echo "python 3 is not installed"
+        exit 1
+    fi
+fi
+
+echo "Using ${py}"
+
 root=$(git rev-parse --show-toplevel)
 cd "$root"/tools/ts-generator/types &&
-  python types_gen_js.py \
+  $py types_gen_js.py \
     --entities-define-file "$root"/src/js/modules/domain/generatedRpc/entitiesDefinition.json \
     --output-file "$root"/src/js/modules/domain/generatedRpc/generatedClasses.ts
 
 cd "$root"/tools/ts-generator/types &&
-  python types_gen_js.py \
+  $py types_gen_js.py \
     --entities-define-file "$root"/src/js/modules/domain/generatedRpc/enableDisableCoproc.json \
     --output-file "$root"/src/js/modules/domain/generatedRpc/enableDisableCoprocClasses.ts
 
 cd "$root"/tools/ts-generator/rpc &&
-  python rpc_gen_js.py \
+  $py rpc_gen_js.py \
     --server-define-file "$root"/src/idl/coproc_idl.json \
     --output-file "$root"/src/js/modules/rpc/serverAndClients/server.ts
-
-cd "$root"/tools/ts-generator/rpc &&
-  python rpc_gen_js.py \
-    --server-define-file "$root"/src/idl/process_batch_coproc.json \
-    --output-file "$root"/src/js/modules/rpc/serverAndClients/processBatch.ts

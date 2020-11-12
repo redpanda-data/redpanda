@@ -16,22 +16,82 @@ jobs:
     runs-on: ubuntu-latest
     steps:
 
+    - name: Check out code
+      uses: actions/checkout@v2
+
     - name: Set up Go
       uses: actions/setup-go@v2
       with:
-        go-version: ^1.15
+        go-version: 1.13.6
       id: go
 
-    - name: Check out code into the Go module directory
-      uses: actions/checkout@v2
+    - name: Set up Node
+      uses: actions/setup-node@v2-beta
+      with:
+        node-version: '12.16.1'
+
+    - name: Install JS
+      working-directory: src/js
+      run: |
+        npm install
+
+    - name: Generate WASM deps
+      working-directory: src/js
+      run: |
+        npm run generate:serialization
+        npm run build:public
 
     - name: Test
+      working-directory: src/go/rpk/
       run: go test -v ./...
-      working-directory: src/go/rpk/
 
-    - name: Build
-      run: go build -o . -v ./...
+    - name: Build Linux
       working-directory: src/go/rpk/
+      # TODO: Insert version info.
+      run: GOOS=linux GOARCH=amd64 go build -o ./linux/ -v ./...
 
-    - name: Publish
-      run: echo "TODO"
+    - name: Build MacOS
+      working-directory: src/go/rpk/
+      # TODO: Inject version info.
+      run: GOOS=darwin GOARCH=amd64 go build -o ./darwin/ -v ./...
+
+    - name: Package
+      working-directory: src/go/rpk/
+      run: |
+        zip rpk-linux-amd64.zip ./linux/rpk
+        zip rpk-darwin-amd64.zip ./darwin/rpk
+
+    - name: Create rpk release
+      id: create_rpk_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: ${{ github.ref }}
+        draft: false
+        prerelease: false
+
+    - name: Upload Linux OS rpk to release
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_rpk_release.outputs.upload_url }} 
+        asset_path: src/go/rpk/rpk-linux-amd64.zip
+        asset_name: rpk-linux-amd64.zip
+        asset_content_type: application/zip
+
+    - name: Upload Mac OS rpk to release
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_rpk_release.outputs.upload_url }} 
+        asset_path: src/go/rpk/rpk-darwin-amd64.zip
+        asset_name: rpk-darwin-amd64.zip
+        asset_content_type: application/zip
+
+
+
+        
