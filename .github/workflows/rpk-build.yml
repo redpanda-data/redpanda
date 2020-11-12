@@ -21,7 +21,7 @@ jobs:
       working-directory: src/go/rpk/
 
     - name: Build
-      run: go build -o rpk -v ./...
+      run: go build -o . -v ./...
       working-directory: src/go/rpk/
 
     - name: Publish
