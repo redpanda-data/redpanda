@@ -46,12 +46,17 @@ segment::segment(
   std::optional<segment_appender> a,
   std::optional<compacted_index_writer> ci,
   std::optional<batch_cache_index> c) noexcept
-  : _tracker(tkr)
+  : _appender_callbacks(this)
+  , _tracker(tkr)
   , _reader(std::move(r))
   , _idx(std::move(i))
   , _appender(std::move(a))
   , _compaction_index(std::move(ci))
-  , _cache(std::move(c)) {}
+  , _cache(std::move(c)) {
+    if (_appender) {
+        _appender->set_callbacks(&_appender_callbacks);
+    }
+}
 
 void segment::check_segment_not_closed(const char* msg) {
     if (unlikely(is_closed())) {
@@ -221,6 +226,7 @@ ss::future<> segment::do_flush() {
     auto fsize = _appender->file_byte_offset();
     return _appender->flush().then([this, o, fsize] {
         _tracker.committed_offset = o;
+        _tracker.stable_offset = o;
         _reader.set_file_size(fsize);
     });
 }
@@ -245,7 +251,9 @@ segment::truncate(model::offset prev_last_offset, size_t physical) {
 
 ss::future<>
 segment::do_truncate(model::offset prev_last_offset, size_t physical) {
-    _tracker.committed_offset = _tracker.dirty_offset = prev_last_offset;
+    _tracker.committed_offset = prev_last_offset;
+    _tracker.stable_offset = prev_last_offset;
+    _tracker.dirty_offset = prev_last_offset;
     _reader.set_file_size(physical);
     cache_truncate(prev_last_offset + model::offset(1));
     auto f = ss::now();
@@ -294,6 +302,7 @@ ss::future<bool> segment::materialize_index() {
     return _idx.materialize_index().then([this](bool yn) {
         if (yn) {
             _tracker.committed_offset = _idx.max_offset();
+            _tracker.stable_offset = _idx.max_offset();
             _tracker.dirty_offset = _idx.max_offset();
         }
         return yn;
@@ -366,6 +375,8 @@ ss::future<append_result> segment::append(const model::record_batch& b) {
               expected_end_physical,
               b.header(),
               *this);
+            // inflight index. trimmed on every dma_write in appender
+            _inflight.emplace(end_physical_offset, b.last_offset());
             // index the write
             _idx.maybe_track(b.header(), start_physical_offset);
             auto ret = append_result{
@@ -419,6 +430,25 @@ segment::offset_data_stream(model::offset o, ss::io_priority_class iopc) {
         position = nearest->filepos;
     }
     return _reader.data_stream(position, iopc);
+}
+
+void segment::advance_stable_offset(size_t offset) {
+    if (_inflight.empty()) {
+        return;
+    }
+
+    auto it = _inflight.upper_bound(offset);
+    if (it != _inflight.begin()) {
+        --it;
+    }
+
+    if (it->first > offset) {
+        return;
+    }
+
+    _reader.set_file_size(it->first);
+    _tracker.stable_offset = it->second;
+    _inflight.erase(_inflight.begin(), it);
 }
 
 std::ostream& operator<<(std::ostream& o, const segment::offset_tracker& t) {

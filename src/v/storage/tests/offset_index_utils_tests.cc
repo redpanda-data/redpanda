@@ -6,12 +6,11 @@
 // As of the Change Date specified in that file, in accordance with
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
-
-#include "bytes/iobuf_file.h"
 #include "random/generators.h"
 #include "storage/segment_index.h"
 #include "test_utils/fixture.h"
 #include "utils/file_io.h"
+#include "utils/tmpbuf_file.h"
 
 #include <seastar/core/seastar.hh>
 #include <seastar/core/shared_ptr.hh>
@@ -24,7 +23,7 @@ struct context {
         // index
         _idx = std::make_unique<storage::segment_index>(
           "In memoyr iobuf",
-          ss::file(ss::make_shared(iobuf_file(_data))),
+          ss::file(ss::make_shared(tmpbuf_file(_data))),
           _base_offset,
           storage::segment_index::default_data_buffer_step);
     }
@@ -47,7 +46,7 @@ struct context {
     model::offset _base_offset;
     model::record_batch_header _base_hdr;
     storage::segment_index_ptr _idx;
-    iobuf _data;
+    tmpbuf_file::store_t _data;
 };
 FIXTURE_TEST(index_round_trip, context) {
     BOOST_CHECK(true);
@@ -59,9 +58,10 @@ FIXTURE_TEST(index_round_trip, context) {
     }
     info("About to flush index");
     _idx->flush().get0();
-    info("{} - serializing from bytes into mem: buffer{}", _idx, _data);
+    auto data = _data.share_iobuf();
+    info("{} - serializing from bytes into mem: buffer{}", _idx, data);
     auto raw_idx = storage::index_state::hydrate_from_buffer(
-      _data.share(0, _data.size_bytes()));
+      data.share(0, data.size_bytes()));
     BOOST_REQUIRE(raw_idx != std::nullopt);
     info("verifying tracking info: {}", *raw_idx);
     BOOST_REQUIRE_EQUAL(raw_idx->max_offset(), 1023);

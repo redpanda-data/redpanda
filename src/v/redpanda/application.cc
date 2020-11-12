@@ -22,6 +22,7 @@
 #include "redpanda/admin/api-doc/kafka.json.h"
 #include "redpanda/admin/api-doc/raft.json.h"
 #include "rpc/simple_protocol.h"
+#include "storage/chunk_cache.h"
 #include "storage/directories.h"
 #include "syschecks/syschecks.h"
 #include "test_utils/logs.h"
@@ -280,6 +281,10 @@ static storage::log_config manager_config_from_global_config() {
 
 // add additional services in here
 void application::wire_up_services() {
+    ss::smp::invoke_on_all([] {
+        return storage::internal::chunks().start();
+    }).get();
+
     // cluster
     syschecks::systemd_message("Adding raft client cache");
     construct_service(_raft_connection_cache).get();

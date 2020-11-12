@@ -34,8 +34,6 @@ namespace storage {
 class segment_appender {
 public:
     using chunk = segment_appender_chunk;
-    using underlying_t = intrusive_list<chunk, &chunk::hook>;
-    using iterator = typename underlying_t::iterator;
 
     static constexpr const size_t write_behind_memory = 1_MiB;
     static constexpr const size_t chunks_no_buffer = write_behind_memory
@@ -76,13 +74,32 @@ public:
     ss::future<> close();
     ss::future<> flush();
 
+    struct callbacks {
+        virtual void committed_physical_offset(size_t) = 0;
+    };
+
+    void set_callbacks(callbacks* callbacks) { _callbacks = callbacks; }
+
 private:
-    void clear();
-    chunk& head() { return _free_chunks.front(); }
     void dispatch_background_head_write();
     ss::future<> do_next_adaptive_fallocation();
     ss::future<> hydrate_last_half_page();
     ss::future<> do_truncation(size_t);
+    ss::future<> do_append(const char* buf, const size_t n);
+
+    /*
+     * committed offset isn't updated until the background write is dispatched.
+     * however, we must ensure that an fallocation never occurs at an offset
+     * below the committed offset. because truncation can occur at an unaligned
+     * offset, its possible that a chunk offset range overlaps fallocation
+     * offset. if that happens and the chunk fills up and is dispatched before
+     * the next fallocation then fallocation will write zeros to a lower offset
+     * than the commit index. thus, here we must compare fallocation offset to
+     * the eventual committed offset taking into account pending bytes.
+     */
+    size_t next_committed_offset() const {
+        return _committed_offset + (_head ? _head->bytes_pending() : 0);
+    }
 
     ss::file _out;
     options _opts;
@@ -91,8 +108,24 @@ private:
     size_t _fallocation_offset{0};
     size_t _bytes_flush_pending{0};
     ss::semaphore _concurrent_flushes;
-    underlying_t _free_chunks;
-    underlying_t _full_chunks;
+    ss::lw_shared_ptr<chunk> _head;
+
+    struct inflight_write {
+        bool done;
+        size_t offset;
+
+        explicit inflight_write(size_t offset)
+          : done(false)
+          , offset(offset) {}
+    };
+
+    ss::chunked_fifo<ss::lw_shared_ptr<inflight_write>> _inflight;
+    callbacks* _callbacks = nullptr;
+    void maybe_advance_stable_offset(const ss::lw_shared_ptr<inflight_write>&);
+
+    ss::timer<ss::lowres_clock> _inactive_timer;
+    void handle_inactive_timer();
+    bool _previously_inactive = false;
 
     friend std::ostream& operator<<(std::ostream&, const segment_appender&);
 };
