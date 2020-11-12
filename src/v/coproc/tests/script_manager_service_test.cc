@@ -78,6 +78,20 @@ FIXTURE_TEST(test_coproc_topic_dne, script_manager_service_fixture) {
     BOOST_CHECK(resp.acks[0].second[0] == erc::topic_does_not_exist);
 }
 
+FIXTURE_TEST(test_coproc_no_topics, script_manager_service_fixture) {
+    startup({{make_ts("foo"), 5}}, {});
+    auto client = rpc::client<coproc::script_manager_client_protocol>(
+      client_config());
+    client.connect().get();
+    auto dclient = ss::defer([&client] { client.stop().get(); });
+    const auto resp = coproc_register_topics(
+                        client, {make_enable_req(1234, {})})
+                        .get0()
+                        .value()
+                        .data;
+    BOOST_CHECK_EQUAL(resp.acks.size(), 1);
+}
+
 // This test fixture tests the edge cases, i.e. situations that should fail
 FIXTURE_TEST(test_coproc_invalid_topics, script_manager_service_fixture) {
     startup(
