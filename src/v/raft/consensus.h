@@ -104,7 +104,8 @@ public:
           .commit_index = _commit_index,
           .term = _term,
           .prev_log_index = lstats.dirty_offset,
-          .prev_log_term = lstats.dirty_offset_term};
+          .prev_log_term = lstats.dirty_offset_term,
+          .last_visible_index = _last_visible_index};
     }
     raft::group_id group() const { return _group; }
     model::term_id term() const { return _term; }

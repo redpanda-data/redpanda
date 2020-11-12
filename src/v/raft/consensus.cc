@@ -1010,6 +1010,8 @@ consensus::do_append_entries(append_entries_request&& r) {
             return ss::make_ready_future<append_entries_reply>(
               std::move(reply));
         }
+        maybe_update_last_visible_index(
+          std::min(lstats.dirty_offset, r.meta.last_visible_index));
         return maybe_update_follower_commit_idx(
                  model::offset(r.meta.commit_index))
           .then([reply = std::move(reply)]() mutable {
@@ -1081,7 +1083,8 @@ consensus::do_append_entries(append_entries_request&& r) {
           if (flush) {
               f = f.then([this] { return flush_log(); });
           }
-
+          maybe_update_last_visible_index(
+            std::min(ofs.last_offset, m.last_visible_index));
           return f.then(
             [this, m = std::move(m), ofs = std::move(ofs)]() mutable {
                 return maybe_update_follower_commit_idx(

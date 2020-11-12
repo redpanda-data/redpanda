@@ -256,6 +256,8 @@ ss::future<> recovery_stm::replicate(model::record_batch_reader&& reader) {
 
     // calculate commit index for follower to update immediately
     auto commit_idx = std::min(_last_batch_offset, _committed_offset);
+    auto last_visible_idx = std::min(
+      _last_batch_offset, _ptr->last_visible_index());
     // build request
     append_entries_request r(
       _ptr->self(),
@@ -264,7 +266,8 @@ ss::future<> recovery_stm::replicate(model::record_batch_reader&& reader) {
         .commit_index = commit_idx,
         .term = _ptr->term(),
         .prev_log_index = prev_log_idx,
-        .prev_log_term = prev_log_term},
+        .prev_log_term = prev_log_term,
+        .last_visible_index = last_visible_idx},
       std::move(reader),
       append_entries_request::flush_after_append::no);
 

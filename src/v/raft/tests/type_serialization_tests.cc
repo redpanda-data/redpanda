@@ -70,6 +70,7 @@ SEASTAR_THREAD_TEST_CASE(append_entries_requests) {
       .term = model::term_id(10),
       .prev_log_index = model::offset(99),
       .prev_log_term = model::term_id(-1),
+      .last_visible_index = model::offset(200),
     };
     raft::append_entries_request req(
       model::node_id(1), meta, std::move(readers.back()));
@@ -83,6 +84,7 @@ SEASTAR_THREAD_TEST_CASE(append_entries_requests) {
     BOOST_REQUIRE_EQUAL(d.meta.term, meta.term);
     BOOST_REQUIRE_EQUAL(d.meta.prev_log_index, meta.prev_log_index);
     BOOST_REQUIRE_EQUAL(d.meta.prev_log_term, meta.prev_log_term);
+    BOOST_REQUIRE_EQUAL(d.meta.last_visible_index, meta.last_visible_index);
 
     auto batches_result = model::consume_reader_to_memory(
                             std::move(readers.back()), model::no_timeout)
@@ -117,6 +119,7 @@ SEASTAR_THREAD_TEST_CASE(heartbeat_request_roundtrip) {
         req.meta[i].term = model::term_id(i);
         req.meta[i].prev_log_index = model::offset(i);
         req.meta[i].prev_log_term = model::term_id(i);
+        req.meta[i].last_visible_index = model::offset(i);
     }
     iobuf buf;
     reflection::async_adl<raft::heartbeat_request>{}
@@ -135,6 +138,7 @@ SEASTAR_THREAD_TEST_CASE(heartbeat_request_roundtrip) {
         BOOST_REQUIRE_EQUAL(res.meta[i].term, model::term_id(i));
         BOOST_REQUIRE_EQUAL(res.meta[i].prev_log_index, model::offset(i));
         BOOST_REQUIRE_EQUAL(res.meta[i].prev_log_term, model::term_id(i));
+        BOOST_REQUIRE_EQUAL(res.meta[i].last_visible_index, model::offset(i));
     }
 }
 SEASTAR_THREAD_TEST_CASE(heartbeat_request_roundtrip_with_negative) {
@@ -148,6 +152,7 @@ SEASTAR_THREAD_TEST_CASE(heartbeat_request_roundtrip_with_negative) {
         req.meta[i].term = model::term_id(-i - 100);
         req.meta[i].prev_log_index = model::offset(-i - 100);
         req.meta[i].prev_log_term = model::term_id(-i - 100);
+        req.meta[i].last_visible_index = model::offset(-i - 100);
     }
     iobuf buf;
     reflection::async_adl<raft::heartbeat_request>{}
@@ -165,6 +170,7 @@ SEASTAR_THREAD_TEST_CASE(heartbeat_request_roundtrip_with_negative) {
         BOOST_REQUIRE_EQUAL(m.term, model::term_id{-1});
         BOOST_REQUIRE_EQUAL(m.prev_log_index, model::offset{});
         BOOST_REQUIRE_EQUAL(m.prev_log_term, model::term_id{});
+        BOOST_REQUIRE_EQUAL(m.last_visible_index, model::offset{});
     }
 }
 SEASTAR_THREAD_TEST_CASE(heartbeat_response_roundtrip) {
