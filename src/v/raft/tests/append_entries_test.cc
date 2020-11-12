@@ -259,7 +259,7 @@ FIXTURE_TEST(
       [this, &gr] {
           auto& node = gr.get_members().begin()->second;
           auto lstats = node.log->offsets();
-          return node.consensus->max_consumable_offset() == lstats.dirty_offset;
+          return node.consensus->last_visible_index() == lstats.dirty_offset;
       },
       "Commit index is advanced ");
 };

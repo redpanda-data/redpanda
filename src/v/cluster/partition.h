@@ -88,7 +88,7 @@ public:
      * consistent with Kafka nomenclature.
      */
     model::offset high_watermark() const {
-        return _raft->max_consumable_offset();
+        return _raft->last_visible_index();
     }
 
     const model::ntp& ntp() const { return _raft->ntp(); }

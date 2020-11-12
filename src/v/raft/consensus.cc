@@ -348,8 +348,8 @@ consensus::replicate(model::record_batch_reader&& rdr, replicate_options opts) {
                                details::term_assigning_reader>(
                                std::move(rdr), model::term_id(_term)))
             .then([this](storage::append_result res) {
-                // update max_consumable_offset immediately after append succeed
-                maybe_update_max_consumable_offset(res.last_offset);
+                // update last_visible_index immediately after append succeed
+                maybe_update_last_visible_index(res.last_offset);
                 return result<replicate_result>(
                   replicate_result{.last_offset = res.last_offset});
             });
@@ -374,7 +374,7 @@ void consensus::dispatch_flush_with_lock() {
 model::offset consensus::last_stable_offset() const {
     // TODO: handle transactions, when we implement them, for now LSO is simply
     // equal to max consumable offset
-    return _max_consumable_offset;
+    return _last_visible_index;
 }
 
 ss::future<model::record_batch_reader>
@@ -389,7 +389,7 @@ consensus::do_make_reader(storage::log_reader_config config) {
     // region or the reader will enounter the end of log adn the reader will
     // flush and retry, making progress.
     if (!_has_pending_flushes || config.start_offset <= lstats.dirty_offset) {
-        config.max_offset = std::min(config.max_offset, _max_consumable_offset);
+        config.max_offset = std::min(config.max_offset, _last_visible_index);
         return _log.make_reader(config);
     }
 
@@ -401,7 +401,7 @@ consensus::do_make_reader(storage::log_reader_config config) {
         }
         return f.then([this, config = config]() mutable {
             config.max_offset = std::min(
-              config.max_offset, _max_consumable_offset);
+              config.max_offset, _last_visible_index);
             return _log.make_reader(config);
         });
     });
@@ -417,7 +417,7 @@ ss::future<model::record_batch_reader> consensus::make_reader(
 
     return _consumable_offset_monitor
       .wait(
-        details::next_offset(_max_consumable_offset), *debounce_timeout, _as)
+        details::next_offset(_last_visible_index), *debounce_timeout, _as)
       .then([this, config]() mutable { return do_make_reader(config); });
 }
 
@@ -697,7 +697,7 @@ ss::future<> consensus::start() {
               auto last_applied = read_last_applied();
               if (last_applied > _commit_index) {
                   _commit_index = last_applied;
-                  _max_consumable_offset = last_applied;
+                  _last_visible_index = last_applied;
                   vlog(
                     _ctxlog.trace, "Recovered commit_index: {}", _commit_index);
               }
@@ -1160,7 +1160,7 @@ ss::future<> consensus::do_hydrate_snapshot(storage::snapshot_reader& reader) {
 
         // TODO: add applying snapshot content to state machine
         _commit_index = std::max(_last_snapshot_index, _commit_index);
-        maybe_update_max_consumable_offset(_commit_index);
+        maybe_update_last_visible_index(_commit_index);
 
         update_follower_stats(metadata.latest_configuration);
         return _configuration_manager
@@ -1552,7 +1552,7 @@ consensus::do_maybe_update_leader_commit_idx(ss::semaphore_units<> u) {
           _commit_index);
         _commit_index_updated.broadcast();
         _event_manager.notify_commit_index(_commit_index);
-        maybe_update_max_consumable_offset(_commit_index);
+        maybe_update_last_visible_index(_commit_index);
         return maybe_commit_configuration(std::move(u));
     }
     return ss::now();
@@ -1573,7 +1573,7 @@ consensus::maybe_update_follower_commit_idx(model::offset request_commit_idx) {
               _ctxlog.trace, "Follower commit index updated {}", _commit_index);
             _commit_index_updated.broadcast();
             _event_manager.notify_commit_index(_commit_index);
-            maybe_update_max_consumable_offset(_commit_index);
+            maybe_update_last_visible_index(_commit_index);
         }
     }
     return ss::make_ready_future<>();
@@ -1853,9 +1853,9 @@ ss::future<> consensus::remove_persistent_state() {
         [this] { return _configuration_manager.remove_persistent_state(); });
 }
 
-void consensus::maybe_update_max_consumable_offset(model::offset offset) {
-    _max_consumable_offset = std::max(_max_consumable_offset, offset);
-    _consumable_offset_monitor.notify(_max_consumable_offset);
+void consensus::maybe_update_last_visible_index(model::offset offset) {
+    _last_visible_index = std::max(_last_visible_index, offset);
+    _consumable_offset_monitor.notify(_last_visible_index);
 }
 
 } // namespace raft
