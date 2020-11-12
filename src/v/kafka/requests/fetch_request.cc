@@ -263,7 +263,9 @@ make_ready_partition_response_error(error_code error) {
  * Low-level handler for reading from an ntp. Runs on ntp's home core.
  */
 static ss::future<fetch_response::partition_response> read_from_partition(
-  ss::lw_shared_ptr<cluster::partition> partition, fetch_config config) {
+  ss::lw_shared_ptr<cluster::partition> partition,
+  fetch_config config,
+  std::optional<model::timeout_clock::time_point> deadline) {
     storage::log_reader_config reader_config(
       config.start_offset,
       model::model_limits<model::offset>::max(),
@@ -276,7 +278,7 @@ static ss::future<fetch_response::partition_response> read_from_partition(
 
     reader_config.strict_max_bytes = config.strict_max_bytes;
 
-    return partition->make_reader(reader_config)
+    return partition->make_reader(reader_config, deadline)
       .then([partition,
              timeout = config.timeout](model::record_batch_reader reader) {
           vlog(klog.trace, "fetch reader {}", reader);
@@ -292,6 +294,13 @@ static ss::future<fetch_response::partition_response> read_from_partition(
                   .record_set = std::move(res.data),
                 };
             });
+      })
+      .handle_exception_type([](const ss::timed_out_error&) {
+          // no data are returned
+          return fetch_response::partition_response{
+            .error = error_code::none,
+            .record_set = iobuf(),
+          };
       });
 }
 
@@ -315,7 +324,10 @@ read_from_ntp(op_context& octx, model::ntp ntp, fetch_config config) {
     return octx.rctx.partition_manager().invoke_on(
       *shard,
       octx.ssg,
-      [ntp = std::move(ntp), config](cluster::partition_manager& mgr) {
+      [initial_fetch = octx.initial_fetch,
+       deadline = octx.deadline,
+       ntp = std::move(ntp),
+       config](cluster::partition_manager& mgr) {
           /*
            * lookup the ntp's partition
            */
@@ -328,9 +340,10 @@ read_from_ntp(op_context& octx, model::ntp ntp, fetch_config config) {
               return make_ready_partition_response_error(
                 error_code::not_leader_for_partition);
           }
-          auto max_offset = partition->high_watermark() < model::offset(0)
+          auto high_watermark = partition->high_watermark();
+          auto max_offset = high_watermark < model::offset(0)
                               ? model::offset(0)
-                              : partition->high_watermark() + model::offset(1);
+                              : high_watermark + model::offset(1);
           if (
             config.start_offset < partition->start_offset()
             || config.start_offset > max_offset) {
@@ -343,7 +356,20 @@ read_from_ntp(op_context& octx, model::ntp ntp, fetch_config config) {
                   .record_set = iobuf(),
                 });
           }
-          return read_from_partition(partition, config)
+          /**
+           * Check if we should wait for more data.
+           *
+           * If request allow waiting for more data we will wait in two
+           * scenarios:
+           *
+           * - previous read didn't meet requested budged
+           * - consumer requested read that is beyond high water mark
+           */
+          bool can_wait = !initial_fetch
+                          || config.start_offset > high_watermark;
+
+          return read_from_partition(
+                   partition, config, can_wait ? deadline : std::nullopt)
             .then([partition](fetch_response::partition_response&& resp) {
                 resp.last_stable_offset = partition->last_stable_offset();
                 resp.high_watermark = partition->high_watermark();
@@ -423,7 +449,8 @@ static ss::future<> fetch_topic_partitions(op_context& octx) {
           // if over budget create placeholder response
           if (
             octx.bytes_left == 0
-            || model::timeout_clock::now() > octx.deadline) {
+            || model::timeout_clock::now()
+                 > octx.deadline.value_or(model::no_timeout)) {
               octx.add_partition_response(
                 make_partition_response_error(error_code::message_too_large));
               return ss::make_ready_future<>();
@@ -435,7 +462,7 @@ static ss::future<> fetch_topic_partitions(op_context& octx) {
             .start_offset = part.fetch_offset,
             .max_bytes = std::min(
               octx.bytes_left, size_t(part.partition_max_bytes)),
-            .timeout = octx.deadline,
+            .timeout = octx.deadline.value_or(model::no_timeout),
             .strict_max_bytes = octx.response_size > 0,
           };
 
@@ -449,41 +476,16 @@ fetch_api::process(request_context&& rctx, ss::smp_service_group ssg) {
         // top-level error is used for session-level errors, but we do not yet
         // implement session management.
         octx.response.error = error_code::none;
-        return fetch_topic_partitions(octx).then([&octx] {
-            /*
-             * fast out
-             *
-             * response_size is a size_t accumulated value that we track as we
-             * build the response. all of the kafka types (e.g. min_bytes) are
-             * annoyingly signed.
-             */
-            if (
-              !octx.request.debounce_delay()
-              || (int32_t)octx.response_size >= octx.request.min_bytes
-              || octx.request.topics.empty() || octx.response_error) {
-                return octx.rctx.respond(std::move(octx.response));
-            }
-
-            /*
-             * debounce since not enough bytes were collected.
-             *
-             * TODO:
-             *   - actual debouncing would collect additional data if
-             * available, but this only introduces the delay. the delay is
-             * still important for now so that the client and server do
-             * not sit in tight req/rep loop, and once the client gets an
-             * ack it can retry. the implementation of debouncing should
-             * be done or at least coordinated with the storage layer.
-             * Otherwise we'd have to developer heuristics on top of
-             * storage for polling.
-             *
-             *   - this needs to be abortable sleep coordinated with
-             * server shutdown.
-             */
-            auto delay = octx.deadline - model::timeout_clock::now();
-            return ss::sleep<model::timeout_clock>(delay).then(
-              [&octx] { return octx.rctx.respond(std::move(octx.response)); });
-        });
+        // first fetch, do not wait
+        return fetch_topic_partitions(octx)
+          .then([&octx] {
+              octx.initial_fetch = false;
+              return ss::do_until(
+                [&octx] { return octx.should_stop_fetch(); },
+                [&octx] { return fetch_topic_partitions(octx); });
+          })
+          .then(
+            [&octx] { return octx.rctx.respond(std::move(octx.response)); });
     });
 }
 
