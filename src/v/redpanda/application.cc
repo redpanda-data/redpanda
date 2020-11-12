@@ -402,14 +402,15 @@ void application::wire_up_services() {
 
     // coproc rpc
     if (coproc_enabled()) {
-        auto coproc_management_server_addr = config::shard_local_cfg()
-                                               .coproc_management_server()
-                                               .resolve()
-                                               .get0();
+        auto coproc_script_manager_server_addr
+          = config::shard_local_cfg()
+              .coproc_script_manager_server()
+              .resolve()
+              .get0();
         rpc::server_configuration cp_rpc_cfg("coproc_rpc");
         cp_rpc_cfg.max_service_memory_per_core
           = memory_groups::rpc_total_memory();
-        cp_rpc_cfg.addrs.push_back(coproc_management_server_addr);
+        cp_rpc_cfg.addrs.push_back(coproc_script_manager_server_addr);
         syschecks::systemd_message(
           "Starting coprocessor internal RPC {}", cp_rpc_cfg);
         construct_service(_coproc_rpc, cp_rpc_cfg).get();
@@ -492,7 +493,9 @@ void application::start() {
           .get();
         _coproc_rpc.invoke_on_all(&rpc::server::start).get();
         vlog(
-          _log.info, "Started coproc RPC server listening at 127.0.0.1:43188");
+          _log.info,
+          "Started coproc RPC server listening at {}",
+          conf.coproc_script_manager_server());
     }
 
     _quota_mgr.invoke_on_all(&kafka::quota_manager::start).get();

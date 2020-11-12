@@ -38,7 +38,7 @@ struct configuration final : public config_store {
     property<tls_config> rpc_server_tls;
     // Coproc
     property<bool> enable_coproc;
-    property<unresolved_address> coproc_management_server;
+    property<unresolved_address> coproc_script_manager_server;
     property<unresolved_address> coproc_supervisor_server;
     // Raft
     property<int32_t> node_id;

@@ -55,9 +55,9 @@ configuration::configuration()
       tls_config::validate)
   , enable_coproc(
       *this, "enable_coproc", "Enable coprocessing mode", required::no, false)
-  , coproc_management_server(
+  , coproc_script_manager_server(
       *this,
-      "coproc_management_server",
+      "coproc_script_manager_server",
       "IpAddress and port for management service",
       required::no,
       unresolved_address("127.0.0.1", 43118))
