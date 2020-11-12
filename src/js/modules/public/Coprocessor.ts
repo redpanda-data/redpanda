@@ -1,4 +1,14 @@
 /**
+ * Copyright 2020 Vectorized, Inc.
+ *
+ * Licensed as a Redpanda Enterprise file under the Redpanda Community
+ * License (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ *
+ * https://github.com/vectorizedio/redpanda/blob/master/licenses/rcl.md
+ */
+
+/**
  * Policy Error define what does the coprocessor function
  * do when the apply function into Coprocessor class fail.
  * SkipOnFailure: the current record is lose but the function

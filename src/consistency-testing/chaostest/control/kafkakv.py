@@ -1,4 +1,13 @@
 #!/usr/bin/env python3
+# Copyright 2020 Vectorized, Inc.
+#
+# Use of this software is governed by the Business Source License
+# included in the file licenses/BSL.md
+#
+# As of the Change Date specified in that file, in accordance with
+# the Business Source License, use of this software will be governed
+# by the Apache License, Version 2.0
+
 
 # pip3 install kafka-python flask
 # rpk api topic create -p 1 -r 3 topic3
