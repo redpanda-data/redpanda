@@ -2,13 +2,14 @@
 **/*
 
 # base
-!/tools/install-deps.sh
+!/vtools/scripts/install-deps.sh
 
+!/vtools/
 # vtools
-!/tools/
+!/vtools/vtools
 
 # vtools configs
-!/tools/ci/vtools*.yml
+!/vtools/vtools/artifacts/ci/vtools*.yml
 
 # rpk
 !/src/go/rpk/go.mod
@@ -18,11 +19,11 @@
 
 # clang
 !/cmake/caches/llvm.cmake
-!/tools/vtools/vlib/clang.py
+!/vtools/vtools/vlib/clang.py
 
 # external projects
 !/3rdparty.cmake.in
-!/tools/vtools/vlib/cmake.py
+!/vtools/vtools/vlib/cmake.py
 !/cmake/dpdk_configure.cmake
 !dpdk_config
 
