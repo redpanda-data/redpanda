@@ -104,7 +104,8 @@ public:
           .commit_index = _commit_index,
           .term = _term,
           .prev_log_index = lstats.dirty_offset,
-          .prev_log_term = lstats.dirty_offset_term};
+          .prev_log_term = lstats.dirty_offset_term,
+          .last_visible_index = _last_visible_index};
     }
     raft::group_id group() const { return _group; }
     model::term_id term() const { return _term; }
@@ -140,26 +141,24 @@ public:
     model::offset last_stable_offset() const;
 
     /**
-     * Max consumable offset is an offset that is safe to be fetched by the
-     * consumers. This is similar to Kafka's HighWatermark. Max consumable
-     * offset is depends on the consistency level of messages replicated by the
-     * consensus instance and state of the log. Max consumable offset similarly
-     * to HighWaterMark is monotonic and can never move backward. Max consumable
+     * Last visible index is an offset that is safe to be fetched by the
+     * consumers. This is similar to Kafka's HighWatermark. Last visible
+     * offset depends on the consistency level of messages replicated by the
+     * consensus instance and state of the log. Last visible offset similarly
+     * to HighWaterMark is monotonic and can never move backward. Last visible
      * offset is always greater than log start offset and smaller than log dirty
      * offset.
      *
-     * Max consumable offset is updated in two scenarios
+     * Last visible offset is updated in two scenarios
      *
      * - commited offset is updated (consistency_level=quorum)
      * - when batch with was appended to the leader log with relaxed consistency
      *
-     * We always update max_consumable offset with std::max(prev,
+     * We always update last visible index with std::max(prev,
      * possible_value) to guarantee its monotonicity.
      *
      */
-    model::offset max_consumable_offset() const {
-        return _max_consumable_offset;
-    };
+    model::offset last_visible_index() const { return _last_visible_index; };
 
     ss::future<offset_configuration>
     wait_for_config_change(model::offset last_seen, ss::abort_source& as) {
@@ -314,7 +313,7 @@ private:
 
     bytes last_applied_key() const;
 
-    void maybe_update_max_consumable_offset(model::offset);
+    void maybe_update_last_visible_index(model::offset);
     // args
     model::node_id _self;
     raft::group_id _group;
@@ -370,7 +369,7 @@ private:
     model::offset _last_snapshot_index;
     model::term_id _last_snapshot_term;
     configuration_manager _configuration_manager;
-    model::offset _max_consumable_offset;
+    model::offset _last_visible_index;
     offset_monitor _consumable_offset_monitor;
     friend std::ostream& operator<<(std::ostream&, const consensus&);
 };

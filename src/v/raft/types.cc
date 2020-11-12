@@ -189,7 +189,7 @@ async_adl<raft::append_entries_request>::from(iobuf_parser& in) {
 
 void adl<raft::protocol_metadata>::to(
   iobuf& out, raft::protocol_metadata request) {
-    std::array<bytes::value_type, 5 * vint::max_length> staging{};
+    std::array<bytes::value_type, 6 * vint::max_length> staging{};
     auto idx = vint::serialize(request.group(), staging.data());
     idx += vint::serialize(request.commit_index(), staging.data() + idx);
     idx += vint::serialize(request.term(), staging.data() + idx);
@@ -197,6 +197,7 @@ void adl<raft::protocol_metadata>::to(
     // varint the delta-encoded value
     idx += vint::serialize(request.prev_log_index(), staging.data() + idx);
     idx += vint::serialize(request.prev_log_term(), staging.data() + idx);
+    idx += vint::serialize(request.last_visible_index(), staging.data() + idx);
 
     out.append(
       // NOLINTNEXTLINE
@@ -217,6 +218,7 @@ raft::protocol_metadata adl<raft::protocol_metadata>::from(iobuf_parser& in) {
     ret.term = varlong_reader<model::term_id>(in);
     ret.prev_log_index = varlong_reader<model::offset>(in);
     ret.prev_log_term = varlong_reader<model::term_id>(in);
+    ret.last_visible_index = varlong_reader<model::offset>(in);
     return ret;
 }
 namespace internal {
@@ -226,7 +228,8 @@ struct hbeat_soa {
       , commit_indices(n)
       , terms(n)
       , prev_log_indices(n)
-      , prev_log_terms(n) {}
+      , prev_log_terms(n)
+      , last_visible_indices(n) {}
     ~hbeat_soa() noexcept = default;
     hbeat_soa(const hbeat_soa&) = delete;
     hbeat_soa& operator=(const hbeat_soa&) = delete;
@@ -238,6 +241,7 @@ struct hbeat_soa {
     std::vector<model::term_id> terms;
     std::vector<model::offset> prev_log_indices;
     std::vector<model::term_id> prev_log_terms;
+    std::vector<model::offset> last_visible_indices;
 };
 
 struct hbeat_response_array {
@@ -313,6 +317,8 @@ ss::future<> async_adl<raft::heartbeat_request>::to(
                 model::offset(-1), m.prev_log_index);
               encodee.prev_log_terms[i] = std::max(
                 model::term_id(-1), m.prev_log_term);
+              encodee.last_visible_indices[i] = std::max(
+                model::offset(-1), m.last_visible_index);
           }
           // important to release this memory after this function
           // request.meta = {}; // release memory
@@ -329,6 +335,8 @@ ss::future<> async_adl<raft::heartbeat_request>::to(
             out, encodee.prev_log_indices);
           internal::encode_one_delta_array<model::term_id>(
             out, encodee.prev_log_terms);
+          internal::encode_one_delta_array<model::offset>(
+            out, encodee.last_visible_indices);
       });
 }
 
@@ -374,11 +382,18 @@ async_adl<raft::heartbeat_request>::from(iobuf_parser& in) {
           = internal::read_one_varint_delta<model::term_id>(
             in, req.meta[i - 1].prev_log_term);
     }
+    req.meta[0].last_visible_index = varlong_reader<model::offset>(in);
+    for (size_t i = 1; i < max; ++i) {
+        req.meta[i].last_visible_index
+          = internal::read_one_varint_delta<model::offset>(
+            in, req.meta[i - 1].last_visible_index);
+    }
 
     for (auto& m : req.meta) {
         m.prev_log_index = decode_signed(m.prev_log_index);
         m.commit_index = decode_signed(m.commit_index);
         m.prev_log_term = decode_signed(m.prev_log_term);
+        m.last_visible_index = decode_signed(m.last_visible_index);
     }
     return ss::make_ready_future<raft::heartbeat_request>(std::move(req));
 }

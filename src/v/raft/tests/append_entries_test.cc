@@ -18,6 +18,7 @@
 #include "storage/record_batch_builder.h"
 #include "storage/tests/utils/disk_log_builder.h"
 #include "storage/tests/utils/random_batch.h"
+#include "test_utils/async.h"
 
 #include <system_error>
 
@@ -234,7 +235,7 @@ FIXTURE_TEST(test_append_entries_with_relaxed_consistency, raft_test_fixture) {
 
     wait_for(
       10s,
-      [this, &gr] { return are_all_commit_indexes_the_same(gr); },
+      [this, &gr] { return are_all_consumable_offsets_are_the_same(gr); },
       "After recovery state is consistent");
 };
 
@@ -250,7 +251,7 @@ FIXTURE_TEST(
 
     wait_for(
       1s,
-      [this, &gr] { return are_all_commit_indexes_the_same(gr); },
+      [this, &gr] { return are_all_consumable_offsets_are_the_same(gr); },
       "After recovery state is consistent");
 
     wait_for(
@@ -258,9 +259,7 @@ FIXTURE_TEST(
       [this, &gr] {
           auto& node = gr.get_members().begin()->second;
           auto lstats = node.log->offsets();
-          return lstats.committed_offset == lstats.dirty_offset
-                 && node.consensus->committed_offset()
-                      == lstats.committed_offset;
+          return node.consensus->last_visible_index() == lstats.dirty_offset;
       },
       "Commit index is advanced ");
 };
@@ -443,6 +442,16 @@ FIXTURE_TEST(test_snapshot_recovery, raft_test_fixture) {
     bool success = replicate_random_batches(gr, 5).get0();
     BOOST_REQUIRE(success);
     validate_logs_replication(gr);
+
+    tests::cooperative_spin_wait_with_timeout(2s, [&gr] {
+        auto offset
+          = gr.get_members().begin()->second.consensus->committed_offset();
+        if (offset <= model::offset(0)) {
+            return false;
+        }
+        return are_all_commit_indexes_the_same(gr);
+    }).get0();
+
     // store snapshot
     for (auto& [_, member] : gr.get_members()) {
         member.consensus
@@ -486,6 +495,15 @@ FIXTURE_TEST(test_snapshot_recovery_last_config, raft_test_fixture) {
     leader_raft->step_down(leader_raft->term() + model::term_id(1)).get0();
 
     validate_logs_replication(gr);
+    tests::cooperative_spin_wait_with_timeout(2s, [&gr] {
+        auto offset
+          = gr.get_members().begin()->second.consensus->committed_offset();
+        if (offset <= model::offset(0)) {
+            return false;
+        }
+        return are_all_commit_indexes_the_same(gr);
+    }).get0();
+
     // store snapshot
     for (auto& [_, member] : gr.get_members()) {
         member.consensus

@@ -49,6 +49,7 @@ struct protocol_metadata {
     model::term_id term;
     model::offset prev_log_index;
     model::term_id prev_log_term;
+    model::offset last_visible_index;
 };
 
 // The sequence used to track the order of follower append entries request
