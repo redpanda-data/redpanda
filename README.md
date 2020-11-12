@@ -6,15 +6,14 @@
 [<img src="docs/PANDA_sitting.jpg" alt="redpanda sitting" width="400"/>](https://vectorized.io/redpanda)
 
 
-Redpanda is a modern streaming platform for mission critical workloads. Kafka® compatible, 
+Redpanda is a streaming platform for mission critical workloads. Kafka® compatible, 
 No Zookeeper®, no JVM, and no code changes required. Use all your favorite open source tooling - 10x faster.
 
-Our goal is to empower every developer to supercharge their applications with real-time streaming. 
-From solo JS devs to enterprise data engineers- we've got your back.
-We're building the future of streaming. Whether it's providing inline WASM transforms for one-shot 
-transformations or helping with tiered hierarchical storage to unify real-time and historical data, 
-we're pushing the boundaries of what's possible with streaming.
-
+We are building a real-time streaming engine for modern applications - from the 
+enterprise to the solo dev prototyping a react application on her laptop. 
+We go beyond the Kafka protocol, into the future of streaming with inline WASM 
+transforms and geo-replicated hierarchical storage. A new platform that scales with 
+you from the smallest projects to petabytes of data distributed across the globe.
 
 # Community
 
@@ -24,7 +23,7 @@ we're pushing the boundaries of what's possible with streaming.
 
 [GitHub Issues](https://github.com/vectorizedio/redpanda/issues) is reserved only for actual issues. Please use the mailing list for discussions.
 
-[Code of conduct](./CODE_OF_CONDUCT.md)
+[Code of conduct](./CODE_OF_CONDUCT.md) code of conduct for the community
 
 # Getting Started
 
@@ -34,7 +33,7 @@ We recommend using our free & prebuilt stable releases below.
 
 ### On MacOS
 
-Simply download our `rpk` binary [here]. We require docker on MacOS
+Simply download our `rpk` [binary here](https://github.com/vectorizedio/redpanda/releases). We require Docker on MacOS
 
 ```
 rpk container start
