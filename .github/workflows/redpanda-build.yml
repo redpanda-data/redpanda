@@ -3,13 +3,23 @@ on: [push, pull_request]
 
 jobs:
   build:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
+    container:
+      image: ubuntu:20.04
+
     steps:
         - name: checkout
           uses: actions/checkout@v2
 
+        - name: update container base
+          run: |
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update -y
+            apt-get install -y git sudo pkg-config
+
         - name: install dependencies
-          run: sudo ./install-dependencies.sh
+          run: ./install-dependencies.sh
+
 
         - name: build & test
           run: ./build.sh

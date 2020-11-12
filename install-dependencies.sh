@@ -1,6 +1,11 @@
 #!/bin/bash
 
 echo "installing seastar dependencies"
+
+if [[ $EUID -ne 0 ]]; then
+    echo "This script should be run as root."
+    exit 1
+fi
 if [ -f "/etc/os-release" ]; then
   . /etc/os-release
 elif [ -f "/etc/arch-release" ]; then
@@ -45,5 +50,5 @@ case "$ID" in
     ;;
 esac
 # needed for unit tests
-sudo sysctl -w fs.aio-max-nr=10485760
-curl -1sLf "https://raw.githubusercontent.com/vectorizedio/seastar/master/install-dependencies.sh" | sudo -E bash
+sysctl -w fs.aio-max-nr=10485760
+curl -1sLf "https://raw.githubusercontent.com/vectorizedio/seastar/master/install-dependencies.sh" | bash
