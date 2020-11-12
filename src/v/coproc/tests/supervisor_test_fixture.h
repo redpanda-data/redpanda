@@ -31,31 +31,36 @@ public:
     template<typename CoprocessorType>
     ss::future<> add_copro(uint32_t sid, simple_input_set&& input) {
         return _coprocessors.invoke_on_all(
-          [sid, input = std::move(input)](copro_map& coprocessors) {
+          [this, sid, input = std::move(input)](
+            copro_map& coprocessors) mutable {
               coproc::script_id asid(sid);
               vassert(
                 coprocessors.find(asid) == coprocessors.end(),
                 "Cannot double insert coprocessor with same cp_id");
-              coprocessor::input_set iset;
-              iset.reserve(input.size());
-              std::transform(
-                input.begin(),
-                input.end(),
-                std::back_inserter(iset),
-                [](auto& p) {
-                    return std::make_pair(
-                      model::topic(std::move(p.first)), std::move(p.second));
-                });
               coprocessors.emplace(
-                asid, std::make_unique<CoprocessorType>(asid, std::move(iset)));
+                asid,
+                std::make_unique<CoprocessorType>(
+                  asid, create_input_set(std::move(input))));
           });
     }
 
+protected:
     ss::sharded<copro_map>& all_coprocessors() { return _coprocessors; }
     const ss::sharded<copro_map>& all_coprocessors() const {
         return _coprocessors;
     }
 
 private:
+    coprocessor::input_set create_input_set(simple_input_set&& input) {
+        coprocessor::input_set iset;
+        iset.reserve(input.size());
+        std::transform(
+          input.begin(), input.end(), std::back_inserter(iset), [](auto& p) {
+              return std::make_pair(
+                model::topic(std::move(p.first)), std::move(p.second));
+          });
+        return iset;
+    }
+
     ss::sharded<copro_map> _coprocessors;
 };
