@@ -29,7 +29,5 @@ jobs:
       run: go build -o rpk -v ./...
       working-directory: src/go/rpk/
 
-    # Lets publish a package on release
     - name: Publish
       run: echo "TODO"
-      if: contains(github.ref, "release")
