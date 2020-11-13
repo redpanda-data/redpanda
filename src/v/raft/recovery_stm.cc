@@ -370,7 +370,8 @@ bool recovery_stm::is_recovery_finished() {
       max_offset);
 
     bool is_up_to_date = meta.value()->match_index == max_offset;
-    bool quorum_writes = _ptr->_last_visible_index <= _ptr->_commit_index;
+    bool quorum_writes = _ptr->_visibility_upper_bound_index
+                         <= _ptr->_commit_index;
     /**
      * We do not stop recovery for relaxed consistency recoveries as we want
      * recoveries to be send immediately after leader disk append. For low
