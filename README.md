@@ -17,7 +17,7 @@ you from the smallest projects to petabytes of data distributed across the globe
 
 # Community
 
-[Slack](vectorized.io/slack) is the main way the community interacts with one another in real time :) 
+[Slack](https://vectorized.io/slack) is the main way the community interacts with one another in real time :) 
 
 [User mailing list](https://groups.google.com/g/redpanda-users) is preferred for longer, async, thoughtful discussions
 
