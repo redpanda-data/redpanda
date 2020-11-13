@@ -27,8 +27,17 @@ rp_test(
   BINARY_NAME record_batch_test
   SOURCES record_batch_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
-  LIBRARIES v::seastar_testing_main v::model v::model v::storage_test_utils
+  LIBRARIES v::seastar_testing_main v::model v::storage_test_utils
 )
+
+rp_test(
+  UNIT_TEST
+  BINARY_NAME materialized_type_test
+  SOURCES materialized_type_test.cc
+  DEFINITIONS BOOST_TEST_DYN_LINK
+  LIBRARIES Boost::unit_test_framework v::seastar_testing_main v::model
+  )
+
 
 rp_test(
   UNIT_TEST

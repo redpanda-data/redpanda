@@ -81,7 +81,7 @@ ss::future<enable_response_code> service::insert(
 
 enable_response_code
 enable_validator(const model::topic& topic, topic_ingestion_policy p) {
-    if (is_materialized_topic(topic)) {
+    if (model::is_materialized_topic(topic)) {
         return erc::materialized_topic;
     } else if (model::validate_kafka_topic_name(topic).value() != 0) {
         return erc::invalid_topic;

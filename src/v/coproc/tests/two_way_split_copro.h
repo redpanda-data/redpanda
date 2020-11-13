@@ -10,6 +10,7 @@
 
 #pragma once
 #include "coproc/tests/coprocessor.h"
+#include "model/record_batch_types.h"
 #include "storage/record_batch_builder.h"
 #include "storage/tests/utils/disk_log_builder.h"
 
@@ -19,8 +20,9 @@ struct two_way_split_copro : public coprocessor {
     two_way_split_copro(coproc::script_id sid, input_set input)
       : coprocessor(sid, std::move(input)) {}
 
-    coprocessor::result
-    apply(model::topic, std::vector<model::record_batch> batches) override {
+    coprocessor::result apply(
+      const model::topic&,
+      const std::vector<model::record_batch>& batches) override {
         model::topic even("even");
         model::topic odd("odd");
         coprocessor::result r;
@@ -28,17 +30,17 @@ struct two_way_split_copro : public coprocessor {
         r.emplace(odd, std::vector<model::record_batch>());
         for (auto& record_batch : batches) {
             storage::record_batch_builder even_rbb(
-              model::record_batch_type(0), model::offset(0));
+              model::well_known_record_batch_types[1], model::offset(0));
             storage::record_batch_builder odd_rbb(
-              model::record_batch_type(0), model::offset(0));
+              model::well_known_record_batch_types[1], model::offset(0));
             record_batch.for_each_record(
               [&even_rbb, &odd_rbb](model::record&& record) {
                   if (record.key_size() % 2 == 0) {
                       even_rbb.add_raw_kv(
-                        record.release_key(), record.release_value());
+                        record.share_key(), record.share_value());
                   } else {
                       odd_rbb.add_raw_kv(
-                        record.release_key(), record.release_value());
+                        record.share_key(), record.share_value());
                   }
               });
             r[even].emplace_back(std::move(even_rbb).build());
