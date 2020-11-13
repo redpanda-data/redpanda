@@ -127,6 +127,7 @@ ss::future<> consensus::stop() {
     _vote_timeout.cancel();
     _as.request_abort();
     _commit_index_updated.broken();
+    _disk_append.broken();
 
     return _event_manager.stop()
       .then([this] { return _bg.close(); })
@@ -1419,6 +1420,7 @@ consensus::disk_append(model::record_batch_reader&& reader) {
              _log.make_appender(cfg),
              cfg.timeout)
       .then([this](std::tuple<ret_t, std::vector<offset_configuration>> t) {
+          _disk_append.broadcast();
           auto& [ret, configurations] = t;
           _has_pending_flushes = true;
           // TODO

@@ -81,9 +81,21 @@ ss::future<> recovery_stm::do_recover() {
      */
     _committed_offset = _ptr->committed_offset();
 
+    auto follower_next_offset = meta.value()->next_index;
+    auto f = ss::now();
+
+    // we do not have next entry for the follower yet, wait for next disk append
+    if (lstats.dirty_offset < follower_next_offset) {
+        f = _ptr->_disk_append.wait([this, follower_next_offset] {
+            return _ptr->_log.offsets().dirty_offset >= follower_next_offset;
+        });
+    }
+
     // read & replicate log entries
-    return read_range_for_recovery(
-      meta.value()->next_index, lstats.dirty_offset);
+    return f.then([this, follower_next_offset] {
+        return read_range_for_recovery(
+          follower_next_offset, _ptr->_log.offsets().dirty_offset);
+    });
 }
 
 ss::future<> recovery_stm::read_range_for_recovery(
@@ -356,9 +368,18 @@ bool recovery_stm::is_recovery_finished() {
       _node_id,
       meta.value()->match_index,
       max_offset);
-    return meta.value()->match_index == max_offset // fully caught up
-           || _stop_requested                      // stop requested
-           || _term != _ptr->term();               // leadership changed
+
+    bool is_up_to_date = meta.value()->match_index == max_offset;
+    bool quorum_writes = _ptr->_last_visible_index <= _ptr->_commit_index;
+    /**
+     * We do not stop recovery for relaxed consistency recoveries as we want
+     * recoveries to be send immediately after leader disk append. For low
+     * volume producers we might have to wait for the next heartbeat to send
+     * recovery request to follower which would lead to increased E2E latency
+     */
+    return (is_up_to_date && quorum_writes) // fully caught up
+           || _stop_requested               // stop requested
+           || _term != _ptr->term();        // leadership changed
 }
 
 ss::future<> recovery_stm::apply() {

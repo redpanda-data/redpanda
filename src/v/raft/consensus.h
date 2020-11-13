@@ -372,6 +372,8 @@ private:
     configuration_manager _configuration_manager;
     model::offset _last_visible_index;
     offset_monitor _consumable_offset_monitor;
+    ss::condition_variable _disk_append;
+
     friend std::ostream& operator<<(std::ostream&, const consensus&);
 };
 
