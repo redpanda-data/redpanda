@@ -28,6 +28,7 @@ recovery_stm::recovery_stm(
   consensus* p, model::node_id node_id, ss::io_priority_class prio)
   : _ptr(p)
   , _node_id(node_id)
+  , _term(_ptr->term())
   , _prio(prio)
   , _ctxlog(_ptr->_ctxlog) {}
 
@@ -276,7 +277,7 @@ ss::future<> recovery_stm::replicate(
       protocol_metadata{
         .group = _ptr->group(),
         .commit_index = commit_idx,
-        .term = _ptr->term(),
+        .term = _term,
         .prev_log_index = prev_log_idx,
         .prev_log_term = prev_log_term,
         .last_visible_index = last_visible_idx},
@@ -357,8 +358,7 @@ bool recovery_stm::is_recovery_finished() {
       max_offset);
     return meta.value()->match_index == max_offset // fully caught up
            || _stop_requested                      // stop requested
-           || _ptr->_vstate
-                != consensus::vote_state::leader; // not a leader anymore
+           || _term != _ptr->term();               // leadership changed
 }
 
 ss::future<> recovery_stm::apply() {
