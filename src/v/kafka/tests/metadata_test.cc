@@ -7,10 +7,16 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "cluster/namespace.h"
+#include "kafka/errors.h"
 #include "librdkafka/rdkafkacpp.h"
 #include "model/fundamental.h"
 #include "redpanda/tests/fixture.h"
 #include "test_utils/fixture.h"
+
+#include <seastar/core/when_all.hh>
+
+#include <boost/test/tools/old/interface.hpp>
 
 #include <optional>
 #include <vector>
@@ -114,3 +120,39 @@ FIXTURE_TEST(rack, redpanda_thread_fixture) {
     BOOST_TEST(
       (resp.brokers[0].rack && resp.brokers[0].rack.value() == rack_name));
 }
+
+FIXTURE_TEST(test_topic_namespaces, redpanda_thread_fixture) {
+    wait_for_controller_leadership().get();
+
+    auto add_topic_for_tp_ns = [&, this](model::topic_namespace tp_ns) {
+        add_topic(tp_ns).get();
+        model::ntp ntp(tp_ns.ns, tp_ns.tp, model::partition_id(0));
+        return tests::cooperative_spin_wait_with_timeout(2s, [ntp, this] {
+            auto shard = app.shard_table.local().shard_for(ntp);
+            if (!shard) {
+                return ss::make_ready_future<bool>(false);
+            }
+            return app.partition_manager.invoke_on(
+              *shard, [ntp](cluster::partition_manager& pm) {
+                  return pm.get(ntp)->is_leader();
+              });
+        });
+    };
+
+    const model::topic_namespace test_topic(
+      cluster::kafka_namespace, model::topic("test-topic"));
+    const model::topic_namespace test_internal_topic(
+      cluster::kafka_internal_namespace, model::topic("test-internal-topic"));
+
+    ss::when_all_succeed(
+      add_topic_for_tp_ns(test_topic), add_topic_for_tp_ns(test_internal_topic))
+      .get();
+
+    auto client = make_kafka_client().get();
+    client.connect().get();
+    auto resp = client.dispatch(all_topics()).get();
+    BOOST_REQUIRE_EQUAL(resp.topics.size(), 1);
+    BOOST_REQUIRE_EQUAL(resp.topics[0].err_code, kafka::error_code::none);
+    BOOST_REQUIRE_EQUAL(resp.topics[0].name, test_topic.tp);
+    client.stop().then([&client] { client.shutdown(); }).get();
+};
