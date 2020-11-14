@@ -390,7 +390,7 @@ struct op_context {
     bool should_stop_fetch() const {
         return !request.debounce_delay()
                || static_cast<int32_t>(response_size) >= request.min_bytes
-               || request.topics.empty() || response_error;
+               || request.empty() || response_error;
     }
 };
 
