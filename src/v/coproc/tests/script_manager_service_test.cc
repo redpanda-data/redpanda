@@ -88,9 +88,9 @@ FIXTURE_TEST(test_coproc_topic_dne, script_manager_service_fixture) {
                         .value()
                         .data;
     BOOST_CHECK_EQUAL(resp.acks.size(), 1);
-    BOOST_CHECK(resp.acks[0].first == coproc::script_id(1234));
+    BOOST_CHECK_EQUAL(resp.acks[0].first, coproc::script_id(1234));
     BOOST_CHECK_EQUAL(resp.acks[0].second.size(), 1);
-    BOOST_CHECK(resp.acks[0].second[0] == erc::topic_does_not_exist);
+    BOOST_CHECK_EQUAL(resp.acks[0].second[0], erc::topic_does_not_exist);
 }
 
 FIXTURE_TEST(test_coproc_no_topics, script_manager_service_fixture) {
@@ -138,11 +138,11 @@ FIXTURE_TEST(test_coproc_invalid_topics, script_manager_service_fixture) {
     const auto& first_acks = resp.acks[0].second;
     BOOST_CHECK_EQUAL(first_acks.size(), 5);
     BOOST_CHECK_EQUAL(resp.acks[0].first, coproc::script_id(1234));
-    BOOST_CHECK(first_acks[0] == erc::invalid_topic);
-    BOOST_CHECK(first_acks[1] == erc::invalid_topic);
-    BOOST_CHECK(first_acks[2] == erc::success);
-    BOOST_CHECK(first_acks[3] == erc::invalid_topic);
-    BOOST_CHECK(first_acks[4] == erc::invalid_topic);
+    BOOST_CHECK_EQUAL(first_acks[0], erc::invalid_topic);
+    BOOST_CHECK_EQUAL(first_acks[1], erc::invalid_topic);
+    BOOST_CHECK_EQUAL(first_acks[2], erc::success);
+    BOOST_CHECK_EQUAL(first_acks[3], erc::invalid_topic);
+    BOOST_CHECK_EQUAL(first_acks[4], erc::invalid_topic);
     BOOST_CHECK_EQUAL(coproc_validate(to_topic_set({"foo"})).get0(), 5);
 }
 
@@ -165,8 +165,8 @@ FIXTURE_TEST(
     const auto& acks = resp.acks[0].second;
     BOOST_CHECK_EQUAL(coproc::script_id(2313), resp.acks[0].first);
     BOOST_CHECK_EQUAL(acks.size(), 2);
-    BOOST_CHECK(acks[0] == erc::success);
-    BOOST_CHECK(acks[1] == erc::materialized_topic);
+    BOOST_CHECK_EQUAL(acks[0], erc::success);
+    BOOST_CHECK_EQUAL(acks[1], erc::materialized_topic);
     BOOST_CHECK_EQUAL(coproc_validate(to_topic_set({"foo"})).get0(), 6);
     BOOST_CHECK_EQUAL(coproc_validate(to_topic_set({"foo.$bar$"})).get0(), 0);
 }
@@ -198,9 +198,9 @@ FIXTURE_TEST(
     BOOST_CHECK_EQUAL(acks_2.size(), 1);
     BOOST_CHECK_EQUAL(resp.acks[0].first, coproc::script_id(3289));
     BOOST_CHECK_EQUAL(resp.acks[1].first, coproc::script_id(script_id));
-    BOOST_CHECK(acks_1[0] == erc::success);
-    BOOST_CHECK(acks_1[1] == erc::invalid_ingestion_policy);
-    BOOST_CHECK(acks_2[0] == erc::script_id_already_exists);
+    BOOST_CHECK_EQUAL(acks_1[0], erc::success);
+    BOOST_CHECK_EQUAL(acks_1[1], erc::invalid_ingestion_policy);
+    BOOST_CHECK_EQUAL(acks_2[0], erc::script_id_already_exists);
     BOOST_CHECK_EQUAL(coproc_validate(to_topic_set({"foo", "bar"})).get0(), 5);
 }
 
@@ -228,11 +228,11 @@ FIXTURE_TEST(test_coproc_topics, script_manager_service_fixture) {
     BOOST_CHECK_EQUAL(resp.acks[0].first, coproc::script_id(1523));
     BOOST_CHECK_EQUAL(resp.acks[1].first, coproc::script_id(123));
     BOOST_CHECK_EQUAL(first_acks.size(), 3);
-    BOOST_CHECK(first_acks[0] == erc::success);
-    BOOST_CHECK(first_acks[1] == erc::success);
-    BOOST_CHECK(first_acks[2] == erc::success);
+    BOOST_CHECK_EQUAL(first_acks[0], erc::success);
+    BOOST_CHECK_EQUAL(first_acks[1], erc::success);
+    BOOST_CHECK_EQUAL(first_acks[2], erc::success);
     BOOST_CHECK_EQUAL(second_acks.size(), 1);
-    BOOST_CHECK(second_acks[0] == erc::success);
+    BOOST_CHECK_EQUAL(second_acks[0], erc::success);
 
     // 3. Verify they actually exist in the 'source_topics' struct
     BOOST_CHECK_EQUAL(
@@ -242,7 +242,7 @@ FIXTURE_TEST(test_coproc_topics, script_manager_service_fixture) {
     const auto disable_acks
       = coproc_deregister_topics(client, {1523}).get0().value().data;
     BOOST_CHECK_EQUAL(disable_acks.acks.size(), 1);
-    BOOST_CHECK(disable_acks.acks[0] == drc::success);
+    BOOST_CHECK_EQUAL(disable_acks.acks[0], drc::success);
     BOOST_CHECK_EQUAL(
       coproc_validate(to_topic_set({"foo", "bar", "baz"})).get0(), 8);
     BOOST_CHECK_EQUAL(coproc_validate(to_topic_set({"foo"})).get0(), 8);
@@ -250,7 +250,7 @@ FIXTURE_TEST(test_coproc_topics, script_manager_service_fixture) {
     const auto disable_acks2
       = coproc_deregister_topics(client, {123}).get0().value().data;
     BOOST_CHECK_EQUAL(disable_acks2.acks.size(), 1);
-    BOOST_CHECK(disable_acks2.acks[0] == drc::success);
+    BOOST_CHECK_EQUAL(disable_acks2.acks[0], drc::success);
     BOOST_CHECK_EQUAL(
       coproc_validate(to_topic_set({"foo", "bar", "baz"})).get0(), 0);
 }
