@@ -281,3 +281,49 @@ FIXTURE_TEST(fetch_one, redpanda_thread_fixture) {
           resp.partitions[0].responses[0].record_set->size_bytes() > 0);
     }
 }
+
+SEASTAR_THREAD_TEST_CASE(fetch_response_iterator_test) {
+    kafka::fetch_response response;
+
+    auto make_partition = [](ss::sstring topic) {
+        return kafka::fetch_response::partition(model::topic(std::move(topic)));
+    };
+
+    auto make_partition_response = [](int id) {
+        kafka::fetch_response::partition_response resp;
+        resp.error = kafka::error_code::none;
+        resp.id = model::partition_id(id);
+        resp.last_stable_offset = model::offset(0);
+        return resp;
+    };
+
+    response.partitions.push_back(make_partition("tp-1"));
+    response.partitions.push_back(make_partition("tp-2"));
+    response.partitions.push_back(make_partition("tp-3"));
+
+    response.partitions[0].responses.push_back(make_partition_response(0));
+    response.partitions[0].responses.push_back(make_partition_response(1));
+    response.partitions[0].responses.push_back(make_partition_response(2));
+
+    response.partitions[1].responses.push_back(make_partition_response(0));
+
+    response.partitions[2].responses.push_back(make_partition_response(0));
+    response.partitions[2].responses.push_back(make_partition_response(1));
+
+    int i = 0;
+
+    for (auto it = response.begin(); it != response.end(); ++it) {
+        if (i < 3) {
+            BOOST_REQUIRE_EQUAL(it->partition->name(), "tp-1");
+            BOOST_REQUIRE_EQUAL(it->partition_response->id(), i);
+
+        } else if (i == 3) {
+            BOOST_REQUIRE_EQUAL(it->partition->name(), "tp-2");
+            BOOST_REQUIRE_EQUAL(it->partition_response->id(), 0);
+        } else {
+            BOOST_REQUIRE_EQUAL(it->partition->name(), "tp-3");
+            BOOST_REQUIRE_EQUAL(it->partition_response->id(), i - 4);
+        }
+        ++i;
+    }
+};

@@ -218,6 +218,98 @@ struct fetch_response final {
 
     void encode(const request_context& ctx, response& resp);
     void decode(iobuf buf, api_version version);
+
+    /*
+     * iterator over response partitions. this adapter iterator is used because
+     * the partitions are encoded into the vector of partition responses
+     *
+     *       [
+     *         partition0 -> [...]
+     *         partition1 -> [partition_resp1, partition_resp2, ...]
+     *         ...
+     *         partitionN -> [...]
+     *       ]
+     *
+     * the iterator value is a reference to the current partition and
+     * partition_response.
+     */
+    class iterator {
+    public:
+        using partition_iterator = std::vector<partition>::iterator;
+        using partition_response_iterator
+          = std::vector<partition_response>::iterator;
+
+        struct value_type {
+            partition_iterator partition;
+            partition_response_iterator partition_response;
+        };
+
+        using difference_type = void;
+        using pointer = value_type*;
+        using reference = value_type&;
+        using iterator_category = std::forward_iterator_tag;
+
+        iterator(partition_iterator begin, partition_iterator end)
+          : state_({.partition = begin})
+          , t_end_(end) {
+            if (likely(state_.partition != t_end_)) {
+                state_.partition_response = state_.partition->responses.begin();
+                normalize();
+            }
+        }
+
+        reference operator*() noexcept { return state_; }
+
+        pointer operator->() noexcept { return &state_; }
+
+        iterator& operator++() {
+            state_.partition_response++;
+            normalize();
+            return *this;
+        }
+        iterator operator++(int) {
+            iterator tmp = *this;
+            ++(*this);
+            return tmp;
+        }
+
+        bool operator==(const iterator& o) const noexcept {
+            if (state_.partition == o.state_.partition) {
+                if (state_.partition == t_end_) {
+                    return true;
+                } else {
+                    return state_.partition_response
+                           == o.state_.partition_response;
+                }
+            }
+            return false;
+        }
+
+        bool operator!=(const iterator& o) const noexcept {
+            return !(*this == o);
+        }
+
+    private:
+        void normalize() {
+            while (state_.partition_response
+                   == state_.partition->responses.end()) {
+                state_.partition++;
+                if (state_.partition != t_end_) {
+                    state_.partition_response
+                      = state_.partition->responses.begin();
+                } else {
+                    break;
+                }
+            }
+        }
+
+        value_type state_;
+        partition_iterator t_end_;
+    };
+
+    iterator begin() { return iterator(partitions.begin(), partitions.end()); }
+
+    iterator end() { return iterator(partitions.end(), partitions.end()); }
 };
 
 std::ostream& operator<<(std::ostream&, const fetch_response&);
