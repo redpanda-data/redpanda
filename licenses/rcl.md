@@ -16,33 +16,33 @@ this Agreement, to the exclusion of all other terms.
     terms defined elsewhere in this Agreement, the terms below have the
     following meanings.
 
-### “Redpanda” shall mean the event streaming platform provided by Vectorized, including both Redpanda Core and Redpanda Enterprise Edition, as defined below.
+(a) “Redpanda” shall mean the event streaming platform provided by Vectorized, including both Redpanda Core and Redpanda Enterprise Edition, as defined below.
 
-### “Redpanda Core” shall mean the version of Redpanda, available free of charge at https://github.com/vectorizedio/redpanda.
+(b) “Redpanda Core” shall mean the version of Redpanda, available free of charge at https://github.com/vectorizedio/redpanda.
 
-### “Redpanda Enterprise Edition” shall mean the additional features made available by Vectorized, the use of which is subject to additional terms set out below.
+(c) “Redpanda Enterprise Edition” shall mean the additional features made available by Vectorized, the use of which is subject to additional terms set out below.
 
-### “Contribution” shall mean any work of authorship, including the original version of the Work and any modifications or additions to that Work or Derivative Works thereof, that is intentionally submitted Vectorized for inclusion in the Work by the copyright owner or by an individual or Legal Entity authorized to submit on behalf of the copyright owner. For the purposes of this definition, “submitted” means any form of electronic, verbal, or written communication sent to Vectorized or its representatives, including but not limited to communication on electronic mailing lists, source code control systems, and issue tracking systems that are managed by, or on behalf of, Vectorized for the purpose of discussing and improving the Work, but excluding communication that is conspicuously marked or otherwise designated in writing by the copyright owner as “Not a Contribution.”
+(d) “Contribution” shall mean any work of authorship, including the original version of the Work and any modifications or additions to that Work or Derivative Works thereof, that is intentionally submitted Vectorized for inclusion in the Work by the copyright owner or by an individual or Legal Entity authorized to submit on behalf of the copyright owner. For the purposes of this definition, “submitted” means any form of electronic, verbal, or written communication sent to Vectorized or its representatives, including but not limited to communication on electronic mailing lists, source code control systems, and issue tracking systems that are managed by, or on behalf of, Vectorized for the purpose of discussing and improving the Work, but excluding communication that is conspicuously marked or otherwise designated in writing by the copyright owner as “Not a Contribution.”
 
-### “Contributor” shall mean any copyright owner or individual or Legal Entity authorized by the copyright owner, other than Vectorized, from whom Vectorized receives a Contribution that Vectorized subsequently incorporates within the Work.
+(e) “Contributor” shall mean any copyright owner or individual or Legal Entity authorized by the copyright owner, other than Vectorized, from whom Vectorized receives a Contribution that Vectorized subsequently incorporates within the Work.
 
-### “Derivative Works” shall mean any work, whether in Source or Object form, that is based on (or derived from) the Work, such as a translation, abridgement, condensation, or any other recasting, transformation, or adaptation for which the editorial revisions, annotations, elaborations, or other modifications represent, as a whole, an original work of authorship. For the purposes of this License, Derivative Works shall not include works that remain separable from, or merely link (or bind by name) to the interfaces of, the Work and Derivative Works thereof.
+(f) “Derivative Works” shall mean any work, whether in Source or Object form, that is based on (or derived from) the Work, such as a translation, abridgement, condensation, or any other recasting, transformation, or adaptation for which the editorial revisions, annotations, elaborations, or other modifications represent, as a whole, an original work of authorship. For the purposes of this License, Derivative Works shall not include works that remain separable from, or merely link (or bind by name) to the interfaces of, the Work and Derivative Works thereof.
 
-### “Legal Entity” shall mean the union of the acting entity and all other entities that control, are controlled by, or are under common control with that entity. For the purposes of this definition, “control” means (i) the power, direct or indirect, to cause the direction or management of such entity, whether by contract or otherwise, or (ii) ownership of fifty percent (50%) or more of the outstanding shares, or (iii) beneficial ownership of such entity.
+(g) “Legal Entity” shall mean the union of the acting entity and all other entities that control, are controlled by, or are under common control with that entity. For the purposes of this definition, “control” means (i) the power, direct or indirect, to cause the direction or management of such entity, whether by contract or otherwise, or (ii) ownership of fifty percent (50%) or more of the outstanding shares, or (iii) beneficial ownership of such entity.
 
-### “License” shall mean the terms and conditions for use, reproduction, and distribution of a Work as defined by this Agreement.
+(h) “License” shall mean the terms and conditions for use, reproduction, and distribution of a Work as defined by this Agreement.
 
-### “Licensor” shall mean Vectorized or a Contributor, as applicable.
+(i) “Licensor” shall mean Vectorized or a Contributor, as applicable.
 
-### “Object” form shall mean any form resulting from mechanical transformation or translation of a Source form, including but not limited to compiled object code, generated documentation, and conversions to other media types.
+(j) “Object” form shall mean any form resulting from mechanical transformation or translation of a Source form, including but not limited to compiled object code, generated documentation, and conversions to other media types.
 
-### “Source” form shall mean the preferred form for making modifications, including but not limited to software source code, documentation source, and configuration files.
+(k) “Source” form shall mean the preferred form for making modifications, including but not limited to software source code, documentation source, and configuration files.
 
-### “Third Party Works” shall mean Works, including Contributions, and other technology owned by a person or Legal Entity other than Vectorized, as indicated by a copyright notice that is included in or attached to such Works or technology.
+(l) “Third Party Works” shall mean Works, including Contributions, and other technology owned by a person or Legal Entity other than Vectorized, as indicated by a copyright notice that is included in or attached to such Works or technology.
 
-### “Work” shall mean the work of authorship, whether in Source or Object form, made available under a License, as indicated by a copyright notice that is included in or attached to the work.
+(m) “Work” shall mean the work of authorship, whether in Source or Object form, made available under a License, as indicated by a copyright notice that is included in or attached to the work.
 
-### “You” (or “Your”) shall mean an individual or Legal Entity exercising permissions granted by this License.
+(n) “You” (or “Your”) shall mean an individual or Legal Entity exercising permissions granted by this License.
 
 1.  **<span class="smallcaps">Licenses</span>**.
 
