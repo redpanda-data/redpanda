@@ -214,3 +214,4 @@ tools/ts-generator/node_modules
 results
 .ducktape
 tests/docker/build
+vbuild/
