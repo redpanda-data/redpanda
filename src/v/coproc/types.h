@@ -102,6 +102,10 @@ struct process_batch_reply {
     std::vector<data> resps;
 };
 
+std::ostream& operator<<(std::ostream& os, const enable_response_code);
+
+std::ostream& operator<<(std::ostream& os, const disable_response_code);
+
 std::ostream&
 operator<<(std::ostream& os, const enable_copros_request::data::topic_mode&);
 
