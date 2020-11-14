@@ -36,18 +36,11 @@ assemble_response(std::vector<enable_response_code> codes) {
     if (all_dne) {
         return erc::topic_does_not_exist;
     }
-
-    const bool any_double_id = std::any_of(
-      codes.begin(), codes.end(), [](auto x) {
-          return x == erc::script_id_already_exists;
-      });
     const bool any_success = std::any_of(
       codes.begin(), codes.end(), [](auto x) { return x == erc::success; });
-    if (!any_success && any_double_id) {
-        // An attempt to re-register was made
-        return erc::script_id_already_exists;
+    if (!any_success) {
+        return erc::internal_error;
     }
-    vassert(any_success, "At least one core should have inserted the source");
     return erc::success;
 }
 

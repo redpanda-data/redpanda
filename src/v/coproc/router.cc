@@ -307,9 +307,6 @@ errc router::add_source(
     if (!is_valid_ingestion_policy(p)) {
         return errc::invalid_ingestion_policy;
     }
-    if (script_id_exists(id)) {
-        return errc::script_id_already_exists;
-    }
     auto logs = _api.local().log_mgr().get(tns);
     if (logs.empty()) {
         return errc::topic_does_not_exist;
@@ -322,10 +319,7 @@ errc router::add_source(
               .log = log, .head = topic_offsets(), .scripts = {id}};
             _sources.emplace(ntp, std::move(ts));
         } else {
-            auto& scripts = found->second.scripts;
-            auto id_found = scripts.find(id);
-            vassert(id_found == scripts.end(), "Failed to detect double id");
-            scripts.emplace(id);
+            found->second.scripts.emplace(id);
         }
         vlog(coproclog.info, "Inserted ntp {} id {}", ntp, id);
     }
@@ -351,7 +345,7 @@ bool router::remove_source(const script_id sid) {
 }
 
 bool router::script_id_exists(const script_id sid) const {
-    return std::any_of(_sources.begin(), _sources.end(), [sid](auto& p) {
+    return std::any_of(_sources.begin(), _sources.end(), [sid](const auto& p) {
         return p.second.scripts.contains(sid);
     });
 }
