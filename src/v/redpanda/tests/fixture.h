@@ -141,6 +141,24 @@ public:
           });
     }
 
+    ss::future<> wait_for_partition_offset(
+      model::ntp ntp,
+      model::offset o,
+      model::timeout_clock::duration tout = 3s) {
+        return tests::cooperative_spin_wait_with_timeout(
+          tout, [this, ntp = std::move(ntp), o]() mutable {
+              auto shard = app.shard_table.local().shard_for(ntp);
+              if (!shard) {
+                  return ss::make_ready_future<bool>(false);
+              }
+              return app.partition_manager.invoke_on(
+                *shard, [ntp, o](cluster::partition_manager& mgr) {
+                    auto partition = mgr.get(ntp);
+                    return partition && partition->committed_offset() >= o;
+                });
+          });
+    }
+
     model::ntp make_data(storage::ntp_config::ntp_id version) {
         auto topic_name = fmt::format("my_topic_{}", 0);
         model::ntp ntp(

@@ -83,6 +83,18 @@ struct fetch_request final {
         }
     }
 
+    /**
+     * return empty if request doesn't contain any topics or all topics are
+     * empty
+     */
+    bool empty() const {
+        return topics.empty()
+               || std::all_of(
+                 topics.cbegin(), topics.cend(), [](const topic& t) {
+                     return t.partitions.empty();
+                 });
+    }
+
     /*
      * iterator over request partitions. this adapter iterator is used because
      * the partitions are decoded off the wire directly into a hierarhical

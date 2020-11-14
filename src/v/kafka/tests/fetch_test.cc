@@ -327,3 +327,38 @@ SEASTAR_THREAD_TEST_CASE(fetch_response_iterator_test) {
         ++i;
     }
 };
+
+FIXTURE_TEST(fetch_empty, redpanda_thread_fixture) {
+    // create a topic partition with some data
+    model::topic topic("foo");
+    model::partition_id pid(0);
+    model::offset offset(0);
+    auto ntp = make_default_ntp(topic, pid);
+    auto log_config = make_default_config();
+    wait_for_controller_leadership().get0();
+    add_topic(model::topic_namespace_view(ntp)).get();
+
+    wait_for_partition_offset(ntp, model::offset(0)).get0();
+
+    kafka::fetch_request no_topics;
+    no_topics.max_bytes = std::numeric_limits<int32_t>::max();
+    no_topics.min_bytes = 1;
+    no_topics.max_wait_time = std::chrono::milliseconds(1000);
+
+    auto client = make_kafka_client().get0();
+    client.connect().get();
+    auto resp_1 = client.dispatch(no_topics, kafka::api_version(6)).get0();
+
+    BOOST_REQUIRE(resp_1.partitions.empty());
+
+    kafka::fetch_request no_partitions;
+    no_partitions.max_bytes = std::numeric_limits<int32_t>::max();
+    no_partitions.min_bytes = 1;
+    no_partitions.max_wait_time = std::chrono::milliseconds(1000);
+    no_partitions.topics = {{.name = topic, .partitions = {}}};
+
+    auto resp_2 = client.dispatch(no_topics, kafka::api_version(6)).get0();
+    client.stop().then([&client] { client.shutdown(); }).get();
+
+    BOOST_REQUIRE(resp_2.partitions.empty());
+}
