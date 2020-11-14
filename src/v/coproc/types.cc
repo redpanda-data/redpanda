@@ -6,13 +6,28 @@
 //
 // https://github.com/vectorizedio/redpanda/blob/master/licenses/rcl.md
 
-#include "types.h"
+#include "coproc/types.h"
 
+#include "coproc/errc.h"
 #include "model/async_adl_serde.h"
 
 #include <boost/range/irange.hpp>
 
 namespace coproc {
+std::ostream& operator<<(std::ostream& os, const enable_response_code erc) {
+    const auto errc = make_error_code(
+      static_cast<coproc::errc>(static_cast<int8_t>(erc)));
+    os << errc.message();
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, const disable_response_code drc) {
+    const auto errc = make_error_code(
+      static_cast<coproc::errc>(static_cast<int8_t>(drc)));
+    os << errc.message();
+    return os;
+}
+
 std::ostream& operator<<(
   std::ostream& os, const enable_copros_request::data::topic_mode& topic_mode) {
     os << "<Topic: " << topic_mode.first << " mode: " << (int)topic_mode.second

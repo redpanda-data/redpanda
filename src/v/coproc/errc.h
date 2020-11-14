@@ -15,15 +15,13 @@ namespace coproc {
 
 enum class errc {
     success = 0,
+    internal_error,
     invalid_ingestion_policy,
     script_id_already_exists,
-    script_id_does_not_exist,
-    topic_already_enabled,
     topic_does_not_exist,
-    topic_never_enabled,
     invalid_topic,
     materialized_topic,
-    internal_error
+    script_id_does_not_exist
 };
 
 struct errc_category final : public std::error_category {
@@ -39,12 +37,8 @@ struct errc_category final : public std::error_category {
             return "Attempted double registration encountered";
         case errc::script_id_does_not_exist:
             return "Could not find coprocessor with matching script_id";
-        case errc::topic_already_enabled:
-            return "Topic already enabled on behalf of a coprocessor";
         case errc::topic_does_not_exist:
             return "Topic does not exist yet";
-        case errc::topic_never_enabled:
-            return "Topic never enabled on behalf of a coprocessor";
         case errc::invalid_topic:
             return "Topic name is invalid";
         case errc::materialized_topic:
