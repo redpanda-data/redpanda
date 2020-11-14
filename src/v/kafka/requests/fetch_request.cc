@@ -315,7 +315,7 @@ static ss::future<fetch_response::partition_response> read_from_partition(
                 };
             });
       })
-      .handle_exception_type([](const ss::timed_out_error&) {
+      .handle_exception_type([](const raft::offset_monitor::wait_aborted&) {
           // no data are returned
           return fetch_response::partition_response{
             .error = error_code::none,
