@@ -209,6 +209,8 @@ struct fetch_response final {
         model::offset log_start_offset;                        // >= v5
         std::vector<aborted_transaction> aborted_transactions; // >= v4
         std::optional<iobuf> record_set;
+
+        bool has_error() const { return error != error_code::none; }
     };
 
     struct partition {
@@ -345,12 +347,21 @@ struct op_context {
     bool response_error;
 
     bool initial_fetch = true;
+
+    fetch_response::iterator response_iterator;
+
+    void reset_context() {
+        initial_fetch = false;
+        response_iterator = response.begin();
+    }
+
     // decode request and initialize budgets
     op_context(request_context&& ctx, ss::smp_service_group ssg)
       : rctx(std::move(ctx))
       , ssg(ssg)
       , response_size(0)
-      , response_error(false) {
+      , response_error(false)
+      , response_iterator(response.begin()) {
         /*
          * decode request and prepare the inital response
          */
@@ -379,18 +390,29 @@ struct op_context {
     }
 
     // add to the response the result of fetching from a partition
-    void add_partition_response(fetch_response::partition_response&& r) {
+    void set_partition_response(fetch_response::partition_response&& r) {
+        if (r.error != error_code::none) {
+            response_error = true;
+        }
         if (r.record_set) {
             response_size += r.record_set->size_bytes();
             bytes_left -= std::min(bytes_left, r.record_set->size_bytes());
         }
-        response.partitions.back().responses.push_back(std::move(r));
+        if (!initial_fetch) {
+            // replace response
+            *response_iterator->partition_response = std::move(r);
+        } else {
+            response.partitions.back().responses.push_back(std::move(r));
+        }
     }
 
     bool should_stop_fetch() const {
-        return !request.debounce_delay()
-               || static_cast<int32_t>(response_size) >= request.min_bytes
-               || request.empty() || response_error;
+        return !request.debounce_delay() || over_min_bytes() || request.empty()
+               || response_error;
+    }
+
+    bool over_min_bytes() const {
+        return static_cast<int32_t>(response_size) >= request.min_bytes;
     }
 };
 
