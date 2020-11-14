@@ -6,8 +6,9 @@
 //
 // https://github.com/vectorizedio/redpanda/blob/master/licenses/rcl.md
 
-#include "types.h"
+#include "coproc/types.h"
 
+#include "coproc/errc.h"
 #include "model/async_adl_serde.h"
 
 #include <boost/range/irange.hpp>

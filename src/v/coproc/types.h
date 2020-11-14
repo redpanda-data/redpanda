@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "coproc/errc.h"
 #include "model/adl_serde.h"
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
@@ -28,20 +29,20 @@ using script_id = named_type<uint64_t, struct script_id_tag>;
 /// registration status of the topic
 enum class enable_response_code : int8_t {
     success = 0,
+    internal_error = 1,
     invalid_ingestion_policy,
     script_id_already_exists,
     topic_does_not_exist,
     invalid_topic,
-    materialized_topic,
-    internal_error
+    materialized_topic
 };
 
 /// \brief per topic a client will recieve a response code on the
 /// deregistration status of the topic
 enum class disable_response_code : int8_t {
     success = 0,
-    script_id_does_not_exist,
-    internal_error
+    internal_error = 1,
+    script_id_does_not_exist = 7,
 };
 
 enum class topic_ingestion_policy : int8_t { earliest = 0, stored, latest };
