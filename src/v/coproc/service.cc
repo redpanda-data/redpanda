@@ -30,17 +30,11 @@ service::service(
 
 enable_response_code
 assemble_response(std::vector<enable_response_code> codes) {
-    const bool any_dne = std::all_of(codes.begin(), codes.end(), [](auto x) {
+    const bool all_dne = std::all_of(codes.begin(), codes.end(), [](auto x) {
         return x == erc::topic_does_not_exist;
     });
-    vassert(!any_dne, "Topic was expected to not have existed");
-
-    const bool any_err = std::any_of(codes.begin(), codes.end(), [](auto x) {
-        return x == erc::internal_error;
-    });
-
-    if (any_err) {
-        return erc::internal_error;
+    if (all_dne) {
+        return erc::topic_does_not_exist;
     }
 
     const bool any_double_id = std::any_of(
@@ -100,6 +94,16 @@ ss::future<enable_copros_reply::ack_id_pair> service::evaluate_topics(
       "topics: {}",
       id,
       topics);
+    if (topics.empty()) {
+        vlog(
+          coproclog.warn,
+          "Request to enable coprocessor {} failed due to empty topics "
+          "list",
+          id);
+        return ss::make_ready_future<enable_copros_reply::ack_id_pair>(
+          std::make_pair(
+            id, std::vector<enable_response_code>{erc::invalid_topic}));
+    }
     return copro_exists(id).then([this, id, topics = std::move(topics)](
                                    bool exists) mutable {
         if (exists) {
