@@ -36,7 +36,6 @@ FIXTURE_TEST(pandaproxy_produce_reconnect, ppc_test_fixture) {
 
     info("Connecting client");
     wait_for_controller_leadership().get();
-    client.connect().get();
 
     {
         info("Producing to unknown topic");
