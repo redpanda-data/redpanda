@@ -145,7 +145,7 @@ FIXTURE_TEST(
     // Connect a kafka client to the expected output topic
     kafka::fetch_request req;
     req.max_bytes = std::numeric_limits<int32_t>::max();
-    req.min_bytes = min_expected_bytes; // At LEAST 'bytes_written' in src topic
+    req.min_bytes = 1; // At LEAST 'bytes_written' in src topic
     req.max_wait_time = 2s;
     req.topics = {
       {.name = materialized_topic,

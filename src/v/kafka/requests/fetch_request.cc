@@ -315,7 +315,7 @@ static ss::future<fetch_response::partition_response> read_from_partition(
                 };
             });
       })
-      .handle_exception_type([](const ss::timed_out_error&) {
+      .handle_exception_type([](const raft::offset_monitor::wait_aborted&) {
           // no data are returned
           return fetch_response::partition_response{
             .error = error_code::none,
@@ -428,18 +428,68 @@ handle_ntp_fetch(op_context& octx, model::ntp ntp, fetch_config config) {
           try {
               auto response = f.get0();
               response.id = p_id;
-              octx.add_partition_response(std::move(response));
+              octx.set_partition_response(std::move(response));
           } catch (...) {
               /*
                * TODO: this is where we will want to handle any storage
                * specific errors and translate them into kafka response
                * error codes.
                */
-              octx.response_error = true;
-              octx.add_partition_response(make_partition_response_error(
+              octx.set_partition_response(make_partition_response_error(
                 error_code::unknown_server_error));
           }
       });
+}
+
+static ss::future<> fetch_topic_partition(
+  op_context& octx, const fetch_request::const_iterator::value_type& p) {
+    /*
+     * the next topic-partition to fetch
+     */
+    auto& topic = *p.topic;
+    auto& part = *p.partition;
+    if (p.new_topic && octx.initial_fetch) {
+        octx.start_response_topic(topic);
+    }
+
+    if (
+      model::timeout_clock::now() > octx.deadline.value_or(model::no_timeout)) {
+        octx.set_partition_response(
+          make_partition_response_error(error_code::request_timed_out));
+        return ss::now();
+    }
+
+    // if over budget create placeholder response
+    if (octx.bytes_left <= 0) {
+        octx.set_partition_response(
+          make_partition_response_error(error_code::message_too_large));
+        return ss::now();
+    }
+    // if we already have data in response for this partition skip it
+    if (!octx.initial_fetch) {
+        auto& partition_response = octx.response_iterator->partition_response;
+
+        /**
+         * do not try to fetch again if partition response already contains an
+         * error or it is not empty and we are already over the min bytes
+         * threshold.
+         */
+        if (
+          partition_response->has_error()
+          || (!partition_response->record_set->empty() && octx.over_min_bytes())) {
+            return ss::now();
+        }
+    }
+
+    auto ntp = model::ntp(cluster::kafka_namespace, topic.name, part.id);
+
+    fetch_config config{
+      .start_offset = part.fetch_offset,
+      .max_bytes = std::min(octx.bytes_left, size_t(part.partition_max_bytes)),
+      .timeout = octx.deadline.value_or(model::no_timeout),
+      .strict_max_bytes = octx.response_size > 0,
+    };
+    return handle_ntp_fetch(octx, std::move(ntp), config);
 }
 
 /**
@@ -448,72 +498,46 @@ handle_ntp_fetch(op_context& octx, model::ntp ntp, fetch_config config) {
  * Each request is handled serially in the order they appear in the request.
  * There are a couple reasons why we are not **yet** processing these in
  * parallel. First, Kafka expects to some extent that the order of the
- * partitions in the request is an implicit priority on which partitions to read
- * from. This is closely related to the request budget limits specified in terms
- * of maximum bytes and maximum time delay.
+ * partitions in the request is an implicit priority on which partitions to
+ * read from. This is closely related to the request budget limits specified
+ * in terms of maximum bytes and maximum time delay.
  *
  * Once we start processing requests in parallel we'll have to work through
  * various challenges. First, once we dispatch in parallel, we'll need to
- * develop heuristics for dealing with the implicit priority order. We'll also
- * need to develop techniques and heuristics for dealing with budgets since
- * global budgets aren't trivially divisible onto each core when partition
- * requests may produce non-uniform amounts of data.
+ * develop heuristics for dealing with the implicit priority order. We'll
+ * also need to develop techniques and heuristics for dealing with budgets
+ * since global budgets aren't trivially divisible onto each core when
+ * partition requests may produce non-uniform amounts of data.
  *
  * w.r.t. what is needed to parallelize this, there are no data dependencies
- * between partition requests within the fetch request, and so they can be run
- * fully in parallel. The only dependency that exists is that the response must
- * be reassembled such that the responses appear in these order as the
- * partitions in the request.
+ * between partition requests within the fetch request, and so they can be
+ * run fully in parallel. The only dependency that exists is that the
+ * response must be reassembled such that the responses appear in these
+ * order as the partitions in the request.
  */
 static ss::future<> fetch_topic_partitions(op_context& octx) {
     return ss::do_for_each(
-      octx.request.cbegin(),
-      octx.request.cend(),
-      [&octx](const fetch_request::const_iterator::value_type& p) {
-          /*
-           * the next topic-partition to fetch
-           */
-          auto& topic = *p.topic;
-          auto& part = *p.partition;
-
-          if (p.new_topic) {
-              octx.start_response_topic(topic);
-          }
-
-          // if over budget create placeholder response
-          if (
-            octx.bytes_left == 0
-            || model::timeout_clock::now()
-                 > octx.deadline.value_or(model::no_timeout)) {
-              octx.add_partition_response(
-                make_partition_response_error(error_code::message_too_large));
-              return ss::make_ready_future<>();
-          }
-
-          auto ntp = model::ntp(cluster::kafka_namespace, topic.name, part.id);
-
-          fetch_config config{
-            .start_offset = part.fetch_offset,
-            .max_bytes = std::min(
-              octx.bytes_left, size_t(part.partition_max_bytes)),
-            .timeout = octx.deadline.value_or(model::no_timeout),
-            .strict_max_bytes = octx.response_size > 0,
-          };
-
-          return handle_ntp_fetch(octx, std::move(ntp), config);
-      });
+             octx.request.cbegin(),
+             octx.request.cend(),
+             [&octx](const fetch_request::const_iterator::value_type& p) {
+                 return fetch_topic_partition(octx, p).then([&octx] {
+                     if (!octx.initial_fetch) {
+                         octx.response_iterator++;
+                     }
+                 });
+             })
+      .then([&octx] { octx.reset_context(); });
 }
 
 ss::future<response_ptr>
 fetch_api::process(request_context&& rctx, ss::smp_service_group ssg) {
     return ss::do_with(op_context(std::move(rctx), ssg), [](op_context& octx) {
-        // top-level error is used for session-level errors, but we do not yet
-        // implement session management.
+        // top-level error is used for session-level errors, but we do
+        // not yet implement session management.
         octx.response.error = error_code::none;
         // first fetch, do not wait
         return fetch_topic_partitions(octx)
           .then([&octx] {
-              octx.initial_fetch = false;
               return ss::do_until(
                 [&octx] { return octx.should_stop_fetch(); },
                 [&octx] { return fetch_topic_partitions(octx); });

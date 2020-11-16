@@ -105,7 +105,7 @@ struct prod_consume_fixture : public redpanda_thread_fixture {
         kafka::fetch_request req;
         req.min_bytes = 1;
         req.max_bytes = 10_MiB;
-        req.max_wait_time = 100ms;
+        req.max_wait_time = 1000ms;
         req.topics.push_back(std::move(topic));
 
         return consumer->dispatch(std::move(req), kafka::api_version(4))

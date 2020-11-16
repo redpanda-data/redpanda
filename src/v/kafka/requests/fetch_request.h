@@ -83,6 +83,18 @@ struct fetch_request final {
         }
     }
 
+    /**
+     * return empty if request doesn't contain any topics or all topics are
+     * empty
+     */
+    bool empty() const {
+        return topics.empty()
+               || std::all_of(
+                 topics.cbegin(), topics.cend(), [](const topic& t) {
+                     return t.partitions.empty();
+                 });
+    }
+
     /*
      * iterator over request partitions. this adapter iterator is used because
      * the partitions are decoded off the wire directly into a hierarhical
@@ -197,6 +209,8 @@ struct fetch_response final {
         model::offset log_start_offset;                        // >= v5
         std::vector<aborted_transaction> aborted_transactions; // >= v4
         std::optional<iobuf> record_set;
+
+        bool has_error() const { return error != error_code::none; }
     };
 
     struct partition {
@@ -218,6 +232,98 @@ struct fetch_response final {
 
     void encode(const request_context& ctx, response& resp);
     void decode(iobuf buf, api_version version);
+
+    /*
+     * iterator over response partitions. this adapter iterator is used because
+     * the partitions are encoded into the vector of partition responses
+     *
+     *       [
+     *         partition0 -> [...]
+     *         partition1 -> [partition_resp1, partition_resp2, ...]
+     *         ...
+     *         partitionN -> [...]
+     *       ]
+     *
+     * the iterator value is a reference to the current partition and
+     * partition_response.
+     */
+    class iterator {
+    public:
+        using partition_iterator = std::vector<partition>::iterator;
+        using partition_response_iterator
+          = std::vector<partition_response>::iterator;
+
+        struct value_type {
+            partition_iterator partition;
+            partition_response_iterator partition_response;
+        };
+
+        using difference_type = void;
+        using pointer = value_type*;
+        using reference = value_type&;
+        using iterator_category = std::forward_iterator_tag;
+
+        iterator(partition_iterator begin, partition_iterator end)
+          : state_({.partition = begin})
+          , t_end_(end) {
+            if (likely(state_.partition != t_end_)) {
+                state_.partition_response = state_.partition->responses.begin();
+                normalize();
+            }
+        }
+
+        reference operator*() noexcept { return state_; }
+
+        pointer operator->() noexcept { return &state_; }
+
+        iterator& operator++() {
+            state_.partition_response++;
+            normalize();
+            return *this;
+        }
+        iterator operator++(int) {
+            iterator tmp = *this;
+            ++(*this);
+            return tmp;
+        }
+
+        bool operator==(const iterator& o) const noexcept {
+            if (state_.partition == o.state_.partition) {
+                if (state_.partition == t_end_) {
+                    return true;
+                } else {
+                    return state_.partition_response
+                           == o.state_.partition_response;
+                }
+            }
+            return false;
+        }
+
+        bool operator!=(const iterator& o) const noexcept {
+            return !(*this == o);
+        }
+
+    private:
+        void normalize() {
+            while (state_.partition_response
+                   == state_.partition->responses.end()) {
+                state_.partition++;
+                if (state_.partition != t_end_) {
+                    state_.partition_response
+                      = state_.partition->responses.begin();
+                } else {
+                    break;
+                }
+            }
+        }
+
+        value_type state_;
+        partition_iterator t_end_;
+    };
+
+    iterator begin() { return iterator(partitions.begin(), partitions.end()); }
+
+    iterator end() { return iterator(partitions.end(), partitions.end()); }
 };
 
 std::ostream& operator<<(std::ostream&, const fetch_response&);
@@ -241,12 +347,21 @@ struct op_context {
     bool response_error;
 
     bool initial_fetch = true;
+
+    fetch_response::iterator response_iterator;
+
+    void reset_context() {
+        initial_fetch = false;
+        response_iterator = response.begin();
+    }
+
     // decode request and initialize budgets
     op_context(request_context&& ctx, ss::smp_service_group ssg)
       : rctx(std::move(ctx))
       , ssg(ssg)
       , response_size(0)
-      , response_error(false) {
+      , response_error(false)
+      , response_iterator(response.begin()) {
         /*
          * decode request and prepare the inital response
          */
@@ -275,18 +390,29 @@ struct op_context {
     }
 
     // add to the response the result of fetching from a partition
-    void add_partition_response(fetch_response::partition_response&& r) {
+    void set_partition_response(fetch_response::partition_response&& r) {
+        if (r.error != error_code::none) {
+            response_error = true;
+        }
         if (r.record_set) {
             response_size += r.record_set->size_bytes();
             bytes_left -= std::min(bytes_left, r.record_set->size_bytes());
         }
-        response.partitions.back().responses.push_back(std::move(r));
+        if (!initial_fetch) {
+            // replace response
+            *response_iterator->partition_response = std::move(r);
+        } else {
+            response.partitions.back().responses.push_back(std::move(r));
+        }
     }
 
     bool should_stop_fetch() const {
-        return !request.debounce_delay()
-               || static_cast<int32_t>(response_size) >= request.min_bytes
-               || request.topics.empty() || response_error;
+        return !request.debounce_delay() || over_min_bytes() || request.empty()
+               || response_error;
+    }
+
+    bool over_min_bytes() const {
+        return static_cast<int32_t>(response_size) >= request.min_bytes;
     }
 };
 

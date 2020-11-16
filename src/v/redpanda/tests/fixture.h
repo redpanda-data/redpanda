@@ -111,9 +111,10 @@ public:
           storage::debug_sanitize_files::yes);
     }
 
-    ss::future<> add_topic(model::topic_namespace_view tp_ns) {
+    ss::future<>
+    add_topic(model::topic_namespace_view tp_ns, int partitions = 1) {
         std::vector<cluster::topic_configuration> cfgs{
-          cluster::topic_configuration(tp_ns.ns, tp_ns.tp, 1, 1)};
+          cluster::topic_configuration(tp_ns.ns, tp_ns.tp, partitions, 1)};
         return app.controller->get_topics_frontend()
           .local()
           .create_topics(std::move(cfgs), model::no_timeout)
@@ -137,6 +138,24 @@ public:
                                            r.tp_ns.ns, r.tp_ns.tp, p.id));
                                    });
                       });
+                });
+          });
+    }
+
+    ss::future<> wait_for_partition_offset(
+      model::ntp ntp,
+      model::offset o,
+      model::timeout_clock::duration tout = 3s) {
+        return tests::cooperative_spin_wait_with_timeout(
+          tout, [this, ntp = std::move(ntp), o]() mutable {
+              auto shard = app.shard_table.local().shard_for(ntp);
+              if (!shard) {
+                  return ss::make_ready_future<bool>(false);
+              }
+              return app.partition_manager.invoke_on(
+                *shard, [ntp, o](cluster::partition_manager& mgr) {
+                    auto partition = mgr.get(ntp);
+                    return partition && partition->committed_offset() >= o;
                 });
           });
     }

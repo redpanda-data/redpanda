@@ -281,3 +281,214 @@ FIXTURE_TEST(fetch_one, redpanda_thread_fixture) {
           resp.partitions[0].responses[0].record_set->size_bytes() > 0);
     }
 }
+
+SEASTAR_THREAD_TEST_CASE(fetch_response_iterator_test) {
+    kafka::fetch_response response;
+
+    auto make_partition = [](ss::sstring topic) {
+        return kafka::fetch_response::partition(model::topic(std::move(topic)));
+    };
+
+    auto make_partition_response = [](int id) {
+        kafka::fetch_response::partition_response resp;
+        resp.error = kafka::error_code::none;
+        resp.id = model::partition_id(id);
+        resp.last_stable_offset = model::offset(0);
+        return resp;
+    };
+
+    response.partitions.push_back(make_partition("tp-1"));
+    response.partitions.push_back(make_partition("tp-2"));
+    response.partitions.push_back(make_partition("tp-3"));
+
+    response.partitions[0].responses.push_back(make_partition_response(0));
+    response.partitions[0].responses.push_back(make_partition_response(1));
+    response.partitions[0].responses.push_back(make_partition_response(2));
+
+    response.partitions[1].responses.push_back(make_partition_response(0));
+
+    response.partitions[2].responses.push_back(make_partition_response(0));
+    response.partitions[2].responses.push_back(make_partition_response(1));
+
+    int i = 0;
+
+    for (auto it = response.begin(); it != response.end(); ++it) {
+        if (i < 3) {
+            BOOST_REQUIRE_EQUAL(it->partition->name(), "tp-1");
+            BOOST_REQUIRE_EQUAL(it->partition_response->id(), i);
+
+        } else if (i == 3) {
+            BOOST_REQUIRE_EQUAL(it->partition->name(), "tp-2");
+            BOOST_REQUIRE_EQUAL(it->partition_response->id(), 0);
+        } else {
+            BOOST_REQUIRE_EQUAL(it->partition->name(), "tp-3");
+            BOOST_REQUIRE_EQUAL(it->partition_response->id(), i - 4);
+        }
+        ++i;
+    }
+};
+
+FIXTURE_TEST(fetch_empty, redpanda_thread_fixture) {
+    // create a topic partition with some data
+    model::topic topic("foo");
+    model::partition_id pid(0);
+    model::offset offset(0);
+    auto ntp = make_default_ntp(topic, pid);
+    auto log_config = make_default_config();
+    wait_for_controller_leadership().get0();
+    add_topic(model::topic_namespace_view(ntp)).get();
+
+    wait_for_partition_offset(ntp, model::offset(0)).get0();
+
+    kafka::fetch_request no_topics;
+    no_topics.max_bytes = std::numeric_limits<int32_t>::max();
+    no_topics.min_bytes = 1;
+    no_topics.max_wait_time = std::chrono::milliseconds(1000);
+
+    auto client = make_kafka_client().get0();
+    client.connect().get();
+    auto resp_1 = client.dispatch(no_topics, kafka::api_version(6)).get0();
+
+    BOOST_REQUIRE(resp_1.partitions.empty());
+
+    kafka::fetch_request no_partitions;
+    no_partitions.max_bytes = std::numeric_limits<int32_t>::max();
+    no_partitions.min_bytes = 1;
+    no_partitions.max_wait_time = std::chrono::milliseconds(1000);
+    no_partitions.topics = {{.name = topic, .partitions = {}}};
+
+    auto resp_2 = client.dispatch(no_topics, kafka::api_version(6)).get0();
+    client.stop().then([&client] { client.shutdown(); }).get();
+
+    BOOST_REQUIRE(resp_2.partitions.empty());
+}
+
+FIXTURE_TEST(fetch_multi_partitions_debounce, redpanda_thread_fixture) {
+    // create a topic partition with some data
+    model::topic topic("foo");
+    model::partition_id pid(0);
+    model::offset offset(0);
+
+    wait_for_controller_leadership().get0();
+
+    add_topic(model::topic_namespace(model::ns("kafka"), topic), 6).get();
+
+    for (int i = 0; i < 6; ++i) {
+        auto ntp = make_default_ntp(topic, model::partition_id(i));
+        wait_for_partition_offset(ntp, model::offset(0)).get0();
+    }
+
+    kafka::fetch_request req;
+    req.max_bytes = std::numeric_limits<int32_t>::max();
+    req.min_bytes = 1;
+    req.max_wait_time = std::chrono::milliseconds(3000);
+    req.topics = {{
+      .name = topic,
+      .partitions = {},
+    }};
+    for (int i = 0; i < 6; ++i) {
+        kafka::fetch_request::partition p;
+        p.id = model::partition_id(i);
+        p.log_start_offset = offset;
+        p.fetch_offset = offset;
+        p.partition_max_bytes = std::numeric_limits<int32_t>::max();
+        req.topics[0].partitions.push_back(p);
+    }
+    auto client = make_kafka_client().get0();
+    client.connect().get();
+    auto fresp = client.dispatch(req, kafka::api_version(4));
+
+    for (int i = 0; i < 6; ++i) {
+        model::partition_id partition_id(i);
+        auto ntp = make_default_ntp(topic, partition_id);
+        auto shard = app.shard_table.local().shard_for(ntp);
+        auto r = app.partition_manager
+                   .invoke_on(
+                     *shard,
+                     [ntp](cluster::partition_manager& mgr) {
+                         auto partition = mgr.get(ntp);
+                         auto batches = storage::test::make_random_batches(
+                           model::offset(0), 5);
+                         auto rdr = model::make_memory_record_batch_reader(
+                           std::move(batches));
+                         return partition->replicate(
+                           std::move(rdr),
+                           raft::replicate_options(
+                             raft::consistency_level::quorum_ack));
+                     })
+                   .get0();
+    }
+    auto resp = fresp.get0();
+    client.stop().then([&client] { client.shutdown(); }).get();
+
+    BOOST_REQUIRE_EQUAL(resp.partitions.size(), 1);
+    BOOST_REQUIRE_EQUAL(resp.partitions[0].name, topic());
+    BOOST_REQUIRE_EQUAL(resp.partitions[0].responses.size(), 6);
+    size_t total_size = 0;
+    for (int i = 0; i < 6; ++i) {
+        BOOST_REQUIRE_EQUAL(
+          resp.partitions[0].responses[i].error, kafka::error_code::none);
+        BOOST_REQUIRE_EQUAL(
+          resp.partitions[0].responses[i].id, model::partition_id(i));
+        BOOST_REQUIRE(resp.partitions[0].responses[i].record_set);
+
+        total_size += resp.partitions[0].responses[i].record_set->size_bytes();
+    }
+    BOOST_REQUIRE_GT(total_size, 0);
+}
+
+FIXTURE_TEST(fetch_one_debounce, redpanda_thread_fixture) {
+    model::topic topic("foo");
+    model::partition_id pid(0);
+    model::offset offset(0);
+    auto ntp = make_default_ntp(topic, pid);
+
+    wait_for_controller_leadership().get0();
+
+    add_topic(model::topic_namespace_view(ntp)).get();
+    wait_for_partition_offset(ntp, model::offset(0)).get0();
+
+    kafka::fetch_request req;
+    req.max_bytes = std::numeric_limits<int32_t>::max();
+    req.min_bytes = 1;
+    req.max_wait_time = std::chrono::milliseconds(5000);
+    req.topics = {{
+      .name = topic,
+      .partitions = {{
+        .id = pid,
+        .fetch_offset = offset,
+      }},
+    }};
+
+    auto client = make_kafka_client().get0();
+    client.connect().get();
+    auto fresp = client.dispatch(req, kafka::api_version(4));
+    auto shard = app.shard_table.local().shard_for(ntp);
+    auto r = app.partition_manager
+               .invoke_on(
+                 *shard,
+                 [ntp](cluster::partition_manager& mgr) {
+                     auto partition = mgr.get(ntp);
+                     auto batches = storage::test::make_random_batches(
+                       model::offset(0), 5);
+                     auto rdr = model::make_memory_record_batch_reader(
+                       std::move(batches));
+                     return partition->replicate(
+                       std::move(rdr),
+                       raft::replicate_options(
+                         raft::consistency_level::quorum_ack));
+                 })
+               .get0();
+
+    auto resp = fresp.get0();
+    client.stop().then([&client] { client.shutdown(); }).get();
+
+    BOOST_REQUIRE(resp.partitions.size() == 1);
+    BOOST_REQUIRE(resp.partitions[0].name == topic());
+    BOOST_REQUIRE(resp.partitions[0].responses.size() == 1);
+    BOOST_REQUIRE(
+      resp.partitions[0].responses[0].error == kafka::error_code::none);
+    BOOST_REQUIRE(resp.partitions[0].responses[0].id == pid);
+    BOOST_REQUIRE(resp.partitions[0].responses[0].record_set);
+    BOOST_REQUIRE(resp.partitions[0].responses[0].record_set->size_bytes() > 0);
+}
