@@ -1,15 +1,13 @@
 import {
   calculateRecordBatchSize,
-  calculateRecordLength
+  calculateRecordLength,
 } from "../../modules/public";
-import {
-  Record
-} from "../../modules/public/Coprocessor";
+import { Record } from "../../modules/public/Coprocessor";
 import { varintZigzagSize } from "../../modules/public/Utils";
 import * as assert from "assert";
 
-describe("Public utils functions", function() {
-  it("should calculate number byte size on varint encode", function() {
+describe("Public utils functions", function () {
+  it("should calculate number byte size on varint encode", function () {
     const size = varintZigzagSize(BigInt(50)); // zigzag: 100
     assert.strictEqual(size, 1);
     const size2 = varintZigzagSize(BigInt(200)); // zigzag: 400
@@ -20,25 +18,25 @@ describe("Public utils functions", function() {
     assert.strictEqual(size4, 4);
   });
 
-  it("should calculateRecordLength", function() {
+  it("should calculateRecordLength", function () {
     const value = Buffer.from("Test");
     const record: Record = {
-      value: value,                 // 4  |
-      headers: [],                  // 1  |
-      key: Buffer.from(""),         // 0  |
-      offsetDelta: 0,               // 1  |
-      timestampDelta: BigInt(0),    // 1  |
-      keyLength: 0,                 // 1  |
-      attributes: 0,                // 1  |
-      length: 0,                    // 1  |
-      valueLen: value.length        // 1 => 11
+      value: value, // 4  |
+      headers: [], // 1  |
+      key: Buffer.from(""), // 0  |
+      offsetDelta: 0, // 1  |
+      timestampDelta: BigInt(0), // 1  |
+      keyLength: 0, // 1  |
+      attributes: 0, // 1  |
+      length: 0, // 1  |
+      valueLen: value.length, // 1 => 11
     };
     console.log(record);
     const size = calculateRecordLength(record);
     assert.strictEqual(size, 11);
   });
 
-  it("should calculate record batch size", function() {
+  it("should calculate record batch size", function () {
     const value = Buffer.from("Test");
     const record: Record = {
       value: value,
@@ -49,10 +47,10 @@ describe("Public utils functions", function() {
       keyLength: 0,
       attributes: 0,
       length: 11,
-      valueLen: value.length
+      valueLen: value.length,
     };
     const size = calculateRecordBatchSize([record]);
     // 61 bytes from record batch header and 11 bytes from record
-    assert.strictEqual(size, 72)
+    assert.strictEqual(size, 72);
   });
 });

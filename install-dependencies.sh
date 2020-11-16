@@ -8,12 +8,11 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-
 echo "installing seastar dependencies"
 
 if [[ $EUID -ne 0 ]]; then
-    echo "This script should be run as root."
-    exit 1
+  echo "This script should be run as root."
+  exit 1
 fi
 if [ -f "/etc/os-release" ]; then
   . /etc/os-release

@@ -8,7 +8,6 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-
 # pip3 install kafka-python flask
 # rpk api topic create -p 1 -r 3 topic3
 # python3 kafkakv.py --topic topic3 --log kafka1.log --port 9891 --broker 172.31.38.96:9092 --broker 172.31.37.22:9092 --broker 172.31.35.89:9092

@@ -9,7 +9,6 @@
  * by the Apache License, Version 2.0
  */
 
-
 #pragma once
 #include "model/record.h"
 #include "model/record_batch_reader.h"
