@@ -14,11 +14,12 @@ import { join } from "path";
 
 describe("Checksum utilities", () => {
   describe("When we call getChecksumFromFile", () => {
-    const expectChecksum = "9W4k/uZKoPMZxDJyvj7rvcO8NYWGFKtd7MOR4UA9Wls=";
+    const expectChecksum =
+      "0374d40e1d2b885e0cb2f23f181d50443b6473ef819c10f3dc3e73e9b8b9f800";
     describe("Given a existing file", () => {
       it("Should get file content's checksum", (done) => {
         const checksumPromise = getChecksumFromFile(
-          join(__dirname, "/CoprocessorTest.js")
+          join(__dirname, "/CoprocessorTest.ts")
         );
         checksumPromise
           .then((checksum) => {
