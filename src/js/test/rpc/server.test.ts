@@ -10,7 +10,7 @@
 
 import { ProcessBatchServer } from "../../modules/rpc/server";
 import Repository from "../../modules/supervisors/Repository";
-import { reset, stub } from "sinon";
+import { SinonSandbox, createSandbox } from "sinon";
 import { SupervisorClient } from "../../modules/rpc/serverAndClients/processBatch";
 import { createRecordBatch } from "../../modules/public";
 import { Script_ManagerServer as ManagementServer } from "../../modules/rpc/serverAndClients/server";
@@ -21,25 +21,44 @@ import { PolicyError, RecordBatch } from "../../modules/public/Coprocessor";
 import assert = require("assert");
 
 const INotifyWait = require("inotifywait");
-const sinon = require("sinon");
 
+let sinonInstance: SinonSandbox;
 let server: ProcessBatchServer;
 let client: SupervisorClient;
-const spyFireExceptionServer = sinon.stub(
-  ProcessBatchServer.prototype,
-  "fireException"
-);
-const spyGetHandles = sinon.stub(
-  Repository.prototype,
-  "getHandlesByCoprocessorIds"
-);
-const spyFindByCoprocessor = sinon.stub(
-  Repository.prototype,
-  "findByCoprocessor"
-);
-const spyMoveHandle = sinon.stub(FileManager.prototype, "moveCoprocessorFile");
-const spyDeregister = sinon.spy(FileManager.prototype, "deregisterCoprocessor");
 let manageServer: ManagementServer;
+
+const createStubs = (sandbox: SinonSandbox) => {
+  sandbox.stub(FileManager.prototype, "readActiveCoprocessor");
+  sandbox.stub(FileManager.prototype, "updateRepositoryOnNewFile");
+  sandbox.stub(INotifyWait.prototype);
+  const spyFireExceptionServer = sandbox.stub(
+    ProcessBatchServer.prototype,
+    "fireException"
+  );
+  const spyGetHandles = sandbox.stub(
+    Repository.prototype,
+    "getHandlesByCoprocessorIds"
+  );
+  const spyFindByCoprocessor = sandbox.stub(
+    Repository.prototype,
+    "findByCoprocessor"
+  );
+  const spyMoveHandle = sandbox.stub(
+    FileManager.prototype,
+    "moveCoprocessorFile"
+  );
+  const spyDeregister = sandbox.spy(
+    FileManager.prototype,
+    "deregisterCoprocessor"
+  );
+  return {
+    spyFireExceptionServer,
+    spyGetHandles,
+    spyFindByCoprocessor,
+    spyMoveHandle,
+    spyDeregister,
+  };
+};
 
 const createProcessBatchRequest = (
   ids: bigint[] = [],
@@ -58,17 +77,8 @@ const createProcessBatchRequest = (
 
 describe("Server", function () {
   describe("Given a Request", function () {
-    stub(FileManager.prototype, "readActiveCoprocessor");
-    stub(FileManager.prototype, "updateRepositoryOnNewFile");
-    stub(INotifyWait.prototype);
-
     beforeEach(() => {
-      reset();
-      spyFireExceptionServer.reset();
-      spyGetHandles.reset();
-      spyMoveHandle.reset();
-      spyFindByCoprocessor.reset();
-      spyDeregister.resetHistory();
+      sinonInstance = createSandbox();
       manageServer = new ManagementServer();
       manageServer.disable_copros = () => Promise.resolve({ inputs: [0] });
       manageServer.listen(43118);
@@ -79,6 +89,7 @@ describe("Server", function () {
 
     afterEach(async () => {
       client.close();
+      sinonInstance.restore();
       await server.closeConnection();
       await manageServer.closeConnection();
     });
@@ -87,6 +98,9 @@ describe("Server", function () {
       "should fail when the given recordProcessBatch doesn't have " +
         "coprocessor ids",
       function (done) {
+        const { spyFireExceptionServer } = createStubs(sinonInstance);
+        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+        // @ts-ignore
         spyFireExceptionServer.returns(Promise.resolve({ result: [] }));
         client.process_batch(createProcessBatchRequest()).then(() => {
           assert(
@@ -100,15 +114,23 @@ describe("Server", function () {
     );
 
     it("should fail if there isn't coprocessor that processBatch contain", function (done) {
+      const { spyFireExceptionServer, spyGetHandles } = createStubs(
+        sinonInstance
+      );
       spyGetHandles.returns([]);
       spyFireExceptionServer.returns(
+        /* FireException should throw an exception but there isn't way to
+             listen that exception, for that reason this stub return a "correct"
+             value in order to check the error, when the server response
+             to client
+           */
         Promise.resolve([
           {
             coprocessorId: "",
             ntp: { namespace: "", topic: "", partition: 1 },
             resultRecordBatch: [createRecordBatch()],
           },
-        ])
+        ]) as never
       );
       client.process_batch(createProcessBatchRequest([BigInt(1)])).then(() => {
         assert(
@@ -122,6 +144,7 @@ describe("Server", function () {
 
     it("should apply the right Coprocessor for the Request's topic", function (done) {
       const coprocessorId = BigInt(1);
+      const { spyGetHandles } = createStubs(sinonInstance);
       spyGetHandles.returns([
         createHandle({
           apply: () =>
@@ -153,8 +176,11 @@ describe("Server", function () {
         });
     });
 
-    describe("Given an Error when applying the Coprocessor", function () {
-      it("should skip the Request, if ErrorPolicy is SkipOnFailure", function (done) {
+    it(
+      "if there is an error, should skip the Request, if ErrorPolicy is " +
+        "SkipOnFailure",
+      function (done) {
+        const { spyGetHandles, spyDeregister } = createStubs(sinonInstance);
         const badApplyCoprocessor = (record: RecordBatch) =>
           // eslint-disable-next-line @typescript-eslint/ban-ts-comment
           // @ts-ignore
@@ -175,9 +201,19 @@ describe("Server", function () {
             assert.deepStrictEqual(res.result, []);
             done();
           });
-      });
+      }
+    );
 
-      it("should deregister the Coprocessor, if ErrorPolicy is Deregister", function (done) {
+    it(
+      "if there is an error, should deregister the Coprocessor, if " +
+        "ErrorPolicy is Deregister",
+      function (done) {
+        const {
+          spyGetHandles,
+          spyDeregister,
+          spyMoveHandle,
+          spyFindByCoprocessor,
+        } = createStubs(sinonInstance);
         const badApplyCoprocessor = (record: RecordBatch) =>
           // eslint-disable-next-line @typescript-eslint/ban-ts-comment
           // @ts-ignore
@@ -202,7 +238,7 @@ describe("Server", function () {
             assert.deepStrictEqual(res.result, []);
             done();
           });
-      });
-    });
+      }
+    );
   });
 });

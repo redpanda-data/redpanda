@@ -9,7 +9,7 @@
  */
 
 import * as assert from "assert";
-import { stub, spy, reset } from "sinon";
+import { SinonSandbox, createSandbox } from "sinon";
 import FileManager from "../../modules/supervisors/FileManager";
 import Repository from "../../modules/supervisors/Repository";
 import {
@@ -20,31 +20,41 @@ import * as fs from "fs";
 import { createHandle } from "../testUtilities";
 
 const INotifyWait = require("inotifywait");
-
-const readdirFake = stub(fs, "readdir");
+let sinonInstance: SinonSandbox;
 let server: ManagementServer;
 let client: ManagementClient;
-const moveCoprocessor = stub(FileManager.prototype, "moveCoprocessorFile");
-const getCoprocessor = stub(FileManager.prototype, "getHandle");
+
+const createStubs = (sandbox: SinonSandbox) => {
+  sandbox.stub(INotifyWait.prototype);
+  const readdirFake = sandbox.stub(fs, "readdir");
+  const moveCoprocessor = sandbox.stub(
+    FileManager.prototype,
+    "moveCoprocessorFile"
+  );
+  const getCoprocessor = sandbox.stub(FileManager.prototype, "getHandle");
+  return {
+    moveCoprocessor,
+    getCoprocessor,
+    readdirFake,
+  };
+};
 
 describe("FileManager", () => {
-  stub(INotifyWait.prototype);
-
   beforeEach(() => {
-    reset();
-    moveCoprocessor.reset();
+    sinonInstance = createSandbox();
     server = new ManagementServer();
     server.listen(4300);
     client = new ManagementClient(4300);
   });
 
   afterEach(async () => {
-    readdirFake.reset();
+    sinonInstance.restore();
     client.close();
     await server.closeConnection();
   });
 
   it("should read the existing file into active directory", () => {
+    const { readdirFake } = createStubs(sinonInstance);
     const repo = new Repository();
     new FileManager(repo, "submit", "active", "inactive", client);
     assert(readdirFake.firstCall.calledWith("active"));
@@ -52,7 +62,11 @@ describe("FileManager", () => {
 
   it("should add listen for new file event", () => {
     const repo = new Repository();
-    const updateFile = stub(FileManager.prototype, "updateRepositoryOnNewFile");
+    const { readdirFake } = createStubs(sinonInstance);
+    const updateFile = sinonInstance.stub(
+      FileManager.prototype,
+      "updateRepositoryOnNewFile"
+    );
     new FileManager(repo, "submit", "active", "inactive", client);
     assert(readdirFake.firstCall.calledWith("active"));
     assert(updateFile.called);
@@ -66,6 +80,7 @@ describe("FileManager", () => {
     (done) => {
       const handle = createHandle();
       const repo = new Repository();
+      const { moveCoprocessor, getCoprocessor } = createStubs(sinonInstance);
       moveCoprocessor.returns(Promise.resolve(handle));
       getCoprocessor.returns(Promise.resolve(handle));
 
@@ -102,6 +117,8 @@ describe("FileManager", () => {
   it("should remove a coprocessor from file path", (done) => {
     const handle = createHandle();
     const repo = new Repository();
+    const { moveCoprocessor, getCoprocessor } = createStubs(sinonInstance);
+
     // add coprocessor
     repo.add(handle);
     // mock value for moving and getCoprocessor
@@ -110,7 +127,7 @@ describe("FileManager", () => {
     // override the disable_copros method in server
     server.disable_copros = () => Promise.resolve({ inputs: [0] });
     // add spy to server
-    const spyDisable = spy(client, "disable_copros");
+    const spyDisable = sinonInstance.spy(client, "disable_copros");
 
     const file = new FileManager(repo, "submit", "active", "inactive", client);
     file.deregisterCoprocessor(handle.coprocessor);
