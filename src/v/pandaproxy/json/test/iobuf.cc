@@ -10,6 +10,8 @@
 #include "pandaproxy/json/iobuf.h"
 
 #include "bytes/iobuf_parser.h"
+#include "json/json.h"
+#include "pandaproxy/json/rjson_util.h"
 
 #include <seastar/testing/thread_test_case.hh>
 
@@ -30,4 +32,19 @@ SEASTAR_THREAD_TEST_CASE(test_iobuf_parse_binary_error) {
       ppj::serialization_format::binary_v2}("cGFuZGFwcm94eQ=?");
     BOOST_REQUIRE(!res);
     BOOST_REQUIRE(!buf);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_iobuf_serialize_binary) {
+    iobuf in_buf;
+    auto input = ss::sstring("pandaproxy");
+    auto expected = ss::sstring("\"cGFuZGFwcm94eQ==\"");
+    in_buf.append(input.data(), input.size());
+
+    rapidjson::StringBuffer out_buf;
+    rapidjson::Writer<rapidjson::StringBuffer> w(out_buf);
+    ppj::rjson_serialize_fmt(ppj::serialization_format::binary_v2)(
+      w, std::move(in_buf));
+    ss::sstring output{out_buf.GetString(), out_buf.GetSize()};
+
+    BOOST_REQUIRE_EQUAL(output, expected);
 }
