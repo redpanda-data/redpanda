@@ -316,6 +316,9 @@ func writeNodeConfig(
 	conf := config.DefaultConfig()
 	conf.Redpanda.Id = int(nodeID)
 
+	conf.Redpanda.AdvertisedKafkaApi = &config.SocketAddress{}
+	conf.Redpanda.AdvertisedRPCAPI = &config.SocketAddress{}
+
 	conf.Rpk.Overprovisioned = true
 	conf.Redpanda.DeveloperMode = true
 

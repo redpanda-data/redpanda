@@ -205,9 +205,9 @@ func TestDefaultConfig(t *testing.T) {
 		Redpanda: &RedpandaConfig{
 			Directory:          "/var/lib/redpanda/data",
 			RPCServer:          SocketAddress{"0.0.0.0", 33145},
-			AdvertisedRPCAPI:   SocketAddress{"0.0.0.0", 33145},
+			AdvertisedRPCAPI:   &SocketAddress{"0.0.0.0", 33145},
 			KafkaApi:           SocketAddress{"0.0.0.0", 9092},
-			AdvertisedKafkaApi: SocketAddress{"0.0.0.0", 9092},
+			AdvertisedKafkaApi: &SocketAddress{"0.0.0.0", 9092},
 			AdminApi:           SocketAddress{"0.0.0.0", 9644},
 			Id:                 0,
 			SeedServers:        []*SeedServer{},
