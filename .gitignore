@@ -204,8 +204,11 @@ src/js/modules/domain/generatedRpc/*.ts
 src/js/modules/rpc/serverAndClients/*.ts
 # vectorized public dependency
 src/js/vectorizedDependency.js
-# generated vectorized dependecy
-src/go/rpk/pkg/cli/cmd/wasm/template/vectorized_dependency.go
+
+# rpk build dirs
+src/go/rpk/linux*
+src/go/rpk/darwin*
+
 #intelij
 *.iml
 # Node dependecies ts-generated
