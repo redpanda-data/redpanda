@@ -458,7 +458,7 @@ func check(
 	checkFailedActions map[tuners.CheckerID]checkFailedAction,
 ) ([]api.CheckPayload, error) {
 	payloads := make([]api.CheckPayload, 0)
-	results, err := tuners.Check(fs, conf.ConfigFile, conf, timeout)
+	results, err := tuners.Check(fs, conf, timeout)
 	if err != nil {
 		return payloads, err
 	}
