@@ -203,14 +203,12 @@ func TestDefaultConfig(t *testing.T) {
 	expected := Config{
 		ConfigFile: "/etc/redpanda/redpanda.yaml",
 		Redpanda: &RedpandaConfig{
-			Directory:          "/var/lib/redpanda/data",
-			RPCServer:          SocketAddress{"0.0.0.0", 33145},
-			AdvertisedRPCAPI:   &SocketAddress{"0.0.0.0", 33145},
-			KafkaApi:           SocketAddress{"0.0.0.0", 9092},
-			AdvertisedKafkaApi: &SocketAddress{"0.0.0.0", 9092},
-			AdminApi:           SocketAddress{"0.0.0.0", 9644},
-			Id:                 0,
-			SeedServers:        []*SeedServer{},
+			Directory:   "/var/lib/redpanda/data",
+			RPCServer:   SocketAddress{"0.0.0.0", 33145},
+			KafkaApi:    SocketAddress{"0.0.0.0", 9092},
+			AdminApi:    SocketAddress{"0.0.0.0", 9644},
+			Id:          0,
+			SeedServers: []*SeedServer{},
 		},
 		Rpk: &RpkConfig{
 			CoredumpDir: "/var/lib/redpanda/coredump",
@@ -276,6 +274,96 @@ func TestWriteConfig(t *testing.T) {
 		expected     string
 	}{
 		{
+			name: "shall write a valid config file without advertised_kafka_api",
+			conf: func() *Config {
+				c := getValidConfig()
+				c.Redpanda.AdvertisedRPCAPI = &SocketAddress{
+					"174.32.64.2",
+					33145,
+				}
+				c.Rpk = nil
+				return c
+			},
+			wantErr: false,
+			expected: `config_file: /etc/redpanda/redpanda.yaml
+redpanda:
+  admin:
+    address: 0.0.0.0
+    port: 9644
+  advertised_rpc_api:
+    address: 174.32.64.2
+    port: 33145
+  data_directory: /var/lib/redpanda/data
+  developer_mode: false
+  kafka_api:
+    address: 0.0.0.0
+    port: 9092
+  kafka_api_tls:
+    cert_file: ""
+    enabled: false
+    key_file: ""
+    truststore_file: ""
+  node_id: 0
+  rpc_server:
+    address: 0.0.0.0
+    port: 33145
+  seed_servers:
+  - host:
+      address: 127.0.0.1
+      port: 33145
+    node_id: 1
+  - host:
+      address: 127.0.0.1
+      port: 33146
+    node_id: 2
+`,
+		},
+		{
+			name: "shall write a valid config file without advertised_rpc_api",
+			conf: func() *Config {
+				c := getValidConfig()
+				c.Redpanda.AdvertisedKafkaApi = &SocketAddress{
+					"174.32.64.2",
+					9092,
+				}
+				c.Rpk = nil
+				return c
+			},
+			wantErr: false,
+			expected: `config_file: /etc/redpanda/redpanda.yaml
+redpanda:
+  admin:
+    address: 0.0.0.0
+    port: 9644
+  advertised_kafka_api:
+    address: 174.32.64.2
+    port: 9092
+  data_directory: /var/lib/redpanda/data
+  developer_mode: false
+  kafka_api:
+    address: 0.0.0.0
+    port: 9092
+  kafka_api_tls:
+    cert_file: ""
+    enabled: false
+    key_file: ""
+    truststore_file: ""
+  node_id: 0
+  rpc_server:
+    address: 0.0.0.0
+    port: 33145
+  seed_servers:
+  - host:
+      address: 127.0.0.1
+      port: 33145
+    node_id: 1
+  - host:
+      address: 127.0.0.1
+      port: 33146
+    node_id: 2
+`,
+		},
+		{
 			name: "shall write a valid config file without an rpk config object",
 			conf: func() *Config {
 				c := getValidConfig()
@@ -288,12 +376,6 @@ redpanda:
   admin:
     address: 0.0.0.0
     port: 9644
-  advertised_kafka_api:
-    address: 0.0.0.0
-    port: 9092
-  advertised_rpc_api:
-    address: 0.0.0.0
-    port: 33145
   data_directory: /var/lib/redpanda/data
   developer_mode: false
   kafka_api:
@@ -344,12 +426,6 @@ redpanda:
   admin:
     address: 0.0.0.0
     port: 9644
-  advertised_kafka_api:
-    address: 0.0.0.0
-    port: 9092
-  advertised_rpc_api:
-    address: 0.0.0.0
-    port: 33145
   data_directory: /var/lib/redpanda/data
   developer_mode: false
   kafka_api:
@@ -434,12 +510,6 @@ redpanda:
     address: 0.0.0.0
     port: 9644
   admin_api_doc_dir: /etc/redpanda/doc
-  advertised_kafka_api:
-    address: 0.0.0.0
-    port: 9092
-  advertised_rpc_api:
-    address: 0.0.0.0
-    port: 33145
   data_directory: /var/lib/redpanda/data
   default_window_sec: 100
   developer_mode: false
@@ -787,7 +857,7 @@ func TestReadAsJSON(t *testing.T) {
 				return WriteConfig(fs, &conf, conf.ConfigFile)
 			},
 			path:     DefaultConfig().ConfigFile,
-			expected: `{"config_file":"/etc/redpanda/redpanda.yaml","redpanda":{"admin":{"address":"0.0.0.0","port":9644},"advertised_kafka_api":{"address":"0.0.0.0","port":9092},"advertised_rpc_api":{"address":"0.0.0.0","port":33145},"data_directory":"/var/lib/redpanda/data","developer_mode":false,"kafka_api":{"address":"0.0.0.0","port":9092},"kafka_api_tls":{"cert_file":"","enabled":false,"key_file":"","truststore_file":""},"node_id":0,"rpc_server":{"address":"0.0.0.0","port":33145},"seed_servers":[]},"rpk":{"coredump_dir":"/var/lib/redpanda/coredump","enable_memory_locking":false,"enable_usage_stats":false,"overprovisioned":false,"tls":{"cert_file":"","key_file":"","truststore_file":""},"tune_aio_events":false,"tune_clocksource":false,"tune_coredump":false,"tune_cpu":false,"tune_disk_irq":false,"tune_disk_nomerges":false,"tune_disk_scheduler":false,"tune_fstrim":false,"tune_network":false,"tune_swappiness":false,"tune_transparent_hugepages":false}}`,
+			expected: `{"config_file":"/etc/redpanda/redpanda.yaml","redpanda":{"admin":{"address":"0.0.0.0","port":9644},"data_directory":"/var/lib/redpanda/data","developer_mode":false,"kafka_api":{"address":"0.0.0.0","port":9092},"kafka_api_tls":{"cert_file":"","enabled":false,"key_file":"","truststore_file":""},"node_id":0,"rpc_server":{"address":"0.0.0.0","port":33145},"seed_servers":[]},"rpk":{"coredump_dir":"/var/lib/redpanda/coredump","enable_memory_locking":false,"enable_usage_stats":false,"overprovisioned":false,"tls":{"cert_file":"","key_file":"","truststore_file":""},"tune_aio_events":false,"tune_clocksource":false,"tune_coredump":false,"tune_cpu":false,"tune_disk_irq":false,"tune_disk_nomerges":false,"tune_disk_scheduler":false,"tune_fstrim":false,"tune_network":false,"tune_swappiness":false,"tune_transparent_hugepages":false}}`,
 		},
 		{
 			name:           "it should fail if the the config isn't found",
