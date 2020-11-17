@@ -16,10 +16,6 @@ public:
     using script_manager_client
       = rpc::client<coproc::script_manager_client_protocol>;
 
-    router_test_fixture()
-      : coproc_test_fixture(true)
-      , supervisor_test_fixture() {}
-
     /// \brief Initialize the storage layer, then submit all coprocessors to
     /// v/coproc/service
     ss::future<> startup(log_layout_map&&, script_manager_client&);

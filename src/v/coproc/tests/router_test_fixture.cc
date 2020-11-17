@@ -9,12 +9,13 @@ ss::future<> router_test_fixture::startup(
     vassert(client.is_valid(), "Client isn't valid");
 
     // Data on all shards is identical
-    coproc_test_fixture::startup(std::move(llm));
-    // assemble the active_copros from the '_coprocessors' map
-    return ss::do_with(
-      enable_reqs_data(), [this, &client](enable_reqs_data& layout) {
-          return enable_coprocessors(layout, client);
-      });
+    return coproc_test_fixture::startup(std::move(llm)).then([this, &client] {
+        // assemble the active_copros from the '_coprocessors' map
+        return ss::do_with(
+          enable_reqs_data(), [this, &client](enable_reqs_data& layout) {
+              return enable_coprocessors(layout, client);
+          });
+    });
 }
 
 void router_test_fixture::validate_result(

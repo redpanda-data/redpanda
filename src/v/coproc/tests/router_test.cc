@@ -13,15 +13,26 @@
 #include "coproc/types.h"
 #include "model/fundamental.h"
 #include "model/timeout_clock.h"
+#include "redpanda/tests/fixture.h"
 #include "storage/tests/utils/random_batch.h"
 #include "test_utils/fixture.h"
 
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test_log.hpp>
 
+size_t number_of_logs(redpanda_thread_fixture* rtf) {
+    return rtf->app.storage
+      .map_reduce0(
+        [](storage::api& api) { return api.log_mgr().size(); },
+        size_t(0),
+        std::plus<>())
+      .get0();
+}
+
 FIXTURE_TEST(test_coproc_router_no_results, router_test_fixture) {
     auto client = make_client();
     client.connect().get();
+    const size_t n_logs = number_of_logs(this);
     // Storage has 10 ntps, 8 of topic 'bar' and 2 of 'foo'
     log_layout_map storage_layout = {{make_ts("foo"), 2}, {make_ts("bar"), 8}};
     // Router has 2 coprocessors, one subscribed to 'foo' the other 'bar'
@@ -38,23 +49,14 @@ FIXTURE_TEST(test_coproc_router_no_results, router_test_fixture) {
     auto batches = storage::test::make_random_batches(
       model::offset(0), 4, false);
     const auto n_records = sum_records(batches);
-    push(input_ntp, std::move(batches)).get();
+    push(input_ntp, model::make_memory_record_batch_reader(std::move(batches)))
+      .get();
 
     // Wait for any side-effects
     using namespace std::literals;
     ss::sleep(1s).get();
-    // Expect that no side-effects have been produced (i.e.
-    // materialized_logs)
-    const auto n_logs = get_api()
-                          .map_reduce0(
-                            [](storage::api& api) {
-                                return api.log_mgr().size();
-                            },
-                            size_t(0),
-                            std::plus<>())
-                          .get0();
-    // Expecting 2, because "foo(2)" and "bar(8)" were loaded at startup
-    BOOST_REQUIRE_EQUAL(n_logs, 10);
+    // Expecting 10, because "foo(2)" and "bar(8)" were loaded at startup
+    BOOST_REQUIRE_EQUAL((number_of_logs(this) - n_logs), 10);
 }
 
 FIXTURE_TEST(test_coproc_router_simple, router_test_fixture) {
@@ -83,14 +85,15 @@ FIXTURE_TEST(test_coproc_router_simple, router_test_fixture) {
     const auto pre_batch_size = sum_records(batches) * 2;
 
     using namespace std::literals;
-    auto f1 = push(input_ntp, std::move(batches));
+    auto f1 = push(
+      input_ntp, model::make_memory_record_batch_reader(std::move(batches)));
     auto f2 = drain(
       output_ntp, pre_batch_size, model::timeout_clock::now() + 5s);
     auto read_batches
       = ss::when_all_succeed(std::move(f1), std::move(f2)).get();
 
-    BOOST_REQUIRE(std::get<0>(read_batches).has_value());
-    const model::record_batch_reader::data_t& data = *std::get<0>(read_batches);
+    BOOST_REQUIRE(std::get<1>(read_batches).has_value());
+    const model::record_batch_reader::data_t& data = *std::get<1>(read_batches);
     BOOST_CHECK_EQUAL(sum_records(data), pre_batch_size);
 }
 
@@ -109,7 +112,7 @@ FIXTURE_TEST(test_coproc_router_multi_route, router_test_fixture) {
 
     // Iterating over all ntps, create random data and push them onto
     // their respective logs
-    std::vector<ss::future<>> pushes;
+    std::vector<ss::future<model::offset>> pushes;
     pushes.reserve(4);
     std::vector<two_way_split_stats> twss;
     twss.reserve(4);
@@ -118,7 +121,9 @@ FIXTURE_TEST(test_coproc_router_multi_route, router_test_fixture) {
         model::record_batch_reader::data_t data
           = storage::test::make_random_batches(model::offset(0), 4, false);
         twss.emplace_back(two_way_split_stats(data));
-        pushes.emplace_back(push(std::move(new_ntp), std::move(data)));
+        pushes.emplace_back(push(
+          std::move(new_ntp),
+          model::make_memory_record_batch_reader(std::move(data))));
     }
 
     // Knowing what the apply::two_way_split method will do, setup listeners
