@@ -20,12 +20,16 @@
 #include <boost/test/unit_test_log.hpp>
 
 FIXTURE_TEST(test_coproc_router_no_results, router_test_fixture) {
+    auto client = make_client();
+    client.connect().get();
     // Storage has 10 ntps, 8 of topic 'bar' and 2 of 'foo'
     log_layout_map storage_layout = {{make_ts("foo"), 2}, {make_ts("bar"), 8}};
     // Router has 2 coprocessors, one subscribed to 'foo' the other 'bar'
     add_copro<null_coprocessor>(321, {{"bar", l}}).get();
     add_copro<null_coprocessor>(1234, {{"foo", l}}).get();
-    startup(std::move(storage_layout));
+    startup(std::move(storage_layout), client)
+      .then([&client] { return client.stop(); })
+      .get();
 
     // Test -> Start pushing to registered topics and check that NO
     // materialized logs have been created
@@ -54,13 +58,17 @@ FIXTURE_TEST(test_coproc_router_no_results, router_test_fixture) {
 }
 
 FIXTURE_TEST(test_coproc_router_simple, router_test_fixture) {
+    auto client = make_client();
+    client.connect().get();
     // Storage has 16 ntps, 4 of topic 'bar' and 12 of 'foo'
     log_layout_map storage_layout = {{make_ts("foo"), 12}, {make_ts("bar"), 4}};
     // Supervisor has 3 registered transforms, of the same type
     add_copro<identity_coprocessor>(1234, {{"foo", l}}).get();
     add_copro<identity_coprocessor>(121, {{"foo", l}}).get();
     add_copro<identity_coprocessor>(321, {{"bar", l}}).get();
-    startup(std::move(storage_layout));
+    startup(std::move(storage_layout), client)
+      .then([&client] { return client.stop(); })
+      .get();
 
     model::topic src_topic("foo");
     model::ntp input_ntp(default_ns, src_topic, model::partition_id(0));
@@ -87,13 +95,17 @@ FIXTURE_TEST(test_coproc_router_simple, router_test_fixture) {
 }
 
 FIXTURE_TEST(test_coproc_router_multi_route, router_test_fixture) {
+    auto client = make_client();
+    client.connect().get();
     // Create and initialize the environment
     // Starts with 4 parititons of logs managing topic "sole_input"
     const model::topic tt("sole_input");
     const std::size_t n_partitions = 4;
     // and one coprocessor that transforms this topic
     add_copro<two_way_split_copro>(4444, {{"sole_input", l}}).get();
-    startup({{make_ts(tt), n_partitions}});
+    startup({{make_ts(tt), n_partitions}}, client)
+      .then([&client] { return client.stop(); })
+      .get();
 
     // Iterating over all ntps, create random data and push them onto
     // their respective logs

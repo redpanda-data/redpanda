@@ -37,6 +37,7 @@ rp_test(
     tests/script_manager_service_test.cc
     tests/supervisor.cc
     tests/coproc_test_fixture.cc
+    tests/router_test_fixture.cc
     tests/router_test.cc
     tests/utils.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
