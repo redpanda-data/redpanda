@@ -8,7 +8,6 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-
 set -e
 
 rpk api topic create topic1 -r 3 -p 1

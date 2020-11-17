@@ -87,9 +87,7 @@ public:
      * Greatest offset visible to consumers. Named high_watermark to be
      * consistent with Kafka nomenclature.
      */
-    model::offset high_watermark() const {
-        return _raft->last_visible_index();
-    }
+    model::offset high_watermark() const { return _raft->last_visible_index(); }
 
     const model::ntp& ntp() const { return _raft->ntp(); }
 

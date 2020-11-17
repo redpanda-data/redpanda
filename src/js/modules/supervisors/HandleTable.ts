@@ -7,4 +7,3 @@
  *
  * https://github.com/vectorizedio/redpanda/blob/master/licenses/rcl.md
  */
-

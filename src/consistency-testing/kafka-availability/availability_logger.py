@@ -8,7 +8,6 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-
 # pip3 install kafka-python
 # rpk api topic create -p 1 -r 3 topic1
 # python3 availability_logger.py --duration 240 --broker 172.31.33.70:9092 --broker 172.31.46.115:9092 --broker 172.31.38.64:9092 --topic topic1

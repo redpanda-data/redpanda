@@ -12,19 +12,19 @@ py="python3"
 command -v python3 >/dev/null 2>&1
 
 if [[ $? -ne 0 ]]; then
-    # python3 isn't installed. Check for python -v.
-    version=$(python -V)
-    if [[ $? -ne 0 ]]; then
-        echo "python is not installed"
-        exit 1
-    fi
+  # python3 isn't installed. Check for python -v.
+  version=$(python -V)
+  if [[ $? -ne 0 ]]; then
+    echo "python is not installed"
+    exit 1
+  fi
 
-    if [[ $version =~ "Python 3" ]]; then
-        $py="python"
-    else
-        echo "python 3 is not installed"
-        exit 1
-    fi
+  if [[ $version =~ "Python 3" ]]; then
+    $py="python"
+  else
+    echo "python 3 is not installed"
+    exit 1
+  fi
 fi
 
 echo "Using ${py}"
