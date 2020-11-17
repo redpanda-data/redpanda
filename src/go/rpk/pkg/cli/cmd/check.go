@@ -72,7 +72,7 @@ func executeCheck(fs afero.Fs, configFile string, timeout time.Duration) error {
 		return err
 	}
 	config.CheckAndPrintNotice(conf.LicenseKey)
-	results, err := tuners.Check(fs, configFile, conf, timeout)
+	results, err := tuners.Check(fs, conf, timeout)
 	if err != nil {
 		return err
 	}
