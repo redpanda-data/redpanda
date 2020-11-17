@@ -253,4 +253,6 @@ constexpr error_code map_topic_error_code(cluster::errc code) {
     }
 }
 
+std::string_view error_code_to_str(error_code error);
+
 } // namespace kafka
