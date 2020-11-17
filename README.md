@@ -3,6 +3,8 @@
 [![Documentation](https://img.shields.io/badge/documentation-black)](https://vectorized.io/documentation)
 [![Slack](https://img.shields.io/badge/slack-purple)](https://vectorized.io/slack)
 [![Twitter](https://img.shields.io/twitter/follow/vectorizedio.svg?style=social&label=Follow)](https://twitter.com/intent/follow?screen_name=vectorizedio)
+![Go](https://github.com/vectorizedio/redpanda/workflows/Go/badge.svg)
+![build-test](https://github.com/vectorizedio/redpanda/workflows/build-test/badge.svg)
 
 [<img src="docs/PANDA_sitting.jpg" alt="redpanda sitting" width="400"/>](https://vectorized.io/redpanda)
 
