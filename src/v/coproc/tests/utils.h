@@ -9,6 +9,7 @@
  */
 
 #pragma once
+#include "coproc/script_manager.h"
 #include "coproc/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -86,3 +87,15 @@ to_ntps(absl::flat_hash_map<model::topic_namespace, std::size_t>&&);
 coproc::enable_copros_request::data make_enable_req(
   uint32_t id,
   std::vector<std::pair<ss::sstring, coproc::topic_ingestion_policy>>);
+
+/// \brief Register coprocessors with redpanda
+ss::future<result<rpc::client_context<coproc::enable_copros_reply>>>
+register_coprocessors(
+  rpc::client<coproc::script_manager_client_protocol>&,
+  std::vector<coproc::enable_copros_request::data>&&);
+
+/// \brief Deregister coprocessors with redpanda
+ss::future<result<rpc::client_context<coproc::disable_copros_reply>>>
+deregister_coprocessors(
+  rpc::client<coproc::script_manager_client_protocol>&,
+  std::vector<uint32_t>&&);

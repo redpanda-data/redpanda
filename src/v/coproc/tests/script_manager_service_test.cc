@@ -17,31 +17,6 @@
 
 #include <seastar/util/defer.hh>
 
-ss::future<result<rpc::client_context<coproc::enable_copros_reply>>>
-coproc_register_topics(
-  rpc::client<coproc::script_manager_client_protocol>& client,
-  std::vector<coproc::enable_copros_request::data>&& data) {
-    coproc::enable_copros_request req{.inputs = std::move(data)};
-    return client.enable_copros(
-      std::move(req), rpc::client_opts(rpc::no_timeout));
-}
-
-ss::future<result<rpc::client_context<coproc::disable_copros_reply>>>
-coproc_deregister_topics(
-  rpc::client<coproc::script_manager_client_protocol>& client,
-  std::vector<uint32_t>&& sids) {
-    std::vector<coproc::script_id> script_ids;
-    script_ids.reserve(sids.size());
-    std::transform(
-      sids.begin(),
-      sids.end(),
-      std::back_inserter(script_ids),
-      [](uint32_t id) { return coproc::script_id(id); });
-    coproc::disable_copros_request req{.ids = std::move(script_ids)};
-    return client.disable_copros(
-      std::move(req), rpc::client_opts(rpc::no_timeout));
-}
-
 class script_manager_service_fixture
   : public coproc_test_fixture
   , public rpc_sharded_integration_fixture {
@@ -82,7 +57,7 @@ FIXTURE_TEST(test_coproc_topic_dne, script_manager_service_fixture) {
       client_config());
     client.connect().get();
     auto dclient = ss::defer([&client] { client.stop().get(); });
-    const auto resp = coproc_register_topics(
+    const auto resp = register_coprocessors(
                         client, {make_enable_req(1234, {{"bar", l}})})
                         .get0()
                         .value()
@@ -99,8 +74,7 @@ FIXTURE_TEST(test_coproc_no_topics, script_manager_service_fixture) {
       client_config());
     client.connect().get();
     auto dclient = ss::defer([&client] { client.stop().get(); });
-    const auto resp = coproc_register_topics(
-                        client, {make_enable_req(1234, {})})
+    const auto resp = register_coprocessors(client, {make_enable_req(1234, {})})
                         .get0()
                         .value()
                         .data;
@@ -126,7 +100,7 @@ FIXTURE_TEST(test_coproc_invalid_topics, script_manager_service_fixture) {
       "abcedgtpr_abcedgtpr_");
 
     const auto resp
-      = coproc_register_topics(
+      = register_coprocessors(
           client,
           {make_enable_req(
             1234,
@@ -155,7 +129,7 @@ FIXTURE_TEST(
     client.connect().get();
     auto dclient = ss::defer([&client] { client.stop().get(); });
 
-    const auto resp = coproc_register_topics(
+    const auto resp = register_coprocessors(
                         client,
                         {make_enable_req(2313, {{"foo", l}, {"foo.$bar$", l}})})
                         .get0()
@@ -183,7 +157,7 @@ FIXTURE_TEST(
     client.connect().get();
     auto dclient = ss::defer([&client] { client.stop().get(); });
 
-    const auto resp = coproc_register_topics(
+    const auto resp = register_coprocessors(
                         client,
                         {make_enable_req(3289, {{"foo", l}, {"bar", e}}),
                          {make_enable_req(script_id, {{"nogo", l}})}})
@@ -213,7 +187,7 @@ FIXTURE_TEST(test_coproc_topics, script_manager_service_fixture) {
     auto dclient = ss::defer([&client] { client.stop().get(); });
 
     // 1. Attempt to register foo, bar and baz
-    const auto resp = coproc_register_topics(
+    const auto resp = register_coprocessors(
                         client,
                         {make_enable_req(
                            1523, {{"foo", l}, {"bar", l}, {"baz", l}}),
@@ -240,7 +214,7 @@ FIXTURE_TEST(test_coproc_topics, script_manager_service_fixture) {
 
     // 4-6. Attempt to deregister some
     const auto disable_acks
-      = coproc_deregister_topics(client, {1523}).get0().value().data;
+      = deregister_coprocessors(client, {1523}).get0().value().data;
     BOOST_CHECK_EQUAL(disable_acks.acks.size(), 1);
     BOOST_CHECK_EQUAL(disable_acks.acks[0], drc::success);
     BOOST_CHECK_EQUAL(
@@ -248,7 +222,7 @@ FIXTURE_TEST(test_coproc_topics, script_manager_service_fixture) {
     BOOST_CHECK_EQUAL(coproc_validate(to_topic_set({"foo"})).get0(), 8);
 
     const auto disable_acks2
-      = coproc_deregister_topics(client, {123}).get0().value().data;
+      = deregister_coprocessors(client, {123}).get0().value().data;
     BOOST_CHECK_EQUAL(disable_acks2.acks.size(), 1);
     BOOST_CHECK_EQUAL(disable_acks2.acks[0], drc::success);
     BOOST_CHECK_EQUAL(
