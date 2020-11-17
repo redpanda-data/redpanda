@@ -52,7 +52,7 @@ public:
     ss::future<> stop() {
         _loop_timer.cancel();
         _abort_source.request_abort();
-        return ss::when_all(_gate.close(), _transport.stop()).discard_result();
+        return _gate.close().then([this] { return _transport.stop(); });
     }
 
     errc add_source(
