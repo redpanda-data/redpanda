@@ -62,5 +62,6 @@ private:
         return iset;
     }
 
+    /// Map is identical accross all cores
     ss::sharded<copro_map> _coprocessors;
 };
