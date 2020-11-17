@@ -53,8 +53,7 @@ public:
 
 FIXTURE_TEST(test_coproc_topic_dne, script_manager_service_fixture) {
     startup({{make_ts("foo"), 5}}, {});
-    auto client = rpc::client<coproc::script_manager_client_protocol>(
-      client_config());
+    auto client = make_client();
     client.connect().get();
     auto dclient = ss::defer([&client] { client.stop().get(); });
     const auto resp = register_coprocessors(
@@ -70,8 +69,7 @@ FIXTURE_TEST(test_coproc_topic_dne, script_manager_service_fixture) {
 
 FIXTURE_TEST(test_coproc_no_topics, script_manager_service_fixture) {
     startup({{make_ts("foo"), 5}}, {});
-    auto client = rpc::client<coproc::script_manager_client_protocol>(
-      client_config());
+    auto client = make_client();
     client.connect().get();
     auto dclient = ss::defer([&client] { client.stop().get(); });
     const auto resp = register_coprocessors(client, {make_enable_req(1234, {})})
@@ -85,8 +83,7 @@ FIXTURE_TEST(test_coproc_no_topics, script_manager_service_fixture) {
 FIXTURE_TEST(test_coproc_invalid_topics, script_manager_service_fixture) {
     startup(
       {{make_ts("foo"), 5}, {make_ts("bar"), 3}, {make_ts("baz"), 18}}, {});
-    auto client = rpc::client<coproc::script_manager_client_protocol>(
-      client_config());
+    auto client = make_client();
     client.connect().get();
     auto dclient = ss::defer([&client] { client.stop().get(); });
 
@@ -124,8 +121,7 @@ FIXTURE_TEST(
   test_coproc_reg_materialized_topic, script_manager_service_fixture) {
     startup(
       {{make_ts("foo"), 6}, {make_ts("bar"), 3}, {make_ts("baz"), 18}}, {});
-    auto client = rpc::client<coproc::script_manager_client_protocol>(
-      client_config());
+    auto client = make_client();
     client.connect().get();
     auto dclient = ss::defer([&client] { client.stop().get(); });
 
@@ -152,8 +148,7 @@ FIXTURE_TEST(
       {make_ts("foo"), 5}, {make_ts("bar"), 3}, {make_ts("baz"), 18}};
     active_copros router_layout = {make_enable_req(script_id, {{"foo", l}})};
     startup(std::move(storage_layout), std::move(router_layout));
-    auto client = rpc::client<coproc::script_manager_client_protocol>(
-      client_config());
+    auto client = make_client();
     client.connect().get();
     auto dclient = ss::defer([&client] { client.stop().get(); });
 
@@ -181,8 +176,7 @@ FIXTURE_TEST(
 FIXTURE_TEST(test_coproc_topics, script_manager_service_fixture) {
     startup(
       {{make_ts("foo"), 8}, {make_ts("bar"), 2}, {make_ts("baz"), 18}}, {});
-    auto client = rpc::client<coproc::script_manager_client_protocol>(
-      client_config());
+    auto client = make_client();
     client.connect().get();
     auto dclient = ss::defer([&client] { client.stop().get(); });
 

@@ -99,3 +99,12 @@ ss::future<result<rpc::client_context<coproc::disable_copros_reply>>>
 deregister_coprocessors(
   rpc::client<coproc::script_manager_client_protocol>&,
   std::vector<uint32_t>&&);
+
+/// \brief Return a client ready to connect to redpandas script manager svc
+inline rpc::client<coproc::script_manager_client_protocol> make_client() {
+    return rpc::client<coproc::script_manager_client_protocol>(
+      rpc::transport_configuration{
+        .server_addr = ss::socket_address(
+          ss::net::inet_address("127.0.0.1"), 43118),
+        .credentials = std::nullopt});
+}
