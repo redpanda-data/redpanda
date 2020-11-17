@@ -259,7 +259,7 @@ func containerBrokers(fs afero.Fs) []string {
 			addrs = append(
 				addrs,
 				fmt.Sprintf(
-					"0.0.0.0:%d",
+					"127.0.0.1:%d",
 					s.HostKafkaPort,
 				),
 			)

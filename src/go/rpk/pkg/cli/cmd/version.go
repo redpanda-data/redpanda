@@ -25,7 +25,7 @@ func NewVersionCommand() *cobra.Command {
 		SilenceUsage: true,
 		Run: func(_ *cobra.Command, _ []string) {
 			log.SetFormatter(cli.NewNoopFormatter())
-			log.Info(version.Pretty())
+			log.Infof("%s\n", version.Pretty())
 		},
 	}
 	return command

@@ -46,16 +46,16 @@ type Config struct {
 }
 
 type RedpandaConfig struct {
-	Directory          string        `yaml:"data_directory" json:"dataDirectory"`
-	RPCServer          SocketAddress `yaml:"rpc_server" json:"rpcServer"`
-	AdvertisedRPCAPI   SocketAddress `yaml:"advertised_rpc_api" json:"advertisedRpcApi"`
-	KafkaApi           SocketAddress `yaml:"kafka_api" json:"kafkaApi"`
-	AdvertisedKafkaApi SocketAddress `yaml:"advertised_kafka_api" json:"advertisedKafkaApi"`
-	KafkaApiTLS        ServerTLS     `yaml:"kafka_api_tls" json:"kafkaApiTls"`
-	AdminApi           SocketAddress `yaml:"admin" json:"admin"`
-	Id                 int           `yaml:"node_id" json:"id"`
-	SeedServers        []*SeedServer `yaml:"seed_servers" json:"seedServers"`
-	DeveloperMode      bool          `yaml:"developer_mode" json:"developerMode"`
+	Directory          string         `yaml:"data_directory" json:"dataDirectory"`
+	RPCServer          SocketAddress  `yaml:"rpc_server" json:"rpcServer"`
+	AdvertisedRPCAPI   *SocketAddress `yaml:"advertised_rpc_api,omitempty" json:"advertisedRpcApi"`
+	KafkaApi           SocketAddress  `yaml:"kafka_api" json:"kafkaApi"`
+	AdvertisedKafkaApi *SocketAddress `yaml:"advertised_kafka_api,omitempty" json:"advertisedKafkaApi"`
+	KafkaApiTLS        ServerTLS      `yaml:"kafka_api_tls" json:"kafkaApiTls"`
+	AdminApi           SocketAddress  `yaml:"admin" json:"admin"`
+	Id                 int            `yaml:"node_id" json:"id"`
+	SeedServers        []*SeedServer  `yaml:"seed_servers" json:"seedServers"`
+	DeveloperMode      bool           `yaml:"developer_mode" json:"developerMode"`
 }
 
 type SeedServer struct {
@@ -113,9 +113,9 @@ func DefaultConfig() Config {
 		Redpanda: &RedpandaConfig{
 			Directory:          "/var/lib/redpanda/data",
 			RPCServer:          SocketAddress{"0.0.0.0", 33145},
-			AdvertisedRPCAPI:   SocketAddress{"0.0.0.0", 33145},
+			AdvertisedRPCAPI:   &SocketAddress{"0.0.0.0", 33145},
 			KafkaApi:           SocketAddress{"0.0.0.0", 9092},
-			AdvertisedKafkaApi: SocketAddress{"0.0.0.0", 9092},
+			AdvertisedKafkaApi: &SocketAddress{"0.0.0.0", 9092},
 			AdminApi:           SocketAddress{"0.0.0.0", 9644},
 			Id:                 0,
 			SeedServers:        []*SeedServer{},

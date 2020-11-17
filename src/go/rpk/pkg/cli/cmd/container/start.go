@@ -313,16 +313,34 @@ func writeNodeConfig(
 	nodeID, kafkaPort, rpcPort, seedRPCPort uint,
 	ip, seedIP, path string,
 ) (*config.Config, error) {
+	localhost := "127.0.0.1"
 	conf := config.DefaultConfig()
 	conf.Redpanda.Id = int(nodeID)
 
+	conf.Redpanda.KafkaApi.Address = ip
+	conf.Redpanda.RPCServer.Address = ip
+
+	conf.Redpanda.AdvertisedKafkaApi = &config.SocketAddress{
+		Address: localhost,
+		Port:    int(kafkaPort),
+	}
+	conf.Redpanda.AdvertisedRPCAPI = &config.SocketAddress{
+		Address: ip,
+		Port:    conf.Redpanda.RPCServer.Port,
+	}
+
+	if seedIP != "" {
+		conf.Redpanda.SeedServers = []*config.SeedServer{{
+			Id: 0,
+			Host: config.SocketAddress{
+				Address: seedIP,
+				Port:    conf.Redpanda.RPCServer.Port,
+			},
+		}}
+	}
+
 	conf.Rpk.Overprovisioned = true
 	conf.Redpanda.DeveloperMode = true
-
-	err := applyPlatformSpecificConf(&conf, kafkaPort, rpcPort, seedRPCPort, ip, seedIP)
-	if err != nil {
-		return nil, err
-	}
 
 	return &conf, config.WriteConfig(fs, &conf, path)
 }
