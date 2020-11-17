@@ -32,13 +32,13 @@ size_t number_of_logs(redpanda_thread_fixture* rtf) {
 FIXTURE_TEST(test_coproc_router_no_results, router_test_fixture) {
     auto client = make_client();
     client.connect().get();
+    // Note the original number of logs
     const size_t n_logs = number_of_logs(this);
-    // Storage has 10 ntps, 8 of topic 'bar' and 2 of 'foo'
-    log_layout_map storage_layout = {{make_ts("foo"), 2}, {make_ts("bar"), 8}};
     // Router has 2 coprocessors, one subscribed to 'foo' the other 'bar'
     add_copro<null_coprocessor>(321, {{"bar", l}}).get();
     add_copro<null_coprocessor>(1234, {{"foo", l}}).get();
-    startup(std::move(storage_layout), client)
+    // Storage has 10 ntps, 8 of topic 'bar' and 2 of 'foo'
+    startup({{make_ts("foo"), 2}, {make_ts("bar"), 8}}, client)
       .then([&client] { return client.stop(); })
       .get();
 
@@ -52,7 +52,7 @@ FIXTURE_TEST(test_coproc_router_no_results, router_test_fixture) {
     push(input_ntp, model::make_memory_record_batch_reader(std::move(batches)))
       .get();
 
-    // Wait for any side-effects
+    // Wait for any side-effects, ...expecting that none occur
     using namespace std::literals;
     ss::sleep(1s).get();
     // Expecting 10, because "foo(2)" and "bar(8)" were loaded at startup
@@ -62,13 +62,12 @@ FIXTURE_TEST(test_coproc_router_no_results, router_test_fixture) {
 FIXTURE_TEST(test_coproc_router_simple, router_test_fixture) {
     auto client = make_client();
     client.connect().get();
-    // Storage has 16 ntps, 4 of topic 'bar' and 12 of 'foo'
-    log_layout_map storage_layout = {{make_ts("foo"), 12}, {make_ts("bar"), 4}};
     // Supervisor has 3 registered transforms, of the same type
     add_copro<identity_coprocessor>(1234, {{"foo", l}}).get();
     add_copro<identity_coprocessor>(121, {{"foo", l}}).get();
     add_copro<identity_coprocessor>(321, {{"bar", l}}).get();
-    startup(std::move(storage_layout), client)
+    // Storage has 5 ntps, 4 of topic 'foo' and 1 of 'bar'
+    startup({{make_ts("foo"), 4}, {make_ts("bar"), 1}}, client)
       .then([&client] { return client.stop(); })
       .get();
 
@@ -157,6 +156,4 @@ FIXTURE_TEST(test_coproc_router_multi_route, router_test_fixture) {
     const auto observed_totals = aggregate_totals(
       all_drained.cbegin(), all_drained.cend());
     BOOST_CHECK_EQUAL(known_totals, observed_totals);
-    BOOST_CHECK_EQUAL(known_totals.n_even, observed_totals.n_even);
-    BOOST_CHECK_EQUAL(known_totals.n_odd, observed_totals.n_odd);
 }
