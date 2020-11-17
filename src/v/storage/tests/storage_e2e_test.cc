@@ -1059,9 +1059,10 @@ FIXTURE_TEST(check_segment_size_jitter, storage_test_fixture) {
         auto& segs = get_disk_log(l)->segments();
         sizes.push_back((*segs.begin())->size_bytes());
     }
-    std::sort(sizes.begin(), sizes.end());
-    auto end = std::unique(sizes.begin(), sizes.end());
-    auto unique_cnt = std::distance(sizes.begin(), end);
-    // check if all logs have unique segment size
-    BOOST_REQUIRE_EQUAL(unique_cnt, sizes.size());
+    BOOST_REQUIRE_EQUAL(
+      std::all_of(
+        sizes.begin(),
+        sizes.end(),
+        [size = sizes[0]](auto other) { return size == other; }),
+      false);
 }
