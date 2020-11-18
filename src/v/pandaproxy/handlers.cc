@@ -9,6 +9,9 @@
 
 #include "handlers.h"
 
+#include "kafka/requests/fetch_request.h"
+#include "model/fundamental.h"
+#include "pandaproxy/json/requests/fetch.h"
 #include "pandaproxy/json/requests/produce.h"
 #include "pandaproxy/json/rjson_util.h"
 #include "pandaproxy/reply.h"
@@ -20,6 +23,7 @@
 
 #include <absl/container/flat_hash_map.h>
 #include <boost/algorithm/string.hpp>
+#include <boost/lexical_cast.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -76,6 +80,43 @@ get_topics_names(server::request_t rq, server::reply_t rp) {
             });
 
           auto json_rslt = ppj::rjson_serialize(names);
+          rp.rep->write_body("json", json_rslt);
+          return std::move(rp);
+      });
+}
+
+ss::future<server::reply_t>
+get_topics_records(server::request_t rq, server::reply_t rp) {
+    auto fmt = parse_serialization_format(rq.req->get_header("Accept"));
+    if (fmt == ppj::serialization_format::unsupported) {
+        rp.rep = unprocessable_entity("Unsupported serialization format");
+        return ss::make_ready_future<server::reply_t>(std::move(rp));
+    }
+
+    model::topic_partition tp{
+      model::topic(rq.req->param["topic_name"]),
+      model::partition_id{boost::lexical_cast<model::partition_id::type>(
+        rq.req->param["partition_id"])}};
+    model::offset offset{boost::lexical_cast<model::offset::type>(
+      rq.req->get_query_param("offset"))};
+    std::chrono::milliseconds timeout{
+      boost::lexical_cast<std::chrono::milliseconds::rep>(
+        rq.req->get_query_param("timeout"))};
+    int32_t max_bytes{
+      boost::lexical_cast<int32_t>(rq.req->get_query_param("max_bytes"))};
+
+    rq.req.reset();
+    return rq.ctx.client
+      .fetch_partition(std::move(tp), offset, max_bytes, timeout)
+      .then([fmt,
+             rp = std::move(rp)](kafka::fetch_response::partition res) mutable {
+          rapidjson::StringBuffer str_buf;
+          rapidjson::Writer<rapidjson::StringBuffer> w(str_buf);
+
+          ppj::rjson_serialize_fmt(fmt)(w, std::move(res));
+
+          // TODO Ben: Prevent this linearization
+          ss::sstring json_rslt = str_buf.GetString();
           rp.rep->write_body("json", json_rslt);
           return std::move(rp);
       });

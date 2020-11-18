@@ -2,6 +2,7 @@ rp_test(
   UNIT_TEST
   BINARY_NAME pandaproxy_fixture
   SOURCES
+    fetch.cc
     list_topics.cc
     produce.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
