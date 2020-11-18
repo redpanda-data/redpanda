@@ -35,3 +35,10 @@ rp_test(
   SOURCES ${srcs}
   LIBRARIES v::seastar_testing_main v::application
 )
+
+# These 2 files have a `using namespace cluster;` and removing that
+# would require modifying the FIXTURE_TEST and PERF_TEST_F macros.
+set_source_files_properties(
+    partition_allocator_tests.cc
+    allocation_bench.cc
+  PROPERTIES SKIP_UNITY_BUILD_INCLUSION 1)

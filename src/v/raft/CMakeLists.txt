@@ -39,3 +39,8 @@ v_cc_library(
 add_subdirectory(tests)
 add_subdirectory(tron)
 add_subdirectory(kvelldb)
+
+set_source_files_properties(
+    consensus.cc # too big => negative impact on minimal rebuilds for unity
+    group_manager.cc # redefinition problem with `reflection::adl`
+  PROPERTIES SKIP_UNITY_BUILD_INCLUSION 1)
