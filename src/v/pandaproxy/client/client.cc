@@ -92,10 +92,10 @@ ss::future<> client::mitigate_error(std::exception_ptr ex) {
     } catch (const broker_error& ex) {
         // If there are no brokers, reconnect
         if (ex.node_id == unknown_node_id) {
-            vlog(ppclog.warn, "broker_error: {}", ex.what());
+            vlog(ppclog.warn, "broker_error: {}", ex);
             return connect();
         } else {
-            vlog(ppclog.debug, "broker_error: {}", ex.what());
+            vlog(ppclog.debug, "broker_error: {}", ex);
             return _brokers.erase(ex.node_id).then([this]() {
                 return _wait_or_start_update_metadata();
             });
@@ -105,12 +105,12 @@ ss::future<> client::mitigate_error(std::exception_ptr ex) {
         case kafka::error_code::unknown_topic_or_partition:
             [[fallthrough]];
         case kafka::error_code::leader_not_available: {
-            vlog(ppclog.debug, "partition_error: {}", ex.what());
+            vlog(ppclog.debug, "partition_error: {}", ex);
             return _wait_or_start_update_metadata();
         }
         default:
             // TODO(Ben): Maybe vassert
-            vlog(ppclog.warn, "partition_error: ", ex.what());
+            vlog(ppclog.warn, "partition_error: ", ex);
             return ss::make_exception_future(ex);
         }
     } catch (const ss::gate_closed_exception&) {
@@ -119,7 +119,7 @@ ss::future<> client::mitigate_error(std::exception_ptr ex) {
         // TODO(Ben): Probably vassert
         vlog(ppclog.error, "unknown exception");
     }
-    return ss::make_exception_future(std::move(ex));
+    return ss::make_exception_future(ex);
 }
 
 ss::future<kafka::produce_response::partition> client::produce_record_batch(
