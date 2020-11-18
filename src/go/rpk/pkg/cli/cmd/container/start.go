@@ -79,6 +79,13 @@ func startCluster(fs afero.Fs, c common.Client, n uint) error {
 	if len(restarted) != 0 {
 		log.Info("\nFound an existing cluster:\n")
 		renderClusterInfo(restarted)
+		if len(restarted) != int(n) {
+			log.Infof(
+				"\nTo change the number of nodes, first purge" +
+					" the existing cluster:\n\n" +
+					"rpk container purge\n",
+			)
+		}
 		return nil
 	}
 
