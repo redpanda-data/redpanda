@@ -15,6 +15,7 @@
 #include "likely.h"
 #include "model/limits.h"
 #include "model/record_batch_reader.h"
+#include "raft/types.h"
 #include "rpc/backoff_policy.h"
 #include "storage/ntp_config.h"
 #include "storage/types.h"
@@ -360,7 +361,7 @@ router::reader_cfg(model::offset start, model::offset end) {
       1,
       32_KiB,
       ss::default_priority_class(),
-      model::well_known_record_batch_types[1],
+      raft::data_batch_type,
       std::nullopt,
       _abort_source);
 }
