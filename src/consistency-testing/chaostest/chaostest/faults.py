@@ -123,7 +123,7 @@ class TerminateNodeRecoverableFault:
         chaos_event_log.info(
             m(f"a service on {self.node.node_id} restarted").with_time())
 
-        attempts = 2
+        attempts = 4
         while True:
             attempts -= 1
             time.sleep(5)
@@ -244,7 +244,7 @@ class RuinIORecoverableFault:
         self.node.kill()
         self.node.start_service()
 
-        attempts = 2
+        attempts = 4
         while True:
             attempts -= 1
             time.sleep(5)

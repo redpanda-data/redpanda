@@ -168,6 +168,8 @@
     "workload": {
         "name": "mrsw"
     },
+    "system": "kafka",
+    "scenario": "inject-recover",
     "exit_on_violation": false,
     "reset_before_test": true,
     "destroy_on_exit": true,
