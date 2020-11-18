@@ -256,6 +256,7 @@ def analyze_inject_recover_availability(log_dir,
     maxunava_recovery = 0
     maxunava_fault = 0
     maxunava_base = 0
+    latencies = []
 
     with open(path.join(log_dir, latency_log)) as latency_log_file:
         for line in latency_log_file:
@@ -267,6 +268,7 @@ def analyze_inject_recover_availability(log_dir,
                 lat = int(parts[1])
                 maxlat = max(maxlat, lat)
                 minlat = min(minlat, lat)
+                latencies.append(lat)
 
                 if last_ok == None:
                     last_ok = tick
@@ -299,9 +301,13 @@ def analyze_inject_recover_availability(log_dir,
                     minunava = min(minunava, tick - last_ok)
                     last_ok = tick
 
+    latencies.sort()
+
     return {
         "max_lat": maxlat,
         "min_lat": minlat,
+        "p99_lat": latencies[int(0.99 * len(latencies))],
+        "second_max_lat": latencies[-2],
         "max_unavailability": maxunava,
         "min_unavailability": minunava,
         "base_max_unavailability": maxunava_base,
@@ -316,49 +322,6 @@ class ExperimentGroup:
         self.workload = workload
         self.fault = fault
         self.experiments = []
-
-
-def make_results_chart(result, warmup):
-    root = Path(result).parent
-    with open(result, 'r') as result_file:
-        experiments = dict()
-        for line in result_file:
-            info = json.loads(line)
-            kind = info["workload"] + "/" + info["scenario"] + "/" + info[
-                "fault"]
-            if kind not in experiments:
-                experiments[kind] = ExperimentGroup(info["workload"],
-                                                    info["scenario"],
-                                                    info["fault"])
-            experiments[kind].experiments.append(
-                (info["id"], info["metrics"]["max_unavailability"],
-                 info["metrics"]["max_lat"]))
-        for kind in experiments.keys():
-            meid = min(map(lambda x: x[0], experiments[kind].experiments))
-            group = experiments[kind]
-            maxlat = 0
-            maxunava = 0
-            with open(
-                    path.join(root, group.workload, group.scenario,
-                              group.fault, f"all_{meid}.log"),
-                    'w') as all_log_file:
-                for i in range(0, len(group.experiments)):
-                    _, unava, lat = group.experiments[i]
-                    maxlat = max(lat, maxlat)
-                    maxunava = max(lat, maxunava)
-                    all_log_file.write(f"{i}\t{unava}\t{lat}\n")
-            with open(
-                    path.join(root, group.workload, group.scenario,
-                              group.fault, f"all_{meid}.gp"),
-                    'w') as all_gp_file:
-                all_gp_file.write(
-                    jinja2.Template(ALL).render(
-                        data=f"all_{meid}",
-                        maxunava=int(1.2 * maxunava),
-                        maxlat=int(1.2 * maxlat),
-                        title=
-                        f"{group.workload} with {group.scenario} using {group.fault}"
-                    ))
 
 
 def make_latency_chart(title, log_dir, availability_log, latency_log, warmup_s,

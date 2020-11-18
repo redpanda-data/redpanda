@@ -108,6 +108,8 @@
     "workload": {
         "name": "mrsw"
     },
+    "system": "redpanda",
+    "scenario": "inject-recover",
     "exit_on_violation": false,
     "reset_before_test": true,
     "destroy_on_exit": true,

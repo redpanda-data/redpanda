@@ -109,6 +109,8 @@
         "name": "comrmw",
         "period_s": 0.01
     },
+    "system": "redpanda",
+    "scenario": "inject-recover",
     "exit_on_violation": false,
     "reset_before_test": true,
     "destroy_on_exit": true,

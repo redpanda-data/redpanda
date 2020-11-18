@@ -96,6 +96,8 @@
     "workload": {
         "name": "mrsw"
     },
+    "system": "kvelldb",
+    "scenario": "inject-recover",
     "exit_on_violation": false,
     "reset_before_test": true,
     "destroy_on_exit": true,

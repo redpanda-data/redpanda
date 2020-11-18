@@ -159,13 +159,20 @@ async def inject_recover_scenario_aio(log_dir, config, cluster,
     return result
 
 
-async def inject_recover_scenarios_aio(config, cluster, faults,
+async def inject_recover_scenarios_aio(suite_id, config, cluster, faults,
                                        workload_factory):
-    scenario = "inject-recover"
+    scenario = config["scenario"]
     workload = config["workload"]["name"]
 
-    if not path.exists(config["output"]):
-        os.mkdir(config["output"])
+    root = path.join(config["output"], str(suite_id))
+
+    with open(path.join(root, "context.json"), "w") as info:
+        info.write(
+            json.dumps({
+                "scenario": scenario,
+                "system": config["system"],
+                "workload": workload
+            }))
 
     for fault in faults.keys():
         if config["reset_before_test"]:
@@ -186,7 +193,7 @@ async def inject_recover_scenarios_aio(config, cluster, faults,
         experiment_id = int(time.time())
 
         rel_dir = path.join(workload, scenario, fault, str(experiment_id))
-        log_dir = path.join(config["output"], rel_dir)
+        log_dir = path.join(root, rel_dir)
         pathlib.Path(log_dir).mkdir(parents=True, exist_ok=True)
 
         chaos_event_log.info(
@@ -206,11 +213,11 @@ async def inject_recover_scenarios_aio(config, cluster, faults,
                     title=result.title,
                     latency_log=result.latency_log,
                     availability_log=result.availability_log,
+                    cmd_log=config["cmd_log"],
                     workload=workload,
                     scenario=scenario,
                     fault=fault,
-                    path=rel_dir,
-                    metrics=result.analysis).with_time()
+                    path=rel_dir).with_time()
         if result.is_valid:
             chaos_stdout.info(f"\tlinearizability testing passed")
             message.kwargs["status"] = "passed"
@@ -245,28 +252,26 @@ async def inject_recover_scenarios_aio(config, cluster, faults,
             await cluster.restart()
 
 
-def init_output(config):
+def init_output(config, suite_id):
     if path.exists(config["output"]):
         if not (path.isdir(config["output"])):
             raise Exception(config["output"] + " must be a directory")
     else:
         os.mkdir(config["output"])
 
-    suitid = int(time.time())
+    root = path.join(config["output"], str(suite_id))
+    os.mkdir(root)
 
     chaos_event_log.handlers = []
     formatter = logging.Formatter('%(message)s')
-    fileHandler = logging.FileHandler(path.join(config["output"],
-                                                f"{suitid}_events.log"),
-                                      mode="w")
+    fileHandler = logging.FileHandler(path.join(root, f"events.log"), mode="w")
     fileHandler.setFormatter(formatter)
     chaos_event_log.setLevel(logging.INFO)
     chaos_event_log.addHandler(fileHandler)
 
     chaos_results.handlers = []
     formatter = logging.Formatter('%(message)s')
-    fileHandler = logging.FileHandler(path.join(config["output"],
-                                                f"{suitid}_results.log"),
+    fileHandler = logging.FileHandler(path.join(root, f"results.log"),
                                       mode="w")
     fileHandler.setFormatter(formatter)
     chaos_results.setLevel(logging.INFO)

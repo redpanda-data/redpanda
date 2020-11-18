@@ -91,7 +91,9 @@ def workload_factory(config):
 
 
 async def run(config, n, overrides):
-    init_output(config)
+    suite_id = int(time.time())
+
+    init_output(config, suite_id)
 
     if overrides:
         for overide in overrides:
@@ -110,7 +112,8 @@ async def run(config, n, overrides):
                             m(f"cluster isn't healthy").with_time())
                         raise Exception(f"cluster isn't healthy")
                 await inject_recover_scenarios_aio(
-                    config, cluster, faults, lambda: workload_factory(config))
+                    suite_id, config, cluster, faults,
+                    lambda: workload_factory(config))
         except ViolationInducedExit:
             pass
 
