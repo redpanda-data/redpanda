@@ -22,7 +22,9 @@ const packageJson = `{
   "keywords": ["inline-wasm-transform", "redpanda"],
   "author": "",
   "license": "ISC",
-  "dependencies": {},
+  "dependencies": {
+    "@vectorizedio/wasm-api": "^1.0.0"
+  },
   "devDependencies": {
     "ts-loader": "8.0.4",
     "webpack": "4.44.2",

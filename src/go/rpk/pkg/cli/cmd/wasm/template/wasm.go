@@ -9,7 +9,7 @@
 
 package template
 
-const wasmJs = `const { SimpleTransform, PolicyError } = require("../vectorized");
+const wasmJs = `const { SimpleTransform, PolicyError } = require("@vectorizedio/wasm-api");
 const transform = new SimpleTransform();
 /* Topics that fire the transform function */
 transform.subscribe([

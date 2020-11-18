@@ -10,7 +10,7 @@
 package template
 
 const wasmTestJS = `const transform = require("../src/wasm");
-const { createRecordBatch } = require("../vectorized");
+const { createRecordBatch } = require("@vectorizedio/wasm-api");
 const assert = require("assert");
 
 const record = createRecordBatch();
