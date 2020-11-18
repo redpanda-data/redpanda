@@ -41,6 +41,9 @@ if ("${CMAKE_BUILD_TYPE}" MATCHES "Debug")
             )
 endif()
 
+# included here because it modifies the BASE_*_FLAGS_LIST variables used below
+include(diagnostic_colors)
+
 # join flag lists
 string(JOIN " " BASE_C_FLAGS ${BASE_C_FLAGS_LIST})
 string(JOIN " " BASE_CXX_FLAGS ${BASE_CXX_FLAGS_LIST})
