@@ -47,11 +47,12 @@ static group get() {
     return group(kafka::group_id("g"), group_state::empty, conf, nullptr);
 }
 
-static const std::vector<member_protocol> test_protos = {
+static const std::vector<member_protocol> test_group_protos = {
   {kafka::protocol_name("n0"), "d0"}, {kafka::protocol_name("n1"), "d1"}};
 
-static member_ptr get_member(
-  ss::sstring id = "m", std::vector<member_protocol> protos = test_protos) {
+static member_ptr get_group_member(
+  ss::sstring id = "m",
+  std::vector<member_protocol> protos = test_group_protos) {
     return ss::make_lw_shared<group_member>(
       kafka::member_id(id),
       kafka::group_id("g"),
@@ -106,7 +107,7 @@ SEASTAR_THREAD_TEST_CASE(get_member_throws_on_empty) {
 
 SEASTAR_THREAD_TEST_CASE(get_member_returns_member) {
     auto g = get();
-    auto m = get_member();
+    auto m = get_group_member();
     (void)g.add_member(m);
     BOOST_TEST(g.get_member(kafka::member_id("m")) == m);
 }
@@ -114,7 +115,7 @@ SEASTAR_THREAD_TEST_CASE(get_member_returns_member) {
 SEASTAR_THREAD_TEST_CASE(contains_member) {
     auto g = get();
     BOOST_TEST(!g.contains_member(kafka::member_id("m")));
-    auto m = get_member();
+    auto m = get_group_member();
     (void)g.add_member(m);
     BOOST_TEST(g.contains_member(kafka::member_id("m")));
     BOOST_TEST(!g.contains_member(kafka::member_id("n")));
@@ -123,7 +124,7 @@ SEASTAR_THREAD_TEST_CASE(contains_member) {
 SEASTAR_THREAD_TEST_CASE(has_members) {
     auto g = get();
     BOOST_TEST(!g.has_members());
-    auto m = get_member();
+    auto m = get_group_member();
     (void)g.add_member(m);
     BOOST_TEST(g.has_members());
 }
@@ -152,7 +153,7 @@ SEASTAR_THREAD_TEST_CASE(rebalance_timeout) {
       std::chrono::seconds(1),
       std::chrono::milliseconds(2),
       kafka::protocol_type("p"),
-      test_protos);
+      test_group_protos);
 
     auto m1 = ss::make_lw_shared<group_member>(
       kafka::member_id("n"),
@@ -161,7 +162,7 @@ SEASTAR_THREAD_TEST_CASE(rebalance_timeout) {
       std::chrono::seconds(1),
       std::chrono::seconds(3),
       kafka::protocol_type("p"),
-      test_protos);
+      test_group_protos);
 
     (void)g.add_member(m0);
     BOOST_TEST(g.rebalance_timeout() == std::chrono::milliseconds(2));
@@ -175,7 +176,7 @@ SEASTAR_THREAD_TEST_CASE(add_member_sets_leader) {
     BOOST_TEST(!g.is_leader(kafka::member_id("m")));
     BOOST_TEST(!g.leader());
 
-    auto m = get_member();
+    auto m = get_group_member();
     (void)g.add_member(m);
 
     BOOST_TEST(g.is_leader(kafka::member_id("m")));
@@ -187,7 +188,7 @@ SEASTAR_THREAD_TEST_CASE(add_member_sets_protocol_type) {
     auto g = get();
     BOOST_TEST(!g.protocol_type());
 
-    auto m = get_member();
+    auto m = get_group_member();
     (void)g.add_member(m);
 
     BOOST_TEST(g.protocol_type());
@@ -197,9 +198,9 @@ SEASTAR_THREAD_TEST_CASE(add_member_sets_protocol_type) {
 SEASTAR_THREAD_TEST_CASE(add_missing_assignments) {
     auto g = get();
 
-    auto m = get_member("m");
+    auto m = get_group_member("m");
     (void)g.add_member(m);
-    auto m2 = get_member("n");
+    auto m2 = get_group_member("n");
     (void)g.add_member(m2);
 
     assignments_type a;
@@ -221,9 +222,9 @@ SEASTAR_THREAD_TEST_CASE(add_missing_assignments) {
 SEASTAR_THREAD_TEST_CASE(set_and_clear_assignments) {
     auto g = get();
 
-    auto m = get_member("m");
+    auto m = get_group_member("m");
     (void)g.add_member(m);
-    auto m2 = get_member("n");
+    auto m2 = get_group_member("n");
     (void)g.add_member(m2);
 
     BOOST_TEST(m->assignment() == bytes());
@@ -244,7 +245,7 @@ SEASTAR_THREAD_TEST_CASE(set_and_clear_assignments) {
 
 SEASTAR_THREAD_TEST_CASE(all_members_joined) {
     auto g = get();
-    auto m = get_member();
+    auto m = get_group_member();
     (void)g.add_member(m);
     BOOST_TEST(g.all_members_joined());
     g.add_pending_member(kafka::member_id("x"));
@@ -262,7 +263,7 @@ SEASTAR_THREAD_TEST_CASE(advance_generation_empty) {
 
 SEASTAR_THREAD_TEST_CASE(advance_generation_non_empty) {
     auto g = get();
-    auto m = get_member();
+    auto m = get_group_member();
     (void)g.add_member(m);
     g.set_state(group_state::preparing_rebalance);
     g.advance_generation();
@@ -279,13 +280,13 @@ SEASTAR_THREAD_TEST_CASE(member_metadata) {
       {kafka::protocol_name("p0"), bytes()},
       {kafka::protocol_name("p1"), bytes("foo")},
       {kafka::protocol_name("p2"), bytes()}};
-    auto m0 = get_member("m", protos);
+    auto m0 = get_group_member("m", protos);
 
     protos = std::vector<member_protocol>{
       {kafka::protocol_name("p1"), bytes("bar")},
       {kafka::protocol_name("p2"), bytes()},
       {kafka::protocol_name("p3"), bytes()}};
-    auto m1 = get_member("n", protos);
+    auto m1 = get_group_member("n", protos);
 
     (void)g.add_member(m0);
     (void)g.add_member(m1);
@@ -309,13 +310,13 @@ SEASTAR_THREAD_TEST_CASE(select_protocol) {
       {kafka::protocol_name("p0"), bytes()},
       {kafka::protocol_name("p1"), bytes()},
       {kafka::protocol_name("p2"), bytes()}};
-    auto m0 = get_member("m", protos);
+    auto m0 = get_group_member("m", protos);
 
     protos = std::vector<member_protocol>{
       {kafka::protocol_name("p1"), bytes()},
       {kafka::protocol_name("p2"), bytes()},
       {kafka::protocol_name("p3"), bytes()}};
-    auto m1 = get_member("n", protos);
+    auto m1 = get_group_member("n", protos);
 
     // p1 and p2 are supported by both members
     (void)g.add_member(m0);
@@ -327,7 +328,7 @@ SEASTAR_THREAD_TEST_CASE(select_protocol) {
     protos = std::vector<member_protocol>{
       {kafka::protocol_name("p2"), bytes()},
       {kafka::protocol_name("p3"), bytes()}};
-    auto m2 = get_member("o", protos);
+    auto m2 = get_group_member("o", protos);
 
     (void)g.add_member(m2);
     BOOST_TEST(g.select_protocol() == "p2");
@@ -363,7 +364,7 @@ SEASTAR_THREAD_TEST_CASE(supports_protocols) {
       std::chrono::seconds(1),
       std::chrono::seconds(3),
       kafka::protocol_type("p"),
-      test_protos);
+      test_group_protos);
 
     (void)g.add_member(m);
     g.set_state(group_state::preparing_rebalance);
@@ -406,7 +407,7 @@ SEASTAR_THREAD_TEST_CASE(leader_rejoined) {
     // no leader
     BOOST_TEST(!g.leader_rejoined());
 
-    auto m0 = get_member("m");
+    auto m0 = get_group_member("m");
     (void)g.add_member(m0);
 
     // leader is joining
@@ -418,7 +419,7 @@ SEASTAR_THREAD_TEST_CASE(leader_rejoined) {
     BOOST_TEST(!g.leader_rejoined());
 
     // now add a new member. m is still leader
-    auto m1 = get_member("n");
+    auto m1 = get_group_member("n");
     (void)g.add_member(m1);
     BOOST_TEST(g.leader() == "m");
 
