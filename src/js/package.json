@@ -8,7 +8,7 @@
     "fmt": "./node_modules/typescript-formatter/bin/tsfmt --baseDir ../../src/js/ -r",
     "build:ts": "npx tsc --build ./tsconfig.json",
     "build": "./build.sh",
-    "test": "./node_modules/mocha/bin/mocha --recursive \"./output/test\"",
+    "test": "./node_modules/mocha/bin/mocha -r ts-node/register \"./test/**/*.ts\"",
     "prettier:format": "npx prettier --write .",
     "prettier:check": "npx prettier --list-different .",
     "eslint:check": "eslint . --ext .ts",
