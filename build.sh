@@ -20,6 +20,7 @@ cmake -DCMAKE_BUILD_TYPE=Release \
   -H$root \
   -GNinja \
   -DCMAKE_C_COMPILER=$CC \
-  -DCMAKE_CXX_COMPILER=$CXX
+  -DCMAKE_CXX_COMPILER=$CXX \
+  "$@"
 
 (cd $root/build && ninja && ctest --output-on-failure -R _rpunit)

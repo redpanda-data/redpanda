@@ -31,4 +31,4 @@ jobs:
 
 
         - name: build & test
-          run: ./build.sh
+          run: ./build.sh -DCMAKE_UNITY_BUILD=ON
