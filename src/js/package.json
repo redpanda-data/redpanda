@@ -6,8 +6,8 @@
   "author": "hi@vectorized.io",
   "scripts": {
     "fmt": "./node_modules/typescript-formatter/bin/tsfmt --baseDir ../../src/js/ -r",
-    "build:ts": "npx tsc --build ../../src/js/tsconfig.json",
-    "build": "npm run generate:serialization && npm run build:ts",
+    "build:ts": "npx tsc --build ./tsconfig.json",
+    "build": "./build.sh",
     "test": "./node_modules/mocha/bin/mocha --recursive \"./output/test\"",
     "prettier:format": "npx prettier --write .",
     "prettier:check": "npx prettier --list-different .",
@@ -16,7 +16,8 @@
     "generate:serialization": "./generate-entries.sh && npm run prettier:format",
     "postinstall": "npm run generate:serialization",
     "build:public": "./compact-public.js",
-    "start": "sudo npx ts-node ./modules/rpc/service.ts"
+    "start:dev": "sudo npx ts-node ./modules/rpc/service.ts",
+    "start": "sudo node ./modules/rpc/service.js"
   },
   "requires": true,
   "dependencies": {
