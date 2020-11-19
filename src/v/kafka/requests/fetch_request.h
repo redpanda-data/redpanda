@@ -387,6 +387,8 @@ struct op_context {
         return static_cast<int32_t>(response_size) >= request.min_bytes;
     }
 
+    ss::future<response_ptr> send_response() &&;
+
     response_iterator response_begin() {
         return response_iterator(response.begin(), this);
     }
@@ -420,11 +422,10 @@ public:
       : _partition(partition)
       , _log(log) {}
 
-    ss::future<model::record_batch_reader> make_reader(
-      storage::log_reader_config config,
-      std::optional<model::timeout_clock::time_point> deadline = std::nullopt) {
+    ss::future<model::record_batch_reader>
+    make_reader(storage::log_reader_config config) {
         return _log ? _log->make_reader(config)
-                    : _partition->make_reader(config, deadline);
+                    : _partition->make_reader(config);
     }
 
     cluster::partition_probe& probe() { return _partition->probe(); }
@@ -461,6 +462,11 @@ struct read_result {
       model::record_batch_reader rdr, model::offset hw, model::offset lso)
       : reader(std::move(rdr))
       , high_watermark(hw)
+      , last_stable_offset(lso)
+      , error(error_code::none) {}
+
+    read_result(model::offset hw, model::offset lso)
+      : high_watermark(hw)
       , last_stable_offset(lso)
       , error(error_code::none) {}
 

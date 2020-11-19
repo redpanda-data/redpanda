@@ -26,9 +26,13 @@
 
 #include <fmt/ostream.h>
 
+#include <chrono>
 #include <string_view>
 
 namespace kafka {
+
+static constexpr std::chrono::milliseconds fetch_reads_debounce_timeout
+  = std::chrono::milliseconds(5);
 
 void fetch_request::encode(response_writer& writer, api_version version) {
     writer.write(replica_id());
@@ -291,6 +295,13 @@ static ss::future<read_result> read_from_partition(
   fetch_config config,
   bool foreign_read,
   std::optional<model::timeout_clock::time_point> deadline) {
+    auto hw = pw.high_watermark();
+    auto lso = pw.last_stable_offset();
+    // if we have no data read, return fast
+    if (hw < config.start_offset) {
+        return ss::make_ready_future<read_result>(hw, lso);
+    }
+
     storage::log_reader_config reader_config(
       config.start_offset,
       model::model_limits<model::offset>::max(),
@@ -302,10 +313,7 @@ static ss::future<read_result> read_from_partition(
       std::nullopt);
 
     reader_config.strict_max_bytes = config.strict_max_bytes;
-    auto hw = pw.high_watermark();
-    auto lso = pw.last_stable_offset();
-
-    return pw.make_reader(reader_config, deadline)
+    return pw.make_reader(reader_config)
       .then([hw, lso, foreign_read, deadline](model::record_batch_reader rdr) {
           // if we are on remote core, we MUST use foreign record batch reader.
           if (foreign_read) {
@@ -321,15 +329,7 @@ static ss::future<read_result> read_from_partition(
           }
           return ss::make_ready_future<read_result>(
             read_result(std::move(rdr), hw, lso));
-      })
-      .handle_exception_type(
-        [hw, lso](const raft::offset_monitor::wait_aborted&) {
-            // return an empty reader
-            auto reader = model::make_memory_record_batch_reader(
-              ss::circular_buffer<model::record_batch>{});
-            return read_result(std::move(reader), hw, lso);
-        });
-    ;
+      });
 }
 
 /**
@@ -356,11 +356,10 @@ read_from_ntp(op_context& octx, model::ntp ntp, fetch_config config) {
       .invoke_on(
         *shard,
         octx.ssg,
-        [initial_fetch = octx.initial_fetch,
-         deadline = octx.deadline,
-         mntpv = std::move(mntpv),
+        [mntpv = std::move(mntpv),
          foreign_read,
-         config](cluster::partition_manager& mgr) {
+         config,
+         deadline = octx.deadline](cluster::partition_manager& mgr) {
             /*
              * lookup the ntp's partition
              */
@@ -379,7 +378,7 @@ read_from_ntp(op_context& octx, model::ntp ntp, fetch_config config) {
                       partition_wrapper(partition, log),
                       config,
                       foreign_read,
-                      std::nullopt);
+                      deadline);
                 } else {
                     return ss::make_ready_future<read_result>(
                       error_code::unknown_topic_or_partition);
@@ -396,23 +395,9 @@ read_from_ntp(op_context& octx, model::ntp ntp, fetch_config config) {
                 return ss::make_ready_future<read_result>(
                   error_code::offset_out_of_range);
             }
-            /**
-             * Check if we should wait for more data.
-             *
-             * If request allow waiting for more data we will wait in two
-             * scenarios:
-             *
-             * - previous read didn't meet requested budged
-             * - consumer requested read that is beyond high water mark
-             */
-            bool can_wait = !initial_fetch
-                            || config.start_offset > high_watermark;
 
             return read_from_partition(
-              partition_wrapper(partition),
-              config,
-              foreign_read,
-              can_wait ? deadline : std::nullopt);
+              partition_wrapper(partition), config, foreign_read, deadline);
         })
       .then([timeout = config.timeout](read_result res) mutable {
           vlog(klog.trace, "fetch reader {}", res.reader);
@@ -532,18 +517,31 @@ static ss::future<> fetch_topic_partition(
  * response must be reassembled such that the responses appear in these
  * order as the partitions in the request.
  */
+
 static ss::future<> fetch_topic_partitions(op_context& octx) {
+    auto resp_it = octx.response_begin();
+    std::vector<ss::future<>> fetches;
+    std::transform(
+      octx.request.cbegin(),
+      octx.request.cend(),
+      std::back_inserter(fetches),
+      [&resp_it, &octx](const fetch_request::const_iterator::value_type& p) {
+          // we use gate as we may not wait for all the fetch results
+          return fetch_topic_partition(octx, p, resp_it++);
+      });
+
     return ss::do_with(
-      octx.response_begin(), [&octx](op_context::response_iterator& resp_it) {
-          return ss::do_for_each(
-                   octx.request.cbegin(),
-                   octx.request.cend(),
-                   [&octx, &resp_it](
-                     const fetch_request::const_iterator::value_type& p) {
-                       return fetch_topic_partition(octx, p, resp_it)
-                         .then([&resp_it] { resp_it++; });
-                   })
-            .then([&octx] { octx.reset_context(); });
+      std::move(fetches), [&octx](std::vector<ss::future<>>& fetches) {
+          return ss::when_all_succeed(fetches.begin(), fetches.end())
+            .then([&octx] {
+                if (octx.should_stop_fetch()) {
+                    return ss::now();
+                }
+                octx.reset_context();
+                // debounce next read retry
+                return ss::sleep(std::min(
+                  fetch_reads_debounce_timeout, octx.request.max_wait_time));
+            });
       });
 }
 
@@ -560,8 +558,7 @@ fetch_api::process(request_context&& rctx, ss::smp_service_group ssg) {
                 [&octx] { return octx.should_stop_fetch(); },
                 [&octx] { return fetch_topic_partitions(octx); });
           })
-          .then(
-            [&octx] { return octx.rctx.respond(std::move(octx.response)); });
+          .then([&octx] { return std::move(octx).send_response(); });
     });
 }
 
@@ -622,6 +619,11 @@ void op_context::create_response_placeholders() {
           }
           start_response_partition(*v.partition);
       });
+}
+
+ss::future<response_ptr> op_context::send_response() && {
+    response.session_id = invalid_fetch_session_id;
+    return rctx.respond(std::move(response));
 }
 
 op_context::response_iterator::response_iterator(
