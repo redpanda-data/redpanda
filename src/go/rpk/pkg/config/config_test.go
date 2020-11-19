@@ -646,6 +646,7 @@ func TestSetMode(t *testing.T) {
 	fillRpkConfig := func(mode string) Config {
 		conf := DefaultConfig()
 		val := mode == ModeProd
+		conf.Redpanda.DeveloperMode = !val
 		conf.Rpk = &RpkConfig{
 			TuneNetwork:       val,
 			TuneDiskScheduler: val,
