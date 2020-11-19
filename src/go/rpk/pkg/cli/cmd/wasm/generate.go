@@ -32,7 +32,6 @@ var manifest = func() map[string][]genFile {
 		"src":  {genFile{name: "wasm.js", content: template.GetWasmJs()}},
 		"test": {genFile{name: "wasm.test.js", content: template.GetWasmTestJs()}},
 		"": {
-			genFile{name: "vectorized.js", content: template.GetVectorizedDependency()},
 			genFile{name: "package.json", content: template.GetPackageJson()},
 			genFile{name: "webpack.js", content: template.GetWebpack(), permission: 0766},
 		},
