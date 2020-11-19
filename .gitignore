@@ -203,7 +203,7 @@ src/js/modules/domain/generatedRpc/*.ts
 # rpc generated for coprocessor
 src/js/modules/rpc/serverAndClients/*.ts
 # vectorized public dependency
-src/js/vectorizedDependency.js
+src/js/public
 
 # rpk build dirs
 src/go/rpk/linux*
