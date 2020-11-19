@@ -55,6 +55,20 @@ static inline const member_id unknown_member_id("");
 /// An unknown / missing generation id (Kafka protocol specific)
 static inline const generation_id unknown_generation_id(-1);
 
+using fetch_session_id = named_type<int32_t, struct session_id_tag>;
+using fetch_session_epoch = named_type<int32_t, struct session_epoch_tag>;
+
+// Unknown/missing/not initialized session (Kafka protocol specific)
+static constexpr fetch_session_id invalid_fetch_session_id(0);
+/**
+ * Used by the client to start new fetch session. (Kafka protocol specific)
+ */
+static constexpr fetch_session_epoch initial_fetch_session_epoch(0);
+/**
+ * Used by the client to close existing fetch session. (Kafka protocol specific)
+ */
+static constexpr fetch_session_epoch final_fetch_session_epoch(-1);
+
 enum class coordinator_type : int8_t {
     group = 0,
     transaction = 1,
