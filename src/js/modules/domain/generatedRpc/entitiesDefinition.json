@@ -52,6 +52,7 @@
     },
     {
       "className": "RecordBatch",
+      "customEncode": "BF.recordBatchEncode",
       "fields": [
         {
           "name": "header",
