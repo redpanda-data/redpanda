@@ -28,7 +28,7 @@ namespace ppj = pandaproxy::json;
 
 namespace pandaproxy {
 
-serialization_format parse_serialization_format(std::string_view accept) {
+ppj::serialization_format parse_serialization_format(std::string_view accept) {
     std::vector<std::string_view> none = {
       "", "*/*", "application/json", "application/vnd.kafka.v2+json"};
 
@@ -39,7 +39,7 @@ serialization_format parse_serialization_format(std::string_view accept) {
     if (std::any_of(results.begin(), results.end(), [](std::string_view v) {
             return v == "application/vnd.kafka.binary.v2+json";
         })) {
-        return serialization_format::binary_v2;
+        return ppj::serialization_format::binary_v2;
     }
 
     if (std::any_of(
@@ -49,10 +49,10 @@ serialization_format parse_serialization_format(std::string_view accept) {
                     return lhs == rhs;
                 });
           })) {
-        return serialization_format::none;
+        return ppj::serialization_format::none;
     }
 
-    return serialization_format::unsupported;
+    return ppj::serialization_format::unsupported;
 }
 
 ss::future<server::reply_t>
@@ -84,7 +84,7 @@ get_topics_names(server::request_t rq, server::reply_t rp) {
 ss::future<server::reply_t>
 post_topics_name(server::request_t rq, server::reply_t rp) {
     auto fmt = parse_serialization_format(rq.req->get_header("Accept"));
-    if (fmt == serialization_format::unsupported) {
+    if (fmt == ppj::serialization_format::unsupported) {
         rp.rep = unprocessable_entity("Unsupported serialization format");
         return ss::make_ready_future<server::reply_t>(std::move(rp));
     }

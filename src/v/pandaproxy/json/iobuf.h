@@ -14,7 +14,6 @@
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
 #include "pandaproxy/json/types.h"
-#include "pandaproxy/types.h"
 
 #include <libbase64.h>
 #include <optional>

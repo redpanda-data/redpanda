@@ -20,8 +20,7 @@
 namespace ppj = pandaproxy::json;
 
 auto make_binary_v2_handler() {
-    return ppj::produce_request_handler<>(
-      pandaproxy::serialization_format::binary_v2);
+    return ppj::produce_request_handler<>(ppj::serialization_format::binary_v2);
 }
 
 SEASTAR_THREAD_TEST_CASE(test_produce_request) {
