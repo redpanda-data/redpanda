@@ -458,13 +458,6 @@ static ss::future<> fetch_topic_partition(
     auto& topic = *p.topic;
     auto& part = *p.partition;
 
-    if (
-      model::timeout_clock::now() > octx.deadline.value_or(model::no_timeout)) {
-        resp_it.set(make_partition_response_error(
-          part.id, error_code::request_timed_out));
-        return ss::now();
-    }
-
     // if over budget create placeholder response
     if (octx.bytes_left <= 0) {
         resp_it.set(make_partition_response_error(
