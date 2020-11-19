@@ -21,6 +21,7 @@ set(request_srcs
   requests/delete_topics_request.cc
   requests/alter_configs_request.cc
   requests/describe_groups_request.cc
+  requests/sasl_handshake_request.cc
   requests/topics/types.cc
   requests/topics/topic_utils.cc)
 
