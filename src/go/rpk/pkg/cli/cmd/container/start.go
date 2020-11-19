@@ -13,6 +13,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
+	"runtime"
 	"sync"
 	"vectorized/pkg/cli/cmd/container/common"
 	"vectorized/pkg/cli/ui"
@@ -152,6 +154,8 @@ func startCluster(fs afero.Fs, c common.Client, n uint) error {
 		return err
 	}
 
+	coreCount := int(math.Max(1, float64(runtime.NumCPU()) / float64(n)))
+
 	log.Info("Starting cluster")
 	seedIP, seedKafkaPort, err := startNode(
 		fs,
@@ -163,6 +167,7 @@ func startCluster(fs afero.Fs, c common.Client, n uint) error {
 		seedState.ContainerID,
 		seedState.ContainerIP,
 		"",
+		coreCount,
 	)
 	if err != nil {
 		return err
@@ -207,6 +212,7 @@ func startCluster(fs afero.Fs, c common.Client, n uint) error {
 				state.ContainerID,
 				state.ContainerIP,
 				seedState.ContainerIP,
+				coreCount,
 			)
 			if err != nil {
 				return err
@@ -303,9 +309,9 @@ func startNode(
 	fs afero.Fs,
 	c common.Client,
 	nodeID, kafkaPort, rpcPort, seedRPCPort uint,
-	containerID, ip, seedIP string,
+	containerID, ip, seedIP string, cores int,
 ) (string, uint, error) {
-	conf, err := writeNodeConfig(fs, nodeID, kafkaPort, rpcPort, seedRPCPort, ip, seedIP, common.ConfPath(nodeID))
+	conf, err := writeNodeConfig(fs, nodeID, kafkaPort, rpcPort, seedRPCPort, ip, seedIP, common.ConfPath(nodeID), cores)
 	if err != nil {
 		return "", 0, err
 	}
@@ -318,7 +324,7 @@ func startNode(
 func writeNodeConfig(
 	fs afero.Fs,
 	nodeID, kafkaPort, rpcPort, seedRPCPort uint,
-	ip, seedIP, path string,
+	ip, seedIP, path string, cores int,
 ) (*config.Config, error) {
 	localhost := "127.0.0.1"
 	conf := config.DefaultConfig()
@@ -347,6 +353,7 @@ func writeNodeConfig(
 	}
 
 	conf.Rpk.Overprovisioned = true
+	conf.Rpk.SMP = &cores 
 	conf.Redpanda.DeveloperMode = true
 
 	return &conf, config.WriteConfig(fs, &conf, path)
