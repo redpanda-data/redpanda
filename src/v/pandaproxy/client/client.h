@@ -15,6 +15,7 @@
 #include "pandaproxy/client/broker.h"
 #include "pandaproxy/client/brokers.h"
 #include "pandaproxy/client/configuration.h"
+#include "pandaproxy/client/fetcher.h"
 #include "pandaproxy/client/producer.h"
 #include "pandaproxy/client/retry_with_mitigation.h"
 #include "utils/retry.h"
@@ -88,6 +89,12 @@ public:
 
     ss::future<kafka::produce_response::partition> produce_record_batch(
       model::topic_partition tp, model::record_batch&& batch);
+
+    ss::future<kafka::fetch_response::partition> fetch_partition(
+      model::topic_partition tp,
+      model::offset offset,
+      int32_t max_bytes,
+      std::chrono::milliseconds timeout);
 
 private:
     /// \brief Connect and update metdata.

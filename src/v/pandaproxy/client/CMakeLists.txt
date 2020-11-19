@@ -5,6 +5,7 @@ v_cc_library(
     brokers.cc
     client.cc
     configuration.cc
+    fetcher.cc
     logger.cc
     producer.cc
   DEPS

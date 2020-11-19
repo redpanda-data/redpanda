@@ -9,6 +9,9 @@
 
 #include "pandaproxy/client/client.h"
 
+#include "kafka/errors.h"
+#include "kafka/requests/fetch_request.h"
+#include "model/fundamental.h"
 #include "pandaproxy/client/broker.h"
 #include "pandaproxy/client/configuration.h"
 #include "pandaproxy/client/error.h"
@@ -19,6 +22,8 @@
 #include "utils/unresolved_address.h"
 
 #include <seastar/core/gate.hh>
+
+#include <exception>
 
 namespace pandaproxy::client {
 
@@ -130,6 +135,40 @@ ss::future<kafka::produce_response::partition> client::produce_record_batch(
       tp,
       batch.record_count());
     return _producer.produce(std::move(tp), std::move(batch));
+}
+
+ss::future<kafka::fetch_response::partition> client::fetch_partition(
+  model::topic_partition tp,
+  model::offset offset,
+  int32_t max_bytes,
+  std::chrono::milliseconds timeout) {
+    using namespace std::chrono_literals;
+    auto build_request =
+      [offset, max_bytes, timeout](model::topic_partition& tp) {
+          return make_fetch_request(tp, offset, max_bytes, timeout);
+      };
+
+    return ss::do_with(
+      std::move(build_request),
+      std::move(tp),
+      [this](auto& build_request, model::topic_partition& tp) {
+          return retry_with_mitigation(
+                   shard_local_cfg().retries(),
+                   shard_local_cfg().retry_base_backoff(),
+                   [this, &tp, &build_request]() {
+                       return _brokers.find(tp)
+                         .then([&tp, &build_request](shared_broker_t&& b) {
+                             return b->dispatch(build_request(tp));
+                         })
+                         .then([](kafka::fetch_response res) {
+                             return std::move(res.partitions[0]);
+                         });
+                   },
+                   [this](std::exception_ptr ex) { return mitigate_error(ex); })
+            .handle_exception([&tp](std::exception_ptr ex) {
+                return make_fetch_response(tp, ex);
+            });
+      });
 }
 
 } // namespace pandaproxy::client
