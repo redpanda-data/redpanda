@@ -19,6 +19,7 @@
 #include "resource_mgmt/io_priority.h"
 #include "utils/to_string.h"
 
+#include <seastar/core/do_with.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/core/thread.hh>
 #include <seastar/util/log.hh>
@@ -422,55 +423,57 @@ read_from_ntp(op_context& octx, model::ntp ntp, fetch_config config) {
  * partition response is finalized and placed into its position in the
  * response message.
  */
-static ss::future<>
-handle_ntp_fetch(op_context& octx, model::ntp ntp, fetch_config config) {
+static ss::future<> handle_ntp_fetch(
+  op_context& octx,
+  model::ntp ntp,
+  fetch_config config,
+  op_context::response_iterator resp_it) {
     using read_response_type = ss::future<fetch_response::partition_response>;
     auto p_id = ntp.tp.partition;
     return read_from_ntp(octx, std::move(ntp), config)
-      .then_wrapped([&octx, p_id](read_response_type&& f) {
+      .then_wrapped([p_id, resp_it](read_response_type&& f) mutable {
           try {
               auto response = f.get0();
               response.id = p_id;
-              octx.set_partition_response(std::move(response));
+              resp_it.set(std::move(response));
           } catch (...) {
               /*
                * TODO: this is where we will want to handle any storage
                * specific errors and translate them into kafka response
                * error codes.
                */
-              octx.set_partition_response(make_partition_response_error(
+              resp_it.set(make_partition_response_error(
                 p_id, error_code::unknown_server_error));
           }
       });
 }
 
 static ss::future<> fetch_topic_partition(
-  op_context& octx, const fetch_request::const_iterator::value_type& p) {
+  op_context& octx,
+  const fetch_request::const_iterator::value_type& p,
+  op_context::response_iterator resp_it) {
     /*
      * the next topic-partition to fetch
      */
     auto& topic = *p.topic;
     auto& part = *p.partition;
-    if (p.new_topic && octx.initial_fetch) {
-        octx.start_response_topic(topic);
-    }
 
     if (
       model::timeout_clock::now() > octx.deadline.value_or(model::no_timeout)) {
-        octx.set_partition_response(make_partition_response_error(
+        resp_it.set(make_partition_response_error(
           part.id, error_code::request_timed_out));
         return ss::now();
     }
 
     // if over budget create placeholder response
     if (octx.bytes_left <= 0) {
-        octx.set_partition_response(make_partition_response_error(
+        resp_it.set(make_partition_response_error(
           part.id, error_code::message_too_large));
         return ss::now();
     }
     // if we already have data in response for this partition skip it
     if (!octx.initial_fetch) {
-        auto& partition_response = octx.response_iterator->partition_response;
+        auto& partition_response = resp_it->partition_response;
 
         /**
          * do not try to fetch again if partition response already contains an
@@ -478,7 +481,7 @@ static ss::future<> fetch_topic_partition(
          * threshold.
          */
         if (
-          partition_response->has_error()
+          resp_it->partition_response->has_error()
           || (!partition_response->record_set->empty() && octx.over_min_bytes())) {
             return ss::now();
         }
@@ -492,7 +495,7 @@ static ss::future<> fetch_topic_partition(
       .timeout = octx.deadline.value_or(model::no_timeout),
       .strict_max_bytes = octx.response_size > 0,
     };
-    return handle_ntp_fetch(octx, std::move(ntp), config);
+    return handle_ntp_fetch(octx, std::move(ntp), config, resp_it);
 }
 
 /**
@@ -519,17 +522,18 @@ static ss::future<> fetch_topic_partition(
  * order as the partitions in the request.
  */
 static ss::future<> fetch_topic_partitions(op_context& octx) {
-    return ss::do_for_each(
-             octx.request.cbegin(),
-             octx.request.cend(),
-             [&octx](const fetch_request::const_iterator::value_type& p) {
-                 return fetch_topic_partition(octx, p).then([&octx] {
-                     if (!octx.initial_fetch) {
-                         octx.response_iterator++;
-                     }
-                 });
-             })
-      .then([&octx] { octx.reset_context(); });
+    return ss::do_with(
+      octx.response_begin(), [&octx](op_context::response_iterator& resp_it) {
+          return ss::do_for_each(
+                   octx.request.cbegin(),
+                   octx.request.cend(),
+                   [&octx, &resp_it](
+                     const fetch_request::const_iterator::value_type& p) {
+                       return fetch_topic_partition(octx, p, resp_it)
+                         .then([&resp_it] { resp_it++; });
+                   })
+            .then([&octx] { octx.reset_context(); });
+      });
 }
 
 ss::future<response_ptr>
@@ -550,18 +554,14 @@ fetch_api::process(request_context&& rctx, ss::smp_service_group ssg) {
     });
 }
 
-void op_context::reset_context() {
-    initial_fetch = false;
-    response_iterator = response.begin();
-}
+void op_context::reset_context() { initial_fetch = false; }
 
 // decode request and initialize budgets
 op_context::op_context(request_context&& ctx, ss::smp_service_group ssg)
   : rctx(std::move(ctx))
   , ssg(ssg)
   , response_size(0)
-  , response_error(false)
-  , response_iterator(response.begin()) {
+  , response_error(false) {
     /*
      * decode request and prepare the inital response
      */
@@ -581,6 +581,8 @@ op_context::op_context(request_context&& ctx, ss::smp_service_group ssg)
      */
     static constexpr size_t max_size = 128_KiB;
     bytes_left = std::min(max_size, size_t(request.max_bytes));
+
+    create_response_placeholders();
 }
 
 // insert and reserve space for a new topic in the response
@@ -589,21 +591,82 @@ void op_context::start_response_topic(const fetch_request::topic& topic) {
     p.responses.reserve(topic.partitions.size());
 }
 
-// add to the response the result of fetching from a partition
-void op_context::set_partition_response(
-  fetch_response::partition_response&& r) {
-    if (r.error != error_code::none) {
-        response_error = true;
-    }
-    if (r.record_set) {
-        response_size += r.record_set->size_bytes();
-        bytes_left -= std::min(bytes_left, r.record_set->size_bytes());
-    }
-    if (!initial_fetch) {
-        // replace response
-        *response_iterator->partition_response = std::move(r);
-    } else {
-        response.partitions.back().responses.push_back(std::move(r));
-    }
+void op_context::start_response_partition(const fetch_request::partition& p) {
+    response.partitions.back().responses.push_back(
+      fetch_response::partition_response{
+        .id = p.id,
+        .error = error_code::none,
+        .high_watermark = model::offset(-1),
+        .last_stable_offset = model::offset(-1),
+        .record_set = iobuf()});
 }
+
+void op_context::create_response_placeholders() {
+    std::for_each(
+      request.cbegin(),
+      request.cend(),
+      [this](const fetch_request::const_iterator::value_type& v) {
+          if (v.new_topic) {
+              start_response_topic(*v.topic);
+          }
+          start_response_partition(*v.partition);
+      });
+}
+
+op_context::response_iterator::response_iterator(
+  fetch_response::iterator it, op_context* ctx)
+  : _it(it)
+  , _ctx(ctx) {}
+
+void op_context::response_iterator::set(
+  fetch_response::partition_response&& response) {
+    // we are already done, for now ignore what we read
+    vassert(
+      response.id == _it->partition_response->id,
+      "Response and current partition ids have to be the same. Current "
+      "response {}, update {}",
+      _it->partition_response->id,
+      response.id);
+
+    if (response.has_error()) {
+        _ctx->response_error = true;
+    }
+    auto& current_resp_data = _it->partition_response->record_set;
+    if (current_resp_data) {
+        auto sz = current_resp_data->size_bytes();
+        _ctx->response_size -= sz;
+        _ctx->bytes_left += sz;
+    }
+
+    if (response.record_set) {
+        auto sz = response.record_set->size_bytes();
+        _ctx->response_size += sz;
+        _ctx->bytes_left -= std::min(_ctx->bytes_left, sz);
+    }
+
+    *_it->partition_response = std::move(response);
+}
+
+op_context::response_iterator& op_context::response_iterator::operator++() {
+    _it->partition_response++;
+    return *this;
+}
+
+const op_context::response_iterator
+op_context::response_iterator::operator++(int) {
+    response_iterator tmp = *this;
+    ++(*this);
+    return tmp;
+}
+
+bool op_context::response_iterator::operator==(
+  const response_iterator& o) const noexcept {
+    return _it == o._it;
+}
+
+bool op_context::response_iterator::operator!=(
+  const response_iterator& o) const noexcept {
+    return !(*this == o);
+}
+
 } // namespace kafka

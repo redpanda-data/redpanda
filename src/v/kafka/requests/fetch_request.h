@@ -336,16 +336,47 @@ std::ostream& operator<<(std::ostream&, const fetch_response&);
  * Fetch operation context
  */
 struct op_context {
+    class response_iterator {
+    public:
+        using difference_type = void;
+        using pointer = fetch_response::iterator::pointer;
+        using reference = fetch_response::iterator::reference;
+        using iterator_category = std::forward_iterator_tag;
+
+        response_iterator(fetch_response::iterator, op_context* ctx);
+
+        reference operator*() noexcept { return *_it; }
+
+        pointer operator->() noexcept { return &(*_it); }
+
+        response_iterator& operator++();
+
+        const response_iterator operator++(int);
+
+        bool operator==(const response_iterator& o) const noexcept;
+
+        bool operator!=(const response_iterator& o) const noexcept;
+
+        void set(fetch_response::partition_response&&);
+
+    private:
+        fetch_response::iterator _it;
+        op_context* _ctx;
+    };
+
     void reset_context();
 
     // decode request and initialize budgets
     op_context(request_context&& ctx, ss::smp_service_group ssg);
 
-    // insert and reserve space for a new topic in the response
+    // reserve space for a new topic in the response
     void start_response_topic(const fetch_request::topic& topic);
 
-    // add to the response the result of fetching from a partition
-    void set_partition_response(fetch_response::partition_response&& r);
+    // reserve space for new partition in the response
+    void start_response_partition(const fetch_request::partition&);
+
+    // create placeholder for response topics and partitions
+    void create_response_placeholders();
 
     bool should_stop_fetch() const {
         return !request.debounce_delay() || over_min_bytes() || request.empty()
@@ -354,6 +385,14 @@ struct op_context {
 
     bool over_min_bytes() const {
         return static_cast<int32_t>(response_size) >= request.min_bytes;
+    }
+
+    response_iterator response_begin() {
+        return response_iterator(response.begin(), this);
+    }
+
+    response_iterator response_end() {
+        return response_iterator(response.end(), this);
     }
 
     request_context rctx;
@@ -371,8 +410,6 @@ struct op_context {
     bool response_error;
 
     bool initial_fetch = true;
-
-    fetch_response::iterator response_iterator;
 };
 
 class partition_wrapper {
