@@ -438,6 +438,7 @@ func SetMode(mode string, conf *Config) (*Config, error) {
 }
 
 func setDevelopment(conf *Config) *Config {
+	conf.Redpanda.DeveloperMode = true
 	// Defaults to setting all tuners to false
 	conf.Rpk = &RpkConfig{
 		EnableUsageStats: conf.Rpk.EnableUsageStats,
@@ -449,6 +450,7 @@ func setDevelopment(conf *Config) *Config {
 }
 
 func setProduction(conf *Config) *Config {
+	conf.Redpanda.DeveloperMode = false
 	rpk := conf.Rpk
 	rpk.TuneNetwork = true
 	rpk.TuneDiskScheduler = true
