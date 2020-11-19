@@ -118,26 +118,42 @@ void fetch_request::decode(request_context& ctx) {
     }
 }
 
+std::ostream&
+operator<<(std::ostream& o, const fetch_request::forgotten_topic& t) {
+    fmt::print(o, "{{topic {} partitions {}}}", t.name, t.partitions);
+    return o;
+}
+
 std::ostream& operator<<(std::ostream& o, const fetch_request::partition& p) {
-    return ss::fmt_print(
-      o, "id {} off {} max {}", p.id, p.fetch_offset, p.partition_max_bytes);
+    fmt::print(
+      o,
+      "{{id {} off {} max {}}}",
+      p.id,
+      p.fetch_offset,
+      p.partition_max_bytes);
+    return o;
 }
 
 std::ostream& operator<<(std::ostream& o, const fetch_request::topic& t) {
-    return ss::fmt_print(o, "name {} parts {}", t.name, t.partitions);
+    fmt::print(o, "{{name {} parts {}}}", t.name, t.partitions);
+    return o;
 }
 
 std::ostream& operator<<(std::ostream& o, const fetch_request& r) {
-    return ss::fmt_print(
+    fmt::print(
       o,
-      "replica {} max_wait_time {} min_bytes {} max_bytes {} isolation {} "
-      "topics {}",
+      "{{replica {} max_wait_time {} session_id {} session_epoch {} min_bytes "
+      "{} max_bytes {} isolation {} topics {} forgotten {}}}",
       r.replica_id,
       r.max_wait_time,
+      r.session_id,
+      r.session_epoch,
       r.min_bytes,
       r.max_bytes,
       r.isolation_level,
-      r.topics);
+      r.topics,
+      r.forgotten_topics);
+    return o;
 }
 
 void fetch_response::encode(const request_context& ctx, response& resp) {
@@ -210,31 +226,39 @@ void fetch_response::decode(iobuf buf, api_version version) {
 
 std::ostream&
 operator<<(std::ostream& o, const fetch_response::aborted_transaction& t) {
-    return ss::fmt_print(
-      o, "producer {} first_off {}", t.producer_id, t.first_offset);
+    fmt::print(
+      o, "{{producer {} first_off {}}}", t.producer_id, t.first_offset);
+    return o;
 }
 
 std::ostream&
 operator<<(std::ostream& o, const fetch_response::partition_response& p) {
-    return ss::fmt_print(
+    fmt::print(
       o,
-      "id {} err {} high_water {} last_stable_off {} aborted {} "
-      "record_set_len "
-      "{}",
+      "{{id {} err {} high_water {} last_stable_off {} aborted {} "
+      "record_set_len {}}}",
       p.id,
       p.error,
       p.high_watermark,
       p.last_stable_offset,
       p.aborted_transactions,
       (p.record_set ? p.record_set->size_bytes() : -1));
+    return o;
 }
 
 std::ostream& operator<<(std::ostream& o, const fetch_response::partition& p) {
-    return ss::fmt_print(o, "name {} responses {}", p.name, p.responses);
+    fmt::print(o, "{{name {} responses {}}}", p.name, p.responses);
+    return o;
 }
 
 std::ostream& operator<<(std::ostream& o, const fetch_response& r) {
-    return ss::fmt_print(o, "partitions {}", r.partitions);
+    fmt::print(
+      o,
+      "{{session_id {} error {} partitions {}}}",
+      r.session_id,
+      r.error,
+      r.partitions);
+    return o;
 }
 
 /**

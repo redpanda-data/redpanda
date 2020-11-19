@@ -57,6 +57,7 @@ struct fetch_request final {
     struct forgotten_topic {
         model::topic name;
         std::vector<int32_t> partitions;
+        friend std::ostream& operator<<(std::ostream&, const forgotten_topic&);
     };
 
     model::node_id replica_id;
@@ -233,6 +234,8 @@ struct fetch_response final {
 
     void encode(const request_context& ctx, response& resp);
     void decode(iobuf buf, api_version version);
+
+    friend std::ostream& operator<<(std::ostream&, const fetch_response&);
 
     /*
      * iterator over response partitions. this adapter iterator is used because
