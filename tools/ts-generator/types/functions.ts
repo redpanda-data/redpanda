@@ -280,7 +280,7 @@ const readArray = (readSize?: number) => <T>(
   obj?: FromBytes<T>
 ): [T[], number] => {
   const array: T[] = [];
-  let arraySize = readSize
+  let arraySize = readSize;
   if (arraySize === undefined) {
     arraySize = buffer.readInt32LE(offset);
     offset += 4;
@@ -374,7 +374,7 @@ const recordBatchEncode = (value: RecordBatch, buffer: IOBuf): number => {
   // reset reserve write offset, I can use index 0 because there only
   // one fragment in this reserve with 70 bytes, this in order to update
   // complete record batch header with its crc hash code.
-  reserver.getFragmentByIndex(0).used = 0
+  reserver.getFragmentByIndex(0).used = 0;
   reserver.appendBuffer(headerBuffer);
 
   return wroteBytes;
