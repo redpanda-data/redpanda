@@ -112,10 +112,16 @@ private:
     ss::tmp_dir _dir;
 };
 
+struct certificate_reload_ctx {
+    std::unordered_set<ss::sstring> updated;
+    ss::condition_variable cvar;
+};
+
 FIXTURE_TEST(rpcgen_reload_credentials_integration, rpc_integration_fixture) {
     // Server starts with bad credentials, files are updated on disk and then
     // client connects. Expected behavior is that client can connect without
     // issues. Condition variable is used to wait for credentials to reload.
+    auto context = ss::make_lw_shared<certificate_reload_ctx>();
     temporary_dir tmp;
     // client credentials
     auto client_key = tmp.copy_file("redpanda.key", "client.key");
@@ -144,11 +150,9 @@ FIXTURE_TEST(rpcgen_reload_credentials_integration, rpc_integration_fixture) {
                                   .get_credentials_builder()
                                   .get0();
 
-    std::unordered_set<ss::sstring> updated;
-    ss::condition_variable cvar;
     configure_server(
       server_creds_builder,
-      [&updated, &cvar](
+      [context](
         const std::unordered_set<ss::sstring>& delta,
         const std::exception_ptr& err) {
           info("server credentials reload event");
@@ -164,9 +168,10 @@ FIXTURE_TEST(rpcgen_reload_credentials_integration, rpc_integration_fixture) {
               }
           } else {
               for (const auto& name : delta) {
-                  updated.insert(name);
+                  info("server credentials reload {}", name);
+                  context->updated.insert(name);
               }
-              cvar.signal();
+              context->cvar.signal();
           }
       });
 
@@ -180,7 +185,8 @@ FIXTURE_TEST(rpcgen_reload_credentials_integration, rpc_integration_fixture) {
     tmp.copy_file("redpanda.crt", "server.crt");
     tmp.copy_file("root_certificate_authority.chain_cert", "ca_server.pem");
 
-    cvar.wait([&updated] { return updated.size() == 3; }).get();
+    context->cvar.wait([context] { return context->updated.size() == 3; })
+      .get();
 
     info("client connection attempt");
     auto cli = rpc::client<cycling::team_movistar_client_protocol>(
