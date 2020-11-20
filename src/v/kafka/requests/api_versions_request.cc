@@ -29,6 +29,8 @@
 #include "kafka/requests/requests.h"
 #include "kafka/requests/response.h"
 #include "kafka/requests/response_writer.h"
+#include "kafka/requests/sasl_authenticate_request.h"
+#include "kafka/requests/sasl_handshake_request.h"
 #include "kafka/requests/sync_group_request.h"
 
 namespace kafka {
@@ -63,7 +65,9 @@ using request_types = make_request_types<
   describe_configs_api,
   alter_configs_api,
   delete_topics_api,
-  describe_groups_api>;
+  describe_groups_api,
+  sasl_handshake_api,
+  sasl_authenticate_api>;
 
 template<typename RequestType>
 static auto make_api() {

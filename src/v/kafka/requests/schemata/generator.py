@@ -706,12 +706,12 @@ writer.write({{ fname }});
 namespace kafka {
 
 {%- if struct.fields %}
-void {{ struct.name }}::encode(response_writer& writer, api_version version) {
+void {{ struct.name }}::encode(response_writer& writer, [[maybe_unused]] api_version version) {
 {{- struct_serde(struct, field_encoder) | indent }}
 }
 
 {%- if op_type == "request" %}
-void {{ struct.name }}::decode(request_reader& reader, api_version version) {
+void {{ struct.name }}::decode(request_reader& reader, [[maybe_unused]] api_version version) {
 {{- struct_serde(struct, field_decoder) | indent }}
 }
 {%- else %}

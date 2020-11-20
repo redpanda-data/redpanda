@@ -96,7 +96,7 @@ struct find_coordinator_response final {
     }
 };
 
-static inline std::ostream&
+inline std::ostream&
 operator<<(std::ostream& os, const find_coordinator_response& r) {
     return os << r.data;
 }
