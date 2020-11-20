@@ -106,9 +106,19 @@ const writeBuffer: WriteFn<Buffer> = (field, buffer, offset) => {
   return 4 + bufferBuffer;
 };
 
-const writeArray = <T>(fields: T[], buffer: IOBuf, fn: WriteFn<T>): number => {
-  buffer.appendInt32LE(fields.length);
-  let wroteBytes = 4;
+/**
+ * @param appendSize, define if writeArray puts an int32 (array size) in buffer
+ */
+const writeArray = (appendSize?: boolean) => <T>(
+  fields: T[],
+  buffer: IOBuf,
+  fn: WriteFn<T>
+): number => {
+  let wroteBytes = 0;
+  if (appendSize) {
+    buffer.appendInt32LE(fields.length);
+    wroteBytes += 4;
+  }
   for (const item of fields) {
     wroteBytes += fn(item, buffer);
   }
@@ -225,16 +235,22 @@ const readBuffer: ReadFunction<Buffer> = (buffer: Buffer, offset: number) => {
   return [value, offset];
 };
 
-const readArray = <T>(
+/**
+ * @param readSize, define if readArray reads an int32 (array size) from buffer,
+ * otherwise, the array size is passed
+ */
+const readArray = (readSize?: number) => <T>(
   buffer: Buffer,
   offset: number,
   fn: ReadFunction<T>,
   obj?: FromBytes<T>
 ): [T[], number] => {
   const array: T[] = [];
-  const size = buffer.readInt32LE(offset);
-  offset += 4;
-  for (let i = 0; i < size; i++) {
+  const arraySize = readSize || buffer.readInt32LE(offset);
+  if (!readSize) {
+    offset += 4;
+  }
+  for (let i = 0; i < arraySize; i++) {
     const [value, newOffset] = fn(buffer, offset, obj);
     offset = newOffset;
     array.push(value);
