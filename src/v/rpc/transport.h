@@ -27,6 +27,7 @@
 #include <seastar/core/metrics_registration.hh>
 #include <seastar/core/semaphore.hh>
 #include <seastar/net/api.hh>
+#include <seastar/net/tls.hh>
 
 #include <absl/container/flat_hash_map.h>
 
@@ -42,7 +43,7 @@ class base_transport {
 public:
     struct configuration {
         ss::socket_address server_addr;
-        std::optional<ss::tls::credentials_builder> credentials;
+        ss::shared_ptr<ss::tls::certificate_credentials> credentials;
         rpc::metrics_disabled disable_metrics = rpc::metrics_disabled::no;
         /// Optional server name indication (SNI) for TLS connection
         std::optional<ss::sstring> tls_sni_hostname;
