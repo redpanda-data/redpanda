@@ -11,10 +11,11 @@ import asyncio
 import uuid
 import random
 import sys
+import json
 import logging
 import traceback
 
-from gobekli.kvapi import RequestCanceled, RequestTimedout
+from gobekli.kvapi import RequestCanceled, RequestTimedout, RequestViolated
 from gobekli.consensus import Violation
 from gobekli.workloads.common import (AvailabilityStatLogger, Stat,
                                       LinearizabilityHashmapChecker)
@@ -135,6 +136,15 @@ class MWClient:
                       error_value=str(v),
                       stacktrace=traceback.format_exc()).with_time())
                 self.checker.abort()
+        except RequestViolated as e:
+            try:
+                self.checker.report_violation("internal violation: " +
+                                              json.dumps(e.info))
+            except Violation as e:
+                cmdlog.info(
+                    m(e.message,
+                      type="linearizability_violation",
+                      write_id=curr_write_id).with_time())
         except Violation as e:
             cmdlog.info(
                 m(e.message,
@@ -235,6 +245,15 @@ class MRClient:
                       error_value=str(v),
                       stacktrace=traceback.format_exc()).with_time())
                 self.checker.abort()
+        except RequestViolated as e:
+            try:
+                self.checker.report_violation("internal violation: " +
+                                              json.dumps(e.info))
+            except Violation as e:
+                cmdlog.info(
+                    m(e.message,
+                      type="linearizability_violation",
+                      read_id=read_id).with_time())
         except Violation as e:
             cmdlog.info(
                 m(e.message, type="linearizability_violation",

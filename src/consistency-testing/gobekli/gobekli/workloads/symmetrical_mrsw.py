@@ -11,10 +11,11 @@ import asyncio
 import uuid
 import random
 import sys
+import json
 import logging
 import traceback
 
-from gobekli.kvapi import RequestCanceled, RequestTimedout
+from gobekli.kvapi import RequestCanceled, RequestTimedout, RequestViolated
 from gobekli.consensus import Violation
 from gobekli.workloads.common import (ReaderClient, AvailabilityStatLogger,
                                       Stat, LinearizabilityHashmapChecker)
@@ -141,6 +142,13 @@ class WriterClient:
                           stacktrace=traceback.format_exc()).with_time())
 
                     self.checker.abort()
+                    break
+            except RequestViolated as e:
+                try:
+                    self.checker.report_violation("internal violation: " +
+                                                  json.dumps(e.info))
+                except Violation as e:
+                    log_violation(self.pid, e.message)
                     break
             except Violation as e:
                 log_violation(self.pid, e.message)

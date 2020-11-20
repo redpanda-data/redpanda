@@ -15,7 +15,7 @@ import sys
 import asyncio
 import aiohttp
 
-from gobekli.kvapi import KVNode, RequestTimedout, RequestCanceled
+from gobekli.kvapi import KVNode, RequestTimedout, RequestCanceled, RequestViolated
 from gobekli.logging import m
 import logging
 import jinja2
@@ -355,6 +355,8 @@ class KafkaCluster:
                     m(f"put request to {address} timed out").with_time())
                 pass
             except RequestCanceled:
+                pass
+            except RequestViolated:
                 pass
             await kv.close_aio()
             if is_ok:

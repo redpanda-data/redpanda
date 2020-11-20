@@ -16,7 +16,7 @@ import json
 import logging
 import traceback
 
-from gobekli.kvapi import RequestCanceled, RequestTimedout
+from gobekli.kvapi import RequestCanceled, RequestTimedout, RequestViolated
 from gobekli.consensus import LinearizabilityRegisterChecker, Violation
 from gobekli.logging import (m, log_violation, log_latency)
 
@@ -198,6 +198,11 @@ class LinearizabilityHashmapChecker:
 
         self.checkers[key].read_canceled(pid)
 
+    def report_violation(self, message):
+        self.is_valid = False
+        self.error = message
+        raise Violation(self.error)
+
 
 class ReaderClient:
     def __init__(self, pid, started_at, stat, checker, node, key):
@@ -293,6 +298,7 @@ class ReaderClient:
                           key=self.key).with_time())
                     self.checker.read_canceled(self.pid, self.key)
                 except:
+                    # TODO: handle violation
                     e, v = sys.exc_info()[:2]
 
                     cmdlog.info(
@@ -303,6 +309,13 @@ class ReaderClient:
                           stacktrace=traceback.format_exc()).with_time())
 
                     self.checker.abort()
+                    break
+            except RequestViolated as e:
+                try:
+                    self.checker.report_violation("internal violation: " +
+                                                  json.dumps(e.info))
+                except Violation as e:
+                    log_violation(self.pid, e.message)
                     break
             except Violation as e:
                 log_violation(self.pid, e.message)

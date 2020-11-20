@@ -67,7 +67,8 @@ class UnknownTopic(Exception):
 
 
 class KafkaKV:
-    def __init__(self, inflight_limit, bootstrap_servers, topic, acks):
+    def __init__(self, check_history, inflight_limit, bootstrap_servers, topic,
+                 acks):
         self.topic = topic
         self.acks = acks
         self.bootstrap_servers = bootstrap_servers
@@ -81,8 +82,54 @@ class KafkaKV:
         self.state = dict()
         self.consumers = []
         self.n_consumers = 0
+        self.check_history = check_history
         self.inflight_limit = inflight_limit
         self.inflight_requests = 0
+        self.has_accessed = False
+        self.has_data_loss = False
+        self.data_loss_info = None
+
+    def start_history_check_thread(self):
+        consumer_tps = None
+        while not self.has_data_loss:
+            offset = self.offset
+            state = copy.deepcopy(self.state)
+            try:
+                replay = dict()
+                consumer_tps = self.catchup_beginning(consumer_tps, replay,
+                                                      offset,
+                                                      {"key": "replay"}, {})
+                missing = []
+                mismatch = []
+                extra = []
+                for key in state.keys():
+                    if key not in replay:
+                        missing.append({"key": key, "extected": state[key]})
+                    elif state[key]["writeID"] != replay[key][
+                            "writeID"] or state[key]["value"] != replay[key][
+                                "value"]:
+                        mismatch.append({
+                            "key": key,
+                            "extected": state[key],
+                            "reconstructed": replay[key]
+                        })
+                for key in replay.keys():
+                    if key not in state:
+                        extra.append({
+                            "key": key,
+                            "reconstructed": replay[key]
+                        })
+                if len(missing) > 0 or len(mismatch) > 0 or len(extra) > 0:
+                    self.data_loss_info = {
+                        "missing": missing,
+                        "mismatch": mismatch,
+                        "extra": extra
+                    }
+                    self.has_data_loss = True
+            except:
+                consumer_tps = None
+                pass
+            time.sleep(1)
 
     def catchup(self, state, from_offset, to_offset, cmd, metrics):
         consumer = None
@@ -178,7 +225,93 @@ class KafkaKV:
                 pass
             raise
 
+    def catchup_beginning(self, consumer_tps, state, to_offset, cmd, metrics):
+        init_started = time.time()
+
+        if consumer_tps == None:
+            try:
+                consumer = KafkaConsumer(
+                    client_id=uuid.uuid4(),
+                    bootstrap_servers=self.bootstrap_servers,
+                    request_timeout_ms=1000,
+                    enable_auto_commit=False,
+                    auto_offset_reset="earliest")
+            except ValueError as e:
+                msg = m("Error on creating consumer",
+                        type=str(type(e)),
+                        msg=str(e),
+                        stacktrace=traceback.format_exc()).with_time()
+                kafkakv_log.info(msg)
+                kafkakv_err.info(msg)
+                kafkakv_stdout.info("Error on creating consumer")
+                raise RequestTimedout()
+            tps = [TopicPartition(self.topic, 0)]
+            consumer.assign(tps)
+            consumer_tps = (consumer, tps)
+
+        consumer, tps = consumer_tps
+
+        try:
+            metrics["init_us"] = int((time.time() - init_started) * 1000000)
+            catchup_started = time.time()
+            consumer.seek_to_beginning(tps[0])
+            processed = 0
+
+            while consumer.position(tps[0]) <= to_offset:
+                rs = consumer.poll()
+
+                if tps[0] not in rs:
+                    continue
+
+                for record in rs[tps[0]]:
+                    if record.offset > to_offset:
+                        break
+
+                    data = json.loads(record.value.decode("utf-8"))
+                    processed += 1
+
+                    if "writeID" not in data:
+                        continue
+
+                    if "prevWriteID" in data:
+                        if data["key"] not in state:
+                            continue
+
+                        current = state[data["key"]]
+                        if current["writeID"] == data["prevWriteID"]:
+                            state[data["key"]] = {
+                                "value": data["value"],
+                                "writeID": data["writeID"]
+                            }
+                    else:
+                        state[data["key"]] = {
+                            "value": data["value"],
+                            "writeID": data["writeID"]
+                        }
+
+            kafkakv_log.info(
+                m("caught",
+                  cmd=cmd,
+                  sent_offset=to_offset,
+                  processed=processed).with_time())
+            metrics["catchup_us"] = int(
+                (time.time() - catchup_started) * 1000000)
+            return consumer_tps
+        except:
+            try:
+                consumer.close()
+            except:
+                pass
+            raise
+
     def execute(self, payload, cmd, metrics):
+        if not self.has_accessed and self.offset is not None:
+            self.has_accessed = True
+            if self.check_history:
+                thread = threading.Thread(
+                    target=lambda: self.start_history_check_thread())
+                thread.start()
+
         msg = json.dumps(payload).encode("utf-8")
 
         offset = self.offset
@@ -322,6 +455,7 @@ class KafkaKV:
 #################################################################################################
 
 parser = argparse.ArgumentParser(description='kafka-kvelldb')
+parser.add_argument('--check-history', action='store_true')
 parser.add_argument('--log', required=True)
 parser.add_argument('--err', required=True)
 parser.add_argument('--topic', required=True)
@@ -358,8 +492,8 @@ kafkakv_stdout_handler.setFormatter(
     logging.Formatter("%(asctime)s - %(message)s"))
 kafkakv_stdout.addHandler(kafkakv_stdout_handler)
 
-kafkakv = KafkaKV(args.inflight_limit, args.broker, args.topic,
-                  json.loads(args.acks))
+kafkakv = KafkaKV(args.check_history, args.inflight_limit, args.broker,
+                  args.topic, json.loads(args.acks))
 
 app = Flask(__name__)
 
@@ -369,6 +503,9 @@ def read():
     metrics = {}
     key = request.args.get("key")
     read_id = request.args.get("read_id")
+
+    if kafkakv.has_data_loss:
+        return {"status": "violation", "info": kafkakv.data_loss_info}
 
     try:
         data = kafkakv.read(key, read_id, metrics)
@@ -395,6 +532,10 @@ def read():
 def write():
     metrics = {}
     body = request.get_json(force=True)
+
+    if kafkakv.has_data_loss:
+        return {"status": "violation", "info": kafkakv.data_loss_info}
+
     try:
         data = kafkakv.write(body["key"], body["value"], body["writeID"],
                              metrics)
@@ -421,6 +562,9 @@ def write():
 def cas():
     metrics = {}
     body = request.get_json(force=True)
+
+    if kafkakv.has_data_loss:
+        return {"status": "violation", "info": kafkakv.data_loss_info}
 
     try:
         data = kafkakv.cas(body["key"], body["prevWriteID"], body["value"],

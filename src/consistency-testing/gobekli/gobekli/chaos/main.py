@@ -20,7 +20,6 @@ import traceback
 import pathlib
 from datetime import datetime
 
-from gobekli.kvapi import KVNode
 from gobekli.workloads.symmetrical_mrsw import MRSWWorkload
 from gobekli.logging import (init_logs, m)
 
