@@ -26,7 +26,6 @@
 #include <seastar/core/print.hh>
 #include <seastar/util/log.hh>
 
-using namespace raft;                 // NOLINT
 using namespace std::chrono_literals; // NOLINT
 
 struct bootstrap_fixture : raft::simple_record_fixture {

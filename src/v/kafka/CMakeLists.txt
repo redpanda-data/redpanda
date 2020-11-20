@@ -51,3 +51,7 @@ v_cc_library(
     absl::flat_hash_set
 )
 add_subdirectory(tests)
+
+set_source_files_properties(
+    groups/group.cc # too big => negative impact on minimal rebuilds for unity
+  PROPERTIES SKIP_UNITY_BUILD_INCLUSION 1)

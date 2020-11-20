@@ -29,13 +29,9 @@
 #include <bits/stdint-intn.h>
 #include <boost/test/tools/old/interface.hpp>
 
-using namespace std::chrono_literals;
+#include "topic_table_fixture.h"
 
-static std::unique_ptr<cluster::allocation_node>
-create_allocation_node(model::node_id nid, uint32_t cores) {
-    return std::make_unique<cluster::allocation_node>(
-      nid, cores, std::unordered_map<ss::sstring, ss::sstring>{});
-}
+using namespace std::chrono_literals;
 
 struct cmd_test_fixture {
     cluster::topic_configuration_assignment make_tp_configuration(

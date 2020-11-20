@@ -16,20 +16,13 @@
 #include "storage/logger.h"
 #include "storage/parser.h"
 #include "utils/vint.h"
+#include "bytes/utils.h"
 #include "vlog.h"
 
 #include <limits>
 #include <type_traits>
 
 namespace storage {
-static inline void crc_extend_iobuf(crc32& crc, const iobuf& buf) {
-    auto in = iobuf::iterator_consumer(buf.cbegin(), buf.cend());
-    (void)in.consume(buf.size_bytes(), [&crc](const char* src, size_t sz) {
-        // NOLINTNEXTLINE
-        crc.extend(reinterpret_cast<const uint8_t*>(src), sz);
-        return ss::stop_iteration::no;
-    });
-}
 class checksumming_consumer final : public batch_consumer {
 public:
     static constexpr size_t max_segment_size = static_cast<size_t>(
