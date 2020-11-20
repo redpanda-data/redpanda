@@ -17,6 +17,7 @@
 #include "model/metadata.h"
 #include "raft/types.h"
 #include "test_utils/fixture.h"
+#include "topic_table_fixture.h"
 #include "units.h"
 
 #include <seastar/core/abort_source.hh>
@@ -28,8 +29,6 @@
 
 #include <bits/stdint-intn.h>
 #include <boost/test/tools/old/interface.hpp>
-
-#include "topic_table_fixture.h"
 
 using namespace std::chrono_literals;
 
