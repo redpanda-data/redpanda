@@ -22,7 +22,7 @@ import { hash64 } from "xxhash";
 /**
  * FileManager class is an inotify implementation, it receives a
  * Repository and updates this object when to  add a new file in
- * submit directory and read previous files from the active directory when
+ * submit folder and read previous files from the active folder when
  * this class is instanced
  */
 class FileManager {
@@ -35,8 +35,9 @@ class FileManager {
   ) {
     try {
       this.watcher = new Inotify(this.submitDir);
-      this.readActiveCoprocessor(repository);
-      this.updateRepositoryOnNewFile(repository);
+      this.readCoprocessorFolder(repository, this.activeDir)
+        .then(() => this.readCoprocessorFolder(repository, this.submitDir))
+        .then(() => this.updateRepositoryOnNewFile(repository));
     } catch (e) {
       console.error(e);
       //TODO: implement winston for loggin information and error handler
@@ -83,13 +84,14 @@ class FileManager {
   }
 
   /**
-   * reads the files in the "active" folder, loads them as Handles
+   * reads the files in the given folder, loads them as Handles
    * and adds them to the given Repository
    * @param repository
+   * @param folder
    */
-  readActiveCoprocessor(repository: Repository): void {
+  readCoprocessorFolder(repository: Repository, folder: string): Promise<void> {
     const readdirPromise = promisify(readdir);
-    readdirPromise(this.activeDir)
+    return readdirPromise(folder)
       .then((files) => {
         files.forEach((file) =>
           this.addCoprocessor(`${this.activeDir}/${file}`, repository, false)
@@ -127,7 +129,7 @@ class FileManager {
 
   /**
    * Deregister the given Coprocessor and move the file where it's defined to
-   * the 'inactive' directory.
+   * the 'inactive' folder.
    * @param coprocessor is a Coprocessor implementation.
    */
   deregisterCoprocessor(coprocessor: Coprocessor): Promise<Handle> {

@@ -28,7 +28,11 @@ let client: SupervisorClient;
 let manageServer: ManagementServer;
 
 const createStubs = (sandbox: SinonSandbox) => {
-  sandbox.stub(FileManager.prototype, "readActiveCoprocessor");
+  const readCoprocessorFolder = sandbox.stub(
+    FileManager.prototype,
+    "readCoprocessorFolder"
+  );
+  readCoprocessorFolder.returns(Promise.resolve());
   sandbox.stub(FileManager.prototype, "updateRepositoryOnNewFile");
   sandbox.stub(INotifyWait.prototype);
   const spyFireExceptionServer = sandbox.stub(

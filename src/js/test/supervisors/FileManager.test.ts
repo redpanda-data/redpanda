@@ -27,6 +27,11 @@ let client: ManagementClient;
 const createStubs = (sandbox: SinonSandbox) => {
   sandbox.stub(INotifyWait.prototype);
   const readdirFake = sandbox.stub(fs, "readdir");
+  const readFolderStub = sandbox.stub(
+    FileManager.prototype,
+    "readCoprocessorFolder"
+  );
+  readFolderStub.returns(Promise.resolve());
   const moveCoprocessor = sandbox.stub(
     FileManager.prototype,
     "moveCoprocessorFile"
@@ -36,6 +41,7 @@ const createStubs = (sandbox: SinonSandbox) => {
     moveCoprocessor,
     getCoprocessor,
     readdirFake,
+    readFolderStub,
   };
 };
 
@@ -53,24 +59,36 @@ describe("FileManager", () => {
     await server.closeConnection();
   });
 
-  it("should read the existing file into active directory", () => {
-    const { readdirFake } = createStubs(sinonInstance);
-    const repo = new Repository();
-    new FileManager(repo, "submit", "active", "inactive", client);
-    assert(readdirFake.firstCall.calledWith("active"));
-  });
+  it(
+    "should read the existing file into active directory and after that " +
+      "read submit directory",
+    () => {
+      const { readFolderStub } = createStubs(sinonInstance);
+      const repo = new Repository();
+      new FileManager(repo, "submit", "active", "inactive", client);
+      // wait for promise readFolderCoprocessor resolves
+      setTimeout(() => {
+        assert(readFolderStub.firstCall.calledWith(repo, "active"));
+        assert(readFolderStub.secondCall.calledWith(repo, "submit"));
+      }, 300);
+    }
+  );
 
-  it("should add listen for new file event", () => {
+  it("should add listen for new file event", (done) => {
     const repo = new Repository();
-    const { readdirFake } = createStubs(sinonInstance);
+    const { readFolderStub } = createStubs(sinonInstance);
     const updateFile = sinonInstance.stub(
       FileManager.prototype,
       "updateRepositoryOnNewFile"
     );
     new FileManager(repo, "submit", "active", "inactive", client);
-    assert(readdirFake.firstCall.calledWith("active"));
-    assert(updateFile.called);
-    assert(updateFile.calledWith(repo));
+    // wait for promise readFolderCoprocessor resolves
+    setTimeout(() => {
+      assert(readFolderStub.firstCall.calledWith(repo, "active"));
+      assert(updateFile.called);
+      assert(updateFile.calledWith(repo));
+      done();
+    }, 300);
   });
 
   it(
