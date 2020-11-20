@@ -106,5 +106,5 @@ inline rpc::client<coproc::script_manager_client_protocol> make_client() {
       rpc::transport_configuration{
         .server_addr = ss::socket_address(
           ss::net::inet_address("127.0.0.1"), 43118),
-        .credentials = std::nullopt});
+        .credentials = nullptr});
 }
