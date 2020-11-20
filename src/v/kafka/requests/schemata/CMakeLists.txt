@@ -32,7 +32,9 @@ set(schemata
   create_topics_request.json
   create_topics_response.json
   sasl_handshake_request.json
-  sasl_handshake_response.json)
+  sasl_handshake_response.json
+  sasl_authenticate_request.json
+  sasl_authenticate_response.json)
 
 set(srcs)
 foreach(schema ${schemata})

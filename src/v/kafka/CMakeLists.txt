@@ -22,6 +22,7 @@ set(request_srcs
   requests/alter_configs_request.cc
   requests/describe_groups_request.cc
   requests/sasl_handshake_request.cc
+  requests/sasl_authenticate_request.cc
   requests/topics/types.cc
   requests/topics/topic_utils.cc)
 
