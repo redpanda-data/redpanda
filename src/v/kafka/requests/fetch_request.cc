@@ -10,7 +10,6 @@
 #include "kafka/requests/fetch_request.h"
 
 #include "cluster/namespace.h"
-#include "cluster/partition.h"
 #include "cluster/partition_manager.h"
 #include "kafka/errors.h"
 #include "kafka/requests/batch_consumer.h"
@@ -29,28 +28,6 @@
 #include <string_view>
 
 namespace kafka {
-
-class partition_wrapper {
-public:
-    partition_wrapper(
-      ss::lw_shared_ptr<cluster::partition> partition,
-      std::optional<storage::log> log = std::nullopt)
-      : _partition(partition)
-      , _log(log) {}
-
-    ss::future<model::record_batch_reader> make_reader(
-      storage::log_reader_config config,
-      std::optional<model::timeout_clock::time_point> deadline) {
-        return _log ? _log->make_reader(config)
-                    : _partition->make_reader(config, deadline);
-    }
-
-    cluster::partition_probe& probe() { return _partition->probe(); }
-
-private:
-    ss::lw_shared_ptr<cluster::partition> _partition;
-    std::optional<storage::log> _log;
-};
 
 void fetch_request::encode(response_writer& writer, api_version version) {
     writer.write(replica_id());

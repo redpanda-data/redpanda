@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "cluster/partition.h"
 #include "kafka/requests/request_context.h"
 #include "kafka/requests/response.h"
 #include "likely.h"
@@ -414,6 +415,28 @@ struct op_context {
     bool over_min_bytes() const {
         return static_cast<int32_t>(response_size) >= request.min_bytes;
     }
+};
+
+class partition_wrapper {
+public:
+    partition_wrapper(
+      ss::lw_shared_ptr<cluster::partition> partition,
+      std::optional<storage::log> log = std::nullopt)
+      : _partition(partition)
+      , _log(log) {}
+
+    ss::future<model::record_batch_reader> make_reader(
+      storage::log_reader_config config,
+      std::optional<model::timeout_clock::time_point> deadline = std::nullopt) {
+        return _log ? _log->make_reader(config)
+                    : _partition->make_reader(config, deadline);
+    }
+
+    cluster::partition_probe& probe() { return _partition->probe(); }
+
+private:
+    ss::lw_shared_ptr<cluster::partition> _partition;
+    std::optional<storage::log> _log;
 };
 
 struct fetch_config {
