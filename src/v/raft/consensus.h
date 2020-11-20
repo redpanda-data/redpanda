@@ -307,6 +307,7 @@ private:
     ss::future<std::error_code> change_configuration(Func&&);
 
     ss::future<> maybe_commit_configuration(ss::semaphore_units<>);
+    void maybe_promote_to_voter(model::node_id);
 
     ss::future<model::record_batch_reader>
       do_make_reader(storage::log_reader_config);

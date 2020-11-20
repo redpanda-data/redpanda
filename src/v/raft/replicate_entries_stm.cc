@@ -245,7 +245,7 @@ replicate_entries_stm::replicate_entries_stm(
   , _req(std::move(r))
   , _followers_seq(std::move(seqs))
   , _share_sem(1)
-  , _ctxlog(_ptr->group(), _ptr->ntp()) {}
+  , _ctxlog(_ptr->_ctxlog) {}
 
 replicate_entries_stm::~replicate_entries_stm() {
     vassert(
