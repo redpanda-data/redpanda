@@ -75,9 +75,12 @@ class BaseChaosTest(Test):
 
     def run(self, failure_factory):
         cluster = RedpandaDuckCluster(self.service, self.redpanda_mu)
-        workload_factory = lambda: MRSWWorkload(
-            list(map(lambda x: KVNode(x, x), self.kafkakv_mu.endpoints)), 3, 3,
-            [])
+
+        def workload_factory():
+            nodes = []
+            for x in self.kafkakv_mu.endpoints:
+                nodes.append(KVNode(len(nodes), x, x))
+            return MRSWWorkload(nodes, 3, 3, [])
 
         asyncio.run(
             inject_recover_scenario_aio(BaseChaosTest.PERSISTENT_ROOT,

@@ -12,7 +12,6 @@ import json
 import sys
 import uuid
 
-from gobekli.kvapi import KVNode, RequestTimedout, RequestCanceled
 from gobekli.logging import m
 from rptest.chaos.kafkakv_muservice import KafkaKVMuService
 from rptest.chaos.mount_muservice import MountMuService

@@ -68,7 +68,8 @@ class WriterClient:
                 data = response.record
                 op_ended = loop.time()
                 log_latency("ok", op_ended - self.started_at,
-                            op_ended - op_started, response.metrics)
+                            op_ended - op_started, self.node.idx,
+                            response.metrics)
                 cmdlog.info(
                     m(type="write_ended",
                       node=self.node.name,
@@ -94,7 +95,7 @@ class WriterClient:
                     self.stat.inc(self.node.name + ":out")
                     op_ended = loop.time()
                     log_latency("out", op_ended - self.started_at,
-                                op_ended - op_started)
+                                op_ended - op_started, self.node.idx)
                     cmdlog.info(
                         m(type="write_timedout",
                           node=self.node.name,
@@ -119,7 +120,7 @@ class WriterClient:
                     self.stat.inc(self.node.name + ":err")
                     op_ended = loop.time()
                     log_latency("err", op_ended - self.started_at,
-                                op_ended - op_started)
+                                op_ended - op_started, self.node.idx)
                     cmdlog.info(
                         m(type="write_canceled",
                           node=self.node.name,

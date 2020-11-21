@@ -65,7 +65,7 @@ class MWClient:
             data = response.record
             op_ended = loop.time()
             log_latency("ok", op_ended - self.started_at,
-                        op_ended - op_started, response.metrics)
+                        op_ended - op_started, self.node.idx, response.metrics)
             cmdlog.info(
                 m(type="write_ended",
                   node=self.node.name,
@@ -93,7 +93,7 @@ class MWClient:
                 self.stat.inc(self.node.name + ":out")
                 op_ended = loop.time()
                 log_latency("out", op_ended - self.started_at,
-                            op_ended - op_started)
+                            op_ended - op_started, self.node.idx)
                 cmdlog.info(
                     m(type="write_timedout",
                       node=self.node.name,
@@ -114,7 +114,7 @@ class MWClient:
                 self.stat.inc(self.node.name + ":err")
                 op_ended = loop.time()
                 log_latency("err", op_ended - self.started_at,
-                            op_ended - op_started)
+                            op_ended - op_started, self.node.idx)
                 cmdlog.info(
                     m(type="write_canceled",
                       node=self.node.name,
@@ -185,7 +185,7 @@ class MRClient:
             read = response.record
             op_ended = loop.time()
             log_latency("ok", op_ended - self.started_at,
-                        op_ended - op_started, response.metrics)
+                        op_ended - op_started, self.node.idx, response.metrics)
             if read == None:
                 cmdlog.info(
                     m(type="read_404",
@@ -209,7 +209,7 @@ class MRClient:
             try:
                 op_ended = loop.time()
                 log_latency("out", op_ended - self.started_at,
-                            op_ended - op_started)
+                            op_ended - op_started, self.node.idx)
                 self.stat.inc(self.node.name + ":out")
                 cmdlog.info(
                     m(type="read_timedout",
@@ -229,7 +229,7 @@ class MRClient:
             try:
                 op_ended = loop.time()
                 log_latency("err", op_ended - self.started_at,
-                            op_ended - op_started)
+                            op_ended - op_started, self.node.idx)
                 self.stat.inc(self.node.name + ".err")
                 cmdlog.info(
                     m(type="read_canceled",

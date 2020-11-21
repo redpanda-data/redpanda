@@ -73,7 +73,7 @@ def workload_factory(config):
         host = endpoint["host"]
         port = endpoint["httpport"]
         address = f"{host}:{port}"
-        nodes.append(KVNode(endpoint["id"], address))
+        nodes.append(KVNode(endpoint["idx"], endpoint["id"], address))
     if config["workload"]["name"] == "mrsw":
         return MRSWWorkload(nodes, config["writers"], config["readers"],
                             config["ss_metrics"])

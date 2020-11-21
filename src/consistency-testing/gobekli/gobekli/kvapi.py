@@ -39,11 +39,12 @@ Response = namedtuple('Response', ['record', 'metrics'])
 
 
 class KVNode:
-    def __init__(self, name, address):
+    def __init__(self, idx, name, address):
         timeout = aiohttp.ClientTimeout(total=10)
         self.session = aiohttp.ClientSession(timeout=timeout)
         self.address = address
         self.name = name
+        self.idx = idx
 
     async def get_aio(self, key, read_id):
         data = None
