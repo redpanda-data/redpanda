@@ -31,7 +31,7 @@ void router_test_fixture::validate_result(
     for (const auto& ack : reply.acks) {
         const auto& [sid, topic_acks] = ack;
         const auto found = std::find_if(
-          layout.cbegin(), layout.cend(), [&](const auto& data_e) {
+          layout.cbegin(), layout.cend(), [sid = sid](const auto& data_e) {
               return data_e.id == sid;
           });
         vassert(found != layout.end(), "Missing script id: {}", sid);
