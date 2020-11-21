@@ -14,6 +14,7 @@ import sys
 import json
 import logging
 import traceback
+from collections import defaultdict
 
 from gobekli.kvapi import RequestCanceled, RequestTimedout, RequestViolated
 from gobekli.consensus import Violation
@@ -329,14 +330,22 @@ class COMRMWWorkload:
         loop = asyncio.get_running_loop()
         started_at = loop.time()
 
+        clients_by_endpoint = defaultdict(lambda: [])
+
         for key in keys:
             for kv in self.kv_nodes:
-                clients.append(MWClient(started_at, stat, checker, kv, key))
+                mwclient = MWClient(started_at, stat, checker, kv, key)
+                clients_by_endpoint[kv.address].append(mwclient)
                 for _ in range(0, self.numOfReaders):
-                    clients.append(MRClient(started_at, stat, checker, kv,
-                                            key))
+                    mrclient = MRClient(started_at, stat, checker, kv, key)
+                    clients_by_endpoint[kv.address].append(mrclient)
 
+        clients_groups = list(clients_by_endpoint.values())
+        group_idx = 0
         while checker.is_valid and (not checker.is_aborted) and self.is_active:
+            clients = clients_groups[group_idx]
+            group_idx = (group_idx + 1) % len(clients_groups)
+
             i = random.randint(0, len(clients) - 1)
             client = clients[i]
             # TODO: keep track of tasks and wait them in the end
