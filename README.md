@@ -6,7 +6,7 @@
 ![Go](https://github.com/vectorizedio/redpanda/workflows/Go/badge.svg)
 ![C++](https://github.com/vectorizedio/redpanda/workflows/build-test/badge.svg)
 
-[<img src="docs/PANDA_sitting.jpg" alt="redpanda sitting" width="400"/>](https://vectorized.io/redpanda)
+[<p align="center"><img src="docs/PANDA_sitting.jpg" alt="redpanda sitting" width="400"/></p>](https://vectorized.io/redpanda)
 
 
 Redpanda is a streaming platform for mission critical workloads. Kafka® compatible, 
