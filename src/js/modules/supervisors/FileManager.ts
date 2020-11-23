@@ -65,15 +65,27 @@ class FileManager {
     validatePrevCoprocessor = true
   ): Promise<Handle> {
     return this.getHandle(filePath).then((handle) => {
-      const preCoprocessor = repository.findByGlobalId(handle);
-      if (preCoprocessor && validatePrevCoprocessor) {
-        if (preCoprocessor.checksum === handle.checksum) {
+      const prevHandle = repository.findByGlobalId(handle);
+      if (prevHandle && validatePrevCoprocessor) {
+        if (prevHandle.checksum === handle.checksum) {
           return this.moveCoprocessorFile(handle, this.inactiveDir);
         } else {
-          return this.moveCoprocessorFile(preCoprocessor, this.inactiveDir)
-            .then(() => repository.remove(preCoprocessor))
+          return this.moveCoprocessorFile(prevHandle, this.inactiveDir)
+            .then(() =>
+              this.deregisterCoprocessor(prevHandle.coprocessor).catch((e) => {
+                console.error(e);
+                return Promise.resolve();
+              })
+            )
             .then(() => this.moveCoprocessorFile(handle, this.activeDir))
-            .then((newCoprocessor) => repository.add(newCoprocessor));
+            .then((newCoprocessor) => repository.add(newCoprocessor))
+            .then(() => this.enableCoprocessor([handle.coprocessor]))
+            .then(() => handle)
+            .catch((e) =>
+              this.moveCoprocessorFile(handle, this.inactiveDir).then(() =>
+                Promise.reject(e)
+              )
+            );
         }
       } else {
         return this.moveCoprocessorFile(handle, this.activeDir)
@@ -81,6 +93,11 @@ class FileManager {
           .then((newHandle) =>
             this.enableCoprocessor([newHandle.coprocessor]).then(
               () => newHandle
+            )
+          )
+          .catch((e) =>
+            this.moveCoprocessorFile(handle, this.inactiveDir).then(() =>
+              Promise.reject(e)
             )
           );
       }
