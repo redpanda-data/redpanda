@@ -77,8 +77,8 @@ def log_violation(pid, message):
 def log_latency(type, time_s, latency_s, endpoint_idx, metrics=None):
     message = f"{int(time_s*1000*1000)}\t{int(latency_s*1000*1000)}\t{type}\t{endpoint_idx}"
     if metrics != None:
-        for key in latency_metrics:
-            message += "\t"
-            if key in metrics:
+        if all(key in metrics for key in latency_metrics):
+            for key in latency_metrics:
+                message += "\t"
                 message += str(metrics[key])
     latlog.info(message)

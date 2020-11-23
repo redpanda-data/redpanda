@@ -125,7 +125,7 @@
     "cluster_warmup": 30,
     "exploitation": 60,
     "cooldown": 120,
-    "ss_metrics": [],
+    "ss_metrics": ["send_us", "catchup_us"],
     "cmd_log": "cmd.log",
     "latency_log": "lat.log",
     "availability_log": "1s.log",
