@@ -286,9 +286,10 @@ make_ready_partition_response_error(error_code error) {
 /**
  * Low-level handler for reading from an ntp. Runs on ntp's home core.
  */
-static ss::future<fetch_response::partition_response> read_from_partition(
+static ss::future<read_result> read_from_partition(
   partition_wrapper pw,
   fetch_config config,
+  bool foreign_read,
   std::optional<model::timeout_clock::time_point> deadline) {
     storage::log_reader_config reader_config(
       config.start_offset,
@@ -301,31 +302,34 @@ static ss::future<fetch_response::partition_response> read_from_partition(
       std::nullopt);
 
     reader_config.strict_max_bytes = config.strict_max_bytes;
+    auto hw = pw.high_watermark();
+    auto lso = pw.last_stable_offset();
 
     return pw.make_reader(reader_config, deadline)
-      .then([pw, timeout = config.timeout](
-              model::record_batch_reader reader) mutable {
-          vlog(klog.trace, "fetch reader {}", reader);
-          return std::move(reader)
-            .consume(kafka_batch_serializer(), timeout)
-            .then([pw](kafka_batch_serializer::result res) mutable {
-                /*
-                 * return path will fill in other response fields.
-                 */
-                pw.probe().add_records_fetched(res.record_count);
-                return fetch_response::partition_response{
-                  .error = error_code::none,
-                  .record_set = std::move(res.data),
-                };
-            });
+      .then([hw, lso, foreign_read, deadline](model::record_batch_reader rdr) {
+          // if we are on remote core, we MUST use foreign record batch reader.
+          if (foreign_read) {
+              return model::consume_reader_to_memory(
+                       std::move(rdr), deadline.value_or(model::no_timeout))
+                .then([hw, lso](ss::circular_buffer<model::record_batch> data) {
+                    return read_result(
+                      model::make_foreign_memory_record_batch_reader(
+                        std::move(data)),
+                      hw,
+                      lso);
+                });
+          }
+          return ss::make_ready_future<read_result>(
+            read_result(std::move(rdr), hw, lso));
       })
-      .handle_exception_type([](const raft::offset_monitor::wait_aborted&) {
-          // no data are returned
-          return fetch_response::partition_response{
-            .error = error_code::none,
-            .record_set = iobuf(),
-          };
-      });
+      .handle_exception_type(
+        [hw, lso](const raft::offset_monitor::wait_aborted&) {
+            // return an empty reader
+            auto reader = model::make_memory_record_batch_reader(
+              ss::circular_buffer<model::record_batch>{});
+            return read_result(std::move(reader), hw, lso);
+        });
+    ;
 }
 
 /**
@@ -339,13 +343,14 @@ read_from_ntp(op_context& octx, model::ntp ntp, fetch_config config) {
      * the tp in the metadata cache so that this condition is unlikely
      * to pass.
      */
-    const auto mntpv = model::materialized_ntp(std::move(ntp));
+    auto mntpv = model::materialized_ntp(std::move(ntp));
     auto shard = octx.rctx.shards().shard_for(mntpv.source_ntp());
 
     if (unlikely(!shard)) {
         return make_ready_partition_response_error(
           error_code::unknown_topic_or_partition);
     }
+    bool foreign_read = shard != ss::this_shard_id();
 
     return octx.rctx.partition_manager().invoke_on(
       *shard,
@@ -353,25 +358,29 @@ read_from_ntp(op_context& octx, model::ntp ntp, fetch_config config) {
       [initial_fetch = octx.initial_fetch,
        deadline = octx.deadline,
        mntpv = std::move(mntpv),
+         foreign_read,
        config](cluster::partition_manager& mgr) {
           /*
            * lookup the ntp's partition
            */
           auto partition = mgr.get(mntpv.source_ntp());
           if (unlikely(!partition)) {
-              return make_ready_partition_response_error(
+              return ss::make_ready_future<read_result>(
                 error_code::unknown_topic_or_partition);
           }
           if (unlikely(!partition->is_leader())) {
-              return make_ready_partition_response_error(
+              return ss::make_ready_future<read_result>(
                 error_code::not_leader_for_partition);
           }
           if (mntpv.is_materialized()) {
               if (auto log = mgr.log(mntpv.input_ntp())) {
                   return read_from_partition(
-                    partition_wrapper(partition, log), config, std::nullopt);
+                    partition_wrapper(partition, log),
+                    config,
+                    foreign_read,
+                    std::nullopt);
               } else {
-                  return make_ready_partition_response_error(
+                  return ss::make_ready_future<read_result>(
                     error_code::unknown_topic_or_partition);
               }
           }
@@ -383,14 +392,8 @@ read_from_ntp(op_context& octx, model::ntp ntp, fetch_config config) {
           if (
             config.start_offset < partition->start_offset()
             || config.start_offset > max_offset) {
-              return ss::make_ready_future<fetch_response::partition_response>(
-                fetch_response::partition_response{
-                  .error = error_code::offset_out_of_range,
-                  .high_watermark = model::offset(-1),
-                  .last_stable_offset = model::offset(-1),
-                  .log_start_offset = model::offset(-1),
-                  .record_set = iobuf(),
-                });
+              return ss::make_ready_future<read_result>(
+                error_code::offset_out_of_range);
           }
           /**
            * Check if we should wait for more data.
@@ -407,11 +410,25 @@ read_from_ntp(op_context& octx, model::ntp ntp, fetch_config config) {
           return read_from_partition(
                    partition_wrapper(partition),
                    config,
-                   can_wait ? deadline : std::nullopt)
-            .then([partition](fetch_response::partition_response&& resp) {
-                resp.last_stable_offset = partition->last_stable_offset();
-                resp.high_watermark = partition->high_watermark();
-                return std::move(resp);
+                   foreign_read,
+                   can_wait ? deadline : std::nullopt);
+       })
+      .then([timeout = config.timeout](read_result res) mutable {
+          vlog(klog.trace, "fetch reader {}", res.reader);
+          // error case
+          if (!res.reader) {
+              return make_ready_partition_response_error(res.error);
+          }
+          return std::move(*res.reader)
+            .consume(kafka_batch_serializer(), timeout)
+            .then([](kafka_batch_serializer::result res) mutable {
+                /*
+                 * return path will fill in other response fields.
+                 */
+                return fetch_response::partition_response{
+                  .error = error_code::none,
+                  .record_set = std::move(res.data),
+                };
             });
       });
 }

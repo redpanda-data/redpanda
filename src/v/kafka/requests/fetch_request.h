@@ -429,6 +429,16 @@ public:
 
     cluster::partition_probe& probe() { return _partition->probe(); }
 
+    model::offset high_watermark() const {
+        return _log ? _log->offsets().dirty_offset
+                    : _partition->high_watermark();
+    }
+
+    model::offset last_stable_offset() const {
+        return _log ? _log->offsets().dirty_offset
+                    : _partition->last_stable_offset();
+    }
+
 private:
     ss::lw_shared_ptr<cluster::partition> _partition;
     std::optional<storage::log> _log;
@@ -439,6 +449,25 @@ struct fetch_config {
     size_t max_bytes;
     model::timeout_clock::time_point timeout;
     bool strict_max_bytes{false};
+};
+/**
+ * Simple type aggregating either reader and offsets or an error
+ */
+struct read_result {
+    explicit read_result(error_code e)
+      : error(e) {}
+
+    read_result(
+      model::record_batch_reader rdr, model::offset hw, model::offset lso)
+      : reader(std::move(rdr))
+      , high_watermark(hw)
+      , last_stable_offset(lso)
+      , error(error_code::none) {}
+
+    std::optional<model::record_batch_reader> reader;
+    model::offset high_watermark;
+    model::offset last_stable_offset;
+    error_code error;
 };
 
 ss::future<fetch_response::partition_response>
