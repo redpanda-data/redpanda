@@ -599,8 +599,8 @@ def make_latency_chart(title, endpoint_idx, log_dir, availability_log,
                 if idx != endpoint_idx:
                     continue
                 maxmaxx = max(maxmaxx, lat)
+                maxtick = max(maxtick, tick)
                 if "ok" in line:
-                    maxtick = max(maxtick, tick)
                     mn = min(mn, lat)
                     maxlat = max(maxlat, lat)
                 out = f"{tick}\t{lat}"
