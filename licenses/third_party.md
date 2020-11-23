@@ -1,6 +1,5 @@
 # Licenses list as of 12/6/2019
 
-### Please update with every change of every dependency
 
 Dependencies sometimes change licenses between versions, 
 please keep this up to date with every new library use.
