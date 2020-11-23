@@ -373,6 +373,21 @@ class KafkaKV:
             m("sent", cmd=cmd, base_offset=offset,
               sent_offset=written.offset).with_time())
 
+        if offset != None and written.offset <= offset:
+            error = f"Monotonicity violation: written offset ({written.offset}) is behind current offset ({offset})"
+            msg = m(error, stacktrace=stacktrace).with_time()
+            kafkakv_log.info(msg)
+            kafkakv_err.info(msg)
+            self.has_data_loss = True
+            self.data_loss_info = error
+        elif self.offset == written.offset:
+            error = f"Conflict write: written offset ({written.offset}) is same as the current offset ({self.offset})"
+            msg = m(error, stacktrace=stacktrace).with_time()
+            kafkakv_log.info(msg)
+            kafkakv_err.info(msg)
+            self.has_data_loss = True
+            self.data_loss_info = error
+
         try:
             state = self.catchup(state, offset, written.offset, cmd, metrics)
         except NoBrokersAvailable:
