@@ -9,26 +9,39 @@
 
 package template
 
-const wasmJs = `const { SimpleTransform, PolicyError } = require("@vectorizedio/wasm-api");
+const wasmJs = `const {
+  SimpleTransform,
+  PolicyError,
+} = require("@vectorizedio/wasm-api");
 const transform = new SimpleTransform();
 /* Topics that fire the transform function */
-transform.subscribe([
-  /*\"input topics\"*/
-]);
+transform.subscribe(["produce"]);
 /* The strategy the transform engine will use when handling errors */
 transform.errorHandler(PolicyError.SkipOnFailure);
+/* Auxiliar transform function for records */
+const uppercase = (record) => {
+  const newRecord = {
+    ...record,
+    value: record.value.map((char) => {
+      if (char > 97 && char < 122) {
+        return char - 32;
+      } else {
+        return char;
+      }
+    }),
+  };
+  return newRecord;
+}
 /* Transform function */
 transform.processRecord((recordBatch) => {
-  /* Custom logic */
   const result = new Map();
-  const transformedRecord = recordBatch.map(({ header, records }) => ({
-    header,
-    records: records.map((record) => ({
-      ...record,
-      value: Buffer.from("Change Record"),
-    })),
-  }));
-  result.set("topic", transformedRecord);
+  const transformedRecord = recordBatch.map(({ header, records }) => {
+    return {
+      header,
+      records: records.map(uppercase),
+    };
+  });
+  result.set("result", transformedRecord);
   return result;
 });
 exports["default"] = transform;

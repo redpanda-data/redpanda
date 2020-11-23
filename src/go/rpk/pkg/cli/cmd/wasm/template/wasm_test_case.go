@@ -13,16 +13,16 @@ const wasmTestJS = `const transform = require("../src/wasm");
 const { createRecordBatch } = require("@vectorizedio/wasm-api");
 const assert = require("assert");
 
-const record = createRecordBatch();
+const record = createRecordBatch({records: [{value: Buffer.from("test")}]});
 
 describe("transform", () => {
   it("should apply function", function() {
     const result = transform.default.apply(record);
     assert.strictEqual(result.size, 1);
-    assert(result.get("topic"));
+    assert(result.get("result"));
     assert(!result.get("unExpectedTopic"));
-    result.get("topic").records.forEach(record => {
-      assert.strictEqual(record.value, Buffer.from("Changed"))
+    result.get("result").records.forEach(record => {
+      assert.deepStrictEqual(record.value, Buffer.from("TEST"))
     })
   });
 });`
