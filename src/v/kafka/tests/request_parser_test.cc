@@ -79,7 +79,8 @@ get_request_context(application& app, ss::input_stream<char>&& input) {
                               app.group_router.local(),
                               app.shard_table.local(),
                               app.partition_manager,
-                              app.coordinator_ntp_mapper);
+                              app.coordinator_ntp_mapper,
+                              app.fetch_session_cache);
                         });
                 });
           });

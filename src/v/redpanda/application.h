@@ -18,6 +18,7 @@
 #include "config/configuration.h"
 #include "coproc/router.h"
 #include "coproc/service.h"
+#include "kafka/fetch_session_cache.h"
 #include "kafka/groups/coordinator_ntp_mapper.h"
 #include "kafka/groups/group_manager.h"
 #include "kafka/groups/group_router.h"
@@ -66,6 +67,7 @@ public:
       md_dissemination_service;
     ss::sharded<kafka::coordinator_ntp_mapper> coordinator_ntp_mapper;
     std::unique_ptr<cluster::controller> controller;
+    ss::sharded<kafka::fetch_session_cache> fetch_session_cache;
 
 private:
     using deferred_actions

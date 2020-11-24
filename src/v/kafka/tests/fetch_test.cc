@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 
 #include "kafka/requests/fetch_request.h"
+#include "kafka/types.h"
 #include "model/fundamental.h"
 #include "redpanda/tests/fixture.h"
 #include "resource_mgmt/io_priority.h"
@@ -146,39 +147,6 @@ SEASTAR_THREAD_TEST_CASE(partition_iterator) {
     }
 }
 
-// TODO: this sort of factory should eventually go into a kafka fixture that
-// builds on top of the redpanda application fixture.
-static kafka::request_context make_request_context(application& app) {
-    kafka::request_header header;
-    auto encoder_context = kafka::request_context(
-      app.metadata_cache,
-      app.controller->get_topics_frontend().local(),
-      std::move(header),
-      iobuf(),
-      std::chrono::milliseconds(0),
-      app.group_router.local(),
-      app.shard_table.local(),
-      app.partition_manager,
-      app.coordinator_ntp_mapper);
-
-    iobuf buf;
-    kafka::fetch_request request;
-    request.max_wait_time = std::chrono::milliseconds::zero();
-    kafka::response_writer writer(buf);
-    request.encode(writer, encoder_context.header().version);
-
-    return kafka::request_context(
-      app.metadata_cache,
-      app.controller->get_topics_frontend().local(),
-      std::move(header),
-      std::move(buf),
-      std::chrono::milliseconds(0),
-      app.group_router.local(),
-      app.shard_table.local(),
-      app.partition_manager,
-      app.coordinator_ntp_mapper);
-}
-
 // TODO: when we have a more precise log builder tool we can make these finer
 // grained tests. for now the test is coarse grained based on the random batch
 // builder.
@@ -189,7 +157,7 @@ FIXTURE_TEST(read_from_ntp_max_bytes, redpanda_thread_fixture) {
           .max_bytes = max_bytes,
           .timeout = model::no_timeout,
         };
-        auto rctx = make_request_context(app);
+        auto rctx = make_request_context();
         auto octx = kafka::op_context(
           std::move(rctx), ss::default_smp_service_group());
         auto resp = kafka::read_from_ntp(octx, ntp, config).get0();
@@ -257,6 +225,9 @@ FIXTURE_TEST(fetch_one, redpanda_thread_fixture) {
         req.max_bytes = std::numeric_limits<int32_t>::max();
         req.min_bytes = 1;
         req.max_wait_time = std::chrono::milliseconds(0);
+        // disable incremental fetches
+        req.session_id = kafka::invalid_fetch_session_id;
+        req.session_epoch = kafka::final_fetch_session_epoch;
         req.topics = {{
           .name = topic,
           .partitions = {{
@@ -382,6 +353,7 @@ FIXTURE_TEST(fetch_multi_partitions_debounce, redpanda_thread_fixture) {
     req.max_bytes = std::numeric_limits<int32_t>::max();
     req.min_bytes = 1;
     req.max_wait_time = std::chrono::milliseconds(3000);
+    req.session_id = kafka::invalid_fetch_session_id;
     req.topics = {{
       .name = topic,
       .partitions = {},
@@ -452,6 +424,7 @@ FIXTURE_TEST(fetch_one_debounce, redpanda_thread_fixture) {
     req.max_bytes = std::numeric_limits<int32_t>::max();
     req.min_bytes = 1;
     req.max_wait_time = std::chrono::milliseconds(5000);
+    req.session_id = kafka::invalid_fetch_session_id;
     req.topics = {{
       .name = topic,
       .partitions = {{

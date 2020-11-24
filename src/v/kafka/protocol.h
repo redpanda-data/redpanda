@@ -14,6 +14,7 @@
 #include "cluster/partition_manager.h"
 #include "cluster/shard_table.h"
 #include "cluster/topics_frontend.h"
+#include "kafka/fetch_session_cache.h"
 #include "kafka/groups/group_router.h"
 #include "kafka/quota_manager.h"
 #include "kafka/requests/request_context.h"
@@ -61,7 +62,8 @@ public:
       ss::sharded<kafka::group_router_type>&,
       ss::sharded<cluster::shard_table>&,
       ss::sharded<cluster::partition_manager>&,
-      ss::sharded<coordinator_ntp_mapper>& coordinator_mapper) noexcept;
+      ss::sharded<coordinator_ntp_mapper>& coordinator_mapper,
+      ss::sharded<fetch_session_cache>&) noexcept;
 
     ~protocol() noexcept override = default;
     protocol(const protocol&) = delete;
@@ -124,6 +126,7 @@ private:
     ss::sharded<cluster::shard_table>& _shard_table;
     ss::sharded<cluster::partition_manager>& _partition_manager;
     ss::sharded<kafka::coordinator_ntp_mapper>& _coordinator_mapper;
+    ss::sharded<kafka::fetch_session_cache>& _fetch_session_cache;
 };
 
 } // namespace kafka

@@ -11,6 +11,7 @@
 
 #pragma once
 #include "bytes/iobuf.h"
+#include "kafka/fetch_session_cache.h"
 #include "kafka/logger.h"
 #include "kafka/requests/request_reader.h"
 #include "kafka/types.h"
@@ -80,7 +81,8 @@ public:
       kafka::group_router_type& group_router,
       cluster::shard_table& shard_table,
       ss::sharded<cluster::partition_manager>& partition_manager,
-      ss::sharded<coordinator_ntp_mapper>& coordinator_mapper) noexcept
+      ss::sharded<coordinator_ntp_mapper>& coordinator_mapper,
+      ss::sharded<fetch_session_cache>& fetch_session_cache) noexcept
       : _metadata_cache(&metadata_cache)
       , _topics_frontend(&topics_frontend)
       , _header(std::move(header))
@@ -89,7 +91,8 @@ public:
       , _group_router(&group_router)
       , _shard_table(&shard_table)
       , _partition_manager(&partition_manager)
-      , _coordinator_mapper(&coordinator_mapper) {
+      , _coordinator_mapper(&coordinator_mapper)
+      , _fetch_session_cache(&fetch_session_cache) {
         // XXX: don't forget to extend the move ctor
     }
     ~request_context() noexcept = default;
@@ -102,7 +105,8 @@ public:
       , _group_router(o._group_router)
       , _shard_table(o._shard_table)
       , _partition_manager(o._partition_manager)
-      , _coordinator_mapper(o._coordinator_mapper) {}
+      , _coordinator_mapper(o._coordinator_mapper)
+      , _fetch_session_cache(o._fetch_session_cache) {}
     request_context& operator=(request_context&& o) noexcept {
         if (this != &o) {
             this->~request_context();
@@ -143,6 +147,10 @@ public:
         return *_partition_manager;
     }
 
+    fetch_session_cache& fetch_sessions() {
+        return _fetch_session_cache->local();
+    }
+
     // clang-format off
     template<typename ResponseType>
     CONCEPT(requires requires (
@@ -176,6 +184,7 @@ private:
     cluster::shard_table* _shard_table;
     ss::sharded<cluster::partition_manager>* _partition_manager;
     ss::sharded<kafka::coordinator_ntp_mapper>* _coordinator_mapper;
+    ss::sharded<kafka::fetch_session_cache>* _fetch_session_cache;
 };
 
 // Executes the API call identified by the specified request_context.

@@ -458,6 +458,10 @@ void application::wire_up_services() {
                       : nullptr;
     syschecks::systemd_message("Starting kafka RPC {}", kafka_cfg);
     construct_service(_kafka_server, kafka_cfg).get();
+    construct_service(
+      fetch_session_cache,
+      config::shard_local_cfg().fetch_session_eviction_timeout_ms())
+      .get();
 }
 
 void application::start() {
@@ -542,7 +546,8 @@ void application::start() {
             group_router,
             shard_table,
             partition_manager,
-            coordinator_ntp_mapper);
+            coordinator_ntp_mapper,
+            fetch_session_cache);
           s.set_protocol(std::move(proto));
       })
       .get();
