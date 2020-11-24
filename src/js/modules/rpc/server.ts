@@ -91,7 +91,7 @@ export class ProcessBatchServer extends SupervisorServer {
    * @param processBatchRequest
    * @param error
    */
-  private handleErrorByPolicy(
+  public handleErrorByPolicy(
     coprocessor: Coprocessor,
     processBatchRequest: ProcessBatchRequestItem,
     error: Error

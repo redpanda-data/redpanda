@@ -15,7 +15,11 @@ import {
   ProcessBatchRequestItem,
 } from "../domain/generatedRpc/generatedClasses";
 import { ProcessBatchServer } from "../rpc/server";
-import { createRecordBatch } from "../public";
+import {
+  calculateRecordBatchSize,
+  calculateRecordLength,
+  createRecordBatch,
+} from "../public";
 
 /**
  * Repository is a container for Handles.
@@ -118,6 +122,12 @@ class Repository {
 
             const results: ProcessBatchReplyItem[] = [];
             for (const [key, value] of resultRecordBatch) {
+              value.records = value.records.map((record) => {
+                record.length = calculateRecordLength(record);
+                return record;
+              });
+              value.header.sizeBytes = calculateRecordBatchSize(value.records);
+              value.header.term = recordBatch.header.term;
               results.push({
                 coprocessorId: BigInt(handle.coprocessor.globalId),
                 ntp: {

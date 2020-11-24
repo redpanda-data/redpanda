@@ -12,6 +12,11 @@ import * as assert from "assert";
 import Repository from "../../modules/supervisors/Repository";
 
 import { createHandle, createMockCoprocessor } from "../testUtilities";
+import { ProcessBatchRequestItem } from "../../modules/domain/generatedRpc/generatedClasses";
+import { ProcessBatchServer } from "../../modules/rpc/server";
+import { createRecordBatch } from "../../modules/public";
+import { RecordBatch } from "../../modules/public/Coprocessor";
+import sinon = require("sinon");
 
 describe("Repository", function () {
   it("should initialize with an empty map", function () {
@@ -74,5 +79,89 @@ describe("Repository", function () {
     repository.add(handleA);
     assert(repository.findByCoprocessor(handleA.coprocessor));
     assert(!repository.findByCoprocessor(handleB.coprocessor));
+  });
+
+  it("should apply function and calculate record batch size", function (done) {
+    const repository = new Repository();
+    const handleA = createHandle();
+    repository.add(handleA);
+    const processBatchRequest: ProcessBatchRequestItem = {
+      ntp: {
+        topic: "topic",
+        namespace: "namespace",
+        partition: 1,
+      },
+      coprocessorIds: [handleA.coprocessor.globalId],
+      recordBatch: [
+        {
+          header: {
+            term: BigInt(1),
+            sizeBytes: 1,
+            crc: 1,
+            headerCrc: 1,
+            firstTimestamp: BigInt(1),
+            recordCount: 1,
+            isCompressed: 0,
+            baseOffset: BigInt(1),
+            attrs: 0,
+            baseSequence: 0,
+            lastOffsetDelta: 0,
+            maxTimestamp: BigInt(0),
+            producerEpoch: 1,
+            producerId: BigInt(1),
+            recordBatchType: 1,
+          },
+          records: [
+            {
+              length: 0,
+              headers: [],
+              valueLen: 2,
+              attributes: 0,
+              keyLength: 0,
+              key: Buffer.from(""),
+              timestampDelta: BigInt(1),
+              offsetDelta: 0,
+              value: Buffer.from("test"),
+            },
+          ],
+        },
+      ],
+    };
+    handleA.coprocessor.apply = (record: RecordBatch) =>
+      new Map([
+        [
+          "result",
+          createRecordBatch({
+            records: record.records.map((r) => ({
+              ...r,
+              value: Buffer.from("TEST"),
+              valueLen: 4,
+            })),
+          }),
+        ],
+      ]);
+    const sinonInstance = sinon.createSandbox();
+    const stubFire = sinonInstance.stub(
+      ProcessBatchServer.prototype,
+      "fireException"
+    );
+    const stubHandleError = sinonInstance.stub(
+      ProcessBatchServer.prototype,
+      "handleErrorByPolicy"
+    );
+    const applyResult = repository.applyCoprocessor(
+      [handleA.coprocessor.globalId],
+      processBatchRequest,
+      stubHandleError,
+      stubFire
+    );
+    Promise.all(applyResult).then((result) => {
+      const recordBatchResult = result[0][0].resultRecordBatch;
+      const record = recordBatchResult[0].records[0];
+      assert.strictEqual(recordBatchResult[0].header.sizeBytes, 72);
+      assert.strictEqual(record.length, 10);
+      assert.deepStrictEqual(record.value, Buffer.from("TEST"));
+      done();
+    });
   });
 });
