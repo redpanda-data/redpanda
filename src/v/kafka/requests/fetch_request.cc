@@ -352,67 +352,68 @@ read_from_ntp(op_context& octx, model::ntp ntp, fetch_config config) {
     }
     bool foreign_read = shard != ss::this_shard_id();
 
-    return octx.rctx.partition_manager().invoke_on(
-      *shard,
-      octx.ssg,
-      [initial_fetch = octx.initial_fetch,
-       deadline = octx.deadline,
-       mntpv = std::move(mntpv),
+    return octx.rctx.partition_manager()
+      .invoke_on(
+        *shard,
+        octx.ssg,
+        [initial_fetch = octx.initial_fetch,
+         deadline = octx.deadline,
+         mntpv = std::move(mntpv),
          foreign_read,
-       config](cluster::partition_manager& mgr) {
-          /*
-           * lookup the ntp's partition
-           */
-          auto partition = mgr.get(mntpv.source_ntp());
-          if (unlikely(!partition)) {
-              return ss::make_ready_future<read_result>(
-                error_code::unknown_topic_or_partition);
-          }
-          if (unlikely(!partition->is_leader())) {
-              return ss::make_ready_future<read_result>(
-                error_code::not_leader_for_partition);
-          }
-          if (mntpv.is_materialized()) {
-              if (auto log = mgr.log(mntpv.input_ntp())) {
-                  return read_from_partition(
-                    partition_wrapper(partition, log),
-                    config,
-                    foreign_read,
-                    std::nullopt);
-              } else {
-                  return ss::make_ready_future<read_result>(
-                    error_code::unknown_topic_or_partition);
-              }
-          }
+         config](cluster::partition_manager& mgr) {
+            /*
+             * lookup the ntp's partition
+             */
+            auto partition = mgr.get(mntpv.source_ntp());
+            if (unlikely(!partition)) {
+                return ss::make_ready_future<read_result>(
+                  error_code::unknown_topic_or_partition);
+            }
+            if (unlikely(!partition->is_leader())) {
+                return ss::make_ready_future<read_result>(
+                  error_code::not_leader_for_partition);
+            }
+            if (mntpv.is_materialized()) {
+                if (auto log = mgr.log(mntpv.input_ntp())) {
+                    return read_from_partition(
+                      partition_wrapper(partition, log),
+                      config,
+                      foreign_read,
+                      std::nullopt);
+                } else {
+                    return ss::make_ready_future<read_result>(
+                      error_code::unknown_topic_or_partition);
+                }
+            }
 
-          auto high_watermark = partition->high_watermark();
-          auto max_offset = high_watermark < model::offset(0)
-                              ? model::offset(0)
-                              : high_watermark + model::offset(1);
-          if (
-            config.start_offset < partition->start_offset()
-            || config.start_offset > max_offset) {
-              return ss::make_ready_future<read_result>(
-                error_code::offset_out_of_range);
-          }
-          /**
-           * Check if we should wait for more data.
-           *
-           * If request allow waiting for more data we will wait in two
-           * scenarios:
-           *
-           * - previous read didn't meet requested budged
-           * - consumer requested read that is beyond high water mark
-           */
-          bool can_wait = !initial_fetch
-                          || config.start_offset > high_watermark;
+            auto high_watermark = partition->high_watermark();
+            auto max_offset = high_watermark < model::offset(0)
+                                ? model::offset(0)
+                                : high_watermark + model::offset(1);
+            if (
+              config.start_offset < partition->start_offset()
+              || config.start_offset > max_offset) {
+                return ss::make_ready_future<read_result>(
+                  error_code::offset_out_of_range);
+            }
+            /**
+             * Check if we should wait for more data.
+             *
+             * If request allow waiting for more data we will wait in two
+             * scenarios:
+             *
+             * - previous read didn't meet requested budged
+             * - consumer requested read that is beyond high water mark
+             */
+            bool can_wait = !initial_fetch
+                            || config.start_offset > high_watermark;
 
-          return read_from_partition(
-                   partition_wrapper(partition),
-                   config,
-                   foreign_read,
-                   can_wait ? deadline : std::nullopt);
-       })
+            return read_from_partition(
+              partition_wrapper(partition),
+              config,
+              foreign_read,
+              can_wait ? deadline : std::nullopt);
+        })
       .then([timeout = config.timeout](read_result res) mutable {
           vlog(klog.trace, "fetch reader {}", res.reader);
           // error case
