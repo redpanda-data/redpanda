@@ -41,6 +41,7 @@ v_cc_library(
     protocol_utils.cc
     logger.cc
     quota_manager.cc
+    fetch_session_cache.cc
  DEPS
     Seastar::seastar
     v::bytes
