@@ -61,7 +61,16 @@ ss::future<enable_response_code> service::insert(
   script_id id, model::topic_namespace&& tn, topic_ingestion_policy p) {
     return _router
       .map([id, p, tn = std::move(tn)](router& r) {
-          return map_code(r.add_source(id, tn, p));
+          return r.add_source(id, tn, p)
+            .then([](coproc::errc code) { return map_code(code); })
+            .handle_exception([id](std::exception_ptr e) {
+                vlog(
+                  coproclog.warn,
+                  "Exception in coproc::router with id {} - {}",
+                  id,
+                  e);
+                return ss::make_ready_future<erc>(erc::internal_error);
+            });
       })
       .then(&assemble_response);
 }
@@ -157,13 +166,29 @@ ss::future<disable_response_code> service::remove(script_id id) {
       "Incoming request to disable coprocessor with script_id {}",
       id);
     using drc = disable_response_code;
-    return _router
-      .map_reduce0(
-        [id](router& r) { return r.remove_source(id); },
-        false,
-        std::logical_or<>())
-      .then([](bool r) {
-          return r ? drc::success : drc::script_id_does_not_exist;
+    return _router.map_reduce0(
+      [id](router& r) {
+          return r.remove_source(id)
+            .then([](bool removed) {
+                return removed ? drc::success : drc::script_id_does_not_exist;
+            })
+            .handle_exception([id](std::exception_ptr e) {
+                vlog(
+                  coproclog.warn,
+                  "Exception within coproc::remove for script_id {} - {}",
+                  id,
+                  e);
+                return ss::make_ready_future<drc>(drc::internal_error);
+            });
+      },
+      drc::script_id_does_not_exist,
+      [](drc acc, drc v) {
+          if (acc == drc::internal_error || v == drc::internal_error) {
+              return drc::internal_error;
+          } else if (acc == drc::success || v == drc::success) {
+              return drc::success;
+          }
+          return acc;
       });
 }
 

@@ -34,6 +34,8 @@
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/flat_hash_set.h>
 
+#include <exception>
+
 namespace coproc {
 /// Reads data from registered input topics and routes them to the coprocessor
 /// engine connected locally. This is done by polling the registered ntps in a
@@ -51,15 +53,11 @@ public:
     }
 
     /// Shut down the loop on the current shard
-    ss::future<> stop() {
-        _loop_timer.cancel();
-        _abort_source.request_abort();
-        return _gate.close().then([this] { return _transport.stop(); });
-    }
+    ss::future<> stop();
 
-    errc add_source(
+    ss::future<errc> add_source(
       const script_id, const model::topic_namespace&, topic_ingestion_policy);
-    bool remove_source(const script_id sid);
+    ss::future<bool> remove_source(const script_id sid);
     bool script_id_exists(const script_id sid) const;
     bool ntp_exists(const model::ntp& ntp) const {
         return _sources.find(ntp) != _sources.cend();
@@ -70,6 +68,13 @@ private:
       = std::pair<model::offset, model::record_batch_reader>;
     using opt_req_data = std::optional<process_batch_request::data>;
     using opt_cfg = std::optional<storage::log_reader_config>;
+
+    template<typename T>
+    struct source {
+        model::topic_namespace tn;
+        topic_ingestion_policy tip;
+        ss::promise<T> promise;
+    };
 
     struct topic_offsets {
         model::offset committed{model::model_limits<model::offset>::min()};
@@ -84,6 +89,10 @@ private:
         absl::flat_hash_set<script_id> scripts;
     };
 
+    ss::future<> process_additions();
+    ss::future<> process_removals();
+    ss::future<> cancel_pending_updates();
+
     ss::future<result<supervisor_client_protocol>> get_client();
     ss::future<storage::log> get_log(const model::ntp& ntp);
 
@@ -92,8 +101,11 @@ private:
 
     ss::future<> route();
     ss::future<> do_route();
-    ss::future<opt_req_data>
-    route_ntp(const model::ntp&, ss::lw_shared_ptr<topic_state>&);
+    ss::future<opt_req_data> route_ntp(
+      const model::ntp&,
+      storage::log_reader_config,
+      ss::lw_shared_ptr<topic_state>);
+
     ss::future<> process_batch(std::vector<process_batch_request::data>);
     ss::future<> send_batch(supervisor_client_protocol, process_batch_request);
 
@@ -119,6 +131,9 @@ private:
     /// Core in-memory data structure that manages the relationships between
     /// topics and coprocessor scripts
     absl::flat_hash_map<model::ntp, ss::lw_shared_ptr<topic_state>> _sources;
+
+    absl::flat_hash_map<script_id, source<errc>> _deferred_additions;
+    absl::flat_hash_map<script_id, ss::promise<bool>> _deferred_removals;
 
     /// Connection to the coprocessor engine
     rpc::reconnect_transport _transport;
