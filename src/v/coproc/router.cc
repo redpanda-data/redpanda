@@ -115,7 +115,8 @@ ss::future<> router::do_route() {
     return ss::map_reduce(
              _sources.begin(),
              _sources.end(),
-             [this](std::pair<const model::ntp, topic_state>& p) {
+             [this](
+               std::pair<const model::ntp, ss::lw_shared_ptr<topic_state>>& p) {
                  return route_ntp(p.first, p.second);
              },
              std::vector<process_batch_request::data>(),
@@ -151,7 +152,7 @@ router::process_batch(std::vector<process_batch_request::data> batch) {
 }
 
 ss::future<router::opt_req_data>
-router::route_ntp(const model::ntp& ntp, topic_state& ts) {
+router::route_ntp(const model::ntp& ntp, ss::lw_shared_ptr<topic_state>& ts) {
     /**
      * Making a reader will grab a mutual exclusion lock on reading from the
      * requested log. This is OK for now since the only topic_ingestion_policy
@@ -159,9 +160,8 @@ router::route_ntp(const model::ntp& ntp, topic_state& ts) {
      *
      * The last offset is recorded and the request is prepared and returned.
      */
-    return make_reader_cfg(ts.log, ts.head)
-      .then([this, ntp, log = ts.log, sids = ts.scripts](
-              opt_cfg config) mutable {
+    return make_reader_cfg(ts).then(
+      [this, ntp, log = ts->log, sids = ts->scripts](opt_cfg config) mutable {
           if (!config) {
               return ss::make_ready_future<opt_req_data>(std::nullopt);
           }
@@ -183,7 +183,7 @@ router::route_ntp(const model::ntp& ntp, topic_state& ts) {
                       ntp);
                     return opt_req_data(std::nullopt);
                 }
-                found->second.head.dirty = offset;
+                found->second->head.dirty = offset;
                 std::vector<script_id> ids(
                   std::make_move_iterator(sids.begin()),
                   std::make_move_iterator(sids.end()));
@@ -234,12 +234,12 @@ void router::bump_offset(const model::ntp& src_ntp, const script_id sid) {
         vlog(coproclog.warn, "Ntp removed before offset set: {}", src_ntp);
         return;
     }
-    auto fsid = found->second.scripts.find(sid);
-    if (fsid == found->second.scripts.end()) {
+    auto fsid = found->second->scripts.find(sid);
+    if (fsid == found->second->scripts.end()) {
         vlog(coproclog.warn, "Script id removed before offset set: {}", sid);
         return;
     }
-    found->second.head.committed = found->second.head.dirty;
+    found->second->head.committed = found->second->head.dirty;
 }
 
 ss::future<> router::process_reply_one(process_batch_reply::data e) {
@@ -292,9 +292,10 @@ ss::future<> router::process_reply_one(process_batch_reply::data e) {
 }
 
 ss::future<router::opt_cfg>
-router::make_reader_cfg(storage::log log, topic_offsets& head) {
-    return head.mtx.with([this, log, committed = head.committed]() {
-        const storage::offset_stats ostats = log.offsets();
+router::make_reader_cfg(ss::lw_shared_ptr<topic_state> ts) {
+    return ts->head.mtx.with([this, ts]() {
+        const storage::offset_stats ostats = ts->log.offsets();
+        const model::offset committed = ts->head.committed;
         if (committed >= ostats.committed_offset) {
             // Signifies materialized log is up-to-date with source, there
             // isn't anything more to read
@@ -335,11 +336,11 @@ errc router::add_source(
     for (auto& [ntp, log] : logs) {
         auto found = _sources.find(ntp);
         if (found == _sources.end()) {
-            topic_state ts{
-              .log = log, .head = topic_offsets(), .scripts = {id}};
-            _sources.emplace(ntp, std::move(ts));
+            auto ts = ss::make_lw_shared<topic_state>(topic_state{
+              .log = log, .head = topic_offsets(), .scripts = {id}});
+            _sources.emplace(ntp, ts);
         } else {
-            found->second.scripts.emplace(id);
+            found->second->scripts.emplace(id);
         }
         vlog(coproclog.info, "Inserted ntp {} id {}", ntp, id);
     }
@@ -349,7 +350,7 @@ errc router::add_source(
 bool router::remove_source(const script_id sid) {
     absl::flat_hash_set<model::ntp> deleted;
     std::for_each(_sources.begin(), _sources.end(), [&deleted, sid](auto& p) {
-        auto& scripts = p.second.scripts;
+        auto& scripts = p.second->scripts;
         scripts.erase(sid);
         vlog(coproclog.info, "Deleted script id: {}", sid);
         if (scripts.empty()) {
@@ -366,7 +367,7 @@ bool router::remove_source(const script_id sid) {
 
 bool router::script_id_exists(const script_id sid) const {
     return std::any_of(_sources.begin(), _sources.end(), [sid](const auto& p) {
-        return p.second.scripts.contains(sid);
+        return p.second->scripts.contains(sid);
     });
 }
 

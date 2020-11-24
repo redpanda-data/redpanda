@@ -27,6 +27,7 @@
 #include <seastar/core/future-util.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
+#include <seastar/core/shared_ptr.hh>
 #include <seastar/net/inet_address.hh>
 #include <seastar/net/socket_defs.hh>
 
@@ -91,7 +92,8 @@ private:
 
     ss::future<> route();
     ss::future<> do_route();
-    ss::future<opt_req_data> route_ntp(const model::ntp&, topic_state&);
+    ss::future<opt_req_data>
+    route_ntp(const model::ntp&, ss::lw_shared_ptr<topic_state>&);
     ss::future<> process_batch(std::vector<process_batch_request::data>);
     ss::future<> send_batch(supervisor_client_protocol, process_batch_request);
 
@@ -99,7 +101,7 @@ private:
       extract_offset(model::record_batch_reader);
     void bump_offset(const model::ntp&, const script_id);
 
-    ss::future<opt_cfg> make_reader_cfg(storage::log, topic_offsets&);
+    ss::future<opt_cfg> make_reader_cfg(ss::lw_shared_ptr<topic_state>);
     storage::log_reader_config reader_cfg(model::offset, model::offset);
 
 private:
@@ -116,7 +118,7 @@ private:
 
     /// Core in-memory data structure that manages the relationships between
     /// topics and coprocessor scripts
-    absl::flat_hash_map<model::ntp, topic_state> _sources;
+    absl::flat_hash_map<model::ntp, ss::lw_shared_ptr<topic_state>> _sources;
 
     /// Connection to the coprocessor engine
     rpc::reconnect_transport _transport;
