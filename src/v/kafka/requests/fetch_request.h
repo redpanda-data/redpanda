@@ -57,6 +57,7 @@ struct fetch_request final {
     struct forgotten_topic {
         model::topic name;
         std::vector<int32_t> partitions;
+        friend std::ostream& operator<<(std::ostream&, const forgotten_topic&);
     };
 
     model::node_id replica_id;
@@ -234,6 +235,8 @@ struct fetch_response final {
     void encode(const request_context& ctx, response& resp);
     void decode(iobuf buf, api_version version);
 
+    friend std::ostream& operator<<(std::ostream&, const fetch_response&);
+
     /*
      * iterator over response partitions. this adapter iterator is used because
      * the partitions are encoded into the vector of partition responses
@@ -333,6 +336,67 @@ std::ostream& operator<<(std::ostream&, const fetch_response&);
  * Fetch operation context
  */
 struct op_context {
+    class response_iterator {
+    public:
+        using difference_type = void;
+        using pointer = fetch_response::iterator::pointer;
+        using reference = fetch_response::iterator::reference;
+        using iterator_category = std::forward_iterator_tag;
+
+        response_iterator(fetch_response::iterator, op_context* ctx);
+
+        reference operator*() noexcept { return *_it; }
+
+        pointer operator->() noexcept { return &(*_it); }
+
+        response_iterator& operator++();
+
+        const response_iterator operator++(int);
+
+        bool operator==(const response_iterator& o) const noexcept;
+
+        bool operator!=(const response_iterator& o) const noexcept;
+
+        void set(fetch_response::partition_response&&);
+
+    private:
+        fetch_response::iterator _it;
+        op_context* _ctx;
+    };
+
+    void reset_context();
+
+    // decode request and initialize budgets
+    op_context(request_context&& ctx, ss::smp_service_group ssg);
+
+    // reserve space for a new topic in the response
+    void start_response_topic(const fetch_request::topic& topic);
+
+    // reserve space for new partition in the response
+    void start_response_partition(const fetch_request::partition&);
+
+    // create placeholder for response topics and partitions
+    void create_response_placeholders();
+
+    bool should_stop_fetch() const {
+        return !request.debounce_delay() || over_min_bytes() || request.empty()
+               || response_error || deadline <= model::timeout_clock::now();
+    }
+
+    bool over_min_bytes() const {
+        return static_cast<int32_t>(response_size) >= request.min_bytes;
+    }
+
+    ss::future<response_ptr> send_response() &&;
+
+    response_iterator response_begin() {
+        return response_iterator(response.begin(), this);
+    }
+
+    response_iterator response_end() {
+        return response_iterator(response.end(), this);
+    }
+
     request_context rctx;
     ss::smp_service_group ssg;
     fetch_request request;
@@ -348,73 +412,6 @@ struct op_context {
     bool response_error;
 
     bool initial_fetch = true;
-
-    fetch_response::iterator response_iterator;
-
-    void reset_context() {
-        initial_fetch = false;
-        response_iterator = response.begin();
-    }
-
-    // decode request and initialize budgets
-    op_context(request_context&& ctx, ss::smp_service_group ssg)
-      : rctx(std::move(ctx))
-      , ssg(ssg)
-      , response_size(0)
-      , response_error(false)
-      , response_iterator(response.begin()) {
-        /*
-         * decode request and prepare the inital response
-         */
-        request.decode(rctx);
-        if (likely(!request.topics.empty())) {
-            response.partitions.reserve(request.topics.size());
-        }
-
-        if (auto delay = request.debounce_delay(); delay) {
-            deadline = model::timeout_clock::now() + delay.value();
-        }
-
-        /*
-         * TODO: max size is multifaceted. it needs to be absolute, but also
-         * integrate with other resource contraints that are dynamic within the
-         * kafka server itself.
-         */
-        static constexpr size_t MAX_SIZE = 128 << 20;
-        bytes_left = std::min(MAX_SIZE, size_t(request.max_bytes));
-    }
-
-    // insert and reserve space for a new topic in the response
-    void start_response_topic(const fetch_request::topic& topic) {
-        auto& p = response.partitions.emplace_back(topic.name);
-        p.responses.reserve(topic.partitions.size());
-    }
-
-    // add to the response the result of fetching from a partition
-    void set_partition_response(fetch_response::partition_response&& r) {
-        if (r.error != error_code::none) {
-            response_error = true;
-        }
-        if (r.record_set) {
-            response_size += r.record_set->size_bytes();
-            bytes_left -= std::min(bytes_left, r.record_set->size_bytes());
-        }
-        if (!initial_fetch) {
-            // replace response
-            *response_iterator->partition_response = std::move(r);
-        } else {
-            response.partitions.back().responses.push_back(std::move(r));
-        }
-    }
-
-    bool should_stop_fetch() const {
-        return !request.debounce_delay() || over_min_bytes() || request.empty()
-               || response_error;
-    }
-
-    bool over_min_bytes() const {
-        return static_cast<int32_t>(response_size) >= request.min_bytes;
-    }
 };
 
 class partition_wrapper {
@@ -425,14 +422,23 @@ public:
       : _partition(partition)
       , _log(log) {}
 
-    ss::future<model::record_batch_reader> make_reader(
-      storage::log_reader_config config,
-      std::optional<model::timeout_clock::time_point> deadline = std::nullopt) {
+    ss::future<model::record_batch_reader>
+    make_reader(storage::log_reader_config config) {
         return _log ? _log->make_reader(config)
-                    : _partition->make_reader(config, deadline);
+                    : _partition->make_reader(config);
     }
 
     cluster::partition_probe& probe() { return _partition->probe(); }
+
+    model::offset high_watermark() const {
+        return _log ? _log->offsets().dirty_offset
+                    : _partition->high_watermark();
+    }
+
+    model::offset last_stable_offset() const {
+        return _log ? _log->offsets().dirty_offset
+                    : _partition->last_stable_offset();
+    }
 
 private:
     ss::lw_shared_ptr<cluster::partition> _partition;
@@ -444,6 +450,30 @@ struct fetch_config {
     size_t max_bytes;
     model::timeout_clock::time_point timeout;
     bool strict_max_bytes{false};
+};
+/**
+ * Simple type aggregating either reader and offsets or an error
+ */
+struct read_result {
+    explicit read_result(error_code e)
+      : error(e) {}
+
+    read_result(
+      model::record_batch_reader rdr, model::offset hw, model::offset lso)
+      : reader(std::move(rdr))
+      , high_watermark(hw)
+      , last_stable_offset(lso)
+      , error(error_code::none) {}
+
+    read_result(model::offset hw, model::offset lso)
+      : high_watermark(hw)
+      , last_stable_offset(lso)
+      , error(error_code::none) {}
+
+    std::optional<model::record_batch_reader> reader;
+    model::offset high_watermark;
+    model::offset last_stable_offset;
+    error_code error;
 };
 
 ss::future<fetch_response::partition_response>

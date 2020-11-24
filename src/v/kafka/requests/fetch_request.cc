@@ -19,15 +19,20 @@
 #include "resource_mgmt/io_priority.h"
 #include "utils/to_string.h"
 
+#include <seastar/core/do_with.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/core/thread.hh>
 #include <seastar/util/log.hh>
 
 #include <fmt/ostream.h>
 
+#include <chrono>
 #include <string_view>
 
 namespace kafka {
+
+static constexpr std::chrono::milliseconds fetch_reads_debounce_timeout
+  = std::chrono::milliseconds(5);
 
 void fetch_request::encode(response_writer& writer, api_version version) {
     writer.write(replica_id());
@@ -118,26 +123,42 @@ void fetch_request::decode(request_context& ctx) {
     }
 }
 
+std::ostream&
+operator<<(std::ostream& o, const fetch_request::forgotten_topic& t) {
+    fmt::print(o, "{{topic {} partitions {}}}", t.name, t.partitions);
+    return o;
+}
+
 std::ostream& operator<<(std::ostream& o, const fetch_request::partition& p) {
-    return ss::fmt_print(
-      o, "id {} off {} max {}", p.id, p.fetch_offset, p.partition_max_bytes);
+    fmt::print(
+      o,
+      "{{id {} off {} max {}}}",
+      p.id,
+      p.fetch_offset,
+      p.partition_max_bytes);
+    return o;
 }
 
 std::ostream& operator<<(std::ostream& o, const fetch_request::topic& t) {
-    return ss::fmt_print(o, "name {} parts {}", t.name, t.partitions);
+    fmt::print(o, "{{name {} parts {}}}", t.name, t.partitions);
+    return o;
 }
 
 std::ostream& operator<<(std::ostream& o, const fetch_request& r) {
-    return ss::fmt_print(
+    fmt::print(
       o,
-      "replica {} max_wait_time {} min_bytes {} max_bytes {} isolation {} "
-      "topics {}",
+      "{{replica {} max_wait_time {} session_id {} session_epoch {} min_bytes "
+      "{} max_bytes {} isolation {} topics {} forgotten {}}}",
       r.replica_id,
       r.max_wait_time,
+      r.session_id,
+      r.session_epoch,
       r.min_bytes,
       r.max_bytes,
       r.isolation_level,
-      r.topics);
+      r.topics,
+      r.forgotten_topics);
+    return o;
 }
 
 void fetch_response::encode(const request_context& ctx, response& resp) {
@@ -210,42 +231,51 @@ void fetch_response::decode(iobuf buf, api_version version) {
 
 std::ostream&
 operator<<(std::ostream& o, const fetch_response::aborted_transaction& t) {
-    return ss::fmt_print(
-      o, "producer {} first_off {}", t.producer_id, t.first_offset);
+    fmt::print(
+      o, "{{producer {} first_off {}}}", t.producer_id, t.first_offset);
+    return o;
 }
 
 std::ostream&
 operator<<(std::ostream& o, const fetch_response::partition_response& p) {
-    return ss::fmt_print(
+    fmt::print(
       o,
-      "id {} err {} high_water {} last_stable_off {} aborted {} "
-      "record_set_len "
-      "{}",
+      "{{id {} err {} high_water {} last_stable_off {} aborted {} "
+      "record_set_len {}}}",
       p.id,
       p.error,
       p.high_watermark,
       p.last_stable_offset,
       p.aborted_transactions,
       (p.record_set ? p.record_set->size_bytes() : -1));
+    return o;
 }
 
 std::ostream& operator<<(std::ostream& o, const fetch_response::partition& p) {
-    return ss::fmt_print(o, "name {} responses {}", p.name, p.responses);
+    fmt::print(o, "{{name {} responses {}}}", p.name, p.responses);
+    return o;
 }
 
 std::ostream& operator<<(std::ostream& o, const fetch_response& r) {
-    return ss::fmt_print(o, "partitions {}", r.partitions);
+    fmt::print(
+      o,
+      "{{session_id {} error {} partitions {}}}",
+      r.session_id,
+      r.error,
+      r.partitions);
+    return o;
 }
 
 /**
  * Make a partition response error.
  */
 static fetch_response::partition_response
-make_partition_response_error(error_code error) {
+make_partition_response_error(model::partition_id p_id, error_code error) {
     return fetch_response::partition_response{
+      .id = p_id,
       .error = error,
-      .high_watermark = model::offset(0),
-      .last_stable_offset = model::offset(0),
+      .high_watermark = model::offset(-1),
+      .last_stable_offset = model::offset(-1),
       .record_set = iobuf(),
     };
 }
@@ -253,16 +283,25 @@ make_partition_response_error(error_code error) {
 static ss::future<fetch_response::partition_response>
 make_ready_partition_response_error(error_code error) {
     return ss::make_ready_future<fetch_response::partition_response>(
-      make_partition_response_error(error));
+      // partiton id will be modified when assembling the response further
+      make_partition_response_error(model::partition_id(-1), error));
 }
 
 /**
  * Low-level handler for reading from an ntp. Runs on ntp's home core.
  */
-static ss::future<fetch_response::partition_response> read_from_partition(
+static ss::future<read_result> read_from_partition(
   partition_wrapper pw,
   fetch_config config,
+  bool foreign_read,
   std::optional<model::timeout_clock::time_point> deadline) {
+    auto hw = pw.high_watermark();
+    auto lso = pw.last_stable_offset();
+    // if we have no data read, return fast
+    if (hw < config.start_offset) {
+        return ss::make_ready_future<read_result>(hw, lso);
+    }
+
     storage::log_reader_config reader_config(
       config.start_offset,
       model::model_limits<model::offset>::max(),
@@ -274,30 +313,22 @@ static ss::future<fetch_response::partition_response> read_from_partition(
       std::nullopt);
 
     reader_config.strict_max_bytes = config.strict_max_bytes;
-
-    return pw.make_reader(reader_config, deadline)
-      .then([pw, timeout = config.timeout](
-              model::record_batch_reader reader) mutable {
-          vlog(klog.trace, "fetch reader {}", reader);
-          return std::move(reader)
-            .consume(kafka_batch_serializer(), timeout)
-            .then([pw](kafka_batch_serializer::result res) mutable {
-                /*
-                 * return path will fill in other response fields.
-                 */
-                pw.probe().add_records_fetched(res.record_count);
-                return fetch_response::partition_response{
-                  .error = error_code::none,
-                  .record_set = std::move(res.data),
-                };
-            });
-      })
-      .handle_exception_type([](const raft::offset_monitor::wait_aborted&) {
-          // no data are returned
-          return fetch_response::partition_response{
-            .error = error_code::none,
-            .record_set = iobuf(),
-          };
+    return pw.make_reader(reader_config)
+      .then([hw, lso, foreign_read, deadline](model::record_batch_reader rdr) {
+          // if we are on remote core, we MUST use foreign record batch reader.
+          if (foreign_read) {
+              return model::consume_reader_to_memory(
+                       std::move(rdr), deadline.value_or(model::no_timeout))
+                .then([hw, lso](ss::circular_buffer<model::record_batch> data) {
+                    return read_result(
+                      model::make_foreign_memory_record_batch_reader(
+                        std::move(data)),
+                      hw,
+                      lso);
+                });
+          }
+          return ss::make_ready_future<read_result>(
+            read_result(std::move(rdr), hw, lso));
       });
 }
 
@@ -312,79 +343,78 @@ read_from_ntp(op_context& octx, model::ntp ntp, fetch_config config) {
      * the tp in the metadata cache so that this condition is unlikely
      * to pass.
      */
-    const auto mntpv = model::materialized_ntp(std::move(ntp));
+    auto mntpv = model::materialized_ntp(std::move(ntp));
     auto shard = octx.rctx.shards().shard_for(mntpv.source_ntp());
 
     if (unlikely(!shard)) {
         return make_ready_partition_response_error(
           error_code::unknown_topic_or_partition);
     }
+    bool foreign_read = shard != ss::this_shard_id();
 
-    return octx.rctx.partition_manager().invoke_on(
-      *shard,
-      octx.ssg,
-      [initial_fetch = octx.initial_fetch,
-       deadline = octx.deadline,
-       mntpv = std::move(mntpv),
-       config](cluster::partition_manager& mgr) {
-          /*
-           * lookup the ntp's partition
-           */
-          auto partition = mgr.get(mntpv.source_ntp());
-          if (unlikely(!partition)) {
-              return make_ready_partition_response_error(
-                error_code::unknown_topic_or_partition);
-          }
-          if (unlikely(!partition->is_leader())) {
-              return make_ready_partition_response_error(
-                error_code::not_leader_for_partition);
-          }
-          if (mntpv.is_materialized()) {
-              if (auto log = mgr.log(mntpv.input_ntp())) {
-                  return read_from_partition(
-                    partition_wrapper(partition, log), config, std::nullopt);
-              } else {
-                  return make_ready_partition_response_error(
-                    error_code::unknown_topic_or_partition);
-              }
-          }
+    return octx.rctx.partition_manager()
+      .invoke_on(
+        *shard,
+        octx.ssg,
+        [mntpv = std::move(mntpv),
+         foreign_read,
+         config,
+         deadline = octx.deadline](cluster::partition_manager& mgr) {
+            /*
+             * lookup the ntp's partition
+             */
+            auto partition = mgr.get(mntpv.source_ntp());
+            if (unlikely(!partition)) {
+                return ss::make_ready_future<read_result>(
+                  error_code::unknown_topic_or_partition);
+            }
+            if (unlikely(!partition->is_leader())) {
+                return ss::make_ready_future<read_result>(
+                  error_code::not_leader_for_partition);
+            }
+            if (mntpv.is_materialized()) {
+                if (auto log = mgr.log(mntpv.input_ntp())) {
+                    return read_from_partition(
+                      partition_wrapper(partition, log),
+                      config,
+                      foreign_read,
+                      deadline);
+                } else {
+                    return ss::make_ready_future<read_result>(
+                      error_code::unknown_topic_or_partition);
+                }
+            }
 
-          auto high_watermark = partition->high_watermark();
-          auto max_offset = high_watermark < model::offset(0)
-                              ? model::offset(0)
-                              : high_watermark + model::offset(1);
-          if (
-            config.start_offset < partition->start_offset()
-            || config.start_offset > max_offset) {
-              return ss::make_ready_future<fetch_response::partition_response>(
-                fetch_response::partition_response{
-                  .error = error_code::offset_out_of_range,
-                  .high_watermark = model::offset(-1),
-                  .last_stable_offset = model::offset(-1),
-                  .log_start_offset = model::offset(-1),
-                  .record_set = iobuf(),
-                });
-          }
-          /**
-           * Check if we should wait for more data.
-           *
-           * If request allow waiting for more data we will wait in two
-           * scenarios:
-           *
-           * - previous read didn't meet requested budged
-           * - consumer requested read that is beyond high water mark
-           */
-          bool can_wait = !initial_fetch
-                          || config.start_offset > high_watermark;
+            auto high_watermark = partition->high_watermark();
+            auto max_offset = high_watermark < model::offset(0)
+                                ? model::offset(0)
+                                : high_watermark + model::offset(1);
+            if (
+              config.start_offset < partition->start_offset()
+              || config.start_offset > max_offset) {
+                return ss::make_ready_future<read_result>(
+                  error_code::offset_out_of_range);
+            }
 
-          return read_from_partition(
-                   partition_wrapper(partition),
-                   config,
-                   can_wait ? deadline : std::nullopt)
-            .then([partition](fetch_response::partition_response&& resp) {
-                resp.last_stable_offset = partition->last_stable_offset();
-                resp.high_watermark = partition->high_watermark();
-                return std::move(resp);
+            return read_from_partition(
+              partition_wrapper(partition), config, foreign_read, deadline);
+        })
+      .then([timeout = config.timeout](read_result res) mutable {
+          vlog(klog.trace, "fetch reader {}", res.reader);
+          // error case
+          if (!res.reader) {
+              return make_ready_partition_response_error(res.error);
+          }
+          return std::move(*res.reader)
+            .consume(kafka_batch_serializer(), timeout)
+            .then([](kafka_batch_serializer::result res) mutable {
+                /*
+                 * return path will fill in other response fields.
+                 */
+                return fetch_response::partition_response{
+                  .error = error_code::none,
+                  .record_set = std::move(res.data),
+                };
             });
       });
 }
@@ -396,55 +426,50 @@ read_from_ntp(op_context& octx, model::ntp ntp, fetch_config config) {
  * partition response is finalized and placed into its position in the
  * response message.
  */
-static ss::future<>
-handle_ntp_fetch(op_context& octx, model::ntp ntp, fetch_config config) {
+static ss::future<> handle_ntp_fetch(
+  op_context& octx,
+  model::ntp ntp,
+  fetch_config config,
+  op_context::response_iterator resp_it) {
     using read_response_type = ss::future<fetch_response::partition_response>;
     auto p_id = ntp.tp.partition;
     return read_from_ntp(octx, std::move(ntp), config)
-      .then_wrapped([&octx, p_id](read_response_type&& f) {
+      .then_wrapped([p_id, resp_it](read_response_type&& f) mutable {
           try {
               auto response = f.get0();
               response.id = p_id;
-              octx.set_partition_response(std::move(response));
+              resp_it.set(std::move(response));
           } catch (...) {
               /*
                * TODO: this is where we will want to handle any storage
                * specific errors and translate them into kafka response
                * error codes.
                */
-              octx.set_partition_response(make_partition_response_error(
-                error_code::unknown_server_error));
+              resp_it.set(make_partition_response_error(
+                p_id, error_code::unknown_server_error));
           }
       });
 }
 
 static ss::future<> fetch_topic_partition(
-  op_context& octx, const fetch_request::const_iterator::value_type& p) {
+  op_context& octx,
+  const fetch_request::const_iterator::value_type& p,
+  op_context::response_iterator resp_it) {
     /*
      * the next topic-partition to fetch
      */
     auto& topic = *p.topic;
     auto& part = *p.partition;
-    if (p.new_topic && octx.initial_fetch) {
-        octx.start_response_topic(topic);
-    }
-
-    if (
-      model::timeout_clock::now() > octx.deadline.value_or(model::no_timeout)) {
-        octx.set_partition_response(
-          make_partition_response_error(error_code::request_timed_out));
-        return ss::now();
-    }
 
     // if over budget create placeholder response
     if (octx.bytes_left <= 0) {
-        octx.set_partition_response(
-          make_partition_response_error(error_code::message_too_large));
+        resp_it.set(make_partition_response_error(
+          part.id, error_code::message_too_large));
         return ss::now();
     }
     // if we already have data in response for this partition skip it
     if (!octx.initial_fetch) {
-        auto& partition_response = octx.response_iterator->partition_response;
+        auto& partition_response = resp_it->partition_response;
 
         /**
          * do not try to fetch again if partition response already contains an
@@ -452,7 +477,7 @@ static ss::future<> fetch_topic_partition(
          * threshold.
          */
         if (
-          partition_response->has_error()
+          resp_it->partition_response->has_error()
           || (!partition_response->record_set->empty() && octx.over_min_bytes())) {
             return ss::now();
         }
@@ -466,7 +491,7 @@ static ss::future<> fetch_topic_partition(
       .timeout = octx.deadline.value_or(model::no_timeout),
       .strict_max_bytes = octx.response_size > 0,
     };
-    return handle_ntp_fetch(octx, std::move(ntp), config);
+    return handle_ntp_fetch(octx, std::move(ntp), config, resp_it);
 }
 
 /**
@@ -492,18 +517,32 @@ static ss::future<> fetch_topic_partition(
  * response must be reassembled such that the responses appear in these
  * order as the partitions in the request.
  */
+
 static ss::future<> fetch_topic_partitions(op_context& octx) {
-    return ss::do_for_each(
-             octx.request.cbegin(),
-             octx.request.cend(),
-             [&octx](const fetch_request::const_iterator::value_type& p) {
-                 return fetch_topic_partition(octx, p).then([&octx] {
-                     if (!octx.initial_fetch) {
-                         octx.response_iterator++;
-                     }
-                 });
-             })
-      .then([&octx] { octx.reset_context(); });
+    auto resp_it = octx.response_begin();
+    std::vector<ss::future<>> fetches;
+    std::transform(
+      octx.request.cbegin(),
+      octx.request.cend(),
+      std::back_inserter(fetches),
+      [&resp_it, &octx](const fetch_request::const_iterator::value_type& p) {
+          // we use gate as we may not wait for all the fetch results
+          return fetch_topic_partition(octx, p, resp_it++);
+      });
+
+    return ss::do_with(
+      std::move(fetches), [&octx](std::vector<ss::future<>>& fetches) {
+          return ss::when_all_succeed(fetches.begin(), fetches.end())
+            .then([&octx] {
+                if (octx.should_stop_fetch()) {
+                    return ss::now();
+                }
+                octx.reset_context();
+                // debounce next read retry
+                return ss::sleep(std::min(
+                  fetch_reads_debounce_timeout, octx.request.max_wait_time));
+            });
+      });
 }
 
 ss::future<response_ptr>
@@ -519,9 +558,128 @@ fetch_api::process(request_context&& rctx, ss::smp_service_group ssg) {
                 [&octx] { return octx.should_stop_fetch(); },
                 [&octx] { return fetch_topic_partitions(octx); });
           })
-          .then(
-            [&octx] { return octx.rctx.respond(std::move(octx.response)); });
+          .then([&octx] { return std::move(octx).send_response(); });
     });
+}
+
+void op_context::reset_context() { initial_fetch = false; }
+
+// decode request and initialize budgets
+op_context::op_context(request_context&& ctx, ss::smp_service_group ssg)
+  : rctx(std::move(ctx))
+  , ssg(ssg)
+  , response_size(0)
+  , response_error(false) {
+    /*
+     * decode request and prepare the inital response
+     */
+    request.decode(rctx);
+    if (likely(!request.topics.empty())) {
+        response.partitions.reserve(request.topics.size());
+    }
+
+    if (auto delay = request.debounce_delay(); delay) {
+        deadline = model::timeout_clock::now() + delay.value();
+    }
+
+    /*
+     * TODO: max size is multifaceted. it needs to be absolute, but also
+     * integrate with other resource contraints that are dynamic within the
+     * kafka server itself.
+     */
+    static constexpr size_t max_size = 128_KiB;
+    bytes_left = std::min(max_size, size_t(request.max_bytes));
+
+    create_response_placeholders();
+}
+
+// insert and reserve space for a new topic in the response
+void op_context::start_response_topic(const fetch_request::topic& topic) {
+    auto& p = response.partitions.emplace_back(topic.name);
+    p.responses.reserve(topic.partitions.size());
+}
+
+void op_context::start_response_partition(const fetch_request::partition& p) {
+    response.partitions.back().responses.push_back(
+      fetch_response::partition_response{
+        .id = p.id,
+        .error = error_code::none,
+        .high_watermark = model::offset(-1),
+        .last_stable_offset = model::offset(-1),
+        .record_set = iobuf()});
+}
+
+void op_context::create_response_placeholders() {
+    std::for_each(
+      request.cbegin(),
+      request.cend(),
+      [this](const fetch_request::const_iterator::value_type& v) {
+          if (v.new_topic) {
+              start_response_topic(*v.topic);
+          }
+          start_response_partition(*v.partition);
+      });
+}
+
+ss::future<response_ptr> op_context::send_response() && {
+    response.session_id = invalid_fetch_session_id;
+    return rctx.respond(std::move(response));
+}
+
+op_context::response_iterator::response_iterator(
+  fetch_response::iterator it, op_context* ctx)
+  : _it(it)
+  , _ctx(ctx) {}
+
+void op_context::response_iterator::set(
+  fetch_response::partition_response&& response) {
+    // we are already done, for now ignore what we read
+    vassert(
+      response.id == _it->partition_response->id,
+      "Response and current partition ids have to be the same. Current "
+      "response {}, update {}",
+      _it->partition_response->id,
+      response.id);
+
+    if (response.has_error()) {
+        _ctx->response_error = true;
+    }
+    auto& current_resp_data = _it->partition_response->record_set;
+    if (current_resp_data) {
+        auto sz = current_resp_data->size_bytes();
+        _ctx->response_size -= sz;
+        _ctx->bytes_left += sz;
+    }
+
+    if (response.record_set) {
+        auto sz = response.record_set->size_bytes();
+        _ctx->response_size += sz;
+        _ctx->bytes_left -= std::min(_ctx->bytes_left, sz);
+    }
+
+    *_it->partition_response = std::move(response);
+}
+
+op_context::response_iterator& op_context::response_iterator::operator++() {
+    _it->partition_response++;
+    return *this;
+}
+
+const op_context::response_iterator
+op_context::response_iterator::operator++(int) {
+    response_iterator tmp = *this;
+    ++(*this);
+    return tmp;
+}
+
+bool op_context::response_iterator::operator==(
+  const response_iterator& o) const noexcept {
+    return _it == o._it;
+}
+
+bool op_context::response_iterator::operator!=(
+  const response_iterator& o) const noexcept {
+    return !(*this == o);
 }
 
 } // namespace kafka
