@@ -368,6 +368,15 @@ configuration::configuration()
       "Maximum delay until buffered data is written",
       required::no,
       std::chrono::milliseconds(1s))
+  , fetch_session_eviction_timeout_ms(
+      *this,
+      "fetch_session_eviction_timeout_ms",
+      "Minimum time before which unused session will get evicted from "
+      "sessions. Maximum time after which inactive session will be deleted is "
+      "two time given configuration value"
+      "cache",
+      required::no,
+      60s)
   , _advertised_kafka_api(
       *this,
       "advertised_kafka_api",

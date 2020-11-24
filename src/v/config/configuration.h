@@ -98,6 +98,7 @@ struct configuration final : public config_store {
       raft_transfer_leader_recovery_timeout_ms;
     property<bool> release_cache_on_segment_roll;
     property<std::chrono::milliseconds> segment_appender_flush_timeout_ms;
+    property<std::chrono::milliseconds> fetch_session_eviction_timeout_ms;
 
     configuration();
 
