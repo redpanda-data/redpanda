@@ -123,13 +123,27 @@ using ns = named_type<ss::sstring, struct model_ns_type>;
 
 using offset = named_type<int64_t, struct model_offset_type>;
 
-struct topic_partition {
-    using compaction = ss::bool_class<struct compaction_tag>;
+struct topic_partition_view {
+    topic_partition_view(model::topic_view tp, model::partition_id p)
+      : topic(tp)
+      , partition(p) {}
 
+    model::topic_view topic;
+    model::partition_id partition;
+    template<typename H>
+    friend H AbslHashValue(H h, const topic_partition_view& tp) {
+        return H::combine(std::move(h), tp.topic, tp.partition);
+    }
+};
+struct topic_partition {
     topic_partition() = default;
     topic_partition(model::topic t, model::partition_id i)
       : topic(std::move(t))
       , partition(i) {}
+
+    explicit topic_partition(model::topic_partition_view view)
+      : topic_partition(model::topic(view.topic), view.partition) {}
+
     model::topic topic;
     model::partition_id partition;
 
@@ -146,7 +160,20 @@ struct topic_partition {
                || (topic == other.topic && partition < other.partition);
     }
 
+    operator topic_partition_view() {
+        return topic_partition_view(topic, partition);
+    }
+
+    operator topic_partition_view() const {
+        return topic_partition_view(topic, partition);
+    }
+
     friend std::ostream& operator<<(std::ostream&, const topic_partition&);
+
+    template<typename H>
+    friend H AbslHashValue(H h, const topic_partition& tp) {
+        return H::combine(std::move(h), tp.topic, tp.partition);
+    }
 };
 
 std::ostream& operator<<(std::ostream&, const topic_partition&);
