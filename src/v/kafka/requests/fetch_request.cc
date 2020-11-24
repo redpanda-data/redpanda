@@ -461,12 +461,11 @@ static ss::future<> fetch_topic_partition(
     auto& topic = *p.topic;
     auto& part = *p.partition;
 
-    // if over budget create placeholder response
+    // if over budget skip the fetch.
     if (octx.bytes_left <= 0) {
-        resp_it.set(make_partition_response_error(
-          part.id, error_code::message_too_large));
         return ss::now();
     }
+
     // if we already have data in response for this partition skip it
     if (!octx.initial_fetch) {
         auto& partition_response = resp_it->partition_response;
