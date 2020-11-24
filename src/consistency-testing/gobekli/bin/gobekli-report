@@ -7,6 +7,7 @@ from sh import (gnuplot, tar, rm)
 from collections import defaultdict
 from pathlib import Path
 
+from gobekli.logging import m
 from gobekli.chaos.analysis import (make_overview_chart,
                                     make_latency_chart, make_availability_chart,
                                     analyze_inject_recover_availability)
@@ -289,6 +290,12 @@ def load_context(root):
     with open(path.join(root, "context.json")) as context_info:
         return json.load(context_info)
 
+def build_alerts(root, results):
+    with open(path.join(root, "alerts.log"), "w") as alerts:
+        for result in results:
+            if result["status"] == "failed":
+                alerts.write(str(m(type="consistency", message=result["error"], id=result["id"])) + "\n")
+
 def build_index(context, title, root, results):
     ava_stat = defaultdict(lambda: [])
     fault_stat = defaultdict(lambda: { "passed": 0, "failed": [] })
@@ -359,6 +366,7 @@ def build_report(results_log, warmup_s, zoom_us):
         build_experiment_index(context, root, result, warmup_s, zoom_us)
     
     build_index(context, results_log, root, results)
+    build_alerts(root, results)
     archive_logs(root, results)
 
 parser = argparse.ArgumentParser(description='build gobekli report')
