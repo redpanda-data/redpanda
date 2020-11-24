@@ -12,6 +12,7 @@
 #include "cluster/namespace.h"
 #include "cluster/partition_manager.h"
 #include "kafka/errors.h"
+#include "kafka/fetch_session.h"
 #include "kafka/requests/batch_consumer.h"
 #include "likely.h"
 #include "model/fundamental.h"
@@ -90,6 +91,7 @@ void fetch_request::decode(request_context& ctx) {
     if (version >= api_version(4)) {
         isolation_level = reader.read_int8();
     }
+
     if (version >= api_version(7)) {
         session_id = reader.read_int32();
         session_epoch = reader.read_int32();
@@ -453,13 +455,12 @@ static ss::future<> handle_ntp_fetch(
 
 static ss::future<> fetch_topic_partition(
   op_context& octx,
-  const fetch_request::const_iterator::value_type& p,
+  const fetch_partition& fp,
   op_context::response_iterator resp_it) {
     /*
      * the next topic-partition to fetch
      */
-    auto& topic = *p.topic;
-    auto& part = *p.partition;
+    auto& topic = fp.topic;
 
     // if over budget skip the fetch.
     if (octx.bytes_left <= 0) {
@@ -476,17 +477,16 @@ static ss::future<> fetch_topic_partition(
          * threshold.
          */
         if (
-          resp_it->partition_response->has_error()
+          partition_response->has_error()
           || (!partition_response->record_set->empty() && octx.over_min_bytes())) {
             return ss::now();
         }
     }
-
-    auto ntp = model::ntp(cluster::kafka_namespace, topic.name, part.id);
+    auto ntp = model::ntp(cluster::kafka_namespace, topic, fp.partition);
 
     fetch_config config{
-      .start_offset = part.fetch_offset,
-      .max_bytes = std::min(octx.bytes_left, size_t(part.partition_max_bytes)),
+      .start_offset = fp.fetch_offset,
+      .max_bytes = std::min(octx.bytes_left, size_t(fp.max_bytes)),
       .timeout = octx.deadline.value_or(model::no_timeout),
       .strict_max_bytes = octx.response_size > 0,
     };
@@ -520,13 +520,11 @@ static ss::future<> fetch_topic_partition(
 static ss::future<> fetch_topic_partitions(op_context& octx) {
     auto resp_it = octx.response_begin();
     std::vector<ss::future<>> fetches;
-    std::transform(
-      octx.request.cbegin(),
-      octx.request.cend(),
-      std::back_inserter(fetches),
-      [&resp_it, &octx](const fetch_request::const_iterator::value_type& p) {
+
+    octx.for_each_fetch_partition(
+      [&resp_it, &octx, &fetches](fetch_partition p) {
           // we use gate as we may not wait for all the fetch results
-          return fetch_topic_partition(octx, p, resp_it++);
+          return fetches.push_back(fetch_topic_partition(octx, p, resp_it++));
       });
 
     return ss::do_with(
@@ -542,13 +540,16 @@ static ss::future<> fetch_topic_partitions(op_context& octx) {
                   fetch_reads_debounce_timeout, octx.request.max_wait_time));
             });
       });
-}
+} // namespace kafka
 
 ss::future<response_ptr>
 fetch_api::process(request_context&& rctx, ss::smp_service_group ssg) {
     return ss::do_with(op_context(std::move(rctx), ssg), [](op_context& octx) {
-        // top-level error is used for session-level errors, but we do
-        // not yet implement session management.
+        // top-level error is used for session-level errors
+        if (octx.session_ctx.has_error()) {
+            octx.response.error = octx.session_ctx.error();
+            return std::move(octx).send_response();
+        }
         octx.response.error = error_code::none;
         // first fetch, do not wait
         return fetch_topic_partitions(octx)
@@ -588,7 +589,7 @@ op_context::op_context(request_context&& ctx, ss::smp_service_group ssg)
      */
     static constexpr size_t max_size = 128_KiB;
     bytes_left = std::min(max_size, size_t(request.max_bytes));
-
+    session_ctx = rctx.fetch_sessions().maybe_get_session(request);
     create_response_placeholders();
 }
 
@@ -609,20 +610,97 @@ void op_context::start_response_partition(const fetch_request::partition& p) {
 }
 
 void op_context::create_response_placeholders() {
-    std::for_each(
-      request.cbegin(),
-      request.cend(),
-      [this](const fetch_request::const_iterator::value_type& v) {
-          if (v.new_topic) {
-              start_response_topic(*v.topic);
-          }
-          start_response_partition(*v.partition);
-      });
+    if (session_ctx.is_sessionless() || session_ctx.is_full_fetch()) {
+        std::for_each(
+          request.cbegin(),
+          request.cend(),
+          [this](const fetch_request::const_iterator::value_type& v) {
+              if (v.new_topic) {
+                  start_response_topic(*v.topic);
+              }
+              start_response_partition(*v.partition);
+          });
+    } else {
+        model::topic last_topic;
+        std::for_each(
+          session_ctx.session()->partitions().cbegin_insertion_order(),
+          session_ctx.session()->partitions().cend_insertion_order(),
+          [this, &last_topic](const fetch_partition& fp) {
+              if (last_topic != fp.topic) {
+                  response.partitions.emplace_back(fp.topic);
+                  last_topic = fp.topic;
+              }
+              fetch_response::partition_response p{
+                .id = fp.partition,
+                .error = error_code::none,
+                .high_watermark = fp.high_watermark,
+                .last_stable_offset = fp.high_watermark,
+                .record_set = iobuf()};
+
+              response.partitions.back().responses.push_back(std::move(p));
+          });
+    }
+}
+
+bool update_fetch_partition(
+  const fetch_response::partition_response& resp, fetch_partition& partition) {
+    bool include = false;
+    if (resp.record_set && resp.record_set->size_bytes() > 0) {
+        // Partitions with new data are always included in the response.
+        include = true;
+    }
+    if (partition.high_watermark != resp.high_watermark) {
+        partition.high_watermark = model::offset(resp.high_watermark);
+        return true;
+    }
+    if (resp.error != error_code::none) {
+        // Partitions with errors are always included in the response.
+        // We also set the cached highWatermark to an invalid offset, -1.
+        // This ensures that when the error goes away, we re-send the partition.
+        partition.high_watermark = model::offset{-1};
+        include = true;
+    }
+    return include;
 }
 
 ss::future<response_ptr> op_context::send_response() && {
-    response.session_id = invalid_fetch_session_id;
-    return rctx.respond(std::move(response));
+    // Sessionless fetch
+    if (session_ctx.is_sessionless()) {
+        response.session_id = invalid_fetch_session_id;
+        return rctx.respond(std::move(response));
+    }
+    // bellow we handle incremental fetches, set response session id
+    response.session_id = session_ctx.session()->id();
+    if (session_ctx.is_full_fetch()) {
+        return rctx.respond(std::move(response));
+    }
+
+    fetch_response final_response;
+    final_response.error = response.error;
+    final_response.session_id = response.session_id;
+    final_response.throttle_time = response.throttle_time;
+
+    for (auto it = response.begin(true); it != response.end(); ++it) {
+        if (it->is_new_topic) {
+            final_response.partitions.emplace_back(it->partition->name);
+            final_response.partitions.back().responses.reserve(
+              it->partition->responses.size());
+        }
+
+        fetch_response::partition_response r{
+          .id = it->partition_response->id,
+          .error = it->partition_response->error,
+          .high_watermark = it->partition_response->high_watermark,
+          .last_stable_offset = it->partition_response->last_stable_offset,
+          .log_start_offset = it->partition_response->log_start_offset,
+          .aborted_transactions = std::move(
+            it->partition_response->aborted_transactions),
+          .record_set = std::move(it->partition_response->record_set)};
+
+        final_response.partitions.back().responses.push_back(std::move(r));
+    }
+
+    return rctx.respond(std::move(final_response));
 }
 
 op_context::response_iterator::response_iterator(
@@ -655,8 +733,22 @@ void op_context::response_iterator::set(
         _ctx->response_size += sz;
         _ctx->bytes_left -= std::min(_ctx->bytes_left, sz);
     }
-
     *_it->partition_response = std::move(response);
+
+    // if we are not sessionless update session cache
+    if (!_ctx->session_ctx.is_sessionless()) {
+        auto& session_partitions = _ctx->session_ctx.session()->partitions();
+        auto key = model::topic_partition_view(
+          _it->partition->name, _it->partition_response->id);
+
+        if (auto it = session_partitions.find(key);
+            it != session_partitions.end()) {
+            auto has_to_be_included = update_fetch_partition(
+              *_it->partition_response, it->second->partition);
+
+            _it->partition_response->has_to_be_included = has_to_be_included;
+        }
+    }
 }
 
 op_context::response_iterator& op_context::response_iterator::operator++() {
