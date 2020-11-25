@@ -14,6 +14,7 @@ import sys
 import json
 import logging
 import traceback
+from collections import defaultdict
 
 from gobekli.kvapi import RequestCanceled, RequestTimedout, RequestViolated
 from gobekli.consensus import Violation
@@ -65,7 +66,7 @@ class MWClient:
             data = response.record
             op_ended = loop.time()
             log_latency("ok", op_ended - self.started_at,
-                        op_ended - op_started, response.metrics)
+                        op_ended - op_started, self.node.idx, response.metrics)
             cmdlog.info(
                 m(type="write_ended",
                   node=self.node.name,
@@ -93,7 +94,7 @@ class MWClient:
                 self.stat.inc(self.node.name + ":out")
                 op_ended = loop.time()
                 log_latency("out", op_ended - self.started_at,
-                            op_ended - op_started)
+                            op_ended - op_started, self.node.idx)
                 cmdlog.info(
                     m(type="write_timedout",
                       node=self.node.name,
@@ -114,7 +115,7 @@ class MWClient:
                 self.stat.inc(self.node.name + ":err")
                 op_ended = loop.time()
                 log_latency("err", op_ended - self.started_at,
-                            op_ended - op_started)
+                            op_ended - op_started, self.node.idx)
                 cmdlog.info(
                     m(type="write_canceled",
                       node=self.node.name,
@@ -185,7 +186,7 @@ class MRClient:
             read = response.record
             op_ended = loop.time()
             log_latency("ok", op_ended - self.started_at,
-                        op_ended - op_started, response.metrics)
+                        op_ended - op_started, self.node.idx, response.metrics)
             if read == None:
                 cmdlog.info(
                     m(type="read_404",
@@ -209,7 +210,7 @@ class MRClient:
             try:
                 op_ended = loop.time()
                 log_latency("out", op_ended - self.started_at,
-                            op_ended - op_started)
+                            op_ended - op_started, self.node.idx)
                 self.stat.inc(self.node.name + ":out")
                 cmdlog.info(
                     m(type="read_timedout",
@@ -229,7 +230,7 @@ class MRClient:
             try:
                 op_ended = loop.time()
                 log_latency("err", op_ended - self.started_at,
-                            op_ended - op_started)
+                            op_ended - op_started, self.node.idx)
                 self.stat.inc(self.node.name + ".err")
                 cmdlog.info(
                     m(type="read_canceled",
@@ -329,14 +330,22 @@ class COMRMWWorkload:
         loop = asyncio.get_running_loop()
         started_at = loop.time()
 
+        clients_by_endpoint = defaultdict(lambda: [])
+
         for key in keys:
             for kv in self.kv_nodes:
-                clients.append(MWClient(started_at, stat, checker, kv, key))
+                mwclient = MWClient(started_at, stat, checker, kv, key)
+                clients_by_endpoint[kv.address].append(mwclient)
                 for _ in range(0, self.numOfReaders):
-                    clients.append(MRClient(started_at, stat, checker, kv,
-                                            key))
+                    mrclient = MRClient(started_at, stat, checker, kv, key)
+                    clients_by_endpoint[kv.address].append(mrclient)
 
+        clients_groups = list(clients_by_endpoint.values())
+        group_idx = 0
         while checker.is_valid and (not checker.is_aborted) and self.is_active:
+            clients = clients_groups[group_idx]
+            group_idx = (group_idx + 1) % len(clients_groups)
+
             i = random.randint(0, len(clients) - 1)
             client = clients[i]
             # TODO: keep track of tasks and wait them in the end

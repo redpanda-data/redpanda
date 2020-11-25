@@ -3,17 +3,20 @@
         {
             "host": "427.0.0.1",
             "httpport": 9092,
-            "id": "node0"
+            "id": "node0",
+            "idx": 0
         },
         {
             "host": "427.0.0.2",
             "httpport": 9092,
-            "id": "node1"
+            "id": "node1",
+            "idx": 1
         },
         {
             "host": "427.0.0.3",
             "httpport": 9092,
-            "id": "node2"
+            "id": "node2",
+            "idx": 2
         }
     ],
     "nodes": [

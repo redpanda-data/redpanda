@@ -346,7 +346,7 @@ class KafkaCluster:
             host = endpoint["host"]
             port = endpoint["httpport"]
             address = f"{host}:{port}"
-            kv = KVNode(address, address)
+            kv = KVNode(endpoint["idx"], address, address)
             try:
                 await kv.put_aio("test", "value1", "wid1")
                 is_ok = True

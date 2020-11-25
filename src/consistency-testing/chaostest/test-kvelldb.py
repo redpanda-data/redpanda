@@ -19,6 +19,8 @@ import logging
 import asyncio
 import argparse
 import json
+import shutil
+from os import path
 
 chaos_event_log = logging.getLogger("chaos-event")
 chaos_stdout = logging.getLogger("chaos-stdout")
@@ -71,7 +73,7 @@ def workload_factory(config):
         host = endpoint["host"]
         port = endpoint["httpport"]
         address = f"{host}:{port}"
-        nodes.append(KVNode(endpoint["id"], address))
+        nodes.append(KVNode(endpoint["idx"], endpoint["id"], address))
     if config["workload"]["name"] == "mrsw":
         return MRSWWorkload(nodes, config["writers"], config["readers"],
                             config["ss_metrics"])
@@ -83,10 +85,17 @@ def workload_factory(config):
         raise Exception("Unknown workload: " + config["workload"]["name"])
 
 
-async def run(config, n, overrides):
+async def run(config_json, n, overrides):
     suite_id = int(time.time())
 
+    with open(config_json, "r") as settings_json:
+        config = json.load(settings_json)
+
     init_output(config, suite_id)
+
+    shutil.copyfile(
+        config_json, path.join(config["output"], str(suite_id),
+                               "settings.json"))
 
     if overrides:
         for overide in overrides:
@@ -118,9 +127,4 @@ parser.add_argument('--repeat', type=int, default=1, required=False)
 
 args = parser.parse_args()
 
-config = None
-
-with open(args.config, "r") as settings_json:
-    config = json.load(settings_json)
-
-asyncio.run(run(config, args.repeat, args.override))
+asyncio.run(run(args.config, args.repeat, args.override))

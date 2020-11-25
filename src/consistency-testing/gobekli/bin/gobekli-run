@@ -15,7 +15,7 @@ async def mrsw_aio(kvs, writers, readers, duration, ss_metrics, cmd_log, latency
     
     nodes = []
     for i in range(0, len(kvs)):
-        nodes.append(KVNode(kvs[i], kvs[i]))
+        nodes.append(KVNode(i, kvs[i], kvs[i]))
     
     await symmetrical_mrsw.start_mrsw_workload_aio(nodes, writers, readers, duration, ss_metrics)
     
@@ -29,7 +29,7 @@ async def comrmw_aio(kvs, writers, readers, duration, ss_metrics, cmd_log, laten
     
     nodes = []
     for i in range(0, len(kvs)):
-        nodes.append(KVNode(kvs[i], kvs[i]))
+        nodes.append(KVNode(i, kvs[i], kvs[i]))
     
     await symmetrical_comrmw.start_comrsw_workload_aio(nodes, writers, readers, duration, ss_metrics)
     

@@ -3,17 +3,20 @@
         {
             "host": "427.0.0.1",
             "httpport": 8888,
-            "id": "endpoint0"
+            "id": "endpoint0",
+            "idx": 0
         },
         {
             "host": "427.0.0.2",
             "httpport": 8888,
-            "id": "endpoint1"
+            "id": "endpoint1",
+            "idx": 1
         },
         {
             "host": "427.0.0.3",
             "httpport": 8888,
-            "id": "endpoint2"
+            "id": "endpoint2",
+            "idx": 2
         }
     ],
     "nodes": [
@@ -181,7 +184,7 @@
     "cluster_warmup": 30,
     "exploitation": 60,
     "cooldown": 120,
-    "ss_metrics": [],
+    "ss_metrics": ["send_us", "catchup_us"],
     "cmd_log": "cmd.log",
     "latency_log": "lat.log",
     "availability_log": "1s.log",

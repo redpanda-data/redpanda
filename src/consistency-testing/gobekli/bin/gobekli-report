@@ -8,8 +8,8 @@ from collections import defaultdict
 from pathlib import Path
 
 from gobekli.logging import m
-from gobekli.chaos.analysis import (make_overview_chart,
-                                    make_latency_chart, make_availability_chart,
+from gobekli.chaos.analysis import (make_overview_chart, make_latency_chart,
+                                    make_pdf_latency_chart, make_availability_chart,
                                     analyze_inject_recover_availability)
 
 from os import path
@@ -163,12 +163,6 @@ EXPERIMENT = """
 <html>
     <head></head>
     <body>
-        <a href="overview.png"><img src="overview.png" width="600"/></a>
-
-        <a href="pdf.latency.png"><img src="pdf.latency.png" width="600"/></a>
-
-        <a href="availability.png"><img src="availability.png" width="600"/></a>
-
         <table class="setup">
             <tr>
                 <td class="label">system</td>
@@ -203,28 +197,65 @@ EXPERIMENT = """
                 <td class="value">{{ max_unavailability }}</td>
             </tr>
         </table>
+
+{% for chart in charts %}
+        <div>
+            <h2>{{ chart.title }}</h2>
+
+            <a href="{{ chart.latency }}"><img src="{{ chart.latency }}" width="600"/></a>
+
+            <a href="{{ chart.pdf_latency }}"><img src="{{ chart.pdf_latency }}" width="600"/></a>
+
+            <a href="{{ chart.availability }}"><img src="{{ chart.availability }}" width="600"/></a>        
+        </div>
+{% endfor %}
     </body>
 </html>
 """
 
-def build_charts(root, results, warmup_s, zoom_us):
+def build_charts(config, root, results, warmup_s, zoom_us):
     for result in results:
         path = os.path.join(root, result["path"])
         make_overview_chart(result["title"], path, result["availability_log"], result["latency_log"], warmup_s)
-        make_availability_chart(result["title"], path, result["availability_log"], result["latency_log"], warmup_s)
-        make_latency_chart(result["title"], path, result["availability_log"], result["latency_log"], warmup_s, zoom_us)
+        make_availability_chart(result["title"], None, path, result["availability_log"], result["latency_log"], warmup_s)
+        for endpoint in config["endpoints"]:
+           make_availability_chart(result["title"], endpoint["idx"], path, result["availability_log"], result["latency_log"], warmup_s)
+        make_pdf_latency_chart(result["title"], None, path, result["availability_log"], result["latency_log"], warmup_s, zoom_us)
+        for endpoint in config["endpoints"]:
+            make_pdf_latency_chart(result["title"], endpoint["idx"], path, result["availability_log"], result["latency_log"], warmup_s, zoom_us)
+        for endpoint in config["endpoints"]:
+            make_latency_chart(result["title"], endpoint["idx"], path, result["availability_log"], result["latency_log"], warmup_s)
         came_from = os.getcwd()
         os.chdir(path)
+        gnuplot("pdf.latency.all.gp")
+        rm("pdf.latency.all.gp")
+        rm("pdf.latency.all.log")
+        for endpoint in config["endpoints"]:
+            idx = endpoint["idx"]
+            gnuplot(f"pdf.latency.{idx}.gp")
+            rm(f"pdf.latency.{idx}.gp")
+            rm(f"pdf.latency.{idx}.log")
+        
+        gnuplot("availability.all.gp")
+        rm("availability.all.gp")
+        rm("availability.all.log")
+        for endpoint in config["endpoints"]:
+            idx = endpoint["idx"]
+            gnuplot(f"availability.{idx}.gp")
+            rm(f"availability.{idx}.gp")
+            rm(f"availability.{idx}.log")
+
+        for endpoint in config["endpoints"]:
+            idx = endpoint["idx"]
+            gnuplot(f"latency.{idx}.gp")
+            rm(f"latency.{idx}.gp")
+            rm(f"latency.{idx}.log")
+
         gnuplot("overview.gp")
         rm("overview.gp")
         rm("overview.lat.log")
         rm("overview.1s.log")
-        gnuplot("pdf.latency.gp")
-        rm("pdf.latency.gp")
-        rm("pdf.latency.log")
-        gnuplot("availability.gp")
-        rm("availability.gp")
-        rm("availability.log")
+
         os.chdir(came_from)
 
 def archive_logs(root, results):
@@ -259,13 +290,31 @@ def archive_failed_cmd_log(root, results):
                 for f in cmd_logs:
                     os.remove(path.join(root, result["path"], f))
 
-def build_experiment_index(context, root, result, warmup, zoom_us):
+
+class ChartSet:
+    def __init__(self, title, latency, pdf_latency, availability):
+        self.title = title
+        self.latency = latency
+        self.pdf_latency = pdf_latency
+        self.availability = availability
+
+def build_experiment_index(context, config, root, result, warmup, zoom_us):
     index_path = os.path.join(root, result["path"], "index.html")
+    
+    charts = [
+        ChartSet("Combined", "overview.png", "pdf.latency.all.png", "availability.all.png")
+    ]
+
+    for endpoint in config["endpoints"]:
+        idx = endpoint["idx"]
+        charts.append(ChartSet(endpoint["id"], f"latency.{idx}.png", f"pdf.latency.{idx}.png", f"availability.{idx}.png"))
+    
     with open(index_path, 'w') as html:
         html.write(jinja2.Template(EXPERIMENT).render(
             system = context["system"],
             workload = context["workload"],
             scenario = context["scenario"],
+            charts = charts,
             fault = result["fault"],
             id = result["id"],
             min_lat = result["stat"]["min_lat"],
@@ -295,6 +344,10 @@ def build_alerts(root, results):
         for result in results:
             if result["status"] == "failed":
                 alerts.write(str(m(type="consistency", message=result["error"], id=result["id"])) + "\n")
+
+def load_config(root):
+    with open(path.join(root, "settings.json")) as config_json:
+        return json.load(config_json)
 
 def build_index(context, title, root, results):
     ava_stat = defaultdict(lambda: [])
@@ -357,13 +410,14 @@ def build_index(context, title, root, results):
 def build_report(results_log, warmup_s, zoom_us):
     root = Path(results_log).parent
     context = load_context(root)
+    config = load_config(root)
     results = list(load_results(context, results_log, warmup_s))   
 
-    build_charts(root, results, warmup_s, zoom_us)
+    build_charts(config, root, results, warmup_s, zoom_us)
     archive_failed_cmd_log(root, results)
     
     for result in results:
-        build_experiment_index(context, root, result, warmup_s, zoom_us)
+        build_experiment_index(context, config, root, result, warmup_s, zoom_us)
     
     build_index(context, results_log, root, results)
     build_alerts(root, results)

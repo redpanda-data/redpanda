@@ -237,7 +237,8 @@ class ReaderClient:
                 read = response.record
                 op_ended = loop.time()
                 log_latency("ok", op_ended - self.started_at,
-                            op_ended - op_started, response.metrics)
+                            op_ended - op_started, self.node.idx,
+                            response.metrics)
                 if read == None:
                     cmdlog.info(
                         m(type="read_404",
@@ -263,7 +264,7 @@ class ReaderClient:
                 try:
                     op_ended = loop.time()
                     log_latency("out", op_ended - self.started_at,
-                                op_ended - op_started)
+                                op_ended - op_started, self.node.idx)
                     self.stat.inc(self.node.name + ":out")
                     cmdlog.info(
                         m(type="read_timedout",
@@ -288,7 +289,7 @@ class ReaderClient:
                 try:
                     op_ended = loop.time()
                     log_latency("err", op_ended - self.started_at,
-                                op_ended - op_started)
+                                op_ended - op_started, self.node.idx)
                     self.stat.inc(self.node.name + ".err")
                     cmdlog.info(
                         m(type="read_canceled",
