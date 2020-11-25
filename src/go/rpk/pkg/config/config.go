@@ -34,13 +34,13 @@ const (
 	ModeProd = "prod"
 )
 
-func Default() Config {
+func Default() *Config {
 	conf := &Config{}
 	err := mapstructure.Decode(defaultMap(), conf)
 	if err != nil {
 		panic(err)
 	}
-	return *conf
+	return conf
 }
 
 func defaultMap() map[string]interface{} {
@@ -178,7 +178,7 @@ func ReadOrGenerate(fs afero.Fs, configFile string) (*Config, error) {
 		)
 		conf := Default()
 		conf.ConfigFile = configFile
-		err = WriteConfig(fs, &conf, configFile)
+		err = WriteConfig(fs, conf, configFile)
 		if err != nil {
 			return nil, fmt.Errorf(
 				"Couldn't write config to %s: %v",
@@ -186,7 +186,7 @@ func ReadOrGenerate(fs afero.Fs, configFile string) (*Config, error) {
 				err,
 			)
 		}
-		return &conf, nil
+		return conf, nil
 	}
 	return nil, fmt.Errorf(
 		"An error happened while trying to read %s: %v",

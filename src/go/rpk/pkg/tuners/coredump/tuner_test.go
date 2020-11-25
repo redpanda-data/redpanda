@@ -19,7 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func validConfig() config.Config {
+func validConfig() *config.Config {
 	conf := config.Default()
 	conf.Rpk.TuneCoredump = true
 	conf.Rpk.CoredumpDir = "/var/lib/redpanda/coredumps"
@@ -29,8 +29,8 @@ func validConfig() config.Config {
 func TestTune(t *testing.T) {
 	tests := []struct {
 		name string
-		pre  func(afero.Fs, config.Config) error
-		conf func() config.Config
+		pre  func(afero.Fs) error
+		conf func() *config.Config
 	}{
 		{
 			name: "it should install the coredump config file",
@@ -38,7 +38,7 @@ func TestTune(t *testing.T) {
 		},
 		{
 			name: "it should not fail to install if the coredump config file already exists",
-			pre: func(fs afero.Fs, config config.Config) error {
+			pre: func(fs afero.Fs) error {
 				_, err := fs.Create(corePatternFilePath)
 				return err
 			},
@@ -50,10 +50,10 @@ func TestTune(t *testing.T) {
 			fs := afero.NewMemMapFs()
 			conf := tt.conf()
 			if tt.pre != nil {
-				err := tt.pre(fs, conf)
+				err := tt.pre(fs)
 				require.NoError(t, err)
 			}
-			tuner := NewCoredumpTuner(fs, tt.conf(), executors.NewDirectExecutor())
+			tuner := NewCoredumpTuner(fs, *conf, executors.NewDirectExecutor())
 			res := tuner.Tune()
 			require.NoError(t, res.Error())
 			pattern, err := fs.Open(corePatternFilePath)

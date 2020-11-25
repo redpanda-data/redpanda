@@ -23,7 +23,7 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-func fillRpkConfig(path, mode string) config.Config {
+func fillRpkConfig(path, mode string) *config.Config {
 	conf := config.Default()
 	val := mode == config.ModeProd
 	conf.Redpanda.DeveloperMode = !val
@@ -55,7 +55,7 @@ func TestModeCommand(t *testing.T) {
 		name           string
 		args           []string
 		before         func(afero.Fs) (string, error)
-		expectedConfig config.Config
+		expectedConfig *config.Config
 		expectedOutput string
 		expectedErrMsg string
 	}{
@@ -163,7 +163,7 @@ func TestModeCommand(t *testing.T) {
 			require.Contains(t, strings.TrimSpace(output), tt.expectedOutput)
 			conf, err := config.ReadConfigFromPath(fs, path)
 			require.NoError(t, err)
-			require.Exactly(t, tt.expectedConfig, *conf)
+			require.Exactly(t, tt.expectedConfig, conf)
 		})
 	}
 }

@@ -50,7 +50,7 @@ func getValidConfig() *Config {
 		CoredumpDir:              "/var/lib/redpanda/coredumps",
 		WellKnownIo:              "vendor:vm:storage",
 	}
-	return &conf
+	return conf
 }
 
 func TestSet(t *testing.T) {
@@ -173,7 +173,7 @@ func TestSet(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			fs := afero.NewMemMapFs()
 			conf := Default()
-			err := WriteConfig(fs, &conf, conf.ConfigFile)
+			err := WriteConfig(fs, conf, conf.ConfigFile)
 			require.NoError(t, err)
 			err = Set(fs, tt.key, tt.value, tt.format, conf.ConfigFile)
 			if tt.expectErr {
@@ -195,7 +195,7 @@ func TestSet(t *testing.T) {
 
 func TestDefault(t *testing.T) {
 	defaultConfig := Default()
-	expected := Config{
+	expected := &Config{
 		ConfigFile: "/etc/redpanda/redpanda.yaml",
 		Redpanda: RedpandaConfig{
 			Directory: "/var/lib/redpanda/data",
@@ -615,7 +615,7 @@ func TestInitConfig(t *testing.T) {
 			name: "it shouldn't fail if there's a config file already",
 			setup: func(fs afero.Fs) error {
 				conf := Default()
-				return WriteConfig(fs, &conf, conf.ConfigFile)
+				return WriteConfig(fs, conf, conf.ConfigFile)
 			},
 			configFile: Default().ConfigFile,
 		},
@@ -651,7 +651,7 @@ func TestInitConfig(t *testing.T) {
 }
 
 func TestSetMode(t *testing.T) {
-	fillRpkConfig := func(mode string) Config {
+	fillRpkConfig := func(mode string) *Config {
 		conf := Default()
 		val := mode == ModeProd
 		conf.Redpanda.DeveloperMode = !val
@@ -674,7 +674,7 @@ func TestSetMode(t *testing.T) {
 	tests := []struct {
 		name           string
 		mode           string
-		expectedConfig Config
+		expectedConfig *Config
 		expectedErrMsg string
 	}{
 		{
@@ -712,13 +712,13 @@ func TestSetMode(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(st *testing.T) {
 			defaultConf := Default()
-			conf, err := SetMode(tt.mode, &defaultConf)
+			conf, err := SetMode(tt.mode, defaultConf)
 			if tt.expectedErrMsg != "" {
 				require.EqualError(t, err, tt.expectedErrMsg)
 				return
 			}
 			require.NoError(t, err)
-			require.Exactly(t, tt.expectedConfig, *conf)
+			require.Exactly(t, tt.expectedConfig, conf)
 		})
 	}
 }
@@ -863,7 +863,7 @@ func TestReadAsJSON(t *testing.T) {
 			name: "it should load the config as JSON",
 			before: func(fs afero.Fs) error {
 				conf := Default()
-				return WriteConfig(fs, &conf, conf.ConfigFile)
+				return WriteConfig(fs, conf, conf.ConfigFile)
 			},
 			path:     Default().ConfigFile,
 			expected: `{"config_file":"/etc/redpanda/redpanda.yaml","redpanda":{"admin":{"address":"0.0.0.0","port":9644},"data_directory":"/var/lib/redpanda/data","developer_mode":false,"kafka_api":{"address":"0.0.0.0","port":9092},"node_id":0,"rpc_server":{"address":"0.0.0.0","port":33145},"seed_servers":[]},"rpk":{"coredump_dir":"/var/lib/redpanda/coredump","enable_memory_locking":false,"enable_usage_stats":false,"overprovisioned":false,"tune_aio_events":false,"tune_clocksource":false,"tune_coredump":false,"tune_cpu":false,"tune_disk_irq":false,"tune_disk_nomerges":false,"tune_disk_scheduler":false,"tune_fstrim":false,"tune_network":false,"tune_swappiness":false,"tune_transparent_hugepages":false}}`,
@@ -929,7 +929,7 @@ func TestReadFlat(t *testing.T) {
 			1001,
 		},
 	}
-	err := WriteConfig(fs, &conf, conf.ConfigFile)
+	err := WriteConfig(fs, conf, conf.ConfigFile)
 	require.NoError(t, err)
 	props, err := ReadFlat(fs, conf.ConfigFile)
 	require.NoError(t, err)

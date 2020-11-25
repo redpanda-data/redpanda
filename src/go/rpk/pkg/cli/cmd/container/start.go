@@ -358,7 +358,7 @@ func writeNodeConfig(
 	conf.Rpk.SMP = &cores
 	conf.Redpanda.DeveloperMode = true
 
-	return &conf, config.WriteConfig(fs, &conf, path)
+	return conf, config.WriteConfig(fs, conf, path)
 }
 
 func renderClusterInfo(nodes []node) {

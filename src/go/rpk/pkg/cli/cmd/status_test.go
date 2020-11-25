@@ -23,8 +23,7 @@ import (
 func getConfig() *config.Config {
 	conf := config.Default()
 	conf.Rpk.EnableUsageStats = true
-	conf.ConfigFile = "/etc/redpanda/redpanda.yaml"
-	return &conf
+	return conf
 }
 
 func writeConfig(fs afero.Fs, conf *config.Config) error {

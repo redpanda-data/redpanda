@@ -105,8 +105,7 @@ Would you like to continue with the default configuration?`,
 				if !confirmed {
 					return nil
 				}
-				defaultConf := config.Default()
-				conf = &defaultConf
+				conf = config.Default()
 			}
 			config.CheckAndPrintNotice(conf.LicenseKey)
 			var tunerFactory factory.TunersFactory

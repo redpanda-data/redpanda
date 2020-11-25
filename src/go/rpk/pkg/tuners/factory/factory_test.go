@@ -59,7 +59,7 @@ func TestMergeTunerParamsConfig(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			conf := config.Default()
-			res, err := factory.MergeTunerParamsConfig(tt.tunerParams(), &conf)
+			res, err := factory.MergeTunerParamsConfig(tt.tunerParams(), conf)
 			require.NoError(t, err)
 			expected := tt.expected()
 			require.Exactly(t, expected, res)

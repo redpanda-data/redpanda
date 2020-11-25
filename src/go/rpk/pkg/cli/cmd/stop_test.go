@@ -74,7 +74,7 @@ func TestStopCommand(t *testing.T) {
 			)
 			require.NoError(t, err)
 
-			err = config.WriteConfig(fs, &conf, confPath)
+			err = config.WriteConfig(fs, conf, confPath)
 			require.NoError(t, err)
 
 			var out bytes.Buffer
