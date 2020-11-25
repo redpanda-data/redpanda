@@ -33,7 +33,7 @@ func getValidConfig() *Config {
 			2,
 		},
 	}
-	conf.Rpk = &RpkConfig{
+	conf.Rpk = RpkConfig{
 		EnableUsageStats:         true,
 		TuneNetwork:              true,
 		TuneDiskScheduler:        true,
@@ -103,13 +103,8 @@ func TestSet(t *testing.T) {
 			value:  `tune_disk_irq: true`,
 			format: "yaml",
 			expected: map[string]interface{}{
-				"enable_usage_stats": false,
-				"overprovisioned":    false,
-				"tls": map[string]interface{}{
-					"cert_file":       "",
-					"key_file":        "",
-					"truststore_file": "",
-				},
+				"enable_usage_stats":         false,
+				"overprovisioned":            false,
 				"tune_network":               false,
 				"tune_disk_scheduler":        false,
 				"tune_disk_nomerges":         false,
@@ -202,14 +197,14 @@ func TestDefault(t *testing.T) {
 	defaultConfig := Default()
 	expected := Config{
 		ConfigFile: "/etc/redpanda/redpanda.yaml",
-		Redpanda: &RedpandaConfig{
+		Redpanda: RedpandaConfig{
 			Directory: "/var/lib/redpanda/data",
 			RPCServer: SocketAddress{"0.0.0.0", 33145},
 			KafkaApi:  SocketAddress{"0.0.0.0", 9092},
 			AdminApi:  SocketAddress{"0.0.0.0", 9644},
 			Id:        0,
 		},
-		Rpk: &RpkConfig{
+		Rpk: RpkConfig{
 			CoredumpDir: "/var/lib/redpanda/coredump",
 		},
 	}
@@ -280,7 +275,6 @@ func TestWriteConfig(t *testing.T) {
 					"174.32.64.2",
 					33145,
 				}
-				c.Rpk = nil
 				return c
 			},
 			wantErr: false,
@@ -297,11 +291,6 @@ redpanda:
   kafka_api:
     address: 0.0.0.0
     port: 9092
-  kafka_api_tls:
-    cert_file: ""
-    enabled: false
-    key_file: ""
-    truststore_file: ""
   node_id: 0
   rpc_server:
     address: 0.0.0.0
@@ -315,6 +304,23 @@ redpanda:
       address: 127.0.0.1
       port: 33146
     node_id: 2
+rpk:
+  coredump_dir: /var/lib/redpanda/coredumps
+  enable_memory_locking: true
+  enable_usage_stats: true
+  overprovisioned: false
+  tune_aio_events: true
+  tune_clocksource: true
+  tune_coredump: true
+  tune_cpu: true
+  tune_disk_irq: true
+  tune_disk_nomerges: true
+  tune_disk_scheduler: true
+  tune_fstrim: true
+  tune_network: true
+  tune_swappiness: true
+  tune_transparent_hugepages: true
+  well_known_io: vendor:vm:storage
 `,
 		},
 		{
@@ -325,7 +331,6 @@ redpanda:
 					"174.32.64.2",
 					9092,
 				}
-				c.Rpk = nil
 				return c
 			},
 			wantErr: false,
@@ -342,11 +347,6 @@ redpanda:
   kafka_api:
     address: 0.0.0.0
     port: 9092
-  kafka_api_tls:
-    cert_file: ""
-    enabled: false
-    key_file: ""
-    truststore_file: ""
   node_id: 0
   rpc_server:
     address: 0.0.0.0
@@ -360,13 +360,30 @@ redpanda:
       address: 127.0.0.1
       port: 33146
     node_id: 2
+rpk:
+  coredump_dir: /var/lib/redpanda/coredumps
+  enable_memory_locking: true
+  enable_usage_stats: true
+  overprovisioned: false
+  tune_aio_events: true
+  tune_clocksource: true
+  tune_coredump: true
+  tune_cpu: true
+  tune_disk_irq: true
+  tune_disk_nomerges: true
+  tune_disk_scheduler: true
+  tune_fstrim: true
+  tune_network: true
+  tune_swappiness: true
+  tune_transparent_hugepages: true
+  well_known_io: vendor:vm:storage
 `,
 		},
 		{
 			name: "shall write a valid config file without an rpk config object",
 			conf: func() *Config {
 				c := getValidConfig()
-				c.Rpk = nil
+				c.Rpk = RpkConfig{}
 				return c
 			},
 			wantErr: false,
@@ -380,11 +397,6 @@ redpanda:
   kafka_api:
     address: 0.0.0.0
     port: 9092
-  kafka_api_tls:
-    cert_file: ""
-    enabled: false
-    key_file: ""
-    truststore_file: ""
   node_id: 0
   rpc_server:
     address: 0.0.0.0
@@ -398,6 +410,21 @@ redpanda:
       address: 127.0.0.1
       port: 33146
     node_id: 2
+rpk:
+  enable_memory_locking: false
+  enable_usage_stats: false
+  overprovisioned: false
+  tune_aio_events: false
+  tune_clocksource: false
+  tune_coredump: false
+  tune_cpu: false
+  tune_disk_irq: false
+  tune_disk_nomerges: false
+  tune_disk_scheduler: false
+  tune_fstrim: false
+  tune_network: false
+  tune_swappiness: false
+  tune_transparent_hugepages: false
 `,
 		},
 		{
@@ -430,11 +457,6 @@ redpanda:
   kafka_api:
     address: 0.0.0.0
     port: 9092
-  kafka_api_tls:
-    cert_file: ""
-    enabled: false
-    key_file: ""
-    truststore_file: ""
   node_id: 0
   rpc_server:
     address: 0.0.0.0
@@ -453,10 +475,6 @@ rpk:
   enable_memory_locking: true
   enable_usage_stats: true
   overprovisioned: false
-  tls:
-    cert_file: ""
-    key_file: ""
-    truststore_file: ""
   tune_aio_events: true
   tune_clocksource: true
   tune_coredump: true
@@ -515,11 +533,6 @@ redpanda:
   kafka_api:
     address: 0.0.0.0
     port: 9092
-  kafka_api_tls:
-    cert_file: ""
-    enabled: false
-    key_file: ""
-    truststore_file: ""
   node_id: 0
   rpc_server:
     address: 0.0.0.0
@@ -539,10 +552,6 @@ rpk:
   enable_memory_locking: true
   enable_usage_stats: true
   overprovisioned: false
-  tls:
-    cert_file: ""
-    key_file: ""
-    truststore_file: ""
   tune_aio_events: true
   tune_clocksource: true
   tune_coredump: true
@@ -646,7 +655,7 @@ func TestSetMode(t *testing.T) {
 		conf := Default()
 		val := mode == ModeProd
 		conf.Redpanda.DeveloperMode = !val
-		conf.Rpk = &RpkConfig{
+		conf.Rpk = RpkConfig{
 			TuneNetwork:       val,
 			TuneDiskScheduler: val,
 			TuneNomerges:      val,
@@ -857,7 +866,7 @@ func TestReadAsJSON(t *testing.T) {
 				return WriteConfig(fs, &conf, conf.ConfigFile)
 			},
 			path:     Default().ConfigFile,
-			expected: `{"config_file":"/etc/redpanda/redpanda.yaml","redpanda":{"admin":{"address":"0.0.0.0","port":9644},"data_directory":"/var/lib/redpanda/data","developer_mode":false,"kafka_api":{"address":"0.0.0.0","port":9092},"kafka_api_tls":{"cert_file":"","enabled":false,"key_file":"","truststore_file":""},"node_id":0,"rpc_server":{"address":"0.0.0.0","port":33145}},"rpk":{"coredump_dir":"/var/lib/redpanda/coredump","enable_memory_locking":false,"enable_usage_stats":false,"overprovisioned":false,"tls":{"cert_file":"","key_file":"","truststore_file":""},"tune_aio_events":false,"tune_clocksource":false,"tune_coredump":false,"tune_cpu":false,"tune_disk_irq":false,"tune_disk_nomerges":false,"tune_disk_scheduler":false,"tune_fstrim":false,"tune_network":false,"tune_swappiness":false,"tune_transparent_hugepages":false}}`,
+			expected: `{"config_file":"/etc/redpanda/redpanda.yaml","redpanda":{"admin":{"address":"0.0.0.0","port":9644},"data_directory":"/var/lib/redpanda/data","developer_mode":false,"kafka_api":{"address":"0.0.0.0","port":9092},"node_id":0,"rpc_server":{"address":"0.0.0.0","port":33145},"seed_servers":[]},"rpk":{"coredump_dir":"/var/lib/redpanda/coredump","enable_memory_locking":false,"enable_usage_stats":false,"overprovisioned":false,"tune_aio_events":false,"tune_clocksource":false,"tune_coredump":false,"tune_cpu":false,"tune_disk_irq":false,"tune_disk_nomerges":false,"tune_disk_scheduler":false,"tune_fstrim":false,"tune_network":false,"tune_swappiness":false,"tune_transparent_hugepages":false}}`,
 		},
 		{
 			name:           "it should fail if the the config isn't found",
@@ -884,37 +893,30 @@ func TestReadAsJSON(t *testing.T) {
 
 func TestReadFlat(t *testing.T) {
 	expected := map[string]string{
-		"config_file":                            "/etc/redpanda/redpanda.yaml",
-		"redpanda.admin":                         "0.0.0.0:9644",
-		"redpanda.data_directory":                "/var/lib/redpanda/data",
-		"redpanda.developer_mode":                "false",
-		"redpanda.kafka_api":                     "0.0.0.0:9092",
-		"redpanda.kafka_api_tls.cert_file":       "",
-		"redpanda.kafka_api_tls.enabled":         "false",
-		"redpanda.kafka_api_tls.key_file":        "",
-		"redpanda.kafka_api_tls.truststore_file": "",
-		"redpanda.node_id":                       "0",
-		"redpanda.rpc_server":                    "0.0.0.0:33145",
-		"redpanda.seed_servers.1000":             "192.168.167.0:1337",
-		"redpanda.seed_servers.1001":             "192.168.167.1:1337",
-		"rpk.coredump_dir":                       "/var/lib/redpanda/coredump",
-		"rpk.enable_memory_locking":              "false",
-		"rpk.enable_usage_stats":                 "false",
-		"rpk.overprovisioned":                    "false",
-		"rpk.tls.cert_file":                      "",
-		"rpk.tls.key_file":                       "",
-		"rpk.tls.truststore_file":                "",
-		"rpk.tune_aio_events":                    "false",
-		"rpk.tune_clocksource":                   "false",
-		"rpk.tune_coredump":                      "false",
-		"rpk.tune_cpu":                           "false",
-		"rpk.tune_disk_irq":                      "false",
-		"rpk.tune_disk_nomerges":                 "false",
-		"rpk.tune_disk_scheduler":                "false",
-		"rpk.tune_fstrim":                        "false",
-		"rpk.tune_network":                       "false",
-		"rpk.tune_swappiness":                    "false",
-		"rpk.tune_transparent_hugepages":         "false",
+		"config_file":                    "/etc/redpanda/redpanda.yaml",
+		"redpanda.admin":                 "0.0.0.0:9644",
+		"redpanda.data_directory":        "/var/lib/redpanda/data",
+		"redpanda.developer_mode":        "false",
+		"redpanda.kafka_api":             "0.0.0.0:9092",
+		"redpanda.node_id":               "0",
+		"redpanda.rpc_server":            "0.0.0.0:33145",
+		"redpanda.seed_servers.1000":     "192.168.167.0:1337",
+		"redpanda.seed_servers.1001":     "192.168.167.1:1337",
+		"rpk.coredump_dir":               "/var/lib/redpanda/coredump",
+		"rpk.enable_memory_locking":      "false",
+		"rpk.enable_usage_stats":         "false",
+		"rpk.overprovisioned":            "false",
+		"rpk.tune_aio_events":            "false",
+		"rpk.tune_clocksource":           "false",
+		"rpk.tune_coredump":              "false",
+		"rpk.tune_cpu":                   "false",
+		"rpk.tune_disk_irq":              "false",
+		"rpk.tune_disk_nomerges":         "false",
+		"rpk.tune_disk_scheduler":        "false",
+		"rpk.tune_fstrim":                "false",
+		"rpk.tune_network":               "false",
+		"rpk.tune_swappiness":            "false",
+		"rpk.tune_transparent_hugepages": "false",
 	}
 	fs := afero.NewMemMapFs()
 	conf := Default()

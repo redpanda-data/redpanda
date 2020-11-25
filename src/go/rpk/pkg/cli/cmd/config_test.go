@@ -60,12 +60,7 @@ func TestSet(t *testing.T) {
 			value: `tune_disk_irq: true`,
 			args:  []string{"--format", "yaml"},
 			expected: map[string]interface{}{
-				"enable_usage_stats": false,
-				"tls": map[string]interface{}{
-					"cert_file":       "",
-					"key_file":        "",
-					"truststore_file": "",
-				},
+				"enable_usage_stats":         false,
 				"overprovisioned":            false,
 				"tune_network":               false,
 				"tune_disk_scheduler":        false,
