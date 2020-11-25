@@ -52,7 +52,7 @@ func TestInteractive(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			conf := config.DefaultConfig()
+			conf := config.Default()
 			fs := afero.NewMemMapFs()
 			// Write invalid yaml to simulate an error
 			_, err := utils.WriteBytes(fs, []byte("*asdf&"), conf.ConfigFile)

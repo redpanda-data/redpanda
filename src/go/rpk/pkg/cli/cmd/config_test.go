@@ -139,7 +139,7 @@ func TestSet(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			fs := afero.NewMemMapFs()
-			conf := config.DefaultConfig()
+			conf := config.Default()
 			err := config.WriteConfig(fs, &conf, conf.ConfigFile)
 			require.NoError(t, err)
 
@@ -265,7 +265,7 @@ func TestBootstrap(t *testing.T) {
 
 func TestInitNode(t *testing.T) {
 	fs := afero.NewMemMapFs()
-	conf := config.DefaultConfig()
+	conf := config.Default()
 	err := config.WriteConfig(fs, &conf, conf.ConfigFile)
 	require.NoError(t, err)
 	c := cmd.NewConfigCommand(fs)

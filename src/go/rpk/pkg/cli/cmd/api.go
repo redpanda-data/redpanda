@@ -108,7 +108,7 @@ func findConfigFile(
 						" wasn't passed, using default" +
 						" config",
 				)
-				defaultConf := config.DefaultConfig()
+				defaultConf := config.Default()
 				conf = &defaultConf
 				return conf, nil
 			}

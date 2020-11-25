@@ -124,14 +124,14 @@ func GetState(c Client, nodeID uint) (*NodeState, error) {
 	}
 
 	hostRPCPort, err := getHostPort(
-		config.DefaultConfig().Redpanda.RPCServer.Port,
+		config.Default().Redpanda.RPCServer.Port,
 		containerJSON,
 	)
 	if err != nil {
 		return nil, err
 	}
 	hostKafkaPort, err := getHostPort(
-		config.DefaultConfig().Redpanda.KafkaApi.Port,
+		config.Default().Redpanda.KafkaApi.Port,
 		containerJSON,
 	)
 	if err != nil {
@@ -213,14 +213,14 @@ func CreateNode(
 ) (*NodeState, error) {
 	rPort, err := nat.NewPort(
 		"tcp",
-		strconv.Itoa(config.DefaultConfig().Redpanda.RPCServer.Port),
+		strconv.Itoa(config.Default().Redpanda.RPCServer.Port),
 	)
 	if err != nil {
 		return nil, err
 	}
 	kPort, err := nat.NewPort(
 		"tcp",
-		strconv.Itoa(config.DefaultConfig().Redpanda.KafkaApi.Port),
+		strconv.Itoa(config.Default().Redpanda.KafkaApi.Port),
 	)
 	if err != nil {
 		return nil, err

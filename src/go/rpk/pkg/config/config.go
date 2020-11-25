@@ -107,7 +107,7 @@ func (conf *Config) PIDFile() string {
 	return path.Join(conf.Redpanda.Directory, "pid.lock")
 }
 
-func DefaultConfig() Config {
+func Default() Config {
 	return Config{
 		ConfigFile: "/etc/redpanda/redpanda.yaml",
 		Redpanda: &RedpandaConfig{
@@ -231,7 +231,7 @@ func ReadOrGenerate(fs afero.Fs, configFile string) (*Config, error) {
 			"Couldn't find config file at %s. Generating it.",
 			configFile,
 		)
-		conf := DefaultConfig()
+		conf := Default()
 		conf.ConfigFile = configFile
 		err = WriteConfig(fs, &conf, configFile)
 		if err != nil {
@@ -443,7 +443,7 @@ func setDevelopment(conf *Config) *Config {
 	conf.Rpk = &RpkConfig{
 		EnableUsageStats: conf.Rpk.EnableUsageStats,
 		CoredumpDir:      conf.Rpk.CoredumpDir,
-		SMP:              DefaultConfig().Rpk.SMP,
+		SMP:              Default().Rpk.SMP,
 		Overprovisioned:  true,
 	}
 	return conf

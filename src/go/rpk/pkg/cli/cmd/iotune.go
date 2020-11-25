@@ -60,7 +60,7 @@ func NewIoTuneCmd(fs afero.Fs) *cobra.Command {
 	command.Flags().StringVar(
 		&outputFile,
 		"out",
-		filepath.Join(filepath.Dir(config.DefaultConfig().ConfigFile), "io-config.yaml"),
+		filepath.Join(filepath.Dir(config.Default().ConfigFile), "io-config.yaml"),
 		"The file path where the IO config will be written",
 	)
 	command.Flags().StringSliceVar(&directories,

@@ -87,7 +87,7 @@ especify an arbitrary config file.`,
 A comma-delimited list of the addresses (<host:port>) of all the redpanda nodes
 in a cluster. The port must be the one configured for the nodes' admin API
 (%d by default)`,
-			config.DefaultConfig().Redpanda.AdminApi.Port,
+			config.Default().Redpanda.AdminApi.Port,
 		))
 	command.Flags().StringVar(
 		&seedAddr,

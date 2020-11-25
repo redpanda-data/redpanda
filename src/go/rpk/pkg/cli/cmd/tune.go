@@ -105,7 +105,7 @@ Would you like to continue with the default configuration?`,
 				if !confirmed {
 					return nil
 				}
-				defaultConf := config.DefaultConfig()
+				defaultConf := config.Default()
 				conf = &defaultConf
 			}
 			config.CheckAndPrintNotice(conf.LicenseKey)

@@ -24,7 +24,7 @@ import (
 )
 
 func fillRpkConfig(path, mode string) config.Config {
-	conf := config.DefaultConfig()
+	conf := config.Default()
 	val := mode == config.ModeProd
 	conf.Redpanda.DeveloperMode = !val
 	conf.Rpk = &config.RpkConfig{
