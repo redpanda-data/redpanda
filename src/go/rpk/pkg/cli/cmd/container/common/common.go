@@ -164,34 +164,37 @@ func CreateNetwork(c Client) (string, error) {
 		return "", err
 	}
 
-	if len(networks) == 0 {
-		log.Debugf(
-			"Docker network '%s' doesn't exist, creating.",
-			redpandaNetwork,
-		)
-		resp, err := c.NetworkCreate(
-			ctx, redpandaNetwork, types.NetworkCreate{
-				Driver: "bridge",
-				IPAM: &network.IPAM{
-					Driver: "default",
-					Config: []network.IPAMConfig{
-						network.IPAMConfig{
-							Subnet:  "172.24.1.0/24",
-							Gateway: "172.24.1.1",
-						},
+	for _, net := range networks {
+		if net.Name == redpandaNetwork {
+			return net.ID, nil
+		}
+	}
+
+	log.Debugf(
+		"Docker network '%s' doesn't exist, creating.",
+		redpandaNetwork,
+	)
+	resp, err := c.NetworkCreate(
+		ctx, redpandaNetwork, types.NetworkCreate{
+			Driver: "bridge",
+			IPAM: &network.IPAM{
+				Driver: "default",
+				Config: []network.IPAMConfig{
+					network.IPAMConfig{
+						Subnet:  "172.24.1.0/24",
+						Gateway: "172.24.1.1",
 					},
 				},
 			},
-		)
-		if err != nil {
-			return "", err
-		}
-		if resp.Warning != "" {
-			log.Debug(resp.Warning)
-		}
-		return resp.ID, nil
+		},
+	)
+	if err != nil {
+		return "", err
 	}
-	return networks[0].ID, nil
+	if resp.Warning != "" {
+		log.Debug(resp.Warning)
+	}
+	return resp.ID, nil
 }
 
 // Delete the Redpanda network if it exists.
