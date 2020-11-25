@@ -329,7 +329,7 @@ func writeNodeConfig(
 	cores int,
 ) (*config.Config, error) {
 	localhost := "127.0.0.1"
-	conf := config.DefaultConfig()
+	conf := config.Default()
 	conf.Redpanda.Id = int(nodeID)
 
 	conf.Redpanda.KafkaApi.Address = ip

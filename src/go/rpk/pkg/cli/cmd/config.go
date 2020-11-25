@@ -95,7 +95,7 @@ func bootstrap(fs afero.Fs) *cobra.Command {
 			" ones can join later.",
 		Args: cobra.OnlyValidArgs,
 		RunE: func(c *cobra.Command, args []string) error {
-			defaultRpcPort := config.DefaultConfig().Redpanda.RPCServer.Port
+			defaultRpcPort := config.Default().Redpanda.RPCServer.Port
 			conf, err := config.FindOrGenerate(fs, configPath)
 			if err != nil {
 				return errors.New("YAML")

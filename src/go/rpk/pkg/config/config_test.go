@@ -22,7 +22,7 @@ import (
 )
 
 func getValidConfig() *Config {
-	conf := DefaultConfig()
+	conf := Default()
 	conf.Redpanda.SeedServers = []*SeedServer{
 		&SeedServer{
 			SocketAddress{"127.0.0.1", 33145},
@@ -177,7 +177,7 @@ func TestSet(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			fs := afero.NewMemMapFs()
-			conf := DefaultConfig()
+			conf := Default()
 			err := WriteConfig(fs, &conf, conf.ConfigFile)
 			require.NoError(t, err)
 			err = Set(fs, tt.key, tt.value, tt.format, conf.ConfigFile)
@@ -198,8 +198,8 @@ func TestSet(t *testing.T) {
 	}
 }
 
-func TestDefaultConfig(t *testing.T) {
-	defaultConfig := DefaultConfig()
+func TestDefault(t *testing.T) {
+	defaultConfig := Default()
 	expected := Config{
 		ConfigFile: "/etc/redpanda/redpanda.yaml",
 		Redpanda: &RedpandaConfig{
@@ -601,24 +601,24 @@ func TestInitConfig(t *testing.T) {
 	}{
 		{
 			name:       "it should generate a config file at the given location",
-			configFile: DefaultConfig().ConfigFile,
+			configFile: Default().ConfigFile,
 		},
 		{
 			name: "it shouldn't fail if there's a config file already",
 			setup: func(fs afero.Fs) error {
-				conf := DefaultConfig()
+				conf := Default()
 				return WriteConfig(fs, &conf, conf.ConfigFile)
 			},
-			configFile: DefaultConfig().ConfigFile,
+			configFile: Default().ConfigFile,
 		},
 		{
 			name: "it should fail if the existing config file's content isn't valid yaml",
 			setup: func(fs afero.Fs) error {
 				bs := []byte(`redpanda:
 - something`)
-				return vyaml.Persist(fs, bs, DefaultConfig().ConfigFile)
+				return vyaml.Persist(fs, bs, Default().ConfigFile)
 			},
-			configFile:  DefaultConfig().ConfigFile,
+			configFile:  Default().ConfigFile,
 			expectError: true,
 		},
 	}
@@ -644,7 +644,7 @@ func TestInitConfig(t *testing.T) {
 
 func TestSetMode(t *testing.T) {
 	fillRpkConfig := func(mode string) Config {
-		conf := DefaultConfig()
+		conf := Default()
 		val := mode == ModeProd
 		conf.Redpanda.DeveloperMode = !val
 		conf.Rpk = &RpkConfig{
@@ -703,7 +703,7 @@ func TestSetMode(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(st *testing.T) {
-			defaultConf := DefaultConfig()
+			defaultConf := Default()
 			conf, err := SetMode(tt.mode, &defaultConf)
 			if tt.expectedErrMsg != "" {
 				require.EqualError(t, err, tt.expectedErrMsg)
@@ -854,15 +854,15 @@ func TestReadAsJSON(t *testing.T) {
 		{
 			name: "it should load the config as JSON",
 			before: func(fs afero.Fs) error {
-				conf := DefaultConfig()
+				conf := Default()
 				return WriteConfig(fs, &conf, conf.ConfigFile)
 			},
-			path:     DefaultConfig().ConfigFile,
+			path:     Default().ConfigFile,
 			expected: `{"config_file":"/etc/redpanda/redpanda.yaml","redpanda":{"admin":{"address":"0.0.0.0","port":9644},"data_directory":"/var/lib/redpanda/data","developer_mode":false,"kafka_api":{"address":"0.0.0.0","port":9092},"kafka_api_tls":{"cert_file":"","enabled":false,"key_file":"","truststore_file":""},"node_id":0,"rpc_server":{"address":"0.0.0.0","port":33145},"seed_servers":[]},"rpk":{"coredump_dir":"/var/lib/redpanda/coredump","enable_memory_locking":false,"enable_usage_stats":false,"overprovisioned":false,"tls":{"cert_file":"","key_file":"","truststore_file":""},"tune_aio_events":false,"tune_clocksource":false,"tune_coredump":false,"tune_cpu":false,"tune_disk_irq":false,"tune_disk_nomerges":false,"tune_disk_scheduler":false,"tune_fstrim":false,"tune_network":false,"tune_swappiness":false,"tune_transparent_hugepages":false}}`,
 		},
 		{
 			name:           "it should fail if the the config isn't found",
-			path:           DefaultConfig().ConfigFile,
+			path:           Default().ConfigFile,
 			expectedErrMsg: "open /etc/redpanda/redpanda.yaml: file does not exist",
 		},
 	}
@@ -918,7 +918,7 @@ func TestReadFlat(t *testing.T) {
 		"rpk.tune_transparent_hugepages":         "false",
 	}
 	fs := afero.NewMemMapFs()
-	conf := DefaultConfig()
+	conf := Default()
 	conf.Redpanda.SeedServers = []*SeedServer{
 		&SeedServer{
 			SocketAddress{"192.168.167.0", 1337},

@@ -20,7 +20,7 @@ import (
 )
 
 func validConfig() config.Config {
-	conf := config.DefaultConfig()
+	conf := config.Default()
 	conf.Rpk.TuneCoredump = true
 	conf.Rpk.CoredumpDir = "/var/lib/redpanda/coredumps"
 	return conf
