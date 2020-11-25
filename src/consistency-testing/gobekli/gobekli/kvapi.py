@@ -28,6 +28,12 @@ class RequestCanceled(Exception):
     pass
 
 
+class RequestViolated(Exception):
+    def __init__(self, info):
+        self.info = info
+        super().__init__()
+
+
 Record = namedtuple('Record', ['write_id', 'value'])
 Response = namedtuple('Response', ['record', 'metrics'])
 
@@ -78,6 +84,8 @@ class KVNode:
             raise RequestTimedout()
         elif data["status"] == "fail":
             raise RequestCanceled()
+        elif data["status"] == "violation":
+            raise RequestViolated(data["info"])
         else:
             raise Exception(f"Unknown status: {data['status']}")
         return Response(record, data["metrics"])
@@ -125,6 +133,8 @@ class KVNode:
             raise RequestTimedout()
         elif data["status"] == "fail":
             raise RequestCanceled()
+        elif data["status"] == "violation":
+            raise RequestViolated(data["info"])
         else:
             raise Exception(f"Unknown status: {data['status']}")
         return Response(record, data["metrics"])
@@ -173,6 +183,8 @@ class KVNode:
             raise RequestTimedout()
         elif data["status"] == "fail":
             raise RequestCanceled()
+        elif data["status"] == "violation":
+            raise RequestViolated(data["info"])
         else:
             raise Exception(f"Unknown status: {data['status']}")
         return Response(record, data["metrics"])

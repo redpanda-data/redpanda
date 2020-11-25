@@ -10,7 +10,7 @@
 from sh import ssh
 import sh
 
-from gobekli.kvapi import KVNode, RequestTimedout, RequestCanceled
+from gobekli.kvapi import KVNode, RequestTimedout, RequestCanceled, RequestViolated
 from gobekli.logging import m
 import logging
 import asyncio
@@ -199,9 +199,10 @@ class KvelldbCluster:
                 await kv.put_aio("test", "value1", "wid1")
                 is_ok = True
             except RequestTimedout:
-                # TODO add logging
                 pass
             except RequestCanceled:
+                pass
+            except RequestViolated:
                 pass
             await kv.close_aio()
             if is_ok:
