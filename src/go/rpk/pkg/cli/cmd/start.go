@@ -79,11 +79,13 @@ const (
 func NewStartCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	prestartCfg := prestartConfig{}
 	var (
-		configFile     string
-		seeds          []string
-		installDirFlag string
-		timeout        time.Duration
-		wellKnownIo    string
+		configFile      string
+		seeds           []string
+		advertisedKafka string
+		advertisedRPC   string
+		installDirFlag  string
+		timeout         time.Duration
+		wellKnownIo     string
 	)
 	sFlags := seastarFlags{}
 
@@ -111,6 +113,30 @@ func NewStartCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 				return err
 			}
 			conf.Redpanda.SeedServers = seedServers
+			advertisedKafka = stringOr(
+				advertisedKafka,
+				os.Getenv("REDPANDA_ADVERTISE_KAFKA_ADDRESS"),
+			)
+			advKafkaApi, err := parseAddress(advertisedKafka)
+			if err != nil {
+				sendEnv(mgr, env, conf, err)
+				return err
+			}
+			if advKafkaApi != nil {
+				conf.Redpanda.AdvertisedKafkaApi = advKafkaApi
+			}
+			advertisedRPC = stringOr(
+				advertisedRPC,
+				os.Getenv("REDPANDA_ADVERTISE_RPC_ADDRESS"),
+			)
+			advRPCApi, err := parseAddress(advertisedRPC)
+			if err != nil {
+				sendEnv(mgr, env, conf, err)
+				return err
+			}
+			if advRPCApi != nil {
+				conf.Redpanda.AdvertisedRPCAPI = advRPCApi
+			}
 			installDirectory, err := cli.GetOrFindInstallDir(fs, installDirFlag)
 			if err != nil {
 				sendEnv(mgr, env, conf, err)
@@ -163,6 +189,18 @@ func NewStartCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 		[]string{},
 		"A list of seed nodes to connect to, in the format "+
 			seedFormat,
+	)
+	command.Flags().StringVar(
+		&advertisedKafka,
+		"advertise-kafka-addr",
+		"",
+		"The Kafka address to advertise (<host>:<port>)",
+	)
+	command.Flags().StringVar(
+		&advertisedKafka,
+		"advertise-rpc-addr",
+		"",
+		"The advertised RPC address (<host>:<port>)",
 	)
 	command.Flags().StringVar(&sFlags.memory,
 		memoryFlag, "", "Amount of memory for redpanda to use, "+
@@ -651,4 +689,11 @@ func sendEnv(
 	if err != nil {
 		log.Warnf("couldn't send environment data: %v", err)
 	}
+}
+
+func stringOr(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
 }
