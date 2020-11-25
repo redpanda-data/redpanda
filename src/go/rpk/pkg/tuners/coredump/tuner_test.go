@@ -19,7 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func validConfig() config.Config {
+func validConfig() *config.Config {
 	conf := config.Default()
 	conf.Rpk.TuneCoredump = true
 	conf.Rpk.CoredumpDir = "/var/lib/redpanda/coredumps"
@@ -29,8 +29,8 @@ func validConfig() config.Config {
 func TestTune(t *testing.T) {
 	tests := []struct {
 		name string
-		pre  func(afero.Fs, config.Config) error
-		conf func() config.Config
+		pre  func(afero.Fs, *config.Config) error
+		conf func() *config.Config
 	}{
 		{
 			name: "it should install the coredump config file",
@@ -38,7 +38,7 @@ func TestTune(t *testing.T) {
 		},
 		{
 			name: "it should not fail to install if the coredump config file already exists",
-			pre: func(fs afero.Fs, config config.Config) error {
+			pre: func(fs afero.Fs, config *config.Config) error {
 				_, err := fs.Create(corePatternFilePath)
 				return err
 			},
@@ -65,7 +65,7 @@ func TestTune(t *testing.T) {
 			// Check that the script is world-readable, writable and executable
 			expectedMode := os.FileMode(int(0777))
 			require.Equal(t, expectedMode, info.Mode())
-			expectedScript, err := renderTemplate(coredumpScriptTmpl, *conf.Rpk)
+			expectedScript, err := renderTemplate(coredumpScriptTmpl, conf.Rpk)
 			require.NoError(t, err)
 			buf := make([]byte, len(expectedScript))
 			_, err = script.Read(buf)

@@ -60,7 +60,7 @@ type TunersFactory interface {
 
 type tunersFactory struct {
 	fs                afero.Fs
-	conf              config.Config
+	conf              *config.Config
 	irqDeviceInfo     irq.DeviceInfo
 	cpuMasks          irq.CpuMasks
 	irqBalanceService irq.BalanceService
@@ -72,7 +72,7 @@ type tunersFactory struct {
 }
 
 func NewDirectExecutorTunersFactory(
-	fs afero.Fs, conf config.Config, timeout time.Duration,
+	fs afero.Fs, conf *config.Config, timeout time.Duration,
 ) TunersFactory {
 	irqProcFile := irq.NewProcFile(fs)
 	proc := os.NewProc()
@@ -82,7 +82,7 @@ func NewDirectExecutorTunersFactory(
 }
 
 func NewScriptRenderingTunersFactory(
-	fs afero.Fs, conf config.Config, out string, timeout time.Duration,
+	fs afero.Fs, conf *config.Config, out string, timeout time.Duration,
 ) TunersFactory {
 	irqProcFile := irq.NewProcFile(fs)
 	proc := os.NewProc()
@@ -93,7 +93,7 @@ func NewScriptRenderingTunersFactory(
 
 func newTunersFactory(
 	fs afero.Fs,
-	conf config.Config,
+	conf *config.Config,
 	irqProcFile irq.ProcFile,
 	proc os.Proc,
 	irqDeviceInfo irq.DeviceInfo,
@@ -126,7 +126,7 @@ func IsTunerAvailable(tuner string) bool {
 	return allTuners[tuner] != nil
 }
 
-func IsTunerEnabled(tuner string, rpkConfig *config.RpkConfig) bool {
+func IsTunerEnabled(tuner string, rpkConfig config.RpkConfig) bool {
 	switch tuner {
 	case "disk_irq":
 		return rpkConfig.TuneDiskIrq

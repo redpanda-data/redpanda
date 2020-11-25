@@ -41,18 +41,18 @@ cat - > "${COREDUMP_PATH}"
 
 type tuner struct {
 	fs       afero.Fs
-	conf     config.Config
+	conf     *config.Config
 	executor executors.Executor
 }
 
 func NewCoredumpTuner(
-	fs afero.Fs, conf config.Config, executor executors.Executor,
+	fs afero.Fs, conf *config.Config, executor executors.Executor,
 ) tuners.Tunable {
 	return &tuner{fs, conf, executor}
 }
 
 func (t *tuner) Tune() tuners.TuneResult {
-	script, err := renderTemplate(coredumpScriptTmpl, *t.conf.Rpk)
+	script, err := renderTemplate(coredumpScriptTmpl, t.conf.Rpk)
 	if err != nil {
 		return tuners.NewTuneError(err)
 	}

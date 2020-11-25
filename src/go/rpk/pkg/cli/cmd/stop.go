@@ -23,7 +23,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewStopCommand(fs afero.Fs) *cobra.Command {
+func NewStopCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	var (
 		configFile string
 		timeout    time.Duration
@@ -37,7 +37,7 @@ hasn't stopped, it sends SIGTERM. Lastly, it sends SIGKILL if it's still
 running.`,
 		SilenceUsage: true,
 		RunE: func(ccmd *cobra.Command, args []string) error {
-			return executeStop(fs, configFile, timeout)
+			return executeStop(fs, mgr, configFile, timeout)
 		},
 	}
 	command.Flags().StringVar(
@@ -61,8 +61,8 @@ running.`,
 	return command
 }
 
-func executeStop(fs afero.Fs, configFile string, timeout time.Duration) error {
-	conf, err := config.ReadOrFind(fs, configFile)
+func executeStop(fs afero.Fs, mgr config.Manager, configFile string, timeout time.Duration) error {
+	conf, err := mgr.ReadOrFind(configFile)
 	if err != nil {
 		return err
 	}

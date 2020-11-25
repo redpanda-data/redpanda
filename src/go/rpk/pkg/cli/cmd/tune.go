@@ -39,7 +39,7 @@ type result struct {
 	errMsg    string
 }
 
-func NewTuneCommand(fs afero.Fs) *cobra.Command {
+func NewTuneCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	tunerParams := factory.TunerParams{}
 	var (
 		configFile        string
@@ -88,7 +88,7 @@ func NewTuneCommand(fs afero.Fs) *cobra.Command {
 				return err
 			}
 			tunerParams.CpuMask = cpuMask
-			conf, err := config.FindOrGenerate(fs, configFile)
+			conf, err := mgr.FindOrGenerate(configFile)
 			if err != nil {
 				if !interactive {
 					return err
@@ -105,17 +105,16 @@ Would you like to continue with the default configuration?`,
 				if !confirmed {
 					return nil
 				}
-				defaultConf := config.Default()
-				conf = &defaultConf
+				conf = config.Default()
 			}
 			config.CheckAndPrintNotice(conf.LicenseKey)
 			var tunerFactory factory.TunersFactory
 			if outTuneScriptFile != "" {
 				tunerFactory = factory.NewScriptRenderingTunersFactory(
-					fs, *conf, outTuneScriptFile, timeout)
+					fs, conf, outTuneScriptFile, timeout)
 			} else {
 				tunerFactory = factory.NewDirectExecutorTunersFactory(
-					fs, *conf, timeout)
+					fs, conf, timeout)
 			}
 			return tune(fs, conf, tuners, tunerFactory, &tunerParams)
 		},

@@ -35,7 +35,7 @@ type status struct {
 	topics   []*sarama.TopicMetadata
 }
 
-func NewStatusCommand(fs afero.Fs) *cobra.Command {
+func NewStatusCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	var (
 		configFile string
 		send       bool
@@ -47,7 +47,7 @@ func NewStatusCommand(fs afero.Fs) *cobra.Command {
 		Long:         "",
 		SilenceUsage: true,
 		RunE: func(ccmd *cobra.Command, args []string) error {
-			return executeStatus(fs, configFile, timeout, send)
+			return executeStatus(fs, mgr, configFile, timeout, send)
 		},
 	}
 	command.Flags().StringVar(
@@ -75,9 +75,9 @@ func NewStatusCommand(fs afero.Fs) *cobra.Command {
 }
 
 func executeStatus(
-	fs afero.Fs, configFile string, timeout time.Duration, send bool,
+	fs afero.Fs, mgr config.Manager, configFile string, timeout time.Duration, send bool,
 ) error {
-	conf, err := config.FindOrGenerate(fs, configFile)
+	conf, err := mgr.FindOrGenerate(configFile)
 	if err != nil {
 		return err
 	}
@@ -98,8 +98,8 @@ func executeStatus(
 	kafkaRowsCh := make(chan [][]string)
 
 	go getCloudProviderInfo(providerInfoRowsCh)
-	go getMetrics(fs, timeout, *conf, send, metricsRowsCh)
-	go getConf(fs, conf.ConfigFile, confRowsCh)
+	go getMetrics(fs, mgr, timeout, *conf, send, metricsRowsCh)
+	go getConf(mgr, conf.ConfigFile, confRowsCh)
 	go getKafkaInfo(*conf, kafkaRowsCh)
 
 	for _, row := range <-providerInfoRowsCh {
@@ -143,6 +143,7 @@ func getCloudProviderInfo(out chan<- [][]string) {
 
 func getMetrics(
 	fs afero.Fs,
+	mgr config.Manager,
 	timeout time.Duration,
 	conf config.Config,
 	send bool,
@@ -179,13 +180,12 @@ func getMetrics(
 	}
 	if send {
 		if conf.NodeUuid == "" {
-			c, err := config.GenerateAndWriteNodeUuid(fs, &conf)
+			err := mgr.WriteNodeUUID(&conf)
 			if err != nil {
 				log.Info("Error writing the node's UUID: ", err)
 			}
-			conf = *c
 		}
-		err := sendMetrics(fs, conf, m)
+		err := sendMetrics(conf, m)
 		if err != nil {
 			log.Info("Error sending metrics: ", err)
 		}
@@ -193,9 +193,9 @@ func getMetrics(
 	out <- rows
 }
 
-func getConf(fs afero.Fs, configFile string, out chan<- [][]string) {
+func getConf(mgr config.Manager, configFile string, out chan<- [][]string) {
 	rows := [][]string{}
-	props, err := config.ReadFlat(fs, configFile)
+	props, err := mgr.ReadFlat(configFile)
 	if err != nil {
 		log.Info("Error reading or parsing configuration: ", err)
 	} else {
@@ -355,14 +355,14 @@ func getKafkaInfoRows(
 }
 
 func sendMetrics(
-	fs afero.Fs, conf config.Config, metrics *system.Metrics,
+	conf config.Config, metrics *system.Metrics,
 ) error {
 	payload := api.MetricsPayload{
 		FreeMemoryMB:  metrics.FreeMemoryMB,
 		FreeSpaceMB:   metrics.FreeSpaceMB,
 		CpuPercentage: metrics.CpuPercentage,
 	}
-	return api.SendMetrics(payload, conf)
+	return api.SendMetrics(payload, &conf)
 }
 
 func topicsDetail(admin sarama.ClusterAdmin) ([]*sarama.TopicMetadata, error) {

@@ -19,7 +19,6 @@ import (
 	"vectorized/pkg/kafka"
 
 	log "github.com/sirupsen/logrus"
-	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v2"
 )
@@ -33,7 +32,7 @@ type StaticConfig struct {
 	Targets []string `yaml:"targets"`
 }
 
-func NewPrometheusConfigCmd(fs afero.Fs) *cobra.Command {
+func NewPrometheusConfigCmd(mgr config.Manager) *cobra.Command {
 	var (
 		jobName    string
 		nodeAddrs  []string
@@ -61,7 +60,7 @@ especify an arbitrary config file.`,
 				log.SetOutput(os.Stdout)
 			}
 			yml, err := executePrometheusConfig(
-				fs,
+				mgr,
 				jobName,
 				nodeAddrs,
 				seedAddr,
@@ -103,7 +102,7 @@ in a cluster. The port must be the one configured for the nodes' admin API
 }
 
 func executePrometheusConfig(
-	fs afero.Fs, jobName string, nodeAddrs []string, seedAddr, configFile string,
+	mgr config.Manager, jobName string, nodeAddrs []string, seedAddr, configFile string,
 ) ([]byte, error) {
 	if len(nodeAddrs) > 0 {
 		return renderConfig(jobName, nodeAddrs)
@@ -122,7 +121,7 @@ func executePrometheusConfig(
 		}
 		return renderConfig(jobName, hosts)
 	}
-	conf, err := config.FindOrGenerate(fs, configFile)
+	conf, err := mgr.FindOrGenerate(configFile)
 	if err != nil {
 		return []byte(""), err
 	}

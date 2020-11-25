@@ -77,7 +77,7 @@ type environmentBody struct {
 	RPVersion    string                 `json:"rpVersion"`
 }
 
-func SendMetrics(p MetricsPayload, conf config.Config) error {
+func SendMetrics(p MetricsPayload, conf *config.Config) error {
 	b := metricsBody{
 		p,
 		time.Now(),
@@ -90,7 +90,7 @@ func SendMetrics(p MetricsPayload, conf config.Config) error {
 }
 
 func SendEnvironment(
-	env EnvironmentPayload, conf config.Config, confJSON string,
+	env EnvironmentPayload, conf *config.Config, confJSON string,
 ) error {
 	confMap := map[string]interface{}{}
 	err := json.Unmarshal([]byte(confJSON), &confMap)
@@ -160,7 +160,7 @@ func stripCtlFromUTF8(str string) string {
 	}, str)
 }
 
-func sendMetricsToUrl(b metricsBody, url string, conf config.Config) error {
+func sendMetricsToUrl(b metricsBody, url string, conf *config.Config) error {
 	bs, err := json.Marshal(b)
 	if err != nil {
 		return err
@@ -169,7 +169,7 @@ func sendMetricsToUrl(b metricsBody, url string, conf config.Config) error {
 }
 
 func sendEnvironmentToUrl(
-	body environmentBody, url string, conf config.Config,
+	body environmentBody, url string, conf *config.Config,
 ) error {
 	bs, err := json.Marshal(body)
 	if err != nil {
@@ -178,7 +178,7 @@ func sendEnvironmentToUrl(
 	return sendRequest(bs, http.MethodPost, url, conf)
 }
 
-func sendRequest(body []byte, method, url string, conf config.Config) error {
+func sendRequest(body []byte, method, url string, conf *config.Config) error {
 	if !conf.Rpk.EnableUsageStats {
 		log.Debug("Sending usage stats is disabled.")
 		return nil

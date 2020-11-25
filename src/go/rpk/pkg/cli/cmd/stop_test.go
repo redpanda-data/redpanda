@@ -26,7 +26,6 @@ import (
 )
 
 func TestStopCommand(t *testing.T) {
-	const confPath string = "/etc/redpanda/redpanda.yaml"
 	// simulate the redpanda process with an infinite loop.
 	const baseCommand string = "while :; do sleep 1; done"
 	tests := []struct {
@@ -53,6 +52,7 @@ func TestStopCommand(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			fs := afero.NewMemMapFs()
+			mgr := config.NewManager(fs)
 			conf := config.Default()
 			command := baseCommand
 			// trap the signals we want to ignore, to check that the
@@ -73,13 +73,12 @@ func TestStopCommand(t *testing.T) {
 				conf.PIDFile(),
 			)
 			require.NoError(t, err)
-
-			err = config.WriteConfig(fs, &conf, confPath)
+			err = mgr.Write(conf)
 			require.NoError(t, err)
 
 			var out bytes.Buffer
-			c := cmd.NewStopCommand(fs)
-			args := append([]string{"--config", confPath}, tt.args...)
+			c := cmd.NewStopCommand(fs, mgr)
+			args := append([]string{"--config", conf.ConfigFile}, tt.args...)
 			c.SetArgs(args)
 
 			logrus.SetOutput(&out)

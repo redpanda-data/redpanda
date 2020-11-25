@@ -17,17 +17,18 @@ import (
 	"testing"
 	"vectorized/pkg/config"
 
+	"github.com/prometheus/common/log"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v2"
 )
 
-func fillRpkConfig(path, mode string) config.Config {
+func fillRpkConfig(path, mode string) *config.Config {
 	conf := config.Default()
 	val := mode == config.ModeProd
 	conf.Redpanda.DeveloperMode = !val
-	conf.Rpk = &config.RpkConfig{
+	conf.Rpk = config.RpkConfig{
 		TuneNetwork:       val,
 		TuneDiskScheduler: val,
 		TuneNomerges:      val,
@@ -54,7 +55,7 @@ func TestModeCommand(t *testing.T) {
 		name           string
 		args           []string
 		before         func(afero.Fs) (string, error)
-		expectedConfig config.Config
+		expectedConfig *config.Config
 		expectedOutput string
 		expectedErrMsg string
 	}{
@@ -146,10 +147,11 @@ func TestModeCommand(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			fs := afero.NewMemMapFs()
+			mgr := config.NewManager(fs)
 			path, err := tt.before(fs)
 			require.NoError(t, err)
 			var out bytes.Buffer
-			cmd := NewModeCommand(fs)
+			cmd := NewModeCommand(mgr)
 			cmd.SetArgs(tt.args)
 			logrus.SetOutput(&out)
 			err = cmd.Execute()
@@ -160,9 +162,12 @@ func TestModeCommand(t *testing.T) {
 			require.NoError(t, err)
 			output := out.String()
 			require.Contains(t, strings.TrimSpace(output), tt.expectedOutput)
-			conf, err := config.ReadConfigFromPath(fs, path)
+			bs, err := afero.ReadFile(fs, configPath)
+			log.Info(string(bs))
 			require.NoError(t, err)
-			require.Exactly(t, tt.expectedConfig, *conf)
+			conf, err := mgr.Read(path)
+			require.NoError(t, err)
+			require.Exactly(t, tt.expectedConfig, conf)
 		})
 	}
 }
