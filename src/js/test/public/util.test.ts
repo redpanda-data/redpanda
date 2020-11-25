@@ -20,20 +20,30 @@ describe("Public utils functions", function () {
 
   it("should calculateRecordLength", function () {
     const value = Buffer.from("Test");
+    /**
+     * value (4 bytes)
+     * header (1 byte)
+     * key (0 byte)
+     * offsetDelta (1 byte)
+     * timestampDelta (1 byte)
+     * keyLength (1 byte)
+     * attributes (1 byte)
+     * valueLen (1 byte)
+     * Total = 10 bytes
+     */
     const record: Record = {
-      value: value, // 4  |
-      headers: [], // 1  |
-      key: Buffer.from(""), // 0  |
-      offsetDelta: 0, // 1  |
-      timestampDelta: BigInt(0), // 1  |
-      keyLength: 0, // 1  |
-      attributes: 0, // 1  |
-      length: 0, // 1  |
-      valueLen: value.length, // 1 => 11
+      value: value,
+      headers: [],
+      key: Buffer.from(""),
+      offsetDelta: 0,
+      timestampDelta: BigInt(0),
+      keyLength: 0,
+      attributes: 0,
+      valueLen: value.length,
+      length: 0,
     };
-    console.log(record);
     const size = calculateRecordLength(record);
-    assert.strictEqual(size, 11);
+    assert.strictEqual(size, 10);
   });
 
   it("should calculate record batch size", function () {
@@ -46,7 +56,7 @@ describe("Public utils functions", function () {
       timestampDelta: BigInt(0),
       keyLength: 0,
       attributes: 0,
-      length: 11,
+      length: 10,
       valueLen: value.length,
     };
     const size = calculateRecordBatchSize([record]);

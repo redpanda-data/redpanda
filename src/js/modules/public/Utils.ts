@@ -133,11 +133,18 @@ export const calculateRecordLength = (record: Record): number => {
   size += varintZigzagSize(BigInt(record.valueLen));
   size += record.value.length;
   size += varintZigzagSize(BigInt(record.headers.length));
-  size += varintZigzagSize(BigInt(size));
   return size;
 };
 
 export const calculateRecordBatchSize = (records: Record[]): number => {
-  // 61 is the header batch bytes size
-  return 61 + records.reduce((p, r) => p + r.length, 0);
+  const headerBytesSize = 57;
+  const arrayBytesSize = 4;
+  return (
+    headerBytesSize +
+    records.reduce(
+      (p, r) => p + r.length + varintZigzagSize(BigInt(r.length)),
+      0
+    ) +
+    arrayBytesSize
+  );
 };
