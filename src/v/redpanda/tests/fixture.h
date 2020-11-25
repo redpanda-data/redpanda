@@ -172,6 +172,40 @@ public:
         return ntp;
     }
 
+    kafka::request_context make_request_context() {
+        kafka::request_header header;
+        auto encoder_context = kafka::request_context(
+          app.metadata_cache,
+          app.controller->get_topics_frontend().local(),
+          std::move(header),
+          iobuf(),
+          std::chrono::milliseconds(0),
+          app.group_router.local(),
+          app.shard_table.local(),
+          app.partition_manager,
+          app.coordinator_ntp_mapper,
+          app.fetch_session_cache);
+
+        iobuf buf;
+        kafka::fetch_request request;
+        // do not use incremental fetch requests
+        request.max_wait_time = std::chrono::milliseconds::zero();
+        kafka::response_writer writer(buf);
+        request.encode(writer, encoder_context.header().version);
+
+        return kafka::request_context(
+          app.metadata_cache,
+          app.controller->get_topics_frontend().local(),
+          std::move(header),
+          std::move(buf),
+          std::chrono::milliseconds(0),
+          app.group_router.local(),
+          app.shard_table.local(),
+          app.partition_manager,
+          app.coordinator_ntp_mapper,
+          app.fetch_session_cache);
+    }
+
     application app;
     std::filesystem::path data_dir;
 };

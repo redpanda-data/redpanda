@@ -46,6 +46,7 @@ set(srcs
   list_offsets_test.cc
   offset_commit_test.cc
   topic_recreate_test.cc
+  fetch_session_test.cc
   produce_consume_test.cc)
 
 rp_test(

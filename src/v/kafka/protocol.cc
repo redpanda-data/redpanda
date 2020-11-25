@@ -41,7 +41,8 @@ protocol::protocol(
   ss::sharded<kafka::group_router_type>& router,
   ss::sharded<cluster::shard_table>& tbl,
   ss::sharded<cluster::partition_manager>& pm,
-  ss::sharded<coordinator_ntp_mapper>& coordinator_mapper) noexcept
+  ss::sharded<coordinator_ntp_mapper>& coordinator_mapper,
+  ss::sharded<fetch_session_cache>& session_cache) noexcept
   : _smp_group(smp)
   , _topics_frontend(tf)
   , _metadata_cache(meta)
@@ -49,7 +50,8 @@ protocol::protocol(
   , _group_router(router)
   , _shard_table(tbl)
   , _partition_manager(pm)
-  , _coordinator_mapper(coordinator_mapper) {}
+  , _coordinator_mapper(coordinator_mapper)
+  , _fetch_session_cache(session_cache) {}
 
 ss::future<> protocol::apply(rpc::server::resources rs) {
     auto ctx = ss::make_lw_shared<protocol::connection_context>(
@@ -164,7 +166,8 @@ ss::future<> protocol::connection_context::dispatch_method_once(
                   _proto._group_router.local(),
                   _proto._shard_table.local(),
                   _proto._partition_manager,
-                  _proto._coordinator_mapper);
+                  _proto._coordinator_mapper,
+                  _proto._fetch_session_cache);
                 // background process this one full request
                 auto self = shared_from_this();
                 (void)ss::with_gate(

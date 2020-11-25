@@ -12,8 +12,10 @@
 #pragma once
 
 #include "cluster/partition.h"
+#include "kafka/fetch_session.h"
 #include "kafka/requests/request_context.h"
 #include "kafka/requests/response.h"
+#include "kafka/types.h"
 #include "likely.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
@@ -63,10 +65,10 @@ struct fetch_request final {
     model::node_id replica_id;
     std::chrono::milliseconds max_wait_time;
     int32_t min_bytes;
-    int32_t max_bytes;      // >= v3
-    int8_t isolation_level; // >= v4
-    int32_t session_id;     // >= v7
-    int32_t session_epoch;  // >= v7
+    int32_t max_bytes;                                 // >= v3
+    int8_t isolation_level;                            // >= v4
+    int32_t session_id = invalid_fetch_session_id;     // >= v7
+    int32_t session_epoch = final_fetch_session_epoch; // >= v7
     std::vector<topic> topics;
     std::vector<forgotten_topic> forgotten_topics; // >= v7
 
@@ -95,6 +97,14 @@ struct fetch_request final {
                  topics.cbegin(), topics.cend(), [](const topic& t) {
                      return t.partitions.empty();
                  });
+    }
+
+    /**
+     * Check if this request is a full fetch request initiating a session
+     */
+    bool is_full_fetch_request() const {
+        return session_epoch == initial_fetch_session_epoch
+               || session_epoch == final_fetch_session_epoch;
     }
 
     /*
@@ -211,6 +221,13 @@ struct fetch_response final {
         model::offset log_start_offset;                        // >= v5
         std::vector<aborted_transaction> aborted_transactions; // >= v4
         std::optional<iobuf> record_set;
+        /*
+         * _not part of kafka protocol
+         * used to indicate wether we have to
+         * include this partition response into the final response assembly
+         * by default all partition responsens are included
+         */
+        bool has_to_be_included = true;
 
         bool has_error() const { return error != error_code::none; }
     };
@@ -260,6 +277,7 @@ struct fetch_response final {
         struct value_type {
             partition_iterator partition;
             partition_response_iterator partition_response;
+            bool is_new_topic;
         };
 
         using difference_type = void;
@@ -267,11 +285,16 @@ struct fetch_response final {
         using reference = value_type&;
         using iterator_category = std::forward_iterator_tag;
 
-        iterator(partition_iterator begin, partition_iterator end)
+        iterator(
+          partition_iterator begin,
+          partition_iterator end,
+          bool enable_filtering = false)
           : state_({.partition = begin})
-          , t_end_(end) {
+          , t_end_(end)
+          , filter_(enable_filtering) {
             if (likely(state_.partition != t_end_)) {
                 state_.partition_response = state_.partition->responses.begin();
+                state_.is_new_topic = true;
                 normalize();
             }
         }
@@ -281,6 +304,7 @@ struct fetch_response final {
         pointer operator->() noexcept { return &state_; }
 
         iterator& operator++() {
+            state_.is_new_topic = false;
             state_.partition_response++;
             normalize();
             return *this;
@@ -313,19 +337,31 @@ struct fetch_response final {
                    == state_.partition->responses.end()) {
                 state_.partition++;
                 if (state_.partition != t_end_) {
+                    state_.is_new_topic = true;
                     state_.partition_response
                       = state_.partition->responses.begin();
                 } else {
                     break;
                 }
             }
+
+            // filter responsens that we do not want to include
+            if (
+              filter_ && state_.partition != t_end_
+              && !state_.partition_response->has_to_be_included) {
+                state_.partition_response++;
+                normalize();
+            }
         }
 
         value_type state_;
         partition_iterator t_end_;
+        bool filter_;
     };
 
-    iterator begin() { return iterator(partitions.begin(), partitions.end()); }
+    iterator begin(bool enable_filtering = false) {
+        return iterator(partitions.begin(), partitions.end(), enable_filtering);
+    }
 
     iterator end() { return iterator(partitions.end(), partitions.end()); }
 };
@@ -389,12 +425,34 @@ struct op_context {
 
     ss::future<response_ptr> send_response() &&;
 
-    response_iterator response_begin() {
-        return response_iterator(response.begin(), this);
+    response_iterator response_begin(bool enable_filtering = false) {
+        return response_iterator(response.begin(enable_filtering), this);
     }
 
     response_iterator response_end() {
         return response_iterator(response.end(), this);
+    }
+    template<typename Func>
+    void for_each_fetch_partition(Func&& f) const {
+        if (session_ctx.is_full_fetch() || session_ctx.is_sessionless()) {
+            std::for_each(
+              request.cbegin(),
+              request.cend(),
+              [f = std::forward<Func>(f)](
+                const fetch_request::const_iterator::value_type& p) {
+                  f(fetch_partition{
+                    .topic = p.topic->name,
+                    .partition = p.partition->id,
+                    .max_bytes = p.partition->partition_max_bytes,
+                    .fetch_offset = p.partition->fetch_offset,
+                  });
+              });
+        } else {
+            std::for_each(
+              session_ctx.session()->partitions().cbegin_insertion_order(),
+              session_ctx.session()->partitions().cend_insertion_order(),
+              std::forward<Func>(f));
+        }
     }
 
     request_context rctx;
@@ -412,6 +470,7 @@ struct op_context {
     bool response_error;
 
     bool initial_fetch = true;
+    fetch_session_ctx session_ctx;
 };
 
 class partition_wrapper {
