@@ -147,7 +147,6 @@ ss::future<kafka::fetch_response::partition> client::fetch_partition(
   model::offset offset,
   int32_t max_bytes,
   std::chrono::milliseconds timeout) {
-    using namespace std::chrono_literals;
     auto build_request =
       [offset, max_bytes, timeout](model::topic_partition& tp) {
           return make_fetch_request(tp, offset, max_bytes, timeout);
@@ -157,6 +156,7 @@ ss::future<kafka::fetch_response::partition> client::fetch_partition(
       std::move(build_request),
       std::move(tp),
       [this](auto& build_request, model::topic_partition& tp) {
+          vlog(ppclog.debug, "fetching: {}", tp);
           return gated_retry_with_mitigation([this, &tp, &build_request]() {
                      return _brokers.find(tp)
                        .then([&tp, &build_request](shared_broker_t&& b) {
