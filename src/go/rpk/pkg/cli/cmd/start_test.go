@@ -11,6 +11,7 @@ package cmd
 
 import (
 	"testing"
+	"vectorized/pkg/config"
 
 	"github.com/stretchr/testify/require"
 )
@@ -66,6 +67,84 @@ func TestMergeFlags(t *testing.T) {
 			for k, v := range flags {
 				require.Equal(t, tt.expected[k], v)
 			}
+		})
+	}
+}
+
+func TestParseSeeds(t *testing.T) {
+	tests := []struct {
+		name           string
+		arg            []string
+		expected       []config.SeedServer
+		expectedErrMsg string
+	}{
+		{
+			name: "it should parse well-formed seed addrs",
+			arg:  []string{"127.0.0.1:1234+0", "domain.com:9892+1", "lonely-host+30", "192.168.34.1+5"},
+			expected: []config.SeedServer{
+				{
+					config.SocketAddress{"127.0.0.1", 1234},
+					0,
+				},
+				{
+					config.SocketAddress{"domain.com", 9892},
+					1,
+				},
+				{
+					config.SocketAddress{"lonely-host", 9092},
+					30,
+				},
+				{
+					config.SocketAddress{"192.168.34.1", 9092},
+					5,
+				},
+			},
+		},
+		{
+			name:     "it shouldn't do anything for an empty list",
+			arg:      []string{},
+			expected: []config.SeedServer{},
+		},
+		{
+			name:           "it should fail for empty addresses",
+			arg:            []string{"+1"},
+			expectedErrMsg: "Couldn't parse seed '+1': empty address",
+		},
+		{
+			name:           "it should fail if one of the addrs is missing an ID",
+			arg:            []string{"127.0.0.1:1234+0", "domain.com"},
+			expectedErrMsg: "Couldn't parse seed 'domain.com': Format doesn't conform to <host>[:<port>]+<id>. Missing ID.",
+		},
+		{
+			name:           "it should fail if one of the addrs' ID isn't an int",
+			arg:            []string{"127.0.0.1:1234+id?", "domain.com+1"},
+			expectedErrMsg: "Couldn't parse seed '127.0.0.1:1234+id?': ID must be an int.",
+		},
+		{
+			name:           "it should fail if the host is empty",
+			arg:            []string{" :1234+1234"},
+			expectedErrMsg: "Couldn't parse seed ' :1234+1234': Empty host in address ' :1234'",
+		},
+		{
+			name:           "it should fail if the port is empty",
+			arg:            []string{" :+1234"},
+			expectedErrMsg: "Couldn't parse seed ' :+1234': Empty host in address ' :'",
+		},
+		{
+			name:           "it should fail if the port is empty",
+			arg:            []string{"host:+1234"},
+			expectedErrMsg: "Couldn't parse seed 'host:+1234': Port must be an int",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(st *testing.T) {
+			addrs, err := parseSeeds(tt.arg)
+			if tt.expectedErrMsg != "" {
+				require.EqualError(st, err, tt.expectedErrMsg)
+				return
+			}
+			require.Exactly(st, tt.expected, addrs)
 		})
 	}
 }

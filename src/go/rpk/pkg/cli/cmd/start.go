@@ -13,8 +13,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 	"vectorized/pkg/api"
@@ -70,12 +72,15 @@ const (
 	maxIoRequestsFlag    = "max-io-requests"
 	mbindFlag            = "mbind"
 	overprovisionedFlag  = "overprovisioned"
+
+	seedFormat = "<host>[:<port>]+<id>"
 )
 
 func NewStartCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	prestartCfg := prestartConfig{}
 	var (
 		configFile     string
+		seeds          []string
 		installDirFlag string
 		timeout        time.Duration
 		wellKnownIo    string
@@ -92,6 +97,20 @@ func NewStartCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 			}
 			config.CheckAndPrintNotice(conf.LicenseKey)
 			env := api.EnvironmentPayload{}
+			if len(seeds) == 0 {
+				// If --seeds wasn't passed, fall back to the
+				// env var.
+				seeds = strings.Split(
+					os.Getenv("REDPANDA_SEEDS"),
+					",",
+				)
+			}
+			seedServers, err := parseSeeds(seeds)
+			if err != nil {
+				sendEnv(mgr, env, conf, err)
+				return err
+			}
+			conf.Redpanda.SeedServers = seedServers
 			installDirectory, err := cli.GetOrFindInstallDir(fs, installDirFlag)
 			if err != nil {
 				sendEnv(mgr, env, conf, err)
@@ -137,6 +156,14 @@ func NewStartCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 			" in the default locations",
 	)
 	mgr.BindFlag("config_file", command.Flags().Lookup("config"))
+	command.Flags().StringSliceVarP(
+		&seeds,
+		"seeds",
+		"s",
+		[]string{},
+		"A list of seed nodes to connect to, in the format "+
+			seedFormat,
+	)
 	command.Flags().StringVar(&sFlags.memory,
 		memoryFlag, "", "Amount of memory for redpanda to use, "+
 			"if not specified redpanda will use all available memory")
@@ -521,6 +548,75 @@ func parseFlags(flags []string) map[string]string {
 		i += 1
 	}
 	return parsed
+}
+
+func parseSeeds(seeds []string) ([]config.SeedServer, error) {
+	seedServers := []config.SeedServer{}
+	for _, s := range seeds {
+		addressID := strings.Split(s, "+")
+		if len(addressID) != 2 {
+			return seedServers, fmt.Errorf(
+				"Couldn't parse seed '%s': Format doesn't"+
+					" conform to %s."+
+					" Missing ID.",
+				s,
+				seedFormat,
+			)
+		}
+		id, err := strconv.Atoi(strings.Trim(addressID[1], " "))
+		if err != nil {
+			return seedServers, fmt.Errorf(
+				"Couldn't parse seed '%s': ID must be an int.",
+				s,
+			)
+		}
+		addr, err := parseAddress(addressID[0])
+		if err != nil {
+			return seedServers, fmt.Errorf(
+				"Couldn't parse seed '%s': %v",
+				s,
+				err,
+			)
+		}
+		if addr == nil {
+			return seedServers, fmt.Errorf(
+				"Couldn't parse seed '%s': empty address",
+				s,
+			)
+		}
+		seedServers = append(
+			seedServers,
+			config.SeedServer{Host: *addr, Id: id},
+		)
+	}
+	return seedServers, nil
+}
+
+func parseAddress(addr string) (*config.SocketAddress, error) {
+	if addr == "" {
+		return nil, nil
+	}
+	hostPort := strings.Split(addr, ":")
+	host := strings.Trim(hostPort[0], " ")
+	if host == "" {
+		return nil, fmt.Errorf("Empty host in address '%s'", addr)
+	}
+	if len(hostPort) != 2 {
+		// It's just a hostname with no port. Assume 9092.
+		return &config.SocketAddress{
+			Address: strings.Trim(hostPort[0], " "),
+			Port:    9092,
+		}, nil
+	}
+	// It's a host:port combo.
+	port, err := strconv.Atoi(strings.Trim(hostPort[1], " "))
+	if err != nil {
+		return nil, fmt.Errorf("Port must be an int")
+	}
+	return &config.SocketAddress{
+		Address: host,
+		Port:    port,
+	}, nil
 }
 
 func sendEnv(
