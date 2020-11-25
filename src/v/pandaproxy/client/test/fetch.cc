@@ -94,7 +94,6 @@ FIXTURE_TEST(pandaproxy_fetch, ppc_test_fixture) {
         auto const& r = p.responses[0];
         BOOST_REQUIRE_EQUAL(r.id, ntp.tp.partition);
         BOOST_REQUIRE_EQUAL(r.error, kafka::error_code::none);
-        BOOST_REQUIRE_EQUAL(r.high_watermark, committed_offset);
     }
 
     client.stop().get();
