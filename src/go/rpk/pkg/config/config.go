@@ -15,7 +15,7 @@ import (
 	"fmt"
 	"math/big"
 	"os"
-	"path/filepath"
+	fp "path/filepath"
 	"strconv"
 	"strings"
 	"vectorized/pkg/utils"
@@ -33,6 +33,46 @@ const (
 	ModeDev  = "dev"
 	ModeProd = "prod"
 )
+
+func InitViper(fs afero.Fs) *viper.Viper {
+	v := viper.New()
+	v.SetFs(fs)
+	v.SetConfigName("redpanda")
+	v.SetConfigType("yaml")
+	setDefaults(v)
+	return v
+}
+
+func addConfigPaths(v *viper.Viper) {
+	v.AddConfigPath("$HOME")
+	v.AddConfigPath(fp.Join("etc", "redpanda"))
+	v.AddConfigPath(".")
+	path, err := os.Getwd()
+	if err != nil {
+		log.Warnf("Error getting the current dir: %v", err)
+	} else {
+		for dir := fp.Dir(path); dir != string(fp.Separator); dir = fp.Dir(dir) {
+			v.AddConfigPath(dir)
+		}
+	}
+}
+
+func setDefaults(v *viper.Viper) {
+	var traverse func(tree map[string]interface{}, path ...string)
+	traverse = func(tree map[string]interface{}, path ...string) {
+		for key, val := range tree {
+			if subtree, ok := val.(map[string]interface{}); ok {
+				traverse(subtree, append(path, key)...)
+			} else {
+				v.SetDefault(
+					strings.Join(append(path, key), "."),
+					val,
+				)
+			}
+		}
+	}
+	traverse(defaultMap())
+}
 
 func Default() *Config {
 	conf := &Config{}
@@ -249,7 +289,7 @@ func checkAndWrite(
 		}
 		return errors.New(strings.Join(reasons, ", "))
 	}
-	lastBackupFile, err := findBackup(fs, filepath.Dir(path))
+	lastBackupFile, err := findBackup(fs, fp.Dir(path))
 	if err != nil {
 		return err
 	}
@@ -490,6 +530,10 @@ func toMap(conf *Config) (map[string]interface{}, error) {
 func check(conf map[string]interface{}) (bool, []error) {
 	v := viper.New()
 	v.MergeConfigMap(conf)
+	return checkViper(v)
+}
+
+func checkViper(v *viper.Viper) (bool, []error) {
 	errs := checkRedpandaConfig(v)
 	errs = append(
 		errs,
