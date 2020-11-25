@@ -36,71 +36,71 @@ const (
 )
 
 type Config struct {
-	NodeUuid     string          `yaml:"node_uuid,omitempty" json:"nodeUuid"`
-	Organization string          `yaml:"organization,omitempty" json:"organization"`
-	LicenseKey   string          `yaml:"license_key,omitempty" json:"licenseKey"`
-	ClusterId    string          `yaml:"cluster_id,omitempty" json:"clusterId"`
-	ConfigFile   string          `yaml:"config_file,omitempty" json:"configFile"`
-	Redpanda     *RedpandaConfig `json:"redpanda"`
-	Rpk          *RpkConfig      `yaml:"rpk,omitempty" json:"rpk"`
+	NodeUuid     string          `yaml:"node_uuid,omitempty" mapstructure:"node_uuid,omitempty" json:"nodeUuid"`
+	Organization string          `yaml:"organization,omitempty" mapstructure:"organization,omitempty" json:"organization"`
+	LicenseKey   string          `yaml:"license_key,omitempty" mapstructure:"license_key,omitempty" json:"licenseKey"`
+	ClusterId    string          `yaml:"cluster_id,omitempty" mapstructure:"cluster_id,omitempty" json:"clusterId"`
+	ConfigFile   string          `yaml:"config_file" mapstructure:"config_file" json:"configFile"`
+	Redpanda     *RedpandaConfig `yaml:"redpanda" mapstructure:"redpanda" json:"redpanda"`
+	Rpk          *RpkConfig      `yaml:"rpk" mapstructure:"rpk" json:"rpk"`
 }
 
 type RedpandaConfig struct {
-	Directory          string         `yaml:"data_directory" json:"dataDirectory"`
-	RPCServer          SocketAddress  `yaml:"rpc_server" json:"rpcServer"`
-	AdvertisedRPCAPI   *SocketAddress `yaml:"advertised_rpc_api,omitempty" json:"advertisedRpcApi"`
-	KafkaApi           SocketAddress  `yaml:"kafka_api" json:"kafkaApi"`
-	AdvertisedKafkaApi *SocketAddress `yaml:"advertised_kafka_api,omitempty" json:"advertisedKafkaApi"`
-	KafkaApiTLS        ServerTLS      `yaml:"kafka_api_tls" json:"kafkaApiTls"`
-	AdminApi           SocketAddress  `yaml:"admin" json:"admin"`
-	Id                 int            `yaml:"node_id" json:"id"`
-	SeedServers        []*SeedServer  `yaml:"seed_servers" json:"seedServers"`
-	DeveloperMode      bool           `yaml:"developer_mode" json:"developerMode"`
+	Directory          string         `yaml:"data_directory" mapstructure:"data_directory" json:"dataDirectory"`
+	RPCServer          SocketAddress  `yaml:"rpc_server" mapstructure:"rpc_server" json:"rpcServer"`
+	AdvertisedRPCAPI   *SocketAddress `yaml:"advertised_rpc_api,omitempty" mapstructure:"advertised_rpc_api,omitempty" json:"advertisedRpcApi,omitempty"`
+	KafkaApi           SocketAddress  `yaml:"kafka_api" mapstructure:"kafka_api" json:"kafkaApi"`
+	AdvertisedKafkaApi *SocketAddress `yaml:"advertised_kafka_api,omitempty" mapstructure:"advertised_kafka_api,omitempty" json:"advertisedKafkaApi,omitempty"`
+	KafkaApiTLS        ServerTLS      `yaml:"kafka_api_tls" mapstructure:"kafka_api_tls" json:"kafkaApiTls"`
+	AdminApi           SocketAddress  `yaml:"admin" mapstructure:"admin" json:"admin"`
+	Id                 int            `yaml:"node_id" mapstructure:"node_id" json:"id"`
+	SeedServers        []*SeedServer  `yaml:"seed_servers,omitempty" mapstructure:"seed_servers,omitempty" json:"seedServers"`
+	DeveloperMode      bool           `yaml:"developer_mode" mapstructure:"developer_mode" json:"developerMode"`
 }
 
 type SeedServer struct {
-	Host SocketAddress `yaml:"host" json:"host"`
-	Id   int           `yaml:"node_id" json:"id"`
+	Host SocketAddress `yaml:"host" mapstructure:"host" json:"host"`
+	Id   int           `yaml:"node_id" mapstructure:"node_id" json:"id"`
 }
 
 type SocketAddress struct {
-	Address string `yaml:"address" json:"address"`
-	Port    int    `yaml:"port" json:"port"`
+	Address string `yaml:"address" mapstructure:"address" json:"address"`
+	Port    int    `yaml:"port" mapstructure:"port" json:"port"`
 }
 
 type TLS struct {
-	KeyFile        string `yaml:"key_file" json:"keyFile"`
-	CertFile       string `yaml:"cert_file" json:"certFile"`
-	TruststoreFile string `yaml:"truststore_file" json:"truststoreFile"`
+	KeyFile        string `yaml:"key_file" mapstructure:"key_file" json:"keyFile"`
+	CertFile       string `yaml:"cert_file" mapstructure:"cert_file" json:"certFile"`
+	TruststoreFile string `yaml:"truststore_file" mapstructure:"truststore_file" json:"truststoreFile"`
 }
 
 type ServerTLS struct {
-	KeyFile        string `yaml:"key_file" json:"keyFile"`
-	CertFile       string `yaml:"cert_file" json:"certFile"`
-	TruststoreFile string `yaml:"truststore_file" json:"truststoreFile"`
-	Enabled        bool   `yaml:"enabled" json:"enabled"`
+	KeyFile        string `yaml:"key_file" mapstructure:"key_file" json:"keyFile"`
+	CertFile       string `yaml:"cert_file" mapstructure:"cert_file" json:"certFile"`
+	TruststoreFile string `yaml:"truststore_file" mapstructure:"truststore_file" json:"truststoreFile"`
+	Enabled        bool   `yaml:"enabled" mapstructure:"enabled" json:"enabled"`
 }
 
 type RpkConfig struct {
-	TLS                      TLS      `yaml:"tls" json:"tls"`
-	AdditionalStartFlags     []string `yaml:"additional_start_flags,omitempty" json:"additionalStartFlags"`
-	EnableUsageStats         bool     `yaml:"enable_usage_stats" json:"enableUsageStats"`
-	TuneNetwork              bool     `yaml:"tune_network" json:"tuneNetwork"`
-	TuneDiskScheduler        bool     `yaml:"tune_disk_scheduler" json:"tuneDiskScheduler"`
-	TuneNomerges             bool     `yaml:"tune_disk_nomerges" json:"tuneNomerges"`
-	TuneDiskIrq              bool     `yaml:"tune_disk_irq" json:"tuneDiskIrq"`
-	TuneFstrim               bool     `yaml:"tune_fstrim" json:"tuneFstrim"`
-	TuneCpu                  bool     `yaml:"tune_cpu" json:"tuneCpu"`
-	TuneAioEvents            bool     `yaml:"tune_aio_events" json:"tuneAioEvents"`
-	TuneClocksource          bool     `yaml:"tune_clocksource" json:"tuneClocksource"`
-	TuneSwappiness           bool     `yaml:"tune_swappiness" json:"tuneSwappiness"`
-	TuneTransparentHugePages bool     `yaml:"tune_transparent_hugepages" json:"tuneTransparentHugePages"`
-	EnableMemoryLocking      bool     `yaml:"enable_memory_locking" json:"enableMemoryLocking"`
-	TuneCoredump             bool     `yaml:"tune_coredump" json:"tuneCoredump"`
-	CoredumpDir              string   `yaml:"coredump_dir" json:"coredumpDir"`
-	WellKnownIo              string   `yaml:"well_known_io,omitempty" json:"wellKnownIo"`
-	Overprovisioned          bool     `yaml:"overprovisioned", json:"overprovisioned"`
-	SMP                      *int     `yaml:"smp,omitempty", json:"smp,omitempty"`
+	TLS                      TLS      `yaml:"tls" mapstructure:"tls" json:"tls"`
+	AdditionalStartFlags     []string `yaml:"additional_start_flags,omitempty" mapstructure:"additional_start_flags,omitempty" json:"additionalStartFlags"`
+	EnableUsageStats         bool     `yaml:"enable_usage_stats" mapstructure:"enable_usage_stats" json:"enableUsageStats"`
+	TuneNetwork              bool     `yaml:"tune_network" mapstructure:"tune_network" json:"tuneNetwork"`
+	TuneDiskScheduler        bool     `yaml:"tune_disk_scheduler" mapstructure:"tune_disk_scheduler" json:"tuneDiskScheduler"`
+	TuneNomerges             bool     `yaml:"tune_disk_nomerges" mapstructure:"tune_disk_nomerges" json:"tuneNomerges"`
+	TuneDiskIrq              bool     `yaml:"tune_disk_irq" mapstructure:"tune_disk_irq" json:"tuneDiskIrq"`
+	TuneFstrim               bool     `yaml:"tune_fstrim" mapstructure:"tune_fstrim" json:"tuneFstrim"`
+	TuneCpu                  bool     `yaml:"tune_cpu" mapstructure:"tune_cpu" json:"tuneCpu"`
+	TuneAioEvents            bool     `yaml:"tune_aio_events" mapstructure:"tune_aio_events" json:"tuneAioEvents"`
+	TuneClocksource          bool     `yaml:"tune_clocksource" mapstructure:"tune_clocksource" json:"tuneClocksource"`
+	TuneSwappiness           bool     `yaml:"tune_swappiness" mapstructure:"tune_swappiness" json:"tuneSwappiness"`
+	TuneTransparentHugePages bool     `yaml:"tune_transparent_hugepages" mapstructure:"tune_transparent_hugepages" json:"tuneTransparentHugePages"`
+	EnableMemoryLocking      bool     `yaml:"enable_memory_locking" mapstructure:"enable_memory_locking" json:"enableMemoryLocking"`
+	TuneCoredump             bool     `yaml:"tune_coredump" mapstructure:"tune_coredump" json:"tuneCoredump"`
+	CoredumpDir              string   `yaml:"coredump_dir,omitempty" mapstructure:"coredump_dir,omitempty" json:"coredumpDir"`
+	WellKnownIo              string   `yaml:"well_known_io,omitempty" mapstructure:"well_known_io,omitempty" json:"wellKnownIo"`
+	Overprovisioned          bool     `yaml:"overprovisioned" mapstructure:"overprovisioned" json:"overprovisioned"`
+	SMP                      *int     `yaml:"smp,omitempty" mapstructure:"smp,omitempty" json:"smp,omitempty"`
 }
 
 func (conf *Config) PIDFile() string {
@@ -108,18 +108,36 @@ func (conf *Config) PIDFile() string {
 }
 
 func Default() Config {
-	return Config{
-		ConfigFile: "/etc/redpanda/redpanda.yaml",
-		Redpanda: &RedpandaConfig{
-			Directory:   "/var/lib/redpanda/data",
-			RPCServer:   SocketAddress{"0.0.0.0", 33145},
-			KafkaApi:    SocketAddress{"0.0.0.0", 9092},
-			AdminApi:    SocketAddress{"0.0.0.0", 9644},
-			Id:          0,
-			SeedServers: []*SeedServer{},
+	conf := &Config{}
+	err := mapstructure.Decode(defaultMap(), conf)
+	if err != nil {
+		panic(err)
+	}
+	return *conf
+}
+
+func defaultMap() map[string]interface{} {
+	return map[string]interface{}{
+		"config_file": "/etc/redpanda/redpanda.yaml",
+		"redpanda": map[string]interface{}{
+			"data_directory": "/var/lib/redpanda/data",
+			"rpc_server": map[string]interface{}{
+				"address": "0.0.0.0",
+				"port":    33145,
+			},
+			"kafka_api": map[string]interface{}{
+				"address": "0.0.0.0",
+				"port":    9092,
+			},
+			"admin": map[string]interface{}{
+				"address": "0.0.0.0",
+				"port":    9644,
+			},
+			"node_id":      0,
+			"seed_servers": []map[string]interface{}{},
 		},
-		Rpk: &RpkConfig{
-			CoredumpDir: "/var/lib/redpanda/coredump",
+		"rpk": map[string]interface{}{
+			"coredump_dir": "/var/lib/redpanda/coredump",
 		},
 	}
 }

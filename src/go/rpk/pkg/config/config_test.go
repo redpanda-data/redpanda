@@ -203,12 +203,11 @@ func TestDefault(t *testing.T) {
 	expected := Config{
 		ConfigFile: "/etc/redpanda/redpanda.yaml",
 		Redpanda: &RedpandaConfig{
-			Directory:   "/var/lib/redpanda/data",
-			RPCServer:   SocketAddress{"0.0.0.0", 33145},
-			KafkaApi:    SocketAddress{"0.0.0.0", 9092},
-			AdminApi:    SocketAddress{"0.0.0.0", 9644},
-			Id:          0,
-			SeedServers: []*SeedServer{},
+			Directory: "/var/lib/redpanda/data",
+			RPCServer: SocketAddress{"0.0.0.0", 33145},
+			KafkaApi:  SocketAddress{"0.0.0.0", 9092},
+			AdminApi:  SocketAddress{"0.0.0.0", 9644},
+			Id:        0,
 		},
 		Rpk: &RpkConfig{
 			CoredumpDir: "/var/lib/redpanda/coredump",
@@ -858,7 +857,7 @@ func TestReadAsJSON(t *testing.T) {
 				return WriteConfig(fs, &conf, conf.ConfigFile)
 			},
 			path:     Default().ConfigFile,
-			expected: `{"config_file":"/etc/redpanda/redpanda.yaml","redpanda":{"admin":{"address":"0.0.0.0","port":9644},"data_directory":"/var/lib/redpanda/data","developer_mode":false,"kafka_api":{"address":"0.0.0.0","port":9092},"kafka_api_tls":{"cert_file":"","enabled":false,"key_file":"","truststore_file":""},"node_id":0,"rpc_server":{"address":"0.0.0.0","port":33145},"seed_servers":[]},"rpk":{"coredump_dir":"/var/lib/redpanda/coredump","enable_memory_locking":false,"enable_usage_stats":false,"overprovisioned":false,"tls":{"cert_file":"","key_file":"","truststore_file":""},"tune_aio_events":false,"tune_clocksource":false,"tune_coredump":false,"tune_cpu":false,"tune_disk_irq":false,"tune_disk_nomerges":false,"tune_disk_scheduler":false,"tune_fstrim":false,"tune_network":false,"tune_swappiness":false,"tune_transparent_hugepages":false}}`,
+			expected: `{"config_file":"/etc/redpanda/redpanda.yaml","redpanda":{"admin":{"address":"0.0.0.0","port":9644},"data_directory":"/var/lib/redpanda/data","developer_mode":false,"kafka_api":{"address":"0.0.0.0","port":9092},"kafka_api_tls":{"cert_file":"","enabled":false,"key_file":"","truststore_file":""},"node_id":0,"rpc_server":{"address":"0.0.0.0","port":33145}},"rpk":{"coredump_dir":"/var/lib/redpanda/coredump","enable_memory_locking":false,"enable_usage_stats":false,"overprovisioned":false,"tls":{"cert_file":"","key_file":"","truststore_file":""},"tune_aio_events":false,"tune_clocksource":false,"tune_coredump":false,"tune_cpu":false,"tune_disk_irq":false,"tune_disk_nomerges":false,"tune_disk_scheduler":false,"tune_fstrim":false,"tune_network":false,"tune_swappiness":false,"tune_transparent_hugepages":false}}`,
 		},
 		{
 			name:           "it should fail if the the config isn't found",
