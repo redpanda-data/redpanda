@@ -107,6 +107,12 @@ inline bool is_materialized_topic(const model::topic& t) {
     return make_materialized_topic(t).has_value();
 }
 
+inline model::topic get_source_topic(const model::topic& topic) {
+    const std::optional<materialized_topic> maybe_materialized
+      = make_materialized_topic(topic);
+    return maybe_materialized ? model::topic(maybe_materialized->src) : topic;
+}
+
 inline model::topic
 to_materialized_topic(const model::topic& src, const model::topic& dest) {
     return model::topic(fmt::format("{}.${}$", src(), dest()));

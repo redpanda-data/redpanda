@@ -71,7 +71,9 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
   list_offset_topic& topic,
   list_offset_partition& part) {
     auto ntp = model::ntp(
-      cluster::kafka_namespace, topic.name, part.partition_index);
+      cluster::kafka_namespace,
+      model::get_source_topic(topic.name),
+      part.partition_index);
 
     auto shard = octx.rctx.shards().shard_for(ntp);
     if (!shard) {
@@ -147,7 +149,8 @@ list_offsets_topic(list_offsets_ctx& octx, list_offset_topic& topic) {
         }
 
         if (!octx.rctx.metadata_cache().contains(
-              model::topic_namespace_view(cluster::kafka_namespace, topic.name),
+              model::topic_namespace_view(
+                cluster::kafka_namespace, model::get_source_topic(topic.name)),
               part.partition_index)) {
             partitions.push_back(
               ss::make_ready_future<list_offset_partition_response>(
