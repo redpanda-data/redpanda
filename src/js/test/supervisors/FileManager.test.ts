@@ -37,11 +37,22 @@ const createStubs = (sandbox: SinonSandbox) => {
     "moveCoprocessorFile"
   );
   const getCoprocessor = sandbox.stub(FileManager.prototype, "getHandle");
+
+  const enableCoprocessor = sandbox
+    .stub(FileManager.prototype, "enableCoprocessor")
+    .returns(Promise.resolve());
+
+  const disableCoprocessor = sandbox
+    .stub(FileManager.prototype, "disableCoprocessors")
+    .returns(Promise.resolve());
+
   return {
     moveCoprocessor,
     getCoprocessor,
     readdirFake,
     readFolderStub,
+    enableCoprocessor,
+    disableCoprocessor,
   };
 };
 
@@ -132,10 +143,54 @@ describe("FileManager", () => {
     }
   );
 
+  it(
+    "if adding a new coprocessor to repository and that repository has a " +
+      "coprocessor with same id, FileManager should disable the previous " +
+      "coprocessor and enable the new one",
+    (done) => {
+      const handle = createHandle();
+      const handle2 = createHandle({ inputTopics: ["anotherTopics"] });
+      handle2.checksum = "different";
+      const repo = new Repository();
+      const {
+        moveCoprocessor,
+        getCoprocessor,
+        enableCoprocessor,
+        disableCoprocessor,
+      } = createStubs(sinonInstance);
+      moveCoprocessor.returns(Promise.resolve(handle));
+      getCoprocessor.returns(Promise.resolve(handle));
+      getCoprocessor.returns(Promise.resolve(handle2));
+
+      const fileManager = new FileManager(
+        repo,
+        "submit",
+        "active",
+        "inactive",
+        client
+      );
+
+      fileManager
+        .addCoprocessor(handle.filename, repo)
+        .then(() => {
+          assert(enableCoprocessor.called);
+          assert(!disableCoprocessor.called);
+        })
+        .then(() => fileManager.addCoprocessor(handle2.filename, repo))
+        .then(() => {
+          assert.strictEqual(enableCoprocessor.getCalls().length, 2);
+          assert(disableCoprocessor.called);
+        })
+        .then(() => done());
+    }
+  );
+
   it("should remove a coprocessor from file path", (done) => {
     const handle = createHandle();
     const repo = new Repository();
-    const { moveCoprocessor, getCoprocessor } = createStubs(sinonInstance);
+    const { moveCoprocessor, getCoprocessor, disableCoprocessor } = createStubs(
+      sinonInstance
+    );
 
     // add coprocessor
     repo.add(handle);
@@ -145,16 +200,14 @@ describe("FileManager", () => {
     // override the disable_copros method in server
     server.disable_copros = () => Promise.resolve({ inputs: [0] });
     // add spy to server
-    const spyDisable = sinonInstance.spy(client, "disable_copros");
 
     const file = new FileManager(repo, "submit", "active", "inactive", client);
-    file.deregisterCoprocessor(handle.coprocessor);
-    setTimeout(() => {
+    file.deregisterCoprocessor(handle.coprocessor).then(() => {
       assert(moveCoprocessor.called);
       assert(moveCoprocessor.calledWith(handle, "inactive"));
-      assert(spyDisable.called);
-      assert(spyDisable.calledWith({ inputs: [handle.coprocessor.globalId] }));
+      assert(disableCoprocessor.called);
+      assert(disableCoprocessor.calledWith([handle.coprocessor]));
       done();
-    }, 150);
+    });
   });
 });

@@ -18,6 +18,10 @@ import { Coprocessor, PolicyInjection } from "../public/Coprocessor";
 import { Script_ManagerClient as ManagementClient } from "../rpc/serverAndClients/server";
 import * as path from "path";
 import { hash64 } from "xxhash";
+import {
+  validateDisableResponseCode,
+  validateEnableResponseCode,
+} from "./HandleError";
 
 /**
  * FileManager class is an inotify implementation, it receives a
@@ -61,15 +65,27 @@ class FileManager {
     validatePrevCoprocessor = true
   ): Promise<Handle> {
     return this.getHandle(filePath).then((handle) => {
-      const preCoprocessor = repository.findByGlobalId(handle);
-      if (preCoprocessor && validatePrevCoprocessor) {
-        if (preCoprocessor.checksum === handle.checksum) {
+      const prevHandle = repository.findByGlobalId(handle);
+      if (prevHandle && validatePrevCoprocessor) {
+        if (prevHandle.checksum === handle.checksum) {
           return this.moveCoprocessorFile(handle, this.inactiveDir);
         } else {
-          return this.moveCoprocessorFile(preCoprocessor, this.inactiveDir)
-            .then(() => repository.remove(preCoprocessor))
+          return this.moveCoprocessorFile(prevHandle, this.inactiveDir)
+            .then(() =>
+              this.deregisterCoprocessor(prevHandle.coprocessor).catch((e) => {
+                console.error(e);
+                return Promise.resolve();
+              })
+            )
             .then(() => this.moveCoprocessorFile(handle, this.activeDir))
-            .then((newCoprocessor) => repository.add(newCoprocessor));
+            .then((newCoprocessor) => repository.add(newCoprocessor))
+            .then(() => this.enableCoprocessor([handle.coprocessor]))
+            .then(() => handle)
+            .catch((e) =>
+              this.moveCoprocessorFile(handle, this.inactiveDir).then(() =>
+                Promise.reject(e)
+              )
+            );
         }
       } else {
         return this.moveCoprocessorFile(handle, this.activeDir)
@@ -77,6 +93,11 @@ class FileManager {
           .then((newHandle) =>
             this.enableCoprocessor([newHandle.coprocessor]).then(
               () => newHandle
+            )
+          )
+          .catch((e) =>
+            this.moveCoprocessorFile(handle, this.inactiveDir).then(() =>
+              Promise.reject(e)
             )
           );
       }
@@ -157,33 +178,17 @@ class FileManager {
    *
    * Possible coprocessor statuses:
    *   0 = success
-   *   1 = topic never enabled
-   *   2 = invalid coprocessor
-   *   3 = materialized coprocessor
-   *   4 = internal error
-   * @param coprocessor
-   * @param validateNeverEnabled
+   *   1 = internal error
+   *   2 = script doesn't exist
+   * @param coprocessors
    */
-  disableCoprocessors(
-    coprocessor: Coprocessor[],
-    validateNeverEnabled = true
-  ): Promise<void> {
+  disableCoprocessors(coprocessors: Coprocessor[]): Promise<void> {
     return this.managementClient
-      .disable_copros({ inputs: coprocessor.map((coproc) => coproc.globalId) })
-      .then((disableResponse) => {
-        const isValid = (condition: (n: number) => boolean) =>
-          disableResponse.inputs.find(condition);
-        const condition = validateNeverEnabled
-          ? (coproc) => coproc > 0
-          : (coproc) => coproc > 1;
-        const invalidCoprocessor = isValid(condition);
-        if (invalidCoprocessor > 0) {
-          return Promise.reject(
-            new Error(
-              "Is not possible to disable coprocessors with ids: " +
-                invalidCoprocessor
-            )
-          );
+      .disable_copros({ inputs: coprocessors.map((coproc) => coproc.globalId) })
+      .then((response) => {
+        const errors = validateDisableResponseCode(response, coprocessors);
+        if (errors.length > 0) {
+          return Promise.reject(errors);
         } else {
           return Promise.resolve();
         }
@@ -197,18 +202,15 @@ class FileManager {
    *
    * Possible topic statuses:
    *   0 = success
-   *   1 = topic already enabled
-   *   2 = topic does not exist
-   *   3 = invalid coprocessor
-   *   4 = materialized coprocessor
-   *   5 = internal error
+   *   1 = internal error
+   *   2 = invalid ingestion policy
+   *   3 = script id already exist
+   *   4 = topic doesn't exist
+   *   5 = invalid topic
+   *   6 = materialized topic
    * @param coprocessors
-   * @param validateAlreadyEnabled
    */
-  enableCoprocessor(
-    coprocessors: Coprocessor[],
-    validateAlreadyEnabled = false
-  ): Promise<void> {
+  enableCoprocessor(coprocessors: Coprocessor[]): Promise<void> {
     if (coprocessors.length == 0) {
       return Promise.resolve();
     } else {
@@ -223,21 +225,9 @@ class FileManager {
           })),
         })
         .then((enableResponse) => {
-          const isValid = (condition: (n: number) => boolean) =>
-            enableResponse.inputs.filter((coprocessorStatus) =>
-              coprocessorStatus.response.find(condition)
-            );
-          const condition = validateAlreadyEnabled
-            ? (coproc) => coproc > 0
-            : (coproc) => coproc > 2;
-          const invalidCoprocessor = isValid(condition);
-          if (invalidCoprocessor.length > 0) {
-            return Promise.reject(
-              new Error(
-                `Is not possible to enable coprocessors with ids:` +
-                  invalidCoprocessor.join(", ")
-              )
-            );
+          const errors = validateEnableResponseCode(enableResponse);
+          if (errors.find((errors) => errors.length > 0)) {
+            return Promise.reject(errors.flat());
           } else {
             return Promise.resolve();
           }
