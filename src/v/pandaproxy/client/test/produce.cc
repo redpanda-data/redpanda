@@ -36,7 +36,6 @@ FIXTURE_TEST(pandaproxy_produce_reconnect, ppc_test_fixture) {
 
     info("Connecting client");
     wait_for_controller_leadership().get();
-    client.connect().get();
 
     {
         info("Producing to unknown topic");
@@ -52,8 +51,7 @@ FIXTURE_TEST(pandaproxy_produce_reconnect, ppc_test_fixture) {
     add_topic(model::topic_namespace_view(ntp)).get();
 
     info("Client.dispatch metadata");
-    auto res
-      = client.dispatch(kafka::metadata_request{.list_all_topics = true}).get();
+    auto res = client.dispatch(make_list_topics_req()).get();
     BOOST_REQUIRE_EQUAL(res.topics.size(), 1);
     BOOST_REQUIRE_EQUAL(res.topics[0].name(), "t");
 

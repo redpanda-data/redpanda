@@ -16,7 +16,6 @@
 #include "kafka/errors.h"
 #include "kafka/requests/produce_request.h"
 #include "pandaproxy/json/iobuf.h"
-#include "pandaproxy/types.h"
 #include "seastarx.h"
 
 #include <seastar/core/sstring.hh>

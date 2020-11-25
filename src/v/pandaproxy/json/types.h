@@ -11,9 +11,16 @@
 
 #pragma once
 
+#include <cstdint>
+
 namespace pandaproxy::json {
+
+enum class serialization_format : uint8_t { none = 0, binary_v2, unsupported };
 
 template<typename T>
 class rjson_parse_impl;
+
+template<typename T>
+class rjson_serialize_impl;
 
 } // namespace pandaproxy::json

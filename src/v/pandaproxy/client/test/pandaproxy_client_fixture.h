@@ -42,7 +42,8 @@ public:
         return client;
     }
 
-    kafka::metadata_request make_list_topics_req() {
-        return kafka::metadata_request{.list_all_topics = true};
+    auto make_list_topics_req() {
+        return
+          []() { return kafka::metadata_request{.list_all_topics = true}; };
     }
 };

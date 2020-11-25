@@ -12,6 +12,7 @@
 #pragma once
 
 #include "json/json.h"
+#include "pandaproxy/json/types.h"
 #include "utils/concepts-enabled.h"
 
 #include <seastar/core/sstring.hh>
@@ -45,6 +46,27 @@ ss::sstring rjson_serialize(const T& v) {
     rjson_serialize(wrt, v);
 
     return ss::sstring(str_buf.GetString(), str_buf.GetSize());
+}
+
+struct rjson_serialize_fmt_impl {
+    explicit rjson_serialize_fmt_impl(serialization_format fmt)
+      : fmt{fmt} {}
+
+    serialization_format fmt;
+    template<typename T>
+    void operator()(T&& t) {
+        rjson_serialize_impl<std::remove_reference_t<T>>{fmt}(
+          std::forward<T>(t));
+    }
+    template<typename T>
+    void operator()(rapidjson::Writer<rapidjson::StringBuffer>& w, T&& t) {
+        rjson_serialize_impl<std::remove_reference_t<T>>{fmt}(
+          w, std::forward<T>(t));
+    }
+};
+
+inline rjson_serialize_fmt_impl rjson_serialize_fmt(serialization_format fmt) {
+    return rjson_serialize_fmt_impl{fmt};
 }
 
 template<typename Handler>

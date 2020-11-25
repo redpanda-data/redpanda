@@ -13,7 +13,7 @@
 
 namespace kafka {
 
-static std::string_view error_code_to_str(error_code error) {
+std::string_view error_code_to_str(error_code error) {
     switch (error) {
     case error_code::none:
         return "none";
