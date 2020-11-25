@@ -134,11 +134,12 @@ func TestSet(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			fs := afero.NewMemMapFs()
+			mgr := config.NewManager(fs)
 			conf := config.Default()
-			err := config.WriteConfig(fs, conf, conf.ConfigFile)
+			err := mgr.Write(conf)
 			require.NoError(t, err)
 
-			c := cmd.NewConfigCommand(fs)
+			c := cmd.NewConfigCommand(fs, mgr)
 			args := []string{"set"}
 			if tt.key != "" {
 				args = append(args, tt.key)
@@ -206,14 +207,16 @@ func TestBootstrap(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			configPath := "./redpanda.yaml"
+			configPath, err := filepath.Abs("./redpanda.yaml")
+			require.NoError(t, err)
 			fs := afero.NewMemMapFs()
-			err := fs.MkdirAll(
+			mgr := config.NewManager(fs)
+			err = fs.MkdirAll(
 				filepath.Dir(configPath),
 				0644,
 			)
 			require.NoError(t, err)
-			c := cmd.NewConfigCommand(fs)
+			c := cmd.NewConfigCommand(fs, mgr)
 			args := []string{"bootstrap", "--config", configPath}
 			if len(tt.ips) != 0 {
 				args = append(
@@ -236,7 +239,7 @@ func TestBootstrap(t *testing.T) {
 			}
 			require.NoError(t, err)
 			_, err = fs.Stat(configPath)
-			conf, err := config.ReadConfigFromPath(fs, configPath)
+			conf, err := mgr.Read(configPath)
 			require.NoError(t, err)
 			require.Equal(t, conf.Redpanda.RPCServer.Address, tt.self)
 			require.Equal(t, conf.Redpanda.KafkaApi.Address, tt.self)
@@ -260,10 +263,11 @@ func TestBootstrap(t *testing.T) {
 
 func TestInitNode(t *testing.T) {
 	fs := afero.NewMemMapFs()
+	mgr := config.NewManager(fs)
 	conf := config.Default()
-	err := config.WriteConfig(fs, conf, conf.ConfigFile)
+	err := mgr.Write(conf)
 	require.NoError(t, err)
-	c := cmd.NewConfigCommand(fs)
+	c := cmd.NewConfigCommand(fs, mgr)
 	args := []string{"init"}
 	c.SetArgs(args)
 

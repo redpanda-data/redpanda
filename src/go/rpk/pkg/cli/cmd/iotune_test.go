@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 	"vectorized/pkg/cli/cmd"
+	"vectorized/pkg/config"
 
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
@@ -80,9 +81,10 @@ func TestTimeoutDuration(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			fs := afero.NewMemMapFs()
+			mgr := config.NewManager(fs)
 			err := afero.WriteFile(fs, configPath, []byte(validConfig), 0644)
 			require.NoError(t, err)
-			cmd := cmd.NewIoTuneCmd(fs)
+			cmd := cmd.NewIoTuneCmd(fs, mgr)
 			args := []string{"--config", configPath}
 			args = append(args, tt.args...)
 			cmd.SetArgs(args)

@@ -72,7 +72,7 @@ const (
 	overprovisionedFlag  = "overprovisioned"
 )
 
-func NewStartCommand(fs afero.Fs) *cobra.Command {
+func NewStartCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	prestartCfg := prestartConfig{}
 	var (
 		configFile     string
@@ -86,16 +86,15 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 		Use:   "start",
 		Short: "Start redpanda",
 		RunE: func(ccmd *cobra.Command, args []string) error {
-			conf, err := config.FindOrGenerate(fs, configFile)
+			conf, err := mgr.FindOrGenerate(configFile)
 			if err != nil {
 				return err
 			}
-			conf.Rpk.WellKnownIo = wellKnownIo
 			config.CheckAndPrintNotice(conf.LicenseKey)
 			env := api.EnvironmentPayload{}
 			installDirectory, err := cli.GetOrFindInstallDir(fs, installDirFlag)
 			if err != nil {
-				sendEnv(fs, env, conf, err)
+				sendEnv(mgr, env, conf, err)
 				return err
 			}
 			rpArgs, err := buildRedpandaFlags(
@@ -105,7 +104,7 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 				ccmd.Flags(),
 			)
 			if err != nil {
-				sendEnv(fs, env, conf, err)
+				sendEnv(mgr, env, conf, err)
 				return err
 			}
 			checkPayloads, tunerPayloads, err := prestart(
@@ -118,11 +117,11 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 			env.Checks = checkPayloads
 			env.Tuners = tunerPayloads
 			if err != nil {
-				sendEnv(fs, env, conf, err)
+				sendEnv(mgr, env, conf, err)
 				return err
 			}
 
-			sendEnv(fs, env, conf, nil)
+			sendEnv(mgr, env, conf, nil)
 			rpArgs.ExtraArgs = args
 			launcher := redpanda.NewLauncher(installDirectory, rpArgs)
 			log.Info(feedbackMsg)
@@ -137,11 +136,13 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 		"Redpanda config file, if not set the file will be searched for"+
 			" in the default locations",
 	)
+	mgr.BindFlag("config_file", command.Flags().Lookup("config"))
 	command.Flags().StringVar(&sFlags.memory,
 		memoryFlag, "", "Amount of memory for redpanda to use, "+
 			"if not specified redpanda will use all available memory")
 	command.Flags().BoolVar(&sFlags.lockMemory,
 		lockMemoryFlag, false, "If set, will prevent redpanda from swapping")
+	mgr.BindFlag("rpk.enable_memory_locking", command.Flags().Lookup(lockMemoryFlag))
 	command.Flags().StringVar(&sFlags.cpuSet, cpuSetFlag, "",
 		"Set of CPUs for redpanda to use in cpuset(7) format, "+
 			"if not specified redpanda will use all available CPUs")
@@ -176,6 +177,7 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 		wellKnownIOFlag,
 		"",
 		"The cloud vendor and VM type, in the format <vendor>:<vm type>:<storage type>")
+	mgr.BindFlag("rpk.well_known_io", command.Flags().Lookup(wellKnownIOFlag))
 	command.Flags().BoolVar(&sFlags.mbind, mbindFlag, true, "enable mbind")
 	command.Flags().BoolVar(
 		&sFlags.overprovisioned,
@@ -183,6 +185,7 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 		true,
 		"Enable overprovisioning",
 	)
+	mgr.BindFlag("rpk.overprovisioned", command.Flags().Lookup(overprovisionedFlag))
 	command.Flags().DurationVar(
 		&timeout,
 		"timeout",
@@ -271,7 +274,7 @@ func buildRedpandaFlags(
 		}
 		// Otherwise, try to deduce the IO props.
 		if sFlags.ioPropertiesFile == "" {
-			ioProps, err := resolveWellKnownIo(conf, conf.Rpk.WellKnownIo)
+			ioProps, err := resolveWellKnownIo(conf)
 			if err == nil {
 				yaml, err := iotune.ToYaml(*ioProps)
 				if err != nil {
@@ -303,15 +306,11 @@ func buildRedpandaFlags(
 func flagsFromConf(
 	conf *config.Config, flagsMap map[string]interface{}, flags *pflag.FlagSet,
 ) map[string]interface{} {
-	if !flags.Changed(overprovisionedFlag) {
-		flagsMap[overprovisionedFlag] = conf.Rpk.Overprovisioned
-	}
+	flagsMap[overprovisionedFlag] = conf.Rpk.Overprovisioned
+	flagsMap[lockMemoryFlag] = conf.Rpk.EnableMemoryLocking
 	// Setting SMP to 0 doesn't make sense.
 	if !flags.Changed(smpFlag) && conf.Rpk.SMP != nil && *conf.Rpk.SMP != 0 {
 		flagsMap[smpFlag] = *conf.Rpk.SMP
-	}
-	if !flags.Changed(lockMemoryFlag) {
-		flagsMap[lockMemoryFlag] = conf.Rpk.EnableMemoryLocking
 	}
 	return flagsMap
 }
@@ -336,19 +335,10 @@ func mergeFlags(
 	return current
 }
 
-func resolveWellKnownIo(
-	conf *config.Config, wellKnownIo string,
-) (*iotune.IoProperties, error) {
-	var configuredWellKnownIo string
-	// The flags take precedence over the config file
-	if wellKnownIo != "" {
-		configuredWellKnownIo = wellKnownIo
-	} else {
-		configuredWellKnownIo = conf.Rpk.WellKnownIo
-	}
+func resolveWellKnownIo(conf *config.Config) (*iotune.IoProperties, error) {
 	var ioProps *iotune.IoProperties
-	if configuredWellKnownIo != "" {
-		wellKnownIoTokens := strings.Split(configuredWellKnownIo, ":")
+	if conf.Rpk.WellKnownIo != "" {
+		wellKnownIoTokens := strings.Split(conf.Rpk.WellKnownIo, ":")
 		if len(wellKnownIoTokens) != 3 {
 			err := errors.New(
 				"--well-known-io should have the format '<vendor>:<vm type>:<storage type>'",
@@ -534,7 +524,10 @@ func parseFlags(flags []string) map[string]string {
 }
 
 func sendEnv(
-	fs afero.Fs, env api.EnvironmentPayload, conf *config.Config, err error,
+	mgr config.Manager,
+	env api.EnvironmentPayload,
+	conf *config.Config,
+	err error,
 ) {
 	if err != nil {
 		env.ErrorMsg = err.Error()
@@ -542,7 +535,7 @@ func sendEnv(
 	// The config.Config struct holds only a subset of everything that can
 	// go in the YAML config file, so try to read the file directly to
 	// send everything.
-	confJSON, err := config.ReadAsJSON(fs, conf.ConfigFile)
+	confJSON, err := mgr.ReadAsJSON(conf.ConfigFile)
 	if err != nil {
 		log.Warnf(
 			"Couldn't send latest config at '%s' due to: %s",

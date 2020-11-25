@@ -12,6 +12,7 @@ package cmd
 import (
 	"os"
 	"vectorized/pkg/cli"
+	"vectorized/pkg/config"
 
 	"github.com/Shopify/sarama"
 	"github.com/fatih/color"
@@ -27,6 +28,7 @@ https://vectorized.io/feedback`
 func Execute() {
 	verbose := false
 	fs := afero.NewOsFs()
+	mgr := config.NewManager(fs)
 
 	if !terminal.IsTerminal(int(os.Stdout.Fd())) {
 		color.NoColor = true
@@ -62,16 +64,16 @@ func Execute() {
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose",
 		"v", false, "enable verbose logging (default false)")
 
-	rootCmd.AddCommand(NewModeCommand(fs))
-	rootCmd.AddCommand(NewConfigCommand(fs))
-	rootCmd.AddCommand(NewStatusCommand(fs))
-	rootCmd.AddCommand(NewGenerateCommand(fs))
+	rootCmd.AddCommand(NewModeCommand(mgr))
+	rootCmd.AddCommand(NewConfigCommand(fs, mgr))
+	rootCmd.AddCommand(NewStatusCommand(fs, mgr))
+	rootCmd.AddCommand(NewGenerateCommand(mgr))
 	rootCmd.AddCommand(NewVersionCommand())
-	rootCmd.AddCommand(NewApiCommand(fs))
+	rootCmd.AddCommand(NewApiCommand(fs, mgr))
 	rootCmd.AddCommand(NewWasmCommand(fs))
-	rootCmd.AddCommand(NewContainerCommand(fs))
+	rootCmd.AddCommand(NewContainerCommand(fs, mgr))
 
-	addPlatformDependentCmds(fs, rootCmd)
+	addPlatformDependentCmds(fs, mgr, rootCmd)
 
 	err := rootCmd.Execute()
 	if len(os.Args) > 1 {

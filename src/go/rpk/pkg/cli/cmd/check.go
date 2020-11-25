@@ -23,7 +23,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewCheckCommand(fs afero.Fs) *cobra.Command {
+func NewCheckCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	var (
 		configFile string
 		timeout    time.Duration
@@ -34,7 +34,7 @@ func NewCheckCommand(fs afero.Fs) *cobra.Command {
 		Long:         "",
 		SilenceUsage: true,
 		RunE: func(ccmd *cobra.Command, args []string) error {
-			return executeCheck(fs, configFile, timeout)
+			return executeCheck(fs, mgr, configFile, timeout)
 		},
 	}
 	command.Flags().StringVar(
@@ -66,8 +66,10 @@ func appendToTable(t *tablewriter.Table, r tuners.CheckResult) {
 	})
 }
 
-func executeCheck(fs afero.Fs, configFile string, timeout time.Duration) error {
-	conf, err := config.FindOrGenerate(fs, configFile)
+func executeCheck(
+	fs afero.Fs, mgr config.Manager, configFile string, timeout time.Duration,
+) error {
+	conf, err := mgr.FindOrGenerate(configFile)
 	if err != nil {
 		return err
 	}

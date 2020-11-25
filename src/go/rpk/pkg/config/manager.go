@@ -13,8 +13,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
 	"os"
 	fp "path/filepath"
+	"strconv"
 	"strings"
 	"vectorized/pkg/utils"
 
@@ -302,7 +304,7 @@ func (m *manager) Set(key, value, format, path string) error {
 }
 
 func (m *manager) checkAndWrite(path string) error {
-	ok, errs := checkViper(m.v)
+	ok, errs := check(m.v)
 	if !ok {
 		reasons := []string{}
 		for _, err := range errs {
@@ -368,4 +370,60 @@ func unmarshal(v *viper.Viper) (*Config, error) {
 	}
 	conf.ConfigFile = v.ConfigFileUsed()
 	return conf, nil
+}
+
+func base58Encode(s string) string {
+	b := []byte(s)
+
+	alphabet := "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+	alphabetIdx0 := byte('1')
+	bigRadix := big.NewInt(58)
+	bigZero := big.NewInt(0)
+	x := new(big.Int)
+	x.SetBytes(b)
+
+	answer := make([]byte, 0, len(b)*136/100)
+	for x.Cmp(bigZero) > 0 {
+		mod := new(big.Int)
+		x.DivMod(x, bigRadix, mod)
+		answer = append(answer, alphabet[mod.Int64()])
+	}
+
+	// leading zero bytes
+	for _, i := range b {
+		if i != 0 {
+			break
+		}
+		answer = append(answer, alphabetIdx0)
+	}
+
+	// reverse
+	alen := len(answer)
+	for i := 0; i < alen/2; i++ {
+		answer[i], answer[alen-1-i] = answer[alen-1-i], answer[i]
+	}
+
+	return string(answer)
+}
+
+func checkAndPrintRestartWarning(fieldKey string) {
+	if strings.HasPrefix(fieldKey, "redpanda") {
+		log.Info(
+			"If redpanda is running, please restart it for the" +
+				" changes to take effect.",
+		)
+	}
+}
+
+func parse(val string) interface{} {
+	if i, err := strconv.Atoi(val); err == nil {
+		return i
+	}
+	if f, err := strconv.ParseFloat(val, 64); err == nil {
+		return f
+	}
+	if b, err := strconv.ParseBool(val); err == nil {
+		return b
+	}
+	return val
 }

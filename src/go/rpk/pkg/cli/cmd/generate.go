@@ -11,17 +11,17 @@ package cmd
 
 import (
 	"vectorized/pkg/cli/cmd/generate"
+	"vectorized/pkg/config"
 
-	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
-func NewGenerateCommand(fs afero.Fs) *cobra.Command {
+func NewGenerateCommand(mgr config.Manager) *cobra.Command {
 	command := &cobra.Command{
 		Use:   "generate [template]",
 		Short: "Generate a configuration template for related services.",
 	}
 	command.AddCommand(generate.NewGrafanaDashboardCmd())
-	command.AddCommand(generate.NewPrometheusConfigCmd(fs))
+	command.AddCommand(generate.NewPrometheusConfigCmd(mgr))
 	return command
 }

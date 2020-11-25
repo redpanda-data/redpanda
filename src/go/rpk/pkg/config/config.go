@@ -10,18 +10,12 @@
 package config
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
-	"math/big"
 	"os"
 	fp "path/filepath"
-	"strconv"
 	"strings"
-	"vectorized/pkg/utils"
-	vyaml "vectorized/pkg/yaml"
 
-	"github.com/google/uuid"
 	"github.com/mitchellh/mapstructure"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
@@ -109,68 +103,6 @@ func defaultMap() map[string]interface{} {
 	}
 }
 
-func Set(fs afero.Fs, key, value, format, path string) error {
-	confMap, err := read(fs, path)
-	if err != nil {
-		return err
-	}
-	v := viper.New()
-	v.MergeConfigMap(confMap)
-	var newConfValue interface{}
-	switch strings.ToLower(format) {
-	case "single":
-		v.Set(key, parse(value))
-		err = checkAndWrite(fs, v.AllSettings(), path)
-		if err == nil {
-			checkAndPrintRestartWarning(key)
-		}
-		return err
-	case "yaml":
-		err := yaml.Unmarshal([]byte(value), &newConfValue)
-		if err != nil {
-			return err
-		}
-	case "json":
-		err := json.Unmarshal([]byte(value), &newConfValue)
-		if err != nil {
-			return err
-		}
-	default:
-		return fmt.Errorf("unsupported format %s", format)
-	}
-
-	newV := viper.New()
-	newV.Set(key, newConfValue)
-	v.MergeConfigMap(newV.AllSettings())
-	err = checkAndWrite(fs, v.AllSettings(), path)
-	if err == nil {
-		checkAndPrintRestartWarning(key)
-	}
-	return err
-}
-
-func parse(val string) interface{} {
-	if i, err := strconv.Atoi(val); err == nil {
-		return i
-	}
-	if f, err := strconv.ParseFloat(val, 64); err == nil {
-		return f
-	}
-	if b, err := strconv.ParseBool(val); err == nil {
-		return b
-	}
-	return val
-}
-
-// Checks config and writes it to the given path.
-func WriteConfig(fs afero.Fs, config *Config, path string) error {
-	confMap, err := toMap(config)
-	if err != nil {
-		return err
-	}
-	return checkAndWrite(fs, confMap, path)
-}
-
 func findBackup(fs afero.Fs, dir string) (string, error) {
 	exists, err := afero.Exists(fs, dir)
 	if err != nil {
@@ -189,215 +121,6 @@ func findBackup(fs afero.Fs, dir string) (string, error) {
 		}
 	}
 	return "", nil
-}
-
-func ReadConfigFromPath(fs afero.Fs, path string) (*Config, error) {
-	log.Debugf("Reading Redpanda config file from '%s'", path)
-	config := &Config{}
-	err := vyaml.Read(fs, config, path)
-	if err != nil {
-		return nil, err
-	}
-	config.ConfigFile = path
-	return config, nil
-}
-
-// Tries reading a config file at the given path, or generates a default config
-// and writes it to the path.
-func ReadOrGenerate(fs afero.Fs, configFile string) (*Config, error) {
-	conf, err := ReadConfigFromPath(fs, configFile)
-	if err == nil {
-		// The config file's there, there's nothing to do.
-		return conf, nil
-	}
-	if os.IsNotExist(err) {
-		log.Debug(err)
-		log.Infof(
-			"Couldn't find config file at %s. Generating it.",
-			configFile,
-		)
-		conf := Default()
-		conf.ConfigFile = configFile
-		err = WriteConfig(fs, conf, configFile)
-		if err != nil {
-			return nil, fmt.Errorf(
-				"Couldn't write config to %s: %v",
-				configFile,
-				err,
-			)
-		}
-		return conf, nil
-	}
-	return nil, fmt.Errorf(
-		"An error happened while trying to read %s: %v",
-		configFile,
-		err,
-	)
-}
-
-func ReadOrFind(fs afero.Fs, configFile string) (*Config, error) {
-	var err error
-	if configFile == "" {
-		configFile, err = FindConfigFile(fs)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return ReadConfigFromPath(fs, configFile)
-}
-
-// If configFile is empty, tries to find the file in the default locations.
-// Otherwise, it tries to read the file and load it. If the file doesn't
-// exist, it tries to create it with the default configuration.
-func FindOrGenerate(fs afero.Fs, configFile string) (*Config, error) {
-	var err error
-	if configFile == "" {
-		configFile, err = FindConfigFile(fs)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return ReadOrGenerate(fs, configFile)
-}
-func CheckConfig(config *Config) (bool, []error) {
-	configMap, err := toMap(config)
-	if err != nil {
-		return false, []error{err}
-	}
-	return check(configMap)
-}
-
-func recover(fs afero.Fs, backup, path string, err error) error {
-	log.Infof("Recovering the previous confing from %s", backup)
-	recErr := utils.CopyFile(fs, backup, path)
-	if recErr != nil {
-		msg := "couldn't persist the new config due to '%v'," +
-			" nor recover the backup due to '%v"
-		return fmt.Errorf(msg, err, recErr)
-	}
-	return fmt.Errorf("couldn't persist the new config due to '%v'", err)
-}
-
-func checkAndWrite(
-	fs afero.Fs, conf map[string]interface{}, path string,
-) error {
-	ok, errs := check(conf)
-	if !ok {
-		reasons := []string{}
-		for _, err := range errs {
-			reasons = append(reasons, err.Error())
-		}
-		return errors.New(strings.Join(reasons, ", "))
-	}
-	lastBackupFile, err := findBackup(fs, fp.Dir(path))
-	if err != nil {
-		return err
-	}
-	exists, err := afero.Exists(fs, path)
-	if err != nil {
-		return err
-	}
-	if !exists {
-		// If the config doesn't exist, just write it.
-		return write(fs, conf, path)
-	}
-	// Otherwise, backup the current config file, write the new one, and
-	// try to recover if there's an error.
-	log.Debug("Backing up the current config")
-	backup, err := utils.BackupFile(fs, path)
-	if err != nil {
-		return err
-	}
-	log.Debugf("Backed up the current config to %s", backup)
-	if lastBackupFile != "" && lastBackupFile != backup {
-		log.Debug("Removing previous backup file")
-		err = fs.Remove(lastBackupFile)
-		if err != nil {
-			return err
-		}
-	}
-	currentConf, err := read(fs, path)
-	if err != nil {
-		return recover(fs, backup, path, err)
-	}
-	log.Debugf("Writing the new redpanda config to '%s'", path)
-	if err != nil {
-		return recover(fs, backup, path, err)
-	}
-	merged := merge(currentConf, conf)
-	err = write(fs, merged, path)
-	if err != nil {
-		return recover(fs, backup, path, err)
-	}
-	return nil
-}
-
-func ReadFlat(fs afero.Fs, path string) (map[string]string, error) {
-	v, err := readViper(fs, path)
-	if err != nil {
-		return nil, err
-	}
-	keys := v.AllKeys()
-	flatMap := map[string]string{}
-	compactAddrFields := []string{
-		"redpanda.kafka_api",
-		"redpanda.rpc_server",
-		"redpanda.admin",
-	}
-	unmarshalKey := func(key string, val interface{}) error {
-		return v.UnmarshalKey(
-			key,
-			val,
-			func(c *mapstructure.DecoderConfig) {
-				c.TagName = "yaml"
-			},
-		)
-	}
-	for _, k := range keys {
-		if k == "redpanda.seed_servers" {
-			seeds := &[]SeedServer{}
-			err := unmarshalKey(k, seeds)
-			if err != nil {
-				return nil, err
-			}
-			for _, s := range *seeds {
-				key := fmt.Sprintf("%s.%d", k, s.Id)
-				flatMap[key] = fmt.Sprintf("%s:%d", s.Host.Address, s.Host.Port)
-			}
-			continue
-		}
-		// These fields are added later on as <address>:<port>
-		// instead of
-		// field.address <address>
-		// field.port    <port>
-		if strings.HasSuffix(k, ".port") || strings.HasSuffix(k, ".address") {
-			continue
-		}
-
-		s := v.GetString(k)
-		flatMap[k] = s
-	}
-	for _, k := range compactAddrFields {
-		sa := &SocketAddress{}
-		err := unmarshalKey(k, sa)
-		if err != nil {
-			return nil, err
-		}
-		flatMap[k] = fmt.Sprintf("%s:%d", sa.Address, sa.Port)
-	}
-	return flatMap, nil
-}
-
-func ReadAsJSON(fs afero.Fs, path string) (string, error) {
-	confMap, err := read(fs, path)
-	if err != nil {
-		return "", err
-	}
-	confJSON, err := json.Marshal(confMap)
-	if err != nil {
-		return "", err
-	}
-	return string(confJSON), nil
 }
 
 func SetMode(mode string, conf *Config) (*Config, error) {
@@ -449,15 +172,6 @@ func setProduction(conf *Config) *Config {
 	return conf
 }
 
-func AvailableModes() []string {
-	return []string{
-		ModeDev,
-		"development",
-		ModeProd,
-		"production",
-	}
-}
-
 func NormalizeMode(mode string) (string, error) {
 	switch mode {
 	case "":
@@ -478,62 +192,29 @@ func NormalizeMode(mode string) (string, error) {
 	}
 }
 
-func write(fs afero.Fs, conf map[string]interface{}, path string) error {
-	v := viper.New()
-	v.SetFs(fs)
-	v.MergeConfigMap(conf)
-	err := v.WriteConfigAs(path)
-	if err != nil {
-		return err
+func AvailableModes() []string {
+	return []string{
+		ModeDev,
+		"development",
+		ModeProd,
+		"production",
 	}
-	log.Debugf(
-		"Configuration written to %s.",
-		path,
-	)
-	return nil
 }
 
-func merge(current, new map[string]interface{}) map[string]interface{} {
-	v := viper.New()
-	v.MergeConfigMap(current)
-	v.MergeConfigMap(new)
-	return v.AllSettings()
-}
-
-func read(fs afero.Fs, path string) (map[string]interface{}, error) {
-	v, err := readViper(fs, path)
+func Check(conf *Config) (bool, []error) {
+	configMap, err := toMap(conf)
 	if err != nil {
-		return nil, err
+		return false, []error{err}
 	}
-	return v.AllSettings(), nil
-}
-
-func readViper(fs afero.Fs, path string) (*viper.Viper, error) {
 	v := viper.New()
-	v.SetFs(fs)
-	v.SetConfigFile(path)
-	v.SetConfigType("yaml")
-	err := v.ReadInConfig()
-	return v, err
-}
-
-func toMap(conf *Config) (map[string]interface{}, error) {
-	mapConf := make(map[string]interface{})
-	bs, err := yaml.Marshal(conf)
+	err = v.MergeConfigMap(configMap)
 	if err != nil {
-		return mapConf, err
+		return false, []error{err}
 	}
-	err = yaml.Unmarshal(bs, &mapConf)
-	return mapConf, err
+	return check(v)
 }
 
-func check(conf map[string]interface{}) (bool, []error) {
-	v := viper.New()
-	v.MergeConfigMap(conf)
-	return checkViper(v)
-}
-
-func checkViper(v *viper.Viper) (bool, []error) {
+func check(v *viper.Viper) (bool, []error) {
 	errs := checkRedpandaConfig(v)
 	errs = append(
 		errs,
@@ -545,26 +226,40 @@ func checkViper(v *viper.Viper) (bool, []error) {
 
 func checkRedpandaConfig(v *viper.Viper) []error {
 	errs := []error{}
-	rp := v.Sub("redpanda")
-	if rp == nil {
-		return []error{errors.New("the redpanda config is missing")}
-	}
-	if rp.GetString("data_directory") == "" {
+	if v.GetString("redpanda.data_directory") == "" {
 		errs = append(errs, fmt.Errorf("redpanda.data_directory can't be empty"))
 	}
-	if rp.GetInt("node_id") < 0 {
+	if v.GetInt("redpanda.node_id") < 0 {
 		errs = append(errs, fmt.Errorf("redpanda.node_id can't be a negative integer"))
 	}
-	errs = append(
-		errs,
-		checkSocketAddress(rp.Sub("rpc_server"), "redpanda.rpc_server")...,
-	)
-	errs = append(
-		errs,
-		checkSocketAddress(rp.Sub("kafka_api"), "redpanda.kafka_api")...,
-	)
-	var seedServersSlice []map[string]interface{}
-	err := rp.UnmarshalKey("seed_servers", &seedServersSlice)
+
+	apiConfigKeys := []string{"redpanda.rpc_server", "redpanda.kafka_api"}
+
+	for _, key := range apiConfigKeys {
+		exists := v.Sub(key) != nil
+		if !exists {
+			errs = append(
+				errs,
+				fmt.Errorf("%s missing", key),
+			)
+		} else {
+			socket := &SocketAddress{}
+			err := v.UnmarshalKey(key, socket)
+			if err != nil {
+				errs = append(
+					errs,
+					fmt.Errorf("invalid structure for %s", key),
+				)
+			} else {
+				errs = append(
+					errs,
+					checkSocketAddress(*socket, key)...,
+				)
+			}
+		}
+	}
+	var seedServersSlice []*SeedServer //map[string]interface{}
+	err := v.UnmarshalKey("redpanda.seed_servers", &seedServersSlice)
 	if err != nil {
 		log.Error(err)
 		msg := "redpanda.seed_servers doesn't have the expected structure"
@@ -576,18 +271,6 @@ func checkRedpandaConfig(v *viper.Viper) []error {
 	if len(seedServersSlice) > 0 {
 		seedServersPath := "redpanda.seed_servers"
 		for i, seed := range seedServersSlice {
-			s := viper.New()
-			s.MergeConfigMap(seed)
-			host := s.Sub("host")
-			if host == nil {
-				err := fmt.Errorf(
-					"%s.%d.host can't be empty",
-					seedServersPath,
-					i,
-				)
-				errs = append(errs, err)
-				continue
-			}
 			configPath := fmt.Sprintf(
 				"%s.%d.host",
 				seedServersPath,
@@ -596,7 +279,7 @@ func checkRedpandaConfig(v *viper.Viper) []error {
 			errs = append(
 				errs,
 				checkSocketAddress(
-					host,
+					seed.Host,
 					configPath,
 				)...,
 			)
@@ -605,12 +288,12 @@ func checkRedpandaConfig(v *viper.Viper) []error {
 	return errs
 }
 
-func checkSocketAddress(v *viper.Viper, configPath string) []error {
+func checkSocketAddress(s SocketAddress, configPath string) []error {
 	errs := []error{}
-	if v.GetInt("port") == 0 {
+	if s.Port == 0 {
 		errs = append(errs, fmt.Errorf("%s.port can't be 0", configPath))
 	}
-	if v.GetString("address") == "" {
+	if s.Address == "" {
 		errs = append(errs, fmt.Errorf("%s.address can't be empty", configPath))
 	}
 	return errs
@@ -618,11 +301,7 @@ func checkSocketAddress(v *viper.Viper, configPath string) []error {
 
 func checkRpkConfig(v *viper.Viper) []error {
 	errs := []error{}
-	rpk := v.Sub("rpk")
-	if rpk == nil {
-		return errs
-	}
-	if rpk.GetBool("tune_coredump") && rpk.GetString("coredump_dir") == "" {
+	if v.GetBool("rpk.tune_coredump") && v.GetString("rpk.coredump_dir") == "" {
 		msg := "if rpk.tune_coredump is set to true," +
 			"rpk.coredump_dir can't be empty"
 		errs = append(errs, errors.New(msg))
@@ -630,73 +309,12 @@ func checkRpkConfig(v *viper.Viper) []error {
 	return errs
 }
 
-func GenerateAndWriteNodeUuid(fs afero.Fs, conf *Config) (*Config, error) {
-	id, err := uuid.NewUUID()
+func toMap(conf *Config) (map[string]interface{}, error) {
+	mapConf := make(map[string]interface{})
+	bs, err := yaml.Marshal(conf)
 	if err != nil {
-		return nil, err
+		return mapConf, err
 	}
-	conf.NodeUuid = base58Encode(id.String())
-	err = WriteConfig(fs, conf, conf.ConfigFile)
-	if err != nil {
-		return nil, err
-	}
-	return conf, nil
-}
-
-func stringifyMap(m map[interface{}]interface{}) map[string]interface{} {
-	new := map[string]interface{}{}
-	for k, v := range m {
-		sk := fmt.Sprintf("%v", k)
-		sub, ok := v.(map[interface{}]interface{})
-		if ok {
-			newSub := stringifyMap(sub)
-			new[sk] = newSub
-			continue
-		}
-		new[sk] = v
-	}
-	return new
-}
-
-func base58Encode(s string) string {
-	b := []byte(s)
-
-	alphabet := "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
-	alphabetIdx0 := byte('1')
-	bigRadix := big.NewInt(58)
-	bigZero := big.NewInt(0)
-	x := new(big.Int)
-	x.SetBytes(b)
-
-	answer := make([]byte, 0, len(b)*136/100)
-	for x.Cmp(bigZero) > 0 {
-		mod := new(big.Int)
-		x.DivMod(x, bigRadix, mod)
-		answer = append(answer, alphabet[mod.Int64()])
-	}
-
-	// leading zero bytes
-	for _, i := range b {
-		if i != 0 {
-			break
-		}
-		answer = append(answer, alphabetIdx0)
-	}
-
-	// reverse
-	alen := len(answer)
-	for i := 0; i < alen/2; i++ {
-		answer[i], answer[alen-1-i] = answer[alen-1-i], answer[i]
-	}
-
-	return string(answer)
-}
-
-func checkAndPrintRestartWarning(fieldKey string) {
-	if strings.HasPrefix(fieldKey, "redpanda") {
-		log.Info(
-			"If redpanda is running, please restart it for the" +
-				" changes to take effect.",
-		)
-	}
+	err = yaml.Unmarshal(bs, &mapConf)
+	return mapConf, err
 }

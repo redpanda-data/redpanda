@@ -23,6 +23,7 @@ import (
 func getConfig() *config.Config {
 	conf := config.Default()
 	conf.Rpk.EnableUsageStats = true
+	conf.ConfigFile = "/etc/redpanda/redpanda.yaml"
 	return conf
 }
 
@@ -129,12 +130,13 @@ func TestStatus(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			fs := afero.NewMemMapFs()
+			mgr := config.NewManager(fs)
 			if tt.before != nil {
 				err := tt.before(fs)
 				require.NoError(t, err)
 			}
 			var out bytes.Buffer
-			cmd := NewStatusCommand(fs)
+			cmd := NewStatusCommand(fs, mgr)
 			cmd.SetArgs(tt.args)
 			logrus.SetOutput(&out)
 			err := cmd.Execute()

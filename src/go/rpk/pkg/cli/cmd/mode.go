@@ -15,11 +15,10 @@ import (
 	"vectorized/pkg/config"
 
 	log "github.com/sirupsen/logrus"
-	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
-func NewModeCommand(fs afero.Fs) *cobra.Command {
+func NewModeCommand(mgr config.Manager) *cobra.Command {
 	var configFile string
 	command := &cobra.Command{
 		Use:   "mode <mode>",
@@ -33,7 +32,7 @@ func NewModeCommand(fs afero.Fs) *cobra.Command {
 		},
 		RunE: func(_ *cobra.Command, args []string) error {
 			// Safe to access args[0] because it was validated in Args
-			return executeMode(fs, configFile, args[0])
+			return executeMode(mgr, configFile, args[0])
 		},
 	}
 	command.Flags().StringVar(
@@ -46,8 +45,8 @@ func NewModeCommand(fs afero.Fs) *cobra.Command {
 	return command
 }
 
-func executeMode(fs afero.Fs, configFile string, mode string) error {
-	conf, err := config.FindOrGenerate(fs, configFile)
+func executeMode(mgr config.Manager, configFile string, mode string) error {
+	conf, err := mgr.FindOrGenerate(configFile)
 	if err != nil {
 		return err
 	}
@@ -57,5 +56,5 @@ func executeMode(fs afero.Fs, configFile string, mode string) error {
 		return err
 	}
 	log.Infof("Writing '%s' mode defaults to '%s'", mode, conf.ConfigFile)
-	return config.WriteConfig(fs, conf, conf.ConfigFile)
+	return mgr.Write(conf)
 }

@@ -39,7 +39,7 @@ type result struct {
 	errMsg    string
 }
 
-func NewTuneCommand(fs afero.Fs) *cobra.Command {
+func NewTuneCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	tunerParams := factory.TunerParams{}
 	var (
 		configFile        string
@@ -88,7 +88,7 @@ func NewTuneCommand(fs afero.Fs) *cobra.Command {
 				return err
 			}
 			tunerParams.CpuMask = cpuMask
-			conf, err := config.FindOrGenerate(fs, configFile)
+			conf, err := mgr.FindOrGenerate(configFile)
 			if err != nil {
 				if !interactive {
 					return err
