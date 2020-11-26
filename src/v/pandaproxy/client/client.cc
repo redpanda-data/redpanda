@@ -72,6 +72,7 @@ ss::future<> client::stop() {
 }
 
 ss::future<> client::update_metadata(wait_or_start::tag) {
+    return ss::with_gate(_gate, [this]() {
     vlog(ppclog.debug, "updating metadata");
     return _brokers.any().then([this](shared_broker_t broker) {
         return broker
@@ -88,6 +89,7 @@ ss::future<> client::update_metadata(wait_or_start::tag) {
               return _brokers.apply(std::move(res));
           })
           .finally([]() { vlog(ppclog.trace, "updated metadata"); });
+    });
     });
 }
 
@@ -129,12 +131,15 @@ ss::future<> client::mitigate_error(std::exception_ptr ex) {
 
 ss::future<kafka::produce_response::partition> client::produce_record_batch(
   model::topic_partition tp, model::record_batch&& batch) {
+    return ss::with_gate(
+      _gate, [this, tp{std::move(tp)}, batch{std::move(batch)}]() mutable {
     vlog(
       ppclog.debug,
       "produce record_batch: {}, {{record_count: {}}}",
       tp,
       batch.record_count());
     return _producer.produce(std::move(tp), std::move(batch));
+    });
 }
 
 ss::future<kafka::fetch_response::partition> client::fetch_partition(
@@ -152,10 +157,7 @@ ss::future<kafka::fetch_response::partition> client::fetch_partition(
       std::move(build_request),
       std::move(tp),
       [this](auto& build_request, model::topic_partition& tp) {
-          return retry_with_mitigation(
-                   shard_local_cfg().retries(),
-                   shard_local_cfg().retry_base_backoff(),
-                   [this, &tp, &build_request]() {
+          return gated_retry_with_mitigation([this, &tp, &build_request]() {
                        return _brokers.find(tp)
                          .then([&tp, &build_request](shared_broker_t&& b) {
                              return b->dispatch(build_request(tp));
@@ -163,8 +165,7 @@ ss::future<kafka::fetch_response::partition> client::fetch_partition(
                          .then([](kafka::fetch_response res) {
                              return std::move(res.partitions[0]);
                          });
-                   },
-                   [this](std::exception_ptr ex) { return mitigate_error(ex); })
+                   })
             .handle_exception([&tp](std::exception_ptr ex) {
                 return make_fetch_response(tp, ex);
             });
