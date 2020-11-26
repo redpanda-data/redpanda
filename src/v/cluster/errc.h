@@ -81,6 +81,8 @@ struct errc_category final : public std::error_category {
             return "Invalid topic name";
         case errc::partition_not_exists:
             return "Requested partition does not exists";
+        case errc::not_leader:
+            return "Current node is not a leader for partition";
         case errc::partition_already_exists:
             return "Requested partition already exists";
         case errc::waiting_for_recovery:
