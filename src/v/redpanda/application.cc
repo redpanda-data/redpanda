@@ -225,6 +225,8 @@ void application::configure_admin_server() {
               rb->register_api_file(server._routes, "config");
               rb->register_function(server._routes, insert_comma);
               rb->register_api_file(server._routes, "raft");
+              rb->register_function(server._routes, insert_comma);
+              rb->register_api_file(server._routes, "kafka");
               ss::httpd::config_json::get_config.set(
                 server._routes, []([[maybe_unused]] ss::const_req req) {
                     rapidjson::StringBuffer buf;
