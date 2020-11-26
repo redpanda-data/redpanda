@@ -217,9 +217,13 @@ void application::configure_admin_server() {
           conf.admin_api_doc_dir(), "/v1");
         _admin
           .invoke_on_all([this, rb](ss::http_server& server) {
+              auto insert_comma = [](ss::output_stream<char>& os) {
+                  return os.write(",\n");
+              };
               rb->set_api_doc(server._routes);
               rb->register_api_file(server._routes, "header");
               rb->register_api_file(server._routes, "config");
+              rb->register_function(server._routes, insert_comma);
               rb->register_api_file(server._routes, "raft");
               ss::httpd::config_json::get_config.set(
                 server._routes, []([[maybe_unused]] ss::const_req req) {
