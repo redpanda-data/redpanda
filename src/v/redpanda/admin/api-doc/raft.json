@@ -7,15 +7,13 @@
             "name": "group_id",
             "in": "path",
             "required": true,
-            "type": "integer",
-            "allowMultiple":false
+            "type": "integer"
         },
         {
             "name":"target",
             "in":"query",
             "required":false,
-            "type":"integer",
-            "allowMultiple":false
+            "type":"integer"
         }
     ],
     "responses": {
