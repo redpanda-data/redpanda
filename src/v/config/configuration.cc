@@ -184,7 +184,7 @@ configuration::configuration()
       "heartbeats at the cost of a longer time to detect failures. "
       "Default quota tracking window size in milliseconds",
       required::no,
-      30'000ms)
+      300s)
   , group_initial_rebalance_delay(
       *this,
       "group_initial_rebalance_delay",
