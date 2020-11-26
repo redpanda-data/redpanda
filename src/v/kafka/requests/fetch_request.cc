@@ -750,7 +750,7 @@ void op_context::response_iterator::set(
 }
 
 op_context::response_iterator& op_context::response_iterator::operator++() {
-    _it->partition_response++;
+    _it++;
     return *this;
 }
 
