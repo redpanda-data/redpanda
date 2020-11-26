@@ -564,7 +564,7 @@ void application::start() {
 }
 
 void application::admin_register_raft_routes(ss::http_server& server) {
-    ss::httpd::raft_json::transfer_leadership.set(
+    ss::httpd::raft_json::raft_transfer_leadership.set(
       server._routes, [this](std::unique_ptr<ss::httpd::request> req) {
           raft::group_id group_id;
           try {
@@ -626,7 +626,7 @@ void application::admin_register_raft_routes(ss::http_server& server) {
 }
 
 void application::admin_register_kafka_routes(ss::http_server& server) {
-    ss::httpd::kafka_json::transfer_leadership.set(
+    ss::httpd::kafka_json::kafka_transfer_leadership.set(
       server._routes, [this](std::unique_ptr<ss::httpd::request> req) {
           auto topic = model::topic(req->param["topic"]);
 

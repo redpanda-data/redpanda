@@ -1,7 +1,7 @@
 "/v1/raft/{group_id}/transfer_leadership": {
   "post": {
     "summary": "transfer raft group leadership",
-    "operationId": "transfer_leadership",
+    "operationId": "raft_transfer_leadership",
     "parameters": [
         {
             "name": "group_id",
