@@ -57,14 +57,17 @@ describe("handle error enable and disable coprocessor", () => {
         `${errorNumber} errors, when it receives ${codes} enable ` +
         `response code`,
       function () {
-        const [errors] = validateEnableResponseCode({
-          inputs: [
-            {
-              id: BigInt(1),
-              response: codes,
-            },
-          ],
-        });
+        const [errors] = validateEnableResponseCode(
+          {
+            inputs: [
+              {
+                id: BigInt(1),
+                response: codes,
+              },
+            ],
+          },
+          [createMockCoprocessor()]
+        );
         assert.ok(errors.length === errorNumber);
       }
     );
@@ -89,20 +92,36 @@ describe("handle error enable and disable coprocessor", () => {
         DisableResponseCode.scriptDoesNotExist,
       ],
       errorNumber: 2,
+      coprocessors: [
+        createMockCoprocessor(BigInt(1)),
+        createMockCoprocessor(BigInt(2)),
+      ],
     },
-  ].forEach(({ codes, errorNumber }) => {
+    {
+      codes: [
+        DisableResponseCode.internalError,
+        DisableResponseCode.scriptDoesNotExist,
+      ],
+      errorNumber: 2,
+      fail: true,
+    },
+  ].forEach(({ codes, errorNumber, coprocessors, fail = false }) => {
     it(
       `should validateDisableCodeResponse returns an array with ` +
         `${errorNumber} errors, when it receives ${codes} disable ` +
         `response code`,
       function () {
-        const errors = validateDisableResponseCode(
-          {
-            inputs: codes,
-          },
-          [createMockCoprocessor(BigInt(1)), createMockCoprocessor(BigInt(2))]
-        );
-        assert.ok(errors.length === errorNumber);
+        try {
+          const errors = validateDisableResponseCode(
+            {
+              inputs: codes,
+            },
+            coprocessors || [createMockCoprocessor(BigInt(1))]
+          );
+          assert.ok(errors.length === errorNumber);
+        } catch (e) {
+          assert.ok(fail, "it should be fail");
+        }
       }
     );
   });
