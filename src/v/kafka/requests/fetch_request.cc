@@ -523,7 +523,6 @@ static ss::future<> fetch_topic_partitions(op_context& octx) {
 
     octx.for_each_fetch_partition(
       [&resp_it, &octx, &fetches](fetch_partition p) {
-          // we use gate as we may not wait for all the fetch results
           return fetches.push_back(fetch_topic_partition(octx, p, resp_it++));
       });
 
@@ -540,7 +539,7 @@ static ss::future<> fetch_topic_partitions(op_context& octx) {
                   fetch_reads_debounce_timeout, octx.request.max_wait_time));
             });
       });
-} // namespace kafka
+}
 
 ss::future<response_ptr>
 fetch_api::process(request_context&& rctx, ss::smp_service_group ssg) {
@@ -710,7 +709,6 @@ op_context::response_iterator::response_iterator(
 
 void op_context::response_iterator::set(
   fetch_response::partition_response&& response) {
-    // we are already done, for now ignore what we read
     vassert(
       response.id == _it->partition_response->id,
       "Response and current partition ids have to be the same. Current "
