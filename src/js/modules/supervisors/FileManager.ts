@@ -19,6 +19,7 @@ import { Script_ManagerClient as ManagementClient } from "../rpc/serverAndClient
 import * as path from "path";
 import { hash64 } from "xxhash";
 import {
+  EnableResponseCode as EnableCode,
   validateDisableResponseCode,
   validateEnableResponseCode,
 } from "./HandleError";
@@ -39,7 +40,7 @@ class FileManager {
   ) {
     try {
       this.watcher = new Inotify(this.submitDir);
-      this.readCoprocessorFolder(repository, this.activeDir)
+      this.readCoprocessorFolder(repository, this.activeDir, false)
         .then(() => this.readCoprocessorFolder(repository, this.submitDir))
         .then(() => this.updateRepositoryOnNewFile(repository));
     } catch (e) {
@@ -54,10 +55,7 @@ class FileManager {
    * @param filePath, path of a coprocessor that we want to load and add to
    *        Repository
    * @param repository, coprocessor container
-   * @param validatePrevCoprocessor, this flag is used for validation or not, if
-   *              there is a coprocessor in Repository with the same
-   *              global Id and different checksum, it will decide if id should
-   *              update coprocessor or move the file to the inactive folder.
+   * @param validatePrevCoprocessor
    */
   addCoprocessor(
     filePath: string,
@@ -66,39 +64,46 @@ class FileManager {
   ): Promise<Handle> {
     return this.getHandle(filePath).then((handle) => {
       const prevHandle = repository.findByGlobalId(handle);
-      if (prevHandle && validatePrevCoprocessor) {
+      if (prevHandle) {
         if (prevHandle.checksum === handle.checksum) {
           return this.moveCoprocessorFile(handle, this.inactiveDir);
         } else {
           return this.moveCoprocessorFile(prevHandle, this.inactiveDir)
             .then(() =>
               this.deregisterCoprocessor(prevHandle.coprocessor).catch((e) => {
-                console.error(e);
+                console.error(e.message);
                 return Promise.resolve();
               })
             )
             .then(() => this.moveCoprocessorFile(handle, this.activeDir))
-            .then((newCoprocessor) => repository.add(newCoprocessor))
-            .then(() => this.enableCoprocessor([handle.coprocessor]))
-            .then(() => handle)
-            .catch((e) =>
-              this.moveCoprocessorFile(handle, this.inactiveDir).then(() =>
-                Promise.reject(e)
+            .then((newHandle) => repository.add(newHandle))
+            .then((newHandle) =>
+              this.enableCoprocessor(
+                [newHandle.coprocessor],
+                validatePrevCoprocessor
               )
+                .then(() => newHandle)
+                .catch((error) =>
+                  this.moveCoprocessorFile(newHandle, this.inactiveDir)
+                    .then(() => this.repository.remove(newHandle))
+                    .then(() => Promise.reject(error))
+                )
             );
         }
       } else {
         return this.moveCoprocessorFile(handle, this.activeDir)
           .then((newHandle) => repository.add(newHandle))
           .then((newHandle) =>
-            this.enableCoprocessor([newHandle.coprocessor]).then(
-              () => newHandle
+            this.enableCoprocessor(
+              [newHandle.coprocessor],
+              validatePrevCoprocessor
             )
-          )
-          .catch((e) =>
-            this.moveCoprocessorFile(handle, this.inactiveDir).then(() =>
-              Promise.reject(e)
-            )
+              .then(() => newHandle)
+              .catch((errors) =>
+                this.moveCoprocessorFile(newHandle, this.inactiveDir)
+                  .then(() => this.repository.remove(newHandle))
+                  .then(() => Promise.reject(errors))
+              )
           );
       }
     });
@@ -109,16 +114,23 @@ class FileManager {
    * and adds them to the given Repository
    * @param repository
    * @param folder
+   * @param validatePrevExist
    */
-  readCoprocessorFolder(repository: Repository, folder: string): Promise<void> {
+  readCoprocessorFolder(
+    repository: Repository,
+    folder: string,
+    validatePrevExist = true
+  ): Promise<void> {
     const readdirPromise = promisify(readdir);
-    return readdirPromise(folder)
-      .then((files) => {
-        files.forEach((file) =>
-          this.addCoprocessor(`${this.activeDir}/${file}`, repository, false)
-        );
-      })
-      .catch(console.error);
+    return readdirPromise(folder).then((files) => {
+      files.forEach((file) =>
+        this.addCoprocessor(
+          path.join(folder, file),
+          repository,
+          validatePrevExist
+        ).catch((e) => console.error(e.message))
+      );
+    });
     //TODO: implement winston for loggin information and error handler
   }
 
@@ -129,7 +141,9 @@ class FileManager {
    */
   updateRepositoryOnNewFile(repository: Repository): void {
     return this.watcher.on("add", (filePath) => {
-      this.addCoprocessor(filePath, repository).catch(console.error);
+      this.addCoprocessor(filePath, repository).catch((e) =>
+        console.error(e.message)
+      );
       //TODO: implement winston for logging information and error handler
     });
   }
@@ -172,6 +186,17 @@ class FileManager {
   }
 
   /**
+   * receive an Error array, and return one error with all error messages.
+   * @param errors
+   */
+  compactErrors(errors: Error[][]): Error {
+    const message = errors
+      .flatMap((error) => error.map(({ message }) => message))
+      .join(", ");
+    return new Error(message);
+  }
+
+  /**
    * Receives a coprocessor list, and sends a request to Redpanda for disabling
    * them. The response has the following structure:
    * [<topic status>]
@@ -188,7 +213,7 @@ class FileManager {
       .then((response) => {
         const errors = validateDisableResponseCode(response, coprocessors);
         if (errors.length > 0) {
-          return Promise.reject(errors);
+          return Promise.reject(this.compactErrors([errors]));
         } else {
           return Promise.resolve();
         }
@@ -209,8 +234,12 @@ class FileManager {
    *   5 = invalid topic
    *   6 = materialized topic
    * @param coprocessors
+   * @param validatePrevCoprocessor
    */
-  enableCoprocessor(coprocessors: Coprocessor[]): Promise<void> {
+  enableCoprocessor(
+    coprocessors: Coprocessor[],
+    validatePrevCoprocessor = true
+  ): Promise<void> {
     if (coprocessors.length == 0) {
       return Promise.resolve();
     } else {
@@ -225,9 +254,22 @@ class FileManager {
           })),
         })
         .then((enableResponse) => {
-          const errors = validateEnableResponseCode(enableResponse);
+          if (!validatePrevCoprocessor) {
+            enableResponse.inputs = enableResponse.inputs.map(
+              ({ response, id }) => ({
+                id,
+                response: response.filter(
+                  (code) => code !== EnableCode.scriptIdAlreadyExist
+                ),
+              })
+            );
+          }
+          const errors = validateEnableResponseCode(
+            enableResponse,
+            coprocessors
+          );
           if (errors.find((errors) => errors.length > 0)) {
-            return Promise.reject(errors.flat());
+            return Promise.reject(this.compactErrors(errors));
           } else {
             return Promise.resolve();
           }

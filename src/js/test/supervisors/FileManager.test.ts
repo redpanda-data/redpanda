@@ -210,4 +210,68 @@ describe("FileManager", () => {
       done();
     });
   });
+
+  it(
+    "should move from active to inactive a remove coprocessor, if it fails " +
+      "on enable request",
+    function (done) {
+      const handle = createHandle();
+      const repo = new Repository();
+      const removeSpy = sinonInstance.spy(repo, "remove");
+      const {
+        moveCoprocessor,
+        getCoprocessor,
+        enableCoprocessor,
+      } = createStubs(sinonInstance);
+      moveCoprocessor.returns(Promise.resolve(handle));
+      getCoprocessor.returns(Promise.resolve(handle));
+      enableCoprocessor.returns(Promise.reject(Error("internal error")));
+      // override the enable_copros method in server
+      server.enable_copros = () =>
+        Promise.resolve({
+          inputs: [
+            {
+              response: handle.coprocessor.inputTopics.map(() => 1),
+              id: handle.coprocessor.globalId,
+            },
+          ],
+        });
+
+      const file = new FileManager(
+        repo,
+        "submit",
+        "active",
+        "inactive",
+        client
+      );
+      file
+        .addCoprocessor("active/file", repo)
+        .catch(() => console.log("expected fail"));
+
+      setTimeout(() => {
+        // try to add a coprocessor to repository
+        assert(getCoprocessor.called);
+        assert(getCoprocessor.calledWith("active/file"));
+        assert(moveCoprocessor.called);
+        assert(moveCoprocessor.firstCall.calledWith(handle, "active"));
+        // enable fail
+        assert(moveCoprocessor.secondCall.calledWith(handle, "inactive"));
+        assert(removeSpy.called);
+        assert(removeSpy.calledWith(handle));
+        assert(repo.size() === 0);
+        done();
+      }, 150);
+    }
+  );
+
+  it("should compress an Error Matrix", function () {
+    const errors = [
+      [new Error("a"), new Error("b")],
+      [new Error("c"), new Error("d")],
+      [new Error("e"), new Error("f")],
+    ];
+    const result = FileManager.prototype.compactErrors(errors);
+    const expectedErrorMessage = "a, b, c, d, e, f";
+    assert.strictEqual(expectedErrorMessage, result.message);
+  });
 });
