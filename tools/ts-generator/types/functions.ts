@@ -320,7 +320,15 @@ const extendRecords = (records: Record[], seed = 0): number => {
     const valueLengthCrc = calculate(auxBuffer.slice(0, size), keyCrc);
     const valueCrc = calculate(record.value, valueLengthCrc);
     size = writeVarintBuffer(BigInt(record.headers.length), auxBuffer);
-    return calculate(auxBuffer.slice(0, size), valueCrc);
+    const headerLengthCrc = calculate(auxBuffer.slice(0, size), valueCrc);
+    return record.headers.reduce<number>((crcHeader, header) => {
+      size = writeVarintBuffer(BigInt(header.headerKeyLength), auxBuffer);
+      const keyLengthCrc = calculate(auxBuffer.slice(0, size), crcHeader);
+      const keyCrc = calculate(header.headerKey, keyLengthCrc);
+      size = writeVarintBuffer(BigInt(header.headerValueLength), auxBuffer);
+      const valueLengthCrc = calculate(auxBuffer.slice(0, size), keyCrc);
+      return calculate(header.value, valueLengthCrc);
+    }, headerLengthCrc);
   }, seed);
 };
 
