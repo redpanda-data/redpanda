@@ -20,6 +20,7 @@
 #include <seastar/core/sleep.hh>
 #include <seastar/core/temporary_buffer.hh>
 #include <seastar/core/thread.hh>
+#include <seastar/core/timer.hh>
 #include <seastar/http/function_handlers.hh>
 #include <seastar/http/handlers.hh>
 #include <seastar/http/httpd.hh>
@@ -155,6 +156,108 @@ SEASTAR_TEST_CASE(test_http_POST_roundtrip) {
           config,
           std::move(header),
           ss::sstring(httpd_server_reply),
+          [](http::client::response_header const& header, iobuf&& body) {
+              BOOST_REQUIRE_EQUAL(
+                header.result(), boost::beast::http::status::ok);
+
+              iobuf_parser parser(std::move(body));
+              std::string actual = parser.read_string(parser.bytes_left());
+              std::string expected
+                = "\"" + std::string(httpd_server_reply)
+                  + "\""; // sestar will return json string containing the
+              BOOST_REQUIRE_EQUAL(expected, actual);
+          });
+    });
+}
+
+/// Test http streaming requests e2e in ss::async
+template<class Func>
+void test_http_streaming_request(
+  const rpc::base_transport::configuration& conf,
+  http::client::request_header&& header,
+  std::optional<ss::sstring> request_data,
+  size_t skip,
+  const Func& check_reply) {
+    auto [server, client] = started_client_and_server(conf);
+
+    http::client::response_stream_ref response;
+    if (request_data) {
+        iobuf body;
+        body.append(request_data->data(), request_data->size());
+        auto body_stream = make_iobuf_input_stream(std::move(body));
+        response = client->request(std::move(header), body_stream).get0();
+    } else {
+        response = client->request(std::move(header)).get0();
+    }
+
+    // Receive response
+    auto stream = response->as_input_stream();
+    iobuf response_body;
+    if (skip) {
+        stream.skip(skip).get();
+    }
+    while (!stream.eof()) {
+        auto buf = stream.read().get0();
+        response_body.append(std::move(buf));
+    }
+
+    // Check response
+    check_reply(response->get_headers(), std::move(response_body));
+
+    server->stop().get0();
+}
+
+/// Check GET streaming request and skip method of the response data source
+SEASTAR_TEST_CASE(test_http_GET_streaming_roundtrip) {
+    return ss::async([] {
+        auto config = transport_configuration();
+        http::client::request_header header;
+        header.method(boost::beast::http::verb::get);
+        header.target("/get");
+        header.insert(boost::beast::http::field::content_length, 0);
+        header.insert(boost::beast::http::field::host, config.server_addr);
+        header.insert(
+          boost::beast::http::field::content_type, "application/json");
+        constexpr size_t skip_bytes = 100;
+        test_http_streaming_request(
+          config,
+          std::move(header),
+          std::nullopt,
+          skip_bytes,
+          [skip_bytes](
+            http::client::response_header const& header, iobuf&& body) {
+              BOOST_REQUIRE_EQUAL(
+                header.result(), boost::beast::http::status::ok);
+
+              iobuf_parser parser(std::move(body));
+              std::string actual = parser.read_string(parser.bytes_left());
+              std::string expected
+                = "\"" + std::string(httpd_server_reply)
+                  + "\""; // sestar will return json string containing the
+              expected = expected.substr(skip_bytes);
+              BOOST_REQUIRE_EQUAL(expected, actual);
+          });
+    });
+}
+
+SEASTAR_TEST_CASE(test_http_POST_streaming_roundtrip) {
+    return ss::async([] {
+        auto config = transport_configuration();
+        http::client::request_header header;
+        header.method(boost::beast::http::verb::post);
+        header.target("/echo");
+        header.insert(
+          boost::beast::http::field::content_length,
+          std::strlen(httpd_server_reply));
+        header.insert(boost::beast::http::field::host, config.server_addr);
+        header.insert(
+          boost::beast::http::field::content_type, "application/json");
+
+        test_http_streaming_request(
+          config,
+          std::move(header),
+          ss::sstring(httpd_server_reply),
+          0,
           [](http::client::response_header const& header, iobuf&& body) {
               BOOST_REQUIRE_EQUAL(
                 header.result(), boost::beast::http::status::ok);
