@@ -42,9 +42,9 @@ const createRecordHeader = (
   recordHeader: Partial<RecordHeader>
 ): RecordHeader => {
   return {
-    headerKey: "",
-    headerKeyLength: BigInt(0),
-    headerValueLength: BigInt(0),
+    headerKey: Buffer.from(""),
+    headerKeyLength: 0,
+    headerValueLength: 0,
     value: Buffer.from(""),
     ...recordHeader,
   };

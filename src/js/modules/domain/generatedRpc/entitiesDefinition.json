@@ -176,15 +176,15 @@
       "fields": [
         {
           "name": "headerKeyLength",
-          "type": "varint"
+          "type": "int32"
         },
         {
           "name": "headerKey",
-          "type": "string"
+          "type": "buffer"
         },
         {
           "name": "headerValueLength",
-          "type": "varint"
+          "type": "int32"
         },
         {
           "name": "value",
