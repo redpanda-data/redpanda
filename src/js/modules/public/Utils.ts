@@ -133,6 +133,13 @@ export const calculateRecordLength = (record: Record): number => {
   size += varintZigzagSize(BigInt(record.valueLen));
   size += record.value.length;
   size += varintZigzagSize(BigInt(record.headers.length));
+  size += record.headers.reduceRight<number>((totalHeaderSize, header) => {
+    totalHeaderSize += varintZigzagSize(BigInt(header.headerKeyLength));
+    totalHeaderSize += varintZigzagSize(BigInt(header.headerValueLength));
+    totalHeaderSize += header.value.length;
+    totalHeaderSize += header.headerKey.length;
+    return totalHeaderSize;
+  }, 0);
   return size;
 };
 
