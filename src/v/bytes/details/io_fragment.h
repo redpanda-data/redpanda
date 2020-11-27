@@ -14,6 +14,7 @@
 #include "bytes/details/out_of_range.h"
 #include "seastarx.h"
 #include "utils/intrusive_list_helpers.h"
+#include "vassert.h"
 
 #include <seastar/core/temporary_buffer.hh>
 
@@ -90,6 +91,12 @@ public:
     void trim(size_t len) { _used_bytes = std::min(len, _used_bytes); }
     void trim_front(size_t pos) {
         // required by input_stream<char> converter
+        vassert(
+          pos <= _used_bytes,
+          "trim_front requested {} bytes but io_fragment have only {}",
+          pos,
+          _used_bytes);
+        _used_bytes -= pos;
         _buf.trim_front(pos);
     }
     // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
