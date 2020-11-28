@@ -10,21 +10,15 @@
 
 #pragma once
 #include "coproc/errc.h"
-#include "coproc/logger.h"
+#include "coproc/router_source_manager.h"
 #include "coproc/supervisor.h"
 #include "coproc/types.h"
-#include "model/fundamental.h"
 #include "model/limits.h"
 #include "model/metadata.h"
 #include "rpc/reconnect_transport.h"
-#include "rpc/types.h"
 #include "storage/api.h"
-#include "storage/ntp_config.h"
-#include "storage/types.h"
-#include "utils/mutex.h"
 
 #include <seastar/core/abort_source.hh>
-#include <seastar/core/future-util.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/net/inet_address.hh>
@@ -50,15 +44,11 @@ public:
     }
 
     /// Shut down the loop on the current shard
-    ss::future<> stop() {
-        _loop_timer.cancel();
-        _abort_source.request_abort();
-        return _gate.close().then([this] { return _transport.stop(); });
-    }
+    ss::future<> stop();
 
-    errc add_source(
-      const script_id, const model::topic_namespace&, topic_ingestion_policy);
-    bool remove_source(const script_id sid);
+    ss::future<errc> add_source(
+      script_id, const model::topic_namespace&, topic_ingestion_policy);
+    ss::future<bool> remove_source(script_id);
     bool script_id_exists(const script_id sid) const;
     bool ntp_exists(const model::ntp& ntp) const {
         return _sources.find(ntp) != _sources.cend();
@@ -70,19 +60,6 @@ private:
     using opt_req_data = std::optional<process_batch_request::data>;
     using opt_cfg = std::optional<storage::log_reader_config>;
 
-    struct topic_offsets {
-        model::offset committed{model::model_limits<model::offset>::min()};
-        model::offset dirty{model::model_limits<model::offset>::min()};
-        mutex mtx;
-    };
-
-    struct topic_state {
-        /// For now the only possible topic_ingestion_policy is latest
-        storage::log log;
-        topic_offsets head;
-        absl::flat_hash_set<script_id> scripts;
-    };
-
     ss::future<result<supervisor_client_protocol>> get_client();
     ss::future<storage::log> get_log(const model::ntp& ntp);
 
@@ -91,7 +68,11 @@ private:
 
     ss::future<> route();
     ss::future<> do_route();
-    ss::future<opt_req_data> route_ntp(const model::ntp&, topic_state&);
+    ss::future<opt_req_data> route_ntp(
+      const model::ntp&,
+      storage::log_reader_config,
+      ss::lw_shared_ptr<router_source_manager::topic_state>);
+
     ss::future<> process_batch(std::vector<process_batch_request::data>);
     ss::future<> send_batch(supervisor_client_protocol, process_batch_request);
 
@@ -99,7 +80,8 @@ private:
       extract_offset(model::record_batch_reader);
     void bump_offset(const model::ntp&, const script_id);
 
-    ss::future<opt_cfg> make_reader_cfg(storage::log, topic_offsets&);
+    ss::future<opt_cfg>
+      make_reader_cfg(ss::lw_shared_ptr<router_source_manager::topic_state>);
     storage::log_reader_config reader_cfg(model::offset, model::offset);
 
 private:
@@ -116,7 +98,10 @@ private:
 
     /// Core in-memory data structure that manages the relationships between
     /// topics and coprocessor scripts
-    absl::flat_hash_map<model::ntp, topic_state> _sources;
+    router_source_manager::consumers_state _sources;
+
+    /// Manager of registrations/deregistrations of ntps
+    router_source_manager _rsm;
 
     /// Connection to the coprocessor engine
     rpc::reconnect_transport _transport;

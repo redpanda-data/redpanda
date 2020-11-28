@@ -14,6 +14,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record_batch_types.h"
+#include "raft/types.h"
 #include "storage/log.h"
 #include "storage/types.h"
 
@@ -48,7 +49,7 @@ log_rdr_cfg(const model::offset& min_offset) {
       0,
       std::numeric_limits<size_t>::max(),
       ss::default_priority_class(),
-      model::well_known_record_batch_types[1],
+      raft::data_batch_type,
       std::nullopt,
       std::nullopt);
 }
@@ -60,7 +61,7 @@ inline static storage::log_reader_config log_rdr_cfg(const size_t min_bytes) {
       min_bytes,
       std::numeric_limits<size_t>::max(),
       ss::default_priority_class(),
-      model::well_known_record_batch_types[1],
+      raft::data_batch_type,
       std::nullopt,
       std::nullopt);
 }

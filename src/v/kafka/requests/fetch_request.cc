@@ -334,6 +334,19 @@ static ss::future<read_result> read_from_partition(
       });
 }
 
+std::optional<partition_wrapper> make_partition_wrapper(
+  const model::materialized_ntp& mntp,
+  ss::lw_shared_ptr<cluster::partition> partition,
+  cluster::partition_manager& pm) {
+    if (mntp.is_materialized()) {
+        if (auto log = pm.log(mntp.input_ntp()); log) {
+            return partition_wrapper(partition, log);
+        }
+        return std::nullopt;
+    }
+    return partition_wrapper(partition);
+}
+
 /**
  * Entry point for reading from an ntp. This will forward the request to
  * the ntp's home core and build error responses if anything goes wrong.
@@ -374,17 +387,10 @@ read_from_ntp(op_context& octx, model::ntp ntp, fetch_config config) {
                 return ss::make_ready_future<read_result>(
                   error_code::not_leader_for_partition);
             }
-            if (mntpv.is_materialized()) {
-                if (auto log = mgr.log(mntpv.input_ntp())) {
-                    return read_from_partition(
-                      partition_wrapper(partition, log),
-                      config,
-                      foreign_read,
-                      deadline);
-                } else {
-                    return ss::make_ready_future<read_result>(
-                      error_code::unknown_topic_or_partition);
-                }
+            auto partition_wpr = make_partition_wrapper(mntpv, partition, mgr);
+            if (!partition_wpr) {
+                return ss::make_ready_future<read_result>(
+                  error_code::unknown_topic_or_partition);
             }
 
             auto high_watermark = partition->high_watermark();
@@ -399,7 +405,7 @@ read_from_ntp(op_context& octx, model::ntp ntp, fetch_config config) {
             }
 
             return read_from_partition(
-              partition_wrapper(partition), config, foreign_read, deadline);
+              *partition_wpr, config, foreign_read, deadline);
         })
       .then([timeout = config.timeout](read_result res) mutable {
           vlog(klog.trace, "fetch reader {}", res.reader);

@@ -16,7 +16,7 @@
  ;; directories must be quoted, even if M-x add-dir-local-variable
  ;; adds them without quotes
  (c++-mode
-  (helm-make-build-dir . "build/debug/clang")
+  (helm-make-build-dir . "vbuild/debug/clang")
   )
  (c-or-c++-mode
-  (clang-format-executable . build/llvm/llvm-bin/bin/clang-format)))
+  (clang-format-executable . vbuild/llvm/llvm-bin/bin/clang-format)))

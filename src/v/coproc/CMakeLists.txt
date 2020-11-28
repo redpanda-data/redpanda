@@ -21,6 +21,7 @@ v_cc_library(
     logger.cc
     service.cc
     router.cc
+    router_source_manager.cc
   DEPS
     v::rpc
     v::model

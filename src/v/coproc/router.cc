@@ -15,17 +15,18 @@
 #include "likely.h"
 #include "model/limits.h"
 #include "model/record_batch_reader.h"
+#include "raft/types.h"
 #include "rpc/backoff_policy.h"
+#include "storage/ntp_config.h"
 #include "storage/types.h"
 #include "units.h"
 #include "vassert.h"
 #include "vlog.h"
 
 #include <seastar/core/gate.hh>
-#include <seastar/core/loop.hh>
 #include <seastar/core/map_reduce.hh>
 
-#include <absl/container/flat_hash_map.h>
+#include <exception>
 
 namespace coproc {
 
@@ -36,7 +37,7 @@ router::extract_offset(model::record_batch_reader reader) {
           if (data.empty()) {
               return std::optional<offset_rbr_pair>(std::nullopt);
           }
-          const auto last_offset = data.back().last_offset();
+          const model::offset last_offset = data.back().last_offset();
           return std::optional<offset_rbr_pair>(std::make_pair(
             last_offset,
             model::make_memory_record_batch_reader(std::move(data))));
@@ -46,11 +47,42 @@ router::extract_offset(model::record_batch_reader reader) {
 router::router(ss::socket_address addr, ss::sharded<storage::api>& api)
   : _api(api)
   , _jitter(std::chrono::milliseconds(10))
+  , _rsm(api, _sources)
   , _transport(
       {rpc::transport_configuration{
         .server_addr = addr, .credentials = nullptr}},
       rpc::make_exponential_backoff_policy<rpc::clock_type>(
         std::chrono::seconds(1), std::chrono::seconds(10))) {}
+
+ss::future<errc> router::add_source(
+  script_id id, const model::topic_namespace& tn, topic_ingestion_policy p) {
+    if (_gate.is_closed()) {
+        return ss::make_exception_future<errc>(std::runtime_error(fmt_with_ctx(
+          fmt::format,
+          "Attempted to add a source after the routers gate has been "
+          "closed")));
+    }
+    return _rsm.add_source(id, tn, p);
+}
+
+ss::future<bool> router::remove_source(script_id sid) {
+    if (_gate.is_closed()) {
+        return ss::make_exception_future<bool>(std::runtime_error(fmt_with_ctx(
+          fmt::format,
+          "Attempted to remove a source after the routers gate has been "
+          "closed")));
+    }
+    return _rsm.remove_source(sid);
+}
+
+ss::future<> router::stop() {
+    _loop_timer.cancel();
+    _abort_source.request_abort();
+    return _gate.close().then([this] {
+        _rsm.cancel_pending_updates();
+        return _transport.stop();
+    });
+}
 
 ss::future<result<supervisor_client_protocol>> router::get_client() {
     return _transport.get_connected().then(
@@ -96,7 +128,9 @@ ss::future<> router::route() {
                   coproclog.info, "Abort source triggered, shutting down loop");
                 return ss::now();
             }
-            return do_route();
+            return _rsm.process_additions()
+              .then([this] { return _rsm.process_removals(); })
+              .then([this] { return do_route(); });
         });
     } catch (const ss::gate_closed_exception& gce) {
         vlog(coproclog.debug, "Gate closed exception encountered: {}", gce);
@@ -105,21 +139,27 @@ ss::future<> router::route() {
 }
 
 ss::future<> router::do_route() {
-    auto reducer =
-      [](std::vector<process_batch_request::data> acc, opt_req_data x) {
-          if (x.has_value()) {
-              acc.emplace_back(std::move(*x));
-          }
-          return acc;
-      };
     return ss::map_reduce(
              _sources.begin(),
              _sources.end(),
-             [this](std::pair<const model::ntp, topic_state>& p) {
-                 return route_ntp(p.first, p.second);
+             [this](router_source_manager::consumers_state::value_type& p) {
+                 return make_reader_cfg(p.second).then(
+                   [this, ntp = p.first, ts = p.second](
+                     opt_cfg config) mutable {
+                       if (!config) {
+                           return ss::make_ready_future<opt_req_data>();
+                       }
+                       return route_ntp(std::move(ntp), *config, ts);
+                   });
              },
              std::vector<process_batch_request::data>(),
-             std::move(reducer))
+             [](
+               std::vector<process_batch_request::data>&& acc, opt_req_data x) {
+                 if (x.has_value()) {
+                     acc.emplace_back(std::move(*x));
+                 }
+                 return std::move(acc);
+             })
       .then([this](std::vector<process_batch_request::data> batch) {
           return process_batch(std::move(batch));
       })
@@ -150,46 +190,25 @@ router::process_batch(std::vector<process_batch_request::data> batch) {
       });
 }
 
-ss::future<router::opt_req_data>
-router::route_ntp(const model::ntp& ntp, topic_state& ts) {
-    /**
-     * Making a reader will grab a mutual exclusion lock on reading from the
-     * requested log. This is OK for now since the only topic_ingestion_policy
-     * supported will be 'latest'
-     *
-     * The last offset is recorded and the request is prepared and returned.
-     */
-    return make_reader_cfg(ts.log, ts.head)
-      .then([this, ntp, log = ts.log, sids = ts.scripts](
-              opt_cfg config) mutable {
-          if (!config) {
-              return ss::make_ready_future<opt_req_data>(std::nullopt);
+ss::future<router::opt_req_data> router::route_ntp(
+  const model::ntp& ntp,
+  storage::log_reader_config config,
+  ss::lw_shared_ptr<router_source_manager::topic_state> ts) {
+    return ts->log.make_reader(config)
+      .then([this](model::record_batch_reader reader) {
+          return extract_offset(std::move(reader));
+      })
+      .then([ntp = std::move(ntp), ts = std::move(ts)](
+              std::optional<offset_rbr_pair> offset_and_batch) mutable {
+          if (!offset_and_batch) {
+              return opt_req_data(std::nullopt);
           }
-          return log.make_reader(*config)
-            .then([this, ntp](model::record_batch_reader reader) {
-                return extract_offset(std::move(reader));
-            })
-            .then([this, ntp, sids = std::move(sids)](
-                    std::optional<offset_rbr_pair> p) {
-                if (!p) {
-                    return opt_req_data(std::nullopt);
-                }
-                auto& [offset, rbr] = *p;
-                auto found = _sources.find(ntp);
-                if (found == _sources.end()) {
-                    vlog(
-                      coproclog.info,
-                      "Ntp removed before batch assemble: {}",
-                      ntp);
-                    return opt_req_data(std::nullopt);
-                }
-                found->second.head.dirty = offset;
-                std::vector<script_id> ids(
-                  std::make_move_iterator(sids.begin()),
-                  std::make_move_iterator(sids.end()));
-                return opt_req_data(process_batch_request::data{
-                  .ids = std::move(ids), .ntp = ntp, .reader = std::move(rbr)});
-            });
+          auto& [offset, rbr] = *offset_and_batch;
+          ts->dirty = offset;
+          return opt_req_data(process_batch_request::data{
+            .ids = {ts->scripts.begin(), ts->scripts.end()},
+            .ntp = std::move(ntp),
+            .reader = std::move(rbr)});
       });
 }
 
@@ -234,12 +253,12 @@ void router::bump_offset(const model::ntp& src_ntp, const script_id sid) {
         vlog(coproclog.warn, "Ntp removed before offset set: {}", src_ntp);
         return;
     }
-    auto fsid = found->second.scripts.find(sid);
-    if (fsid == found->second.scripts.end()) {
+    auto fsid = found->second->scripts.find(sid);
+    if (fsid == found->second->scripts.end()) {
         vlog(coproclog.warn, "Script id removed before offset set: {}", sid);
         return;
     }
-    found->second.head.committed = found->second.head.dirty;
+    found->second->committed = found->second->dirty;
 }
 
 ss::future<> router::process_reply_one(process_batch_reply::data e) {
@@ -291,10 +310,19 @@ ss::future<> router::process_reply_one(process_batch_reply::data e) {
     });
 }
 
-ss::future<router::opt_cfg>
-router::make_reader_cfg(storage::log log, topic_offsets& head) {
-    return head.mtx.with([this, log, committed = head.committed]() {
-        const storage::offset_stats ostats = log.offsets();
+ss::future<router::opt_cfg> router::make_reader_cfg(
+  ss::lw_shared_ptr<router_source_manager::topic_state> ts) {
+    /**
+     * Making a reader will grab a mutual exclusion lock on reading from the
+     * requested log. This is OK for now since the only topic_ingestion_policy
+     * supported will be 'latest'
+     *
+     * On success the last offset will be recorded and the request is prepared
+     * and returned.
+     */
+    return ts->mtx.with([this, ts = std::move(ts)]() {
+        const storage::offset_stats ostats = ts->log.offsets();
+        const model::offset committed = ts->committed;
         if (committed >= ostats.committed_offset) {
             // Signifies materialized log is up-to-date with source, there
             // isn't anything more to read
@@ -319,54 +347,9 @@ ss::future<storage::log> router::get_log(const model::ntp& ntp) {
       storage::ntp_config(ntp, _api.local().log_mgr().config().base_dir));
 }
 
-errc router::add_source(
-  const script_id id,
-  const model::topic_namespace& tns,
-  topic_ingestion_policy p) {
-    // For now only support the 'latest' policy
-    if (!is_valid_ingestion_policy(p)) {
-        return errc::invalid_ingestion_policy;
-    }
-    auto logs = _api.local().log_mgr().get(tns);
-    if (logs.empty()) {
-        return errc::topic_does_not_exist;
-    }
-
-    for (auto& [ntp, log] : logs) {
-        auto found = _sources.find(ntp);
-        if (found == _sources.end()) {
-            topic_state ts{
-              .log = log, .head = topic_offsets(), .scripts = {id}};
-            _sources.emplace(ntp, std::move(ts));
-        } else {
-            found->second.scripts.emplace(id);
-        }
-        vlog(coproclog.info, "Inserted ntp {} id {}", ntp, id);
-    }
-    return errc::success;
-}
-
-bool router::remove_source(const script_id sid) {
-    absl::flat_hash_set<model::ntp> deleted;
-    std::for_each(_sources.begin(), _sources.end(), [&deleted, sid](auto& p) {
-        auto& scripts = p.second.scripts;
-        scripts.erase(sid);
-        vlog(coproclog.info, "Deleted script id: {}", sid);
-        if (scripts.empty()) {
-            deleted.emplace(p.first);
-        }
-    });
-    // If no more scripts are tracking an ntp, remove the ntp
-    absl::erase_if(_sources, [&deleted](const auto& p) {
-        return deleted.contains(p.first);
-    });
-
-    return !deleted.empty();
-}
-
 bool router::script_id_exists(const script_id sid) const {
     return std::any_of(_sources.begin(), _sources.end(), [sid](const auto& p) {
-        return p.second.scripts.contains(sid);
+        return p.second->scripts.contains(sid);
     });
 }
 
@@ -378,7 +361,7 @@ router::reader_cfg(model::offset start, model::offset end) {
       1,
       32_KiB,
       ss::default_priority_class(),
-      model::well_known_record_batch_types[1],
+      raft::data_batch_type,
       std::nullopt,
       _abort_source);
 }

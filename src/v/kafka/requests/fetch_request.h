@@ -535,6 +535,11 @@ struct read_result {
     error_code error;
 };
 
+std::optional<partition_wrapper> make_partition_wrapper(
+  const model::materialized_ntp&,
+  ss::lw_shared_ptr<cluster::partition>,
+  cluster::partition_manager& pm);
+
 ss::future<fetch_response::partition_response>
 read_from_ntp(op_context& octx, model::ntp ntp, fetch_config config);
 
