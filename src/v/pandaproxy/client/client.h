@@ -64,25 +64,31 @@ public:
     /// \brief Disconnect from all brokers.
     ss::future<> stop();
 
-    /// \brief Dispatch a request to any broker.
+    /// \brief Invoke func, on failure, mitigate error and retry.
     template<typename Func>
-    CONCEPT(
-      requires(typename std::invoke_result_t<Func>::api_type::response_type))
-    ss::future<typename std::invoke_result_t<
-      Func>::api_type::response_type> dispatch(Func func) {
+    std::invoke_result_t<Func> gated_retry_with_mitigation(Func func) {
         return ss::with_gate(_gate, [this, func{std::move(func)}]() {
             return retry_with_mitigation(
               shard_local_cfg().retries(),
               shard_local_cfg().retry_base_backoff(),
               [this, func{std::move(func)}]() {
                   _gate.check();
-                  return _brokers.any().then(
-                    [func{std::move(func)}](shared_broker_t broker) mutable {
-                        return broker->dispatch(func());
-                    });
+                  return func();
               },
-              [this](std::exception_ptr ex) {
-                  return mitigate_error(std::move(ex));
+              [this](std::exception_ptr ex) { return mitigate_error(ex); });
+        });
+    }
+
+    /// \brief Dispatch a request to any broker.
+    template<typename Func>
+    CONCEPT(
+      requires(typename std::invoke_result_t<Func>::api_type::response_type))
+    ss::future<typename std::invoke_result_t<
+      Func>::api_type::response_type> dispatch(Func func) {
+        return gated_retry_with_mitigation([this, func{std::move(func)}]() {
+            return _brokers.any().then(
+              [func{std::move(func)}](shared_broker_t broker) mutable {
+                  return broker->dispatch(func());
               });
         });
     }

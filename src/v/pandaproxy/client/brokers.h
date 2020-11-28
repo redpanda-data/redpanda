@@ -32,6 +32,12 @@ class brokers {
       = absl::flat_hash_map<model::topic_partition, model::node_id>;
 
 public:
+    brokers() = default;
+    brokers(const brokers&) = delete;
+    brokers(brokers&&) = default;
+    brokers& operator=(brokers const&) = delete;
+    brokers& operator=(brokers&&) = delete;
+
     /// \brief stop and wait for all outstanding activity to finish.
     ss::future<> stop();
 
