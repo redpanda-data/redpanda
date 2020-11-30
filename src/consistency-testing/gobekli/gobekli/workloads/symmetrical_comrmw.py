@@ -81,11 +81,10 @@ class MWClient:
                                     data.value)
 
             read_version = int(data.value.split(":")[1])
-            read_write_id = data.write_id
+            self.last_write_id = data.write_id
 
             if self.last_version < read_version:
                 self.last_version = read_version
-                self.last_write_id = read_write_id
 
             self.stat.inc(self.node.name + ":ok")
             self.stat.inc("all:ok")
