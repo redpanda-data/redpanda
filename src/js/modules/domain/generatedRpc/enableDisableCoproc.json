@@ -95,7 +95,7 @@
       "fields": [
         {
           "name": "inputs",
-          "type": "Array<uint32>"
+          "type": "Array<int8>"
         }
       ]
     },
