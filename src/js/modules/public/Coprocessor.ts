@@ -26,9 +26,9 @@ export enum PolicyInjection {
 }
 
 interface RecordHeader {
-  headerKeyLength: bigint;
-  headerKey: string;
-  headerValueLength: bigint;
+  headerKeyLength: number;
+  headerKey: Buffer;
+  headerValueLength: number;
   value: Buffer;
 }
 
