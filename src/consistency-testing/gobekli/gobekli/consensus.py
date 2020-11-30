@@ -71,11 +71,12 @@ class LinearizabilityRegisterChecker:
         self.history_by_idx = dict()
         self.history_by_write_id = dict()
         self.reads = dict()
+        self.timedout = dict()
 
     def size(self):
         return len(self.pending_writes) + len(self.applied) + len(
             self.history_by_idx) + len(self.history_by_write_id) + len(
-                self.reads) + len(self.gced)
+                self.reads) + len(self.gced) + len(self.timedout)
 
     def gc(self):
         midx = self.head.idx
@@ -91,11 +92,15 @@ class LinearizabilityRegisterChecker:
                 cmdlog.info(
                     m(type="gc", head=self.head.write_id,
                       garbage=key).with_time())
-                # eventually a client initiated a garbage collected request
-                # observes a timeout or an error invoke write_canceled or
-                # write_timeouted and clean self.applied and self.gced
-                self.gced[key] = True
                 del self.pending_writes[key]
+                if key in self.timedout:
+                    # a call has already timed out
+                    del self.timedout[key]
+                else:
+                    # eventually a client initiated a garbage collected request
+                    # observes a timeout or an error invoke write_canceled or
+                    # write_timeouted and clean self.applied and self.gced
+                    self.gced[key] = True
 
     # set an initial value of a register
     # value consists of an actual value, write_id and version
@@ -222,6 +227,8 @@ class LinearizabilityRegisterChecker:
             log_assert(f"write_timeouted: {write_id} not in applied")
         assert write_id in self.applied
         del self.applied[write_id]
+        if write_id in self.pending_writes:
+            self.timedout[write_id] = True
 
     def read_started(self, pid):
         if pid in self.reads:
