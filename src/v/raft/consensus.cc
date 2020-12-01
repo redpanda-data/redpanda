@@ -787,8 +787,16 @@ void consensus::read_voted_for() {
 
 ss::future<vote_reply> consensus::vote(vote_request&& r) {
     return with_gate(_bg, [this, r = std::move(r)]() mutable {
-        return _op_lock.with(
-          [this, r = std::move(r)]() mutable { return do_vote(std::move(r)); });
+        return _op_lock
+          .with(
+            _jit.base_duration(),
+            [this, r = std::move(r)]() mutable {
+                return do_vote(std::move(r));
+            })
+          .handle_exception_type([this](const ss::semaphore_timed_out&) {
+              return vote_reply{
+                .term = _term, .granted = false, .log_ok = false};
+          });
     });
 }
 
