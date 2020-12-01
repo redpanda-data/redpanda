@@ -1,9 +1,14 @@
+#!/usr/bin/env python3
 import os
+import sys
 import collections
 import glob
 import re
 import struct
 import crc32c
+import logging
+
+logger = logging.getLogger('rp')
 
 # https://docs.python.org/3.8/library/struct.html#format-strings
 #
@@ -95,11 +100,11 @@ class Segment:
         index = 0
         for batch in self.batches:
             if index < 3 or index == (len(self.batches) - 1):
-                print(batch.header.base_offset)
+                logger.info(batch.header.base_offset)
             if index == 3 and len(self.batches) > 4:
-                print("...")
+                logger.info("...")
             if batch.header.base_offset != next_offset:
-                print("hole discovered at offset {} expected {}".format(
+                logger.info("hole discovered at offset {} expected {}".format(
                     batch.header.base_offset, next_offset))
                 break
             next_offset = batch.last_offset() + 1
@@ -138,3 +143,38 @@ class Store:
             assert head == self.base_dir
             ntp = Ntp(self.base_dir, nspace, topic, int(part), int(ntp_id))
             self.ntps.append(ntp)
+
+
+def main():
+    import argparse
+
+    def generate_options():
+        parser = argparse.ArgumentParser(description='Redpanda log analyzer')
+        parser.add_argument('--path',
+                            type=str,
+                            help='Path to the log desired to be analyzed')
+        return parser
+
+    parser = generate_options()
+    options, program_options = parser.parse_known_args()
+    logger.info("%s" % options)
+    if not os.path.exists(options.path):
+        logger.error("Path doesn't exist %s" % options.path)
+        sys.exit(1)
+    store = Store(options.path)
+    for ntp in store.ntps:
+        for path in ntp.segments:
+            try:
+                s = Segment(path)
+            except CorruptBatchError as e:
+                logger.error(
+                    "corruption detected in batch {} of segment: {}".format(
+                        e.batch.index, path))
+                logger.error("header of corrupt batch: {}".format(
+                    e.batch.header))
+                sys.exit(1)
+            logger.info("successfully decoded segment: {}".format(path))
+
+
+if __name__ == '__main__':
+    main()
