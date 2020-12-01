@@ -84,9 +84,10 @@ private:
     ss::future<> self_vote();
     ss::future<> dispatch_one(model::node_id);
     ss::future<result<vote_reply>> do_dispatch_one(model::node_id);
-    void update_vote_state(ss::semaphore_units<>);
+    ss::future<> update_vote_state(ss::semaphore_units<>);
     ss::future<> process_replies();
-    void replicate_config_as_new_leader(ss::semaphore_units<>);
+    ss::future<std::error_code>
+      replicate_config_as_new_leader(ss::semaphore_units<>);
     // args
     consensus* _ptr;
     // make sure to always make a copy; never move() this struct
