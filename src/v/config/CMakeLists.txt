@@ -6,5 +6,6 @@ v_cc_library(
     rjson_serialization.cc
   DEPS
     v::json
+   boost_filesystem
 )
 add_subdirectory(tests)
