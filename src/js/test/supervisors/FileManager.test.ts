@@ -19,14 +19,17 @@ import {
 import * as fs from "fs";
 import { createHandle } from "../testUtilities";
 import { hash64 } from "xxhash";
+import * as chokidar from "chokidar";
 
-const INotifyWait = require("inotifywait");
 let sinonInstance: SinonSandbox;
 let server: ManagementServer;
 let client: ManagementClient;
 
 const createStubs = (sandbox: SinonSandbox) => {
-  sandbox.stub(INotifyWait.prototype);
+  const watchMock = sandbox.stub(chokidar, "watch");
+  watchMock.returns(
+    sandbox.createStubInstance(chokidar.FSWatcher, { on: sandbox.stub() })
+  );
   const readdirFake = sandbox.stub(fs, "readdir");
   const readFolderStub = sandbox.stub(
     FileManager.prototype,
@@ -54,6 +57,7 @@ const createStubs = (sandbox: SinonSandbox) => {
     readFolderStub,
     enableCoprocessor,
     disableCoprocessor,
+    watchMock,
   };
 };
 
@@ -88,17 +92,13 @@ describe("FileManager", () => {
 
   it("should add listen for new file event", (done) => {
     const repo = new Repository();
-    const { readFolderStub } = createStubs(sinonInstance);
-    const updateFile = sinonInstance.stub(
-      FileManager.prototype,
-      "updateRepositoryOnNewFile"
-    );
+    const { readFolderStub, watchMock } = createStubs(sinonInstance);
     new FileManager(repo, "submit", "active", "inactive", client);
     // wait for promise readFolderCoprocessor resolves
     setTimeout(() => {
       assert(readFolderStub.firstCall.calledWith(repo, "active"));
-      assert(updateFile.called);
-      assert(updateFile.calledWith(repo));
+      assert(watchMock.called);
+      assert(watchMock.calledWith("submit"));
       done();
     }, 300);
   });
