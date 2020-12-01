@@ -177,6 +177,9 @@ class RedpandaMuService(MuService):
                             build_type, compiler, "dist/local/redpanda/bin",
                             name)
 
+        if not os.path.exists(path):
+            raise RuntimeError("Couldn't find binary %s: %s", name, path)
+
         service.logger.debug("Found binary %s: %s", name, path)
 
         return path

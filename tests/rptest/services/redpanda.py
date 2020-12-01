@@ -147,6 +147,9 @@ class RedpandaService(Service):
         path = os.path.join(RedpandaService.V_DEV_MOUNT, build_dir, build_type,
                             compiler, "dist/local/redpanda/bin", name)
 
+        if not os.path.exists(path):
+            raise RuntimeError("Couldn't find binary %s: %s", name, path)
+
         self.logger.debug("Found binary %s: %s", name, path)
 
         return path
