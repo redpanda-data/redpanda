@@ -1,28 +1,25 @@
 "/v1/kafka/{topic}/{partition}/transfer_leadership": {
   "post": {
     "summary": "Transfer raft group leadership by topic-partition",
-    "operationId": "transfer_leadership",
+    "operationId": "kafka_transfer_leadership",
     "parameters": [
         {
             "name": "topic",
             "in": "path",
             "required": true,
-            "type": "string",
-            "allowMultiple":false
+            "type": "string"
         },
         {
             "name": "partition",
             "in": "path",
             "required": true,
-            "type": "integer",
-            "allowMultiple":false
+            "type": "integer"
         },
         {
             "name":"target",
             "in":"query",
             "required":false,
-            "type":"integer",
-            "allowMultiple":false
+            "type":"integer"
         }
     ],
     "responses": {

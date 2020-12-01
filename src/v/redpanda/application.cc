@@ -217,10 +217,16 @@ void application::configure_admin_server() {
           conf.admin_api_doc_dir(), "/v1");
         _admin
           .invoke_on_all([this, rb](ss::http_server& server) {
+              auto insert_comma = [](ss::output_stream<char>& os) {
+                  return os.write(",\n");
+              };
               rb->set_api_doc(server._routes);
               rb->register_api_file(server._routes, "header");
               rb->register_api_file(server._routes, "config");
+              rb->register_function(server._routes, insert_comma);
               rb->register_api_file(server._routes, "raft");
+              rb->register_function(server._routes, insert_comma);
+              rb->register_api_file(server._routes, "kafka");
               ss::httpd::config_json::get_config.set(
                 server._routes, []([[maybe_unused]] ss::const_req req) {
                     rapidjson::StringBuffer buf;
@@ -560,7 +566,7 @@ void application::start() {
 }
 
 void application::admin_register_raft_routes(ss::http_server& server) {
-    ss::httpd::raft_json::transfer_leadership.set(
+    ss::httpd::raft_json::raft_transfer_leadership.set(
       server._routes, [this](std::unique_ptr<ss::httpd::request> req) {
           raft::group_id group_id;
           try {
@@ -622,7 +628,7 @@ void application::admin_register_raft_routes(ss::http_server& server) {
 }
 
 void application::admin_register_kafka_routes(ss::http_server& server) {
-    ss::httpd::kafka_json::transfer_leadership.set(
+    ss::httpd::kafka_json::kafka_transfer_leadership.set(
       server._routes, [this](std::unique_ptr<ss::httpd::request> req) {
           auto topic = model::topic(req->param["topic"]);
 
