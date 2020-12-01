@@ -54,7 +54,7 @@ type RedpandaConfig struct {
 	KafkaApiTLS        ServerTLS      `yaml:"kafka_api_tls" mapstructure:"kafka_api_tls" json:"kafkaApiTls"`
 	AdminApi           SocketAddress  `yaml:"admin" mapstructure:"admin" json:"admin"`
 	Id                 int            `yaml:"node_id" mapstructure:"node_id" json:"id"`
-	SeedServers        []*SeedServer  `yaml:"seed_servers,omitempty" mapstructure:"seed_servers,omitempty" json:"seedServers"`
+	SeedServers        []SeedServer   `yaml:"seed_servers,omitempty" mapstructure:"seed_servers,omitempty" json:"seedServers"`
 	DeveloperMode      bool           `yaml:"developer_mode" mapstructure:"developer_mode" json:"developerMode"`
 }
 

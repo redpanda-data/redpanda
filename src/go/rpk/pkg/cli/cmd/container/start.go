@@ -345,7 +345,7 @@ func writeNodeConfig(
 	}
 
 	if seedIP != "" {
-		conf.Redpanda.SeedServers = []*config.SeedServer{{
+		conf.Redpanda.SeedServers = []config.SeedServer{{
 			Id: 0,
 			Host: config.SocketAddress{
 				Address: seedIP,

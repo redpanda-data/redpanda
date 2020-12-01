@@ -121,10 +121,10 @@ func bootstrap(fs afero.Fs) *cobra.Command {
 			conf.Redpanda.RPCServer.Address = ownIp.String()
 			conf.Redpanda.KafkaApi.Address = ownIp.String()
 			conf.Redpanda.AdminApi.Address = ownIp.String()
-			conf.Redpanda.SeedServers = []*config.SeedServer{}
-			seeds := []*config.SeedServer{}
+			conf.Redpanda.SeedServers = []config.SeedServer{}
+			seeds := []config.SeedServer{}
 			for i, ip := range ips {
-				seed := &config.SeedServer{
+				seed := config.SeedServer{
 					Id: i,
 					Host: config.SocketAddress{
 						ip.String(),

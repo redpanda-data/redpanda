@@ -23,12 +23,12 @@ import (
 
 func getValidConfig() *Config {
 	conf := Default()
-	conf.Redpanda.SeedServers = []*SeedServer{
-		&SeedServer{
+	conf.Redpanda.SeedServers = []SeedServer{
+		SeedServer{
 			SocketAddress{"127.0.0.1", 33145},
 			1,
 		},
-		&SeedServer{
+		SeedServer{
 			SocketAddress{"127.0.0.1", 33146},
 			2,
 		},
@@ -918,11 +918,11 @@ func TestReadFlat(t *testing.T) {
 	}
 	fs := afero.NewMemMapFs()
 	conf := Default()
-	conf.Redpanda.SeedServers = []*SeedServer{
-		&SeedServer{
+	conf.Redpanda.SeedServers = []SeedServer{
+		SeedServer{
 			SocketAddress{"192.168.167.0", 1337},
 			1000,
-		}, &SeedServer{
+		}, SeedServer{
 			SocketAddress{"192.168.167.1", 1337},
 			1001,
 		},
