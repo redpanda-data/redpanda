@@ -18,6 +18,7 @@ import {
 } from "../../modules/rpc/serverAndClients/server";
 import * as fs from "fs";
 import { createHandle } from "../testUtilities";
+import { hash64 } from "xxhash";
 
 const INotifyWait = require("inotifywait");
 let sinonInstance: SinonSandbox;
@@ -273,5 +274,29 @@ describe("FileManager", () => {
     const result = FileManager.prototype.compactErrors(errors);
     const expectedErrorMessage = "a, b, c, d, e, f";
     assert.strictEqual(expectedErrorMessage, result.message);
+  });
+
+  it("should remove a coprocessor, if it's removed from active folder", function (done) {
+    const handle = createHandle({
+      globalId: hash64(Buffer.from("file"), 0).readBigUInt64LE(),
+    });
+    const { getCoprocessor, moveCoprocessor, disableCoprocessor } = createStubs(
+      sinonInstance
+    );
+    moveCoprocessor.returns(Promise.resolve(handle));
+    getCoprocessor.returns(Promise.resolve(handle));
+
+    const repo = new Repository();
+    const removeSpy = sinonInstance.spy(repo, "remove");
+    const file = new FileManager(repo, "submit", "active", "inactive", client);
+
+    repo.add(handle);
+
+    file.removeHandleFromFilePath(handle.filename, repo).then(() => {
+      assert(removeSpy.called);
+      assert(disableCoprocessor.called);
+      assert(removeSpy.withArgs(handle));
+      done();
+    });
   });
 });

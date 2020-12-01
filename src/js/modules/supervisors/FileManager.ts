@@ -31,6 +31,9 @@ import {
  * this class is instanced
  */
 class FileManager {
+  private submitDirWatcher: Inotify;
+  private activeDirWatcher: Inotify;
+
   constructor(
     private repository: Repository,
     private submitDir: string,
@@ -39,10 +42,12 @@ class FileManager {
     public managementClient: ManagementClient
   ) {
     try {
-      this.watcher = new Inotify(this.submitDir);
+      this.submitDirWatcher = new Inotify(this.submitDir);
+      this.activeDirWatcher = new Inotify(this.activeDir);
       this.readCoprocessorFolder(repository, this.activeDir, false)
         .then(() => this.readCoprocessorFolder(repository, this.submitDir))
-        .then(() => this.updateRepositoryOnNewFile(repository));
+        .then(() => this.updateRepositoryOnNewFile(repository))
+        .then(() => this.removeHandleOnDeleteFile(repository));
     } catch (e) {
       console.error(e);
       //TODO: implement winston for loggin information and error handler
@@ -140,7 +145,7 @@ class FileManager {
    * @param repository, is a coprocessor container
    */
   updateRepositoryOnNewFile(repository: Repository): void {
-    return this.watcher.on("add", (filePath) => {
+    return this.submitDirWatcher.on("add", (filePath) => {
       this.addCoprocessor(filePath, repository).catch((e) =>
         console.error(e.message)
       );
@@ -149,12 +154,55 @@ class FileManager {
   }
 
   /**
+   * add event listener for removing event from active folder
+   * @param repository
+   */
+  removeHandleOnDeleteFile(repository: Repository): Promise<void> {
+    return this.activeDirWatcher.on("unlink", (filePath) =>
+      this.removeHandleFromFilePath(filePath, repository)
+    );
+  }
+
+  /**
+   * Updates the given Repository instance when a coprocessor is removed
+   * from folder.
+   * @param filePath, removed handle path
+   * @param repository, is a coprocessor container
+   */
+  removeHandleFromFilePath(
+    filePath: string,
+    repository: Repository
+  ): Promise<void> {
+    const name = path.basename(filePath, ".js");
+    const id = hash64(Buffer.from(name), 0).readBigUInt64LE();
+    const [handle] = repository.getHandlesByCoprocessorIds([id]);
+    if (!handle) {
+      console.error(
+        "error: trying to disable a removed coprocessor from " +
+          "'active' folder but it wasn't loaded in memory, file name " +
+          `${name}.js`
+      );
+      return Promise.resolve();
+    } else {
+      return this.disableCoprocessors([handle.coprocessor])
+        .then(() => this.repository.remove(handle))
+        .then(() =>
+          console.log(
+            `disabled coprocessor: ID ${handle.coprocessor.globalId} ` +
+              `filename: '${name}.js'`
+          )
+        )
+        .catch((error) => console.log(error.message));
+    }
+  }
+
+  /**
    * allow closing the inotify process
    */
   close = (): Promise<void> => {
     return new Promise((resolve, reject) => {
       try {
-        this.watcher.close();
+        this.submitDirWatcher.close();
         return resolve();
       } catch (e) {
         reject(e);
@@ -338,8 +386,6 @@ class FileManager {
       filename: destinationPath,
     }));
   }
-
-  private watcher: Inotify;
 }
 
 export default FileManager;
