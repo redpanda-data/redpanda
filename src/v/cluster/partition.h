@@ -112,6 +112,10 @@ public:
 
     partition_probe& probe() { return _probe; }
 
+    model::revision_id get_revision_id() const {
+        return _raft->log_config().get_revision();
+    }
+
 private:
     friend partition_manager;
 

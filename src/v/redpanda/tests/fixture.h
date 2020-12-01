@@ -150,7 +150,7 @@ public:
           });
     }
 
-    model::ntp make_data(storage::ntp_config::ntp_id version) {
+    model::ntp make_data(model::revision_id rev) {
         auto topic_name = fmt::format("my_topic_{}", 0);
         model::ntp ntp(
           cluster::kafka_namespace,
@@ -158,7 +158,7 @@ public:
           model::partition_id(0));
 
         storage::ntp_config ntp_cfg(
-          ntp, lconf().data_directory().as_sstring(), nullptr, version);
+          ntp, lconf().data_directory().as_sstring(), nullptr, rev);
 
         storage::disk_log_builder builder(make_default_config());
         using namespace storage; // NOLINT
