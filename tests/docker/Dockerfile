@@ -71,6 +71,7 @@ RUN pip3 install --upgrade \
     pycrypto \
     pywinrm \
     ipaddress \
+    crc32c \
     enum34 \
     pyyaml \
     requests \
