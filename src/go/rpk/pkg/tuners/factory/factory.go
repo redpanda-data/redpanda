@@ -126,7 +126,7 @@ func IsTunerAvailable(tuner string) bool {
 	return allTuners[tuner] != nil
 }
 
-func IsTunerEnabled(tuner string, rpkConfig *config.RpkConfig) bool {
+func IsTunerEnabled(tuner string, rpkConfig config.RpkConfig) bool {
 	switch tuner {
 	case "disk_irq":
 		return rpkConfig.TuneDiskIrq

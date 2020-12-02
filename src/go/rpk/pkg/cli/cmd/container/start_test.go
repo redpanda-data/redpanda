@@ -16,6 +16,7 @@ import (
 	"io"
 	"testing"
 	"vectorized/pkg/cli/cmd/container/common"
+	"vectorized/pkg/config"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
@@ -426,13 +427,14 @@ Please run 'rpk container purge' to delete all remaining data.`,
 		t.Run(tt.name, func(st *testing.T) {
 			var out bytes.Buffer
 			fs := afero.NewMemMapFs()
+			mgr := config.NewManager(fs)
 			if tt.before != nil {
 				require.NoError(st, tt.before(fs))
 			}
 			c, err := tt.client()
 			require.NoError(st, err)
 			logrus.SetOutput(&out)
-			err = startCluster(fs, c, tt.nodes)
+			err = startCluster(fs, mgr, c, tt.nodes)
 			if tt.expectedErrMsg != "" {
 				require.EqualError(st, err, tt.expectedErrMsg)
 			} else {

@@ -21,19 +21,19 @@ import (
 
 const configFileFlag = "config"
 
-func NewConfigCommand(fs afero.Fs) *cobra.Command {
+func NewConfigCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "config <command>",
 		Short: "Edit configuration",
 	}
-	root.AddCommand(set(fs))
-	root.AddCommand(bootstrap(fs))
-	root.AddCommand(initNode(fs))
+	root.AddCommand(set(fs, mgr))
+	root.AddCommand(bootstrap(mgr))
+	root.AddCommand(initNode(mgr))
 
 	return root
 }
 
-func set(fs afero.Fs) *cobra.Command {
+func set(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	var (
 		format     string
 		configPath string
@@ -52,7 +52,7 @@ func set(fs afero.Fs) *cobra.Command {
 					return err
 				}
 			}
-			return config.Set(fs, key, value, format, configPath)
+			return mgr.Set(key, value, format, configPath)
 		},
 	}
 	c.Flags().StringVar(&format,
@@ -72,7 +72,7 @@ func set(fs afero.Fs) *cobra.Command {
 	return c
 }
 
-func bootstrap(fs afero.Fs) *cobra.Command {
+func bootstrap(mgr config.Manager) *cobra.Command {
 	var (
 		ips        []string
 		self       string
@@ -95,8 +95,8 @@ func bootstrap(fs afero.Fs) *cobra.Command {
 			" ones can join later.",
 		Args: cobra.OnlyValidArgs,
 		RunE: func(c *cobra.Command, args []string) error {
-			defaultRpcPort := config.DefaultConfig().Redpanda.RPCServer.Port
-			conf, err := config.FindOrGenerate(fs, configPath)
+			defaultRpcPort := config.Default().Redpanda.RPCServer.Port
+			conf, err := mgr.FindOrGenerate(configPath)
 			if err != nil {
 				return errors.New("YAML")
 			}
@@ -121,10 +121,10 @@ func bootstrap(fs afero.Fs) *cobra.Command {
 			conf.Redpanda.RPCServer.Address = ownIp.String()
 			conf.Redpanda.KafkaApi.Address = ownIp.String()
 			conf.Redpanda.AdminApi.Address = ownIp.String()
-			conf.Redpanda.SeedServers = []*config.SeedServer{}
-			seeds := []*config.SeedServer{}
+			conf.Redpanda.SeedServers = []config.SeedServer{}
+			seeds := []config.SeedServer{}
 			for i, ip := range ips {
-				seed := &config.SeedServer{
+				seed := config.SeedServer{
 					Id: i,
 					Host: config.SocketAddress{
 						ip.String(),
@@ -134,7 +134,7 @@ func bootstrap(fs afero.Fs) *cobra.Command {
 				seeds = append(seeds, seed)
 			}
 			conf.Redpanda.SeedServers = seeds
-			return config.WriteConfig(fs, conf, conf.ConfigFile)
+			return mgr.Write(conf)
 		},
 	}
 	c.Flags().StringSliceVar(
@@ -166,7 +166,7 @@ func bootstrap(fs afero.Fs) *cobra.Command {
 	return c
 }
 
-func initNode(fs afero.Fs) *cobra.Command {
+func initNode(mgr config.Manager) *cobra.Command {
 	var (
 		configPath string
 	)
@@ -175,14 +175,13 @@ func initNode(fs afero.Fs) *cobra.Command {
 		Short: "Init the node after install, by setting the node's UUID.",
 		Args:  cobra.OnlyValidArgs,
 		RunE: func(_ *cobra.Command, args []string) error {
-			conf, err := config.FindOrGenerate(fs, configPath)
+			conf, err := mgr.FindOrGenerate(configPath)
 			if err != nil {
 				return err
 			}
 			// Don't reset the node's UUID if it has already been set.
 			if conf.NodeUuid == "" {
-				conf, err = config.GenerateAndWriteNodeUuid(fs, conf)
-				return err
+				return mgr.WriteNodeUUID(conf)
 			}
 			return nil
 		},

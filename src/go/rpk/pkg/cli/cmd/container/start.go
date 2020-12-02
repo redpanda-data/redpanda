@@ -33,7 +33,7 @@ type node struct {
 	addr string
 }
 
-func Start(fs afero.Fs) *cobra.Command {
+func Start(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	var (
 		nodes uint
 	)
@@ -54,6 +54,7 @@ func Start(fs afero.Fs) *cobra.Command {
 
 			return common.WrapIfConnErr(startCluster(
 				fs,
+				mgr,
 				c,
 				nodes,
 			))
@@ -71,7 +72,9 @@ func Start(fs afero.Fs) *cobra.Command {
 	return command
 }
 
-func startCluster(fs afero.Fs, c common.Client, n uint) error {
+func startCluster(
+	fs afero.Fs, mgr config.Manager, c common.Client, n uint,
+) error {
 	// Check if cluster exists and start it again.
 	restarted, err := restartCluster(fs, c)
 	if err != nil {
@@ -158,7 +161,7 @@ func startCluster(fs afero.Fs, c common.Client, n uint) error {
 
 	log.Info("Starting cluster")
 	seedIP, seedKafkaPort, err := startNode(
-		fs,
+		mgr,
 		c,
 		seedID,
 		seedKafkaPort,
@@ -203,7 +206,7 @@ func startCluster(fs afero.Fs, c common.Client, n uint) error {
 				state.ContainerID,
 			)
 			ip, port, err := startNode(
-				fs,
+				mgr,
 				c,
 				id,
 				kafkaPort,
@@ -306,13 +309,13 @@ func restartCluster(fs afero.Fs, c common.Client) ([]node, error) {
 }
 
 func startNode(
-	fs afero.Fs,
+	mgr config.Manager,
 	c common.Client,
 	nodeID, kafkaPort, rpcPort, seedRPCPort uint,
 	containerID, ip, seedIP string,
 	cores int,
 ) (string, uint, error) {
-	conf, err := writeNodeConfig(fs, nodeID, kafkaPort, rpcPort, seedRPCPort, ip, seedIP, common.ConfPath(nodeID), cores)
+	conf, err := writeNodeConfig(mgr, nodeID, kafkaPort, rpcPort, seedRPCPort, ip, seedIP, common.ConfPath(nodeID), cores)
 	if err != nil {
 		return "", 0, err
 	}
@@ -323,14 +326,15 @@ func startNode(
 }
 
 func writeNodeConfig(
-	fs afero.Fs,
+	mgr config.Manager,
 	nodeID, kafkaPort, rpcPort, seedRPCPort uint,
 	ip, seedIP, path string,
 	cores int,
 ) (*config.Config, error) {
 	localhost := "127.0.0.1"
-	conf := config.DefaultConfig()
+	conf := config.Default()
 	conf.Redpanda.Id = int(nodeID)
+	conf.ConfigFile = path
 
 	conf.Redpanda.KafkaApi.Address = ip
 	conf.Redpanda.RPCServer.Address = ip
@@ -345,7 +349,7 @@ func writeNodeConfig(
 	}
 
 	if seedIP != "" {
-		conf.Redpanda.SeedServers = []*config.SeedServer{{
+		conf.Redpanda.SeedServers = []config.SeedServer{{
 			Id: 0,
 			Host: config.SocketAddress{
 				Address: seedIP,
@@ -353,12 +357,9 @@ func writeNodeConfig(
 			},
 		}}
 	}
-
-	conf.Rpk.Overprovisioned = true
+	config.SetMode(config.ModeDev, conf)
 	conf.Rpk.SMP = &cores
-	conf.Redpanda.DeveloperMode = true
-
-	return &conf, config.WriteConfig(fs, &conf, path)
+	return conf, mgr.Write(conf)
 }
 
 func renderClusterInfo(nodes []node) {

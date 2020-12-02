@@ -13,8 +13,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 	"vectorized/pkg/api"
@@ -70,15 +72,20 @@ const (
 	maxIoRequestsFlag    = "max-io-requests"
 	mbindFlag            = "mbind"
 	overprovisionedFlag  = "overprovisioned"
+
+	seedFormat = "<host>[:<port>]+<id>"
 )
 
-func NewStartCommand(fs afero.Fs) *cobra.Command {
+func NewStartCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	prestartCfg := prestartConfig{}
 	var (
-		configFile     string
-		installDirFlag string
-		timeout        time.Duration
-		wellKnownIo    string
+		configFile      string
+		seeds           []string
+		advertisedKafka string
+		advertisedRPC   string
+		installDirFlag  string
+		timeout         time.Duration
+		wellKnownIo     string
 	)
 	sFlags := seastarFlags{}
 
@@ -86,16 +93,53 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 		Use:   "start",
 		Short: "Start redpanda",
 		RunE: func(ccmd *cobra.Command, args []string) error {
-			conf, err := config.FindOrGenerate(fs, configFile)
+			conf, err := mgr.FindOrGenerate(configFile)
 			if err != nil {
 				return err
 			}
-			conf.Rpk.WellKnownIo = wellKnownIo
 			config.CheckAndPrintNotice(conf.LicenseKey)
 			env := api.EnvironmentPayload{}
+			if len(seeds) == 0 {
+				// If --seeds wasn't passed, fall back to the
+				// env var.
+				seeds = strings.Split(
+					os.Getenv("REDPANDA_SEEDS"),
+					",",
+				)
+			}
+			seedServers, err := parseSeeds(seeds)
+			if err != nil {
+				sendEnv(mgr, env, conf, err)
+				return err
+			}
+			conf.Redpanda.SeedServers = seedServers
+			advertisedKafka = stringOr(
+				advertisedKafka,
+				os.Getenv("REDPANDA_ADVERTISE_KAFKA_ADDRESS"),
+			)
+			advKafkaApi, err := parseAddress(advertisedKafka)
+			if err != nil {
+				sendEnv(mgr, env, conf, err)
+				return err
+			}
+			if advKafkaApi != nil {
+				conf.Redpanda.AdvertisedKafkaApi = advKafkaApi
+			}
+			advertisedRPC = stringOr(
+				advertisedRPC,
+				os.Getenv("REDPANDA_ADVERTISE_RPC_ADDRESS"),
+			)
+			advRPCApi, err := parseAddress(advertisedRPC)
+			if err != nil {
+				sendEnv(mgr, env, conf, err)
+				return err
+			}
+			if advRPCApi != nil {
+				conf.Redpanda.AdvertisedRPCAPI = advRPCApi
+			}
 			installDirectory, err := cli.GetOrFindInstallDir(fs, installDirFlag)
 			if err != nil {
-				sendEnv(fs, env, conf, err)
+				sendEnv(mgr, env, conf, err)
 				return err
 			}
 			rpArgs, err := buildRedpandaFlags(
@@ -105,7 +149,7 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 				ccmd.Flags(),
 			)
 			if err != nil {
-				sendEnv(fs, env, conf, err)
+				sendEnv(mgr, env, conf, err)
 				return err
 			}
 			checkPayloads, tunerPayloads, err := prestart(
@@ -118,11 +162,11 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 			env.Checks = checkPayloads
 			env.Tuners = tunerPayloads
 			if err != nil {
-				sendEnv(fs, env, conf, err)
+				sendEnv(mgr, env, conf, err)
 				return err
 			}
 
-			sendEnv(fs, env, conf, nil)
+			sendEnv(mgr, env, conf, nil)
 			rpArgs.ExtraArgs = args
 			launcher := redpanda.NewLauncher(installDirectory, rpArgs)
 			log.Info(feedbackMsg)
@@ -137,11 +181,33 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 		"Redpanda config file, if not set the file will be searched for"+
 			" in the default locations",
 	)
+	mgr.BindFlag("config_file", command.Flags().Lookup("config"))
+	command.Flags().StringSliceVarP(
+		&seeds,
+		"seeds",
+		"s",
+		[]string{},
+		"A list of seed nodes to connect to, in the format "+
+			seedFormat,
+	)
+	command.Flags().StringVar(
+		&advertisedKafka,
+		"advertise-kafka-addr",
+		"",
+		"The Kafka address to advertise (<host>:<port>)",
+	)
+	command.Flags().StringVar(
+		&advertisedKafka,
+		"advertise-rpc-addr",
+		"",
+		"The advertised RPC address (<host>:<port>)",
+	)
 	command.Flags().StringVar(&sFlags.memory,
 		memoryFlag, "", "Amount of memory for redpanda to use, "+
 			"if not specified redpanda will use all available memory")
 	command.Flags().BoolVar(&sFlags.lockMemory,
 		lockMemoryFlag, false, "If set, will prevent redpanda from swapping")
+	mgr.BindFlag("rpk.enable_memory_locking", command.Flags().Lookup(lockMemoryFlag))
 	command.Flags().StringVar(&sFlags.cpuSet, cpuSetFlag, "",
 		"Set of CPUs for redpanda to use in cpuset(7) format, "+
 			"if not specified redpanda will use all available CPUs")
@@ -176,6 +242,7 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 		wellKnownIOFlag,
 		"",
 		"The cloud vendor and VM type, in the format <vendor>:<vm type>:<storage type>")
+	mgr.BindFlag("rpk.well_known_io", command.Flags().Lookup(wellKnownIOFlag))
 	command.Flags().BoolVar(&sFlags.mbind, mbindFlag, true, "enable mbind")
 	command.Flags().BoolVar(
 		&sFlags.overprovisioned,
@@ -183,6 +250,7 @@ func NewStartCommand(fs afero.Fs) *cobra.Command {
 		true,
 		"Enable overprovisioning",
 	)
+	mgr.BindFlag("rpk.overprovisioned", command.Flags().Lookup(overprovisionedFlag))
 	command.Flags().DurationVar(
 		&timeout,
 		"timeout",
@@ -271,7 +339,7 @@ func buildRedpandaFlags(
 		}
 		// Otherwise, try to deduce the IO props.
 		if sFlags.ioPropertiesFile == "" {
-			ioProps, err := resolveWellKnownIo(conf, conf.Rpk.WellKnownIo)
+			ioProps, err := resolveWellKnownIo(conf)
 			if err == nil {
 				yaml, err := iotune.ToYaml(*ioProps)
 				if err != nil {
@@ -303,15 +371,11 @@ func buildRedpandaFlags(
 func flagsFromConf(
 	conf *config.Config, flagsMap map[string]interface{}, flags *pflag.FlagSet,
 ) map[string]interface{} {
-	if !flags.Changed(overprovisionedFlag) {
-		flagsMap[overprovisionedFlag] = conf.Rpk.Overprovisioned
-	}
+	flagsMap[overprovisionedFlag] = conf.Rpk.Overprovisioned
+	flagsMap[lockMemoryFlag] = conf.Rpk.EnableMemoryLocking
 	// Setting SMP to 0 doesn't make sense.
 	if !flags.Changed(smpFlag) && conf.Rpk.SMP != nil && *conf.Rpk.SMP != 0 {
 		flagsMap[smpFlag] = *conf.Rpk.SMP
-	}
-	if !flags.Changed(lockMemoryFlag) {
-		flagsMap[lockMemoryFlag] = conf.Rpk.EnableMemoryLocking
 	}
 	return flagsMap
 }
@@ -336,19 +400,10 @@ func mergeFlags(
 	return current
 }
 
-func resolveWellKnownIo(
-	conf *config.Config, wellKnownIo string,
-) (*iotune.IoProperties, error) {
-	var configuredWellKnownIo string
-	// The flags take precedence over the config file
-	if wellKnownIo != "" {
-		configuredWellKnownIo = wellKnownIo
-	} else {
-		configuredWellKnownIo = conf.Rpk.WellKnownIo
-	}
+func resolveWellKnownIo(conf *config.Config) (*iotune.IoProperties, error) {
 	var ioProps *iotune.IoProperties
-	if configuredWellKnownIo != "" {
-		wellKnownIoTokens := strings.Split(configuredWellKnownIo, ":")
+	if conf.Rpk.WellKnownIo != "" {
+		wellKnownIoTokens := strings.Split(conf.Rpk.WellKnownIo, ":")
 		if len(wellKnownIoTokens) != 3 {
 			err := errors.New(
 				"--well-known-io should have the format '<vendor>:<vm type>:<storage type>'",
@@ -533,8 +588,80 @@ func parseFlags(flags []string) map[string]string {
 	return parsed
 }
 
+func parseSeeds(seeds []string) ([]config.SeedServer, error) {
+	seedServers := []config.SeedServer{}
+	for _, s := range seeds {
+		addressID := strings.Split(s, "+")
+		if len(addressID) != 2 {
+			return seedServers, fmt.Errorf(
+				"Couldn't parse seed '%s': Format doesn't"+
+					" conform to %s."+
+					" Missing ID.",
+				s,
+				seedFormat,
+			)
+		}
+		id, err := strconv.Atoi(strings.Trim(addressID[1], " "))
+		if err != nil {
+			return seedServers, fmt.Errorf(
+				"Couldn't parse seed '%s': ID must be an int.",
+				s,
+			)
+		}
+		addr, err := parseAddress(addressID[0])
+		if err != nil {
+			return seedServers, fmt.Errorf(
+				"Couldn't parse seed '%s': %v",
+				s,
+				err,
+			)
+		}
+		if addr == nil {
+			return seedServers, fmt.Errorf(
+				"Couldn't parse seed '%s': empty address",
+				s,
+			)
+		}
+		seedServers = append(
+			seedServers,
+			config.SeedServer{Host: *addr, Id: id},
+		)
+	}
+	return seedServers, nil
+}
+
+func parseAddress(addr string) (*config.SocketAddress, error) {
+	if addr == "" {
+		return nil, nil
+	}
+	hostPort := strings.Split(addr, ":")
+	host := strings.Trim(hostPort[0], " ")
+	if host == "" {
+		return nil, fmt.Errorf("Empty host in address '%s'", addr)
+	}
+	if len(hostPort) != 2 {
+		// It's just a hostname with no port. Assume 9092.
+		return &config.SocketAddress{
+			Address: strings.Trim(hostPort[0], " "),
+			Port:    9092,
+		}, nil
+	}
+	// It's a host:port combo.
+	port, err := strconv.Atoi(strings.Trim(hostPort[1], " "))
+	if err != nil {
+		return nil, fmt.Errorf("Port must be an int")
+	}
+	return &config.SocketAddress{
+		Address: host,
+		Port:    port,
+	}, nil
+}
+
 func sendEnv(
-	fs afero.Fs, env api.EnvironmentPayload, conf *config.Config, err error,
+	mgr config.Manager,
+	env api.EnvironmentPayload,
+	conf *config.Config,
+	err error,
 ) {
 	if err != nil {
 		env.ErrorMsg = err.Error()
@@ -542,7 +669,7 @@ func sendEnv(
 	// The config.Config struct holds only a subset of everything that can
 	// go in the YAML config file, so try to read the file directly to
 	// send everything.
-	confJSON, err := config.ReadAsJSON(fs, conf.ConfigFile)
+	confJSON, err := mgr.ReadAsJSON(conf.ConfigFile)
 	if err != nil {
 		log.Warnf(
 			"Couldn't send latest config at '%s' due to: %s",
@@ -562,4 +689,11 @@ func sendEnv(
 	if err != nil {
 		log.Warnf("couldn't send environment data: %v", err)
 	}
+}
+
+func stringOr(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
 }

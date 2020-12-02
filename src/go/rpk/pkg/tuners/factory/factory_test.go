@@ -49,7 +49,7 @@ func TestMergeTunerParamsConfig(t *testing.T) {
 			expected: func() *factory.TunerParams {
 				params := getValidTunerParams()
 				params.Directories = []string{
-					config.DefaultConfig().Redpanda.Directory,
+					config.Default().Redpanda.Directory,
 				}
 				return params
 			},
@@ -58,8 +58,8 @@ func TestMergeTunerParamsConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			conf := config.DefaultConfig()
-			res, err := factory.MergeTunerParamsConfig(tt.tunerParams(), &conf)
+			conf := config.Default()
+			res, err := factory.MergeTunerParamsConfig(tt.tunerParams(), conf)
 			require.NoError(t, err)
 			expected := tt.expected()
 			require.Exactly(t, expected, res)

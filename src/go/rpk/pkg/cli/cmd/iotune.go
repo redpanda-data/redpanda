@@ -20,7 +20,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func NewIoTuneCmd(fs afero.Fs) *cobra.Command {
+func NewIoTuneCmd(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	var (
 		configFile  string
 		outputFile  string
@@ -33,7 +33,7 @@ func NewIoTuneCmd(fs afero.Fs) *cobra.Command {
 		Short: "Measure filesystem performance and create IO configuration file",
 		RunE: func(ccmd *cobra.Command, args []string) error {
 			timeout += duration
-			conf, err := config.FindOrGenerate(fs, configFile)
+			conf, err := mgr.FindOrGenerate(configFile)
 			if err != nil {
 				return err
 			}
@@ -60,7 +60,7 @@ func NewIoTuneCmd(fs afero.Fs) *cobra.Command {
 	command.Flags().StringVar(
 		&outputFile,
 		"out",
-		filepath.Join(filepath.Dir(config.DefaultConfig().ConfigFile), "io-config.yaml"),
+		filepath.Join(filepath.Dir(config.Default().ConfigFile), "io-config.yaml"),
 		"The file path where the IO config will be written",
 	)
 	command.Flags().StringSliceVar(&directories,

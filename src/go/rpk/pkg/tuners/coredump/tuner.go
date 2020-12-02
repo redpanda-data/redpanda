@@ -52,7 +52,7 @@ func NewCoredumpTuner(
 }
 
 func (t *tuner) Tune() tuners.TuneResult {
-	script, err := renderTemplate(coredumpScriptTmpl, *t.conf.Rpk)
+	script, err := renderTemplate(coredumpScriptTmpl, t.conf.Rpk)
 	if err != nil {
 		return tuners.NewTuneError(err)
 	}

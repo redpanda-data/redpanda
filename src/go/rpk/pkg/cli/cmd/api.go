@@ -27,7 +27,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-func NewApiCommand(fs afero.Fs) *cobra.Command {
+func NewApiCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	var (
 		brokers    []string
 		configFile string
@@ -66,7 +66,7 @@ func NewApiCommand(fs afero.Fs) *cobra.Command {
 	// closure with references to the required values (the config file
 	// path, the list of brokers passed through --brokers) to deduce the
 	// actual brokers list to be used.
-	configClosure := findConfigFile(fs, &configFile)
+	configClosure := findConfigFile(mgr, &configFile)
 	brokersClosure := deduceBrokers(fs, configClosure, &brokers)
 	producerClosure := createProducer(fs, brokersClosure, configClosure)
 	clientClosure := createClient(fs, brokersClosure, configClosure)
@@ -89,7 +89,7 @@ func NewApiCommand(fs afero.Fs) *cobra.Command {
 // specific path passed with --config. If --config wasn't passed, and the config
 // wasn't found, return the default configuration.
 func findConfigFile(
-	fs afero.Fs, configFile *string,
+	mgr config.Manager, configFile *string,
 ) func() (*config.Config, error) {
 	var conf *config.Config
 	var err error
@@ -97,7 +97,7 @@ func findConfigFile(
 		if conf != nil {
 			return conf, nil
 		}
-		conf, err = config.ReadOrFind(fs, *configFile)
+		conf, err = mgr.ReadOrFind(*configFile)
 		if err == nil {
 			config.CheckAndPrintNotice(conf.LicenseKey)
 		} else {
@@ -108,9 +108,7 @@ func findConfigFile(
 						" wasn't passed, using default" +
 						" config",
 				)
-				defaultConf := config.DefaultConfig()
-				conf = &defaultConf
-				return conf, nil
+				return config.Default(), nil
 			}
 		}
 		return conf, err

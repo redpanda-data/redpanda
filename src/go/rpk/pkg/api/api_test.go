@@ -45,9 +45,9 @@ func TestSendMetrics(t *testing.T) {
 		}))
 	defer ts.Close()
 
-	conf := config.DefaultConfig()
+	conf := config.Default()
 	conf.Rpk.EnableUsageStats = true
-	err = sendMetricsToUrl(body, ts.URL, conf)
+	err = sendMetricsToUrl(body, ts.URL, *conf)
 	require.NoError(t, err)
 }
 
@@ -62,9 +62,9 @@ func TestSkipSendMetrics(t *testing.T) {
 	)
 	defer ts.Close()
 
-	conf := config.DefaultConfig()
+	conf := config.Default()
 	conf.Rpk.EnableUsageStats = false
-	err := sendMetricsToUrl(metricsBody{}, ts.URL, conf)
+	err := sendMetricsToUrl(metricsBody{}, ts.URL, *conf)
 	require.NoError(t, err)
 }
 
@@ -140,9 +140,9 @@ func TestSendEnvironment(t *testing.T) {
 	)
 	defer ts.Close()
 
-	conf := config.DefaultConfig()
+	conf := config.Default()
 	conf.Rpk.EnableUsageStats = true
-	err = sendEnvironmentToUrl(body, ts.URL, conf)
+	err = sendEnvironmentToUrl(body, ts.URL, *conf)
 	require.NoError(t, err)
 }
 
@@ -157,8 +157,8 @@ func TestSkipSendEnvironment(t *testing.T) {
 	)
 	defer ts.Close()
 
-	conf := config.DefaultConfig()
+	conf := config.Default()
 	conf.Rpk.EnableUsageStats = false
-	err := sendEnvironmentToUrl(environmentBody{}, ts.URL, conf)
+	err := sendEnvironmentToUrl(environmentBody{}, ts.URL, *conf)
 	require.NoError(t, err)
 }
