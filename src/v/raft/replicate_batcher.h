@@ -14,6 +14,7 @@
 #include "model/record_batch_reader.h"
 #include "outcome.h"
 #include "raft/types.h"
+#include "units.h"
 #include "utils/mutex.h"
 
 #include <absl/container/flat_hash_map.h>
@@ -29,7 +30,7 @@ public:
     };
     using item_ptr = ss::lw_shared_ptr<item>;
     // 1MB default size
-    static constexpr size_t default_batch_bytes = 1024 * 1024;
+    static constexpr size_t default_batch_bytes = 1_MiB;
 
     explicit replicate_batcher(
       consensus* ptr, size_t cache_size = default_batch_bytes);
