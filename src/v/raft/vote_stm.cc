@@ -137,7 +137,7 @@ ss::future<> vote_stm::do_vote() {
       .then([this]() {
           return _ptr->_op_lock.get_units().then(
             [this](ss::semaphore_units<> u) {
-                update_vote_state(std::move(u));
+                return update_vote_state(std::move(u));
             });
       });
 }
@@ -191,7 +191,7 @@ ss::future<> vote_stm::process_replies() {
 
 ss::future<> vote_stm::wait() { return _vote_bg.close(); }
 
-void vote_stm::update_vote_state(ss::semaphore_units<> u) {
+ss::future<> vote_stm::update_vote_state(ss::semaphore_units<> u) {
     // use reply term to update voter term
     for (auto& [_, r] : _replies) {
         if (r.value && r.value->has_value()) {
@@ -202,20 +202,20 @@ void vote_stm::update_vote_state(ss::semaphore_units<> u) {
                 _ptr->_term = term;
                 _ptr->_voted_for = {};
                 _ptr->_vstate = consensus::vote_state::follower;
-                return;
+                return ss::now();
             }
         }
     }
 
     if (_ptr->_vstate != consensus::vote_state::candidate) {
         vlog(_ctxlog.info, "No longer a candidate, ignoring vote replies");
-        return;
+        return ss::now();
     }
 
     if (!_success) {
         vlog(_ctxlog.info, "Vote failed");
         _ptr->_vstate = consensus::vote_state::follower;
-        return;
+        return ss::now();
     }
 
     std::vector<model::node_id> acks;
@@ -234,13 +234,23 @@ void vote_stm::update_vote_state(ss::semaphore_units<> u) {
     vlog(_ctxlog.info, "became the leader term:{}", _ptr->term());
 
     _ptr->trigger_leadership_notification();
-    replicate_config_as_new_leader(std::move(u));
+
+    return replicate_config_as_new_leader(std::move(u))
+      .then([this](std::error_code ec) {
+          // if we didn't replicated configuration, step down
+          if (ec) {
+              vlog(
+                _ctxlog.info,
+                "unable to replicate configuration as a leader, stepping down");
+              return _ptr->step_down(_ptr->_term + model::term_id(1));
+          }
+          return ss::now();
+      });
 }
 
-void vote_stm::replicate_config_as_new_leader(ss::semaphore_units<> u) {
-    (void)ss::with_gate(_ptr->_bg, [this, u = std::move(u)]() mutable {
-        return _ptr->replicate_configuration(std::move(u), _config.value());
-    });
+ss::future<std::error_code>
+vote_stm::replicate_config_as_new_leader(ss::semaphore_units<> u) {
+    return _ptr->replicate_configuration(std::move(u), _config.value());
 }
 
 ss::future<> vote_stm::self_vote() {
