@@ -187,17 +187,40 @@ consensus::success_reply consensus::update_follower_index(
           "Append entries response send to wrong group: {}, current group: {}",
           reply.group));
     }
-    if (seq < idx.last_received_seq) {
+    if (
+      seq < idx.last_received_seq
+      && reply.last_dirty_log_index < _log.offsets().dirty_offset) {
         vlog(
           _ctxlog.trace,
-          "ignorring reordered reply from node {} - last: {} current: {} ",
+          "ignorring reordered reply {} from node {} - last: {} current: {} ",
+          reply,
           reply.node_id,
           idx.last_received_seq,
           seq);
         return success_reply::no;
     }
-    // only update for in order sequences
-    idx.last_received_seq = seq;
+    /**
+     * Even though we allow some of the reordered responsens to be proccessed we
+     * do not want it to update last received response sequence. This may lead
+     * to processing one of the response that were reordered and should be
+     * discarded.
+     *
+     * example:
+     *  assumptions:
+     *
+     *  - [ seq: ... , lo: ...] denotes a response with given sequence (seq)
+     *    containing information about last log offset of a follower (lo)
+     *
+     *  - request are processed from left to right
+     *
+     *  [ seq: 100, lo: 10][ seq:97, lo: 11 ][ seq:98, lo: 9 ]
+     *
+     * In this case we want to accept request with seq 100, but not the one with
+     * seq 98, updating the last_received_seq unconditionally would cause
+     * accepting request with seq 98, which should be rejected
+     */
+    idx.last_received_seq = std::max(seq, idx.last_received_seq);
+
     // check preconditions for processing the reply
     if (!is_leader()) {
         vlog(_ctxlog.debug, "ignorring append entries reply, not leader");
