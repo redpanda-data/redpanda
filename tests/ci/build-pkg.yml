@@ -66,11 +66,26 @@ steps:
   name: 'gcr.io/redpandaci/builder'
   args: ['./build/venv/v/bin/vtools', 'build', 'cpp', '--conf=vtools/vtools/artifacts/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml', '--skip-external']
 
-- id: 'test redpanda'
+- id: 'create and archive distro packages'
   name: 'gcr.io/redpandaci/builder'
-  args: ['./build/venv/v/bin/vtools', 'test', 'cpp', '--conf=vtools/vtools/artifacts/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml']
+  entrypoint: bash
+  args:
+  - -c
+  - |
+    ./build/venv/v/bin/vtools build go --targets=rpk --conf=vtools/vtools/artifacts/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml
+    ./build/venv/v/bin/vtools build pkg --conf=vtools/vtools/artifacts/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml --format=rpm --format=deb --format=tar
+  env:
+  - SHORT_SHA=$SHORT_SHA
 
 timeout: 3600s
 
 options:
   machineType: 'N1_HIGHCPU_32'
+
+artifacts:
+  objects:
+    location: 'gs://vectorizedio/rp_dev/$_BUILD_TYPE/$_COMPILER/$SHORT_SHA/'
+    paths:
+    - 'build/$_BUILD_TYPE/$_COMPILER/dist/debian/*.deb'
+    - 'build/$_BUILD_TYPE/$_COMPILER/dist/rpm/RPMS/x86_64/*.rpm'
+    - 'build/$_BUILD_TYPE/$_COMPILER/dist/tar/*.tar.gz'
