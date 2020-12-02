@@ -58,6 +58,7 @@ public:
 
 private:
     ss::future<item_ptr> do_cache(model::record_batch_reader&&);
+    void dispatch_background_flush();
 
     consensus* _ptr;
     std::chrono::milliseconds _debounce_duration;

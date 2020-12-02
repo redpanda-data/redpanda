@@ -32,15 +32,16 @@ replicate_batcher::replicate_batcher(
   : _ptr(ptr)
   , _debounce_duration(debounce_duration)
   , _max_batch_size(cache_size) {
-    _flush_timer.set_callback([this] {
-        (void)ss::with_gate(_ptr->_bg, [this] {
-            // background block further caching too
-            return _lock.with([this] { return flush(); });
-        }).handle_exception_type([this](const ss::gate_closed_exception&) {
-            vlog(
-              _ptr->_ctxlog.debug,
-              "Gate closed while flushing replicate requests");
-        });
+    _flush_timer.set_callback([this] { dispatch_background_flush(); });
+}
+
+void replicate_batcher::dispatch_background_flush() {
+    (void)ss::with_gate(_ptr->_bg, [this] {
+        // background block further caching too
+        return _lock.with([this] { return flush(); });
+    }).handle_exception_type([this](const ss::gate_closed_exception&) {
+        vlog(
+          _ptr->_ctxlog.debug, "Gate closed while flushing replicate requests");
     });
 }
 
@@ -50,7 +51,13 @@ replicate_batcher::replicate(model::record_batch_reader&& r) {
       .with(
         [this, r = std::move(r)]() mutable { return do_cache(std::move(r)); })
       .then([this](item_ptr i) {
-          if (_pending_bytes < _max_batch_size || !_flush_timer.armed()) {
+          if (_pending_bytes >= _max_batch_size) {
+              _flush_timer.cancel();
+              dispatch_background_flush();
+              return i->_promise.get_future();
+          }
+
+          if (!_flush_timer.armed()) {
               _flush_timer.rearm(clock_type::now() + _debounce_duration);
           }
           return i->_promise.get_future();
