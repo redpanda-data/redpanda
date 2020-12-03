@@ -8,7 +8,7 @@
  * https://github.com/vectorizedio/redpanda/blob/master/licenses/rcl.md
  */
 
-import * as Inotify from "inotifywait";
+import { FSWatcher, watch } from "chokidar";
 import { rename, readdir } from "fs";
 import { promisify } from "util";
 import Repository from "./Repository";
@@ -31,8 +31,8 @@ import {
  * this class is instanced
  */
 class FileManager {
-  private submitDirWatcher: Inotify;
-  private activeDirWatcher: Inotify;
+  private submitDirWatcher: FSWatcher;
+  private activeDirWatcher: FSWatcher;
 
   constructor(
     private repository: Repository,
@@ -42,12 +42,9 @@ class FileManager {
     public managementClient: ManagementClient
   ) {
     try {
-      this.submitDirWatcher = new Inotify(this.submitDir);
-      this.activeDirWatcher = new Inotify(this.activeDir);
       this.readCoprocessorFolder(repository, this.activeDir, false)
         .then(() => this.readCoprocessorFolder(repository, this.submitDir))
-        .then(() => this.updateRepositoryOnNewFile(repository))
-        .then(() => this.removeHandleOnDeleteFile(repository));
+        .then(() => this.startWatchers(repository));
     } catch (e) {
       console.error(e);
       //TODO: implement winston for loggin information and error handler
@@ -140,30 +137,6 @@ class FileManager {
   }
 
   /**
-   * Updates the given Repository instance when a new coprocessor
-   * file is added.
-   * @param repository, is a coprocessor container
-   */
-  updateRepositoryOnNewFile(repository: Repository): void {
-    return this.submitDirWatcher.on("add", (filePath) => {
-      this.addCoprocessor(filePath, repository).catch((e) =>
-        console.error(e.message)
-      );
-      //TODO: implement winston for logging information and error handler
-    });
-  }
-
-  /**
-   * add event listener for removing event from active folder
-   * @param repository
-   */
-  removeHandleOnDeleteFile(repository: Repository): Promise<void> {
-    return this.activeDirWatcher.on("unlink", (filePath) =>
-      this.removeHandleFromFilePath(filePath, repository)
-    );
-  }
-
-  /**
    * Updates the given Repository instance when a coprocessor is removed
    * from folder.
    * @param filePath, removed handle path
@@ -199,16 +172,8 @@ class FileManager {
   /**
    * allow closing the inotify process
    */
-  close = (): Promise<void> => {
-    return new Promise((resolve, reject) => {
-      try {
-        this.submitDirWatcher.close();
-        return resolve();
-      } catch (e) {
-        reject(e);
-      }
-    });
-  };
+  close = (): Promise<void> =>
+    this.submitDirWatcher.close().then(this.activeDirWatcher.close);
 
   /**
    * Deregister the given Coprocessor and move the file where it's defined to
@@ -385,6 +350,26 @@ class FileManager {
       ...coprocessor,
       filename: destinationPath,
     }));
+  }
+
+  /**
+   * add event listeners for:
+   * update file: updates the given Repository instance when a new coprocessor
+   * file is added.
+   * remove file: removes from given Repository instance the deleted coprocessor
+   * definition
+   *
+   * @param repository
+   */
+  private startWatchers(repository: Repository): void {
+    this.submitDirWatcher = watch(this.submitDir).on("add", (filePath) => {
+      this.addCoprocessor(filePath, repository).catch((e) =>
+        console.error(e.message)
+      );
+    });
+    this.activeDirWatcher = watch(this.activeDir).on("unlink", (filePath) =>
+      this.removeHandleFromFilePath(filePath, repository)
+    );
   }
 }
 

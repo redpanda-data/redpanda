@@ -19,8 +19,7 @@ import { ProcessBatchRequest } from "../../modules/domain/generatedRpc/generated
 import { createHandle } from "../testUtilities";
 import { PolicyError, RecordBatch } from "../../modules/public/Coprocessor";
 import assert = require("assert");
-
-const INotifyWait = require("inotifywait");
+import * as chokidar from "chokidar";
 
 let sinonInstance: SinonSandbox;
 let server: ProcessBatchServer;
@@ -28,13 +27,13 @@ let client: SupervisorClient;
 let manageServer: ManagementServer;
 
 const createStubs = (sandbox: SinonSandbox) => {
+  const watchMock = sandbox.stub(chokidar, "watch");
+  watchMock.returns(({ on: sandbox.stub() } as unknown) as chokidar.FSWatcher);
   const readCoprocessorFolder = sandbox.stub(
     FileManager.prototype,
     "readCoprocessorFolder"
   );
   readCoprocessorFolder.returns(Promise.resolve());
-  sandbox.stub(FileManager.prototype, "updateRepositoryOnNewFile");
-  sandbox.stub(INotifyWait.prototype);
   const spyFireExceptionServer = sandbox.stub(
     ProcessBatchServer.prototype,
     "fireException"
@@ -61,6 +60,7 @@ const createStubs = (sandbox: SinonSandbox) => {
     spyFindByCoprocessor,
     spyMoveHandle,
     spyDeregister,
+    watchMock,
   };
 };
 

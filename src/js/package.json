@@ -24,7 +24,7 @@
     "@types/mocha": "7.0.2",
     "@types/node": "14.0.23",
     "fast-crc32c": "2.0.0",
-    "inotifywait": "1.8.3",
+    "chokidar": "^3.4.3",
     "mocha": "7.1.1",
     "prettier": "2.0.5",
     "rewire": "5.0.0",
