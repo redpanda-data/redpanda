@@ -102,12 +102,12 @@ func NewStartCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 			if len(seeds) == 0 {
 				// If --seeds wasn't passed, fall back to the
 				// env var.
-				envSeeds := strings.Split(
-					os.Getenv("REDPANDA_SEEDS"),
-					",",
-				)
-				if len(envSeeds) != 0 {
-					seeds = envSeeds
+				envSeeds := os.Getenv("REDPANDA_SEEDS")
+				if envSeeds != "" {
+					seeds = strings.Split(
+						envSeeds,
+						",",
+					)
 				}
 			}
 			seedServers, err := parseSeeds(seeds)
