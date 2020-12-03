@@ -81,6 +81,7 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> kafka_group_recovery_timeout_ms;
     property<std::chrono::milliseconds> replicate_append_timeout_ms;
     property<std::chrono::milliseconds> recovery_append_timeout_ms;
+    property<std::chrono::milliseconds> replicate_request_debounce_timeout_ms;
 
     property<size_t> reclaim_min_size;
     property<size_t> reclaim_max_size;

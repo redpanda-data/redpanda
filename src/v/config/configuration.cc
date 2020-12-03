@@ -282,6 +282,12 @@ configuration::configuration()
       "follower",
       required::no,
       5s)
+  , replicate_request_debounce_timeout_ms(
+      *this,
+      "replicate_request_debounce_timeout_ms",
+      "Max duration before dispatching batched replicate requests",
+      required::no,
+      4ms)
   , reclaim_min_size(
       *this,
       "reclaim_min_size",
