@@ -42,6 +42,10 @@ redpanda:
 
   auto_create_topics_enabled: true
 
+  # Skips most of the checks performed at startup (i.e. memory, xfs)
+  # not recomended for production use
+  developer_mode: true
+
 rpk:
   # TLS configuration.
   tls:

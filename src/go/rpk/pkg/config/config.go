@@ -94,8 +94,9 @@ func defaultMap() map[string]interface{} {
 				"address": "0.0.0.0",
 				"port":    9644,
 			},
-			"node_id":      0,
-			"seed_servers": []map[string]interface{}{},
+			"node_id":        0,
+			"seed_servers":   []map[string]interface{}{},
+			"developer_mode": true,
 		},
 		"rpk": map[string]interface{}{
 			"coredump_dir": "/var/lib/redpanda/coredump",
