@@ -33,7 +33,9 @@ public:
     static constexpr size_t default_batch_bytes = 1_MiB;
 
     explicit replicate_batcher(
-      consensus* ptr, size_t cache_size = default_batch_bytes);
+      consensus* ptr,
+      std::chrono::milliseconds debounce_duration,
+      size_t cache_size = default_batch_bytes);
 
     replicate_batcher(replicate_batcher&&) noexcept = default;
     replicate_batcher& operator=(replicate_batcher&&) noexcept = delete;
@@ -58,6 +60,7 @@ private:
     ss::future<item_ptr> do_cache(model::record_batch_reader&&);
 
     consensus* _ptr;
+    std::chrono::milliseconds _debounce_duration;
     size_t _max_batch_size{default_batch_bytes};
     size_t _pending_bytes{0};
     timer_type _flush_timer;

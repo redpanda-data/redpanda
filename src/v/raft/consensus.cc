@@ -55,7 +55,8 @@ consensus::consensus(
   , _client_protocol(client)
   , _leader_notification(std::move(cb))
   , _fstats({})
-  , _batcher(this)
+  , _batcher(
+      this, config::shard_local_cfg().replicate_request_debounce_timeout_ms())
   , _event_manager(this)
   , _ctxlog(group, _log.config().ntp())
   , _replicate_append_timeout(
