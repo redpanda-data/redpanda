@@ -17,6 +17,7 @@
 #include <seastar/testing/thread_test_case.hh>
 
 #include <boost/range/algorithm/for_each.hpp>
+#include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test.hpp>
 #include <fmt/format.h>
 
@@ -491,4 +492,49 @@ SEASTAR_THREAD_TEST_CASE(trim_front) {
         buf.trim_front(101);
         BOOST_TEST(buf.size_bytes() == 99);
     }
+
+    {
+        iobuf buf;
+        buf.prepend(ss::temporary_buffer<char>(100));
+        auto it = buf.begin();
+        BOOST_TEST(it->size() == 100);
+        buf.trim_front(10);
+        it = buf.begin();
+        BOOST_TEST(it->size() == 90);
+    }
+}
+
+SEASTAR_THREAD_TEST_CASE(test_iobuf_input_stream_from_trimmed_iobuf) {
+    iobuf buf;
+    buf.prepend(ss::temporary_buffer<char>(100));
+    buf.trim_front(10);
+    auto stream = make_iobuf_input_stream(std::move(buf));
+    auto res = stream.read().get0();
+    BOOST_TEST(res.size() == 90);
+}
+
+SEASTAR_THREAD_TEST_CASE(
+  test_trim_front_interator_consumer_segment_bytes_left) {
+    iobuf buf;
+    buf.prepend(ss::temporary_buffer<char>(100));
+    buf.trim_front(10);
+    details::io_iterator_consumer cons(buf.begin(), buf.end());
+
+    BOOST_TEST(cons.segment_bytes_left() == 90);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_trim_front_iterator_consumer_scan) {
+    const auto rgen = random_generators::gen_alphanum_string(100);
+    iobuf buf;
+    buf.append(ss::temporary_buffer<char>(rgen.data(), rgen.size()));
+    buf.trim_front(10);
+    details::io_iterator_consumer cons(buf.begin(), buf.end());
+    std::string expected(rgen.data(), rgen.size());
+    expected = expected.substr(10);
+    std::string actual;
+    for (auto it : cons) {
+        actual.push_back(it);
+    }
+    BOOST_REQUIRE_EQUAL(expected.size(), actual.size());
+    BOOST_REQUIRE_EQUAL(expected, actual);
 }
