@@ -384,10 +384,14 @@ consensus::replicate(model::record_batch_reader&& rdr, replicate_options opts) {
                                details::term_assigning_reader>(
                                std::move(rdr), model::term_id(_term)))
             .then([this](storage::append_result res) {
-                // for relaxed consistency mode update visibility upper bound
-                // with last offset appended to the log
-                _visibility_upper_bound_index = std::max(
-                  _visibility_upper_bound_index, res.last_offset);
+                // only update visibility upper bound if all quorum replicated
+                // entries are committed already
+                if (_commit_index >= _last_quorum_replicated_index) {
+                    // for relaxed consistency mode update visibility upper
+                    // bound with last offset appended to the log
+                    _visibility_upper_bound_index = std::max(
+                      _visibility_upper_bound_index, res.last_offset);
+                }
                 return result<replicate_result>(
                   replicate_result{.last_offset = res.last_offset});
             });
@@ -1066,6 +1070,10 @@ consensus::do_append_entries(append_entries_request&& r) {
         return _log
           .truncate(storage::truncate_config(truncate_at, _io_priority))
           .then([this, truncate_at] {
+              _last_quorum_replicated_index = std::min(
+                details::prev_offset(truncate_at),
+                _last_quorum_replicated_index);
+
               return _configuration_manager.truncate(truncate_at).then([this] {
                   _probe.configuration_update();
                   update_follower_stats(_configuration_manager.get_latest());
@@ -1577,6 +1585,15 @@ consensus::do_maybe_update_leader_commit_idx(ss::semaphore_units<> u) {
           _commit_index);
         _commit_index_updated.broadcast();
         _event_manager.notify_commit_index(_commit_index);
+        // if we successfully acknowledged all quorum writes we can make pending
+        // relaxed consistency requests visible
+        if (_commit_index >= _last_quorum_replicated_index) {
+            maybe_update_last_visible_index(lstats.dirty_offset);
+        } else {
+            // still have to wait for some quorum consistency requests to be
+            // committed
+            maybe_update_last_visible_index(_commit_index);
+        }
         maybe_update_last_visible_index(_commit_index);
         return maybe_commit_configuration(std::move(u));
     }

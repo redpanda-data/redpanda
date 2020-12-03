@@ -377,6 +377,13 @@ private:
     configuration_manager _configuration_manager;
     model::offset _majority_replicated_index;
     model::offset _visibility_upper_bound_index;
+    /**
+     * We keep an idex of the most recent entry replicated with quorum
+     * consistency level to make sure that all requests replicated with quorum
+     * consistency level will not be visible before they are committed by
+     * majority.
+     */
+    model::offset _last_quorum_replicated_index;
     offset_monitor _consumable_offset_monitor;
     ss::condition_variable _disk_append;
 
