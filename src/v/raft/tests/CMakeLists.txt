@@ -29,6 +29,7 @@ set(srcs
     append_entries_test.cc
     offset_monitor_test.cc
     mux_state_machine_test.cc
+    mutex_buffer_test.cc
     configuration_manager_test.cc)
 
 rp_test(
