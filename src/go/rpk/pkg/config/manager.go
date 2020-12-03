@@ -246,12 +246,15 @@ func (m *manager) Write(conf *Config) error {
 	if err != nil {
 		return err
 	}
-	m.v.MergeConfigMap(confMap)
-	return m.checkAndWrite(conf.ConfigFile)
+	// Merge the config into a new viper.Viper instance to prevent
+	// concurrent writes to the underlying config map.
+	v := InitViper(m.fs)
+	v.MergeConfigMap(confMap)
+	return checkAndWrite(m.fs, v, conf.ConfigFile)
 }
 
-func (m *manager) write(path string) error {
-	err := m.v.WriteConfigAs(path)
+func write(v *viper.Viper, path string) error {
+	err := v.WriteConfigAs(path)
 	if err != nil {
 		return err
 	}
@@ -272,7 +275,7 @@ func (m *manager) Set(key, value, format, path string) error {
 	switch strings.ToLower(format) {
 	case "single":
 		m.v.Set(key, parse(value))
-		err = m.checkAndWrite(path)
+		err = checkAndWrite(m.fs, m.v, path)
 		if err == nil {
 			checkAndPrintRestartWarning(key)
 		}
@@ -296,15 +299,15 @@ func (m *manager) Set(key, value, format, path string) error {
 	log.Infof("all: %v", newV.AllSettings())
 	m.v.MergeConfigMap(newV.AllSettings())
 	log.Infof("m.v: %v", m.v.AllSettings())
-	err = m.checkAndWrite(path)
+	err = checkAndWrite(m.fs, m.v, path)
 	if err == nil {
 		checkAndPrintRestartWarning(key)
 	}
 	return err
 }
 
-func (m *manager) checkAndWrite(path string) error {
-	ok, errs := check(m.v)
+func checkAndWrite(fs afero.Fs, v *viper.Viper, path string) error {
+	ok, errs := check(v)
 	if !ok {
 		reasons := []string{}
 		for _, err := range errs {
@@ -312,37 +315,37 @@ func (m *manager) checkAndWrite(path string) error {
 		}
 		return errors.New(strings.Join(reasons, ", "))
 	}
-	lastBackupFile, err := findBackup(m.fs, fp.Dir(path))
+	lastBackupFile, err := findBackup(fs, fp.Dir(path))
 	if err != nil {
 		return err
 	}
-	exists, err := afero.Exists(m.fs, path)
+	exists, err := afero.Exists(fs, path)
 	if err != nil {
 		return err
 	}
 	if !exists {
 		// If the config doesn't exist, just write it.
-		return m.write(path)
+		return write(v, path)
 	}
 	// Otherwise, backup the current config file, write the new one, and
 	// try to recover if there's an error.
 	log.Debug("Backing up the current config")
-	backup, err := utils.BackupFile(m.fs, path)
+	backup, err := utils.BackupFile(fs, path)
 	if err != nil {
 		return err
 	}
 	log.Debugf("Backed up the current config to %s", backup)
 	if lastBackupFile != "" && lastBackupFile != backup {
 		log.Debug("Removing previous backup file")
-		err = m.fs.Remove(lastBackupFile)
+		err = fs.Remove(lastBackupFile)
 		if err != nil {
 			return err
 		}
 	}
 	log.Debugf("Writing the new redpanda config to '%s'", path)
-	err = m.write(path)
+	err = write(v, path)
 	if err != nil {
-		return m.recover(backup, path, err)
+		return recover(fs, backup, path, err)
 	}
 	return nil
 }
@@ -351,9 +354,9 @@ func (m *manager) BindFlag(key string, flag *pflag.Flag) error {
 	return m.v.BindPFlag(key, flag)
 }
 
-func (m *manager) recover(backup, path string, err error) error {
+func recover(fs afero.Fs, backup, path string, err error) error {
 	log.Infof("Recovering the previous confing from %s", backup)
-	recErr := utils.CopyFile(m.fs, backup, path)
+	recErr := utils.CopyFile(fs, backup, path)
 	if recErr != nil {
 		msg := "couldn't persist the new config due to '%v'," +
 			" nor recover the backup due to '%v"
