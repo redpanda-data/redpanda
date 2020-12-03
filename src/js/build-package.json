@@ -16,7 +16,8 @@
     "ts-node": "^9.0.0",
     "webpack": "^4.44.2",
     "xxhash": "0.3.0",
-    "js-yaml": "^3.14.0"
+    "js-yaml": "^3.14.0",
+    "winston": "3.3.3"
   },
   "devDependencies": {
     "sinon": "^9.0.2",
