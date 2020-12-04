@@ -288,6 +288,12 @@ configuration::configuration()
       "Max duration before dispatching batched replicate requests",
       required::no,
       4ms)
+  , raft_replicate_batch_window_size(
+      *this,
+      "raft_replicate_batch_window_size",
+      "Max size of requests cached for replication",
+      required::no,
+      128_KiB)
   , reclaim_min_size(
       *this,
       "reclaim_min_size",
