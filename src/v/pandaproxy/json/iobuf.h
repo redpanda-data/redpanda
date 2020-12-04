@@ -15,10 +15,10 @@
 #include "bytes/iobuf_parser.h"
 #include "json/json.h"
 #include "pandaproxy/json/types.h"
+#include "utils/base64.h"
 
 #include <seastar/core/loop.hh>
 
-#include <libbase64.h>
 #include <optional>
 
 namespace pandaproxy::json {
@@ -44,16 +44,12 @@ public:
 
     inline std::pair<bool, std::optional<iobuf>>
     decode_base64(std::string_view v) {
-        std::vector<char> decoded(v.length());
-        size_t out_len{};
-        if (
-          0
-          == base64_decode(v.data(), v.length(), decoded.data(), &out_len, 0)) {
+        try {
+            auto decoded = base64_to_bytes(v);
+            return {true, bytes_to_iobuf(decoded)};
+        } catch (const base64_decoder_exception&) {
             return {false, std::nullopt};
         }
-        auto buf = std::make_optional<iobuf>();
-        buf->append(decoded.data(), out_len);
-        return {true, std::move(buf)};
     };
 
 private:
@@ -84,27 +80,8 @@ public:
         if (buf.empty()) {
             return w.String("", 0);
         }
-
-        base64_state state{};
-        base64_stream_encode_init(&state, 0);
-        // Required length is ceil(4n/3) rounded up to 4 bytes
-        size_t out_len = (((4 * buf.size_bytes()) / 3) + 3) & ~0x3U;
         // TODO Ben: Implement custom OutputStream to prevent this linearization
-        ss::sstring out(ss::sstring::initialized_later{}, out_len);
-        auto out_ptr = out.data();
-        iobuf::iterator_consumer(buf.cbegin(), buf.cend())
-          .consume(
-            buf.size_bytes(),
-            [&state, &out_ptr, &out_len](const char* src, size_t sz) {
-                base64_stream_encode(&state, src, sz, out_ptr, &out_len);
-                out_ptr += out_len;
-                return ss::stop_iteration::no;
-            });
-        base64_stream_encode_final(&state, out_ptr, &out_len);
-        out_ptr += out_len;
-        size_t written_len = std::distance(out.data(), out_ptr);
-        vassert(written_len <= out.size(), "buffer overrun in encode_base64");
-        return w.String(out.data(), std::distance(out.data(), out_ptr));
+        return w.String(iobuf_to_base64(buf));
     };
 
 private:
