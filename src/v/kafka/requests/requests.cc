@@ -18,6 +18,7 @@
 #include "kafka/requests/fetch_request.h"
 #include "kafka/requests/find_coordinator_request.h"
 #include "kafka/requests/heartbeat_request.h"
+#include "kafka/requests/init_producer_id_request.h"
 #include "kafka/requests/join_group_request.h"
 #include "kafka/requests/leave_group_request.h"
 #include "kafka/requests/list_groups_request.h"
@@ -132,6 +133,8 @@ process_request(request_context&& ctx, ss::smp_service_group g) {
         return do_process<sasl_handshake_api>(std::move(ctx), g);
     case sasl_authenticate_api::key:
         return do_process<sasl_authenticate_api>(std::move(ctx), g);
+    case init_producer_id_api::key:
+        return do_process<init_producer_id_api>(std::move(ctx), g);
     };
     return ss::make_exception_future<response_ptr>(
       std::runtime_error(fmt::format("Unsupported API {}", ctx.header().key)));

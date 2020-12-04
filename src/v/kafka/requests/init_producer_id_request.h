@@ -10,34 +10,40 @@
  */
 
 #pragma once
+
+#include "bytes/iobuf.h"
 #include "kafka/errors.h"
 #include "kafka/requests/request_context.h"
 #include "kafka/requests/response.h"
-#include "kafka/requests/schemata/heartbeat_request.h"
-#include "kafka/requests/schemata/heartbeat_response.h"
+#include "kafka/requests/schemata/init_producer_id_request.h"
+#include "kafka/requests/schemata/init_producer_id_response.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
+#include "model/timestamp.h"
 #include "seastarx.h"
 
 #include <seastar/core/future.hh>
 
 namespace kafka {
 
-struct heartbeat_api final {
-    static constexpr const char* name = "heartbeat";
-    static constexpr api_key key = api_key(12);
+struct init_producer_id_response;
+
+struct init_producer_id_api final {
+    using response_type = init_producer_id_response;
+
+    static constexpr const char* name = "init producer_id";
+    static constexpr api_key key = api_key(22);
     static constexpr api_version min_supported = api_version(0);
-    static constexpr api_version max_supported = api_version(3);
+    static constexpr api_version max_supported = api_version(1);
 
     static ss::future<response_ptr>
     process(request_context&&, ss::smp_service_group);
 };
 
-struct heartbeat_request final {
-    heartbeat_request_data data;
+struct init_producer_id_request final {
+    using api_type = init_producer_id_api;
 
-    // set during request processing after mapping group to ntp
-    model::ntp ntp;
+    init_producer_id_request_data data;
 
     void encode(response_writer& writer, api_version version) {
         data.encode(writer, version);
@@ -48,35 +54,27 @@ struct heartbeat_request final {
     }
 };
 
-inline std::ostream& operator<<(std::ostream& os, const heartbeat_request& r) {
+inline std::ostream&
+operator<<(std::ostream& os, const init_producer_id_request& r) {
     return os << r.data;
 }
 
-struct heartbeat_response final {
-    using api_type = heartbeat_api;
+struct init_producer_id_response final {
+    using api_type = init_producer_id_api;
 
-    heartbeat_response_data data;
-
-    explicit heartbeat_response(error_code error)
-      : data({
-        .throttle_time_ms = std::chrono::milliseconds(0),
-        .error_code = error,
-      }) {}
-
-    heartbeat_response(const heartbeat_request&, error_code error)
-      : heartbeat_response(error) {}
+    init_producer_id_response_data data;
 
     void encode(const request_context& ctx, response& resp) {
         data.encode(resp.writer(), ctx.header().version);
     }
+
+    void decode(iobuf buf, api_version version) {
+        data.decode(std::move(buf), version);
+    }
 };
 
-static inline ss::future<heartbeat_response>
-make_heartbeat_error(error_code error) {
-    return ss::make_ready_future<heartbeat_response>(error);
-}
-
-inline std::ostream& operator<<(std::ostream& os, const heartbeat_response& r) {
+inline std::ostream&
+operator<<(std::ostream& os, const init_producer_id_response& r) {
     return os << r.data;
 }
 

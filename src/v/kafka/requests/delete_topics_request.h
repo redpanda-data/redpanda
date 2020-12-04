@@ -54,7 +54,7 @@ struct delete_topics_request final {
     }
 };
 
-static inline std::ostream&
+inline std::ostream&
 operator<<(std::ostream& os, const delete_topics_request& r) {
     return os << r.data;
 }
@@ -73,7 +73,7 @@ struct delete_topics_response final {
     }
 };
 
-static inline std::ostream&
+inline std::ostream&
 operator<<(std::ostream& os, const delete_topics_response& r) {
     return os << r.data;
 }

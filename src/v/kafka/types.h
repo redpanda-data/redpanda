@@ -33,6 +33,12 @@ using api_version = named_type<int16_t, struct kafka_requests_api_version>;
 /// Kafka group identifier.
 using group_id = named_type<ss::sstring, struct kafka_group_id>;
 
+/// Kafka transactional id identifier.
+using transactional_id = named_type<ss::sstring, struct kafka_transactional_id>;
+
+/// Kafka producer id identifier.
+using producer_id = named_type<int64_t, struct kafka_producer_id>;
+
 /// Kafka group member identifier.
 using member_id = named_type<ss::sstring, struct kafka_member_id>;
 
