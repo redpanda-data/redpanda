@@ -70,3 +70,10 @@ rp_test(
   SOURCES state_crc_file_test.cc
   LIBRARIES v::seastar_testing_main v::utils
 )
+
+rp_test(
+  UNIT_TEST
+  BINARY_NAME base64_test
+  SOURCES base64_test.cc
+  LIBRARIES v::seastar_testing_main v::utils
+)
