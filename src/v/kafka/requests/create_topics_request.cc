@@ -20,6 +20,7 @@
 #include "utils/to_string.h"
 
 #include <seastar/core/future.hh>
+#include <seastar/core/sstring.hh>
 #include <seastar/util/log.hh>
 
 #include <fmt/ostream.h>
@@ -28,6 +29,11 @@
 #include <string_view>
 
 namespace kafka {
+
+bool is_not_supported(const ss::sstring& name) {
+    return name == "min.insync.replicas" || name == "flush.messages"
+           || name == "flush.ms";
+}
 
 ss::future<response_ptr> create_topics_api::process(
   request_context&& ctx, [[maybe_unused]] ss::smp_service_group g) {
@@ -50,6 +56,21 @@ ss::future<response_ptr> create_topics_api::process(
             valid_range_end,
             std::back_inserter(response.data.topics),
             validators{});
+
+          // Print log if not supported configuration options are present
+          for (auto& r : boost::make_iterator_range(begin, valid_range_end)) {
+              for (auto c : r.configs) {
+                  if (is_not_supported(c.name)) {
+                      vlog(
+                        klog.info,
+                        "topic {} not supported configuration {}={} property "
+                        "will be ignored",
+                        r.name,
+                        c.name,
+                        c.value);
+                  }
+              }
+          }
 
           if (request.data.validate_only) {
               // We do not actually create the topics, only validate the

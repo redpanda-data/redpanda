@@ -45,8 +45,7 @@ private:
       no_custom_partition_assignment,
       partition_count_must_be_positive,
       replication_factor_must_be_positive,
-      replication_factor_must_be_odd,
-      unsupported_configuration_entries>;
+      replication_factor_must_be_odd>;
 };
 
 struct create_topics_request final {
