@@ -6,7 +6,7 @@
   "author": "hi@vectorized.io",
   "scripts": {
     "fmt": "./node_modules/typescript-formatter/bin/tsfmt --baseDir ../../src/js/ -r",
-    "build:ts": "npx tsc --build ./tsconfig.json",
+    "build:ts": "npx tsc",
     "build": "./build.sh",
     "test": "./node_modules/mocha/bin/mocha -r ts-node/register \"./test/**/*.ts\"",
     "prettier:format": "npx prettier --write .",
