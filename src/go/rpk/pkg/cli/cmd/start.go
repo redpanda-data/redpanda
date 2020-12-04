@@ -23,6 +23,7 @@ import (
 	"vectorized/pkg/cli"
 	"vectorized/pkg/cloud"
 	"vectorized/pkg/config"
+	"vectorized/pkg/kafka"
 	vos "vectorized/pkg/os"
 	"vectorized/pkg/redpanda"
 	"vectorized/pkg/tuners"
@@ -72,8 +73,6 @@ const (
 	maxIoRequestsFlag    = "max-io-requests"
 	mbindFlag            = "mbind"
 	overprovisionedFlag  = "overprovisioned"
-
-	seedFormat = "<host>[:<port>]+<id>"
 )
 
 func NewStartCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
@@ -110,12 +109,14 @@ func NewStartCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 					)
 				}
 			}
-			seedServers, err := parseSeeds(seeds)
-			if err != nil {
-				sendEnv(mgr, env, conf, err)
-				return err
+			if len(seeds) != 0 {
+				seedServers, err := processSeeds(conf, seeds)
+				if err != nil {
+					sendEnv(mgr, env, conf, err)
+					return err
+				}
+				conf.Redpanda.SeedServers = seedServers
 			}
-			conf.Redpanda.SeedServers = seedServers
 			advertisedKafka = stringOr(
 				advertisedKafka,
 				os.Getenv("REDPANDA_ADVERTISE_KAFKA_ADDRESS"),
@@ -138,6 +139,7 @@ func NewStartCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 				return err
 			}
 			if advRPCApi != nil {
+				log.Infof("%v", advRPCApi)
 				conf.Redpanda.AdvertisedRPCAPI = advRPCApi
 			}
 			installDirectory, err := cli.GetOrFindInstallDir(fs, installDirFlag)
@@ -190,8 +192,8 @@ func NewStartCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 		"seeds",
 		"s",
 		[]string{},
-		"A list of seed nodes to connect to, in the format "+
-			seedFormat,
+		"A list of seed nodes to connect to, in the format"+
+			" <host>:<port>",
 	)
 	command.Flags().StringVar(
 		&advertisedKafka,
@@ -591,44 +593,26 @@ func parseFlags(flags []string) map[string]string {
 	return parsed
 }
 
-func parseSeeds(seeds []string) ([]config.SeedServer, error) {
+func processSeeds(conf *config.Config, seeds []string) ([]config.SeedServer, error) {
 	seedServers := []config.SeedServer{}
-	for _, s := range seeds {
-		addressID := strings.Split(s, "+")
-		if len(addressID) != 2 {
-			return seedServers, fmt.Errorf(
-				"Couldn't parse seed '%s': Format doesn't"+
-					" conform to %s."+
-					" Missing ID.",
-				s,
-				seedFormat,
-			)
+	client, err := kafka.InitClientWithConf(conf, seeds...)
+	if err != nil {
+		return nil, err
+	}
+	brokers := client.Brokers()
+	for _, b := range brokers {
+		// Don't include self.
+		if conf.Redpanda.Id == int(b.ID()) {
+			continue
 		}
-		id, err := strconv.Atoi(strings.Trim(addressID[1], " "))
+		addr, err := parseAddress(b.Addr())
 		if err != nil {
-			return seedServers, fmt.Errorf(
-				"Couldn't parse seed '%s': ID must be an int.",
-				s,
-			)
+			return nil, err
 		}
-		addr, err := parseAddress(addressID[0])
-		if err != nil {
-			return seedServers, fmt.Errorf(
-				"Couldn't parse seed '%s': %v",
-				s,
-				err,
-			)
-		}
-		if addr == nil {
-			return seedServers, fmt.Errorf(
-				"Couldn't parse seed '%s': empty address",
-				s,
-			)
-		}
-		seedServers = append(
-			seedServers,
-			config.SeedServer{Host: *addr, Id: id},
-		)
+		seedServers = append(seedServers, config.SeedServer{
+			Host: *addr,
+			Id:   int(b.ID()),
+		})
 	}
 	return seedServers, nil
 }
