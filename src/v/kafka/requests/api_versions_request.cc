@@ -17,6 +17,7 @@
 #include "kafka/requests/fetch_request.h"
 #include "kafka/requests/find_coordinator_request.h"
 #include "kafka/requests/heartbeat_request.h"
+#include "kafka/requests/init_producer_id_request.h"
 #include "kafka/requests/join_group_request.h"
 #include "kafka/requests/leave_group_request.h"
 #include "kafka/requests/list_groups_request.h"
@@ -54,6 +55,9 @@ using request_types = make_request_types<
   metadata_api,
   offset_fetch_api,
   find_coordinator_api,
+#ifndef SUPPRESS_IDEMPOTENT_PRODUCER
+  init_producer_id_api,
+#endif
   list_groups_api,
   api_versions_api,
   join_group_api,

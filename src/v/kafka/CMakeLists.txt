@@ -16,6 +16,7 @@ set(request_srcs
   requests/heartbeat_request.cc
   requests/leave_group_request.cc
   requests/sync_group_request.cc
+  requests/init_producer_id_request.cc
   requests/create_topics_request.cc
   requests/offset_commit_request.cc
   requests/delete_topics_request.cc

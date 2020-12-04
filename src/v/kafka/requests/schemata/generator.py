@@ -180,11 +180,11 @@ path_type_map = {
 }
 
 # a few kafka field types specify an entity type
-entity_type_map = dict(
-    groupId=("kafka::group_id", "string"),
-    topicName=("model::topic", "string"),
-    brokerId=("model::node_id", "int32"),
-)
+entity_type_map = dict(groupId=("kafka::group_id", "string"),
+                       transactionalId=("kafka::transactional_id", "string"),
+                       topicName=("model::topic", "string"),
+                       brokerId=("model::node_id", "int32"),
+                       producerId=("kafka::producer_id", "int64"))
 
 # mapping specified as a combination of native type and field name
 field_name_type_map = {
@@ -715,7 +715,7 @@ void {{ struct.name }}::decode(request_reader& reader, [[maybe_unused]] api_vers
 {{- struct_serde(struct, field_decoder) | indent }}
 }
 {%- else %}
-void {{ struct.name }}::decode(iobuf buf, api_version version) {
+void {{ struct.name }}::decode(iobuf buf, [[maybe_unused]] api_version version) {
     request_reader reader(std::move(buf));
 
 {{- struct_serde(struct, field_decoder) | indent }}
