@@ -66,6 +66,10 @@ steps:
   name: 'gcr.io/redpandaci/builder'
   args: ['./build/venv/v/bin/vtools', 'build', 'cpp', '--conf=vtools/vtools/artifacts/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml', '--skip-external']
 
+- id: 'test redpanda'
+  name: 'gcr.io/redpandaci/builder'
+  args: ['./build/venv/v/bin/vtools', 'test', 'cpp', '--conf=vtools/vtools/artifacts/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml']
+
 - id: 'create and archive distro packages'
   name: 'gcr.io/redpandaci/builder'
   entrypoint: bash
