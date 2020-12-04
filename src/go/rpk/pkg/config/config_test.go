@@ -33,6 +33,7 @@ func getValidConfig() *Config {
 			2,
 		},
 	}
+	conf.Redpanda.DeveloperMode = false
 	conf.Rpk = RpkConfig{
 		EnableUsageStats:         true,
 		TuneNetwork:              true,
@@ -198,11 +199,12 @@ func TestDefault(t *testing.T) {
 	expected := &Config{
 		ConfigFile: "/etc/redpanda/redpanda.yaml",
 		Redpanda: RedpandaConfig{
-			Directory: "/var/lib/redpanda/data",
-			RPCServer: SocketAddress{"0.0.0.0", 33145},
-			KafkaApi:  SocketAddress{"0.0.0.0", 9092},
-			AdminApi:  SocketAddress{"0.0.0.0", 9644},
-			Id:        0,
+			Directory:     "/var/lib/redpanda/data",
+			RPCServer:     SocketAddress{"0.0.0.0", 33145},
+			KafkaApi:      SocketAddress{"0.0.0.0", 9092},
+			AdminApi:      SocketAddress{"0.0.0.0", 9644},
+			Id:            0,
+			DeveloperMode: true,
 		},
 		Rpk: RpkConfig{
 			CoredumpDir: "/var/lib/redpanda/coredump",
@@ -853,7 +855,7 @@ func TestReadAsJSON(t *testing.T) {
 				return mgr.Write(conf)
 			},
 			path:     Default().ConfigFile,
-			expected: `{"config_file":"/etc/redpanda/redpanda.yaml","redpanda":{"admin":{"address":"0.0.0.0","port":9644},"data_directory":"/var/lib/redpanda/data","developer_mode":false,"kafka_api":{"address":"0.0.0.0","port":9092},"node_id":0,"rpc_server":{"address":"0.0.0.0","port":33145},"seed_servers":[]},"rpk":{"coredump_dir":"/var/lib/redpanda/coredump","enable_memory_locking":false,"enable_usage_stats":false,"overprovisioned":false,"tune_aio_events":false,"tune_clocksource":false,"tune_coredump":false,"tune_cpu":false,"tune_disk_irq":false,"tune_disk_nomerges":false,"tune_disk_scheduler":false,"tune_fstrim":false,"tune_network":false,"tune_swappiness":false,"tune_transparent_hugepages":false}}`,
+			expected: `{"config_file":"/etc/redpanda/redpanda.yaml","redpanda":{"admin":{"address":"0.0.0.0","port":9644},"data_directory":"/var/lib/redpanda/data","developer_mode":true,"kafka_api":{"address":"0.0.0.0","port":9092},"node_id":0,"rpc_server":{"address":"0.0.0.0","port":33145},"seed_servers":[]},"rpk":{"coredump_dir":"/var/lib/redpanda/coredump","enable_memory_locking":false,"enable_usage_stats":false,"overprovisioned":false,"tune_aio_events":false,"tune_clocksource":false,"tune_coredump":false,"tune_cpu":false,"tune_disk_irq":false,"tune_disk_nomerges":false,"tune_disk_scheduler":false,"tune_fstrim":false,"tune_network":false,"tune_swappiness":false,"tune_transparent_hugepages":false}}`,
 		},
 		{
 			name:           "it should fail if the the config isn't found",
@@ -889,7 +891,7 @@ func TestReadFlat(t *testing.T) {
 		"redpanda.rpc_server":            "0.0.0.0:33145",
 		"redpanda.seed_servers.1000":     "192.168.167.0:1337",
 		"redpanda.seed_servers.1001":     "192.168.167.1:1337",
-		"redpanda.developer_mode":        "false",
+		"redpanda.developer_mode":        "true",
 		"rpk.coredump_dir":               "/var/lib/redpanda/coredump",
 		"rpk.enable_memory_locking":      "false",
 		"rpk.enable_usage_stats":         "false",
