@@ -41,77 +41,31 @@ size_t iobuf_body::value_type::size() const { return _size_bytes; }
 bool iobuf_body::value_type::is_done() const { return _done; }
 
 void iobuf_body::value_type::append(boost::asio::const_buffer buf) {
-    _seq.push_back(buf);
-}
-
-iobuf iobuf_body::value_type::consume(ss::temporary_buffer<char>& source) {
-    vlog(http_log.trace, "iobuf_body.consume, _seq.size() = {}", _seq.size());
-    iobuf tmp;
-    std::string_view source_view(source.get(), source.size());
-    for (auto buf : _seq) {
-        // check that the buf is inside the source (should always be the case if
-        // iobuf_body is used correctly)
-        std::string_view buf_view(
-          static_cast<const char*>(buf.data()), buf.size());
-        auto [found, offset, length] = range_to_offset(source_view, buf_view);
-        vassert(found, "Invalid buffer sequence");
-        // share the source and put it into the resulting iobuf
-        tmp.append(source.share(offset, length));
-        _size_bytes += buf.size();
-    }
-    _seq.clear();
-    return tmp;
-}
-
-iobuf iobuf_body::value_type::consume(iobuf& source, size_t limit) {
-    // Invariant 1: '_seq' contains subsets of 'source', every element in '_seq'
-    // fits
-    //              inside some fragment in 'source' fully. The memory order is
-    //              the same in both containers.
-    // Invariant 2: 'limit' is greater or equal to combined '_seq' sizes
-    vlog(
-      http_log.trace,
-      "iobuf_body.consume, _seq.size() = {}, limit = {}",
-      _seq.size(),
-      limit);
-    boost::ignore_unused(limit);
-#ifndef NDEBUG
-    size_t sumsize = 0;
-    for (auto const& cbuf : _seq) {
-        sumsize += cbuf.size();
-    }
-    vassert(
-      sumsize <= limit, "consume wasn't invoked suffecient number of times");
-#endif
-    iobuf tmp;
-    // _seq is expected to have only one element because of eager parsing
-    // in rare and tricky cases it might have two
-    for (auto buf : _seq) {
-        // check that the buf is inside the source (should always be the case if
-        // iobuf_body is used correctly)
-        std::string_view buf_view(
-          static_cast<const char*>(buf.data()), buf.size());
-
-        bool offset_found = false;
-        for (auto& frag : source) {
-            // Should hit right fragment on a first iteration
-            std::string_view source_view(frag.get(), frag.size());
-            auto [incl, offset, length] = range_to_offset(
-              source_view, buf_view);
+    if (_zc_source) {
+        // check that the buffer is inside the _zc_source
+        std::string_view vbuf(static_cast<const char*>(buf.data()), buf.size());
+        for (auto& frag : _zc_source->get()) {
+            std::string_view vsrc(frag.get(), frag.size());
+            auto [incl, offset, length] = range_to_offset(vsrc, vbuf);
             if (incl) {
-                // share the source and put it into the resulting iobuf
-                tmp.append(frag.share(offset, length));
+                _produced.append(frag.share(offset, length));
                 _size_bytes += buf.size();
-                offset_found = true;
-                break;
+                return;
             }
         }
-        vassert(
-          offset_found,
-          "incorect use of iobuf_consume, should be called after every parser "
-          "inovcation");
     }
-    _seq.clear();
+    _size_bytes += buf.size();
+    _produced.append(static_cast<const char*>(buf.data()), buf.size());
+}
+
+void iobuf_body::value_type::set_temporary_source(iobuf& buffer) {
+    _zc_source = std::ref(buffer);
+}
+
+iobuf iobuf_body::value_type::consume() {
+    _zc_source = std::nullopt;
+    iobuf tmp;
+    std::swap(tmp, _produced);
     return tmp;
 }
 

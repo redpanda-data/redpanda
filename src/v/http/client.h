@@ -87,8 +87,6 @@ public:
         ss::future<iobuf> recv_some();
 
     private:
-        ss::future<> do_recv_some(iobuf& result);
-
         client* _client;
         response_parser _parser;
         iobuf _buffer; /// store incomplete tail elements

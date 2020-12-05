@@ -70,27 +70,19 @@ iobuf_to_constbufseq(const iobuf& iobuf) {
     return seq;
 }
 
-ss::future<iobuf> client::response_stream::recv_some() {
-    return ss::do_with(iobuf(), [this](iobuf& result) {
-        return do_recv_some(result).then([&result]() {
-            return ss::make_ready_future<iobuf>(std::move(result));
-        });
-    });
-}
-
 /// Return failed future if ec is set, otherwise return future in ready state
-static ss::future<> fail_on_error(const boost::beast::error_code& ec) {
+static ss::future<iobuf> fail_on_error(const boost::beast::error_code& ec) {
     if (!ec) {
-        return ss::make_ready_future<>();
+        return ss::make_ready_future<iobuf>(iobuf());
     }
     vlog(http_log.error, "'{}' error triggered", ec);
     boost::system::system_error except(ec);
-    return ss::make_exception_future<>(except);
+    return ss::make_exception_future<iobuf>(except);
 }
 
-ss::future<> client::response_stream::do_recv_some(iobuf& result) {
+ss::future<iobuf> client::response_stream::recv_some() {
     return _client->_in.read().then(
-      [this, &result](ss::temporary_buffer<char> chunk) mutable {
+      [this](ss::temporary_buffer<char> chunk) mutable {
           vlog(http_log.trace, "chunk received, chunk length {}", chunk.size());
           if (chunk.empty()) {
               // NOTE: to make the parser stop we need to use the 'put_eof'
@@ -104,6 +96,7 @@ ss::future<> client::response_stream::do_recv_some(iobuf& result) {
               return fail_on_error(ec);
           }
           _buffer.append(std::move(chunk));
+          _parser.get().body().set_temporary_source(_buffer);
           // Feed the parser
           if (_parser.is_done()) {
               vlog(
@@ -112,22 +105,20 @@ ss::future<> client::response_stream::do_recv_some(iobuf& result) {
                 _buffer.size_bytes());
               // this is an error, shouldn't get here if parser is done
               std::runtime_error err("received more data than expected");
-              return ss::make_exception_future<>(err);
+              return ss::make_exception_future<iobuf>(err);
           }
           auto bufseq = iobuf_to_constbufseq(_buffer);
           boost::beast::error_code ec;
           size_t noctets = _parser.put(bufseq, ec);
           if (ec == boost::beast::http::error::need_more) {
-              // The only way to progress for the parser is to add data to
-              // the _buffer which means that we have to read the socket
-              // next
-              vlog(
-                http_log.trace,
-                "need_more, noctents {}, size {}, ec {}",
-                noctets,
-                _buffer.size_bytes(),
-                ec);
-              return ss::make_ready_future<>();
+              // The parser is in the eager mode. This means
+              // that the data will be produced (iobuf_body::value_type::append
+              // will be called) anyway. The parser won't cache any data
+              // internally and produce partial results which is an expected
+              // behaviour. Without eager mode the parser caches partial results
+              // and returns 'need_more'. The data is produced after subsequent
+              // 'put' call(s) is made.
+              ec = {};
           }
           if (ec) {
               // Parser error, response doesn't make sence
@@ -137,12 +128,9 @@ ss::future<> client::response_stream::do_recv_some(iobuf& result) {
                 ec,
                 _buffer.size_bytes());
               _buffer.clear();
-              boost::system::system_error error(ec);
-              return ss::make_exception_future<>(std::move(error));
+              return fail_on_error(ec);
           }
-          auto out = _parser.get().body().consume(_buffer, noctets);
-
-          result.append(std::move(out));
+          auto out = _parser.get().body().consume();
           _buffer.trim_front(noctets);
           if (!_buffer.empty()) {
               vlog(
@@ -151,10 +139,10 @@ ss::future<> client::response_stream::do_recv_some(iobuf& result) {
                 "{}, ec {}",
                 noctets,
                 _buffer.size_bytes(),
-                result.size_bytes(),
+                out.size_bytes(),
                 ec);
           }
-          return ss::make_ready_future<>();
+          return ss::make_ready_future<iobuf>(std::move(out));
       });
 }
 

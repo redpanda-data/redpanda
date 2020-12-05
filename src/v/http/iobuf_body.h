@@ -80,18 +80,23 @@ struct iobuf_body {
 
         bool is_done() const;
 
+        /// Produce buffer
         void append(boost::asio::const_buffer buf);
 
-        /// Construct new iobuf using the pointers from the buffer sequence
-        /// '_seq' and source buffer 'source'.
-        iobuf consume(ss::temporary_buffer<char>& source);
+        /// Construct new iobuf using the pointers from the produced sequence
+        iobuf consume();
 
-        /// Construct new iobuf using the pointers from the buffer sequence
-        /// '_seq' and source iobuf 'source'. The 'limit' contains the actual
-        /// number of bytes consumed from the begining of the 'source' and
-        /// used for sanity checks.
-        iobuf consume(iobuf& source, size_t limit);
+        /// Set source buffer for zero-copy optimization
+        ///
+        /// \note The buffer is used by the following 'append' calls.
+        /// The 'consume' method resets the buffer. The method call
+        /// is optional. If it's not called before 'append' zero copy
+        /// mechanics won't be used. If wrong buffer will be passed to
+        /// the method nothing bad will happen as well.
+        void set_temporary_source(iobuf& buffer);
 
+        /// This method is called by the parser when the response
+        /// body is consumed.
         void finish();
 
     private:
@@ -99,7 +104,8 @@ struct iobuf_body {
 
         size_t _size_bytes = 0;
         bool _done = false;
-        std::vector<boost::asio::const_buffer> _seq;
+        std::optional<std::reference_wrapper<iobuf>> _zc_source;
+        iobuf _produced;
     };
 
     /// Reader implementation that pushes data to iobuf
