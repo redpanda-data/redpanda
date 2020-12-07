@@ -288,18 +288,12 @@ configuration::configuration()
       "follower",
       required::no,
       5s)
-  , replicate_request_debounce_timeout_ms(
-      *this,
-      "replicate_request_debounce_timeout_ms",
-      "Max duration before dispatching batched replicate requests",
-      required::no,
-      4ms)
   , raft_replicate_batch_window_size(
       *this,
       "raft_replicate_batch_window_size",
       "Max size of requests cached for replication",
       required::no,
-      128_KiB)
+      1_MiB)
   , reclaim_min_size(
       *this,
       "reclaim_min_size",
