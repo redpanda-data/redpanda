@@ -188,6 +188,9 @@ consensus::success_reply consensus::update_follower_index(
           "Append entries response send to wrong group: {}, current group: {}",
           reply.group));
     }
+
+    update_node_hbeat_timestamp(node);
+
     if (
       seq < idx.last_received_seq
       && reply.last_dirty_log_index < _log.offsets().dirty_offset) {
@@ -235,8 +238,6 @@ consensus::success_reply consensus::update_follower_index(
         });
         return success_reply::no;
     }
-
-    update_node_hbeat_timestamp(node);
 
     // If recovery is in progress the recovery STM will handle follower index
     // updates
