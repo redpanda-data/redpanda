@@ -17,6 +17,8 @@
 #include "units.h"
 #include "utils/mutex.h"
 
+#include <seastar/core/semaphore.hh>
+
 #include <absl/container/flat_hash_map.h>
 namespace raft {
 class consensus;
@@ -27,12 +29,10 @@ public:
         ss::promise<result<replicate_result>> _promise;
         replicate_result ret;
         size_t record_count;
+        ss::semaphore_units<> units;
     };
     using item_ptr = ss::lw_shared_ptr<item>;
-    explicit replicate_batcher(
-      consensus* ptr,
-      std::chrono::milliseconds debounce_duration,
-      size_t cache_size);
+    explicit replicate_batcher(consensus* ptr, size_t cache_size);
 
     replicate_batcher(replicate_batcher&&) noexcept = default;
     replicate_batcher& operator=(replicate_batcher&&) noexcept = delete;
@@ -55,13 +55,9 @@ public:
 
 private:
     ss::future<item_ptr> do_cache(model::record_batch_reader&&);
-    void dispatch_background_flush();
 
     consensus* _ptr;
-    std::chrono::milliseconds _debounce_duration;
-    size_t _max_batch_size;
-    size_t _pending_bytes{0};
-    timer_type _flush_timer;
+    ss::semaphore _max_batch_size_sem;
 
     std::vector<item_ptr> _item_cache;
     ss::circular_buffer<model::record_batch> _data_cache;
