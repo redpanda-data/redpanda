@@ -56,6 +56,13 @@ struct bytes_type_eq {
 ss::sstring to_hex(bytes_view b);
 ss::sstring to_hex(const bytes& b);
 
+template<typename Char, size_t Size>
+inline ss::sstring to_hex(const std::array<Char, Size>& data) {
+    static_assert(sizeof(Char) == 1, "to_hex only accepts bytes");
+    return to_hex(bytes_view(
+      reinterpret_cast<const uint8_t*>(data.data()), Size)); // NOLINT
+}
+
 std::ostream& operator<<(std::ostream& os, const bytes& b);
 std::ostream& operator<<(std::ostream& os, const bytes_opt& b);
 

@@ -35,8 +35,6 @@ seastar_generate_swagger(
   OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/api/api-doc/post_topics_name.json.h
 )
 
-find_package(Base64 REQUIRED)
-
 v_cc_library(
   NAME rest_application
   SRCS
@@ -47,12 +45,12 @@ v_cc_library(
     probe.cc
     proxy.cc
     server.cc
-    $<TARGET_OBJECTS:Base64::base64>
   DEPS
     v::pandaproxy_client
     v::syschecks
     v::kafka
     v::ssx
+    v::utils
   )
 
 add_executable(pandaproxy
