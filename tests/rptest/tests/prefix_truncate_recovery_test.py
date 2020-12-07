@@ -17,7 +17,7 @@ from ducktape.utils.util import wait_until
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 
-from vtools.vlib import storage as vstorage
+from storage import storage as vstorage
 
 
 class PrefixTruncateRecoveryTest(RedpandaTest):

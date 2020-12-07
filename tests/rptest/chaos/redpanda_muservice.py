@@ -48,6 +48,8 @@ class RedpandaMuService(MuService):
     READY_TIMEOUT_SEC = 10
     V_DEV_MOUNT = "/opt/v"
 
+    BUILD_DIR_KEY = "redpanda_build_dir"
+    DEFAULT_BUILD_DIR = "vbuild"
     BUILD_TYPE_KEY = "redpanda_build_type"
     DEFAULT_BUILD_TYPE = "release"
     COMPILER_KEY = "redpanda_compiler"
@@ -164,12 +166,19 @@ class RedpandaMuService(MuService):
         packaging = service.context.globals.get(
             RedpandaMuService.PACKAGING_KEY,
             RedpandaMuService.DEFAULT_PACKAGING)
+        build_dir = service.context.globals.get(
+            RedpandaMuService.BUILD_DIR_KEY,
+            RedpandaMuService.DEFAULT_BUILD_DIR)
 
         if packaging not in {"dir"}:
             raise RuntimeError("Packaging type %s not supported" % packaging)
 
-        path = os.path.join(RedpandaMuService.V_DEV_MOUNT, "build", build_type,
-                            compiler, "dist/local/redpanda/bin", name)
+        path = os.path.join(RedpandaMuService.V_DEV_MOUNT, build_dir,
+                            build_type, compiler, "dist/local/redpanda/bin",
+                            name)
+
+        if not os.path.exists(path):
+            raise RuntimeError("Couldn't find binary %s: %s", name, path)
 
         service.logger.debug("Found binary %s: %s", name, path)
 

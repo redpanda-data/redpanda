@@ -39,6 +39,8 @@ class RedpandaService(Service):
     V_DEV_MOUNT = "/opt/v"
 
     # ducktape `--globals` for selecting build
+    BUILD_DIR_KEY = "redpanda_build_dir"
+    DEFAULT_BUILD_DIR = "vbuild"
     BUILD_TYPE_KEY = "redpanda_build_type"
     DEFAULT_BUILD_TYPE = "release"
     COMPILER_KEY = "redpanda_compiler"
@@ -136,12 +138,17 @@ class RedpandaService(Service):
                                              RedpandaService.DEFAULT_COMPILER)
         packaging = self._context.globals.get(
             RedpandaService.PACKAGING_KEY, RedpandaService.DEFAULT_PACKAGING)
+        build_dir = self._context.globals.get(
+            RedpandaService.BUILD_DIR_KEY, RedpandaService.DEFAULT_BUILD_DIR)
 
         if packaging not in {"dir"}:
             raise RuntimeError("Packaging type %s not supported" % packaging)
 
-        path = os.path.join(RedpandaService.V_DEV_MOUNT, "build", build_type,
+        path = os.path.join(RedpandaService.V_DEV_MOUNT, build_dir, build_type,
                             compiler, "dist/local/redpanda/bin", name)
+
+        if not os.path.exists(path):
+            raise RuntimeError("Couldn't find binary %s: %s", name, path)
 
         self.logger.debug("Found binary %s: %s", name, path)
 
