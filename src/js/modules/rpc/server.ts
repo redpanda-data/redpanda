@@ -17,26 +17,22 @@ import {
   ProcessBatchRequest,
   ProcessBatchRequestItem,
 } from "../domain/generatedRpc/generatedClasses";
-import { Script_ManagerClient as ManagementClient } from "./serverAndClients/server";
 import { SupervisorServer } from "./serverAndClients/processBatch";
 
 export class ProcessBatchServer extends SupervisorServer {
   private readonly repository: Repository;
   private fileManager: FileManager;
-  managementClient: ManagementClient;
 
   constructor(activeDir: string, inactiveDir: string, submitDir: string) {
     super();
     // TODO Can lookup the port redpanda is listening for copros on in the redpanda.yaml file
-    this.managementClient = new ManagementClient(43118);
     this.applyCoprocessor = this.applyCoprocessor.bind(this);
     this.repository = new Repository();
     this.fileManager = new FileManager(
       this.repository,
       submitDir,
       activeDir,
-      inactiveDir,
-      this.managementClient
+      inactiveDir
     );
   }
 

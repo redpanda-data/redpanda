@@ -36,15 +36,16 @@ const logger = newLogger("FileManager");
 class FileManager {
   private submitDirWatcher: FSWatcher;
   private activeDirWatcher: FSWatcher;
+  private managementClient: ManagementClient;
 
   constructor(
     private repository: Repository,
     private submitDir: string,
     private activeDir: string,
-    private inactiveDir: string,
-    public managementClient: ManagementClient
+    private inactiveDir: string
   ) {
     try {
+      this.managementClient = new ManagementClient(43118);
       this.readCoprocessorFolder(repository, this.activeDir, false)
         .then(() => this.readCoprocessorFolder(repository, this.submitDir))
         .then(() => this.startWatchers(repository));
