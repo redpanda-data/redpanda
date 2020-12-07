@@ -79,6 +79,17 @@ const createProcessBatchRequest = (
   };
 };
 
+describe("Client", function () {
+  it("create() should not return a client if fails to connect", () => {
+    return SupervisorClient.create(40000)
+      .then((_c) => false)
+      .catch((_e) => true)
+      .then((value) => {
+        assert(value, "A client should not have been created");
+      });
+  });
+});
+
 describe("Server", function () {
   describe("Given a Request", function () {
     beforeEach(() => {
@@ -87,8 +98,15 @@ describe("Server", function () {
       manageServer.disable_copros = () => Promise.resolve({ inputs: [0] });
       manageServer.listen(43118);
       server = new ProcessBatchServer("a", "i", "s");
-      server.listen(4300);
-      client = new SupervisorClient(4300);
+      server.listen(43000);
+      return new Promise<void>((resolve, reject) => {
+        return SupervisorClient.create(43000)
+          .then((c) => {
+            client = c;
+            resolve();
+          })
+          .catch((e) => reject(e));
+      });
     });
 
     afterEach(async () => {
