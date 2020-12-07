@@ -135,7 +135,7 @@ class KafkaKV:
         consumer = None
         tps = None
         cid = None
-        init_started = time.time()
+        init_started = time.clock_gettime(time.CLOCK_MONOTONIC)
 
         if len(self.consumers) > 0:
             consumer, tps, cid = self.consumers.pop(0)
@@ -162,8 +162,10 @@ class KafkaKV:
             self.n_consumers += 1
 
         try:
-            metrics["init_us"] = int((time.time() - init_started) * 1000000)
-            catchup_started = time.time()
+            metrics["init_us"] = int(
+                (time.clock_gettime(time.CLOCK_MONOTONIC) - init_started) *
+                1000000)
+            catchup_started = time.clock_gettime(time.CLOCK_MONOTONIC)
             if from_offset is None:
                 consumer.seek_to_beginning(tps[0])
             else:
@@ -215,7 +217,8 @@ class KafkaKV:
                   processed=processed,
                   cid=cid).with_time())
             metrics["catchup_us"] = int(
-                (time.time() - catchup_started) * 1000000)
+                (time.clock_gettime(time.CLOCK_MONOTONIC) - catchup_started) *
+                1000000)
             self.consumers.append((consumer, tps, cid))
             return state
         except:
@@ -226,7 +229,7 @@ class KafkaKV:
             raise
 
     def catchup_beginning(self, consumer_tps, state, to_offset, cmd, metrics):
-        init_started = time.time()
+        init_started = time.clock_gettime(time.CLOCK_MONOTONIC)
 
         if consumer_tps == None:
             try:
@@ -252,8 +255,10 @@ class KafkaKV:
         consumer, tps = consumer_tps
 
         try:
-            metrics["init_us"] = int((time.time() - init_started) * 1000000)
-            catchup_started = time.time()
+            metrics["init_us"] = int(
+                (time.clock_gettime(time.CLOCK_MONOTONIC) - init_started) *
+                1000000)
+            catchup_started = time.clock_gettime(time.CLOCK_MONOTONIC)
             consumer.seek_to_beginning(tps[0])
             processed = 0
 
@@ -295,7 +300,8 @@ class KafkaKV:
                   sent_offset=to_offset,
                   processed=processed).with_time())
             metrics["catchup_us"] = int(
-                (time.time() - catchup_started) * 1000000)
+                (time.clock_gettime(time.CLOCK_MONOTONIC) - catchup_started) *
+                1000000)
             return consumer_tps
         except:
             try:
@@ -320,7 +326,7 @@ class KafkaKV:
         kafkakv_log.info(
             m("executing", cmd=cmd, base_offset=offset).with_time())
 
-        send_started = time.time()
+        send_started = time.clock_gettime(time.CLOCK_MONOTONIC)
         written = None
         try:
             future = self.producer.send(self.topic, msg)
@@ -367,7 +373,9 @@ class KafkaKV:
                                 " on sending")
             raise
 
-        metrics["send_us"] = int((time.time() - send_started) * 1000000)
+        metrics["send_us"] = int(
+            (time.clock_gettime(time.CLOCK_MONOTONIC) - send_started) *
+            1000000)
 
         kafkakv_log.info(
             m("sent", cmd=cmd, base_offset=offset,
