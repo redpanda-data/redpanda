@@ -128,6 +128,7 @@ ss::future<> consensus::stop() {
     _vote_timeout.cancel();
     _as.request_abort();
     _commit_index_updated.broken();
+    _disk_append.broken();
 
     return _event_manager.stop()
       .then([this] { return _bg.close(); })
@@ -316,6 +317,7 @@ void consensus::process_append_entries_reply(
     auto is_success = update_follower_index(node, std::move(r), seq_id);
     if (is_success) {
         maybe_promote_to_voter(node);
+        maybe_update_majority_replicated_index();
         maybe_update_leader_commit_idx();
     }
 }
@@ -406,8 +408,14 @@ consensus::replicate(model::record_batch_reader&& rdr, replicate_options opts) {
                                details::term_assigning_reader>(
                                std::move(rdr), model::term_id(_term)))
             .then([this](storage::append_result res) {
-                // update last_visible_index immediately after append succeed
-                maybe_update_last_visible_index(res.last_offset);
+                // only update visibility upper bound if all quorum replicated
+                // entries are committed already
+                if (_commit_index >= _last_quorum_replicated_index) {
+                    // for relaxed consistency mode update visibility upper
+                    // bound with last offset appended to the log
+                    _visibility_upper_bound_index = std::max(
+                      _visibility_upper_bound_index, res.last_offset);
+                }
                 return result<replicate_result>(
                   replicate_result{.last_offset = res.last_offset});
             });
@@ -432,13 +440,13 @@ void consensus::dispatch_flush_with_lock() {
 model::offset consensus::last_stable_offset() const {
     // TODO: handle transactions, when we implement them, for now LSO is simply
     // equal to max consumable offset
-    return _last_visible_index;
+    return _majority_replicated_index;
 }
 
 ss::future<model::record_batch_reader>
 consensus::do_make_reader(storage::log_reader_config config) {
     // limit to last visible index
-    config.max_offset = std::min(config.max_offset, _last_visible_index);
+    config.max_offset = std::min(config.max_offset, last_visible_index());
     return _log.make_reader(config);
 }
 
@@ -451,7 +459,10 @@ ss::future<model::record_batch_reader> consensus::make_reader(
     }
 
     return _consumable_offset_monitor
-      .wait(details::next_offset(_last_visible_index), *debounce_timeout, _as)
+      .wait(
+        details::next_offset(_majority_replicated_index),
+        *debounce_timeout,
+        _as)
       .then([this, config]() mutable { return do_make_reader(config); });
 }
 
@@ -731,7 +742,7 @@ ss::future<> consensus::start() {
               auto last_applied = read_last_applied();
               if (last_applied > _commit_index) {
                   _commit_index = last_applied;
-                  _last_visible_index = last_applied;
+                  maybe_update_last_visible_index(_commit_index);
                   vlog(
                     _ctxlog.trace, "Recovered commit_index: {}", _commit_index);
               }
@@ -1052,8 +1063,10 @@ consensus::do_append_entries(append_entries_request&& r) {
             return ss::make_ready_future<append_entries_reply>(
               std::move(reply));
         }
-        maybe_update_last_visible_index(
-          std::min(lstats.dirty_offset, r.meta.last_visible_index));
+        auto last_visible = std::min(
+          lstats.dirty_offset, r.meta.last_visible_index);
+        // on the follower leader control visibility of entries in the log
+        maybe_update_last_visible_index(last_visible);
         return maybe_update_follower_commit_idx(
                  model::offset(r.meta.commit_index))
           .then([reply = std::move(reply)]() mutable {
@@ -1089,6 +1102,10 @@ consensus::do_append_entries(append_entries_request&& r) {
         return _log
           .truncate(storage::truncate_config(truncate_at, _io_priority))
           .then([this, truncate_at] {
+              _last_quorum_replicated_index = std::min(
+                details::prev_offset(truncate_at),
+                _last_quorum_replicated_index);
+
               return _configuration_manager.truncate(truncate_at).then([this] {
                   _probe.configuration_update();
                   update_follower_stats(_configuration_manager.get_latest());
@@ -1125,8 +1142,8 @@ consensus::do_append_entries(append_entries_request&& r) {
           if (flush) {
               f = f.then([this] { return flush_log(); });
           }
-          maybe_update_last_visible_index(
-            std::min(ofs.last_offset, m.last_visible_index));
+          auto last_visible = std::min(ofs.last_offset, m.last_visible_index);
+          maybe_update_last_visible_index(last_visible);
           return f.then(
             [this, m = std::move(m), ofs = std::move(ofs)]() mutable {
                 return maybe_update_follower_commit_idx(
@@ -1451,6 +1468,7 @@ consensus::disk_append(model::record_batch_reader&& reader) {
              _log.make_appender(cfg),
              cfg.timeout)
       .then([this](std::tuple<ret_t, std::vector<offset_configuration>> t) {
+          _disk_append.broadcast();
           auto& [ret, configurations] = t;
           _has_pending_flushes = true;
           // TODO
@@ -1599,6 +1617,15 @@ consensus::do_maybe_update_leader_commit_idx(ss::semaphore_units<> u) {
           _commit_index);
         _commit_index_updated.broadcast();
         _event_manager.notify_commit_index(_commit_index);
+        // if we successfully acknowledged all quorum writes we can make pending
+        // relaxed consistency requests visible
+        if (_commit_index >= _last_quorum_replicated_index) {
+            maybe_update_last_visible_index(lstats.dirty_offset);
+        } else {
+            // still have to wait for some quorum consistency requests to be
+            // committed
+            maybe_update_last_visible_index(_commit_index);
+        }
         maybe_update_last_visible_index(_commit_index);
         return maybe_commit_configuration(std::move(u));
     }
@@ -1620,7 +1647,6 @@ consensus::maybe_update_follower_commit_idx(model::offset request_commit_idx) {
               _ctxlog.trace, "Follower commit index updated {}", _commit_index);
             _commit_index_updated.broadcast();
             _event_manager.notify_commit_index(_commit_index);
-            maybe_update_last_visible_index(_commit_index);
         }
     }
     return ss::make_ready_future<>();
@@ -1910,8 +1936,22 @@ ss::future<> consensus::remove_persistent_state() {
 }
 
 void consensus::maybe_update_last_visible_index(model::offset offset) {
-    _last_visible_index = std::max(_last_visible_index, offset);
-    _consumable_offset_monitor.notify(_last_visible_index);
+    _visibility_upper_bound_index = std::max(
+      _visibility_upper_bound_index, offset);
+    _majority_replicated_index = std::max(_majority_replicated_index, offset);
+    _consumable_offset_monitor.notify(last_visible_index());
 }
 
+void consensus::maybe_update_majority_replicated_index() {
+    auto majority_match = config().quorum_match([this](model::node_id id) {
+        if (id == _self) {
+            return _log.offsets().dirty_offset;
+        }
+        return _fstats.get(id).last_dirty_log_index;
+    });
+
+    _majority_replicated_index = std::max(
+      _majority_replicated_index, majority_match);
+    _consumable_offset_monitor.notify(last_visible_index());
+}
 } // namespace raft

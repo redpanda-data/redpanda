@@ -105,7 +105,7 @@ public:
           .term = _term,
           .prev_log_index = lstats.dirty_offset,
           .prev_log_term = lstats.dirty_offset_term,
-          .last_visible_index = _last_visible_index};
+          .last_visible_index = last_visible_index()};
     }
     raft::group_id group() const { return _group; }
     model::term_id term() const { return _term; }
@@ -152,13 +152,17 @@ public:
      * Last visible offset is updated in two scenarios
      *
      * - commited offset is updated (consistency_level=quorum)
-     * - when batch with was appended to the leader log with relaxed consistency
+     * - when batch that was appendend to the leader log is safely replicated on
+     *   majority of nodes
      *
      * We always update last visible index with std::max(prev,
      * possible_value) to guarantee its monotonicity.
      *
      */
-    model::offset last_visible_index() const { return _last_visible_index; };
+    model::offset last_visible_index() const {
+        return std::min(
+          _majority_replicated_index, _visibility_upper_bound_index);
+    };
 
     ss::future<offset_configuration>
     wait_for_config_change(model::offset last_seen, ss::abort_source& as) {
@@ -315,6 +319,7 @@ private:
     bytes last_applied_key() const;
 
     void maybe_update_last_visible_index(model::offset);
+    void maybe_update_majority_replicated_index();
     // args
     model::node_id _self;
     raft::group_id _group;
@@ -370,8 +375,18 @@ private:
     model::offset _last_snapshot_index;
     model::term_id _last_snapshot_term;
     configuration_manager _configuration_manager;
-    model::offset _last_visible_index;
+    model::offset _majority_replicated_index;
+    model::offset _visibility_upper_bound_index;
+    /**
+     * We keep an idex of the most recent entry replicated with quorum
+     * consistency level to make sure that all requests replicated with quorum
+     * consistency level will not be visible before they are committed by
+     * majority.
+     */
+    model::offset _last_quorum_replicated_index;
     offset_monitor _consumable_offset_monitor;
+    ss::condition_variable _disk_append;
+
     friend std::ostream& operator<<(std::ostream&, const consensus&);
 };
 

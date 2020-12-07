@@ -15,6 +15,7 @@
 #include "raft/consensus_utils.h"
 #include "raft/tests/raft_group_fixture.h"
 #include "raft/types.h"
+#include "random/generators.h"
 #include "storage/record_batch_builder.h"
 #include "storage/tests/utils/disk_log_builder.h"
 #include "storage/tests/utils/random_batch.h"
@@ -524,4 +525,69 @@ FIXTURE_TEST(test_snapshot_recovery_last_config, raft_test_fixture) {
       "After recovery state is consistent");
 
     validate_logs_replication(gr);
+};
+
+FIXTURE_TEST(test_last_visible_offset_relaxed_consistency, raft_test_fixture) {
+    raft_group gr = raft_group(raft::group_id(0), 3);
+    gr.enable_all();
+    gr.wait_for_leader().get0();
+    // disable two nodes
+    std::vector<model::node_id> disabled;
+    model::node_id leader_id;
+    for (auto& m : gr.get_members()) {
+        if (!m.second.consensus->is_leader()) {
+            disabled.push_back(m.first);
+        } else {
+            leader_id = m.first;
+        }
+    }
+    for (auto id : disabled) {
+        gr.disable_node(id);
+    }
+    auto leader_raft = gr.get_member(leader_id).consensus;
+    auto last_visible = leader_raft->last_visible_index();
+
+    // replicate some batches with relaxed consistency
+    replicate_random_batches(gr, 20, raft::consistency_level::leader_ack)
+      .get0();
+
+    // check last visible offset, make sure it is
+    auto new_last_visible = leader_raft->last_visible_index();
+    // last visible index couldn't change as there is no majority
+    BOOST_REQUIRE_EQUAL(last_visible, new_last_visible);
+    // enable nodes
+    for (auto id : disabled) {
+        gr.enable_node(id);
+    }
+
+    validate_logs_replication(gr);
+
+    wait_for(
+      10s,
+      [this, &gr] { return are_all_consumable_offsets_are_the_same(gr); },
+      "After recovery state is consistent");
+    auto updated_last_visible = leader_raft->last_visible_index();
+    BOOST_REQUIRE_GT(updated_last_visible, last_visible);
+};
+
+FIXTURE_TEST(test_mixed_consisteny_levels, raft_test_fixture) {
+    raft_group gr = raft_group(raft::group_id(0), 3);
+    gr.enable_all();
+    bool success = false;
+    for (int i = 0; i < 10; ++i) {
+        auto lvl = random_generators::get_int(0, 10) > 5
+                     ? raft::consistency_level::leader_ack
+                     : raft::consistency_level::quorum_ack;
+        success = replicate_random_batches(
+                    gr, 2, raft::consistency_level::leader_ack)
+                    .get0();
+        BOOST_REQUIRE(success);
+    }
+
+    validate_logs_replication(gr);
+
+    wait_for(
+      10s,
+      [this, &gr] { return are_all_consumable_offsets_are_the_same(gr); },
+      "After recovery state is consistent");
 };

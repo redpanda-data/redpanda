@@ -45,6 +45,7 @@ private:
     model::offset _base_batch_offset;
     model::offset _last_batch_offset;
     model::offset _committed_offset;
+    model::term_id _term;
     ss::io_priority_class _prio;
     ctx_log _ctxlog;
     // tracking follower snapshot delivery
