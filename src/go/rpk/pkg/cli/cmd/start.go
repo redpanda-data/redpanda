@@ -169,6 +169,12 @@ func NewStartCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 				return err
 			}
 
+			err = mgr.Write(conf)
+			if err != nil {
+				sendEnv(mgr, env, conf, err)
+				return err
+			}
+
 			sendEnv(mgr, env, conf, nil)
 			rpArgs.ExtraArgs = args
 			launcher := redpanda.NewLauncher(installDirectory, rpArgs)
@@ -200,7 +206,7 @@ func NewStartCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 		"The Kafka address to advertise (<host>:<port>)",
 	)
 	command.Flags().StringVar(
-		&advertisedKafka,
+		&advertisedRPC,
 		"advertise-rpc-addr",
 		"",
 		"The advertised RPC address (<host>:<port>)",
