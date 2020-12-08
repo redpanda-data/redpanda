@@ -92,10 +92,27 @@ ss::future<> recovery_stm::do_recover() {
     }
 
     // read & replicate log entries
-    return f.then([this, follower_next_offset] {
-        return read_range_for_recovery(
-          follower_next_offset, _ptr->_log.offsets().dirty_offset);
-    });
+    return f
+      .then([this, follower_next_offset] {
+          return read_range_for_recovery(
+            follower_next_offset, _ptr->_log.offsets().dirty_offset);
+      })
+      .then([this] {
+          auto meta = get_follower_meta();
+          if (!meta) {
+              _stop_requested = true;
+              return;
+          }
+          /**
+           * since we do not stop recovery for relaxed consistency writes we
+           * have to notify recovery_finished condition variable when follower
+           * is up to date, but before finishing recovery
+           */
+          auto max_offset = _ptr->_log.offsets().dirty_offset();
+          if (meta.value()->match_index == max_offset) {
+              meta.value()->recovery_finished.broadcast();
+          }
+      });
 }
 
 ss::future<> recovery_stm::read_range_for_recovery(
