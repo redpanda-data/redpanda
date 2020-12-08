@@ -85,10 +85,14 @@ ss::future<> recovery_stm::do_recover() {
     auto f = ss::now();
 
     // we do not have next entry for the follower yet, wait for next disk append
+    // of follower state change
     if (lstats.dirty_offset < follower_next_offset) {
-        f = _ptr->_disk_append.wait([this, follower_next_offset] {
-            return _ptr->_log.offsets().dirty_offset >= follower_next_offset;
-        });
+        f = meta.value()
+              ->follower_state_change.wait([this] { return state_changed(); })
+              .handle_exception_type(
+                [this](const ss::broken_condition_variable&) {
+                    _stop_requested = true;
+                });
     }
 
     // read & replicate log entries
@@ -113,6 +117,15 @@ ss::future<> recovery_stm::do_recover() {
               meta.value()->recovery_finished.broadcast();
           }
       });
+}
+
+bool recovery_stm::state_changed() {
+    auto meta = get_follower_meta();
+    if (!meta) {
+        return true;
+    }
+    return _ptr->_log.offsets().dirty_offset
+           >= meta.value()->last_dirty_log_index;
 }
 
 ss::future<> recovery_stm::read_range_for_recovery(

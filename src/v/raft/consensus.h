@@ -327,6 +327,8 @@ private:
 
     void maybe_update_last_visible_index(model::offset);
     void maybe_update_majority_replicated_index();
+
+    void start_dispatching_disk_append_events();
     // args
     model::node_id _self;
     raft::group_id _group;
