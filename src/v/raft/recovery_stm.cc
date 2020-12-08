@@ -316,46 +316,47 @@ ss::future<> recovery_stm::replicate(
     _ptr->update_node_append_timestamp(_node_id);
 
     auto seq = _ptr->next_follower_sequence(_node_id);
-    return dispatch_append_entries(std::move(r)).then([this, seq, dirty_offset = lstats.dirty_offset](auto r) {
-        if (!r) {
-            vlog(
-              _ctxlog.error,
-              "recovery_stm: not replicate entry: {} - {}",
-              r,
-              r.error().message());
-            _stop_requested = true;
-            _ptr->get_probe().recovery_request_error();
-        }
-        _ptr->process_append_entries_reply(
-          _node_id, r.value(), seq, dirty_offset);
-        // If request was reordered we have to stop recovery as follower state
-        // is not known
-        if (seq < _ptr->_fstats.get(_node_id).last_received_seq) {
-            _stop_requested = true;
-            return;
-        }
-        // move the follower next index backward if recovery were not
-        // successfull
-        //
-        // Raft paper:
-        // If AppendEntries fails because of log inconsistency: decrement
-        // nextIndex and retry(§5.3)
+    return dispatch_append_entries(std::move(r))
+      .then([this, seq, dirty_offset = lstats.dirty_offset](auto r) {
+          if (!r) {
+              vlog(
+                _ctxlog.error,
+                "recovery_stm: not replicate entry: {} - {}",
+                r,
+                r.error().message());
+              _stop_requested = true;
+              _ptr->get_probe().recovery_request_error();
+          }
+          _ptr->process_append_entries_reply(
+            _node_id, r.value(), seq, dirty_offset);
+          // If request was reordered we have to stop recovery as follower state
+          // is not known
+          if (seq < _ptr->_fstats.get(_node_id).last_received_seq) {
+              _stop_requested = true;
+              return;
+          }
+          // move the follower next index backward if recovery were not
+          // successfull
+          //
+          // Raft paper:
+          // If AppendEntries fails because of log inconsistency: decrement
+          // nextIndex and retry(§5.3)
 
-        if (r.value().result == append_entries_reply::status::failure) {
-            auto meta = get_follower_meta();
-            if (!meta) {
-                _stop_requested = true;
-                return;
-            }
-            meta.value()->next_index = std::max(
-              model::offset(0), details::prev_offset(_base_batch_offset));
-            vlog(
-              _ctxlog.trace,
-              "Move node {} next index {} backward",
-              _node_id,
-              meta.value()->next_index);
-        }
-    });
+          if (r.value().result == append_entries_reply::status::failure) {
+              auto meta = get_follower_meta();
+              if (!meta) {
+                  _stop_requested = true;
+                  return;
+              }
+              meta.value()->next_index = std::max(
+                model::offset(0), details::prev_offset(_base_batch_offset));
+              vlog(
+                _ctxlog.trace,
+                "Move node {} next index {} backward",
+                _node_id,
+                meta.value()->next_index);
+          }
+      });
 }
 
 clock_type::time_point recovery_stm::append_entries_timeout() {
