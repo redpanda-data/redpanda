@@ -13,12 +13,13 @@ import os
 from os import path
 import sys
 import json
+from enum import Enum
 import jinja2
 from pathlib import Path
 
 PDF_LATENCY = """
 set terminal png size 1600,1200
-set output "pdf.latency.{{ endpoint_idx }}.png"
+set output "pdf.latency.{{ latency_type_name }}.{{ endpoint_idx }}.png"
 set multiplot
 set boxwidth {{ step }}
 has(x) = 1
@@ -36,7 +37,7 @@ set border 11
 set xtics nomirror
 unset ytics
 
-plot "pdf.latency.{{ endpoint_idx }}.log" using 1:(has($2)) notitle with boxes fs solid
+plot "pdf.latency.{{ latency_type_name }}.{{ endpoint_idx }}.log" using 1:(has($2)) notitle with boxes fs solid
 
 set parametric
 plot [t=0:1] {{ p99 }},t notitle lt rgb "black"
@@ -52,7 +53,7 @@ set border 15
 unset xtics
 set ytics auto
 
-plot "pdf.latency.{{ endpoint_idx }}.log" using 1:2 notitle with boxes
+plot "pdf.latency.{{ latency_type_name }}.{{ endpoint_idx }}.log" using 1:2 notitle with boxes
 
 set title "[{{ endpoint_idx }}] latency (pdf) - {{ title }}"
 show title
@@ -77,7 +78,7 @@ set xtics ("{{ p99 }}" {{ p99 }}, "{{ xrange }}" {{ xrange }})
 unset ytics
 
 set object 1 rectangle from graph 0, graph 0 to graph 1, graph 1 behind fillcolor rgb 'white' fillstyle solid noborder
-plot "pdf.latency.{{ endpoint_idx }}.log" using 1:(has($2)) notitle with boxes fs solid
+plot "pdf.latency.{{ latency_type_name }}.{{ endpoint_idx }}.log" using 1:(has($2)) notitle with boxes fs solid
 unset object 1
 set parametric
 plot [t=0:1] {{ p99 }},t notitle lt rgb "black"
@@ -93,7 +94,7 @@ set ytics auto
 unset xtics
 
 set object 2 rectangle from graph 0, graph 0 to graph 1, graph 1 behind fillcolor rgb 'white' fillstyle solid noborder
-plot "pdf.latency.{{ endpoint_idx }}.log" using 1:2 notitle with boxes
+plot "pdf.latency.{{ latency_type_name }}.{{ endpoint_idx }}.log" using 1:2 notitle with boxes
 unset object 2
 set parametric
 plot [t=0:{{ yrange }}] {{ p99 }},t notitle lt rgb "black"
@@ -127,7 +128,7 @@ unset multiplot
 
 OVERVIEW = """
 set terminal png size 1600,1200
-set output "overview.png"
+set output "overview.{{ latency_type_name }}.png"
 set multiplot
 
 set lmargin 6
@@ -148,9 +149,9 @@ set parametric
 {% endfor %}{% for recovery in recoveries %}plot [t=0:{{ maxminlat }}] {{ recovery }},t notitle lt rgb "blue"
 {% endfor %}unset parametric
 
-plot 'overview.lat.log' using 1:(strcol(3) eq 'ok' ? $2:1/0) title "latency ok (us)" with points lt rgb "black" pt 7,\
-     'overview.lat.log' using 1:(strcol(3) eq 'err' ? $2:1/0) title "latency err (us)" with points lt rgb "red" pt 7,\
-     'overview.lat.log' using 1:(strcol(3) eq 'out' ? $2:1/0) title "latency timeout (us)" with points lt rgb "blue" pt 7
+plot 'overview.lat.{{ latency_type_name }}.log' using 1:(strcol(3) eq 'ok' ? $2:1/0) title "latency ok (us)" with points lt rgb "black" pt 7,\
+     'overview.lat.{{ latency_type_name }}.log' using 1:(strcol(3) eq 'err' ? $2:1/0) title "latency err (us)" with points lt rgb "red" pt 7,\
+     'overview.lat.{{ latency_type_name }}.log' using 1:(strcol(3) eq 'out' ? $2:1/0) title "latency timeout (us)" with points lt rgb "blue" pt 7
 
 set yrange [0:{{ maxmaxx }}]
 set pointsize 0.2
@@ -169,9 +170,9 @@ set parametric
 {% endfor %}{% for recovery in recoveries %}plot [t=0:{{ maxmaxx }}] {{ recovery }},t notitle lt rgb "blue"
 {% endfor %}unset parametric
 
-plot 'overview.lat.log' using 1:(strcol(3) eq 'ok' ? $2:1/0) title "latency ok (us)" with points lt rgb "black" pt 7,\
-     'overview.lat.log' using 1:(strcol(3) eq 'err' ? $2:1/0) title "latency err (us)" with points lt rgb "red" pt 7,\
-     'overview.lat.log' using 1:(strcol(3) eq 'out' ? $2:1/0) title "latency timeout (us)" with points lt rgb "blue" pt 7
+plot 'overview.lat.{{ latency_type_name }}.log' using 1:(strcol(3) eq 'ok' ? $2:1/0) title "latency ok (us)" with points lt rgb "black" pt 7,\
+     'overview.lat.{{ latency_type_name }}.log' using 1:(strcol(3) eq 'err' ? $2:1/0) title "latency err (us)" with points lt rgb "red" pt 7,\
+     'overview.lat.{{ latency_type_name }}.log' using 1:(strcol(3) eq 'out' ? $2:1/0) title "latency timeout (us)" with points lt rgb "blue" pt 7
 
 set title "{{ title }}"
 show title
@@ -199,7 +200,7 @@ unset multiplot
 
 LATENCY = """
 set terminal png size 1600,1200
-set output "latency.{{ endpoint_idx }}.png"
+set output "latency.{{ latency_type_name }}.{{ endpoint_idx }}.png"
 set multiplot
 
 set lmargin 6
@@ -220,9 +221,9 @@ set parametric
 {% endfor %}{% for recovery in recoveries %}plot [t=0:{{ maxminlat }}] {{ recovery }},t notitle lt rgb "blue"
 {% endfor %}unset parametric
 
-plot 'latency.{{ endpoint_idx }}.log' using 1:(strcol(3) eq 'ok' ? $2:1/0) title "latency ok (us)" with points lt rgb "black" pt 7,\
-     'latency.{{ endpoint_idx }}.log' using 1:(strcol(3) eq 'err' ? $2:1/0) title "latency err (us)" with points lt rgb "red" pt 7,\
-     'latency.{{ endpoint_idx }}.log' using 1:(strcol(3) eq 'out' ? $2:1/0) title "latency timeout (us)" with points lt rgb "blue" pt 7
+plot 'latency.{{ latency_type_name }}.{{ endpoint_idx }}.log' using 1:(strcol(3) eq 'ok' ? $2:1/0) title "latency ok (us)" with points lt rgb "black" pt 7,\
+     'latency.{{ latency_type_name }}.{{ endpoint_idx }}.log' using 1:(strcol(3) eq 'err' ? $2:1/0) title "latency err (us)" with points lt rgb "red" pt 7,\
+     'latency.{{ latency_type_name }}.{{ endpoint_idx }}.log' using 1:(strcol(3) eq 'out' ? $2:1/0) title "latency timeout (us)" with points lt rgb "blue" pt 7
 
 set title "{{ title }}"
 show title
@@ -243,9 +244,9 @@ set parametric
 {% endfor %}{% for recovery in recoveries %}plot [t=0:{{ maxmaxx }}] {{ recovery }},t notitle lt rgb "blue"
 {% endfor %}unset parametric
 
-plot 'latency.{{ endpoint_idx }}.log' using 1:(strcol(3) eq 'ok' ? $2:1/0) title "latency ok (us)" with points lt rgb "black" pt 7,\
-     'latency.{{ endpoint_idx }}.log' using 1:(strcol(3) eq 'err' ? $2:1/0) title "latency err (us)" with points lt rgb "red" pt 7,\
-     'latency.{{ endpoint_idx }}.log' using 1:(strcol(3) eq 'out' ? $2:1/0) title "latency timeout (us)" with points lt rgb "blue" pt 7
+plot 'latency.{{ latency_type_name }}.{{ endpoint_idx }}.log' using 1:(strcol(3) eq 'ok' ? $2:1/0) title "latency ok (us)" with points lt rgb "black" pt 7,\
+     'latency.{{ latency_type_name }}.{{ endpoint_idx }}.log' using 1:(strcol(3) eq 'err' ? $2:1/0) title "latency err (us)" with points lt rgb "red" pt 7,\
+     'latency.{{ latency_type_name }}.{{ endpoint_idx }}.log' using 1:(strcol(3) eq 'out' ? $2:1/0) title "latency timeout (us)" with points lt rgb "blue" pt 7
 
 unset multiplot
 """
@@ -349,8 +350,13 @@ class ExperimentGroup:
         self.experiments = []
 
 
+class LatencyType(Enum):
+    OVERALL = 1
+    PRODUCER = 4
+
+
 def make_pdf_latency_chart(title, endpoint_idx, log_dir, availability_log,
-                           latency_log, warmup_s, zoom_range_us):
+                           latency_log, warmup_s, zoom_range_us, latency_type):
     latency_cut_off_us = warmup_s * 1000000
     latencies = []
 
@@ -359,7 +365,7 @@ def make_pdf_latency_chart(title, endpoint_idx, log_dir, availability_log,
             if "ok" in line:
                 parts = line.rstrip().split("\t")
                 tick = int(parts[0])
-                latency = int(parts[1])
+                latency = int(parts[latency_type.value])
                 idx = int(parts[3])
                 if endpoint_idx != None:
                     if endpoint_idx != idx:
@@ -378,8 +384,12 @@ def make_pdf_latency_chart(title, endpoint_idx, log_dir, availability_log,
     if endpoint_idx == None:
         endpoint_idx = "all"
 
-    with open(path.join(log_dir, f"pdf.latency.{endpoint_idx}.log"),
-              "w") as latency_file:
+    latency_type_name = latency_type.name.lower()
+
+    with open(
+            path.join(log_dir,
+                      f"pdf.latency.{latency_type_name}.{endpoint_idx}.log"),
+            "w") as latency_file:
         offset = 0
         freq = []
 
@@ -416,17 +426,20 @@ def make_pdf_latency_chart(title, endpoint_idx, log_dir, availability_log,
             if i >= len(latencies):
                 break
 
-    with open(path.join(log_dir, f"pdf.latency.{endpoint_idx}.gp"),
-              "w") as latency_file:
+    with open(
+            path.join(log_dir,
+                      f"pdf.latency.{latency_type_name}.{endpoint_idx}.gp"),
+            "w") as latency_file:
         latency_file.write(
-            jinja2.Template(PDF_LATENCY).render(xrange=maxlat,
-                                                xzrange=min(
-                                                    maxlat, zoom_range_us),
-                                                yrange=1.2 * maxfreq,
-                                                p99=p99,
-                                                step=step,
-                                                title=title,
-                                                endpoint_idx=endpoint_idx))
+            jinja2.Template(PDF_LATENCY).render(
+                xrange=maxlat,
+                xzrange=min(maxlat, zoom_range_us),
+                yrange=1.2 * maxfreq,
+                p99=p99,
+                latency_type_name=latency_type_name,
+                step=step,
+                title=title,
+                endpoint_idx=endpoint_idx))
 
 
 def make_availability_chart(title, endpoint_idx, log_dir, availability_log,
@@ -493,7 +506,7 @@ def make_availability_chart(title, endpoint_idx, log_dir, availability_log,
 
 
 def make_overview_chart(title, log_dir, availability_log, latency_log,
-                        warmup_s):
+                        warmup_s, latency_type):
     latency_cut_off_us = warmup_s * 1000000
     availability_cut_off_s = warmup_s
 
@@ -506,16 +519,22 @@ def make_overview_chart(title, log_dir, availability_log, latency_log,
     faults = []
     recoveries = []
 
-    with open(path.join(log_dir, "overview.lat.log"), "w") as chart_lat_file:
+    latency_type_name = latency_type.name.lower()
+
+    with open(path.join(log_dir, f"overview.lat.{latency_type_name}.log"),
+              "w") as chart_lat_file:
         with open(path.join(log_dir, latency_log)) as latency_log_file:
             mn = sys.maxsize
             for line in latency_log_file:
+                if latency_type == LatencyType.PRODUCER:
+                    if "ok" not in line:
+                        continue
                 parts = line.rstrip().split("\t")
                 tick = int(parts[0])
                 if tick < latency_cut_off_us:
                     continue
                 tick = int(tick / 1000000)
-                lat = int(parts[1])
+                lat = int(parts[latency_type.value])
                 if "ok" in line:
                     maxtick = max(maxtick, tick)
                     mn = min(mn, lat)
@@ -559,21 +578,24 @@ def make_overview_chart(title, log_dir, availability_log, latency_log,
 
             maxthru = int(1.2 * mx_thru)
 
-    with open(path.join(log_dir, "overview.gp"), "w") as overview_file:
+    with open(path.join(log_dir, f"overview.{latency_type_name}.gp"),
+              "w") as overview_file:
         overview_file.write(
-            jinja2.Template(OVERVIEW).render(xrange=maxtick,
-                                             maxminlat=maxminlat,
-                                             minlatstep=minlatstep,
-                                             maxmaxx=maxmaxx,
-                                             maxlat=maxlat,
-                                             maxthru=maxthru,
-                                             faults=faults,
-                                             recoveries=recoveries,
-                                             title=title))
+            jinja2.Template(OVERVIEW).render(
+                xrange=maxtick,
+                maxminlat=maxminlat,
+                minlatstep=minlatstep,
+                maxmaxx=maxmaxx,
+                maxlat=maxlat,
+                maxthru=maxthru,
+                latency_type_name=latency_type_name,
+                faults=faults,
+                recoveries=recoveries,
+                title=title))
 
 
 def make_latency_chart(title, endpoint_idx, log_dir, availability_log,
-                       latency_log, warmup_s):
+                       latency_log, warmup_s, latency_type):
     latency_cut_off_us = warmup_s * 1000000
     availability_cut_off_s = warmup_s
 
@@ -584,17 +606,24 @@ def make_latency_chart(title, endpoint_idx, log_dir, availability_log,
     maxlat = 0
     maxthru = 0
 
-    with open(path.join(log_dir, f"latency.{endpoint_idx}.log"),
-              "w") as chart_lat_file:
+    latency_type_name = latency_type.name.lower()
+
+    with open(
+            path.join(log_dir,
+                      f"latency.{latency_type_name}.{endpoint_idx}.log"),
+            "w") as chart_lat_file:
         with open(path.join(log_dir, latency_log)) as latency_log_file:
             mn = sys.maxsize
             for line in latency_log_file:
+                if latency_type == LatencyType.PRODUCER:
+                    if "ok" not in line:
+                        continue
                 parts = line.rstrip().split("\t")
                 tick = int(parts[0])
                 if tick < latency_cut_off_us:
                     continue
                 tick = int(tick / 1000000)
-                lat = int(parts[1])
+                lat = int(parts[latency_type.value])
                 idx = int(parts[3])
                 if idx != endpoint_idx:
                     continue
@@ -623,16 +652,20 @@ def make_latency_chart(title, endpoint_idx, log_dir, availability_log,
                 elif entry["type"] == "recovery":
                     recoveries.append(tick)
 
-    with open(path.join(log_dir, f"latency.{endpoint_idx}.gp"),
-              "w") as overview_file:
+    with open(
+            path.join(log_dir,
+                      f"latency.{latency_type_name}.{endpoint_idx}.gp"),
+            "w") as overview_file:
         overview_file.write(
-            jinja2.Template(LATENCY).render(xrange=maxtick,
-                                            maxminlat=maxminlat,
-                                            minlatstep=minlatstep,
-                                            maxmaxx=maxmaxx,
-                                            maxlat=maxlat,
-                                            maxthru=maxthru,
-                                            faults=faults,
-                                            recoveries=recoveries,
-                                            title=title,
-                                            endpoint_idx=endpoint_idx))
+            jinja2.Template(LATENCY).render(
+                xrange=maxtick,
+                maxminlat=maxminlat,
+                minlatstep=minlatstep,
+                maxmaxx=maxmaxx,
+                maxlat=maxlat,
+                maxthru=maxthru,
+                faults=faults,
+                latency_type_name=latency_type_name,
+                recoveries=recoveries,
+                title=title,
+                endpoint_idx=endpoint_idx))
