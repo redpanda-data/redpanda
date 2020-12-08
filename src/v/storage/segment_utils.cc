@@ -463,7 +463,6 @@ ss::future<> self_compact_segment(
             switch (state) {
             case compacted_index::recovery_state::recovered: {
                 vlog(stlog.info, "detected {} is already compacted", idx_path);
-                s->mark_as_finished_self_compaction();
                 return ss::now();
             }
             case compacted_index::recovery_state::nonrecovered:
@@ -495,6 +494,7 @@ ss::future<> self_compact_segment(
                 __builtin_unreachable();
             }
         })
+      .then([s] { s->mark_as_finished_self_compaction(); })
       .finally([&pb] { pb.segment_compacted(); });
 }
 
