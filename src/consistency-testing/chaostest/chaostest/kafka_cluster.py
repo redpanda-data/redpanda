@@ -127,16 +127,16 @@ class KafkaNode:
             self.node_config["ssh_user"] + "@" + self.node_config["host"],
             self.node_config["umount_script"])
 
-    def io_ruin(self):
+    def io_ruin(self, op_name):
         ssh("-i", self.node_config["ssh_key"],
             self.node_config["ssh_user"] + "@" + self.node_config["host"],
-            self.node_config["io_ruin_script"])
+            self.node_config["io_ruin_script"], op_name)
         # todo check status code
 
-    def io_delay(self, delay_ms):
+    def io_delay(self, op_name, delay_ms):
         ssh("-i", self.node_config["ssh_key"],
             self.node_config["ssh_user"] + "@" + self.node_config["host"],
-            self.node_config["io_delay_script"], delay_ms)
+            self.node_config["io_delay_script"], op_name, delay_ms)
         # todo check status code
 
     def io_recover(self):

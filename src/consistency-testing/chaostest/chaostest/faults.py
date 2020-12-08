@@ -196,7 +196,42 @@ class MakeIOSlowerRecoverableFault:
               ).with_time())
         self.workload.availability_logger.log_fault(
             f"injecting 10ms disk delay on {self.node.node_id} ({self.scope})")
-        self.node.io_delay(10)
+        self.node.io_delay("all", 10)
+        chaos_event_log.info(
+            m(f"10ms disk delay on {self.node.node_id} injected").with_time())
+
+    def recover(self):
+        chaos_event_log.info(
+            m(f"removing disk delay on {self.node.node_id}").with_time())
+        self.node.io_recover()
+        self.workload.availability_logger.log_recovery(
+            f"disk delay on {self.node.node_id} removed")
+        chaos_event_log.info(
+            m(f"disk delay on {self.node.node_id} removed").with_time())
+
+
+class MakeFsyncSlowerRecoverableFault:
+    def __init__(self, node_selector, scope):
+        self.node_selector = node_selector
+        self.node = None
+        self.workload = None
+        self.title = f"introduce 10ms disk delay ({scope})"
+        self.scope = scope
+
+    def inject(self, cluster, workload):
+        self.workload = workload
+        self.node = self.node_selector(cluster)
+        if self.node == None:
+            chaos_event_log.info(m("can't select a node").with_time())
+            raise Exception("can't select a node")
+
+        chaos_event_log.info(
+            m(f"injecting 10ms disk delay on {self.node.node_id} ({self.scope})"
+              ).with_time())
+        self.workload.availability_logger.log_fault(
+            f"injecting 10ms disk delay on {self.node.node_id} ({self.scope})")
+        self.node.io_delay("flush", 10)
+        self.node.io_delay("fsync", 10)
         chaos_event_log.info(
             m(f"10ms disk delay on {self.node.node_id} injected").with_time())
 
@@ -231,7 +266,7 @@ class RuinIORecoverableFault:
         self.workload.availability_logger.log_fault(
             f"injecting disk error for any op on {self.node.node_id} ({self.scope})"
         )
-        self.node.io_ruin()
+        self.node.io_ruin("all")
         chaos_event_log.info(
             m(f"disk error for any op on {self.node.node_id} injected").
             with_time())

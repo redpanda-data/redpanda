@@ -10,4 +10,4 @@
 
 set -e
 
-curl 127.0.0.1:9093/delay/$1
+curl 127.0.0.1:9093/delay/all/$1
