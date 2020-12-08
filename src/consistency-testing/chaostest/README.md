@@ -16,12 +16,18 @@ Start a control node, let address is
 
 Update ip-addresses of this document and test configs
 
-    for system in kvelldb kafka redpanda; do
+    for system in kafka redpanda; do
         for workflow in comrmw mrsw; do
-            sed -i'' "s/427.0.0.1/$server1_int/" src/consistency-testing/chaostest/example.$system.$workflow.json
-            sed -i'' "s/427.0.0.2/$server2_int/" src/consistency-testing/chaostest/example.$system.$workflow.json
-            sed -i'' "s/427.0.0.3/$server3_int/" src/consistency-testing/chaostest/example.$system.$workflow.json
+            sed -i'' "s/427.0.0.1/$server1_int/" src/consistency-testing/chaostest/test-plan-templates/$system.$workflow.int.json
+            sed -i'' "s/427.0.0.2/$server2_int/" src/consistency-testing/chaostest/test-plan-templates/$system.$workflow.int.json
+            sed -i'' "s/427.0.0.3/$server3_int/" src/consistency-testing/chaostest/test-plan-templates/$system.$workflow.int.json
         done
+    done
+
+    for workflow in comrmw mrsw; do
+        sed -i'' "s/427.0.0.1/$server1_int/" src/consistency-testing/chaostest/test-plan-templates/kvelldb.$workflow.json
+        sed -i'' "s/427.0.0.2/$server2_int/" src/consistency-testing/chaostest/test-plan-templates/kvelldb.$workflow.json
+        sed -i'' "s/427.0.0.3/$server3_int/" src/consistency-testing/chaostest/test-plan-templates/kvelldb.$workflow.json
     done
 
 Stop redpanda & prometheus:
