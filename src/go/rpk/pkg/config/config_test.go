@@ -283,20 +283,21 @@ func TestWrite(t *testing.T) {
 			wantErr: false,
 			expected: `config_file: /etc/redpanda/redpanda.yaml
 redpanda:
-  data_directory: /var/lib/redpanda/data
-  rpc_server:
-    address: 0.0.0.0
-    port: 33145
-  advertised_rpc_api:
-    address: 174.32.64.2
-    port: 33145
-  kafka_api:
-    address: 0.0.0.0
-    port: 9092
   admin:
     address: 0.0.0.0
     port: 9644
+  advertised_rpc_api:
+    address: 174.32.64.2
+    port: 33145
+  data_directory: /var/lib/redpanda/data
+  developer_mode: false
+  kafka_api:
+    address: 0.0.0.0
+    port: 9092
   node_id: 0
+  rpc_server:
+    address: 0.0.0.0
+    port: 33145
   seed_servers:
   - host:
       address: 127.0.0.1
@@ -306,24 +307,23 @@ redpanda:
       address: 127.0.0.1
       port: 33146
     node_id: 2
-  developer_mode: false
 rpk:
+  coredump_dir: /var/lib/redpanda/coredumps
+  enable_memory_locking: true
   enable_usage_stats: true
-  tune_network: true
-  tune_disk_scheduler: true
-  tune_disk_nomerges: true
-  tune_disk_irq: true
-  tune_fstrim: true
-  tune_cpu: true
+  overprovisioned: false
   tune_aio_events: true
   tune_clocksource: true
+  tune_coredump: true
+  tune_cpu: true
+  tune_disk_irq: true
+  tune_disk_nomerges: true
+  tune_disk_scheduler: true
+  tune_fstrim: true
+  tune_network: true
   tune_swappiness: true
   tune_transparent_hugepages: true
-  enable_memory_locking: true
-  tune_coredump: true
-  coredump_dir: /var/lib/redpanda/coredumps
   well_known_io: vendor:vm:storage
-  overprovisioned: false
 `,
 		},
 		{
@@ -339,20 +339,21 @@ rpk:
 			wantErr: false,
 			expected: `config_file: /etc/redpanda/redpanda.yaml
 redpanda:
-  data_directory: /var/lib/redpanda/data
-  rpc_server:
-    address: 0.0.0.0
-    port: 33145
-  kafka_api:
-    address: 0.0.0.0
-    port: 9092
-  advertised_kafka_api:
-    address: 174.32.64.2
-    port: 9092
   admin:
     address: 0.0.0.0
     port: 9644
+  advertised_kafka_api:
+    address: 174.32.64.2
+    port: 9092
+  data_directory: /var/lib/redpanda/data
+  developer_mode: false
+  kafka_api:
+    address: 0.0.0.0
+    port: 9092
   node_id: 0
+  rpc_server:
+    address: 0.0.0.0
+    port: 33145
   seed_servers:
   - host:
       address: 127.0.0.1
@@ -362,24 +363,23 @@ redpanda:
       address: 127.0.0.1
       port: 33146
     node_id: 2
-  developer_mode: false
 rpk:
+  coredump_dir: /var/lib/redpanda/coredumps
+  enable_memory_locking: true
   enable_usage_stats: true
-  tune_network: true
-  tune_disk_scheduler: true
-  tune_disk_nomerges: true
-  tune_disk_irq: true
-  tune_fstrim: true
-  tune_cpu: true
+  overprovisioned: false
   tune_aio_events: true
   tune_clocksource: true
+  tune_coredump: true
+  tune_cpu: true
+  tune_disk_irq: true
+  tune_disk_nomerges: true
+  tune_disk_scheduler: true
+  tune_fstrim: true
+  tune_network: true
   tune_swappiness: true
   tune_transparent_hugepages: true
-  enable_memory_locking: true
-  tune_coredump: true
-  coredump_dir: /var/lib/redpanda/coredumps
   well_known_io: vendor:vm:storage
-  overprovisioned: false
 `,
 		},
 		{
@@ -392,17 +392,18 @@ rpk:
 			wantErr: false,
 			expected: `config_file: /etc/redpanda/redpanda.yaml
 redpanda:
-  data_directory: /var/lib/redpanda/data
-  rpc_server:
-    address: 0.0.0.0
-    port: 33145
-  kafka_api:
-    address: 0.0.0.0
-    port: 9092
   admin:
     address: 0.0.0.0
     port: 9644
+  data_directory: /var/lib/redpanda/data
+  developer_mode: false
+  kafka_api:
+    address: 0.0.0.0
+    port: 9092
   node_id: 0
+  rpc_server:
+    address: 0.0.0.0
+    port: 33145
   seed_servers:
   - host:
       address: 127.0.0.1
@@ -412,22 +413,22 @@ redpanda:
       address: 127.0.0.1
       port: 33146
     node_id: 2
-  developer_mode: false
 rpk:
+  coredump_dir: /var/lib/redpanda/coredump
+  enable_memory_locking: false
   enable_usage_stats: false
-  tune_network: false
-  tune_disk_scheduler: false
-  tune_disk_nomerges: false
-  tune_disk_irq: false
-  tune_fstrim: false
-  tune_cpu: false
+  overprovisioned: false
   tune_aio_events: false
   tune_clocksource: false
+  tune_coredump: false
+  tune_cpu: false
+  tune_disk_irq: false
+  tune_disk_nomerges: false
+  tune_disk_scheduler: false
+  tune_fstrim: false
+  tune_network: false
   tune_swappiness: false
   tune_transparent_hugepages: false
-  enable_memory_locking: false
-  tune_coredump: false
-  overprovisioned: false
 `,
 		},
 		{
@@ -440,29 +441,23 @@ rpk:
 			wantErr: true,
 		},
 		{
-			name: "shall fail if there's no redpanda config",
-			conf: func() *Config {
-				return &Config{}
-			},
-			wantErr: true,
-		},
-		{
 			name:    "shall write a valid config file with an rpk config object",
 			conf:    getValidConfig,
 			wantErr: false,
 			expected: `config_file: /etc/redpanda/redpanda.yaml
 redpanda:
-  data_directory: /var/lib/redpanda/data
-  rpc_server:
-    address: 0.0.0.0
-    port: 33145
-  kafka_api:
-    address: 0.0.0.0
-    port: 9092
   admin:
     address: 0.0.0.0
     port: 9644
+  data_directory: /var/lib/redpanda/data
+  developer_mode: false
+  kafka_api:
+    address: 0.0.0.0
+    port: 9092
   node_id: 0
+  rpc_server:
+    address: 0.0.0.0
+    port: 33145
   seed_servers:
   - host:
       address: 127.0.0.1
@@ -472,24 +467,23 @@ redpanda:
       address: 127.0.0.1
       port: 33146
     node_id: 2
-  developer_mode: false
 rpk:
+  coredump_dir: /var/lib/redpanda/coredumps
+  enable_memory_locking: true
   enable_usage_stats: true
-  tune_network: true
-  tune_disk_scheduler: true
-  tune_disk_nomerges: true
-  tune_disk_irq: true
-  tune_fstrim: true
-  tune_cpu: true
+  overprovisioned: false
   tune_aio_events: true
   tune_clocksource: true
+  tune_coredump: true
+  tune_cpu: true
+  tune_disk_irq: true
+  tune_disk_nomerges: true
+  tune_disk_scheduler: true
+  tune_fstrim: true
+  tune_network: true
   tune_swappiness: true
   tune_transparent_hugepages: true
-  enable_memory_locking: true
-  tune_coredump: true
-  coredump_dir: /var/lib/redpanda/coredumps
   well_known_io: vendor:vm:storage
-  overprovisioned: false
 `,
 		},
 		{
@@ -532,6 +526,7 @@ redpanda:
   admin_api_doc_dir: /etc/redpanda/doc
   data_directory: /var/lib/redpanda/data
   default_window_sec: 100
+  developer_mode: false
   kafka_api:
     address: 0.0.0.0
     port: 9092
@@ -549,6 +544,23 @@ redpanda:
       port: 33146
     node_id: 2
   target_quota_byte_rate: 1000000
+rpk:
+  coredump_dir: /var/lib/redpanda/coredumps
+  enable_memory_locking: true
+  enable_usage_stats: true
+  overprovisioned: false
+  tune_aio_events: true
+  tune_clocksource: true
+  tune_coredump: true
+  tune_cpu: true
+  tune_disk_irq: true
+  tune_disk_nomerges: true
+  tune_disk_scheduler: true
+  tune_fstrim: true
+  tune_network: true
+  tune_swappiness: true
+  tune_transparent_hugepages: true
+  well_known_io: vendor:vm:storage
 unrecognized_top_field:
   child: true
 `,
@@ -556,6 +568,7 @@ unrecognized_top_field:
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			path := tt.conf().ConfigFile
 			fs := afero.NewMemMapFs()
 			mgr := NewManager(fs)
 			if tt.existingConf != "" {
@@ -567,7 +580,9 @@ unrecognized_top_field:
 				err := vyaml.Persist(fs, tt.conf(), path)
 				require.NoError(t, err)
 			}
-			err := mgr.Write(tt.conf())
+			_, err := mgr.Read(path)
+			require.NoError(t, err)
+			err = mgr.Write(tt.conf())
 			if tt.wantErr {
 				require.Error(t, err)
 				return
