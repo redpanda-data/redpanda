@@ -95,7 +95,7 @@ func defaultMap() map[string]interface{} {
 				"port":    9644,
 			},
 			"node_id":        0,
-			"seed_servers":   []map[string]interface{}{},
+			"seed_servers":   []interface{}{},
 			"developer_mode": true,
 		},
 		"rpk": map[string]interface{}{
