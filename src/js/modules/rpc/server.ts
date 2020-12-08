@@ -27,6 +27,7 @@ export class ProcessBatchServer extends SupervisorServer {
 
   constructor(activeDir: string, inactiveDir: string, submitDir: string) {
     super();
+    // TODO Can lookup the port redpanda is listening for copros on in the redpanda.yaml file
     this.managementClient = new ManagementClient(43118);
     this.applyCoprocessor = this.applyCoprocessor.bind(this);
     this.repository = new Repository();

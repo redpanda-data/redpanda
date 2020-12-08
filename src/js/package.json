@@ -34,7 +34,8 @@
     "typescript-formatter": "7.2.2",
     "webpack": "^4.44.2",
     "xxhash": "0.3.0",
-    "js-yaml": "^3.14.0"
+    "js-yaml": "^3.14.0",
+    "winston": "3.3.3"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^3.7.0",

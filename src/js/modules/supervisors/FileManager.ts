@@ -13,6 +13,7 @@ import { rename, readdir } from "fs";
 import { promisify } from "util";
 import Repository from "./Repository";
 import { Handle } from "../domain/Handle";
+import { newLogger } from "../utilities/Logging";
 import { getChecksumFromFile } from "../utilities/Checksum";
 import { Coprocessor, PolicyInjection } from "../public/Coprocessor";
 import { Script_ManagerClient as ManagementClient } from "../rpc/serverAndClients/server";
@@ -23,6 +24,8 @@ import {
   validateDisableResponseCode,
   validateEnableResponseCode,
 } from "./HandleError";
+
+const logger = newLogger("FileManager");
 
 /**
  * FileManager class is an inotify implementation, it receives a
@@ -46,8 +49,8 @@ class FileManager {
         .then(() => this.readCoprocessorFolder(repository, this.submitDir))
         .then(() => this.startWatchers(repository));
     } catch (e) {
-      console.error(e);
-      //TODO: implement winston for loggin information and error handler
+      // TODO: This should be a FATAL error
+      logger.error(`Failed to register watch(es): ${e.message}`);
     }
   }
 
@@ -73,7 +76,7 @@ class FileManager {
           return this.moveCoprocessorFile(prevHandle, this.inactiveDir)
             .then(() =>
               this.deregisterCoprocessor(prevHandle.coprocessor).catch((e) => {
-                console.error(e.message);
+                logger.error(e.message);
                 return Promise.resolve();
               })
             )
@@ -130,7 +133,7 @@ class FileManager {
           path.join(folder, file),
           repository,
           validatePrevExist
-        ).catch((e) => console.error(e.message))
+        ).catch((e) => logger.error(e.message))
       );
     });
     //TODO: implement winston for loggin information and error handler
@@ -150,22 +153,23 @@ class FileManager {
     const id = hash64(Buffer.from(name), 0).readBigUInt64LE();
     const [handle] = repository.getHandlesByCoprocessorIds([id]);
     if (!handle) {
-      console.error(
-        "error: trying to disable a removed coprocessor from " +
-          "'active' folder but it wasn't loaded in memory, file name " +
-          `${name}.js`
+      logger.error(
+        `Trying to disable a removed coprocessor from 'active' folder but it` +
+          `wasn't loaded in memory, file name: ${name}.js`
       );
       return Promise.resolve();
     } else {
       return this.disableCoprocessors([handle.coprocessor])
         .then(() => this.repository.remove(handle))
-        .then(() =>
-          console.log(
+        .then(() => {
+          logger.info(
             `disabled coprocessor: ID ${handle.coprocessor.globalId} ` +
               `filename: '${name}.js'`
-          )
-        )
-        .catch((error) => console.log(error.message));
+          );
+        })
+        .catch((error) => {
+          logger.error(error.message);
+        });
     }
   }
 
@@ -221,12 +225,20 @@ class FileManager {
    * @param coprocessors
    */
   disableCoprocessors(coprocessors: Coprocessor[]): Promise<void> {
+    logger.info(
+      `Initiating RPC call to redpandas coprocessor service at endpoint - ` +
+        `disable_coprocessors with data: ${coprocessors}`
+    );
     return this.managementClient
       .disable_copros({ inputs: coprocessors.map((coproc) => coproc.globalId) })
       .then((response) => {
         const errors = validateDisableResponseCode(response, coprocessors);
         if (errors.length > 0) {
-          return Promise.reject(this.compactErrors([errors]));
+          const compactedErrors = this.compactErrors([errors]);
+          logger.error(
+            `disable_coprocessors RPC returned with errors: ${compactedErrors}`
+          );
+          return Promise.reject(compactedErrors);
         } else {
           return Promise.resolve();
         }
@@ -256,6 +268,10 @@ class FileManager {
     if (coprocessors.length == 0) {
       return Promise.resolve();
     } else {
+      logger.info(
+        `Initiating RPC call to redpandas coprocessor service at endpoint - ` +
+          `enable_coprocessors with data: ${coprocessors}`
+      );
       return this.managementClient
         .enable_copros({
           coprocessors: coprocessors.map((coproc) => ({
@@ -282,7 +298,12 @@ class FileManager {
             coprocessors
           );
           if (errors.find((errors) => errors.length > 0)) {
-            return Promise.reject(this.compactErrors(errors));
+            const compactedErrors = this.compactErrors(errors);
+            logger.error(
+              `enable_coprocessors RPC returned with some error: ` +
+                `${compactedErrors}`
+            );
+            return Promise.reject(compactedErrors);
           } else {
             return Promise.resolve();
           }
@@ -363,13 +384,15 @@ class FileManager {
    */
   private startWatchers(repository: Repository): void {
     this.submitDirWatcher = watch(this.submitDir).on("add", (filePath) => {
-      this.addCoprocessor(filePath, repository).catch((e) =>
-        console.error(e.message)
-      );
+      logger.info(`Detected new file in submit dir: ${filePath}`);
+      this.addCoprocessor(filePath, repository).catch((e) => {
+        logger.error(`addCoprocessor failed with exception: ${e.message}`);
+      });
     });
-    this.activeDirWatcher = watch(this.activeDir).on("unlink", (filePath) =>
-      this.removeHandleFromFilePath(filePath, repository)
-    );
+    this.activeDirWatcher = watch(this.activeDir).on("unlink", (filePath) => {
+      logger.info(`Detected removed file from active dir: ${filePath}`);
+      this.removeHandleFromFilePath(filePath, repository);
+    });
   }
 }
 

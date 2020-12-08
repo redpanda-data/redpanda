@@ -26,7 +26,7 @@ export const validateDisableResponseCode = (
 ): Error[] => {
   if (responses.inputs.length !== coprocessors.length) {
     throw new Error(
-      "error: inconsistent response for disable coprocessors, " +
+      "inconsistent response for disable coprocessors, " +
         `the disabled coprocessor response for ${coprocessors.join(", ")} ` +
         "doesn't have the same number item results, expected: " +
         `${coprocessors.length} result: ${responses.inputs.length}`
@@ -36,17 +36,14 @@ export const validateDisableResponseCode = (
     switch (code) {
       case DisableResponseCode.internalError: {
         errors.push(
-          new Error(
-            `internal error: wasm function ID: ${coprocessors[index].globalId}`
-          )
+          new Error(`wasm function ID: ${coprocessors[index].globalId}`)
         );
         break;
       }
       case DisableResponseCode.scriptDoesNotExist: {
         errors.push(
           new Error(
-            `error: script with ID ${coprocessors[index].globalId} ` +
-              "doesn't exist."
+            `script with ID ${coprocessors[index].globalId} ` + "doesn't exist."
           )
         );
       }
@@ -61,7 +58,7 @@ export const validateEnableResponseCode = (
 ): Error[][] => {
   if (responses.inputs.length !== coprocessors.length) {
     throw new Error(
-      "error: inconsistent response for enable coprocessors, " +
+      "inconsistent response for enable coprocessors, " +
         `the enable coprocessor response for ${coprocessors.join(", ")} ` +
         "doesn't have the same number item results, expected: " +
         `${coprocessors.length} result: ${responses.inputs.length}`
@@ -73,25 +70,23 @@ export const validateEnableResponseCode = (
       const coprocessor = coprocessors[index];
       switch (code) {
         case EnableResponseCode.internalError: {
-          errors.push(new Error(`internal error: wasm function ID: ${id}`));
+          errors.push(new Error(`wasm function ID: ${id}`));
           break;
         }
         case EnableResponseCode.invalidIngestionPolicy: {
-          errors.push(new Error(`error: invalid ingestion policy`));
+          errors.push(new Error(`invalid ingestion policy`));
           break;
         }
         case EnableResponseCode.invalidTopic: {
           errors.push(
-            new Error(
-              `error: invalid topic "${coprocessor.inputTopics[topicIndex]}"`
-            )
+            new Error(`invalid topic "${coprocessor.inputTopics[topicIndex]}"`)
           );
           break;
         }
         case EnableResponseCode.topicDoesNotExist: {
           errors.push(
             new Error(
-              `error: topic "${coprocessor.inputTopics[topicIndex]}" ` +
+              `topic "${coprocessor.inputTopics[topicIndex]}" ` +
                 `doesn't exist`
             )
           );
@@ -100,14 +95,13 @@ export const validateEnableResponseCode = (
         case EnableResponseCode.scriptIdAlreadyExist: {
           errors.push(
             new Error(
-              "error: wasm function already register, ID: " +
-                coprocessor.globalId
+              "wasm function already register, ID: " + coprocessor.globalId
             )
           );
           break;
         }
         case EnableResponseCode.materializedTopic: {
-          errors.push(new Error("error: materialized topic"));
+          errors.push(new Error("materialized topic"));
           break;
         }
         case EnableResponseCode.success: {
