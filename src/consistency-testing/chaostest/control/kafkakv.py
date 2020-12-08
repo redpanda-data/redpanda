@@ -21,6 +21,7 @@ import sys
 from time import sleep
 import time
 import threading
+from threading import Lock
 import logging
 import logging.handlers
 import argparse
@@ -88,12 +89,15 @@ class KafkaKV:
         self.has_accessed = False
         self.has_data_loss = False
         self.data_loss_info = None
+        self.mutex = Lock()
 
     def start_history_check_thread(self):
         consumer_tps = None
         while not self.has_data_loss:
+            self.mutex.acquire()
             offset = self.offset
             state = copy.deepcopy(self.state)
+            self.mutex.release()
             try:
                 replay = dict()
                 consumer_tps = self.catchup_beginning(consumer_tps, replay,
@@ -120,12 +124,14 @@ class KafkaKV:
                             "reconstructed": replay[key]
                         })
                 if len(missing) > 0 or len(mismatch) > 0 or len(extra) > 0:
+                    self.mutex.acquire()
                     self.data_loss_info = {
                         "missing": missing,
                         "mismatch": mismatch,
                         "extra": extra
                     }
                     self.has_data_loss = True
+                    self.mutex.release()
             except:
                 consumer_tps = None
                 pass
@@ -158,8 +164,10 @@ class KafkaKV:
                 raise RequestTimedout()
             tps = [TopicPartition(self.topic, 0)]
             consumer.assign(tps)
+            self.mutex.acquire()
             cid = self.n_consumers
             self.n_consumers += 1
+            self.mutex.release()
 
         try:
             metrics["init_us"] = int(
@@ -311,6 +319,9 @@ class KafkaKV:
             raise
 
     def execute(self, payload, cmd, metrics):
+        msg = json.dumps(payload).encode("utf-8")
+
+        self.mutex.acquire()
         if not self.has_accessed and self.offset is not None:
             self.has_accessed = True
             if self.check_history:
@@ -318,10 +329,9 @@ class KafkaKV:
                     target=lambda: self.start_history_check_thread())
                 thread.start()
 
-        msg = json.dumps(payload).encode("utf-8")
-
         offset = self.offset
         state = copy.deepcopy(self.state)
+        self.mutex.release()
 
         kafkakv_log.info(
             m("executing", cmd=cmd, base_offset=offset).with_time())
@@ -381,6 +391,7 @@ class KafkaKV:
             m("sent", cmd=cmd, base_offset=offset,
               sent_offset=written.offset).with_time())
 
+        self.mutex.acquire()
         if offset != None and written.offset <= offset:
             error = f"Monotonicity violation: written offset ({written.offset}) is behind current offset ({offset})"
             msg = m(error, stacktrace=stacktrace).with_time()
@@ -395,6 +406,7 @@ class KafkaKV:
             kafkakv_err.info(msg)
             self.has_data_loss = True
             self.data_loss_info = error
+        self.mutex.release()
 
         try:
             state = self.catchup(state, offset, written.offset, cmd, metrics)
@@ -418,6 +430,7 @@ class KafkaKV:
                                 " on catching up")
             raise RequestTimedout()
 
+        self.mutex.acquire()
         if self.offset is None or self.offset < written.offset:
             base_offset = self.offset
             self.state = state
@@ -428,6 +441,7 @@ class KafkaKV:
                   base_offset=offset,
                   root_offset=base_offset,
                   sent_offset=written.offset).with_time())
+        self.mutex.release()
 
         return state
 
