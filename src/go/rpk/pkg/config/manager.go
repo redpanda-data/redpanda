@@ -295,10 +295,7 @@ func (m *manager) Set(key, value, format, path string) error {
 	}
 	newV := viper.New()
 	newV.Set(key, newConfValue)
-	log.Infof("k %s, v: %v", key, newConfValue)
-	log.Infof("all: %v", newV.AllSettings())
 	m.v.MergeConfigMap(newV.AllSettings())
-	log.Infof("m.v: %v", m.v.AllSettings())
 	err = checkAndWrite(m.fs, m.v, path)
 	if err == nil {
 		checkAndPrintRestartWarning(key)
