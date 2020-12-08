@@ -565,6 +565,71 @@ unrecognized_top_field:
   child: true
 `,
 		},
+		{
+			name: "should merge the new config onto the current one, not just overwrite it",
+			existingConf: `config_file: /etc/redpanda/redpanda.yaml
+redpanda:
+  admin:
+    address: 0.0.0.0
+    port: 9644
+  admin_api_doc_dir: /etc/redpanda/doc
+  auto_create_topics_enabled: true
+  data_directory: /var/lib/redpanda/data
+  default_window_sec: 100
+  kafka_api:
+    address: 0.0.0.0
+    port: 9092
+  node_id: 0
+  rpc_server:
+    address: 0.0.0.0
+    port: 33145
+  target_quota_byte_rate: 1000000
+`,
+			conf: func() *Config {
+				conf := getValidConfig()
+				conf.Redpanda.SeedServers = []SeedServer{}
+				conf.Redpanda.Directory = "/different/path"
+				return conf
+			},
+			wantErr: false,
+			expected: `config_file: /etc/redpanda/redpanda.yaml
+redpanda:
+  admin:
+    address: 0.0.0.0
+    port: 9644
+  admin_api_doc_dir: /etc/redpanda/doc
+  auto_create_topics_enabled: true
+  data_directory: /different/path
+  default_window_sec: 100
+  developer_mode: false
+  kafka_api:
+    address: 0.0.0.0
+    port: 9092
+  node_id: 0
+  rpc_server:
+    address: 0.0.0.0
+    port: 33145
+  seed_servers: []
+  target_quota_byte_rate: 1000000
+rpk:
+  coredump_dir: /var/lib/redpanda/coredumps
+  enable_memory_locking: true
+  enable_usage_stats: true
+  overprovisioned: false
+  tune_aio_events: true
+  tune_clocksource: true
+  tune_coredump: true
+  tune_cpu: true
+  tune_disk_irq: true
+  tune_disk_nomerges: true
+  tune_disk_scheduler: true
+  tune_fstrim: true
+  tune_network: true
+  tune_swappiness: true
+  tune_transparent_hugepages: true
+  well_known_io: vendor:vm:storage
+`,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

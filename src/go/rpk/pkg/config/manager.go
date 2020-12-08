@@ -249,6 +249,7 @@ func (m *manager) Write(conf *Config) error {
 	// Merge the config into a new viper.Viper instance to prevent
 	// concurrent writes to the underlying config map.
 	v := InitViper(m.fs)
+	v.MergeConfigMap(m.v.AllSettings())
 	v.MergeConfigMap(confMap)
 	return checkAndWrite(m.fs, v, conf.ConfigFile)
 }
