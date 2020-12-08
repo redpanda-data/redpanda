@@ -144,7 +144,10 @@ ss::future<> consensus::stop() {
 }
 
 consensus::success_reply consensus::update_follower_index(
-  model::node_id node, result<append_entries_reply> r, follower_req_seq seq) {
+  model::node_id node,
+  result<append_entries_reply> r,
+  follower_req_seq seq,
+  model::offset dirty_offset) {
     // do not process replies when stoping
     if (unlikely(_as.abort_requested())) {
         return success_reply::no;
@@ -261,7 +264,7 @@ consensus::success_reply consensus::update_follower_index(
         return success_reply::no;
     }
 
-    if (needs_recovery(idx)) {
+    if (needs_recovery(idx, dirty_offset)) {
         vlog(
           _ctxlog.trace,
           "Starting recovery process for {} - current reply: {}",
@@ -1859,7 +1862,9 @@ consensus::transfer_leadership(std::optional<model::node_id> target) {
          * election request.
          */
         auto& meta = _fstats.get(target);
-        if (!meta.is_recovering && needs_recovery(meta)) {
+        if (
+          !meta.is_recovering
+          && needs_recovery(meta, _log.offsets().dirty_offset)) {
             dispatch_recovery(meta); // sets is_recovering flag
         }
 
@@ -1897,7 +1902,7 @@ consensus::transfer_leadership(std::optional<model::node_id> target) {
             }
 
             auto& meta = _fstats.get(target);
-            if (needs_recovery(meta)) {
+            if (needs_recovery(meta, _log.offsets().dirty_offset)) {
                 return seastar::make_ready_future<std::error_code>(
                   make_error_code(errc::timeout));
             }

@@ -87,17 +87,23 @@ static std::vector<heartbeat_manager::node_heartbeat> requests_for_range(
     reqs.reserve(pending_beats.size());
     for (auto& p : pending_beats) {
         std::vector<protocol_metadata> requests;
-        absl::flat_hash_map<raft::group_id, follower_req_seq> sequence_map;
+        absl::flat_hash_map<
+          raft::group_id,
+          heartbeat_manager::follower_request_meta>
+          meta_map;
         requests.reserve(p.second.size());
-        sequence_map.reserve(p.second.size());
+        meta_map.reserve(p.second.size());
         for (auto& [meta, seq] : p.second) {
-            sequence_map.emplace(meta.group, seq);
+            meta_map.emplace(
+              meta.group,
+              heartbeat_manager::follower_request_meta{
+                seq, meta.prev_log_index});
             requests.push_back(std::move(meta));
         }
         reqs.emplace_back(
           p.first,
           heartbeat_request{self, std::move(requests)},
-          std::move(sequence_map));
+          std::move(meta_map));
     }
 
     return reqs;
@@ -157,7 +163,7 @@ ss::future<> heartbeat_manager::do_self_heartbeat(node_heartbeat&& r) {
             .group = meta.group,
             .result = append_entries_reply::status::success};
       });
-    process_reply(r.target, std::move(r.sequence_map), std::move(reply));
+    process_reply(r.target, std::move(r.meta_map), std::move(reply));
     return ss::now();
 }
 
@@ -169,7 +175,7 @@ ss::future<> heartbeat_manager::do_heartbeat(node_heartbeat&& r) {
         next_heartbeat_timeout(), rpc::compression_type::zstd, 512));
     _dispatch_sem.signal();
     return f
-      .then([node = r.target, groups = std::move(r.sequence_map), this](
+      .then([node = r.target, groups = std::move(r.meta_map), this](
               result<heartbeat_reply> ret) mutable {
           process_reply(node, std::move(groups), std::move(ret));
       })
@@ -178,7 +184,7 @@ ss::future<> heartbeat_manager::do_heartbeat(node_heartbeat&& r) {
 
 void heartbeat_manager::process_reply(
   model::node_id n,
-  absl::flat_hash_map<raft::group_id, follower_req_seq> groups,
+  absl::flat_hash_map<raft::group_id, follower_request_meta> groups,
   result<heartbeat_reply> r) {
     if (!r) {
         vlog(
@@ -187,7 +193,7 @@ void heartbeat_manager::process_reply(
           n,
           r,
           r.error().message());
-        for (auto& [g, seq_id] : groups) {
+        for (auto& [g, req_meta] : groups) {
             auto it = _consensus_groups.find(g);
             if (it == _consensus_groups.end()) {
                 vlog(hbeatlog.error, "cannot find consensus group:{}", g);
@@ -196,7 +202,10 @@ void heartbeat_manager::process_reply(
             // propagate error
             (*it)->get_probe().heartbeat_request_error();
             (*it)->process_append_entries_reply(
-              n, result<append_entries_reply>(r.error()), seq_id);
+              n,
+              result<append_entries_reply>(r.error()),
+              req_meta.seq,
+              req_meta.dirty_offset);
         }
         return;
     }
@@ -207,10 +216,12 @@ void heartbeat_manager::process_reply(
               hbeatlog.error, "Could not find consensus for group:{}", m.group);
             continue;
         }
+        auto meta = groups.find(m.group)->second;
         (*it)->process_append_entries_reply(
           n,
           result<append_entries_reply>(std::move(m)),
-          groups.find(m.group)->second);
+          meta.seq,
+          meta.dirty_offset);
     }
 }
 

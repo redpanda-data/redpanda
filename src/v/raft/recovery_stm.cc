@@ -316,7 +316,7 @@ ss::future<> recovery_stm::replicate(
     _ptr->update_node_append_timestamp(_node_id);
 
     auto seq = _ptr->next_follower_sequence(_node_id);
-    return dispatch_append_entries(std::move(r)).then([this, seq](auto r) {
+    return dispatch_append_entries(std::move(r)).then([this, seq, dirty_offset = lstats.dirty_offset](auto r) {
         if (!r) {
             vlog(
               _ctxlog.error,
@@ -326,7 +326,8 @@ ss::future<> recovery_stm::replicate(
             _stop_requested = true;
             _ptr->get_probe().recovery_request_error();
         }
-        _ptr->process_append_entries_reply(_node_id, r.value(), seq);
+        _ptr->process_append_entries_reply(
+          _node_id, r.value(), seq, dirty_offset);
         // If request was reordered we have to stop recovery as follower state
         // is not known
         if (seq < _ptr->_fstats.get(_node_id).last_received_seq) {

@@ -89,22 +89,27 @@ public:
     using consensus_set = boost::container::
       flat_set<consensus_ptr, details::consensus_ptr_by_group_id>;
 
+    struct follower_request_meta {
+        follower_req_seq seq;
+        model::offset dirty_offset;
+    };
     // Heartbeats from all groups for single node
     struct node_heartbeat {
         node_heartbeat(
           model::node_id t,
           heartbeat_request req,
-          absl::flat_hash_map<raft::group_id, follower_req_seq> seqs)
+          absl::flat_hash_map<raft::group_id, follower_request_meta> seqs)
           : target(t)
           , request(std::move(req))
-          , sequence_map(std::move(seqs)) {}
+          , meta_map(std::move(seqs)) {}
 
         model::node_id target;
         heartbeat_request request;
         // each raft group has its own follower metadata hence we need map to
         // track a sequence per group
-        absl::flat_hash_map<raft::group_id, follower_req_seq> sequence_map;
+        absl::flat_hash_map<raft::group_id, follower_request_meta> meta_map;
     };
+
     heartbeat_manager(
       duration_type interval, consensus_client_protocol, model::node_id);
 
@@ -135,7 +140,7 @@ private:
     /// \param result if the node return successful heartbeats
     void process_reply(
       model::node_id n,
-      absl::flat_hash_map<raft::group_id, follower_req_seq> groups,
+      absl::flat_hash_map<raft::group_id, follower_request_meta> groups,
       result<heartbeat_reply> result);
 
     // private members
