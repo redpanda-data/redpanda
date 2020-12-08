@@ -206,6 +206,17 @@ void application::configure_admin_server() {
           })
           .get0();
     }
+    if (conf.dashboard_dir()) {
+        _admin
+          .invoke_on_all([](ss::http_server& server) {
+              server._routes.add(
+                ss::httpd::operation_type::GET,
+                ss::httpd::url("/"),
+                new ss::httpd::directory_handler(
+                  *config::shard_local_cfg().dashboard_dir()));
+          })
+          .get0();
+    }
     ss::prometheus::config metrics_conf;
     metrics_conf.metric_help = "redpanda metrics";
     metrics_conf.prefix = "vectorized";
