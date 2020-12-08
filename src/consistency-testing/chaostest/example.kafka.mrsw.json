@@ -4,19 +4,34 @@
             "host": "427.0.0.1",
             "httpport": 8888,
             "id": "endpoint0",
-            "idx": 0
+            "idx": 0,
+            "ssh_key": "/home/ubuntu/aws-cluster",
+            "ssh_user": "ubuntu",
+            "start_api_script": "sudo -b nohup python3 /home/ubuntu/control/kafkakv.py --acks '\"all\"' --topic topic1 --inflight-limit 36 --err /home/ubuntu/kafkakv_err.log --log /home/ubuntu/kafkakv.log --port 8888 --broker 427.0.0.1:9092 --broker 427.0.0.2:9092 --broker 427.0.0.3:9092 > /dev/null 2>&1 < /dev/null &",
+            "kill_api_script": "sudo /home/ubuntu/control/redpanda/kill-api.sh",
+            "rm_api_log_script": "sudo rm -f /home/ubuntu/kafkakv.log*"
         },
         {
             "host": "427.0.0.2",
             "httpport": 8888,
             "id": "endpoint1",
-            "idx": 1
+            "idx": 1,
+            "ssh_key": "/home/ubuntu/aws-cluster",
+            "ssh_user": "ubuntu",
+            "start_api_script": "sudo -b nohup python3 /home/ubuntu/control/kafkakv.py --acks '\"all\"' --topic topic1 --inflight-limit 36 --err /home/ubuntu/kafkakv_err.log --log /home/ubuntu/kafkakv.log --port 8888 --broker 427.0.0.1:9092 --broker 427.0.0.2:9092 --broker 427.0.0.3:9092 > /dev/null 2>&1 < /dev/null &",
+            "kill_api_script": "sudo /home/ubuntu/control/redpanda/kill-api.sh",
+            "rm_api_log_script": "sudo rm -f /home/ubuntu/kafkakv.log*"
         },
         {
             "host": "427.0.0.3",
             "httpport": 8888,
             "id": "endpoint2",
-            "idx": 2
+            "idx": 2,
+            "ssh_key": "/home/ubuntu/aws-cluster",
+            "ssh_user": "ubuntu",
+            "start_api_script": "sudo -b nohup python3 /home/ubuntu/control/kafkakv.py --acks '\"all\"' --topic topic1 --inflight-limit 36 --err /home/ubuntu/kafkakv_err.log --log /home/ubuntu/kafkakv.log --port 8888 --broker 427.0.0.1:9092 --broker 427.0.0.2:9092 --broker 427.0.0.3:9092 > /dev/null 2>&1 < /dev/null &",
+            "kill_api_script": "sudo /home/ubuntu/control/redpanda/kill-api.sh",
+            "rm_api_log_script": "sudo rm -f /home/ubuntu/kafkakv.log*"
         }
     ],
     "nodes": [
@@ -50,9 +65,6 @@
             "start_kafka_script": "sudo -b nohup /opt/kafka_2.12-2.6.0/bin/kafka-server-start.sh /opt/kafka_2.12-2.6.0/config/server.properties > /home/ubuntu/kafka.log 2>&1 < /dev/null &",
             "kill_kafka_script": "sudo /home/ubuntu/control/kafka/kill-kafka.sh",
             "kill_zookeeper_script": "sudo /home/ubuntu/control/kafka/kill-zookeeper.sh",
-            "start_api_script": "sudo -b nohup python3 /home/ubuntu/control/kafkakv.py --acks '\"all\"' --topic topic1 --inflight-limit 36 --err /home/ubuntu/kafkakv_err.log --log /home/ubuntu/kafkakv.log --port 8888 --broker 427.0.0.1:9092 --broker 427.0.0.2:9092 --broker 427.0.0.3:9092 > /dev/null 2>&1 < /dev/null &",
-            "kill_api_script": "sudo /home/ubuntu/control/kafka/kill-api.sh",
-            "rm_api_log_script": "sudo rm -f /home/ubuntu/kafkakv.log*",
             "zookeeper_config": {
                 "path": "/opt/apache-zookeeper-3.6.2-bin/conf/zoo.cfg",
                 "dataDir": "/mnt/vectorized/front/zookeeper",
@@ -99,9 +111,6 @@
             "start_kafka_script": "sudo -b nohup /opt/kafka_2.12-2.6.0/bin/kafka-server-start.sh /opt/kafka_2.12-2.6.0/config/server.properties > /home/ubuntu/kafka.log 2>&1 < /dev/null &",
             "kill_kafka_script": "sudo /home/ubuntu/control/kafka/kill-kafka.sh",
             "kill_zookeeper_script": "sudo /home/ubuntu/control/kafka/kill-zookeeper.sh",
-            "start_api_script": "sudo -b nohup python3 /home/ubuntu/control/kafkakv.py --acks '\"all\"' --topic topic1 --inflight-limit 36 --err /home/ubuntu/kafkakv_err.log --log /home/ubuntu/kafkakv.log --port 8888 --broker 427.0.0.1:9092 --broker 427.0.0.2:9092 --broker 427.0.0.3:9092 > /dev/null 2>&1 < /dev/null &",
-            "kill_api_script": "sudo /home/ubuntu/control/kafka/kill-api.sh",
-            "rm_api_log_script": "sudo rm -f /home/ubuntu/kafkakv.log*",
             "zookeeper_config": {
                 "path": "/opt/apache-zookeeper-3.6.2-bin/conf/zoo.cfg",
                 "dataDir": "/mnt/vectorized/front/zookeeper",
@@ -148,9 +157,6 @@
             "start_kafka_script": "sudo -b nohup /opt/kafka_2.12-2.6.0/bin/kafka-server-start.sh /opt/kafka_2.12-2.6.0/config/server.properties > /home/ubuntu/kafka.log 2>&1 < /dev/null &",
             "kill_kafka_script": "sudo /home/ubuntu/control/kafka/kill-kafka.sh",
             "kill_zookeeper_script": "sudo /home/ubuntu/control/kafka/kill-zookeeper.sh",
-            "start_api_script": "sudo -b nohup python3 /home/ubuntu/control/kafkakv.py --acks '\"all\"' --topic topic1 --inflight-limit 36 --err /home/ubuntu/kafkakv_err.log --log /home/ubuntu/kafkakv.log --port 8888 --broker 427.0.0.1:9092 --broker 427.0.0.2:9092 --broker 427.0.0.3:9092 > /dev/null 2>&1 < /dev/null &",
-            "kill_api_script": "sudo /home/ubuntu/control/kafka/kill-api.sh",
-            "rm_api_log_script": "sudo rm -f /home/ubuntu/kafkakv.log*",
             "zookeeper_config": {
                 "path": "/opt/apache-zookeeper-3.6.2-bin/conf/zoo.cfg",
                 "dataDir": "/mnt/vectorized/front/zookeeper",
