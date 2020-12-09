@@ -254,6 +254,7 @@ func TestRead(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
+			require.True(t, filepath.IsAbs(got.ConfigFile))
 			require.Exactly(t, want, got)
 		})
 	}
