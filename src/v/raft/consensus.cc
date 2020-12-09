@@ -144,7 +144,10 @@ ss::future<> consensus::stop() {
 }
 
 consensus::success_reply consensus::update_follower_index(
-  model::node_id node, result<append_entries_reply> r, follower_req_seq seq) {
+  model::node_id node,
+  result<append_entries_reply> r,
+  follower_req_seq seq,
+  model::offset dirty_offset) {
     // do not process replies when stoping
     if (unlikely(_as.abort_requested())) {
         return success_reply::no;
@@ -257,11 +260,16 @@ consensus::success_reply consensus::update_follower_index(
     }
 
     if (idx.is_recovering) {
-        // we are already recovering, do nothing
+        // we are already recovering, if follower dirty log index moved back
+        // from some reason (i.e. truncation, data loss, trigger recovery)
+        if (idx.last_dirty_log_index > reply.last_dirty_log_index) {
+            idx.next_index = details::next_offset(idx.last_dirty_log_index);
+            idx.follower_state_change.broadcast();
+        }
         return success_reply::no;
     }
 
-    if (needs_recovery(idx)) {
+    if (needs_recovery(idx, dirty_offset)) {
         vlog(
           _ctxlog.trace,
           "Starting recovery process for {} - current reply: {}",
@@ -313,8 +321,10 @@ void consensus::maybe_promote_to_voter(model::node_id id) {
 void consensus::process_append_entries_reply(
   model::node_id node,
   result<append_entries_reply> r,
-  follower_req_seq seq_id) {
-    auto is_success = update_follower_index(node, std::move(r), seq_id);
+  follower_req_seq seq_id,
+  model::offset dirty_offset) {
+    auto is_success = update_follower_index(
+      node, std::move(r), seq_id, dirty_offset);
     if (is_success) {
         maybe_promote_to_voter(node);
         maybe_update_majority_replicated_index();
@@ -337,10 +347,11 @@ void consensus::successfull_append_entries_reply(
       idx.next_index);
 }
 
-bool consensus::needs_recovery(const follower_index_metadata& idx) {
+bool consensus::needs_recovery(
+  const follower_index_metadata& idx, model::offset dirty_offset) {
     // follower match_index is behind, we have to recover it
-    auto lstats = _log.offsets();
-    return idx.match_index < lstats.dirty_offset
+
+    return idx.match_index < dirty_offset
            || idx.match_index > idx.last_dirty_log_index;
 }
 
@@ -747,7 +758,33 @@ ss::future<> consensus::start() {
                     _ctxlog.trace, "Recovered commit_index: {}", _commit_index);
               }
           })
-          .then([this] { return _event_manager.start(); });
+          .then([this] {
+              start_dispatching_disk_append_events();
+              return _event_manager.start();
+          });
+    });
+}
+
+void consensus::start_dispatching_disk_append_events() {
+    // forward disk appends to follower state changed condition
+    // variables
+    (void)ss::with_gate(_bg, [this] {
+        return ss::do_until(
+          [this] { return _as.abort_requested(); },
+          [this] {
+              return _disk_append.wait()
+                .then([this] {
+                    for (auto& idx : _fstats) {
+                        idx.second.follower_state_change.broadcast();
+                    }
+                })
+                .handle_exception_type(
+                  [this](const ss::broken_condition_variable&) {
+                      for (auto& idx : _fstats) {
+                          idx.second.follower_state_change.broken();
+                      }
+                  });
+          });
     });
 }
 
@@ -1859,7 +1896,9 @@ consensus::transfer_leadership(std::optional<model::node_id> target) {
          * election request.
          */
         auto& meta = _fstats.get(target);
-        if (!meta.is_recovering && needs_recovery(meta)) {
+        if (
+          !meta.is_recovering
+          && needs_recovery(meta, _log.offsets().dirty_offset)) {
             dispatch_recovery(meta); // sets is_recovering flag
         }
 
@@ -1897,7 +1936,7 @@ consensus::transfer_leadership(std::optional<model::node_id> target) {
             }
 
             auto& meta = _fstats.get(target);
-            if (needs_recovery(meta)) {
+            if (needs_recovery(meta, _log.offsets().dirty_offset)) {
                 return seastar::make_ready_future<std::error_code>(
                   make_error_code(errc::timeout));
             }

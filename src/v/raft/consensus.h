@@ -128,7 +128,10 @@ public:
     follower_req_seq next_follower_sequence(model::node_id);
 
     void process_append_entries_reply(
-      model::node_id, result<append_entries_reply>, follower_req_seq);
+      model::node_id,
+      result<append_entries_reply>,
+      follower_req_seq,
+      model::offset);
 
     ss::future<result<replicate_result>>
     replicate(model::record_batch_reader&&, replicate_options);
@@ -255,11 +258,15 @@ private:
     using success_reply = ss::bool_class<struct successfull_reply_tag>;
 
     success_reply update_follower_index(
-      model::node_id, result<append_entries_reply>, follower_req_seq seq_id);
+      model::node_id,
+      result<append_entries_reply>,
+      follower_req_seq seq_id,
+      model::offset);
+
     void successfull_append_entries_reply(
       follower_index_metadata&, append_entries_reply);
 
-    bool needs_recovery(const follower_index_metadata&);
+    bool needs_recovery(const follower_index_metadata&, model::offset);
     void dispatch_recovery(follower_index_metadata&);
     void maybe_update_leader_commit_idx();
     ss::future<> do_maybe_update_leader_commit_idx(ss::semaphore_units<>);
@@ -320,6 +327,8 @@ private:
 
     void maybe_update_last_visible_index(model::offset);
     void maybe_update_majority_replicated_index();
+
+    void start_dispatching_disk_append_events();
     // args
     model::node_id _self;
     raft::group_id _group;

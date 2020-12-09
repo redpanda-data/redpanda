@@ -127,6 +127,40 @@ FIXTURE_TEST(test_empty_node_recovery, raft_test_fixture) {
       "After recovery state is consistent");
 };
 
+FIXTURE_TEST(test_empty_node_recovery_relaxed_consistency, raft_test_fixture) {
+    raft_group gr = raft_group(raft::group_id(0), 3);
+    gr.enable_all();
+    bool success = replicate_random_batches(
+                     gr, 5, raft::consistency_level::leader_ack)
+                     .get0();
+    BOOST_REQUIRE(success);
+
+    validate_logs_replication(gr);
+    model::node_id disabled_id;
+    for (auto& [id, m] : gr.get_members()) {
+        // disable one of the non leader nodes
+        if (gr.get_leader_id() != id) {
+            disabled_id = id;
+            // truncate the node log
+            m.log
+              ->truncate(storage::truncate_config(
+                model::offset(0), ss::default_priority_class()))
+              .get();
+            gr.disable_node(id);
+            break;
+        }
+    }
+
+    gr.enable_node(disabled_id);
+
+    validate_logs_replication(gr);
+
+    wait_for(
+      10s,
+      [this, &gr] { return are_all_consumable_offsets_are_the_same(gr); },
+      "After recovery state is consistent");
+};
+
 FIXTURE_TEST(test_single_node_recovery_multi_terms, raft_test_fixture) {
     raft_group gr = raft_group(raft::group_id(0), 3);
     gr.enable_all();

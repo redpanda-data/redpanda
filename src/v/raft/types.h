@@ -137,6 +137,16 @@ struct follower_index_metadata {
      * on the recovery_finished condition variable.
      */
     ss::condition_variable recovery_finished;
+    /**
+     * When recovering, the recovery state machine will wait on this condition
+     * variable to wait for any changes that may require triggering recovery.
+     *
+     * This is:
+     * - follower log indices moved backward
+     * - disk append happened on the leader
+     * - follower is going to be removed
+     */
+    ss::condition_variable follower_state_change;
 };
 
 struct append_entries_request {

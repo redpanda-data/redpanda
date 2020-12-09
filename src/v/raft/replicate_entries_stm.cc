@@ -102,7 +102,8 @@ ss::future<> replicate_entries_stm::dispatch_one(
                        if (!reply) {
                            _ptr->get_probe().replicate_request_error();
                        }
-                       _ptr->process_append_entries_reply(id, reply, seq);
+                       _ptr->process_append_entries_reply(
+                         id, reply, seq, _dirty_offset);
                    });
              })
       .handle_exception_type([](const ss::gate_closed_exception&) {});
@@ -157,6 +158,7 @@ replicate_entries_stm::apply(ss::semaphore_units<> u) {
               return ss::make_ready_future<result<storage::append_result>>(
                 append_result);
           }
+          _dirty_offset = append_result.value().last_offset;
           // dispatch requests to followers & leader flush
           std::vector<ss::semaphore_units<>> vec;
           vec.push_back(std::move(u));

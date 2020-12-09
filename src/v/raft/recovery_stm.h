@@ -37,7 +37,7 @@ private:
     ss::future<> handle_install_snapshot_reply(result<install_snapshot_reply>);
     ss::future<> open_snapshot_reader();
     ss::future<> close_snapshot_reader();
-
+    bool state_changed();
     bool is_recovery_finished();
 
     consensus* _ptr;

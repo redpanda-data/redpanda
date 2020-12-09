@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "model/fundamental.h"
 #include "model/metadata.h"
 #include "raft/consensus.h"
 #include "seastarx.h"
@@ -116,6 +117,7 @@ private:
     ss::semaphore _dispatch_sem{0};
     ss::gate _req_bg;
     ctx_log _ctxlog;
+    model::offset _dirty_offset;
 };
 
 } // namespace raft
