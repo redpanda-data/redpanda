@@ -147,6 +147,8 @@ struct follower_index_metadata {
      * - follower is going to be removed
      */
     ss::condition_variable follower_state_change;
+    
+    bool suppress_heartbeats = false;
 };
 
 struct append_entries_request {
