@@ -42,7 +42,6 @@ steps:
 
     # install infra-deps (needed by formatting check of terraform files)
     vtools install infra-deps --conf=vtools/vtools/artifacts/ci/vtools-gcc-release.yml
-    vtools install redpanda-build-deps --conf=vtools/vtools/artifacts/ci/vtools-gcc-release.yml
 
 - id: 'build builder image'
   name: 'gcr.io/redpandaci/fedora:31-python37-docker1903'
