@@ -23,8 +23,10 @@ import (
 )
 
 type Launcher interface {
-	Start() error
+	Start(installDir string, args *RedpandaArgs) error
 }
+
+type launcher struct{}
 
 type RedpandaArgs struct {
 	ConfigFilePath string
@@ -32,28 +34,20 @@ type RedpandaArgs struct {
 	ExtraArgs      []string
 }
 
-func NewLauncher(installDir string, args *RedpandaArgs) Launcher {
-	return &launcher{
-		installDir: installDir,
-		args:       args,
-	}
+func NewLauncher() Launcher {
+	return &launcher{}
 }
 
-type launcher struct {
-	installDir string
-	args       *RedpandaArgs
-}
-
-func (l *launcher) Start() error {
-	binary, err := l.getBinary()
+func (l *launcher) Start(installDir string, args *RedpandaArgs) error {
+	binary, err := getBinary(installDir)
 	if err != nil {
 		return err
 	}
 
-	if l.args.ConfigFilePath == "" {
+	if args.ConfigFilePath == "" {
 		return errors.New("Redpanda config file is required")
 	}
-	redpandaArgs := collectRedpandaArgs(l.args)
+	redpandaArgs := collectRedpandaArgs(args)
 	log.Debugf("Starting '%s' with arguments '%v'", binary, redpandaArgs)
 
 	var rpEnv []string
@@ -67,8 +61,8 @@ func (l *launcher) Start() error {
 	return unix.Exec(binary, redpandaArgs, rpEnv)
 }
 
-func (l *launcher) getBinary() (string, error) {
-	path, err := exec.LookPath(filepath.Join(l.installDir, "bin", "redpanda"))
+func getBinary(installDir string) (string, error) {
+	path, err := exec.LookPath(filepath.Join(installDir, "bin", "redpanda"))
 	if err != nil {
 		return "", err
 	}

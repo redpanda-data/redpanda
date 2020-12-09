@@ -209,10 +209,10 @@ func NewStartCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 
 			sendEnv(mgr, env, conf, nil)
 			rpArgs.ExtraArgs = args
-			launcher := redpanda.NewLauncher(installDirectory, rpArgs)
+			launcher := redpanda.NewLauncher()
 			log.Info(feedbackMsg)
 			log.Info("Starting redpanda...")
-			return launcher.Start()
+			return launcher.Start(installDirectory, rpArgs)
 		},
 	}
 	command.Flags().StringVar(
