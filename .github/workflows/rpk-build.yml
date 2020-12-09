@@ -10,7 +10,8 @@
 name: Go
 on:
   push:
-    tags: 'release-*'
+    tags: 
+    - 'v2**'
     branches:
       - '*'
   pull_request:
@@ -60,7 +61,7 @@ jobs:
 
     - name: Upload build artifacts
       uses: actions/upload-artifact@v2
-      if: startsWith(github.ref, 'refs/tags/release-')
+      if: startsWith(github.ref, 'refs/tags/v')  && !contains(github.ref, '-')
       with:
         name: rpk-archives
         path: |
@@ -69,7 +70,7 @@ jobs:
   sign-darwin:
     name: Sign and notarize the darwin release_name
     needs: build
-    if: startsWith(github.ref, 'refs/tags/release-')
+    if: startsWith(github.ref, 'refs/tags/v')  && !contains(github.ref, '-')
     runs-on: macos-10.15
     steps:
       - name: Checkout
@@ -115,7 +116,7 @@ jobs:
   create-release:
     name: Create release
     needs: [build, sign-darwin]
-    if: startsWith(github.ref, 'refs/tags/release-')
+    if: startsWith(github.ref, 'refs/tags/v')  && !contains(github.ref, '-')
     runs-on: ubuntu-latest
     steps:
     - name: Create rpk release
@@ -134,7 +135,7 @@ jobs:
   publish-release-artifacts:
     name: Publish release
     needs: create-release
-    if: startsWith(github.ref, 'refs/tags/release-')
+    if: startsWith(github.ref, 'refs/tags/v')  && !contains(github.ref, '-')
     strategy:
       matrix:
         os: [linux, darwin]
