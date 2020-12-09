@@ -29,13 +29,10 @@ public:
         size_t record_count;
     };
     using item_ptr = ss::lw_shared_ptr<item>;
-    // 1MB default size
-    static constexpr size_t default_batch_bytes = 1_MiB;
-
     explicit replicate_batcher(
       consensus* ptr,
       std::chrono::milliseconds debounce_duration,
-      size_t cache_size = default_batch_bytes);
+      size_t cache_size);
 
     replicate_batcher(replicate_batcher&&) noexcept = default;
     replicate_batcher& operator=(replicate_batcher&&) noexcept = delete;
@@ -62,7 +59,7 @@ private:
 
     consensus* _ptr;
     std::chrono::milliseconds _debounce_duration;
-    size_t _max_batch_size{default_batch_bytes};
+    size_t _max_batch_size;
     size_t _pending_bytes{0};
     timer_type _flush_timer;
 
