@@ -115,7 +115,9 @@ func NewStartCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 				sendEnv(mgr, env, conf, err)
 				return err
 			}
-			conf.Redpanda.SeedServers = seedServers
+			if len(seedServers) != 0 {
+				conf.Redpanda.SeedServers = seedServers
+			}
 			advertisedKafka = stringOr(
 				advertisedKafka,
 				os.Getenv("REDPANDA_ADVERTISE_KAFKA_ADDRESS"),
