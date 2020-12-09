@@ -161,6 +161,12 @@ configuration::configuration()
       required::no,
       64_MiB)
   , rack(*this, "rack", "Rack identifier", required::no, std::nullopt)
+  , dashboard_dir(
+      *this,
+      "dashboard_dir",
+      "serve http dashboard on / url",
+      required::no,
+      std::nullopt)
   , disable_metrics(
       *this,
       "disable_metrics",

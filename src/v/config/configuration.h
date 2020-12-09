@@ -62,6 +62,7 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> quota_manager_gc_sec;
     property<uint32_t> target_quota_byte_rate;
     property<std::optional<ss::sstring>> rack;
+    property<std::optional<ss::sstring>> dashboard_dir;
     property<bool> disable_metrics;
     property<std::chrono::milliseconds> group_min_session_timeout_ms;
     property<std::chrono::milliseconds> group_max_session_timeout_ms;
