@@ -17,6 +17,7 @@ import (
 	"time"
 	"vectorized/pkg/cli/cmd/container/common"
 
+	"github.com/docker/docker/api/types"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
@@ -35,6 +36,32 @@ func TestStop(t *testing.T) {
 			name: "it should log if the container can't be stopped",
 			client: func() (common.Client, error) {
 				return &common.MockClient{
+					MockContainerInspect: common.MockContainerInspect,
+					MockContainerList: func(
+						_ context.Context,
+						_ types.ContainerListOptions,
+					) ([]types.Container, error) {
+						return []types.Container{
+							{
+								ID: "a",
+								Labels: map[string]string{
+									"node-id": "0",
+								},
+							},
+							{
+								ID: "b",
+								Labels: map[string]string{
+									"node-id": "1",
+								},
+							},
+							{
+								ID: "c",
+								Labels: map[string]string{
+									"node-id": "2",
+								},
+							},
+						}, nil
+					},
 					MockContainerStop: func(
 						_ context.Context,
 						_ string,
@@ -65,7 +92,22 @@ func TestStop(t *testing.T) {
 		{
 			name: "it should stop the current cluster",
 			client: func() (common.Client, error) {
-				return &common.MockClient{}, nil
+				return &common.MockClient{
+					MockContainerInspect: common.MockContainerInspect,
+					MockContainerList: func(
+						_ context.Context,
+						_ types.ContainerListOptions,
+					) ([]types.Container, error) {
+						return []types.Container{
+							{
+								ID: "a",
+								Labels: map[string]string{
+									"node-id": "0",
+								},
+							},
+						}, nil
+					},
+				}, nil
 			},
 			before: func(fs afero.Fs) error {
 				return fs.MkdirAll(common.ConfDir(0), 0755)

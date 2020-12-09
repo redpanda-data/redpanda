@@ -372,36 +372,32 @@ Please check your internet connection and try again.`,
 			name:  "it should do nothing if there's an existing running cluster",
 			nodes: 1,
 			client: func() (common.Client, error) {
-				return &common.MockClient{}, nil
-			},
-			before: func(fs afero.Fs) error {
-				return fs.MkdirAll(common.ConfDir(0), 0755)
-			},
-			check: func(fs afero.Fs, st *testing.T) {
-				ok, err := common.CheckFiles(
-					fs,
-					st,
-					true,
-					common.ConfDir(0),
-				)
-				require.NoError(st, err)
-				require.True(st, ok)
-			},
-		},
-		{
-			name:  "it should fail if there's an existing cluster but the containers were removed",
-			nodes: 1,
-			client: func() (common.Client, error) {
 				return &common.MockClient{
-					MockContainerInspect: func(
+					MockContainerInspect: common.MockContainerInspect,
+					MockContainerList: func(
 						_ context.Context,
-						_ string,
-					) (types.ContainerJSON, error) {
-						return types.ContainerJSON{},
-							errors.New("Image not found")
-					},
-					MockIsErrNotFound: func(_ error) bool {
-						return true
+						_ types.ContainerListOptions,
+					) ([]types.Container, error) {
+						return []types.Container{
+							{
+								ID: "a",
+								Labels: map[string]string{
+									"node-id": "0",
+								},
+							},
+							{
+								ID: "b",
+								Labels: map[string]string{
+									"node-id": "1",
+								},
+							},
+							{
+								ID: "c",
+								Labels: map[string]string{
+									"node-id": "2",
+								},
+							},
+						}, nil
 					},
 				}, nil
 			},
@@ -418,8 +414,6 @@ Please check your internet connection and try again.`,
 				require.NoError(st, err)
 				require.True(st, ok)
 			},
-			expectedErrMsg: `Found data for an existing cluster, but the container for node 0 was removed.
-Please run 'rpk container purge' to delete all remaining data.`,
 		},
 	}
 

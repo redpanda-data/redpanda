@@ -39,11 +39,11 @@ func Purge(fs afero.Fs) *cobra.Command {
 }
 
 func purgeCluster(fs afero.Fs, c common.Client) error {
-	nodeIDs, err := common.GetExistingNodes(fs)
+	nodes, err := common.GetExistingNodes(c)
 	if err != nil {
 		return err
 	}
-	if len(nodeIDs) == 0 {
+	if len(nodes) == 0 {
 		log.Info(
 			`No nodes to remove.
 You may start a new local cluster with 'rpk container start'`,
@@ -55,8 +55,8 @@ You may start a new local cluster with 'rpk container start'`,
 		return err
 	}
 	grp, _ := errgroup.WithContext(context.Background())
-	for _, nodeID := range nodeIDs {
-		id := nodeID
+	for _, node := range nodes {
+		id := node.ID
 		grp.Go(func() error {
 			err := common.RemoveNodeDir(fs, id)
 			if err != nil {

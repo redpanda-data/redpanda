@@ -36,6 +36,32 @@ func TestPurge(t *testing.T) {
 			name: "it should log if the containers can't be stopped",
 			client: func() (common.Client, error) {
 				return &common.MockClient{
+					MockContainerInspect: common.MockContainerInspect,
+					MockContainerList: func(
+						_ context.Context,
+						_ types.ContainerListOptions,
+					) ([]types.Container, error) {
+						return []types.Container{
+							{
+								ID: "a",
+								Labels: map[string]string{
+									"node-id": "0",
+								},
+							},
+							{
+								ID: "b",
+								Labels: map[string]string{
+									"node-id": "1",
+								},
+							},
+							{
+								ID: "c",
+								Labels: map[string]string{
+									"node-id": "2",
+								},
+							},
+						}, nil
+					},
 					MockContainerStop: func(
 						_ context.Context,
 						_ string,
@@ -66,7 +92,34 @@ func TestPurge(t *testing.T) {
 		{
 			name: "it should stop the current cluster",
 			client: func() (common.Client, error) {
-				return &common.MockClient{}, nil
+				return &common.MockClient{
+					MockContainerInspect: common.MockContainerInspect,
+					MockContainerList: func(
+						_ context.Context,
+						_ types.ContainerListOptions,
+					) ([]types.Container, error) {
+						return []types.Container{
+							{
+								ID: "a",
+								Labels: map[string]string{
+									"node-id": "0",
+								},
+							},
+							{
+								ID: "b",
+								Labels: map[string]string{
+									"node-id": "1",
+								},
+							},
+							{
+								ID: "c",
+								Labels: map[string]string{
+									"node-id": "2",
+								},
+							},
+						}, nil
+					},
+				}, nil
 			},
 			before: func(fs afero.Fs) error {
 				err := fs.MkdirAll(common.ConfDir(0), 0755)
@@ -93,6 +146,20 @@ func TestPurge(t *testing.T) {
 			name: "it should fail if it fails to remove a container",
 			client: func() (common.Client, error) {
 				return &common.MockClient{
+					MockContainerInspect: common.MockContainerInspect,
+					MockContainerList: func(
+						_ context.Context,
+						_ types.ContainerListOptions,
+					) ([]types.Container, error) {
+						return []types.Container{
+							{
+								ID: "a",
+								Labels: map[string]string{
+									"node-id": "0",
+								},
+							},
+						}, nil
+					},
 					MockContainerRemove: func(
 						context.Context,
 						string,
@@ -111,6 +178,20 @@ func TestPurge(t *testing.T) {
 			name: "it should fail if it fails to delete the network",
 			client: func() (common.Client, error) {
 				return &common.MockClient{
+					MockContainerInspect: common.MockContainerInspect,
+					MockContainerList: func(
+						_ context.Context,
+						_ types.ContainerListOptions,
+					) ([]types.Container, error) {
+						return []types.Container{
+							{
+								ID: "a",
+								Labels: map[string]string{
+									"node-id": "0",
+								},
+							},
+						}, nil
+					},
 					MockNetworkRemove: func(
 						context.Context,
 						string,
@@ -128,6 +209,20 @@ func TestPurge(t *testing.T) {
 			name: "it should succeed if the network has been removed",
 			client: func() (common.Client, error) {
 				return &common.MockClient{
+					MockContainerInspect: common.MockContainerInspect,
+					MockContainerList: func(
+						_ context.Context,
+						_ types.ContainerListOptions,
+					) ([]types.Container, error) {
+						return []types.Container{
+							{
+								ID: "a",
+								Labels: map[string]string{
+									"node-id": "0",
+								},
+							},
+						}, nil
+					},
 					MockNetworkRemove: func(
 						context.Context,
 						string,
@@ -143,6 +238,55 @@ func TestPurge(t *testing.T) {
 				return fs.MkdirAll(common.ConfDir(0), 0755)
 			},
 			expectedOutput: []string{"Deleted cluster data."},
+		},
+		{
+			name: "it should fail if it fails to list the containers",
+			client: func() (common.Client, error) {
+				return &common.MockClient{
+					MockContainerInspect: common.MockContainerInspect,
+					MockContainerList: func(
+						_ context.Context,
+						_ types.ContainerListOptions,
+					) ([]types.Container, error) {
+						return nil, errors.New("Can't list")
+					},
+				}, nil
+			},
+			before: func(fs afero.Fs) error {
+				return fs.MkdirAll(common.ConfDir(0), 0755)
+			},
+			expectedErrMsg: "Can't list",
+		},
+		{
+			name: "it should fail if it fails to inspect a container",
+			client: func() (common.Client, error) {
+				return &common.MockClient{
+					MockContainerInspect: func(
+						_ context.Context,
+						_ string,
+					) (types.ContainerJSON, error) {
+						return types.ContainerJSON{},
+							errors.New("Can't inspect")
+					},
+					MockContainerList: func(
+						_ context.Context,
+						_ types.ContainerListOptions,
+					) ([]types.Container, error) {
+						return []types.Container{
+							{
+								ID: "a",
+								Labels: map[string]string{
+									"node-id": "0",
+								},
+							},
+						}, nil
+					},
+				}, nil
+			},
+			before: func(fs afero.Fs) error {
+				return fs.MkdirAll(common.ConfDir(0), 0755)
+			},
+			expectedErrMsg: "Can't inspect",
 		},
 	}
 	for _, tt := range tests {

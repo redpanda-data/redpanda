@@ -249,33 +249,20 @@ func startCluster(
 
 func restartCluster(fs afero.Fs, c common.Client) ([]node, error) {
 	// Check if a cluster is running
-	nodeIDs, err := common.GetExistingNodes(fs)
+	states, err := common.GetExistingNodes(c)
 	if err != nil {
 		return nil, err
 	}
 	// If there isn't an existing cluster, there's nothing to restart.
-	if len(nodeIDs) == 0 {
+	if len(states) == 0 {
 		return nil, nil
 	}
 	grp, _ := errgroup.WithContext(context.Background())
 	mu := sync.Mutex{}
 	nodes := []node{}
-	for _, nodeID := range nodeIDs {
-		id := nodeID
+	for _, s := range states {
+		state := s
 		grp.Go(func() error {
-			state, err := common.GetState(c, id)
-			if err != nil {
-				if c.IsErrNotFound(err) {
-					msg := "Found data for an existing" +
-						" cluster, but the container" +
-						" for node %d was removed.\n" +
-						"Please run 'rpk container" +
-						" purge' to delete all" +
-						" remaining data."
-					return fmt.Errorf(msg, id)
-				}
-				return err
-			}
 			if !state.Running {
 				ctx, _ := common.DefaultCtx()
 				err = c.ContainerStart(
@@ -286,7 +273,7 @@ func restartCluster(fs afero.Fs, c common.Client) ([]node, error) {
 				if err != nil {
 					return err
 				}
-				state, err = common.GetState(c, id)
+				state, err = common.GetState(c, state.ID)
 				if err != nil {
 					return err
 				}

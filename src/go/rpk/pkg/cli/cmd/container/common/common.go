@@ -16,7 +16,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -83,32 +82,41 @@ func ClusterDir() string {
 	return filepath.Join(home, ".rpk", "cluster")
 }
 
-func GetExistingNodes(fs afero.Fs) ([]uint, error) {
-	nodeIDs := []uint{}
-	nodeDirs, err := afero.ReadDir(fs, ClusterDir())
+func GetExistingNodes(c Client) ([]*NodeState, error) {
+	regExp := `^/rp-node-[\d]+`
+	filters := filters.NewArgs()
+	filters.Add("name", regExp)
+	ctx, _ := DefaultCtx()
+	containers, err := c.ContainerList(
+		ctx,
+		types.ContainerListOptions{
+			All:     true,
+			Filters: filters,
+		},
+	)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nodeIDs, nil
-		}
-		return nodeIDs, err
+		return nil, err
 	}
-	nameRegExp := regexp.MustCompile(`node-[\d]+`)
-	for _, nodeDir := range nodeDirs {
-		if nodeDir.IsDir() && nameRegExp.Match([]byte(nodeDir.Name())) {
-			nameParts := strings.Split(nodeDir.Name(), "-")
-			nodeIDStr := nameParts[len(nameParts)-1]
-			nodeID, err := strconv.ParseUint(nodeIDStr, 10, 64)
-			if err != nil {
-				return nodeIDs, fmt.Errorf(
-					"Couldn't parse node ID '%s': %v",
-					nodeIDStr,
-					err,
-				)
-			}
-			nodeIDs = append(nodeIDs, uint(nodeID))
+	if len(containers) == 0 {
+		return []*NodeState{}, nil
+	}
+
+	nodes := make([]*NodeState, len(containers))
+	for i, cont := range containers {
+		nodeIDStr := cont.Labels["node-id"]
+		nodeID, err := strconv.ParseUint(nodeIDStr, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"Couldn't parse node ID: '%s'",
+				nodeIDStr,
+			)
+		}
+		nodes[i], err = GetState(c, uint(nodeID))
+		if err != nil {
+			return nil, err
 		}
 	}
-	return nodeIDs, nil
+	return nodes, nil
 }
 
 func GetState(c Client, nodeID uint) (*NodeState, error) {
