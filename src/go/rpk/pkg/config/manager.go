@@ -83,8 +83,8 @@ func (m *manager) FindOrGenerate(path string) (*Config, error) {
 			if err != nil {
 				return nil, err
 			}
-			conf.ConfigFile = m.v.ConfigFileUsed()
-			return conf, nil
+			conf.ConfigFile, err = absPath(m.v.ConfigFileUsed())
+			return conf, err
 		}
 
 	}
@@ -218,8 +218,8 @@ func (m *manager) Read(path string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	conf.ConfigFile = m.v.ConfigFileUsed()
-	return conf, nil
+	conf.ConfigFile, err = absPath(m.v.ConfigFileUsed())
+	return conf, err
 }
 
 func (m *manager) readMap(path string) (map[string]interface{}, error) {
@@ -369,8 +369,8 @@ func unmarshal(v *viper.Viper) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	conf.ConfigFile = v.ConfigFileUsed()
-	return conf, nil
+	conf.ConfigFile, err = absPath(v.ConfigFileUsed())
+	return conf, err
 }
 
 func base58Encode(s string) string {
@@ -427,4 +427,16 @@ func parse(val string) interface{} {
 		return b
 	}
 	return val
+}
+
+func absPath(path string) (string, error) {
+	absPath, err := fp.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf(
+			"Couldn't convert the used config file path to"+
+				" absolute: %s",
+			path,
+		)
+	}
+	return absPath, nil
 }
