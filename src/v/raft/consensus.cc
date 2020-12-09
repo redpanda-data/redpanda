@@ -1995,4 +1995,22 @@ void consensus::maybe_update_majority_replicated_index() {
       _majority_replicated_index, majority_match);
     _consumable_offset_monitor.notify(last_visible_index());
 }
+
+bool consensus::are_heartbeats_suppressed(model::node_id id) const {
+    if (!_fstats.contains(id)) {
+        return true;
+    }
+
+    return _fstats.get(id).suppress_heartbeats;
+}
+
+void consensus::suppress_heartbeats(
+  model::node_id id, follower_req_seq last_seq, bool is_suppressed) {
+    if (auto it = _fstats.find(id); it != _fstats.end()) {
+        if (last_seq <= it->second.last_sent_seq) {
+            it->second.suppress_heartbeats = is_suppressed;
+        }
+    }
+}
+
 } // namespace raft

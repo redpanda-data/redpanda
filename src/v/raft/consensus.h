@@ -217,6 +217,10 @@ public:
 
     probe& get_probe() { return _probe; };
 
+    bool are_heartbeats_suppressed(model::node_id) const;
+
+    void suppress_heartbeats(model::node_id, follower_req_seq, bool);
+
 private:
     friend replicate_entries_stm;
     friend vote_stm;

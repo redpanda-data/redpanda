@@ -147,6 +147,11 @@ struct follower_index_metadata {
      * - follower is going to be removed
      */
     ss::condition_variable follower_state_change;
+    /**
+     * We prevent race conditions accessing suppress_heartbeats flag using the
+     * `last_sent_seq` value for version control.
+     */
+    bool suppress_heartbeats = false;
 };
 
 struct append_entries_request {

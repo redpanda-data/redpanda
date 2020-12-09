@@ -74,6 +74,10 @@ static std::vector<heartbeat_manager::node_heartbeat> requests_for_range(
                 // we already sent heartbeat, skip it
                 return;
             }
+
+            if (ptr->are_heartbeats_suppressed(n.id())) {
+                return;
+            }
             auto seq_id = ptr->next_follower_sequence(n.id());
             pending_beats[n.id()].emplace_back(ptr->meta(), seq_id);
         };
