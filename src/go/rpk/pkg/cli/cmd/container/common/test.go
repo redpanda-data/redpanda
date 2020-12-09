@@ -56,6 +56,11 @@ type MockClient struct {
 		timeout *time.Duration,
 	) error
 
+	MockContainerList func(
+		ctx context.Context,
+		options types.ContainerListOptions,
+	) ([]types.Container, error)
+
 	MockContainerInspect func(
 		ctx context.Context,
 		containerID string,
@@ -156,6 +161,15 @@ func (c *MockClient) ContainerStop(
 		return c.MockContainerStop(ctx, containerID, timeout)
 	}
 	return nil
+}
+
+func (c *MockClient) ContainerList(
+	ctx context.Context, options types.ContainerListOptions,
+) ([]types.Container, error) {
+	if c.MockContainerList != nil {
+		return c.MockContainerList(ctx, options)
+	}
+	return []types.Container{}, nil
 }
 
 func (c *MockClient) ContainerInspect(

@@ -56,6 +56,11 @@ type Client interface {
 		timeout *time.Duration,
 	) error
 
+	ContainerList(
+		ctx context.Context,
+		options types.ContainerListOptions,
+	) ([]types.Container, error)
+
 	ContainerInspect(
 		ctx context.Context,
 		containerID string,
