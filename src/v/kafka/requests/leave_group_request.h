@@ -48,7 +48,7 @@ struct leave_group_request final {
     }
 };
 
-static inline std::ostream&
+inline std::ostream&
 operator<<(std::ostream& os, const leave_group_request& r) {
     return os << r.data;
 }
@@ -75,7 +75,7 @@ make_leave_error(error_code error) {
     return ss::make_ready_future<leave_group_response>(error);
 }
 
-static inline std::ostream&
+inline std::ostream&
 operator<<(std::ostream& os, const leave_group_response& r) {
     return os << r.data;
 }

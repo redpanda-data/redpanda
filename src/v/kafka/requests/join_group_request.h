@@ -77,8 +77,7 @@ struct join_group_request final {
     void decode(request_context& ctx);
 };
 
-static inline std::ostream&
-operator<<(std::ostream& os, const join_group_request& r) {
+inline std::ostream& operator<<(std::ostream& os, const join_group_request& r) {
     return os << r.data;
 }
 
@@ -135,7 +134,7 @@ make_join_error(kafka::member_id member_id, error_code error) {
       _make_join_error(std::move(member_id), error));
 }
 
-static inline std::ostream&
+inline std::ostream&
 operator<<(std::ostream& os, const join_group_response& r) {
     return os << r.data;
 }

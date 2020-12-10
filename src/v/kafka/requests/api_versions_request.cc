@@ -17,6 +17,7 @@
 #include "kafka/requests/fetch_request.h"
 #include "kafka/requests/find_coordinator_request.h"
 #include "kafka/requests/heartbeat_request.h"
+#include "kafka/requests/init_producer_id_request.h"
 #include "kafka/requests/join_group_request.h"
 #include "kafka/requests/leave_group_request.h"
 #include "kafka/requests/list_groups_request.h"

@@ -62,8 +62,7 @@ struct sync_group_request final {
     }
 };
 
-static inline std::ostream&
-operator<<(std::ostream& os, const sync_group_request& r) {
+inline std::ostream& operator<<(std::ostream& os, const sync_group_request& r) {
     return os << r.data;
 }
 
@@ -95,7 +94,7 @@ make_sync_error(error_code error) {
     return ss::make_ready_future<sync_group_response>(error);
 }
 
-static inline std::ostream&
+inline std::ostream&
 operator<<(std::ostream& os, const sync_group_response& r) {
     return os << r.data;
 }
