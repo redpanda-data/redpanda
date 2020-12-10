@@ -140,6 +140,59 @@ func checkScheduler(
 	return scheduler == "none" || scheduler == "noop", nil
 }
 
+func NewDeviceWriteCacheChecker(
+	fs afero.Fs, device string, deviceFeatures disk.DeviceFeatures,
+) Checker {
+	return NewEqualityChecker(
+		SchedulerChecker,
+		fmt.Sprintf("Disk '%s' write cache tuned", device),
+		Warning,
+		true,
+		func() (interface{}, error) {
+			return checkDeviceWriteCache(deviceFeatures, device)
+		},
+	)
+}
+
+func NewDirectoryWriteCacheChecker(
+	fs afero.Fs,
+	dir string,
+	deviceFeatures disk.DeviceFeatures,
+	blockDevices disk.BlockDevices,
+) Checker {
+	return NewEqualityChecker(
+		SchedulerChecker,
+		fmt.Sprintf("Dir '%s' write cache tuned", dir),
+		Warning,
+		true,
+		func() (interface{}, error) {
+			devices, err := blockDevices.GetDirectoryDevices(dir)
+			if err != nil {
+				return nil, err
+			}
+			tuned := true
+			for _, device := range devices {
+				ok, err := checkDeviceWriteCache(deviceFeatures, device)
+				if err != nil {
+					return false, err
+				}
+				tuned = tuned && ok
+			}
+			return tuned, nil
+		},
+	)
+}
+
+func checkDeviceWriteCache(
+	deviceFeatures disk.DeviceFeatures, device string,
+) (bool, error) {
+	cachePolicy, err := deviceFeatures.GetWriteCache(device)
+	if err != nil {
+		return false, err
+	}
+	return (cachePolicy == disk.CachePolicyWriteThrough), nil
+}
+
 func NewDisksIRQAffinityStaticChecker(
 	fs afero.Fs,
 	devices []string,

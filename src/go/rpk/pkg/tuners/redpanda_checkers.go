@@ -11,6 +11,8 @@ package tuners
 
 import (
 	"time"
+	"vectorized/pkg/cloud"
+	"vectorized/pkg/cloud/gcp"
 	"vectorized/pkg/config"
 	"vectorized/pkg/net"
 	"vectorized/pkg/os"
@@ -55,6 +57,7 @@ const (
 	ClockSource
 	Swappiness
 	KernelVersion
+	WriteCachePolicyChecker
 )
 
 func NewConfigChecker(conf *config.Config) Checker {
@@ -210,7 +213,7 @@ func RedpandaCheckers(
 	}
 	netCheckersFactory := NewNetCheckersFactory(
 		fs, irqProcFile, irqDeviceInfo, ethtool, balanceService, cpuMasks)
-	return map[CheckerID][]Checker{
+	checkers := map[CheckerID][]Checker{
 		ConfigFileChecker:             []Checker{NewConfigChecker(config)},
 		IoConfigFileChecker:           []Checker{NewIOConfigFileExistanceChecker(fs, ioConfigFile)},
 		FreeMemChecker:                []Checker{NewMemoryChecker(fs)},
@@ -237,5 +240,19 @@ func RedpandaCheckers(
 		ClockSource:                   []Checker{NewClockSourceChecker(fs)},
 		Swappiness:                    []Checker{NewSwappinessChecker(fs)},
 		KernelVersion:                 []Checker{NewKernelVersionChecker(GetKernelVersion)},
-	}, nil
+	}
+
+	v, err := cloud.AvailableVendor()
+	// NOTE: important workaround for very high flush latency in
+	//       GCP when using local SSD's
+	gcpVendor := gcp.GcpVendor{}
+	if err != nil && v.Name() == gcpVendor.Name() {
+
+		checkers[WriteCachePolicyChecker] = []Checker{NewDirectoryWriteCacheChecker(fs,
+			config.Redpanda.Directory,
+			deviceFeatures,
+			blockDevices)}
+	}
+
+	return checkers, nil
 }
