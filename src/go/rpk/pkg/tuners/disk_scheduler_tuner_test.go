@@ -20,11 +20,13 @@ import (
 
 type deviceFeaturesMock struct {
 	disk.DeviceFeatures
-	getSupportedSchedulers  func(string) ([]string, error)
-	getNomerges             func(string) (int, error)
-	getNomergesFeatureFile  func(string) (string, error)
-	getSchedulerFeatureFile func(string) (string, error)
-	getScheduler            func(string) (string, error)
+	getSupportedSchedulers   func(string) ([]string, error)
+	getNomerges              func(string) (int, error)
+	getNomergesFeatureFile   func(string) (string, error)
+	getSchedulerFeatureFile  func(string) (string, error)
+	getScheduler             func(string) (string, error)
+	getWriteCacheFeatureFile func(string) (string, error)
+	getWriteCache            func(string) (string, error)
 }
 
 func (m *deviceFeaturesMock) GetScheduler(device string) (string, error) {
@@ -51,6 +53,16 @@ func (m *deviceFeaturesMock) GetSchedulerFeatureFile(
 	device string,
 ) (string, error) {
 	return m.getSchedulerFeatureFile(device)
+}
+
+func (m *deviceFeaturesMock) GetWriteCacheFeatureFile(
+	device string,
+) (string, error) {
+	return m.getWriteCacheFeatureFile(device)
+}
+
+func (m *deviceFeaturesMock) GetWriteCache(device string) (string, error) {
+	return m.getWriteCache(device)
 }
 
 func TestDeviceSchedulerTuner_Tune(t *testing.T) {
