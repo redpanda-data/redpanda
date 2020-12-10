@@ -97,7 +97,8 @@
         }
     ],
     "workload": {
-        "name": "mrsw"
+        "name": "comrmw",
+        "period_s": 0.003
     },
     "system": "kvelldb",
     "scenario": "inject-recover",

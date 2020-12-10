@@ -12,16 +12,25 @@ Let the addresses are (public ip / private ip)
 
 Start a control node, let address is
 
-  export control_ext=34.221.236.57
+  export control_ext=34.221.236.57 control_int=172.31.19.127
 
 Update ip-addresses of this document and test configs
 
-    for system in kvelldb kafka redpanda; do
+    for system in kafka redpanda; do
         for workflow in comrmw mrsw; do
-            sed -i'' "s/427.0.0.1/$server1_int/" src/consistency-testing/chaostest/example.$system.$workflow.json
-            sed -i'' "s/427.0.0.2/$server2_int/" src/consistency-testing/chaostest/example.$system.$workflow.json
-            sed -i'' "s/427.0.0.3/$server3_int/" src/consistency-testing/chaostest/example.$system.$workflow.json
+            for mode in int ext; do
+                sed -i'' "s/427.0.0.1/$server1_int/" src/consistency-testing/chaostest/test-plan-templates/$system.$workflow.$mode.json
+                sed -i'' "s/427.0.0.2/$server2_int/" src/consistency-testing/chaostest/test-plan-templates/$system.$workflow.$mode.json
+                sed -i'' "s/427.0.0.3/$server3_int/" src/consistency-testing/chaostest/test-plan-templates/$system.$workflow.$mode.json
+                sed -i'' "s/527.0.0.1/$control_int/" src/consistency-testing/chaostest/test-plan-templates/$system.$workflow.$mode.json
+            done
         done
+    done
+
+    for workflow in comrmw mrsw; do
+        sed -i'' "s/427.0.0.1/$server1_int/" src/consistency-testing/chaostest/test-plan-templates/kvelldb.$workflow.json
+        sed -i'' "s/427.0.0.2/$server2_int/" src/consistency-testing/chaostest/test-plan-templates/kvelldb.$workflow.json
+        sed -i'' "s/427.0.0.3/$server3_int/" src/consistency-testing/chaostest/test-plan-templates/kvelldb.$workflow.json
     done
 
 Stop redpanda & prometheus:

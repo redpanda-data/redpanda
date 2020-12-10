@@ -145,24 +145,6 @@ class KafkaNode:
             self.node_config["io_recover_script"])
         # todo check status code
 
-    def start_api(self):
-        ssh("-i", self.node_config["ssh_key"],
-            self.node_config["ssh_user"] + "@" + self.node_config["host"],
-            self.node_config["start_api_script"])
-
-    def kill_api(self):
-        try:
-            ssh("-i", self.node_config["ssh_key"],
-                self.node_config["ssh_user"] + "@" + self.node_config["host"],
-                self.node_config["kill_api_script"])
-        except sh.ErrorReturnCode:
-            pass
-
-    def rm_api_log(self):
-        ssh("-i", self.node_config["ssh_key"],
-            self.node_config["ssh_user"] + "@" + self.node_config["host"],
-            self.node_config["rm_api_log_script"])
-
     def isolate(self, ips):
         ssh("-i", self.node_config["ssh_key"],
             self.node_config["ssh_user"] + "@" + self.node_config["host"],
@@ -257,6 +239,37 @@ class KafkaNode:
             self.node_config["prepdirs_script"])
 
 
+class EndpointNode:
+    def __init__(self, config, node_id):
+        self.config = config
+        self.node_id = node_id
+        self.node_config = None
+        for node in config["endpoints"]:
+            if node["id"] == node_id:
+                self.node_config = node
+        if self.node_config == None:
+            raise Exception(f"Unknown node_id: {node_id}")
+        self.ip = self.node_config["host"]
+
+    def start_api(self):
+        ssh("-i", self.node_config["ssh_key"],
+            self.node_config["ssh_user"] + "@" + self.node_config["host"],
+            self.node_config["start_api_script"])
+
+    def kill_api(self):
+        try:
+            ssh("-i", self.node_config["ssh_key"],
+                self.node_config["ssh_user"] + "@" + self.node_config["host"],
+                self.node_config["kill_api_script"])
+        except sh.ErrorReturnCode:
+            pass
+
+    def rm_api_log(self):
+        ssh("-i", self.node_config["ssh_key"],
+            self.node_config["ssh_user"] + "@" + self.node_config["host"],
+            self.node_config["rm_api_log_script"])
+
+
 chaos_stdout = logging.getLogger("chaos-stdout")
 
 
@@ -266,6 +279,10 @@ class KafkaCluster:
         self.nodes = {
             config_node["id"]: KafkaNode(config, config_node["id"])
             for config_node in config["nodes"]
+        }
+        self.endpoints = {
+            config_node["id"]: EndpointNode(config, config_node["id"])
+            for config_node in config["endpoints"]
         }
 
     def __enter__(self):
@@ -386,18 +403,18 @@ class KafkaCluster:
             return self.nodes[node_id]
 
     def _start_api(self):
-        for node_id in self.nodes:
-            node = self.nodes[node_id]
+        for node_id in self.endpoints:
+            node = self.endpoints[node_id]
             node.start_api()
 
     def _kill_api(self):
-        for node_id in self.nodes:
-            node = self.nodes[node_id]
+        for node_id in self.endpoints:
+            node = self.endpoints[node_id]
             node.kill_api()
 
     def _rm_api_log(self):
-        for node_id in self.nodes:
-            node = self.nodes[node_id]
+        for node_id in self.endpoints:
+            node = self.endpoints[node_id]
             node.rm_api_log()
 
     def _mount(self):
