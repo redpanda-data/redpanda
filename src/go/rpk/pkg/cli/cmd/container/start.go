@@ -304,43 +304,6 @@ func startNode(
 	return err
 }
 
-func writeNodeConfig(
-	mgr config.Manager,
-	nodeID, kafkaPort, rpcPort, seedRPCPort uint,
-	ip, seedIP, path string,
-	cores int,
-) (*config.Config, error) {
-	localhost := "127.0.0.1"
-	conf := config.Default()
-	conf.Redpanda.Id = int(nodeID)
-	conf.ConfigFile = path
-
-	conf.Redpanda.KafkaApi.Address = ip
-	conf.Redpanda.RPCServer.Address = ip
-
-	conf.Redpanda.AdvertisedKafkaApi = &config.SocketAddress{
-		Address: localhost,
-		Port:    int(kafkaPort),
-	}
-	conf.Redpanda.AdvertisedRPCAPI = &config.SocketAddress{
-		Address: ip,
-		Port:    conf.Redpanda.RPCServer.Port,
-	}
-
-	if seedIP != "" {
-		conf.Redpanda.SeedServers = []config.SeedServer{{
-			Id: 0,
-			Host: config.SocketAddress{
-				Address: seedIP,
-				Port:    conf.Redpanda.RPCServer.Port,
-			},
-		}}
-	}
-	config.SetMode(config.ModeDev, conf)
-	conf.Rpk.SMP = &cores
-	return conf, mgr.Write(conf)
-}
-
 func renderClusterInfo(nodes []node) {
 	t := ui.NewRpkTable(log.StandardLogger().Out)
 	t.SetColWidth(80)
