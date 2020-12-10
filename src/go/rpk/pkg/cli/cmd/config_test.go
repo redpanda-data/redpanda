@@ -64,6 +64,7 @@ func TestSet(t *testing.T) {
 				"overprovisioned":            false,
 				"tune_network":               false,
 				"tune_disk_scheduler":        false,
+				"tune_disk_write_cache":      false,
 				"tune_disk_nomerges":         false,
 				"tune_disk_irq":              true,
 				"tune_cpu":                   false,

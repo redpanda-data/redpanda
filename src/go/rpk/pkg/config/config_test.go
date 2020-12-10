@@ -38,6 +38,7 @@ func getValidConfig() *Config {
 		EnableUsageStats:         true,
 		TuneNetwork:              true,
 		TuneDiskScheduler:        true,
+		TuneDiskWriteCache:       true,
 		TuneNomerges:             true,
 		TuneDiskIrq:              true,
 		TuneFstrim:               true,
@@ -118,6 +119,7 @@ func TestSet(t *testing.T) {
 				"enable_memory_locking":      false,
 				"tune_fstrim":                false,
 				"tune_coredump":              false,
+				"tune_disk_write_cache":      false,
 				"coredump_dir":               "/var/lib/redpanda/coredump",
 			},
 		},
@@ -320,6 +322,7 @@ rpk:
   tune_disk_irq: true
   tune_disk_nomerges: true
   tune_disk_scheduler: true
+  tune_disk_write_cache: true
   tune_fstrim: true
   tune_network: true
   tune_swappiness: true
@@ -376,6 +379,7 @@ rpk:
   tune_disk_irq: true
   tune_disk_nomerges: true
   tune_disk_scheduler: true
+  tune_disk_write_cache: true
   tune_fstrim: true
   tune_network: true
   tune_swappiness: true
@@ -426,6 +430,7 @@ rpk:
   tune_disk_irq: false
   tune_disk_nomerges: false
   tune_disk_scheduler: false
+  tune_disk_write_cache: false
   tune_fstrim: false
   tune_network: false
   tune_swappiness: false
@@ -480,6 +485,7 @@ rpk:
   tune_disk_irq: true
   tune_disk_nomerges: true
   tune_disk_scheduler: true
+  tune_disk_write_cache: true
   tune_fstrim: true
   tune_network: true
   tune_swappiness: true
@@ -557,6 +563,7 @@ rpk:
   tune_disk_irq: true
   tune_disk_nomerges: true
   tune_disk_scheduler: true
+  tune_disk_write_cache: true
   tune_fstrim: true
   tune_network: true
   tune_swappiness: true
@@ -624,6 +631,7 @@ rpk:
   tune_disk_irq: true
   tune_disk_nomerges: true
   tune_disk_scheduler: true
+  tune_disk_write_cache: true
   tune_fstrim: true
   tune_network: true
   tune_swappiness: true
@@ -725,17 +733,18 @@ func TestSetMode(t *testing.T) {
 		val := mode == ModeProd
 		conf.Redpanda.DeveloperMode = !val
 		conf.Rpk = RpkConfig{
-			TuneNetwork:       val,
-			TuneDiskScheduler: val,
-			TuneNomerges:      val,
-			TuneDiskIrq:       val,
-			TuneFstrim:        val,
-			TuneCpu:           val,
-			TuneAioEvents:     val,
-			TuneClocksource:   val,
-			TuneSwappiness:    val,
-			CoredumpDir:       conf.Rpk.CoredumpDir,
-			Overprovisioned:   !val,
+			TuneNetwork:        val,
+			TuneDiskScheduler:  val,
+			TuneNomerges:       val,
+			TuneDiskWriteCache: val,
+			TuneDiskIrq:        val,
+			TuneFstrim:         val,
+			TuneCpu:            val,
+			TuneAioEvents:      val,
+			TuneClocksource:    val,
+			TuneSwappiness:     val,
+			CoredumpDir:        conf.Rpk.CoredumpDir,
+			Overprovisioned:    !val,
 		}
 		return conf
 	}
@@ -936,7 +945,7 @@ func TestReadAsJSON(t *testing.T) {
 				return mgr.Write(conf)
 			},
 			path:     Default().ConfigFile,
-			expected: `{"config_file":"/etc/redpanda/redpanda.yaml","redpanda":{"admin":{"address":"0.0.0.0","port":9644},"data_directory":"/var/lib/redpanda/data","developer_mode":true,"kafka_api":{"address":"0.0.0.0","port":9092},"node_id":0,"rpc_server":{"address":"0.0.0.0","port":33145},"seed_servers":[]},"rpk":{"coredump_dir":"/var/lib/redpanda/coredump","enable_memory_locking":false,"enable_usage_stats":false,"overprovisioned":false,"tune_aio_events":false,"tune_clocksource":false,"tune_coredump":false,"tune_cpu":false,"tune_disk_irq":false,"tune_disk_nomerges":false,"tune_disk_scheduler":false,"tune_fstrim":false,"tune_network":false,"tune_swappiness":false,"tune_transparent_hugepages":false}}`,
+			expected: `{"config_file":"/etc/redpanda/redpanda.yaml","redpanda":{"admin":{"address":"0.0.0.0","port":9644},"data_directory":"/var/lib/redpanda/data","developer_mode":true,"kafka_api":{"address":"0.0.0.0","port":9092},"node_id":0,"rpc_server":{"address":"0.0.0.0","port":33145},"seed_servers":[]},"rpk":{"coredump_dir":"/var/lib/redpanda/coredump","enable_memory_locking":false,"enable_usage_stats":false,"overprovisioned":false,"tune_aio_events":false,"tune_clocksource":false,"tune_coredump":false,"tune_cpu":false,"tune_disk_irq":false,"tune_disk_nomerges":false,"tune_disk_scheduler":false,"tune_disk_write_cache":false,"tune_fstrim":false,"tune_network":false,"tune_swappiness":false,"tune_transparent_hugepages":false}}`,
 		},
 		{
 			name:           "it should fail if the the config isn't found",
@@ -984,6 +993,7 @@ func TestReadFlat(t *testing.T) {
 		"rpk.tune_disk_irq":              "false",
 		"rpk.tune_disk_nomerges":         "false",
 		"rpk.tune_disk_scheduler":        "false",
+		"rpk.tune_disk_write_cache":      "false",
 		"rpk.tune_fstrim":                "false",
 		"rpk.tune_network":               "false",
 		"rpk.tune_swappiness":            "false",

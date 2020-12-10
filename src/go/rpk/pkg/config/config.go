@@ -170,6 +170,7 @@ func setProduction(conf *Config) *Config {
 	conf.Rpk.TuneClocksource = true
 	conf.Rpk.TuneSwappiness = true
 	conf.Rpk.Overprovisioned = false
+	conf.Rpk.TuneDiskWriteCache = true
 	return conf
 }
 
