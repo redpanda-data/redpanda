@@ -12,14 +12,12 @@ package common
 import (
 	"context"
 	"io"
-	"testing"
 	"time"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/go-connections/nat"
-	"github.com/spf13/afero"
 )
 
 type MockClient struct {
@@ -236,21 +234,6 @@ func (c *MockClient) IsErrConnectionFailed(err error) bool {
 		return c.MockIsErrConnectionFailed(err)
 	}
 	return false
-}
-
-func CheckFiles(
-	fs afero.Fs, st *testing.T, shouldExist bool, paths ...string,
-) (bool, error) {
-	for _, p := range paths {
-		exists, err := afero.Exists(fs, p)
-		if err != nil {
-			return false, err
-		}
-		if exists != shouldExist {
-			return false, nil
-		}
-	}
-	return true, nil
 }
 
 func MockContainerInspect(

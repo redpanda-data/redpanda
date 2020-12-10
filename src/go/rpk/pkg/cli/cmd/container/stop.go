@@ -16,11 +16,10 @@ import (
 	"vectorized/pkg/cli/cmd/container/common"
 
 	log "github.com/sirupsen/logrus"
-	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
-func Stop(fs afero.Fs) *cobra.Command {
+func Stop() *cobra.Command {
 	command := &cobra.Command{
 		Use:   "stop",
 		Short: "Stop an existing local container cluster",
@@ -30,13 +29,13 @@ func Stop(fs afero.Fs) *cobra.Command {
 				return err
 			}
 			defer c.Close()
-			return common.WrapIfConnErr(stopCluster(fs, c))
+			return common.WrapIfConnErr(stopCluster(c))
 		},
 	}
 	return command
 }
 
-func stopCluster(fs afero.Fs, c common.Client) error {
+func stopCluster(c common.Client) error {
 	nodes, err := common.GetExistingNodes(c)
 	if err != nil {
 		return err

@@ -19,7 +19,6 @@ import (
 
 	"github.com/docker/docker/api/types"
 	"github.com/sirupsen/logrus"
-	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
 )
 
@@ -30,7 +29,6 @@ func TestStop(t *testing.T) {
 		client         func() (common.Client, error)
 		expectedErrMsg string
 		expectedOutput []string
-		before         func(afero.Fs) error
 	}{
 		{
 			name: "it should log if the container can't be stopped",
@@ -71,14 +69,57 @@ func TestStop(t *testing.T) {
 					},
 				}, nil
 			},
-			before: func(fs afero.Fs) error {
-				return fs.MkdirAll(common.ConfDir(0), 0755)
-			},
 			expectedOutput: []string{
+				"Stopping node 2",
+				"Couldn't stop node 2",
+				"Stopping node 1",
+				"Couldn't stop node 1",
 				"Stopping node 0",
 				"Couldn't stop node 0",
 				"Don't stop me now",
 			},
+		},
+		{
+			name: "it should fail if the containers can't be listed",
+			client: func() (common.Client, error) {
+				return &common.MockClient{
+					MockContainerList: func(
+						_ context.Context,
+						_ types.ContainerListOptions,
+					) ([]types.Container, error) {
+						return nil, errors.New("Can't list")
+					},
+				}, nil
+			},
+			expectedErrMsg: "Can't list",
+		},
+		{
+			name: "it should fail if the containers can't be inspected",
+			client: func() (common.Client, error) {
+				return &common.MockClient{
+					MockContainerInspect: func(
+						_ context.Context,
+						_ string,
+					) (types.ContainerJSON, error) {
+						return types.ContainerJSON{},
+							errors.New("Can't inspect")
+					},
+					MockContainerList: func(
+						_ context.Context,
+						_ types.ContainerListOptions,
+					) ([]types.Container, error) {
+						return []types.Container{
+							{
+								ID: "a",
+								Labels: map[string]string{
+									"node-id": "0",
+								},
+							},
+						}, nil
+					},
+				}, nil
+			},
+			expectedErrMsg: "Can't inspect",
 		},
 		{
 			name: "it should do nothing if there's no cluster",
@@ -109,9 +150,6 @@ func TestStop(t *testing.T) {
 					},
 				}, nil
 			},
-			before: func(fs afero.Fs) error {
-				return fs.MkdirAll(common.ConfDir(0), 0755)
-			},
 			expectedOutput: []string{
 				"Stopping node 0",
 			},
@@ -120,15 +158,11 @@ func TestStop(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(st *testing.T) {
 			var out bytes.Buffer
-			fs := afero.NewMemMapFs()
-			if tt.before != nil {
-				require.NoError(st, tt.before(fs))
-			}
 			c, err := tt.client()
 			require.NoError(st, err)
 			logrus.SetOutput(&out)
 			logrus.SetLevel(logrus.DebugLevel)
-			err = stopCluster(fs, c)
+			err = stopCluster(c)
 			if tt.expectedErrMsg != "" {
 				require.EqualError(st, err, tt.expectedErrMsg)
 				return

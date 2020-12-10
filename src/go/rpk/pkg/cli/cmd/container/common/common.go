@@ -14,8 +14,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -24,12 +22,10 @@ import (
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
 	log "github.com/sirupsen/logrus"
-	"github.com/spf13/afero"
 )
 
 const (
@@ -59,27 +55,6 @@ func Name(nodeID uint) string {
 
 func DefaultCtx() (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.Background(), defaultDockerClientTimeout)
-}
-
-func ConfPath(nodeID uint) string {
-	return filepath.Join(ConfDir(nodeID), "redpanda.yaml")
-}
-
-func DataDir(nodeID uint) string {
-	return filepath.Join(NodeDir(nodeID), "data")
-}
-
-func ConfDir(nodeID uint) string {
-	return filepath.Join(NodeDir(nodeID), "conf")
-}
-
-func NodeDir(nodeID uint) string {
-	return filepath.Join(ClusterDir(), fmt.Sprintf("node-%d", nodeID))
-}
-
-func ClusterDir() string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".rpk", "cluster")
 }
 
 func GetExistingNodes(c Client) ([]*NodeState, error) {
@@ -148,7 +123,6 @@ func GetState(c Client, nodeID uint) (*NodeState, error) {
 	return &NodeState{
 		Running:       containerJSON.State.Running,
 		Status:        containerJSON.State.Status,
-		ConfigFile:    ConfPath(nodeID),
 		ContainerID:   containerJSON.ID,
 		ContainerIP:   ipAddress,
 		HostKafkaPort: hostKafkaPort,
@@ -216,8 +190,8 @@ func RemoveNetwork(c Client) error {
 }
 
 func CreateNode(
-	fs afero.Fs, c Client, nodeID,
-	kafkaPort, rpcPort uint, netID string,
+	c Client, nodeID,
+	kafkaPort, rpcPort uint, netID string, args ...string,
 ) (*NodeState, error) {
 	rPort, err := nat.NewPort(
 		"tcp",
@@ -233,10 +207,28 @@ func CreateNode(
 	if err != nil {
 		return nil, err
 	}
+	ip, err := nodeIP(c, netID, nodeID)
+	if err != nil {
+		return nil, err
+	}
 	hostname := Name(nodeID)
+	cmd := []string{
+		"start",
+		"--node-id",
+		fmt.Sprintf("%d", nodeID),
+		"--kafka-addr",
+		fmt.Sprintf("%s:%d", ip, config.Default().Redpanda.KafkaApi.Port),
+		"--rpc-addr",
+		fmt.Sprintf("%s:%d", ip, config.Default().Redpanda.RPCServer.Port),
+		"--advertise-kafka-addr",
+		fmt.Sprintf("127.0.0.1:%d", kafkaPort),
+		"--advertise-rpc-addr",
+		fmt.Sprintf("%s:%d", ip, config.Default().Redpanda.RPCServer.Port),
+	}
 	containerConfig := container.Config{
 		Image:    redpandaImageBase,
 		Hostname: hostname,
+		Cmd:      append(cmd, args...),
 		ExposedPorts: nat.PortSet{
 			rPort: {},
 			kPort: {},
@@ -247,18 +239,6 @@ func CreateNode(
 		},
 	}
 	hostConfig := container.HostConfig{
-		Mounts: []mount.Mount{
-			mount.Mount{
-				Type:   mount.TypeBind,
-				Target: "/opt/redpanda/data",
-				Source: DataDir(nodeID),
-			},
-			mount.Mount{
-				Type:   mount.TypeBind,
-				Target: "/etc/redpanda",
-				Source: ConfDir(nodeID),
-			},
-		},
 		PortBindings: nat.PortMap{
 			rPort: []nat.PortBinding{nat.PortBinding{
 				HostPort: fmt.Sprint(rpcPort),
@@ -267,10 +247,6 @@ func CreateNode(
 				HostPort: fmt.Sprint(kafkaPort),
 			}},
 		},
-	}
-	ip, err := nodeIP(c, netID, nodeID)
-	if err != nil {
-		return nil, err
 	}
 	networkConfig := network.NetworkingConfig{
 		EndpointsConfig: map[string]*network.EndpointSettings{
@@ -283,12 +259,6 @@ func CreateNode(
 		},
 	}
 
-	err = createNodeDirs(fs, nodeID)
-	if err != nil {
-		RemoveNodeDir(fs, nodeID)
-		return nil, err
-	}
-
 	ctx, _ := DefaultCtx()
 	container, err := c.ContainerCreate(
 		ctx,
@@ -298,11 +268,9 @@ func CreateNode(
 		hostname,
 	)
 	if err != nil {
-		RemoveNodeDir(fs, nodeID)
 		return nil, err
 	}
 	return &NodeState{
-		ConfigFile:    ConfPath(nodeID),
 		HostKafkaPort: kafkaPort,
 		ID:            nodeID,
 		ContainerID:   container.ID,
@@ -386,47 +354,6 @@ func nodeIP(c Client, netID string, id uint) (string, error) {
 	}
 	octets[3] = fmt.Sprintf("%d", lastOctet+uint64(id)+1)
 	return strings.Join(octets, "."), nil
-}
-
-func createNodeDirs(fs afero.Fs, nodeID uint) error {
-	dir := DataDir(nodeID)
-	// If it doesn't exist already, create a directory for the node's data.
-	exists, err := afero.DirExists(fs, dir)
-	if err != nil {
-		return err
-	}
-	if !exists {
-		err = fs.MkdirAll(dir, 0755)
-		if err != nil {
-			return err
-		}
-	}
-
-	dir = ConfDir(nodeID)
-	// If it doesn't exist already, create a directory for the node's config.
-	exists, err = afero.DirExists(fs, dir)
-	if err != nil {
-		return err
-	}
-	if !exists {
-		err = fs.MkdirAll(dir, 0755)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func RemoveNodeDir(fs afero.Fs, nodeID uint) error {
-	err := fs.RemoveAll(NodeDir(nodeID))
-	if err != nil {
-		log.Debugf(
-			"Got an error while removing node %d's dir: %v",
-			nodeID,
-			err,
-		)
-	}
-	return err
 }
 
 func WrapIfConnErr(err error) error {
