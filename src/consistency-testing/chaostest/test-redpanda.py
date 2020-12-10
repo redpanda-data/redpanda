@@ -59,6 +59,10 @@ known_faults = {
     lambda: IsolateNodeRecoverableFault(select_leader, "leader"),
     "isolate.follower":
     lambda: IsolateNodeRecoverableFault(select_follower, "follower"),
+    "fsync10ms.leader":
+    lambda: MakeFsyncSlowerRecoverableFault(select_leader, "leader"),
+    "fsync10ms.follower":
+    lambda: MakeFsyncSlowerRecoverableFault(select_follower, "follower"),
     "io10ms.leader":
     lambda: MakeIOSlowerRecoverableFault(select_leader, "leader"),
     "io10ms.follower":

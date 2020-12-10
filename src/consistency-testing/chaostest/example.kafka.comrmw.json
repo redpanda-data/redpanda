@@ -202,6 +202,8 @@
         "iofail.leader",
         "iofail.follower",
         "strobe.leader",
-        "strobe.follower"
+        "strobe.follower",
+        "fsync10ms.leader",
+        "fsync10ms.follower"
     ]
 }
