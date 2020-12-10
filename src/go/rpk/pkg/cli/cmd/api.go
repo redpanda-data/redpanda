@@ -232,12 +232,12 @@ func createAdmin(
 }
 
 func containerBrokers(fs afero.Fs) []string {
-	nodeIDs, err := common.GetExistingNodes(fs)
+	c, err := common.NewDockerClient()
 	if err != nil {
 		log.Debug(err)
 		return []string{}
 	}
-	c, err := common.NewDockerClient()
+	nodes, err := common.GetExistingNodes(c)
 	if err != nil {
 		log.Debug(err)
 		return []string{}
@@ -245,13 +245,9 @@ func containerBrokers(fs afero.Fs) []string {
 	grp := errgroup.Group{}
 	mu := sync.Mutex{}
 	addrs := []string{}
-	for _, nodeID := range nodeIDs {
-		id := nodeID
+	for _, node := range nodes {
+		s := node
 		grp.Go(func() error {
-			s, err := common.GetState(c, id)
-			if err != nil {
-				return err
-			}
 			mu.Lock()
 			defer mu.Unlock()
 			addrs = append(

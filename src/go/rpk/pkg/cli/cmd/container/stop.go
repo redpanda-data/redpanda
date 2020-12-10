@@ -16,11 +16,10 @@ import (
 	"vectorized/pkg/cli/cmd/container/common"
 
 	log "github.com/sirupsen/logrus"
-	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
-func Stop(fs afero.Fs) *cobra.Command {
+func Stop() *cobra.Command {
 	command := &cobra.Command{
 		Use:   "stop",
 		Short: "Stop an existing local container cluster",
@@ -30,18 +29,18 @@ func Stop(fs afero.Fs) *cobra.Command {
 				return err
 			}
 			defer c.Close()
-			return common.WrapIfConnErr(stopCluster(fs, c))
+			return common.WrapIfConnErr(stopCluster(c))
 		},
 	}
 	return command
 }
 
-func stopCluster(fs afero.Fs, c common.Client) error {
-	nodeIDs, err := common.GetExistingNodes(fs)
+func stopCluster(c common.Client) error {
+	nodes, err := common.GetExistingNodes(c)
 	if err != nil {
 		return err
 	}
-	if len(nodeIDs) == 0 {
+	if len(nodes) == 0 {
 		log.Info(
 			`No cluster available.
 You may start a new cluster with 'rpk container start'`,
@@ -49,36 +48,34 @@ You may start a new cluster with 'rpk container start'`,
 	}
 
 	wg := sync.WaitGroup{}
-	wg.Add(len(nodeIDs))
-	for _, nodeID := range nodeIDs {
-		go func(id uint) {
+	wg.Add(len(nodes))
+	for _, node := range nodes {
+		go func(state *common.NodeState) {
 			defer wg.Done()
-			state, err := common.GetState(c, id)
-			if err != nil {
-				log.Errorf("Couldn't get node %d's state", id)
-				return
-			}
 			// If the node was stopped already, do nothing.
 			if !state.Running {
-				log.Infof("Node %d was stopped already.", id)
+				log.Infof(
+					"Node %d was stopped already.",
+					state.ID,
+				)
 				return
 			}
-			log.Infof("Stopping node %d", id)
+			log.Infof("Stopping node %d", state.ID)
 			ctx := context.Background()
 			// Redpanda sometimes takes a while to stop, so 20
 			// seconds is a safe estimate
 			timeout := 20 * time.Second
 			err = c.ContainerStop(
 				ctx,
-				common.Name(id),
+				common.Name(state.ID),
 				&timeout,
 			)
 			if err != nil {
-				log.Errorf("Couldn't stop node %d", id)
+				log.Errorf("Couldn't stop node %d", state.ID)
 				log.Debug(err)
 				return
 			}
-		}(nodeID)
+		}(node)
 	}
 	wg.Wait()
 	return nil

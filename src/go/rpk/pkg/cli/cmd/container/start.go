@@ -23,7 +23,6 @@ import (
 
 	"github.com/docker/docker/api/types"
 	log "github.com/sirupsen/logrus"
-	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
 )
@@ -33,7 +32,7 @@ type node struct {
 	addr string
 }
 
-func Start(fs afero.Fs, mgr config.Manager) *cobra.Command {
+func Start() *cobra.Command {
 	var (
 		nodes uint
 	)
@@ -53,8 +52,6 @@ func Start(fs afero.Fs, mgr config.Manager) *cobra.Command {
 			defer c.Close()
 
 			return common.WrapIfConnErr(startCluster(
-				fs,
-				mgr,
 				c,
 				nodes,
 			))
@@ -72,11 +69,9 @@ func Start(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	return command
 }
 
-func startCluster(
-	fs afero.Fs, mgr config.Manager, c common.Client, n uint,
-) error {
+func startCluster(c common.Client, n uint) error {
 	// Check if cluster exists and start it again.
-	restarted, err := restartCluster(fs, c)
+	restarted, err := restartCluster(c)
 	if err != nil {
 		return err
 	}
@@ -116,19 +111,6 @@ func startCluster(
 		}
 	}
 
-	dir := common.ClusterDir()
-	// If it doesn't exist already, create a directory for the cluster.
-	exists, err := afero.DirExists(fs, dir)
-	if err != nil {
-		return err
-	}
-	if !exists {
-		err = fs.MkdirAll(dir, 0755)
-		if err != nil {
-			return err
-		}
-	}
-
 	// Create the docker network if it doesn't exist already
 	netID, err := common.CreateNetwork(c)
 	if err != nil {
@@ -146,7 +128,6 @@ func startCluster(
 		return err
 	}
 	seedState, err := common.CreateNode(
-		fs,
 		c,
 		seedID,
 		seedKafkaPort,
@@ -160,13 +141,12 @@ func startCluster(
 	coreCount := int(math.Max(1, float64(runtime.NumCPU())/float64(n)))
 
 	log.Info("Starting cluster")
-	seedIP, seedKafkaPort, err := startNode(
-		mgr,
+	err = startNode(
 		c,
 		seedID,
 		seedKafkaPort,
 		seedRPCPort,
-		0,
+		seedID,
 		seedState.ContainerID,
 		seedState.ContainerIP,
 		"",
@@ -176,7 +156,10 @@ func startCluster(
 		return err
 	}
 
-	seedNode := node{0, fmt.Sprintf("%s:%d", seedIP, seedKafkaPort)}
+	seedNode := node{
+		seedID,
+		fmt.Sprintf("%s:%d", seedState.ContainerIP, seedKafkaPort),
+	}
 
 	nodes := []node{seedNode}
 
@@ -195,7 +178,23 @@ func startCluster(
 			if err != nil {
 				return err
 			}
-			state, err := common.CreateNode(fs, c, id, kafkaPort, rpcPort, netID)
+			args := []string{
+				"--seeds",
+				fmt.Sprintf(
+					"%s:%d+%d",
+					seedState.ContainerIP,
+					config.Default().Redpanda.RPCServer.Port,
+					seedID,
+				),
+			}
+			state, err := common.CreateNode(
+				c,
+				id,
+				kafkaPort,
+				rpcPort,
+				netID,
+				args...,
+			)
 			if err != nil {
 				return err
 			}
@@ -205,8 +204,7 @@ func startCluster(
 				state.ContainerIP,
 				state.ContainerID,
 			)
-			ip, port, err := startNode(
-				mgr,
+			err = startNode(
 				c,
 				id,
 				kafkaPort,
@@ -225,8 +223,8 @@ func startCluster(
 				id,
 				fmt.Sprintf(
 					"%s:%d",
-					ip,
-					port,
+					state.ContainerIP,
+					state.HostKafkaPort,
 				),
 			})
 			mu.Unlock()
@@ -247,35 +245,22 @@ func startCluster(
 	return nil
 }
 
-func restartCluster(fs afero.Fs, c common.Client) ([]node, error) {
+func restartCluster(c common.Client) ([]node, error) {
 	// Check if a cluster is running
-	nodeIDs, err := common.GetExistingNodes(fs)
+	states, err := common.GetExistingNodes(c)
 	if err != nil {
 		return nil, err
 	}
 	// If there isn't an existing cluster, there's nothing to restart.
-	if len(nodeIDs) == 0 {
+	if len(states) == 0 {
 		return nil, nil
 	}
 	grp, _ := errgroup.WithContext(context.Background())
 	mu := sync.Mutex{}
 	nodes := []node{}
-	for _, nodeID := range nodeIDs {
-		id := nodeID
+	for _, s := range states {
+		state := s
 		grp.Go(func() error {
-			state, err := common.GetState(c, id)
-			if err != nil {
-				if c.IsErrNotFound(err) {
-					msg := "Found data for an existing" +
-						" cluster, but the container" +
-						" for node %d was removed.\n" +
-						"Please run 'rpk container" +
-						" purge' to delete all" +
-						" remaining data."
-					return fmt.Errorf(msg, id)
-				}
-				return err
-			}
 			if !state.Running {
 				ctx, _ := common.DefaultCtx()
 				err = c.ContainerStart(
@@ -286,7 +271,7 @@ func restartCluster(fs afero.Fs, c common.Client) ([]node, error) {
 				if err != nil {
 					return err
 				}
-				state, err = common.GetState(c, id)
+				state, err = common.GetState(c, state.ID)
 				if err != nil {
 					return err
 				}
@@ -309,69 +294,25 @@ func restartCluster(fs afero.Fs, c common.Client) ([]node, error) {
 }
 
 func startNode(
-	mgr config.Manager,
 	c common.Client,
 	nodeID, kafkaPort, rpcPort, seedRPCPort uint,
 	containerID, ip, seedIP string,
 	cores int,
-) (string, uint, error) {
-	conf, err := writeNodeConfig(mgr, nodeID, kafkaPort, rpcPort, seedRPCPort, ip, seedIP, common.ConfPath(nodeID), cores)
-	if err != nil {
-		return "", 0, err
-	}
+) error {
 	ctx, _ := common.DefaultCtx()
-	err = c.ContainerStart(ctx, containerID, types.ContainerStartOptions{})
-	advert := conf.Redpanda.AdvertisedKafkaApi
-	return advert.Address, uint(advert.Port), err
-}
-
-func writeNodeConfig(
-	mgr config.Manager,
-	nodeID, kafkaPort, rpcPort, seedRPCPort uint,
-	ip, seedIP, path string,
-	cores int,
-) (*config.Config, error) {
-	localhost := "127.0.0.1"
-	conf := config.Default()
-	conf.Redpanda.Id = int(nodeID)
-	conf.ConfigFile = path
-
-	conf.Redpanda.KafkaApi.Address = ip
-	conf.Redpanda.RPCServer.Address = ip
-
-	conf.Redpanda.AdvertisedKafkaApi = &config.SocketAddress{
-		Address: localhost,
-		Port:    int(kafkaPort),
-	}
-	conf.Redpanda.AdvertisedRPCAPI = &config.SocketAddress{
-		Address: ip,
-		Port:    conf.Redpanda.RPCServer.Port,
-	}
-
-	if seedIP != "" {
-		conf.Redpanda.SeedServers = []config.SeedServer{{
-			Id: 0,
-			Host: config.SocketAddress{
-				Address: seedIP,
-				Port:    conf.Redpanda.RPCServer.Port,
-			},
-		}}
-	}
-	config.SetMode(config.ModeDev, conf)
-	conf.Rpk.SMP = &cores
-	return conf, mgr.Write(conf)
+	err := c.ContainerStart(ctx, containerID, types.ContainerStartOptions{})
+	return err
 }
 
 func renderClusterInfo(nodes []node) {
 	t := ui.NewRpkTable(log.StandardLogger().Out)
 	t.SetColWidth(80)
 	t.SetAutoWrapText(true)
-	t.SetHeader([]string{"Node ID", "Address", "Config"})
+	t.SetHeader([]string{"Node ID", "Address"})
 	for _, node := range nodes {
 		t.Append([]string{
 			fmt.Sprint(node.id),
 			node.addr,
-			common.ConfPath(node.id),
 		})
 	}
 

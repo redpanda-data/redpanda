@@ -11,17 +11,15 @@ package container
 
 import (
 	"context"
-	"os"
 	"vectorized/pkg/cli/cmd/container/common"
 
 	"github.com/docker/docker/api/types"
 	log "github.com/sirupsen/logrus"
-	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
 )
 
-func Purge(fs afero.Fs) *cobra.Command {
+func Purge() *cobra.Command {
 	command := &cobra.Command{
 		Use:   "purge",
 		Short: "Stop and remove an existing local container cluster's data",
@@ -31,40 +29,33 @@ func Purge(fs afero.Fs) *cobra.Command {
 				return err
 			}
 			defer c.Close()
-			return common.WrapIfConnErr(purgeCluster(fs, c))
+			return common.WrapIfConnErr(purgeCluster(c))
 		},
 	}
 
 	return command
 }
 
-func purgeCluster(fs afero.Fs, c common.Client) error {
-	nodeIDs, err := common.GetExistingNodes(fs)
+func purgeCluster(c common.Client) error {
+	nodes, err := common.GetExistingNodes(c)
 	if err != nil {
 		return err
 	}
-	if len(nodeIDs) == 0 {
+	if len(nodes) == 0 {
 		log.Info(
 			`No nodes to remove.
 You may start a new local cluster with 'rpk container start'`,
 		)
 		return nil
 	}
-	err = stopCluster(fs, c)
+	err = stopCluster(c)
 	if err != nil {
 		return err
 	}
 	grp, _ := errgroup.WithContext(context.Background())
-	for _, nodeID := range nodeIDs {
-		id := nodeID
+	for _, node := range nodes {
+		id := node.ID
 		grp.Go(func() error {
-			err := common.RemoveNodeDir(fs, id)
-			if err != nil {
-				if !os.IsNotExist(err) {
-					return err
-				}
-			}
-			log.Infof("Deleted data for node %d", id)
 			ctx, _ := common.DefaultCtx()
 			name := common.Name(id)
 			err = c.ContainerRemove(

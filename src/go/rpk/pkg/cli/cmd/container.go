@@ -11,21 +11,19 @@ package cmd
 
 import (
 	"vectorized/pkg/cli/cmd/container"
-	"vectorized/pkg/config"
 
-	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 )
 
-func NewContainerCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
+func NewContainerCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:   "container",
 		Short: "Manage a local container cluster",
 	}
 
-	command.AddCommand(container.Start(fs, mgr))
-	command.AddCommand(container.Stop(fs))
-	command.AddCommand(container.Purge(fs))
+	command.AddCommand(container.Start())
+	command.AddCommand(container.Stop())
+	command.AddCommand(container.Purge())
 
 	return command
 }
