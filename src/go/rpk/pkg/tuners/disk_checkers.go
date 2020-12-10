@@ -35,7 +35,7 @@ func CreateDirectoryCheckers(
 }
 
 func NewDeviceNomergesChecker(
-	fs afero.Fs, device string, schedulerInfo disk.SchedulerInfo,
+	fs afero.Fs, device string, deviceFeatures disk.DeviceFeatures,
 ) Checker {
 	return NewEqualityChecker(
 		NomergesChecker,
@@ -43,7 +43,7 @@ func NewDeviceNomergesChecker(
 		Warning,
 		true,
 		func() (interface{}, error) {
-			return checkDeviceNomerges(schedulerInfo, device)
+			return checkDeviceNomerges(deviceFeatures, device)
 		},
 	)
 }
@@ -51,7 +51,7 @@ func NewDeviceNomergesChecker(
 func NewDirectoryNomergesChecker(
 	fs afero.Fs,
 	dir string,
-	schedulerInfo disk.SchedulerInfo,
+	deviceFeatures disk.DeviceFeatures,
 	blockDevices disk.BlockDevices,
 ) Checker {
 	return NewEqualityChecker(
@@ -66,7 +66,7 @@ func NewDirectoryNomergesChecker(
 			}
 			tuned := true
 			for _, device := range devices {
-				ok, err := checkDeviceNomerges(schedulerInfo, device)
+				ok, err := checkDeviceNomerges(deviceFeatures, device)
 				if err != nil {
 					return false, err
 				}
@@ -78,9 +78,9 @@ func NewDirectoryNomergesChecker(
 }
 
 func checkDeviceNomerges(
-	schedulerInfo disk.SchedulerInfo, device string,
+	deviceFeatures disk.DeviceFeatures, device string,
 ) (bool, error) {
-	nomerges, err := schedulerInfo.GetNomerges(device)
+	nomerges, err := deviceFeatures.GetNomerges(device)
 	if err != nil {
 		return false, err
 	}
@@ -88,7 +88,7 @@ func checkDeviceNomerges(
 }
 
 func NewDeviceSchedulerChecker(
-	fs afero.Fs, device string, schedulerInfo disk.SchedulerInfo,
+	fs afero.Fs, device string, deviceFeatures disk.DeviceFeatures,
 ) Checker {
 	return NewEqualityChecker(
 		SchedulerChecker,
@@ -96,7 +96,7 @@ func NewDeviceSchedulerChecker(
 		Warning,
 		true,
 		func() (interface{}, error) {
-			return checkScheduler(schedulerInfo, device)
+			return checkScheduler(deviceFeatures, device)
 		},
 	)
 }
@@ -104,7 +104,7 @@ func NewDeviceSchedulerChecker(
 func NewDirectorySchedulerChecker(
 	fs afero.Fs,
 	dir string,
-	schedulerInfo disk.SchedulerInfo,
+	deviceFeatures disk.DeviceFeatures,
 	blockDevices disk.BlockDevices,
 ) Checker {
 	return NewEqualityChecker(
@@ -119,7 +119,7 @@ func NewDirectorySchedulerChecker(
 			}
 			tuned := true
 			for _, device := range devices {
-				ok, err := checkScheduler(schedulerInfo, device)
+				ok, err := checkScheduler(deviceFeatures, device)
 				if err != nil {
 					return false, err
 				}
@@ -131,9 +131,9 @@ func NewDirectorySchedulerChecker(
 }
 
 func checkScheduler(
-	schedulerInfo disk.SchedulerInfo, device string,
+	deviceFeatures disk.DeviceFeatures, device string,
 ) (bool, error) {
-	scheduler, err := schedulerInfo.GetScheduler(device)
+	scheduler, err := deviceFeatures.GetScheduler(device)
 	if err != nil {
 		return false, err
 	}

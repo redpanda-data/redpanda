@@ -181,17 +181,17 @@ func RedpandaCheckers(
 	irqProcFile := irq.NewProcFile(fs)
 	irqDeviceInfo := irq.NewDeviceInfo(fs, irqProcFile)
 	blockDevices := disk.NewBlockDevices(fs, irqDeviceInfo, irqProcFile, proc, timeout)
-	schedulerInfo := disk.NewSchedulerInfo(fs, blockDevices)
+	deviceFeatures := disk.NewDeviceFeatures(fs, blockDevices)
 	schedulerChecker := NewDirectorySchedulerChecker(
 		fs,
 		config.Redpanda.Directory,
-		schedulerInfo,
+		deviceFeatures,
 		blockDevices,
 	)
 	nomergesChecker := NewDirectoryNomergesChecker(
 		fs,
 		config.Redpanda.Directory,
-		schedulerInfo,
+		deviceFeatures,
 		blockDevices,
 	)
 	balanceService := irq.NewBalanceService(fs, proc, executor, timeout)

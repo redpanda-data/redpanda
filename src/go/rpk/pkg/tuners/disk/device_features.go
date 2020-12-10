@@ -20,7 +20,7 @@ import (
 	"github.com/spf13/afero"
 )
 
-type SchedulerInfo interface {
+type DeviceFeatures interface {
 	GetScheduler(device string) (string, error)
 	GetSupportedSchedulers(device string) ([]string, error)
 	GetNomerges(device string) (int, error)
@@ -28,83 +28,85 @@ type SchedulerInfo interface {
 	GetSchedulerFeatureFile(device string) (string, error)
 }
 
-func NewSchedulerInfo(fs afero.Fs, blockDevices BlockDevices) SchedulerInfo {
-	return &schedulerInfo{
+func NewDeviceFeatures(fs afero.Fs, blockDevices BlockDevices) DeviceFeatures {
+	return &deviceFeatures{
 		fs:           fs,
 		blockDevices: blockDevices,
 	}
 }
 
-type schedulerInfo struct {
+type deviceFeatures struct {
 	fs           afero.Fs
 	blockDevices BlockDevices
 }
 
-func (s *schedulerInfo) GetScheduler(device string) (string, error) {
-	schedulerOpts, err := s.getSchedulerOptions(device)
+func (d *deviceFeatures) GetScheduler(device string) (string, error) {
+	schedulerOpts, err := d.getSchedulerOptions(device)
 	if err != nil {
 		return "", err
 	}
 	return schedulerOpts.GetActive(), nil
 }
 
-func (s *schedulerInfo) GetSupportedSchedulers(
+func (d *deviceFeatures) GetSupportedSchedulers(
 	device string,
 ) ([]string, error) {
-	schedulerOpts, err := s.getSchedulerOptions(device)
+	schedulerOpts, err := d.getSchedulerOptions(device)
 	if err != nil {
 		return nil, err
 	}
 	return schedulerOpts.GetAvailable(), nil
 }
 
-func (s *schedulerInfo) GetNomerges(device string) (int, error) {
+func (d *deviceFeatures) GetNomerges(device string) (int, error) {
 	log.Debugf("Getting '%s' nomerges", device)
-	featureFile, err := s.GetNomergesFeatureFile(device)
+	featureFile, err := d.GetNomergesFeatureFile(device)
 	if err != nil {
 		return 0, err
 	}
 	log.Debugf("Feature file %s", featureFile)
-	bytes, err := afero.ReadFile(s.fs, featureFile)
+	bytes, err := afero.ReadFile(d.fs, featureFile)
 	if err != nil {
 		return 0, err
 	}
 	return strconv.Atoi(strings.TrimSpace(string(bytes)))
 }
 
-func (s *schedulerInfo) GetNomergesFeatureFile(device string) (string, error) {
-	return s.getQueueFeatureFile(deviceNode(device), "nomerges")
+func (d *deviceFeatures) GetNomergesFeatureFile(device string) (string, error) {
+	return d.getQueueFeatureFile(deviceNode(device), "nomerges")
 }
-func (s *schedulerInfo) GetSchedulerFeatureFile(device string) (string, error) {
-	return s.getQueueFeatureFile(deviceNode(device), "scheduler")
+func (d *deviceFeatures) GetSchedulerFeatureFile(
+	device string,
+) (string, error) {
+	return d.getQueueFeatureFile(deviceNode(device), "scheduler")
 }
 
-func (s *schedulerInfo) getSchedulerOptions(
+func (d *deviceFeatures) getSchedulerOptions(
 	device string,
 ) (*system.RuntimeOptions, error) {
 	log.Debugf("Getting '%s' scheduler options", device)
-	featureFile, err := s.GetSchedulerFeatureFile(device)
+	featureFile, err := d.GetSchedulerFeatureFile(device)
 	if err != nil {
 		return nil, err
 	}
 	log.Debugf("Feature file %s", featureFile)
-	return system.ReadRuntineOptions(s.fs, featureFile)
+	return system.ReadRuntineOptions(d.fs, featureFile)
 }
 
-func (s *schedulerInfo) getQueueFeatureFile(
+func (d *deviceFeatures) getQueueFeatureFile(
 	deviceNode string, featureType string,
 ) (string, error) {
-	device, err := s.blockDevices.GetDeviceFromPath(deviceNode)
+	device, err := d.blockDevices.GetDeviceFromPath(deviceNode)
 	if err != nil {
 		log.Error(err.Error())
 		return "", nil
 	}
 	featureFile := filepath.Join(device.Syspath(), "queue", featureType)
 	log.Debugf("Trying to open feature file '%s'", featureFile)
-	if exists, _ := afero.Exists(s.fs, featureFile); exists {
+	if exists, _ := afero.Exists(d.fs, featureFile); exists {
 		return featureFile, nil
 	} else if device.Parent() != nil {
-		return s.getQueueFeatureFile(device.Parent().Devnode(), featureType)
+		return d.getQueueFeatureFile(device.Parent().Devnode(), featureType)
 	} else {
 		return "", nil
 	}

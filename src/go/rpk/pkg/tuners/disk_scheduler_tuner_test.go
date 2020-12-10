@@ -18,8 +18,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type schedulerInfoMock struct {
-	disk.SchedulerInfo
+type deviceFeaturesMock struct {
+	disk.DeviceFeatures
 	getSupportedSchedulers  func(string) ([]string, error)
 	getNomerges             func(string) (int, error)
 	getNomergesFeatureFile  func(string) (string, error)
@@ -27,27 +27,27 @@ type schedulerInfoMock struct {
 	getScheduler            func(string) (string, error)
 }
 
-func (m *schedulerInfoMock) GetScheduler(device string) (string, error) {
+func (m *deviceFeaturesMock) GetScheduler(device string) (string, error) {
 	return m.getScheduler(device)
 }
 
-func (m *schedulerInfoMock) GetSupportedSchedulers(
+func (m *deviceFeaturesMock) GetSupportedSchedulers(
 	device string,
 ) ([]string, error) {
 	return m.getSupportedSchedulers(device)
 }
 
-func (m *schedulerInfoMock) GetNomerges(device string) (int, error) {
+func (m *deviceFeaturesMock) GetNomerges(device string) (int, error) {
 	return m.getNomerges(device)
 }
 
-func (m *schedulerInfoMock) GetNomergesFeatureFile(
+func (m *deviceFeaturesMock) GetNomergesFeatureFile(
 	device string,
 ) (string, error) {
 	return m.getNomergesFeatureFile(device)
 }
 
-func (m *schedulerInfoMock) GetSchedulerFeatureFile(
+func (m *deviceFeaturesMock) GetSchedulerFeatureFile(
 	device string,
 ) (string, error) {
 	return m.getSchedulerFeatureFile(device)
@@ -55,7 +55,7 @@ func (m *schedulerInfoMock) GetSchedulerFeatureFile(
 
 func TestDeviceSchedulerTuner_Tune(t *testing.T) {
 	// given
-	schedulerInfo := &schedulerInfoMock{
+	deviceFeatures := &deviceFeaturesMock{
 		getSchedulerFeatureFile: func(string) (string, error) {
 			return "/sys/devices/pci0000:00/0000:00:1d.0/0000:71:00.0/nvme/fake/queue/scheduler", nil
 		},
@@ -68,7 +68,7 @@ func TestDeviceSchedulerTuner_Tune(t *testing.T) {
 	}
 	fs := afero.NewMemMapFs()
 	fs.MkdirAll("/sys/devices/pci0000:00/0000:00:1d.0/0000:71:00.0/nvme/fake/queue", 0644)
-	tuner := NewDeviceSchedulerTuner(fs, "fake", schedulerInfo, executors.NewDirectExecutor())
+	tuner := NewDeviceSchedulerTuner(fs, "fake", deviceFeatures, executors.NewDirectExecutor())
 	// when
 	tuner.Tune()
 	// then
@@ -78,7 +78,7 @@ func TestDeviceSchedulerTuner_Tune(t *testing.T) {
 
 func TestDeviceSchedulerTuner_IsSupported_Should_return_true(t *testing.T) {
 	// given
-	schedulerInfo := &schedulerInfoMock{
+	deviceFeatures := &deviceFeaturesMock{
 		getSchedulerFeatureFile: func(string) (string, error) {
 			return "/sys/devices/pci0000:00/0000:00:1d.0/0000:71:00.0/nvme/fake/queue/scheduler", nil
 		},
@@ -91,7 +91,7 @@ func TestDeviceSchedulerTuner_IsSupported_Should_return_true(t *testing.T) {
 	}
 	fs := afero.NewMemMapFs()
 	fs.MkdirAll("/sys/devices/pci0000:00/0000:00:1d.0/0000:71:00.0/nvme/fake/queue", 0644)
-	tuner := NewDeviceSchedulerTuner(fs, "fake", schedulerInfo, executors.NewDirectExecutor())
+	tuner := NewDeviceSchedulerTuner(fs, "fake", deviceFeatures, executors.NewDirectExecutor())
 	// when
 	supported, _ := tuner.CheckIfSupported()
 	// then
@@ -100,7 +100,7 @@ func TestDeviceSchedulerTuner_IsSupported_Should_return_true(t *testing.T) {
 
 func TestDeviceSchedulerTuner_IsSupported_should_return_false(t *testing.T) {
 	// given
-	schedulerInfo := &schedulerInfoMock{
+	deviceFeatures := &deviceFeaturesMock{
 		getSchedulerFeatureFile: func(string) (string, error) {
 			return "/sys/devices/pci0000:00/0000:00:1d.0/0000:71:00.0/nvme/fake/queue/scheduler", nil
 		},
@@ -113,7 +113,7 @@ func TestDeviceSchedulerTuner_IsSupported_should_return_false(t *testing.T) {
 	}
 	fs := afero.NewMemMapFs()
 	fs.MkdirAll("/sys/devices/pci0000:00/0000:00:1d.0/0000:71:00.0/nvme/fake/queue", 0644)
-	tuner := NewDeviceSchedulerTuner(fs, "fake", schedulerInfo, executors.NewDirectExecutor())
+	tuner := NewDeviceSchedulerTuner(fs, "fake", deviceFeatures, executors.NewDirectExecutor())
 	// when
 	supported, _ := tuner.CheckIfSupported()
 	// then
@@ -122,7 +122,7 @@ func TestDeviceSchedulerTuner_IsSupported_should_return_false(t *testing.T) {
 
 func TestDeviceSchedulerTuner_Tune_should_prefer_none_over_noop(t *testing.T) {
 	// given
-	schedulerInfo := &schedulerInfoMock{
+	deviceFeatures := &deviceFeaturesMock{
 		getSchedulerFeatureFile: func(string) (string, error) {
 			return "/sys/devices/pci0000:00/0000:00:1d.0/0000:71:00.0/nvme/fake/queue/scheduler", nil
 		},
@@ -135,7 +135,7 @@ func TestDeviceSchedulerTuner_Tune_should_prefer_none_over_noop(t *testing.T) {
 	}
 	fs := afero.NewMemMapFs()
 	fs.MkdirAll("/sys/devices/pci0000:00/0000:00:1d.0/0000:71:00.0/nvme/fake/queue", 0644)
-	tuner := NewDeviceSchedulerTuner(fs, "fake", schedulerInfo, executors.NewDirectExecutor())
+	tuner := NewDeviceSchedulerTuner(fs, "fake", deviceFeatures, executors.NewDirectExecutor())
 	// when
 	tuner.Tune()
 	// then
