@@ -10,7 +10,7 @@ from pathlib import Path
 from gobekli.logging import m
 from gobekli.chaos.analysis import (make_overview_chart, make_latency_chart,
                                     make_pdf_latency_chart, make_availability_chart,
-                                    analyze_inject_recover_availability)
+                                    analyze_inject_recover_availability, LatencyType)
 
 from os import path
 import json
@@ -161,7 +161,22 @@ INDEX = """
 
 EXPERIMENT = """
 <html>
-    <head></head>
+    <head>
+        <script>
+            function show_hide(visible_id, hidden_id) {
+                const visible = document.getElementById(visible_id);
+                visible.style.display = "block";
+                const hidden = document.getElementById(hidden_id);
+                hidden.style.display = "none";
+            }
+        </script>
+        <style>
+            .a {
+                text-decoration: underline;
+                cursor: pointer;
+            }
+        </style>
+    </head>
     <body>
         <table class="setup">
             <tr>
@@ -202,11 +217,25 @@ EXPERIMENT = """
         <div>
             <h2>{{ chart.title }}</h2>
 
-            <a href="{{ chart.latency }}"><img src="{{ chart.latency }}" width="600"/></a>
+            <div id="{{ chart.id }}_overall">
+            <h3>Overall <span class="a" onclick="show_hide('{{ chart.id }}_producer','{{ chart.id }}_overall')">Producer</span></h3>
 
-            <a href="{{ chart.pdf_latency }}"><img src="{{ chart.pdf_latency }}" width="600"/></a>
+            <a href="{{ chart.latency_overall }}"><img src="{{ chart.latency_overall }}" width="600"/></a>
+
+            <a href="{{ chart.pdf_latency_overall }}"><img src="{{ chart.pdf_latency_overall }}" width="600"/></a>
 
             <a href="{{ chart.availability }}"><img src="{{ chart.availability }}" width="600"/></a>        
+            </div>
+
+            <div id="{{ chart.id }}_producer" style="display: none;">
+            <h3><span class="a" onclick="show_hide('{{ chart.id }}_overall','{{ chart.id }}_producer')">Overall</span> Producer</h3>
+
+            <a href="{{ chart.latency_producer }}"><img src="{{ chart.latency_producer }}" width="600"/></a>
+
+            <a href="{{ chart.pdf_latency_producer }}"><img src="{{ chart.pdf_latency_producer }}" width="600"/></a>
+
+            <a href="{{ chart.availability }}"><img src="{{ chart.availability }}" width="600"/></a>        
+            </div>
         </div>
 {% endfor %}
     </body>
@@ -216,25 +245,35 @@ EXPERIMENT = """
 def build_charts(config, root, results, warmup_s, zoom_us):
     for result in results:
         path = os.path.join(root, result["path"])
-        make_overview_chart(result["title"], path, result["availability_log"], result["latency_log"], warmup_s)
+        make_overview_chart(result["title"], path, result["availability_log"], result["latency_log"], warmup_s, LatencyType.OVERALL)
+        make_overview_chart(result["title"], path, result["availability_log"], result["latency_log"], warmup_s, LatencyType.PRODUCER)
         make_availability_chart(result["title"], None, path, result["availability_log"], result["latency_log"], warmup_s)
         for endpoint in config["endpoints"]:
            make_availability_chart(result["title"], endpoint["idx"], path, result["availability_log"], result["latency_log"], warmup_s)
-        make_pdf_latency_chart(result["title"], None, path, result["availability_log"], result["latency_log"], warmup_s, zoom_us)
+        make_pdf_latency_chart(result["title"], None, path, result["availability_log"], result["latency_log"], warmup_s, zoom_us, LatencyType.OVERALL)
+        make_pdf_latency_chart(result["title"], None, path, result["availability_log"], result["latency_log"], warmup_s, zoom_us, LatencyType.PRODUCER)
         for endpoint in config["endpoints"]:
-            make_pdf_latency_chart(result["title"], endpoint["idx"], path, result["availability_log"], result["latency_log"], warmup_s, zoom_us)
+            make_pdf_latency_chart(result["title"], endpoint["idx"], path, result["availability_log"], result["latency_log"], warmup_s, zoom_us, LatencyType.OVERALL)
+            make_pdf_latency_chart(result["title"], endpoint["idx"], path, result["availability_log"], result["latency_log"], warmup_s, zoom_us, LatencyType.PRODUCER)
         for endpoint in config["endpoints"]:
-            make_latency_chart(result["title"], endpoint["idx"], path, result["availability_log"], result["latency_log"], warmup_s)
+            make_latency_chart(result["title"], endpoint["idx"], path, result["availability_log"], result["latency_log"], warmup_s, LatencyType.OVERALL)
+            make_latency_chart(result["title"], endpoint["idx"], path, result["availability_log"], result["latency_log"], warmup_s, LatencyType.PRODUCER)
         came_from = os.getcwd()
         os.chdir(path)
-        gnuplot("pdf.latency.all.gp")
-        rm("pdf.latency.all.gp")
-        rm("pdf.latency.all.log")
+        gnuplot("pdf.latency.overall.all.gp")
+        rm("pdf.latency.overall.all.gp")
+        rm("pdf.latency.overall.all.log")
+        gnuplot("pdf.latency.producer.all.gp")
+        rm("pdf.latency.producer.all.gp")
+        rm("pdf.latency.producer.all.log")
         for endpoint in config["endpoints"]:
             idx = endpoint["idx"]
-            gnuplot(f"pdf.latency.{idx}.gp")
-            rm(f"pdf.latency.{idx}.gp")
-            rm(f"pdf.latency.{idx}.log")
+            gnuplot(f"pdf.latency.overall.{idx}.gp")
+            rm(f"pdf.latency.overall.{idx}.gp")
+            rm(f"pdf.latency.overall.{idx}.log")
+            gnuplot(f"pdf.latency.producer.{idx}.gp")
+            rm(f"pdf.latency.producer.{idx}.gp")
+            rm(f"pdf.latency.producer.{idx}.log")
         
         gnuplot("availability.all.gp")
         rm("availability.all.gp")
@@ -247,13 +286,20 @@ def build_charts(config, root, results, warmup_s, zoom_us):
 
         for endpoint in config["endpoints"]:
             idx = endpoint["idx"]
-            gnuplot(f"latency.{idx}.gp")
-            rm(f"latency.{idx}.gp")
-            rm(f"latency.{idx}.log")
+            gnuplot(f"latency.overall.{idx}.gp")
+            rm(f"latency.overall.{idx}.gp")
+            rm(f"latency.overall.{idx}.log")
+            gnuplot(f"latency.producer.{idx}.gp")
+            rm(f"latency.producer.{idx}.gp")
+            rm(f"latency.producer.{idx}.log")
 
-        gnuplot("overview.gp")
-        rm("overview.gp")
-        rm("overview.lat.log")
+        gnuplot("overview.overall.gp")
+        rm("overview.overall.gp")
+        rm("overview.lat.overall.log")
+
+        gnuplot("overview.producer.gp")
+        rm("overview.producer.gp")
+        rm("overview.lat.producer.log")
         rm("overview.1s.log")
 
         os.chdir(came_from)
@@ -292,22 +338,32 @@ def archive_failed_cmd_log(root, results):
 
 
 class ChartSet:
-    def __init__(self, title, latency, pdf_latency, availability):
+    def __init__(self, id, title, latency_overall, latency_producer, pdf_latency_overall, pdf_latency_producer, availability):
         self.title = title
-        self.latency = latency
-        self.pdf_latency = pdf_latency
+        self.id = id
+        self.latency_overall = latency_overall
+        self.latency_producer = latency_producer
+        self.pdf_latency_overall = pdf_latency_overall
+        self.pdf_latency_producer = pdf_latency_producer
         self.availability = availability
 
 def build_experiment_index(context, config, root, result, warmup, zoom_us):
     index_path = os.path.join(root, result["path"], "index.html")
     
-    charts = [
-        ChartSet("Combined", "overview.png", "pdf.latency.all.png", "availability.all.png")
-    ]
+    charts = []
+
+    if len(config["endpoints"]) > 1:
+        charts.append(
+            ChartSet("overview", "Combined", "overview.overall.png", "overview.producer.png", "pdf.latency.overall.all.png", "pdf.latency.producer.all.png", "availability.all.png")
+        )
 
     for endpoint in config["endpoints"]:
         idx = endpoint["idx"]
-        charts.append(ChartSet(endpoint["id"], f"latency.{idx}.png", f"pdf.latency.{idx}.png", f"availability.{idx}.png"))
+        charts.append(
+            ChartSet(endpoint["id"], endpoint["id"], f"latency.overall.{idx}.png", f"latency.producer.{idx}.png", f"pdf.latency.overall.{idx}.png", f"pdf.latency.producer.{idx}.png", f"availability.{idx}.png")
+        )
+        
+
     
     with open(index_path, 'w') as html:
         html.write(jinja2.Template(EXPERIMENT).render(
