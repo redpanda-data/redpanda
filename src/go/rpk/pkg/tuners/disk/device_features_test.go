@@ -16,6 +16,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	testDevicePath string = "/sys/devices/pci0000:00/0000:00:1d.0/0000:71:00.0/nvme/fake"
+)
+
 type blockDevicesMock struct {
 	getDirectoriesDevices    func([]string) (map[string][]string, error)
 	getDirectoryDevices      func(string) ([]string, error)
@@ -56,14 +60,14 @@ func TestDeviceFeatures_GetScheduler(t *testing.T) {
 		getBlockDeviceFromPath: func(path string) (BlockDevice, error) {
 			return &blockDevice{
 				devnode: "/dev/fake",
-				syspath: "/sys/devices/pci0000:00/0000:00:1d.0/0000:71:00.0/nvme/fake",
+				syspath: testDevicePath,
 			}, nil
 		},
 	}
 	fs := afero.NewMemMapFs()
-	fs.MkdirAll("/sys/devices/pci0000:00/0000:00:1d.0/0000:71:00.0/nvme/fake/queue", 0644)
+	fs.MkdirAll(testDevicePath+"/queue", 0644)
 	afero.WriteFile(fs,
-		"/sys/devices/pci0000:00/0000:00:1d.0/0000:71:00.0/nvme/fake/queue/scheduler",
+		testDevicePath+"/queue/scheduler",
 		[]byte(noopSchedulerEnabled), 0644)
 	deviceFeatures := NewDeviceFeatures(fs, blockDevices)
 	// when
@@ -79,14 +83,14 @@ func TestDeviceFeatures_GetSupportedScheduler(t *testing.T) {
 		getBlockDeviceFromPath: func(path string) (BlockDevice, error) {
 			return &blockDevice{
 				devnode: "/dev/fake",
-				syspath: "/sys/devices/pci0000:00/0000:00:1d.0/0000:71:00.0/nvme/fake",
+				syspath: testDevicePath,
 			}, nil
 		},
 	}
 	fs := afero.NewMemMapFs()
-	fs.MkdirAll("/sys/devices/pci0000:00/0000:00:1d.0/0000:71:00.0/nvme/fake/queue", 0644)
+	fs.MkdirAll(testDevicePath+"/queue", 0644)
 	afero.WriteFile(fs,
-		"/sys/devices/pci0000:00/0000:00:1d.0/0000:71:00.0/nvme/fake/queue/scheduler",
+		testDevicePath+"/queue/scheduler",
 		[]byte(noopSchedulerEnabled), 0644)
 	deviceFeatures := NewDeviceFeatures(fs, blockDevices)
 	// when
@@ -105,14 +109,14 @@ func TestDeviceFeatures_GetNoMerges(t *testing.T) {
 		getBlockDeviceFromPath: func(path string) (BlockDevice, error) {
 			return &blockDevice{
 				devnode: "/dev/fake",
-				syspath: "/sys/devices/pci0000:00/0000:00:1d.0/0000:71:00.0/nvme/fake",
+				syspath: testDevicePath,
 			}, nil
 		},
 	}
 	fs := afero.NewMemMapFs()
-	fs.MkdirAll("/sys/devices/pci0000:00/0000:00:1d.0/0000:71:00.0/nvme/fake/queue", 0644)
+	fs.MkdirAll(testDevicePath+"/queue", 0644)
 	afero.WriteFile(fs,
-		"/sys/devices/pci0000:00/0000:00:1d.0/0000:71:00.0/nvme/fake/queue/nomerges",
+		testDevicePath+"/queue/nomerges",
 		[]byte("2"), 0644)
 	deviceFeatures := NewDeviceFeatures(fs, blockDevices)
 	// when
@@ -120,4 +124,27 @@ func TestDeviceFeatures_GetNoMerges(t *testing.T) {
 	// then
 	require.NoError(t, err)
 	require.Equal(t, nomerges, 2)
+}
+
+func TestDeviceFeatures_GetWriteCache(t *testing.T) {
+	// given
+	blockDevices := &blockDevicesMock{
+		getBlockDeviceFromPath: func(path string) (BlockDevice, error) {
+			return &blockDevice{
+				devnode: "/dev/fake",
+				syspath: testDevicePath,
+			}, nil
+		},
+	}
+	fs := afero.NewMemMapFs()
+	fs.MkdirAll(testDevicePath+"/queue", 0644)
+	afero.WriteFile(fs,
+		testDevicePath+"/queue/write_cache",
+		[]byte(CachePolicyWriteBack), 0644)
+	deviceFeatures := NewDeviceFeatures(fs, blockDevices)
+	// when
+	cache, err := deviceFeatures.GetWriteCache("fake")
+	// then
+	require.NoError(t, err)
+	require.Equal(t, cache, CachePolicyWriteBack)
 }

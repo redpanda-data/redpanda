@@ -20,12 +20,19 @@ import (
 	"github.com/spf13/afero"
 )
 
+const (
+	CachePolicyWriteThrough string = "write through"
+	CachePolicyWriteBack    string = "write back"
+)
+
 type DeviceFeatures interface {
 	GetScheduler(device string) (string, error)
 	GetSupportedSchedulers(device string) ([]string, error)
 	GetNomerges(device string) (int, error)
 	GetNomergesFeatureFile(device string) (string, error)
 	GetSchedulerFeatureFile(device string) (string, error)
+	GetWriteCache(device string) (string, error)
+	GetWriteCacheFeatureFile(device string) (string, error)
 }
 
 func NewDeviceFeatures(fs afero.Fs, blockDevices BlockDevices) DeviceFeatures {
@@ -79,6 +86,26 @@ func (d *deviceFeatures) GetSchedulerFeatureFile(
 	device string,
 ) (string, error) {
 	return d.getQueueFeatureFile(deviceNode(device), "scheduler")
+}
+
+func (d *deviceFeatures) GetWriteCache(device string) (string, error) {
+	log.Debugf("Getting '%s' write cache", device)
+	featureFile, err := d.GetWriteCacheFeatureFile(device)
+	if err != nil {
+		return "", err
+	}
+	log.Debugf("Feature file %s", featureFile)
+	bytes, err := afero.ReadFile(d.fs, featureFile)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(bytes)), nil
+}
+
+func (d *deviceFeatures) GetWriteCacheFeatureFile(
+	device string,
+) (string, error) {
+	return d.getQueueFeatureFile(deviceNode(device), "write_cache")
 }
 
 func (d *deviceFeatures) getSchedulerOptions(
