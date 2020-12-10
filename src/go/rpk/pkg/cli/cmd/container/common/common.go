@@ -28,11 +28,15 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-const (
-	redpandaNetwork   = "redpanda"
+var (
 	registry          = "docker.io"
-	redpandaImageBase = "vectorized/redpanda"
+	tag               = "latest"
+	redpandaImageBase = "vectorized/redpanda:" + tag
 	redpandaImage     = registry + "/" + redpandaImageBase
+)
+
+const (
+	redpandaNetwork = "redpanda"
 
 	defaultDockerClientTimeout = 10 * time.Second
 )
