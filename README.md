@@ -22,7 +22,7 @@ you from the smallest projects to petabytes of data distributed across the globe
 
 [Slack](https://vectorized.io/slack) is the main way the community interacts with one another in real time :) 
 
-[User mailing list](https://groups.google.com/g/redpanda-users) is preferred for longer, async, thoughtful discussions
+[Github Discussion](https://github.com/vectorizedio/redpanda/discussions) is preferred for longer, async, thoughtful discussions
 
 [GitHub Issues](https://github.com/vectorizedio/redpanda/issues) is reserved only for actual issues. Please use the mailing list for discussions.
 
