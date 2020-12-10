@@ -74,3 +74,21 @@ please keep this up to date with every new library use.
 | gopkg.in/yaml.v2                     | Apache License 2 |
 | github.com/aws/aws-sdk-go            | Apache License 2 |
 | github.com/jmespath/go-jmespath      | Apache License 2 |
+
+
+# Javascript deps _used_ in production (exclude all test dependencies)
+
+| software                             | license          |
+| :----------                          | :------------:   |
+| @types/jest                          | MIT              |
+| @types/node                          | MIT              |             
+| @types/react                         | MIT              |
+| @types/react-dom                     | MIT              |
+| parse-prometheus-text-format         | Apache-2.0       |
+| react                                | MIT              |
+| react-charts                         | MIT              |
+| react-dom                            | MIT              |
+| react-scripts                        | MIT              |
+| typescript                           | Apache-2.0       |
+| web-vitals                           | Apache-2.0       |
+| node-sass                            | MIT              |
