@@ -91,11 +91,11 @@ func TestParseSeeds(t *testing.T) {
 					1,
 				},
 				{
-					config.SocketAddress{"lonely-host", 9092},
+					config.SocketAddress{"lonely-host", 33145},
 					30,
 				},
 				{
-					config.SocketAddress{"192.168.34.1", 9092},
+					config.SocketAddress{"192.168.34.1", 33145},
 					5,
 				},
 			},

@@ -704,7 +704,7 @@ func parseAddress(addr string) (*config.SocketAddress, error) {
 		// It's just a hostname with no port. Assume 9092.
 		return &config.SocketAddress{
 			Address: strings.Trim(hostPort[0], " "),
-			Port:    9092,
+			Port:    config.Default().Redpanda.RPCServer.Port,
 		}, nil
 	}
 	// It's a host:port combo.
