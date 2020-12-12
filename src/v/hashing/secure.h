@@ -45,7 +45,12 @@ class hmac {
 public:
     // silence clang-tidy about _handle being uninitialized
     // NOLINTNEXTLINE(hicpp-member-init, cppcoreguidelines-pro-type-member-init)
-    explicit hmac(const bytes& key)
+    explicit hmac(std::string_view key)
+      : hmac(key.data(), key.size()) {}
+
+    // silence clang-tidy about _handle being uninitialized
+    // NOLINTNEXTLINE(hicpp-member-init, cppcoreguidelines-pro-type-member-init)
+    explicit hmac(bytes_view key)
       : hmac(key.data(), key.size()) {}
 
     hmac(const hmac&) = delete;
@@ -55,7 +60,8 @@ public:
 
     ~hmac() noexcept { gnutls_hmac_deinit(_handle, nullptr); }
 
-    void update(const bytes& data) { update(data.data(), data.size()); }
+    void update(std::string_view data) { update(data.data(), data.size()); }
+    void update(bytes_view data) { update(data.data(), data.size()); }
 
     template<std::size_t Size>
     void update(const std::array<char, Size>& data) {
@@ -122,7 +128,8 @@ public:
 
     ~hash() noexcept { gnutls_hash_deinit(_handle, nullptr); }
 
-    void update(const bytes& data) { update(data.data(), data.size()); }
+    void update(std::string_view data) { update(data.data(), data.size()); }
+    void update(bytes_view data) { update(data.data(), data.size()); }
 
     /**
      * Return the current output and reset.
