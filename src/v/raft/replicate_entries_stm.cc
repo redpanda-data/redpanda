@@ -84,7 +84,8 @@ replicate_entries_stm::send_append_entries_request(
     auto f = _ptr->_client_protocol.append_entries(
       n, std::move(req), rpc::client_opts(append_entries_timeout()));
     _dispatch_sem.signal();
-    return f;
+    return f.finally(
+      [this, n] { _ptr->suppress_heartbeats(n, _followers_seq[n], false); });
 }
 
 ss::future<> replicate_entries_stm::dispatch_one(
@@ -151,8 +152,15 @@ inline bool replicate_entries_stm::is_follower_recovering(model::node_id id) {
 ss::future<result<replicate_result>>
 replicate_entries_stm::apply(ss::semaphore_units<> u) {
     // first append lo leader log, no flushing
+    auto cfg = _ptr->config();
+    cfg.for_each_broker([this](const model::broker& n) {
+        // suppress follower heartbeat, before appending to self log
+        if (n.id() != _ptr->_self) {
+            _ptr->suppress_heartbeats(n.id(), _followers_seq[n.id()], true);
+        }
+    });
     return append_to_self()
-      .then([this, u = std::move(u)](
+      .then([this, u = std::move(u), cfg = std::move(cfg)](
               result<storage::append_result> append_result) mutable {
           if (!append_result) {
               return ss::make_ready_future<result<storage::append_result>>(
@@ -165,7 +173,7 @@ replicate_entries_stm::apply(ss::semaphore_units<> u) {
           auto units = ss::make_lw_shared<std::vector<ss::semaphore_units<>>>(
             std::move(vec));
           uint16_t requests_count = 0;
-          _ptr->config().for_each_broker(
+          cfg.for_each_broker(
             [this, &requests_count, units](const model::broker& n) {
                 // We are not dispatching request to followers that are
                 // recovering
@@ -174,6 +182,8 @@ replicate_entries_stm::apply(ss::semaphore_units<> u) {
                       _ctxlog.trace,
                       "Skipping sending append request to {}, recovering",
                       n.id());
+                    _ptr->suppress_heartbeats(
+                      n.id(), _followers_seq[n.id()], false);
                     return;
                 }
                 ++requests_count;
