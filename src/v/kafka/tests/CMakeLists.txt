@@ -70,3 +70,10 @@ rp_test(
   PREPARE_COMMAND "${KAFKA_PYTHON_ENV} ${PROJECT_SOURCE_DIR}/tools/kafka-python-api-serde.py 1000 > requests.bin"
   ARGS "-- -c 1"
 )
+
+rp_test(
+  UNIT_TEST
+  BINARY_NAME test_scram_algorithm
+  SOURCES scram_algorithm_test.cc
+  LIBRARIES v::seastar_testing_main v::kafka
+)
