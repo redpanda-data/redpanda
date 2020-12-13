@@ -10,108 +10,96 @@
 #include "raft/replicate_batcher.h"
 
 #include "model/fundamental.h"
+#include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "raft/consensus_utils.h"
 #include "raft/errc.h"
 #include "raft/replicate_entries_stm.h"
 #include "raft/types.h"
 
+#include <seastar/core/circular_buffer.hh>
 #include <seastar/core/semaphore.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/core/smp.hh>
 
 #include <chrono>
+#include <cstddef>
 #include <exception>
 
 namespace raft {
 using namespace std::chrono_literals; // NOLINT
-replicate_batcher::replicate_batcher(
-  consensus* ptr,
-  std::chrono::milliseconds debounce_duration,
-  size_t cache_size)
+replicate_batcher::replicate_batcher(consensus* ptr, size_t cache_size)
   : _ptr(ptr)
-  , _debounce_duration(debounce_duration)
-  , _max_batch_size(cache_size) {
-    _flush_timer.set_callback([this] { dispatch_background_flush(); });
-}
-
-void replicate_batcher::dispatch_background_flush() {
-    (void)ss::with_gate(_ptr->_bg, [this] {
-        // background block further caching too
-        return _lock.with([this] { return flush(); });
-    }).handle_exception_type([this](const ss::gate_closed_exception&) {
-        vlog(
-          _ptr->_ctxlog.debug, "Gate closed while flushing replicate requests");
-    });
-}
+  , _max_batch_size_sem(cache_size) {}
 
 ss::future<result<replicate_result>>
 replicate_batcher::replicate(model::record_batch_reader&& r) {
-    return _lock
-      .with(
-        [this, r = std::move(r)]() mutable { return do_cache(std::move(r)); })
-      .then([this](item_ptr i) {
-          if (_pending_bytes >= _max_batch_size) {
-              _flush_timer.cancel();
-              dispatch_background_flush();
-              return i->_promise.get_future();
-          }
-
-          if (!_flush_timer.armed()) {
-              _flush_timer.rearm(clock_type::now() + _debounce_duration);
-          }
-          return i->_promise.get_future();
-      });
+    return do_cache(std::move(r)).then([this](item_ptr i) {
+        return _lock.with([this] { return flush(); }).then([i] {
+            return i->_promise.get_future();
+        });
+    });
 }
 
 ss::future<> replicate_batcher::stop() {
-    _flush_timer.cancel();
     // we keep a lock here to make sure that all inflight requests have finished
     // already
     return _lock.with([this]() {
-        if (_pending_bytes > 0) {
-            _ptr->_ctxlog.info(
-              "Setting exceptional futures to {} pending writes",
-              _item_cache.size());
-            for (auto& i : _item_cache) {
-                i->_promise.set_exception(std::runtime_error(
-                  "replicate_batcher destructor called. Cannot "
-                  "finish replicating pending entries"));
-            }
-            _item_cache.clear();
-            _data_cache.clear();
-            _pending_bytes = 0;
+        for (auto& i : _item_cache) {
+            i->_promise.set_exception(
+              std::runtime_error("replicate_batcher destructor called. Cannot "
+                                 "finish replicating pending entries"));
         }
+        _item_cache.clear();
+        _data_cache.clear();
     });
 }
 ss::future<replicate_batcher::item_ptr>
 replicate_batcher::do_cache(model::record_batch_reader&& r) {
     return model::consume_reader_to_memory(std::move(r), model::no_timeout)
       .then([this](ss::circular_buffer<model::record_batch> batches) {
-          auto i = ss::make_lw_shared<item>();
+          ss::circular_buffer<model::record_batch> data;
+          size_t bytes = std::accumulate(
+            batches.cbegin(),
+            batches.cend(),
+            size_t{0},
+            [](size_t sum, const model::record_batch& b) {
+                return sum + b.size_bytes();
+            });
+          return do_cache_with_backpressure(std::move(batches), bytes);
+      });
+}
+
+ss::future<replicate_batcher::item_ptr>
+replicate_batcher::do_cache_with_backpressure(
+  ss::circular_buffer<model::record_batch> batches, size_t bytes) {
+    return ss::get_units(_max_batch_size_sem, bytes)
+      .then([this, batches = std::move(batches)](
+
+              ss::semaphore_units<> u) mutable {
           size_t record_count = 0;
           for (auto& b : batches) {
               record_count += b.record_count();
-              _pending_bytes += b.size_bytes();
               if (b.header().ctx.owner_shard == ss::this_shard_id()) {
-                  _data_cache.emplace_back(std::move(b));
+                  _data_cache.push_back(std::move(b));
               } else {
-                  _data_cache.emplace_back(b.copy());
+                  _data_cache.push_back(b.copy());
               }
           }
+          auto i = ss::make_lw_shared<item>();
           i->record_count = record_count;
+          i->units = std::move(u);
           _item_cache.emplace_back(i);
           return i;
       });
 }
 
 ss::future<> replicate_batcher::flush() {
-    if (_pending_bytes == 0) {
-        return ss::make_ready_future<>();
-    }
     auto notifications = std::exchange(_item_cache, {});
     auto data = std::exchange(_data_cache, {});
-    _pending_bytes = 0;
+    if (notifications.empty()) {
+        return ss::now();
+    }
     return ss::with_gate(
       _ptr->_bg,
       [this,
