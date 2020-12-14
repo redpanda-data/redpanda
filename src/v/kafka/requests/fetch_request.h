@@ -17,6 +17,7 @@
 #include "kafka/requests/response.h"
 #include "kafka/types.h"
 #include "likely.h"
+#include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
 #include "seastarx.h"
@@ -533,6 +534,34 @@ struct read_result {
     model::offset high_watermark;
     model::offset last_stable_offset;
     error_code error;
+    model::partition_id partition;
+};
+
+using ntp_fetch_config = std::pair<model::materialized_ntp, fetch_config>;
+// struct aggregating fetch requests and corresponding response iterators for
+// the same shard
+struct shard_fetch {
+    void push_back(
+      model::materialized_ntp ntp,
+      fetch_config config,
+      op_context::response_iterator it) {
+        requests.emplace_back(std::move(ntp), config);
+        responses.push_back(it);
+    }
+
+    bool empty() const {
+        vassert(
+          requests.size() == responses.size(),
+          "there have to be equal number of fetch requests and responsens for "
+          "single shard. requests count: {}, response count {}",
+          requests.size(),
+          responses.size());
+
+        return requests.empty();
+    }
+
+    std::vector<ntp_fetch_config> requests;
+    std::vector<op_context::response_iterator> responses;
 };
 
 std::optional<partition_wrapper> make_partition_wrapper(
@@ -540,7 +569,11 @@ std::optional<partition_wrapper> make_partition_wrapper(
   ss::lw_shared_ptr<cluster::partition>,
   cluster::partition_manager& pm);
 
-ss::future<fetch_response::partition_response>
-read_from_ntp(op_context& octx, model::ntp ntp, fetch_config config);
+ss::future<read_result> read_from_ntp(
+  cluster::partition_manager&,
+  const model::materialized_ntp&,
+  fetch_config,
+  bool,
+  std::optional<model::timeout_clock::time_point>);
 
 } // namespace kafka
