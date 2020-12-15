@@ -12,6 +12,7 @@ package factory
 import (
 	"runtime"
 	"time"
+	"vectorized/pkg/cloud/gcp"
 	"vectorized/pkg/config"
 	"vectorized/pkg/net"
 	"vectorized/pkg/os"
@@ -34,6 +35,7 @@ var (
 		"disk_irq":              (*tunersFactory).newDiskIRQTuner,
 		"disk_scheduler":        (*tunersFactory).newDiskSchedulerTuner,
 		"disk_nomerges":         (*tunersFactory).newDiskNomergesTuner,
+		"disk_write_cache":      (*tunersFactory).newGcpWriteCacheTuner,
 		"fstrim":                (*tunersFactory).newFstrimTuner,
 		"net":                   (*tunersFactory).newNetworkTuner,
 		"cpu":                   (*tunersFactory).newCpuTuner,
@@ -134,6 +136,8 @@ func IsTunerEnabled(tuner string, rpkConfig config.RpkConfig) bool {
 		return rpkConfig.TuneDiskScheduler
 	case "disk_nomerges":
 		return rpkConfig.TuneNomerges
+	case "disk_write_cache":
+		return rpkConfig.TuneDiskWriteCache
 	case "fstrim":
 		return rpkConfig.TuneFstrim
 	case "net":
@@ -200,6 +204,19 @@ func (factory *tunersFactory) newDiskNomergesTuner(
 		params.Directories,
 		params.Disks,
 		factory.blockDevices,
+		factory.executor,
+	)
+}
+
+func (factory *tunersFactory) newGcpWriteCacheTuner(
+	params *TunerParams,
+) tuners.Tunable {
+	return tuners.NewGcpWriteCacheTuner(
+		factory.fs,
+		params.Directories,
+		params.Disks,
+		factory.blockDevices,
+		&gcp.GcpVendor{},
 		factory.executor,
 	)
 }

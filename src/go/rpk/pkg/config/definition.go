@@ -64,6 +64,7 @@ type RpkConfig struct {
 	TuneNetwork              bool     `yaml:"tune_network" mapstructure:"tune_network" json:"tuneNetwork"`
 	TuneDiskScheduler        bool     `yaml:"tune_disk_scheduler" mapstructure:"tune_disk_scheduler" json:"tuneDiskScheduler"`
 	TuneNomerges             bool     `yaml:"tune_disk_nomerges" mapstructure:"tune_disk_nomerges" json:"tuneNomerges"`
+	TuneDiskWriteCache       bool     `yaml:"tune_disk_write_cache" mapstructure:"tune_disk_write_cache" json:"tuneDiskWriteCache"`
 	TuneDiskIrq              bool     `yaml:"tune_disk_irq" mapstructure:"tune_disk_irq" json:"tuneDiskIrq"`
 	TuneFstrim               bool     `yaml:"tune_fstrim" mapstructure:"tune_fstrim" json:"tuneFstrim"`
 	TuneCpu                  bool     `yaml:"tune_cpu" mapstructure:"tune_cpu" json:"tuneCpu"`

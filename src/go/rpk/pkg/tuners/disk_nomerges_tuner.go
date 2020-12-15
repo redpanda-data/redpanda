@@ -20,13 +20,13 @@ import (
 func NewDeviceNomergesTuner(
 	fs afero.Fs,
 	device string,
-	schedulerInfo disk.SchedulerInfo,
+	deviceFeatures disk.DeviceFeatures,
 	executor executors.Executor,
 ) Tunable {
 	return NewCheckedTunable(
-		NewDeviceNomergesChecker(fs, device, schedulerInfo),
+		NewDeviceNomergesChecker(fs, device, deviceFeatures),
 		func() TuneResult {
-			return tuneNomerges(fs, device, schedulerInfo, executor)
+			return tuneNomerges(fs, device, deviceFeatures, executor)
 		},
 		func() (bool, string) {
 			return true, ""
@@ -38,10 +38,10 @@ func NewDeviceNomergesTuner(
 func tuneNomerges(
 	fs afero.Fs,
 	device string,
-	schedulerInfo disk.SchedulerInfo,
+	deviceFeatures disk.DeviceFeatures,
 	executor executors.Executor,
 ) TuneResult {
-	featureFile, err := schedulerInfo.GetNomergesFeatureFile(device)
+	featureFile, err := deviceFeatures.GetNomergesFeatureFile(device)
 	if err != nil {
 		return NewTuneError(err)
 	}
@@ -60,14 +60,14 @@ func NewNomergesTuner(
 	blockDevices disk.BlockDevices,
 	executor executors.Executor,
 ) Tunable {
-	schedulerInfo := disk.NewSchedulerInfo(fs, blockDevices)
+	deviceFeatures := disk.NewDeviceFeatures(fs, blockDevices)
 	return NewDiskTuner(
 		fs,
 		directories,
 		devices,
 		blockDevices,
 		func(device string) Tunable {
-			return NewDeviceNomergesTuner(fs, device, schedulerInfo, executor)
+			return NewDeviceNomergesTuner(fs, device, deviceFeatures, executor)
 		},
 	)
 }

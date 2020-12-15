@@ -21,16 +21,16 @@ import (
 func NewDeviceSchedulerTuner(
 	fs afero.Fs,
 	device string,
-	schedulerInfo disk.SchedulerInfo,
+	deviceFeatures disk.DeviceFeatures,
 	executor executors.Executor,
 ) Tunable {
 	return NewCheckedTunable(
-		NewDeviceSchedulerChecker(fs, device, schedulerInfo),
+		NewDeviceSchedulerChecker(fs, device, deviceFeatures),
 		func() TuneResult {
-			return tuneScheduler(fs, device, schedulerInfo, executor)
+			return tuneScheduler(fs, device, deviceFeatures, executor)
 		},
 		func() (bool, string) {
-			_, err := getPreferredScheduler(device, schedulerInfo)
+			_, err := getPreferredScheduler(device, deviceFeatures)
 			if err != nil {
 				return false, err.Error()
 			}
@@ -43,14 +43,14 @@ func NewDeviceSchedulerTuner(
 func tuneScheduler(
 	fs afero.Fs,
 	device string,
-	schedulerInfo disk.SchedulerInfo,
+	deviceFeatures disk.DeviceFeatures,
 	executor executors.Executor,
 ) TuneResult {
-	preferredScheduler, err := getPreferredScheduler(device, schedulerInfo)
+	preferredScheduler, err := getPreferredScheduler(device, deviceFeatures)
 	if err != nil {
 		return NewTuneError(err)
 	}
-	featureFile, err := schedulerInfo.GetSchedulerFeatureFile(device)
+	featureFile, err := deviceFeatures.GetSchedulerFeatureFile(device)
 	if err != nil {
 		return NewTuneError(err)
 	}
@@ -64,9 +64,9 @@ func tuneScheduler(
 }
 
 func getPreferredScheduler(
-	device string, schedulerInfo disk.SchedulerInfo,
+	device string, deviceFeatures disk.DeviceFeatures,
 ) (string, error) {
-	supported, err := schedulerInfo.GetSupportedSchedulers(device)
+	supported, err := deviceFeatures.GetSupportedSchedulers(device)
 	if err != nil {
 		return "", err
 	}
@@ -93,14 +93,14 @@ func NewSchedulerTuner(
 	blockDevices disk.BlockDevices,
 	executor executors.Executor,
 ) Tunable {
-	schedulerInfo := disk.NewSchedulerInfo(fs, blockDevices)
+	deviceFeatures := disk.NewDeviceFeatures(fs, blockDevices)
 	return NewDiskTuner(
 		fs,
 		directories,
 		devices,
 		blockDevices,
 		func(device string) Tunable {
-			return NewDeviceSchedulerTuner(fs, device, schedulerInfo, executor)
+			return NewDeviceSchedulerTuner(fs, device, deviceFeatures, executor)
 		},
 	)
 }

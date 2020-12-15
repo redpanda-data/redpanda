@@ -16,6 +16,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	testDevicePath string = "/sys/devices/pci0000:00/0000:00:1d.0/0000:71:00.0/nvme/fake"
+)
+
 type blockDevicesMock struct {
 	getDirectoriesDevices    func([]string) (map[string][]string, error)
 	getDirectoryDevices      func(string) ([]string, error)
@@ -50,47 +54,47 @@ func (m *blockDevicesMock) GetDiskInfoByType(
 
 var noopSchedulerEnabled = "deadline cfq [noop]"
 
-func TestSchedulerInfo_GetScheduler(t *testing.T) {
+func TestDeviceFeatures_GetScheduler(t *testing.T) {
 	// given
 	blockDevices := &blockDevicesMock{
 		getBlockDeviceFromPath: func(path string) (BlockDevice, error) {
 			return &blockDevice{
 				devnode: "/dev/fake",
-				syspath: "/sys/devices/pci0000:00/0000:00:1d.0/0000:71:00.0/nvme/fake",
+				syspath: testDevicePath,
 			}, nil
 		},
 	}
 	fs := afero.NewMemMapFs()
-	fs.MkdirAll("/sys/devices/pci0000:00/0000:00:1d.0/0000:71:00.0/nvme/fake/queue", 0644)
+	fs.MkdirAll(testDevicePath+"/queue", 0644)
 	afero.WriteFile(fs,
-		"/sys/devices/pci0000:00/0000:00:1d.0/0000:71:00.0/nvme/fake/queue/scheduler",
+		testDevicePath+"/queue/scheduler",
 		[]byte(noopSchedulerEnabled), 0644)
-	schedulerInfo := NewSchedulerInfo(fs, blockDevices)
+	deviceFeatures := NewDeviceFeatures(fs, blockDevices)
 	// when
-	scheduler, err := schedulerInfo.GetScheduler("fake")
+	scheduler, err := deviceFeatures.GetScheduler("fake")
 	// then
 	require.NoError(t, err)
 	require.Equal(t, "noop", scheduler)
 }
 
-func TestSchedulerInfo_GetSupportedScheduler(t *testing.T) {
+func TestDeviceFeatures_GetSupportedScheduler(t *testing.T) {
 	// given
 	blockDevices := &blockDevicesMock{
 		getBlockDeviceFromPath: func(path string) (BlockDevice, error) {
 			return &blockDevice{
 				devnode: "/dev/fake",
-				syspath: "/sys/devices/pci0000:00/0000:00:1d.0/0000:71:00.0/nvme/fake",
+				syspath: testDevicePath,
 			}, nil
 		},
 	}
 	fs := afero.NewMemMapFs()
-	fs.MkdirAll("/sys/devices/pci0000:00/0000:00:1d.0/0000:71:00.0/nvme/fake/queue", 0644)
+	fs.MkdirAll(testDevicePath+"/queue", 0644)
 	afero.WriteFile(fs,
-		"/sys/devices/pci0000:00/0000:00:1d.0/0000:71:00.0/nvme/fake/queue/scheduler",
+		testDevicePath+"/queue/scheduler",
 		[]byte(noopSchedulerEnabled), 0644)
-	schedulerInfo := NewSchedulerInfo(fs, blockDevices)
+	deviceFeatures := NewDeviceFeatures(fs, blockDevices)
 	// when
-	schedulers, err := schedulerInfo.GetSupportedSchedulers("fake")
+	schedulers, err := deviceFeatures.GetSupportedSchedulers("fake")
 	// then
 	require.NoError(t, err)
 	require.Contains(t, schedulers, "noop")
@@ -99,25 +103,48 @@ func TestSchedulerInfo_GetSupportedScheduler(t *testing.T) {
 	require.Len(t, schedulers, 3)
 }
 
-func TestSchedulerInfo_GetNoMerges(t *testing.T) {
+func TestDeviceFeatures_GetNoMerges(t *testing.T) {
 	// given
 	blockDevices := &blockDevicesMock{
 		getBlockDeviceFromPath: func(path string) (BlockDevice, error) {
 			return &blockDevice{
 				devnode: "/dev/fake",
-				syspath: "/sys/devices/pci0000:00/0000:00:1d.0/0000:71:00.0/nvme/fake",
+				syspath: testDevicePath,
 			}, nil
 		},
 	}
 	fs := afero.NewMemMapFs()
-	fs.MkdirAll("/sys/devices/pci0000:00/0000:00:1d.0/0000:71:00.0/nvme/fake/queue", 0644)
+	fs.MkdirAll(testDevicePath+"/queue", 0644)
 	afero.WriteFile(fs,
-		"/sys/devices/pci0000:00/0000:00:1d.0/0000:71:00.0/nvme/fake/queue/nomerges",
+		testDevicePath+"/queue/nomerges",
 		[]byte("2"), 0644)
-	schedulerInfo := NewSchedulerInfo(fs, blockDevices)
+	deviceFeatures := NewDeviceFeatures(fs, blockDevices)
 	// when
-	nomerges, err := schedulerInfo.GetNomerges("fake")
+	nomerges, err := deviceFeatures.GetNomerges("fake")
 	// then
 	require.NoError(t, err)
 	require.Equal(t, nomerges, 2)
+}
+
+func TestDeviceFeatures_GetWriteCache(t *testing.T) {
+	// given
+	blockDevices := &blockDevicesMock{
+		getBlockDeviceFromPath: func(path string) (BlockDevice, error) {
+			return &blockDevice{
+				devnode: "/dev/fake",
+				syspath: testDevicePath,
+			}, nil
+		},
+	}
+	fs := afero.NewMemMapFs()
+	fs.MkdirAll(testDevicePath+"/queue", 0644)
+	afero.WriteFile(fs,
+		testDevicePath+"/queue/write_cache",
+		[]byte(CachePolicyWriteBack), 0644)
+	deviceFeatures := NewDeviceFeatures(fs, blockDevices)
+	// when
+	cache, err := deviceFeatures.GetWriteCache("fake")
+	// then
+	require.NoError(t, err)
+	require.Equal(t, cache, CachePolicyWriteBack)
 }

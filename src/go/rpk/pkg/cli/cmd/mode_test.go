@@ -29,17 +29,18 @@ func fillRpkConfig(path, mode string) *config.Config {
 	val := mode == config.ModeProd
 	conf.Redpanda.DeveloperMode = !val
 	conf.Rpk = config.RpkConfig{
-		TuneNetwork:       val,
-		TuneDiskScheduler: val,
-		TuneNomerges:      val,
-		TuneDiskIrq:       val,
-		TuneFstrim:        val,
-		TuneCpu:           val,
-		TuneAioEvents:     val,
-		TuneClocksource:   val,
-		TuneSwappiness:    val,
-		CoredumpDir:       path,
-		Overprovisioned:   !val,
+		TuneNetwork:        val,
+		TuneDiskScheduler:  val,
+		TuneDiskWriteCache: val,
+		TuneNomerges:       val,
+		TuneDiskIrq:        val,
+		TuneFstrim:         val,
+		TuneCpu:            val,
+		TuneAioEvents:      val,
+		TuneClocksource:    val,
+		TuneSwappiness:     val,
+		CoredumpDir:        path,
+		Overprovisioned:    !val,
 	}
 	return conf
 }

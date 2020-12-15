@@ -19,7 +19,7 @@ import (
 
 func TestDeviceNomergesTuner_Tune(t *testing.T) {
 	// given
-	schedulerInfo := &schedulerInfoMock{
+	deviceFeatures := &deviceFeaturesMock{
 		getNomergesFeatureFile: func(string) (string, error) {
 			return "/sys/devices/pci0000:00/0000:00:1d.0/0000:71:00.0/nvme/fake/queue/nomerges", nil
 		},
@@ -29,7 +29,7 @@ func TestDeviceNomergesTuner_Tune(t *testing.T) {
 	}
 	fs := afero.NewMemMapFs()
 	fs.MkdirAll("/sys/devices/pci0000:00/0000:00:1d.0/0000:71:00.0/nvme/fake/queue", 0644)
-	tuner := NewDeviceNomergesTuner(fs, "fake", schedulerInfo, executors.NewDirectExecutor())
+	tuner := NewDeviceNomergesTuner(fs, "fake", deviceFeatures, executors.NewDirectExecutor())
 	// when
 	tuner.Tune()
 	// then
