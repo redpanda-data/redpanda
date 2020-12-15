@@ -50,6 +50,18 @@ ss::future<response_ptr> create_topics_api::process(
             request.data.topics.end(),
             std::back_inserter(response.data.topics));
 
+          // fill in defaults if necessary
+          for (auto& r : boost::make_iterator_range(begin, valid_range_end)) {
+              if (r.num_partitions == -1) {
+                  r.num_partitions
+                    = config::shard_local_cfg().default_topic_partitions();
+              }
+              if (r.replication_factor == -1) {
+                  r.replication_factor
+                    = config::shard_local_cfg().default_topic_replication();
+              }
+          }
+
           // Validate with validators
           valid_range_end = validate_requests_range(
             begin,

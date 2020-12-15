@@ -34,7 +34,7 @@ public:
     static constexpr const char* name = "create topics";
     static constexpr api_key key = api_key(19);
     static constexpr api_version min_supported = api_version(0);
-    static constexpr api_version max_supported = api_version(3);
+    static constexpr api_version max_supported = api_version(4);
 
     static ss::future<response_ptr>
     process(request_context&&, ss::smp_service_group);
