@@ -11,6 +11,7 @@
 
 #include "config/configuration.h"
 #include "likely.h"
+#include "model/metadata.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "raft/configuration.h"
 #include "raft/consensus_client_protocol.h"
@@ -530,7 +531,23 @@ void consensus::dispatch_vote(bool leadership_transfer) {
         arm_vote_timeout();
         return;
     }
+    auto self_priority = get_node_priority(_self);
+    // check if current node priority is high enough
+    bool current_priority_to_low = _target_priority > self_priority;
+    // update target priority
+    _target_priority = next_target_priority();
 
+    // if priority is to low, skip dispatching votes, do not take priority into
+    // account when we transfer leadership
+    if (current_priority_to_low && !leadership_transfer) {
+        vlog(
+          _ctxlog.trace,
+          "current node priority {} is to low, target priority {}",
+          self_priority,
+          _target_priority);
+        arm_vote_timeout();
+        return;
+    }
     // background, acquire lock, transition state
     (void)with_gate(_bg, [this, leadership_transfer] {
         return dispatch_prevote(leadership_transfer)
@@ -909,7 +926,20 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
     if (r.term < _term) {
         return ss::make_ready_future<vote_reply>(std::move(reply));
     }
-
+    auto n_priority = get_node_priority(r.node_id);
+    // do not grant vote if voter priority is lower than current target
+    // priority
+    if (n_priority < _target_priority && !r.leadership_transfer) {
+        vlog(
+          _ctxlog.info,
+          "not grainting vote to node {}, it has priority {} which is lower "
+          "than current target priority {}",
+          r.node_id,
+          n_priority,
+          _target_priority);
+        reply.granted = false;
+        return ss::make_ready_future<vote_reply>(reply);
+    }
     /// Stable leadership optimization
     ///
     /// When current node is a leader (we set _hbeat to max after
@@ -1022,7 +1052,11 @@ consensus::do_append_entries(append_entries_request&& r) {
         reply.result = append_entries_reply::status::failure;
         return ss::make_ready_future<append_entries_reply>(std::move(reply));
     }
-
+    /**
+     * When the current leader is alive, whenever a follower receives heartbeat,
+     * it updates its target priority to the initial value
+     */
+    _target_priority = voter_priority::max();
     do_step_down();
     if (r.meta.term > _term) {
         vlog(
@@ -2009,6 +2043,44 @@ void consensus::suppress_heartbeats(
             it->second.suppress_heartbeats = is_suppressed;
         }
     }
+}
+
+voter_priority consensus::next_target_priority() {
+    return voter_priority(std::max<voter_priority::type>(
+      (_target_priority / 5) * 4, min_voter_priority));
+}
+
+/**
+ * We use simple policy where we calculate priority based on the position of the
+ * node in configuration broker vector. We shuffle brokers in raft configuration
+ * so it should give us fairly even distribution of leaders across the nodes.
+ */
+voter_priority consensus::get_node_priority(model::node_id id) const {
+    auto& latest_cfg = _configuration_manager.get_latest();
+    auto& brokers = latest_cfg.brokers();
+
+    auto it = std::find_if(
+      brokers.cbegin(), brokers.cend(), [id](const model::broker& b) {
+          return b.id() == id;
+      });
+
+    if (it == brokers.cend()) {
+        /**
+         * If node is not present in current configuration i.e. was added to the
+         * cluster, return 1 which is lowest priority allowing to become a
+         * leader.
+         */
+        return min_voter_priority;
+    }
+
+    auto idx = std::distance(brokers.cbegin(), it);
+
+    /**
+     * Voter priority is inversly proportion to node position in brokers
+     * vector.
+     */
+    return voter_priority(
+      (brokers.size() - idx) * (voter_priority::max() / brokers.size()));
 }
 
 } // namespace raft

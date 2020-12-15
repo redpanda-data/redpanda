@@ -333,6 +333,10 @@ private:
     void maybe_update_majority_replicated_index();
 
     void start_dispatching_disk_append_events();
+
+    voter_priority next_target_priority();
+    voter_priority get_node_priority(model::node_id id) const;
+
     // args
     model::node_id _self;
     raft::group_id _group;
@@ -390,6 +394,7 @@ private:
     configuration_manager _configuration_manager;
     model::offset _majority_replicated_index;
     model::offset _visibility_upper_bound_index;
+    voter_priority _target_priority = voter_priority::max();
     /**
      * We keep an idex of the most recent entry replicated with quorum
      * consistency level to make sure that all requests replicated with quorum

@@ -228,6 +228,8 @@ ss::future<> vote_stm::update_vote_state(ss::semaphore_units<> u) {
     // section vote:5.2.2
     _ptr->_vstate = consensus::vote_state::leader;
     _ptr->_leader_id = _ptr->self();
+    // reset target priority
+    _ptr->_target_priority = voter_priority::max();
     _ptr->_became_leader_at = clock_type::now();
     // Set last heartbeat timestamp to max as we are the leader
     _ptr->_hbeat = clock_type::time_point::max();
