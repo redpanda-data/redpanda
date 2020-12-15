@@ -46,6 +46,7 @@ const getNextSize = (currentSize: number) => {
 
 export class IOBuf {
   private fragmentList: Fragment[] = [];
+  private currentWriteIndex = 0;
   /**
    * It's a buffer used for integer operations which need to be applied to 2
    * distinct buffers
@@ -61,6 +62,14 @@ export class IOBuf {
    * @private
    */
   private auxBuf: Buffer = Buffer.alloc(8);
+
+  private incrementCurrentIndex() {
+    this.currentWriteIndex++;
+  }
+
+  private resetCurrentIndex() {
+    this.currentWriteIndex = 0;
+  }
 
   appendInt8(value: number): number {
     const writeBuffer: WriteInt = (buffer, value1, offset1) =>
@@ -119,7 +128,7 @@ export class IOBuf {
       );
       bytesForWriting -= wroteBytes;
       if (bytesForWriting > 0) {
-        fragment = this.appendNewFragment(fragment.getSize());
+        fragment = this.getNextFragmentOrAppend(fragment);
       }
     }
     return value.length;
@@ -141,7 +150,7 @@ export class IOBuf {
       fragment.used += wroteBytes;
       bytesForWriting -= wroteBytes;
       if (bytesForWriting !== 0) {
-        fragment = this.appendNewFragment(fragment.getSize());
+        fragment = this.getNextFragmentOrAppend(fragment);
       }
     }
     return stringSize;
@@ -164,6 +173,17 @@ export class IOBuf {
 
   forEach(fn: (value: Fragment, index: number) => void): void {
     this.fragmentList.forEach(fn);
+  }
+
+  /**
+   * clean fragments and reset its state
+   */
+  clean(): void {
+    this.fragmentList.forEach((fragment) => {
+      fragment.buffer.fill(0);
+      fragment.used = 0;
+    });
+    this.resetCurrentIndex();
   }
 
   /**
@@ -190,7 +210,7 @@ export class IOBuf {
       fragment.used += auxReserve.length;
       reserves.push(auxReserve);
       if (size > 0) {
-        fragment = this.appendNewFragment(fragment.getSize());
+        fragment = this.getNextFragmentOrAppend(fragment);
       }
     }
     return IOBuf.createFromBuffers(reserves);
@@ -206,19 +226,43 @@ export class IOBuf {
     return iob;
   }
 
+  /**
+   * find the first fragment with free space, otherwise it returns the last
+   * fragment in the list.
+   */
   private getLastFragment = (): Fragment => {
-    const lastFragment = this.fragmentList[this.fragmentList.length - 1];
+    const lastFragment = this.fragmentList[this.currentWriteIndex];
     if (lastFragment) {
       return lastFragment;
     } else {
-      return this.appendNewFragment();
+      return this.appendNewFragment(lastFragment?.getSize());
+    }
+  };
+
+  /**
+   * given a fragment, it tries to find the next fragment in the list, or
+   * appends a new one.
+   * @param fragment
+   */
+  private getNextFragmentOrAppend = (fragment: Fragment): Fragment => {
+    const nextFragment = this.fragmentList[this.currentWriteIndex + 1];
+    if (nextFragment) {
+      return nextFragment;
+    } else {
+      return this.appendNewFragment(fragment.getSize());
     }
   };
 
   private appendNewFragment = (size?: number): Fragment => {
     const nextSize = size ? getNextSize(size) : fragmentSizes[0];
     const fragment = new Fragment(nextSize);
-    this.fragmentList.push(fragment);
+    const newIndex = this.fragmentList.push(fragment);
+    // if newIndex is 1, it means this.fragment added the first element, in this
+    // case, the currentIndex shouldn't increment because for 1 element the
+    // index must be 0 not 1.
+    if (newIndex !== 1) {
+      this.incrementCurrentIndex();
+    }
     return fragment;
   };
 
@@ -243,7 +287,7 @@ export class IOBuf {
         this.auxBuf.slice(byteLength - bytesForWriting, byteLength)
       );
       if (bytesForWriting > 0) {
-        fragment = this.appendNewFragment(fragment.getSize());
+        fragment = this.getNextFragmentOrAppend(fragment);
       }
     }
     return byteLength;

@@ -379,10 +379,7 @@ const recordBatchEncode = (value: RecordBatch, buffer: IOBuf): number => {
    */
   const headerCrc = calculate(headerBuffer.slice(4, 61));
   headerBuffer.writeUInt32LE(headerCrc, 0);
-  // reset reserve write offset, I can use index 0 because there only
-  // one fragment in this reserve with 70 bytes, this in order to update
-  // complete record batch header with its crc hash code.
-  reserver.getFragmentByIndex(0).used = 0;
+  reserver.clean();
   reserver.appendBuffer(headerBuffer);
 
   return wroteBytes;
