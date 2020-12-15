@@ -36,7 +36,9 @@ set(schemata
   sasl_authenticate_request.json
   sasl_authenticate_response.json
   init_producer_id_request.json
-  init_producer_id_response.json)
+  init_producer_id_response.json
+  incremental_alter_configs_request.json
+  incremental_alter_configs_response.json)
 
 set(srcs)
 foreach(schema ${schemata})

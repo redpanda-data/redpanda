@@ -213,7 +213,18 @@ basic_type_map = dict(
 #
 # the format here is the field name path terminating with the expected type name
 # mapping to the new type name.
-struct_renames = {}
+# yapf: disable
+struct_renames = {
+    ("IncrementalAlterConfigsRequestData", "Resources"):
+        ("AlterConfigsResource", "IncrementalAlterConfigsResource"),
+
+    ("IncrementalAlterConfigsRequestData", "Resources", "Configs"):
+        ("AlterableConfig", "IncrementalAlterableConfig"),
+
+    ("IncrementalAlterConfigsResponseData", "Responses"):
+        ("AlterConfigsResourceResponse", "IncrementalAlterConfigsResourceResponse"),
+}
+# yapf: enable
 
 # a listing of expected struct types
 STRUCT_TYPES = [
