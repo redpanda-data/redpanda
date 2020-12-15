@@ -262,5 +262,74 @@ describe("Server", function () {
           });
       }
     );
+
+    it("should apply coprocessors to multiple record batches", function () {
+      const { spyGetHandles } = createStubs(sinonInstance);
+      // transform coprocessor function
+      const uppercase = (record) => ({
+        ...record,
+        value: record.value.map((char) => {
+          if (char > 97 && char < 122) {
+            return char - 32;
+          } else {
+            return char;
+          }
+        }),
+      });
+
+      const coprocessors = [1, 2, 3].map((id) =>
+        createHandle({
+          globalId: BigInt(id),
+          apply: (recordBatch) => {
+            const result = new Map();
+            const transformedRecord =
+              // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+              // @ts-ignore
+              recordBatch.map(({ header, records }) => ({
+                header,
+                records: records.map(uppercase),
+              }));
+            result.set("result", transformedRecord);
+            return result;
+          },
+        })
+      );
+
+      spyGetHandles.returns(coprocessors);
+
+      // it sends 101 record batches, for each of those this should be
+      // apply 3 coprocessors.
+      const requests = new Array(100).fill({
+        recordBatch: [
+          createRecordBatch({
+            header: {
+              recordCount: 1,
+            },
+            records: [{ value: Buffer.from("b") }],
+          }),
+        ],
+        coprocessorIds: [BigInt(1), BigInt(2), BigInt(3)],
+        ntp: { partition: 1, namespace: "", topic: "produce" },
+      });
+
+      return Promise.all([
+        client.process_batch({
+          requests,
+        }),
+      ]).then(([{ result }]) => {
+        // 101 record batches * 3 coprocessor definition = 303
+        assert(result.length === 300);
+        result.forEach((processBatches) => {
+          processBatches.resultRecordBatch.forEach((rb) => {
+            rb.records.forEach((record) => {
+              // each record must have "A", because the coprocessors
+              // definition transform all letter to uppercase
+              assert.strictEqual(record.value.toString(), "B");
+              assert.strictEqual(record.valueLen, 1);
+            });
+          });
+        });
+      });
+    });
   });
 });
