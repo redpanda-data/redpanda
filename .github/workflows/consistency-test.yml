@@ -1,0 +1,68 @@
+name: consistency_testing
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: ref to fetch package for
+        required: true
+jobs:
+  run_consistency_tests:
+    runs-on: ubuntu-20.04
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      CI: 1
+      CI_INSTALL_INFRA: 1
+      AWS_EC2_METADATA_DISABLED: true
+
+    steps:
+      - name: gcloud auth
+        uses: GoogleCloudPlatform/github-actions/setup-gcloud@master
+        with:
+          version: '290.0.1'
+          project_id: 'redpandaci'
+          service_account_key: ${{ secrets.GCR_JSON}}
+          export_default_credentials: true
+
+      - name: fetch release from gcb
+        run: |
+          gsutil cp gs://vectorizedio/rp/release/clang/${{ github.event.inputs.ref }}/redpanda_*.deb redpanda.deb
+
+      - name: Setup vtools
+        run: |
+          sudo apt-get install python3-pip unzip python3-setuptools python3-venv
+          python3 -m venv .chaosenv && source .chaosenv/bin/activate
+          pip install git+https://${{ secrets.GH_API_TOKEN }}@github.com/vectorizedio/vtools > vtools_out.log 2>&1
+
+          # create a simple vtools config
+
+          cat <<EOF >> .vtools.yml
+          ---
+          build:
+            root: ./vbuild
+            src: ./
+            gopath: ./vbuild
+            node_build_dir: ./vbuild
+            default_type: release
+          EOF
+
+          vtools install infra-deps > vtools_out.log 2>&1
+
+      - name: Run chaos tests
+        run: source .chaosenv/bin/activate && vtools test chaos --binary-path ${{ github.workspace }}/redpanda.deb --result-path ${{ github.workspace }}/ > vtools_out.log 2>&1
+
+      - name: Upload results
+        run: |
+          tar -xvf chaos_results.tar.gz
+          vbuild/infra/v2/current/bin/aws s3 cp results/ s3://${{ secrets.S3_BUCKET }}/redpanda --recursive >> vtools_out.log 2>&1
+
+      - name: Destroy Test Resources
+        run: |
+          source .chaosenv/bin/activate && vtools deploy cluster --provider aws --destroy true || true >> vtools_out.log 2>&1
+
+          # Get the result dir so we can add the log inside it, if not found just add a directory named error-xxxx (workflow run id)
+          result_dir=$(find results/ -maxdepth 1 -mindepth 1 -type d -printf "%P\n" | sort -r | head -n1)
+          if [ -z "${result_dir}" ]; then result_dir="error-${{ github.github.run_number }}";fi
+
+          vbuild/infra/v2/current/bin/aws s3 cp vtools_out.log s3://${{ secrets.S3_BUCKET }}/redpanda/$result_dir/
+        if: ${{ always() }}
