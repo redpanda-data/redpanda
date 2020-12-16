@@ -17,6 +17,7 @@
 #include "kafka/requests/fetch_request.h"
 #include "kafka/requests/find_coordinator_request.h"
 #include "kafka/requests/heartbeat_request.h"
+#include "kafka/requests/incremental_alter_configs_request.h"
 #include "kafka/requests/init_producer_id_request.h"
 #include "kafka/requests/join_group_request.h"
 #include "kafka/requests/leave_group_request.h"
@@ -68,7 +69,8 @@ using request_types = make_request_types<
   delete_topics_api,
   describe_groups_api,
   sasl_handshake_api,
-  sasl_authenticate_api>;
+  sasl_authenticate_api,
+  incremental_alter_configs_api>;
 
 template<typename RequestType>
 static auto make_api() {

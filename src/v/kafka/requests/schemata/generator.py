@@ -207,6 +207,25 @@ basic_type_map = dict(
     int64=("int64_t", "read_int64()"),
 )
 
+# apply a rename to a struct. this is useful when there is a type name conflict
+# between two request types. since we generate types in a flat namespace this
+# feature is important for resolving naming conflicts.
+#
+# the format here is the field name path terminating with the expected type name
+# mapping to the new type name.
+# yapf: disable
+struct_renames = {
+    ("IncrementalAlterConfigsRequestData", "Resources"):
+        ("AlterConfigsResource", "IncrementalAlterConfigsResource"),
+
+    ("IncrementalAlterConfigsRequestData", "Resources", "Configs"):
+        ("AlterableConfig", "IncrementalAlterableConfig"),
+
+    ("IncrementalAlterConfigsResponseData", "Responses"):
+        ("AlterConfigsResourceResponse", "IncrementalAlterConfigsResourceResponse"),
+}
+# yapf: enable
+
 # a listing of expected struct types
 STRUCT_TYPES = [
     "ApiVersionsRequestKey",
@@ -247,6 +266,14 @@ STRUCT_TYPES = [
 
 SCALAR_TYPES = list(basic_type_map.keys())
 ENTITY_TYPES = list(entity_type_map.keys())
+
+
+def apply_struct_renames(path, type_name):
+    rename = struct_renames.get(path, None)
+    if rename is None:
+        return type_name
+    assert rename[0] == type_name
+    return rename[1]
 
 
 class VersionRange:
@@ -332,6 +359,7 @@ class FieldType:
         else:
             assert is_array
             path = path + (field["name"], )
+            type_name = apply_struct_renames(path, type_name)
             t = StructType(type_name, field["fields"], path)
 
         if is_array:
