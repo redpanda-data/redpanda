@@ -189,3 +189,12 @@ rp_test(
   LIBRARIES Seastar::seastar_perf_testing v::storage
   LABELS storage
 )
+
+rp_test(
+  UNIT_TEST
+  BINARY_NAME file_stm_test
+  SOURCES file_stm_test.cc
+  LIBRARIES v::seastar_testing_main v::storage_test_utils
+  LABELS storage
+  ARGS "-- -c 1"
+)
