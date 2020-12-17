@@ -15,7 +15,7 @@
 
 static const constexpr size_t characters_per_append = 10;
 
-void append_sequence(iobuf& buf, size_t count) {
+inline void append_sequence(iobuf& buf, size_t count) {
     for (size_t i = 0; i < count; i++) {
         auto str = random_generators::gen_alphanum_string(
           characters_per_append);

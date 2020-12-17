@@ -33,11 +33,15 @@ set(group_srcs
   groups/group.cc
   groups/group_manager.cc)
 
+set(security_srcs
+    security/scram_algorithm.cc)
+
 v_cc_library(
   NAME kafka
   SRCS
     ${request_srcs}
     ${group_srcs}
+    ${security_srcs}
     errors.cc
     protocol.cc
     protocol_utils.cc

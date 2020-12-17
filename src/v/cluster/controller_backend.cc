@@ -202,7 +202,6 @@ controller_backend::execute_partitition_op(const topic_table::delta& delta) {
 
     // only create partitions for this backend
     // partitions created on current shard at this node
-    auto f = ss::make_ready_future<std::error_code>(errc::success);
     switch (delta.type) {
     case topic_table::delta::op_type::add:
         if (!has_local_replicas(_self, delta.p_as.replicas)) {

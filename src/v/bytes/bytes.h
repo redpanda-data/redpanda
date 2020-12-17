@@ -134,3 +134,23 @@ bytes_type_eq::operator()(const bytes& lhs, const iobuf& rhs) const {
     }
     return true;
 }
+
+inline bytes operator^(bytes_view a, bytes_view b) {
+    if (unlikely(a.size() != b.size())) {
+        throw std::runtime_error(
+          "Cannot compute xor for different size byte strings");
+    }
+    bytes res(bytes::initialized_later{}, a.size());
+    std::transform(
+      a.cbegin(), a.cend(), b.cbegin(), res.begin(), std::bit_xor<>());
+    return res;
+}
+
+template<size_t Size>
+inline std::array<char, Size>
+operator^(const std::array<char, Size>& a, const std::array<char, Size>& b) {
+    std::array<char, Size> out; // NOLINT
+    std::transform(
+      a.begin(), a.end(), b.begin(), out.begin(), std::bit_xor<>());
+    return out;
+}
