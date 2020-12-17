@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "kafka/requests/batch_consumer.h"
 #include "kafka/requests/fetch_request.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
@@ -160,9 +161,23 @@ FIXTURE_TEST(read_from_ntp_max_bytes, redpanda_thread_fixture) {
         auto rctx = make_request_context();
         auto octx = kafka::op_context(
           std::move(rctx), ss::default_smp_service_group());
-        auto resp = kafka::read_from_ntp(octx, ntp, config).get0();
-        BOOST_REQUIRE(resp.record_set);
-        return resp;
+        auto shard = octx.rctx.shards().shard_for(ntp).value();
+        return octx.rctx.partition_manager()
+          .invoke_on(
+            shard,
+            [ntp, config](cluster::partition_manager& pm) {
+                return kafka::read_from_ntp(
+                  pm,
+                  model::materialized_ntp(ntp),
+                  config,
+                  true,
+                  model::no_timeout);
+            })
+          .then([](kafka::read_result res) {
+              return std::move(*res.reader)
+                .consume(kafka::kafka_batch_serializer(), model::no_timeout);
+          })
+          .get0();
     };
     wait_for_controller_leadership().get0();
     auto ntp = make_data(model::revision_id(2));
@@ -177,10 +192,10 @@ FIXTURE_TEST(read_from_ntp_max_bytes, redpanda_thread_fixture) {
           });
     }).get();
 
-    auto zero = do_read(ntp, 0).record_set->size_bytes();
-    auto one = do_read(ntp, 1).record_set->size_bytes();
-    auto maxlimit = do_read(ntp, std::numeric_limits<size_t>::max())
-                      .record_set->size_bytes();
+    auto zero = do_read(ntp, 0).data.size_bytes();
+    auto one = do_read(ntp, 1).data.size_bytes();
+    auto maxlimit
+      = do_read(ntp, std::numeric_limits<size_t>::max()).data.size_bytes();
 
     BOOST_TEST(zero > 0); // read something
     BOOST_TEST(zero == one);
