@@ -355,24 +355,36 @@ class LatencyType(Enum):
     PRODUCER = 4
 
 
+def read_latency(log_dir, latency_log):
+    latency_files = []
+    for f in os.listdir(log_dir):
+        if f.startswith(latency_log):
+            if f == latency_log:
+                latency_files.append((f, 0))
+            else:
+                latency_files.append((f, int(f[len(latency_log) + 1:])))
+    for f, _ in sorted(latency_files, key=lambda x: x[1], reverse=True):
+        for line in open(path.join(log_dir, f), 'r'):
+            yield line
+
+
 def make_pdf_latency_chart(title, endpoint_idx, log_dir, availability_log,
                            latency_log, warmup_s, zoom_range_us, latency_type):
     latency_cut_off_us = warmup_s * 1000000
     latencies = []
 
-    with open(path.join(log_dir, latency_log)) as latency_log_file:
-        for line in latency_log_file:
-            if "ok" in line:
-                parts = line.rstrip().split("\t")
-                tick = int(parts[0])
-                latency = int(parts[latency_type.value])
-                idx = int(parts[3])
-                if endpoint_idx != None:
-                    if endpoint_idx != idx:
-                        continue
-                if tick < latency_cut_off_us:
+    for line in read_latency(log_dir, latency_log):
+        if "ok" in line:
+            parts = line.rstrip().split("\t")
+            tick = int(parts[0])
+            latency = int(parts[latency_type.value])
+            idx = int(parts[3])
+            if endpoint_idx != None:
+                if endpoint_idx != idx:
                     continue
-                latencies.append(latency)
+            if tick < latency_cut_off_us:
+                continue
+            latencies.append(latency)
 
     latencies = sorted(latencies)
 
@@ -456,26 +468,25 @@ def make_availability_chart(title, endpoint_idx, log_dir, availability_log,
         ava_log = f"availability.{endpoint_idx}.log"
 
     with open(path.join(log_dir, ava_log), "w") as availability_file:
-        with open(path.join(log_dir, latency_log)) as latency_log_file:
-            last = None
-            for line in latency_log_file:
-                if "ok" in line:
-                    parts = line.rstrip().split("\t")
-                    tick = int(parts[0])
-                    idx = int(parts[3])
-                    if tick < latency_cut_off_us:
+        last = None
+        for line in read_latency(log_dir, latency_log):
+            if "ok" in line:
+                parts = line.rstrip().split("\t")
+                tick = int(parts[0])
+                idx = int(parts[3])
+                if tick < latency_cut_off_us:
+                    continue
+                maxx = max(tick / 1000000, maxx)
+                if last == None:
+                    last = int(parts[0])
+                    continue
+                if endpoint_idx != None:
+                    if endpoint_idx != idx:
                         continue
-                    maxx = max(tick / 1000000, maxx)
-                    if last == None:
-                        last = int(parts[0])
-                        continue
-                    if endpoint_idx != None:
-                        if endpoint_idx != idx:
-                            continue
-                    delta = tick - last
-                    last = tick
-                    maxy = max(maxy, delta)
-                    availability_file.write(f"{tick}\t{delta}\n")
+                delta = tick - last
+                last = tick
+                maxy = max(maxy, delta)
+                availability_file.write(f"{tick}\t{delta}\n")
 
     maxy = int(1.2 * maxy)
     faults = []
@@ -523,29 +534,28 @@ def make_overview_chart(title, log_dir, availability_log, latency_log,
 
     with open(path.join(log_dir, f"overview.lat.{latency_type_name}.log"),
               "w") as chart_lat_file:
-        with open(path.join(log_dir, latency_log)) as latency_log_file:
-            mn = sys.maxsize
-            for line in latency_log_file:
-                if latency_type == LatencyType.PRODUCER:
-                    if "ok" not in line:
-                        continue
-                parts = line.rstrip().split("\t")
-                tick = int(parts[0])
-                if tick < latency_cut_off_us:
+        mn = sys.maxsize
+        for line in read_latency(log_dir, latency_log):
+            if latency_type == LatencyType.PRODUCER:
+                if "ok" not in line:
                     continue
-                tick = int(tick / 1000000)
-                lat = int(parts[latency_type.value])
-                if "ok" in line:
-                    maxtick = max(maxtick, tick)
-                    mn = min(mn, lat)
-                    maxlat = max(maxlat, lat)
-                out = f"{tick}\t{lat}"
-                for i in range(2, len(parts)):
-                    out += "\t" + parts[i]
-                chart_lat_file.write(out + "\n")
-            maxminlat = mn * 3
-            minlatstep = mn
-            maxmaxx = int(1.2 * maxlat)
+            parts = line.rstrip().split("\t")
+            tick = int(parts[0])
+            if tick < latency_cut_off_us:
+                continue
+            tick = int(tick / 1000000)
+            lat = int(parts[latency_type.value])
+            if "ok" in line:
+                maxtick = max(maxtick, tick)
+                mn = min(mn, lat)
+                maxlat = max(maxlat, lat)
+            out = f"{tick}\t{lat}"
+            for i in range(2, len(parts)):
+                out += "\t" + parts[i]
+            chart_lat_file.write(out + "\n")
+        maxminlat = mn * 3
+        minlatstep = mn
+        maxmaxx = int(1.2 * maxlat)
 
     with open(path.join(log_dir, "overview.1s.log"), "w") as chart_ava_file:
         with open(path.join(log_dir,
@@ -612,32 +622,31 @@ def make_latency_chart(title, endpoint_idx, log_dir, availability_log,
             path.join(log_dir,
                       f"latency.{latency_type_name}.{endpoint_idx}.log"),
             "w") as chart_lat_file:
-        with open(path.join(log_dir, latency_log)) as latency_log_file:
-            mn = sys.maxsize
-            for line in latency_log_file:
-                if latency_type == LatencyType.PRODUCER:
-                    if "ok" not in line:
-                        continue
-                parts = line.rstrip().split("\t")
-                tick = int(parts[0])
-                if tick < latency_cut_off_us:
+        mn = sys.maxsize
+        for line in read_latency(log_dir, latency_log):
+            if latency_type == LatencyType.PRODUCER:
+                if "ok" not in line:
                     continue
-                tick = int(tick / 1000000)
-                lat = int(parts[latency_type.value])
-                idx = int(parts[3])
-                if idx != endpoint_idx:
-                    continue
-                maxmaxx = max(maxmaxx, lat)
-                maxtick = max(maxtick, tick)
-                if "ok" in line:
-                    mn = min(mn, lat)
-                    maxlat = max(maxlat, lat)
-                out = f"{tick}\t{lat}"
-                out += "\t" + parts[2]
-                chart_lat_file.write(out + "\n")
-            maxminlat = mn * 3
-            minlatstep = mn
-            maxmaxx = int(1.2 * maxmaxx)
+            parts = line.rstrip().split("\t")
+            tick = int(parts[0])
+            if tick < latency_cut_off_us:
+                continue
+            tick = int(tick / 1000000)
+            lat = int(parts[latency_type.value])
+            idx = int(parts[3])
+            if idx != endpoint_idx:
+                continue
+            maxmaxx = max(maxmaxx, lat)
+            maxtick = max(maxtick, tick)
+            if "ok" in line:
+                mn = min(mn, lat)
+                maxlat = max(maxlat, lat)
+            out = f"{tick}\t{lat}"
+            out += "\t" + parts[2]
+            chart_lat_file.write(out + "\n")
+        maxminlat = mn * 3
+        minlatstep = mn
+        maxmaxx = int(1.2 * maxmaxx)
 
     faults = []
     recoveries = []
