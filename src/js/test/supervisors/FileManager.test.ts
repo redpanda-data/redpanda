@@ -12,10 +12,7 @@ import * as assert from "assert";
 import { SinonSandbox, createSandbox } from "sinon";
 import FileManager from "../../modules/supervisors/FileManager";
 import Repository from "../../modules/supervisors/Repository";
-import {
-  Script_ManagerClient as ManagementClient,
-  Script_ManagerServer as ManagementServer,
-} from "../../modules/rpc/serverAndClients/server";
+import { Script_ManagerServer as ManagementServer } from "../../modules/rpc/serverAndClients/server";
 import * as fs from "fs";
 import { createHandle } from "../testUtilities";
 import { hash64 } from "xxhash";
@@ -23,7 +20,6 @@ import * as chokidar from "chokidar";
 
 let sinonInstance: SinonSandbox;
 let server: ManagementServer;
-let client: ManagementClient;
 
 const createStubs = (sandbox: SinonSandbox) => {
   const watchMock = sandbox.stub(chokidar, "watch");
@@ -65,13 +61,11 @@ describe("FileManager", () => {
   beforeEach(() => {
     sinonInstance = createSandbox();
     server = new ManagementServer();
-    server.listen(4300);
-    client = new ManagementClient(4300);
+    server.listen(43118);
   });
 
   afterEach(async () => {
     sinonInstance.restore();
-    client.close();
     await server.closeConnection();
   });
 
@@ -81,7 +75,7 @@ describe("FileManager", () => {
     () => {
       const { readFolderStub } = createStubs(sinonInstance);
       const repo = new Repository();
-      new FileManager(repo, "submit", "active", "inactive", client);
+      new FileManager(repo, "submit", "active", "inactive");
       // wait for promise readFolderCoprocessor resolves
       setTimeout(() => {
         assert(readFolderStub.firstCall.calledWith(repo, "active"));
@@ -93,7 +87,7 @@ describe("FileManager", () => {
   it("should add listen for new file event", (done) => {
     const repo = new Repository();
     const { readFolderStub, watchMock } = createStubs(sinonInstance);
-    new FileManager(repo, "submit", "active", "inactive", client);
+    new FileManager(repo, "submit", "active", "inactive");
     // wait for promise readFolderCoprocessor resolves
     setTimeout(() => {
       assert(readFolderStub.firstCall.calledWith(repo, "active"));
@@ -125,13 +119,7 @@ describe("FileManager", () => {
           ],
         });
 
-      const file = new FileManager(
-        repo,
-        "submit",
-        "active",
-        "inactive",
-        client
-      );
+      const file = new FileManager(repo, "submit", "active", "inactive");
       file.addCoprocessor("active/file", repo);
       setTimeout(() => {
         assert(getCoprocessor.called);
@@ -163,13 +151,7 @@ describe("FileManager", () => {
       getCoprocessor.returns(Promise.resolve(handle));
       getCoprocessor.returns(Promise.resolve(handle2));
 
-      const fileManager = new FileManager(
-        repo,
-        "submit",
-        "active",
-        "inactive",
-        client
-      );
+      const fileManager = new FileManager(repo, "submit", "active", "inactive");
 
       fileManager
         .addCoprocessor(handle.filename, repo)
@@ -202,7 +184,7 @@ describe("FileManager", () => {
     server.disable_copros = () => Promise.resolve({ inputs: [0] });
     // add spy to server
 
-    const file = new FileManager(repo, "submit", "active", "inactive", client);
+    const file = new FileManager(repo, "submit", "active", "inactive");
     file.deregisterCoprocessor(handle.coprocessor).then(() => {
       assert(moveCoprocessor.called);
       assert(moveCoprocessor.calledWith(handle, "inactive"));
@@ -238,13 +220,7 @@ describe("FileManager", () => {
           ],
         });
 
-      const file = new FileManager(
-        repo,
-        "submit",
-        "active",
-        "inactive",
-        client
-      );
+      const file = new FileManager(repo, "submit", "active", "inactive");
       file
         .addCoprocessor("active/file", repo)
         .catch(() => console.log("expected fail"));
@@ -288,7 +264,7 @@ describe("FileManager", () => {
 
     const repo = new Repository();
     const removeSpy = sinonInstance.spy(repo, "remove");
-    const file = new FileManager(repo, "submit", "active", "inactive", client);
+    const file = new FileManager(repo, "submit", "active", "inactive");
 
     repo.add(handle);
 

@@ -251,18 +251,31 @@ export class {{service_name.title()}}Server {
 
 client_template = """
 export class {{service_name.title()}}Client {
-  constructor(port: number) {
-    this.process = this.process.bind(this)
-    this.client = createConnection({ port }, () => {
-    console.log("Established connection with redpanda");
+  private constructor(client: Socket) {
+    // false because a constructor represents an already connected client
+    this.process = this.process.bind(this);
+    this.isDisconnected = false;
+    this.client = client;
     startReadRequest(this.process)(this.client);
-    })
+    this.client.on('end', () => {
+      this.isDisconnected = true;
+    });
   }
-  
+
+  static create(port: number) {
+    return new Promise<{{service_name.title()}}Client>((resolve, reject) => {
+      let client = createConnection({ port }, () => {
+        resolve(new {{service_name.title()}}Client(client));
+      }).on('error', err => reject(err));
+    });
+  }
+
+  isConnected() { return !this.isDisconnected; }
+
   process(rpcHeader: RpcHeader, payload: Buffer, socket: Socket) {
     this.responseHandlers.get(rpcHeader.correlationId)(payload);
-  }  
-    
+  }
+
   send(buffer: IOBuf, headerReserve: IOBuf, size: number, meta: number): number{
     const correlationId = ++this.correlationId;
     generateRpcHeader(buffer, headerReserve, size, meta, correlationId);
@@ -303,6 +316,7 @@ export class {{service_name.title()}}Client {
   // and transform it into the expected output type
   responseHandlers = new Map<number, (buffer) => void>()
   client: Socket;
+  isDisconnected: boolean;
   correlationId = 0;
 }
 """
