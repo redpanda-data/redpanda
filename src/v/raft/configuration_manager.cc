@@ -122,7 +122,7 @@ configuration_manager::add(model::offset offset, group_configuration cfg) {
     });
 }
 
-group_configuration configuration_manager::get_latest() const {
+const group_configuration& configuration_manager::get_latest() const {
     vassert(
       !_configurations.empty(),
       "Configuration manager should always have at least one configuration");

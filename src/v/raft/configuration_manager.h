@@ -92,7 +92,7 @@ public:
     /**
      * Get latest configuration.
      */
-    group_configuration get_latest() const;
+    const group_configuration& get_latest() const;
 
     /**
      * Get latest configuration offset.
