@@ -100,6 +100,14 @@ public:
     // implicit conversion operator
     constexpr operator type() const { return _value; }
 
+    static constexpr base_named_type min() {
+        return base_named_type(std::numeric_limits<type>::min());
+    }
+
+    static constexpr base_named_type max() {
+        return base_named_type(std::numeric_limits<type>::max());
+    }
+
 protected:
     type _value = std::numeric_limits<T>::min();
 };
