@@ -209,6 +209,13 @@ configuration::configuration()
       "Interaval for metadata dissemination batching",
       required::no,
       3'000ms)
+  , fetch_reads_debounce_timeout(
+      *this,
+      "fetch_reads_debounce_timeout",
+      "Time to wait for next read in fetch request when requested min bytes "
+      "wasn't reached",
+      required::no,
+      1ms)
   , delete_retention_ms(
       *this,
       "delete_retention_ms",

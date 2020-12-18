@@ -11,6 +11,7 @@
 
 #include "cluster/namespace.h"
 #include "cluster/partition_manager.h"
+#include "config/configuration.h"
 #include "kafka/errors.h"
 #include "kafka/fetch_session.h"
 #include "kafka/requests/batch_consumer.h"
@@ -32,9 +33,6 @@
 #include <string_view>
 
 namespace kafka {
-
-static constexpr std::chrono::milliseconds fetch_reads_debounce_timeout
-  = std::chrono::milliseconds(5);
 
 void fetch_request::encode(response_writer& writer, api_version version) {
     writer.write(replica_id());
@@ -584,7 +582,8 @@ static ss::future<> fetch_topic_partitions(op_context& octx) {
                 octx.reset_context();
                 // debounce next read retry
                 return ss::sleep(std::min(
-                  fetch_reads_debounce_timeout, octx.request.max_wait_time));
+                  config::shard_local_cfg().fetch_reads_debounce_timeout(),
+                  octx.request.max_wait_time));
             });
       });
 }
