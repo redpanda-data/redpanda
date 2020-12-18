@@ -275,6 +275,27 @@ FIXTURE_TEST(rpc_mixed_compression, rpc_integration_fixture) {
     client.stop().get();
 }
 
+FIXTURE_TEST(ordering_test, rpc_integration_fixture) {
+    configure_server();
+    register_services();
+    start_server();
+    rpc::client<echo::echo_client_protocol> client(client_config());
+    client.connect().get();
+    std::vector<ss::future<>> futures;
+    futures.reserve(10);
+    for (uint64_t i = 0; i < 10; ++i) {
+        futures.push_back(
+          client.counter(echo::cnt_req{i}, rpc::client_opts(rpc::no_timeout))
+            .then(&rpc::get_ctx_data<echo::cnt_resp>)
+            .then([i](result<echo::cnt_resp> r) {
+                BOOST_REQUIRE_EQUAL(r.value().current, i);
+                BOOST_REQUIRE_EQUAL(r.value().expected, i);
+            }));
+    }
+    ss::when_all_succeed(futures.begin(), futures.end()).get0();
+    client.stop().get();
+}
+
 FIXTURE_TEST(server_exception_test, rpc_integration_fixture) {
     configure_server();
     register_services();

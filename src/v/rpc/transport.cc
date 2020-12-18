@@ -11,11 +11,16 @@
 
 #include "likely.h"
 #include "rpc/logger.h"
+#include "rpc/netbuf.h"
 #include "rpc/parse_utils.h"
+#include "rpc/response_handler.h"
 #include "rpc/types.h"
 #include "vlog.h"
 
 #include <seastar/core/reactor.hh>
+
+#include <memory>
+#include <type_traits>
 
 namespace rpc {
 struct client_context_impl final : streaming_context {
@@ -112,6 +117,9 @@ void transport::fail_outstanding_futures() noexcept {
     for (auto& [_, p] : _correlations) {
         p->set_value(errc::disconnected_endpoint);
     }
+    _last_seq = sequence_t{0};
+    _seq = sequence_t{0};
+    _requests_queue.clear();
     _correlations.clear();
 }
 void base_transport::shutdown() noexcept {
@@ -132,6 +140,8 @@ void base_transport::shutdown() noexcept {
 ss::future<> transport::connect() {
     return base_transport::connect().then([this] {
         _correlation_idx = 0;
+        _last_seq = sequence_t{0};
+        _seq = sequence_t{0};
         // background
         (void)ss::with_gate(_dispatch_gate, [this] {
             return do_reads().then_wrapped([this](ss::future<> f) {
@@ -149,67 +159,98 @@ ss::future<> transport::connect() {
 
 ss::future<result<std::unique_ptr<streaming_context>>>
 transport::send(netbuf b, rpc::client_opts opts) {
+    return do_send(_seq++, std::move(b), std::move(opts));
+}
+
+ss::future<result<std::unique_ptr<streaming_context>>>
+transport::make_response_handler(netbuf& b, const rpc::client_opts& opts) {
+    if (_correlations.find(_correlation_idx + 1) != _correlations.end()) {
+        _probe.client_correlation_error();
+        throw std::runtime_error("Invalid transport state. Doubly "
+                                 "registered correlation_id");
+    }
+    const uint32_t idx = ++_correlation_idx;
+    auto item = std::make_unique<internal::response_handler>();
+    auto item_raw_ptr = item.get();
+    // capture the future _before_ inserting promise in the map
+    // in case there is a concurrent error w/ the connection and it
+    // fails the future before we return from this function
+    auto response_future = item_raw_ptr->get_future();
+    b.set_correlation_id(idx);
+    auto [_, success] = _correlations.emplace(idx, std::move(item));
+    if (unlikely(!success)) {
+        throw std::logic_error(
+          fmt::format("Tried to reuse correlation id: {}", idx));
+    }
+    item_raw_ptr->with_timeout(opts.timeout, [this, idx] {
+        auto it = _correlations.find(idx);
+        if (likely(it != _correlations.end())) {
+            vlog(rpclog.debug, "Request timeout, correlation id: {}", idx);
+            _probe.request_timeout();
+            _correlations.erase(it);
+        }
+    });
+
+    return response_future;
+}
+
+ss::future<result<std::unique_ptr<streaming_context>>>
+transport::do_send(sequence_t seq, netbuf b, rpc::client_opts opts) {
     using ret_t = result<std::unique_ptr<streaming_context>>;
     // hold invariant of always having a valid connection _and_ a working
     // dispatch gate where we can wait for async futures
     if (!is_valid() || _dispatch_gate.is_closed()) {
+        _last_seq = std::max(_last_seq, seq);
         return ss::make_ready_future<ret_t>(errc::disconnected_endpoint);
     }
     return ss::with_gate(
-      _dispatch_gate,
-      [this, b = std::move(b), opts = std::move(opts)]() mutable {
-          if (_correlations.find(_correlation_idx + 1) != _correlations.end()) {
-              _probe.client_correlation_error();
-              throw std::runtime_error(
-                "Invalid transport state. Doubly registered correlation_id");
-          }
-          const uint32_t idx = ++_correlation_idx;
-          auto item = std::make_unique<internal::response_handler>();
-          auto it = item.get();
-          // capture the future _before_ inserting promise in the map
-          // in case there is a concurrent error w/ the connection and it fails
-          // the future before we return from this function
-          auto fut = it->get_future();
-          b.set_correlation_id(idx);
-          auto [_, success] = _correlations.emplace(idx, std::move(item));
-          if (unlikely(!success)) {
-              return ss::make_exception_future<ret_t>(std::logic_error(
-                fmt::format("Tried to reuse correlation id: {}", idx)));
-          }
-          it->with_timeout(opts.timeout, [this, idx] {
-              auto it = _correlations.find(idx);
-              if (likely(it != _correlations.end())) {
-                  vlog(
-                    rpclog.debug, "Request timeout, correlation id: {}", idx);
-                  _probe.request_timeout();
-                  _correlations.erase(it);
-              }
-          });
+             _dispatch_gate,
+             [this, b = std::move(b), opts = std::move(opts), seq]() mutable {
+                 auto f = make_response_handler(b, opts);
 
-          // send
-          auto view = std::move(b).as_scattered();
-          const auto sz = view.size();
-          return get_units(_memory, sz)
-            .then([this, v = std::move(view), f = std::move(fut)](
-                    ss::semaphore_units<> units) mutable {
-                /// background
-                (void)ss::with_gate(
-                  _dispatch_gate,
-                  [this, v = std::move(v), u = std::move(units)]() mutable {
-                      auto msg_size = v.size();
-                      return _out.write(std::move(v))
-                        .finally([this, msg_size, u = std::move(u)] {
-                            _probe.add_bytes_sent(msg_size);
-                        });
-                  })
-                  .handle_exception([this](std::exception_ptr e) {
-                      vlog(rpclog.info, "Error dispatching socket write:{}", e);
-                      _probe.request_error();
-                      fail_outstanding_futures();
-                  });
-                return std::move(f);
-            });
+                 // send
+                 auto sz = b.buffer().size_bytes();
+                 return get_units(_memory, sz)
+                   .then([this, b = std::move(b), f = std::move(f), seq](
+                           ss::semaphore_units<> units) mutable {
+                       _requests_queue.emplace(
+                         seq, std::make_unique<netbuf>(std::move(b)));
+                       dispatch_send();
+                       return std::move(f).finally([u = std::move(units)] {});
+                   });
+             })
+      .finally([this, seq] {
+          // update last sequence to make progress, for successfull dispatches
+          // this will be noop, as _last_seq was already update before sending
+          // data
+          _last_seq = std::max(_last_seq, seq);
       });
+}
+
+void transport::dispatch_send() {
+    (void)ss::with_gate(_dispatch_gate, [this]() mutable {
+        return ss::do_until(
+          [this] {
+              return _requests_queue.empty()
+                     || _requests_queue.begin()->first
+                          > (_last_seq + sequence_t(1));
+          },
+          [this] {
+              auto it = _requests_queue.begin();
+              _last_seq = it->first;
+              auto buffer = std::move(it->second).get();
+              auto v = std::move(*buffer).as_scattered();
+              auto msg_size = v.size();
+              _requests_queue.erase(it->first);
+              return _out.write(std::move(v)).finally([this, msg_size] {
+                  _probe.add_bytes_sent(msg_size);
+              });
+          });
+    }).handle_exception([this](std::exception_ptr e) {
+        vlog(rpclog.info, "Error dispatching socket write:{}", e);
+        _probe.request_error();
+        fail_outstanding_futures();
+    });
 }
 
 ss::future<> transport::do_reads() {

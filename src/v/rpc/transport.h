@@ -21,6 +21,7 @@
 #include "rpc/response_handler.h"
 #include "rpc/types.h"
 #include "seastarx.h"
+#include "utils/named_type.h"
 
 #include <seastar/core/gate.hh>
 #include <seastar/core/iostream.hh>
@@ -29,7 +30,9 @@
 #include <seastar/net/api.hh>
 #include <seastar/net/tls.hh>
 
+#include <absl/container/btree_map.h>
 #include <absl/container/flat_hash_map.h>
+#include <bits/stdint-uintn.h>
 
 #include <cstdint>
 #include <memory>
@@ -102,19 +105,35 @@ public:
       send_typed(Input, uint32_t, rpc::client_opts);
 
 private:
+    using sequence_t = named_type<uint64_t, struct sequence_tag>;
+    using requests_queue_t
+      = absl::btree_map<sequence_t, std::unique_ptr<netbuf>>;
     friend client_context_impl;
-
     ss::future<> do_reads();
     ss::future<> dispatch(header);
     void fail_outstanding_futures() noexcept final;
     void setup_metrics(const std::optional<ss::sstring>&);
+
+    ss::future<result<std::unique_ptr<streaming_context>>>
+      do_send(sequence_t, netbuf, rpc::client_opts);
+    void dispatch_send();
+
+    ss::future<result<std::unique_ptr<streaming_context>>>
+    make_response_handler(netbuf&, const rpc::client_opts&);
 
     ss::semaphore _memory;
     absl::flat_hash_map<uint32_t, std::unique_ptr<internal::response_handler>>
       _correlations;
     uint32_t _correlation_idx{0};
     ss::metrics::metric_groups _metrics;
-
+    /**
+     * ordered map containing in-flight requests. The map preserves order of
+     * calling send_typed function. It is fine to use btree_map in here as it
+     * ususally contains only few elements.
+     */
+    requests_queue_t _requests_queue;
+    sequence_t _seq;
+    sequence_t _last_seq;
     friend std::ostream& operator<<(std::ostream&, const transport&);
 };
 
@@ -157,10 +176,13 @@ transport::send_typed(Input r, uint32_t method_id, rpc::client_opts opts) {
     b->set_min_compression_bytes(opts.min_compression_bytes);
     auto raw_b = b.get();
     raw_b->set_service_method_id(method_id);
+
+    auto& target_buffer = raw_b->buffer();
+    auto seq = ++_seq;
     return reflection::async_adl<Input>{}
-      .to(raw_b->buffer(), std::move(r))
-      .then([this, b = std::move(b), opts = std::move(opts)]() mutable {
-          return send(std::move(*b), std::move(opts));
+      .to(target_buffer, std::move(r))
+      .then([this, b = std::move(b), seq, opts = std::move(opts)]() mutable {
+          return do_send(seq, std::move(*b.get()), std::move(opts));
       })
       .then([this](result<std::unique_ptr<streaming_context>> sctx) mutable {
           if (!sctx) {
