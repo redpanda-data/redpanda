@@ -135,7 +135,7 @@ configuration::configuration()
       "admin_api_doc_dir",
       "Admin API doc directory",
       required::no,
-      "/etc/redpanda/admin-api-doc")
+      "/usr/share/redpanda/admin-api-doc")
   , default_num_windows(
       *this,
       "default_num_windows",

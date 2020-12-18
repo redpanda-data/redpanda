@@ -23,8 +23,8 @@ pandaproxy:
     address: "0.0.0.0"
     port: 9645
 
-  admin_api_doc_dir: /etc/pandaproxy/admin-api-doc
-  api_doc_dir: /etc/pandaproxy/api-doc
+  admin_api_doc_dir: /usr/share/pandaproxy/admin-api-doc
+  api_doc_dir: /usr/share/pandaproxy/api-doc
 
 pandaproxy_client:
   # kafka-api compatible brokers

@@ -500,7 +500,7 @@ redpanda:
   admin:
     address: 0.0.0.0
     port: 9644
-  admin_api_doc_dir: /etc/redpanda/doc
+  admin_api_doc_dir: /usr/share/redpanda/admin-api-doc
   data_directory: /var/lib/redpanda/data
   default_window_sec: 100
   kafka_api:
@@ -530,7 +530,7 @@ redpanda:
   admin:
     address: 0.0.0.0
     port: 9644
-  admin_api_doc_dir: /etc/redpanda/doc
+  admin_api_doc_dir: /usr/share/redpanda/admin-api-doc
   data_directory: /var/lib/redpanda/data
   default_window_sec: 100
   developer_mode: false
@@ -580,7 +580,7 @@ redpanda:
   admin:
     address: 0.0.0.0
     port: 9644
-  admin_api_doc_dir: /etc/redpanda/doc
+  admin_api_doc_dir: /usr/share/redpanda/admin-api-doc
   auto_create_topics_enabled: true
   data_directory: /var/lib/redpanda/data
   default_window_sec: 100
@@ -605,7 +605,7 @@ redpanda:
   admin:
     address: 0.0.0.0
     port: 9644
-  admin_api_doc_dir: /etc/redpanda/doc
+  admin_api_doc_dir: /usr/share/redpanda/admin-api-doc
   auto_create_topics_enabled: true
   data_directory: /different/path
   default_window_sec: 100
