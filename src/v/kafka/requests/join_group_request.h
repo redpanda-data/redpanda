@@ -24,7 +24,11 @@
 
 namespace kafka {
 
+struct join_group_response;
+
 struct join_group_api final {
+    using response_type = join_group_response;
+
     static constexpr const char* name = "join group";
     static constexpr api_key key = api_key(11);
     static constexpr api_version min_supported = api_version(0);
@@ -35,6 +39,8 @@ struct join_group_api final {
 };
 
 struct join_group_request final {
+    using api_type = join_group_api;
+
     join_group_request_data data;
 
     join_group_request() = default;
@@ -90,6 +96,8 @@ struct join_group_response final {
 
     join_group_response_data data;
 
+    join_group_response() = default;
+
     join_group_response(kafka::member_id member_id, kafka::error_code error)
       : join_group_response(
         error, no_generation, no_protocol, no_leader, member_id) {}
@@ -117,6 +125,10 @@ struct join_group_response final {
     }
 
     void encode(const request_context&, response&);
+
+    void decode(iobuf buf, api_version version) {
+        data.decode(std::move(buf), version);
+    }
 };
 
 static inline join_group_response
