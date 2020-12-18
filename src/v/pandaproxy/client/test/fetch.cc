@@ -54,35 +54,11 @@ FIXTURE_TEST(pandaproxy_fetch, ppc_test_fixture) {
     }
 
     info("Adding known topic");
-    auto ntp = make_data(model::revision_id(2));
-    auto shard = app.shard_table.local().shard_for(ntp);
-    {
-        info("Waiting for topic leader");
-        tests::cooperative_spin_wait_with_timeout(10s, [this, shard, ntp] {
-            return app.partition_manager.invoke_on(
-              *shard, [ntp](cluster::partition_manager& mgr) {
-                  auto partition = mgr.get(ntp);
-                  return partition && partition->is_leader();
-              });
-        }).get();
-    }
+    auto tp_ns = make_data(model::revision_id(2), 1);
+    auto ntp = model::ntp(tp_ns.ns, tp_ns.tp, model::partition_id{0});
 
-    model::offset committed_offset{};
     info("Waiting for topic data");
-    tests::cooperative_spin_wait_with_timeout(
-      10s,
-      [this, shard, ntp, &committed_offset] {
-          return app.partition_manager.invoke_on(
-            *shard, [ntp, &committed_offset](cluster::partition_manager& mgr) {
-                auto partition = mgr.get(ntp);
-                if (partition) {
-                    committed_offset = partition->committed_offset();
-                    return committed_offset >= model::offset(1);
-                }
-                return false;
-            });
-      })
-      .get();
+    wait_for_partition_offset(ntp, model::offset{1}).get();
 
     {
         info("Fetching from nonempty known topic");
