@@ -14,6 +14,7 @@ rp_test(
   UNIT_TEST
   BINARY_NAME pandaproxy_client_fixture
   SOURCES
+    consumer_group.cc
     fetch.cc
     produce.cc
     reconnect.cc
