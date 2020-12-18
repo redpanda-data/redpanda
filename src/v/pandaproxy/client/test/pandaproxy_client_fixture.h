@@ -46,4 +46,27 @@ public:
         return
           []() { return kafka::metadata_request{.list_all_topics = true}; };
     }
+
+    model::topic_namespace
+    make_data(model::revision_id rev, int partitions = 1) {
+        auto topic_name = fmt::format("my_topic_{}", 0);
+        auto tp_ns = model::topic_namespace(
+          cluster::kafka_namespace, model::topic{topic_name});
+
+        for (int p = 0; p < partitions; ++p) {
+            model::ntp ntp(tp_ns.ns, tp_ns.tp, model::partition_id(p));
+
+            storage::ntp_config ntp_cfg(
+              ntp, lconf().data_directory().as_sstring(), nullptr, rev);
+
+            storage::disk_log_builder builder(make_default_config());
+            using namespace storage; // NOLINT
+            builder | start(std::move(ntp_cfg)) | add_segment(model::offset(0))
+              | add_random_batches(
+                model::offset(0), 20, maybe_compress_batches::yes)
+              | stop();
+        }
+        add_topic(tp_ns, partitions).get();
+        return tp_ns;
+    }
 };
