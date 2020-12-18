@@ -125,7 +125,7 @@ bool recovery_stm::state_changed() {
         return true;
     }
     return _ptr->_log.offsets().dirty_offset
-           >= meta.value()->last_dirty_log_index;
+           > meta.value()->last_dirty_log_index;
 }
 
 ss::future<> recovery_stm::read_range_for_recovery(
