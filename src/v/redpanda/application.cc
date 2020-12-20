@@ -100,8 +100,9 @@ void application::initialize() {
     _scheduling_groups.create_groups().get();
     _deferred.emplace_back(
       [this] { _scheduling_groups.destroy_groups().get(); });
-    _smp_groups.create_groups().get();
-    _deferred.emplace_back([this] { _smp_groups.destroy_groups().get(); });
+    smp_service_groups.create_groups().get();
+    _deferred.emplace_back(
+      [this] { smp_service_groups.destroy_groups().get(); });
 }
 
 void application::setup_metrics() {
@@ -398,7 +399,7 @@ void application::wire_up_services() {
     construct_service(
       group_router,
       _scheduling_groups.kafka_sg(),
-      _smp_groups.kafka_smp_sg(),
+      smp_service_groups.kafka_smp_sg(),
       std::ref(_group_manager),
       std::ref(shard_table),
       std::ref(coordinator_ntp_mapper))
@@ -406,7 +407,7 @@ void application::wire_up_services() {
 
     // metrics and quota management
     syschecks::systemd_message("Adding kafka quota manager");
-    construct_service(_quota_mgr).get();
+    construct_service(quota_mgr).get();
     // rpc
     rpc::server_configuration rpc_cfg("internal_rpc");
     /**
@@ -511,18 +512,18 @@ void application::start() {
           proto->register_service<
             raft::service<cluster::partition_manager, cluster::shard_table>>(
             _scheduling_groups.raft_sg(),
-            _smp_groups.raft_smp_sg(),
+            smp_service_groups.raft_smp_sg(),
             partition_manager,
             shard_table.local());
           proto->register_service<cluster::service>(
             _scheduling_groups.cluster_sg(),
-            _smp_groups.cluster_smp_sg(),
+            smp_service_groups.cluster_smp_sg(),
             std::ref(controller->get_topics_frontend()),
             std::ref(controller->get_members_manager()),
             std::ref(metadata_cache));
           proto->register_service<cluster::metadata_dissemination_handler>(
             _scheduling_groups.cluster_sg(),
-            _smp_groups.cluster_smp_sg(),
+            smp_service_groups.cluster_smp_sg(),
             std::ref(controller->get_partition_leaders()));
           s.set_protocol(std::move(proto));
       })
@@ -538,7 +539,7 @@ void application::start() {
               auto proto = std::make_unique<rpc::simple_protocol>();
               proto->register_service<coproc::service>(
                 _scheduling_groups.coproc_sg(),
-                _smp_groups.coproc_smp_sg(),
+                smp_service_groups.coproc_smp_sg(),
                 std::ref(router));
               s.set_protocol(std::move(proto));
           })
@@ -550,16 +551,16 @@ void application::start() {
           conf.coproc_script_manager_server());
     }
 
-    _quota_mgr.invoke_on_all(&kafka::quota_manager::start).get();
+    quota_mgr.invoke_on_all(&kafka::quota_manager::start).get();
 
     // Kafka API
     _kafka_server
       .invoke_on_all([this](rpc::server& s) {
           auto proto = std::make_unique<kafka::protocol>(
-            _smp_groups.kafka_smp_sg(),
+            smp_service_groups.kafka_smp_sg(),
             metadata_cache,
             controller->get_topics_frontend(),
-            _quota_mgr,
+            quota_mgr,
             group_router,
             shard_table,
             partition_manager,
