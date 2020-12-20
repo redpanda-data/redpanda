@@ -29,8 +29,6 @@ class metadata_cache;
 
 namespace kafka {
 
-using group_router_type = kafka::group_router<kafka::group_manager>;
-
 class protocol final : public rpc::server::protocol {
 public:
     protocol(
@@ -38,7 +36,7 @@ public:
       ss::sharded<cluster::metadata_cache>&,
       ss::sharded<cluster::topics_frontend>&,
       ss::sharded<quota_manager>&,
-      ss::sharded<kafka::group_router_type>&,
+      ss::sharded<kafka::group_router>&,
       ss::sharded<cluster::shard_table>&,
       ss::sharded<cluster::partition_manager>&,
       ss::sharded<coordinator_ntp_mapper>& coordinator_mapper,
@@ -62,7 +60,7 @@ public:
     ss::sharded<cluster::metadata_cache>& metadata_cache() {
         return _metadata_cache;
     }
-    kafka::group_router_type& group_router() { return _group_router.local(); }
+    kafka::group_router& group_router() { return _group_router.local(); }
     cluster::shard_table& shard_table() { return _shard_table.local(); }
     ss::sharded<cluster::partition_manager>& partition_manager() {
         return _partition_manager;
@@ -80,7 +78,7 @@ private:
     ss::sharded<cluster::topics_frontend>& _topics_frontend;
     ss::sharded<cluster::metadata_cache>& _metadata_cache;
     ss::sharded<quota_manager>& _quota_mgr;
-    ss::sharded<kafka::group_router_type>& _group_router;
+    ss::sharded<kafka::group_router>& _group_router;
     ss::sharded<cluster::shard_table>& _shard_table;
     ss::sharded<cluster::partition_manager>& _partition_manager;
     ss::sharded<kafka::coordinator_ntp_mapper>& _coordinator_mapper;

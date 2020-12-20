@@ -20,7 +20,6 @@
 #include "coproc/service.h"
 #include "kafka/fetch_session_cache.h"
 #include "kafka/groups/coordinator_ntp_mapper.h"
-#include "kafka/groups/group_manager.h"
 #include "kafka/groups/group_router.h"
 #include "kafka/quota_manager.h"
 #include "raft/group_manager.h"
@@ -38,7 +37,6 @@
 #include <seastar/util/defer.hh>
 
 namespace po = boost::program_options; // NOLINT
-using group_router_type = kafka::group_router<kafka::group_manager>;
 
 class application {
 public:
@@ -57,7 +55,7 @@ public:
     }
 
     ss::sharded<cluster::metadata_cache> metadata_cache;
-    ss::sharded<group_router_type> group_router;
+    ss::sharded<kafka::group_router> group_router;
     ss::sharded<cluster::shard_table> shard_table;
     ss::sharded<storage::api> storage;
     ss::sharded<coproc::router> router;

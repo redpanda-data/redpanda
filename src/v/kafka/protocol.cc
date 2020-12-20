@@ -35,7 +35,7 @@ protocol::protocol(
   ss::sharded<cluster::metadata_cache>& meta,
   ss::sharded<cluster::topics_frontend>& tf,
   ss::sharded<quota_manager>& quota,
-  ss::sharded<kafka::group_router_type>& router,
+  ss::sharded<kafka::group_router>& router,
   ss::sharded<cluster::shard_table>& tbl,
   ss::sharded<cluster::partition_manager>& pm,
   ss::sharded<coordinator_ntp_mapper>& coordinator_mapper,

@@ -72,7 +72,7 @@ public:
       request_header&& header,
       iobuf&& request,
       ss::lowres_clock::duration throttle_delay,
-      kafka::group_router_type& group_router,
+      kafka::group_router& group_router,
       cluster::shard_table& shard_table,
       ss::sharded<cluster::partition_manager>& partition_manager,
       ss::sharded<coordinator_ntp_mapper>& coordinator_mapper,
@@ -133,7 +133,7 @@ public:
           .count();
     }
 
-    kafka::group_router_type& groups() { return *_group_router; }
+    kafka::group_router& groups() { return *_group_router; }
 
     cluster::shard_table& shards() { return *_shard_table; }
 
@@ -174,7 +174,7 @@ private:
     request_header _header;
     request_reader _reader;
     ss::lowres_clock::duration _throttle_delay;
-    kafka::group_router_type* _group_router;
+    kafka::group_router* _group_router;
     cluster::shard_table* _shard_table;
     ss::sharded<cluster::partition_manager>* _partition_manager;
     ss::sharded<kafka::coordinator_ntp_mapper>* _coordinator_mapper;
