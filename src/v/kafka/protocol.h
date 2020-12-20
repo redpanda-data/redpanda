@@ -55,19 +55,19 @@ public:
     cluster::topics_frontend& topics_frontend() {
         return _topics_frontend.local();
     }
-    ss::sharded<cluster::metadata_cache>& metadata_cache() {
-        return _metadata_cache;
+    cluster::metadata_cache& metadata_cache() {
+        return _metadata_cache.local();
     }
     kafka::group_router& group_router() { return _group_router.local(); }
     cluster::shard_table& shard_table() { return _shard_table.local(); }
     ss::sharded<cluster::partition_manager>& partition_manager() {
         return _partition_manager;
     }
-    ss::sharded<kafka::coordinator_ntp_mapper>& coordinator_mapper() {
-        return _coordinator_mapper;
+    coordinator_ntp_mapper& coordinator_mapper() {
+        return _coordinator_mapper.local();
     }
-    ss::sharded<kafka::fetch_session_cache>& fetch_sessions_cache() {
-        return _fetch_session_cache;
+    fetch_session_cache& fetch_sessions_cache() {
+        return _fetch_session_cache.local();
     }
     quota_manager& quota_mgr() { return _quota_mgr.local(); }
 

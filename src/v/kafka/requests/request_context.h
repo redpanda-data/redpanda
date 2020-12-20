@@ -90,11 +90,11 @@ public:
     request_reader& reader() { return _reader; }
 
     const cluster::metadata_cache& metadata_cache() const {
-        return _conn->server().metadata_cache().local();
+        return _conn->server().metadata_cache();
     }
 
     cluster::metadata_cache& metadata_cache() {
-        return _conn->server().metadata_cache().local();
+        return _conn->server().metadata_cache();
     }
 
     cluster::topics_frontend& topics_frontend() const {
@@ -116,7 +116,7 @@ public:
     }
 
     fetch_session_cache& fetch_sessions() {
-        return _conn->server().fetch_sessions_cache().local();
+        return _conn->server().fetch_sessions_cache();
     }
 
     // clang-format off
@@ -138,7 +138,7 @@ public:
         return ss::make_ready_future<response_ptr>(std::move(resp));
     }
 
-    ss::sharded<kafka::coordinator_ntp_mapper>& coordinator_mapper() {
+    coordinator_ntp_mapper& coordinator_mapper() {
         return _conn->server().coordinator_mapper();
     }
 
