@@ -13,6 +13,7 @@
 #include "bytes/iobuf.h"
 #include "kafka/fetch_session_cache.h"
 #include "kafka/logger.h"
+#include "kafka/protocol.h"
 #include "kafka/requests/request_reader.h"
 #include "kafka/types.h"
 #include "seastarx.h"
@@ -35,13 +36,6 @@ class topics_frontend;
 
 namespace kafka {
 class coordinator_ntp_mapper;
-
-template<typename T>
-class group_router;
-
-class group_manager;
-
-using group_router_type = kafka::group_router<kafka::group_manager>;
 
 // Fields may not be byte-aligned since we work
 // with the underlying network buffer.

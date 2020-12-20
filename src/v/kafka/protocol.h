@@ -15,6 +15,7 @@
 #include "cluster/shard_table.h"
 #include "cluster/topics_frontend.h"
 #include "kafka/fetch_session_cache.h"
+#include "kafka/groups/group_manager.h"
 #include "kafka/groups/group_router.h"
 #include "kafka/quota_manager.h"
 #include "rpc/server.h"
@@ -27,6 +28,8 @@ class metadata_cache;
 }
 
 namespace kafka {
+
+using group_router_type = kafka::group_router<kafka::group_manager>;
 
 class protocol final : public rpc::server::protocol {
 public:

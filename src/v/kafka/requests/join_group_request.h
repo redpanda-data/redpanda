@@ -11,7 +11,6 @@
 
 #pragma once
 #include "kafka/errors.h"
-#include "kafka/requests/request_context.h"
 #include "kafka/requests/response.h"
 #include "kafka/requests/schemata/join_group_request.h"
 #include "kafka/requests/schemata/join_group_response.h"
@@ -117,9 +116,7 @@ struct join_group_response final {
         data.members = std::move(members);
     }
 
-    void encode(const request_context& ctx, response& resp) {
-        data.encode(resp.writer(), ctx.header().version);
-    }
+    void encode(const request_context&, response&);
 };
 
 static inline join_group_response
