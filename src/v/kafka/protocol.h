@@ -11,21 +11,19 @@
 
 #pragma once
 
+#include "cluster/metadata_cache.h"
 #include "cluster/partition_manager.h"
 #include "cluster/shard_table.h"
 #include "cluster/topics_frontend.h"
 #include "kafka/fetch_session_cache.h"
-#include "kafka/groups/group_manager.h"
+#include "kafka/groups/coordinator_ntp_mapper.h"
 #include "kafka/groups/group_router.h"
 #include "kafka/quota_manager.h"
 #include "rpc/server.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/sharded.hh>
-
-namespace cluster {
-class metadata_cache;
-}
+#include <seastar/core/smp.hh>
 
 namespace kafka {
 

@@ -12,6 +12,7 @@
 
 #include "kafka/protocol.h"
 #include "kafka/protocol_utils.h"
+#include "kafka/requests/request_context.h"
 
 #include <seastar/core/scattered_message.hh>
 #include <seastar/core/sleep.hh>
@@ -114,19 +115,13 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                     // _proto._cntrl etc might not be alive
                     return;
                 }
+                auto self = shared_from_this();
                 auto rctx = request_context(
-                  _proto.metadata_cache(),
-                  _proto.topics_frontend(),
+                  self,
                   std::move(hdr),
                   std::move(buf),
-                  sres.backpressure_delay,
-                  _proto.group_router(),
-                  _proto.shard_table(),
-                  _proto.partition_manager(),
-                  _proto.coordinator_mapper(),
-                  _proto.fetch_sessions_cache());
+                  sres.backpressure_delay);
                 // background process this one full request
-                auto self = shared_from_this();
                 (void)ss::with_gate(
                   _rs.conn_gate(),
                   [this, rctx = std::move(rctx)]() mutable {

@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
-#include "kafka/requests/request_context.h"
+#include "kafka/protocol.h"
 #include "kafka/requests/response.h"
 #include "rpc/server.h"
 #include "seastarx.h"
@@ -27,7 +27,8 @@
 
 namespace kafka {
 
-class protocol;
+struct request_header;
+class request_context;
 
 class connection_context final
   : public ss::enable_lw_shared_from_this<connection_context> {
@@ -40,6 +41,8 @@ public:
     connection_context(connection_context&&) = delete;
     connection_context& operator=(const connection_context&) = delete;
     connection_context& operator=(connection_context&&) = delete;
+
+    protocol& server() { return _proto; }
 
     ss::future<> process_one_request();
     bool is_finished_parsing() const;
