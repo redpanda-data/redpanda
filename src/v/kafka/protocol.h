@@ -28,8 +28,6 @@ class metadata_cache;
 
 namespace kafka {
 
-class connection_context;
-
 class protocol final : public rpc::server::protocol {
 public:
     protocol(
@@ -54,12 +52,28 @@ public:
     // until the end of the server (container/parent)
     ss::future<> apply(rpc::server::resources) final;
 
+    ss::smp_service_group smp_group() const { return _smp_group; }
+    cluster::topics_frontend& topics_frontend() {
+        return _topics_frontend.local();
+    }
+    ss::sharded<cluster::metadata_cache>& metadata_cache() {
+        return _metadata_cache;
+    }
+    kafka::group_router_type& group_router() { return _group_router.local(); }
+    cluster::shard_table& shard_table() { return _shard_table.local(); }
+    ss::sharded<cluster::partition_manager>& partition_manager() {
+        return _partition_manager;
+    }
+    ss::sharded<kafka::coordinator_ntp_mapper>& coordinator_mapper() {
+        return _coordinator_mapper;
+    }
+    ss::sharded<kafka::fetch_session_cache>& fetch_sessions_cache() {
+        return _fetch_session_cache;
+    }
+    quota_manager& quota_mgr() { return _quota_mgr.local(); }
+
 private:
-    friend class connection_context;
-
     ss::smp_service_group _smp_group;
-
-    // services needed by kafka proto
     ss::sharded<cluster::topics_frontend>& _topics_frontend;
     ss::sharded<cluster::metadata_cache>& _metadata_cache;
     ss::sharded<quota_manager>& _quota_mgr;

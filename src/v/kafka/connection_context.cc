@@ -60,7 +60,7 @@ connection_context::throttle_request(
     // distinguish throttling delays from real delays. delays
     // applied to subsequent messages allow backpressure to take
     // affect.
-    auto delay = _proto._quota_mgr.local().record_tp_and_throttle(
+    auto delay = _proto.quota_mgr().record_tp_and_throttle(
       client_id, request_size);
 
     auto fut = ss::now();
@@ -115,16 +115,16 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                     return;
                 }
                 auto rctx = request_context(
-                  _proto._metadata_cache,
-                  _proto._topics_frontend.local(),
+                  _proto.metadata_cache(),
+                  _proto.topics_frontend(),
                   std::move(hdr),
                   std::move(buf),
                   sres.backpressure_delay,
-                  _proto._group_router.local(),
-                  _proto._shard_table.local(),
-                  _proto._partition_manager,
-                  _proto._coordinator_mapper,
-                  _proto._fetch_session_cache);
+                  _proto.group_router(),
+                  _proto.shard_table(),
+                  _proto.partition_manager(),
+                  _proto.coordinator_mapper(),
+                  _proto.fetch_sessions_cache());
                 // background process this one full request
                 auto self = shared_from_this();
                 (void)ss::with_gate(
@@ -146,7 +146,7 @@ ss::future<> connection_context::do_process(request_context ctx) {
     const auto correlation = ctx.header().correlation;
     const sequence_id seq = _seq_idx;
     _seq_idx = _seq_idx + sequence_id(1);
-    return kafka::process_request(std::move(ctx), _proto._smp_group)
+    return kafka::process_request(std::move(ctx), _proto.smp_group())
       .then([this, seq, correlation](response_ptr r) mutable {
           r->set_correlation(correlation);
           _responses.insert({seq, std::move(r)});
