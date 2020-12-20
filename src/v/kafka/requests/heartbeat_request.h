@@ -68,8 +68,7 @@ struct heartbeat_response final {
     void encode(const request_context&, response&);
 };
 
-static inline ss::future<heartbeat_response>
-make_heartbeat_error(error_code error) {
+inline ss::future<heartbeat_response> make_heartbeat_error(error_code error) {
     return ss::make_ready_future<heartbeat_response>(error);
 }
 

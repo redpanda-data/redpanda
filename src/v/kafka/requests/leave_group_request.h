@@ -67,8 +67,7 @@ struct leave_group_response final {
     void encode(const request_context&, response&);
 };
 
-static inline ss::future<leave_group_response>
-make_leave_error(error_code error) {
+inline ss::future<leave_group_response> make_leave_error(error_code error) {
     return ss::make_ready_future<leave_group_response>(error);
 }
 
