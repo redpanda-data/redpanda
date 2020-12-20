@@ -16,6 +16,7 @@
 #include "kafka/logger.h"
 #include "kafka/protocol.h"
 #include "kafka/requests/request_reader.h"
+#include "kafka/requests/response.h"
 #include "kafka/types.h"
 #include "seastarx.h"
 #include "vlog.h"
@@ -29,15 +30,7 @@
 
 #include <memory>
 
-namespace cluster {
-class metadata_cache;
-class partition_manager;
-class shard_table;
-class topics_frontend;
-} // namespace cluster
-
 namespace kafka {
-class coordinator_ntp_mapper;
 
 // Fields may not be byte-aligned since we work
 // with the underlying network buffer.
@@ -62,9 +55,6 @@ struct request_header {
 };
 
 std::ostream& operator<<(std::ostream&, const request_header&);
-
-class response;
-using response_ptr = ss::foreign_ptr<std::unique_ptr<response>>;
 
 class request_context {
 public:
