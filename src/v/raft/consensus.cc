@@ -266,6 +266,10 @@ consensus::success_reply consensus::update_follower_index(
         // we are already recovering, if follower dirty log index moved back
         // from some reason (i.e. truncation, data loss, trigger recovery)
         if (idx.last_dirty_log_index > reply.last_dirty_log_index) {
+            // update follower state to allow recovery of follower with
+            // missing entries
+            idx.last_dirty_log_index = reply.last_dirty_log_index;
+            idx.last_committed_log_index = reply.last_committed_log_index;
             idx.next_index = details::next_offset(idx.last_dirty_log_index);
             idx.follower_state_change.broadcast();
         }
