@@ -45,13 +45,13 @@ configuration::configuration()
       "admin_api_doc_dir",
       "Admin API doc directory",
       config::required::no,
-      "/etc/pandaproxy/admin-api-doc")
+      "/usr/share/pandaproxy/admin-api-doc")
   , api_doc_dir(
       *this,
       "api_doc_dir",
       "API doc directory",
       config::required::no,
-      "/etc/pandaproxy/api-doc")
+      "/usr/share/pandaproxy/api-doc")
   , disable_metrics(
       *this,
       "disable_metrics",

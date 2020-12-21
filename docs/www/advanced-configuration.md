@@ -211,8 +211,8 @@ redpanda:
   enable_admin_api: true
   
   # Admin API doc directory.
-  # Default: /etc/redpanda/admin-api-doc
-  admin_api_doc_dir: "/etc/redpanda/admin-api-doc"
+  # Default: /usr/share/redpanda/admin-api-doc
+  admin_api_doc_dir: "/usr/share/redpanda/admin-api-doc"
   
   # Default number of quota tracking windows.
   # Default: 10

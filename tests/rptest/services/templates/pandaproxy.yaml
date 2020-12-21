@@ -25,8 +25,8 @@ pandaproxy:
     address: "0.0.0.0"
     port: 9645
 
-  admin_api_doc_dir: {{root}}/etc/pandaproxy/admin-api-doc
-  api_doc_dir: {{root}}/etc/pandaproxy/api-doc
+  admin_api_doc_dir: {{root}}/usr/share/pandaproxy/admin-api-doc
+  api_doc_dir: {{root}}/usr/share/pandaproxy/api-doc
   retries: 10
   retry_base_backoff_ms: 10
 
