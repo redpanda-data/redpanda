@@ -7,7 +7,7 @@ set(info_dir --infodir=@REDPANDA_DEPS_INSTALL_DIR@/share/info)
 include(ExternalProject)
 
 set(c_flags "@BASE_C_FLAGS@ @CMAKE_C_FLAGS_BUILD_TYPE@")
-set(cxx_flags "@BASE_CXX_FLAGS@ @CMAKE_CXX_FLAGS_BUILD_TYPE@ -std=c++17")
+set(cxx_flags "@BASE_CXX_FLAGS@ @CMAKE_CXX_FLAGS_BUILD_TYPE@ -std=c++20")
 set(ld_flags "@BASE_LD_FLAGS@")
 set(default_depends "")
 
@@ -18,7 +18,7 @@ set(common_cmake_args
   -DCMAKE_CXX_COMPILER=@CMAKE_CXX_COMPILER@
   "-DCMAKE_C_FLAGS=@BASE_C_FLAGS@"
   "-DCMAKE_C_FLAGS_@BUILD_TYPE@=@CMAKE_C_FLAGS_BUILD_TYPE@"
-  "-DCMAKE_CXX_FLAGS=@BASE_CXX_FLAGS@ -std=c++17"
+  "-DCMAKE_CXX_FLAGS=@BASE_CXX_FLAGS@ -std=c++20"
   "-DCMAKE_CXX_FLAGS_@BUILD_TYPE@=@CMAKE_CXX_FLAGS_BUILD_TYPE@"
   "-DCMAKE_EXE_LINKER_FLAGS=@CMAKE_EXE_LINKER_FLAGS@"
   "-DCMAKE_SHARED_LINKER_FLAGS=@CMAKE_SHARED_LINKER_FLAGS@"
@@ -126,7 +126,7 @@ ExternalProject_Add(seastar
     -DSeastar_CXX_FLAGS=-Wno-error
     "-DSeastar_LD_FLAGS=${seastar_ld_flags}"
     -DSeastar_API_LEVEL=6
-    -DSeastar_CXX_DIALECT=c++17
+    -DSeastar_CXX_DIALECT=c++20
     -DSeastar_UNUSED_RESULT_ERROR=ON
   INSTALL_COMMAND ${CMAKE_COMMAND} --build <BINARY_DIR> --target install
   DEPENDS ${default_depends} boost)
