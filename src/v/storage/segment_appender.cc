@@ -318,7 +318,7 @@ ss::future<> segment_appender::do_next_adaptive_fallocation() {
             false,
             "We failed to fallocate file. This usually means we have ran out "
             "of disk space. Please check your data partition and ensure you "
-            "have enoufh space. Error: {} - {}",
+            "have enough space. Error: {} - {}",
             e,
             *this);
       });
