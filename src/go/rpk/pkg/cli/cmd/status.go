@@ -177,12 +177,6 @@ func getMetrics(
 		)
 	}
 	if send {
-		if conf.NodeUuid == "" {
-			err := mgr.WriteNodeUUID(&conf)
-			if err != nil {
-				log.Info("Error writing the node's UUID: ", err)
-			}
-		}
 		err := sendMetrics(conf, m)
 		if err != nil {
 			log.Info("Error sending metrics: ", err)
