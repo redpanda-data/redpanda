@@ -110,4 +110,11 @@ static constexpr jitter_percents default_segment_size_jitter(5);
 size_t
   jitter_segment_size(size_t, jitter_percents = default_segment_size_jitter);
 
+// key types used to store data in key-value store
+enum class kvstore_key_type : int8_t {
+    start_offset = 0,
+};
+
+bytes start_offset_key(model::ntp ntp);
+
 } // namespace storage::internal

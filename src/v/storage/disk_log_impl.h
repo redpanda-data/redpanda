@@ -78,15 +78,9 @@ private:
     friend class disk_log_builder;  // for tests
     friend std::ostream& operator<<(std::ostream& o, const disk_log_impl& d);
 
-    // key types used to store data in key-value store
-    enum class kvstore_key_type : int8_t {
-        start_offset = 0,
-    };
-
     ss::future<model::record_batch_reader>
       make_unchecked_reader(log_reader_config);
 
-    bytes start_offset_key() const;
     model::offset read_start_offset() const;
 
     ss::future<> do_compact(compaction_config);

@@ -81,7 +81,8 @@ ss::future<> disk_log_impl::remove() {
       })
       .then([this] {
           return _kvstore.remove(
-            kvstore::key_space::storage, start_offset_key());
+            kvstore::key_space::storage,
+            internal::start_offset_key(config().ntp()));
       });
 }
 ss::future<> disk_log_impl::close() {
@@ -211,7 +212,7 @@ ss::future<> disk_log_impl::garbage_collect_segments(
           return _kvstore
             .put(
               kvstore::key_space::storage,
-              start_offset_key(),
+              internal::start_offset_key(config().ntp()),
               reflection::to_iobuf(start_offset))
             .then([this, ptr, ctx] {
                 if (!is_front_segment(ptr)) {
@@ -630,7 +631,7 @@ ss::future<> disk_log_impl::do_truncate_prefix(truncate_prefix_config cfg) {
     return _kvstore
       .put(
         kvstore::key_space::storage,
-        start_offset_key(),
+        internal::start_offset_key(config().ntp()),
         reflection::to_iobuf(cfg.start_offset))
       .then([this, cfg] {
           /*
@@ -772,15 +773,9 @@ ss::future<> disk_log_impl::do_truncate(truncate_config cfg) {
       });
 }
 
-bytes disk_log_impl::start_offset_key() const {
-    iobuf buf;
-    auto ntp = config().ntp();
-    reflection::serialize(buf, kvstore_key_type::start_offset, std::move(ntp));
-    return iobuf_to_bytes(buf);
-}
-
 model::offset disk_log_impl::read_start_offset() const {
-    auto value = _kvstore.get(kvstore::key_space::storage, start_offset_key());
+    auto value = _kvstore.get(
+      kvstore::key_space::storage, internal::start_offset_key(config().ntp()));
     if (value) {
         auto offset = reflection::adl<model::offset>{}.from(std::move(*value));
         return offset;
