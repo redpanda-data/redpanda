@@ -82,7 +82,7 @@ ss::future<response_ptr> do_process(
   request_context&& ctx, ss::smp_service_group g) {
     vlog(
       klog.trace,
-      "Processing name:{}, key:{}, verion:{} for {}",
+      "Processing name:{}, key:{}, version:{} for {}",
       Request::name,
       ctx.header().key,
       ctx.header().version,
