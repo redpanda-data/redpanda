@@ -42,10 +42,10 @@ cd "$root"/tools/ts-generator/types &&
 
 cd "$root"/tools/ts-generator/rpc &&
   $py rpc_gen_js.py \
-    --server-define-file "$root"/src/idl/coproc_idl.json \
+    --server-define-file "$root"/src/v/coproc/gen.json \
     --output-file "$root"/src/js/modules/rpc/serverAndClients/server.ts
 
 cd "$root"/tools/ts-generator/rpc &&
   $py rpc_gen_js.py \
-    --server-define-file "$root"/src/idl/process_batch_coproc.json \
+    --server-define-file "$root"/src/v/coproc/gen_engine.json \
     --output-file "$root"/src/js/modules/rpc/serverAndClients/processBatch.ts

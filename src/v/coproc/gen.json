@@ -4,6 +4,7 @@
     "includes": [
         "coproc/types.h"
     ],
+    "js_include": "../../domain/generatedRpc/enableDisableCoprocClasses",
     "methods": [
         {
             "name": "enable_copros",
