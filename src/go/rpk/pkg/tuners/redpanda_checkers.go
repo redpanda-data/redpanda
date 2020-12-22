@@ -246,8 +246,7 @@ func RedpandaCheckers(
 	// NOTE: important workaround for very high flush latency in
 	//       GCP when using local SSD's
 	gcpVendor := gcp.GcpVendor{}
-	if err != nil && v.Name() == gcpVendor.Name() {
-
+	if err == nil && v.Name() == gcpVendor.Name() {
 		checkers[WriteCachePolicyChecker] = []Checker{NewDirectoryWriteCacheChecker(fs,
 			config.Redpanda.Directory,
 			deviceFeatures,
