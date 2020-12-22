@@ -29,12 +29,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-type status struct {
-	metrics  *system.Metrics
-	jsonConf string
-	topics   []*sarama.TopicMetadata
-}
-
 func NewStatusCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	var (
 		configFile string
