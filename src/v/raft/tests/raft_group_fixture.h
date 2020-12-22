@@ -719,7 +719,7 @@ static ss::future<bool> replicate_compactible_batches(
   model::timestamp ts,
   model::timeout_clock::duration tout = 1s) {
     return retry_with_leader(gr, 5, tout, [ts](raft_node& leader_node) {
-        auto rdr = make_compactible_batches(5, 30, ts);
+        auto rdr = make_compactible_batches(5, 80, ts);
         raft::replicate_options opts(raft::consistency_level::quorum_ack);
 
         return leader_node.consensus->replicate(std::move(rdr), opts)
