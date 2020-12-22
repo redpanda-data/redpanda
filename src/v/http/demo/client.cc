@@ -64,9 +64,6 @@ void cli_opts(boost::program_options::options_description_easy_init opt) {
 }
 
 struct test_conf {
-    test_conf() = default;
-    test_conf(const test_conf&) = default;
-
     std::size_t chunk_size;
     std::string data;
     std::string target;
