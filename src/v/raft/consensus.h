@@ -335,8 +335,6 @@ private:
 
     void start_dispatching_disk_append_events();
 
-    ss::future<> create_recovery_snapshot(const storage::offset_stats&);
-
     voter_priority next_target_priority();
     voter_priority get_node_priority(model::node_id id) const;
 

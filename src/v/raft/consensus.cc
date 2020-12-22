@@ -24,7 +24,6 @@
 #include "raft/types.h"
 #include "raft/vote_stm.h"
 #include "reflection/adl.h"
-#include "storage/types.h"
 #include "utils/state_crc_file.h"
 #include "utils/state_crc_file_errc.h"
 #include "vlog.h"
@@ -721,43 +720,19 @@ ss::future<> consensus::start() {
                   _term = lstats.dirty_offset_term;
                   _voted_for = {};
               }
-              auto f = ss::now();
-              /**
-               * Snapshot and log was delted, try to recover by creating
-               * snapshot with initial data.
-               *
-               * MOST IMPORTANT:
-               * we can only do this when log is empty and there
-               * is no snapshot for given offset.
-               */
-              if (
-                _log.segment_count() == 0
-                // if log is empty and start offset is persisted in kvstore
-                // dirty offset is equal to (start_offset-1)
-                && lstats.start_offset > lstats.dirty_offset
-                // snapshot must be deleted (it is in the same folder as log
-                // segments)
-                && _last_snapshot_index != lstats.dirty_offset) {
-                  f = f.then([this, lstats] {
-                      return create_recovery_snapshot(lstats);
-                  });
-              }
+              vlog(
+                _ctxlog.info,
+                "Recovered, log offsets: {}, term:{}",
+                lstats,
+                _term);
               /**
                * The configuration manager state may be divereged from the log
                * state, as log is flushed lazily, we have to make sure that the
                * log and configuration manager has exactly the same offsets
                * range
                */
-              f = f.then([this, dirty = lstats.dirty_offset] {
-                  return _configuration_manager.truncate(
-                    details::next_offset(dirty));
-              });
-
-              vlog(
-                _ctxlog.info,
-                "Recovered, log offsets: {}, term:{}",
-                lstats,
-                _term);
+              auto f = _configuration_manager.truncate(
+                details::next_offset(lstats.dirty_offset));
 
               /**
                * We read some batches from the log and have to update the
@@ -817,42 +792,6 @@ ss::future<> consensus::start() {
                 });
           });
     });
-}
-ss::future<> consensus::create_recovery_snapshot(
-  const storage::offset_stats& initial_offsets) {
-    auto snapshot_offset = details::prev_offset(initial_offsets.start_offset);
-    static constexpr model::term_id poisson_value{-2};
-    /**
-     * IMPORTANT NOTICE
-     *
-     * We can leverage the fact that log start offset is only updated up to the
-     * committed offset. We can safely update committed index with offset that
-     * is previous to log start offset (last prefix truncation offset).
-     */
-    _commit_index = snapshot_offset;
-    snapshot_metadata md{
-      .last_included_index = snapshot_offset,
-      .last_included_term = poisson_value,
-      .latest_configuration = _configuration_manager.get_latest(),
-      .cluster_time = clock_type::time_point::min(),
-    };
-
-    return details::persist_snapshot(_snapshot_mgr, std::move(md), iobuf())
-      .then([this,
-             snapshot_offset,
-             cfg = _configuration_manager.get_latest()]() mutable {
-          // update consensus state
-          _last_snapshot_index = snapshot_offset;
-          _last_snapshot_term = poisson_value;
-          // update configuration manager
-          return _configuration_manager
-            .add(_last_snapshot_index, std::move(cfg))
-            .then([this] {
-                return _configuration_manager.prefix_truncate(
-                  _last_snapshot_index);
-            });
-      });
-    ;
 }
 
 void consensus::start_dispatching_disk_append_events() {
@@ -1178,17 +1117,12 @@ consensus::do_append_entries(append_entries_request&& r) {
           ? lstats.dirty_offset_term // use term from lstats
           : get_term(model::offset(
             r.meta.prev_log_index)); // lookup for request term in log
-
-    // if request prev log index is equal to snapshot index use snapshot as a
-    // source of term information
-    if (r.meta.prev_log_index == _last_snapshot_index) {
-        last_log_term = _last_snapshot_term;
-    }
-    /**
-     * Skip checking term if follower log is empty, we just accept any term from
-     * the leader. This is the case when follower log was deleted.
-     */
-    if (_log.segment_count() > 0 && r.meta.prev_log_term != last_log_term) {
+    // We can only check prev_log_term for entries that are present in the
+    // log. When leader installed snapshot on the follower we may require to
+    // skip the term check as term of prev_log_idx may not be available.
+    if (
+      r.meta.prev_log_index >= lstats.start_offset
+      && r.meta.prev_log_term != last_log_term) {
         vlog(
           _ctxlog.debug,
           "Rejecting append entries. missmatching entry term at offset: "
