@@ -22,7 +22,11 @@
 
 namespace kafka {
 
+struct leave_group_response;
+
 struct leave_group_api final {
+    using response_type = leave_group_response;
+
     static constexpr const char* name = "leave group";
     static constexpr api_key key = api_key(13);
     static constexpr api_version min_supported = api_version(0);
@@ -33,6 +37,8 @@ struct leave_group_api final {
 };
 
 struct leave_group_request final {
+    using api_type = leave_group_api;
+
     leave_group_request_data data;
 
     // set during request processing after mapping group to ntp
@@ -53,7 +59,11 @@ operator<<(std::ostream& os, const leave_group_request& r) {
 }
 
 struct leave_group_response final {
+    using api_type = leave_group_api;
+
     leave_group_response_data data;
+
+    leave_group_response() = default;
 
     explicit leave_group_response(error_code error)
       : data({
@@ -65,6 +75,10 @@ struct leave_group_response final {
       : leave_group_response(error) {}
 
     void encode(const request_context&, response&);
+
+    void decode(iobuf buf, api_version version) {
+        data.decode(std::move(buf), version);
+    }
 };
 
 inline ss::future<leave_group_response> make_leave_error(error_code error) {

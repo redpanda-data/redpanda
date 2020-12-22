@@ -24,7 +24,11 @@
 
 namespace kafka {
 
+struct sync_group_response;
+
 struct sync_group_api final {
+    using response_type = sync_group_response;
+
     static constexpr const char* name = "sync group";
     static constexpr api_key key = api_key(14);
     static constexpr api_version min_supported = api_version(0);
@@ -35,6 +39,8 @@ struct sync_group_api final {
 };
 
 struct sync_group_request final {
+    using api_type = sync_group_api;
+
     sync_group_request_data data;
 
     // set during request processing after mapping group to ntp
@@ -70,6 +76,8 @@ struct sync_group_response final {
 
     sync_group_response_data data;
 
+    sync_group_response() = default;
+
     sync_group_response(error_code error, bytes assignment)
       : data({
         .throttle_time_ms = std::chrono::milliseconds(0),
@@ -84,10 +92,13 @@ struct sync_group_response final {
       : sync_group_response(error) {}
 
     void encode(const request_context&, response&);
+
+    void decode(iobuf buf, api_version version) {
+        data.decode(std::move(buf), version);
+    }
 };
 
-static inline ss::future<sync_group_response>
-make_sync_error(error_code error) {
+inline ss::future<sync_group_response> make_sync_error(error_code error) {
     return ss::make_ready_future<sync_group_response>(error);
 }
 
