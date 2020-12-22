@@ -29,6 +29,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
+type metricsResult struct {
+	rows    [][]string
+	metrics *system.Metrics
+}
+
 func NewStatusCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	var (
 		configFile string
