@@ -11,9 +11,12 @@
 
 #pragma once
 #include "bytes/iobuf.h"
+#include "kafka/connection_context.h"
 #include "kafka/fetch_session_cache.h"
 #include "kafka/logger.h"
+#include "kafka/protocol.h"
 #include "kafka/requests/request_reader.h"
+#include "kafka/requests/response.h"
 #include "kafka/types.h"
 #include "seastarx.h"
 #include "vlog.h"
@@ -21,27 +24,13 @@
 #include <seastar/core/future.hh>
 #include <seastar/core/reactor.hh>
 #include <seastar/core/sharded.hh>
+#include <seastar/core/shared_ptr.hh>
 #include <seastar/core/unaligned.hh>
 #include <seastar/util/log.hh>
 
 #include <memory>
 
-namespace cluster {
-class metadata_cache;
-class partition_manager;
-class shard_table;
-class topics_frontend;
-} // namespace cluster
-
 namespace kafka {
-class coordinator_ntp_mapper;
-
-template<typename T>
-class group_router;
-
-class group_manager;
-
-using group_router_type = kafka::group_router<kafka::group_manager>;
 
 // Fields may not be byte-aligned since we work
 // with the underlying network buffer.
@@ -67,46 +56,25 @@ struct request_header {
 
 std::ostream& operator<<(std::ostream&, const request_header&);
 
-class response;
-using response_ptr = ss::foreign_ptr<std::unique_ptr<response>>;
-
 class request_context {
 public:
     request_context(
-      ss::sharded<cluster::metadata_cache>& metadata_cache,
-      cluster::topics_frontend& topics_frontend,
+      ss::lw_shared_ptr<connection_context> conn,
       request_header&& header,
       iobuf&& request,
-      ss::lowres_clock::duration throttle_delay,
-      kafka::group_router_type& group_router,
-      cluster::shard_table& shard_table,
-      ss::sharded<cluster::partition_manager>& partition_manager,
-      ss::sharded<coordinator_ntp_mapper>& coordinator_mapper,
-      ss::sharded<fetch_session_cache>& fetch_session_cache) noexcept
-      : _metadata_cache(&metadata_cache)
-      , _topics_frontend(&topics_frontend)
+      ss::lowres_clock::duration throttle_delay) noexcept
+      : _conn(std::move(conn))
       , _header(std::move(header))
       , _reader(std::move(request))
-      , _throttle_delay(throttle_delay)
-      , _group_router(&group_router)
-      , _shard_table(&shard_table)
-      , _partition_manager(&partition_manager)
-      , _coordinator_mapper(&coordinator_mapper)
-      , _fetch_session_cache(&fetch_session_cache) {
+      , _throttle_delay(throttle_delay) {
         // XXX: don't forget to extend the move ctor
     }
     ~request_context() noexcept = default;
     request_context(request_context&& o) noexcept
-      : _metadata_cache(o._metadata_cache)
-      , _topics_frontend(o._topics_frontend)
+      : _conn(std::move(o._conn))
       , _header(std::move(o._header))
       , _reader(std::move(o._reader))
-      , _throttle_delay(o._throttle_delay)
-      , _group_router(o._group_router)
-      , _shard_table(o._shard_table)
-      , _partition_manager(o._partition_manager)
-      , _coordinator_mapper(o._coordinator_mapper)
-      , _fetch_session_cache(o._fetch_session_cache) {}
+      , _throttle_delay(o._throttle_delay) {}
     request_context& operator=(request_context&& o) noexcept {
         if (this != &o) {
             this->~request_context();
@@ -122,15 +90,15 @@ public:
     request_reader& reader() { return _reader; }
 
     const cluster::metadata_cache& metadata_cache() const {
-        return _metadata_cache->local();
+        return _conn->server().metadata_cache();
     }
 
     cluster::metadata_cache& metadata_cache() {
-        return _metadata_cache->local();
+        return _conn->server().metadata_cache();
     }
 
     cluster::topics_frontend& topics_frontend() const {
-        return *_topics_frontend;
+        return _conn->server().topics_frontend();
     }
 
     int32_t throttle_delay_ms() const {
@@ -139,16 +107,16 @@ public:
           .count();
     }
 
-    kafka::group_router_type& groups() { return *_group_router; }
+    kafka::group_router& groups() { return _conn->server().group_router(); }
 
-    cluster::shard_table& shards() { return *_shard_table; }
+    cluster::shard_table& shards() { return _conn->server().shard_table(); }
 
     ss::sharded<cluster::partition_manager>& partition_manager() {
-        return *_partition_manager;
+        return _conn->server().partition_manager();
     }
 
     fetch_session_cache& fetch_sessions() {
-        return _fetch_session_cache->local();
+        return _conn->server().fetch_sessions_cache();
     }
 
     // clang-format off
@@ -170,21 +138,15 @@ public:
         return ss::make_ready_future<response_ptr>(std::move(resp));
     }
 
-    ss::sharded<kafka::coordinator_ntp_mapper>& coordinator_mapper() {
-        return *_coordinator_mapper;
+    coordinator_ntp_mapper& coordinator_mapper() {
+        return _conn->server().coordinator_mapper();
     }
 
 private:
-    ss::sharded<cluster::metadata_cache>* _metadata_cache;
-    cluster::topics_frontend* _topics_frontend;
+    ss::lw_shared_ptr<connection_context> _conn;
     request_header _header;
     request_reader _reader;
     ss::lowres_clock::duration _throttle_delay;
-    kafka::group_router_type* _group_router;
-    cluster::shard_table* _shard_table;
-    ss::sharded<cluster::partition_manager>* _partition_manager;
-    ss::sharded<kafka::coordinator_ntp_mapper>* _coordinator_mapper;
-    ss::sharded<kafka::fetch_session_cache>* _fetch_session_cache;
 };
 
 // Executes the API call identified by the specified request_context.

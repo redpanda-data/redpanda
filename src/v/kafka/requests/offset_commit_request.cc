@@ -28,6 +28,11 @@
 
 namespace kafka {
 
+void offset_commit_response::encode(
+  const request_context& ctx, response& resp) {
+    data.encode(resp.writer(), ctx.header().version);
+}
+
 struct offset_commit_ctx {
     request_context rctx;
     offset_commit_request request;

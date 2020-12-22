@@ -19,6 +19,11 @@
 
 namespace kafka {
 
+void describe_groups_response::encode(
+  const request_context& ctx, response& resp) {
+    data.encode(resp.writer(), ctx.header().version);
+}
+
 struct describe_groups_ctx {
     request_context rctx;
     describe_groups_request request;

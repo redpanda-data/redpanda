@@ -10,7 +10,6 @@
  */
 
 #pragma once
-#include "kafka/requests/request_context.h"
 #include "kafka/requests/response.h"
 #include "kafka/requests/schemata/list_groups_request.h"
 #include "kafka/requests/schemata/list_groups_response.h"
@@ -60,9 +59,7 @@ struct list_groups_response final {
 
     list_groups_response_data data;
 
-    void encode(const request_context& ctx, response& resp) {
-        data.encode(resp.writer(), ctx.header().version);
-    }
+    void encode(const request_context& ctx, response& resp);
 
     void decode(iobuf buf, api_version version) {
         data.decode(std::move(buf), version);

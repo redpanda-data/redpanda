@@ -20,7 +20,6 @@
 #include "coproc/service.h"
 #include "kafka/fetch_session_cache.h"
 #include "kafka/groups/coordinator_ntp_mapper.h"
-#include "kafka/groups/group_manager.h"
 #include "kafka/groups/group_router.h"
 #include "kafka/quota_manager.h"
 #include "raft/group_manager.h"
@@ -38,7 +37,6 @@
 #include <seastar/util/defer.hh>
 
 namespace po = boost::program_options; // NOLINT
-using group_router_type = kafka::group_router<kafka::group_manager>;
 
 class application {
 public:
@@ -57,7 +55,7 @@ public:
     }
 
     ss::sharded<cluster::metadata_cache> metadata_cache;
-    ss::sharded<group_router_type> group_router;
+    ss::sharded<kafka::group_router> group_router;
     ss::sharded<cluster::shard_table> shard_table;
     ss::sharded<storage::api> storage;
     ss::sharded<coproc::router> router;
@@ -68,6 +66,8 @@ public:
     ss::sharded<kafka::coordinator_ntp_mapper> coordinator_ntp_mapper;
     std::unique_ptr<cluster::controller> controller;
     ss::sharded<kafka::fetch_session_cache> fetch_session_cache;
+    smp_groups smp_service_groups;
+    ss::sharded<kafka::quota_manager> quota_mgr;
 
 private:
     using deferred_actions
@@ -102,7 +102,6 @@ private:
     void setup_metrics();
     std::unique_ptr<ss::app_template> _app;
     scheduling_groups _scheduling_groups;
-    smp_groups _smp_groups;
     ss::logger _log{"redpanda::main"};
 
     ss::sharded<rpc::server> _coproc_rpc;
@@ -110,7 +109,6 @@ private:
     ss::sharded<kafka::group_manager> _group_manager;
     ss::sharded<rpc::server> _rpc;
     ss::sharded<ss::http_server> _admin;
-    ss::sharded<kafka::quota_manager> _quota_mgr;
     ss::sharded<rpc::server> _kafka_server;
     ss::metrics::metric_groups _metrics;
     // run these first on destruction

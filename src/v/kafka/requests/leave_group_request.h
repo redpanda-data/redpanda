@@ -11,7 +11,6 @@
 
 #pragma once
 #include "kafka/errors.h"
-#include "kafka/requests/request_context.h"
 #include "kafka/requests/response.h"
 #include "kafka/requests/schemata/leave_group_request.h"
 #include "kafka/requests/schemata/leave_group_response.h"
@@ -65,13 +64,10 @@ struct leave_group_response final {
     leave_group_response(const leave_group_request&, error_code error)
       : leave_group_response(error) {}
 
-    void encode(const request_context& ctx, response& resp) {
-        data.encode(resp.writer(), ctx.header().version);
-    }
+    void encode(const request_context&, response&);
 };
 
-static inline ss::future<leave_group_response>
-make_leave_error(error_code error) {
+inline ss::future<leave_group_response> make_leave_error(error_code error) {
     return ss::make_ready_future<leave_group_response>(error);
 }
 

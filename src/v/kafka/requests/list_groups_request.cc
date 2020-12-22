@@ -17,6 +17,10 @@
 
 namespace kafka {
 
+void list_groups_response::encode(const request_context& ctx, response& resp) {
+    data.encode(resp.writer(), ctx.header().version);
+}
+
 ss::future<response_ptr> list_groups_api::process(
   request_context&& ctx, [[maybe_unused]] ss::smp_service_group g) {
     list_groups_request request{};

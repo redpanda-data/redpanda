@@ -11,7 +11,6 @@
 
 #pragma once
 #include "kafka/errors.h"
-#include "kafka/requests/request_context.h"
 #include "kafka/requests/response.h"
 #include "kafka/requests/schemata/heartbeat_request.h"
 #include "kafka/requests/schemata/heartbeat_response.h"
@@ -66,13 +65,10 @@ struct heartbeat_response final {
     heartbeat_response(const heartbeat_request&, error_code error)
       : heartbeat_response(error) {}
 
-    void encode(const request_context& ctx, response& resp) {
-        data.encode(resp.writer(), ctx.header().version);
-    }
+    void encode(const request_context&, response&);
 };
 
-static inline ss::future<heartbeat_response>
-make_heartbeat_error(error_code error) {
+inline ss::future<heartbeat_response> make_heartbeat_error(error_code error) {
     return ss::make_ready_future<heartbeat_response>(error);
 }
 

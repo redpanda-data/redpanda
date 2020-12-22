@@ -11,7 +11,6 @@
 
 #pragma once
 #include "kafka/errors.h"
-#include "kafka/requests/request_context.h"
 #include "kafka/requests/response.h"
 #include "kafka/requests/schemata/sync_group_request.h"
 #include "kafka/requests/schemata/sync_group_response.h"
@@ -84,9 +83,7 @@ struct sync_group_response final {
     sync_group_response(const sync_group_request&, error_code error)
       : sync_group_response(error) {}
 
-    void encode(const request_context& ctx, response& resp) {
-        data.encode(resp.writer(), ctx.header().version);
-    }
+    void encode(const request_context&, response&);
 };
 
 static inline ss::future<sync_group_response>

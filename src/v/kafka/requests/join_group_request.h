@@ -11,7 +11,6 @@
 
 #pragma once
 #include "kafka/errors.h"
-#include "kafka/requests/request_context.h"
 #include "kafka/requests/response.h"
 #include "kafka/requests/schemata/join_group_request.h"
 #include "kafka/requests/schemata/join_group_response.h"
@@ -117,9 +116,7 @@ struct join_group_response final {
         data.members = std::move(members);
     }
 
-    void encode(const request_context& ctx, response& resp) {
-        data.encode(resp.writer(), ctx.header().version);
-    }
+    void encode(const request_context&, response&);
 };
 
 static inline join_group_response
@@ -128,7 +125,7 @@ _make_join_error(kafka::member_id member_id, error_code error) {
       error, no_generation, no_protocol, no_leader, std::move(member_id));
 }
 
-static inline ss::future<join_group_response>
+inline ss::future<join_group_response>
 make_join_error(kafka::member_id member_id, error_code error) {
     return ss::make_ready_future<join_group_response>(
       _make_join_error(std::move(member_id), error));
@@ -156,7 +153,7 @@ static inline bool operator==(
 
 // group membership helper to compare a protocol set from the wire with our
 // internal type without doing a full type conversion.
-static inline bool operator!=(
+inline bool operator!=(
   const std::vector<join_group_request_protocol>& a,
   const std::vector<member_protocol>& b) {
     return !(a == b);

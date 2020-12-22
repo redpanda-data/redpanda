@@ -43,6 +43,7 @@ v_cc_library(
     ${group_srcs}
     ${security_srcs}
     errors.cc
+    connection_context.cc
     protocol.cc
     protocol_utils.cc
     logger.cc

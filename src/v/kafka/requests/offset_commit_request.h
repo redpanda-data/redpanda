@@ -13,7 +13,6 @@
 
 #include "bytes/iobuf.h"
 #include "kafka/errors.h"
-#include "kafka/requests/request_context.h"
 #include "kafka/requests/response.h"
 #include "kafka/requests/schemata/offset_commit_request.h"
 #include "kafka/requests/schemata/offset_commit_response.h"
@@ -87,9 +86,7 @@ struct offset_commit_response final {
         }
     }
 
-    void encode(const request_context& ctx, response& resp) {
-        data.encode(resp.writer(), ctx.header().version);
-    }
+    void encode(const request_context&, response&);
 
     void decode(iobuf buf, api_version version) {
         data.decode(std::move(buf), version);

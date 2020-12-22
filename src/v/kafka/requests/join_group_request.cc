@@ -30,6 +30,10 @@ void join_group_request::decode(request_context& ctx) {
     }
 }
 
+void join_group_response::encode(const request_context& ctx, response& resp) {
+    data.encode(resp.writer(), ctx.header().version);
+}
+
 ss::future<response_ptr> join_group_api::process(
   request_context&& ctx, [[maybe_unused]] ss::smp_service_group g) {
     join_group_request request(ctx);

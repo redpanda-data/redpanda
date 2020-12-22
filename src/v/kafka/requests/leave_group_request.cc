@@ -20,6 +20,10 @@
 
 namespace kafka {
 
+void leave_group_response::encode(const request_context& ctx, response& resp) {
+    data.encode(resp.writer(), ctx.header().version);
+}
+
 ss::future<response_ptr> leave_group_api::process(
   request_context&& ctx, [[maybe_unused]] ss::smp_service_group g) {
     return ss::do_with(

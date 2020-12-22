@@ -107,7 +107,7 @@ ss::future<response_ptr> find_coordinator_api::process(
            * metadata topic doesn't exist. in this case fall through and create
            * the topic on-demand.
            */
-          if (auto ntp = ctx.coordinator_mapper().local().ntp_for(
+          if (auto ntp = ctx.coordinator_mapper().ntp_for(
                 kafka::group_id(request.data.key));
               ntp) {
               return handle_ntp(ctx, std::move(ntp));
@@ -115,8 +115,8 @@ ss::future<response_ptr> find_coordinator_api::process(
 
           // the new internal metadata topic for group membership
           cluster::topic_configuration topic{
-            ctx.coordinator_mapper().local().ns(),
-            ctx.coordinator_mapper().local().topic(),
+            ctx.coordinator_mapper().ns(),
+            ctx.coordinator_mapper().topic(),
             config::shard_local_cfg().group_topic_partitions(),
             config::shard_local_cfg().default_topic_replication()};
 
@@ -130,7 +130,7 @@ ss::future<response_ptr> find_coordinator_api::process(
                  * will be updated and we can retry the group-ntp mapping.
                  */
                 if (error == error_code::none) {
-                    auto ntp = ctx.coordinator_mapper().local().ntp_for(
+                    auto ntp = ctx.coordinator_mapper().ntp_for(
                       kafka::group_id(request.data.key));
                     return handle_ntp(ctx, std::move(ntp));
                 }

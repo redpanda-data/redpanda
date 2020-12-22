@@ -41,6 +41,18 @@ public:
         app.configure_admin_server();
         app.wire_up_services();
         app.start();
+
+        // used by request context builder
+        proto = std::make_unique<kafka::protocol>(
+          app.smp_service_groups.kafka_smp_sg(),
+          app.metadata_cache,
+          app.controller->get_topics_frontend(),
+          app.quota_mgr,
+          app.group_router,
+          app.shard_table,
+          app.partition_manager,
+          app.coordinator_ntp_mapper,
+          app.fetch_session_cache);
     }
 
     ~redpanda_thread_fixture() {
@@ -173,18 +185,12 @@ public:
     }
 
     kafka::request_context make_request_context() {
+        auto conn = ss::make_lw_shared<kafka::connection_context>(
+          *proto, rpc::server::resources(nullptr, nullptr));
+
         kafka::request_header header;
         auto encoder_context = kafka::request_context(
-          app.metadata_cache,
-          app.controller->get_topics_frontend().local(),
-          std::move(header),
-          iobuf(),
-          std::chrono::milliseconds(0),
-          app.group_router.local(),
-          app.shard_table.local(),
-          app.partition_manager,
-          app.coordinator_ntp_mapper,
-          app.fetch_session_cache);
+          conn, std::move(header), iobuf(), std::chrono::milliseconds(0));
 
         iobuf buf;
         kafka::fetch_request request;
@@ -194,18 +200,13 @@ public:
         request.encode(writer, encoder_context.header().version);
 
         return kafka::request_context(
-          app.metadata_cache,
-          app.controller->get_topics_frontend().local(),
+          conn,
           std::move(header),
           std::move(buf),
-          std::chrono::milliseconds(0),
-          app.group_router.local(),
-          app.shard_table.local(),
-          app.partition_manager,
-          app.coordinator_ntp_mapper,
-          app.fetch_session_cache);
+          std::chrono::milliseconds(0));
     }
 
     application app;
     std::filesystem::path data_dir;
+    std::unique_ptr<kafka::protocol> proto;
 };
