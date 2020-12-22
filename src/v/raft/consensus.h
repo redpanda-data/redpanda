@@ -13,6 +13,7 @@
 
 #include "hashing/crc32c.h"
 #include "model/fundamental.h"
+#include "model/metadata.h"
 #include "raft/configuration_manager.h"
 #include "raft/consensus_client_protocol.h"
 #include "raft/event_manager.h"
@@ -337,6 +338,19 @@ private:
 
     voter_priority next_target_priority();
     voter_priority get_node_priority(model::node_id id) const;
+
+    /**
+     * Return true if there is no state backing this consensus group i.e. there
+     * is no snapshot and log is empty
+     */
+    bool is_initial_state() const {
+        static constexpr model::offset not_initialized{};
+        auto lstats = _log.offsets();
+        return _log.segment_count() == 0
+               && lstats.dirty_offset == not_initialized
+               && lstats.start_offset == not_initialized
+               && _last_snapshot_index == not_initialized;
+    }
 
     // args
     model::node_id _self;
