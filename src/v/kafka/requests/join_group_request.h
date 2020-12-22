@@ -131,7 +131,7 @@ struct join_group_response final {
     }
 };
 
-static inline join_group_response
+inline join_group_response
 _make_join_error(kafka::member_id member_id, error_code error) {
     return join_group_response(
       error, no_generation, no_protocol, no_leader, std::move(member_id));
@@ -150,7 +150,7 @@ operator<<(std::ostream& os, const join_group_response& r) {
 
 // group membership helper to compare a protocol set from the wire with our
 // internal type without doing a full type conversion.
-static inline bool operator==(
+inline bool operator==(
   const std::vector<join_group_request_protocol>& a,
   const std::vector<member_protocol>& b) {
     return std::equal(

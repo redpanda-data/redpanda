@@ -98,8 +98,7 @@ struct sync_group_response final {
     }
 };
 
-static inline ss::future<sync_group_response>
-make_sync_error(error_code error) {
+inline ss::future<sync_group_response> make_sync_error(error_code error) {
     return ss::make_ready_future<sync_group_response>(error);
 }
 
