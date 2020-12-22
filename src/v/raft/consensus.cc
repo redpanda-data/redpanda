@@ -357,10 +357,12 @@ void consensus::successfull_append_entries_reply(
 
 bool consensus::needs_recovery(
   const follower_index_metadata& idx, model::offset dirty_offset) {
-    // follower match_index is behind, we have to recover it
-
+    // follower is behind
     return idx.match_index < dirty_offset
-           || idx.match_index > idx.last_dirty_log_index;
+           // follower is ahead of the leader
+           || idx.match_index > idx.last_dirty_log_index
+           // leader has to sent snapshot to the follower, follower is behind
+           || idx.last_dirty_log_index < _log.offsets().start_offset;
 }
 
 void consensus::dispatch_recovery(follower_index_metadata& idx) {
