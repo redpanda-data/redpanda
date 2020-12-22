@@ -40,11 +40,12 @@ func TestStatus(t *testing.T) {
 		return writeConfig(fs, getConfig())
 	}
 	tests := []struct {
-		name        string
-		expectedErr string
-		expectedOut string
-		args        []string
-		before      func(afero.Fs) error
+		name           string
+		expectedErr    string
+		expectedOut    string
+		expectNoReport bool
+		args           []string
+		before         func(afero.Fs) error
 	}{
 		{
 			name:        "it should contain a version row",
@@ -118,7 +119,8 @@ func TestStatus(t *testing.T) {
 			expectedOut: "Usage stats reporting is disabled, so" +
 				" nothing will be sent. To enable it, run" +
 				" `rpk config set rpk.enable_usage_stats true`.",
-			args: []string{"--send"},
+			expectedErr: "open /var/lib/redpanda/data/pid.lock: file does not exist",
+			args:        []string{"--send"},
 			before: func(fs afero.Fs) error {
 				conf := getConfig()
 				conf.Rpk.EnableUsageStats = false
@@ -148,6 +150,11 @@ func TestStatus(t *testing.T) {
 			require.NoError(t, err)
 			if tt.expectedOut != "" {
 				require.Regexp(t, tt.expectedOut, out.String())
+			}
+			if tt.expectNoReport {
+				require.NotRegexp(t, `\s\sVersion`, out.String())
+				require.NotRegexp(t, `\s\sOS`, out.String())
+				require.NotRegexp(t, `\s\sCPU Model`, out.String())
 			}
 		})
 	}

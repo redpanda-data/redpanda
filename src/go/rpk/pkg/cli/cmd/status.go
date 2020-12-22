@@ -103,9 +103,23 @@ func executeStatus(
 	confRowsCh := make(chan [][]string)
 	kafkaRowsCh := make(chan [][]string)
 
-	metricsRes, err := getMetrics(fs, mgr, timeout, *conf, send)
+	metricsRes, err := getMetrics(fs, mgr, timeout, *conf)
 	if err != nil {
+		// Retrieving the metrics is a prerequisite to sending them.
+		// Therefore, if that fails, return an error.
+		if send {
+			return err
+		}
+		// Otherwise, just log it. The rest of the info will still be
+		// shown to the user.
 		log.Infof("%v", err)
+	} else if send {
+		// If there was no error, send the metrics.
+		err := sendMetrics(*conf, metricsRes.metrics)
+		if err != nil {
+			return fmt.Errorf("Error sending metrics: %v", err)
+		}
+		return nil
 	}
 
 	go getCloudProviderInfo(providerInfoRowsCh)
@@ -132,7 +146,6 @@ func executeStatus(
 	for _, row := range <-kafkaRowsCh {
 		t.Append(row)
 	}
-
 	t.Render()
 
 	return nil
@@ -160,11 +173,7 @@ func getCloudProviderInfo(out chan<- [][]string) {
 }
 
 func getMetrics(
-	fs afero.Fs,
-	mgr config.Manager,
-	timeout time.Duration,
-	conf config.Config,
-	send bool,
+	fs afero.Fs, mgr config.Manager, timeout time.Duration, conf config.Config,
 ) (*metricsResult, error) {
 	res := &metricsResult{[][]string{}, nil}
 	m, errs := system.GatherMetrics(fs, timeout, conf)
@@ -180,12 +189,6 @@ func getMetrics(
 		[]string{"Free Memory (MB)", fmt.Sprintf("%0.3f", m.FreeMemoryMB)},
 		[]string{"Free Space  (MB)", fmt.Sprintf("%0.3f", m.FreeSpaceMB)},
 	)
-	if send {
-		err := sendMetrics(conf, m)
-		if err != nil {
-			return nil, errors.Errorf("Error sending metrics: %v", err)
-		}
-	}
 	return res, nil
 }
 
