@@ -171,33 +171,53 @@ ss::future<log> log_manager::manage(ntp_config cfg) {
     });
 }
 
+ss::future<> log_manager::recover_log_state(const ntp_config& cfg) {
+    return ss::file_exists(cfg.work_directory())
+      .then(
+        [this, key = internal::start_offset_key(cfg.ntp())](bool dir_exists) {
+            if (dir_exists) {
+                return ss::now();
+            }
+            // directory was deleted, make sure we do not have any state in KV
+            // store.
+            return _kvstore.remove(kvstore::key_space::storage, key);
+        });
+}
+
 ss::future<log> log_manager::do_manage(ntp_config cfg) {
     if (_config.base_dir.empty()) {
         return ss::make_exception_future<log>(std::runtime_error(
           "log_manager:: cannot have empty config.base_dir"));
     }
-    ss::sstring path = cfg.work_directory();
+
     vassert(
       _logs.find(cfg.ntp()) == _logs.end(), "cannot double register same ntp");
+
     if (_config.stype == log_config::storage_type::memory) {
+        auto path = cfg.work_directory();
         auto l = storage::make_memory_backed_log(std::move(cfg));
         _logs.emplace(l.config().ntp(), l);
         // in-memory needs to write vote_for configuration
         return ss::recursive_touch_directory(path).then([l] { return l; });
     }
-    return recover_segments(
-             std::filesystem::path(path),
-             _config.sanitize_fileops,
-             cfg.is_compacted(),
-             [this] { return create_cache(); },
-             _abort_source)
-      .then([this, cfg = std::move(cfg)](segment_set segments) mutable {
-          auto l = storage::make_disk_backed_log(
-            std::move(cfg), *this, std::move(segments), _kvstore);
-          auto [_, success] = _logs.emplace(l.config().ntp(), l);
-          vassert(success, "Could not keep track of:{} - concurrency issue", l);
-          return l;
-      });
+
+    return recover_log_state(cfg).then([this, cfg = std::move(cfg)]() mutable {
+        ss::sstring path = cfg.work_directory();
+        return recover_segments(
+                 std::filesystem::path(path),
+                 _config.sanitize_fileops,
+                 cfg.is_compacted(),
+                 [this] { return create_cache(); },
+                 _abort_source)
+          .then([this, cfg = std::move(cfg)](segment_set segments) mutable {
+              auto l = storage::make_disk_backed_log(
+                std::move(cfg), *this, std::move(segments), _kvstore);
+              auto [_, success] = _logs.emplace(l.config().ntp(), l);
+              vassert(
+                success, "Could not keep track of:{} - concurrency issue", l);
+              return l;
+          });
+    });
 }
 
 ss::future<> log_manager::remove(model::ntp ntp) {
