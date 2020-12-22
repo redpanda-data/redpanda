@@ -236,7 +236,7 @@ private:
         const bool all_initialized
           = ss::map_reduce(
               boost::irange<unsigned>(0, ss::smp::count),
-              [this](unsigned /*c*/) { return _server.local_is_initialized(); },
+              [this](unsigned /*c*/) { return ss::make_ready_future<bool>(_server.local_is_initialized()); },
               true,
               std::logical_and<>())
               .get0();
