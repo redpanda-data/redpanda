@@ -26,6 +26,7 @@ require (
 	github.com/go-ole/go-ole v1.2.4 // indirect
 	github.com/golang/protobuf v1.3.2
 	github.com/google/uuid v1.1.1
+	github.com/hashicorp/go-multierror v1.1.0
 	github.com/jhump/protoreflect v1.7.0
 	github.com/konsorten/go-windows-terminal-sequences v1.0.2 // indirect
 	github.com/lorenzosaino/go-sysctl v0.1.0
