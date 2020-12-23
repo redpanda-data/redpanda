@@ -40,11 +40,12 @@ func TestStatus(t *testing.T) {
 		return writeConfig(fs, getConfig())
 	}
 	tests := []struct {
-		name        string
-		expectedErr string
-		expectedOut string
-		args        []string
-		before      func(afero.Fs) error
+		name           string
+		expectedErr    string
+		expectedOut    string
+		expectNoReport bool
+		args           []string
+		before         func(afero.Fs) error
 	}{
 		{
 			name:        "it should contain a version row",
@@ -63,12 +64,12 @@ func TestStatus(t *testing.T) {
 		},
 		{
 			name:        "doesn't print the CPU% if no pid file is found",
-			expectedOut: "Error gathering metrics: open /var/lib/redpanda/data/pid.lock: file does not exist",
+			expectedOut: "open /var/lib/redpanda/data/pid.lock: file does not exist",
 			before:      defaultSetup,
 		},
 		{
 			name:        "fails if the pid file is empty",
-			expectedOut: "Error gathering metrics: /var/lib/redpanda/data/pid.lock is empty",
+			expectedOut: "/var/lib/redpanda/data/pid.lock is empty",
 			before: func(fs afero.Fs) error {
 				conf := getConfig()
 				err := writeConfig(fs, conf)
@@ -81,7 +82,7 @@ func TestStatus(t *testing.T) {
 		},
 		{
 			name:        "fails if the pid file contains more than one line",
-			expectedOut: "Error gathering metrics: /var/lib/redpanda/data/pid.lock contains multiple lines",
+			expectedOut: "/var/lib/redpanda/data/pid.lock contains multiple lines",
 			before: func(fs afero.Fs) error {
 				conf := getConfig()
 				err := writeConfig(fs, conf)
@@ -118,7 +119,8 @@ func TestStatus(t *testing.T) {
 			expectedOut: "Usage stats reporting is disabled, so" +
 				" nothing will be sent. To enable it, run" +
 				" `rpk config set rpk.enable_usage_stats true`.",
-			args: []string{"--send"},
+			expectedErr: "open /var/lib/redpanda/data/pid.lock: file does not exist",
+			args:        []string{"--send"},
 			before: func(fs afero.Fs) error {
 				conf := getConfig()
 				conf.Rpk.EnableUsageStats = false
@@ -141,12 +143,18 @@ func TestStatus(t *testing.T) {
 			logrus.SetOutput(&out)
 			err := cmd.Execute()
 			if tt.expectedErr != "" {
-				require.EqualError(t, err, tt.expectedErr)
+				require.Error(t, err)
+				require.Regexp(t, tt.expectedErr, err.Error())
 				return
 			}
 			require.NoError(t, err)
 			if tt.expectedOut != "" {
 				require.Regexp(t, tt.expectedOut, out.String())
+			}
+			if tt.expectNoReport {
+				require.NotRegexp(t, `\s\sVersion`, out.String())
+				require.NotRegexp(t, `\s\sOS`, out.String())
+				require.NotRegexp(t, `\s\sCPU Model`, out.String())
 			}
 		})
 	}
