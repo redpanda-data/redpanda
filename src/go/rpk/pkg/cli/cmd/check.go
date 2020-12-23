@@ -73,7 +73,6 @@ func executeCheck(
 	if err != nil {
 		return err
 	}
-	config.CheckAndPrintNotice(conf.LicenseKey)
 	results, err := tuners.Check(fs, conf, timeout)
 	if err != nil {
 		return err

@@ -50,7 +50,6 @@ func executeMode(mgr config.Manager, configFile string, mode string) error {
 	if err != nil {
 		return err
 	}
-	config.CheckAndPrintNotice(conf.LicenseKey)
 	conf, err = config.SetMode(mode, conf)
 	if err != nil {
 		return err

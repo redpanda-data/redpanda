@@ -37,7 +37,6 @@ func NewIoTuneCmd(fs afero.Fs, mgr config.Manager) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			config.CheckAndPrintNotice(conf.LicenseKey)
 			var evalDirectories []string
 			if directories != nil && len(directories) != 0 {
 				log.Infof("Overriding evaluation directories with '%v'",

@@ -98,9 +98,7 @@ func findConfigFile(
 			return conf, nil
 		}
 		conf, err = mgr.ReadOrFind(*configFile)
-		if err == nil {
-			config.CheckAndPrintNotice(conf.LicenseKey)
-		} else {
+		if err != nil {
 			log.Debug(err)
 			if os.IsNotExist(err) && *configFile == "" {
 				log.Debug(

@@ -68,7 +68,6 @@ func executeStop(
 	if err != nil {
 		return err
 	}
-	config.CheckAndPrintNotice(conf.LicenseKey)
 	pidFile := conf.PIDFile()
 	isLocked, err := os.CheckLocked(pidFile)
 	if err != nil {

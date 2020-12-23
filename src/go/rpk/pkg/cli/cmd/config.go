@@ -100,7 +100,6 @@ func bootstrap(mgr config.Manager) *cobra.Command {
 			if err != nil {
 				return errors.New("YAML")
 			}
-			config.CheckAndPrintNotice(conf.LicenseKey)
 			ips, err := parseIPs(ips)
 			if err != nil {
 				return err
