@@ -24,6 +24,8 @@ import (
 	"vectorized/pkg/system"
 
 	"github.com/Shopify/sarama"
+	"github.com/hashicorp/go-multierror"
+	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
@@ -96,20 +98,23 @@ func executeStatus(
 	t.Append(getVersion())
 
 	providerInfoRowsCh := make(chan [][]string)
-	metricsRowsCh := make(chan [][]string)
 	osInfoRowsCh := make(chan [][]string)
 	cpuInfoRowsCh := make(chan [][]string)
 	confRowsCh := make(chan [][]string)
 	kafkaRowsCh := make(chan [][]string)
 
+	metricsRes, err := getMetrics(fs, mgr, timeout, *conf, send)
+	if err != nil {
+		log.Infof("%v", err)
+	}
+
 	go getCloudProviderInfo(providerInfoRowsCh)
 	go getOSInfo(timeout, osInfoRowsCh)
 	go getCPUInfo(cpuInfoRowsCh)
-	go getMetrics(fs, mgr, timeout, *conf, send, metricsRowsCh)
 	go getConf(mgr, conf.ConfigFile, confRowsCh)
 	go getKafkaInfo(*conf, kafkaRowsCh)
 
-	for _, row := range <-providerInfoRowsCh {
+	for _, row := range metricsRes.rows {
 		t.Append(row)
 	}
 	for _, row := range <-osInfoRowsCh {
@@ -118,7 +123,7 @@ func executeStatus(
 	for _, row := range <-cpuInfoRowsCh {
 		t.Append(row)
 	}
-	for _, row := range <-metricsRowsCh {
+	for _, row := range <-providerInfoRowsCh {
 		t.Append(row)
 	}
 	for _, row := range <-confRowsCh {
@@ -160,29 +165,28 @@ func getMetrics(
 	timeout time.Duration,
 	conf config.Config,
 	send bool,
-	out chan<- [][]string,
-) {
-	rows := [][]string{}
+) (*metricsResult, error) {
+	res := &metricsResult{[][]string{}, nil}
 	m, errs := system.GatherMetrics(fs, timeout, conf)
 	if len(errs) != 0 {
-		for _, err := range errs {
-			log.Debugf("Error gathering metrics: %v", err)
-		}
-	} else {
-		rows = append(
-			rows,
-			[]string{"CPU Usage %", fmt.Sprintf("%0.3f", m.CpuPercentage)},
-			[]string{"Free Memory (MB)", fmt.Sprintf("%0.3f", m.FreeMemoryMB)},
-			[]string{"Free Space  (MB)", fmt.Sprintf("%0.3f", m.FreeSpaceMB)},
-		)
+		var err error
+		err = multierror.Append(err, errs...)
+		return res, errors.Errorf("Error gathering metrics: %v", err)
 	}
+	res.metrics = m
+	res.rows = append(
+		res.rows,
+		[]string{"CPU Usage %", fmt.Sprintf("%0.3f", m.CpuPercentage)},
+		[]string{"Free Memory (MB)", fmt.Sprintf("%0.3f", m.FreeMemoryMB)},
+		[]string{"Free Space  (MB)", fmt.Sprintf("%0.3f", m.FreeSpaceMB)},
+	)
 	if send {
 		err := sendMetrics(conf, m)
 		if err != nil {
-			log.Info("Error sending metrics: ", err)
+			return nil, errors.Errorf("Error sending metrics: %v", err)
 		}
 	}
-	out <- rows
+	return res, nil
 }
 
 func getOSInfo(timeout time.Duration, out chan<- [][]string) {

@@ -63,12 +63,12 @@ func TestStatus(t *testing.T) {
 		},
 		{
 			name:        "doesn't print the CPU% if no pid file is found",
-			expectedOut: "Error gathering metrics: open /var/lib/redpanda/data/pid.lock: file does not exist",
+			expectedOut: "open /var/lib/redpanda/data/pid.lock: file does not exist",
 			before:      defaultSetup,
 		},
 		{
 			name:        "fails if the pid file is empty",
-			expectedOut: "Error gathering metrics: /var/lib/redpanda/data/pid.lock is empty",
+			expectedOut: "/var/lib/redpanda/data/pid.lock is empty",
 			before: func(fs afero.Fs) error {
 				conf := getConfig()
 				err := writeConfig(fs, conf)
@@ -81,7 +81,7 @@ func TestStatus(t *testing.T) {
 		},
 		{
 			name:        "fails if the pid file contains more than one line",
-			expectedOut: "Error gathering metrics: /var/lib/redpanda/data/pid.lock contains multiple lines",
+			expectedOut: "/var/lib/redpanda/data/pid.lock contains multiple lines",
 			before: func(fs afero.Fs) error {
 				conf := getConfig()
 				err := writeConfig(fs, conf)
@@ -141,7 +141,8 @@ func TestStatus(t *testing.T) {
 			logrus.SetOutput(&out)
 			err := cmd.Execute()
 			if tt.expectedErr != "" {
-				require.EqualError(t, err, tt.expectedErr)
+				require.Error(t, err)
+				require.Regexp(t, tt.expectedErr, err.Error())
 				return
 			}
 			require.NoError(t, err)
