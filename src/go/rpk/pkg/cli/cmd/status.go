@@ -93,11 +93,13 @@ func executeStatus(
 	providerInfoRowsCh := make(chan [][]string)
 	metricsRowsCh := make(chan [][]string)
 	osInfoRowsCh := make(chan [][]string)
+	cpuInfoRowsCh := make(chan [][]string)
 	confRowsCh := make(chan [][]string)
 	kafkaRowsCh := make(chan [][]string)
 
 	go getCloudProviderInfo(providerInfoRowsCh)
 	go getOSInfo(timeout, osInfoRowsCh)
+	go getCPUInfo(cpuInfoRowsCh)
 	go getMetrics(fs, mgr, timeout, *conf, send, metricsRowsCh)
 	go getConf(mgr, conf.ConfigFile, confRowsCh)
 	go getKafkaInfo(*conf, kafkaRowsCh)
@@ -106,6 +108,9 @@ func executeStatus(
 		t.Append(row)
 	}
 	for _, row := range <-osInfoRowsCh {
+		t.Append(row)
+	}
+	for _, row := range <-cpuInfoRowsCh {
 		t.Append(row)
 	}
 	for _, row := range <-metricsRowsCh {
@@ -153,15 +158,6 @@ func getMetrics(
 	out chan<- [][]string,
 ) {
 	rows := [][]string{}
-	cpuInfo, err := system.CpuInfo()
-	if err != nil {
-		log.Info("Error querying CPU info: ", err)
-	}
-	cpuModel := ""
-	if len(cpuInfo) > 0 {
-		cpuModel = cpuInfo[0].ModelName
-		rows = append(rows, []string{"CPU Model", cpuModel})
-	}
 	m, errs := system.GatherMetrics(fs, timeout, conf)
 	if len(errs) != 0 {
 		for _, err := range errs {
@@ -191,6 +187,20 @@ func getOSInfo(timeout time.Duration, out chan<- [][]string) {
 		log.Info("Error querying OS info: ", err)
 	} else {
 		rows = append(rows, []string{"OS", osInfo})
+	}
+	out <- rows
+}
+
+func getCPUInfo(out chan<- [][]string) {
+	rows := [][]string{}
+	cpuInfo, err := system.CpuInfo()
+	if err != nil {
+		log.Info("Error querying CPU info: ", err)
+	}
+	cpuModel := ""
+	if len(cpuInfo) > 0 {
+		cpuModel = cpuInfo[0].ModelName
+		rows = append(rows, []string{"CPU Model", cpuModel})
 	}
 	out <- rows
 }
