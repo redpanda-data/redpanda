@@ -122,29 +122,41 @@ func executeStatus(
 		return nil
 	}
 
-	go getCloudProviderInfo(providerInfoRowsCh)
-	go getOSInfo(timeout, osInfoRowsCh)
-	go getCPUInfo(cpuInfoRowsCh)
-	go getConf(mgr, conf.ConfigFile, confRowsCh)
-	go getKafkaInfo(*conf, kafkaRowsCh)
+	grp := multierror.Group{}
+	grp.Go(func() error {
+		return getCloudProviderInfo(providerInfoRowsCh)
+	})
+	grp.Go(func() error {
+		return getOSInfo(timeout, osInfoRowsCh)
+	})
+	grp.Go(func() error {
+		return getCPUInfo(cpuInfoRowsCh)
+	})
+	grp.Go(func() error {
+		return getConf(mgr, conf.ConfigFile, confRowsCh)
+	})
+	grp.Go(func() error {
+		return getKafkaInfo(*conf, kafkaRowsCh)
+	})
+	results := [][][]string{
+		metricsRes.rows,
+		<-osInfoRowsCh,
+		<-cpuInfoRowsCh,
+		<-providerInfoRowsCh,
+		<-confRowsCh,
+		<-kafkaRowsCh,
+	}
 
-	for _, row := range metricsRes.rows {
-		t.Append(row)
+	errs := grp.Wait().Errors
+	if errs != nil {
+		for _, err := range errs {
+			log.Info(err)
+		}
 	}
-	for _, row := range <-osInfoRowsCh {
-		t.Append(row)
-	}
-	for _, row := range <-cpuInfoRowsCh {
-		t.Append(row)
-	}
-	for _, row := range <-providerInfoRowsCh {
-		t.Append(row)
-	}
-	for _, row := range <-confRowsCh {
-		t.Append(row)
-	}
-	for _, row := range <-kafkaRowsCh {
-		t.Append(row)
+	for _, rows := range results {
+		for _, row := range rows {
+			t.Append(row)
+		}
 	}
 	t.Render()
 
@@ -155,21 +167,21 @@ func getVersion() []string {
 	return []string{"Version", version.Pretty()}
 }
 
-func getCloudProviderInfo(out chan<- [][]string) {
+func getCloudProviderInfo(out chan<- [][]string) error {
 	v, err := cloud.AvailableVendor()
 	if err != nil {
-		log.Debug("Error initializing: ", err)
 		out <- [][]string{}
-		return
+		return errors.Wrap(err, "Error initializing")
 	}
 	rows := [][]string{{"Cloud Provider", v.Name()}}
 	vmType, err := v.VmType()
 	if err != nil {
-		log.Info("Error getting the VM type: ", err)
+		err = errors.Wrap(err, "Error getting the VM type")
 	} else {
 		rows = append(rows, []string{"Machine Type", vmType})
 	}
 	out <- rows
+	return err
 }
 
 func getMetrics(
@@ -178,9 +190,8 @@ func getMetrics(
 	res := &metricsResult{[][]string{}, nil}
 	m, errs := system.GatherMetrics(fs, timeout, conf)
 	if len(errs) != 0 {
-		var err error
-		err = multierror.Append(err, errs...)
-		return res, errors.Errorf("Error gathering metrics: %v", err)
+		err := multierror.Append(nil, errs...)
+		return res, errors.Wrap(err, "Error gathering metrics")
 	}
 	res.metrics = m
 	res.rows = append(
@@ -192,22 +203,23 @@ func getMetrics(
 	return res, nil
 }
 
-func getOSInfo(timeout time.Duration, out chan<- [][]string) {
+func getOSInfo(timeout time.Duration, out chan<- [][]string) error {
 	rows := [][]string{}
 	osInfo, err := system.UnameAndDistro(timeout)
 	if err != nil {
-		log.Info("Error querying OS info: ", err)
+		err = errors.Wrap(err, "Error querying OS info")
 	} else {
 		rows = append(rows, []string{"OS", osInfo})
 	}
 	out <- rows
+	return err
 }
 
-func getCPUInfo(out chan<- [][]string) {
+func getCPUInfo(out chan<- [][]string) error {
 	rows := [][]string{}
 	cpuInfo, err := system.CpuInfo()
 	if err != nil {
-		log.Info("Error querying CPU info: ", err)
+		err = errors.Wrap(err, "Error querying CPU info")
 	}
 	cpuModel := ""
 	if len(cpuInfo) > 0 {
@@ -215,13 +227,16 @@ func getCPUInfo(out chan<- [][]string) {
 		rows = append(rows, []string{"CPU Model", cpuModel})
 	}
 	out <- rows
+	return err
 }
 
-func getConf(mgr config.Manager, configFile string, out chan<- [][]string) {
+func getConf(
+	mgr config.Manager, configFile string, out chan<- [][]string,
+) error {
 	rows := [][]string{}
 	props, err := mgr.ReadFlat(configFile)
 	if err != nil {
-		log.Info("Error reading or parsing configuration: ", err)
+		err = errors.Wrap(err, "Error reading or parsing configuration")
 	} else {
 		keys := []string{}
 		for k := range props {
@@ -233,9 +248,10 @@ func getConf(mgr config.Manager, configFile string, out chan<- [][]string) {
 		}
 	}
 	out <- rows
+	return err
 }
 
-func getKafkaInfo(conf config.Config, out chan<- [][]string) {
+func getKafkaInfo(conf config.Config, out chan<- [][]string) error {
 	addr := fmt.Sprintf(
 		"%s:%d",
 		conf.Redpanda.KafkaApi.Address,
@@ -243,28 +259,26 @@ func getKafkaInfo(conf config.Config, out chan<- [][]string) {
 	)
 	client, err := kafka.InitClientWithConf(&conf, addr)
 	if err != nil {
-		log.Infof("Error initializing redpanda client: %s", err)
 		out <- [][]string{}
-		return
+		return errors.Wrap(err, "Error initializing redpanda client")
 	}
 	admin, err := sarama.NewClusterAdminFromClient(client)
 	if err != nil {
-		log.Infof("Error initializing redpanda client: %s", err)
 		out <- [][]string{}
-		return
+		return errors.Wrap(err, "Error initializing redpanda client")
 	}
 	defer admin.Close()
 	topics, err := topicsDetail(admin)
 	if err != nil {
-		log.Info("Error fetching the Redpanda topic details: ", err)
 		out <- [][]string{}
-		return
+		return errors.Wrap(err, "Error fetching the Redpanda topic details")
 	}
 	if len(topics) == 0 {
 		out <- [][]string{}
-		return
+		return nil
 	}
 	out <- getKafkaInfoRows(client.Brokers(), topics)
+	return nil
 }
 
 func getKafkaInfoRows(
