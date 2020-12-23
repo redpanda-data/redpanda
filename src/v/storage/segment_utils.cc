@@ -11,8 +11,11 @@
 
 #include "bytes/iobuf_parser.h"
 #include "likely.h"
+#include "model/adl_serde.h"
+#include "model/fundamental.h"
 #include "model/timeout_clock.h"
 #include "random/generators.h"
+#include "reflection/adl.h"
 #include "storage/compacted_index.h"
 #include "storage/compacted_index_writer.h"
 #include "storage/compaction_reducers.h"
@@ -513,6 +516,12 @@ size_t jitter_segment_size(size_t sz, jitter_percents jitter_percents) {
 
     int64_t jitter = jit * static_cast<int64_t>(sz) / 1000;
     return jitter + sz;
+}
+
+bytes start_offset_key(model::ntp ntp) {
+    iobuf buf;
+    reflection::serialize(buf, kvstore_key_type::start_offset, std::move(ntp));
+    return iobuf_to_bytes(buf);
 }
 
 } // namespace storage::internal

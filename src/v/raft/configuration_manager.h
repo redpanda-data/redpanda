@@ -51,7 +51,7 @@ public:
     configuration_manager(
       group_configuration, raft::group_id, storage::api&, ctx_log&);
 
-    ss::future<> start();
+    ss::future<> start(bool reset);
 
     ss::future<> stop();
     /**

@@ -96,7 +96,7 @@ struct config_manager_fixture {
         raft::configuration_manager recovered(
           raft::group_configuration({}), raft::group_id(1), _storage, _logger);
 
-        recovered.start().get0();
+        recovered.start(false).get0();
 
         BOOST_REQUIRE_EQUAL(
           recovered.get_highest_known_offset(),
@@ -210,7 +210,7 @@ FIXTURE_TEST(test_start_write_concurrency, config_manager_fixture) {
     raft::configuration_manager new_cfg_manager(
       raft::group_configuration({}), raft::group_id(1), _storage, _logger);
 
-    auto start = new_cfg_manager.start();
+    auto start = new_cfg_manager.start(false);
     auto cfg = random_configuration();
     auto add = new_cfg_manager.add(model::offset(3000), cfg);
     configurations.push_back(cfg);

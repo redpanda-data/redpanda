@@ -208,6 +208,7 @@ private:
     std::optional<batch_cache_index> create_cache();
 
     ss::future<> dispatch_topic_dir_deletion(ss::sstring dir);
+    ss::future<> recover_log_state(const ntp_config&);
 
     log_config _config;
     kvstore& _kvstore;
