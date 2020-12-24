@@ -107,7 +107,6 @@ Would you like to continue with the default configuration?`,
 				}
 				conf = config.Default()
 			}
-			config.CheckAndPrintNotice(conf.LicenseKey)
 			var tunerFactory factory.TunersFactory
 			if outTuneScriptFile != "" {
 				tunerFactory = factory.NewScriptRenderingTunersFactory(

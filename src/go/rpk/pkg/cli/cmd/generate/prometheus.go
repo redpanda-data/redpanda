@@ -128,7 +128,6 @@ func executePrometheusConfig(
 	if err != nil {
 		return []byte(""), err
 	}
-	config.CheckAndPrintNotice(conf.LicenseKey)
 	hosts, err := discoverHosts(
 		conf.Redpanda.KafkaApi.Address,
 		conf.Redpanda.KafkaApi.Port,

@@ -100,7 +100,6 @@ func NewStartCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			config.CheckAndPrintNotice(conf.LicenseKey)
 			env := api.EnvironmentPayload{}
 			if len(seeds) == 0 {
 				// If --seeds wasn't passed, fall back to the
