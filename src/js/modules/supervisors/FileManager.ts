@@ -13,7 +13,7 @@ import { rename, readdir } from "fs";
 import { promisify } from "util";
 import Repository from "./Repository";
 import { Handle } from "../domain/Handle";
-import { newLogger } from "../utilities/Logging";
+import LogService from "../utilities/Logging";
 import { getChecksumFromFile } from "../utilities/Checksum";
 import { Coprocessor, PolicyInjection } from "../public/Coprocessor";
 import { Script_ManagerClient as ManagementClient } from "../rpc/serverAndClients/server";
@@ -25,8 +25,6 @@ import {
   validateEnableResponseCode,
 } from "./HandleError";
 
-const logger = newLogger("FileManager");
-
 /**
  * FileManager class is an inotify implementation, it receives a
  * Repository and updates this object when to  add a new file in
@@ -37,9 +35,9 @@ class FileManager {
   private submitDirWatcher: FSWatcher;
   private activeDirWatcher: FSWatcher;
   private managementClient: ManagementClient;
+  private logger = LogService.createLogger("FileManager");
   constructor(
     private repository: Repository,
-
     private submitDir: string,
     private activeDir: string,
     private inactiveDir: string
@@ -74,7 +72,7 @@ class FileManager {
           return this.moveCoprocessorFile(prevHandle, this.inactiveDir)
             .then(() =>
               this.deregisterCoprocessor(prevHandle.coprocessor).catch((e) => {
-                logger.error(e.message);
+                this.logger.error(e.message);
                 return Promise.resolve();
               })
             )
@@ -131,7 +129,7 @@ class FileManager {
           path.join(folder, file),
           repository,
           validatePrevExist
-        ).catch((e) => logger.error(e.message))
+        ).catch((e) => this.logger.error(e.message))
       );
     });
     //TODO: implement winston for loggin information and error handler
@@ -151,7 +149,7 @@ class FileManager {
     const id = hash64(Buffer.from(name), 0).readBigUInt64LE();
     const [handle] = repository.getHandlesByCoprocessorIds([id]);
     if (!handle) {
-      logger.error(
+      this.logger.error(
         `Trying to disable a removed coprocessor from 'active' folder but it` +
           `wasn't loaded in memory, file name: ${name}.js`
       );
@@ -160,13 +158,15 @@ class FileManager {
       this.repository.remove(handle);
       return this.disableCoprocessors([handle.coprocessor])
         .then(() => {
-          logger.info(
+          this.logger.info(
             `disabled coprocessor: ID ${handle.coprocessor.globalId} ` +
               `filename: '${name}.js'`
           );
         })
         .catch((err) => {
-          logger.error(`disable_coprocessors RPC returned with errors: ${err}`);
+          this.logger.error(
+            `disable_coprocessors RPC returned with errors: ${err}`
+          );
         });
     }
   }
@@ -223,7 +223,7 @@ class FileManager {
    * @param coprocessors
    */
   disableCoprocessors(coprocessors: Coprocessor[]): Promise<void> {
-    logger.info(
+    this.logger.info(
       `Initiating RPC call to redpandas coprocessor service at endpoint - ` +
         `disable_coprocessors with data: ${coprocessors}`
     );
@@ -236,7 +236,7 @@ class FileManager {
           const errors = validateDisableResponseCode(response, coprocessors);
           if (errors.length > 0) {
             const compactedErrors = this.compactErrors([errors]);
-            logger.error(
+            this.logger.error(
               `disable_coprocessors() RPC returned with ` +
                 `errors: ${compactedErrors}`
             );
@@ -275,7 +275,7 @@ class FileManager {
     if (coprocessors.length == 0) {
       return Promise.resolve();
     }
-    logger.info(
+    this.logger.info(
       `Initiating RPC call to redpandas coprocessor service at endpoint - ` +
         `enable_coprocessors with data: ${coprocessors}`
     );
@@ -307,7 +307,7 @@ class FileManager {
           );
           if (errors.find((errors) => errors.length > 0)) {
             const compactedErrors = this.compactErrors(errors);
-            logger.error(
+            this.logger.error(
               `enable_coprocessors RPC returned with some error: ` +
                 `${compactedErrors}`
             );
@@ -391,13 +391,13 @@ class FileManager {
    */
   private startWatchers(repository: Repository): void {
     this.submitDirWatcher = watch(this.submitDir).on("add", (filePath) => {
-      logger.info(`Detected new file in submit dir: ${filePath}`);
+      this.logger.info(`Detected new file in submit dir: ${filePath}`);
       this.addCoprocessor(filePath, repository).catch((e) => {
-        logger.error(`addCoprocessor failed with exception: ${e.message}`);
+        this.logger.error(`addCoprocessor failed with exception: ${e.message}`);
       });
     });
     this.activeDirWatcher = watch(this.activeDir).on("unlink", (filePath) => {
-      logger.info(`Detected removed file from active dir: ${filePath}`);
+      this.logger.info(`Detected removed file from active dir: ${filePath}`);
       this.removeHandleFromFilePath(filePath, repository);
     });
   }
@@ -413,12 +413,14 @@ class FileManager {
     if (!this.managementClient) {
       return ManagementClient.create(43118)
         .then((client) => {
-          logger.info("Succeeded in establishing a connection to redpanda");
+          this.logger.info(
+            "Succeeded in establishing a connection to redpanda"
+          );
           this.managementClient = client;
           return client;
         })
         .catch((err) => {
-          logger.warn(
+          this.logger.warn(
             `Failed to connect to redpanda, retrying again, reason: ${err.message}`
           );
           return new Promise((resolve, reject) => {

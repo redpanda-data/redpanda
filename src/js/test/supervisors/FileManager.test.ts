@@ -17,6 +17,7 @@ import * as fs from "fs";
 import { createHandle } from "../testUtilities";
 import { hash64 } from "xxhash";
 import * as chokidar from "chokidar";
+import LogService from "../../modules/utilities/Logging";
 
 let sinonInstance: SinonSandbox;
 let server: ManagementServer;
@@ -45,6 +46,15 @@ const createStubs = (sandbox: SinonSandbox) => {
   const disableCoprocessor = sandbox
     .stub(FileManager.prototype, "disableCoprocessors")
     .returns(Promise.resolve());
+
+  sandbox.stub(LogService, "createLogger").returns({
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+    // @ts-ignore
+    info: sandbox.stub(),
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+    // @ts-ignore
+    error: sandbox.stub(),
+  });
 
   return {
     moveCoprocessor,

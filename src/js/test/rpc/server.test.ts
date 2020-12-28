@@ -20,6 +20,7 @@ import { createHandle } from "../testUtilities";
 import { PolicyError, RecordBatch } from "../../modules/public/Coprocessor";
 import assert = require("assert");
 import * as chokidar from "chokidar";
+import LogService from "../../modules/utilities/Logging";
 
 let sinonInstance: SinonSandbox;
 let server: ProcessBatchServer;
@@ -82,8 +83,8 @@ const createProcessBatchRequest = (
 describe("Client", function () {
   it("create() should not return a client if fails to connect", () => {
     return SupervisorClient.create(40000)
-      .then((_c) => false)
-      .catch((_e) => true)
+      .then(() => false)
+      .catch(() => true)
       .then((value) => {
         assert(value, "A client should not have been created");
       });
@@ -94,6 +95,15 @@ describe("Server", function () {
   describe("Given a Request", function () {
     beforeEach(() => {
       sinonInstance = createSandbox();
+      //Mock LogService
+      sinonInstance.stub(LogService, "createLogger").returns({
+        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+        // @ts-ignore
+        info: sinonInstance.stub(),
+        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+        // @ts-ignore
+        error: sinonInstance.stub(),
+      });
       manageServer = new ManagementServer();
       manageServer.disable_copros = () => Promise.resolve({ inputs: [0] });
       manageServer.listen(43118);
