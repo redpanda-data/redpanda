@@ -37,9 +37,9 @@ class FileManager {
   private submitDirWatcher: FSWatcher;
   private activeDirWatcher: FSWatcher;
   private managementClient: ManagementClient;
-
   constructor(
     private repository: Repository,
+
     private submitDir: string,
     private activeDir: string,
     private inactiveDir: string
@@ -157,16 +157,16 @@ class FileManager {
       );
       return Promise.resolve();
     } else {
+      this.repository.remove(handle);
       return this.disableCoprocessors([handle.coprocessor])
-        .then(() => this.repository.remove(handle))
         .then(() => {
           logger.info(
             `disabled coprocessor: ID ${handle.coprocessor.globalId} ` +
               `filename: '${name}.js'`
           );
         })
-        .catch((error) => {
-          logger.error(error.message);
+        .catch((err) => {
+          logger.error(`disable_coprocessors RPC returned with errors: ${err}`);
         });
     }
   }

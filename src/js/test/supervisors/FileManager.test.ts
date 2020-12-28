@@ -275,4 +275,37 @@ describe("FileManager", () => {
       done();
     });
   });
+
+  it(
+    "should remove a coprocessor, if it's removed from active folder and " +
+      "memory, although disable_coproc request fails",
+    function () {
+      const handle = createHandle({
+        globalId: hash64(Buffer.from("file"), 0).readBigUInt64LE(),
+      });
+      const {
+        getCoprocessor,
+        moveCoprocessor,
+        disableCoprocessor,
+      } = createStubs(sinonInstance);
+      moveCoprocessor.returns(Promise.resolve(handle));
+      getCoprocessor.returns(Promise.resolve(handle));
+      disableCoprocessor.reset();
+      disableCoprocessor.returns(Promise.reject("error"));
+
+      const repo = new Repository();
+      const removeSpy = sinonInstance.spy(repo, "remove");
+      const file = new FileManager(repo, "submit", "active", "inactive");
+
+      repo.add(handle);
+
+      return file.removeHandleFromFilePath(handle.filename, repo).then(() => {
+        assert(removeSpy.called);
+        assert(disableCoprocessor.called);
+        assert.strictEqual(repo.size(), 0);
+        assert(removeSpy.withArgs(handle));
+        assert.rejects(disableCoprocessor.firstCall.returnValue);
+      });
+    }
+  );
 });
