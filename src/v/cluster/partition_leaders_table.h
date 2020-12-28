@@ -49,7 +49,7 @@ public:
       model::partition_id pid, 
       std::optional<model::node_id> leader, 
       model::term_id term) {
-            { f(tp_ns, pid, leader, term) } ->void;
+            { f(tp_ns, pid, leader, term) } -> std::same_as<void>;
     })
     // clang-format on
     void for_each_leader(Func&& f) const {

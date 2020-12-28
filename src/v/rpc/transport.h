@@ -201,7 +201,7 @@ transport::send_typed(Input r, uint32_t method_id, rpc::client_opts opts) {
 CONCEPT(
 template<typename Protocol>
 concept RpcClientProtocol = requires (rpc::transport& t) {
-    { Protocol(t) } -> Protocol;
+    { Protocol(t) } -> std::same_as<Protocol>;
 };
 )
 // clang-format on

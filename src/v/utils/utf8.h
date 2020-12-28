@@ -18,7 +18,7 @@
 // clang-format off
 CONCEPT(
 template<typename T>
-concept bool ExceptionThrower = requires(T obj) {
+concept ExceptionThrower = requires(T obj) {
     obj.conversion_error();
 };
 )

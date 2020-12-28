@@ -41,8 +41,8 @@ CONCEPT(
     concept State = requires(T s,
                              model::record_batch batch,
                              const model::record_batch& const_batch) {
-        { s.is_batch_applicable(const_batch) } -> bool;
-        { s.apply_update(std::move(batch)) } -> ss::future<std::error_code>;
+        { s.is_batch_applicable(const_batch) } -> std::convertible_to<bool>;
+        { s.apply_update(std::move(batch)) } -> std::same_as<ss::future<std::error_code>>;
     };
 )
 // clang-format on

@@ -20,10 +20,12 @@
 #include "seastarx.h"
 
 namespace raft::tron {
+// clang-format off
 template<typename ConsensusManager, typename ShardLookup>
 CONCEPT(
-  requires raft::RaftGroupManager<ConsensusManager>()
-  && raft::ShardLookupManager<ShardLookup>())
+  requires raft::RaftGroupManager<ConsensusManager>
+  && raft::ShardLookupManager<ShardLookup>)
+// clang-format on
 struct service final : trongen_service {
     service(
       ss::scheduling_group sc,

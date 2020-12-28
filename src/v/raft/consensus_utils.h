@@ -118,7 +118,7 @@ template<typename Func>
 CONCEPT(
     requires requires(Func f, model::record_batch b){
         { f(std::move(b)) } 
-            -> ss::futurize_t<std::invoke_result_t<Func, model::record_batch&&>>;
+            -> std::same_as<ss::futurize_t<std::invoke_result_t<Func, model::record_batch&&>>>;
     }
 )
 // clang-format on

@@ -36,14 +36,14 @@ namespace ssx {
 /// function invocations that resolves when all the function invocations
 /// complete.  If one or more return an exception, the return value contains one
 /// of the exceptions.
+// clang-format off
 template<typename Iterator, typename Func>
 CONCEPT(requires requires(Func f, Iterator i) {
     *i++;
-    { i != i }
-    ->bool;
-    seastar::futurize_invoke(f, *i);
-    sizeof(seastar::futurize_invoke(f, *i)::value_type) == 1;
+    { i != i } -> std::convertible_to<bool>;
+    seastar::futurize_invoke(f, *i).get0();
 })
+// clang-format on
 inline auto async_transform(Iterator begin, Iterator end, Func&& func) {
     using value_type = typename std::iterator_traits<Iterator>::value_type;
     using result_type = decltype(
@@ -85,16 +85,15 @@ inline auto async_transform(Iterator begin, Iterator end, Func&& func) {
 /// function invocations that resolves when all the function invocations
 /// complete.  If one or more return an exception, the return value contains one
 /// of the exceptions.
+// clang-format off
 template<typename Rng, typename Func>
 CONCEPT(requires requires(Func f, Rng r) {
     r.begin();
     r.end();
-    *r.begin()++;
-    { r.begin() != r.begin() }
-    ->bool;
-    seastar::futurize_invoke(f, *r.begin());
-    sizeof(seastar::futurize_invoke(f, *i)::value_type) == 1;
+    { r.begin() != r.begin() } -> std::convertible_to<bool>;
+    seastar::futurize_invoke(f, *r.begin()).get0();
 })
+// clang-format on
 inline auto async_transform(Rng&& rng, Func&& func) {
     return seastar::do_with(
       std::forward<Rng>(rng), [func{std::forward<Func>(func)}](Rng& rng) {
@@ -118,13 +117,13 @@ inline auto async_transform(Rng&& rng, Func&& func) {
 /// function invocations that resolves when all the function invocations
 /// complete.  If one or more return an exception, the return value contains one
 /// of the exceptions.
+// clang-format off
 template<typename Iterator, typename Func>
 CONCEPT(requires requires(Func f, Iterator i) {
     *i++;
-    { i != i }
-    ->bool;
-    seastar::futurize_invoke(f, *i);
+    { i != i } -> std::convertible_to<bool>;
 })
+// clang-format on
 inline auto parallel_transform(Iterator begin, Iterator end, Func func) {
     using value_type = typename std::iterator_traits<Iterator>::value_type;
     using future = decltype(
@@ -162,15 +161,14 @@ inline auto parallel_transform(Iterator begin, Iterator end, Func func) {
 /// function invocations that resolves when all the function invocations
 /// complete.  If one or more return an exception, the return value contains one
 /// of the exceptions.
+// clang-format off
 template<typename Rng, typename Func>
 CONCEPT(requires requires(Func f, Rng r) {
     r.begin();
     r.end();
-    *r.begin()++;
-    { r.begin() != r.begin() }
-    ->bool;
-    seastar::futurize_invoke(f, *r.begin());
+    { r.begin() != r.begin() } -> std::convertible_to<bool>;
 })
+// clang-format on
 inline auto parallel_transform(Rng rng, Func func) {
     return seastar::do_with(
       std::move(rng), [func{std::move(func)}](Rng& rng) mutable {

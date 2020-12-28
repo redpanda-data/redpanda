@@ -123,7 +123,7 @@ public:
     template<typename ResponseType>
     CONCEPT(requires requires (
             ResponseType r, const request_context& ctx, response& resp) {
-        { r.encode(ctx, resp) } -> void;
+        { r.encode(ctx, resp) } -> std::same_as<void>;
     })
     // clang-format on
     ss::future<response_ptr> respond(ResponseType r) {

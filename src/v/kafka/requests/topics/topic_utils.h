@@ -33,7 +33,7 @@ namespace kafka {
 CONCEPT(
 template<typename T> 
 concept TopicRequestItem = requires(T item) {
-    { item.name } -> model::topic_view;
+    { item.name } -> std::convertible_to<model::topic_view>;
 };)
 CONCEPT(
 template<typename Iterator> 
@@ -68,9 +68,7 @@ template<typename Iter, typename ErrIter, typename Predicate>
 CONCEPT(
     requires TopicRequestItem<typename Iter::value_type> && 
     TopicResultIterator<ErrIter> &&
-    requires (Predicate p, Iter it) {
-        {p(*it)}->bool;
-    }
+    std::predicate<Predicate, std::iter_reference_t<Iter>>
 )
 // clang-format on
 Iter validate_requests_range(

@@ -25,10 +25,7 @@ template<
   typename Func,
   typename ErrFunc,
   typename Futurator = ss::futurize<std::invoke_result_t<Func>>>
-CONCEPT(requires requires(Func f) {
-    Func g = f;
-    seastar::futurize_invoke(f);
-})
+CONCEPT(requires std::regular_invocable<Func>)
 auto retry_with_mitigation(
   int32_t retries,
   std::chrono::milliseconds retry_base_backoff,

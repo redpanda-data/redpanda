@@ -21,12 +21,13 @@
 namespace storage {
 
 // clang-format off
-CONCEPT(template<typename Consumer> concept bool CompactedIndexEntryConsumer() {
-    return requires(Consumer c, compacted_index::entry&& b) {
-        { c(std::move(b)) } -> ss::future<ss::stop_iteration>;
-        c.end_of_stream();
-    };
-})
+CONCEPT(
+template<typename Consumer>
+concept CompactedIndexEntryConsumer = requires(Consumer c, compacted_index::entry&& b) {
+    { c(std::move(b)) } -> std::same_as<ss::future<ss::stop_iteration>>;
+    c.end_of_stream();
+};
+)
 // clang-format on
 
 /// use this like a shared-pointer and pass around a copy
@@ -123,7 +124,7 @@ public:
     const ss::sstring& filename() const { return _impl->filename(); }
 
     template<typename Consumer>
-    CONCEPT(requires CompactedIndexEntryConsumer<Consumer>())
+    CONCEPT(requires CompactedIndexEntryConsumer<Consumer>)
     auto consume(Consumer consumer, model::timeout_clock::time_point timeout) {
         return _impl->consume(std::move(consumer), timeout);
     }
