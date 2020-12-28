@@ -76,7 +76,9 @@ const (
 	seedFormat = "<host>[:<port>]+<id>"
 )
 
-func NewStartCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
+func NewStartCommand(
+	fs afero.Fs, mgr config.Manager, launcher redpanda.Launcher,
+) *cobra.Command {
 	prestartCfg := prestartConfig{}
 	var (
 		configFile      string
@@ -208,10 +210,9 @@ func NewStartCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 
 			sendEnv(mgr, env, conf, nil)
 			rpArgs.ExtraArgs = args
-			launcher := redpanda.NewLauncher(installDirectory, rpArgs)
 			log.Info(feedbackMsg)
 			log.Info("Starting redpanda...")
-			return launcher.Start()
+			return launcher.Start(installDirectory, rpArgs)
 		},
 	}
 	command.Flags().StringVar(

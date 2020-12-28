@@ -11,6 +11,7 @@ package cmd
 
 import (
 	"vectorized/pkg/config"
+	"vectorized/pkg/redpanda"
 
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
@@ -22,6 +23,6 @@ func addPlatformDependentCmds(
 	cmd.AddCommand(NewTuneCommand(fs, mgr))
 	cmd.AddCommand(NewCheckCommand(fs, mgr))
 	cmd.AddCommand(NewIoTuneCmd(fs, mgr))
-	cmd.AddCommand(NewStartCommand(fs, mgr))
+	cmd.AddCommand(NewStartCommand(fs, mgr, redpanda.NewLauncher()))
 	cmd.AddCommand(NewStopCommand(fs, mgr))
 }
