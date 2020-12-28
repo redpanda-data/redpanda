@@ -73,13 +73,16 @@ func createTopic(admin func() (sarama.ClusterAdmin, error)) *cobra.Command {
 			}
 			defer adm.Close()
 			topicName := args[0]
+			topicDetail := &sarama.TopicDetail{
+				NumPartitions: partitions,
+				ConfigEntries: configEntries,
+			}
+			if replicas > 0 {
+				topicDetail.ReplicationFactor = replicas
+			}
 			err = adm.CreateTopic(
 				topicName,
-				&sarama.TopicDetail{
-					NumPartitions:     partitions,
-					ReplicationFactor: replicas,
-					ConfigEntries:     configEntries,
-				},
+				topicDetail,
 				false,
 			)
 			if err != nil {
@@ -123,8 +126,10 @@ func createTopic(admin func() (sarama.ClusterAdmin, error)) *cobra.Command {
 		&replicas,
 		"replicas",
 		"r",
-		int16(1),
-		"Number of replicas",
+		int16(-1),
+		"Replication factor. If it's negative or is left unspecified,"+
+			" it will use the cluster's default topic replication"+
+			" factor.",
 	)
 	cmd.Flags().BoolVar(
 		&compact,
