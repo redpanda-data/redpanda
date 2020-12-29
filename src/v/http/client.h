@@ -22,8 +22,10 @@
 
 #include <seastar/core/circular_buffer.hh>
 #include <seastar/core/future.hh>
+#include <seastar/core/iostream.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/temporary_buffer.hh>
+#include <seastar/core/timer.hh>
 
 #include <boost/beast/core.hpp>
 #include <boost/beast/core/error.hpp>
@@ -56,11 +58,16 @@ public:
     using request_header = boost::beast::http::request_header<>;
     using response_header = boost::beast::http::response_header<>;
     using response_parser = boost::beast::http::response_parser<iobuf_body>;
+    using field = boost::beast::http::field;
+    using verb = boost::beast::http::verb;
 
     explicit client(const rpc::base_transport::configuration& cfg);
 
+    ss::future<> shutdown();
+
     // Response state machine
-    class response_stream {
+    class response_stream final
+      : public ss::enable_shared_from_this<response_stream> {
     public:
         /// C-tor can only be called by http_request
         explicit response_stream(client* client);
@@ -69,7 +76,10 @@ public:
         response_stream(response_stream const&) = delete;
         response_stream& operator=(response_stream const&) = delete;
         response_stream operator=(response_stream&&) = delete;
-        ~response_stream() = default;
+        ~response_stream() override = default;
+
+        /// \brief Shutdown connection gracefully
+        ss::future<> shutdown();
 
         /// Return true if the parsing is done
         bool is_done() const;
@@ -86,6 +96,10 @@ public:
         /// should be ignored (deosn't mean EOF).
         ss::future<iobuf> recv_some();
 
+        /// Returns input_stream that can be used to fetch response body.
+        /// Can be used instead of 'recv_some'.
+        ss::input_stream<char> as_input_stream();
+
     private:
         client* _client;
         response_parser _parser;
@@ -96,7 +110,8 @@ public:
 
     // Request state machine
     // can only be created by the http_client
-    class request_stream {
+    class request_stream final
+      : public ss::enable_shared_from_this<request_stream> {
     public:
         explicit request_stream(client* client, request_header&& hdr);
 
@@ -104,18 +119,23 @@ public:
         request_stream(request_stream const&) = delete;
         request_stream& operator=(request_stream const&) = delete;
         request_stream operator=(request_stream&&) = delete;
-        ~request_stream() = default;
+        ~request_stream() override = default;
 
         /// Send data, if heders weren't sent they should be sent first
         /// followed by the data. BufferSeq is supposed to be an iobuf
         /// or temporary_buffer<char>.
         ss::future<> send_some(iobuf&& seq);
+        ss::future<> send_some(ss::temporary_buffer<char>&& buf);
 
         // True if done, false otherwise
         bool is_done();
 
         // Wait until remaining data will be transmitted
         ss::future<> send_eof();
+
+        /// Returns output_stream that can be used to send request headers and
+        /// the body. Can be used instead of 'send_some' and 'send_eof'.
+        ss::output_stream<char> as_output_stream();
 
     private:
         client* _client;
@@ -136,6 +156,18 @@ public:
     // Make http_request, if the transport is not yet connected it will connect
     // first otherwise the future will resolve immediately.
     ss::future<request_response_t> make_request(request_header&& header);
+
+    /// Utility function that executes request with the body and returns
+    /// stream. Returned future becomes ready when the body is sent.
+    /// Using the stream returned by the future client can pull response.
+    ///
+    /// \param header is a prepred request header
+    /// \param input in an input stream that contains request body octets
+    /// \param limits is a set of limitation for a query
+    /// \returns response stream future
+    ss::future<response_stream_ref>
+    request(request_header&& header, ss::input_stream<char>& input);
+    ss::future<response_stream_ref> request(request_header&& header);
 
 private:
     template<class BufferSeq>
