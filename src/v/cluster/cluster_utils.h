@@ -34,7 +34,7 @@ patch<broker_ptr> calculate_changed_brokers(
 // clang-format off
 template<typename T>
 CONCEPT(requires requires(const T& req) {
-    { req.tp_ns } -> std::same_as<const model::topic_namespace&>;
+    { req.tp_ns } -> std::convertible_to<const model::topic_namespace&>;
 })
 // clang-format on
 std::vector<topic_result> create_topic_results(
