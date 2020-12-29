@@ -913,9 +913,10 @@ consensus::get_last_entry_term(const storage::offset_stats& lstats) const {
       _last_snapshot_index == lstats.dirty_offset,
       "Last log offset is smaller than its start offset, snapshot is "
       "required to have last included offset that is equal to log dirty "
-      "offset. Log offsets: {}. Last snapshot index: {}",
+      "offset. Log offsets: {}. Last snapshot index: {}. {}",
       lstats,
-      _last_snapshot_index);
+      _last_snapshot_index,
+      _log.config().ntp());
 
     return _last_snapshot_term;
 }
