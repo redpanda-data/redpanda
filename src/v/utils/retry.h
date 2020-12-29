@@ -34,7 +34,7 @@ private:
 CONCEPT(
 template<typename Policy>
 concept BackoffPolicy = requires (Policy b) {
-    { b.next_backoff() } -> uint32_t;
+    { b.next_backoff() } -> std::same_as<uint32_t>;
 };
 )
 // clang-format on
@@ -43,7 +43,7 @@ concept BackoffPolicy = requires (Policy b) {
 template<typename Func, typename DurationType = std::chrono::seconds, typename Policy = exp_backoff_policy>
 CONCEPT(
   requires requires (Func f) {
-      { f() } -> ss::futurize_t<std::invoke_result_t<Func>>;
+      { f() } -> std::same_as<ss::futurize_t<std::invoke_result_t<Func>>>;
   } 
   && BackoffPolicy<Policy>
 )

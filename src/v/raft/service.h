@@ -25,26 +25,23 @@
 namespace raft {
 // clang-format off
 CONCEPT(
-    template<typename ConsensusManager>
-    concept bool RaftGroupManager() {
-        return requires(ConsensusManager m, group_id g) {
-            { m.consensus_for(g) } -> ss::lw_shared_ptr<consensus>;
-    };
-})
-CONCEPT(
-    template<typename ShardLookup>
-    concept bool ShardLookupManager() {
-        return requires(ShardLookup m, group_id g) {
-            { m.shard_for(g) } -> ss::shard_id;
-            { m.contains(g) } -> bool;
-    };
-})
-// clang-format on
+template<typename ConsensusManager>
+concept RaftGroupManager = requires(ConsensusManager m, group_id g) {
+    { m.consensus_for(g) } -> std::same_as<ss::lw_shared_ptr<consensus>>;
+};
+
+template<typename ShardLookup>
+concept ShardLookupManager = requires(ShardLookup m, group_id g) {
+   { m.shard_for(g) } -> std::same_as<ss::shard_id>;
+   { m.contains(g) } -> std::same_as<bool>;
+};
+)
 
 template<typename ConsensusManager, typename ShardLookup>
 CONCEPT(
-  requires RaftGroupManager<ConsensusManager>()
-  && ShardLookupManager<ShardLookup>())
+  requires RaftGroupManager<ConsensusManager>
+  && ShardLookupManager<ShardLookup>)
+// clang-format on
 class service final : public raftgen_service {
 public:
     using failure_probes = raftgen_service::failure_probes;

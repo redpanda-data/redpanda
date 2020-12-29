@@ -115,23 +115,18 @@ public:
       typename ValueProvider,
       typename Ret = std::invoke_result_t<ValueProvider, model::node_id>>
     CONCEPT(requires requires(
-        ValueProvider f,  model::node_id nid, Ret ret_a, Ret ret_b) {
-        {f(nid)};
-        { ret_a < ret_b } -> bool;
+        ValueProvider&& f, model::node_id nid, Ret ret_a, Ret ret_b) {
+        f(nid);
+        { ret_a < ret_b } -> std::same_as<bool>;
     })
     // clang-format on
-
     auto quorum_match(ValueProvider&& f) const;
 
     /**
      * Returns true if for majority of group_nodes predicate returns true
      */
-    // clang-format off
     template<typename Predicate>
-    CONCEPT(requires requires(Predicate f, model::node_id id) {
-        { f(id) } -> bool;
-    })
-    // clang-format on
+    CONCEPT(requires std::predicate<Predicate, model::node_id>)
     bool majority(Predicate&& f) const;
 
     int8_t version() const { return _version; }
@@ -198,7 +193,14 @@ void group_configuration::for_each_broker(Func&& f) const {
       std::cbegin(_brokers), std::cend(_brokers), std::forward<Func>(f));
 }
 
+// clang-format off
 template<typename Func, typename Ret>
+CONCEPT(requires requires(
+    Func&& f, model::node_id nid, Ret ret_a, Ret ret_b) {
+    f(nid);
+    { ret_a < ret_b } -> std::same_as<bool>;
+})
+// clang-format on
 auto group_configuration::quorum_match(Func&& f) const {
     if (!_old) {
         return details::quorum_match(std::forward<Func>(f), _current.voters);
@@ -209,6 +211,7 @@ auto group_configuration::quorum_match(Func&& f) const {
 }
 
 template<typename Predicate>
+CONCEPT(requires std::predicate<Predicate, model::node_id>)
 bool group_configuration::majority(Predicate&& f) const {
     if (!_old) {
         return details::majority(std::forward<Predicate>(f), _current.voters);

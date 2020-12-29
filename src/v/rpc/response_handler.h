@@ -36,7 +36,7 @@ public:
     // clang-format off
     template<typename Func>
     CONCEPT(requires requires(Func f){
-        {f()} -> void;
+        {f()} -> std::same_as<void>;
     })
     // clang-format on
     void with_timeout(

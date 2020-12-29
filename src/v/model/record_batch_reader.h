@@ -30,18 +30,19 @@
 namespace model {
 
 // clang-format off
-CONCEPT(template<typename Consumer> concept bool BatchReaderConsumer() {
-    return requires(Consumer c, record_batch&& b) {
-        { c(std::move(b)) } -> ss::future<ss::stop_iteration>;
-        c.end_of_stream();
-    };
-})
-CONCEPT(template<typename ReferenceConsumer> concept bool ReferenceBatchReaderConsumer() {
-    return requires(ReferenceConsumer c, record_batch& b) {
-        { c(b) } -> ss::future<ss::stop_iteration>;
-        c.end_of_stream();
-    };
-})
+CONCEPT(
+template<typename Consumer>
+concept BatchReaderConsumer = requires(Consumer c, record_batch&& b) {
+    { c(std::move(b)) } -> std::same_as<ss::future<ss::stop_iteration>>;
+    c.end_of_stream();
+};
+
+template<typename ReferenceConsumer>
+concept ReferenceBatchReaderConsumer = requires(ReferenceConsumer c, record_batch& b) {
+    { c(b) } -> std::same_as<ss::future<ss::stop_iteration>>;
+    c.end_of_stream();
+};
+)
 // clang-format on
 
 class record_batch_reader final {
@@ -183,7 +184,7 @@ public:
     /// if you need to own the data, please use consume() below
     /// Stops when consumer returns stop_iteration::yes or end of stream
     template<typename ReferenceConsumer>
-    CONCEPT(requires ReferenceBatchReaderConsumer<ReferenceConsumer>())
+    CONCEPT(requires ReferenceBatchReaderConsumer<ReferenceConsumer>)
     auto for_each_ref(
       ReferenceConsumer consumer, timeout_clock::time_point timeout) & {
         return _impl->for_each_ref(std::move(consumer), timeout);
@@ -195,7 +196,7 @@ public:
     /// r-value version so you can do std::move(reader).do_for_each_ref();
     ///
     template<typename ReferenceConsumer>
-    CONCEPT(requires ReferenceBatchReaderConsumer<ReferenceConsumer>())
+    CONCEPT(requires ReferenceBatchReaderConsumer<ReferenceConsumer>)
     auto for_each_ref(
       ReferenceConsumer consumer, timeout_clock::time_point timeout) && {
         auto raw = _impl.get();
@@ -209,7 +210,7 @@ public:
     // reached. Next call will start from the next mutation_fragment in the
     // stream.
     template<typename Consumer>
-    CONCEPT(requires BatchReaderConsumer<Consumer>())
+    CONCEPT(requires BatchReaderConsumer<Consumer>)
     auto consume(Consumer consumer, timeout_clock::time_point timeout) & {
         return _impl->consume(std::move(consumer), timeout);
     }
@@ -230,7 +231,7 @@ public:
      * the consume method.
      */
     template<typename Consumer>
-    CONCEPT(requires BatchReaderConsumer<Consumer>())
+    CONCEPT(requires BatchReaderConsumer<Consumer>)
     auto consume(Consumer consumer, timeout_clock::time_point timeout) && {
         /*
          * ideally what we would do here is:

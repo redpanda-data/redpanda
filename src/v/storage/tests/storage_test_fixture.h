@@ -125,7 +125,7 @@ public:
     template<typename T = random_batches_generator>
     CONCEPT(
         requires requires (T generator) {
-            { generator() } -> ss::circular_buffer<model::record_batch>;
+            { generator() } -> std::same_as<ss::circular_buffer<model::record_batch>>;
         }
     )
     // clang-format on

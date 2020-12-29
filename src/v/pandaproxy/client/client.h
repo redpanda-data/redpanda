@@ -81,8 +81,9 @@ public:
 
     /// \brief Dispatch a request to any broker.
     template<typename Func>
-    CONCEPT(
-      requires(typename std::invoke_result_t<Func>::api_type::response_type))
+    CONCEPT(requires requires {
+        typename std::invoke_result_t<Func>::api_type::response_type;
+    })
     ss::future<typename std::invoke_result_t<
       Func>::api_type::response_type> dispatch(Func func) {
         return gated_retry_with_mitigation([this, func{std::move(func)}]() {

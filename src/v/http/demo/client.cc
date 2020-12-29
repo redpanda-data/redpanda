@@ -64,9 +64,6 @@ void cli_opts(boost::program_options::options_description_easy_init opt) {
 }
 
 struct test_conf {
-    test_conf() = default;
-    test_conf(const test_conf&) = default;
-
     std::size_t chunk_size;
     std::string data;
     std::string target;
@@ -101,8 +98,11 @@ http::client::request_header make_header(const test_conf& cfg) {
     http::client::request_header header;
     header.method(cfg.method);
     header.target(cfg.target);
-    header.insert(boost::beast::http::field::content_length, cfg.data.length());
-    header.insert(boost::beast::http::field::host, cfg.client_cfg.server_addr);
+    header.insert(
+      boost::beast::http::field::content_length,
+      boost::beast::to_static_string(cfg.data.length()));
+    auto host = fmt::format("{}", cfg.client_cfg.server_addr);
+    header.insert(boost::beast::http::field::host, host);
     header.insert(boost::beast::http::field::content_type, "application/json");
     return header;
 }

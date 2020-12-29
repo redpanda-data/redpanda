@@ -108,6 +108,12 @@ started_client_and_server(const rpc::base_transport::configuration& conf) {
     };
 }
 
+template<typename Header, typename Host>
+static void header_set_host(Header& header, Host& h) {
+    auto host = fmt::format("{}", h);
+    header.insert(boost::beast::http::field::host, host);
+}
+
 /// Test success path (should run in ss::async)
 template<class Func>
 void test_http_request(
@@ -148,8 +154,8 @@ SEASTAR_TEST_CASE(test_http_POST_roundtrip) {
         header.target("/echo");
         header.insert(
           boost::beast::http::field::content_length,
-          std::strlen(httpd_server_reply));
-        header.insert(boost::beast::http::field::host, config.server_addr);
+          boost::beast::to_static_string(std::strlen(httpd_server_reply)));
+        header_set_host(header, config.server_addr);
         header.insert(
           boost::beast::http::field::content_type, "application/json");
         test_http_request(
@@ -278,7 +284,7 @@ SEASTAR_TEST_CASE(test_error_500) {
         http::client::request_header header;
         header.method(boost::beast::http::verb::get);
         header.target("/fail-status-500");
-        header.insert(boost::beast::http::field::host, config.server_addr);
+        header_set_host(header, config.server_addr);
         header.insert(
           boost::beast::http::field::content_type, "application/json");
         test_http_request(
@@ -304,7 +310,7 @@ SEASTAR_TEST_CASE(test_http_GET_roundtrip) {
         http::client::request_header header;
         header.method(boost::beast::http::verb::get);
         header.target("/get");
-        header.insert(boost::beast::http::field::host, config.server_addr);
+        header_set_host(header, config.server_addr);
         header.insert(
           boost::beast::http::field::content_type, "application/json");
         test_http_request(
@@ -332,8 +338,8 @@ SEASTAR_TEST_CASE(test_http_PUT_roundtrip) {
         header.target("/put");
         header.insert(
           boost::beast::http::field::content_length,
-          std::strlen(httpd_server_reply));
-        header.insert(boost::beast::http::field::host, config.server_addr);
+          boost::beast::to_static_string(std::strlen(httpd_server_reply)));
+        header_set_host(header, config.server_addr);
         header.insert(
           boost::beast::http::field::content_type, "application/json");
         test_http_request(
@@ -513,9 +519,8 @@ SEASTAR_TEST_CASE(test_http_via_impostor) {
         request_header.target("/");
         request_header.insert(
           boost::beast::http::field::content_length,
-          std::strlen(httpd_server_reply));
-        request_header.insert(
-          boost::beast::http::field::host, config.server_addr);
+          boost::beast::to_static_string(std::strlen(httpd_server_reply)));
+        header_set_host(request_header, config.server_addr);
         request_header.insert(
           boost::beast::http::field::content_type, "application/json");
 
@@ -523,9 +528,10 @@ SEASTAR_TEST_CASE(test_http_via_impostor) {
         ss::sstring response_data = httpd_server_reply;
         http::client::response_header resp_hdr;
         resp_hdr.result(boost::beast::http::status::ok);
-        resp_hdr.insert(boost::beast::http::field::host, config.server_addr);
+        header_set_host(resp_hdr, config.server_addr);
         resp_hdr.insert(
-          boost::beast::http::field::content_length, response_data.size());
+          boost::beast::http::field::content_length,
+          boost::beast::to_static_string(response_data.size()));
         auto full_response = get_response_header(resp_hdr) + response_data;
 
         // Run test case
@@ -556,9 +562,8 @@ SEASTAR_TEST_CASE(test_http_via_impostor_incorrect_reply) {
         request_header.target("/");
         request_header.insert(
           boost::beast::http::field::content_length,
-          std::strlen(httpd_server_reply));
-        request_header.insert(
-          boost::beast::http::field::host, config.server_addr);
+          boost::beast::to_static_string(std::strlen(httpd_server_reply)));
+        header_set_host(request_header, config.server_addr);
         request_header.insert(
           boost::beast::http::field::content_type, "application/json");
 
@@ -595,9 +600,8 @@ SEASTAR_TEST_CASE(test_http_via_impostor_chunked_encoding) {
         request_header.target("/");
         request_header.insert(
           boost::beast::http::field::content_length,
-          std::strlen(httpd_server_reply));
-        request_header.insert(
-          boost::beast::http::field::host, config.server_addr);
+          boost::beast::to_static_string(std::strlen(httpd_server_reply)));
+        header_set_host(request_header, config.server_addr);
         request_header.insert(
           boost::beast::http::field::content_type, "application/json");
 
@@ -608,7 +612,7 @@ SEASTAR_TEST_CASE(test_http_via_impostor_chunked_encoding) {
         resp_hdr.result(boost::beast::http::status::ok);
         resp_hdr.insert(
           boost::beast::http::field::transfer_encoding, "chunked");
-        resp_hdr.insert(boost::beast::http::field::host, config.server_addr);
+        header_set_host(resp_hdr, config.server_addr);
         auto header_str = get_response_header(resp_hdr);
         iobuf outbuf;
         outbuf.append(header_str.data(), header_str.size());
@@ -663,9 +667,8 @@ ss::future<> run_framing_test_using_impostor(bool chunked, size_t n_iters) {
         request_header.target("/");
         request_header.insert(
           boost::beast::http::field::content_length,
-          std::strlen(httpd_server_reply));
-        request_header.insert(
-          boost::beast::http::field::host, config.server_addr);
+          boost::beast::to_static_string(std::strlen(httpd_server_reply)));
+        header_set_host(request_header, config.server_addr);
         request_header.insert(
           boost::beast::http::field::content_type, "application/json");
 
@@ -678,9 +681,10 @@ ss::future<> run_framing_test_using_impostor(bool chunked, size_t n_iters) {
               boost::beast::http::field::transfer_encoding, "chunked");
         } else {
             resp_hdr.insert(
-              boost::beast::http::field::content_length, response_data.size());
+              boost::beast::http::field::content_length,
+              boost::beast::to_static_string(response_data.size()));
         }
-        resp_hdr.insert(boost::beast::http::field::host, config.server_addr);
+        header_set_host(resp_hdr, config.server_addr);
         auto header_str = get_response_header(resp_hdr);
 
         using split_t = std::vector<range_t>;
@@ -746,9 +750,8 @@ SEASTAR_TEST_CASE(test_http_via_impostor_no_content_length) {
         request_header.target("/");
         request_header.insert(
           boost::beast::http::field::content_length,
-          std::strlen(httpd_server_reply));
-        request_header.insert(
-          boost::beast::http::field::host, config.server_addr);
+          boost::beast::to_static_string(std::strlen(httpd_server_reply)));
+        header_set_host(request_header, config.server_addr);
         request_header.insert(
           boost::beast::http::field::content_type, "application/json");
 
@@ -756,7 +759,7 @@ SEASTAR_TEST_CASE(test_http_via_impostor_no_content_length) {
         ss::sstring response_data = httpd_server_reply;
         http::client::response_header resp_hdr;
         resp_hdr.result(boost::beast::http::status::ok);
-        resp_hdr.insert(boost::beast::http::field::host, config.server_addr);
+        header_set_host(resp_hdr, config.server_addr);
         auto full_response = get_response_header(resp_hdr) + response_data;
 
         // Run test case

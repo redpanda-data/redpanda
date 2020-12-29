@@ -11,6 +11,6 @@
 
 #pragma once
 
-#include <seastar/util/gcc6-concepts.hh>
+#include <seastar/util/concepts.hh>
 
-#define CONCEPT(...) GCC6_CONCEPT(__VA_ARGS__)
+#define CONCEPT(...) SEASTAR_CONCEPT(__VA_ARGS__)

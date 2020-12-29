@@ -12,8 +12,10 @@
 #pragma once
 
 #include "seastarx.h"
+#include "utils/concepts-enabled.h"
 
 #include <seastar/core/future.hh>
+#include <seastar/core/loop.hh>
 
 #include <iterator>
 
@@ -69,7 +71,7 @@ copy_range(Iterator begin, Iterator end, AsyncAction action, Container c) {
 /// preserved where applicable (i.e., the target Container has a notion of
 /// order).
 template<typename Container, typename Iterator, typename AsyncAction>
-GCC6_CONCEPT(requires requires(AsyncAction aa, Iterator it, Container c) {
+CONCEPT(requires requires(AsyncAction aa, Iterator it, Container c) {
     ss::futurize_invoke(aa, *it++);
     requires ss::is_future<decltype(ss::futurize_invoke(aa, *it))>::value;
     *std::inserter(c, c.end()) = ss::futurize_invoke(aa, *it).get0();
@@ -98,7 +100,7 @@ inline ss::future<Container> copy_range(
 /// preserved where applicable (i.e., the target Container has a notion of
 /// order).
 template<typename Container, typename Range, typename AsyncAction>
-GCC6_CONCEPT(requires requires(AsyncAction aa, Range r, Container c) {
+CONCEPT(requires requires(AsyncAction aa, Range r, Container c) {
     ss::futurize_invoke(aa, *r.begin());
     requires ss::is_future<decltype(
       ss::futurize_invoke(aa, *r.begin()))>::value;

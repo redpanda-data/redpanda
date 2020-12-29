@@ -67,8 +67,8 @@ else ()
 endif()
 ExternalProject_Add(boost
   # Boost outcome is only installed on boost 1.70.0+
-  URL https://storage.googleapis.com/vectorizedio-public/dependencies/boost_1_71_0.tar.gz
-  URL_MD5 5f521b41b79bf8616582c4a8a2c10177
+  URL https://storage.googleapis.com/vectorizedio-public/dependencies/boost_1_75_0.tar.gz
+  URL_MD5 38813f6feb40387dfe90160debd71251
   INSTALL_DIR    @REDPANDA_DEPS_INSTALL_DIR@
   PATCH_COMMAND
     ./bootstrap.sh
@@ -95,7 +95,7 @@ ExternalProject_Add(boost
 
 ExternalProject_Add(seastar
   GIT_REPOSITORY https://github.com/vectorizedio/seastar.git
-  GIT_TAG 043ecec732b2109a6c618641c0b74df0aa1ece09
+  GIT_TAG 956923580080edbc7f9f2708de872afdbc50e7e0
   INSTALL_DIR    @REDPANDA_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   CMAKE_ARGS
@@ -130,7 +130,7 @@ ExternalProject_Add(HdrHistogram
 
 ExternalProject_Add(abseil
   GIT_REPOSITORY https://github.com/vectorizedio/abseil-cpp.git
-  GIT_TAG bcefbdcd
+  GIT_TAG 1e3d25b2657228bd691ee938cfd37d487f48054b
   INSTALL_DIR    @REDPANDA_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   DEPENDS ${default_depends}

@@ -36,7 +36,9 @@ inline http::client::request_header make_header(
     http::client::request_header hdr;
     hdr.method(method);
     hdr.target(target);
-    hdr.insert(boost::beast::http::field::content_length, body.size_bytes());
+    hdr.insert(
+      boost::beast::http::field::content_length,
+      boost::beast::to_static_string(body.size_bytes()));
     hdr.insert(
       boost::beast::http::field::content_type,
       "application/vnd.kafka.binary.v2+json");

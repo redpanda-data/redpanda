@@ -52,8 +52,6 @@ void cli_opts(boost::program_options::options_description_easy_init o) {
 }
 
 struct load_gen_cfg {
-    load_gen_cfg() = default;
-    load_gen_cfg(const load_gen_cfg&) = default;
     std::size_t global_total_requests() const {
         return core_total_requests() * ss::smp::count;
     }

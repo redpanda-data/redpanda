@@ -72,7 +72,7 @@ void cli_opts(po::options_description_easy_init o) {
 
 struct simple_shard_lookup {
     ss::shard_id shard_for(raft::group_id g) { return g() % ss::smp::count; }
-    ss::shard_id contains(raft::group_id g) { return true; }
+    bool contains(raft::group_id g) { return true; }
 };
 
 class simple_group_manager {

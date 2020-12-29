@@ -24,11 +24,11 @@ CONCEPT(
 // A Kafka request.
 template<typename T>
 concept KafkaRequest = requires (T request, request_context&& ctx, ss::smp_service_group g) {
-    { T::name } -> const char*;
-    { T::key } -> api_key;
-    { T::min_supported } -> api_version;
-    { T::max_supported } -> api_version;
-    { T::process(std::move(ctx), g) } -> ss::future<response_ptr>;
+    { T::name } -> std::same_as<const char* const&>;
+    { T::key } -> std::same_as<const api_key&>;
+    { T::min_supported } -> std::same_as<const api_version&>;
+    { T::max_supported } -> std::same_as<const api_version&>;
+    { T::process(std::move(ctx), g) } -> std::same_as<ss::future<response_ptr>>;
 };
 )
 // clang-format on
