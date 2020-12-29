@@ -9,3 +9,4 @@ v_cc_library(
     v::bytes
     v::http
 )
+add_subdirectory(tests)
