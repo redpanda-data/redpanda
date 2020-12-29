@@ -433,6 +433,19 @@ func buildRedpandaFlags(
 	flagsMap = flagsFromConf(conf, flagsMap, flags)
 	finalFlags := parseFlags(conf.Rpk.AdditionalStartFlags)
 	for n, v := range flagsMap {
+		if _, alreadyPresent := finalFlags[n]; alreadyPresent {
+			return nil, fmt.Errorf(
+				"Configuration conflict. Flag '--%s'"+
+					" is also present in"+
+					" 'rpk.additional_start_flags' in"+
+					" configuration file '%s'. Please"+
+					" remove it and pass '--%s' directly"+
+					" to `rpk start`.",
+				n,
+				conf.ConfigFile,
+				n,
+			)
+		}
 		finalFlags[n] = fmt.Sprint(v)
 	}
 	return &redpanda.RedpandaArgs{

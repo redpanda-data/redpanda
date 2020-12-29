@@ -792,6 +792,42 @@ func TestStartCommand(t *testing.T) {
 				conf.Redpanda.AdvertisedRPCAPI,
 			)
 		},
+	}, {
+		name: "it should fail if --overprovisioned is set in the config file too",
+		args: []string{
+			"--install-dir", "/var/lib/redpanda", "--overprovisioned",
+		},
+		before: func(fs afero.Fs) error {
+			mgr := config.NewManager(fs)
+			conf := config.Default()
+			conf.Rpk.AdditionalStartFlags = []string{"--overprovisioned"}
+			return mgr.Write(conf)
+		},
+		expectedErrMsg: "Configuration conflict. Flag '--overprovisioned' is also present in 'rpk.additional_start_flags' in configuration file '/etc/redpanda/redpanda.yaml'. Please remove it and pass '--overprovisioned' directly to `rpk start`.",
+	}, {
+		name: "it should fail if --smp is set in the config file too",
+		args: []string{
+			"--install-dir", "/var/lib/redpanda", "--smp", "1",
+		},
+		before: func(fs afero.Fs) error {
+			mgr := config.NewManager(fs)
+			conf := config.Default()
+			conf.Rpk.AdditionalStartFlags = []string{"--smp=1"}
+			return mgr.Write(conf)
+		},
+		expectedErrMsg: "Configuration conflict. Flag '--smp' is also present in 'rpk.additional_start_flags' in configuration file '/etc/redpanda/redpanda.yaml'. Please remove it and pass '--smp' directly to `rpk start`.",
+	}, {
+		name: "it should fail if --memory is set in the config file too",
+		args: []string{
+			"--install-dir", "/var/lib/redpanda", "--memory", "2G",
+		},
+		before: func(fs afero.Fs) error {
+			mgr := config.NewManager(fs)
+			conf := config.Default()
+			conf.Rpk.AdditionalStartFlags = []string{"--memory=1G"}
+			return mgr.Write(conf)
+		},
+		expectedErrMsg: "Configuration conflict. Flag '--memory' is also present in 'rpk.additional_start_flags' in configuration file '/etc/redpanda/redpanda.yaml'. Please remove it and pass '--memory' directly to `rpk start`.",
 	}}
 
 	for _, tt := range tests {
