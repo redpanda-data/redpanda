@@ -220,8 +220,10 @@ SEASTAR_TEST_CASE(test_http_GET_streaming_roundtrip) {
         http::client::request_header header;
         header.method(boost::beast::http::verb::get);
         header.target("/get");
-        header.insert(boost::beast::http::field::content_length, 0);
-        header.insert(boost::beast::http::field::host, config.server_addr);
+        header.insert(
+          boost::beast::http::field::content_length,
+          boost::beast::to_static_string(0));
+        header_set_host(header, config.server_addr);
         header.insert(
           boost::beast::http::field::content_type, "application/json");
         constexpr size_t skip_bytes = 100;
@@ -254,8 +256,8 @@ SEASTAR_TEST_CASE(test_http_POST_streaming_roundtrip) {
         header.target("/echo");
         header.insert(
           boost::beast::http::field::content_length,
-          std::strlen(httpd_server_reply));
-        header.insert(boost::beast::http::field::host, config.server_addr);
+          boost::beast::to_static_string(std::strlen(httpd_server_reply)));
+        header_set_host(header, config.server_addr);
         header.insert(
           boost::beast::http::field::content_type, "application/json");
 
