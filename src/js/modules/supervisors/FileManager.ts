@@ -24,6 +24,7 @@ import {
   validateDisableResponseCode,
   validateEnableResponseCode,
 } from "./HandleError";
+import { closeProcess } from "../rpc/service";
 
 /**
  * FileManager class is an inotify implementation, it receives a
@@ -46,7 +47,8 @@ class FileManager {
       .then(() => this.readCoprocessorFolder(repository, this.submitDir))
       .then(() => this.startWatchers(repository))
       .catch((e) => {
-        throw Error(`Failed startup the FileManager: ${e.message}`);
+        // fatal error close
+        closeProcess(e);
       });
   }
 

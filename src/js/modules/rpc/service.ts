@@ -43,6 +43,28 @@ const validateOrCreateScaffolding = (directoryPath: string): Promise<void> => {
   return Promise.all(validations).then(() => null);
 };
 
+export const closeProcess = (e: Error): Promise<void> => {
+  return LogService.close().then(() => {
+    fs.writeFile(
+      LogService.getPath(),
+      `Error: ${e.message}`,
+      { flag: "+a" },
+      (err) => {
+        if (err) {
+          console.error(
+            "failing on write exception on " +
+              LogService.getPath() +
+              " Error: " +
+              err.message
+          );
+        }
+        console.log("Closing");
+        process.exit(1);
+      }
+    );
+  });
+};
+
 function main() {
   // read config file path argument
   const configPathArg = process.argv.splice(2)[0];
@@ -52,25 +74,35 @@ function main() {
   // resolve config path or assign default value
   const configPath = configPathArg ? resolve(configPathArg) : defaultConfigPath;
 
-  readConfigFile(configPath).then((config) => {
-    const port = config?.redpanda?.coproc_supervisor_server || 43189;
-    const path = config?.coproc_engine?.path || defaultCoprocessorPath;
-    const logFilePath = config?.coproc_engine?.logFilePath || defaultLogFile;
-    LogService.setPath(logFilePath);
-    const logger = LogService.createLogger("service");
-    logger.info("Starting redpanda wasm service...");
-    logger.info(`Reading from config file: ${configPath}`);
-    logger.info(`Using root scaffolding path: ${path}`);
-    validateOrCreateScaffolding(path).then(() => {
-      const service = new ProcessBatchServer(
-        join(path, "active"),
-        join(path, "inactive"),
-        join(path, "submit")
-      );
-      logger.info(`Starting redpanda wasm service on port: ${port}`);
-      service.listen(port);
-    });
-  });
+  readConfigFile(configPath)
+    .then((config) => {
+      const port = config?.redpanda?.coproc_supervisor_server || 43189;
+      const path = config?.coproc_engine?.path || defaultCoprocessorPath;
+      const logFilePath = config?.coproc_engine?.logFilePath || defaultLogFile;
+      LogService.setPath(logFilePath);
+      const logger = LogService.createLogger("service");
+      logger.info("Starting redpanda wasm service...");
+      logger.info(`Reading from config file: ${configPath}`);
+      logger.info(`Using root scaffolding path: ${path}`);
+      validateOrCreateScaffolding(path)
+        .then(() => {
+          const service = new ProcessBatchServer(
+            join(path, "active"),
+            join(path, "inactive"),
+            join(path, "submit")
+          );
+          process.on("SIGINT", function () {
+            service
+              .closeConnection()
+              .then(() => LogService.close())
+              .then(() => process.exit());
+          });
+          logger.info(`Starting redpanda wasm service on port: ${port}`);
+          service.listen(port);
+        })
+        .catch(closeProcess);
+    })
+    .catch(closeProcess);
 }
 
 main();

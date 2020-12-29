@@ -21,6 +21,7 @@ import { PolicyError, RecordBatch } from "../../modules/public/Coprocessor";
 import assert = require("assert");
 import * as chokidar from "chokidar";
 import LogService from "../../modules/utilities/Logging";
+const fs = require("fs");
 
 let sinonInstance: SinonSandbox;
 let server: ProcessBatchServer;
@@ -340,6 +341,26 @@ describe("Server", function () {
           });
         });
       });
+    });
+
+    it("should close logger if there is a fatal exception", (done) => {
+      const fsStub = sinonInstance.stub(fs, "writeFile").returns(null);
+      sinonInstance.stub(LogService, "getPath").returns("a");
+      const close = sinonInstance.stub(LogService, "close");
+      close.returns(Promise.resolve());
+      new ProcessBatchServer("a", "a", "a");
+      // waiting for firing exception
+      setTimeout(() => {
+        assert(close.called);
+        assert(fsStub.called);
+        // validate FileManager exception, this exception happens when it tries
+        // to read unexciting folder
+        assert.strictEqual(
+          fsStub.firstCall.args[1],
+          "Error: ENOENT: no such file or directory, scandir 'a'"
+        );
+        done();
+      }, 10);
     });
   });
 });
