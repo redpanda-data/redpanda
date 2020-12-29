@@ -14,7 +14,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     container:
-      image: ubuntu:20.04
+      image: ubuntu:20.10
 
     steps:
         - name: checkout
@@ -29,8 +29,10 @@ jobs:
         - name: install dependencies
           run: |
             ./install-dependencies.sh
-            apt-get install -y gcc-10 g++-10
-            update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-10 10 --slave /usr/bin/g++ g++ /usr/bin/g++-10
+            apt-get install -y clang-11
 
         - name: build & test
+          env:
+            CC: clang-11
+            CXX: clang++-11
           run: ./build.sh -DCMAKE_UNITY_BUILD=ON
