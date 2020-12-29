@@ -167,6 +167,7 @@ private:
 };
 
 template<typename... T>
+CONCEPT(requires(State<T>, ...))
 mux_state_machine<T...>::mux_state_machine(
   ss::logger& logger,
   consensus* c,
@@ -178,14 +179,16 @@ mux_state_machine<T...>::mux_state_machine(
   , _state(state...) {}
 
 template<typename... T>
-ss::future<result<raft::replicate_result>>
-mux_state_machine<T...>::replicate(model::record_batch&& batch) {
+CONCEPT(requires(State<T>, ...))
+ss::future<result<raft::replicate_result>> mux_state_machine<T...>::replicate(
+  model::record_batch&& batch) {
     return _c->replicate(
       model::make_memory_record_batch_reader(std::move(batch)),
       raft::replicate_options{raft::consistency_level::quorum_ack});
 }
 
 template<typename... T>
+CONCEPT(requires(State<T>, ...))
 ss::future<std::error_code> mux_state_machine<T...>::replicate_and_wait(
   model::record_batch&& b,
   model::timeout_clock::time_point timeout,
@@ -231,6 +234,7 @@ is_batch_applicable(State& s, const model::record_batch& batch) {
 }
 
 template<typename... T>
+CONCEPT(requires(State<T>, ...))
 ss::future<> mux_state_machine<T...>::apply(model::record_batch b) {
     // lookup for the state to apply the update
     auto state = std::apply(
