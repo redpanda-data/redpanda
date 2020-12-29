@@ -58,6 +58,15 @@ set(build_env
   CXXFLAGS=${cxx_flags}
   "LDFLAGS=${ld_flags}"
 )
+
+if ("@CMAKE_CXX_COMPILER_ID@" MATCHES "Clang")
+    set(toolset clang)
+    set(boost_user_config_jam "using clang : : @CMAKE_CXX_COMPILER@ $<SEMICOLON>")
+elseif (@CMAKE_CXX_COMPILER_ID@ STREQUAL "GNU")
+    set(toolset gcc)
+    set(boost_user_config_jam "using gcc : : @CMAKE_CXX_COMPILER@ : $<SEMICOLON>")
+endif()
+
 # define make command in terms of cmake
 set(make_command make ${build_env} -j${build_concurrency_factor} )
 if ("@CMAKE_BUILD_TYPE@" MATCHES "Debug")
@@ -74,6 +83,10 @@ ExternalProject_Add(boost
     ./bootstrap.sh
     --prefix=@REDPANDA_DEPS_INSTALL_DIR@
     --with-libraries=atomic,chrono,date_time,filesystem,program_options,system,test,thread
+    &&
+    echo
+    "${boost_user_config_jam}"
+    > <SOURCE_DIR>/tools/build/src/user-config.jam
   CONFIGURE_COMMAND ""
   BUILD_COMMAND ""
   DEPENDS ${default_depends}
@@ -81,6 +94,7 @@ ExternalProject_Add(boost
     ${CMAKE_COMMAND} -E chdir <SOURCE_DIR>
     ./b2
     -j ${build_concurrency_factor}
+    --toolset=${toolset}
     --layout=system
     --build-dir=<BINARY_DIR>
     install
