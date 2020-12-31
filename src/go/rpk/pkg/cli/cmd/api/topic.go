@@ -53,7 +53,9 @@ func createTopic(admin func() (sarama.ClusterAdmin, error)) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "create <topic name>",
 		Short: "Create a topic",
-		Args:  cobra.ExactArgs(1),
+		Args:  exactArgs(1, "topic's name is missing."),
+		// We don't want Cobra printing CLI usage help if the error isn't about CLI usage.
+		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			configEntries, err := parseKVs(config)
 			if err != nil {
@@ -144,7 +146,9 @@ func deleteTopic(admin func() (sarama.ClusterAdmin, error)) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "delete <topic name>",
 		Short: "Delete a topic",
-		Args:  cobra.ExactArgs(1),
+		Args:  exactArgs(1, "topic's name is missing."),
+		// We don't want Cobra printing CLI usage help if the error isn't about CLI usage.
+		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			adm, err := admin()
 			if err != nil {
@@ -167,9 +171,11 @@ func deleteTopic(admin func() (sarama.ClusterAdmin, error)) *cobra.Command {
 
 func setTopicConfig(admin func() (sarama.ClusterAdmin, error)) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "set-config <topic> <key> [<value>]",
+		Use:   "set-config <topic> <key> <value>",
 		Short: "Set the topic's config key/value pairs",
-		Args:  cobra.ExactArgs(3),
+		Args:  exactArgs(3, "topic's name, config key or value are missing."),
+		// We don't want Cobra printing CLI usage help if the error isn't about CLI usage.
+		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			adm, err := admin()
 			if err != nil {
@@ -216,7 +222,9 @@ func describeTopic(
 		Use:   "describe <topic>",
 		Short: "Describe topic",
 		Long:  "Describe a topic. Default values of the configuration are omitted.",
-		Args:  cobra.ExactArgs(1),
+		Args:  exactArgs(1, "topic's name is missing."),
+		// We don't want Cobra printing CLI usage help if the error isn't about CLI usage.
+		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cl, err := client()
 			if err != nil {
@@ -387,9 +395,10 @@ func topicStatus(admin func() (sarama.ClusterAdmin, error)) *cobra.Command {
 		Use:     "status <topic name>",
 		Aliases: []string{"health"},
 		Short:   "Show a topic's status - leader, replication, etc.",
-		Args:    cobra.ExactArgs(1),
+		Args:    exactArgs(1, "topic's name is missing."),
+		// We don't want Cobra printing CLI usage help if the error isn't about CLI usage.
+		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-
 			containsID := func(ids []int32, id int32) bool {
 				for _, i := range ids {
 					if i == id {
@@ -489,6 +498,8 @@ func listTopics(admin func() (sarama.ClusterAdmin, error)) *cobra.Command {
 		Aliases: []string{"ls"},
 		Short:   "List topics",
 		Args:    cobra.ExactArgs(0),
+		// We don't want Cobra printing CLI usage help if the error isn't about CLI usage.
+		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			adm, err := admin()
 			if err != nil {

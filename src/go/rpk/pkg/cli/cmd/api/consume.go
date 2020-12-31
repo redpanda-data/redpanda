@@ -68,7 +68,9 @@ func NewConsumeCommand(client func() (sarama.Client, error)) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "consume <topic>",
 		Short: "Consume records from a topic",
-		Args:  cobra.ExactArgs(1),
+		Args:  exactArgs(1, "topic's name is missing."),
+		// We don't want Cobra printing CLI usage help if the error isn't about CLI usage.
+		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cl, err := client()
 			if err != nil {
