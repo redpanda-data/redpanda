@@ -7,10 +7,23 @@
 
 #include <boost/algorithm/string.hpp>
 
+/*
+ * Likely an issue with gcc, memory usage is unacceptably high using c++20 with
+ * these regular expressions and the ctre library. Since this is not a problem
+ * with clang and our release builds use clang, we fall back to slow std::regex
+ * when using gcc. The following ticket is tracking the issue, and the fallback
+ * can be removed once the issue is resolved:
+ *
+ * https://github.com/hanickadot/compile-time-regular-expressions/issues/155
+ */
+#undef USE_CTRE
+#ifdef __clang__
+#define USE_CTRE
 #include <ctll.hpp>
 #include <ctre.hpp>
-
-namespace kafka {
+#else
+#include <regex>
+#endif
 
 // ALPHA / DIGIT / "/" / "+"
 // NOLINTNEXTLINE
@@ -47,14 +60,127 @@ namespace kafka {
 // NOLINTNEXTLINE
 #define ALPHA "[a-zA-Z]"
 
-// clang-format off
+#define CLIENT_FIRST_MESSAGE_RE                                                \
+    "n,(?:a=(" SASLNAME "))?,(m=" VALUE ",)?n=(" SASLNAME "),"                 \
+    "r=(" PRINTABLE ")(," ALPHA "+=" VALUE ")*"
+
+#define CLIENT_FINAL_MESSAGE_RE                                                \
+    "c=(" BASE64 "),r=(" PRINTABLE ")" EXTENSIONS ",p=(" BASE64 ")"
+
+/*
+ * {ctre,std_re}_parse_client_{first,final} implementations are defined. ctre_*
+ * with clang, and std_re* for gcc. a generic wrapper compiles with the correct
+ * version which scram algorithms use directly.
+ */
+namespace details {
+struct client_first_match {
+    ss::sstring authzid;
+    ss::sstring username;
+    ss::sstring nonce;
+    ss::sstring extensions;
+};
+
+struct client_final_match {
+    bytes channel_binding;
+    ss::sstring nonce;
+    ss::sstring extensions;
+    bytes proof;
+};
+
+#ifdef USE_CTRE
 static constexpr auto client_first_message_re = ctll::fixed_string{
-    "n,(?:a=(" SASLNAME "))?,(m=" VALUE ",)?n=(" SASLNAME "),"
-    "r=(" PRINTABLE ")(," ALPHA "+=" VALUE ")*"};
+  CLIENT_FIRST_MESSAGE_RE};
 
 static constexpr auto client_final_message_re = ctll::fixed_string{
-    "c=(" BASE64 "),r=(" PRINTABLE ")" EXTENSIONS ",p=(" BASE64 ")"};
-// clang-format on
+  CLIENT_FINAL_MESSAGE_RE};
+
+static inline std::optional<client_first_match>
+ctre_parse_client_first(std::string_view message) {
+    auto match = ctre::match<client_first_message_re>(message);
+    if (unlikely(!match)) {
+        return std::nullopt;
+    }
+    return client_first_match{
+      .authzid = match.get<1>().to_string(),
+      .username = match.get<3>().to_string(),
+      .nonce = match.get<4>().to_string(),
+      .extensions = match.get<5>().to_string(), // NOLINT
+    };
+}
+
+static inline std::optional<client_final_match>
+ctre_parse_client_final(std::string_view message) {
+    auto match = ctre::match<client_final_message_re>(message);
+    if (unlikely(!match)) {
+        return std::nullopt;
+    }
+    return client_final_match{
+      .channel_binding = base64_to_bytes(match.get<1>().to_view()),
+      .nonce = match.get<2>().to_string(),
+      .extensions = match.get<3>().to_string(),
+      .proof = base64_to_bytes(match.get<4>().to_view()),
+    };
+}
+
+#else
+static const char* client_first_message_re = CLIENT_FIRST_MESSAGE_RE;
+static const char* client_final_message_re = CLIENT_FINAL_MESSAGE_RE;
+
+static inline std::optional<client_first_match>
+std_re_parse_client_first(std::string_view message) {
+    static const std::regex re(
+      client_first_message_re, std::regex::ECMAScript | std::regex::optimize);
+    std::smatch match;
+    std::string m(message);
+    if (unlikely(!std::regex_match(m, match, re))) {
+        return std::nullopt;
+    }
+    return client_first_match{
+      .authzid = match[1].str(),
+      .username = match[3].str(),
+      .nonce = match[4].str(),
+      .extensions = match[5].str(), // NOLINT
+    };
+}
+
+static inline std::optional<client_final_match>
+std_re_parse_client_final(std::string_view message) {
+    static const std::regex re(
+      client_final_message_re, std::regex::ECMAScript | std::regex::optimize);
+    std::smatch match;
+    std::string m(message);
+    if (unlikely(!std::regex_match(m, match, re))) {
+        return std::nullopt;
+    }
+    return client_final_match{
+      .channel_binding = base64_to_bytes(match[1].str()),
+      .nonce = match[2].str(),
+      .extensions = match[3].str(),
+      .proof = base64_to_bytes(match[4].str()),
+    };
+}
+#endif
+} // namespace details
+
+static inline std::optional<details::client_first_match>
+parse_client_first(std::string_view message) {
+#ifdef USE_CTRE
+    return details::ctre_parse_client_first(message);
+#else
+    return details::std_re_parse_client_first(message);
+#endif
+}
+
+static inline std::optional<details::client_final_match>
+parse_client_final(std::string_view message) {
+#ifdef USE_CTRE
+    return details::ctre_parse_client_final(message);
+#else
+    return details::std_re_parse_client_final(message);
+#endif
+}
+
+namespace kafka {
 
 std::ostream& operator<<(std::ostream& os, const scram_credential& cred) {
     fmt::print(
@@ -72,25 +198,25 @@ client_first_message::client_first_message(bytes_view data) {
       reinterpret_cast<const char*>(data.data()), data.size()); // NOLINT
     validate_utf8(view);
 
-    auto match = ctre::match<client_first_message_re>(view);
+    auto match = parse_client_first(view);
     if (unlikely(!match)) {
         throw scram_exception(fmt_with_ctx(
           fmt::format, "Invalid SCRAM client first message: {}", view));
     }
 
-    _authzid = match.get<1>().to_string();
-    _username = match.get<3>().to_string();
-    _nonce = match.get<4>().to_string();
+    _authzid = std::move(match->authzid);
+    _username = std::move(match->username);
+    _nonce = std::move(match->nonce);
 
-    auto extensions = match.get<5>().to_string(); // NOLINT
-    if (extensions.empty()) {
+    if (match->extensions.empty()) {
         return;
     }
 
     // split on "," following the "," prefix
     std::vector<std::string> extension_pairs;
-    boost::split(
-      extension_pairs, extensions.substr(1), [](char c) { return c == ','; });
+    boost::split(extension_pairs, match->extensions.substr(1), [](char c) {
+        return c == ',';
+    });
 
     // split pairs on first "=". the value part may also contain "="
     for (const auto& pair : extension_pairs) {
@@ -152,16 +278,16 @@ client_final_message::client_final_message(bytes_view data) {
       reinterpret_cast<const char*>(data.data()), data.size()); // NOLINT
     validate_utf8(view);
 
-    auto match = ctre::match<client_final_message_re>(view);
+    auto match = parse_client_final(view);
     if (unlikely(!match)) {
         throw scram_exception(fmt_with_ctx(
           fmt::format, "Invalid SCRAM client final message: {}", view));
     }
 
-    _channel_binding = base64_to_bytes(match.get<1>().to_view());
-    _nonce = match.get<2>().to_string();
-    _extensions = match.get<3>().to_string();
-    _proof = base64_to_bytes(match.get<4>().to_view());
+    _channel_binding = std::move(match->channel_binding);
+    _nonce = std::move(match->nonce);
+    _extensions = std::move(match->extensions);
+    _proof = std::move(match->proof);
 }
 
 ss::sstring client_final_message::msg_no_proof() const {
