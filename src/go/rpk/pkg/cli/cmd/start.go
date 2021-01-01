@@ -127,7 +127,10 @@ func NewStartCommand(
 				kafkaAddr,
 				os.Getenv("REDPANDA_KAFKA_ADDRESS"),
 			)
-			kafkaApi, err := parseAddress(kafkaAddr)
+			kafkaApi, err := parseAddress(
+				kafkaAddr,
+				config.Default().Redpanda.KafkaApi.Port,
+			)
 			if err != nil {
 				sendEnv(mgr, env, conf, err)
 				return err
@@ -140,7 +143,10 @@ func NewStartCommand(
 				rpcAddr,
 				os.Getenv("REDPANDA_RPC_ADDRESS"),
 			)
-			rpcServer, err := parseAddress(rpcAddr)
+			rpcServer, err := parseAddress(
+				rpcAddr,
+				config.Default().Redpanda.RPCServer.Port,
+			)
 			if err != nil {
 				sendEnv(mgr, env, conf, err)
 				return err
@@ -153,7 +159,10 @@ func NewStartCommand(
 				advertisedKafka,
 				os.Getenv("REDPANDA_ADVERTISE_KAFKA_ADDRESS"),
 			)
-			advKafkaApi, err := parseAddress(advertisedKafka)
+			advKafkaApi, err := parseAddress(
+				advertisedKafka,
+				config.Default().Redpanda.KafkaApi.Port,
+			)
 			if err != nil {
 				sendEnv(mgr, env, conf, err)
 				return err
@@ -165,7 +174,10 @@ func NewStartCommand(
 				advertisedRPC,
 				os.Getenv("REDPANDA_ADVERTISE_RPC_ADDRESS"),
 			)
-			advRPCApi, err := parseAddress(advertisedRPC)
+			advRPCApi, err := parseAddress(
+				advertisedRPC,
+				config.Default().Redpanda.RPCServer.Port,
+			)
 			if err != nil {
 				sendEnv(mgr, env, conf, err)
 				return err
@@ -669,7 +681,10 @@ func parseSeeds(seeds []string) ([]config.SeedServer, error) {
 				s,
 			)
 		}
-		addr, err := parseAddress(addressID[0])
+		addr, err := parseAddress(
+			addressID[0],
+			config.Default().Redpanda.RPCServer.Port,
+		)
 		if err != nil {
 			return seedServers, fmt.Errorf(
 				"Couldn't parse seed '%s': %v",
@@ -691,7 +706,7 @@ func parseSeeds(seeds []string) ([]config.SeedServer, error) {
 	return seedServers, nil
 }
 
-func parseAddress(addr string) (*config.SocketAddress, error) {
+func parseAddress(addr string, defaultPort int) (*config.SocketAddress, error) {
 	if addr == "" {
 		return nil, nil
 	}
@@ -701,10 +716,10 @@ func parseAddress(addr string) (*config.SocketAddress, error) {
 		return nil, fmt.Errorf("Empty host in address '%s'", addr)
 	}
 	if len(hostPort) != 2 {
-		// It's just a hostname with no port. Assume 9092.
+		// It's just a hostname with no port. Use the default port.
 		return &config.SocketAddress{
 			Address: strings.Trim(hostPort[0], " "),
-			Port:    config.Default().Redpanda.RPCServer.Port,
+			Port:    defaultPort,
 		}, nil
 	}
 	// It's a host:port combo.
