@@ -15,9 +15,9 @@ import (
 	"vectorized/pkg/config"
 	"vectorized/pkg/utils"
 
-	"github.com/shirou/gopsutil/disk"
-	"github.com/shirou/gopsutil/mem"
-	"github.com/shirou/gopsutil/process"
+	"github.com/shirou/gopsutil/v3/disk"
+	"github.com/shirou/gopsutil/v3/mem"
+	"github.com/shirou/gopsutil/v3/process"
 	"github.com/spf13/afero"
 )
 

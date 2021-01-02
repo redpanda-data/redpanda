@@ -9,7 +9,7 @@
 
 package system
 
-import "github.com/shirou/gopsutil/cpu"
+import "github.com/shirou/gopsutil/v3/cpu"
 
 func CpuInfo() ([]cpu.InfoStat, error) {
 	return cpu.Info()

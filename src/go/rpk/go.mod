@@ -5,11 +5,10 @@ require (
 	github.com/Azure/go-ansiterm v0.0.0-20170929234023-d6e3b3328b78 // indirect
 	github.com/Microsoft/go-winio v0.4.12 // indirect
 	github.com/Shopify/sarama v1.26.1
-	github.com/StackExchange/wmi v0.0.0-20190523213315-cbe66965904d // indirect
 	github.com/avast/retry-go v2.6.0+incompatible
 	github.com/aws/aws-sdk-go v1.25.43
 	github.com/burdiyan/kafkautil v0.0.0-20190131162249-eaf83ed22d5b
-	github.com/cockroachdb/crlfmt v0.0.0-20200923085322-b9cb16fe9a33 // indirect
+	github.com/cockroachdb/crlfmt v0.0.0-20200923085322-b9cb16fe9a33
 	github.com/containerd/containerd v1.4.1 // indirect
 	github.com/coreos/go-systemd/v22 v22.1.0
 	github.com/docker/distribution v2.7.1+incompatible // indirect
@@ -17,7 +16,6 @@ require (
 	github.com/docker/go-connections v0.4.0
 	github.com/docker/go-units v0.4.0
 	github.com/fatih/color v1.7.0
-	github.com/go-ole/go-ole v1.2.4 // indirect
 	github.com/google/uuid v1.1.1
 	github.com/hashicorp/go-multierror v1.1.0
 	github.com/konsorten/go-windows-terminal-sequences v1.0.2 // indirect
@@ -36,7 +34,7 @@ require (
 	github.com/prometheus/client_model v0.2.0
 	github.com/prometheus/common v0.9.1
 	github.com/safchain/ethtool v0.0.0-20190326074333-42ed695e3de8
-	github.com/shirou/gopsutil v2.19.12+incompatible
+	github.com/shirou/gopsutil/v3 v3.20.12
 	github.com/sirupsen/logrus v1.4.2
 	github.com/spf13/afero v1.2.2
 	github.com/spf13/cobra v0.0.7
@@ -49,7 +47,7 @@ require (
 	google.golang.org/grpc v1.22.0 // indirect
 	gopkg.in/yaml.v2 v2.2.8
 	gotest.tools v2.2.0+incompatible // indirect
-	mvdan.cc/sh/v3 v3.2.1 // indirect
+	mvdan.cc/sh/v3 v3.2.1
 )
 
 go 1.13
