@@ -21,10 +21,10 @@ import (
 const defaultMode os.FileMode = 0644
 
 type writeFileCommand struct {
-	fs      afero.Fs
-	path    string
-	content string
-	mode    os.FileMode
+	fs	afero.Fs
+	path	string
+	content	string
+	mode	os.FileMode
 }
 
 func NewWriteFileModeCmd(

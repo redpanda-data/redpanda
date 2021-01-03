@@ -15,8 +15,8 @@ import (
 )
 
 type fileLock struct {
-	path  string
-	flock *syscall.Flock_t
+	path	string
+	flock	*syscall.Flock_t
 }
 
 func lockFile(path string) (*fileLock, error) {

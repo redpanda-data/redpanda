@@ -32,21 +32,21 @@ import (
 )
 
 type metricsResult struct {
-	rows    [][]string
-	metrics *system.Metrics
+	rows	[][]string
+	metrics	*system.Metrics
 }
 
 func NewStatusCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	var (
-		configFile string
-		send       bool
-		timeout    time.Duration
+		configFile	string
+		send		bool
+		timeout		time.Duration
 	)
 	command := &cobra.Command{
-		Use:          "status",
-		Short:        "Check the resource usage in the system, and optionally send it to Vectorized",
-		Long:         "",
-		SilenceUsage: true,
+		Use:		"status",
+		Short:		"Check the resource usage in the system, and optionally send it to Vectorized",
+		Long:		"",
+		SilenceUsage:	true,
 		RunE: func(ccmd *cobra.Command, args []string) error {
 			return executeStatus(fs, mgr, configFile, timeout, send)
 		},
@@ -287,8 +287,8 @@ func getKafkaInfoRows(
 	spacingRow := []string{"", ""}
 	type node struct {
 		// map[topic-name][]partitions
-		leaderParts  map[string][]int
-		replicaParts map[string][]int
+		leaderParts	map[string][]int
+		replicaParts	map[string][]int
 	}
 	nodePartitions := map[int]*node{}
 	for _, topic := range topics {
@@ -341,7 +341,7 @@ func getKafkaInfoRows(
 		}
 	}
 	nodeIDs := []int{}
-	for nodeID, _ := range nodePartitions {
+	for nodeID := range nodePartitions {
 		nodeIDs = append(nodeIDs, nodeID)
 	}
 	sort.Ints(nodeIDs)
@@ -393,9 +393,9 @@ func getKafkaInfoRows(
 
 func sendMetrics(conf config.Config, metrics *system.Metrics) error {
 	payload := api.MetricsPayload{
-		FreeMemoryMB:  metrics.FreeMemoryMB,
-		FreeSpaceMB:   metrics.FreeSpaceMB,
-		CpuPercentage: metrics.CpuPercentage,
+		FreeMemoryMB:	metrics.FreeMemoryMB,
+		FreeSpaceMB:	metrics.FreeSpaceMB,
+		CpuPercentage:	metrics.CpuPercentage,
 	}
 	return api.SendMetrics(payload, conf)
 }
@@ -406,7 +406,7 @@ func topicsDetail(admin sarama.ClusterAdmin) ([]*sarama.TopicMetadata, error) {
 		return nil, err
 	}
 	topicNames := []string{}
-	for name, _ := range topics {
+	for name := range topics {
 		topicNames = append(topicNames, name)
 	}
 	return admin.DescribeTopics(topicNames)
@@ -414,7 +414,7 @@ func topicsDetail(admin sarama.ClusterAdmin) ([]*sarama.TopicMetadata, error) {
 
 func formatTopicsAndPartitions(tps map[string][]int) string {
 	topicNames := []string{}
-	for topicName, _ := range tps {
+	for topicName := range tps {
 		topicNames = append(topicNames, topicName)
 	}
 	sort.Strings(topicNames)

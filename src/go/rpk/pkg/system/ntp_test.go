@@ -32,13 +32,13 @@ func (*procMock) IsRunning(_ time.Duration, _ string) bool {
 
 func Test_ntpQuery_checkWithTimedateCtl(t *testing.T) {
 	tests := []struct {
-		name      string
-		ntpOutput []string
-		want      bool
-		wantErr   bool
+		name		string
+		ntpOutput	[]string
+		want		bool
+		wantErr		bool
 	}{
 		{
-			name: "shall return true when clock is synced",
+			name:	"shall return true when clock is synced",
 			ntpOutput: []string{
 				"Local time: Tue 2019-07-23 07:17:38 UTC",
 				"Universal time: Tue 2019-07-23 07:17:38 UTC",
@@ -48,10 +48,10 @@ func Test_ntpQuery_checkWithTimedateCtl(t *testing.T) {
 				"NTP service: active",
 				"RTC in local TZ: no",
 			},
-			want: true,
+			want:	true,
 		},
 		{
-			name: "shall parse timedatectl with legacy output",
+			name:	"shall parse timedatectl with legacy output",
 			ntpOutput: []string{
 				"Local time: Tue 2019-07-23 07:17:38 UTC",
 				"Universal time: Tue 2019-07-23 07:17:38 UTC",
@@ -61,7 +61,7 @@ func Test_ntpQuery_checkWithTimedateCtl(t *testing.T) {
 				"NTP service: active",
 				"RTC in local TZ: no",
 			},
-			want: false,
+			want:	false,
 		},
 		{
 			name: "shall return an error when there is no" +
@@ -74,8 +74,8 @@ func Test_ntpQuery_checkWithTimedateCtl(t *testing.T) {
 				"NTP service: active",
 				"RTC in local TZ: no",
 			},
-			want:    false,
-			wantErr: true,
+			want:		false,
+			wantErr:	true,
 		},
 	}
 	for _, tt := range tests {
@@ -99,41 +99,41 @@ func Test_ntpQuery_checkWithTimedateCtl(t *testing.T) {
 
 func TestCheckNtpqOutput(t *testing.T) {
 	tests := []struct {
-		name           string
-		output         []string
-		expectedResult bool
-		expectedError  bool
+		name		string
+		output		[]string
+		expectedResult	bool
+		expectedError	bool
 	}{
 		{
-			name: "should return true if it's synced",
+			name:	"should return true if it's synced",
 			output: []string{
 				"     remote           refid      st t when poll reach   delay   offset  jitter",
 				"==============================================================================",
 				"*metadata.google 71.79.79.71      2 u  236 1024  377    0.738   -0.405   4.483",
 			},
-			expectedResult: true,
+			expectedResult:	true,
 		},
 		{
-			name: "should return false if the output is bad",
+			name:	"should return false if the output is bad",
 			output: []string{
 				"     remote           refid      st t when poll reach   delay   offset  jitter",
 				"==============================================================================",
 			},
-			expectedResult: false,
-			expectedError:  true,
+			expectedResult:	false,
+			expectedError:	true,
 		},
 		{
-			name: "should return false if the last requests were unsuccessful for each peer",
+			name:	"should return false if the last requests were unsuccessful for each peer",
 			output: []string{
 				"     remote           refid      st t when poll reach   delay   offset  jitter",
 				"==============================================================================",
 				"*metadata.google 71.79.79.71      2 u  236 1024  376    0.738   -0.405   4.483",
 				"*metadata2.google 71.79.79.72     2 u  236 1024  376    0.738   -0.405   4.483",
 			},
-			expectedResult: false,
+			expectedResult:	false,
 		},
 		{
-			name: "should return true if at least one the last requests was successful",
+			name:	"should return true if at least one the last requests was successful",
 			output: []string{
 				"     remote           refid      st t when poll reach   delay   offset  jitter",
 				"==============================================================================",
@@ -141,7 +141,7 @@ func TestCheckNtpqOutput(t *testing.T) {
 				"*metadata2.google 71.79.79.72     2 u  236 1024  376    0.738   -0.405   4.483",
 				"*metadata3.google 71.79.79.73     2 u  236 1024  377    0.738   -0.405   4.483",
 			},
-			expectedResult: true,
+			expectedResult:	true,
 		},
 	}
 

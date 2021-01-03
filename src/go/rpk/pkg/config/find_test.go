@@ -20,38 +20,38 @@ import (
 
 func TestFindConfig(t *testing.T) {
 	tests := []struct {
-		name    string
-		before  func(fs afero.Fs)
-		want    string
-		wantErr bool
+		name	string
+		before	func(fs afero.Fs)
+		want	string
+		wantErr	bool
 	}{
 		{
-			name:    "should return an error when config is not found",
-			before:  func(afero.Fs) {},
-			want:    "",
-			wantErr: true,
+			name:		"should return an error when config is not found",
+			before:		func(afero.Fs) {},
+			want:		"",
+			wantErr:	true,
 		},
 		{
-			name: "should return config file from parent directory",
+			name:	"should return config file from parent directory",
 			before: func(fs afero.Fs) {
 				currentDir := currentDir()
 				fs.MkdirAll(currentDir, 0755)
 				createConfigIn(fs, filepath.Dir(currentDir))
 			},
-			want: filepath.Join(filepath.Dir(currentDir()), "redpanda.yaml"),
+			want:	filepath.Join(filepath.Dir(currentDir()), "redpanda.yaml"),
 		},
 		{
-			name: "should return config file from 'etc' directory",
+			name:	"should return config file from 'etc' directory",
 			before: func(fs afero.Fs) {
 				createConfigIn(fs, "/etc/redpanda")
 				currentDir := currentDir()
 				fs.MkdirAll(currentDir, 0755)
 				createConfigIn(fs, filepath.Dir(currentDir))
 			},
-			want: "/etc/redpanda/redpanda.yaml",
+			want:	"/etc/redpanda/redpanda.yaml",
 		},
 		{
-			name: "should return config file from current directory",
+			name:	"should return config file from current directory",
 			before: func(fs afero.Fs) {
 				createConfigIn(fs, "/etc/redpanda")
 				currentDir := currentDir()
@@ -59,7 +59,7 @@ func TestFindConfig(t *testing.T) {
 				createConfigIn(fs, filepath.Dir(currentDir))
 				createConfigIn(fs, currentDir)
 			},
-			want: filepath.Join(currentDir(), "redpanda.yaml"),
+			want:	filepath.Join(currentDir(), "redpanda.yaml"),
 		},
 	}
 	for _, tt := range tests {

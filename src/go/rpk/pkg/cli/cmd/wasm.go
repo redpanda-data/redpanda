@@ -18,8 +18,8 @@ import (
 
 func NewWasmCommand(fs afero.Fs) *cobra.Command {
 	command := &cobra.Command{
-		Use:   "wasm",
-		Short: "Create and upload inline WASM engine scripts",
+		Use:	"wasm",
+		Short:	"Create and upload inline WASM engine scripts",
 	}
 	command.AddCommand(wasm.NewGenerateCommand(fs))
 	return command

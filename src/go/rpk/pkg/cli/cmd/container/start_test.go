@@ -26,14 +26,14 @@ import (
 
 func TestStart(t *testing.T) {
 	tests := []struct {
-		name           string
-		client         func() (common.Client, error)
-		nodes          uint
-		expectedErrMsg string
-		expectedOutput string
+		name		string
+		client		func() (common.Client, error)
+		nodes		uint
+		expectedErrMsg	string
+		expectedOutput	string
 	}{
 		{
-			name: "it should fail if the img can't be pulled and imgs can't be listed",
+			name:	"it should fail if the img can't be pulled and imgs can't be listed",
 			client: func() (common.Client, error) {
 				return &common.MockClient{
 					MockImagePull: func(
@@ -55,7 +55,7 @@ func TestStart(t *testing.T) {
 				" wasn't found either.",
 		},
 		{
-			name: "it should fail if the img couldn't be pulled bc of internet conn issues",
+			name:	"it should fail if the img couldn't be pulled bc of internet conn issues",
 			client: func() (common.Client, error) {
 				return &common.MockClient{
 					MockImagePull: func(
@@ -80,7 +80,7 @@ func TestStart(t *testing.T) {
 Please check your internet connection and try again.`,
 		},
 		{
-			name: "it should fail if the img can't be pulled and it isn't avail. locally",
+			name:	"it should fail if the img can't be pulled and it isn't avail. locally",
 			client: func() (common.Client, error) {
 				return &common.MockClient{
 					MockImagePull: func(
@@ -102,7 +102,7 @@ Please check your internet connection and try again.`,
 				" wasn't found either.",
 		},
 		{
-			name: "it should fail if creating the network fails",
+			name:	"it should fail if creating the network fails",
 			client: func() (common.Client, error) {
 				return &common.MockClient{
 					MockNetworkCreate: func(
@@ -117,10 +117,10 @@ Please check your internet connection and try again.`,
 					},
 				}, nil
 			},
-			expectedErrMsg: "Network create go boom",
+			expectedErrMsg:	"Network create go boom",
 		},
 		{
-			name: "it should fail if inspecting the network fails",
+			name:	"it should fail if inspecting the network fails",
 			client: func() (common.Client, error) {
 				return &common.MockClient{
 					MockNetworkInspect: func(
@@ -135,10 +135,10 @@ Please check your internet connection and try again.`,
 					},
 				}, nil
 			},
-			expectedErrMsg: "Can't inspect the network",
+			expectedErrMsg:	"Can't inspect the network",
 		},
 		{
-			name: "it should fail if the network config is corrupted",
+			name:	"it should fail if the network config is corrupted",
 			client: func() (common.Client, error) {
 				return &common.MockClient{
 					MockNetworkInspect: func(
@@ -150,17 +150,17 @@ Please check your internet connection and try again.`,
 							Config: []network.IPAMConfig{},
 						}
 						res := types.NetworkResource{
-							Name: "rpnet",
-							IPAM: ipam,
+							Name:	"rpnet",
+							IPAM:	ipam,
 						}
 						return res, nil
 					},
 				}, nil
 			},
-			expectedErrMsg: "'rpnet' network config is corrupted",
+			expectedErrMsg:	"'rpnet' network config is corrupted",
 		},
 		{
-			name: "it should fail if listing the containers fails",
+			name:	"it should fail if listing the containers fails",
 			client: func() (common.Client, error) {
 				return &common.MockClient{
 					MockContainerList: func(
@@ -171,10 +171,10 @@ Please check your internet connection and try again.`,
 					},
 				}, nil
 			},
-			expectedErrMsg: "Can't list",
+			expectedErrMsg:	"Can't list",
 		},
 		{
-			name: "it should fail if inspecting existing containers fails",
+			name:	"it should fail if inspecting existing containers fails",
 			client: func() (common.Client, error) {
 				return &common.MockClient{
 					MockContainerInspect: func(
@@ -190,7 +190,7 @@ Please check your internet connection and try again.`,
 					) ([]types.Container, error) {
 						return []types.Container{
 							{
-								ID: "a",
+								ID:	"a",
 								Labels: map[string]string{
 									"node-id": "0",
 								},
@@ -199,10 +199,10 @@ Please check your internet connection and try again.`,
 					},
 				}, nil
 			},
-			expectedErrMsg: "Can't inspect",
+			expectedErrMsg:	"Can't inspect",
 		},
 		{
-			name: "it should fail if creating the container fails",
+			name:	"it should fail if creating the container fails",
 			client: func() (common.Client, error) {
 				return &common.MockClient{
 					// NetworkInspect succeeds returning the
@@ -213,8 +213,8 @@ Please check your internet connection and try again.`,
 						_ types.NetworkInspectOptions,
 					) (types.NetworkResource, error) {
 						ipamConf := network.IPAMConfig{
-							Subnet:  "172.24.1.0/24",
-							Gateway: "172.24.1.1",
+							Subnet:		"172.24.1.0/24",
+							Gateway:	"172.24.1.1",
 						}
 						ipam := network.IPAM{
 							Config: []network.IPAMConfig{
@@ -222,8 +222,8 @@ Please check your internet connection and try again.`,
 							},
 						}
 						res := types.NetworkResource{
-							Name: "rpnet",
-							IPAM: ipam,
+							Name:	"rpnet",
+							IPAM:	ipam,
 						}
 						return res, nil
 					},
@@ -242,11 +242,11 @@ Please check your internet connection and try again.`,
 					},
 				}, nil
 			},
-			expectedErrMsg: "Can't create container",
+			expectedErrMsg:	"Can't create container",
 		},
 		{
-			name:  "it should allow creating a single container",
-			nodes: 1,
+			name:	"it should allow creating a single container",
+			nodes:	1,
 			client: func() (common.Client, error) {
 				return &common.MockClient{
 					// NetworkInspect succeeds returning the
@@ -257,8 +257,8 @@ Please check your internet connection and try again.`,
 						_ types.NetworkInspectOptions,
 					) (types.NetworkResource, error) {
 						ipamConf := network.IPAMConfig{
-							Subnet:  "172.24.1.0/24",
-							Gateway: "172.24.1.1",
+							Subnet:		"172.24.1.0/24",
+							Gateway:	"172.24.1.1",
 						}
 						ipam := network.IPAM{
 							Config: []network.IPAMConfig{
@@ -266,8 +266,8 @@ Please check your internet connection and try again.`,
 							},
 						}
 						res := types.NetworkResource{
-							Name: "rpnet",
-							IPAM: ipam,
+							Name:	"rpnet",
+							IPAM:	ipam,
 						}
 						return res, nil
 					},
@@ -286,11 +286,11 @@ Please check your internet connection and try again.`,
 					},
 				}, nil
 			},
-			expectedOutput: `Cluster started! You may use 'rpk api' to interact with the cluster. E.g:\n\nrpk api status`,
+			expectedOutput:	`Cluster started! You may use 'rpk api' to interact with the cluster. E.g:\n\nrpk api status`,
 		},
 		{
-			name:  "it should allow creating multiple containers",
-			nodes: 3,
+			name:	"it should allow creating multiple containers",
+			nodes:	3,
 			client: func() (common.Client, error) {
 				return &common.MockClient{
 					// NetworkInspect succeeds returning the
@@ -301,8 +301,8 @@ Please check your internet connection and try again.`,
 						_ types.NetworkInspectOptions,
 					) (types.NetworkResource, error) {
 						ipamConf := network.IPAMConfig{
-							Subnet:  "172.24.1.0/24",
-							Gateway: "172.24.1.1",
+							Subnet:		"172.24.1.0/24",
+							Gateway:	"172.24.1.1",
 						}
 						ipam := network.IPAM{
 							Config: []network.IPAMConfig{
@@ -310,8 +310,8 @@ Please check your internet connection and try again.`,
 							},
 						}
 						res := types.NetworkResource{
-							Name: "rpnet",
-							IPAM: ipam,
+							Name:	"rpnet",
+							IPAM:	ipam,
 						}
 						return res, nil
 					},
@@ -330,33 +330,33 @@ Please check your internet connection and try again.`,
 					},
 				}, nil
 			},
-			expectedOutput: `Cluster started! You may use 'rpk api' to interact with the cluster. E.g:\n\nrpk api status`,
+			expectedOutput:	`Cluster started! You may use 'rpk api' to interact with the cluster. E.g:\n\nrpk api status`,
 		},
 		{
-			name:  "it should do nothing if there's an existing running cluster",
-			nodes: 1,
+			name:	"it should do nothing if there's an existing running cluster",
+			nodes:	1,
 			client: func() (common.Client, error) {
 				return &common.MockClient{
-					MockContainerInspect: common.MockContainerInspect,
+					MockContainerInspect:	common.MockContainerInspect,
 					MockContainerList: func(
 						_ context.Context,
 						_ types.ContainerListOptions,
 					) ([]types.Container, error) {
 						return []types.Container{
 							{
-								ID: "a",
+								ID:	"a",
 								Labels: map[string]string{
 									"node-id": "0",
 								},
 							},
 							{
-								ID: "b",
+								ID:	"b",
 								Labels: map[string]string{
 									"node-id": "1",
 								},
 							},
 							{
-								ID: "c",
+								ID:	"c",
 								Labels: map[string]string{
 									"node-id": "2",
 								},

@@ -24,8 +24,8 @@ import (
 )
 
 const (
-	ModeDev  = "dev"
-	ModeProd = "prod"
+	ModeDev		= "dev"
+	ModeProd	= "prod"
 )
 
 func InitViper(fs afero.Fs) *viper.Viper {
@@ -79,24 +79,24 @@ func Default() *Config {
 
 func defaultMap() map[string]interface{} {
 	return map[string]interface{}{
-		"config_file": "/etc/redpanda/redpanda.yaml",
+		"config_file":	"/etc/redpanda/redpanda.yaml",
 		"redpanda": map[string]interface{}{
-			"data_directory": "/var/lib/redpanda/data",
+			"data_directory":	"/var/lib/redpanda/data",
 			"rpc_server": map[string]interface{}{
-				"address": "0.0.0.0",
-				"port":    33145,
+				"address":	"0.0.0.0",
+				"port":		33145,
 			},
 			"kafka_api": map[string]interface{}{
-				"address": "0.0.0.0",
-				"port":    9092,
+				"address":	"0.0.0.0",
+				"port":		9092,
 			},
 			"admin": map[string]interface{}{
-				"address": "0.0.0.0",
-				"port":    9644,
+				"address":	"0.0.0.0",
+				"port":		9644,
 			},
-			"node_id":        0,
-			"seed_servers":   []interface{}{},
-			"developer_mode": true,
+			"node_id":		0,
+			"seed_servers":		[]interface{}{},
+			"developer_mode":	true,
 		},
 		"rpk": map[string]interface{}{
 			"coredump_dir": "/var/lib/redpanda/coredump",
@@ -150,10 +150,10 @@ func setDevelopment(conf *Config) *Config {
 	conf.Redpanda.DeveloperMode = true
 	// Defaults to setting all tuners to false
 	conf.Rpk = RpkConfig{
-		EnableUsageStats: conf.Rpk.EnableUsageStats,
-		CoredumpDir:      conf.Rpk.CoredumpDir,
-		SMP:              Default().Rpk.SMP,
-		Overprovisioned:  true,
+		EnableUsageStats:	conf.Rpk.EnableUsageStats,
+		CoredumpDir:		conf.Rpk.CoredumpDir,
+		SMP:			Default().Rpk.SMP,
+		Overprovisioned:	true,
 	}
 	return conf
 }
@@ -260,7 +260,7 @@ func checkRedpandaConfig(v *viper.Viper) []error {
 			}
 		}
 	}
-	var seedServersSlice []*SeedServer //map[string]interface{}
+	var seedServersSlice []*SeedServer	//map[string]interface{}
 	err := v.UnmarshalKey("redpanda.seed_servers", &seedServersSlice)
 	if err != nil {
 		log.Error(err)

@@ -20,45 +20,45 @@ import (
 func TestReadRuntineOptions(t *testing.T) {
 	path := "/proc/test"
 	tests := []struct {
-		name    string
-		opts    []byte
-		want    *RuntimeOptions
-		wantErr bool
+		name	string
+		opts	[]byte
+		want	*RuntimeOptions
+		wantErr	bool
 	}{
 		{
-			name: "shall return correct set of options",
-			opts: []byte("opt1 opt2 [opt3] opt4\n"),
+			name:	"shall return correct set of options",
+			opts:	[]byte("opt1 opt2 [opt3] opt4\n"),
 			want: &RuntimeOptions{
 				optionsMap: map[string]bool{
-					"opt1": false,
-					"opt2": false,
-					"opt3": true,
-					"opt4": false,
+					"opt1":	false,
+					"opt2":	false,
+					"opt3":	true,
+					"opt4":	false,
 				},
 			},
 		},
 		{
-			name: "shall return correct set of options when last one is active",
-			opts: []byte("opt1 opt2 [opt3]\n"),
+			name:	"shall return correct set of options when last one is active",
+			opts:	[]byte("opt1 opt2 [opt3]\n"),
 			want: &RuntimeOptions{
 				optionsMap: map[string]bool{
-					"opt1": false,
-					"opt2": false,
-					"opt3": true,
+					"opt1":	false,
+					"opt2":	false,
+					"opt3":	true,
 				},
 			},
 		},
 		{
-			name: "shall return the option when there is only one string",
-			opts: []byte("opt1\n"),
+			name:	"shall return the option when there is only one string",
+			opts:	[]byte("opt1\n"),
 			want: &RuntimeOptions{
 				optionsMap: map[string]bool{"opt1": true},
 			},
 		},
 		{
-			name:    "shall return error when there are more than one line in file",
-			opts:    []byte("opt1 opt2 [opt3]\n second line\n"),
-			wantErr: true,
+			name:		"shall return error when there are more than one line in file",
+			opts:		[]byte("opt1 opt2 [opt3]\n second line\n"),
+			wantErr:	true,
 		},
 	}
 	for _, tt := range tests {

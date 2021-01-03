@@ -29,27 +29,27 @@ import (
 )
 
 var (
-	registry          = "docker.io"
-	tag               = "latest"
-	redpandaImageBase = "vectorized/redpanda:" + tag
-	redpandaImage     = registry + "/" + redpandaImageBase
+	registry		= "docker.io"
+	tag			= "latest"
+	redpandaImageBase	= "vectorized/redpanda:" + tag
+	redpandaImage		= registry + "/" + redpandaImageBase
 )
 
 const (
-	redpandaNetwork = "redpanda"
+	redpandaNetwork	= "redpanda"
 
-	defaultDockerClientTimeout = 10 * time.Second
+	defaultDockerClientTimeout	= 10 * time.Second
 )
 
 type NodeState struct {
-	Status        string
-	Running       bool
-	ConfigFile    string
-	HostRPCPort   uint
-	HostKafkaPort uint
-	ID            uint
-	ContainerIP   string
-	ContainerID   string
+	Status		string
+	Running		bool
+	ConfigFile	string
+	HostRPCPort	uint
+	HostKafkaPort	uint
+	ID		uint
+	ContainerIP	string
+	ContainerID	string
 }
 
 // Returns the container name for the given node ID.
@@ -69,8 +69,8 @@ func GetExistingNodes(c Client) ([]*NodeState, error) {
 	containers, err := c.ContainerList(
 		ctx,
 		types.ContainerListOptions{
-			All:     true,
-			Filters: filters,
+			All:		true,
+			Filters:	filters,
 		},
 	)
 	if err != nil {
@@ -125,13 +125,13 @@ func GetState(c Client, nodeID uint) (*NodeState, error) {
 		return nil, err
 	}
 	return &NodeState{
-		Running:       containerJSON.State.Running,
-		Status:        containerJSON.State.Status,
-		ContainerID:   containerJSON.ID,
-		ContainerIP:   ipAddress,
-		HostKafkaPort: hostKafkaPort,
-		HostRPCPort:   hostRPCPort,
-		ID:            nodeID,
+		Running:	containerJSON.State.Running,
+		Status:		containerJSON.State.Status,
+		ContainerID:	containerJSON.ID,
+		ContainerIP:	ipAddress,
+		HostKafkaPort:	hostKafkaPort,
+		HostRPCPort:	hostRPCPort,
+		ID:		nodeID,
 	}, nil
 }
 
@@ -162,13 +162,13 @@ func CreateNetwork(c Client) (string, error) {
 	)
 	resp, err := c.NetworkCreate(
 		ctx, redpandaNetwork, types.NetworkCreate{
-			Driver: "bridge",
+			Driver:	"bridge",
 			IPAM: &network.IPAM{
-				Driver: "default",
+				Driver:	"default",
 				Config: []network.IPAMConfig{
-					network.IPAMConfig{
-						Subnet:  "172.24.1.0/24",
-						Gateway: "172.24.1.1",
+					{
+						Subnet:		"172.24.1.0/24",
+						Gateway:	"172.24.1.1",
 					},
 				},
 			},
@@ -230,35 +230,35 @@ func CreateNode(
 		fmt.Sprintf("%s:%d", ip, config.Default().Redpanda.RPCServer.Port),
 	}
 	containerConfig := container.Config{
-		Image:    redpandaImageBase,
-		Hostname: hostname,
-		Cmd:      append(cmd, args...),
+		Image:		redpandaImageBase,
+		Hostname:	hostname,
+		Cmd:		append(cmd, args...),
 		ExposedPorts: nat.PortSet{
-			rPort: {},
-			kPort: {},
+			rPort:	{},
+			kPort:	{},
 		},
 		Labels: map[string]string{
-			"cluster-id": "redpanda",
-			"node-id":    fmt.Sprint(nodeID),
+			"cluster-id":	"redpanda",
+			"node-id":	fmt.Sprint(nodeID),
 		},
 	}
 	hostConfig := container.HostConfig{
 		PortBindings: nat.PortMap{
-			rPort: []nat.PortBinding{nat.PortBinding{
+			rPort: []nat.PortBinding{{
 				HostPort: fmt.Sprint(rpcPort),
 			}},
-			kPort: []nat.PortBinding{nat.PortBinding{
+			kPort: []nat.PortBinding{{
 				HostPort: fmt.Sprint(kafkaPort),
 			}},
 		},
 	}
 	networkConfig := network.NetworkingConfig{
 		EndpointsConfig: map[string]*network.EndpointSettings{
-			redpandaNetwork: &network.EndpointSettings{
+			redpandaNetwork: {
 				IPAMConfig: &network.EndpointIPAMConfig{
 					IPv4Address: ip,
 				},
-				Aliases: []string{hostname},
+				Aliases:	[]string{hostname},
 			},
 		},
 	}
@@ -275,10 +275,10 @@ func CreateNode(
 		return nil, err
 	}
 	return &NodeState{
-		HostKafkaPort: kafkaPort,
-		ID:            nodeID,
-		ContainerID:   container.ID,
-		ContainerIP:   ip,
+		HostKafkaPort:	kafkaPort,
+		ID:		nodeID,
+		ContainerID:	container.ID,
+		ContainerIP:	ip,
 	}, nil
 }
 

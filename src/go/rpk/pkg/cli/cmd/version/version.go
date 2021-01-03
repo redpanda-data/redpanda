@@ -12,8 +12,8 @@ package version
 import "fmt"
 
 var (
-	version string
-	rev     string
+	version	string
+	rev	string
 )
 
 func Version() string {

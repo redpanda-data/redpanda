@@ -23,18 +23,18 @@ func NewCheckedTunable(
 	disablePostTuneCheck bool,
 ) Tunable {
 	return &checkedTunable{
-		checker:              checker,
-		tuneAction:           tuneAction,
-		supportedAction:      supportedAction,
-		disablePostTuneCheck: disablePostTuneCheck,
+		checker:		checker,
+		tuneAction:		tuneAction,
+		supportedAction:	supportedAction,
+		disablePostTuneCheck:	disablePostTuneCheck,
 	}
 }
 
 type checkedTunable struct {
-	checker              Checker
-	tuneAction           func() TuneResult
-	supportedAction      func() (supported bool, reason string)
-	disablePostTuneCheck bool
+	checker			Checker
+	tuneAction		func() TuneResult
+	supportedAction		func() (supported bool, reason string)
+	disablePostTuneCheck	bool
 }
 
 func (t *checkedTunable) CheckIfSupported() (supported bool, reason string) {

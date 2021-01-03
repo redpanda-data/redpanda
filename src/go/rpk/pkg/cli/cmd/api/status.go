@@ -23,16 +23,16 @@ import (
 
 type node struct {
 	// map[topic-name][]partitions
-	leaderParts  map[string][]int
-	replicaParts map[string][]int
+	leaderParts	map[string][]int
+	replicaParts	map[string][]int
 }
 
 func NewStatusCommand(
 	admin func() (sarama.ClusterAdmin, error),
 ) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "status",
-		Short: "Get the cluster's status",
+		Use:	"status",
+		Short:	"Get the cluster's status",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			adm, err := admin()
 			if err != nil {
@@ -146,8 +146,8 @@ func partitionsPerNode(topics []*sarama.TopicMetadata) map[int]*node {
 		n := nodePartitions[ID]
 		if n == nil {
 			n = &node{
-				leaderParts:  map[string][]int{},
-				replicaParts: map[string][]int{}}
+				leaderParts:	map[string][]int{},
+				replicaParts:	map[string][]int{}}
 			nodePartitions[ID] = n
 		}
 		return n
@@ -183,7 +183,7 @@ func topicsDetail(admin sarama.ClusterAdmin) ([]*sarama.TopicMetadata, error) {
 		return nil, err
 	}
 	topicNames := []string{}
-	for name, _ := range topics {
+	for name := range topics {
 		topicNames = append(topicNames, name)
 	}
 	return admin.DescribeTopics(topicNames)
@@ -191,7 +191,7 @@ func topicsDetail(admin sarama.ClusterAdmin) ([]*sarama.TopicMetadata, error) {
 
 func formatTopicsAndPartitions(tps map[string][]int) string {
 	topicNames := []string{}
-	for topicName, _ := range tps {
+	for topicName := range tps {
 		topicNames = append(topicNames, topicName)
 	}
 	sort.Strings(topicNames)

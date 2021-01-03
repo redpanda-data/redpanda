@@ -18,51 +18,51 @@ import (
 
 func Test_intChecker_Check(t *testing.T) {
 	tests := []struct {
-		name           string
-		check          func(c int) bool
-		renderRequired func() string
-		getCurrent     func() (int, error)
-		desc           string
-		severity       Severity
-		want           *CheckResult
+		name		string
+		check		func(c int) bool
+		renderRequired	func() string
+		getCurrent	func() (int, error)
+		desc		string
+		severity	Severity
+		want		*CheckResult
 	}{
 		{
-			name:           "Shall return valid result when condition is met",
-			check:          func(c int) bool { return c == 0 },
-			renderRequired: func() string { return "0" },
-			getCurrent:     func() (int, error) { return 0, nil },
+			name:		"Shall return valid result when condition is met",
+			check:		func(c int) bool { return c == 0 },
+			renderRequired:	func() string { return "0" },
+			getCurrent:	func() (int, error) { return 0, nil },
 			want: &CheckResult{
-				IsOk:     true,
-				Current:  "0",
-				Desc:     "An int check",
-				Severity: Warning,
-				Required: "0",
+				IsOk:		true,
+				Current:	"0",
+				Desc:		"An int check",
+				Severity:	Warning,
+				Required:	"0",
 			},
 		},
 		{
-			name:           "Shall return not valid result when condition is not met",
-			check:          func(c int) bool { return c == 0 },
-			renderRequired: func() string { return "0" },
-			getCurrent:     func() (int, error) { return 1, nil },
+			name:		"Shall return not valid result when condition is not met",
+			check:		func(c int) bool { return c == 0 },
+			renderRequired:	func() string { return "0" },
+			getCurrent:	func() (int, error) { return 1, nil },
 			want: &CheckResult{
-				IsOk:     false,
-				Current:  "1",
-				Desc:     "An int check",
-				Severity: Warning,
-				Required: "0",
+				IsOk:		false,
+				Current:	"1",
+				Desc:		"An int check",
+				Severity:	Warning,
+				Required:	"0",
 			},
 		},
 		{
-			name:           "Shall return result with an error when getCurrent returns an error",
-			check:          func(c int) bool { return c == 0 },
-			renderRequired: func() string { return "0" },
-			getCurrent:     func() (int, error) { return 0, errors.New("err") },
+			name:		"Shall return result with an error when getCurrent returns an error",
+			check:		func(c int) bool { return c == 0 },
+			renderRequired:	func() string { return "0" },
+			getCurrent:	func() (int, error) { return 0, errors.New("err") },
 			want: &CheckResult{
-				IsOk:     false,
-				Desc:     "An int check",
-				Err:      errors.New("err"),
-				Severity: Warning,
-				Required: "0",
+				IsOk:		false,
+				Desc:		"An int check",
+				Err:		errors.New("err"),
+				Severity:	Warning,
+				Required:	"0",
 			},
 		},
 	}

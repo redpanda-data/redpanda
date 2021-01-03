@@ -35,16 +35,16 @@ const (
 )
 
 var (
-	brokerList = flag.String("brokers", "localhost:9092", "The comma separated list of brokers in the Kafka cluster")
-	topic      = flag.String("topic", "", "The topic to consume")
-	sleep      = flag.Int("sleep", 1000, "The number of nanoseconds to sleep between producing messages")
-	messages   = flag.Int("messages", 1000000, "The number of messages to produce")
+	brokerList	= flag.String("brokers", "localhost:9092", "The comma separated list of brokers in the Kafka cluster")
+	topic		= flag.String("topic", "", "The topic to consume")
+	sleep		= flag.Int("sleep", 1000, "The number of nanoseconds to sleep between producing messages")
+	messages	= flag.Int("messages", 1000000, "The number of messages to produce")
 
-	verbose = flag.Bool("verbose", false, "Whether to turn on sarama logging")
+	verbose	= flag.Bool("verbose", false, "Whether to turn on sarama logging")
 
-	logger   = log.New(os.Stderr, "", log.LstdFlags)
-	stats    = &Stats{}
-	shutdown = make(chan os.Signal, 1)
+	logger		= log.New(os.Stderr, "", log.LstdFlags)
+	stats		= &Stats{}
+	shutdown	= make(chan os.Signal, 1)
 )
 
 func StringWithCharset(length int, charset string) string {
@@ -63,7 +63,7 @@ func monitor() {
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
-	for _ = range ticker.C {
+	for range ticker.C {
 		stats.Print()
 	}
 }
@@ -151,10 +151,10 @@ func expectationProducer(
 ProducerLoop:
 	for i := 0; i < *messages; i++ {
 		msg := &sarama.ProducerMessage{
-			Topic:    *topic,
-			Key:      sarama.StringEncoder(fmt.Sprintf("%d", i)),
-			Value:    sarama.StringEncoder(AlphanumString(1024)),
-			Metadata: &MessageMetadata{Enqueued: time.Now()},
+			Topic:		*topic,
+			Key:		sarama.StringEncoder(fmt.Sprintf("%d", i)),
+			Value:		sarama.StringEncoder(AlphanumString(1024)),
+			Metadata:	&MessageMetadata{Enqueued: time.Now()},
 		}
 
 		select {
@@ -176,8 +176,8 @@ ProducerLoop:
 }
 
 type partitionVerifier struct {
-	pc           sarama.PartitionConsumer
-	expectations chan *sarama.ProducerMessage
+	pc		sarama.PartitionConsumer
+	expectations	chan *sarama.ProducerMessage
 }
 
 func expectationConsumer(
@@ -193,8 +193,8 @@ func expectationConsumer(
 	}()
 
 	var (
-		partitionVerifiers = make(map[int32]*partitionVerifier)
-		consumerWg         sync.WaitGroup
+		partitionVerifiers	= make(map[int32]*partitionVerifier)
+		consumerWg		sync.WaitGroup
 	)
 
 	for expectation := range expectations {

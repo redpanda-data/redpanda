@@ -29,8 +29,8 @@ func NewNoopFormatter() logrus.Formatter {
 }
 
 var logLevelColorMap = map[logrus.Level]*color.Color{
-	logrus.WarnLevel:  color.New(color.FgYellow),
-	logrus.ErrorLevel: color.New(color.FgRed),
+	logrus.WarnLevel:	color.New(color.FgYellow),
+	logrus.ErrorLevel:	color.New(color.FgRed),
 }
 
 type rpkLogFormatter struct {

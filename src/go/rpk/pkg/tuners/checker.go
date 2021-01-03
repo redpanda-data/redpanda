@@ -12,7 +12,7 @@ package tuners
 type Severity byte
 
 const (
-	Fatal = iota
+	Fatal	= iota
 	Warning
 )
 
@@ -27,13 +27,13 @@ func (s Severity) String() string {
 }
 
 type CheckResult struct {
-	CheckerId CheckerID
-	IsOk      bool
-	Err       error
-	Current   string
-	Desc      string
-	Severity  Severity
-	Required  string
+	CheckerId	CheckerID
+	IsOk		bool
+	Err		error
+	Current		string
+	Desc		string
+	Severity	Severity
+	Required	string
 }
 
 type Checker interface {

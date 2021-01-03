@@ -22,9 +22,9 @@ import (
 )
 
 type Metrics struct {
-	CpuPercentage float64
-	FreeMemoryMB  float64
-	FreeSpaceMB   float64
+	CpuPercentage	float64
+	FreeMemoryMB	float64
+	FreeSpaceMB	float64
 }
 
 func GatherMetrics(

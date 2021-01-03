@@ -60,8 +60,8 @@ type Manager interface {
 }
 
 type manager struct {
-	fs afero.Fs
-	v  *viper.Viper
+	fs	afero.Fs
+	v	*viper.Viper
 }
 
 func NewManager(fs afero.Fs) Manager {

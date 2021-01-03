@@ -54,23 +54,23 @@ func TestWasmCommand(t *testing.T) {
 	path, err := os.Getwd()
 	require.NoError(t, err)
 	tests := []struct {
-		name           string
-		args           []string
-		before         func(afero.Fs) error
-		check          func(fs afero.Fs, t *testing.T)
-		expectedErrMsg string
+		name		string
+		args		[]string
+		before		func(afero.Fs) error
+		check		func(fs afero.Fs, t *testing.T)
+		expectedErrMsg	string
 	}{
 		{
-			name: "should create an npm template with its folder",
-			args: []string{"generate"},
+			name:	"should create an npm template with its folder",
+			args:	[]string{"generate"},
 			check: func(fs afero.Fs, t *testing.T) {
 				dir := filepath.Join(path, "wasm")
 				checkGeneratedFiles(fs, t, dir)
 			},
 		},
 		{
-			name: "should create the project at the given path",
-			args: []string{"generate", "--dir", "./newFolder"},
+			name:	"should create the project at the given path",
+			args:	[]string{"generate", "--dir", "./newFolder"},
 			check: func(fs afero.Fs, t *testing.T) {
 				absolutePath, err := filepath.Abs(".")
 				require.NoError(t, err)
@@ -80,7 +80,7 @@ func TestWasmCommand(t *testing.T) {
 		}, {
 			name: "should create the project at the given path, also" +
 				"if the folder exists",
-			args: []string{"generate", "--dir", "./existFolder"},
+			args:	[]string{"generate", "--dir", "./existFolder"},
 			before: func(fs afero.Fs) error {
 				return fs.MkdirAll("./existFolder", 0755)
 			},
@@ -93,7 +93,7 @@ func TestWasmCommand(t *testing.T) {
 		}, {
 			name: "should fail if the given dir contains files created by " +
 				"this command*",
-			args: []string{"generate", "--dir", "./existFolder"},
+			args:	[]string{"generate", "--dir", "./existFolder"},
 			before: func(fs afero.Fs) error {
 				absolutePath, err := filepath.Abs(".")
 				folderPath := filepath.Join(absolutePath, "existFolder")
@@ -104,8 +104,8 @@ func TestWasmCommand(t *testing.T) {
 			expectedErrMsg: fmt.Sprintf("The directory %s/existFolder/"+
 				" contains files that could conflict: \n package.json", path),
 		}, {
-			name: "should create webpack file with executable permission",
-			args: []string{"generate"},
+			name:	"should create webpack file with executable permission",
+			args:	[]string{"generate"},
 			check: func(fs afero.Fs, t *testing.T) {
 				dir := filepath.Join(path, "wasm", "webpack.js")
 				info, _ := fs.Stat(dir)

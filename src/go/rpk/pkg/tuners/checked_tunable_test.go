@@ -17,12 +17,12 @@ import (
 )
 
 type checkedTunerMock struct {
-	checkCalled bool
-	tuneCalled  bool
-	severity    Severity
-	supported   func() (bool, string)
-	check       func() *CheckResult
-	tune        func() TuneResult
+	checkCalled	bool
+	tuneCalled	bool
+	severity	Severity
+	supported	func() (bool, string)
+	check		func() *CheckResult
+	tune		func() TuneResult
 }
 
 func (c *checkedTunerMock) Id() CheckerID {
@@ -57,15 +57,15 @@ func (c *checkedTunerMock) CheckIfSupported() (bool, string) {
 
 func TestTune(t *testing.T) {
 	tests := []struct {
-		name             string
-		check            func() *CheckResult
-		tune             func() TuneResult
-		severity         Severity
-		want             TuneResult
-		expectTuneCalled bool
+		name			string
+		check			func() *CheckResult
+		tune			func() TuneResult
+		severity		Severity
+		want			TuneResult
+		expectTuneCalled	bool
 	}{
 		{
-			name: "should not execute tuner when condition is already met",
+			name:	"should not execute tuner when condition is already met",
 			check: func() *CheckResult {
 				return &CheckResult{
 					IsOk: true,
@@ -74,41 +74,41 @@ func TestTune(t *testing.T) {
 			tune: func() TuneResult {
 				return NewTuneResult(false)
 			},
-			severity:         Fatal,
-			want:             NewTuneResult(false),
-			expectTuneCalled: false,
+			severity:		Fatal,
+			want:			NewTuneResult(false),
+			expectTuneCalled:	false,
 		},
 		{
-			name: "Tune result should contain an error if tuning was not successful",
+			name:	"Tune result should contain an error if tuning was not successful",
 			check: func() *CheckResult {
 				return &CheckResult{
-					IsOk:    false,
-					Current: "smth",
+					IsOk:		false,
+					Current:	"smth",
 				}
 			},
 			tune: func() TuneResult {
 				return NewTuneResult(false)
 			},
-			severity: Fatal,
+			severity:	Fatal,
 			want: NewTuneError(errors.New(
 				"check 'mocked check' failed after its associated tuners ran. Severity: Fatal, required value: 'r', current value: 'smth'",
 			)),
-			expectTuneCalled: true,
+			expectTuneCalled:	true,
 		},
 		{
-			name: "should not fail if the checker fails and its severity is Warning",
+			name:	"should not fail if the checker fails and its severity is Warning",
 			check: func() *CheckResult {
 				return &CheckResult{
-					IsOk:    false,
-					Current: "smth",
+					IsOk:		false,
+					Current:	"smth",
 				}
 			},
 			tune: func() TuneResult {
 				return NewTuneResult(false)
 			},
-			severity:         Warning,
-			want:             NewTuneResult(false),
-			expectTuneCalled: true,
+			severity:		Warning,
+			want:			NewTuneResult(false),
+			expectTuneCalled:	true,
 		},
 	}
 	for _, tt := range tests {
@@ -117,9 +117,9 @@ func TestTune(t *testing.T) {
 				supported: func() (bool, string) {
 					return true, ""
 				},
-				check:    tt.check,
-				tune:     tt.tune,
-				severity: tt.severity,
+				check:		tt.check,
+				tune:		tt.tune,
+				severity:	tt.severity,
 			}
 			ct := NewCheckedTunable(c, c.Tune, c.CheckIfSupported, false)
 			got := ct.Tune()

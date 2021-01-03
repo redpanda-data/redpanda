@@ -15,10 +15,10 @@ import (
 )
 
 type MemInfo struct {
-	MemTotal       uint64
-	MemFree        uint64
-	CGroupMemLimit uint64
-	SwapTotal      uint64
+	MemTotal	uint64
+	MemFree		uint64
+	CGroupMemLimit	uint64
+	SwapTotal	uint64
 }
 
 func GetTransparentHugePagesActive(fs afero.Fs) (bool, error) {

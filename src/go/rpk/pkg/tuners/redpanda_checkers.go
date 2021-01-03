@@ -30,7 +30,7 @@ import (
 type CheckerID int
 
 const (
-	ConfigFileChecker = iota
+	ConfigFileChecker	= iota
 	DataDirAccessChecker
 	DiskSpaceChecker
 	FreeMemChecker
@@ -214,32 +214,32 @@ func RedpandaCheckers(
 	netCheckersFactory := NewNetCheckersFactory(
 		fs, irqProcFile, irqDeviceInfo, ethtool, balanceService, cpuMasks)
 	checkers := map[CheckerID][]Checker{
-		ConfigFileChecker:             []Checker{NewConfigChecker(config)},
-		IoConfigFileChecker:           []Checker{NewIOConfigFileExistanceChecker(fs, ioConfigFile)},
-		FreeMemChecker:                []Checker{NewMemoryChecker(fs)},
-		SwapChecker:                   []Checker{NewSwapChecker(fs)},
-		DataDirAccessChecker:          []Checker{NewDataDirWritableChecker(fs, config.Redpanda.Directory)},
-		DiskSpaceChecker:              []Checker{NewFreeDiskSpaceChecker(config.Redpanda.Directory)},
-		FsTypeChecker:                 []Checker{NewFilesystemTypeChecker(config.Redpanda.Directory)},
-		TransparentHugePagesChecker:   []Checker{NewTransparentHugePagesChecker(fs)},
-		NtpChecker:                    []Checker{NewNTPSyncChecker(timeout, fs)},
-		SchedulerChecker:              []Checker{schedulerChecker},
-		NomergesChecker:               []Checker{nomergesChecker},
-		DiskIRQsAffinityChecker:       []Checker{dirIRQAffinityChecker},
-		DiskIRQsAffinityStaticChecker: []Checker{dirIRQAffinityStaticChecker},
-		FstrimChecker:                 []Checker{NewFstrimChecker()},
-		SynBacklogChecker:             []Checker{netCheckersFactory.NewSynBacklogChecker()},
-		ListenBacklogChecker:          []Checker{netCheckersFactory.NewListenBacklogChecker()},
-		RfsTableEntriesChecker:        []Checker{netCheckersFactory.NewRfsTableSizeChecker()},
-		NicIRQsAffinitStaticChecker:   []Checker{netCheckersFactory.NewNicIRQAffinityStaticChecker(interfaces)},
-		NicIRQsAffinitChecker:         netCheckersFactory.NewNicIRQAffinityCheckers(interfaces, irq.Default, "all"),
-		NicRpsChecker:                 netCheckersFactory.NewNicRpsSetCheckers(interfaces, irq.Default, "all"),
-		NicRfsChecker:                 netCheckersFactory.NewNicRfsCheckers(interfaces),
-		NicXpsChecker:                 netCheckersFactory.NewNicXpsCheckers(interfaces),
-		MaxAIOEvents:                  []Checker{NewMaxAIOEventsChecker(fs)},
-		ClockSource:                   []Checker{NewClockSourceChecker(fs)},
-		Swappiness:                    []Checker{NewSwappinessChecker(fs)},
-		KernelVersion:                 []Checker{NewKernelVersionChecker(GetKernelVersion)},
+		ConfigFileChecker:		{NewConfigChecker(config)},
+		IoConfigFileChecker:		{NewIOConfigFileExistanceChecker(fs, ioConfigFile)},
+		FreeMemChecker:			{NewMemoryChecker(fs)},
+		SwapChecker:			{NewSwapChecker(fs)},
+		DataDirAccessChecker:		{NewDataDirWritableChecker(fs, config.Redpanda.Directory)},
+		DiskSpaceChecker:		{NewFreeDiskSpaceChecker(config.Redpanda.Directory)},
+		FsTypeChecker:			{NewFilesystemTypeChecker(config.Redpanda.Directory)},
+		TransparentHugePagesChecker:	{NewTransparentHugePagesChecker(fs)},
+		NtpChecker:			{NewNTPSyncChecker(timeout, fs)},
+		SchedulerChecker:		{schedulerChecker},
+		NomergesChecker:		{nomergesChecker},
+		DiskIRQsAffinityChecker:	{dirIRQAffinityChecker},
+		DiskIRQsAffinityStaticChecker:	{dirIRQAffinityStaticChecker},
+		FstrimChecker:			{NewFstrimChecker()},
+		SynBacklogChecker:		{netCheckersFactory.NewSynBacklogChecker()},
+		ListenBacklogChecker:		{netCheckersFactory.NewListenBacklogChecker()},
+		RfsTableEntriesChecker:		{netCheckersFactory.NewRfsTableSizeChecker()},
+		NicIRQsAffinitStaticChecker:	{netCheckersFactory.NewNicIRQAffinityStaticChecker(interfaces)},
+		NicIRQsAffinitChecker:		netCheckersFactory.NewNicIRQAffinityCheckers(interfaces, irq.Default, "all"),
+		NicRpsChecker:			netCheckersFactory.NewNicRpsSetCheckers(interfaces, irq.Default, "all"),
+		NicRfsChecker:			netCheckersFactory.NewNicRfsCheckers(interfaces),
+		NicXpsChecker:			netCheckersFactory.NewNicXpsCheckers(interfaces),
+		MaxAIOEvents:			{NewMaxAIOEventsChecker(fs)},
+		ClockSource:			{NewClockSourceChecker(fs)},
+		Swappiness:			{NewSwappinessChecker(fs)},
+		KernelVersion:			{NewKernelVersionChecker(GetKernelVersion)},
 	}
 
 	v, err := cloud.AvailableVendor()

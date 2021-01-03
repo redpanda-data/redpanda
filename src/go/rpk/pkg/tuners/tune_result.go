@@ -16,8 +16,8 @@ type TuneResult interface {
 }
 
 type tuneResult struct {
-	err            error
-	rebootRequired bool
+	err		error
+	rebootRequired	bool
 }
 
 func NewTuneError(err error) TuneResult {

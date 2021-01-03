@@ -24,13 +24,13 @@ import (
 
 // Sarama configuration options
 var (
-	brokers  = ""
-	version  = ""
-	group    = ""
-	topics   = ""
-	assignor = ""
-	oldest   = true
-	verbose  = false
+	brokers		= ""
+	version		= ""
+	group		= ""
+	topics		= ""
+	assignor	= ""
+	oldest		= true
+	verbose		= false
 )
 
 func init() {
@@ -124,7 +124,7 @@ func main() {
 		}
 	}()
 
-	<-consumer.ready // Await till the consumer has been set up
+	<-consumer.ready	// Await till the consumer has been set up
 	log.Println("Sarama consumer up and running!...")
 
 	sigterm := make(chan os.Signal, 1)
@@ -144,9 +144,9 @@ func main() {
 
 // Consumer represents a Sarama consumer group consumer
 type Consumer struct {
-	ready      chan bool
-	counter    int64
-	valueBytes int64
+	ready		chan bool
+	counter		int64
+	valueBytes	int64
 }
 
 // Setup is run at the beginning of a new session, before ConsumeClaim

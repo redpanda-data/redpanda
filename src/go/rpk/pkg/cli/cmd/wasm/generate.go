@@ -22,15 +22,15 @@ import (
 )
 
 type genFile struct {
-	name       string
-	content    string
-	permission os.FileMode
+	name		string
+	content		string
+	permission	os.FileMode
 }
 
 var manifest = func() map[string][]genFile {
 	return map[string][]genFile{
-		"src":  {genFile{name: "wasm.js", content: template.GetWasmJs()}},
-		"test": {genFile{name: "wasm.test.js", content: template.GetWasmTestJs()}},
+		"src":	{genFile{name: "wasm.js", content: template.GetWasmJs()}},
+		"test":	{genFile{name: "wasm.test.js", content: template.GetWasmTestJs()}},
 		"": {
 			genFile{name: "package.json", content: template.GetPackageJson()},
 			genFile{name: "webpack.js", content: template.GetWebpack(), permission: 0766},
@@ -42,8 +42,8 @@ func NewGenerateCommand(fs afero.Fs) *cobra.Command {
 	var dir string
 	const localDir = "./"
 	command := &cobra.Command{
-		Use:   "generate",
-		Short: "Create a npm template project for inline WASM engine",
+		Use:	"generate",
+		Short:	"Create a npm template project for inline WASM engine",
 		RunE: func(_ *cobra.Command, args []string) error {
 			if dir == localDir {
 				path, err := filepath.Abs(dir)

@@ -9,6 +9,7 @@ require (
 	github.com/avast/retry-go v2.6.0+incompatible
 	github.com/aws/aws-sdk-go v1.25.43
 	github.com/burdiyan/kafkautil v0.0.0-20190131162249-eaf83ed22d5b
+	github.com/cockroachdb/crlfmt v0.0.0-20200923085322-b9cb16fe9a33 // indirect
 	github.com/containerd/containerd v1.4.1 // indirect
 	github.com/coreos/go-systemd/v22 v22.1.0
 	github.com/docker/distribution v2.7.1+incompatible // indirect
@@ -41,14 +42,14 @@ require (
 	github.com/spf13/cobra v0.0.7
 	github.com/spf13/pflag v1.0.5
 	github.com/spf13/viper v1.4.0
-	github.com/stretchr/testify v1.4.0
-	golang.org/x/crypto v0.0.0-20200204104054-c9f3fb736b72
-	golang.org/x/net v0.0.0-20200226121028-0de0cce0169b // indirect
-	golang.org/x/sync v0.0.0-20190911185100-cd5d95a43a6e
-	golang.org/x/sys v0.0.0-20200217220822-9197077df867
+	github.com/stretchr/testify v1.6.1
+	golang.org/x/crypto v0.0.0-20200622213623-75b288015ac9
+	golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9
+	golang.org/x/sys v0.0.0-20201029080932-201ba4db2418
 	google.golang.org/grpc v1.22.0 // indirect
 	gopkg.in/yaml.v2 v2.2.8
 	gotest.tools v2.2.0+incompatible // indirect
+	mvdan.cc/sh/v3 v3.2.1 // indirect
 )
 
 go 1.13

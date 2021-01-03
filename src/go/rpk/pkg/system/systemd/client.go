@@ -20,7 +20,7 @@ type ActiveState int
 // systemctl --state=help
 // https://www.freedesktop.org/software/systemd/man/systemctl.html
 const (
-	ActiveStateActive ActiveState = iota
+	ActiveStateActive	ActiveState	= iota
 	ActiveStateReloading
 	ActiveStateInactive
 	ActiveStateFailed
@@ -74,7 +74,7 @@ func toActiveState(s string) ActiveState {
 type LoadState int
 
 const (
-	LoadStateStub = iota
+	LoadStateStub	= iota
 	LoadStateLoaded
 	LoadStateNotFound
 	LoadStateBadSetting

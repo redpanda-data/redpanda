@@ -28,8 +28,8 @@ import (
 )
 
 type node struct {
-	id   uint
-	addr string
+	id	uint
+	addr	string
 }
 
 func Start() *cobra.Command {
@@ -37,8 +37,8 @@ func Start() *cobra.Command {
 		nodes uint
 	)
 	command := &cobra.Command{
-		Use:   "start",
-		Short: "Start a local container cluster",
+		Use:	"start",
+		Short:	"Start a local container cluster",
 		RunE: func(_ *cobra.Command, _ []string) error {
 			if nodes < 1 {
 				return errors.New(

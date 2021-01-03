@@ -21,11 +21,11 @@ const (
 )
 
 type blockDevicesMock struct {
-	getDirectoriesDevices    func([]string) (map[string][]string, error)
-	getDirectoryDevices      func(string) ([]string, error)
-	getBlockDeviceFromPath   func(string) (BlockDevice, error)
-	getBlockDeviceSystemPath func(string) (string, error)
-	getDiskInfoByType        func([]string) (map[DiskType]DevicesIRQs, error)
+	getDirectoriesDevices		func([]string) (map[string][]string, error)
+	getDirectoryDevices		func(string) ([]string, error)
+	getBlockDeviceFromPath		func(string) (BlockDevice, error)
+	getBlockDeviceSystemPath	func(string) (string, error)
+	getDiskInfoByType		func([]string) (map[DiskType]DevicesIRQs, error)
 }
 
 func (m *blockDevicesMock) GetDirectoriesDevices(
@@ -59,8 +59,8 @@ func TestDeviceFeatures_GetScheduler(t *testing.T) {
 	blockDevices := &blockDevicesMock{
 		getBlockDeviceFromPath: func(path string) (BlockDevice, error) {
 			return &blockDevice{
-				devnode: "/dev/fake",
-				syspath: testDevicePath,
+				devnode:	"/dev/fake",
+				syspath:	testDevicePath,
 			}, nil
 		},
 	}
@@ -82,8 +82,8 @@ func TestDeviceFeatures_GetSupportedScheduler(t *testing.T) {
 	blockDevices := &blockDevicesMock{
 		getBlockDeviceFromPath: func(path string) (BlockDevice, error) {
 			return &blockDevice{
-				devnode: "/dev/fake",
-				syspath: testDevicePath,
+				devnode:	"/dev/fake",
+				syspath:	testDevicePath,
 			}, nil
 		},
 	}
@@ -108,8 +108,8 @@ func TestDeviceFeatures_GetNoMerges(t *testing.T) {
 	blockDevices := &blockDevicesMock{
 		getBlockDeviceFromPath: func(path string) (BlockDevice, error) {
 			return &blockDevice{
-				devnode: "/dev/fake",
-				syspath: testDevicePath,
+				devnode:	"/dev/fake",
+				syspath:	testDevicePath,
 			}, nil
 		},
 	}
@@ -131,8 +131,8 @@ func TestDeviceFeatures_GetWriteCache(t *testing.T) {
 	blockDevices := &blockDevicesMock{
 		getBlockDeviceFromPath: func(path string) (BlockDevice, error) {
 			return &blockDevice{
-				devnode: "/dev/fake",
-				syspath: testDevicePath,
+				devnode:	"/dev/fake",
+				syspath:	testDevicePath,
 			}, nil
 		},
 	}

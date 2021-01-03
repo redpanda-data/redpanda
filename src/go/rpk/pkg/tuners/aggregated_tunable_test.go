@@ -17,8 +17,8 @@ import (
 )
 
 type mockedTunable struct {
-	tune             func() TuneResult
-	checkIfSupported func() (bool, string)
+	tune			func() TuneResult
+	checkIfSupported	func() (bool, string)
 }
 
 func (t *mockedTunable) CheckIfSupported() (supported bool, reason string) {
@@ -31,16 +31,16 @@ func (t *mockedTunable) Tune() TuneResult {
 
 func Test_aggregatedTunable_Tune(t *testing.T) {
 	type fields struct {
-		Tunable  Tunable
-		tunables []Tunable
+		Tunable		Tunable
+		tunables	[]Tunable
 	}
 	tests := []struct {
-		name   string
-		fields fields
-		want   TuneResult
+		name	string
+		fields	fields
+		want	TuneResult
 	}{
 		{
-			name: "shall return success when all tune opertions are suceessful",
+			name:	"shall return success when all tune opertions are suceessful",
 			fields: fields{
 				tunables: []Tunable{
 					&mockedTunable{
@@ -60,10 +60,10 @@ func Test_aggregatedTunable_Tune(t *testing.T) {
 					},
 				},
 			},
-			want: NewTuneResult(false),
+			want:	NewTuneResult(false),
 		},
 		{
-			name: "shall return error when at least one of result contains an error",
+			name:	"shall return error when at least one of result contains an error",
 			fields: fields{
 				tunables: []Tunable{
 					&mockedTunable{
@@ -83,10 +83,10 @@ func Test_aggregatedTunable_Tune(t *testing.T) {
 					},
 				},
 			},
-			want: NewTuneError(fmt.Errorf("Test error")),
+			want:	NewTuneError(fmt.Errorf("Test error")),
 		},
 		{
-			name: "shall request for reboot if at least one of result requests it",
+			name:	"shall request for reboot if at least one of result requests it",
 			fields: fields{
 				tunables: []Tunable{
 					&mockedTunable{
@@ -106,7 +106,7 @@ func Test_aggregatedTunable_Tune(t *testing.T) {
 					},
 				},
 			},
-			want: NewTuneResult(true),
+			want:	NewTuneResult(true),
 		},
 	}
 	for _, tt := range tests {
@@ -120,13 +120,13 @@ func Test_aggregatedTunable_Tune(t *testing.T) {
 
 func Test_aggregatedTunable_CheckIfSupported(t *testing.T) {
 	tests := []struct {
-		name          string
-		tunables      []Tunable
-		wantSupported bool
-		wantReason    string
+		name		string
+		tunables	[]Tunable
+		wantSupported	bool
+		wantReason	string
 	}{
 		{
-			name: "shall be supported when all tunables are",
+			name:	"shall be supported when all tunables are",
 			tunables: []Tunable{
 				&mockedTunable{
 					checkIfSupported: func() (bool, string) {
@@ -144,11 +144,11 @@ func Test_aggregatedTunable_CheckIfSupported(t *testing.T) {
 					},
 				},
 			},
-			wantSupported: true,
-			wantReason:    "",
+			wantSupported:	true,
+			wantReason:	"",
 		},
 		{
-			name: "shall forward reson when one of tunables is not supported",
+			name:	"shall forward reson when one of tunables is not supported",
 			tunables: []Tunable{
 				&mockedTunable{
 					checkIfSupported: func() (bool, string) {
@@ -166,8 +166,8 @@ func Test_aggregatedTunable_CheckIfSupported(t *testing.T) {
 					},
 				},
 			},
-			wantSupported: false,
-			wantReason:    "Why not",
+			wantSupported:	false,
+			wantReason:	"Why not",
 		},
 	}
 	for _, tt := range tests {

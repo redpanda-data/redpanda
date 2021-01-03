@@ -25,14 +25,14 @@ import (
 
 func NewCheckCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	var (
-		configFile string
-		timeout    time.Duration
+		configFile	string
+		timeout		time.Duration
 	)
 	command := &cobra.Command{
-		Use:          "check",
-		Short:        "Check if system meets redpanda requirements",
-		Long:         "",
-		SilenceUsage: true,
+		Use:		"check",
+		Short:		"Check if system meets redpanda requirements",
+		Long:		"",
+		SilenceUsage:	true,
 		RunE: func(ccmd *cobra.Command, args []string) error {
 			return executeCheck(fs, mgr, configFile, timeout)
 		},

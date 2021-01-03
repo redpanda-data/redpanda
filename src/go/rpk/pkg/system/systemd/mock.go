@@ -12,10 +12,10 @@ package systemd
 import "github.com/spf13/afero"
 
 type mockClient struct {
-	shutdown  func() error
-	startUnit func(string) error
-	unitState func(string) (LoadState, ActiveState, error)
-	loadUnit  func(afero.Fs, string, string) error
+	shutdown	func() error
+	startUnit	func(string) error
+	unitState	func(string) (LoadState, ActiveState, error)
+	loadUnit	func(afero.Fs, string, string) error
 }
 
 func NewMockClient(
@@ -25,10 +25,10 @@ func NewMockClient(
 	loadUnit func(afero.Fs, string, string) error,
 ) Client {
 	return &mockClient{
-		shutdown:  shutdown,
-		startUnit: startUnit,
-		unitState: unitState,
-		loadUnit:  loadUnit,
+		shutdown:	shutdown,
+		startUnit:	startUnit,
+		unitState:	unitState,
+		loadUnit:	loadUnit,
 	}
 }
 

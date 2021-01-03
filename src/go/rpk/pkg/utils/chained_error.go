@@ -12,14 +12,14 @@ package utils
 import "fmt"
 
 type chainedError struct {
-	err error
-	msg string
+	err	error
+	msg	string
 }
 
 func ChainedError(err error, msg string) *chainedError {
 	return &chainedError{
-		err: err,
-		msg: msg,
+		err:	err,
+		msg:	msg,
 	}
 }
 
