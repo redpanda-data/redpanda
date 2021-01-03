@@ -163,7 +163,7 @@ func TestTopicCmd(t *testing.T) {
 			name:        "create should fail if no topic is passed",
 			cmd:         createTopic,
 			args:        []string{},
-			expectedErr: "accepts 1 arg(s), received 0",
+			expectedErr: "topic's name is missing.",
 		},
 		{
 			name: "create should fail if the topic creation req fails",
@@ -197,7 +197,7 @@ func TestTopicCmd(t *testing.T) {
 			name:        "delete should fail if no topic is passed",
 			cmd:         deleteTopic,
 			args:        []string{},
-			expectedErr: "accepts 1 arg(s), received 0",
+			expectedErr: "topic's name is missing.",
 		},
 		{
 			name:           "set-config should output the given config key-value pair",
@@ -225,19 +225,19 @@ func TestTopicCmd(t *testing.T) {
 			name:        "set-config should fail if no topic is passed",
 			cmd:         setTopicConfig,
 			args:        []string{},
-			expectedErr: "accepts 3 arg(s), received 0",
+			expectedErr: "topic's name, config key or value are missing.",
 		},
 		{
 			name:        "set-config should fail if no key is passed",
 			cmd:         setTopicConfig,
 			args:        []string{"Chepo"},
-			expectedErr: "accepts 3 arg(s), received 1",
+			expectedErr: "topic's name, config key or value are missing.",
 		},
 		{
 			name:        "set-config should fail if no value is passed",
 			cmd:         setTopicConfig,
 			args:        []string{"Chepo", "key"},
-			expectedErr: "accepts 3 arg(s), received 2",
+			expectedErr: "topic's name, config key or value are missing.",
 		},
 		{
 			name: "list should output the list of topics",
@@ -304,7 +304,7 @@ func TestTopicCmd(t *testing.T) {
 			logrus.SetOutput(&out)
 			err := cmd.Execute()
 			if tt.expectedErr != "" {
-				require.EqualError(t, err, tt.expectedErr)
+				require.Contains(t, err.Error(), tt.expectedErr)
 				return
 			}
 			require.NoError(t, err)
@@ -561,7 +561,7 @@ func TestDescribeTopic(t *testing.T) {
 			logrus.SetOutput(&out)
 			err := cmd.Execute()
 			if tt.expectedErr != "" {
-				require.EqualError(t, err, tt.expectedErr)
+				require.Contains(t, err.Error(), tt.expectedErr)
 				return
 			}
 			require.NoError(t, err)

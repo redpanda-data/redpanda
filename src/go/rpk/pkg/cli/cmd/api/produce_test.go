@@ -104,7 +104,7 @@ func TestProduceCmd(t *testing.T) {
 			name:        "it should fail if no topic is passed",
 			args:        []string{"-k", "key"},
 			data:        `{"very":"important", "data": true}`,
-			expectedErr: "accepts 1 arg(s), received 0",
+			expectedErr: "topic's name is missing.",
 		},
 		{
 			name: "it should fail if the producer creation fails",
@@ -148,7 +148,7 @@ func TestProduceCmd(t *testing.T) {
 			logrus.SetLevel(logrus.DebugLevel)
 			err := cmd.Execute()
 			if tt.expectedErr != "" {
-				require.EqualError(t, err, tt.expectedErr)
+				require.Contains(t, err.Error(), tt.expectedErr)
 				return
 			}
 			require.NoError(t, err)

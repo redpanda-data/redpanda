@@ -35,7 +35,9 @@ func NewProduceCommand(
 	cmd := &cobra.Command{
 		Use:   "produce <topic>",
 		Short: "Produce a record. Reads data from stdin.",
-		Args:  cobra.ExactArgs(1),
+		Args:  exactArgs(1, "topic's name is missing."),
+		// We don't want Cobra printing CLI usage help if the error isn't about CLI usage.
+		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			prod, err := producer(jvmPartitioner, partition)
 			if err != nil {
