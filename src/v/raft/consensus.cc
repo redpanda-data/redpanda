@@ -293,8 +293,15 @@ consensus::success_reply consensus::update_follower_index(
 
 void consensus::maybe_promote_to_voter(model::node_id id) {
     (void)ss::with_gate(_bg, [this, id] {
+        const auto& latest_cfg = _configuration_manager.get_latest();
+
+        // node is no longer part of current configuration, skip promotion
+        if (!latest_cfg.current_config().contains(id)) {
+            return ss::now();
+        }
+
         // is voter already
-        if (config().is_voter(id)) {
+        if (latest_cfg.is_voter(id)) {
             return ss::now();
         }
         auto it = _fstats.find(id);
