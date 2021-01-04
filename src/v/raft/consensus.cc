@@ -500,8 +500,6 @@ bool consensus::should_skip_vote(bool ignore_heartbeat) {
     }
 
     skip_vote |= _vstate == vote_state::leader; // already a leader
-    skip_vote |= !_configuration_manager.get_latest().is_voter(
-      _self); // not a voter
 
     return skip_vote;
 }
@@ -549,6 +547,12 @@ void consensus::dispatch_vote(bool leadership_transfer) {
     bool current_priority_to_low = _target_priority > self_priority;
     // update target priority
     _target_priority = next_target_priority();
+
+    // skip sending vote request if current node is not a voter
+    if (!_configuration_manager.get_latest().is_voter(_self)) {
+        arm_vote_timeout();
+        return;
+    }
 
     // if priority is to low, skip dispatching votes, do not take priority into
     // account when we transfer leadership
