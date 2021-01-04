@@ -29,6 +29,15 @@ ss::future<shared_broker_t> brokers::any() {
       *std::next(_brokers.begin(), _next_broker++ % _brokers.size()));
 }
 
+ss::future<shared_broker_t> brokers::find(model::node_id id) {
+    auto b_it = _brokers.find(id);
+    if (b_it == _brokers.end()) {
+        return ss::make_exception_future<shared_broker_t>(
+          broker_error(id, kafka::error_code::broker_not_available));
+    }
+    return ss::make_ready_future<shared_broker_t>(*b_it);
+}
+
 ss::future<shared_broker_t> brokers::find(model::topic_partition tp) {
     auto l_it = _leaders.find(tp);
     if (l_it == _leaders.end()) {
@@ -36,12 +45,7 @@ ss::future<shared_broker_t> brokers::find(model::topic_partition tp) {
           std::move(tp), kafka::error_code::unknown_topic_or_partition));
     }
 
-    auto b_it = _brokers.find(l_it->second);
-    if (b_it == _brokers.end()) {
-        return ss::make_exception_future<shared_broker_t>(partition_error(
-          std::move(tp), kafka::error_code::leader_not_available));
-    }
-    return ss::make_ready_future<shared_broker_t>(*b_it);
+    return find(l_it->second);
 }
 
 ss::future<> brokers::erase(model::node_id node_id) {

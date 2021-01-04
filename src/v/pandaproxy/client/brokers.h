@@ -46,6 +46,9 @@ public:
     /// The broker returned is fetched using a round-robin strategy.
     ss::future<shared_broker_t> any();
 
+    /// \brief Retrieve the broker for the given node_id.
+    ss::future<shared_broker_t> find(model::node_id id);
+
     /// \brief Retrieve the broker for the given topic_partition.
     ss::future<shared_broker_t> find(model::topic_partition tp);
 
