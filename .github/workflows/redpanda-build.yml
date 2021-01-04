@@ -27,12 +27,7 @@ jobs:
             apt-get install -y git sudo pkg-config
 
         - name: install dependencies
-          run: |
-            ./install-dependencies.sh
-            apt-get install -y clang-11
+          run: ./install-dependencies.sh
 
         - name: build & test
-          env:
-            CC: clang-11
-            CXX: clang++-11
           run: ./build.sh -DCMAKE_UNITY_BUILD=ON
