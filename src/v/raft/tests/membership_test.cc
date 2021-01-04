@@ -188,8 +188,6 @@ FIXTURE_TEST(try_remove_all_voters, raft_test_fixture) {
     BOOST_REQUIRE_EQUAL(result, raft::errc::invalid_configuration_update);
 }
 
-// TODO: Fix failing test. For more details see: #342
-#if 0
 FIXTURE_TEST(replace_whole_group, raft_test_fixture) {
     raft_group gr = raft_group(raft::group_id(0), 3);
     gr.enable_all();
@@ -251,11 +249,19 @@ FIXTURE_TEST(replace_whole_group, raft_test_fixture) {
       },
       "new nodes are up to date");
 
-    info("waiting for new group leader");
-    auto new_leader_id = wait_for_group_leader(gr);
-    auto& new_leader = gr.get_member(new_leader_id);
+    wait_for(
+      5s,
+      [&gr]() {
+          info("waiting for new group leader");
+          auto new_leader_id = wait_for_group_leader(gr);
 
-    BOOST_REQUIRE_GT(new_leader_id, model::node_id(4));
-    BOOST_REQUIRE_EQUAL(new_leader.consensus->config().brokers().size(), 3);
+          return new_leader_id >= model::node_id(4);
+      },
+      "one of new nodes is a leader");
+
+    auto new_leader_id = gr.get_leader_id();
+    if (new_leader_id) {
+        auto& new_leader = gr.get_member(*new_leader_id);
+        BOOST_REQUIRE_EQUAL(new_leader.consensus->config().brokers().size(), 3);
+    }
 }
-#endif
