@@ -35,20 +35,10 @@ jobs:
       id: go
 
     - name: install crlfmt
+      working-directory: src/go/rpk
       run: |
-        # Workaround to download the specific version we use internally
-        cat > go.mod << EOF
-        module vectorized
-        require (
-          github.com/cockroachdb/crlfmt v0.0.0-20200309141329-97b747f03b21
-        )
-        go 1.13
-
-        EOF
-
-        go mod download
+        go mod download github.com/cockroachdb/crlfmt
         go install github.com/cockroachdb/crlfmt
-        rm -rf go.mod
 
     - name: lint go files
       run: |
