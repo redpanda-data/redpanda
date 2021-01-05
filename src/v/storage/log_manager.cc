@@ -82,13 +82,14 @@ ss::future<> log_manager::stop() {
     });
 }
 
-inline logs_type::iterator find_next_non_compacted_log(logs_type& logs) {
+static inline logs_type::iterator find_next_non_compacted_log(logs_type& logs) {
     using bflags = log_housekeeping_meta::bitflags;
     return std::find_if(
       logs.begin(), logs.end(), [](const logs_type::value_type& l) {
           return bflags::none == (l.second.flags & bflags::compacted);
       });
 }
+
 ss::future<> log_manager::housekeeping() {
     auto collection_threshold = model::timestamp(
       model::timestamp::now().value() - _config.delete_retention.count());
