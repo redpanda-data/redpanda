@@ -14,9 +14,11 @@
 #include "coproc/types.h"
 #include "model/record_batch_reader.h"
 
+#include <seastar/core/circular_buffer.hh>
 #include <seastar/core/gate.hh>
 
 #include <absl/container/flat_hash_map.h>
+#include <absl/hash/hash.h>
 
 namespace coproc {
 // A super simplistic form of the javascript supervisor soley used for
@@ -33,7 +35,7 @@ public:
       : supervisor_service(sc, ssg)
       , _coprocessors(cp_map) {}
 
-    ~supervisor() { _gate.close().get(); }
+    ~supervisor() override { _gate.close().get(); }
 
     /// Method is hit when a request arrives from redpanda
     /// Data is transformed by all applicable coprocessors in the copro_map
@@ -41,11 +43,10 @@ public:
     process_batch(process_batch_request&& r, rpc::streaming_context&) final;
 
 private:
-    void invoke_coprocessor(
+    ss::future<std::vector<process_batch_reply::data>> invoke_coprocessor(
       const model::ntp&,
       const script_id,
-      const std::vector<model::record_batch>&,
-      std::vector<process_batch_reply::data>&);
+      ss::circular_buffer<model::record_batch>&&);
 
     ss::future<std::vector<process_batch_reply::data>>
       invoke_coprocessors(process_batch_request::data);
