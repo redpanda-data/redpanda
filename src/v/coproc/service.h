@@ -10,7 +10,7 @@
 
 #pragma once
 #include "cluster/namespace.h"
-#include "coproc/router.h"
+#include "coproc/pacemaker.h"
 #include "coproc/script_manager.h"
 #include "coproc/types.h"
 #include "model/validation.h"
@@ -30,43 +30,35 @@ namespace coproc {
 /// be its interface for working with redpanda.
 class service final : public script_manager_service {
 public:
-    service(ss::scheduling_group, ss::smp_service_group, ss::sharded<router>&);
+    service(
+      ss::scheduling_group, ss::smp_service_group, ss::sharded<pacemaker>&);
 
-    /// coproc client calls this to 'register'
+    /// \brief coproc client calls this to 'register'
     ///
-    /// \param metdata_info list of topics coproc is interested in transforming
-    /// \param stgreaming_context rpc context expected at every endpoint
+    /// \param metdata_info list of coprocessors to register
+    /// \param streaming_context rpc context expected at every endpoint
     ///
-    /// \return structure representing an ack per topic
+    /// \return structure representing an ack per topic per coprocessor
     ss::future<enable_copros_reply>
     enable_copros(enable_copros_request&&, rpc::streaming_context&) final;
 
-    /// coproc client calls this to 'deregister'
+    /// \brief coproc client calls this to 'deregister'
     ///
-    /// \param metdata_info list of topics coproc no longer wants updates on
+    /// \param metdata_info list of coprocessor to deregister
     /// \param streaming_context rpc context expected at every endpoint
     ///
-    /// \return structure representing an ack per topic
+    /// \return structure representing an ack per deregistered coprocessor
     ss::future<disable_copros_reply>
     disable_copros(disable_copros_request&&, rpc::streaming_context&) final;
 
 private:
-    using id_resp_vec_pair = std::vector<enable_copros_reply::ack_id_pair>;
+    ss::future<enable_copros_reply::ack_id_pair>
+    enable_copro(enable_copros_request::data&&);
 
-    ss::future<enable_copros_reply::ack_id_pair> evaluate_topics(
-      const script_id, std::vector<enable_copros_request::data::topic_mode>);
+    ss::future<disable_response_code> disable_copro(script_id);
 
-    /// Verify if a script_id exists across all shards of the router
-    /// Not called upon the hot path
-    ss::future<bool> copro_exists(const script_id);
-
-    /// Different implementation details of update_cache
-    ss::future<enable_response_code>
-    insert(script_id, model::topic_namespace&&, topic_ingestion_policy);
-    ss::future<disable_response_code> remove(script_id);
-
-    /// Main mapping for actively tracked coproc topics
-    ss::sharded<router>& _router;
+    /// Main mapping for actively tracked coprocessor scripts
+    ss::sharded<pacemaker>& _pacemaker;
 };
 
 } // namespace coproc

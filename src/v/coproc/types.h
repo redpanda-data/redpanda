@@ -103,6 +103,11 @@ struct process_batch_reply {
     std::vector<data> resps;
 };
 
+struct topic_namespace_policy {
+    model::topic_namespace tn;
+    topic_ingestion_policy policy;
+};
+
 std::ostream& operator<<(std::ostream& os, const enable_response_code);
 
 std::ostream& operator<<(std::ostream& os, const disable_response_code);

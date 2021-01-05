@@ -42,7 +42,7 @@ struct configuration final : public config_store {
     property<bool> enable_coproc;
     property<unresolved_address> coproc_script_manager_server;
     property<unresolved_address> coproc_supervisor_server;
-    property<uint32_t> coproc_max_inflight_bytes;
+    property<std::size_t> coproc_max_inflight_bytes;
     property<std::size_t> coproc_max_ingest_bytes;
     property<std::size_t> coproc_max_batch_size;
 

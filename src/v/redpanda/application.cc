@@ -330,12 +330,10 @@ void application::wire_up_services() {
                                                .coproc_supervisor_server()
                                                .resolve()
                                                .get0();
-        syschecks::systemd_message("Building coproc router");
+        syschecks::systemd_message("Building coproc pacemaker");
         construct_service(
-          router, coproc_supervisor_server_addr, std::ref(storage))
+          pacemaker, coproc_supervisor_server_addr, std::ref(storage))
           .get();
-        // Start the run loop
-        router.invoke_on_all([](coproc::router& r) { return r.start(); }).get();
     }
 
     syschecks::systemd_message("Intializing raft group manager");
@@ -540,7 +538,7 @@ void application::start() {
               proto->register_service<coproc::service>(
                 _scheduling_groups.coproc_sg(),
                 smp_service_groups.coproc_smp_sg(),
-                std::ref(router));
+                std::ref(pacemaker));
               s.set_protocol(std::move(proto));
           })
           .get();

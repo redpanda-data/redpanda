@@ -6,13 +6,14 @@
 //
 // https://github.com/vectorizedio/redpanda/blob/master/licenses/rcl.md
 
-#include "coproc/router.h"
+#include "coproc/pacemaker.h"
 #include "coproc/script_manager.h"
 #include "coproc/service.h"
 #include "coproc/tests/coproc_test_fixture.h"
 #include "coproc/tests/utils.h"
 #include "coproc/types.h"
 #include "rpc/test/rpc_integration_fixture.h"
+#include "ssx/future-util.h"
 #include "test_utils/fixture.h"
 
 class script_manager_service_fixture : public coproc_test_fixture {
@@ -21,17 +22,19 @@ public:
     // caches are laid out how they are expected to be i.e. the right ntps
     // existing on the correct cores determined by the _shard_table
     ss::future<bool> coproc_validate() {
-        return app.router.map_reduce0(
-          [this](const coproc::router& r) {
-              return std::all_of(
+        return app.pacemaker.map_reduce0(
+          [this](coproc::pacemaker& p) {
+              return ssx::async_all_of(
                 get_layout().cbegin(),
                 get_layout().cend(),
-                [this, &r](auto& p) {
-                    const auto logs = app.storage.local().log_mgr().get(
-                      p.first);
-                    return std::all_of(
-                      logs.begin(), logs.end(), [&r](auto& p2) {
-                          return r.ntp_exists(p2.first);
+                [this, &p](const log_layout_map::value_type& pair) {
+                    auto logs = app.storage.local().log_mgr().get(pair.first);
+                    return ss::do_with(
+                      std::move(logs), [&p](decltype(logs)& logs) {
+                          return ssx::async_all_of(
+                            logs.cbegin(), logs.cend(), [&p](const auto& e) {
+                                return p.ntp_is_registered(e.first);
+                            });
                       });
                 });
           },
