@@ -48,8 +48,8 @@ public:
     }
 
     model::topic_namespace
-    make_data(model::revision_id rev, int partitions = 1) {
-        auto topic_name = fmt::format("my_topic_{}", 0);
+    make_data(model::revision_id rev, int partitions = 1, int topic = 0) {
+        auto topic_name = fmt::format("my_topic_{}", topic);
         auto tp_ns = model::topic_namespace(
           cluster::kafka_namespace, model::topic{topic_name});
 
