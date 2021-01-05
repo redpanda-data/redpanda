@@ -28,24 +28,14 @@
  *    return m.with([] { ... });
  *    ```
  *
- * The `named_mutex` variant is analgous to `seastar::named_semaphore`. See
- * `seastar/core/semaphore.hh` for more information using an exception factory.
- *
  */
-template<
-  typename ExceptionFactory,
-  typename Clock = typename ss::timer<>::clock>
-class basic_mutex {
+class mutex {
 public:
-    using underlying_t = ss::basic_semaphore<ExceptionFactory, Clock>;
-    using duration = typename underlying_t::duration;
-    using time_point = typename underlying_t::time_point;
+    using duration = typename ss::semaphore::duration;
+    using time_point = typename ss::semaphore::time_point;
 
-    basic_mutex()
+    mutex()
       : _sem(1) {}
-
-    basic_mutex(ExceptionFactory&& factory)
-      : _sem(1, std::forward<ExceptionFactory>(factory)) {}
 
     template<typename Func>
     auto with(Func&& func) noexcept {
@@ -69,8 +59,5 @@ public:
     auto get_units() noexcept { return ss::get_units(_sem, 1); }
 
 private:
-    underlying_t _sem;
+    ss::semaphore _sem;
 };
-
-using mutex = basic_mutex<ss::semaphore_default_exception_factory>;
-using named_mutex = basic_mutex<ss::named_semaphore_exception_factory>;

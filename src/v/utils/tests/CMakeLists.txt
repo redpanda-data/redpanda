@@ -77,3 +77,10 @@ rp_test(
   SOURCES base64_test.cc
   LIBRARIES v::seastar_testing_main v::utils
 )
+
+rp_test(
+  UNIT_TEST
+  BINARY_NAME timed_mutex_test
+  SOURCES timed_mutex_test.cc
+  LIBRARIES v::seastar_testing_main v::utils
+)
