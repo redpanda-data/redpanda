@@ -46,9 +46,7 @@ CONCEPT(requires requires(Func f, Iterator i) {
 })
 // clang-format on
 inline auto async_transform(Iterator begin, Iterator end, Func&& func) {
-    using value_type = typename std::iterator_traits<Iterator>::value_type;
-    using result_type = decltype(
-      seastar::futurize_invoke(std::forward<Func>(func), *begin).get0());
+    using result_type = decltype(seastar::futurize_invoke(func, *begin).get0());
     std::vector<result_type> res;
     res.reserve(std::distance(begin, end));
     return seastar::do_with(
@@ -60,10 +58,12 @@ inline auto async_transform(Iterator begin, Iterator end, Func&& func) {
           return seastar::do_for_each(
                    begin,
                    end,
-                   [&res, func{std::forward<Func>(func)}](value_type val) {
+                   [&res, func{std::forward<Func>(func)}](auto&& val) mutable {
                        return seastar::futurize_invoke(
-                                func, std::forward<value_type>(val))
-                         .then([&res](auto r) { res.push_back(std::move(r)); });
+                                func, std::forward<decltype(val)>(val))
+                         .then([&res](result_type r) {
+                             return res.push_back(std::move(r));
+                         });
                    })
             .then([&res] { return std::move(res); });
       });

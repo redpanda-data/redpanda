@@ -63,6 +63,35 @@ SEASTAR_THREAD_TEST_CASE(async_transform_move_test) {
       std::equal(input.begin(), input.end(), expected.begin(), expected.end()));
 }
 
+SEASTAR_THREAD_TEST_CASE(async_transform_copy_test) {
+    class noncopyable_foo {
+    public:
+        noncopyable_foo(int value)
+          : _x(value) {}
+        noncopyable_foo(const noncopyable_foo&) = delete;
+        noncopyable_foo(noncopyable_foo&&) = default;
+
+        int value() const { return _x; }
+
+    private:
+        int _x;
+    };
+    std::vector<noncopyable_foo> foos;
+    foos.emplace_back(1);
+    foos.emplace_back(2);
+    foos.emplace_back(3);
+    std::vector<noncopyable_foo> results = ssx::async_transform(
+                                             foos.begin(),
+                                             foos.end(),
+                                             [](noncopyable_foo& ncf) {
+                                                 return std::move(ncf);
+                                             })
+                                             .get0();
+    BOOST_TEST(results[0].value() == 1);
+    BOOST_TEST(results[1].value() == 2);
+    BOOST_TEST(results[2].value() == 3);
+}
+
 SEASTAR_THREAD_TEST_CASE(async_all_of_test) {
     std::vector<int> input{5, 4, 2, 1, 8};
     const bool is_five
