@@ -9,6 +9,7 @@
 
 #include "storage/disk_log_impl.h"
 
+#include "model/namespace.h"
 #include "model/adl_serde.h"
 #include "model/fundamental.h"
 #include "model/timeout_clock.h"
@@ -288,11 +289,9 @@ ss::future<> disk_log_impl::gc(compaction_config cfg) {
     // TODO: this a workaround until we have raft-snapshotting in the the
     // controller so that we can still evict older data. At the moment we keep
     // the full history.
-    constexpr std::string_view redpanda_ignored_ns = "redpanda";
-    constexpr std::string_view kafka_ignored_ns = "kafka_internal";
     if (
-      config().ntp().ns() == redpanda_ignored_ns
-      || config().ntp().ns() == kafka_ignored_ns) {
+      config().ntp().ns() == model::redpanda_ns
+      || config().ntp().ns() == model::kafka_internal_namespace) {
         return ss::make_ready_future<>();
     }
     if (cfg.max_bytes) {
