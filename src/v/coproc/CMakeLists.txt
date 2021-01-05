@@ -22,6 +22,7 @@ v_cc_library(
     service.cc
     router.cc
     router_source_manager.cc
+    script_context.cc
   DEPS
     v::rpc
     v::model
