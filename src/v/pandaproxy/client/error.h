@@ -12,6 +12,7 @@
 #pragma once
 
 #include "kafka/errors.h"
+#include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 
@@ -42,6 +43,21 @@ struct partition_error final : std::exception {
     const char* what() const noexcept final { return msg.c_str(); }
     std::string msg;
     model::topic_partition tp;
+    kafka::error_code error;
+};
+
+struct consumer_error final : std::exception {
+    consumer_error(
+      kafka::group_id g_id, kafka::member_id m_id, kafka::error_code e)
+      : std::exception{}
+      , msg{fmt::format("{}, {}, {}", g_id, m_id, e)}
+      , group_id{std::move(g_id)}
+      , member_id{std::move(m_id)}
+      , error{e} {}
+    const char* what() const noexcept final { return msg.c_str(); }
+    std::string msg;
+    kafka::group_id group_id;
+    kafka::member_id member_id;
     kafka::error_code error;
 };
 
