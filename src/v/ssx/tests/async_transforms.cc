@@ -43,8 +43,7 @@ SEASTAR_THREAD_TEST_CASE(async_transform_range_test) {
     std::vector<int> expected(10);
     std::iota(expected.begin(), expected.end(), 2);
 
-    std::vector<int> out_range
-      = ssx::async_transform(std::move(input), plus(2)).get0();
+    std::vector<int> out_range = ssx::async_transform(input, plus(2)).get0();
     BOOST_TEST(std::equal(
       out_range.begin(), out_range.end(), expected.begin(), expected.end()));
 }
@@ -63,7 +62,7 @@ SEASTAR_THREAD_TEST_CASE(async_transform_move_test) {
       std::equal(input.begin(), input.end(), expected.begin(), expected.end()));
 }
 
-SEASTAR_THREAD_TEST_CASE(async_transform_copy_test) {
+SEASTAR_THREAD_TEST_CASE(async_transform_noncopyable_test) {
     class noncopyable_foo {
     public:
         noncopyable_foo(int value)

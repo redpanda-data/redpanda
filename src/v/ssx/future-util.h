@@ -96,10 +96,7 @@ CONCEPT(requires requires(Func f, Rng r) {
 })
 // clang-format on
 inline auto async_transform(Rng&& rng, Func&& func) {
-    return seastar::do_with(
-      std::forward<Rng>(rng), [func{std::forward<Func>(func)}](Rng& rng) {
-          return async_transform(rng.begin(), rng.end(), func);
-      });
+    return async_transform(rng.begin(), rng.end(), std::forward<Func>(func));
 }
 
 /// \brief Run tasks in parallel and wait for completion, capturing possible
