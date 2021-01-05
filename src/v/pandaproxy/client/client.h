@@ -118,6 +118,9 @@ public:
     ss::future<std::vector<model::topic>>
     consumer_topics(const kafka::group_id& g_id, const kafka::member_id& m_id);
 
+    ss::future<assignment> consumer_assignment(
+      const kafka::group_id& g_id, const kafka::member_id& m_id);
+
 private:
     /// \brief Connect and update metdata.
     ss::future<> do_connect(unresolved_address addr);

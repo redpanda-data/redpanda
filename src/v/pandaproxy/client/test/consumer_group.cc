@@ -219,6 +219,20 @@ FIXTURE_TEST(pandaproxy_consumer_group, ppc_test_fixture) {
         BOOST_REQUIRE_EQUAL(consumer_topics[0], topics[i]);
     }
 
+    // Check member assignment
+    // range_assignment is allocated according to sorted member ids
+    auto sorted_members = members;
+    std::sort(sorted_members.begin(), sorted_members.end());
+    for (int i = 0; i < sorted_members.size(); ++i) {
+        auto m_id = sorted_members[i];
+        auto assignment = client.consumer_assignment(group_id, m_id).get();
+        BOOST_REQUIRE_EQUAL(assignment.size(), 3);
+        for (auto const& [topic, partitions] : assignment) {
+            BOOST_REQUIRE_EQUAL(partitions.size(), 1);
+            BOOST_REQUIRE_EQUAL(partitions[0](), i);
+        }
+    }
+
     ss::when_all_succeed(
       client.remove_consumer(group_id, members[0]),
       client.remove_consumer(group_id, members[1]),

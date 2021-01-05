@@ -27,6 +27,8 @@ namespace pandaproxy::client {
 
 // consumer manages the lifetime of a consumer within a group.
 class consumer final : public ss::enable_lw_shared_from_this<consumer> {
+    using assignment_t = client::assignment;
+
 public:
     consumer(shared_broker_t coordinator, kafka::group_id group_id)
       : _coordinator(std::move(coordinator))
@@ -36,6 +38,7 @@ public:
     const kafka::group_id& group_id() const { return _group_id; }
     const kafka::member_id& member_id() const { return _member_id; }
     const std::vector<model::topic>& topics() const { return _topics; }
+    const assignment_t& assignment() const { return _assignment; }
 
     ss::future<> join();
     ss::future<kafka::leave_group_response> leave();
@@ -91,7 +94,7 @@ private:
     std::vector<kafka::member_id> _members{};
     std::vector<model::topic> _subscribed_topics{};
     std::unique_ptr<assignment_plan> _plan{};
-    assignment _assignment{};
+    assignment_t _assignment{};
 
     friend std::ostream& operator<<(std::ostream& os, const consumer& c) {
         fmt::print(
