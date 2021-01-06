@@ -30,6 +30,8 @@ type MetricsPayload struct {
 	FreeMemoryMB	float64	`json:"freeMemoryMB"`
 	FreeSpaceMB	float64	`json:"freeSpaceMB"`
 	CpuPercentage	float64	`json:"cpuPercentage"`
+	Partitions	*int	`json:"partitions"`
+	Topics		*int	`json:"topics"`
 }
 
 type EnvironmentPayload struct {

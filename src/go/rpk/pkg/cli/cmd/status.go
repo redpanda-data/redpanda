@@ -36,6 +36,11 @@ type metricsResult struct {
 	metrics	*system.Metrics
 }
 
+type kafkaInfo struct {
+	partitions	*int
+	topics		*int
+}
+
 func NewStatusCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	var (
 		configFile	string
@@ -96,13 +101,15 @@ func executeStatus(
 	t.SetAutoWrapText(true)
 	t.Append(getVersion())
 
-	providerInfoRowsCh := make(chan [][]string)
-	osInfoRowsCh := make(chan [][]string)
-	cpuInfoRowsCh := make(chan [][]string)
-	confRowsCh := make(chan [][]string)
-	kafkaRowsCh := make(chan [][]string)
+	kafkaRowsCh := make(chan [][]string, 1)
+	kafkaInfoCh := make(chan kafkaInfo, 1)
 
 	metricsRes, err := getMetrics(fs, mgr, timeout, *conf)
+
+	go func() {
+		err := getKafkaInfo(*conf, kafkaRowsCh, kafkaInfoCh, send)
+		log.Debug(err)
+	}()
 	if err != nil {
 		// Retrieving the metrics is a prerequisite to sending them.
 		// Therefore, if that fails, return an error.
@@ -114,12 +121,17 @@ func executeStatus(
 		log.Infof("%v", err)
 	} else if send {
 		// If there was no error, send the metrics.
-		err := sendMetrics(*conf, metricsRes.metrics)
+		err := sendMetrics(*conf, metricsRes.metrics, <-kafkaInfoCh)
 		if err != nil {
 			return fmt.Errorf("Error sending metrics: %v", err)
 		}
 		return nil
 	}
+
+	providerInfoRowsCh := make(chan [][]string)
+	osInfoRowsCh := make(chan [][]string)
+	cpuInfoRowsCh := make(chan [][]string)
+	confRowsCh := make(chan [][]string)
 
 	grp := multierror.Group{}
 	grp.Go(func() error {
@@ -133,9 +145,6 @@ func executeStatus(
 	})
 	grp.Go(func() error {
 		return getConf(mgr, conf.ConfigFile, confRowsCh)
-	})
-	grp.Go(func() error {
-		return getKafkaInfo(*conf, kafkaRowsCh)
 	})
 	results := [][][]string{
 		metricsRes.rows,
@@ -250,7 +259,13 @@ func getConf(
 	return err
 }
 
-func getKafkaInfo(conf config.Config, out chan<- [][]string) error {
+func getKafkaInfo(
+	conf config.Config,
+	out chan<- [][]string,
+	kafkaInfoCh chan<- kafkaInfo,
+	send bool,
+) error {
+	kInfo := kafkaInfo{}
 	addr := fmt.Sprintf(
 		"%s:%d",
 		conf.Redpanda.KafkaApi.Address,
@@ -259,30 +274,45 @@ func getKafkaInfo(conf config.Config, out chan<- [][]string) error {
 	client, err := kafka.InitClientWithConf(&conf, addr)
 	if err != nil {
 		out <- [][]string{}
+		kafkaInfoCh <- kInfo
 		return errors.Wrap(err, "Error initializing redpanda client")
 	}
 	admin, err := sarama.NewClusterAdminFromClient(client)
 	if err != nil {
 		out <- [][]string{}
+		kafkaInfoCh <- kInfo
 		return errors.Wrap(err, "Error initializing redpanda client")
 	}
 	defer admin.Close()
 	topics, err := topicsDetail(admin)
 	if err != nil {
 		out <- [][]string{}
+		kafkaInfoCh <- kInfo
 		return errors.Wrap(err, "Error fetching the Redpanda topic details")
 	}
-	if len(topics) == 0 {
+	if send {
 		out <- [][]string{}
+		topicsNo := len(topics)
+		parts := 0
+		for _, t := range topics {
+			parts += len(t.Partitions)
+		}
+		kInfo.partitions = &parts
+		kInfo.topics = &topicsNo
+		kafkaInfoCh <- kInfo
 		return nil
 	}
 	out <- getKafkaInfoRows(client.Brokers(), topics)
+	kafkaInfoCh <- kInfo
 	return nil
 }
 
 func getKafkaInfoRows(
 	brokers []*sarama.Broker, topics []*sarama.TopicMetadata,
 ) [][]string {
+	if len(topics) == 0 {
+		return [][]string{}
+	}
 	rows := [][]string{}
 	spacingRow := []string{"", ""}
 	type node struct {
@@ -391,11 +421,15 @@ func getKafkaInfoRows(
 	return rows
 }
 
-func sendMetrics(conf config.Config, metrics *system.Metrics) error {
+func sendMetrics(
+	conf config.Config, metrics *system.Metrics, kInfo kafkaInfo,
+) error {
 	payload := api.MetricsPayload{
 		FreeMemoryMB:	metrics.FreeMemoryMB,
 		FreeSpaceMB:	metrics.FreeSpaceMB,
 		CpuPercentage:	metrics.CpuPercentage,
+		Partitions:	kInfo.partitions,
+		Topics:		kInfo.topics,
 	}
 	return api.SendMetrics(payload, conf)
 }
