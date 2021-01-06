@@ -218,3 +218,5 @@ results
 .ducktape
 tests/docker/build
 vbuild/
+
+vtools/
