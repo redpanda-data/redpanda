@@ -64,7 +64,7 @@ FIXTURE_TEST(test_coproc_no_topics, script_manager_service_fixture) {
     client.connect().get();
     auto dclient = ss::defer([&client] { client.stop().get(); });
     startup({{make_ts("foo"), 5}}).get();
-    const auto resp = register_coprocessors(client, {make_enable_req(1234, {})})
+    const auto resp = register_coprocessors(client, {make_enable_req(54, {})})
                         .get0()
                         .value()
                         .data;
@@ -91,7 +91,7 @@ FIXTURE_TEST(test_coproc_invalid_topics, script_manager_service_fixture) {
       = register_coprocessors(
           client,
           {make_enable_req(
-            1234,
+            999,
             {{".", l}, {"..", l}, {"foo", l}, {"", l}, {too_long_topic, l}})})
           .get0()
           .value()
@@ -99,7 +99,7 @@ FIXTURE_TEST(test_coproc_invalid_topics, script_manager_service_fixture) {
     BOOST_CHECK_EQUAL(resp.acks.size(), 1);
     const auto& first_acks = resp.acks[0].second;
     BOOST_CHECK_EQUAL(first_acks.size(), 5);
-    BOOST_CHECK_EQUAL(resp.acks[0].first, coproc::script_id(1234));
+    BOOST_CHECK_EQUAL(resp.acks[0].first, coproc::script_id(999));
     BOOST_CHECK_EQUAL(first_acks[0], erc::invalid_topic);
     BOOST_CHECK_EQUAL(first_acks[1], erc::invalid_topic);
     BOOST_CHECK_EQUAL(first_acks[2], erc::success);
@@ -184,8 +184,8 @@ FIXTURE_TEST(test_coproc_topics, script_manager_service_fixture) {
     const auto resp = register_coprocessors(
                         client,
                         {make_enable_req(
-                           1523, {{"foo", l}, {"bar", l}, {"baz", l}}),
-                         make_enable_req(123, {{"foo", l}})})
+                           523, {{"foo", l}, {"bar", l}, {"baz", l}}),
+                         make_enable_req(332, {{"foo", l}})})
                         .get0()
                         .value()
                         .data;
@@ -193,8 +193,8 @@ FIXTURE_TEST(test_coproc_topics, script_manager_service_fixture) {
     BOOST_CHECK_EQUAL(resp.acks.size(), 2);
     const auto& first_acks = resp.acks[0].second;
     const auto& second_acks = resp.acks[1].second;
-    BOOST_CHECK_EQUAL(resp.acks[0].first, coproc::script_id(1523));
-    BOOST_CHECK_EQUAL(resp.acks[1].first, coproc::script_id(123));
+    BOOST_CHECK_EQUAL(resp.acks[0].first, coproc::script_id(523));
+    BOOST_CHECK_EQUAL(resp.acks[1].first, coproc::script_id(332));
     BOOST_CHECK_EQUAL(first_acks.size(), 3);
     BOOST_CHECK_EQUAL(first_acks[0], erc::success);
     BOOST_CHECK_EQUAL(first_acks[1], erc::success);
@@ -207,13 +207,13 @@ FIXTURE_TEST(test_coproc_topics, script_manager_service_fixture) {
 
     // 4-6. Attempt to deregister some
     const auto disable_acks
-      = deregister_coprocessors(client, {1523}).get0().value().data;
+      = deregister_coprocessors(client, {523}).get0().value().data;
     BOOST_CHECK_EQUAL(disable_acks.acks.size(), 1);
     BOOST_CHECK_EQUAL(disable_acks.acks[0], drc::success);
     BOOST_CHECK(coproc_validate().get0());
 
     const auto disable_acks2
-      = deregister_coprocessors(client, {123}).get0().value().data;
+      = deregister_coprocessors(client, {332}).get0().value().data;
     BOOST_CHECK_EQUAL(disable_acks2.acks.size(), 1);
     BOOST_CHECK_EQUAL(disable_acks2.acks[0], drc::success);
     BOOST_CHECK(coproc_validate().get0());

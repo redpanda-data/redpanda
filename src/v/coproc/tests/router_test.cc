@@ -35,8 +35,8 @@ FIXTURE_TEST(test_coproc_router_no_results, router_test_fixture) {
     // Note the original number of logs
     const size_t n_logs = number_of_logs(this);
     // Router has 2 coprocessors, one subscribed to 'foo' the other 'bar'
-    add_copro<null_coprocessor>(321, {{"bar", l}}).get();
-    add_copro<null_coprocessor>(1234, {{"foo", l}}).get();
+    add_copro<null_coprocessor>(2222, {{"bar", l}}).get();
+    add_copro<null_coprocessor>(7777, {{"foo", l}}).get();
     // Storage has 10 ntps, 8 of topic 'bar' and 2 of 'foo'
     startup({{make_ts("foo"), 2}, {make_ts("bar"), 8}}, client)
       .then([&client] { return client.stop(); })
@@ -63,9 +63,9 @@ FIXTURE_TEST(test_coproc_router_simple, router_test_fixture) {
     auto client = make_client();
     client.connect().get();
     // Supervisor has 3 registered transforms, of the same type
-    add_copro<identity_coprocessor>(1234, {{"foo", l}}).get();
-    add_copro<identity_coprocessor>(121, {{"foo", l}}).get();
-    add_copro<identity_coprocessor>(321, {{"bar", l}}).get();
+    add_copro<identity_coprocessor>(8888, {{"foo", l}}).get();
+    add_copro<identity_coprocessor>(9159, {{"foo", l}}).get();
+    add_copro<identity_coprocessor>(4444, {{"bar", l}}).get();
     // Storage has 5 ntps, 4 of topic 'foo' and 1 of 'bar'
     startup({{make_ts("foo"), 4}, {make_ts("bar"), 1}}, client)
       .then([&client] { return client.stop(); })
@@ -80,14 +80,14 @@ FIXTURE_TEST(test_coproc_router_simple, router_test_fixture) {
       model::partition_id(0));
 
     auto batches = storage::test::make_random_batches(
-      model::offset(0), 4, false);
+      model::offset(0), 40, false);
     const auto pre_batch_size = sum_records(batches) * 2;
 
     using namespace std::literals;
     auto f1 = push(
       input_ntp, model::make_memory_record_batch_reader(std::move(batches)));
     auto f2 = drain(
-      output_ntp, pre_batch_size, model::timeout_clock::now() + 5s);
+      output_ntp, pre_batch_size, model::timeout_clock::now() + 10s);
     auto read_batches
       = ss::when_all_succeed(std::move(f1), std::move(f2)).get();
 
@@ -104,7 +104,7 @@ FIXTURE_TEST(test_coproc_router_multi_route, router_test_fixture) {
     const model::topic tt("sole_input");
     const std::size_t n_partitions = 4;
     // and one coprocessor that transforms this topic
-    add_copro<two_way_split_copro>(4444, {{"sole_input", l}}).get();
+    add_copro<two_way_split_copro>(9111, {{"sole_input", l}}).get();
     startup({{make_ts(tt), n_partitions}}, client)
       .then([&client] { return client.stop(); })
       .get();
