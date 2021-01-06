@@ -32,7 +32,7 @@ class TopicDeleteTest(RedpandaTest):
 
         self.kafka_tools = KafkaCliTools(self.redpanda)
 
-    @cluster(num_node=3)
+    @cluster(num_nodes=3)
     def topic_delete_test(self):
         def produce_until_partitions():
             self.kafka_tools.produce("topic", 1024, 1024)
