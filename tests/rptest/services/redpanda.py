@@ -30,23 +30,12 @@ Partition = collections.namedtuple('Partition',
 
 
 class RedpandaService(Service):
-    PERSISTENT_ROOT = "/mnt/redpanda"
+    PERSISTENT_ROOT = "/var/lib/redpanda"
     DATA_DIR = os.path.join(PERSISTENT_ROOT, "data")
-    CONFIG_FILE = os.path.join(PERSISTENT_ROOT, "redpanda.yaml")
+    CONFIG_FILE = "/etc/redpanda/redpanda.yaml"
     STDOUT_STDERR_CAPTURE = os.path.join(PERSISTENT_ROOT, "redpanda.log")
     CLUSTER_NAME = "my_cluster"
     READY_TIMEOUT_SEC = 10
-    V_DEV_MOUNT = "/opt/v"
-
-    # ducktape `--globals` for selecting build
-    BUILD_DIR_KEY = "redpanda_build_dir"
-    DEFAULT_BUILD_DIR = "vbuild"
-    BUILD_TYPE_KEY = "redpanda_build_type"
-    DEFAULT_BUILD_TYPE = "release"
-    COMPILER_KEY = "redpanda_compiler"
-    DEFAULT_COMPILER = "clang"
-    PACKAGING_KEY = "redpanda_packaging"
-    DEFAULT_PACKAGING = "dir"
 
     logs = {
         "redpanda_start_stdout_stderr": {
@@ -66,6 +55,7 @@ class RedpandaService(Service):
         self._extra_rp_conf = extra_rp_conf
         self._log_level = log_level
         self._topics = topics or dict()
+        self.v_build_dir = self._context.globals.get("v_build_dir", None)
 
     def start(self):
         super(RedpandaService, self).start()
@@ -92,17 +82,21 @@ class RedpandaService(Service):
 
     def start_node(self, node, override_cfg_params=None):
         node.account.mkdirs(RedpandaService.DATA_DIR)
-        self.write_conf_file(node, override_cfg_params)
+        node.account.mkdirs(os.path.dirname(RedpandaService.CONFIG_FILE))
 
-        cmd = "nohup {} ".format(self.find_binary("redpanda"))
-        cmd += "--redpanda-cfg {} ".format(RedpandaService.CONFIG_FILE)
-        cmd += "--default-log-level {} ".format(self._log_level)
-        cmd += "--logger-log-level=exception=debug "
-        cmd += ">> {0} 2>&1 &".format(RedpandaService.STDOUT_STDERR_CAPTURE)
+        platform = self._context.globals.get("platform", "docker-compose")
+
+        if platform == "docker-compose":
+            self.write_conf_file(node, override_cfg_params)
+
+        cmd = (f"nohup {self.find_binary('redpanda')}"
+               f" --redpanda-cfg {RedpandaService.CONFIG_FILE}"
+               f" --default-log-level {self._log_level}"
+               f" --logger-log-level=exception=debug "
+               f" >> {RedpandaService.STDOUT_STDERR_CAPTURE} 2>&1 &")
 
         self.logger.info(
-            "Starting Redpanda service on {} with command: {}".format(
-                node.account, cmd))
+            "Starting Redpanda service on {node.account} with command: {cmd}")
 
         # wait until redpanda has finished booting up
         with node.account.monitor_log(
@@ -112,8 +106,15 @@ class RedpandaService(Service):
                 "Successfully started Redpanda!",
                 timeout_sec=RedpandaService.READY_TIMEOUT_SEC,
                 backoff_sec=0.5,
-                err_msg="Redpanda didn't finish startup in {} seconds".format(
-                    RedpandaService.READY_TIMEOUT_SEC))
+                err_msg=
+                "Redpanda didn't finish startup in {RedpandaService.READY_TIMEOUT_SEC} seconds",
+            )
+
+    def find_binary(self, name):
+        rp_install_path_root = self._context.globals.get(
+            "rp_install_path_root", None)
+
+        return f"{rp_install_path_root}/redpanda/bin/{name}"
 
     def stop_node(self, node):
         pids = self.pids(node)
@@ -129,30 +130,8 @@ class RedpandaService(Service):
 
     def clean_node(self, node):
         node.account.kill_process("redpanda", clean_shutdown=False)
-        node.account.remove(RedpandaService.PERSISTENT_ROOT)
-
-    def find_binary(self, name):
-        build_type = self._context.globals.get(
-            RedpandaService.BUILD_TYPE_KEY, RedpandaService.DEFAULT_BUILD_TYPE)
-        compiler = self._context.globals.get(RedpandaService.COMPILER_KEY,
-                                             RedpandaService.DEFAULT_COMPILER)
-        packaging = self._context.globals.get(
-            RedpandaService.PACKAGING_KEY, RedpandaService.DEFAULT_PACKAGING)
-        build_dir = self._context.globals.get(
-            RedpandaService.BUILD_DIR_KEY, RedpandaService.DEFAULT_BUILD_DIR)
-
-        if packaging not in {"dir"}:
-            raise RuntimeError("Packaging type %s not supported" % packaging)
-
-        path = os.path.join(RedpandaService.V_DEV_MOUNT, build_dir, build_type,
-                            compiler, "dist/local/redpanda/bin", name)
-
-        if not os.path.exists(path):
-            raise RuntimeError("Couldn't find binary %s: %s", name, path)
-
-        self.logger.debug("Found binary %s: %s", name, path)
-
-        return path
+        node.account.remove(f"{RedpandaService.PERSISTENT_ROOT}/*")
+        node.account.remove(f"{RedpandaService.CONFIG_FILE}")
 
     def pids(self, node):
         """Return process ids associated with running processes on the given node."""
@@ -206,12 +185,13 @@ class RedpandaService(Service):
 
     def registered(self, node):
         idx = self.idx(node)
-        self.logger.debug("Checking if broker %d/%s is registered", idx, node)
+        self.logger.debug(
+            f"Checking if broker {idx} ({node.name} is registered")
         kc = KafkaCat(self)
         brokers = kc.metadata()["brokers"]
         brokers = {b["id"]: b for b in brokers}
         broker = brokers.get(idx, None)
-        self.logger.debug("Found broker info: %s", broker)
+        self.logger.debug(f"Found broker info: {broker}")
         return broker is not None
 
     def controller(self):

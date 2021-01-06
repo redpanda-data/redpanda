@@ -10,27 +10,16 @@
 import os
 import signal
 
-import yaml
-
 from ducktape.services.service import Service
 from ducktape.cluster.remoteaccount import RemoteCommandError
 from ducktape.utils.util import wait_until
 
 
 class PandaProxyService(Service):
-    PERSISTENT_ROOT = "/mnt/pandaproxy"
-    CONFIG_FILE = os.path.join(PERSISTENT_ROOT, "pandaproxy.yaml")
+    PERSISTENT_ROOT = "/var/lib/pandaproxy"
+    CONFIG_FILE = "/etc/pandaproxy/pandaproxy.yaml"
     STDOUT_STDERR_CAPTURE = os.path.join(PERSISTENT_ROOT, "pandaproxy.log")
     READY_TIMEOUT_SEC = 10
-    V_DEV_MOUNT = "/opt/v"
-
-    # ducktape `--globals` for selecting build
-    BUILD_TYPE_KEY = "redpanda_build_type"
-    DEFAULT_BUILD_TYPE = "release"
-    COMPILER_KEY = "redpanda_compiler"
-    DEFAULT_COMPILER = "clang"
-    PACKAGING_KEY = "redpanda_packaging"
-    DEFAULT_PACKAGING = "dir"
 
     logs = {
         "pandaproxy_start_stdout_stderr": {
@@ -44,9 +33,21 @@ class PandaProxyService(Service):
         self._context = context
         self._redpanda = redpanda
 
+        self._rp_install_path_root = self._context.globals.get(
+            "rp_install_path_root", "")
+
+        if not os.path.isdir(self._rp_install_path_root):
+            raise RuntimeError(
+                f"Install path: {self._rp_install_path_root} doesn't exist")
+
     def start_node(self, node):
         node.account.mkdirs(PandaProxyService.PERSISTENT_ROOT)
-        self.write_conf_file(node)
+        node.account.mkdirs(os.path.dirname(PandaProxyService.CONFIG_FILE))
+
+        platform = self._context.globals.get("platform", "docker-compose")
+
+        if platform == "docker-compose":
+            self.write_conf_file(node)
 
         cmd = "nohup {} ".format(self.find_binary("pandaproxy"))
         cmd += "--pandaproxy-cfg {} ".format(PandaProxyService.CONFIG_FILE)
@@ -82,31 +83,12 @@ class PandaProxyService(Service):
 
     def clean_node(self, node):
         node.account.kill_process("pandaproxy", clean_shutdown=False)
-        node.account.remove(PandaProxyService.PERSISTENT_ROOT)
+        node.account.remove(f"{PandaProxyService.PERSISTENT_ROOT}/*")
+        node.account.remove(f"{PandaProxyService.CONFIG_FILE}")
 
     def find_binary(self, name):
-        root = self._build_root()
-        path = os.path.join(root, "bin", name)
-        self.logger.debug("Found binary %s: %s", name, path)
-        return path
-
-    def _build_root(self):
-        # TODO: figure out how to use python mixin design pattern to factor out
-        # the build path calculation to share between services.
-        build_type = self._context.globals.get(
-            PandaProxyService.BUILD_TYPE_KEY,
-            PandaProxyService.DEFAULT_BUILD_TYPE)
-        compiler = self._context.globals.get(
-            PandaProxyService.COMPILER_KEY, PandaProxyService.DEFAULT_COMPILER)
-        packaging = self._context.globals.get(
-            PandaProxyService.PACKAGING_KEY,
-            PandaProxyService.DEFAULT_PACKAGING)
-
-        if packaging not in {"dir"}:
-            raise RuntimeError("Packaging type %s not supported" % packaging)
-
-        return os.path.join(PandaProxyService.V_DEV_MOUNT, "build", build_type,
-                            compiler, "dist/local/pandaproxy")
+        bin_path = f"{self._rp_install_path_root}/pandaproxy/bin/{name}"
+        return bin_path
 
     def pids(self, node):
         """Return process ids associated with running processes on the given node."""
@@ -123,7 +105,7 @@ class PandaProxyService(Service):
     def write_conf_file(self, node):
         conf = self.render("pandaproxy.yaml",
                            broker=self._redpanda.nodes[0],
-                           root=self._build_root())
+                           root=self._rp_install_path_root)
 
         self.logger.info("Writing Pandaproxy config file: {}".format(
             PandaProxyService.CONFIG_FILE))
