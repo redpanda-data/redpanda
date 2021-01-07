@@ -15,11 +15,42 @@
 
 #include <seastar/core/future-util.hh>
 #include <seastar/core/future.hh>
+#include <seastar/core/when_all.hh>
 
 #include <algorithm>
 #include <iterator>
 
 namespace ssx {
+
+namespace detail {
+
+template<typename ResultType, typename Iterator, typename Func>
+inline seastar::future<std::vector<ResultType>>
+async_transform(Iterator begin, Iterator end, Func&& func) {
+    std::vector<ResultType> res;
+    res.reserve(std::distance(begin, end));
+    return seastar::do_with(
+      std::move(res),
+      std::move(begin),
+      std::move(end),
+      [func = std::forward<Func>(func)](
+        std::vector<ResultType>& res, Iterator& begin, Iterator& end) mutable {
+          /// Since its not known what type of iterator 'Iterator' is, a
+          /// universal ref must be used. For example an rval-ref to a temporary
+          /// (when Iterator is a boost::range::iterator_range) or an l-val ref
+          /// (when Iterator is std::vector<>::iterator).
+          return seastar::do_for_each(
+                   begin,
+                   end,
+                   [&res,
+                    func = std::forward<Func>(func)](auto&& value) mutable {
+                       return func(res, std::forward<decltype(value)>(value));
+                   })
+            .then([&res] { return std::move(res); });
+      });
+}
+
+} // namespace detail
 
 /// \brief Run tasks synchronously in order and wait for completion only
 /// invoking futures one after the previous has completed
@@ -47,25 +78,14 @@ CONCEPT(requires requires(Func f, Iterator i) {
 // clang-format on
 inline auto async_transform(Iterator begin, Iterator end, Func&& func) {
     using result_type = decltype(seastar::futurize_invoke(func, *begin).get0());
-    std::vector<result_type> res;
-    res.reserve(std::distance(begin, end));
-    return seastar::do_with(
-      std::move(res),
+    return detail::async_transform<result_type>(
       std::move(begin),
       std::move(end),
-      [func{std::forward<Func>(func)}](
-        std::vector<result_type>& res, Iterator& begin, Iterator& end) mutable {
-          return seastar::do_for_each(
-                   begin,
-                   end,
-                   [&res, func{std::forward<Func>(func)}](auto&& val) mutable {
-                       return seastar::futurize_invoke(
-                                func, std::forward<decltype(val)>(val))
-                         .then([&res](result_type r) {
-                             return res.push_back(std::move(r));
-                         });
-                   })
-            .then([&res] { return std::move(res); });
+      [func = std::forward<Func>(func)](
+        std::vector<result_type>& acc, auto&& x) {
+          return seastar::futurize_invoke(func, std::forward<decltype(x)>(x))
+            .then(
+              [&acc](result_type result) { acc.push_back(std::move(result)); });
       });
 }
 
@@ -95,7 +115,7 @@ CONCEPT(requires requires(Func f, Rng r) {
     seastar::futurize_invoke(f, *r.begin()).get0();
 })
 // clang-format on
-inline auto async_transform(Rng&& rng, Func&& func) {
+inline auto async_transform(Rng& rng, Func&& func) {
     return async_transform(rng.begin(), rng.end(), std::forward<Func>(func));
 }
 
@@ -131,32 +151,18 @@ CONCEPT(requires requires(Func f, Iterator i) {
 inline auto async_flat_transform(Iterator begin, Iterator end, Func&& func) {
     using result_type = decltype(seastar::futurize_invoke(func, *begin).get0());
     using value_type = typename result_type::value_type;
-    std::vector<value_type> res;
-    res.reserve(std::distance(begin, end));
-    return seastar::do_with(
-      std::move(res),
+    return detail::async_transform<value_type>(
       std::move(begin),
       std::move(end),
-      [func{std::forward<Func>(func)}](
-        std::vector<value_type>& res, Iterator& begin, Iterator& end) mutable {
-          return seastar::do_for_each(
-                   begin,
-                   end,
-                   [&res, func{std::forward<Func>(func)}](auto&& val) mutable {
-                       return seastar::futurize_invoke(
-                                func, std::forward<decltype(val)>(val))
-                         .then([&res](std::vector<value_type> r) {
-                             return seastar::do_with(
-                               std::move(r),
-                               [&res](std::vector<value_type>& r) {
-                                   return seastar::do_for_each(
-                                     r, [&res](value_type& element) {
-                                         res.push_back(std::move(element));
-                                     });
-                               });
-                         });
-                   })
-            .then([&res] { return std::move(res); });
+      [func = std::forward<Func>(func)](
+        std::vector<value_type>& acc, auto&& x) {
+          return seastar::futurize_invoke(func, std::forward<decltype(x)>(x))
+            .then([&acc](std::vector<value_type> x) {
+                std::copy(
+                  std::make_move_iterator(x.begin()),
+                  std::make_move_iterator(x.end()),
+                  std::back_inserter(acc));
+            });
       });
 }
 
