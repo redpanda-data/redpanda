@@ -71,7 +71,8 @@ public:
               r.node_id,
               m,
               model::make_memory_record_batch_reader(
-                ss::circular_buffer<model::record_batch>{})));
+                ss::circular_buffer<model::record_batch>{}),
+              append_entries_request::flush_after_append::no));
         }
 
         auto req_size = reqs.size();

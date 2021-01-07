@@ -67,7 +67,7 @@ consensus::consensus(
   , _snapshot_mgr(
       std::filesystem::path(_log.config().work_directory()), _io_priority)
   , _configuration_manager(std::move(initial_cfg), _group, _storage, _ctxlog)
-  , _append_requests_buffer(_op_lock, 256) {
+  , _append_requests_buffer(*this, 256) {
     setup_metrics();
     update_follower_stats(_configuration_manager.get_latest());
     _vote_timeout.set_callback([this] {
@@ -786,12 +786,7 @@ ss::future<> consensus::start() {
               start_dispatching_disk_append_events();
               return _event_manager.start();
           })
-          .then([this] {
-              _append_requests_buffer.start(
-                [this](append_entries_request&& request) {
-                    return do_append_entries(std::move(request));
-                });
-          });
+          .then([this] { _append_requests_buffer.start(); });
     });
 }
 
@@ -1220,21 +1215,12 @@ consensus::do_append_entries(append_entries_request&& r) {
     // success. copy entries for each subsystem
     using offsets_ret = storage::append_result;
     return disk_append(std::move(r.batches))
-      .then([this, m = r.meta, flush = r.flush](offsets_ret ofs) mutable {
+      .then([this, m = r.meta](offsets_ret ofs) {
           auto f = ss::make_ready_future<>();
-          if (flush) {
-              f = f.then([this] { return flush_log(); });
-          }
           auto last_visible = std::min(ofs.last_offset, m.last_visible_index);
           maybe_update_last_visible_index(last_visible);
-          return f.then(
-            [this, m = std::move(m), ofs = std::move(ofs)]() mutable {
-                return maybe_update_follower_commit_idx(
-                         model::offset(m.commit_index))
-                  .then([this, ofs = std::move(ofs)]() mutable {
-                      return make_append_entries_reply(std::move(ofs));
-                  });
-            });
+          return maybe_update_follower_commit_idx(model::offset(m.commit_index))
+            .then([this, ofs] { return make_append_entries_reply(ofs); });
       })
       .handle_exception([this, reply = std::move(reply)](
                           const std::exception_ptr& e) mutable {

@@ -30,6 +30,7 @@ v_cc_library(
     log_eviction_stm.cc
     configuration_manager.cc
     configuration.cc
+    append_entries_buffer.cc
   DEPS
     v::storage
     raft_rpc
