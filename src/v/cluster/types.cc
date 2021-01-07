@@ -36,7 +36,7 @@ storage::ntp_config topic_configuration::make_ntp_config(
                          || segment_size || retention_bytes.has_value()
                          || retention_bytes.is_disabled()
                          || retention_duration.has_value()
-                         || retention_duration.is_disabled();
+                         || retention_duration.is_disabled() || is_internal();
     std::unique_ptr<storage::ntp_config::default_overrides> overrides = nullptr;
 
     if (has_overrides) {
@@ -46,7 +46,10 @@ storage::ntp_config topic_configuration::make_ntp_config(
             .compaction_strategy = compaction_strategy,
             .segment_size = segment_size,
             .retention_bytes = retention_bytes,
-            .retention_time = retention_duration});
+            .retention_time = retention_duration,
+            // we disable cache for internal topics as they are read only once
+            // during bootstrap.
+            .cache_enabled = storage::with_cache(!is_internal())});
     }
     return storage::ntp_config(
       model::ntp(tp_ns.ns, tp_ns.tp, p_id),
