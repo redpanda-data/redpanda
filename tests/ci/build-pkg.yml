@@ -78,8 +78,10 @@ steps:
     ./build/venv/v/bin/vtools build go --targets=rpk --conf=vtools/vtools/artifacts/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml
     ./build/venv/v/bin/vtools build redpanda-dashboard --conf=vtools/vtools/artifacts/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml
     ./build/venv/v/bin/vtools build pkg --conf=vtools/vtools/artifacts/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml --format=rpm --format=deb --format=tar
+    ./build/venv/v/bin/vtools ci github-event --event-type packages-created
   env:
   - SHORT_SHA=$SHORT_SHA
+  - GH_TOKEN=$_GITHUB_API_TOKEN
 
 timeout: 3600s
 

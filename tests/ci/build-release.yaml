@@ -80,6 +80,7 @@ steps:
     ./build/venv/v/bin/vtools build redpanda-dashboard --conf=vtools/vtools/artifacts/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml
     ./build/venv/v/bin/vtools build pkg --conf=vtools/vtools/artifacts/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml --format=rpm --format=deb --format=tar
     ./build/venv/v/bin/vtools publish --conf=vtools/vtools/artifacts/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml
+    ./build/venv/v/bin/vtools ci github-event --event-type packages-created || true # let's not mess with the release pipeline yet
   env:
   - SHORT_SHA=$SHORT_SHA
   - TAG_NAME=$TAG_NAME
@@ -87,6 +88,7 @@ steps:
   - DOCKER_USERNAME=$_DOCKER_USERNAME
   - DOCKER_PASSWORD=$_DOCKER_PASSWORD
   - CLOUDSMITH_TOKEN=$_CLOUDSMITH_TOKEN
+  - GH_TOKEN=$_GITHUB_API_TOKEN
 
 timeout: 3600s
 
