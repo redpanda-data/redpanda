@@ -1,9 +1,9 @@
 #pragma once
 #include "coproc/logger.h"
 #include "coproc/script_manager.h"
-#include "coproc/tests/coproc_test_fixture.h"
-#include "coproc/tests/coprocessor.h"
-#include "coproc/tests/supervisor_test_fixture.h"
+#include "coproc/tests/utils/coproc_test_fixture.h"
+#include "coproc/tests/utils/coprocessor.h"
+#include "coproc/tests/utils/supervisor_test_fixture.h"
 #include "coproc/types.h"
 
 // Non-sharded rpc_service to emmulate the javascript engine

@@ -1,6 +1,6 @@
-#include "coproc/tests/router_test_fixture.h"
+#include "coproc/tests/utils/router_test_fixture.h"
 
-#include "coproc/tests/utils.h"
+#include "coproc/tests/utils/utils.h"
 #include "model/metadata.h"
 #include "test_utils/async.h"
 

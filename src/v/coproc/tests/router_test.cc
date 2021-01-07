@@ -6,10 +6,10 @@
 //
 // https://github.com/vectorizedio/redpanda/blob/master/licenses/rcl.md
 
-#include "coproc/tests/coprocessor.h"
-#include "coproc/tests/router_test_fixture.h"
-#include "coproc/tests/two_way_split_copro.h"
-#include "coproc/tests/utils.h"
+#include "coproc/tests/utils/coprocessor.h"
+#include "coproc/tests/utils/router_test_fixture.h"
+#include "coproc/tests/utils/two_way_split_copro.h"
+#include "coproc/tests/utils/utils.h"
 #include "coproc/types.h"
 #include "model/fundamental.h"
 #include "model/timeout_clock.h"

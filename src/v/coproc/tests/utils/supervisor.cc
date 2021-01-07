@@ -6,10 +6,10 @@
 //
 // https://github.com/vectorizedio/redpanda/blob/master/licenses/rcl.md
 
-#include "coproc/tests/supervisor.h"
+#include "coproc/tests/utils/supervisor.h"
 
 #include "coproc/logger.h"
-#include "coproc/tests/utils.h"
+#include "coproc/tests/utils/utils.h"
 #include "coproc/types.h"
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"

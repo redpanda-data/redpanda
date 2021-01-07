@@ -9,7 +9,7 @@
  */
 
 #pragma once
-#include "coproc/tests/coprocessor.h"
+#include "coproc/tests/utils/coprocessor.h"
 #include "model/record_batch_types.h"
 #include "raft/types.h"
 #include "storage/record_batch_builder.h"

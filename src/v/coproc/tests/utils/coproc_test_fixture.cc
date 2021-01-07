@@ -9,7 +9,7 @@
 #include "coproc_test_fixture.h"
 
 #include "coproc/logger.h"
-#include "coproc/tests/utils.h"
+#include "coproc/tests/utils/utils.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "model/timestamp.h"

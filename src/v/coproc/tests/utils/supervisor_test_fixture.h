@@ -1,6 +1,6 @@
 #pragma once
-#include "coproc/tests/coprocessor.h"
-#include "coproc/tests/supervisor.h"
+#include "coproc/tests/utils/coprocessor.h"
+#include "coproc/tests/utils/supervisor.h"
 #include "rpc/test/rpc_integration_fixture.h"
 #include "vassert.h"
 
