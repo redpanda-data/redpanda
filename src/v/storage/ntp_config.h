@@ -19,6 +19,8 @@
 #include <optional>
 
 namespace storage {
+using with_cache = ss::bool_class<struct log_cache_tag>;
+
 class ntp_config {
 public:
     struct default_overrides {

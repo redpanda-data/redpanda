@@ -316,8 +316,7 @@ static storage::log_config manager_config_from_global_config() {
       config::shard_local_cfg().retention_bytes(),
       config::shard_local_cfg().log_compaction_interval_ms(),
       config::shard_local_cfg().delete_retention_ms(),
-      storage::log_config::with_cache(
-        !config::shard_local_cfg().disable_batch_cache()),
+      storage::with_cache(!config::shard_local_cfg().disable_batch_cache()),
       storage::batch_cache::reclaim_options{
         .growth_window = config::shard_local_cfg().reclaim_growth_window(),
         .stable_window = config::shard_local_cfg().reclaim_stable_window(),

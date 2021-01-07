@@ -792,7 +792,7 @@ void append_single_record_batch(
 FIXTURE_TEST(truncate_and_roll_segment, storage_test_fixture) {
     auto cfg = default_log_config(test_dir);
     cfg.stype = storage::log_config::storage_type::disk;
-    cfg.cache = storage::log_config::with_cache::yes;
+    cfg.cache = storage::with_cache::yes;
 
     {
         storage::log_manager mgr = make_log_manager(cfg);
@@ -838,7 +838,7 @@ FIXTURE_TEST(truncate_and_roll_segment, storage_test_fixture) {
 FIXTURE_TEST(compacted_log_truncation, storage_test_fixture) {
     auto cfg = default_log_config(test_dir);
     cfg.stype = storage::log_config::storage_type::disk;
-    cfg.cache = storage::log_config::with_cache::yes;
+    cfg.cache = storage::with_cache::yes;
     storage::ntp_config::default_overrides overrides;
     overrides.cleanup_policy_bitflags
       = model::cleanup_policy_bitflags::compaction;
@@ -903,7 +903,7 @@ FIXTURE_TEST(
   check_segment_roll_after_compacted_log_truncate, storage_test_fixture) {
     auto cfg = default_log_config(test_dir);
     cfg.stype = storage::log_config::storage_type::disk;
-    cfg.cache = storage::log_config::with_cache::yes;
+    cfg.cache = storage::with_cache::yes;
     storage::ntp_config::default_overrides overrides;
     overrides.cleanup_policy_bitflags
       = model::cleanup_policy_bitflags::compaction;
@@ -985,7 +985,7 @@ FIXTURE_TEST(partition_size_while_cleanup, storage_test_fixture) {
     cfg.max_compacted_segment_size = 10_KiB;
     cfg.stype = storage::log_config::storage_type::disk;
     // we want force reading most recent compacted batches, disable the cache
-    cfg.cache = storage::log_config::with_cache::no;
+    cfg.cache = storage::with_cache::no;
     ss::abort_source as;
     storage::log_manager mgr = make_log_manager(cfg);
 

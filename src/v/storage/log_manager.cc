@@ -158,7 +158,7 @@ ss::future<ss::lw_shared_ptr<segment>> log_manager::make_log_segment(
 }
 
 std::optional<batch_cache_index> log_manager::create_cache() {
-    if (unlikely(_config.cache == log_config::with_cache::no)) {
+    if (unlikely(_config.cache == with_cache::no)) {
         return std::nullopt;
     }
 

@@ -39,7 +39,7 @@ FIXTURE_TEST(test_random_workload, storage_test_fixture) {
       std::move(test_dir),
       200_MiB,
       storage::debug_sanitize_files::no,
-      storage::log_config::with_cache::yes));
+      storage::with_cache::yes));
     auto deferred = ss::defer([&mngr]() mutable { mngr.stop().get0(); });
 
     // Test parameters
@@ -87,7 +87,7 @@ FIXTURE_TEST(test_random_remove, storage_test_fixture) {
       std::move(test_dir),
       200_MiB,
       storage::debug_sanitize_files::no,
-      storage::log_config::with_cache::yes));
+      storage::with_cache::yes));
     auto deferred = ss::defer([&mngr]() mutable { mngr.stop().get0(); });
 
     // Test parameters

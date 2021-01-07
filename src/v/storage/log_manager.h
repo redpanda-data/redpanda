@@ -41,7 +41,6 @@ namespace storage {
 
 struct log_config {
     enum class storage_type { memory, disk };
-    using with_cache = ss::bool_class<struct log_cache_tag>;
     log_config(
       storage_type type,
       ss::sstring directory,
@@ -105,7 +104,7 @@ struct log_config {
     std::chrono::milliseconds compaction_interval = std::chrono::minutes(10);
     // same as delete.retention.ms in kafka - default 1 week
     std::chrono::milliseconds delete_retention = std::chrono::minutes(10080);
-    with_cache cache = log_config::with_cache::yes;
+    with_cache cache = with_cache::yes;
     batch_cache::reclaim_options reclaim_opts{
       .growth_window = std::chrono::seconds(3),
       .stable_window = std::chrono::seconds(10),

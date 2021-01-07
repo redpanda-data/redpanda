@@ -89,7 +89,7 @@ struct mux_state_machine_fixture {
           _data_dir,
           100_MiB,
           storage::debug_sanitize_files::yes,
-          storage::log_config::with_cache::yes);
+          storage::with_cache::yes);
     }
 
     model::broker self_broker() {
