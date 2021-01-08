@@ -13,11 +13,10 @@
 
 #include "seastarx.h"
 
-#include <seastar/core/sstring.hh>
-
 #include <cstdint>
 #include <cstring>
 #include <functional>
+#include <string_view>
 #include <xxhash.h>
 
 inline uint64_t xxhash_64(const char* data, const size_t& length) {
@@ -39,11 +38,21 @@ public:
         XXH64_update(&_state, src, sz);
     }
 
-    void update(const ss::sstring& str) { update(str.data(), str.size()); }
+    // string override
+    void update(std::string_view str) { update(str.data(), str.size()); }
+
+    // named type override
+    template<
+      typename T,
+      typename std::enable_if_t<
+        std::is_convertible_v<T, typename T::type>>* = nullptr>
+    void update(const T& named_type) {
+        update(named_type());
+    }
 
     template<
       typename T,
-      class = typename std::enable_if<std::is_integral_v<T>, T>>
+      typename std::enable_if_t<std::is_integral_v<T>>* = nullptr>
     void update(T t) {
         update((const char*)&t, sizeof(T));
     }

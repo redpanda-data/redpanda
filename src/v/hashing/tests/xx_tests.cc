@@ -7,6 +7,13 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "utils/named_type.h"
+
+#include <seastar/core/sstring.hh>
+
+#include <boost/test/tools/old/interface.hpp>
+
+#include <cstddef>
 #define BOOST_TEST_MODULE xxhash
 #include "hashing/xx.h"
 
@@ -38,4 +45,24 @@ BOOST_AUTO_TEST_CASE(digest_idempotency) {
     for (auto i = 0; i < 10; ++i) {
         BOOST_CHECK_EQUAL(inc.digest(), arr_hash);
     }
+}
+
+template<typename T, typename V>
+void test_incremental_hash(T test, V expected) {
+    incremental_xxhash64 hash;
+    hash.update(test);
+
+    incremental_xxhash64 expected_hash;
+    expected_hash.update(expected);
+    BOOST_REQUIRE_EQUAL(hash.digest(), expected_hash.digest());
+}
+
+BOOST_AUTO_TEST_CASE(overload_resolution) {
+    using named_str = named_type<ss::sstring, struct str_type>;
+    using named_integral = named_type<size_t, struct int_type>;
+
+    test_incremental_hash(named_str{"named_str"}, "named_str");
+    test_incremental_hash(named_integral{10}, (size_t)10);
+    named_str s("test_str");
+    test_incremental_hash(s, s());
 }
