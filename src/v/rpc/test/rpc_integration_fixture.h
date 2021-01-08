@@ -63,7 +63,7 @@ struct echo_impl final : echo::echo_service {
     }
 
     ss::future<echo::echo_resp>
-    sleep_1s(echo::echo_req&& req, rpc::streaming_context&) final {
+    sleep_1s(echo::echo_req&&, rpc::streaming_context&) final {
         using namespace std::chrono_literals;
         return ss::sleep(1s).then(
           []() { return echo::echo_resp{.str = "Zzz..."}; });
@@ -124,9 +124,9 @@ public:
     }
 
 protected:
+    ss::socket_address _listen_address;
     ss::smp_service_group _ssg;
     ss::scheduling_group _sg;
-    ss::socket_address _listen_address;
 
 private:
     virtual void check_server() = 0;

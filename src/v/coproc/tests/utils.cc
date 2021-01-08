@@ -72,7 +72,7 @@ absl::flat_hash_set<model::ntp>
 to_ntps(absl::flat_hash_map<model::topic_namespace, std::size_t>&& mp) {
     absl::flat_hash_set<model::ntp> r;
     for (auto&& e : mp) {
-        for (auto n = 0; n < e.second; ++n) {
+        for (std::size_t n = 0; n < e.second; ++n) {
             r.emplace(e.first.ns, e.first.tp, model::partition_id(n));
         }
     }

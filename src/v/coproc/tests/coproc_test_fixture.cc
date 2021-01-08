@@ -26,9 +26,8 @@ ss::future<> coproc_test_fixture::startup(log_layout_map&& llm) {
     _llm = llm;
     return ss::do_with(std::move(llm), [this](log_layout_map& llm) {
         return wait_for_controller_leadership().then([this, &llm] {
-            return ss::parallel_for_each(llm, [this](auto& p) {
-                return add_topic(p.first, p.second).then([this, &p] {});
-            });
+            return ss::parallel_for_each(
+              llm, [this](auto& p) { return add_topic(p.first, p.second); });
         });
     });
 }
@@ -152,7 +151,7 @@ ss::future<std::optional<ss::shard_id>>
 coproc_test_fixture::shard_for_ntp(const model::ntp& ntp) {
     return app.storage
       .map_reduce0(
-        [this, ntp](storage::api& api) -> std::optional<ss::shard_id> {
+        [ntp](storage::api& api) -> std::optional<ss::shard_id> {
             if (auto log = api.log_mgr().get(ntp)) {
                 return ss::this_shard_id();
             }
