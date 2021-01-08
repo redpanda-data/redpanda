@@ -1568,13 +1568,19 @@ consensus::disk_append(model::record_batch_reader&& reader) {
               update_follower_stats(configurations.back().cfg);
               f = _configuration_manager.add(std::move(configurations));
           }
+
           return f.then([this, ret = ret] {
-              return _configuration_manager
-                .maybe_store_highest_known_offset(
-                  ret.last_offset, ret.byte_size)
-                .then([ret = ret]() mutable {
-                    return ss::make_ready_future<ret_t>(std::move(ret));
+              // if we are already shutting down, do nothing
+              if (_bg.is_closed()) {
+                  return ret;
+              }
+
+              (void)ss::with_gate(
+                _bg, [this, last_offset = ret.last_offset, sz = ret.byte_size] {
+                    return _configuration_manager
+                      .maybe_store_highest_known_offset(last_offset, sz);
                 });
+              return ret;
           });
       });
 }
