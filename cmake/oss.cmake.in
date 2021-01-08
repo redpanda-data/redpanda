@@ -37,6 +37,7 @@ set(ENV{PKG_CONFIG_PATH}  @PKG_CONFIG_PATH@)
 set(cmake_build_env)
 if (@CMAKE_CXX_COMPILER_ID@ MATCHES "GNU")
   set(seastar_ld_flags "${ld_flags} -pthread")
+  set(seastar_cxx_flags "-Wno-error$<SEMICOLON>-fcoroutines")
 endif()
 
 # autotools
@@ -123,7 +124,7 @@ ExternalProject_Add(seastar
     -DSeastar_DEMOS=OFF
     -DSeastar_DOCS=OFF
     -DSeastar_TESTING=OFF
-    -DSeastar_CXX_FLAGS=-Wno-error
+    -DSeastar_CXX_FLAGS=${seastar_cxx_flags}
     "-DSeastar_LD_FLAGS=${seastar_ld_flags}"
     -DSeastar_API_LEVEL=6
     -DSeastar_CXX_DIALECT=c++20
