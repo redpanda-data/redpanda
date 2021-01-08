@@ -35,6 +35,7 @@
 #include <seastar/core/thread.hh>
 #include <seastar/http/api_docs.hh>
 #include <seastar/http/exception.hh>
+#include <seastar/http/file_handler.hh>
 #include <seastar/json/json_elements.hh>
 #include <seastar/util/defer.hh>
 
@@ -174,6 +175,26 @@ void application::check_environment() {
       .get();
 }
 
+/**
+ * Prepend a / to the path component. This handles the case where path is an
+ * empty string (e.g. url/) or when the path omits the root file path directory
+ * (e.g. url/index.html vs url//index.html). The directory handler in seastar is
+ * opininated and not very forgiving here so we help it a bit.
+ */
+class dashboard_handler final : public ss::httpd::directory_handler {
+public:
+    dashboard_handler()
+      : directory_handler(*config::shard_local_cfg().dashboard_dir()) {}
+
+    ss::future<std::unique_ptr<ss::httpd::reply>> handle(
+      const ss::sstring& path,
+      std::unique_ptr<ss::httpd::request> req,
+      std::unique_ptr<ss::httpd::reply> rep) override {
+        req->param.set("path", "/" + req->param.at("path"));
+        return directory_handler::handle(path, std::move(req), std::move(rep));
+    }
+};
+
 void application::configure_admin_server() {
     auto& conf = config::shard_local_cfg();
     if (!conf.enable_admin_api()) {
@@ -212,9 +233,8 @@ void application::configure_admin_server() {
           .invoke_on_all([](ss::http_server& server) {
               server._routes.add(
                 ss::httpd::operation_type::GET,
-                ss::httpd::url("/"),
-                new ss::httpd::directory_handler(
-                  *config::shard_local_cfg().dashboard_dir()));
+                ss::httpd::url("/dashboard").remainder("path"),
+                new dashboard_handler());
           })
           .get0();
     }
