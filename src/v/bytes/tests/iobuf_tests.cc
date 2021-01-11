@@ -10,6 +10,7 @@
 #include "bytes/bytes.h"
 #include "bytes/details/io_allocation_size.h"
 #include "bytes/iobuf.h"
+#include "bytes/iobuf_istreambuf.h"
 #include "bytes/iobuf_ostreambuf.h"
 #include "bytes/tests/utils.h"
 
@@ -537,4 +538,33 @@ SEASTAR_THREAD_TEST_CASE(test_trim_front_iterator_consumer_scan) {
     }
     BOOST_REQUIRE_EQUAL(expected.size(), actual.size());
     BOOST_REQUIRE_EQUAL(expected, actual);
+}
+SEASTAR_THREAD_TEST_CASE(iobuf_as_istream_basic) {
+    iobuf underlying;
+    underlying.append("hello world", 11);
+    iobuf_istreambuf ibuf(underlying);
+    std::istream is(&ibuf);
+    std::string h;
+    std::string w;
+    is >> h;
+    is >> w;
+    BOOST_REQUIRE_EQUAL(h, "hello");
+    BOOST_REQUIRE_EQUAL(w, "world");
+}
+
+SEASTAR_THREAD_TEST_CASE(iobuf_as_istream) {
+    const auto a = random_generators::gen_alphanum_string(1024);
+    const auto b = random_generators::gen_alphanum_string(1024);
+    iobuf underlying;
+    underlying.append(a.data(), a.size());
+    underlying.append(b.data(), b.size());
+    iobuf_istreambuf ibuf(underlying);
+    std::istream is(&ibuf);
+    std::string out;
+    std::copy(
+      std::istreambuf_iterator<char>(is),
+      std::istreambuf_iterator<char>(),
+      std::back_inserter(out));
+    BOOST_REQUIRE_EQUAL(underlying.size_bytes(), out.size());
+    BOOST_REQUIRE_EQUAL(a + b, out);
 }
