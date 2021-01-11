@@ -293,8 +293,15 @@ consensus::success_reply consensus::update_follower_index(
 
 void consensus::maybe_promote_to_voter(model::node_id id) {
     (void)ss::with_gate(_bg, [this, id] {
+        const auto& latest_cfg = _configuration_manager.get_latest();
+
+        // node is no longer part of current configuration, skip promotion
+        if (!latest_cfg.current_config().contains(id)) {
+            return ss::now();
+        }
+
         // is voter already
-        if (config().is_voter(id)) {
+        if (latest_cfg.is_voter(id)) {
             return ss::now();
         }
         auto it = _fstats.find(id);
@@ -493,8 +500,6 @@ bool consensus::should_skip_vote(bool ignore_heartbeat) {
     }
 
     skip_vote |= _vstate == vote_state::leader; // already a leader
-    skip_vote |= !_configuration_manager.get_latest().is_voter(
-      _self); // not a voter
 
     return skip_vote;
 }
@@ -542,6 +547,12 @@ void consensus::dispatch_vote(bool leadership_transfer) {
     bool current_priority_to_low = _target_priority > self_priority;
     // update target priority
     _target_priority = next_target_priority();
+
+    // skip sending vote request if current node is not a voter
+    if (!_configuration_manager.get_latest().is_voter(_self)) {
+        arm_vote_timeout();
+        return;
+    }
 
     // if priority is to low, skip dispatching votes, do not take priority into
     // account when we transfer leadership
