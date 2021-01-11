@@ -66,6 +66,54 @@ FIXTURE_TEST(test_replicate_multiple_entries, raft_test_fixture) {
       "State is consistent");
 };
 
+FIXTURE_TEST(test_replicate_with_expected_term_leader, raft_test_fixture) {
+    raft_group gr = raft_group(raft::group_id(0), 3);
+    gr.enable_all();
+    auto leader_id = wait_for_group_leader(gr);
+    auto leader_raft = gr.get_member(leader_id).consensus;
+    auto term = leader_raft->term();
+    bool success = replicate_random_batches(
+                     term, gr, 5, raft::consistency_level::leader_ack)
+                     .get0();
+    BOOST_REQUIRE(success);
+};
+
+FIXTURE_TEST(test_replicate_with_expected_term_quorum, raft_test_fixture) {
+    raft_group gr = raft_group(raft::group_id(0), 3);
+    gr.enable_all();
+    auto leader_id = wait_for_group_leader(gr);
+    auto leader_raft = gr.get_member(leader_id).consensus;
+    auto term = leader_raft->term();
+    bool success = replicate_random_batches(
+                     term, gr, 5, raft::consistency_level::quorum_ack)
+                     .get0();
+    BOOST_REQUIRE(success);
+};
+
+FIXTURE_TEST(test_replicate_violating_expected_term_leader, raft_test_fixture) {
+    raft_group gr = raft_group(raft::group_id(0), 3);
+    gr.enable_all();
+    auto leader_id = wait_for_group_leader(gr);
+    auto leader_raft = gr.get_member(leader_id).consensus;
+    auto term = leader_raft->term() + model::term_id(100);
+    bool success = replicate_random_batches(
+                     term, gr, 5, raft::consistency_level::leader_ack)
+                     .get0();
+    BOOST_REQUIRE(!success);
+};
+
+FIXTURE_TEST(test_replicate_violating_expected_term_quorum, raft_test_fixture) {
+    raft_group gr = raft_group(raft::group_id(0), 3);
+    gr.enable_all();
+    auto leader_id = wait_for_group_leader(gr);
+    auto leader_raft = gr.get_member(leader_id).consensus;
+    auto term = leader_raft->term() + model::term_id(100);
+    bool success = replicate_random_batches(
+                     term, gr, 5, raft::consistency_level::quorum_ack)
+                     .get0();
+    BOOST_REQUIRE(!success);
+};
+
 FIXTURE_TEST(test_single_node_recovery, raft_test_fixture) {
     raft_group gr = raft_group(raft::group_id(0), 3);
     gr.enable_all();

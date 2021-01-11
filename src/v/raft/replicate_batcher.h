@@ -29,6 +29,8 @@ public:
         ss::promise<result<replicate_result>> _promise;
         replicate_result ret;
         size_t record_count;
+        std::vector<model::record_batch> data;
+        std::optional<model::term_id> expected_term;
         /**
          * Item keeps semaphore units until replicate batcher is done with
          * processing the request.
@@ -45,7 +47,7 @@ public:
     ~replicate_batcher() noexcept = default;
 
     ss::future<result<replicate_result>>
-    replicate(model::record_batch_reader&&);
+    replicate(std::optional<model::term_id>, model::record_batch_reader&&);
 
     ss::future<> flush();
     ss::future<> stop();
@@ -58,15 +60,17 @@ public:
       absl::flat_hash_map<vnode, follower_req_seq>);
 
 private:
-    ss::future<item_ptr> do_cache(model::record_batch_reader&&);
+    ss::future<item_ptr>
+    do_cache(std::optional<model::term_id>, model::record_batch_reader&&);
     ss::future<replicate_batcher::item_ptr> do_cache_with_backpressure(
-      ss::circular_buffer<model::record_batch>, size_t);
+      std::optional<model::term_id>,
+      ss::circular_buffer<model::record_batch>,
+      size_t);
 
     consensus* _ptr;
     ss::semaphore _max_batch_size_sem;
 
     std::vector<item_ptr> _item_cache;
-    ss::circular_buffer<model::record_batch> _data_cache;
     mutex _lock;
 };
 

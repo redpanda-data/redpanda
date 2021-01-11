@@ -411,6 +411,20 @@ void consensus::dispatch_recovery(follower_index_metadata& idx) {
 
 ss::future<result<replicate_result>>
 consensus::replicate(model::record_batch_reader&& rdr, replicate_options opts) {
+    return do_replicate({}, std::move(rdr), opts);
+}
+
+ss::future<result<replicate_result>> consensus::replicate(
+  model::term_id expected_term,
+  model::record_batch_reader&& rdr,
+  replicate_options opts) {
+    return do_replicate(expected_term, std::move(rdr), opts);
+}
+
+ss::future<result<replicate_result>> consensus::do_replicate(
+  std::optional<model::term_id> expected_term,
+  model::record_batch_reader&& rdr,
+  replicate_options opts) {
     if (!is_leader() || unlikely(_transferring_leadership)) {
         return seastar::make_ready_future<result<replicate_result>>(
           errc::not_leader);
@@ -418,11 +432,11 @@ consensus::replicate(model::record_batch_reader&& rdr, replicate_options opts) {
 
     if (opts.consistency == consistency_level::quorum_ack) {
         _probe.replicate_requests_ack_all();
-        return ss::with_gate(_bg, [this, rdr = std::move(rdr)]() mutable {
-            return _batcher.replicate(std::move(rdr)).finally([this] {
-                _probe.replicate_done();
-            });
-        });
+        return ss::with_gate(
+          _bg, [this, expected_term, rdr = std::move(rdr)]() mutable {
+              return _batcher.replicate(expected_term, std::move(rdr))
+                .finally([this] { _probe.replicate_done(); });
+          });
     }
 
     if (opts.consistency == consistency_level::leader_ack) {
@@ -433,8 +447,13 @@ consensus::replicate(model::record_batch_reader&& rdr, replicate_options opts) {
     // For relaxed consistency, append data to leader disk without flush
     // asynchronous replication is provided by Raft protocol recovery mechanism.
     return _op_lock
-      .with([this, rdr = std::move(rdr)]() mutable {
+      .with([this, expected_term, rdr = std::move(rdr)]() mutable {
           if (!is_leader()) {
+              return seastar::make_ready_future<result<replicate_result>>(
+                errc::not_leader);
+          }
+
+          if (expected_term.has_value() && expected_term.value() != _term) {
               return seastar::make_ready_future<result<replicate_result>>(
                 errc::not_leader);
           }
