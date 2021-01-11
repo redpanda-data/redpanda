@@ -139,6 +139,34 @@ public:
     ss::future<result<replicate_result>>
     replicate(model::record_batch_reader&&, replicate_options);
 
+    /**
+     * Replication happens only when expected_term matches the current _term
+     * otherwise consensus returns not_leader. This feature is needed to keep
+     * ingestion-time state machine in sync with the log. The conventional
+     * state machines running on top on the log are optimistic: to execute a
+     * command a user should add a command to a log (replicate) then continue
+     * reading the commands from the log and executing them one after another.
+     * When the commands are conditional the conventional approach is wasteful
+     * because we even when a condition resolves to false we still pay the
+     * replication costs. An alternative approach is to check the conditions
+     * before replication but in this case there is a risk of divergence between
+     * the log and the state (e.g. a leadership moves to an another broker, it
+     * adds messages then the leadership moves back). The expected_term
+     * prevents this situation. The expected use case is:
+     *   1. when cached term matches consensus.term() call replicate using
+     *      the cached term as expected_term
+     *   2. otherwise:
+     *      a. cache all incoming requests
+     *      b. call consensus meta() to get the latest offset and a term
+     *      c. wait until the state caches up with the latest offset
+     *      d. cache the term
+     *      e. replay the caches request using the cached term as expected_term
+     */
+    ss::future<result<replicate_result>> replicate(
+      model::term_id expected_term,
+      model::record_batch_reader&&,
+      replicate_options);
+
     ss::future<model::record_batch_reader> make_reader(
       storage::log_reader_config,
       std::optional<clock_type::time_point> = std::nullopt);
@@ -257,8 +285,10 @@ private:
     ss::future<> do_write_snapshot(model::offset, iobuf&&);
     append_entries_reply make_append_entries_reply(storage::append_result);
 
-    ss::future<result<replicate_result>>
-    do_replicate(model::record_batch_reader&&);
+    ss::future<result<replicate_result>> do_replicate(
+      std::optional<model::term_id>,
+      model::record_batch_reader&&,
+      replicate_options);
 
     ss::future<storage::append_result>
     disk_append(model::record_batch_reader&&);

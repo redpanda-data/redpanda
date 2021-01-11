@@ -688,6 +688,28 @@ static ss::future<bool> replicate_random_batches(
       });
 }
 
+static ss::future<bool> replicate_random_batches(
+  model::term_id expected_term,
+  raft_group& gr,
+  int count,
+  raft::consistency_level c_lvl = raft::consistency_level::quorum_ack,
+  model::timeout_clock::duration tout = 1s) {
+    return retry_with_leader(
+      gr, 5, tout, [count, expected_term, c_lvl](raft_node& leader_node) {
+          auto rdr = random_batches_reader(count);
+          raft::replicate_options opts(c_lvl);
+
+          return leader_node.consensus
+            ->replicate(expected_term, std::move(rdr), opts)
+            .then([](result<raft::replicate_result> res) {
+                if (!res) {
+                    return false;
+                }
+                return true;
+            });
+      });
+}
+
 /**
  * Makes compactible batches, having one record per batch
  */
