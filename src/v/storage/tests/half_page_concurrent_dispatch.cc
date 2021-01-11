@@ -20,7 +20,7 @@ struct fixture {
       storage::random_dir(),
       1_GiB,
       storage::debug_sanitize_files::yes,
-      storage::log_config::with_cache::no)};
+      storage::with_cache::no)};
     ~fixture() { b.stop().get(); }
 };
 

@@ -19,6 +19,8 @@
 #include <optional>
 
 namespace storage {
+using with_cache = ss::bool_class<struct log_cache_tag>;
+
 class ntp_config {
 public:
     struct default_overrides {
@@ -33,6 +35,9 @@ public:
         // will be disabled if there is no value set the default will be used
         tristate<size_t> retention_bytes{std::nullopt};
         tristate<std::chrono::milliseconds> retention_time{std::nullopt};
+        // if set, log will not use batch cache
+        with_cache cache_enabled = with_cache::yes;
+
         friend std::ostream&
         operator<<(std::ostream&, const default_overrides&);
     };
@@ -100,6 +105,10 @@ public:
 
     std::filesystem::path topic_directory() const {
         return std::filesystem::path(_base_dir) / _ntp.topic_path();
+    }
+
+    with_cache cache_enabled() const {
+        return with_cache(!has_overrides() || _overrides->cache_enabled);
     }
 
 private:
