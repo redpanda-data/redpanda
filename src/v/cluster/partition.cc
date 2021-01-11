@@ -24,15 +24,46 @@ static bool is_id_allocator_topic(model::ntp ntp) {
 partition::partition(consensus_ptr r)
   : _raft(r)
   , _probe(*this) {
+    auto stm_manager = _raft->log().stm_manager();
     if (is_id_allocator_topic(_raft->ntp())) {
-        _id_allocator_stm = std::make_unique<raft::id_allocator_stm>(
+        _id_allocator_stm = ss::make_lw_shared<raft::id_allocator_stm>(
           clusterlog, _raft.get(), config::shard_local_cfg());
-    } else if (_raft->log_config().is_collectable()) {
-        _nop_stm = std::make_unique<raft::log_eviction_stm>(
-          _raft.get(),
-          clusterlog,
-          ss::make_lw_shared<storage::stm_manager>(),
-          _as);
+    } else {
+        if (_raft->log_config().is_collectable()) {
+            _nop_stm = ss::make_lw_shared<raft::log_eviction_stm>(
+              _raft.get(), clusterlog, stm_manager, _as);
+        }
+        if (config::shard_local_cfg().enable_idempotence.value()) {
+            _seq_stm = ss::make_shared<seq_stm>(
+              clusterlog, _raft.get(), config::shard_local_cfg());
+            stm_manager->add_stm(_seq_stm);
+        }
+    }
+}
+
+ss::future<result<raft::replicate_result>> partition::replicate(
+  model::record_batch_reader&& r, raft::replicate_options opts) {
+    return _raft->replicate(std::move(r), std::move(opts));
+}
+
+ss::future<checked<raft::replicate_result, kafka::error_code>>
+partition::replicate(
+  model::batch_identity bid,
+  model::record_batch_reader&& r,
+  raft::replicate_options opts) {
+    if (bid.has_idempotent()) {
+        return _seq_stm->replicate(bid, std::move(r), std::move(opts));
+    } else {
+        return _raft->replicate(std::move(r), std::move(opts))
+          .then([](result<raft::replicate_result> result) {
+              if (result.has_value()) {
+                  return checked<raft::replicate_result, kafka::error_code>(
+                    result.value());
+              } else {
+                  return checked<raft::replicate_result, kafka::error_code>(
+                    kafka::error_code::unknown_server_error);
+              }
+          });
     }
 }
 
@@ -45,8 +76,12 @@ ss::future<> partition::start() {
 
     if (is_id_allocator_topic(ntp)) {
         return f.then([this] { return _id_allocator_stm->start(); });
-    } else if (_nop_stm != nullptr) {
-        return f.then([this] { return _nop_stm->start(); });
+    } else if (_nop_stm) {
+        f = f.then([this] { return _nop_stm->start(); });
+    }
+
+    if (_seq_stm) {
+        f = f.then([this] { return _seq_stm->start(); });
     }
 
     return f;
@@ -55,16 +90,22 @@ ss::future<> partition::start() {
 ss::future<> partition::stop() {
     _as.request_abort();
 
-    if (_id_allocator_stm != nullptr) {
+    auto f = ss::now();
+
+    if (_id_allocator_stm) {
         return _id_allocator_stm->stop();
     }
 
-    if (_nop_stm != nullptr) {
-        return _nop_stm->stop();
+    if (_nop_stm) {
+        f = _nop_stm->stop();
+    }
+
+    if (_seq_stm) {
+        f = f.then([this] { return _seq_stm->stop(); });
     }
 
     // no state machine
-    return ss::now();
+    return f;
 }
 
 ss::future<std::optional<storage::timequery_result>>

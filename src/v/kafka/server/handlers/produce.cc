@@ -32,6 +32,7 @@
 #include <seastar/core/future.hh>
 #include <seastar/util/log.hh>
 
+#include <boost/container_hash/extensions.hpp>
 #include <fmt/ostream.h>
 
 #include <string_view>
@@ -251,6 +252,11 @@ reader_from_lcore_batch(model::record_batch&& batch) {
     return model::make_foreign_memory_record_batch_reader(std::move(batch));
 }
 
+static const failure_type<error_code>
+  not_leader_for_partition(error_code::not_leader_for_partition);
+static const failure_type<error_code>
+  out_of_order_sequence_number(error_code::out_of_order_sequence_number);
+
 /*
  * Caller is expected to catch errors that may be thrown while the kafka
  * batch is being deserialized (see reader_from_kafka_batch).
@@ -258,31 +264,37 @@ reader_from_lcore_batch(model::record_batch&& batch) {
 static ss::future<produce_response::partition> partition_append(
   model::partition_id id,
   ss::lw_shared_ptr<cluster::partition> partition,
+  model::batch_identity bid,
   model::record_batch_reader reader,
   int16_t acks,
   int32_t num_records) {
     return partition
-      ->replicate(std::move(reader), acks_to_replicate_options(acks))
-      .then_wrapped([partition, id, num_records = num_records](
-                      ss::future<result<raft::replicate_result>> f) {
-          produce_response::partition p{.id = id};
-          try {
-              auto r = f.get0();
-              if (r) {
-                  // have to subtract num_of_records - 1 as base_offset
-                  // is inclusive
-                  p.base_offset = model::offset(
-                    r.value().last_offset() - (num_records - 1));
-                  p.error = error_code::none;
-                  partition->probe().add_records_produced(num_records);
-              } else {
-                  p.error = error_code::unknown_server_error;
-              }
-          } catch (...) {
-              p.error = error_code::unknown_server_error;
-          }
-          return p;
-      });
+      ->replicate(bid, std::move(reader), acks_to_replicate_options(acks))
+      .then_wrapped(
+        [partition, id, num_records = num_records](
+          ss::future<checked<raft::replicate_result, kafka::error_code>> f) {
+            produce_response::partition p{.id = id};
+            try {
+                auto r = f.get0();
+                if (r.has_value()) {
+                    // have to subtract num_of_records - 1 as base_offset
+                    // is inclusive
+                    p.base_offset = model::offset(
+                      r.value().last_offset() - (num_records - 1));
+                    p.error = error_code::none;
+                    partition->probe().add_records_produced(num_records);
+                } else if (r == not_leader_for_partition) {
+                    p.error = error_code::not_leader_for_partition;
+                } else if (r == out_of_order_sequence_number) {
+                    p.error = error_code::out_of_order_sequence_number;
+                } else {
+                    p.error = error_code::unknown_server_error;
+                }
+            } catch (...) {
+                p.error = error_code::unknown_server_error;
+            }
+            return p;
+        });
 }
 
 /**
@@ -324,15 +336,18 @@ static ss::future<produce_response::partition> produce_topic_partition(
           model::timestamp_type::append_time, model::timestamp(now.count()));
     }
 
+    const auto& hdr = batch.header();
+    auto bid = model::batch_identity::from(hdr);
+
     auto num_records = batch.record_count();
     auto reader = reader_from_lcore_batch(std::move(batch));
-
     return octx.rctx.partition_manager().invoke_on(
       *shard,
       octx.ssg,
       [reader = std::move(reader),
        ntp = std::move(ntp),
        num_records,
+       bid,
        acks = octx.request.acks](cluster::partition_manager& mgr) mutable {
           auto partition = mgr.get(ntp);
           if (!partition) {
@@ -348,7 +363,12 @@ static ss::future<produce_response::partition> produce_topic_partition(
                   .error = error_code::not_leader_for_partition});
           }
           return partition_append(
-            ntp.tp.partition, partition, std::move(reader), acks, num_records);
+            ntp.tp.partition,
+            partition,
+            bid,
+            std::move(reader),
+            acks,
+            num_records);
       });
 }
 
@@ -440,9 +460,10 @@ produce_handler::handle(request_context&& ctx, ss::smp_service_group ssg) {
           error_code::transactional_id_authorization_failed));
 
     } else if (request.has_idempotent) {
-        return ctx.respond(request.make_error_response(
-          error_code::cluster_authorization_failed));
-
+        if (!ctx.is_idempotence_enabled()) {
+            return ctx.respond(request.make_error_response(
+              error_code::cluster_authorization_failed));
+        }
     } else if (request.acks < -1 || request.acks > 1) {
         // from kafka source: "if required.acks is outside accepted
         // range, something is wrong with the client Just return an

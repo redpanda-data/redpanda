@@ -276,6 +276,8 @@ public:
 
     probe& get_probe() { return _probe; };
 
+    storage::log& log() { return _log; }
+
     bool are_heartbeats_suppressed(vnode) const;
 
     void suppress_heartbeats(vnode, follower_req_seq, bool);

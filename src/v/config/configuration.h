@@ -78,6 +78,7 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> fetch_reads_debounce_timeout;
     // same as transactional.id.expiration.ms in kafka
     property<std::chrono::milliseconds> transactional_id_expiration_ms;
+    property<bool> enable_idempotence;
     // same as delete.retention.ms in kafka
     property<std::chrono::milliseconds> delete_retention_ms;
     property<std::chrono::milliseconds> log_compaction_interval_ms;

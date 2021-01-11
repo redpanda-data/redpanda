@@ -12,6 +12,7 @@
 #pragma once
 
 #include "cluster/fwd.h"
+#include "config/configuration.h"
 #include "kafka/server/fwd.h"
 #include "rpc/server.h"
 
@@ -68,6 +69,7 @@ public:
         return _fetch_session_cache.local();
     }
     quota_manager& quota_mgr() { return _quota_mgr.local(); }
+    bool is_idempotence_enabled() { return _is_idempotence_enabled; }
 
 private:
     ss::smp_service_group _smp_group;
@@ -80,6 +82,7 @@ private:
     ss::sharded<kafka::coordinator_ntp_mapper>& _coordinator_mapper;
     ss::sharded<kafka::fetch_session_cache>& _fetch_session_cache;
     ss::sharded<cluster::id_allocator_frontend>& _id_allocator_frontend;
+    bool _is_idempotence_enabled{false};
 };
 
 } // namespace kafka

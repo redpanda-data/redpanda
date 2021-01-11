@@ -12,6 +12,7 @@
 #pragma once
 
 #include "cluster/partition_probe.h"
+#include "cluster/seq_stm.h"
 #include "cluster/types.h"
 #include "model/metadata.h"
 #include "model/record_batch_reader.h"
@@ -36,9 +37,12 @@ public:
     ss::future<> stop();
 
     ss::future<result<raft::replicate_result>>
-    replicate(model::record_batch_reader&& r, raft::replicate_options opts) {
-        return _raft->replicate(std::move(r), std::move(opts));
-    }
+    replicate(model::record_batch_reader&&, raft::replicate_options);
+
+    ss::future<checked<raft::replicate_result, kafka::error_code>> replicate(
+      model::batch_identity,
+      model::record_batch_reader&&,
+      raft::replicate_options);
 
     /**
      * The reader is modified such that the max offset is configured to be
@@ -123,7 +127,7 @@ public:
         return _raft->get_latest_configuration_offset();
     }
 
-    std::unique_ptr<raft::id_allocator_stm>& id_allocator_stm() {
+    ss::lw_shared_ptr<raft::id_allocator_stm>& id_allocator_stm() {
         return _id_allocator_stm;
     }
 
@@ -134,8 +138,9 @@ private:
 
 private:
     consensus_ptr _raft;
-    std::unique_ptr<raft::log_eviction_stm> _nop_stm;
-    std::unique_ptr<raft::id_allocator_stm> _id_allocator_stm;
+    ss::lw_shared_ptr<raft::log_eviction_stm> _nop_stm;
+    ss::lw_shared_ptr<raft::id_allocator_stm> _id_allocator_stm;
+    ss::shared_ptr<seq_stm> _seq_stm;
     ss::abort_source _as;
     partition_probe _probe;
 

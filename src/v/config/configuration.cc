@@ -247,6 +247,12 @@ configuration::configuration()
       "write with the given producer id.",
       required::no,
       10080min)
+  , enable_idempotence(
+      *this,
+      "enable_idempotence",
+      "Enable idempotent producer",
+      required::no,
+      false)
   , delete_retention_ms(
       *this,
       "delete_retention_ms",

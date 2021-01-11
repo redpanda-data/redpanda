@@ -105,6 +105,10 @@ public:
         return _conn->server().id_allocator_frontend();
     }
 
+    bool is_idempotence_enabled() {
+        return _conn->server().is_idempotence_enabled();
+    }
+
     int32_t throttle_delay_ms() const {
         return std::chrono::duration_cast<std::chrono::milliseconds>(
                  _throttle_delay)

@@ -50,7 +50,9 @@ protocol::protocol(
   , _partition_manager(pm)
   , _coordinator_mapper(coordinator_mapper)
   , _fetch_session_cache(session_cache)
-  , _id_allocator_frontend(id_allocator_frontend) {}
+  , _id_allocator_frontend(id_allocator_frontend)
+  , _is_idempotence_enabled(
+      config::shard_local_cfg().enable_idempotence.value()) {}
 
 ss::future<> protocol::apply(rpc::server::resources rs) {
     auto ctx = ss::make_lw_shared<connection_context>(*this, std::move(rs));
