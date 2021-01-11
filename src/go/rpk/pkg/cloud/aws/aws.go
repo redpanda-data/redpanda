@@ -12,10 +12,10 @@ package aws
 import (
 	"errors"
 	"time"
-	"vectorized/pkg/cloud/vendor"
 
 	"github.com/aws/aws-sdk-go/aws/ec2metadata"
 	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cloud/vendor"
 )
 
 const name = "aws"

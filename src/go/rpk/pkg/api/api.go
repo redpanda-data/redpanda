@@ -16,12 +16,12 @@ import (
 	"net/http"
 	"strings"
 	"time"
-	"vectorized/pkg/cli/cmd/version"
-	"vectorized/pkg/cloud"
-	"vectorized/pkg/config"
-	"vectorized/pkg/system"
 
 	log "github.com/sirupsen/logrus"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/version"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cloud"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/system"
 )
 
 const defaultUrl = "https://m.rp.vectorized.io"

@@ -14,13 +14,13 @@ import (
 	"strings"
 	"testing"
 	"time"
-	"vectorized/pkg/os"
-	"vectorized/pkg/system/systemd"
-	"vectorized/pkg/tuners/executors"
-	"vectorized/pkg/utils"
 
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/os"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/system/systemd"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/executors"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/utils"
 )
 
 const fstrimBinPath = "/usr/sbin/fstrim"

@@ -13,12 +13,12 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"vectorized/pkg/cli/cmd"
-	"vectorized/pkg/config"
 
 	"github.com/spf13/afero"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 )
 
 func TestSet(t *testing.T) {

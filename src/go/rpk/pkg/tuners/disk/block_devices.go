@@ -18,12 +18,12 @@ import (
 	"strings"
 	"syscall"
 	"time"
-	"vectorized/pkg/os"
-	"vectorized/pkg/tuners/irq"
-	"vectorized/pkg/utils"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/os"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/irq"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/utils"
 )
 
 type DiskType string

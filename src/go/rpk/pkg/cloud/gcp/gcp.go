@@ -14,9 +14,9 @@ import (
 	"net/http"
 	"path/filepath"
 	"time"
-	"vectorized/pkg/cloud/vendor"
 
 	"cloud.google.com/go/compute/metadata"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cloud/vendor"
 )
 
 const name = "gcp"

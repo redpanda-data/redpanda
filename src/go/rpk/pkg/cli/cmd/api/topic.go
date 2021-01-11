@@ -15,13 +15,13 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"vectorized/pkg/cli/ui"
-	"vectorized/pkg/kafka"
 
 	"github.com/Shopify/sarama"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/ui"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/kafka"
 )
 
 func NewTopicCommand(

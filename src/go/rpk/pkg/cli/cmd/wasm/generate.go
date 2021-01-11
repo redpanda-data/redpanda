@@ -13,12 +13,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"vectorized/pkg/cli/cmd/wasm/template"
-	"vectorized/pkg/utils"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/wasm/template"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/utils"
 )
 
 type genFile struct {

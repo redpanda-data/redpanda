@@ -13,9 +13,9 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"vectorized/pkg/utils"
 
 	"github.com/spf13/cobra"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/utils"
 )
 
 func NewHelpCommand() *cobra.Command {

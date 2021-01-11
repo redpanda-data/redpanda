@@ -15,12 +15,12 @@ import (
 	"os"
 	"strings"
 	"testing"
-	"vectorized/pkg/config"
 
 	"github.com/prometheus/common/log"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 	"gopkg.in/yaml.v2"
 )
 

@@ -17,7 +17,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"vectorized/pkg/config"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
@@ -26,6 +25,7 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
 	log "github.com/sirupsen/logrus"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 )
 
 var (

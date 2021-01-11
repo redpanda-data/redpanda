@@ -12,9 +12,9 @@ package cloud
 import (
 	"fmt"
 	"testing"
-	"vectorized/pkg/cloud/vendor"
 
 	"github.com/stretchr/testify/require"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cloud/vendor"
 )
 
 type mockVendor struct {

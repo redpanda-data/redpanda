@@ -19,16 +19,16 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	tunecmd "vectorized/pkg/cli/cmd/tune"
-	"vectorized/pkg/cli/ui"
-	"vectorized/pkg/config"
-	"vectorized/pkg/tuners/factory"
-	"vectorized/pkg/tuners/hwloc"
 
 	"github.com/fatih/color"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
+	tunecmd "github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/tune"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/ui"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/factory"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/hwloc"
 )
 
 type result struct {

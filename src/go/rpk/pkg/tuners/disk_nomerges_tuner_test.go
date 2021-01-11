@@ -11,10 +11,10 @@ package tuners
 
 import (
 	"testing"
-	"vectorized/pkg/tuners/executors"
 
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/executors"
 )
 
 func TestDeviceNomergesTuner_Tune(t *testing.T) {

@@ -14,11 +14,11 @@ package cmd
 import (
 	"bytes"
 	"testing"
-	"vectorized/pkg/config"
 
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 	"gopkg.in/yaml.v2"
 )
 

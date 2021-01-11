@@ -12,10 +12,10 @@ package commands
 import (
 	"bufio"
 	"fmt"
-	"vectorized/pkg/utils"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/utils"
 )
 
 type backupFileCommand struct {

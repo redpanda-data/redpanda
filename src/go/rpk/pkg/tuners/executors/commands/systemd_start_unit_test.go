@@ -14,10 +14,10 @@ import (
 	"bytes"
 	"errors"
 	"testing"
-	"vectorized/pkg/system/systemd"
-	"vectorized/pkg/tuners/executors/commands"
 
 	"github.com/stretchr/testify/require"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/system/systemd"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/executors/commands"
 )
 
 func TestStartSystemdUnitCmdRender(t *testing.T) {

@@ -10,10 +10,9 @@
 package cmd
 
 import (
-	wasm "vectorized/pkg/cli/cmd/wasm"
-
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
+	wasm "github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/wasm"
 )
 
 func NewWasmCommand(fs afero.Fs) *cobra.Command {

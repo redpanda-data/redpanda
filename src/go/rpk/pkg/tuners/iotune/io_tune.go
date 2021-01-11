@@ -13,9 +13,9 @@ import (
 	"errors"
 	"strconv"
 	"time"
-	"vectorized/pkg/os"
 
 	log "github.com/sirupsen/logrus"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/os"
 )
 
 type OutputFormat string

@@ -11,9 +11,9 @@ package net
 
 import (
 	"net"
-	"vectorized/pkg/utils"
 
 	log "github.com/sirupsen/logrus"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/utils"
 )
 
 func GetInterfacesByIps(addresses ...string) ([]string, error) {

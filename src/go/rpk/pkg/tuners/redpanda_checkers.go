@@ -11,20 +11,20 @@ package tuners
 
 import (
 	"time"
-	"vectorized/pkg/cloud"
-	"vectorized/pkg/cloud/gcp"
-	"vectorized/pkg/config"
-	"vectorized/pkg/net"
-	"vectorized/pkg/os"
-	"vectorized/pkg/system"
-	"vectorized/pkg/system/filesystem"
-	"vectorized/pkg/tuners/disk"
-	"vectorized/pkg/tuners/ethtool"
-	"vectorized/pkg/tuners/executors"
-	"vectorized/pkg/tuners/hwloc"
-	"vectorized/pkg/tuners/irq"
 
 	"github.com/spf13/afero"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cloud"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cloud/gcp"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/net"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/os"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/system"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/system/filesystem"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/disk"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/ethtool"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/executors"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/hwloc"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/irq"
 )
 
 type CheckerID int

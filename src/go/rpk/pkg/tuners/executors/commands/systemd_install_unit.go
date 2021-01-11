@@ -12,9 +12,9 @@ package commands
 import (
 	"bufio"
 	"fmt"
-	"vectorized/pkg/system/systemd"
 
 	"github.com/spf13/afero"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/system/systemd"
 )
 
 type installSystemdUnitCommand struct {

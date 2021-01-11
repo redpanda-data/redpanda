@@ -11,11 +11,11 @@ package disk
 
 import (
 	"testing"
-	"vectorized/pkg/os"
-	"vectorized/pkg/tuners/irq"
 
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/os"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/irq"
 )
 
 type irqDeviceInfoMock struct {

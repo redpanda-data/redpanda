@@ -13,9 +13,9 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
-	"vectorized/pkg/utils"
 
 	"github.com/spf13/afero"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/utils"
 )
 
 type RuntimeOptions struct {

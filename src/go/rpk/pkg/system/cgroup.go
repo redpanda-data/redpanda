@@ -17,9 +17,9 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"vectorized/pkg/utils"
 
 	"github.com/spf13/afero"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/utils"
 )
 
 const cgroupBaseDir = "/sys/fs/cgroup"
