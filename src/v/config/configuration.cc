@@ -67,6 +67,24 @@ configuration::configuration()
       "IpAddress and port for supervisor service",
       required::no,
       unresolved_address("127.0.0.1", 43189))
+  , coproc_max_inflight_bytes(
+      *this,
+      "coproc_max_inflight_bytes",
+      "Max amt of inflight bytes when sending data to wasm engine",
+      required::no,
+      32_KiB * 4)
+  , coproc_max_ingest_bytes(
+      *this,
+      "coproc_max_ingest_bytes",
+      "Max amt of data to hold from input logs in memory",
+      required::no,
+      32_KiB * 20)
+  , coproc_max_batch_size(
+      *this,
+      "coproc_max_batch_size",
+      "Max of bytes to read from one topic read",
+      required::no,
+      32_KiB)
   , node_id(
       *this,
       "node_id",
