@@ -25,12 +25,10 @@ class router_test_fixture
 public:
     using copro_map = coproc::supervisor::copro_map;
     using enable_reqs_data = std::vector<coproc::enable_copros_request::data>;
-    using script_manager_client
-      = rpc::client<coproc::script_manager_client_protocol>;
 
     /// \brief Initialize the storage layer, then submit all coprocessors to
     /// v/coproc/service
-    ss::future<> startup(log_layout_map&&, script_manager_client&);
+    ss::future<> startup(log_layout_map&&) override;
 
 private:
     /// Sanity checks, throws if the service fails to register a
@@ -40,7 +38,7 @@ private:
       const enable_reqs_data&,
       result<rpc::client_context<coproc::enable_copros_reply>>);
 
-    ss::future<> enable_coprocessors(enable_reqs_data&, script_manager_client&);
+    ss::future<> enable_coprocessors(enable_reqs_data&);
 
     void to_ecr_data(enable_reqs_data&, const copro_map&);
 };

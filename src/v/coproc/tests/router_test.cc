@@ -32,17 +32,13 @@ size_t number_of_logs(redpanda_thread_fixture* rtf) {
 }
 
 FIXTURE_TEST(test_coproc_router_no_results, router_test_fixture) {
-    auto client = make_client();
-    client.connect().get();
     // Note the original number of logs
     const size_t n_logs = number_of_logs(this);
     // Router has 2 coprocessors, one subscribed to 'foo' the other 'bar'
     add_copro<null_coprocessor>(2222, {{"bar", l}}).get();
     add_copro<null_coprocessor>(7777, {{"foo", l}}).get();
     // Storage has 10 ntps, 8 of topic 'bar' and 2 of 'foo'
-    startup({{make_ts("foo"), 2}, {make_ts("bar"), 8}}, client)
-      .then([&client] { return client.stop(); })
-      .get();
+    startup({{make_ts("foo"), 2}, {make_ts("bar"), 8}}).get();
 
     // Test -> Start pushing to registered topics and check that NO
     // materialized logs have been created
@@ -62,16 +58,12 @@ FIXTURE_TEST(test_coproc_router_no_results, router_test_fixture) {
 }
 
 FIXTURE_TEST(test_coproc_router_simple, router_test_fixture) {
-    auto client = make_client();
-    client.connect().get();
     // Supervisor has 3 registered transforms, of the same type
     add_copro<identity_coprocessor>(8888, {{"foo", l}}).get();
     add_copro<identity_coprocessor>(9159, {{"foo", l}}).get();
     add_copro<identity_coprocessor>(4444, {{"bar", l}}).get();
     // Storage has 5 ntps, 4 of topic 'foo' and 1 of 'bar'
-    startup({{make_ts("foo"), 4}, {make_ts("bar"), 1}}, client)
-      .then([&client] { return client.stop(); })
-      .get();
+    startup({{make_ts("foo"), 4}, {make_ts("bar"), 1}}).get();
 
     model::topic src_topic("foo");
     model::ntp input_ntp(
@@ -100,17 +92,13 @@ FIXTURE_TEST(test_coproc_router_simple, router_test_fixture) {
 }
 
 FIXTURE_TEST(test_coproc_router_multi_route, router_test_fixture) {
-    auto client = make_client();
-    client.connect().get();
     // Create and initialize the environment
     // Starts with 4 parititons of logs managing topic "sole_input"
     const model::topic tt("sole_input");
     const std::size_t n_partitions = 4;
     // and one coprocessor that transforms this topic
     add_copro<two_way_split_copro>(9111, {{"sole_input", l}}).get();
-    startup({{make_ts(tt), n_partitions}}, client)
-      .then([&client] { return client.stop(); })
-      .get();
+    startup({{make_ts(tt), n_partitions}}).get();
 
     // Iterating over all ntps, create random data and push them onto
     // their respective logs

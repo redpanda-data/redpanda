@@ -15,16 +15,13 @@
 #include "model/metadata.h"
 #include "test_utils/async.h"
 
-ss::future<> router_test_fixture::startup(
-  log_layout_map&& llm, script_manager_client& client) {
-    vassert(client.is_valid(), "Client isn't valid");
-
+ss::future<> router_test_fixture::startup(log_layout_map&& llm) {
     // Data on all shards is identical
-    return coproc_test_fixture::startup(std::move(llm)).then([this, &client] {
+    return coproc_test_fixture::startup(std::move(llm)).then([this] {
         // assemble the active_copros from the '_coprocessors' map
         return ss::do_with(
-          enable_reqs_data(), [this, &client](enable_reqs_data& layout) {
-              return enable_coprocessors(layout, client);
+          enable_reqs_data(), [this](enable_reqs_data& layout) {
+              return enable_coprocessors(layout);
           });
     });
 }
@@ -51,8 +48,8 @@ void router_test_fixture::validate_result(
     }
 }
 
-ss::future<> router_test_fixture::enable_coprocessors(
-  enable_reqs_data& layout, script_manager_client& client) {
+ss::future<>
+router_test_fixture::enable_coprocessors(enable_reqs_data& layout) {
     /// TODO(Rob) just call to .local() is enough
     return all_coprocessors()
       .invoke_on(
@@ -60,9 +57,9 @@ ss::future<> router_test_fixture::enable_coprocessors(
         [this, &layout](const copro_map& coprocessors) {
             to_ecr_data(layout, coprocessors);
         })
-      .then([this, &layout, &client] {
+      .then([this, &layout] {
           auto layout_cp = layout;
-          return register_coprocessors(client, std::move(layout))
+          return register_coprocessors(sm_client(), std::move(layout))
             .then([this, layout = std::move(layout_cp)](auto r) {
                 validate_result(layout, std::move(r));
             });
