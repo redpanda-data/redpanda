@@ -59,4 +59,10 @@ struct assignment_range final : public assignment_plan {
       const std::vector<kafka::metadata_response::topic>& topics) final;
 };
 
+kafka::join_group_request_protocol
+make_join_group_request_protocol_range(const std::vector<model::topic>& topics);
+
+std::vector<kafka::join_group_request_protocol>
+make_join_group_request_protocols(const std::vector<model::topic>& topics);
+
 } // namespace pandaproxy::client

@@ -94,4 +94,26 @@ make_assignment_plan(const kafka::protocol_name& protocol_name) {
     }
 }
 
+kafka::join_group_request_protocol make_join_group_request_protocol_range(
+  const std::vector<model::topic>& topics) {
+    iobuf metadata;
+    kafka::response_writer writer(metadata);
+    writer.write_array(
+      topics, [](const model::topic& t, kafka::response_writer& writer) {
+          writer.write(t);
+      });
+    kafka::join_group_request_data d;
+    writer.write(int32_t(-1)); // userdata length
+
+    return kafka::join_group_request_protocol{
+      .name{kafka::protocol_name{"range"}},
+      .metadata{iobuf_to_bytes(metadata)}};
+}
+
+std::vector<kafka::join_group_request_protocol>
+make_join_group_request_protocols(const std::vector<model::topic>& topics) {
+    // When this is extended, create them in order of preference
+    return {make_join_group_request_protocol_range(topics)};
+}
+
 } // namespace pandaproxy::client
