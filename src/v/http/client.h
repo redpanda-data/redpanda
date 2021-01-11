@@ -81,19 +81,30 @@ public:
         /// \brief Shutdown connection gracefully
         ss::future<> shutdown();
 
-        /// Return true if the parsing is done
+        /// Return true if the whole http payload is received and parsed
         bool is_done() const;
 
         /// Return true if the header parsing is done
         bool is_header_done() const;
 
-        /// Access response headers (should only be called if is_header_done()
+        /// Access response headers (should only be called if is_headers_done()
         /// == true)
         response_header const& get_headers() const;
+
+        /// Prefetch HTTP headers. Read data from the socket until the header is
+        /// received and parsed (is_headers_done = true).
+        ///
+        /// \return future that becomes ready when the header is received
+        ss::future<> prefetch_headers();
 
         /// Recv new portion of the payload, this method should be called untill
         /// is_done returns false. It's possible to get an empty iobuf which
         /// should be ignored (deosn't mean EOF).
+        /// The method doesn't return bytes that belong to HTTP header or chunk
+        /// headers.
+        ///
+        /// \return future that becomes ready when the next portion of data is
+        /// received
         ss::future<iobuf> recv_some();
 
         /// Returns input_stream that can be used to fetch response body.
@@ -104,6 +115,7 @@ public:
         client* _client;
         response_parser _parser;
         iobuf _buffer; /// store incomplete tail elements
+        iobuf _prefetch;
     };
 
     using response_stream_ref = ss::shared_ptr<response_stream>;

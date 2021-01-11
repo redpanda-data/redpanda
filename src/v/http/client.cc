@@ -62,7 +62,9 @@ client::response_stream::response_stream(client* client)
     _parser.eager(true);
 }
 
-bool client::response_stream::is_done() const { return _parser.is_done(); }
+bool client::response_stream::is_done() const {
+    return _prefetch.empty() && _parser.is_done();
+}
 
 /// Return true if the header parsing is done
 bool client::response_stream::is_header_done() const {
@@ -97,7 +99,27 @@ static ss::future<iobuf> fail_on_error(const boost::beast::error_code& ec) {
     return ss::make_exception_future<iobuf>(except);
 }
 
+ss::future<> client::response_stream::prefetch_headers() {
+    if (is_header_done()) {
+        return ss::now();
+    }
+    return ss::do_with(iobuf(), [this](iobuf& head) {
+        return ss::do_until(
+                 [this] { return is_header_done(); },
+                 [this, &head] {
+                     return recv_some().then(
+                       [&head](iobuf buf) { head.append(std::move(buf)); });
+                 })
+          .then([this, &head] { _prefetch = std::move(head); });
+    });
+}
+
 ss::future<iobuf> client::response_stream::recv_some() {
+    if (!_prefetch.empty()) {
+        // This code will only be executed if 'prefetch_headers' was called. It
+        // can only be called once.
+        return ss::make_ready_future<iobuf>(std::move(_prefetch));
+    }
     return _client->_in.read().then(
       [this](ss::temporary_buffer<char> chunk) mutable {
           vlog(http_log.trace, "chunk received, chunk length {}", chunk.size());
