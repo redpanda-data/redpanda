@@ -43,14 +43,13 @@ ss::future<> poll_until(
       false,
       [timeout](auto& now, auto& fn, auto& exit) {
           return ss::do_until(
-                   [&exit, &now, timeout] { return exit || (now > timeout); },
-                   [&exit, &now, &fn] {
-                       return fn().then([&exit, &now](bool r) {
-                           exit = r;
-                           now = model::timeout_clock::now();
-                       });
-                   })
-            .then([]() { return ss::sleep(200ms); });
+            [&exit, &now, timeout] { return exit || (now > timeout); },
+            [&exit, &now, &fn] {
+                return fn().then([&exit, &now](bool r) {
+                    exit = r;
+                    now = model::timeout_clock::now();
+                });
+            });
       });
 }
 
