@@ -277,6 +277,23 @@ ss::future<kafka::describe_groups_response> consumer::describe_group() {
     return req_res(req_builder);
 }
 
+ss::future<kafka::offset_fetch_response>
+consumer::offset_fetch(std::vector<kafka::offset_fetch_request_topic> topics) {
+    auto req_builder = [topics{std::move(topics)}, group_id{_group_id}] {
+        return kafka::offset_fetch_request{
+          .data{.group_id = group_id, .topics = topics}};
+    };
+    return req_res(std::move(req_builder))
+      .then([this](kafka::offset_fetch_response res) {
+          return res.data.error_code == kafka::error_code::none
+                   ? ss::make_ready_future<kafka::offset_fetch_response>(
+                     std::move(res))
+                   : ss::make_exception_future<kafka::offset_fetch_response>(
+                     consumer_error(
+                       _group_id, _member_id, res.data.error_code));
+      });
+}
+
 ss::future<shared_consumer_t>
 make_consumer(shared_broker_t coordinator, kafka::group_id group_id) {
     auto c = ss::make_lw_shared<consumer>(

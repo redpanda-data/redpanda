@@ -58,6 +58,26 @@
 
 namespace ppc = pandaproxy::client;
 
+namespace {
+
+std::vector<kafka::offset_fetch_request_topic>
+offset_request_from_assignment(ppc::assignment assignment) {
+    auto topics = std::vector<kafka::offset_fetch_request_topic>{};
+    topics.reserve(assignment.size());
+    std::transform(
+      std::make_move_iterator(assignment.begin()),
+      std::make_move_iterator(assignment.end()),
+      std::back_inserter(topics),
+      [](auto a) {
+          return kafka::offset_fetch_request_topic{
+            .name = std::move(a.first),
+            .partition_indexes = std::move(a.second)};
+      });
+    return topics;
+}
+
+} // namespace
+
 FIXTURE_TEST(pandaproxy_consumer_group, ppc_test_fixture) {
     using namespace std::chrono_literals;
 
@@ -219,7 +239,7 @@ FIXTURE_TEST(pandaproxy_consumer_group, ppc_test_fixture) {
         BOOST_REQUIRE_EQUAL(consumer_topics[0], topics[i]);
     }
 
-    // Check member assignment
+    // Check member assignment and offsets
     // range_assignment is allocated according to sorted member ids
     auto sorted_members = members;
     std::sort(sorted_members.begin(), sorted_members.end());
@@ -230,6 +250,21 @@ FIXTURE_TEST(pandaproxy_consumer_group, ppc_test_fixture) {
         for (auto const& [topic, partitions] : assignment) {
             BOOST_REQUIRE_EQUAL(partitions.size(), 1);
             BOOST_REQUIRE_EQUAL(partitions[0](), i);
+        }
+
+        auto topics = offset_request_from_assignment(std::move(assignment));
+        auto offsets
+          = client.consumer_offset_fetch(group_id, m_id, std::move(topics))
+              .get();
+        BOOST_REQUIRE_EQUAL(offsets.data.error_code, kafka::error_code::none);
+        BOOST_REQUIRE_EQUAL(offsets.data.topics.size(), 3);
+        for (auto const& t : offsets.data.topics) {
+            BOOST_REQUIRE_EQUAL(t.partitions.size(), 1);
+            for (auto const& p : t.partitions) {
+                BOOST_REQUIRE_EQUAL(p.error_code, kafka::error_code::none);
+                BOOST_REQUIRE_EQUAL(p.partition_index(), i);
+                BOOST_REQUIRE_EQUAL(p.committed_offset(), -1);
+            }
         }
     }
 

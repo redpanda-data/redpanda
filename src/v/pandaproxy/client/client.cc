@@ -249,4 +249,14 @@ ss::future<assignment> client::consumer_assignment(
     });
 }
 
+ss::future<kafka::offset_fetch_response> client::consumer_offset_fetch(
+  const kafka::group_id& g_id,
+  const kafka::member_id& m_id,
+  std::vector<kafka::offset_fetch_request_topic> topics) {
+    return get_consumer(g_id, m_id)
+      .then([topics{std::move(topics)}](shared_consumer_t c) mutable {
+          return c->offset_fetch(std::move(topics));
+      });
+}
+
 } // namespace pandaproxy::client

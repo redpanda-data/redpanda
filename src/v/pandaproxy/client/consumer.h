@@ -43,7 +43,8 @@ public:
     ss::future<> join();
     ss::future<kafka::leave_group_response> leave();
     ss::future<> subscribe(std::vector<model::topic> topics);
-    ss::future<kafka::offset_fetch_response> offset_fetch();
+    ss::future<kafka::offset_fetch_response>
+    offset_fetch(std::vector<kafka::offset_fetch_request_topic> topics);
 
 private:
     bool is_leader() const {
