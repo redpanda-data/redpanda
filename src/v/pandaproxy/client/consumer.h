@@ -35,6 +35,7 @@ public:
 
     const kafka::group_id& group_id() const { return _group_id; }
     const kafka::member_id& member_id() const { return _member_id; }
+    const std::vector<model::topic>& topics() const { return _topics; }
 
     ss::future<> join();
     ss::future<kafka::leave_group_response> leave();

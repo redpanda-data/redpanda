@@ -235,4 +235,11 @@ ss::future<> client::subscribe_consumer(
       });
 }
 
+ss::future<std::vector<model::topic>> client::consumer_topics(
+  const kafka::group_id& g_id, const kafka::member_id& m_id) {
+    return get_consumer(g_id, m_id).then([](shared_consumer_t c) {
+        return ss::make_ready_future<std::vector<model::topic>>(c->topics());
+    });
+}
+
 } // namespace pandaproxy::client

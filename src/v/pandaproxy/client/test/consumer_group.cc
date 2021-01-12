@@ -33,6 +33,7 @@
 #include "model/metadata.h"
 #include "pandaproxy/client/client.h"
 #include "pandaproxy/client/configuration.h"
+#include "pandaproxy/client/consumer.h"
 #include "pandaproxy/client/test/pandaproxy_client_fixture.h"
 #include "pandaproxy/client/test/utils.h"
 #include "redpanda/tests/fixture.h"
@@ -171,6 +172,13 @@ FIXTURE_TEST(pandaproxy_consumer_group, ppc_test_fixture) {
         check_group_response(desc_res, kafka::group_state::stable, 2);
     }
 
+    // Check topic subscriptions - none expected
+    for (auto& member : members) {
+        auto consumer_topics = client.consumer_topics(group_id, member).get();
+        BOOST_REQUIRE_EQUAL(consumer_topics.size(), 0);
+    }
+
+    info("Subscribing Consumers 0,1");
     ss::when_all_succeed(
       client.subscribe_consumer(group_id, members[0], {topics[0]}),
       client.subscribe_consumer(group_id, members[1], {topics[1]}))
@@ -179,6 +187,14 @@ FIXTURE_TEST(pandaproxy_consumer_group, ppc_test_fixture) {
     desc_res = client.dispatch(describe_group_request_builder()).get();
     BOOST_TEST_CONTEXT("Group size = 2") {
         check_group_response(desc_res, kafka::group_state::stable, 2);
+    }
+
+    // Check topic subscriptions - one each expected
+    for (int i = 0; i < members.size(); ++i) {
+        auto consumer_topics
+          = client.consumer_topics(group_id, members[i]).get();
+        BOOST_REQUIRE_EQUAL(consumer_topics.size(), 1);
+        BOOST_REQUIRE_EQUAL(consumer_topics[0], topics[i]);
     }
 
     info("Joining Consumer 2");
@@ -195,8 +211,13 @@ FIXTURE_TEST(pandaproxy_consumer_group, ppc_test_fixture) {
     auto list_res = client.dispatch(list_groups_request_builder()).get();
     info("list res: {}", list_res);
 
-    desc_res = client.dispatch(describe_group_request_builder()).get();
-    info("Describe group res: {}", desc_res);
+    // Check topic subscriptions - one each expected
+    for (int i = 0; i < members.size(); ++i) {
+        auto consumer_topics
+          = client.consumer_topics(group_id, members[i]).get();
+        BOOST_REQUIRE_EQUAL(consumer_topics.size(), 1);
+        BOOST_REQUIRE_EQUAL(consumer_topics[0], topics[i]);
+    }
 
     ss::when_all_succeed(
       client.remove_consumer(group_id, members[0]),
