@@ -243,15 +243,13 @@ FIXTURE_TEST(test_recreated_topic_does_not_lose_data, recreate_test_fixture) {
       cluster::kafka_namespace,
       model::topic_partition(test_tp, model::partition_id(0)));
 
-    tests::cooperative_spin_wait_with_timeout(2s, [ntp, this] {
+    auto wait_for_ntp_leader = [this, ntp] {
         auto shard_id = app.shard_table.local().shard_for(ntp);
-        return shard_id.has_value();
-    }).get0();
-
-    auto shard_id = app.shard_table.local().shard_for(ntp);
-    auto wait_for_ntp_leader = [this, shard_id = *shard_id, ntp] {
+        if (!shard_id) {
+            return ss::make_ready_future<bool>(false);
+        }
         return app.partition_manager.invoke_on(
-          shard_id, [ntp](cluster::partition_manager& pm) {
+          *shard_id, [ntp](cluster::partition_manager& pm) {
               if (pm.get(ntp)) {
                   return pm.get(ntp)->is_leader();
               }
@@ -259,6 +257,7 @@ FIXTURE_TEST(test_recreated_topic_does_not_lose_data, recreate_test_fixture) {
           });
     };
     tests::cooperative_spin_wait_with_timeout(2s, wait_for_ntp_leader).get0();
+    auto shard_id = app.shard_table.local().shard_for(ntp);
     model::offset committed_offset
       = app.partition_manager
           .invoke_on(
@@ -284,15 +283,14 @@ FIXTURE_TEST(test_recreated_topic_does_not_lose_data, recreate_test_fixture) {
     {
         info("Expected committed offset {}", committed_offset);
         wait_for_controller_leadership().get();
-        tests::cooperative_spin_wait_with_timeout(2s, [ntp, this] {
-            auto shard_id = app.shard_table.local().shard_for(ntp);
-            return shard_id.has_value();
-        }).get0();
-
-        auto shard_id = app.shard_table.local().shard_for(ntp);
         tests::cooperative_spin_wait_with_timeout(2s, wait_for_ntp_leader)
           .get0();
-        tests::cooperative_spin_wait_with_timeout(2s, [this, shard_id, ntp] {
+        tests::cooperative_spin_wait_with_timeout(2s, [this, ntp] {
+            auto shard_id = app.shard_table.local().shard_for(ntp);
+            if (!shard_id) {
+                return ss::make_ready_future<bool>(false);
+            }
+
             return app.partition_manager.invoke_on(
               *shard_id, [ntp](cluster::partition_manager& pm) {
                   auto partition = pm.get(ntp);
@@ -300,6 +298,7 @@ FIXTURE_TEST(test_recreated_topic_does_not_lose_data, recreate_test_fixture) {
                          && partition->committed_offset() >= model::offset(0);
               });
         }).get0();
+        auto shard_id = app.shard_table.local().shard_for(ntp);
         app.partition_manager
           .invoke_on(
             *shard_id,
