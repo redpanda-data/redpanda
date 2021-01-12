@@ -240,6 +240,13 @@ configuration::configuration()
       "wasn't reached",
       required::no,
       1ms)
+  , transactional_id_expiration_ms(
+      *this,
+      "transactional_id_expiration_ms",
+      "Producer ids are expired once this time has elapsed after the last "
+      "write with the given producer id.",
+      required::no,
+      10080min)
   , delete_retention_ms(
       *this,
       "delete_retention_ms",
