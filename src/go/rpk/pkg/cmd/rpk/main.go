@@ -9,7 +9,7 @@
 
 package main
 
-import "vectorized/pkg/cli/cmd"
+import "github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd"
 
 func main() {
 	cmd.Execute()

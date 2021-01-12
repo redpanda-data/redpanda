@@ -12,9 +12,9 @@ package graf_test
 import (
 	"encoding/json"
 	"testing"
-	"vectorized/pkg/cli/cmd/generate/graf"
 
 	"github.com/stretchr/testify/require"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/generate/graf"
 )
 
 func TestSingleStatPanelType(t *testing.T) {

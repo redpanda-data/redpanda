@@ -12,15 +12,15 @@ package cpu
 import (
 	"fmt"
 	"strconv"
-	"vectorized/pkg/system"
-	"vectorized/pkg/tuners"
-	"vectorized/pkg/tuners/executors"
-	"vectorized/pkg/tuners/executors/commands"
-	"vectorized/pkg/tuners/irq"
-	"vectorized/pkg/utils"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/system"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/executors"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/executors/commands"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/irq"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/utils"
 )
 
 type tuner struct {

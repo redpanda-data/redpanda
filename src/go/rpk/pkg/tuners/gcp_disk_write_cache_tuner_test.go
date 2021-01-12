@@ -12,11 +12,11 @@ package tuners
 import (
 	"fmt"
 	"testing"
-	"vectorized/pkg/cloud/vendor"
-	"vectorized/pkg/tuners/executors"
 
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cloud/vendor"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/executors"
 )
 
 type vendorMock struct {

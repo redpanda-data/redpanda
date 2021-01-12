@@ -12,12 +12,12 @@ package tuners_test
 import (
 	"fmt"
 	"testing"
-	"vectorized/pkg/tuners"
-	"vectorized/pkg/tuners/executors"
-	"vectorized/pkg/utils"
 
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/executors"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/utils"
 )
 
 func TestMaxAIOEventsCheck(t *testing.T) {

@@ -12,7 +12,8 @@ package commands
 import (
 	"bufio"
 	"fmt"
-	"vectorized/pkg/system/systemd"
+
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/system/systemd"
 )
 
 type startSystemdUnitCommand struct {

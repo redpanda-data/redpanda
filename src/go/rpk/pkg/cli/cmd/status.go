@@ -15,13 +15,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"vectorized/pkg/api"
-	"vectorized/pkg/cli/cmd/version"
-	"vectorized/pkg/cli/ui"
-	"vectorized/pkg/cloud"
-	"vectorized/pkg/config"
-	"vectorized/pkg/kafka"
-	"vectorized/pkg/system"
 
 	"github.com/Shopify/sarama"
 	"github.com/hashicorp/go-multierror"
@@ -29,6 +22,13 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/api"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/version"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/ui"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cloud"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/kafka"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/system"
 )
 
 type metricsResult struct {

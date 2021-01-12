@@ -13,12 +13,12 @@ import (
 	"bytes"
 	"os"
 	"testing"
-	"vectorized/pkg/config"
-	"vectorized/pkg/redpanda"
 
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/redpanda"
 )
 
 type noopLauncher struct {

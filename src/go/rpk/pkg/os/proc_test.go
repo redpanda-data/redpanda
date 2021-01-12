@@ -12,11 +12,11 @@ package os_test
 import (
 	"fmt"
 	"testing"
-	"vectorized/pkg/os"
-	"vectorized/pkg/utils"
 
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/os"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/utils"
 )
 
 type beforeFunc func(afero.Fs) error

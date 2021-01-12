@@ -12,13 +12,13 @@ package system
 import (
 	"strconv"
 	"time"
-	"vectorized/pkg/config"
-	"vectorized/pkg/utils"
 
 	"github.com/shirou/gopsutil/v3/disk"
 	"github.com/shirou/gopsutil/v3/mem"
 	"github.com/shirou/gopsutil/v3/process"
 	"github.com/spf13/afero"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/utils"
 )
 
 type Metrics struct {

@@ -13,7 +13,8 @@ import (
 	"bufio"
 	"fmt"
 	"time"
-	"vectorized/pkg/os"
+
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/os"
 )
 
 type executeCommand struct {

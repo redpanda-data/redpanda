@@ -14,12 +14,12 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"vectorized/pkg/cli"
-	"vectorized/pkg/config"
-	"vectorized/pkg/kafka"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/kafka"
 	"gopkg.in/yaml.v2"
 )
 

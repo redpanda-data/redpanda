@@ -14,9 +14,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"vectorized/pkg/os"
 
 	log "github.com/sirupsen/logrus"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/os"
 )
 
 const (

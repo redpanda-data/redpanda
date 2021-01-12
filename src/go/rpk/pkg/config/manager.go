@@ -18,7 +18,6 @@ import (
 	fp "path/filepath"
 	"strconv"
 	"strings"
-	"vectorized/pkg/utils"
 
 	"github.com/google/uuid"
 	"github.com/mitchellh/mapstructure"
@@ -26,6 +25,7 @@ import (
 	"github.com/spf13/afero"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/utils"
 	"gopkg.in/yaml.v2"
 )
 

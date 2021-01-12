@@ -15,11 +15,11 @@ import (
 	"errors"
 	"testing"
 	"time"
-	"vectorized/pkg/cli/cmd/container/common"
 
 	"github.com/docker/docker/api/types"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/container/common"
 )
 
 func TestStop(t *testing.T) {

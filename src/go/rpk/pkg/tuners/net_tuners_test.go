@@ -13,17 +13,17 @@ import (
 	"fmt"
 	"testing"
 	"time"
-	"vectorized/pkg/os"
-	"vectorized/pkg/tuners"
-	"vectorized/pkg/tuners/ethtool"
-	"vectorized/pkg/tuners/executors"
-	"vectorized/pkg/tuners/hwloc"
-	"vectorized/pkg/tuners/irq"
-	"vectorized/pkg/tuners/network"
-	"vectorized/pkg/utils"
 
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/os"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/ethtool"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/executors"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/hwloc"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/irq"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/network"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/utils"
 )
 
 func mockNetTunersFactory(

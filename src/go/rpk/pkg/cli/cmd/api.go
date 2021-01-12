@@ -14,16 +14,16 @@ import (
 	"os"
 	"strings"
 	"sync"
-	"vectorized/pkg/cli/cmd/api"
-	"vectorized/pkg/cli/cmd/container/common"
-	"vectorized/pkg/config"
-	"vectorized/pkg/kafka"
 
 	"github.com/Shopify/sarama"
 	"github.com/burdiyan/kafkautil"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/api"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/container/common"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/kafka"
 	"golang.org/x/sync/errgroup"
 )
 

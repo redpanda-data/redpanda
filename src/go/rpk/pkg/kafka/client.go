@@ -16,11 +16,11 @@ import (
 	"io/ioutil"
 	"sync"
 	"time"
-	"vectorized/pkg/config"
 
 	"github.com/Shopify/sarama"
 	"github.com/avast/retry-go"
 	log "github.com/sirupsen/logrus"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 )
 
 func DefaultConfig() *sarama.Config {

@@ -12,12 +12,12 @@ package config
 import (
 	"path/filepath"
 	"testing"
-	"vectorized/pkg/utils"
-	vyaml "vectorized/pkg/yaml"
 
 	"github.com/spf13/afero"
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/utils"
+	vyaml "github.com/vectorizedio/redpanda/src/go/rpk/pkg/yaml"
 	"gopkg.in/yaml.v2"
 )
 

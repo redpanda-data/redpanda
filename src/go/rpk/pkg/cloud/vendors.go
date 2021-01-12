@@ -12,11 +12,11 @@ package cloud
 import (
 	"errors"
 	"sync"
-	"vectorized/pkg/cloud/aws"
-	"vectorized/pkg/cloud/gcp"
-	"vectorized/pkg/cloud/vendor"
 
 	log "github.com/sirupsen/logrus"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cloud/aws"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cloud/gcp"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cloud/vendor"
 )
 
 func vendors() map[string]vendor.Vendor {

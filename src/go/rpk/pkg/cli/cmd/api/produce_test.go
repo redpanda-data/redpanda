@@ -14,11 +14,11 @@ import (
 	"errors"
 	"strings"
 	"testing"
-	"vectorized/pkg/cli/cmd/api"
 
 	"github.com/Shopify/sarama"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/api"
 )
 
 type mockSyncProducer struct {

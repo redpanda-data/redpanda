@@ -15,13 +15,13 @@ import (
 	"errors"
 	"io"
 	"testing"
-	"vectorized/pkg/cli/cmd/container/common"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/container/common"
 )
 
 func TestStart(t *testing.T) {

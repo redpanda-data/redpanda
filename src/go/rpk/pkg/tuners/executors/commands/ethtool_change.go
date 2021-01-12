@@ -12,9 +12,9 @@ package commands
 import (
 	"bufio"
 	"fmt"
-	"vectorized/pkg/tuners/ethtool"
 
 	log "github.com/sirupsen/logrus"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/ethtool"
 )
 
 type ethtoolChangeCommand struct {

@@ -11,10 +11,10 @@ package tuners
 
 import (
 	"fmt"
-	"vectorized/pkg/tuners/disk"
-	"vectorized/pkg/tuners/irq"
 
 	"github.com/spf13/afero"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/disk"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/tuners/irq"
 )
 
 func CreateDirectoryCheckers(

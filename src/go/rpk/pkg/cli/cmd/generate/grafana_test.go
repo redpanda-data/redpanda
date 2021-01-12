@@ -14,10 +14,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"vectorized/pkg/cli/cmd/generate"
 
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/generate"
 )
 
 func TestGrafanaHostNoServer(t *testing.T) {
