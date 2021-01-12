@@ -7,11 +7,17 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+// +kubebuilder:object:generate=true
 package config
 
-import "path"
+import (
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"path"
+)
 
+// +kubebuilder:object:root=true
 type Config struct {
+	metav1.TypeMeta		`json:",inline"`
 	NodeUuid	string		`yaml:"node_uuid,omitempty" mapstructure:"node_uuid,omitempty" json:"nodeUuid"`
 	Organization	string		`yaml:"organization,omitempty" mapstructure:"organization,omitempty" json:"organization"`
 	LicenseKey	string		`yaml:"license_key,omitempty" mapstructure:"license_key,omitempty" json:"licenseKey"`

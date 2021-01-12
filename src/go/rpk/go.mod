@@ -16,7 +16,7 @@ require (
 	github.com/docker/go-connections v0.4.0
 	github.com/docker/go-units v0.4.0
 	github.com/fatih/color v1.7.0
-	github.com/google/uuid v1.1.1
+	github.com/google/uuid v1.1.4
 	github.com/hashicorp/go-multierror v1.1.0
 	github.com/konsorten/go-windows-terminal-sequences v1.0.2 // indirect
 	github.com/kr/text v0.2.0 // indirect
@@ -43,10 +43,10 @@ require (
 	github.com/stretchr/testify v1.6.1
 	golang.org/x/crypto v0.0.0-20200622213623-75b288015ac9
 	golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9
-	golang.org/x/sys v0.0.0-20201029080932-201ba4db2418
-	google.golang.org/grpc v1.22.0 // indirect
+	golang.org/x/sys v0.0.0-20201112073958-5cba982894dd
 	gopkg.in/yaml.v2 v2.2.8
 	gotest.tools v2.2.0+incompatible // indirect
+	k8s.io/apimachinery v0.19.2
 	mvdan.cc/sh/v3 v3.2.1
 )
 
