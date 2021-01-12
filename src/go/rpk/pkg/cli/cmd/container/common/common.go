@@ -228,6 +228,7 @@ func CreateNode(
 		fmt.Sprintf("127.0.0.1:%d", kafkaPort),
 		"--advertise-rpc-addr",
 		fmt.Sprintf("%s:%d", ip, config.Default().Redpanda.RPCServer.Port),
+		"--smp 1 --memory 1G --reserve-memory 0M",
 	}
 	containerConfig := container.Config{
 		Image:		redpandaImageBase,
