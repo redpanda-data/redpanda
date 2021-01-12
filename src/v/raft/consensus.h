@@ -14,6 +14,7 @@
 #include "hashing/crc32c.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "raft/append_entries_buffer.h"
 #include "raft/configuration_manager.h"
 #include "raft/consensus_client_protocol.h"
 #include "raft/event_manager.h"
@@ -230,6 +231,7 @@ private:
     friend recovery_stm;
     friend replicate_batcher;
     friend event_manager;
+    friend append_entries_buffer;
 
     // all these private functions assume that we are under exclusive operations
     // via the _op_sem
@@ -419,8 +421,7 @@ private:
     model::offset _last_quorum_replicated_index;
     offset_monitor _consumable_offset_monitor;
     ss::condition_variable _disk_append;
-    details::mutex_buffer<append_entries_request, append_entries_reply>
-      _append_requests_buffer;
+    append_entries_buffer _append_requests_buffer;
     friend std::ostream& operator<<(std::ostream&, const consensus&);
 };
 
