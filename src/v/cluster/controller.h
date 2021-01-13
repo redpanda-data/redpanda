@@ -40,6 +40,7 @@ public:
       ss::sharded<shard_table>& st,
       ss::sharded<storage::api>& storage);
 
+    model::node_id self() { return _raft0->self(); }
     ss::sharded<topics_frontend>& get_topics_frontend() { return _tp_frontend; }
     ss::sharded<members_manager>& get_members_manager() {
         return _members_manager;
