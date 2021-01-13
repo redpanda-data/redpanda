@@ -18,16 +18,33 @@ If you are planning on benchmarking locally, make sure to check out our
 #### On Fedora/RedHat Systems {#qs-fedora}
 
 ```
-curl -s https://{{client_token}}:@packagecloud.io/install/repositories/vectorizedio/v/script.rpm.sh \
-    | sudo bash && sudo yum install redpanda -y && sudo systemctl start redpanda
+curl -1sLf \
+  'https://packages.vectorized.io/nzc4ZYQK3WRGd9sy/redpanda/cfg/setup/bash.rpm.sh' \
+  | sudo -E bash
+  
+sudo yum install redpanda
 ```
+
 
 #### On Debian Systems {#qs-debian}
 
 ```
-curl -s https://{{client_token}}:@packagecloud.io/install/repositories/vectorizedio/v/script.deb.sh \
-    | sudo bash && sudo apt install redpanda -y && sudo systemctl start redpanda
+curl -1sLf \
+  'https://packages.vectorized.io/nzc4ZYQK3WRGd9sy/redpanda/cfg/setup/bash.deb.sh' \
+  | sudo -E bash
+  
+sudo apt-get install redpanda
 ```
+
+
+#### On MacOS {#qs-mac}
+
+Simply download our `rpk` [binary here](https://github.com/vectorizedio/redpanda/releases). We require Docker on MacOS
+
+```
+brew install vectorizedio/tap/redpanda && rpk container start
+```
+
 
 # Single Node Production Setup
 
@@ -41,15 +58,21 @@ Requirements:
 #### On Fedora/RedHat Systems {#single-node-fedora}
 
 ```
-curl -s https://{{client_token}}:@packagecloud.io/install/repositories/vectorizedio/v/script.rpm.sh \ 
-    | sudo bash && sudo yum install redpanda -y
+curl -1sLf \
+  'https://packages.vectorized.io/nzc4ZYQK3WRGd9sy/redpanda/cfg/setup/bash.rpm.sh' \
+  | sudo -E bash
+  
+sudo yum install redpanda
 ```
 
 #### On Debian Systems {#single-node-debian}
 
 ```
-curl -s https://{{client_token}}:@packagecloud.io/install/repositories/vectorizedio/v/script.deb.sh \
-    | sudo bash && sudo apt install redpanda -y
+curl -1sLf \
+  'https://packages.vectorized.io/nzc4ZYQK3WRGd9sy/redpanda/cfg/setup/bash.rpm.sh' \
+  | sudo -E bash
+  
+sudo yum install redpanda
 ```
 
 
@@ -103,16 +126,23 @@ Requirements:
 #### On Fedora/RedHat Systems {#multi-node-fedora}
 
 ```
-curl -s https://{{client_token}}:@packagecloud.io/install/repositories/vectorizedio/v/script.rpm.sh \
-    | sudo bash && sudo yum install redpanda -y
+curl -1sLf \
+  'https://packages.vectorized.io/nzc4ZYQK3WRGd9sy/redpanda/cfg/setup/bash.rpm.sh' \
+  | sudo -E bash
+  
+sudo yum install redpanda
 ```
 
 #### On Debian Systems {#multi-node-debian}
 
 ```
-curl -s https://{{client_token}}:@packagecloud.io/install/repositories/vectorizedio/v/script.deb.sh \
-    | sudo bash && sudo apt install redpanda -y
+curl -1sLf \
+  'https://packages.vectorized.io/nzc4ZYQK3WRGd9sy/redpanda/cfg/setup/bash.deb.sh' \
+  | sudo -E bash
+  
+sudo apt-get install redpanda
 ```
+
 
 ## Step 2: Start the root node
 

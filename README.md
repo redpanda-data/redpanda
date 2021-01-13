@@ -49,7 +49,7 @@ curl -1sLf \
   'https://packages.vectorized.io/nzc4ZYQK3WRGd9sy/redpanda/cfg/setup/bash.deb.sh' \
   | sudo -E bash
   
-apt-get install redpanda
+sudo apt-get install redpanda
 ```
 
 ### On Fedora/RedHat/Amazon Linux
@@ -59,7 +59,7 @@ curl -1sLf \
   'https://packages.vectorized.io/nzc4ZYQK3WRGd9sy/redpanda/cfg/setup/bash.rpm.sh' \
   | sudo -E bash
   
-yum install redpanda
+sudo yum install redpanda
 ```
 
 ## Build Manually
