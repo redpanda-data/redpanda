@@ -74,6 +74,8 @@ std::istream& operator>>(std::istream&, compaction_strategy&);
 
 using term_id = named_type<int64_t, struct model_raft_term_id_type>;
 
+using run_id = named_type<int64_t, struct model_raft_run_id_type>;
+
 using partition_id = named_type<int32_t, struct model_partition_id_type>;
 
 using topic_view = named_type<std::string_view, struct model_topic_view_type>;

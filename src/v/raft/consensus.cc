@@ -880,6 +880,27 @@ model::offset consensus::read_last_applied() const {
     return model::offset{};
 }
 
+ss::future<model::run_id> consensus::get_run_id() {
+    iobuf buf;
+    reflection::serialize(buf, metadata_key::unique_local_id, _group);
+    const auto key = iobuf_to_bytes(buf);
+
+    auto value = _storage.kvs().get(
+      storage::kvstore::key_space::consensus, key);
+
+    int64_t last_id = 0;
+    if (value) {
+        last_id = reflection::adl<int64_t>{}.from(std::move(*value));
+    }
+    last_id++;
+
+    iobuf val = reflection::to_iobuf(last_id);
+    return _storage.kvs()
+      .put(
+        storage::kvstore::key_space::consensus, std::move(key), std::move(val))
+      .then([last_id] { return model::run_id(last_id); });
+}
+
 void consensus::read_voted_for() {
     /*
      * Initial values

@@ -241,6 +241,9 @@ public:
 
     model::offset read_last_applied() const;
 
+    // yields a node scoped unique number on each invocation
+    ss::future<model::run_id> get_run_id();
+
     probe& get_probe() { return _probe; };
 
     bool are_heartbeats_suppressed(vnode) const;
