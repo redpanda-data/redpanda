@@ -34,6 +34,8 @@ namespace storage {
    [] position_index
  */
 struct index_state {
+    static constexpr int8_t ondisk_version = 1;
+
     index_state() = default;
     index_state(index_state&&) noexcept = default;
     index_state& operator=(index_state&&) noexcept = default;
@@ -41,7 +43,6 @@ struct index_state {
     index_state& operator=(const index_state&) = delete;
     ~index_state() noexcept = default;
 
-    int8_t version{1};
     /// \brief sizeof the index in bytes
     uint32_t size{0};
     /// \brief currently xxhash64

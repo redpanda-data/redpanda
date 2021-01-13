@@ -86,8 +86,7 @@ bool index_state::maybe_index(
 }
 
 std::ostream& operator<<(std::ostream& o, const index_state& s) {
-    return o << "{version:" << (int)s.version << ", header_size:" << s.size
-             << ", header_checksum:" << s.checksum
+    return o << "{header_size:" << s.size << ", header_checksum:" << s.checksum
              << ", header_bitflags:" << s.bitflags
              << ", base_offset:" << s.base_offset
              << ", max_offset:" << s.max_offset
@@ -101,8 +100,8 @@ std::ostream& operator<<(std::ostream& o, const index_state& s) {
 std::optional<index_state> index_state::hydrate_from_buffer(iobuf b) {
     iobuf_parser parser(std::move(b));
     index_state retval;
-    retval.version = reflection::adl<int8_t>{}.from(parser);
-    if (retval.version != 1) {
+    auto version = reflection::adl<int8_t>{}.from(parser);
+    if (version != index_state::ondisk_version) {
         // we screwed up version 0; and we only have version 1, so
         // we force the users to rebuild the all indices here
         return std::nullopt;
@@ -167,7 +166,7 @@ iobuf index_state::checksum_and_serialize() {
     checksum = storage::index_state::checksum_state(*this);
     reflection::serialize(
       out,
-      version,
+      index_state::ondisk_version,
       size,
       checksum,
       bitflags,
