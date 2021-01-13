@@ -101,6 +101,10 @@ public:
         return _conn->server().topics_frontend();
     }
 
+    cluster::id_allocator_frontend& id_allocator_frontend() const {
+        return _conn->server().id_allocator_frontend();
+    }
+
     int32_t throttle_delay_ms() const {
         return std::chrono::duration_cast<std::chrono::milliseconds>(
                  _throttle_delay)

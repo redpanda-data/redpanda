@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "cluster/id_allocator_frontend.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/partition_manager.h"
 #include "cluster/shard_table.h"
@@ -38,7 +39,8 @@ public:
       ss::sharded<cluster::shard_table>&,
       ss::sharded<cluster::partition_manager>&,
       ss::sharded<coordinator_ntp_mapper>& coordinator_mapper,
-      ss::sharded<fetch_session_cache>&) noexcept;
+      ss::sharded<fetch_session_cache>&,
+      ss::sharded<cluster::id_allocator_frontend>&) noexcept;
 
     ~protocol() noexcept override = default;
     protocol(const protocol&) = delete;
@@ -57,6 +59,9 @@ public:
     }
     cluster::metadata_cache& metadata_cache() {
         return _metadata_cache.local();
+    }
+    cluster::id_allocator_frontend& id_allocator_frontend() {
+        return _id_allocator_frontend.local();
     }
     kafka::group_router& group_router() { return _group_router.local(); }
     cluster::shard_table& shard_table() { return _shard_table.local(); }
@@ -81,6 +86,7 @@ private:
     ss::sharded<cluster::partition_manager>& _partition_manager;
     ss::sharded<kafka::coordinator_ntp_mapper>& _coordinator_mapper;
     ss::sharded<kafka::fetch_session_cache>& _fetch_session_cache;
+    ss::sharded<cluster::id_allocator_frontend>& _id_allocator_frontend;
 };
 
 } // namespace kafka

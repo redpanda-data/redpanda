@@ -12,6 +12,7 @@
 #pragma once
 
 #include "cluster/controller.h"
+#include "cluster/id_allocator_frontend.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/metadata_dissemination_service.h"
 #include "cluster/partition_manager.h"
@@ -68,6 +69,7 @@ public:
     ss::sharded<kafka::fetch_session_cache> fetch_session_cache;
     smp_groups smp_service_groups;
     ss::sharded<kafka::quota_manager> quota_mgr;
+    ss::sharded<cluster::id_allocator_frontend> id_allocator_frontend;
 
 private:
     using deferred_actions

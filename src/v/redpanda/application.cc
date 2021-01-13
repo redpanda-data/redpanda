@@ -9,6 +9,8 @@
 
 #include "redpanda/application.h"
 
+#include "cluster/id_allocator.h"
+#include "cluster/id_allocator_frontend.h"
 #include "cluster/metadata_dissemination_handler.h"
 #include "cluster/metadata_dissemination_service.h"
 #include "cluster/service.h"
@@ -472,6 +474,18 @@ void application::wire_up_services() {
         construct_service(_coproc_rpc, cp_rpc_cfg).get();
     }
 
+    syschecks::systemd_message("Creating id allocator frontend");
+    construct_service(
+      id_allocator_frontend,
+      smp_service_groups.raft_smp_sg(),
+      std::ref(partition_manager),
+      std::ref(shard_table),
+      std::ref(metadata_cache),
+      std::ref(_raft_connection_cache),
+      std::ref(controller->get_partition_leaders()),
+      std::ref(controller))
+      .get();
+
     rpc::server_configuration kafka_cfg("kafka_rpc");
     kafka_cfg.max_service_memory_per_core = memory_groups::kafka_total_memory();
     auto kafka_addr = config::shard_local_cfg().kafka_api().resolve().get0();
@@ -527,6 +541,10 @@ void application::start() {
     _rpc
       .invoke_on_all([this](rpc::server& s) {
           auto proto = std::make_unique<rpc::simple_protocol>();
+          proto->register_service<cluster::id_allocator>(
+            _scheduling_groups.raft_sg(),
+            smp_service_groups.raft_smp_sg(),
+            std::ref(id_allocator_frontend));
           proto->register_service<
             raft::service<cluster::partition_manager, cluster::shard_table>>(
             _scheduling_groups.raft_sg(),
@@ -583,7 +601,8 @@ void application::start() {
             shard_table,
             partition_manager,
             coordinator_ntp_mapper,
-            fetch_session_cache);
+            fetch_session_cache,
+            std::ref(id_allocator_frontend));
           s.set_protocol(std::move(proto));
       })
       .get();

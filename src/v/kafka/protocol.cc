@@ -39,7 +39,8 @@ protocol::protocol(
   ss::sharded<cluster::shard_table>& tbl,
   ss::sharded<cluster::partition_manager>& pm,
   ss::sharded<coordinator_ntp_mapper>& coordinator_mapper,
-  ss::sharded<fetch_session_cache>& session_cache) noexcept
+  ss::sharded<fetch_session_cache>& session_cache,
+  ss::sharded<cluster::id_allocator_frontend>& id_allocator_frontend) noexcept
   : _smp_group(smp)
   , _topics_frontend(tf)
   , _metadata_cache(meta)
@@ -48,7 +49,8 @@ protocol::protocol(
   , _shard_table(tbl)
   , _partition_manager(pm)
   , _coordinator_mapper(coordinator_mapper)
-  , _fetch_session_cache(session_cache) {}
+  , _fetch_session_cache(session_cache)
+  , _id_allocator_frontend(id_allocator_frontend) {}
 
 ss::future<> protocol::apply(rpc::server::resources rs) {
     auto ctx = ss::make_lw_shared<connection_context>(*this, std::move(rs));
