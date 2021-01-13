@@ -982,7 +982,7 @@ FIXTURE_TEST(partition_size_while_cleanup, storage_test_fixture) {
     auto cfg = default_log_config(test_dir);
     // make sure segments are small
     cfg.max_segment_size = 10_KiB;
-    cfg.max_compacted_segment_size = 10_KiB;
+    cfg.compacted_segment_size = 10_KiB;
     cfg.stype = storage::log_config::storage_type::disk;
     // we want force reading most recent compacted batches, disable the cache
     cfg.cache = storage::with_cache::no;

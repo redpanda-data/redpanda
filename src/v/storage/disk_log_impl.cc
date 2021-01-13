@@ -438,9 +438,8 @@ size_t disk_log_impl::max_segment_size() const {
         return *config().get_overrides().segment_size;
     }
     // no overrides use defaults
-    return config().is_compacted()
-             ? _manager.config().max_compacted_segment_size
-             : _manager.config().max_segment_size;
+    return config().is_compacted() ? _manager.config().compacted_segment_size
+                                   : _manager.config().max_segment_size;
 }
 
 size_t disk_log_impl::bytes_left_before_roll() const {
