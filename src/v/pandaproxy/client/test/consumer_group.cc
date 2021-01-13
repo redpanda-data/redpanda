@@ -268,6 +268,64 @@ FIXTURE_TEST(pandaproxy_consumer_group, ppc_test_fixture) {
         }
     }
 
+    // Commit offsets
+    // Each partition is commited with the offset of the index of the sorted
+    // member, and with metadata of the member id.
+    for (int i = 0; i < sorted_members.size(); ++i) {
+        auto m_id = sorted_members[i];
+        auto t = std::vector<kafka::offset_commit_request_topic>{};
+        t.reserve(3);
+        std::transform(
+          topics.begin(),
+          topics.end(),
+          std::back_inserter(t),
+          [i, m_id](auto& topic) {
+              return kafka::offset_commit_request_topic{
+                .name = topic,
+                .partitions = {
+                  {.partition_index = model::partition_id{i},
+                   .committed_offset = model::offset{i},
+                   .committed_metadata{m_id()}}}};
+          });
+        auto res
+          = client.consumer_offset_commit(group_id, m_id, std::move(t)).get();
+        BOOST_REQUIRE_EQUAL(res.data.topics.size(), 3);
+        for (const auto& t : res.data.topics) {
+            BOOST_REQUIRE_EQUAL(t.partitions.size(), 1);
+            auto& p = t.partitions[0];
+            BOOST_REQUIRE_EQUAL(p.error_code, kafka::error_code::none);
+            BOOST_REQUIRE_EQUAL(p.partition_index, i);
+        }
+    }
+
+    // Check member assignment and offsets
+    // range_assignment is allocated according to sorted member ids
+    for (int i = 0; i < sorted_members.size(); ++i) {
+        auto m_id = sorted_members[i];
+        auto assignment = client.consumer_assignment(group_id, m_id).get();
+        BOOST_REQUIRE_EQUAL(assignment.size(), 3);
+        for (auto const& [topic, partitions] : assignment) {
+            BOOST_REQUIRE_EQUAL(partitions.size(), 1);
+            BOOST_REQUIRE_EQUAL(partitions[0](), i);
+        }
+
+        auto topics = offset_request_from_assignment(std::move(assignment));
+        auto offsets
+          = client.consumer_offset_fetch(group_id, m_id, std::move(topics))
+              .get();
+        BOOST_REQUIRE_EQUAL(offsets.data.error_code, kafka::error_code::none);
+        BOOST_REQUIRE_EQUAL(offsets.data.topics.size(), 3);
+        for (auto const& t : offsets.data.topics) {
+            BOOST_REQUIRE_EQUAL(t.partitions.size(), 1);
+            for (auto const& p : t.partitions) {
+                BOOST_REQUIRE_EQUAL(p.error_code, kafka::error_code::none);
+                BOOST_REQUIRE_EQUAL(p.partition_index(), i);
+                BOOST_REQUIRE_EQUAL(p.committed_offset(), i);
+                BOOST_REQUIRE_EQUAL(p.metadata, m_id());
+            }
+        }
+    }
+
     ss::when_all_succeed(
       client.remove_consumer(group_id, members[0]),
       client.remove_consumer(group_id, members[1]),

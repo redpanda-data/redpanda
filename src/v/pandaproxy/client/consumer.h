@@ -45,6 +45,8 @@ public:
     ss::future<> subscribe(std::vector<model::topic> topics);
     ss::future<kafka::offset_fetch_response>
     offset_fetch(std::vector<kafka::offset_fetch_request_topic> topics);
+    ss::future<kafka::offset_commit_response>
+    offset_commit(std::vector<kafka::offset_commit_request_topic> topics);
 
 private:
     bool is_leader() const {

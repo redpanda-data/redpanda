@@ -294,6 +294,19 @@ consumer::offset_fetch(std::vector<kafka::offset_fetch_request_topic> topics) {
       });
 }
 
+ss::future<kafka::offset_commit_response> consumer::offset_commit(
+  std::vector<kafka::offset_commit_request_topic> topics) {
+    auto req_builder = [me{shared_from_this()}, topics{std::move(topics)}]() {
+        return kafka::offset_commit_request{.data{
+          .group_id = me->_group_id,
+          .generation_id = me->_generation_id,
+          .member_id = me->_member_id,
+          .topics = topics}};
+    };
+
+    return req_res(std::move(req_builder));
+}
+
 ss::future<shared_consumer_t>
 make_consumer(shared_broker_t coordinator, kafka::group_id group_id) {
     auto c = ss::make_lw_shared<consumer>(
