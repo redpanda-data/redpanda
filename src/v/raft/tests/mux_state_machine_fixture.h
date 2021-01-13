@@ -9,6 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
+#pragma once
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
