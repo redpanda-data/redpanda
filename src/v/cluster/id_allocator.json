@@ -1,0 +1,14 @@
+{
+    "namespace": "cluster",
+    "service_name": "id_allocator",
+    "includes": [
+        "cluster/types.h"
+    ],
+    "methods": [
+        {
+            "name": "allocate_id",
+            "input_type": "allocate_id_request",
+            "output_type": "allocate_id_reply"
+        }
+    ]
+}
