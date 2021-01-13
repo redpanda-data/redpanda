@@ -65,8 +65,6 @@ func Execute() {
 		"v", false, "enable verbose logging (default false)")
 
 	rootCmd.AddCommand(NewModeCommand(mgr))
-	rootCmd.AddCommand(NewConfigCommand(fs, mgr))
-	rootCmd.AddCommand(NewStatusCommand(fs, mgr))
 	rootCmd.AddCommand(NewGenerateCommand(mgr))
 	rootCmd.AddCommand(NewVersionCommand())
 	rootCmd.AddCommand(NewApiCommand(fs, mgr))
