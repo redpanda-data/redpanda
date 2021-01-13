@@ -60,6 +60,9 @@ void segment_set::add(ss::lw_shared_ptr<segment> h) {
 
 void segment_set::pop_back() { _handles.pop_back(); }
 void segment_set::pop_front() { _handles.pop_front(); }
+void segment_set::erase(iterator begin, iterator end) {
+    _handles.erase(begin, end);
+}
 
 template<typename Iterator>
 struct needle_in_range {

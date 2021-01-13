@@ -60,6 +60,7 @@ public:
 
     void pop_back();
     void pop_front();
+    void erase(iterator begin, iterator end);
 
     underlying_t release() && { return std::move(_handles); }
     type& back() { return _handles.back(); }

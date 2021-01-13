@@ -35,6 +35,34 @@ ss::future<> self_compact_segment(
   storage::compaction_config,
   storage::probe&);
 
+/*
+ * Concatentate segments into a minimal new segment.
+ *
+ * This is effectively equivalent to acquiring the proper locks while
+ * concatenating segment data into the given path and then building an open
+ * segment around the new data file. The returned segment will only have a
+ * reader and the proper offset tracking metadata.
+ *
+ * Note that the segment has an index, but it is empty. The caller is expected
+ * to either immediately rebuild or replace the index. Current behavior is that
+ * readers built from a segment with an empty segment will read from the
+ * beginning which is exactly what we want for the rebuild process.
+ *
+ * The resulting segment will have the same term and base offset of the first
+ * segment, and upper range offsets (e.g. stable_offset) taken from the last
+ * segment in the input range.
+ */
+ss::future<ss::lw_shared_ptr<segment>> make_concatenated_segment(
+  std::filesystem::path,
+  std::vector<ss::lw_shared_ptr<segment>>,
+  compaction_config);
+
+ss::future<> transfer_segment(
+  ss::lw_shared_ptr<segment> to,
+  ss::lw_shared_ptr<segment> from,
+  compaction_config cfg,
+  probe& probe);
+
 /// make file handle with default opts
 ss::future<ss::file>
 make_writer_handle(const std::filesystem::path&, storage::debug_sanitize_files);
