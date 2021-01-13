@@ -43,8 +43,7 @@ SEASTAR_THREAD_TEST_CASE(async_transform_range_test) {
     std::vector<int> expected(10);
     std::iota(expected.begin(), expected.end(), 2);
 
-    std::vector<int> out_range
-      = ssx::async_transform(std::move(input), plus(2)).get0();
+    std::vector<int> out_range = ssx::async_transform(input, plus(2)).get0();
     BOOST_TEST(std::equal(
       out_range.begin(), out_range.end(), expected.begin(), expected.end()));
 }
@@ -61,6 +60,52 @@ SEASTAR_THREAD_TEST_CASE(async_transform_move_test) {
                                           .get0();
     BOOST_TEST(
       std::equal(input.begin(), input.end(), expected.begin(), expected.end()));
+}
+
+SEASTAR_THREAD_TEST_CASE(async_transform_noncopyable_test) {
+    class noncopyable_foo {
+    public:
+        noncopyable_foo(int value)
+          : _x(value) {}
+        noncopyable_foo(const noncopyable_foo&) = delete;
+        noncopyable_foo(noncopyable_foo&&) = default;
+
+        int value() const { return _x; }
+
+    private:
+        int _x;
+    };
+    std::vector<noncopyable_foo> foos;
+    foos.emplace_back(1);
+    foos.emplace_back(2);
+    foos.emplace_back(3);
+    std::vector<noncopyable_foo> results = ssx::async_transform(
+                                             foos.begin(),
+                                             foos.end(),
+                                             [](noncopyable_foo& ncf) {
+                                                 return std::move(ncf);
+                                             })
+                                             .get0();
+    BOOST_TEST(results[0].value() == 1);
+    BOOST_TEST(results[1].value() == 2);
+    BOOST_TEST(results[2].value() == 3);
+}
+
+SEASTAR_THREAD_TEST_CASE(async_all_of_test) {
+    std::vector<int> input{5, 4, 2, 1, 8};
+    const bool is_five
+      = ssx::async_all_of(input.begin(), input.end(), [](int n) {
+            return ss::make_ready_future<bool>(n == 5);
+        }).get0();
+
+    BOOST_CHECK(!is_five);
+
+    const bool less_than_ten
+      = ssx::async_all_of(input.begin(), input.end(), [](int n) {
+            return ss::make_ready_future<bool>(n < 10);
+        }).get0();
+
+    BOOST_CHECK(less_than_ten);
 }
 
 SEASTAR_THREAD_TEST_CASE(parallel_transform_iter_test) {

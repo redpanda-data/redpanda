@@ -43,9 +43,13 @@ struct async_adl<std::vector<T>> {
 
     ss::future<std::vector<value_type>> from(iobuf_parser& in) {
         const auto size = adl<int32_t>{}.from(in);
-        return ssx::async_transform(
+        return ss::do_with(
           boost::irange<size_t>(0, size),
-          [&in](size_t) { return async_adl<value_type>{}.from(in); });
+          [&in](const boost::integer_range<size_t>& r) {
+              return ssx::async_transform(r.begin(), r.end(), [&in](size_t) {
+                  return async_adl<value_type>{}.from(in);
+              });
+          });
     }
 };
 } // namespace reflection

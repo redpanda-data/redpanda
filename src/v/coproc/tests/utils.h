@@ -16,6 +16,7 @@
 #include "model/record_batch_types.h"
 #include "raft/types.h"
 #include "storage/log.h"
+#include "storage/record_batch_builder.h"
 #include "storage/types.h"
 
 #include <seastar/core/future.hh>
@@ -109,3 +110,6 @@ inline rpc::client<coproc::script_manager_client_protocol> make_client() {
           ss::net::inet_address("127.0.0.1"), 43118),
         .credentials = nullptr});
 }
+
+ss::future<model::record_batch_reader::data_t>
+copy_batch(const model::record_batch_reader::data_t&);

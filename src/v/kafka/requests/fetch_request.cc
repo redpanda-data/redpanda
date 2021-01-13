@@ -439,15 +439,20 @@ static ss::future<std::vector<read_result>> fetch_ntps_in_parallel(
   std::vector<ntp_fetch_config> ntp_fetch_configs,
   bool foreign_read,
   std::optional<model::timeout_clock::time_point> deadline) {
-    return ssx::async_transform(
+    return ss::do_with(
       std::move(ntp_fetch_configs),
-      [&mgr, deadline, foreign_read](ntp_fetch_config cfg) {
-          auto p_id = cfg.first.source_ntp().tp.partition;
-          return read_from_ntp(
-                   mgr, cfg.first, cfg.second, foreign_read, deadline)
-            .then([p_id](read_result res) {
-                res.partition = p_id;
-                return res;
+      [&mgr, deadline, foreign_read](
+        std::vector<ntp_fetch_config>& ntp_fetch_configs) {
+          return ssx::async_transform(
+            ntp_fetch_configs,
+            [&mgr, deadline, foreign_read](ntp_fetch_config cfg) {
+                auto p_id = cfg.first.source_ntp().tp.partition;
+                return read_from_ntp(
+                         mgr, cfg.first, cfg.second, foreign_read, deadline)
+                  .then([p_id](read_result res) {
+                      res.partition = p_id;
+                      return res;
+                  });
             });
       });
 }

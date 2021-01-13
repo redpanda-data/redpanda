@@ -117,3 +117,15 @@ deregister_coprocessors(
     return client.disable_copros(
       std::move(req), rpc::client_opts(rpc::no_timeout));
 }
+
+ss::future<model::record_batch_reader::data_t>
+copy_batch(const model::record_batch_reader::data_t& data) {
+    return ss::map_reduce(
+      data.cbegin(),
+      data.cend(),
+      [](const model::record_batch& rb) {
+          return ss::make_ready_future<model::record_batch>(rb.copy());
+      },
+      model::record_batch_reader::data_t(),
+      reduce::push_back());
+}

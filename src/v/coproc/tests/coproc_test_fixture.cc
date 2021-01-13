@@ -43,14 +43,13 @@ ss::future<> poll_until(
       false,
       [timeout](auto& now, auto& fn, auto& exit) {
           return ss::do_until(
-                   [&exit, &now, timeout] { return exit || (now > timeout); },
-                   [&exit, &now, &fn] {
-                       return fn().then([&exit, &now](bool r) {
-                           exit = r;
-                           now = model::timeout_clock::now();
-                       });
-                   })
-            .then([]() { return ss::sleep(200ms); });
+            [&exit, &now, timeout] { return exit || (now > timeout); },
+            [&exit, &now, &fn] {
+                return fn().then([&exit, &now](bool r) {
+                    exit = r;
+                    now = model::timeout_clock::now();
+                });
+            });
       });
 }
 
@@ -166,20 +165,20 @@ ss::future<model::offset> coproc_test_fixture::push(
 
 ss::future<std::optional<ss::shard_id>>
 coproc_test_fixture::shard_for_ntp(const model::ntp& ntp) {
-    return ss::do_with(
-      std::vector<ss::shard_id>(),
-      [this, ntp](std::vector<ss::shard_id>& shards) {
-          return app.storage
-            .invoke_on_all([this, ntp, &shards](storage::api& api) {
-                if (auto log = api.log_mgr().get(ntp)) {
-                    shards.push_back(ss::this_shard_id());
-                }
-            })
-            .then([&shards] {
-                vassert(shards.size() <= 1, "Same ntp detected across shards");
-                return shards.empty()
-                         ? std::nullopt
-                         : std::optional<ss::shard_id>(*shards.begin());
-            });
+    return app.storage
+      .map_reduce0(
+        [this, ntp](storage::api& api) -> std::optional<ss::shard_id> {
+            if (auto log = api.log_mgr().get(ntp)) {
+                return ss::this_shard_id();
+            }
+            return std::nullopt;
+        },
+        std::vector<ss::shard_id>(),
+        reduce::push_back_opt())
+      .then([ntp](std::vector<ss::shard_id> sids) {
+          vassert(
+            sids.size() <= 1, "ntp {} duplicate detected across shards", ntp);
+          return sids.size() == 1 ? std::optional<ss::shard_id>(sids.front())
+                                  : std::nullopt;
       });
 }

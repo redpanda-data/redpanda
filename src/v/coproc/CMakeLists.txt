@@ -20,8 +20,8 @@ v_cc_library(
     types.cc
     logger.cc
     service.cc
-    router.cc
-    router_source_manager.cc
+    script_context.cc
+    pacemaker.cc
   DEPS
     v::rpc
     v::model

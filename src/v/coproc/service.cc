@@ -12,146 +12,179 @@
 #include "coproc/logger.h"
 #include "coproc/types.h"
 #include "ssx/future-util.h"
+#include "utils/functional.h"
 #include "vassert.h"
 #include "vlog.h"
 
+#include <seastar/core/array_map.hh>
 #include <seastar/core/loop.hh>
 
-namespace coproc {
+#include <boost/range/irange.hpp>
 
-using erc = enable_response_code;
+#include <iterator>
+
+namespace coproc {
 
 service::service(
   ss::scheduling_group sg,
   ss::smp_service_group ssg,
-  ss::sharded<router>& router)
+  ss::sharded<pacemaker>& pacemaker)
   : script_manager_service(sg, ssg)
-  , _router(router) {}
+  , _pacemaker(pacemaker) {}
 
-enable_response_code
-assemble_response(std::vector<enable_response_code> codes) {
-    const bool all_dne = std::all_of(codes.begin(), codes.end(), [](auto x) {
-        return x == erc::topic_does_not_exist;
-    });
-    if (all_dne) {
-        return erc::topic_does_not_exist;
+bool contains_code(const std::vector<errc>& codes, errc code) {
+    return std::any_of(codes.cbegin(), codes.cend(), xform::equal_to(code));
+}
+
+bool contains_all_codes(const std::vector<errc>& codes, errc code) {
+    return std::all_of(codes.cbegin(), codes.cend(), xform::equal_to(code));
+}
+
+enable_response_code fold_enable_acks(const std::vector<errc>& codes) {
+    /// If at least one shard returned with error, the effect of registering has
+    /// produced undefined behavior, so returns 'internal_error'
+    if (contains_code(codes, errc::internal_error)) {
+        return enable_response_code::internal_error;
     }
-    const bool any_success = std::any_of(
-      codes.begin(), codes.end(), [](auto x) { return x == erc::success; });
-    if (!any_success) {
-        return erc::internal_error;
+    /// For identifiable errors, all shards should have agreed on the error
+    if (contains_all_codes(codes, errc::topic_does_not_exist)) {
+        return enable_response_code::topic_does_not_exist;
     }
-    return erc::success;
-}
-
-enable_response_code map_code(const coproc::errc error_code) {
-    switch (error_code) {
-    case errc::success:
-        return erc::success;
-    case errc::script_id_already_exists:
-        return erc::script_id_already_exists;
-    case errc::topic_does_not_exist:
-        return erc::topic_does_not_exist;
-    default:
-        return erc::internal_error;
-    };
-}
-
-ss::future<enable_response_code> service::insert(
-  script_id id, model::topic_namespace&& tn, topic_ingestion_policy p) {
-    return _router
-      .map([id, p, tn = std::move(tn)](router& r) {
-          return r.add_source(id, tn, p)
-            .then([](coproc::errc code) { return map_code(code); })
-            .handle_exception([id](std::exception_ptr e) {
-                vlog(
-                  coproclog.warn,
-                  "Exception in coproc::router with id {} - {}",
-                  id,
-                  e);
-                return ss::make_ready_future<erc>(erc::internal_error);
-            });
-      })
-      .then(&assemble_response);
-}
-
-enable_response_code
-enable_validator(const model::topic& topic, topic_ingestion_policy p) {
-    if (model::is_materialized_topic(topic)) {
-        return erc::materialized_topic;
-    } else if (model::validate_kafka_topic_name(topic).value() != 0) {
-        return erc::invalid_topic;
-    } else if (!is_valid_ingestion_policy(p)) {
-        return erc::invalid_ingestion_policy;
+    if (contains_all_codes(codes, errc::invalid_ingestion_policy)) {
+        return enable_response_code::invalid_ingestion_policy;
     }
-    return erc::success;
+    if (contains_all_codes(codes, errc::materialized_topic)) {
+        return enable_response_code::materialized_topic;
+    }
+    if (contains_all_codes(codes, errc::invalid_topic)) {
+        return enable_response_code::invalid_topic;
+    }
+    /// The only other 'normal' circumstance is some shards reporting 'success'
+    /// and others reporting 'topic_does_not_exist'
+    vassert(
+      std::all_of(
+        codes.cbegin(),
+        codes.cend(),
+        [](errc code) {
+            return code == errc::success || code == errc::topic_does_not_exist;
+        }),
+      "Undefined behavior detected within the copro pacemaker, mismatch of "
+      "reported error codes");
+    return enable_response_code::success;
 }
 
-ss::future<enable_copros_reply::ack_id_pair> service::evaluate_topics(
-  const script_id id,
-  std::vector<enable_copros_request::data::topic_mode> topics) {
+std::pair<script_id, std::vector<enable_response_code>>
+make_copro_error(script_id id, enable_response_code c) {
+    return std::make_pair(id, std::vector<enable_response_code>{c});
+}
+
+std::vector<topic_namespace_policy>
+enrich_topics(std::vector<enable_copros_request::data::topic_mode> topics) {
+    std::vector<topic_namespace_policy> tns;
+    tns.reserve(topics.size());
+    std::transform(
+      std::make_move_iterator(topics.begin()),
+      std::make_move_iterator(topics.end()),
+      std::back_inserter(tns),
+      [](enable_copros_request::data::topic_mode&& tm) {
+          return topic_namespace_policy{
+            .tn = model::topic_namespace(
+              cluster::kafka_namespace, std::move(tm.first)),
+            .policy = tm.second};
+      });
+    return tns;
+}
+
+ss::future<enable_copros_reply::ack_id_pair>
+service::enable_copro(enable_copros_request::data&& input) {
+    using reply_type = enable_copros_reply::ack_id_pair;
     vlog(
       coproclog.info,
-      "Incoming request to enable new coprocessor with script_id {} and "
-      "topics: {}",
-      id,
-      topics);
-    if (topics.empty()) {
+      "Request recieved to register coprocessor with id: {}",
+      input.id);
+    /// First verify that the request is valid
+    if (input.topics.empty()) {
         vlog(
           coproclog.warn,
-          "Request to enable coprocessor {} failed due to empty topics "
-          "list",
-          id);
-        return ss::make_ready_future<enable_copros_reply::ack_id_pair>(
-          std::make_pair(
-            id, std::vector<enable_response_code>{erc::invalid_topic}));
+          "Rejected attempt to register coprocessor with id {} as it "
+          "didn't pass any input topics",
+          input.id);
+        return ss::make_ready_future<reply_type>(
+          make_copro_error(input.id, enable_response_code::internal_error));
     }
-    return copro_exists(id).then([this, id, topics = std::move(topics)](
-                                   bool exists) mutable {
-        if (exists) {
-            std::vector<enable_response_code> id_dne(
-              topics.size(), erc::script_id_already_exists);
-            return ss::make_ready_future<enable_copros_reply::ack_id_pair>(
-              std::make_pair(id, std::move(id_dne)));
-        }
-        return ss::do_with(
-          std::move(topics),
-          [this,
-           id](std::vector<enable_copros_request::data::topic_mode>& topics) {
-              return ssx::async_transform(
-                       topics.begin(),
-                       topics.end(),
-                       [this, id](enable_copros_request::data::topic_mode tm) {
-                           const auto v = enable_validator(tm.first, tm.second);
-                           if (v != erc::success) {
-                               return ss::make_ready_future<erc>(v);
-                           }
-                           return insert(
-                             id,
-                             model::topic_namespace(
-                               cluster::kafka_namespace, std::move(tm.first)),
-                             tm.second);
-                       })
-                .then([id](auto erc_vec) {
-                    return std::make_pair(id, std::move(erc_vec));
-                });
-          });
-    });
+    /// Then verify that the script id isn't already registered
+    return _pacemaker
+      .map_reduce0(
+        [id = input.id](pacemaker& pacemaker) {
+            /// ... to do this, query each shard for the id
+            return pacemaker.local_script_id_exists(id);
+        },
+        false,
+        std::logical_or<>())
+      .then([this, id = input.id, topics = std::move(input.topics)](
+              bool script_exists) mutable {
+          if (script_exists) {
+              /// Protocol dictates that if the script id already exists,
+              /// the topic acks reply will be a vector of 1 with the
+              /// script_id_dne code as the sole element
+              vlog(
+                coproclog.warn,
+                "Rejected attempt to register coprocessor with id {} as it "
+                "has already been registered",
+                id);
+              return ss::make_ready_future<reply_type>(make_copro_error(
+                id, enable_response_code::script_id_already_exists));
+          }
+          auto enriched_topics = enrich_topics(std::move(topics));
+          return _pacemaker
+            .map(
+              [id, topics = std::move(enriched_topics)](pacemaker& pacemaker) {
+                  /// Insert the script into the pacemaker, after ensuring a
+                  /// double id insert is not possible
+                  return pacemaker.add_source(id, topics);
+              })
+            .then([id](std::vector<std::vector<errc>> ack_codes) {
+                vassert(!ack_codes.empty(), "acks.size() must be > 0");
+                vassert(
+                  !ack_codes[0].empty(), "acks vector must contain values");
+                const bool all_equivalent = std::all_of(
+                  ack_codes.cbegin(),
+                  ack_codes.cend(),
+                  [s = ack_codes[0].size()](const std::vector<errc>& v) {
+                      return v.size() == s;
+                  });
+                vassert(all_equivalent, "Acks from all shards differ in size");
+                /// Interpret the reply, aggregate the response from
+                /// attempting to insert a topic across each shard, per
+                /// topic.
+                std::vector<enable_response_code> acks;
+                for (std::size_t i :
+                     boost::irange<std::size_t>(0, ack_codes[0].size())) {
+                    std::vector<errc> cross_shard_acks;
+                    for (std::size_t j :
+                         boost::irange<std::size_t>(0, ack_codes.size())) {
+                        cross_shard_acks.push_back(ack_codes[j][i]);
+                    }
+                    /// Ordering is preserved so the client can know which
+                    /// acks correspond to what topics
+                    acks.push_back(fold_enable_acks(cross_shard_acks));
+                }
+                return std::make_pair(id, std::move(acks));
+            });
+      });
 }
 
 ss::future<enable_copros_reply>
 service::enable_copros(enable_copros_request&& req, rpc::streaming_context&) {
-    return ss::with_scheduling_group(
-      get_scheduling_group(), [this, req = std::move(req)]() mutable {
-          return ss::do_with(
-            std::move(req.inputs),
-            [this](std::vector<enable_copros_request::data>& inputs) {
+    return ss::do_with(
+      std::move(req.inputs),
+      [this](std::vector<enable_copros_request::data>& inputs) {
+          return ss::with_scheduling_group(
+            get_scheduling_group(), [this, &inputs]() {
                 return ssx::async_transform(
-                         inputs.begin(),
-                         inputs.end(),
-                         [this](enable_copros_request::data rich_topics) {
-                             return evaluate_topics(
-                               rich_topics.id, std::move(rich_topics.topics));
+                         inputs,
+                         [this](enable_copros_request::data input) {
+                             return enable_copro(std::move(input));
                          })
                   .then([](std::vector<enable_copros_reply::ack_id_pair> acks) {
                       return enable_copros_reply{.acks = std::move(acks)};
@@ -160,61 +193,50 @@ service::enable_copros(enable_copros_request&& req, rpc::streaming_context&) {
       });
 }
 
-ss::future<disable_response_code> service::remove(script_id id) {
+disable_response_code fold_disable_acks(const std::vector<errc>& acks) {
+    const bool internal_error = std::any_of(
+      acks.cbegin(), acks.cend(), [](errc ack) {
+          return ack == errc::internal_error;
+      });
+    if (internal_error) {
+        /// If any shard reported an error, this operation failed with error
+        return disable_response_code::internal_error;
+    }
+    const bool not_removed = std::all_of(
+      acks.cbegin(), acks.cend(), [](errc ack) {
+          return ack == errc::script_id_does_not_exist;
+      });
+    if (not_removed) {
+        /// If all shards reported that a script_id didn't exist, then it
+        /// was never registered to begin with
+        return disable_response_code::script_id_does_not_exist;
+    }
+    /// In oll other cases, return success
+    return disable_response_code::success;
+}
+
+ss::future<disable_response_code> service::disable_copro(script_id id) {
     vlog(
       coproclog.info,
-      "Incoming request to disable coprocessor with script_id {}",
+      "Request recieved to disable coprocessor with id: {}",
       id);
-    using drc = disable_response_code;
-    return _router.map_reduce0(
-      [id](router& r) {
-          return r.remove_source(id)
-            .then([](bool removed) {
-                return removed ? drc::success : drc::script_id_does_not_exist;
-            })
-            .handle_exception([id](std::exception_ptr e) {
-                vlog(
-                  coproclog.warn,
-                  "Exception within coproc::remove for script_id {} - {}",
-                  id,
-                  e);
-                return ss::make_ready_future<drc>(drc::internal_error);
-            });
-      },
-      drc::script_id_does_not_exist,
-      [](drc acc, drc v) {
-          if (acc == drc::internal_error || v == drc::internal_error) {
-              return drc::internal_error;
-          } else if (acc == drc::success || v == drc::success) {
-              return drc::success;
-          }
-          return acc;
-      });
+    return _pacemaker
+      .map([id](pacemaker& pacemaker) { return pacemaker.remove_source(id); })
+      .then(&fold_disable_acks);
 }
 
 ss::future<disable_copros_reply>
 service::disable_copros(disable_copros_request&& req, rpc::streaming_context&) {
-    return ss::with_scheduling_group(
-      get_scheduling_group(), [this, req = std::move(req)]() mutable {
-          return ss::do_with(
-            std::move(req.ids),
-            [this](const std::vector<script_id>& script_ids) {
-                return ssx::async_transform(
-                         script_ids.begin(),
-                         script_ids.end(),
-                         [this](script_id id) { return remove(id); })
-                  .then([](std::vector<disable_response_code> acks) {
-                      return disable_copros_reply{.acks = std::move(acks)};
-                  });
-            });
-      });
-}
-
-ss::future<bool> service::copro_exists(const script_id id) {
-    return _router.map_reduce0(
-      [id](const router& r) { return r.script_id_exists(id); },
-      false,
-      std::logical_or<>());
+    return ss::do_with(std::move(req.ids), [this](std::vector<script_id>& ids) {
+        return ss::with_scheduling_group(
+          get_scheduling_group(), [this, &ids]() {
+              return ssx::async_transform(
+                       ids, [this](script_id id) { return disable_copro(id); })
+                .then([](std::vector<disable_response_code> acks) {
+                    return disable_copros_reply{.acks = std::move(acks)};
+                });
+          });
+    });
 }
 
 } // namespace coproc

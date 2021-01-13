@@ -9,7 +9,6 @@
  */
 
 #pragma once
-#include "coproc/router.h"
 #include "coproc/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"

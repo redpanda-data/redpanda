@@ -16,7 +16,7 @@
 #include "cluster/metadata_dissemination_service.h"
 #include "cluster/partition_manager.h"
 #include "config/configuration.h"
-#include "coproc/router.h"
+#include "coproc/pacemaker.h"
 #include "coproc/service.h"
 #include "kafka/fetch_session_cache.h"
 #include "kafka/groups/coordinator_ntp_mapper.h"
@@ -58,7 +58,7 @@ public:
     ss::sharded<kafka::group_router> group_router;
     ss::sharded<cluster::shard_table> shard_table;
     ss::sharded<storage::api> storage;
-    ss::sharded<coproc::router> router;
+    ss::sharded<coproc::pacemaker> pacemaker;
     ss::sharded<cluster::partition_manager> partition_manager;
     ss::sharded<raft::group_manager> raft_group_manager;
     ss::sharded<cluster::metadata_dissemination_service>
