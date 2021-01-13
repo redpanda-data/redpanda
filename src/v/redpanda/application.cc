@@ -312,6 +312,7 @@ static storage::log_config manager_config_from_global_config() {
       config::shard_local_cfg().data_directory().as_sstring(),
       config::shard_local_cfg().log_segment_size(),
       config::shard_local_cfg().compacted_log_segment_size(),
+      config::shard_local_cfg().max_compacted_log_segment_size(),
       storage::debug_sanitize_files::no,
       config::shard_local_cfg().retention_bytes(),
       config::shard_local_cfg().log_compaction_interval_ms(),
