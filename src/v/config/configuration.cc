@@ -414,6 +414,12 @@ configuration::configuration()
       "cache",
       required::no,
       60s)
+  , max_compacted_log_segment_size(
+      *this,
+      "max_compacted_log_segment_size",
+      "Max compacted segment size after consolidation",
+      required::no,
+      5_GiB)
   , _advertised_kafka_api(
       *this,
       "advertised_kafka_api",
