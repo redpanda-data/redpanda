@@ -228,10 +228,10 @@ ss::future<> consumer::sync() {
                 case kafka::error_code::rebalance_in_progress:
                     return sync();
                 case kafka::error_code::illegal_generation:
-                    return join().then([this]() { return sync(); });
+                    return join();
                 case kafka::error_code::unknown_member_id:
                     _member_id = kafka::no_member;
-                    return join().then([this]() { return sync(); });
+                    return join();
                 case kafka::error_code::none:
                     _assignment = _plan->decode(res.data.assignment);
                     return ss::now();
