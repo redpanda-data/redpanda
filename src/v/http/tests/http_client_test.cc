@@ -476,6 +476,7 @@ void test_impostor_request(
   http::client::request_header header,
   const ss::sstring& request_data,
   std::vector<ss::sstring> response_data,
+  bool prefetch_header,
   const OKFunc& check_reply,
   const ErrFunc check_error = &std::rethrow_exception) {
     auto [server, client] = started_client_and_impostor(
@@ -493,6 +494,10 @@ void test_impostor_request(
         req_stream->send_eof().get();
 
         // Receive response
+        if (prefetch_header) {
+            resp_stream->prefetch_headers().get();
+            BOOST_REQUIRE(resp_stream->is_header_done());
+        }
         while (!resp_stream->is_done()) {
             iobuf res = resp_stream->recv_some().get0();
             response_body.append(std::move(res));
@@ -542,6 +547,7 @@ SEASTAR_TEST_CASE(test_http_via_impostor) {
           std::move(request_header),
           ss::sstring(httpd_server_reply),
           {full_response},
+          false,
           [](http::client::response_header const& header, iobuf&& body) {
               BOOST_REQUIRE_EQUAL(
                 header.result(), boost::beast::http::status::ok);
@@ -577,6 +583,7 @@ SEASTAR_TEST_CASE(test_http_via_impostor_incorrect_reply) {
           std::move(request_header),
           ss::sstring(httpd_server_reply),
           {full_response},
+          false,
           [](http::client::response_header const&, iobuf&&) {
               BOOST_FAIL("Exception expected");
           },
@@ -629,6 +636,7 @@ SEASTAR_TEST_CASE(test_http_via_impostor_chunked_encoding) {
           std::move(request_header),
           ss::sstring(httpd_server_reply),
           {bufparser.read_string(bufparser.bytes_left())},
+          false,
           [](http::client::response_header const& header, iobuf&& body) {
               BOOST_REQUIRE_EQUAL(
                 header.result(), boost::beast::http::status::ok);
@@ -659,9 +667,10 @@ struct range_t {
     size_t ixend;
 };
 
-ss::future<> run_framing_test_using_impostor(bool chunked, size_t n_iters) {
+ss::future<> run_framing_test_using_impostor(
+  bool chunked, size_t n_iters, bool prefetch_headers) {
     // Send data and recv chunked response
-    return ss::async([chunked, n_iters] {
+    return ss::async([chunked, n_iters, prefetch_headers] {
         auto config = transport_configuration();
         // Generate request
         http::client::request_header request_header;
@@ -721,6 +730,7 @@ ss::future<> run_framing_test_using_impostor(bool chunked, size_t n_iters) {
               request_header,
               ss::sstring(httpd_server_reply),
               chunks,
+              prefetch_headers,
               [](http::client::response_header const& header, iobuf&& body) {
                   BOOST_REQUIRE_EQUAL(
                     header.result(), boost::beast::http::status::ok);
@@ -734,11 +744,20 @@ ss::future<> run_framing_test_using_impostor(bool chunked, size_t n_iters) {
 }
 
 SEASTAR_TEST_CASE(test_http_via_impostor_framing) {
-    return run_framing_test_using_impostor(false, 32);
+    return run_framing_test_using_impostor(false, 32, false);
+}
+
+SEASTAR_TEST_CASE(test_http_via_impostor_framing_with_prefetch) {
+    return run_framing_test_using_impostor(false, 32, true);
 }
 
 SEASTAR_TEST_CASE(test_http_via_impostor_chunked_encoding_framing) {
-    return run_framing_test_using_impostor(true, 32);
+    return run_framing_test_using_impostor(true, 32, false);
+}
+
+SEASTAR_TEST_CASE(
+  test_http_via_impostor_chunked_encoding_framing_with_prefetch) {
+    return run_framing_test_using_impostor(true, 32, true);
 }
 
 SEASTAR_TEST_CASE(test_http_via_impostor_no_content_length) {
@@ -770,6 +789,7 @@ SEASTAR_TEST_CASE(test_http_via_impostor_no_content_length) {
           std::move(request_header),
           ss::sstring(httpd_server_reply),
           {full_response},
+          false,
           [](http::client::response_header const& header, iobuf&& body) {
               // Expect normal reply despite the absence of content-length
               // header
