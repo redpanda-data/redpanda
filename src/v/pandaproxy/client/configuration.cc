@@ -57,7 +57,25 @@ configuration::configuration()
       "produce_batch_delay_ms",
       "Delay (in milliseconds) to wait before sending batch",
       config::required::no,
-      100ms) {}
+      100ms)
+  , consumer_session_timeout(
+      *this,
+      "consumer_session_timeout_ms",
+      "Timeout (in milliseconds) for consumer session",
+      config::required::no,
+      10s)
+  , consumer_rebalance_timeout(
+      *this,
+      "consumer_rebalance_timeout_ms",
+      "Timeout (in milliseconds) for consumer rebalance",
+      config::required::no,
+      2s)
+  , consumer_heartbeat_interval(
+      *this,
+      "consumer_heartbeat_interval_ms",
+      "Interval (in milliseconds) for consumer heartbeats",
+      config::required::no,
+      500ms) {}
 
 void configuration::read_yaml(const YAML::Node& root_node) {
     if (!root_node["pandaproxy_client"]) {

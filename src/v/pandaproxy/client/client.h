@@ -12,9 +12,12 @@
 #pragma once
 
 #include "kafka/client.h"
+#include "kafka/requests/join_group_request.h"
+#include "kafka/types.h"
 #include "pandaproxy/client/broker.h"
 #include "pandaproxy/client/brokers.h"
 #include "pandaproxy/client/configuration.h"
+#include "pandaproxy/client/consumer.h"
 #include "pandaproxy/client/fetcher.h"
 #include "pandaproxy/client/producer.h"
 #include "pandaproxy/client/retry_with_mitigation.h"
@@ -103,6 +106,16 @@ public:
       int32_t max_bytes,
       std::chrono::milliseconds timeout);
 
+    ss::future<kafka::member_id> create_consumer(const kafka::group_id& g_id);
+
+    ss::future<>
+    remove_consumer(const kafka::group_id& g_id, const kafka::member_id& m_id);
+
+    ss::future<> subscribe_consumer(
+      const kafka::group_id& group_id,
+      const kafka::member_id& member_id,
+      std::vector<model::topic> topics);
+
 private:
     /// \brief Connect and update metdata.
     ss::future<> do_connect(unresolved_address addr);
@@ -119,6 +132,9 @@ private:
     /// the error
     ss::future<> mitigate_error(std::exception_ptr ex);
 
+    ss::future<shared_consumer_t>
+    get_consumer(const kafka::group_id& g_id, const kafka::member_id& m_id);
+
     /// \brief Seeds are used when no brokers are connected.
     std::vector<unresolved_address> _seeds;
     /// \brief Broker lookup from topic_partition.
@@ -127,6 +143,12 @@ private:
     wait_or_start _wait_or_start_update_metadata;
     /// \brief Batching producer.
     producer _producer;
+    /// \brief Consumers
+    absl::flat_hash_set<
+      shared_consumer_t,
+      detail::consumer_hash,
+      detail::consumer_eq>
+      _consumers;
     /// \brief Wait for retries.
     ss::gate _gate;
 };
