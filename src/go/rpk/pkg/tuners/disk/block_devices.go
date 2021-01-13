@@ -162,6 +162,9 @@ func (b *blockDevices) GetDeviceFromPath(path string) (BlockDevice, error) {
 func (b *blockDevices) GetDeviceSystemPath(path string) (string, error) {
 	device, err := b.getBlockDeviceFromPath(path,
 		getDevNumFromDeviceDirectory)
+	if err != nil {
+		return "", err
+	}
 	return device.Syspath(), err
 }
 
