@@ -29,6 +29,7 @@ func NewRedpandaCommand(
 	command.AddCommand(redpanda.NewStopCommand(fs, mgr))
 	command.AddCommand(redpanda.NewCheckCommand(fs, mgr))
 	command.AddCommand(redpanda.NewTuneCommand(fs, mgr))
+	command.AddCommand(redpanda.NewModeCommand(mgr))
 
 	return command
 }
