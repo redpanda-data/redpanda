@@ -384,7 +384,7 @@ inline void iobuf::trim_back(size_t n) {
 ss::input_stream<char> make_iobuf_input_stream(iobuf io);
 
 /// \brief wraps the iobuf to be used as an output stream sink
-ss::output_stream<char> make_iobuf_output_stream(iobuf io);
+ss::output_stream<char> make_iobuf_ref_output_stream(iobuf& io);
 
 /// \brief exactly like input_stream<char>::read_exactly but returns iobuf
 ss::future<iobuf> read_iobuf_exactly(ss::input_stream<char>& in, size_t n);
