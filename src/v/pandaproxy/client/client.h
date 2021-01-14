@@ -12,7 +12,6 @@
 #pragma once
 
 #include "kafka/client.h"
-#include "kafka/requests/join_group_request.h"
 #include "kafka/types.h"
 #include "pandaproxy/client/broker.h"
 #include "pandaproxy/client/brokers.h"
