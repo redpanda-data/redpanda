@@ -41,10 +41,16 @@ public:
     ss::future<configuration_update_reply> update_node_configuration(
       configuration_update_request&&, rpc::streaming_context&) final;
 
+    ss::future<finish_partition_update_reply> finish_partition_update(
+      finish_partition_update_request&&, rpc::streaming_context&) final;
+
 private:
     std::
       pair<std::vector<model::topic_metadata>, std::vector<topic_configuration>>
       fetch_metadata_and_cfg(const std::vector<topic_result>&);
+
+    ss::future<finish_partition_update_reply>
+    do_finish_partition_update(finish_partition_update_request&&);
 
     ss::sharded<topics_frontend>& _topics_frontend;
     ss::sharded<members_manager>& _members_manager;
