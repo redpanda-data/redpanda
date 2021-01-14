@@ -80,14 +80,14 @@ FIXTURE_TEST(test_coproc_router_simple, router_test_fixture) {
       model::partition_id(0));
 
     auto batches = storage::test::make_random_batches(
-      model::offset(0), 40, false);
+      model::offset(0), 100, false);
     const auto pre_batch_size = sum_records(batches) * 2;
 
     using namespace std::literals;
     auto f1 = push(
       input_ntp, model::make_memory_record_batch_reader(std::move(batches)));
     auto f2 = drain(
-      output_ntp, pre_batch_size, model::timeout_clock::now() + 10s);
+      output_ntp, pre_batch_size, model::timeout_clock::now() + 5s);
     auto read_batches
       = ss::when_all_succeed(std::move(f1), std::move(f2)).get();
 
