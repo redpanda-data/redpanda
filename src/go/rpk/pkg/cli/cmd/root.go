@@ -18,12 +18,10 @@ import (
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/common"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 	"golang.org/x/crypto/ssh/terminal"
 )
-
-const feedbackMsg = `We'd love to hear about your experience with redpanda:
-https://vectorized.io/feedback`
 
 func Execute() {
 	verbose := false
@@ -79,7 +77,7 @@ func Execute() {
 		case "check":
 			fallthrough
 		case "tune":
-			log.Info(feedbackMsg)
+			log.Info(common.FeedbackMsg)
 		}
 	}
 	if err != nil {

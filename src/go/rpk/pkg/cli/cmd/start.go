@@ -26,6 +26,7 @@ import (
 	"github.com/spf13/pflag"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/api"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/common"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cloud"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 	vos "github.com/vectorizedio/redpanda/src/go/rpk/pkg/os"
@@ -222,7 +223,7 @@ func NewStartCommand(
 
 			sendEnv(mgr, env, conf, nil)
 			rpArgs.ExtraArgs = args
-			log.Info(feedbackMsg)
+			log.Info(common.FeedbackMsg)
 			log.Info("Starting redpanda...")
 			return launcher.Start(installDirectory, rpArgs)
 		},
