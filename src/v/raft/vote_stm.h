@@ -82,8 +82,8 @@ private:
 
     ss::future<> do_vote();
     ss::future<> self_vote();
-    ss::future<> dispatch_one(model::node_id);
-    ss::future<result<vote_reply>> do_dispatch_one(model::node_id);
+    ss::future<> dispatch_one(vnode);
+    ss::future<result<vote_reply>> do_dispatch_one(vnode);
     ss::future<> update_vote_state(ss::semaphore_units<>);
     ss::future<> process_replies();
     ss::future<std::error_code>
@@ -98,7 +98,7 @@ private:
     std::optional<raft::group_configuration> _config;
     // for safety to wait for all bg ops
     ss::gate _vote_bg;
-    absl::flat_hash_map<model::node_id, vmeta> _replies;
+    absl::flat_hash_map<vnode, vmeta> _replies;
     ctx_log _ctxlog;
 };
 

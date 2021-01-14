@@ -47,7 +47,7 @@ consensus::consensus(
   consensus_client_protocol client,
   consensus::leader_cb_t cb,
   storage::api& storage)
-  : _self(std::move(nid))
+  : _self(nid, initial_cfg.revision_id())
   , _group(group)
   , _jit(std::move(jit))
   , _log(l)
@@ -55,7 +55,7 @@ consensus::consensus(
   , _disk_timeout(disk_timeout)
   , _client_protocol(client)
   , _leader_notification(std::move(cb))
-  , _fstats(nid)
+  , _fstats(_self)
   , _batcher(this, config::shard_local_cfg().raft_replicate_batch_window_size())
   , _event_manager(this)
   , _ctxlog(group, _log.config().ntp())
@@ -103,19 +103,19 @@ void consensus::maybe_step_down() {
     (void)ss::with_gate(_bg, [this] {
         return _op_lock.with([this] {
             if (_vstate == vote_state::leader) {
-                auto majority_hbeat = config().quorum_match(
-                  [this](model::node_id id) {
-                      if (id == _self) {
-                          return clock_type::now();
-                      }
+                auto majority_hbeat = config().quorum_match([this](vnode rni) {
+                    if (rni == _self) {
+                        return clock_type::now();
+                    }
 
-                      if (auto it = _fstats.find(id); it != _fstats.end()) {
-                          return it->second.last_hbeat_timestamp;
-                      }
-                      // if we do not know the follower state yet i.e. we have
-                      // never received its heartbeat
-                      return clock_type::time_point::min();
-                  });
+                    if (auto it = _fstats.find(rni); it != _fstats.end()) {
+                        return it->second.last_hbeat_timestamp;
+                    }
+
+                    // if we do not know the follower state yet i.e. we have
+                    // never received its heartbeat
+                    return clock_type::time_point::min();
+                });
 
                 if (majority_hbeat < _became_leader_at) {
                     majority_hbeat = _became_leader_at;
@@ -151,8 +151,8 @@ ss::future<> consensus::stop() {
 }
 
 consensus::success_reply consensus::update_follower_index(
-  model::node_id node,
-  result<append_entries_reply> r,
+  model::node_id physical_node,
+  const result<append_entries_reply>& r,
   follower_req_seq seq,
   model::offset dirty_offset) {
     // do not process replies when stoping
@@ -164,12 +164,12 @@ consensus::success_reply consensus::update_follower_index(
         vlog(
           _ctxlog.trace,
           "Error append entries response from {}, {}",
-          node,
+          physical_node,
           r.error().message());
         // add stats to group
         return success_reply::no;
     }
-
+    auto node = r.value().node_id;
     if (node == _self) {
         // We use similar path for replicate entries for both the current node
         // and followers. We do not need to track state of self in follower
@@ -189,7 +189,7 @@ consensus::success_reply consensus::update_follower_index(
     }
 
     follower_index_metadata& idx = it->second;
-    append_entries_reply& reply = r.value();
+    const append_entries_reply& reply = r.value();
     vlog(_ctxlog.trace, "Append entries response: {}", reply);
     if (unlikely(
           reply.result == append_entries_reply::status::group_unavailable)) {
@@ -302,7 +302,7 @@ consensus::success_reply consensus::update_follower_index(
     // learners to nodes and perform data movement to added replicas
 }
 
-void consensus::maybe_promote_to_voter(model::node_id id) {
+void consensus::maybe_promote_to_voter(vnode id) {
     (void)ss::with_gate(_bg, [this, id] {
         const auto& latest_cfg = _configuration_manager.get_latest();
 
@@ -344,14 +344,14 @@ void consensus::maybe_promote_to_voter(model::node_id id) {
 }
 
 void consensus::process_append_entries_reply(
-  model::node_id node,
+  model::node_id physical_node,
   result<append_entries_reply> r,
   follower_req_seq seq_id,
   model::offset dirty_offset) {
     auto is_success = update_follower_index(
-      node, std::move(r), seq_id, dirty_offset);
+      physical_node, r, seq_id, dirty_offset);
     if (is_success) {
-        maybe_promote_to_voter(node);
+        maybe_promote_to_voter(r.value().node_id);
         maybe_update_majority_replicated_index();
         maybe_update_leader_commit_idx();
     }
@@ -683,7 +683,7 @@ ss::future<std::error_code> consensus::add_group_members(
             return result<group_configuration>(errc::node_already_exists);
         }
         current.set_revision(new_revision);
-        current.add(std::move(nodes));
+        current.add(std::move(nodes), new_revision);
 
         return result<group_configuration>(std::move(current));
     });
@@ -717,7 +717,7 @@ ss::future<std::error_code> consensus::replace_configuration(
     return change_configuration(
       [new_brokers = std::move(new_brokers),
        new_revision](group_configuration current) mutable {
-          current.replace(std::move(new_brokers));
+          current.replace(std::move(new_brokers), new_revision);
           current.set_revision(new_revision);
           return result<group_configuration>(std::move(current));
       });
@@ -784,7 +784,7 @@ ss::future<> consensus::start() {
               // election
               _hbeat = clock_type::time_point::min();
               auto conf = _configuration_manager.get_latest().brokers();
-              if (!conf.empty() && _self == conf.begin()->id()) {
+              if (!conf.empty() && _self.id() == conf.begin()->id()) {
                   // for single node scenarios arm immediate election,
                   // use standard election timeout otherwise.
                   if (conf.size() > 1) {
@@ -884,7 +884,7 @@ void consensus::read_voted_for() {
     /*
      * Initial values
      */
-    _voted_for = model::node_id{};
+    _voted_for = vnode{};
     _term = model::term_id(0);
 
     /*
@@ -895,11 +895,31 @@ void consensus::read_voted_for() {
     auto value = _storage.kvs().get(
       storage::kvstore::key_space::consensus, key);
     if (value) {
-        auto config = reflection::adl<consensus::voted_for_configuration>{}
-                        .from(std::move(*value));
-
-        _voted_for = config.voted_for;
-        _term = config.term;
+        try {
+            auto config = reflection::adl<consensus::voted_for_configuration>{}
+                            .from(std::move(*value));
+            _voted_for = config.voted_for;
+            _term = config.term;
+        } catch (...) {
+            /**
+             * If first attempt to read voted_for failed, read buffer once again
+             * and deserialize it with old version i.e. without vnode.
+             *
+             * NOTE: will be removed in future versions.
+             */
+            auto value = _storage.kvs().get(
+              storage::kvstore::key_space::consensus, key);
+            vlog(
+              _ctxlog.info,
+              "triggerred voter for read fallback, reading previous version of "
+              "voted for configuration");
+            // fallback to old version
+            auto config
+              = reflection::adl<consensus::voted_for_configuration_old>{}.from(
+                std::move(*value));
+            _voted_for = vnode(config.voted_for, model::revision_id(0));
+            _term = config.term;
+        }
 
         vlog(
           _ctxlog.info,
@@ -1027,7 +1047,7 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
         return ss::make_ready_future<vote_reply>(reply);
     }
 
-    if (_voted_for() < 0) {
+    if (_voted_for.id()() < 0) {
         return write_voted_for({r.node_id, _term})
           .then_wrapped(
             [this, reply = std::move(reply), r = std::move(r)](ss::future<> f) {
@@ -1606,22 +1626,22 @@ model::term_id consensus::get_term(model::offset o) {
     return _log.get_term(o).value_or(model::term_id{});
 }
 
-clock_type::time_point consensus::last_append_timestamp(model::node_id id) {
+clock_type::time_point consensus::last_append_timestamp(vnode id) {
     return _fstats.get(id).last_append_timestamp;
 }
 
-void consensus::update_node_append_timestamp(model::node_id id) {
+void consensus::update_node_append_timestamp(vnode id) {
     if (auto it = _fstats.find(id); it != _fstats.end()) {
         it->second.last_append_timestamp = clock_type::now();
         update_node_hbeat_timestamp(id);
     }
 }
 
-void consensus::update_node_hbeat_timestamp(model::node_id id) {
+void consensus::update_node_hbeat_timestamp(vnode id) {
     _fstats.get(id).last_hbeat_timestamp = clock_type::now();
 }
 
-follower_req_seq consensus::next_follower_sequence(model::node_id id) {
+follower_req_seq consensus::next_follower_sequence(vnode id) {
     if (auto it = _fstats.find(id); it != _fstats.end()) {
         return it->second.last_sent_seq++;
     }
@@ -1629,9 +1649,9 @@ follower_req_seq consensus::next_follower_sequence(model::node_id id) {
     return follower_req_seq{};
 }
 
-absl::flat_hash_map<model::node_id, follower_req_seq>
+absl::flat_hash_map<vnode, follower_req_seq>
 consensus::next_followers_request_seq() {
-    absl::flat_hash_map<model::node_id, follower_req_seq> ret;
+    absl::flat_hash_map<vnode, follower_req_seq> ret;
     ret.reserve(_fstats.size());
     auto range = boost::make_iterator_range(_fstats.begin(), _fstats.end());
     for (const auto& [node_id, _] : range) {
@@ -1667,13 +1687,13 @@ ss::future<> consensus::maybe_commit_configuration(ss::semaphore_units<> u) {
     // as a leader replicate new simple configuration
     if (
       latest_cfg.type() == configuration_type::joint
-      && !latest_cfg.current_config().voters.empty()) {
+      && latest_cfg.current_config().learners.empty()) {
         latest_cfg.discard_old_config();
         vlog(
           _ctxlog.trace,
           "leaving joint consensus, new simple configuration {}",
           latest_cfg);
-        auto contains_current = latest_cfg.contains_broker(_self);
+        auto contains_current = latest_cfg.contains(_self);
         return replicate_configuration(std::move(u), std::move(latest_cfg))
           .then([this, contains_current](std::error_code ec) {
               if (ec) {
@@ -1705,7 +1725,7 @@ consensus::do_maybe_update_leader_commit_idx(ss::semaphore_units<> u) {
     // of matchIndex[i] ≥ N, and log[N].term == currentTerm:
     // set commitIndex = N (§5.3, §5.4).
     auto majority_match = config().quorum_match(
-      [this, committed_offset = lstats.committed_offset](model::node_id id) {
+      [this, committed_offset = lstats.committed_offset](vnode id) {
           // current node - we just return commited offset
           if (id == _self) {
               return committed_offset;
@@ -1888,10 +1908,10 @@ consensus::transfer_leadership(std::optional<model::node_id> target) {
               make_error_code(errc::node_does_not_exists));
         }
 
-        target = it->first;
+        target = it->first.id();
     }
 
-    if (*target == _self) {
+    if (*target == _self.id()) {
         vlog(_ctxlog.debug, "Cannot transfer leadership to self");
         return seastar::make_ready_future<std::error_code>(
           make_error_code(errc::not_leader));
@@ -1905,8 +1925,9 @@ consensus::transfer_leadership(std::optional<model::node_id> target) {
           make_error_code(errc::configuration_change_in_progress));
     }
     auto conf = _configuration_manager.get_latest();
+    auto target_rni = conf.current_config().find(*target);
 
-    if (!conf.contains_broker(*target)) {
+    if (!target_rni) {
         vlog(
           _ctxlog.debug,
           "Cannot transfer leadership to node {} not found in configuration",
@@ -1915,11 +1936,11 @@ consensus::transfer_leadership(std::optional<model::node_id> target) {
           make_error_code(errc::node_does_not_exists));
     }
 
-    if (!conf.is_voter(*target)) {
+    if (!conf.is_voter(*target_rni)) {
         vlog(
           _ctxlog.debug,
           "Cannot transfer leadership to node {} which is a learner",
-          *target);
+          *target_rni);
         return seastar::make_ready_future<std::error_code>(
           make_error_code(errc::not_voter));
     }
@@ -1928,10 +1949,10 @@ consensus::transfer_leadership(std::optional<model::node_id> target) {
       _ctxlog.info,
       "Transferring leadership from {} to {} in term {}",
       _self,
-      *target,
+      *target_rni,
       _term);
 
-    auto f = ss::with_gate(_bg, [this, target = *target] {
+    auto f = ss::with_gate(_bg, [this, target_rni = *target_rni] {
         if (_transferring_leadership) {
             vlog(
               _ctxlog.info,
@@ -1966,11 +1987,11 @@ consensus::transfer_leadership(std::optional<model::node_id> target) {
          * then wait on that process to complete before sending the
          * election request.
          */
-        if (!_fstats.contains(target)) {
+        if (!_fstats.contains(target_rni)) {
             return seastar::make_ready_future<std::error_code>(
               make_error_code(errc::node_does_not_exists));
         }
-        auto& meta = _fstats.get(target);
+        auto& meta = _fstats.get(target_rni);
         if (
           !meta.is_recovering
           && needs_recovery(meta, _log.offsets().dirty_offset)) {
@@ -1988,7 +2009,7 @@ consensus::transfer_leadership(std::optional<model::node_id> target) {
             f = meta.recovery_finished.wait(timeout);
         }
 
-        return f.then([this, target] {
+        return f.then([this, target_rni] {
             /*
              * there are still several scenarios in which we will want
              * to not complete leadership transfer, all of which might
@@ -2010,12 +2031,12 @@ consensus::transfer_leadership(std::optional<model::node_id> target) {
                   make_error_code(errc::not_leader));
             }
 
-            if (!_fstats.contains(target)) {
+            if (!_fstats.contains(target_rni)) {
                 return seastar::make_ready_future<std::error_code>(
                   make_error_code(errc::node_does_not_exists));
             }
 
-            auto& meta = _fstats.get(target);
+            auto& meta = _fstats.get(target_rni);
             if (needs_recovery(meta, _log.offsets().dirty_offset)) {
                 return seastar::make_ready_future<std::error_code>(
                   make_error_code(errc::timeout));
@@ -2032,7 +2053,8 @@ consensus::transfer_leadership(std::optional<model::node_id> target) {
                 + config::shard_local_cfg().raft_timeout_now_timeout_ms();
 
             return _client_protocol
-              .timeout_now(target, std::move(req), rpc::client_opts(timeout))
+              .timeout_now(
+                target_rni.id(), std::move(req), rpc::client_opts(timeout))
               .then([](result<timeout_now_reply>) {
                   return seastar::make_ready_future<std::error_code>(
                     make_error_code(errc::success));
@@ -2062,7 +2084,7 @@ void consensus::maybe_update_last_visible_index(model::offset offset) {
 }
 
 void consensus::maybe_update_majority_replicated_index() {
-    auto majority_match = config().quorum_match([this](model::node_id id) {
+    auto majority_match = config().quorum_match([this](vnode id) {
         if (id == _self) {
             return _log.offsets().dirty_offset;
         }
@@ -2077,7 +2099,7 @@ void consensus::maybe_update_majority_replicated_index() {
     _consumable_offset_monitor.notify(last_visible_index());
 }
 
-bool consensus::are_heartbeats_suppressed(model::node_id id) const {
+bool consensus::are_heartbeats_suppressed(vnode id) const {
     if (!_fstats.contains(id)) {
         return true;
     }
@@ -2086,7 +2108,7 @@ bool consensus::are_heartbeats_suppressed(model::node_id id) const {
 }
 
 void consensus::suppress_heartbeats(
-  model::node_id id, follower_req_seq last_seq, bool is_suppressed) {
+  vnode id, follower_req_seq last_seq, bool is_suppressed) {
     if (auto it = _fstats.find(id); it != _fstats.end()) {
         if (last_seq <= it->second.last_sent_seq) {
             it->second.suppress_heartbeats = is_suppressed;
@@ -2104,13 +2126,13 @@ voter_priority consensus::next_target_priority() {
  * node in configuration broker vector. We shuffle brokers in raft configuration
  * so it should give us fairly even distribution of leaders across the nodes.
  */
-voter_priority consensus::get_node_priority(model::node_id id) const {
+voter_priority consensus::get_node_priority(vnode rni) const {
     auto& latest_cfg = _configuration_manager.get_latest();
     auto& brokers = latest_cfg.brokers();
 
     auto it = std::find_if(
-      brokers.cbegin(), brokers.cend(), [id](const model::broker& b) {
-          return b.id() == id;
+      brokers.cbegin(), brokers.cend(), [rni](const model::broker& b) {
+          return b.id() == rni.id();
       });
 
     if (it == brokers.cend()) {

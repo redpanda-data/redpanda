@@ -25,7 +25,7 @@ model::broker create_broker(int32_t id) {
 
 BOOST_AUTO_TEST_CASE(should_return_true_as_it_contains_learner) {
     raft::group_configuration test_grp = raft::group_configuration(
-      {create_broker(1)});
+      {create_broker(1)}, model::revision_id(0));
 
     auto contains = test_grp.contains_broker(model::node_id(1));
     BOOST_REQUIRE_EQUAL(contains, true);
@@ -33,7 +33,7 @@ BOOST_AUTO_TEST_CASE(should_return_true_as_it_contains_learner) {
 
 BOOST_AUTO_TEST_CASE(should_return_true_as_it_contains_voter) {
     raft::group_configuration test_grp = raft::group_configuration(
-      {create_broker(1)});
+      {create_broker(1)}, model::revision_id(0));
 
     auto contains = test_grp.contains_broker(model::node_id(1));
     BOOST_REQUIRE_EQUAL(contains, true);
@@ -41,7 +41,7 @@ BOOST_AUTO_TEST_CASE(should_return_true_as_it_contains_voter) {
 
 BOOST_AUTO_TEST_CASE(should_return_false_as_it_does_not_contain_machine) {
     raft::group_configuration test_grp = raft::group_configuration(
-      {create_broker(3)});
+      {create_broker(3)}, model::revision_id(0));
 
     auto contains = test_grp.contains_broker(model::node_id(1));
     BOOST_REQUIRE_EQUAL(contains, false);

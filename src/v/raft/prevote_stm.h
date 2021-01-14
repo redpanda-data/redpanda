@@ -48,10 +48,9 @@ private:
     };
 
     ss::future<bool> do_prevote();
-    ss::future<> dispatch_prevote(model::node_id);
-    ss::future<result<vote_reply>> do_dispatch_prevote(model::node_id);
-    ss::future<>
-    process_reply(model::node_id n, ss::future<result<vote_reply>> f);
+    ss::future<> dispatch_prevote(vnode);
+    ss::future<result<vote_reply>> do_dispatch_prevote(vnode);
+    ss::future<> process_reply(vnode n, ss::future<result<vote_reply>> f);
     ss::future<> process_replies();
     // args
     consensus* _ptr;
@@ -64,7 +63,7 @@ private:
     clock_type::time_point _prevote_timeout;
     // for safety to wait for all bg ops
     ss::gate _vote_bg;
-    absl::flat_hash_map<model::node_id, vmeta> _replies;
+    absl::flat_hash_map<vnode, vmeta> _replies;
     ctx_log _ctxlog;
 };
 

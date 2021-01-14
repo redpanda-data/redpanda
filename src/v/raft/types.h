@@ -56,7 +56,7 @@ struct protocol_metadata {
 using follower_req_seq = named_type<uint64_t, struct follower_req_seq_tag>;
 
 struct follower_index_metadata {
-    explicit follower_index_metadata(model::node_id node)
+    explicit follower_index_metadata(vnode node)
       : node_id(node) {}
 
     follower_index_metadata(const follower_index_metadata&) = delete;
@@ -64,7 +64,7 @@ struct follower_index_metadata {
     follower_index_metadata(follower_index_metadata&&) = default;
     follower_index_metadata& operator=(follower_index_metadata&&) = default;
 
-    model::node_id node_id;
+    vnode node_id;
     // index of last known log for this follower
     model::offset last_committed_log_index;
     // index of last not flushed offset
@@ -158,7 +158,7 @@ struct append_entries_request {
     using flush_after_append = ss::bool_class<struct flush_after_append_tag>;
 
     append_entries_request(
-      model::node_id i,
+      vnode i,
       protocol_metadata m,
       model::record_batch_reader r,
       flush_after_append f = flush_after_append::yes) noexcept
@@ -175,7 +175,7 @@ struct append_entries_request {
 
     raft::group_id target_group() const { return meta.group; }
 
-    model::node_id node_id;
+    vnode node_id;
     protocol_metadata meta;
     model::record_batch_reader batches;
     flush_after_append flush;
@@ -191,7 +191,7 @@ struct append_entries_request {
 struct append_entries_reply {
     enum class status : uint8_t { success, failure, group_unavailable };
     /// \brief callee's node_id; work-around for batched heartbeats
-    model::node_id node_id;
+    vnode node_id;
     group_id group;
     /// \brief callee's term, for the caller to upate itself
     model::term_id term;
@@ -207,6 +207,11 @@ struct append_entries_reply {
     status result = status::failure;
 };
 
+struct heartbeat_metadata {
+    protocol_metadata meta;
+    vnode node_id;
+};
+
 /// \brief this is our _biggest_ modification to how raft works
 /// to accomodate for millions of raft groups in a cluster.
 /// internally, the receiving side will simply iterate and dispatch one
@@ -214,15 +219,14 @@ struct append_entries_reply {
 /// individual raft responses one at a time - for example to start replaying the
 /// log at some offset
 struct heartbeat_request {
-    model::node_id node_id;
-    std::vector<protocol_metadata> meta;
+    std::vector<heartbeat_metadata> heartbeats;
 };
 struct heartbeat_reply {
     std::vector<append_entries_reply> meta;
 };
 
 struct vote_request {
-    model::node_id node_id;
+    vnode node_id;
     group_id group;
     /// \brief current term
     model::term_id term;
@@ -255,7 +259,7 @@ struct leadership_status {
     // Group for which leader have changed
     group_id group;
     // Empty when there is no known leader in the group
-    std::optional<model::node_id> current_leader;
+    std::optional<vnode> current_leader;
 };
 
 struct replicate_result {
@@ -286,7 +290,7 @@ struct install_snapshot_request {
     // target group
     raft::group_id group;
     // leader id so follower can redirect clients
-    model::node_id node_id;
+    vnode node_id;
     // the snapshot replaces all entries up through and including this index
     model::offset last_included_index;
     // byte offset where chunk is positioned in the snapshot file
@@ -375,7 +379,7 @@ struct write_snapshot_cfg {
 };
 
 struct timeout_now_request {
-    model::node_id node_id;
+    vnode node_id;
     group_id group;
     model::term_id term;
 
@@ -405,6 +409,7 @@ static constexpr voter_priority zero_voter_priority = voter_priority{0};
 // 1 is smallest possible priority allowing node to become a leader
 static constexpr voter_priority min_voter_priority = voter_priority{1};
 
+std::ostream& operator<<(std::ostream& o, const vnode& r);
 std::ostream& operator<<(std::ostream& o, const consistency_level& l);
 std::ostream& operator<<(std::ostream& o, const protocol_metadata& m);
 std::ostream& operator<<(std::ostream& o, const vote_reply& r);

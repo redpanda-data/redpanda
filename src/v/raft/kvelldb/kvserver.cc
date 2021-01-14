@@ -242,7 +242,7 @@ group_cfg_from_args(const po::variables_map& opts) {
       model::broker_properties{
         .cores = ss::smp::count,
       }));
-    return raft::group_configuration(std::move(brokers));
+    return raft::group_configuration(std::move(brokers), model::revision_id(0));
 }
 
 int main(int args, char** argv, char** env) {

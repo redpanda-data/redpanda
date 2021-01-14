@@ -11,6 +11,7 @@
 
 #pragma once
 #include "cluster/types.h"
+#include "model/metadata.h"
 #include "raft/consensus.h"
 #include "raft/consensus_client_protocol.h"
 #include "raft/heartbeat_manager.h"

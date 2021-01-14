@@ -25,7 +25,7 @@ namespace raft {
 using namespace std::chrono_literals;
 
 recovery_stm::recovery_stm(
-  consensus* p, model::node_id node_id, ss::io_priority_class prio)
+  consensus* p, vnode node_id, ss::io_priority_class prio)
   : _ptr(p)
   , _node_id(node_id)
   , _term(_ptr->term())
@@ -224,7 +224,7 @@ ss::future<> recovery_stm::send_install_snapshot_request() {
             req.last_included_index);
           return _ptr->_client_protocol
             .install_snapshot(
-              _node_id,
+              _node_id.id(),
               std::move(req),
               rpc::client_opts(append_entries_timeout()))
             .then([this](result<install_snapshot_reply> reply) {
@@ -343,7 +343,7 @@ ss::future<> recovery_stm::replicate(
               _ptr->get_probe().recovery_request_error();
           }
           _ptr->process_append_entries_reply(
-            _node_id, r.value(), seq, dirty_offset);
+            _node_id.id(), r.value(), seq, dirty_offset);
           // If follower stats aren't present we have to stop recovery as
           // follower was removed from configuration
           if (!_ptr->_fstats.contains(_node_id)) {
@@ -388,7 +388,7 @@ ss::future<result<append_entries_reply>>
 recovery_stm::dispatch_append_entries(append_entries_request&& r) {
     _ptr->_probe.recovery_append_request();
     return _ptr->_client_protocol.append_entries(
-      _node_id, std::move(r), rpc::client_opts(append_entries_timeout()));
+      _node_id.id(), std::move(r), rpc::client_opts(append_entries_timeout()));
 }
 
 bool recovery_stm::is_recovery_finished() {

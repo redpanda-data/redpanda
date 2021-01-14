@@ -289,7 +289,7 @@ auto members_manager::dispatch_rpc_to_leader(Func&& f) {
         return fut_t::convert(errc::no_leader_controller);
     }
 
-    auto leader = _raft0->config().find(*leader_id);
+    auto leader = _raft0->config().find_broker(*leader_id);
 
     if (!leader) {
         return fut_t::convert(errc::no_leader_controller);

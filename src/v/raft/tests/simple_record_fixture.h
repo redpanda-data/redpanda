@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "model/metadata.h"
 #include "model/record.h"
 #include "storage/record_batch_builder.h"
 // testing
@@ -62,7 +63,8 @@ struct simple_record_fixture {
             learners.push_back(tests::random_broker(
               active_nodes + 1, active_nodes * active_nodes));
         }
-        return raft::group_configuration(std::move(nodes));
+        return raft::group_configuration(
+          std::move(nodes), model::revision_id{});
     }
     model::offset _base_offset{0};
     model::ntp _ntp{

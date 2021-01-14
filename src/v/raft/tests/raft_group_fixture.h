@@ -345,7 +345,7 @@ struct raft_group {
           ntp,
           make_broker(node_id),
           _id,
-          raft::group_configuration(_initial_brokers),
+          raft::group_configuration(_initial_brokers, model::revision_id(0)),
           raft::timeout_jitter(heartbeat_interval * 2),
           fmt::format("{}/{}", _storage_dir, node_id()),
           _storage_type,
@@ -366,7 +366,7 @@ struct raft_group {
           ntp,
           broker,
           _id,
-          raft::group_configuration({}),
+          raft::group_configuration({}, model::revision_id(0)),
           raft::timeout_jitter(heartbeat_interval * 2),
           fmt::format("{}/{}", _storage_dir, node_id()),
           _storage_type,
@@ -416,14 +416,16 @@ struct raft_group {
     }
 
     void election_callback(model::node_id src, raft::leadership_status st) {
-        if (st.current_leader != src) {
+        if (
+          !st.current_leader
+          || st.current_leader && st.current_leader->id() != src) {
             // only accept election callbacks from current leader.
             return;
         }
         tstlog.info(
           "Group {} has new leader {}", st.group, st.current_leader.value());
 
-        _leader_id = st.current_leader;
+        _leader_id = st.current_leader->id();
         _election_cond.broadcast();
         _elections_count++;
     }

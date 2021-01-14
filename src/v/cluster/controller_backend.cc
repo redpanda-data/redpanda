@@ -20,6 +20,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "outcome.h"
+#include "raft/configuration.h"
 #include "raft/types.h"
 #include "ssx/future-util.h"
 
@@ -261,9 +262,9 @@ bool is_configuration_up_to_date(
         return false;
     }
     cfg.for_each_voter(
-      [&all_ids](model::node_id nid) { all_ids.emplace(nid); });
+      [&all_ids](raft::vnode nid) { all_ids.emplace(nid.id()); });
     cfg.for_each_learner(
-      [&all_ids](model::node_id nid) { all_ids.emplace(nid); });
+      [&all_ids](raft::vnode nid) { all_ids.emplace(nid.id()); });
     // there is different number of brokers in group configuration
     if (all_ids.size() != bs.size()) {
         return false;

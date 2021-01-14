@@ -34,8 +34,7 @@ prevote_stm::~prevote_stm() {
       "Must call vote_stm::wait()");
 }
 
-ss::future<result<vote_reply>>
-prevote_stm::do_dispatch_prevote(model::node_id n) {
+ss::future<result<vote_reply>> prevote_stm::do_dispatch_prevote(vnode n) {
     auto tout_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
       _prevote_timeout.time_since_epoch());
     vlog(
@@ -46,11 +45,11 @@ prevote_stm::do_dispatch_prevote(model::node_id n) {
       tout_ms);
     auto r = _req;
     return _ptr->_client_protocol.vote(
-      n, std::move(r), rpc::client_opts(_prevote_timeout));
+      n.id(), std::move(r), rpc::client_opts(_prevote_timeout));
 }
 
 ss::future<>
-prevote_stm::process_reply(model::node_id n, ss::future<result<vote_reply>> f) {
+prevote_stm::process_reply(vnode n, ss::future<result<vote_reply>> f) {
     auto voter_reply = _replies.find(n);
 
     try {
@@ -100,7 +99,7 @@ prevote_stm::process_reply(model::node_id n, ss::future<result<vote_reply>> f) {
     return ss::make_ready_future<>();
 }
 
-ss::future<> prevote_stm::dispatch_prevote(model::node_id n) {
+ss::future<> prevote_stm::dispatch_prevote(vnode n) {
     return with_gate(_vote_bg, [this, n] {
         if (n == _ptr->_self) {
             // skip self prevote
@@ -119,7 +118,7 @@ ss::future<bool> prevote_stm::prevote(bool leadership_transfer) {
       .with([this, leadership_transfer] {
           _config = _ptr->config();
           _config->for_each_voter(
-            [this](model::node_id id) { _replies.emplace(id, vmeta{}); });
+            [this](vnode id) { _replies.emplace(id, vmeta{}); });
 
           auto lstats = _ptr->_log.offsets();
           auto last_entry_term = _ptr->get_last_entry_term(lstats);
@@ -143,8 +142,7 @@ ss::future<bool> prevote_stm::prevote(bool leadership_transfer) {
 
 ss::future<bool> prevote_stm::do_prevote() {
     // dispatch requests to all voters
-    _config->for_each_voter(
-      [this](model::node_id id) { (void)dispatch_prevote(id); });
+    _config->for_each_voter([this](vnode id) { (void)dispatch_prevote(id); });
 
     // wait until majority
     const size_t majority = (_config->unique_voter_count() / 2) + 1;
@@ -158,9 +156,8 @@ ss::future<bool> prevote_stm::do_prevote() {
 ss::future<> prevote_stm::process_replies() {
     return ss::repeat([this] {
         // majority votes granted
-        bool majority_granted = _config->majority([this](model::node_id id) {
-            return _replies.find(id)->second._is_ok;
-        });
+        bool majority_granted = _config->majority(
+          [this](vnode id) { return _replies.find(id)->second._is_ok; });
 
         if (majority_granted) {
             _success = true;
@@ -169,9 +166,8 @@ ss::future<> prevote_stm::process_replies() {
         }
 
         // majority votes not granted, pre-election not successfull
-        bool majority_failed = _config->majority([this](model::node_id id) {
-            return _replies.find(id)->second._is_failed;
-        });
+        bool majority_failed = _config->majority(
+          [this](vnode id) { return _replies.find(id)->second._is_failed; });
 
         if (majority_failed) {
             _success = false;

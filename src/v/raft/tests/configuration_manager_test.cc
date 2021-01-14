@@ -48,7 +48,10 @@ struct config_manager_fixture {
           raft::group_id(1),
           model::ntp(model::ns("t"), model::topic("t"), model::partition_id(0)))
       , _cfg_mgr(
-          raft::group_configuration({}), raft::group_id(1), _storage, _logger) {
+          raft::group_configuration({}, model::revision_id(0)),
+          raft::group_id(1),
+          _storage,
+          _logger) {
         _storage.start().get0();
     }
 
@@ -71,7 +74,8 @@ struct config_manager_fixture {
         for (auto i = 0; i < 2; ++i) {
             learners.push_back(tests::random_broker(i, i));
         }
-        return raft::group_configuration(std::move(nodes));
+        return raft::group_configuration(
+          std::move(nodes), model::revision_id(0));
     }
 
     raft::group_configuration add_random_cfg(model::offset offset) {
@@ -94,7 +98,10 @@ struct config_manager_fixture {
 
     void validate_recovery() {
         raft::configuration_manager recovered(
-          raft::group_configuration({}), raft::group_id(1), _storage, _logger);
+          raft::group_configuration({}, model::revision_id(0)),
+          raft::group_id(1),
+          _storage,
+          _logger);
 
         recovered.start(false).get0();
 
@@ -208,7 +215,10 @@ FIXTURE_TEST(test_start_write_concurrency, config_manager_fixture) {
     auto configurations = test_configurations();
 
     raft::configuration_manager new_cfg_manager(
-      raft::group_configuration({}), raft::group_id(1), _storage, _logger);
+      raft::group_configuration({}, model::revision_id(1)),
+      raft::group_id(1),
+      _storage,
+      _logger);
 
     auto start = new_cfg_manager.start(false);
     auto cfg = random_configuration();

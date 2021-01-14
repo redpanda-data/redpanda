@@ -80,7 +80,7 @@ public:
     replicate_entries_stm(
       consensus*,
       append_entries_request,
-      absl::flat_hash_map<model::node_id, follower_req_seq>);
+      absl::flat_hash_map<vnode, follower_req_seq>);
     ~replicate_entries_stm();
 
     /// caller have to pass _op_sem semaphore units, the apply call will do the
@@ -94,25 +94,25 @@ private:
     ss::future<append_entries_request> share_request();
 
     ss::future<> dispatch_one(
-      model::node_id, ss::lw_shared_ptr<std::vector<ss::semaphore_units<>>>);
+      vnode, ss::lw_shared_ptr<std::vector<ss::semaphore_units<>>>);
     ss::future<result<append_entries_reply>> dispatch_single_retry(
-      model::node_id, ss::lw_shared_ptr<std::vector<ss::semaphore_units<>>>);
+      vnode, ss::lw_shared_ptr<std::vector<ss::semaphore_units<>>>);
     ss::future<result<append_entries_reply>> do_dispatch_one(
-      model::node_id,
+      vnode,
       append_entries_request,
       ss::lw_shared_ptr<std::vector<ss::semaphore_units<>>>);
 
     ss::future<result<append_entries_reply>>
-      send_append_entries_request(model::node_id, append_entries_request);
+      send_append_entries_request(vnode, append_entries_request);
     result<replicate_result> process_result(model::offset, model::term_id);
-    bool is_follower_recovering(model::node_id);
+    bool is_follower_recovering(vnode);
     clock_type::time_point append_entries_timeout();
     /// This append will happen under the lock
     ss::future<result<storage::append_result>> append_to_self();
     consensus* _ptr;
     /// we keep a copy around until we finish the retries
     append_entries_request _req;
-    absl::flat_hash_map<model::node_id, follower_req_seq> _followers_seq;
+    absl::flat_hash_map<vnode, follower_req_seq> _followers_seq;
     ss::semaphore _share_sem;
     ss::semaphore _dispatch_sem{0};
     ss::gate _req_bg;

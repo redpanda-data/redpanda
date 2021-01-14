@@ -55,7 +55,7 @@ public:
       std::vector<item_ptr>&&,
       append_entries_request&&,
       ss::semaphore_units<>,
-      absl::flat_hash_map<model::node_id, follower_req_seq>);
+      absl::flat_hash_map<vnode, follower_req_seq>);
 
 private:
     ss::future<item_ptr> do_cache(model::record_batch_reader&&);

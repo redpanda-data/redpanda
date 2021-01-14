@@ -9,21 +9,22 @@
 
 #include "raft/follower_stats.h"
 
-#include <absl/container/node_hash_map.h>
+#include "raft/configuration.h"
 
 namespace raft {
 void follower_stats::update_with_configuration(const group_configuration& cfg) {
-    cfg.for_each_broker([this](const model::broker& n) {
-        if (n.id() == _self || _followers.contains(n.id())) {
+    cfg.for_each_broker_id([this](const vnode& rni) {
+        if (rni == _self || _followers.contains(rni)) {
             return;
         }
-        _followers.emplace(n.id(), follower_index_metadata(n.id()));
+        _followers.emplace(rni, follower_index_metadata(rni));
     });
 
     absl::erase_if(_followers, [&cfg](const container_t::value_type& p) {
-        return !cfg.contains_broker(p.first);
+        return !cfg.contains(p.first);
     });
 }
+
 std::ostream& operator<<(std::ostream& o, const follower_stats& s) {
     o << "{followers:" << s._followers.size() << ", [";
     for (auto& f : s) {
