@@ -32,12 +32,13 @@ ss::future<> coproc_test_fixture::startup(log_layout_map&& llm) {
     });
 }
 
+// clang-format off
 ss::future<coproc_test_fixture::opt_reader_data_t> coproc_test_fixture::drain(
   const model::ntp& ntp,
   std::size_t limit,
   model::timeout_clock::time_point timeout) {
     const auto m_ntp = model::materialized_ntp(std::move(ntp));
-    const auto shard_id = shard_for_ntp(m_ntp.source_ntp()).get0();
+    return shard_for_ntp(m_ntp.source_ntp()).then([this, m_ntp, limit, timeout](auto shard_id){
     if (!shard_id) {
         vlog(
           coproc::coproclog.error,
@@ -75,7 +76,9 @@ ss::future<coproc_test_fixture::opt_reader_data_t> coproc_test_fixture::drain(
                   [](auto rval) { return opt_reader_data_t(std::move(rval)); });
           });
     });
+    });
 }
+// clang-format on
 
 ss::future<model::record_batch_reader::data_t> coproc_test_fixture::do_drain(
   kafka::partition_wrapper pw,
@@ -115,9 +118,10 @@ ss::future<model::record_batch_reader::data_t> coproc_test_fixture::do_drain(
     });
 }
 
+// clang-format off
 ss::future<model::offset> coproc_test_fixture::push(
   const model::ntp& ntp, model::record_batch_reader&& rbr) {
-    const auto shard_id = shard_for_ntp(ntp).get0();
+    return shard_for_ntp(ntp).then([this, ntp, rbr = std::move(rbr)](auto shard_id) mutable{
     if (!shard_id) {
         vlog(
           coproc::coproclog.error,
@@ -145,7 +149,9 @@ ss::future<model::offset> coproc_test_fixture::push(
                   .then([](auto r) { return r.value().last_offset; });
             });
       });
+    });
 }
+// clang-format on
 
 ss::future<std::optional<ss::shard_id>>
 coproc_test_fixture::shard_for_ntp(const model::ntp& ntp) {
