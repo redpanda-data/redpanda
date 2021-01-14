@@ -216,6 +216,13 @@ iobuf index_state::checksum_and_serialize() {
     for (auto i = 0U; i < vsize; ++i) {
         reflection::adl<uint32_t>{}.to(out, position_index[i]);
     }
+    // add back the version and size field
+    const auto expected_size = size + sizeof(int8_t) + sizeof(uint32_t);
+    vassert(
+      out.size_bytes() == expected_size,
+      "Unexpected serialization size {} != expected {}",
+      out.size_bytes(),
+      expected_size);
     return out;
 }
 } // namespace storage
