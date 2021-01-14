@@ -2116,10 +2116,10 @@ voter_priority consensus::get_node_priority(model::node_id id) const {
     if (it == brokers.cend()) {
         /**
          * If node is not present in current configuration i.e. was added to the
-         * cluster, return 1 which is lowest priority allowing to become a
-         * leader.
+         * cluster, return max, this way for joining node we will use
+         * priorityless, classic raft leader election
          */
-        return min_voter_priority;
+        return voter_priority::max();
     }
 
     auto idx = std::distance(brokers.cbegin(), it);
