@@ -27,6 +27,7 @@ func NewRedpandaCommand(
 
 	command.AddCommand(redpanda.NewStartCommand(fs, mgr, launcher))
 	command.AddCommand(redpanda.NewStopCommand(fs, mgr))
+	command.AddCommand(redpanda.NewCheckCommand(fs, mgr))
 
 	return command
 }
