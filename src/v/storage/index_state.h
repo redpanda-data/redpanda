@@ -34,7 +34,7 @@ namespace storage {
    [] position_index
  */
 struct index_state {
-    static constexpr int8_t ondisk_version = 1;
+    static constexpr int8_t ondisk_version = 2;
 
     index_state() = default;
     index_state(index_state&&) noexcept = default;
