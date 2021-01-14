@@ -80,7 +80,17 @@ enum class coordinator_type : int8_t {
     transaction = 1,
 };
 
-std::ostream& operator<<(std::ostream& os, coordinator_type t);
+// TODO Ben: Why is this an undefined reference for pandaproxy when defined in
+// kafka/requests.cc
+inline std::ostream& operator<<(std::ostream& os, coordinator_type t) {
+    switch (t) {
+    case coordinator_type::group:
+        return os << "{group}";
+    case coordinator_type::transaction:
+        return os << "{transaction}";
+    };
+    return os << "{unknown type}";
+}
 
 enum class config_resource_type : int8_t {
     topic = 2,
