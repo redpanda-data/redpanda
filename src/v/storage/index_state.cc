@@ -86,8 +86,7 @@ bool index_state::maybe_index(
 }
 
 std::ostream& operator<<(std::ostream& o, const index_state& s) {
-    return o << "{version:" << (int)s.version << ", header_size:" << s.size
-             << ", header_checksum:" << s.checksum
+    return o << "{header_size:" << s.size << ", header_checksum:" << s.checksum
              << ", header_bitflags:" << s.bitflags
              << ", base_offset:" << s.base_offset
              << ", max_offset:" << s.max_offset
@@ -101,13 +100,43 @@ std::ostream& operator<<(std::ostream& o, const index_state& s) {
 std::optional<index_state> index_state::hydrate_from_buffer(iobuf b) {
     iobuf_parser parser(std::move(b));
     index_state retval;
-    retval.version = reflection::adl<int8_t>{}.from(parser);
-    if (retval.version != 1) {
-        // we screwed up version 0; and we only have version 1, so
-        // we force the users to rebuild the all indices here
+
+    size_t expected_size_adjustment = 0;
+    auto version = reflection::adl<int8_t>{}.from(parser);
+    switch (version) {
+    case index_state::ondisk_version:
+        break;
+    case 1:
+        /*
+         * version 1 code stored an on disk size that was calculated as 4 bytes
+         * too small, and the decoder did not check the size. instead of
+         * rebuilding indexes for version 1 we'll adjust the size because the
+         * checksums are still verified.
+         */
+        expected_size_adjustment = 4;
+        break;
+    default:
+        /*
+         * v0: fully deprecated
+         */
+        vlog(
+          stlog.debug,
+          "Forcing index rebuild for unknown or unsupported version {}",
+          version);
         return std::nullopt;
     }
+
     retval.size = reflection::adl<uint32_t>{}.from(parser);
+    const auto expected_size = retval.size + expected_size_adjustment;
+    if (unlikely(parser.bytes_left() != expected_size)) {
+        vlog(
+          stlog.debug,
+          "Index size does not match header size. Got:{}, expected:{}",
+          parser.bytes_left(),
+          expected_size);
+        return std::nullopt;
+    }
+
     retval.checksum = reflection::adl<uint64_t>{}.from(parser);
     retval.bitflags = reflection::adl<uint32_t>{}.from(parser);
     retval.base_offset = model::offset(
@@ -161,13 +190,14 @@ iobuf index_state::checksum_and_serialize() {
         + sizeof(storage::index_state::base_offset)
         + sizeof(storage::index_state::max_offset)
         + sizeof(storage::index_state::base_timestamp)
-        + sizeof(storage::index_state::max_timestamp) + (uint32_t) // index size
+        + sizeof(storage::index_state::max_timestamp)
+        + sizeof(uint32_t) // index size
         + (relative_offset_index.size() * (sizeof(uint32_t) * 3));
     size = final_size;
     checksum = storage::index_state::checksum_state(*this);
     reflection::serialize(
       out,
-      version,
+      index_state::ondisk_version,
       size,
       checksum,
       bitflags,
@@ -186,6 +216,13 @@ iobuf index_state::checksum_and_serialize() {
     for (auto i = 0U; i < vsize; ++i) {
         reflection::adl<uint32_t>{}.to(out, position_index[i]);
     }
+    // add back the version and size field
+    const auto expected_size = size + sizeof(int8_t) + sizeof(uint32_t);
+    vassert(
+      out.size_bytes() == expected_size,
+      "Unexpected serialization size {} != expected {}",
+      out.size_bytes(),
+      expected_size);
     return out;
 }
 } // namespace storage

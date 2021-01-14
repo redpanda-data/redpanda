@@ -34,6 +34,8 @@ namespace storage {
    [] position_index
  */
 struct index_state {
+    static constexpr int8_t ondisk_version = 2;
+
     index_state() = default;
     index_state(index_state&&) noexcept = default;
     index_state& operator=(index_state&&) noexcept = default;
@@ -41,7 +43,6 @@ struct index_state {
     index_state& operator=(const index_state&) = delete;
     ~index_state() noexcept = default;
 
-    int8_t version{1};
     /// \brief sizeof the index in bytes
     uint32_t size{0};
     /// \brief currently xxhash64
@@ -89,6 +90,8 @@ struct index_state {
       model::offset batch_max_offset,
       model::timestamp first_timestamp,
       model::timestamp last_timestamp);
+
+    friend bool operator==(const index_state&, const index_state&) = default;
 
     static std::optional<index_state> hydrate_from_buffer(iobuf);
     static uint64_t checksum_state(const index_state&);
