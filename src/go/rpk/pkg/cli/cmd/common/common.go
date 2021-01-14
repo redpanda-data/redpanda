@@ -9,5 +9,11 @@
 
 package common
 
+import "fmt"
+
 const FeedbackMsg = `We'd love to hear about your experience with redpanda:
 https://vectorized.io/feedback`
+
+func DeprecationMessage(altCmd string) string {
+	return fmt.Sprintf("use '%s' instead.", altCmd)
+}
