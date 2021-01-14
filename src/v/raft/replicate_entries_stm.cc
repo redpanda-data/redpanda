@@ -146,7 +146,11 @@ replicate_entries_stm::append_to_self() {
 }
 
 inline bool replicate_entries_stm::is_follower_recovering(model::node_id id) {
-    return id != _ptr->self() && _ptr->_fstats.get(id).is_recovering;
+    if (auto it = _ptr->_fstats.find(id); it != _ptr->_fstats.end()) {
+        return it->second.is_recovering;
+    }
+
+    return false;
 }
 
 ss::future<result<replicate_result>>

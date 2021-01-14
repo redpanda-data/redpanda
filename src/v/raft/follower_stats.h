@@ -11,26 +11,23 @@
 
 #pragma once
 
+#include "model/metadata.h"
 #include "raft/types.h"
 #include "vassert.h"
 
-#include <absl/container/flat_hash_map.h>
-#include <boost/container/flat_map.hpp>
+#include <absl/container/node_hash_map.h>
 
 namespace raft {
 
 class follower_stats {
 public:
     using container_t
-      = boost::container::flat_map<model::node_id, follower_index_metadata>;
+      = absl::node_hash_map<model::node_id, follower_index_metadata>;
     using iterator = container_t::iterator;
     using const_iterator = container_t::const_iterator;
 
-    explicit follower_stats(std::vector<follower_index_metadata> meta) {
-        for (auto& i : meta) {
-            _followers.emplace(i.node_id, std::move(i));
-        }
-    }
+    explicit follower_stats(model::node_id self)
+      : _self(self) {}
 
     const follower_index_metadata& get(model::node_id n) const {
         auto it = _followers.find(n);
@@ -71,8 +68,11 @@ public:
 
     size_t size() const { return _followers.size(); }
 
+    void update_with_configuration(const group_configuration&);
+
 private:
     friend std::ostream& operator<<(std::ostream&, const follower_stats&);
+    model::node_id _self;
     container_t _followers;
 };
 

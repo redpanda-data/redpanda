@@ -59,7 +59,10 @@ static std::vector<heartbeat_manager::node_heartbeat> requests_for_range(
                 pending_beats[n.id()].emplace_back(ptr->meta(), 0);
                 return;
             }
-
+            
+            if (ptr->are_heartbeats_suppressed(n.id())) {
+                return;
+            }
             auto last_append_timestamp = ptr->last_append_timestamp(n.id());
 
             if (last_append_timestamp > last_heartbeat) {
@@ -75,9 +78,6 @@ static std::vector<heartbeat_manager::node_heartbeat> requests_for_range(
                 return;
             }
 
-            if (ptr->are_heartbeats_suppressed(n.id())) {
-                return;
-            }
             auto seq_id = ptr->next_follower_sequence(n.id());
             pending_beats[n.id()].emplace_back(ptr->meta(), seq_id);
         };
