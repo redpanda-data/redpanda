@@ -1,4 +1,4 @@
-// Copyright 2020 Vectorized, Inc.
+// Copyright 2021 Vectorized, Inc.
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.md
@@ -9,7 +9,7 @@
 
 // +build linux
 
-package cmd
+package debug
 
 import (
 	"bytes"
@@ -37,7 +37,7 @@ func writeConfig(fs afero.Fs, conf *config.Config) error {
 	return afero.WriteFile(fs, conf.ConfigFile, bs, 0644)
 }
 
-func TestStatus(t *testing.T) {
+func TestInfo(t *testing.T) {
 	defaultSetup := func(fs afero.Fs) error {
 		return writeConfig(fs, getConfig())
 	}
@@ -140,7 +140,7 @@ func TestStatus(t *testing.T) {
 				require.NoError(t, err)
 			}
 			var out bytes.Buffer
-			cmd := NewStatusCommand(fs, mgr)
+			cmd := NewInfoCommand(fs, mgr)
 			cmd.SetArgs(tt.args)
 			logrus.SetOutput(&out)
 			err := cmd.Execute()

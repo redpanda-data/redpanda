@@ -1,4 +1,4 @@
-// Copyright 2020 Vectorized, Inc.
+// Copyright 2021 Vectorized, Inc.
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.md
@@ -12,14 +12,16 @@ package cmd
 import (
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/common"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/debug"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 )
 
-func NewStatusCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
-	command := debug.NewInfoCommand(fs, mgr)
-	command.Deprecated = common.DeprecationMessage("rpk debug info")
-	command.Hidden = true
+func NewDebugCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
+	command := &cobra.Command{
+		Use:	"debug",
+		Short:	"Debug the local Redpanda process",
+	}
+	command.AddCommand(debug.NewInfoCommand(fs, mgr))
+
 	return command
 }
