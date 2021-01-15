@@ -14,6 +14,8 @@
 # rpk
 !/src/go/rpk/go.mod
 !/src/go/rpk/go.sum
+!/src/go/k8s/go.mod
+!/src/go/k8s/go.sum
 !/src/go/metrics/go.mod
 !/src/go/metrics/go.sum
 
