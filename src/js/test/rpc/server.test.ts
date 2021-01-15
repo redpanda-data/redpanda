@@ -362,5 +362,61 @@ describe("Server", function () {
         done();
       }, 10);
     });
+
+    it("should server process 100 requests", function () {
+      const { spyGetHandles } = createStubs(sinonInstance);
+      // transform coprocessor function
+      const uppercase = (record) => ({
+        ...record,
+        value: record.value.map((char) => {
+          if (char > 97 && char < 122) {
+            return char - 32;
+          } else {
+            return char;
+          }
+        }),
+      });
+
+      const coprocessors = [1].map((id) =>
+        createHandle({
+          globalId: BigInt(id),
+          apply: (recordBatch) => {
+            const result = new Map();
+            const transformedRecord =
+              // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+              // @ts-ignore
+              recordBatch.map(({ header, records }) => ({
+                header,
+                records: records.map(uppercase),
+              }));
+            result.set("result", transformedRecord);
+            return result;
+          },
+        })
+      );
+
+      spyGetHandles.returns(coprocessors);
+      const requests = new Array(100).fill({
+        recordBatch: [
+          createRecordBatch({
+            header: {
+              recordCount: 1,
+            },
+            records: [{ value: Buffer.from("b") }],
+          }),
+        ],
+        coprocessorIds: [BigInt(1)],
+        ntp: { partition: 1, namespace: "", topic: "produce" },
+      });
+
+      return Promise.all(
+        requests.map((item) => client.process_batch({ requests: [item] }))
+      ).then(([{ result }]) => {
+        result.forEach((r) => {
+          const e = r.resultRecordBatch[0].records[0].value;
+          assert.deepStrictEqual(e, Buffer.from("B"));
+        });
+      });
+    });
   });
 });
