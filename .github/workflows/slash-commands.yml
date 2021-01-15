@@ -13,3 +13,4 @@ jobs:
           issue-type: pull-request
           commands: |
             chaos-test
+            ducktape-test
