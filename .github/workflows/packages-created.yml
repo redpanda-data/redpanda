@@ -11,7 +11,7 @@ jobs:
       - name: Notify PR
         uses: peter-evans/create-or-update-comment@v1
         with:
-          token: ${{ secrets.GH_API_TOKEN }}
+          token: ${{ secrets.VTOOLS_GITHUB_API_TOKEN }}
           issue-number: ${{ github.event.client_payload.pr_number }}
           body: |
             Packages created for ${{ github.event.client_payload.ref }}

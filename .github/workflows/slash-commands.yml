@@ -9,7 +9,7 @@ jobs:
       - name: Slash Command Dispatch
         uses: peter-evans/slash-command-dispatch@dc2f82020dc2c4e9bfed7e87eb4a09506afd431b
         with:
-          token: ${{ secrets.GH_API_TOKEN }}
+          token: ${{ secrets.VTOOLS_GITHUB_API_TOKEN }}
           issue-type: pull-request
           commands: |
             chaos-test
