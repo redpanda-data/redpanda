@@ -10,6 +10,7 @@
 
 #include "coproc/logger.h"
 #include "coproc/tests/utils.h"
+#include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "model/timestamp.h"
 #include "vassert.h"
@@ -30,27 +31,6 @@ ss::future<> coproc_test_fixture::startup(log_layout_map&& llm) {
             });
         });
     });
-}
-
-// Keep calling 'fn' until function returns true
-// OR if 'timeout' was specified, exit when timeout is reached
-template<typename Func>
-ss::future<> poll_until(
-  Func&& fn, model::timeout_clock::time_point timeout = model::no_timeout) {
-    return ss::do_with(
-      model::timeout_clock::now(),
-      std::forward<Func>(fn),
-      false,
-      [timeout](auto& now, auto& fn, auto& exit) {
-          return ss::do_until(
-            [&exit, &now, timeout] { return exit || (now > timeout); },
-            [&exit, &now, &fn] {
-                return fn().then([&exit, &now](bool r) {
-                    exit = r;
-                    now = model::timeout_clock::now();
-                });
-            });
-      });
 }
 
 ss::future<coproc_test_fixture::opt_reader_data_t> coproc_test_fixture::drain(
@@ -102,33 +82,38 @@ ss::future<model::record_batch_reader::data_t> coproc_test_fixture::do_drain(
   kafka::partition_wrapper pw,
   std::size_t limit,
   model::timeout_clock::time_point timeout) {
-    return ss::do_with(
-      static_cast<std::size_t>(0),
-      model::offset(0),
-      model::record_batch_reader::data_t(),
-      [timeout, limit, pw](auto& acc, auto& offset, auto& b) mutable {
-          // Loop until the expected number of records is read
-          // OR a non-configurable timeout has been reached
-          return poll_until(
-                   [&b, &acc, &offset, &timeout, limit, pw]() mutable {
-                       return pw.make_reader(log_rdr_cfg(model::offset(acc)))
-                         .then([&timeout](model::record_batch_reader reader) {
-                             return model::consume_reader_to_memory(
-                               std::move(reader), timeout);
-                         })
-                         .then([&acc, &b, &offset](
-                                 model::record_batch_reader::data_t data) {
-                             offset += data.size();
-                             for (auto&& r : data) {
-                                 acc += r.record_count();
-                                 b.push_back(std::move(r));
-                             }
-                         })
-                         .then([&acc, limit] { return acc >= limit; });
-                   },
-                   timeout)
-            .then([&b, &acc] { return std::move(b); });
-      });
+    struct state {
+        std::size_t n_records{0};
+        model::offset next_offset{0};
+        model::record_batch_reader::data_t batches;
+    };
+    return ss::do_with(state(), [limit, timeout, pw](state& s) mutable {
+        return ss::do_until(
+                 [&s, limit, timeout] {
+                     const auto now = model::timeout_clock::now();
+                     return (s.n_records >= limit) || (now > timeout);
+                 },
+                 [&s, pw]() mutable {
+                     return pw.make_reader(log_rdr_cfg(s.next_offset))
+                       .then([](model::record_batch_reader rbr) {
+                           return model::consume_reader_to_memory(
+                             std::move(rbr), model::no_timeout);
+                       })
+                       .then([&s](model::record_batch_reader::data_t b) {
+                           if (b.empty()) {
+                               return ss::sleep(20ms);
+                           }
+                           for (model::record_batch& rb : b) {
+                               s.n_records += rb.record_count();
+                               s.next_offset = rb.last_offset()
+                                               + model::offset(1);
+                               s.batches.push_back(std::move(rb));
+                           }
+                           return ss::now();
+                       });
+                 })
+          .then([&s] { return std::move(s.batches); });
+    });
 }
 
 ss::future<model::offset> coproc_test_fixture::push(
