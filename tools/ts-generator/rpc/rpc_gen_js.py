@@ -108,12 +108,17 @@ const readBufferRequest = (buffer: Buffer, fn: ApplyFn, socket: Socket) => {
     );
   }
   const size = rpcHeader.payloadSize;
-  if (buffer.length - rpcHeaderSize >= size) {
+  const availableBytesOnBuffer = buffer.length - rpcHeaderSize;
+  if (availableBytesOnBuffer == size) {
     const result = buffer.slice(rpcHeaderSize, size + rpcHeaderSize);
     startReadRequest(fn)(socket)
     return fn(rpcHeader, result, socket);
+  } else if (availableBytesOnBuffer > size) {
+    const result = buffer.slice(rpcHeaderSize, size + rpcHeaderSize);
+    readBufferRequest(buffer.slice(size + rpcHeaderSize), fn, socket);
+    return fn(rpcHeader, result, socket);
   } else {
-    const bytesForReading = size - (buffer.length - rpcHeaderSize);
+    const bytesForReading = size - (availableBytesOnBuffer);
     return readNextChunk(socket, bytesForReading, fn)
       .then((nextBuffer) =>
         Buffer.concat([buffer.slice(rpcHeaderSize), nextBuffer])
