@@ -12,8 +12,8 @@
 #pragma once
 
 #include "kafka/client.h"
-#include "kafka/requests/join_group_request.h"
 #include "kafka/types.h"
+#include "pandaproxy/client/assignment_plans.h"
 #include "pandaproxy/client/broker.h"
 #include "pandaproxy/client/brokers.h"
 #include "pandaproxy/client/configuration.h"
@@ -115,6 +115,22 @@ public:
       const kafka::group_id& group_id,
       const kafka::member_id& member_id,
       std::vector<model::topic> topics);
+
+    ss::future<std::vector<model::topic>>
+    consumer_topics(const kafka::group_id& g_id, const kafka::member_id& m_id);
+
+    ss::future<assignment> consumer_assignment(
+      const kafka::group_id& g_id, const kafka::member_id& m_id);
+
+    ss::future<kafka::offset_fetch_response> consumer_offset_fetch(
+      const kafka::group_id& g_id,
+      const kafka::member_id& m_id,
+      std::vector<kafka::offset_fetch_request_topic> topics);
+
+    ss::future<kafka::offset_commit_response> consumer_offset_commit(
+      const kafka::group_id& g_id,
+      const kafka::member_id& m_id,
+      std::vector<kafka::offset_commit_request_topic> topics);
 
 private:
     /// \brief Connect and update metdata.

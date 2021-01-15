@@ -20,9 +20,11 @@
 #include "kafka/types.h"
 #include "pandaproxy/client/assignment_plans.h"
 #include "pandaproxy/client/configuration.h"
+#include "pandaproxy/client/error.h"
 #include "pandaproxy/client/logger.h"
 
 #include <chrono>
+#include <exception>
 
 namespace pandaproxy::client {
 
@@ -65,7 +67,9 @@ void consumer::start() {
     ppclog.info("Consumer: {}: start", *this);
     _timer.set_callback([this]() {
         ppclog.info("Consumer: {}: timer cb", *this);
-        (void)heartbeat();
+        (void)heartbeat().handle_exception_type([this](consumer_error e) {
+            ppclog.error("Consumer: {}: heartbeat failed: {}", *this, e.error);
+        });
     });
     _timer.arm_periodic(std::chrono::duration_cast<ss::timer<>::duration>(
       shard_local_cfg().consumer_heartbeat_interval()));
@@ -122,8 +126,8 @@ ss::future<> consumer::join() {
               start();
               return sync();
           default:
-              vassert(false, "Consumer: join: unhandled error_code");
-              break;
+              return ss::make_exception_future<>(
+                consumer_error(_group_id, _member_id, res.data.error_code));
           }
       });
 }
@@ -224,18 +228,17 @@ ss::future<> consumer::sync() {
                 case kafka::error_code::rebalance_in_progress:
                     return sync();
                 case kafka::error_code::illegal_generation:
-                    return join().then([this]() { return sync(); });
+                    return join();
                 case kafka::error_code::unknown_member_id:
                     _member_id = kafka::no_member;
-                    return join().then([this]() { return sync(); });
+                    return join();
                 case kafka::error_code::none:
                     _assignment = _plan->decode(res.data.assignment);
-                    break;
+                    return ss::now();
                 default:
-                    vassert(false, "Consumer sync: unhandled error_code");
-                    break;
+                    return ss::make_exception_future<>(consumer_error(
+                      _group_id, _member_id, res.data.error_code));
                 }
-                return ss::now();
             });
       });
 }
@@ -259,12 +262,11 @@ ss::future<> consumer::heartbeat() {
           case kafka::error_code::rebalance_in_progress:
               return join();
           case kafka::error_code::none:
-              break;
+              return ss::now();
           default:
-              vassert(false, "Consumer heartbeat: unhandled error_code");
-              break;
+              return ss::make_exception_future<>(
+                consumer_error(_group_id, _member_id, res.data.error_code));
           }
-          return ss::now();
       });
 }
 
@@ -272,19 +274,37 @@ ss::future<kafka::describe_groups_response> consumer::describe_group() {
     auto req_builder = [this]() {
         return kafka::describe_groups_request{.data{.groups = {{_group_id}}}};
     };
-    return req_res(req_builder).then([](kafka::describe_groups_response res) {
-        vassert(res.data.groups.size() == 1, "Unexpected group response");
-        const auto& grp = res.data.groups[0];
-        switch (grp.error_code) {
-        case kafka::error_code::none:
-            break;
-        default:
-            vassert(false, "Consumer desc: unhandled error_code");
-            break;
-        }
-        return ss::make_ready_future<kafka::describe_groups_response>(
-          std::move(res));
-    });
+    return req_res(req_builder);
+}
+
+ss::future<kafka::offset_fetch_response>
+consumer::offset_fetch(std::vector<kafka::offset_fetch_request_topic> topics) {
+    auto req_builder = [topics{std::move(topics)}, group_id{_group_id}] {
+        return kafka::offset_fetch_request{
+          .data{.group_id = group_id, .topics = topics}};
+    };
+    return req_res(std::move(req_builder))
+      .then([this](kafka::offset_fetch_response res) {
+          return res.data.error_code == kafka::error_code::none
+                   ? ss::make_ready_future<kafka::offset_fetch_response>(
+                     std::move(res))
+                   : ss::make_exception_future<kafka::offset_fetch_response>(
+                     consumer_error(
+                       _group_id, _member_id, res.data.error_code));
+      });
+}
+
+ss::future<kafka::offset_commit_response> consumer::offset_commit(
+  std::vector<kafka::offset_commit_request_topic> topics) {
+    auto req_builder = [me{shared_from_this()}, topics{std::move(topics)}]() {
+        return kafka::offset_commit_request{.data{
+          .group_id = me->_group_id,
+          .generation_id = me->_generation_id,
+          .member_id = me->_member_id,
+          .topics = topics}};
+    };
+
+    return req_res(std::move(req_builder));
 }
 
 ss::future<shared_consumer_t>
