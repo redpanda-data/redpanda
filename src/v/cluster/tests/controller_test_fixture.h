@@ -14,7 +14,6 @@
 #include "cluster/controller.h"
 #include "cluster/metadata_dissemination_handler.h"
 #include "cluster/metadata_dissemination_service.h"
-#include "cluster/namespace.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/service.h"
 #include "cluster/simple_batch_builder.h"
@@ -23,6 +22,7 @@
 #include "config/configuration.h"
 #include "fmt/format.h"
 #include "model/metadata.h"
+#include "model/namespace.h"
 #include "model/record.h"
 #include "raft/service.h"
 #include "random/generators.h"
@@ -109,7 +109,7 @@ public:
     void
     persist_test_batches(ss::circular_buffer<model::record_batch> batches) {
         tests::persist_log_file(
-          _base_dir, cluster::controller_ntp, std::move(batches))
+          _base_dir, model::controller_ntp, std::move(batches))
           .get0();
     }
 
@@ -329,7 +329,6 @@ static void wait_for_leadership(cluster::partition_leaders_table& leaders) {
     using namespace std::chrono_literals;
 
     leaders
-      .wait_for_leader(
-        cluster::controller_ntp, ss::lowres_clock::now() + 10s, {})
+      .wait_for_leader(model::controller_ntp, ss::lowres_clock::now() + 10s, {})
       .get0();
 }

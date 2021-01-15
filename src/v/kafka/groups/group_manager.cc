@@ -42,8 +42,8 @@ ss::future<> group_manager::start() {
      * synchronously invoked for all existing partitions that match the query.
      */
     _manage_notify_handle = _pm.local().register_manage_notification(
-      cluster::kafka_internal_namespace,
-      cluster::kafka_group_topic,
+      model::kafka_internal_namespace,
+      model::kafka_group_topic,
       [this](ss::lw_shared_ptr<cluster::partition> p) { attach_partition(p); });
 
     return ss::make_ready_future<>();

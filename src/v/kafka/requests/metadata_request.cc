@@ -304,7 +304,7 @@ static ss::future<metadata_response::topic>
 create_topic(request_context& ctx, model::topic&& topic) {
     // default topic configuration
     cluster::topic_configuration cfg{
-      cluster::kafka_namespace,
+      model::kafka_namespace,
       topic,
       config::shard_local_cfg().default_topic_partitions(),
       config::shard_local_cfg().default_topic_replication()};
@@ -355,7 +355,7 @@ get_topic_metadata(request_context& ctx, metadata_request& request) {
         // only serve topics from the kafka namespace
         auto it = std::remove_if(
           topics.begin(), topics.end(), [](model::topic_metadata& t_md) {
-              return t_md.tp_ns.ns != cluster::kafka_namespace;
+              return t_md.tp_ns.ns != model::kafka_namespace;
           });
         std::transform(
           topics.begin(),
@@ -375,7 +375,7 @@ get_topic_metadata(request_context& ctx, metadata_request& request) {
         auto source_topic = model::get_source_topic(topic);
         if (auto md = ctx.metadata_cache().get_topic_metadata(
               model::topic_namespace_view(
-                cluster::kafka_namespace, source_topic));
+                model::kafka_namespace, source_topic));
             md) {
             auto src_topic_response
               = metadata_response::topic::make_from_topic_metadata(

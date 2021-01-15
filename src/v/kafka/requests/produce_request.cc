@@ -11,7 +11,6 @@
 
 #include "bytes/iobuf.h"
 #include "cluster/metadata_cache.h"
-#include "cluster/namespace.h"
 #include "cluster/partition_manager.h"
 #include "kafka/errors.h"
 #include "kafka/requests/kafka_batch_adapter.h"
@@ -19,6 +18,7 @@
 #include "likely.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "model/namespace.h"
 #include "model/record_batch_reader.h"
 #include "model/timestamp.h"
 #include "raft/types.h"
@@ -291,7 +291,7 @@ static ss::future<produce_response::partition> produce_topic_partition(
   produce_ctx& octx,
   produce_request::topic& topic,
   produce_request::partition& part) {
-    auto ntp = model::ntp(cluster::kafka_namespace, topic.name, part.id);
+    auto ntp = model::ntp(model::kafka_namespace, topic.name, part.id);
 
     /*
      * A single produce request may contain record batches for many
@@ -314,7 +314,7 @@ static ss::future<produce_response::partition> produce_topic_partition(
      * the CRC.
      */
     auto timestamp_type = octx.rctx.metadata_cache().get_topic_timestamp_type(
-      model::topic_namespace_view(cluster::kafka_namespace, topic.name));
+      model::topic_namespace_view(model::kafka_namespace, topic.name));
 
     if (timestamp_type == model::timestamp_type::append_time) {
         auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -361,7 +361,7 @@ produce_topic(produce_ctx& octx, produce_request::topic& topic) {
 
     for (auto& part : topic.partitions) {
         if (!octx.rctx.metadata_cache().contains(
-              model::topic_namespace_view(cluster::kafka_namespace, topic.name),
+              model::topic_namespace_view(model::kafka_namespace, topic.name),
               part.id)) {
             partitions.push_back(
               ss::make_ready_future<produce_response::partition>(

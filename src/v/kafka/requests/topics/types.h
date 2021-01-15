@@ -10,12 +10,12 @@
  */
 
 #pragma once
-#include "cluster/namespace.h"
 #include "cluster/types.h"
 #include "kafka/errors.h"
 #include "kafka/requests/schemata/create_topics_request.h"
 #include "kafka/requests/schemata/create_topics_response.h"
 #include "model/fundamental.h"
+#include "model/namespace.h"
 
 #include <absl/container/flat_hash_map.h>
 #include <boost/algorithm/string.hpp>

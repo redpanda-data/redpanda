@@ -15,7 +15,7 @@
 
 #include <seastar/core/smp.hh>
 
-namespace cluster {
+namespace model {
 
 inline const model::ns redpanda_ns("redpanda");
 
@@ -35,4 +35,4 @@ inline const model::ns kafka_namespace("kafka");
 inline const model::ns kafka_internal_namespace("kafka_internal");
 inline const model::topic kafka_group_topic("group");
 
-} // namespace cluster
+} // namespace model

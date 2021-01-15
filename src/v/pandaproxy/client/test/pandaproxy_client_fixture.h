@@ -51,7 +51,7 @@ public:
     make_data(model::revision_id rev, int partitions = 1, int topic = 0) {
         auto topic_name = fmt::format("my_topic_{}", topic);
         auto tp_ns = model::topic_namespace(
-          cluster::kafka_namespace, model::topic{topic_name});
+          model::kafka_namespace, model::topic{topic_name});
 
         for (int p = 0; p < partitions; ++p) {
             model::ntp ntp(tp_ns.ns, tp_ns.tp, model::partition_id(p));

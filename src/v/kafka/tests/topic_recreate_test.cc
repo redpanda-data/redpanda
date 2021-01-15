@@ -240,7 +240,7 @@ FIXTURE_TEST(test_recreated_topic_does_not_lose_data, recreate_test_fixture) {
     create_topic(test_tp(), 1, 1);
     wait_until_topic_status(test_tp, kafka::error_code::none).get0();
     auto ntp = model::ntp(
-      cluster::kafka_namespace,
+      model::kafka_namespace,
       model::topic_partition(test_tp, model::partition_id(0)));
 
     auto wait_for_ntp_leader = [this, ntp] {

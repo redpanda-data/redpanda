@@ -13,11 +13,11 @@
 
 #include "cluster/controller_stm.h"
 #include "cluster/logger.h"
-#include "cluster/namespace.h"
 #include "cluster/partition_manager.h"
 #include "cluster/shard_table.h"
 #include "cluster/types.h"
 #include "model/metadata.h"
+#include "model/namespace.h"
 
 #include <vector>
 namespace cluster {
@@ -35,14 +35,14 @@ static ss::future<consensus_ptr> create_raft0(
 
     return pm.local()
       .manage(
-        storage::ntp_config(controller_ntp, data_directory),
+        storage::ntp_config(model::controller_ntp, data_directory),
         raft::group_id(0),
         std::move(initial_brokers))
       .then([&st](consensus_ptr p) {
           // Add raft 0 to shard table
           return st
             .invoke_on_all([gr = p->group()](shard_table& local_st) {
-                local_st.insert(controller_ntp, controller_stm_shard);
+                local_st.insert(model::controller_ntp, controller_stm_shard);
                 local_st.insert(gr, controller_stm_shard);
             })
             .then([p] { return p; });

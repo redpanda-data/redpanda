@@ -8,9 +8,9 @@
 
 #include "service.h"
 
-#include "cluster/namespace.h"
 #include "coproc/logger.h"
 #include "coproc/types.h"
+#include "model/namespace.h"
 #include "ssx/future-util.h"
 #include "utils/functional.h"
 #include "vassert.h"
@@ -89,7 +89,7 @@ enrich_topics(std::vector<enable_copros_request::data::topic_mode> topics) {
       [](enable_copros_request::data::topic_mode&& tm) {
           return topic_namespace_policy{
             .tn = model::topic_namespace(
-              cluster::kafka_namespace, std::move(tm.first)),
+              model::kafka_namespace, std::move(tm.first)),
             .policy = tm.second};
       });
     return tns;

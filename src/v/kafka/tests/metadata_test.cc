@@ -7,10 +7,10 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "cluster/namespace.h"
 #include "kafka/errors.h"
 #include "librdkafka/rdkafkacpp.h"
 #include "model/fundamental.h"
+#include "model/namespace.h"
 #include "redpanda/tests/fixture.h"
 #include "test_utils/fixture.h"
 
@@ -140,9 +140,9 @@ FIXTURE_TEST(test_topic_namespaces, redpanda_thread_fixture) {
     };
 
     const model::topic_namespace test_topic(
-      cluster::kafka_namespace, model::topic("test-topic"));
+      model::kafka_namespace, model::topic("test-topic"));
     const model::topic_namespace test_internal_topic(
-      cluster::kafka_internal_namespace, model::topic("test-internal-topic"));
+      model::kafka_internal_namespace, model::topic("test-internal-topic"));
 
     ss::when_all_succeed(
       add_topic_for_tp_ns(test_topic), add_topic_for_tp_ns(test_internal_topic))

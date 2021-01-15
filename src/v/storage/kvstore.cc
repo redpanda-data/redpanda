@@ -10,7 +10,7 @@
 #include "storage/kvstore.h"
 
 #include "bytes/iobuf.h"
-#include "cluster/namespace.h"
+#include "model/namespace.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "raft/types.h"
 #include "reflection/adl.h"
@@ -30,7 +30,7 @@ namespace storage {
 
 kvstore::kvstore(kvstore_config kv_conf)
   : _conf(kv_conf)
-  , _ntpc(cluster::kvstore_ntp(ss::this_shard_id()), _conf.base_dir)
+  , _ntpc(model::kvstore_ntp(ss::this_shard_id()), _conf.base_dir)
   , _snap(
       std::filesystem::path(_ntpc.work_directory()),
       ss::default_priority_class())

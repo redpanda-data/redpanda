@@ -698,7 +698,7 @@ void application::admin_register_kafka_routes(ss::http_server& server) {
             partition,
             target);
 
-          model::ntp ntp(cluster::kafka_namespace, topic, partition);
+          model::ntp ntp(model::kafka_namespace, topic, partition);
 
           auto shard = shard_table.local().shard_for(ntp);
           if (!shard) {

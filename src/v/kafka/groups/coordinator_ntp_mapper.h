@@ -11,11 +11,11 @@
 
 #pragma once
 #include "cluster/metadata_cache.h"
-#include "cluster/namespace.h"
 #include "hashing/jump_consistent_hash.h"
 #include "hashing/xx.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
+#include "model/namespace.h"
 #include "seastar/core/sharded.hh"
 #include "seastarx.h"
 #include "utils/concepts-enabled.h"
@@ -45,7 +45,7 @@ class coordinator_ntp_mapper {
 public:
     coordinator_ntp_mapper(ss::sharded<cluster::metadata_cache>& md)
       : _md(md)
-      , _tp_ns(cluster::kafka_internal_namespace, cluster::kafka_group_topic) {}
+      , _tp_ns(model::kafka_internal_namespace, model::kafka_group_topic) {}
 
     std::optional<model::ntp> ntp_for(const kafka::group_id& group) const {
         auto md = _md.local().get_topic_metadata(_tp_ns);

@@ -9,13 +9,13 @@
 
 #include "kafka/requests/offset_commit_request.h"
 
-#include "cluster/namespace.h"
 #include "kafka/errors.h"
 #include "kafka/groups/group_manager.h"
 #include "kafka/groups/group_router.h"
 #include "kafka/requests/request_context.h"
 #include "kafka/requests/response.h"
 #include "model/metadata.h"
+#include "model/namespace.h"
 
 #include <seastar/core/do_with.hh>
 #include <seastar/core/smp.hh>
@@ -86,7 +86,7 @@ offset_commit_api::process(request_context&& ctx, ss::smp_service_group ssg) {
          * check if topic exists
          */
         const auto topic_name = model::topic(it->name);
-        model::topic_namespace_view tn(cluster::kafka_namespace, topic_name);
+        model::topic_namespace_view tn(model::kafka_namespace, topic_name);
 
         if (const auto& md = octx.rctx.metadata_cache().get_topic_metadata(tn);
             md) {

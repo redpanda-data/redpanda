@@ -9,7 +9,6 @@
 
 #include "kafka/requests/fetch_request.h"
 
-#include "cluster/namespace.h"
 #include "cluster/partition_manager.h"
 #include "config/configuration.h"
 #include "kafka/errors.h"
@@ -17,6 +16,7 @@
 #include "kafka/requests/batch_consumer.h"
 #include "likely.h"
 #include "model/fundamental.h"
+#include "model/namespace.h"
 #include "model/timeout_clock.h"
 #include "resource_mgmt/io_priority.h"
 #include "utils/to_string.h"
@@ -517,7 +517,7 @@ static std::vector<shard_fetch> group_requests_by_shard(op_context& octx) {
             }
         }
 
-        auto ntp = model::ntp(cluster::kafka_namespace, fp.topic, fp.partition);
+        auto ntp = model::ntp(model::kafka_namespace, fp.topic, fp.partition);
         auto materialized_ntp = model::materialized_ntp(std::move(ntp));
 
         auto shard = octx.rctx.shards().shard_for(

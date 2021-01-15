@@ -10,11 +10,11 @@
 #include "kafka/requests/list_offsets_request.h"
 
 #include "cluster/metadata_cache.h"
-#include "cluster/namespace.h"
 #include "cluster/partition_manager.h"
 #include "kafka/errors.h"
 #include "kafka/requests/request_context.h"
 #include "kafka/requests/response.h"
+#include "model/namespace.h"
 #include "resource_mgmt/io_priority.h"
 
 namespace kafka {
@@ -71,7 +71,7 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
   list_offset_topic& topic,
   list_offset_partition& part) {
     auto ntp = model::ntp(
-      cluster::kafka_namespace,
+      model::kafka_namespace,
       model::get_source_topic(topic.name),
       part.partition_index);
 
@@ -150,7 +150,7 @@ list_offsets_topic(list_offsets_ctx& octx, list_offset_topic& topic) {
 
         if (!octx.rctx.metadata_cache().contains(
               model::topic_namespace_view(
-                cluster::kafka_namespace, model::get_source_topic(topic.name)),
+                model::kafka_namespace, model::get_source_topic(topic.name)),
               part.partition_index)) {
             partitions.push_back(
               ss::make_ready_future<list_offset_partition_response>(

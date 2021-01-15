@@ -11,7 +11,6 @@
 
 #pragma once
 #include "cluster/cluster_utils.h"
-#include "cluster/namespace.h"
 #include "cluster/partition_manager.h"
 #include "config/configuration.h"
 #include "kafka/errors.h"
@@ -25,6 +24,7 @@
 #include "kafka/requests/offset_commit_request.h"
 #include "kafka/requests/offset_fetch_request.h"
 #include "kafka/requests/sync_group_request.h"
+#include "model/namespace.h"
 #include "raft/group_manager.h"
 #include "seastarx.h"
 

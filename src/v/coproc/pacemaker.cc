@@ -11,7 +11,6 @@
 
 #include "coproc/pacemaker.h"
 
-#include "cluster/namespace.h"
 #include "coproc/logger.h"
 #include "coproc/types.h"
 #include "model/validation.h"

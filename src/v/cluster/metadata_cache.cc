@@ -9,11 +9,11 @@
 
 #include "cluster/metadata_cache.h"
 
-#include "cluster/namespace.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "model/namespace.h"
 #include "model/timestamp.h"
 
 #include <seastar/core/sharded.hh>
@@ -99,7 +99,7 @@ ss::future<model::node_id> metadata_cache::get_leader(
 
 /// If present returns a leader of raft0 group
 std::optional<model::node_id> metadata_cache::get_controller_leader_id() {
-    return _leaders.local().get_leader(controller_ntp);
+    return _leaders.local().get_leader(model::controller_ntp);
 }
 
 } // namespace cluster
