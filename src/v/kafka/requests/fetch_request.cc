@@ -502,43 +502,43 @@ static std::vector<shard_fetch> group_requests_by_shard(op_context& octx) {
     /**
      * group fetch requests by shard
      */
-    octx.for_each_fetch_partition([&resp_it, &octx, &shard_fetches](
-                                    const fetch_partition& fp) {
-        // if this is not an initial fetch we are allowed to skip
-        // partions that aleready have an error or we have enough data
-        if (!octx.initial_fetch) {
-            bool has_enough_data
-              = !resp_it->partition_response->record_set->empty()
-                && octx.over_min_bytes();
+    octx.for_each_fetch_partition(
+      [&resp_it, &octx, &shard_fetches](const fetch_partition& fp) {
+          // if this is not an initial fetch we are allowed to skip
+          // partions that aleready have an error or we have enough data
+          if (!octx.initial_fetch) {
+              bool has_enough_data
+                = !resp_it->partition_response->record_set->empty()
+                  && octx.over_min_bytes();
 
-            if (resp_it->partition_response->has_error() || has_enough_data) {
-                ++resp_it;
-                return;
-            }
-        }
+              if (resp_it->partition_response->has_error() || has_enough_data) {
+                  ++resp_it;
+                  return;
+              }
+          }
 
-        auto ntp = model::ntp(model::kafka_namespace, fp.topic, fp.partition);
-        auto materialized_ntp = model::materialized_ntp(std::move(ntp));
+          auto ntp = model::ntp(model::kafka_namespace, fp.topic, fp.partition);
+          auto materialized_ntp = model::materialized_ntp(std::move(ntp));
 
-        auto shard = octx.rctx.shards().shard_for(
-          materialized_ntp.source_ntp());
-        if (!shard) {
-            // no shard found, set error
-            (resp_it).set(make_partition_response_error(
-              fp.partition, error_code::unknown_topic_or_partition));
-            ++resp_it;
-            return;
-        }
+          auto shard = octx.rctx.shards().shard_for(
+            materialized_ntp.source_ntp());
+          if (!shard) {
+              // no shard found, set error
+              (resp_it).set(make_partition_response_error(
+                fp.partition, error_code::unknown_topic_or_partition));
+              ++resp_it;
+              return;
+          }
 
-        fetch_config config{
-          .start_offset = fp.fetch_offset,
-          .max_bytes = std::min(octx.bytes_left, size_t(fp.max_bytes)),
-          .timeout = octx.deadline.value_or(model::no_timeout),
-          .strict_max_bytes = octx.response_size > 0,
-        };
-        shard_fetches[*shard].push_back(
-          std::move(materialized_ntp), config, resp_it++);
-    });
+          fetch_config config{
+            .start_offset = fp.fetch_offset,
+            .max_bytes = std::min(octx.bytes_left, size_t(fp.max_bytes)),
+            .timeout = octx.deadline.value_or(model::no_timeout),
+            .strict_max_bytes = octx.response_size > 0,
+          };
+          shard_fetches[*shard].push_back(
+            std::move(materialized_ntp), config, resp_it++);
+      });
 
     return shard_fetches;
 }
