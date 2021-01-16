@@ -1,4 +1,4 @@
-me: integration_testing
+name: integration_testing
 on:
   repository_dispatch:
     types: [ducktape-test-command]
