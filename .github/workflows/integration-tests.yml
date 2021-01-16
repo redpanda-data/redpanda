@@ -1,10 +1,10 @@
-name: integration_testing
+me: integration_testing
 on:
   repository_dispatch:
     types: [ducktape-test-command]
 
 jobs:
-  run_consistency_tests:
+  integration_tests:
     runs-on: ubuntu-20.04
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -39,6 +39,7 @@ jobs:
         run: |
           # check if the file exists
           check=$(gsutil -q stat $deb_pkg_url || echo "NotFound")
+
           if [[ $check == "NotFound" ]]; then
             echo "Provided file $deb_pkg_url was not found"; exit 1
           fi
@@ -47,9 +48,11 @@ jobs:
 
       - name: Setup vtools
         run: |
-          sudo apt-get install python3-pip unzip python3-setuptools python3-venv
+          sudo apt update
+          sudo apt-get install -y python3-venv
           python3 -m venv .venv
           source .venv/bin/activate
+          pip install --upgrade pip setuptools wheel
           git clone https://${{ secrets.GH_API_TOKEN }}@github.com/vectorizedio/vtools vtools > vtools_out.log 2>&1
           pip install vtools/ >> vtools_out.log 2>&1
 
