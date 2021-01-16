@@ -100,7 +100,8 @@ ss::future<storage::index_state> do_copy_segment_data(
 ss::future<> do_swap_data_file_handles(
   std::filesystem::path compacted,
   ss::lw_shared_ptr<storage::segment>,
-  storage::compaction_config);
+  storage::compaction_config,
+  probe&);
 
 std::filesystem::path compacted_index_path(std::filesystem::path segment_path);
 
