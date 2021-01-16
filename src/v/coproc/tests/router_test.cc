@@ -75,10 +75,9 @@ FIXTURE_TEST(test_coproc_router_simple, router_test_fixture) {
 
     auto batches = storage::test::make_random_batches(
       model::offset(0), 100, false);
-
     auto f1 = push(
       input_ntp, model::make_memory_record_batch_reader(std::move(batches)));
-    auto f2 = drain(output_ntp, 100, model::timeout_clock::now() + 5s);
+    auto f2 = drain(output_ntp, 100);
     auto read_batches
       = ss::when_all_succeed(std::move(f1), std::move(f2)).get();
 
@@ -115,7 +114,6 @@ FIXTURE_TEST(test_coproc_router_multi_route, router_test_fixture) {
     // for the materialized topics that are known to eventually exist
     std::vector<ss::future<opt_reader_data_t>> drains;
     drains.reserve(n_partitions * 2);
-    auto timeout = model::timeout_clock::now() + 10s;
     for (auto i = 0; i < n_partitions; ++i) {
         model::ntp even(
           model::kafka_namespace,
@@ -125,8 +123,8 @@ FIXTURE_TEST(test_coproc_router_multi_route, router_test_fixture) {
           model::kafka_namespace,
           model::to_materialized_topic(tt, model::topic("odd")),
           model::partition_id(i));
-        drains.emplace_back(drain(even, 4, timeout));
-        drains.emplace_back(drain(odd, 4, timeout));
+        drains.emplace_back(drain(even, 4));
+        drains.emplace_back(drain(odd, 4));
     }
 
     // Wait on all asynchronous actions to finish

@@ -50,11 +50,15 @@ public:
 
     /// \brief Write records to storage::api
     ss::future<model::offset>
-    push(const model::ntp&, model::record_batch_reader&&);
+    push(const model::ntp&, model::record_batch_reader);
 
     /// \brief Read records from storage::api up until 'limit' or 'time'
-    ss::future<opt_reader_data_t>
-    drain(const model::ntp&, std::size_t, model::timeout_clock::time_point);
+    /// starting at 'offset'
+    ss::future<opt_reader_data_t> drain(
+      const model::ntp&,
+      std::size_t,
+      model::offset = model::offset(0),
+      model::timeout_clock::time_point = model::timeout_clock::now() + 5s);
 
 protected:
     /// \brief Populate 'app.storage' with the user defined test layout
@@ -64,7 +68,10 @@ protected:
 
 private:
     ss::future<model::record_batch_reader::data_t> do_drain(
-      kafka::partition_wrapper, std::size_t, model::timeout_clock::time_point);
+      kafka::partition_wrapper,
+      model::offset,
+      std::size_t,
+      model::timeout_clock::time_point);
 
     /// \brief Discover for which shard an ntp exists on, like the shard table
     /// only works by querying v/storage instead

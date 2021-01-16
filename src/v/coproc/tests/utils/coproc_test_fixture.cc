@@ -54,11 +54,12 @@ ss::future<> coproc_test_fixture::startup(log_layout_map&& llm) {
 ss::future<coproc_test_fixture::opt_reader_data_t> coproc_test_fixture::drain(
   const model::ntp& ntp,
   std::size_t limit,
+  model::offset offset,
   model::timeout_clock::time_point timeout) {
     const auto m_ntp = model::materialized_ntp(std::move(ntp));
     return shard_for_ntp(m_ntp.source_ntp())
       .then(
-        [this, m_ntp, limit, timeout](auto shard_id) {
+        [this, m_ntp, offset, limit, timeout](auto shard_id) {
             if (!shard_id) {
                 vlog(
                   coproc::coproclog.error,
@@ -73,7 +74,7 @@ ss::future<coproc_test_fixture::opt_reader_data_t> coproc_test_fixture::drain(
               *shard_id,
               limit);
             return ss::smp::submit_to(
-              *shard_id, [this, m_ntp, limit, timeout]() {
+              *shard_id, [this, m_ntp, offset, limit, timeout]() {
                   return tests::cooperative_spin_wait_with_timeout(
                            5s,
                            [this, m_ntp] {
@@ -82,7 +83,7 @@ ss::future<coproc_test_fixture::opt_reader_data_t> coproc_test_fixture::drain(
                                return partition->is_leader()
                             && (!m_ntp.is_materialized() || pm.log(m_ntp.input_ntp()));
                            })
-                    .then([this, m_ntp, limit, timeout] {
+                    .then([this, m_ntp, limit, offset, timeout] {
                         auto& pm = app.partition_manager.local();
                         auto partition = pm.get(m_ntp.source_ntp());
                         std::optional<storage::log> log;
@@ -93,6 +94,7 @@ ss::future<coproc_test_fixture::opt_reader_data_t> coproc_test_fixture::drain(
                         }
                         return do_drain(
                                  kafka::partition_wrapper(partition, log),
+                                 offset,
                                  limit,
                                  timeout)
                           .then([](auto rval) {
@@ -117,14 +119,17 @@ storage::log_reader_config log_rdr_cfg(const model::offset& min_offset) {
 
 ss::future<model::record_batch_reader::data_t> coproc_test_fixture::do_drain(
   kafka::partition_wrapper pw,
+  model::offset offset,
   std::size_t limit,
   model::timeout_clock::time_point timeout) {
     struct state {
         std::size_t batches_read{0};
-        model::offset next_offset{0};
+        model::offset next_offset;
         model::record_batch_reader::data_t batches;
+        explicit state(model::offset o)
+          : next_offset(o) {}
     };
-    return ss::do_with(state(), [limit, timeout, pw](state& s) mutable {
+    return ss::do_with(state(offset), [limit, timeout, pw](state& s) mutable {
         return ss::do_until(
                  [&s, limit, timeout] {
                      const auto now = model::timeout_clock::now();
@@ -153,7 +158,7 @@ ss::future<model::record_batch_reader::data_t> coproc_test_fixture::do_drain(
 }
 
 ss::future<model::offset> coproc_test_fixture::push(
-  const model::ntp& ntp, model::record_batch_reader&& rbr) {
+  const model::ntp& ntp, model::record_batch_reader rbr) {
     return shard_for_ntp(ntp).then([this, ntp, rbr = std::move(rbr)](
                                      auto shard_id) mutable {
         if (!shard_id) {
