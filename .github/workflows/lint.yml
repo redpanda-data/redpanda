@@ -10,7 +10,7 @@
 name: Lint all codez
 on:
   push:
-    tags: 'release-*'
+    tags: 'v2**'
     branches:
       - dev
       - release
