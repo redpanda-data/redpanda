@@ -596,6 +596,21 @@ size_t disk_log_impl::bytes_left_before_roll() const {
     return max - fo;
 }
 
+ss::future<> disk_log_impl::force_roll(ss::io_priority_class iopc) {
+    auto t = term();
+    auto next_offset = offsets().dirty_offset + model::offset(1);
+    if (_segs.empty()) {
+        return new_segment(next_offset, t, iopc);
+    }
+    auto ptr = _segs.back();
+    if (!ptr->has_appender()) {
+        return new_segment(next_offset, t, iopc);
+    }
+    return ptr->release_appender().then([this, next_offset, t, iopc] {
+        return new_segment(next_offset, t, iopc);
+    });
+}
+
 ss::future<> disk_log_impl::maybe_roll(
   model::term_id t, model::offset next_offset, ss::io_priority_class iopc) {
     vassert(t >= term(), "Term:{} must be greater than base:{}", t, term());
