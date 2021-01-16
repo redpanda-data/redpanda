@@ -55,9 +55,6 @@ inline static storage::log_reader_config log_rdr_cfg(const size_t min_bytes) {
       std::nullopt);
 }
 
-/// \brief returns the number of records across all batches
-std::size_t sum_records(const model::record_batch_reader::data_t&);
-
 /// \brief short way to construct an enable_copros_request::data
 coproc::enable_copros_request::data make_enable_req(
   uint32_t id,

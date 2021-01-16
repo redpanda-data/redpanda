@@ -106,3 +106,61 @@ struct identity_coprocessor : public coprocessor {
     static const inline model::topic identity_topic = model::topic(
       "identity_topic");
 };
+
+struct two_way_split_copro : public coprocessor {
+    static const inline model::topic even{model::topic("even")};
+    static const inline model::topic odd{model::topic("odd")};
+
+    two_way_split_copro(coproc::script_id sid, input_set input)
+      : coprocessor(sid, std::move(input)) {}
+
+    ss::future<coprocessor::result> apply(
+      const model::topic&,
+      model::record_batch_reader::data_t&& batches) override {
+        using agg_t = std::pair<coprocessor::result, bool>;
+        coprocessor::result initial_val;
+        initial_val.emplace(even, model::record_batch_reader::data_t());
+        initial_val.emplace(odd, model::record_batch_reader::data_t());
+        bool next_even = _last_even;
+        _last_even = (batches.size() % 2 != 0) ? !_last_even : _last_even;
+        /// Loop over the input set, taking every other batch and moving it
+        /// into one of the two result sets, 'even' or 'odd'. The end result
+        /// is half of the input topic split evenly across the two output
+        /// topics.
+        return ss::do_with(
+          std::move(batches),
+          [next_even, initial = std::move(initial_val)](
+            model::record_batch_reader::data_t& batches) mutable {
+              /// TODO(rob) looks like a good argument for ssx::async_reduce
+              return ss::map_reduce(
+                       batches.begin(),
+                       batches.end(),
+                       [](model::record_batch& b) {
+                           return ss::make_ready_future<model::record_batch>(
+                             std::move(b));
+                       },
+                       std::make_pair(std::move(initial), next_even),
+                       [](agg_t acc, model::record_batch x) {
+                           auto& [map, do_even] = acc;
+                           if (do_even) {
+                               map[even].push_back(std::move(x));
+                           } else {
+                               map[odd].push_back(std::move(x));
+                           }
+                           return std::make_pair(std::move(map), !do_even);
+                       })
+                .then([](agg_t result) { return std::move(result.first); });
+          });
+    }
+
+    static absl::flat_hash_set<model::topic> output_topics() {
+        return {even, odd};
+    }
+
+private:
+    /// NOTE: This coprocessor is sharded, however invocations of apply() will
+    /// be called across partitions on 'this' shard. Meaning that the use of
+    /// state to represent work that is partition dependent will not work and
+    /// should be avoided.
+    bool _last_even{true};
+};

@@ -15,16 +15,6 @@
 
 #include <algorithm>
 
-std::size_t sum_records(const model::record_batch_reader::data_t& batches) {
-    return std::accumulate(
-      batches.cbegin(),
-      batches.cend(),
-      static_cast<std::size_t>(0),
-      [](std::size_t acc, const model::record_batch& rb) {
-          return acc + rb.record_count();
-      });
-}
-
 coproc::enable_copros_request::data make_enable_req(
   uint32_t id,
   std::vector<std::pair<ss::sstring, coproc::topic_ingestion_policy>> topics) {

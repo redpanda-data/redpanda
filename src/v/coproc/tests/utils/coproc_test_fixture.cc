@@ -102,13 +102,12 @@ ss::future<coproc_test_fixture::opt_reader_data_t> coproc_test_fixture::drain(
               });
         });
 }
-
 ss::future<model::record_batch_reader::data_t> coproc_test_fixture::do_drain(
   kafka::partition_wrapper pw,
   std::size_t limit,
   model::timeout_clock::time_point timeout) {
     struct state {
-        std::size_t n_records{0};
+        std::size_t batches_read{0};
         model::offset next_offset{0};
         model::record_batch_reader::data_t batches;
     };
@@ -116,7 +115,7 @@ ss::future<model::record_batch_reader::data_t> coproc_test_fixture::do_drain(
         return ss::do_until(
                  [&s, limit, timeout] {
                      const auto now = model::timeout_clock::now();
-                     return (s.n_records >= limit) || (now > timeout);
+                     return (s.batches_read >= limit) || (now > timeout);
                  },
                  [&s, pw]() mutable {
                      return pw.make_reader(log_rdr_cfg(s.next_offset))
@@ -128,10 +127,9 @@ ss::future<model::record_batch_reader::data_t> coproc_test_fixture::do_drain(
                            if (b.empty()) {
                                return ss::sleep(20ms);
                            }
+                           s.batches_read += b.size();
+                           s.next_offset = ++b.back().last_offset();
                            for (model::record_batch& rb : b) {
-                               s.n_records += rb.record_count();
-                               s.next_offset = rb.last_offset()
-                                               + model::offset(1);
                                s.batches.push_back(std::move(rb));
                            }
                            return ss::now();

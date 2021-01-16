@@ -10,7 +10,6 @@
 
 #include "coproc/tests/utils/coprocessor.h"
 #include "coproc/tests/utils/router_test_fixture.h"
-#include "coproc/tests/utils/two_way_split_copro.h"
 #include "coproc/tests/utils/utils.h"
 #include "coproc/types.h"
 #include "model/fundamental.h"
@@ -31,6 +30,8 @@ size_t number_of_logs(redpanda_thread_fixture* rtf) {
       .get0();
 }
 
+using namespace std::literals;
+
 FIXTURE_TEST(test_coproc_router_no_results, router_test_fixture) {
     // Note the original number of logs
     const size_t n_logs = number_of_logs(this);
@@ -46,12 +47,10 @@ FIXTURE_TEST(test_coproc_router_no_results, router_test_fixture) {
       model::kafka_namespace, model::topic("foo"), model::partition_id(0));
     auto batches = storage::test::make_random_batches(
       model::offset(0), 4, false);
-    const auto n_records = sum_records(batches);
     push(input_ntp, model::make_memory_record_batch_reader(std::move(batches)))
       .get();
 
     // Wait for any side-effects, ...expecting that none occur
-    using namespace std::literals;
     ss::sleep(1s).get();
     // Expecting 10, because "foo(2)" and "bar(8)" were loaded at startup
     BOOST_REQUIRE_EQUAL((number_of_logs(this) - n_logs), 10);
@@ -76,19 +75,18 @@ FIXTURE_TEST(test_coproc_router_simple, router_test_fixture) {
 
     auto batches = storage::test::make_random_batches(
       model::offset(0), 100, false);
-    const auto pre_batch_size = sum_records(batches) * 2;
 
-    using namespace std::literals;
     auto f1 = push(
       input_ntp, model::make_memory_record_batch_reader(std::move(batches)));
-    auto f2 = drain(
-      output_ntp, pre_batch_size, model::timeout_clock::now() + 5s);
+    auto f2 = drain(output_ntp, 100, model::timeout_clock::now() + 5s);
     auto read_batches
       = ss::when_all_succeed(std::move(f1), std::move(f2)).get();
 
+    /// The identity coprocessor should not have modified the number of record
+    /// batches from the source log onto the output log
     BOOST_REQUIRE(std::get<1>(read_batches).has_value());
     const model::record_batch_reader::data_t& data = *std::get<1>(read_batches);
-    BOOST_CHECK_EQUAL(sum_records(data), pre_batch_size);
+    BOOST_CHECK_EQUAL(data.size(), 100);
 }
 
 FIXTURE_TEST(test_coproc_router_multi_route, router_test_fixture) {
@@ -104,13 +102,10 @@ FIXTURE_TEST(test_coproc_router_multi_route, router_test_fixture) {
     // their respective logs
     std::vector<ss::future<model::offset>> pushes;
     pushes.reserve(4);
-    std::vector<two_way_split_stats> twss;
-    twss.reserve(4);
     for (auto i = 0; i < n_partitions; ++i) {
         model::ntp new_ntp(model::kafka_namespace, tt, model::partition_id(i));
         model::record_batch_reader::data_t data
           = storage::test::make_random_batches(model::offset(0), 4, false);
-        twss.emplace_back(two_way_split_stats(data));
         pushes.emplace_back(push(
           std::move(new_ntp),
           model::make_memory_record_batch_reader(std::move(data))));
@@ -118,9 +113,8 @@ FIXTURE_TEST(test_coproc_router_multi_route, router_test_fixture) {
 
     // Knowing what the apply::two_way_split method will do, setup listeners
     // for the materialized topics that are known to eventually exist
-    std::vector<ss::future<two_way_split_stats>> drains;
+    std::vector<ss::future<opt_reader_data_t>> drains;
     drains.reserve(n_partitions * 2);
-    using namespace std::literals;
     auto timeout = model::timeout_clock::now() + 10s;
     for (auto i = 0; i < n_partitions; ++i) {
         model::ntp even(
@@ -131,20 +125,21 @@ FIXTURE_TEST(test_coproc_router_multi_route, router_test_fixture) {
           model::kafka_namespace,
           model::to_materialized_topic(tt, model::topic("odd")),
           model::partition_id(i));
-        drains.emplace_back(
-          drain(even, twss[i].n_even, timeout).then(&map_stats));
-        drains.emplace_back(
-          drain(odd, twss[i].n_odd, timeout).then(&map_stats));
+        drains.emplace_back(drain(even, 4, timeout));
+        drains.emplace_back(drain(odd, 4, timeout));
     }
 
     // Wait on all asynchronous actions to finish
-    ss::when_all_succeed(pushes.begin(), pushes.end()).get();
-    std::vector<two_way_split_stats> all_drained
-      = ss::when_all_succeed(drains.begin(), drains.end()).get0();
-
-    // Calculate recieved records across all ntps and compare to known
-    const auto known_totals = aggregate_totals(twss.cbegin(), twss.cend());
-    const auto observed_totals = aggregate_totals(
-      all_drained.cbegin(), all_drained.cend());
-    BOOST_CHECK_EQUAL(known_totals, observed_totals);
+    uint32_t n_batches = ss::when_all_succeed(drains.begin(), drains.end())
+                           .then([](std::vector<opt_reader_data_t> results) {
+                               return std::accumulate(
+                                 results.begin(),
+                                 results.end(),
+                                 0,
+                                 [](uint32_t acc, const opt_reader_data_t& x) {
+                                     return acc + (0 ? !x : x->size());
+                                 });
+                           })
+                           .get0();
+    BOOST_CHECK_EQUAL(n_batches, 4 * n_partitions);
 }
