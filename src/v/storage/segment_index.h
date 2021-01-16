@@ -81,6 +81,7 @@ public:
     void reset();
     void swap_index_state(index_state&&);
     bool needs_persistence() const { return _needs_persistence; }
+    index_state release_index_state() && { return std::move(_state); }
 
 private:
     ss::sstring _name;
