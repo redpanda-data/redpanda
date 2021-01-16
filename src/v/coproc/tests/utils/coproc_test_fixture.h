@@ -62,7 +62,7 @@ public:
 
 protected:
     /// \brief Populate 'app.storage' with the user defined test layout
-    virtual ss::future<> startup(log_layout_map&& data);
+    virtual ss::future<> startup(log_layout_map data);
 
     const log_layout_map& get_layout() const { return _llm; }
 

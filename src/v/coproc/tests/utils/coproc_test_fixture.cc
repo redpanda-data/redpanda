@@ -39,7 +39,7 @@ coproc_test_fixture::script_manager_client coproc_test_fixture::make_client() {
         .credentials = nullptr});
 }
 
-ss::future<> coproc_test_fixture::startup(log_layout_map&& llm) {
+ss::future<> coproc_test_fixture::startup(log_layout_map llm) {
     _llm = llm;
     return ss::do_with(std::move(llm), [this](log_layout_map& llm) {
         return wait_for_controller_leadership()
@@ -76,7 +76,7 @@ ss::future<coproc_test_fixture::opt_reader_data_t> coproc_test_fixture::drain(
             return ss::smp::submit_to(
               *shard_id, [this, m_ntp, offset, limit, timeout]() {
                   return tests::cooperative_spin_wait_with_timeout(
-                           5s,
+                           10s,
                            [this, m_ntp] {
                                auto& pm = app.partition_manager.local();
                                auto partition = pm.get(m_ntp.source_ntp());
