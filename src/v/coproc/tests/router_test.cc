@@ -21,20 +21,18 @@
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test_log.hpp>
 
-size_t number_of_logs(redpanda_thread_fixture* rtf) {
-    return rtf->app.storage
-      .map_reduce0(
-        [](storage::api& api) { return api.log_mgr().size(); },
-        size_t(0),
-        std::plus<>())
-      .get0();
+ss::future<std::size_t> number_of_logs(redpanda_thread_fixture* rtf) {
+    return rtf->app.storage.map_reduce0(
+      [](storage::api& api) { return api.log_mgr().size(); },
+      std::size_t(0),
+      std::plus<>());
 }
 
 using namespace std::literals;
 
 FIXTURE_TEST(test_coproc_router_no_results, router_test_fixture) {
     // Note the original number of logs
-    const size_t n_logs = number_of_logs(this);
+    const std::size_t n_logs = number_of_logs(this).get0();
     // Router has 2 coprocessors, one subscribed to 'foo' the other 'bar'
     add_copro<null_coprocessor>(2222, {{"bar", l}}).get();
     add_copro<null_coprocessor>(7777, {{"foo", l}}).get();
@@ -45,18 +43,23 @@ FIXTURE_TEST(test_coproc_router_no_results, router_test_fixture) {
     // materialized logs have been created
     model::ntp input_ntp(
       model::kafka_namespace, model::topic("foo"), model::partition_id(0));
-    auto batches = storage::test::make_random_batches(
-      model::offset(0), 4, false);
-    push(input_ntp, model::make_memory_record_batch_reader(std::move(batches)))
+    push(
+      input_ntp,
+      storage::test::make_random_memory_record_batch_reader(
+        model::offset(0), 40, 1))
       .get();
 
     // Wait for any side-effects, ...expecting that none occur
     ss::sleep(1s).get();
     // Expecting 10, because "foo(2)" and "bar(8)" were loaded at startup
-    BOOST_REQUIRE_EQUAL((number_of_logs(this) - n_logs), 10);
+    const std::size_t final_n_logs = number_of_logs(this).get0() - n_logs;
+    BOOST_REQUIRE_EQUAL(final_n_logs, 10);
 }
 
-FIXTURE_TEST(test_coproc_router_simple, router_test_fixture) {
+/// Tests a simple case of two coprocessors registered to the same output topic
+/// producing onto the same materialized topic. Should not crash and have a
+/// doubling effect on output size
+FIXTURE_TEST(test_coproc_router_double, router_test_fixture) {
     // Supervisor has 3 registered transforms, of the same type
     add_copro<identity_coprocessor>(8888, {{"foo", l}}).get();
     add_copro<identity_coprocessor>(9159, {{"foo", l}}).get();
@@ -73,10 +76,10 @@ FIXTURE_TEST(test_coproc_router_simple, router_test_fixture) {
         src_topic, identity_coprocessor::identity_topic),
       model::partition_id(0));
 
-    auto batches = storage::test::make_random_batches(
-      model::offset(0), 100, false);
     auto f1 = push(
-      input_ntp, model::make_memory_record_batch_reader(std::move(batches)));
+      input_ntp,
+      storage::test::make_random_memory_record_batch_reader(
+        model::offset(0), 50, 1));
     auto f2 = drain(output_ntp, 100);
     auto read_batches
       = ss::when_all_succeed(std::move(f1), std::move(f2)).get();
@@ -89,55 +92,43 @@ FIXTURE_TEST(test_coproc_router_simple, router_test_fixture) {
 }
 
 FIXTURE_TEST(test_coproc_router_multi_route, router_test_fixture) {
-    // Create and initialize the environment
-    // Starts with 4 parititons of logs managing topic "sole_input"
-    const model::topic tt("sole_input");
-    const std::size_t n_partitions = 4;
-    // and one coprocessor that transforms this topic
-    add_copro<two_way_split_copro>(9111, {{"sole_input", l}}).get();
-    startup({{make_ts(tt), n_partitions}}).get();
+    /// Topics that coprocessors will consume from
+    const model::topic input_one("one");
+    const model::topic input_two("two");
+    /// Expected topics coprocessors will produce onto
+    const model::topic even_mt_one = model::to_materialized_topic(
+      input_one, two_way_split_copro::even);
+    const model::topic odd_mt_one = model::to_materialized_topic(
+      input_one, two_way_split_copro::odd);
+    const model::topic even_mt_two = model::to_materialized_topic(
+      input_two, two_way_split_copro::even);
+    const model::topic odd_mt_two = model::to_materialized_topic(
+      input_two, two_way_split_copro::odd);
 
-    // Iterating over all ntps, create random data and push them onto
-    // their respective logs
-    std::vector<ss::future<model::offset>> pushes;
-    pushes.reserve(4);
-    for (auto i = 0; i < n_partitions; ++i) {
-        model::ntp new_ntp(model::kafka_namespace, tt, model::partition_id(i));
-        model::record_batch_reader::data_t data
-          = storage::test::make_random_batches(model::offset(0), 4, false);
-        pushes.emplace_back(push(
-          std::move(new_ntp),
-          model::make_memory_record_batch_reader(std::move(data))));
+    /// Deploy coprocessors and prime v::storage with logs
+    add_copro<two_way_split_copro>(9111, {{"one", l}}).get();
+    add_copro<two_way_split_copro>(4517, {{"two", l}}).get();
+    log_layout_map inputs = {{make_ts(input_one), 1}, {make_ts(input_two), 1}};
+    log_layout_map outputs = {
+      {make_ts(even_mt_one), 1},
+      {make_ts(odd_mt_one), 1},
+      {make_ts(even_mt_two), 1},
+      {make_ts(odd_mt_two), 1}};
+    startup(inputs).get();
+
+    /// Run the test
+    router_test_plan test_plan{
+      .input = build_simple_opts(inputs, 100),
+      .output = build_simple_opts(outputs, 50)};
+    auto result_tuple = start_benchmark(std::move(test_plan)).get0();
+    const auto& [push_results, drain_results] = result_tuple;
+
+    /// Expect all 4 partitions to exist and verify the exact number of record
+    /// batches accross all
+    BOOST_REQUIRE_EQUAL(push_results.size(), 2);
+    BOOST_REQUIRE_EQUAL(drain_results.size(), 4);
+    for (const auto& [_, pair] : drain_results) {
+        const auto& [__, n_batches] = pair;
+        BOOST_REQUIRE_EQUAL(n_batches, 50);
     }
-
-    // Knowing what the apply::two_way_split method will do, setup listeners
-    // for the materialized topics that are known to eventually exist
-    std::vector<ss::future<opt_reader_data_t>> drains;
-    drains.reserve(n_partitions * 2);
-    for (auto i = 0; i < n_partitions; ++i) {
-        model::ntp even(
-          model::kafka_namespace,
-          model::to_materialized_topic(tt, model::topic("even")),
-          model::partition_id(i));
-        model::ntp odd(
-          model::kafka_namespace,
-          model::to_materialized_topic(tt, model::topic("odd")),
-          model::partition_id(i));
-        drains.emplace_back(drain(even, 4));
-        drains.emplace_back(drain(odd, 4));
-    }
-
-    // Wait on all asynchronous actions to finish
-    uint32_t n_batches = ss::when_all_succeed(drains.begin(), drains.end())
-                           .then([](std::vector<opt_reader_data_t> results) {
-                               return std::accumulate(
-                                 results.begin(),
-                                 results.end(),
-                                 0,
-                                 [](uint32_t acc, const opt_reader_data_t& x) {
-                                     return acc + (0 ? !x : x->size());
-                                 });
-                           })
-                           .get0();
-    BOOST_CHECK_EQUAL(n_batches, 4 * n_partitions);
 }
