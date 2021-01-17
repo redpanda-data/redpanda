@@ -72,7 +72,7 @@ configuration::configuration()
       "coproc_max_inflight_bytes",
       "Maximum amountt of inflight bytes when sending data to wasm engine",
       required::no,
-      128_KiB)
+      10_MiB)
   , coproc_max_ingest_bytes(
       *this,
       "coproc_max_ingest_bytes",
