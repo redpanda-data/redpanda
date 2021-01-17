@@ -11,8 +11,8 @@
 #include "cluster/partition.h"
 #include "coproc/script_manager.h"
 #include "coproc/tests/utils/coprocessor.h"
+#include "coproc/tests/utils/helpers.h"
 #include "coproc/tests/utils/supervisor_test_fixture.h"
-#include "coproc/tests/utils/utils.h"
 #include "coproc/types.h"
 #include "kafka/client.h"
 #include "kafka/requests/batch_consumer.h"
@@ -79,8 +79,17 @@ public:
                   return ss::make_ready_future<std::optional<iobuf>>(
                     std::nullopt);
               }
-              return olog->make_reader(log_rdr_cfg(min_bytes))
-                .then([](model::record_batch_reader rbr) {
+              storage::log_reader_config cfg(
+                model::offset(0),
+                model::model_limits<model::offset>::max(),
+                min_bytes,
+                std::numeric_limits<size_t>::max(),
+                ss::default_priority_class(),
+                raft::data_batch_type,
+                std::nullopt,
+                std::nullopt);
+              return olog->make_reader(cfg).then(
+                [](model::record_batch_reader rbr) {
                     return std::move(rbr)
                       .consume(
                         kafka::kafka_batch_serializer{}, model::no_timeout)

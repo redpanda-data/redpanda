@@ -4,12 +4,12 @@ v_cc_library(
   HDRS
     "utils/supervisor.h"
     "utils/supervisor_test_fixture.h"
-    "utils/utils.h"
+    "utils/helpers.h"
     "utils/coprocessor.h"
     "utils/coproc_test_fixture.h"
     "utils/router_test_fixture.h"
   SRCS
-    utils/utils.cc
+    utils/helpers.cc
     utils/supervisor.cc
     utils/coproc_test_fixture.cc
     utils/router_test_fixture.cc

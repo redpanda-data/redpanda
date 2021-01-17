@@ -12,7 +12,7 @@
 #include "coproc_test_fixture.h"
 
 #include "coproc/logger.h"
-#include "coproc/tests/utils/utils.h"
+#include "coproc/tests/utils/helpers.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "model/timestamp.h"
@@ -102,6 +102,19 @@ ss::future<coproc_test_fixture::opt_reader_data_t> coproc_test_fixture::drain(
               });
         });
 }
+
+storage::log_reader_config log_rdr_cfg(const model::offset& min_offset) {
+    return storage::log_reader_config(
+      min_offset,
+      model::model_limits<model::offset>::max(),
+      0,
+      std::numeric_limits<size_t>::max(),
+      ss::default_priority_class(),
+      raft::data_batch_type,
+      std::nullopt,
+      std::nullopt);
+}
+
 ss::future<model::record_batch_reader::data_t> coproc_test_fixture::do_drain(
   kafka::partition_wrapper pw,
   std::size_t limit,

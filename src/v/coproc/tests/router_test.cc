@@ -9,8 +9,8 @@
  */
 
 #include "coproc/tests/utils/coprocessor.h"
+#include "coproc/tests/utils/helpers.h"
 #include "coproc/tests/utils/router_test_fixture.h"
-#include "coproc/tests/utils/utils.h"
 #include "coproc/types.h"
 #include "model/fundamental.h"
 #include "model/timeout_clock.h"

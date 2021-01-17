@@ -9,9 +9,7 @@
  * by the Apache License, Version 2.0
  */
 
-#include "coproc/tests/utils/utils.h"
-
-#include "model/record_batch_reader.h"
+#include "coproc/tests/utils/helpers.h"
 
 #include <algorithm>
 
@@ -52,16 +50,4 @@ deregister_coprocessors(
     coproc::disable_copros_request req{.ids = std::move(script_ids)};
     return client.disable_copros(
       std::move(req), rpc::client_opts(rpc::no_timeout));
-}
-
-ss::future<model::record_batch_reader::data_t>
-copy_batch(const model::record_batch_reader::data_t& data) {
-    return ss::map_reduce(
-      data.cbegin(),
-      data.cend(),
-      [](const model::record_batch& rb) {
-          return ss::make_ready_future<model::record_batch>(rb.copy());
-      },
-      model::record_batch_reader::data_t(),
-      reduce::push_back());
 }
