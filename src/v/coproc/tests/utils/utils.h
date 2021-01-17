@@ -13,6 +13,7 @@
 #include "coproc/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "model/namespace.h"
 #include "model/record_batch_types.h"
 #include "raft/types.h"
 #include "storage/log.h"
@@ -25,14 +26,12 @@
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/flat_hash_set.h>
 
-static const inline model::ns default_ns("kafka");
-
 inline static model::topic_namespace make_ts(ss::sstring&& topic) {
-    return model::topic_namespace(default_ns, model::topic(topic));
+    return model::topic_namespace(model::kafka_namespace, model::topic(topic));
 }
 
 inline static model::topic_namespace make_ts(const model::topic& topic) {
-    return model::topic_namespace(default_ns, topic);
+    return model::topic_namespace(model::kafka_namespace, topic);
 }
 
 inline static storage::log_append_config log_app_cfg() {

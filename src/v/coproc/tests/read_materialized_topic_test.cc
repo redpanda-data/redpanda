@@ -123,7 +123,7 @@ FIXTURE_TEST(
 
     /// Wait until the materialized topic has entered existance
     const auto mntpv = model::materialized_ntp(
-      model::ntp(default_ns, materialized_topic, pid));
+      model::ntp(model::kafka_namespace, materialized_topic, pid));
     auto origin_shard = app.shard_table.local().shard_for(mntpv.source_ntp());
     tests::cooperative_spin_wait_with_timeout(10s, [this, origin_shard, mntpv] {
         return app.partition_manager.invoke_on(

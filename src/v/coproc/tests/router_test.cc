@@ -45,7 +45,7 @@ FIXTURE_TEST(test_coproc_router_no_results, router_test_fixture) {
     // Test -> Start pushing to registered topics and check that NO
     // materialized logs have been created
     model::ntp input_ntp(
-      default_ns, model::topic("foo"), model::partition_id(0));
+      model::kafka_namespace, model::topic("foo"), model::partition_id(0));
     auto batches = storage::test::make_random_batches(
       model::offset(0), 4, false);
     const auto n_records = sum_records(batches);
@@ -72,9 +72,10 @@ FIXTURE_TEST(test_coproc_router_simple, router_test_fixture) {
       .get();
 
     model::topic src_topic("foo");
-    model::ntp input_ntp(default_ns, src_topic, model::partition_id(0));
+    model::ntp input_ntp(
+      model::kafka_namespace, src_topic, model::partition_id(0));
     model::ntp output_ntp(
-      default_ns,
+      model::kafka_namespace,
       model::to_materialized_topic(
         src_topic, identity_coprocessor::identity_topic),
       model::partition_id(0));
@@ -116,7 +117,7 @@ FIXTURE_TEST(test_coproc_router_multi_route, router_test_fixture) {
     std::vector<two_way_split_stats> twss;
     twss.reserve(4);
     for (auto i = 0; i < n_partitions; ++i) {
-        model::ntp new_ntp(default_ns, tt, model::partition_id(i));
+        model::ntp new_ntp(model::kafka_namespace, tt, model::partition_id(i));
         model::record_batch_reader::data_t data
           = storage::test::make_random_batches(model::offset(0), 4, false);
         twss.emplace_back(two_way_split_stats(data));
@@ -133,11 +134,11 @@ FIXTURE_TEST(test_coproc_router_multi_route, router_test_fixture) {
     auto timeout = model::timeout_clock::now() + 10s;
     for (auto i = 0; i < n_partitions; ++i) {
         model::ntp even(
-          default_ns,
+          model::kafka_namespace,
           model::to_materialized_topic(tt, model::topic("even")),
           model::partition_id(i));
         model::ntp odd(
-          default_ns,
+          model::kafka_namespace,
           model::to_materialized_topic(tt, model::topic("odd")),
           model::partition_id(i));
         drains.emplace_back(
