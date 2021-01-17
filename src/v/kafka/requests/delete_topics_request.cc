@@ -9,12 +9,12 @@
 
 #include "kafka/requests/delete_topics_request.h"
 
-#include "cluster/namespace.h"
 #include "cluster/topics_frontend.h"
 #include "kafka/errors.h"
 #include "kafka/requests/request_context.h"
 #include "kafka/requests/response.h"
 #include "model/metadata.h"
+#include "model/namespace.h"
 #include "model/timeout_clock.h"
 
 #include <seastar/core/do_with.hh>
@@ -51,8 +51,7 @@ create_topic_namespaces(std::vector<model::topic> topic_names) {
       std::end(topic_names),
       std::back_inserter(ret),
       [](model::topic& tp) {
-          return model::topic_namespace(
-            cluster::kafka_namespace, std::move(tp));
+          return model::topic_namespace(model::kafka_namespace, std::move(tp));
       });
     return ret;
 }

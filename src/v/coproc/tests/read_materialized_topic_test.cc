@@ -1,4 +1,3 @@
-#include "cluster/namespace.h"
 #include "cluster/partition.h"
 #include "coproc/script_manager.h"
 #include "coproc/tests/coprocessor.h"
@@ -9,6 +8,7 @@
 #include "kafka/requests/batch_consumer.h"
 #include "kafka/requests/fetch_request.h"
 #include "model/metadata.h"
+#include "model/namespace.h"
 #include "model/timeout_clock.h"
 #include "redpanda/tests/fixture.h"
 #include "rpc/types.h"

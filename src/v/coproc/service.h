@@ -9,7 +9,6 @@
  */
 
 #pragma once
-#include "cluster/namespace.h"
 #include "coproc/pacemaker.h"
 #include "coproc/script_manager.h"
 #include "coproc/types.h"

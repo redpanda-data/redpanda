@@ -10,11 +10,11 @@
 #include "kafka/requests/describe_configs_request.h"
 
 #include "cluster/metadata_cache.h"
-#include "cluster/namespace.h"
 #include "kafka/errors.h"
 #include "kafka/requests/request_context.h"
 #include "kafka/requests/response.h"
 #include "model/metadata.h"
+#include "model/namespace.h"
 #include "model/validation.h"
 
 #include <seastar/core/do_with.hh>
@@ -61,7 +61,7 @@ ss::future<response_ptr> describe_configs_api::process(
         switch (resource.resource_type) {
         case config_resource_type::topic: {
             model::topic_namespace topic(
-              cluster::kafka_namespace, model::topic(resource.resource_name));
+              model::kafka_namespace, model::topic(resource.resource_name));
 
             auto err = model::validate_kafka_topic_name(topic.tp);
             if (err) {

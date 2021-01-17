@@ -14,11 +14,11 @@
 #include "cluster/controller_stm.h"
 #include "cluster/errc.h"
 #include "cluster/logger.h"
-#include "cluster/namespace.h"
 #include "cluster/partition_allocator.h"
 #include "cluster/types.h"
 #include "model/errc.h"
 #include "model/metadata.h"
+#include "model/namespace.h"
 #include "model/validation.h"
 #include "raft/errc.h"
 #include "raft/types.h"
@@ -259,7 +259,7 @@ ss::future<std::vector<topic_result>> topics_frontend::autocreate_topics(
   model::timeout_clock::duration timeout) {
     vlog(clusterlog.trace, "Auto create topics {}", topics);
 
-    auto leader = _leaders.local().get_leader(controller_ntp);
+    auto leader = _leaders.local().get_leader(model::controller_ntp);
 
     // no leader available
     if (!leader) {
@@ -303,7 +303,7 @@ topics_frontend::dispatch_create_to_leader(
 }
 
 bool topics_frontend::validate_topic_name(const model::topic_namespace& topic) {
-    if (topic.ns == cluster::kafka_namespace) {
+    if (topic.ns == model::kafka_namespace) {
         const auto errc = model::validate_kafka_topic_name(topic.tp);
         if (static_cast<model::errc>(errc.value()) != model::errc::success) {
             vlog(clusterlog.info, "{} {}", errc.message(), topic.tp());

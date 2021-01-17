@@ -751,11 +751,28 @@ FIXTURE_TEST(test_compation_preserve_state, storage_test_fixture) {
 }
 
 void append_single_record_batch(
-  storage::log log, int cnt, model::term_id term) {
+  storage::log log,
+  int cnt,
+  model::term_id term,
+  size_t val_size = 0,
+  bool rand_key = false) {
     for (int i = 0; i < cnt; ++i) {
-        iobuf key = bytes_to_iobuf(bytes("key"));
-        ss::sstring v = fmt::format("v-{}", i);
-        iobuf value = bytes_to_iobuf(bytes(v.c_str()));
+        ss::sstring key_str;
+        if (rand_key) {
+            key_str = fmt::format(
+              "key_{}", random_generators::get_int<uint64_t>());
+        } else {
+            key_str = "key";
+        }
+        iobuf key = bytes_to_iobuf(bytes(key_str.c_str()));
+        bytes val_bytes;
+        if (val_size > 0) {
+            val_bytes = random_generators::get_bytes(val_size);
+        } else {
+            ss::sstring v = fmt::format("v-{}", i);
+            val_bytes = bytes(v.c_str());
+        }
+        iobuf value = bytes_to_iobuf(val_bytes);
         storage::record_batch_builder builder(
           model::record_batch_type(1), model::offset(0));
         builder.add_raw_kv(std::move(key), std::move(value));
@@ -982,7 +999,7 @@ FIXTURE_TEST(partition_size_while_cleanup, storage_test_fixture) {
     auto cfg = default_log_config(test_dir);
     // make sure segments are small
     cfg.max_segment_size = 10_KiB;
-    cfg.max_compacted_segment_size = 10_KiB;
+    cfg.compacted_segment_size = 10_KiB;
     cfg.stype = storage::log_config::storage_type::disk;
     // we want force reading most recent compacted batches, disable the cache
     cfg.cache = storage::with_cache::no;
@@ -1065,4 +1082,196 @@ FIXTURE_TEST(check_segment_size_jitter, storage_test_fixture) {
         sizes.end(),
         [size = sizes[0]](auto other) { return size == other; }),
       false);
+}
+
+FIXTURE_TEST(adjacent_segment_compaction, storage_test_fixture) {
+    auto cfg = default_log_config(test_dir);
+    cfg.stype = storage::log_config::storage_type::disk;
+    cfg.cache = storage::with_cache::yes;
+    storage::ntp_config::default_overrides overrides;
+    overrides.cleanup_policy_bitflags
+      = model::cleanup_policy_bitflags::compaction;
+
+    ss::abort_source as;
+    storage::log_manager mgr = make_log_manager(cfg);
+
+    info("config: {}", mgr.config());
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    auto ntp = model::ntp("default", "test", 0);
+    auto log = mgr
+                 .manage(storage::ntp_config(
+                   ntp,
+                   mgr.config().base_dir,
+                   std::make_unique<storage::ntp_config::default_overrides>(
+                     overrides)))
+                 .get0();
+
+    // build some segments
+    auto disk_log = get_disk_log(log);
+    append_single_record_batch(log, 20, model::term_id(1));
+    disk_log->force_roll(ss::default_priority_class()).get();
+    append_single_record_batch(log, 30, model::term_id(1));
+    disk_log->force_roll(ss::default_priority_class()).get();
+    append_single_record_batch(log, 40, model::term_id(1));
+    disk_log->force_roll(ss::default_priority_class()).get();
+    append_single_record_batch(log, 50, model::term_id(1));
+    log.flush().get0();
+
+    BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 4);
+
+    storage::compaction_config c_cfg(
+      model::timestamp::min(), std::nullopt, ss::default_priority_class(), as);
+
+    log.compact(c_cfg).get0();
+    log.compact(c_cfg).get0();
+    log.compact(c_cfg).get0();
+    BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 4);
+
+    log.compact(c_cfg).get0();
+    BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 3);
+
+    log.compact(c_cfg).get0();
+    BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 2);
+
+    // no change since we can't combine with appender segment
+    log.compact(c_cfg).get0();
+    BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 2);
+}
+
+FIXTURE_TEST(adjacent_segment_compaction_terms, storage_test_fixture) {
+    auto cfg = default_log_config(test_dir);
+    cfg.stype = storage::log_config::storage_type::disk;
+    cfg.cache = storage::with_cache::yes;
+    storage::ntp_config::default_overrides overrides;
+    overrides.cleanup_policy_bitflags
+      = model::cleanup_policy_bitflags::compaction;
+
+    ss::abort_source as;
+    storage::log_manager mgr = make_log_manager(cfg);
+
+    info("config: {}", mgr.config());
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    auto ntp = model::ntp("default", "test", 0);
+    auto log = mgr
+                 .manage(storage::ntp_config(
+                   ntp,
+                   mgr.config().base_dir,
+                   std::make_unique<storage::ntp_config::default_overrides>(
+                     overrides)))
+                 .get0();
+
+    // build some segments
+    auto disk_log = get_disk_log(log);
+    append_single_record_batch(log, 20, model::term_id(1));
+    append_single_record_batch(log, 30, model::term_id(2));
+    disk_log->force_roll(ss::default_priority_class()).get();
+    append_single_record_batch(log, 30, model::term_id(2));
+    append_single_record_batch(log, 40, model::term_id(3));
+    append_single_record_batch(log, 50, model::term_id(4));
+    append_single_record_batch(log, 50, model::term_id(5));
+    log.flush().get0();
+
+    BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 6);
+
+    storage::compaction_config c_cfg(
+      model::timestamp::min(), std::nullopt, ss::default_priority_class(), as);
+
+    log.compact(c_cfg).get0();
+    log.compact(c_cfg).get0();
+    log.compact(c_cfg).get0();
+    log.compact(c_cfg).get0();
+    log.compact(c_cfg).get0();
+    BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 6);
+
+    // the two segments with term 2 can be combined
+    log.compact(c_cfg).get0();
+    BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 5);
+
+    // no more pairs with the same term
+    log.compact(c_cfg).get0();
+    log.compact(c_cfg).get0();
+    log.compact(c_cfg).get0();
+    log.compact(c_cfg).get0();
+    log.compact(c_cfg).get0();
+    BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 5);
+
+    for (int i = 0; i < 5; i++) {
+        BOOST_REQUIRE_EQUAL(disk_log->segments()[i]->offsets().term(), i + 1);
+    }
+}
+
+FIXTURE_TEST(max_adjacent_segment_compaction, storage_test_fixture) {
+    auto cfg = default_log_config(test_dir);
+    cfg.max_compacted_segment_size = 6_MiB;
+    cfg.stype = storage::log_config::storage_type::disk;
+    cfg.cache = storage::with_cache::yes;
+    storage::ntp_config::default_overrides overrides;
+    overrides.cleanup_policy_bitflags
+      = model::cleanup_policy_bitflags::compaction;
+
+    ss::abort_source as;
+    storage::log_manager mgr = make_log_manager(cfg);
+
+    info("config: {}", mgr.config());
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    auto ntp = model::ntp("default", "test", 0);
+    auto log = mgr
+                 .manage(storage::ntp_config(
+                   ntp,
+                   mgr.config().base_dir,
+                   std::make_unique<storage::ntp_config::default_overrides>(
+                     overrides)))
+                 .get0();
+
+    auto disk_log = get_disk_log(log);
+
+    // add a segment with random keys until a certain size
+    auto add_segment = [&log, disk_log](size_t size, model::term_id term) {
+        do {
+            append_single_record_batch(log, 1, term, 16_KiB, true);
+        } while (disk_log->segments().back()->size_bytes() < size);
+    };
+
+    add_segment(2_MiB, model::term_id(1));
+    disk_log->force_roll(ss::default_priority_class()).get();
+    add_segment(2_MiB, model::term_id(1));
+    disk_log->force_roll(ss::default_priority_class()).get();
+    add_segment(5_MiB, model::term_id(1));
+    disk_log->force_roll(ss::default_priority_class()).get();
+    add_segment(16_KiB, model::term_id(1));
+    disk_log->force_roll(ss::default_priority_class()).get();
+    add_segment(16_KiB, model::term_id(1));
+    disk_log->force_roll(ss::default_priority_class()).get();
+    add_segment(16_KiB, model::term_id(1));
+    log.flush().get0();
+
+    BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 6);
+
+    storage::compaction_config c_cfg(
+      model::timestamp::min(), std::nullopt, ss::default_priority_class(), as);
+
+    // self compaction steps
+    log.compact(c_cfg).get0();
+    log.compact(c_cfg).get0();
+    log.compact(c_cfg).get0();
+    log.compact(c_cfg).get0();
+    log.compact(c_cfg).get0();
+    BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 6);
+
+    // the first two segments are combined 2+2=4 < 6 MB
+    log.compact(c_cfg).get0();
+    BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 5);
+
+    // the new first and second are too big 4+5 > 6 MB but the second and third
+    // can be combined 5 + 15KB < 6 MB
+    log.compact(c_cfg).get0();
+    BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 4);
+
+    // then the next 16 KB can be folded in
+    log.compact(c_cfg).get0();
+    BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 3);
+
+    // that's all that can be done. the next seg is an appender
+    log.compact(c_cfg).get0();
+    BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 3);
 }

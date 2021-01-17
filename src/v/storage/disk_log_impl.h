@@ -67,6 +67,10 @@ public:
     ss::future<> maybe_roll(
       model::term_id, model::offset next_offset, ss::io_priority_class);
 
+    // roll immediately with the current term. users should prefer the
+    // maybe_call interface which enforces sizing policies.
+    ss::future<> force_roll(ss::io_priority_class);
+
     probe& get_probe() { return _probe; }
     model::term_id term() const;
     segment_set& segments() { return _segs; }
@@ -84,6 +88,11 @@ private:
     model::offset read_start_offset() const;
 
     ss::future<> do_compact(compaction_config);
+    ss::future<> compact_adjacent_segments(
+      std::pair<segment_set::iterator, segment_set::iterator>,
+      storage::compaction_config cfg);
+    std::optional<std::pair<segment_set::iterator, segment_set::iterator>>
+    find_compaction_range();
     ss::future<> gc(compaction_config);
 
     ss::future<> remove_empty_segments();

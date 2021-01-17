@@ -112,6 +112,12 @@ redpanda:
   # The compacted log segment size in bytes.
   # Default: 256MiB
   compacted_log_segment_size: 268435500
+
+  # The maximum compacted log segment size in bytes. The compaction process will
+  # attempt to combine segments to achieve a higher compaction rate. This maximum
+  # size will control how large a segment may become during this process.
+  # Default: 5 GiB
+  max_compacted_log_segment_size: 5368709120
     
   # The IP address and port for the internal RPC server.
   # Default: 127.0.0.0:33145

@@ -12,10 +12,10 @@
 #pragma once
 
 #include "cluster/errc.h"
-#include "cluster/namespace.h"
 #include "model/adl_serde.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "model/namespace.h"
 #include "model/timeout_clock.h"
 #include "raft/types.h"
 #include "reflection/adl.h"
@@ -85,7 +85,9 @@ struct topic_configuration {
     storage::ntp_config make_ntp_config(
       const ss::sstring&, model::partition_id, model::revision_id) const;
 
-    bool is_internal() const { return tp_ns.ns == kafka_internal_namespace; }
+    bool is_internal() const {
+        return tp_ns.ns == model::kafka_internal_namespace;
+    }
 
     model::topic_namespace tp_ns;
     // using signed integer because Kafka protocol defines it as signed int

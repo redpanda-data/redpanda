@@ -10,11 +10,11 @@
  */
 
 #pragma once
-#include "cluster/namespace.h"
 #include "cluster/types.h"
 #include "kafka/client.h"
 #include "kafka/requests/topics/topic_utils.h"
 #include "model/metadata.h"
+#include "model/namespace.h"
 #include "model/timeout_clock.h"
 #include "redpanda/application.h"
 #include "storage/directories.h"
@@ -84,7 +84,7 @@ public:
         return app.controller->get_partition_leaders()
           .local()
           .wait_for_leader(
-            cluster::controller_ntp,
+            model::controller_ntp,
             ss::lowres_clock::now() + std::chrono::seconds(10),
             {})
           .discard_result();
@@ -101,8 +101,7 @@ public:
 
     model::ntp
     make_default_ntp(model::topic topic, model::partition_id partition) {
-        return model::ntp(
-          cluster::kafka_namespace, std::move(topic), partition);
+        return model::ntp(model::kafka_namespace, std::move(topic), partition);
     }
 
     storage::log_config make_default_config() {
@@ -165,7 +164,7 @@ public:
     model::ntp make_data(model::revision_id rev) {
         auto topic_name = fmt::format("my_topic_{}", 0);
         model::ntp ntp(
-          cluster::kafka_namespace,
+          model::kafka_namespace,
           model::topic(topic_name),
           model::partition_id(0));
 

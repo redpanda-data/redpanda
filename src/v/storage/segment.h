@@ -140,6 +140,8 @@ public:
     ss::future<ss::rwlock::holder> write_lock(
       ss::semaphore::time_point timeout = ss::semaphore::time_point::max());
 
+    ss::future<> remove_persistent_state();
+
 private:
     void set_close();
     void cache_truncate(model::offset offset);

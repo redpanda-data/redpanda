@@ -9,12 +9,12 @@
 
 #include "kafka/requests/describe_groups_request.h"
 
-#include "cluster/namespace.h"
 #include "kafka/errors.h"
 #include "kafka/groups/group_manager.h"
 #include "kafka/groups/group_router.h"
 #include "kafka/requests/request_context.h"
 #include "kafka/requests/response.h"
+#include "model/namespace.h"
 #include "resource_mgmt/io_priority.h"
 
 namespace kafka {

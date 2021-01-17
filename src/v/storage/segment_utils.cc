@@ -25,13 +25,17 @@
 #include "storage/logger.h"
 #include "storage/parser_utils.h"
 #include "storage/segment.h"
+#include "storage/types.h"
 #include "units.h"
 #include "utils/file_sanitizer.h"
 #include "vassert.h"
 #include "vlog.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/file-types.hh>
+#include <seastar/core/file.hh>
 #include <seastar/core/future.hh>
+#include <seastar/core/iostream.hh>
 #include <seastar/core/reactor.hh>
 #include <seastar/core/rwlock.hh>
 #include <seastar/core/seastar.hh>
@@ -499,6 +503,98 @@ ss::future<> self_compact_segment(
         })
       .then([s] { s->mark_as_finished_self_compaction(); })
       .finally([&pb] { pb.segment_compacted(); });
+}
+
+ss::future<ss::lw_shared_ptr<segment>> make_concatenated_segment(
+  std::filesystem::path path,
+  std::vector<ss::lw_shared_ptr<segment>> segments,
+  compaction_config cfg) {
+    // read locks on source segments
+    std::vector<ss::rwlock::holder> locks;
+    locks.reserve(segments.size());
+    for (auto& segment : segments) {
+        locks.push_back(co_await segment->read_lock());
+    }
+
+    // concatenation process
+    auto writer = co_await make_writer_handle(path, cfg.sanitize);
+    auto output = co_await ss::make_file_output_stream(std::move(writer));
+    for (auto& segment : segments) {
+        auto input = segment->reader().data_stream(0, cfg.iopc);
+        co_await ss::copy(input, output);
+        co_await input.close();
+    }
+    co_await output.close();
+
+    // offsets span the concatenated range
+    segment::offset_tracker offsets(
+      segments.front()->offsets().term,
+      segments.front()->offsets().base_offset);
+    offsets.committed_offset = segments.back()->offsets().committed_offset;
+    offsets.dirty_offset = segments.back()->offsets().dirty_offset;
+    offsets.stable_offset = segments.back()->offsets().stable_offset;
+
+    // build segment reader over combined data
+    auto reader_fd = co_await internal::make_reader_handle(path, cfg.sanitize);
+    auto segment_size = (co_await reader_fd.stat()).st_size;
+    segment_reader reader(
+      path.string(),
+      std::move(reader_fd),
+      segment_size,
+      default_segment_readahead_size);
+
+    // build an empty index for the segment
+    auto index_name = path;
+    index_name.replace_extension("base_index");
+    auto index_fd = co_await ss::open_file_dma(
+      index_name.string(), ss::open_flags::create | ss::open_flags::rw);
+    if (cfg.sanitize) {
+        index_fd = ss::file(
+          ss::make_shared(file_io_sanitizer(std::move(index_fd))));
+    }
+    segment_index index(
+      index_name.string(),
+      index_fd,
+      offsets.base_offset,
+      segment_index::default_data_buffer_step);
+
+    co_return ss::make_lw_shared<segment>(
+      offsets,
+      std::move(reader),
+      std::move(index),
+      std::nullopt,
+      std::nullopt,
+      std::nullopt);
+}
+
+ss::future<> transfer_segment(
+  ss::lw_shared_ptr<segment> to,
+  ss::lw_shared_ptr<segment> from,
+  compaction_config cfg,
+  probe& probe) {
+    co_await from->close();
+
+    auto lock = co_await to->write_lock();
+    co_await to->index().drop_all_data();
+
+    // segment data file
+    auto from_path = std::filesystem::path(from->reader().filename());
+    co_await do_swap_data_file_handles(from_path, to, cfg, probe);
+
+    // offset index
+    to->index().swap_index_state(
+      std::move(from->index()).release_index_state());
+    to->force_set_commit_offset_from_index();
+    co_await to->index().flush();
+
+    // compaction index
+    from_path = compacted_index_path(from_path);
+    auto to_path = compacted_index_path(
+      std::filesystem::path(to->reader().filename()));
+    co_await ss::rename_file(from_path.string(), to_path.string());
+
+    // clean up replacement segment
+    co_await from->remove_persistent_state();
 }
 
 std::filesystem::path compacted_index_path(std::filesystem::path segment_path) {

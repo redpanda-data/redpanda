@@ -9,10 +9,10 @@
 
 #include "kafka/requests/topics/types.h"
 
-#include "cluster/namespace.h"
 #include "config/configuration.h"
 #include "model/compression.h"
 #include "model/fundamental.h"
+#include "model/namespace.h"
 #include "model/timestamp.h"
 #include "units.h"
 
@@ -74,7 +74,7 @@ static tristate<T> get_tristate_value(
 
 cluster::topic_configuration to_cluster_type(const creatable_topic& t) {
     auto cfg = cluster::topic_configuration(
-      cluster::kafka_namespace, t.name, t.num_partitions, t.replication_factor);
+      model::kafka_namespace, t.name, t.num_partitions, t.replication_factor);
 
     auto config_entries = config_map(t.configs);
     // Parse topic configuration

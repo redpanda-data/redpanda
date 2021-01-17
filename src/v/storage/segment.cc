@@ -88,10 +88,9 @@ ss::future<> segment::close() {
     });
 }
 
-ss::future<> segment::remove_tombstones() {
-    if (!is_tombstone()) {
-        return ss::make_ready_future<>();
-    }
+ss::future<> segment::remove_persistent_state() {
+    vassert(is_closed(), "Cannot clear state from unclosed segment");
+
     std::vector<std::filesystem::path> rm;
     rm.reserve(3);
     rm.emplace_back(reader().filename().c_str());
@@ -111,6 +110,13 @@ ss::future<> segment::remove_tombstones() {
                   });
             });
       });
+}
+
+ss::future<> segment::remove_tombstones() {
+    if (!is_tombstone()) {
+        return ss::make_ready_future<>();
+    }
+    return remove_persistent_state();
 }
 
 ss::future<> segment::do_close() {

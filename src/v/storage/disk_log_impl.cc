@@ -11,6 +11,7 @@
 
 #include "model/adl_serde.h"
 #include "model/fundamental.h"
+#include "model/namespace.h"
 #include "model/timeout_clock.h"
 #include "reflection/adl.h"
 #include "storage/disk_log_appender.h"
@@ -26,6 +27,7 @@
 #include "vlog.h"
 
 #include <seastar/core/abort_source.hh>
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/fair_queue.hh>
 #include <seastar/core/future-util.hh>
 #include <seastar/core/future.hh>
@@ -244,7 +246,9 @@ ss::future<> disk_log_impl::garbage_collect_oldest_segments(
 }
 
 ss::future<> disk_log_impl::do_compact(compaction_config cfg) {
-    // use signed type
+    /*
+     * single segment compaction
+     */
     auto segit = std::find_if(
       _segs.begin(), _segs.end(), [](ss::lw_shared_ptr<segment>& s) {
           return !s->has_appender() && s->is_compacted_segment()
@@ -255,10 +259,145 @@ ss::future<> disk_log_impl::do_compact(compaction_config cfg) {
         return storage::internal::self_compact_segment(seg, cfg, _probe)
           .finally([seg] { seg->mark_as_finished_self_compaction(); });
     }
-    // all segments are self-compacted
-    // do cross segment compaction
+
+    if (auto range = find_compaction_range(); range) {
+        return compact_adjacent_segments(std::move(*range), cfg);
+    }
+
     return ss::now();
 }
+
+std::optional<std::pair<segment_set::iterator, segment_set::iterator>>
+disk_log_impl::find_compaction_range() {
+    /*
+     * adjacent segment compaction.
+     *
+     * the strategy is to choose a pair of adjacent segments and first combine
+     * them into a single segment that replaces the pair, and then perform
+     * self-compaction on the replacement segment.
+     */
+    if (_segs.size() < 2) {
+        return std::nullopt;
+    }
+
+    // sliding window over segments. currently restricted to two segments
+    auto range = std::make_pair(_segs.begin(), std::next(_segs.begin(), 2));
+
+    while (true) {
+        // the simple compaction process in use right now builds a concatenation
+        // of segments so we avoid processing a group that is too large.
+        const auto total_size = std::accumulate(
+          range.first,
+          range.second,
+          size_t(0),
+          [](size_t acc, ss::lw_shared_ptr<segment>& seg) {
+              return acc + seg->size_bytes();
+          });
+
+        // batches in a segment have a term that is implicitly defined by the
+        // name of the file they are contained in. since we need to retain the
+        // term information for reach batch we'll avoid combining segments with
+        // different terms. this can be addressed in a later optimization.
+        const auto same_term = std::all_of(
+          range.first,
+          range.second,
+          [term = (*range.first)->offsets().term](
+            ss::lw_shared_ptr<segment>& seg) {
+              return seg->offsets().term == term;
+          });
+
+        // found a good range if all the tests pass
+        if (
+          same_term
+          && total_size < _manager.config().max_compacted_segment_size) {
+            break;
+        }
+
+        // no candidate range found, yet. advance the window if we aren't
+        // already at the end of the set. one option would also be to shrink the
+        // range from the lower end if the range is large enough. advanced
+        // scheduling is future work.
+        if (range.second == _segs.end()) {
+            return std::nullopt;
+        }
+        ++range.first;
+        ++range.second;
+    }
+
+    // the chosen segments all need to be stable
+    const auto unstable = std::any_of(
+      range.first, range.second, [](ss::lw_shared_ptr<segment>& seg) {
+          return seg->has_appender();
+      });
+    if (unstable) {
+        return std::nullopt;
+    }
+
+    return range;
+}
+
+ss::future<> disk_log_impl::compact_adjacent_segments(
+  std::pair<segment_set::iterator, segment_set::iterator> range,
+  storage::compaction_config cfg) {
+    // lightweight copy of segments in range
+    std::vector<ss::lw_shared_ptr<segment>> segments;
+    std::copy(range.first, range.second, std::back_inserter(segments));
+
+    if (stlog.is_enabled(ss::log_level::debug)) {
+        vlog(stlog.debug, "Compacting {} adjacent segments:", segments.size());
+        for (size_t i = 0; i < segments.size(); i++) {
+            vlog(stlog.debug, "Segment {}: {}", i + 1, *segments[i]);
+        }
+    }
+
+    // the segment which will be expanded to replace
+    auto target = segments.front();
+
+    // concatenate segments from the compaction range into replacement segment
+    // backed by a staging file. the process is completed while holding a read
+    // lock on the range, which is then released. the remainder of the
+    // compaction process operates on replacement segment, and any conflicting
+    // log operations are later identified before committing changes.
+    auto staging_path = std::filesystem::path(
+      fmt::format("{}.compaction.staging", target->reader().filename()));
+    auto replacement = co_await storage::internal::make_concatenated_segment(
+      staging_path, segments, cfg);
+
+    // compact the combined data in the replacement segment. the partition size
+    // tracking needs to be adjusted as compaction routines assume the segment
+    // size is already contained in the partition size probe
+    replacement->mark_as_compacted_segment();
+    _probe.add_initial_segment(*replacement.get());
+    co_await storage::internal::self_compact_segment(replacement, cfg, _probe);
+    _probe.delete_segment(*replacement.get());
+    vlog(stlog.debug, "Final compacted segment {}", replacement);
+
+    /*
+     * remove index files. they will be rebuilt by the single segment compaction
+     * operation, and also ensures we examine segments correctly on recovery.
+     */
+    if (co_await ss::file_exists(target->index().filename())) {
+        co_await ss::remove_file(target->index().filename());
+    }
+
+    auto compact_index = internal::compacted_index_path(
+      target->reader().filename().c_str());
+    if (co_await ss::file_exists(compact_index.string())) {
+        co_await ss::remove_file(compact_index.string());
+    }
+
+    // transfer segment state from replacement to target
+    co_await internal::transfer_segment(target, replacement, cfg, _probe);
+
+    // remove redundant range. in the current version of adjacent segment
+    // compaction this will only erase on segment, but the formulation is
+    // generalized to work for any size range.
+    _segs.erase(std::next(range.first), range.second);
+    for (auto it = std::next(segments.begin()); it != segments.end(); it++) {
+        co_await remove_segment_permanently(*it, "compact_adjacent_segments");
+    }
+}
+
 ss::future<> disk_log_impl::compact(compaction_config cfg) {
     ss::future<> f = ss::now();
     if (config().is_collectable()) {
@@ -288,11 +427,9 @@ ss::future<> disk_log_impl::gc(compaction_config cfg) {
     // TODO: this a workaround until we have raft-snapshotting in the the
     // controller so that we can still evict older data. At the moment we keep
     // the full history.
-    constexpr std::string_view redpanda_ignored_ns = "redpanda";
-    constexpr std::string_view kafka_ignored_ns = "kafka_internal";
     if (
-      config().ntp().ns() == redpanda_ignored_ns
-      || config().ntp().ns() == kafka_ignored_ns) {
+      config().ntp().ns() == model::redpanda_ns
+      || config().ntp().ns() == model::kafka_internal_namespace) {
         return ss::make_ready_future<>();
     }
     if (cfg.max_bytes) {
@@ -439,9 +576,8 @@ size_t disk_log_impl::max_segment_size() const {
         return *config().get_overrides().segment_size;
     }
     // no overrides use defaults
-    return config().is_compacted()
-             ? _manager.config().max_compacted_segment_size
-             : _manager.config().max_segment_size;
+    return config().is_compacted() ? _manager.config().compacted_segment_size
+                                   : _manager.config().max_segment_size;
 }
 
 size_t disk_log_impl::bytes_left_before_roll() const {
@@ -458,6 +594,21 @@ size_t disk_log_impl::bytes_left_before_roll() const {
         return 0;
     }
     return max - fo;
+}
+
+ss::future<> disk_log_impl::force_roll(ss::io_priority_class iopc) {
+    auto t = term();
+    auto next_offset = offsets().dirty_offset + model::offset(1);
+    if (_segs.empty()) {
+        return new_segment(next_offset, t, iopc);
+    }
+    auto ptr = _segs.back();
+    if (!ptr->has_appender()) {
+        return new_segment(next_offset, t, iopc);
+    }
+    return ptr->release_appender().then([this, next_offset, t, iopc] {
+        return new_segment(next_offset, t, iopc);
+    });
 }
 
 ss::future<> disk_log_impl::maybe_roll(
