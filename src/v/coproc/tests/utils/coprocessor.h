@@ -107,6 +107,26 @@ struct identity_coprocessor : public coprocessor {
       "identity_topic");
 };
 
+/// Maps data from input topic to 1 unique output topic, as the materialized
+/// topic name contains the script_id within it
+struct unique_identity_coprocessor : public coprocessor {
+    unique_identity_coprocessor(coproc::script_id sid, input_set input)
+      : coprocessor(sid, std::move(input))
+      , _identity_topic(model::topic(fmt::format("identity_topic_{}", sid()))) {
+    }
+
+    ss::future<coprocessor::result> apply(
+      const model::topic&,
+      ss::circular_buffer<model::record_batch>&& batches) override {
+        coprocessor::result r;
+        r.emplace(_identity_topic, std::move(batches));
+        return ss::make_ready_future<coprocessor::result>(std::move(r));
+    }
+
+private:
+    model::topic _identity_topic;
+};
+
 struct two_way_split_copro : public coprocessor {
     static const inline model::topic even{model::topic("even")};
     static const inline model::topic odd{model::topic("odd")};

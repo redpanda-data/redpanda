@@ -76,7 +76,7 @@ ss::future<coproc_test_fixture::opt_reader_data_t> coproc_test_fixture::drain(
             return ss::smp::submit_to(
               *shard_id, [this, m_ntp, offset, limit, timeout]() {
                   return tests::cooperative_spin_wait_with_timeout(
-                           10s,
+                           60s,
                            [this, m_ntp] {
                                auto& pm = app.partition_manager.local();
                                auto partition = pm.get(m_ntp.source_ntp());
@@ -178,7 +178,7 @@ ss::future<model::offset> coproc_test_fixture::push(
           [ntp, rbr = std::move(rbr)](cluster::partition_manager& pm) mutable {
               auto partition = pm.get(ntp);
               return tests::cooperative_spin_wait_with_timeout(
-                       5s, [partition] { return partition->is_leader(); })
+                       60s, [partition] { return partition->is_leader(); })
                 .then([rbr = std::move(rbr), partition]() mutable {
                     return partition
                       ->replicate(

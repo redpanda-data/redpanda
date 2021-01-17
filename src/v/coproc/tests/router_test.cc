@@ -8,6 +8,7 @@
  * https://github.com/vectorizedio/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "coproc/tests/utils/coproc_test_fixture.h"
 #include "coproc/tests/utils/coprocessor.h"
 #include "coproc/tests/utils/helpers.h"
 #include "coproc/tests/utils/router_test_fixture.h"
@@ -131,4 +132,67 @@ FIXTURE_TEST(test_coproc_router_multi_route, router_test_fixture) {
         const auto& [__, n_batches] = pair;
         BOOST_REQUIRE_EQUAL(n_batches, 50);
     }
+}
+
+FIXTURE_TEST(test_coproc_router_giant_fanin, router_test_fixture) {
+    const std::size_t n_copros = 50;
+    const std::size_t n_partitions = 10;
+    const model::topic source_topic("sole_input");
+    const model::topic output_topic = model::to_materialized_topic(
+      source_topic, identity_coprocessor::identity_topic);
+    const auto range = boost::irange<std::size_t>(0, n_copros);
+    ss::do_for_each(range, [this](std::size_t i) {
+        return add_copro<identity_coprocessor>(i, {{"sole_input", l}});
+    }).get();
+    log_layout_map inputs = {{make_ts(source_topic), n_partitions}};
+    log_layout_map outputs = {{make_ts(output_topic), n_partitions}};
+    startup(inputs).get();
+
+    router_test_plan test_plan{
+      .input = build_simple_opts(inputs, 10),
+      .output = build_simple_opts(outputs, 500)};
+    auto result_tuple = start_benchmark(std::move(test_plan)).get0();
+    const auto& [push_results, drain_results] = result_tuple;
+    const std::size_t n_record_batches = std::accumulate(
+      drain_results.begin(),
+      drain_results.end(),
+      std::size_t(0),
+      [](std::size_t acc, const auto& kv_pair) {
+          return acc += kv_pair.second.second;
+      });
+    const std::size_t expected_record_batches = 10 * n_copros * n_partitions;
+    BOOST_CHECK_EQUAL(n_record_batches, expected_record_batches);
+}
+
+FIXTURE_TEST(test_coproc_router_giant_one_to_many, router_test_fixture) {
+    const std::size_t n_copros = 50;
+    const std::size_t n_partitions = 10;
+    const model::topic source_topic("sole_input");
+    const auto range = boost::irange<std::size_t>(0, n_copros);
+    ss::do_for_each(range, [this](std::size_t i) {
+        return add_copro<unique_identity_coprocessor>(i, {{"sole_input", l}});
+    }).get();
+    log_layout_map inputs = {{make_ts(source_topic), n_partitions}};
+    log_layout_map outputs;
+    for (auto i = 0; i < n_copros; ++i) {
+        auto materialized_topic = model::to_materialized_topic(
+          source_topic, model::topic(fmt::format("identity_topic_{}", i)));
+        outputs.emplace(make_ts(materialized_topic), n_partitions);
+    }
+    startup(inputs).get();
+
+    router_test_plan test_plan{
+      .input = build_simple_opts(inputs, 10),
+      .output = build_simple_opts(outputs, 10)};
+    auto result_tuple = start_benchmark(std::move(test_plan)).get0();
+    const auto& [push_results, drain_results] = result_tuple;
+    const std::size_t n_record_batches = std::accumulate(
+      drain_results.begin(),
+      drain_results.end(),
+      std::size_t(0),
+      [](std::size_t acc, const auto& kv_pair) {
+          return acc += kv_pair.second.second;
+      });
+    const std::size_t expected_record_batches = 10 * n_copros * n_partitions;
+    BOOST_CHECK_EQUAL(n_record_batches, expected_record_batches);
 }
