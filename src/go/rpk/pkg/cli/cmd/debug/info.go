@@ -196,9 +196,8 @@ func getMetrics(
 	fs afero.Fs, mgr config.Manager, timeout time.Duration, conf config.Config,
 ) (*metricsResult, error) {
 	res := &metricsResult{[][]string{}, nil}
-	m, errs := system.GatherMetrics(fs, timeout, conf)
-	if len(errs) != 0 {
-		err := multierror.Append(nil, errs...)
+	m, err := system.GatherMetrics(fs, timeout, conf)
+	if err != nil {
 		return res, errors.Wrap(err, "Error gathering metrics")
 	}
 	res.metrics = m
