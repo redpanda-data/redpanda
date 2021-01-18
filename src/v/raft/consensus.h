@@ -115,6 +115,7 @@ public:
     // Removes members from group
     ss::future<std::error_code>
       remove_members(std::vector<model::node_id>, model::revision_id);
+    ss::future<std::error_code> decomission_nodes(std::vector<model::node_id>);
     // Replace configuration of raft group with given set of nodes
     ss::future<std::error_code>
       replace_configuration(std::vector<model::broker>, model::revision_id);

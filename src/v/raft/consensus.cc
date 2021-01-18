@@ -856,6 +856,35 @@ ss::future<std::error_code> consensus::replace_configuration(
       });
 }
 
+// we do not have to use joint consensus in here as
+// decommissioning/recommissioning does not influence raft protocol internals
+ss::future<std::error_code>
+consensus::decomission_nodes(std::vector<model::node_id> ids) {
+    return _op_lock.get_units().then(
+      [this, ids = std::move(ids)](ss::semaphore_units<> u) mutable {
+          auto cfg = _configuration_manager.get_latest();
+          auto all_present = std::all_of(
+            ids.cbegin(), ids.cend(), [&cfg](model::node_id id) {
+                return cfg.contains_broker(id);
+            });
+          if (!all_present) {
+              vlog(
+                _ctxlog.warn,
+                "Some of the nodes {} are not present current configuration",
+                ids);
+              return ss::make_ready_future<std::error_code>(
+                errc::node_does_not_exists);
+          }
+          // update broker information, we are certain that all nodes are in
+          // configuration at this point
+          for (auto& id : ids) {
+              cfg.decommission(id);
+          }
+
+          return replicate_configuration(std::move(u), std::move(cfg));
+      });
+}
+
 ss::future<> consensus::start() {
     vlog(_ctxlog.info, "Starting");
     return _op_lock.with([this] {
