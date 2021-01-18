@@ -112,7 +112,7 @@ get_topics_records(server::request_t rq, server::reply_t rp) {
           rapidjson::StringBuffer str_buf;
           rapidjson::Writer<rapidjson::StringBuffer> w(str_buf);
 
-          ppj::rjson_serialize_fmt(fmt)(w, std::move(res.partitions[0]));
+          ppj::rjson_serialize_fmt(fmt)(w, std::move(res));
 
           // TODO Ben: Prevent this linearization
           ss::sstring json_rslt = str_buf.GetString();
