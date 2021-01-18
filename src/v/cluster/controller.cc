@@ -77,6 +77,8 @@ ss::future<> controller::start() {
             std::ref(_connections),
             std::ref(_partition_allocator),
             std::ref(_storage),
+            std::ref(_tp_frontend),
+            std::ref(_tp_state),
             std::ref(_as));
       })
       .then([this] {
@@ -162,13 +164,13 @@ ss::future<> controller::stop() {
 
     return f.then([this] {
         return _backend.stop()
+          .then([this] { return _members_manager.stop(); })
           .then([this] { return _tp_frontend.stop(); })
           .then([this] { return _security_frontend.stop(); })
           .then([this] { return _stm.stop(); })
           .then([this] { return _authorizer.stop(); })
           .then([this] { return _credentials.stop(); })
           .then([this] { return _tp_state.stop(); })
-          .then([this] { return _members_manager.stop(); })
           .then([this] { return _partition_allocator.stop(); })
           .then([this] { return _partition_leaders.stop(); })
           .then([this] { return _members_table.stop(); })

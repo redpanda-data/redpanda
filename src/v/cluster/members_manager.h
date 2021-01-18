@@ -11,10 +11,12 @@
 
 #pragma once
 
+#include "cluster/decommissioning_monitor.h"
 #include "cluster/types.h"
 #include "config/seed_server.h"
 #include "config/tls_config.h"
 #include "model/fundamental.h"
+#include "model/metadata.h"
 #include "model/timeout_clock.h"
 #include "raft/consensus.h"
 #include "raft/types.h"
@@ -40,6 +42,8 @@ public:
       ss::sharded<rpc::connection_cache>&,
       ss::sharded<partition_allocator>&,
       ss::sharded<storage::api>&,
+      ss::sharded<topics_frontend>&,
+      ss::sharded<topic_table>&,
       ss::sharded<ss::abort_source>&);
 
     ss::future<> start();
@@ -54,6 +58,9 @@ public:
     bool is_batch_applicable(const model::record_batch& b) {
         return b.header().type == raft::configuration_batch_type;
     }
+
+    ss::future<result<decommissioning_status>>
+      decommission_nodes(std::vector<model::node_id>);
 
 private:
     using seed_iterator = std::vector<config::seed_server>::const_iterator;
@@ -77,7 +84,7 @@ private:
     ss::future<> update_connections(patch<broker_ptr>);
 
     ss::future<> start_config_changes_watcher();
-
+    ss::future<> update_partition_allocator(raft::group_configuration);
     ss::future<> maybe_update_current_node_configuration();
     ss::future<> dispatch_configuration_update(model::broker);
     ss::future<result<configuration_update_reply>>
@@ -93,6 +100,7 @@ private:
     ss::sharded<rpc::connection_cache>& _connection_cache;
     ss::sharded<partition_allocator>& _allocator;
     ss::sharded<storage::api>& _storage;
+    decommissioning_monitor _decommissioning_monitor;
     ss::sharded<ss::abort_source>& _as;
     config::tls_config _rpc_tls_config;
     ss::gate _gate;

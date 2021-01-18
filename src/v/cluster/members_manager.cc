@@ -13,6 +13,8 @@
 #include "cluster/logger.h"
 #include "cluster/members_table.h"
 #include "cluster/partition_allocator.h"
+#include "cluster/topic_table.h"
+#include "cluster/topics_frontend.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "model/metadata.h"
@@ -31,7 +33,6 @@
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/smp.hh>
 
-#include <chrono>
 #include <system_error>
 namespace cluster {
 
@@ -41,6 +42,8 @@ members_manager::members_manager(
   ss::sharded<rpc::connection_cache>& connections,
   ss::sharded<partition_allocator>& allocator,
   ss::sharded<storage::api>& storage,
+  ss::sharded<topics_frontend>& topics_frontend,
+  ss::sharded<topic_table>& topics,
   ss::sharded<ss::abort_source>& as)
   : _seed_servers(config::shard_local_cfg().seed_servers())
   , _self(make_self_broker(config::shard_local_cfg()))
@@ -51,6 +54,7 @@ members_manager::members_manager(
   , _connection_cache(connections)
   , _allocator(allocator)
   , _storage(storage)
+  , _decommissioning_monitor(topics_frontend, topics, allocator, raft0, as)
   , _as(as)
   , _rpc_tls_config(config::shard_local_cfg().rpc_server_tls()) {}
 
@@ -61,7 +65,7 @@ ss::future<> members_manager::start() {
     if (!is_already_member()) {
         join_raft0();
     }
-
+    _decommissioning_monitor.start();
     return start_config_changes_watcher();
 }
 
@@ -135,21 +139,55 @@ calculate_brokers_diff(members_table& m, const raft::group_configuration& cfg) {
     return calculate_changed_brokers(std::move(new_list), std::move(old_list));
 }
 
+cluster::patch<model::node_id> calculate_allocation_nodes_diff(
+  partition_allocator& pa, const raft::group_configuration& cfg) {
+    patch<model::node_id> res;
+
+    cfg.for_each_broker([&res, &pa](const model::broker& b) mutable {
+        if (!pa.contains_node(b.id())) {
+            res.additions.push_back(b.id());
+        }
+    });
+
+    for (const auto& [id, _] : pa.allocation_nodes()) {
+        if (!cfg.contains_broker(id)) {
+            res.deletions.push_back(id);
+        }
+    }
+
+    return res;
+}
+
+ss::future<>
+members_manager::update_partition_allocator(raft::group_configuration cfg) {
+    return _allocator.invoke_on(
+      partition_allocator::shard,
+      [cfg = std::move(cfg)](partition_allocator& allocator) {
+          patch<model::node_id> diff = calculate_allocation_nodes_diff(
+            allocator, cfg);
+          for (auto& id : diff.additions) {
+              auto it = std::find_if(
+                cfg.brokers().cbegin(),
+                cfg.brokers().cend(),
+                [id](const model::broker& b) { return b.id() == id; });
+
+              allocator.register_node(std::make_unique<allocation_node>(
+                allocation_node(id, it->properties().cores, {})));
+          }
+          for (auto& id : diff.deletions) {
+              allocator.unregister_node(id);
+          }
+          for (auto id : cfg.decommissioned()) {
+              allocator.decommission_node(id);
+          }
+      });
+}
+
 ss::future<>
 members_manager::handle_raft0_cfg_update(raft::group_configuration cfg) {
-    // distribute to all cluster::members_table
-    return _allocator
-      .invoke_on(
-        partition_allocator::shard,
-        [cfg](partition_allocator& allocator) {
-            cfg.for_each_broker([&allocator](const model::broker& n) {
-                if (!allocator.contains_node(n.id())) {
-                    allocator.register_node(std::make_unique<allocation_node>(
-                      allocation_node(n.id(), n.properties().cores, {})));
-                }
-            });
-        })
-      .then([this, cfg = std::move(cfg)]() mutable {
+    return update_partition_allocator(cfg)
+      .then([this, cfg]() mutable {
+          // distribute to all cluster::members_table
           auto diff = calculate_brokers_diff(_members_table.local(), cfg);
           return _members_table
             .invoke_on_all([cfg = std::move(cfg)](members_table& m) mutable {
@@ -159,6 +197,11 @@ members_manager::handle_raft0_cfg_update(raft::group_configuration cfg) {
                 // update internode connections
                 return update_connections(std::move(diff));
             });
+      })
+      .then([this, cfg] {
+          if (!cfg.decommissioned().empty()) {
+              _decommissioning_monitor.decommission(cfg.decommissioned());
+          }
       });
 }
 
@@ -173,7 +216,8 @@ members_manager::apply_update(model::record_batch b) {
 
 ss::future<> members_manager::stop() {
     vlog(clusterlog.info, "stopping cluster::members_manager...");
-    return _gate.close();
+    return _decommissioning_monitor.stop().then(
+      [this] { return _gate.close(); });
 }
 
 ss::future<> members_manager::update_connections(patch<broker_ptr> diff) {
@@ -547,6 +591,71 @@ members_manager::handle_configuration_update_request(
           return ss::make_ready_future<ret_t>(
             errc::join_request_dispatch_error);
       });
-} // namespace cluster
+}
+
+ss::future<result<decommissioning_status>>
+members_manager::decommission_nodes(std::vector<model::node_id> ids) {
+    vlog(clusterlog.trace, "decomissioning nodes {}", ids);
+    using ret_t = result<decommissioning_status>;
+    if (!_raft0->is_leader()) {
+        return ss::make_ready_future<ret_t>(errc::not_leader_controller);
+    }
+    std::vector<decommissioning_status::node_state> res;
+    res.reserve(ids.size());
+
+    auto raft_cfg = _raft0->config();
+
+    auto already_removed_end = std::stable_partition(
+      ids.begin(), ids.end(), [&raft_cfg](model::node_id id) {
+          return !raft_cfg.contains_broker(id);
+      });
+
+    std::transform(
+      ids.begin(),
+      already_removed_end,
+      std::back_inserter(res),
+      [](model::node_id id) {
+          return decommissioning_status::node_state{
+            id, decommissioning_status::state::decomission_finished};
+      });
+
+    auto already_decommissioned_end = std::stable_partition(
+      already_removed_end, ids.end(), [&raft_cfg](model::node_id id) {
+          return raft_cfg.is_decommissioned(id);
+      });
+
+    std::transform(
+      already_removed_end,
+      already_decommissioned_end,
+      std::back_inserter(res),
+      [](model::node_id id) {
+          return decommissioning_status::node_state{
+            id, decommissioning_status::state::decommission_in_progress};
+      });
+
+    auto count = std::distance(already_decommissioned_end, ids.end());
+    if (count == 0) {
+        return ss::make_ready_future<ret_t>(
+          decommissioning_status{std::move(res)});
+    }
+    std::vector<model::node_id> to_decomission;
+    to_decomission.reserve(count);
+    std::copy(
+      already_decommissioned_end,
+      ids.end(),
+      std::back_inserter(to_decomission));
+
+    return _raft0->decomission_nodes(to_decomission)
+      .then([to_decomission, res = std::move(res)](std::error_code ec) mutable {
+          auto result
+            = ec ? decommissioning_status::state::error
+                 : decommissioning_status::state::decommission_in_progress;
+
+          for (auto& id : to_decomission) {
+              res.emplace_back(id, result);
+          }
+          return ret_t(decommissioning_status{std::move(res)});
+      });
+}
 
 } // namespace cluster
