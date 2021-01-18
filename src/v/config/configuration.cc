@@ -626,6 +626,12 @@ configuration::configuration()
       "target compaction backlog would be equal to ",
       required::no,
       std::nullopt)
+  , members_backend_retry_ms(
+      *this,
+      "members_backend_retry_ms",
+      "Time between members backend reconciliation loop retries ",
+      required::no,
+      5s)
   , cloud_storage_enabled(
       *this,
       "cloud_storage_enabled",
