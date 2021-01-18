@@ -13,6 +13,7 @@
 
 #include "cluster/errc.h"
 #include "cluster/fwd.h"
+#include "json/json.h"
 #include "model/adl_serde.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
@@ -366,6 +367,11 @@ template<>
 struct is_error_code_enum<cluster::tx_errc> : true_type {};
 } // namespace std
 
+namespace json {
+void rjson_serialize(
+  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  const cluster::decommissioning_status& v);
+}
 namespace reflection {
 
 template<>

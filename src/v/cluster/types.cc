@@ -172,6 +172,25 @@ std::ostream& operator<<(std::ostream& o, decommissioning_status::state s) {
 }
 
 } // namespace cluster
+namespace json {
+void rjson_serialize(
+  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  const cluster::decommissioning_status& v) {
+    w.StartObject();
+    w.Key("nodes");
+    w.StartArray();
+    for (auto& p : v.nodes) {
+        w.StartObject();
+        auto k = fmt::format("{}", p.first);
+        w.Key(k.c_str());
+        auto v = fmt::format("{}", p.second);
+        w.String(v.c_str());
+        w.EndObject();
+    }
+    w.EndArray();
+    w.EndObject();
+}
+} // namespace json
 
 namespace reflection {
 void adl<cluster::topic_configuration>::to(

@@ -14,6 +14,7 @@
 #include "cluster/cluster_utils.h"
 #include "cluster/controller.h"
 #include "cluster/fwd.h"
+#include "cluster/members_manager.h"
 #include "cluster/partition_manager.h"
 #include "cluster/security_frontend.h"
 #include "cluster/shard_table.h"
@@ -23,6 +24,7 @@
 #include "raft/types.h"
 #include "redpanda/admin/api-doc/config.json.h"
 #include "redpanda/admin/api-doc/kafka.json.h"
+#include "redpanda/admin/api-doc/node.json.h"
 #include "redpanda/admin/api-doc/partition.json.h"
 #include "redpanda/admin/api-doc/raft.json.h"
 #include "redpanda/admin/api-doc/security.json.h"
@@ -100,6 +102,8 @@ void admin_server::configure_admin_routes() {
     rb->register_api_file(_server._routes, "security");
     rb->register_function(_server._routes, insert_comma);
     rb->register_api_file(_server._routes, "status");
+    rb->register_function(_server._routes, insert_comma);
+    rb->register_api_file(_server._routes, "nodes");
     ss::httpd::config_json::get_config.set(
       _server._routes, []([[maybe_unused]] ss::const_req req) {
           rapidjson::StringBuffer buf;
@@ -111,6 +115,7 @@ void admin_server::configure_admin_routes() {
     register_kafka_routes();
     register_security_routes();
     register_status_routes();
+    register_node_routes();
 }
 
 void admin_server::configure_dashboard() {
@@ -523,5 +528,59 @@ void admin_server::register_status_routes() {
           const static std::unordered_map<ss::sstring, ss::sstring> status_map{
             {"status", "ready"}};
           return ss::make_ready_future<ss::json::json_return_type>(status_map);
+      });
+}
+
+std::vector<model::node_id> parse_node_ids(const ss::sstring& params) {
+    std::vector<model::node_id> ids;
+    std::string token;
+    std::istringstream tokenStream(params);
+    while (std::getline(tokenStream, token, ',')) {
+        ids.emplace_back(boost::lexical_cast<int32_t>(token));
+    }
+    return ids;
+}
+
+void admin_server::register_node_routes() {
+    ss::httpd::node_json::decommission_nodes.set(
+      _server._routes, [this](std::unique_ptr<ss::httpd::request> req) {
+          auto ids_str = req->get_query_param("node_id");
+          try {
+              std::vector<model::node_id> ids;
+              try {
+                  auto ids = parse_node_ids(ids_str);
+              } catch (...) {
+                  throw ss::httpd::bad_param_exception(fmt::format(
+                    "Invalid node_id parameter format: {} - {}",
+                    ids_str,
+                    std::current_exception()));
+              }
+              if (ids.empty()) {
+                  throw ss::httpd::bad_param_exception(
+                    fmt::format("node_id parameter is required"));
+              }
+
+              vlog(logger.debug, "processing decommission request for {}", ids);
+              return _controller->get_members_manager()
+                .invoke_on(
+                  cluster::members_manager::shard,
+                  [ids = std::move(ids)](cluster::members_manager& m_mgr) {
+                      return m_mgr.decommission_nodes(std::move(ids));
+                  })
+                .then([](result<cluster::decommissioning_status> res) {
+                    if (!res) {
+                        throw ss::httpd::server_error_exception(fmt::format(
+                          "Nodes decomissioning failed: {}",
+                          res.error().message()));
+                    }
+                    rapidjson::StringBuffer buf;
+                    rapidjson::Writer<rapidjson::StringBuffer> writer(buf);
+                    json::rjson_serialize(writer, res.value());
+                    return ss::json::json_return_type(buf.GetString());
+                });
+          } catch (const boost::bad_lexical_cast& e) {
+              throw ss::httpd::bad_param_exception(
+                fmt::format("Invalid node ids {}", ids_str));
+          }
       });
 }

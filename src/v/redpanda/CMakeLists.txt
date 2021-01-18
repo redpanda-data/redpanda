@@ -25,6 +25,12 @@ seastar_generate_swagger(
   IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/admin/api-doc/partition.json
   OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/admin/api-doc/partition.json.h
 )
+seastar_generate_swagger(
+  TARGET node_swagger
+  VAR node_swagger_file
+  IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/admin/api-doc/node.json
+  OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/admin/api-doc/node.json.h
+)
 
 seastar_generate_swagger(
   TARGET security_swagger
@@ -61,7 +67,7 @@ add_executable(redpanda
 target_link_libraries(redpanda PUBLIC v::application v::raft v::kafka)
 set_property(TARGET redpanda PROPERTY POSITION_INDEPENDENT_CODE ON)
 add_dependencies(v_application config_swagger raft_swagger kafka_swagger
-    partition_swagger security_swagger status_swagger)
+    partition_swagger security_swagger status_swagger node_swagger)
 
 if(CMAKE_BUILD_TYPE MATCHES Release)
   include(CheckIPOSupported)

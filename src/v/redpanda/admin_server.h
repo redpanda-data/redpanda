@@ -70,6 +70,7 @@ private:
     void register_kafka_routes();
     void register_security_routes();
     void register_status_routes();
+    void register_node_routes();
 
     ss::http_server _server;
     admin_server_cfg _cfg;
