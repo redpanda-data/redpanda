@@ -186,8 +186,9 @@ ss::future<member_id> client::create_consumer(const group_id& group_id) {
           return make_broker(
             res.data.node_id, unresolved_address(res.data.host, res.data.port));
       })
-      .then([group_id](shared_broker_t coordinator) mutable {
-          return make_consumer(std::move(coordinator), std::move(group_id));
+      .then([this, group_id](shared_broker_t coordinator) mutable {
+          return make_consumer(
+            _brokers, std::move(coordinator), std::move(group_id));
       })
       .then([this](shared_consumer_t c) {
           auto m_id = c->member_id();
