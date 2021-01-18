@@ -540,6 +540,12 @@ configuration::configuration()
       "Interval between iterations of controller backend housekeeping loop",
       required::no,
       1s)
+  , decomission_monitor_retry_ms(
+      *this,
+      "decomission_monitor_retry_ms",
+      "Time between node decomissioning retries ",
+      required::no,
+      5s)
   , cloud_storage_enabled(
       *this,
       "cloud_storage_enabled",

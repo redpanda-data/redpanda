@@ -139,6 +139,7 @@ struct configuration final : public config_store {
     property<bool> enable_sasl;
     property<std::chrono::milliseconds>
       controller_backend_housekeeping_interval_ms;
+    property<std::chrono::milliseconds> decomission_monitor_retry_ms;
 
     // Archival storage
     property<bool> cloud_storage_enabled;
