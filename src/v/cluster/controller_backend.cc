@@ -166,17 +166,6 @@ ss::future<> controller_backend::reconcile_topics() {
     });
 }
 
-bool has_local_replicas(
-  model::node_id self, const std::vector<model::broker_shard>& replicas) {
-    return std::find_if(
-             std::cbegin(replicas),
-             std::cend(replicas),
-             [self](const model::broker_shard& bs) {
-                 return bs.node_id == self && bs.shard == ss::this_shard_id();
-             })
-           != replicas.cend();
-}
-
 std::vector<model::broker> create_brokers_set(
   const std::vector<model::broker_shard>& replicas,
   cluster::members_table& members) {
