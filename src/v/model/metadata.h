@@ -137,6 +137,7 @@ struct broker_shard {
     /// and for predictability we need fixed-sized ints
     uint32_t shard;
     friend std::ostream& operator<<(std::ostream&, const broker_shard&);
+    bool operator==(const broker_shard&) const = default;
 };
 
 struct partition_metadata {
