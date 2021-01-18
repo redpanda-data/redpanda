@@ -64,7 +64,7 @@ struct group_nodes {
 
 class group_configuration final {
 public:
-    static constexpr int8_t current_version = 3;
+    static constexpr int8_t current_version = 4;
     /**
      * creates a configuration where all provided brokers are current
      * configuration voters
@@ -80,6 +80,13 @@ public:
       group_nodes,
       model::revision_id,
       std::optional<group_nodes> = std::nullopt);
+
+    group_configuration(
+      std::vector<model::broker>,
+      group_nodes,
+      model::revision_id,
+      std::optional<group_nodes>,
+      std::vector<model::node_id>);
 
     group_configuration(const group_configuration&) = default;
     group_configuration(group_configuration&&) = default;
@@ -194,6 +201,13 @@ public:
 
     friend std::ostream& operator<<(std::ostream&, const group_configuration&);
 
+    /**
+     * nodes decommissioning
+     */
+    void decommission(model::node_id);
+    bool is_decommissioned(model::node_id) const;
+    const std::vector<model::node_id>& decommissioned() const;
+
 private:
     std::vector<vnode> unique_voter_ids() const;
     std::vector<vnode> unique_learner_ids() const;
@@ -203,6 +217,7 @@ private:
     group_nodes _current;
     std::optional<group_nodes> _old;
     model::revision_id _revision;
+    std::vector<model::node_id> _decommissioned;
 };
 
 namespace details {

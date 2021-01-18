@@ -32,6 +32,7 @@ std::vector<model::broker> random_brokers() {
 }
 
 raft::group_configuration random_configuration() {
+    auto version = random_generators::get_int(0, 2);
     auto brokers = random_brokers();
     raft::group_nodes current;
     for (auto& b : brokers) {
@@ -41,6 +42,13 @@ raft::group_configuration random_configuration() {
         } else {
             current.learners.emplace_back(
               b.id(), model::revision_id(random_generators::get_int(100)));
+        }
+    }
+
+    std::vector<model::node_id> decommissioned;
+    for (auto& b : brokers) {
+        if (random_generators::get_int(0, 100) > 50) {
+            decommissioned.push_back(b.id());
         }
     }
 
@@ -62,7 +70,11 @@ raft::group_configuration random_configuration() {
           std::move(old));
     } else {
         return raft::group_configuration(
-          std::move(brokers), std::move(current), model::revision_id(0));
+          std::move(brokers),
+          std::move(current),
+          model::revision_id(0),
+          std::nullopt,
+          std::move(decommissioned));
     }
 }
 
@@ -255,11 +267,33 @@ iobuf serialize_v3() {
     return buffer;
 }
 
+iobuf serialize_v4() {
+    iobuf buffer;
+
+    raft::group_nodes current;
+    current.learners.emplace_back(node_0.id, model::revision_id(15));
+    current.voters.emplace_back(node_1.id, model::revision_id(10));
+
+    raft::group_nodes old;
+    old.voters.emplace_back(node_2.id, model::revision_id(5));
+
+    raft::group_configuration cfg(
+      std::vector<model::broker>{
+        node_0.to_v3(), node_1.to_v3(), node_2.to_v3()},
+      std::move(current),
+      model::revision_id(15),
+      std::move(old),
+      std::vector<model::node_id>{node_1.id});
+    reflection::serialize(buffer, cfg);
+    return buffer;
+}
+
 SEASTAR_THREAD_TEST_CASE(configuration_backward_compatibility_test) {
     iobuf v0 = serialize_v0();
     iobuf v1 = serialize_v1();
     iobuf v2 = serialize_v2();
     iobuf v3 = serialize_v3();
+    iobuf v4 = serialize_v4();
 
     auto cfg_v0 = reflection::from_iobuf<raft::group_configuration>(
       std::move(v0));
@@ -272,6 +306,9 @@ SEASTAR_THREAD_TEST_CASE(configuration_backward_compatibility_test) {
 
     auto cfg_v3 = reflection::from_iobuf<raft::group_configuration>(
       std::move(v3));
+
+    auto cfg_v4 = reflection::from_iobuf<raft::group_configuration>(
+      std::move(v4));
 
     BOOST_REQUIRE_EQUAL(cfg_v0.brokers(), cfg_v1.brokers());
     BOOST_REQUIRE_EQUAL(cfg_v1.brokers(), cfg_v2.brokers());
@@ -286,6 +323,9 @@ SEASTAR_THREAD_TEST_CASE(configuration_backward_compatibility_test) {
     BOOST_REQUIRE_EQUAL(
       cfg_v2.current_config().learners.size(),
       cfg_v3.current_config().learners.size());
+    BOOST_REQUIRE_EQUAL(
+      cfg_v3.current_config().learners.size(),
+      cfg_v4.current_config().learners.size());
 
     BOOST_REQUIRE_EQUAL(
       cfg_v0.current_config().voters.size(),
@@ -296,6 +336,9 @@ SEASTAR_THREAD_TEST_CASE(configuration_backward_compatibility_test) {
     BOOST_REQUIRE_EQUAL(
       cfg_v2.current_config().voters.size(),
       cfg_v3.current_config().voters.size());
+    BOOST_REQUIRE_EQUAL(
+      cfg_v3.current_config().voters.size(),
+      cfg_v4.current_config().voters.size());
 
     BOOST_REQUIRE_EQUAL(
       cfg_v0.old_config()->voters.size(), cfg_v1.old_config()->voters.size());
@@ -303,6 +346,8 @@ SEASTAR_THREAD_TEST_CASE(configuration_backward_compatibility_test) {
       cfg_v1.old_config()->voters.size(), cfg_v2.old_config()->voters.size());
     BOOST_REQUIRE_EQUAL(
       cfg_v2.old_config()->voters.size(), cfg_v3.old_config()->voters.size());
+    BOOST_REQUIRE_EQUAL(
+      cfg_v3.old_config()->voters.size(), cfg_v4.old_config()->voters.size());
 
     BOOST_REQUIRE_EQUAL(
       cfg_v0.old_config()->voters[0].id(), cfg_v1.old_config()->voters[0].id());
@@ -316,6 +361,9 @@ SEASTAR_THREAD_TEST_CASE(configuration_backward_compatibility_test) {
     BOOST_REQUIRE_EQUAL(
       cfg_v2.current_config().learners[0].id(),
       cfg_v3.current_config().learners[0].id());
+    BOOST_REQUIRE_EQUAL(
+      cfg_v3.current_config().learners[0].id(),
+      cfg_v4.current_config().learners[0].id());
 
     BOOST_REQUIRE_EQUAL(
       cfg_v0.current_config().voters[0].id(),
@@ -326,11 +374,21 @@ SEASTAR_THREAD_TEST_CASE(configuration_backward_compatibility_test) {
     BOOST_REQUIRE_EQUAL(
       cfg_v2.current_config().voters[0].id(),
       cfg_v3.current_config().voters[0].id());
+    BOOST_REQUIRE_EQUAL(
+      cfg_v2.current_config().voters[0].id(),
+      cfg_v4.current_config().voters[0].id());
 
     BOOST_REQUIRE_EQUAL(cfg_v0.revision_id(), raft::no_revision);
     BOOST_REQUIRE_EQUAL(cfg_v1.revision_id(), model::revision_id(15));
     BOOST_REQUIRE_EQUAL(cfg_v2.revision_id(), model::revision_id(15));
     BOOST_REQUIRE_EQUAL(cfg_v3.revision_id(), model::revision_id(15));
+    BOOST_REQUIRE_EQUAL(cfg_v4.revision_id(), model::revision_id(15));
+
+    BOOST_REQUIRE_EQUAL(cfg_v0.decommissioned().empty(), true);
+    BOOST_REQUIRE_EQUAL(cfg_v1.decommissioned().empty(), true);
+    BOOST_REQUIRE_EQUAL(cfg_v2.decommissioned().empty(), true);
+    BOOST_REQUIRE_EQUAL(cfg_v3.decommissioned().empty(), true);
+    BOOST_REQUIRE_EQUAL(cfg_v4.decommissioned()[0], node_1.id);
 }
 
 SEASTAR_THREAD_TEST_CASE(configuration_broker_many_endpoints) {
