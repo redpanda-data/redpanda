@@ -303,10 +303,10 @@ consumer::offset_commit(std::vector<offset_commit_request_topic> topics) {
     return req_res(std::move(req_builder));
 }
 
-ss::future<shared_consumer_t>
-make_consumer(shared_broker_t coordinator, group_id group_id) {
+ss::future<shared_consumer_t> make_consumer(
+  brokers& brokers, shared_broker_t coordinator, group_id group_id) {
     auto c = ss::make_lw_shared<consumer>(
-      std::move(coordinator), std::move(group_id));
+      brokers, std::move(coordinator), std::move(group_id));
     return c->join().then([c]() mutable { return std::move(c); });
 }
 

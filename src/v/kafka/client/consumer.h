@@ -12,7 +12,7 @@
 #pragma once
 
 #include "kafka/client/assignment_plans.h"
-#include "kafka/client/broker.h"
+#include "kafka/client/brokers.h"
 #include "kafka/client/logger.h"
 #include "kafka/types.h"
 
@@ -30,8 +30,9 @@ class consumer final : public ss::enable_lw_shared_from_this<consumer> {
     using assignment_t = client::assignment;
 
 public:
-    consumer(shared_broker_t coordinator, group_id group_id)
-      : _coordinator(std::move(coordinator))
+    consumer(brokers& brokers, shared_broker_t coordinator, group_id group_id)
+      : _brokers(brokers)
+      , _coordinator(std::move(coordinator))
       , _group_id(std::move(group_id))
       , _topics() {}
 
@@ -85,6 +86,7 @@ private:
         });
     }
 
+    brokers& _brokers;
     shared_broker_t _coordinator;
     ss::gate _gate{};
     ss::timer<> _timer;
@@ -112,7 +114,7 @@ private:
 using shared_consumer_t = ss::lw_shared_ptr<consumer>;
 
 ss::future<shared_consumer_t>
-make_consumer(shared_broker_t coordinator, group_id group_id);
+make_consumer(brokers& brokers, shared_broker_t coordinator, group_id group_id);
 
 namespace detail {
 
