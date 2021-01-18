@@ -45,10 +45,10 @@ struct fetch_request final {
 
     struct partition {
         model::partition_id id;
-        int32_t current_leader_epoch; // >= v9
+        int32_t current_leader_epoch{-1}; // >= v9
         model::offset fetch_offset;
         // inter-broker data
-        model::offset log_start_offset; // >= v5
+        model::offset log_start_offset{-1}; // >= v5
         int32_t partition_max_bytes;
     };
 
@@ -66,10 +66,10 @@ struct fetch_request final {
     model::node_id replica_id;
     std::chrono::milliseconds max_wait_time;
     int32_t min_bytes;
-    int32_t max_bytes;                                 // >= v3
-    int8_t isolation_level;                            // >= v4
-    int32_t session_id = invalid_fetch_session_id;     // >= v7
-    int32_t session_epoch = final_fetch_session_epoch; // >= v7
+    int32_t max_bytes{std::numeric_limits<int32_t>::max()}; // >= v3
+    int8_t isolation_level{0};                              // >= v4
+    int32_t session_id = invalid_fetch_session_id;          // >= v7
+    int32_t session_epoch = final_fetch_session_epoch;      // >= v7
     std::vector<topic> topics;
     std::vector<forgotten_topic> forgotten_topics; // >= v7
 
@@ -241,13 +241,9 @@ struct fetch_response final {
           : name(std::move(name)) {}
     };
 
-    fetch_response()
-      : throttle_time(0) {}
-
-    std::chrono::milliseconds throttle_time = std::chrono::milliseconds(
-      0);               // >= v1
-    error_code error;   // >= v7
-    int32_t session_id; // >= v7
+    std::chrono::milliseconds throttle_time{0}; // >= v1
+    error_code error;                           // >= v7
+    int32_t session_id;                         // >= v7
     std::vector<partition> partitions;
 
     void encode(const request_context& ctx, response& resp);
