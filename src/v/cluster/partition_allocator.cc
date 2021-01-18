@@ -10,6 +10,7 @@
 #include "cluster/partition_allocator.h"
 
 #include "cluster/logger.h"
+#include "model/metadata.h"
 #include "vlog.h"
 
 #include <boost/container_hash/hash.hpp>
@@ -64,34 +65,86 @@ static bool is_machine_in_replicas(
 }
 
 std::optional<std::vector<model::broker_shard>>
-partition_allocator::allocate_replicas(int16_t replication_factor) {
-    std::vector<model::broker_shard> replicas;
-    replicas.reserve(replication_factor);
+partition_allocator::allocate_replicas(
+  int16_t replication_factor, const std::vector<model::broker_shard>& current) {
+    std::vector<model::broker_shard> new_replicas;
+    new_replicas.reserve(replication_factor);
+    for (size_t i = 0; i < _machines.size(); ++i) {
+        const uint16_t replicas_left = replication_factor
+                                       - (new_replicas.size() + current.size());
+        if (replicas_left == 0) {
+            break;
+        }
 
-    while (replicas.size() < (size_t)replication_factor) {
-        const uint16_t replicas_left = replication_factor - replicas.size();
         if (_available_machines.size() < replicas_left) {
-            rollback(replicas);
+            rollback(new_replicas);
             return std::nullopt;
         }
         auto& rr = round_robin_ptr();
         auto& machine = *rr;
         rr++;
-        if (is_machine_in_replicas(machine, replicas)) {
+        if (machine.is_decommissioned()) {
+            continue;
+        }
+        if (
+          is_machine_in_replicas(machine, new_replicas)
+          || is_machine_in_replicas(machine, current)) {
             continue;
         }
         const uint32_t cpu = machine.allocate();
         model::broker_shard bs{.node_id = machine.id(), .shard = cpu};
-        replicas.push_back(bs);
+        new_replicas.push_back(bs);
         if (machine.is_full()) {
             _available_machines.erase(_available_machines.iterator_to(machine));
         }
     }
-    if (!valid_machine_fault_domain_diversity(replicas)) {
-        rollback(replicas);
+
+    std::copy(
+      current.cbegin(), current.cend(), std::back_inserter(new_replicas));
+
+    if (
+      new_replicas.size() < (size_t)replication_factor
+      || !valid_machine_fault_domain_diversity(new_replicas)) {
+        rollback(new_replicas);
         return std::nullopt;
     }
-    return replicas;
+    return new_replicas;
+}
+
+std::optional<partition_allocator::allocation_units>
+partition_allocator::reassign_decommissioned_replicas(
+  const partition_assignment& pas) {
+    int16_t rf = pas.replicas.size();
+    auto current_replicas = pas.replicas;
+    /**
+     * In the first step we need to decide which replicas have to be moved, we
+     * will move replicas from decommissioned nodes to other available nodes
+     */
+    auto it = std::stable_partition(
+      current_replicas.begin(),
+      current_replicas.end(),
+      [this](model::broker_shard& bs) {
+          if (auto it = _machines.find(bs.node_id); it != _machines.end()) {
+              return !it->second->is_decommissioned();
+          }
+          // if machine is no longer in a list of allocation nodes, just
+          // reallocate replica to another node
+          return false;
+      });
+
+    // remove all replicas that doesn't have to be moved
+    current_replicas.erase(it, current_replicas.end());
+
+    // try to allocate replicas that have to be moved
+    auto new_replicas = allocate_replicas(rf, current_replicas);
+
+    if (new_replicas) {
+        auto res = pas;
+        res.replicas = std::move(*new_replicas);
+        return allocation_units({res}, this);
+    }
+    // there are not enough nodes to fullfil replicas assignment return nullopt
+    return std::nullopt;
 }
 
 // FIXME: take into account broker.rack diversity & other constraints
@@ -120,7 +173,8 @@ partition_allocator::allocate(const topic_configuration& cfg) {
     for (int32_t i = 0; i < cfg.partition_count; ++i) {
         // all replicas must belong to the same raft group
         raft::group_id partition_group = raft::group_id(_highest_group() + 1);
-        auto replicas_assignment = allocate_replicas(cfg.replication_factor);
+        auto replicas_assignment = allocate_replicas(
+          cfg.replication_factor, {});
         if (replicas_assignment == std::nullopt) {
             rollback(ret);
             return std::nullopt;
@@ -143,7 +197,7 @@ void partition_allocator::deallocate(const model::broker_shard& bs) {
         auto& [id, machine] = *it;
         if (bs.shard < machine->cpus()) {
             machine->deallocate(bs.shard);
-            if (!machine->_hook.is_linked()) {
+            if (!machine->_hook.is_linked() && !machine->is_decommissioned()) {
                 _available_machines.push_back(*machine);
             }
         }
@@ -184,11 +238,12 @@ void partition_allocator::update_allocation_state(
       });
     auto node_id = std::cbegin(shards)->node_id;
     auto it = find_node(node_id);
-    vassert(
-      it != _machines.end(),
-      "node: {} must exists in partition allocator, it currenlty does not",
-      node_id);
+
     for (auto const& bs : shards) {
+        if (it == _machines.end()) {
+            // do nothing, node was deleted
+            continue;
+        }
         // Thanks to shards being sorted we need to do only
         //  as many lookups as there are brokers
         if (it->first != bs.node_id) {
@@ -203,6 +258,55 @@ void partition_allocator::update_allocation_state(
 partition_allocator::iterator
 partition_allocator::find_node(model::node_id id) {
     return _machines.find(id);
+}
+
+void partition_allocator::unregister_node(model::node_id id) {
+    auto it = std::find_if(
+      _available_machines.begin(),
+      _available_machines.end(),
+      [id](allocation_node& n) { return n._id == id; });
+
+    if (it != _available_machines.end()) {
+        _available_machines.erase(it);
+    }
+    _machines.erase(id);
+}
+
+void partition_allocator::decommission_node(model::node_id id) {
+    auto it = _machines.find(id);
+    if (it == _machines.end()) {
+        throw std::invalid_argument(
+          fmt::format("machine with id {} not found", id));
+    }
+    // mark as decommissioned
+    it->second->decommission();
+
+    // remove from available machines list
+    if (it->second->_hook.is_linked()) {
+        _available_machines.erase(cil_t::s_iterator_to(*it->second));
+    }
+}
+
+void partition_allocator::recommission_node(model::node_id id) {
+    auto it = _machines.find(id);
+    if (it == _machines.end()) {
+        throw std::invalid_argument(
+          fmt::format("machine with id {} not found", id));
+    }
+    // mark as decommissioned
+    it->second->recommission();
+
+    // add to available machines list
+    _available_machines.push_back(*it->second);
+}
+
+bool partition_allocator::is_empty(model::node_id id) {
+    auto it = _machines.find(id);
+    if (it == _machines.end()) {
+        throw std::invalid_argument(
+          fmt::format("machine with id {} not found", id));
+    }
+    return it->second->empty();
 }
 
 void partition_allocator::test_only_saturate_all_machines() {

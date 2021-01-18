@@ -28,6 +28,69 @@ FIXTURE_TEST(register_node, partition_allocator_tester) {
     BOOST_REQUIRE_EQUAL(machines().size(), 3);
     BOOST_REQUIRE_EQUAL(highest_group()(), 0);
 }
+
+FIXTURE_TEST(unregister_node, partition_allocator_tester) {
+    pa.unregister_node(model::node_id(1));
+    BOOST_REQUIRE_EQUAL(machines().size(), 2);
+    BOOST_REQUIRE_EQUAL(available_machines().size(), 2);
+}
+
+FIXTURE_TEST(decommission_node, partition_allocator_tester) {
+    pa.decommission_node(model::node_id(1));
+    BOOST_REQUIRE_EQUAL(machines().size(), 3);
+    // only two of machines are available as one of them is decommissioned
+    BOOST_REQUIRE_EQUAL(available_machines().size(), 2);
+}
+
+FIXTURE_TEST(test_decommissioned_realloc, partition_allocator_tester) {
+    auto cfg = gen_topic_configuration(1, 3);
+    partition_allocator::allocation_units allocs = pa.allocate(cfg).value();
+
+    pa.decommission_node(model::node_id(2));
+    BOOST_REQUIRE_EQUAL(machines().size(), 3);
+    // only two of machines are available as one of them is decommissioned
+    BOOST_REQUIRE_EQUAL(available_machines().size(), 2);
+    auto assignment = *allocs.get_assignments().begin();
+
+    // reallocate
+    auto first_attempt = pa.reassign_decommissioned_replicas(assignment);
+    // first attempt should fail, there are not enough nodes to allocate
+    // replicas (requested rf = 3, while we have 2 nodes)
+    BOOST_REQUIRE_EQUAL(first_attempt.has_value(), false);
+
+    pa.register_node(std::make_unique<allocation_node>(
+      model::node_id(10), 8, std::unordered_map<ss::sstring, ss::sstring>()));
+
+    auto second_attempt = pa.reassign_decommissioned_replicas(assignment);
+    //  second attempt should be successfull
+    BOOST_REQUIRE_EQUAL(second_attempt.has_value(), true);
+    BOOST_REQUIRE_EQUAL(second_attempt->get_assignments().size(), 1);
+    BOOST_REQUIRE_EQUAL(
+      second_attempt->get_assignments().begin()->replicas.size(), 3);
+}
+
+FIXTURE_TEST(
+  test_decommissioned_realloc_single_replica, partition_allocator_tester) {
+    auto cfg = gen_topic_configuration(1, 1);
+    partition_allocator::allocation_units allocs = pa.allocate(cfg).value();
+
+    pa.decommission_node(model::node_id(1));
+    BOOST_REQUIRE_EQUAL(machines().size(), 3);
+    // only two of machines are available as one of them is decommissioned
+    BOOST_REQUIRE_EQUAL(available_machines().size(), 2);
+    auto assignment = *allocs.get_assignments().begin();
+
+    // reallocate
+
+    auto reallocated = pa.reassign_decommissioned_replicas(assignment);
+    // first attempt should be successful as we have 2 nodes left and requested
+    // rf = 1
+    BOOST_REQUIRE_EQUAL(reallocated.has_value(), true);
+    BOOST_REQUIRE_EQUAL(reallocated->get_assignments().size(), 1);
+    BOOST_REQUIRE_EQUAL(
+      reallocated->get_assignments().begin()->replicas.size(), 1);
+}
+
 FIXTURE_TEST(invalid_allocation, partition_allocator_tester) {
     auto cfg = gen_topic_configuration(1, 1);
     saturate_all_machines();
