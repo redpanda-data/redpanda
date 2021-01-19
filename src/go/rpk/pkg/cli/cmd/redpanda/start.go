@@ -117,7 +117,7 @@ func NewStartCommand(
 			}
 			seedServers, err := parseSeeds(seeds)
 			if err != nil {
-				sendEnv(mgr, env, conf, err)
+				sendEnv(fs, mgr, env, conf, err)
 				return err
 			}
 			if len(seedServers) != 0 {
@@ -133,7 +133,7 @@ func NewStartCommand(
 				config.Default().Redpanda.KafkaApi.Port,
 			)
 			if err != nil {
-				sendEnv(mgr, env, conf, err)
+				sendEnv(fs, mgr, env, conf, err)
 				return err
 			}
 			if kafkaApi != nil {
@@ -149,7 +149,7 @@ func NewStartCommand(
 				config.Default().Redpanda.RPCServer.Port,
 			)
 			if err != nil {
-				sendEnv(mgr, env, conf, err)
+				sendEnv(fs, mgr, env, conf, err)
 				return err
 			}
 			if rpcServer != nil {
@@ -165,7 +165,7 @@ func NewStartCommand(
 				config.Default().Redpanda.KafkaApi.Port,
 			)
 			if err != nil {
-				sendEnv(mgr, env, conf, err)
+				sendEnv(fs, mgr, env, conf, err)
 				return err
 			}
 			if advKafkaApi != nil {
@@ -180,7 +180,7 @@ func NewStartCommand(
 				config.Default().Redpanda.RPCServer.Port,
 			)
 			if err != nil {
-				sendEnv(mgr, env, conf, err)
+				sendEnv(fs, mgr, env, conf, err)
 				return err
 			}
 			if advRPCApi != nil {
@@ -188,7 +188,7 @@ func NewStartCommand(
 			}
 			installDirectory, err := cli.GetOrFindInstallDir(fs, installDirFlag)
 			if err != nil {
-				sendEnv(mgr, env, conf, err)
+				sendEnv(fs, mgr, env, conf, err)
 				return err
 			}
 			rpArgs, err := buildRedpandaFlags(
@@ -198,7 +198,7 @@ func NewStartCommand(
 				ccmd.Flags(),
 			)
 			if err != nil {
-				sendEnv(mgr, env, conf, err)
+				sendEnv(fs, mgr, env, conf, err)
 				return err
 			}
 			checkPayloads, tunerPayloads, err := prestart(
@@ -211,17 +211,17 @@ func NewStartCommand(
 			env.Checks = checkPayloads
 			env.Tuners = tunerPayloads
 			if err != nil {
-				sendEnv(mgr, env, conf, err)
+				sendEnv(fs, mgr, env, conf, err)
 				return err
 			}
 
 			err = mgr.Write(conf)
 			if err != nil {
-				sendEnv(mgr, env, conf, err)
+				sendEnv(fs, mgr, env, conf, err)
 				return err
 			}
 
-			sendEnv(mgr, env, conf, nil)
+			sendEnv(fs, mgr, env, conf, nil)
 			rpArgs.ExtraArgs = args
 			log.Info(common.FeedbackMsg)
 			log.Info("Starting redpanda...")
@@ -748,6 +748,7 @@ func parseAddress(addr string, defaultPort int) (*config.SocketAddress, error) {
 }
 
 func sendEnv(
+	fs afero.Fs,
 	mgr config.Manager,
 	env api.EnvironmentPayload,
 	conf *config.Config,
@@ -775,7 +776,7 @@ func sendEnv(
 		}
 		confJSON = string(confBytes)
 	}
-	err = api.SendEnvironment(env, *conf, confJSON)
+	err = api.SendEnvironment(fs, env, *conf, confJSON)
 	if err != nil {
 		log.Warnf("couldn't send environment data: %v", err)
 	}

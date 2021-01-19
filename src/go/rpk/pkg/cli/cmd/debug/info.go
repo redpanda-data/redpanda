@@ -141,7 +141,7 @@ func executeInfo(
 		return getOSInfo(timeout, osInfoRowsCh)
 	})
 	grp.Go(func() error {
-		return getCPUInfo(cpuInfoRowsCh)
+		return getCPUInfo(fs, cpuInfoRowsCh)
 	})
 	grp.Go(func() error {
 		return getConf(mgr, conf.ConfigFile, confRowsCh)
@@ -196,9 +196,8 @@ func getMetrics(
 	fs afero.Fs, mgr config.Manager, timeout time.Duration, conf config.Config,
 ) (*metricsResult, error) {
 	res := &metricsResult{[][]string{}, nil}
-	m, errs := system.GatherMetrics(fs, timeout, conf)
-	if len(errs) != 0 {
-		err := multierror.Append(nil, errs...)
+	m, err := system.GatherMetrics(fs, timeout, conf)
+	if err != nil {
 		return res, errors.Wrap(err, "Error gathering metrics")
 	}
 	res.metrics = m
@@ -223,9 +222,9 @@ func getOSInfo(timeout time.Duration, out chan<- [][]string) error {
 	return err
 }
 
-func getCPUInfo(out chan<- [][]string) error {
+func getCPUInfo(fs afero.Fs, out chan<- [][]string) error {
 	rows := [][]string{}
-	cpuInfo, err := system.CpuInfo()
+	cpuInfo, err := system.CpuInfo(fs)
 	if err != nil {
 		err = errors.Wrap(err, "Error querying CPU info")
 	}
