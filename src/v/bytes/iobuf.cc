@@ -72,10 +72,10 @@ ss::future<iobuf> read_iobuf_exactly(ss::input_stream<char>& in, size_t n) {
     });
 }
 
-ss::output_stream<char> make_iobuf_output_stream(iobuf io) {
+ss::output_stream<char> make_iobuf_ref_output_stream(iobuf& io) {
     struct iobuf_output_stream final : ss::data_sink_impl {
-        explicit iobuf_output_stream(iobuf i)
-          : io(std::move(i)) {}
+        explicit iobuf_output_stream(iobuf& i)
+          : io(i) {}
         ss::future<> put(ss::net::packet data) final {
             auto all = data.release();
             for (auto& b : all) {
@@ -95,11 +95,11 @@ ss::output_stream<char> make_iobuf_output_stream(iobuf io) {
         }
         ss::future<> flush() final { return ss::make_ready_future<>(); }
         ss::future<> close() final { return ss::make_ready_future<>(); }
-        iobuf io;
+        iobuf& io;
     };
     const size_t sz = io.size_bytes();
     return ss::output_stream<char>(
-      ss::data_sink(std::make_unique<iobuf_output_stream>(std::move(io))), sz);
+      ss::data_sink(std::make_unique<iobuf_output_stream>(io)), sz);
 }
 ss::input_stream<char> make_iobuf_input_stream(iobuf io) {
     struct iobuf_input_stream final : ss::data_source_impl {

@@ -2,6 +2,7 @@
 v_cc_library(
   NAME s3
   SRCS
+    client.cc
     signature.cc
     error.cc
   DEPS
@@ -10,3 +11,5 @@ v_cc_library(
     v::http
 )
 add_subdirectory(tests)
+add_subdirectory(test_client)
+
