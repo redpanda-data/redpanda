@@ -10,7 +10,10 @@
 // Package v1alpha1 represent Custom Resource definition of the vectorized.io redpanda group
 package v1alpha1
 
-import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+import (
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
 
 // ClusterSpec defines the desired state of Cluster
 type ClusterSpec struct {
@@ -24,6 +27,10 @@ type ClusterSpec struct {
 	// Replicas determine how big the cluster will be.
 	// +kubebuilder:validation:Minimum=0
 	Replicas	*int32	`json:"replicas,omitempty"`
+	// Resources used by each Redpanda container
+	// To calculate overall resource consumption one need to
+	// multiply replicas against limits
+	Resources	corev1.ResourceRequirements	`json:"resources"`
 	// Configuration represent redpanda specific configuration
 	Configuration	RedpandaConfig	`json:"configuration,omitempty"`
 }
