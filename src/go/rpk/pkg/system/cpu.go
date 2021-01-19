@@ -9,8 +9,60 @@
 
 package system
 
-import "github.com/shirou/gopsutil/v3/cpu"
+import (
+	"errors"
+	"strconv"
+	"strings"
 
-func CpuInfo() ([]cpu.InfoStat, error) {
-	return cpu.Info()
+	"github.com/spf13/afero"
+)
+
+type CPUInfo struct {
+	ModelName	string
+	Cores		int
+}
+
+func CpuInfo(fs afero.Fs) ([]*CPUInfo, error) {
+	bytes, err := afero.ReadFile(fs, "/proc/cpuinfo")
+	if err != nil {
+		return nil, err
+	}
+	contents := string(bytes)
+	if contents == "" {
+		return nil, errors.New("/proc/cpuinfo is empty")
+	}
+	sections := strings.Split(contents, "\n\n")
+
+	cpus := []*CPUInfo{}
+	for _, s := range sections {
+		if s == "" {
+			continue
+		}
+		cpu := &CPUInfo{Cores: 1}
+		sectionLines := strings.Split(s, "\n")
+		for _, l := range sectionLines {
+			row := strings.Split(l, ":")
+			for i := 0; i < len(row); i++ {
+				row[i] = strings.TrimSpace(row[i])
+			}
+			if len(row) < 2 {
+				continue
+			}
+			k := row[0]
+			v := row[1]
+
+			switch k {
+			case "model name":
+				cpu.ModelName = v
+			case "cpu cores":
+				cores, err := strconv.Atoi(v)
+				if err != nil {
+					return nil, err
+				}
+				cpu.Cores = cores
+			}
+		}
+		cpus = append(cpus, cpu)
+	}
+	return cpus, nil
 }

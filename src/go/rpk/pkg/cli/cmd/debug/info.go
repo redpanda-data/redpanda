@@ -141,7 +141,7 @@ func executeInfo(
 		return getOSInfo(timeout, osInfoRowsCh)
 	})
 	grp.Go(func() error {
-		return getCPUInfo(cpuInfoRowsCh)
+		return getCPUInfo(fs, cpuInfoRowsCh)
 	})
 	grp.Go(func() error {
 		return getConf(mgr, conf.ConfigFile, confRowsCh)
@@ -222,9 +222,9 @@ func getOSInfo(timeout time.Duration, out chan<- [][]string) error {
 	return err
 }
 
-func getCPUInfo(out chan<- [][]string) error {
+func getCPUInfo(fs afero.Fs, out chan<- [][]string) error {
 	rows := [][]string{}
-	cpuInfo, err := system.CpuInfo()
+	cpuInfo, err := system.CpuInfo(fs)
 	if err != nil {
 		err = errors.Wrap(err, "Error querying CPU info")
 	}

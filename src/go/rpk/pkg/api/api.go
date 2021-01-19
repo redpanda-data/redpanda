@@ -18,6 +18,7 @@ import (
 	"time"
 
 	log "github.com/sirupsen/logrus"
+	"github.com/spf13/afero"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/version"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cloud"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
@@ -92,7 +93,7 @@ func SendMetrics(p MetricsPayload, conf config.Config) error {
 }
 
 func SendEnvironment(
-	env EnvironmentPayload, conf config.Config, confJSON string,
+	fs afero.Fs, env EnvironmentPayload, conf config.Config, confJSON string,
 ) error {
 	confMap := map[string]interface{}{}
 	err := json.Unmarshal([]byte(confJSON), &confMap)
@@ -123,7 +124,7 @@ func SendEnvironment(
 	}
 	cpuModel := "N/A"
 	cpuCores := 0
-	cpuInfo, err := system.CpuInfo()
+	cpuInfo, err := system.CpuInfo(fs)
 	if err != nil {
 		log.Debug("Error querying CPU info: ", err)
 	} else if len(cpuInfo) > 0 {
