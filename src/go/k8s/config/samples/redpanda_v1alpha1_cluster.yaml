@@ -1,0 +1,30 @@
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Cluster
+metadata:
+  name: cluster-sample
+  labels:
+    app.kubernetes.io/name: "redpanda"
+    app.kubernetes.io/instance: "redpandacluster-sample"
+spec:
+  image: "vectorized/redpanda"
+  version: "latest"
+  replicas: 1
+  resources:
+    requests:
+      cpu: 1
+      memory: 2Gi
+    limits:
+      cpu: 1
+      memory: 2Gi
+  configuration:
+    rpcServer:
+      port: 33145
+    advertisedRpcApi:
+      port: 33145
+    kafkaApi:
+      port: 9092
+    advertisedKafkaApi:
+      port: 9092
+    admin:
+      port: 9644
+    developerMode: true
