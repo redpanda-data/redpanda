@@ -32,53 +32,57 @@ ss::future<> coproc_test_fixture::startup(log_layout_map&& llm) {
     });
 }
 
-// clang-format off
 ss::future<coproc_test_fixture::opt_reader_data_t> coproc_test_fixture::drain(
   const model::ntp& ntp,
   std::size_t limit,
   model::timeout_clock::time_point timeout) {
     const auto m_ntp = model::materialized_ntp(std::move(ntp));
-    return shard_for_ntp(m_ntp.source_ntp()).then([this, m_ntp, limit, timeout](auto shard_id){
-    if (!shard_id) {
-        vlog(
-          coproc::coproclog.error,
-          "No ntp exists, cannot drain from ntp: {}",
-          m_ntp.input_ntp());
-        return ss::make_ready_future<opt_reader_data_t>(std::nullopt);
-    }
-    vlog(
-      coproc::coproclog.info,
-      "searching for ntp {} on shard id {} ...with value for limit: {}",
-      m_ntp.input_ntp(),
-      *shard_id,
-      limit);
-    return ss::smp::submit_to(*shard_id, [this, m_ntp, limit, timeout]() {
-        return tests::cooperative_spin_wait_with_timeout(
-                 5s,
-                 [this, m_ntp] {
-                     auto& pm = app.partition_manager.local();
-                     auto partition = pm.get(m_ntp.source_ntp());
-                     return partition->is_leader()
+    return shard_for_ntp(m_ntp.source_ntp())
+      .then(
+        [this, m_ntp, limit, timeout](auto shard_id) {
+            if (!shard_id) {
+                vlog(
+                  coproc::coproclog.error,
+                  "No ntp exists, cannot drain from ntp: {}",
+                  m_ntp.input_ntp());
+                return ss::make_ready_future<opt_reader_data_t>(std::nullopt);
+            }
+            vlog(
+              coproc::coproclog.info,
+              "searching for ntp {} on shard id {} ...with value for limit: {}",
+              m_ntp.input_ntp(),
+              *shard_id,
+              limit);
+            return ss::smp::submit_to(
+              *shard_id, [this, m_ntp, limit, timeout]() {
+                  return tests::cooperative_spin_wait_with_timeout(
+                           5s,
+                           [this, m_ntp] {
+                               auto& pm = app.partition_manager.local();
+                               auto partition = pm.get(m_ntp.source_ntp());
+                               return partition->is_leader()
                             && (!m_ntp.is_materialized() || pm.log(m_ntp.input_ntp()));
-                 })
-          .then([this, m_ntp, limit, timeout] {
-              auto& pm = app.partition_manager.local();
-              auto partition = pm.get(m_ntp.source_ntp());
-              std::optional<storage::log> log;
-              if (m_ntp.is_materialized()) {
-                  if (auto olog = pm.log(m_ntp.input_ntp())) {
-                      log = olog;
-                  }
-              }
-              return do_drain(
-                       kafka::partition_wrapper(partition, log), limit, timeout)
-                .then(
-                  [](auto rval) { return opt_reader_data_t(std::move(rval)); });
-          });
-    });
-    });
+                           })
+                    .then([this, m_ntp, limit, timeout] {
+                        auto& pm = app.partition_manager.local();
+                        auto partition = pm.get(m_ntp.source_ntp());
+                        std::optional<storage::log> log;
+                        if (m_ntp.is_materialized()) {
+                            if (auto olog = pm.log(m_ntp.input_ntp())) {
+                                log = olog;
+                            }
+                        }
+                        return do_drain(
+                                 kafka::partition_wrapper(partition, log),
+                                 limit,
+                                 timeout)
+                          .then([](auto rval) {
+                              return opt_reader_data_t(std::move(rval));
+                          });
+                    });
+              });
+        });
 }
-// clang-format on
 
 ss::future<model::record_batch_reader::data_t> coproc_test_fixture::do_drain(
   kafka::partition_wrapper pw,
@@ -118,40 +122,39 @@ ss::future<model::record_batch_reader::data_t> coproc_test_fixture::do_drain(
     });
 }
 
-// clang-format off
 ss::future<model::offset> coproc_test_fixture::push(
   const model::ntp& ntp, model::record_batch_reader&& rbr) {
-    return shard_for_ntp(ntp).then([this, ntp, rbr = std::move(rbr)](auto shard_id) mutable{
-    if (!shard_id) {
+    return shard_for_ntp(ntp).then([this, ntp, rbr = std::move(rbr)](
+                                     auto shard_id) mutable {
+        if (!shard_id) {
+            vlog(
+              coproc::coproclog.error,
+              "No ntp exists, cannot push data to log: {}",
+              ntp);
+            return ss::make_ready_future<model::offset>(model::offset(-1));
+        }
         vlog(
-          coproc::coproclog.error,
-          "No ntp exists, cannot push data to log: {}",
-          ntp);
-        return ss::make_ready_future<model::offset>(model::offset(-1));
-    }
-    vlog(
-      coproc::coproclog.info,
-      "Pushing record_batch_reader to ntp: {} on shard_id: {}",
-      ntp,
-      *shard_id);
-    return app.partition_manager.invoke_on(
-      *shard_id,
-      [ntp, rbr = std::move(rbr)](cluster::partition_manager& pm) mutable {
-          auto partition = pm.get(ntp);
-          return tests::cooperative_spin_wait_with_timeout(
-                   5s, [partition] { return partition->is_leader(); })
-            .then([rbr = std::move(rbr), partition]() mutable {
-                return partition
-                  ->replicate(
-                    std::move(rbr),
-                    raft::replicate_options(
-                      raft::consistency_level::quorum_ack))
-                  .then([](auto r) { return r.value().last_offset; });
-            });
-      });
+          coproc::coproclog.info,
+          "Pushing record_batch_reader to ntp: {} on shard_id: {}",
+          ntp,
+          *shard_id);
+        return app.partition_manager.invoke_on(
+          *shard_id,
+          [ntp, rbr = std::move(rbr)](cluster::partition_manager& pm) mutable {
+              auto partition = pm.get(ntp);
+              return tests::cooperative_spin_wait_with_timeout(
+                       5s, [partition] { return partition->is_leader(); })
+                .then([rbr = std::move(rbr), partition]() mutable {
+                    return partition
+                      ->replicate(
+                        std::move(rbr),
+                        raft::replicate_options(
+                          raft::consistency_level::quorum_ack))
+                      .then([](auto r) { return r.value().last_offset; });
+                });
+          });
     });
 }
-// clang-format on
 
 ss::future<std::optional<ss::shard_id>>
 coproc_test_fixture::shard_for_ntp(const model::ntp& ntp) {
