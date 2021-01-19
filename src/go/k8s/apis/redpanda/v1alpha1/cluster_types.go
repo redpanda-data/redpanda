@@ -17,14 +17,28 @@ type ClusterSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	// Foo is an example field of Cluster. Edit cluster_types.go to remove/update
-	Foo string `json:"foo,omitempty"`
+	// Image is the fully qualified name of the Redpanda container
+	Image	string	`json:"image,omitempty"`
+	// Version is the Redpanda container tag
+	Version	string	`json:"version,omitempty"`
+	// Replicas determine how big the cluster will be.
+	// +kubebuilder:validation:Minimum=0
+	Replicas	*int32	`json:"replicas,omitempty"`
+	// Configuration represent redpanda specific configuration
+	Configuration	RedpandaConfig	`json:"configuration,omitempty"`
 }
 
 // ClusterStatus defines the observed state of Cluster
 type ClusterStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
+
+	// Replicas show how many nodes are working in the cluster
+	// +optional
+	Replicas	int32	`json:"replicas,omitempty"`
+	// Nodes of the provisioned redpanda nodes
+	// +optional
+	Nodes	[]string	`json:"nodes,omitempty"`
 }
 
 //+kubebuilder:object:root=true
@@ -46,6 +60,21 @@ type ClusterList struct {
 	metav1.TypeMeta	`json:",inline"`
 	metav1.ListMeta	`json:"metadata,omitempty"`
 	Items		[]Cluster	`json:"items"`
+}
+
+// RedpandaConfig is the definition of the main configuration
+type RedpandaConfig struct {
+	RPCServer		SocketAddress	`json:"rpcServer,omitempty"`
+	AdvertisedRPCAPI	SocketAddress	`json:"advertisedRpcApi,omitempty"`
+	KafkaAPI		SocketAddress	`json:"kafkaApi,omitempty"`
+	AdvertisedKafkaAPI	SocketAddress	`json:"advertisedKafkaApi,omitempty"`
+	AdminAPI		SocketAddress	`json:"admin,omitempty"`
+	DeveloperMode		bool		`json:"developerMode,omitempty"`
+}
+
+// SocketAddress provide the way to configure the port
+type SocketAddress struct {
+	Port int `json:"port,omitempty"`
 }
 
 func init() {
