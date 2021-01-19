@@ -24,11 +24,18 @@ import (
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/container/common"
 )
 
+func noopCheck(_ []node) func() error {
+	return func() error {
+		return nil
+	}
+}
+
 func TestStart(t *testing.T) {
 	tests := []struct {
 		name		string
 		client		func() (common.Client, error)
 		nodes		uint
+		check		func([]node) func() error
 		expectedErrMsg	string
 		expectedOutput	string
 	}{
@@ -366,6 +373,55 @@ Please check your internet connection and try again.`,
 				}, nil
 			},
 		},
+		{
+			name:	"it should fail if the cluster doesn't form",
+			nodes:	3,
+			client: func() (common.Client, error) {
+				return &common.MockClient{
+					// NetworkInspect succeeds returning the
+					// expected config.
+					MockNetworkInspect: func(
+						_ context.Context,
+						_ string,
+						_ types.NetworkInspectOptions,
+					) (types.NetworkResource, error) {
+						ipamConf := network.IPAMConfig{
+							Subnet:		"172.24.1.0/24",
+							Gateway:	"172.24.1.1",
+						}
+						ipam := network.IPAM{
+							Config: []network.IPAMConfig{
+								ipamConf,
+							},
+						}
+						res := types.NetworkResource{
+							Name:	"rpnet",
+							IPAM:	ipam,
+						}
+						return res, nil
+					},
+					// ContainerCreate succeeds.
+					MockContainerCreate: func(
+						_ context.Context,
+						_ *container.Config,
+						_ *container.HostConfig,
+						_ *network.NetworkingConfig,
+						_ string,
+					) (container.ContainerCreateCreatedBody, error) {
+						body := container.ContainerCreateCreatedBody{
+							ID: "container-1",
+						}
+						return body, nil
+					},
+				}, nil
+			},
+			check: func(_ []node) func() error {
+				return func() error {
+					return errors.New("Some weird error")
+				}
+			},
+			expectedErrMsg:	`Some weird error`,
+		},
 	}
 
 	for _, tt := range tests {
@@ -374,7 +430,12 @@ Please check your internet connection and try again.`,
 			c, err := tt.client()
 			require.NoError(st, err)
 			logrus.SetOutput(&out)
-			err = startCluster(c, tt.nodes)
+			check := noopCheck
+			if tt.check != nil {
+				check = tt.check
+			}
+			retries := uint(10)
+			err = startCluster(c, tt.nodes, check, retries)
 			if tt.expectedErrMsg != "" {
 				require.EqualError(st, err, tt.expectedErrMsg)
 			} else {

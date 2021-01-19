@@ -37,7 +37,8 @@ type node struct {
 
 func Start() *cobra.Command {
 	var (
-		nodes uint
+		nodes	uint
+		retries	uint
 	)
 	command := &cobra.Command{
 		Use:	"start",
@@ -57,6 +58,8 @@ func Start() *cobra.Command {
 			return common.WrapIfConnErr(startCluster(
 				c,
 				nodes,
+				checkBrokers,
+				retries,
 			))
 		},
 	}
@@ -69,12 +72,22 @@ func Start() *cobra.Command {
 		"The number of nodes to start",
 	)
 
+	command.Flags().UintVar(
+		&retries,
+		"retries",
+		10,
+		"The amount of times to check for the cluster before"+
+			" considering it unstable and exiting.",
+	)
+
 	return command
 }
 
-func startCluster(c common.Client, n uint) error {
+func startCluster(
+	c common.Client, n uint, check func([]node) func() error, retries uint,
+) error {
 	// Check if cluster exists and start it again.
-	restarted, err := restartCluster(c)
+	restarted, err := restartCluster(c, check, retries)
 	if err != nil {
 		return err
 	}
@@ -233,6 +246,10 @@ func startCluster(c common.Client, n uint) error {
 
 	err = grp.Wait()
 	if err != nil {
+		return fmt.Errorf("Error restarting the cluster: %v", err)
+	}
+	err = waitForCluster(check(nodes), retries)
+	if err != nil {
 		return err
 	}
 	renderClusterInfo(nodes)
@@ -244,7 +261,9 @@ func startCluster(c common.Client, n uint) error {
 	return nil
 }
 
-func restartCluster(c common.Client) ([]node, error) {
+func restartCluster(
+	c common.Client, check func([]node) func() error, retries uint,
+) ([]node, error) {
 	// Check if a cluster is running
 	states, err := common.GetExistingNodes(c)
 	if err != nil {
@@ -285,7 +304,14 @@ func restartCluster(c common.Client) ([]node, error) {
 		})
 	}
 	err = grp.Wait()
-	return nodes, err
+	if err != nil {
+		return nil, fmt.Errorf("Error restarting the cluster: %v", err)
+	}
+	err = waitForCluster(check(nodes), retries)
+	if err != nil {
+		return nil, err
+	}
+	return nodes, nil
 }
 
 func startNode(
