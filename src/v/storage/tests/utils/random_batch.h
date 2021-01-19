@@ -12,8 +12,7 @@
 #pragma once
 
 #include "model/record.h"
-
-#include <seastar/core/circular_buffer.hh>
+#include "model/record_batch_reader.h"
 
 namespace storage::test {
 /**
@@ -35,5 +34,8 @@ make_random_batches(model::offset o, int count, bool allow_compression = true);
 
 ss::circular_buffer<model::record_batch>
 make_random_batches(model::offset o = model::offset(0));
+
+model::record_batch_reader make_random_memory_record_batch_reader(
+  model::offset, int, int, bool allow_compression = true);
 
 } // namespace storage::test

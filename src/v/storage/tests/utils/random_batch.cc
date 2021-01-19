@@ -19,6 +19,7 @@
 #include "storage/parser_utils.h"
 #include "utils/vint.h"
 
+#include <seastar/core/future.hh>
 #include <seastar/core/smp.hh>
 
 #include <random>
@@ -151,6 +152,21 @@ make_random_batches(model::offset o, int count, bool allow_compression) {
 
 ss::circular_buffer<model::record_batch> make_random_batches(model::offset o) {
     return make_random_batches(o, get_int(2, 30));
+}
+
+model::record_batch_reader make_random_memory_record_batch_reader(
+  model::offset offset, int batch_size, int n_batches, bool allow_compression) {
+    return model::make_generating_record_batch_reader(
+      [offset, batch_size, n_batches, allow_compression]() mutable {
+          model::record_batch_reader::data_t batches;
+          if (n_batches--) {
+              batches = make_random_batches(
+                offset, batch_size, allow_compression);
+              offset = batches.back().last_offset()++;
+          }
+          return ss::make_ready_future<model::record_batch_reader::data_t>(
+            std::move(batches));
+      });
 }
 
 } // namespace storage::test
