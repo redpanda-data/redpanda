@@ -71,7 +71,9 @@ struct shared_script_resources {
     /// guaranteed across script contexts. Two scripts writing to the same
     /// underlying log must not have portions of the writes be ordered within
     /// the seastar reactor
-    absl::flat_hash_map<model::ntp, mutex> log_mtx;
+    /// NOTE: Pointer stability is explicity requested due to the way iterators
+    /// to elements within the collection are used
+    absl::node_hash_map<model::ntp, mutex> log_mtx;
 
     explicit shared_script_resources(
       rpc::reconnect_transport t, storage::api& a)
