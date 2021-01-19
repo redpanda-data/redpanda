@@ -1,0 +1,25 @@
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+repos:
+  - repo: https://github.com/vectorizedio/pre-commit-vectorizedio.git
+    rev: da67abf82ab30c3f2b5f39620b89f18d16448730
+    hooks:
+      - id: crlfmt
+      - id: golangci-lint
+        args:
+          - src/go/k8s
+  - repo: git://github.com/pre-commit/pre-commit-hooks
+    rev: v3.4.0
+    hooks:
+      - id: check-merge-conflict
+      - id: check-yaml
+        args:
+          - --allow-multiple-documents
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-symlinks
+      - id: detect-private-key
+  - repo: https://github.com/dnephin/pre-commit-golang.git
+    rev: master
+    hooks:
+      - id: go-mod-tidy
