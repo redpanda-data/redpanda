@@ -39,17 +39,19 @@ func init() {
 }
 
 func main() {
-	var metricsAddr string
-
-	var enableLeaderElection bool
-
-	var probeAddr string
+	var (
+		metricsAddr		string
+		enableLeaderElection	bool
+		probeAddr		string
+		webhookEnabled		bool
+	)
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
+	flag.BoolVar(&webhookEnabled, "webhook-enabled", false, "Enable webhook Manager")
 
 	opts := zap.Options{
 		Development: true,
@@ -83,9 +85,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (&redpandav1alpha1.Cluster{}).SetupWebhookWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create webhook", "webhook", "Cluster")
-		os.Exit(1)
+	if webhookEnabled {
+		setupLog.Info("setup webhook")
+
+		if err = (&redpandav1alpha1.Cluster{}).SetupWebhookWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create webhook", "webhook", "RedpandaCluster")
+			os.Exit(1)
+		}
 	}
 	//+kubebuilder:scaffold:builder
 
