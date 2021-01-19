@@ -16,13 +16,16 @@ import (
 	"math"
 	"runtime"
 	"sync"
+	"time"
 
+	"github.com/avast/retry-go"
 	"github.com/docker/docker/api/types"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/container/common"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/ui"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/kafka"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/net"
 	"golang.org/x/sync/errgroup"
 )
@@ -294,6 +297,43 @@ func startNode(
 	ctx, _ := common.DefaultCtx()
 	err := c.ContainerStart(ctx, containerID, types.ContainerStartOptions{})
 	return err
+}
+
+func checkBrokers(nodes []node) func() error {
+	return func() error {
+		addrs := make([]string, 0, len(nodes))
+		for _, n := range nodes {
+			addrs = append(addrs, n.addr)
+		}
+		client, err := kafka.InitClient(addrs...)
+		if err != nil {
+			return err
+		}
+		lenBrokers := len(client.Brokers())
+		if lenBrokers != len(nodes) {
+			return fmt.Errorf(
+				"Expected %d nodes, got %d.",
+				len(nodes),
+				lenBrokers,
+			)
+		}
+		return nil
+	}
+}
+
+func waitForCluster(check func() error, retries uint) error {
+	log.Info("Waiting for the cluster to be ready...")
+	return retry.Do(
+		check,
+		retry.Attempts(retries),
+		retry.DelayType(retry.FixedDelay),
+		retry.Delay(1*time.Second),
+		retry.LastErrorOnly(true),
+		retry.OnRetry(func(n uint, err error) {
+			log.Debugf("Cluster didn't stabilize: %v", err)
+			log.Debugf("Retrying (%d retries left)", retries-n)
+		}),
+	)
 }
 
 func renderClusterInfo(nodes []node) {
