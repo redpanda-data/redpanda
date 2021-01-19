@@ -7,14 +7,10 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+// Package v1alpha1 represent Custom Resource definition of the vectorized.io redpanda group
 package v1alpha1
 
-import (
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-)
-
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
+import metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 // ClusterSpec defines the desired state of Cluster
 type ClusterSpec struct {
@@ -36,20 +32,20 @@ type ClusterStatus struct {
 
 // Cluster is the Schema for the clusters API
 type Cluster struct {
-	metav1.TypeMeta   `json:",inline"`
-	metav1.ObjectMeta `json:"metadata,omitempty"`
+	metav1.TypeMeta		`json:",inline"`
+	metav1.ObjectMeta	`json:"metadata,omitempty"`
 
-	Spec   ClusterSpec   `json:"spec,omitempty"`
-	Status ClusterStatus `json:"status,omitempty"`
+	Spec	ClusterSpec	`json:"spec,omitempty"`
+	Status	ClusterStatus	`json:"status,omitempty"`
 }
 
 //+kubebuilder:object:root=true
 
 // ClusterList contains a list of Cluster
 type ClusterList struct {
-	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []Cluster `json:"items"`
+	metav1.TypeMeta	`json:",inline"`
+	metav1.ListMeta	`json:"metadata,omitempty"`
+	Items		[]Cluster	`json:"items"`
 }
 
 func init() {
