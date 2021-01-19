@@ -72,7 +72,7 @@ func main() {
 		LeaderElectionID:	"aa9fc693.vectorized.io",
 	})
 	if err != nil {
-		setupLog.Error(err, "unable to start manager")
+		setupLog.Error(err, "Unable to start manager")
 		os.Exit(1)
 	}
 
@@ -81,34 +81,34 @@ func main() {
 		Log:	ctrl.Log.WithName("controllers").WithName("redpanda").WithName("Cluster"),
 		Scheme:	mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "Cluster")
+		setupLog.Error(err, "Unable to create controller", "controller", "Cluster")
 		os.Exit(1)
 	}
 
 	if webhookEnabled {
-		setupLog.Info("setup webhook")
+		setupLog.Info("Setup webhook")
 
 		if err = (&redpandav1alpha1.Cluster{}).SetupWebhookWithManager(mgr); err != nil {
-			setupLog.Error(err, "unable to create webhook", "webhook", "RedpandaCluster")
+			setupLog.Error(err, "Unable to create webhook", "webhook", "RedpandaCluster")
 			os.Exit(1)
 		}
 	}
 	//+kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("health", healthz.Ping); err != nil {
-		setupLog.Error(err, "unable to set up health check")
+		setupLog.Error(err, "Unable to set up health check")
 		os.Exit(1)
 	}
 
 	if err := mgr.AddReadyzCheck("check", healthz.Ping); err != nil {
-		setupLog.Error(err, "unable to set up ready check")
+		setupLog.Error(err, "Unable to set up ready check")
 		os.Exit(1)
 	}
 
-	setupLog.Info("starting manager")
+	setupLog.Info("Starting manager")
 
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
-		setupLog.Error(err, "problem running manager")
+		setupLog.Error(err, "Problem running manager")
 		os.Exit(1)
 	}
 }
