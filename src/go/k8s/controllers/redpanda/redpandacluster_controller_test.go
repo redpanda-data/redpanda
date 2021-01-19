@@ -18,6 +18,7 @@ import (
 	"github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/pointer"
@@ -38,6 +39,10 @@ var _ = Describe("RedPandaCluster controller", func() {
 
 	Context("When creating RedpandaCluster", func() {
 		It("Should create Redpanda cluster", func() {
+			resources := corev1.ResourceList{
+				corev1.ResourceCPU:	resource.MustParse("1"),
+				corev1.ResourceMemory:	resource.MustParse("2Gi"),
+			}
 
 			key := types.NamespacedName{
 				Name:		"redpanda-test",
@@ -65,6 +70,10 @@ var _ = Describe("RedPandaCluster controller", func() {
 					Replicas:	pointer.Int32Ptr(replicas),
 					Configuration: v1alpha1.RedpandaConfig{
 						KafkaAPI: v1alpha1.SocketAddress{Port: kafkaPort},
+					},
+					Resources: corev1.ResourceRequirements{
+						Limits:		resources,
+						Requests:	resources,
 					},
 				},
 			}
@@ -98,7 +107,9 @@ var _ = Describe("RedPandaCluster controller", func() {
 					*sts.Spec.Replicas == replicas &&
 					sts.Spec.Template.Spec.Containers[0].Image == "vectorized/redpanda:"+redpandaContainerTag
 			}, timeout, interval).Should(BeTrue())
+
+			Expect(sts.Spec.Template.Spec.Containers[0].Resources.Requests).Should(Equal(resources))
+			Expect(sts.Spec.Template.Spec.Containers[0].Resources.Limits).Should(Equal(resources))
 		})
 	})
-
 })

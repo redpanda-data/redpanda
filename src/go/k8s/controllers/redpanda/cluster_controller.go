@@ -14,6 +14,7 @@ import (
 	"context"
 	"reflect"
 	"strconv"
+	"strings"
 
 	"github.com/go-logr/logr"
 	redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
@@ -277,6 +278,11 @@ func copyConfig(
 func (r *ClusterReconciler) createBootstrapStatefulSet(
 	ctx context.Context, cluster *redpandav1alpha1.Cluster,
 ) error {
+	memory, exist := cluster.Spec.Resources.Limits["memory"]
+	if !exist {
+		memory = resource.MustParse("2Gi")
+	}
+
 	return r.Create(ctx, &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace:	cluster.Namespace,
@@ -319,7 +325,7 @@ func (r *ClusterReconciler) createBootstrapStatefulSet(
 								"--advertise-rpc-addr $HOSTNAME." + cluster.Namespace + ".redpanda.svc.cluster.local:" + strconv.Itoa(cluster.Spec.Configuration.AdvertisedRPCAPI.Port),
 								"--check=false",
 								"--smp 1",
-								"--memory 2G",
+								"--memory " + strings.ReplaceAll(memory.String(), "Gi", "G"),
 								"start",
 								"--",
 								"--default-log-level=info",
@@ -340,8 +346,8 @@ func (r *ClusterReconciler) createBootstrapStatefulSet(
 								},
 							},
 							Resources: corev1.ResourceRequirements{
-								Limits:		nil,
-								Requests:	nil,
+								Limits:		cluster.Spec.Resources.Limits,
+								Requests:	cluster.Spec.Resources.Requests,
 							},
 							VolumeMounts: []corev1.VolumeMount{
 								{
