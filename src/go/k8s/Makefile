@@ -1,6 +1,6 @@
 
 # Image URL to use all building/pushing image targets
-IMG ?= controller:latest
+IMG ?= gcr.io/vectorized/redpanda-k8s-operator:latest
 # Produce CRDs that work back to Kubernetes 1.11 (no version conversion)
 CRD_OPTIONS ?= "crd:trivialVersions=true,preserveUnknownFields=false"
 
@@ -41,6 +41,9 @@ deploy: manifests kustomize
 	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
 	$(KUSTOMIZE) build config/default | kubectl apply -f -
 
+# Deploy pre loaded controller in the configured Kind Kubernetes cluster
+deploy-to-kind: manifests kustomize push-to-kind deploy
+
 # UnDeploy controller from the configured Kubernetes cluster in ~/.kube/config
 undeploy:
 	$(KUSTOMIZE) build config/default | kubectl delete -f -
@@ -68,6 +71,10 @@ docker-build: test
 # Push the docker image
 docker-push:
 	docker push ${IMG}
+
+# Preload controller image to kind cluster
+push-to-kind:
+	kind load docker-image ${IMG}
 
 # Download controller-gen locally if necessary
 CONTROLLER_GEN = $(shell pwd)/bin/controller-gen
