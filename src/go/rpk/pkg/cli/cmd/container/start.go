@@ -158,7 +158,7 @@ func startCluster(c common.Client, n uint) error {
 
 	seedNode := node{
 		seedID,
-		fmt.Sprintf("%s:%d", seedState.ContainerIP, seedKafkaPort),
+		nodeAddr(seedKafkaPort),
 	}
 
 	nodes := []node{seedNode}
@@ -221,11 +221,7 @@ func startCluster(c common.Client, n uint) error {
 			mu.Lock()
 			nodes = append(nodes, node{
 				id,
-				fmt.Sprintf(
-					"%s:%d",
-					state.ContainerIP,
-					state.HostKafkaPort,
-				),
+				nodeAddr(state.HostKafkaPort),
 			})
 			mu.Unlock()
 			return nil
@@ -279,11 +275,7 @@ func restartCluster(c common.Client) ([]node, error) {
 			mu.Lock()
 			nodes = append(nodes, node{
 				state.ID,
-				fmt.Sprintf(
-					"%s:%d",
-					state.ContainerIP,
-					state.HostKafkaPort,
-				),
+				nodeAddr(state.HostKafkaPort),
 			})
 			mu.Unlock()
 			return nil
@@ -317,4 +309,11 @@ func renderClusterInfo(nodes []node) {
 	}
 
 	t.Render()
+}
+
+func nodeAddr(port uint) string {
+	return fmt.Sprintf(
+		"127.0.0.1:%d",
+		port,
+	)
 }
