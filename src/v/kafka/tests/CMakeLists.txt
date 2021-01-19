@@ -6,6 +6,7 @@ rp_test(
   SOURCES error_mapping_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES Boost::unit_test_framework v::kafka
+  LABELS kafka
 )
 
 rp_test(
@@ -14,6 +15,7 @@ rp_test(
   SOURCES timeouts_conversion_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES Boost::unit_test_framework v::kafka
+  LABELS kafka
 )
 
 rp_test(
@@ -22,6 +24,7 @@ rp_test(
   SOURCES types_conversion_tests.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES Boost::unit_test_framework v::kafka
+  LABELS kafka
 )
 
 rp_test(
@@ -30,6 +33,7 @@ rp_test(
   SOURCES topic_utils_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES Boost::unit_test_framework v::kafka
+  LABELS kafka
 )
 
 set(srcs
@@ -55,6 +59,7 @@ rp_test(
   SOURCES ${srcs}
   LIBRARIES v::seastar_testing_main v::application v::raft v::kafka v::config v::storage_test_utils
   ARGS "-- -c 1"
+  LABELS kafka
 )
 
 find_program(KAFKA_PYTHON_ENV "kafka-python-env")
@@ -69,6 +74,7 @@ rp_test(
   # the same scratch directory so the generated output file writes to pwd.
   PREPARE_COMMAND "${KAFKA_PYTHON_ENV} ${PROJECT_SOURCE_DIR}/tools/kafka-python-api-serde.py 1000 > requests.bin"
   ARGS "-- -c 1"
+  LABELS kafka
 )
 
 rp_test(
@@ -76,4 +82,5 @@ rp_test(
   BINARY_NAME test_scram_algorithm
   SOURCES scram_algorithm_test.cc
   LIBRARIES v::seastar_testing_main v::kafka
+  LABELS kafka
 )

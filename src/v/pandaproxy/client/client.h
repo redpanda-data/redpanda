@@ -100,7 +100,7 @@ public:
     ss::future<kafka::produce_response::partition> produce_record_batch(
       model::topic_partition tp, model::record_batch&& batch);
 
-    ss::future<kafka::fetch_response::partition> fetch_partition(
+    ss::future<kafka::fetch_response> fetch_partition(
       model::topic_partition tp,
       model::offset offset,
       int32_t max_bytes,

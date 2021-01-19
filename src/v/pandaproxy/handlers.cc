@@ -108,8 +108,7 @@ get_topics_records(server::request_t rq, server::reply_t rp) {
     rq.req.reset();
     return rq.ctx.client
       .fetch_partition(std::move(tp), offset, max_bytes, timeout)
-      .then([fmt,
-             rp = std::move(rp)](kafka::fetch_response::partition res) mutable {
+      .then([fmt, rp = std::move(rp)](kafka::fetch_response res) mutable {
           rapidjson::StringBuffer str_buf;
           rapidjson::Writer<rapidjson::StringBuffer> w(str_buf);
 

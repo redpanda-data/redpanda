@@ -152,7 +152,7 @@ ss::future<kafka::produce_response::partition> client::produce_record_batch(
       });
 }
 
-ss::future<kafka::fetch_response::partition> client::fetch_partition(
+ss::future<kafka::fetch_response> client::fetch_partition(
   model::topic_partition tp,
   model::offset offset,
   int32_t max_bytes,
@@ -168,12 +168,9 @@ ss::future<kafka::fetch_response::partition> client::fetch_partition(
       [this](auto& build_request, model::topic_partition& tp) {
           vlog(ppclog.debug, "fetching: {}", tp);
           return gated_retry_with_mitigation([this, &tp, &build_request]() {
-                     return _brokers.find(tp)
-                       .then([&tp, &build_request](shared_broker_t&& b) {
+                     return _brokers.find(tp).then(
+                       [&tp, &build_request](shared_broker_t&& b) {
                            return b->dispatch(build_request(tp));
-                       })
-                       .then([](kafka::fetch_response res) {
-                           return std::move(res.partitions[0]);
                        });
                  })
             .handle_exception([&tp](std::exception_ptr ex) {

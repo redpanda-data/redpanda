@@ -44,8 +44,9 @@ FIXTURE_TEST(pandaproxy_fetch, ppc_test_fixture) {
         info("Fetching from unknown topic");
         auto ntp = make_default_ntp(
           model::topic("unknown"), model::partition_id(0));
-        auto p{
+        auto res{
           client.fetch_partition(ntp.tp, model::offset(0), 1024, 1000ms).get()};
+        const auto& p = res.partitions[0];
         BOOST_REQUIRE_EQUAL(p.name, ntp.tp.topic);
         BOOST_REQUIRE_EQUAL(p.responses.size(), 1);
         BOOST_REQUIRE_EQUAL(p.responses[0].id, ntp.tp.partition);
@@ -63,8 +64,9 @@ FIXTURE_TEST(pandaproxy_fetch, ppc_test_fixture) {
     {
         info("Fetching from nonempty known topic");
         ppc::shard_local_cfg().retries.set_value(size_t(3));
-        auto p{
+        auto res{
           client.fetch_partition(ntp.tp, model::offset(0), 1024, 1000ms).get()};
+        const auto& p = res.partitions[0];
         BOOST_REQUIRE_EQUAL(p.name, ntp.tp.topic);
         BOOST_REQUIRE_EQUAL(p.responses.size(), 1);
         auto const& r = p.responses[0];

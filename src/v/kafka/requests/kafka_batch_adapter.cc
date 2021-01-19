@@ -9,6 +9,7 @@
 
 #include "kafka/requests/kafka_batch_adapter.h"
 
+#include "bytes/iobuf.h"
 #include "hashing/crc32c.h"
 #include "kafka/requests/request_context.h"
 #include "kafka/requests/request_reader.h"
@@ -23,11 +24,6 @@
 #include <stdexcept>
 
 namespace kafka {
-
-struct header_and_kafka_size {
-    model::record_batch_header header;
-    size_t kafka_size;
-};
 
 model::record_batch_header kafka_batch_adapter::read_header(iobuf_parser& in) {
     const size_t initial_bytes_consumed = in.bytes_consumed();
@@ -123,7 +119,28 @@ void kafka_batch_adapter::verify_crc(int32_t expected_crc, iobuf_parser in) {
     }
 }
 
-void kafka_batch_adapter::adapt(iobuf&& kbatch) {
+iobuf kafka_batch_adapter::adapt(iobuf&& kbatch) {
+    // The batch size given in the kafka header does not include the offset
+    // preceeding the length field nor the size of the length field itself.
+    constexpr size_t kafka_length_diff
+      = sizeof(model::record_batch_header::base_offset)
+        + sizeof(model::record_batch_header::size_bytes);
+
+    if (unlikely(kbatch.size_bytes() < kafka_length_diff)) {
+        vlog(klog.error, "kbatch is unexpectedly small");
+        return iobuf{};
+    }
+
+    auto batch_length =
+      [peeker{iobuf_parser(kbatch.share(0, kafka_length_diff))}]() mutable {
+          peeker.skip(sizeof(model::record_batch_header::base_offset));
+          return peeker.consume_be_type<int32_t>() + kafka_length_diff;
+      }();
+
+    auto remainder = kbatch.share(
+      batch_length, kbatch.size_bytes() - batch_length);
+    kbatch.trim_back(remainder.size_bytes());
+
     auto crcparser = iobuf_parser(kbatch.share(0, kbatch.size_bytes()));
     auto parser = iobuf_parser(std::move(kbatch));
 
@@ -131,14 +148,14 @@ void kafka_batch_adapter::adapt(iobuf&& kbatch) {
     if (unlikely(!v2_format)) {
         vlog(
           klog.error,
-          "cann only parse magic.version2 format messages. ignoring");
-        return;
+          "can only parse magic.version2 format messages. ignoring");
+        return remainder;
     }
 
     verify_crc(header.crc, std::move(crcparser));
     if (unlikely(!valid_crc)) {
-        vlog(klog.error, "batch has invlaid CRC: {}", header);
-        return;
+        vlog(klog.error, "batch has invalid CRC: {}", header);
+        return remainder;
     }
 
     auto records_size = header.size_bytes
@@ -158,11 +175,12 @@ void kafka_batch_adapter::adapt(iobuf&& kbatch) {
             new_batch.for_each_record([](model::record r) { (void)r; });
         } catch (const std::exception& e) {
             vlog(klog.error, "Parsing uncompressed records: {}", e.what());
-            return;
+            return remainder;
         }
     }
 
     batch = std::move(new_batch);
+    return remainder;
 }
 
 } // namespace kafka

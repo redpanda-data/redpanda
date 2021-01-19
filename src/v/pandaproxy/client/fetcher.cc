@@ -40,12 +40,10 @@ kafka::fetch_request make_fetch_request(
       .min_bytes = 0,
       .max_bytes = max_bytes,
       .isolation_level = 0,
-      .session_id = 0,
-      .session_epoch = 0,
       .topics{std::move(topics)}};
 }
 
-kafka::fetch_response::partition
+kafka::fetch_response
 make_fetch_response(const model::topic_partition& tp, std::exception_ptr ex) {
     kafka::error_code error;
     try {
@@ -79,7 +77,12 @@ make_fetch_response(const model::topic_partition& tp, std::exception_ptr ex) {
     responses.push_back(std::move(pr));
     auto response = kafka::fetch_response::partition(tp.topic);
     response.responses = std::move(responses);
-    return response;
+    std::vector<kafka::fetch_response::partition> parts;
+    parts.push_back(std::move(response));
+    return kafka::fetch_response{
+      .error = error,
+      .partitions = std::move(parts),
+    };
 }
 
 } // namespace pandaproxy::client

@@ -39,19 +39,25 @@ constexpr size_t kafka_header_size = sizeof(int64_t) + // base offset
 /**
  * Usage:
  *
- *   kafka_batch_adapter kba;
- *   kba.adapt(std::move(batch));
+ *   iobuf record_set; // May contain multiple batches, e.g., fetch_response
+ *   while(!record_set.empty()) {
+ *       kafka_batch_adapter kba;
+ *       record_set = kba.adapt(std::move(record_set));
+ *       do_something_with(kba.batch);
+ *   }
  *
  * 1. require that v2_format is true
  * 2. require that valid_crc is true
- * 3. if batch is empty then it signals that more data was on the wire than the
- *    expected single batch. otherwise, its good to go.
+ * 3. if kba.batch is empty then it signals that decoding failed. otherwise,
+ *    it's good to go.
+ * 4. if returned batch is not empty then it signals that more data was on the
+ *    wire than a single batch.
  *
  * Note that the default constructed batch adapter is in an undefined state.
  */
 class kafka_batch_adapter {
 public:
-    void adapt(iobuf&&);
+    iobuf adapt(iobuf&&);
 
     bool v2_format;
     bool valid_crc;

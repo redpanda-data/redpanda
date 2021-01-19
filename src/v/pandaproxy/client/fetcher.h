@@ -21,7 +21,7 @@ kafka::fetch_request make_fetch_request(
   int32_t max_bytes,
   std::chrono::milliseconds timeout);
 
-kafka::fetch_response::partition
+kafka::fetch_response
 make_fetch_response(const model::topic_partition& tp, std::exception_ptr ex);
 
 } // namespace pandaproxy::client

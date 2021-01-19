@@ -16,6 +16,7 @@
 #include "json/json.h"
 #include "kafka/errors.h"
 #include "kafka/requests/fetch_request.h"
+#include "model/fundamental.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "pandaproxy/json/iobuf.h"
@@ -34,46 +35,74 @@
 namespace pandaproxy::json {
 
 template<>
-class rjson_serialize_impl<kafka::fetch_response::partition> {
+class rjson_serialize_impl<model::record> {
+public:
+    explicit rjson_serialize_impl(
+      serialization_format fmt,
+      model::topic_partition_view tpv,
+      model::offset base_offset)
+      : _fmt(fmt)
+      , _tpv(tpv)
+      , _base_offset(base_offset) {}
+
+    void operator()(
+      rapidjson::Writer<rapidjson::StringBuffer>& w, model::record record) {
+        w.StartObject();
+        w.Key("topic");
+        ::json::rjson_serialize(w, _tpv.topic);
+        w.Key("key");
+        rjson_serialize_fmt(_fmt)(w, record.release_key());
+        w.Key("value");
+        rjson_serialize_fmt(_fmt)(w, record.release_value());
+        w.Key("partition");
+        ::json::rjson_serialize(w, _tpv.partition);
+        w.Key("offset");
+        ::json::rjson_serialize(w, _base_offset() + record.offset_delta());
+        w.EndObject();
+    }
+
+private:
+    serialization_format _fmt;
+    model::topic_partition_view _tpv;
+    model::offset _base_offset;
+};
+
+template<>
+class rjson_serialize_impl<kafka::fetch_response> {
 public:
     explicit rjson_serialize_impl(serialization_format fmt)
       : _fmt(fmt) {}
 
     void operator()(
       rapidjson::Writer<rapidjson::StringBuffer>& w,
-      kafka::fetch_response::partition&& v) {
-        vassert(
-          v.responses.size() == 1, "expected a single partition_response");
-
-        auto r = std::move(v.responses[0]);
-        if (r.has_error()) {
-            error_body e{
-              .error_code = ss::httpd::reply::status_type::not_found,
-              .message{ss::sstring{kafka::error_code_to_str(r.error)}}};
-            rjson_serialize(w, e);
-            return;
+      kafka::fetch_response&& res) {
+        // Eager check for errors
+        for (auto& v : res) {
+            if (v.partition_response->has_error()) {
+                error_body e{
+                  .error_code = ss::httpd::reply::status_type::not_found,
+                  .message{ss::sstring{
+                    kafka::error_code_to_str(v.partition_response->error)}}};
+                rjson_serialize(w, e);
+                return;
+            }
         }
 
         w.StartArray();
-        if (r.record_set && !r.record_set->empty()) {
-            kafka::kafka_batch_adapter adapter;
-            adapter.adapt(std::move(*r.record_set));
-            adapter.batch->for_each_record(
-              [this, &w, &v, &r, &adapter](model::record record) {
-                  w.StartObject();
-                  w.Key("topic");
-                  ::json::rjson_serialize(w, v.name);
-                  w.Key("key");
-                  rjson_serialize_fmt(_fmt)(w, record.release_key());
-                  w.Key("value");
-                  rjson_serialize_fmt(_fmt)(w, record.release_value());
-                  w.Key("partition");
-                  ::json::rjson_serialize(w, r.id);
-                  w.Key("offset");
-                  ::json::rjson_serialize(
-                    w, adapter.batch->base_offset()() + record.offset_delta());
-                  w.EndObject();
-              });
+        for (auto& v : res) {
+            auto r = std::move(*v.partition_response);
+            model::topic_partition_view tpv(v.partition->name, r.id);
+            while (r.record_set && !r.record_set->empty()) {
+                kafka::kafka_batch_adapter adapter;
+                r.record_set = adapter.adapt(std::move(*r.record_set));
+                auto rjs = rjson_serialize_impl<model::record>(
+                  _fmt, tpv, adapter.batch->base_offset());
+
+                adapter.batch->for_each_record(
+                  [&rjs, &w](model::record record) {
+                      rjs(w, std::move(record));
+                  });
+            }
         }
         w.EndArray();
     }
