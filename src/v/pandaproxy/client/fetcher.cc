@@ -40,8 +40,6 @@ kafka::fetch_request make_fetch_request(
       .min_bytes = 0,
       .max_bytes = max_bytes,
       .isolation_level = 0,
-      .session_id = 0,
-      .session_epoch = 0,
       .topics{std::move(topics)}};
 }
 
