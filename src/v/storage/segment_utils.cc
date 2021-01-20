@@ -39,6 +39,8 @@
 #include <seastar/core/reactor.hh>
 #include <seastar/core/rwlock.hh>
 #include <seastar/core/seastar.hh>
+#include <seastar/core/semaphore.hh>
+#include <seastar/core/when_all.hh>
 
 #include <absl/container/btree_map.h>
 #include <absl/container/flat_hash_map.h>
@@ -595,6 +597,34 @@ ss::future<> transfer_segment(
 
     // clean up replacement segment
     co_await from->remove_persistent_state();
+}
+
+ss::future<std::vector<ss::rwlock::holder>> write_lock_segments(
+  std::vector<ss::lw_shared_ptr<segment>>& segments,
+  ss::semaphore::clock::duration timeout,
+  int retries) {
+    vassert(retries >= 0, "Invalid retries value");
+    std::vector<ss::rwlock::holder> held;
+    held.reserve(segments.size());
+    while (true) {
+        try {
+            std::vector<ss::future<ss::rwlock::holder>> held_f;
+            held_f.reserve(segments.size());
+            for (auto& segment : segments) {
+                held_f.push_back(
+                  segment->write_lock(ss::semaphore::clock::now() + timeout));
+            }
+            held = co_await ss::when_all_succeed(held_f.begin(), held_f.end());
+            break;
+        } catch (ss::semaphore_timed_out&) {
+            held.clear();
+        }
+        if (retries == 0) {
+            throw ss::semaphore_timed_out();
+        }
+        --retries;
+    }
+    co_return held;
 }
 
 std::filesystem::path compacted_index_path(std::filesystem::path segment_path) {
