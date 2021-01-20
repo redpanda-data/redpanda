@@ -49,8 +49,13 @@ ss::future<result<vote_reply>> vote_stm::do_dispatch_one(vnode n) {
 
     auto r = _req;
     _ptr->_probe.vote_request_sent();
-    return _ptr->_client_protocol.vote(
-      n.id(), std::move(r), rpc::client_opts(tout));
+    r.target_node_id = n;
+    return _ptr->_client_protocol
+      .vote(n.id(), std::move(r), rpc::client_opts(tout))
+      .then([this](result<vote_reply> reply) {
+          return _ptr->validate_reply_target_node(
+            "vote_request", std::move(reply));
+      });
 }
 
 ss::future<> vote_stm::dispatch_one(vnode n) {
@@ -107,12 +112,12 @@ ss::future<> vote_stm::vote(bool leadership_transfer) {
           auto last_entry_term = _ptr->get_last_entry_term(lstats);
 
           _req = vote_request{
-            _ptr->_self,
-            _ptr->group(),
-            _ptr->term(),
-            lstats.dirty_offset,
-            last_entry_term,
-            leadership_transfer};
+            .node_id = _ptr->_self,
+            .group = _ptr->group(),
+            .term = _ptr->term(),
+            .prev_log_index = lstats.dirty_offset,
+            .prev_log_term = last_entry_term,
+            .leadership_transfer = leadership_transfer};
           // we have to self vote before dispatching vote request to
           // other nodes, this vote has to be done under op semaphore as
           // it changes voted_for state

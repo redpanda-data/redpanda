@@ -76,6 +76,7 @@ SEASTAR_THREAD_TEST_CASE(append_entries_requests) {
     };
     raft::append_entries_request req(
       raft::vnode(model::node_id(1), model::revision_id(10)),
+      raft::vnode(model::node_id(10), model::revision_id(101)),
       meta,
       std::move(readers.back()));
 
@@ -84,6 +85,7 @@ SEASTAR_THREAD_TEST_CASE(append_entries_requests) {
 
     BOOST_REQUIRE_EQUAL(
       d.node_id, raft::vnode(model::node_id(1), model::revision_id(10)));
+    BOOST_REQUIRE_EQUAL(d.target_node_id, req.target_node_id);
     BOOST_REQUIRE_EQUAL(d.meta.group, meta.group);
     BOOST_REQUIRE_EQUAL(d.meta.commit_index, meta.commit_index);
     BOOST_REQUIRE_EQUAL(d.meta.term, meta.term);
@@ -126,6 +128,8 @@ SEASTAR_THREAD_TEST_CASE(heartbeat_request_roundtrip) {
         req.heartbeats[i].meta.prev_log_index = model::offset(i);
         req.heartbeats[i].meta.prev_log_term = model::term_id(i);
         req.heartbeats[i].meta.last_visible_index = model::offset(i);
+        req.heartbeats[i].target_node_id = raft::vnode(
+          model::node_id(0), model::revision_id(i));
     }
     iobuf buf;
     reflection::async_adl<raft::heartbeat_request>{}
@@ -150,6 +154,9 @@ SEASTAR_THREAD_TEST_CASE(heartbeat_request_roundtrip) {
         BOOST_REQUIRE_EQUAL(
           res.heartbeats[i].meta.last_visible_index, model::offset(i));
         BOOST_REQUIRE_EQUAL(
+          res.heartbeats[i].target_node_id,
+          raft::vnode(model::node_id(0), model::revision_id(i)));
+        BOOST_REQUIRE_EQUAL(
           res.heartbeats[i].node_id,
           raft::vnode(model::node_id(one_k), model::revision_id(i)));
     }
@@ -160,6 +167,8 @@ SEASTAR_THREAD_TEST_CASE(heartbeat_request_roundtrip_with_negative) {
 
     req.heartbeats = std::vector<raft::heartbeat_metadata>(one_k);
     for (int64_t i = 0; i < one_k; ++i) {
+        req.heartbeats[i].target_node_id = raft::vnode(
+          model::node_id(0), model::revision_id(-i - 100));
         req.heartbeats[i].node_id = raft::vnode(
           model::node_id(one_k), model::revision_id(-i - 100));
         req.heartbeats[i].meta.group = raft::group_id(i);
@@ -186,6 +195,11 @@ SEASTAR_THREAD_TEST_CASE(heartbeat_request_roundtrip_with_negative) {
         BOOST_REQUIRE_EQUAL(hb.meta.prev_log_index, model::offset{});
         BOOST_REQUIRE_EQUAL(hb.meta.prev_log_term, model::term_id{});
         BOOST_REQUIRE_EQUAL(hb.meta.last_visible_index, model::offset{});
+        BOOST_REQUIRE_EQUAL(
+          hb.node_id, raft::vnode(model::node_id(one_k), model::revision_id{}));
+        BOOST_REQUIRE_EQUAL(
+          hb.target_node_id,
+          raft::vnode(model::node_id(0), model::revision_id{}));
     }
 }
 SEASTAR_THREAD_TEST_CASE(heartbeat_response_roundtrip) {
@@ -200,6 +214,8 @@ SEASTAR_THREAD_TEST_CASE(heartbeat_response_roundtrip) {
                          + model::offset(random_generators::get_int(10000));
 
         reply.meta.push_back(raft::append_entries_reply{
+          .target_node_id = raft::vnode(
+            model::node_id(2), model::revision_id(i)),
           .node_id = raft::vnode(model::node_id(1), model::revision_id(i)),
           .group = raft::group_id(i),
           .term = model::term_id(random_generators::get_int(-1, 1000)),
@@ -227,6 +243,8 @@ SEASTAR_THREAD_TEST_CASE(heartbeat_response_roundtrip) {
     for (size_t i = 0; i < result.meta.size(); ++i) {
         auto gr = result.meta[i].group;
         BOOST_REQUIRE_EQUAL(expected[gr].node_id, result.meta[i].node_id);
+        BOOST_REQUIRE_EQUAL(
+          expected[gr].target_node_id, result.meta[i].target_node_id);
         BOOST_REQUIRE_EQUAL(expected[gr].group, result.meta[i].group);
         BOOST_REQUIRE_EQUAL(expected[gr].term, result.meta[i].term);
         BOOST_REQUIRE_EQUAL(

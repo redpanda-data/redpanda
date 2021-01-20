@@ -81,7 +81,7 @@ static std::vector<heartbeat_manager::node_heartbeat> requests_for_range(
 
             auto seq_id = ptr->next_follower_sequence(rni);
             pending_beats[rni.id()].emplace_back(
-              heartbeat_metadata{ptr->meta(), ptr->self()}, seq_id);
+              heartbeat_metadata{ptr->meta(), ptr->self(), rni}, seq_id);
         };
 
         auto group = ptr->config();
@@ -163,7 +163,8 @@ ss::future<> heartbeat_manager::do_self_heartbeat(node_heartbeat&& r) {
       std::back_inserter(reply.meta),
       [](heartbeat_metadata& hb) {
           return append_entries_reply{
-            .node_id = hb.node_id,
+            .target_node_id = hb.target_node_id,
+            .node_id = hb.target_node_id,
             .group = hb.meta.group,
             .result = append_entries_reply::status::success};
       });

@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "likely.h"
 #include "raft/consensus.h"
 #include "raft/raftgen_service.h"
 #include "raft/types.h"
@@ -69,6 +70,7 @@ public:
         for (auto& m : r.heartbeats) {
             append_entries_request append_req(
               m.node_id,
+              m.target_node_id,
               m.meta,
               model::make_memory_record_batch_reader(
                 ss::circular_buffer<model::record_batch>{}),

@@ -932,16 +932,21 @@ void consensus::read_voted_for() {
 
 ss::future<vote_reply> consensus::vote(vote_request&& r) {
     return with_gate(_bg, [this, r = std::move(r)]() mutable {
+        auto target_node_id = r.node_id;
         return _op_lock
           .with(
             _jit.base_duration(),
             [this, r = std::move(r)]() mutable {
                 return do_vote(std::move(r));
             })
-          .handle_exception_type([this](const ss::semaphore_timed_out&) {
-              return vote_reply{
-                .term = _term, .granted = false, .log_ok = false};
-          });
+          .handle_exception_type(
+            [this, target_node_id](const ss::semaphore_timed_out&) {
+                return vote_reply{
+                  .target_node_id = target_node_id,
+                  .term = _term,
+                  .granted = false,
+                  .log_ok = false};
+            });
     });
 }
 
@@ -967,11 +972,18 @@ consensus::get_last_entry_term(const storage::offset_stats& lstats) const {
 ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
     vote_reply reply;
     reply.term = _term;
+    reply.target_node_id = r.node_id;
     auto lstats = _log.offsets();
     auto last_log_index = lstats.dirty_offset;
     _probe.vote_request();
     auto last_entry_term = get_last_entry_term(lstats);
     vlog(_ctxlog.trace, "Vote request: {}", r);
+
+    if (unlikely(is_request_target_node_invalid("vote", r))) {
+        reply.log_ok = false;
+        reply.granted = false;
+        return ss::make_ready_future<vote_reply>(reply);
+    }
     /// set to true if the caller's log is as up to date as the recipient's
     /// - extension on raft. see Diego's phd dissertation, section 9.6
     /// - "Preventing disruptions when a server rejoins the cluster"
@@ -1049,28 +1061,26 @@ ss::future<vote_reply> consensus::do_vote(vote_request&& r) {
 
     if (_voted_for.id()() < 0) {
         return write_voted_for({r.node_id, _term})
-          .then_wrapped(
-            [this, reply = std::move(reply), r = std::move(r)](ss::future<> f) {
-                bool granted = false;
+          .then_wrapped([this, reply = std::move(reply), r = std::move(r)](
+                          ss::future<> f) mutable {
+              bool granted = false;
 
-                if (f.failed()) {
-                    vlog(
-                      _ctxlog.warn,
-                      "Unable to persist raft group state, vote not granted "
-                      "- {}",
-                      f.get_exception());
-                } else {
-                    _voted_for = r.node_id;
-                    _hbeat = clock_type::now();
-                    granted = true;
-                }
+              if (f.failed()) {
+                  vlog(
+                    _ctxlog.warn,
+                    "Unable to persist raft group state, vote not granted "
+                    "- {}",
+                    f.get_exception());
+              } else {
+                  _voted_for = r.node_id;
+                  _hbeat = clock_type::now();
+                  granted = true;
+              }
 
-                vote_reply response;
-                response.term = reply.term;
-                response.log_ok = reply.log_ok;
-                response.granted = granted;
-                return ss::make_ready_future<vote_reply>(std::move(response));
-            });
+              reply.granted = granted;
+
+              return ss::make_ready_future<vote_reply>(std::move(reply));
+          });
     } else {
         reply.granted = (r.node_id == _voted_for);
         if (reply.granted) {
@@ -1092,6 +1102,7 @@ consensus::do_append_entries(append_entries_request&& r) {
     auto lstats = _log.offsets();
     append_entries_reply reply;
     reply.node_id = _self;
+    reply.target_node_id = r.node_id;
     reply.group = r.meta.group;
     reply.term = _term;
     reply.last_dirty_log_index = lstats.dirty_offset;
@@ -1099,6 +1110,9 @@ consensus::do_append_entries(append_entries_request&& r) {
     reply.result = append_entries_reply::status::failure;
     _probe.append_request();
 
+    if (unlikely(is_request_target_node_invalid("append_entries", r))) {
+        return ss::make_ready_future<append_entries_reply>(reply);
+    }
     // no need to trigger timeout
     vlog(_ctxlog.trace, "Append entries request: {}", r.meta);
 
@@ -1263,12 +1277,14 @@ consensus::do_append_entries(append_entries_request&& r) {
     // success. copy entries for each subsystem
     using offsets_ret = storage::append_result;
     return disk_append(std::move(r.batches))
-      .then([this, m = r.meta](offsets_ret ofs) {
+      .then([this, m = r.meta, target = r.node_id](offsets_ret ofs) {
           auto f = ss::make_ready_future<>();
           auto last_visible = std::min(ofs.last_offset, m.last_visible_index);
           maybe_update_last_visible_index(last_visible);
           return maybe_update_follower_commit_idx(model::offset(m.commit_index))
-            .then([this, ofs] { return make_append_entries_reply(ofs); });
+            .then([this, ofs, target] {
+                return make_append_entries_reply(target, ofs);
+            });
       })
       .handle_exception([this, reply = std::move(reply)](
                           const std::exception_ptr& e) mutable {
@@ -1358,6 +1374,11 @@ consensus::do_install_snapshot(install_snapshot_request&& r) {
 
     install_snapshot_reply reply{
       .term = _term, .bytes_stored = r.chunk.size_bytes(), .success = false};
+    reply.target_node_id = r.node_id;
+
+    if (unlikely(is_request_target_node_invalid("install_snapshot", r))) {
+        return ss::make_ready_future<install_snapshot_reply>(reply);
+    }
 
     bool is_done = r.done;
     // Raft paper: Reply immediately if term < currentTerm (§7.1)
@@ -1552,11 +1573,12 @@ ss::future<std::error_code> consensus::replicate_configuration(
       });
 }
 
-append_entries_reply
-consensus::make_append_entries_reply(storage::append_result disk_results) {
+append_entries_reply consensus::make_append_entries_reply(
+  vnode target_node, storage::append_result disk_results) {
     auto lstats = _log.offsets();
     append_entries_reply reply;
     reply.node_id = _self;
+    reply.target_node_id = target_node;
     reply.group = _group;
     reply.term = _term;
     reply.last_dirty_log_index = disk_results.last_offset;
@@ -1828,6 +1850,13 @@ operator<<(std::ostream& os, const consensus::vote_state& state) {
 }
 
 ss::future<timeout_now_reply> consensus::timeout_now(timeout_now_request&& r) {
+    if (unlikely(is_request_target_node_invalid("timeout_now", r))) {
+        return ss::make_ready_future<timeout_now_reply>(timeout_now_reply{
+          .term = _term,
+          .result = timeout_now_reply::status::failure,
+        });
+    }
+
     if (r.term != _term) {
         vlog(
           _ctxlog.debug,
@@ -1879,6 +1908,7 @@ ss::future<timeout_now_reply> consensus::timeout_now(timeout_now_request&& r) {
      * down even before it receives a request vote rpc.
      */
     return ss::make_ready_future<timeout_now_reply>(timeout_now_reply{
+      .target_node_id = r.node_id,
       .term = _term,
       .result = timeout_now_reply::status::success,
     });
@@ -2043,6 +2073,7 @@ consensus::transfer_leadership(std::optional<model::node_id> target) {
             }
 
             timeout_now_request req{
+              .target_node_id = target_rni,
               .node_id = _self,
               .group = _group,
               .term = _term,
@@ -2055,7 +2086,12 @@ consensus::transfer_leadership(std::optional<model::node_id> target) {
             return _client_protocol
               .timeout_now(
                 target_rni.id(), std::move(req), rpc::client_opts(timeout))
-              .then([](result<timeout_now_reply>) {
+
+              .then([](result<timeout_now_reply> reply) {
+                  if (!reply) {
+                      return seastar::make_ready_future<std::error_code>(
+                        reply.error());
+                  }
                   return seastar::make_ready_future<std::error_code>(
                     make_error_code(errc::success));
               });

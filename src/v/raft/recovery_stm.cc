@@ -209,6 +209,7 @@ ss::future<> recovery_stm::send_install_snapshot_request() {
       .then([this](iobuf chunk) mutable {
           auto chunk_size = chunk.size_bytes();
           install_snapshot_request req{
+            .target_node_id = _node_id,
             .term = _ptr->term(),
             .group = _ptr->group(),
             .node_id = _ptr->_self,
@@ -228,7 +229,9 @@ ss::future<> recovery_stm::send_install_snapshot_request() {
               std::move(req),
               rpc::client_opts(append_entries_timeout()))
             .then([this](result<install_snapshot_reply> reply) {
-                return handle_install_snapshot_reply(reply);
+                return handle_install_snapshot_reply(
+                  _ptr->validate_reply_target_node(
+                    "install_snapshot", std::move(reply)));
             });
       });
 }
@@ -316,6 +319,7 @@ ss::future<> recovery_stm::replicate(
     // build request
     append_entries_request r(
       _ptr->self(),
+      _node_id,
       protocol_metadata{
         .group = _ptr->group(),
         .commit_index = commit_idx,
@@ -387,8 +391,14 @@ clock_type::time_point recovery_stm::append_entries_timeout() {
 ss::future<result<append_entries_reply>>
 recovery_stm::dispatch_append_entries(append_entries_request&& r) {
     _ptr->_probe.recovery_append_request();
-    return _ptr->_client_protocol.append_entries(
-      _node_id.id(), std::move(r), rpc::client_opts(append_entries_timeout()));
+
+    return _ptr->_client_protocol
+      .append_entries(
+        _node_id.id(), std::move(r), rpc::client_opts(append_entries_timeout()))
+      .then([this](result<append_entries_reply> reply) {
+          return _ptr->validate_reply_target_node(
+            "append_entries_recovery", std::move(reply));
+      });
 }
 
 bool recovery_stm::is_recovery_finished() {

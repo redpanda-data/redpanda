@@ -278,7 +278,8 @@ private:
       finish_snapshot(install_snapshot_request, install_snapshot_reply);
 
     ss::future<> do_write_snapshot(model::offset, iobuf&&);
-    append_entries_reply make_append_entries_reply(storage::append_result);
+    append_entries_reply
+      make_append_entries_reply(vnode, storage::append_result);
 
     ss::future<result<replicate_result>>
     do_replicate(model::record_batch_reader&&);
@@ -376,6 +377,38 @@ private:
                && _last_snapshot_index == not_initialized;
     }
 
+    template<typename Reply>
+    result<Reply> validate_reply_target_node(
+      std::string_view request, result<Reply>&& reply) {
+        if (unlikely(reply && reply.value().target_node_id != self())) {
+            vlog(
+              _ctxlog.warn,
+              "received {} reply addressed to different node: {}, current "
+              "node: {}",
+              request,
+              reply.value().target_node_id,
+              _self);
+            return result<Reply>(errc::invalid_target_node);
+        }
+        return std::move(reply);
+    }
+
+    template<typename Request>
+    bool is_request_target_node_invalid(
+      std::string_view request_name, const Request& request) {
+        auto target = request.target_node();
+        if (unlikely(target != _self)) {
+            vlog(
+              _ctxlog.warn,
+              "received {} request addressed to different node: {}, current "
+              "node: {}",
+              request_name,
+              target,
+              _self);
+            return true;
+        }
+        return false;
+    }
     // args
     vnode _self;
     raft::group_id _group;

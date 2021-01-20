@@ -53,6 +53,7 @@ ss::future<result<append_entries_reply>> replicate_entries_stm::do_dispatch_one(
                        auto last_idx = lstats.committed_offset;
                        append_entries_reply reply;
                        reply.node_id = _ptr->_self;
+                       reply.target_node_id = _ptr->_self;
                        reply.group = _ptr->group();
                        reply.term = _ptr->term();
                        // we just flushed offsets are the same
@@ -82,8 +83,16 @@ replicate_entries_stm::send_append_entries_request(
     _ptr->update_node_append_timestamp(n);
     vlog(_ctxlog.trace, "Sending append entries request {} to {}", req.meta, n);
 
-    auto f = _ptr->_client_protocol.append_entries(
-      n.id(), std::move(req), rpc::client_opts(append_entries_timeout()));
+    req.target_node_id = n;
+    auto f = _ptr->_client_protocol
+               .append_entries(
+                 n.id(),
+                 std::move(req),
+                 rpc::client_opts(append_entries_timeout()))
+               .then([this](result<append_entries_reply> reply) {
+                   return _ptr->validate_reply_target_node(
+                     "append_entries_replicate", std::move(reply));
+               });
     _dispatch_sem.signal();
     return f.finally(
       [this, n] { _ptr->suppress_heartbeats(n, _followers_seq[n], false); });

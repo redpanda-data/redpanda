@@ -44,8 +44,12 @@ ss::future<result<vote_reply>> prevote_stm::do_dispatch_prevote(vnode n) {
       _ptr->_self,
       tout_ms);
     auto r = _req;
-    return _ptr->_client_protocol.vote(
-      n.id(), std::move(r), rpc::client_opts(_prevote_timeout));
+    r.target_node_id = n;
+    return _ptr->_client_protocol
+      .vote(n.id(), std::move(r), rpc::client_opts(_prevote_timeout))
+      .then([this](result<vote_reply> reply) {
+          return _ptr->validate_reply_target_node("prevote", std::move(reply));
+      });
 }
 
 ss::future<>
@@ -124,12 +128,12 @@ ss::future<bool> prevote_stm::prevote(bool leadership_transfer) {
           auto last_entry_term = _ptr->get_last_entry_term(lstats);
 
           _req = vote_request{
-            _ptr->_self,
-            _ptr->group(),
-            _ptr->term(),
-            lstats.dirty_offset,
-            last_entry_term,
-            leadership_transfer};
+            .node_id = _ptr->_self,
+            .group = _ptr->group(),
+            .term = _ptr->term(),
+            .prev_log_index = lstats.dirty_offset,
+            .prev_log_term = last_entry_term,
+            .leadership_transfer = leadership_transfer};
 
           _prevote_timeout = clock_type::now() + _ptr->_jit.base_duration();
 
