@@ -81,7 +81,7 @@ steps:
     ./build/venv/v/bin/vtools build redpanda-dashboard --conf=vtools/vtools/artifacts/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml
     ./build/venv/v/bin/vtools build pkg --conf=vtools/vtools/artifacts/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml --format=rpm --format=deb --format=tar
     ./build/venv/v/bin/vtools publish --conf=vtools/vtools/artifacts/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml
-    ./build/venv/v/bin/vtools ci github-event --event-type packages-created || true # let's not mess with the release pipeline yet
+    ./build/venv/v/bin/vtools ci github-event --event-type release-uploaded || true # let's not mess with the release pipeline yet
   env:
   - SHORT_SHA=$SHORT_SHA
   - TAG_NAME=$TAG_NAME

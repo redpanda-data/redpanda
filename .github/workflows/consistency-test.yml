@@ -1,7 +1,7 @@
 name: consistency_testing
 on:
   repository_dispatch:
-    types: [chaos-test-command]
+    types: [chaos-test-command, release-uploaded]
 
 jobs:
   run_consistency_tests:
@@ -32,6 +32,15 @@ jobs:
           echo "deb_pkg_url=gs://vectorizedio/rp_dev/release/clang/$short/redpanda_*.deb" >> $GITHUB_ENV
           echo "upload_dir=redpanda/pr-${{ github.event.client_payload.pull_request.number }}" >> $GITHUB_ENV
         if: ${{ github.event.action == 'chaos-test-command' }}
+
+      - name: setup env release
+        run: |
+          echo "Populating env from release context"
+
+          # Make env available to next steps
+          echo "deb_pkg_url=${{ github.event.client_payload.deb_pkg }}" >> $GITHUB_ENV
+          echo "upload_dir=redpanda/${{ github.event.client_payload.tag }}-${{ github.event.client_payload.ref }}" >> $GITHUB_ENV
+        if: ${{ github.event.action == 'release-uploaded' }}
 
       - name: fetch release from gcb
         run: |
