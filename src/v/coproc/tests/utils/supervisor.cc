@@ -78,6 +78,7 @@ supervisor::invoke_coprocessor(
         vlog(coproclog.warn, "Script id: {} not found", id);
         return ss::make_ready_future<std::vector<process_batch_reply::data>>();
     }
+    vassert(!batches.empty(), "Shouldn't expect empty batches from redpanda");
     auto& copro = found->second;
     return copro->apply(ntp.tp.topic, std::move(batches))
       .then([id, ntp](coprocessor::result rmap) {
@@ -116,11 +117,7 @@ supervisor::invoke_coprocessors(process_batch_request::data d) {
 ss::future<process_batch_reply>
 supervisor::process_batch(process_batch_request&& r, rpc::streaming_context&) {
     return ss::with_gate(_gate, [this, r = std::move(r)]() mutable {
-        if (r.reqs.empty()) {
-            vlog(coproclog.error, "Error with redpanda, request is of 0 size");
-            /// TODO(rob) check if this is ok
-            return ss::make_ready_future<process_batch_reply>();
-        }
+        vassert(!r.reqs.empty(), "Cannot expect empty request from redpanda");
         return ss::do_with(std::move(r), [this](process_batch_request& r) {
             return ssx::async_flat_transform(
                      r.reqs,
