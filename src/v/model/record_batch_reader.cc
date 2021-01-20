@@ -126,11 +126,12 @@ record_batch_reader make_foreign_memory_record_batch_reader(record_batch b) {
 }
 
 record_batch_reader make_generating_record_batch_reader(
-  ss::noncopyable_function<ss::future<record_batch_opt>()> gen) {
+  ss::noncopyable_function<ss::future<record_batch_reader::data_t>()> gen) {
     class reader final : public record_batch_reader::impl {
     public:
         explicit reader(
-          ss::noncopyable_function<ss::future<record_batch_opt>()> gen)
+          ss::noncopyable_function<ss::future<record_batch_reader::data_t>()>
+            gen)
           : _gen(std::move(gen)) {}
 
         bool is_end_of_stream() const final { return _end_of_stream; }
@@ -142,21 +143,19 @@ record_batch_reader make_generating_record_batch_reader(
     protected:
         ss::future<record_batch_reader::storage_t>
         do_load_slice(timeout_clock::time_point) final {
-            return _gen().then([this](record_batch_opt batch) {
-                data_t ret;
-                if (!batch) {
+            return _gen().then([this](record_batch_reader::data_t data) {
+                if (data.empty()) {
                     _end_of_stream = true;
-                } else {
-                    ret.reserve(1);
-                    ret.push_back(std::move(*batch));
+                    return storage_t();
                 }
-                return storage_t(std::move(ret));
+                return storage_t(std::move(data));
             });
         }
 
     private:
         bool _end_of_stream{false};
-        ss::noncopyable_function<ss::future<record_batch_opt>()> _gen;
+        ss::noncopyable_function<ss::future<record_batch_reader::data_t>()>
+          _gen;
     };
 
     return make_record_batch_reader<reader>(std::move(gen));

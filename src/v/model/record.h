@@ -606,8 +606,6 @@ private:
     for_each_record(const model::record_batch& batch, Func&& f);
 };
 
-using record_batch_opt = ss::optimized_optional<record_batch>;
-
 /**
  * Iterate over records with lazy record materialization.
  */

@@ -92,12 +92,8 @@ record_batch_reader
 make_generating_reader(ss::circular_buffer<record_batch> batches) {
     return make_generating_record_batch_reader(
       [batches = std::move(batches)]() mutable {
-          if (batches.empty()) {
-              return ss::make_ready_future<record_batch_opt>();
-          }
-          auto batch = std::move(batches.front());
-          batches.pop_front();
-          return ss::make_ready_future<record_batch_opt>(std::move(batch));
+          return ss::make_ready_future<record_batch_reader::data_t>(
+            std::move(batches));
       });
 }
 
