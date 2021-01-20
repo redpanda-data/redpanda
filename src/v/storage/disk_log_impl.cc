@@ -33,11 +33,14 @@
 #include <seastar/core/future.hh>
 #include <seastar/core/reactor.hh>
 #include <seastar/core/seastar.hh>
+#include <seastar/core/semaphore.hh>
 #include <seastar/core/shared_ptr.hh>
 
 #include <fmt/format.h>
 
 #include <iterator>
+
+using namespace std::literals::chrono_literals;
 
 namespace storage {
 
@@ -339,7 +342,9 @@ disk_log_impl::find_compaction_range() {
 ss::future<> disk_log_impl::compact_adjacent_segments(
   std::pair<segment_set::iterator, segment_set::iterator> range,
   storage::compaction_config cfg) {
-    // lightweight copy of segments in range
+    // lightweight copy of segments in range. once a scheduling event occurs in
+    // this method we can't rely on the iterators in the range remaining valid.
+    // for example, a concurrent truncate may erase an element from the range.
     std::vector<ss::lw_shared_ptr<segment>> segments;
     std::copy(range.first, range.second, std::back_inserter(segments));
 
@@ -386,15 +391,40 @@ ss::future<> disk_log_impl::compact_adjacent_segments(
         co_await ss::remove_file(compact_index.string());
     }
 
-    // transfer segment state from replacement to target
-    co_await internal::transfer_segment(target, replacement, cfg, _probe);
+    // lock the range. only metadata (e.g. open/rename/delete) i/o occurs with
+    // these locks held so it is a relatively short duration. all of the data
+    // copying and compaction i/o occurred above with no locks held. 5 retries
+    // with a max lock timeout of 1 second. if we don't get the locks there is
+    // probably a reader. compaction will revisit.
+    auto locks = co_await internal::write_lock_segments(segments, 1s, 5);
 
-    // remove redundant range. in the current version of adjacent segment
-    // compaction this will only erase on segment, but the formulation is
-    // generalized to work for any size range.
-    _segs.erase(std::next(range.first), range.second);
-    for (auto it = std::next(segments.begin()); it != segments.end(); it++) {
-        co_await remove_segment_permanently(*it, "compact_adjacent_segments");
+    // fast check if we should abandon all the expensive i/o work if we happened
+    // to be racing with an operation like truncation or shutdown.
+    for (const auto& segment : segments) {
+        if (unlikely(segment->is_closed())) {
+            throw std::runtime_error(fmt::format(
+              "Aborting compaction of closed segment: {}", *segment));
+        }
+    }
+
+    // transfer segment state from replacement to target
+    locks = co_await internal::transfer_segment(
+      target, replacement, cfg, _probe, std::move(locks));
+
+    // remove the now redundant segments, if they haven't already been removed.
+    // this could occur if racing with functions like truncate which manipulate
+    // the segment set before acquiring segment locks. this also means that the
+    // input iterator range may not longer be valid so we must manually search
+    // the segment set.  the current adjacent segment compaction limits
+    // compaction to two segments, and we check that assumption here and use
+    // simplified clean-up routine.
+    locks.clear();
+    vassert(segments.size() == 2, "Cannot compact more than two segments");
+    auto it = std::find(_segs.begin(), _segs.end(), segments.back());
+    if (it != _segs.end()) {
+        _segs.erase(it, std::next(it));
+        co_await remove_segment_permanently(
+          segments.back(), "compact_adjacent_segments");
     }
 }
 

@@ -518,6 +518,15 @@ ss::future<ss::lw_shared_ptr<segment>> make_concatenated_segment(
         locks.push_back(co_await segment->read_lock());
     }
 
+    // fast check if we should abandon all the expensive i/o work if we happened
+    // to be racing with an operation like truncation or shutdown.
+    for (const auto& segment : segments) {
+        if (unlikely(segment->is_closed())) {
+            throw std::runtime_error(fmt::format(
+              "Aborting compaction of closed segment: {}", *segment));
+        }
+    }
+
     // concatenation process
     auto writer = co_await make_writer_handle(path, cfg.sanitize);
     auto output = co_await ss::make_file_output_stream(std::move(writer));
@@ -569,14 +578,14 @@ ss::future<ss::lw_shared_ptr<segment>> make_concatenated_segment(
       std::nullopt);
 }
 
-ss::future<> transfer_segment(
+ss::future<std::vector<ss::rwlock::holder>> transfer_segment(
   ss::lw_shared_ptr<segment> to,
   ss::lw_shared_ptr<segment> from,
   compaction_config cfg,
-  probe& probe) {
+  probe& probe,
+  std::vector<ss::rwlock::holder> locks) {
     co_await from->close();
 
-    auto lock = co_await to->write_lock();
     co_await to->index().drop_all_data();
 
     // segment data file
@@ -597,6 +606,8 @@ ss::future<> transfer_segment(
 
     // clean up replacement segment
     co_await from->remove_persistent_state();
+
+    co_return std::move(locks);
 }
 
 ss::future<std::vector<ss::rwlock::holder>> write_lock_segments(

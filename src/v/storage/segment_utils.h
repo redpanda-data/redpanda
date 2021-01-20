@@ -57,11 +57,12 @@ ss::future<ss::lw_shared_ptr<segment>> make_concatenated_segment(
   std::vector<ss::lw_shared_ptr<segment>>,
   compaction_config);
 
-ss::future<> transfer_segment(
+ss::future<std::vector<ss::rwlock::holder>> transfer_segment(
   ss::lw_shared_ptr<segment> to,
   ss::lw_shared_ptr<segment> from,
   compaction_config cfg,
-  probe& probe);
+  probe& probe,
+  std::vector<ss::rwlock::holder>);
 
 /*
  * Acquire write locks on multiple segments. The process will proceed until
