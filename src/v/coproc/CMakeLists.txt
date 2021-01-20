@@ -22,6 +22,7 @@ v_cc_library(
     service.cc
     script_context.cc
     pacemaker.cc
+    wasm_event.cc
   DEPS
     v::rpc
     v::model
