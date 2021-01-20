@@ -10,22 +10,11 @@
 package cmd
 
 import (
-	"fmt"
-	"os"
-	"strings"
-	"sync"
-
-	"github.com/Shopify/sarama"
-	"github.com/burdiyan/kafkautil"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/api"
-	cliCommon "github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/common"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/container/common"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/common"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/kafka"
-	"golang.org/x/sync/errgroup"
 )
 
 func NewApiCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
@@ -67,11 +56,11 @@ func NewApiCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	// closure with references to the required values (the config file
 	// path, the list of brokers passed through --brokers) to deduce the
 	// actual brokers list to be used.
-	configClosure := cliCommon.FindConfigFile(mgr, &configFile)
-	brokersClosure := cliCommon.DeduceBrokers(fs, configClosure, &brokers)
-	producerClosure := cliCommon.CreateProducer(brokersClosure, configClosure)
-	clientClosure := cliCommon.CreateClient(fs, brokersClosure, configClosure)
-	adminClosure := cliCommon.CreateAdmin(fs, brokersClosure, configClosure)
+	configClosure := common.FindConfigFile(mgr, &configFile)
+	brokersClosure := common.DeduceBrokers(fs, configClosure, &brokers)
+	producerClosure := common.CreateProducer(brokersClosure, configClosure)
+	clientClosure := common.CreateClient(fs, brokersClosure, configClosure)
+	adminClosure := common.CreateAdmin(fs, brokersClosure, configClosure)
 
 	command.AddCommand(api.NewStatusCommand(adminClosure))
 	command.AddCommand(
@@ -84,185 +73,4 @@ func NewApiCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 		api.NewConsumeCommand(clientClosure),
 	)
 	return command
-}
-
-// Try to read the config from the default expected locations, or from the
-// specific path passed with --config. If --config wasn't passed, and the config
-// wasn't found, return the default configuration.
-func findConfigFile(
-	mgr config.Manager, configFile *string,
-) func() (*config.Config, error) {
-	var conf *config.Config
-	var err error
-	return func() (*config.Config, error) {
-		if conf != nil {
-			return conf, nil
-		}
-		conf, err = mgr.ReadOrFind(*configFile)
-		if err != nil {
-			log.Debug(err)
-			if os.IsNotExist(err) && *configFile == "" {
-				log.Debug(
-					"Config file not found and --config" +
-						" wasn't passed, using default" +
-						" config",
-				)
-				return config.Default(), nil
-			}
-		}
-		return conf, err
-	}
-}
-
-func deduceBrokers(
-	fs afero.Fs, configuration func() (*config.Config, error), brokers *[]string,
-) func() []string {
-	return func() []string {
-		bs := *brokers
-		// Prioritize brokers passed through --brokers
-		if len(bs) != 0 {
-			log.Debugf("Using --brokers: %s", strings.Join(bs, ", "))
-			return bs
-		}
-		// Otherwise, try to detect if a local container cluster is
-		// running, and use its brokers' addresses.
-		bs = containerBrokers(fs)
-		if len(bs) > 0 {
-			log.Debugf(
-				"Using container cluster brokers %s",
-				strings.Join(bs, ", "),
-			)
-			return bs
-		}
-		// Otherwise, try to find an existing config file.
-		conf, err := configuration()
-		if err != nil {
-			log.Trace(
-				"Couldn't read the config file." +
-					" Assuming 127.0.0.1:9092",
-			)
-			log.Debug(err)
-			return []string{"127.0.0.1:9092"}
-		}
-
-		// Add the seed servers' Kafka addrs.
-		if len(conf.Redpanda.SeedServers) > 0 {
-			for _, b := range conf.Redpanda.SeedServers {
-				addr := fmt.Sprintf(
-					"%s:%d",
-					b.Host.Address,
-					conf.Redpanda.KafkaApi.Port,
-				)
-				bs = append(bs, addr)
-			}
-		}
-		// Add the current node's Kafka addr.
-		selfAddr := fmt.Sprintf(
-			"%s:%d",
-			conf.Redpanda.KafkaApi.Address,
-			conf.Redpanda.KafkaApi.Port,
-		)
-		bs = append(bs, selfAddr)
-		log.Debugf(
-			"Using brokers from config: %s",
-			strings.Join(bs, ", "),
-		)
-		return bs
-	}
-}
-
-func createProducer(
-	fs afero.Fs,
-	brokers func() []string,
-	configuration func() (*config.Config, error),
-) func(bool, int32) (sarama.SyncProducer, error) {
-	return func(jvmPartitioner bool, partition int32) (sarama.SyncProducer, error) {
-		conf, err := configuration()
-		if err != nil {
-			return nil, err
-		}
-		cfg, err := kafka.LoadConfig(conf)
-		if err != nil {
-			return nil, err
-		}
-		if jvmPartitioner {
-			cfg.Producer.Partitioner = kafkautil.NewJVMCompatiblePartitioner
-		}
-
-		if partition > -1 {
-			cfg.Producer.Partitioner = sarama.NewManualPartitioner
-		}
-
-		return sarama.NewSyncProducer(brokers(), cfg)
-	}
-}
-
-func createClient(
-	fs afero.Fs,
-	brokers func() []string,
-	configuration func() (*config.Config, error),
-) func() (sarama.Client, error) {
-	return func() (sarama.Client, error) {
-		conf, err := configuration()
-		if err != nil {
-			return nil, err
-		}
-		bs := brokers()
-		return kafka.InitClientWithConf(conf, bs...)
-	}
-}
-
-func createAdmin(
-	fs afero.Fs,
-	brokers func() []string,
-	configuration func() (*config.Config, error),
-) func() (sarama.ClusterAdmin, error) {
-	return func() (sarama.ClusterAdmin, error) {
-		conf, err := configuration()
-		if err != nil {
-			return nil, err
-		}
-		cfg, err := kafka.LoadConfig(conf)
-		if err != nil {
-			return nil, err
-		}
-		return sarama.NewClusterAdmin(brokers(), cfg)
-	}
-}
-
-func containerBrokers(fs afero.Fs) []string {
-	c, err := common.NewDockerClient()
-	if err != nil {
-		log.Debug(err)
-		return []string{}
-	}
-	nodes, err := common.GetExistingNodes(c)
-	if err != nil {
-		log.Debug(err)
-		return []string{}
-	}
-	grp := errgroup.Group{}
-	mu := sync.Mutex{}
-	addrs := []string{}
-	for _, node := range nodes {
-		s := node
-		grp.Go(func() error {
-			mu.Lock()
-			defer mu.Unlock()
-			addrs = append(
-				addrs,
-				fmt.Sprintf(
-					"127.0.0.1:%d",
-					s.HostKafkaPort,
-				),
-			)
-			return nil
-		})
-	}
-	err = grp.Wait()
-	if err != nil {
-		log.Debug(err)
-		return []string{}
-	}
-	return addrs
 }

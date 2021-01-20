@@ -60,43 +60,6 @@ func FindConfigFile(
 	}
 }
 
-func ContainerBrokers() []string {
-	c, err := common.NewDockerClient()
-	if err != nil {
-		log.Debug(err)
-		return []string{}
-	}
-	nodes, err := common.GetExistingNodes(c)
-	if err != nil {
-		log.Debug(err)
-		return []string{}
-	}
-	grp := errgroup.Group{}
-	mu := sync.Mutex{}
-	addrs := []string{}
-	for _, node := range nodes {
-		s := node
-		grp.Go(func() error {
-			mu.Lock()
-			defer mu.Unlock()
-			addrs = append(
-				addrs,
-				fmt.Sprintf(
-					"127.0.0.1:%d",
-					s.HostKafkaPort,
-				),
-			)
-			return nil
-		})
-	}
-	err = grp.Wait()
-	if err != nil {
-		log.Debug(err)
-		return []string{}
-	}
-	return addrs
-}
-
 func DeduceBrokers(
 	fs afero.Fs, configuration func() (*config.Config, error), brokers *[]string,
 ) func() []string {
@@ -209,4 +172,41 @@ func CreateAdmin(
 		}
 		return sarama.NewClusterAdmin(brokers(), cfg)
 	}
+}
+
+func ContainerBrokers() []string {
+	c, err := common.NewDockerClient()
+	if err != nil {
+		log.Debug(err)
+		return []string{}
+	}
+	nodes, err := common.GetExistingNodes(c)
+	if err != nil {
+		log.Debug(err)
+		return []string{}
+	}
+	grp := errgroup.Group{}
+	mu := sync.Mutex{}
+	addrs := []string{}
+	for _, node := range nodes {
+		s := node
+		grp.Go(func() error {
+			mu.Lock()
+			defer mu.Unlock()
+			addrs = append(
+				addrs,
+				fmt.Sprintf(
+					"127.0.0.1:%d",
+					s.HostKafkaPort,
+				),
+			)
+			return nil
+		})
+	}
+	err = grp.Wait()
+	if err != nil {
+		log.Debug(err)
+		return []string{}
+	}
+	return addrs
 }
