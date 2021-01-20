@@ -155,6 +155,10 @@ FIXTURE_TEST(test_topic_recreation, recreate_test_fixture) {
                 return false;
             }
             auto& partitions = md.topics.begin()->partitions;
+            if (partitions.size() != 6) {
+                return false;
+            }
+
             return std::all_of(
               partitions.begin(),
               partitions.end(),
@@ -163,14 +167,6 @@ FIXTURE_TEST(test_topic_recreation, recreate_test_fixture) {
               });
         });
     }).get0();
-
-    auto md = get_topic_metadata(test_tp).get0();
-    BOOST_REQUIRE_EQUAL(md.topics.size(), 1);
-    BOOST_REQUIRE_EQUAL(md.topics.begin()->partitions.size(), 6);
-
-    for (auto& p : md.topics.begin()->partitions) {
-        BOOST_REQUIRE_EQUAL(p.leader, model::node_id{1});
-    }
 }
 
 FIXTURE_TEST(test_topic_recreation_recovery, recreate_test_fixture) {
