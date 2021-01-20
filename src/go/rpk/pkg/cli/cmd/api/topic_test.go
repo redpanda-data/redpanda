@@ -18,20 +18,8 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/kafka/mocks"
 )
-
-type mockAdmin struct {
-	// add an anonymous interface to trick Go into thinking that this struct
-	// implements it 100%.
-	sarama.ClusterAdmin
-	// add the specific funcs we'll need
-	createTopic	func(string, *sarama.TopicDetail, bool) error
-	deleteTopic	func(string) error
-	alterConfig	func(sarama.ConfigResourceType, string, map[string]*string, bool) error
-	describeTopics	func([]string) ([]*sarama.TopicMetadata, error)
-	listTopics	func() (map[string]sarama.TopicDetail, error)
-	describeConfig	func(sarama.ConfigResource) ([]sarama.ConfigEntry, error)
-}
 
 type mockClient struct {
 	// add an anonymous interface to trick Go into thinking that this struct
@@ -40,73 +28,6 @@ type mockClient struct {
 }
 
 func (_ *mockClient) Close() error {
-	return nil
-}
-
-func (a *mockAdmin) CreateTopic(
-	topic string, detail *sarama.TopicDetail, validateOnly bool,
-) error {
-	if a.createTopic != nil {
-		return a.createTopic(topic, detail, validateOnly)
-	}
-	return nil
-}
-
-func (a *mockAdmin) DeleteTopic(topic string) error {
-	if a.deleteTopic != nil {
-		return a.deleteTopic(topic)
-	}
-	return nil
-}
-
-func (a *mockAdmin) AlterConfig(
-	resType sarama.ConfigResourceType,
-	topic string,
-	config map[string]*string,
-	validate bool,
-) error {
-	if a.alterConfig != nil {
-		return a.alterConfig(resType, topic, config, validate)
-	}
-	return nil
-}
-
-func (a *mockAdmin) DescribeTopics(
-	topics []string,
-) ([]*sarama.TopicMetadata, error) {
-	if a.describeTopics != nil {
-		return a.describeTopics(topics)
-	}
-	return []*sarama.TopicMetadata{{}}, nil
-}
-
-func (a *mockAdmin) ListTopics() (map[string]sarama.TopicDetail, error) {
-	if a.listTopics != nil {
-		return a.listTopics()
-	}
-	return map[string]sarama.TopicDetail{}, nil
-}
-
-func (a *mockAdmin) DescribeConfig(
-	res sarama.ConfigResource,
-) ([]sarama.ConfigEntry, error) {
-	if a.describeConfig != nil {
-		return a.describeConfig(res)
-	}
-	return []sarama.ConfigEntry{
-		{
-			Name:		"cleanup.policy",
-			Value:		"compact",
-			Default:	true,
-		},
-		{
-			Name:	"key",
-			Value:	"value",
-		},
-	}, nil
-}
-
-func (_ *mockAdmin) Close() error {
 	return nil
 }
 
@@ -129,7 +50,7 @@ func generatePartitions(no int) []*sarama.PartitionMetadata {
 func TestTopicCmd(t *testing.T) {
 	tests := []struct {
 		name		string
-		admin		*mockAdmin
+		admin		*mocks.MockAdmin
 		cmd		func(func() (sarama.ClusterAdmin, error)) *cobra.Command
 		args		[]string
 		expectedOutput	string
@@ -169,8 +90,8 @@ func TestTopicCmd(t *testing.T) {
 			name:	"create should fail if the topic creation req fails",
 			cmd:	createTopic,
 			args:	[]string{"Chicago"},
-			admin: &mockAdmin{
-				createTopic: func(string, *sarama.TopicDetail, bool) error {
+			admin: &mocks.MockAdmin{
+				MockCreateTopic: func(string, *sarama.TopicDetail, bool) error {
 					return errors.New("no bueno error")
 				},
 			},
@@ -186,8 +107,8 @@ func TestTopicCmd(t *testing.T) {
 			name:	"delete should fail if the topic deletion req fails",
 			cmd:	deleteTopic,
 			args:	[]string{"Leticia"},
-			admin: &mockAdmin{
-				deleteTopic: func(string) error {
+			admin: &mocks.MockAdmin{
+				MockDeleteTopic: func(string) error {
 					return errors.New("that topic don't exist, yo")
 				},
 			},
@@ -209,8 +130,8 @@ func TestTopicCmd(t *testing.T) {
 			name:	"set-config should fail if the req fails",
 			cmd:	setTopicConfig,
 			args:	[]string{"Chiriqui", "k", "v"},
-			admin: &mockAdmin{
-				alterConfig: func(
+			admin: &mocks.MockAdmin{
+				MockAlterConfig: func(
 					sarama.ConfigResourceType,
 					string,
 					map[string]*string,
@@ -242,8 +163,8 @@ func TestTopicCmd(t *testing.T) {
 		{
 			name:	"list should output the list of topics",
 			cmd:	listTopics,
-			admin: &mockAdmin{
-				listTopics: func() (map[string]sarama.TopicDetail, error) {
+			admin: &mocks.MockAdmin{
+				MockListTopics: func() (map[string]sarama.TopicDetail, error) {
 					return map[string]sarama.TopicDetail{
 						"tokyo": {
 							NumPartitions:		2,
@@ -271,8 +192,8 @@ func TestTopicCmd(t *testing.T) {
 			name:	"list should fail if the req fails",
 			cmd:	listTopics,
 			args:	[]string{},
-			admin: &mockAdmin{
-				listTopics: func() (map[string]sarama.TopicDetail, error) {
+			admin: &mocks.MockAdmin{
+				MockListTopics: func() (map[string]sarama.TopicDetail, error) {
 					return nil, errors.New("an error happened :(")
 				},
 			},
@@ -281,8 +202,8 @@ func TestTopicCmd(t *testing.T) {
 		{
 			name:	"list should output a message if there are no topics",
 			cmd:	listTopics,
-			admin: &mockAdmin{
-				listTopics: func() (map[string]sarama.TopicDetail, error) {
+			admin: &mocks.MockAdmin{
+				MockListTopics: func() (map[string]sarama.TopicDetail, error) {
 					return map[string]sarama.TopicDetail{}, nil
 				},
 			},
@@ -296,7 +217,7 @@ func TestTopicCmd(t *testing.T) {
 				if tt.admin != nil {
 					return tt.admin, nil
 				}
-				return &mockAdmin{}, nil
+				return &mocks.MockAdmin{}, nil
 			}
 			var out bytes.Buffer
 			cmd := tt.cmd(admin)
@@ -316,15 +237,15 @@ func TestTopicCmd(t *testing.T) {
 func TestDescribeTopic(t *testing.T) {
 	tests := []struct {
 		name		string
-		admin		*mockAdmin
+		admin		*mocks.MockAdmin
 		args		[]string
 		expectedOutput	string
 		expectedErr	string
 	}{
 		{
 			name:	"fails if the describe-topics request fails",
-			admin: &mockAdmin{
-				describeTopics: func(topics []string) ([]*sarama.TopicMetadata, error) {
+			admin: &mocks.MockAdmin{
+				MockDescribeTopics: func(topics []string) ([]*sarama.TopicMetadata, error) {
 					return nil, errors.New("it go boom")
 				},
 			},
@@ -333,8 +254,8 @@ func TestDescribeTopic(t *testing.T) {
 		},
 		{
 			name:	"fails if the topic doesn't exist",
-			admin: &mockAdmin{
-				describeTopics: func(_ []string) ([]*sarama.TopicMetadata, error) {
+			admin: &mocks.MockAdmin{
+				MockDescribeTopics: func(_ []string) ([]*sarama.TopicMetadata, error) {
 					return []*sarama.TopicMetadata{
 						{
 							Err: sarama.ErrUnknownTopicOrPartition,
@@ -347,8 +268,8 @@ func TestDescribeTopic(t *testing.T) {
 		},
 		{
 			name:	"fails if the describe-config request fails",
-			admin: &mockAdmin{
-				describeConfig: func(
+			admin: &mocks.MockAdmin{
+				MockDescribeConfig: func(
 					_ sarama.ConfigResource,
 				) ([]sarama.ConfigEntry, error) {
 					return nil, errors.New("describe-config failure")
@@ -359,8 +280,8 @@ func TestDescribeTopic(t *testing.T) {
 		},
 		{
 			name:	"it should show the topic info",
-			admin: &mockAdmin{
-				describeTopics: func(_ []string) ([]*sarama.TopicMetadata, error) {
+			admin: &mocks.MockAdmin{
+				MockDescribeTopics: func(_ []string) ([]*sarama.TopicMetadata, error) {
 					return []*sarama.TopicMetadata{
 						{
 							Name:		"Hannover",
@@ -392,8 +313,8 @@ func TestDescribeTopic(t *testing.T) {
 		},
 		{
 			name:	"it shouldn't show the 'config' section if there's no non-default config",
-			admin: &mockAdmin{
-				describeTopics: func(_ []string) ([]*sarama.TopicMetadata, error) {
+			admin: &mocks.MockAdmin{
+				MockDescribeTopics: func(_ []string) ([]*sarama.TopicMetadata, error) {
 					return []*sarama.TopicMetadata{
 						{
 							Name:		"Hannover",
@@ -401,7 +322,7 @@ func TestDescribeTopic(t *testing.T) {
 						},
 					}, nil
 				},
-				describeConfig: func(_ sarama.ConfigResource) ([]sarama.ConfigEntry, error) {
+				MockDescribeConfig: func(_ sarama.ConfigResource) ([]sarama.ConfigEntry, error) {
 					return []sarama.ConfigEntry{
 						{
 							Name:		"cleanup.policy",
@@ -422,8 +343,8 @@ func TestDescribeTopic(t *testing.T) {
 		},
 		{
 			name:	"it should paginate the partitions",
-			admin: &mockAdmin{
-				describeTopics: func(_ []string) ([]*sarama.TopicMetadata, error) {
+			admin: &mocks.MockAdmin{
+				MockDescribeTopics: func(_ []string) ([]*sarama.TopicMetadata, error) {
 					return []*sarama.TopicMetadata{
 						{
 							Name:		"Cologne",
@@ -451,8 +372,8 @@ func TestDescribeTopic(t *testing.T) {
 		},
 		{
 			name:	"it should show the last page if the given page exceeds the # of pages",
-			admin: &mockAdmin{
-				describeTopics: func(_ []string) ([]*sarama.TopicMetadata, error) {
+			admin: &mocks.MockAdmin{
+				MockDescribeTopics: func(_ []string) ([]*sarama.TopicMetadata, error) {
 					return []*sarama.TopicMetadata{
 						{
 							Name:		"Cologne",
@@ -477,8 +398,8 @@ func TestDescribeTopic(t *testing.T) {
 		},
 		{
 			name:	"it should show all the partitions if the page size exceeds the # of partitions",
-			admin: &mockAdmin{
-				describeTopics: func(_ []string) ([]*sarama.TopicMetadata, error) {
+			admin: &mocks.MockAdmin{
+				MockDescribeTopics: func(_ []string) ([]*sarama.TopicMetadata, error) {
 					return []*sarama.TopicMetadata{
 						{
 							Name:		"Cologne",
@@ -512,8 +433,8 @@ func TestDescribeTopic(t *testing.T) {
 		},
 		{
 			name:	"it should show all the partitions if the page size is negative",
-			admin: &mockAdmin{
-				describeTopics: func(_ []string) ([]*sarama.TopicMetadata, error) {
+			admin: &mocks.MockAdmin{
+				MockDescribeTopics: func(_ []string) ([]*sarama.TopicMetadata, error) {
 					return []*sarama.TopicMetadata{
 						{
 							Name:		"Cologne",
@@ -549,7 +470,7 @@ func TestDescribeTopic(t *testing.T) {
 				if tt.admin != nil {
 					return tt.admin, nil
 				}
-				return &mockAdmin{}, nil
+				return &mocks.MockAdmin{}, nil
 			}
 			var out bytes.Buffer
 			cmd := describeTopic(client, admin)
