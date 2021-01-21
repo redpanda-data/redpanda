@@ -32,9 +32,9 @@ replicate_batcher::replicate_batcher(consensus* ptr, size_t cache_size)
   : _ptr(ptr)
   , _max_batch_size_sem(cache_size) {}
 
-ss::future<result<replicate_result>> replicate_batcher::replicate(
-  std::optional<model::term_id> expected_term, model::record_batch_reader&& r) {
-    return do_cache(expected_term, std::move(r)).then([this](item_ptr i) {
+ss::future<result<replicate_result>>
+replicate_batcher::replicate(model::record_batch_reader&& r) {
+    return do_cache(std::move(r)).then([this](item_ptr i) {
         return _lock.with([this] { return flush(); }).then([i] {
             return i->_promise.get_future();
         });
@@ -51,14 +51,13 @@ ss::future<> replicate_batcher::stop() {
                                  "finish replicating pending entries"));
         }
         _item_cache.clear();
+        _data_cache.clear();
     });
 }
-
-ss::future<replicate_batcher::item_ptr> replicate_batcher::do_cache(
-  std::optional<model::term_id> expected_term, model::record_batch_reader&& r) {
+ss::future<replicate_batcher::item_ptr>
+replicate_batcher::do_cache(model::record_batch_reader&& r) {
     return model::consume_reader_to_memory(std::move(r), model::no_timeout)
-      .then([this,
-             expected_term](ss::circular_buffer<model::record_batch> batches) {
+      .then([this](ss::circular_buffer<model::record_batch> batches) {
           ss::circular_buffer<model::record_batch> data;
           size_t bytes = std::accumulate(
             batches.cbegin(),
@@ -67,31 +66,27 @@ ss::future<replicate_batcher::item_ptr> replicate_batcher::do_cache(
             [](size_t sum, const model::record_batch& b) {
                 return sum + b.size_bytes();
             });
-          return do_cache_with_backpressure(
-            expected_term, std::move(batches), bytes);
+          return do_cache_with_backpressure(std::move(batches), bytes);
       });
 }
 
 ss::future<replicate_batcher::item_ptr>
 replicate_batcher::do_cache_with_backpressure(
-  std::optional<model::term_id> expected_term,
-  ss::circular_buffer<model::record_batch> batches,
-  size_t bytes) {
+  ss::circular_buffer<model::record_batch> batches, size_t bytes) {
     return ss::get_units(_max_batch_size_sem, bytes)
-      .then([this, expected_term, batches = std::move(batches)](
+      .then([this, batches = std::move(batches)](
 
               ss::semaphore_units<> u) mutable {
           size_t record_count = 0;
-          auto i = ss::make_lw_shared<item>();
           for (auto& b : batches) {
               record_count += b.record_count();
               if (b.header().ctx.owner_shard == ss::this_shard_id()) {
-                  i->data.push_back(std::move(b));
+                  _data_cache.push_back(std::move(b));
               } else {
-                  i->data.push_back(b.copy());
+                  _data_cache.push_back(b.copy());
               }
           }
-          i->expected_term = expected_term;
+          auto i = ss::make_lw_shared<item>();
           i->record_count = record_count;
           i->units = std::move(u);
           _item_cache.emplace_back(i);
@@ -100,14 +95,20 @@ replicate_batcher::do_cache_with_backpressure(
 }
 
 ss::future<> replicate_batcher::flush() {
-    auto item_cache = std::exchange(_item_cache, {});
-    if (item_cache.empty()) {
+    auto notifications = std::exchange(_item_cache, {});
+    auto data = std::exchange(_data_cache, {});
+    if (notifications.empty()) {
         return ss::now();
     }
     return ss::with_gate(
-      _ptr->_bg, [this, item_cache = std::move(item_cache)]() mutable {
+      _ptr->_bg,
+      [this,
+       data = std::move(data),
+       notifications = std::move(notifications)]() mutable {
           return _ptr->_op_lock.get_units().then(
-            [this, item_cache = std::move(item_cache)](
+            [this,
+             data = std::move(data),
+             notifications = std::move(notifications)](
               ss::semaphore_units<> u) mutable {
                 // we have to check if we are the leader
                 // it is critical as term could have been updated already by
@@ -116,7 +117,7 @@ ss::future<> replicate_batcher::flush() {
                 // this problem caused truncation failure.
 
                 if (!_ptr->is_leader()) {
-                    for (auto& n : item_cache) {
+                    for (auto& n : notifications) {
                         n->_promise.set_value(errc::not_leader);
                     }
                     return ss::make_ready_future<>();
@@ -124,27 +125,9 @@ ss::future<> replicate_batcher::flush() {
 
                 auto meta = _ptr->meta();
                 auto const term = model::term_id(meta.term);
-                ss::circular_buffer<model::record_batch> data;
-                std::vector<item_ptr> notifications;
-
-                for (auto& n : item_cache) {
-                    if (
-                      !n->expected_term.has_value()
-                      || n->expected_term.value() == term) {
-                        for (auto& b : n->data) {
-                            b.set_term(term);
-                            data.push_back(std::move(b));
-                        }
-                        notifications.push_back(std::move(n));
-                    } else {
-                        n->_promise.set_value(errc::not_leader);
-                    }
+                for (auto& b : data) {
+                    b.set_term(term);
                 }
-
-                if (notifications.empty()) {
-                    return ss::now();
-                }
-
                 auto seqs = _ptr->next_followers_request_seq();
                 append_entries_request req(
                   _ptr->_self,
@@ -158,7 +141,6 @@ ss::future<> replicate_batcher::flush() {
             });
       });
 }
-
 static void propagate_result(
   result<replicate_result> r,
   std::vector<replicate_batcher::item_ptr>& notifications) {
