@@ -34,6 +34,7 @@ enum class errc {
     invalid_configuration_update,
     not_voter,
     invalid_target_node,
+    shutting_down
 };
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "raft::errc"; }
@@ -77,6 +78,8 @@ struct errc_category final : public std::error_category {
         case errc::invalid_target_node:
             return "Node that received the request is not the one that the "
                    "request was addressed to";
+        case errc::shutting_down:
+            return "raft protocol shutting down";
         default:
             return "raft::errc::unknown";
         }
