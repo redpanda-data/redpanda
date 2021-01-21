@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-// Package redpanda is responsible for Reconcile the redpanda.vectorized.io Custom Resource Definition
+// Package redpanda contains reconciliation logic for redpanda.vectorized.io CRD
 package redpanda
 
 import (
@@ -32,6 +32,7 @@ import (
 	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 const (
@@ -91,7 +92,7 @@ func (r *ClusterReconciler) Reconcile(
 	if errors.IsNotFound(err) {
 		log.V(debugLevel).Info("Creating headless service")
 
-		if err = r.createHeadlessService(ctx, &redpandaCluster); err != nil {
+		if err = r.createHeadlessService(ctx, &redpandaCluster, r.Scheme); err != nil {
 			log.Error(err, "Failed to create new service",
 				"Service.Namespace", redpandaCluster.Namespace,
 				"Service.Name", redpandaCluster.Name)
@@ -112,7 +113,7 @@ func (r *ClusterReconciler) Reconcile(
 	if errors.IsNotFound(err) {
 		log.V(debugLevel).Info("Creating seed redpanda ConfigMap")
 
-		if err = r.createBootstrapConfigMap(ctx, &redpandaCluster); err != nil {
+		if err = r.createBootstrapConfigMap(ctx, &redpandaCluster, r.Scheme); err != nil {
 			log.Error(err, "Failed to create new seed redpanda ConfigMap",
 				"Configmap.Namespace", redpandaCluster.Namespace,
 				"Configmap.Name", redpandaCluster.Name+seedSuffix)
@@ -133,7 +134,7 @@ func (r *ClusterReconciler) Reconcile(
 	if errors.IsNotFound(err) {
 		log.V(debugLevel).Info("Creating bootstrap StatefulSet")
 
-		if err = r.createBootstrapStatefulSet(ctx, &redpandaCluster); err != nil {
+		if err = r.createBootstrapStatefulSet(ctx, &redpandaCluster, r.Scheme); err != nil {
 			log.Error(err, "Failed to create new bootstrap StatefulSet",
 				"Configmap.Namespace", redpandaCluster.Namespace, "StatefulSet.Name", redpandaCluster.Name+seedSuffix)
 
@@ -181,9 +182,11 @@ func (r *ClusterReconciler) Reconcile(
 }
 
 func (r *ClusterReconciler) createHeadlessService(
-	ctx context.Context, clusterSpec *redpandav1alpha1.Cluster,
+	ctx context.Context,
+	clusterSpec *redpandav1alpha1.Cluster,
+	scheme *runtime.Scheme,
 ) error {
-	return r.Create(ctx, &corev1.Service{
+	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace:	clusterSpec.Namespace,
 			Name:		clusterSpec.Name,
@@ -201,11 +204,18 @@ func (r *ClusterReconciler) createHeadlessService(
 			},
 			Selector:	clusterSpec.Labels,
 		},
-	})
+	}
+	err := controllerutil.SetControllerReference(clusterSpec, svc, scheme)
+	if err != nil {
+		return err
+	}
+	return r.Create(ctx, svc)
 }
 
 func (r *ClusterReconciler) createBootstrapConfigMap(
-	ctx context.Context, cluster *redpandav1alpha1.Cluster,
+	ctx context.Context,
+	cluster *redpandav1alpha1.Cluster,
+	scheme *runtime.Scheme,
 ) error {
 	cfg := config.Default()
 	cfg.Redpanda = copyConfig(&cluster.Spec.Configuration, &cfg.Redpanda)
@@ -225,7 +235,7 @@ func (r *ClusterReconciler) createBootstrapConfigMap(
 		return err
 	}
 
-	return r.Create(ctx, &corev1.ConfigMap{
+	cm := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace:	cluster.Namespace,
 			Name:		cluster.Name + seedSuffix,
@@ -234,7 +244,13 @@ func (r *ClusterReconciler) createBootstrapConfigMap(
 		Data: map[string]string{
 			"redpanda.yaml": string(cfgBytes),
 		},
-	})
+	}
+	err = controllerutil.SetControllerReference(cluster, cm, scheme)
+	if err != nil {
+		return err
+	}
+
+	return r.Create(ctx, cm)
 }
 
 func copyConfig(
@@ -276,14 +292,16 @@ func copyConfig(
 
 // nolint:funlen // The definition needs further refinement
 func (r *ClusterReconciler) createBootstrapStatefulSet(
-	ctx context.Context, cluster *redpandav1alpha1.Cluster,
+	ctx context.Context,
+	cluster *redpandav1alpha1.Cluster,
+	scheme *runtime.Scheme,
 ) error {
 	memory, exist := cluster.Spec.Resources.Limits["memory"]
 	if !exist {
 		memory = resource.MustParse("2Gi")
 	}
 
-	return r.Create(ctx, &appsv1.StatefulSet{
+	ss := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace:	cluster.Namespace,
 			Name:		cluster.Name + seedSuffix,
@@ -405,7 +423,14 @@ func (r *ClusterReconciler) createBootstrapStatefulSet(
 				},
 			},
 		},
-	})
+	}
+
+	err := controllerutil.SetControllerReference(cluster, ss, scheme)
+	if err != nil {
+		return err
+	}
+
+	return r.Create(ctx, ss)
 }
 
 // SetupWithManager sets up the controller with the Manager.
