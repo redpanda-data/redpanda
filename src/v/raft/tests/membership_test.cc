@@ -19,7 +19,8 @@ FIXTURE_TEST(add_one_node_to_single_node_cluster, raft_test_fixture) {
     BOOST_REQUIRE(res);
     auto new_node = gr.create_new_node(model::node_id(2));
     res = retry_with_leader(gr, 5, 1s, [new_node](raft_node& leader) {
-              return leader.consensus->add_group_members({new_node})
+              return leader.consensus
+                ->add_group_members({new_node}, model::revision_id(0))
                 .then([](std::error_code ec) { return !ec; });
           }).get0();
 
@@ -41,7 +42,8 @@ FIXTURE_TEST(add_two_nodes_to_the_cluster, raft_test_fixture) {
             1s,
             [new_node_1, new_node_2](raft_node& leader) {
                 return leader.consensus
-                  ->add_group_members({new_node_1, new_node_2})
+                  ->add_group_members(
+                    {new_node_1, new_node_2}, model::revision_id(0))
                   .then([](std::error_code ec) { return !ec; });
             })
             .get0();
@@ -94,7 +96,8 @@ FIXTURE_TEST(remove_non_leader, raft_test_fixture) {
                            })
                            ->first;
     res = retry_with_leader(gr, 5, 1s, [non_leader_id](raft_node& leader) {
-              return leader.consensus->remove_members({non_leader_id})
+              return leader.consensus
+                ->remove_members({non_leader_id}, model::revision_id(0))
                 .then([](std::error_code ec) { return !ec; });
           }).get0();
     BOOST_REQUIRE(res);
@@ -116,7 +119,8 @@ FIXTURE_TEST(remove_current_leader, raft_test_fixture) {
     auto res = replicate_random_batches(gr, 2).get0();
     auto old_leader_id = wait_for_group_leader(gr);
     res = retry_with_leader(gr, 5, 1s, [old_leader_id](raft_node& leader) {
-              return leader.consensus->remove_members({old_leader_id})
+              return leader.consensus
+                ->remove_members({old_leader_id}, model::revision_id(0))
                 .then([](std::error_code ec) { return !ec; });
           }).get0();
 
@@ -155,7 +159,8 @@ FIXTURE_TEST(remove_multiple_members, raft_test_fixture) {
             1s,
             [old_leader_id, non_leader_id](raft_node& leader) {
                 return leader.consensus
-                  ->remove_members({old_leader_id, non_leader_id})
+                  ->remove_members(
+                    {old_leader_id, non_leader_id}, model::revision_id(0))
                   .then([](std::error_code ec) { return !ec; });
             })
             .get0();
@@ -182,7 +187,8 @@ FIXTURE_TEST(try_remove_all_voters, raft_test_fixture) {
     // remove all members
     auto result = leader_raft
                     ->remove_members(
-                      {model::node_id(0), model::node_id(1), model::node_id(2)})
+                      {model::node_id(0), model::node_id(1), model::node_id(2)},
+                      model::revision_id(0))
                     .get0();
 
     BOOST_REQUIRE_EQUAL(result, raft::errc::invalid_configuration_update);
@@ -205,7 +211,8 @@ FIXTURE_TEST(replace_whole_group, raft_test_fixture) {
     bool success = false;
     info("replacing configuration");
     res = retry_with_leader(gr, 5, 5s, [new_members](raft_node& leader) {
-              return leader.consensus->replace_configuration(new_members)
+              return leader.consensus
+                ->replace_configuration(new_members, model::revision_id(0))
                 .then([](std::error_code ec) {
                     info("configuration replace result: {}", ec.message());
                     return !ec

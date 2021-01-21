@@ -43,16 +43,22 @@ vote_stm::~vote_stm() {
       _vote_bg.get_count() <= 0 || _vote_bg.is_closed(),
       "Must call vote_stm::wait()");
 }
-ss::future<result<vote_reply>> vote_stm::do_dispatch_one(model::node_id n) {
+ss::future<result<vote_reply>> vote_stm::do_dispatch_one(vnode n) {
     vlog(_ctxlog.trace, "Sending vote request to {}", n);
     auto tout = clock_type::now() + _ptr->_jit.base_duration();
 
     auto r = _req;
     _ptr->_probe.vote_request_sent();
-    return _ptr->_client_protocol.vote(n, std::move(r), rpc::client_opts(tout));
+    r.target_node_id = n;
+    return _ptr->_client_protocol
+      .vote(n.id(), std::move(r), rpc::client_opts(tout))
+      .then([this](result<vote_reply> reply) {
+          return _ptr->validate_reply_target_node(
+            "vote_request", std::move(reply));
+      });
 }
 
-ss::future<> vote_stm::dispatch_one(model::node_id n) {
+ss::future<> vote_stm::dispatch_one(vnode n) {
     return with_gate(_vote_bg, [this, n] {
         if (n == _ptr->_self) {
             // skip self vote
@@ -89,27 +95,29 @@ ss::future<> vote_stm::vote(bool leadership_transfer) {
           if (_ptr->should_skip_vote(leadership_transfer)) {
               return ss::make_ready_future<skip_vote>(skip_vote::yes);
           }
+
           // 5.2.1
           _ptr->_vstate = consensus::vote_state::candidate;
           _ptr->_leader_id = std::nullopt;
           _ptr->trigger_leadership_notification();
+
           // 5.2.1.2
           _ptr->_term += model::term_id(1);
           _ptr->_voted_for = {};
 
           // vote is the only method under _op_sem
           _config->for_each_voter(
-            [this](model::node_id id) { _replies.emplace(id, vmeta{}); });
+            [this](vnode id) { _replies.emplace(id, vmeta{}); });
           auto lstats = _ptr->_log.offsets();
           auto last_entry_term = _ptr->get_last_entry_term(lstats);
 
           _req = vote_request{
-            _ptr->_self,
-            _ptr->group(),
-            _ptr->term(),
-            lstats.dirty_offset,
-            last_entry_term,
-            leadership_transfer};
+            .node_id = _ptr->_self,
+            .group = _ptr->group(),
+            .term = _ptr->term(),
+            .prev_log_index = lstats.dirty_offset,
+            .prev_log_term = last_entry_term,
+            .leadership_transfer = leadership_transfer};
           // we have to self vote before dispatching vote request to
           // other nodes, this vote has to be done under op semaphore as
           // it changes voted_for state
@@ -125,8 +133,7 @@ ss::future<> vote_stm::vote(bool leadership_transfer) {
 
 ss::future<> vote_stm::do_vote() {
     // dispatch requests to all voters
-    _config->for_each_voter(
-      [this](model::node_id id) { (void)dispatch_one(id); });
+    _config->for_each_voter([this](vnode id) { (void)dispatch_one(id); });
 
     // wait until majority
     const size_t majority = (_config->unique_voter_count() / 2) + 1;
@@ -145,7 +152,7 @@ ss::future<> vote_stm::do_vote() {
 ss::future<> vote_stm::process_replies() {
     return ss::repeat([this] {
         // majority votes granted
-        bool majority_granted = _config->majority([this](model::node_id id) {
+        bool majority_granted = _config->majority([this](vnode id) {
             return _replies.find(id)->second.get_state()
                    == vmeta::state::vote_granted;
         });
@@ -157,7 +164,7 @@ ss::future<> vote_stm::process_replies() {
         }
 
         // majority votes not granted, election not successfull
-        bool majority_failed = _config->majority([this](model::node_id id) {
+        bool majority_failed = _config->majority([this](vnode id) {
             auto state = _replies.find(id)->second.get_state();
             // vote not granted and not in progress, it is failed
             return state != vmeta::state::vote_granted
@@ -218,7 +225,7 @@ ss::future<> vote_stm::update_vote_state(ss::semaphore_units<> u) {
         return ss::now();
     }
 
-    std::vector<model::node_id> acks;
+    std::vector<vnode> acks;
     for (auto& [id, r] : _replies) {
         if (r.get_state() == vmeta::state::vote_granted) {
             acks.emplace_back(id);

@@ -32,7 +32,8 @@ enum class errc {
     leadership_transfer_in_progress,
     node_already_exists,
     invalid_configuration_update,
-    not_voter
+    not_voter,
+    invalid_target_node,
 };
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "raft::errc"; }
@@ -73,6 +74,9 @@ struct errc_category final : public std::error_category {
             return "Configuration resulting from the update is invalid";
         case errc::not_voter:
             return "Requested node is not a voter";
+        case errc::invalid_target_node:
+            return "Node that received the request is not the one that the "
+                   "request was addressed to";
         default:
             return "raft::errc::unknown";
         }

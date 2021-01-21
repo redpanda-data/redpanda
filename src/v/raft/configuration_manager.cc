@@ -326,6 +326,14 @@ ss::future<> configuration_manager::remove_persistent_state() {
       });
 }
 
+model::revision_id configuration_manager::get_latest_revision() const {
+    vassert(
+      !_configurations.empty(),
+      "Configuration manager should always have at least one "
+      "configuration");
+    return _configurations.rbegin()->second.revision_id();
+}
+
 std::ostream& operator<<(std::ostream& o, const configuration_manager& m) {
     o << "{configurations: ";
     for (const auto& p : m._configurations) {

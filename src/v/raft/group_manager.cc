@@ -10,6 +10,7 @@
 #include "raft/group_manager.h"
 
 #include "config/configuration.h"
+#include "model/metadata.h"
 #include "prometheus/prometheus_sanitize.h"
 #include "resource_mgmt/io_priority.h"
 
@@ -43,10 +44,11 @@ ss::future<> group_manager::stop() {
 
 ss::future<ss::lw_shared_ptr<raft::consensus>> group_manager::create_group(
   raft::group_id id, std::vector<model::broker> nodes, storage::log log) {
+    auto revision = log.config().get_revision();
     auto raft = ss::make_lw_shared<raft::consensus>(
       _self,
       id,
-      raft::group_configuration(std::move(nodes)),
+      raft::group_configuration(std::move(nodes), revision),
       raft::timeout_jitter(
         config::shard_local_cfg().raft_election_timeout_ms()),
       log,
@@ -80,7 +82,7 @@ ss::future<> group_manager::remove(ss::lw_shared_ptr<raft::consensus> c) {
 void group_manager::trigger_leadership_notification(
   raft::leadership_status st) {
     for (auto& cb : _notifications) {
-        cb.second(st.group, st.term, st.current_leader);
+        cb.second(st.group, st.term, st.current_leader->id());
     }
 }
 

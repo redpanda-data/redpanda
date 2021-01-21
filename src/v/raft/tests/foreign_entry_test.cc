@@ -9,6 +9,7 @@
 
 #include "model/adl_serde.h"
 #include "model/fundamental.h"
+#include "model/metadata.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
@@ -114,7 +115,8 @@ struct foreign_entry_fixture {
             learners.push_back(tests::random_broker(
               active_nodes + 1, active_nodes * active_nodes));
         }
-        return raft::group_configuration(std::move(nodes));
+        return raft::group_configuration(
+          std::move(nodes), model::revision_id(1));
     }
     ~foreign_entry_fixture() { _storage.stop().get(); }
     model::offset _base_offset{0};
@@ -159,11 +161,12 @@ FIXTURE_TEST(sharing_one_reader, foreign_entry_fixture) {
               return extract_configuration(std::move(e));
           }).get0();
 
-        for (auto& id : cfg.current_config().voters) {
-            BOOST_REQUIRE(id >= 0 && id <= foreign_entry_fixture::active_nodes);
+        for (auto& rni : cfg.current_config().voters) {
+            BOOST_REQUIRE(
+              rni.id() >= 0 && rni.id() <= foreign_entry_fixture::active_nodes);
         }
-        for (auto& id : cfg.current_config().learners) {
-            BOOST_REQUIRE(id > foreign_entry_fixture::active_nodes);
+        for (auto& rni : cfg.current_config().learners) {
+            BOOST_REQUIRE(rni.id() > foreign_entry_fixture::active_nodes);
         }
     }
 }
@@ -215,12 +218,13 @@ FIXTURE_TEST(copy_lots_of_readers, foreign_entry_fixture) {
                      })
                      .get0();
 
-        cfg.for_each_voter([](model::node_id id) {
-            BOOST_REQUIRE(id >= 0 && id <= foreign_entry_fixture::active_nodes);
+        cfg.for_each_voter([](const raft::vnode& rni) {
+            BOOST_REQUIRE(
+              rni.id() >= 0 && rni.id() <= foreign_entry_fixture::active_nodes);
         });
 
-        cfg.for_each_learner([](model::node_id id) {
-            BOOST_REQUIRE(id > foreign_entry_fixture::active_nodes);
+        cfg.for_each_learner([](const raft::vnode& rni) {
+            BOOST_REQUIRE(rni.id() > foreign_entry_fixture::active_nodes);
         });
     }
 }

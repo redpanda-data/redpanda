@@ -14,6 +14,7 @@
 #include "config/configuration.h"
 #include "model/metadata.h"
 #include "outcome.h"
+#include "raft/configuration.h"
 #include "raft/consensus.h"
 #include "raft/consensus_client_protocol.h"
 #include "raft/types.h"

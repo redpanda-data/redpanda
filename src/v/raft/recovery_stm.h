@@ -19,7 +19,7 @@ namespace raft {
 
 class recovery_stm {
 public:
-    recovery_stm(consensus*, model::node_id, ss::io_priority_class);
+    recovery_stm(consensus*, vnode, ss::io_priority_class);
     ss::future<> apply();
 
 private:
@@ -41,7 +41,7 @@ private:
     bool is_recovery_finished();
 
     consensus* _ptr;
-    model::node_id _node_id;
+    vnode _node_id;
     model::offset _base_batch_offset;
     model::offset _last_batch_offset;
     model::offset _committed_offset;

@@ -81,7 +81,7 @@ ss::future<> controller::start() {
       })
       .then([this] {
           return _tp_frontend.start(
-            _raft0->self(),
+            _raft0->self().id(),
             std::ref(_stm),
             std::ref(_connections),
             std::ref(_partition_allocator),

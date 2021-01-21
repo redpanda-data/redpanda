@@ -25,7 +25,7 @@ namespace raft {
 using namespace std::chrono_literals;
 
 recovery_stm::recovery_stm(
-  consensus* p, model::node_id node_id, ss::io_priority_class prio)
+  consensus* p, vnode node_id, ss::io_priority_class prio)
   : _ptr(p)
   , _node_id(node_id)
   , _term(_ptr->term())
@@ -209,6 +209,7 @@ ss::future<> recovery_stm::send_install_snapshot_request() {
       .then([this](iobuf chunk) mutable {
           auto chunk_size = chunk.size_bytes();
           install_snapshot_request req{
+            .target_node_id = _node_id,
             .term = _ptr->term(),
             .group = _ptr->group(),
             .node_id = _ptr->_self,
@@ -224,11 +225,13 @@ ss::future<> recovery_stm::send_install_snapshot_request() {
             req.last_included_index);
           return _ptr->_client_protocol
             .install_snapshot(
-              _node_id,
+              _node_id.id(),
               std::move(req),
               rpc::client_opts(append_entries_timeout()))
             .then([this](result<install_snapshot_reply> reply) {
-                return handle_install_snapshot_reply(reply);
+                return handle_install_snapshot_reply(
+                  _ptr->validate_reply_target_node(
+                    "install_snapshot", std::move(reply)));
             });
       });
 }
@@ -316,6 +319,7 @@ ss::future<> recovery_stm::replicate(
     // build request
     append_entries_request r(
       _ptr->self(),
+      _node_id,
       protocol_metadata{
         .group = _ptr->group(),
         .commit_index = commit_idx,
@@ -343,7 +347,13 @@ ss::future<> recovery_stm::replicate(
               _ptr->get_probe().recovery_request_error();
           }
           _ptr->process_append_entries_reply(
-            _node_id, r.value(), seq, dirty_offset);
+            _node_id.id(), r.value(), seq, dirty_offset);
+          // If follower stats aren't present we have to stop recovery as
+          // follower was removed from configuration
+          if (!_ptr->_fstats.contains(_node_id)) {
+              _stop_requested = true;
+              return;
+          }
           // If request was reordered we have to stop recovery as follower state
           // is not known
           if (seq < _ptr->_fstats.get(_node_id).last_received_seq) {
@@ -381,8 +391,14 @@ clock_type::time_point recovery_stm::append_entries_timeout() {
 ss::future<result<append_entries_reply>>
 recovery_stm::dispatch_append_entries(append_entries_request&& r) {
     _ptr->_probe.recovery_append_request();
-    return _ptr->_client_protocol.append_entries(
-      _node_id, std::move(r), rpc::client_opts(append_entries_timeout()));
+
+    return _ptr->_client_protocol
+      .append_entries(
+        _node_id.id(), std::move(r), rpc::client_opts(append_entries_timeout()))
+      .then([this](result<append_entries_reply> reply) {
+          return _ptr->validate_reply_target_node(
+            "append_entries_recovery", std::move(reply));
+      });
 }
 
 bool recovery_stm::is_recovery_finished() {

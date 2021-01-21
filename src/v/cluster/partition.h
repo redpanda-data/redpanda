@@ -13,6 +13,7 @@
 
 #include "cluster/partition_probe.h"
 #include "cluster/types.h"
+#include "model/metadata.h"
 #include "model/record_batch_reader.h"
 #include "raft/configuration.h"
 #include "raft/consensus.h"
@@ -101,9 +102,10 @@ public:
         return _raft->transfer_leadership(target);
     }
 
-    ss::future<std::error_code>
-    update_replica_set(std::vector<model::broker> brokers) {
-        return _raft->replace_configuration(std::move(brokers));
+    ss::future<std::error_code> update_replica_set(
+      std::vector<model::broker> brokers, model::revision_id new_revision_id) {
+        return _raft->replace_configuration(
+          std::move(brokers), new_revision_id);
     }
 
     raft::group_configuration group_configuration() const {

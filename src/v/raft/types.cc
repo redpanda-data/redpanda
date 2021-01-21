@@ -10,6 +10,8 @@
 #include "raft/types.h"
 
 #include "model/fundamental.h"
+#include "model/metadata.h"
+#include "raft/configuration.h"
 #include "raft/consensus_utils.h"
 #include "reflection/adl.h"
 #include "utils/to_string.h"
@@ -22,8 +24,13 @@
 
 namespace raft {
 
+std::ostream& operator<<(std::ostream& o, const vnode& id) {
+    return o << "{id: " << id.id() << ", revision: " << id.revision() << "}";
+}
+
 std::ostream& operator<<(std::ostream& o, const append_entries_reply& r) {
-    return o << "{node_id: " << r.node_id << ", group: " << r.group
+    return o << "{node_id: " << r.node_id << ", target_node_id"
+             << r.target_node_id << ", group: " << r.group
              << ", term:" << r.term
              << ", last_dirty_log_index:" << r.last_dirty_log_index
              << ", last_committed_log_index:" << r.last_committed_log_index
@@ -32,7 +39,8 @@ std::ostream& operator<<(std::ostream& o, const append_entries_reply& r) {
 }
 
 std::ostream& operator<<(std::ostream& o, const vote_request& r) {
-    return o << "{node_id: " << r.node_id << ", group: " << r.group
+    return o << "{node_id: " << r.node_id << ", target_node_id"
+             << r.target_node_id << ", group: " << r.group
              << ", term:" << r.term << ", prev_log_index:" << r.prev_log_index
              << ", prev_log_term: " << r.prev_log_term
              << ", leadership_xfer: " << r.leadership_transfer << "}";
@@ -48,9 +56,11 @@ std::ostream& operator<<(std::ostream& o, const follower_index_metadata& i) {
 }
 
 std::ostream& operator<<(std::ostream& o, const heartbeat_request& r) {
-    o << "{node: " << r.node_id << ", meta:(" << r.meta.size() << ") [";
-    for (auto& m : r.meta) {
-        o << m << ",";
+    o << "{meta:(" << r.heartbeats.size() << ") [";
+    for (auto& m : r.heartbeats) {
+        o << "meta: " << m.meta << ","
+          << "node_id: " << m.node_id << ","
+          << "target_node_id: " << m.target_node_id << ",";
     }
     return o << "]}";
 }
@@ -84,8 +94,9 @@ std::ostream& operator<<(std::ostream& o, const protocol_metadata& m) {
              << ", prev_log_term:" << m.prev_log_term << "}";
 }
 std::ostream& operator<<(std::ostream& o, const vote_reply& r) {
-    return o << "{term:" << r.term << ", vote_granted: " << r.granted
-             << ", log_ok:" << r.log_ok << "}";
+    return o << "{term:" << r.term << ", target_node_id" << r.target_node_id
+             << ", vote_granted: " << r.granted << ", log_ok:" << r.log_ok
+             << "}";
 }
 std::ostream&
 operator<<(std::ostream& o, const append_entries_reply::status& r) {
@@ -107,10 +118,12 @@ operator<<(std::ostream& o, const append_entries_reply::status& r) {
 std::ostream& operator<<(std::ostream& o, const install_snapshot_request& r) {
     fmt::print(
       o,
-      "{{term: {}, group: {}, node_id: {}, last_included_index: {}, "
+      "{{term: {}, group: {}, target_node_id: {}, node_id: {}, "
+      "last_included_index: {}, "
       "file_offset: {}, chunk_size: {}, done: {}}}",
       r.term,
       r.group,
+      r.target_node_id,
       r.node_id,
       r.last_included_index,
       r.file_offset,
@@ -122,8 +135,9 @@ std::ostream& operator<<(std::ostream& o, const install_snapshot_request& r) {
 std::ostream& operator<<(std::ostream& o, const install_snapshot_reply& r) {
     fmt::print(
       o,
-      "{{term: {}, bytes_stored: {}, success: {}}}",
+      "{{term: {}, target_node_id: {}, bytes_stored: {}, success: {}}}",
       r.term,
+      r.target_node_id,
       r.bytes_stored,
       r.success);
     return o;
@@ -165,7 +179,11 @@ ss::future<> async_adl<raft::append_entries_request>::to(
               reflection::serialize(out, std::move(batch));
           }
           reflection::serialize(
-            out, request.meta, request.node_id, request.flush);
+            out,
+            request.target_node_id,
+            request.meta,
+            request.node_id,
+            request.flush);
       });
 }
 
@@ -178,12 +196,15 @@ async_adl<raft::append_entries_request>::from(iobuf_parser& in) {
         batches.push_back(adl<model::record_batch>{}.from(in));
     }
     auto reader = model::make_memory_record_batch_reader(std::move(batches));
+    auto target_node = reflection::adl<raft::vnode>{}.from(in);
     auto meta = reflection::adl<raft::protocol_metadata>{}.from(in);
-    auto n = reflection::adl<model::node_id>{}.from(in);
+    auto n = reflection::adl<raft::vnode>{}.from(in);
     auto flush
       = reflection::adl<raft::append_entries_request::flush_after_append>{}
           .from(in);
-    raft::append_entries_request ret(n, meta, std::move(reader), flush);
+
+    raft::append_entries_request ret(
+      n, target_node, meta, std::move(reader), flush);
     return ss::make_ready_future<raft::append_entries_request>(std::move(ret));
 }
 
@@ -229,7 +250,10 @@ struct hbeat_soa {
       , terms(n)
       , prev_log_indices(n)
       , prev_log_terms(n)
-      , last_visible_indices(n) {}
+      , last_visible_indices(n)
+      , revisions(n)
+      , target_revisions(n) {}
+
     ~hbeat_soa() noexcept = default;
     hbeat_soa(const hbeat_soa&) = delete;
     hbeat_soa& operator=(const hbeat_soa&) = delete;
@@ -242,6 +266,8 @@ struct hbeat_soa {
     std::vector<model::offset> prev_log_indices;
     std::vector<model::term_id> prev_log_terms;
     std::vector<model::offset> last_visible_indices;
+    std::vector<model::revision_id> revisions;
+    std::vector<model::revision_id> target_revisions;
 };
 
 struct hbeat_response_array {
@@ -250,13 +276,17 @@ struct hbeat_response_array {
       , terms(n)
       , last_committed_log_index(n)
       , last_dirty_log_index(n)
-      , last_term_base_offset(n) {}
+      , last_term_base_offset(n)
+      , revisions(n)
+      , target_revisions(n) {}
 
     std::vector<raft::group_id> groups;
     std::vector<model::term_id> terms;
     std::vector<model::offset> last_committed_log_index;
     std::vector<model::offset> last_dirty_log_index;
     std::vector<model::offset> last_term_base_offset;
+    std::vector<model::revision_id> revisions;
+    std::vector<model::revision_id> target_revisions;
 };
 template<typename T>
 void encode_one_vint(iobuf& out, const T& t) {
@@ -295,18 +325,25 @@ ss::future<> async_adl<raft::heartbeat_request>::to(
   iobuf& out, raft::heartbeat_request&& request) {
     struct sorter_fn {
         constexpr bool operator()(
-          const raft::protocol_metadata& lhs,
-          const raft::protocol_metadata& rhs) const {
-            return lhs.commit_index < rhs.commit_index;
+          const raft::heartbeat_metadata& lhs,
+          const raft::heartbeat_metadata& rhs) const {
+            return lhs.meta.commit_index < rhs.meta.commit_index;
         }
     };
-    std::sort(request.meta.begin(), request.meta.end(), sorter_fn{});
+    std::sort(
+      request.heartbeats.begin(), request.heartbeats.end(), sorter_fn{});
     return ss::make_ready_future<>()
       .then([&out, request = std::move(request)] {
-          internal::hbeat_soa encodee(request.meta.size());
-          const size_t size = request.meta.size();
+          internal::hbeat_soa encodee(request.heartbeats.size());
+          // target physical node id is always the same it differs only by
+          // revision
+
+          const size_t size = request.heartbeats.size();
           for (size_t i = 0; i < size; ++i) {
-              const auto& m = request.meta[i];
+              const auto& m = request.heartbeats[i].meta;
+              const raft::vnode node = request.heartbeats[i].node_id;
+              const raft::vnode target_node
+                = request.heartbeats[i].target_node_id;
               vassert(
                 m.group() >= 0, "Negative raft group detected. {}", m.group);
               encodee.groups[i] = m.group;
@@ -319,11 +356,21 @@ ss::future<> async_adl<raft::heartbeat_request>::to(
                 model::term_id(-1), m.prev_log_term);
               encodee.last_visible_indices[i] = std::max(
                 model::offset(-1), m.last_visible_index);
+              encodee.revisions[i] = std::max(
+                model::revision_id(-1), node.revision());
+              encodee.target_revisions[i] = std::max(
+                model::revision_id(-1), target_node.revision());
           }
           // important to release this memory after this function
           // request.meta = {}; // release memory
-          adl<model::node_id>{}.to(out, request.node_id);
+
+          // physical node ids are the same for all requests
+          adl<model::node_id>{}.to(
+            out, request.heartbeats.front().node_id.id());
+          adl<model::node_id>{}.to(
+            out, request.heartbeats.front().target_node_id.id());
           adl<uint32_t>{}.to(out, size);
+
           return encodee;
       })
       .then([&out](internal::hbeat_soa encodee) {
@@ -337,6 +384,10 @@ ss::future<> async_adl<raft::heartbeat_request>::to(
             out, encodee.prev_log_terms);
           internal::encode_one_delta_array<model::offset>(
             out, encodee.last_visible_indices);
+          internal::encode_one_delta_array<model::revision_id>(
+            out, encodee.revisions);
+          internal::encode_one_delta_array<model::revision_id>(
+            out, encodee.target_revisions);
       });
 }
 
@@ -348,52 +399,79 @@ T decode_signed(T value) {
 ss::future<raft::heartbeat_request>
 async_adl<raft::heartbeat_request>::from(iobuf_parser& in) {
     raft::heartbeat_request req;
-    req.node_id = adl<model::node_id>{}.from(in);
-    req.meta = std::vector<raft::protocol_metadata>(adl<uint32_t>{}.from(in));
-    if (req.meta.empty()) {
+    auto node_id = adl<model::node_id>{}.from(in);
+    auto target_node = adl<model::node_id>{}.from(in);
+    req.heartbeats = std::vector<raft::heartbeat_metadata>(
+      adl<uint32_t>{}.from(in));
+    if (req.heartbeats.empty()) {
         return ss::make_ready_future<raft::heartbeat_request>(std::move(req));
     }
-    const size_t max = req.meta.size();
-    req.meta[0].group = varlong_reader<raft::group_id>(in);
+    const size_t max = req.heartbeats.size();
+    req.heartbeats[0].meta.group = varlong_reader<raft::group_id>(in);
     for (size_t i = 1; i < max; ++i) {
-        req.meta[i].group = internal::read_one_varint_delta<raft::group_id>(
-          in, req.meta[i - 1].group);
+        req.heartbeats[i].meta.group
+          = internal::read_one_varint_delta<raft::group_id>(
+            in, req.heartbeats[i - 1].meta.group);
     }
-    req.meta[0].commit_index = varlong_reader<model::offset>(in);
+    req.heartbeats[0].meta.commit_index = varlong_reader<model::offset>(in);
     for (size_t i = 1; i < max; ++i) {
-        req.meta[i].commit_index
+        req.heartbeats[i].meta.commit_index
           = internal::read_one_varint_delta<model::offset>(
-            in, req.meta[i - 1].commit_index);
+            in, req.heartbeats[i - 1].meta.commit_index);
     }
-    req.meta[0].term = varlong_reader<model::term_id>(in);
+    req.heartbeats[0].meta.term = varlong_reader<model::term_id>(in);
     for (size_t i = 1; i < max; ++i) {
-        req.meta[i].term = internal::read_one_varint_delta<model::term_id>(
-          in, req.meta[i - 1].term);
-    }
-    req.meta[0].prev_log_index = varlong_reader<model::offset>(in);
-    for (size_t i = 1; i < max; ++i) {
-        req.meta[i].prev_log_index
-          = internal::read_one_varint_delta<model::offset>(
-            in, req.meta[i - 1].prev_log_index);
-    }
-    req.meta[0].prev_log_term = varlong_reader<model::term_id>(in);
-    for (size_t i = 1; i < max; ++i) {
-        req.meta[i].prev_log_term
+        req.heartbeats[i].meta.term
           = internal::read_one_varint_delta<model::term_id>(
-            in, req.meta[i - 1].prev_log_term);
+            in, req.heartbeats[i - 1].meta.term);
     }
-    req.meta[0].last_visible_index = varlong_reader<model::offset>(in);
+    req.heartbeats[0].meta.prev_log_index = varlong_reader<model::offset>(in);
     for (size_t i = 1; i < max; ++i) {
-        req.meta[i].last_visible_index
+        req.heartbeats[i].meta.prev_log_index
           = internal::read_one_varint_delta<model::offset>(
-            in, req.meta[i - 1].last_visible_index);
+            in, req.heartbeats[i - 1].meta.prev_log_index);
+    }
+    req.heartbeats[0].meta.prev_log_term = varlong_reader<model::term_id>(in);
+    for (size_t i = 1; i < max; ++i) {
+        req.heartbeats[i].meta.prev_log_term
+          = internal::read_one_varint_delta<model::term_id>(
+            in, req.heartbeats[i - 1].meta.prev_log_term);
+    }
+    req.heartbeats[0].meta.last_visible_index = varlong_reader<model::offset>(
+      in);
+    for (size_t i = 1; i < max; ++i) {
+        req.heartbeats[i].meta.last_visible_index
+          = internal::read_one_varint_delta<model::offset>(
+            in, req.heartbeats[i - 1].meta.last_visible_index);
     }
 
-    for (auto& m : req.meta) {
-        m.prev_log_index = decode_signed(m.prev_log_index);
-        m.commit_index = decode_signed(m.commit_index);
-        m.prev_log_term = decode_signed(m.prev_log_term);
-        m.last_visible_index = decode_signed(m.last_visible_index);
+    req.heartbeats[0].node_id = raft::vnode(
+      node_id, varlong_reader<model::revision_id>(in));
+    for (size_t i = 1; i < max; ++i) {
+        req.heartbeats[i].node_id = raft::vnode(
+          node_id,
+          internal::read_one_varint_delta<model::revision_id>(
+            in, req.heartbeats[i - 1].node_id.revision()));
+    }
+
+    req.heartbeats[0].target_node_id = raft::vnode(
+      target_node, varlong_reader<model::revision_id>(in));
+    for (size_t i = 1; i < max; ++i) {
+        req.heartbeats[i].target_node_id = raft::vnode(
+          target_node,
+          internal::read_one_varint_delta<model::revision_id>(
+            in, req.heartbeats[i - 1].target_node_id.revision()));
+    }
+
+    for (auto& hb : req.heartbeats) {
+        hb.meta.prev_log_index = decode_signed(hb.meta.prev_log_index);
+        hb.meta.commit_index = decode_signed(hb.meta.commit_index);
+        hb.meta.prev_log_term = decode_signed(hb.meta.prev_log_term);
+        hb.meta.last_visible_index = decode_signed(hb.meta.last_visible_index);
+        hb.node_id = raft::vnode(
+          hb.node_id.id(), decode_signed(hb.node_id.revision()));
+        hb.target_node_id = raft::vnode(
+          hb.target_node_id.id(), decode_signed(hb.target_node_id.revision()));
     }
     return ss::make_ready_future<raft::heartbeat_request>(std::move(req));
 }
@@ -413,9 +491,10 @@ ss::future<> async_adl<raft::heartbeat_reply>::to(
         return ss::make_ready_future<>();
     }
 
-    // replies are comming from the same node
-    adl<model::node_id>{}.to(out, reply.meta.front().node_id);
-
+    // replies are comming from the same physical node
+    adl<model::node_id>{}.to(out, reply.meta.front().node_id.id());
+    // replies are addressed to the same physical node
+    adl<model::node_id>{}.to(out, reply.meta.front().target_node_id.id());
     std::sort(reply.meta.begin(), reply.meta.end(), sorter_fn{});
     internal::hbeat_response_array encodee(reply.meta.size());
 
@@ -429,6 +508,10 @@ ss::future<> async_adl<raft::heartbeat_reply>::to(
           model::offset(-1), reply.meta[i].last_dirty_log_index);
         encodee.last_term_base_offset[i] = std::max(
           model::offset(-1), reply.meta[i].last_term_base_offset);
+        encodee.revisions[i] = std::max(
+          model::revision_id(-1), reply.meta[i].node_id.revision());
+        encodee.target_revisions[i] = std::max(
+          model::revision_id(-1), reply.meta[i].target_node_id.revision());
     }
     internal::encode_one_delta_array<raft::group_id>(out, encodee.groups);
     internal::encode_one_delta_array<model::term_id>(out, encodee.terms);
@@ -439,6 +522,10 @@ ss::future<> async_adl<raft::heartbeat_reply>::to(
       out, encodee.last_dirty_log_index);
     internal::encode_one_delta_array<model::offset>(
       out, encodee.last_term_base_offset);
+    internal::encode_one_delta_array<model::revision_id>(
+      out, encodee.revisions);
+    internal::encode_one_delta_array<model::revision_id>(
+      out, encodee.target_revisions);
     for (auto& m : reply.meta) {
         adl<raft::append_entries_reply::status>{}.to(out, m.result);
     }
@@ -457,12 +544,11 @@ async_adl<raft::heartbeat_reply>::from(iobuf_parser& in) {
     }
 
     auto node_id = adl<model::node_id>{}.from(in);
+    auto target_node_id = adl<model::node_id>{}.from(in);
 
     size_t size = reply.meta.size();
-    reply.meta[0].node_id = node_id;
     reply.meta[0].group = varlong_reader<raft::group_id>(in);
     for (size_t i = 1; i < size; ++i) {
-        reply.meta[i].node_id = node_id;
         reply.meta[i].group = internal::read_one_varint_delta<raft::group_id>(
           in, reply.meta[i - 1].group);
     }
@@ -493,6 +579,24 @@ async_adl<raft::heartbeat_reply>::from(iobuf_parser& in) {
             in, reply.meta[i - 1].last_term_base_offset);
     }
 
+    reply.meta[0].node_id = raft::vnode(
+      node_id, varlong_reader<model::revision_id>(in));
+    for (size_t i = 1; i < size; ++i) {
+        reply.meta[i].node_id = raft::vnode(
+          node_id,
+          internal::read_one_varint_delta<model::revision_id>(
+            in, reply.meta[i - 1].node_id.revision()));
+    }
+
+    reply.meta[0].target_node_id = raft::vnode(
+      target_node_id, varlong_reader<model::revision_id>(in));
+    for (size_t i = 1; i < size; ++i) {
+        reply.meta[i].target_node_id = raft::vnode(
+          target_node_id,
+          internal::read_one_varint_delta<model::revision_id>(
+            in, reply.meta[i - 1].target_node_id.revision()));
+    }
+
     for (size_t i = 0; i < size; ++i) {
         reply.meta[i].result = adl<raft::append_entries_reply::status>{}.from(
           in);
@@ -502,6 +606,10 @@ async_adl<raft::heartbeat_reply>::from(iobuf_parser& in) {
         m.last_committed_log_index = decode_signed(m.last_committed_log_index);
         m.last_dirty_log_index = decode_signed(m.last_dirty_log_index);
         m.last_term_base_offset = decode_signed(m.last_term_base_offset);
+        m.node_id = raft::vnode(
+          m.node_id.id(), decode_signed(m.node_id.revision()));
+        m.target_node_id = raft::vnode(
+          m.target_node_id.id(), decode_signed(m.target_node_id.revision()));
     }
 
     return ss::make_ready_future<raft::heartbeat_reply>(std::move(reply));

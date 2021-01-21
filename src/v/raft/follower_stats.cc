@@ -9,7 +9,22 @@
 
 #include "raft/follower_stats.h"
 
+#include "raft/configuration.h"
+
 namespace raft {
+void follower_stats::update_with_configuration(const group_configuration& cfg) {
+    cfg.for_each_broker_id([this](const vnode& rni) {
+        if (rni == _self || _followers.contains(rni)) {
+            return;
+        }
+        _followers.emplace(rni, follower_index_metadata(rni));
+    });
+
+    absl::erase_if(_followers, [&cfg](const container_t::value_type& p) {
+        return !cfg.contains(p.first);
+    });
+}
+
 std::ostream& operator<<(std::ostream& o, const follower_stats& s) {
     o << "{followers:" << s._followers.size() << ", [";
     for (auto& f : s) {

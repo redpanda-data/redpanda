@@ -15,6 +15,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "raft/append_entries_buffer.h"
+#include "raft/configuration.h"
 #include "raft/configuration_manager.h"
 #include "raft/consensus_client_protocol.h"
 #include "raft/event_manager.h"
@@ -37,6 +38,8 @@
 #include <seastar/core/sharded.hh>
 #include <seastar/util/bool_class.hh>
 
+#include <optional>
+
 namespace raft {
 class replicate_entries_stm;
 class vote_stm;
@@ -45,7 +48,9 @@ class recovery_stm;
 /// consensus for one raft group
 class consensus {
 public:
-    struct voted_for_configuration {
+    // we maintain this for backward compatibility, will be removed in future
+    // versions.
+    struct voted_for_configuration_old {
         model::node_id voted_for;
         // for term it doesn't make sense to use numeric_limits<>::min
         model::term_id term{0};
@@ -53,6 +58,19 @@ public:
         uint32_t crc() const {
             crc32 c;
             c.extend(voted_for());
+            c.extend(term());
+            return c.value();
+        }
+    };
+    struct voted_for_configuration {
+        vnode voted_for;
+        // for term it doesn't make sense to use numeric_limits<>::min
+        model::term_id term{0};
+
+        uint32_t crc() const {
+            crc32 c;
+            c.extend(voted_for.id()());
+            c.extend(voted_for.revision()());
             c.extend(term());
             return c.value();
         }
@@ -87,19 +105,24 @@ public:
 
     /// This method adds multiple members to the group and performs
     /// configuration update
-    ss::future<std::error_code> add_group_members(std::vector<model::broker>);
+    ss::future<std::error_code>
+      add_group_members(std::vector<model::broker>, model::revision_id);
     /// Updates given member configuration
     ss::future<std::error_code> update_group_member(model::broker);
     // Removes members from group
-    ss::future<std::error_code> remove_members(std::vector<model::node_id>);
+    ss::future<std::error_code>
+      remove_members(std::vector<model::node_id>, model::revision_id);
     // Replace configuration of raft group with given set of nodes
     ss::future<std::error_code>
-      replace_configuration(std::vector<model::broker>);
+      replace_configuration(std::vector<model::broker>, model::revision_id);
 
     bool is_leader() const { return _vstate == vote_state::leader; }
     bool is_candidate() const { return _vstate == vote_state::candidate; }
-    std::optional<model::node_id> get_leader_id() const { return _leader_id; }
-    model::node_id self() const { return _self; }
+    std::optional<model::node_id> get_leader_id() const {
+        return _leader_id ? std::make_optional(_leader_id->id()) : std::nullopt;
+    }
+
+    vnode self() const { return _self; }
     protocol_metadata meta() const {
         auto lstats = _log.offsets();
         return protocol_metadata{
@@ -116,7 +139,7 @@ public:
     const model::ntp& ntp() const { return _log.config().ntp(); }
     clock_type::time_point last_heartbeat() const { return _hbeat; };
 
-    clock_type::time_point last_append_timestamp(model::node_id);
+    clock_type::time_point last_append_timestamp(vnode);
     /**
      * \brief Persist snapshot with given data and start offset
      *
@@ -128,7 +151,7 @@ public:
 
     /// Increment and returns next append_entries order tracking sequence for
     /// follower with given node id
-    follower_req_seq next_follower_sequence(model::node_id);
+    follower_req_seq next_follower_sequence(vnode);
 
     void process_append_entries_reply(
       model::node_id,
@@ -220,9 +243,9 @@ public:
 
     probe& get_probe() { return _probe; };
 
-    bool are_heartbeats_suppressed(model::node_id) const;
+    bool are_heartbeats_suppressed(vnode) const;
 
-    void suppress_heartbeats(model::node_id, follower_req_seq, bool);
+    void suppress_heartbeats(vnode, follower_req_seq, bool);
 
 private:
     friend replicate_entries_stm;
@@ -255,7 +278,8 @@ private:
       finish_snapshot(install_snapshot_request, install_snapshot_reply);
 
     ss::future<> do_write_snapshot(model::offset, iobuf&&);
-    append_entries_reply make_append_entries_reply(storage::append_result);
+    append_entries_reply
+      make_append_entries_reply(vnode, storage::append_result);
 
     ss::future<result<replicate_result>>
     do_replicate(model::record_batch_reader&&);
@@ -267,7 +291,7 @@ private:
 
     success_reply update_follower_index(
       model::node_id,
-      result<append_entries_reply>,
+      const result<append_entries_reply>&,
       follower_req_seq seq_id,
       model::offset);
 
@@ -298,8 +322,8 @@ private:
     ss::future<> maybe_update_follower_commit_idx(model::offset);
 
     void arm_vote_timeout();
-    void update_node_append_timestamp(model::node_id);
-    void update_node_hbeat_timestamp(model::node_id);
+    void update_node_append_timestamp(vnode);
+    void update_node_hbeat_timestamp(vnode);
 
     void update_follower_stats(const group_configuration&);
     void trigger_leadership_notification();
@@ -312,8 +336,7 @@ private:
 
     void maybe_step_down();
 
-    absl::flat_hash_map<model::node_id, follower_req_seq>
-    next_followers_request_seq();
+    absl::flat_hash_map<vnode, follower_req_seq> next_followers_request_seq();
 
     void setup_metrics();
 
@@ -326,7 +349,7 @@ private:
     ss::future<std::error_code> change_configuration(Func&&);
 
     ss::future<> maybe_commit_configuration(ss::semaphore_units<>);
-    void maybe_promote_to_voter(model::node_id);
+    void maybe_promote_to_voter(vnode);
 
     ss::future<model::record_batch_reader>
       do_make_reader(storage::log_reader_config);
@@ -339,7 +362,7 @@ private:
     void start_dispatching_disk_append_events();
 
     voter_priority next_target_priority();
-    voter_priority get_node_priority(model::node_id id) const;
+    voter_priority get_node_priority(vnode) const;
 
     /**
      * Return true if there is no state backing this consensus group i.e. there
@@ -354,8 +377,40 @@ private:
                && _last_snapshot_index == not_initialized;
     }
 
+    template<typename Reply>
+    result<Reply> validate_reply_target_node(
+      std::string_view request, result<Reply>&& reply) {
+        if (unlikely(reply && reply.value().target_node_id != self())) {
+            vlog(
+              _ctxlog.warn,
+              "received {} reply addressed to different node: {}, current "
+              "node: {}",
+              request,
+              reply.value().target_node_id,
+              _self);
+            return result<Reply>(errc::invalid_target_node);
+        }
+        return std::move(reply);
+    }
+
+    template<typename Request>
+    bool is_request_target_node_invalid(
+      std::string_view request_name, const Request& request) {
+        auto target = request.target_node();
+        if (unlikely(target != _self)) {
+            vlog(
+              _ctxlog.warn,
+              "received {} request addressed to different node: {}, current "
+              "node: {}",
+              request_name,
+              target,
+              _self);
+            return true;
+        }
+        return false;
+    }
     // args
-    model::node_id _self;
+    vnode _self;
     raft::group_id _group;
     timeout_jitter _jit;
     storage::log _log;
@@ -369,8 +424,8 @@ private:
     model::term_id _term;
 
     // read at `ss::future<> start()`
-    model::node_id _voted_for;
-    std::optional<model::node_id> _leader_id;
+    vnode _voted_for;
+    std::optional<vnode> _leader_id;
     bool _transferring_leadership{false};
 
     /// useful for when we are not the leader

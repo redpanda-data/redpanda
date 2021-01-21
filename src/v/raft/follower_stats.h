@@ -11,28 +11,24 @@
 
 #pragma once
 
+#include "model/metadata.h"
 #include "raft/types.h"
 #include "vassert.h"
 
-#include <absl/container/flat_hash_map.h>
-#include <boost/container/flat_map.hpp>
+#include <absl/container/node_hash_map.h>
 
 namespace raft {
 
 class follower_stats {
 public:
-    using container_t
-      = boost::container::flat_map<model::node_id, follower_index_metadata>;
+    using container_t = absl::node_hash_map<vnode, follower_index_metadata>;
     using iterator = container_t::iterator;
     using const_iterator = container_t::const_iterator;
 
-    explicit follower_stats(std::vector<follower_index_metadata> meta) {
-        for (auto& i : meta) {
-            _followers.emplace(i.node_id, std::move(i));
-        }
-    }
+    explicit follower_stats(vnode self)
+      : _self(self) {}
 
-    const follower_index_metadata& get(model::node_id n) const {
+    const follower_index_metadata& get(vnode n) const {
         auto it = _followers.find(n);
         vassert(
           it != _followers.end(),
@@ -41,7 +37,7 @@ public:
           n);
         return it->second;
     }
-    follower_index_metadata& get(model::node_id n) {
+    follower_index_metadata& get(vnode n) {
         auto it = _followers.find(n);
         vassert(
           it != _followers.end(),
@@ -51,18 +47,18 @@ public:
         return it->second;
     }
 
-    bool contains(model::node_id n) const {
+    bool contains(vnode n) const {
         return _followers.find(n) != _followers.end();
     }
 
-    iterator emplace(model::node_id n, follower_index_metadata m) {
+    iterator emplace(vnode n, follower_index_metadata m) {
         auto [it, success] = _followers.insert_or_assign(n, std::move(m));
         vassert(success, "could not insert node:{}", n);
         return it;
     }
 
-    iterator find(model::node_id n) { return _followers.find(n); }
-    const_iterator find(model::node_id n) const { return _followers.find(n); }
+    iterator find(vnode n) { return _followers.find(n); }
+    const_iterator find(vnode n) const { return _followers.find(n); }
 
     iterator begin() { return _followers.begin(); }
     iterator end() { return _followers.end(); }
@@ -71,8 +67,11 @@ public:
 
     size_t size() const { return _followers.size(); }
 
+    void update_with_configuration(const group_configuration&);
+
 private:
     friend std::ostream& operator<<(std::ostream&, const follower_stats&);
+    vnode _self;
     container_t _followers;
 };
 

@@ -13,6 +13,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "outcome_future_utils.h"
+#include "raft/configuration.h"
 #include "raft/consensus.h"
 #include "raft/consensus_utils.h"
 #include "raft/errc.h"
@@ -40,7 +41,7 @@ ss::future<append_entries_request> replicate_entries_stm::share_request() {
     });
 }
 ss::future<result<append_entries_reply>> replicate_entries_stm::do_dispatch_one(
-  model::node_id n,
+  vnode n,
   append_entries_request req,
   ss::lw_shared_ptr<std::vector<ss::semaphore_units<>>> units) {
     using ret_t = result<append_entries_reply>;
@@ -52,6 +53,7 @@ ss::future<result<append_entries_reply>> replicate_entries_stm::do_dispatch_one(
                        auto last_idx = lstats.committed_offset;
                        append_entries_reply reply;
                        reply.node_id = _ptr->_self;
+                       reply.target_node_id = _ptr->_self;
                        reply.group = _ptr->group();
                        reply.term = _ptr->term();
                        // we just flushed offsets are the same
@@ -77,20 +79,27 @@ clock_type::time_point replicate_entries_stm::append_entries_timeout() {
 
 ss::future<result<append_entries_reply>>
 replicate_entries_stm::send_append_entries_request(
-  model::node_id n, append_entries_request req) {
+  vnode n, append_entries_request req) {
     _ptr->update_node_append_timestamp(n);
     vlog(_ctxlog.trace, "Sending append entries request {} to {}", req.meta, n);
 
-    auto f = _ptr->_client_protocol.append_entries(
-      n, std::move(req), rpc::client_opts(append_entries_timeout()));
+    req.target_node_id = n;
+    auto f = _ptr->_client_protocol
+               .append_entries(
+                 n.id(),
+                 std::move(req),
+                 rpc::client_opts(append_entries_timeout()))
+               .then([this](result<append_entries_reply> reply) {
+                   return _ptr->validate_reply_target_node(
+                     "append_entries_replicate", std::move(reply));
+               });
     _dispatch_sem.signal();
     return f.finally(
       [this, n] { _ptr->suppress_heartbeats(n, _followers_seq[n], false); });
 }
 
 ss::future<> replicate_entries_stm::dispatch_one(
-  model::node_id id,
-  ss::lw_shared_ptr<std::vector<ss::semaphore_units<>>> units) {
+  vnode id, ss::lw_shared_ptr<std::vector<ss::semaphore_units<>>> units) {
     return ss::with_gate(
              _req_bg,
              [this, id, units]() mutable {
@@ -104,7 +113,7 @@ ss::future<> replicate_entries_stm::dispatch_one(
                            _ptr->get_probe().replicate_request_error();
                        }
                        _ptr->process_append_entries_reply(
-                         id, reply, seq, _dirty_offset);
+                         id.id(), reply, seq, _dirty_offset);
                    });
              })
       .handle_exception_type([](const ss::gate_closed_exception&) {});
@@ -112,8 +121,7 @@ ss::future<> replicate_entries_stm::dispatch_one(
 
 ss::future<result<append_entries_reply>>
 replicate_entries_stm::dispatch_single_retry(
-  model::node_id id,
-  ss::lw_shared_ptr<std::vector<ss::semaphore_units<>>> units) {
+  vnode id, ss::lw_shared_ptr<std::vector<ss::semaphore_units<>>> units) {
     return share_request()
       .then([this, id, units](append_entries_request r) mutable {
           return do_dispatch_one(id, std::move(r), units);
@@ -145,18 +153,22 @@ replicate_entries_stm::append_to_self() {
       });
 }
 
-inline bool replicate_entries_stm::is_follower_recovering(model::node_id id) {
-    return id != _ptr->self() && _ptr->_fstats.get(id).is_recovering;
+inline bool replicate_entries_stm::is_follower_recovering(vnode id) {
+    if (auto it = _ptr->_fstats.find(id); it != _ptr->_fstats.end()) {
+        return it->second.is_recovering;
+    }
+
+    return false;
 }
 
 ss::future<result<replicate_result>>
 replicate_entries_stm::apply(ss::semaphore_units<> u) {
     // first append lo leader log, no flushing
     auto cfg = _ptr->config();
-    cfg.for_each_broker([this](const model::broker& n) {
+    cfg.for_each_broker_id([this](const vnode& rni) {
         // suppress follower heartbeat, before appending to self log
-        if (n.id() != _ptr->_self) {
-            _ptr->suppress_heartbeats(n.id(), _followers_seq[n.id()], true);
+        if (rni != _ptr->_self) {
+            _ptr->suppress_heartbeats(rni, _followers_seq[rni], true);
         }
     });
     return append_to_self()
@@ -173,21 +185,20 @@ replicate_entries_stm::apply(ss::semaphore_units<> u) {
           auto units = ss::make_lw_shared<std::vector<ss::semaphore_units<>>>(
             std::move(vec));
           uint16_t requests_count = 0;
-          cfg.for_each_broker(
-            [this, &requests_count, units](const model::broker& n) {
+          cfg.for_each_broker_id(
+            [this, &requests_count, units](const vnode& rni) {
                 // We are not dispatching request to followers that are
                 // recovering
-                if (is_follower_recovering(n.id())) {
+                if (is_follower_recovering(rni)) {
                     vlog(
                       _ctxlog.trace,
                       "Skipping sending append request to {}, recovering",
-                      n.id());
-                    _ptr->suppress_heartbeats(
-                      n.id(), _followers_seq[n.id()], false);
+                      rni);
+                    _ptr->suppress_heartbeats(rni, _followers_seq[rni], false);
                     return;
                 }
                 ++requests_count;
-                (void)dispatch_one(n.id(), units); // background
+                (void)dispatch_one(rni, units); // background
             });
           // Wait until all RPCs will be dispatched
           return _dispatch_sem.wait(requests_count)
@@ -253,7 +264,7 @@ ss::future<> replicate_entries_stm::wait() { return _req_bg.close(); }
 replicate_entries_stm::replicate_entries_stm(
   consensus* p,
   append_entries_request r,
-  absl::flat_hash_map<model::node_id, follower_req_seq> seqs)
+  absl::flat_hash_map<vnode, follower_req_seq> seqs)
   : _ptr(p)
   , _req(std::move(r))
   , _followers_seq(std::move(seqs))

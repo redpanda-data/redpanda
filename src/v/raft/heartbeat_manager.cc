@@ -13,6 +13,7 @@
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
 #include "outcome_future_utils.h"
+#include "raft/configuration.h"
 #include "raft/consensus_client_protocol.h"
 #include "raft/errc.h"
 #include "raft/raftgen_service.h"
@@ -36,12 +37,11 @@ static std::vector<heartbeat_manager::node_heartbeat> requests_for_range(
   const consensus_set& c, clock_type::duration heartbeat_interval) {
     absl::flat_hash_map<
       model::node_id,
-      std::vector<std::pair<protocol_metadata, follower_req_seq>>>
+      std::vector<std::pair<heartbeat_metadata, follower_req_seq>>>
       pending_beats;
     if (c.empty()) {
         return {};
     }
-    auto self = (*c.begin())->self();
     auto last_heartbeat = clock_type::now() - heartbeat_interval;
     for (auto& ptr : c) {
         if (!ptr->is_leader()) {
@@ -51,23 +51,27 @@ static std::vector<heartbeat_manager::node_heartbeat> requests_for_range(
         auto maybe_create_follower_request = [ptr,
                                               last_heartbeat,
                                               &pending_beats](
-                                               const model::broker& n) mutable {
+                                               const vnode& rni) mutable {
             // special case self beat
             // self beat is used to make sure that the protocol will make
             // progress when there is only on node
-            if (n.id() == ptr->self()) {
-                pending_beats[n.id()].emplace_back(ptr->meta(), 0);
+            if (rni == ptr->self()) {
+                pending_beats[rni.id()].emplace_back(
+                  heartbeat_metadata{ptr->meta(), rni}, 0);
                 return;
             }
 
-            auto last_append_timestamp = ptr->last_append_timestamp(n.id());
+            if (ptr->are_heartbeats_suppressed(rni)) {
+                return;
+            }
+            auto last_append_timestamp = ptr->last_append_timestamp(rni);
 
             if (last_append_timestamp > last_heartbeat) {
                 vlog(
                   hbeatlog.trace,
                   "Skipping sending beat to {} gr: {} last hb {}, last append "
                   "{}",
-                  n.id(),
+                  rni,
                   ptr->group(),
                   last_heartbeat.time_since_epoch().count(),
                   last_append_timestamp.time_since_epoch().count());
@@ -75,39 +79,35 @@ static std::vector<heartbeat_manager::node_heartbeat> requests_for_range(
                 return;
             }
 
-            if (ptr->are_heartbeats_suppressed(n.id())) {
-                return;
-            }
-            auto seq_id = ptr->next_follower_sequence(n.id());
-            pending_beats[n.id()].emplace_back(ptr->meta(), seq_id);
+            auto seq_id = ptr->next_follower_sequence(rni);
+            pending_beats[rni.id()].emplace_back(
+              heartbeat_metadata{ptr->meta(), ptr->self(), rni}, seq_id);
         };
 
         auto group = ptr->config();
         // collect voters
-        group.for_each_broker(maybe_create_follower_request);
+        group.for_each_broker_id(maybe_create_follower_request);
     }
 
     std::vector<heartbeat_manager::node_heartbeat> reqs;
     reqs.reserve(pending_beats.size());
     for (auto& p : pending_beats) {
-        std::vector<protocol_metadata> requests;
+        std::vector<heartbeat_metadata> requests;
         absl::flat_hash_map<
           raft::group_id,
           heartbeat_manager::follower_request_meta>
           meta_map;
         requests.reserve(p.second.size());
         meta_map.reserve(p.second.size());
-        for (auto& [meta, seq] : p.second) {
+        for (auto& [hb, seq] : p.second) {
             meta_map.emplace(
-              meta.group,
+              hb.meta.group,
               heartbeat_manager::follower_request_meta{
-                seq, meta.prev_log_index});
-            requests.push_back(std::move(meta));
+                seq, hb.meta.prev_log_index});
+            requests.push_back(std::move(hb));
         }
         reqs.emplace_back(
-          p.first,
-          heartbeat_request{self, std::move(requests)},
-          std::move(meta_map));
+          p.first, heartbeat_request{std::move(requests)}, std::move(meta_map));
     }
 
     return reqs;
@@ -156,15 +156,16 @@ ss::future<> heartbeat_manager::do_dispatch_heartbeats() {
 ss::future<> heartbeat_manager::do_self_heartbeat(node_heartbeat&& r) {
     _dispatch_sem.signal();
     heartbeat_reply reply;
-    reply.meta.reserve(r.request.meta.size());
+    reply.meta.reserve(r.request.heartbeats.size());
     std::transform(
-      std::begin(r.request.meta),
-      std::end(r.request.meta),
+      std::begin(r.request.heartbeats),
+      std::end(r.request.heartbeats),
       std::back_inserter(reply.meta),
-      [nid = r.target](protocol_metadata& meta) {
+      [](heartbeat_metadata& hb) {
           return append_entries_reply{
-            .node_id = nid,
-            .group = meta.group,
+            .target_node_id = hb.target_node_id,
+            .node_id = hb.target_node_id,
+            .group = hb.meta.group,
             .result = append_entries_reply::status::success};
       });
     process_reply(r.target, std::move(r.meta_map), std::move(reply));
@@ -204,12 +205,12 @@ void heartbeat_manager::process_reply(
                 continue;
             }
             // propagate error
-            (*it)->get_probe().heartbeat_request_error();
             (*it)->process_append_entries_reply(
               n,
               result<append_entries_reply>(r.error()),
               req_meta.seq,
               req_meta.dirty_offset);
+            (*it)->get_probe().heartbeat_request_error();
         }
         return;
     }

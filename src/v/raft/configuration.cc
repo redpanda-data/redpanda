@@ -14,13 +14,15 @@
 
 #include <absl/container/flat_hash_set.h>
 #include <bits/stdint-uintn.h>
+#include <boost/range/join.hpp>
 
 #include <algorithm>
 #include <iterator>
 #include <optional>
+#include <utility>
 
 namespace raft {
-bool group_nodes::contains(model::node_id id) const {
+bool group_nodes::contains(vnode id) const {
     auto v_it = std::find(std::cbegin(voters), std::cend(voters), id);
     if (v_it != voters.cend()) {
         return true;
@@ -29,14 +31,33 @@ bool group_nodes::contains(model::node_id id) const {
     return l_it != learners.cend();
 }
 
-group_configuration::group_configuration(std::vector<model::broker> brokers)
-  : _brokers(std::move(brokers)) {
+std::optional<vnode> group_nodes::find(model::node_id id) const {
+    auto v_it = std::find_if(
+      std::cbegin(voters), std::cend(voters), [id](const vnode& rni) {
+          return rni.id() == id;
+      });
+
+    if (v_it != voters.cend()) {
+        return *v_it;
+    }
+    auto l_it = std::find_if(
+      std::cbegin(learners), std::cend(learners), [id](const vnode& rni) {
+          return rni.id() == id;
+      });
+
+    return l_it != learners.cend() ? std::make_optional(*l_it) : std::nullopt;
+}
+
+group_configuration::group_configuration(
+  std::vector<model::broker> brokers, model::revision_id revision)
+  : _brokers(std::move(brokers))
+  , _revision(revision) {
     _current.voters.resize(brokers.size());
     std::transform(
       std::cbegin(_brokers),
       std::cend(_brokers),
       std::back_inserter(_current.voters),
-      [](const model::broker& br) { return br.id(); });
+      [revision](const model::broker& br) { return vnode(br.id(), revision); });
 }
 
 /**
@@ -45,13 +66,15 @@ group_configuration::group_configuration(std::vector<model::broker> brokers)
 group_configuration::group_configuration(
   std::vector<model::broker> brokers,
   group_nodes current,
+  model::revision_id revision,
   std::optional<group_nodes> old)
   : _brokers(std::move(brokers))
   , _current(std::move(current))
-  , _old(std::move(old)) {}
+  , _old(std::move(old))
+  , _revision(revision) {}
 
 std::optional<model::broker>
-group_configuration::find(model::node_id id) const {
+group_configuration::find_broker(model::node_id id) const {
     auto it = std::find_if(
       std::cbegin(_brokers),
       std::cend(_brokers),
@@ -67,7 +90,7 @@ bool group_configuration::has_voters() {
     return !(_current.voters.empty() || (_old && _old->voters.empty()));
 }
 
-bool group_configuration::is_voter(model::node_id id) const {
+bool group_configuration::is_voter(vnode id) const {
     auto it = std::find(
       std::cbegin(_current.voters), std::cend(_current.voters), id);
 
@@ -99,10 +122,9 @@ configuration_type group_configuration::type() const {
     return configuration_type::simple;
 };
 
-std::vector<model::node_id> unique_ids(
-  const std::vector<model::node_id>& current,
-  const std::vector<model::node_id>& old) {
-    absl::flat_hash_set<model::node_id> unique_ids;
+std::vector<vnode>
+unique_ids(const std::vector<vnode>& current, const std::vector<vnode>& old) {
+    absl::flat_hash_set<vnode> unique_ids;
     unique_ids.reserve(current.size());
 
     for (auto& id : current) {
@@ -111,31 +133,39 @@ std::vector<model::node_id> unique_ids(
     for (auto& id : old) {
         unique_ids.insert(id);
     }
-    std::vector<model::node_id> ret;
+    std::vector<vnode> ret;
     ret.reserve(unique_ids.size());
     std::copy(unique_ids.begin(), unique_ids.end(), std::back_inserter(ret));
     return ret;
 }
 
-std::vector<model::node_id> group_configuration::unique_voter_ids() const {
-    auto old_voters = _old ? _old->voters : std::vector<model::node_id>();
+bool group_configuration::contains(vnode id) const {
+    return _current.contains(id) || (_old && _old->contains(id));
+}
+
+std::vector<vnode> group_configuration::unique_voter_ids() const {
+    auto old_voters = _old ? _old->voters : std::vector<vnode>();
     return unique_ids(_current.voters, old_voters);
 }
-std::vector<model::node_id> group_configuration::unique_learner_ids() const {
-    auto old_learners = _old ? _old->learners : std::vector<model::node_id>();
+std::vector<vnode> group_configuration::unique_learner_ids() const {
+    auto old_learners = _old ? _old->learners : std::vector<vnode>();
     return unique_ids(_current.learners, old_learners);
 }
 
-void erase_id(std::vector<model::node_id>& v, model::node_id id) {
-    auto it = std::find(std::cbegin(v), std::cend(v), id);
+void erase_id(std::vector<vnode>& v, model::node_id id) {
+    auto it = std::find_if(
+      std::cbegin(v), std::cend(v), [id](const vnode& rni) {
+          return id == rni.id();
+      });
     if (it != std::cend(v)) {
         v.erase(it);
     }
 }
 
-void group_configuration::add(std::vector<model::broker> brokers) {
+void group_configuration::add(
+  std::vector<model::broker> brokers, model::revision_id rev) {
     vassert(!_old, "can not add broker to joint configuration - {}", *this);
-
+    _revision = rev;
     for (auto& b : brokers) {
         auto it = std::find_if(
           std::cbegin(_brokers),
@@ -151,7 +181,7 @@ void group_configuration::add(std::vector<model::broker> brokers) {
 
     _old = _current;
     for (auto& b : brokers) {
-        _current.learners.push_back(b.id());
+        _current.learners.emplace_back(b.id(), rev);
         _brokers.push_back(std::move(b));
     }
 }
@@ -182,8 +212,10 @@ void group_configuration::remove(const std::vector<model::node_id>& ids) {
     _current = std::move(new_cfg);
 }
 
-void group_configuration::replace(std::vector<model::broker> brokers) {
+void group_configuration::replace(
+  std::vector<model::broker> brokers, model::revision_id rev) {
     vassert(!_old, "can not replace joint configuration - {}", *this);
+    _revision = rev;
 
     /**
      * If configurations are identical do nothing. For identical configuration
@@ -194,8 +226,8 @@ void group_configuration::replace(std::vector<model::broker> brokers) {
     if (brokers == _brokers) {
         // check if all brokers are assigned to current configuration (2)
         bool has_all = std::all_of(
-          brokers.begin(), brokers.end(), [this](model::broker& b) {
-              return _current.contains(b.id());
+          brokers.begin(), brokers.end(), [this, rev](model::broker& b) {
+              return _current.contains(vnode(b.id(), rev));
           });
         // configurations are identical, do nothing
         if (has_all) {
@@ -208,17 +240,29 @@ void group_configuration::replace(std::vector<model::broker> brokers) {
     _current.voters.clear();
 
     for (auto& br : brokers) {
-        auto was_voter = std::find(
-                           std::cbegin(_old->voters),
-                           std::cend(_old->voters),
-                           br.id())
-                         != std::cend(_old->voters);
+        // brokers was a voter
+        auto v_it = std::find_if(
+          std::cbegin(_old->voters),
+          std::cend(_old->voters),
+          [&br](const vnode& rni) { return rni.id() == br.id(); });
 
-        if (was_voter) {
-            _current.voters.push_back(br.id());
-        } else {
-            _current.learners.push_back(br.id());
+        if (v_it != std::cend(_old->voters)) {
+            _current.voters.push_back(*v_it);
+            continue;
         }
+        // brokers was a learner
+        auto l_it = std::find_if(
+          std::cbegin(_old->learners),
+          std::cend(_old->learners),
+          [&br](const vnode& rni) { return rni.id() == br.id(); });
+
+        if (l_it != std::cend(_old->learners)) {
+            _current.learners.push_back(*l_it);
+            continue;
+        }
+
+        // new broker, use provided revision
+        _current.learners.emplace_back(br.id(), rev);
     }
 
     for (auto& b : brokers) {
@@ -228,7 +272,7 @@ void group_configuration::replace(std::vector<model::broker> brokers) {
     }
 }
 
-void group_configuration::promote_to_voter(model::node_id id) {
+void group_configuration::promote_to_voter(vnode id) {
     auto it = std::find(
       std::cbegin(_current.learners), std::cend(_current.learners), id);
     // do nothing
@@ -246,19 +290,21 @@ void group_configuration::discard_old_config() {
       "can not discard old configuration as configuration is of simple type - "
       "{}",
       *this);
-    absl::flat_hash_set<model::node_id> ids;
+    absl::flat_hash_set<model::node_id> physical_node_ids;
 
     for (auto& id : _current.learners) {
-        ids.insert(id);
+        physical_node_ids.insert(id.id());
     }
 
     for (auto& id : _current.voters) {
-        ids.insert(id);
+        physical_node_ids.insert(id.id());
     }
     // remove unused brokers from brokers set
     auto it = std::stable_partition(
-      std::begin(_brokers), std::end(_brokers), [ids](const model::broker& b) {
-          return ids.contains(b.id());
+      std::begin(_brokers),
+      std::end(_brokers),
+      [physical_node_ids](const model::broker& b) {
+          return physical_node_ids.contains(b.id());
       });
     // we are only interested in current brokers
     _brokers.erase(it, std::end(_brokers));
@@ -282,9 +328,10 @@ void group_configuration::update(model::broker broker) {
 std::ostream& operator<<(std::ostream& o, const group_configuration& c) {
     fmt::print(
       o,
-      "{{current: {}, old:{}, brokers: {}}}",
+      "{{current: {}, old:{}, revision: {}, brokers: {}}}",
       c._current,
       c._old,
+      c._revision,
       c._brokers);
     return o;
 }
@@ -318,24 +365,84 @@ void adl<raft::group_configuration>::to(
       cfg.version(),
       cfg.brokers(),
       cfg.current_config(),
-      cfg.old_config());
+      cfg.old_config(),
+      cfg.revision_id());
 }
+
+std::vector<raft::vnode> make_vnodes(const std::vector<model::node_id> ids) {
+    std::vector<raft::vnode> ret;
+    ret.reserve(ids.size());
+    std::transform(
+      ids.begin(), ids.end(), std::back_inserter(ret), [](model::node_id id) {
+          return raft::vnode(id, model::revision_id(0));
+      });
+    return ret;
+}
+
+struct group_nodes_v0 {
+    std::vector<model::node_id> voters;
+    std::vector<model::node_id> learners;
+
+    raft::group_nodes to_v2() {
+        raft::group_nodes ret;
+        ret.voters = make_vnodes(voters);
+        ret.learners = make_vnodes(learners);
+        return ret;
+    }
+};
 
 raft::group_configuration
 adl<raft::group_configuration>::from(iobuf_parser& p) {
     auto version = adl<uint8_t>{}.from(p);
-    // currently we support only version 1
+    // currently we support only versions up to 1
     vassert(
-      version == raft::group_configuration::current_version,
-      "Version {} is not supported. We only support version {}",
+      version <= raft::group_configuration::current_version,
+      "Version {} is not supported. We only support versions up to {}",
       version,
       raft::group_configuration::current_version);
 
     auto brokers = adl<std::vector<model::broker>>{}.from(p);
-    auto current = adl<raft::group_nodes>{}.from(p);
-    auto old = adl<std::optional<raft::group_nodes>>{}.from(p);
+
+    /**
+     * we use versions field to maintain backward compatibility
+     *
+     * version 0 - base
+     * version 1 - introduced revision id
+     * version 2 - introduced raft::vnode
+     */
+
+    raft::group_nodes current;
+    std::optional<raft::group_nodes> old;
+
+    if (likely(version >= 2)) {
+        current = adl<raft::group_nodes>{}.from(p);
+        old = adl<std::optional<raft::group_nodes>>{}.from(p);
+    } else {
+        // no raft::vnodes
+        auto current_v0 = adl<group_nodes_v0>{}.from(p);
+        auto old_v0 = adl<std::optional<group_nodes_v0>>{}.from(p);
+
+        current = current_v0.to_v2();
+        if (old_v0) {
+            old = old_v0->to_v2();
+        }
+    }
+    model::revision_id revision{0};
+    if (version > 0) {
+        revision = adl<model::revision_id>{}.from(p);
+    }
     return raft::group_configuration(
-      std::move(brokers), std::move(current), std::move(old));
+      std::move(brokers), std::move(current), revision, std::move(old));
+}
+
+void adl<raft::vnode>::to(iobuf& buf, raft::vnode id) {
+    serialize(buf, id.id(), id.revision());
+}
+
+raft::vnode adl<raft::vnode>::from(iobuf_parser& p) {
+    auto id = adl<model::node_id>{}.from(p);
+    auto rev = adl<model::revision_id>{}.from(p);
+    return raft::vnode(id, rev);
 }
 
 } // namespace reflection

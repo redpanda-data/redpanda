@@ -173,7 +173,7 @@ ss::future<> replicate_batcher::do_flush(
   std::vector<replicate_batcher::item_ptr>&& notifications,
   append_entries_request&& req,
   ss::semaphore_units<> u,
-  absl::flat_hash_map<model::node_id, follower_req_seq> seqs) {
+  absl::flat_hash_map<vnode, follower_req_seq> seqs) {
     _ptr->_probe.replicate_batch_flushed();
     auto stm = ss::make_lw_shared<replicate_entries_stm>(
       _ptr, std::move(req), std::move(seqs));

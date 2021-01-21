@@ -15,6 +15,7 @@
 #include "cluster/partition_allocator.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
+#include "model/metadata.h"
 #include "raft/errc.h"
 #include "raft/types.h"
 #include "random/generators.h"
@@ -288,7 +289,7 @@ auto members_manager::dispatch_rpc_to_leader(Func&& f) {
         return fut_t::convert(errc::no_leader_controller);
     }
 
-    auto leader = _raft0->config().find(*leader_id);
+    auto leader = _raft0->config().find_broker(*leader_id);
 
     if (!leader) {
         return fut_t::convert(errc::no_leader_controller);
@@ -310,7 +311,11 @@ members_manager::handle_join_request(model::broker broker) {
     // curent node is a leader
     if (_raft0->is_leader()) {
         // Just update raft0 configuration
-        return _raft0->add_group_members({std::move(broker)})
+        // we do not use revisions in raft0 configuration, it is always revision
+        // 0 which is perfectly fine. this will work like revision less raft
+        // protocol.
+        return _raft0
+          ->add_group_members({std::move(broker)}, model::revision_id(0))
           .then([](std::error_code ec) {
               if (!ec) {
                   return ret_t(join_reply{true});

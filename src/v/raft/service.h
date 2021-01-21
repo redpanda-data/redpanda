@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "likely.h"
 #include "raft/consensus.h"
 #include "raft/raftgen_service.h"
 #include "raft/types.h"
@@ -65,15 +66,17 @@ public:
     heartbeat(heartbeat_request&& r, rpc::streaming_context&) final {
         using ret_t = std::vector<append_entries_reply>;
         std::vector<append_entries_request> reqs;
-        reqs.reserve(r.meta.size());
-        for (auto& m : r.meta) {
-            reqs.emplace_back(raft::append_entries_request(
-              r.node_id,
-              m,
+        reqs.reserve(r.heartbeats.size());
+        for (auto& m : r.heartbeats) {
+            append_entries_request append_req(
+              m.node_id,
+              m.target_node_id,
+              m.meta,
               model::make_memory_record_batch_reader(
                 ss::circular_buffer<model::record_batch>{}),
-              append_entries_request::flush_after_append::no));
-        }
+              append_entries_request::flush_after_append::no);
+            reqs.push_back(std::move(append_req));
+        };
 
         auto req_size = reqs.size();
         auto groupped = group_hbeats_by_shard(std::move(reqs));

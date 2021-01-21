@@ -20,6 +20,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "outcome.h"
+#include "raft/configuration.h"
 #include "raft/types.h"
 #include "ssx/future-util.h"
 
@@ -261,9 +262,9 @@ bool is_configuration_up_to_date(
         return false;
     }
     cfg.for_each_voter(
-      [&all_ids](model::node_id nid) { all_ids.emplace(nid); });
+      [&all_ids](raft::vnode nid) { all_ids.emplace(nid.id()); });
     cfg.for_each_learner(
-      [&all_ids](model::node_id nid) { all_ids.emplace(nid); });
+      [&all_ids](raft::vnode nid) { all_ids.emplace(nid.id()); });
     // there is different number of brokers in group configuration
     if (all_ids.size() != bs.size()) {
         return false;
@@ -292,7 +293,11 @@ ss::future<std::error_code> controller_backend::update_partition_replica_set(
     // we are the leader, update configuration
     if (partition->is_leader()) {
         auto brokers = create_brokers_set(replicas, _members_table.local());
-        return partition->update_replica_set(std::move(brokers));
+        // TODO: replace with correct revision_id, this feature is not used yet.
+        //       The `update_partition_replica` set method is never called.
+        //       We have to fix this before enabling partition moving
+        return partition->update_replica_set(
+          std::move(brokers), model::revision_id(0));
     }
     // not the leader, wait for configuration update, only declare success
     // when configuration was actually updated
