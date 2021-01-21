@@ -58,6 +58,8 @@ public:
 
     auto get_units() noexcept { return ss::get_units(_sem, 1); }
 
+    void broken() noexcept { _sem.broken(); }
+
 private:
     ss::semaphore _sem;
 };
