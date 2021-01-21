@@ -53,3 +53,12 @@ rp_test(
   LIBRARIES v::seastar_testing_main v::coproc_test_utils v::kafka
   LABELS coproc
   )
+
+rp_test(
+  UNIT_TEST
+  BINARY_NAME wasm_event_listener_tests
+  SOURCES wasm_event_listener_tests.cc
+  DEFINITIONS BOOST_TEST_DYN_LINK
+  LIBRARIES v::seastar_testing_main v::coproc_test_utils
+  LABELS coproc
+  )

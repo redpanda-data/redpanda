@@ -85,6 +85,12 @@ configuration::configuration()
       "Maximum amount of bytes to read from one topic read",
       required::no,
       32_KiB)
+  , coproc_script_directory(
+      *this,
+      "coproc_script_directory",
+      "Location where the source code for custom coprocessors will reside",
+      required::no,
+      "/var/lib/redpanda/coprocessors")
   , node_id(
       *this,
       "node_id",
