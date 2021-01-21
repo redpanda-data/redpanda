@@ -53,30 +53,10 @@ func createTopic(admin func() (sarama.ClusterAdmin, error)) *cobra.Command {
 }
 
 func deleteTopic(admin func() (sarama.ClusterAdmin, error)) *cobra.Command {
-	cmd := &cobra.Command{
-		Use:	"delete <topic name>",
-		Short:	"Delete a topic",
-		Args:	common.ExactArgs(1, "topic's name is missing."),
-		// We don't want Cobra printing CLI usage help if the error isn't about CLI usage.
-		SilenceUsage:	true,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			adm, err := admin()
-			if err != nil {
-				log.Error("Couldn't initialize API admin")
-				return err
-			}
-			defer adm.Close()
-
-			topicName := args[0]
-			err = adm.DeleteTopic(topicName)
-			if err != nil {
-				return err
-			}
-			log.Infof("Deleted topic '%s'.", topicName)
-			return nil
-		},
-	}
-	return cmd
+	return common.Deprecated(
+		topic.NewDeleteCommand(admin),
+		"rpk topic delete",
+	)
 }
 
 func setTopicConfig(admin func() (sarama.ClusterAdmin, error)) *cobra.Command {

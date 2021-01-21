@@ -61,6 +61,7 @@ func NewTopicCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	adminClosure := common.CreateAdmin(fs, brokersClosure, configClosure)
 
 	command.AddCommand(topic.NewCreateCommand(adminClosure))
+	command.AddCommand(topic.NewDeleteCommand(adminClosure))
 
 	return command
 }
