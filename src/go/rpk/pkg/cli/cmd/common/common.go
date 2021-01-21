@@ -19,6 +19,7 @@ import (
 	"github.com/burdiyan/kafkautil"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
+	"github.com/spf13/cobra"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/container/common"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/kafka"
@@ -30,6 +31,18 @@ https://vectorized.io/feedback`
 
 func DeprecationMessage(altCmd string) string {
 	return fmt.Sprintf("use '%s' instead.", altCmd)
+}
+
+// exactArgs makes sure exactly n arguments are passed, if not, a custom error
+// err is returned back. This is so we can return more contextually friendly errors back
+// to users.
+func ExactArgs(n int, err string) cobra.PositionalArgs {
+	return func(cmd *cobra.Command, args []string) error {
+		if len(args) != n {
+			return fmt.Errorf(err + "\n\n" + cmd.UsageString())
+		}
+		return nil
+	}
 }
 
 // Try to read the config from the default expected locations, or from the

@@ -19,6 +19,7 @@ import (
 	"github.com/Shopify/sarama"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/common"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -68,7 +69,7 @@ func NewConsumeCommand(client func() (sarama.Client, error)) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:	"consume <topic>",
 		Short:	"Consume records from a topic",
-		Args:	exactArgs(1, "topic's name is missing."),
+		Args:	common.ExactArgs(1, "topic's name is missing."),
 		// We don't want Cobra printing CLI usage help if the error isn't about CLI usage.
 		SilenceUsage:	true,
 		RunE: func(cmd *cobra.Command, args []string) error {

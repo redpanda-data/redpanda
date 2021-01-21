@@ -20,6 +20,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/common"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/ui"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/kafka"
 )
@@ -53,7 +54,7 @@ func createTopic(admin func() (sarama.ClusterAdmin, error)) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:	"create <topic name>",
 		Short:	"Create a topic",
-		Args:	exactArgs(1, "topic's name is missing."),
+		Args:	common.ExactArgs(1, "topic's name is missing."),
 		// We don't want Cobra printing CLI usage help if the error isn't about CLI usage.
 		SilenceUsage:	true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -146,7 +147,7 @@ func deleteTopic(admin func() (sarama.ClusterAdmin, error)) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:	"delete <topic name>",
 		Short:	"Delete a topic",
-		Args:	exactArgs(1, "topic's name is missing."),
+		Args:	common.ExactArgs(1, "topic's name is missing."),
 		// We don't want Cobra printing CLI usage help if the error isn't about CLI usage.
 		SilenceUsage:	true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -173,7 +174,7 @@ func setTopicConfig(admin func() (sarama.ClusterAdmin, error)) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:	"set-config <topic> <key> <value>",
 		Short:	"Set the topic's config key/value pairs",
-		Args:	exactArgs(3, "topic's name, config key or value are missing."),
+		Args:	common.ExactArgs(3, "topic's name, config key or value are missing."),
 		// We don't want Cobra printing CLI usage help if the error isn't about CLI usage.
 		SilenceUsage:	true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -222,7 +223,7 @@ func describeTopic(
 		Use:	"describe <topic>",
 		Short:	"Describe topic",
 		Long:	"Describe a topic. Default values of the configuration are omitted.",
-		Args:	exactArgs(1, "topic's name is missing."),
+		Args:	common.ExactArgs(1, "topic's name is missing."),
 		// We don't want Cobra printing CLI usage help if the error isn't about CLI usage.
 		SilenceUsage:	true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -395,7 +396,7 @@ func topicStatus(admin func() (sarama.ClusterAdmin, error)) *cobra.Command {
 		Use:		"status <topic name>",
 		Aliases:	[]string{"health"},
 		Short:		"Show a topic's status - leader, replication, etc.",
-		Args:		exactArgs(1, "topic's name is missing."),
+		Args:		common.ExactArgs(1, "topic's name is missing."),
 		// We don't want Cobra printing CLI usage help if the error isn't about CLI usage.
 		SilenceUsage:	true,
 		RunE: func(cmd *cobra.Command, args []string) error {
