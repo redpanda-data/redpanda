@@ -60,6 +60,7 @@ func NewTopicCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	brokersClosure := common.DeduceBrokers(fs, configClosure, &brokers)
 	adminClosure := common.CreateAdmin(fs, brokersClosure, configClosure)
 	clientClosure := common.CreateClient(fs, brokersClosure, configClosure)
+	producerClosure := common.CreateProducer(brokersClosure, configClosure)
 
 	command.AddCommand(topic.NewCreateCommand(adminClosure))
 	command.AddCommand(topic.NewDeleteCommand(adminClosure))
@@ -68,6 +69,7 @@ func NewTopicCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	command.AddCommand(topic.NewInfoCommand(adminClosure))
 	command.AddCommand(topic.NewListCommand(adminClosure))
 	command.AddCommand(topic.NewConsumeCommand(clientClosure))
+	command.AddCommand(topic.NewProduceCommand(producerClosure))
 
 	return command
 }
