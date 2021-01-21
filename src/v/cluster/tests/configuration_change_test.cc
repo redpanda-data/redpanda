@@ -41,7 +41,6 @@ FIXTURE_TEST(test_updating_node_rpc_ip_address, cluster_test_fixture) {
       })
       .get0();
 
-    cntrl_2->stop().get0();
     remove_controller(node_2);
     // Change RPC port from 11000 to 13000
     info("Restarting node {} with changed configuration", node_2);
@@ -79,7 +78,6 @@ FIXTURE_TEST(test_single_node_update, cluster_test_fixture) {
     cntrl->start().get();
     wait_for_leadership(cntrl->get_partition_leaders().local());
 
-    cntrl->stop().get0();
     remove_controller(node_id);
     // Change kafka port from 9092 to 15000
     cntrl = create_controller(node_id, 15000, 13000);

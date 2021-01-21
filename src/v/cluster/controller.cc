@@ -19,6 +19,7 @@
 #include "model/timeout_clock.h"
 
 #include <seastar/core/thread.hh>
+#include <seastar/util/later.hh>
 
 namespace cluster {
 
@@ -106,17 +107,29 @@ ss::future<> controller::start() {
       .then(
         [this] { return _backend.invoke_on_all(&controller_backend::start); });
 }
+
+ss::future<> controller::shutdown_input() {
+    _raft0->shutdown_input();
+    return _as.invoke_on_all(&ss::abort_source::request_abort);
+}
+
 ss::future<> controller::stop() {
-    return _as.invoke_on_all(&ss::abort_source::request_abort)
-      .then([this] { return _backend.stop(); })
-      .then([this] { return _stm.stop(); })
-      .then([this] { return _members_manager.stop(); })
-      .then([this] { return _tp_frontend.stop(); })
-      .then([this] { return _tp_state.stop(); })
-      .then([this] { return _partition_allocator.stop(); })
-      .then([this] { return _partition_leaders.stop(); })
-      .then([this] { return _members_table.stop(); })
-      .then([this] { return _as.stop(); });
+    auto f = ss::now();
+    if (!_as.local().abort_requested()) {
+        f = shutdown_input();
+    }
+
+    return f.then([this] {
+        return _stm.stop()
+          .then([this] { return _members_manager.stop(); })
+          .then([this] { return _tp_frontend.stop(); })
+          .then([this] { return _backend.stop(); })
+          .then([this] { return _tp_state.stop(); })
+          .then([this] { return _partition_allocator.stop(); })
+          .then([this] { return _partition_leaders.stop(); })
+          .then([this] { return _members_table.stop(); })
+          .then([this] { return _as.stop(); });
+    });
 }
 
 } // namespace cluster
