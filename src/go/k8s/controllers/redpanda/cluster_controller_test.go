@@ -85,7 +85,8 @@ var _ = Describe("RedPandaCluster controller", func() {
 				err := k8sClient.Get(context.Background(), key, &svc)
 				return err == nil &&
 					svc.Spec.ClusterIP == corev1.ClusterIPNone &&
-					svc.Spec.Ports[0].Port == kafkaPort
+					svc.Spec.Ports[0].Port == kafkaPort &&
+					validOwner(redpandaCluster, svc.OwnerReferences)
 			}, timeout, interval).Should(BeTrue())
 
 			By("Creating Configmap with the redpanda configuration")
@@ -96,7 +97,8 @@ var _ = Describe("RedPandaCluster controller", func() {
 					return false
 				}
 				_, exist := cm.Data[redpandaConfigurationFile]
-				return exist
+				return exist &&
+					validOwner(redpandaCluster, cm.OwnerReferences)
 			}, timeout, interval).Should(BeTrue())
 
 			By("Creating StatefulSet")
@@ -105,7 +107,8 @@ var _ = Describe("RedPandaCluster controller", func() {
 				err := k8sClient.Get(context.Background(), seedKey, &sts)
 				return err == nil &&
 					*sts.Spec.Replicas == replicas &&
-					sts.Spec.Template.Spec.Containers[0].Image == "vectorized/redpanda:"+redpandaContainerTag
+					sts.Spec.Template.Spec.Containers[0].Image == "vectorized/redpanda:"+redpandaContainerTag &&
+					validOwner(redpandaCluster, sts.OwnerReferences)
 			}, timeout, interval).Should(BeTrue())
 
 			Expect(sts.Spec.Template.Spec.Containers[0].Resources.Requests).Should(Equal(resources))
@@ -113,3 +116,13 @@ var _ = Describe("RedPandaCluster controller", func() {
 		})
 	})
 })
+
+func validOwner(
+	cluster *v1alpha1.Cluster, owners []metav1.OwnerReference,
+) bool {
+	if len(owners) != 1 {
+		return false
+	}
+	owner := owners[0]
+	return owner.Name == cluster.Name && owner.Controller != nil && *owner.Controller
+}
