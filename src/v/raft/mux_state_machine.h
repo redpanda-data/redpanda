@@ -27,7 +27,7 @@
 #include <seastar/util/bool_class.hh>
 #include <seastar/util/log.hh>
 
-#include <absl/container/flat_hash_map.h>
+#include <absl/container/node_hash_map.h>
 
 #include <optional>
 #include <system_error>
@@ -116,7 +116,7 @@ private:
     // promises used to wait for result of state applies, keyed by offser
     // returned in replication result (i.e. last batch end offset)
     using container_t
-      = absl::flat_hash_map<model::offset, expiring_promise<std::error_code>>;
+      = absl::node_hash_map<model::offset, expiring_promise<std::error_code>>;
 
     ss::future<> apply(model::record_batch b) final;
 
