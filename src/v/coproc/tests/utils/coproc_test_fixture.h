@@ -27,6 +27,8 @@ using log_layout_map = absl::flat_hash_map<model::topic_namespace, size_t>;
 
 class coproc_test_fixture : public redpanda_thread_fixture {
 public:
+    using script_manager_client
+      = rpc::client<coproc::script_manager_client_protocol>;
     using opt_reader_data_t = std::optional<model::record_batch_reader::data_t>;
     using erc = coproc::enable_response_code;
     using drc = coproc::disable_response_code;
@@ -41,28 +43,44 @@ public:
     coproc_test_fixture& operator=(const coproc_test_fixture&) = delete;
     coproc_test_fixture& operator=(const coproc_test_fixture&&) = delete;
 
+    ~coproc_test_fixture();
+
+    /// \brief Grab a convienent handle to a connected script_manager_client
+    script_manager_client& sm_client() { return _client; }
+
     /// \brief Write records to storage::api
     ss::future<model::offset>
-    push(const model::ntp&, model::record_batch_reader&&);
+    push(const model::ntp&, model::record_batch_reader);
 
     /// \brief Read records from storage::api up until 'limit' or 'time'
-    ss::future<opt_reader_data_t>
-    drain(const model::ntp&, std::size_t, model::timeout_clock::time_point);
+    /// starting at 'offset'
+    ss::future<opt_reader_data_t> drain(
+      const model::ntp&,
+      std::size_t,
+      model::offset = model::offset(0),
+      model::timeout_clock::time_point = model::timeout_clock::now() + 5s);
 
 protected:
     /// \brief Populate 'app.storage' with the user defined test layout
-    ss::future<> startup(log_layout_map&& data);
+    virtual ss::future<> startup(log_layout_map data);
 
     const log_layout_map& get_layout() const { return _llm; }
 
 private:
     ss::future<model::record_batch_reader::data_t> do_drain(
-      kafka::partition_wrapper, std::size_t, model::timeout_clock::time_point);
+      kafka::partition_wrapper,
+      model::offset,
+      std::size_t,
+      model::timeout_clock::time_point);
 
     /// \brief Discover for which shard an ntp exists on, like the shard table
     /// only works by querying v/storage instead
     ss::future<std::optional<ss::shard_id>> shard_for_ntp(const model::ntp&);
 
+    script_manager_client make_client();
+
 private:
     log_layout_map _llm;
+
+    script_manager_client _client{make_client()};
 };

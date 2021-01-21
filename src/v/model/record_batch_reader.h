@@ -263,8 +263,6 @@ private:
     operator<<(std::ostream& os, const record_batch_reader& r);
 };
 
-using record_batch_reader_opt = ss::optimized_optional<record_batch_reader>;
-
 template<typename Impl, typename... Args>
 record_batch_reader make_record_batch_reader(Args&&... args) {
     return record_batch_reader(
@@ -288,7 +286,7 @@ record_batch_reader
   make_foreign_memory_record_batch_reader(record_batch_reader::data_t);
 
 record_batch_reader make_generating_record_batch_reader(
-  ss::noncopyable_function<ss::future<record_batch_opt>()>);
+  ss::noncopyable_function<ss::future<record_batch_reader::data_t>()>);
 
 ss::future<record_batch_reader::data_t> consume_reader_to_memory(
   record_batch_reader, timeout_clock::time_point timeout);

@@ -1,8 +1,18 @@
+/*
+ * Copyright 2020 Vectorized, Inc.
+ *
+ * Licensed as a Redpanda Enterprise file under the Redpanda Community
+ * License (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ *
+ * https://github.com/vectorizedio/redpanda/blob/master/licenses/rcl.md
+ */
+
 #include "cluster/partition.h"
 #include "coproc/script_manager.h"
-#include "coproc/tests/coprocessor.h"
-#include "coproc/tests/supervisor_test_fixture.h"
-#include "coproc/tests/utils.h"
+#include "coproc/tests/utils/coprocessor.h"
+#include "coproc/tests/utils/helpers.h"
+#include "coproc/tests/utils/supervisor_test_fixture.h"
 #include "coproc/types.h"
 #include "kafka/client.h"
 #include "kafka/requests/batch_consumer.h"
@@ -69,8 +79,17 @@ public:
                   return ss::make_ready_future<std::optional<iobuf>>(
                     std::nullopt);
               }
-              return olog->make_reader(log_rdr_cfg(min_bytes))
-                .then([](model::record_batch_reader rbr) {
+              storage::log_reader_config cfg(
+                model::offset(0),
+                model::model_limits<model::offset>::max(),
+                min_bytes,
+                std::numeric_limits<size_t>::max(),
+                ss::default_priority_class(),
+                raft::data_batch_type,
+                std::nullopt,
+                std::nullopt);
+              return olog->make_reader(cfg).then(
+                [](model::record_batch_reader rbr) {
                     return std::move(rbr)
                       .consume(
                         kafka::kafka_batch_serializer{}, model::no_timeout)
@@ -123,7 +142,7 @@ FIXTURE_TEST(
 
     /// Wait until the materialized topic has entered existance
     const auto mntpv = model::materialized_ntp(
-      model::ntp(default_ns, materialized_topic, pid));
+      model::ntp(model::kafka_namespace, materialized_topic, pid));
     auto origin_shard = app.shard_table.local().shard_for(mntpv.source_ntp());
     tests::cooperative_spin_wait_with_timeout(10s, [this, origin_shard, mntpv] {
         return app.partition_manager.invoke_on(

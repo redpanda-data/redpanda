@@ -1,15 +1,18 @@
-// Copyright 2020 Vectorized, Inc.
-//
-// Licensed as a Redpanda Enterprise file under the Redpanda Community
-// License (the "License"); you may not use this file except in compliance with
-// the License. You may obtain a copy of the License at
-//
-// https://github.com/vectorizedio/redpanda/blob/master/licenses/rcl.md
+/*
+ * Copyright 2020 Vectorized, Inc.
+ *
+ * Use of this software is governed by the Business Source License
+ * included in the file licenses/BSL.md
+ *
+ * As of the Change Date specified in that file, in accordance with
+ * the Business Source License, use of this software will be governed
+ * by the Apache License, Version 2.0
+ */
 
-#include "coproc/tests/supervisor.h"
+#include "coproc/tests/utils/supervisor.h"
 
 #include "coproc/logger.h"
-#include "coproc/tests/utils.h"
+#include "coproc/tests/utils/helpers.h"
 #include "coproc/types.h"
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
@@ -18,6 +21,18 @@
 #include <type_traits>
 
 namespace coproc {
+
+ss::future<model::record_batch_reader::data_t>
+copy_batch(const model::record_batch_reader::data_t& data) {
+    return ss::map_reduce(
+      data.cbegin(),
+      data.cend(),
+      [](const model::record_batch& rb) {
+          return ss::make_ready_future<model::record_batch>(rb.copy());
+      },
+      model::record_batch_reader::data_t(),
+      reduce::push_back());
+}
 
 ss::future<std::vector<process_batch_reply::data>> resultmap_to_vector(
   script_id id, const model::ntp& ntp, coprocessor::result rmap) {
@@ -63,6 +78,7 @@ supervisor::invoke_coprocessor(
         vlog(coproclog.warn, "Script id: {} not found", id);
         return ss::make_ready_future<std::vector<process_batch_reply::data>>();
     }
+    vassert(!batches.empty(), "Shouldn't expect empty batches from redpanda");
     auto& copro = found->second;
     return copro->apply(ntp.tp.topic, std::move(batches))
       .then([id, ntp](coprocessor::result rmap) {
@@ -78,12 +94,21 @@ supervisor::invoke_coprocessors(process_batch_request::data d) {
     return model::consume_reader_to_memory(
              std::move(d.reader), model::no_timeout)
       .then([this, ids = std::move(d.ids), ntp = std::move(d.ntp)](
-              model::record_batch_reader::data_t rbr) {
-          return ssx::async_flat_transform(
-            ids, [this, ntp, rbr = std::move(rbr)](script_id id) {
-                return copy_batch(rbr).then(
-                  [this, id, ntp](model::record_batch_reader::data_t batch) {
-                      return invoke_coprocessor(ntp, id, std::move(batch));
+              model::record_batch_reader::data_t rbr) mutable {
+          return ss::do_with(
+            std::move(rbr),
+            std::move(ids),
+            [this, ntp = std::move(ntp)](
+              const model::record_batch_reader::data_t& rbr,
+              const std::vector<script_id>& ids) {
+                return ssx::async_flat_transform(
+                  ids, [this, ntp, &rbr](script_id id) {
+                      return copy_batch(rbr).then(
+                        [this, id, ntp](
+                          model::record_batch_reader::data_t batch) {
+                            return invoke_coprocessor(
+                              ntp, id, std::move(batch));
+                        });
                   });
             });
       });
@@ -92,11 +117,7 @@ supervisor::invoke_coprocessors(process_batch_request::data d) {
 ss::future<process_batch_reply>
 supervisor::process_batch(process_batch_request&& r, rpc::streaming_context&) {
     return ss::with_gate(_gate, [this, r = std::move(r)]() mutable {
-        if (r.reqs.empty()) {
-            vlog(coproclog.error, "Error with redpanda, request is of 0 size");
-            /// TODO(rob) check if this is ok
-            return ss::make_ready_future<process_batch_reply>();
-        }
+        vassert(!r.reqs.empty(), "Cannot expect empty request from redpanda");
         return ss::do_with(std::move(r), [this](process_batch_request& r) {
             return ssx::async_flat_transform(
                      r.reqs,

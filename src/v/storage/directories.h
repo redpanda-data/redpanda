@@ -22,7 +22,7 @@
 
 namespace storage::directories {
 
-static ss::future<> initialize(ss::sstring dir) {
+inline ss::future<> initialize(ss::sstring dir) {
     return recursive_touch_directory(dir)
       .handle_exception([dir](std::exception_ptr ep) {
           stlog.error(

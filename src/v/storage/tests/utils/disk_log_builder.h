@@ -141,7 +141,6 @@ public:
     // Syntactic sugar for pipes
     template<typename... Args>
     disk_log_builder& operator|(std::tuple<Args...> args) {
-        auto op = std::get<0>(args);
         constexpr auto size = std::tuple_size<std::tuple<Args...>>::value;
         using type = typename std::tuple_element<0, std::tuple<Args...>>::type;
         // This can be rewritten with TMP. start(decompose(args))

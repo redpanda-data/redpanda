@@ -10,7 +10,7 @@
 
 #pragma once
 #include "coproc/supervisor.h"
-#include "coproc/tests/coprocessor.h"
+#include "coproc/tests/utils/coprocessor.h"
 #include "coproc/types.h"
 #include "model/record_batch_reader.h"
 
