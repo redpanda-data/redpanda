@@ -29,8 +29,14 @@ import (
 const FeedbackMsg = `We'd love to hear about your experience with redpanda:
 https://vectorized.io/feedback`
 
-func DeprecationMessage(altCmd string) string {
-	return fmt.Sprintf("use '%s' instead.", altCmd)
+func Deprecated(newCmd *cobra.Command, newUse string) *cobra.Command {
+	newCmd.Deprecated = deprecationMessage(newUse)
+	newCmd.Hidden = true
+	return newCmd
+}
+
+func deprecationMessage(newUse string) string {
+	return fmt.Sprintf("use '%s' instead.", newUse)
 }
 
 // exactArgs makes sure exactly n arguments are passed, if not, a custom error

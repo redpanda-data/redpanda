@@ -17,17 +17,9 @@ import (
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 )
 
-type result struct {
-	name		string
-	applied		bool
-	enabled		bool
-	supported	bool
-	errMsg		string
-}
-
 func NewTuneCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
-	command := redpanda.NewTuneCommand(fs, mgr)
-	command.Deprecated = common.DeprecationMessage("rpk redpanda tune")
-	command.Hidden = true
-	return command
+	return common.Deprecated(
+		redpanda.NewTuneCommand(fs, mgr),
+		"rpk redpanda tune",
+	)
 }

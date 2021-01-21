@@ -17,8 +17,8 @@ import (
 )
 
 func NewModeCommand(mgr config.Manager) *cobra.Command {
-	command := redpanda.NewModeCommand(mgr)
-	command.Deprecated = common.DeprecationMessage("rpk redpanda mode")
-	command.Hidden = true
-	return command
+	return common.Deprecated(
+		redpanda.NewModeCommand(mgr),
+		"rpk redpanda mode",
+	)
 }
