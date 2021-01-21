@@ -67,9 +67,7 @@ type ClusterReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.7.0/pkg/reconcile
 // nolint:funlen // The complexity of Reconcile function will be address in the next version
-func (r *ClusterReconciler) Reconcile(
-	ctx context.Context, req ctrl.Request,
-) (ctrl.Result, error) {
+func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := r.Log.WithValues("redpandacluster", req.NamespacedName)
 
 	var redpandaCluster redpandav1alpha1.Cluster
@@ -138,6 +136,16 @@ func (r *ClusterReconciler) Reconcile(
 			log.Error(err, "Failed to create new bootstrap StatefulSet",
 				"Configmap.Namespace", redpandaCluster.Namespace, "StatefulSet.Name", redpandaCluster.Name+seedSuffix)
 
+			return ctrl.Result{}, err
+		}
+	}
+
+	// Ensure StatefulSet #replicas equals cluster requirement.
+	if sts.Spec.Replicas != redpandaCluster.Spec.Replicas {
+		sts.Spec.Replicas = redpandaCluster.Spec.Replicas
+		err = r.Update(ctx, &sts)
+		if err != nil {
+			log.Error(err, "Failed to update StatefulSet", "StatefulSet.Namespace", sts.Namespace, "StatefulSet.Name", sts.Name)
 			return ctrl.Result{}, err
 		}
 	}
