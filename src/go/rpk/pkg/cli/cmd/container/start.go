@@ -16,13 +16,16 @@ import (
 	"math"
 	"runtime"
 	"sync"
+	"time"
 
+	"github.com/avast/retry-go"
 	"github.com/docker/docker/api/types"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/container/common"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/ui"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/kafka"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/net"
 	"golang.org/x/sync/errgroup"
 )
@@ -34,7 +37,8 @@ type node struct {
 
 func Start() *cobra.Command {
 	var (
-		nodes uint
+		nodes	uint
+		retries	uint
 	)
 	command := &cobra.Command{
 		Use:	"start",
@@ -54,6 +58,8 @@ func Start() *cobra.Command {
 			return common.WrapIfConnErr(startCluster(
 				c,
 				nodes,
+				checkBrokers,
+				retries,
 			))
 		},
 	}
@@ -66,12 +72,22 @@ func Start() *cobra.Command {
 		"The number of nodes to start",
 	)
 
+	command.Flags().UintVar(
+		&retries,
+		"retries",
+		10,
+		"The amount of times to check for the cluster before"+
+			" considering it unstable and exiting.",
+	)
+
 	return command
 }
 
-func startCluster(c common.Client, n uint) error {
+func startCluster(
+	c common.Client, n uint, check func([]node) func() error, retries uint,
+) error {
 	// Check if cluster exists and start it again.
-	restarted, err := restartCluster(c)
+	restarted, err := restartCluster(c, check, retries)
 	if err != nil {
 		return err
 	}
@@ -158,7 +174,7 @@ func startCluster(c common.Client, n uint) error {
 
 	seedNode := node{
 		seedID,
-		fmt.Sprintf("%s:%d", seedState.ContainerIP, seedKafkaPort),
+		nodeAddr(seedKafkaPort),
 	}
 
 	nodes := []node{seedNode}
@@ -221,11 +237,7 @@ func startCluster(c common.Client, n uint) error {
 			mu.Lock()
 			nodes = append(nodes, node{
 				id,
-				fmt.Sprintf(
-					"%s:%d",
-					state.ContainerIP,
-					state.HostKafkaPort,
-				),
+				nodeAddr(state.HostKafkaPort),
 			})
 			mu.Unlock()
 			return nil
@@ -233,6 +245,10 @@ func startCluster(c common.Client, n uint) error {
 	}
 
 	err = grp.Wait()
+	if err != nil {
+		return fmt.Errorf("Error restarting the cluster: %v", err)
+	}
+	err = waitForCluster(check(nodes), retries)
 	if err != nil {
 		return err
 	}
@@ -245,7 +261,9 @@ func startCluster(c common.Client, n uint) error {
 	return nil
 }
 
-func restartCluster(c common.Client) ([]node, error) {
+func restartCluster(
+	c common.Client, check func([]node) func() error, retries uint,
+) ([]node, error) {
 	// Check if a cluster is running
 	states, err := common.GetExistingNodes(c)
 	if err != nil {
@@ -279,18 +297,21 @@ func restartCluster(c common.Client) ([]node, error) {
 			mu.Lock()
 			nodes = append(nodes, node{
 				state.ID,
-				fmt.Sprintf(
-					"%s:%d",
-					state.ContainerIP,
-					state.HostKafkaPort,
-				),
+				nodeAddr(state.HostKafkaPort),
 			})
 			mu.Unlock()
 			return nil
 		})
 	}
 	err = grp.Wait()
-	return nodes, err
+	if err != nil {
+		return nil, fmt.Errorf("Error restarting the cluster: %v", err)
+	}
+	err = waitForCluster(check(nodes), retries)
+	if err != nil {
+		return nil, err
+	}
+	return nodes, nil
 }
 
 func startNode(
@@ -302,6 +323,43 @@ func startNode(
 	ctx, _ := common.DefaultCtx()
 	err := c.ContainerStart(ctx, containerID, types.ContainerStartOptions{})
 	return err
+}
+
+func checkBrokers(nodes []node) func() error {
+	return func() error {
+		addrs := make([]string, 0, len(nodes))
+		for _, n := range nodes {
+			addrs = append(addrs, n.addr)
+		}
+		client, err := kafka.InitClient(addrs...)
+		if err != nil {
+			return err
+		}
+		lenBrokers := len(client.Brokers())
+		if lenBrokers != len(nodes) {
+			return fmt.Errorf(
+				"Expected %d nodes, got %d.",
+				len(nodes),
+				lenBrokers,
+			)
+		}
+		return nil
+	}
+}
+
+func waitForCluster(check func() error, retries uint) error {
+	log.Info("Waiting for the cluster to be ready...")
+	return retry.Do(
+		check,
+		retry.Attempts(retries),
+		retry.DelayType(retry.FixedDelay),
+		retry.Delay(1*time.Second),
+		retry.LastErrorOnly(true),
+		retry.OnRetry(func(n uint, err error) {
+			log.Debugf("Cluster didn't stabilize: %v", err)
+			log.Debugf("Retrying (%d retries left)", retries-n)
+		}),
+	)
 }
 
 func renderClusterInfo(nodes []node) {
@@ -317,4 +375,11 @@ func renderClusterInfo(nodes []node) {
 	}
 
 	t.Render()
+}
+
+func nodeAddr(port uint) string {
+	return fmt.Sprintf(
+		"127.0.0.1:%d",
+		port,
+	)
 }
