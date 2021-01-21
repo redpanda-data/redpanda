@@ -43,6 +43,7 @@ public:
     connection_context& operator=(connection_context&&) = delete;
 
     protocol& server() { return _proto; }
+    const ss::sstring& listener() const { return _rs.conn->name(); }
 
     ss::future<> process_one_request();
     bool is_finished_parsing() const;

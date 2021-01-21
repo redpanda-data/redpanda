@@ -412,17 +412,19 @@ ss::future<response_ptr> metadata_api::process(
       metadata_response{},
       [](request_context& ctx, metadata_response& reply) {
           auto brokers = ctx.metadata_cache().all_brokers();
-          std::transform(
-            brokers.begin(),
-            brokers.end(),
-            std::back_inserter(reply.brokers),
-            [](cluster::broker_ptr b) {
-                return metadata_response::broker{
-                  .node_id = b->id(),
-                  .host = b->kafka_api_address().host(),
-                  .port = b->kafka_api_address().port(),
-                  .rack = b->rack()};
-            });
+          for (const auto& broker : brokers) {
+              for (const auto& listener :
+                   broker->kafka_advertised_listeners()) {
+                  // filter broker listeners by active connection
+                  if (listener.name == ctx.listener()) {
+                      reply.brokers.push_back(metadata_response::broker{
+                        .node_id = broker->id(),
+                        .host = listener.address.host(),
+                        .port = listener.address.port(),
+                        .rack = broker->rack()});
+                  }
+              }
+          }
 
           // FIXME:  #95 Cluster Id
           reply.cluster_id = std::nullopt;
