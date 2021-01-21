@@ -1,4 +1,4 @@
-// Copyright 2020 Vectorized, Inc.
+// Copyright 2021 Vectorized, Inc.
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.md
@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-package api
+package cmd
 
 import (
 	"bytes"
@@ -18,6 +18,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/topic"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/kafka/mocks"
 )
 
@@ -58,37 +59,37 @@ func TestTopicCmd(t *testing.T) {
 	}{
 		{
 			name:		"create should output info about the created topic (default values)",
-			cmd:		createTopic,
+			cmd:		topic.NewCreateCommand,
 			args:		[]string{"San Francisco"},
 			expectedOutput:	`Created topic 'San Francisco'. Partitions: 1, replicas: -1, configuration:\n'cleanup.policy':'delete'`,
 		},
 		{
 			name:		"create should output info about the created topic (custom values)",
-			cmd:		createTopic,
+			cmd:		topic.NewCreateCommand,
 			args:		[]string{"Seattle", "--partitions", "2", "--replicas", "3", "--compact"},
 			expectedOutput:	`Created topic 'Seattle'. Partitions: 2, replicas: 3, configuration:\n'cleanup.policy':'compact'`,
 		},
 		{
 			name:		"create should allow passing arbitrary topic config",
-			cmd:		createTopic,
+			cmd:		topic.NewCreateCommand,
 			args:		[]string{"San Francisco", "-c", "custom.config:value", "--config", "another.config:anothervalue"},
 			expectedOutput:	`Created topic 'San Francisco'. Partitions: 1, replicas: -1, configuration:\n'another.config':'anothervalue'\n'cleanup.policy':'delete'\n'custom.config':'value'`,
 		},
 		{
 			name:		"create should allow passing comma-separated config values",
-			cmd:		createTopic,
+			cmd:		topic.NewCreateCommand,
 			args:		[]string{"San Francisco", "-c", "custom.config:value", "--config", "cleanup.policy:cleanup,compact"},
 			expectedOutput:	`Created topic 'San Francisco'. Partitions: 1, replicas: -1, configuration:\n'cleanup.policy':'cleanup,compact'\n'custom.config':'value'`,
 		},
 		{
 			name:		"create should fail if no topic is passed",
-			cmd:		createTopic,
+			cmd:		topic.NewCreateCommand,
 			args:		[]string{},
 			expectedErr:	"topic's name is missing.",
 		},
 		{
 			name:	"create should fail if the topic creation req fails",
-			cmd:	createTopic,
+			cmd:	topic.NewCreateCommand,
 			args:	[]string{"Chicago"},
 			admin: &mocks.MockAdmin{
 				MockCreateTopic: func(string, *sarama.TopicDetail, bool) error {
@@ -99,13 +100,13 @@ func TestTopicCmd(t *testing.T) {
 		},
 		{
 			name:		"delete should output the name of the deleted topic",
-			cmd:		deleteTopic,
+			cmd:		topic.NewDeleteCommand,
 			args:		[]string{"Medellin"},
 			expectedOutput:	"Deleted topic 'Medellin'.",
 		},
 		{
 			name:	"delete should fail if the topic deletion req fails",
-			cmd:	deleteTopic,
+			cmd:	topic.NewDeleteCommand,
 			args:	[]string{"Leticia"},
 			admin: &mocks.MockAdmin{
 				MockDeleteTopic: func(string) error {
@@ -116,19 +117,19 @@ func TestTopicCmd(t *testing.T) {
 		},
 		{
 			name:		"delete should fail if no topic is passed",
-			cmd:		deleteTopic,
+			cmd:		topic.NewDeleteCommand,
 			args:		[]string{},
 			expectedErr:	"topic's name is missing.",
 		},
 		{
 			name:		"set-config should output the given config key-value pair",
-			cmd:		setTopicConfig,
+			cmd:		topic.NewSetConfigCommand,
 			args:		[]string{"Panama", "somekey", "somevalue"},
 			expectedOutput:	"Added config 'somekey'='somevalue' to topic 'Panama'.",
 		},
 		{
 			name:	"set-config should fail if the req fails",
-			cmd:	setTopicConfig,
+			cmd:	topic.NewSetConfigCommand,
 			args:	[]string{"Chiriqui", "k", "v"},
 			admin: &mocks.MockAdmin{
 				MockAlterConfig: func(
@@ -144,25 +145,25 @@ func TestTopicCmd(t *testing.T) {
 		},
 		{
 			name:		"set-config should fail if no topic is passed",
-			cmd:		setTopicConfig,
+			cmd:		topic.NewSetConfigCommand,
 			args:		[]string{},
 			expectedErr:	"topic's name, config key or value are missing.",
 		},
 		{
 			name:		"set-config should fail if no key is passed",
-			cmd:		setTopicConfig,
+			cmd:		topic.NewSetConfigCommand,
 			args:		[]string{"Chepo"},
 			expectedErr:	"topic's name, config key or value are missing.",
 		},
 		{
 			name:		"set-config should fail if no value is passed",
-			cmd:		setTopicConfig,
+			cmd:		topic.NewSetConfigCommand,
 			args:		[]string{"Chepo", "key"},
 			expectedErr:	"topic's name, config key or value are missing.",
 		},
 		{
 			name:	"list should output the list of topics",
-			cmd:	listTopics,
+			cmd:	topic.NewListCommand,
 			admin: &mocks.MockAdmin{
 				MockListTopics: func() (map[string]sarama.TopicDetail, error) {
 					return map[string]sarama.TopicDetail{
@@ -190,7 +191,7 @@ func TestTopicCmd(t *testing.T) {
 		},
 		{
 			name:	"list should fail if the req fails",
-			cmd:	listTopics,
+			cmd:	topic.NewListCommand,
 			args:	[]string{},
 			admin: &mocks.MockAdmin{
 				MockListTopics: func() (map[string]sarama.TopicDetail, error) {
@@ -201,7 +202,7 @@ func TestTopicCmd(t *testing.T) {
 		},
 		{
 			name:	"list should output a message if there are no topics",
-			cmd:	listTopics,
+			cmd:	topic.NewListCommand,
 			admin: &mocks.MockAdmin{
 				MockListTopics: func() (map[string]sarama.TopicDetail, error) {
 					return map[string]sarama.TopicDetail{}, nil
@@ -473,7 +474,7 @@ func TestDescribeTopic(t *testing.T) {
 				return &mocks.MockAdmin{}, nil
 			}
 			var out bytes.Buffer
-			cmd := describeTopic(client, admin)
+			cmd := topic.NewDescribeCommand(client, admin)
 			// Disable watermarks so that the function doesn't call
 			// kafka.HighWatermarks (kafka/client.go), which uses
 			// an un-mockable function in sarama.Broker.
