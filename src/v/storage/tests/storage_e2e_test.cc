@@ -17,11 +17,13 @@
 #include "storage/batch_cache.h"
 #include "storage/log_manager.h"
 #include "storage/record_batch_builder.h"
+#include "storage/segment_utils.h"
 #include "storage/tests/storage_test_fixture.h"
 #include "storage/tests/utils/disk_log_builder.h"
 #include "storage/tests/utils/random_batch.h"
 #include "storage/types.h"
 
+#include <seastar/core/semaphore.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/util/defer.hh>
 #include <seastar/util/log.hh>
@@ -1274,4 +1276,70 @@ FIXTURE_TEST(max_adjacent_segment_compaction, storage_test_fixture) {
     // that's all that can be done. the next seg is an appender
     log.compact(c_cfg).get0();
     BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 3);
+}
+
+FIXTURE_TEST(many_segment_locking, storage_test_fixture) {
+    auto cfg = default_log_config(test_dir);
+    cfg.stype = storage::log_config::storage_type::disk;
+    cfg.cache = storage::with_cache::yes;
+    storage::ntp_config::default_overrides overrides;
+    overrides.cleanup_policy_bitflags
+      = model::cleanup_policy_bitflags::compaction;
+
+    ss::abort_source as;
+    storage::log_manager mgr = make_log_manager(cfg);
+
+    info("config: {}", mgr.config());
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    auto ntp = model::ntp("default", "test", 0);
+    auto log = mgr
+                 .manage(storage::ntp_config(
+                   ntp,
+                   mgr.config().base_dir,
+                   std::make_unique<storage::ntp_config::default_overrides>(
+                     overrides)))
+                 .get0();
+
+    auto disk_log = get_disk_log(log);
+    append_single_record_batch(log, 20, model::term_id(1));
+    disk_log->force_roll(ss::default_priority_class()).get();
+    append_single_record_batch(log, 30, model::term_id(2));
+    disk_log->force_roll(ss::default_priority_class()).get();
+    append_single_record_batch(log, 40, model::term_id(3));
+    disk_log->force_roll(ss::default_priority_class()).get();
+    append_single_record_batch(log, 50, model::term_id(4));
+    log.flush().get0();
+
+    BOOST_REQUIRE_EQUAL(disk_log->segment_count(), 4);
+
+    std::vector<ss::lw_shared_ptr<storage::segment>> segments;
+    std::copy(
+      disk_log->segments().begin(),
+      disk_log->segments().end(),
+      std::back_inserter(segments));
+    segments.pop_back(); // discard the active segment
+    BOOST_REQUIRE_EQUAL(segments.size(), 3);
+
+    {
+        auto locks = storage::internal::write_lock_segments(
+                       segments, std::chrono::seconds(1), 1)
+                       .get0();
+        BOOST_REQUIRE(locks.size() == segments.size());
+    }
+
+    {
+        auto lock = segments[2]->write_lock().get0();
+        BOOST_REQUIRE_THROW(
+          storage::internal::write_lock_segments(
+            segments, std::chrono::seconds(1), 1)
+            .get0(),
+          ss::semaphore_timed_out);
+    }
+
+    {
+        auto locks = storage::internal::write_lock_segments(
+                       segments, std::chrono::seconds(1), 1)
+                       .get0();
+        BOOST_REQUIRE(locks.size() == segments.size());
+    }
 }

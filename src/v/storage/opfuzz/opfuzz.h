@@ -43,6 +43,9 @@ public:
         // main api
         virtual const char* name() const = 0;
         virtual ss::future<> invoke(op_context ctx) = 0;
+
+        // unset if an op should not run concurrently with compaction
+        bool concurrent_compaction_safe{true};
     };
 
     enum class op_name : int {

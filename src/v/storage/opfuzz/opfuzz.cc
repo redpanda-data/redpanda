@@ -18,6 +18,7 @@
 #include "vlog.h"
 
 #include <seastar/core/file.hh>
+#include <seastar/core/loop.hh>
 #include <seastar/core/seastar.hh>
 #include <seastar/util/backtrace.hh>
 
@@ -380,6 +381,7 @@ struct term_roll_op final : opfuzz::op {
 };
 
 struct remove_all_compacted_indices_op final : opfuzz::op {
+    remove_all_compacted_indices_op() { concurrent_compaction_safe = false; }
     ~remove_all_compacted_indices_op() noexcept override = default;
     const char* name() const final { return "remove_all_compacted_indices_op"; }
     ss::future<> invoke(opfuzz::op_context ctx) final {
@@ -399,6 +401,8 @@ struct remove_all_compacted_indices_op final : opfuzz::op {
 };
 
 struct compact_op final : opfuzz::op {
+    compact_op() { concurrent_compaction_safe = false; }
+
     ~compact_op() noexcept override = default;
     const char* name() const final { return "compact_op"; }
     ss::future<> invoke(opfuzz::op_context ctx) final {
@@ -418,10 +422,41 @@ struct compact_op final : opfuzz::op {
 };
 
 ss::future<> opfuzz::execute() {
-    // execute commands in sequence
-    return ss::do_for_each(_workload, [this](std::unique_ptr<op>& c) {
-        vlog(fuzzlogger.info, "Executing: {}", c->name());
-        return c->invoke(op_context{&_term, &_log, &_as});
+    // compaction operation factory
+    auto compact = [this]() {
+        return ss::do_with(compact_op(), [this](compact_op& c) {
+            return c.invoke(op_context{&_term, &_log, &_as})
+              .handle_exception([](std::exception_ptr e) {
+                  vlog(fuzzlogger.info, "Background compaction error: {}", e);
+              });
+        });
+    };
+
+    return ss::do_for_each(_workload, [this, compact](std::unique_ptr<op>& c) {
+        vlog(
+          fuzzlogger.info,
+          "Executing (with compaction={}): {}",
+          c->concurrent_compaction_safe,
+          c->name());
+
+        std::vector<ss::future<>> ops;
+        ops.push_back(c->invoke(op_context{&_term, &_log, &_as}));
+
+        if (
+          c->concurrent_compaction_safe
+          && random_generators::get_int(0, 100) > 50) {
+            auto f = ss::do_for_each(
+              boost::counting_iterator<size_t>(0),
+              boost::counting_iterator<size_t>(2),
+              [compact](size_t) {
+                  return compact().then([] { return ss::later(); });
+              });
+            ops.push_back(std::move(f));
+        }
+
+        return ss::do_with(std::move(ops), [](std::vector<ss::future<>>& ops) {
+            return ss::when_all(ops.begin(), ops.end()).discard_result();
+        });
     });
 }
 

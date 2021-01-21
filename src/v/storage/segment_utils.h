@@ -57,11 +57,24 @@ ss::future<ss::lw_shared_ptr<segment>> make_concatenated_segment(
   std::vector<ss::lw_shared_ptr<segment>>,
   compaction_config);
 
-ss::future<> transfer_segment(
+ss::future<std::vector<ss::rwlock::holder>> transfer_segment(
   ss::lw_shared_ptr<segment> to,
   ss::lw_shared_ptr<segment> from,
   compaction_config cfg,
-  probe& probe);
+  probe& probe,
+  std::vector<ss::rwlock::holder>);
+
+/*
+ * Acquire write locks on multiple segments. The process will proceed until
+ * success, or timeout. Failure to acquire the locks may result from contention
+ * or deadlock. There is no intelligent handling for deadlock avoidance or
+ * fairness. If a lock cannot be acquired all held locks are released and the
+ * process is retried. Favor more retries over longer timeouts.
+ */
+ss::future<std::vector<ss::rwlock::holder>> write_lock_segments(
+  std::vector<ss::lw_shared_ptr<segment>>& segments,
+  ss::semaphore::clock::duration timeout,
+  int retries);
 
 /// make file handle with default opts
 ss::future<ss::file>

@@ -39,6 +39,8 @@
 #include <seastar/core/reactor.hh>
 #include <seastar/core/rwlock.hh>
 #include <seastar/core/seastar.hh>
+#include <seastar/core/semaphore.hh>
+#include <seastar/core/when_all.hh>
 
 #include <absl/container/btree_map.h>
 #include <absl/container/flat_hash_map.h>
@@ -516,6 +518,15 @@ ss::future<ss::lw_shared_ptr<segment>> make_concatenated_segment(
         locks.push_back(co_await segment->read_lock());
     }
 
+    // fast check if we should abandon all the expensive i/o work if we happened
+    // to be racing with an operation like truncation or shutdown.
+    for (const auto& segment : segments) {
+        if (unlikely(segment->is_closed())) {
+            throw std::runtime_error(fmt::format(
+              "Aborting compaction of closed segment: {}", *segment));
+        }
+    }
+
     // concatenation process
     auto writer = co_await make_writer_handle(path, cfg.sanitize);
     auto output = co_await ss::make_file_output_stream(std::move(writer));
@@ -567,14 +578,14 @@ ss::future<ss::lw_shared_ptr<segment>> make_concatenated_segment(
       std::nullopt);
 }
 
-ss::future<> transfer_segment(
+ss::future<std::vector<ss::rwlock::holder>> transfer_segment(
   ss::lw_shared_ptr<segment> to,
   ss::lw_shared_ptr<segment> from,
   compaction_config cfg,
-  probe& probe) {
+  probe& probe,
+  std::vector<ss::rwlock::holder> locks) {
     co_await from->close();
 
-    auto lock = co_await to->write_lock();
     co_await to->index().drop_all_data();
 
     // segment data file
@@ -595,6 +606,36 @@ ss::future<> transfer_segment(
 
     // clean up replacement segment
     co_await from->remove_persistent_state();
+
+    co_return std::move(locks);
+}
+
+ss::future<std::vector<ss::rwlock::holder>> write_lock_segments(
+  std::vector<ss::lw_shared_ptr<segment>>& segments,
+  ss::semaphore::clock::duration timeout,
+  int retries) {
+    vassert(retries >= 0, "Invalid retries value");
+    std::vector<ss::rwlock::holder> held;
+    held.reserve(segments.size());
+    while (true) {
+        try {
+            std::vector<ss::future<ss::rwlock::holder>> held_f;
+            held_f.reserve(segments.size());
+            for (auto& segment : segments) {
+                held_f.push_back(
+                  segment->write_lock(ss::semaphore::clock::now() + timeout));
+            }
+            held = co_await ss::when_all_succeed(held_f.begin(), held_f.end());
+            break;
+        } catch (ss::semaphore_timed_out&) {
+            held.clear();
+        }
+        if (retries == 0) {
+            throw ss::semaphore_timed_out();
+        }
+        --retries;
+    }
+    co_return held;
 }
 
 std::filesystem::path compacted_index_path(std::filesystem::path segment_path) {
