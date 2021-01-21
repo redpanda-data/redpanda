@@ -96,6 +96,9 @@ public:
     /// Stop all communications.
     ss::future<> stop();
 
+    /// Stop consensus instance from accepting requests
+    void shutdown_input();
+
     ss::future<vote_reply> vote(vote_request&& r);
     ss::future<append_entries_reply> append_entries(append_entries_request&& r);
     ss::future<install_snapshot_reply>
