@@ -81,13 +81,22 @@ public:
     const hdr_hist& histogram() const { return _hist; }
 
 private:
+    struct listener {
+        ss::sstring name;
+        ss::server_socket socket;
+
+        listener(ss::sstring name, ss::server_socket socket)
+          : name(std::move(name))
+          , socket(std::move(socket)) {}
+    };
+
     friend resources;
-    ss::future<> accept(ss::server_socket&);
+    ss::future<> accept(listener&);
     void setup_metrics();
 
     std::unique_ptr<protocol> _proto;
     ss::semaphore _memory;
-    std::vector<std::unique_ptr<ss::server_socket>> _listeners;
+    std::vector<std::unique_ptr<listener>> _listeners;
     boost::intrusive::list<connection> _connections;
     ss::abort_source _as;
     ss::gate _conn_gate;

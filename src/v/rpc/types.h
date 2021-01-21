@@ -177,8 +177,20 @@ inline result<T> get_ctx_data(result<client_context<T>>&& ctx) {
 
 using metrics_disabled = ss::bool_class<struct metrics_disabled_tag>;
 
+struct server_endpoint {
+    ss::sstring name;
+    ss::socket_address addr;
+
+    server_endpoint(ss::sstring name, ss::socket_address addr)
+      : name(std::move(name))
+      , addr(addr) {}
+
+    explicit server_endpoint(ss::socket_address addr)
+      : server_endpoint("", addr) {}
+};
+
 struct server_configuration {
-    std::vector<ss::socket_address> addrs;
+    std::vector<server_endpoint> addrs;
     int64_t max_service_memory_per_core;
     ss::shared_ptr<ss::tls::server_credentials> credentials;
     metrics_disabled disable_metrics = metrics_disabled::no;
@@ -203,6 +215,7 @@ struct transport_configuration {
 };
 
 std::ostream& operator<<(std::ostream&, const header&);
+std::ostream& operator<<(std::ostream&, const server_endpoint&);
 std::ostream& operator<<(std::ostream&, const server_configuration&);
 std::ostream& operator<<(std::ostream&, const status&);
 } // namespace rpc

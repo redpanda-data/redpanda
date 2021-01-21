@@ -14,11 +14,13 @@
 namespace rpc {
 connection::connection(
   boost::intrusive::list<connection>& hook,
+  ss::sstring name,
   ss::connected_socket f,
   ss::socket_address a,
   server_probe& p)
   : addr(std::move(a))
   , _hook(hook)
+  , _name(std::move(name))
   , _fd(std::move(f))
   , _in(_fd.input())
   , _out(_fd.output())

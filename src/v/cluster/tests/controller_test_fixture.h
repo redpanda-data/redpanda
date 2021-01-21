@@ -175,7 +175,7 @@ public:
         rpc::server_configuration rpc_cfg("cluster_tests_rpc");
         auto rpc_sa = _current_node.rpc_address().resolve().get0();
         rpc_cfg.max_service_memory_per_core = memory_groups::rpc_total_memory();
-        rpc_cfg.addrs.push_back(rpc_sa);
+        rpc_cfg.addrs.emplace_back(rpc_sa);
         rpc_cfg.disable_metrics = rpc::metrics_disabled::yes;
 
         _rpc.start(rpc_cfg).get0();

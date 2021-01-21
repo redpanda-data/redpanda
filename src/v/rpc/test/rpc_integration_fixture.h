@@ -155,7 +155,7 @@ public:
       std::optional<ss::tls::credentials_builder> credentials = std::nullopt,
       ss::tls::reload_callback&& cb = {}) override {
         rpc::server_configuration scfg("unit_test_rpc");
-        scfg.addrs = {_listen_address};
+        scfg.addrs.emplace_back(_listen_address);
         scfg.max_service_memory_per_core = static_cast<int64_t>(
           ss::memory::stats().total_memory() / 10);
         scfg.credentials
@@ -201,7 +201,7 @@ public:
       std::optional<ss::tls::credentials_builder> credentials = std::nullopt,
       ss::tls::reload_callback&& cb = {}) override {
         rpc::server_configuration scfg("unit_test_rpc_sharded");
-        scfg.addrs = {_listen_address};
+        scfg.addrs.emplace_back(_listen_address);
         scfg.max_service_memory_per_core = static_cast<int64_t>(
           ss::memory::stats().total_memory() / 10);
         scfg.credentials
