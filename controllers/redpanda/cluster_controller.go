@@ -12,6 +12,8 @@ package redpanda
 
 import (
 	"context"
+	"fmt"
+	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
@@ -40,7 +42,16 @@ const (
 	dataDirectory	= "/var/lib/redpanda/data"
 	fsGroup		= 101
 
+	configDir		= "/etc/redpanda"
+	configuratorDir		= "/mnt/operator"
+	configuratorScript	= "configurator.sh"
+
 	debugLevel	= 2
+)
+
+var (
+	configPath		= filepath.Join(configDir, "redpanda.yaml")
+	configuratorPath	= filepath.Join(configuratorDir, configuratorScript)
 )
 
 // ClusterReconciler reconciles a Cluster object
@@ -69,6 +80,9 @@ type ClusterReconciler struct {
 // nolint:funlen // The complexity of Reconcile function will be address in the next version
 func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := r.Log.WithValues("redpandacluster", req.NamespacedName)
+
+	log.Info(fmt.Sprintf("Starting reconcile loop for %v", req.NamespacedName))
+	defer log.Info(fmt.Sprintf("Finished reconcile loop for %v", req.NamespacedName))
 
 	var redpandaCluster redpandav1alpha1.Cluster
 	if err := r.Get(ctx, req.NamespacedName, &redpandaCluster); err != nil {
@@ -132,7 +146,7 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if errors.IsNotFound(err) {
 		log.V(debugLevel).Info("Creating bootstrap StatefulSet")
 
-		if err = r.createBootstrapStatefulSet(ctx, &redpandaCluster, r.Scheme); err != nil {
+		if err = r.createBootstrapStatefulSet(ctx, &redpandaCluster, r.Scheme, redpandaCluster.Name+seedSuffix); err != nil {
 			log.Error(err, "Failed to create new bootstrap StatefulSet",
 				"Configmap.Namespace", redpandaCluster.Namespace, "StatefulSet.Name", redpandaCluster.Name+seedSuffix)
 
@@ -140,12 +154,12 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 	}
 
+	log.V(debugLevel).Info("Replicas comparison", "StatefulSet replicas", sts.Spec.Replicas, "Redpanda cluster replicas", redpandaCluster.Spec.Replicas)
 	// Ensure StatefulSet #replicas equals cluster requirement.
 	if sts.Spec.Replicas != redpandaCluster.Spec.Replicas {
 		sts.Spec.Replicas = redpandaCluster.Spec.Replicas
-		err = r.Update(ctx, &sts)
-		if err != nil {
-			log.Error(err, "Failed to update StatefulSet", "StatefulSet.Namespace", sts.Namespace, "StatefulSet.Name", sts.Name)
+		if err = r.Update(ctx, &sts); err != nil {
+			log.Error(err, "Failed to update StatefulSet", "StatefulSet.Namespace", redpandaCluster.Namespace, "StatefulSet.Name", redpandaCluster.Name+seedSuffix)
 			return ctrl.Result{}, err
 		}
 	}
@@ -225,6 +239,7 @@ func (r *ClusterReconciler) createBootstrapConfigMap(
 	cluster *redpandav1alpha1.Cluster,
 	scheme *runtime.Scheme,
 ) error {
+	serviceAddress := cluster.Name + "." + cluster.Namespace + ".svc.cluster.local"
 	cfg := config.Default()
 	cfg.Redpanda = copyConfig(&cluster.Spec.Configuration, &cfg.Redpanda)
 	cfg.Redpanda.Id = 0
@@ -232,16 +247,43 @@ func (r *ClusterReconciler) createBootstrapConfigMap(
 		cluster.Name + seedSuffix + "." +
 		cluster.Namespace +
 		".svc.cluster.local"
+	cfg.Redpanda.AdvertisedKafkaApi.Port = cfg.Redpanda.KafkaApi.Port
 	cfg.Redpanda.AdvertisedRPCAPI.Address = cluster.Name + seedSuffix + "-0" + "." +
 		cluster.Name + seedSuffix + "." +
 		cluster.Namespace +
 		".svc.cluster.local"
+	cfg.Redpanda.AdvertisedRPCAPI.Port = cfg.Redpanda.RPCServer.Port
 	cfg.Redpanda.Directory = dataDirectory
+	cfg.Redpanda.SeedServers = []config.SeedServer{
+		{
+			Host: config.SocketAddress{
+				// Example address: cluster-sample-seed-0.cluster-sample.default.svc.cluster.local
+				Address:	cluster.Name + seedSuffix + "-0." + serviceAddress,
+				Port:		cfg.Redpanda.AdvertisedRPCAPI.Port,
+			},
+		},
+	}
 
 	cfgBytes, err := yaml.Marshal(cfg)
 	if err != nil {
 		return err
 	}
+
+	script :=
+		`set -xe;
+		CONFIG=` + configPath + `;
+		ORDINAL_INDEX=${HOSTNAME##*-};
+		SERVICE_NAME=${HOSTNAME}.` + serviceAddress + `
+		cp /mnt/operator/redpanda.yaml $CONFIG;
+		rpk --config $CONFIG config set redpanda.node_id $ORDINAL_INDEX;
+		if [ "$ORDINAL_INDEX" = "0" ]; then
+			rpk --config $CONFIG config set redpanda.seed_servers '[]' --format yaml;
+		fi;
+		rpk --config $CONFIG config set redpanda.advertised_rpc_api.address $SERVICE_NAME;
+		rpk --config $CONFIG config set redpanda.advertised_rpc_api.port ` + strconv.Itoa(cfg.Redpanda.AdvertisedRPCAPI.Port) + `;
+		rpk --config $CONFIG config set redpanda.advertised_kafka_api.address $SERVICE_NAME;
+		rpk --config $CONFIG config set redpanda.advertised_kafka_api.port ` + strconv.Itoa(cfg.Redpanda.AdvertisedKafkaApi.Port) + `;
+		cat $CONFIG`
 
 	cm := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
@@ -250,7 +292,8 @@ func (r *ClusterReconciler) createBootstrapConfigMap(
 			Labels:		cluster.Labels,
 		},
 		Data: map[string]string{
-			"redpanda.yaml": string(cfgBytes),
+			"redpanda.yaml":	string(cfgBytes),
+			"configurator.sh":	scriptBytes,
 		},
 	}
 	err = controllerutil.SetControllerReference(cluster, cm, scheme)
@@ -303,7 +346,11 @@ func (r *ClusterReconciler) createBootstrapStatefulSet(
 	ctx context.Context,
 	cluster *redpandav1alpha1.Cluster,
 	scheme *runtime.Scheme,
+	configMapName string,
 ) error {
+	// Default configMap mode is 0644. Adding og+x to execute configurator script.
+	var configMapDefaultMode int32 = 0754
+
 	memory, exist := cluster.Spec.Resources.Limits["memory"]
 	if !exist {
 		memory = resource.MustParse("2Gi")
@@ -322,6 +369,7 @@ func (r *ClusterReconciler) createBootstrapStatefulSet(
 			UpdateStrategy: appsv1.StatefulSetUpdateStrategy{
 				Type: appsv1.RollingUpdateStatefulSetStrategyType,
 			},
+			ServiceName:	cluster.Name,
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:		cluster.Name + seedSuffix,
@@ -341,20 +389,53 @@ func (r *ClusterReconciler) createBootstrapStatefulSet(
 								},
 							},
 						},
+						{
+							Name:	"configmap-dir",
+							VolumeSource: corev1.VolumeSource{
+								ConfigMap: &corev1.ConfigMapVolumeSource{
+									LocalObjectReference: corev1.LocalObjectReference{
+										Name: configMapName,
+									},
+									DefaultMode:	&configMapDefaultMode,
+								},
+							},
+						},
+						{
+							Name:	"config-dir",
+							VolumeSource: corev1.VolumeSource{
+								EmptyDir: &corev1.EmptyDirVolumeSource{},
+							},
+						},
+					},
+					InitContainers: []corev1.Container{
+						{
+							Name:		"redpanda-configurator",
+							Image:		cluster.Spec.Image + ":" + cluster.Spec.Version,
+							Command:	[]string{"/bin/sh", "-c"},
+							Args:		[]string{configuratorPath},
+							VolumeMounts: []corev1.VolumeMount{
+								{
+									Name:		"config-dir",
+									MountPath:	configDir,
+								},
+								{
+									Name:		"configmap-dir",
+									MountPath:	configuratorDir,
+								},
+							},
+						},
 					},
 					Containers: []corev1.Container{
 						{
 							Name:	"redpanda",
 							Image:	cluster.Spec.Image + ":" + cluster.Spec.Version,
 							Args: []string{
-								"--advertise-kafka-addr $HOSTNAME." + cluster.Namespace + ".redpanda.svc.cluster.local:" + strconv.Itoa(cluster.Spec.Configuration.AdvertisedKafkaAPI.Port),
-								"--advertise-rpc-addr $HOSTNAME." + cluster.Namespace + ".redpanda.svc.cluster.local:" + strconv.Itoa(cluster.Spec.Configuration.AdvertisedRPCAPI.Port),
 								"--check=false",
 								"--smp 1",
 								"--memory " + strings.ReplaceAll(memory.String(), "Gi", "G"),
 								"start",
 								"--",
-								"--default-log-level=info",
+								"--default-log-level=debug",
 								"--reserve-memory 0M",
 							},
 							Ports: []corev1.ContainerPort{
@@ -379,6 +460,10 @@ func (r *ClusterReconciler) createBootstrapStatefulSet(
 								{
 									Name:		"datadir",
 									MountPath:	dataDirectory,
+								},
+								{
+									Name:		"config-dir",
+									MountPath:	configDir,
 								},
 							},
 						},
