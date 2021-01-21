@@ -101,6 +101,14 @@ public:
     // Lifecycle management
     ss::future<> start() { return raft::state_machine::start(); }
 
+    ss::future<> stop() {
+        _mutex.broken();
+        for (auto& p : _promises) {
+            p.second.set_value(std::error_code(errc::shutting_down));
+        }
+        return raft::state_machine::stop();
+    }
+
     /// Replicates record batch
     ss::future<result<raft::replicate_result>> replicate(model::record_batch&&);
 
