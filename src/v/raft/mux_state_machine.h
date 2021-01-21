@@ -182,9 +182,11 @@ template<typename... T>
 CONCEPT(requires(State<T>, ...))
 ss::future<result<raft::replicate_result>> mux_state_machine<T...>::replicate(
   model::record_batch&& batch) {
+    return ss::with_gate(_gate, [this, batch = std::move(batch)]() mutable {
     return _c->replicate(
       model::make_memory_record_batch_reader(std::move(batch)),
       raft::replicate_options{raft::consistency_level::quorum_ack});
+    });
 }
 
 template<typename... T>
@@ -194,6 +196,8 @@ ss::future<std::error_code> mux_state_machine<T...>::replicate_and_wait(
   model::timeout_clock::time_point timeout,
   ss::abort_source& as) {
     using ret_t = std::error_code;
+    return ss::with_gate(
+      _gate, [this, b = std::move(b), timeout, &as]() mutable {
     return _mutex.get_units().then(
       [this, b = std::move(b), timeout, &as](ss::semaphore_units<> u) mutable {
           return replicate(std::move(b))
@@ -221,6 +225,7 @@ ss::future<std::error_code> mux_state_machine<T...>::replicate_and_wait(
                     });
             });
       });
+      });
 }
 
 // return value only if state accepts given batch type
@@ -236,6 +241,7 @@ is_batch_applicable(State& s, const model::record_batch& batch) {
 template<typename... T>
 CONCEPT(requires(State<T>, ...))
 ss::future<> mux_state_machine<T...>::apply(model::record_batch b) {
+    return ss::with_gate(_gate, [this, b = std::move(b)]() mutable {
     // lookup for the state to apply the update
     auto state = std::apply(
       [&b](T&... st) {
@@ -275,6 +281,7 @@ ss::future<> mux_state_machine<T...>::apply(model::record_batch b) {
         }
         return f.then(
           [this, last_offset] { return write_last_applied(last_offset); });
+    });
     });
 }
 
