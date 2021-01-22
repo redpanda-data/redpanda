@@ -55,6 +55,9 @@ struct broker_endpoint final {
     ss::sstring name;
     unresolved_address address;
 
+    // required for yaml serde
+    broker_endpoint() = default;
+
     broker_endpoint(ss::sstring name, unresolved_address address) noexcept
       : name(std::move(name))
       , address(std::move(address)) {}

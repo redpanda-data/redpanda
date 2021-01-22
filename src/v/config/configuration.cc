@@ -119,7 +119,7 @@ configuration::configuration()
       "kafka_api",
       "Address and port of an interface to listen for Kafka API requests",
       required::no,
-      unresolved_address("127.0.0.1", 9092))
+      {model::broker_endpoint(unresolved_address("127.0.0.1", 9092))})
   , kafka_api_tls(
       *this,
       "kafka_api_tls",
@@ -425,7 +425,7 @@ configuration::configuration()
       "advertised_kafka_api",
       "Address of Kafka API published to the clients",
       required::no,
-      std::nullopt)
+      {})
   , _advertised_rpc_api(
       *this,
       "advertised_rpc_api",

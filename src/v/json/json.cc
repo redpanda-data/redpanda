@@ -92,4 +92,17 @@ void rjson_serialize(
     rjson_serialize(w, _tmp);
 }
 
+void rjson_serialize(
+  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  const model::broker_endpoint& ep) {
+    w.StartObject();
+    w.Key("name");
+    w.String(ep.name);
+    w.Key("host");
+    w.String(ep.address.host());
+    w.Key("port");
+    w.Uint(ep.address.port());
+    w.EndObject();
+}
+
 } // namespace json

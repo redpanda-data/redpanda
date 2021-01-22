@@ -15,6 +15,7 @@
 #include "config/seed_server.h"
 #include "config/tls_config.h"
 #include "model/metadata.h"
+#include "utils/unresolved_address.h"
 
 #include <seastar/net/inet_address.hh>
 #include <seastar/net/ip.hh>
@@ -54,7 +55,7 @@ struct configuration final : public config_store {
     property<int16_t> min_version;
     property<int16_t> max_version;
     // Kafka
-    property<unresolved_address> kafka_api;
+    one_or_many_property<model::broker_endpoint> kafka_api;
     property<tls_config> kafka_api_tls;
     property<bool> use_scheduling_groups;
     property<unresolved_address> admin;
@@ -114,8 +115,11 @@ struct configuration final : public config_store {
 
     void read_yaml(const YAML::Node& root_node) override;
 
-    unresolved_address advertised_kafka_api() const {
-        return _advertised_kafka_api().value_or(kafka_api());
+    const std::vector<model::broker_endpoint>& advertised_kafka_api() const {
+        if (_advertised_kafka_api().empty()) {
+            return kafka_api();
+        }
+        return _advertised_kafka_api();
     }
 
     unresolved_address advertised_rpc_api() const {
@@ -128,7 +132,7 @@ struct configuration final : public config_store {
     }
 
 private:
-    property<std::optional<unresolved_address>> _advertised_kafka_api;
+    one_or_many_property<model::broker_endpoint> _advertised_kafka_api;
     property<std::optional<unresolved_address>> _advertised_rpc_api;
 };
 
@@ -359,6 +363,36 @@ struct convert<named_type<T, Tag>> {
             return false;
         }
         rhs = type{node.as<T>()};
+        return true;
+    }
+};
+
+template<>
+struct convert<model::broker_endpoint> {
+    using type = model::broker_endpoint;
+
+    static Node encode(const type& rhs) {
+        Node node;
+        node["name"] = rhs.name;
+        node["address"] = rhs.address.host();
+        node["port"] = rhs.address.port();
+        return node;
+    }
+
+    static bool decode(const Node& node, type& rhs) {
+        for (auto s : {"address", "port"}) {
+            if (!node[s]) {
+                return false;
+            }
+        }
+        ss::sstring name;
+        if (node["name"]) {
+            name = node["name"].as<ss::sstring>();
+        }
+        auto address = node["address"].as<ss::sstring>();
+        auto port = node["port"].as<uint16_t>();
+        auto addr = unresolved_address(std::move(address), port);
+        rhs = model::broker_endpoint(std::move(name), std::move(addr));
         return true;
     }
 };

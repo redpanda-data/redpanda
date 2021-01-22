@@ -12,6 +12,7 @@
 #pragma once
 
 #include "likely.h"
+#include "model/metadata.h"
 #include "utils/named_type.h"
 #include "utils/unresolved_address.h"
 
@@ -71,6 +72,9 @@ void rjson_serialize(
 void rjson_serialize(
   rapidjson::Writer<rapidjson::StringBuffer>& w,
   const std::chrono::milliseconds& v);
+
+void rjson_serialize(
+  rapidjson::Writer<rapidjson::StringBuffer>&, const model::broker_endpoint&);
 
 template<typename T, typename = std::enable_if_t<std::is_enum_v<T>>>
 void rjson_serialize(rapidjson::Writer<rapidjson::StringBuffer>& w, T v) {

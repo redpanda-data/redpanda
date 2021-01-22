@@ -119,8 +119,7 @@ public:
         set_configuration("data_directory", data_dir_path);
         set_configuration("node_id", _current_node.id()());
         set_configuration(
-          "kafka_api",
-          _current_node.kafka_advertised_listeners().front().address);
+          "kafka_api", _current_node.kafka_advertised_listeners());
         set_configuration("rpc_server", _current_node.rpc_address());
         set_configuration("seed_servers", _seeds);
         set_configuration("disable_metrics", true);
