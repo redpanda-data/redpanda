@@ -141,11 +141,16 @@ func startCluster(
 	if err != nil {
 		return err
 	}
+	seedMetricsPort, err := net.GetFreePort()
+	if err != nil {
+		return err
+	}
 	seedState, err := common.CreateNode(
 		c,
 		seedID,
 		seedKafkaPort,
 		seedRPCPort,
+		seedMetricsPort,
 		netID,
 	)
 	if err != nil {
@@ -183,6 +188,10 @@ func startCluster(
 			if err != nil {
 				return err
 			}
+			metricsPort, err := net.GetFreePort()
+			if err != nil {
+				return err
+			}
 			args := []string{
 				"--seeds",
 				fmt.Sprintf(
@@ -197,6 +206,7 @@ func startCluster(
 				id,
 				kafkaPort,
 				rpcPort,
+				metricsPort,
 				netID,
 				args...,
 			)
