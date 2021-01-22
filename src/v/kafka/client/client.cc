@@ -21,6 +21,7 @@
 #include "kafka/protocol/leave_group.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
+#include "model/timeout_clock.h"
 #include "seastarx.h"
 #include "ssx/future-util.h"
 #include "utils/unresolved_address.h"
@@ -262,6 +263,23 @@ ss::future<offset_commit_response> client::consumer_offset_commit(
       .then([topics{std::move(topics)}](shared_consumer_t c) mutable {
           return c->offset_commit(std::move(topics));
       });
+}
+
+ss::future<kafka::fetch_response> client::consumer_fetch(
+  const group_id& g_id,
+  const member_id& m_id,
+  std::chrono::milliseconds timeout,
+  int32_t max_bytes) {
+    auto end = model::timeout_clock::now() + timeout;
+    return gated_retry_with_mitigation([this, g_id, m_id, end, max_bytes]() {
+        return get_consumer(g_id, m_id)
+          .then([end, max_bytes](shared_consumer_t c) {
+              auto timeout = std::max(
+                model::timeout_clock::duration{0},
+                end - model::timeout_clock::now());
+              return c->fetch(timeout, max_bytes);
+          });
+    });
 }
 
 } // namespace kafka::client
