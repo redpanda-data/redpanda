@@ -68,6 +68,7 @@ func Execute() {
 	rootCmd.AddCommand(NewApiCommand(fs, mgr))
 	rootCmd.AddCommand(NewWasmCommand(fs, mgr))
 	rootCmd.AddCommand(NewContainerCommand())
+	rootCmd.AddCommand(NewTopicCommand(fs, mgr))
 
 	addPlatformDependentCmds(fs, mgr, rootCmd)
 

@@ -19,6 +19,7 @@ import (
 	"github.com/burdiyan/kafkautil"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
+	"github.com/spf13/cobra"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/container/common"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/kafka"
@@ -28,8 +29,26 @@ import (
 const FeedbackMsg = `We'd love to hear about your experience with redpanda:
 https://vectorized.io/feedback`
 
-func DeprecationMessage(altCmd string) string {
-	return fmt.Sprintf("use '%s' instead.", altCmd)
+func Deprecated(newCmd *cobra.Command, newUse string) *cobra.Command {
+	newCmd.Deprecated = deprecationMessage(newUse)
+	newCmd.Hidden = true
+	return newCmd
+}
+
+func deprecationMessage(newUse string) string {
+	return fmt.Sprintf("use '%s' instead.", newUse)
+}
+
+// exactArgs makes sure exactly n arguments are passed, if not, a custom error
+// err is returned back. This is so we can return more contextually friendly errors back
+// to users.
+func ExactArgs(n int, err string) cobra.PositionalArgs {
+	return func(cmd *cobra.Command, args []string) error {
+		if len(args) != n {
+			return fmt.Errorf(err + "\n\n" + cmd.UsageString())
+		}
+		return nil
+	}
 }
 
 // Try to read the config from the default expected locations, or from the
@@ -58,43 +77,6 @@ func FindConfigFile(
 		}
 		return conf, err
 	}
-}
-
-func ContainerBrokers() []string {
-	c, err := common.NewDockerClient()
-	if err != nil {
-		log.Debug(err)
-		return []string{}
-	}
-	nodes, err := common.GetExistingNodes(c)
-	if err != nil {
-		log.Debug(err)
-		return []string{}
-	}
-	grp := errgroup.Group{}
-	mu := sync.Mutex{}
-	addrs := []string{}
-	for _, node := range nodes {
-		s := node
-		grp.Go(func() error {
-			mu.Lock()
-			defer mu.Unlock()
-			addrs = append(
-				addrs,
-				fmt.Sprintf(
-					"127.0.0.1:%d",
-					s.HostKafkaPort,
-				),
-			)
-			return nil
-		})
-	}
-	err = grp.Wait()
-	if err != nil {
-		log.Debug(err)
-		return []string{}
-	}
-	return addrs
 }
 
 func DeduceBrokers(
@@ -209,4 +191,41 @@ func CreateAdmin(
 		}
 		return sarama.NewClusterAdmin(brokers(), cfg)
 	}
+}
+
+func ContainerBrokers() []string {
+	c, err := common.NewDockerClient()
+	if err != nil {
+		log.Debug(err)
+		return []string{}
+	}
+	nodes, err := common.GetExistingNodes(c)
+	if err != nil {
+		log.Debug(err)
+		return []string{}
+	}
+	grp := errgroup.Group{}
+	mu := sync.Mutex{}
+	addrs := []string{}
+	for _, node := range nodes {
+		s := node
+		grp.Go(func() error {
+			mu.Lock()
+			defer mu.Unlock()
+			addrs = append(
+				addrs,
+				fmt.Sprintf(
+					"127.0.0.1:%d",
+					s.HostKafkaPort,
+				),
+			)
+			return nil
+		})
+	}
+	err = grp.Wait()
+	if err != nil {
+		log.Debug(err)
+		return []string{}
+	}
+	return addrs
 }

@@ -18,8 +18,8 @@ import (
 )
 
 func NewCheckCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
-	command := redpanda.NewCheckCommand(fs, mgr)
-	command.Deprecated = common.DeprecationMessage("rpk redpanda check")
-	command.Hidden = true
-	return command
+	return common.Deprecated(
+		redpanda.NewCheckCommand(fs, mgr),
+		"rpk redpanda check",
+	)
 }

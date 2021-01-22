@@ -1,4 +1,4 @@
-// Copyright 2020 Vectorized, Inc.
+// Copyright 2021 Vectorized, Inc.
 //
 // Use of this software is governed by the Business Source License
 // included in the file licenses/BSL.md
@@ -12,19 +12,19 @@ package cmd
 import (
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/api"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/common"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/topic"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 )
 
-func NewApiCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
+func NewTopicCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	var (
 		brokers		[]string
 		configFile	string
 	)
 	command := &cobra.Command{
-		Use:	"api",
-		Short:	"Interact with the Redpanda API",
+		Use:	"topic",
+		Short:	"Create, delete, produce to and consume from Redpanda topics.",
 	}
 
 	command.PersistentFlags().StringSliceVar(
@@ -40,6 +40,7 @@ func NewApiCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 		"Redpanda config file, if not set the file will be searched for"+
 			" in the default locations",
 	)
+
 	// The ideal way to pass common (global flags') values would be to
 	// declare PersistentPreRun hooks on each command root (such as rpk
 	// api), validating them there and them passing them down to its
@@ -52,25 +53,23 @@ func NewApiCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	// hierarchy to avoid import cycles (parent command imports child
 	// command's package, child cmd import parent cmd's package to access
 	// the flag's value), but this leads to entangled code.
-	// As a cleaner workaround, the brokers value has to be gotten through a
+	// As a cleaner workaround, the flags are provided through a
 	// closure with references to the required values (the config file
-	// path, the list of brokers passed through --brokers) to deduce the
-	// actual brokers list to be used.
+	// path, the list of brokers passed through --brokers).
 	configClosure := common.FindConfigFile(mgr, &configFile)
 	brokersClosure := common.DeduceBrokers(fs, configClosure, &brokers)
-	producerClosure := common.CreateProducer(brokersClosure, configClosure)
-	clientClosure := common.CreateClient(fs, brokersClosure, configClosure)
 	adminClosure := common.CreateAdmin(fs, brokersClosure, configClosure)
+	clientClosure := common.CreateClient(fs, brokersClosure, configClosure)
+	producerClosure := common.CreateProducer(brokersClosure, configClosure)
 
-	command.AddCommand(api.NewStatusCommand(adminClosure))
-	command.AddCommand(
-		api.NewTopicCommand(fs, clientClosure, adminClosure),
-	)
-	command.AddCommand(
-		api.NewProduceCommand(producerClosure),
-	)
-	command.AddCommand(
-		api.NewConsumeCommand(clientClosure),
-	)
+	command.AddCommand(topic.NewCreateCommand(adminClosure))
+	command.AddCommand(topic.NewDeleteCommand(adminClosure))
+	command.AddCommand(topic.NewSetConfigCommand(adminClosure))
+	command.AddCommand(topic.NewDescribeCommand(clientClosure, adminClosure))
+	command.AddCommand(topic.NewInfoCommand(adminClosure))
+	command.AddCommand(topic.NewListCommand(adminClosure))
+	command.AddCommand(topic.NewConsumeCommand(clientClosure))
+	command.AddCommand(topic.NewProduceCommand(producerClosure))
+
 	return command
 }

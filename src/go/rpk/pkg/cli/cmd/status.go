@@ -18,8 +18,8 @@ import (
 )
 
 func NewStatusCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
-	command := debug.NewInfoCommand(fs, mgr)
-	command.Deprecated = common.DeprecationMessage("rpk debug info")
-	command.Hidden = true
-	return command
+	return common.Deprecated(
+		debug.NewInfoCommand(fs, mgr),
+		"rpk debug info",
+	)
 }

@@ -21,8 +21,8 @@ import (
 func NewStartCommand(
 	fs afero.Fs, mgr config.Manager, launcher rp.Launcher,
 ) *cobra.Command {
-	command := redpanda.NewStartCommand(fs, mgr, launcher)
-	command.Deprecated = common.DeprecationMessage("rpk redpanda start")
-	command.Hidden = true
-	return command
+	return common.Deprecated(
+		redpanda.NewStartCommand(fs, mgr, launcher),
+		"rpk redpanda start",
+	)
 }
