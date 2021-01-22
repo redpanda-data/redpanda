@@ -92,7 +92,7 @@ public:
 private:
     struct sequence_id {
         model::run_id run_id;
-        model::node_id node_id;
+        raft::vnode node_id;
         int64_t tick;
 
         bool operator==(const sequence_id& other) const {
