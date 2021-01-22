@@ -194,8 +194,10 @@ func RemoveNetwork(c Client) error {
 }
 
 func CreateNode(
-	c Client, nodeID,
-	kafkaPort, rpcPort uint, netID string, args ...string,
+	c Client,
+	nodeID, kafkaPort, rpcPort, metricsPort uint,
+	netID string,
+	args ...string,
 ) (*NodeState, error) {
 	rPort, err := nat.NewPort(
 		"tcp",
@@ -207,6 +209,13 @@ func CreateNode(
 	kPort, err := nat.NewPort(
 		"tcp",
 		strconv.Itoa(config.Default().Redpanda.KafkaApi.Port),
+	)
+	if err != nil {
+		return nil, err
+	}
+	metPort, err := nat.NewPort(
+		"tcp",
+		strconv.Itoa(config.Default().Redpanda.AdminApi.Port),
 	)
 	if err != nil {
 		return nil, err
@@ -250,6 +259,9 @@ func CreateNode(
 			}},
 			kPort: []nat.PortBinding{{
 				HostPort: fmt.Sprint(kafkaPort),
+			}},
+			metPort: []nat.PortBinding{{
+				HostPort: fmt.Sprint(metricsPort),
 			}},
 		},
 	}

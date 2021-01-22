@@ -13,8 +13,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
-	"runtime"
 	"sync"
 	"time"
 
@@ -143,30 +141,26 @@ func startCluster(
 	if err != nil {
 		return err
 	}
+	seedMetricsPort, err := net.GetFreePort()
+	if err != nil {
+		return err
+	}
 	seedState, err := common.CreateNode(
 		c,
 		seedID,
 		seedKafkaPort,
 		seedRPCPort,
+		seedMetricsPort,
 		netID,
 	)
 	if err != nil {
 		return err
 	}
 
-	coreCount := int(math.Max(1, float64(runtime.NumCPU())/float64(n)))
-
 	log.Info("Starting cluster")
 	err = startNode(
 		c,
-		seedID,
-		seedKafkaPort,
-		seedRPCPort,
-		seedID,
 		seedState.ContainerID,
-		seedState.ContainerIP,
-		"",
-		coreCount,
 	)
 	if err != nil {
 		return err
@@ -194,6 +188,10 @@ func startCluster(
 			if err != nil {
 				return err
 			}
+			metricsPort, err := net.GetFreePort()
+			if err != nil {
+				return err
+			}
 			args := []string{
 				"--seeds",
 				fmt.Sprintf(
@@ -208,6 +206,7 @@ func startCluster(
 				id,
 				kafkaPort,
 				rpcPort,
+				metricsPort,
 				netID,
 				args...,
 			)
@@ -222,14 +221,7 @@ func startCluster(
 			)
 			err = startNode(
 				c,
-				id,
-				kafkaPort,
-				rpcPort,
-				seedRPCPort,
 				state.ContainerID,
-				state.ContainerIP,
-				seedState.ContainerIP,
-				coreCount,
 			)
 			if err != nil {
 				return err
@@ -314,12 +306,7 @@ func restartCluster(
 	return nodes, nil
 }
 
-func startNode(
-	c common.Client,
-	nodeID, kafkaPort, rpcPort, seedRPCPort uint,
-	containerID, ip, seedIP string,
-	cores int,
-) error {
+func startNode(c common.Client, containerID string) error {
 	ctx, _ := common.DefaultCtx()
 	err := c.ContainerStart(ctx, containerID, types.ContainerStartOptions{})
 	return err
