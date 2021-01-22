@@ -568,3 +568,31 @@ SEASTAR_THREAD_TEST_CASE(iobuf_as_istream) {
     BOOST_REQUIRE_EQUAL(underlying.size_bytes(), out.size());
     BOOST_REQUIRE_EQUAL(a + b, out);
 }
+
+SEASTAR_THREAD_TEST_CASE(iobuf_string_view_cmp) {
+    {
+        /// string_view to iobuf comparator, random string
+        auto a = random_generators::gen_alphanum_string(1024);
+        iobuf buf;
+        buf.append(a.data(), a.size());
+        BOOST_REQUIRE_EQUAL(buf, std::string_view(a));
+    }
+    {
+        /// Same length different content
+        static const ss::sstring a = "static_content";
+        static const ss::sstring b = "that_is_not_eq";
+        iobuf buf;
+        buf.append(a.data(), a.size());
+        BOOST_REQUIRE_NE(buf, std::string_view(b));
+        BOOST_REQUIRE_EQUAL(buf, std::string_view(a));
+    }
+    {
+        /// Different length items
+        static const ss::sstring a = "Not the same";
+        static const ss::sstring b = "length";
+        iobuf buf;
+        buf.append(a.data(), a.size());
+        BOOST_REQUIRE_NE(a, std::string_view(b));
+        BOOST_REQUIRE_EQUAL(a, std::string_view(a));
+    }
+}

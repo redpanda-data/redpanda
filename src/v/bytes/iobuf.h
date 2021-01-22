@@ -159,6 +159,9 @@ public:
     bool operator==(const iobuf&) const;
     bool operator!=(const iobuf&) const;
 
+    bool operator==(std::string_view) const;
+    bool operator!=(std::string_view) const;
+
     iterator begin();
     iterator end();
     reverse_iterator rbegin();
@@ -199,6 +202,9 @@ inline iobuf::const_iterator iobuf::cbegin() const { return _frags.cbegin(); }
 inline iobuf::const_iterator iobuf::cend() const { return _frags.cend(); }
 
 inline bool iobuf::operator!=(const iobuf& o) const { return !(*this == o); }
+inline bool iobuf::operator!=(std::string_view o) const {
+    return !(*this == o);
+}
 inline bool iobuf::empty() const { return _frags.empty(); }
 inline size_t iobuf::size_bytes() const { return _size; }
 

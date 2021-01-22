@@ -200,3 +200,22 @@ bool iobuf::operator==(const iobuf& o) const {
     }
     return true;
 }
+
+bool iobuf::operator==(std::string_view o) const {
+    if (_size != o.size()) {
+        return false;
+    }
+    auto lhs_begin = byte_iterator(cbegin(), cend());
+    auto lhs_end = byte_iterator(cend(), cend());
+    auto c = o.data();
+    while (lhs_begin != lhs_end) {
+        char l = *lhs_begin;
+        char r = *c;
+        if (l != r) {
+            return false;
+        }
+        ++lhs_begin;
+        ++c;
+    }
+    return true;
+}
