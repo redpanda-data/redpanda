@@ -10,25 +10,38 @@
 #include "cluster/partition.h"
 
 #include "cluster/logger.h"
+#include "model/namespace.h"
 #include "prometheus/prometheus_sanitize.h"
 
 namespace cluster {
 
+static bool is_id_allocator_topic(model::ntp ntp) {
+    return ntp.ns == model::kafka_internal_namespace
+           && ntp.tp.topic == model::id_allocator_topic;
+}
+
 partition::partition(consensus_ptr r)
   : _raft(r)
   , _probe(*this) {
-    if (_raft->log_config().is_collectable()) {
+    if (is_id_allocator_topic(_raft->ntp())) {
+        _id_allocator_stm = std::make_unique<raft::id_allocator_stm>(
+          clusterlog, _raft.get(), config::shard_local_cfg());
+    } else if (_raft->log_config().is_collectable()) {
         _nop_stm = std::make_unique<raft::log_eviction_stm>(
           _raft.get(), clusterlog, _as);
     }
 }
 
 ss::future<> partition::start() {
-    _probe.setup_metrics(_raft->ntp());
+    auto ntp = _raft->ntp();
+
+    _probe.setup_metrics(ntp);
 
     auto f = _raft->start();
 
-    if (_nop_stm != nullptr) {
+    if (is_id_allocator_topic(ntp)) {
+        return f.then([this] { return _id_allocator_stm->start(); });
+    } else if (_nop_stm != nullptr) {
         return f.then([this] { return _nop_stm->start(); });
     }
 
@@ -37,12 +50,17 @@ ss::future<> partition::start() {
 
 ss::future<> partition::stop() {
     _as.request_abort();
-    // no state machine
-    if (_nop_stm == nullptr) {
-        return ss::now();
+
+    if (_id_allocator_stm != nullptr) {
+        return _id_allocator_stm->stop();
     }
 
-    return _nop_stm->stop();
+    if (_nop_stm != nullptr) {
+        return _nop_stm->stop();
+    }
+
+    // no state machine
+    return ss::now();
 }
 
 ss::future<std::optional<storage::timequery_result>>

@@ -34,6 +34,8 @@ ss::future<> state_machine::start() {
     return ss::now();
 }
 
+void state_machine::set_next(model::offset offset) { _next = offset; }
+
 ss::future<> state_machine::stop() {
     _waiters.stop();
     _as.request_abort();

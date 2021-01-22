@@ -420,6 +420,21 @@ configuration::configuration()
       "Max compacted segment size after consolidation",
       required::no,
       5_GiB)
+  , id_allocator_log_capacity(
+      *this,
+      "id_allocator_log_capacity",
+      "Capacity of the id_allocator log in number of messages. "
+      "Once it reached id_allocator_stm should compact the log.",
+      required::no,
+      100)
+  , id_allocator_batch_size(
+      *this,
+      "id_allocator_batch_size",
+      "Id allocator allocates messages in batches (each batch is a "
+      "one log record) and then serves requests from memory without "
+      "touching the log until the batch is exhausted.",
+      required::no,
+      1000)
   , _advertised_kafka_api(
       *this,
       "advertised_kafka_api",

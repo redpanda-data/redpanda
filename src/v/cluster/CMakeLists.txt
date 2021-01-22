@@ -14,6 +14,13 @@ rpcgen(
   INCLUDES ${CMAKE_BINARY_DIR}/src/v
 )
 
+rpcgen(
+  TARGET id_allocator_rpc
+  IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/id_allocator.json
+  OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/id_allocator_service.h
+  INCLUDES ${CMAKE_BINARY_DIR}/src/v
+)
+
 v_cc_library(
   NAME cluster
   SRCS
@@ -22,6 +29,8 @@ v_cc_library(
     partition_allocator.cc
     logger.cc
     cluster_utils.cc
+    id_allocator.cc
+    id_allocator_frontend.cc
     service.cc
     metadata_dissemination_handler.cc
     metadata_dissemination_service.cc
@@ -42,6 +51,7 @@ v_cc_library(
     Seastar::seastar
     controller_rpc
     metadata_rpc
+    id_allocator_rpc
     v::raft
     Roaring::roaring
     absl::flat_hash_map

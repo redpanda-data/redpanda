@@ -31,8 +31,18 @@ class consensus;
 namespace cluster {
 
 static constexpr model::record_batch_type controller_record_batch_type{3};
+static constexpr model::record_batch_type id_allocator_stm_batch_type{8};
 using consensus_ptr = ss::lw_shared_ptr<raft::consensus>;
 using broker_ptr = ss::lw_shared_ptr<model::broker>;
+
+struct allocate_id_request {
+    model::timeout_clock::duration timeout;
+};
+
+struct allocate_id_reply {
+    int64_t id;
+    errc ec;
+};
 
 /// Join request sent by node to join raft-0
 struct join_request {

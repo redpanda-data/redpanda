@@ -60,7 +60,7 @@ public:
     state_machine(consensus*, ss::logger& log, ss::io_priority_class io_prio);
 
     // start after ready to receive batches through apply upcall.
-    ss::future<> start();
+    virtual ss::future<> start();
 
     ss::future<> stop();
 
@@ -88,6 +88,12 @@ public:
     ss::future<result<replicate_result>>
       quorum_write_empty_batch(model::timeout_clock::time_point);
 
+    virtual ~state_machine() {}
+
+protected:
+    void set_next(model::offset offset);
+    ss::gate _gate;
+
 private:
     class batch_applicator {
     public:
@@ -111,7 +117,6 @@ private:
     offset_monitor _waiters;
     model::offset _next;
     ss::abort_source _as;
-    ss::gate _gate;
     model::offset _bootstrap_last_applied;
 };
 

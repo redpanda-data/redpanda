@@ -17,6 +17,7 @@
 #include "model/record_batch_reader.h"
 #include "raft/configuration.h"
 #include "raft/consensus.h"
+#include "raft/id_allocator_stm.h"
 #include "raft/log_eviction_stm.h"
 #include "raft/types.h"
 #include "storage/types.h"
@@ -118,6 +119,10 @@ public:
         return _raft->log_config().get_revision();
     }
 
+    std::unique_ptr<raft::id_allocator_stm>& id_allocator_stm() {
+        return _id_allocator_stm;
+    }
+
 private:
     friend partition_manager;
 
@@ -126,6 +131,7 @@ private:
 private:
     consensus_ptr _raft;
     std::unique_ptr<raft::log_eviction_stm> _nop_stm;
+    std::unique_ptr<raft::id_allocator_stm> _id_allocator_stm;
     ss::abort_source _as;
     partition_probe _probe;
 
