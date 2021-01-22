@@ -59,7 +59,7 @@ model::record_batch record_batch_builder::build() && {
           std::move(sr.key),
           vz,
           std::move(sr.value),
-          std::vector<model::record_header>{});
+          std::move(sr.headers));
         ++offset_delta;
         model::append_record_to_buffer(records, r);
     }
@@ -71,14 +71,19 @@ model::record_batch record_batch_builder::build() && {
 
 uint32_t record_batch_builder::record_size(
   int32_t offset_delta, const serialized_record& r) {
-    return sizeof(model::record_attributes::type)  // attributes
-           + zero_vint_size                        // timestamp delta
-           + vint::vint_size(offset_delta)         // offset_delta
-           + vint::vint_size(r.key.size_bytes())   // key size
-           + r.key.size_bytes()                    // key
-           + vint::vint_size(r.value.size_bytes()) // value size
-           + r.value.size_bytes()                  // value
-           + zero_vint_size;                       // headers size
+    uint32_t size = sizeof(model::record_attributes::type)  // attributes
+                    + zero_vint_size                        // timestamp delta
+                    + vint::vint_size(offset_delta)         // offset_delta
+                    + vint::vint_size(r.key.size_bytes())   // key size
+                    + r.key.size_bytes()                    // key
+                    + vint::vint_size(r.value.size_bytes()) // value size
+                    + r.value.size_bytes()                  // value
+                    + vint::vint_size(r.headers.size());    // headers size
+    for (const auto& h : r.headers) {
+        size += vint::vint_size(h.key_size()) + h.key().size_bytes()
+                + vint::vint_size(h.value_size()) + h.value().size_bytes();
+    }
+    return size;
 }
 
 } // namespace storage

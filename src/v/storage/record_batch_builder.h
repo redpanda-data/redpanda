@@ -28,18 +28,30 @@ public:
         _records.emplace_back(std::move(key), std::move(value));
         return *this;
     }
+    virtual record_batch_builder& add_raw_kw(
+      iobuf&& key, iobuf&& value, std::vector<model::record_header> headers) {
+        _records.emplace_back(
+          std::move(key), std::move(value), std::move(headers));
+        return *this;
+    }
     virtual model::record_batch build() &&;
     virtual ~record_batch_builder();
 
 private:
     static constexpr int64_t zero_vint_size = vint::vint_size(0);
     struct serialized_record {
-        serialized_record(iobuf k, iobuf v)
+        serialized_record(
+          iobuf k,
+          iobuf v,
+          std::vector<model::record_header> hdrs
+          = std::vector<model::record_header>())
           : key(std::move(k))
-          , value(std::move(v)) {}
+          , value(std::move(v))
+          , headers(std::move(hdrs)) {}
 
         iobuf key;
         iobuf value;
+        std::vector<model::record_header> headers;
 
         uint32_t size_bytes() const {
             return key.size_bytes() + value.size_bytes();
