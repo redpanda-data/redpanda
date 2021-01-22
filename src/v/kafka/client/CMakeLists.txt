@@ -8,6 +8,7 @@ v_cc_library(
     configuration.cc
     consumer.cc
     fetcher.cc
+    fetch_session.cc
     producer.cc
   DEPS
     v::kafka
