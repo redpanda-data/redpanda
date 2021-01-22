@@ -13,11 +13,13 @@
 
 #include "kafka/client/assignment_plans.h"
 #include "kafka/client/brokers.h"
+#include "kafka/client/fetch_session.h"
 #include "kafka/client/logger.h"
 #include "kafka/types.h"
 
 #include <seastar/core/shared_ptr.hh>
 
+#include <absl/container/node_hash_map.h>
 #include <absl/hash/hash.h>
 
 #include <chrono>
@@ -48,6 +50,8 @@ public:
     offset_fetch(std::vector<offset_fetch_request_topic> topics);
     ss::future<offset_commit_response>
     offset_commit(std::vector<offset_commit_request_topic> topics);
+    ss::future<fetch_response>
+    consume(std::chrono::milliseconds timeout, int32_t max_bytes);
 
 private:
     bool is_leader() const {
@@ -100,6 +104,7 @@ private:
     std::vector<model::topic> _subscribed_topics{};
     std::unique_ptr<assignment_plan> _plan{};
     assignment_t _assignment{};
+    absl::node_hash_map<shared_broker_t, fetch_session> _fetch_sessions;
 
     friend std::ostream& operator<<(std::ostream& os, const consumer& c) {
         fmt::print(
