@@ -138,10 +138,10 @@ replicate_entries_stm::append_to_self() {
     return share_request()
       .then([this](append_entries_request req) mutable {
           vlog(_ctxlog.trace, "Self append entries - {}", req.meta);
-          return _ptr->disk_append(std::move(req.batches));
+          return _ptr->disk_append(
+            std::move(req.batches), consensus::update_last_quorum_index::yes);
       })
-      .then([this](storage::append_result res) {
-          _ptr->_last_quorum_replicated_index = res.last_offset;
+      .then([](storage::append_result res) {
           return result<storage::append_result>(std::move(res));
       })
       .handle_exception([this](const std::exception_ptr& e) {
