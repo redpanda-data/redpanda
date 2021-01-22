@@ -21,6 +21,7 @@ import (
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/api"
+	cliCommon "github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/common"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/container/common"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/kafka"
@@ -66,11 +67,11 @@ func NewApiCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	// closure with references to the required values (the config file
 	// path, the list of brokers passed through --brokers) to deduce the
 	// actual brokers list to be used.
-	configClosure := findConfigFile(mgr, &configFile)
-	brokersClosure := deduceBrokers(fs, configClosure, &brokers)
-	producerClosure := createProducer(fs, brokersClosure, configClosure)
-	clientClosure := createClient(fs, brokersClosure, configClosure)
-	adminClosure := createAdmin(fs, brokersClosure, configClosure)
+	configClosure := cliCommon.FindConfigFile(mgr, &configFile)
+	brokersClosure := cliCommon.DeduceBrokers(fs, configClosure, &brokers)
+	producerClosure := cliCommon.CreateProducer(brokersClosure, configClosure)
+	clientClosure := cliCommon.CreateClient(fs, brokersClosure, configClosure)
+	adminClosure := cliCommon.CreateAdmin(fs, brokersClosure, configClosure)
 
 	command.AddCommand(api.NewStatusCommand(adminClosure))
 	command.AddCommand(
