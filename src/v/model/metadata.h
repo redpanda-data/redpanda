@@ -77,17 +77,7 @@ public:
     const unresolved_address& rpc_address() const { return _rpc_address; }
     const std::optional<ss::sstring>& rack() const { return _rack; }
 
-    inline bool operator==(const model::broker& other) const {
-        return _id == other._id
-               && _kafka_api_address == other._kafka_api_address
-               && _rpc_address == other._rpc_address && _rack == other._rack
-               && _properties == other._properties;
-    }
-
-    inline bool operator!=(const model::broker& other) const {
-        return !(*this == other);
-    }
-
+    bool operator==(const model::broker& other) const = default;
     bool operator<(const model::broker& other) const { return _id < other._id; }
 
 private:
