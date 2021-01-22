@@ -20,6 +20,7 @@
 #include "kafka/client/producer.h"
 #include "kafka/client/retry_with_mitigation.h"
 #include "kafka/client/transport.h"
+#include "kafka/protocol/fetch.h"
 #include "kafka/types.h"
 #include "utils/retry.h"
 #include "utils/unresolved_address.h"
@@ -130,6 +131,12 @@ public:
       const group_id& g_id,
       const member_id& m_id,
       std::vector<offset_commit_request_topic> topics);
+
+    ss::future<fetch_response> consume(
+      const group_id& g_id,
+      const member_id& m_id,
+      std::chrono::milliseconds timeout,
+      int32_t max_bytes);
 
 private:
     /// \brief Connect and update metdata.

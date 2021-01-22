@@ -264,4 +264,15 @@ ss::future<offset_commit_response> client::consumer_offset_commit(
       });
 }
 
+ss::future<kafka::fetch_response> client::consume(
+  const group_id& g_id,
+  const member_id& m_id,
+  std::chrono::milliseconds timeout,
+  int32_t max_bytes) {
+    return get_consumer(g_id, m_id)
+      .then([timeout, max_bytes](shared_consumer_t c) mutable {
+          return c->consume(timeout, max_bytes);
+      });
+}
+
 } // namespace kafka::client
