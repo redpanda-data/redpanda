@@ -660,9 +660,7 @@ FIXTURE_TEST(test_mixed_consisteny_levels, raft_test_fixture) {
         auto lvl = random_generators::get_int(0, 10) > 5
                      ? raft::consistency_level::leader_ack
                      : raft::consistency_level::quorum_ack;
-        success = replicate_random_batches(
-                    gr, 2, raft::consistency_level::leader_ack)
-                    .get0();
+        success = replicate_random_batches(gr, 2, lvl).get0();
         BOOST_REQUIRE(success);
     }
 
