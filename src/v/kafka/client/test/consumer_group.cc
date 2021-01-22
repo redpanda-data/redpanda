@@ -48,6 +48,7 @@
 #include <seastar/util/noncopyable_function.hh>
 
 #include <absl/container/flat_hash_map.h>
+#include <boost/test/tools/context.hpp>
 #include <boost/test/tools/old/interface.hpp>
 
 #include <algorithm>
@@ -324,6 +325,72 @@ FIXTURE_TEST(consumer_group, kafka_client_fixture) {
                 BOOST_REQUIRE_EQUAL(p.metadata, m_id());
             }
         }
+    }
+
+    info("Producing data");
+    const int batch_size = 3;
+    using offsets_t = absl::flat_hash_map<
+      model::topic,
+      absl::flat_hash_map<model::partition_id, model::offset>>;
+    offsets_t produced_offsets;
+    for (const auto& t : topics) {
+        for (model::partition_id p{0}; p < partition_count; ++p) {
+            auto tp = model::topic_partition{t, p};
+            auto res = client
+                         .produce_record_batch(
+                           tp, make_batch(model::offset{0}, batch_size))
+                         .get();
+            BOOST_REQUIRE_EQUAL(res.error, kafka::error_code::none);
+            produced_offsets[t][p] = res.base_offset
+                                     + model::offset(batch_size - 1);
+            info("\033[1;31mProduced {}, {}\033[0m", tp, res.base_offset);
+        }
+    }
+
+    static auto get_last_offsets = [](kafka::fetch_response& res) {
+        offsets_t offsets;
+        for (auto& p : res) {
+            auto& pr = *p.partition_response;
+            model::topic_partition tp{p.partition->name, pr.id};
+            BOOST_TEST_CONTEXT("tp: " << tp) {
+                if (pr.error == kafka::error_code::offset_out_of_range) {
+                    continue;
+                }
+                BOOST_REQUIRE_EQUAL(pr.error, kafka::error_code::none);
+                if (!pr.record_set || pr.record_set->empty()) {
+                    continue;
+                }
+                offsets[tp.topic][tp.partition] = pr.record_set->last_offset();
+            }
+        }
+        return offsets;
+    };
+
+    static auto consumed_all =
+      [&produced_offsets](const offsets_t& consumed_offsets) {
+          for (const auto& [t, ps] : consumed_offsets) {
+              for (const auto& [p, o] : ps) {
+                  auto produced_offset = produced_offsets[t][p];
+                  debug("{} {} consumed: {} of {}", t, p, o, produced_offset);
+                  if (o < produced_offset) {
+                      return false;
+                  }
+              }
+          }
+          return true;
+      };
+
+    static auto consume_all =
+      [&client, &group_id, &produced_offsets](kafka::member_id m) {
+          offsets_t consumed_offsets;
+          do {
+              auto res = client.consume(group_id, m, 10ms, 10).get();
+              consumed_offsets = get_last_offsets(res);
+          } while (!consumed_all(consumed_offsets));
+      };
+
+    for (auto& m : members) {
+        BOOST_TEST_CONTEXT("member: " << m) { consume_all(m); }
     }
 
     ss::when_all_succeed(
