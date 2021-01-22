@@ -200,3 +200,24 @@ bool iobuf::operator==(const iobuf& o) const {
     }
     return true;
 }
+
+bool iobuf::operator==(std::string_view o) const {
+    if (_size != o.size()) {
+        return false;
+    }
+    bool are_equal = true;
+    std::string_view::size_type n = 0;
+    auto in = iobuf::iterator_consumer(cbegin(), cend());
+    (void)in.consume(
+      size_bytes(), [&are_equal, &o, &n](const char* src, size_t fg_sz) {
+          /// Both strings are equiv in total size, so its safe to assume the
+          /// next chunk to compare is the remaining to cmp or the fragment size
+          const auto size = std::min((o.size() - n), fg_sz);
+          std::string_view a_view(src, size);
+          std::string_view b_view(o.cbegin() + n, size);
+          n += size;
+          are_equal &= (a_view == b_view);
+          return !are_equal ? ss::stop_iteration::yes : ss::stop_iteration::no;
+      });
+    return are_equal;
+}
