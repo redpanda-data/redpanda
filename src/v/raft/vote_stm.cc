@@ -241,7 +241,7 @@ ss::future<> vote_stm::update_vote_state(ss::semaphore_units<> u) {
     // Set last heartbeat timestamp to max as we are the leader
     _ptr->_hbeat = clock_type::time_point::max();
     vlog(_ctxlog.info, "became the leader term:{}", _ptr->term());
-
+    _ptr->_last_quorum_replicated_index = _ptr->_log.offsets().committed_offset;
     _ptr->trigger_leadership_notification();
 
     return replicate_config_as_new_leader(std::move(u))

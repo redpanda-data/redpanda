@@ -82,6 +82,7 @@ ss::future<> recovery_stm::do_recover() {
     _committed_offset = _ptr->committed_offset();
 
     auto follower_next_offset = meta.value()->next_index;
+    auto follower_committed_match_index = meta.value()->match_committed_index();
     auto f = ss::now();
 
     // we do not have next entry for the follower yet, wait for next disk append
@@ -97,9 +98,11 @@ ss::future<> recovery_stm::do_recover() {
 
     // read & replicate log entries
     return f
-      .then([this, follower_next_offset] {
+      .then([this, follower_next_offset, follower_committed_match_index] {
           return read_range_for_recovery(
-            follower_next_offset, _ptr->_log.offsets().dirty_offset);
+            follower_next_offset,
+            _ptr->_log.offsets().dirty_offset,
+            follower_committed_match_index);
       })
       .then([this] {
           auto meta = get_follower_meta();
@@ -129,7 +132,9 @@ bool recovery_stm::state_changed() {
 }
 
 ss::future<> recovery_stm::read_range_for_recovery(
-  model::offset start_offset, model::offset end_offset) {
+  model::offset start_offset,
+  model::offset end_offset,
+  model::offset follower_committed_match_index) {
     storage::log_reader_config cfg(
       start_offset,
       end_offset,
@@ -157,37 +162,39 @@ ss::future<> recovery_stm::read_range_for_recovery(
           return model::consume_reader_to_memory(
             std::move(reader), model::no_timeout);
       })
-      .then(
-        [this, start_offset](ss::circular_buffer<model::record_batch> batches) {
-            auto lstats = _ptr->_log.offsets();
-            vlog(
-              _ctxlog.trace,
-              "Read {} batches for {} node recovery",
-              batches.size(),
-              _node_id);
-            if (batches.empty()) {
-                _stop_requested = true;
-                return ss::make_ready_future<>();
-            }
-            auto gap_filled_batches = details::make_ghost_batches_in_gaps(
-              start_offset, std::move(batches));
-            _base_batch_offset = gap_filled_batches.begin()->base_offset();
-            _last_batch_offset = gap_filled_batches.back().last_offset();
+      .then([this, start_offset, follower_committed_match_index](
+              ss::circular_buffer<model::record_batch> batches) {
+          auto lstats = _ptr->_log.offsets();
+          vlog(
+            _ctxlog.trace,
+            "Read {} batches for {} node recovery",
+            batches.size(),
+            _node_id);
+          if (batches.empty()) {
+              _stop_requested = true;
+              return ss::make_ready_future<>();
+          }
+          auto gap_filled_batches = details::make_ghost_batches_in_gaps(
+            start_offset, std::move(batches));
+          _base_batch_offset = gap_filled_batches.begin()->base_offset();
+          _last_batch_offset = gap_filled_batches.back().last_offset();
 
-            auto f_reader = model::make_foreign_memory_record_batch_reader(
-              std::move(gap_filled_batches));
+          auto f_reader = model::make_foreign_memory_record_batch_reader(
+            std::move(gap_filled_batches));
 
-            /**
-             * We request follower to flush only when we use quorum consistency
-             * level and when we send last batch that will make follower to
-             * be fully caught up.
-             */
-            auto should_flush = append_entries_request::flush_after_append(
-              _last_batch_offset == lstats.dirty_offset
-              && (_ptr->last_visible_index() <= _ptr->committed_offset()));
+          /**
+           * We request follower to flush only when follower is fully caught
+           * up and its match committed offset is smaller than last replicated
+           * offset with quorum level. This way when follower flush, leader
+           * will be able to update committed_index up to the last offset
+           * of last batch replicated with quorum_acks consistency level.
+           */
+          auto should_flush = append_entries_request::flush_after_append(
+            _last_batch_offset == lstats.dirty_offset
+            && (follower_committed_match_index < _ptr->_last_quorum_replicated_index));
 
-            return replicate(std::move(f_reader), should_flush);
-        });
+          return replicate(std::move(f_reader), should_flush);
+      });
 }
 
 ss::future<> recovery_stm::open_snapshot_reader() {
