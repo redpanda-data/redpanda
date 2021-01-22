@@ -92,7 +92,7 @@ FIXTURE_TEST(test_single_node_update, cluster_test_fixture) {
             return false;
         }
 
-        return updated_broker.value()->kafka_api_address()
+        return updated_broker.value()->kafka_advertised_listeners()[0].address
                == unresolved_address("127.0.0.1", 15000);
     }).get0();
 }

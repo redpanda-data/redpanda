@@ -65,8 +65,9 @@ SEASTAR_THREAD_TEST_CASE(broker_metadata_rt_test) {
     auto d = serialize_roundtrip_rpc(std::move(b));
 
     BOOST_REQUIRE_EQUAL(d.id(), model::node_id(0));
-    BOOST_REQUIRE_EQUAL(d.kafka_api_address().host(), "127.0.0.1");
-    BOOST_REQUIRE_EQUAL(d.kafka_api_address().port(), 9092);
+    BOOST_REQUIRE_EQUAL(
+      d.kafka_advertised_listeners()[0].address.host(), "127.0.0.1");
+    BOOST_REQUIRE_EQUAL(d.kafka_advertised_listeners()[0].address.port(), 9092);
     BOOST_REQUIRE_EQUAL(d.rpc_address().host(), "172.0.1.2");
     BOOST_REQUIRE_EQUAL(d.properties().cores, 8);
     BOOST_REQUIRE_EQUAL(d.properties().available_memory, 1024);

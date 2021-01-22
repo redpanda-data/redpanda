@@ -63,7 +63,7 @@ struct group_nodes {
 
 class group_configuration final {
 public:
-    static constexpr int8_t current_version = 2;
+    static constexpr int8_t current_version = 3;
     /**
      * creates a configuration where all provided brokers are current
      * configuration voters
