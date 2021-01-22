@@ -156,6 +156,21 @@ std::ostream& operator<<(std::ostream& o, const partition_assignment& p_as) {
       p_as.replicas);
     return o;
 }
+
+std::ostream& operator<<(std::ostream& o, decommissioning_status::state s) {
+    switch (s) {
+    case decommissioning_status::state::decomission_finished:
+        return o << "decomission_finished";
+    case decommissioning_status::state::decommission_in_progress:
+        return o << "decommission_in_progress";
+    case decommissioning_status::state::recommissioned:
+        return o << "recommissioned";
+    case decommissioning_status::state::error:
+        return o << "error";
+    }
+    __builtin_unreachable();
+}
+
 } // namespace cluster
 
 namespace reflection {

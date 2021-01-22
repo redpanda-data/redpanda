@@ -312,6 +312,19 @@ public:
 private:
     ss::sstring _msg;
 };
+struct decommissioning_status {
+    enum class state {
+        decommission_in_progress,
+        error,
+        decomission_finished,
+        recommissioned
+    };
+    using node_state = std::pair<model::node_id, state>;
+
+    std::vector<node_state> nodes;
+};
+
+std::ostream& operator<<(std::ostream&, decommissioning_status::state);
 
 struct create_acls_cmd_data {
     static constexpr int8_t current_version = 1;
