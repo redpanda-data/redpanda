@@ -63,7 +63,7 @@ public:
             using namespace storage; // NOLINT
             builder | start(std::move(ntp_cfg)) | add_segment(model::offset(0))
               | add_random_batches(
-                model::offset(0), 20, maybe_compress_batches::yes)
+                model::offset(0), 20, maybe_compress_batches::no)
               | stop();
         }
         add_topic(tp_ns, partitions).get();
