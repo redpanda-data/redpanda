@@ -80,11 +80,37 @@ public:
         return *this;
     }
 
-private:
+protected:
     T _value;
+
+private:
     validator _validator;
     constexpr static auto noop_validator = [](const auto&) {
         return std::nullopt;
     };
 };
+
+/*
+ * Same as property<std::vector<T>> but will also decode a single T. This can be
+ * useful for dealing with backwards compatibility or creating easier yaml
+ * schemas that have simplified special cases.
+ */
+template<typename T>
+class one_or_many_property : public property<std::vector<T>> {
+public:
+    using property<std::vector<T>>::property;
+
+    void set_value(YAML::Node n) override {
+        std::vector<T> value;
+        if (n.IsSequence()) {
+            for (auto elem : n) {
+                value.push_back(std::move(elem.as<T>()));
+            }
+        } else {
+            value.push_back(std::move(n.as<T>()));
+        }
+        this->_value = std::move(value);
+    }
+};
+
 }; // namespace config
