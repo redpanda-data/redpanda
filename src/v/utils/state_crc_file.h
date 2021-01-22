@@ -17,6 +17,7 @@
 #include "outcome.h"
 #include "reflection/adl.h"
 #include "seastarx.h"
+#include "utils/file_io.h"
 #include "utils/state_crc_file_errc.h"
 
 #include <seastar/core/file-types.hh>
@@ -35,15 +36,23 @@
 
 namespace utils {
 
-uint32_t crc_iobuf(const iobuf& buf);
+inline uint32_t crc_iobuf(const iobuf& buf) {
+    crc32 crc;
+    for (const auto& frag : buf) {
+        crc.extend(frag.get(), frag.size());
+    }
+
+    return crc.value();
+}
 
 class state_crc_file {
 public:
-    explicit state_crc_file(ss::sstring);
+    explicit state_crc_file(ss::sstring name)
+      : _filename(std::move(name)) {}
 
     template<typename T>
     ss::future<result<T>> read() {
-        return read_file().then([](iobuf buf) {
+        return read_fully(_filename.string()).then([](iobuf buf) {
             if (buf.empty()) {
                 return result<T>(state_crc_file_errc::file_not_found);
             }
@@ -70,13 +79,11 @@ public:
         // prepend data with CRC
         buf.prepend(reflection::to_iobuf(crc));
 
-        return write_file(std::move(buf));
+        return write_fully(_filename, std::move(buf));
     }
 
 private:
     static constexpr const size_t buf_size = 4096;
-    ss::future<iobuf> read_file();
-    ss::future<> write_file(iobuf);
-    ss::sstring _filename;
+    std::filesystem::path _filename;
 };
 } // namespace utils
