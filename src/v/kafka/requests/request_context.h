@@ -146,6 +146,8 @@ public:
         return _conn->server().coordinator_mapper();
     }
 
+    const ss::sstring& listener() const { return _conn->listener(); }
+
 private:
     ss::lw_shared_ptr<connection_context> _conn;
     request_header _header;

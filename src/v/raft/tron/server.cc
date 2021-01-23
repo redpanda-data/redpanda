@@ -256,7 +256,7 @@ int main(int args, char** argv, char** env) {
             auto ccd = ss::defer(
               [&connection_cache] { connection_cache.stop().get(); });
             rpc::server_configuration scfg("tron_rpc");
-            scfg.addrs.push_back(ss::socket_address(
+            scfg.addrs.emplace_back(ss::socket_address(
               ss::net::inet_address(cfg["ip"].as<ss::sstring>()),
               cfg["port"].as<uint16_t>()));
             scfg.max_service_memory_per_core

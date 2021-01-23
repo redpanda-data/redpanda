@@ -439,7 +439,7 @@ void application::wire_up_services() {
     rpc_cfg.max_service_memory_per_core = memory_groups::rpc_total_memory();
     auto rpc_server_addr
       = config::shard_local_cfg().rpc_server().resolve().get0();
-    rpc_cfg.addrs.push_back(rpc_server_addr);
+    rpc_cfg.addrs.emplace_back(rpc_server_addr);
     auto rpc_builder = config::shard_local_cfg()
                          .rpc_server_tls()
                          .get_credentials_builder()
@@ -468,7 +468,7 @@ void application::wire_up_services() {
         rpc::server_configuration cp_rpc_cfg("coproc_rpc");
         cp_rpc_cfg.max_service_memory_per_core
           = memory_groups::rpc_total_memory();
-        cp_rpc_cfg.addrs.push_back(coproc_script_manager_server_addr);
+        cp_rpc_cfg.addrs.emplace_back(coproc_script_manager_server_addr);
         syschecks::systemd_message(
           "Starting coprocessor internal RPC {}", cp_rpc_cfg);
         construct_service(_coproc_rpc, cp_rpc_cfg).get();
@@ -488,8 +488,9 @@ void application::wire_up_services() {
 
     rpc::server_configuration kafka_cfg("kafka_rpc");
     kafka_cfg.max_service_memory_per_core = memory_groups::kafka_total_memory();
-    auto kafka_addr = config::shard_local_cfg().kafka_api().resolve().get0();
-    kafka_cfg.addrs.push_back(kafka_addr);
+    for (const auto& ep : config::shard_local_cfg().kafka_api()) {
+        kafka_cfg.addrs.emplace_back(ep.name, ep.address.resolve().get0());
+    }
     syschecks::systemd_message("Building TLS credentials for kafka");
     auto kafka_builder = config::shard_local_cfg()
                            .kafka_api_tls()

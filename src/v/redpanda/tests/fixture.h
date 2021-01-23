@@ -92,7 +92,7 @@ public:
     }
 
     ss::future<kafka::client> make_kafka_client() {
-        return config::shard_local_cfg().kafka_api().resolve().then(
+        return config::shard_local_cfg().kafka_api()[0].address.resolve().then(
           [](ss::socket_address addr) {
               return kafka::client(rpc::base_transport::configuration{
                 .server_addr = addr,

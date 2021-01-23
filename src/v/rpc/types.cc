@@ -58,6 +58,11 @@ std::ostream& operator<<(std::ostream& o, const server_configuration& c) {
     return o << "}";
 }
 
+std::ostream& operator<<(std::ostream& os, const server_endpoint& ep) {
+    fmt::print(os, "{{{}:{}}}", ep.name, ep.addr);
+    return os;
+}
+
 std::ostream& operator<<(std::ostream& o, const status& s) {
     switch (s) {
     case status::success:

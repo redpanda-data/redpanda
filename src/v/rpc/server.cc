@@ -39,7 +39,7 @@ void server::start() {
         setup_metrics();
         _probe.setup_metrics(_metrics, cfg.name.c_str());
     }
-    for (auto addr : cfg.addrs) {
+    for (const auto& endpoint : cfg.addrs) {
         ss::server_socket ss;
         try {
             ss::listen_options lo;
@@ -47,20 +47,21 @@ void server::start() {
             lo.lba = cfg.load_balancing_algo;
 
             if (!_creds) {
-                ss = ss::engine().listen(addr, lo);
+                ss = ss::engine().listen(endpoint.addr, lo);
             } else {
-                ss = ss::tls::listen(_creds, ss::engine().listen(addr, lo));
+                ss = ss::tls::listen(
+                  _creds, ss::engine().listen(endpoint.addr, lo));
             }
         } catch (...) {
             throw std::runtime_error(fmt::format(
               "{} - Error attempting to listen on {}: {}",
               _proto->name(),
-              addr,
+              endpoint,
               std::current_exception()));
         }
         auto& b = _listeners.emplace_back(
-          std::make_unique<ss::server_socket>(std::move(ss)));
-        ss::server_socket& ref = *b;
+          std::make_unique<listener>(endpoint.name, std::move(ss)));
+        listener& ref = *b;
         // background
         (void)with_gate(_conn_gate, [this, &ref] { return accept(ref); });
     }
@@ -93,10 +94,10 @@ apply_proto(server::protocol* proto, server::resources&& rs) {
       })
       .finally([conn] {});
 }
-ss::future<> server::accept(ss::server_socket& s) {
+ss::future<> server::accept(listener& s) {
     return ss::repeat([this, &s]() mutable {
-        return s.accept().then_wrapped(
-          [this](ss::future<ss::accept_result> f_cs_sa) mutable {
+        return s.socket.accept().then_wrapped(
+          [this, &s](ss::future<ss::accept_result> f_cs_sa) mutable {
               if (_as.abort_requested()) {
                   f_cs_sa.ignore_ready_future();
                   return ss::make_ready_future<ss::stop_iteration>(
@@ -107,11 +108,15 @@ ss::future<> server::accept(ss::server_socket& s) {
               ar.connection.set_keepalive(true);
               auto conn = ss::make_lw_shared<connection>(
                 _connections,
+                s.name,
                 std::move(ar.connection),
                 ar.remote_address,
                 _probe);
               vlog(
-                rpclog.trace, "Incoming connection from {}", ar.remote_address);
+                rpclog.trace,
+                "Incoming connection from {} on \"{}\"",
+                ar.remote_address,
+                s.name);
               if (_conn_gate.is_closed()) {
                   return conn->shutdown().then([] {
                       return ss::make_exception_future<ss::stop_iteration>(
@@ -131,8 +136,8 @@ ss::future<> server::stop() {
     ss::sstring proto_name = _proto ? _proto->name() : "protocol not set";
     vlog(
       rpclog.info, "{} - Stopping {} listeners", proto_name, _listeners.size());
-    for (auto&& l : _listeners) {
-        l->abort_accept();
+    for (auto& l : _listeners) {
+        l->socket.abort_accept();
     }
     vlog(rpclog.debug, "{} - Service probes {}", proto_name, _probe);
     vlog(

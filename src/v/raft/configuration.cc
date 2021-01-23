@@ -9,6 +9,7 @@
 
 #include "raft/configuration.h"
 
+#include "model/adl_serde.h"
 #include "model/metadata.h"
 #include "raft/consensus_utils.h"
 
@@ -401,15 +402,30 @@ adl<raft::group_configuration>::from(iobuf_parser& p) {
       version,
       raft::group_configuration::current_version);
 
-    auto brokers = adl<std::vector<model::broker>>{}.from(p);
-
     /**
      * we use versions field to maintain backward compatibility
      *
      * version 0 - base
      * version 1 - introduced revision id
      * version 2 - introduced raft::vnode
+     * version 3 - model::broker with multiple endpoints
      */
+
+    std::vector<model::broker> brokers;
+
+    if (likely(version >= 3)) {
+        brokers = adl<std::vector<model::broker>>{}.from(p);
+    } else {
+        auto brokers_v0 = adl<std::vector<model::internal::broker_v0>>{}.from(
+          p);
+        std::transform(
+          brokers_v0.begin(),
+          brokers_v0.end(),
+          std::back_inserter(brokers),
+          [](const model::internal::broker_v0& broker) {
+              return broker.to_v3();
+          });
+    }
 
     raft::group_nodes current;
     std::optional<raft::group_nodes> old;

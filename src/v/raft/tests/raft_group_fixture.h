@@ -145,7 +145,7 @@ struct raft_node {
         tstlog.info("Starting node {} stack ", id());
         // start rpc
         rpc::server_configuration scfg("raft_test_rpc");
-        scfg.addrs = {broker.rpc_address().resolve().get0()};
+        scfg.addrs.emplace_back(broker.rpc_address().resolve().get0());
         scfg.max_service_memory_per_core = 1024 * 1024 * 1024;
         scfg.credentials = nullptr;
         scfg.disable_metrics = rpc::metrics_disabled::yes;

@@ -48,7 +48,7 @@ private:
         pandaproxy::shard_local_cfg().developer_mode.set_value(true);
         pandaproxy::client::shard_local_cfg().brokers.set_value(
           std::vector<unresolved_address>{
-            config::shard_local_cfg().advertised_kafka_api()});
+            config::shard_local_cfg().advertised_kafka_api()[0].address});
     }
 
     void start_proxy() {

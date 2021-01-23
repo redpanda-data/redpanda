@@ -147,26 +147,26 @@ SEASTAR_THREAD_TEST_CASE(test_config_extracting_reader) {
  * configuration
  */
 
-model::broker node_0(
+model::internal::broker_v0 node_0{
   model::node_id(0),           // id
   tests::random_net_address(), // kafka api address
   tests::random_net_address(), // rpc address
   std::nullopt,
-  model::broker_properties{.cores = random_generators::get_int<uint32_t>(96)});
+  model::broker_properties{.cores = random_generators::get_int<uint32_t>(96)}};
 
-model::broker node_1(
+model::internal::broker_v0 node_1{
   model::node_id(1),           // id
   tests::random_net_address(), // kafka api address
   tests::random_net_address(), // rpc address
   std::nullopt,
-  model::broker_properties{.cores = random_generators::get_int<uint32_t>(96)});
+  model::broker_properties{.cores = random_generators::get_int<uint32_t>(96)}};
 
-model::broker node_2(
+model::internal::broker_v0 node_2{
   model::node_id(2),           // id
   tests::random_net_address(), // kafka api address
   tests::random_net_address(), // rpc address
   std::nullopt,
-  model::broker_properties{.cores = random_generators::get_int<uint32_t>(96)});
+  model::broker_properties{.cores = random_generators::get_int<uint32_t>(96)}};
 
 struct group_nodes_v0 {
     std::vector<model::node_id> voters;
@@ -176,17 +176,17 @@ iobuf serialize_v0() {
     iobuf buffer;
 
     group_nodes_v0 current;
-    current.learners.push_back(node_0.id());
-    current.voters.push_back(node_1.id());
+    current.learners.push_back(node_0.id);
+    current.voters.push_back(node_1.id);
 
     std::optional<group_nodes_v0> old;
     old.emplace();
-    old->voters.push_back(node_2.id());
+    old->voters.push_back(node_2.id);
 
     reflection::serialize(
       buffer,
       (uint8_t)0, // version
-      std::vector<model::broker>{node_0, node_1, node_2},
+      std::vector<model::internal::broker_v0>{node_0, node_1, node_2},
       std::move(current),
       std::move(old));
 
@@ -197,17 +197,17 @@ iobuf serialize_v1() {
     iobuf buffer;
 
     group_nodes_v0 current;
-    current.learners.push_back(node_0.id());
-    current.voters.push_back(node_1.id());
+    current.learners.push_back(node_0.id);
+    current.voters.push_back(node_1.id);
 
     std::optional<group_nodes_v0> old;
     old.emplace();
-    old->voters.push_back(node_2.id());
+    old->voters.push_back(node_2.id);
 
     reflection::serialize(
       buffer,
       (uint8_t)1, // version
-      std::vector<model::broker>{node_0, node_1, node_2},
+      std::vector<model::internal::broker_v0>{node_0, node_1, node_2},
       std::move(current),
       std::move(old),
       model::revision_id(15));
@@ -219,14 +219,35 @@ iobuf serialize_v2() {
     iobuf buffer;
 
     raft::group_nodes current;
-    current.learners.emplace_back(node_0.id(), model::revision_id(15));
-    current.voters.emplace_back(node_1.id(), model::revision_id(10));
+    current.learners.emplace_back(node_0.id, model::revision_id(15));
+    current.voters.emplace_back(node_1.id, model::revision_id(10));
+
+    std::optional<raft::group_nodes> old = raft::group_nodes{};
+    old->voters.emplace_back(node_2.id, model::revision_id(5));
+
+    reflection::serialize(
+      buffer,
+      (uint8_t)2, // version
+      std::vector<model::internal::broker_v0>{node_0, node_1, node_2},
+      std::move(current),
+      std::move(old),
+      model::revision_id(15));
+    return buffer;
+}
+
+iobuf serialize_v3() {
+    iobuf buffer;
+
+    raft::group_nodes current;
+    current.learners.emplace_back(node_0.id, model::revision_id(15));
+    current.voters.emplace_back(node_1.id, model::revision_id(10));
 
     raft::group_nodes old;
-    old.voters.emplace_back(node_2.id(), model::revision_id(5));
+    old.voters.emplace_back(node_2.id, model::revision_id(5));
 
     raft::group_configuration cfg(
-      std::vector<model::broker>{node_0, node_1, node_2},
+      std::vector<model::broker>{
+        node_0.to_v3(), node_1.to_v3(), node_2.to_v3()},
       std::move(current),
       model::revision_id(15),
       std::move(old));
@@ -238,6 +259,7 @@ SEASTAR_THREAD_TEST_CASE(configuration_backward_compatibility_test) {
     iobuf v0 = serialize_v0();
     iobuf v1 = serialize_v1();
     iobuf v2 = serialize_v2();
+    iobuf v3 = serialize_v3();
 
     auto cfg_v0 = reflection::from_iobuf<raft::group_configuration>(
       std::move(v0));
@@ -248,8 +270,13 @@ SEASTAR_THREAD_TEST_CASE(configuration_backward_compatibility_test) {
     auto cfg_v2 = reflection::from_iobuf<raft::group_configuration>(
       std::move(v2));
 
+    auto cfg_v3 = reflection::from_iobuf<raft::group_configuration>(
+      std::move(v3));
+
     BOOST_REQUIRE_EQUAL(cfg_v0.brokers(), cfg_v1.brokers());
     BOOST_REQUIRE_EQUAL(cfg_v1.brokers(), cfg_v2.brokers());
+    BOOST_REQUIRE_EQUAL(cfg_v2.brokers(), cfg_v3.brokers());
+
     BOOST_REQUIRE_EQUAL(
       cfg_v0.current_config().learners.size(),
       cfg_v1.current_config().learners.size());
@@ -257,33 +284,105 @@ SEASTAR_THREAD_TEST_CASE(configuration_backward_compatibility_test) {
       cfg_v1.current_config().learners.size(),
       cfg_v2.current_config().learners.size());
     BOOST_REQUIRE_EQUAL(
+      cfg_v2.current_config().learners.size(),
+      cfg_v3.current_config().learners.size());
+
+    BOOST_REQUIRE_EQUAL(
       cfg_v0.current_config().voters.size(),
       cfg_v1.current_config().voters.size());
     BOOST_REQUIRE_EQUAL(
       cfg_v1.current_config().voters.size(),
       cfg_v2.current_config().voters.size());
     BOOST_REQUIRE_EQUAL(
+      cfg_v2.current_config().voters.size(),
+      cfg_v3.current_config().voters.size());
+
+    BOOST_REQUIRE_EQUAL(
       cfg_v0.old_config()->voters.size(), cfg_v1.old_config()->voters.size());
     BOOST_REQUIRE_EQUAL(
       cfg_v1.old_config()->voters.size(), cfg_v2.old_config()->voters.size());
+    BOOST_REQUIRE_EQUAL(
+      cfg_v2.old_config()->voters.size(), cfg_v3.old_config()->voters.size());
+
+    BOOST_REQUIRE_EQUAL(
+      cfg_v0.old_config()->voters[0].id(), cfg_v1.old_config()->voters[0].id());
 
     BOOST_REQUIRE_EQUAL(
       cfg_v0.current_config().learners[0].id(),
       cfg_v1.current_config().learners[0].id());
     BOOST_REQUIRE_EQUAL(
-      cfg_v0.current_config().voters[0].id(),
-      cfg_v1.current_config().voters[0].id());
-
-    BOOST_REQUIRE_EQUAL(
       cfg_v1.current_config().learners[0].id(),
       cfg_v2.current_config().learners[0].id());
+    BOOST_REQUIRE_EQUAL(
+      cfg_v2.current_config().learners[0].id(),
+      cfg_v3.current_config().learners[0].id());
+
+    BOOST_REQUIRE_EQUAL(
+      cfg_v0.current_config().voters[0].id(),
+      cfg_v1.current_config().voters[0].id());
     BOOST_REQUIRE_EQUAL(
       cfg_v1.current_config().voters[0].id(),
       cfg_v2.current_config().voters[0].id());
     BOOST_REQUIRE_EQUAL(
-      cfg_v0.old_config()->voters[0].id(), cfg_v1.old_config()->voters[0].id());
+      cfg_v2.current_config().voters[0].id(),
+      cfg_v3.current_config().voters[0].id());
 
     BOOST_REQUIRE_EQUAL(cfg_v0.revision_id(), model::revision_id(0));
     BOOST_REQUIRE_EQUAL(cfg_v1.revision_id(), model::revision_id(15));
     BOOST_REQUIRE_EQUAL(cfg_v2.revision_id(), model::revision_id(15));
+    BOOST_REQUIRE_EQUAL(cfg_v3.revision_id(), model::revision_id(15));
+}
+
+SEASTAR_THREAD_TEST_CASE(configuration_broker_many_endpoints) {
+    model::broker node_0(
+      model::node_id(2),
+      {
+        model::broker_endpoint(tests::random_net_address()),
+        model::broker_endpoint("foobar", tests::random_net_address()),
+      },
+      tests::random_net_address(),
+      std::nullopt,
+      model::broker_properties{
+        .cores = random_generators::get_int<uint32_t>(96)});
+
+    model::broker node_1(
+      model::node_id(2),
+      {
+        model::broker_endpoint("foobar2", tests::random_net_address()),
+        model::broker_endpoint(tests::random_net_address()),
+        model::broker_endpoint("foobar3", tests::random_net_address()),
+      },
+      tests::random_net_address(),
+      std::nullopt,
+      model::broker_properties{
+        .cores = random_generators::get_int<uint32_t>(96)});
+
+    iobuf buffer;
+
+    raft::group_nodes current;
+    current.learners.emplace_back(node_0.id(), model::revision_id(15));
+    current.voters.emplace_back(node_1.id(), model::revision_id(10));
+
+    raft::group_nodes old;
+    old.voters.emplace_back(node_1.id(), model::revision_id(5));
+
+    raft::group_configuration cfg_in(
+      std::vector<model::broker>{node_0, node_1},
+      std::move(current),
+      model::revision_id(15),
+      std::move(old));
+    reflection::serialize(buffer, cfg_in);
+
+    auto cfg = reflection::from_iobuf<raft::group_configuration>(
+      std::move(buffer));
+
+    BOOST_REQUIRE_EQUAL(cfg.brokers().size(), 2);
+    BOOST_REQUIRE_EQUAL(node_0.kafka_advertised_listeners().size(), 2);
+    BOOST_REQUIRE_EQUAL(node_1.kafka_advertised_listeners().size(), 3);
+    BOOST_REQUIRE_EQUAL(
+      cfg.brokers()[0].kafka_advertised_listeners(),
+      node_0.kafka_advertised_listeners());
+    BOOST_REQUIRE_EQUAL(
+      cfg.brokers()[1].kafka_advertised_listeners(),
+      node_1.kafka_advertised_listeners());
 }

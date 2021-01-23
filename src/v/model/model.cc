@@ -267,10 +267,10 @@ std::ostream& operator<<(std::ostream& o, const model::broker_properties& b) {
 std::ostream& operator<<(std::ostream& o, const model::broker& b) {
     return ss::fmt_print(
       o,
-      "{{id: {}, kafka_api_address: {}, rpc_address: {}, rack: {}, "
+      "{{id: {}, kafka_advertised_listeners: {}, rpc_address: {}, rack: {}, "
       "properties: {}}}",
       b.id(),
-      b.kafka_api_address(),
+      b.kafka_advertised_listeners(),
       b.rpc_address(),
       b.rack(),
       b.properties());
@@ -359,6 +359,11 @@ std::istream& operator>>(std::istream& i, cleanup_policy_bitflags& cp) {
              cleanup_policy_bitflags::deletion
                | cleanup_policy_bitflags::compaction);
     return i;
+}
+
+std::ostream& operator<<(std::ostream& os, const model::broker_endpoint& ep) {
+    fmt::print(os, "{{{}:{}}}", ep.name, ep.address);
+    return os;
 }
 
 } // namespace model

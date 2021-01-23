@@ -34,7 +34,7 @@ public:
 
     ppc::client make_client() {
         return ppc::client(std::vector<unresolved_address>{
-          config::shard_local_cfg().kafka_api()});
+          config::shard_local_cfg().kafka_api()[0].address});
     }
     ppc::client make_connected_client() {
         auto client = make_client();

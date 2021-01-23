@@ -51,19 +51,52 @@ struct broker_properties {
     }
 };
 
+struct broker_endpoint final {
+    ss::sstring name;
+    unresolved_address address;
+
+    // required for yaml serde
+    broker_endpoint() = default;
+
+    broker_endpoint(ss::sstring name, unresolved_address address) noexcept
+      : name(std::move(name))
+      , address(std::move(address)) {}
+
+    explicit broker_endpoint(unresolved_address address) noexcept
+      : address(std::move(address)) {}
+
+    bool operator==(const broker_endpoint&) const = default;
+    friend std::ostream& operator<<(std::ostream&, const broker_endpoint&);
+};
+
+std::ostream& operator<<(std::ostream&, const broker_endpoint&);
+
 class broker {
 public:
     broker(
       node_id id,
-      unresolved_address kafka_api_address,
+      std::vector<broker_endpoint> kafka_advertised_listeners,
       unresolved_address rpc_address,
       std::optional<ss::sstring> rack,
       broker_properties props) noexcept
       : _id(id)
-      , _kafka_api_address(std::move(kafka_api_address))
+      , _kafka_advertised_listeners(std::move(kafka_advertised_listeners))
       , _rpc_address(std::move(rpc_address))
       , _rack(std::move(rack))
       , _properties(std::move(props)) {}
+
+    broker(
+      node_id id,
+      unresolved_address kafka_advertised_listener,
+      unresolved_address rpc_address,
+      std::optional<ss::sstring> rack,
+      broker_properties props) noexcept
+      : broker(
+        id,
+        {broker_endpoint(std::move(kafka_advertised_listener))},
+        std::move(rpc_address),
+        std::move(rack),
+        std::move(props)) {}
 
     broker(broker&&) noexcept = default;
     broker& operator=(broker&&) noexcept = default;
@@ -71,28 +104,18 @@ public:
     const node_id& id() const { return _id; }
 
     const broker_properties& properties() const { return _properties; }
-    const unresolved_address& kafka_api_address() const {
-        return _kafka_api_address;
+    const std::vector<broker_endpoint>& kafka_advertised_listeners() const {
+        return _kafka_advertised_listeners;
     }
     const unresolved_address& rpc_address() const { return _rpc_address; }
     const std::optional<ss::sstring>& rack() const { return _rack; }
 
-    inline bool operator==(const model::broker& other) const {
-        return _id == other._id
-               && _kafka_api_address == other._kafka_api_address
-               && _rpc_address == other._rpc_address && _rack == other._rack
-               && _properties == other._properties;
-    }
-
-    inline bool operator!=(const model::broker& other) const {
-        return !(*this == other);
-    }
-
+    bool operator==(const model::broker& other) const = default;
     bool operator<(const model::broker& other) const { return _id < other._id; }
 
 private:
     node_id _id;
-    unresolved_address _kafka_api_address;
+    std::vector<broker_endpoint> _kafka_advertised_listeners;
     unresolved_address _rpc_address;
     std::optional<ss::sstring> _rack;
     broker_properties _properties;
@@ -219,9 +242,39 @@ struct topic_metadata {
 
     friend std::ostream& operator<<(std::ostream&, const topic_metadata&);
 };
+
+namespace internal {
+/*
+ * Old version for use in backwards compatibility serialization /
+ * deserialization helpers.
+ */
+struct broker_v0 {
+    model::node_id id;
+    unresolved_address kafka_address;
+    unresolved_address rpc_address;
+    std::optional<ss::sstring> rack;
+    model::broker_properties properties;
+
+    model::broker to_v3() const {
+        return model::broker(id, kafka_address, rpc_address, rack, properties);
+    }
+};
+
+} // namespace internal
 } // namespace model
 
 namespace std {
+
+template<>
+struct hash<model::broker_endpoint> {
+    size_t operator()(const model::broker_endpoint& ep) const {
+        size_t h = 0;
+        boost::hash_combine(h, std::hash<ss::sstring>()(ep.name));
+        boost::hash_combine(h, std::hash<unresolved_address>()(ep.address));
+        return h;
+    }
+};
+
 template<>
 struct hash<model::broker_properties> {
     size_t operator()(const model::broker_properties& b) const {
@@ -239,13 +292,15 @@ struct hash<model::broker_properties> {
         return h;
     }
 };
+
 template<>
 struct hash<model::broker> {
     size_t operator()(const model::broker& b) const {
         size_t h = 0;
         boost::hash_combine(h, std::hash<model::node_id>()(b.id()));
-        boost::hash_combine(
-          h, std::hash<unresolved_address>()(b.kafka_api_address()));
+        for (const auto& ep : b.kafka_advertised_listeners()) {
+            boost::hash_combine(h, std::hash<model::broker_endpoint>()(ep));
+        }
         boost::hash_combine(
           h, std::hash<unresolved_address>()(b.rpc_address()));
         boost::hash_combine(

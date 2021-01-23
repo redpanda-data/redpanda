@@ -61,9 +61,21 @@ struct adl<model::broker_properties> {
 };
 
 template<>
+struct adl<model::broker_endpoint> {
+    void to(iobuf&, model::broker_endpoint&&);
+    model::broker_endpoint from(iobuf_parser&);
+};
+
+template<>
 struct adl<model::broker> {
     void to(iobuf& out, model::broker&& r);
     model::broker from(iobuf_parser& in);
+};
+
+template<>
+struct adl<model::internal::broker_v0> {
+    void to(iobuf& out, model::internal::broker_v0&& r);
+    model::internal::broker_v0 from(iobuf_parser& in);
 };
 
 // TODO: optimize this transmition with varints
