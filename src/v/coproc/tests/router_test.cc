@@ -141,8 +141,8 @@ FIXTURE_TEST(test_coproc_router_giant_fanin, router_test_fixture) {
     const model::topic output_topic = model::to_materialized_topic(
       source_topic, identity_coprocessor::identity_topic);
     const auto range = boost::irange<std::size_t>(0, n_copros);
-    ss::do_for_each(range, [this](std::size_t i) {
-        return add_copro<identity_coprocessor>(i, {{"sole_input", l}});
+    ss::do_for_each(range, [this, source_topic](std::size_t i) {
+        return add_copro<identity_coprocessor>(i, {{source_topic(), l}});
     }).get();
     log_layout_map inputs = {{make_ts(source_topic), n_partitions}};
     log_layout_map outputs = {{make_ts(output_topic), n_partitions}};
@@ -165,12 +165,12 @@ FIXTURE_TEST(test_coproc_router_giant_fanin, router_test_fixture) {
 }
 
 FIXTURE_TEST(test_coproc_router_giant_one_to_many, router_test_fixture) {
-    const std::size_t n_copros = 50;
-    const std::size_t n_partitions = 10;
-    const model::topic source_topic("sole_input");
+    const std::size_t n_copros = 25;
+    const std::size_t n_partitions = 5;
+    const model::topic source_topic("input");
     const auto range = boost::irange<std::size_t>(0, n_copros);
-    ss::do_for_each(range, [this](std::size_t i) {
-        return add_copro<unique_identity_coprocessor>(i, {{"sole_input", l}});
+    ss::do_for_each(range, [this, source_topic](std::size_t i) {
+        return add_copro<unique_identity_coprocessor>(i, {{source_topic(), l}});
     }).get();
     log_layout_map inputs = {{make_ts(source_topic), n_partitions}};
     log_layout_map outputs;
