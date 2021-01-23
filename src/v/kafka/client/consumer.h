@@ -12,9 +12,9 @@
 #pragma once
 
 #include "kafka/types.h"
-#include "pandaproxy/client/assignment_plans.h"
-#include "pandaproxy/client/broker.h"
-#include "pandaproxy/client/logger.h"
+#include "kafka/client/assignment_plans.h"
+#include "kafka/client/broker.h"
+#include "kafka/client/logger.h"
 
 #include <seastar/core/shared_ptr.hh>
 

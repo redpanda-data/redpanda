@@ -58,6 +58,8 @@ v_cc_library(
     absl::flat_hash_map
     absl::flat_hash_set
 )
+
+add_subdirectory(client)
 add_subdirectory(tests)
 
 set_source_files_properties(

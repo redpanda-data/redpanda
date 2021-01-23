@@ -12,9 +12,9 @@
 #pragma once
 
 #include "model/fundamental.h"
-#include "pandaproxy/client/configuration.h"
-#include "pandaproxy/client/error.h"
-#include "pandaproxy/client/produce_batcher.h"
+#include "kafka/client/configuration.h"
+#include "kafka/client/error.h"
+#include "kafka/client/produce_batcher.h"
 
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/timer.hh>

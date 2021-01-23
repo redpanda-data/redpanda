@@ -9,7 +9,7 @@
 
 #include "pandaproxy/application.h"
 
-#include "pandaproxy/client/configuration.h"
+#include "kafka/client/configuration.h"
 #include "pandaproxy/configuration.h"
 #include "platform/stop_signal.h"
 #include "ssx/future-util.h"

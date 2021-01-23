@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "pandaproxy/client/client.h"
+#include "kafka/client/client.h"
 
 #include "kafka/errors.h"
 #include "kafka/requests/fetch_request.h"
@@ -15,12 +15,12 @@
 #include "kafka/requests/leave_group_request.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
-#include "pandaproxy/client/broker.h"
-#include "pandaproxy/client/configuration.h"
-#include "pandaproxy/client/consumer.h"
-#include "pandaproxy/client/error.h"
-#include "pandaproxy/client/logger.h"
-#include "pandaproxy/client/retry_with_mitigation.h"
+#include "kafka/client/broker.h"
+#include "kafka/client/configuration.h"
+#include "kafka/client/consumer.h"
+#include "kafka/client/error.h"
+#include "kafka/client/logger.h"
+#include "kafka/client/retry_with_mitigation.h"
 #include "seastarx.h"
 #include "ssx/future-util.h"
 #include "utils/unresolved_address.h"

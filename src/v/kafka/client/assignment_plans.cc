@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "pandaproxy/client/assignment_plans.h"
+#include "kafka/client/assignment_plans.h"
 
 namespace pandaproxy::client {
 

@@ -13,7 +13,7 @@
 
 #include "kafka/client.h"
 #include "model/metadata.h"
-#include "pandaproxy/client/error.h"
+#include "kafka/client/error.h"
 #include "utils/mutex.h"
 
 #include <seastar/core/gate.hh>

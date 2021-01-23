@@ -17,7 +17,7 @@
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/timestamp.h"
-#include "pandaproxy/client/test/utils.h"
+#include "kafka/client/test/utils.h"
 #include "pandaproxy/json/requests/fetch.h"
 #include "pandaproxy/json/rjson_util.h"
 #include "pandaproxy/json/types.h"

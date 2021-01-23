@@ -12,7 +12,7 @@
 #pragma once
 
 #include "model/fundamental.h"
-#include "pandaproxy/client/broker.h"
+#include "kafka/client/broker.h"
 #include "seastarx.h"
 
 #include <seastar/core/future.hh>

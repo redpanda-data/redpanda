@@ -1,5 +1,3 @@
-add_subdirectory(client)
-
 seastar_generate_swagger(
   TARGET admin_config_swagger
   VAR admin_config_swagger_file

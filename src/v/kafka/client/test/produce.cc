@@ -12,10 +12,10 @@
 #include "kafka/requests/produce_request.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
-#include "pandaproxy/client/client.h"
-#include "pandaproxy/client/configuration.h"
-#include "pandaproxy/client/test/pandaproxy_client_fixture.h"
-#include "pandaproxy/client/test/utils.h"
+#include "kafka/client/client.h"
+#include "kafka/client/configuration.h"
+#include "kafka/client/test/pandaproxy_client_fixture.h"
+#include "kafka/client/test/utils.h"
 #include "utils/unresolved_address.h"
 
 #include <chrono>
