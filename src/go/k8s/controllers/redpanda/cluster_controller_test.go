@@ -117,9 +117,7 @@ var _ = Describe("RedPandaCluster controller", func() {
 	})
 })
 
-func validOwner(
-	cluster *v1alpha1.Cluster, owners []metav1.OwnerReference,
-) bool {
+func validOwner(cluster *v1alpha1.Cluster, owners []metav1.OwnerReference) bool {
 	if len(owners) != 1 {
 		return false
 	}

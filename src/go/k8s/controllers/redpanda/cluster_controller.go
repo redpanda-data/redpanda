@@ -204,9 +204,7 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 }
 
 func (r *ClusterReconciler) createHeadlessService(
-	ctx context.Context,
-	clusterSpec *redpandav1alpha1.Cluster,
-	scheme *runtime.Scheme,
+	ctx context.Context, clusterSpec *redpandav1alpha1.Cluster, scheme *runtime.Scheme,
 ) error {
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
@@ -235,23 +233,13 @@ func (r *ClusterReconciler) createHeadlessService(
 }
 
 func (r *ClusterReconciler) createBootstrapConfigMap(
-	ctx context.Context,
-	cluster *redpandav1alpha1.Cluster,
-	scheme *runtime.Scheme,
+	ctx context.Context, cluster *redpandav1alpha1.Cluster, scheme *runtime.Scheme,
 ) error {
 	serviceAddress := cluster.Name + "." + cluster.Namespace + ".svc.cluster.local"
 	cfg := config.Default()
 	cfg.Redpanda = copyConfig(&cluster.Spec.Configuration, &cfg.Redpanda)
 	cfg.Redpanda.Id = 0
-	cfg.Redpanda.AdvertisedKafkaApi.Address = cluster.Name + "-0" + "." +
-		cluster.Name + "." +
-		cluster.Namespace +
-		".svc.cluster.local"
 	cfg.Redpanda.AdvertisedKafkaApi.Port = cfg.Redpanda.KafkaApi.Port
-	cfg.Redpanda.AdvertisedRPCAPI.Address = cluster.Name + "-0" + "." +
-		cluster.Name + "." +
-		cluster.Namespace +
-		".svc.cluster.local"
 	cfg.Redpanda.AdvertisedRPCAPI.Port = cfg.Redpanda.RPCServer.Port
 	cfg.Redpanda.Directory = dataDirectory
 	cfg.Redpanda.SeedServers = []config.SeedServer{
