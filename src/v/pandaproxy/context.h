@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "pandaproxy/client/client.h"
+#include "kafka/client/client.h"
 #include "seastarx.h"
 
 #include <seastar/core/abort_source.hh>

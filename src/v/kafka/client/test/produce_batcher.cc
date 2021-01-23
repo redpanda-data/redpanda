@@ -7,14 +7,14 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "pandaproxy/client/produce_batcher.h"
+#include "kafka/client/produce_batcher.h"
 
 #include "cluster/simple_batch_builder.h"
 #include "kafka/errors.h"
 #include "kafka/requests/produce_request.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
-#include "pandaproxy/client/test/utils.h"
+#include "kafka/client/test/utils.h"
 #include "reflection/adl.h"
 #include "storage/record_batch_builder.h"
 

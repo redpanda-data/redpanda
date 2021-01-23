@@ -12,8 +12,8 @@
 #pragma once
 
 #include "model/fundamental.h"
-#include "pandaproxy/client/produce_batcher.h"
-#include "pandaproxy/client/produce_partition.h"
+#include "kafka/client/produce_batcher.h"
+#include "kafka/client/produce_partition.h"
 #include "ssx/future-util.h"
 
 #include <absl/container/flat_hash_map.h>

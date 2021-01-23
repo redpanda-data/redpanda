@@ -7,9 +7,9 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "pandaproxy/client/broker.h"
+#include "kafka/client/broker.h"
 
-#include "pandaproxy/client/logger.h"
+#include "kafka/client/logger.h"
 
 namespace pandaproxy::client {
 

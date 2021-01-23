@@ -9,11 +9,11 @@
  * by the Apache License, Version 2.0
  */
 
-#include "pandaproxy/client/fetcher.h"
+#include "kafka/client/fetcher.h"
 
 #include "model/fundamental.h"
-#include "pandaproxy/client/error.h"
-#include "pandaproxy/client/logger.h"
+#include "kafka/client/error.h"
+#include "kafka/client/logger.h"
 #include "seastar/core/gate.hh"
 
 namespace pandaproxy::client {
