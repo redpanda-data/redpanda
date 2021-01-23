@@ -38,7 +38,7 @@ import (
 )
 
 const (
-	seedSuffix	= "-seed"
+	baseSuffix	= "-base"
 	dataDirectory	= "/var/lib/redpanda/data"
 	fsGroup		= 101
 
@@ -113,22 +113,22 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 	}
 
-	var seedConfigMap corev1.ConfigMap
+	var baseConfigMap corev1.ConfigMap
 
-	err = r.Get(ctx, types.NamespacedName{Name: redpandaCluster.Name + seedSuffix, Namespace: redpandaCluster.Namespace}, &seedConfigMap)
+	err = r.Get(ctx, types.NamespacedName{Name: redpandaCluster.Name + baseSuffix, Namespace: redpandaCluster.Namespace}, &baseConfigMap)
 	if err != nil && !errors.IsNotFound(err) {
-		log.V(debugLevel).Info("Unable to fetch seed redpanda ConfigMap resource")
+		log.V(debugLevel).Info("Unable to fetch base redpanda ConfigMap resource")
 
 		return ctrl.Result{}, err
 	}
 
 	if errors.IsNotFound(err) {
-		log.V(debugLevel).Info("Creating seed redpanda ConfigMap")
+		log.V(debugLevel).Info("Creating base redpanda ConfigMap")
 
 		if err = r.createBootstrapConfigMap(ctx, &redpandaCluster, r.Scheme); err != nil {
-			log.Error(err, "Failed to create new seed redpanda ConfigMap",
+			log.Error(err, "Failed to create new base redpanda ConfigMap",
 				"Configmap.Namespace", redpandaCluster.Namespace,
-				"Configmap.Name", redpandaCluster.Name+seedSuffix)
+				"Configmap.Name", redpandaCluster.Name+baseSuffix)
 
 			return ctrl.Result{}, err
 		}
@@ -136,7 +136,7 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	var sts appsv1.StatefulSet
 
-	err = r.Get(ctx, types.NamespacedName{Name: redpandaCluster.Name + seedSuffix, Namespace: redpandaCluster.Namespace}, &sts)
+	err = r.Get(ctx, types.NamespacedName{Name: redpandaCluster.Name, Namespace: redpandaCluster.Namespace}, &sts)
 	if err != nil && !errors.IsNotFound(err) {
 		log.V(debugLevel).Info("Unable to fetch StatefulSet resource")
 
@@ -146,9 +146,9 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if errors.IsNotFound(err) {
 		log.V(debugLevel).Info("Creating bootstrap StatefulSet")
 
-		if err = r.createBootstrapStatefulSet(ctx, &redpandaCluster, r.Scheme, redpandaCluster.Name+seedSuffix); err != nil {
+		if err = r.createBootstrapStatefulSet(ctx, &redpandaCluster, r.Scheme, redpandaCluster.Name+baseSuffix); err != nil {
 			log.Error(err, "Failed to create new bootstrap StatefulSet",
-				"Configmap.Namespace", redpandaCluster.Namespace, "StatefulSet.Name", redpandaCluster.Name+seedSuffix)
+				"Configmap.Namespace", redpandaCluster.Namespace, "StatefulSet.Name", redpandaCluster.Name)
 
 			return ctrl.Result{}, err
 		}
@@ -159,7 +159,7 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	if sts.Spec.Replicas != redpandaCluster.Spec.Replicas {
 		sts.Spec.Replicas = redpandaCluster.Spec.Replicas
 		if err = r.Update(ctx, &sts); err != nil {
-			log.Error(err, "Failed to update StatefulSet", "StatefulSet.Namespace", redpandaCluster.Namespace, "StatefulSet.Name", redpandaCluster.Name+seedSuffix)
+			log.Error(err, "Failed to update StatefulSet", "StatefulSet.Namespace", redpandaCluster.Namespace, "StatefulSet.Name", redpandaCluster.Name)
 			return ctrl.Result{}, err
 		}
 	}
@@ -243,13 +243,13 @@ func (r *ClusterReconciler) createBootstrapConfigMap(
 	cfg := config.Default()
 	cfg.Redpanda = copyConfig(&cluster.Spec.Configuration, &cfg.Redpanda)
 	cfg.Redpanda.Id = 0
-	cfg.Redpanda.AdvertisedKafkaApi.Address = cluster.Name + seedSuffix + "-0" + "." +
-		cluster.Name + seedSuffix + "." +
+	cfg.Redpanda.AdvertisedKafkaApi.Address = cluster.Name + "-0" + "." +
+		cluster.Name + "." +
 		cluster.Namespace +
 		".svc.cluster.local"
 	cfg.Redpanda.AdvertisedKafkaApi.Port = cfg.Redpanda.KafkaApi.Port
-	cfg.Redpanda.AdvertisedRPCAPI.Address = cluster.Name + seedSuffix + "-0" + "." +
-		cluster.Name + seedSuffix + "." +
+	cfg.Redpanda.AdvertisedRPCAPI.Address = cluster.Name + "-0" + "." +
+		cluster.Name + "." +
 		cluster.Namespace +
 		".svc.cluster.local"
 	cfg.Redpanda.AdvertisedRPCAPI.Port = cfg.Redpanda.RPCServer.Port
@@ -257,8 +257,8 @@ func (r *ClusterReconciler) createBootstrapConfigMap(
 	cfg.Redpanda.SeedServers = []config.SeedServer{
 		{
 			Host: config.SocketAddress{
-				// Example address: cluster-sample-seed-0.cluster-sample.default.svc.cluster.local
-				Address:	cluster.Name + seedSuffix + "-0." + serviceAddress,
+				// Example address: cluster-sample-0.cluster-sample.default.svc.cluster.local
+				Address:	cluster.Name + "-0." + serviceAddress,
 				Port:		cfg.Redpanda.AdvertisedRPCAPI.Port,
 			},
 		},
@@ -288,7 +288,7 @@ func (r *ClusterReconciler) createBootstrapConfigMap(
 	cm := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace:	cluster.Namespace,
-			Name:		cluster.Name + seedSuffix,
+			Name:		cluster.Name + baseSuffix,
 			Labels:		cluster.Labels,
 		},
 		Data: map[string]string{
@@ -359,7 +359,7 @@ func (r *ClusterReconciler) createBootstrapStatefulSet(
 	ss := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace:	cluster.Namespace,
-			Name:		cluster.Name + seedSuffix,
+			Name:		cluster.Name,
 			Labels:		cluster.Labels,
 		},
 		Spec: appsv1.StatefulSetSpec{
@@ -372,7 +372,7 @@ func (r *ClusterReconciler) createBootstrapStatefulSet(
 			ServiceName:	cluster.Name,
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:		cluster.Name + seedSuffix,
+					Name:		cluster.Name,
 					Namespace:	cluster.Namespace,
 					Labels:		cluster.Labels,
 				},
