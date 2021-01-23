@@ -46,7 +46,7 @@ struct ntp_context {
 };
 
 using ntp_context_cache
-  = absl::node_hash_map<model::ntp, ss::lw_shared_ptr<ntp_context>>;
+  = absl::flat_hash_map<model::ntp, ss::lw_shared_ptr<ntp_context>>;
 
 /// One instance of this struct exists per shard (held by the pacemaker) and a
 /// reference will be passed to all script_contexts on that shard. The data
