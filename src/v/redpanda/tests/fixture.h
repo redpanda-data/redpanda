@@ -76,9 +76,9 @@ public:
 
             config.get("data_directory")
               .set_value(config::data_directory_path{.path = data_dir});
+            std::filesystem::path copro_root = data_dir / "coprocessors";
             config.get("coproc_script_directory")
-              .set_value(config::data_directory_path{
-                .path = (data_dir / "coprocessors")});
+              .set_value(ss::sstring(copro_root.string()));
 
             config.get("node_id").set_value(1);
         }).get0();
