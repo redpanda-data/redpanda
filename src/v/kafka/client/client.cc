@@ -83,7 +83,7 @@ ss::future<> client::stop() {
 
 ss::future<> client::update_metadata(wait_or_start::tag) {
     return ss::with_gate(_gate, [this]() {
-        vlog(ppclog.debug, "updating metadata");
+        vlog(kclog.debug, "updating metadata");
         return _brokers.any().then([this](shared_broker_t broker) {
             return broker
               ->dispatch(kafka::metadata_request{.list_all_topics = true})
@@ -98,7 +98,7 @@ ss::future<> client::update_metadata(wait_or_start::tag) {
 
                   return _brokers.apply(std::move(res));
               })
-              .finally([]() { vlog(ppclog.trace, "updated metadata"); });
+              .finally([]() { vlog(kclog.trace, "updated metadata"); });
         });
     });
 }
@@ -109,10 +109,10 @@ ss::future<> client::mitigate_error(std::exception_ptr ex) {
     } catch (const broker_error& ex) {
         // If there are no brokers, reconnect
         if (ex.node_id == unknown_node_id) {
-            vlog(ppclog.warn, "broker_error: {}", ex);
+            vlog(kclog.warn, "broker_error: {}", ex);
             return connect();
         } else {
-            vlog(ppclog.debug, "broker_error: {}", ex);
+            vlog(kclog.debug, "broker_error: {}", ex);
             return _brokers.erase(ex.node_id).then([this]() {
                 return _wait_or_start_update_metadata();
             });
@@ -122,19 +122,19 @@ ss::future<> client::mitigate_error(std::exception_ptr ex) {
         case kafka::error_code::unknown_topic_or_partition:
         case kafka::error_code::not_leader_for_partition:
         case kafka::error_code::leader_not_available: {
-            vlog(ppclog.debug, "partition_error: {}", ex);
+            vlog(kclog.debug, "partition_error: {}", ex);
             return _wait_or_start_update_metadata();
         }
         default:
             // TODO(Ben): Maybe vassert
-            vlog(ppclog.warn, "partition_error: ", ex);
+            vlog(kclog.warn, "partition_error: ", ex);
             return ss::make_exception_future(ex);
         }
     } catch (const ss::gate_closed_exception&) {
-        vlog(ppclog.debug, "gate_closed_exception");
+        vlog(kclog.debug, "gate_closed_exception");
     } catch (const std::exception_ptr& ex) {
         // TODO(Ben): Probably vassert
-        vlog(ppclog.error, "unknown exception");
+        vlog(kclog.error, "unknown exception");
     }
     return ss::make_exception_future(ex);
 }
@@ -144,7 +144,7 @@ ss::future<kafka::produce_response::partition> client::produce_record_batch(
     return ss::with_gate(
       _gate, [this, tp{std::move(tp)}, batch{std::move(batch)}]() mutable {
           vlog(
-            ppclog.debug,
+            kclog.debug,
             "produce record_batch: {}, {{record_count: {}}}",
             tp,
             batch.record_count());
@@ -166,7 +166,7 @@ ss::future<kafka::fetch_response> client::fetch_partition(
       std::move(build_request),
       std::move(tp),
       [this](auto& build_request, model::topic_partition& tp) {
-          vlog(ppclog.debug, "fetching: {}", tp);
+          vlog(kclog.debug, "fetching: {}", tp);
           return gated_retry_with_mitigation([this, &tp, &build_request]() {
                      return _brokers.find(tp).then(
                        [&tp, &build_request](shared_broker_t&& b) {

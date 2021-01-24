@@ -24,7 +24,7 @@ make_broker(model::node_id node_id, unresolved_address addr) {
       })
       .then([node_id, addr](ss::lw_shared_ptr<transport> client) {
           vlog(
-            ppclog.info,
+            kclog.info,
             "connected to broker:{} - {}:{}",
             node_id,
             addr.host(),
@@ -38,7 +38,7 @@ make_broker(model::node_id node_id, unresolved_address addr) {
               return ss::make_exception_future<shared_broker_t>(
                 broker_error(node_id, kafka::error_code::network_exception));
           }
-          vlog(ppclog.warn, "std::system_error: ", ex.what());
+          vlog(kclog.warn, "std::system_error: ", ex.what());
           return ss::make_exception_future<shared_broker_t>(ex);
       });
 }

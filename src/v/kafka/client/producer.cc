@@ -50,19 +50,19 @@ make_produce_response(model::partition_id p_id, std::exception_ptr ex) {
     try {
         std::rethrow_exception(std::move(ex));
     } catch (const partition_error& ex) {
-        vlog(ppclog.debug, "handling partition_error {}", ex.what());
+        vlog(kclog.debug, "handling partition_error {}", ex.what());
         response.error = ex.error;
     } catch (const broker_error& ex) {
-        vlog(ppclog.debug, "handling broker_error {}", ex.what());
+        vlog(kclog.debug, "handling broker_error {}", ex.what());
         response.error = ex.error;
     } catch (const ss::gate_closed_exception&) {
-        vlog(ppclog.debug, "gate_closed_exception");
+        vlog(kclog.debug, "gate_closed_exception");
         response.error = kafka::error_code::operation_not_attempted;
     } catch (const std::exception& ex) {
-        vlog(ppclog.warn, "std::exception {}", ex.what());
+        vlog(kclog.warn, "std::exception {}", ex.what());
         response.error = kafka::error_code::unknown_server_error;
     } catch (const std::exception_ptr&) {
-        vlog(ppclog.error, "std::exception_ptr");
+        vlog(kclog.error, "std::exception_ptr");
         response.error = kafka::error_code::unknown_server_error;
     }
     return response;
@@ -99,7 +99,7 @@ ss::future<>
 producer::send(model::topic_partition tp, model::record_batch&& batch) {
     auto record_count = batch.record_count();
     vlog(
-      ppclog.debug,
+      kclog.debug,
       "send record_batch: {}, {{record_count: {}}}",
       tp,
       record_count);
@@ -117,7 +117,7 @@ producer::send(model::topic_partition tp, model::record_batch&& batch) {
                        return _error_handler(std::move(ex))
                          .handle_exception([](std::exception_ptr ex) {
                              vlog(
-                               ppclog.trace, "Error during mitigation: {}", ex);
+                               kclog.trace, "Error during mitigation: {}", ex);
                              // ignore failed mitigation
                          });
                    });
@@ -128,7 +128,7 @@ producer::send(model::topic_partition tp, model::record_batch&& batch) {
       .then([this, tp, record_count](
               kafka::produce_response::partition res) mutable {
           vlog(
-            ppclog.debug,
+            kclog.debug,
             "sent record_batch: {}, {{record_count: {}}}, {}",
             tp,
             record_count,
