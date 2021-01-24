@@ -20,7 +20,7 @@
 
 #include <chrono>
 
-namespace pandaproxy::client {
+namespace kafka::client {
 
 /// Pandaproxy client configuration
 ///
@@ -47,4 +47,4 @@ configuration& shard_local_cfg();
 
 using conf_ref = typename std::reference_wrapper<configuration>;
 
-} // namespace pandaproxy::client
+} // namespace kafka::client

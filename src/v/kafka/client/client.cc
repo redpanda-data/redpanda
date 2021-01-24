@@ -29,7 +29,7 @@
 
 #include <exception>
 
-namespace pandaproxy::client {
+namespace kafka::client {
 
 client::client(std::vector<unresolved_address> broker_addrs)
   : _seeds{std::move(broker_addrs)}
@@ -266,4 +266,4 @@ ss::future<kafka::offset_commit_response> client::consumer_offset_commit(
       });
 }
 
-} // namespace pandaproxy::client
+} // namespace kafka::client

@@ -56,12 +56,12 @@
 #include <memory>
 #include <vector>
 
-namespace ppc = pandaproxy::client;
+namespace kc = kafka::client;
 
 namespace {
 
 std::vector<kafka::offset_fetch_request_topic>
-offset_request_from_assignment(ppc::assignment assignment) {
+offset_request_from_assignment(kc::assignment assignment) {
     auto topics = std::vector<kafka::offset_fetch_request_topic>{};
     topics.reserve(assignment.size());
     std::transform(
@@ -85,8 +85,8 @@ FIXTURE_TEST(pandaproxy_consumer_group, ppc_test_fixture) {
     wait_for_controller_leadership().get();
 
     info("Connecting client");
-    ppc::shard_local_cfg().retry_base_backoff.set_value(10ms);
-    ppc::shard_local_cfg().retries.set_value(size_t(10));
+    kc::shard_local_cfg().retry_base_backoff.set_value(10ms);
+    kc::shard_local_cfg().retries.set_value(size_t(10));
     auto client = make_connected_client();
     client.connect().get();
 

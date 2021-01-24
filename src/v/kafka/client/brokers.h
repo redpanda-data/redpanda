@@ -20,7 +20,7 @@
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/flat_hash_set.h>
 
-namespace pandaproxy::client {
+namespace kafka::client {
 
 /// \brief during connection, the node_id isn't known.
 const model::node_id unknown_node_id{-1};
@@ -67,4 +67,4 @@ private:
     leaders_t _leaders;
 };
 
-} // namespace pandaproxy::client
+} // namespace kafka::client

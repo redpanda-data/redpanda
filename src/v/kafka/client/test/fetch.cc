@@ -26,7 +26,7 @@
 
 #include <chrono>
 
-namespace ppc = pandaproxy::client;
+namespace kc = kafka::client;
 
 FIXTURE_TEST(pandaproxy_fetch, ppc_test_fixture) {
     using namespace std::chrono_literals;
@@ -35,8 +35,8 @@ FIXTURE_TEST(pandaproxy_fetch, ppc_test_fixture) {
     wait_for_controller_leadership().get();
 
     info("Connecting client");
-    ppc::shard_local_cfg().retry_base_backoff.set_value(10ms);
-    ppc::shard_local_cfg().retries.set_value(size_t(1));
+    kc::shard_local_cfg().retry_base_backoff.set_value(10ms);
+    kc::shard_local_cfg().retries.set_value(size_t(1));
     auto client = make_connected_client();
     client.connect().get();
 
@@ -63,7 +63,7 @@ FIXTURE_TEST(pandaproxy_fetch, ppc_test_fixture) {
 
     {
         info("Fetching from nonempty known topic");
-        ppc::shard_local_cfg().retries.set_value(size_t(3));
+        kc::shard_local_cfg().retries.set_value(size_t(3));
         auto res{
           client.fetch_partition(ntp.tp, model::offset(0), 1024, 1000ms).get()};
         const auto& p = res.partitions[0];

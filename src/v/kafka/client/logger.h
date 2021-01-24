@@ -15,6 +15,6 @@
 
 #include <seastar/util/log.hh>
 
-namespace pandaproxy::client {
+namespace kafka::client {
 extern ss::logger ppclog;
-} // namespace pandaproxy::client
+} // namespace kafka::client

@@ -16,7 +16,7 @@
 #include "kafka/client/logger.h"
 #include "seastar/core/gate.hh"
 
-namespace pandaproxy::client {
+namespace kafka::client {
 
 kafka::fetch_request make_fetch_request(
   const model::topic_partition& tp,
@@ -85,4 +85,4 @@ make_fetch_response(const model::topic_partition& tp, std::exception_ptr ex) {
     };
 }
 
-} // namespace pandaproxy::client
+} // namespace kafka::client

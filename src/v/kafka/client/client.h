@@ -30,7 +30,7 @@
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/flat_hash_set.h>
 
-namespace pandaproxy::client {
+namespace kafka::client {
 
 /// \brief wait or start a function
 ///
@@ -169,4 +169,4 @@ private:
     ss::gate _gate;
 };
 
-} // namespace pandaproxy::client
+} // namespace kafka::client

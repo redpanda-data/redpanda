@@ -24,7 +24,7 @@
 #include <exception>
 #include <system_error>
 
-namespace ppc = pandaproxy::client;
+namespace kc = kafka::client;
 
 SEASTAR_THREAD_TEST_CASE(test_produce_partition_record_count) {
     std::vector<model::record_batch> consumed_batches;
@@ -33,11 +33,11 @@ SEASTAR_THREAD_TEST_CASE(test_produce_partition_record_count) {
     };
 
     // large
-    ppc::shard_local_cfg().produce_batch_size_bytes.set_value(1024);
+    kc::shard_local_cfg().produce_batch_size_bytes.set_value(1024);
     // configuration under test
-    ppc::shard_local_cfg().produce_batch_record_count.set_value(3);
+    kc::shard_local_cfg().produce_batch_record_count.set_value(3);
 
-    ppc::produce_partition producer(consumer);
+    kc::produce_partition producer(consumer);
 
     auto c_res0_fut = producer.produce(make_batch(model::offset(0), 2));
     auto c_res1_fut = producer.produce(make_batch(model::offset(2), 1));

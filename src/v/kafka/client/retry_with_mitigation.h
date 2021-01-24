@@ -14,7 +14,7 @@
 #include "utils/concepts-enabled.h"
 #include "utils/retry.h"
 
-namespace pandaproxy::client {
+namespace kafka::client {
 
 /// \brief Perform an action with retry on failure.
 ///
@@ -58,4 +58,4 @@ auto retry_with_mitigation(
       });
 }
 
-} // namespace pandaproxy::client
+} // namespace kafka::client

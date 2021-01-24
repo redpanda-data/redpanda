@@ -11,7 +11,7 @@
 
 #include "ssx/future-util.h"
 
-namespace pandaproxy::client {
+namespace kafka::client {
 
 ss::future<> brokers::stop() {
     return ss::parallel_for_each(
@@ -106,4 +106,4 @@ ss::future<> brokers::apply(kafka::metadata_response&& res) {
     });
 }
 
-} // namespace pandaproxy::client
+} // namespace kafka::client

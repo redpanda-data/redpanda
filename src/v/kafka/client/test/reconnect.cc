@@ -20,7 +20,7 @@
 
 #include <chrono>
 
-namespace ppc = pandaproxy::client;
+namespace kc = kafka::client;
 
 FIXTURE_TEST(pandaproxy_client_reconnect, ppc_test_fixture) {
     using namespace std::chrono_literals;
@@ -28,8 +28,8 @@ FIXTURE_TEST(pandaproxy_client_reconnect, ppc_test_fixture) {
     info("Waiting for leadership");
     wait_for_controller_leadership().get();
 
-    ppc::shard_local_cfg().retry_base_backoff.set_value(10ms);
-    ppc::shard_local_cfg().retries.set_value(size_t(0));
+    kc::shard_local_cfg().retry_base_backoff.set_value(10ms);
+    kc::shard_local_cfg().retries.set_value(size_t(0));
 
     auto tp = model::topic_partition(model::topic("t"), model::partition_id(0));
     auto client = make_connected_client();
@@ -61,11 +61,11 @@ FIXTURE_TEST(pandaproxy_client_reconnect, ppc_test_fixture) {
     {
         info("Checking for known topic - expect controller not ready");
         auto res = client.dispatch(make_list_topics_req());
-        BOOST_REQUIRE_THROW(res.get(), ppc::broker_error);
+        BOOST_REQUIRE_THROW(res.get(), kc::broker_error);
     }
 
     {
-        ppc::shard_local_cfg().retries.set_value(size_t(5));
+        kc::shard_local_cfg().retries.set_value(size_t(5));
         info("Checking for known topic - controller ready");
         auto res = client.dispatch(make_list_topics_req()).get();
         BOOST_REQUIRE_EQUAL(res.topics.size(), 1);

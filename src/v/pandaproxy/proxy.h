@@ -32,7 +32,7 @@ public:
     ss::future<> stop();
 
 private:
-    client::client _client;
+    kafka::client::client _client;
     server::context_t _ctx;
     server _server;
 };

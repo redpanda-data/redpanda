@@ -13,7 +13,7 @@
 
 #include "kafka/requests/fetch_request.h"
 
-namespace pandaproxy::client {
+namespace kafka::client {
 
 kafka::fetch_request make_fetch_request(
   const model::topic_partition& tp,
@@ -24,4 +24,4 @@ kafka::fetch_request make_fetch_request(
 kafka::fetch_response
 make_fetch_response(const model::topic_partition& tp, std::exception_ptr ex);
 
-} // namespace pandaproxy::client
+} // namespace kafka::client

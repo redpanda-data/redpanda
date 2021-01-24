@@ -18,7 +18,7 @@
 
 #include <absl/container/flat_hash_map.h>
 
-namespace pandaproxy::client {
+namespace kafka::client {
 
 using assignment
   = absl::flat_hash_map<model::topic, std::vector<model::partition_id>>;
@@ -65,4 +65,4 @@ make_join_group_request_protocol_range(const std::vector<model::topic>& topics);
 std::vector<kafka::join_group_request_protocol>
 make_join_group_request_protocols(const std::vector<model::topic>& topics);
 
-} // namespace pandaproxy::client
+} // namespace kafka::client

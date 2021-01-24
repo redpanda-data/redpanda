@@ -11,18 +11,18 @@
 
 #include "kafka/client/logger.h"
 
-namespace pandaproxy::client {
+namespace kafka::client {
 
 ss::future<shared_broker_t>
 make_broker(model::node_id node_id, unresolved_address addr) {
     return addr.resolve()
       .then([](ss::socket_address addr) {
-          auto client = ss::make_lw_shared<kafka::client::transport>(
+          auto client = ss::make_lw_shared<transport>(
             rpc::base_transport::configuration{.server_addr = addr});
           return client->connect().then(
             [client]() mutable { return std::move(client); });
       })
-      .then([node_id, addr](ss::lw_shared_ptr<kafka::client::transport> client) {
+      .then([node_id, addr](ss::lw_shared_ptr<transport> client) {
           vlog(
             ppclog.info,
             "connected to broker:{} - {}:{}",
@@ -43,4 +43,4 @@ make_broker(model::node_id node_id, unresolved_address addr) {
       });
 }
 
-} // namespace pandaproxy::client
+} // namespace kafka::client

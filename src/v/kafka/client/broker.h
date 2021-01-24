@@ -21,7 +21,7 @@
 
 #include <absl/container/flat_hash_set.h>
 
-namespace pandaproxy::client {
+namespace kafka::client {
 
 struct gated_mutex {
     gated_mutex()
@@ -48,7 +48,7 @@ struct gated_mutex {
 
 class broker : public ss::enable_lw_shared_from_this<broker> {
 public:
-    broker(model::node_id node_id, kafka::client::transport&& client)
+    broker(model::node_id node_id, transport&& client)
       : _node_id(node_id)
       , _client(std::move(client))
       , _gated_mutex{} {}
@@ -77,7 +77,7 @@ public:
 
 private:
     model::node_id _node_id;
-    kafka::client::transport _client;
+    transport _client;
     // TODO(Ben): allow overlapped requests
     gated_mutex _gated_mutex;
 };
@@ -111,4 +111,4 @@ struct broker_eq {
     }
 };
 
-} // namespace pandaproxy::client
+} // namespace kafka::client

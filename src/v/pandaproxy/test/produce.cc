@@ -17,13 +17,13 @@
 #include <boost/beast/http/verb.hpp>
 #include <boost/test/tools/old/interface.hpp>
 
-namespace ppc = pandaproxy::client;
+namespace kc = kafka::client;
 
 FIXTURE_TEST(pandaproxy_produce, pandaproxy_test_fixture) {
     using namespace std::chrono_literals;
 
-    ppc::shard_local_cfg().retry_base_backoff.set_value(10ms);
-    ppc::shard_local_cfg().produce_batch_delay.set_value(0ms);
+    kc::shard_local_cfg().retry_base_backoff.set_value(10ms);
+    kc::shard_local_cfg().produce_batch_delay.set_value(0ms);
 
     info("Waiting for leadership");
     wait_for_controller_leadership().get();
@@ -50,7 +50,7 @@ FIXTURE_TEST(pandaproxy_produce, pandaproxy_test_fixture) {
 
     {
         info("Produce without topic");
-        ppc::shard_local_cfg().retries.set_value(size_t(0));
+        kc::shard_local_cfg().retries.set_value(size_t(0));
         auto body = iobuf();
         body.append(produce_body.data(), produce_body.size());
         auto res = http_request(client, "/topics/t", std::move(body));
@@ -73,7 +73,7 @@ FIXTURE_TEST(pandaproxy_produce, pandaproxy_test_fixture) {
     {
         info("Produce to known topic");
         // Will require a metadata update
-        ppc::shard_local_cfg().retries.set_value(size_t(5));
+        kc::shard_local_cfg().retries.set_value(size_t(5));
         auto body = iobuf();
         body.append(produce_body.data(), produce_body.size());
         auto res = http_request(client, "/topics/t", std::move(body));
@@ -86,7 +86,7 @@ FIXTURE_TEST(pandaproxy_produce, pandaproxy_test_fixture) {
 
     {
         info("Produce to known topic");
-        ppc::shard_local_cfg().retries.set_value(size_t(0));
+        kc::shard_local_cfg().retries.set_value(size_t(0));
         auto body = iobuf();
         body.append(produce_body.data(), produce_body.size());
         auto res = http_request(client, "/topics/t", std::move(body));
