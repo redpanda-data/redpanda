@@ -57,10 +57,15 @@ ss::sstring to_hex(bytes_view b);
 ss::sstring to_hex(const bytes& b);
 
 template<typename Char, size_t Size>
+inline bytes_view to_bytes_view(const std::array<Char, Size>& data) {
+    static_assert(sizeof(Char) == 1, "to_bytes_view only accepts bytes");
+    return bytes_view(
+      reinterpret_cast<const uint8_t*>(data.data()), Size); // NOLINT
+}
+
+template<typename Char, size_t Size>
 inline ss::sstring to_hex(const std::array<Char, Size>& data) {
-    static_assert(sizeof(Char) == 1, "to_hex only accepts bytes");
-    return to_hex(bytes_view(
-      reinterpret_cast<const uint8_t*>(data.data()), Size)); // NOLINT
+    return to_hex(to_bytes_view(data));
 }
 
 std::ostream& operator<<(std::ostream& os, const bytes& b);
