@@ -85,7 +85,8 @@ public:
           [f = std::forward<Func>(f)](kafka::client::transport client) mutable {
               return ss::do_with(
                 std::move(client),
-                [f = std::forward<Func>(f)](kafka::client::transport& client) mutable {
+                [f = std::forward<Func>(f)](
+                  kafka::client::transport& client) mutable {
                     return client.connect().then(
                       [&client, f = std::forward<Func>(f)]() mutable {
                           return f(client);

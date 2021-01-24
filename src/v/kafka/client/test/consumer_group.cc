@@ -10,6 +10,11 @@
  */
 
 #include "bytes/bytes.h"
+#include "kafka/client/client.h"
+#include "kafka/client/configuration.h"
+#include "kafka/client/consumer.h"
+#include "kafka/client/test/fixture.h"
+#include "kafka/client/test/utils.h"
 #include "kafka/errors.h"
 #include "kafka/groups/group.h"
 #include "kafka/requests/describe_groups_request.h"
@@ -31,11 +36,6 @@
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
-#include "kafka/client/client.h"
-#include "kafka/client/configuration.h"
-#include "kafka/client/consumer.h"
-#include "kafka/client/test/fixture.h"
-#include "kafka/client/test/utils.h"
 #include "redpanda/tests/fixture.h"
 #include "utils/unresolved_address.h"
 #include "vassert.h"

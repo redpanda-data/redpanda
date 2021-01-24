@@ -46,8 +46,7 @@ assignment assignment_plan::decode(const bytes& b) const {
     auto result = reader.read_array([](request_reader& reader) {
         auto topic = model::topic(reader.read_string());
         return std::make_pair(
-          std::move(topic),
-          reader.read_array([](request_reader& reader) {
+          std::move(topic), reader.read_array([](request_reader& reader) {
               return model::partition_id(reader.read_int32());
           }));
     });
@@ -99,15 +98,13 @@ join_group_request_protocol make_join_group_request_protocol_range(
     iobuf metadata;
     response_writer writer(metadata);
     writer.write_array(
-      topics, [](const model::topic& t, response_writer& writer) {
-          writer.write(t);
-      });
+      topics,
+      [](const model::topic& t, response_writer& writer) { writer.write(t); });
     join_group_request_data d;
     writer.write(int32_t(-1)); // userdata length
 
     return join_group_request_protocol{
-      .name{protocol_name{"range"}},
-      .metadata{iobuf_to_bytes(metadata)}};
+      .name{protocol_name{"range"}}, .metadata{iobuf_to_bytes(metadata)}};
 }
 
 std::vector<join_group_request_protocol>

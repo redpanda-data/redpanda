@@ -9,18 +9,18 @@
 
 #include "kafka/client/client.h"
 
-#include "kafka/errors.h"
-#include "kafka/requests/fetch_request.h"
-#include "kafka/requests/find_coordinator_request.h"
-#include "kafka/requests/leave_group_request.h"
-#include "kafka/types.h"
-#include "model/fundamental.h"
 #include "kafka/client/broker.h"
 #include "kafka/client/configuration.h"
 #include "kafka/client/consumer.h"
 #include "kafka/client/error.h"
 #include "kafka/client/logger.h"
 #include "kafka/client/retry_with_mitigation.h"
+#include "kafka/errors.h"
+#include "kafka/requests/fetch_request.h"
+#include "kafka/requests/find_coordinator_request.h"
+#include "kafka/requests/leave_group_request.h"
+#include "kafka/types.h"
+#include "model/fundamental.h"
 #include "seastarx.h"
 #include "ssx/future-util.h"
 #include "utils/unresolved_address.h"
@@ -45,8 +45,7 @@ ss::future<> client::do_connect(unresolved_address addr) {
     return ss::with_gate(_gate, [this, addr]() {
         return make_broker(unknown_node_id, addr)
           .then([this](shared_broker_t broker) {
-              return broker
-                ->dispatch(metadata_request{.list_all_topics = true})
+              return broker->dispatch(metadata_request{.list_all_topics = true})
                 .then([this, broker](metadata_response res) {
                     return _brokers.apply(std::move(res));
                 });
@@ -85,8 +84,7 @@ ss::future<> client::update_metadata(wait_or_start::tag) {
     return ss::with_gate(_gate, [this]() {
         vlog(kclog.debug, "updating metadata");
         return _brokers.any().then([this](shared_broker_t broker) {
-            return broker
-              ->dispatch(metadata_request{.list_all_topics = true})
+            return broker->dispatch(metadata_request{.list_all_topics = true})
               .then([this](metadata_response res) {
                   // Create new seeds from the returned set of brokers
                   std::vector<unresolved_address> seeds;
@@ -179,8 +177,7 @@ ss::future<fetch_response> client::fetch_partition(
       });
 }
 
-ss::future<member_id>
-client::create_consumer(const group_id& group_id) {
+ss::future<member_id> client::create_consumer(const group_id& group_id) {
     auto build_request = [group_id]() {
         return find_coordinator_request(group_id);
     };
@@ -199,8 +196,8 @@ client::create_consumer(const group_id& group_id) {
       });
 }
 
-ss::future<shared_consumer_t> client::get_consumer(
-  const group_id& g_id, const member_id& m_id) {
+ss::future<shared_consumer_t>
+client::get_consumer(const group_id& g_id, const member_id& m_id) {
     if (auto c_it = _consumers.find(m_id); c_it != _consumers.end()) {
         return ss::make_ready_future<shared_consumer_t>(*c_it);
     }
@@ -208,8 +205,8 @@ ss::future<shared_consumer_t> client::get_consumer(
       consumer_error(g_id, m_id, error_code::unknown_member_id));
 }
 
-ss::future<> client::remove_consumer(
-  const group_id& g_id, const member_id& m_id) {
+ss::future<>
+client::remove_consumer(const group_id& g_id, const member_id& m_id) {
     return get_consumer(g_id, m_id).then([this](shared_consumer_t c) {
         return c->leave().then([this, c](leave_group_response res) {
             _consumers.erase(c);
@@ -232,15 +229,15 @@ ss::future<> client::subscribe_consumer(
       });
 }
 
-ss::future<std::vector<model::topic>> client::consumer_topics(
-  const group_id& g_id, const member_id& m_id) {
+ss::future<std::vector<model::topic>>
+client::consumer_topics(const group_id& g_id, const member_id& m_id) {
     return get_consumer(g_id, m_id).then([](shared_consumer_t c) {
         return ss::make_ready_future<std::vector<model::topic>>(c->topics());
     });
 }
 
-ss::future<assignment> client::consumer_assignment(
-  const group_id& g_id, const member_id& m_id) {
+ss::future<assignment>
+client::consumer_assignment(const group_id& g_id, const member_id& m_id) {
     return get_consumer(g_id, m_id).then([](shared_consumer_t c) {
         return ss::make_ready_future<assignment>(c->assignment());
     });

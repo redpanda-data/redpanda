@@ -11,10 +11,10 @@
 
 #pragma once
 
-#include "model/fundamental.h"
 #include "kafka/client/configuration.h"
 #include "kafka/client/error.h"
 #include "kafka/client/produce_batcher.h"
+#include "model/fundamental.h"
 
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/timer.hh>

@@ -24,8 +24,10 @@ using namespace std::chrono_literals;
 
 struct prod_consume_fixture : public redpanda_thread_fixture {
     void start() {
-        consumer = std::make_unique<kafka::client::transport>(make_kafka_client().get0());
-        producer = std::make_unique<kafka::client::transport>(make_kafka_client().get0());
+        consumer = std::make_unique<kafka::client::transport>(
+          make_kafka_client().get0());
+        producer = std::make_unique<kafka::client::transport>(
+          make_kafka_client().get0());
         consumer->connect().get0();
         producer->connect().get0();
         model::topic_namespace tp_ns(model::ns("kafka"), test_topic);

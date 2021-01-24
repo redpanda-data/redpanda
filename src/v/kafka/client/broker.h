@@ -11,9 +11,9 @@
 
 #pragma once
 
+#include "kafka/client/error.h"
 #include "kafka/client/transport.h"
 #include "model/metadata.h"
-#include "kafka/client/error.h"
 #include "utils/mutex.h"
 
 #include <seastar/core/gate.hh>
@@ -62,8 +62,8 @@ public:
           })
           .handle_exception_type([this](const std::bad_optional_access&) {
               // Short read
-              return ss::make_exception_future<Ret>(broker_error(
-                _node_id, error_code::broker_not_available));
+              return ss::make_exception_future<Ret>(
+                broker_error(_node_id, error_code::broker_not_available));
           })
           .finally([b = shared_from_this()]() {});
     }

@@ -11,8 +11,6 @@
 
 #pragma once
 
-#include "kafka/client/transport.h"
-#include "kafka/types.h"
 #include "kafka/client/assignment_plans.h"
 #include "kafka/client/broker.h"
 #include "kafka/client/brokers.h"
@@ -21,6 +19,8 @@
 #include "kafka/client/fetcher.h"
 #include "kafka/client/producer.h"
 #include "kafka/client/retry_with_mitigation.h"
+#include "kafka/client/transport.h"
+#include "kafka/types.h"
 #include "utils/retry.h"
 #include "utils/unresolved_address.h"
 
@@ -108,8 +108,7 @@ public:
 
     ss::future<member_id> create_consumer(const group_id& g_id);
 
-    ss::future<>
-    remove_consumer(const group_id& g_id, const member_id& m_id);
+    ss::future<> remove_consumer(const group_id& g_id, const member_id& m_id);
 
     ss::future<> subscribe_consumer(
       const group_id& group_id,
@@ -119,8 +118,8 @@ public:
     ss::future<std::vector<model::topic>>
     consumer_topics(const group_id& g_id, const member_id& m_id);
 
-    ss::future<assignment> consumer_assignment(
-      const group_id& g_id, const member_id& m_id);
+    ss::future<assignment>
+    consumer_assignment(const group_id& g_id, const member_id& m_id);
 
     ss::future<offset_fetch_response> consumer_offset_fetch(
       const group_id& g_id,

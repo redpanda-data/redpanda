@@ -11,10 +11,10 @@
 
 #pragma once
 
-#include "kafka/types.h"
 #include "kafka/client/assignment_plans.h"
 #include "kafka/client/broker.h"
 #include "kafka/client/logger.h"
+#include "kafka/types.h"
 
 #include <seastar/core/shared_ptr.hh>
 
@@ -135,12 +135,10 @@ struct consumer_eq {
       const shared_consumer_t& lhs, const shared_consumer_t& rhs) const {
         return lhs->member_id() == rhs->member_id();
     }
-    bool operator()(
-      const member_id& lhs, const shared_consumer_t& rhs) const {
+    bool operator()(const member_id& lhs, const shared_consumer_t& rhs) const {
         return lhs == rhs->member_id();
     }
-    bool operator()(
-      const shared_consumer_t& lhs, const member_id& rhs) const {
+    bool operator()(const shared_consumer_t& lhs, const member_id& rhs) const {
         return lhs->member_id() == rhs;
     }
 };

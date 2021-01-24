@@ -61,16 +61,15 @@ private:
         ph.write(raw_size, sizeof(be_total_size));
 
         return _out.write(iobuf_as_scattered(std::move(buf))).then([this] {
-            return parse_size(_in).then(
-              [this](std::optional<size_t> sz) {
-                  auto size = sz.value();
-                  return _in.read_exactly(sizeof(correlation_id))
-                    .then([this, size](ss::temporary_buffer<char>) {
-                        // drops the correlation id on the floor
-                        auto remaining = size - sizeof(correlation_id);
-                        return read_iobuf_exactly(_in, remaining);
-                    });
-              });
+            return parse_size(_in).then([this](std::optional<size_t> sz) {
+                auto size = sz.value();
+                return _in.read_exactly(sizeof(correlation_id))
+                  .then([this, size](ss::temporary_buffer<char>) {
+                      // drops the correlation id on the floor
+                      auto remaining = size - sizeof(correlation_id);
+                      return read_iobuf_exactly(_in, remaining);
+                  });
+            });
         });
     }
 
@@ -123,4 +122,4 @@ private:
     correlation_id _correlation{0};
 };
 
-} // namespace kafka
+} // namespace kafka::client

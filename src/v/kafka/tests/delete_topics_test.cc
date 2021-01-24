@@ -89,15 +89,16 @@ public:
 
     ss::future<kafka::metadata_response> get_all_metadata() {
         return make_kafka_client().then([](kafka::client::transport c) {
-            return ss::do_with(std::move(c), [](kafka::client::transport& client) {
-                return client.connect().then([&client] {
-                    kafka::metadata_request md_req{
-                      .topics = std::nullopt,
-                      .allow_auto_topic_creation = false};
-                    return client.dispatch(
-                      std::move(md_req), kafka::api_version(1));
-                });
-            });
+            return ss::do_with(
+              std::move(c), [](kafka::client::transport& client) {
+                  return client.connect().then([&client] {
+                      kafka::metadata_request md_req{
+                        .topics = std::nullopt,
+                        .allow_auto_topic_creation = false};
+                      return client.dispatch(
+                        std::move(md_req), kafka::api_version(1));
+                  });
+              });
         });
     }
 

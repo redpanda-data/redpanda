@@ -21,8 +21,8 @@ ss::future<> brokers::stop() {
 
 ss::future<shared_broker_t> brokers::any() {
     if (_brokers.empty()) {
-        return ss::make_exception_future<shared_broker_t>(broker_error(
-          unknown_node_id, error_code::broker_not_available));
+        return ss::make_exception_future<shared_broker_t>(
+          broker_error(unknown_node_id, error_code::broker_not_available));
     }
 
     return ss::make_ready_future<shared_broker_t>(
