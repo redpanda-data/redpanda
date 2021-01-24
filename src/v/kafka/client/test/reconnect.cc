@@ -14,7 +14,7 @@
 #include "model/metadata.h"
 #include "kafka/client/client.h"
 #include "kafka/client/configuration.h"
-#include "kafka/client/test/pandaproxy_client_fixture.h"
+#include "kafka/client/test/fixture.h"
 #include "kafka/client/test/utils.h"
 #include "utils/unresolved_address.h"
 
