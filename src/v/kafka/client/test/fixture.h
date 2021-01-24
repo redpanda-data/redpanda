@@ -17,7 +17,7 @@
 
 namespace kc = kafka::client;
 
-class ppc_test_fixture : public redpanda_thread_fixture {
+class kafka_client_fixture : public redpanda_thread_fixture {
 public:
     void restart() {
         app.shutdown();

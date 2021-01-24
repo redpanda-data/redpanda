@@ -22,7 +22,7 @@
 
 namespace kc = kafka::client;
 
-FIXTURE_TEST(pandaproxy_client_reconnect, ppc_test_fixture) {
+FIXTURE_TEST(reconnect, kafka_client_fixture) {
     using namespace std::chrono_literals;
 
     info("Waiting for leadership");

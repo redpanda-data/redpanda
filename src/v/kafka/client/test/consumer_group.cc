@@ -78,7 +78,7 @@ offset_request_from_assignment(kc::assignment assignment) {
 
 } // namespace
 
-FIXTURE_TEST(pandaproxy_consumer_group, ppc_test_fixture) {
+FIXTURE_TEST(consumer_group, kafka_client_fixture) {
     using namespace std::chrono_literals;
 
     info("Waiting for leadership");
