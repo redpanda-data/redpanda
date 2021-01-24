@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "kafka/client.h"
+#include "kafka/client/transport.h"
 #include "kafka/errors.h"
 #include "kafka/requests/fetch_request.h"
 #include "kafka/requests/produce_request.h"
@@ -24,8 +24,10 @@ using namespace std::chrono_literals;
 
 struct prod_consume_fixture : public redpanda_thread_fixture {
     void start() {
-        consumer = std::make_unique<kafka::client>(make_kafka_client().get0());
-        producer = std::make_unique<kafka::client>(make_kafka_client().get0());
+        consumer = std::make_unique<kafka::client::transport>(
+          make_kafka_client().get0());
+        producer = std::make_unique<kafka::client::transport>(
+          make_kafka_client().get0());
         consumer->connect().get0();
         producer->connect().get0();
         model::topic_namespace tp_ns(model::ns("kafka"), test_topic);
@@ -129,8 +131,8 @@ struct prod_consume_fixture : public redpanda_thread_fixture {
     }
 
     model::offset fetch_offset{0};
-    std::unique_ptr<kafka::client> consumer;
-    std::unique_ptr<kafka::client> producer;
+    std::unique_ptr<kafka::client::transport> consumer;
+    std::unique_ptr<kafka::client::transport> producer;
     ss::abort_source as;
     const model::topic test_topic = model::topic("test-topic");
 };

@@ -13,9 +13,9 @@
 
 #include "config/configuration.h"
 #include "http/client.h"
+#include "kafka/client/client.h"
 #include "kafka/requests/metadata_request.h"
 #include "pandaproxy/application.h"
-#include "pandaproxy/client/client.h"
 #include "pandaproxy/configuration.h"
 #include "pandaproxy/proxy.h"
 #include "redpanda/tests/fixture.h"
@@ -46,7 +46,7 @@ public:
 private:
     void configure_proxy() {
         pandaproxy::shard_local_cfg().developer_mode.set_value(true);
-        pandaproxy::client::shard_local_cfg().brokers.set_value(
+        kafka::client::shard_local_cfg().brokers.set_value(
           std::vector<unresolved_address>{
             config::shard_local_cfg().advertised_kafka_api()[0].address});
     }

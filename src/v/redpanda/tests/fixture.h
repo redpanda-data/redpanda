@@ -11,7 +11,7 @@
 
 #pragma once
 #include "cluster/types.h"
-#include "kafka/client.h"
+#include "kafka/client/transport.h"
 #include "kafka/requests/topics/topic_utils.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
@@ -91,12 +91,13 @@ public:
           .discard_result();
     }
 
-    ss::future<kafka::client> make_kafka_client() {
+    ss::future<kafka::client::transport> make_kafka_client() {
         return config::shard_local_cfg().kafka_api()[0].address.resolve().then(
           [](ss::socket_address addr) {
-              return kafka::client(rpc::base_transport::configuration{
-                .server_addr = addr,
-              });
+              return kafka::client::transport(
+                rpc::base_transport::configuration{
+                  .server_addr = addr,
+                });
           });
     }
 

@@ -1,5 +1,3 @@
-add_subdirectory(client)
-
 seastar_generate_swagger(
   TARGET admin_config_swagger
   VAR admin_config_swagger_file
@@ -46,7 +44,7 @@ v_cc_library(
     proxy.cc
     server.cc
   DEPS
-    v::pandaproxy_client
+    v::kafka_client
     v::syschecks
     v::kafka
     v::ssx

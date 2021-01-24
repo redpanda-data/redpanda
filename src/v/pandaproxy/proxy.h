@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "pandaproxy/client/client.h"
+#include "kafka/client/client.h"
 #include "pandaproxy/server.h"
 #include "seastarx.h"
 
@@ -32,7 +32,7 @@ public:
     ss::future<> stop();
 
 private:
-    client::client _client;
+    kafka::client::client _client;
     server::context_t _ctx;
     server _server;
 };

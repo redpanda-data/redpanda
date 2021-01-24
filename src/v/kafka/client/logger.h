@@ -11,18 +11,10 @@
 
 #pragma once
 
-#include "kafka/client/client.h"
 #include "seastarx.h"
 
-#include <seastar/core/abort_source.hh>
-#include <seastar/core/semaphore.hh>
+#include <seastar/util/log.hh>
 
-namespace pandaproxy {
-
-struct context_t {
-    ss::semaphore mem_sem;
-    ss::abort_source as;
-    kafka::client::client& client;
-};
-
-} // namespace pandaproxy
+namespace kafka::client {
+inline ss::logger kclog("kafka::client");
+} // namespace kafka::client

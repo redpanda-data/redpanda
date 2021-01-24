@@ -14,7 +14,7 @@
 #include "coproc/tests/utils/helpers.h"
 #include "coproc/tests/utils/supervisor_test_fixture.h"
 #include "coproc/types.h"
-#include "kafka/client.h"
+#include "kafka/client/transport.h"
 #include "kafka/requests/batch_consumer.h"
 #include "kafka/requests/fetch_request.h"
 #include "model/metadata.h"

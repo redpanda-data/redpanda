@@ -11,18 +11,17 @@
 
 #pragma once
 
-#include "kafka/client/client.h"
-#include "seastarx.h"
+#include "kafka/requests/fetch_request.h"
 
-#include <seastar/core/abort_source.hh>
-#include <seastar/core/semaphore.hh>
+namespace kafka::client {
 
-namespace pandaproxy {
+fetch_request make_fetch_request(
+  const model::topic_partition& tp,
+  model::offset offset,
+  int32_t max_bytes,
+  std::chrono::milliseconds timeout);
 
-struct context_t {
-    ss::semaphore mem_sem;
-    ss::abort_source as;
-    kafka::client::client& client;
-};
+fetch_response
+make_fetch_response(const model::topic_partition& tp, std::exception_ptr ex);
 
-} // namespace pandaproxy
+} // namespace kafka::client
