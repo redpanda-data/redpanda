@@ -97,40 +97,40 @@ public:
         });
     }
 
-    ss::future<kafka::produce_response::partition> produce_record_batch(
+    ss::future<produce_response::partition> produce_record_batch(
       model::topic_partition tp, model::record_batch&& batch);
 
-    ss::future<kafka::fetch_response> fetch_partition(
+    ss::future<fetch_response> fetch_partition(
       model::topic_partition tp,
       model::offset offset,
       int32_t max_bytes,
       std::chrono::milliseconds timeout);
 
-    ss::future<kafka::member_id> create_consumer(const kafka::group_id& g_id);
+    ss::future<member_id> create_consumer(const group_id& g_id);
 
     ss::future<>
-    remove_consumer(const kafka::group_id& g_id, const kafka::member_id& m_id);
+    remove_consumer(const group_id& g_id, const member_id& m_id);
 
     ss::future<> subscribe_consumer(
-      const kafka::group_id& group_id,
-      const kafka::member_id& member_id,
+      const group_id& group_id,
+      const member_id& member_id,
       std::vector<model::topic> topics);
 
     ss::future<std::vector<model::topic>>
-    consumer_topics(const kafka::group_id& g_id, const kafka::member_id& m_id);
+    consumer_topics(const group_id& g_id, const member_id& m_id);
 
     ss::future<assignment> consumer_assignment(
-      const kafka::group_id& g_id, const kafka::member_id& m_id);
+      const group_id& g_id, const member_id& m_id);
 
-    ss::future<kafka::offset_fetch_response> consumer_offset_fetch(
-      const kafka::group_id& g_id,
-      const kafka::member_id& m_id,
-      std::vector<kafka::offset_fetch_request_topic> topics);
+    ss::future<offset_fetch_response> consumer_offset_fetch(
+      const group_id& g_id,
+      const member_id& m_id,
+      std::vector<offset_fetch_request_topic> topics);
 
-    ss::future<kafka::offset_commit_response> consumer_offset_commit(
-      const kafka::group_id& g_id,
-      const kafka::member_id& m_id,
-      std::vector<kafka::offset_commit_request_topic> topics);
+    ss::future<offset_commit_response> consumer_offset_commit(
+      const group_id& g_id,
+      const member_id& m_id,
+      std::vector<offset_commit_request_topic> topics);
 
 private:
     /// \brief Connect and update metdata.
@@ -149,7 +149,7 @@ private:
     ss::future<> mitigate_error(std::exception_ptr ex);
 
     ss::future<shared_consumer_t>
-    get_consumer(const kafka::group_id& g_id, const kafka::member_id& m_id);
+    get_consumer(const group_id& g_id, const member_id& m_id);
 
     /// \brief Seeds are used when no brokers are connected.
     std::vector<unresolved_address> _seeds;

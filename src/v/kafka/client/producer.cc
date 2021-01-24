@@ -24,28 +24,28 @@
 
 namespace kafka::client {
 
-kafka::produce_request
+produce_request
 make_produce_request(model::topic_partition tp, model::record_batch&& batch) {
-    std::vector<kafka::produce_request::partition> partitions;
-    partitions.emplace_back(kafka::produce_request::partition{
+    std::vector<produce_request::partition> partitions;
+    partitions.emplace_back(produce_request::partition{
       .id{tp.partition},
       .data{},
-      .adapter = kafka::kafka_batch_adapter{
+      .adapter = kafka_batch_adapter{
         .v2_format = true, .valid_crc = true, .batch{std::move(batch)}}});
 
-    std::vector<kafka::produce_request::topic> topics;
-    topics.emplace_back(kafka::produce_request::topic{
+    std::vector<produce_request::topic> topics;
+    topics.emplace_back(produce_request::topic{
       .name{std::move(tp.topic)}, .partitions{std::move(partitions)}});
     std::optional<ss::sstring> t_id;
     int16_t acks = -1;
-    return kafka::produce_request(t_id, acks, std::move(topics));
+    return produce_request(t_id, acks, std::move(topics));
 }
 
-kafka::produce_response::partition
+produce_response::partition
 make_produce_response(model::partition_id p_id, std::exception_ptr ex) {
-    auto response = kafka::produce_response::partition{
+    auto response = produce_response::partition{
       .id{p_id},
-      .error = kafka::error_code::none,
+      .error = error_code::none,
     };
     try {
         std::rethrow_exception(std::move(ex));
@@ -57,23 +57,23 @@ make_produce_response(model::partition_id p_id, std::exception_ptr ex) {
         response.error = ex.error;
     } catch (const ss::gate_closed_exception&) {
         vlog(kclog.debug, "gate_closed_exception");
-        response.error = kafka::error_code::operation_not_attempted;
+        response.error = error_code::operation_not_attempted;
     } catch (const std::exception& ex) {
         vlog(kclog.warn, "std::exception {}", ex.what());
-        response.error = kafka::error_code::unknown_server_error;
+        response.error = error_code::unknown_server_error;
     } catch (const std::exception_ptr&) {
         vlog(kclog.error, "std::exception_ptr");
-        response.error = kafka::error_code::unknown_server_error;
+        response.error = error_code::unknown_server_error;
     }
     return response;
 }
 
-ss::future<kafka::produce_response::partition>
+ss::future<produce_response::partition>
 producer::produce(model::topic_partition tp, model::record_batch&& batch) {
     return get_context(std::move(tp))->produce(std::move(batch));
 }
 
-ss::future<kafka::produce_response::partition>
+ss::future<produce_response::partition>
 producer::do_send(model::topic_partition tp, model::record_batch&& batch) {
     return _brokers.find(tp)
       .then([tp{std::move(tp)},
@@ -81,16 +81,16 @@ producer::do_send(model::topic_partition tp, model::record_batch&& batch) {
           return broker->dispatch(
             make_produce_request(std::move(tp), std::move(batch)));
       })
-      .then([](kafka::produce_response res) mutable {
+      .then([](produce_response res) mutable {
           auto topic = std::move(res.topics[0]);
           auto partition = std::move(topic.partitions[0]);
-          if (partition.error != kafka::error_code::none) {
+          if (partition.error != error_code::none) {
               return ss::make_exception_future<
-                kafka::produce_response::partition>(partition_error(
+                produce_response::partition>(partition_error(
                 model::topic_partition(topic.name, partition.id),
                 partition.error));
           }
-          return ss::make_ready_future<kafka::produce_response::partition>(
+          return ss::make_ready_future<produce_response::partition>(
             std::move(partition));
       });
 }
@@ -126,7 +126,7 @@ producer::send(model::topic_partition tp, model::record_batch&& batch) {
           return make_produce_response(p_id, std::move(ex));
       })
       .then([this, tp, record_count](
-              kafka::produce_response::partition res) mutable {
+              produce_response::partition res) mutable {
           vlog(
             kclog.debug,
             "sent record_batch: {}, {{record_count: {}}}, {}",

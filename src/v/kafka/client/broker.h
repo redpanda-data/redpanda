@@ -54,7 +54,7 @@ public:
       , _gated_mutex{} {}
 
     template<typename T, typename Ret = typename T::api_type::response_type>
-    CONCEPT(requires(kafka::KafkaRequest<typename T::api_type>))
+    CONCEPT(requires(KafkaRequest<typename T::api_type>))
     ss::future<Ret> dispatch(T r) {
         return _gated_mutex
           .with([this, r{std::move(r)}]() mutable {
@@ -63,7 +63,7 @@ public:
           .handle_exception_type([this](const std::bad_optional_access&) {
               // Short read
               return ss::make_exception_future<Ret>(broker_error(
-                _node_id, kafka::error_code::broker_not_available));
+                _node_id, error_code::broker_not_available));
           })
           .finally([b = shared_from_this()]() {});
     }

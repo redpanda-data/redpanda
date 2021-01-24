@@ -15,13 +15,13 @@
 
 namespace kafka::client {
 
-kafka::fetch_request make_fetch_request(
+fetch_request make_fetch_request(
   const model::topic_partition& tp,
   model::offset offset,
   int32_t max_bytes,
   std::chrono::milliseconds timeout);
 
-kafka::fetch_response
+fetch_response
 make_fetch_response(const model::topic_partition& tp, std::exception_ptr ex);
 
 } // namespace kafka::client

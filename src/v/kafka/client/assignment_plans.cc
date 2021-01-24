@@ -11,26 +11,26 @@
 
 namespace kafka::client {
 
-kafka::sync_group_request_assignment
+sync_group_request_assignment
 assignment_plan::encode(const assignments::value_type& m) const {
     iobuf assignments_buf;
-    kafka::response_writer writer(assignments_buf);
+    response_writer writer(assignments_buf);
     writer.write(int32_t(m.second.size()));
     for (const auto& t : m.second) {
         writer.write(t.first);
         writer.write_array(
-          t.second, [](model::partition_id id, kafka::response_writer& writer) {
+          t.second, [](model::partition_id id, response_writer& writer) {
               writer.write(id);
           });
     }
 
-    return kafka::sync_group_request_assignment{
+    return sync_group_request_assignment{
       .member_id = m.first, .assignment = iobuf_to_bytes(assignments_buf)};
 };
 
-std::vector<kafka::sync_group_request_assignment>
+std::vector<sync_group_request_assignment>
 assignment_plan::encode(const assignments& assignments) const {
-    std::vector<kafka::sync_group_request_assignment> result;
+    std::vector<sync_group_request_assignment> result;
     result.reserve(assignments.size());
     for (const auto& m : assignments) {
         result.push_back(encode(m));
@@ -42,12 +42,12 @@ assignment assignment_plan::decode(const bytes& b) const {
     if (b.empty()) {
         return {};
     }
-    kafka::request_reader reader(bytes_to_iobuf(b));
-    auto result = reader.read_array([](kafka::request_reader& reader) {
+    request_reader reader(bytes_to_iobuf(b));
+    auto result = reader.read_array([](request_reader& reader) {
         auto topic = model::topic(reader.read_string());
         return std::make_pair(
           std::move(topic),
-          reader.read_array([](kafka::request_reader& reader) {
+          reader.read_array([](request_reader& reader) {
               return model::partition_id(reader.read_int32());
           }));
     });
@@ -57,8 +57,8 @@ assignment assignment_plan::decode(const bytes& b) const {
 }
 
 assignments assignment_range::plan(
-  const std::vector<kafka::member_id>& members,
-  const std::vector<kafka::metadata_response::topic>& topics) {
+  const std::vector<member_id>& members,
+  const std::vector<metadata_response::topic>& topics) {
     assignments assignments;
     for (auto const& t : topics) {
         auto [len, rem] = std::ldiv(t.partitions.size(), members.size());
@@ -86,7 +86,7 @@ assignments assignment_range::plan(
 }
 
 std::unique_ptr<assignment_plan>
-make_assignment_plan(const kafka::protocol_name& protocol_name) {
+make_assignment_plan(const protocol_name& protocol_name) {
     if (protocol_name == assignment_range::name) {
         return std::make_unique<assignment_range>();
     } else {
@@ -94,23 +94,23 @@ make_assignment_plan(const kafka::protocol_name& protocol_name) {
     }
 }
 
-kafka::join_group_request_protocol make_join_group_request_protocol_range(
+join_group_request_protocol make_join_group_request_protocol_range(
   const std::vector<model::topic>& topics) {
     iobuf metadata;
-    kafka::response_writer writer(metadata);
+    response_writer writer(metadata);
     writer.write_array(
-      topics, [](const model::topic& t, kafka::response_writer& writer) {
+      topics, [](const model::topic& t, response_writer& writer) {
           writer.write(t);
       });
-    kafka::join_group_request_data d;
+    join_group_request_data d;
     writer.write(int32_t(-1)); // userdata length
 
-    return kafka::join_group_request_protocol{
-      .name{kafka::protocol_name{"range"}},
+    return join_group_request_protocol{
+      .name{protocol_name{"range"}},
       .metadata{iobuf_to_bytes(metadata)}};
 }
 
-std::vector<kafka::join_group_request_protocol>
+std::vector<join_group_request_protocol>
 make_join_group_request_protocols(const std::vector<model::topic>& topics) {
     // When this is extended, create them in order of preference
     return {make_join_group_request_protocol_range(topics)};

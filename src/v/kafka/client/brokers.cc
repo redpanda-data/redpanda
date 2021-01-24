@@ -22,7 +22,7 @@ ss::future<> brokers::stop() {
 ss::future<shared_broker_t> brokers::any() {
     if (_brokers.empty()) {
         return ss::make_exception_future<shared_broker_t>(broker_error(
-          unknown_node_id, kafka::error_code::broker_not_available));
+          unknown_node_id, error_code::broker_not_available));
     }
 
     return ss::make_ready_future<shared_broker_t>(
@@ -33,7 +33,7 @@ ss::future<shared_broker_t> brokers::find(model::node_id id) {
     auto b_it = _brokers.find(id);
     if (b_it == _brokers.end()) {
         return ss::make_exception_future<shared_broker_t>(
-          broker_error(id, kafka::error_code::broker_not_available));
+          broker_error(id, error_code::broker_not_available));
     }
     return ss::make_ready_future<shared_broker_t>(*b_it);
 }
@@ -42,7 +42,7 @@ ss::future<shared_broker_t> brokers::find(model::topic_partition tp) {
     auto l_it = _leaders.find(tp);
     if (l_it == _leaders.end()) {
         return ss::make_exception_future<shared_broker_t>(partition_error(
-          std::move(tp), kafka::error_code::unknown_topic_or_partition));
+          std::move(tp), error_code::unknown_topic_or_partition));
     }
 
     return find(l_it->second);
@@ -57,19 +57,19 @@ ss::future<> brokers::erase(model::node_id node_id) {
     return ss::now();
 }
 
-ss::future<> brokers::apply(kafka::metadata_response&& res) {
-    return ss::do_with(std::move(res), [this](kafka::metadata_response& res) {
+ss::future<> brokers::apply(metadata_response&& res) {
+    return ss::do_with(std::move(res), [this](metadata_response& res) {
         auto new_brokers_begin = std::partition(
           res.brokers.begin(),
           res.brokers.end(),
-          [this](const kafka::metadata_response::broker& broker) {
+          [this](const metadata_response::broker& broker) {
               return _brokers.count(broker.node_id);
           });
 
         return ssx::parallel_transform(
                  new_brokers_begin,
                  res.brokers.end(),
-                 [](const kafka::metadata_response::broker& b) {
+                 [](const metadata_response::broker& b) {
                      return make_broker(
                        b.node_id, unresolved_address(b.host, b.port));
                  })

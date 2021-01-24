@@ -56,10 +56,10 @@ public:
     ss::future<> erase(model::node_id id);
 
     /// \brief Apply the given metadata response.
-    ss::future<> apply(kafka::metadata_response&& res);
+    ss::future<> apply(metadata_response&& res);
 
 private:
-    /// \brief Brokers map a model::node_id to a kafka::client.
+    /// \brief Brokers map a model::node_id to a client.
     brokers_t _brokers;
     /// \brief Next broker to select with round-robin
     size_t _next_broker;

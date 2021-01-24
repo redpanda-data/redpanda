@@ -22,7 +22,7 @@ namespace kafka::client {
 
 using assignment
   = absl::flat_hash_map<model::topic, std::vector<model::partition_id>>;
-using assignments = absl::flat_hash_map<kafka::member_id, assignment>;
+using assignments = absl::flat_hash_map<member_id, assignment>;
 
 /// \brief Assignment plans are used by the consumer group leader to distribute
 /// topic partitions amongst consumers during sync.
@@ -35,34 +35,34 @@ struct assignment_plan {
     virtual ~assignment_plan() = default;
 
     virtual assignments plan(
-      const std::vector<kafka::member_id>& members,
-      const std::vector<kafka::metadata_response::topic>& topics)
+      const std::vector<member_id>& members,
+      const std::vector<metadata_response::topic>& topics)
       = 0;
 
-    kafka::sync_group_request_assignment
+    sync_group_request_assignment
     encode(const assignments::value_type& m) const;
 
-    std::vector<kafka::sync_group_request_assignment>
+    std::vector<sync_group_request_assignment>
     encode(const assignments& assignments) const;
 
     assignment decode(const bytes& b) const;
 };
 
 std::unique_ptr<assignment_plan>
-make_assignment_plan(const kafka::protocol_name& protocol_name);
+make_assignment_plan(const protocol_name& protocol_name);
 
 /// \brief The range assigner is the default assignment plan.
 struct assignment_range final : public assignment_plan {
-    static inline const kafka::protocol_name name{"range"};
+    static inline const protocol_name name{"range"};
     assignments plan(
-      const std::vector<kafka::member_id>& members,
-      const std::vector<kafka::metadata_response::topic>& topics) final;
+      const std::vector<member_id>& members,
+      const std::vector<metadata_response::topic>& topics) final;
 };
 
-kafka::join_group_request_protocol
+join_group_request_protocol
 make_join_group_request_protocol_range(const std::vector<model::topic>& topics);
 
-std::vector<kafka::join_group_request_protocol>
+std::vector<join_group_request_protocol>
 make_join_group_request_protocols(const std::vector<model::topic>& topics);
 
 } // namespace kafka::client
