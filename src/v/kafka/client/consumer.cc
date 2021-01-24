@@ -26,7 +26,7 @@
 #include <chrono>
 #include <exception>
 
-namespace pandaproxy::client {
+namespace kafka::client {
 
 using namespace std::chrono_literals;
 
@@ -314,4 +314,4 @@ make_consumer(shared_broker_t coordinator, kafka::group_id group_id) {
     return c->join().then([c]() mutable { return std::move(c); });
 }
 
-} // namespace pandaproxy::client
+} // namespace kafka::client

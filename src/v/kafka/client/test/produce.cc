@@ -20,7 +20,7 @@
 
 #include <chrono>
 
-namespace ppc = pandaproxy::client;
+namespace kc = kafka::client;
 
 FIXTURE_TEST(pandaproxy_produce_reconnect, ppc_test_fixture) {
     using namespace std::chrono_literals;
@@ -28,8 +28,8 @@ FIXTURE_TEST(pandaproxy_produce_reconnect, ppc_test_fixture) {
     info("Waiting for leadership");
     wait_for_controller_leadership().get();
 
-    ppc::shard_local_cfg().retry_base_backoff.set_value(10ms);
-    ppc::shard_local_cfg().retries.set_value(size_t(0));
+    kc::shard_local_cfg().retry_base_backoff.set_value(10ms);
+    kc::shard_local_cfg().retries.set_value(size_t(0));
 
     auto tp = model::topic_partition(model::topic("t"), model::partition_id(0));
     auto client = make_connected_client();
@@ -55,16 +55,16 @@ FIXTURE_TEST(pandaproxy_produce_reconnect, ppc_test_fixture) {
     BOOST_REQUIRE_EQUAL(res.topics.size(), 1);
     BOOST_REQUIRE_EQUAL(res.topics[0].name(), "t");
 
-    ppc::shard_local_cfg().produce_batch_record_count.set_value(3);
-    ppc::shard_local_cfg().produce_batch_size_bytes.set_value(1024);
-    ppc::shard_local_cfg().produce_batch_delay.set_value(1000ms);
+    kc::shard_local_cfg().produce_batch_record_count.set_value(3);
+    kc::shard_local_cfg().produce_batch_size_bytes.set_value(1024);
+    kc::shard_local_cfg().produce_batch_delay.set_value(1000ms);
 
     auto bat0 = make_batch(model::offset(0), 2);
     auto bat1 = make_batch(model::offset(2), 1);
     auto bat2 = make_batch(model::offset(3), 3);
 
-    ppc::shard_local_cfg().retry_base_backoff.set_value(10ms);
-    ppc::shard_local_cfg().retries.set_value(size_t(10));
+    kc::shard_local_cfg().retry_base_backoff.set_value(10ms);
+    kc::shard_local_cfg().retries.set_value(size_t(10));
 
     info("Producing to known topic");
     auto req0_fut = client.produce_record_batch(tp, std::move(bat0));

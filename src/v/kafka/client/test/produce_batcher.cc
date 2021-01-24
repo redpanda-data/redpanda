@@ -21,7 +21,7 @@
 #include <seastar/core/when_all.hh>
 #include <seastar/testing/thread_test_case.hh>
 
-namespace ppc = pandaproxy::client;
+namespace kc = kafka::client;
 
 struct produce_batcher_context {
     const model::partition_id partition_id{2};
@@ -29,7 +29,7 @@ struct produce_batcher_context {
     model::offset client_req_offset{base_offset};
     model::offset broker_req_offset{base_offset};
 
-    ppc::produce_batcher batcher;
+    kc::produce_batcher batcher;
     // expected client offset
     std::vector<model::offset> expected_offsets;
     // future client offset
@@ -52,7 +52,7 @@ struct produce_batcher_context {
         return record_count;
     }
     auto handle_response(kafka::error_code error = kafka::error_code::none) {
-        auto batch = ppc::consume_front(broker_batches);
+        auto batch = kc::consume_front(broker_batches);
         batcher.handle_response(kafka::produce_response::partition{
           .id{partition_id},
           .error = error,

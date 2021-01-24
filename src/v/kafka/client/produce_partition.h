@@ -22,7 +22,7 @@
 
 #include <absl/container/flat_hash_map.h>
 
-namespace pandaproxy::client {
+namespace kafka::client {
 
 /// \brief Batch multiple client requests, flush them based on size or time.
 class produce_partition {
@@ -96,4 +96,4 @@ private:
     bool _in_flight{};
 };
 
-} // namespace pandaproxy::client
+} // namespace kafka::client

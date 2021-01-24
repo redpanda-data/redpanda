@@ -9,6 +9,6 @@
 
 #include "kafka/client/logger.h"
 
-namespace pandaproxy::client {
+namespace kafka::client {
 ss::logger ppclog{"pandaproxy::client"};
-} // namespace pandaproxy::client
+} // namespace kafka::client

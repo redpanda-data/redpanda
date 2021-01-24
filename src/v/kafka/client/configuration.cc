@@ -11,7 +11,7 @@
 
 #include "units.h"
 
-namespace pandaproxy::client {
+namespace kafka::client {
 using namespace std::chrono_literals;
 
 configuration::configuration()
@@ -88,4 +88,4 @@ configuration& shard_local_cfg() {
     static thread_local configuration cfg;
     return cfg;
 }
-} // namespace pandaproxy::client
+} // namespace kafka::client

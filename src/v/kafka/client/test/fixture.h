@@ -15,7 +15,7 @@
 #include "kafka/client/client.h"
 #include "redpanda/tests/fixture.h"
 
-namespace ppc = pandaproxy::client;
+namespace kc = kafka::client;
 
 class ppc_test_fixture : public redpanda_thread_fixture {
 public:
@@ -32,11 +32,11 @@ public:
         app.start();
     }
 
-    ppc::client make_client() {
-        return ppc::client(std::vector<unresolved_address>{
+    kc::client make_client() {
+        return kc::client(std::vector<unresolved_address>{
           config::shard_local_cfg().kafka_api()[0].address});
     }
-    ppc::client make_connected_client() {
+    kc::client make_connected_client() {
         auto client = make_client();
         client.connect().get();
         return client;

@@ -18,7 +18,7 @@
 
 #include <absl/container/flat_hash_map.h>
 
-namespace pandaproxy::client {
+namespace kafka::client {
 
 class brokers;
 
@@ -71,4 +71,4 @@ private:
     brokers& _brokers;
 };
 
-} // namespace pandaproxy::client
+} // namespace kafka::client

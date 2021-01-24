@@ -22,7 +22,7 @@
 
 #include <exception>
 
-namespace pandaproxy::client {
+namespace kafka::client {
 
 kafka::produce_request
 make_produce_request(model::topic_partition tp, model::record_batch&& batch) {
@@ -137,4 +137,4 @@ producer::send(model::topic_partition tp, model::record_batch&& batch) {
       });
 }
 
-} // namespace pandaproxy::client
+} // namespace kafka::client

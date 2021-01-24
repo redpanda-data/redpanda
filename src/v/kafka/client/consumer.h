@@ -23,7 +23,7 @@
 #include <chrono>
 #include <iterator>
 
-namespace pandaproxy::client {
+namespace kafka::client {
 
 // consumer manages the lifetime of a consumer within a group.
 class consumer final : public ss::enable_lw_shared_from_this<consumer> {
@@ -147,4 +147,4 @@ struct consumer_eq {
 
 } // namespace detail
 
-} // namespace pandaproxy::client
+} // namespace kafka::client

@@ -20,7 +20,7 @@
 #include <initializer_list>
 #include <stdexcept>
 
-namespace ppc = pandaproxy::client;
+namespace kc = kafka::client;
 using namespace std::chrono_literals;
 
 namespace {
@@ -56,7 +56,7 @@ struct context {
 
 SEASTAR_THREAD_TEST_CASE(test_retry_fail_0) {
     context ctx = {false, false, false};
-    auto res = ppc::retry_with_mitigation(
+    auto res = kc::retry_with_mitigation(
       ctx.retries(), 0ms, std::ref(ctx), ctx);
     BOOST_REQUIRE_NO_THROW(res.get());
     BOOST_REQUIRE_EQUAL(ctx.calls(), 1);
@@ -64,7 +64,7 @@ SEASTAR_THREAD_TEST_CASE(test_retry_fail_0) {
 
 SEASTAR_THREAD_TEST_CASE(test_retry_fail_1) {
     context ctx = {true, false, false};
-    auto res = ppc::retry_with_mitigation(
+    auto res = kc::retry_with_mitigation(
       ctx.retries(), 0ms, std::ref(ctx), ctx);
     BOOST_REQUIRE_NO_THROW(res.get());
     BOOST_REQUIRE_EQUAL(ctx.calls(), 2);
@@ -72,7 +72,7 @@ SEASTAR_THREAD_TEST_CASE(test_retry_fail_1) {
 
 SEASTAR_THREAD_TEST_CASE(test_retry_fail_2) {
     context ctx = {true, true, false};
-    auto res = ppc::retry_with_mitigation(
+    auto res = kc::retry_with_mitigation(
       ctx.retries(), 0ms, std::ref(ctx), ctx);
     BOOST_REQUIRE_NO_THROW(res.get());
     BOOST_REQUIRE_EQUAL(ctx.calls(), 3);
@@ -81,7 +81,7 @@ SEASTAR_THREAD_TEST_CASE(test_retry_fail_2) {
 SEASTAR_THREAD_TEST_CASE(test_retry_fail_all) {
     context ctx = {true, true, true};
     size_t errors{};
-    auto res = ppc::retry_with_mitigation(
+    auto res = kc::retry_with_mitigation(
                  ctx.retries(), 0ms, std::ref(ctx), ctx)
                  .handle_exception_type(
                    [&errors](const counted_error& ex) { errors = ex.count; })

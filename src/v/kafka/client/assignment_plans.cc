@@ -9,7 +9,7 @@
 
 #include "kafka/client/assignment_plans.h"
 
-namespace pandaproxy::client {
+namespace kafka::client {
 
 kafka::sync_group_request_assignment
 assignment_plan::encode(const assignments::value_type& m) const {
@@ -116,4 +116,4 @@ make_join_group_request_protocols(const std::vector<model::topic>& topics) {
     return {make_join_group_request_protocol_range(topics)};
 }
 
-} // namespace pandaproxy::client
+} // namespace kafka::client

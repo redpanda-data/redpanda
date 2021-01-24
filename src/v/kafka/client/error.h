@@ -20,7 +20,7 @@
 
 #include <exception>
 
-namespace pandaproxy::client {
+namespace kafka::client {
 
 struct broker_error final : std::exception {
     broker_error(model::node_id n_id, kafka::error_code err)
@@ -61,4 +61,4 @@ struct consumer_error final : std::exception {
     kafka::error_code error;
 };
 
-} // namespace pandaproxy::client
+} // namespace kafka::client

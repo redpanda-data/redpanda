@@ -23,7 +23,7 @@
 
 #include <absl/container/flat_hash_map.h>
 
-namespace pandaproxy::client {
+namespace kafka::client {
 
 template<typename ContainerT>
 typename ContainerT::value_type consume_front(ContainerT& c) {
@@ -120,4 +120,4 @@ private:
     ss::circular_buffer<broker_context> _broker_reqs;
 };
 
-} // namespace pandaproxy::client
+} // namespace kafka::client
