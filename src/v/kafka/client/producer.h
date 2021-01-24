@@ -35,7 +35,7 @@ public:
       , _error_handler(std::move(error_handler))
       , _brokers(brokers) {}
 
-    ss::future<kafka::produce_response::partition>
+    ss::future<produce_response::partition>
     produce(model::topic_partition tp, model::record_batch&& batch);
 
     ss::future<> stop() {
@@ -47,7 +47,7 @@ public:
 private:
     ss::future<> send(model::topic_partition tp, model::record_batch&& batch);
 
-    ss::future<kafka::produce_response::partition>
+    ss::future<produce_response::partition>
     do_send(model::topic_partition tp, model::record_batch&& batch);
 
     auto make_consumer(model::topic_partition tp) {

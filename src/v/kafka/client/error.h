@@ -23,7 +23,7 @@
 namespace kafka::client {
 
 struct broker_error final : std::exception {
-    broker_error(model::node_id n_id, kafka::error_code err)
+    broker_error(model::node_id n_id, error_code err)
       : std::exception{}
       , msg{fmt::format("{{ node: {} }}, {}", n_id, err)}
       , node_id{n_id}
@@ -31,11 +31,11 @@ struct broker_error final : std::exception {
     const char* what() const noexcept final { return msg.c_str(); }
     std::string msg;
     model::node_id node_id;
-    kafka::error_code error;
+    error_code error;
 };
 
 struct partition_error final : std::exception {
-    partition_error(model::topic_partition tp, kafka::error_code e)
+    partition_error(model::topic_partition tp, error_code e)
       : std::exception{}
       , msg{fmt::format("{}, {}", tp, e)}
       , tp{std::move(tp)}
@@ -43,12 +43,12 @@ struct partition_error final : std::exception {
     const char* what() const noexcept final { return msg.c_str(); }
     std::string msg;
     model::topic_partition tp;
-    kafka::error_code error;
+    error_code error;
 };
 
 struct consumer_error final : std::exception {
     consumer_error(
-      kafka::group_id g_id, kafka::member_id m_id, kafka::error_code e)
+      kafka::group_id g_id, kafka::member_id m_id, error_code e)
       : std::exception{}
       , msg{fmt::format("{}, {}, {}", g_id, m_id, e)}
       , group_id{std::move(g_id)}
@@ -58,7 +58,7 @@ struct consumer_error final : std::exception {
     std::string msg;
     kafka::group_id group_id;
     kafka::member_id member_id;
-    kafka::error_code error;
+    error_code error;
 };
 
 } // namespace kafka::client

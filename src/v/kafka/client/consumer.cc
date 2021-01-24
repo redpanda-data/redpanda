@@ -37,26 +37,26 @@ struct topic_comp {
         return lhs < rhs;
     }
     bool operator()(
-      const kafka::metadata_response::topic& lhs,
-      const kafka::metadata_response::topic& rhs) const {
+      const metadata_response::topic& lhs,
+      const metadata_response::topic& rhs) const {
         return lhs.name < rhs.name;
     }
     bool operator()(
-      const kafka::metadata_response::topic& lhs,
+      const metadata_response::topic& lhs,
       const model::topic& rhs) const {
         return lhs.name < rhs;
     }
     bool operator()(
       const model::topic& lhs,
-      const kafka::metadata_response::topic& rhs) const {
+      const metadata_response::topic& rhs) const {
         return lhs < rhs.name;
     }
 };
 
 struct partition_comp {
     bool operator()(
-      const kafka::metadata_response::partition& lhs,
-      const kafka::metadata_response::partition& rhs) const {
+      const metadata_response::partition& lhs,
+      const metadata_response::partition& rhs) const {
         return lhs.index < rhs.index;
     }
 };
@@ -84,29 +84,29 @@ ss::future<> consumer::join() {
     _timer.cancel();
     auto req_builder = [me{shared_from_this()}]() {
         const auto& cfg = shard_local_cfg();
-        kafka::join_group_request req{};
+        join_group_request req{};
         req.client_id = "test_client";
         req.data = {
           .group_id = me->_group_id,
           .session_timeout_ms = cfg.consumer_session_timeout(),
           .rebalance_timeout_ms = cfg.consumer_rebalance_timeout(),
           .member_id = me->_member_id,
-          .protocol_type = kafka::protocol_type{"consumer"},
+          .protocol_type = protocol_type{"consumer"},
           .protocols = make_join_group_request_protocols(me->_topics)};
         return req;
     };
     return req_res(std::move(req_builder))
-      .then([this](kafka::join_group_response res) {
+      .then([this](join_group_response res) {
           switch (res.data.error_code) {
-          case kafka::error_code::member_id_required:
+          case error_code::member_id_required:
               _member_id = res.data.member_id;
               return join();
-          case kafka::error_code::unknown_member_id:
-              _member_id = kafka::no_member;
+          case error_code::unknown_member_id:
+              _member_id = no_member;
               return join();
-          case kafka::error_code::illegal_generation:
+          case error_code::illegal_generation:
               return join();
-          case kafka::error_code::none:
+          case error_code::none:
               _generation_id = res.data.generation_id;
               _member_id = res.data.member_id;
               _leader_id = res.data.leader;
@@ -116,7 +116,7 @@ ss::future<> consumer::join() {
                   return ss::make_exception_future<>(consumer_error(
                     group_id(),
                     member_id(),
-                    kafka::error_code::inconsistent_group_protocol));
+                    error_code::inconsistent_group_protocol));
               }
 
               if (is_leader()) {
@@ -137,7 +137,7 @@ ss::future<> consumer::subscribe(std::vector<model::topic> topics) {
     return join();
 }
 
-void consumer::on_leader_join(const kafka::join_group_response& res) {
+void consumer::on_leader_join(const join_group_response& res) {
     _members.clear();
     _members.reserve(res.data.members.size());
     for (auto const& m : res.data.members) {
@@ -149,8 +149,8 @@ void consumer::on_leader_join(const kafka::join_group_response& res) {
 
     _subscribed_topics.clear();
     for (auto const& m : res.data.members) {
-        kafka::request_reader r(bytes_to_iobuf(m.metadata));
-        auto topics = r.read_array([](kafka::request_reader& reader) {
+        request_reader r(bytes_to_iobuf(m.metadata));
+        auto topics = r.read_array([](request_reader& reader) {
             return model::topic(reader.read_string());
         });
         std::copy(
@@ -168,23 +168,23 @@ void consumer::on_leader_join(const kafka::join_group_response& res) {
       _subscribed_topics);
 }
 
-ss::future<kafka::leave_group_response> consumer::leave() {
+ss::future<leave_group_response> consumer::leave() {
     auto req_builder = [me{shared_from_this()}] {
-        return kafka::leave_group_request{
+        return leave_group_request{
           .data{.group_id = me->_group_id, .member_id = me->_member_id}};
     };
     return req_res(std::move(req_builder)).finally([this]() { return stop(); });
 }
 
-ss::future<std::vector<kafka::metadata_response::topic>>
+ss::future<std::vector<metadata_response::topic>>
 consumer::get_subscribed_topic_metadata() {
     return req_res(
-             []() { return kafka::metadata_request{.list_all_topics = true}; })
-      .then([this](kafka::metadata_response res) {
-          std::vector<kafka::sync_group_request_assignment> assignments;
+             []() { return metadata_request{.list_all_topics = true}; })
+      .then([this](metadata_response res) {
+          std::vector<sync_group_request_assignment> assignments;
 
           std::sort(res.topics.begin(), res.topics.end(), detail::topic_comp{});
-          std::vector<kafka::metadata_response::topic> topics;
+          std::vector<metadata_response::topic> topics;
           topics.reserve(_subscribed_topics.size());
           std::set_intersection(
             res.topics.begin(),
@@ -206,15 +206,15 @@ consumer::get_subscribed_topic_metadata() {
 ss::future<> consumer::sync() {
     return (is_leader() ? get_subscribed_topic_metadata()
                         : ss::make_ready_future<
-                          std::vector<kafka::metadata_response::topic>>())
-      .then([this](std::vector<kafka::metadata_response::topic> topics) {
+                          std::vector<metadata_response::topic>>())
+      .then([this](std::vector<metadata_response::topic> topics) {
           auto req_builder = [me{shared_from_this()},
                               topics{std::move(topics)}]() {
               auto assignments
                 = me->is_leader()
                     ? me->_plan->encode(me->_plan->plan(me->_members, topics))
-                    : std::vector<kafka::sync_group_request_assignment>{};
-              return kafka::sync_group_request{.data{
+                    : std::vector<sync_group_request_assignment>{};
+              return sync_group_request{.data{
                 .group_id = me->_group_id,
                 .generation_id = me->_generation_id,
                 .member_id = me->_member_id,
@@ -223,16 +223,16 @@ ss::future<> consumer::sync() {
           };
 
           return req_res(std::move(req_builder))
-            .then([this](kafka::sync_group_response res) {
+            .then([this](sync_group_response res) {
                 switch (res.data.error_code) {
-                case kafka::error_code::rebalance_in_progress:
+                case error_code::rebalance_in_progress:
                     return sync();
-                case kafka::error_code::illegal_generation:
+                case error_code::illegal_generation:
                     return join();
-                case kafka::error_code::unknown_member_id:
-                    _member_id = kafka::no_member;
+                case error_code::unknown_member_id:
+                    _member_id = no_member;
                     return join();
-                case kafka::error_code::none:
+                case error_code::none:
                     _assignment = _plan->decode(res.data.assignment);
                     return ss::now();
                 default:
@@ -245,23 +245,23 @@ ss::future<> consumer::sync() {
 
 ss::future<> consumer::heartbeat() {
     auto req_builder = [me{shared_from_this()}] {
-        return kafka::heartbeat_request{.data{
+        return heartbeat_request{.data{
           .group_id = me->_group_id,
           .generation_id = me->_generation_id,
           .member_id = me->_member_id,
           .group_instance_id = std::nullopt}};
     };
     return req_res(std::move(req_builder))
-      .then([this](kafka::heartbeat_response res) {
+      .then([this](heartbeat_response res) {
           switch (res.data.error_code) {
-          case kafka::error_code::illegal_generation:
+          case error_code::illegal_generation:
               return join();
-          case kafka::error_code::unknown_member_id:
-              _member_id = kafka::no_member;
+          case error_code::unknown_member_id:
+              _member_id = no_member;
               return join();
-          case kafka::error_code::rebalance_in_progress:
+          case error_code::rebalance_in_progress:
               return join();
-          case kafka::error_code::none:
+          case error_code::none:
               return ss::now();
           default:
               return ss::make_exception_future<>(
@@ -270,34 +270,34 @@ ss::future<> consumer::heartbeat() {
       });
 }
 
-ss::future<kafka::describe_groups_response> consumer::describe_group() {
+ss::future<describe_groups_response> consumer::describe_group() {
     auto req_builder = [this]() {
-        return kafka::describe_groups_request{.data{.groups = {{_group_id}}}};
+        return describe_groups_request{.data{.groups = {{_group_id}}}};
     };
     return req_res(req_builder);
 }
 
-ss::future<kafka::offset_fetch_response>
-consumer::offset_fetch(std::vector<kafka::offset_fetch_request_topic> topics) {
+ss::future<offset_fetch_response>
+consumer::offset_fetch(std::vector<offset_fetch_request_topic> topics) {
     auto req_builder = [topics{std::move(topics)}, group_id{_group_id}] {
-        return kafka::offset_fetch_request{
+        return offset_fetch_request{
           .data{.group_id = group_id, .topics = topics}};
     };
     return req_res(std::move(req_builder))
-      .then([this](kafka::offset_fetch_response res) {
-          return res.data.error_code == kafka::error_code::none
-                   ? ss::make_ready_future<kafka::offset_fetch_response>(
+      .then([this](offset_fetch_response res) {
+          return res.data.error_code == error_code::none
+                   ? ss::make_ready_future<offset_fetch_response>(
                      std::move(res))
-                   : ss::make_exception_future<kafka::offset_fetch_response>(
+                   : ss::make_exception_future<offset_fetch_response>(
                      consumer_error(
                        _group_id, _member_id, res.data.error_code));
       });
 }
 
-ss::future<kafka::offset_commit_response> consumer::offset_commit(
-  std::vector<kafka::offset_commit_request_topic> topics) {
+ss::future<offset_commit_response> consumer::offset_commit(
+  std::vector<offset_commit_request_topic> topics) {
     auto req_builder = [me{shared_from_this()}, topics{std::move(topics)}]() {
-        return kafka::offset_commit_request{.data{
+        return offset_commit_request{.data{
           .group_id = me->_group_id,
           .generation_id = me->_generation_id,
           .member_id = me->_member_id,
@@ -308,7 +308,7 @@ ss::future<kafka::offset_commit_response> consumer::offset_commit(
 }
 
 ss::future<shared_consumer_t>
-make_consumer(shared_broker_t coordinator, kafka::group_id group_id) {
+make_consumer(shared_broker_t coordinator, group_id group_id) {
     auto c = ss::make_lw_shared<consumer>(
       std::move(coordinator), std::move(group_id));
     return c->join().then([c]() mutable { return std::move(c); });

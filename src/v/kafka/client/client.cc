@@ -46,8 +46,8 @@ ss::future<> client::do_connect(unresolved_address addr) {
         return make_broker(unknown_node_id, addr)
           .then([this](shared_broker_t broker) {
               return broker
-                ->dispatch(kafka::metadata_request{.list_all_topics = true})
-                .then([this, broker](kafka::metadata_response res) {
+                ->dispatch(metadata_request{.list_all_topics = true})
+                .then([this, broker](metadata_response res) {
                     return _brokers.apply(std::move(res));
                 });
           });
@@ -86,8 +86,8 @@ ss::future<> client::update_metadata(wait_or_start::tag) {
         vlog(kclog.debug, "updating metadata");
         return _brokers.any().then([this](shared_broker_t broker) {
             return broker
-              ->dispatch(kafka::metadata_request{.list_all_topics = true})
-              .then([this](kafka::metadata_response res) {
+              ->dispatch(metadata_request{.list_all_topics = true})
+              .then([this](metadata_response res) {
                   // Create new seeds from the returned set of brokers
                   std::vector<unresolved_address> seeds;
                   seeds.reserve(res.brokers.size());
@@ -119,9 +119,9 @@ ss::future<> client::mitigate_error(std::exception_ptr ex) {
         }
     } catch (const partition_error& ex) {
         switch (ex.error) {
-        case kafka::error_code::unknown_topic_or_partition:
-        case kafka::error_code::not_leader_for_partition:
-        case kafka::error_code::leader_not_available: {
+        case error_code::unknown_topic_or_partition:
+        case error_code::not_leader_for_partition:
+        case error_code::leader_not_available: {
             vlog(kclog.debug, "partition_error: {}", ex);
             return _wait_or_start_update_metadata();
         }
@@ -139,7 +139,7 @@ ss::future<> client::mitigate_error(std::exception_ptr ex) {
     return ss::make_exception_future(ex);
 }
 
-ss::future<kafka::produce_response::partition> client::produce_record_batch(
+ss::future<produce_response::partition> client::produce_record_batch(
   model::topic_partition tp, model::record_batch&& batch) {
     return ss::with_gate(
       _gate, [this, tp{std::move(tp)}, batch{std::move(batch)}]() mutable {
@@ -152,7 +152,7 @@ ss::future<kafka::produce_response::partition> client::produce_record_batch(
       });
 }
 
-ss::future<kafka::fetch_response> client::fetch_partition(
+ss::future<fetch_response> client::fetch_partition(
   model::topic_partition tp,
   model::offset offset,
   int32_t max_bytes,
@@ -179,13 +179,13 @@ ss::future<kafka::fetch_response> client::fetch_partition(
       });
 }
 
-ss::future<kafka::member_id>
-client::create_consumer(const kafka::group_id& group_id) {
+ss::future<member_id>
+client::create_consumer(const group_id& group_id) {
     auto build_request = [group_id]() {
-        return kafka::find_coordinator_request(group_id);
+        return find_coordinator_request(group_id);
     };
     return dispatch(build_request)
-      .then([](kafka::find_coordinator_response res) {
+      .then([](find_coordinator_response res) {
           return make_broker(
             res.data.node_id, unresolved_address(res.data.host, res.data.port));
       })
@@ -200,20 +200,20 @@ client::create_consumer(const kafka::group_id& group_id) {
 }
 
 ss::future<shared_consumer_t> client::get_consumer(
-  const kafka::group_id& g_id, const kafka::member_id& m_id) {
+  const group_id& g_id, const member_id& m_id) {
     if (auto c_it = _consumers.find(m_id); c_it != _consumers.end()) {
         return ss::make_ready_future<shared_consumer_t>(*c_it);
     }
     return ss::make_exception_future<shared_consumer_t>(
-      consumer_error(g_id, m_id, kafka::error_code::unknown_member_id));
+      consumer_error(g_id, m_id, error_code::unknown_member_id));
 }
 
 ss::future<> client::remove_consumer(
-  const kafka::group_id& g_id, const kafka::member_id& m_id) {
+  const group_id& g_id, const member_id& m_id) {
     return get_consumer(g_id, m_id).then([this](shared_consumer_t c) {
-        return c->leave().then([this, c](kafka::leave_group_response res) {
+        return c->leave().then([this, c](leave_group_response res) {
             _consumers.erase(c);
-            if (res.data.error_code != kafka::error_code::none) {
+            if (res.data.error_code != error_code::none) {
                 return ss::make_exception_future<>(consumer_error(
                   c->group_id(), c->member_id(), res.data.error_code));
             }
@@ -223,8 +223,8 @@ ss::future<> client::remove_consumer(
 }
 
 ss::future<> client::subscribe_consumer(
-  const kafka::group_id& g_id,
-  const kafka::member_id& m_id,
+  const group_id& g_id,
+  const member_id& m_id,
   std::vector<model::topic> topics) {
     return get_consumer(g_id, m_id)
       .then([topics{std::move(topics)}](shared_consumer_t c) mutable {
@@ -233,33 +233,33 @@ ss::future<> client::subscribe_consumer(
 }
 
 ss::future<std::vector<model::topic>> client::consumer_topics(
-  const kafka::group_id& g_id, const kafka::member_id& m_id) {
+  const group_id& g_id, const member_id& m_id) {
     return get_consumer(g_id, m_id).then([](shared_consumer_t c) {
         return ss::make_ready_future<std::vector<model::topic>>(c->topics());
     });
 }
 
 ss::future<assignment> client::consumer_assignment(
-  const kafka::group_id& g_id, const kafka::member_id& m_id) {
+  const group_id& g_id, const member_id& m_id) {
     return get_consumer(g_id, m_id).then([](shared_consumer_t c) {
         return ss::make_ready_future<assignment>(c->assignment());
     });
 }
 
-ss::future<kafka::offset_fetch_response> client::consumer_offset_fetch(
-  const kafka::group_id& g_id,
-  const kafka::member_id& m_id,
-  std::vector<kafka::offset_fetch_request_topic> topics) {
+ss::future<offset_fetch_response> client::consumer_offset_fetch(
+  const group_id& g_id,
+  const member_id& m_id,
+  std::vector<offset_fetch_request_topic> topics) {
     return get_consumer(g_id, m_id)
       .then([topics{std::move(topics)}](shared_consumer_t c) mutable {
           return c->offset_fetch(std::move(topics));
       });
 }
 
-ss::future<kafka::offset_commit_response> client::consumer_offset_commit(
-  const kafka::group_id& g_id,
-  const kafka::member_id& m_id,
-  std::vector<kafka::offset_commit_request_topic> topics) {
+ss::future<offset_commit_response> client::consumer_offset_commit(
+  const group_id& g_id,
+  const member_id& m_id,
+  std::vector<offset_commit_request_topic> topics) {
     return get_consumer(g_id, m_id)
       .then([topics{std::move(topics)}](shared_consumer_t c) mutable {
           return c->offset_commit(std::move(topics));

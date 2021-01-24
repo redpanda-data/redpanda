@@ -36,7 +36,7 @@ make_broker(model::node_id node_id, unresolved_address addr) {
             ex.code() == std::errc::host_unreachable
             || ex.code() == std::errc::connection_refused) {
               return ss::make_exception_future<shared_broker_t>(
-                broker_error(node_id, kafka::error_code::network_exception));
+                broker_error(node_id, error_code::network_exception));
           }
           vlog(kclog.warn, "std::system_error: ", ex.what());
           return ss::make_exception_future<shared_broker_t>(ex);

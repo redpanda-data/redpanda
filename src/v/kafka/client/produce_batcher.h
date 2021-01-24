@@ -47,7 +47,7 @@ typename ContainerT::value_type consume_front(ContainerT& c) {
 /// |          b_ctx0(3)        |       b_ctx1(3)      | broker ctx(rec_count)
 class produce_batcher {
 public:
-    using partition_response = kafka::produce_response::partition;
+    using partition_response = produce_response::partition;
     explicit produce_batcher()
       : _builder{make_builder()}
       , _client_reqs{}
@@ -67,7 +67,7 @@ public:
         explicit broker_context(size_t record_count)
           : record_count(record_count) {}
         int32_t record_count;
-        // TODO(Ben): kafka::correlation_id id;
+        // TODO(Ben): correlation_id id;
     };
 
     ss::future<partition_response> produce(model::record_batch&& batch) {
@@ -99,7 +99,7 @@ public:
             response.promise.set_value(partition_response{
               .id{res.id},
               .error = res.error,
-              .base_offset = res.error == kafka::error_code::none
+              .base_offset = res.error == error_code::none
                                ? model::offset(running_offset)
                                : model::offset(-1),
               // TODO(Ben): Are these correct?
