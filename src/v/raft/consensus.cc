@@ -458,9 +458,11 @@ ss::future<result<replicate_result>> consensus::do_replicate(
                 errc::not_leader);
           }
 
-          return disk_append(model::make_record_batch_reader<
-                               details::term_assigning_reader>(
-                               std::move(rdr), model::term_id(_term)))
+          return disk_append(
+                   model::make_record_batch_reader<
+                     details::term_assigning_reader>(
+                     std::move(rdr), model::term_id(_term)),
+                   update_last_quorum_index::no)
             .then([this](storage::append_result res) {
                 // only update visibility upper bound if all quorum replicated
                 // entries are committed already
@@ -1317,7 +1319,7 @@ consensus::do_append_entries(append_entries_request&& r) {
 
     // success. copy entries for each subsystem
     using offsets_ret = storage::append_result;
-    return disk_append(std::move(r.batches))
+    return disk_append(std::move(r.batches), update_last_quorum_index::no)
       .then([this, m = r.meta, target = r.node_id](offsets_ret ofs) {
           auto f = ss::make_ready_future<>();
           auto last_visible = std::min(ofs.last_offset, m.last_visible_index);
@@ -1633,8 +1635,9 @@ ss::future<> consensus::flush_log() {
     return _log.flush().then([this] { _has_pending_flushes = false; });
 }
 
-ss::future<storage::append_result>
-consensus::disk_append(model::record_batch_reader&& reader) {
+ss::future<storage::append_result> consensus::disk_append(
+  model::record_batch_reader&& reader,
+  update_last_quorum_index should_update_last_quorum_idx) {
     using ret_t = storage::append_result;
     auto cfg = storage::log_append_config{
       // no fsync explicit on a per write, we verify at the end to
@@ -1647,9 +1650,19 @@ consensus::disk_append(model::record_batch_reader&& reader) {
              std::move(reader),
              _log.make_appender(cfg),
              cfg.timeout)
-      .then([this](std::tuple<ret_t, std::vector<offset_configuration>> t) {
-          _disk_append.broadcast();
+      .then([this, should_update_last_quorum_idx](
+              std::tuple<ret_t, std::vector<offset_configuration>> t) {
           auto& [ret, configurations] = t;
+          if (should_update_last_quorum_idx) {
+              /**
+               * We have to update last quorum replicated index before we
+               * trigger read for followers recovery as recovery_stm will have
+               * to deceide if follower flush is required basing on last quorum
+               * replicated index.
+               */
+              _last_quorum_replicated_index = ret.last_offset;
+          }
+          _disk_append.broadcast();
           _has_pending_flushes = true;
           // TODO
           // if we rolled a log segment. write current configuration
