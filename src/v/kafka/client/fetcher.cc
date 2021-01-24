@@ -49,19 +49,19 @@ make_fetch_response(const model::topic_partition& tp, std::exception_ptr ex) {
     try {
         std::rethrow_exception(std::move(ex));
     } catch (const partition_error& ex) {
-        vlog(ppclog.debug, "handling partition_error {}", ex);
+        vlog(kclog.debug, "handling partition_error {}", ex);
         error = ex.error;
     } catch (const broker_error& ex) {
-        vlog(ppclog.debug, "handling broker_error {}", ex);
+        vlog(kclog.debug, "handling broker_error {}", ex);
         error = ex.error;
     } catch (const ss::gate_closed_exception&) {
-        vlog(ppclog.debug, "gate_closed_exception");
+        vlog(kclog.debug, "gate_closed_exception");
         error = kafka::error_code::operation_not_attempted;
     } catch (const std::exception& ex) {
-        vlog(ppclog.warn, "std::exception {}", ex);
+        vlog(kclog.warn, "std::exception {}", ex);
         error = kafka::error_code::unknown_server_error;
     } catch (const std::exception_ptr&) {
-        vlog(ppclog.error, "std::exception_ptr");
+        vlog(kclog.error, "std::exception_ptr");
         error = kafka::error_code::unknown_server_error;
     }
     kafka::fetch_response::partition_response pr{

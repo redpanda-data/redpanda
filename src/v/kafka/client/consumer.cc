@@ -64,11 +64,11 @@ struct partition_comp {
 } // namespace detail
 
 void consumer::start() {
-    ppclog.info("Consumer: {}: start", *this);
+    kclog.info("Consumer: {}: start", *this);
     _timer.set_callback([this]() {
-        ppclog.info("Consumer: {}: timer cb", *this);
+        kclog.info("Consumer: {}: timer cb", *this);
         (void)heartbeat().handle_exception_type([this](consumer_error e) {
-            ppclog.error("Consumer: {}: heartbeat failed: {}", *this, e.error);
+            kclog.error("Consumer: {}: heartbeat failed: {}", *this, e.error);
         });
     });
     _timer.arm_periodic(std::chrono::duration_cast<ss::timer<>::duration>(
@@ -161,7 +161,7 @@ void consumer::on_leader_join(const kafka::join_group_response& res) {
       std::unique(_subscribed_topics.begin(), _subscribed_topics.end()),
       _subscribed_topics.end());
 
-    ppclog.info(
+    kclog.info(
       "Consumer: {}: join: members: {}, topics: {}",
       *this,
       _members,

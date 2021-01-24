@@ -16,5 +16,5 @@
 #include <seastar/util/log.hh>
 
 namespace kafka::client {
-extern ss::logger ppclog;
+inline ss::logger kclog("kafka::client");
 } // namespace kafka::client
