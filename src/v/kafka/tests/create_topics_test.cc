@@ -104,7 +104,7 @@ public:
     }
 
     void verify_metadata(
-      kafka::client& client,
+      kafka::client::transport& client,
       kafka::create_topics_request& create_req,
       kafka::creatable_topic& request_topic) {
         // query the server for this topic's metadata

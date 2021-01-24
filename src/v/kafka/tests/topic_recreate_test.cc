@@ -82,10 +82,10 @@ public:
     template<typename Func>
     auto do_with_client(Func&& f) {
         return make_kafka_client().then(
-          [f = std::forward<Func>(f)](kafka::client client) mutable {
+          [f = std::forward<Func>(f)](kafka::client::transport client) mutable {
               return ss::do_with(
                 std::move(client),
-                [f = std::forward<Func>(f)](kafka::client& client) mutable {
+                [f = std::forward<Func>(f)](kafka::client::transport& client) mutable {
                     return client.connect().then(
                       [&client, f = std::forward<Func>(f)]() mutable {
                           return f(client);
@@ -96,7 +96,7 @@ public:
 
     ss::future<kafka::metadata_response>
     get_topic_metadata(const model::topic& tp) {
-        return do_with_client([tp](kafka::client& client) {
+        return do_with_client([tp](kafka::client::transport& client) {
             std::vector<model::topic> topics;
             topics.push_back(tp);
             kafka::metadata_request md_req{
