@@ -33,6 +33,7 @@ struct ntp_context {
         model::offset last_read{model::model_limits<model::offset>::min()};
         model::offset last_acked{model::model_limits<model::offset>::min()};
     };
+    using offsets_map = absl::btree_map<script_id, offset_pair>;
 
     explicit ntp_context(storage::log lg)
       : log(std::move(lg)) {}
@@ -42,7 +43,7 @@ struct ntp_context {
     /// Reference to the storage layer for reading from the input ntp
     storage::log log;
     /// Interested scripts write their last read offset of the input ntp
-    absl::btree_map<script_id, offset_pair> offsets;
+    offsets_map offsets;
 };
 
 using ntp_context_cache
