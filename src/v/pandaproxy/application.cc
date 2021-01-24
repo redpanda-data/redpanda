@@ -33,10 +33,10 @@
 
 namespace pandaproxy {
 
-void systemd_notify_ready() {
+void pandaproxy_notify_ready() {
     ss::sstring msg = fmt::format(
       "READY=1\nSTATUS=pandaproxy is ready! - {}", redpanda_version());
-    syschecks::systemd_raw_message(msg);
+    syschecks::systemd_raw_message(msg).get();
 }
 
 int application::run(int ac, char** av) {
@@ -141,7 +141,7 @@ void application::hydrate_config(
 }
 
 void application::check_environment() {
-    syschecks::systemd_message("checking environment (CPU, Mem)");
+    syschecks::systemd_message("checking environment (CPU, Mem)").get();
     syschecks::cpu();
     syschecks::memory(shard_local_cfg().developer_mode());
 }
@@ -151,7 +151,7 @@ void application::configure_admin_server() {
     if (!conf.enable_admin_api()) {
         return;
     }
-    syschecks::systemd_message("constructing http server");
+    syschecks::systemd_message("constructing http server").get();
     construct_service(_admin, ss::sstring("admin")).get();
     ss::prometheus::config metrics_conf;
     metrics_conf.metric_help = "pandaproxy metrics";
@@ -159,7 +159,8 @@ void application::configure_admin_server() {
     ss::prometheus::add_prometheus_routes(_admin, metrics_conf).get();
     if (conf.enable_admin_api()) {
         syschecks::systemd_message(
-          "enabling admin HTTP api: {}", shard_local_cfg().admin_api());
+          "enabling admin HTTP api: {}", shard_local_cfg().admin_api())
+          .get();
         auto rb = ss::make_shared<ss::api_registry_builder20>(
           conf.admin_api_doc_dir(), "/v1");
         _admin
@@ -200,7 +201,7 @@ void application::configure_admin_server() {
 
 // add additional services in here
 void application::wire_up_services() {
-    syschecks::systemd_message("Starting Pandaproxy");
+    syschecks::systemd_message("Starting Pandaproxy").get();
 
     construct_service(
       _proxy,
@@ -214,8 +215,8 @@ void application::start() {
     _proxy.invoke_on_all(&proxy::start).get();
     vlog(_log.info, "Started Pandaproxy listening at {}", conf.pandaproxy_api);
 
-    syschecks::systemd_message("Pandaproxy ready!");
-    systemd_notify_ready();
+    syschecks::systemd_message("Pandaproxy ready!").get();
+    pandaproxy_notify_ready();
 }
 
 } // namespace pandaproxy

@@ -27,7 +27,6 @@ deb_deps=(
   curl
   libzstd-dev
   libsnappy-dev
-  libsystemd-dev
   rapidjson-dev
   libxxhash-dev
   python3-venv
@@ -38,7 +37,6 @@ fedora_deps=(
   libzstd-static
   libzstd-devel
   snappy-devel
-  systemd-devel
   rapidjson-devel
   xxhash-devel
   python3-virtualenv

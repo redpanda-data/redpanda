@@ -49,15 +49,15 @@ ss::future<> disk(const ss::sstring& path);
 
 void memory(bool ignore);
 
-void systemd_raw_message(const ss::sstring& out);
+ss::future<> systemd_raw_message(ss::sstring out);
 
-void systemd_notify_ready();
+ss::future<> systemd_notify_ready();
 
 template<typename... Args>
-void systemd_message(const char* fmt, Args&&... args) {
+ss::future<> systemd_message(const char* fmt, Args&&... args) {
     ss::sstring s = fmt::format(
       "STATUS={}\n", fmt::format(fmt, std::forward<Args>(args)...));
-    systemd_raw_message(s);
+    return systemd_raw_message(std::move(s));
 }
 
 /*
