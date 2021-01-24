@@ -37,7 +37,7 @@ kvstore::kvstore(kvstore_config kv_conf)
   , _timer([this] { _sem.signal(); }) {}
 
 ss::future<> kvstore::start() {
-    vlog(lg.info, "Starting kvstore: dir {}", _ntpc.work_directory());
+    vlog(lg.debug, "Starting kvstore: dir {}", _ntpc.work_directory());
 
     if (!config::shard_local_cfg().disable_metrics()) {
         _probe.metrics.add_group(
@@ -456,7 +456,7 @@ void kvstore::load_snapshot_in_thread() {
 
 void kvstore::replay_segments_in_thread(segment_set segs) {
     vlog(
-      lg.info,
+      lg.debug,
       "Replaying {} segments from offset {}",
       segs.size(),
       _next_offset);

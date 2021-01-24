@@ -164,7 +164,7 @@ void application::hydrate_config(const po::variables_map& cfg) {
       [this](const config::base_property& item) {
           std::stringstream val;
           item.print(val);
-          vlog(_log.info, "{}\t- {}", val.str(), item.desc());
+          vlog(_log.debug, "{}\t- {}", val.str(), item.desc());
       });
 }
 
