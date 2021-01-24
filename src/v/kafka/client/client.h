@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "kafka/client.h"
+#include "kafka/client/transport.h"
 #include "kafka/types.h"
 #include "kafka/client/assignment_plans.h"
 #include "kafka/client/broker.h"

@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "kafka/client.h"
+#include "kafka/client/transport.h"
 #include "model/metadata.h"
 #include "kafka/client/error.h"
 #include "utils/mutex.h"
@@ -48,7 +48,7 @@ struct gated_mutex {
 
 class broker : public ss::enable_lw_shared_from_this<broker> {
 public:
-    broker(model::node_id node_id, kafka::client&& client)
+    broker(model::node_id node_id, kafka::client::transport&& client)
       : _node_id(node_id)
       , _client(std::move(client))
       , _gated_mutex{} {}
@@ -77,7 +77,7 @@ public:
 
 private:
     model::node_id _node_id;
-    kafka::client _client;
+    kafka::client::transport _client;
     // TODO(Ben): allow overlapped requests
     gated_mutex _gated_mutex;
 };

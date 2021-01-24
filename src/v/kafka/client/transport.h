@@ -26,7 +26,7 @@
 #include <seastar/net/inet_address.hh>
 #include <seastar/net/socket_defs.hh>
 
-namespace kafka {
+namespace kafka::client {
 
 /**
  * \brief Kafka client.
@@ -34,7 +34,7 @@ namespace kafka {
  * Restrictions:
  *  - don't dispatch concurrent requests.
  */
-class client : public rpc::base_transport {
+class transport : public rpc::base_transport {
 private:
     /*
      * send a request message and process the reply. note that the kafka
