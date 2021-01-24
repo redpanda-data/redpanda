@@ -9,13 +9,13 @@
 
 #include "kafka/client/produce_partition.h"
 
+#include "kafka/client/brokers.h"
+#include "kafka/client/configuration.h"
+#include "kafka/client/test/utils.h"
 #include "kafka/errors.h"
 #include "kafka/requests/produce_request.h"
 #include "model/fundamental.h"
 #include "model/record.h"
-#include "kafka/client/brokers.h"
-#include "kafka/client/configuration.h"
-#include "kafka/client/test/utils.h"
 
 #include <seastar/testing/thread_test_case.hh>
 

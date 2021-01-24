@@ -47,8 +47,7 @@ struct partition_error final : std::exception {
 };
 
 struct consumer_error final : std::exception {
-    consumer_error(
-      group_id g_id, member_id m_id, error_code e)
+    consumer_error(group_id g_id, member_id m_id, error_code e)
       : std::exception{}
       , msg{fmt::format("{}, {}, {}", g_id, m_id, e)}
       , group_id{std::move(g_id)}

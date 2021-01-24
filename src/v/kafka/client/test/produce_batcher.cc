@@ -10,11 +10,11 @@
 #include "kafka/client/produce_batcher.h"
 
 #include "cluster/simple_batch_builder.h"
+#include "kafka/client/test/utils.h"
 #include "kafka/errors.h"
 #include "kafka/requests/produce_request.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
-#include "kafka/client/test/utils.h"
 #include "reflection/adl.h"
 #include "storage/record_batch_builder.h"
 

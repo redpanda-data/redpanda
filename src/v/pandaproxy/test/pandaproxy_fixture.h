@@ -13,9 +13,9 @@
 
 #include "config/configuration.h"
 #include "http/client.h"
+#include "kafka/client/client.h"
 #include "kafka/requests/metadata_request.h"
 #include "pandaproxy/application.h"
-#include "kafka/client/client.h"
 #include "pandaproxy/configuration.h"
 #include "pandaproxy/proxy.h"
 #include "redpanda/tests/fixture.h"

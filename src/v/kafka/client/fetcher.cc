@@ -11,9 +11,9 @@
 
 #include "kafka/client/fetcher.h"
 
-#include "model/fundamental.h"
 #include "kafka/client/error.h"
 #include "kafka/client/logger.h"
+#include "model/fundamental.h"
 #include "seastar/core/gate.hh"
 
 namespace kafka::client {

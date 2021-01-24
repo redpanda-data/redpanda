@@ -9,14 +9,14 @@
 
 #include "kafka/client/producer.h"
 
-#include "kafka/errors.h"
-#include "kafka/requests/produce_request.h"
-#include "model/fundamental.h"
 #include "kafka/client/brokers.h"
 #include "kafka/client/configuration.h"
 #include "kafka/client/error.h"
 #include "kafka/client/logger.h"
 #include "kafka/client/retry_with_mitigation.h"
+#include "kafka/errors.h"
+#include "kafka/requests/produce_request.h"
+#include "model/fundamental.h"
 
 #include <seastar/core/gate.hh>
 
@@ -85,10 +85,10 @@ producer::do_send(model::topic_partition tp, model::record_batch&& batch) {
           auto topic = std::move(res.topics[0]);
           auto partition = std::move(topic.partitions[0]);
           if (partition.error != error_code::none) {
-              return ss::make_exception_future<
-                produce_response::partition>(partition_error(
-                model::topic_partition(topic.name, partition.id),
-                partition.error));
+              return ss::make_exception_future<produce_response::partition>(
+                partition_error(
+                  model::topic_partition(topic.name, partition.id),
+                  partition.error));
           }
           return ss::make_ready_future<produce_response::partition>(
             std::move(partition));
@@ -125,8 +125,7 @@ producer::send(model::topic_partition tp, model::record_batch&& batch) {
       .handle_exception([p_id](std::exception_ptr ex) {
           return make_produce_response(p_id, std::move(ex));
       })
-      .then([this, tp, record_count](
-              produce_response::partition res) mutable {
+      .then([this, tp, record_count](produce_response::partition res) mutable {
           vlog(
             kclog.debug,
             "sent record_batch: {}, {{record_count: {}}}, {}",

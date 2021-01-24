@@ -9,6 +9,10 @@
 
 #include "kafka/client/consumer.h"
 
+#include "kafka/client/assignment_plans.h"
+#include "kafka/client/configuration.h"
+#include "kafka/client/error.h"
+#include "kafka/client/logger.h"
 #include "kafka/errors.h"
 #include "kafka/requests/describe_groups_request.h"
 #include "kafka/requests/find_coordinator_request.h"
@@ -18,10 +22,6 @@
 #include "kafka/requests/metadata_request.h"
 #include "kafka/requests/sync_group_request.h"
 #include "kafka/types.h"
-#include "kafka/client/assignment_plans.h"
-#include "kafka/client/configuration.h"
-#include "kafka/client/error.h"
-#include "kafka/client/logger.h"
 
 #include <chrono>
 #include <exception>
@@ -42,13 +42,11 @@ struct topic_comp {
         return lhs.name < rhs.name;
     }
     bool operator()(
-      const metadata_response::topic& lhs,
-      const model::topic& rhs) const {
+      const metadata_response::topic& lhs, const model::topic& rhs) const {
         return lhs.name < rhs;
     }
     bool operator()(
-      const model::topic& lhs,
-      const metadata_response::topic& rhs) const {
+      const model::topic& lhs, const metadata_response::topic& rhs) const {
         return lhs < rhs.name;
     }
 };
@@ -178,8 +176,7 @@ ss::future<leave_group_response> consumer::leave() {
 
 ss::future<std::vector<metadata_response::topic>>
 consumer::get_subscribed_topic_metadata() {
-    return req_res(
-             []() { return metadata_request{.list_all_topics = true}; })
+    return req_res([]() { return metadata_request{.list_all_topics = true}; })
       .then([this](metadata_response res) {
           std::vector<sync_group_request_assignment> assignments;
 
@@ -204,9 +201,9 @@ consumer::get_subscribed_topic_metadata() {
 }
 
 ss::future<> consumer::sync() {
-    return (is_leader() ? get_subscribed_topic_metadata()
-                        : ss::make_ready_future<
-                          std::vector<metadata_response::topic>>())
+    return (is_leader()
+              ? get_subscribed_topic_metadata()
+              : ss::make_ready_future<std::vector<metadata_response::topic>>())
       .then([this](std::vector<metadata_response::topic> topics) {
           auto req_builder = [me{shared_from_this()},
                               topics{std::move(topics)}]() {
@@ -251,23 +248,22 @@ ss::future<> consumer::heartbeat() {
           .member_id = me->_member_id,
           .group_instance_id = std::nullopt}};
     };
-    return req_res(std::move(req_builder))
-      .then([this](heartbeat_response res) {
-          switch (res.data.error_code) {
-          case error_code::illegal_generation:
-              return join();
-          case error_code::unknown_member_id:
-              _member_id = no_member;
-              return join();
-          case error_code::rebalance_in_progress:
-              return join();
-          case error_code::none:
-              return ss::now();
-          default:
-              return ss::make_exception_future<>(
-                consumer_error(_group_id, _member_id, res.data.error_code));
-          }
-      });
+    return req_res(std::move(req_builder)).then([this](heartbeat_response res) {
+        switch (res.data.error_code) {
+        case error_code::illegal_generation:
+            return join();
+        case error_code::unknown_member_id:
+            _member_id = no_member;
+            return join();
+        case error_code::rebalance_in_progress:
+            return join();
+        case error_code::none:
+            return ss::now();
+        default:
+            return ss::make_exception_future<>(
+              consumer_error(_group_id, _member_id, res.data.error_code));
+        }
+    });
 }
 
 ss::future<describe_groups_response> consumer::describe_group() {
@@ -294,8 +290,8 @@ consumer::offset_fetch(std::vector<offset_fetch_request_topic> topics) {
       });
 }
 
-ss::future<offset_commit_response> consumer::offset_commit(
-  std::vector<offset_commit_request_topic> topics) {
+ss::future<offset_commit_response>
+consumer::offset_commit(std::vector<offset_commit_request_topic> topics) {
     auto req_builder = [me{shared_from_this()}, topics{std::move(topics)}]() {
         return offset_commit_request{.data{
           .group_id = me->_group_id,
