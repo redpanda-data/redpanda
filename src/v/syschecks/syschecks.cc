@@ -68,7 +68,7 @@ ss::future<> systemd_raw_message(ss::sstring out) {
         checklog.trace("NOTIFY_SOCKET unset. ignoring {}", log_msg);
         co_return;
     }
-    checklog.debug("{}", log_msg);
+    checklog.info("{}", log_msg);
     ss::sstring systemd_socket = systemd_socket_path;
     if (systemd_socket[0] == '@') {
         // detected abstract socket; replace @ with 0
