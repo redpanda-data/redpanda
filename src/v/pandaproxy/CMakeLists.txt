@@ -44,7 +44,7 @@ v_cc_library(
     proxy.cc
     server.cc
   DEPS
-    v::pandaproxy_client
+    v::kafka_client
     v::syschecks
     v::kafka
     v::ssx

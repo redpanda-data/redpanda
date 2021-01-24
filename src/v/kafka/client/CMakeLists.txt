@@ -1,5 +1,5 @@
 v_cc_library(
-  NAME pandaproxy_client
+  NAME kafka_client
   SRCS
     assignment_plans.cc
     broker.cc

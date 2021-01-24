@@ -34,7 +34,7 @@
 #include "kafka/client/client.h"
 #include "kafka/client/configuration.h"
 #include "kafka/client/consumer.h"
-#include "kafka/client/test/pandaproxy_client_fixture.h"
+#include "kafka/client/test/fixture.h"
 #include "kafka/client/test/utils.h"
 #include "redpanda/tests/fixture.h"
 #include "utils/unresolved_address.h"
