@@ -33,7 +33,6 @@ please keep this up to date with every new library use.
 | zstd            | BSD                                |
 | HdrHistogram    | BSD 2                              |
 | xxhash          | BSD                                |
-| GSL             | MIT                                |
 | abseil          | Apache License 2                   |
 | rapidjson       | MIT                                |
 | crc32c          | BSD 3                              |
