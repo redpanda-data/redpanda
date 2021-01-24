@@ -613,6 +613,10 @@ void application::start() {
     vlog(
       _log.info, "Started Kafka API server listening at {}", conf.kafka_api());
 
+    if (coproc_enabled()) {
+        pacemaker.invoke_on_all(&coproc::pacemaker::start).get();
+    }
+
     vlog(_log.info, "Successfully started Redpanda!");
     syschecks::systemd_notify_ready().get();
 }
