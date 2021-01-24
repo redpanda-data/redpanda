@@ -96,6 +96,7 @@ public:
         consensus = 1,
         storage = 2,
         controller = 3,
+        coproc = 4,
         /* your sub-system here */
     };
 
