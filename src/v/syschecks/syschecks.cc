@@ -10,12 +10,15 @@
 #include "syschecks/syschecks.h"
 
 #include "likely.h"
+#include "seastarx.h"
 #include "version.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/memory.hh>
+#include <seastar/core/posix.hh> // here for workaround
+#include <seastar/core/reactor.hh>
 #include <seastar/core/seastar.hh>
-
-#include <systemd/sd-daemon.h>
+#include <seastar/net/api.hh>
 
 namespace syschecks {
 ss::logger checklog{"syschecks"};
@@ -48,24 +51,49 @@ void memory(bool ignore) {
     }
 }
 
-void systemd_notify_ready() {
+ss::future<> systemd_notify_ready() {
     ss::sstring msg = fmt::format(
       "READY=1\nSTATUS=redpanda is ready! - {}", redpanda_version());
-    systemd_raw_message(msg);
+    return systemd_raw_message(std::move(msg));
 }
 
-// TODO:agallego - support non-systemd installations
-// by adding a macro around sd_notify to disable at compile time
-void systemd_raw_message(const ss::sstring& out) {
-    auto r = sd_notify(0, out.c_str());
+ss::future<> systemd_raw_message(ss::sstring out) {
+    const char* systemd_socket_path = std::getenv("NOTIFY_SOCKET");
+    std::string_view log_msg = out;
     if (out.back() == '\n') {
-        checklog.debug("{}", std::string_view(out.c_str(), out.size() - 1));
-    } else {
-        checklog.debug("{}", out);
+        // emit tight logs without extra new lines
+        log_msg = std::string_view(out.c_str(), out.size() - 1);
     }
-    if (unlikely(r < 0)) {
-        checklog.trace("Could not notify systemd sd_notify ready, error:{}", r);
+    if (!systemd_socket_path) {
+        checklog.trace("NOTIFY_SOCKET unset. ignoring {}", log_msg);
+        co_return;
     }
+    checklog.debug("{}", log_msg);
+    ss::sstring systemd_socket = systemd_socket_path;
+    if (systemd_socket[0] == '@') {
+        // detected abstract socket; replace @ with 0
+        systemd_socket[0] = '\0';
+    }
+    auto nixaddr = ss::unix_domain_addr(systemd_socket);
+    auto addr = ss::socket_address(nixaddr);
+    /**
+    // NOTE: the below impl works once we fix seastar
+    auto chan = ss::make_udp_channel();
+    try {
+        co_await chan.send(addr, out.data());
+    } catch (const std::exception& e) {
+        checklog.error("Error sending systemd notification: {}", e.what());
+    }
+    chan.shutdown_input();
+    chan.shutdown_output();
+    */
+
+    // TODO: remove once we futurize the channel code above
+    // In the meantime, we are ok to block while we make this one syscall
+    // it is used only in main() before anything actually starts.
+    auto fd = ss::file_desc::socket(AF_UNIX, SOCK_DGRAM, 0);
+    fd.sendto(addr, out.data(), out.length(), 0);
+    co_return;
 }
 
 } // namespace syschecks

@@ -6,4 +6,4 @@ v_cc_library(
     pidfile.cc
   DEPS
     v::utils
-    systemd)
+    )
