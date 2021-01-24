@@ -84,9 +84,8 @@ class RedpandaService(Service):
         node.account.mkdirs(RedpandaService.DATA_DIR)
         node.account.mkdirs(os.path.dirname(RedpandaService.CONFIG_FILE))
 
-        platform = self._context.globals.get("platform", "docker-compose")
-
-        if platform == "docker-compose":
+        if self._context.globals.get("platform",
+                                     "docker-compose") == "docker-compose":
             self.write_conf_file(node, override_cfg_params)
 
         cmd = (f"nohup {self.find_binary('redpanda')}"
@@ -131,7 +130,10 @@ class RedpandaService(Service):
     def clean_node(self, node):
         node.account.kill_process("redpanda", clean_shutdown=False)
         node.account.remove(f"{RedpandaService.PERSISTENT_ROOT}/*")
-        node.account.remove(f"{RedpandaService.CONFIG_FILE}")
+
+        if self._context.globals.get("platform",
+                                     "docker-compose") == "docker-compose":
+            node.account.remove(f"{RedpandaService.CONFIG_FILE}")
 
     def pids(self, node):
         """Return process ids associated with running processes on the given node."""
