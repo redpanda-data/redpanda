@@ -469,6 +469,7 @@ ss::future<result<replicate_result>> consensus::do_replicate(
                     // bound with last offset appended to the log
                     _visibility_upper_bound_index = std::max(
                       _visibility_upper_bound_index, res.last_offset);
+                    maybe_update_majority_replicated_index();
                 }
                 return result<replicate_result>(
                   replicate_result{.last_offset = res.last_offset});
