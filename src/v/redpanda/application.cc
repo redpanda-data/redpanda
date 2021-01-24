@@ -617,6 +617,7 @@ void application::start() {
           std::filesystem::path(
             config::shard_local_cfg().coproc_script_directory.value()));
         _wasm_event_listener->start();
+        pacemaker.invoke_on_all(&coproc::pacemaker::start).get();
     }
 
     vlog(_log.info, "Successfully started Redpanda!");

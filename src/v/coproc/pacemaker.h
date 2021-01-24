@@ -12,6 +12,7 @@
 #pragma once
 
 #include "coproc/ntp_context.h"
+#include "coproc/pacemaker_offset_keeper.h"
 #include "coproc/script_context.h"
 #include "coproc/types.h"
 #include "rpc/reconnect_transport.h"
@@ -38,6 +39,11 @@ public:
      * @param reference to the storage layer
      */
     pacemaker(ss::socket_address, ss::sharded<storage::api>&);
+
+    /**
+     * Begins the offset keepers loop
+     */
+    ss::future<> start() { return _pof.start(); }
 
     /**
      * Gracefully stops and deregisters all coproc scripts
@@ -91,6 +97,9 @@ private:
 
     /// Referencable cache of active ntps
     ntp_context_cache _ntps;
+
+    /// Responsible for timed persistence of offsets to disk
+    pacemaker_offset_keeper _pof{_ntps};
 };
 
 } // namespace coproc
