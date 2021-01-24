@@ -49,6 +49,30 @@ FIXTURE_TEST(test_replicate_multiple_entries_single_node, raft_test_fixture) {
       "State is consistent after replication");
 };
 
+FIXTURE_TEST(
+  test_replicate_multiple_entries_single_node_relaxed_consistency,
+  raft_test_fixture) {
+    raft_group gr = raft_group(raft::group_id(0), 1);
+    gr.enable_all();
+    for (int i = 0; i < 5; ++i) {
+        bool success = replicate_random_batches(
+                         gr, 5, raft::consistency_level::leader_ack)
+                         .get0();
+        BOOST_REQUIRE(success);
+    }
+
+    validate_logs_replication(gr);
+
+    wait_for(
+      10s,
+      [this, &gr] { return are_all_consumable_offsets_are_the_same(gr); },
+      "State is consistent after replication");
+    auto& n = gr.get_member(model::node_id(0));
+    auto last_visible = n.consensus->last_visible_index();
+    auto lstats = n.log->offsets();
+    BOOST_REQUIRE_EQUAL(last_visible, lstats.dirty_offset);
+};
+
 FIXTURE_TEST(test_replicate_multiple_entries, raft_test_fixture) {
     raft_group gr = raft_group(raft::group_id(0), 3);
     gr.enable_all();
