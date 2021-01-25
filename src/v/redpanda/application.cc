@@ -616,6 +616,9 @@ void application::start() {
 
     /// Start client listening for events on the internal coprocessor topic
     if (coproc_enabled()) {
+        /// Temporarily disable retries for the new client until we create a
+        /// more granular way to configure this per client or per request.
+        kafka::client::shard_local_cfg().retries.set_value(size_t(0));
         construct_single_service(
           _wasm_event_listener,
           config::shard_local_cfg().data_directory.value().path);
