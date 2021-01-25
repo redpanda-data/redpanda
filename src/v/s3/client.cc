@@ -204,7 +204,7 @@ request_creator::make_delete_object_request(
     auto target = fmt::format("/{}", key());
     std::string emptysig
       = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
-    header.method(boost::beast::http::verb::get);
+    header.method(boost::beast::http::verb::delete_);
     header.target(target);
     header.insert(
       boost::beast::http::field::user_agent, aws_header_values::user_agent);
@@ -433,9 +433,11 @@ client::delete_object(const bucket_name& bucket, const object_key& key) {
     return _client.request(std::move(header.value()))
       .then([](const http::client::response_stream_ref& ref) {
           return drain_response_stream(ref).then([ref](iobuf&& res) {
+              auto status = ref->get_headers().result();
               if (
-                ref->get_headers().result()
-                != boost::beast::http::status::ok) { // expect 204
+                status != boost::beast::http::status::ok
+                && status
+                     != boost::beast::http::status::no_content) { // expect 204
                   return parse_rest_error_response<>(std::move(res));
               }
               return ss::now();
