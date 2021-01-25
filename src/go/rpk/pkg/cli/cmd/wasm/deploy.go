@@ -143,7 +143,7 @@ func createHeaders(
 
 func createCheckSumHeader(content []byte) (sarama.RecordHeader, error) {
 	// create key for checksum
-	keySha := []byte("checksum")
+	keySha := []byte("sha256")
 	// create sha256 value for content
 	shaValue := sha256.Sum256(content)
 	return sarama.RecordHeader{
