@@ -211,10 +211,7 @@ ss::future<result<join_reply>> members_manager::dispatch_join_to_remote(
       target.id,
       target.addr);
 
-    return with_client<controller_client_protocol>(
-      _self.id(),
-      _connection_cache,
-      target.id,
+    return do_with_client_one_shot<controller_client_protocol>(
       target.addr,
       _rpc_tls_config,
       [joining_node = std::move(joining_node),
