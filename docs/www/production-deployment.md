@@ -7,7 +7,7 @@ order: 0
 This guide will take you through what is needed to setup a production cluster
 of Redpanda.
 
-### Requirements
+## Requirements
 
 For the best performance the following are strongly recommended:
 
@@ -22,7 +22,7 @@ For the best performance the following are strongly recommended:
 
 ## Installation
 
-First we need to provision the hardware needed. This can be done [manually](#manual-installation) or with the provided Terraform deployment files found here: [https://github.com/vectorizedio/deployment-automation].
+First we need to provision the hardware needed. This can be done manually or with the provided Terraform deployment files found here: https://github.com/vectorizedio/deployment-automation.
 
 First, install Terraform using the [Terraform Installation Tutorial](https://learn.hashicorp.com/tutorials/terraform/install-cli).
 Then clone the `deployment-automation` repo:
@@ -37,8 +37,8 @@ Then change into the directory:
 cd deployment-automation
 ```
 
-From here you can follow the specific instructions for [AWS](#aws) or
-[GCP](#gcp)
+From here you can follow the specific instructions for [AWS](#AWS) or
+[GCP](#GCP)
 
 ### AWS
 
@@ -51,7 +51,7 @@ cd aws
 #### Step 1: Set AWS Credentials
 
 First we need to set the AWS secret and key. Terraform provide multiple ways
-to set this which is covered here: [https://registry.terraform.io/providers/hashicorp/aws/latest/docs#environment-variables]
+to set this which is covered here: https://registry.terraform.io/providers/hashicorp/aws/latest/docs#environment-variables
 
 #### Step 2: Init Terraform
 
@@ -81,7 +81,7 @@ The following is an example of creating a three node cluster using i3.large
 instances.
 
 ```
-terraform apply -var="instance_type=i3.large" -var="nodes 3"
+terraform apply -var="instance_type=i3.large" -var="nodes=3"
 ```
 
 ### GCP
@@ -167,7 +167,11 @@ ansible-galaxy install -r ansible/requirements.yml
 ### Step 2: Configure the hosts.ini file
 
 In the deployment-automation directory you will find a file called `hosts.ini`.
-It will look something like:
+If you used Terraform to deploy the instances this file will be updated
+automatically. If you did not use Terraform you will have to update it
+manually.
+
+If you need to update it manually, first open the file and you will see something like:
 
 ```
 [redpanda]
@@ -207,13 +211,15 @@ Once this completes you will have a fully running cluster.
 On Fedora/RedHat Systems:
 
 ```
-curl -1sLf 'https://packages.vectorized.io/nzc4ZYQK3WRGd9sy/redpanda/cfg/setup/bash.rpm.sh' | sudo -E bash && sudo yum install redpanda -y 
+curl -1sLf 'https://packages.vectorized.io/nzc4ZYQK3WRGd9sy/redpanda/cfg/setup/bash.rpm.sh' | \
+sudo -E bash && sudo yum install redpanda -y 
 ```
 
 On Debian Systems:
 
 ```
-curl -1sLf 'https://packages.vectorized.io/nzc4ZYQK3WRGd9sy/redpanda/cfg/setup/bash.deb.sh' | sudo -E bash && sudo apt install redpanda -y
+curl -1sLf 'https://packages.vectorized.io/nzc4ZYQK3WRGd9sy/redpanda/cfg/setup/bash.deb.sh' | \
+sudo -E bash && sudo apt install redpanda -y
 ```
 
 ### Step 2: Set Redpanda Production Mode
@@ -255,7 +261,7 @@ Now that the software is installed we need to configure it. The first step is
 to setup the root node. The root node will start as a standalone node, and
 every other one will join it, forming a cluster along the way.
 
-For the root node we’ll choose 0 as its ID. --self tells the node which interface address to bind to. Usually you want that to be its private IP.
+For the root node we’ll choose 0 as its ID. `--self` tells the node which interface address to bind to. Usually you want that to be its private IP.
 
 ```
 sudo rpk config bootstrap --id 0 --self <ip> && \

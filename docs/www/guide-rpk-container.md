@@ -15,7 +15,7 @@ It's important to note, however, that you won't need to interact with Docker dir
 
 To get started, run `rpk container start -n 3`. This will start a 3-node cluster. You should see something like this (the addresses may vary):
 
-> `rpk container start` will take a minute the first time you run it, since it will download the latest stable version of Redpanda. The next time you run it it should be quicker.
+> `rpk container start` will take a minute the first time you run it, as it will download the latest stable version of Redpanda.
 
 ```
 Downloading latest version of Redpanda
@@ -30,7 +30,7 @@ Cluster started! You may use 'rpk api' to interact with the cluster. E.g:
 rpk api status
 ```
 
-It says we can check our cluster with `rpk api status` Let's try that!
+It says we can check our cluster with `rpk api status`
 
 ```
   Redpanda Cluster Status
@@ -42,7 +42,7 @@ It says we can check our cluster with `rpk api status` Let's try that!
 
 You can now connect your Kafka compatible applications directly to Redpanda
 by using the ports listed above. In this example the ports to use would be
-58754, 58757, 58756.
+`58754`, `58757`, `58756`.
 
 All of the `rpk api` subcommands will detect the local cluster and use its addresses, so you don't have to configure anything or keep track of IPs and ports.
 
@@ -60,5 +60,5 @@ rpk container stop
 ```
 
 You are all set! You can now use Redpanda to test your favorite Kafka
-compatiable application or use the `rpk api` commands to further interace with
+compatible application or use the `rpk api` commands to further interface with
 the local cluster!
