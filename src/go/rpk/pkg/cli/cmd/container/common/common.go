@@ -52,6 +52,10 @@ type NodeState struct {
 	ContainerID	string
 }
 
+func HostAddr(port uint) string {
+	return fmt.Sprintf("127.0.0.1:%d", port)
+}
+
 // Returns the container name for the given node ID.
 func Name(nodeID uint) string {
 	return fmt.Sprintf("rp-node-%d", nodeID)
@@ -234,7 +238,7 @@ func CreateNode(
 		"--rpc-addr",
 		fmt.Sprintf("%s:%d", ip, config.Default().Redpanda.RPCServer.Port),
 		"--advertise-kafka-addr",
-		fmt.Sprintf("127.0.0.1:%d", kafkaPort),
+		HostAddr(kafkaPort),
 		"--advertise-rpc-addr",
 		fmt.Sprintf("%s:%d", ip, config.Default().Redpanda.RPCServer.Port),
 		"--smp 1 --memory 1G --reserve-memory 0M",

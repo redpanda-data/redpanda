@@ -214,10 +214,7 @@ func ContainerBrokers() []string {
 			defer mu.Unlock()
 			addrs = append(
 				addrs,
-				fmt.Sprintf(
-					"127.0.0.1:%d",
-					s.HostKafkaPort,
-				),
+				common.HostAddr(s.HostKafkaPort),
 			)
 			return nil
 		})
