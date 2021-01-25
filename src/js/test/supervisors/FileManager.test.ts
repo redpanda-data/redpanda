@@ -262,29 +262,34 @@ describe("FileManager", () => {
     assert.strictEqual(expectedErrorMessage, result.message);
   });
 
-  it("should remove a coprocessor, if it's removed from active folder", function (done) {
-    const handle = createHandle({
-      globalId: hash64(Buffer.from("file"), 0).readBigUInt64LE(),
-    });
-    const { getCoprocessor, moveCoprocessor, disableCoprocessor } = createStubs(
-      sinonInstance
-    );
-    moveCoprocessor.returns(Promise.resolve(handle));
-    getCoprocessor.returns(Promise.resolve(handle));
+  it(
+    "should remove a coprocessor, if it's removed from " + "active folder",
+    function (done) {
+      const handle = createHandle({
+        globalId: hash64(Buffer.from("file"), 0).readBigUInt64LE(),
+      });
+      const {
+        getCoprocessor,
+        moveCoprocessor,
+        disableCoprocessor,
+      } = createStubs(sinonInstance);
+      moveCoprocessor.returns(Promise.resolve(handle));
+      getCoprocessor.returns(Promise.resolve(handle));
 
-    const repo = new Repository();
-    const removeSpy = sinonInstance.spy(repo, "remove");
-    const file = new FileManager(repo, "submit", "active", "inactive");
+      const repo = new Repository();
+      const removeSpy = sinonInstance.spy(repo, "remove");
+      const file = new FileManager(repo, "submit", "active", "inactive");
 
-    repo.add(handle);
+      repo.add(handle);
 
-    file.removeHandleFromFilePath(handle.filename, repo).then(() => {
-      assert(removeSpy.called);
-      assert(disableCoprocessor.called);
-      assert(removeSpy.withArgs(handle));
-      done();
-    });
-  });
+      file.removeHandleFromFilePath(handle.filename, repo).then(() => {
+        assert(removeSpy.called);
+        assert(disableCoprocessor.called);
+        assert(removeSpy.withArgs(handle));
+        done();
+      });
+    }
+  );
 
   it(
     "should remove a coprocessor, if it's removed from active folder and " +
@@ -316,6 +321,84 @@ describe("FileManager", () => {
         assert(removeSpy.withArgs(handle));
         assert.rejects(disableCoprocessor.firstCall.returnValue);
       });
+    }
+  );
+
+  it(
+    "if it receives a new handle, and there is another handle with" +
+      " the same checksum, it should move the new handle to the 'inactive' " +
+      "folder.",
+    function (done) {
+      const { getCoprocessor, moveCoprocessor } = createStubs(sinonInstance);
+      const coproc1 = createHandle();
+      const coproc2 = createHandle();
+      sinonInstance
+        .stub(Repository.prototype, "findByGlobalId")
+        .returns(coproc1);
+      const r = new Repository();
+      const filemanager = new FileManager(r, "submit", "active", "inactive");
+      getCoprocessor.returns(Promise.resolve(coproc2));
+      filemanager.addCoprocessor("file", r).then(() => {
+        const [handle, dir] = moveCoprocessor.firstCall.args;
+        assert.strictEqual(handle, coproc2);
+        assert.strictEqual(dir, "inactive");
+
+        done();
+      });
+    }
+  );
+
+  it(
+    "if it receives a new handle, with a different checksum, it should " +
+      "move the previous handle to the 'inactive' folder, and move the new  " +
+      "one to 'active' folder, but it the new handle throws an error on " +
+      "enable coproc, it should be moved to 'inactive' folder.",
+    function (done) {
+      const {
+        getCoprocessor,
+        moveCoprocessor,
+        disableCoprocessor,
+        enableCoprocessor,
+      } = createStubs(sinonInstance);
+      const coproc1 = createHandle();
+      const coproc2 = createHandle();
+      coproc2.checksum = "anotherCheck";
+
+      // Mock moveCoprocessorFile
+      moveCoprocessor
+        .returns(Promise.resolve(coproc1))
+        .returns(Promise.resolve(coproc2))
+        .returns(Promise.resolve(coproc2));
+
+      // Mock deregistration
+      disableCoprocessor.returns(Promise.resolve());
+
+      // Mock enable coproc fail
+      enableCoprocessor.returns(Promise.reject());
+
+      getCoprocessor.returns(Promise.resolve(coproc2));
+
+      sinonInstance
+        .stub(Repository.prototype, "findByGlobalId")
+        .returns(coproc1);
+      const r = new Repository();
+      const filemanager = new FileManager(r, "submit", "active", "inactive");
+
+      filemanager
+        .addCoprocessor("file", r)
+        .then(() => assert.fail("should fail"))
+        .catch(() => {
+          // move coproc1 to inactive folder because there is a new coproc
+          // with same id, but different checksum
+          assert(moveCoprocessor.firstCall.calledWith(coproc1, "inactive"));
+          // move coproc2 after
+          assert(moveCoprocessor.secondCall.calledWith(coproc2, "active"));
+          assert(moveCoprocessor.thirdCall.calledWith(coproc2, "inactive"));
+          assert(
+            enableCoprocessor.firstCall.calledWith([coproc2.coprocessor], true)
+          );
+          done();
+        });
     }
   );
 });
