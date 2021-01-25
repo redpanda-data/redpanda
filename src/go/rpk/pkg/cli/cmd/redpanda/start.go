@@ -763,7 +763,7 @@ func sendEnv(
 	confJSON, err := mgr.ReadAsJSON(conf.ConfigFile)
 	if err != nil {
 		log.Warnf(
-			"Couldn't send latest config at '%s' due to: %s",
+			"Couldn't parse latest config at '%s' due to: %s",
 			conf.ConfigFile,
 			err,
 		)
@@ -778,7 +778,7 @@ func sendEnv(
 	}
 	err = api.SendEnvironment(fs, env, *conf, confJSON)
 	if err != nil {
-		log.Warnf("couldn't send environment data: %v", err)
+		log.Debugf("couldn't send environment data: %v", err)
 	}
 }
 
