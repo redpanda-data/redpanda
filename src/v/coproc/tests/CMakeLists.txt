@@ -13,6 +13,7 @@ v_cc_library(
     utils/supervisor.cc
     utils/coproc_test_fixture.cc
     utils/router_test_fixture.cc
+    utils/wasm_event_generator.cc
   DEPS
     v::coproc v::storage_test_utils v::application
   )
