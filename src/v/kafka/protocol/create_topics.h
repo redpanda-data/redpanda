@@ -13,8 +13,8 @@
 
 #include "kafka/requests/request_context.h"
 #include "kafka/requests/response.h"
-#include "kafka/requests/schemata/create_topics_request.h"
-#include "kafka/requests/schemata/create_topics_response.h"
+#include "kafka/protocol/schemata/create_topics_request.h"
+#include "kafka/protocol/schemata/create_topics_response.h"
 #include "kafka/requests/topics/types.h"
 #include "kafka/requests/topics/validators.h"
 #include "seastarx.h"

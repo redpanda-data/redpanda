@@ -12,8 +12,8 @@
 
 #include "kafka/requests/request_context.h"
 #include "kafka/requests/response.h"
-#include "kafka/requests/schemata/sasl_authenticate_request.h"
-#include "kafka/requests/schemata/sasl_authenticate_response.h"
+#include "kafka/protocol/schemata/sasl_authenticate_request.h"
+#include "kafka/protocol/schemata/sasl_authenticate_response.h"
 #include "kafka/types.h"
 #include "seastarx.h"
 

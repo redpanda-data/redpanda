@@ -631,7 +631,7 @@ class response;
 """
 
 SOURCE_TEMPLATE = """
-#include "kafka/requests/schemata/{{ header }}"
+#include "kafka/protocol/schemata/{{ header }}"
 
 #include "cluster/types.h"
 #include "kafka/requests/response_writer.h"

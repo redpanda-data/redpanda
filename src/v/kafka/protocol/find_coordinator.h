@@ -13,8 +13,8 @@
 
 #include "kafka/requests/request_context.h"
 #include "kafka/requests/response.h"
-#include "kafka/requests/schemata/find_coordinator_request.h"
-#include "kafka/requests/schemata/find_coordinator_response.h"
+#include "kafka/protocol/schemata/find_coordinator_request.h"
+#include "kafka/protocol/schemata/find_coordinator_response.h"
 #include "kafka/types.h"
 #include "seastarx.h"
 

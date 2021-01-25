@@ -20,7 +20,7 @@
 #include "kafka/protocol/leave_group.h"
 #include "kafka/protocol/offset_commit.h"
 #include "kafka/protocol/offset_fetch.h"
-#include "kafka/requests/schemata/describe_groups_response.h"
+#include "kafka/protocol/schemata/describe_groups_response.h"
 #include "kafka/protocol/sync_group.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"

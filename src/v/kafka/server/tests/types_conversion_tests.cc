@@ -11,7 +11,7 @@
 #include "model/metadata.h"
 #define BOOST_TEST_MODULE utils
 #include "cluster/types.h"
-#include "kafka/requests/schemata/create_topics_request.h"
+#include "kafka/protocol/schemata/create_topics_request.h"
 #include "kafka/requests/topics/topic_utils.h"
 #include "kafka/requests/topics/types.h"
 

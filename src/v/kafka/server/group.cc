@@ -14,7 +14,7 @@
 #include "cluster/simple_batch_builder.h"
 #include "kafka/server/group_manager.h"
 #include "kafka/server/logger.h"
-#include "kafka/requests/schemata/describe_groups_response.h"
+#include "kafka/protocol/schemata/describe_groups_response.h"
 #include "kafka/protocol/sync_group.h"
 #include "likely.h"
 #include "utils/to_string.h"

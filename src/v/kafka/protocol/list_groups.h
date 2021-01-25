@@ -11,8 +11,8 @@
 
 #pragma once
 #include "kafka/requests/response.h"
-#include "kafka/requests/schemata/list_groups_request.h"
-#include "kafka/requests/schemata/list_groups_response.h"
+#include "kafka/protocol/schemata/list_groups_request.h"
+#include "kafka/protocol/schemata/list_groups_response.h"
 #include "kafka/types.h"
 #include "seastarx.h"
 

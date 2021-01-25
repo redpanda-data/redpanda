@@ -10,8 +10,8 @@
  */
 
 #pragma once
-#include "kafka/requests/schemata/create_topics_request.h"
-#include "kafka/requests/schemata/create_topics_response.h"
+#include "kafka/protocol/schemata/create_topics_request.h"
+#include "kafka/protocol/schemata/create_topics_response.h"
 #include "kafka/requests/topics/types.h"
 
 namespace kafka {

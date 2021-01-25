@@ -10,7 +10,7 @@
 #include "kafka/errors.h"
 #include "kafka/protocol/delete_topics.h"
 #include "kafka/protocol/metadata.h"
-#include "kafka/requests/schemata/create_topics_request.h"
+#include "kafka/protocol/schemata/create_topics_request.h"
 #include "kafka/requests/topics/types.h"
 #include "kafka/types.h"
 #include "redpanda/application.h"

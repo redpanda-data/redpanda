@@ -13,8 +13,8 @@
 
 #include "kafka/requests/request_context.h"
 #include "kafka/requests/response.h"
-#include "kafka/requests/schemata/api_versions_request.h"
-#include "kafka/requests/schemata/api_versions_response.h"
+#include "kafka/protocol/schemata/api_versions_request.h"
+#include "kafka/protocol/schemata/api_versions_response.h"
 #include "seastarx.h"
 
 #include <seastar/core/future.hh>

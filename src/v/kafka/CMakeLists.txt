@@ -1,4 +1,4 @@
-add_subdirectory(requests/schemata)
+add_subdirectory(protocol)
 
 set(request_srcs
   requests/kafka_batch_adapter.cc

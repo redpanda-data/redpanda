@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "kafka/requests/schemata/create_topics_response.h"
+#include "kafka/protocol/schemata/create_topics_response.h"
 #define BOOST_TEST_MODULE utils
 #include "kafka/requests/topics/topic_utils.h"
 #include "model/fundamental.h"

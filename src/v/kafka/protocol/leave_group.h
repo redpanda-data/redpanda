@@ -12,8 +12,8 @@
 #pragma once
 #include "kafka/errors.h"
 #include "kafka/requests/response.h"
-#include "kafka/requests/schemata/leave_group_request.h"
-#include "kafka/requests/schemata/leave_group_response.h"
+#include "kafka/protocol/schemata/leave_group_request.h"
+#include "kafka/protocol/schemata/leave_group_response.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "seastarx.h"
