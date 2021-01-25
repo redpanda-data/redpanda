@@ -163,9 +163,13 @@ func (m *manager) ReadFlat(path string) (map[string]string, error) {
 			if err != nil {
 				return nil, err
 			}
-			for _, s := range *seeds {
-				key := fmt.Sprintf("%s.%d", k, s.Id)
-				flatMap[key] = fmt.Sprintf("%s:%d", s.Host.Address, s.Host.Port)
+			for i, s := range *seeds {
+				key := fmt.Sprintf("%s.%d", k, i)
+				flatMap[key] = fmt.Sprintf(
+					"%s:%d",
+					s.Host.Address,
+					s.Host.Port,
+				)
 			}
 			continue
 		}

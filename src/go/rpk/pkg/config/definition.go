@@ -35,8 +35,7 @@ type RedpandaConfig struct {
 }
 
 type SeedServer struct {
-	Host	SocketAddress	`yaml:"host" mapstructure:"host" json:"host"`
-	Id	int		`yaml:"node_id" mapstructure:"node_id" json:"id"`
+	Host SocketAddress `yaml:"host" mapstructure:"host" json:"host"`
 }
 
 type SocketAddress struct {
