@@ -154,7 +154,6 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 	}
 
-	log.V(debugLevel).Info("Replicas comparison", "StatefulSet replicas", sts.Spec.Replicas, "Redpanda cluster replicas", redpandaCluster.Spec.Replicas)
 	// Ensure StatefulSet #replicas equals cluster requirement.
 	if sts.Spec.Replicas != redpandaCluster.Spec.Replicas {
 		sts.Spec.Replicas = redpandaCluster.Spec.Replicas
