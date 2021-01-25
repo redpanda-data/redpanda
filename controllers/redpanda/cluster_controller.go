@@ -78,7 +78,9 @@ type ClusterReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.7.0/pkg/reconcile
 // nolint:funlen // The complexity of Reconcile function will be address in the next version
-func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *ClusterReconciler) Reconcile(
+	ctx context.Context, req ctrl.Request,
+) (ctrl.Result, error) {
 	log := r.Log.WithValues("redpandacluster", req.NamespacedName)
 
 	log.Info(fmt.Sprintf("Starting reconcile loop for %v", req.NamespacedName))
@@ -203,7 +205,9 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 }
 
 func (r *ClusterReconciler) createHeadlessService(
-	ctx context.Context, clusterSpec *redpandav1alpha1.Cluster, scheme *runtime.Scheme,
+	ctx context.Context,
+	clusterSpec *redpandav1alpha1.Cluster,
+	scheme *runtime.Scheme,
 ) error {
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
@@ -224,15 +228,19 @@ func (r *ClusterReconciler) createHeadlessService(
 			Selector:	clusterSpec.Labels,
 		},
 	}
+
 	err := controllerutil.SetControllerReference(clusterSpec, svc, scheme)
 	if err != nil {
 		return err
 	}
+
 	return r.Create(ctx, svc)
 }
 
 func (r *ClusterReconciler) createBootstrapConfigMap(
-	ctx context.Context, cluster *redpandav1alpha1.Cluster, scheme *runtime.Scheme,
+	ctx context.Context,
+	cluster *redpandav1alpha1.Cluster,
+	scheme *runtime.Scheme,
 ) error {
 	serviceAddress := cluster.Name + "." + cluster.Namespace + ".svc.cluster.local"
 	cfg := config.Default()
@@ -280,9 +288,10 @@ func (r *ClusterReconciler) createBootstrapConfigMap(
 		},
 		Data: map[string]string{
 			"redpanda.yaml":	string(cfgBytes),
-			"configurator.sh":	scriptBytes,
+			"configurator.sh":	script,
 		},
 	}
+
 	err = controllerutil.SetControllerReference(cluster, cm, scheme)
 	if err != nil {
 		return err
