@@ -80,7 +80,10 @@ func FindConfigFile(
 }
 
 func DeduceBrokers(
-	fs afero.Fs, configuration func() (*config.Config, error), brokers *[]string,
+	fs afero.Fs,
+	client func() (common.Client, error),
+	configuration func() (*config.Config, error),
+	brokers *[]string,
 ) func() []string {
 	return func() []string {
 		bs := *brokers
@@ -91,14 +94,20 @@ func DeduceBrokers(
 		}
 		// Otherwise, try to detect if a local container cluster is
 		// running, and use its brokers' addresses.
-		bs = ContainerBrokers()
-		if len(bs) > 0 {
-			log.Debugf(
-				"Using container cluster brokers %s",
-				strings.Join(bs, ", "),
-			)
-			return bs
+		c, err := client()
+		if err != nil {
+			log.Debug(err)
+		} else {
+			bs = ContainerBrokers(c)
+			if len(bs) > 0 {
+				log.Debugf(
+					"Using container cluster brokers %s",
+					strings.Join(bs, ", "),
+				)
+				return bs
+			}
 		}
+
 		// Otherwise, try to find an existing config file.
 		conf, err := configuration()
 		if err != nil {
@@ -193,12 +202,11 @@ func CreateAdmin(
 	}
 }
 
-func ContainerBrokers() []string {
-	c, err := common.NewDockerClient()
-	if err != nil {
-		log.Debug(err)
-		return []string{}
-	}
+func CreateDockerClient() (common.Client, error) {
+	return common.NewDockerClient()
+}
+
+func ContainerBrokers(c common.Client) []string {
 	nodes, err := common.GetExistingNodes(c)
 	if err != nil {
 		log.Debug(err)

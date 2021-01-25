@@ -57,7 +57,12 @@ func NewTopicCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	// closure with references to the required values (the config file
 	// path, the list of brokers passed through --brokers).
 	configClosure := common.FindConfigFile(mgr, &configFile)
-	brokersClosure := common.DeduceBrokers(fs, configClosure, &brokers)
+	brokersClosure := common.DeduceBrokers(
+		fs,
+		common.CreateDockerClient,
+		configClosure,
+		&brokers,
+	)
 	adminClosure := common.CreateAdmin(fs, brokersClosure, configClosure)
 	clientClosure := common.CreateClient(fs, brokersClosure, configClosure)
 	producerClosure := common.CreateProducer(brokersClosure, configClosure)

@@ -57,7 +57,12 @@ func NewApiCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	// path, the list of brokers passed through --brokers) to deduce the
 	// actual brokers list to be used.
 	configClosure := common.FindConfigFile(mgr, &configFile)
-	brokersClosure := common.DeduceBrokers(fs, configClosure, &brokers)
+	brokersClosure := common.DeduceBrokers(
+		fs,
+		common.CreateDockerClient,
+		configClosure,
+		&brokers,
+	)
 	producerClosure := common.CreateProducer(brokersClosure, configClosure)
 	clientClosure := common.CreateClient(fs, brokersClosure, configClosure)
 	adminClosure := common.CreateAdmin(fs, brokersClosure, configClosure)
