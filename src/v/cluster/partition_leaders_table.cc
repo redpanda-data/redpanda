@@ -11,6 +11,7 @@
 
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "utils/expiring_promise.h"
 
 #include <seastar/core/future-util.hh>
 
@@ -22,7 +23,7 @@ ss::future<> partition_leaders_table::stop() {
     while (!_leader_promises.empty()) {
         auto it = _leader_promises.begin();
         for (auto& promise : it->second) {
-            promise.set_exception(
+            promise.second.set_exception(
               std::make_exception_ptr(ss::timed_out_error()));
         }
         _leader_promises.erase(it);
@@ -74,7 +75,7 @@ void partition_leaders_table::update_partition_leader(
 
     if (auto it = _leader_promises.find(ntp); it != _leader_promises.end()) {
         for (auto& promise : it->second) {
-            promise.set_value(*leader_id);
+            promise.second.set_value(*leader_id);
         }
     }
 }
@@ -86,15 +87,22 @@ ss::future<model::node_id> partition_leaders_table::wait_for_leader(
     if (auto leader = get_leader(ntp); leader.has_value()) {
         return ss::make_ready_future<model::node_id>(*leader);
     }
+    auto id = _promise_id++;
+    _leader_promises[ntp].emplace(id, expiring_promise<model::node_id>{});
+    auto& promise = _leader_promises[ntp][id];
 
-    auto& promise = _leader_promises[ntp].emplace_back();
     return promise
       .get_future_with_timeout(
         timeout,
         [] { return std::make_exception_ptr(ss::timed_out_error()); },
         as)
-      .then_wrapped([ntp, this](ss::future<model::node_id> leader) {
-          _leader_promises.erase(ntp);
+      .then_wrapped([id, ntp, this](ss::future<model::node_id> leader) {
+          auto& ntp_promises = _leader_promises[ntp];
+          ntp_promises.erase(id);
+          if (ntp_promises.empty()) {
+              _leader_promises.erase(ntp);
+          }
+
           return leader;
       });
 }

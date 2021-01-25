@@ -17,6 +17,7 @@
 #include "utils/expiring_promise.h"
 
 #include <absl/container/flat_hash_map.h>
+#include <absl/container/node_hash_map.h>
 
 namespace cluster {
 
@@ -134,9 +135,12 @@ private:
     // per-ntp notifications for leadership election. note that the
     // namespace is currently ignored pending an update to the metadata
     // cache that attaches a namespace to all topics partition references.
-    absl::
-      flat_hash_map<model::ntp, std::vector<expiring_promise<model::node_id>>>
-        _leader_promises;
+    int32_t _promise_id = 0;
+    using promises_t = absl::node_hash_map<
+      model::ntp,
+      absl::node_hash_map<int32_t, expiring_promise<model::node_id>>>;
+
+    promises_t _leader_promises;
 };
 
 } // namespace cluster
