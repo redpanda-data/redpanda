@@ -268,8 +268,9 @@ members_manager::dispatch_join_to_seed_server(seed_iterator it) {
         }
         vlog(
           clusterlog.info,
-          "Error joining cluster using {} seed server",
-          it->id);
+          "Error joining cluster using {} seed server - {}",
+          it->id,
+          fut.get_exception());
 
         // Dispatch to next server
         return dispatch_join_to_seed_server(std::next(it));
