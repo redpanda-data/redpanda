@@ -614,6 +614,14 @@ void application::start() {
     vlog(
       _log.info, "Started Kafka API server listening at {}", conf.kafka_api());
 
+    /// Start client listening for events on the internal coprocessor topic
+    if (coproc_enabled()) {
+        construct_single_service(
+          _wasm_event_listener,
+          config::shard_local_cfg().data_directory.value().path);
+        _wasm_event_listener->start().get();
+    }
+
     vlog(_log.info, "Successfully started Redpanda!");
     syschecks::systemd_notify_ready().get();
 }
