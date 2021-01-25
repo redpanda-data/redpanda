@@ -11,7 +11,6 @@
 
 #pragma once
 #include "kafka/errors.h"
-#include "kafka/requests/fwd.h"
 #include "kafka/types.h"
 
 #include <seastar/core/future.hh>

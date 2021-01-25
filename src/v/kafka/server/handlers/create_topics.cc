@@ -11,7 +11,6 @@
 
 #include "cluster/topics_frontend.h"
 #include "kafka/errors.h"
-#include "kafka/requests/fwd.h"
 #include "kafka/requests/timeout.h"
 #include "kafka/requests/topics/topic_utils.h"
 #include "kafka/requests/topics/types.h"
