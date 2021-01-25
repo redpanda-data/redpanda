@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "kafka/requests/fetch_request.h"
+#include "kafka/protocol/fetch.h"
 
 namespace kafka::client {
 

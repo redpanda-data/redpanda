@@ -9,8 +9,8 @@
 
 #include "kafka/client/transport.h"
 #include "kafka/errors.h"
-#include "kafka/requests/fetch_request.h"
-#include "kafka/requests/produce_request.h"
+#include "kafka/protocol/fetch.h"
+#include "kafka/protocol/produce.h"
 #include "kafka/requests/request_reader.h"
 #include "random/generators.h"
 #include "redpanda/tests/fixture.h"

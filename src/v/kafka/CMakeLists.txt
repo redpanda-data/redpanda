@@ -1,41 +1,45 @@
 add_subdirectory(requests/schemata)
 
 set(request_srcs
-  requests/requests.cc
-  requests/api_versions_request.cc
-  requests/metadata_request.cc
-  requests/list_groups_request.cc
-  requests/find_coordinator_request.cc
-  requests/describe_configs_request.cc
-  requests/offset_fetch_request.cc
   requests/kafka_batch_adapter.cc
-  requests/produce_request.cc
-  requests/list_offsets_request.cc
-  requests/fetch_request.cc
-  requests/join_group_request.cc
-  requests/heartbeat_request.cc
-  requests/leave_group_request.cc
-  requests/sync_group_request.cc
-  requests/init_producer_id_request.cc
-  requests/create_topics_request.cc
-  requests/offset_commit_request.cc
-  requests/delete_topics_request.cc
-  requests/alter_configs_request.cc
-  requests/describe_groups_request.cc
-  requests/sasl_handshake_request.cc
-  requests/sasl_authenticate_request.cc
-  requests/incremental_alter_configs_request.cc
+  requests/requests.cc
   requests/topics/types.cc
   requests/topics/topic_utils.cc)
 
 set(security_srcs
     security/scram_algorithm.cc)
 
+set(handlers_srcs
+  server/handlers/api_versions.cc
+  server/handlers/metadata.cc
+  server/handlers/list_groups.cc
+  server/handlers/find_coordinator.cc
+  server/handlers/describe_configs.cc
+  server/handlers/offset_fetch.cc
+  server/handlers/produce.cc
+  server/handlers/list_offsets.cc
+  server/handlers/fetch.cc
+  server/handlers/join_group.cc
+  server/handlers/heartbeat.cc
+  server/handlers/leave_group.cc
+  server/handlers/sync_group.cc
+  server/handlers/init_producer_id.cc
+  server/handlers/create_topics.cc
+  server/handlers/offset_commit.cc
+  server/handlers/delete_topics.cc
+  server/handlers/alter_configs.cc
+  server/handlers/describe_groups.cc
+  server/handlers/sasl_handshake.cc
+  server/handlers/sasl_authenticate.cc
+  server/handlers/incremental_alter_configs.cc
+)
+
 v_cc_library(
   NAME kafka
   SRCS
     ${request_srcs}
     ${security_srcs}
+    ${handlers_srcs}
     errors.cc
     server/member.cc
     server/group.cc

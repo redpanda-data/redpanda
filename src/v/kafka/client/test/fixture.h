@@ -12,7 +12,7 @@
 #pragma once
 
 #include "kafka/client/client.h"
-#include "kafka/requests/metadata_request.h"
+#include "kafka/protocol/metadata.h"
 #include "redpanda/tests/fixture.h"
 
 namespace kc = kafka::client;

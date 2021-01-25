@@ -8,8 +8,8 @@
 // by the Apache License, Version 2.0
 
 #include "kafka/errors.h"
-#include "kafka/requests/delete_topics_request.h"
-#include "kafka/requests/metadata_request.h"
+#include "kafka/protocol/delete_topics.h"
+#include "kafka/protocol/metadata.h"
 #include "kafka/requests/schemata/create_topics_request.h"
 #include "kafka/requests/topics/types.h"
 #include "kafka/types.h"

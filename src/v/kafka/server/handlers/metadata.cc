@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "kafka/requests/metadata_request.h"
+#include "kafka/protocol/metadata.h"
 
 #include "cluster/metadata_cache.h"
 #include "cluster/topics_frontend.h"

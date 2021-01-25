@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "kafka/requests/delete_topics_request.h"
+#include "kafka/protocol/delete_topics.h"
 
 #include "cluster/topics_frontend.h"
 #include "kafka/errors.h"

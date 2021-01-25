@@ -12,9 +12,9 @@
 #pragma once
 #include "bytes/bytes.h"
 #include "bytes/iobuf.h"
-#include "kafka/requests/join_group_request.h"
+#include "kafka/protocol/join_group.h"
 #include "kafka/requests/schemata/describe_groups_response.h"
-#include "kafka/requests/sync_group_request.h"
+#include "kafka/protocol/sync_group.h"
 #include "kafka/types.h"
 #include "utils/concepts-enabled.h"
 

@@ -7,17 +7,19 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "kafka/requests/sasl_handshake_request.h"
+#include "kafka/protocol/sasl_authenticate.h"
 
 #include "kafka/errors.h"
 
 namespace kafka {
 
-ss::future<response_ptr> sasl_handshake_api::process(
+ss::future<response_ptr> sasl_authenticate_api::process(
   request_context&& ctx, [[maybe_unused]] ss::smp_service_group g) {
-    sasl_handshake_request request;
+    sasl_authenticate_request request;
     request.decode(ctx.reader(), ctx.header().version);
-    return ctx.respond(sasl_handshake_response(error_code::illegal_sasl_state));
+    return ctx.respond(sasl_authenticate_response(
+      error_code::illegal_sasl_state,
+      "SASL authenticate request received after successful authentication"));
 }
 
 } // namespace kafka

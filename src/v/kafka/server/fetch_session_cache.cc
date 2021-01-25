@@ -1,7 +1,7 @@
 #include "kafka/server/fetch_session_cache.h"
 
 #include "kafka/server/logger.h"
-#include "kafka/requests/fetch_request.h"
+#include "kafka/protocol/fetch.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/timeout_clock.h"

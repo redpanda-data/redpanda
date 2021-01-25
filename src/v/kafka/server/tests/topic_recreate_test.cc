@@ -9,9 +9,9 @@
 
 #include "kafka/errors.h"
 #include "kafka/requests/batch_consumer.h"
-#include "kafka/requests/delete_topics_request.h"
-#include "kafka/requests/metadata_request.h"
-#include "kafka/requests/produce_request.h"
+#include "kafka/protocol/delete_topics.h"
+#include "kafka/protocol/metadata.h"
+#include "kafka/protocol/produce.h"
 #include "kafka/requests/topics/types.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"

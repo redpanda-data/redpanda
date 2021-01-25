@@ -11,7 +11,7 @@
 
 #include "kafka/client/test/utils.h"
 #include "kafka/errors.h"
-#include "kafka/requests/fetch_request.h"
+#include "kafka/protocol/fetch.h"
 #include "kafka/requests/response.h"
 #include "kafka/requests/response_writer.h"
 #include "kafka/requests/response_writer_utils.h"

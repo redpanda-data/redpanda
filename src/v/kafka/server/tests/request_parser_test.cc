@@ -7,9 +7,9 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "kafka/requests/fetch_request.h"
-#include "kafka/requests/metadata_request.h"
-#include "kafka/requests/produce_request.h"
+#include "kafka/protocol/fetch.h"
+#include "kafka/protocol/metadata.h"
+#include "kafka/protocol/produce.h"
 #include "redpanda/tests/fixture.h"
 #include "test_utils/fixture.h"
 #include "utils/file_io.h"

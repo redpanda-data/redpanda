@@ -8,7 +8,7 @@
 // by the Apache License, Version 2.0
 
 #include "kafka/requests/batch_consumer.h"
-#include "kafka/requests/fetch_request.h"
+#include "kafka/protocol/fetch.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "redpanda/tests/fixture.h"

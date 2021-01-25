@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "kafka/requests/offset_commit_request.h"
+#include "kafka/protocol/offset_commit.h"
 
 #include "kafka/errors.h"
 #include "kafka/server/group_manager.h"

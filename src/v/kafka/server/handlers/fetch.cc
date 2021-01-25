@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "kafka/requests/fetch_request.h"
+#include "kafka/protocol/fetch.h"
 
 #include "cluster/partition_manager.h"
 #include "config/configuration.h"

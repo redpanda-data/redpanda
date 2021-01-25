@@ -10,10 +10,10 @@
 #include "kafka/server/group_manager.h"
 
 #include "cluster/simple_batch_builder.h"
-#include "kafka/requests/delete_groups_request.h"
-#include "kafka/requests/describe_groups_request.h"
-#include "kafka/requests/offset_commit_request.h"
-#include "kafka/requests/offset_fetch_request.h"
+#include "kafka/protocol/delete_groups.h"
+#include "kafka/protocol/describe_groups.h"
+#include "kafka/protocol/offset_commit.h"
+#include "kafka/protocol/offset_fetch.h"
 #include "model/record.h"
 #include "resource_mgmt/io_priority.h"
 

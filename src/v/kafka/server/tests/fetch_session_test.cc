@@ -10,7 +10,7 @@
  */
 #include "kafka/server/fetch_session.h"
 #include "kafka/server/fetch_session_cache.h"
-#include "kafka/requests/fetch_request.h"
+#include "kafka/protocol/fetch.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "random/generators.h"

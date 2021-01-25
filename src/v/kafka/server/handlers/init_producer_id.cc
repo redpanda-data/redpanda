@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "kafka/requests/init_producer_id_request.h"
+#include "kafka/protocol/init_producer_id.h"
 
 #include "cluster/topics_frontend.h"
 #include "kafka/server/group_manager.h"
