@@ -33,7 +33,7 @@ auto hostname_address_str = "test_addr:\n"
 ss::socket_address ip4_addr = ss::socket_address(
   ss::ipv4_addr("192.168.0.1", 6547));
 
-ss::socket_address read_from_yaml(ss::sstring yaml_string) {
+ss::socket_address read_socket_from_yaml(ss::sstring yaml_string) {
     auto node = YAML::Load(yaml_string);
     return node["test_addr"].as<ss::socket_address>();
 }
@@ -41,13 +41,13 @@ ss::socket_address read_from_yaml(ss::sstring yaml_string) {
 SEASTAR_THREAD_TEST_CASE(write_as_yaml) {}
 
 SEASTAR_THREAD_TEST_CASE(test_decode_ipv4) {
-    auto ip4 = read_from_yaml(ipv4_address_str);
+    auto ip4 = read_socket_from_yaml(ipv4_address_str);
 
     BOOST_TEST(ip4.port() == 6547);
     BOOST_TEST(ip4.addr().is_ipv4());
     BOOST_TEST(ip4.addr().as_ipv4_address().ip == 0xC0A80001);
 
-    auto ip6 = read_from_yaml(ipv6_address_str);
+    auto ip6 = read_socket_from_yaml(ipv6_address_str);
 
     BOOST_TEST(ip6.port() == 7777);
     BOOST_TEST(ip6.addr().is_ipv6());
@@ -70,13 +70,13 @@ SEASTAR_THREAD_TEST_CASE(test_decode_ipv4) {
       0x34};
     BOOST_TEST(ip6.addr().as_ipv6_address().ip == expected_ip6);
 
-    auto all_interfaces = read_from_yaml(all_interfaces_address_str);
+    auto all_interfaces = read_socket_from_yaml(all_interfaces_address_str);
 
     BOOST_TEST(all_interfaces.port() == 3214);
     BOOST_TEST(all_interfaces.addr().is_ipv4());
     BOOST_TEST(all_interfaces.addr().as_ipv4_address().ip == 0x00000000);
 
-    auto host_name = read_from_yaml(hostname_address_str);
+    auto host_name = read_socket_from_yaml(hostname_address_str);
 
     BOOST_TEST(host_name.port() == 1234);
     BOOST_TEST(host_name.addr().is_ipv4());

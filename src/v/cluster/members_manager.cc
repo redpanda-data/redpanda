@@ -205,16 +205,9 @@ wait_for_next_join_retry(std::chrono::milliseconds tout, ss::abort_source& as) {
 
 ss::future<result<join_reply>> members_manager::dispatch_join_to_remote(
   const config::seed_server& target, model::broker joining_node) {
-    vlog(
-      clusterlog.info,
-      "Sending join request to {} @ {}",
-      target.id,
-      target.addr);
+    vlog(clusterlog.info, "Sending join request to {}", target.addr);
 
-    return with_client<controller_client_protocol>(
-      _self.id(),
-      _connection_cache,
-      target.id,
+    return do_with_client_one_shot<controller_client_protocol>(
       target.addr,
       _rpc_tls_config,
       [joining_node = std::move(joining_node),
@@ -255,7 +248,7 @@ members_manager::dispatch_join_to_seed_server(seed_iterator it) {
         return f;
     }
     // Current node is a seed server, just call the method
-    if (it->id == _self.id()) {
+    if (it->addr == _self.rpc_address()) {
         vlog(clusterlog.debug, "Using current node as a seed server");
         f = handle_join_request(_self);
     } else {
@@ -271,8 +264,9 @@ members_manager::dispatch_join_to_seed_server(seed_iterator it) {
         }
         vlog(
           clusterlog.info,
-          "Error joining cluster using {} seed server",
-          it->id);
+          "Error joining cluster using {} seed server - {}",
+          it->addr,
+          fut.get_exception());
 
         // Dispatch to next server
         return dispatch_join_to_seed_server(std::next(it));

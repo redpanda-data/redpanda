@@ -1,32 +1,12 @@
+set(srcs
+    config_store_test.cc
+    socket_address_convert_test.cc
+    tls_config_convert_test.cc
+    advertised_kafka_api_test.cc
+    seed_server_property_test.cc)
 
 rp_test(
   UNIT_TEST
-  BINARY_NAME config_store_test
-  SOURCES config_store_test.cc
-  LIBRARIES v::seastar_testing_main v::config
-
-)
-
-rp_test(
-  UNIT_TEST
-  BINARY_NAME socket_address_yaml_convert_test
-  SOURCES socket_address_convert_test.cc
-  LIBRARIES v::seastar_testing_main v::config
-
-)
-
-rp_test(
-  UNIT_TEST
-  BINARY_NAME tls_config_convert_test
-  SOURCES tls_config_convert_test.cc
-  LIBRARIES v::seastar_testing_main v::config
-
-)
-
-rp_test(
-  UNIT_TEST
-  BINARY_NAME advertised_kafka_api_test
-  SOURCES advertised_kafka_api_test.cc
-  LIBRARIES v::seastar_testing_main v::config
-
-)
+  BINARY_NAME test_configuration
+  SOURCES ${srcs}
+  LIBRARIES v::seastar_testing_main v::config)

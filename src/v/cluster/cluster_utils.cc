@@ -103,23 +103,8 @@ ss::future<> maybe_create_tcp_client(
                        node,
                        new_addr,
                        tls_config = std::move(tls_config)]() mutable {
-            return std::move(tls_config)
-              .get_credentials_builder()
-              .then([](
-                      std::optional<ss::tls::credentials_builder> credentials) {
-                  if (credentials) {
-                      return credentials
-                        ->build_reloadable_certificate_credentials(
-                          [](
-                            const std::unordered_set<ss::sstring>& updated,
-                            const std::exception_ptr& eptr) {
-                              log_certificate_reload_event(
-                                clusterlog, "Client TLS", updated, eptr);
-                          });
-                  }
-                  return ss::make_ready_future<
-                    ss::shared_ptr<ss::tls::certificate_credentials>>(nullptr);
-              })
+            return maybe_build_reloadable_certificate_credentials(
+                     std::move(tls_config))
               .then([&cache, node, new_addr](
                       ss::shared_ptr<ss::tls::certificate_credentials>&& cert) {
                   return cache.emplace(
