@@ -20,14 +20,13 @@
 
 namespace config {
 struct seed_server {
-    model::node_id id;
     unresolved_address addr;
 };
 } // namespace config
 
 namespace std {
 static inline ostream& operator<<(ostream& o, const config::seed_server& s) {
-    fmt::print(o, "node_id: {}, addr: {}", s.id, s.addr);
+    fmt::print(o, "addr: {}", s.addr);
     return o;
 }
 } // namespace std

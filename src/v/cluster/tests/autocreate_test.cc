@@ -84,11 +84,19 @@ FIXTURE_TEST(
     cntrl->start().get0();
     wait_for_leadership(cntrl->get_partition_leaders().local());
 
-    auto results = cntrl->get_topics_frontend()
-                     .local()
-                     .autocreate_topics(
-                       test_topics_configuration(), std::chrono::seconds(10))
-                     .get0();
+    std::vector<cluster::topic_result> results;
+    bool success = false;
+    while (!success) {
+        results = cntrl->get_topics_frontend()
+                    .local()
+                    .autocreate_topics(
+                      test_topics_configuration(), std::chrono::seconds(10))
+                    .get0();
+        success = std::all_of(
+          results.begin(), results.end(), [](const cluster::topic_result& r) {
+              return r.ec == cluster::errc::success;
+          });
+    }
 
     BOOST_REQUIRE_EQUAL(results.size(), 3);
     wait_for_metadata(get_local_cache(), results);
@@ -113,8 +121,7 @@ FIXTURE_TEST(test_autocreate_on_non_leader, cluster_test_fixture) {
       ss::smp::count,
       9093,
       11001,
-      {{.id = model::node_id{1},
-        .addr = unresolved_address("127.0.0.1", 11000)}});
+      {{.addr = unresolved_address("127.0.0.1", 11000)}});
 
     // first controller
     auto cntrl_0 = get_controller(n_1);
@@ -130,15 +137,22 @@ FIXTURE_TEST(test_autocreate_on_non_leader, cluster_test_fixture) {
                && get_local_cache(model::node_id(2)).all_brokers().size() == 2;
     }).get();
 
-    auto res = cntrl_1->get_topics_frontend()
-                 .local()
-                 .autocreate_topics(
-                   test_topics_configuration(), std::chrono::seconds(10))
-                 .get0();
-
-    wait_for_metadata(get_local_cache(n_1), res);
-    wait_for_metadata(get_local_cache(n_2), res);
-    for (auto& r : res) {
+    std::vector<cluster::topic_result> results;
+    bool success = false;
+    while (!success) {
+        results = cntrl_1->get_topics_frontend()
+                    .local()
+                    .autocreate_topics(
+                      test_topics_configuration(), std::chrono::seconds(10))
+                    .get0();
+        success = std::all_of(
+          results.begin(), results.end(), [](const cluster::topic_result& r) {
+              return r.ec == cluster::errc::success;
+          });
+    }
+    wait_for_metadata(get_local_cache(n_1), results);
+    wait_for_metadata(get_local_cache(n_2), results);
+    for (auto& r : results) {
         BOOST_REQUIRE_EQUAL(r.ec, cluster::errc::success);
         auto md = get_local_cache(n_1).get_topic_metadata(r.tp_ns);
         BOOST_REQUIRE_EQUAL(md.has_value(), true);

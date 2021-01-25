@@ -25,9 +25,6 @@ void rjson_serialize(
 void rjson_serialize(
   rapidjson::Writer<rapidjson::StringBuffer>& w, const config::seed_server& v) {
     w.StartObject();
-    w.Key("node_id");
-    rjson_serialize(w, v.id());
-
     w.Key("host");
     rjson_serialize(w, v.addr);
     w.EndObject();

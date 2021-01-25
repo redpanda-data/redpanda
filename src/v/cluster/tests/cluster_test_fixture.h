@@ -76,9 +76,7 @@ public:
       model::node_id node_id, int kafka_port = 9092, int rpc_port = 11000) {
         std::vector<config::seed_server> seeds = {};
         if (node_id != 0) {
-            seeds.push_back(
-              {.id = model::node_id{0},
-               .addr = unresolved_address("127.0.0.1", 11000)});
+            seeds.push_back({.addr = unresolved_address("127.0.0.1", 11000)});
         }
         add_controller(
           node_id,
