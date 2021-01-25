@@ -11,15 +11,14 @@ Kafka ecosystem.
 This quick start guide to intended to help you get started with Redpanda
 for development and testing purposes. For production deployments or
 performance testing please see our
-[Production Deployment](production-deployment.md) for more information.
+[Production Deployment](production-deployment) for more information.
 
 ## Installation
 
-Redpanda itself cannot be run directly on MacOS, so we must make use of
-docker to run Redpanda on MacOS. If you wish to run Redpanda directly
-from docker please follow our
-[Docker Quick Start Guide](quick-start-docker.md). Otherwise you can
-download our binary, rpk, which stands for Redpanda Keeper, to orchestrate
+Redpanda itself cannot run directly on MacOS, so we must make use of
+docker. If you wish to run Redpanda manually using Docker please follow our
+[Docker Quick Start Guide](quick-start-docker). Otherwise you can
+download our binary, `rpk`, which stands for Redpanda Keeper, to orchestrate
 the running of Redpanda via Docker for you.
 
 To install RPK, you can choose to either use [Homebrew](https://brew.sh/)
@@ -36,10 +35,10 @@ brew install vectorizedio/tap/redpanda
 
 ### Binary
 
-The latest RPK binary can be found here: [rpk-darwin-amd64.zip](https://github.com/vectorizedio/redpanda/releases/download/latest/rpk-darwin-amd64.zip)
+The latest RPK binary can be found here: [rpk-darwin-amd64.zip](https://github.com/vectorizedio/redpanda/releases/latest/download/rpk-darwin-amd64.zip)
 
-### Next Steps
+## What's Next?
 
-Now that you have RPK downloaded and installed you can check out our
-[RPK Container Guide] which will take you through how to set up a
-local development cluster.
+- Setup a local multi node cluster using [RPK Container Guide](guide-rpk-container)
+- Check out our [FAQ](faq)
+- Want to setup a production cluster? Check out our [Production Deployment](production-deployment) Guide.

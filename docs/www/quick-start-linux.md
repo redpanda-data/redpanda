@@ -9,7 +9,7 @@ is also fully API compatible Kafka allowing you to make full use of the Kafka ec
 
 This quick start guide to intended to help you get started with Redpanda for
 development and testing purposes. For production deployments or performance
-testing please see our [Production Deployment](production-deployment.md)
+testing please see our [Production Deployment](production-deployment)
 for more information.
 
 ## Installation
@@ -19,29 +19,26 @@ The first step is to install either the RPM or DEB package of Redpanda.
 ### On Fedora/RedHat Systems
 
 ```
-curl -1sLf 'https://packages.vectorized.io/nzc4ZYQK3WRGd9sy/redpanda/cfg/setup/bash.rpm.sh' | sudo -E bash && sudo yum install redpanda -y && sudo systemctl start redpanda
+curl -1sLf 'https://packages.vectorized.io/nzc4ZYQK3WRGd9sy/redpanda/cfg/setup/bash.rpm.sh' | \
+sudo -E bash && sudo yum install redpanda -y && sudo systemctl start redpanda
 ```
 
-### On Debian Systems
+### On Debian/Ubuntu Systems
 
 ```
-curl -1sLf 'https://packages.vectorized.io/nzc4ZYQK3WRGd9sy/redpanda/cfg/setup/bash.deb.sh' | sudo -E bash && sudo apt install redpanda -y && sudo systemctl start redpanda
+curl -1sLf 'https://packages.vectorized.io/nzc4ZYQK3WRGd9sy/redpanda/cfg/setup/bash.deb.sh' | \
+sudo -E bash && sudo apt install redpanda -y && sudo systemctl start redpanda
 ```
 
 ## Getting Started
 
-Now that Redpanda is installed we can either setup a single node cluster of
-Redpanda or setup a local multi-node cluster using docker.
+Now that Redpanda is installed and running we can either setup a single
+node cluster of Redpanda or setup a local multi-node cluster using docker.
 
 ### Single Node Deployment
 
-First we need to start Redpanda.
-
-```
-sudo systemctl start redpanda
-```
-
-Then we can check the status of the node with the following command:
+First we should check the status of the redpanda service as the install step
+above should have started Redpanda.
 
 ```
 sudo systemctl status redpanda
@@ -61,6 +58,12 @@ You now have a running Redpanda instance!
 
 The simplest way to get a multi node cluster up and running is by using
 `rpk container`. You can follow the
-[rpk Container Guide](rpk-container-guide.md). If you want a more manual
+[rpk Container Guide](guide-rpk-container). If you want a more manual
 approach you can check out the
-[Quick Start Docker Guide](quick-start-docker.md).
+[Quick Start Docker Guide](quick-start-docker).
+
+## What's Next?
+
+- Check out our [FAQ](faq)
+- Want to setup a production cluster? Check out our [Production Deployment](production-deployment) Guide.
+  
