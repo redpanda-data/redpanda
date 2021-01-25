@@ -38,6 +38,15 @@ rp_test(
 
 rp_test(
   UNIT_TEST
+  BINARY_NAME wasm_event_tests
+  SOURCES wasm_event_tests.cc
+  DEFINITIONS BOOST_TEST_DYN_LINK
+  LIBRARIES v::seastar_testing_main v::coproc_test_utils
+  LABELS coproc
+  )
+
+rp_test(
+  UNIT_TEST
   BINARY_NAME read_materialized_topic_unit_tests
   SOURCES read_materialized_topic_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
