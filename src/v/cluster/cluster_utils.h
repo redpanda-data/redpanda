@@ -12,6 +12,7 @@
 #pragma once
 #include "cluster/controller_service.h"
 #include "cluster/errc.h"
+#include "cluster/logger.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "config/tls_config.h"
@@ -99,5 +100,54 @@ void log_certificate_reload_event(
   const char* system_name,
   const std::unordered_set<ss::sstring>& updated,
   const std::exception_ptr& eptr);
+
+inline ss::future<ss::shared_ptr<ss::tls::certificate_credentials>>
+maybe_build_reloadable_certificate_credentials(config::tls_config tls_config) {
+    return std::move(tls_config)
+      .get_credentials_builder()
+      .then([](std::optional<ss::tls::credentials_builder> credentials) {
+          if (credentials) {
+              return credentials->build_reloadable_certificate_credentials(
+                [](
+                  const std::unordered_set<ss::sstring>& updated,
+                  const std::exception_ptr& eptr) {
+                    log_certificate_reload_event(
+                      clusterlog, "Client TLS", updated, eptr);
+                });
+          }
+          return ss::make_ready_future<
+            ss::shared_ptr<ss::tls::certificate_credentials>>(nullptr);
+      });
+}
+
+template<typename Proto, typename Func>
+CONCEPT(requires requires(Func&& f, Proto c) { f(c); })
+auto do_with_client_one_shot(
+  unresolved_address addr, config::tls_config tls_config, Func&& f) {
+    using transport_ptr = ss::lw_shared_ptr<rpc::transport>;
+    return maybe_build_reloadable_certificate_credentials(std::move(tls_config))
+      .then([addr = std::move(addr)](
+              ss::shared_ptr<ss::tls::certificate_credentials>&& cert) {
+          return addr.resolve().then(
+            [cert = std::move(cert)](ss::socket_address new_addr) {
+                return ss::make_lw_shared<rpc::transport>(
+                  rpc::transport_configuration{
+                    .server_addr = new_addr,
+                    .credentials = cert,
+                    .disable_metrics = rpc::metrics_disabled(true)});
+            });
+      })
+      .then([addr, f = std::forward<Func>(f)](transport_ptr transport) mutable {
+          return transport->connect()
+            .then([transport, f = std::forward<Func>(f)]() mutable {
+                return ss::futurize_invoke(
+                  std::forward<Func>(f), Proto(*transport));
+            })
+            .finally([transport] {
+                transport->shutdown();
+                return transport->stop().finally([transport] {});
+            });
+      });
+}
 
 } // namespace cluster
