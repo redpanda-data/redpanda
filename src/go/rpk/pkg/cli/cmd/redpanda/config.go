@@ -98,7 +98,7 @@ func bootstrap(mgr config.Manager) *cobra.Command {
 			defaultRpcPort := config.Default().Redpanda.RPCServer.Port
 			conf, err := mgr.FindOrGenerate(configPath)
 			if err != nil {
-				return errors.New("YAML")
+				return err
 			}
 			ips, err := parseIPs(ips)
 			if err != nil {
@@ -122,9 +122,8 @@ func bootstrap(mgr config.Manager) *cobra.Command {
 			conf.Redpanda.AdminApi.Address = ownIp.String()
 			conf.Redpanda.SeedServers = []config.SeedServer{}
 			seeds := []config.SeedServer{}
-			for i, ip := range ips {
+			for _, ip := range ips {
 				seed := config.SeedServer{
-					Id:	i,
 					Host: config.SocketAddress{
 						ip.String(),
 						defaultRpcPort,

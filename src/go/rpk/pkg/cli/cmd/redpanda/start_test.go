@@ -95,23 +95,19 @@ func TestParseSeeds(t *testing.T) {
 	}{
 		{
 			name:	"it should parse well-formed seed addrs",
-			arg:	[]string{"127.0.0.1:1234+0", "domain.com:9892+1", "lonely-host+30", "192.168.34.1+5"},
+			arg:	[]string{"127.0.0.1:1234", "domain.com:9892", "lonely-host", "192.168.34.1"},
 			expected: []config.SeedServer{
 				{
 					config.SocketAddress{"127.0.0.1", 1234},
-					0,
 				},
 				{
 					config.SocketAddress{"domain.com", 9892},
-					1,
 				},
 				{
 					config.SocketAddress{"lonely-host", 33145},
-					30,
 				},
 				{
 					config.SocketAddress{"192.168.34.1", 33145},
-					5,
 				},
 			},
 		},
@@ -122,33 +118,13 @@ func TestParseSeeds(t *testing.T) {
 		},
 		{
 			name:		"it should fail for empty addresses",
-			arg:		[]string{"+1"},
-			expectedErrMsg:	"Couldn't parse seed '+1': empty address",
-		},
-		{
-			name:		"it should fail if one of the addrs is missing an ID",
-			arg:		[]string{"127.0.0.1:1234+0", "domain.com"},
-			expectedErrMsg:	"Couldn't parse seed 'domain.com': Format doesn't conform to <host>[:<port>]+<id>. Missing ID.",
-		},
-		{
-			name:		"it should fail if one of the addrs' ID isn't an int",
-			arg:		[]string{"127.0.0.1:1234+id?", "domain.com+1"},
-			expectedErrMsg:	"Couldn't parse seed '127.0.0.1:1234+id?': ID must be an int.",
+			arg:		[]string{""},
+			expectedErrMsg:	"Couldn't parse seed '': empty address",
 		},
 		{
 			name:		"it should fail if the host is empty",
-			arg:		[]string{" :1234+1234"},
-			expectedErrMsg:	"Couldn't parse seed ' :1234+1234': Empty host in address ' :1234'",
-		},
-		{
-			name:		"it should fail if the port is empty",
-			arg:		[]string{" :+1234"},
-			expectedErrMsg:	"Couldn't parse seed ' :+1234': Empty host in address ' :'",
-		},
-		{
-			name:		"it should fail if the port is empty",
-			arg:		[]string{"host:+1234"},
-			expectedErrMsg:	"Couldn't parse seed 'host:+1234': Port must be an int",
+			arg:		[]string{" :1234"},
+			expectedErrMsg:	"Couldn't parse seed ' :1234': Empty host in address ' :1234'",
 		},
 	}
 
@@ -218,7 +194,7 @@ func TestStartCommand(t *testing.T) {
 		name:	"it should parse the --seeds and persist them",
 		args: []string{
 			"--install-dir", "/var/lib/redpanda",
-			"--seeds", "192.168.34.32:33145+1,somehost:54321+3,justahostnoport+5",
+			"--seeds", "192.168.34.32:33145,somehost:54321,justahostnoport",
 		},
 		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
 			mgr := config.NewManager(fs)
@@ -229,19 +205,16 @@ func TestStartCommand(t *testing.T) {
 					Address:	"192.168.34.32",
 					Port:		33145,
 				},
-				Id:	1,
 			}, {
 				Host: config.SocketAddress{
 					Address:	"somehost",
 					Port:		54321,
 				},
-				Id:	3,
 			}, {
 				Host: config.SocketAddress{
 					Address:	"justahostnoport",
 					Port:		33145,
 				},
-				Id:	5,
 			}}
 			// Check that the generated config is as expected.
 			require.Exactly(
@@ -254,8 +227,8 @@ func TestStartCommand(t *testing.T) {
 		name:	"it should parse the --seeds and persist them (shorthand)",
 		args: []string{
 			"--install-dir", "/var/lib/redpanda",
-			"-s", "192.168.3.32:33145+1",
-			"-s", "192.168.123.32:33146+5,host+34",
+			"-s", "192.168.3.32:33145",
+			"-s", "192.168.123.32:33146,host",
 		},
 		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
 			mgr := config.NewManager(fs)
@@ -266,19 +239,16 @@ func TestStartCommand(t *testing.T) {
 					Address:	"192.168.3.32",
 					Port:		33145,
 				},
-				Id:	1,
 			}, {
 				Host: config.SocketAddress{
 					Address:	"192.168.123.32",
 					Port:		33146,
 				},
-				Id:	5,
 			}, {
 				Host: config.SocketAddress{
 					Address:	"host",
 					Port:		33145,
 				},
-				Id:	34,
 			}}
 			// Check that the generated config is as expected.
 			require.Exactly(
@@ -293,7 +263,7 @@ func TestStartCommand(t *testing.T) {
 			"--install-dir", "/var/lib/redpanda",
 		},
 		before: func(_ afero.Fs) error {
-			os.Setenv("REDPANDA_SEEDS", "10.23.12.5:33146+5,host+34")
+			os.Setenv("REDPANDA_SEEDS", "10.23.12.5:33146,host")
 			return nil
 		},
 		after: func() {
@@ -308,13 +278,11 @@ func TestStartCommand(t *testing.T) {
 					Address:	"10.23.12.5",
 					Port:		33146,
 				},
-				Id:	5,
 			}, {
 				Host: config.SocketAddress{
 					Address:	"host",
 					Port:		33145,
 				},
-				Id:	34,
 			}}
 			// Check that the generated config is as expected.
 			require.Exactly(
@@ -336,7 +304,6 @@ func TestStartCommand(t *testing.T) {
 					Address:	"10.23.12.5",
 					Port:		33146,
 				},
-				Id:	5,
 			}}
 			return mgr.Write(conf)
 		},
@@ -349,7 +316,6 @@ func TestStartCommand(t *testing.T) {
 					Address:	"10.23.12.5",
 					Port:		33146,
 				},
-				Id:	5,
 			}}
 			// Check that the generated config is as expected.
 			require.Exactly(
@@ -361,21 +327,15 @@ func TestStartCommand(t *testing.T) {
 	}, {
 		name:	"it should fail if the host is missing in the given seed",
 		args: []string{
-			"-s", "goodhost.com:54897+2,:33145+1",
+			"-s", "goodhost.com:54897,:33145",
 		},
-		expectedErrMsg:	"Couldn't parse seed ':33145+1': Empty host in address ':33145'",
-	}, {
-		name:	"it should fail if the ID is missing in the given seed",
-		args: []string{
-			"-s", "host:33145",
-		},
-		expectedErrMsg:	"Couldn't parse seed 'host:33145': Format doesn't conform to <host>[:<port>]+<id>. Missing ID.",
+		expectedErrMsg:	"Couldn't parse seed ':33145': Empty host in address ':33145'",
 	}, {
 		name:	"it should fail if the port isn't an int",
 		args: []string{
-			"-s", "host:port+2",
+			"-s", "host:port",
 		},
-		expectedErrMsg:	"Couldn't parse seed 'host:port+2': Port must be an int",
+		expectedErrMsg:	"Couldn't parse seed 'host:port': Port must be an int",
 	}, {
 		name:	"it should parse the --rpc-addr and persist it",
 		args: []string{

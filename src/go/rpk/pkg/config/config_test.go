@@ -26,11 +26,9 @@ func getValidConfig() *Config {
 	conf.Redpanda.SeedServers = []SeedServer{
 		{
 			SocketAddress{"127.0.0.1", 33145},
-			1,
 		},
 		{
 			SocketAddress{"127.0.0.1", 33146},
-			2,
 		},
 	}
 	conf.Redpanda.DeveloperMode = false
@@ -305,11 +303,9 @@ redpanda:
   - host:
       address: 127.0.0.1
       port: 33145
-    node_id: 1
   - host:
       address: 127.0.0.1
       port: 33146
-    node_id: 2
 rpk:
   coredump_dir: /var/lib/redpanda/coredumps
   enable_memory_locking: true
@@ -362,11 +358,9 @@ redpanda:
   - host:
       address: 127.0.0.1
       port: 33145
-    node_id: 1
   - host:
       address: 127.0.0.1
       port: 33146
-    node_id: 2
 rpk:
   coredump_dir: /var/lib/redpanda/coredumps
   enable_memory_locking: true
@@ -413,11 +407,9 @@ redpanda:
   - host:
       address: 127.0.0.1
       port: 33145
-    node_id: 1
   - host:
       address: 127.0.0.1
       port: 33146
-    node_id: 2
 rpk:
   coredump_dir: /var/lib/redpanda/coredump
   enable_memory_locking: false
@@ -468,11 +460,9 @@ redpanda:
   - host:
       address: 127.0.0.1
       port: 33145
-    node_id: 1
   - host:
       address: 127.0.0.1
       port: 33146
-    node_id: 2
 rpk:
   coredump_dir: /var/lib/redpanda/coredumps
   enable_memory_locking: true
@@ -545,11 +535,9 @@ redpanda:
   - host:
       address: 127.0.0.1
       port: 33145
-    node_id: 1
   - host:
       address: 127.0.0.1
       port: 33146
-    node_id: 2
   target_quota_byte_rate: 1000000
 rpk:
   coredump_dir: /var/lib/redpanda/coredumps
@@ -979,8 +967,8 @@ func TestReadFlat(t *testing.T) {
 		"redpanda.kafka_api":			"0.0.0.0:9092",
 		"redpanda.node_id":			"0",
 		"redpanda.rpc_server":			"0.0.0.0:33145",
-		"redpanda.seed_servers.1000":		"192.168.167.0:1337",
-		"redpanda.seed_servers.1001":		"192.168.167.1:1337",
+		"redpanda.seed_servers.0":		"192.168.167.0:1337",
+		"redpanda.seed_servers.1":		"192.168.167.1:1337",
 		"redpanda.developer_mode":		"true",
 		"rpk.coredump_dir":			"/var/lib/redpanda/coredump",
 		"rpk.enable_memory_locking":		"false",
@@ -1005,10 +993,8 @@ func TestReadFlat(t *testing.T) {
 	conf.Redpanda.SeedServers = []SeedServer{
 		{
 			SocketAddress{"192.168.167.0", 1337},
-			1000,
 		}, {
 			SocketAddress{"192.168.167.1", 1337},
-			1001,
 		},
 	}
 	err := mgr.Write(conf)
