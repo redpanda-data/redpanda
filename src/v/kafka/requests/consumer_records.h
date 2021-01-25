@@ -13,6 +13,7 @@
 
 #include "bytes/iobuf.h"
 #include "kafka/types.h"
+#include "model/fundamental.h"
 
 #include <optional>
 
@@ -34,6 +35,9 @@ public:
     size_t size_bytes() const {
         return _record_set ? _record_set->size_bytes() : -1;
     }
+
+    // Obtain the offset of the last record in the last batch
+    model::offset last_offset() const;
 
     // Check that the iobuf isn't nullopt
     constexpr explicit operator bool() const noexcept {

@@ -51,7 +51,8 @@ set(srcs
   offset_commit_test.cc
   topic_recreate_test.cc
   fetch_session_test.cc
-  produce_consume_test.cc)
+  produce_consume_test.cc
+  consumer_records_test.cc)
 
 rp_test(
   UNIT_TEST

@@ -9,6 +9,7 @@ set(request_srcs
   requests/describe_configs_request.cc
   requests/offset_fetch_request.cc
   requests/kafka_batch_adapter.cc
+  requests/consumer_records.cc
   requests/produce_request.cc
   requests/list_offsets_request.cc
   requests/fetch_request.cc
