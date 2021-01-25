@@ -34,14 +34,15 @@
 
 namespace ppj = pandaproxy::json;
 
-iobuf make_record_set(model::offset offset, size_t count) {
-    iobuf record_set;
+std::optional<kafka::batch_reader>
+make_record_set(model::offset offset, size_t count) {
     if (!count) {
-        return record_set;
+        return std::nullopt;
     }
+    iobuf record_set;
     auto writer{kafka::response_writer(record_set)};
     kafka::writer_serialize_batch(writer, make_batch(offset, count));
-    return record_set;
+    return kafka::batch_reader{std::move(record_set)};
 }
 
 auto make_fetch_response(
@@ -49,10 +50,6 @@ auto make_fetch_response(
     std::vector<kafka::fetch_response::partition> parts;
     for (const auto& tp : tps) {
         kafka::fetch_response::partition res{tp.topic};
-        auto batch = make_batch(offset, count);
-        iobuf record_set;
-        auto writer{kafka::response_writer(record_set)};
-        kafka::writer_serialize_batch(writer, std::move(batch));
         res.responses.push_back(kafka::fetch_response::partition_response{
           .id{tp.partition},
           .error = kafka::error_code::none,
