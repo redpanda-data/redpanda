@@ -21,6 +21,8 @@
 namespace config {
 struct seed_server {
     unresolved_address addr;
+
+    bool operator==(const seed_server&) const = default;
 };
 } // namespace config
 

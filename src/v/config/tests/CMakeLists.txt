@@ -30,3 +30,9 @@ rp_test(
   LIBRARIES v::seastar_testing_main v::config
 
 )
+rp_test(
+  UNIT_TEST
+  BINARY_NAME seed_server_property_test
+  SOURCES seed_server_property_test.cc
+  LIBRARIES v::seastar_testing_main v::config
+)
