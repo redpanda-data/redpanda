@@ -9,8 +9,14 @@
 
 #include "kafka/requests/consumer_records.h"
 
+#include "kafka/logger.h"
 #include "kafka/requests/kafka_batch_adapter.h"
 #include "model/record.h"
+#include "model/timeout_clock.h"
+
+#include <seastar/core/coroutine.hh>
+#include <seastar/core/loop.hh>
+#include <seastar/core/std-coroutine.hh>
 
 namespace kafka {
 
@@ -60,7 +66,8 @@ record_batch_info read_record_batch_info(iobuf_const_parser& in) {
         + sizeof(base_offset) + sizeof(batch_length);
 
     if (unlikely(record_count - 1 != last_offset_delta)) {
-        throw std::runtime_error(fmt::format(
+        throw std::runtime_error(fmt_with_ctx(
+          fmt::format,
           "Invalid kafka header parsing. "
           "record count:{}, but"
           "base_offset: {} and last_offset_delta: {}",
@@ -72,7 +79,8 @@ record_batch_info read_record_batch_info(iobuf_const_parser& in) {
     const size_t total_bytes_consumed = in.bytes_consumed()
                                         - initial_bytes_consumed;
     if (unlikely(total_bytes_consumed != kafka::internal::kafka_header_size)) {
-        throw std::runtime_error(fmt::format(
+        throw std::runtime_error(fmt_with_ctx(
+          fmt::format,
           "Invalid kafka header parsing. Must consume exactly:{}, but "
           "consumed:{}",
           kafka::internal::kafka_header_size,
@@ -109,6 +117,34 @@ kafka_batch_adapter consumer_records::consume_record_batch() {
     kba.adapt(_record_set->share(0, size_bytes));
     _record_set->trim_front(size_bytes);
     return kba;
+}
+
+ss::future<consumer_records::storage_t>
+consumer_records::do_load_slice(model::timeout_clock::time_point tp) {
+    using data_t = model::record_batch_reader::data_t;
+    return ss::do_with(data_t{}, [this, tp](data_t& batches) {
+        const auto resources_exceeded = [this, tp] {
+            return is_end_of_stream() || model::timeout_clock::now() > tp;
+        };
+        const auto consume_batch = [this, &batches]() {
+            bool failed = true;
+            auto kba = consume_record_batch();
+            if (unlikely(!kba.valid_crc)) {
+                vlog(klog.error, "record_batch: has invalid crc");
+            } else if (unlikely(!kba.v2_format)) {
+                vlog(klog.error, "record_batch: only v2 is supported");
+            } else if (unlikely(!kba.batch)) {
+                vlog(klog.error, "record_batch: empty ");
+            } else {
+                batches.push_back(std::move(*kba.batch));
+                failed = false;
+            }
+            _do_load_slice_failed = failed;
+            return ss::now();
+        };
+        return ss::do_until(resources_exceeded, consume_batch)
+          .then([&batches]() { return storage_t(std::move(batches)); });
+    });
 }
 
 } // namespace kafka
