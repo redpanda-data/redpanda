@@ -49,9 +49,9 @@ class Repository {
    * coprocessor. Returns undefined otherwise.
    * @param handle
    */
-  findByGlobalId = (handle: Handle): Handle | undefined =>
-    this.handles.get(handle.coprocessor.globalId);
-
+  findByGlobalId(handle: Handle): Handle | undefined {
+    return this.handles.get(handle.coprocessor.globalId);
+  }
   /**
    * Given a Coprocessor, try to find one with the same global ID and return it
    * if it exists, returns undefined otherwise
