@@ -93,9 +93,7 @@ public:
             auto r = std::move(*v.partition_response);
             model::topic_partition_view tpv(v.partition->name, r.id);
             while (!r.record_set.empty()) {
-                kafka::kafka_batch_adapter adapter;
-                r.record_set = kafka::consumer_records(
-                  adapter.adapt(*std::move(r.record_set).release()));
+                auto adapter = r.record_set.consume_record_batch();
                 auto rjs = rjson_serialize_impl<model::record>(
                   _fmt, tpv, adapter.batch->base_offset());
 
