@@ -17,6 +17,7 @@
 #include "cluster/partition_leaders_table.h"
 #include "cluster/partition_manager.h"
 #include "cluster/topic_table.h"
+#include "config/tls_config.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "raft/group_manager.h"
@@ -24,6 +25,7 @@
 #include "rpc/connection_cache.h"
 #include "utils/mutex.h"
 #include "utils/retry.h"
+#include "utils/unresolved_address.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/sharded.hh>
@@ -100,9 +102,9 @@ private:
     // Used to track the process of requesting update when redpanda starts
     // when update using a node from ids will fail we will try the next one
     struct request_retry_meta {
-        using container_t = std::vector<model::node_id>;
+        using container_t = std::vector<unresolved_address>;
         using const_iterator = container_t::const_iterator;
-        container_t ids;
+        container_t addresses;
         bool success = false;
         const_iterator next;
         exp_backoff_policy backoff_policy;
@@ -121,12 +123,12 @@ private:
     ss::future<> dispatch_disseminate_leadership();
     ss::future<> dispatch_one_update(model::node_id, update_retry_meta&);
     ss::future<result<get_leadership_reply>>
-      dispatch_get_metadata_update(model::node_id);
+      dispatch_get_metadata_update(unresolved_address);
     ss::future<> do_request_metadata_update(request_retry_meta&);
     ss::future<>
     process_get_update_reply(result<get_leadership_reply>, request_retry_meta&);
 
-    ss::future<> update_metadata_with_retries(std::vector<model::node_id>);
+    ss::future<> update_metadata_with_retries(std::vector<unresolved_address>);
 
     ss::sharded<raft::group_manager>& _raft_manager;
     ss::sharded<cluster::partition_manager>& _partition_manager;
@@ -134,10 +136,11 @@ private:
     ss::sharded<members_table>& _members_table;
     ss::sharded<topic_table>& _topics;
     ss::sharded<rpc::connection_cache>& _clients;
-    model::node_id _self;
+    model::broker _self;
     std::chrono::milliseconds _dissemination_interval;
+    config::tls_config _rpc_tls_config;
     std::vector<ntp_leader> _requests;
-    std::vector<model::node_id> _seed_server_ids;
+    std::vector<unresolved_address> _seed_servers;
     broker_updates_t _pending_updates;
     mutex _lock;
     ss::timer<> _dispatch_timer;

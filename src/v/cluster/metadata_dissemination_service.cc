@@ -25,6 +25,7 @@
 #include "rpc/connection_cache.h"
 #include "rpc/types.h"
 #include "utils/retry.h"
+#include "utils/unresolved_address.h"
 #include "vassert.h"
 #include "vlog.h"
 
@@ -37,6 +38,7 @@
 
 #include <chrono>
 #include <exception>
+#include <optional>
 
 namespace cluster {
 metadata_dissemination_service::metadata_dissemination_service(
@@ -52,9 +54,10 @@ metadata_dissemination_service::metadata_dissemination_service(
   , _members_table(members)
   , _topics(topics)
   , _clients(clients)
-  , _self(config::shard_local_cfg().node_id)
+  , _self(make_self_broker(config::shard_local_cfg()))
   , _dissemination_interval(
-      config::shard_local_cfg().metadata_dissemination_interval_ms) {
+      config::shard_local_cfg().metadata_dissemination_interval_ms)
+  , _rpc_tls_config(config::shard_local_cfg().rpc_server_tls()) {
     _dispatch_timer.set_callback([this] {
         (void)ss::with_gate(
           _bg, [this] { return dispatch_disseminate_leadership(); });
@@ -62,7 +65,7 @@ metadata_dissemination_service::metadata_dissemination_service(
     _dispatch_timer.arm_periodic(_dissemination_interval);
 
     for (auto& seed : config::shard_local_cfg().seed_servers()) {
-        _seed_server_ids.push_back(seed.id);
+        _seed_servers.push_back(seed.addr);
     }
 }
 
@@ -99,33 +102,35 @@ ss::future<> metadata_dissemination_service::start() {
         return ss::make_ready_future<>();
     }
     // poll either seed servers or configuration
-    auto ids = _members_table.local().all_broker_ids();
+    auto all_brokers = _members_table.local().all_brokers();
     // use hash set to deduplicate ids
-    absl::flat_hash_set<model::node_id> all_broker_ids;
-    all_broker_ids.reserve(ids.size() + _seed_server_ids.size());
+    absl::flat_hash_set<unresolved_address> all_broker_addresses;
+    all_broker_addresses.reserve(all_brokers.size() + _seed_servers.size());
     // collect ids
-    for (auto& id : ids) {
-        all_broker_ids.emplace(id);
+    for (auto& b : all_brokers) {
+        all_broker_addresses.emplace(b->rpc_address());
     }
-    for (auto& id : _seed_server_ids) {
-        all_broker_ids.emplace(id);
+    for (auto& id : _seed_servers) {
+        all_broker_addresses.emplace(id);
     }
 
     // We do not want to send requst to self
-    all_broker_ids.erase(_self);
+    all_broker_addresses.erase(_self.rpc_address());
 
     // Do nothing, single node cluster
-    if (all_broker_ids.empty()) {
+    if (all_broker_addresses.empty()) {
         return ss::make_ready_future<>();
     }
-    std::vector<model::node_id> ids_vector;
-    ids_vector.reserve(all_broker_ids.size());
-    ids_vector.insert(
-      ids_vector.begin(), all_broker_ids.begin(), all_broker_ids.end());
+    std::vector<unresolved_address> addresses;
+    addresses.reserve(all_broker_addresses.size());
+    addresses.insert(
+      addresses.begin(),
+      all_broker_addresses.begin(),
+      all_broker_addresses.end());
 
     (void)ss::with_gate(
-      _bg, [this, ids_vector = std::move(ids_vector)]() mutable {
-          return update_metadata_with_retries(std::move(ids_vector));
+      _bg, [this, addresses = std::move(addresses)]() mutable {
+          return update_metadata_with_retries(std::move(addresses));
       });
 
     return ss::make_ready_future<>();
@@ -155,7 +160,7 @@ ss::future<> metadata_dissemination_service::apply_leadership_notification(
                 [ntp, lid, term](partition_leaders_table& leaders) {
                     leaders.update_partition_leader(ntp, term, lid);
                 });
-              if (lid == _self) {
+              if (lid == _self.id()) {
                   // only disseminate from current leader
                   f = f.then([this, ntp = std::move(ntp), term, lid]() mutable {
                       return disseminate_leadership(std::move(ntp), term, lid);
@@ -175,11 +180,11 @@ wait_for_next_retry(std::chrono::seconds sleep_for, ss::abort_source& as) {
 }
 
 ss::future<> metadata_dissemination_service::update_metadata_with_retries(
-  std::vector<model::node_id> ids) {
+  std::vector<unresolved_address> addresses) {
     return ss::do_with(
-      request_retry_meta{.ids = std::move(ids)},
+      request_retry_meta{.addresses = std::move(addresses)},
       [this](request_retry_meta& meta) {
-          meta.next = std::cbegin(meta.ids);
+          meta.next = std::cbegin(meta.addresses);
           return ss::do_until(
             [this, &meta] { return meta.success || _bg.is_closed(); },
             [this, &meta]() mutable {
@@ -204,11 +209,11 @@ ss::future<> metadata_dissemination_service::do_request_metadata_update(
           }
           // Dispatch next retry
           ++meta.next;
-          if (meta.next != meta.ids.end()) {
+          if (meta.next != meta.addresses.end()) {
               return ss::make_ready_future<>();
           }
           // start from the beggining, after backoff elapsed
-          meta.next = std::cbegin(meta.ids);
+          meta.next = std::cbegin(meta.addresses);
           return wait_for_next_retry(
             std::chrono::seconds(meta.backoff_policy.next_backoff()), _as);
       });
@@ -236,21 +241,19 @@ ss::future<> metadata_dissemination_service::process_get_update_reply(
 
 ss::future<result<get_leadership_reply>>
 metadata_dissemination_service::dispatch_get_metadata_update(
-  model::node_id id) {
-    vlog(clusterlog.debug, "Requesting metadata update from node {}", id);
-    return _clients.local()
-      .with_node_client<metadata_dissemination_rpc_client_protocol>(
-        _self,
-        ss::this_shard_id(),
-        id,
-        [this](metadata_dissemination_rpc_client_protocol c) {
-            return c
-              .get_leadership(
-                get_leadership_request{},
-                rpc::client_opts(
-                  rpc::clock_type::now() + _dissemination_interval))
-              .then(&rpc::get_ctx_data<get_leadership_reply>);
-        });
+  unresolved_address address) {
+    vlog(clusterlog.debug, "Requesting metadata update from node {}", address);
+    return do_with_client_one_shot<metadata_dissemination_rpc_client_protocol>(
+      address,
+      _rpc_tls_config,
+      [this](metadata_dissemination_rpc_client_protocol c) {
+          return c
+            .get_leadership(
+              get_leadership_request{},
+              rpc::client_opts(
+                rpc::clock_type::now() + _dissemination_interval))
+            .then(&rpc::get_ctx_data<get_leadership_reply>);
+      });
 }
 
 void metadata_dissemination_service::collect_pending_updates() {
@@ -303,7 +306,7 @@ ss::future<> metadata_dissemination_service::dispatch_one_update(
   model::node_id target_id, update_retry_meta& meta) {
     return _clients.local()
       .with_node_client<metadata_dissemination_rpc_client_protocol>(
-        _self,
+        _self.id(),
         ss::this_shard_id(),
         target_id,
         [this, &meta, target_id](
