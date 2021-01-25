@@ -224,7 +224,7 @@ void fetch_response::decode(iobuf buf, api_version version) {
                       .first_offset = model::offset(reader.read_int64()),
                     };
                 }),
-              .record_set = reader.read_fragmented_nullable_bytes()};
+              .record_set = reader.read_nullable_batch_reader()};
         });
         return p;
     });
@@ -277,7 +277,7 @@ make_partition_response_error(model::partition_id p_id, error_code error) {
       .error = error,
       .high_watermark = model::offset(-1),
       .last_stable_offset = model::offset(-1),
-      .record_set = iobuf(),
+      .record_set = batch_reader(),
     };
 }
 
@@ -403,7 +403,7 @@ static ss::future<> do_fill_fetch_responses(
               fetch_response::partition_response resp{
                 .id = pid,
                 .error = error_code::none,
-                .record_set = std::move(res.data),
+                .record_set = batch_reader(std::move(res.data)),
               };
               resp_it.set(std::move(resp));
           })
@@ -658,7 +658,7 @@ void op_context::start_response_partition(const fetch_request::partition& p) {
         .error = error_code::none,
         .high_watermark = model::offset(-1),
         .last_stable_offset = model::offset(-1),
-        .record_set = iobuf()});
+        .record_set = batch_reader()});
 }
 
 void op_context::create_response_placeholders() {
@@ -687,7 +687,7 @@ void op_context::create_response_placeholders() {
                 .error = error_code::none,
                 .high_watermark = fp.high_watermark,
                 .last_stable_offset = fp.high_watermark,
-                .record_set = iobuf()};
+                .record_set = batch_reader()};
 
               response.partitions.back().responses.push_back(std::move(p));
           });

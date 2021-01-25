@@ -81,19 +81,6 @@ struct prod_consume_fixture : public redpanda_thread_fixture {
           .then([](kafka::produce_response) {});
     }
 
-    model::offset read_last_batch_offset(iobuf&& record_set) {
-        kafka::request_reader rdr(std::move(record_set));
-        auto bo = rdr.read_int64();
-        auto len = rdr.read_int32();
-        auto ple = rdr.read_int32();
-        auto magic = rdr.read_int8();
-        auto crc = rdr.read_int32();
-        auto attr = rdr.read_int16();
-        auto lod = rdr.read_int32();
-
-        return model::offset(bo + lod);
-    }
-
     ss::future<kafka::fetch_response> fetch_next() {
         kafka::fetch_request::partition partition;
         partition.fetch_offset = fetch_offset;
@@ -118,12 +105,10 @@ struct prod_consume_fixture : public redpanda_thread_fixture {
               auto& part = *resp.partitions.begin();
 
               for (auto& r : part.responses) {
-                  std::optional<iobuf> data = std::move(
-                    part.responses.begin()->record_set);
+                  const auto& data = part.responses.begin()->record_set;
                   if (data && !data->empty()) {
                       // update next fetch offset the same way as Kafka clients
-                      fetch_offset = read_last_batch_offset(std::move(*data))
-                                     + model::offset(1);
+                      fetch_offset = ++data->last_offset();
                   }
               }
               return resp;
