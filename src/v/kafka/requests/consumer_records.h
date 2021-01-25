@@ -12,6 +12,7 @@
 #pragma once
 
 #include "bytes/iobuf.h"
+#include "kafka/requests/kafka_batch_adapter.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 
@@ -38,6 +39,9 @@ public:
 
     // Obtain the offset of the last record in the last batch
     model::offset last_offset() const;
+
+    // Consume a model::record_batch
+    kafka_batch_adapter consume_record_batch();
 
     // Check that the iobuf isn't nullopt
     constexpr explicit operator bool() const noexcept {

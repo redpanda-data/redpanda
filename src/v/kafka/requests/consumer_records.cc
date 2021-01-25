@@ -101,4 +101,14 @@ model::offset consumer_records::last_offset() const {
     return rbi.last_offset();
 }
 
+kafka_batch_adapter consumer_records::consume_record_batch() {
+    iobuf_const_parser p{*_record_set};
+    const auto hdr = read_record_batch_info(p);
+    const auto size_bytes = hdr.size_bytes;
+    kafka_batch_adapter kba;
+    kba.adapt(_record_set->share(0, size_bytes));
+    _record_set->trim_front(size_bytes);
+    return kba;
+}
+
 } // namespace kafka
