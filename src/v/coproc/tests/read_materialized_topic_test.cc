@@ -180,6 +180,7 @@ FIXTURE_TEST(
     BOOST_REQUIRE_EQUAL(
       resp.partitions[0].responses[0].error, kafka::error_code::none);
     BOOST_REQUIRE_EQUAL(resp.partitions[0].responses[0].id, pid);
-    BOOST_REQUIRE(resp.partitions[0].responses[0].record_set);
-    BOOST_REQUIRE_EQUAL(resp.partitions[0].responses[0].record_set, data);
+    auto record_set = std::move(resp.partitions[0].responses[0].record_set);
+    BOOST_REQUIRE(record_set);
+    BOOST_REQUIRE_EQUAL(std::move(record_set).release(), data);
 }

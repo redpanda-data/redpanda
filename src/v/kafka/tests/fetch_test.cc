@@ -262,9 +262,7 @@ FIXTURE_TEST(fetch_one, redpanda_thread_fixture) {
         BOOST_REQUIRE(
           resp.partitions[0].responses[0].error == kafka::error_code::none);
         BOOST_REQUIRE(resp.partitions[0].responses[0].id == pid);
-        BOOST_REQUIRE(resp.partitions[0].responses[0].record_set);
-        BOOST_REQUIRE(
-          resp.partitions[0].responses[0].record_set->size_bytes() > 0);
+        BOOST_REQUIRE(!resp.partitions[0].responses[0].record_set.empty());
     }
 }
 
@@ -430,7 +428,7 @@ FIXTURE_TEST(fetch_multi_partitions_debounce, redpanda_thread_fixture) {
           resp.partitions[0].responses[i].id, model::partition_id(i));
         BOOST_REQUIRE(resp.partitions[0].responses[i].record_set);
 
-        total_size += resp.partitions[0].responses[i].record_set->size_bytes();
+        total_size += resp.partitions[0].responses[i].record_set.size_bytes();
     }
     BOOST_REQUIRE_GT(total_size, 0);
 }
@@ -488,8 +486,7 @@ FIXTURE_TEST(fetch_one_debounce, redpanda_thread_fixture) {
     BOOST_REQUIRE(
       resp.partitions[0].responses[0].error == kafka::error_code::none);
     BOOST_REQUIRE(resp.partitions[0].responses[0].id == pid);
-    BOOST_REQUIRE(resp.partitions[0].responses[0].record_set);
-    BOOST_REQUIRE(resp.partitions[0].responses[0].record_set->size_bytes() > 0);
+    BOOST_REQUIRE(!resp.partitions[0].responses[0].record_set.empty());
 }
 
 FIXTURE_TEST(fetch_multi_topics, redpanda_thread_fixture) {
@@ -576,7 +573,7 @@ FIXTURE_TEST(fetch_multi_topics, redpanda_thread_fixture) {
           resp.partitions[0].responses[i].id, model::partition_id(i));
         BOOST_REQUIRE(resp.partitions[0].responses[i].record_set);
 
-        total_size += resp.partitions[0].responses[i].record_set->size_bytes();
+        total_size += resp.partitions[0].responses[i].record_set.size_bytes();
     }
     BOOST_REQUIRE_GT(total_size, 0);
 }

@@ -192,7 +192,7 @@ void fetch_response::encode(const request_context& ctx, response& resp) {
                       writer.write(t.producer_id);
                       writer.write(int64_t(t.first_offset));
                   });
-                writer.write(std::move(r.record_set));
+                writer.write(std::move(r.record_set).release());
             });
       });
 }
@@ -224,7 +224,8 @@ void fetch_response::decode(iobuf buf, api_version version) {
                       .first_offset = model::offset(reader.read_int64()),
                     };
                 }),
-              .record_set = reader.read_fragmented_nullable_bytes()};
+              .record_set = consumer_records(
+                reader.read_fragmented_nullable_bytes())};
         });
         return p;
     });
@@ -248,7 +249,7 @@ operator<<(std::ostream& o, const fetch_response::partition_response& p) {
       p.high_watermark,
       p.last_stable_offset,
       p.aborted_transactions,
-      (p.record_set ? p.record_set->size_bytes() : -1));
+      p.record_set.size_bytes());
     return o;
 }
 
@@ -277,7 +278,7 @@ make_partition_response_error(model::partition_id p_id, error_code error) {
       .error = error,
       .high_watermark = model::offset(-1),
       .last_stable_offset = model::offset(-1),
-      .record_set = iobuf(),
+      .record_set = consumer_records(iobuf()),
     };
 }
 
@@ -403,7 +404,7 @@ static ss::future<> do_fill_fetch_responses(
               fetch_response::partition_response resp{
                 .id = pid,
                 .error = error_code::none,
-                .record_set = std::move(res.data),
+                .record_set = consumer_records(std::move(res.data)),
               };
               resp_it.set(std::move(resp));
           })
@@ -508,7 +509,7 @@ static std::vector<shard_fetch> group_requests_by_shard(op_context& octx) {
           // partions that aleready have an error or we have enough data
           if (!octx.initial_fetch) {
               bool has_enough_data
-                = !resp_it->partition_response->record_set->empty()
+                = !resp_it->partition_response->record_set.empty()
                   && octx.over_min_bytes();
 
               if (resp_it->partition_response->has_error() || has_enough_data) {
@@ -657,7 +658,7 @@ void op_context::start_response_partition(const fetch_request::partition& p) {
         .error = error_code::none,
         .high_watermark = model::offset(-1),
         .last_stable_offset = model::offset(-1),
-        .record_set = iobuf()});
+        .record_set = consumer_records(iobuf())});
 }
 
 void op_context::create_response_placeholders() {
@@ -686,7 +687,7 @@ void op_context::create_response_placeholders() {
                 .error = error_code::none,
                 .high_watermark = fp.high_watermark,
                 .last_stable_offset = fp.high_watermark,
-                .record_set = iobuf()};
+                .record_set = consumer_records(iobuf())};
 
               response.partitions.back().responses.push_back(std::move(p));
           });
@@ -696,7 +697,7 @@ void op_context::create_response_placeholders() {
 bool update_fetch_partition(
   const fetch_response::partition_response& resp, fetch_partition& partition) {
     bool include = false;
-    if (resp.record_set && resp.record_set->size_bytes() > 0) {
+    if (!resp.record_set.empty()) {
         // Partitions with new data are always included in the response.
         include = true;
     }
@@ -773,13 +774,13 @@ void op_context::response_iterator::set(
     }
     auto& current_resp_data = _it->partition_response->record_set;
     if (current_resp_data) {
-        auto sz = current_resp_data->size_bytes();
+        auto sz = current_resp_data.size_bytes();
         _ctx->response_size -= sz;
         _ctx->bytes_left += sz;
     }
 
     if (response.record_set) {
-        auto sz = response.record_set->size_bytes();
+        auto sz = response.record_set.size_bytes();
         _ctx->response_size += sz;
         _ctx->bytes_left -= std::min(_ctx->bytes_left, sz);
     }

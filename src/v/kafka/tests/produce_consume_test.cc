@@ -118,11 +118,11 @@ struct prod_consume_fixture : public redpanda_thread_fixture {
               auto& part = *resp.partitions.begin();
 
               for (auto& r : part.responses) {
-                  std::optional<iobuf> data = std::move(
-                    part.responses.begin()->record_set);
-                  if (data && !data->empty()) {
+                  auto data = std::move(part.responses.begin()->record_set);
+                  if (!data.empty()) {
                       // update next fetch offset the same way as Kafka clients
-                      fetch_offset = read_last_batch_offset(std::move(*data))
+                      fetch_offset = read_last_batch_offset(
+                                       *std::move(data).release())
                                      + model::offset(1);
                   }
               }

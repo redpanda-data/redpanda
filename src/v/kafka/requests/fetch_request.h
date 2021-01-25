@@ -13,6 +13,7 @@
 
 #include "cluster/partition.h"
 #include "kafka/fetch_session.h"
+#include "kafka/requests/consumer_records.h"
 #include "kafka/requests/request_context.h"
 #include "kafka/requests/response.h"
 #include "kafka/types.h"
@@ -221,7 +222,7 @@ struct fetch_response final {
         model::offset last_stable_offset;                      // >= v4
         model::offset log_start_offset;                        // >= v5
         std::vector<aborted_transaction> aborted_transactions; // >= v4
-        std::optional<iobuf> record_set;
+        consumer_records record_set;
         /*
          * _not part of kafka protocol
          * used to indicate wether we have to
