@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"sync"
 
 	"github.com/Shopify/sarama"
 	"github.com/burdiyan/kafkautil"
@@ -23,7 +22,6 @@ import (
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/container/common"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/kafka"
-	"golang.org/x/sync/errgroup"
 )
 
 const FeedbackMsg = `We'd love to hear about your experience with redpanda:
@@ -98,7 +96,14 @@ func DeduceBrokers(
 		if err != nil {
 			log.Debug(err)
 		} else {
-			bs = ContainerBrokers(c)
+			bs, stopped := ContainerBrokers(c)
+			if len(stopped) > 0 {
+				log.Errorf(
+					"%d local container nodes have stopped. Run"+
+						" 'rpk container start' to restart them.",
+					len(stopped),
+				)
+			}
 			if len(bs) > 0 {
 				log.Debugf(
 					"Using container cluster brokers %s",
@@ -206,31 +211,25 @@ func CreateDockerClient() (common.Client, error) {
 	return common.NewDockerClient()
 }
 
-func ContainerBrokers(c common.Client) []string {
+func ContainerBrokers(c common.Client) ([]string, []string) {
 	nodes, err := common.GetExistingNodes(c)
 	if err != nil {
 		log.Debug(err)
-		return []string{}
+		return nil, nil
 	}
-	grp := errgroup.Group{}
-	mu := sync.Mutex{}
+	if len(nodes) == 0 {
+		return nil, nil
+	}
+
 	addrs := []string{}
+	stopped := []string{}
 	for _, node := range nodes {
-		s := node
-		grp.Go(func() error {
-			mu.Lock()
-			defer mu.Unlock()
-			addrs = append(
-				addrs,
-				common.HostAddr(s.HostKafkaPort),
-			)
-			return nil
-		})
+		addr := common.HostAddr(node.HostKafkaPort)
+		if !node.Running {
+			stopped = append(stopped, addr)
+			continue
+		}
+		addrs = append(addrs, addr)
 	}
-	err = grp.Wait()
-	if err != nil {
-		log.Debug(err)
-		return []string{}
-	}
-	return addrs
+	return addrs, stopped
 }
