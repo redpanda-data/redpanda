@@ -4,7 +4,6 @@ import (
 	"github.com/Shopify/sarama"
 	"github.com/spf13/cobra"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/kafka"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/utils"
 )
 
 func NewRemoveCommand(
@@ -63,10 +62,7 @@ func remove(
 	// create empty message, the remove command doesn't need
 	// information on message, just a key value
 	var emptyMessage []byte
-	header, err := createHeader("remove")
-	if err != nil {
-		return err
-	}
+	header := createHeader("remove")
 	//publish message
 	return kafka.PublishMessage(
 		producer,
@@ -77,19 +73,13 @@ func remove(
 	)
 }
 
-func createHeader(action string) (sarama.RecordHeader, error) {
+func createHeader(action string) sarama.RecordHeader {
 	// create key
-	key, err := utils.WriteString([]byte{}, "action")
-	if err != nil {
-		return sarama.RecordHeader{}, err
-	}
+	key := []byte("action")
 	// create value
-	value, err := utils.WriteString([]byte{}, action)
-	if err != nil {
-		return sarama.RecordHeader{}, err
-	}
+	value := []byte(action)
 	return sarama.RecordHeader{
 		Key:	key,
 		Value:	value,
-	}, nil
+	}
 }

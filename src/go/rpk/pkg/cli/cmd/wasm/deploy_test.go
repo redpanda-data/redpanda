@@ -12,7 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/kafka"
 	kafkaMocks "github.com/vectorizedio/redpanda/src/go/rpk/pkg/kafka/mocks"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/utils"
 )
 
 type fileInfo struct {
@@ -119,7 +118,7 @@ func TestNewDeployCommand(t *testing.T) {
 				if !tt.failSendMessage {
 					produce.ExpectSendMessageWithCheckerFunctionAndSucceed(func(val []byte) error {
 						if tt.fileInformation.content != "" {
-							expectValue, _ := utils.WriteString([]byte{}, tt.fileInformation.content)
+							expectValue := []byte(tt.fileInformation.content)
 							require.Equal(t, expectValue, val)
 						}
 						return nil
