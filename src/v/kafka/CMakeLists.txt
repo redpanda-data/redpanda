@@ -28,11 +28,6 @@ set(request_srcs
   requests/topics/types.cc
   requests/topics/topic_utils.cc)
 
-set(group_srcs
-  groups/member.cc
-  groups/group.cc
-  groups/group_manager.cc)
-
 set(security_srcs
     security/scram_algorithm.cc)
 
@@ -40,15 +35,17 @@ v_cc_library(
   NAME kafka
   SRCS
     ${request_srcs}
-    ${group_srcs}
     ${security_srcs}
     errors.cc
-    connection_context.cc
-    protocol.cc
-    protocol_utils.cc
-    logger.cc
-    quota_manager.cc
-    fetch_session_cache.cc
+    server/member.cc
+    server/group.cc
+    server/group_manager.cc
+    server/connection_context.cc
+    server/protocol.cc
+    server/protocol_utils.cc
+    server/logger.cc
+    server/quota_manager.cc
+    server/fetch_session_cache.cc
  DEPS
     Seastar::seastar
     v::bytes
@@ -60,8 +57,8 @@ v_cc_library(
 )
 
 add_subdirectory(client)
-add_subdirectory(tests)
+add_subdirectory(server/tests)
 
 set_source_files_properties(
-    groups/group.cc # too big => negative impact on minimal rebuilds for unity
+    server/group.cc # too big => negative impact on minimal rebuilds for unity
   PROPERTIES SKIP_UNITY_BUILD_INCLUSION 1)

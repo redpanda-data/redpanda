@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "kafka/protocol_utils.h"
+#include "kafka/server/protocol_utils.h"
 #include "kafka/requests/api_versions_request.h"
 #include "kafka/requests/create_topics_request.h"
 #include "kafka/requests/fetch_request.h"

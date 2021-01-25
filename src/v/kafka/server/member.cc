@@ -15,7 +15,7 @@
  *  for now, we may be non-optimal for very small sizes, but degrade gracefully
  *  if we have some big inputs.
  */
-#include "kafka/groups/member.h"
+#include "kafka/server/member.h"
 
 #include "utils/named_type.h"
 #include "utils/to_string.h"

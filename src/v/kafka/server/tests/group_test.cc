@@ -8,7 +8,7 @@
 // by the Apache License, Version 2.0
 
 #include "config/configuration.h"
-#include "kafka/groups/group.h"
+#include "kafka/server/group.h"
 #include "utils/to_string.h"
 
 #include <seastar/core/sstring.hh>

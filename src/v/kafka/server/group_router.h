@@ -11,8 +11,8 @@
 
 #pragma once
 #include "cluster/shard_table.h"
-#include "kafka/groups/coordinator_ntp_mapper.h"
-#include "kafka/groups/group_manager.h"
+#include "kafka/server/coordinator_ntp_mapper.h"
+#include "kafka/server/group_manager.h"
 #include "kafka/requests/describe_groups_request.h"
 #include "kafka/requests/heartbeat_request.h"
 #include "kafka/requests/join_group_request.h"

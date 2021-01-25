@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "kafka/protocol_utils.h"
+#include "kafka/server/protocol_utils.h"
 
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"

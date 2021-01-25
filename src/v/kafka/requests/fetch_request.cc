@@ -12,7 +12,7 @@
 #include "cluster/partition_manager.h"
 #include "config/configuration.h"
 #include "kafka/errors.h"
-#include "kafka/fetch_session.h"
+#include "kafka/server/fetch_session.h"
 #include "kafka/requests/batch_consumer.h"
 #include "likely.h"
 #include "model/fundamental.h"

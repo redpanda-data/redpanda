@@ -12,7 +12,7 @@
 #include "cluster/topics_frontend.h"
 #include "config/configuration.h"
 #include "kafka/errors.h"
-#include "kafka/groups/coordinator_ntp_mapper.h"
+#include "kafka/server/coordinator_ntp_mapper.h"
 #include "model/metadata.h"
 
 #include <seastar/util/log.hh>

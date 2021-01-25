@@ -7,13 +7,13 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "kafka/groups/group.h"
+#include "kafka/server/group.h"
 
 #include "bytes/bytes.h"
 #include "cluster/partition.h"
 #include "cluster/simple_batch_builder.h"
-#include "kafka/groups/group_manager.h"
-#include "kafka/logger.h"
+#include "kafka/server/group_manager.h"
+#include "kafka/server/logger.h"
 #include "kafka/requests/schemata/describe_groups_response.h"
 #include "kafka/requests/sync_group_request.h"
 #include "likely.h"

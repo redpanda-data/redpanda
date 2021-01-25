@@ -8,8 +8,8 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
-#include "kafka/fetch_session.h"
-#include "kafka/fetch_session_cache.h"
+#include "kafka/server/fetch_session.h"
+#include "kafka/server/fetch_session_cache.h"
 #include "kafka/requests/fetch_request.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"

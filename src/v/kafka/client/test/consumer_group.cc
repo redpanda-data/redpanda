@@ -16,7 +16,7 @@
 #include "kafka/client/test/fixture.h"
 #include "kafka/client/test/utils.h"
 #include "kafka/errors.h"
-#include "kafka/groups/group.h"
+#include "kafka/server/group.h"
 #include "kafka/requests/describe_groups_request.h"
 #include "kafka/requests/fetch_request.h"
 #include "kafka/requests/find_coordinator_request.h"

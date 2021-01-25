@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "kafka/groups/group_manager.h"
+#include "kafka/server/group_manager.h"
 
 #include "cluster/simple_batch_builder.h"
 #include "kafka/requests/delete_groups_request.h"

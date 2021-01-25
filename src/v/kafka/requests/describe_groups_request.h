@@ -11,7 +11,7 @@
 
 #pragma once
 #include "kafka/errors.h"
-#include "kafka/groups/group.h"
+#include "kafka/server/group.h"
 #include "kafka/requests/response.h"
 #include "kafka/requests/schemata/describe_groups_request.h"
 #include "kafka/requests/schemata/describe_groups_response.h"

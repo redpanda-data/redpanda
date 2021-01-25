@@ -10,7 +10,7 @@
  */
 #pragma once
 
-#include "kafka/fetch_session.h"
+#include "kafka/server/fetch_session.h"
 #include "kafka/types.h"
 #include "units.h"
 

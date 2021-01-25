@@ -11,10 +11,10 @@
 
 #pragma once
 #include "bytes/iobuf.h"
-#include "kafka/connection_context.h"
-#include "kafka/fetch_session_cache.h"
-#include "kafka/logger.h"
-#include "kafka/protocol.h"
+#include "kafka/server/connection_context.h"
+#include "kafka/server/fetch_session_cache.h"
+#include "kafka/server/logger.h"
+#include "kafka/server/protocol.h"
 #include "kafka/requests/request_reader.h"
 #include "kafka/requests/response.h"
 #include "kafka/types.h"

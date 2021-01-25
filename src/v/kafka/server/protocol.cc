@@ -10,8 +10,8 @@
 #include "protocol.h"
 
 #include "cluster/topics_frontend.h"
-#include "kafka/connection_context.h"
-#include "kafka/logger.h"
+#include "kafka/server/connection_context.h"
+#include "kafka/server/logger.h"
 #include "kafka/requests/request_context.h"
 #include "kafka/requests/response.h"
 #include "utils/utf8.h"

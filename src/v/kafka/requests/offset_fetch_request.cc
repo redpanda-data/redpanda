@@ -10,8 +10,8 @@
 #include "kafka/requests/offset_fetch_request.h"
 
 #include "kafka/errors.h"
-#include "kafka/groups/group_manager.h"
-#include "kafka/groups/group_router.h"
+#include "kafka/server/group_manager.h"
+#include "kafka/server/group_router.h"
 #include "kafka/requests/request_context.h"
 #include "kafka/requests/response.h"
 #include "model/metadata.h"

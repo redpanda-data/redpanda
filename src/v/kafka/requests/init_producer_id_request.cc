@@ -10,9 +10,9 @@
 #include "kafka/requests/init_producer_id_request.h"
 
 #include "cluster/topics_frontend.h"
-#include "kafka/groups/group_manager.h"
-#include "kafka/groups/group_router.h"
-#include "kafka/logger.h"
+#include "kafka/server/group_manager.h"
+#include "kafka/server/group_router.h"
+#include "kafka/server/logger.h"
 #include "kafka/requests/request_context.h"
 #include "kafka/requests/response.h"
 #include "utils/remote.h"

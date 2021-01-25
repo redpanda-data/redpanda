@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
-#include "kafka/protocol.h"
+#include "kafka/server/protocol.h"
 #include "kafka/requests/response.h"
 #include "rpc/server.h"
 #include "seastarx.h"
