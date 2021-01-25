@@ -31,7 +31,12 @@ func NewWasmCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 
 	// configure kafka producer
 	configClosure := common.FindConfigFile(mgr, &configFile)
-	brokersClosure := common.DeduceBrokers(fs, configClosure, &brokers)
+	brokersClosure := common.DeduceBrokers(
+		fs,
+		common.CreateDockerClient,
+		configClosure,
+		&brokers,
+	)
 	producerClosure := common.CreateProducer(brokersClosure, configClosure)
 	adminClosure := common.CreateAdmin(fs, brokersClosure, configClosure)
 

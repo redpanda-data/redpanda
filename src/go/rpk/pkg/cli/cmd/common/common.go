@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"sync"
 
 	"github.com/Shopify/sarama"
 	"github.com/burdiyan/kafkautil"
@@ -23,7 +22,6 @@ import (
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/container/common"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/kafka"
-	"golang.org/x/sync/errgroup"
 )
 
 const FeedbackMsg = `We'd love to hear about your experience with redpanda:
@@ -80,7 +78,10 @@ func FindConfigFile(
 }
 
 func DeduceBrokers(
-	fs afero.Fs, configuration func() (*config.Config, error), brokers *[]string,
+	fs afero.Fs,
+	client func() (common.Client, error),
+	configuration func() (*config.Config, error),
+	brokers *[]string,
 ) func() []string {
 	return func() []string {
 		bs := *brokers
@@ -91,14 +92,27 @@ func DeduceBrokers(
 		}
 		// Otherwise, try to detect if a local container cluster is
 		// running, and use its brokers' addresses.
-		bs = ContainerBrokers()
-		if len(bs) > 0 {
-			log.Debugf(
-				"Using container cluster brokers %s",
-				strings.Join(bs, ", "),
-			)
-			return bs
+		c, err := client()
+		if err != nil {
+			log.Debug(err)
+		} else {
+			bs, stopped := ContainerBrokers(c)
+			if len(stopped) > 0 {
+				log.Errorf(
+					"%d local container nodes have stopped. Run"+
+						" 'rpk container start' to restart them.",
+					len(stopped),
+				)
+			}
+			if len(bs) > 0 {
+				log.Debugf(
+					"Using container cluster brokers %s",
+					strings.Join(bs, ", "),
+				)
+				return bs
+			}
 		}
+
 		// Otherwise, try to find an existing config file.
 		conf, err := configuration()
 		if err != nil {
@@ -193,39 +207,29 @@ func CreateAdmin(
 	}
 }
 
-func ContainerBrokers() []string {
-	c, err := common.NewDockerClient()
-	if err != nil {
-		log.Debug(err)
-		return []string{}
-	}
+func CreateDockerClient() (common.Client, error) {
+	return common.NewDockerClient()
+}
+
+func ContainerBrokers(c common.Client) ([]string, []string) {
 	nodes, err := common.GetExistingNodes(c)
 	if err != nil {
 		log.Debug(err)
-		return []string{}
+		return nil, nil
 	}
-	grp := errgroup.Group{}
-	mu := sync.Mutex{}
+	if len(nodes) == 0 {
+		return nil, nil
+	}
+
 	addrs := []string{}
+	stopped := []string{}
 	for _, node := range nodes {
-		s := node
-		grp.Go(func() error {
-			mu.Lock()
-			defer mu.Unlock()
-			addrs = append(
-				addrs,
-				fmt.Sprintf(
-					"127.0.0.1:%d",
-					s.HostKafkaPort,
-				),
-			)
-			return nil
-		})
+		addr := common.HostAddr(node.HostKafkaPort)
+		if !node.Running {
+			stopped = append(stopped, addr)
+			continue
+		}
+		addrs = append(addrs, addr)
 	}
-	err = grp.Wait()
-	if err != nil {
-		log.Debug(err)
-		return []string{}
-	}
-	return addrs
+	return addrs, stopped
 }
