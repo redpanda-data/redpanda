@@ -229,7 +229,8 @@ ss::future<> configuration_manager::stop() {
     return ss::now();
 }
 
-ss::future<> configuration_manager::start(bool reset) {
+ss::future<>
+configuration_manager::start(bool reset, model::revision_id initial_revision) {
     if (reset) {
         return _storage.kvs()
           .remove(
@@ -243,7 +244,9 @@ ss::future<> configuration_manager::start(bool reset) {
 
     auto map_buf = _storage.kvs().get(
       storage::kvstore::key_space::consensus, configurations_map_key());
-    return _lock.with([this, map_buf = std::move(map_buf)]() mutable {
+    return _lock.with([this,
+                       map_buf = std::move(map_buf),
+                       initial_revision]() mutable {
         auto f = ss::now();
 
         if (map_buf) {
@@ -267,7 +270,12 @@ ss::future<> configuration_manager::start(bool reset) {
                 _highest_known_offset = std::max(_highest_known_offset, offset);
             });
         }
-        return f;
+
+        return f.then([this, initial_revision] {
+            for (auto& [o, cfg] : _configurations) {
+                cfg.maybe_set_initial_revision(initial_revision);
+            }
+        });
     });
 }
 

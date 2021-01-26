@@ -753,7 +753,8 @@ ss::future<> consensus::start() {
     return _op_lock.with([this] {
         read_voted_for();
 
-        return _configuration_manager.start(is_initial_state())
+        return _configuration_manager
+          .start(is_initial_state(), _self.revision())
           .then([this] { return hydrate_snapshot(); })
           .then([this] {
               vlog(

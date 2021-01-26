@@ -12,6 +12,7 @@
 #pragma once
 
 #include "model/fundamental.h"
+#include "model/metadata.h"
 #include "model/record_batch_reader.h"
 #include "raft/logger.h"
 #include "raft/types.h"
@@ -51,7 +52,7 @@ public:
     configuration_manager(
       group_configuration, raft::group_id, storage::api&, ctx_log&);
 
-    ss::future<> start(bool reset);
+    ss::future<> start(bool reset, model::revision_id);
 
     ss::future<> stop();
     /**

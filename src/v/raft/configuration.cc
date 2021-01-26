@@ -21,6 +21,7 @@
 #include <iterator>
 #include <optional>
 #include <utility>
+#include <vector>
 
 namespace raft {
 bool group_nodes::contains(vnode id) const {
@@ -326,6 +327,50 @@ void group_configuration::update(model::broker broker) {
     *it = std::move(broker);
 }
 
+std::vector<vnode> with_revisions_assigned(
+  const std::vector<vnode>& vnodes, model::revision_id new_revision) {
+    std::vector<vnode> with_rev;
+    with_rev.reserve(vnodes.size());
+
+    std::transform(
+      vnodes.cbegin(),
+      vnodes.cend(),
+      std::back_inserter(with_rev),
+      [new_revision](const vnode& n) {
+          vassert(
+            n.revision() == no_revision,
+            "changing revision of nodes with current revision set should never "
+            "happen, current revision: {}",
+            n.revision());
+          return vnode(n.id(), new_revision);
+      });
+
+    return with_rev;
+}
+
+bool have_no_revision(const std::vector<vnode>& vnodes) {
+    return !vnodes.empty() && vnodes.begin()->revision() == no_revision;
+}
+
+void group_configuration::maybe_set_initial_revision(
+  model::revision_id new_rev) {
+    group_nodes new_current;
+    // if configuration have no revision assigned, fix it
+    if (
+      have_no_revision(_current.learners)
+      || have_no_revision(_current.voters)) {
+        // current configuration
+        _current.voters = with_revisions_assigned(_current.voters, new_rev);
+        _current.learners = with_revisions_assigned(_current.learners, new_rev);
+
+        // old configuration
+        if (_old) {
+            _old->voters = with_revisions_assigned(_old->voters, new_rev);
+            _old->learners = with_revisions_assigned(_old->learners, new_rev);
+        }
+    }
+}
+
 std::ostream& operator<<(std::ostream& o, const group_configuration& c) {
     fmt::print(
       o,
@@ -375,7 +420,7 @@ std::vector<raft::vnode> make_vnodes(const std::vector<model::node_id> ids) {
     ret.reserve(ids.size());
     std::transform(
       ids.begin(), ids.end(), std::back_inserter(ret), [](model::node_id id) {
-          return raft::vnode(id, model::revision_id(0));
+          return raft::vnode(id, raft::no_revision);
       });
     return ret;
 }
@@ -443,7 +488,7 @@ adl<raft::group_configuration>::from(iobuf_parser& p) {
             old = old_v0->to_v2();
         }
     }
-    model::revision_id revision{0};
+    model::revision_id revision = raft::no_revision;
     if (version > 0) {
         revision = adl<model::revision_id>{}.from(p);
     }

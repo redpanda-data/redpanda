@@ -23,6 +23,7 @@
 
 namespace raft {
 
+static constexpr model::revision_id no_revision{};
 class vnode {
 public:
     constexpr vnode() = default;
@@ -179,6 +180,14 @@ public:
 
     void promote_to_voter(vnode id);
     model::revision_id revision_id() const { return _revision; }
+
+    /**
+     * Used to set initial revision for old configuration vnodes to maintain
+     * backward compatibility.
+     *
+     * IMPORTANT: may be removed in future versions
+     */
+    void maybe_set_initial_revision(model::revision_id r);
 
     friend bool
     operator==(const group_configuration&, const group_configuration&);
