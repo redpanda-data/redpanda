@@ -392,13 +392,17 @@ class FileManager {
    * @param repository
    */
   private startWatchers(repository: Repository): void {
-    this.submitDirWatcher = watch(this.submitDir).on("add", (filePath) => {
+    this.submitDirWatcher = watch(this.submitDir, {
+      awaitWriteFinish: true,
+    }).on("add", (filePath) => {
       this.logger.info(`Detected new file in submit dir: ${filePath}`);
       this.addCoprocessor(filePath, repository).catch((e) => {
         this.logger.error(`addCoprocessor failed with exception: ${e.message}`);
       });
     });
-    this.activeDirWatcher = watch(this.activeDir).on("unlink", (filePath) => {
+    this.activeDirWatcher = watch(this.activeDir, {
+      awaitWriteFinish: true,
+    }).on("unlink", (filePath) => {
       this.logger.info(`Detected removed file from active dir: ${filePath}`);
       this.removeHandleFromFilePath(filePath, repository);
     });

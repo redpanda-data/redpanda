@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"path/filepath"
-	"strings"
 
 	"github.com/Shopify/sarama"
 	"github.com/spf13/afero"
@@ -31,7 +30,6 @@ func NewDeployCommand(
 			if fileExt != ".js" {
 				return fmt.Errorf("can't deploy '%s': only .js files are supported.", path)
 			}
-			fileName := strings.Replace(fullFileName, fileExt, "", 1)
 			fileContent, err := afero.ReadFile(fs, path)
 			if err != nil {
 				return err
@@ -48,7 +46,7 @@ func NewDeployCommand(
 			}
 
 			return deploy(
-				fileName,
+				fullFileName,
 				fileContent,
 				description,
 				producer,
