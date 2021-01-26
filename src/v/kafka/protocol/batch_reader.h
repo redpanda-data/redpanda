@@ -12,6 +12,7 @@
 #pragma once
 
 #include "bytes/iobuf.h"
+#include "kafka/protocol/kafka_batch_adapter.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 
@@ -38,6 +39,9 @@ public:
     //
     // Complexity: O(n) record_batches
     model::offset last_offset() const;
+
+    // Consume a model::record_batch as a kafka_batch_adaptor
+    kafka_batch_adapter consume_batch();
 
     // Release any remaining iobuf that hasn't been consumed
     iobuf release() && { return std::move(_buf); }

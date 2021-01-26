@@ -103,3 +103,44 @@ SEASTAR_THREAD_TEST_CASE(batch_reader_last_offset_short_header) {
           return e.error == kafka::error_code::corrupt_message;
       });
 }
+
+SEASTAR_THREAD_TEST_CASE(consumer_records_consume_batch) {
+    auto ctx = make_context(base_offset, many_batches);
+
+    auto crs = kafka::batch_reader(std::move(ctx.record_set));
+
+    model::offset last_offset{};
+    while (!crs.empty()) {
+        auto kba = crs.consume_batch();
+        BOOST_REQUIRE(kba.v2_format);
+        BOOST_REQUIRE(kba.valid_crc);
+        BOOST_REQUIRE(kba.batch);
+        last_offset = kba.batch->last_offset();
+    }
+
+    BOOST_REQUIRE_EQUAL(last_offset, ctx.last_offset);
+}
+
+SEASTAR_THREAD_TEST_CASE(consumer_records_consume_batch_fail_magic) {
+    auto ctx = make_context(base_offset, few_batches);
+    corrupt_offset<int32_t>(
+      ctx.record_set, mag_offset, [](int32_t& t) { --t; });
+
+    auto crs = kafka::batch_reader(std::move(ctx.record_set));
+
+    model::offset last_offset{};
+    auto kba = crs.consume_batch();
+    BOOST_REQUIRE(!kba.v2_format);
+}
+
+SEASTAR_THREAD_TEST_CASE(consumer_records_consume_batch_fail_crc) {
+    auto ctx = make_context(base_offset, few_batches);
+    corrupt_offset<int32_t>(
+      ctx.record_set, crc_offset, [](int32_t& t) { --t; });
+
+    auto crs = kafka::batch_reader(std::move(ctx.record_set));
+
+    model::offset last_offset{};
+    auto kba = crs.consume_batch();
+    BOOST_REQUIRE(!kba.valid_crc);
+}

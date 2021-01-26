@@ -111,4 +111,14 @@ model::offset batch_reader::last_offset() const {
     return last_offset;
 }
 
+kafka_batch_adapter batch_reader::consume_batch() {
+    iobuf_const_parser p{_buf};
+    const auto hdr = read_record_batch_info(p);
+    const auto size_bytes = hdr.size_bytes();
+    kafka_batch_adapter kba;
+    kba.adapt(_buf.share(0, size_bytes));
+    _buf.trim_front(size_bytes);
+    return kba;
+}
+
 } // namespace kafka
