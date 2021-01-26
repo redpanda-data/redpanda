@@ -108,6 +108,8 @@ public:
 
     ss::future<> remove_partial_snapshots();
 
+    ss::future<> remove_snapshot();
+
 private:
     std::filesystem::path _dir;
     ss::io_priority_class _io_prio;
