@@ -107,10 +107,8 @@ func NewCreateCommand(
 		&replicas,
 		"replicas",
 		"r",
-		int16(-1),
-		"Replication factor. If it's negative or is left unspecified,"+
-			" it will use the cluster's default topic replication"+
-			" factor.",
+		int16(1),
+		"Replication factor",
 	)
 	cmd.Flags().BoolVar(
 		&compact,
