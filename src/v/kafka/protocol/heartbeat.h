@@ -11,9 +11,9 @@
 
 #pragma once
 #include "kafka/errors.h"
-#include "kafka/server/response.h"
 #include "kafka/protocol/schemata/heartbeat_request.h"
 #include "kafka/protocol/schemata/heartbeat_response.h"
+#include "kafka/server/response.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "seastarx.h"

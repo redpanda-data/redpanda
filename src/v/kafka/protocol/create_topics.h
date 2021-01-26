@@ -11,12 +11,12 @@
 
 #pragma once
 
-#include "kafka/server/request_context.h"
-#include "kafka/server/response.h"
 #include "kafka/protocol/schemata/create_topics_request.h"
 #include "kafka/protocol/schemata/create_topics_response.h"
 #include "kafka/protocol/topics/types.h"
 #include "kafka/protocol/topics/validators.h"
+#include "kafka/server/request_context.h"
+#include "kafka/server/response.h"
 #include "seastarx.h"
 
 #include <seastar/core/future.hh>

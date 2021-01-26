@@ -13,9 +13,9 @@
 
 #include "bytes/iobuf.h"
 #include "kafka/errors.h"
-#include "kafka/server/response.h"
 #include "kafka/protocol/schemata/offset_commit_request.h"
 #include "kafka/protocol/schemata/offset_commit_response.h"
+#include "kafka/server/response.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/timestamp.h"

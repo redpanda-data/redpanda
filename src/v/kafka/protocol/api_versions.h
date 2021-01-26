@@ -11,10 +11,10 @@
 
 #pragma once
 
-#include "kafka/server/request_context.h"
-#include "kafka/server/response.h"
 #include "kafka/protocol/schemata/api_versions_request.h"
 #include "kafka/protocol/schemata/api_versions_response.h"
+#include "kafka/server/request_context.h"
+#include "kafka/server/response.h"
 #include "seastarx.h"
 
 #include <seastar/core/future.hh>

@@ -11,8 +11,8 @@
 
 #include "bytes/iobuf.h"
 #include "hashing/crc32c.h"
-#include "kafka/server/request_context.h"
 #include "kafka/protocol/request_reader.h"
+#include "kafka/server/request_context.h"
 #include "likely.h"
 #include "model/record.h"
 #include "raft/types.h"

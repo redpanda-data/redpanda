@@ -13,10 +13,10 @@
 
 #include "bytes/iobuf.h"
 #include "kafka/errors.h"
-#include "kafka/server/request_context.h"
-#include "kafka/server/response.h"
 #include "kafka/protocol/schemata/delete_topics_request.h"
 #include "kafka/protocol/schemata/delete_topics_response.h"
+#include "kafka/server/request_context.h"
+#include "kafka/server/response.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/timestamp.h"

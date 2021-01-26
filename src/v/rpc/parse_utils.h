@@ -63,8 +63,7 @@ parse_header(ss::input_stream<char>& in) {
     });
 }
 
-inline void
-validate_payload_and_header(const iobuf& io, const header& h) {
+inline void validate_payload_and_header(const iobuf& io, const header& h) {
     detail::check_out_of_range(io.size_bytes(), h.payload_size);
     auto in = iobuf::iterator_consumer(io.cbegin(), io.cend());
     incremental_xxhash64 hasher;

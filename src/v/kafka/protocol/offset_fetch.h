@@ -13,9 +13,9 @@
 
 #include "bytes/iobuf.h"
 #include "kafka/errors.h"
-#include "kafka/server/response.h"
 #include "kafka/protocol/schemata/offset_fetch_request.h"
 #include "kafka/protocol/schemata/offset_fetch_response.h"
+#include "kafka/server/response.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "seastarx.h"

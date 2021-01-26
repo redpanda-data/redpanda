@@ -12,10 +12,10 @@
 #pragma once
 #include "bytes/iobuf.h"
 #include "kafka/errors.h"
-#include "kafka/server/request_context.h"
-#include "kafka/server/response.h"
 #include "kafka/protocol/schemata/describe_configs_request.h"
 #include "kafka/protocol/schemata/describe_configs_response.h"
+#include "kafka/server/request_context.h"
+#include "kafka/server/response.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"

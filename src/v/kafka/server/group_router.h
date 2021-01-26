@@ -11,8 +11,6 @@
 
 #pragma once
 #include "cluster/shard_table.h"
-#include "kafka/server/coordinator_ntp_mapper.h"
-#include "kafka/server/group_manager.h"
 #include "kafka/protocol/describe_groups.h"
 #include "kafka/protocol/heartbeat.h"
 #include "kafka/protocol/join_group.h"
@@ -21,6 +19,8 @@
 #include "kafka/protocol/offset_commit.h"
 #include "kafka/protocol/offset_fetch.h"
 #include "kafka/protocol/sync_group.h"
+#include "kafka/server/coordinator_ntp_mapper.h"
+#include "kafka/server/group_manager.h"
 #include "kafka/types.h"
 #include "seastarx.h"
 

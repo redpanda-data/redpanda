@@ -28,10 +28,10 @@
 #include "kafka/protocol/offset_commit.h"
 #include "kafka/protocol/offset_fetch.h"
 #include "kafka/protocol/produce.h"
-#include "kafka/server/request_context.h"
 #include "kafka/protocol/sasl_authenticate.h"
 #include "kafka/protocol/sasl_handshake.h"
 #include "kafka/protocol/sync_group.h"
+#include "kafka/server/request_context.h"
 #include "utils/to_string.h"
 #include "vlog.h"
 
