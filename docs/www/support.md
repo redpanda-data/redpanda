@@ -88,8 +88,8 @@ sudo systemctl start redpanda
 
 ### Adding a new node
 
-Adding a new node is very easy.
-Follow [step #3 of our guide](https://vectorized.io/documentation/setup-guide/#Step-3-Start-the-other-nodes)
+Adding a new node is very easy. You can follow
+[the manual installation section](/docs/production-deployment#Manual-Installation)
 on setting up a production cluster.
 
 ### Changing the config on an existing node
@@ -114,7 +114,7 @@ Some configuration fields can't be changed, however.
 Redpanda exports Prometheus metrics on `<host>:9644/metrics`. To learn how to
 quickly generate the necessary configuration, to start scraping it and
 visualizing it, see our
-[monitoring docs](https://vectorized.io/documentation/monitoring/).
+[monitoring docs](/docs/monitoring)
 
 ## Troubleshooting
 
@@ -162,22 +162,10 @@ can use `telnet` or `ncat** to check that the node is reachable from the rest,
 and that it can reach the other nodes. Check your firewall rules to discard any
 misconfigurations.
 
-### The 'redpanda' APT or RPM repository couldn't be configured
-
-If the installation command in our
-[Quick Start guide](https://vectorized.io/documentation/setup-guide#Quick-Start---60-Seconds)
-fails while setting up the repo, verify that you've replaced the placeholder for
-your actual token. If you've done that already, please double-check that it's
-correct.
-
-If your token is correct, it might be expired. In that case, please ask your
-team lead for the latest one, or send us a message in your team's shared Slack
-channel.
-
 ### The 'redpanda' package wasn't found
 
 Make sure that you added our repo to your package manager as explained in our
-[Quick Start guide](https://vectorized.io/documentation/setup-guide#Quick-Start---60-Seconds).
+[Quick Start Linux Guide](/docs/quick-start-linux)
 
 ### The 'redpanda' package can't be downloaded
 
