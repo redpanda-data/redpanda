@@ -11,7 +11,7 @@
 #include "kafka/errors.h"
 #include "kafka/protocol/fetch.h"
 #include "kafka/protocol/produce.h"
-#include "kafka/requests/request_reader.h"
+#include "kafka/protocol/request_reader.h"
 #include "random/generators.h"
 #include "redpanda/tests/fixture.h"
 #include "storage/record_batch_builder.h"

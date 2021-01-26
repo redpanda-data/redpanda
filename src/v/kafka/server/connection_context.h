@@ -10,7 +10,7 @@
  */
 #pragma once
 #include "kafka/server/protocol.h"
-#include "kafka/requests/response.h"
+#include "kafka/server/response.h"
 #include "rpc/server.h"
 #include "seastarx.h"
 #include "utils/hdr_hist.h"

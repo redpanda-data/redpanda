@@ -12,7 +12,7 @@
 #pragma once
 #include "bytes/iobuf.h"
 #include "kafka/errors.h"
-#include "kafka/requests/response.h"
+#include "kafka/server/response.h"
 #include "kafka/protocol/schemata/list_offset_request.h"
 #include "kafka/protocol/schemata/list_offset_response.h"
 #include "kafka/types.h"

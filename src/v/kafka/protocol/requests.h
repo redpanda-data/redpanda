@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "kafka/requests/request_context.h"
+#include "kafka/server/request_context.h"
 #include "kafka/types.h"
 #include "utils/concepts-enabled.h"
 

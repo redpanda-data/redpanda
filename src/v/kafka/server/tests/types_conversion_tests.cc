@@ -12,8 +12,8 @@
 #define BOOST_TEST_MODULE utils
 #include "cluster/types.h"
 #include "kafka/protocol/schemata/create_topics_request.h"
-#include "kafka/requests/topics/topic_utils.h"
-#include "kafka/requests/topics/types.h"
+#include "kafka/protocol/topics/topic_utils.h"
+#include "kafka/protocol/topics/types.h"
 
 #include <boost/test/unit_test.hpp>
 

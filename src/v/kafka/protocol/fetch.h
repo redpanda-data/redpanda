@@ -13,8 +13,8 @@
 
 #include "cluster/partition.h"
 #include "kafka/server/fetch_session.h"
-#include "kafka/requests/request_context.h"
-#include "kafka/requests/response.h"
+#include "kafka/server/request_context.h"
+#include "kafka/server/response.h"
 #include "kafka/types.h"
 #include "likely.h"
 #include "model/fundamental.h"

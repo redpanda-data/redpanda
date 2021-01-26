@@ -10,8 +10,8 @@
 #include "kafka/protocol/alter_configs.h"
 
 #include "kafka/errors.h"
-#include "kafka/requests/request_context.h"
-#include "kafka/requests/response.h"
+#include "kafka/server/request_context.h"
+#include "kafka/server/response.h"
 #include "model/metadata.h"
 
 #include <seastar/core/do_with.hh>

@@ -634,8 +634,8 @@ SOURCE_TEMPLATE = """
 #include "kafka/protocol/schemata/{{ header }}"
 
 #include "cluster/types.h"
-#include "kafka/requests/response_writer.h"
-#include "kafka/requests/request_reader.h"
+#include "kafka/protocol/response_writer.h"
+#include "kafka/protocol/request_reader.h"
 
 #include <fmt/core.h>
 #include <fmt/format.h>

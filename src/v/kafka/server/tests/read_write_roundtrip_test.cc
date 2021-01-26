@@ -7,8 +7,8 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "kafka/requests/request_reader.h"
-#include "kafka/requests/response_writer.h"
+#include "kafka/protocol/request_reader.h"
+#include "kafka/protocol/response_writer.h"
 #include "random/generators.h"
 #include "utils/to_string.h"
 

@@ -12,8 +12,8 @@
 #include "cluster/topics_frontend.h"
 #include "kafka/server/connection_context.h"
 #include "kafka/server/logger.h"
-#include "kafka/requests/request_context.h"
-#include "kafka/requests/response.h"
+#include "kafka/server/request_context.h"
+#include "kafka/server/response.h"
 #include "utils/utf8.h"
 #include "vlog.h"
 

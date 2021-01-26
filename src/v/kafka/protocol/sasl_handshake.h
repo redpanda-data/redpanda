@@ -10,8 +10,8 @@
  */
 #pragma once
 
-#include "kafka/requests/request_context.h"
-#include "kafka/requests/response.h"
+#include "kafka/server/request_context.h"
+#include "kafka/server/response.h"
 #include "kafka/protocol/schemata/sasl_handshake_request.h"
 #include "kafka/protocol/schemata/sasl_handshake_response.h"
 #include "kafka/types.h"

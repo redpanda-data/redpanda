@@ -8,11 +8,11 @@
 // by the Apache License, Version 2.0
 
 #include "kafka/errors.h"
-#include "kafka/requests/batch_consumer.h"
+#include "kafka/protocol/batch_consumer.h"
 #include "kafka/protocol/delete_topics.h"
 #include "kafka/protocol/metadata.h"
 #include "kafka/protocol/produce.h"
-#include "kafka/requests/topics/types.h"
+#include "kafka/protocol/topics/types.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"

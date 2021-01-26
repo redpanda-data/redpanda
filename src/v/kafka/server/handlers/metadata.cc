@@ -14,7 +14,7 @@
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "kafka/errors.h"
-#include "kafka/requests/topics/topic_utils.h"
+#include "kafka/protocol/topics/topic_utils.h"
 #include "likely.h"
 #include "model/metadata.h"
 #include "utils/to_string.h"

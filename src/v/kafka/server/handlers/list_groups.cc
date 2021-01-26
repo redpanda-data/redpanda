@@ -12,7 +12,7 @@
 #include "kafka/errors.h"
 #include "kafka/server/group_manager.h"
 #include "kafka/server/group_router.h"
-#include "kafka/requests/request_context.h"
+#include "kafka/server/request_context.h"
 #include "model/metadata.h"
 
 namespace kafka {

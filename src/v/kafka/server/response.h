@@ -12,7 +12,7 @@
 #pragma once
 
 #include "bytes/iobuf.h"
-#include "kafka/requests/response_writer.h"
+#include "kafka/protocol/response_writer.h"
 #include "seastarx.h"
 
 #include <seastar/core/sharded.hh>

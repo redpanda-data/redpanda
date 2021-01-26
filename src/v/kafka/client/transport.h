@@ -16,7 +16,7 @@
 #include "kafka/protocol/create_topics.h"
 #include "kafka/protocol/fetch.h"
 #include "kafka/protocol/metadata.h"
-#include "kafka/requests/requests.h"
+#include "kafka/protocol/requests.h"
 #include "rpc/transport.h"
 #include "seastarx.h"
 

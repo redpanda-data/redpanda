@@ -12,9 +12,9 @@
 #pragma once
 
 #include "kafka/errors.h"
-#include "kafka/requests/kafka_batch_adapter.h"
-#include "kafka/requests/request_context.h"
-#include "kafka/requests/response.h"
+#include "kafka/protocol/kafka_batch_adapter.h"
+#include "kafka/server/request_context.h"
+#include "kafka/server/response.h"
 #include "kafka/types.h"
 #include "model/timestamp.h"
 #include "seastarx.h"

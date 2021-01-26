@@ -12,8 +12,8 @@
 #pragma once
 #include "cluster/metadata_cache.h"
 #include "cluster/types.h"
-#include "kafka/requests/topics/types.h"
-#include "kafka/requests/topics/validators.h"
+#include "kafka/protocol/topics/types.h"
+#include "kafka/protocol/topics/validators.h"
 #include "model/timeout_clock.h"
 #include "seastarx.h"
 

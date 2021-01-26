@@ -12,7 +12,7 @@
 
 #include "kafka/server/protocol.h"
 #include "kafka/server/protocol_utils.h"
-#include "kafka/requests/request_context.h"
+#include "kafka/server/request_context.h"
 
 #include <seastar/core/scattered_message.hh>
 #include <seastar/core/sleep.hh>

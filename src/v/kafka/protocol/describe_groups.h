@@ -12,7 +12,7 @@
 #pragma once
 #include "kafka/errors.h"
 #include "kafka/server/group.h"
-#include "kafka/requests/response.h"
+#include "kafka/server/response.h"
 #include "kafka/protocol/schemata/describe_groups_request.h"
 #include "kafka/protocol/schemata/describe_groups_response.h"
 #include "kafka/types.h"

@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "kafka/requests/topics/types.h"
+#include "kafka/protocol/topics/types.h"
 
 #include "config/configuration.h"
 #include "model/compression.h"

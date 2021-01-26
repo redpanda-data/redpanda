@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "kafka/requests/batch_consumer.h"
+#include "kafka/protocol/batch_consumer.h"
 #include "kafka/protocol/fetch.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"

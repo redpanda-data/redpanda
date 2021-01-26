@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "kafka/requests/requests.h"
+#include "kafka/protocol/requests.h"
 
 #include "kafka/protocol/alter_configs.h"
 #include "kafka/protocol/api_versions.h"
@@ -28,7 +28,7 @@
 #include "kafka/protocol/offset_commit.h"
 #include "kafka/protocol/offset_fetch.h"
 #include "kafka/protocol/produce.h"
-#include "kafka/requests/request_context.h"
+#include "kafka/server/request_context.h"
 #include "kafka/protocol/sasl_authenticate.h"
 #include "kafka/protocol/sasl_handshake.h"
 #include "kafka/protocol/sync_group.h"

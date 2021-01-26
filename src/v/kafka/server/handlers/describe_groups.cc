@@ -12,8 +12,8 @@
 #include "kafka/errors.h"
 #include "kafka/server/group_manager.h"
 #include "kafka/server/group_router.h"
-#include "kafka/requests/request_context.h"
-#include "kafka/requests/response.h"
+#include "kafka/server/request_context.h"
+#include "kafka/server/response.h"
 #include "model/namespace.h"
 #include "resource_mgmt/io_priority.h"
 

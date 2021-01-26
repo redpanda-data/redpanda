@@ -7,12 +7,12 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "kafka/requests/kafka_batch_adapter.h"
+#include "kafka/protocol/kafka_batch_adapter.h"
 
 #include "bytes/iobuf.h"
 #include "hashing/crc32c.h"
-#include "kafka/requests/request_context.h"
-#include "kafka/requests/request_reader.h"
+#include "kafka/server/request_context.h"
+#include "kafka/protocol/request_reader.h"
 #include "likely.h"
 #include "model/record.h"
 #include "raft/types.h"

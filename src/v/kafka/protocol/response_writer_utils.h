@@ -10,8 +10,8 @@
  */
 
 #pragma once
-#include "kafka/requests/kafka_batch_adapter.h"
-#include "kafka/requests/response_writer.h"
+#include "kafka/protocol/kafka_batch_adapter.h"
+#include "kafka/protocol/response_writer.h"
 #include "model/record.h"
 
 #include <cstdint>

@@ -1,11 +1,5 @@
 add_subdirectory(protocol)
 
-set(request_srcs
-  requests/kafka_batch_adapter.cc
-  requests/requests.cc
-  requests/topics/types.cc
-  requests/topics/topic_utils.cc)
-
 set(security_srcs
     security/scram_algorithm.cc)
 
@@ -37,10 +31,13 @@ set(handlers_srcs
 v_cc_library(
   NAME kafka
   SRCS
-    ${request_srcs}
+    errors.cc
+    protocol/kafka_batch_adapter.cc
+    protocol/topics/types.cc
+    protocol/topics/topic_utils.cc
     ${security_srcs}
     ${handlers_srcs}
-    errors.cc
+    server/requests.cc
     server/member.cc
     server/group.cc
     server/group_manager.cc
