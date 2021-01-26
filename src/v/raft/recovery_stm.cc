@@ -131,6 +131,34 @@ bool recovery_stm::state_changed() {
            > meta.value()->last_dirty_log_index;
 }
 
+append_entries_request::flush_after_append
+recovery_stm::should_flush(model::offset follower_committed_match_index) const {
+    auto lstats = _ptr->_log.offsets();
+
+    /**
+     * We request follower to flush only when follower is fully caught
+     * up and its match committed offset is smaller than last replicated
+     * offset with quorum level. This way when follower flush, leader
+     * will be able to update committed_index up to the last offset
+     * of last batch replicated with quorum_acks consistency level. Recovery STM
+     * works outside of the Raft mutex. It is possible that it read batches that
+     * were appendend with quorum consistency level but the
+     * _last_quorum_replicated_index wasn't yet updated, hence we have to check
+     * if last log append was executed with quorum write and if this is true
+     * force the flush on follower.
+     */
+
+    const bool is_last_batch = _last_batch_offset == lstats.dirty_offset;
+    const bool follower_has_batches_to_commit
+      = follower_committed_match_index < _ptr->_last_quorum_replicated_index;
+    const bool last_replicate_with_quorum = _ptr->_last_write_consistency_level
+                                            == consistency_level::quorum_ack;
+
+    return append_entries_request::flush_after_append(
+      is_last_batch
+      && (follower_has_batches_to_commit || last_replicate_with_quorum));
+}
+
 ss::future<> recovery_stm::read_range_for_recovery(
   model::offset start_offset,
   model::offset end_offset,
@@ -164,7 +192,6 @@ ss::future<> recovery_stm::read_range_for_recovery(
       })
       .then([this, start_offset, follower_committed_match_index](
               ss::circular_buffer<model::record_batch> batches) {
-          auto lstats = _ptr->_log.offsets();
           vlog(
             _ctxlog.trace,
             "Read {} batches for {} node recovery",
@@ -182,18 +209,8 @@ ss::future<> recovery_stm::read_range_for_recovery(
           auto f_reader = model::make_foreign_memory_record_batch_reader(
             std::move(gap_filled_batches));
 
-          /**
-           * We request follower to flush only when follower is fully caught
-           * up and its match committed offset is smaller than last replicated
-           * offset with quorum level. This way when follower flush, leader
-           * will be able to update committed_index up to the last offset
-           * of last batch replicated with quorum_acks consistency level.
-           */
-          auto should_flush = append_entries_request::flush_after_append(
-            _last_batch_offset == lstats.dirty_offset
-            && (follower_committed_match_index < _ptr->_last_quorum_replicated_index));
-
-          return replicate(std::move(f_reader), should_flush);
+          return replicate(
+            std::move(f_reader), should_flush(follower_committed_match_index));
       });
 }
 
