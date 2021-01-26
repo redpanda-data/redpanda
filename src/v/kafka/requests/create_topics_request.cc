@@ -39,6 +39,8 @@ ss::future<response_ptr> create_topics_api::process(
   request_context&& ctx, [[maybe_unused]] ss::smp_service_group g) {
     kafka::create_topics_request request;
     request.decode(ctx.reader(), ctx.header().version);
+    vlog(
+      klog.debug, "Handling {} request: {}", create_topics_api::name, request);
     return ss::do_with(
       std::move(ctx),
       [request = std::move(request)](request_context& ctx) mutable {
