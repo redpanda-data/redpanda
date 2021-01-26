@@ -42,7 +42,8 @@ transform.processRecord((recordBatch) => {
     };
   });
   result.set("result", transformedRecord);
-  return result;
+  // processRecord function returns a Promise
+  return Promise.resolve(result);
 });
 exports["default"] = transform;
 `
