@@ -55,11 +55,9 @@ func NewCreateCommand(
 			defer adm.Close()
 			topicName := args[0]
 			topicDetail := &sarama.TopicDetail{
-				NumPartitions:	partitions,
-				ConfigEntries:	configEntries,
-			}
-			if replicas > 0 {
-				topicDetail.ReplicationFactor = replicas
+				NumPartitions:		partitions,
+				ConfigEntries:		configEntries,
+				ReplicationFactor:	replicas,
 			}
 			err = adm.CreateTopic(
 				topicName,
