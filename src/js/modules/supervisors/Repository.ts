@@ -9,7 +9,7 @@
  */
 
 import { Handle } from "../domain/Handle";
-import { Coprocessor } from "../public/Coprocessor";
+import { Coprocessor, RecordBatch } from "../public/Coprocessor";
 import {
   ProcessBatchReplyItem,
   ProcessBatchRequestItem,
@@ -87,6 +87,33 @@ class Repository {
     return this.handles.size;
   }
 
+  transformMapResultToArray(
+    requestItem: ProcessBatchRequestItem,
+    handle: Handle,
+    recordBatch: RecordBatch,
+    resultRecordBatch: Map<string, RecordBatch>
+  ): ProcessBatchReplyItem[] {
+    const results: ProcessBatchReplyItem[] = [];
+    for (const [key, value] of resultRecordBatch) {
+      value.records = value.records.map((record) => {
+        record.length = calculateRecordLength(record);
+        record.valueLen = record.value.length;
+        return record;
+      });
+      value.header.sizeBytes = calculateRecordBatchSize(value.records);
+      value.header.term = recordBatch.header.term;
+      results.push({
+        coprocessorId: BigInt(handle.coprocessor.globalId),
+        ntp: {
+          ...requestItem.ntp,
+          topic: `${requestItem.ntp.topic}.$${key}$`,
+        },
+        resultRecordBatch: [value],
+      });
+      return results;
+    }
+  }
+
   applyCoprocessor(
     CoprocessorIds: bigint[],
     requestItem: ProcessBatchRequestItem,
@@ -116,29 +143,16 @@ class Repository {
           try {
             //TODO: https://app.clubhouse.io/vectorized/story/1257
             //pass functor to apply function
-            const resultRecordBatch = handle.coprocessor.apply(
-              createRecordBatch(recordBatch)
-            );
-
-            const results: ProcessBatchReplyItem[] = [];
-            for (const [key, value] of resultRecordBatch) {
-              value.records = value.records.map((record) => {
-                record.length = calculateRecordLength(record);
-                record.valueLen = record.value.length;
-                return record;
-              });
-              value.header.sizeBytes = calculateRecordBatchSize(value.records);
-              value.header.term = recordBatch.header.term;
-              results.push({
-                coprocessorId: BigInt(handle.coprocessor.globalId),
-                ntp: {
-                  ...requestItem.ntp,
-                  topic: `${requestItem.ntp.topic}.$${key}$`,
-                },
-                resultRecordBatch: [value],
-              });
-            }
-            return Promise.resolve(results);
+            return handle.coprocessor
+              .apply(createRecordBatch(recordBatch))
+              .then((resultMap) =>
+                this.transformMapResultToArray(
+                  requestItem,
+                  handle,
+                  recordBatch,
+                  resultMap
+                )
+              );
           } catch (e) {
             return handleError(handle.coprocessor, requestItem, e);
           }

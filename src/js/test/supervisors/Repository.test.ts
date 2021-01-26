@@ -128,18 +128,20 @@ describe("Repository", function () {
       ],
     };
     handleA.coprocessor.apply = (record: RecordBatch) =>
-      new Map([
-        [
-          "result",
-          createRecordBatch({
-            records: record.records.map((r) => ({
-              ...r,
-              value: Buffer.from("TEST"),
-              valueLen: 4,
-            })),
-          }),
-        ],
-      ]);
+      Promise.resolve(
+        new Map([
+          [
+            "result",
+            createRecordBatch({
+              records: record.records.map((r) => ({
+                ...r,
+                value: Buffer.from("TEST"),
+                valueLen: 4,
+              })),
+            }),
+          ],
+        ])
+      );
     const sinonInstance = sinon.createSandbox();
     const stubFire = sinonInstance.stub(
       ProcessBatchServer.prototype,

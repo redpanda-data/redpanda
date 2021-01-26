@@ -16,7 +16,8 @@ export const createMockCoprocessor = (
   globalId: Coprocessor["globalId"] = BigInt(1),
   inputTopics: Coprocessor["inputTopics"] = ["topicA"],
   policyError: Coprocessor["policyError"] = PolicyError.SkipOnFailure,
-  apply: Coprocessor["apply"] = () => new Map([["result", createRecordBatch()]])
+  apply: Coprocessor["apply"] = () =>
+    Promise.resolve(new Map([["result", createRecordBatch()]]))
 ): Coprocessor => ({
   globalId,
   inputTopics,
