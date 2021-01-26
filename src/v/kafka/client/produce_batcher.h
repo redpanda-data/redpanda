@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "kafka/requests/produce_request.h"
+#include "kafka/protocol/produce.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"

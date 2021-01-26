@@ -11,8 +11,8 @@
 
 #pragma once
 
-#include "kafka/requests/metadata_request.h"
-#include "kafka/requests/sync_group_request.h"
+#include "kafka/protocol/metadata.h"
+#include "kafka/protocol/sync_group.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 

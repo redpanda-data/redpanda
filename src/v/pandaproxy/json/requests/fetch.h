@@ -15,7 +15,7 @@
 #include "bytes/iobuf_parser.h"
 #include "json/json.h"
 #include "kafka/errors.h"
-#include "kafka/requests/fetch_request.h"
+#include "kafka/protocol/fetch.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"

@@ -13,7 +13,7 @@
 #include "kafka/client/configuration.h"
 #include "kafka/client/test/utils.h"
 #include "kafka/errors.h"
-#include "kafka/requests/produce_request.h"
+#include "kafka/protocol/produce.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 

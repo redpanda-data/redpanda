@@ -9,7 +9,7 @@
 
 #include "handlers.h"
 
-#include "kafka/requests/fetch_request.h"
+#include "kafka/protocol/fetch.h"
 #include "model/fundamental.h"
 #include "pandaproxy/json/requests/fetch.h"
 #include "pandaproxy/json/requests/produce.h"

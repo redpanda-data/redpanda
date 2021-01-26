@@ -9,8 +9,8 @@
 
 #include "pandaproxy/json/requests/produce.h"
 
-#include "kafka/requests/produce_request.h"
-#include "kafka/requests/response.h"
+#include "kafka/protocol/produce.h"
+#include "kafka/server/response.h"
 #include "model/timestamp.h"
 #include "pandaproxy/json/rjson_util.h"
 #include "seastarx.h"

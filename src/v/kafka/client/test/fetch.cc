@@ -9,13 +9,14 @@
  * by the Apache License, Version 2.0
  */
 
+#include "kafka/protocol/fetch.h"
+
 #include "kafka/client/client.h"
 #include "kafka/client/configuration.h"
 #include "kafka/client/test/fixture.h"
 #include "kafka/client/test/utils.h"
 #include "kafka/errors.h"
-#include "kafka/requests/fetch_request.h"
-#include "kafka/requests/metadata_request.h"
+#include "kafka/protocol/metadata.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"

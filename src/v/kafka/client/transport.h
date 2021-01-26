@@ -11,12 +11,12 @@
 
 #pragma once
 
-#include "kafka/protocol_utils.h"
-#include "kafka/requests/api_versions_request.h"
-#include "kafka/requests/create_topics_request.h"
-#include "kafka/requests/fetch_request.h"
-#include "kafka/requests/metadata_request.h"
-#include "kafka/requests/requests.h"
+#include "kafka/protocol/api_versions.h"
+#include "kafka/protocol/create_topics.h"
+#include "kafka/protocol/fetch.h"
+#include "kafka/protocol/metadata.h"
+#include "kafka/protocol/requests.h"
+#include "kafka/server/protocol_utils.h"
 #include "rpc/transport.h"
 #include "seastarx.h"
 

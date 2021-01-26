@@ -11,7 +11,7 @@
 #pragma once
 #include "bytes/bytes.h"
 #include "hashing/secure.h"
-#include "kafka/logger.h"
+#include "kafka/server/logger.h"
 #include "random/generators.h"
 
 #include <absl/container/node_hash_map.h>

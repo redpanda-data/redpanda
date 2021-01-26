@@ -16,7 +16,7 @@
 #include "cluster/service.h"
 #include "config/configuration.h"
 #include "config/seed_server.h"
-#include "kafka/protocol.h"
+#include "kafka/server/protocol.h"
 #include "model/metadata.h"
 #include "platform/stop_signal.h"
 #include "raft/service.h"
