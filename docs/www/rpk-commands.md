@@ -161,6 +161,21 @@ Usage:
   rpk topic set-config <topic> <key> [<value>] [flags]
 ```
 
+## cluster
+
+### info
+
+Get the cluster's info
+
+```
+Usage:
+  rpk cluster info [flags]
+
+Flags:
+  --brokers strings   Comma-separated list of broker ip:port pairs
+  --config string     Redpanda config file, if not set the file will be searched for in the default locations
+```
+
 ## container
 
 Manage a local container cluster
