@@ -293,7 +293,7 @@ Please check your internet connection and try again.`,
 					},
 				}, nil
 			},
-			expectedOutput:	`Cluster started! You may use 'rpk api' to interact with the cluster. E.g:\n\nrpk api status`,
+			expectedOutput:	`Cluster started! You may use rpk to interact with it. E.g:\n\nrpk api status`,
 		},
 		{
 			name:	"it should allow creating multiple containers",
@@ -337,7 +337,7 @@ Please check your internet connection and try again.`,
 					},
 				}, nil
 			},
-			expectedOutput:	`Cluster started! You may use 'rpk api' to interact with the cluster. E.g:\n\nrpk api status`,
+			expectedOutput:	`Cluster started! You may use rpk to interact with it. E.g:\n\nrpk api status`,
 		},
 		{
 			name:	"it should do nothing if there's an existing running cluster",

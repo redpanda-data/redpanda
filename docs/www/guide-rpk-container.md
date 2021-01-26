@@ -46,10 +46,10 @@ by using the ports listed above. In this example the ports to use would be
 
 All of the `rpk api` subcommands will detect the local cluster and use its addresses, so you don't have to configure anything or keep track of IPs and ports.
 
-For example, you can run `rpk api topic create` and it will work!
+For example, you can run `rpk topic create` and it will work!
 
 ```
-$ rpk api topic create -p 6 -r 3 new-topic
+$ rpk topic create -p 6 -r 3 new-topic
 Created topic 'new-topic'. Partitions: 6, replicas: 3, cleanup policy: 'delete'
 ```
 
@@ -60,5 +60,5 @@ rpk container stop
 ```
 
 You are all set! You can now use Redpanda to test your favorite Kafka
-compatible application or use the `rpk api` commands to further interface with
+compatible application or use the `rpk topic` commands to further interface with
 the local cluster!
