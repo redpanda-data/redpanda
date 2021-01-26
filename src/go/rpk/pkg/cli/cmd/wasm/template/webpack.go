@@ -29,6 +29,7 @@ fs.readdir("./src/", (err, files) => {
       performance: {
         hints: false
       },
+      target: 'node',
     };
   });
   webpack(webPackOptions, (err, stat) => {
