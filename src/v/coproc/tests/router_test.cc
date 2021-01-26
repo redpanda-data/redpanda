@@ -57,6 +57,39 @@ FIXTURE_TEST(test_coproc_router_no_results, router_test_fixture) {
     BOOST_REQUIRE_EQUAL(final_n_logs, 10);
 }
 
+/// Tests an off-by-one error where producing recordbatches of size 1 on the
+/// input log wouldn't produce onto the materialized log
+FIXTURE_TEST(test_coproc_router_off_by_one, router_test_fixture) {
+    model::topic src_topic("obo");
+    add_copro<identity_coprocessor>(12345678, {{src_topic(), l}}).get();
+    startup({{make_ts(src_topic), 1}}).get();
+    model::ntp input_ntp(
+      model::kafka_namespace, src_topic, model::partition_id(0));
+    model::ntp output_ntp(
+      model::kafka_namespace,
+      model::to_materialized_topic(
+        src_topic, identity_coprocessor::identity_topic),
+      model::partition_id(0));
+    auto fn = [this, input_ntp, output_ntp]() -> ss::future<size_t> {
+        return push(input_ntp, single_record_record_batch_reader())
+          .then([this, input_ntp, output_ntp](auto) {
+              return drain(output_ntp, 1)
+                .then([this, input_ntp, output_ntp](opt_reader_data_t r) {
+                    BOOST_CHECK(r);
+                    return r->size();
+                });
+          });
+    };
+    // Perform push/drain twice
+    size_t result = fn()
+                      .then([this, &fn](size_t sz) {
+                          return fn().then(
+                            [sz](size_t sz2) { return sz + sz2; });
+                      })
+                      .get0();
+    BOOST_CHECK_EQUAL(result, 2);
+}
+
 /// Tests a simple case of two coprocessors registered to the same output topic
 /// producing onto the same materialized topic. Should not crash and have a
 /// doubling effect on output size
