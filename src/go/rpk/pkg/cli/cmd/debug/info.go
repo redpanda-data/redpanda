@@ -154,10 +154,8 @@ func executeInfo(
 		<-confRowsCh,
 		<-kafkaRowsCh,
 	}
-
-	errs := grp.Wait().Errors
-	if errs != nil {
-		for _, err := range errs {
+	if errs := grp.Wait(); errs != nil {
+		for _, err := range errs.Errors {
 			log.Info(err)
 		}
 	}
