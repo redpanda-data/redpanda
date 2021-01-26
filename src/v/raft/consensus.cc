@@ -28,6 +28,7 @@
 #include "utils/state_crc_file_errc.h"
 #include "vlog.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/fstream.hh>
 #include <seastar/core/future.hh>
 
@@ -2160,14 +2161,19 @@ consensus::transfer_leadership(std::optional<model::node_id> target) {
 }
 
 ss::future<> consensus::remove_persistent_state() {
-    return _storage.kvs()
-      .remove(storage::kvstore::key_space::consensus, voted_for_key())
-      .then([this] {
-          return _storage.kvs().remove(
-            storage::kvstore::key_space::consensus, last_applied_key());
-      })
-      .then(
-        [this] { return _configuration_manager.remove_persistent_state(); });
+    // voted for
+    co_await _storage.kvs().remove(
+      storage::kvstore::key_space::consensus, voted_for_key());
+    // last applied key
+    co_await _storage.kvs().remove(
+      storage::kvstore::key_space::consensus, last_applied_key());
+    // configuration manager
+    co_await _configuration_manager.remove_persistent_state();
+    // snapshot
+    co_await _snapshot_mgr.remove_snapshot();
+    co_await _snapshot_mgr.remove_partial_snapshots();
+
+    co_return;
 }
 
 void consensus::maybe_update_last_visible_index(model::offset offset) {
