@@ -6,3 +6,5 @@ v_cc_library(
     errors.cc
   DEPS
     v::kafka_request_schemata)
+
+add_subdirectory(tests)

@@ -13,6 +13,7 @@
 
 #include "bytes/iobuf.h"
 #include "kafka/types.h"
+#include "model/fundamental.h"
 
 #include <optional>
 
@@ -32,6 +33,11 @@ public:
     bool empty() const { return _buf.empty(); }
 
     size_t size_bytes() const { return _buf.size_bytes(); }
+
+    // Obtain the offset of the last record in the last batch
+    //
+    // Complexity: O(n) record_batches
+    model::offset last_offset() const;
 
     // Release any remaining iobuf that hasn't been consumed
     iobuf release() && { return std::move(_buf); }
