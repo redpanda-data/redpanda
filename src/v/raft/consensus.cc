@@ -447,7 +447,10 @@ ss::future<result<replicate_result>> consensus::do_replicate(
     // For relaxed consistency, append data to leader disk without flush
     // asynchronous replication is provided by Raft protocol recovery mechanism.
     return _op_lock
-      .with([this, expected_term, rdr = std::move(rdr)]() mutable {
+      .with([this,
+             expected_term,
+             rdr = std::move(rdr),
+             lvl = opts.consistency]() mutable {
           if (!is_leader()) {
               return seastar::make_ready_future<result<replicate_result>>(
                 errc::not_leader);
@@ -457,7 +460,7 @@ ss::future<result<replicate_result>> consensus::do_replicate(
               return seastar::make_ready_future<result<replicate_result>>(
                 errc::not_leader);
           }
-
+          _last_write_consistency_level = lvl;
           return disk_append(
                    model::make_record_batch_reader<
                      details::term_assigning_reader>(

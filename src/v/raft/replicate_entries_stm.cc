@@ -138,6 +138,7 @@ replicate_entries_stm::append_to_self() {
     return share_request()
       .then([this](append_entries_request req) mutable {
           vlog(_ctxlog.trace, "Self append entries - {}", req.meta);
+          _ptr->_last_write_consistency_level = consistency_level::quorum_ack;
           return _ptr->disk_append(
             std::move(req.batches), consensus::update_last_quorum_index::yes);
       })

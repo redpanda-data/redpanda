@@ -508,6 +508,7 @@ private:
      * majority.
      */
     model::offset _last_quorum_replicated_index;
+    consistency_level _last_write_consistency_level;
     offset_monitor _consumable_offset_monitor;
     ss::condition_variable _disk_append;
     append_entries_buffer _append_requests_buffer;

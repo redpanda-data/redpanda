@@ -40,7 +40,8 @@ private:
     ss::future<> close_snapshot_reader();
     bool state_changed();
     bool is_recovery_finished();
-
+    append_entries_request::flush_after_append
+      should_flush(model::offset) const;
     consensus* _ptr;
     vnode _node_id;
     model::offset _base_batch_offset;
