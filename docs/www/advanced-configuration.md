@@ -107,11 +107,11 @@ redpanda:
 
   # The log segment size in bytes.
   # Default: 1GiB
-  log_segment_size: 1073742000
+  log_segment_size: 1073741824
 
   # The compacted log segment size in bytes.
   # Default: 256MiB
-  compacted_log_segment_size: 268435500
+  compacted_log_segment_size: 268435456
 
   # The maximum compacted log segment size in bytes. The compaction process will
   # attempt to combine segments to achieve a higher compaction rate. This maximum
@@ -167,6 +167,21 @@ redpanda:
     address: "0.0.0.0"
     port: 9644
   
+  # TLS configuration for the admin server.
+  # Default: null
+  admin_api_tls:
+    # Whether to enable TLS for the admin server.
+    enabled: false
+    # Require client authentication
+    require_client_auth: false
+    # The path to the server certificate PEM file.
+    cert_file: ""
+    # The path to the server key PEM file
+    key_file: ""
+    # The path to the truststore PEM file. Only required if client authentication
+    # is enabled.
+    truststore_file: ""
+
   # Address of RPC endpoint published to other cluster members.
   # Default: 0.0.0.0:33145
   advertised_rpc_api:
@@ -183,10 +198,8 @@ redpanda:
   # empty the node will be a cluster root and it will form a new cluster
   # Default: []
   seed_servers:
-    - id: 0
-      host:
-        address: "192.167.32.78"
-        port: 33145
+    - address: "192.167.32.78"
+      port: 33145
   
   # Number of partitions for the internal raft metadata topic.
   # Default: 7
@@ -201,12 +214,6 @@ redpanda:
   
   # Maximum redpanda version
   max_version: 1
-  
-  # TLS configuration for Kafka API endpoint.
-  # Default: null
-  kafka_api_tls:
-    key_file: "path/to/key"
-    cert_file: "path/to/cert"
   
   # Manage CPU scheduling.
   # Default: false
@@ -233,8 +240,8 @@ redpanda:
   quota_manager_gc_sec: 30000
   
   # Target quota byte rate (bytes per second).
-  # Default: 64MiB
-  target_quota_byte_rate: 6291456
+  # Default: 2GiB
+  target_quota_byte_rate: 2147483648
   
   # Rack identifier.
   # Default: null
@@ -253,8 +260,8 @@ redpanda:
   # The maximum allowed session timeout for registered consumers. Longer timeouts give
   # consumers more time to process messages in between heartbeats at the cost of a longer
   # time to detect failures.
-  # Default: 30s
-  group_max_session_timeout_ms: 30000
+  # Default: 300s
+  group_max_session_timeout_ms: 300000
   
   # Extra delay (in milliseconds) added to the rebalance phase to wait for new members.
   # Default: 300ms
@@ -264,10 +271,14 @@ redpanda:
   # Default: 30s
   group_new_member_join_timeout: 30000
   
-  # Interaval for metadata dissemination batching.
+  # Interval (in milliseconds) for metadata dissemination batching.
   # Default: 3s
   metadata_dissemination_interval_ms: 3000
-  
+
+  # Time to wait (in millisconds) for next read in fetch request when requested min bytes wasn't reached
+  # Default: 1ms
+  fetch_reads_debounce_timeout: 1
+
   # Delete segments older than this.
   # Default; 1 week
   delete_retention_ms: 604800000
@@ -286,7 +297,7 @@ redpanda:
   
   # Default replication factor for new topics.
   # Default: 1
-  default_topic_replication: 1
+  default_topic_replications: 1
   
   # Timeout (in milliseconds) to wait when creating a new topic.
   # Default: 2s
@@ -306,7 +317,7 @@ redpanda:
       
   # Election timeout expressed in milliseconds.
   # Default: 1.5s
-  raft_election_timeout_ms: 1500
+  election_timeout_ms: 1500
       
   # Kafka group recovery timeout expressed in milliseconds.
   # Default: 30s
@@ -318,8 +329,12 @@ redpanda:
       
   # Timeout for append entries requests issued while updating a stale follower.
   # Default: 5s
-  recovery_append_timeout_ms:
-      
+  recovery_append_timeout_ms: 5000
+
+  # Max size of requests cached for replication in bytes
+  # Default 1 MiB
+  raft_replicate_batch_window_size: 1048576
+
   # Minimum batch cache reclaim size.
   # Default: 128 KiB
   reclaim_min_size: 131072
@@ -349,7 +364,8 @@ redpanda:
   kvstore_flush_interval: 10
       
   # Key-value maximum segment size (bytes).
-  kvstore_max_segment_size: 16777220
+  # Default: 16 MiB
+  kvstore_max_segment_size: 16777216
   
   # Fail-safe maximum throttle delay on kafka requests.
   # Default: 60s
@@ -358,4 +374,28 @@ redpanda:
   # Raft I/O timeout.
   # Default: 10s
   raft_io_timeout_ms: 10000
+
+  # Time between cluster join retries in milliseconds
+  # Default: 5s
+  join_retry_timeout_ms: 5000
+
+  # Timeout for a timeout now request in milliseconds
+  # Default: 1s
+  raft_timeout_now_timeout_ms: 1000
+
+  # Timeout waiting for follower recovery when transferring leadership
+  # Default: 10s
+  raft_transfer_leader_recovery_timeout_ms: 10000
+
+  # Free cache when segments roll
+  # Default: false
+  release_cache_on_segment_roll: 10000
+
+  # Maximum delay in milliseconds until buffered data is written
+  # Default: 1s
+  segment_appender_flush_timeout_ms: 1000
+
+  # Minimum time before which unused session will get evicted from sessions. Maximum time after which inactive session will be deleted is twice the given configuration value
+  # Default: 60s
+  fetch_session_eviction_timeout_ms: 60000
 ```
