@@ -27,6 +27,7 @@
 #include <boost/test/tools/old/interface.hpp>
 
 #include <chrono>
+#include <optional>
 #include <vector>
 
 using namespace std::chrono_literals; // NOLINT
@@ -103,7 +104,7 @@ struct config_manager_fixture {
           _storage,
           _logger);
 
-        recovered.start(false).get0();
+        recovered.start(false, model::revision_id(0)).get0();
 
         BOOST_REQUIRE_EQUAL(
           recovered.get_highest_known_offset(),
@@ -220,7 +221,7 @@ FIXTURE_TEST(test_start_write_concurrency, config_manager_fixture) {
       _storage,
       _logger);
 
-    auto start = new_cfg_manager.start(false);
+    auto start = new_cfg_manager.start(false, model::revision_id(0));
     auto cfg = random_configuration();
     auto add = new_cfg_manager.add(model::offset(3000), cfg);
     configurations.push_back(cfg);
@@ -236,4 +237,30 @@ FIXTURE_TEST(test_start_write_concurrency, config_manager_fixture) {
     BOOST_REQUIRE_EQUAL(new_cfg_manager.get_latest(), cfg);
     BOOST_REQUIRE_EQUAL(
       new_cfg_manager.get_highest_known_offset(), model::offset(3000));
+}
+
+FIXTURE_TEST(test_assigning_initial_revision, config_manager_fixture) {
+    // store some configurations
+    auto configurations = test_configurations();
+    model::revision_id new_revision(10);
+
+    raft::configuration_manager mgr(
+      raft::group_configuration(
+        {tests::random_broker(0, 0), tests::random_broker(1, 1)},
+        raft::group_nodes{
+          .voters = {raft::vnode(model::node_id(0), raft::no_revision)},
+          .learners = {raft::vnode(model::node_id(1), raft::no_revision)},
+        },
+        raft::no_revision,
+        std::nullopt),
+      raft::group_id(100),
+      _storage,
+      _logger);
+
+    mgr.start(false, new_revision).get0();
+    std::cout << mgr.get_latest() << std::endl;
+    BOOST_REQUIRE(
+      mgr.get_latest().contains(raft::vnode(model::node_id(0), new_revision)));
+    BOOST_REQUIRE(
+      mgr.get_latest().contains(raft::vnode(model::node_id(1), new_revision)));
 }

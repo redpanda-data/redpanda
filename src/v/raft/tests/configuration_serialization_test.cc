@@ -327,7 +327,7 @@ SEASTAR_THREAD_TEST_CASE(configuration_backward_compatibility_test) {
       cfg_v2.current_config().voters[0].id(),
       cfg_v3.current_config().voters[0].id());
 
-    BOOST_REQUIRE_EQUAL(cfg_v0.revision_id(), model::revision_id(0));
+    BOOST_REQUIRE_EQUAL(cfg_v0.revision_id(), raft::no_revision);
     BOOST_REQUIRE_EQUAL(cfg_v1.revision_id(), model::revision_id(15));
     BOOST_REQUIRE_EQUAL(cfg_v2.revision_id(), model::revision_id(15));
     BOOST_REQUIRE_EQUAL(cfg_v3.revision_id(), model::revision_id(15));
