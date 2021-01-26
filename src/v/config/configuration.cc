@@ -175,9 +175,9 @@ configuration::configuration()
   , target_quota_byte_rate(
       *this,
       "target_quota_byte_rate",
-      "Target quota byte rate (bytes per second) - 1GB default",
+      "Target quota byte rate (bytes per second) - 2GB default",
       required::no,
-      1_GiB)
+      2_GiB)
   , rack(*this, "rack", "Rack identifier", required::no, std::nullopt)
   , dashboard_dir(
       *this,
