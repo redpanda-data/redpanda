@@ -9,6 +9,7 @@
 
 #include "kafka/protocol/batch_reader.h"
 
+#include "kafka/protocol/exceptions.h"
 #include "kafka/protocol/kafka_batch_adapter.h"
 #include "model/record.h"
 #include "model/timeout_clock.h"
@@ -119,6 +120,37 @@ kafka_batch_adapter batch_reader::consume_batch() {
     kba.adapt(_buf.share(0, size_bytes));
     _buf.trim_front(size_bytes);
     return kba;
+}
+
+ss::future<batch_reader::storage_t>
+batch_reader::do_load_slice(model::timeout_clock::time_point tp) {
+    using data_t = model::record_batch_reader::data_t;
+    return ss::do_with(data_t{}, [this, tp](data_t& batches) {
+        const auto resources_exceeded = [this, tp] {
+            return is_end_of_stream() || model::timeout_clock::now() > tp;
+        };
+        const auto consume_one = [this, &batches]() {
+            auto kba = consume_batch();
+            if (likely(kba.v2_format && kba.valid_crc && kba.batch)) {
+                batches.push_back(std::move(*kba.batch));
+                return ss::now();
+            } else {
+                _do_load_slice_failed = true;
+                batches.clear();
+                return ss::make_exception_future<>(exception(
+                  kafka::error_code::corrupt_message,
+                  fmt_with_ctx(
+                    fmt::format,
+                    "Invalid kafka record parsing: {}",
+                    !kba.v2_format   ? "not v2_format"
+                    : !kba.valid_crc ? "invalid crc"
+                                     : "empty batch")));
+            }
+        };
+        return ss::do_until(resources_exceeded, consume_one).then([&batches]() {
+            return storage_t(std::move(batches));
+        });
+    });
 }
 
 } // namespace kafka

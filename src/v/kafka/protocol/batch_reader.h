@@ -24,7 +24,9 @@ namespace kafka {
 /// model::record_batch on the wire
 ///
 /// The array bound is not serialized, c.f. array<kafka::thing>
-class batch_reader {
+class batch_reader final : public model::record_batch_reader::impl {
+    using storage_t = model::record_batch_reader::storage_t;
+
 public:
     batch_reader() = default;
 
@@ -43,11 +45,23 @@ public:
     // Consume a model::record_batch as a kafka_batch_adaptor
     kafka_batch_adapter consume_batch();
 
+    // Implements model::record_batch_reader::impl
+    bool is_end_of_stream() const final {
+        return _do_load_slice_failed || empty();
+    }
+
+    // Implements model::record_batch_reader::impl
+    ss::future<storage_t> do_load_slice(model::timeout_clock::time_point) final;
+
+    // Implements model::record_batch_reader::impl
+    void print(std::ostream& os) final { os << "{kafka::consumer_records}"; }
+
     // Release any remaining iobuf that hasn't been consumed
     iobuf release() && { return std::move(_buf); }
 
 private:
     iobuf _buf;
+    bool _do_load_slice_failed{false};
 };
 
 } // namespace kafka

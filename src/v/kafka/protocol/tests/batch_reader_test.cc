@@ -144,3 +144,80 @@ SEASTAR_THREAD_TEST_CASE(consumer_records_consume_batch_fail_crc) {
     auto kba = crs.consume_batch();
     BOOST_REQUIRE(!kba.valid_crc);
 }
+
+SEASTAR_THREAD_TEST_CASE(batch_reader_record_batch_reader_impl) {
+    auto ctx = make_context(base_offset, many_batches);
+
+    auto rdr = model::make_record_batch_reader<kafka::batch_reader>(
+      std::move(ctx.record_set));
+    auto output = model::consume_reader_to_memory(
+                    std::move(rdr), model::no_timeout)
+                    .get();
+
+    BOOST_REQUIRE(!output.empty());
+    BOOST_REQUIRE_EQUAL(output.back().last_offset(), ctx.last_offset);
+}
+
+SEASTAR_THREAD_TEST_CASE(batch_reader_record_batch_reader_impl_fail_short_hdr) {
+    auto ctx = make_context(base_offset, few_batches);
+    corrupt_with_short_header(ctx.record_set);
+
+    auto rdr = model::make_record_batch_reader<kafka::batch_reader>(
+      std::move(ctx.record_set));
+
+    BOOST_REQUIRE_EXCEPTION(
+      model::consume_reader_to_memory(std::move(rdr), model::no_timeout).get(),
+      kafka::exception,
+      [](const kafka::exception& e) {
+          return e.error == kafka::error_code::corrupt_message;
+      });
+}
+
+SEASTAR_THREAD_TEST_CASE(batch_reader_record_batch_reader_impl_fail_crc) {
+    auto ctx = make_context(base_offset, few_batches);
+    corrupt_offset<int32_t>(
+      ctx.record_set, crc_offset, [](int32_t& t) { --t; });
+
+    auto rdr = model::make_record_batch_reader<kafka::batch_reader>(
+      std::move(ctx.record_set));
+
+    BOOST_REQUIRE_EXCEPTION(
+      model::consume_reader_to_memory(std::move(rdr), model::no_timeout).get(),
+      kafka::exception,
+      [](const kafka::exception& e) {
+          return e.error == kafka::error_code::corrupt_message;
+      });
+}
+
+SEASTAR_THREAD_TEST_CASE(batch_reader_record_batch_reader_impl_fail_lod) {
+    auto ctx = make_context(base_offset, few_batches);
+    // The lod is an arbitrary choice here, failure is due to crc mismatch.
+    corrupt_offset<int32_t>(
+      ctx.record_set, lod_offset, [](int32_t& t) { --t; });
+
+    auto rdr = model::make_record_batch_reader<kafka::batch_reader>(
+      std::move(ctx.record_set));
+
+    BOOST_REQUIRE_EXCEPTION(
+      model::consume_reader_to_memory(std::move(rdr), model::no_timeout).get(),
+      kafka::exception,
+      [](const kafka::exception& e) {
+          return e.error == kafka::error_code::corrupt_message;
+      });
+}
+
+SEASTAR_THREAD_TEST_CASE(batch_reader_record_batch_reader_impl_fail_magic) {
+    auto ctx = make_context(base_offset, few_batches);
+    corrupt_offset<int32_t>(
+      ctx.record_set, mag_offset, [](int32_t& t) { --t; });
+
+    auto rdr = model::make_record_batch_reader<kafka::batch_reader>(
+      std::move(ctx.record_set));
+
+    BOOST_REQUIRE_EXCEPTION(
+      model::consume_reader_to_memory(std::move(rdr), model::no_timeout).get(),
+      kafka::exception,
+      [](const kafka::exception& e) {
+          return e.error == kafka::error_code::corrupt_message;
+      });
+}
