@@ -69,6 +69,7 @@ func Execute() {
 	rootCmd.AddCommand(NewWasmCommand(fs, mgr))
 	rootCmd.AddCommand(NewContainerCommand())
 	rootCmd.AddCommand(NewTopicCommand(fs, mgr))
+	rootCmd.AddCommand(NewClusterCommand(fs, mgr))
 
 	addPlatformDependentCmds(fs, mgr, rootCmd)
 
