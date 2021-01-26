@@ -1,4 +1,4 @@
-#Node.js set up
+# Node.js Setup
 
 If you haven't already, install Node by following the appropriate steps for
 your OS [here](https://nodejs.org/en/download/package-manager/).
@@ -24,7 +24,7 @@ npm i -D @types/uuid
 tsc --init
 ```
 
-##Setting up Redpanda and creating a topic
+## Setting up Redpanda and creating a topic
 
 If you are on MacOS, check out [this post](https://vectorized.io/docs/quick-start-macos).
 If you’re on linux, follow the instructions in the
@@ -53,7 +53,7 @@ $ rpk api topic list
 With that out of the way, we can get started. To have a working chat we need to
 receive and send messages, so we need to create a consumer and a producer.
 
-##Producer set up
+## Producer Setup
 
 ```typescript
 // src/producer.ts
@@ -86,7 +86,7 @@ export function disconnect(){
 That’s it, a working producer, sending strings entered by the user. Keepin mind
 that you can send buffers, meaning you can send pretty much anything you want.
 
-##Consumer set up
+## Consumer Setup
 
 ```typescript
 // src/consumer.ts
@@ -121,7 +121,7 @@ There you have it. This will get all produced messages and print them. You can
 have as many consumer groups as you want, but bear in mind that each group will
 get a message only once. That’s why we have the uuid generated.
 
-##Putting everything together
+## Putting everything together
 
 ```typescript
 //src/index.ts
@@ -162,7 +162,7 @@ process.on('exit', () => {
 });
 ``` 
 
-##Running
+## Running
 
 ```
 tsc && node src/index.js
@@ -170,7 +170,7 @@ tsc && node src/index.js
 Run this as many times as you want clients. At least 2 so you can chat between
 2 terminals.
 
-##Wrapping up
+## Wrapping up
 
 Now you have the basic building blocks to work with Redpanda. Try it yourself,
 there are endless use cases - what we built here was just the simplest of
