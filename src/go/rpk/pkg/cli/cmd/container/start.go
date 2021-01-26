@@ -246,8 +246,8 @@ func startCluster(
 	}
 	renderClusterInfo(nodes)
 	log.Infof(
-		"\nCluster started! You may use 'rpk api' to interact with" +
-			" the cluster. E.g:\n\nrpk api status\n",
+		"\nCluster started! You may use rpk to interact with it." +
+			" E.g:\n\nrpk api status\n",
 	)
 
 	return nil

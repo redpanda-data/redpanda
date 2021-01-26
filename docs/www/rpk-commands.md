@@ -4,15 +4,17 @@ order: 7
 ---
 # rpk Commands
 
-## tune
+## redpanda
 
-Run all (`rpk tune all`) or some (i.e. `rpk tune cpu network`) of the tuners
+### tune
+
+Run all (`rpk redpanda tune all`) or some (i.e. `rpk redpanda tune cpu network`) of the tuners
 available on **rpk.**
 
 ```
 
 Usage:
-  rpk tune <list_of_elements_to_tune> [flags]
+  rpk redpanda tune <list_of_elements_to_tune> [flags]
 
 Flags:
       --config string          Redpanda config file, if not set the file will be searched for in the default locations (default "/etc/redpanda/redpanda.yaml")
@@ -27,14 +29,14 @@ Flags:
       --timeout duration       The maximum time to wait for the tune processes to complete. The value passed is a sequence of decimal numbers, each with optional fraction and a unit suffix, such as '300ms', '1.5s' or '2h45m'. Valid time units are 'ns', 'us' (or 'µs'), 'ms', 's', 'm', 'h' (default 10s)
 ```
 
-## start
+### start
 
 Start redpanda.
 
 ```
 
 Usage:
-  rpk start [flags]
+  rpk redpanda start [flags]
 
 Flags:
       --check                  When set to false will disable system checking before starting redpanda (default true)
@@ -45,46 +47,46 @@ Flags:
       --well-known-io string   The cloud vendor and VM type, in the format <vendor>:<vm type>:<storage type>
 ```
 
-## mode
+### mode
 
 Enable a default configuration mode (development, production). See the [**rpk
-Modes**](http://localhost:8000/documentation/rpk-modes/) section.
+Modes**](https://vectorized.io/docs/rpk-modes/) section.
 
 ```
 
 Usage:
-  rpk mode {development, production} [flags]
+  rpk redpanda mode {development, production} [flags]
 
 Flags:
       --config string   Redpanda config file, if not set the file will be searched for in the default locations (default "/etc/redpanda/redpanda.yaml")
 ```
 
-## config
+### config
 
 Edit configuration.
 
-### config set
+#### config set
 
 Set configuration values, such as the node IDs or the list of seed servers
 
 ```
 
 Usage:
-  rpk config set <key> <value> [flags]
+  rpk redpanda config set <key> <value> [flags]
 
 Flags:
       --config string   Redpanda config file, if not set the file will be searched for in default location (default "/etc/redpanda/redpanda.yaml")
       --format string   The value format. Can be 'single', for single values such as '/etc/redpanda' or 100; and 'json', 'toml', 'yaml','yml', 'properties', 'props', 'prop', or 'hcl' when partially or completely setting config objects (default "single")
 ```
 
-### config bootstrap
+#### config bootstrap
 
 Initialize the configuration to bootstrap a cluster. --id is mandatory. `bootstrap` will expect the machine it's running on to have only one non-loopback IP address associated to it, and use it in the configuration as the node's address. If it has multiple IPs, --self must be specified. In that case, the given IP will be used without checking whether it's among the machine's addresses or not. The elements in --ips must be separated by a comma, no spaces. If omitted, the node will be configured as a root node, that otherones can join later.
 
 ```
 
 Usage:
-  rpk config bootstrap --id <id> [--self <ip>] [--ips <ip1,ip2,...>] [flags]
+  rpk redpanda config bootstrap --id <id> [--self <ip>] [--ips <ip1,ip2,...>] [flags]
 
 Flags:
       --config string   Redpanda config file, if not set the file will be searched for in the default location (default "/etc/redpanda/redpanda.yaml")
@@ -93,7 +95,7 @@ Flags:
       --self string     Hint at this node's IP address from within the list passed in --ips
 ```
 
-## api
+## topic
 
 Interact with the Redpanda API.
 
@@ -101,13 +103,13 @@ Interact with the Redpanda API.
 Global flags: --brokers strings   Comma-separated list of broker ip:port pair
 ```
 
-### api topic create
+### create
 
 Create a topic.
 
 ```
 Usage:
-  rpk api topic create <topic name> [flags]
+  rpk topic create <topic name> [flags]
 
 Flags:
       --compact            Enable topic compaction
@@ -115,22 +117,22 @@ Flags:
   -r, --replicas int16     Number of replicas (default 1)
 ```
 
-### api topic delete
+### delete
 
 Delete a topic.
 
 ```
 Usage:
-  rpk api topic delete <topic name> [flags]
+  rpk topic delete <topic name> [flags]
 ```
 
-### api topic describe
+### describe
 
 Describe a topic. Default values of the configuration are omitted.
 
 ```
 Usage:
-  rpk api topic describe <topic> [flags]
+  rpk topic describe <topic> [flags]
 
 Flags:
       --page int        The partitions page to display. If negative, all partitions will be shown
@@ -138,25 +140,25 @@ Flags:
       --watermarks      If enabled, will display the topic's partitions' high watermarks (default true)
 ```
 
-### api topic list
+### list
 
 List topics.
 
 ```
 Usage:
-  rpk api topic list [flags]
+  rpk topic list [flags]
   
 Aliases:
   list, ls
 ```
 
-### api topic set-config
+### set-config
 
 Set the topic's config key/value pairs
 
 ```
 Usage:
-  rpk api topic set-config <topic> <key> [<value>] [flags]
+  rpk topic set-config <topic> <key> [<value>] [flags]
 ```
 
 ## container
@@ -251,4 +253,20 @@ Flags:
                              in a cluster. The port must be the one configured for the nodes' admin API
                              (9644 by default)
       --seed-addr string     The URL of a redpanda node with which to discover the rest
+```
+
+## debug
+
+### info
+
+Check the resource usage in the system, and optionally send it to Vectorized.
+
+```
+Usage:
+  rpk debug info [flags]
+
+Flags:
+      --config string         Redpanda config file, if not set the file will be searched for in the default locations
+      --send   bool           Tells 'rpk debug info' whether to send the gathered resource usage data to Vectorized
+      --timeout duration      The maximum amount of time to wait for the metrics to be gathered. The value passed is a sequence of decimal numbers, each with optional fraction and a unit suffix, such as '300ms', '1.5s' or '2h45m'. Valid time units are 'ns', 'us' (or 'µs'), 'ms', 's', 'm', 'h' (default 2s)
 ```

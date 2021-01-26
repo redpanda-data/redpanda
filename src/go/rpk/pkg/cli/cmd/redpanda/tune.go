@@ -55,7 +55,7 @@ func NewTuneCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 		Use:	"tune <list of elements to tune>",
 		Short:	baseMsg,
 		Long: baseMsg + ".\n In order to get more information about the" +
-			" tuners, run `rpk tune help <tuner name>`",
+			" tuners, run `rpk redpanda tune help <tuner name>`",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) < 1 {
 				return errors.New("requires the list of elements to tune")
