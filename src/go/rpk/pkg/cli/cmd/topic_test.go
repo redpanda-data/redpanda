@@ -58,28 +58,22 @@ func TestTopicCmd(t *testing.T) {
 		expectedErr	string
 	}{
 		{
-			name:		"create should output info about the created topic (default values)",
-			cmd:		topic.NewCreateCommand,
-			args:		[]string{"San Francisco"},
-			expectedOutput:	`Created topic 'San Francisco'. Partitions: 1, replicas: -1, configuration:\n'cleanup.policy':'delete'`,
-		},
-		{
 			name:		"create should output info about the created topic (custom values)",
 			cmd:		topic.NewCreateCommand,
 			args:		[]string{"Seattle", "--partitions", "2", "--replicas", "3", "--compact"},
-			expectedOutput:	`Created topic 'Seattle'. Partitions: 2, replicas: 3, configuration:\n'cleanup.policy':'compact'`,
+			expectedOutput:	"Created topic 'Seattle'.\\nYou may check its config with\\n\\nrpk topic describe 'Seattle'\\n\"\n",
 		},
 		{
 			name:		"create should allow passing arbitrary topic config",
 			cmd:		topic.NewCreateCommand,
 			args:		[]string{"San Francisco", "-c", "custom.config:value", "--config", "another.config:anothervalue"},
-			expectedOutput:	`Created topic 'San Francisco'. Partitions: 1, replicas: -1, configuration:\n'another.config':'anothervalue'\n'cleanup.policy':'delete'\n'custom.config':'value'`,
+			expectedOutput:	"Created topic 'San Francisco'.\\nYou may check its config with\\n\\nrpk topic describe 'San Francisco'\\n\"\n",
 		},
 		{
 			name:		"create should allow passing comma-separated config values",
 			cmd:		topic.NewCreateCommand,
 			args:		[]string{"San Francisco", "-c", "custom.config:value", "--config", "cleanup.policy:cleanup,compact"},
-			expectedOutput:	`Created topic 'San Francisco'. Partitions: 1, replicas: -1, configuration:\n'cleanup.policy':'cleanup,compact'\n'custom.config':'value'`,
+			expectedOutput:	"Created topic 'San Francisco'.\\nYou may check its config with\\n\\nrpk topic describe 'San Francisco'\\n\"\n",
 		},
 		{
 			name:		"create should fail if no topic is passed",
