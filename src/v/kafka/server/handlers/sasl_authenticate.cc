@@ -9,7 +9,7 @@
 
 #include "kafka/server/handlers/sasl_authenticate.h"
 
-#include "kafka/errors.h"
+#include "kafka/protocol/errors.h"
 
 namespace kafka {
 

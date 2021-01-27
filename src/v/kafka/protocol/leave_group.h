@@ -10,7 +10,7 @@
  */
 
 #pragma once
-#include "kafka/errors.h"
+#include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/leave_group_request.h"
 #include "kafka/protocol/schemata/leave_group_response.h"
 #include "kafka/server/response.h"

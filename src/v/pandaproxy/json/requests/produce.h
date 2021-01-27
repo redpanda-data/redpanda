@@ -13,7 +13,7 @@
 
 #include "bytes/iobuf.h"
 #include "json/json.h"
-#include "kafka/errors.h"
+#include "kafka/protocol/errors.h"
 #include "kafka/protocol/produce.h"
 #include "pandaproxy/json/iobuf.h"
 #include "seastarx.h"

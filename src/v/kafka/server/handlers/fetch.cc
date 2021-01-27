@@ -11,8 +11,8 @@
 
 #include "cluster/partition_manager.h"
 #include "config/configuration.h"
-#include "kafka/errors.h"
 #include "kafka/protocol/batch_consumer.h"
+#include "kafka/protocol/errors.h"
 #include "kafka/server/fetch_session.h"
 #include "likely.h"
 #include "model/fundamental.h"

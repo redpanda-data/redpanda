@@ -11,7 +11,7 @@
 
 #include "cluster/simple_batch_builder.h"
 #include "kafka/client/test/utils.h"
-#include "kafka/errors.h"
+#include "kafka/protocol/errors.h"
 #include "kafka/protocol/produce.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"

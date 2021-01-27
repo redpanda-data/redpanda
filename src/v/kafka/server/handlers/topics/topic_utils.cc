@@ -10,7 +10,7 @@
 #include "kafka/server/handlers/topics/topic_utils.h"
 
 #include "cluster/errc.h"
-#include "kafka/errors.h"
+#include "kafka/protocol/errors.h"
 
 namespace kafka {
 

@@ -10,7 +10,7 @@
  */
 
 #pragma once
-#include "kafka/errors.h"
+#include "kafka/protocol/errors.h"
 #include "kafka/types.h"
 
 #include <seastar/core/future.hh>

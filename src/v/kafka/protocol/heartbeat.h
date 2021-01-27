@@ -10,7 +10,7 @@
  */
 
 #pragma once
-#include "kafka/errors.h"
+#include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/heartbeat_request.h"
 #include "kafka/protocol/schemata/heartbeat_response.h"
 #include "kafka/server/response.h"

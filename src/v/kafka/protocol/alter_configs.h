@@ -11,7 +11,7 @@
 
 #pragma once
 #include "bytes/iobuf.h"
-#include "kafka/errors.h"
+#include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/alter_configs_request.h"
 #include "kafka/protocol/schemata/alter_configs_response.h"
 #include "kafka/server/request_context.h"

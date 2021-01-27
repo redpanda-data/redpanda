@@ -13,7 +13,7 @@
 #include "cluster/topics_frontend.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
-#include "kafka/errors.h"
+#include "kafka/server/errors.h"
 #include "kafka/server/handlers/topics/topic_utils.h"
 #include "likely.h"
 #include "model/metadata.h"

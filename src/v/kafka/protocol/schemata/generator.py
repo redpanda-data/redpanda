@@ -575,10 +575,10 @@ class Field:
 
 HEADER_TEMPLATE = """
 #pragma once
-#include "kafka/errors.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "kafka/protocol/errors.h"
 #include "model/timestamp.h"
 #include "seastarx.h"
 

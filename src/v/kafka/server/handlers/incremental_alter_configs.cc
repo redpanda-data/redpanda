@@ -8,7 +8,7 @@
 // by the Apache License, Version 2.0
 #include "kafka/server/handlers/incremental_alter_configs.h"
 
-#include "kafka/errors.h"
+#include "kafka/protocol/errors.h"
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
 #include "model/metadata.h"

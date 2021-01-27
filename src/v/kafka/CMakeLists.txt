@@ -33,7 +33,6 @@ set(handlers_srcs
 v_cc_library(
   NAME kafka
   SRCS
-    errors.cc
     protocol/kafka_batch_adapter.cc
     ${security_srcs}
     ${handlers_srcs}
@@ -52,7 +51,7 @@ v_cc_library(
     v::bytes
     v::rpc
     v::cluster
-    v::kafka_request_schemata
+    v::kafka_protocol
     absl::flat_hash_map
     absl::flat_hash_set
 )

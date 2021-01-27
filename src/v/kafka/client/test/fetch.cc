@@ -15,7 +15,7 @@
 #include "kafka/client/configuration.h"
 #include "kafka/client/test/fixture.h"
 #include "kafka/client/test/utils.h"
-#include "kafka/errors.h"
+#include "kafka/protocol/errors.h"
 #include "kafka/protocol/metadata.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"

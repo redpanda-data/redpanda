@@ -10,7 +10,7 @@
 #include "kafka/server/handlers/describe_configs.h"
 
 #include "cluster/metadata_cache.h"
-#include "kafka/errors.h"
+#include "kafka/protocol/errors.h"
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
 #include "model/metadata.h"

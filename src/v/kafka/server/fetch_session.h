@@ -9,7 +9,7 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
-#include "kafka/errors.h"
+#include "kafka/protocol/errors.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/timeout_clock.h"

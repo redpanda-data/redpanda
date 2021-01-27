@@ -9,7 +9,7 @@
 
 #define BOOST_TEST_MODULE utils
 
-#include "kafka/errors.h"
+#include "kafka/server/errors.h"
 
 #include <boost/test/unit_test.hpp>
 

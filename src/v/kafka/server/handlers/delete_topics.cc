@@ -10,7 +10,7 @@
 #include "kafka/server/handlers/delete_topics.h"
 
 #include "cluster/topics_frontend.h"
-#include "kafka/errors.h"
+#include "kafka/server/errors.h"
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
 #include "model/metadata.h"

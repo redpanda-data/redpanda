@@ -11,7 +11,7 @@
 
 #include "cluster/topics_frontend.h"
 #include "config/configuration.h"
-#include "kafka/errors.h"
+#include "kafka/protocol/errors.h"
 #include "kafka/server/coordinator_ntp_mapper.h"
 #include "model/metadata.h"
 

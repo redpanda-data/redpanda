@@ -8,7 +8,7 @@
 // by the Apache License, Version 2.0
 
 #include "kafka/client/transport.h"
-#include "kafka/errors.h"
+#include "kafka/protocol/errors.h"
 #include "kafka/protocol/fetch.h"
 #include "kafka/protocol/produce.h"
 #include "kafka/protocol/request_reader.h"
