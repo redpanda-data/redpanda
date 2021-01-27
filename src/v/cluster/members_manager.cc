@@ -257,16 +257,20 @@ members_manager::dispatch_join_to_seed_server(seed_iterator it) {
     }
 
     return f.then_wrapped([it, this](ss::future<ret_t> fut) {
-        if (!fut.failed()) {
-            if (auto r = fut.get0(); r.has_value()) {
-                return ss::make_ready_future<ret_t>(std::move(r));
+        try {
+            auto r = fut.get0();
+            if (r) {
+                return ss::make_ready_future<ret_t>(r);
             }
+        } catch (...) {
+            // just log an exception, we will retry joining cluster in next loop
+            // iteration
+            vlog(
+              clusterlog.info,
+              "Error joining cluster using {} seed server - {}",
+              it->addr,
+              std::current_exception());
         }
-        vlog(
-          clusterlog.info,
-          "Error joining cluster using {} seed server - {}",
-          it->addr,
-          fut.get_exception());
 
         // Dispatch to next server
         return dispatch_join_to_seed_server(std::next(it));
