@@ -24,6 +24,7 @@ ss::future<result<vote_reply>> rpc_client_protocol::vote(
       _self,
       ss::this_shard_id(),
       n,
+      opts.timeout,
       [r = std::move(r),
        opts = std::move(opts)](raftgen_client_protocol client) mutable {
           return client.vote(std::move(r), std::move(opts))
@@ -37,6 +38,7 @@ ss::future<result<append_entries_reply>> rpc_client_protocol::append_entries(
       _self,
       ss::this_shard_id(),
       n,
+      opts.timeout,
       [r = std::move(r),
        opts = std::move(opts)](raftgen_client_protocol client) mutable {
           return client.append_entries(std::move(r), std::move(opts))
@@ -50,6 +52,7 @@ ss::future<result<heartbeat_reply>> rpc_client_protocol::heartbeat(
       _self,
       ss::this_shard_id(),
       n,
+      opts.timeout,
       [r = std::move(r),
        opts = std::move(opts)](raftgen_client_protocol client) mutable {
           return client.heartbeat(std::move(r), std::move(opts))
@@ -64,6 +67,7 @@ rpc_client_protocol::install_snapshot(
       _self,
       ss::this_shard_id(),
       n,
+      opts.timeout,
       [r = std::move(r),
        opts = std::move(opts)](raftgen_client_protocol client) mutable {
           return client.install_snapshot(std::move(r), std::move(opts))
@@ -77,6 +81,7 @@ ss::future<result<timeout_now_reply>> rpc_client_protocol::timeout_now(
       _self,
       ss::this_shard_id(),
       n,
+      opts.timeout,
       [r = std::move(r),
        opts = std::move(opts)](raftgen_client_protocol client) mutable {
           return client.timeout_now(std::move(r), std::move(opts))

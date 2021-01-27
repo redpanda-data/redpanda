@@ -206,15 +206,16 @@ wait_for_next_join_retry(std::chrono::milliseconds tout, ss::abort_source& as) {
 ss::future<result<join_reply>> members_manager::dispatch_join_to_remote(
   const config::seed_server& target, model::broker joining_node) {
     vlog(clusterlog.info, "Sending join request to {}", target.addr);
-
     return do_with_client_one_shot<controller_client_protocol>(
       target.addr,
       _rpc_tls_config,
+      _join_timeout,
       [joining_node = std::move(joining_node),
-       tout = rpc::clock_type::now()
-              + _join_timeout](controller_client_protocol c) mutable {
+       timeout = rpc::clock_type::now()
+                 + _join_timeout](controller_client_protocol c) mutable {
           return c
-            .join(join_request(std::move(joining_node)), rpc::client_opts(tout))
+            .join(
+              join_request(std::move(joining_node)), rpc::client_opts(timeout))
             .then(&rpc::get_ctx_data<join_reply>);
       });
 }
@@ -278,7 +279,8 @@ members_manager::dispatch_join_to_seed_server(seed_iterator it) {
 }
 
 template<typename Func>
-auto members_manager::dispatch_rpc_to_leader(Func&& f) {
+auto members_manager::dispatch_rpc_to_leader(
+  rpc::clock_type::duration connection_timeout, Func&& f) {
     using inner_t = std::invoke_result_t<Func, controller_client_protocol>;
     using fut_t = ss::futurize<result_wrap_t<inner_t>>;
 
@@ -299,6 +301,7 @@ auto members_manager::dispatch_rpc_to_leader(Func&& f) {
       *leader_id,
       leader->rpc_address(),
       _rpc_tls_config,
+      connection_timeout,
       std::forward<Func>(f));
 }
 
@@ -324,14 +327,16 @@ members_manager::handle_join_request(model::broker broker) {
     }
     // Current node is not the leader have to send an RPC to leader
     // controller
-    return dispatch_rpc_to_leader([broker = std::move(broker),
-                                   tout = rpc::clock_type::now()
-                                          + _join_timeout](
-                                    controller_client_protocol c) mutable {
-               return c
-                 .join(join_request(std::move(broker)), rpc::client_opts(tout))
-                 .then(&rpc::get_ctx_data<join_reply>);
-           })
+    return dispatch_rpc_to_leader(
+             _join_timeout,
+             [broker = std::move(broker),
+              tout = rpc::clock_type::now()
+                     + _join_timeout](controller_client_protocol c) mutable {
+                 return c
+                   .join(
+                     join_request(std::move(broker)), rpc::client_opts(tout))
+                   .then(&rpc::get_ctx_data<join_reply>);
+             })
       .handle_exception([](const std::exception_ptr& e) {
           vlog(
             clusterlog.warn,
@@ -399,13 +404,14 @@ members_manager::do_dispatch_configuration_update(
       target.id(),
       target.rpc_address(),
       _rpc_tls_config,
+      _join_timeout,
       [broker = std::move(updated_cfg),
-       tout = rpc::clock_type::now() + _join_timeout,
+       timeout = rpc::clock_type::now() + _join_timeout,
        target_id = target.id()](controller_client_protocol c) mutable {
           return c
             .update_node_configuration(
               configuration_update_request(std::move(broker), target_id),
-              rpc::client_opts(tout))
+              rpc::client_opts(timeout))
             .then(&rpc::get_ctx_data<configuration_update_reply>);
       });
 }
@@ -493,15 +499,16 @@ members_manager::handle_configuration_update_request(
         return ss::make_ready_future<ret_t>(errc::no_leader_controller);
     }
 
-    auto tout = ss::lowres_clock::now() + _join_timeout;
     return with_client<controller_client_protocol>(
              _self.id(),
              _connection_cache,
              *leader_id,
              (*leader)->rpc_address(),
              _rpc_tls_config,
-             [tout, node = *node_ptr, target = *leader_id](
-               controller_client_protocol c) mutable {
+             _join_timeout,
+             [tout = ss::lowres_clock::now() + _join_timeout,
+              node = *node_ptr,
+              target = *leader_id](controller_client_protocol c) mutable {
                  return c
                    .update_node_configuration(
                      configuration_update_request(std::move(node), target),

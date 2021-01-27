@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "model/timeout_clock.h"
 #include "rpc/demo/demo_utils.h"
 #include "rpc/demo/simple_service.h"
 #include "rpc/types.h"
@@ -118,7 +119,7 @@ public:
     ss::future<> connect() {
         return ss::parallel_for_each(
           _clients.begin(), _clients.end(), [](auto& c) {
-              return c->connect();
+              return c->connect(model::no_timeout);
           });
     }
     ss::future<> stop() {

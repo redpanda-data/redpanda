@@ -50,7 +50,7 @@ public:
             .server_addr = ss::socket_address(
               ss::net::inet_address("127.0.0.1"), 43118),
             .credentials = nullptr});
-        client.connect().get();
+        client.connect(model::no_timeout).get();
         const auto resp = client
                             .enable_copros(
                               coproc::enable_copros_request{

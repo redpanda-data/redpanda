@@ -39,7 +39,7 @@ FIXTURE_TEST(rpcgen_integration, rpc_integration_fixture) {
     auto cli = rpc::client<cycling::team_movistar_client_protocol>(
       client_config());
     info("client connecting");
-    cli.connect().get();
+    cli.connect(model::no_timeout).get();
     auto dcli = ss::defer([&cli] { cli.stop().get(); });
     info("client calling method");
     auto ret = cli
@@ -67,7 +67,7 @@ FIXTURE_TEST(rpcgen_tls_integration, rpc_integration_fixture) {
     auto cli = rpc::client<cycling::team_movistar_client_protocol>(
       client_config(creds_builder));
     info("client connecting");
-    cli.connect().get();
+    cli.connect(model::no_timeout).get();
     auto dcli = ss::defer([&cli] { cli.stop().get(); });
     info("client calling method");
     auto ret = cli
@@ -191,7 +191,7 @@ FIXTURE_TEST(rpcgen_reload_credentials_integration, rpc_integration_fixture) {
     info("client connection attempt");
     auto cli = rpc::client<cycling::team_movistar_client_protocol>(
       client_config(client_creds_builder));
-    cli.connect().get();
+    cli.connect(model::no_timeout).get();
     auto okret = cli
                    .ibis_hakka(
                      cycling::san_francisco{66},
@@ -210,7 +210,7 @@ FIXTURE_TEST(client_muxing, rpc_integration_fixture) {
     rpc::
       client<cycling::team_movistar_client_protocol, echo::echo_client_protocol>
         client(client_config());
-    client.connect().get();
+    client.connect(model::no_timeout).get();
     info("Calling movistar method");
     auto ret = client
                  .ibis_hakka(
@@ -234,7 +234,7 @@ FIXTURE_TEST(timeout_test, rpc_integration_fixture) {
     start_server();
 
     rpc::client<echo::echo_client_protocol> client(client_config());
-    client.connect().get();
+    client.connect(model::no_timeout).get();
     info("Calling echo method");
     auto echo_resp = client.sleep_1s(
       echo::echo_req{.str = "testing..."},
@@ -253,7 +253,7 @@ FIXTURE_TEST(rpc_mixed_compression, rpc_integration_fixture) {
 
     using client_t = rpc::client<echo::echo_client_protocol>;
     client_t client(client_config());
-    client.connect().get();
+    client.connect(model::no_timeout).get();
     BOOST_TEST_MESSAGE("Calling echo method no compression");
     auto echo_resp
       = client
@@ -280,7 +280,7 @@ FIXTURE_TEST(ordering_test, rpc_integration_fixture) {
     register_services();
     start_server();
     rpc::client<echo::echo_client_protocol> client(client_config());
-    client.connect().get();
+    client.connect(model::no_timeout).get();
     std::vector<ss::future<>> futures;
     futures.reserve(10);
     for (uint64_t i = 0; i < 10; ++i) {
@@ -301,7 +301,7 @@ FIXTURE_TEST(server_exception_test, rpc_integration_fixture) {
     register_services();
     start_server();
     rpc::client<echo::echo_client_protocol> client(client_config());
-    client.connect().get();
+    client.connect(model::no_timeout).get();
     auto ret = client
                  .throw_exception(
                    echo::failure_type::exceptional_future,
@@ -318,7 +318,7 @@ FIXTURE_TEST(missing_method_test, rpc_integration_fixture) {
     register_services();
     start_server();
     rpc::transport t(client_config());
-    t.connect().get();
+    t.connect(model::no_timeout).get();
     auto ret = t.send_typed<echo::failure_type, echo::throw_resp>(
                   echo::failure_type::exceptional_future,
                   1234,
@@ -334,7 +334,7 @@ FIXTURE_TEST(corrupted_header_at_client_test, rpc_integration_fixture) {
     register_services();
     start_server();
     rpc::transport t(client_config());
-    t.connect().get();
+    t.connect(model::no_timeout).get();
     auto client = echo::echo_client_protocol(t);
     auto stop_action = ss::defer([&t] { t.stop().get(); });
     BOOST_TEST_MESSAGE("Request with valid payload");
@@ -361,7 +361,7 @@ FIXTURE_TEST(corrupted_header_at_client_test, rpc_integration_fixture) {
 
     // reconnect
     BOOST_TEST_MESSAGE("Another request with valid payload");
-    t.connect().get0();
+    t.connect(model::no_timeout).get0();
     for (int i = 0; i < 10; ++i) {
         auto echo_resp_new = client
                                .echo(
@@ -378,7 +378,7 @@ FIXTURE_TEST(corrupted_data_at_server, rpc_integration_fixture) {
     register_services();
     start_server();
     rpc::transport t(client_config());
-    t.connect().get();
+    t.connect(model::no_timeout).get();
     auto client = echo::echo_client_protocol(t);
     auto stop_action = ss::defer([&t] { t.stop().get(); });
     BOOST_TEST_MESSAGE("Request with valid payload");
@@ -403,7 +403,7 @@ FIXTURE_TEST(corrupted_data_at_server, rpc_integration_fixture) {
                  .get0();
     // reconnect
     BOOST_TEST_MESSAGE("Another request with valid payload");
-    t.connect().get0();
+    t.connect(model::no_timeout).get0();
     for (int i = 0; i < 10; ++i) {
         auto echo_resp_new = client
                                .echo(

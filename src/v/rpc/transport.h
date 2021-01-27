@@ -59,7 +59,8 @@ public:
     base_transport(const base_transport&) = delete;
     base_transport& operator=(const base_transport&) = delete;
 
-    virtual ss::future<> connect();
+    virtual ss::future<>
+      connect(clock_type::time_point = clock_type::time_point::max());
     ss::future<> stop();
     void shutdown() noexcept;
 
@@ -76,7 +77,7 @@ protected:
     client_probe _probe;
 
 private:
-    ss::future<> do_connect();
+    ss::future<> do_connect(clock_type::time_point);
 
     std::unique_ptr<ss::connected_socket> _fd;
     ss::socket_address _server_addr;
@@ -96,7 +97,8 @@ public:
     transport(const transport&) = delete;
     transport& operator=(const transport&) = delete;
 
-    ss::future<> connect() final;
+    ss::future<> connect(clock_type::time_point) final;
+    ss::future<> connect(clock_type::duration);
     ss::future<result<std::unique_ptr<streaming_context>>>
       send(netbuf, rpc::client_opts);
 
@@ -214,7 +216,9 @@ public:
       : Protocol(_transport)...
       , _transport(std::move(cfg)) {}
 
-    ss::future<> connect() { return _transport.connect(); }
+    ss::future<> connect(rpc::clock_type::time_point connection_timeout) {
+        return _transport.connect(connection_timeout);
+    }
     ss::future<> stop() { return _transport.stop(); };
     void shutdown() { _transport.shutdown(); }
 

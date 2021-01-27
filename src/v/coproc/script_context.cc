@@ -98,8 +98,8 @@ ss::future<> script_context::do_execute() {
             return ss::make_ready_future<ss::stop_iteration>(
               ss::stop_iteration::yes);
         }
-        return _resources.transport.get_connected().then(
-          [this](result<rpc::transport*> transport) {
+        return _resources.transport.get_connected(model::no_timeout)
+          .then([this](result<rpc::transport*> transport) {
               if (!transport) {
                   /// Failed to connected to the wasm engine for whatever
                   /// reason, exit to yield

@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 
 #include "model/record_batch_reader.h"
+#include "model/timeout_clock.h"
 #include "raft/tron/logger.h"
 #include "raft/tron/service.h"
 #include "random/generators.h"
@@ -91,7 +92,7 @@ public:
     ss::future<> connect() {
         return ss::parallel_for_each(
           _clients.begin(), _clients.end(), [](auto& c) {
-              return c->connect();
+              return c->connect(model::no_timeout);
           });
     }
     ss::future<> stop() {

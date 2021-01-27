@@ -43,7 +43,7 @@ ss::future<> coproc_test_fixture::startup(log_layout_map llm) {
     _llm = llm;
     return ss::do_with(std::move(llm), [this](log_layout_map& llm) {
         return wait_for_controller_leadership()
-          .then([this] { return _client.connect(); })
+          .then([this] { return _client.connect(model::no_timeout); })
           .then([this, &llm] {
               return ss::parallel_for_each(
                 llm, [this](auto& p) { return add_topic(p.first, p.second); });

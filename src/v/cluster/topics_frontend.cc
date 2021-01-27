@@ -287,6 +287,7 @@ topics_frontend::dispatch_create_to_leader(
         _self,
         ss::this_shard_id(),
         leader,
+        timeout,
         [topics, timeout](controller_client_protocol cp) mutable {
             return cp.create_topics(
               create_topics_request{std::move(topics), timeout},
