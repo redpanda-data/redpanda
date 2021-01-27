@@ -154,7 +154,7 @@ func (r *ClusterReconciler) Reconcile(
 		return ctrl.Result{}, err
 	}
 
-	observedNodes := make([]string, len(observedPods.Items))
+	observedNodes := make([]string, 0, len(observedPods.Items))
 	// nolint:gocritic // the copies are necessary for further redpandacluster updates
 	for _, item := range observedPods.Items {
 		observedNodes = append(observedNodes, item.Name)
