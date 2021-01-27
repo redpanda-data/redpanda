@@ -17,14 +17,37 @@ import { ProcessBatchServer } from "../../modules/rpc/server";
 import { createRecordBatch } from "../../modules/public";
 import { RecordBatch } from "../../modules/public/Coprocessor";
 import sinon = require("sinon");
+import LogService from "../../modules/utilities/Logging";
+import { createSandbox, SinonSandbox } from "sinon";
+import { Script_ManagerServer as ManagementServer } from "../../modules/rpc/serverAndClients/server";
+
+let sinonInstance: SinonSandbox;
+
+const createSinonInstances = (sinonInstance: SinonSandbox) => {
+  sinonInstance.stub(LogService, "createLogger").returns({
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+    // @ts-ignore
+    warn: sinonInstance.stub(),
+  });
+};
 
 describe("Repository", function () {
+  beforeEach(() => {
+    sinonInstance = createSandbox();
+  });
+
+  afterEach(async () => {
+    sinonInstance.restore();
+  });
+
   it("should initialize with an empty map", function () {
+    createSinonInstances(sinonInstance);
     const repository = new Repository();
     assert(repository.size() === 0);
   });
 
   it("should add a handle to the repository", function () {
+    createSinonInstances(sinonInstance);
     const repository = new Repository();
     repository.add(createHandle());
     assert(repository.size() === 1);
@@ -34,6 +57,7 @@ describe("Repository", function () {
     "should replace a handle if a new one with the same globalId " +
       "is added.",
     function () {
+      createSinonInstances(sinonInstance);
       const topicA = "topicA";
       const topicB = "topicB";
       const coprocessorA = createMockCoprocessor(BigInt(1), [topicA]);
@@ -58,6 +82,7 @@ describe("Repository", function () {
   );
 
   it("should find a handle by another Handle", function () {
+    createSinonInstances(sinonInstance);
     const repository = new Repository();
     const handleA = createHandle();
     const handleB = createHandle({
@@ -70,6 +95,7 @@ describe("Repository", function () {
   });
 
   it("should find a handle by another Coprocessor", function () {
+    createSinonInstances(sinonInstance);
     const repository = new Repository();
     const handleA = createHandle();
     const handleB = createHandle({
@@ -82,6 +108,8 @@ describe("Repository", function () {
   });
 
   it("should apply function and calculate record batch size", function (done) {
+    const sinonInstance = sinon.createSandbox();
+    createSinonInstances(sinonInstance);
     const repository = new Repository();
     const handleA = createHandle();
     repository.add(handleA);
@@ -142,7 +170,6 @@ describe("Repository", function () {
           ],
         ])
       );
-    const sinonInstance = sinon.createSandbox();
     const stubFire = sinonInstance.stub(
       ProcessBatchServer.prototype,
       "fireException"

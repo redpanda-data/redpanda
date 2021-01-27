@@ -20,11 +20,14 @@ import {
   calculateRecordLength,
   createRecordBatch,
 } from "../public";
+import LogService from "../utilities/Logging";
 
 /**
  * Repository is a container for Handles.
  */
 class Repository {
+  private logger = LogService.createLogger("FileManager");
+
   constructor() {
     this.handles = new Map();
   }
@@ -87,6 +90,20 @@ class Repository {
     return this.handles.size;
   }
 
+  createEmptyProcessBatchReplay(
+    handle: Handle,
+    requestItem: ProcessBatchRequestItem
+  ): ProcessBatchReplyItem {
+    return {
+      coprocessorId: BigInt(handle.coprocessor.globalId),
+      ntp: {
+        ...requestItem.ntp,
+        topic: `${requestItem.ntp.topic}`,
+      },
+      resultRecordBatch: [],
+    };
+  }
+
   transformMapResultToArray(
     requestItem: ProcessBatchRequestItem,
     handle: Handle,
@@ -94,24 +111,35 @@ class Repository {
     resultRecordBatch: Map<string, RecordBatch>
   ): ProcessBatchReplyItem[] {
     const results: ProcessBatchReplyItem[] = [];
-    for (const [key, value] of resultRecordBatch) {
-      value.records = value.records.map((record) => {
-        record.length = calculateRecordLength(record);
-        record.valueLen = record.value.length;
-        return record;
-      });
-      value.header.sizeBytes = calculateRecordBatchSize(value.records);
-      value.header.term = recordBatch.header.term;
-      results.push({
-        coprocessorId: BigInt(handle.coprocessor.globalId),
-        ntp: {
-          ...requestItem.ntp,
-          topic: `${requestItem.ntp.topic}.$${key}$`,
-        },
-        resultRecordBatch: [value],
-      });
-      return results;
+    if (resultRecordBatch.size === 0) {
+      /*
+       Coprocessor returns a empty Map, in this case, it responses to
+       empty process batch replay to Redpanda in order to avoid, send this
+       request again.
+      */
+
+      results.push(this.createEmptyProcessBatchReplay(handle, requestItem));
+    } else {
+      // Coprocessor return a Map with values
+      for (const [key, value] of resultRecordBatch) {
+        value.records = value.records.map((record) => {
+          record.length = calculateRecordLength(record);
+          record.valueLen = record.value.length;
+          return record;
+        });
+        value.header.sizeBytes = calculateRecordBatchSize(value.records);
+        value.header.term = recordBatch.header.term;
+        results.push({
+          coprocessorId: BigInt(handle.coprocessor.globalId),
+          ntp: {
+            ...requestItem.ntp,
+            topic: `${requestItem.ntp.topic}.$${key}$`,
+          },
+          resultRecordBatch: [value],
+        });
+      }
     }
+    return results;
   }
 
   applyCoprocessor(
@@ -141,8 +169,6 @@ class Repository {
             );
           }
           try {
-            //TODO: https://app.clubhouse.io/vectorized/story/1257
-            //pass functor to apply function
             return handle.coprocessor
               .apply(createRecordBatch(recordBatch))
               .then((resultMap) =>
