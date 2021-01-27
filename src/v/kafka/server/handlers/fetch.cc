@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "kafka/protocol/fetch.h"
+#include "kafka/server/handlers/fetch.h"
 
 #include "cluster/partition_manager.h"
 #include "config/configuration.h"
@@ -593,8 +593,9 @@ static ss::future<> fetch_topic_partitions(op_context& octx) {
       });
 }
 
+template<>
 ss::future<response_ptr>
-fetch_api::process(request_context&& rctx, ss::smp_service_group ssg) {
+fetch_handler::handle(request_context&& rctx, ss::smp_service_group ssg) {
     return ss::do_with(op_context(std::move(rctx), ssg), [](op_context& octx) {
         // top-level error is used for session-level errors
         if (octx.session_ctx.has_error()) {

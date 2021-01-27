@@ -8,7 +8,7 @@
 // by the Apache License, Version 2.0
 
 #include "kafka/protocol/batch_consumer.h"
-#include "kafka/protocol/fetch.h"
+#include "kafka/server/handlers/fetch.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "redpanda/tests/fixture.h"
@@ -233,8 +233,8 @@ FIXTURE_TEST(fetch_one, redpanda_thread_fixture) {
     }).get();
 
     for (auto version : boost::irange<uint16_t>(
-           kafka::fetch_response::api_type::min_supported,
-           kafka::fetch_response::api_type::max_supported + int16_t(1))) {
+           kafka::fetch_handler::min_supported,
+           kafka::fetch_handler::max_supported + int16_t(1))) {
         info("Checking fetch api v{}", version);
         kafka::fetch_request req;
         req.max_bytes = std::numeric_limits<int32_t>::max();

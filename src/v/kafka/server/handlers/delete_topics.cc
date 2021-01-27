@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "kafka/protocol/delete_topics.h"
+#include "kafka/server/handlers/delete_topics.h"
 
 #include "cluster/topics_frontend.h"
 #include "kafka/errors.h"
@@ -71,8 +71,9 @@ delete_topics_response create_response(std::vector<cluster::topic_result> res) {
     return resp;
 }
 
-ss::future<response_ptr>
-delete_topics_api::process(request_context&& ctx, ss::smp_service_group ssg) {
+template<>
+ss::future<response_ptr> delete_topics_handler::handle(
+  request_context&& ctx, ss::smp_service_group ssg) {
     delete_topics_request request;
     request.decode(ctx.reader(), ctx.header().version);
     vlog(klog.trace, "Handling request {}", request);

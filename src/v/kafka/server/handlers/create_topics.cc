@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "kafka/protocol/create_topics.h"
+#include "kafka/server/handlers/create_topics.h"
 
 #include "cluster/topics_frontend.h"
 #include "kafka/errors.h"
@@ -34,7 +34,15 @@ bool is_not_supported(const ss::sstring& name) {
            || name == "flush.ms";
 }
 
-ss::future<response_ptr> create_topics_api::process(
+using validators = make_validator_types<
+  creatable_topic,
+  no_custom_partition_assignment,
+  partition_count_must_be_positive,
+  replication_factor_must_be_positive,
+  replication_factor_must_be_odd>;
+
+template<>
+ss::future<response_ptr> create_topics_handler::handle(
   request_context&& ctx, [[maybe_unused]] ss::smp_service_group g) {
     kafka::create_topics_request request;
     request.decode(ctx.reader(), ctx.header().version);

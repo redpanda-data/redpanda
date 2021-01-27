@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "kafka/protocol/alter_configs.h"
+#include "kafka/server/handlers/alter_configs.h"
 
 #include "kafka/errors.h"
 #include "kafka/server/request_context.h"
@@ -24,7 +24,8 @@
 
 namespace kafka {
 
-ss::future<response_ptr> alter_configs_api::process(
+template<>
+ss::future<response_ptr> alter_configs_handler::handle(
   request_context&& ctx, [[maybe_unused]] ss::smp_service_group ssg) {
     alter_configs_request request;
     request.decode(ctx.reader(), ctx.header().version);

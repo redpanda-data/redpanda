@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "kafka/protocol/list_groups.h"
+#include "kafka/server/handlers/list_groups.h"
 
 #include "kafka/errors.h"
 #include "kafka/server/group_manager.h"
@@ -21,7 +21,8 @@ void list_groups_response::encode(const request_context& ctx, response& resp) {
     data.encode(resp.writer(), ctx.header().version);
 }
 
-ss::future<response_ptr> list_groups_api::process(
+template<>
+ss::future<response_ptr> list_groups_handler::handle(
   request_context&& ctx, [[maybe_unused]] ss::smp_service_group g) {
     list_groups_request request{};
     request.decode(ctx.reader(), ctx.header().version);

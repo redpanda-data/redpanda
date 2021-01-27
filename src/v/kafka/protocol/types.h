@@ -8,27 +8,18 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
-
 #pragma once
-
-#include "kafka/server/request_context.h"
 #include "kafka/types.h"
 #include "utils/concepts-enabled.h"
-
-#include <seastar/core/smp.hh>
 
 namespace kafka {
 
 // clang-format off
 CONCEPT(
-// A Kafka request.
 template<typename T>
-concept KafkaRequest = requires (T request, request_context&& ctx, ss::smp_service_group g) {
+concept KafkaApi = requires (T request) {
     { T::name } -> std::convertible_to<const char*>;
     { T::key } -> std::convertible_to<const api_key&>;
-    { T::min_supported } -> std::convertible_to<const api_version&>;
-    { T::max_supported } -> std::convertible_to<const api_version&>;
-    { T::process(std::move(ctx), g) } -> std::same_as<ss::future<response_ptr>>;
 };
 )
 // clang-format on

@@ -19,7 +19,7 @@
 #include "kafka/protocol/offset_commit.h"
 #include "kafka/protocol/offset_fetch.h"
 #include "kafka/protocol/produce.h"
-#include "kafka/protocol/requests.h"
+#include "kafka/protocol/types.h"
 #include "kafka/server/protocol_utils.h"
 #include "rpc/transport.h"
 #include "seastarx.h"
@@ -85,7 +85,7 @@ public:
      * types to encode their type relationships between api/request/response.
      */
     template<typename T>
-    CONCEPT(requires(KafkaRequest<typename T::api_type>))
+    CONCEPT(requires(KafkaApi<typename T::api_type>))
     ss::future<typename T::api_type::response_type> dispatch(
       T r, api_version request_version, api_version response_version) {
         return send_recv([this, request_version, r = std::move(r)](
@@ -102,7 +102,7 @@ public:
     }
 
     template<typename T>
-    CONCEPT(requires(KafkaRequest<typename T::api_type>))
+    CONCEPT(requires(KafkaApi<typename T::api_type>))
     ss::future<typename T::api_type::response_type> dispatch(
       T r, api_version ver) {
         return dispatch(std::move(r), ver, ver);
@@ -117,7 +117,7 @@ public:
      * range.
      */
     template<typename T>
-    CONCEPT(requires(KafkaRequest<typename T::api_type>))
+    CONCEPT(requires(KafkaApi<typename T::api_type>))
     ss::future<typename T::api_type::response_type> dispatch(T r) {
         using type = std::remove_reference_t<std::decay_t<T>>;
         if constexpr (std::is_same_v<type, offset_fetch_request>) {

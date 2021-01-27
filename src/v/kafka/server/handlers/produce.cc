@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "kafka/protocol/produce.h"
+#include "kafka/server/handlers/produce.h"
 
 #include "bytes/iobuf.h"
 #include "cluster/metadata_cache.h"
@@ -421,8 +421,9 @@ produce_topics(produce_ctx& octx) {
     return topics;
 }
 
+template<>
 ss::future<response_ptr>
-produce_api::process(request_context&& ctx, ss::smp_service_group ssg) {
+produce_handler::handle(request_context&& ctx, ss::smp_service_group ssg) {
     produce_request request(ctx);
 
     /*

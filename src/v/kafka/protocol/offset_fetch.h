@@ -32,15 +32,6 @@ public:
 
     static constexpr const char* name = "offset fetch";
     static constexpr api_key key = api_key(9);
-
-    // in version 0 kafka stores offsets in zookeeper. if we ever need to
-    // support version 0 then we need to do some code review to see if this has
-    // any implications on semantics.
-    static constexpr api_version min_supported = api_version(1);
-    static constexpr api_version max_supported = api_version(4);
-
-    static ss::future<response_ptr>
-    process(request_context&&, ss::smp_service_group);
 };
 
 struct offset_fetch_request final {

@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "kafka/protocol/init_producer_id.h"
+#include "kafka/server/handlers/init_producer_id.h"
 
 #include "cluster/topics_frontend.h"
 #include "kafka/server/group_manager.h"
@@ -22,7 +22,8 @@
 
 namespace kafka {
 
-ss::future<response_ptr> init_producer_id_api::process(
+template<>
+ss::future<response_ptr> init_producer_id_handler::handle(
   request_context&& ctx, [[maybe_unused]] ss::smp_service_group g) {
     return ss::do_with(std::move(ctx), [](request_context& ctx) {
         vlog(klog.trace, "processing init_producer_id");

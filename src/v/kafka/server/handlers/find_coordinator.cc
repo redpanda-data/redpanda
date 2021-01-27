@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "kafka/protocol/find_coordinator.h"
+#include "kafka/server/handlers/find_coordinator.h"
 
 #include "cluster/topics_frontend.h"
 #include "config/configuration.h"
@@ -89,7 +89,8 @@ create_topic(request_context& ctx, cluster::topic_configuration topic) {
       });
 }
 
-ss::future<response_ptr> find_coordinator_api::process(
+template<>
+ss::future<response_ptr> find_coordinator_handler::handle(
   request_context&& ctx, [[maybe_unused]] ss::smp_service_group g) {
     find_coordinator_request request;
     request.decode(ctx.reader(), ctx.header().version);

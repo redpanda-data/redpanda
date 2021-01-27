@@ -33,11 +33,6 @@ struct delete_topics_api final {
 
     static constexpr const char* name = "delete topics";
     static constexpr api_key key = api_key(20);
-    static constexpr api_version min_supported = api_version(0);
-    static constexpr api_version max_supported = api_version(3);
-
-    static ss::future<response_ptr>
-    process(request_context&&, ss::smp_service_group);
 };
 
 struct delete_topics_request final {

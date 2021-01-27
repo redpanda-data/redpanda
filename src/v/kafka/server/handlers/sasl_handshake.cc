@@ -7,13 +7,14 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "kafka/protocol/sasl_handshake.h"
+#include "kafka/server/handlers/sasl_handshake.h"
 
 #include "kafka/errors.h"
 
 namespace kafka {
 
-ss::future<response_ptr> sasl_handshake_api::process(
+template<>
+ss::future<response_ptr> sasl_handshake_handler::handle(
   request_context&& ctx, [[maybe_unused]] ss::smp_service_group g) {
     sasl_handshake_request request;
     request.decode(ctx.reader(), ctx.header().version);

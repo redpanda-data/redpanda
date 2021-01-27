@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "kafka/protocol/offset_commit.h"
+#include "kafka/server/handlers/offset_commit.h"
 
 #include "kafka/errors.h"
 #include "kafka/server/group_manager.h"
@@ -53,8 +53,9 @@ struct offset_commit_ctx {
       , ssg(ssg) {}
 };
 
-ss::future<response_ptr>
-offset_commit_api::process(request_context&& ctx, ss::smp_service_group ssg) {
+template<>
+ss::future<response_ptr> offset_commit_handler::handle(
+  request_context&& ctx, ss::smp_service_group ssg) {
     offset_commit_request request;
     request.decode(ctx.reader(), ctx.header().version);
     klog.trace("Handling request {}", request);

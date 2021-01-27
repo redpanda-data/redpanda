@@ -6,7 +6,7 @@
 // As of the Change Date specified in that file, in accordance with
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
-#include "kafka/protocol/incremental_alter_configs.h"
+#include "kafka/server/handlers/incremental_alter_configs.h"
 
 #include "kafka/errors.h"
 #include "kafka/server/request_context.h"
@@ -23,7 +23,8 @@
 
 namespace kafka {
 
-ss::future<response_ptr> incremental_alter_configs_api::process(
+template<>
+ss::future<response_ptr> incremental_alter_configs_handler::handle(
   request_context&& ctx, [[maybe_unused]] ss::smp_service_group ssg) {
     incremental_alter_configs_request request;
     request.decode(ctx.reader(), ctx.header().version);

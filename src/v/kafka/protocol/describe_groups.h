@@ -29,11 +29,6 @@ public:
 
     static constexpr const char* name = "describe groups";
     static constexpr api_key key = api_key(15);
-    static constexpr api_version min_supported = api_version(0);
-    static constexpr api_version max_supported = api_version(2);
-
-    static ss::future<response_ptr>
-    process(request_context&&, ss::smp_service_group);
 };
 
 struct describe_groups_request final {
