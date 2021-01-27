@@ -166,6 +166,8 @@ private:
      * bootstrap redpanda will have to read up to 64MB per raft group.
      */
     size_t _bytes_since_last_offset_update = 0;
+
+    model::revision_id _initial_revision{};
     ctx_log& _ctxlog;
 };
 } // namespace raft
