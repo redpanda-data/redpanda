@@ -52,9 +52,9 @@ undeploy:
 manifests: controller-gen
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) rbac:roleName=manager-role webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 
-# Run go fmt against code
+# Run crlfmt against code
 fmt:
-	crlfmt -w .
+	crlfmt -w -wrap=80 -ignore '_generated.deepcopy.go$$' .
 
 # Run go vet against code
 vet:
