@@ -26,6 +26,8 @@ set(handlers_srcs
   server/handlers/sasl_handshake.cc
   server/handlers/sasl_authenticate.cc
   server/handlers/incremental_alter_configs.cc
+  server/handlers/topics/types.cc
+  server/handlers/topics/topic_utils.cc
 )
 
 v_cc_library(
@@ -33,8 +35,6 @@ v_cc_library(
   SRCS
     errors.cc
     protocol/kafka_batch_adapter.cc
-    protocol/topics/types.cc
-    protocol/topics/topic_utils.cc
     ${security_srcs}
     ${handlers_srcs}
     server/requests.cc

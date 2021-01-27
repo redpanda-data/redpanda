@@ -12,7 +12,7 @@
 #pragma once
 #include "cluster/types.h"
 #include "kafka/client/transport.h"
-#include "kafka/protocol/topics/topic_utils.h"
+#include "kafka/server/handlers/topics/topic_utils.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "model/timeout_clock.h"

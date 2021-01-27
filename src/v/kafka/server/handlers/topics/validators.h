@@ -12,7 +12,7 @@
 #pragma once
 #include "kafka/protocol/schemata/create_topics_request.h"
 #include "kafka/protocol/schemata/create_topics_response.h"
-#include "kafka/protocol/topics/types.h"
+#include "kafka/server/handlers/topics/types.h"
 
 namespace kafka {
 // clang-format off
