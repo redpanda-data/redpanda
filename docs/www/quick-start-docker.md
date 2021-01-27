@@ -16,7 +16,7 @@ performance testing please see our
 ## Step 1: Create a bridge network
 
 The bridge network will allow for the Redpanda instances to communicate
-with one another but still allow for the Kafka API to be availbale on
+with one another but still allow for the Kafka API to be available on
 the localhost.
 
 ```
