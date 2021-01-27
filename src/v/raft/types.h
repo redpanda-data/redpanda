@@ -437,6 +437,7 @@ enum class metadata_key : int8_t {
     config_latest_known_offset = 2,
     last_applied_offset = 3,
     unique_local_id = 4,
+    last
 };
 
 // priority used to implement semi-deterministic leader election
