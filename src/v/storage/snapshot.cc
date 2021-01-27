@@ -16,7 +16,9 @@
 #include "reflection/adl.h"
 #include "utils/directory_walker.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/iostream.hh>
+#include <seastar/core/seastar.hh>
 
 #include <regex>
 
@@ -87,6 +89,14 @@ ss::future<> snapshot_manager::remove_partial_snapshots() {
           }
           return ss::now();
       });
+}
+
+ss::future<> snapshot_manager::remove_snapshot() {
+    if (co_await ss::file_exists(snapshot_path().string())) {
+        co_await ss::remove_file(snapshot_path().string());
+    }
+
+    co_return;
 }
 
 snapshot_reader::~snapshot_reader() noexcept {
