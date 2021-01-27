@@ -34,6 +34,8 @@
 
 #include <absl/container/flat_hash_set.h>
 
+#include <exception>
+
 /// Class that contains the controller state, for now we will have single
 /// controller backend
 
@@ -101,7 +103,13 @@ void controller_backend::start_topics_reconciliation_loop() {
 
 void controller_backend::housekeeping() {
     if (!_topic_deltas.empty() && _topics_sem.available_units() > 0) {
-        (void)ss::with_gate(_gate, [this] { return reconcile_topics(); });
+        (void)ss::with_gate(_gate, [this] {
+            return reconcile_topics();
+        }).handle_exception([](const std::exception_ptr& e) {
+            // we ignore the exception as controller backend will retry in next
+            // loop
+            vlog(clusterlog.warn, "error during reconciliation - {}", e);
+        });
     }
 }
 
