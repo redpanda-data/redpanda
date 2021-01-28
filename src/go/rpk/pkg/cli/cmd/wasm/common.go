@@ -24,7 +24,9 @@ func CreateCoprocessorTopic(admin sarama.ClusterAdmin) error {
 	}
 	configEntry := make(map[string]*string)
 	compact := "compact"
+	compressionType := "zstd"
 	configEntry["cleanup.policy"] = &compact
+	configEntry["compression.type"] = &compressionType
 	detail := sarama.TopicDetail{
 		NumPartitions:		1,
 		ReplicationFactor:	replicationFactor,
