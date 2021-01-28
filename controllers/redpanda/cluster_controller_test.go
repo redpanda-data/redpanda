@@ -48,9 +48,9 @@ var _ = Describe("RedPandaCluster controller", func() {
 				Name:		"redpanda-test",
 				Namespace:	"default",
 			}
-			seedKey := types.NamespacedName{
+			baseKey := types.NamespacedName{
+				Name:		key.Name + "-base",
 				Namespace:	"default",
-				Name:		"redpanda-test-seed",
 			}
 			redpandaCluster := &v1alpha1.Cluster{
 				TypeMeta: metav1.TypeMeta{
@@ -92,7 +92,7 @@ var _ = Describe("RedPandaCluster controller", func() {
 			By("Creating Configmap with the redpanda configuration")
 			var cm corev1.ConfigMap
 			Eventually(func() bool {
-				err := k8sClient.Get(context.Background(), seedKey, &cm)
+				err := k8sClient.Get(context.Background(), baseKey, &cm)
 				if err != nil {
 					return false
 				}
@@ -104,7 +104,7 @@ var _ = Describe("RedPandaCluster controller", func() {
 			By("Creating StatefulSet")
 			var sts appsv1.StatefulSet
 			Eventually(func() bool {
-				err := k8sClient.Get(context.Background(), seedKey, &sts)
+				err := k8sClient.Get(context.Background(), key, &sts)
 				return err == nil &&
 					*sts.Spec.Replicas == replicas &&
 					sts.Spec.Template.Spec.Containers[0].Image == "vectorized/redpanda:"+redpandaContainerTag &&
@@ -123,6 +123,8 @@ func validOwner(
 	if len(owners) != 1 {
 		return false
 	}
+
 	owner := owners[0]
+
 	return owner.Name == cluster.Name && owner.Controller != nil && *owner.Controller
 }
