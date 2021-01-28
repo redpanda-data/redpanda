@@ -151,10 +151,11 @@ class FileManager {
     const id = hash64(Buffer.from(name), 0).readBigUInt64LE();
     const [handle] = repository.getHandlesByCoprocessorIds([id]);
     if (!handle) {
-      this.logger.error(
-        `Trying to disable a removed coprocessor from 'active' folder but it` +
-          `wasn't loaded in memory, file name: ${name}.js`
-      );
+      /**
+       * this case is possible when a coprocessor is disabled either by
+       * 'rpk wasm disable' or by the error policy, so the file is moved
+       * from the active folder to the inactive folder.
+       */
       return Promise.resolve();
     } else {
       this.repository.remove(handle);
