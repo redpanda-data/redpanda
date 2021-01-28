@@ -208,6 +208,7 @@ func Check(conf *Config) (bool, []error) {
 	if err != nil {
 		return false, []error{err}
 	}
+
 	v := viper.New()
 	err = v.MergeConfigMap(configMap)
 	if err != nil {
@@ -315,7 +316,7 @@ func toMap(conf *Config) (map[string]interface{}, error) {
 	mapConf := make(map[string]interface{})
 	bs, err := yaml.Marshal(conf)
 	if err != nil {
-		return mapConf, err
+		return nil, err
 	}
 	err = yaml.Unmarshal(bs, &mapConf)
 	return mapConf, err

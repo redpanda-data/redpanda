@@ -29,6 +29,10 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+type configConverter interface {
+	ToGeneric() (*Config, error)
+}
+
 type Manager interface {
 	// Reads the config from the given path
 	Read(path string) (*Config, error)
@@ -368,13 +372,27 @@ func recover(fs afero.Fs, backup, path string, err error) error {
 }
 
 func unmarshal(v *viper.Viper) (*Config, error) {
-	conf := &Config{}
-	err := v.Unmarshal(conf)
+	result := &Config{}
+	decoderConfig := mapstructure.DecoderConfig{
+		Result:	result,
+		// Sometimes viper will save int values as strings (i.e.
+		// through BindPFlag) so we have to allow mapstructure
+		// to cast them.
+		WeaklyTypedInput:	true,
+	}
+	decoder, err := mapstructure.NewDecoder(&decoderConfig)
 	if err != nil {
 		return nil, err
 	}
-	conf.ConfigFile, err = absPath(v.ConfigFileUsed())
-	return conf, err
+	err = decoder.Decode(v.AllSettings())
+	if err != nil {
+		return nil, err
+	}
+	result.ConfigFile, err = absPath(v.ConfigFileUsed())
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 func base58Encode(s string) string {
