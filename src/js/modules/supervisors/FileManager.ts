@@ -9,7 +9,7 @@
  */
 
 import { FSWatcher, watch } from "chokidar";
-import { rename, readdir } from "fs";
+import { rename, readdir, unlink } from "fs";
 import { promisify } from "util";
 import Repository from "./Repository";
 import { Handle } from "../domain/Handle";
@@ -345,8 +345,13 @@ class FileManager {
             })
           )
           .catch(reject);
-      } catch (e) {
-        reject(e);
+      } catch (fileErrors) {
+        const name = path.basename(filename);
+        this.moveFile(filename, path.join(this.inactiveDir, name)).then(() =>
+          this.logger.warn(
+            `Delete wasm definition file, ${filename}, error: ${fileErrors}`
+          )
+        );
       }
     });
   }
@@ -362,7 +367,6 @@ class FileManager {
     coprocessor: Handle,
     destination: string
   ): Promise<Handle> {
-    const renamePromise = promisify(rename);
     const name = path.basename(coprocessor.filename, ".js");
     let destinationPath;
     /** Each coprocessor needs an ID, which is calculated based on the
@@ -376,10 +380,15 @@ class FileManager {
     } else {
       destinationPath = `${destination}/${name}.js.vectorized.${coprocessor.checksum}.bk`;
     }
-    return renamePromise(coprocessor.filename, destinationPath).then(() => ({
+    return this.moveFile(coprocessor.filename, destinationPath).then(() => ({
       ...coprocessor,
       filename: destinationPath,
     }));
+  }
+
+  private moveFile(origin: string, destination: string): Promise<void> {
+    const renamePromise = promisify(rename);
+    return renamePromise(origin, destination);
   }
 
   /**
