@@ -26,6 +26,10 @@ fs.readdir("./src/", (err, files) => {
         filename: fileName,
         libraryTarget: "commonjs2",
       },
+      performance: {
+        hints: false
+      },
+      target: 'node',
     };
   });
   webpack(webPackOptions, (err, stat) => {
