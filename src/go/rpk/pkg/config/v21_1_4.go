@@ -109,7 +109,7 @@ func (rc v2114RedpandaConfig) toGeneric() (*RedpandaConfig, error) {
 
 	kafkaApi := rc.KafkaApi.toGeneric()
 
-	var advKafkaApi *SocketAddress
+	var advKafkaApi []SocketAddress
 	if rc.AdvertisedKafkaApi != nil {
 		var err error
 		advKafkaApi, err = v2114ParsePolymorphicSocketAddress(rc.AdvertisedKafkaApi)
@@ -197,16 +197,19 @@ func (s v2114SeedServer) toGeneric() SeedServer {
 	return SeedServer{Host: *host}
 }
 
-func v2114ParsePolymorphicSocketAddress(v interface{}) (*SocketAddress, error) {
+func v2114ParsePolymorphicSocketAddress(
+	v interface{},
+) ([]SocketAddress, error) {
 	if v == nil {
 		return nil, nil
 	}
 	basePath := "redpanda.advertised_kafka_api"
 	if m, ok := v.(map[string]interface{}); ok {
 		return v2114ParseSocketAddressMap(m)
-	} else if _, ok := v.([]interface{}); ok {
-		// TODO: Support lists
+	} else if vs, ok := v.([]interface{}); ok {
+		return v2114ParseSocketAddressList(vs)
 	}
+	panic(fmt.Sprintf("%T", v))
 	return nil, fmt.Errorf(
 		"couldn't parse '%s'. Its value doesn't match any of"+
 			" the supported structures for v21.1.4",
@@ -216,7 +219,7 @@ func v2114ParsePolymorphicSocketAddress(v interface{}) (*SocketAddress, error) {
 
 func v2114ParseSocketAddressMap(
 	m map[string]interface{},
-) (*SocketAddress, error) {
+) ([]SocketAddress, error) {
 	address := ""
 	port := 0
 	basePath := "redpanda.advertised_kafka_api"
@@ -258,7 +261,37 @@ func v2114ParseSocketAddressMap(
 			}
 		}
 	}
-	return &SocketAddress{Address: address, Port: port}, nil
+	return []SocketAddress{{Address: address, Port: port}}, nil
+}
+
+func v2114ParseSocketAddressList(vs []interface{}) ([]SocketAddress, error) {
+	basePath := "redpanda.advertised_kafka_api"
+	ss := make([]SocketAddress, 0, len(vs))
+	for i, v := range vs {
+		genericMap, ok := v.(map[interface{}]interface{})
+		if !ok {
+			return nil, mismatchError(
+				fmt.Sprintf("%s.%d", basePath, i),
+				"an object",
+				v,
+			)
+		}
+		m := stringifyKeys(genericMap)
+		s, err := v2114ParseSocketAddressMap(m)
+		if err != nil {
+			return nil, err
+		}
+		ss = append(ss, s...)
+	}
+	return ss, nil
+}
+
+func stringifyKeys(m map[interface{}]interface{}) map[string]interface{} {
+	newMap := map[string]interface{}{}
+	for k, v := range m {
+		newMap[fmt.Sprintf("%v", k)] = v
+	}
+	return newMap
 }
 
 func mismatchError(
