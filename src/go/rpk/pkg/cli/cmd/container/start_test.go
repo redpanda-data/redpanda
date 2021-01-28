@@ -14,6 +14,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"strings"
 	"testing"
 
 	"github.com/docker/docker/api/types"
@@ -33,7 +34,7 @@ func noopCheck(_ []node) func() error {
 func TestStart(t *testing.T) {
 	tests := []struct {
 		name		string
-		client		func() (common.Client, error)
+		client		func(st *testing.T) (common.Client, error)
 		nodes		uint
 		check		func([]node) func() error
 		expectedErrMsg	string
@@ -41,7 +42,7 @@ func TestStart(t *testing.T) {
 	}{
 		{
 			name:	"it should fail if the img can't be pulled and imgs can't be listed",
-			client: func() (common.Client, error) {
+			client: func(_ *testing.T) (common.Client, error) {
 				return &common.MockClient{
 					MockImagePull: func(
 						_ context.Context,
@@ -63,7 +64,7 @@ func TestStart(t *testing.T) {
 		},
 		{
 			name:	"it should fail if the img couldn't be pulled bc of internet conn issues",
-			client: func() (common.Client, error) {
+			client: func(_ *testing.T) (common.Client, error) {
 				return &common.MockClient{
 					MockImagePull: func(
 						_ context.Context,
@@ -88,7 +89,7 @@ Please check your internet connection and try again.`,
 		},
 		{
 			name:	"it should fail if the img can't be pulled and it isn't avail. locally",
-			client: func() (common.Client, error) {
+			client: func(_ *testing.T) (common.Client, error) {
 				return &common.MockClient{
 					MockImagePull: func(
 						_ context.Context,
@@ -110,7 +111,7 @@ Please check your internet connection and try again.`,
 		},
 		{
 			name:	"it should fail if creating the network fails",
-			client: func() (common.Client, error) {
+			client: func(_ *testing.T) (common.Client, error) {
 				return &common.MockClient{
 					MockNetworkCreate: func(
 						_ context.Context,
@@ -128,7 +129,7 @@ Please check your internet connection and try again.`,
 		},
 		{
 			name:	"it should fail if inspecting the network fails",
-			client: func() (common.Client, error) {
+			client: func(_ *testing.T) (common.Client, error) {
 				return &common.MockClient{
 					MockNetworkInspect: func(
 						_ context.Context,
@@ -146,7 +147,7 @@ Please check your internet connection and try again.`,
 		},
 		{
 			name:	"it should fail if the network config is corrupted",
-			client: func() (common.Client, error) {
+			client: func(_ *testing.T) (common.Client, error) {
 				return &common.MockClient{
 					MockNetworkInspect: func(
 						_ context.Context,
@@ -168,7 +169,7 @@ Please check your internet connection and try again.`,
 		},
 		{
 			name:	"it should fail if listing the containers fails",
-			client: func() (common.Client, error) {
+			client: func(_ *testing.T) (common.Client, error) {
 				return &common.MockClient{
 					MockContainerList: func(
 						_ context.Context,
@@ -182,7 +183,7 @@ Please check your internet connection and try again.`,
 		},
 		{
 			name:	"it should fail if inspecting existing containers fails",
-			client: func() (common.Client, error) {
+			client: func(_ *testing.T) (common.Client, error) {
 				return &common.MockClient{
 					MockContainerInspect: func(
 						_ context.Context,
@@ -210,7 +211,7 @@ Please check your internet connection and try again.`,
 		},
 		{
 			name:	"it should fail if creating the container fails",
-			client: func() (common.Client, error) {
+			client: func(_ *testing.T) (common.Client, error) {
 				return &common.MockClient{
 					// NetworkInspect succeeds returning the
 					// expected config.
@@ -254,7 +255,7 @@ Please check your internet connection and try again.`,
 		{
 			name:	"it should allow creating a single container",
 			nodes:	1,
-			client: func() (common.Client, error) {
+			client: func(_ *testing.T) (common.Client, error) {
 				return &common.MockClient{
 					// NetworkInspect succeeds returning the
 					// expected config.
@@ -298,7 +299,7 @@ Please check your internet connection and try again.`,
 		{
 			name:	"it should allow creating multiple containers",
 			nodes:	3,
-			client: func() (common.Client, error) {
+			client: func(_ *testing.T) (common.Client, error) {
 				return &common.MockClient{
 					// NetworkInspect succeeds returning the
 					// expected config.
@@ -342,7 +343,7 @@ Please check your internet connection and try again.`,
 		{
 			name:	"it should do nothing if there's an existing running cluster",
 			nodes:	1,
-			client: func() (common.Client, error) {
+			client: func(_ *testing.T) (common.Client, error) {
 				return &common.MockClient{
 					MockContainerInspect:	common.MockContainerInspect,
 					MockContainerList: func(
@@ -376,7 +377,7 @@ Please check your internet connection and try again.`,
 		{
 			name:	"it should fail if the cluster doesn't form",
 			nodes:	3,
-			client: func() (common.Client, error) {
+			client: func(_ *testing.T) (common.Client, error) {
 				return &common.MockClient{
 					// NetworkInspect succeeds returning the
 					// expected config.
@@ -422,12 +423,71 @@ Please check your internet connection and try again.`,
 			},
 			expectedErrMsg:	`Some weird error`,
 		},
+		{
+			name:	"it should pass the right flags",
+			nodes:	3,
+			client: func(st *testing.T) (common.Client, error) {
+				return &common.MockClient{
+					// NetworkInspect succeeds returning the
+					// expected config.
+					MockNetworkInspect: func(
+						_ context.Context,
+						_ string,
+						_ types.NetworkInspectOptions,
+					) (types.NetworkResource, error) {
+						ipamConf := network.IPAMConfig{
+							Subnet:		"172.24.1.0/24",
+							Gateway:	"172.24.1.1",
+						}
+						ipam := network.IPAM{
+							Config: []network.IPAMConfig{
+								ipamConf,
+							},
+						}
+						res := types.NetworkResource{
+							Name:	"rpnet",
+							IPAM:	ipam,
+						}
+						return res, nil
+					},
+					// ContainerCreate succeeds.
+					MockContainerCreate: func(
+						_ context.Context,
+						cc *container.Config,
+						_ *container.HostConfig,
+						_ *network.NetworkingConfig,
+						_ string,
+					) (container.ContainerCreateCreatedBody, error) {
+						// If the node is not the seed, check
+						// that --seed is passed and that
+						// the format is right
+						if cc.Hostname != "rp-node-0" {
+							require.Contains(
+								st,
+								strings.Join(cc.Cmd, " "),
+								"--seeds 172.24.1.2:33145",
+							)
+						}
+						body := container.ContainerCreateCreatedBody{
+							ID: "container-1",
+						}
+						return body, nil
+					},
+				}, nil
+			},
+			check: func(_ []node) func() error {
+				return func() error {
+					return errors.New("Some weird error")
+				}
+			},
+			expectedErrMsg:	`Some weird error`,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(st *testing.T) {
 			var out bytes.Buffer
-			c, err := tt.client()
+			c, err := tt.client(st)
 			require.NoError(st, err)
 			logrus.SetOutput(&out)
 			check := noopCheck

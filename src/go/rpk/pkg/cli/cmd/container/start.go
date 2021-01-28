@@ -195,10 +195,9 @@ func startCluster(
 			args := []string{
 				"--seeds",
 				fmt.Sprintf(
-					"%s:%d+%d",
+					"%s:%d",
 					seedState.ContainerIP,
 					config.Default().Redpanda.RPCServer.Port,
-					seedID,
 				),
 			}
 			state, err := common.CreateNode(
