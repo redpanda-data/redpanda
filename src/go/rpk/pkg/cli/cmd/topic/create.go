@@ -12,7 +12,6 @@ package topic
 import (
 	"fmt"
 	"sort"
-	"strings"
 
 	"github.com/Shopify/sarama"
 	log "github.com/sirupsen/logrus"
@@ -76,12 +75,13 @@ func NewCreateCommand(
 			}
 			sort.Strings(configList)
 			log.Infof(
-				"Created topic '%s'. Partitions: %d,"+
-					" replicas: %d, configuration:\n%s",
+				`Created topic '%s'.
+You may check its config with
+
+rpk topic describe '%s'
+`,
 				topicName,
-				partitions,
-				replicas,
-				strings.Join(configList, "\n"),
+				topicName,
 			)
 			return nil
 		},
