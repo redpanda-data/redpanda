@@ -15,7 +15,7 @@
 #include "kafka/client/error.h"
 #include "kafka/client/logger.h"
 #include "kafka/client/retry_with_mitigation.h"
-#include "kafka/errors.h"
+#include "kafka/protocol/errors.h"
 #include "kafka/protocol/fetch.h"
 #include "kafka/protocol/find_coordinator.h"
 #include "kafka/protocol/leave_group.h"

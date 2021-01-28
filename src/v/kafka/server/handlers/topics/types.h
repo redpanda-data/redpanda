@@ -11,9 +11,9 @@
 
 #pragma once
 #include "cluster/types.h"
-#include "kafka/errors.h"
 #include "kafka/protocol/schemata/create_topics_request.h"
 #include "kafka/protocol/schemata/create_topics_response.h"
+#include "kafka/server/errors.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
 

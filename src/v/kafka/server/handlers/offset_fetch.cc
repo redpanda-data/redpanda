@@ -7,9 +7,9 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "kafka/protocol/offset_fetch.h"
+#include "kafka/server/handlers/offset_fetch.h"
 
-#include "kafka/errors.h"
+#include "kafka/protocol/errors.h"
 #include "kafka/server/group_manager.h"
 #include "kafka/server/group_router.h"
 #include "kafka/server/request_context.h"
@@ -54,8 +54,9 @@ struct offset_fetch_ctx {
       , ssg(ssg) {}
 };
 
+template<>
 ss::future<response_ptr>
-offset_fetch_api::process(request_context&& ctx, ss::smp_service_group ssg) {
+offset_fetch_handler::handle(request_context&& ctx, ss::smp_service_group ssg) {
     offset_fetch_request request;
     request.decode(ctx.reader(), ctx.header().version);
     klog.trace("Handling request {}", request);

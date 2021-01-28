@@ -10,7 +10,7 @@
 #include "pandaproxy/json/requests/fetch.h"
 
 #include "kafka/client/test/utils.h"
-#include "kafka/errors.h"
+#include "kafka/protocol/errors.h"
 #include "kafka/protocol/fetch.h"
 #include "kafka/protocol/response_writer.h"
 #include "kafka/protocol/response_writer_utils.h"

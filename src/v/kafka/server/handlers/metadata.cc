@@ -7,14 +7,14 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "kafka/protocol/metadata.h"
+#include "kafka/server/handlers/metadata.h"
 
 #include "cluster/metadata_cache.h"
 #include "cluster/topics_frontend.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
-#include "kafka/errors.h"
-#include "kafka/protocol/topics/topic_utils.h"
+#include "kafka/server/errors.h"
+#include "kafka/server/handlers/topics/topic_utils.h"
 #include "likely.h"
 #include "model/metadata.h"
 #include "utils/to_string.h"
@@ -405,7 +405,8 @@ get_topic_metadata(request_context& ctx, metadata_request& request) {
       });
 }
 
-ss::future<response_ptr> metadata_api::process(
+template<>
+ss::future<response_ptr> metadata_handler::handle(
   request_context&& ctx, [[maybe_unused]] ss::smp_service_group g) {
     return ss::do_with(
       std::move(ctx),

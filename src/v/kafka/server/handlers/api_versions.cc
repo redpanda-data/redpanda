@@ -7,31 +7,9 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "kafka/protocol/api_versions.h"
-
-#include "kafka/protocol/alter_configs.h"
-#include "kafka/protocol/create_topics.h"
-#include "kafka/protocol/delete_topics.h"
-#include "kafka/protocol/describe_configs.h"
-#include "kafka/protocol/describe_groups.h"
-#include "kafka/protocol/fetch.h"
-#include "kafka/protocol/find_coordinator.h"
-#include "kafka/protocol/heartbeat.h"
-#include "kafka/protocol/incremental_alter_configs.h"
-#include "kafka/protocol/init_producer_id.h"
-#include "kafka/protocol/join_group.h"
-#include "kafka/protocol/leave_group.h"
-#include "kafka/protocol/list_groups.h"
-#include "kafka/protocol/list_offsets.h"
-#include "kafka/protocol/metadata.h"
-#include "kafka/protocol/offset_commit.h"
-#include "kafka/protocol/offset_fetch.h"
-#include "kafka/protocol/produce.h"
-#include "kafka/protocol/requests.h"
 #include "kafka/protocol/response_writer.h"
-#include "kafka/protocol/sasl_authenticate.h"
-#include "kafka/protocol/sasl_handshake.h"
-#include "kafka/protocol/sync_group.h"
+#include "kafka/protocol/types.h"
+#include "kafka/server/handlers/handlers.h"
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
 
@@ -46,36 +24,38 @@ template<typename... Ts>
 struct type_list {};
 
 template<typename... Requests>
-CONCEPT(requires(KafkaRequest<Requests>, ...))
+CONCEPT(requires(KafkaApiHandler<Requests>, ...))
 using make_request_types = type_list<Requests...>;
 
 using request_types = make_request_types<
-  produce_api,
-  fetch_api,
-  list_offsets_api,
-  metadata_api,
-  offset_fetch_api,
-  find_coordinator_api,
-  list_groups_api,
-  api_versions_api,
-  join_group_api,
-  heartbeat_api,
-  leave_group_api,
-  sync_group_api,
-  create_topics_api,
-  offset_commit_api,
-  describe_configs_api,
-  alter_configs_api,
-  delete_topics_api,
-  describe_groups_api,
-  sasl_handshake_api,
-  sasl_authenticate_api,
-  incremental_alter_configs_api>;
+  produce_handler,
+  fetch_handler,
+  list_offsets_handler,
+  metadata_handler,
+  offset_fetch_handler,
+  find_coordinator_handler,
+  list_groups_handler,
+  api_versions_handler,
+  join_group_handler,
+  heartbeat_handler,
+  leave_group_handler,
+  sync_group_handler,
+  create_topics_handler,
+  offset_commit_handler,
+  describe_configs_handler,
+  alter_configs_handler,
+  delete_topics_handler,
+  describe_groups_handler,
+  sasl_handshake_handler,
+  sasl_authenticate_handler,
+  incremental_alter_configs_handler>;
 
 template<typename RequestType>
 static auto make_api() {
     return api_versions_response_key{
-      RequestType::key, RequestType::min_supported, RequestType::max_supported};
+      RequestType::api::key,
+      RequestType::min_supported,
+      RequestType::max_supported};
 }
 
 template<typename... RequestTypes>
@@ -90,8 +70,9 @@ std::vector<api_versions_response_key> get_supported_apis() {
     return serialize_apis(request_types{});
 }
 
+template<>
 ss::future<response_ptr>
-api_versions_api::process(request_context&& ctx, ss::smp_service_group) {
+api_versions_handler::handle(request_context&& ctx, ss::smp_service_group) {
     // Unlike other request types, we handle ApiVersion requests
     // with higher versions than supported. We treat such a request
     // as if it were v0 and return a response using the v0 response

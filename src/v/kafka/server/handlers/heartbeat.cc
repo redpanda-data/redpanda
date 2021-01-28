@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "kafka/protocol/heartbeat.h"
+#include "kafka/server/handlers/heartbeat.h"
 
 #include "kafka/server/group_manager.h"
 #include "kafka/server/group_router.h"
@@ -24,7 +24,8 @@ void heartbeat_response::encode(const request_context& ctx, response& resp) {
     data.encode(resp.writer(), ctx.header().version);
 }
 
-ss::future<response_ptr> heartbeat_api::process(
+template<>
+ss::future<response_ptr> heartbeat_handler::handle(
   request_context&& ctx, [[maybe_unused]] ss::smp_service_group g) {
     return ss::do_with(std::move(ctx), [](request_context& ctx) {
         heartbeat_request request;

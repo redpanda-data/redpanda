@@ -14,8 +14,12 @@
 #include "kafka/protocol/api_versions.h"
 #include "kafka/protocol/create_topics.h"
 #include "kafka/protocol/fetch.h"
+#include "kafka/protocol/find_coordinator.h"
 #include "kafka/protocol/metadata.h"
-#include "kafka/protocol/requests.h"
+#include "kafka/protocol/offset_commit.h"
+#include "kafka/protocol/offset_fetch.h"
+#include "kafka/protocol/produce.h"
+#include "kafka/protocol/types.h"
 #include "kafka/server/protocol_utils.h"
 #include "rpc/transport.h"
 #include "seastarx.h"
@@ -81,7 +85,7 @@ public:
      * types to encode their type relationships between api/request/response.
      */
     template<typename T>
-    CONCEPT(requires(KafkaRequest<typename T::api_type>))
+    CONCEPT(requires(KafkaApi<typename T::api_type>))
     ss::future<typename T::api_type::response_type> dispatch(
       T r, api_version request_version, api_version response_version) {
         return send_recv([this, request_version, r = std::move(r)](
@@ -98,16 +102,49 @@ public:
     }
 
     template<typename T>
-    CONCEPT(requires(KafkaRequest<typename T::api_type>))
+    CONCEPT(requires(KafkaApi<typename T::api_type>))
     ss::future<typename T::api_type::response_type> dispatch(
       T r, api_version ver) {
         return dispatch(std::move(r), ver, ver);
     }
 
+    /*
+     * Invokes dispatch with the given request type at the max supported level
+     * of the redpanda kafka server.
+     *
+     * TODO: this will go away once the kafka client implements version
+     * negotiation and can track on a per-broker basis the supported version
+     * range.
+     */
     template<typename T>
-    CONCEPT(requires(KafkaRequest<typename T::api_type>))
+    CONCEPT(requires(KafkaApi<typename T::api_type>))
     ss::future<typename T::api_type::response_type> dispatch(T r) {
-        return dispatch(std::move(r), T::api_type::max_supported);
+        using type = std::remove_reference_t<std::decay_t<T>>;
+        if constexpr (std::is_same_v<type, offset_fetch_request>) {
+            return dispatch(std::move(r), api_version(4));
+        } else if constexpr (std::is_same_v<type, fetch_request>) {
+            return dispatch(std::move(r), api_version(10));
+        } else if constexpr (std::is_same_v<type, produce_request>) {
+            return dispatch(std::move(r), api_version(7));
+        } else if constexpr (std::is_same_v<type, offset_commit_request>) {
+            return dispatch(std::move(r), api_version(7));
+        } else if constexpr (std::is_same_v<type, describe_groups_request>) {
+            return dispatch(std::move(r), api_version(2));
+        } else if constexpr (std::is_same_v<type, heartbeat_request>) {
+            return dispatch(std::move(r), api_version(3));
+        } else if constexpr (std::is_same_v<type, join_group_request>) {
+            return dispatch(std::move(r), api_version(4));
+        } else if constexpr (std::is_same_v<type, sync_group_request>) {
+            return dispatch(std::move(r), api_version(3));
+        } else if constexpr (std::is_same_v<type, leave_group_request>) {
+            return dispatch(std::move(r), api_version(2));
+        } else if constexpr (std::is_same_v<type, metadata_request>) {
+            return dispatch(std::move(r), api_version(7));
+        } else if constexpr (std::is_same_v<type, find_coordinator_request>) {
+            return dispatch(std::move(r), api_version(2));
+        } else if constexpr (std::is_same_v<type, list_groups_request>) {
+            return dispatch(std::move(r), api_version(2));
+        }
     }
 
 private:

@@ -13,8 +13,6 @@
 
 #include "kafka/protocol/schemata/create_topics_request.h"
 #include "kafka/protocol/schemata/create_topics_response.h"
-#include "kafka/protocol/topics/types.h"
-#include "kafka/protocol/topics/validators.h"
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
 #include "seastarx.h"
@@ -33,19 +31,6 @@ public:
 
     static constexpr const char* name = "create topics";
     static constexpr api_key key = api_key(19);
-    static constexpr api_version min_supported = api_version(0);
-    static constexpr api_version max_supported = api_version(4);
-
-    static ss::future<response_ptr>
-    process(request_context&&, ss::smp_service_group);
-
-private:
-    using validators = make_validator_types<
-      creatable_topic,
-      no_custom_partition_assignment,
-      partition_count_must_be_positive,
-      replication_factor_must_be_positive,
-      replication_factor_must_be_odd>;
 };
 
 struct create_topics_request final {

@@ -7,10 +7,10 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "kafka/protocol/topics/topic_utils.h"
+#include "kafka/server/handlers/topics/topic_utils.h"
 
 #include "cluster/errc.h"
-#include "kafka/errors.h"
+#include "kafka/protocol/errors.h"
 
 namespace kafka {
 

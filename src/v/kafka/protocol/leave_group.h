@@ -10,7 +10,7 @@
  */
 
 #pragma once
-#include "kafka/errors.h"
+#include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/leave_group_request.h"
 #include "kafka/protocol/schemata/leave_group_response.h"
 #include "kafka/server/response.h"
@@ -29,11 +29,6 @@ struct leave_group_api final {
 
     static constexpr const char* name = "leave group";
     static constexpr api_key key = api_key(13);
-    static constexpr api_version min_supported = api_version(0);
-    static constexpr api_version max_supported = api_version(2);
-
-    static ss::future<response_ptr>
-    process(request_context&&, ss::smp_service_group);
 };
 
 struct leave_group_request final {

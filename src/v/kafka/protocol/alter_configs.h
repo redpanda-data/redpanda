@@ -11,7 +11,7 @@
 
 #pragma once
 #include "bytes/iobuf.h"
-#include "kafka/errors.h"
+#include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/alter_configs_request.h"
 #include "kafka/protocol/schemata/alter_configs_response.h"
 #include "kafka/server/request_context.h"
@@ -33,11 +33,6 @@ public:
 
     static constexpr const char* name = "alter_configs";
     static constexpr api_key key = api_key(33);
-    static constexpr api_version min_supported = api_version(0);
-    static constexpr api_version max_supported = api_version(1);
-
-    static ss::future<response_ptr>
-    process(request_context&&, ss::smp_service_group);
 };
 
 struct alter_configs_request final {

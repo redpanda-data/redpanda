@@ -13,7 +13,7 @@
 
 #include "bytes/bytes.h"
 #include "bytes/iobuf.h"
-#include "kafka/errors.h"
+#include "kafka/protocol/errors.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/timestamp.h"

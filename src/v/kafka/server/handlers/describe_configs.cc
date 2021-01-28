@@ -7,10 +7,10 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "kafka/protocol/describe_configs.h"
+#include "kafka/server/handlers/describe_configs.h"
 
 #include "cluster/metadata_cache.h"
-#include "kafka/errors.h"
+#include "kafka/protocol/errors.h"
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
 #include "model/metadata.h"
@@ -40,7 +40,8 @@ static void add_config(
     });
 }
 
-ss::future<response_ptr> describe_configs_api::process(
+template<>
+ss::future<response_ptr> describe_configs_handler::handle(
   request_context&& ctx, [[maybe_unused]] ss::smp_service_group ssg) {
     describe_configs_request request;
     request.decode(ctx.reader(), ctx.header().version);

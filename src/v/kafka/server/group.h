@@ -12,7 +12,7 @@
 #pragma once
 #include "cluster/partition.h"
 #include "config/configuration.h"
-#include "kafka/errors.h"
+#include "kafka/protocol/errors.h"
 #include "kafka/protocol/heartbeat.h"
 #include "kafka/protocol/join_group.h"
 #include "kafka/protocol/leave_group.h"

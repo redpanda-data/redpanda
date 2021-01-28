@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "kafka/errors.h"
+#include "kafka/protocol/errors.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"

@@ -7,11 +7,11 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "kafka/protocol/list_offsets.h"
+#include "kafka/server/handlers/list_offsets.h"
 
 #include "cluster/metadata_cache.h"
 #include "cluster/partition_manager.h"
-#include "kafka/errors.h"
+#include "kafka/protocol/errors.h"
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
 #include "model/namespace.h"
@@ -187,8 +187,9 @@ list_offsets_topics(list_offsets_ctx& octx) {
     return topics;
 }
 
+template<>
 ss::future<response_ptr>
-list_offsets_api::process(request_context&& ctx, ss::smp_service_group ssg) {
+list_offsets_handler::handle(request_context&& ctx, ss::smp_service_group ssg) {
     list_offsets_request request;
     request.decode(ctx.reader(), ctx.header().version);
     request.compute_duplicate_topics();

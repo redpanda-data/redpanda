@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "kafka/protocol/api_versions.h"
+#include "kafka/server/handlers/api_versions.h"
 #include "kafka/types.h"
 #include "redpanda/tests/fixture.h"
 #include "resource_mgmt/io_priority.h"
@@ -89,6 +89,6 @@ FIXTURE_TEST(unsupported_version, redpanda_thread_fixture) {
 
     BOOST_REQUIRE(api != response.data.api_keys.cend());
     BOOST_TEST(api->api_key == kafka::api_versions_api::key);
-    BOOST_TEST(api->min_version == kafka::api_versions_api::min_supported);
-    BOOST_TEST(api->max_version == kafka::api_versions_api::max_supported);
+    BOOST_TEST(api->min_version == kafka::api_versions_handler::min_supported);
+    BOOST_TEST(api->max_version == kafka::api_versions_handler::max_supported);
 }

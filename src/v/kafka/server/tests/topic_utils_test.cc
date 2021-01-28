@@ -9,7 +9,7 @@
 
 #include "kafka/protocol/schemata/create_topics_response.h"
 #define BOOST_TEST_MODULE utils
-#include "kafka/protocol/topics/topic_utils.h"
+#include "kafka/server/handlers/topics/topic_utils.h"
 #include "model/fundamental.h"
 
 #include <boost/range/iterator_range.hpp>
