@@ -201,7 +201,7 @@ script_context::get_reader(const ss::lw_shared_ptr<ntp_context>& ntp_ctx) {
     const storage::offset_stats os = ntp_ctx->log.offsets();
     return storage::log_reader_config(
       next_read,
-      os.committed_offset,
+      os.dirty_offset,
       1,
       max_batch_size(),
       ss::default_priority_class(),
