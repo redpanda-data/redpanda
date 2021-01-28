@@ -131,7 +131,17 @@ redpanda:
     address: "0.0.0.0"
     port: 33145
    
-  # TLS configuration for the RPC server.
+  # Multiple listeners are also supported as per KIP-103.
+  # The names must match those in advertised_kafka_api
+  kafka_api:
+  - address: "0.0.0.0"
+    name: internal
+    port: 9092
+  - address: "0.0.0.0"
+    name: external
+    port: 9093
+
+# TLS configuration for the RPC server.
   # Default: null
   rpc_server_tls:
     # Whether to enable TLS for the RPC server.
@@ -192,7 +202,17 @@ redpanda:
   # Default: 0.0.0.0:9092
   advertised_kafka_api:
     address: "0.0.0.0"
-    port: 9092 
+    port: 9092
+
+  # Multiple listeners are also supported as per KIP-103.
+  # The names must match those in kafka_api
+  advertised_kafka_api:
+  - address: 0.0.0.0
+    name: internal
+    port: 9092
+  - address: redpanda-0.my.domain.com.
+    name: external
+    port: 9093
   
   # List of the seed servers used to join current cluster. If the seed_server list is
   # empty the node will be a cluster root and it will form a new cluster
