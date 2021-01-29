@@ -87,18 +87,21 @@ export class ProcessBatchServer extends SupervisorServer {
    * @param coprocessor
    * @param processBatchRequest
    * @param error
+   * @param policyError, optional, by default this function takes value from
+   * coprocessor.
    */
   public handleErrorByPolicy(
     coprocessor: Coprocessor,
     processBatchRequest: ProcessBatchRequestItem,
-    error: Error
+    error: Error,
+    policyError = coprocessor.policyError
   ): Promise<never> {
     const errorMessage = this.createMessageError(
       coprocessor,
       processBatchRequest,
       error
     );
-    switch (coprocessor.policyError) {
+    switch (policyError) {
       case PolicyError.Deregister:
         return this.fileManager
           .deregisterCoprocessor(coprocessor)

@@ -9,7 +9,7 @@
  */
 
 import { Handle } from "../domain/Handle";
-import { Coprocessor, RecordBatch } from "../public/Coprocessor";
+import { Coprocessor, PolicyError, RecordBatch } from "../public/Coprocessor";
 import {
   ProcessBatchReplyItem,
   ProcessBatchRequestItem,
@@ -104,6 +104,28 @@ class Repository {
     };
   }
 
+  validateResultApply(
+    requestItem: ProcessBatchRequestItem,
+    handle: Handle,
+    handleError: ProcessBatchServer["handleErrorByPolicy"],
+    resultRecordBatch: Map<string, RecordBatch>
+  ): Promise<Map<string, RecordBatch>> {
+    if (resultRecordBatch instanceof Map) {
+      return Promise.resolve(resultRecordBatch);
+    } else {
+      const error = new Error(
+        `Wasm function (${handle.coprocessor.globalId}) ` +
+          `didn't return a Promise<Map<string, RecordBatch>>`
+      );
+      return handleError(
+        handle.coprocessor,
+        requestItem,
+        error,
+        PolicyError.Deregister
+      );
+    }
+  }
+
   transformMapResultToArray(
     requestItem: ProcessBatchRequestItem,
     handle: Handle,
@@ -171,6 +193,14 @@ class Repository {
           try {
             return handle.coprocessor
               .apply(createRecordBatch(recordBatch))
+              .then((resultMap) =>
+                this.validateResultApply(
+                  requestItem,
+                  handle,
+                  handleError,
+                  resultMap
+                )
+              )
               .then((resultMap) =>
                 this.transformMapResultToArray(
                   requestItem,
