@@ -12,6 +12,7 @@
 #include "kafka/client/configuration.h"
 #include "pandaproxy/configuration.h"
 #include "platform/stop_signal.h"
+#include "rpc/dns.h"
 #include "ssx/future-util.h"
 #include "syschecks/syschecks.h"
 #include "utils/file_io.h"
@@ -179,9 +180,7 @@ void application::configure_admin_server() {
           .get();
     }
 
-    shard_local_cfg()
-      .admin_api()
-      .resolve()
+    rpc::resolve_dns(shard_local_cfg().admin_api())
       .then([this](ss::socket_address addr) mutable {
           return _admin
             .invoke_on_all<ss::future<> (ss::http_server::*)(
@@ -205,7 +204,7 @@ void application::wire_up_services() {
 
     construct_service(
       _proxy,
-      shard_local_cfg().pandaproxy_api().resolve().get0(),
+      rpc::resolve_dns(shard_local_cfg().pandaproxy_api()).get(),
       kafka::client::shard_local_cfg().brokers())
       .get();
 }

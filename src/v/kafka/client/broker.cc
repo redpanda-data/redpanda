@@ -10,12 +10,13 @@
 #include "kafka/client/broker.h"
 
 #include "kafka/client/logger.h"
+#include "rpc/dns.h"
 
 namespace kafka::client {
 
 ss::future<shared_broker_t>
 make_broker(model::node_id node_id, unresolved_address addr) {
-    return addr.resolve()
+    return rpc::resolve_dns(std::move(addr))
       .then([](ss::socket_address addr) {
           auto client = ss::make_lw_shared<transport>(
             rpc::base_transport::configuration{.server_addr = addr});

@@ -276,8 +276,8 @@ void application::configure_admin_server() {
     }
 
     with_scheduling_group(_scheduling_groups.admin_sg(), [this] {
-        return config::shard_local_cfg().admin().resolve().then(
-          [this](ss::socket_address addr) mutable {
+        return rpc::resolve_dns(config::shard_local_cfg().admin())
+          .then([this](ss::socket_address addr) mutable {
               return _admin
                 .invoke_on_all<ss::future<> (ss::http_server::*)(
                   ss::socket_address)>(&ss::http_server::listen, addr)
@@ -349,10 +349,9 @@ void application::wire_up_services() {
       .get();
 
     if (coproc_enabled()) {
-        auto coproc_supervisor_server_addr = config::shard_local_cfg()
-                                               .coproc_supervisor_server()
-                                               .resolve()
-                                               .get0();
+        auto coproc_supervisor_server_addr
+          = rpc::resolve_dns(config::shard_local_cfg().coproc_supervisor_server())
+              .get0();
         syschecks::systemd_message("Building coproc pacemaker").get();
         construct_service(
           pacemaker, coproc_supervisor_server_addr, std::ref(storage))
@@ -439,7 +438,7 @@ void application::wire_up_services() {
       = ss::server_socket::load_balancing_algorithm::port;
     rpc_cfg.max_service_memory_per_core = memory_groups::rpc_total_memory();
     auto rpc_server_addr
-      = config::shard_local_cfg().rpc_server().resolve().get0();
+      = rpc::resolve_dns(config::shard_local_cfg().rpc_server()).get0();
     rpc_cfg.addrs.emplace_back(rpc_server_addr);
     auto rpc_builder = config::shard_local_cfg()
                          .rpc_server_tls()
@@ -462,9 +461,8 @@ void application::wire_up_services() {
     // coproc rpc
     if (coproc_enabled()) {
         auto coproc_script_manager_server_addr
-          = config::shard_local_cfg()
-              .coproc_script_manager_server()
-              .resolve()
+          = rpc::resolve_dns(
+              config::shard_local_cfg().coproc_script_manager_server())
               .get0();
         rpc::server_configuration cp_rpc_cfg("coproc_rpc");
         cp_rpc_cfg.max_service_memory_per_core
@@ -491,7 +489,7 @@ void application::wire_up_services() {
     rpc::server_configuration kafka_cfg("kafka_rpc");
     kafka_cfg.max_service_memory_per_core = memory_groups::kafka_total_memory();
     for (const auto& ep : config::shard_local_cfg().kafka_api()) {
-        kafka_cfg.addrs.emplace_back(ep.name, ep.address.resolve().get0());
+        kafka_cfg.addrs.emplace_back(ep.name, rpc::resolve_dns(ep.address).get0());
     }
     syschecks::systemd_message("Building TLS credentials for kafka").get();
     auto kafka_builder = config::shard_local_cfg()

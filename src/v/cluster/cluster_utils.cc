@@ -84,7 +84,7 @@ ss::future<> maybe_create_tcp_client(
   model::node_id node,
   unresolved_address rpc_address,
   config::tls_config tls_config) {
-    return rpc_address.resolve().then([node,
+    return rpc::resolve_dns(std::move(rpc_address)).then([node,
                                        &cache,
                                        tls_config = std::move(tls_config)](
                                         ss::socket_address new_addr) mutable {

@@ -18,6 +18,7 @@
 #include "config/tls_config.h"
 #include "outcome_future_utils.h"
 #include "rpc/connection_cache.h"
+#include "rpc/dns.h"
 
 #include <seastar/core/sharded.hh>
 
@@ -127,9 +128,9 @@ auto do_with_client_one_shot(
     using transport_ptr = ss::lw_shared_ptr<rpc::transport>;
     return maybe_build_reloadable_certificate_credentials(std::move(tls_config))
       .then([addr = std::move(addr)](
-              ss::shared_ptr<ss::tls::certificate_credentials>&& cert) {
-          return addr.resolve().then(
-            [cert = std::move(cert)](ss::socket_address new_addr) {
+              ss::shared_ptr<ss::tls::certificate_credentials>&& cert) mutable {
+          return rpc::resolve_dns(std::move(addr))
+            .then([cert = std::move(cert)](ss::socket_address new_addr) {
                 return ss::make_lw_shared<rpc::transport>(
                   rpc::transport_configuration{
                     .server_addr = new_addr,
