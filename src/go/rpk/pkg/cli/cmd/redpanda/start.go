@@ -127,7 +127,7 @@ func NewStartCommand(
 				kafkaAddr,
 				os.Getenv("REDPANDA_KAFKA_ADDRESS"),
 			)
-			kafkaApi, err := parseAddress(
+			kafkaApi, err := parseNamedAddress(
 				kafkaAddr,
 				config.Default().Redpanda.KafkaApi.Port,
 			)
@@ -162,7 +162,7 @@ func NewStartCommand(
 					",",
 				),
 			)
-			advKafkaApi, err := parseAddresses(
+			advKafkaApi, err := parseNamedAddresses(
 				advertisedKafka,
 				config.Default().Redpanda.KafkaApi.Port,
 			)
@@ -703,39 +703,15 @@ func parseSeeds(seeds []string) ([]config.SeedServer, error) {
 	return seedServers, nil
 }
 
-func parseAddresses(
-	addrs []string, defaultPort int,
-) ([]config.SocketAddress, error) {
-	as := make([]config.SocketAddress, 0, len(addrs))
-	for _, addr := range addrs {
-		a, err := parseAddress(addr, defaultPort)
-		if err != nil {
-			return nil, err
-		}
-		if a != nil {
-			as = append(as, *a)
-		}
-	}
-	return as, nil
-}
-
 func parseAddress(addr string, defaultPort int) (*config.SocketAddress, error) {
-	if addr == "" {
-		return nil, nil
-	}
-
-	_, hostname, port, err := parseURL(addr)
+	named, err := parseNamedAddress(addr, defaultPort)
 	if err != nil {
 		return nil, err
 	}
-	if port == 0 {
-		port = defaultPort
+	if named == nil {
+		return nil, nil
 	}
-
-	return &config.SocketAddress{
-		Address:	hostname,
-		Port:		port,
-	}, nil
+	return &named.SocketAddress, nil
 }
 
 func parseNamedAddresses(

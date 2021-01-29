@@ -201,7 +201,12 @@ func TestDefault(t *testing.T) {
 		Redpanda: RedpandaConfig{
 			Directory:	"/var/lib/redpanda/data",
 			RPCServer:	SocketAddress{"0.0.0.0", 33145},
-			KafkaApi:	SocketAddress{"0.0.0.0", 9092},
+			KafkaApi: NamedSocketAddress{
+				SocketAddress: SocketAddress{
+					"0.0.0.0",
+					9092,
+				},
+			},
 			AdminApi:	SocketAddress{"0.0.0.0", 9644},
 			Id:		0,
 			DeveloperMode:	true,
@@ -330,9 +335,11 @@ rpk:
 			name:	"shall write a valid config file without advertised_rpc_api",
 			conf: func() *Config {
 				c := getValidConfig()
-				c.Redpanda.AdvertisedKafkaApi = []SocketAddress{{
-					"174.32.64.2",
-					9092,
+				c.Redpanda.AdvertisedKafkaApi = []NamedSocketAddress{{
+					SocketAddress: SocketAddress{
+						"174.32.64.2",
+						9092,
+					},
 				}}
 				return c
 			},
@@ -963,6 +970,8 @@ func TestReadFlat(t *testing.T) {
 	expected := map[string]string{
 		"config_file":				"/etc/redpanda/redpanda.yaml",
 		"redpanda.admin":			"0.0.0.0:9644",
+		"redpanda.advertised_kafka_api.0":	"internal://127.0.0.1:9092",
+		"redpanda.advertised_kafka_api.1":	"127.0.0.1:9093",
 		"redpanda.data_directory":		"/var/lib/redpanda/data",
 		"redpanda.kafka_api":			"0.0.0.0:9092",
 		"redpanda.node_id":			"0",
@@ -997,6 +1006,18 @@ func TestReadFlat(t *testing.T) {
 			SocketAddress{"192.168.167.1", 1337},
 		},
 	}
+	conf.Redpanda.AdvertisedKafkaApi = []NamedSocketAddress{{
+		SocketAddress: SocketAddress{
+			Address:	"127.0.0.1",
+			Port:		9092,
+		},
+		Name:	"internal",
+	}, {
+		SocketAddress: SocketAddress{
+			Address:	"127.0.0.1",
+			Port:		9093,
+		},
+	}}
 	err := mgr.Write(conf)
 	require.NoError(t, err)
 	props, err := mgr.ReadFlat(conf.ConfigFile)

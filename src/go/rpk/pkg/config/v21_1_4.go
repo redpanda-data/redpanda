@@ -11,7 +11,8 @@ package config
 
 import (
 	"fmt"
-	"strconv"
+
+	"github.com/mitchellh/mapstructure"
 )
 
 type v2114Config struct {
@@ -28,7 +29,7 @@ type v2114RedpandaConfig struct {
 	Directory		string			`yaml:"data_directory" mapstructure:"data_directory" json:"dataDirectory"`
 	RPCServer		v2114SocketAddress	`yaml:"rpc_server" mapstructure:"rpc_server" json:"rpcServer"`
 	AdvertisedRPCAPI	*v2114SocketAddress	`yaml:"advertised_rpc_api,omitempty" mapstructure:"advertised_rpc_api,omitempty" json:"advertisedRpcApi,omitempty"`
-	KafkaApi		v2114SocketAddress	`yaml:"kafka_api" mapstructure:"kafka_api" json:"kafkaApi"`
+	KafkaApi		v2114NamedSocketAddress	`yaml:"kafka_api" mapstructure:"kafka_api" json:"kafkaApi"`
 	AdvertisedKafkaApi	interface{}		`yaml:"advertised_kafka_api,omitempty" mapstructure:"advertised_kafka_api,omitempty" json:"advertisedKafkaApi,omitempty"`
 	KafkaApiTLS		v2114ServerTLS		`yaml:"kafka_api_tls,omitempty" mapstructure:"kafka_api_tls,omitempty" json:"kafkaApiTls"`
 	AdminApi		v2114SocketAddress	`yaml:"admin" mapstructure:"admin" json:"admin"`
@@ -44,6 +45,11 @@ type v2114SeedServer struct {
 type v2114SocketAddress struct {
 	Address	string	`yaml:"address" mapstructure:"address" json:"address"`
 	Port	int	`yaml:"port" mapstructure:"port" json:"port"`
+}
+
+type v2114NamedSocketAddress struct {
+	v2114SocketAddress	`yaml:",inline" mapstructure:",squash"`
+	Name			string	`yaml:"name,omitempty" mapstructure:"name,omitempty" json:"name,omitempty"`
 }
 
 type v2114TLS struct {
@@ -109,7 +115,7 @@ func (rc v2114RedpandaConfig) toGeneric() (*RedpandaConfig, error) {
 
 	kafkaApi := rc.KafkaApi.toGeneric()
 
-	var advKafkaApi []SocketAddress
+	var advKafkaApi []NamedSocketAddress
 	if rc.AdvertisedKafkaApi != nil {
 		var err error
 		advKafkaApi, err = v2114ParsePolymorphicSocketAddress(rc.AdvertisedKafkaApi)
@@ -175,6 +181,14 @@ func (sa *v2114SocketAddress) toGeneric() *SocketAddress {
 	}
 }
 
+func (sa *v2114NamedSocketAddress) toGeneric() *NamedSocketAddress {
+	addr := sa.v2114SocketAddress.toGeneric()
+	return &NamedSocketAddress{
+		SocketAddress:	*addr,
+		Name:		sa.Name,
+	}
+}
+
 func (stls v2114ServerTLS) toGeneric() ServerTLS {
 	return ServerTLS{
 		KeyFile:	stls.KeyFile,
@@ -199,15 +213,15 @@ func (s v2114SeedServer) toGeneric() SeedServer {
 
 func v2114ParsePolymorphicSocketAddress(
 	v interface{},
-) ([]SocketAddress, error) {
+) ([]NamedSocketAddress, error) {
 	if v == nil {
 		return nil, nil
 	}
 	basePath := "redpanda.advertised_kafka_api"
 	if m, ok := v.(map[string]interface{}); ok {
-		return v2114ParseSocketAddressMap(m)
+		return v2114ParseNamedSocketAddressMap(m)
 	} else if vs, ok := v.([]interface{}); ok {
-		return v2114ParseSocketAddressList(vs)
+		return v2114ParseNamedSocketAddressList(vs)
 	}
 	panic(fmt.Sprintf("%T", v))
 	return nil, fmt.Errorf(
@@ -217,73 +231,26 @@ func v2114ParsePolymorphicSocketAddress(
 	)
 }
 
-func v2114ParseSocketAddressMap(
+func v2114ParseNamedSocketAddressMap(
 	m map[string]interface{},
-) ([]SocketAddress, error) {
-	address := ""
-	port := 0
-	basePath := "redpanda.advertised_kafka_api"
-	for k, v := range m {
-		switch k {
-		case "address":
-			addr, ok := v.(string)
-			if !ok {
-				return nil, mismatchError(
-					basePath+".address",
-					"a string",
-					v,
-				)
-			}
-			address = addr
-		case "port":
-			var ok bool
-			field := basePath + ".port"
-			port, ok = v.(int)
-			if ok {
-				continue
-			}
-			portStr, ok := v.(string)
-			if !ok {
-				return nil, mismatchError(
-					field,
-					"a parseable int",
-					v,
-				)
-			}
-			var err error
-			port, err = strconv.Atoi(portStr)
-			if err != nil {
-				return nil, mismatchError(
-					field,
-					"a parseable int",
-					v,
-				)
-			}
-		}
+) ([]NamedSocketAddress, error) {
+	var nsa v2114NamedSocketAddress
+	err := mapstructure.Decode(m, &nsa)
+	if err != nil {
+		return nil, err
 	}
-	return []SocketAddress{{Address: address, Port: port}}, nil
+	sa := nsa.v2114SocketAddress.toGeneric()
+	return []NamedSocketAddress{{
+		SocketAddress: *sa,
+	}}, err
 }
 
-func v2114ParseSocketAddressList(vs []interface{}) ([]SocketAddress, error) {
-	basePath := "redpanda.advertised_kafka_api"
-	ss := make([]SocketAddress, 0, len(vs))
-	for i, v := range vs {
-		genericMap, ok := v.(map[interface{}]interface{})
-		if !ok {
-			return nil, mismatchError(
-				fmt.Sprintf("%s.%d", basePath, i),
-				"an object",
-				v,
-			)
-		}
-		m := stringifyKeys(genericMap)
-		s, err := v2114ParseSocketAddressMap(m)
-		if err != nil {
-			return nil, err
-		}
-		ss = append(ss, s...)
-	}
-	return ss, nil
+func v2114ParseNamedSocketAddressList(
+	vs []interface{},
+) ([]NamedSocketAddress, error) {
+	var ss []NamedSocketAddress
+	err := mapstructure.Decode(vs, &ss)
+	return ss, err
 }
 
 func stringifyKeys(m map[interface{}]interface{}) map[string]interface{} {
