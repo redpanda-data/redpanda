@@ -350,7 +350,8 @@ void application::wire_up_services() {
 
     if (coproc_enabled()) {
         auto coproc_supervisor_server_addr
-          = rpc::resolve_dns(config::shard_local_cfg().coproc_supervisor_server())
+          = rpc::resolve_dns(
+              config::shard_local_cfg().coproc_supervisor_server())
               .get0();
         syschecks::systemd_message("Building coproc pacemaker").get();
         construct_service(
@@ -489,7 +490,8 @@ void application::wire_up_services() {
     rpc::server_configuration kafka_cfg("kafka_rpc");
     kafka_cfg.max_service_memory_per_core = memory_groups::kafka_total_memory();
     for (const auto& ep : config::shard_local_cfg().kafka_api()) {
-        kafka_cfg.addrs.emplace_back(ep.name, rpc::resolve_dns(ep.address).get0());
+        kafka_cfg.addrs.emplace_back(
+          ep.name, rpc::resolve_dns(ep.address).get0());
     }
     syschecks::systemd_message("Building TLS credentials for kafka").get();
     auto kafka_builder = config::shard_local_cfg()
