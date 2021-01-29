@@ -12,6 +12,7 @@ v_cc_library(
     reconnect_transport.cc
     connection_cache.cc
     simple_protocol.cc
+    dns.cc
   DEPS
     Seastar::seastar
     v::bytes
