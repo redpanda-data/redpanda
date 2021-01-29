@@ -33,6 +33,7 @@ set(handlers_srcs
 v_cc_library(
   NAME kafka
   SRCS
+    protocol/batch_reader.cc
     protocol/kafka_batch_adapter.cc
     ${security_srcs}
     ${handlers_srcs}

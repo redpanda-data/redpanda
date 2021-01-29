@@ -13,6 +13,7 @@
 
 #include "bytes/bytes.h"
 #include "bytes/iobuf.h"
+#include "kafka/protocol/batch_reader.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
@@ -115,6 +116,13 @@ public:
                     + data->size_bytes();
         _out->append(std::move(*data));
         return size;
+    }
+
+    uint32_t write(std::optional<batch_reader>&& rdr) {
+        if (!rdr) {
+            return write(std::optional<iobuf>());
+        }
+        return write(std::move(*rdr).release());
     }
 
     // write bytes directly to output without a length prefix

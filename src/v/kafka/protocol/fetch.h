@@ -12,6 +12,7 @@
 #pragma once
 
 #include "cluster/partition.h"
+#include "kafka/protocol/batch_reader.h"
 #include "kafka/server/fetch_session.h"
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
@@ -216,7 +217,7 @@ struct fetch_response final {
         model::offset last_stable_offset;                      // >= v4
         model::offset log_start_offset;                        // >= v5
         std::vector<aborted_transaction> aborted_transactions; // >= v4
-        std::optional<iobuf> record_set;
+        std::optional<batch_reader> record_set;
         /*
          * _not part of kafka protocol
          * used to indicate wether we have to

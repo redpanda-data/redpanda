@@ -13,6 +13,7 @@
 
 #include "bytes/bytes.h"
 #include "bytes/iobuf_parser.h"
+#include "kafka/protocol/batch_reader.h"
 #include "likely.h"
 #include "seastarx.h"
 #include "utils/concepts-enabled.h"
@@ -74,6 +75,14 @@ public:
         }
         auto ret = _parser.share(len);
         return {std::move(ret), len};
+    }
+
+    std::optional<batch_reader> read_nullable_batch_reader() {
+        auto io = read_fragmented_nullable_bytes();
+        if (!io) {
+            return std::nullopt;
+        }
+        return batch_reader(std::move(*io));
     }
 
     template<
