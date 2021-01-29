@@ -25,15 +25,15 @@ Starting cluster
   2        172.24.1.4:58756
   1        172.24.1.3:58757
 
-Cluster started! You may use 'rpk api' to interact with the cluster. E.g:
+Cluster started! You may use rpk to interact with it. E.g:
 
-rpk api status
+rpk cluster info
 ```
 
-It says we can check our cluster with `rpk api status`
+It says we can check our cluster with `rpk cluster info`
 
 ```
-  Redpanda Cluster Status
+  Redpanda Cluster Info
 
   0 (127.0.0.1:58754)      (No partitions)
   1 (127.0.0.1:58757)      (No partitions)
@@ -44,7 +44,7 @@ You can now connect your Kafka compatible applications directly to Redpanda
 by using the ports listed above. In this example the ports to use would be
 `58754`, `58757`, `58756`.
 
-All of the `rpk api` subcommands will detect the local cluster and use its addresses, so you don't have to configure anything or keep track of IPs and ports.
+Additionally, all of the `rpk topic` subcommands will detect the local cluster and use its addresses, so you don't have to configure anything or keep track of IPs and ports.
 
 For example, you can run `rpk topic create` and it will work!
 
