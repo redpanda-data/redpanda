@@ -112,7 +112,7 @@ func (r *StatefulSetResource) Obj() (client.Object, error) {
 							VolumeSource: corev1.VolumeSource{
 								ConfigMap: &corev1.ConfigMapVolumeSource{
 									LocalObjectReference: corev1.LocalObjectReference{
-										Name: r.pandaCluster.Name + baseSuffix,	// TODO extract this
+										Name: ConfigMapKey(r.pandaCluster).Name,
 									},
 									DefaultMode:	&configMapDefaultMode,
 								},
