@@ -11,7 +11,7 @@
 
 #include "kafka/client/brokers.h"
 #include "kafka/client/configuration.h"
-#include "kafka/client/error.h"
+#include "kafka/client/exceptions.h"
 #include "kafka/client/logger.h"
 #include "kafka/client/retry_with_mitigation.h"
 #include "kafka/protocol/errors.h"

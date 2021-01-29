@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "kafka/client/error.h"
+#include "kafka/client/exceptions.h"
 #include "kafka/client/transport.h"
 #include "model/metadata.h"
 #include "utils/mutex.h"
