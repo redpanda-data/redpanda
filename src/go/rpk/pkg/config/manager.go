@@ -157,7 +157,7 @@ func (m *manager) ReadFlat(path string) (map[string]string, error) {
 			key,
 			val,
 			func(c *mapstructure.DecoderConfig) {
-				c.TagName = "yaml"
+				c.TagName = "mapstructure"
 			},
 		)
 	}
@@ -175,6 +175,26 @@ func (m *manager) ReadFlat(path string) (map[string]string, error) {
 					s.Host.Address,
 					s.Host.Port,
 				)
+			}
+			continue
+		}
+		if k == "redpanda.advertised_kafka_api" {
+			addrs := []NamedSocketAddress{}
+			err := unmarshalKey(k, &addrs)
+			if err != nil {
+				return nil, err
+			}
+			for i, a := range addrs {
+				key := fmt.Sprintf("%s.%d", k, i)
+				str := fmt.Sprintf(
+					"%s:%d",
+					a.Address,
+					a.Port,
+				)
+				if a.Name != "" {
+					str = fmt.Sprintf("%s://%s", a.Name, str)
+				}
+				flatMap[key] = str
 			}
 			continue
 		}
@@ -381,7 +401,7 @@ func unmarshal(v *viper.Viper) (*Config, error) {
 		// to cast them.
 		WeaklyTypedInput:	true,
 		DecodeHook: mapstructure.ComposeDecodeHookFunc(
-			v21_1_4MapToSocketAddressSlice,
+			v21_1_4MapToNamedSocketAddressSlice,
 		),
 	}
 	decoder, err := mapstructure.NewDecoder(&decoderConfig)
@@ -399,21 +419,23 @@ func unmarshal(v *viper.Viper) (*Config, error) {
 	return result, nil
 }
 
-// Redpanda version < 21.1.4 only supported a single listener and a single
-// advertised address. This custom decode function translates a single
-// SocketAddress map into a []SocketAddress
-func v21_1_4MapToSocketAddressSlice(
+// Redpanda version < 21.1.4 only supported a single anonymous listener and a
+// single anonymous advertised address. This custom decode function translates
+// a single SocketAddress-equivalent map[string]interface{} into a
+// []NamedSocketAddress.
+func v21_1_4MapToNamedSocketAddressSlice(
 	from, to reflect.Type, data interface{},
 ) (interface{}, error) {
-	if to == reflect.TypeOf([]SocketAddress{}) {
+	if to == reflect.TypeOf([]NamedSocketAddress{}) {
 		switch from.Kind() {
 		case reflect.Map:
-			sa := SocketAddress{}
+			sa := NamedSocketAddress{}
 			err := mapstructure.Decode(data, &sa)
 			if err != nil {
 				return nil, err
 			}
-			return []SocketAddress{sa}, nil
+			return []NamedSocketAddress{sa}, nil
+
 		}
 	}
 	return data, nil
