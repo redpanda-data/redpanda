@@ -162,7 +162,11 @@ func copyConfig(
 }
 
 func (r *ConfigMapResource) Key() types.NamespacedName {
-	return types.NamespacedName{Name: r.pandaCluster.Name + baseSuffix, Namespace: r.pandaCluster.Namespace}
+	return ConfigMapKey(r.pandaCluster)
+}
+
+func ConfigMapKey(pandaCluster *redpandav1alpha1.Cluster) types.NamespacedName {
+	return types.NamespacedName{Name: pandaCluster.Name + baseSuffix, Namespace: pandaCluster.Namespace}
 }
 
 func (r *ConfigMapResource) Kind() string {
