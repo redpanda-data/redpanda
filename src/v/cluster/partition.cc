@@ -29,7 +29,10 @@ partition::partition(consensus_ptr r)
           clusterlog, _raft.get(), config::shard_local_cfg());
     } else if (_raft->log_config().is_collectable()) {
         _nop_stm = std::make_unique<raft::log_eviction_stm>(
-          _raft.get(), clusterlog, _as);
+          _raft.get(),
+          clusterlog,
+          ss::make_lw_shared<storage::stm_manager>(),
+          _as);
     }
 }
 

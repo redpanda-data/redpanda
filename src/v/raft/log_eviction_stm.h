@@ -10,8 +10,10 @@
  */
 
 #pragma once
+#include "config/configuration.h"
 #include "model/fundamental.h"
 #include "seastarx.h"
+#include "storage/types.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/gate.hh>
@@ -27,7 +29,11 @@ class consensus;
  */
 class log_eviction_stm {
 public:
-    log_eviction_stm(consensus*, ss::logger&, ss::abort_source&);
+    log_eviction_stm(
+      consensus*,
+      ss::logger&,
+      ss::lw_shared_ptr<storage::stm_manager>,
+      ss::abort_source&);
 
     ss::future<> start();
 
@@ -39,6 +45,7 @@ private:
 
     consensus* _raft;
     ss::logger& _logger;
+    ss::lw_shared_ptr<storage::stm_manager> _stm_manager;
     ss::abort_source& _as;
     ss::gate _gate;
     model::offset _previous_eviction_offset;

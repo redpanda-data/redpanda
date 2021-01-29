@@ -179,7 +179,10 @@ struct raft_node {
         consensus->start().get0();
         if (log->config().is_collectable()) {
             _nop_stm = std::make_unique<raft::log_eviction_stm>(
-              consensus.get(), tstlog, _as);
+              consensus.get(),
+              tstlog,
+              ss::make_lw_shared<storage::stm_manager>(),
+              _as);
             _nop_stm->start().get0();
         }
     }

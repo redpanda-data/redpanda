@@ -17,9 +17,13 @@
 namespace raft {
 
 log_eviction_stm::log_eviction_stm(
-  consensus* raft, ss::logger& logger, ss::abort_source& as)
+  consensus* raft,
+  ss::logger& logger,
+  ss::lw_shared_ptr<storage::stm_manager> stm_manager,
+  ss::abort_source& as)
   : _raft(raft)
   , _logger(logger)
+  , _stm_manager(stm_manager)
   , _as(as) {}
 
 ss::future<> log_eviction_stm::start() {
