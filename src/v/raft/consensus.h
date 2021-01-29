@@ -188,10 +188,8 @@ public:
      *      d. cache the term
      *      e. continue with step #1
      */
-    ss::future<result<replicate_result>> replicate(
-      model::term_id expected_term,
-      model::record_batch_reader&&,
-      replicate_options);
+    ss::future<result<replicate_result>>
+    replicate(model::term_id, model::record_batch_reader&&, replicate_options);
 
     ss::future<model::record_batch_reader> make_reader(
       storage::log_reader_config,
