@@ -565,6 +565,7 @@ ss::future<> disk_log_impl::new_segment(
                 }
                 _segs.add(std::move(h));
                 _probe.segment_created();
+                return _stm_manager->make_snapshot();
             });
       });
 }
