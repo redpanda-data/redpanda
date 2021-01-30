@@ -18,6 +18,10 @@
 #include "ssx/future-util.h"
 #include "test_utils/fixture.h"
 
+#include <seastar/core/when_all.hh>
+
+#include <boost/test/tools/old/interface.hpp>
+
 class script_manager_service_fixture : public coproc_test_fixture {
 public:
     // This function ensures that the internals of the coproc::active_mappings
@@ -202,4 +206,48 @@ FIXTURE_TEST(test_coproc_topics, script_manager_service_fixture) {
     BOOST_CHECK_EQUAL(disable_acks2.acks.size(), 1);
     BOOST_CHECK_EQUAL(disable_acks2.acks[0], drc::success);
     BOOST_CHECK(coproc_validate().get0());
+}
+
+/// Ensure that double deletions don't cause redpanda to crash
+FIXTURE_TEST(test_coproc_double_delete, script_manager_service_fixture) {
+    startup({{make_ts("ABC"), 1}}).get();
+
+    using result_t = result<rpc::client_context<coproc::disable_copros_reply>>;
+    auto delete_and_verify = [this]() {
+        return deregister_coprocessors(sm_client(), {79})
+          .then([this](result_t first_reply) {
+              BOOST_CHECK(first_reply);
+              const auto& acks = first_reply.value().data.acks;
+              BOOST_CHECK_EQUAL(acks.size(), 1);
+              return acks[0];
+          });
+    };
+
+    for (auto i = 0; i < 50; ++i) {
+        /// 1. Register a coprocessor with id #79
+        const auto resp = register_coprocessors(
+                            sm_client(), {make_enable_req(79, {{"ABC", l}})})
+                            .get0()
+                            .value()
+                            .data;
+        BOOST_CHECK_EQUAL(resp.acks.size(), 1);
+        BOOST_CHECK_EQUAL(resp.acks[0].first, coproc::script_id(79));
+        BOOST_CHECK_EQUAL(resp.acks[0].first, coproc::script_id(79));
+        const auto& first_acks = resp.acks[0].second;
+        BOOST_CHECK_EQUAL(first_acks[0], erc::success);
+
+        /// 2. Issue a bunch of commands to remove copro #79 concurrently
+        std::vector<ss::future<drc>> removals;
+        removals.reserve(20);
+        for (auto j = 0; j < 20; ++j) {
+            removals.push_back(delete_and_verify());
+        }
+        const auto values
+          = ss::when_all_succeed(removals.begin(), removals.end()).get0();
+        const auto one_removal = std::accumulate(
+          values.cbegin(), values.cend(), size_t(0), [](size_t acc, drc v) {
+              return acc + ((v == drc::success) ? 1 : 0);
+          });
+        BOOST_CHECK_EQUAL(one_removal, 1);
+    }
 }
