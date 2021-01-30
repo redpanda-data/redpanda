@@ -87,7 +87,7 @@ private:
     shared_script_resources _shared_res;
 
     /// Main datastructure containing all active script_contexts
-    std::map<script_id, script_context> _scripts;
+    std::map<script_id, std::unique_ptr<script_context>> _scripts;
 
     /// Referencable cache of active ntps
     ntp_context_cache _ntps;
