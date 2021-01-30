@@ -21,7 +21,7 @@
 #include <seastar/net/inet_address.hh>
 #include <seastar/net/socket_defs.hh>
 
-#include <map>
+#include <absl/container/node_hash_map.h>
 
 namespace coproc {
 /**
@@ -73,7 +73,7 @@ public:
     /**
      * @returns true if a matching ntp exists on 'this' shard
      */
-    bool ntp_is_registered(model::ntp);
+    bool ntp_is_registered(const model::ntp&);
 
 private:
     void do_add_source(
@@ -87,7 +87,7 @@ private:
     shared_script_resources _shared_res;
 
     /// Main datastructure containing all active script_contexts
-    std::map<script_id, script_context> _scripts;
+    absl::node_hash_map<script_id, std::unique_ptr<script_context>> _scripts;
 
     /// Referencable cache of active ntps
     ntp_context_cache _ntps;

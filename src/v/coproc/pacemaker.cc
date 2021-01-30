@@ -18,6 +18,8 @@
 #include "rpc/types.h"
 #include "ssx/future-util.h"
 
+#include <seastar/core/coroutine.hh>
+
 #include <absl/container/flat_hash_set.h>
 
 #include <algorithm>
@@ -84,12 +86,11 @@ std::vector<errc> pacemaker::add_source(
         /// Reasons are returned in the 'acks' structure
         return acks;
     }
-    const auto& [itr, success] = _scripts.emplace(
-      std::piecewise_construct,
-      std::forward_as_tuple(id),
-      std::forward_as_tuple(id, _shared_res, std::move(ctxs)));
+    auto script_ctx = std::make_unique<script_context>(
+      id, _shared_res, std::move(ctxs));
+    const auto& [itr, success] = _scripts.emplace(id, std::move(script_ctx));
     vassert(success, "Double coproc insert detected");
-    (void)itr->second.start();
+    (void)itr->second->start();
     return acks;
 }
 
@@ -133,7 +134,8 @@ void pacemaker::do_add_source(
             }
             vassert(
               ntp_ctx->offsets.emplace(id, ntp_context::offset_pair()).second,
-              "Script id expected to not exist: {}, id");
+              "Script id expected to not exist: {}",
+              id);
             ctxs.emplace(ntp, ntp_ctx);
         }
         acks.push_back(errc::success);
@@ -141,33 +143,27 @@ void pacemaker::do_add_source(
 }
 
 ss::future<errc> pacemaker::remove_source(script_id id) {
-    auto found = _scripts.find(id);
-    if (found == _scripts.end()) {
-        return ss::make_ready_future<errc>(errc::script_id_does_not_exist);
+    auto handle = _scripts.extract(id);
+    if (handle.empty()) {
+        co_return errc::script_id_does_not_exist;
     }
-    script_context& ctx = found->second;
-    return ctx.shutdown()
-      .then([this] {
-          /// shutdown explicity clears out strong references to ntp
-          /// contexts. It is known to remove them from the pacemakers cache
-          /// when the use_count() == 1, as there are then known to be no
-          /// more subscribing scripts for the ntp
-          absl::erase_if(_ntps, [](const ntp_context_cache::value_type& p) {
-              return p.second.use_count() == 1;
-          });
-      })
-      .then([this, found] {
-          /// Finally, remove the script_context itself
-          _scripts.erase(found);
-          return errc::success;
-      });
+    std::unique_ptr<script_context> ctx = std::move(handle.mapped());
+    co_await ctx->shutdown();
+    /// shutdown explicity clears out strong references to ntp
+    /// contexts. It is known to remove them from the pacemakers cache
+    /// when the use_count() == 1, as there are then known to be no
+    /// more subscribing scripts for the ntp
+    absl::erase_if(_ntps, [](const ntp_context_cache::value_type& p) {
+        return p.second.use_count() == 1;
+    });
+    co_return errc::success;
 }
 
 bool pacemaker::local_script_id_exists(script_id id) {
     return _scripts.find(id) != _scripts.end();
 }
 
-bool pacemaker::ntp_is_registered(model::ntp ntp) {
+bool pacemaker::ntp_is_registered(const model::ntp& ntp) {
     auto found = _ntps.find(ntp);
     return found != _ntps.end() && found->second;
 }
