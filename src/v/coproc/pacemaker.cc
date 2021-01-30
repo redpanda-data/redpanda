@@ -133,7 +133,8 @@ void pacemaker::do_add_source(
             }
             vassert(
               ntp_ctx->offsets.emplace(id, ntp_context::offset_pair()).second,
-              "Script id expected to not exist: {}, id");
+              "Script id expected to not exist: {}",
+              id);
             ctxs.emplace(ntp, ntp_ctx);
         }
         acks.push_back(errc::success);
