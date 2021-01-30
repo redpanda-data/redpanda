@@ -85,7 +85,7 @@ func NewStartCommand(
 		seeds		[]string
 		kafkaAddr	string
 		rpcAddr		string
-		advertisedKafka	string
+		advertisedKafka	[]string
 		advertisedRPC	string
 		installDirFlag	string
 		timeout		time.Duration
@@ -154,11 +154,14 @@ func NewStartCommand(
 				conf.Redpanda.RPCServer = *rpcServer
 			}
 
-			advertisedKafka = stringOr(
+			advertisedKafka = stringSliceOr(
 				advertisedKafka,
-				os.Getenv("REDPANDA_ADVERTISE_KAFKA_ADDRESS"),
+				strings.Split(
+					os.Getenv("REDPANDA_ADVERTISE_KAFKA_ADDRESS"),
+					",",
+				),
 			)
-			advKafkaApi, err := parseAddress(
+			advKafkaApi, err := parseAddresses(
 				advertisedKafka,
 				config.Default().Redpanda.KafkaApi.Port,
 			)
@@ -262,11 +265,11 @@ func NewStartCommand(
 		"",
 		"The RPC address to bind to (<host>:<port>)",
 	)
-	command.Flags().StringVar(
+	command.Flags().StringSliceVar(
 		&advertisedKafka,
 		"advertise-kafka-addr",
-		"",
-		"The Kafka address to advertise (<host>:<port>)",
+		[]string{},
+		"The list of Kafka addresses to advertise (<host>:<port>)",
 	)
 	command.Flags().StringVar(
 		&advertisedRPC,
@@ -726,6 +729,21 @@ func parseAddress(addr string, defaultPort int) (*config.SocketAddress, error) {
 	}, nil
 }
 
+func parseAddresses(
+	addrs []string, defaultPort int,
+) ([]config.SocketAddress, error) {
+	as := make([]config.SocketAddress, 0, len(addrs))
+	for _, addr := range addrs {
+		a, err := parseAddress(addr, defaultPort)
+		if err != nil {
+			return nil, err
+		}
+		if a != nil {
+			as = append(as, *a)
+		}
+	}
+	return as, nil
+}
 func sendEnv(
 	fs afero.Fs,
 	mgr config.Manager,
@@ -763,6 +781,13 @@ func sendEnv(
 
 func stringOr(a, b string) string {
 	if a != "" {
+		return a
+	}
+	return b
+}
+
+func stringSliceOr(a, b []string) []string {
+	if a != nil && len(a) != 0 {
 		return a
 	}
 	return b

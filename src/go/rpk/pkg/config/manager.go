@@ -29,6 +29,10 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+type configConverter interface {
+	ToGeneric() (*Config, error)
+}
+
 type Manager interface {
 	// Reads the config from the given path
 	Read(path string) (*Config, error)
@@ -368,8 +372,15 @@ func recover(fs afero.Fs, backup, path string, err error) error {
 }
 
 func unmarshal(v *viper.Viper) (*Config, error) {
-	conf := &Config{}
-	err := v.Unmarshal(conf)
+	v2214conf := &v2114Config{}
+	err := v.Unmarshal(v2214conf)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"Couldn't parse config as v21.1.4: %w",
+			err,
+		)
+	}
+	conf, err := v2214conf.ToGeneric()
 	if err != nil {
 		return nil, err
 	}
