@@ -32,13 +32,6 @@ public:
     const ss::sstring& host() const { return _host; }
     uint16_t port() const { return _port; }
 
-    ss::future<ss::socket_address> resolve() const {
-        return ss::net::inet_address::find(_host).then(
-          [port = _port](ss::net::inet_address i_a) {
-              return ss::socket_address(i_a, port);
-          });
-    }
-
     bool operator==(const unresolved_address& other) const {
         return _host == other._host && _port == other._port;
     }

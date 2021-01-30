@@ -39,7 +39,8 @@ public:
     http::client make_client() {
         rpc::base_transport::configuration transport_cfg;
         transport_cfg.server_addr
-          = pandaproxy::shard_local_cfg().pandaproxy_api().resolve().get();
+          = rpc::resolve_dns(pandaproxy::shard_local_cfg().pandaproxy_api())
+              .get();
         return http::client(transport_cfg);
     }
 

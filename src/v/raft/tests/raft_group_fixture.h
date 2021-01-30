@@ -21,6 +21,7 @@
 #include "random/generators.h"
 #include "rpc/backoff_policy.h"
 #include "rpc/connection_cache.h"
+#include "rpc/dns.h"
 #include "rpc/server.h"
 #include "rpc/simple_protocol.h"
 #include "rpc/types.h"
@@ -145,7 +146,7 @@ struct raft_node {
         tstlog.info("Starting node {} stack ", id());
         // start rpc
         rpc::server_configuration scfg("raft_test_rpc");
-        scfg.addrs.emplace_back(broker.rpc_address().resolve().get0());
+        scfg.addrs.emplace_back(rpc::resolve_dns(broker.rpc_address()).get());
         scfg.max_service_memory_per_core = 1024 * 1024 * 1024;
         scfg.credentials = nullptr;
         scfg.disable_metrics = rpc::metrics_disabled::yes;
@@ -262,8 +263,8 @@ struct raft_node {
                     if (c.contains(broker.id())) {
                         return seastar::make_ready_future<>();
                     }
-                    return broker.rpc_address().resolve().then(
-                      [this, &broker, &c](ss::socket_address addr) {
+                    return rpc::resolve_dns(broker.rpc_address())
+                      .then([this, &broker, &c](ss::socket_address addr) {
                           return c.emplace(
                             broker.id(),
                             {.server_addr = addr,
