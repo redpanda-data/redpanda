@@ -73,7 +73,7 @@ public:
     /**
      * @returns true if a matching ntp exists on 'this' shard
      */
-    bool ntp_is_registered(model::ntp);
+    bool ntp_is_registered(const model::ntp&);
 
 private:
     void do_add_source(
