@@ -22,11 +22,14 @@ v_cc_library(
     service.cc
     script_context.cc
     pacemaker.cc
+    wasm_event.cc
+    wasm_event_listener.cc
   DEPS
     v::rpc
     v::model
     v::storage
     v::reflection
+    v::kafka_client
     coproc_mgmnt_gen
     coproc_engine_gen
   )

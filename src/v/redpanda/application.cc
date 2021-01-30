@@ -146,7 +146,8 @@ ss::app_template application::setup_app_template() {
 }
 
 void application::hydrate_config(const po::variables_map& cfg) {
-    auto buf = read_fully(cfg["redpanda-cfg"].as<std::string>()).get0();
+    std::filesystem::path cfg_path(cfg["redpanda-cfg"].as<std::string>());
+    auto buf = read_fully(cfg_path).get0();
     // see https://github.com/jbeder/yaml-cpp/issues/765
     auto workaround = ss::uninitialized_string(buf.size_bytes());
     auto in = iobuf::iterator_consumer(buf.cbegin(), buf.cend());
@@ -612,6 +613,17 @@ void application::start() {
     _kafka_server.invoke_on_all(&rpc::server::start).get();
     vlog(
       _log.info, "Started Kafka API server listening at {}", conf.kafka_api());
+
+    /// Start client listening for events on the internal coprocessor topic
+    if (coproc_enabled()) {
+        /// Temporarily disable retries for the new client until we create a
+        /// more granular way to configure this per client or per request.
+        kafka::client::shard_local_cfg().retries.set_value(size_t(0));
+        construct_single_service(
+          _wasm_event_listener,
+          config::shard_local_cfg().data_directory.value().path);
+        _wasm_event_listener->start().get();
+    }
 
     vlog(_log.info, "Successfully started Redpanda!");
     syschecks::systemd_notify_ready().get();

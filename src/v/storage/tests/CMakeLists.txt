@@ -100,6 +100,15 @@ rp_test(
   LIBRARIES v::seastar_testing_main v::storage_test_utils
   LABELS storage
 )
+
+rp_test(
+  UNIT_TEST
+  BINARY_NAME record_batch_builder_test
+  SOURCES record_batch_builder_test.cc
+  LIBRARIES v::seastar_testing_main v::storage_test_utils
+  LABELS storage
+)
+
 rp_test(
   UNIT_TEST
   BINARY_NAME disk_log_builder_test

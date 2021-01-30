@@ -18,7 +18,6 @@
 #include "reflection/adl.h"
 #include "resource_mgmt/io_priority.h"
 #include "storage/record_batch_builder.h"
-#include "utils/state_crc_file.h"
 #include "vassert.h"
 
 #include <seastar/core/abort_source.hh>

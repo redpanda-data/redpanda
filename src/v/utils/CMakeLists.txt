@@ -5,7 +5,7 @@ v_cc_library(
   SRCS
     hdr_hist.cc
     human.cc
-    state_crc_file.cc
+    file_io.cc
     base64.cc
   DEPS
     Seastar::seastar

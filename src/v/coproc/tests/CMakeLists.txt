@@ -13,6 +13,7 @@ v_cc_library(
     utils/supervisor.cc
     utils/coproc_test_fixture.cc
     utils/router_test_fixture.cc
+    utils/wasm_event_generator.cc
   DEPS
     v::coproc v::storage_test_utils v::application
   )
@@ -30,6 +31,17 @@ rp_test(
   UNIT_TEST
   BINARY_NAME router_unit_tests
   SOURCES router_test.cc
+  DEFINITIONS BOOST_TEST_DYN_LINK
+  LIBRARIES v::seastar_testing_main v::coproc_test_utils
+  LABELS coproc
+  )
+
+rp_test(
+  UNIT_TEST
+  BINARY_NAME wasm_event_tests
+  SOURCES
+    wasm_event_tests.cc
+    wasm_event_listener_tests.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES v::seastar_testing_main v::coproc_test_utils
   LABELS coproc

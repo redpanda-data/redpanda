@@ -19,10 +19,7 @@
 #include "config/configuration.h"
 #include "coproc/pacemaker.h"
 #include "coproc/service.h"
-#include "kafka/server/coordinator_ntp_mapper.h"
-#include "kafka/server/fetch_session_cache.h"
-#include "kafka/server/group_router.h"
-#include "kafka/server/quota_manager.h"
+#include "coproc/wasm_event_listener.h"
 #include "raft/group_manager.h"
 #include "resource_mgmt/cpu_scheduling.h"
 #include "resource_mgmt/memory_groups.h"
@@ -106,6 +103,7 @@ private:
     scheduling_groups _scheduling_groups;
     ss::logger _log{"redpanda::main"};
 
+    std::unique_ptr<coproc::wasm_event_listener> _wasm_event_listener;
     ss::sharded<rpc::server> _coproc_rpc;
     ss::sharded<rpc::connection_cache> _raft_connection_cache;
     ss::sharded<kafka::group_manager> _group_manager;
