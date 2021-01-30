@@ -113,8 +113,7 @@ class RedpandaService(Service):
     def find_binary(self, name):
         rp_install_path_root = self._context.globals.get(
             "rp_install_path_root", None)
-
-        return f"{rp_install_path_root}/redpanda/bin/{name}"
+        return f"{rp_install_path_root}/bin/{name}"
 
     def stop_node(self, node):
         pids = self.pids(node)

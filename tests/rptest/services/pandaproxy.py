@@ -87,7 +87,7 @@ class PandaProxyService(Service):
         node.account.remove(f"{PandaProxyService.CONFIG_FILE}")
 
     def find_binary(self, name):
-        bin_path = f"{self._rp_install_path_root}/pandaproxy/bin/{name}"
+        bin_path = f"{self._rp_install_path_root}/bin/{name}"
         return bin_path
 
     def pids(self, node):
