@@ -44,10 +44,7 @@ class PandaProxyService(Service):
         node.account.mkdirs(PandaProxyService.PERSISTENT_ROOT)
         node.account.mkdirs(os.path.dirname(PandaProxyService.CONFIG_FILE))
 
-        platform = self._context.globals.get("platform", "docker-compose")
-
-        if platform == "docker-compose":
-            self.write_conf_file(node)
+        self.write_conf_file(node)
 
         cmd = "nohup {} ".format(self.find_binary("pandaproxy"))
         cmd += "--pandaproxy-cfg {} ".format(PandaProxyService.CONFIG_FILE)
