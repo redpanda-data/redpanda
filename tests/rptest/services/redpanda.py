@@ -84,10 +84,7 @@ class RedpandaService(Service):
         node.account.mkdirs(RedpandaService.DATA_DIR)
         node.account.mkdirs(os.path.dirname(RedpandaService.CONFIG_FILE))
 
-        platform = self._context.globals.get("platform", "docker-compose")
-
-        if platform == "docker-compose":
-            self.write_conf_file(node, override_cfg_params)
+        self.write_conf_file(node, override_cfg_params)
 
         cmd = (f"nohup {self.find_binary('redpanda')}"
                f" --redpanda-cfg {RedpandaService.CONFIG_FILE}"
@@ -113,8 +110,7 @@ class RedpandaService(Service):
     def find_binary(self, name):
         rp_install_path_root = self._context.globals.get(
             "rp_install_path_root", None)
-
-        return f"{rp_install_path_root}/redpanda/bin/{name}"
+        return f"{rp_install_path_root}/bin/{name}"
 
     def stop_node(self, node):
         pids = self.pids(node)

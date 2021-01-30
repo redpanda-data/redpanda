@@ -44,10 +44,7 @@ class PandaProxyService(Service):
         node.account.mkdirs(PandaProxyService.PERSISTENT_ROOT)
         node.account.mkdirs(os.path.dirname(PandaProxyService.CONFIG_FILE))
 
-        platform = self._context.globals.get("platform", "docker-compose")
-
-        if platform == "docker-compose":
-            self.write_conf_file(node)
+        self.write_conf_file(node)
 
         cmd = "nohup {} ".format(self.find_binary("pandaproxy"))
         cmd += "--pandaproxy-cfg {} ".format(PandaProxyService.CONFIG_FILE)
@@ -87,7 +84,7 @@ class PandaProxyService(Service):
         node.account.remove(f"{PandaProxyService.CONFIG_FILE}")
 
     def find_binary(self, name):
-        bin_path = f"{self._rp_install_path_root}/pandaproxy/bin/{name}"
+        bin_path = f"{self._rp_install_path_root}/bin/{name}"
         return bin_path
 
     def pids(self, node):
