@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -703,27 +704,42 @@ func parseAddress(addr string, defaultPort int) (*config.SocketAddress, error) {
 	if addr == "" {
 		return nil, nil
 	}
-	hostPort := strings.Split(addr, ":")
-	host := strings.Trim(hostPort[0], " ")
-	if host == "" {
-		return nil, fmt.Errorf("Empty host in address '%s'", addr)
-	}
-	if len(hostPort) != 2 {
-		// It's just a hostname with no port. Use the default port.
-		return &config.SocketAddress{
-			Address:	strings.Trim(hostPort[0], " "),
-			Port:		defaultPort,
-		}, nil
-	}
-	// It's a host:port combo.
-	port, err := strconv.Atoi(strings.Trim(hostPort[1], " "))
+
+	_, hostname, port, err := parseURL(addr)
 	if err != nil {
-		return nil, fmt.Errorf("Port must be an int")
+		return nil, err
 	}
+	if port == 0 {
+		port = defaultPort
+	}
+
 	return &config.SocketAddress{
-		Address:	host,
+		Address:	hostname,
 		Port:		port,
 	}, nil
+}
+
+func parseURL(addr string) (scheme, hostname string, port int, err error) {
+	if strings.HasPrefix(addr, ":") {
+		return "", "", 0, errors.New("missing hostname")
+	}
+	root := "//"
+	if !strings.Contains(addr, root) {
+		addr = fmt.Sprintf("%s%s", root, addr)
+	}
+	u, err := url.Parse(addr)
+	if err != nil {
+		return "", "", 0, err
+	}
+	if u.Port() != "" {
+		port, err = strconv.Atoi(u.Port())
+		if err != nil {
+			return "", "", 0, err
+		}
+	}
+	scheme = u.Scheme
+	hostname = u.Hostname()
+	return scheme, hostname, port, nil
 }
 
 func sendEnv(
