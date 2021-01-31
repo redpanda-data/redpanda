@@ -124,7 +124,7 @@ func TestParseSeeds(t *testing.T) {
 		{
 			name:		"it should fail if the host is empty",
 			arg:		[]string{" :1234"},
-			expectedErrMsg:	"Couldn't parse seed ' :1234': Empty host in address ' :1234'",
+			expectedErrMsg:	"Couldn't parse seed ' :1234': parse // :1234: invalid character \" \" in host name",
 		},
 	}
 
@@ -329,13 +329,13 @@ func TestStartCommand(t *testing.T) {
 		args: []string{
 			"-s", "goodhost.com:54897,:33145",
 		},
-		expectedErrMsg:	"Couldn't parse seed ':33145': Empty host in address ':33145'",
+		expectedErrMsg:	"Couldn't parse seed ':33145': missing hostname",
 	}, {
 		name:	"it should fail if the port isn't an int",
 		args: []string{
 			"-s", "host:port",
 		},
-		expectedErrMsg:	"Couldn't parse seed 'host:port': Port must be an int",
+		expectedErrMsg:	"Couldn't parse seed 'host:port': parse //host:port: invalid port \":port\" after host",
 	}, {
 		name:	"it should parse the --rpc-addr and persist it",
 		args: []string{
@@ -384,7 +384,7 @@ func TestStartCommand(t *testing.T) {
 			"--install-dir", "/var/lib/redpanda",
 			"--rpc-addr", "host:nonnumericport",
 		},
-		expectedErrMsg:	"Port must be an int",
+		expectedErrMsg:	"parse //host:nonnumericport: invalid port \":nonnumericport\" after host",
 	}, {
 		name:	"if --rpc-addr wasn't passed, it should fall back to REDPANDA_RPC_ADDRESS and persist it",
 		args: []string{
@@ -489,7 +489,7 @@ func TestStartCommand(t *testing.T) {
 			"--install-dir", "/var/lib/redpanda",
 			"--kafka-addr", "host:nonnumericport",
 		},
-		expectedErrMsg:	"Port must be an int",
+		expectedErrMsg:	"parse //host:nonnumericport: invalid port \":nonnumericport\" after host",
 	}, {
 		name:	"if --kafka-addr wasn't passed, it should fall back to REDPANDA_KAFKA_ADDRESS and persist it",
 		args: []string{
@@ -594,7 +594,7 @@ func TestStartCommand(t *testing.T) {
 			"--install-dir", "/var/lib/redpanda",
 			"--advertise-kafka-addr", "host:nonnumericport",
 		},
-		expectedErrMsg:	"Port must be an int",
+		expectedErrMsg:	"parse //host:nonnumericport: invalid port \":nonnumericport\" after host",
 	}, {
 		name:	"if --advertise-kafka-addr, it should fall back to REDPANDA_ADVERTISE_KAFKA_ADDRESS and persist it",
 		args: []string{
@@ -699,7 +699,7 @@ func TestStartCommand(t *testing.T) {
 			"--install-dir", "/var/lib/redpanda",
 			"--advertise-rpc-addr", "host:nonnumericport",
 		},
-		expectedErrMsg:	"Port must be an int",
+		expectedErrMsg:	"parse //host:nonnumericport: invalid port \":nonnumericport\" after host",
 	}, {
 		name:	"if --advertise-rpc-addr wasn't passed, it should fall back to REDPANDA_ADVERTISE_RPC_ADDRESS and persist it",
 		args: []string{
