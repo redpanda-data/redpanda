@@ -330,10 +330,11 @@ rpk:
 			name:	"shall write a valid config file without advertised_rpc_api",
 			conf: func() *Config {
 				c := getValidConfig()
-				c.Redpanda.AdvertisedKafkaApi = []SocketAddress{{
-					"174.32.64.2",
-					9092,
-				}}
+				c.Redpanda.AdvertisedKafkaApi = []NamedSocketAddress{{
+					Name:	"default", SocketAddress: SocketAddress{
+						"174.32.64.2",
+						9092,
+					}}}
 				return c
 			},
 			wantErr:	false,
@@ -344,6 +345,7 @@ redpanda:
     port: 9644
   advertised_kafka_api:
   - address: 174.32.64.2
+    name: default
     port: 9092
   data_directory: /var/lib/redpanda/data
   developer_mode: false

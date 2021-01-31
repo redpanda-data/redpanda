@@ -170,7 +170,11 @@ func NewStartCommand(
 				return err
 			}
 			if advKafkaApi != nil {
-				conf.Redpanda.AdvertisedKafkaApi = advKafkaApi
+				aka := make([]config.NamedSocketAddress, 0, len(advKafkaApi))
+				for _, a := range advKafkaApi {
+					aka = append(aka, config.NamedSocketAddress{Name: "", SocketAddress: a})
+				}
+				conf.Redpanda.AdvertisedKafkaApi = aka
 			}
 			advertisedRPC = stringOr(
 				advertisedRPC,

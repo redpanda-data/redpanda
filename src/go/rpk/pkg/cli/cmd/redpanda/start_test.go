@@ -556,10 +556,11 @@ func TestStartCommand(t *testing.T) {
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
-			expectedAddr := []config.SocketAddress{{
-				Address:	"192.168.34.32",
-				Port:		33145,
-			}}
+			expectedAddr := []config.NamedSocketAddress{{
+				SocketAddress: config.SocketAddress{
+					Address:	"192.168.34.32",
+					Port:		33145,
+				}}}
 			// Check that the generated config is as expected.
 			require.Exactly(
 				st,
@@ -577,10 +578,11 @@ func TestStartCommand(t *testing.T) {
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
-			expectedAddr := []config.SocketAddress{{
-				Address:	"192.168.34.32",
-				Port:		9092,
-			}}
+			expectedAddr := []config.NamedSocketAddress{{
+				SocketAddress: config.SocketAddress{
+					Address:	"192.168.34.32",
+					Port:		9092,
+				}}}
 			// Check that the generated config is as expected.
 			require.Exactly(
 				st,
@@ -611,10 +613,11 @@ func TestStartCommand(t *testing.T) {
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
-			expectedAddr := []config.SocketAddress{{
-				Address:	"host",
-				Port:		3123,
-			}}
+			expectedAddr := []config.NamedSocketAddress{{
+				SocketAddress: config.SocketAddress{
+					Address:	"host",
+					Port:		3123,
+				}}}
 			// Check that the generated config is as expected.
 			require.Exactly(
 				st,
@@ -630,9 +633,12 @@ func TestStartCommand(t *testing.T) {
 		before: func(fs afero.Fs) error {
 			mgr := config.NewManager(fs)
 			conf := config.Default()
-			conf.Redpanda.AdvertisedKafkaApi = []config.SocketAddress{{
-				Address:	"192.168.33.33",
-				Port:		9892,
+			conf.Redpanda.AdvertisedKafkaApi = []config.NamedSocketAddress{{
+				Name:	"",
+				SocketAddress: config.SocketAddress{
+					Address:	"192.168.33.33",
+					Port:		9892,
+				},
 			}}
 			return mgr.Write(conf)
 		},
@@ -640,10 +646,11 @@ func TestStartCommand(t *testing.T) {
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
-			expectedAddr := []config.SocketAddress{{
-				Address:	"192.168.33.33",
-				Port:		9892,
-			}}
+			expectedAddr := []config.NamedSocketAddress{{
+				SocketAddress: config.SocketAddress{
+					Address:	"192.168.33.33",
+					Port:		9892,
+				}}}
 			// Check that the generated config is as expected.
 			require.Exactly(
 				st,
