@@ -128,10 +128,10 @@ func TestSet(t *testing.T) {
 		  "address": "192.168.54.2"
 		}`,
 			format:	"json",
-			expected: map[string]interface{}{
+			expected: []map[string]interface{}{{
 				"address":	"192.168.54.2",
 				"port":		9092,
-			},
+			}},
 		},
 		{
 			name:		"it should fail if the new value is invalid",
@@ -201,7 +201,8 @@ func TestDefault(t *testing.T) {
 		Redpanda: RedpandaConfig{
 			Directory:	"/var/lib/redpanda/data",
 			RPCServer:	SocketAddress{"0.0.0.0", 33145},
-			KafkaApi:	SocketAddress{"0.0.0.0", 9092},
+			KafkaApi: []NamedSocketAddress{{
+				Name:	"", SocketAddress: SocketAddress{"0.0.0.0", 9092}}},
 			AdminApi:	SocketAddress{"0.0.0.0", 9644},
 			Id:		0,
 			DeveloperMode:	true,
@@ -293,8 +294,8 @@ redpanda:
   data_directory: /var/lib/redpanda/data
   developer_mode: false
   kafka_api:
-    address: 0.0.0.0
-    port: 9092
+    - address: 0.0.0.0
+      port: 9092
   node_id: 0
   rpc_server:
     address: 0.0.0.0
@@ -350,8 +351,8 @@ redpanda:
   data_directory: /var/lib/redpanda/data
   developer_mode: false
   kafka_api:
-    address: 0.0.0.0
-    port: 9092
+    - address: 0.0.0.0
+      port: 9092
   node_id: 0
   rpc_server:
     address: 0.0.0.0
@@ -399,8 +400,8 @@ redpanda:
   data_directory: /var/lib/redpanda/data
   developer_mode: false
   kafka_api:
-    address: 0.0.0.0
-    port: 9092
+    - address: 0.0.0.0
+      port: 9092
   node_id: 0
   rpc_server:
     address: 0.0.0.0
@@ -452,8 +453,8 @@ redpanda:
   data_directory: /var/lib/redpanda/data
   developer_mode: false
   kafka_api:
-    address: 0.0.0.0
-    port: 9092
+    - address: 0.0.0.0
+      port: 9092
   node_id: 0
   rpc_server:
     address: 0.0.0.0
@@ -842,7 +843,7 @@ func TestCheckConfig(t *testing.T) {
 			name:	"shall return an error when the Kafka API port is 0",
 			conf: func() *Config {
 				c := getValidConfig()
-				c.Redpanda.KafkaApi.Port = 0
+				c.Redpanda.KafkaApi[0].Port = 0
 				return c
 			},
 			expected:	[]string{"redpanda.kafka_api.port can't be 0"},
@@ -851,7 +852,7 @@ func TestCheckConfig(t *testing.T) {
 			name:	"shall return an error when the Kafka API address is empty",
 			conf: func() *Config {
 				c := getValidConfig()
-				c.Redpanda.KafkaApi.Address = ""
+				c.Redpanda.KafkaApi[0].Address = ""
 				return c
 			},
 			expected:	[]string{"redpanda.kafka_api.address can't be empty"},

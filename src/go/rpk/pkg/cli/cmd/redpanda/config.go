@@ -118,7 +118,7 @@ func bootstrap(mgr config.Manager) *cobra.Command {
 			}
 			conf.Redpanda.Id = id
 			conf.Redpanda.RPCServer.Address = ownIp.String()
-			conf.Redpanda.KafkaApi.Address = ownIp.String()
+			conf.Redpanda.KafkaApi[0].Address = ownIp.String()
 			conf.Redpanda.AdminApi.Address = ownIp.String()
 			conf.Redpanda.SeedServers = []config.SeedServer{}
 			seeds := []config.SeedServer{}

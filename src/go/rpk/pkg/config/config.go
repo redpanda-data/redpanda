@@ -86,10 +86,10 @@ func defaultMap() map[string]interface{} {
 				"address":	"0.0.0.0",
 				"port":		33145,
 			},
-			"kafka_api": map[string]interface{}{
+			"kafka_api": []interface{}{map[string]interface{}{
 				"address":	"0.0.0.0",
 				"port":		9092,
-			},
+			}},
 			"admin": map[string]interface{}{
 				"address":	"0.0.0.0",
 				"port":		9644,
@@ -245,7 +245,7 @@ func checkRedpandaConfig(v *viper.Viper) []error {
 				fmt.Errorf("%s missing", key),
 			)
 		} else {
-			socket := &SocketAddress{}
+			socket := &NamedSocketAddress{}
 			err := v.UnmarshalKey(key, socket)
 			if err != nil {
 				errs = append(
@@ -255,7 +255,7 @@ func checkRedpandaConfig(v *viper.Viper) []error {
 			} else {
 				errs = append(
 					errs,
-					checkSocketAddress(*socket, key)...,
+					checkSocketAddress(*&socket.SocketAddress, key)...,
 				)
 			}
 		}
@@ -312,11 +312,15 @@ func checkRpkConfig(v *viper.Viper) []error {
 }
 
 func toMap(conf *Config) (map[string]interface{}, error) {
+	fmt.Println(conf)
+
 	mapConf := make(map[string]interface{})
 	bs, err := yaml.Marshal(conf)
+	fmt.Println(string(bs))
 	if err != nil {
 		return mapConf, err
 	}
 	err = yaml.Unmarshal(bs, &mapConf)
+	fmt.Println(conf)
 	return mapConf, err
 }

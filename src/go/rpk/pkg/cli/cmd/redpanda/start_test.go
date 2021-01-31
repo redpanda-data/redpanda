@@ -525,10 +525,11 @@ func TestStartCommand(t *testing.T) {
 		before: func(fs afero.Fs) error {
 			mgr := config.NewManager(fs)
 			conf := config.Default()
-			conf.Redpanda.KafkaApi = config.SocketAddress{
-				Address:	"192.168.33.33",
-				Port:		9892,
-			}
+			conf.Redpanda.KafkaApi = []config.NamedSocketAddress{{
+				SocketAddress: config.SocketAddress{
+					Address:	"192.168.33.33",
+					Port:		9892,
+				}}}
 			return mgr.Write(conf)
 		},
 		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {

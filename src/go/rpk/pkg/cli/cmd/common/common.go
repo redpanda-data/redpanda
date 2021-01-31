@@ -130,7 +130,7 @@ func DeduceBrokers(
 				addr := fmt.Sprintf(
 					"%s:%d",
 					b.Host.Address,
-					conf.Redpanda.KafkaApi.Port,
+					b.Host.Port,
 				)
 				bs = append(bs, addr)
 			}
@@ -138,8 +138,8 @@ func DeduceBrokers(
 		// Add the current node's Kafka addr.
 		selfAddr := fmt.Sprintf(
 			"%s:%d",
-			conf.Redpanda.KafkaApi.Address,
-			conf.Redpanda.KafkaApi.Port,
+			conf.Redpanda.KafkaApi[0].Address,
+			conf.Redpanda.KafkaApi[0].Port,
 		)
 		bs = append(bs, selfAddr)
 		log.Debugf(

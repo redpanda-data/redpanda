@@ -265,8 +265,8 @@ func getKafkaInfo(
 	kInfo := kafkaInfo{}
 	addr := fmt.Sprintf(
 		"%s:%d",
-		conf.Redpanda.KafkaApi.Address,
-		conf.Redpanda.KafkaApi.Port,
+		conf.Redpanda.KafkaApi[0].Address,
+		conf.Redpanda.KafkaApi[0].Port,
 	)
 	client, err := kafka.InitClientWithConf(&conf, addr)
 	if err != nil {

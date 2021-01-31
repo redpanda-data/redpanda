@@ -147,7 +147,7 @@ func (m *manager) ReadFlat(path string) (map[string]string, error) {
 	keys := m.v.AllKeys()
 	flatMap := map[string]string{}
 	compactAddrFields := []string{
-		"redpanda.kafka_api",
+		"redpanda.kafka_api[0]",
 		"redpanda.rpc_server",
 		"redpanda.admin",
 	}

@@ -85,10 +85,10 @@ func TestSet(t *testing.T) {
   "address": "192.168.54.2"
 }`,
 			args:	[]string{"--format", "json"},
-			expected: map[string]interface{}{
+			expected: []map[string]interface{}{{
 				"address":	"192.168.54.2",
 				"port":		9092,
-			},
+			}},
 		},
 		{
 			name:		"it should fail if the new value is invalid",
@@ -243,7 +243,7 @@ func TestBootstrap(t *testing.T) {
 			conf, err := mgr.Read(configPath)
 			require.NoError(t, err)
 			require.Equal(t, conf.Redpanda.RPCServer.Address, tt.self)
-			require.Equal(t, conf.Redpanda.KafkaApi.Address, tt.self)
+			require.Equal(t, conf.Redpanda.KafkaApi[0].Address, tt.self)
 			require.Equal(t, conf.Redpanda.AdminApi.Address, tt.self)
 			if len(tt.ips) == 1 {
 				require.Equal(

@@ -29,7 +29,7 @@ type v2114RedpandaConfig struct {
 	Directory		string			`yaml:"data_directory" mapstructure:"data_directory" json:"dataDirectory"`
 	RPCServer		v2114SocketAddress	`yaml:"rpc_server" mapstructure:"rpc_server" json:"rpcServer"`
 	AdvertisedRPCAPI	*v2114SocketAddress	`yaml:"advertised_rpc_api,omitempty" mapstructure:"advertised_rpc_api,omitempty" json:"advertisedRpcApi,omitempty"`
-	KafkaApi		v2114SocketAddress	`yaml:"kafka_api" mapstructure:"kafka_api" json:"kafkaApi"`
+	KafkaApi		[]NamedSocketAddress	`yaml:"kafka_api" mapstructure:"kafka_api" json:"kafkaApi"`
 	AdvertisedKafkaApi	[]NamedSocketAddress	`yaml:"advertised_kafka_api,omitempty" mapstructure:"advertised_kafka_api,omitempty" json:"advertisedKafkaApi,omitempty"`
 	KafkaApiTLS		v2114ServerTLS		`yaml:"kafka_api_tls,omitempty" mapstructure:"kafka_api_tls,omitempty" json:"kafkaApiTls"`
 	AdminApi		v2114SocketAddress	`yaml:"admin" mapstructure:"admin" json:"admin"`
@@ -108,12 +108,20 @@ func (rc v2114RedpandaConfig) toGeneric() (*RedpandaConfig, error) {
 		advRpcApi = rc.AdvertisedRPCAPI.toGeneric()
 	}
 
-	kafkaApi := rc.KafkaApi.toGeneric()
-
-	var advKafkaApi []NamedSocketAddress
-	err := mapstructure.Decode(rc.AdvertisedKafkaApi, &advKafkaApi)
+	var kafkaApi []NamedSocketAddress
+	var err error
+	kafkaApi, err = v2114ParsePolymorphicSocketAddress(rc.KafkaApi)
 	if err != nil {
 		return nil, err
+	}
+
+	var advKafkaApi []NamedSocketAddress
+	if rc.AdvertisedKafkaApi != nil {
+		var err error
+		advKafkaApi, err = v2114ParsePolymorphicSocketAddress(rc.AdvertisedKafkaApi)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	kafkaApiTls := rc.KafkaApiTLS.toGeneric()
@@ -131,7 +139,7 @@ func (rc v2114RedpandaConfig) toGeneric() (*RedpandaConfig, error) {
 		Directory:		rc.Directory,
 		RPCServer:		*rpcServer,
 		AdvertisedRPCAPI:	advRpcApi,
-		KafkaApi:		*kafkaApi,
+		KafkaApi:		kafkaApi,
 		AdvertisedKafkaApi:	advKafkaApi,
 		KafkaApiTLS:		kafkaApiTls,
 		AdminApi:		*adminApi,
@@ -206,6 +214,10 @@ func v2114ParsePolymorphicSocketAddress(
 		return v2114ParseSocketAddressMap(m)
 	} else if vs, ok := v.([]interface{}); ok {
 		return v2114ParseSocketAddressList(vs)
+	} else if vs, ok := v.([]NamedSocketAddress); ok {
+		var ss []NamedSocketAddress
+		err := mapstructure.Decode(vs, &ss)
+		return ss, err
 	}
 	panic(fmt.Sprintf("%T", v))
 	return nil, fmt.Errorf(
