@@ -43,6 +43,11 @@ type SocketAddress struct {
 	Port	int	`yaml:"port" mapstructure:"port" json:"port"`
 }
 
+type NamedSocketAddress struct {
+	SocketAddress	`yaml:",inline" mapstructure:",squash"`
+	Name		string	`yaml:"name,omitempty" mapstructure:"name,omitempty" json:"name,omitempty"`
+}
+
 type TLS struct {
 	KeyFile		string	`yaml:"key_file,omitempty" mapstructure:"key_file,omitempty" json:"keyFile"`
 	CertFile	string	`yaml:"cert_file,omitempty" mapstructure:"cert_file,omitempty" json:"certFile"`
