@@ -24,6 +24,7 @@
 
 namespace pp = pandaproxy;
 namespace ppj = pp::json;
+namespace kc = kafka::client;
 
 FIXTURE_TEST(pandaproxy_consumer_group, pandaproxy_test_fixture) {
     using namespace std::chrono_literals;
@@ -104,5 +105,50 @@ FIXTURE_TEST(pandaproxy_consumer_group, pandaproxy_test_fixture) {
           std::move(req_body_buf));
         BOOST_REQUIRE_EQUAL(
           res.headers.result(), boost::beast::http::status::ok);
+    }
+
+    {
+        info("Produce to topic");
+        kc::shard_local_cfg().retries.set_value(size_t(5));
+        const ss::sstring produce_body(R"({
+   "records":[
+      {
+         "value":"dmVjdG9yaXplZA==",
+         "partition":0
+      },
+      {
+         "value":"cGFuZGFwcm94eQ==",
+         "partition":0
+      },
+      {
+         "value":"bXVsdGlicm9rZXI=",
+         "partition":0
+      }
+   ]
+})");
+        auto body = iobuf();
+        body.append(produce_body.data(), produce_body.size());
+        auto res = http_request(client, "/topics/t", std::move(body));
+
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::ok);
+        BOOST_REQUIRE_EQUAL(
+          res.body, R"({"offsets":[{"partition":0,"offset":1}]})");
+    }
+    {
+        info("Consume from topic");
+        auto res = http_request(
+          client,
+          fmt::format(
+            "/consumers/{}/instances/{}/records?timeout={}&max_bytes={}",
+            group_id(),
+            member_id(),
+            "1000",
+            "1000000"));
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::ok);
+        BOOST_REQUIRE_EQUAL(
+          res.body,
+          R"([{"topic":"t","key":"AAD//w==","value":"","partition":0,"offset":0},{"topic":"t","key":"","value":"dmVjdG9yaXplZA==","partition":0,"offset":1},{"topic":"t","key":"","value":"cGFuZGFwcm94eQ==","partition":0,"offset":2},{"topic":"t","key":"","value":"bXVsdGlicm9rZXI=","partition":0,"offset":3}])");
     }
 }
