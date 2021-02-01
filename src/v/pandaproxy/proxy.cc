@@ -34,17 +34,17 @@ std::vector<server::route_t> get_proxy_routes() {
       }});
 
     routes.emplace_back(server::route_t{
-      "get_topics_names",
+      ss::httpd::get_topics_names_json::name,
       ss::httpd::get_topics_names_json::get_topics_names,
       get_topics_names});
 
     routes.emplace_back(server::route_t{
-      "get_topics_records",
+      ss::httpd::get_topics_records_json::name,
       ss::httpd::get_topics_records_json::get_topics_records,
       get_topics_records});
 
     routes.emplace_back(server::route_t{
-      "post_topics_name",
+      ss::httpd::post_topics_name_json::name,
       ss::httpd::post_topics_name_json::post_topics_name,
       post_topics_name});
 
