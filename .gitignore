@@ -27,6 +27,7 @@
 /build
 /dbuild
 bin
+_artifacts/
 /src/go/k8s/testbin/*
 
 # Test binary, build with `go test -c`
