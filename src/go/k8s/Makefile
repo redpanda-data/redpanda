@@ -53,8 +53,8 @@ manifests: controller-gen
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) rbac:roleName=manager-role webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 
 # Run crlfmt against code
-fmt:
-	crlfmt -w -wrap=80 -ignore '_generated.deepcopy.go$$' .
+fmt: crlfmt
+	$(CRLFMT) -w -wrap=80 -ignore '_generated.deepcopy.go$$' .
 
 # Run go vet against code
 vet:
@@ -89,6 +89,11 @@ controller-gen:
 KUTTL = $(shell pwd)/bin/kubectl-kuttl
 kuttl:
 	$(call go-get-tool,$(KUTTL),github.com/kudobuilder/kuttl/cmd/kubectl-kuttl@v0.8.0)
+
+# Download crlfmt locally if necessary
+CRLFMT = $(shell pwd)/bin/crlfmt
+crlfmt:
+	$(call go-get-tool,$(CRLFMT),github.com/cockroachdb/crlfmt@v0.0.0-20200923085322-b9cb16fe9a33)
 
 # Download kustomize locally if necessary
 KUSTOMIZE = $(shell pwd)/bin/kustomize
