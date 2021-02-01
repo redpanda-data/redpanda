@@ -105,6 +105,10 @@ ss::future<> consumer::join() {
               return join();
           case error_code::illegal_generation:
               return join();
+          case error_code::not_coordinator:
+              return ss::sleep_abortable(
+                       shard_local_cfg().retry_base_backoff(), _as)
+                .then([this]() { return join(); });
           case error_code::none:
               _generation_id = res.data.generation_id;
               _member_id = res.data.member_id;
