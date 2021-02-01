@@ -17,6 +17,7 @@ RUN go mod download
 COPY k8s/main.go main.go
 COPY k8s/apis/ apis/
 COPY k8s/controllers/ controllers/
+COPY k8s/pkg/ pkg/
 
 # Build
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GO111MODULE=on go build -a -o manager main.go
