@@ -72,7 +72,7 @@ func (r *ClusterReconciler) Reconcile(
 	}
 
 	sts := resources.NewStatefulSet(r.Client, &redpandaCluster, r.Scheme)
-	toApply := []resources.OwnedResource{
+	toApply := []resources.Resource{
 		resources.NewService(r.Client, &redpandaCluster, r.Scheme),
 		resources.NewConfigMap(r.Client, &redpandaCluster, r.Scheme),
 		sts,
