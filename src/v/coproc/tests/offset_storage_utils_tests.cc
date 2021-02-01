@@ -26,7 +26,10 @@ public:
     offset_keeper_fixture()
       : _base_dir(make_base_dir())
       , _api(make_api())
-      , _snap(_base_dir, ss::default_priority_class()) {
+      , _snap(
+          _base_dir,
+          storage::snapshot_manager::default_snapshot_filename,
+          ss::default_priority_class()) {
         _api.start().get();
     }
 

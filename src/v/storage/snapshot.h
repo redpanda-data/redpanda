@@ -89,12 +89,15 @@ class snapshot_writer;
  *       mgr.remove_partial_snapshots();
  */
 class snapshot_manager {
-    static constexpr const char* snapshot_filename = "snapshot";
-
 public:
+    static constexpr const char* default_snapshot_filename = "snapshot";
+
     snapshot_manager(
-      std::filesystem::path dir, ss::io_priority_class io_prio) noexcept
-      : _dir(std::move(dir))
+      std::filesystem::path dir,
+      const char* filename,
+      ss::io_priority_class io_prio) noexcept
+      : _filename(filename)
+      , _dir(std::move(dir))
       , _io_prio(io_prio) {}
 
     ss::future<std::optional<snapshot_reader>> open_snapshot();
@@ -103,7 +106,7 @@ public:
     ss::future<> finish_snapshot(snapshot_writer&);
 
     std::filesystem::path snapshot_path() const {
-        return _dir / snapshot_filename;
+        return _dir / _filename.c_str();
     }
 
     ss::future<> remove_partial_snapshots();
@@ -111,6 +114,7 @@ public:
     ss::future<> remove_snapshot();
 
 private:
+    ss::sstring _filename;
     std::filesystem::path _dir;
     ss::io_priority_class _io_prio;
 };

@@ -64,7 +64,9 @@ consensus::consensus(
       config::shard_local_cfg().recovery_append_timeout_ms())
   , _storage(storage)
   , _snapshot_mgr(
-      std::filesystem::path(_log.config().work_directory()), _io_priority)
+      std::filesystem::path(_log.config().work_directory()),
+      storage::snapshot_manager::default_snapshot_filename,
+      _io_priority)
   , _configuration_manager(std::move(initial_cfg), _group, _storage, _ctxlog)
   , _append_requests_buffer(*this, 256) {
     setup_metrics();

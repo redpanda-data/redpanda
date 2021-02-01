@@ -25,7 +25,7 @@
 namespace storage {
 
 ss::future<std::optional<snapshot_reader>> snapshot_manager::open_snapshot() {
-    auto path = _dir / snapshot_filename;
+    auto path = _dir / _filename.c_str();
     return ss::file_exists(path.string()).then([this, path](bool exists) {
         if (!exists) {
             return ss::make_ready_future<std::optional<snapshot_reader>>(
@@ -49,7 +49,7 @@ ss::future<snapshot_writer> snapshot_manager::start_snapshot() {
     // unique file names when tests run fast.
     auto filename = fmt::format(
       "{}.partial.{}.{}",
-      snapshot_filename,
+      _filename,
       ss::lowres_system_clock::now().time_since_epoch().count(),
       random_generators::gen_alphanum_string(4));
 
@@ -75,8 +75,8 @@ ss::future<> snapshot_manager::finish_snapshot(snapshot_writer& writer) {
 }
 
 ss::future<> snapshot_manager::remove_partial_snapshots() {
-    std::regex re(fmt::format(
-      "^{}\\.partial\\.(\\d+)\\.([a-zA-Z0-9]{{4}})$", snapshot_filename));
+    std::regex re(
+      fmt::format("^{}\\.partial\\.(\\d+)\\.([a-zA-Z0-9]{{4}})$", _filename));
     return directory_walker::walk(
       _dir.string(), [this, re = std::move(re)](ss::directory_entry ent) {
           if (!ent.type || *ent.type != ss::directory_entry_type::regular) {
