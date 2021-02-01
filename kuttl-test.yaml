@@ -1,0 +1,12 @@
+apiVersion: kuttl.dev/v1beta1
+kind: TestSuite
+startKIND: true
+kindNodeCache: true
+kindContainers:
+  - gcr.io/vectorized/redpanda-k8s-operator:latest
+testDirs:
+  - ./tests/e2e
+commands:
+  - command: "kubectl apply -k config/default"
+artifactsDir: tests/e2e/_artifacts
+timeout: 180
