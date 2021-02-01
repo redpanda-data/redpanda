@@ -9,6 +9,7 @@
 
 #include "pandaproxy/proxy.h"
 
+#include "pandaproxy/api/api-doc/create_consumer.json.h"
 #include "pandaproxy/api/api-doc/get_topics_names.json.h"
 #include "pandaproxy/api/api-doc/get_topics_records.json.h"
 #include "pandaproxy/api/api-doc/health.json.h"
@@ -47,6 +48,11 @@ std::vector<server::route_t> get_proxy_routes() {
       ss::httpd::post_topics_name_json::name,
       ss::httpd::post_topics_name_json::post_topics_name,
       post_topics_name});
+
+    routes.emplace_back(server::route_t{
+      ss::httpd::create_consumer_json::name,
+      ss::httpd::create_consumer_json::create_consumer,
+      create_consumer});
 
     return routes;
 }

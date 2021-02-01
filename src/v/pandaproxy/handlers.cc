@@ -10,7 +10,10 @@
 #include "handlers.h"
 
 #include "kafka/protocol/fetch.h"
+#include "kafka/types.h"
 #include "model/fundamental.h"
+#include "pandaproxy/configuration.h"
+#include "pandaproxy/json/requests/create_consumer.h"
 #include "pandaproxy/json/requests/fetch.h"
 #include "pandaproxy/json/requests/produce.h"
 #include "pandaproxy/json/rjson_util.h"
@@ -175,6 +178,28 @@ post_topics_name(server::request_t rq, server::reply_t rp) {
             .throttle{std::chrono::milliseconds{0}}};
 
           auto json_rslt = ppj::rjson_serialize(res.topics[0]);
+          rp.rep->write_body("json", json_rslt);
+          return std::move(rp);
+      });
+}
+
+ss::future<server::reply_t>
+create_consumer(server::request_t rq, server::reply_t rp) {
+    auto req_data = ppj::rjson_parse(
+      rq.req->content.data(), ppj::create_consumer_request_handler());
+    auto group_id = kafka::group_id(rq.req->param["group_name"]);
+
+    return rq.ctx.client.create_consumer(group_id).then(
+      [group_id, rp{std::move(rp)}](kafka::member_id m_id) mutable {
+          auto adv_addr = shard_local_cfg().advertised_pandaproxy_api();
+          json::create_consumer_response res{
+            .instance_id = m_id,
+            .base_uri = fmt::format(
+              "http://{}:{}/consumers/{}",
+              adv_addr.host(),
+              adv_addr.port(),
+              m_id())};
+          auto json_rslt = ppj::rjson_serialize(res);
           rp.rep->write_body("json", json_rslt);
           return std::move(rp);
       });
