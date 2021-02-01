@@ -484,7 +484,26 @@ private:
 
 static model::record_batch_reader random_batches_reader(int max_batches) {
     auto batches = storage::test::make_random_batches(
-      model::offset(0), max_batches);
+      storage::test::record_batch_spec{
+        .offset = model::offset(0),
+        .allow_compression = true,
+        .count = max_batches});
+    return model::make_memory_record_batch_reader(std::move(batches));
+}
+
+static model::record_batch_reader
+random_batch_reader(storage::test::record_batch_spec spec) {
+    auto batch = storage::test::make_random_batch(spec);
+    ss::circular_buffer<model::record_batch> batches;
+    batches.reserve(1);
+    batch.set_term(model::term_id(0));
+    batches.push_back(std::move(batch));
+    return model::make_memory_record_batch_reader(std::move(batches));
+}
+
+static model::record_batch_reader
+random_batches_reader(storage::test::record_batch_spec spec) {
+    auto batches = storage::test::make_random_batches(spec);
     return model::make_memory_record_batch_reader(std::move(batches));
 }
 

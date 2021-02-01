@@ -27,13 +27,14 @@ set(srcs
     topic_table_test.cc
     topic_updates_dispatcher_test.cc
     controller_backend_test.cc
-    configuration_change_test.cc)
+    configuration_change_test.cc
+    seq_stm_tests.cc)
 
 rp_test(
   UNIT_TEST
   BINARY_NAME test_cluster
   SOURCES ${srcs}
-  LIBRARIES v::seastar_testing_main v::application
+  LIBRARIES v::seastar_testing_main v::application v::storage_test_utils
 )
 
 # These 2 files have a `using namespace cluster;` and removing that
