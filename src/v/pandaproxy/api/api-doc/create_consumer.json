@@ -1,0 +1,14 @@
+    "/consumers/{group_name}": {
+      "post": {
+        "summary": "Create a consumer for the group",
+        "operationId": "create_consumer",
+        "parameters": [
+          {
+            "name": "group_name",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ]
+      }
+    }

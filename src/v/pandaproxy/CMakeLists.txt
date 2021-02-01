@@ -33,6 +33,13 @@ seastar_generate_swagger(
   OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/api/api-doc/post_topics_name.json.h
 )
 
+seastar_generate_swagger(
+  TARGET create_consumer_swagger
+  VAR create_consumer_swagger_file
+  IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/api/api-doc/create_consumer.json
+  OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/api/api-doc/create_consumer.json.h
+)
+
 v_cc_library(
   NAME rest_application
   SRCS
@@ -62,6 +69,7 @@ add_dependencies(v_rest_application
   get_topics_names_swagger
   get_topics_records_swagger
   post_topics_name_swagger
+  create_consumer_swagger
 )
 
 if(CMAKE_BUILD_TYPE MATCHES Release)
