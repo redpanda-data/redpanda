@@ -738,6 +738,46 @@ func parseAddress(addr string, defaultPort int) (*config.SocketAddress, error) {
 	}, nil
 }
 
+func parseNamedAddresses(
+	addrs []string, defaultPort int,
+) ([]config.NamedSocketAddress, error) {
+	as := make([]config.NamedSocketAddress, 0, len(addrs))
+	for _, addr := range addrs {
+		a, err := parseNamedAddress(addr, defaultPort)
+		if err != nil {
+			return nil, err
+		}
+		if a != nil {
+			as = append(as, *a)
+		}
+	}
+	log.Info(as)
+	return as, nil
+}
+
+func parseNamedAddress(
+	addr string, defaultPort int,
+) (*config.NamedSocketAddress, error) {
+	if addr == "" {
+		return nil, nil
+	}
+	scheme, hostname, port, err := parseURL(addr)
+	if err != nil {
+		return nil, err
+	}
+	if port == 0 {
+		port = defaultPort
+	}
+
+	return &config.NamedSocketAddress{
+		SocketAddress: config.SocketAddress{
+			Address:	hostname,
+			Port:		port,
+		},
+		Name:	scheme,
+	}, nil
+}
+
 func parseURL(addr string) (scheme, hostname string, port int, err error) {
 	if strings.HasPrefix(addr, ":") {
 		return "", "", 0, errors.New("missing hostname")
