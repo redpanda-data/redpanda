@@ -1,0 +1,32 @@
+    "/consumers/{group_name}/instances/{instance}/records": {
+      "get": {
+        "summary": "Fetch data for the consumer assignments",
+        "operationId": "consumer_fetch",
+        "parameters": [
+          {
+            "name": "group_name",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "instance",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "timeout",
+            "in": "query",
+            "required": false,
+            "type": "integer"
+          },
+          {
+            "name": "max_bytes",
+            "in": "query",
+            "required": false,
+            "type": "integer"
+          }
+        ]
+      }
+    }
