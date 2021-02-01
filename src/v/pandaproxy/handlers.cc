@@ -221,4 +221,33 @@ subscribe_consumer(server::request_t rq, server::reply_t rp) {
       });
 }
 
+ss::future<server::reply_t>
+consumer_fetch(server::request_t rq, server::reply_t rp) {
+    auto fmt = parse_serialization_format(rq.req->get_header("Accept"));
+    if (fmt == ppj::serialization_format::unsupported) {
+        rp.rep = unprocessable_entity("Unsupported serialization format");
+        return ss::make_ready_future<server::reply_t>(std::move(rp));
+    }
+
+    std::chrono::milliseconds timeout{
+      boost::lexical_cast<std::chrono::milliseconds::rep>(
+        rq.req->get_query_param("timeout"))};
+    int32_t max_bytes{
+      boost::lexical_cast<int32_t>(rq.req->get_query_param("max_bytes"))};
+    auto group_id = kafka::group_id(rq.req->param["group_name"]);
+    auto member_id = kafka::member_id(rq.req->param["instance"]);
+
+    return rq.ctx.client.consumer_fetch(group_id, member_id, timeout, max_bytes)
+      .then([fmt, rp{std::move(rp)}](kafka::fetch_response res) mutable {
+          rapidjson::StringBuffer str_buf;
+          rapidjson::Writer<rapidjson::StringBuffer> w(str_buf);
+
+          ppj::rjson_serialize_fmt(fmt)(w, std::move(res));
+
+          // TODO Ben: Prevent this linearization
+          ss::sstring json_rslt = str_buf.GetString();
+          rp.rep->write_body("json", json_rslt);
+          return std::move(rp);
+      });
+}
 } // namespace pandaproxy
