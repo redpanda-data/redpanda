@@ -109,6 +109,13 @@ struct mux_state_machine_fixture {
         }).get0();
     }
 
+    void wait_for_meta_initialized() {
+        using namespace std::chrono_literals;
+        tests::cooperative_spin_wait_with_timeout(10s, [this] {
+            return _raft->meta().commit_index >= model::offset(0);
+        }).get0();
+    }
+
     model::node_id _self;
     model::ntp _ntp = model::ntp(
       model::ns("default"), model::topic("test"), model::partition_id(0));

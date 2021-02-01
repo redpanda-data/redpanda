@@ -42,6 +42,7 @@ FIXTURE_TEST(
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
 
     wait_for_leader();
+    wait_for_meta_initialized();
 
     stm.catchup().get0();
 
@@ -96,6 +97,7 @@ FIXTURE_TEST(
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
 
     wait_for_leader();
+    wait_for_meta_initialized();
 
     stm.catchup().get0();
 
@@ -148,6 +150,7 @@ FIXTURE_TEST(test_seq_stm_prevents_duplicates, mux_state_machine_fixture) {
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
 
     wait_for_leader();
+    wait_for_meta_initialized();
 
     stm.catchup().get0();
 
@@ -203,6 +206,7 @@ FIXTURE_TEST(test_seq_stm_prevents_gaps, mux_state_machine_fixture) {
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
 
     wait_for_leader();
+    wait_for_meta_initialized();
 
     stm.catchup().get0();
 
@@ -259,6 +263,7 @@ FIXTURE_TEST(
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
 
     wait_for_leader();
+    wait_for_meta_initialized();
 
     auto count = 5;
     auto rdr = random_batches_reader(storage::test::record_batch_spec{
