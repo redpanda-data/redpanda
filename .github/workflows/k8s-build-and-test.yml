@@ -19,6 +19,13 @@ jobs:
     - name: Check out code
       uses: actions/checkout@v2
 
+    - name: golangci-lint
+      uses: golangci/golangci-lint-action@v2
+      with:
+        version: v1.36
+        args: --timeout 8m
+        working-directory: src/go/k8s/
+
     - name: Set up Go
       uses: actions/setup-go@v2
       with:
