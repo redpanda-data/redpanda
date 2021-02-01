@@ -76,10 +76,19 @@ docker-push:
 push-to-kind:
 	kind load docker-image ${IMG}
 
+# Execute end to end tests
+e2e-tests: kuttl docker-build
+	$(KUTTL) test
+
 # Download controller-gen locally if necessary
 CONTROLLER_GEN = $(shell pwd)/bin/controller-gen
 controller-gen:
 	$(call go-get-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen@v0.4.1)
+
+# Download kuttl locally if necessary
+KUTTL = $(shell pwd)/bin/kubectl-kuttl
+kuttl:
+	$(call go-get-tool,$(KUTTL),github.com/kudobuilder/kuttl/cmd/kubectl-kuttl@v0.8.0)
 
 # Download kustomize locally if necessary
 KUSTOMIZE = $(shell pwd)/bin/kustomize
