@@ -30,4 +30,7 @@ post_topics_name(server::request_t rq, server::reply_t rp);
 ss::future<server::reply_t>
 create_consumer(server::request_t rq, server::reply_t rp);
 
+ss::future<server::reply_t>
+subscribe_consumer(server::request_t rq, server::reply_t rp);
+
 } // namespace pandaproxy

@@ -16,6 +16,7 @@
 #include "pandaproxy/json/requests/create_consumer.h"
 #include "pandaproxy/json/requests/fetch.h"
 #include "pandaproxy/json/requests/produce.h"
+#include "pandaproxy/json/requests/subscribe_consumer.h"
 #include "pandaproxy/json/rjson_util.h"
 #include "pandaproxy/reply.h"
 #include "raft/types.h"
@@ -201,6 +202,21 @@ create_consumer(server::request_t rq, server::reply_t rp) {
               m_id())};
           auto json_rslt = ppj::rjson_serialize(res);
           rp.rep->write_body("json", json_rslt);
+          return std::move(rp);
+      });
+}
+
+ss::future<server::reply_t>
+subscribe_consumer(server::request_t rq, server::reply_t rp) {
+    auto req_data = ppj::rjson_parse(
+      rq.req->content.data(), ppj::subscribe_consumer_request_handler());
+    auto group_id = kafka::group_id(rq.req->param["group_name"]);
+    auto member_id = kafka::member_id(rq.req->param["instance"]);
+
+    return rq.ctx.client
+      .subscribe_consumer(group_id, member_id, std::move(req_data.topics))
+      .then([group_id, rp{std::move(rp)}]() mutable {
+          // nothing to do!
           return std::move(rp);
       });
 }
