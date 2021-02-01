@@ -87,4 +87,22 @@ FIXTURE_TEST(pandaproxy_consumer_group, pandaproxy_test_fixture) {
           res.headers.result(), boost::beast::http::status::ok);
         BOOST_REQUIRE_EQUAL(res.body, R"(["t"])");
     }
+    {
+        info("Subscribe consumer");
+        ss::sstring req_body(R"(
+{
+  "topics": [
+    "t"
+  ]
+})");
+        iobuf req_body_buf;
+        req_body_buf.append(req_body.data(), req_body.size());
+        auto res = http_request(
+          client,
+          fmt::format(
+            "/consumers/{}/instances/{}/subscription", group_id(), member_id()),
+          std::move(req_body_buf));
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::ok);
+    }
 }
