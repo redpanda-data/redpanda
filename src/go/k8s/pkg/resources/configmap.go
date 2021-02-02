@@ -1,3 +1,13 @@
+// Copyright 2021 Vectorized, Inc.
+//
+// Use of this software is governed by the Business Source License
+// included in the file licenses/BSL.md
+//
+// As of the Change Date specified in that file, in accordance with
+// the Business Source License, use of this software will be governed
+// by the Apache License, Version 2.0
+
+// Package resources contains reconciliation logic for redpanda.vectorized.io CRD
 package resources
 
 import (
@@ -13,7 +23,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	k8sclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
@@ -34,14 +44,17 @@ var (
 
 var _ Resource = &ConfigMapResource{}
 
+// ConfigMapResource contains definition and reconciliation logic for operator's ConfigMap.
+// The ConfigMap contains the configuration as well as init script.
 type ConfigMapResource struct {
-	client.Client
+	k8sclient.Client
 	scheme		*runtime.Scheme
 	pandaCluster	*redpandav1alpha1.Cluster
 }
 
+// NewConfigMap creates ConfigMapResource
 func NewConfigMap(
-	client client.Client,
+	client k8sclient.Client,
 	pandaCluster *redpandav1alpha1.Cluster,
 	scheme *runtime.Scheme,
 ) *ConfigMapResource {
@@ -50,6 +63,7 @@ func NewConfigMap(
 	}
 }
 
+// Ensure will manage kubernetes v1.ConfigMap for redpanda.vectorized.io CR
 func (r *ConfigMapResource) Ensure(ctx context.Context) error {
 	var cfgm corev1.ConfigMap
 
@@ -57,17 +71,21 @@ func (r *ConfigMapResource) Ensure(ctx context.Context) error {
 	if err != nil && !errors.IsNotFound(err) {
 		return err
 	}
+
 	if errors.IsNotFound(err) {
 		obj, err := r.Obj()
 		if err != nil {
 			return err
 		}
+
 		return r.Create(ctx, obj)
 	}
+
 	return nil
 }
 
-func (r *ConfigMapResource) Obj() (client.Object, error) {
+// Obj returns resource managed client.Object
+func (r *ConfigMapResource) Obj() (k8sclient.Object, error) {
 	serviceAddress := r.pandaCluster.Name + "." + r.pandaCluster.Namespace + ".svc.cluster.local"
 	cfg := config.Default()
 	cfg.Redpanda = copyConfig(&r.pandaCluster.Spec.Configuration, &cfg.Redpanda)
@@ -117,10 +135,12 @@ func (r *ConfigMapResource) Obj() (client.Object, error) {
 			"configurator.sh":	script,
 		},
 	}
+
 	err = controllerutil.SetControllerReference(r.pandaCluster, cm, r.scheme)
 	if err != nil {
 		return nil, err
 	}
+
 	return cm, nil
 }
 
@@ -161,14 +181,18 @@ func copyConfig(
 	}
 }
 
+// Key returns namespace/name object that is used to identify object.
+// For reference please visit types.NamespacedName docs in k8s.io/apimachinery
 func (r *ConfigMapResource) Key() types.NamespacedName {
 	return ConfigMapKey(r.pandaCluster)
 }
 
+// ConfigMapKey provides config map name that derived from redpanda.vectorized.io CR
 func ConfigMapKey(pandaCluster *redpandav1alpha1.Cluster) types.NamespacedName {
 	return types.NamespacedName{Name: pandaCluster.Name + baseSuffix, Namespace: pandaCluster.Namespace}
 }
 
+// Kind returns v1.ConfigMap kind
 func (r *ConfigMapResource) Kind() string {
 	var cfg corev1.ConfigMap
 	return cfg.Kind

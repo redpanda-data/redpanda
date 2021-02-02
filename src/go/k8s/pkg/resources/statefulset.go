@@ -1,3 +1,13 @@
+// Copyright 2021 Vectorized, Inc.
+//
+// Use of this software is governed by the Business Source License
+// included in the file licenses/BSL.md
+//
+// As of the Change Date specified in that file, in accordance with
+// the Business Source License, use of this software will be governed
+// by the Apache License, Version 2.0
+
+// Package resources contains reconciliation logic for redpanda.vectorized.io CRD
 package resources
 
 import (
@@ -14,22 +24,25 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/pointer"
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	k8sclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 var _ Resource = &StatefulSetResource{}
 
+// StatefulSetResource is part of the reconciliation of redpanda.vectorized.io CRD
+// focusing on the management of redpanda cluster
 type StatefulSetResource struct {
-	client.Client
+	k8sclient.Client
 	scheme		*runtime.Scheme
 	pandaCluster	*redpandav1alpha1.Cluster
 
 	LastObservedState	*appsv1.StatefulSet
 }
 
+// NewStatefulSet creates StatefulSetResource
 func NewStatefulSet(
-	client client.Client,
+	client k8sclient.Client,
 	pandaCluster *redpandav1alpha1.Cluster,
 	scheme *runtime.Scheme,
 ) *StatefulSetResource {
@@ -38,6 +51,7 @@ func NewStatefulSet(
 	}
 }
 
+// Ensure will manage kubernetes v1.StatefulSet for redpanda.vectorized.io custom resource
 func (r *StatefulSetResource) Ensure(ctx context.Context) error {
 	var sts appsv1.StatefulSet
 
@@ -45,30 +59,37 @@ func (r *StatefulSetResource) Ensure(ctx context.Context) error {
 	if err != nil && !errors.IsNotFound(err) {
 		return err
 	}
+
 	if errors.IsNotFound(err) {
 		obj, err := r.Obj()
 		if err != nil {
 			return err
 		}
+
 		err = r.Create(ctx, obj)
 		r.LastObservedState = obj.(*appsv1.StatefulSet)
+
 		return err
 	}
+
 	r.LastObservedState = &sts
 
 	// Ensure StatefulSet #replicas equals cluster requirement.
 	if sts.Spec.Replicas != r.pandaCluster.Spec.Replicas {
 		sts.Spec.Replicas = r.pandaCluster.Spec.Replicas
-		if err = r.Update(ctx, &sts); err != nil {
-			return fmt.Errorf("Failed to update StatefulSet: %v", err)
+		if err := r.Update(ctx, &sts); err != nil {
+			return fmt.Errorf("failed to update StatefulSet: %w", err)
 		}
 	}
 
 	return nil
 }
 
-func (r *StatefulSetResource) Obj() (client.Object, error) {
+// Obj returns resource managed client.Object
+// nolint:funlen // The complexity of Obj function will be address in the next version TODO
+func (r *StatefulSetResource) Obj() (k8sclient.Object, error) {
 	var configMapDefaultMode int32 = 0754
+
 	memory, exist := r.pandaCluster.Spec.Resources.Limits["memory"]
 	if !exist {
 		memory = resource.MustParse("2Gi")
@@ -244,10 +265,13 @@ func (r *StatefulSetResource) Obj() (client.Object, error) {
 	return ss, nil
 }
 
+// Key returns namespace/name object that is used to identify object.
+// For reference please visit types.NamespacedName docs in k8s.io/apimachinery
 func (r *StatefulSetResource) Key() types.NamespacedName {
 	return types.NamespacedName{Name: r.pandaCluster.Name, Namespace: r.pandaCluster.Namespace}
 }
 
+// Kind returns v1.StatefulSet kind
 func (r *StatefulSetResource) Kind() string {
 	var statefulSet appsv1.StatefulSet
 	return statefulSet.Kind
