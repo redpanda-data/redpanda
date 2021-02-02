@@ -12,16 +12,20 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-FROM python:3.8
+FROM ubuntu:focal
 
-ENV TZ="UTC"
+ENV TZ="UTC" \
+    DEBIAN_FRONTEND=noninteractive
 
 # - install openssh, jvm and kafka cli tools
 # - allow user env variables in ssh sessions
 RUN apt update && \
     apt install -y \
+      python3-pip \
       openssh-server \
       default-jre \
+      build-essential \
+      curl \
       kafkacat && \
     rm -rf /var/lib/apt/lists/* && \
     echo 'PermitUserEnvironment yes' >> /etc/ssh/sshd_config
@@ -42,9 +46,9 @@ RUN mkdir -p "/opt/kafka-2.3.1" && chmod a+rw /opt/kafka-2.3.1 && curl -s "$KAFK
 
 # install python dependencies
 COPY . /root/tests/
-RUN pip install --no-cache-dir --upgrade pip wheel setuptools && \
-    pip install --no-cache-dir -e /root/tests/ && \
-    pip list && \
+RUN pip3 install --no-cache-dir --upgrade pip wheel setuptools && \
+    pip3 install --no-cache-dir -e /root/tests/ && \
+    pip3 list && \
     mv /root/tests/docker/ssh /root/.ssh && \
     rm -r /root/tests/ci /root/tests/docker
 
