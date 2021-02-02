@@ -9,7 +9,7 @@
  */
 
 import { Handle } from "../domain/Handle";
-import { Coprocessor } from "../public/Coprocessor";
+import { Coprocessor, PolicyError, RecordBatch } from "../public/Coprocessor";
 import {
   ProcessBatchReplyItem,
   ProcessBatchRequestItem,
@@ -20,11 +20,14 @@ import {
   calculateRecordLength,
   createRecordBatch,
 } from "../public";
+import LogService from "../utilities/Logging";
 
 /**
  * Repository is a container for Handles.
  */
 class Repository {
+  private logger = LogService.createLogger("FileManager");
+
   constructor() {
     this.handles = new Map();
   }
@@ -87,6 +90,80 @@ class Repository {
     return this.handles.size;
   }
 
+  createEmptyProcessBatchReplay(
+    handle: Handle,
+    requestItem: ProcessBatchRequestItem
+  ): ProcessBatchReplyItem {
+    return {
+      coprocessorId: BigInt(handle.coprocessor.globalId),
+      ntp: {
+        ...requestItem.ntp,
+        topic: `${requestItem.ntp.topic}`,
+      },
+      resultRecordBatch: [],
+    };
+  }
+
+  validateResultApply(
+    requestItem: ProcessBatchRequestItem,
+    handle: Handle,
+    handleError: ProcessBatchServer["handleErrorByPolicy"],
+    resultRecordBatch: Map<string, RecordBatch>
+  ): Promise<Map<string, RecordBatch>> {
+    if (resultRecordBatch instanceof Map) {
+      return Promise.resolve(resultRecordBatch);
+    } else {
+      const error = new Error(
+        `Wasm function (${handle.coprocessor.globalId}) ` +
+          `didn't return a Promise<Map<string, RecordBatch>>`
+      );
+      return handleError(
+        handle.coprocessor,
+        requestItem,
+        error,
+        PolicyError.Deregister
+      );
+    }
+  }
+
+  transformMapResultToArray(
+    requestItem: ProcessBatchRequestItem,
+    handle: Handle,
+    recordBatch: RecordBatch,
+    resultRecordBatch: Map<string, RecordBatch>
+  ): ProcessBatchReplyItem[] {
+    const results: ProcessBatchReplyItem[] = [];
+    if (resultRecordBatch.size === 0) {
+      /*
+       Coprocessor returns a empty Map, in this case, it responses to
+       empty process batch replay to Redpanda in order to avoid, send this
+       request again.
+      */
+
+      results.push(this.createEmptyProcessBatchReplay(handle, requestItem));
+    } else {
+      // Coprocessor return a Map with values
+      for (const [key, value] of resultRecordBatch) {
+        value.records = value.records.map((record) => {
+          record.length = calculateRecordLength(record);
+          record.valueLen = record.value.length;
+          return record;
+        });
+        value.header.sizeBytes = calculateRecordBatchSize(value.records);
+        value.header.term = recordBatch.header.term;
+        results.push({
+          coprocessorId: BigInt(handle.coprocessor.globalId),
+          ntp: {
+            ...requestItem.ntp,
+            topic: `${requestItem.ntp.topic}.$${key}$`,
+          },
+          resultRecordBatch: [value],
+        });
+      }
+    }
+    return results;
+  }
+
   applyCoprocessor(
     CoprocessorIds: bigint[],
     requestItem: ProcessBatchRequestItem,
@@ -114,31 +191,24 @@ class Repository {
             );
           }
           try {
-            //TODO: https://app.clubhouse.io/vectorized/story/1257
-            //pass functor to apply function
-            const resultRecordBatch = handle.coprocessor.apply(
-              createRecordBatch(recordBatch)
-            );
-
-            const results: ProcessBatchReplyItem[] = [];
-            for (const [key, value] of resultRecordBatch) {
-              value.records = value.records.map((record) => {
-                record.length = calculateRecordLength(record);
-                record.valueLen = record.value.length;
-                return record;
-              });
-              value.header.sizeBytes = calculateRecordBatchSize(value.records);
-              value.header.term = recordBatch.header.term;
-              results.push({
-                coprocessorId: BigInt(handle.coprocessor.globalId),
-                ntp: {
-                  ...requestItem.ntp,
-                  topic: `${requestItem.ntp.topic}.$${key}$`,
-                },
-                resultRecordBatch: [value],
-              });
-            }
-            return Promise.resolve(results);
+            return handle.coprocessor
+              .apply(createRecordBatch(recordBatch))
+              .then((resultMap) =>
+                this.validateResultApply(
+                  requestItem,
+                  handle,
+                  handleError,
+                  resultMap
+                )
+              )
+              .then((resultMap) =>
+                this.transformMapResultToArray(
+                  requestItem,
+                  handle,
+                  recordBatch,
+                  resultMap
+                )
+              );
           } catch (e) {
             return handleError(handle.coprocessor, requestItem, e);
           }

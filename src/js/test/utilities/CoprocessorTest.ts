@@ -19,8 +19,8 @@ class CoprocessorTest implements Coprocessor {
   inputTopics = ["topicA"];
   policyError = PolicyError.Deregister;
 
-  apply(record: RecordBatch): Map<string, RecordBatch> {
-    return new Map([["test", record]]);
+  apply(record: RecordBatch): Promise<Map<string, RecordBatch>> {
+    return Promise.resolve(new Map([["test", record]]));
   }
 }
 

@@ -181,15 +181,17 @@ describe("Server", function () {
       spyGetHandles.returns([
         createHandle({
           apply: () =>
-            new Map([
-              [
-                "newTopic",
-                createRecordBatch({
-                  header: { recordCount: 1 },
-                  records: [{ value: Buffer.from("new VALUE") }],
-                }),
-              ],
-            ]),
+            Promise.resolve(
+              new Map([
+                [
+                  "newTopic",
+                  createRecordBatch({
+                    header: { recordCount: 1 },
+                    records: [{ value: Buffer.from("new VALUE") }],
+                  }),
+                ],
+              ])
+            ),
         }),
       ]);
       client
@@ -301,7 +303,7 @@ describe("Server", function () {
                 records: records.map(uppercase),
               }));
             result.set("result", transformedRecord);
-            return result;
+            return Promise.resolve(result);
           },
         })
       );
@@ -390,7 +392,7 @@ describe("Server", function () {
                 records: records.map(uppercase),
               }));
             result.set("result", transformedRecord);
-            return result;
+            return Promise.resolve(result);
           },
         })
       );

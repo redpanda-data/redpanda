@@ -73,7 +73,7 @@ interface Coprocessor {
   inputTopics: string[];
   policyError: PolicyError;
   globalId: bigint;
-  apply: (record: RecordBatch) => Map<Topic, RecordBatch>;
+  apply: (record: RecordBatch) => Promise<Map<Topic, RecordBatch>>;
 }
 
 export { RecordBatchHeader, RecordHeader, Record, RecordBatch, Coprocessor };

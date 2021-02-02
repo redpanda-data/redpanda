@@ -95,8 +95,8 @@ describe("FileManager", () => {
   );
 
   it("should add listen for new file event", (done) => {
-    const repo = new Repository();
     const { readFolderStub, watchMock } = createStubs(sinonInstance);
+    const repo = new Repository();
     new FileManager(repo, "submit", "active", "inactive");
     // wait for promise readFolderCoprocessor resolves
     setTimeout(() => {
@@ -112,9 +112,9 @@ describe("FileManager", () => {
       "it should disable coprocessor topics and enable after adding" +
       "coprocessor",
     (done) => {
+      const { moveCoprocessor, getCoprocessor } = createStubs(sinonInstance);
       const handle = createHandle();
       const repo = new Repository();
-      const { moveCoprocessor, getCoprocessor } = createStubs(sinonInstance);
       moveCoprocessor.returns(Promise.resolve(handle));
       getCoprocessor.returns(Promise.resolve(handle));
 
@@ -150,13 +150,13 @@ describe("FileManager", () => {
       const handle = createHandle();
       const handle2 = createHandle({ inputTopics: ["anotherTopics"] });
       handle2.checksum = "different";
-      const repo = new Repository();
       const {
         moveCoprocessor,
         getCoprocessor,
         enableCoprocessor,
         disableCoprocessor,
       } = createStubs(sinonInstance);
+      const repo = new Repository();
       moveCoprocessor.returns(Promise.resolve(handle));
       getCoprocessor.returns(Promise.resolve(handle));
       getCoprocessor.returns(Promise.resolve(handle2));
@@ -180,10 +180,10 @@ describe("FileManager", () => {
 
   it("should remove a coprocessor from file path", (done) => {
     const handle = createHandle();
-    const repo = new Repository();
     const { moveCoprocessor, getCoprocessor, disableCoprocessor } = createStubs(
       sinonInstance
     );
+    const repo = new Repository();
 
     // add coprocessor
     repo.add(handle);
@@ -209,13 +209,13 @@ describe("FileManager", () => {
       "on enable request",
     function (done) {
       const handle = createHandle();
-      const repo = new Repository();
-      const removeSpy = sinonInstance.spy(repo, "remove");
       const {
         moveCoprocessor,
         getCoprocessor,
         enableCoprocessor,
       } = createStubs(sinonInstance);
+      const repo = new Repository();
+      const removeSpy = sinonInstance.spy(repo, "remove");
       moveCoprocessor.returns(Promise.resolve(handle));
       getCoprocessor.returns(Promise.resolve(handle));
       enableCoprocessor.returns(Promise.reject(Error("internal error")));
