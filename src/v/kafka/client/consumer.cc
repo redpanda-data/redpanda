@@ -70,7 +70,7 @@ void consumer::start() {
             kclog.error("Consumer: {}: heartbeat failed: {}", *this, e.error);
         });
     });
-    _timer.arm_periodic(std::chrono::duration_cast<ss::timer<>::duration>(
+    _timer.rearm_periodic(std::chrono::duration_cast<ss::timer<>::duration>(
       shard_local_cfg().consumer_heartbeat_interval()));
 }
 
