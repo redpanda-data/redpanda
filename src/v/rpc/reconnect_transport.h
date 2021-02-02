@@ -31,12 +31,14 @@ public:
 
     bool is_valid() const { return _transport.is_valid(); }
 
-    ss::future<result<rpc::transport*>> reconnect();
+    ss::future<result<rpc::transport*>> reconnect(clock_type::time_point);
+    ss::future<result<rpc::transport*>> reconnect(clock_type::duration);
 
     rpc::transport& get() { return _transport; }
 
     /// safe client connect - attempts to reconnect if not connected
-    ss::future<result<transport*>> get_connected();
+    ss::future<result<transport*>> get_connected(clock_type::time_point);
+    ss::future<result<transport*>> get_connected(clock_type::duration);
 
     const ss::socket_address& server_address() const {
         return _transport.server_address();

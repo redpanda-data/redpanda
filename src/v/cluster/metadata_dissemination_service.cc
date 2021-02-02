@@ -246,6 +246,7 @@ metadata_dissemination_service::dispatch_get_metadata_update(
     return do_with_client_one_shot<metadata_dissemination_rpc_client_protocol>(
       address,
       _rpc_tls_config,
+      _dissemination_interval,
       [this](metadata_dissemination_rpc_client_protocol c) {
           return c
             .get_leadership(
@@ -309,6 +310,7 @@ ss::future<> metadata_dissemination_service::dispatch_one_update(
         _self.id(),
         ss::this_shard_id(),
         target_id,
+        _dissemination_interval,
         [this, &meta, target_id](
           metadata_dissemination_rpc_client_protocol proto) mutable {
             vlog(

@@ -69,7 +69,7 @@ private:
 
     ss::future<join_reply> dispatch_join_request();
     template<typename Func>
-    auto dispatch_rpc_to_leader(Func&& f);
+    auto dispatch_rpc_to_leader(rpc::clock_type::duration, Func&& f);
 
     // Raft 0 config updates
     ss::future<> handle_raft0_cfg_update(raft::group_configuration);

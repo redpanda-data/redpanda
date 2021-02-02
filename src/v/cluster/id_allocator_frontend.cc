@@ -89,6 +89,7 @@ id_allocator_frontend::dispatch_allocate_id_to_leader(
         _controller->self(),
         ss::this_shard_id(),
         leader,
+        timeout,
         [timeout](id_allocator_client_protocol cp) {
             return cp.allocate_id(
               allocate_id_request{timeout},

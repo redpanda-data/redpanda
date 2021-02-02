@@ -19,6 +19,7 @@
 #include "outcome_future_utils.h"
 #include "rpc/connection_cache.h"
 #include "rpc/dns.h"
+#include "rpc/types.h"
 
 #include <seastar/core/sharded.hh>
 
@@ -76,12 +77,21 @@ auto with_client(
   model::node_id id,
   unresolved_address addr,
   config::tls_config tls_config,
+  rpc::clock_type::duration connection_timeout,
   Func&& f) {
     return update_broker_client(
              self, cache, id, std::move(addr), std::move(tls_config))
-      .then([id, self, &cache, f = std::forward<Func>(f)]() mutable {
+      .then([id,
+             self,
+             &cache,
+             f = std::forward<Func>(f),
+             connection_timeout]() mutable {
           return cache.local().with_node_client<Proto, Func>(
-            self, ss::this_shard_id(), id, std::forward<Func>(f));
+            self,
+            ss::this_shard_id(),
+            id,
+            connection_timeout,
+            std::forward<Func>(f));
       });
 }
 
@@ -124,7 +134,10 @@ maybe_build_reloadable_certificate_credentials(config::tls_config tls_config) {
 template<typename Proto, typename Func>
 CONCEPT(requires requires(Func&& f, Proto c) { f(c); })
 auto do_with_client_one_shot(
-  unresolved_address addr, config::tls_config tls_config, Func&& f) {
+  unresolved_address addr,
+  config::tls_config tls_config,
+  rpc::clock_type::duration connection_timeout,
+  Func&& f) {
     using transport_ptr = ss::lw_shared_ptr<rpc::transport>;
     return maybe_build_reloadable_certificate_credentials(std::move(tls_config))
       .then([addr = std::move(addr)](
@@ -138,8 +151,9 @@ auto do_with_client_one_shot(
                     .disable_metrics = rpc::metrics_disabled(true)});
             });
       })
-      .then([addr, f = std::forward<Func>(f)](transport_ptr transport) mutable {
-          return transport->connect()
+      .then([addr, f = std::forward<Func>(f), connection_timeout](
+              transport_ptr transport) mutable {
+          return transport->connect(connection_timeout)
             .then([transport, f = std::forward<Func>(f)]() mutable {
                 return ss::futurize_invoke(
                   std::forward<Func>(f), Proto(*transport));

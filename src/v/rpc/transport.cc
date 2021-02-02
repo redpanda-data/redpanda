@@ -17,7 +17,12 @@
 #include "rpc/types.h"
 #include "vlog.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/reactor.hh>
+#include <seastar/core/timed_out_error.hh>
+#include <seastar/core/with_timeout.hh>
+#include <seastar/net/api.hh>
+#include <seastar/net/socket_defs.hh>
 
 #include <memory>
 #include <type_traits>
@@ -59,52 +64,66 @@ transport::transport(
     }
 }
 
-ss::future<> base_transport::do_connect() {
+ss::future<ss::connected_socket> connect_with_timeout(
+  ss::socket& sock,
+  const seastar::socket_address& address,
+  rpc::clock_type::time_point timeout) {
+    auto f = sock.connect(
+      address,
+      ss::socket_address(sockaddr_in{AF_INET, INADDR_ANY, {0}}),
+      ss::transport::TCP);
+    return ss::with_timeout(timeout, std::move(f))
+      .handle_exception_type([&sock, &address](const ss::timed_out_error& e) {
+          rpclog.info("connection to: {}, timed out", address);
+          sock.shutdown();
+          return ss::make_exception_future<ss::connected_socket>(e);
+      });
+}
+
+ss::future<> base_transport::do_connect(clock_type::time_point timeout) {
     // hold invariant of having an always valid dispatch gate
     // and make sure we don't have a live connection already
     if (is_valid() || _dispatch_gate.is_closed()) {
-        return ss::make_exception_future<>(std::runtime_error(fmt::format(
+        throw std::runtime_error(fmt::format(
           "cannot do_connect with a valid connection. remote:{}",
-          server_address())));
+          server_address()));
     }
-    return ss::engine()
-      .net()
-      .connect(
-        server_address(),
-        ss::socket_address(sockaddr_in{AF_INET, INADDR_ANY, {0}}),
-        ss::transport::TCP)
-      .then([this](ss::connected_socket fd) mutable {
-          if (_creds) {
-              return ss::tls::wrap_client(
-                _creds,
-                std::move(fd),
-                _tls_sni_hostname ? *_tls_sni_hostname : ss::sstring{});
-          }
-          return ss::make_ready_future<ss::connected_socket>(std::move(fd));
-      })
-      .then_wrapped([this](ss::future<ss::connected_socket> f_fd) mutable {
-          try {
-              _fd = std::make_unique<ss::connected_socket>(f_fd.get0());
-          } catch (...) {
-              auto e = std::current_exception();
-              _probe.connection_error(e);
-              std::rethrow_exception(e);
-          }
-          _probe.connection_established();
-          _in = _fd->input();
-          _out = batched_output_stream(_fd->output());
-      });
+    try {
+        auto socket = ss::engine().net().socket();
+
+        ss::connected_socket fd = co_await connect_with_timeout(
+          socket, server_address(), timeout);
+
+        if (_creds) {
+            fd = co_await ss::tls::wrap_client(
+              _creds,
+              std::move(fd),
+              _tls_sni_hostname ? *_tls_sni_hostname : ss::sstring{});
+        }
+        _fd = std::make_unique<ss::connected_socket>(std::move(fd));
+        _probe.connection_established();
+        _in = _fd->input();
+        _out = batched_output_stream(_fd->output());
+    } catch (...) {
+        auto e = std::current_exception();
+        _probe.connection_error(e);
+        std::rethrow_exception(e);
+    }
+
+    co_return;
 }
-ss::future<> base_transport::connect() {
+
+ss::future<>
+base_transport::connect(clock_type::time_point connection_timeout) {
     // in order to hold concurrency correctness invariants we must guarantee 3
     // things before we attempt to send a payload:
     // 1. there are no background futures waiting
     // 2. the _dispatch_gate() is open
     // 3. the connection is valid
     //
-    return stop().then([this] {
+    return stop().then([this, connection_timeout] {
         _dispatch_gate = {};
-        return do_connect();
+        return do_connect(connection_timeout);
     });
 }
 ss::future<> base_transport::stop() {
@@ -137,8 +156,13 @@ void base_transport::shutdown() noexcept {
     }
 }
 
-ss::future<> transport::connect() {
-    return base_transport::connect().then([this] {
+ss::future<> transport::connect(clock_type::duration connection_timeout) {
+    return connect(connection_timeout + rpc::clock_type::now());
+}
+
+ss::future<>
+transport::connect(rpc::clock_type::time_point connection_timeout) {
+    return base_transport::connect(connection_timeout).then([this] {
         _correlation_idx = 0;
         _last_seq = sequence_t{0};
         _seq = sequence_t{0};
@@ -185,7 +209,7 @@ transport::make_response_handler(netbuf& b, const rpc::client_opts& opts) {
     item_raw_ptr->with_timeout(opts.timeout, [this, idx] {
         auto it = _correlations.find(idx);
         if (likely(it != _correlations.end())) {
-            vlog(rpclog.debug, "Request timeout, correlation id: {}", idx);
+            vlog(rpclog.info, "Request timeout, correlation id: {}", idx);
             _probe.request_timeout();
             _correlations.erase(it);
         }
