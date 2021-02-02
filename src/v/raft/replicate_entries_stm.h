@@ -105,7 +105,7 @@ private:
     ss::future<result<append_entries_reply>>
       send_append_entries_request(vnode, append_entries_request);
     result<replicate_result> process_result(model::offset, model::term_id);
-    bool is_follower_recovering(vnode);
+    bool should_skip_follower_request(vnode);
     clock_type::time_point append_entries_timeout();
     /// This append will happen under the lock
     ss::future<result<storage::append_result>> append_to_self();

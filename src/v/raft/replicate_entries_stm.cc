@@ -153,10 +153,26 @@ replicate_entries_stm::append_to_self() {
           return result<storage::append_result>(errc::leader_append_failed);
       });
 }
-
-inline bool replicate_entries_stm::is_follower_recovering(vnode id) {
+/**
+ *  We skip sending follower requests it those two cases:
+ *   - follower is recovering - when follower is not fully caught up it will not
+ *     accept append entries request, missing data will be replicated to
+ *     follower during recovery process
+ *   - we haven't received any response from the follower for replicate append
+ *     timeout duration - follower is probably down, we will not be able to
+ *     send the request to the follower and it will require recovery. This
+ *     prevents pending follower request queue build up and relieve memory
+ *     pressure. Follower will still receive heartbeats, as we skip sending
+ *     append entries request, after recovery follower will start receiving
+ *     requests.
+ */
+inline bool replicate_entries_stm::should_skip_follower_request(vnode id) {
     if (auto it = _ptr->_fstats.find(id); it != _ptr->_fstats.end()) {
-        return it->second.is_recovering;
+        const auto timeout = clock_type::now()
+                             - _ptr->_replicate_append_timeout;
+
+        return it->second.last_hbeat_timestamp < timeout
+               || it->second.is_recovering;
     }
 
     return false;
@@ -190,10 +206,10 @@ replicate_entries_stm::apply(ss::semaphore_units<> u) {
             [this, &requests_count, units](const vnode& rni) {
                 // We are not dispatching request to followers that are
                 // recovering
-                if (is_follower_recovering(rni)) {
+                if (should_skip_follower_request(rni)) {
                     vlog(
                       _ctxlog.trace,
-                      "Skipping sending append request to {}, recovering",
+                      "Skipping sending append request to {}",
                       rni);
                     _ptr->suppress_heartbeats(rni, _followers_seq[rni], false);
                     return;
