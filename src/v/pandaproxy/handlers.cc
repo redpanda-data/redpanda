@@ -192,13 +192,13 @@ create_consumer(server::request_t rq, server::reply_t rp) {
     auto req_data = ppj::rjson_parse(
       rq.req->content.data(), ppj::create_consumer_request_handler());
 
-    return rq.ctx.client.create_consumer(group_id).then(
-      [group_id, res_fmt, rq{std::move(rq)}, rp{std::move(rp)}](
-        kafka::member_id m_id) mutable {
+    return rq.ctx.client.create_consumer(group_id, req_data.name)
+      .then([group_id, res_fmt, rq{std::move(rq)}, rp{std::move(rp)}](
+              kafka::member_id name) mutable {
           auto adv_addr = rq.ctx.config.advertised_pandaproxy_api();
           json::create_consumer_response res{
-            .instance_id = m_id,
-            .base_uri = make_consumer_uri(rq, m_id, group_id)};
+            .instance_id = name,
+            .base_uri = make_consumer_uri(rq, name, group_id)};
           auto json_rslt = ppj::rjson_serialize(res);
           rp.rep->write_body("json", json_rslt);
           rp.mime_type = res_fmt;
@@ -260,9 +260,9 @@ consumer_fetch(server::request_t rq, server::reply_t rp) {
     int32_t max_bytes{
       boost::lexical_cast<int32_t>(rq.req->get_query_param("max_bytes"))};
     auto group_id = kafka::group_id(rq.req->param["group_name"]);
-    auto member_id = kafka::member_id(rq.req->param["instance"]);
+    auto name = kafka::member_id(rq.req->param["instance"]);
 
-    return rq.ctx.client.consumer_fetch(group_id, member_id, timeout, max_bytes)
+    return rq.ctx.client.consumer_fetch(group_id, name, timeout, max_bytes)
       .then([fmt, rp{std::move(rp)}](kafka::fetch_response res) mutable {
           rapidjson::StringBuffer str_buf;
           rapidjson::Writer<rapidjson::StringBuffer> w(str_buf);

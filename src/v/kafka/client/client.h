@@ -113,7 +113,8 @@ public:
       int32_t max_bytes,
       std::chrono::milliseconds timeout);
 
-    ss::future<member_id> create_consumer(const group_id& g_id);
+    ss::future<member_id>
+    create_consumer(const group_id& g_id, member_id name = kafka::no_member);
 
     ss::future<> remove_consumer(const group_id& g_id, const member_id& m_id);
 

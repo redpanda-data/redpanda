@@ -64,6 +64,7 @@ FIXTURE_TEST(pandaproxy_consumer_group, pandaproxy_test_fixture) {
     {
         info("Create consumer");
         ss::sstring req_body(R"({
+  "name": "test_consumer",
   "format": "binary",
   "auto.offset.reset": "earliest",
   "auto.commit.enable": "false",
@@ -84,7 +85,7 @@ FIXTURE_TEST(pandaproxy_consumer_group, pandaproxy_test_fixture) {
 
         auto res_data = ppj::rjson_parse(
           res.body.data(), ppj::create_consumer_response_handler());
-        BOOST_REQUIRE(res_data.instance_id != kafka::no_member);
+        BOOST_REQUIRE_EQUAL(res_data.instance_id, "test_consumer");
         member_id = res_data.instance_id;
         BOOST_REQUIRE_EQUAL(
           res_data.base_uri,

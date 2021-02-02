@@ -44,16 +44,21 @@ public:
       topic_cache& topic_cache,
       brokers& brokers,
       shared_broker_t coordinator,
-      group_id group_id)
+      group_id group_id,
+      member_id name)
       : _config(config)
       , _topic_cache(topic_cache)
       , _brokers(brokers)
       , _coordinator(std::move(coordinator))
       , _group_id(std::move(group_id))
+      , _name(std::move(name))
       , _topics() {}
 
     const kafka::group_id& group_id() const { return _group_id; }
     const kafka::member_id& member_id() const { return _member_id; }
+    const kafka::member_id& name() const {
+        return _name != kafka::no_member ? _name : _member_id;
+    }
     const std::vector<model::topic>& topics() const { return _topics; }
     const assignment_t& assignment() const { return _assignment; }
 
@@ -117,6 +122,7 @@ private:
     kafka::group_id _group_id;
     generation_id _generation_id{no_generation};
     kafka::member_id _member_id{no_member};
+    kafka::member_id _name{no_member};
     kafka::member_id _leader_id{no_leader};
     std::vector<model::topic> _topics{};
     std::vector<kafka::member_id> _members{};
@@ -128,9 +134,10 @@ private:
     friend std::ostream& operator<<(std::ostream& os, const consumer& c) {
         fmt::print(
           os,
-          "type={}, id={}",
+          "type={}, member_id={}, name={}",
           c.is_leader() ? "leader" : "member",
-          c._member_id);
+          c._member_id,
+          c._name);
         return os;
     }
 };
@@ -142,7 +149,8 @@ ss::future<shared_consumer_t> make_consumer(
   topic_cache& topic_cache,
   brokers& brokers,
   shared_broker_t coordinator,
-  group_id group_id);
+  group_id group_id,
+  member_id name);
 
 namespace detail {
 
@@ -151,11 +159,9 @@ struct consumer_hash {
     size_t operator()(const member_id& id) const {
         return absl::Hash<member_id>{}(id);
     }
-    size_t operator()(const consumer& c) const {
-        return (*this)(c.member_id());
-    }
+    size_t operator()(const consumer& c) const { return (*this)(c.name()); }
     size_t operator()(const shared_consumer_t& c) const {
-        return (*this)(c->member_id());
+        return (*this)(c->name());
     }
 };
 
@@ -163,13 +169,13 @@ struct consumer_eq {
     using is_transparent = void;
     bool operator()(
       const shared_consumer_t& lhs, const shared_consumer_t& rhs) const {
-        return lhs->member_id() == rhs->member_id();
+        return lhs->name() == rhs->name();
     }
     bool operator()(const member_id& lhs, const shared_consumer_t& rhs) const {
-        return lhs == rhs->member_id();
+        return lhs == rhs->name();
     }
     bool operator()(const shared_consumer_t& lhs, const member_id& rhs) const {
-        return lhs->member_id() == rhs;
+        return lhs->name() == rhs;
     }
 };
 

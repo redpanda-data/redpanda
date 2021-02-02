@@ -425,13 +425,15 @@ ss::future<shared_consumer_t> make_consumer(
   topic_cache& topic_cache,
   brokers& brokers,
   shared_broker_t coordinator,
-  group_id group_id) {
+  group_id group_id,
+  member_id name) {
     auto c = ss::make_lw_shared<consumer>(
       config,
       topic_cache,
       brokers,
       std::move(coordinator),
-      std::move(group_id));
+      std::move(group_id),
+      std::move(name));
     return c->join().then([c]() mutable { return std::move(c); });
 }
 
