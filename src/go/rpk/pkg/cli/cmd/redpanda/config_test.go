@@ -81,13 +81,16 @@ func TestSet(t *testing.T) {
 		{
 			name:	"it should partially set map fields (json)",
 			key:	"redpanda.kafka_api",
-			value: `{
-  "address": "192.168.54.2"
-}`,
+			value: `[{
+  "address": "192.168.54.2",
+  "port": 9092
+}]`,
 			args:	[]string{"--format", "json"},
-			expected: map[string]interface{}{
-				"address":	"192.168.54.2",
-				"port":		9092,
+			expected: []interface{}{
+				map[interface{}]interface{}{
+					"port":		9092,
+					"address":	"192.168.54.2",
+				},
 			},
 		},
 		{
@@ -242,9 +245,10 @@ func TestBootstrap(t *testing.T) {
 			_, err = fs.Stat(configPath)
 			conf, err := mgr.Read(configPath)
 			require.NoError(t, err)
-			require.Equal(t, conf.Redpanda.RPCServer.Address, tt.self)
-			require.Equal(t, conf.Redpanda.KafkaApi.Address, tt.self)
-			require.Equal(t, conf.Redpanda.AdminApi.Address, tt.self)
+
+			require.Equal(t, tt.self, conf.Redpanda.RPCServer.Address)
+			require.Equal(t, tt.self, conf.Redpanda.KafkaApi[0].Address)
+			require.Equal(t, tt.self, conf.Redpanda.AdminApi.Address)
 			if len(tt.ips) == 1 {
 				require.Equal(
 					t,

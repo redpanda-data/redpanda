@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/icza/dyno"
 	"github.com/mitchellh/mapstructure"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
@@ -148,7 +149,6 @@ func (m *manager) ReadFlat(path string) (map[string]string, error) {
 	keys := m.v.AllKeys()
 	flatMap := map[string]string{}
 	compactAddrFields := []string{
-		"redpanda.kafka_api",
 		"redpanda.rpc_server",
 		"redpanda.admin",
 	}
@@ -178,7 +178,7 @@ func (m *manager) ReadFlat(path string) (map[string]string, error) {
 			}
 			continue
 		}
-		if k == "redpanda.advertised_kafka_api" {
+		if k == "redpanda.advertised_kafka_api" || k == "redpanda.kafka_api" {
 			addrs := []NamedSocketAddress{}
 			err := unmarshalKey(k, &addrs)
 			if err != nil {
@@ -257,7 +257,8 @@ func (m *manager) readMap(path string) (map[string]interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	return m.v.AllSettings(), nil
+	strMap := dyno.ConvertMapI2MapS(m.v.AllSettings())
+	return strMap.(map[string]interface{}), nil
 }
 
 func (m *manager) WriteNodeUUID(conf *Config) error {

@@ -26,6 +26,8 @@ import (
 const (
 	ModeDev		= "dev"
 	ModeProd	= "prod"
+
+	DefaultKafkaPort	= 9092
 )
 
 func InitViper(fs afero.Fs) *viper.Viper {
@@ -78,6 +80,11 @@ func Default() *Config {
 }
 
 func defaultMap() map[string]interface{} {
+	var defaultListener interface{} = map[string]interface{}{
+		"address":	"0.0.0.0",
+		"port":		9092,
+	}
+	var defaultListeners []interface{} = []interface{}{defaultListener}
 	return map[string]interface{}{
 		"config_file":	"/etc/redpanda/redpanda.yaml",
 		"redpanda": map[string]interface{}{
@@ -86,10 +93,7 @@ func defaultMap() map[string]interface{} {
 				"address":	"0.0.0.0",
 				"port":		33145,
 			},
-			"kafka_api": map[string]interface{}{
-				"address":	"0.0.0.0",
-				"port":		9092,
-			},
+			"kafka_api":	defaultListeners,
 			"admin": map[string]interface{}{
 				"address":	"0.0.0.0",
 				"port":		9644,
@@ -236,31 +240,66 @@ func checkRedpandaConfig(v *viper.Viper) []error {
 		errs = append(errs, fmt.Errorf("redpanda.node_id can't be a negative integer"))
 	}
 
-	apiConfigKeys := []string{"redpanda.rpc_server", "redpanda.kafka_api"}
-
-	for _, key := range apiConfigKeys {
-		exists := v.Sub(key) != nil
-		if !exists {
+	rpcServerKey := "redpanda.rpc_server"
+	exists := v.Sub(rpcServerKey) != nil
+	if !exists {
+		errs = append(
+			errs,
+			fmt.Errorf("%s missing", rpcServerKey),
+		)
+	} else {
+		socket := &SocketAddress{}
+		err := v.UnmarshalKey(rpcServerKey, socket)
+		if err != nil {
 			errs = append(
 				errs,
-				fmt.Errorf("%s missing", key),
+				fmt.Errorf("invalid structure for %s", rpcServerKey),
 			)
 		} else {
-			socket := &SocketAddress{}
-			err := v.UnmarshalKey(key, socket)
-			if err != nil {
-				errs = append(
-					errs,
-					fmt.Errorf("invalid structure for %s", key),
-				)
-			} else {
-				errs = append(
-					errs,
-					checkSocketAddress(*socket, key)...,
-				)
-			}
+			errs = append(
+				errs,
+				checkSocketAddress(*socket, rpcServerKey)...,
+			)
 		}
 	}
+
+	kafkaApiKey := "redpanda.kafka_api"
+	exists = v.Get(kafkaApiKey) != nil
+	if !exists {
+		errs = append(
+			errs,
+			fmt.Errorf("%s missing", kafkaApiKey),
+		)
+	} else {
+		var kafkaListeners []NamedSocketAddress
+		err := v.UnmarshalKey("redpanda.kafka_api", &kafkaListeners)
+		if err != nil {
+			log.Error(err)
+			err = fmt.Errorf(
+				"%s doesn't have the expected structure",
+				kafkaApiKey,
+			)
+			return append(
+				errs,
+				err,
+			)
+		}
+		for i, addr := range kafkaListeners {
+			configPath := fmt.Sprintf(
+				"%s.%d",
+				kafkaApiKey,
+				i,
+			)
+			errs = append(
+				errs,
+				checkSocketAddress(
+					addr.SocketAddress,
+					configPath,
+				)...,
+			)
+		}
+	}
+
 	var seedServersSlice []*SeedServer	//map[string]interface{}
 	err := v.UnmarshalKey("redpanda.seed_servers", &seedServersSlice)
 	if err != nil {

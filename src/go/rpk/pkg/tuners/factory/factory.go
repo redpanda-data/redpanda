@@ -288,9 +288,12 @@ func MergeTunerParamsConfig(
 	params *TunerParams, conf *config.Config,
 ) (*TunerParams, error) {
 	if len(params.Nics) == 0 {
+		addrs := []string{conf.Redpanda.RPCServer.Address}
+		if len(conf.Redpanda.KafkaApi) > 0 {
+			addrs = append(addrs, conf.Redpanda.KafkaApi[0].Address)
+		}
 		nics, err := net.GetInterfacesByIps(
-			conf.Redpanda.KafkaApi.Address,
-			conf.Redpanda.RPCServer.Address,
+			addrs...,
 		)
 		if err != nil {
 			return params, err
@@ -306,8 +309,13 @@ func MergeTunerParamsConfig(
 func FillTunerParamsWithValuesFromConfig(
 	params *TunerParams, conf *config.Config,
 ) error {
+	addrs := []string{conf.Redpanda.RPCServer.Address}
+	if len(conf.Redpanda.KafkaApi) > 0 {
+		addrs = append(addrs, conf.Redpanda.KafkaApi[0].Address)
+	}
 	nics, err := net.GetInterfacesByIps(
-		conf.Redpanda.KafkaApi.Address, conf.Redpanda.RPCServer.Address)
+		addrs...,
+	)
 	if err != nil {
 		return err
 	}

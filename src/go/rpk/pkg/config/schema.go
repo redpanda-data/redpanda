@@ -25,7 +25,7 @@ type RedpandaConfig struct {
 	Directory		string			`yaml:"data_directory" mapstructure:"data_directory" json:"dataDirectory"`
 	RPCServer		SocketAddress		`yaml:"rpc_server" mapstructure:"rpc_server" json:"rpcServer"`
 	AdvertisedRPCAPI	*SocketAddress		`yaml:"advertised_rpc_api,omitempty" mapstructure:"advertised_rpc_api,omitempty" json:"advertisedRpcApi,omitempty"`
-	KafkaApi		NamedSocketAddress	`yaml:"kafka_api" mapstructure:"kafka_api" json:"kafkaApi"`
+	KafkaApi		[]NamedSocketAddress	`yaml:"kafka_api" mapstructure:"kafka_api" json:"kafkaApi"`
 	AdvertisedKafkaApi	[]NamedSocketAddress	`yaml:"advertised_kafka_api,omitempty" mapstructure:"advertised_kafka_api,omitempty" json:"advertisedKafkaApi,omitempty"`
 	KafkaApiTLS		ServerTLS		`yaml:"kafka_api_tls,omitempty" mapstructure:"kafka_api_tls,omitempty" json:"kafkaApiTls"`
 	AdminApi		SocketAddress		`yaml:"admin" mapstructure:"admin" json:"admin"`
