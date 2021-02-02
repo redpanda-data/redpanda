@@ -129,8 +129,8 @@ func executePrometheusConfig(
 		return []byte(""), err
 	}
 	hosts, err := discoverHosts(
-		conf.Redpanda.KafkaApi.Address,
-		conf.Redpanda.KafkaApi.Port,
+		conf.Redpanda.KafkaApi[0].Address,
+		conf.Redpanda.KafkaApi[0].Port,
 	)
 	if err != nil {
 		return []byte(""), err

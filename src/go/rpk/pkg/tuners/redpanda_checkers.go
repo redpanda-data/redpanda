@@ -10,6 +10,7 @@
 package tuners
 
 import (
+	"errors"
 	"time"
 
 	"github.com/spf13/afero"
@@ -207,7 +208,13 @@ func RedpandaCheckers(
 		blockDevices,
 		balanceService,
 	)
-	interfaces, err := net.GetInterfacesByIps(config.Redpanda.KafkaApi.Address, config.Redpanda.RPCServer.Address)
+	if len(config.Redpanda.KafkaApi) == 0 {
+		return nil, errors.New("'redpanda.kafka_api' is empty")
+	}
+	interfaces, err := net.GetInterfacesByIps(
+		config.Redpanda.KafkaApi[0].Address,
+		config.Redpanda.RPCServer.Address,
+	)
 	if err != nil {
 		return nil, err
 	}

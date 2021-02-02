@@ -84,7 +84,7 @@ func NewStartCommand(
 		configFile	string
 		nodeID		uint
 		seeds		[]string
-		kafkaAddr	string
+		kafkaAddr	[]string
 		rpcAddr		string
 		advertisedKafka	[]string
 		advertisedRPC	string
@@ -123,20 +123,23 @@ func NewStartCommand(
 				conf.Redpanda.SeedServers = seedServers
 			}
 
-			kafkaAddr = stringOr(
+			kafkaAddr = stringSliceOr(
 				kafkaAddr,
-				os.Getenv("REDPANDA_KAFKA_ADDRESS"),
+				strings.Split(
+					os.Getenv("REDPANDA_KAFKA_ADDRESS"),
+					",",
+				),
 			)
-			kafkaApi, err := parseNamedAddress(
+			kafkaApi, err := parseNamedAddresses(
 				kafkaAddr,
-				config.Default().Redpanda.KafkaApi.Port,
+				config.DefaultKafkaPort,
 			)
 			if err != nil {
 				sendEnv(fs, mgr, env, conf, err)
 				return err
 			}
-			if kafkaApi != nil {
-				conf.Redpanda.KafkaApi = *kafkaApi
+			if kafkaApi != nil && len(kafkaApi) > 0 {
+				conf.Redpanda.KafkaApi = kafkaApi
 			}
 
 			rpcAddr = stringOr(
@@ -164,7 +167,7 @@ func NewStartCommand(
 			)
 			advKafkaApi, err := parseNamedAddresses(
 				advertisedKafka,
-				config.Default().Redpanda.KafkaApi.Port,
+				config.DefaultKafkaPort,
 			)
 			if err != nil {
 				sendEnv(fs, mgr, env, conf, err)
@@ -254,11 +257,11 @@ func NewStartCommand(
 		"A comma-separated list of seed node addresses"+
 			" (<host>[:<port>]) to connect to",
 	)
-	command.Flags().StringVar(
+	command.Flags().StringSliceVar(
 		&kafkaAddr,
 		"kafka-addr",
-		"",
-		"The Kafka address to bind to (<host>:<port>)",
+		[]string{},
+		"The list of Kafka listener addresses to bind to (<host>:<port>)",
 	)
 	command.Flags().StringVar(
 		&rpcAddr,

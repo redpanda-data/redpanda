@@ -59,7 +59,7 @@ func TestSet(t *testing.T) {
 		key		string
 		value		string
 		format		string
-		expected	interface{}
+		expected	func() interface{}
 		expectErr	bool
 	}{
 		{
@@ -67,70 +67,76 @@ func TestSet(t *testing.T) {
 			key:		"redpanda.node_id",
 			value:		"1",
 			format:		"single",
-			expected:	1,
+			expected:	func() interface{} { return 1 },
 		},
 		{
 			name:		"it should set single integer fields",
 			key:		"redpanda.node_id",
 			value:		"54312",
 			format:		"single",
-			expected:	54312,
+			expected:	func() interface{} { return 54312 },
 		},
 		{
 			name:		"it should set single float fields",
 			key:		"redpanda.float_field",
 			value:		"42.3",
 			format:		"single",
-			expected:	42.3,
+			expected:	func() interface{} { return 42.3 },
 		},
 		{
 			name:		"it should set single string fields",
 			key:		"redpanda.data_directory",
 			value:		"'/var/lib/differentdir'",
 			format:		"single",
-			expected:	"'/var/lib/differentdir'",
+			expected:	func() interface{} { return "'/var/lib/differentdir'" },
 		},
 		{
 			name:		"it should set single bool fields",
 			key:		"rpk.enable_usage_stats",
 			value:		"true",
 			format:		"single",
-			expected:	true,
+			expected:	func() interface{} { return true },
 		},
 		{
 			name:	"it should partially set map fields (yaml)",
 			key:	"rpk",
 			value:	`tune_disk_irq: true`,
 			format:	"yaml",
-			expected: map[string]interface{}{
-				"enable_usage_stats":		false,
-				"overprovisioned":		false,
-				"tune_network":			false,
-				"tune_disk_scheduler":		false,
-				"tune_disk_nomerges":		false,
-				"tune_disk_irq":		true,
-				"tune_cpu":			false,
-				"tune_aio_events":		false,
-				"tune_clocksource":		false,
-				"tune_swappiness":		false,
-				"tune_transparent_hugepages":	false,
-				"enable_memory_locking":	false,
-				"tune_fstrim":			false,
-				"tune_coredump":		false,
-				"tune_disk_write_cache":	false,
-				"coredump_dir":			"/var/lib/redpanda/coredump",
+			expected: func() interface{} {
+				return map[string]interface{}{
+					"enable_usage_stats":		false,
+					"overprovisioned":		false,
+					"tune_network":			false,
+					"tune_disk_scheduler":		false,
+					"tune_disk_nomerges":		false,
+					"tune_disk_irq":		true,
+					"tune_cpu":			false,
+					"tune_aio_events":		false,
+					"tune_clocksource":		false,
+					"tune_swappiness":		false,
+					"tune_transparent_hugepages":	false,
+					"enable_memory_locking":	false,
+					"tune_fstrim":			false,
+					"tune_coredump":		false,
+					"tune_disk_write_cache":	false,
+					"coredump_dir":			"/var/lib/redpanda/coredump",
+				}
 			},
 		},
 		{
 			name:	"it should partially set map fields (json)",
 			key:	"redpanda.kafka_api",
-			value: `{
-		  "address": "192.168.54.2"
-		}`,
+			value: `[{
+		  "address": "192.168.54.2",
+                  "port": 9092
+		}]`,
 			format:	"json",
-			expected: map[string]interface{}{
-				"address":	"192.168.54.2",
-				"port":		9092,
+			expected: func() interface{} {
+				var addr interface{} = map[interface{}]interface{}{
+					"address":	"192.168.54.2",
+					"port":		9092,
+				}
+				return []interface{}{addr}
 			},
 		},
 		{
@@ -189,7 +195,7 @@ func TestSet(t *testing.T) {
 			err = v.ReadInConfig()
 			require.NoError(t, err)
 			val := v.Get(tt.key)
-			require.Exactly(t, tt.expected, val)
+			require.Exactly(t, tt.expected(), val)
 		})
 	}
 }
@@ -201,12 +207,12 @@ func TestDefault(t *testing.T) {
 		Redpanda: RedpandaConfig{
 			Directory:	"/var/lib/redpanda/data",
 			RPCServer:	SocketAddress{"0.0.0.0", 33145},
-			KafkaApi: NamedSocketAddress{
+			KafkaApi: []NamedSocketAddress{{
 				SocketAddress: SocketAddress{
 					"0.0.0.0",
 					9092,
 				},
-			},
+			}},
 			AdminApi:	SocketAddress{"0.0.0.0", 9644},
 			Id:		0,
 			DeveloperMode:	true,
@@ -298,7 +304,7 @@ redpanda:
   data_directory: /var/lib/redpanda/data
   developer_mode: false
   kafka_api:
-    address: 0.0.0.0
+  - address: 0.0.0.0
     port: 9092
   node_id: 0
   rpc_server:
@@ -355,7 +361,7 @@ redpanda:
   data_directory: /var/lib/redpanda/data
   developer_mode: false
   kafka_api:
-    address: 0.0.0.0
+  - address: 0.0.0.0
     port: 9092
   node_id: 0
   rpc_server:
@@ -404,7 +410,7 @@ redpanda:
   data_directory: /var/lib/redpanda/data
   developer_mode: false
   kafka_api:
-    address: 0.0.0.0
+  - address: 0.0.0.0
     port: 9092
   node_id: 0
   rpc_server:
@@ -457,7 +463,7 @@ redpanda:
   data_directory: /var/lib/redpanda/data
   developer_mode: false
   kafka_api:
-    address: 0.0.0.0
+  - address: 0.0.0.0
     port: 9092
   node_id: 0
   rpc_server:
@@ -501,7 +507,7 @@ redpanda:
   data_directory: /var/lib/redpanda/data
   default_window_sec: 100
   kafka_api:
-    address: 0.0.0.0
+  - address: 0.0.0.0
     port: 9092
   node_id: 0
   rpc_server:
@@ -532,7 +538,7 @@ redpanda:
   default_window_sec: 100
   developer_mode: false
   kafka_api:
-    address: 0.0.0.0
+  - address: 0.0.0.0
     port: 9092
   node_id: 0
   rpc_server:
@@ -580,7 +586,7 @@ redpanda:
   data_directory: /var/lib/redpanda/data
   default_window_sec: 100
   kafka_api:
-    address: 0.0.0.0
+  - address: 0.0.0.0
     port: 9092
   node_id: 0
   rpc_server:
@@ -606,7 +612,7 @@ redpanda:
   default_window_sec: 100
   developer_mode: false
   kafka_api:
-    address: 0.0.0.0
+  - address: 0.0.0.0
     port: 9092
   node_id: 0
   rpc_server:
@@ -847,19 +853,19 @@ func TestCheckConfig(t *testing.T) {
 			name:	"shall return an error when the Kafka API port is 0",
 			conf: func() *Config {
 				c := getValidConfig()
-				c.Redpanda.KafkaApi.Port = 0
+				c.Redpanda.KafkaApi[0].Port = 0
 				return c
 			},
-			expected:	[]string{"redpanda.kafka_api.port can't be 0"},
+			expected:	[]string{"redpanda.kafka_api.0.port can't be 0"},
 		},
 		{
 			name:	"shall return an error when the Kafka API address is empty",
 			conf: func() *Config {
 				c := getValidConfig()
-				c.Redpanda.KafkaApi.Address = ""
+				c.Redpanda.KafkaApi[0].Address = ""
 				return c
 			},
-			expected:	[]string{"redpanda.kafka_api.address can't be empty"},
+			expected:	[]string{"redpanda.kafka_api.0.address can't be empty"},
 		},
 		{
 			name:	"shall return an error when one of the seed servers' address is empty",
@@ -973,7 +979,8 @@ func TestReadFlat(t *testing.T) {
 		"redpanda.advertised_kafka_api.0":	"internal://127.0.0.1:9092",
 		"redpanda.advertised_kafka_api.1":	"127.0.0.1:9093",
 		"redpanda.data_directory":		"/var/lib/redpanda/data",
-		"redpanda.kafka_api":			"0.0.0.0:9092",
+		"redpanda.kafka_api.0":			"internal://192.168.92.34:9092",
+		"redpanda.kafka_api.1":			"127.0.0.1:9093",
 		"redpanda.node_id":			"0",
 		"redpanda.rpc_server":			"0.0.0.0:33145",
 		"redpanda.seed_servers.0":		"192.168.167.0:1337",
@@ -1018,6 +1025,20 @@ func TestReadFlat(t *testing.T) {
 			Port:		9093,
 		},
 	}}
+
+	conf.Redpanda.KafkaApi = []NamedSocketAddress{{
+		SocketAddress: SocketAddress{
+			Address:	"192.168.92.34",
+			Port:		9092,
+		},
+		Name:	"internal",
+	}, {
+		SocketAddress: SocketAddress{
+			Address:	"127.0.0.1",
+			Port:		9093,
+		},
+	}}
+
 	err := mgr.Write(conf)
 	require.NoError(t, err)
 	props, err := mgr.ReadFlat(conf.ConfigFile)

@@ -147,7 +147,6 @@ func (m *manager) ReadFlat(path string) (map[string]string, error) {
 	keys := m.v.AllKeys()
 	flatMap := map[string]string{}
 	compactAddrFields := []string{
-		"redpanda.kafka_api",
 		"redpanda.rpc_server",
 		"redpanda.admin",
 	}
@@ -177,7 +176,7 @@ func (m *manager) ReadFlat(path string) (map[string]string, error) {
 			}
 			continue
 		}
-		if k == "redpanda.advertised_kafka_api" {
+		if k == "redpanda.advertised_kafka_api" || k == "redpanda.kafka_api" {
 			addrs := []NamedSocketAddress{}
 			err := unmarshalKey(k, &addrs)
 			if err != nil {

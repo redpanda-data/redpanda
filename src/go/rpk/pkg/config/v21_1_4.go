@@ -29,7 +29,7 @@ type v2114RedpandaConfig struct {
 	Directory		string			`yaml:"data_directory" mapstructure:"data_directory" json:"dataDirectory"`
 	RPCServer		v2114SocketAddress	`yaml:"rpc_server" mapstructure:"rpc_server" json:"rpcServer"`
 	AdvertisedRPCAPI	*v2114SocketAddress	`yaml:"advertised_rpc_api,omitempty" mapstructure:"advertised_rpc_api,omitempty" json:"advertisedRpcApi,omitempty"`
-	KafkaApi		v2114NamedSocketAddress	`yaml:"kafka_api" mapstructure:"kafka_api" json:"kafkaApi"`
+	KafkaApi		interface{}		`yaml:"kafka_api" mapstructure:"kafka_api" json:"kafkaApi"`
 	AdvertisedKafkaApi	interface{}		`yaml:"advertised_kafka_api,omitempty" mapstructure:"advertised_kafka_api,omitempty" json:"advertisedKafkaApi,omitempty"`
 	KafkaApiTLS		v2114ServerTLS		`yaml:"kafka_api_tls,omitempty" mapstructure:"kafka_api_tls,omitempty" json:"kafkaApiTls"`
 	AdminApi		v2114SocketAddress	`yaml:"admin" mapstructure:"admin" json:"admin"`
@@ -113,7 +113,14 @@ func (rc v2114RedpandaConfig) toGeneric() (*RedpandaConfig, error) {
 		advRpcApi = rc.AdvertisedRPCAPI.toGeneric()
 	}
 
-	kafkaApi := rc.KafkaApi.toGeneric()
+	var kafkaApi []NamedSocketAddress
+	if rc.KafkaApi != nil {
+		var err error
+		kafkaApi, err = v2114ParsePolymorphicSocketAddress(rc.KafkaApi)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	var advKafkaApi []NamedSocketAddress
 	if rc.AdvertisedKafkaApi != nil {
@@ -139,7 +146,7 @@ func (rc v2114RedpandaConfig) toGeneric() (*RedpandaConfig, error) {
 		Directory:		rc.Directory,
 		RPCServer:		*rpcServer,
 		AdvertisedRPCAPI:	advRpcApi,
-		KafkaApi:		*kafkaApi,
+		KafkaApi:		kafkaApi,
 		AdvertisedKafkaApi:	advKafkaApi,
 		KafkaApiTLS:		kafkaApiTls,
 		AdminApi:		*adminApi,
@@ -223,7 +230,6 @@ func v2114ParsePolymorphicSocketAddress(
 	} else if vs, ok := v.([]interface{}); ok {
 		return v2114ParseNamedSocketAddressList(vs)
 	}
-	panic(fmt.Sprintf("%T", v))
 	return nil, fmt.Errorf(
 		"couldn't parse '%s'. Its value doesn't match any of"+
 			" the supported structures for v21.1.4",

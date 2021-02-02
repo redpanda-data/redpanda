@@ -243,7 +243,7 @@ func TestBootstrap(t *testing.T) {
 			conf, err := mgr.Read(configPath)
 			require.NoError(t, err)
 			require.Equal(t, conf.Redpanda.RPCServer.Address, tt.self)
-			require.Equal(t, conf.Redpanda.KafkaApi.Address, tt.self)
+			require.Equal(t, conf.Redpanda.KafkaApi[0].Address, tt.self)
 			require.Equal(t, conf.Redpanda.AdminApi.Address, tt.self)
 			if len(tt.ips) == 1 {
 				require.Equal(
