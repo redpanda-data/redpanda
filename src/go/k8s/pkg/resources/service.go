@@ -4,6 +4,7 @@ import (
 	"context"
 
 	redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/labels"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -54,7 +55,7 @@ func (r *ServiceResource) Obj() (client.Object, error) {
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace:	r.Key().Namespace,
 			Name:		r.Key().Name,
-			Labels:		r.pandaCluster.Labels,
+			Labels:		labels.ForCluster(r.pandaCluster),
 		},
 		Spec: corev1.ServiceSpec{
 			ClusterIP:	corev1.ClusterIPNone,

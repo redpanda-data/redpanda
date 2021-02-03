@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/labels"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 	"gopkg.in/yaml.v3"
 	corev1 "k8s.io/api/core/v1"
@@ -110,7 +111,7 @@ func (r *ConfigMapResource) Obj() (client.Object, error) {
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace:	r.Key().Namespace,
 			Name:		r.Key().Name,
-			Labels:		r.pandaCluster.Labels,
+			Labels:		labels.ForCluster(r.pandaCluster),
 		},
 		Data: map[string]string{
 			"redpanda.yaml":	string(cfgBytes),
