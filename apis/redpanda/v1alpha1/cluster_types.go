@@ -42,7 +42,7 @@ type ClusterStatus struct {
 
 	// Replicas show how many nodes are working in the cluster
 	// +optional
-	Replicas	int32	`json:"replicas,omitempty"`
+	Replicas	int32	`json:"replicas"`
 	// Nodes of the provisioned redpanda nodes
 	// +optional
 	Nodes	[]string	`json:"nodes,omitempty"`
