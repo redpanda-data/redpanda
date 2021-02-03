@@ -2,7 +2,7 @@
 # See https://pre-commit.com/hooks.html for more hooks
 repos:
   - repo: https://github.com/vectorizedio/pre-commit-vectorizedio.git
-    rev: da67abf82ab30c3f2b5f39620b89f18d16448730
+    rev: 91f6656b0fd532cdf325536a1daf8f28a8fa670c
     hooks:
       - id: crlfmt
       - id: golangci-lint

@@ -12,6 +12,7 @@ package redpanda
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 
@@ -26,8 +27,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-const (
-	debugLevel = 2
+var (
+	errNonexistentLastObservesState = errors.New("expecting to have statefulset LastObservedState set but is nil")
 )
 
 // ClusterReconciler reconciles a Cluster object
@@ -53,7 +54,6 @@ type ClusterReconciler struct {
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.7.0/pkg/reconcile
-// nolint:funlen // The complexity of Reconcile function will be address in the next version
 func (r *ClusterReconciler) Reconcile(
 	ctx context.Context, req ctrl.Request,
 ) (ctrl.Result, error) {
@@ -116,7 +116,7 @@ func (r *ClusterReconciler) Reconcile(
 	}
 
 	if sts.LastObservedState != nil {
-		return ctrl.Result{}, fmt.Errorf("Expecting to have statefulset LastObservedState set but is null")
+		return ctrl.Result{}, errNonexistentLastObservesState
 	}
 
 	if sts.LastObservedState != nil && !reflect.DeepEqual(sts.LastObservedState.Status.ReadyReplicas, redpandaCluster.Status.Replicas) {
