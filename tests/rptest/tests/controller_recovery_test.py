@@ -26,7 +26,7 @@ class ControllerRecoveryTest(RedpandaTest):
             curr = self.redpanda.controller()
             return curr and curr != prev
 
-        wait_until(lambda: new_controller_elected(),
+        wait_until(new_controller_elected,
                    timeout_sec=30,
                    backoff_sec=2,
                    err_msg="Controller did not failover")
