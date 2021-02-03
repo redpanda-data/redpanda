@@ -10,7 +10,7 @@
 from ducktape.mark.resource import cluster
 from ducktape.utils.util import wait_until
 
-from rptest.tests.redpanda_test import RedpandaTest
+from rptest.tests.redpanda_test import RedpandaTest, TopicSpec
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 
 
@@ -18,18 +18,17 @@ class CompactionRecoveryTest(RedpandaTest):
     """
     Verify that segment indices are recovered on startup.
     """
+    topics = (TopicSpec(cleanup_policy=TopicSpec.CLEANUP_COMPACT), )
+
     def __init__(self, test_context):
         extra_rp_conf = dict(
             log_compaction_interval_ms=2000,
             compacted_log_segment_size=1048576,
         )
 
-        topics = dict(topic=dict(cleanup_policy="compact"))
-
         super(CompactionRecoveryTest,
               self).__init__(test_context=test_context,
-                             extra_rp_conf=extra_rp_conf,
-                             topics=topics)
+                             extra_rp_conf=extra_rp_conf)
 
     @cluster(num_nodes=3)
     def test_index_recovery(self):
@@ -54,9 +53,9 @@ class CompactionRecoveryTest(RedpandaTest):
         kafka_tools = KafkaCliTools(self.redpanda)
 
         def check_partitions():
-            kafka_tools.produce("topic", 1024, 1024)
+            kafka_tools.produce(self.topic, 1024, 1024)
             storage = self.redpanda.storage()
-            partitions[:] = storage.partitions("kafka", "topic")
+            partitions[:] = storage.partitions("kafka", self.topic)
             return partitions and all(
                 map(lambda p: len(p.segments) > count and p.recovered(),
                     partitions))
