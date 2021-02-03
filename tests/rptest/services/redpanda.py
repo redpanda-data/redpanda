@@ -54,7 +54,7 @@ class RedpandaService(Service):
         self._context = context
         self._extra_rp_conf = extra_rp_conf
         self._log_level = log_level
-        self._topics = topics or dict()
+        self._topics = topics or ()
         self.v_build_dir = self._context.globals.get("v_build_dir", None)
 
     def start(self):
@@ -75,10 +75,13 @@ class RedpandaService(Service):
             assert set(node.ns) == {"redpanda"}
             assert set(node.ns["redpanda"].topics) == {"controller", "kvstore"}
 
+        self._create_initial_topics()
+
+    def _create_initial_topics(self):
         kafka_tools = KafkaCliTools(self)
-        for topic, cfg in self._topics.items():
-            self.logger.debug("Creating initial topic %s / %s", topic, cfg)
-            kafka_tools.create_topic(topic, **cfg)
+        for spec in self._topics:
+            self.logger.debug(f"Creating initial topic {spec}")
+            kafka_tools.create_topic_from_spec(spec)
 
     def start_node(self, node, override_cfg_params=None):
         node.account.mkdirs(RedpandaService.DATA_DIR)

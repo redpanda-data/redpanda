@@ -15,17 +15,14 @@ from ducktape.utils.util import wait_until
 from rptest.clients.kafka_cat import KafkaCat
 import requests
 
-from rptest.tests.redpanda_test import RedpandaTest
+from rptest.tests.redpanda_test import RedpandaTest, TopicSpec
 
 
 class LeadershipTransferTest(RedpandaTest):
     """
     Transfer leadership from one node to another.
     """
-    def __init__(self, test_context):
-        topics = dict(topic=dict(partitions=3, replication_factor=3))
-
-        super().__init__(test_context=test_context, topics=topics)
+    topics = (TopicSpec(partitions=3, replication_factor=3), )
 
     @cluster(num_nodes=3)
     def test_controller_recovery(self):
@@ -53,7 +50,7 @@ class LeadershipTransferTest(RedpandaTest):
         host = host.split(":")[0]
         partition_id = partition["partition"]
         url = "http://{}:9644/v1/kafka/{}/{}/transfer_leadership?target={}".format(
-            host, "topic", partition["partition"], target_node_id)
+            host, self.topic, partition["partition"], target_node_id)
 
         def try_transfer():
             self.logger.debug(url)
@@ -81,7 +78,7 @@ class LeadershipTransferTest(RedpandaTest):
             meta = kc.metadata()
             topics = meta["topics"]
             assert len(topics) == 1
-            assert topics[0]["topic"] == "topic"
+            assert topics[0]["topic"] == self.topic
             partition[0] = random.choice(topics[0]["partitions"])
             if partition[0]["leader"] > 0:
                 return True

@@ -38,6 +38,12 @@ class KafkaCliTools:
             args += ["--config", "cleanup.policy={}".format(cleanup_policy)]
         return self._run("kafka-topics.sh", args)
 
+    def create_topic_from_spec(self, spec):
+        return self.create_topic(spec.name,
+                                 partitions=spec.partitions,
+                                 replication_factor=spec.replication_factor,
+                                 cleanup_policy=spec.cleanup_policy)
+
     def delete_topic(self, topic):
         self._redpanda.logger.debug("Deleting topic: %s", topic)
         args = ["--delete"]

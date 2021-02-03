@@ -14,7 +14,7 @@ from ducktape.mark import matrix
 from ducktape.mark.resource import cluster
 from ducktape.utils.util import wait_until
 
-from rptest.tests.redpanda_test import RedpandaTest
+from rptest.tests.redpanda_test import RedpandaTest, TopicSpec
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 
 from storage import storage as vstorage
@@ -25,6 +25,8 @@ class PrefixTruncateRecoveryTest(RedpandaTest):
     Verify that a kafka log that's been prefix truncated due to retention policy
     eventually converges with other raft group nodes.
     """
+    topics = (TopicSpec(cleanup_policy=TopicSpec.CLEANUP_DELETE), )
+
     def __init__(self, test_context):
         extra_rp_conf = dict(
             log_segment_size=1048576,
@@ -32,13 +34,10 @@ class PrefixTruncateRecoveryTest(RedpandaTest):
             log_compaction_interval_ms=2000,
         )
 
-        topics = dict(topic=dict(cleanup_policy="delete"))
-
         super(PrefixTruncateRecoveryTest,
               self).__init__(test_context=test_context,
                              num_brokers=3,
-                             extra_rp_conf=extra_rp_conf,
-                             topics=topics)
+                             extra_rp_conf=extra_rp_conf)
 
         self.kafka_tools = KafkaCliTools(self.redpanda)
 
@@ -46,7 +45,7 @@ class PrefixTruncateRecoveryTest(RedpandaTest):
     @matrix(acks=[-1, 1])
     def test_prefix_truncate_recovery(self, acks):
         # produce a little data
-        self.kafka_tools.produce("topic", 1024, 1024, acks=acks)
+        self.kafka_tools.produce(self.topic, 1024, 1024, acks=acks)
 
         # stop one of the nodes
         node = self.redpanda.controller()
@@ -66,9 +65,9 @@ class PrefixTruncateRecoveryTest(RedpandaTest):
         # Produce until at least 3 segments per partition appear on disk.
         #
         def produce_until_segments(count):
-            self.kafka_tools.produce("topic", 1000, 1000)
+            self.kafka_tools.produce(self.topic, 1000, 1000)
             storage = self.redpanda.storage()
-            for p in storage.partitions("kafka", "topic"):
+            for p in storage.partitions("kafka", self.topic):
                 if p.node == ignore_node:
                     continue
                 if p.num not in partitions or len(
@@ -98,11 +97,11 @@ class PrefixTruncateRecoveryTest(RedpandaTest):
         # because of the retention / cleanup policy.
         #
         def produce_until_segments_deleted():
-            self.kafka_tools.produce("topic", 1000, 1000)
+            self.kafka_tools.produce(self.topic, 1000, 1000)
             storage = self.redpanda.storage()
             curr_segments = make_segment_sets(
                 {p.num: p
-                 for p in storage.partitions("kafka", "topic")})
+                 for p in storage.partitions("kafka", self.topic)})
             for p, segs in orig_segments.items():
                 self.logger.debug("Partition %d segment set intersection: %s",
                                   p, segs.intersection(curr_segments[p]))

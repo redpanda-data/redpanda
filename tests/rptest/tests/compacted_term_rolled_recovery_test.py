@@ -10,24 +10,23 @@
 from ducktape.mark.resource import cluster
 from ducktape.utils.util import wait_until
 
-from rptest.tests.redpanda_test import RedpandaTest
+from rptest.tests.redpanda_test import RedpandaTest, TopicSpec
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 
 
 class CompactionTermRollRecoveryTest(RedpandaTest):
+    topics = (TopicSpec(cleanup_policy=TopicSpec.CLEANUP_COMPACT), )
+
     def __init__(self, test_context):
         extra_rp_conf = dict(
             log_compaction_interval_ms=5000,
             compacted_log_segment_size=1048576,
         )
 
-        topics = dict(topic=dict(cleanup_policy="compact"))
-
         super(CompactionTermRollRecoveryTest,
               self).__init__(test_context=test_context,
                              num_brokers=3,
-                             extra_rp_conf=extra_rp_conf,
-                             topics=topics)
+                             extra_rp_conf=extra_rp_conf)
 
     @cluster(num_nodes=3)
     def test_compact_term_rolled_recovery(self):
@@ -42,7 +41,7 @@ class CompactionTermRollRecoveryTest(RedpandaTest):
         scenario with various topic configurations.
         """
         # operate on a partition. doesn't matter which one
-        partition = next(self.redpanda.partitions("topic"))
+        partition = next(self.redpanda.partitions(self.topic))
 
         # stop a replica in order to test its recovery
         all_replicas = list(partition.replicas)
@@ -50,13 +49,13 @@ class CompactionTermRollRecoveryTest(RedpandaTest):
         self.redpanda.stop_node(needs_recovery)
 
         # produce until segments have been compacted
-        self._produce_until_compaction(others, "topic", partition.index)
+        self._produce_until_compaction(others, self.topic, partition.index)
 
         # restart all replicas: rolls term, starts recovery
         self.redpanda.restart_nodes(all_replicas)
 
         # ensure that the first stopped node recovered ok
-        self._wait_until_recovered(all_replicas, "topic", partition.index)
+        self._wait_until_recovered(all_replicas, self.topic, partition.index)
 
     def _produce_until_compaction(self, nodes, topic, partition):
         """
@@ -71,7 +70,7 @@ class CompactionTermRollRecoveryTest(RedpandaTest):
         kafka_tools = KafkaCliTools(self.redpanda)
 
         def done():
-            kafka_tools.produce("topic", 1024, 1024)
+            kafka_tools.produce(self.topic, 1024, 1024)
             curr = self._compacted_segments(nodes, topic, partition)
             return all(map(lambda cnt: cnt[0] > cnt[1], zip(curr, target)))
 
