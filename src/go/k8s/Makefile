@@ -4,6 +4,8 @@ IMG ?= gcr.io/vectorized/redpanda-k8s-operator:latest
 # Produce CRDs that work back to Kubernetes 1.11 (no version conversion)
 CRD_OPTIONS ?= "crd:trivialVersions=true,preserveUnknownFields=false"
 
+SHELL := /bin/bash
+
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
 GOBIN=$(shell go env GOPATH)/bin
@@ -53,8 +55,8 @@ manifests: controller-gen
 	$(CONTROLLER_GEN) $(CRD_OPTIONS) rbac:roleName=manager-role webhook paths="./..." output:crd:artifacts:config=config/crd/bases
 
 # Run crlfmt against code
-fmt:
-	crlfmt -w -wrap=80 -ignore '_generated.deepcopy.go$$' .
+fmt: crlfmt
+	$(CRLFMT) -w -wrap=80 -ignore '_generated.deepcopy.go$$' .
 
 # Run go vet against code
 vet:
@@ -76,10 +78,24 @@ docker-push:
 push-to-kind:
 	kind load docker-image ${IMG}
 
+# Execute end to end tests
+e2e-tests: kuttl docker-build
+	$(KUTTL) test
+
 # Download controller-gen locally if necessary
 CONTROLLER_GEN = $(shell pwd)/bin/controller-gen
 controller-gen:
 	$(call go-get-tool,$(CONTROLLER_GEN),sigs.k8s.io/controller-tools/cmd/controller-gen@v0.4.1)
+
+# Download kuttl locally if necessary
+KUTTL = $(shell pwd)/bin/kubectl-kuttl
+kuttl:
+	$(call go-get-tool,$(KUTTL),github.com/kudobuilder/kuttl/cmd/kubectl-kuttl@v0.8.0)
+
+# Download crlfmt locally if necessary
+CRLFMT = $(shell pwd)/bin/crlfmt
+crlfmt:
+	$(call go-get-tool,$(CRLFMT),github.com/cockroachdb/crlfmt@v0.0.0-20200923085322-b9cb16fe9a33)
 
 # Download kustomize locally if necessary
 KUSTOMIZE = $(shell pwd)/bin/kustomize

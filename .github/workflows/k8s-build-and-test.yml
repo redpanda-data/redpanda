@@ -1,0 +1,50 @@
+# Copyright 2021 Vectorized, Inc.
+#
+# Use of this software is governed by the Business Source License
+# included in the file licenses/BSL.md
+#
+# As of the Change Date specified in that file, in accordance with
+# the Business Source License, use of this software will be governed
+# by the Apache License, Version 2.0
+
+name: K8S build and test
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+
+    - name: Check out code
+      uses: actions/checkout@v2
+
+    - name: golangci-lint
+      uses: golangci/golangci-lint-action@v2
+      with:
+        version: v1.36
+        args: --timeout 8m
+        working-directory: src/go/k8s/
+
+    - name: Set up Go
+      uses: actions/setup-go@v2
+      with:
+        go-version: 1.13.6
+      id: go
+
+    - uses: azure/setup-kubectl@v1
+      with:
+        version: 'v1.20.2'
+      id: install
+
+    - name: Unit tests & Integration tests & E2E tests
+      working-directory: src/go/k8s/
+      run: make e2e-tests
+      shell: bash
+
+    - name: Archive test data
+      if: ${{ failure() }}
+      uses: actions/upload-artifact@v2
+      with:
+        name: kuttl test artifacts
+        path: src/go/k8s/tests/e2e/_artifacts
