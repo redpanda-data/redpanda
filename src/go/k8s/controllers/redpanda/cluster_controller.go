@@ -28,7 +28,7 @@ import (
 )
 
 var (
-	errNonexistentLastObservesState = errors.New("expecting to have statefulset LastObservedState set but is nil")
+	errNonexistentLastObservesState = errors.New("expecting to have statefulset LastObservedState set but it's nil")
 )
 
 // ClusterReconciler reconciles a Cluster object
@@ -115,7 +115,7 @@ func (r *ClusterReconciler) Reconcile(
 		}
 	}
 
-	if sts.LastObservedState != nil {
+	if sts.LastObservedState == nil {
 		return ctrl.Result{}, errNonexistentLastObservesState
 	}
 
