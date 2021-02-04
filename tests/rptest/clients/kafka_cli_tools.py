@@ -8,9 +8,10 @@
 # by the Apache License, Version 2.0
 
 import subprocess
+from rptest.clients.types import KafkaClient
 
 
-class KafkaCliTools:
+class KafkaCliTools(KafkaClient):
     """
     Wrapper around the Kafka admin command line tools.
     """

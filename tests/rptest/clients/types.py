@@ -37,3 +37,8 @@ class TopicSpec:
     def _random_topic_suffix(self, size=4):
         return "".join(
             random.choice(string.ascii_lowercase) for _ in range(size))
+
+
+class KafkaClient:
+    def create_topic(self, spec):
+        raise NotImplementedError
