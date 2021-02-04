@@ -1,3 +1,4 @@
+// Package labels handles label for cluster resource
 package labels
 
 import redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
@@ -15,6 +16,7 @@ const (
 	PartOfKey	= "app.kubernetes.io/part-of"
 	// The tool being used to manage the operation of an application
 	ManagedByKey	= "app.kubernetes.io/managed-by"
+	nameKeyVal	= "redpanda"
 )
 
 // ForCluster returns a set of labels that is a union of cluster labels as well as recommended default labels
@@ -22,6 +24,7 @@ const (
 func ForCluster(cluster *redpandav1alpha1.Cluster) map[string]string {
 	dl := defaultLabels(cluster)
 	labels := merge(cluster.Labels, dl)
+
 	return labels
 }
 
@@ -33,20 +36,23 @@ func merge(
 	if mainLabels == nil {
 		mainLabels = make(map[string]string)
 	}
+
 	for k, v := range newLabels {
 		if _, ok := mainLabels[k]; !ok {
 			mainLabels[k] = v
 		}
 	}
+
 	return mainLabels
 }
 
 func defaultLabels(cluster *redpandav1alpha1.Cluster) map[string]string {
 	labels := make(map[string]string)
-	labels[NameKey] = "redpanda"
+	labels[NameKey] = nameKeyVal
 	labels[InstanceKey] = cluster.Name
 	labels[ComponentKey] = "database"
-	labels[PartOfKey] = "redpanda"
+	labels[PartOfKey] = nameKeyVal
 	labels[ManagedByKey] = "redpanda-operator"
+
 	return labels
 }
