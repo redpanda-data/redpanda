@@ -113,6 +113,7 @@ var _ = Describe("RedPandaCluster controller", func() {
 
 			Expect(sts.Spec.Template.Spec.Containers[0].Resources.Requests).Should(Equal(resources))
 			Expect(sts.Spec.Template.Spec.Containers[0].Resources.Limits).Should(Equal(resources))
+			Expect(sts.Spec.Template.Spec.Containers[0].Env).Should(ContainElement(corev1.EnvVar{Name: "REDPANDA_ENVIRONMENT", Value: "kubernetes"}))
 		})
 	})
 })

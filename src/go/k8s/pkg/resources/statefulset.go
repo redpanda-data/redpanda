@@ -178,6 +178,12 @@ func (r *StatefulSetResource) Obj() (k8sclient.Object, error) {
 								"--default-log-level=debug",
 								"--reserve-memory 0M",
 							},
+							Env: []corev1.EnvVar{
+								{
+									Name:	"REDPANDA_ENVIRONMENT",
+									Value:	"kubernetes",
+								},
+							},
 							Ports: []corev1.ContainerPort{
 								{
 									Name:		"admin",
