@@ -8,7 +8,7 @@
 # by the Apache License, Version 2.0
 
 import subprocess
-from rptest.clients.types import KafkaClient
+from rptest.clients.types import TopicSpec, KafkaClient
 
 
 class KafkaCliTools(KafkaClient):
@@ -57,6 +57,29 @@ class KafkaCliTools(KafkaClient):
         res = self._run("kafka-topics.sh", args)
         self._redpanda.logger.debug("Describe topics result: %s", res)
         return res
+
+    def describe_topic(self, topic):
+        self._redpanda.logger.debug("Describing topics")
+        args = ["--describe", "--topic", topic]
+        res = self._run("kafka-topics.sh", args)
+        self._redpanda.logger.debug("Describe topics result: %s", res)
+
+        # parse/extract the topic configuration
+        configs = None
+        for part in [part.strip() for part in res.split("\t")]:
+            if part.startswith("Configs:"):
+                configs = part[8:]
+
+        def maybe_int(key, value):
+            if key in ["partition_count", "replication_factor"]:
+                value = int(value)
+            return value
+
+        self._redpanda.logger.debug(f"Describe topics configs: {configs}")
+        configs = [config.split("=") for config in configs.split(",")]
+        configs = {kv[0].strip(): kv[1].strip() for kv in configs}
+        configs = {kv[0]: maybe_int(kv[0], kv[1]) for kv in configs.items()}
+        return TopicSpec(name=topic, **configs)
 
     def produce(self,
                 topic,
