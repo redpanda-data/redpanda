@@ -11,9 +11,9 @@
 #pragma once
 #include "bytes/bytes.h"
 #include "hashing/secure.h"
+#include "kafka/security/scram_credential.h"
 #include "kafka/server/logger.h"
 #include "random/generators.h"
-#include "kafka/security/scram_credential.h"
 
 #include <absl/container/node_hash_map.h>
 
@@ -166,9 +166,16 @@ std::ostream& operator<<(std::ostream&, const server_first_message&);
 std::ostream& operator<<(std::ostream&, const client_final_message&);
 std::ostream& operator<<(std::ostream&, const server_final_message&);
 
-template<typename MacType, typename HashType, size_t SaltSize>
+template<
+  typename MacType,
+  typename HashType,
+  size_t SaltSize,
+  int MinIterations>
 class scram_algorithm {
 public:
+    static constexpr int min_iterations = MinIterations;
+    static_assert(min_iterations > 0, "Minimum iterations must be positive");
+
     static bytes client_signature(
       bytes_view stored_key,
       const client_first_message& client_first,
@@ -273,7 +280,10 @@ private:
     }
 };
 
-using scram_sha512 = scram_algorithm<hmac_sha512, hash_sha512, 130>; // NOLINT
-using scram_sha256 = scram_algorithm<hmac_sha256, hash_sha256, 130>; // NOLINT
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers)
+using scram_sha512 = scram_algorithm<hmac_sha512, hash_sha512, 130, 4096>;
+
+// NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers)
+using scram_sha256 = scram_algorithm<hmac_sha256, hash_sha256, 130, 4096>;
 
 } // namespace kafka
