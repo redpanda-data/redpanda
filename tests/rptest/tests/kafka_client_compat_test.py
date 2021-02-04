@@ -14,14 +14,13 @@ from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 
 
-class KafkaCliToolsTest(RedpandaTest):
-    """
-    Verify that kafka cli tools works for all supported versions.
-    """
-    @matrix(version=KafkaCliTools.VERSIONS)
-    def test_create_topic(self, version):
-        tools = KafkaCliTools(self.redpanda, version)
-        topics = ["v{}.{}".format(version, i) for i in range(3)]
-        for topic in topics:
-            tools.create_topic(TopicSpec(name=topic))
-        assert set(topics) <= set(tools.list_topics())
+class KafkaClientCompatTest(RedpandaTest):
+    def test_create_topic(self):
+        for client_factory in KafkaCliTools.instances():
+            client = client_factory(self.redpanda)
+            topics = [TopicSpec() for _ in range(3)]
+            for topic in topics:
+                client.create_topic(topic)
+            for topic in topics:
+                spec = client.describe_topic(topic.name)
+                assert spec == topic
