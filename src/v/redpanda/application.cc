@@ -18,6 +18,7 @@
 #include "cluster/service.h"
 #include "config/configuration.h"
 #include "config/seed_server.h"
+#include "kafka/security/scram_algorithm.h"
 #include "kafka/server/coordinator_ntp_mapper.h"
 #include "kafka/server/group_manager.h"
 #include "kafka/server/group_router.h"
@@ -418,6 +419,25 @@ void application::wire_up_services() {
 
     syschecks::systemd_message("Creating kafka credential store").get();
     construct_service(credentials).get();
+
+    /*
+     * Add in the static scram credential for testing.
+     * - sasl and developer mode needs to be enabled
+     */
+    if (
+      unlikely(config::shard_local_cfg().enable_admin_api())
+      && config::shard_local_cfg().developer_mode()
+      && !config::shard_local_cfg().static_scram_user().empty()
+      && !config::shard_local_cfg().static_scram_pass().empty()) {
+        credentials
+          .invoke_on_all([](kafka::credential_store& store) {
+              store.put(
+                config::shard_local_cfg().static_scram_user(),
+                kafka::scram_sha256::make_credentials(
+                  config::shard_local_cfg().static_scram_pass(), 4096));
+          })
+          .get();
+    }
 
     syschecks::systemd_message("Creating metadata dissemination service").get();
     construct_service(
