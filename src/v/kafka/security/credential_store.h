@@ -48,7 +48,10 @@ public:
     }
 
 private:
+    // when a second type is supported update `credential_store_test` to include
+    // a mismatched credential type test for get<type>(name).
     using credential_types = std::variant<scram_credential>;
+
     absl::node_hash_map<ss::sstring, credential_types> _credentials;
 };
 
