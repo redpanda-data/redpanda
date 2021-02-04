@@ -57,8 +57,10 @@ struct sasl_handshake_response final {
 
     sasl_handshake_response_data data;
 
-    explicit sasl_handshake_response(error_code error) {
+    sasl_handshake_response(
+      error_code error, std::vector<ss::sstring> mechanisms) {
         data.error_code = error;
+        data.mechanisms = std::move(mechanisms);
     }
 
     void encode(const request_context& ctx, response& resp) {
