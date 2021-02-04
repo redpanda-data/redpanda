@@ -31,6 +31,8 @@ public:
     const bytes& stored_key() const { return _stored_key; }
     int iterations() const { return _iterations; }
 
+    bool operator==(const scram_credential&) const = default;
+
 private:
     friend std::ostream& operator<<(std::ostream&, const scram_credential&);
 
