@@ -26,6 +26,7 @@ from gobekli.workloads import symmetrical_mrsw
 from gobekli.workloads.symmetrical_mrsw import MRSWWorkload
 
 from ducktape.tests.test import Test
+from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.chaos.mount_muservice import MountMuService
 from rptest.chaos.redpanda_muservice import (RedpandaMuService,
@@ -68,7 +69,7 @@ class BaseChaosTest(Test):
         redpanda = RedpandaMuServiceServiceProxy(self.service,
                                                  self.redpanda_mu)
         tools = KafkaCliTools(redpanda, KafkaCliTools.VERSIONS[0])
-        tools.create_topic(KafkaKVMuService.TOPIC)
+        tools.create_topic(TopicSpec(name=KafkaKVMuService.TOPIC))
 
     def tearDown(self):
         self.service.stop()

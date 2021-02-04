@@ -24,25 +24,17 @@ class KafkaCliTools:
         assert self._version is None or \
                 self._version in KafkaCliTools.VERSIONS
 
-    def create_topic(self,
-                     topic,
-                     partitions=1,
-                     replication_factor=3,
-                     cleanup_policy=None):
-        self._redpanda.logger.debug("Creating topic: %s", topic)
+    def create_topic(self, spec):
+        self._redpanda.logger.debug("Creating topic: %s", spec.name)
         args = ["--create"]
-        args += ["--topic", topic]
-        args += ["--partitions", str(partitions)]
-        args += ["--replication-factor", str(replication_factor)]
-        if cleanup_policy:
-            args += ["--config", "cleanup.policy={}".format(cleanup_policy)]
+        args += ["--topic", spec.name]
+        args += ["--partitions", str(spec.partitions)]
+        args += ["--replication-factor", str(spec.replication_factor)]
+        if spec.cleanup_policy:
+            args += [
+                "--config", "cleanup.policy={}".format(spec.cleanup_policy)
+            ]
         return self._run("kafka-topics.sh", args)
-
-    def create_topic_from_spec(self, spec):
-        return self.create_topic(spec.name,
-                                 partitions=spec.partitions,
-                                 replication_factor=spec.replication_factor,
-                                 cleanup_policy=spec.cleanup_policy)
 
     def delete_topic(self, topic):
         self._redpanda.logger.debug("Deleting topic: %s", topic)

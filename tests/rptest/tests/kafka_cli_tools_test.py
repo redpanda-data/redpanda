@@ -10,6 +10,7 @@
 from ducktape.mark import matrix
 from rptest.tests.redpanda_test import RedpandaTest
 
+from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 
 
@@ -22,5 +23,5 @@ class KafkaCliToolsTest(RedpandaTest):
         tools = KafkaCliTools(self.redpanda, version)
         topics = ["v{}.{}".format(version, i) for i in range(3)]
         for topic in topics:
-            tools.create_topic(topic)
+            tools.create_topic(TopicSpec(name=topic))
         assert set(topics) <= set(tools.list_topics())

@@ -12,7 +12,8 @@ import collections
 from ducktape.mark.resource import cluster
 from ducktape.utils.util import wait_until
 
-from rptest.tests.redpanda_test import RedpandaTest, TopicSpec
+from rptest.clients.types import TopicSpec
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 
 

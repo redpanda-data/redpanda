@@ -81,7 +81,7 @@ class RedpandaService(Service):
         kafka_tools = KafkaCliTools(self)
         for spec in self._topics:
             self.logger.debug(f"Creating initial topic {spec}")
-            kafka_tools.create_topic_from_spec(spec)
+            kafka_tools.create_topic(spec)
 
     def start_node(self, node, override_cfg_params=None):
         node.account.mkdirs(RedpandaService.DATA_DIR)

@@ -15,7 +15,8 @@ from ducktape.utils.util import wait_until
 from rptest.clients.kafka_cat import KafkaCat
 import requests
 
-from rptest.tests.redpanda_test import RedpandaTest, TopicSpec
+from rptest.clients.types import TopicSpec
+from rptest.tests.redpanda_test import RedpandaTest
 
 
 class LeadershipTransferTest(RedpandaTest):
