@@ -22,6 +22,7 @@ v_cc_library(
     service.cc
     script_context.cc
     pacemaker.cc
+    offset_storage_utils.cc
     wasm_event.cc
     wasm_event_listener.cc
   DEPS
