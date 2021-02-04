@@ -36,7 +36,7 @@ steps:
   args:
   - -ec
   - |
-    python3 -mvenv --system-site-packages build/venv/v
+    python3 -mvenv --system-site-packages --upgrade-deps build/venv/v
     source build/venv/v/bin/activate
     pip install vtools/
 
