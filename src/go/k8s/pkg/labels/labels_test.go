@@ -1,10 +1,11 @@
-package labels
+package labels_test
 
 import (
 	"reflect"
 	"testing"
 
 	redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/labels"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -22,7 +23,7 @@ func TestLabels(t *testing.T) {
 	}
 	withPartOfDefined := testCluster.DeepCopy()
 	withPartOfDefined.Labels = make(map[string]string)
-	withPartOfDefined.Labels[PartOfKey] = "part-of-something-else"
+	withPartOfDefined.Labels[labels.PartOfKey] = "part-of-something-else"
 
 	tests := []struct {
 		name		string
@@ -48,7 +49,7 @@ func TestLabels(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		actual := ForCluster(tt.pandaCluster)
+		actual := labels.ForCluster(tt.pandaCluster)
 		if !reflect.DeepEqual(actual, tt.expected) {
 			t.Errorf("%s: Expecting labels to be %v but got %v", tt.name, tt.expected, actual)
 		}
