@@ -34,6 +34,14 @@ class TopicSpec:
     def __str__(self):
         return self.name
 
+    def __eq__(self, other):
+        if not isinstance(other, TopicSpec):
+            return False
+        return self.name == other.name and \
+                self.partition_count == other.partition_count and \
+                self.replication_factor == other.replication_factor and \
+                self.cleanup_policy == other.cleanup_policy
+
     def _random_topic_suffix(self, size=4):
         return "".join(
             random.choice(string.ascii_lowercase) for _ in range(size))
