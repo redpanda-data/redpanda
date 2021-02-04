@@ -91,7 +91,7 @@ steps:
   name: 'gcr.io/redpandaci/builder'
   entrypoint: bash
   args:
-  - -c
+  - -cex
   - |
     ./build/venv/v/bin/vtools build go --targets=rpk --conf=vtools/vtools/artifacts/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml
     ./build/venv/v/bin/vtools build redpanda-dashboard --conf=vtools/vtools/artifacts/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml
