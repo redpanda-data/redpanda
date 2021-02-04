@@ -12,13 +12,17 @@
 #include "coproc/pacemaker.h"
 
 #include "coproc/logger.h"
+#include "coproc/ntp_context.h"
+#include "coproc/offset_storage_utils.h"
 #include "coproc/types.h"
 #include "model/validation.h"
 #include "rpc/reconnect_transport.h"
 #include "rpc/types.h"
 #include "ssx/future-util.h"
+#include "storage/directories.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/core/reactor.hh>
 
 #include <absl/container/flat_hash_set.h>
 
@@ -46,30 +50,45 @@ pacemaker::pacemaker(ss::socket_address addr, ss::sharded<storage::api>& api)
       wasm_transport_cfg(addr), wasm_transport_backoff()),
     api.local()) {}
 
+ss::future<> pacemaker::start() {
+    _offs.timer.set_callback([this] {
+        (void)ss::with_gate(_offs.gate, [this] {
+            return save_offsets(_offs.snap, _ntps).then([this] {
+                if (!_offs.timer.armed()) {
+                    _offs.timer.arm(_offs.duration);
+                }
+            });
+        });
+    });
+    co_await ss::recursive_touch_directory(offsets_snapshot_path().string());
+    auto ncc = co_await recover_offsets(_offs.snap, _shared_res.api.log_mgr());
+    _ntps = std::move(ncc);
+    _offs.timer.arm(_offs.duration);
+}
+
 ss::future<> pacemaker::stop() {
+    /// First shutdown the offset keepers loop
+    _offs.timer.cancel();
+    co_await _offs.gate.close();
     std::vector<script_id> ids;
     ids.reserve(_scripts.size());
     for (const auto& [id, _] : _scripts) {
         ids.push_back(id);
     }
-    return ss::do_with(
-             std::move(ids),
-             [this](const std::vector<script_id>& ids) {
-                 return ssx::async_all_of(
-                   ids.begin(), ids.end(), [this](script_id id) {
-                       return remove_source(id).then(
-                         xform::equal_to(errc::success));
-                   });
-             })
-      .then([this](bool success) {
-          if (!success) {
-              vlog(
-                coproclog.error,
-                "Failed to gracefully shutdown all copro fibers");
-          }
-          vlog(coproclog.info, "Closing connection to coproc wasm engine");
-          return _shared_res.transport.stop();
-      });
+    /// Next de-register all coprocessors
+    bool success = true;
+    for (const script_id& id : ids) {
+        success = co_await remove_source(id) == errc::success;
+        if (!success) {
+            break;
+        }
+    }
+    if (!success) {
+        vlog(coproclog.error, "Failed to gracefully shutdown all copro fibers");
+    }
+    /// Finally close the connection to the wasm engine
+    vlog(coproclog.info, "Closing connection to coproc wasm engine");
+    co_await _shared_res.transport.stop();
 }
 
 std::vector<errc> pacemaker::add_source(
