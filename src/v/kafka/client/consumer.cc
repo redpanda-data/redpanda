@@ -11,7 +11,7 @@
 
 #include "kafka/client/assignment_plans.h"
 #include "kafka/client/configuration.h"
-#include "kafka/client/error.h"
+#include "kafka/client/exceptions.h"
 #include "kafka/client/logger.h"
 #include "kafka/protocol/describe_groups.h"
 #include "kafka/protocol/errors.h"
@@ -63,18 +63,19 @@ struct partition_comp {
 
 void consumer::start() {
     kclog.info("Consumer: {}: start", *this);
+    _as.subscribe([this]() noexcept { _timer.cancel(); });
     _timer.set_callback([this]() {
         kclog.info("Consumer: {}: timer cb", *this);
         (void)heartbeat().handle_exception_type([this](consumer_error e) {
             kclog.error("Consumer: {}: heartbeat failed: {}", *this, e.error);
         });
     });
-    _timer.arm_periodic(std::chrono::duration_cast<ss::timer<>::duration>(
+    _timer.rearm_periodic(std::chrono::duration_cast<ss::timer<>::duration>(
       shard_local_cfg().consumer_heartbeat_interval()));
 }
 
 ss::future<> consumer::stop() {
-    _timer.cancel();
+    _as.request_abort();
     return _coordinator->stop().then([this]() { return _gate.close(); });
 }
 
@@ -104,6 +105,10 @@ ss::future<> consumer::join() {
               return join();
           case error_code::illegal_generation:
               return join();
+          case error_code::not_coordinator:
+              return ss::sleep_abortable(
+                       shard_local_cfg().retry_base_backoff(), _as)
+                .then([this]() { return join(); });
           case error_code::none:
               _generation_id = res.data.generation_id;
               _member_id = res.data.member_id;

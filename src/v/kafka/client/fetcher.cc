@@ -11,7 +11,7 @@
 
 #include "kafka/client/fetcher.h"
 
-#include "kafka/client/error.h"
+#include "kafka/client/exceptions.h"
 #include "kafka/client/logger.h"
 #include "model/fundamental.h"
 #include "seastar/core/gate.hh"

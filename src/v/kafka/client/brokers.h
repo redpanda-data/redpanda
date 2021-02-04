@@ -37,6 +37,7 @@ public:
     brokers(brokers&&) = default;
     brokers& operator=(brokers const&) = delete;
     brokers& operator=(brokers&&) = delete;
+    ~brokers() noexcept = default;
 
     /// \brief stop and wait for all outstanding activity to finish.
     ss::future<> stop();
@@ -62,7 +63,7 @@ private:
     /// \brief Brokers map a model::node_id to a client.
     brokers_t _brokers;
     /// \brief Next broker to select with round-robin
-    size_t _next_broker;
+    size_t _next_broker{0};
     /// \brief Leaders map a partition to a model::node_id.
     leaders_t _leaders;
 };

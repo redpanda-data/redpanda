@@ -86,6 +86,7 @@ private:
     }
 
     shared_broker_t _coordinator;
+    ss::abort_source _as;
     ss::gate _gate{};
     ss::timer<> _timer;
 

@@ -12,7 +12,7 @@
 #pragma once
 
 #include "kafka/client/configuration.h"
-#include "kafka/client/error.h"
+#include "kafka/client/exceptions.h"
 #include "kafka/client/produce_batcher.h"
 #include "model/fundamental.h"
 

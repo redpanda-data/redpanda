@@ -100,7 +100,6 @@ join_group_request_protocol make_join_group_request_protocol_range(
     writer.write_array(
       topics,
       [](const model::topic& t, response_writer& writer) { writer.write(t); });
-    join_group_request_data d;
     writer.write(int32_t(-1)); // userdata length
 
     return join_group_request_protocol{
