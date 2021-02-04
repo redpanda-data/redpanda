@@ -18,10 +18,10 @@ import (
 
 	"github.com/go-logr/logr"
 	redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/labels"
 	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/resources"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -91,7 +91,7 @@ func (r *ClusterReconciler) Reconcile(
 	var observedPods corev1.PodList
 
 	err := r.List(ctx, &observedPods, &client.ListOptions{
-		LabelSelector:	labels.SelectorFromSet(redpandaCluster.Labels),
+		LabelSelector:	labels.ForCluster(&redpandaCluster).AsSelector(),
 		Namespace:	redpandaCluster.Namespace,
 	})
 	if err != nil {

@@ -1,7 +1,10 @@
 // Package labels handles label for cluster resource
 package labels
 
-import redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+import (
+	redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	"k8s.io/apimachinery/pkg/labels"
+)
 
 // https://kubernetes.io/docs/concepts/overview/working-with-objects/common-labels/
 // TODO support "app.kubernetes.io/version"
@@ -19,13 +22,24 @@ const (
 	nameKeyVal	= "redpanda"
 )
 
+type CommonLabels map[string]string
+
 // ForCluster returns a set of labels that is a union of cluster labels as well as recommended default labels
 // recommended by the kubernetes documentation https://kubernetes.io/docs/concepts/overview/working-with-objects/common-labels/
-func ForCluster(cluster *redpandav1alpha1.Cluster) map[string]string {
+func ForCluster(cluster *redpandav1alpha1.Cluster) CommonLabels {
 	dl := defaultLabels(cluster)
 	labels := merge(cluster.Labels, dl)
 
 	return labels
+}
+
+// AsSelector returns label selector made out of subset of common labels: name, instance, component
+func (cl CommonLabels) AsSelector() labels.Selector {
+	return labels.SelectorFromSet(map[string]string{
+		NameKey:	cl[NameKey],
+		InstanceKey:	cl[InstanceKey],
+		ComponentKey:	cl[ComponentKey],
+	})
 }
 
 // merge merges two sets of labels
