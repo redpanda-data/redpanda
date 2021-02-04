@@ -63,6 +63,7 @@ struct partition_comp {
 
 void consumer::start() {
     kclog.info("Consumer: {}: start", *this);
+    _as.subscribe([this]() noexcept { _timer.cancel(); });
     _timer.set_callback([this]() {
         kclog.info("Consumer: {}: timer cb", *this);
         (void)heartbeat().handle_exception_type([this](consumer_error e) {
@@ -74,7 +75,7 @@ void consumer::start() {
 }
 
 ss::future<> consumer::stop() {
-    _timer.cancel();
+    _as.request_abort();
     return _coordinator->stop().then([this]() { return _gate.close(); });
 }
 
