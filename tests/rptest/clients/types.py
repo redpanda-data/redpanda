@@ -48,8 +48,8 @@ class TopicSpec:
 
 
 class KafkaClient:
-    def create_topic(self, spec):
+    def create_topic(self, spec: TopicSpec):
         raise NotImplementedError
 
-    def describe_topic(self, topic):
+    def describe_topic(self, topic: str) -> TopicSpec:
         raise NotImplementedError
