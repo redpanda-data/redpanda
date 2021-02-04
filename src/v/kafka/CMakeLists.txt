@@ -2,7 +2,8 @@ add_subdirectory(protocol)
 
 set(security_srcs
     security/scram_algorithm.cc
-    security/scram_credential.cc)
+    security/scram_credential.cc
+    security/scram_authenticator.cc)
 
 set(handlers_srcs
   server/handlers/api_versions.cc
