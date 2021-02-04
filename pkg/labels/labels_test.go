@@ -59,7 +59,9 @@ func TestLabels(t *testing.T) {
 
 	for _, tt := range tests {
 		actual := labels.ForCluster(tt.pandaCluster)
-		if !reflect.DeepEqual(actual, tt.expected) {
+		// we need to change the type to map here for deepEqual to compare the same types
+		var actualMap map[string]string = actual
+		if !reflect.DeepEqual(actualMap, tt.expected) {
 			t.Errorf("%s: Expecting labels to be %v but got %v", tt.name, tt.expected, actual)
 		}
 	}

@@ -69,11 +69,12 @@ func (r *ServiceResource) Ensure(ctx context.Context) error {
 
 // Obj returns resource managed client.Object
 func (r *ServiceResource) Obj() (k8sclient.Object, error) {
+	objLabels := labels.ForCluster(r.pandaCluster)
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace:	r.Key().Namespace,
 			Name:		r.Key().Name,
-			Labels:		labels.ForCluster(r.pandaCluster),
+			Labels:		objLabels,
 		},
 		Spec: corev1.ServiceSpec{
 			ClusterIP:	corev1.ClusterIPNone,
@@ -85,7 +86,7 @@ func (r *ServiceResource) Obj() (k8sclient.Object, error) {
 					TargetPort:	intstr.FromInt(r.pandaCluster.Spec.Configuration.KafkaAPI.Port),
 				},
 			},
-			Selector:	r.pandaCluster.Labels,
+			Selector:	objLabels.AsAPISelector().MatchLabels,
 		},
 	}
 

@@ -76,7 +76,7 @@ func (r *StatefulSetResource) Ensure(ctx context.Context) error {
 	r.LastObservedState = &sts
 
 	// Ensure StatefulSet #replicas equals cluster requirement.
-	if sts.Spec.Replicas != r.pandaCluster.Spec.Replicas {
+	if sts.Spec.Replicas != nil && r.pandaCluster.Spec.Replicas != nil && *sts.Spec.Replicas != *r.pandaCluster.Spec.Replicas {
 		sts.Spec.Replicas = r.pandaCluster.Spec.Replicas
 		if err := r.Update(ctx, &sts); err != nil {
 			return fmt.Errorf("failed to update StatefulSet: %w", err)
@@ -96,16 +96,18 @@ func (r *StatefulSetResource) Obj() (k8sclient.Object, error) {
 		memory = resource.MustParse("2Gi")
 	}
 
+	var clusterLabels = labels.ForCluster(r.pandaCluster)
+
 	ss := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace:	r.Key().Namespace,
 			Name:		r.Key().Name,
-			Labels:		labels.ForCluster(r.pandaCluster),
+			Labels:		clusterLabels,
 		},
 		Spec: appsv1.StatefulSetSpec{
 			Replicas:		pointer.Int32Ptr(1),
 			PodManagementPolicy:	appsv1.ParallelPodManagement,
-			Selector:		metav1.SetAsLabelSelector(r.pandaCluster.Labels),
+			Selector:		clusterLabels.AsAPISelector(),
 			UpdateStrategy: appsv1.StatefulSetUpdateStrategy{
 				Type: appsv1.RollingUpdateStatefulSetStrategyType,
 			},
@@ -114,7 +116,7 @@ func (r *StatefulSetResource) Obj() (k8sclient.Object, error) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:		r.pandaCluster.Name,
 					Namespace:	r.pandaCluster.Namespace,
-					Labels:		r.pandaCluster.Labels,
+					Labels:		clusterLabels.AsAPISelector().MatchLabels,
 				},
 				Spec: corev1.PodSpec{
 					SecurityContext: &corev1.PodSecurityContext{
@@ -212,7 +214,7 @@ func (r *StatefulSetResource) Obj() (k8sclient.Object, error) {
 						PodAntiAffinity: &corev1.PodAntiAffinity{
 							RequiredDuringSchedulingIgnoredDuringExecution: []corev1.PodAffinityTerm{
 								{
-									LabelSelector:	metav1.SetAsLabelSelector(r.pandaCluster.Labels),
+									LabelSelector:	clusterLabels.AsAPISelector(),
 									Namespaces:	[]string{r.pandaCluster.Namespace},
 									TopologyKey:	corev1.LabelHostname},
 							},
@@ -220,7 +222,7 @@ func (r *StatefulSetResource) Obj() (k8sclient.Object, error) {
 								{
 									Weight:	100,
 									PodAffinityTerm: corev1.PodAffinityTerm{
-										LabelSelector:	metav1.SetAsLabelSelector(r.pandaCluster.Labels),
+										LabelSelector:	clusterLabels.AsAPISelector(),
 										Namespaces:	[]string{r.pandaCluster.Namespace},
 										TopologyKey:	corev1.LabelHostname,
 									},
@@ -233,7 +235,7 @@ func (r *StatefulSetResource) Obj() (k8sclient.Object, error) {
 							MaxSkew:		1,
 							TopologyKey:		corev1.LabelZoneFailureDomainStable,
 							WhenUnsatisfiable:	corev1.ScheduleAnyway,
-							LabelSelector:		metav1.SetAsLabelSelector(r.pandaCluster.Labels),
+							LabelSelector:		clusterLabels.AsAPISelector(),
 						},
 					},
 				},
@@ -243,7 +245,7 @@ func (r *StatefulSetResource) Obj() (k8sclient.Object, error) {
 					ObjectMeta: metav1.ObjectMeta{
 						Namespace:	r.pandaCluster.Namespace,
 						Name:		"datadir",
-						Labels:		r.pandaCluster.Labels,
+						Labels:		clusterLabels,
 					},
 					Spec: corev1.PersistentVolumeClaimSpec{
 						AccessModes:	[]corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
