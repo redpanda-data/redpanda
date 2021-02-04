@@ -23,7 +23,7 @@ class WaitForLocalConsumerTest(RedpandaTest):
     """
     NUM_RECORDS = 2000
 
-    topics = (TopicSpec(partitions=1, replication_factor=1), )
+    topics = (TopicSpec(partition_count=1, replication_factor=1), )
 
     def __init__(self, ctx):
         super(WaitForLocalConsumerTest, self).__init__(test_context=ctx,

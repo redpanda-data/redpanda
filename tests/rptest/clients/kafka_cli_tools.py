@@ -29,7 +29,7 @@ class KafkaCliTools(KafkaClient):
         self._redpanda.logger.debug("Creating topic: %s", spec.name)
         args = ["--create"]
         args += ["--topic", spec.name]
-        args += ["--partitions", str(spec.partitions)]
+        args += ["--partitions", str(spec.partition_count)]
         args += ["--replication-factor", str(spec.replication_factor)]
         if spec.cleanup_policy:
             args += [

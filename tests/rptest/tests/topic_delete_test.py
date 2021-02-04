@@ -21,7 +21,7 @@ class TopicDeleteTest(RedpandaTest):
     """
     Verify that topic deletion cleans up storage.
     """
-    topics = (TopicSpec(partitions=3,
+    topics = (TopicSpec(partition_count=3,
                         cleanup_policy=TopicSpec.CLEANUP_COMPACT), )
 
     def __init__(self, test_context):

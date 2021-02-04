@@ -23,7 +23,7 @@ class LeadershipTransferTest(RedpandaTest):
     """
     Transfer leadership from one node to another.
     """
-    topics = (TopicSpec(partitions=3, replication_factor=3), )
+    topics = (TopicSpec(partition_count=3, replication_factor=3), )
 
     @cluster(num_nodes=3)
     def test_controller_recovery(self):

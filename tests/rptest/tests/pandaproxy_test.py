@@ -92,7 +92,7 @@ class PandaProxyTest(RedpandaTest):
         self.logger.debug("Creating test topic")
         kafka_tools = KafkaCliTools(self.redpanda)
         kafka_tools.create_topic(
-            TopicSpec(name=name, replication_factor=1, partitions=3))
+            TopicSpec(name=name, replication_factor=1, partition_count=3))
 
         self.logger.debug("Waiting for leaders to settle")
         has_leaders = False

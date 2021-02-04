@@ -15,7 +15,7 @@ from rptest.clients.kafka_cli_tools import KafkaCliTools
 
 
 class DescribeTopicsTest(RedpandaTest):
-    topics = (TopicSpec(partitions=2, replication_factor=3), )
+    topics = (TopicSpec(partition_count=2, replication_factor=3), )
 
     def test_describe_topics(self):
         tools = KafkaCliTools(self.redpanda)

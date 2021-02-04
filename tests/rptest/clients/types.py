@@ -23,11 +23,11 @@ class TopicSpec:
     def __init__(self,
                  *,
                  name=None,
-                 partitions=1,
+                 partition_count=1,
                  replication_factor=3,
                  cleanup_policy=None):
         self.name = name or f"topic-{self._random_topic_suffix()}"
-        self.partitions = partitions
+        self.partition_count = partition_count
         self.replication_factor = replication_factor
         self.cleanup_policy = cleanup_policy
 
