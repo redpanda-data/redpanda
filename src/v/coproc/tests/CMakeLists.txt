@@ -30,7 +30,9 @@ rp_test(
 rp_test(
   UNIT_TEST
   BINARY_NAME router_unit_tests
-  SOURCES router_test.cc
+  SOURCES
+    router_test.cc
+    offset_storage_utils_tests.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES v::seastar_testing_main v::coproc_test_utils
   LABELS coproc
