@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "kafka/protocol/errors.h"
+#include "kafka/protocol/exceptions.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -22,42 +22,27 @@
 
 namespace kafka::client {
 
-struct broker_error final : std::exception {
-    broker_error(model::node_id n_id, error_code err)
-      : std::exception{}
-      , msg{fmt::format("{{ node: {} }}, {}", n_id, err)}
-      , node_id{n_id}
-      , error{err} {}
-    const char* what() const noexcept final { return msg.c_str(); }
-    std::string msg;
+struct broker_error final : exception_base {
+    broker_error(model::node_id n_id, error_code e)
+      : exception_base{e, fmt::format("{{ node: {} }}, {}", n_id, e)}
+      , node_id{n_id} {}
     model::node_id node_id;
-    error_code error;
 };
 
-struct partition_error final : std::exception {
+struct partition_error final : exception_base {
     partition_error(model::topic_partition tp, error_code e)
-      : std::exception{}
-      , msg{fmt::format("{}, {}", tp, e)}
-      , tp{std::move(tp)}
-      , error{e} {}
-    const char* what() const noexcept final { return msg.c_str(); }
-    std::string msg;
+      : exception_base{e, fmt::format("{}, {}", tp, e)}
+      , tp{std::move(tp)} {}
     model::topic_partition tp;
-    error_code error;
 };
 
-struct consumer_error final : std::exception {
+struct consumer_error final : exception_base {
     consumer_error(kafka::group_id g_id, kafka::member_id m_id, error_code e)
-      : std::exception{}
-      , msg{fmt::format("{}, {}, {}", g_id, m_id, e)}
+      : exception_base{e, fmt::format("{}, {}, {}", g_id, m_id, e)}
       , group_id{std::move(g_id)}
-      , member_id{std::move(m_id)}
-      , error{e} {}
-    const char* what() const noexcept final { return msg.c_str(); }
-    std::string msg;
+      , member_id{std::move(m_id)} {}
     kafka::group_id group_id;
     kafka::member_id member_id;
-    error_code error;
 };
 
 } // namespace kafka::client
