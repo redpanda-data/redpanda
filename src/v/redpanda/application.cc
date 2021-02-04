@@ -416,6 +416,9 @@ void application::wire_up_services() {
       std::ref(controller->get_partition_leaders()))
       .get();
 
+    syschecks::systemd_message("Creating kafka credential store").get();
+    construct_service(credentials).get();
+
     syschecks::systemd_message("Creating metadata dissemination service").get();
     construct_service(
       md_dissemination_service,
@@ -641,7 +644,8 @@ void application::start() {
             partition_manager,
             coordinator_ntp_mapper,
             fetch_session_cache,
-            std::ref(id_allocator_frontend));
+            std::ref(id_allocator_frontend),
+            credentials);
           s.set_protocol(std::move(proto));
       })
       .get();

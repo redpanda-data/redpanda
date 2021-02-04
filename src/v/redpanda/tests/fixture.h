@@ -78,7 +78,8 @@ public:
           app.partition_manager,
           app.coordinator_ntp_mapper,
           app.fetch_session_cache,
-          app.id_allocator_frontend);
+          app.id_allocator_frontend,
+          app.credentials);
     }
 
     // creates single node with default configuration

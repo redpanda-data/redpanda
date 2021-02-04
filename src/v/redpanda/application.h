@@ -16,6 +16,7 @@
 #include "coproc/pacemaker.h"
 #include "coproc/service.h"
 #include "coproc/wasm_event_listener.h"
+#include "kafka/security/credential_store.h"
 #include "raft/group_manager.h"
 #include "resource_mgmt/cpu_scheduling.h"
 #include "resource_mgmt/memory_groups.h"
@@ -65,6 +66,7 @@ public:
     smp_groups smp_service_groups;
     ss::sharded<kafka::quota_manager> quota_mgr;
     ss::sharded<cluster::id_allocator_frontend> id_allocator_frontend;
+    ss::sharded<kafka::credential_store> credentials;
 
 private:
     using deferred_actions

@@ -40,7 +40,8 @@ protocol::protocol(
   ss::sharded<cluster::partition_manager>& pm,
   ss::sharded<coordinator_ntp_mapper>& coordinator_mapper,
   ss::sharded<fetch_session_cache>& session_cache,
-  ss::sharded<cluster::id_allocator_frontend>& id_allocator_frontend) noexcept
+  ss::sharded<cluster::id_allocator_frontend>& id_allocator_frontend,
+  ss::sharded<credential_store>& credentials) noexcept
   : _smp_group(smp)
   , _topics_frontend(tf)
   , _metadata_cache(meta)
@@ -52,7 +53,8 @@ protocol::protocol(
   , _fetch_session_cache(session_cache)
   , _id_allocator_frontend(id_allocator_frontend)
   , _is_idempotence_enabled(
-      config::shard_local_cfg().enable_idempotence.value()) {}
+      config::shard_local_cfg().enable_idempotence.value())
+  , _credentials(credentials) {}
 
 ss::future<> protocol::apply(rpc::server::resources rs) {
     auto ctx = ss::make_lw_shared<connection_context>(*this, std::move(rs));
