@@ -21,7 +21,7 @@ would offer the Licensed Work in connection with a broader service
 offering to customers or subscribers of such of such third party’s core
 services.
 
-<u>Change Date</u>: December 03, 2030. Change date is ten years from
+<u>Change Date</u>: Feb 04, 2025. Change date is ten years from
 release date.
 
 <u>Change License</u>: [Apache License, Version
