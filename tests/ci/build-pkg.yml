@@ -69,13 +69,28 @@ steps:
   name: 'gcr.io/redpandaci/builder'
   args: ['./build/venv/v/bin/vtools', 'test', 'cpp', '--conf=vtools/vtools/artifacts/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml']
 
+- id: 'redpanda integration tests'
+  name: 'gcr.io/redpandaci/builder'
+  entrypoint: 'bash'
+  args:
+  - -cex
+  - |
+    ./build/venv/v/bin/vtools build go --targets=rpk --conf=vtools/vtools/artifacts/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml
+    ./build/venv/v/bin/vtools build pkg --format=dir --conf vtools/vtools/artifacts/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml
+    ./build/venv/v/bin/vtools install java --conf vtools/vtools/artifacts/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml
+    ./build/venv/v/bin/vtools install maven --conf vtools/vtools/artifacts/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml
+    ./build/venv/v/bin/vtools build java --conf vtools/vtools/artifacts/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml
+    ./build/venv/v/bin/vtools deploy cluster --provider docker-compose nodes=4 --conf vtools/vtools/artifacts/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml
+    ./build/venv/v/bin/vtools test ducky --skip-build-img --skip-pkg --provider docker-compose tests/rptest/test_suite_quick.yml --conf vtools/vtools/artifacts/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml
+  env:
+  - GH_TOKEN=$_GITHUB_API_TOKEN
+
 - id: 'create and archive distro packages'
   name: 'gcr.io/redpandaci/builder'
   entrypoint: bash
   args:
   - -c
   - |
-    ./build/venv/v/bin/vtools build go --targets=rpk --conf=vtools/vtools/artifacts/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml
     ./build/venv/v/bin/vtools build redpanda-dashboard --conf=vtools/vtools/artifacts/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml
     ./build/venv/v/bin/vtools build pkg --conf=vtools/vtools/artifacts/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml --format=rpm --format=deb --format=tar
     ./build/venv/v/bin/vtools ci github-event --event-type packages-created

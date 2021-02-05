@@ -8,9 +8,14 @@
 # by the Apache License, Version 2.0
 
 quick:
-    included:
-        - tests/
+  included:
+  - tests/
 
-    excluded:
-        - tests/rpk_test.py
-        - tests/librdkafka_test.py
+  excluded:
+  - tests/pandaproxy_test.py
+  - tests/librdkafka_test.py
+  - tests/rpk_test.py
+  - tests/demo_test.py
+  - tests/compaction_recovery_test.py::CompactionRecoveryTest.test_index_recovery
+  - tests/configuration_update_test.py::ConfigurationUpdateTest.test_two_nodes_update
+  - tests/topic_delete_test.py::TopicDeleteTest.topic_delete_test
