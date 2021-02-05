@@ -25,6 +25,12 @@ class KafkaCliTools(KafkaClient):
         assert self._version is None or \
                 self._version in KafkaCliTools.VERSIONS
 
+    @classmethod
+    def instances(cls):
+        def make_factory(version):
+            return lambda redpanda: cls(redpanda, version)
+        return list(map(make_factory, cls.VERSIONS))
+
     def create_topic(self, spec):
         self._redpanda.logger.debug("Creating topic: %s", spec.name)
         args = ["--create"]
