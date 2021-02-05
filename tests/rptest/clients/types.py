@@ -6,11 +6,8 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
-from __future__ import annotations
 import random
 import string
-from typing import Any
-from collections.abc import Callable
 
 
 class TopicSpec:
@@ -48,15 +45,3 @@ class TopicSpec:
     def _random_topic_suffix(self, size=4):
         return "".join(
             random.choice(string.ascii_lowercase) for _ in range(size))
-
-
-class KafkaClient:
-    @classmethod
-    def instances(cls) -> list[Callable[[Any], KafkaClient]]:
-        raise NotImplementedError
-
-    def create_topic(self, spec: TopicSpec):
-        raise NotImplementedError
-
-    def describe_topic(self, topic: str) -> TopicSpec:
-        raise NotImplementedError

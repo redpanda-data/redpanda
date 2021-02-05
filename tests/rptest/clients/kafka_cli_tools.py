@@ -8,7 +8,8 @@
 # by the Apache License, Version 2.0
 
 import subprocess
-from rptest.clients.types import TopicSpec, KafkaClient
+from rptest.clients.types import TopicSpec
+from rptest.clients.kafka_client import KafkaClient
 
 
 class KafkaCliTools(KafkaClient):
@@ -29,6 +30,7 @@ class KafkaCliTools(KafkaClient):
     def instances(cls):
         def make_factory(version):
             return lambda redpanda: cls(redpanda, version)
+
         return list(map(make_factory, cls.VERSIONS))
 
     def create_topic(self, spec):

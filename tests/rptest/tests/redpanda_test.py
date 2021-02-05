@@ -11,6 +11,7 @@ import string
 
 from ducktape.tests.test import Test
 from rptest.services.redpanda import RedpandaService
+from rptest.clients.kafka_cli_tools import KafkaCliTools
 
 
 class RedpandaTest(Test):
@@ -31,7 +32,8 @@ class RedpandaTest(Test):
         super(RedpandaTest, self).__init__(test_context)
 
         self.redpanda = RedpandaService(test_context,
-                                        num_brokers=num_brokers,
+                                        num_brokers,
+                                        KafkaCliTools,
                                         extra_rp_conf=extra_rp_conf,
                                         topics=self.topics,
                                         log_level=log_level)
