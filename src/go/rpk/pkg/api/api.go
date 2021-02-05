@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -78,6 +79,7 @@ type environmentBody struct {
 	CPUModel	string			`json:"cpuModel"`
 	CPUCores	int			`json:"cpuCores"`
 	RPVersion	string			`json:"rpVersion"`
+	Environment	string			`json:"environment"`
 }
 
 func SendMetrics(p MetricsPayload, conf config.Config) error {
@@ -174,6 +176,7 @@ func sendMetricsToUrl(b metricsBody, url string, conf config.Config) error {
 func sendEnvironmentToUrl(
 	body environmentBody, url string, conf config.Config,
 ) error {
+	body.Environment = os.Getenv("REDPANDA_ENVIRONMENT")
 	bs, err := json.Marshal(body)
 	if err != nil {
 		return err
