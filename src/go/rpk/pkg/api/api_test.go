@@ -14,6 +14,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 	"time"
 
@@ -130,11 +131,27 @@ func TestSendEnvironment(t *testing.T) {
 	bs, err := json.Marshal(body)
 	require.NoError(t, err)
 
+	// Deep-copy the body that will be sent.
+	expected := environmentBody{}
+	err = json.Unmarshal(bs, &expected)
+	require.NoError(t, err)
+
+	env := "only-testing-nbd"
+	os.Setenv("REDPANDA_ENVIRONMENT", env)
+	defer func() {
+		os.Setenv("REDPANDA_ENVIRONMENT", "")
+	}()
+
+	expected.Environment = env
+
+	expectedBytes, err := json.Marshal(expected)
+	require.NoError(t, err)
+
 	ts := httptest.NewServer(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			b, err := ioutil.ReadAll(r.Body)
 			require.NoError(t, err)
-			require.Exactly(t, bs, b)
+			require.Exactly(t, expectedBytes, b)
 			w.WriteHeader(http.StatusOK)
 		}),
 	)
