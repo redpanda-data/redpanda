@@ -155,6 +155,15 @@ struct create_topics_reply {
     std::vector<topic_configuration> configs;
 };
 
+struct finish_partition_update_request {
+    model::ntp ntp;
+    std::vector<model::broker_shard> new_replica_set;
+};
+
+struct finish_partition_update_reply {
+    cluster::errc result;
+};
+
 template<typename T>
 struct patch {
     std::vector<T> additions;

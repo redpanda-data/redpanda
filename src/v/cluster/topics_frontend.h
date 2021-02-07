@@ -54,6 +54,11 @@ public:
       std::vector<model::broker_shard>,
       model::timeout_clock::time_point);
 
+    ss::future<std::error_code> finish_moving_partition_replicas(
+      model::ntp,
+      std::vector<model::broker_shard>,
+      model::timeout_clock::time_point);
+
 private:
     using ntp_leader = std::pair<model::ntp, model::node_id>;
 

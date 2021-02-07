@@ -18,6 +18,7 @@
 #include "utils/expiring_promise.h"
 
 #include <absl/container/flat_hash_map.h>
+#include <absl/container/flat_hash_set.h>
 
 namespace cluster {
 
@@ -34,7 +35,7 @@ class topic_table {
 public:
     // delta propagated to backend
     struct delta {
-        enum class op_type { add, del, update };
+        enum class op_type { add, del, update, update_finished };
 
         delta(
           model::ntp, cluster::partition_assignment, model::offset, op_type);
@@ -60,13 +61,16 @@ public:
     static constexpr auto accepted_commands = make_commands_list<
       create_topic_cmd,
       delete_topic_cmd,
-      move_partition_replicas_cmd>{};
+      move_partition_replicas_cmd,
+      finish_moving_partition_replicas_cmd>{};
 
     /// State machine applies
     ss::future<std::error_code> apply(create_topic_cmd, model::offset);
     ss::future<std::error_code> apply(delete_topic_cmd, model::offset);
     ss::future<std::error_code>
       apply(move_partition_replicas_cmd, model::offset);
+    ss::future<std::error_code>
+      apply(finish_moving_partition_replicas_cmd, model::offset);
 
     ss::future<> stop();
 
@@ -112,6 +116,9 @@ public:
     void update_partition_leader(
       const model::ntp&, model::term_id, std::optional<model::node_id>);
 
+    std::optional<partition_assignment>
+    get_partition_assignment(const model::ntp&) const;
+
 private:
     struct waiter {
         explicit waiter(uint64_t id)
@@ -134,6 +141,8 @@ private:
       model::topic_namespace_hash,
       model::topic_namespace_eq>
       _topics;
+
+    absl::flat_hash_set<model::ntp> _update_in_progress;
 
     std::vector<delta> _pending_deltas;
     std::vector<std::unique_ptr<waiter>> _waiters;

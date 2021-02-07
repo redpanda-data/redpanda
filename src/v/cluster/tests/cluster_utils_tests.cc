@@ -59,3 +59,20 @@ SEASTAR_THREAD_TEST_CASE(test_group_cfg_difference) {
     BOOST_REQUIRE_EQUAL(diff.additions[0]->rpc_address().host(), "172.168.1.1");
     BOOST_REQUIRE_EQUAL(diff.additions[2]->rpc_address().port(), 6060);
 }
+
+SEASTAR_THREAD_TEST_CASE(test_has_local_replicas) {
+    model::node_id id{2};
+
+    std::vector<model::broker_shard> replicas_1{
+      model::broker_shard{model::node_id(1), 2},
+      model::broker_shard{model::node_id(2), 1},
+      model::broker_shard{model::node_id(3), 0}};
+
+    std::vector<model::broker_shard> replicas_2{
+      model::broker_shard{model::node_id(4), 2},
+      model::broker_shard{model::node_id(2), 0}, // local replica
+    };
+
+    BOOST_REQUIRE_EQUAL(cluster::has_local_replicas(id, replicas_1), false);
+    BOOST_REQUIRE_EQUAL(cluster::has_local_replicas(id, replicas_2), true);
+}

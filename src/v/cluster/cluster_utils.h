@@ -165,4 +165,10 @@ auto do_with_client_one_shot(
       });
 }
 
+/**
+ * checks if current node/shard is part of the partition replica set replica set
+ */
+bool has_local_replicas(
+  model::node_id, const std::vector<model::broker_shard>&);
+
 } // namespace cluster

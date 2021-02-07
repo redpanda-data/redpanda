@@ -9,6 +9,7 @@
 
 #include "cluster/topic_table.h"
 
+#include "cluster/commands.h"
 #include "cluster/logger.h"
 #include "cluster/types.h"
 #include "model/fundamental.h"
@@ -100,6 +101,12 @@ topic_table::apply(move_partition_replicas_cmd cmd, model::offset o) {
         return ss::make_ready_future<std::error_code>(
           errc::partition_not_exists);
     }
+
+    if (_update_in_progress.contains(cmd.key)) {
+        return ss::make_ready_future<std::error_code>(errc::update_in_progress);
+    }
+
+    _update_in_progress.insert(cmd.key);
     // replace partition replica set
     current_assignment_it->replicas = cmd.value;
 
@@ -107,6 +114,37 @@ topic_table::apply(move_partition_replicas_cmd cmd, model::offset o) {
     model::ntp ntp(tp->first.ns, tp->first.tp, current_assignment_it->id);
     _pending_deltas.emplace_back(
       std::move(ntp), *current_assignment_it, o, delta::op_type::update);
+
+    notify_waiters();
+
+    return ss::make_ready_future<std::error_code>(errc::success);
+}
+
+ss::future<std::error_code>
+topic_table::apply(finish_moving_partition_replicas_cmd cmd, model::offset o) {
+    auto tp = _topics.find(model::topic_namespace_view(cmd.key));
+    if (tp == _topics.end()) {
+        return ss::make_ready_future<std::error_code>(errc::topic_not_exists);
+    }
+    _update_in_progress.erase(cmd.key);
+    // calculate deleta for backend
+    auto current_assignment_it = std::find_if(
+      tp->second.assignments.begin(),
+      tp->second.assignments.end(),
+      [p_id = cmd.key.tp.partition](partition_assignment& p_as) {
+          return p_id == p_as.id;
+      });
+
+    if (current_assignment_it == tp->second.assignments.end()) {
+        return ss::make_ready_future<std::error_code>(
+          errc::partition_not_exists);
+    }
+    // notify backend about finished update
+    _pending_deltas.emplace_back(
+      std::move(cmd.key),
+      *current_assignment_it,
+      o,
+      delta::op_type::update_finished);
 
     notify_waiters();
 
@@ -206,6 +244,27 @@ bool topic_table::contains(
     return false;
 }
 
+std::optional<cluster::partition_assignment>
+topic_table::get_partition_assignment(const model::ntp& ntp) const {
+    auto it = _topics.find(model::topic_namespace_view(ntp));
+    if (it == _topics.end()) {
+        return {};
+    }
+
+    auto p_it = std::find_if(
+      it->second.assignments.cbegin(),
+      it->second.assignments.cend(),
+      [&ntp](const partition_assignment& pas) {
+          return pas.id == ntp.tp.partition;
+      });
+
+    if (p_it == it->second.assignments.cend()) {
+        return {};
+    }
+
+    return *p_it;
+}
+
 std::ostream&
 operator<<(std::ostream& o, const topic_table::delta::op_type& tp) {
     switch (tp) {
@@ -215,6 +274,8 @@ operator<<(std::ostream& o, const topic_table::delta::op_type& tp) {
         return o << "deletion";
     case topic_table::delta::op_type::update:
         return o << "update";
+    case topic_table::delta::op_type::update_finished:
+        return o << "update_finished";
     }
     __builtin_unreachable();
 }

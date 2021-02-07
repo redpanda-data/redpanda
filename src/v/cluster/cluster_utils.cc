@@ -211,4 +211,15 @@ void log_certificate_reload_event(
     }
 }
 
+bool has_local_replicas(
+  model::node_id self, const std::vector<model::broker_shard>& replicas) {
+    return std::find_if(
+             std::cbegin(replicas),
+             std::cend(replicas),
+             [self](const model::broker_shard& bs) {
+                 return bs.node_id == self && bs.shard == ss::this_shard_id();
+             })
+           != replicas.cend();
+}
+
 } // namespace cluster

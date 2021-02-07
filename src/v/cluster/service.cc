@@ -13,7 +13,11 @@
 #include "cluster/metadata_cache.h"
 #include "cluster/topics_frontend.h"
 #include "cluster/types.h"
+#include "config/configuration.h"
+#include "model/timeout_clock.h"
 
+#include <seastar/core/coroutine.hh>
+#include <seastar/core/future.hh>
 #include <seastar/core/sharded.hh>
 
 namespace cluster {
@@ -101,6 +105,28 @@ ss::future<configuration_update_reply> service::update_node_configuration(
                 return r.value();
             });
       });
+}
+
+ss::future<finish_partition_update_reply> service::finish_partition_update(
+  finish_partition_update_request&& req, rpc::streaming_context&) {
+    return ss::with_scheduling_group(
+      get_scheduling_group(), [this, req = std::move(req)]() mutable {
+          return do_finish_partition_update(std::move(req));
+      });
+}
+
+ss::future<finish_partition_update_reply>
+service::do_finish_partition_update(finish_partition_update_request&& req) {
+    auto ec
+      = co_await _topics_frontend.local().finish_moving_partition_replicas(
+        req.ntp,
+        req.new_replica_set,
+        config::shard_local_cfg().replicate_append_timeout_ms()
+          + model::timeout_clock::now());
+
+    errc e = ec ? errc::not_leader : errc::success;
+
+    co_return finish_partition_update_reply{.result = e};
 }
 
 } // namespace cluster
