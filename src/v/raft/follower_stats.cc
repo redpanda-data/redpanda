@@ -9,7 +9,7 @@
 
 #include "raft/follower_stats.h"
 
-#include "raft/configuration.h"
+#include "raft/group_configuration.h"
 
 namespace raft {
 void follower_stats::update_with_configuration(const group_configuration& cfg) {

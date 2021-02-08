@@ -8,8 +8,8 @@
 // by the Apache License, Version 2.0
 
 #include "model/metadata.h"
-#include "raft/configuration.h"
 #include "raft/consensus_utils.h"
+#include "raft/group_configuration.h"
 #include "random/generators.h"
 #include "reflection/adl.h"
 #include "storage/tests/utils/random_batch.h"

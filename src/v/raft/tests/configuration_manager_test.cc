@@ -9,8 +9,8 @@
 
 #include "model/fundamental.h"
 #include "model/metadata.h"
-#include "raft/configuration.h"
 #include "raft/configuration_manager.h"
+#include "raft/group_configuration.h"
 #include "raft/logger.h"
 #include "raft/types.h"
 #include "random/generators.h"
