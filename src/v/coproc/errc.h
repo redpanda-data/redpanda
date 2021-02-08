@@ -13,6 +13,45 @@
 #include <system_error>
 namespace coproc {
 
+namespace wasm {
+
+enum class errc {
+    none = 0,
+    mismatched_checksum,
+    empty_mandatory_field,
+    missing_header_key,
+    unexpected_action_type,
+    unexpected_value
+};
+
+inline std::ostream& operator<<(std::ostream& os, errc err) {
+    switch (err) {
+    case errc::none:
+        os << "none";
+        break;
+    case errc::mismatched_checksum:
+        os << "mismatched_checksum";
+        break;
+    case errc::empty_mandatory_field:
+        os << "empty_mandatory_field";
+        break;
+    case errc::missing_header_key:
+        os << "missing_header_key";
+        break;
+    case errc::unexpected_action_type:
+        os << "unexpected_action_type";
+        break;
+    case errc::unexpected_value:
+        os << "unexpected_value";
+        break;
+    default:
+        os << "missing error type";
+    }
+    return os;
+}
+
+} // namespace wasm
+
 enum class errc {
     success = 0,
     internal_error,
@@ -23,41 +62,6 @@ enum class errc {
     materialized_topic,
     script_id_does_not_exist
 };
-
-enum class wasm_event_errc {
-    none = 0,
-    mismatched_checksum,
-    empty_mandatory_field,
-    missing_header_key,
-    unexpected_action_type,
-    unexpected_value
-};
-
-inline std::ostream& operator<<(std::ostream& os, wasm_event_errc errc) {
-    switch (errc) {
-    case wasm_event_errc::none:
-        os << "none";
-        break;
-    case wasm_event_errc::mismatched_checksum:
-        os << "mismatched_checksum";
-        break;
-    case wasm_event_errc::empty_mandatory_field:
-        os << "empty_mandatory_field";
-        break;
-    case wasm_event_errc::missing_header_key:
-        os << "missing_header_key";
-        break;
-    case wasm_event_errc::unexpected_action_type:
-        os << "unexpected_action_type";
-        break;
-    case wasm_event_errc::unexpected_value:
-        os << "unexpected_value";
-        break;
-    default:
-        os << "missing error type";
-    }
-    return os;
-}
 
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "coproc::errc"; }

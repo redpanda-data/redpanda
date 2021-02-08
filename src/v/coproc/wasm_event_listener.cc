@@ -32,14 +32,14 @@ namespace coproc {
 
 using namespace std::chrono_literals;
 
-static wasm_event_action query_action(const iobuf& source_code) {
+static wasm::event_action query_action(const iobuf& source_code) {
     /// If this came from a remove event, the validator would
     /// have failed if the value() field of the record wasn't
     /// empty. Therefore checking if this iobuf is empty is a
     /// certain way to know if the intended request was to
     /// deploy or remove
-    return source_code.empty() ? wasm_event_action::remove
-                               : wasm_event_action::deploy;
+    return source_code.empty() ? wasm::event_action::remove
+                               : wasm::event_action::deploy;
 }
 
 ss::future<> wasm_event_listener::stop() {
@@ -57,7 +57,7 @@ wasm_event_listener::resolve_wasm_script(ss::sstring name, iobuf source_code) {
              active_path,
              name = std::move(name),
              source_code = std::move(source_code)](bool exists) mutable {
-          if (query_action(source_code) == wasm_event_action::remove) {
+          if (query_action(source_code) == wasm::event_action::remove) {
               if (!exists) {
                   vlog(
                     coproclog.warn,
@@ -173,15 +173,15 @@ wasm_event_listener::reconcile_wasm_events(
     wasm_script_actions wsas;
     for (auto& record_batch : events) {
         record_batch.for_each_record([&wsas](model::record r) {
-            wasm_event_errc mb_error = wasm_event_validate(r);
-            if (mb_error != wasm_event_errc::none) {
+            auto mb_error = wasm::validate_event(r);
+            if (mb_error != wasm::errc::none) {
                 vlog(
                   coproclog.error,
                   "Erranous coproc record detected, issue: {}",
                   mb_error);
                 return;
             }
-            auto id = wasm_event_get_name(r);
+            auto id = wasm::get_event_name(r);
             /// Update or insert, preferring the newest
             wsas.insert_or_assign(*id, r.share_value());
         });
