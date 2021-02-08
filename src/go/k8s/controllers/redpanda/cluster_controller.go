@@ -72,9 +72,10 @@ func (r *ClusterReconciler) Reconcile(
 	}
 
 	sts := resources.NewStatefulSet(r.Client, &redpandaCluster, r.Scheme)
+	svc := resources.NewService(r.Client, &redpandaCluster, r.Scheme)
 	toApply := []resources.Resource{
-		resources.NewService(r.Client, &redpandaCluster, r.Scheme),
-		resources.NewConfigMap(r.Client, &redpandaCluster, r.Scheme),
+		svc,
+		resources.NewConfigMap(r.Client, &redpandaCluster, r.Scheme, svc),
 		sts,
 	}
 
@@ -103,7 +104,7 @@ func (r *ClusterReconciler) Reconcile(
 	observedNodes := make([]string, 0, len(observedPods.Items))
 	// nolint:gocritic // the copies are necessary for further redpandacluster updates
 	for _, item := range observedPods.Items {
-		observedNodes = append(observedNodes, item.Name)
+		observedNodes = append(observedNodes, fmt.Sprintf("%s.%s", item.Name, svc.HeadlessServiceFQDN()))
 	}
 
 	if !reflect.DeepEqual(observedNodes, redpandaCluster.Status.Nodes) {
