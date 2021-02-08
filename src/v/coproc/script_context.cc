@@ -18,6 +18,7 @@
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "raft/types.h"
+#include "storage/types.h"
 #include "vlog.h"
 
 #include <chrono>
@@ -177,7 +178,7 @@ ss::future<std::vector<process_batch_request::data>> script_context::read() {
       });
 }
 
-std::optional<storage::log_reader_config>
+storage::log_reader_config
 script_context::get_reader(const ss::lw_shared_ptr<ntp_context>& ntp_ctx) {
     auto found = ntp_ctx->offsets.find(_id);
     vassert(
@@ -185,26 +186,22 @@ script_context::get_reader(const ss::lw_shared_ptr<ntp_context>& ntp_ctx) {
       "script_id must exist: {} for ntp: {}",
       _id,
       ntp_ctx->ntp());
-    const auto& cp_offsets = found->second;
-    if (cp_offsets.last_read != cp_offsets.last_acked) {
+    const ntp_context::offset_pair& cp_offsets = found->second;
+    const model::offset next_read
+      = (unlikely(cp_offsets.last_acked == model::offset{}))
+          ? model::offset(0)
+          : cp_offsets.last_acked + model::offset(1);
+    if (next_read <= cp_offsets.last_acked) {
         vlog(
           coproclog.info,
           "Replaying read on ntp: {} at offset: {}",
           ntp_ctx->ntp(),
           cp_offsets.last_read);
     }
-    const storage::offset_stats stats = ntp_ctx->log.offsets();
-    const model::offset next_read
-      = (unlikely(
-          cp_offsets.last_acked == model::model_limits<model::offset>::min()))
-          ? model::offset(0)
-          : cp_offsets.last_acked + model::offset(1);
-    if (next_read >= stats.committed_offset()) {
-        return std::nullopt;
-    }
+    const storage::offset_stats os = ntp_ctx->log.offsets();
     return storage::log_reader_config(
       next_read,
-      model::model_limits<model::offset>::max(),
+      os.dirty_offset,
       1,
       max_batch_size(),
       ss::default_priority_class(),
@@ -217,12 +214,8 @@ ss::future<std::optional<process_batch_request::data>>
 script_context::read_ntp(ss::lw_shared_ptr<ntp_context> ntp_ctx) {
     return ss::with_semaphore(
       _resources.read_sem, max_batch_size(), [this, ntp_ctx]() {
-          auto cfg = get_reader(ntp_ctx);
-          if (!cfg) {
-              return ss::make_ready_future<
-                std::optional<process_batch_request::data>>(std::nullopt);
-          }
-          return ntp_ctx->log.make_reader(*cfg)
+          storage::log_reader_config cfg = get_reader(ntp_ctx);
+          return ntp_ctx->log.make_reader(cfg)
             .then([](model::record_batch_reader rbr) {
                 return model::consume_reader_to_memory(
                   std::move(rbr), model::no_timeout);

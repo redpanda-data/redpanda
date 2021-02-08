@@ -30,8 +30,8 @@ namespace coproc {
 /// subscribers to an input ntp
 struct ntp_context {
     struct offset_pair {
-        model::offset last_read{model::model_limits<model::offset>::min()};
-        model::offset last_acked{model::model_limits<model::offset>::min()};
+        model::offset last_read{};
+        model::offset last_acked{};
     };
 
     explicit ntp_context(storage::log lg)

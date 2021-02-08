@@ -46,3 +46,6 @@ ss::future<result<rpc::client_context<coproc::disable_copros_reply>>>
 deregister_coprocessors(
   rpc::client<coproc::script_manager_client_protocol>&,
   std::vector<uint32_t>&&);
+
+/// Produces a batch with 1 record_batch which has 1 single record within it
+model::record_batch_reader single_record_record_batch_reader();
