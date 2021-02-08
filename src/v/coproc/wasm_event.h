@@ -12,7 +12,6 @@
 #include "bytes/iobuf.h"
 #include "coproc/errc.h"
 #include "model/record.h"
-#include "model/record_batch_reader.h"
 
 #include <seastar/core/sstring.hh>
 #include <seastar/util/optimized_optional.hh>
@@ -52,6 +51,6 @@ wasm::errc validate_event(const model::record&);
 /// \brief Returns the newest events and their data blobs if the event has
 /// passed all validators
 absl::btree_map<ss::sstring, iobuf>
-reconcile_events(model::record_batch_reader::data_t&);
+  reconcile_events(std::vector<model::record_batch>);
 
 } // namespace coproc::wasm

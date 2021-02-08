@@ -15,7 +15,9 @@
 #include "coproc/logger.h"
 #include "coproc/types.h"
 #include "coproc/wasm_event.h"
+#include "ssx/future-util.h"
 #include "storage/directories.h"
+#include "storage/parser_utils.h"
 #include "utils/file_io.h"
 #include "utils/unresolved_address.h"
 #include "vassert.h"
@@ -126,6 +128,15 @@ ss::future<> wasm_event_listener::start() {
       });
 }
 
+static ss::future<std::vector<model::record_batch>>
+decompress_wasm_events(model::record_batch_reader::data_t events) {
+    return ssx::parallel_transform(
+      std::move(events), [](model::record_batch&& rb) {
+          /// If batch isn't compressed, returns 'rb'
+          return storage::internal::decompress_batch(std::move(rb));
+      });
+}
+
 ss::future<> wasm_event_listener::do_start() {
     /// This method performs the main polling behavior. Within a repeat loop it
     /// will poll from data until it cannot poll anymore. Normally we would be
@@ -145,7 +156,11 @@ ss::future<> wasm_event_listener::do_start() {
                                   : ss::stop_iteration::no;
                      });
                  })
-            .then([&events] { return wasm::reconcile_events(events); })
+            .then(
+              [&events] { return decompress_wasm_events(std::move(events)); })
+            .then([](std::vector<model::record_batch> events) {
+                return wasm::reconcile_events(std::move(events));
+            })
             .then([this](wasm_script_actions wsas) {
                 return ss::do_with(
                   std::move(wsas), [this](wasm_script_actions& wsas) {

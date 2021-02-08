@@ -124,7 +124,7 @@ wasm::errc validate_event(const model::record& r) {
 }
 
 absl::btree_map<ss::sstring, iobuf>
-reconcile_events(model::record_batch_reader::data_t& events) {
+reconcile_events(std::vector<model::record_batch> events) {
     absl::btree_map<ss::sstring, iobuf> wsas;
     for (auto& record_batch : events) {
         record_batch.for_each_record([&wsas](model::record r) {
