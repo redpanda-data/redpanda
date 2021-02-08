@@ -138,6 +138,7 @@ public:
             config.get("enable_admin_api").set_value(false);
             config.get("enable_coproc").set_value(true);
             config.get("join_retry_timeout_ms").set_value(100ms);
+            config.get("decomission_monitor_retry_ms").set_value(100ms);
             config.get("coproc_supervisor_server")
               .set_value(
                 unresolved_address("127.0.0.1", coproc_supervisor_port));
