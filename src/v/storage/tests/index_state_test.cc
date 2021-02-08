@@ -1,5 +1,5 @@
 #define BOOST_TEST_MODULE storage
-#include "bytes/bytes.h"
+#include "bytes/bytes_iobuf.h"
 #include "storage/index_state.h"
 
 #include <boost/test/unit_test.hpp>

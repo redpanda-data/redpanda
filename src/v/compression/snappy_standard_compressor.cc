@@ -9,7 +9,7 @@
 
 #include "compression/snappy_standard_compressor.h"
 
-#include "bytes/bytes.h"
+#include "bytes/bytes_iobuf.h"
 #include "likely.h"
 
 #include <fmt/format.h>

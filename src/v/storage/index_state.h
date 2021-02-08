@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "bytes/iobuf.h"
+#include "bytes/fwd.h"
 #include "model/fundamental.h"
 #include "model/timestamp.h"
 

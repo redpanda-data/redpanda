@@ -11,9 +11,9 @@
 
 #pragma once
 
-#include "bytes/iobuf.h"
-#include "model/async_adl_serde.h"
-#include "raft/types.h"
+#include <seastar/core/sstring.hh>
+
+#include <seastarx.h>
 
 namespace raft::tron {
 struct stats_request {};

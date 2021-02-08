@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "bytes/iobuf.h"
+#include "bytes/fwd.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/init_producer_id_request.h"
 #include "kafka/protocol/schemata/init_producer_id_response.h"

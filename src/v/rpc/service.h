@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "model/async_adl_serde.h"
 #include "reflection/async_adl.h"
 #include "rpc/netbuf.h"
 #include "rpc/parse_utils.h"

@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "bytes/bytes_iobuf.h"
 #include "random/generators.h"
 #include "seastarx.h"
 #include "storage/snapshot.h"

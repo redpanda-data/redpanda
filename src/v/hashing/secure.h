@@ -9,10 +9,13 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
-#include "bytes/bytes.h"
+#include "bytes/bytes_view.h"
+#include "likely.h"
 
 #include <gnutls/crypto.h>
 #include <gnutls/gnutls.h>
+
+#include <exception>
 
 class hmac_exception final : public std::exception {
 public:

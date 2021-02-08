@@ -11,8 +11,8 @@
 
 #pragma once
 
-#include "bytes/bytes.h"
-#include "bytes/iobuf.h"
+#include "bytes/bytes_view.h"
+#include "bytes/fwd.h"
 #include "likely.h"
 #include "seastarx.h"
 #include "storage/segment_appender_chunk.h"

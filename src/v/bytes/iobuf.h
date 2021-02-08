@@ -24,17 +24,13 @@
 
 #include <seastar/core/iostream.hh>
 #include <seastar/core/scattered_message.hh>
-#include <seastar/core/shared_ptr.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/core/temporary_buffer.hh>
 
 #include <boost/container_hash/hash.hpp> // hash_combine
-#include <fmt/format.h>
 
 #include <cstddef>
-#include <list>
-#include <ostream>
-#include <stdexcept>
+#include <iosfwd>
 #include <string_view>
 #include <type_traits>
 

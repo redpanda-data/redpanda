@@ -10,7 +10,7 @@
  */
 
 #pragma once
-#include "bytes/iobuf.h"
+#include "bytes/fwd.h"
 #include "compression/stream_zstd.h"
 namespace compression::internal {
 

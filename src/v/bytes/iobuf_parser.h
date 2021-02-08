@@ -11,9 +11,9 @@
 
 #pragma once
 
-#include "bytes/bytes.h"
-#include "bytes/iobuf.h"
+#include "bytes/bytes_iobuf.h"
 #include "seastarx.h"
+#include "utils/concepts-enabled.h"
 #include "utils/utf8.h"
 #include "utils/vint.h"
 

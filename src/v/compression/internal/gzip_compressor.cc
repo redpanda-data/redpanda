@@ -9,7 +9,7 @@
 
 #include "compression/internal/gzip_compressor.h"
 
-#include "bytes/bytes.h"
+#include "bytes/bytes_iobuf.h"
 #include "vassert.h"
 
 #include <seastar/core/temporary_buffer.hh>

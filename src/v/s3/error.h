@@ -10,7 +10,6 @@
 
 #pragma once
 
-#include "bytes/iobuf.h"
 #include "seastarx.h"
 
 #include <seastar/core/sstring.hh>

@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 
 #define BOOST_TEST_MODULE utils
+#include "bytes/bytes_iobuf.h"
 #include "random/generators.h"
 #include "utils/base64.h"
 

@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "bytes/iobuf.h"
+#include "bytes/fwd.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/schemata/delete_topics_request.h"
 #include "kafka/protocol/schemata/delete_topics_response.h"

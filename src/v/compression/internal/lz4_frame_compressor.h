@@ -10,7 +10,7 @@
  */
 
 #pragma once
-#include "bytes/iobuf.h"
+#include "bytes/fwd.h"
 namespace compression::internal {
 
 struct lz4_frame_compressor {

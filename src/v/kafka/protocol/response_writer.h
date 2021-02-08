@@ -11,7 +11,6 @@
 
 #pragma once
 
-#include "bytes/bytes.h"
 #include "bytes/iobuf.h"
 #include "kafka/protocol/batch_reader.h"
 #include "kafka/protocol/errors.h"

@@ -10,12 +10,10 @@
  */
 
 #pragma once
-#include "model/record.h"
-#include "storage/segment_appender.h"
 
-namespace storage {
+#include <seastar/core/sstring.hh>
 
-ss::future<>
-write(segment_appender& appender, const model::record_batch& batch);
+#include <string_view>
 
-} // namespace storage
+using bytes_view = std::basic_string_view<uint8_t>;
+seastar::sstring to_hex(bytes_view b);

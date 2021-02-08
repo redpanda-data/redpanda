@@ -9,7 +9,7 @@
 
 #include "compression/internal/lz4_frame_compressor.h"
 
-#include "bytes/bytes.h"
+#include "bytes/bytes_iobuf.h"
 #include "compression/logger.h"
 #include "static_deleter_fn.h"
 #include "units.h"

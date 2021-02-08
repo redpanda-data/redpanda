@@ -11,7 +11,9 @@
 
 #pragma once
 
-#include "bytes/iobuf.h"
+#include "bytes/bytes_view.h"
+#include "bytes/fwd.h"
+#include "likely.h"
 #include "seastarx.h"
 
 #include <seastar/core/sstring.hh>
@@ -29,7 +31,6 @@ using bytes = ss::basic_sstring<
   false     // not null terminated
   >;
 
-using bytes_view = std::basic_string_view<uint8_t>;
 using bytes_opt = std::optional<bytes>;
 
 struct bytes_type_hash {
@@ -53,7 +54,6 @@ struct bytes_type_eq {
     bool operator()(const bytes& lhs, const iobuf& rhs) const;
 };
 
-ss::sstring to_hex(bytes_view b);
 ss::sstring to_hex(const bytes& b);
 
 template<typename Char, size_t Size>
@@ -70,22 +70,6 @@ inline ss::sstring to_hex(const std::array<Char, Size>& data) {
 
 std::ostream& operator<<(std::ostream& os, const bytes& b);
 std::ostream& operator<<(std::ostream& os, const bytes_opt& b);
-
-inline bytes iobuf_to_bytes(const iobuf& in) {
-    auto out = ss::uninitialized_string<bytes>(in.size_bytes());
-    {
-        iobuf::iterator_consumer it(in.cbegin(), in.cend());
-        it.consume_to(in.size_bytes(), out.data());
-    }
-    return out;
-}
-
-inline iobuf bytes_to_iobuf(const bytes& in) {
-    iobuf out;
-    // NOLINTNEXTLINE
-    out.append(reinterpret_cast<const char*>(in.data()), in.size());
-    return out;
-}
 
 namespace std {
 
@@ -117,27 +101,6 @@ bytes_type_eq::operator()(const bytes& lhs, const bytes& rhs) const {
 inline bool
 bytes_type_eq::operator()(const bytes& lhs, const bytes_view& rhs) const {
     return bytes_view(lhs) == rhs;
-}
-inline bool
-bytes_type_eq::operator()(const bytes& lhs, const iobuf& rhs) const {
-    if (lhs.size() != rhs.size_bytes()) {
-        return false;
-    }
-    auto iobuf_end = iobuf::byte_iterator(rhs.cend(), rhs.cend());
-    auto iobuf_it = iobuf::byte_iterator(rhs.cbegin(), rhs.cend());
-    size_t bytes_idx = 0;
-    const size_t max = lhs.size();
-    while (iobuf_it != iobuf_end && bytes_idx < max) {
-        const char r_c = *iobuf_it;
-        const char l_c = lhs[bytes_idx];
-        if (l_c != r_c) {
-            return false;
-        }
-        // the equals case
-        ++bytes_idx;
-        ++iobuf_it;
-    }
-    return true;
 }
 
 inline bytes operator^(bytes_view a, bytes_view b) {

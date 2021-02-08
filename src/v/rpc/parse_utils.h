@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "bytes/iobuf_parser.h"
 #include "compression/stream_zstd.h"
 #include "hashing/xx.h"
 #include "likely.h"

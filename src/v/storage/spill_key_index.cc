@@ -9,7 +9,7 @@
 
 #include "storage/spill_key_index.h"
 
-#include "bytes/bytes.h"
+#include "bytes/bytes_iobuf.h"
 #include "random/generators.h"
 #include "reflection/adl.h"
 #include "storage/compacted_index_writer.h"

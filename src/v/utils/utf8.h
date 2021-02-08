@@ -11,6 +11,8 @@
 
 #pragma once
 
+#include "utils/concepts-enabled.h"
+
 #include <boost/locale/encoding_utf.hpp>
 
 #include <string_view>

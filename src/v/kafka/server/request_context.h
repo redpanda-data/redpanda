@@ -10,7 +10,7 @@
  */
 
 #pragma once
-#include "bytes/iobuf.h"
+#include "bytes/fwd.h"
 #include "kafka/protocol/request_reader.h"
 #include "kafka/server/connection_context.h"
 #include "kafka/server/fetch_session_cache.h"

@@ -9,6 +9,7 @@
 
 #include "storage/segment_appender.h"
 
+#include "bytes/iobuf.h"
 #include "config/configuration.h"
 #include "likely.h"
 #include "storage/chunk_cache.h"

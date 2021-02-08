@@ -13,11 +13,14 @@
 
 #include "model/timeout_clock.h"
 #include "storage/compacted_index.h"
+#include "utils/concepts-enabled.h"
 
 #include <seastar/core/circular_buffer.hh>
 #include <seastar/core/file.hh>
+#include <seastar/core/loop.hh>
 
 #include <memory>
+
 namespace storage {
 
 // clang-format off

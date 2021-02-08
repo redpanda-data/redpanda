@@ -10,7 +10,6 @@
 
 #pragma once
 
-#include "bytes/iobuf.h"
 #include "json/json.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"

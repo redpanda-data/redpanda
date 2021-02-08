@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 
 #define BOOST_TEST_MODULE secure_hash
+#include "bytes/bytes.h"
 #include "hashing/secure.h"
 
 #include <boost/test/unit_test.hpp>
