@@ -14,6 +14,7 @@
 #include "bytes/iobuf.h"
 #include "coproc/wasm_event.h"
 #include "hashing/secure.h"
+#include "model/record_batch_reader.h"
 #include "raft/types.h"
 #include "random/generators.h"
 #include "storage/record_batch_builder.h"
@@ -65,10 +66,17 @@ void serialize_event(storage::record_batch_builder& rbb, const event& e) {
     rbb.add_raw_kw(std::move(key), std::move(value), std::move(headers));
 }
 
+bytes calculate_checksum(const event& e) {
+    hash_sha256 h;
+    h.update(*e.script);
+    auto checksum = h.reset();
+    return bytes(checksum.begin(), checksum.end());
+}
+
 /// Don't call this in a loop, rather use 'make_random_wasm_batch' or
 /// 'make_wasm_batch'. This method is only useful for situations where a single
 /// model::record with exact fields must be serialized
-model::record create_record(const event& e) {
+model::record make_record(const event& e) {
     storage::record_batch_builder rbb(raft::data_batch_type, model::offset(0));
     serialize_event(rbb, e);
     auto record_batch = std::move(rbb).build();
@@ -77,69 +85,49 @@ model::record create_record(const event& e) {
     return std::move(record_batch.copy_records()[0]);
 }
 
-event make_random_event() {
-    auto name = random_generators::gen_alphanum_string(15);
-    if (random_generators::get_int(0, 1) == 0) {
-        return event{.name = std::move(name), .action = event_action::remove};
-    }
-    auto script = random_generators::gen_alphanum_string(15);
-    hash_sha256 h;
-    h.update(script);
-    auto checksum = h.reset();
-    return event{
-      .name = std::move(name),
-      .desc = random_generators::gen_alphanum_string(15),
-      .script = std::move(script),
-      .checksum = bytes(checksum.begin(), checksum.end()),
-      .action = event_action::deploy};
-}
-
-model::record_batch
-make_batch(model::offset o, std::vector<model::record> events) {
-    storage::record_batch_builder rbb(raft::data_batch_type, o);
-    for (size_t i = 0; i < events.size(); ++i) {
-        rbb.add_raw_kw(
-          events[i].release_key(),
-          events[i].release_value(),
-          std::move(events[i].headers()));
-    }
-    return std::move(rbb).build();
-}
-
-model::record_batch make_random_batch(model::offset o) {
-    storage::record_batch_builder rbb(raft::data_batch_type, o);
-    auto num_records = random_generators::get_int(2, 30);
-    for (int i = 0; i < num_records; ++i) {
-        auto e = make_random_event();
-        serialize_event(rbb, e);
-    }
-    return std::move(rbb).build();
-}
-
-model::record_batch_reader::data_t
-make_random_batches(model::offset o, int count) {
+model::record_batch_reader make_random_event_record_batch_reader(
+  model::offset offset, int batch_size, int n_batches) {
     model::record_batch_reader::data_t batches;
-    batches.reserve(count);
-    for (int i = 0; i < count; ++i) {
-        auto b = make_random_batch(o);
-        b.set_term(model::term_id(0));
-        batches.push_back(std::move(b));
+    model::offset o{offset};
+    for (auto i = 0; i < n_batches; ++i) {
+        storage::record_batch_builder rbb(raft::data_batch_type, o);
+        for (int j = 0; j < batch_size; ++j) {
+            event e{
+              .name = random_generators::gen_alphanum_string(15),
+              .action = event_action::remove};
+            if (random_generators::get_int(0, 1) == 0) {
+                e.action = event_action::deploy;
+                e.script = random_generators::gen_alphanum_string(15);
+                e.desc = random_generators::gen_alphanum_string(15);
+                e.checksum = calculate_checksum(e);
+            }
+            serialize_event(rbb, e);
+        }
+        batches.push_back(std::move(rbb).build());
+        o = batches.back().last_offset() + model::offset(1);
     }
-    return batches;
+    return model::make_memory_record_batch_reader(std::move(batches));
 }
 
 model::record_batch_reader make_event_record_batch_reader(
-  model::offset offset, int batch_size, int n_batches) {
-    return model::make_generating_record_batch_reader(
-      [offset, batch_size, n_batches]() mutable {
-          model::record_batch_reader::data_t batches;
-          if (n_batches--) {
-              batches = make_random_batches(offset, batch_size);
-              offset = batches.back().last_offset()++;
-          }
-          return ss::make_ready_future<model::record_batch_reader::data_t>(
-            std::move(batches));
-      });
+  std::vector<std::vector<short_event>> event_batches) {
+    model::record_batch_reader::data_t batches;
+    model::offset o{0};
+    for (const auto& events : event_batches) {
+        storage::record_batch_builder rbb(raft::data_batch_type, o);
+        for (const short_event& se : events) {
+            coproc::wasm::event e{.name = se.name, .action = se.action};
+            if (e.action == event_action::deploy) {
+                e.desc = random_generators::gen_alphanum_string(15);
+                e.script = random_generators::gen_alphanum_string(15);
+                e.checksum = calculate_checksum(e);
+            }
+            serialize_event(rbb, e);
+        }
+        batches.push_back(std::move(rbb).build());
+        o = batches.back().last_offset() + model::offset(1);
+    }
+    return model::make_memory_record_batch_reader(std::move(batches));
 }
 
 } // namespace coproc::wasm
