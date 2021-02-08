@@ -131,6 +131,7 @@ ss::future<> wasm_event_listener::do_start() {
     /// will poll from data until it cannot poll anymore. Normally we would be
     /// concerned about keeping all of this data in memory, however the topic is
     /// compacted, we don't expect the size of unique records to be very big.
+    using wasm_script_actions = absl::btree_map<ss::sstring, iobuf>;
     return ss::do_with(
       model::record_batch_reader::data_t(),
       [this](model::record_batch_reader::data_t& events) {
@@ -144,7 +145,7 @@ ss::future<> wasm_event_listener::do_start() {
                                   : ss::stop_iteration::no;
                      });
                  })
-            .then([this, &events] { return reconcile_wasm_events(events); })
+            .then([&events] { return wasm::reconcile_events(events); })
             .then([this](wasm_script_actions wsas) {
                 return ss::do_with(
                   std::move(wsas), [this](wasm_script_actions& wsas) {
@@ -163,30 +164,6 @@ ss::future<> wasm_event_listener::do_start() {
                 vlog(coproclog.debug, "Exited sleep early: {}", eptr);
             });
       });
-}
-
-/// Map a model::record_batch -> std::vector<wasm_script_action>
-/// The transform will only occur after the record has passed all validators
-wasm_event_listener::wasm_script_actions
-wasm_event_listener::reconcile_wasm_events(
-  model::record_batch_reader::data_t& events) {
-    wasm_script_actions wsas;
-    for (auto& record_batch : events) {
-        record_batch.for_each_record([&wsas](model::record r) {
-            auto mb_error = wasm::validate_event(r);
-            if (mb_error != wasm::errc::none) {
-                vlog(
-                  coproclog.error,
-                  "Erranous coproc record detected, issue: {}",
-                  mb_error);
-                return;
-            }
-            auto id = wasm::get_event_name(r);
-            /// Update or insert, preferring the newest
-            wsas.insert_or_assign(*id, r.share_value());
-        });
-    }
-    return wsas;
 }
 
 ss::future<>

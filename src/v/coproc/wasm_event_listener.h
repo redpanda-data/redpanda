@@ -40,14 +40,9 @@ public:
     const std::filesystem::path& inactive_dir() const { return _inactive_dir; }
 
 private:
-    using wasm_script_actions = absl::btree_map<ss::sstring, iobuf>;
-
     ss::future<> do_start();
 
     ss::future<> poll_topic(model::record_batch_reader::data_t&);
-
-    wasm_script_actions
-    reconcile_wasm_events(model::record_batch_reader::data_t&);
 
     ss::future<> resolve_wasm_script(ss::sstring, iobuf);
 

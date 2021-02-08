@@ -9,11 +9,15 @@
  */
 
 #pragma once
+#include "bytes/iobuf.h"
 #include "coproc/errc.h"
 #include "model/record.h"
+#include "model/record_batch_reader.h"
 
 #include <seastar/core/sstring.hh>
 #include <seastar/util/optimized_optional.hh>
+
+#include <absl/container/btree_map.h>
 
 #include <optional>
 #include <variant>
@@ -44,5 +48,10 @@ wasm::errc verify_event_checksum(const model::record&);
 
 /// \brief performs the strictest form of validation, 'none' if all checks pass
 wasm::errc validate_event(const model::record&);
+
+/// \brief Returns the newest events and their data blobs if the event has
+/// passed all validators
+absl::btree_map<ss::sstring, iobuf>
+reconcile_events(model::record_batch_reader::data_t&);
 
 } // namespace coproc::wasm

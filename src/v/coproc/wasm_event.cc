@@ -123,4 +123,25 @@ wasm::errc validate_event(const model::record& r) {
     return wasm::errc::none;
 }
 
+absl::btree_map<ss::sstring, iobuf>
+reconcile_events(model::record_batch_reader::data_t& events) {
+    absl::btree_map<ss::sstring, iobuf> wsas;
+    for (auto& record_batch : events) {
+        record_batch.for_each_record([&wsas](model::record r) {
+            auto mb_error = wasm::validate_event(r);
+            if (mb_error != wasm::errc::none) {
+                vlog(
+                  coproclog.error,
+                  "Erranous coproc record detected, issue: {}",
+                  mb_error);
+                return;
+            }
+            auto id = wasm::get_event_name(r);
+            /// Update or insert, preferring the newest
+            wsas.insert_or_assign(*id, r.share_value());
+        });
+    }
+    return wsas;
+}
+
 } // namespace coproc::wasm
