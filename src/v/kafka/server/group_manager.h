@@ -10,8 +10,7 @@
  */
 
 #pragma once
-#include "cluster/cluster_utils.h"
-#include "cluster/partition_manager.h"
+#include "cluster/fwd.h"
 #include "config/configuration.h"
 #include "kafka/protocol/delete_groups.h"
 #include "kafka/protocol/describe_groups.h"
@@ -114,11 +113,7 @@ public:
     group_manager(
       ss::sharded<raft::group_manager>& gm,
       ss::sharded<cluster::partition_manager>& pm,
-      config::configuration& conf)
-      : _gm(gm)
-      , _pm(pm)
-      , _conf(conf)
-      , _self(cluster::make_self_broker(config::shard_local_cfg())) {}
+      config::configuration& conf);
 
     ss::future<> start();
     ss::future<> stop();
