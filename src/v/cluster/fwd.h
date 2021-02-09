@@ -23,5 +23,6 @@ class topics_frontend;
 class topic_table;
 class members_manager;
 class members_table;
+class metadata_cache;
 
 } // namespace cluster
