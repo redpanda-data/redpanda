@@ -16,7 +16,6 @@
 #include "coproc/types.h"
 #include "coproc/wasm_event.h"
 #include "ssx/future-util.h"
-#include "storage/directories.h"
 #include "storage/parser_utils.h"
 #include "utils/file_io.h"
 #include "utils/unresolved_address.h"
@@ -110,13 +109,12 @@ ss::future<> wasm_event_listener::start() {
           "Attempted to start() the wasm_event_notifier run "
           "loop, after it has already been started or closed");
     }
-    return storage::directories::initialize(_active_dir.string())
+    return ss::recursive_touch_directory(_active_dir.string())
       .then([this] {
-          return storage::directories::initialize(_inactive_dir.string());
+          return ss::recursive_touch_directory(_inactive_dir.string());
       })
-      .then([this] {
-          return storage::directories::initialize(_submit_dir.string());
-      })
+      .then(
+        [this] { return ss::recursive_touch_directory(_submit_dir.string()); })
       .then([this] {
           (void)ss::with_gate(_gate, [this] {
               return _client.connect().then([this] {
