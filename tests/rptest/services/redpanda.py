@@ -21,7 +21,6 @@ from ducktape.utils.util import wait_until
 from ducktape.cluster.cluster import ClusterNode
 from prometheus_client.parser import text_string_to_metric_families
 
-from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.services.storage import ClusterStorage, NodeStorage
 
@@ -47,11 +46,13 @@ class RedpandaService(Service):
     def __init__(self,
                  context,
                  num_brokers,
+                 client_type,
                  extra_rp_conf=None,
                  topics=None,
                  log_level='info'):
         super(RedpandaService, self).__init__(context, num_nodes=num_brokers)
         self._context = context
+        self._client_type = client_type
         self._extra_rp_conf = extra_rp_conf
         self._log_level = log_level
         self._topics = topics or ()
@@ -78,10 +79,10 @@ class RedpandaService(Service):
         self._create_initial_topics()
 
     def _create_initial_topics(self):
-        kafka_tools = KafkaCliTools(self)
+        client = self._client_type(self)
         for spec in self._topics:
             self.logger.debug(f"Creating initial topic {spec}")
-            kafka_tools.create_topic_from_spec(spec)
+            client.create_topic(spec)
 
     def start_node(self, node, override_cfg_params=None):
         node.account.mkdirs(RedpandaService.DATA_DIR)

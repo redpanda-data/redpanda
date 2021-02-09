@@ -14,6 +14,7 @@ import time
 from ducktape.mark.resource import cluster
 from ducktape.utils.util import wait_until
 
+from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.tests.redpanda_test import RedpandaTest
@@ -59,7 +60,8 @@ class PandaProxyTest(RedpandaTest):
         self.logger.debug("Creating test topics")
         kafka_tools = KafkaCliTools(self.redpanda)
         for name in names:
-            kafka_tools.create_topic(name, replication_factor=1)
+            kafka_tools.create_topic(TopicSpec(name=name,
+                                               replication_factor=1))
 
         curr = set(self._get_topics())
         self.logger.debug("Current topics %s", curr)
@@ -89,7 +91,8 @@ class PandaProxyTest(RedpandaTest):
 
         self.logger.debug("Creating test topic")
         kafka_tools = KafkaCliTools(self.redpanda)
-        kafka_tools.create_topic(name, replication_factor=1, partitions=3)
+        kafka_tools.create_topic(
+            TopicSpec(name=name, replication_factor=1, partition_count=3))
 
         self.logger.debug("Waiting for leaders to settle")
         has_leaders = False

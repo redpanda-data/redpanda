@@ -10,7 +10,8 @@
 from ducktape.mark.resource import cluster
 from ducktape.utils.util import wait_until
 
-from rptest.tests.redpanda_test import RedpandaTest, TopicSpec
+from rptest.clients.types import TopicSpec
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.services.kaf_producer import KafProducer
 from rptest.services.kaf_consumer import KafConsumer
 
@@ -22,7 +23,7 @@ class WaitForLocalConsumerTest(RedpandaTest):
     """
     NUM_RECORDS = 2000
 
-    topics = (TopicSpec(partitions=1, replication_factor=1), )
+    topics = (TopicSpec(partition_count=1, replication_factor=1), )
 
     def __init__(self, ctx):
         super(WaitForLocalConsumerTest, self).__init__(test_context=ctx,

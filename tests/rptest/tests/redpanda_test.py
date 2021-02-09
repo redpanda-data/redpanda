@@ -11,35 +11,7 @@ import string
 
 from ducktape.tests.test import Test
 from rptest.services.redpanda import RedpandaService
-
-
-class TopicSpec:
-    """
-    A topic specification.
-
-    It is often the case that in a test the name of a topic does not matter. To
-    simplify for this case, a random name is generated if none is provided.
-    """
-    CLEANUP_COMPACT = "compact"
-    CLEANUP_DELETE = "delete"
-
-    def __init__(self,
-                 *,
-                 name=None,
-                 partitions=1,
-                 replication_factor=1,
-                 cleanup_policy=None):
-        self.name = name or f"topic-{self._random_topic_suffix()}"
-        self.partitions = partitions
-        self.replication_factor = replication_factor
-        self.cleanup_policy = cleanup_policy
-
-    def __str__(self):
-        return self.name
-
-    def _random_topic_suffix(self, size=4):
-        return "".join(
-            random.choice(string.ascii_lowercase) for _ in range(size))
+from rptest.clients.kafka_cli_tools import KafkaCliTools
 
 
 class RedpandaTest(Test):
@@ -60,7 +32,8 @@ class RedpandaTest(Test):
         super(RedpandaTest, self).__init__(test_context)
 
         self.redpanda = RedpandaService(test_context,
-                                        num_brokers=num_brokers,
+                                        num_brokers,
+                                        KafkaCliTools,
                                         extra_rp_conf=extra_rp_conf,
                                         topics=self.topics,
                                         log_level=log_level)

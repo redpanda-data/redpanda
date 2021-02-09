@@ -12,7 +12,8 @@ import collections
 from ducktape.mark.resource import cluster
 from ducktape.utils.util import wait_until
 
-from rptest.tests.redpanda_test import RedpandaTest, TopicSpec
+from rptest.clients.types import TopicSpec
+from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 
 
@@ -20,7 +21,7 @@ class TopicDeleteTest(RedpandaTest):
     """
     Verify that topic deletion cleans up storage.
     """
-    topics = (TopicSpec(partitions=3,
+    topics = (TopicSpec(partition_count=3,
                         cleanup_policy=TopicSpec.CLEANUP_COMPACT), )
 
     def __init__(self, test_context):

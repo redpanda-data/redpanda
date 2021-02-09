@@ -15,14 +15,15 @@ from ducktape.utils.util import wait_until
 from rptest.clients.kafka_cat import KafkaCat
 import requests
 
-from rptest.tests.redpanda_test import RedpandaTest, TopicSpec
+from rptest.clients.types import TopicSpec
+from rptest.tests.redpanda_test import RedpandaTest
 
 
 class LeadershipTransferTest(RedpandaTest):
     """
     Transfer leadership from one node to another.
     """
-    topics = (TopicSpec(partitions=3, replication_factor=3), )
+    topics = (TopicSpec(partition_count=3, replication_factor=3), )
 
     @cluster(num_nodes=3)
     def test_controller_recovery(self):

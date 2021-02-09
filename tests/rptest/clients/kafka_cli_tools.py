@@ -8,9 +8,11 @@
 # by the Apache License, Version 2.0
 
 import subprocess
+from rptest.clients.types import TopicSpec
+from rptest.clients.kafka_client import KafkaClient
 
 
-class KafkaCliTools:
+class KafkaCliTools(KafkaClient):
     """
     Wrapper around the Kafka admin command line tools.
     """
@@ -24,25 +26,24 @@ class KafkaCliTools:
         assert self._version is None or \
                 self._version in KafkaCliTools.VERSIONS
 
-    def create_topic(self,
-                     topic,
-                     partitions=1,
-                     replication_factor=3,
-                     cleanup_policy=None):
-        self._redpanda.logger.debug("Creating topic: %s", topic)
-        args = ["--create"]
-        args += ["--topic", topic]
-        args += ["--partitions", str(partitions)]
-        args += ["--replication-factor", str(replication_factor)]
-        if cleanup_policy:
-            args += ["--config", "cleanup.policy={}".format(cleanup_policy)]
-        return self._run("kafka-topics.sh", args)
+    @classmethod
+    def instances(cls):
+        def make_factory(version):
+            return lambda redpanda: cls(redpanda, version)
 
-    def create_topic_from_spec(self, spec):
-        return self.create_topic(spec.name,
-                                 partitions=spec.partitions,
-                                 replication_factor=spec.replication_factor,
-                                 cleanup_policy=spec.cleanup_policy)
+        return list(map(make_factory, cls.VERSIONS))
+
+    def create_topic(self, spec):
+        self._redpanda.logger.debug("Creating topic: %s", spec.name)
+        args = ["--create"]
+        args += ["--topic", spec.name]
+        args += ["--partitions", str(spec.partition_count)]
+        args += ["--replication-factor", str(spec.replication_factor)]
+        if spec.cleanup_policy:
+            args += [
+                "--config", "cleanup.policy={}".format(spec.cleanup_policy)
+            ]
+        return self._run("kafka-topics.sh", args)
 
     def delete_topic(self, topic):
         self._redpanda.logger.debug("Deleting topic: %s", topic)
@@ -64,6 +65,29 @@ class KafkaCliTools:
         res = self._run("kafka-topics.sh", args)
         self._redpanda.logger.debug("Describe topics result: %s", res)
         return res
+
+    def describe_topic(self, topic):
+        self._redpanda.logger.debug("Describing topics")
+        args = ["--describe", "--topic", topic]
+        res = self._run("kafka-topics.sh", args)
+        self._redpanda.logger.debug("Describe topics result: %s", res)
+
+        # parse/extract the topic configuration
+        configs = None
+        for part in [part.strip() for part in res.split("\t")]:
+            if part.startswith("Configs:"):
+                configs = part[8:]
+
+        def maybe_int(key, value):
+            if key in ["partition_count", "replication_factor"]:
+                value = int(value)
+            return value
+
+        self._redpanda.logger.debug(f"Describe topics configs: {configs}")
+        configs = [config.split("=") for config in configs.split(",")]
+        configs = {kv[0].strip(): kv[1].strip() for kv in configs}
+        configs = {kv[0]: maybe_int(kv[0], kv[1]) for kv in configs.items()}
+        return TopicSpec(name=topic, **configs)
 
     def produce(self,
                 topic,

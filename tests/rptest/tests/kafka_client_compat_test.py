@@ -14,11 +14,13 @@ from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 
 
-class DescribeTopicsTest(RedpandaTest):
-    topics = (TopicSpec(partition_count=2, replication_factor=3), )
-
-    def test_describe_topics(self):
-        tools = KafkaCliTools(self.redpanda)
-        output = tools.describe_topics()
-        assert "partition_count=2" in output
-        assert "replication_factor=3" in output
+class KafkaClientCompatTest(RedpandaTest):
+    def test_create_topic(self):
+        for client_factory in KafkaCliTools.instances():
+            client = client_factory(self.redpanda)
+            topics = [TopicSpec() for _ in range(3)]
+            for topic in topics:
+                client.create_topic(topic)
+            for topic in topics:
+                spec = client.describe_topic(topic.name)
+                assert spec == topic
