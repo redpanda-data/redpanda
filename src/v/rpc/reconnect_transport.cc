@@ -34,6 +34,7 @@ static inline bool has_backoff_expired(
 }
 
 ss::future<> reconnect_transport::stop() {
+    _transport.shutdown();
     return _dispatch_gate.close().then([this] { return _transport.stop(); });
 }
 ss::future<result<transport*>>
