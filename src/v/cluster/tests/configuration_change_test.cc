@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 
 #include "cluster/reflection.h"
+#include "cluster/shard_table.h"
 #include "cluster/simple_batch_builder.h"
 #include "cluster/tests/cluster_test_fixture.h"
 #include "cluster/tests/utils.h"

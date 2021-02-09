@@ -12,6 +12,7 @@
 #include "bytes/iobuf.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/partition_manager.h"
+#include "cluster/shard_table.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/kafka_batch_adapter.h"
 #include "kafka/protocol/response_writer_utils.h"

@@ -18,6 +18,7 @@ class controller_backend;
 class controller_service;
 class id_allocator_frontend;
 class partition_leaders_table;
+class partition_allocator;
 class partition_manager;
 class shard_table;
 class topics_frontend;

@@ -11,10 +11,7 @@
 
 #pragma once
 
-#include "cluster/commands.h"
 #include "cluster/controller_stm.h"
-#include "cluster/partition_allocator.h"
-#include "cluster/partition_leaders_table.h"
 #include "cluster/types.h"
 #include "model/metadata.h"
 #include "model/record.h"

@@ -13,7 +13,6 @@
 
 #include "cluster/ntp_callbacks.h"
 #include "cluster/partition.h"
-#include "cluster/shard_table.h"
 #include "model/metadata.h"
 #include "raft/consensus_client_protocol.h"
 #include "raft/group_manager.h"

@@ -9,6 +9,11 @@
 
 #include "cluster/metadata_dissemination_service.h"
 
+#include "cluster/members_table.h"
+// #include "cluster/metadata_cache.h"
+// #include "cluster/metadata_dissemination_types.h"
+// #include "cluster/partition_leaders_table.h"
+// #include "cluster/partition_manager.h"
 #include "cluster/cluster_utils.h"
 #include "cluster/logger.h"
 #include "cluster/metadata_cache.h"
@@ -16,7 +21,9 @@
 #include "cluster/metadata_dissemination_types.h"
 #include "cluster/metadata_dissemination_utils.h"
 #include "cluster/partition_leaders_table.h"
+#include "cluster/partition_manager.h"
 #include "cluster/reflection.h"
+#include "cluster/topic_table.h"
 #include "config/configuration.h"
 #include "likely.h"
 #include "model/fundamental.h"

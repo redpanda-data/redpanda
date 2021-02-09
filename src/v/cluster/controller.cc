@@ -14,6 +14,7 @@
 #include "cluster/controller_service.h"
 #include "cluster/logger.h"
 #include "cluster/members_manager.h"
+#include "cluster/members_table.h"
 #include "cluster/metadata_dissemination_service.h"
 #include "cluster/partition_leaders_table.h"
 #include "cluster/partition_manager.h"

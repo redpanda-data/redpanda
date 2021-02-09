@@ -10,6 +10,8 @@
  */
 
 #pragma once
+#include "cluster/partition_leaders_table.h"
+#include "cluster/shard_table.h"
 #include "cluster/topics_frontend.h"
 #include "cluster/types.h"
 #include "kafka/client/transport.h"
