@@ -109,21 +109,21 @@ private:
 
 std::set<ss::sstring>
 deployed_ids(coproc_test_fixture::opt_reader_data_t reader) {
-    using cp_errc = coproc::wasm_event_errc;
+    using cp_errc = coproc::wasm::errc;
     std::set<ss::sstring> ids;
     if (!reader) {
         return ids;
     }
     for (auto& rb : *reader) {
         rb.for_each_record([&ids](model::record r) {
-            if (cp_errc::none != coproc::wasm_event_validate(r)) {
+            if (cp_errc::none != coproc::wasm::validate_event(r)) {
                 return;
             }
-            auto a = coproc::wasm_event_get_action(r);
-            if (auto action = std::get_if<coproc::wasm_event_action>(&a)) {
-                if (*action == coproc::wasm_event_action::deploy) {
+            auto a = coproc::wasm::get_event_action(r);
+            if (auto action = std::get_if<coproc::wasm::event_action>(&a)) {
+                if (*action == coproc::wasm::event_action::deploy) {
                     /// Ok to blindly deref optional, it passed validation
-                    ids.insert(*coproc::wasm_event_get_name(r));
+                    ids.insert(*coproc::wasm::get_event_name(r));
                 }
             }
         });
@@ -134,7 +134,8 @@ deployed_ids(coproc_test_fixture::opt_reader_data_t reader) {
 FIXTURE_TEST(test_copro_internal_topic_read, wasm_event_test_harness) {
     push(
       copro_ntp(),
-      coproc::make_wasm_event_record_batch_reader(model::offset(0), 2, 2))
+      coproc::wasm::make_random_event_record_batch_reader(
+        model::offset(0), 2, 2))
       .get();
     std::set<ss::sstring> events
       = drain(copro_ntp(), 2 * 2).then(&deployed_ids).get0();
@@ -154,39 +155,24 @@ FIXTURE_TEST(test_copro_internal_topic_read, wasm_event_test_harness) {
 }
 
 FIXTURE_TEST(test_copro_internal_topic_do_undo, wasm_event_test_harness) {
-    coproc::wasm_event e{
-      .name = "4444-4444",
-      .desc = "Simple wasm event",
-      .script = "console.log('Hello World!');",
-      .action = coproc::wasm_event_action::deploy};
-    hash_sha256 h;
-    h.update(*e.script);
-    iobuf buf;
-    auto checksum = h.reset();
-    buf.append(checksum.data(), checksum.size());
-    e.checksum = iobuf_to_bytes(buf);
-    coproc::wasm_event r{
-      .name = "444-4444", .action = coproc::wasm_event_action::remove};
+    using action = coproc::wasm::event_action;
+    std::vector<std::vector<coproc::wasm::short_event>> events{
+      {{"444", action::deploy},
+       {"444", action::deploy},
+       {"444", action::remove},
+       {"444", action::deploy},
+       {"444", action::remove},
+       {"123", action::deploy}},
+      {{"444", action::remove, true},
+       {"444", action::deploy, true},
+       {"123", action::deploy, true}}};
 
-    /// Attempts redeploying twice in a row, delete, then deploy, then finally
-    /// ending on a deploy. Should expect a single coprocessor in the submit dir
-    std::vector<model::record> actions;
-    actions.emplace_back(create_wasm_record(e));
-    actions.emplace_back(create_wasm_record(e));
-    actions.emplace_back(create_wasm_record(r));
-    actions.emplace_back(create_wasm_record(e));
-    actions.emplace_back(create_wasm_record(r));
-    actions.emplace_back(create_wasm_record(e));
-
-    model::record_batch_reader::data_t batches;
-    batches.push_back(
-      coproc::make_wasm_batch(model::offset(0), std::move(actions)));
-    model::record_batch_reader rbr = model::make_memory_record_batch_reader(
-      std::move(batches));
+    auto rbr = make_event_record_batch_reader(std::move(events));
 
     /// Push and assert
     push(copro_ntp(), std::move(rbr)).get();
-    std::filesystem::path item = submit_dir() / e.name->c_str();
-    const auto found_all = wait_for_scripts({{item}}).get0();
-    BOOST_CHECK_EQUAL(found_all, 1);
+    std::filesystem::path four = submit_dir() / "444";
+    std::filesystem::path ote = submit_dir() / "123";
+    const auto found_all = wait_for_scripts({{four}, {ote}}).get0();
+    BOOST_CHECK_EQUAL(found_all, 2);
 }

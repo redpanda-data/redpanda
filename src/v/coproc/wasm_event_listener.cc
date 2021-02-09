@@ -15,7 +15,8 @@
 #include "coproc/logger.h"
 #include "coproc/types.h"
 #include "coproc/wasm_event.h"
-#include "storage/directories.h"
+#include "ssx/future-util.h"
+#include "storage/parser_utils.h"
 #include "utils/file_io.h"
 #include "utils/unresolved_address.h"
 #include "vassert.h"
@@ -32,14 +33,14 @@ namespace coproc {
 
 using namespace std::chrono_literals;
 
-static wasm_event_action query_action(const iobuf& source_code) {
+static wasm::event_action query_action(const iobuf& source_code) {
     /// If this came from a remove event, the validator would
     /// have failed if the value() field of the record wasn't
     /// empty. Therefore checking if this iobuf is empty is a
     /// certain way to know if the intended request was to
     /// deploy or remove
-    return source_code.empty() ? wasm_event_action::remove
-                               : wasm_event_action::deploy;
+    return source_code.empty() ? wasm::event_action::remove
+                               : wasm::event_action::deploy;
 }
 
 ss::future<> wasm_event_listener::stop() {
@@ -57,7 +58,7 @@ wasm_event_listener::resolve_wasm_script(ss::sstring name, iobuf source_code) {
              active_path,
              name = std::move(name),
              source_code = std::move(source_code)](bool exists) mutable {
-          if (query_action(source_code) == wasm_event_action::remove) {
+          if (query_action(source_code) == wasm::event_action::remove) {
               if (!exists) {
                   vlog(
                     coproclog.warn,
@@ -108,13 +109,12 @@ ss::future<> wasm_event_listener::start() {
           "Attempted to start() the wasm_event_notifier run "
           "loop, after it has already been started or closed");
     }
-    return storage::directories::initialize(_active_dir.string())
+    return ss::recursive_touch_directory(_active_dir.string())
       .then([this] {
-          return storage::directories::initialize(_inactive_dir.string());
+          return ss::recursive_touch_directory(_inactive_dir.string());
       })
-      .then([this] {
-          return storage::directories::initialize(_submit_dir.string());
-      })
+      .then(
+        [this] { return ss::recursive_touch_directory(_submit_dir.string()); })
       .then([this] {
           (void)ss::with_gate(_gate, [this] {
               return _client.connect().then([this] {
@@ -126,11 +126,21 @@ ss::future<> wasm_event_listener::start() {
       });
 }
 
+static ss::future<std::vector<model::record_batch>>
+decompress_wasm_events(model::record_batch_reader::data_t events) {
+    return ssx::parallel_transform(
+      std::move(events), [](model::record_batch&& rb) {
+          /// If batch isn't compressed, returns 'rb'
+          return storage::internal::decompress_batch(std::move(rb));
+      });
+}
+
 ss::future<> wasm_event_listener::do_start() {
     /// This method performs the main polling behavior. Within a repeat loop it
     /// will poll from data until it cannot poll anymore. Normally we would be
     /// concerned about keeping all of this data in memory, however the topic is
     /// compacted, we don't expect the size of unique records to be very big.
+    using wasm_script_actions = absl::btree_map<ss::sstring, iobuf>;
     return ss::do_with(
       model::record_batch_reader::data_t(),
       [this](model::record_batch_reader::data_t& events) {
@@ -144,7 +154,11 @@ ss::future<> wasm_event_listener::do_start() {
                                   : ss::stop_iteration::no;
                      });
                  })
-            .then([this, &events] { return reconcile_wasm_events(events); })
+            .then(
+              [&events] { return decompress_wasm_events(std::move(events)); })
+            .then([](std::vector<model::record_batch> events) {
+                return wasm::reconcile_events(std::move(events));
+            })
             .then([this](wasm_script_actions wsas) {
                 return ss::do_with(
                   std::move(wsas), [this](wasm_script_actions& wsas) {
@@ -163,30 +177,6 @@ ss::future<> wasm_event_listener::do_start() {
                 vlog(coproclog.debug, "Exited sleep early: {}", eptr);
             });
       });
-}
-
-/// Map a model::record_batch -> std::vector<wasm_script_action>
-/// The transform will only occur after the record has passed all validators
-wasm_event_listener::wasm_script_actions
-wasm_event_listener::reconcile_wasm_events(
-  model::record_batch_reader::data_t& events) {
-    wasm_script_actions wsas;
-    for (auto& record_batch : events) {
-        record_batch.for_each_record([&wsas](model::record r) {
-            wasm_event_errc mb_error = wasm_event_validate(r);
-            if (mb_error != wasm_event_errc::none) {
-                vlog(
-                  coproclog.error,
-                  "Erranous coproc record detected, issue: {}",
-                  mb_error);
-                return;
-            }
-            auto id = wasm_event_get_name(r);
-            /// Update or insert, preferring the newest
-            wsas.insert_or_assign(*id, r.share_value());
-        });
-    }
-    return wsas;
 }
 
 ss::future<>

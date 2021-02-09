@@ -13,32 +13,33 @@
 #include "bytes/iobuf_parser.h"
 #include "coproc/logger.h"
 #include "hashing/secure.h"
+#include "vlog.h"
 
-namespace coproc {
+namespace coproc::wasm {
 
-std::string_view action_as_string_view(wasm_event_action action) {
+std::string_view action_as_string_view(event_action action) {
     switch (action) {
-    case wasm_event_action::deploy:
+    case event_action::deploy:
         return "deploy";
-    case wasm_event_action::remove:
+    case event_action::remove:
         return "remove";
     }
     __builtin_unreachable();
 }
 
-std::string_view header_as_string_view(wasm_event_header header) {
+std::string_view header_as_string_view(event_header header) {
     switch (header) {
-    case wasm_event_header::action:
+    case event_header::action:
         return "action";
-    case wasm_event_header::description:
+    case event_header::description:
         return "description";
-    case wasm_event_header::checksum:
+    case event_header::checksum:
         return "sha256";
     }
     __builtin_unreachable();
 }
 
-std::optional<ss::sstring> wasm_event_get_name(const model::record& r) {
+std::optional<ss::sstring> get_event_name(const model::record& r) {
     /// Performs a copy
     auto id = iobuf_const_parser(r.key()).read_string(r.key_size());
     if (id.empty()) {
@@ -48,8 +49,7 @@ std::optional<ss::sstring> wasm_event_get_name(const model::record& r) {
 }
 
 std::vector<model::record_header>::const_iterator
-wasm_event_get_value_for_header(
-  const model::record& r, wasm_event_header header) {
+get_value_for_event_header(const model::record& r, event_header header) {
     std::string_view match = header_as_string_view(header);
     return std::find_if(
       r.headers().cbegin(),
@@ -57,25 +57,25 @@ wasm_event_get_value_for_header(
       [&match](const model::record_header& rh) { return rh.key() == match; });
 }
 
-std::variant<wasm_event_errc, wasm_event_action>
-wasm_event_get_action(const model::record& r) {
-    auto itr = wasm_event_get_value_for_header(r, wasm_event_header::action);
+std::variant<wasm::errc, event_action>
+get_event_action(const model::record& r) {
+    auto itr = get_value_for_event_header(r, event_header::action);
     if (itr == r.headers().cend()) {
-        return wasm_event_errc::missing_header_key;
+        return wasm::errc::missing_header_key;
     }
     const auto& action = itr->value();
-    if (action == action_as_string_view(wasm_event_action::deploy)) {
-        return wasm_event_action::deploy;
-    } else if (action == action_as_string_view(wasm_event_action::remove)) {
-        return wasm_event_action::remove;
+    if (action == action_as_string_view(event_action::deploy)) {
+        return event_action::deploy;
+    } else if (action == action_as_string_view(event_action::remove)) {
+        return event_action::remove;
     }
-    return wasm_event_errc::unexpected_action_type;
+    return wasm::errc::unexpected_action_type;
 }
 
-wasm_event_errc wasm_event_verify_checksum(const model::record& r) {
-    auto itr = wasm_event_get_value_for_header(r, wasm_event_header::checksum);
+wasm::errc verify_event_checksum(const model::record& r) {
+    auto itr = get_value_for_event_header(r, event_header::checksum);
     if (itr == r.headers().cend()) {
-        return wasm_event_errc::missing_header_key;
+        return wasm::errc::missing_header_key;
     }
     /// Verify the checksum against the actual wasm script
     const auto checksum
@@ -83,44 +83,65 @@ wasm_event_errc wasm_event_verify_checksum(const model::record& r) {
     /// Performs a copy
     auto script = iobuf_const_parser(r.value()).read_string(r.value_size());
     if (script.empty()) {
-        return wasm_event_errc::empty_mandatory_field;
+        return wasm::errc::empty_mandatory_field;
     }
     hash_sha256 h;
     h.update(script);
     const auto calculated = h.reset();
     return to_bytes_view(calculated) == checksum
-             ? wasm_event_errc::none
-             : wasm_event_errc::mismatched_checksum;
+             ? wasm::errc::none
+             : wasm::errc::mismatched_checksum;
 }
 
-wasm_event_errc wasm_event_validate(const model::record& r) {
-    /// A key field is mandatory for all types of expected wasm_events
+wasm::errc validate_event(const model::record& r) {
+    /// A key field is mandatory for all types of expected events
     if (r.key_size() == 0) {
-        return wasm_event_errc::empty_mandatory_field;
+        return wasm::errc::empty_mandatory_field;
     }
     /// No copy performed here, optional will be false in the case the 'action'
     /// key is missing, or the value provided is unsupported i.e. not 'remove'
     /// or 'deploy'
-    auto action = coproc::wasm_event_get_action(r);
-    if (auto errc = std::get_if<wasm_event_errc>(&action)) {
+    auto action = get_event_action(r);
+    if (auto errc = std::get_if<wasm::errc>(&action)) {
         return *errc;
     }
     /// Technically all a 'remove' event needs to be valid, is a non-empty
     /// key field
-    auto wasm_action = std::get<wasm_event_action>(action);
-    if (wasm_action == coproc::wasm_event_action::deploy) {
+    auto wasm_action = std::get<event_action>(action);
+    if (wasm_action == event_action::deploy) {
         if (r.value_size() == 0) {
-            return wasm_event_errc::empty_mandatory_field;
+            return wasm::errc::empty_mandatory_field;
         }
-        return coproc::wasm_event_verify_checksum(r);
+        return verify_event_checksum(r);
     } else {
         if (r.value_size() > 0) {
             /// A 'remove' should have an empty body
-            return coproc::wasm_event_errc::unexpected_value;
+            return wasm::errc::unexpected_value;
         }
     }
-    /// A description isn't neccessary for either wasm_event type
-    return wasm_event_errc::none;
+    /// A description isn't neccessary for either event type
+    return wasm::errc::none;
 }
 
-} // namespace coproc
+absl::btree_map<ss::sstring, iobuf>
+reconcile_events(std::vector<model::record_batch> events) {
+    absl::btree_map<ss::sstring, iobuf> wsas;
+    for (auto& record_batch : events) {
+        record_batch.for_each_record([&wsas](model::record r) {
+            auto mb_error = wasm::validate_event(r);
+            if (mb_error != wasm::errc::none) {
+                vlog(
+                  coproclog.error,
+                  "Erranous coproc record detected, issue: {}",
+                  mb_error);
+                return;
+            }
+            auto id = wasm::get_event_name(r);
+            /// Update or insert, preferring the newest
+            wsas.insert_or_assign(*id, r.share_value());
+        });
+    }
+    return wsas;
+}
+
+} // namespace coproc::wasm

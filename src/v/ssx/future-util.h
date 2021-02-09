@@ -71,7 +71,7 @@ async_transform(Iterator begin, Iterator end, Func&& func) {
 // clang-format off
 template<typename Iterator, typename Func>
 CONCEPT(requires requires(Func f, Iterator i) {
-    *i++;
+    *(++i);
     { i != i } -> std::convertible_to<bool>;
     seastar::futurize_invoke(f, *i).get0();
 })
@@ -142,7 +142,7 @@ inline auto async_transform(Rng& rng, Func&& func) {
 // clang-format off
 template<typename Iterator, typename Func>
 CONCEPT(requires requires(Func f, Iterator i) {
-    *i++;
+    *(++i);
     { i != i } ->std::convertible_to<bool>;
     seastar::futurize_invoke(f, *i).get0().begin();
     seastar::futurize_invoke(f, *i).get0().end();
@@ -199,7 +199,7 @@ inline auto async_flat_transform(Rng& rng, Func&& func) {
 // clang-format off
 template<typename Iterator, typename Func>
 CONCEPT(requires requires(Func f, Iterator i) {
-    *i++;
+    *(++i);
     { i != i } -> std::convertible_to<bool>;
 })
 // clang-format on

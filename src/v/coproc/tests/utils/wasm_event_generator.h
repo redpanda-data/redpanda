@@ -18,13 +18,13 @@
 
 #include <optional>
 
-namespace coproc {
+namespace coproc::wasm {
 
 /// Convienent struct for bundling together data necessary to serialized a
 /// wasm_event into a model::record. Any field set to std::nullopt will be
 /// skipped during serialization
-struct wasm_event {
-    using opt_action_t = std::optional<wasm_event_action>;
+struct event {
+    using opt_action_t = std::optional<event_action>;
     using opt_str_t = std::optional<ss::sstring>;
     using opt_bytes_t = std::optional<bytes>;
     opt_str_t name;
@@ -34,20 +34,33 @@ struct wasm_event {
     opt_action_t action;
 };
 
+/// Let the generator functions fill in the other fields
+struct short_event {
+    ss::sstring name;
+    event_action action;
+    bool compress{false};
+    short_event(ss::sstring name, event_action action, bool compress = false)
+      : name(std::move(name))
+      , action(action)
+      , compress(compress) {}
+};
+
 /// \brief Generates an event that models the 'wasm_event' struct passed in. Any
 /// optional fields aren't serialized into the resultant record, useful for
 /// testing failure cases against malformatted record events
-model::record create_wasm_record(const wasm_event&);
+model::record make_record(const event&);
 
-/// \brief Makes model::record_batch of a predefined deterministic records list
-model::record_batch
-make_wasm_batch(model::offset o, std::vector<model::record>);
-
-/// \brief A record batch reader that generates random valid wasm_events
+/// \brief Returns a record batch reader that generates random valid wasm_events
 /// @param offset offset to start at
 /// @param batch_size number of record_batches in each batch
 /// @param n_batches num of batches of batches to generate before stream ends
 model::record_batch_reader
-make_wasm_event_record_batch_reader(model::offset, int, int);
+make_random_event_record_batch_reader(model::offset, int, int);
 
-} // namespace coproc
+/// \brief Returns a record batch reader that generates valid events that
+/// contain generated data constrained by name / action / compressed parameters
+/// per record
+model::record_batch_reader
+  make_event_record_batch_reader(std::vector<std::vector<short_event>>);
+
+} // namespace coproc::wasm
