@@ -10,7 +10,11 @@
 // Package labels handles label for cluster resource
 package labels
 
-import redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+import (
+	redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8slabels "k8s.io/apimachinery/pkg/labels"
+)
 
 // https://kubernetes.io/docs/concepts/overview/working-with-objects/common-labels/
 // TODO support "app.kubernetes.io/version"
@@ -28,13 +32,42 @@ const (
 	nameKeyVal	= "redpanda"
 )
 
+// CommonLabels holds common labels that belong to all resources owned by this operator
+type CommonLabels map[string]string
+
 // ForCluster returns a set of labels that is a union of cluster labels as well as recommended default labels
 // recommended by the kubernetes documentation https://kubernetes.io/docs/concepts/overview/working-with-objects/common-labels/
-func ForCluster(cluster *redpandav1alpha1.Cluster) map[string]string {
+func ForCluster(cluster *redpandav1alpha1.Cluster) CommonLabels {
 	dl := defaultLabels(cluster)
 	labels := merge(cluster.Labels, dl)
 
 	return labels
+}
+
+// AsClientSelector returns label selector made out of subset of common labels: name, instance, component
+// return type is apimachinery labels selector, which is used when constructing client calls
+func (cl CommonLabels) AsClientSelector() k8slabels.Selector {
+	return k8slabels.SelectorFromSet(cl.selectorLabels())
+}
+
+// AsAPISelector returns label selector made out of subset of common labels: name, instance, component
+// return type is metav1.LabelSelector type which is used in resource definition
+func (cl CommonLabels) AsAPISelector() *metav1.LabelSelector {
+	return metav1.SetAsLabelSelector(cl.selectorLabels())
+}
+
+// AsSet returns common labels with types labels.Set
+func (cl CommonLabels) AsSet() k8slabels.Set {
+	var mapLabels map[string]string = cl
+	return mapLabels
+}
+
+func (cl CommonLabels) selectorLabels() k8slabels.Set {
+	return k8slabels.Set{
+		NameKey:	cl[NameKey],
+		InstanceKey:	cl[InstanceKey],
+		ComponentKey:	cl[ComponentKey],
+	}
 }
 
 // merge merges two sets of labels
