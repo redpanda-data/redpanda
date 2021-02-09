@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "raft/configuration.h"
+#include "config/configuration.h"
 
 #include "model/adl_serde.h"
 #include "model/metadata.h"

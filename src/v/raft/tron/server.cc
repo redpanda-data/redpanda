@@ -9,6 +9,7 @@
 
 #include "rpc/server.h"
 
+#include "config/configuration.h"
 #include "platform/stop_signal.h"
 #include "raft/consensus.h"
 #include "raft/consensus_client_protocol.h"

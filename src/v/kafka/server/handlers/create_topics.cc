@@ -10,6 +10,7 @@
 #include "kafka/server/handlers/create_topics.h"
 
 #include "cluster/topics_frontend.h"
+#include "config/configuration.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/timeout.h"
 #include "kafka/server/handlers/topics/topic_utils.h"

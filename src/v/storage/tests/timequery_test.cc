@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "config/configuration.h"
 #include "storage/tests/disk_log_builder_fixture.h"
 #include "storage/tests/utils/random_batch.h"
 #include "test_utils/fixture.h"

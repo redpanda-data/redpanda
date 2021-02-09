@@ -9,6 +9,7 @@
  */
 
 #include "cluster/partition.h"
+#include "config/configuration.h"
 #include "coproc/reflection.h"
 #include "coproc/script_manager.h"
 #include "coproc/tests/utils/coprocessor.h"

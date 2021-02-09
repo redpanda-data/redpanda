@@ -19,7 +19,6 @@
 #include "cluster/simple_batch_builder.h"
 #include "cluster/tests/utils.h"
 #include "cluster/types.h"
-#include "config/configuration.h"
 #include "fmt/format.h"
 #include "model/metadata.h"
 #include "model/namespace.h"

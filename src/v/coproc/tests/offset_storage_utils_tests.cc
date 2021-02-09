@@ -8,6 +8,7 @@
  * https://github.com/vectorizedio/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "config/configuration.h"
 #include "coproc/ntp_context.h"
 #include "coproc/offset_storage_utils.h"
 #include "model/namespace.h"

@@ -11,6 +11,7 @@
 
 #include "coproc/tests/utils/router_test_fixture.h"
 
+#include "config/configuration.h"
 #include "coproc/reflection.h"
 #include "coproc/tests/utils/helpers.h"
 #include "model/metadata.h"

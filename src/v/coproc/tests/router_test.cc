@@ -8,6 +8,7 @@
  * https://github.com/vectorizedio/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "config/configuration.h"
 #include "coproc/reflection.h"
 #include "coproc/tests/utils/coproc_test_fixture.h"
 #include "coproc/tests/utils/coprocessor.h"

@@ -10,7 +10,6 @@
  */
 
 #pragma once
-#include "config/configuration.h"
 #include "model/record.h"
 #include "utils/intrusive_list_helpers.h"
 #include "vassert.h"
