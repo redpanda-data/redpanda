@@ -9,6 +9,7 @@
 
 #include "kafka/server/handlers/offset_commit.h"
 
+#include "cluster/reflection.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/server/group_manager.h"
 #include "kafka/server/group_router.h"

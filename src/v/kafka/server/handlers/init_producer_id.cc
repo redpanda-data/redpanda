@@ -10,6 +10,7 @@
 #include "kafka/server/handlers/init_producer_id.h"
 
 #include "cluster/id_allocator_frontend.h"
+#include "cluster/reflection.h"
 #include "cluster/topics_frontend.h"
 #include "kafka/server/group_manager.h"
 #include "kafka/server/group_router.h"

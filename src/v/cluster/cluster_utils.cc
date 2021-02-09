@@ -11,8 +11,8 @@
 
 #include "cluster/logger.h"
 #include "cluster/metadata_cache.h"
+#include "cluster/reflection.h"
 #include "cluster/simple_batch_builder.h"
-#include "cluster/types.h"
 #include "config/configuration.h"
 #include "rpc/backoff_policy.h"
 #include "rpc/types.h"

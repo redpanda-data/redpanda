@@ -10,6 +10,7 @@
 #include "cluster/topic_updates_dispatcher.h"
 
 #include "cluster/commands.h"
+#include "cluster/reflection.h"
 #include "model/metadata.h"
 #include "raft/types.h"
 

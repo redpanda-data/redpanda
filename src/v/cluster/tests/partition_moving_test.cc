@@ -1,4 +1,5 @@
 #include "cluster/partition.h"
+#include "cluster/reflection.h"
 #include "cluster/tests/cluster_test_fixture.h"
 #include "cluster/tests/utils.h"
 #include "model/metadata.h"

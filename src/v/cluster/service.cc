@@ -11,8 +11,8 @@
 
 #include "cluster/members_manager.h"
 #include "cluster/metadata_cache.h"
+#include "cluster/reflection.h"
 #include "cluster/topics_frontend.h"
-#include "cluster/types.h"
 #include "config/configuration.h"
 #include "model/timeout_clock.h"
 

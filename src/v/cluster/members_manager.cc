@@ -13,7 +13,7 @@
 #include "cluster/logger.h"
 #include "cluster/members_table.h"
 #include "cluster/partition_allocator.h"
-#include "cluster/types.h"
+#include "cluster/reflection.h"
 #include "config/configuration.h"
 #include "model/metadata.h"
 #include "raft/errc.h"

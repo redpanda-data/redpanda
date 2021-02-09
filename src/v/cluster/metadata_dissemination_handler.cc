@@ -14,6 +14,7 @@
 #include "cluster/metadata_cache.h"
 #include "cluster/metadata_dissemination_types.h"
 #include "cluster/partition_leaders_table.h"
+#include "cluster/reflection.h"
 #include "likely.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"

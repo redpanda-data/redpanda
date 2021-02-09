@@ -9,6 +9,7 @@
 
 #include "kafka/server/handlers/leave_group.h"
 
+#include "cluster/reflection.h"
 #include "kafka/server/group_manager.h"
 #include "kafka/server/group_router.h"
 #include "kafka/server/request_context.h"

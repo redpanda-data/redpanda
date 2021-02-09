@@ -9,6 +9,7 @@
 
 #include "kafka/server/group_manager.h"
 
+#include "cluster/reflection.h"
 #include "cluster/simple_batch_builder.h"
 #include "kafka/protocol/delete_groups.h"
 #include "kafka/protocol/describe_groups.h"

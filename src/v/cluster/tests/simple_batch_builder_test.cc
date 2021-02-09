@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "cluster/reflection.h"
 #include "cluster/simple_batch_builder.h"
 #include "model/record_utils.h"
 #include "random/generators.h"

@@ -8,7 +8,7 @@
 // by the Apache License, Version 2.0
 
 #include "cluster/cluster_utils.h"
-#include "cluster/types.h"
+#include "cluster/reflection.h"
 #include "model/metadata.h"
 
 #include <seastar/core/shared_ptr.hh>

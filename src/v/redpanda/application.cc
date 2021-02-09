@@ -14,6 +14,7 @@
 #include "cluster/id_allocator_frontend.h"
 #include "cluster/metadata_dissemination_handler.h"
 #include "cluster/metadata_dissemination_service.h"
+#include "cluster/reflection.h"
 #include "cluster/service.h"
 #include "config/configuration.h"
 #include "config/seed_server.h"

@@ -9,9 +9,9 @@
 
 #include "cluster/commands.h"
 #include "cluster/partition_allocator.h"
+#include "cluster/reflection.h"
 #include "cluster/simple_batch_builder.h"
 #include "cluster/tests/utils.h"
-#include "cluster/types.h"
 #include "model/compression.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"

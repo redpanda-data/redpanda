@@ -15,7 +15,7 @@
 #include "cluster/errc.h"
 #include "cluster/logger.h"
 #include "cluster/partition_allocator.h"
-#include "cluster/types.h"
+#include "cluster/reflection.h"
 #include "model/errc.h"
 #include "model/metadata.h"
 #include "model/namespace.h"

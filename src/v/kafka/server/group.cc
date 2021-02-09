@@ -11,6 +11,7 @@
 
 #include "bytes/bytes.h"
 #include "cluster/partition.h"
+#include "cluster/reflection.h"
 #include "cluster/simple_batch_builder.h"
 #include "kafka/protocol/schemata/describe_groups_response.h"
 #include "kafka/protocol/sync_group.h"
