@@ -12,8 +12,10 @@
 #pragma once
 
 #include "model/metadata.h"
-#include "raft/consensus.h"
+#include "outcome.h"
+#include "raft/logger.h"
 #include "raft/types.h"
+#include "storage/snapshot.h"
 
 namespace raft {
 

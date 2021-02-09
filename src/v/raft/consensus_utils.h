@@ -14,7 +14,8 @@
 #include "likely.h"
 #include "model/record.h"
 #include "raft/configuration_bootstrap_state.h"
-#include "raft/consensus.h"
+#include "storage/log.h"
+#include "storage/snapshot.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/circular_buffer.hh>
