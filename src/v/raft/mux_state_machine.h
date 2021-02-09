@@ -183,9 +183,9 @@ CONCEPT(requires(State<T>, ...))
 ss::future<result<raft::replicate_result>> mux_state_machine<T...>::replicate(
   model::record_batch&& batch) {
     return ss::with_gate(_gate, [this, batch = std::move(batch)]() mutable {
-    return _c->replicate(
-      model::make_memory_record_batch_reader(std::move(batch)),
-      raft::replicate_options{raft::consistency_level::quorum_ack});
+        return _c->replicate(
+          model::make_memory_record_batch_reader(std::move(batch)),
+          raft::replicate_options{raft::consistency_level::quorum_ack});
     });
 }
 
@@ -198,33 +198,33 @@ ss::future<std::error_code> mux_state_machine<T...>::replicate_and_wait(
     using ret_t = std::error_code;
     return ss::with_gate(
       _gate, [this, b = std::move(b), timeout, &as]() mutable {
-    return _mutex.get_units().then(
-      [this, b = std::move(b), timeout, &as](ss::semaphore_units<> u) mutable {
-          return replicate(std::move(b))
-            .then([this, u = std::move(u), timeout, &as](
-                    result<raft::replicate_result> r) {
-                if (!r) {
-                    return ss::make_ready_future<ret_t>(r.error());
-                }
+          return _mutex.get_units().then([this, b = std::move(b), timeout, &as](
+                                           ss::semaphore_units<> u) mutable {
+              return replicate(std::move(b))
+                .then([this, u = std::move(u), timeout, &as](
+                        result<raft::replicate_result> r) {
+                    if (!r) {
+                        return ss::make_ready_future<ret_t>(r.error());
+                    }
 
-                auto last_offset = r.value().last_offset;
+                    auto last_offset = r.value().last_offset;
 
-                auto [it, insterted] = _promises.emplace(
-                  last_offset, expiring_promise<ret_t>{});
-                vassert(
-                  insterted,
-                  "Prosmise for offset {} already registered",
-                  last_offset);
-                return it->second
-                  .get_future_with_timeout(
-                    timeout, [] { return errc::timeout; }, as)
-                  .then_wrapped(
-                    [this, last_offset](ss::future<std::error_code> ec) {
-                        _promises.erase(last_offset);
-                        return ec;
-                    });
-            });
-      });
+                    auto [it, insterted] = _promises.emplace(
+                      last_offset, expiring_promise<ret_t>{});
+                    vassert(
+                      insterted,
+                      "Prosmise for offset {} already registered",
+                      last_offset);
+                    return it->second
+                      .get_future_with_timeout(
+                        timeout, [] { return errc::timeout; }, as)
+                      .then_wrapped(
+                        [this, last_offset](ss::future<std::error_code> ec) {
+                            _promises.erase(last_offset);
+                            return ec;
+                        });
+                });
+          });
       });
 }
 
@@ -242,46 +242,47 @@ template<typename... T>
 CONCEPT(requires(State<T>, ...))
 ss::future<> mux_state_machine<T...>::apply(model::record_batch b) {
     return ss::with_gate(_gate, [this, b = std::move(b)]() mutable {
-    // lookup for the state to apply the update
-    auto state = std::apply(
-      [&b](T&... st) {
-          using variant_t = std::variant<T*...>;
-          std::optional<variant_t> res;
-          (void)((res = is_batch_applicable(st, b), res) || ...);
-          return res;
-      },
-      _state);
+        // lookup for the state to apply the update
+        auto state = std::apply(
+          [&b](T&... st) {
+              using variant_t = std::variant<T*...>;
+              std::optional<variant_t> res;
+              (void)((res = is_batch_applicable(st, b), res) || ...);
+              return res;
+          },
+          _state);
 
-    // applicable state not found
-    if (!state) {
-        vassert(
-          b.header().type == state_machine::checkpoint_batch_type
-            || b.header().type == raft::configuration_batch_type,
-          "State handler for batch of type: {} not found",
-          b.header().type);
-        return ss::now();
-    }
-
-    auto last_offset = b.last_offset();
-    // apply update
-    auto result_f = std::visit(
-      [b = std::move(b)](auto& state) mutable {
-          return state->apply_update(std::move(b));
-      },
-      *state);
-
-    return result_f.then([this, last_offset](std::error_code ec) {
-        auto f = _mutex.with([this, last_offset, ec] {
-            if (auto it = _promises.find(last_offset); it != _promises.end()) {
-                it->second.set_value(ec);
-            }
-        });
-        if (!_persist_last_applied) {
-            return f;
+        // applicable state not found
+        if (!state) {
+            vassert(
+              b.header().type == state_machine::checkpoint_batch_type
+                || b.header().type == raft::configuration_batch_type,
+              "State handler for batch of type: {} not found",
+              b.header().type);
+            return ss::now();
         }
-        return f.then(
-          [this, last_offset] { return write_last_applied(last_offset); });
-    });
+
+        auto last_offset = b.last_offset();
+        // apply update
+        auto result_f = std::visit(
+          [b = std::move(b)](auto& state) mutable {
+              return state->apply_update(std::move(b));
+          },
+          *state);
+
+        return result_f.then([this, last_offset](std::error_code ec) {
+            auto f = _mutex.with([this, last_offset, ec] {
+                if (auto it = _promises.find(last_offset);
+                    it != _promises.end()) {
+                    it->second.set_value(ec);
+                }
+            });
+            if (!_persist_last_applied) {
+                return f;
+            }
+            return f.then(
+              [this, last_offset] { return write_last_applied(last_offset); });
+        });
     });
 }
 
