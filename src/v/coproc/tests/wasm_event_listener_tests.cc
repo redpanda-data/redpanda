@@ -162,7 +162,10 @@ FIXTURE_TEST(test_copro_internal_topic_do_undo, wasm_event_test_harness) {
        {"444", action::remove},
        {"444", action::deploy},
        {"444", action::remove},
-       {"123", action::deploy}}};
+       {"123", action::deploy}},
+      {{"444", action::remove, true},
+       {"444", action::deploy, true},
+       {"123", action::deploy, true}}};
 
     auto rbr = make_event_record_batch_reader(std::move(events));
 
