@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "kafka/protocol/join_group.h"
 #include "kafka/protocol/metadata.h"
 #include "kafka/protocol/sync_group.h"
 #include "kafka/types.h"

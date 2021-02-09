@@ -12,10 +12,7 @@
 #pragma once
 
 #include "cluster/fwd.h"
-#include "kafka/server/coordinator_ntp_mapper.h"
-#include "kafka/server/fetch_session_cache.h"
-#include "kafka/server/group_router.h"
-#include "kafka/server/quota_manager.h"
+#include "kafka/server/fwd.h"
 #include "rpc/server.h"
 
 #include <seastar/core/future.hh>
