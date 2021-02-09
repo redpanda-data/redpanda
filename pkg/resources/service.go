@@ -12,6 +12,7 @@ package resources
 
 import (
 	"context"
+	"fmt"
 
 	redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/labels"
@@ -107,4 +108,15 @@ func (r *ServiceResource) Key() types.NamespacedName {
 func (r *ServiceResource) Kind() string {
 	var svc corev1.Service
 	return svc.Kind
+}
+
+// HeadlessServiceFQDN returns fully qualified domain name for headless service.
+// It can be used to communicate between namespaces if the network policy
+// allows it.
+func (r ServiceResource) HeadlessServiceFQDN() string {
+	// TODO Retrieve cluster domain dynamically and remove hardcoded cluster.local
+	return fmt.Sprintf("%s%c%s.svc.cluster.local",
+		r.Key().Name,
+		'.',
+		r.Key().Namespace)
 }
