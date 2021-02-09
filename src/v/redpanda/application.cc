@@ -9,6 +9,7 @@
 
 #include "redpanda/application.h"
 
+#include "cluster/cluster_utils.h"
 #include "cluster/id_allocator.h"
 #include "cluster/id_allocator_frontend.h"
 #include "cluster/metadata_dissemination_handler.h"
@@ -17,7 +18,11 @@
 #include "cluster/service.h"
 #include "config/configuration.h"
 #include "config/seed_server.h"
+#include "kafka/server/coordinator_ntp_mapper.h"
+#include "kafka/server/group_manager.h"
+#include "kafka/server/group_router.h"
 #include "kafka/server/protocol.h"
+#include "kafka/server/quota_manager.h"
 #include "model/metadata.h"
 #include "platform/stop_signal.h"
 #include "raft/service.h"
