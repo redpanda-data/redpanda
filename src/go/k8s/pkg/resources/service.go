@@ -14,6 +14,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/go-logr/logr"
 	redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/labels"
 	corev1 "k8s.io/api/core/v1"
@@ -34,6 +35,7 @@ type ServiceResource struct {
 	k8sclient.Client
 	scheme		*runtime.Scheme
 	pandaCluster	*redpandav1alpha1.Cluster
+	logger		logr.Logger
 }
 
 // NewService creates ServiceResource
@@ -41,13 +43,15 @@ func NewService(
 	client k8sclient.Client,
 	pandaCluster *redpandav1alpha1.Cluster,
 	scheme *runtime.Scheme,
+	logger logr.Logger,
 ) *ServiceResource {
 	return &ServiceResource{
-		client, scheme, pandaCluster,
+		client, scheme, pandaCluster, logger.WithValues("Kind", serviceKind()),
 	}
 }
 
 // Ensure will manage kubernetes v1.Service for redpanda.vectorized.io custom resource
+//nolint:dupl // we expect this to not be duplicated when more logic is added
 func (r *ServiceResource) Ensure(ctx context.Context) error {
 	var svc corev1.Service
 
@@ -57,6 +61,8 @@ func (r *ServiceResource) Ensure(ctx context.Context) error {
 	}
 
 	if errors.IsNotFound(err) {
+		r.logger.Info(fmt.Sprintf("Service %s does not exist, going to create one", r.Key().Name))
+
 		obj, err := r.Obj()
 		if err != nil {
 			return err
@@ -107,6 +113,10 @@ func (r *ServiceResource) Key() types.NamespacedName {
 
 // Kind returns v1.Service kind
 func (r *ServiceResource) Kind() string {
+	return serviceKind()
+}
+
+func serviceKind() string {
 	var svc corev1.Service
 	return svc.Kind
 }

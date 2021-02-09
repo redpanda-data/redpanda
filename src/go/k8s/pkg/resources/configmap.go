@@ -12,8 +12,10 @@ package resources
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 
+	"github.com/go-logr/logr"
 	redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/labels"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
@@ -73,6 +75,7 @@ type ConfigMapResource struct {
 
 	svc				*ServiceResource
 	polymorphicAdvertisedAPI	bool
+	logger				logr.Logger
 }
 
 // NewConfigMap creates ConfigMapResource
@@ -82,13 +85,15 @@ func NewConfigMap(
 	scheme *runtime.Scheme,
 	svc *ServiceResource,
 	polymorphicAdvertisedAPI bool,
+	logger logr.Logger,
 ) *ConfigMapResource {
 	return &ConfigMapResource{
-		client, scheme, pandaCluster, svc, polymorphicAdvertisedAPI,
+		client, scheme, pandaCluster, svc, polymorphicAdvertisedAPI, logger.WithValues("Kind", configMapKind()),
 	}
 }
 
 // Ensure will manage kubernetes v1.ConfigMap for redpanda.vectorized.io CR
+//nolint:dupl // we expect this to not be duplicated when more logic is added
 func (r *ConfigMapResource) Ensure(ctx context.Context) error {
 	var cfgm corev1.ConfigMap
 
@@ -98,6 +103,8 @@ func (r *ConfigMapResource) Ensure(ctx context.Context) error {
 	}
 
 	if errors.IsNotFound(err) {
+		r.logger.Info(fmt.Sprintf("ConfigMap %s does not exist, going to create one", r.Key().Name))
+
 		obj, err := r.Obj()
 		if err != nil {
 			return err
@@ -244,6 +251,10 @@ func ConfigMapKey(pandaCluster *redpandav1alpha1.Cluster) types.NamespacedName {
 
 // Kind returns v1.ConfigMap kind
 func (r *ConfigMapResource) Kind() string {
+	return configMapKind()
+}
+
+func configMapKind() string {
 	var cfg corev1.ConfigMap
 	return cfg.Kind
 }

@@ -72,11 +72,11 @@ func (r *ClusterReconciler) Reconcile(
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	sts := resources.NewStatefulSet(r.Client, &redpandaCluster, r.Scheme)
-	svc := resources.NewService(r.Client, &redpandaCluster, r.Scheme)
+	sts := resources.NewStatefulSet(r.Client, &redpandaCluster, r.Scheme, log)
+	svc := resources.NewService(r.Client, &redpandaCluster, r.Scheme, log)
 	toApply := []resources.Resource{
 		svc,
-		resources.NewConfigMap(r.Client, &redpandaCluster, r.Scheme, svc, r.polymorphicAdvertisedAPI),
+		resources.NewConfigMap(r.Client, &redpandaCluster, r.Scheme, svc, r.polymorphicAdvertisedAPI, log),
 		sts,
 	}
 
