@@ -47,16 +47,6 @@ steps:
   name: 'gcr.io/redpandaci/fedora:33-python39-docker2010'
   args: ['./build/venv/v/bin/vtools', 'dbuild', 'toolchain', '--conf=vtools/vtools/artifacts/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml']
 
-- id: 'check source code formatting'
-  name: 'gcr.io/redpandaci/builder'
-  entrypoint: 'bash'
-  args:
-  - -c
-  - |
-    if [[ "$_COMPILER" == "clang" ]]; then
-      ./build/venv/v/bin/vtools fmt all --check --conf=vtools/vtools/artifacts/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml
-    fi
-
 - id: 'test rpk'
   name: 'gcr.io/redpandaci/builder'
   args: ['./build/venv/v/bin/vtools', 'test', 'go', '--conf=vtools/vtools/artifacts/ci/vtools-gcc-release.yml']
