@@ -45,4 +45,15 @@ struct adl<raft::snapshot_metadata> {
     raft::snapshot_metadata from(iobuf_parser& in);
 };
 
+template<>
+struct adl<raft::vnode> {
+    void to(iobuf&, raft::vnode);
+    raft::vnode from(iobuf_parser&);
+};
+template<>
+struct adl<raft::group_configuration> {
+    void to(iobuf&, raft::group_configuration);
+    raft::group_configuration from(iobuf_parser&);
+};
+
 } // namespace reflection

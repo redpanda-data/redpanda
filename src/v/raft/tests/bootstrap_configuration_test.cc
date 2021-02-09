@@ -14,6 +14,7 @@
 #include "raft/configuration_bootstrap_state.h"
 #include "raft/consensus.h"
 #include "raft/consensus_utils.h"
+#include "raft/reflection.h"
 #include "random/generators.h"
 #include "resource_mgmt/io_priority.h"
 #include "storage/log.h"

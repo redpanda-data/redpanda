@@ -12,7 +12,7 @@
 #include "bytes/iobuf_parser.h"
 #include "model/fundamental.h"
 #include "raft/consensus_utils.h"
-#include "raft/types.h"
+#include "raft/reflection.h"
 #include "reflection/adl.h"
 #include "storage/kvstore.h"
 #include "vlog.h"

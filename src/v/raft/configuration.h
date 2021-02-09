@@ -11,8 +11,8 @@
 
 #pragma once
 #include "model/metadata.h"
-#include "reflection/adl.h"
 #include "utils/concepts-enabled.h"
+#include "vassert.h"
 
 #include <boost/range/join.hpp>
 
@@ -308,16 +308,3 @@ struct offset_configuration {
     friend std::ostream& operator<<(std::ostream&, const offset_configuration&);
 };
 } // namespace raft
-
-namespace reflection {
-template<>
-struct adl<raft::vnode> {
-    void to(iobuf&, raft::vnode);
-    raft::vnode from(iobuf_parser&);
-};
-template<>
-struct adl<raft::group_configuration> {
-    void to(iobuf&, raft::group_configuration);
-    raft::group_configuration from(iobuf_parser&);
-};
-} // namespace reflection

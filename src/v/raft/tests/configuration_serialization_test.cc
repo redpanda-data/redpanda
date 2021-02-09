@@ -10,8 +10,8 @@
 #include "model/metadata.h"
 #include "raft/configuration.h"
 #include "raft/consensus_utils.h"
+#include "raft/reflection.h"
 #include "random/generators.h"
-#include "reflection/adl.h"
 #include "storage/tests/utils/random_batch.h"
 #include "test_utils/randoms.h"
 

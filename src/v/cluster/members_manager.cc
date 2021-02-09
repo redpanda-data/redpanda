@@ -17,7 +17,7 @@
 #include "config/configuration.h"
 #include "model/metadata.h"
 #include "raft/errc.h"
-#include "raft/types.h"
+#include "raft/reflection.h"
 #include "random/generators.h"
 #include "reflection/adl.h"
 

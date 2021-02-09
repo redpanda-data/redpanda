@@ -12,7 +12,7 @@
 #include "raft/consensus.h"
 #include "raft/errc.h"
 #include "raft/logger.h"
-#include "raft/types.h"
+#include "raft/reflection.h"
 #include "storage/record_batch_builder.h"
 
 #include <seastar/core/future.hh>
