@@ -13,7 +13,6 @@
 #include "cluster/controller_service.h"
 #include "cluster/errc.h"
 #include "cluster/logger.h"
-#include "cluster/types.h"
 #include "config/configuration.h"
 #include "config/tls_config.h"
 #include "outcome_future_utils.h"

@@ -10,7 +10,6 @@
  */
 
 #pragma once
-#include "cluster/types.h"
 #include "reflection/adl.h"
 #include "seastarx.h"
 #include "storage/record_batch_builder.h"

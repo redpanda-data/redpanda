@@ -12,7 +12,7 @@
 #pragma once
 
 #include "cluster/controller_stm.h"
-#include "cluster/types.h"
+#include "cluster/fwd.h"
 #include "model/metadata.h"
 #include "model/record.h"
 #include "model/timeout_clock.h"

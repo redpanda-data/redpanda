@@ -12,8 +12,8 @@
 #pragma once
 
 #include "cluster/controller_stm.h"
+#include "cluster/fwd.h"
 #include "cluster/topic_updates_dispatcher.h"
-#include "cluster/types.h"
 #include "rpc/connection_cache.h"
 #include "storage/api.h"
 
