@@ -22,6 +22,7 @@
 #include "cluster/shard_table.h"
 #include "cluster/topic_table.h"
 #include "cluster/topics_frontend.h"
+#include "config/configuration.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
 #include "raft/reflection.h"

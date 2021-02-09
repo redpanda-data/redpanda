@@ -10,6 +10,7 @@
 #include "cluster/reflection.h"
 #include "cluster/simple_batch_builder.h"
 #include "cluster/tests/cluster_test_fixture.h"
+#include "config/configuration.h"
 #include "raft/reflection.h"
 #include "test_utils/fixture.h"
 #include "utils/unresolved_address.h"

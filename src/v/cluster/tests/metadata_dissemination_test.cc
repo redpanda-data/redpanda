@@ -11,6 +11,7 @@
 #include "cluster/reflection.h"
 #include "cluster/simple_batch_builder.h"
 #include "cluster/tests/cluster_test_fixture.h"
+#include "config/configuration.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"

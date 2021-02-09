@@ -11,7 +11,6 @@
 
 #pragma once
 #include "config/config_store.h"
-#include "config/configuration.h"
 #include "config/tls_config.h"
 
 #include <seastar/net/inet_address.hh>

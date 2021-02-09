@@ -9,6 +9,7 @@
 
 #include "raft/id_allocator_stm.h"
 
+#include "config/configuration.h"
 #include "raft/consensus.h"
 #include "raft/errc.h"
 #include "raft/logger.h"

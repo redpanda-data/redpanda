@@ -10,6 +10,7 @@
 #include "cluster/partition.h"
 
 #include "cluster/logger.h"
+#include "config/configuration.h"
 #include "model/namespace.h"
 #include "prometheus/prometheus_sanitize.h"
 
