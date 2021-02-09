@@ -49,6 +49,19 @@ struct push_back_opt {
 } // namespace reduce
 
 namespace xform {
+/// Even though std::identity is in the spec for C++20 seems as though clang
+/// devs haven't gotten around to implementing it yet.
+#ifdef __GLIBCXX__
+using just = std::identity;
+#else
+struct identity {
+    template<typename T>
+    constexpr T&& operator()(T&& t) const noexcept {
+        return std::forward<T>(t);
+    }
+};
+#endif
+
 template<typename T>
 struct equal_to {
     explicit equal_to(T value)

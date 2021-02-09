@@ -16,6 +16,7 @@ v_cc_library(
     offset_storage_utils.cc
     wasm_event.cc
     wasm_event_listener.cc
+    script_dispatcher.cc
   DEPS
     v::rpc
     v::model
