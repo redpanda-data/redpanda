@@ -13,6 +13,7 @@
 #include "vlog.h"
 
 #include <boost/container_hash/hash.hpp>
+#include <fmt/ostream.h>
 #include <roaring/roaring.hh>
 
 #include <algorithm>

@@ -23,6 +23,8 @@
 
 #include <fmt/format.h>
 
+#include <ostream>
+
 namespace storage {
 
 [[gnu::cold]] static ss::future<>

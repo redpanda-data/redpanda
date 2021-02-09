@@ -19,7 +19,7 @@
 #include <yaml-cpp/yaml.h>
 
 #include <any>
-#include <iostream>
+#include <iosfwd>
 #include <string>
 
 namespace config {

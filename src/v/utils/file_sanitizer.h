@@ -20,8 +20,8 @@
 #include <boost/intrusive/list.hpp>
 #include <fmt/format.h>
 
-#include <iostream>
 #include <optional>
+#include <ostream>
 #include <unordered_map>
 #include <utility>
 

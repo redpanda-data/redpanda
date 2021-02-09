@@ -23,7 +23,7 @@
 #include "tristate.h"
 #include "utils/to_string.h"
 
-#include <fmt/ostream.h>
+#include <fmt/format.h>
 
 namespace cluster {
 

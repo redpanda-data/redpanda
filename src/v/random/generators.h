@@ -18,7 +18,6 @@
 #include <boost/range/algorithm/generate.hpp>
 #include <bytes/bytes.h>
 
-#include <iostream>
 #include <random>
 
 // Random generators useful for testing.
