@@ -11,8 +11,6 @@
 
 #pragma once
 
-#include "cluster/members_table.h"
-#include "cluster/partition_allocator.h"
 #include "cluster/types.h"
 #include "config/seed_server.h"
 #include "config/tls_config.h"

@@ -11,7 +11,6 @@
 
 #pragma once
 #include "cluster/controller_service.h"
-#include "cluster/topics_frontend.h"
 #include "cluster/types.h"
 
 #include <seastar/core/sharded.hh>
