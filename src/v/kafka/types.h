@@ -10,8 +10,7 @@
  */
 
 #pragma once
-#include "bytes/bytes_iobuf.h"
-#include "reflection/adl.h"
+#include "bytes/bytes.h"
 #include "seastarx.h"
 #include "utils/named_type.h"
 

@@ -14,6 +14,8 @@
 #include "model/fundamental.h"
 #include "model/timeout_clock.h"
 #include "model/timestamp.h"
+#include "utils/intrusive_list_helpers.h"
+#include "vassert.h"
 
 #include <absl/container/flat_hash_map.h>
 #include <boost/iterator/iterator_adaptor.hpp>

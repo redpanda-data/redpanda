@@ -15,6 +15,7 @@
 #include "units.h"
 
 #include <seastar/core/metrics_registration.hh>
+#include <seastar/core/smp.hh>
 
 #include <absl/container/flat_hash_map.h>
 
