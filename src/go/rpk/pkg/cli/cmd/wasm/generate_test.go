@@ -67,41 +67,18 @@ func TestWasmCommand(t *testing.T) {
 				dir := filepath.Join(path, "wasm")
 				checkGeneratedFiles(fs, t, dir)
 			},
-		},
-		{
-			name:	"should create the project at the given path",
-			args:	[]string{"generate", "--dir", "./newFolder"},
-			check: func(fs afero.Fs, t *testing.T) {
-				absolutePath, err := filepath.Abs(".")
-				require.NoError(t, err)
-				newDir := filepath.Join(absolutePath, "newFolder")
-				checkGeneratedFiles(fs, t, newDir)
-			},
-		}, {
-			name: "should create the project at the given path, also" +
-				"if the folder exists",
-			args:	[]string{"generate", "--dir", "./existFolder"},
-			before: func(fs afero.Fs) error {
-				return fs.MkdirAll("./existFolder", 0755)
-			},
-			check: func(fs afero.Fs, t *testing.T) {
-				absolutePath, err := filepath.Abs(".")
-				require.NoError(t, err)
-				newDir := filepath.Join(absolutePath, "existFolder")
-				checkGeneratedFiles(fs, t, newDir)
-			},
 		}, {
 			name: "should fail if the given dir contains files created by " +
 				"this command*",
-			args:	[]string{"generate", "--dir", "./existFolder"},
+			args:	[]string{"generate"},
 			before: func(fs afero.Fs) error {
 				absolutePath, err := filepath.Abs(".")
-				folderPath := filepath.Join(absolutePath, "existFolder")
+				folderPath := filepath.Join(absolutePath, "wasm")
 				err = fs.MkdirAll(folderPath, 0755)
 				_, err = fs.Create(filepath.Join(folderPath, "package.json"))
 				return err
 			},
-			expectedErrMsg: fmt.Sprintf("The directory %s/existFolder/"+
+			expectedErrMsg: fmt.Sprintf("The directory %s/wasm/"+
 				" contains files that could conflict: \n package.json", path),
 		}, {
 			name:	"should create webpack file with executable permission",
