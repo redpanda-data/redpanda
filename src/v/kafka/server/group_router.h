@@ -10,6 +10,7 @@
  */
 
 #pragma once
+#include "cluster/fwd.h"
 #include "cluster/shard_table.h"
 #include "kafka/protocol/describe_groups.h"
 #include "kafka/protocol/heartbeat.h"

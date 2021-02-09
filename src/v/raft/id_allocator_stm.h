@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "cluster/types.h"
+#include "cluster/fwd.h"
 #include "config/configuration.h"
 #include "model/fundamental.h"
 #include "model/record.h"
