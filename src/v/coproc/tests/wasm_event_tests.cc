@@ -74,3 +74,28 @@ BOOST_AUTO_TEST_CASE(verify_make_event_failures) {
           cp_errc::mismatched_checksum, coproc::wasm::verify_event_checksum(r));
     }
 }
+
+SEASTAR_THREAD_TEST_CASE(verify_event_reconciliation) {
+    using action = coproc::wasm::event_action;
+    std::vector<std::vector<coproc::wasm::short_event>> events{
+      {{"123", action::deploy},
+       {"456", action::deploy},
+       {"123", action::remove},
+       {"456", action::deploy}},
+      {{"789", action::deploy}, {"123", action::remove}}};
+
+    auto rbr = make_event_record_batch_reader(std::move(events));
+    auto batches = model::consume_reader_to_memory(
+                     std::move(rbr), model::no_timeout)
+                     .get0();
+
+    auto results = coproc::wasm::reconcile_events(
+      std::vector<model::record_batch>(
+        std::make_move_iterator(batches.begin()),
+        std::make_move_iterator(batches.end())));
+    BOOST_CHECK_EQUAL(results.size(), 3);
+    BOOST_CHECK(results.find("123")->second.empty()); /// 'remove' event
+    BOOST_CHECK(results.find("123") != results.end());
+    BOOST_CHECK(results.find("456") != results.end());
+    BOOST_CHECK(results.find("789") != results.end());
+}
