@@ -9,6 +9,7 @@
 
 #include "cluster/id_allocator.h"
 
+#include "cluster/id_allocator_frontend.h"
 #include "cluster/logger.h"
 #include "cluster/types.h"
 #include "model/namespace.h"

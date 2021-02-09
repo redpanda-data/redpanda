@@ -11,14 +11,20 @@
 
 #pragma once
 
-#include "cluster/topic_updates_dispatcher.h"
-#include "raft/mux_state_machine.h"
-
 namespace cluster {
 
-// single instance
-using controller_stm = raft::mux_state_machine<topic_updates_dispatcher>;
-
-static constexpr ss::shard_id controller_stm_shard = 0;
+class controller;
+class controller_backend;
+class controller_service;
+class id_allocator_frontend;
+class partition_leaders_table;
+class partition_manager;
+class shard_table;
+class topics_frontend;
+class topic_table;
+class members_manager;
+class members_table;
+class metadata_cache;
+class metadata_dissemination_service;
 
 } // namespace cluster
