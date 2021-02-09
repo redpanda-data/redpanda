@@ -62,7 +62,7 @@ func TestWasmCommand(t *testing.T) {
 	}{
 		{
 			name:	"should create an npm template with its folder",
-			args:	[]string{"generate"},
+			args:	[]string{"wasm"},
 			check: func(fs afero.Fs, t *testing.T) {
 				dir := filepath.Join(path, "wasm")
 				checkGeneratedFiles(fs, t, dir)
@@ -70,7 +70,7 @@ func TestWasmCommand(t *testing.T) {
 		}, {
 			name: "should fail if the given dir contains files created by " +
 				"this command*",
-			args:	[]string{"generate"},
+			args:	[]string{"wasm"},
 			before: func(fs afero.Fs) error {
 				absolutePath, err := filepath.Abs(".")
 				folderPath := filepath.Join(absolutePath, "wasm")
@@ -82,11 +82,24 @@ func TestWasmCommand(t *testing.T) {
 				" contains files that could conflict: \n package.json", path),
 		}, {
 			name:	"should create webpack file with executable permission",
-			args:	[]string{"generate"},
+			args:	[]string{"wasm-project"},
 			check: func(fs afero.Fs, t *testing.T) {
-				dir := filepath.Join(path, "wasm", "webpack.js")
+				dir := filepath.Join(path, "wasm-project", "webpack.js")
 				info, _ := fs.Stat(dir)
 				require.True(t, info.Mode() == 0766)
+			},
+		},
+		{
+			name:		"should fail if <project directory> argument isn't passed",
+			args:		[]string{},
+			expectedErrMsg:	fmt.Sprintf("no project directory specified"),
+		}, {
+			name:	"should create <project directory> if it doesn't exist",
+			args:	[]string{"new_folder/new_sub_folder/wasm-project"},
+			check: func(fs afero.Fs, t *testing.T) {
+				absolutePath, _ := filepath.Abs(".")
+				dir := filepath.Join(absolutePath, "new_folder", "new_sub_folder", "wasm-project")
+				checkGeneratedFiles(fs, t, dir)
 			},
 		},
 	}

@@ -39,18 +39,24 @@ var manifest = func() map[string][]genFile {
 }
 
 func NewGenerateCommand(fs afero.Fs) *cobra.Command {
-	const localDir = "./"
 	command := &cobra.Command{
-		Use:	"generate",
-		Short:	"Create a npm template project for inline WASM engine",
-		SilenceUsage: true,
+		Use:		"generate <project directory>",
+		Short:		"Create an npm template project for inline WASM engine",
+		SilenceUsage:	true,
+		Args: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				return fmt.Errorf(
+					"no project directory specified",
+				)
+			}
+			return nil
+		},
 		RunE: func(_ *cobra.Command, args []string) error {
-			path, err := filepath.Abs(localDir)
-			rootPath := filepath.Join(path, "wasm")
+			path, err := filepath.Abs(args[0])
 			if err != nil {
 				return err
 			}
-			return executeGenerate(fs, rootPath)
+			return executeGenerate(fs, path)
 		},
 	}
 
