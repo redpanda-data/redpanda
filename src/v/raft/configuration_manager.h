@@ -13,7 +13,6 @@
 
 #include "model/fundamental.h"
 #include "model/metadata.h"
-#include "model/record_batch_reader.h"
 #include "raft/logger.h"
 #include "raft/types.h"
 #include "storage/api.h"

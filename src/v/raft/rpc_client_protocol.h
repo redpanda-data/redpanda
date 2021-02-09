@@ -13,7 +13,6 @@
 
 #include "model/metadata.h"
 #include "outcome_future_utils.h"
-#include "raft/consensus.h"
 #include "raft/consensus_client_protocol.h"
 #include "raft/errc.h"
 #include "raft/raftgen_service.h"

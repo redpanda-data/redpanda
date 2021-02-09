@@ -11,6 +11,7 @@
 
 #include "likely.h"
 #include "model/record.h"
+#include "raft/types.h"
 #include "reflection/adl.h"
 
 #include <fmt/format.h>

@@ -14,7 +14,6 @@
 #include "model/metadata.h"
 #include "outcome.h"
 #include "raft/logger.h"
-#include "raft/types.h"
 #include "storage/snapshot.h"
 
 namespace raft {

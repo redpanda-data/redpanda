@@ -17,7 +17,6 @@
 #include "raft/fwd.h"
 #include "raft/group_configuration.h"
 #include "raft/logger.h"
-#include "raft/types.h"
 #include "seastarx.h"
 #include "storage/types.h"
 
