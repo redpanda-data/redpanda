@@ -9,7 +9,7 @@
 #include "service.h"
 
 #include "coproc/logger.h"
-#include "coproc/types.h"
+#include "coproc/reflection.h"
 #include "model/namespace.h"
 #include "ssx/future-util.h"
 #include "utils/functional.h"

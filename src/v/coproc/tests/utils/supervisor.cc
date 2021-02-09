@@ -12,8 +12,8 @@
 #include "coproc/tests/utils/supervisor.h"
 
 #include "coproc/logger.h"
+#include "coproc/reflection.h"
 #include "coproc/tests/utils/helpers.h"
-#include "coproc/types.h"
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
 #include "storage/record_batch_builder.h"

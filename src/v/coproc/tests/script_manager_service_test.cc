@@ -9,6 +9,7 @@
  */
 
 #include "coproc/pacemaker.h"
+#include "coproc/reflection.h"
 #include "coproc/script_manager.h"
 #include "coproc/service.h"
 #include "coproc/tests/utils/coproc_test_fixture.h"

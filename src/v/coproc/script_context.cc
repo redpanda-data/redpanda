@@ -13,7 +13,7 @@
 
 #include "coproc/logger.h"
 #include "coproc/reference_window_consumer.hpp"
-#include "coproc/types.h"
+#include "coproc/reflection.h"
 #include "likely.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"

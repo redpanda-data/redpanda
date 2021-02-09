@@ -14,7 +14,7 @@
 #include "coproc/logger.h"
 #include "coproc/ntp_context.h"
 #include "coproc/offset_storage_utils.h"
-#include "coproc/types.h"
+#include "coproc/reflection.h"
 #include "model/validation.h"
 #include "rpc/reconnect_transport.h"
 #include "rpc/types.h"

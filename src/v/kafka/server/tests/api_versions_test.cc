@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "coproc/reflection.h"
 #include "kafka/server/handlers/api_versions.h"
 #include "kafka/types.h"
 #include "raft/reflection.h"

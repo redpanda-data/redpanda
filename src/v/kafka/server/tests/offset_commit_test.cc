@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "coproc/reflection.h"
 #include "kafka/protocol/offset_commit.h"
 #include "raft/reflection.h"
 #include "redpanda/tests/fixture.h"

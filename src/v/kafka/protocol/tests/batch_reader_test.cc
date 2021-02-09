@@ -9,6 +9,7 @@
 
 #include "bytes/details/io_iterator_consumer.h"
 #include "bytes/iobuf_parser.h"
+#include "coproc/reflection.h"
 #include "kafka/protocol/batch_consumer.h"
 #include "kafka/protocol/batch_reader.h"
 #include "kafka/protocol/exceptions.h"

@@ -9,6 +9,7 @@
 #include "coproc/types.h"
 
 #include "coproc/errc.h"
+#include "coproc/reflection.h"
 #include "model/async_adl_serde.h"
 
 #include <boost/range/irange.hpp>

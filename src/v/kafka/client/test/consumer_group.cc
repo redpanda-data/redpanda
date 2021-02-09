@@ -10,6 +10,7 @@
  */
 
 #include "bytes/bytes.h"
+#include "coproc/reflection.h"
 #include "kafka/client/client.h"
 #include "kafka/client/configuration.h"
 #include "kafka/client/consumer.h"

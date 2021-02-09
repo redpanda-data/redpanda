@@ -11,6 +11,7 @@
 
 #include "coproc/tests/utils/helpers.h"
 
+#include "coproc/reflection.h"
 #include "storage/tests/utils/random_batch.h"
 
 #include <algorithm>

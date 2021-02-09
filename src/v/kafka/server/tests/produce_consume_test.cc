@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "coproc/reflection.h"
 #include "kafka/client/transport.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/fetch.h"

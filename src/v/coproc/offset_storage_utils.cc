@@ -14,8 +14,8 @@
 #include "bytes/iobuf.h"
 #include "coproc/logger.h"
 #include "coproc/ntp_context.h"
+#include "coproc/reflection.h"
 #include "model/fundamental.h"
-#include "reflection/adl.h"
 #include "vlog.h"
 
 #include <seastar/core/coroutine.hh>

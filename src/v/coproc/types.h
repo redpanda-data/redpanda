@@ -11,10 +11,9 @@
 #pragma once
 
 #include "coproc/errc.h"
-#include "model/adl_serde.h"
 #include "model/fundamental.h"
+#include "model/metadata.h"
 #include "model/record_batch_reader.h"
-#include "reflection/async_adl.h"
 #include "utils/named_type.h"
 
 #include <optional>
@@ -116,31 +115,3 @@ std::ostream&
 operator<<(std::ostream& os, const enable_copros_request::data::topic_mode&);
 
 } // namespace coproc
-
-namespace reflection {
-
-template<>
-struct async_adl<coproc::process_batch_request> {
-    ss::future<> to(iobuf& out, coproc::process_batch_request&&);
-    ss::future<coproc::process_batch_request> from(iobuf_parser&);
-};
-
-template<>
-struct async_adl<coproc::process_batch_request::data> {
-    ss::future<> to(iobuf& out, coproc::process_batch_request::data&&);
-    ss::future<coproc::process_batch_request::data> from(iobuf_parser&);
-};
-
-template<>
-struct async_adl<coproc::process_batch_reply> {
-    ss::future<> to(iobuf& out, coproc::process_batch_reply&&);
-    ss::future<coproc::process_batch_reply> from(iobuf_parser&);
-};
-
-template<>
-struct async_adl<coproc::process_batch_reply::data> {
-    ss::future<> to(iobuf& out, coproc::process_batch_reply::data&&);
-    ss::future<coproc::process_batch_reply::data> from(iobuf_parser&);
-};
-
-} // namespace reflection

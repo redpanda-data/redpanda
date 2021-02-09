@@ -12,6 +12,7 @@
 #include "coproc_test_fixture.h"
 
 #include "coproc/logger.h"
+#include "coproc/reflection.h"
 #include "coproc/tests/utils/helpers.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
