@@ -62,6 +62,7 @@ void stop_node(raft_node& node) {
         node._nop_stm->stop().get0();
     }
     node.raft_manager.stop().get0();
+    node.hbeats->stop().get0();
     node.cache.stop().get0();
     node.storage.stop().get0();
 
