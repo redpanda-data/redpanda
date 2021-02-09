@@ -10,6 +10,7 @@
  */
 
 #pragma once
+#include "cluster/topics_frontend.h"
 #include "cluster/types.h"
 #include "kafka/client/transport.h"
 #include "kafka/server/handlers/topics/topic_utils.h"
