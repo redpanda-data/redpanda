@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "cluster/id_allocator_frontend.h"
+#include "cluster/fwd.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/partition_manager.h"
 #include "cluster/shard_table.h"

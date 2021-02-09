@@ -9,6 +9,7 @@
 
 #include "protocol.h"
 
+#include "cluster/id_allocator_frontend.h"
 #include "cluster/topics_frontend.h"
 #include "kafka/server/connection_context.h"
 #include "kafka/server/logger.h"

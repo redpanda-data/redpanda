@@ -10,7 +10,7 @@
  */
 
 #pragma once
-#include "cluster/id_allocator_frontend.h"
+#include "cluster/fwd.h"
 #include "cluster/id_allocator_service.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/partition_manager.h"
