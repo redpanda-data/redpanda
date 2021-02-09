@@ -440,8 +440,8 @@ public:
             }
 
             wait_for_metadata_update(ntp, r);
-            wait_for_replica_set_partitions(20s, ntp, r);
-            validate_replicas_recovery(2s, ntp, r, reference_batches);
+            wait_for_replica_set_partitions(30s, ntp, r);
+            validate_replicas_recovery(30s, ntp, r, reference_batches);
             logger.info(
               "update no: {}. finished  [{} => {}]", cnt++, current, r);
             print_configuration(ntp).get0();
