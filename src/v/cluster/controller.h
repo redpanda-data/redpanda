@@ -11,7 +11,6 @@
 
 #pragma once
 
-#include "cluster/controller_backend.h"
 #include "cluster/controller_service.h"
 #include "cluster/controller_stm.h"
 #include "cluster/members_manager.h"

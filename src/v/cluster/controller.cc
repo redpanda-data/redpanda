@@ -10,6 +10,7 @@
 #include "cluster/controller.h"
 
 #include "cluster/cluster_utils.h"
+#include "cluster/controller_backend.h"
 #include "cluster/controller_stm.h"
 #include "cluster/logger.h"
 #include "cluster/raft0_utils.h"
