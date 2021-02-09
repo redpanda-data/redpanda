@@ -13,6 +13,7 @@
 #include "cluster/tests/cluster_test_fixture.h"
 #include "cluster/tests/utils.h"
 #include "cluster/types.h"
+#include "config/configuration.h"
 #include "model/metadata.h"
 #include "test_utils/fixture.h"
 #include "utils/unresolved_address.h"

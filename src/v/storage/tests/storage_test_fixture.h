@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "config/configuration.h"
 #include "hashing/crc32c.h"
 #include "model/fundamental.h"
 #include "model/record.h"

@@ -11,7 +11,6 @@
 
 #pragma once
 
-#include "config/configuration.h"
 #include "http/client.h"
 #include "kafka/client/client.h"
 #include "kafka/protocol/metadata.h"

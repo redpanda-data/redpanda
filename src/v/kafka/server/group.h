@@ -12,7 +12,6 @@
 #pragma once
 #include "cluster/fwd.h"
 #include "cluster/partition.h"
-#include "config/configuration.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/heartbeat.h"
 #include "kafka/protocol/join_group.h"

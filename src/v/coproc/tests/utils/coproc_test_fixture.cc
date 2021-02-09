@@ -11,6 +11,7 @@
 
 #include "coproc_test_fixture.h"
 
+#include "config/configuration.h"
 #include "coproc/logger.h"
 #include "coproc/tests/utils/helpers.h"
 #include "model/record_batch_reader.h"

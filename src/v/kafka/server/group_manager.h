@@ -11,7 +11,6 @@
 
 #pragma once
 #include "cluster/fwd.h"
-#include "config/configuration.h"
 #include "kafka/protocol/delete_groups.h"
 #include "kafka/protocol/describe_groups.h"
 #include "kafka/protocol/errors.h"

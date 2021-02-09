@@ -18,6 +18,7 @@
 #include "cluster/shard_table.h"
 #include "cluster/topics_frontend.h"
 #include "cluster/types.h"
+#include "config/configuration.h"
 #include "model/namespace.h"
 #include "model/record_batch_reader.h"
 

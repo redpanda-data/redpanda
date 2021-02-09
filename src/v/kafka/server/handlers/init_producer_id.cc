@@ -11,6 +11,7 @@
 
 #include "cluster/id_allocator_frontend.h"
 #include "cluster/topics_frontend.h"
+#include "config/configuration.h"
 #include "kafka/server/group_manager.h"
 #include "kafka/server/group_router.h"
 #include "kafka/server/logger.h"

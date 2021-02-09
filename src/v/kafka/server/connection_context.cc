@@ -10,6 +10,7 @@
  */
 #include "kafka/server/connection_context.h"
 
+#include "config/configuration.h"
 #include "kafka/server/protocol.h"
 #include "kafka/server/protocol_utils.h"
 #include "kafka/server/quota_manager.h"

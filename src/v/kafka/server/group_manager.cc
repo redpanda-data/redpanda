@@ -12,6 +12,7 @@
 #include "cluster/cluster_utils.h"
 #include "cluster/partition_manager.h"
 #include "cluster/simple_batch_builder.h"
+#include "config/configuration.h"
 #include "kafka/protocol/delete_groups.h"
 #include "kafka/protocol/describe_groups.h"
 #include "kafka/protocol/offset_commit.h"

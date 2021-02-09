@@ -10,7 +10,6 @@
  */
 
 #pragma once
-#include "config/configuration.h"
 #include "coproc/ntp_context.h"
 #include "storage/log_manager.h"
 #include "storage/snapshot.h"

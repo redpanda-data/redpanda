@@ -14,6 +14,7 @@
 #include "cluster/tests/utils.h"
 #include "cluster/topics_frontend.h"
 #include "cluster/types.h"
+#include "config/configuration.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
 #include "test_utils/async.h"

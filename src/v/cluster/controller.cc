@@ -23,6 +23,7 @@
 #include "cluster/topic_table.h"
 #include "cluster/topics_frontend.h"
 #include "cluster/types.h"
+#include "config/configuration.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
 

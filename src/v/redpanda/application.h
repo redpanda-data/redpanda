@@ -13,7 +13,6 @@
 
 #include "cluster/controller.h"
 #include "cluster/fwd.h"
-#include "config/configuration.h"
 #include "coproc/pacemaker.h"
 #include "coproc/service.h"
 #include "coproc/wasm_event_listener.h"

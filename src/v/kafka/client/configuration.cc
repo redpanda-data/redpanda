@@ -9,6 +9,7 @@
 
 #include "configuration.h"
 
+#include "config/configuration.h"
 #include "units.h"
 
 namespace kafka::client {
