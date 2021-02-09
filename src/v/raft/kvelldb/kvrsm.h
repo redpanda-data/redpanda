@@ -13,7 +13,6 @@
 
 #include "model/fundamental.h"
 #include "model/record.h"
-#include "raft/consensus.h"
 #include "raft/errc.h"
 #include "raft/kvelldb/errc.h"
 #include "raft/state_machine.h"

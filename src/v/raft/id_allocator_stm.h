@@ -12,9 +12,9 @@
 #pragma once
 
 #include "cluster/types.h"
+#include "config/configuration.h"
 #include "model/fundamental.h"
 #include "model/record.h"
-#include "raft/consensus.h"
 #include "raft/errc.h"
 #include "raft/logger.h"
 #include "raft/state_machine.h"

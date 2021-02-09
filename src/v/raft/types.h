@@ -18,6 +18,7 @@
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "raft/configuration.h"
+#include "raft/fwd.h"
 #include "reflection/async_adl.h"
 #include "utils/named_type.h"
 
@@ -32,6 +33,9 @@
 #include <exception>
 
 namespace raft {
+
+using consensus_ptr = ss::lw_shared_ptr<consensus>;
+
 using clock_type = ss::lowres_clock;
 using duration_type = typename clock_type::duration;
 using timer_type = ss::timer<clock_type>;

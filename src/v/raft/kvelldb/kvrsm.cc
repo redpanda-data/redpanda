@@ -9,6 +9,7 @@
 
 #include "raft/kvelldb/kvrsm.h"
 
+#include "raft/consensus.h"
 #include "raft/errc.h"
 #include "raft/kvelldb/errc.h"
 #include "raft/types.h"

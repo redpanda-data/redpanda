@@ -13,10 +13,15 @@
 
 #include "model/fundamental.h"
 #include "model/metadata.h"
-#include "raft/consensus.h"
+#include "outcome.h"
+#include "raft/configuration.h"
+#include "raft/fwd.h"
+#include "raft/logger.h"
+#include "raft/types.h"
 #include "seastarx.h"
 #include "storage/types.h"
 
+#include <seastar/core/gate.hh>
 #include <seastar/core/semaphore.hh>
 #include <seastar/core/shared_ptr.hh>
 

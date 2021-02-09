@@ -12,6 +12,7 @@
 #include "model/metadata.h"
 #include "model/record.h"
 #include "raft/configuration_bootstrap_state.h"
+#include "raft/consensus.h"
 #include "raft/consensus_utils.h"
 #include "random/generators.h"
 #include "resource_mgmt/io_priority.h"

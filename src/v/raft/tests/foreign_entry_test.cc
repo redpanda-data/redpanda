@@ -19,6 +19,7 @@
 #include "raft/types.h"
 #include "random/generators.h"
 #include "resource_mgmt/io_priority.h"
+#include "storage/api.h"
 #include "storage/log.h"
 #include "storage/log_manager.h"
 #include "storage/record_batch_builder.h"
