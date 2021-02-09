@@ -614,7 +614,6 @@ void application::start() {
     vlog(
       _log.info, "Started Kafka API server listening at {}", conf.kafka_api());
 
-    /// Start client listening for events on the internal coprocessor topic
     if (coproc_enabled()) {
         /// Temporarily disable retries for the new client until we create a
         /// more granular way to configure this per client or per request.
@@ -623,6 +622,8 @@ void application::start() {
           _wasm_event_listener,
           config::shard_local_cfg().data_directory.value().path);
         _wasm_event_listener->start().get();
+        /// Start the pacemakers offset keeper
+        pacemaker.invoke_on_all(&coproc::pacemaker::start).get();
     }
 
     vlog(_log.info, "Successfully started Redpanda!");

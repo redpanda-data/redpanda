@@ -85,6 +85,12 @@ configuration::configuration()
       "Maximum amount of bytes to read from one topic read",
       required::no,
       32_KiB)
+  , coproc_offset_flush_interval_ms(
+      *this,
+      "coproc_offset_flush_interval_ms",
+      "Interval for which all coprocessor offsets are flushed to disk",
+      required::no,
+      300000ms) // five minutes
   , node_id(
       *this,
       "node_id",
