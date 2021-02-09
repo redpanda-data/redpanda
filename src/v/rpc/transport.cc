@@ -228,26 +228,26 @@ transport::do_send(sequence_t seq, netbuf b, rpc::client_opts opts) {
         return ss::make_ready_future<ret_t>(errc::disconnected_endpoint);
     }
     return ss::with_gate(
-             _dispatch_gate,
-             [this, b = std::move(b), opts = std::move(opts), seq]() mutable {
-                 auto f = make_response_handler(b, opts);
+      _dispatch_gate,
+      [this, b = std::move(b), opts = std::move(opts), seq]() mutable {
+          auto f = make_response_handler(b, opts);
 
-                 // send
-                 auto sz = b.buffer().size_bytes();
-                 return get_units(_memory, sz)
-                   .then([this, b = std::move(b), f = std::move(f), seq](
-                           ss::semaphore_units<> units) mutable {
-                       _requests_queue.emplace(
-                         seq, std::make_unique<netbuf>(std::move(b)));
-                       dispatch_send();
-                       return std::move(f).finally([u = std::move(units)] {});
-                   });
-             })
-      .finally([this, seq] {
-          // update last sequence to make progress, for successfull dispatches
-          // this will be noop, as _last_seq was already update before sending
-          // data
-          _last_seq = std::max(_last_seq, seq);
+          // send
+          auto sz = b.buffer().size_bytes();
+          return get_units(_memory, sz)
+            .then([this, b = std::move(b), f = std::move(f), seq](
+                    ss::semaphore_units<> units) mutable {
+                _requests_queue.emplace(
+                  seq, std::make_unique<netbuf>(std::move(b)));
+                dispatch_send();
+                return std::move(f).finally([u = std::move(units)] {});
+            })
+            .finally([this, seq] {
+                // update last sequence to make progress, for successfull
+                // dispatches this will be noop, as _last_seq was already update
+                // before sending data
+                _last_seq = std::max(_last_seq, seq);
+            });
       });
 }
 
