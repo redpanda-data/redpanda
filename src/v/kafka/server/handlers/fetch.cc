@@ -394,11 +394,13 @@ static ss::future<> do_fill_fetch_responses(
         if (!res.reader) {
             resp_it.set(
               make_partition_response_error(res.partition, res.error));
+            resp_it->partition_response->high_watermark = res.high_watermark;
+            resp_it->partition_response->last_stable_offset = res.last_stable_offset;
             return ss::now();
         }
         return std::move(*res.reader)
           .consume(kafka_batch_serializer(), model::no_timeout)
-          .then([pid = res.partition, resp_it = resp_it](
+          .then([hw = res.high_watermark, lso = res.last_stable_offset, pid = res.partition, resp_it = resp_it](
                   kafka_batch_serializer::result res) mutable {
               fetch_response::partition_response resp{
                 .id = pid,
@@ -406,8 +408,10 @@ static ss::future<> do_fill_fetch_responses(
                 .record_set = batch_reader(std::move(res.data)),
               };
               resp_it.set(std::move(resp));
+              resp_it->partition_response->high_watermark = hw;
+              resp_it->partition_response->last_stable_offset = lso;
           })
-          .handle_exception([pid = res.partition, resp_it = resp_it](
+          .handle_exception([hw = res.high_watermark, lso = res.last_stable_offset, pid = res.partition, resp_it = resp_it](
                               const std::exception_ptr&) mutable {
               /*
                * TODO: this is where we will want to
@@ -417,6 +421,8 @@ static ss::future<> do_fill_fetch_responses(
                */
               resp_it.set(make_partition_response_error(
                 pid, error_code::unknown_server_error));
+              resp_it->partition_response->high_watermark = hw;
+              resp_it->partition_response->last_stable_offset = lso;
           });
     });
 }
