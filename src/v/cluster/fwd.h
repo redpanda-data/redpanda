@@ -14,5 +14,13 @@
 namespace cluster {
 
 class controller_backend;
+class controller_service;
+class partition_leaders_table;
+class partition_manager;
+class shard_table;
+class topics_frontend;
+class topic_table;
+class members_manager;
+class members_table;
 
 } // namespace cluster
