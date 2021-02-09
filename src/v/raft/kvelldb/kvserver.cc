@@ -16,6 +16,7 @@
 #include "raft/kvelldb/kvrsm.h"
 #include "raft/kvelldb/logger.h"
 #include "raft/logger.h"
+#include "raft/reflection.h"
 #include "raft/rpc_client_protocol.h"
 #include "raft/service.h"
 #include "raft/types.h"

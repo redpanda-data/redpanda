@@ -17,6 +17,7 @@
 #include "kafka/protocol/offset_fetch.h"
 #include "kafka/reflection.h"
 #include "model/record.h"
+#include "raft/reflection.h"
 #include "resource_mgmt/io_priority.h"
 
 namespace kafka {

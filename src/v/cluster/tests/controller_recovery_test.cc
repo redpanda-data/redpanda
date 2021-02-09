@@ -10,6 +10,7 @@
 #include "cluster/reflection.h"
 #include "cluster/simple_batch_builder.h"
 #include "cluster/tests/controller_test_fixture.h"
+#include "raft/reflection.h"
 #include "test_utils/fixture.h"
 
 model::topic_namespace topic_ns(model::topic topic) {

@@ -24,6 +24,7 @@
 #include "cluster/topics_frontend.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
+#include "raft/reflection.h"
 
 #include <seastar/core/thread.hh>
 

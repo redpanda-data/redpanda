@@ -20,6 +20,7 @@
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "model/timeout_clock.h"
+#include "raft/reflection.h"
 #include "redpanda/tests/fixture.h"
 #include "rpc/types.h"
 #include "storage/tests/utils/random_batch.h"

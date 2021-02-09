@@ -17,6 +17,7 @@
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
+#include "raft/reflection.h"
 #include "redpanda/application.h"
 #include "redpanda/tests/fixture.h"
 #include "storage/tests/utils/random_batch.h"

@@ -13,6 +13,7 @@
 #include "cluster/tests/utils.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
+#include "raft/reflection.h"
 #include "test_utils/async.h"
 #include "test_utils/fixture.h"
 #include "utils/unresolved_address.h"

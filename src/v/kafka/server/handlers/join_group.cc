@@ -14,6 +14,7 @@
 #include "kafka/server/group_router.h"
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
+#include "raft/reflection.h"
 #include "utils/remote.h"
 #include "utils/to_string.h"
 

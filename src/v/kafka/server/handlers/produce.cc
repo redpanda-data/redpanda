@@ -21,6 +21,7 @@
 #include "model/namespace.h"
 #include "model/record_batch_reader.h"
 #include "model/timestamp.h"
+#include "raft/reflection.h"
 #include "raft/types.h"
 #include "storage/shard_assignment.h"
 #include "utils/remote.h"

@@ -16,6 +16,7 @@
 #include "kafka/protocol/produce.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "raft/reflection.h"
 #include "utils/unresolved_address.h"
 
 #include <chrono>

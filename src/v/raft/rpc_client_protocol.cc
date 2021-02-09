@@ -11,6 +11,7 @@
 
 #include "outcome_future_utils.h"
 #include "raft/raftgen_service.h"
+#include "raft/reflection.h"
 #include "rpc/connection_cache.h"
 #include "rpc/exceptions.h"
 #include "rpc/transport.h"

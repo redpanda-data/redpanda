@@ -10,6 +10,7 @@
 #include "http/client.h"
 #include "pandaproxy/test/pandaproxy_fixture.h"
 #include "pandaproxy/test/utils.h"
+#include "raft/reflection.h"
 
 #include <boost/beast/http/field.hpp>
 #include <boost/beast/http/status.hpp>

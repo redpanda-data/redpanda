@@ -11,7 +11,6 @@
 
 #pragma once
 
-#include "model/adl_serde.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
@@ -19,7 +18,6 @@
 #include "model/timeout_clock.h"
 #include "raft/configuration.h"
 #include "raft/fwd.h"
-#include "reflection/async_adl.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/condition-variable.hh>
@@ -463,34 +461,3 @@ std::ostream& operator<<(std::ostream& o, const follower_index_metadata& i);
 std::ostream& operator<<(std::ostream& o, const heartbeat_request& r);
 std::ostream& operator<<(std::ostream& o, const heartbeat_reply& r);
 } // namespace raft
-
-namespace reflection {
-template<>
-struct async_adl<raft::append_entries_request> {
-    ss::future<> to(iobuf& out, raft::append_entries_request&& request);
-    ss::future<raft::append_entries_request> from(iobuf_parser& in);
-};
-template<>
-struct adl<raft::protocol_metadata> {
-    void to(iobuf& out, raft::protocol_metadata request);
-    raft::protocol_metadata from(iobuf_parser& in);
-};
-template<>
-struct async_adl<raft::heartbeat_request> {
-    ss::future<> to(iobuf& out, raft::heartbeat_request&& request);
-    ss::future<raft::heartbeat_request> from(iobuf_parser& in);
-};
-
-template<>
-struct async_adl<raft::heartbeat_reply> {
-    ss::future<> to(iobuf& out, raft::heartbeat_reply&& request);
-    ss::future<raft::heartbeat_reply> from(iobuf_parser& in);
-};
-
-template<>
-struct adl<raft::snapshot_metadata> {
-    void to(iobuf& out, raft::snapshot_metadata&& request);
-    raft::snapshot_metadata from(iobuf_parser& in);
-};
-
-} // namespace reflection

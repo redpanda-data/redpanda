@@ -11,6 +11,7 @@
 #include "librdkafka/rdkafkacpp.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
+#include "raft/reflection.h"
 #include "redpanda/tests/fixture.h"
 #include "test_utils/fixture.h"
 

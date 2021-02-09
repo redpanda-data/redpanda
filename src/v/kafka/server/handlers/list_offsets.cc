@@ -15,6 +15,7 @@
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
 #include "model/namespace.h"
+#include "raft/reflection.h"
 #include "resource_mgmt/io_priority.h"
 
 namespace kafka {

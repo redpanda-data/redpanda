@@ -13,6 +13,7 @@
 
 #include "coproc/tests/utils/helpers.h"
 #include "model/metadata.h"
+#include "raft/reflection.h"
 #include "test_utils/async.h"
 
 ss::future<> router_test_fixture::startup(log_layout_map llm) {

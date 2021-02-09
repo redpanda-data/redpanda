@@ -23,6 +23,7 @@
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "model/timeout_clock.h"
+#include "raft/reflection.h"
 #include "rpc/connection_cache.h"
 #include "rpc/types.h"
 #include "utils/retry.h"

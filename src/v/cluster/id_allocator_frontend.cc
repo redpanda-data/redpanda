@@ -20,6 +20,7 @@
 #include "cluster/types.h"
 #include "model/namespace.h"
 #include "model/record_batch_reader.h"
+#include "raft/reflection.h"
 
 #include <seastar/core/do_with.hh>
 #include <seastar/core/sharded.hh>

@@ -12,6 +12,7 @@
 #include "model/timeout_clock.h"
 #include "outcome.h"
 #include "raft/id_allocator_stm.h"
+#include "raft/reflection.h"
 #include "raft/tests/mux_state_machine_fixture.h"
 #include "raft/types.h"
 #include "random/generators.h"

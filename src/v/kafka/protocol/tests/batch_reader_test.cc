@@ -14,6 +14,7 @@
 #include "kafka/protocol/exceptions.h"
 #include "kafka/protocol/kafka_batch_adapter.h"
 #include "model/fundamental.h"
+#include "raft/reflection.h"
 #include "redpanda/tests/fixture.h"
 #include "storage/tests/utils/random_batch.h"
 

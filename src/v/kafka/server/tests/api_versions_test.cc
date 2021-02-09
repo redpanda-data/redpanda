@@ -9,6 +9,7 @@
 
 #include "kafka/server/handlers/api_versions.h"
 #include "kafka/types.h"
+#include "raft/reflection.h"
 #include "redpanda/tests/fixture.h"
 #include "resource_mgmt/io_priority.h"
 

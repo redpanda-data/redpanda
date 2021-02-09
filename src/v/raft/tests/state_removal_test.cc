@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "raft/reflection.h"
 #include "raft/tests/raft_group_fixture.h"
 #include "raft/types.h"
 #include "utils/directory_walker.h"

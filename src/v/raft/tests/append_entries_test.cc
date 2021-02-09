@@ -13,6 +13,7 @@
 #include "model/record.h"
 #include "model/timestamp.h"
 #include "raft/consensus_utils.h"
+#include "raft/reflection.h"
 #include "raft/tests/raft_group_fixture.h"
 #include "raft/types.h"
 #include "random/generators.h"

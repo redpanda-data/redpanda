@@ -3,6 +3,7 @@
 #include "cluster/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "raft/reflection.h"
 #include "raft/types.h"
 
 #include <seastar/testing/thread_test_case.hh>

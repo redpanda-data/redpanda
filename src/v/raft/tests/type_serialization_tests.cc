@@ -14,6 +14,7 @@
 #include "model/timeout_clock.h"
 #include "raft/configuration.h"
 #include "raft/consensus_utils.h"
+#include "raft/reflection.h"
 #include "raft/types.h"
 #include "random/generators.h"
 #include "storage/record_batch_builder.h"

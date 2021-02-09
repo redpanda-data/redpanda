@@ -12,6 +12,7 @@
 #include "config/configuration.h"
 #include "model/metadata.h"
 #include "prometheus/prometheus_sanitize.h"
+#include "raft/reflection.h"
 #include "resource_mgmt/io_priority.h"
 
 namespace raft {

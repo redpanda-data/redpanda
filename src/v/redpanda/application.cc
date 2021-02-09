@@ -25,6 +25,7 @@
 #include "kafka/server/quota_manager.h"
 #include "model/metadata.h"
 #include "platform/stop_signal.h"
+#include "raft/reflection.h"
 #include "raft/service.h"
 #include "redpanda/admin/api-doc/config.json.h"
 #include "redpanda/admin/api-doc/kafka.json.h"

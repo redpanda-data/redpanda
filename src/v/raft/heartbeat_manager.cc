@@ -17,7 +17,7 @@
 #include "raft/consensus_client_protocol.h"
 #include "raft/errc.h"
 #include "raft/raftgen_service.h"
-#include "raft/types.h"
+#include "raft/reflection.h"
 #include "rpc/reconnect_transport.h"
 #include "rpc/types.h"
 #include "vlog.h"

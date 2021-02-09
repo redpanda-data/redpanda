@@ -14,6 +14,7 @@
 #include "coproc/tests/utils/coproc_test_fixture.h"
 #include "coproc/tests/utils/helpers.h"
 #include "coproc/types.h"
+#include "raft/reflection.h"
 #include "rpc/test/rpc_integration_fixture.h"
 #include "ssx/future-util.h"
 #include "test_utils/fixture.h"

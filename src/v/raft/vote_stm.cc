@@ -15,6 +15,7 @@
 #include "raft/errc.h"
 #include "raft/logger.h"
 #include "raft/raftgen_service.h"
+#include "raft/reflection.h"
 #include "vassert.h"
 
 #include <seastar/util/bool_class.hh>

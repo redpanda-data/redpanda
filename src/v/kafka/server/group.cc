@@ -19,6 +19,7 @@
 #include "kafka/server/group_manager.h"
 #include "kafka/server/logger.h"
 #include "likely.h"
+#include "raft/reflection.h"
 #include "utils/to_string.h"
 #include "vassert.h"
 

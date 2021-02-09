@@ -14,6 +14,7 @@
 #include "raft/consensus_client_protocol.h"
 #include "raft/heartbeat_manager.h"
 #include "raft/logger.h"
+#include "raft/reflection.h"
 #include "raft/rpc_client_protocol.h"
 #include "raft/service.h"
 #include "raft/tron/logger.h"

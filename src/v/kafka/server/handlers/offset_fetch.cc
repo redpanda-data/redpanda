@@ -16,6 +16,7 @@
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
 #include "model/metadata.h"
+#include "raft/reflection.h"
 
 #include <seastar/core/do_with.hh>
 #include <seastar/core/smp.hh>

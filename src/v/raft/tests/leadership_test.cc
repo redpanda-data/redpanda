@@ -10,6 +10,7 @@
 #include "finjector/hbadger.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
+#include "raft/reflection.h"
 #include "raft/tests/raft_group_fixture.h"
 #include "raft/types.h"
 

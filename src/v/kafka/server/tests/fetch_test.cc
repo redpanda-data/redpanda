@@ -11,6 +11,7 @@
 #include "kafka/server/handlers/fetch.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
+#include "raft/reflection.h"
 #include "redpanda/tests/fixture.h"
 #include "resource_mgmt/io_priority.h"
 #include "test_utils/async.h"

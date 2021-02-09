@@ -16,6 +16,7 @@
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "model/timestamp.h"
+#include "raft/reflection.h"
 #include "vassert.h"
 #include "vlog.h"
 

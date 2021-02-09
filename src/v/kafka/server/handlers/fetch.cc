@@ -18,6 +18,7 @@
 #include "model/fundamental.h"
 #include "model/namespace.h"
 #include "model/timeout_clock.h"
+#include "raft/reflection.h"
 #include "resource_mgmt/io_priority.h"
 #include "utils/to_string.h"
 

@@ -12,7 +12,7 @@
 #include "bytes/iobuf.h"
 #include "model/namespace.h"
 #include "prometheus/prometheus_sanitize.h"
-#include "raft/types.h"
+#include "raft/reflection.h"
 #include "reflection/adl.h"
 #include "storage/record_batch_builder.h"
 #include "storage/segment_set.h"

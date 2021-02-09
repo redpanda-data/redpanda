@@ -9,6 +9,7 @@
 
 #include "model/metadata.h"
 #include "raft/errc.h"
+#include "raft/reflection.h"
 #include "raft/tests/raft_group_fixture.h"
 #include "test_utils/async.h"
 

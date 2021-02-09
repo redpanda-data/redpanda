@@ -20,6 +20,7 @@
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "raft/reflection.h"
 #include "redpanda/tests/fixture.h"
 #include "utils/unresolved_address.h"
 

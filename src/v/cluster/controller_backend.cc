@@ -21,7 +21,7 @@
 #include "model/metadata.h"
 #include "outcome.h"
 #include "raft/configuration.h"
-#include "raft/types.h"
+#include "raft/reflection.h"
 #include "ssx/future-util.h"
 
 #include <seastar/core/abort_source.hh>

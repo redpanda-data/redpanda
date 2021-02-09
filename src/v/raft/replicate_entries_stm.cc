@@ -19,7 +19,7 @@
 #include "raft/errc.h"
 #include "raft/logger.h"
 #include "raft/raftgen_service.h"
-#include "raft/types.h"
+#include "raft/reflection.h"
 #include "rpc/types.h"
 
 #include <chrono>

@@ -15,6 +15,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
+#include "raft/reflection.h"
 #include "test_utils/async.h"
 #include "test_utils/fixture.h"
 

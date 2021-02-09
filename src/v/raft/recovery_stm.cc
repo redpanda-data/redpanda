@@ -17,6 +17,7 @@
 #include "raft/errc.h"
 #include "raft/logger.h"
 #include "raft/raftgen_service.h"
+#include "raft/reflection.h"
 
 #include <seastar/core/future-util.hh>
 

@@ -9,6 +9,7 @@
 
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
+#include "raft/reflection.h"
 #include "raft/tron/logger.h"
 #include "raft/tron/service.h"
 #include "random/generators.h"

@@ -10,6 +10,7 @@
 #include "kafka/protocol/fetch.h"
 #include "kafka/protocol/metadata.h"
 #include "kafka/protocol/produce.h"
+#include "raft/reflection.h"
 #include "redpanda/tests/fixture.h"
 #include "test_utils/fixture.h"
 #include "utils/file_io.h"

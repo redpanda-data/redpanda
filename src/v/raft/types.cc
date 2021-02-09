@@ -13,6 +13,7 @@
 #include "model/metadata.h"
 #include "raft/configuration.h"
 #include "raft/consensus_utils.h"
+#include "raft/reflection.h"
 #include "reflection/adl.h"
 #include "utils/to_string.h"
 #include "vassert.h"

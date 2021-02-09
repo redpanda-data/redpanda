@@ -14,6 +14,7 @@
 #include "model/metadata.h"
 #include "raft/consensus.h"
 #include "raft/log_eviction_stm.h"
+#include "raft/reflection.h"
 #include "raft/rpc_client_protocol.h"
 #include "raft/types.h"
 #include "resource_mgmt/io_priority.h"

@@ -17,7 +17,7 @@
 #include "model/namespace.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
-#include "raft/types.h"
+#include "raft/reflection.h"
 #include "test_utils/fixture.h"
 #include "utils/unresolved_address.h"
 

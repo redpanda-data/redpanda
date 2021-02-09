@@ -15,6 +15,7 @@
 #include "kafka/server/group_router.h"
 #include "kafka/server/request_context.h"
 #include "model/metadata.h"
+#include "raft/reflection.h"
 
 namespace kafka {
 

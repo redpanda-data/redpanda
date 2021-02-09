@@ -15,6 +15,7 @@
 #include "coproc/types.h"
 #include "model/fundamental.h"
 #include "model/timeout_clock.h"
+#include "raft/reflection.h"
 #include "redpanda/tests/fixture.h"
 #include "storage/tests/utils/random_batch.h"
 #include "test_utils/fixture.h"
