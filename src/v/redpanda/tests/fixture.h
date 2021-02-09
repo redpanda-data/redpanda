@@ -86,8 +86,9 @@ public:
           app.controller->get_credential_store(),
           app.controller->get_authorizer(),
           app.controller->get_security_frontend(),
-          std::nullopt,
-          app.controller->get_api());
+          app.controller->get_api(),
+          app.tx_gateway_frontend,
+          std::nullopt);
     }
 
     // creates single node with default configuration

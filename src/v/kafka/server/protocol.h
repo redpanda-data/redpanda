@@ -42,8 +42,9 @@ public:
       ss::sharded<security::credential_store>&,
       ss::sharded<security::authorizer>&,
       ss::sharded<cluster::security_frontend>&,
-      std::optional<qdc_monitor::config>,
-      ss::sharded<cluster::controller_api>&) noexcept;
+      ss::sharded<cluster::controller_api>&,
+      ss::sharded<cluster::tx_gateway_frontend>&,
+      std::optional<qdc_monitor::config>) noexcept;
 
     ~protocol() noexcept override = default;
     protocol(const protocol&) = delete;
@@ -65,6 +66,9 @@ public:
     }
     cluster::id_allocator_frontend& id_allocator_frontend() {
         return _id_allocator_frontend.local();
+    }
+    cluster::tx_gateway_frontend& tx_gateway_frontend() {
+        return _tx_gateway_frontend.local();
     }
     kafka::group_router& group_router() { return _group_router.local(); }
     cluster::shard_table& shard_table() { return _shard_table.local(); }
@@ -121,8 +125,9 @@ private:
     ss::sharded<security::credential_store>& _credentials;
     ss::sharded<security::authorizer>& _authorizer;
     ss::sharded<cluster::security_frontend>& _security_frontend;
-    std::optional<qdc_monitor> _qdc_mon;
     ss::sharded<cluster::controller_api>& _controller_api;
+    ss::sharded<cluster::tx_gateway_frontend>& _tx_gateway_frontend;
+    std::optional<qdc_monitor> _qdc_mon;
 };
 
 } // namespace kafka

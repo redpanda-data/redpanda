@@ -47,9 +47,9 @@ protocol::protocol(
   ss::sharded<security::credential_store>& credentials,
   ss::sharded<security::authorizer>& authorizer,
   ss::sharded<cluster::security_frontend>& sec_fe,
-  std::optional<qdc_monitor::config> qdc_config,
-  ss::sharded<cluster::controller_api>& controller_api) noexcept
-
+  ss::sharded<cluster::controller_api>& controller_api,
+  ss::sharded<cluster::tx_gateway_frontend>& tx_gateway_frontend,
+  std::optional<qdc_monitor::config> qdc_config) noexcept
   : _smp_group(smp)
   , _topics_frontend(tf)
   , _metadata_cache(meta)
@@ -65,7 +65,8 @@ protocol::protocol(
   , _credentials(credentials)
   , _authorizer(authorizer)
   , _security_frontend(sec_fe)
-  , _controller_api(controller_api) {
+  , _controller_api(controller_api)
+  , _tx_gateway_frontend(tx_gateway_frontend) {
     if (qdc_config) {
         _qdc_mon.emplace(*qdc_config);
     }

@@ -81,6 +81,7 @@ public:
     ss::sharded<archival::scheduler_service> archival_scheduler;
     ss::sharded<kafka::rm_group_frontend> rm_group_frontend;
     ss::sharded<cluster::rm_partition_frontend> rm_partition_frontend;
+    ss::sharded<cluster::tx_gateway_frontend> tx_gateway_frontend;
 
 private:
     using deferred_actions
@@ -128,6 +129,7 @@ private:
     ss::sharded<kafka::client::client> _proxy_client;
     ss::sharded<pandaproxy::proxy> _proxy;
     ss::metrics::metric_groups _metrics;
+    kafka::rm_group_proxy_impl _rm_group_proxy;
     // run these first on destruction
     deferred_actions _deferred;
 };
