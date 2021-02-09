@@ -24,30 +24,34 @@ enum class errc {
     unexpected_value
 };
 
-inline std::ostream& operator<<(std::ostream& os, errc err) {
-    switch (err) {
-    case errc::none:
-        os << "none";
-        break;
-    case errc::mismatched_checksum:
-        os << "mismatched_checksum";
-        break;
-    case errc::empty_mandatory_field:
-        os << "empty_mandatory_field";
-        break;
-    case errc::missing_header_key:
-        os << "missing_header_key";
-        break;
-    case errc::unexpected_action_type:
-        os << "unexpected_action_type";
-        break;
-    case errc::unexpected_value:
-        os << "unexpected_value";
-        break;
-    default:
-        os << "missing error type";
+struct errc_category final : public std::error_category {
+    const char* name() const noexcept final { return "coproc::wasm::errc"; }
+
+    std::string message(int c) const final {
+        switch (static_cast<errc>(c)) {
+        case errc::none:
+            return "No error";
+        case errc::mismatched_checksum:
+            return "wasm::events checksum doesn't match expected value";
+        case errc::empty_mandatory_field:
+            return "wasm::event missing a mandatory field";
+        case errc::missing_header_key:
+            return "wasm::event missing a mandatory header key";
+        case errc::unexpected_action_type:
+            return "wasm::event contains an unexpected action type";
+        case errc::unexpected_value:
+            return "wasm::event contains an unexpected value() payload";
+        default:
+            return "Undefined wasm::errc encountered";
+        }
     }
-    return os;
+};
+inline const std::error_category& error_category() noexcept {
+    static errc_category e;
+    return e;
+}
+inline std::error_code make_error_code(errc e) noexcept {
+    return std::error_code(static_cast<int>(e), error_category());
 }
 
 } // namespace wasm
@@ -56,7 +60,6 @@ enum class errc {
     success = 0,
     internal_error,
     invalid_ingestion_policy,
-    script_id_already_exists,
     topic_does_not_exist,
     invalid_topic,
     materialized_topic,
@@ -70,20 +73,20 @@ struct errc_category final : public std::error_category {
         switch (static_cast<errc>(c)) {
         case errc::success:
             return "Success";
+        case errc::internal_error:
+            return "Internal error";
         case errc::invalid_ingestion_policy:
             return "Ingestion policy not yet supported";
-        case errc::script_id_already_exists:
-            return "Attempted double registration encountered";
-        case errc::script_id_does_not_exist:
-            return "Could not find coprocessor with matching script_id";
         case errc::topic_does_not_exist:
             return "Topic does not exist yet";
         case errc::invalid_topic:
             return "Topic name is invalid";
         case errc::materialized_topic:
             return "Topic is already a materialized topic";
+        case errc::script_id_does_not_exist:
+            return "Could not find coprocessor with matching script_id";
         default:
-            return "coproc::errc::internal_error check the logs";
+            return "Undefined coprocessor error encountered";
         }
     }
 };
@@ -98,4 +101,6 @@ inline std::error_code make_error_code(errc e) noexcept {
 namespace std {
 template<>
 struct is_error_code_enum<coproc::errc> : true_type {};
+template<>
+struct is_error_code_enum<coproc::wasm::errc> : true_type {};
 } // namespace std
