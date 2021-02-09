@@ -120,11 +120,11 @@ ss::future<> controller::stop() {
     }
 
     return f.then([this] {
-        return _stm.stop()
-          .then([this] { return _members_manager.stop(); })
+        return _backend.stop()
           .then([this] { return _tp_frontend.stop(); })
-          .then([this] { return _backend.stop(); })
+          .then([this] { return _stm.stop(); })
           .then([this] { return _tp_state.stop(); })
+          .then([this] { return _members_manager.stop(); })
           .then([this] { return _partition_allocator.stop(); })
           .then([this] { return _partition_leaders.stop(); })
           .then([this] { return _members_table.stop(); })
