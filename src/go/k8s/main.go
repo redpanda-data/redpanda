@@ -40,10 +40,11 @@ func init() {
 
 func main() {
 	var (
-		metricsAddr		string
-		enableLeaderElection	bool
-		probeAddr		string
-		webhookEnabled		bool
+		metricsAddr			string
+		enableLeaderElection		bool
+		probeAddr			string
+		webhookEnabled			bool
+		polymorphicAdvertisedAPI	bool
 	)
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
@@ -52,6 +53,7 @@ func main() {
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
 	flag.BoolVar(&webhookEnabled, "webhook-enabled", false, "Enable webhook Manager")
+	flag.BoolVar(&polymorphicAdvertisedAPI, "multi-advertised-api", false, "Enable polymorphic advertised kafka api")
 
 	opts := zap.Options{
 		Development: true,
@@ -80,7 +82,7 @@ func main() {
 		Client:	mgr.GetClient(),
 		Log:	ctrl.Log.WithName("controllers").WithName("redpanda").WithName("Cluster"),
 		Scheme:	mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
+	}).WithPolymorphicAdvertisedAPI(polymorphicAdvertisedAPI).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "Cluster")
 		os.Exit(1)
 	}

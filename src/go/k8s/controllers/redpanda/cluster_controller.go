@@ -34,8 +34,9 @@ var (
 // ClusterReconciler reconciles a Cluster object
 type ClusterReconciler struct {
 	client.Client
-	Log	logr.Logger
-	Scheme	*runtime.Scheme
+	Log				logr.Logger
+	Scheme				*runtime.Scheme
+	polymorphicAdvertisedAPI	bool
 }
 
 //+kubebuilder:rbac:groups=redpanda.vectorized.io,resources=clusters,verbs=get;list;watch;create;update;patch;delete
@@ -75,7 +76,7 @@ func (r *ClusterReconciler) Reconcile(
 	svc := resources.NewService(r.Client, &redpandaCluster, r.Scheme)
 	toApply := []resources.Resource{
 		svc,
-		resources.NewConfigMap(r.Client, &redpandaCluster, r.Scheme, svc),
+		resources.NewConfigMap(r.Client, &redpandaCluster, r.Scheme, svc, r.polymorphicAdvertisedAPI),
 		sts,
 	}
 
@@ -127,6 +128,14 @@ func (r *ClusterReconciler) Reconcile(
 	}
 
 	return ctrl.Result{}, nil
+}
+
+// WithPolymorphicAdvertisedAPI sets up the feature flag for polymorphic advertised API
+func (r *ClusterReconciler) WithPolymorphicAdvertisedAPI(
+	polymorphicAdvertisedAPI bool,
+) *ClusterReconciler {
+	r.polymorphicAdvertisedAPI = polymorphicAdvertisedAPI
+	return r
 }
 
 // SetupWithManager sets up the controller with the Manager.

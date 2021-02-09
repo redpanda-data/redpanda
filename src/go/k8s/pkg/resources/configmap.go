@@ -13,7 +13,6 @@ package resources
 import (
 	"context"
 	"path/filepath"
-	"strconv"
 
 	redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/labels"
@@ -45,6 +44,26 @@ var (
 
 var _ Resource = &ConfigMapResource{}
 
+// Config is the smallest subset of rpk config
+type Config struct {
+	ConfigFile	string		`yaml:"config_file" mapstructure:"config_file" json:"configFile"`
+	Redpanda	RedpandaConfig	`yaml:"redpanda" mapstructure:"redpanda" json:"redpanda"`
+}
+
+// RedpandaConfig is the old version copy of the rpk redpanda config
+type RedpandaConfig struct {
+	Directory		string			`yaml:"data_directory" mapstructure:"data_directory" json:"dataDirectory"`
+	RPCServer		config.SocketAddress	`yaml:"rpc_server" mapstructure:"rpc_server" json:"rpcServer"`
+	AdvertisedRPCAPI	*config.SocketAddress	`yaml:"advertised_rpc_api,omitempty" mapstructure:"advertised_rpc_api,omitempty" json:"advertisedRpcApi,omitempty"`
+	KafkaAPI		config.SocketAddress	`yaml:"kafka_api" mapstructure:"kafka_api" json:"kafkaApi"`
+	AdvertisedKafkaAPI	config.SocketAddress	`yaml:"advertised_kafka_api,omitempty" mapstructure:"advertised_kafka_api,omitempty" json:"advertisedKafkaApi,omitempty"`
+	KafkaAPITLS		config.ServerTLS	`yaml:"kafka_api_tls,omitempty" mapstructure:"kafka_api_tls,omitempty" json:"kafkaApiTls"`
+	AdminAPI		config.SocketAddress	`yaml:"admin" mapstructure:"admin" json:"admin"`
+	ID			int			`yaml:"node_id" mapstructure:"node_id" json:"id"`
+	SeedServers		[]config.SeedServer	`yaml:"seed_servers" mapstructure:"seed_servers" json:"seedServers"`
+	DeveloperMode		bool			`yaml:"developer_mode" mapstructure:"developer_mode" json:"developerMode"`
+}
+
 // ConfigMapResource contains definition and reconciliation logic for operator's ConfigMap.
 // The ConfigMap contains the configuration as well as init script.
 type ConfigMapResource struct {
@@ -52,7 +71,8 @@ type ConfigMapResource struct {
 	scheme		*runtime.Scheme
 	pandaCluster	*redpandav1alpha1.Cluster
 
-	svc	*ServiceResource
+	svc				*ServiceResource
+	polymorphicAdvertisedAPI	bool
 }
 
 // NewConfigMap creates ConfigMapResource
@@ -61,9 +81,10 @@ func NewConfigMap(
 	pandaCluster *redpandav1alpha1.Cluster,
 	scheme *runtime.Scheme,
 	svc *ServiceResource,
+	polymorphicAdvertisedAPI bool,
 ) *ConfigMapResource {
 	return &ConfigMapResource{
-		client, scheme, pandaCluster, svc,
+		client, scheme, pandaCluster, svc, polymorphicAdvertisedAPI,
 	}
 }
 
@@ -91,23 +112,8 @@ func (r *ConfigMapResource) Ensure(ctx context.Context) error {
 // Obj returns resource managed client.Object
 func (r *ConfigMapResource) Obj() (k8sclient.Object, error) {
 	serviceAddress := r.svc.HeadlessServiceFQDN()
-	cfg := config.Default()
-	cfg.Redpanda = copyConfig(&r.pandaCluster.Spec.Configuration, &cfg.Redpanda)
-	cfg.Redpanda.Id = 0
-	cfg.Redpanda.AdvertisedKafkaApi[0].Port = cfg.Redpanda.KafkaApi[0].Port
-	cfg.Redpanda.AdvertisedRPCAPI.Port = cfg.Redpanda.RPCServer.Port
-	cfg.Redpanda.Directory = dataDirectory
-	cfg.Redpanda.SeedServers = []config.SeedServer{
-		{
-			Host: config.SocketAddress{
-				// Example address: cluster-sample-0.cluster-sample.default.svc.cluster.local
-				Address:	r.pandaCluster.Name + "-0." + serviceAddress,
-				Port:		cfg.Redpanda.AdvertisedRPCAPI.Port,
-			},
-		},
-	}
 
-	cfgBytes, err := yaml.Marshal(cfg)
+	cfgBytes, err := yaml.Marshal(r.createConfiguration())
 	if err != nil {
 		return nil, err
 	}
@@ -123,9 +129,7 @@ func (r *ConfigMapResource) Obj() (k8sclient.Object, error) {
 			rpk --config $CONFIG config set redpanda.seed_servers '[]' --format yaml;
 		fi;
 		rpk --config $CONFIG config set redpanda.advertised_rpc_api.address $SERVICE_NAME;
-		rpk --config $CONFIG config set redpanda.advertised_rpc_api.port ` + strconv.Itoa(cfg.Redpanda.AdvertisedRPCAPI.Port) + `;
 		rpk --config $CONFIG config set redpanda.advertised_kafka_api.address $SERVICE_NAME;
-		rpk --config $CONFIG config set redpanda.advertised_kafka_api.port ` + strconv.Itoa(cfg.Redpanda.AdvertisedKafkaApi[0].Port) + `;
 		cat $CONFIG`
 
 	cm := &corev1.ConfigMap{
@@ -148,49 +152,83 @@ func (r *ConfigMapResource) Obj() (k8sclient.Object, error) {
 	return cm, nil
 }
 
-func copyConfig(
-	c *redpandav1alpha1.RedpandaConfig, cfgDefaults *config.RedpandaConfig,
-) config.RedpandaConfig {
-	rpcServerPort := c.RPCServer.Port
-	if c.RPCServer.Port == 0 {
-		rpcServerPort = cfgDefaults.RPCServer.Port
-	}
+func (r *ConfigMapResource) createConfiguration() interface{} {
+	serviceAddress := r.pandaCluster.Name + "." + r.pandaCluster.Namespace + ".svc.cluster.local"
+	cfgRpk := config.Default()
 
-	kafkaAPIPort := c.KafkaAPI.Port
-	if c.KafkaAPI.Port == 0 && len(cfgDefaults.KafkaApi) > 0 {
-		kafkaAPIPort = cfgDefaults.KafkaApi[0].Port
-	}
+	c := r.pandaCluster.Spec.Configuration
+	cr := cfgRpk.Redpanda
 
-	AdminAPIPort := c.AdminAPI.Port
-	if c.AdminAPI.Port == 0 {
-		AdminAPIPort = cfgDefaults.AdminApi.Port
-	}
+	if !r.polymorphicAdvertisedAPI {
+		defaultKafkaAPIPort := 0
+		if len(cfgRpk.Redpanda.KafkaApi) > 0 {
+			defaultKafkaAPIPort = cfgRpk.Redpanda.KafkaApi[0].Port
+		}
 
-	return config.RedpandaConfig{
-		RPCServer: config.SocketAddress{
-			Address:	"0.0.0.0",
-			Port:		rpcServerPort,
-		},
-		AdvertisedRPCAPI:	&config.SocketAddress{},
-		KafkaApi: []config.NamedSocketAddress{
-			{
-				SocketAddress: config.SocketAddress{
+		return &Config{
+			ConfigFile:	configPath,
+			Redpanda: RedpandaConfig{
+				RPCServer: config.SocketAddress{
 					Address:	"0.0.0.0",
-					Port:		kafkaAPIPort,
+					Port:		getPort(c.RPCServer.Port, cr.RPCServer.Port),
 				},
+				AdvertisedRPCAPI: &config.SocketAddress{
+					Address:	"0.0.0.0",
+					Port:		getPort(c.AdvertisedRPCAPI.Port, cr.RPCServer.Port),
+				},
+				KafkaAPI: config.SocketAddress{
+					Address:	"0.0.0.0",
+					Port:		getPort(c.KafkaAPI.Port, defaultKafkaAPIPort),
+				},
+				AdvertisedKafkaAPI: config.SocketAddress{
+					Address:	"0.0.0.0",
+					Port:		getPort(c.AdvertisedKafkaAPI.Port, defaultKafkaAPIPort),
+				},
+				AdminAPI: config.SocketAddress{
+					Address:	"0.0.0.0",
+					Port:		getPort(c.AdminAPI.Port, cr.AdminApi.Port),
+				},
+				DeveloperMode:	c.DeveloperMode,
+				ID:		0,
+				SeedServers: []config.SeedServer{
+					{
+						Host: config.SocketAddress{
+							// Example address: cluster-sample-0.cluster-sample.default.svc.cluster.local
+							Address:	r.pandaCluster.Name + "-0." + serviceAddress,
+							Port:		getPort(c.AdvertisedRPCAPI.Port, cr.RPCServer.Port),
+						},
+					},
+				},
+				Directory:	dataDirectory,
 			},
-		},
-		AdvertisedKafkaApi: []config.NamedSocketAddress{
-			{
-				SocketAddress: config.SocketAddress{},
-			},
-		},
-		AdminApi: config.SocketAddress{
-			Address:	"0.0.0.0",
-			Port:		AdminAPIPort,
-		},
-		DeveloperMode:	c.DeveloperMode,
+		}
 	}
+
+	cr.RPCServer.Port = getPort(c.RPCServer.Port, cr.RPCServer.Port)
+	cr.AdvertisedRPCAPI.Port = getPort(c.AdvertisedRPCAPI.Port, cr.AdvertisedRPCAPI.Port)
+	cr.AdminApi.Port = getPort(c.AdminAPI.Port, cr.AdminApi.Port)
+	cr.RPCServer.Port = getPort(c.RPCServer.Port, cr.RPCServer.Port)
+	cr.DeveloperMode = c.DeveloperMode
+	cr.SeedServers = []config.SeedServer{
+		{
+			Host: config.SocketAddress{
+				// Example address: cluster-sample-0.cluster-sample.default.svc.cluster.local
+				Address:	r.pandaCluster.Name + "-0." + serviceAddress,
+				Port:		getPort(c.AdvertisedRPCAPI.Port, cr.AdvertisedRPCAPI.Port),
+			},
+		},
+	}
+	cr.Directory = dataDirectory
+
+	return cr
+}
+
+func getPort(clusterPort, defaultPort int) int {
+	if clusterPort == 0 {
+		return defaultPort
+	}
+
+	return clusterPort
 }
 
 // Key returns namespace/name object that is used to identify object.
