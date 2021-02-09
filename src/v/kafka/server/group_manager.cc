@@ -15,6 +15,7 @@
 #include "kafka/protocol/describe_groups.h"
 #include "kafka/protocol/offset_commit.h"
 #include "kafka/protocol/offset_fetch.h"
+#include "kafka/reflection.h"
 #include "model/record.h"
 #include "resource_mgmt/io_priority.h"
 

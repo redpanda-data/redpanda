@@ -7,8 +7,8 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "kafka/reflection.h"
 #include "kafka/server/member.h"
-#include "kafka/types.h"
 #include "utils/to_string.h"
 
 #include <seastar/core/sstring.hh>
