@@ -57,9 +57,12 @@ ss::future<> connection_cache::remove(model::node_id n) {
 
 /// \brief closes all client connections
 ss::future<> connection_cache::stop() {
-    return parallel_for_each(_cache, [](auto& it) {
-        auto& [_, cli] = it;
-        return cli->stop();
+    return _mutex.with([this]() {
+        return parallel_for_each(_cache, [](auto& it) {
+            auto& [_, cli] = it;
+            return cli->stop();
+        });
+        _cache.clear();
     });
 }
 
