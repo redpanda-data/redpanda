@@ -22,16 +22,16 @@ type Config struct {
 }
 
 type RedpandaConfig struct {
-	Directory		string		`yaml:"data_directory" mapstructure:"data_directory" json:"dataDirectory"`
-	RPCServer		SocketAddress	`yaml:"rpc_server" mapstructure:"rpc_server" json:"rpcServer"`
-	AdvertisedRPCAPI	*SocketAddress	`yaml:"advertised_rpc_api,omitempty" mapstructure:"advertised_rpc_api,omitempty" json:"advertisedRpcApi,omitempty"`
-	KafkaApi		SocketAddress	`yaml:"kafka_api" mapstructure:"kafka_api" json:"kafkaApi"`
-	AdvertisedKafkaApi	*SocketAddress	`yaml:"advertised_kafka_api,omitempty" mapstructure:"advertised_kafka_api,omitempty" json:"advertisedKafkaApi,omitempty"`
-	KafkaApiTLS		ServerTLS	`yaml:"kafka_api_tls,omitempty" mapstructure:"kafka_api_tls,omitempty" json:"kafkaApiTls"`
-	AdminApi		SocketAddress	`yaml:"admin" mapstructure:"admin" json:"admin"`
-	Id			int		`yaml:"node_id" mapstructure:"node_id" json:"id"`
-	SeedServers		[]SeedServer	`yaml:"seed_servers" mapstructure:"seed_servers" json:"seedServers"`
-	DeveloperMode		bool		`yaml:"developer_mode" mapstructure:"developer_mode" json:"developerMode"`
+	Directory		string			`yaml:"data_directory" mapstructure:"data_directory" json:"dataDirectory"`
+	RPCServer		SocketAddress		`yaml:"rpc_server" mapstructure:"rpc_server" json:"rpcServer"`
+	AdvertisedRPCAPI	*SocketAddress		`yaml:"advertised_rpc_api,omitempty" mapstructure:"advertised_rpc_api,omitempty" json:"advertisedRpcApi,omitempty"`
+	KafkaApi		[]NamedSocketAddress	`yaml:"kafka_api" mapstructure:"kafka_api" json:"kafkaApi"`
+	AdvertisedKafkaApi	[]NamedSocketAddress	`yaml:"advertised_kafka_api,omitempty" mapstructure:"advertised_kafka_api,omitempty" json:"advertisedKafkaApi,omitempty"`
+	KafkaApiTLS		ServerTLS		`yaml:"kafka_api_tls,omitempty" mapstructure:"kafka_api_tls,omitempty" json:"kafkaApiTls"`
+	AdminApi		SocketAddress		`yaml:"admin" mapstructure:"admin" json:"admin"`
+	Id			int			`yaml:"node_id" mapstructure:"node_id" json:"id"`
+	SeedServers		[]SeedServer		`yaml:"seed_servers" mapstructure:"seed_servers" json:"seedServers"`
+	DeveloperMode		bool			`yaml:"developer_mode" mapstructure:"developer_mode" json:"developerMode"`
 }
 
 type SeedServer struct {
@@ -41,6 +41,11 @@ type SeedServer struct {
 type SocketAddress struct {
 	Address	string	`yaml:"address" mapstructure:"address" json:"address"`
 	Port	int	`yaml:"port" mapstructure:"port" json:"port"`
+}
+
+type NamedSocketAddress struct {
+	SocketAddress	`yaml:",inline" mapstructure:",squash"`
+	Name		string	`yaml:"name,omitempty" mapstructure:"name,omitempty" json:"name,omitempty"`
 }
 
 type TLS struct {

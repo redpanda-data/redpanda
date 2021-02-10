@@ -122,7 +122,7 @@ func GetState(c Client, nodeID uint) (*NodeState, error) {
 		return nil, err
 	}
 	hostKafkaPort, err := getHostPort(
-		config.Default().Redpanda.KafkaApi.Port,
+		config.DefaultKafkaPort,
 		containerJSON,
 	)
 	if err != nil {
@@ -212,7 +212,7 @@ func CreateNode(
 	}
 	kPort, err := nat.NewPort(
 		"tcp",
-		strconv.Itoa(config.Default().Redpanda.KafkaApi.Port),
+		strconv.Itoa(config.DefaultKafkaPort),
 	)
 	if err != nil {
 		return nil, err
@@ -234,7 +234,7 @@ func CreateNode(
 		"--node-id",
 		fmt.Sprintf("%d", nodeID),
 		"--kafka-addr",
-		fmt.Sprintf("%s:%d", ip, config.Default().Redpanda.KafkaApi.Port),
+		fmt.Sprintf("%s:%d", ip, config.DefaultKafkaPort),
 		"--rpc-addr",
 		fmt.Sprintf("%s:%d", ip, config.Default().Redpanda.RPCServer.Port),
 		"--advertise-kafka-addr",

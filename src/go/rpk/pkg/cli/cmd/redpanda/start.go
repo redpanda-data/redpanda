@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -83,9 +84,9 @@ func NewStartCommand(
 		configFile	string
 		nodeID		uint
 		seeds		[]string
-		kafkaAddr	string
+		kafkaAddr	[]string
 		rpcAddr		string
-		advertisedKafka	string
+		advertisedKafka	[]string
 		advertisedRPC	string
 		installDirFlag	string
 		timeout		time.Duration
@@ -122,20 +123,23 @@ func NewStartCommand(
 				conf.Redpanda.SeedServers = seedServers
 			}
 
-			kafkaAddr = stringOr(
+			kafkaAddr = stringSliceOr(
 				kafkaAddr,
-				os.Getenv("REDPANDA_KAFKA_ADDRESS"),
+				strings.Split(
+					os.Getenv("REDPANDA_KAFKA_ADDRESS"),
+					",",
+				),
 			)
-			kafkaApi, err := parseAddress(
+			kafkaApi, err := parseNamedAddresses(
 				kafkaAddr,
-				config.Default().Redpanda.KafkaApi.Port,
+				config.DefaultKafkaPort,
 			)
 			if err != nil {
 				sendEnv(fs, mgr, env, conf, err)
 				return err
 			}
-			if kafkaApi != nil {
-				conf.Redpanda.KafkaApi = *kafkaApi
+			if kafkaApi != nil && len(kafkaApi) > 0 {
+				conf.Redpanda.KafkaApi = kafkaApi
 			}
 
 			rpcAddr = stringOr(
@@ -154,13 +158,16 @@ func NewStartCommand(
 				conf.Redpanda.RPCServer = *rpcServer
 			}
 
-			advertisedKafka = stringOr(
+			advertisedKafka = stringSliceOr(
 				advertisedKafka,
-				os.Getenv("REDPANDA_ADVERTISE_KAFKA_ADDRESS"),
+				strings.Split(
+					os.Getenv("REDPANDA_ADVERTISE_KAFKA_ADDRESS"),
+					",",
+				),
 			)
-			advKafkaApi, err := parseAddress(
+			advKafkaApi, err := parseNamedAddresses(
 				advertisedKafka,
-				config.Default().Redpanda.KafkaApi.Port,
+				config.DefaultKafkaPort,
 			)
 			if err != nil {
 				sendEnv(fs, mgr, env, conf, err)
@@ -250,11 +257,11 @@ func NewStartCommand(
 		"A comma-separated list of seed node addresses"+
 			" (<host>[:<port>]) to connect to",
 	)
-	command.Flags().StringVar(
+	command.Flags().StringSliceVar(
 		&kafkaAddr,
 		"kafka-addr",
-		"",
-		"The Kafka address to bind to (<host>:<port>)",
+		[]string{},
+		"The list of Kafka listener addresses to bind to (<host>:<port>)",
 	)
 	command.Flags().StringVar(
 		&rpcAddr,
@@ -262,11 +269,11 @@ func NewStartCommand(
 		"",
 		"The RPC address to bind to (<host>:<port>)",
 	)
-	command.Flags().StringVar(
+	command.Flags().StringSliceVar(
 		&advertisedKafka,
 		"advertise-kafka-addr",
-		"",
-		"The Kafka address to advertise (<host>:<port>)",
+		[]string{},
+		"The list of Kafka addresses to advertise (<host>:<port>)",
 	)
 	command.Flags().StringVar(
 		&advertisedRPC,
@@ -700,30 +707,77 @@ func parseSeeds(seeds []string) ([]config.SeedServer, error) {
 }
 
 func parseAddress(addr string, defaultPort int) (*config.SocketAddress, error) {
+	named, err := parseNamedAddress(addr, defaultPort)
+	if err != nil {
+		return nil, err
+	}
+	if named == nil {
+		return nil, nil
+	}
+	return &named.SocketAddress, nil
+}
+
+func parseNamedAddresses(
+	addrs []string, defaultPort int,
+) ([]config.NamedSocketAddress, error) {
+	as := make([]config.NamedSocketAddress, 0, len(addrs))
+	for _, addr := range addrs {
+		a, err := parseNamedAddress(addr, defaultPort)
+		if err != nil {
+			return nil, err
+		}
+		if a != nil {
+			as = append(as, *a)
+		}
+	}
+	log.Info(as)
+	return as, nil
+}
+
+func parseNamedAddress(
+	addr string, defaultPort int,
+) (*config.NamedSocketAddress, error) {
 	if addr == "" {
 		return nil, nil
 	}
-	hostPort := strings.Split(addr, ":")
-	host := strings.Trim(hostPort[0], " ")
-	if host == "" {
-		return nil, fmt.Errorf("Empty host in address '%s'", addr)
-	}
-	if len(hostPort) != 2 {
-		// It's just a hostname with no port. Use the default port.
-		return &config.SocketAddress{
-			Address:	strings.Trim(hostPort[0], " "),
-			Port:		defaultPort,
-		}, nil
-	}
-	// It's a host:port combo.
-	port, err := strconv.Atoi(strings.Trim(hostPort[1], " "))
+	scheme, hostname, port, err := parseURL(addr)
 	if err != nil {
-		return nil, fmt.Errorf("Port must be an int")
+		return nil, err
 	}
-	return &config.SocketAddress{
-		Address:	host,
-		Port:		port,
+	if port == 0 {
+		port = defaultPort
+	}
+
+	return &config.NamedSocketAddress{
+		SocketAddress: config.SocketAddress{
+			Address:	hostname,
+			Port:		port,
+		},
+		Name:	scheme,
 	}, nil
+}
+
+func parseURL(addr string) (scheme, hostname string, port int, err error) {
+	if strings.HasPrefix(addr, ":") {
+		return "", "", 0, errors.New("missing hostname")
+	}
+	root := "//"
+	if !strings.Contains(addr, root) {
+		addr = fmt.Sprintf("%s%s", root, addr)
+	}
+	u, err := url.Parse(addr)
+	if err != nil {
+		return "", "", 0, err
+	}
+	if u.Port() != "" {
+		port, err = strconv.Atoi(u.Port())
+		if err != nil {
+			return "", "", 0, err
+		}
+	}
+	scheme = u.Scheme
+	hostname = u.Hostname()
+	return scheme, hostname, port, nil
 }
 
 func sendEnv(
@@ -763,6 +817,13 @@ func sendEnv(
 
 func stringOr(a, b string) string {
 	if a != "" {
+		return a
+	}
+	return b
+}
+
+func stringSliceOr(a, b []string) []string {
+	if a != nil && len(a) != 0 {
 		return a
 	}
 	return b

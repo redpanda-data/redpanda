@@ -124,7 +124,7 @@ func TestParseSeeds(t *testing.T) {
 		{
 			name:		"it should fail if the host is empty",
 			arg:		[]string{" :1234"},
-			expectedErrMsg:	"Couldn't parse seed ' :1234': Empty host in address ' :1234'",
+			expectedErrMsg:	"Couldn't parse seed ' :1234': parse // :1234: invalid character \" \" in host name",
 		},
 	}
 
@@ -329,13 +329,13 @@ func TestStartCommand(t *testing.T) {
 		args: []string{
 			"-s", "goodhost.com:54897,:33145",
 		},
-		expectedErrMsg:	"Couldn't parse seed ':33145': Empty host in address ':33145'",
+		expectedErrMsg:	"Couldn't parse seed ':33145': missing hostname",
 	}, {
 		name:	"it should fail if the port isn't an int",
 		args: []string{
 			"-s", "host:port",
 		},
-		expectedErrMsg:	"Couldn't parse seed 'host:port': Port must be an int",
+		expectedErrMsg:	"Couldn't parse seed 'host:port': parse //host:port: invalid port \":port\" after host",
 	}, {
 		name:	"it should parse the --rpc-addr and persist it",
 		args: []string{
@@ -384,7 +384,7 @@ func TestStartCommand(t *testing.T) {
 			"--install-dir", "/var/lib/redpanda",
 			"--rpc-addr", "host:nonnumericport",
 		},
-		expectedErrMsg:	"Port must be an int",
+		expectedErrMsg:	"parse //host:nonnumericport: invalid port \":nonnumericport\" after host",
 	}, {
 		name:	"if --rpc-addr wasn't passed, it should fall back to REDPANDA_RPC_ADDRESS and persist it",
 		args: []string{
@@ -451,10 +451,12 @@ func TestStartCommand(t *testing.T) {
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
-			expectedAddr := config.SocketAddress{
-				Address:	"192.168.34.32",
-				Port:		33145,
-			}
+			expectedAddr := []config.NamedSocketAddress{{
+				SocketAddress: config.SocketAddress{
+					Address:	"192.168.34.32",
+					Port:		33145,
+				},
+			}}
 			// Check that the generated config is as expected.
 			require.Exactly(
 				st,
@@ -472,10 +474,65 @@ func TestStartCommand(t *testing.T) {
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
-			expectedAddr := config.SocketAddress{
-				Address:	"192.168.34.32",
-				Port:		9092,
-			}
+			expectedAddr := []config.NamedSocketAddress{{
+				SocketAddress: config.SocketAddress{
+					Address:	"192.168.34.32",
+					Port:		9092,
+				},
+			}}
+			// Check that the generated config is as expected.
+			require.Exactly(
+				st,
+				expectedAddr,
+				conf.Redpanda.KafkaApi,
+			)
+		},
+	}, {
+		name:	"it should parse the --kafka-addr and persist it (named)",
+		args: []string{
+			"--install-dir", "/var/lib/redpanda",
+			"--kafka-addr", "nondefaultname://192.168.34.32",
+		},
+		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+			mgr := config.NewManager(fs)
+			conf, err := mgr.Read(config.Default().ConfigFile)
+			require.NoError(st, err)
+			expectedAddr := []config.NamedSocketAddress{{
+				Name:	"nondefaultname",
+				SocketAddress: config.SocketAddress{
+					Address:	"192.168.34.32",
+					Port:		9092,
+				},
+			}}
+			// Check that the generated config is as expected.
+			require.Exactly(
+				st,
+				expectedAddr,
+				conf.Redpanda.KafkaApi,
+			)
+		},
+	}, {
+		name:	"it should parse the --kafka-addr and persist it (list)",
+		args: []string{
+			"--install-dir", "/var/lib/redpanda",
+			"--kafka-addr", "nondefaultname://192.168.34.32,host:9092",
+		},
+		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+			mgr := config.NewManager(fs)
+			conf, err := mgr.Read(config.Default().ConfigFile)
+			require.NoError(st, err)
+			expectedAddr := []config.NamedSocketAddress{{
+				Name:	"nondefaultname",
+				SocketAddress: config.SocketAddress{
+					Address:	"192.168.34.32",
+					Port:		9092,
+				},
+			}, {
+				SocketAddress: config.SocketAddress{
+					Address:	"host",
+					Port:		9092,
+				},
+			}}
 			// Check that the generated config is as expected.
 			require.Exactly(
 				st,
@@ -489,7 +546,7 @@ func TestStartCommand(t *testing.T) {
 			"--install-dir", "/var/lib/redpanda",
 			"--kafka-addr", "host:nonnumericport",
 		},
-		expectedErrMsg:	"Port must be an int",
+		expectedErrMsg:	"parse //host:nonnumericport: invalid port \":nonnumericport\" after host",
 	}, {
 		name:	"if --kafka-addr wasn't passed, it should fall back to REDPANDA_KAFKA_ADDRESS and persist it",
 		args: []string{
@@ -506,10 +563,12 @@ func TestStartCommand(t *testing.T) {
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
-			expectedAddr := config.SocketAddress{
-				Address:	"host",
-				Port:		3123,
-			}
+			expectedAddr := []config.NamedSocketAddress{{
+				SocketAddress: config.SocketAddress{
+					Address:	"host",
+					Port:		3123,
+				},
+			}}
 			// Check that the generated config is as expected.
 			require.Exactly(
 				st,
@@ -525,20 +584,24 @@ func TestStartCommand(t *testing.T) {
 		before: func(fs afero.Fs) error {
 			mgr := config.NewManager(fs)
 			conf := config.Default()
-			conf.Redpanda.KafkaApi = config.SocketAddress{
-				Address:	"192.168.33.33",
-				Port:		9892,
-			}
+			conf.Redpanda.KafkaApi = []config.NamedSocketAddress{{
+				SocketAddress: config.SocketAddress{
+					Address:	"192.168.33.33",
+					Port:		9892,
+				},
+			}}
 			return mgr.Write(conf)
 		},
 		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
-			expectedAddr := config.SocketAddress{
-				Address:	"192.168.33.33",
-				Port:		9892,
-			}
+			expectedAddr := []config.NamedSocketAddress{{
+				SocketAddress: config.SocketAddress{
+					Address:	"192.168.33.33",
+					Port:		9892,
+				},
+			}}
 			// Check that the generated config is as expected.
 			require.Exactly(
 				st,
@@ -556,10 +619,12 @@ func TestStartCommand(t *testing.T) {
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
-			expectedAddr := &config.SocketAddress{
-				Address:	"192.168.34.32",
-				Port:		33145,
-			}
+			expectedAddr := []config.NamedSocketAddress{{
+				SocketAddress: config.SocketAddress{
+					Address:	"192.168.34.32",
+					Port:		33145,
+				},
+			}}
 			// Check that the generated config is as expected.
 			require.Exactly(
 				st,
@@ -577,10 +642,12 @@ func TestStartCommand(t *testing.T) {
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
-			expectedAddr := &config.SocketAddress{
-				Address:	"192.168.34.32",
-				Port:		9092,
-			}
+			expectedAddr := []config.NamedSocketAddress{{
+				SocketAddress: config.SocketAddress{
+					Address:	"192.168.34.32",
+					Port:		9092,
+				},
+			}}
 			// Check that the generated config is as expected.
 			require.Exactly(
 				st,
@@ -594,7 +661,7 @@ func TestStartCommand(t *testing.T) {
 			"--install-dir", "/var/lib/redpanda",
 			"--advertise-kafka-addr", "host:nonnumericport",
 		},
-		expectedErrMsg:	"Port must be an int",
+		expectedErrMsg:	"parse //host:nonnumericport: invalid port \":nonnumericport\" after host",
 	}, {
 		name:	"if --advertise-kafka-addr, it should fall back to REDPANDA_ADVERTISE_KAFKA_ADDRESS and persist it",
 		args: []string{
@@ -611,10 +678,12 @@ func TestStartCommand(t *testing.T) {
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
-			expectedAddr := &config.SocketAddress{
-				Address:	"host",
-				Port:		3123,
-			}
+			expectedAddr := []config.NamedSocketAddress{{
+				SocketAddress: config.SocketAddress{
+					Address:	"host",
+					Port:		3123,
+				},
+			}}
 			// Check that the generated config is as expected.
 			require.Exactly(
 				st,
@@ -630,20 +699,24 @@ func TestStartCommand(t *testing.T) {
 		before: func(fs afero.Fs) error {
 			mgr := config.NewManager(fs)
 			conf := config.Default()
-			conf.Redpanda.AdvertisedKafkaApi = &config.SocketAddress{
-				Address:	"192.168.33.33",
-				Port:		9892,
-			}
+			conf.Redpanda.AdvertisedKafkaApi = []config.NamedSocketAddress{{
+				SocketAddress: config.SocketAddress{
+					Address:	"192.168.33.33",
+					Port:		9892,
+				},
+			}}
 			return mgr.Write(conf)
 		},
 		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
-			expectedAddr := &config.SocketAddress{
-				Address:	"192.168.33.33",
-				Port:		9892,
-			}
+			expectedAddr := []config.NamedSocketAddress{{
+				SocketAddress: config.SocketAddress{
+					Address:	"192.168.33.33",
+					Port:		9892,
+				},
+			}}
 			// Check that the generated config is as expected.
 			require.Exactly(
 				st,
@@ -699,7 +772,7 @@ func TestStartCommand(t *testing.T) {
 			"--install-dir", "/var/lib/redpanda",
 			"--advertise-rpc-addr", "host:nonnumericport",
 		},
-		expectedErrMsg:	"Port must be an int",
+		expectedErrMsg:	"parse //host:nonnumericport: invalid port \":nonnumericport\" after host",
 	}, {
 		name:	"if --advertise-rpc-addr wasn't passed, it should fall back to REDPANDA_ADVERTISE_RPC_ADDRESS and persist it",
 		args: []string{

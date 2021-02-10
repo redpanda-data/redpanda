@@ -16,10 +16,12 @@ import (
 	"math/big"
 	"os"
 	fp "path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/icza/dyno"
 	"github.com/mitchellh/mapstructure"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
@@ -28,6 +30,10 @@ import (
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/utils"
 	"gopkg.in/yaml.v2"
 )
+
+type configConverter interface {
+	ToGeneric() (*Config, error)
+}
 
 type Manager interface {
 	// Reads the config from the given path
@@ -143,7 +149,6 @@ func (m *manager) ReadFlat(path string) (map[string]string, error) {
 	keys := m.v.AllKeys()
 	flatMap := map[string]string{}
 	compactAddrFields := []string{
-		"redpanda.kafka_api",
 		"redpanda.rpc_server",
 		"redpanda.admin",
 	}
@@ -152,7 +157,7 @@ func (m *manager) ReadFlat(path string) (map[string]string, error) {
 			key,
 			val,
 			func(c *mapstructure.DecoderConfig) {
-				c.TagName = "yaml"
+				c.TagName = "mapstructure"
 			},
 		)
 	}
@@ -170,6 +175,26 @@ func (m *manager) ReadFlat(path string) (map[string]string, error) {
 					s.Host.Address,
 					s.Host.Port,
 				)
+			}
+			continue
+		}
+		if k == "redpanda.advertised_kafka_api" || k == "redpanda.kafka_api" {
+			addrs := []NamedSocketAddress{}
+			err := unmarshalKey(k, &addrs)
+			if err != nil {
+				return nil, err
+			}
+			for i, a := range addrs {
+				key := fmt.Sprintf("%s.%d", k, i)
+				str := fmt.Sprintf(
+					"%s:%d",
+					a.Address,
+					a.Port,
+				)
+				if a.Name != "" {
+					str = fmt.Sprintf("%s://%s", a.Name, str)
+				}
+				flatMap[key] = str
 			}
 			continue
 		}
@@ -232,7 +257,8 @@ func (m *manager) readMap(path string) (map[string]interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	return m.v.AllSettings(), nil
+	strMap := dyno.ConvertMapI2MapS(m.v.AllSettings())
+	return strMap.(map[string]interface{}), nil
 }
 
 func (m *manager) WriteNodeUUID(conf *Config) error {
@@ -368,13 +394,52 @@ func recover(fs afero.Fs, backup, path string, err error) error {
 }
 
 func unmarshal(v *viper.Viper) (*Config, error) {
-	conf := &Config{}
-	err := v.Unmarshal(conf)
+	result := &Config{}
+	decoderConfig := mapstructure.DecoderConfig{
+		Result:	result,
+		// Sometimes viper will save int values as strings (i.e.
+		// through BindPFlag) so we have to allow mapstructure
+		// to cast them.
+		WeaklyTypedInput:	true,
+		DecodeHook: mapstructure.ComposeDecodeHookFunc(
+			v21_1_4MapToNamedSocketAddressSlice,
+		),
+	}
+	decoder, err := mapstructure.NewDecoder(&decoderConfig)
 	if err != nil {
 		return nil, err
 	}
-	conf.ConfigFile, err = absPath(v.ConfigFileUsed())
-	return conf, err
+	err = decoder.Decode(v.AllSettings())
+	if err != nil {
+		return nil, err
+	}
+	result.ConfigFile, err = absPath(v.ConfigFileUsed())
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// Redpanda version < 21.1.4 only supported a single anonymous listener and a
+// single anonymous advertised address. This custom decode function translates
+// a single SocketAddress-equivalent map[string]interface{} into a
+// []NamedSocketAddress.
+func v21_1_4MapToNamedSocketAddressSlice(
+	from, to reflect.Type, data interface{},
+) (interface{}, error) {
+	if to == reflect.TypeOf([]NamedSocketAddress{}) {
+		switch from.Kind() {
+		case reflect.Map:
+			sa := NamedSocketAddress{}
+			err := mapstructure.Decode(data, &sa)
+			if err != nil {
+				return nil, err
+			}
+			return []NamedSocketAddress{sa}, nil
+
+		}
+	}
+	return data, nil
 }
 
 func base58Encode(s string) string {

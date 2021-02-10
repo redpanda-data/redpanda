@@ -76,10 +76,12 @@ func TestDeduceBrokers(t *testing.T) {
 		},
 		config: func() (*config.Config, error) {
 			conf := config.Default()
-			conf.Redpanda.KafkaApi = config.SocketAddress{
-				Address:	"192.168.25.88",
-				Port:		1235,
-			}
+			conf.Redpanda.KafkaApi = []config.NamedSocketAddress{{
+				SocketAddress: config.SocketAddress{
+					Address:	"192.168.25.88",
+					Port:		1235,
+				},
+			}}
 			return conf, nil
 		},
 		expected:	[]string{"192.168.25.88:1235"},
@@ -94,10 +96,12 @@ func TestDeduceBrokers(t *testing.T) {
 		name:	"it should prioritize the config over the default broker addr",
 		config: func() (*config.Config, error) {
 			conf := config.Default()
-			conf.Redpanda.KafkaApi = config.SocketAddress{
-				Address:	"192.168.25.87",
-				Port:		1234,
-			}
+			conf.Redpanda.KafkaApi = []config.NamedSocketAddress{{
+				SocketAddress: config.SocketAddress{
+					Address:	"192.168.25.87",
+					Port:		1234,
+				},
+			}}
 			return conf, nil
 		},
 		expected:	[]string{"192.168.25.87:1234"},
