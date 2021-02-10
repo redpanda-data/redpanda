@@ -186,4 +186,7 @@ ss::future<std::vector<model::node_id>> wait_for_leaders(
   std::vector<cluster::topic_result>,
   model::timeout_clock::time_point);
 
+ss::sstring describe_topic_cleanup_policy(
+  const std::optional<cluster::topic_configuration>&);
+
 } // namespace kafka
