@@ -1,0 +1,6 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: scale-up-cluster
+status:
+  readyReplicas: 2
