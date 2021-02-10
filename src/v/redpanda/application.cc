@@ -55,6 +55,11 @@
 #include <exception>
 #include <vector>
 
+application::application(ss::sstring logger_name)
+  : _log(std::move(logger_name)){
+
+  };
+
 int application::run(int ac, char** av) {
     init_env();
     vlog(_log.info, "Redpanda {}", redpanda_version());
