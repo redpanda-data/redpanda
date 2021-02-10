@@ -67,7 +67,7 @@ BOOST_AUTO_TEST_CASE(verify_make_event_failures) {
         model::record r = coproc::wasm::make_record(coproc::wasm::event{
           .id = random_generators::get_int<uint64_t>(55555),
           .desc = random_generators::gen_alphanum_string(15),
-          .script = random_generators::gen_alphanum_string(15),
+          .script = random_generators::get_bytes(15),
           .checksum = random_generators::get_bytes(32),
           .action = coproc::wasm::event_action::deploy});
         BOOST_CHECK_EQUAL(

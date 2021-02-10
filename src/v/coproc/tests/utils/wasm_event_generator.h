@@ -26,7 +26,7 @@ namespace coproc::wasm {
 struct event {
     std::optional<uint64_t> id;
     std::optional<ss::sstring> desc;
-    std::optional<ss::sstring> script;
+    std::optional<bytes> script;
     std::optional<bytes> checksum;
     std::optional<event_action> action;
 };

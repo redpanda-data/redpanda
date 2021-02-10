@@ -83,7 +83,7 @@ wasm::errc verify_event_checksum(const model::record& r) {
     const auto checksum
       = iobuf_const_parser(itr->value()).read_bytes(itr->value_size());
     /// Performs a copy
-    auto script = iobuf_const_parser(r.value()).read_string(r.value_size());
+    auto script = iobuf_const_parser(r.value()).read_bytes(r.value_size());
     if (script.empty()) {
         return wasm::errc::empty_mandatory_field;
     }

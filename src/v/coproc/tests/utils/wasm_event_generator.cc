@@ -49,7 +49,7 @@ void serialize_event(storage::record_batch_builder& rbb, const event& e) {
         reflection::serialize(key, *e.id);
     }
     if (e.script) {
-        value.append(e.script->data(), e.script->length());
+        value = bytes_to_iobuf(*e.script);
     }
     if (e.desc) {
         headers.emplace_back(create_header("description", *e.desc));
@@ -97,7 +97,7 @@ model::record_batch_reader make_random_event_record_batch_reader(
               .action = event_action::remove};
             if (random_generators::get_int(0, 1) == 0) {
                 e.action = event_action::deploy;
-                e.script = random_generators::gen_alphanum_string(15);
+                e.script = random_generators::get_bytes();
                 e.desc = random_generators::gen_alphanum_string(15);
                 e.checksum = calculate_checksum(e);
             }
@@ -119,7 +119,7 @@ model::record_batch_reader make_event_record_batch_reader(
             coproc::wasm::event e{.id = se.id, .action = se.action};
             if (e.action == event_action::deploy) {
                 e.desc = random_generators::gen_alphanum_string(15);
-                e.script = random_generators::gen_alphanum_string(15);
+                e.script = random_generators::get_bytes();
                 e.checksum = calculate_checksum(e);
             }
             serialize_event(rbb, e);
