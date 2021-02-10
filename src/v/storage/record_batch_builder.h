@@ -62,10 +62,6 @@ private:
         iobuf value;
         int32_t encoded_value_size;
         std::vector<model::record_header> headers;
-
-        uint32_t size_bytes() const {
-            return key.size_bytes() + value.size_bytes();
-        }
     };
 
     uint32_t record_size(int32_t offset_delta, const serialized_record& r);
