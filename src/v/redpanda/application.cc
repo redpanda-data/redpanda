@@ -457,6 +457,8 @@ void application::wire_up_services() {
     rpc_cfg.load_balancing_algo
       = ss::server_socket::load_balancing_algorithm::port;
     rpc_cfg.max_service_memory_per_core = memory_groups::rpc_total_memory();
+    rpc_cfg.disable_metrics = rpc::metrics_disabled(
+      config::shard_local_cfg().disable_metrics());
     auto rpc_server_addr
       = rpc::resolve_dns(config::shard_local_cfg().rpc_server()).get0();
     rpc_cfg.addrs.emplace_back(rpc_server_addr);
@@ -495,6 +497,8 @@ void application::wire_up_services() {
         cp_rpc_cfg.max_service_memory_per_core
           = memory_groups::rpc_total_memory();
         cp_rpc_cfg.addrs.emplace_back(coproc_script_manager_server_addr);
+        cp_rpc_cfg.disable_metrics = rpc::metrics_disabled(
+          config::shard_local_cfg().disable_metrics());
         syschecks::systemd_message(
           "Starting coprocessor internal RPC {}", cp_rpc_cfg)
           .get();
@@ -535,6 +539,8 @@ void application::wire_up_services() {
                             })
                           .get0()
                       : nullptr;
+    kafka_cfg.disable_metrics = rpc::metrics_disabled(
+      config::shard_local_cfg().disable_metrics());
     syschecks::systemd_message("Starting kafka RPC {}", kafka_cfg).get();
     construct_service(_kafka_server, kafka_cfg).get();
     construct_service(
