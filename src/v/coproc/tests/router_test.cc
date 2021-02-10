@@ -53,7 +53,9 @@ FIXTURE_TEST(test_coproc_router_no_results, router_test_fixture) {
     ss::sleep(1s).get();
     // Expecting 10, because "foo(2)" and "bar(8)" were loaded at startup
     const std::size_t final_n_logs = number_of_logs(this).get0() - n_logs;
-    BOOST_REQUIRE_EQUAL(final_n_logs, 10);
+    /// .. but total should be exactly 11 due to the introducion of the
+    /// coprocessor_internal_topic
+    BOOST_REQUIRE_EQUAL(final_n_logs, 11);
 }
 
 model::record_batch_reader single_record_record_batch_reader() {

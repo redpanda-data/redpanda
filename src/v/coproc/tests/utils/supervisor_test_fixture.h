@@ -20,7 +20,7 @@
 // Non-sharded rpc_service to emmulate the javascript engine
 class supervisor_test_fixture : public rpc_sharded_integration_fixture {
 public:
-    using copro_map = coproc::supervisor::copro_map;
+    using copro_map = coproc::script_map_t;
 
     using simple_input_set
       = std::vector<std::pair<ss::sstring, coproc::topic_ingestion_policy>>;
@@ -53,6 +53,11 @@ public:
                 std::make_unique<CoprocessorType>(
                   asid, create_input_set(std::move(input))));
           });
+    }
+
+    /// The script_map_t is identical across all shards
+    std::size_t total_registered() const {
+        return _coprocessors.local().size();
     }
 
 protected:
