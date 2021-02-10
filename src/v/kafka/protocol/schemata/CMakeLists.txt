@@ -58,7 +58,9 @@ set(schemata
   txn_offset_commit_request.json
   txn_offset_commit_response.json
   fetch_request.json
-  fetch_response.json)
+  fetch_response.json
+  end_txn_request.json
+  end_txn_response.json)
 
 set(srcs)
 foreach(schema ${schemata})
