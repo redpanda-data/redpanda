@@ -144,14 +144,14 @@ ss::future<> group_manager::handle_partition_leader_change(
             return p->partition->make_reader(reader_config)
               .then([this, p, timeout](model::record_batch_reader reader) {
                   return std::move(reader)
-                    .consume(recovery_batch_consumer(&p->as), timeout)
-                    .then([this, p](recovery_batch_consumer ctx) {
+                    .consume(recovery_batch_consumer(p->as), timeout)
+                    .then([this, p](recovery_batch_consumer_state state) {
                         // avoid trying to recover if we stopped the reader
                         // because an abort was requested
                         if (p->as.abort_requested()) {
                             return ss::make_ready_future<>();
                         }
-                        return recover_partition(p->partition, std::move(ctx))
+                        return recover_partition(p->partition, std::move(state))
                           .then([p] { p->loading = false; });
                     });
               });
@@ -168,7 +168,7 @@ ss::future<> group_manager::handle_partition_leader_change(
  * dependencies that would support optimizing for moves.
  */
 ss::future<> group_manager::recover_partition(
-  ss::lw_shared_ptr<cluster::partition> p, recovery_batch_consumer ctx) {
+  ss::lw_shared_ptr<cluster::partition> p, recovery_batch_consumer_state ctx) {
     /*
      * [group-id -> [topic-partition -> offset-metadata]]
      */
@@ -271,7 +271,7 @@ recovery_batch_consumer::operator()(model::record_batch batch) {
         return ss::make_ready_future<ss::stop_iteration>(
           ss::stop_iteration::no);
     }
-    if (as->abort_requested()) {
+    if (as.abort_requested()) {
         return ss::make_ready_future<ss::stop_iteration>(
           ss::stop_iteration::yes);
     }
@@ -316,15 +316,15 @@ ss::future<> recovery_batch_consumer::handle_group_metadata(
 
     if (!val_buf) {
         // tombstone
-        loaded_groups.erase(group_id);
-        removed_groups.emplace(group_id);
+        st.loaded_groups.erase(group_id);
+        st.removed_groups.emplace(group_id);
     } else {
         auto metadata = reflection::from_iobuf<group_log_group_metadata>(
           std::move(*val_buf));
-        removed_groups.erase(group_id);
+        st.removed_groups.erase(group_id);
         // until we switch over to a compacted topic or use raft snapshots,
         // always take the latest entry in the log.
-        loaded_groups[group_id] = std::move(metadata);
+        st.loaded_groups[group_id] = std::move(metadata);
     }
 
     return ss::make_ready_future<>();
@@ -336,7 +336,7 @@ ss::future<> recovery_batch_consumer::handle_offset_metadata(
 
     if (!val_buf) {
         // tombstone
-        loaded_offsets.erase(key);
+        st.loaded_offsets.erase(key);
     } else {
         auto metadata = reflection::from_iobuf<group_log_offset_metadata>(
           std::move(*val_buf));
@@ -344,7 +344,7 @@ ss::future<> recovery_batch_consumer::handle_offset_metadata(
           klog.trace, "Recovering offset {} with metadata {}", key, metadata);
         // until we switch over to a compacted topic or use raft snapshots,
         // always take the latest entry in the log.
-        loaded_offsets[key] = std::make_pair(
+        st.loaded_offsets[key] = std::make_pair(
           batch_base_offset, std::move(metadata));
     }
 

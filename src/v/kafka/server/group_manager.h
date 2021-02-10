@@ -37,7 +37,7 @@
 
 namespace kafka {
 
-struct recovery_batch_consumer;
+struct recovery_batch_consumer_state;
 
 /*
  * \brief Manages the Kafka group lifecycle.
@@ -193,7 +193,7 @@ private:
       std::optional<model::node_id> leader_id);
 
     ss::future<> recover_partition(
-      ss ::lw_shared_ptr<cluster::partition>, recovery_batch_consumer);
+      ss ::lw_shared_ptr<cluster::partition>, recovery_batch_consumer_state);
 
     ss::future<> inject_noop(
       ss::lw_shared_ptr<cluster::partition> p,
@@ -284,20 +284,7 @@ namespace kafka {
  * This batch consumer is used during partition recovery to read, index, and
  * deduplicate both group and commit metadata snapshots.
  */
-struct recovery_batch_consumer {
-    recovery_batch_consumer(ss::abort_source* as)
-      : as(as) {}
-
-    ss::future<ss::stop_iteration> operator()(model::record_batch batch);
-
-    ss::future<> handle_record(model::record);
-    ss::future<> handle_group_metadata(iobuf, std::optional<iobuf>);
-    ss::future<> handle_offset_metadata(iobuf, std::optional<iobuf>);
-
-    recovery_batch_consumer end_of_stream() { return std::move(*this); }
-
-    model::offset batch_base_offset;
-
+struct recovery_batch_consumer_state {
     absl::flat_hash_map<kafka::group_id, group_log_group_metadata>
       loaded_groups;
 
@@ -307,9 +294,24 @@ struct recovery_batch_consumer {
       group_log_offset_key,
       std::pair<model::offset, group_log_offset_metadata>>
       loaded_offsets;
+};
 
-    // this is invalid after end_of_stream() is invoked
-    ss::abort_source* as;
+struct recovery_batch_consumer {
+    explicit recovery_batch_consumer(ss::abort_source& as)
+      : as(as) {}
+
+    ss::future<ss::stop_iteration> operator()(model::record_batch batch);
+
+    ss::future<> handle_record(model::record);
+    ss::future<> handle_group_metadata(iobuf, std::optional<iobuf>);
+    ss::future<> handle_offset_metadata(iobuf, std::optional<iobuf>);
+
+    recovery_batch_consumer_state end_of_stream() { return std::move(st); }
+
+    recovery_batch_consumer_state st;
+    model::offset batch_base_offset;
+
+    ss::abort_source& as;
 };
 
 } // namespace kafka
