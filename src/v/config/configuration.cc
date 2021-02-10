@@ -273,6 +273,8 @@ configuration::configuration()
       "Enable idempotent producer",
       required::no,
       false)
+  , enable_transactions(
+      *this, "enable_transactions", "Enable transactions", required::no, false)
   , delete_retention_ms(
       *this,
       "delete_retention_ms",
