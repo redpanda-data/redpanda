@@ -30,7 +30,7 @@ v_cc_library(
     log_eviction_stm.cc
     id_allocator_stm.cc
     configuration_manager.cc
-    configuration.cc
+    group_configuration.cc
     append_entries_buffer.cc
   DEPS
     v::storage

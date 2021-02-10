@@ -20,7 +20,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "outcome.h"
-#include "raft/configuration.h"
+#include "raft/group_configuration.h"
 #include "raft/types.h"
 #include "ssx/future-util.h"
 

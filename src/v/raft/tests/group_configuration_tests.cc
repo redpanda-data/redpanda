@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "raft/configuration.h"
+#include "raft/group_configuration.h"
 #include "utils/unresolved_address.h"
 #define BOOST_TEST_MODULE raft
 #include "raft/types.h"

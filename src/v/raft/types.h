@@ -17,7 +17,7 @@
 #include "model/record.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
-#include "raft/configuration.h"
+#include "raft/group_configuration.h"
 #include "reflection/async_adl.h"
 #include "utils/named_type.h"
 
