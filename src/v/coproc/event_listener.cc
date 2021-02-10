@@ -8,7 +8,7 @@
  * https://github.com/vectorizedio/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "coproc/wasm_event_listener.h"
+#include "coproc/event_listener.h"
 
 #include "config/configuration.h"
 #include "coproc/errc.h"
@@ -29,7 +29,7 @@
 #include <seastar/core/sstring.hh>
 #include <seastar/net/socket_defs.hh>
 
-namespace coproc {
+namespace coproc::wasm {
 
 using namespace std::chrono_literals;
 
@@ -43,7 +43,7 @@ static wasm::event_action query_action(const iobuf& source_code) {
                                : wasm::event_action::deploy;
 }
 
-ss::future<> wasm_event_listener::stop() {
+ss::future<> event_listener::stop() {
     _abort_source.request_abort();
     return _gate.close().then([this] { return _client.stop(); });
 }
@@ -51,7 +51,7 @@ ss::future<> wasm_event_listener::stop() {
 /// Either writes or removes the file from disk. In either case, logs warning if
 /// the current state of the filesystem represents an unexpected issue
 ss::future<>
-wasm_event_listener::resolve_wasm_script(ss::sstring name, iobuf source_code) {
+event_listener::resolve_wasm_script(ss::sstring name, iobuf source_code) {
     std::filesystem::path active_path(_active_dir / name.c_str());
     return ss::file_exists(active_path.string())
       .then([this,
@@ -95,7 +95,7 @@ wasm_event_listener::resolve_wasm_script(ss::sstring name, iobuf source_code) {
       });
 }
 
-wasm_event_listener::wasm_event_listener(std::filesystem::path data_dir)
+event_listener::event_listener(std::filesystem::path data_dir)
   : _client(
     std::vector<unresolved_address>{unresolved_address("127.0.0.1", 9092)})
   , _wasm_root(data_dir.parent_path() / "coprocessor")
@@ -103,7 +103,7 @@ wasm_event_listener::wasm_event_listener(std::filesystem::path data_dir)
   , _submit_dir(_wasm_root / "submit")
   , _inactive_dir(_wasm_root / "inactive") {}
 
-ss::future<> wasm_event_listener::start() {
+ss::future<> event_listener::start() {
     if (_gate.is_closed() || _gate.get_count() != 0) {
         throw std::logic_error(
           "Attempted to start() the wasm_event_notifier run "
@@ -142,7 +142,7 @@ decompress_wasm_events(model::record_batch_reader::data_t events) {
       });
 }
 
-ss::future<> wasm_event_listener::do_start() {
+ss::future<> event_listener::do_start() {
     /// This method performs the main polling behavior. Within a repeat loop it
     /// will poll from data until it cannot poll anymore. Normally we would be
     /// concerned about keeping all of this data in memory, however the topic is
@@ -187,7 +187,7 @@ ss::future<> wasm_event_listener::do_start() {
 }
 
 ss::future<>
-wasm_event_listener::poll_topic(model::record_batch_reader::data_t& events) {
+event_listener::poll_topic(model::record_batch_reader::data_t& events) {
     return _client.fetch_partition(_coproc_internal_tp, _offset, 64_KiB, 5s)
       .then([this, &events](kafka::fetch_response response) {
           if (
@@ -219,4 +219,4 @@ wasm_event_listener::poll_topic(model::record_batch_reader::data_t& events) {
       });
 };
 
-} // namespace coproc
+} // namespace coproc::wasm

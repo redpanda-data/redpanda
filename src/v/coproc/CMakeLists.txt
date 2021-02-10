@@ -15,7 +15,7 @@ v_cc_library(
     pacemaker.cc
     offset_storage_utils.cc
     wasm_event.cc
-    wasm_event_listener.cc
+    event_listener.cc
     script_dispatcher.cc
   DEPS
     v::rpc

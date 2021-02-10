@@ -13,8 +13,8 @@
 
 #include "cluster/controller.h"
 #include "cluster/fwd.h"
+#include "coproc/event_listener.h"
 #include "coproc/pacemaker.h"
-#include "coproc/wasm_event_listener.h"
 #include "raft/group_manager.h"
 #include "resource_mgmt/cpu_scheduling.h"
 #include "resource_mgmt/memory_groups.h"
@@ -100,7 +100,7 @@ private:
     scheduling_groups _scheduling_groups;
     ss::logger _log;
 
-    std::unique_ptr<coproc::wasm_event_listener> _wasm_event_listener;
+    std::unique_ptr<coproc::wasm::event_listener> _wasm_event_listener;
     ss::sharded<rpc::connection_cache> _raft_connection_cache;
     ss::sharded<kafka::group_manager> _group_manager;
     ss::sharded<rpc::server> _rpc;

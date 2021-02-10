@@ -10,21 +10,23 @@
 
 #pragma once
 
+#include "coproc/script_dispatcher.h"
 #include "coproc/types.h"
 #include "coproc/wasm_event.h"
 #include "kafka/client/client.h"
 #include "utils/unresolved_address.h"
 
 #include <seastar/core/abort_source.hh>
+#include <seastar/core/sharded.hh>
 
 #include <chrono>
 #include <filesystem>
 
-namespace coproc {
+namespace coproc::wasm {
 
-class wasm_event_listener {
+class event_listener {
 public:
-    explicit wasm_event_listener(std::filesystem::path);
+    explicit event_listener(std::filesystem::path);
 
     /// \brief Initializes the listener, ensuring the 'wasm_root' directory is
     /// created establishes a connection to the broker, and begins the poll loop
@@ -69,4 +71,4 @@ private:
     model::offset _offset{0};
 };
 
-} // namespace coproc
+} // namespace coproc::wasm

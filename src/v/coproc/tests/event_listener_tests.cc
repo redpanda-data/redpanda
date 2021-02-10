@@ -8,11 +8,11 @@
  * https://github.com/vectorizedio/redpanda/blob/master/licenses/rcl.md
  */
 
+#include "coproc/event_listener.h"
 #include "coproc/tests/utils/coproc_test_fixture.h"
 #include "coproc/tests/utils/helpers.h"
 #include "coproc/tests/utils/wasm_event_generator.h"
 #include "coproc/wasm_event.h"
-#include "coproc/wasm_event_listener.h"
 #include "hashing/secure.h"
 #include "model/namespace.h"
 #include "model/record_batch_reader.h"
@@ -98,7 +98,7 @@ private:
     }
 
 private:
-    coproc::wasm_event_listener _event_listener{
+    coproc::wasm::event_listener _event_listener{
       (std::filesystem::path(data_dir) / "coprocessors")};
 
     model::topic _coproc_internal_topic{

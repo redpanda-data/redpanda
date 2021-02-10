@@ -18,7 +18,7 @@ rp_test(
     router_test.cc
     offset_storage_utils_tests.cc
     wasm_event_tests.cc
-    wasm_event_listener_tests.cc
+    event_listener_tests.cc
     read_materialized_topic_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES v::seastar_testing_main ${fixture_deps}
