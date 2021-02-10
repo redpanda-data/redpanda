@@ -36,7 +36,7 @@ class application {
 public:
     int run(int, char**);
 
-    void initialize();
+    void initialize(std::optional<scheduling_groups> = std::nullopt);
     void check_environment();
     void configure_admin_server();
     void wire_up_services();

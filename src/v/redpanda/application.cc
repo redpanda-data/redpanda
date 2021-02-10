@@ -107,16 +107,23 @@ int application::run(int ac, char** av) {
     });
 }
 
-void application::initialize() {
+void application::initialize(std::optional<scheduling_groups> groups) {
     if (config::shard_local_cfg().enable_pid_file()) {
         syschecks::pidfile_create(config::shard_local_cfg().pidfile_path());
     }
-    _scheduling_groups.create_groups().get();
-    _deferred.emplace_back(
-      [this] { _scheduling_groups.destroy_groups().get(); });
+
     smp_service_groups.create_groups().get();
     _deferred.emplace_back(
       [this] { smp_service_groups.destroy_groups().get(); });
+
+    if (groups) {
+        _scheduling_groups = *groups;
+        return;
+    }
+
+    _scheduling_groups.create_groups().get();
+    _deferred.emplace_back(
+      [this] { _scheduling_groups.destroy_groups().get(); });
 }
 
 void application::setup_metrics() {
