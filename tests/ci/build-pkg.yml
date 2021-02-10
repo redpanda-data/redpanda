@@ -36,7 +36,7 @@ steps:
   args:
   - -ec
   - |
-    python3 -mvenv --system-site-packages build/venv/v
+    python3 -mvenv --system-site-packages --upgrade-deps build/venv/v
     source build/venv/v/bin/activate
     pip install vtools/
 
@@ -51,9 +51,27 @@ steps:
   name: 'gcr.io/redpandaci/builder'
   args: ['./build/venv/v/bin/vtools', 'test', 'go', '--conf=vtools/vtools/artifacts/ci/vtools-gcc-release.yml']
 
+- id: 'restore ccache'
+  name: 'docker:20.10.3'
+  args: ['run', '--ipc=host', '--network=cloudbuild', 'gcr.io/redpandaci/restore_cache',
+         '--bucket=gs://redpandaci-ccache', '--key=dev-$_BUILD_TYPE-$_COMPILER']
+
 - id: 'build redpanda'
-  name: 'gcr.io/redpandaci/builder'
-  args: ['./build/venv/v/bin/vtools', 'build', 'cpp', '--conf=vtools/vtools/artifacts/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml', '--skip-external']
+  name: 'docker:20.10.3'
+  args: ['run', '-e', 'CCACHE_DIR=/dev/shm/v', '-v', '/workspace:/workspace', '-w', '/workspace', '--ipc=host', 'gcr.io/redpandaci/builder',
+         './build/venv/v/bin/vtools', 'build', 'cpp', '--conf=vtools/vtools/artifacts/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml', '--skip-external']
+
+- id: 'save ccache (only for dev branch)'
+  name: 'docker:20.10.3'
+  entrypoint: '/bin/sh'
+  args:
+  - '-ec'
+  - |
+    if [[ "$BRANCH_NAME" != "dev" ]]; then
+      exit 0
+    fi
+    docker run --ipc=host --network=cloudbuild gcr.io/redpandaci/save_cache \
+      --bucket=gs://redpandaci-ccache --key=dev-$_BUILD_TYPE-$_COMPILER --out=/dev/shm --path=/dev/shm/v
 
 - id: 'test redpanda'
   name: 'gcr.io/redpandaci/builder'
@@ -79,7 +97,7 @@ steps:
   name: 'gcr.io/redpandaci/builder'
   entrypoint: bash
   args:
-  - -c
+  - -cex
   - |
     ./build/venv/v/bin/vtools build redpanda-dashboard --conf=vtools/vtools/artifacts/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml
     ./build/venv/v/bin/vtools build pkg --conf=vtools/vtools/artifacts/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml --format=rpm --format=deb --format=tar

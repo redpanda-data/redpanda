@@ -37,7 +37,7 @@ steps:
   args:
   - -ec
   - |
-    python3 -mvenv --system-site-packages build/venv/v
+    python3 -mvenv --system-site-packages --upgrade-deps build/venv/v
     source build/venv/v/bin/activate
     pip install vtools/
 
@@ -65,7 +65,7 @@ steps:
   name: 'gcr.io/redpandaci/builder'
   entrypoint: bash
   args:
-  - -c
+  - -cex
   - |
     ./build/venv/v/bin/vtools build go --targets=rpk --conf=vtools/vtools/artifacts/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml
     ./build/venv/v/bin/vtools build redpanda-dashboard --conf=vtools/vtools/artifacts/ci/vtools-$_COMPILER-$_BUILD_TYPE.yml
