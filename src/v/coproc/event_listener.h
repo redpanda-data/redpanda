@@ -46,7 +46,7 @@ private:
 
     ss::future<> poll_topic(model::record_batch_reader::data_t&);
 
-    ss::future<> resolve_wasm_script(ss::sstring, iobuf);
+    ss::future<> resolve_wasm_script(script_id, iobuf);
 
 private:
     /// This may never change as it is not a configurable value

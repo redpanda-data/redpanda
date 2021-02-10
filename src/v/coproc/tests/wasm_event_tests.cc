@@ -46,14 +46,14 @@ BOOST_AUTO_TEST_CASE(verify_make_event_failures) {
     {
         /// Empty event
         model::record r = coproc::wasm::make_record(coproc::wasm::event{});
-        BOOST_CHECK(!coproc::wasm::get_event_name(r));
+        BOOST_CHECK(!coproc::wasm::get_event_id(r));
         BOOST_CHECK_EQUAL(
           cp_errc::empty_mandatory_field, coproc::wasm::validate_event(r));
     }
     {
         /// Missing 'script' field
         model::record r = coproc::wasm::make_record(coproc::wasm::event{
-          .name = random_generators::gen_alphanum_string(15),
+          .id = random_generators::get_int<uint64_t>(53339),
           .checksum = random_generators::get_bytes(32),
           .action = coproc::wasm::event_action::deploy});
         BOOST_CHECK_EQUAL(
@@ -65,7 +65,7 @@ BOOST_AUTO_TEST_CASE(verify_make_event_failures) {
     {
         /// Erroneous checksum
         model::record r = coproc::wasm::make_record(coproc::wasm::event{
-          .name = random_generators::gen_alphanum_string(15),
+          .id = random_generators::get_int<uint64_t>(55555),
           .desc = random_generators::gen_alphanum_string(15),
           .script = random_generators::gen_alphanum_string(15),
           .checksum = random_generators::get_bytes(32),
@@ -78,11 +78,11 @@ BOOST_AUTO_TEST_CASE(verify_make_event_failures) {
 SEASTAR_THREAD_TEST_CASE(verify_event_reconciliation) {
     using action = coproc::wasm::event_action;
     std::vector<std::vector<coproc::wasm::short_event>> events{
-      {{"123", action::deploy},
-       {"456", action::deploy},
-       {"123", action::remove},
-       {"456", action::deploy}},
-      {{"789", action::deploy}, {"123", action::remove}}};
+      {{123, action::deploy},
+       {456, action::deploy},
+       {123, action::remove},
+       {456, action::deploy}},
+      {{789, action::deploy}, {123, action::remove}}};
 
     auto rbr = make_event_record_batch_reader(std::move(events));
     auto batches = model::consume_reader_to_memory(
@@ -94,8 +94,9 @@ SEASTAR_THREAD_TEST_CASE(verify_event_reconciliation) {
         std::make_move_iterator(batches.begin()),
         std::make_move_iterator(batches.end())));
     BOOST_CHECK_EQUAL(results.size(), 3);
-    BOOST_CHECK(results.find("123")->second.empty()); /// 'remove' event
-    BOOST_CHECK(results.find("123") != results.end());
-    BOOST_CHECK(results.find("456") != results.end());
-    BOOST_CHECK(results.find("789") != results.end());
+    BOOST_CHECK(
+      results.find(coproc::script_id(123))->second.empty()); /// 'remove' event
+    BOOST_CHECK(results.find(coproc::script_id(123)) != results.end());
+    BOOST_CHECK(results.find(coproc::script_id(456)) != results.end());
+    BOOST_CHECK(results.find(coproc::script_id(789)) != results.end());
 }

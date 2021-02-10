@@ -24,23 +24,20 @@ namespace coproc::wasm {
 /// wasm_event into a model::record. Any field set to std::nullopt will be
 /// skipped during serialization
 struct event {
-    using opt_action_t = std::optional<event_action>;
-    using opt_str_t = std::optional<ss::sstring>;
-    using opt_bytes_t = std::optional<bytes>;
-    opt_str_t name;
-    opt_str_t desc;
-    opt_str_t script;
-    opt_bytes_t checksum;
-    opt_action_t action;
+    std::optional<uint64_t> id;
+    std::optional<ss::sstring> desc;
+    std::optional<ss::sstring> script;
+    std::optional<bytes> checksum;
+    std::optional<event_action> action;
 };
 
 /// Let the generator functions fill in the other fields
 struct short_event {
-    ss::sstring name;
+    uint64_t id;
     event_action action;
     bool compress{false};
-    short_event(ss::sstring name, event_action action, bool compress = false)
-      : name(std::move(name))
+    short_event(uint64_t id, event_action action, bool compress = false)
+      : id(id)
       , action(action)
       , compress(compress) {}
 };

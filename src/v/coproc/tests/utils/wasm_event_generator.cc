@@ -45,8 +45,8 @@ model::record_header create_header(const ss::sstring& key, const bytes& value) {
 void serialize_event(storage::record_batch_builder& rbb, const event& e) {
     iobuf key, value;
     std::vector<model::record_header> headers;
-    if (e.name) {
-        key.append(e.name->data(), e.name->length());
+    if (e.id) {
+        reflection::serialize(key, *e.id);
     }
     if (e.script) {
         value.append(e.script->data(), e.script->length());
@@ -93,7 +93,7 @@ model::record_batch_reader make_random_event_record_batch_reader(
         storage::record_batch_builder rbb(raft::data_batch_type, o);
         for (int j = 0; j < batch_size; ++j) {
             event e{
-              .name = random_generators::gen_alphanum_string(15),
+              .id = random_generators::get_int<uint64_t>(82827),
               .action = event_action::remove};
             if (random_generators::get_int(0, 1) == 0) {
                 e.action = event_action::deploy;
@@ -116,7 +116,7 @@ model::record_batch_reader make_event_record_batch_reader(
     for (const auto& events : event_batches) {
         storage::record_batch_builder rbb(raft::data_batch_type, o);
         for (const short_event& se : events) {
-            coproc::wasm::event e{.name = se.name, .action = se.action};
+            coproc::wasm::event e{.id = se.id, .action = se.action};
             if (e.action == event_action::deploy) {
                 e.desc = random_generators::gen_alphanum_string(15);
                 e.script = random_generators::gen_alphanum_string(15);

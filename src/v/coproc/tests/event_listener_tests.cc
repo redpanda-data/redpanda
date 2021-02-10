@@ -123,7 +123,7 @@ deployed_ids(coproc_test_fixture::opt_reader_data_t reader) {
             if (auto action = std::get_if<coproc::wasm::event_action>(&a)) {
                 if (*action == coproc::wasm::event_action::deploy) {
                     /// Ok to blindly deref optional, it passed validation
-                    ids.insert(*coproc::wasm::get_event_name(r));
+                    ids.insert(std::to_string(*coproc::wasm::get_event_id(r)));
                 }
             }
         });
@@ -157,15 +157,15 @@ FIXTURE_TEST(test_copro_internal_topic_read, wasm_event_test_harness) {
 FIXTURE_TEST(test_copro_internal_topic_do_undo, wasm_event_test_harness) {
     using action = coproc::wasm::event_action;
     std::vector<std::vector<coproc::wasm::short_event>> events{
-      {{"444", action::deploy},
-       {"444", action::deploy},
-       {"444", action::remove},
-       {"444", action::deploy},
-       {"444", action::remove},
-       {"123", action::deploy}},
-      {{"444", action::remove, true},
-       {"444", action::deploy, true},
-       {"123", action::deploy, true}}};
+      {{444, action::deploy},
+       {444, action::deploy},
+       {444, action::remove},
+       {444, action::deploy},
+       {444, action::remove},
+       {123, action::deploy}},
+      {{444, action::remove, true},
+       {444, action::deploy, true},
+       {123, action::deploy, true}}};
 
     auto rbr = make_event_record_batch_reader(std::move(events));
 

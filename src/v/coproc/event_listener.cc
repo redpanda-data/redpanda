@@ -51,7 +51,8 @@ ss::future<> event_listener::stop() {
 /// Either writes or removes the file from disk. In either case, logs warning if
 /// the current state of the filesystem represents an unexpected issue
 ss::future<>
-event_listener::resolve_wasm_script(ss::sstring name, iobuf source_code) {
+event_listener::resolve_wasm_script(script_id id, iobuf source_code) {
+    ss::sstring name = std::to_string(id);
     std::filesystem::path active_path(_active_dir / name.c_str());
     return ss::file_exists(active_path.string())
       .then([this,
@@ -147,7 +148,7 @@ ss::future<> event_listener::do_start() {
     /// will poll from data until it cannot poll anymore. Normally we would be
     /// concerned about keeping all of this data in memory, however the topic is
     /// compacted, we don't expect the size of unique records to be very big.
-    using wasm_script_actions = absl::btree_map<ss::sstring, iobuf>;
+    using wasm_script_actions = absl::btree_map<script_id, iobuf>;
     return ss::do_with(
       model::record_batch_reader::data_t(),
       [this](model::record_batch_reader::data_t& events) {
