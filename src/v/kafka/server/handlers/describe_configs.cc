@@ -11,8 +11,10 @@
 
 #include "cluster/metadata_cache.h"
 #include "kafka/protocol/errors.h"
+#include "kafka/server/handlers/topics/topic_utils.h"
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
+#include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "model/validation.h"
@@ -86,6 +88,12 @@ ss::future<response_ptr> describe_configs_handler::handle(
               result,
               "replication_factor",
               topic_config->replication_factor,
+              describe_configs_source::topic);
+
+            add_config(
+              result,
+              "cleanup.policy",
+              describe_topic_cleanup_policy(topic_config),
               describe_configs_source::topic);
 
             break;
