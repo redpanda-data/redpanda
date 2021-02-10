@@ -104,7 +104,7 @@ public:
         controllers.clear();
         for (auto n : nodes) {
             vlog(logger.info, "terminating node: {}", n);
-            remove_controller(n);
+            remove_node_application(n);
             vlog(logger.info, "terminated node: {}", n);
         }
     }
@@ -112,8 +112,8 @@ public:
     void start_cluster() {
         // start 3 nodes
         for (auto& n : nodes) {
-            controllers.push_back(create_controller(n));
-            controller(n())->start().get0();
+            auto app = create_node_application(n);
+            controllers.push_back(app->controller.get());
         }
         // wait for cluster to be stable
         tests::cooperative_spin_wait_with_timeout(60s, [this] {
@@ -132,7 +132,7 @@ public:
         controllers.clear();
         for (auto n : nodes) {
             vlog(logger.info, "stopping stack at node: {}", n);
-            remove_controller(n);
+            remove_node_application(n);
             vlog(logger.info, "stopped stack at node: {}", n);
         }
         start_cluster();
