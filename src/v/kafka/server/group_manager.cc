@@ -288,13 +288,14 @@ recovery_batch_consumer::operator()(model::record_batch batch) {
 
 ss::future<> recovery_batch_consumer::handle_record(model::record r) {
     auto key = reflection::adl<group_log_record_key>{}.from(r.share_key());
+    auto value = r.has_value() ? r.release_value() : std::optional<iobuf>();
 
     switch (key.record_type) {
     case group_log_record_key::type::group_metadata:
-        return handle_group_metadata(std::move(key.key), r.release_value());
+        return handle_group_metadata(std::move(key.key), std::move(value));
 
     case group_log_record_key::type::offset_commit:
-        return handle_offset_metadata(std::move(key.key), r.release_value());
+        return handle_offset_metadata(std::move(key.key), std::move(value));
 
     case group_log_record_key::type::noop:
         // skip control structure
@@ -306,25 +307,20 @@ ss::future<> recovery_batch_consumer::handle_record(model::record r) {
     }
 }
 
-ss::future<>
-recovery_batch_consumer::handle_group_metadata(iobuf key_buf, iobuf val_buf) {
+ss::future<> recovery_batch_consumer::handle_group_metadata(
+  iobuf key_buf, std::optional<iobuf> val_buf) {
     auto group_id = kafka::group_id(
       reflection::from_iobuf<kafka::group_id::type>(std::move(key_buf)));
 
-    auto metadata = reflection::from_iobuf<group_log_group_metadata>(
-      std::move(val_buf));
-
-    // TODO: this is primarily driven by _deleted_ partitions, and to a lesser
-    // extent deleted groups. We'll soon handle the later case, but redpanda
-    // doesn't consider yet the former.
-    const bool tombstone = false;
-
     vlog(klog.trace, "Recovering group metadata {}", group_id);
 
-    if (tombstone) {
+    if (!val_buf) {
+        // tombstone
         loaded_groups.erase(group_id);
         removed_groups.emplace(group_id);
     } else {
+        auto metadata = reflection::from_iobuf<group_log_group_metadata>(
+          std::move(*val_buf));
         removed_groups.erase(group_id);
         // until we switch over to a compacted topic or use raft snapshots,
         // always take the latest entry in the log.
@@ -334,22 +330,18 @@ recovery_batch_consumer::handle_group_metadata(iobuf key_buf, iobuf val_buf) {
     return ss::make_ready_future<>();
 }
 
-ss::future<>
-recovery_batch_consumer::handle_offset_metadata(iobuf key_buf, iobuf val_buf) {
+ss::future<> recovery_batch_consumer::handle_offset_metadata(
+  iobuf key_buf, std::optional<iobuf> val_buf) {
     auto key = reflection::from_iobuf<group_log_offset_key>(std::move(key_buf));
 
-    auto metadata = reflection::from_iobuf<group_log_offset_metadata>(
-      std::move(val_buf));
-
-    // TODO: handle for deleted groups and partitions. it isn't until kafka
-    // v2.4.0 that delete offsets shows up as an actual api.
-    const bool tombstone = false;
-
-    vlog(klog.trace, "Recovering offset {} with metadata {}", key, metadata);
-
-    if (tombstone) {
+    if (!val_buf) {
+        // tombstone
         loaded_offsets.erase(key);
     } else {
+        auto metadata = reflection::from_iobuf<group_log_offset_metadata>(
+          std::move(*val_buf));
+        vlog(
+          klog.trace, "Recovering offset {} with metadata {}", key, metadata);
         // until we switch over to a compacted topic or use raft snapshots,
         // always take the latest entry in the log.
         loaded_offsets[key] = std::make_pair(

@@ -291,8 +291,8 @@ struct recovery_batch_consumer {
     ss::future<ss::stop_iteration> operator()(model::record_batch batch);
 
     ss::future<> handle_record(model::record);
-    ss::future<> handle_group_metadata(iobuf key_buf, iobuf val_buf);
-    ss::future<> handle_offset_metadata(iobuf key_buf, iobuf val_buf);
+    ss::future<> handle_group_metadata(iobuf, std::optional<iobuf>);
+    ss::future<> handle_offset_metadata(iobuf, std::optional<iobuf>);
 
     recovery_batch_consumer end_of_stream() { return std::move(*this); }
 
