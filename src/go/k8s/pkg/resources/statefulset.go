@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/go-logr/logr"
 	redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/labels"
 	appsv1 "k8s.io/api/apps/v1"
@@ -37,6 +38,7 @@ type StatefulSetResource struct {
 	k8sclient.Client
 	scheme		*runtime.Scheme
 	pandaCluster	*redpandav1alpha1.Cluster
+	logger		logr.Logger
 
 	LastObservedState	*appsv1.StatefulSet
 }
@@ -46,9 +48,10 @@ func NewStatefulSet(
 	client k8sclient.Client,
 	pandaCluster *redpandav1alpha1.Cluster,
 	scheme *runtime.Scheme,
+	logger logr.Logger,
 ) *StatefulSetResource {
 	return &StatefulSetResource{
-		client, scheme, pandaCluster, nil,
+		client, scheme, pandaCluster, logger.WithValues("Kind", statefulSetKind()), nil,
 	}
 }
 
@@ -62,6 +65,8 @@ func (r *StatefulSetResource) Ensure(ctx context.Context) error {
 	}
 
 	if errors.IsNotFound(err) {
+		r.logger.Info(fmt.Sprintf("StatefulSet %s does not exist, going to create one", r.Key().Name))
+
 		obj, err := r.Obj()
 		if err != nil {
 			return err
@@ -77,6 +82,8 @@ func (r *StatefulSetResource) Ensure(ctx context.Context) error {
 
 	// Ensure StatefulSet #replicas equals cluster requirement.
 	if sts.Spec.Replicas != nil && r.pandaCluster.Spec.Replicas != nil && *sts.Spec.Replicas != *r.pandaCluster.Spec.Replicas {
+		r.logger.Info(fmt.Sprintf("StatefulSet %s has replicas set to %d but need %d. Going to update", r.Key().Name, *sts.Spec.Replicas, *r.pandaCluster.Spec.Replicas))
+
 		sts.Spec.Replicas = r.pandaCluster.Spec.Replicas
 		if err := r.Update(ctx, &sts); err != nil {
 			return fmt.Errorf("failed to update StatefulSet: %w", err)
@@ -282,6 +289,10 @@ func (r *StatefulSetResource) Key() types.NamespacedName {
 
 // Kind returns v1.StatefulSet kind
 func (r *StatefulSetResource) Kind() string {
+	return statefulSetKind()
+}
+
+func statefulSetKind() string {
 	var statefulSet appsv1.StatefulSet
 	return statefulSet.Kind
 }
