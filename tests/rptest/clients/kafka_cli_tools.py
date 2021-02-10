@@ -83,9 +83,14 @@ class KafkaCliTools(KafkaClient):
                 value = int(value)
             return value
 
+        def fix_key(key):
+            if key == "cleanup.policy":
+                return "cleanup_policy"
+            return key
+
         self._redpanda.logger.debug(f"Describe topics configs: {configs}")
         configs = [config.split("=") for config in configs.split(",")]
-        configs = {kv[0].strip(): kv[1].strip() for kv in configs}
+        configs = {fix_key(kv[0].strip()): kv[1].strip() for kv in configs}
         configs = {kv[0]: maybe_int(kv[0], kv[1]) for kv in configs.items()}
         return TopicSpec(name=topic, **configs)
 

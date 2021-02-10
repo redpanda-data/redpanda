@@ -25,7 +25,7 @@ class TopicSpec:
                  name=None,
                  partition_count=1,
                  replication_factor=3,
-                 cleanup_policy=None):
+                 cleanup_policy=CLEANUP_DELETE):
         self.name = name or f"topic-{self._random_topic_suffix()}"
         self.partition_count = partition_count
         self.replication_factor = replication_factor
