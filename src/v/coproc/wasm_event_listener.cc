@@ -117,11 +117,18 @@ ss::future<> wasm_event_listener::start() {
         [this] { return ss::recursive_touch_directory(_submit_dir.string()); })
       .then([this] {
           (void)ss::with_gate(_gate, [this] {
-              return _client.connect().then([this] {
-                  return ss::do_until(
-                    [this] { return _abort_source.abort_requested(); },
-                    [this] { return do_start(); });
-              });
+              return _client.connect()
+                .then([this] {
+                    return ss::do_until(
+                      [this] { return _abort_source.abort_requested(); },
+                      [this] { return do_start(); });
+                })
+                .handle_exception([](const std::exception_ptr& e) {
+                    vlog(
+                      coproclog.debug,
+                      "Error connecting to kafka endpoint - {}",
+                      e);
+                });
           });
       });
 }
