@@ -1,0 +1,27 @@
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Cluster
+metadata:
+  name: scale-up-cluster
+spec:
+  image: "vectorized/redpanda"
+  version: "latest"
+  replicas: 1
+  resources:
+    requests:
+      cpu: 1
+      memory: 100M
+    limits:
+      cpu: 1
+      memory: 100M
+  configuration:
+    rpcServer:
+      port: 33145
+    advertisedRpcApi:
+      port: 33145
+    kafkaApi:
+      port: 9092
+    advertisedKafkaApi:
+      port: 9092
+    admin:
+      port: 9644
+    developerMode: true

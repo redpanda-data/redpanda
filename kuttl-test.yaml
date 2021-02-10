@@ -6,6 +6,7 @@ kindContainers:
   - gcr.io/vectorized/redpanda-k8s-operator:latest
 testDirs:
   - ./tests/e2e
+kindConfig: ./kind.yaml
 commands:
   - command: "kubectl apply -k config/default"
 artifactsDir: tests/e2e/_artifacts
