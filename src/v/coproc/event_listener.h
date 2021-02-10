@@ -12,41 +12,46 @@
 
 #include "coproc/script_dispatcher.h"
 #include "coproc/types.h"
-#include "coproc/wasm_event.h"
 #include "kafka/client/client.h"
-#include "utils/unresolved_address.h"
 
 #include <seastar/core/abort_source.hh>
+#include <seastar/core/gate.hh>
 #include <seastar/core/sharded.hh>
+
+#include <absl/container/btree_set.h>
 
 #include <chrono>
 #include <filesystem>
 
 namespace coproc::wasm {
 
+/// The wasm::event_listener listens on an internal topic called the
+/// "coprocessor_internal_topic" for events of type coproc::wasm::event.
+/// When new events arrive they are parsed, reconciled, then the appropriate RPC
+/// command is forwarded to the wasm engine
 class event_listener {
 public:
-    explicit event_listener(std::filesystem::path);
+    /// class constructor
+    ///
+    /// \brief Takes the pacemaker as a reference, to call add / remove source()
+    explicit event_listener(ss::sharded<pacemaker>&);
 
-    /// \brief Initializes the listener, ensuring the 'wasm_root' directory is
-    /// created establishes a connection to the broker, and begins the poll loop
+    /// To be invoked once on redpanda::application startup
+    ///
+    /// \brief Connects the kafka::client to this broker, and starts the loop
     ss::future<> start();
 
-    /// \brief Shuts down the poll loop, started by the start() method
+    /// To be invoked once on redpanda::applications call to svc->stop()
+    ///
+    /// \brief Shuts down the poll loop, initialized by the start() method
     ss::future<> stop();
-
-    /// \brief Absolute paths to local wasm resource directories
-    const std::filesystem::path& wasm_root() const { return _wasm_root; }
-    const std::filesystem::path& submit_dir() const { return _submit_dir; }
-    const std::filesystem::path& active_dir() const { return _active_dir; }
-    const std::filesystem::path& inactive_dir() const { return _inactive_dir; }
 
 private:
     ss::future<> do_start();
 
     ss::future<> poll_topic(model::record_batch_reader::data_t&);
 
-    ss::future<> resolve_wasm_script(script_id, iobuf);
+    ss::future<> persist_actions(absl::btree_map<script_id, iobuf>);
 
 private:
     /// Kafka client used to poll the internal topic
@@ -56,14 +61,14 @@ private:
     ss::gate _gate;
     ss::abort_source _abort_source;
 
-    /// Root directory where the wasm engine will store working set of files
-    std::filesystem::path _wasm_root;
-    std::filesystem::path _active_dir;
-    std::filesystem::path _submit_dir;
-    std::filesystem::path _inactive_dir;
-
-    /// Current offset into the '_coproc_internal_topic'
+    /// Current offset into the 'coprocessor_internal_topic'
     model::offset _offset{0};
+
+    /// Set of known script ids to be active
+    absl::btree_set<script_id> _active_ids;
+
+    /// Used to make requests to the wasm engine
+    script_dispatcher _dispatcher;
 };
 
 } // namespace coproc::wasm

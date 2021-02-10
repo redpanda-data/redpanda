@@ -617,11 +617,8 @@ void application::start() {
         /// Temporarily disable retries for the new client until we create a
         /// more granular way to configure this per client or per request.
         kafka::client::shard_local_cfg().retries.set_value(size_t(1));
-        construct_single_service(
-          _wasm_event_listener,
-          config::shard_local_cfg().data_directory.value().path);
+        construct_single_service(_wasm_event_listener, std::ref(pacemaker));
         _wasm_event_listener->start().get();
-        /// Start the pacemakers offset keeper
         pacemaker.invoke_on_all(&coproc::pacemaker::start).get();
     }
 
