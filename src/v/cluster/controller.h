@@ -55,6 +55,8 @@ public:
     ss::future<> wire_up();
 
     ss::future<> start();
+    // prevents controller from accepting new requests
+    ss::future<> shutdown_input();
     ss::future<> stop();
 
 private:

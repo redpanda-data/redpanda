@@ -128,12 +128,18 @@ void consensus::maybe_step_down() {
     });
 }
 
+void consensus::shutdown_input() {
+    if (likely(!_as.abort_requested())) {
+        _vote_timeout.cancel();
+        _as.request_abort();
+        _commit_index_updated.broken();
+        _disk_append.broken();
+    }
+}
+
 ss::future<> consensus::stop() {
     vlog(_ctxlog.info, "Stopping");
-    _vote_timeout.cancel();
-    _as.request_abort();
-    _commit_index_updated.broken();
-    _disk_append.broken();
+    shutdown_input();
 
     return _event_manager.stop()
       .then([this] { return _append_requests_buffer.stop(); })

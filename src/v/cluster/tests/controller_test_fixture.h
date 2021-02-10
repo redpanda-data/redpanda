@@ -39,6 +39,8 @@
 
 #include <seastar/net/socket_defs.hh>
 
+#include <fmt/ostream.h>
+
 using namespace std::chrono_literals;
 
 template<typename T>
@@ -94,6 +96,9 @@ public:
     cluster::shard_table& get_shard_table() { return st.local(); }
 
     ~controller_tests_fixture() {
+        if (_controller_started) {
+            _controller->shutdown_input().get();
+        }
         _rpc.stop().get0();
         _metadata_dissemination_service.stop().get0();
         if (_controller_started) {

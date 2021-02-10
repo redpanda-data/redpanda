@@ -459,7 +459,14 @@ void application::wire_up_services() {
                     : nullptr;
     syschecks::systemd_message("Starting internal RPC {}", rpc_cfg).get();
     construct_service(_rpc, rpc_cfg).get();
-
+    /**
+     * We schedule shutting down controller input and aborting its operation
+     * right before shutting down an RPC server. (other services are stopeed in
+     * an order reverse to the startup sequence.) This way we terminate all long
+     * running opertions before shutting down the RPC server, preventing it to
+     * wait on background dispatch gate `close` call.
+     */
+    _deferred.emplace_back([this] { controller->shutdown_input().get(); });
     // coproc rpc
     if (coproc_enabled()) {
         auto coproc_script_manager_server_addr
