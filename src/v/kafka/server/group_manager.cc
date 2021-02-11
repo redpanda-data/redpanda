@@ -64,7 +64,9 @@ ss::future<> group_manager::start() {
     _manage_notify_handle = _pm.local().register_manage_notification(
       model::kafka_internal_namespace,
       model::kafka_group_topic,
-      [this](ss::lw_shared_ptr<cluster::partition> p) { attach_partition(p); });
+      [this](ss::lw_shared_ptr<cluster::partition> p) {
+          attach_partition(std::move(p));
+      });
 
     /*
      *
@@ -155,7 +157,7 @@ void group_manager::handle_topic_delta(
 void group_manager::handle_leader_change(
   ss::lw_shared_ptr<cluster::partition> part,
   std::optional<model::node_id> leader) {
-    (void)with_gate(_gate, [this, part, leader] {
+    (void)with_gate(_gate, [this, part = std::move(part), leader] {
         if (auto it = _partitions.find(part->ntp()); it != _partitions.end()) {
             return ss::with_semaphore(
               it->second->sem, 1, [this, p = it->second, leader] {
