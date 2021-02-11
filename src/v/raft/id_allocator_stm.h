@@ -98,14 +98,7 @@ private:
         raft::vnode node_id;
         int64_t tick;
 
-        bool operator==(const sequence_id& other) const {
-            return run_id == other.run_id && node_id == other.node_id
-                   && tick == other.tick;
-        }
-
-        bool operator!=(const sequence_id& other) const {
-            return !(*this == other);
-        }
+        bool operator==(const sequence_id& other) const = default;
 
         template<typename H>
         friend H AbslHashValue(H h, const sequence_id& seq) {
