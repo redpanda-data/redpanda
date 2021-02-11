@@ -143,7 +143,7 @@ public:
 
 private:
     using sharded_groups = absl::
-      flat_hash_map<ss::shard_id, std::vector<std::pair<model::ntp, group_id>>>;
+      node_hash_map<ss::shard_id, std::vector<std::pair<model::ntp, group_id>>>;
 
     std::optional<std::pair<model::ntp, ss::shard_id>>
     shard_for(const group_id& group) {

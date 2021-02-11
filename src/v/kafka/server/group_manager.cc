@@ -71,6 +71,7 @@ void group_manager::attach_partition(ss::lw_shared_ptr<cluster::partition> p) {
     // however, group manager is also not prepared for such scenarios.
     vassert(
       res.second, "double registration of ntp in group manager {}", p->ntp());
+    _partitions.rehash(0);
 }
 
 void group_manager::handle_leader_change(
@@ -248,6 +249,8 @@ ss::future<> group_manager::recover_partition(
         group->reschedule_all_member_heartbeats();
     }
 
+    _groups.rehash(0);
+
     /*
      * <kafka>if the cache already contains a group which should be removed,
      * raise an error. Note that it is possible (however unlikely) for a
@@ -405,6 +408,7 @@ group_manager::join_group(join_group_request&& r) {
         group = ss::make_lw_shared<kafka::group>(
           r.data.group_id, group_state::empty, _conf, p);
         _groups.emplace(r.data.group_id, group);
+        _groups.rehash(0);
         klog.trace("created new group {}", group);
         is_new_group = true;
     }
@@ -514,6 +518,7 @@ group_manager::offset_commit(offset_commit_request&& r) {
             group = ss::make_lw_shared<kafka::group>(
               r.data.group_id, group_state::empty, _conf, p);
             _groups.emplace(r.data.group_id, group);
+            _groups.rehash(0);
         } else {
             // <kafka>or this is a request coming from an older generation.
             // either way, reject the commit</kafka>
@@ -613,6 +618,8 @@ ss::future<std::vector<deletable_group_result>> group_manager::delete_groups(
           .error_code = error,
         });
     }
+
+    _groups.rehash(0);
 
     co_return std::move(results);
 }
