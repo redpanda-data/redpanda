@@ -12,10 +12,10 @@ spec:
   resources:
     requests:
       cpu: 1
-      memory: 2Gi
+      memory: 100M
     limits:
       cpu: 1
-      memory: 2Gi
+      memory: 100M
   configuration:
     rpcServer:
       port: 33145

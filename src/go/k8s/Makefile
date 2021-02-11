@@ -79,8 +79,11 @@ push-to-kind:
 	kind load docker-image ${IMG}
 
 # Execute end to end tests
-e2e-tests: kuttl docker-build
-	$(KUTTL) test
+e2e-tests: kuttl kind docker-build
+	$(KUTTL) test --skip-cluster-delete
+	$(KIND) export kubeconfig --kubeconfig tests/e2e/golang-tests/e2e-operator-test-kubeconfig.yaml
+	cd tests/e2e/golang-tests && KUBECONFIG=e2e-operator-test-kubeconfig.yaml go test ./... && \
+$(KIND) delete cluster || { kind export logs ../_artifacts/kind-logs-golang; exit 1; }
 
 # Download controller-gen locally if necessary
 CONTROLLER_GEN = $(shell pwd)/bin/controller-gen
@@ -91,6 +94,11 @@ controller-gen:
 KUTTL = $(shell pwd)/bin/kubectl-kuttl
 kuttl:
 	$(call go-get-tool,$(KUTTL),github.com/kudobuilder/kuttl/cmd/kubectl-kuttl@v0.8.0)
+
+# Download kind locally if necessary
+KIND = $(shell pwd)/bin/kind
+kind:
+	$(call go-get-tool,$(KIND),sigs.k8s.io/kind@v0.10.0)
 
 # Download crlfmt locally if necessary
 CRLFMT = $(shell pwd)/bin/crlfmt

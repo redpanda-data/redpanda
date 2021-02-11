@@ -27,7 +27,6 @@
 /build
 /dbuild
 bin
-_artifacts/
 /src/go/k8s/testbin/*
 
 # Test binary, build with `go test -c`
@@ -68,6 +67,9 @@ src/demo_apps/demo_server
 # tests
 src/integration_tests/*_test
 src/test/*_unit_test
+
+# operator e2e tests logs
+_artifacts/
 
 # docs
 Doxyfile
@@ -191,6 +193,7 @@ tags
 
 # Configuration
 *.bk
+e2e-operator-test-kubeconfig.yaml
 
 # metrics API
 src/go/metrics/env.yaml

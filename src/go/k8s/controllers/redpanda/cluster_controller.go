@@ -22,7 +22,9 @@ import (
 	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/resources"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	labels2 "k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/selection"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -89,8 +91,18 @@ func (r *ClusterReconciler) Reconcile(
 
 	var observedPods corev1.PodList
 
-	err := r.List(ctx, &observedPods, &client.ListOptions{
-		LabelSelector:	labels.ForCluster(&redpandaCluster).AsClientSelector(),
+	newReq, err := labels2.NewRequirement(
+		appsv1.ControllerRevisionHashLabelKey,
+		selection.Equals,
+		[]string{sts.LastObservedState.Status.CurrentRevision},
+	)
+	if err != nil {
+		log.Error(err, "Unable to create new pod label requirement")
+		return ctrl.Result{}, err
+	}
+
+	err = r.List(ctx, &observedPods, &client.ListOptions{
+		LabelSelector:	labels.ForCluster(&redpandaCluster).AsClientSelector().Add(*newReq),
 		Namespace:	redpandaCluster.Namespace,
 	})
 	if err != nil {
