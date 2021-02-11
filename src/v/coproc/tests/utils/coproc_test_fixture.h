@@ -28,7 +28,7 @@ public:
     using opt_reader_data_t = std::optional<model::record_batch_reader::data_t>;
 
     /// \brief Init the storage layer with the desired ntps
-    ss::future<> setup(log_layout_map);
+    virtual ss::future<> setup(log_layout_map);
 
     /// \brief Write records to storage::api
     ss::future<model::offset>
