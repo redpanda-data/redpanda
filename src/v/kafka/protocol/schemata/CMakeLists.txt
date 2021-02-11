@@ -38,7 +38,9 @@ set(schemata
   init_producer_id_request.json
   init_producer_id_response.json
   incremental_alter_configs_request.json
-  incremental_alter_configs_response.json)
+  incremental_alter_configs_response.json
+  delete_groups_request.json
+  delete_groups_response.json)
 
 set(srcs)
 foreach(schema ${schemata})

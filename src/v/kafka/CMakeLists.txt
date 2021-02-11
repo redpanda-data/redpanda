@@ -26,6 +26,7 @@ set(handlers_srcs
   server/handlers/sasl_handshake.cc
   server/handlers/sasl_authenticate.cc
   server/handlers/incremental_alter_configs.cc
+  server/handlers/delete_groups.cc
   server/handlers/topics/types.cc
   server/handlers/topics/topic_utils.cc
 )
@@ -40,6 +41,7 @@ v_cc_library(
     server/requests.cc
     server/member.cc
     server/group.cc
+    server/group_router.cc
     server/group_manager.cc
     server/connection_context.cc
     server/protocol.cc

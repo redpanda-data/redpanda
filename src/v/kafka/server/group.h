@@ -32,8 +32,8 @@
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/util/log.hh>
 
-#include <absl/container/flat_hash_map.h>
-#include <absl/container/flat_hash_set.h>
+#include <absl/container/node_hash_map.h>
+#include <absl/container/node_hash_set.h>
 
 #include <iosfwd>
 #include <optional>
@@ -412,9 +412,13 @@ public:
     // helper for the kafka api: describe groups
     described_group describe() const;
 
+    // transition group to `dead` state if empty, otherwise an appropriate error
+    // is returned for the current state.
+    ss::future<error_code> remove();
+
 private:
-    using member_map = absl::flat_hash_map<kafka::member_id, member_ptr>;
-    using protocol_support = absl::flat_hash_map<kafka::protocol_name, int>;
+    using member_map = absl::node_hash_map<kafka::member_id, member_ptr>;
+    using protocol_support = absl::node_hash_map<kafka::protocol_name, int>;
 
     friend std::ostream& operator<<(std::ostream&, const group&);
 
@@ -427,7 +431,7 @@ private:
     protocol_support _supported_protocols;
     member_map _members;
     int _num_members_joining;
-    absl::flat_hash_set<kafka::member_id> _pending_members;
+    absl::node_hash_set<kafka::member_id> _pending_members;
     std::optional<kafka::protocol_type> _protocol_type;
     std::optional<kafka::protocol_name> _protocol;
     std::optional<kafka::member_id> _leader;
@@ -435,8 +439,8 @@ private:
     bool _new_member_added;
     config::configuration& _conf;
     ss::lw_shared_ptr<cluster::partition> _partition;
-    absl::flat_hash_map<model::topic_partition, offset_metadata> _offsets;
-    absl::flat_hash_map<model::topic_partition, offset_metadata>
+    absl::node_hash_map<model::topic_partition, offset_metadata> _offsets;
+    absl::node_hash_map<model::topic_partition, offset_metadata>
       _pending_offset_commits;
 };
 

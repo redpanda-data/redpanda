@@ -13,6 +13,7 @@
 #include "kafka/server/handlers/alter_configs.h"
 #include "kafka/server/handlers/api_versions.h"
 #include "kafka/server/handlers/create_topics.h"
+#include "kafka/server/handlers/delete_groups.h"
 #include "kafka/server/handlers/delete_topics.h"
 #include "kafka/server/handlers/describe_configs.h"
 #include "kafka/server/handlers/describe_groups.h"

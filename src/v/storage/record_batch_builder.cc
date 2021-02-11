@@ -49,7 +49,7 @@ model::record_batch record_batch_builder::build() && {
     for (auto& sr : _records) {
         auto rec_sz = record_size(offset_delta, sr);
         auto kz = sr.key.size_bytes();
-        auto vz = sr.value.size_bytes();
+        auto vz = sr.encoded_value_size;
         auto r = model::record(
           rec_sz,
           model::record_attributes{},
@@ -76,7 +76,7 @@ uint32_t record_batch_builder::record_size(
                     + vint::vint_size(offset_delta)         // offset_delta
                     + vint::vint_size(r.key.size_bytes())   // key size
                     + r.key.size_bytes()                    // key
-                    + vint::vint_size(r.value.size_bytes()) // value size
+                    + vint::vint_size(r.encoded_value_size) // value size
                     + r.value.size_bytes()                  // value
                     + vint::vint_size(r.headers.size());    // headers size
     for (const auto& h : r.headers) {

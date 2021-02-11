@@ -189,6 +189,7 @@ public:
     const iobuf& value() const { return _value; }
     iobuf release_value() { return std::exchange(_value, {}); }
     iobuf share_value() { return _value.share(0, _value.size_bytes()); }
+    bool has_value() const { return _val_size >= 0; }
 
     const std::vector<record_header>& headers() const { return _headers; }
     std::vector<record_header>& headers() { return _headers; }

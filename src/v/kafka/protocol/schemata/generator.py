@@ -262,6 +262,7 @@ STRUCT_TYPES = [
     "CreatableReplicaAssignment",
     "CreateableTopicConfig",
     "CreatableTopicConfigs",
+    "DeletableGroupResult",
 ]
 
 SCALAR_TYPES = list(basic_type_map.keys())

@@ -17,6 +17,8 @@
 #include "model/record.h"
 #include "resource_mgmt/io_priority.h"
 
+#include <seastar/core/coroutine.hh>
+
 namespace kafka {
 
 ss::future<> group_manager::start() {
@@ -69,6 +71,7 @@ void group_manager::attach_partition(ss::lw_shared_ptr<cluster::partition> p) {
     // however, group manager is also not prepared for such scenarios.
     vassert(
       res.second, "double registration of ntp in group manager {}", p->ntp());
+    _partitions.rehash(0);
 }
 
 void group_manager::handle_leader_change(
@@ -144,14 +147,14 @@ ss::future<> group_manager::handle_partition_leader_change(
             return p->partition->make_reader(reader_config)
               .then([this, p, timeout](model::record_batch_reader reader) {
                   return std::move(reader)
-                    .consume(recovery_batch_consumer(&p->as), timeout)
-                    .then([this, p](recovery_batch_consumer ctx) {
+                    .consume(recovery_batch_consumer(p->as), timeout)
+                    .then([this, p](recovery_batch_consumer_state state) {
                         // avoid trying to recover if we stopped the reader
                         // because an abort was requested
                         if (p->as.abort_requested()) {
                             return ss::make_ready_future<>();
                         }
-                        return recover_partition(p->partition, std::move(ctx))
+                        return recover_partition(p->partition, std::move(state))
                           .then([p] { p->loading = false; });
                     });
               });
@@ -168,7 +171,7 @@ ss::future<> group_manager::handle_partition_leader_change(
  * dependencies that would support optimizing for moves.
  */
 ss::future<> group_manager::recover_partition(
-  ss::lw_shared_ptr<cluster::partition> p, recovery_batch_consumer ctx) {
+  ss::lw_shared_ptr<cluster::partition> p, recovery_batch_consumer_state ctx) {
     /*
      * [group-id -> [topic-partition -> offset-metadata]]
      */
@@ -246,6 +249,8 @@ ss::future<> group_manager::recover_partition(
         group->reschedule_all_member_heartbeats();
     }
 
+    _groups.rehash(0);
+
     /*
      * <kafka>if the cache already contains a group which should be removed,
      * raise an error. Note that it is possible (however unlikely) for a
@@ -271,7 +276,7 @@ recovery_batch_consumer::operator()(model::record_batch batch) {
         return ss::make_ready_future<ss::stop_iteration>(
           ss::stop_iteration::no);
     }
-    if (as->abort_requested()) {
+    if (as.abort_requested()) {
         return ss::make_ready_future<ss::stop_iteration>(
           ss::stop_iteration::yes);
     }
@@ -288,13 +293,14 @@ recovery_batch_consumer::operator()(model::record_batch batch) {
 
 ss::future<> recovery_batch_consumer::handle_record(model::record r) {
     auto key = reflection::adl<group_log_record_key>{}.from(r.share_key());
+    auto value = r.has_value() ? r.release_value() : std::optional<iobuf>();
 
     switch (key.record_type) {
     case group_log_record_key::type::group_metadata:
-        return handle_group_metadata(std::move(key.key), r.release_value());
+        return handle_group_metadata(std::move(key.key), std::move(value));
 
     case group_log_record_key::type::offset_commit:
-        return handle_offset_metadata(std::move(key.key), r.release_value());
+        return handle_offset_metadata(std::move(key.key), std::move(value));
 
     case group_log_record_key::type::noop:
         // skip control structure
@@ -306,53 +312,44 @@ ss::future<> recovery_batch_consumer::handle_record(model::record r) {
     }
 }
 
-ss::future<>
-recovery_batch_consumer::handle_group_metadata(iobuf key_buf, iobuf val_buf) {
+ss::future<> recovery_batch_consumer::handle_group_metadata(
+  iobuf key_buf, std::optional<iobuf> val_buf) {
     auto group_id = kafka::group_id(
       reflection::from_iobuf<kafka::group_id::type>(std::move(key_buf)));
 
-    auto metadata = reflection::from_iobuf<group_log_group_metadata>(
-      std::move(val_buf));
-
-    // TODO: this is primarily driven by _deleted_ partitions, and to a lesser
-    // extent deleted groups. We'll soon handle the later case, but redpanda
-    // doesn't consider yet the former.
-    const bool tombstone = false;
-
     vlog(klog.trace, "Recovering group metadata {}", group_id);
 
-    if (tombstone) {
-        loaded_groups.erase(group_id);
-        removed_groups.emplace(group_id);
+    if (!val_buf) {
+        // tombstone
+        st.loaded_groups.erase(group_id);
+        st.removed_groups.emplace(group_id);
     } else {
-        removed_groups.erase(group_id);
+        auto metadata = reflection::from_iobuf<group_log_group_metadata>(
+          std::move(*val_buf));
+        st.removed_groups.erase(group_id);
         // until we switch over to a compacted topic or use raft snapshots,
         // always take the latest entry in the log.
-        loaded_groups[group_id] = std::move(metadata);
+        st.loaded_groups[group_id] = std::move(metadata);
     }
 
     return ss::make_ready_future<>();
 }
 
-ss::future<>
-recovery_batch_consumer::handle_offset_metadata(iobuf key_buf, iobuf val_buf) {
+ss::future<> recovery_batch_consumer::handle_offset_metadata(
+  iobuf key_buf, std::optional<iobuf> val_buf) {
     auto key = reflection::from_iobuf<group_log_offset_key>(std::move(key_buf));
 
-    auto metadata = reflection::from_iobuf<group_log_offset_metadata>(
-      std::move(val_buf));
-
-    // TODO: handle for deleted groups and partitions. it isn't until kafka
-    // v2.4.0 that delete offsets shows up as an actual api.
-    const bool tombstone = false;
-
-    vlog(klog.trace, "Recovering offset {} with metadata {}", key, metadata);
-
-    if (tombstone) {
-        loaded_offsets.erase(key);
+    if (!val_buf) {
+        // tombstone
+        st.loaded_offsets.erase(key);
     } else {
+        auto metadata = reflection::from_iobuf<group_log_offset_metadata>(
+          std::move(*val_buf));
+        vlog(
+          klog.trace, "Recovering offset {} with metadata {}", key, metadata);
         // until we switch over to a compacted topic or use raft snapshots,
         // always take the latest entry in the log.
-        loaded_offsets[key] = std::make_pair(
+        st.loaded_offsets[key] = std::make_pair(
           batch_base_offset, std::move(metadata));
     }
 
@@ -411,6 +408,7 @@ group_manager::join_group(join_group_request&& r) {
         group = ss::make_lw_shared<kafka::group>(
           r.data.group_id, group_state::empty, _conf, p);
         _groups.emplace(r.data.group_id, group);
+        _groups.rehash(0);
         klog.trace("created new group {}", group);
         is_new_group = true;
     }
@@ -520,6 +518,7 @@ group_manager::offset_commit(offset_commit_request&& r) {
             group = ss::make_lw_shared<kafka::group>(
               r.data.group_id, group_state::empty, _conf, p);
             _groups.emplace(r.data.group_id, group);
+            _groups.rehash(0);
         } else {
             // <kafka>or this is a request coming from an older generation.
             // either way, reject the commit</kafka>
@@ -583,10 +582,53 @@ group_manager::describe_group(const model::ntp& ntp, const kafka::group_id& g) {
     return group->describe();
 }
 
+ss::future<std::vector<deletable_group_result>> group_manager::delete_groups(
+  std::vector<std::pair<model::ntp, group_id>> groups) {
+    std::vector<deletable_group_result> results;
+
+    for (auto& group_info : groups) {
+        auto error = validate_group_status(
+          group_info.first, group_info.second, delete_groups_api::key);
+        if (error != error_code::none) {
+            results.push_back(deletable_group_result{
+              .group_id = std::move(group_info.second),
+              .error_code = error_code::not_coordinator,
+            });
+            continue;
+        }
+
+        auto group = get_group(group_info.second);
+        if (!group) {
+            results.push_back(deletable_group_result{
+              .group_id = std::move(group_info.second),
+              .error_code = error_code::group_id_not_found,
+            });
+            continue;
+        }
+
+        // TODO: future optimizations
+        // - handle group deletions in parallel
+        // - batch tombstones same backing partition
+        error = co_await group->remove();
+        if (error == error_code::none) {
+            _groups.erase(group_info.second);
+        }
+        results.push_back(deletable_group_result{
+          .group_id = std::move(group_info.second),
+          .error_code = error,
+        });
+    }
+
+    _groups.rehash(0);
+
+    co_return std::move(results);
+}
+
 bool group_manager::valid_group_id(const group_id& group, api_key api) {
     switch (api) {
     case describe_groups_api::key:
     case offset_commit_api::key:
+    case delete_groups_api::key:
         [[fallthrough]];
     case offset_fetch_api::key:
         // <kafka> For backwards compatibility, we support the offset commit
@@ -594,10 +636,6 @@ bool group_manager::valid_group_id(const group_id& group, api_key api) {
         // DeleteGroups so that users can view and delete state of all
         // groups.</kafka>
         return true;
-
-    // currently unsupported apis
-    case delete_groups_api::key:
-        return false;
 
     // join-group etc... require non-empty group ids
     default:

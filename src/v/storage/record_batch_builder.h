@@ -24,12 +24,15 @@ public:
     record_batch_builder& operator=(record_batch_builder&&) = default;
     record_batch_builder& operator=(const record_batch_builder&) = delete;
 
-    virtual record_batch_builder& add_raw_kv(iobuf&& key, iobuf&& value) {
+    virtual record_batch_builder&
+    add_raw_kv(iobuf&& key, std::optional<iobuf>&& value) {
         _records.emplace_back(std::move(key), std::move(value));
         return *this;
     }
     virtual record_batch_builder& add_raw_kw(
-      iobuf&& key, iobuf&& value, std::vector<model::record_header> headers) {
+      iobuf&& key,
+      std::optional<iobuf>&& value,
+      std::vector<model::record_header> headers) {
         _records.emplace_back(
           std::move(key), std::move(value), std::move(headers));
         return *this;
@@ -42,20 +45,23 @@ private:
     struct serialized_record {
         serialized_record(
           iobuf k,
-          iobuf v,
+          std::optional<iobuf> v,
           std::vector<model::record_header> hdrs
           = std::vector<model::record_header>())
           : key(std::move(k))
-          , value(std::move(v))
-          , headers(std::move(hdrs)) {}
+          , headers(std::move(hdrs)) {
+            if (likely(v)) {
+                value = std::move(*v);
+                encoded_value_size = value.size_bytes();
+            } else {
+                encoded_value_size = -1;
+            }
+        }
 
         iobuf key;
         iobuf value;
+        int32_t encoded_value_size;
         std::vector<model::record_header> headers;
-
-        uint32_t size_bytes() const {
-            return key.size_bytes() + value.size_bytes();
-        }
     };
 
     uint32_t record_size(int32_t offset_delta, const serialized_record& r);

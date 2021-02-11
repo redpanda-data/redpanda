@@ -48,7 +48,8 @@ using request_types = make_request_types<
   describe_groups_handler,
   sasl_handshake_handler,
   sasl_authenticate_handler,
-  incremental_alter_configs_handler>;
+  incremental_alter_configs_handler,
+  delete_groups_handler>;
 
 template<typename RequestType>
 static auto make_api() {
