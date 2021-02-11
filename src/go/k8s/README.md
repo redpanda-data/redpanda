@@ -53,5 +53,5 @@ make docker-build deploy-to-kind
 Install sample RedpandaCluster custom resource
 
 ```
-kubectl apply -f config/samples/core_v1alpha1_redpandacluster.yaml
+kubectl apply -f config/samples/redpanda_v1alpha1_cluster.yaml
 ```
