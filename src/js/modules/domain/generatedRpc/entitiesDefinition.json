@@ -243,6 +243,116 @@
           "type": "Array<ProcessBatchReplyItem>"
         }
       ]
+    },
+    {
+      "className": "EnableCoprocessor",
+      "fields": [
+        {
+          "name": "id",
+          "type": "uint64"
+        },
+        {
+          "name": "source_code",
+          "type": "buffer"
+        }
+      ]
+    },
+    {
+      "className": "EnableCoprosRequest",
+      "fields": [
+        {
+          "name": "coprocessors",
+          "type": "Array<EnableCoprocessor>"
+        }
+      ]
+    },
+    {
+      "className": "EnableCoprocessorMetadataItem",
+      "fields": [
+        {
+          "name": "topic",
+          "type": "string"
+        },
+        {
+          "name": "ingestion_policy",
+          "type": "int8"
+        }
+      ]
+    },
+    {
+      "className": "EnableCoprocessorMetadata",
+      "fields": [
+        {
+          "name": "id",
+          "type": "string"
+        },
+        {
+          "name": "inputTopic",
+          "type": "Array<EnableCoprocessorMetadataItem>"
+        }
+      ]
+    },
+    {
+      "className": "EnableCoprocessorRequestData",
+      "fields": [
+        {
+          "name": "enableResponseCode",
+          "type": "int8"
+        },
+        {
+          "name": "scriptMetadata",
+          "type": "EnableCoprocessorMetadata"
+        }
+      ]
+    },
+    {
+      "className": "EnableCoprosReply",
+      "fields": [
+        {
+          "name": "responses",
+          "type": "Array<EnableCoprocessorRequestData>"
+        }
+      ]
+    },
+    {
+      "className": "DisableCoprosRequest",
+      "fields": [
+        {
+          "name": "ids",
+          "type": "Array<uint64>"
+        }
+      ]
+    },
+    {
+      "className": "DisableCoprocessorData",
+      "fields": [
+        {
+          "name": "id",
+          "type": "uint64"
+        },
+        {
+          "name": "disableResponseCode",
+          "type": "uint8"
+        }
+      ]
+    },
+    {
+      "className": "DisableCoprosReply",
+      "fields": [
+        {
+          "name": "responses",
+          "type": "Array<DisableCoprocessorData>"
+        }
+      ]
+    },
+    {
+      "className": "EmptyRequest",
+      "fields": [
+        {
+          "name": "empty",
+          "type": "int8"
+        }
+      ]
     }
   ]
 }
