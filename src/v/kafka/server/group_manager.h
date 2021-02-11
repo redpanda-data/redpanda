@@ -174,7 +174,7 @@ private:
         ss::abort_source as;
         ss::lw_shared_ptr<cluster::partition> partition;
 
-        attached_partition(ss::lw_shared_ptr<cluster::partition> p)
+        explicit attached_partition(ss::lw_shared_ptr<cluster::partition> p)
           : loading(true)
           , partition(std::move(p)) {}
     };
