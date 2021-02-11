@@ -1,0 +1,2 @@
+area/k8s:
+- src/go/k8s/**/*
