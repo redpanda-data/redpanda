@@ -283,7 +283,7 @@ make_memory_record_batch_reader(model::record_batch b) {
 // clang-format off
 template<typename Func>
 CONCEPT(requires requires(Func f, model::record_batch&& batch) {
-    { f(batch) } -> std::same_as<model::record_batch>;
+    { f(std::move(batch)) } -> std::same_as<model::record_batch>;
 })
 // clang-format on
 ss::future<record_batch_reader::data_t> transform_reader_to_memory(
