@@ -92,7 +92,7 @@ func defaultLabels(cluster *redpandav1alpha1.Cluster) map[string]string {
 	labels := make(map[string]string)
 	labels[NameKey] = nameKeyVal
 	labels[InstanceKey] = cluster.Name
-	labels[ComponentKey] = "database"
+	labels[ComponentKey] = "redpanda"
 	labels[PartOfKey] = nameKeyVal
 	labels[ManagedByKey] = "redpanda-operator"
 
