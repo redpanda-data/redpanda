@@ -26,6 +26,7 @@ set(handlers_srcs
   server/handlers/sasl_handshake.cc
   server/handlers/sasl_authenticate.cc
   server/handlers/incremental_alter_configs.cc
+  server/handlers/delete_groups.cc
   server/handlers/topics/types.cc
   server/handlers/topics/topic_utils.cc
 )

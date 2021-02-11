@@ -115,6 +115,8 @@ process_request(request_context&& ctx, ss::smp_service_group g) {
         return do_process<init_producer_id_handler>(std::move(ctx), g);
     case incremental_alter_configs_handler::api::key:
         return do_process<incremental_alter_configs_handler>(std::move(ctx), g);
+    case delete_groups_handler::api::key:
+        return do_process<delete_groups_handler>(std::move(ctx), g);
     };
     return ss::make_exception_future<response_ptr>(
       std::runtime_error(fmt::format("Unsupported API {}", ctx.header().key)));

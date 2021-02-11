@@ -8,20 +8,62 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
-
 #pragma once
 #include "kafka/protocol/errors.h"
+#include "kafka/protocol/schemata/delete_groups_request.h"
+#include "kafka/protocol/schemata/delete_groups_response.h"
 #include "kafka/types.h"
-
-#include <seastar/core/future.hh>
 
 namespace kafka {
 
+struct delete_groups_response;
+
 struct delete_groups_api final {
+    using response_type = delete_groups_response;
+
     static constexpr const char* name = "delete groups";
     static constexpr api_key key = api_key(42);
-    static constexpr api_version min_supported = api_version(0);
-    static constexpr api_version max_supported = api_version(0);
 };
+
+struct delete_groups_request final {
+    using api_type = delete_groups_api;
+
+    delete_groups_request_data data;
+
+    void encode(response_writer& writer, api_version version) {
+        data.encode(writer, version);
+    }
+
+    void decode(request_reader& reader, api_version version) {
+        data.decode(reader, version);
+    }
+};
+
+inline std::ostream&
+operator<<(std::ostream& os, const delete_groups_request& r) {
+    return os << r.data;
+}
+
+struct delete_groups_response final {
+    using api_type = delete_groups_api;
+
+    delete_groups_response_data data;
+
+    explicit delete_groups_response(
+      std::vector<deletable_group_result> results) {
+        data.results = std::move(results);
+    }
+
+    void encode(const request_context&, response&);
+
+    void decode(iobuf buf, api_version version) {
+        data.decode(std::move(buf), version);
+    }
+};
+
+inline std::ostream&
+operator<<(std::ostream& os, const delete_groups_response& r) {
+    return os << r.data;
+}
 
 } // namespace kafka
