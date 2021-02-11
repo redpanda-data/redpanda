@@ -18,6 +18,7 @@
 #include "kafka/protocol/list_groups.h"
 #include "kafka/protocol/offset_commit.h"
 #include "kafka/protocol/offset_fetch.h"
+#include "kafka/protocol/schemata/delete_groups_response.h"
 #include "kafka/protocol/sync_group.h"
 #include "kafka/server/coordinator_ntp_mapper.h"
 #include "kafka/server/group_manager.h"
@@ -137,7 +138,13 @@ public:
           });
     }
 
+    ss::future<std::vector<deletable_group_result>>
+    delete_groups(std::vector<group_id> groups);
+
 private:
+    using sharded_groups = absl::
+      flat_hash_map<ss::shard_id, std::vector<std::pair<model::ntp, group_id>>>;
+
     std::optional<std::pair<model::ntp, ss::shard_id>>
     shard_for(const group_id& group) {
         if (auto ntp = _coordinators.local().ntp_for(group); ntp) {
@@ -147,6 +154,12 @@ private:
         }
         return std::nullopt;
     }
+
+    ss::future<std::vector<deletable_group_result>> route_delete_groups(
+      ss::shard_id, std::vector<std::pair<model::ntp, group_id>>);
+
+    ss::future<> parallel_route_delete_groups(
+      std::vector<deletable_group_result>&, sharded_groups&);
 
     ss::scheduling_group _sg;
     ss::smp_service_group _ssg;

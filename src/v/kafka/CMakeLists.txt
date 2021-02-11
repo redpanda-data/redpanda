@@ -40,6 +40,7 @@ v_cc_library(
     server/requests.cc
     server/member.cc
     server/group.cc
+    server/group_router.cc
     server/group_manager.cc
     server/connection_context.cc
     server/protocol.cc
