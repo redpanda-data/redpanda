@@ -116,6 +116,7 @@ struct configuration final : public config_store {
     property<size_t> max_compacted_log_segment_size;
     property<int16_t> id_allocator_log_capacity;
     property<int16_t> id_allocator_batch_size;
+    property<bool> enable_sasl;
 
     configuration();
 

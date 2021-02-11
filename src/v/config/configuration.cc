@@ -454,6 +454,12 @@ configuration::configuration()
       "touching the log until the batch is exhausted.",
       required::no,
       1000)
+  , enable_sasl(
+      *this,
+      "enable_sasl",
+      "Enable SASL authentication for Kafka connections.",
+      required::no,
+      false)
   , _advertised_kafka_api(
       *this,
       "advertised_kafka_api",
