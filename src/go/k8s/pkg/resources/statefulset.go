@@ -13,7 +13,7 @@ package resources
 import (
 	"context"
 	"fmt"
-	"strings"
+	"strconv"
 
 	"github.com/go-logr/logr"
 	redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
@@ -181,7 +181,7 @@ func (r *StatefulSetResource) Obj() (k8sclient.Object, error) {
 							Args: []string{
 								"--check=false",
 								"--smp 1",
-								"--memory " + strings.ReplaceAll(memory.String(), "Gi", "G"),
+								"--memory " + strconv.FormatInt(memory.Value(), 10),
 								"start",
 								"--",
 								"--default-log-level=debug",
