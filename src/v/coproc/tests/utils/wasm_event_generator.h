@@ -10,6 +10,7 @@
 
 #pragma once
 #include "bytes/bytes.h"
+#include "coproc/tests/utils/coprocessor.h"
 #include "coproc/wasm_event.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
@@ -20,26 +21,33 @@
 
 namespace coproc::wasm {
 
-/// Convienent struct for bundling together data necessary to serialized a
+/// Since c++ cannot dynamically instatiante source code aquired from a payload
+/// over the network (like the nodejs wasm engine can), this payload is defined
+/// which instead carries a coprocessor class name and arguments for which the
+/// coproc::supervisor can use to explicity instantate the desired coproc
+struct cpp_enable_payload {
+    registry::type_identifier tid;
+    std::vector<model::topic> topics;
+};
+
+/// Convienent struct for bundling together data necessary to serialize a
 /// wasm_event into a model::record. Any field set to std::nullopt will be
-/// skipped during serialization
+/// skipped during serialization, useful for testing failure cases
 struct event {
     std::optional<uint64_t> id;
     std::optional<ss::sstring> desc;
     std::optional<bytes> script;
     std::optional<bytes> checksum;
     std::optional<event_action> action;
-};
 
-/// Let the generator functions fill in the other fields
-struct short_event {
-    uint64_t id;
-    event_action action;
-    bool compress{false};
-    short_event(uint64_t id, event_action action, bool compress = false)
-      : id(id)
-      , action(action)
-      , compress(compress) {}
+    /// Default constructor creates an invalid event
+    event() = default;
+
+    /// Use the single arg constructor to create remove events
+    event(uint64_t);
+
+    // And the two arg consutrctor to create deploy events
+    event(uint64_t, cpp_enable_payload);
 };
 
 /// \brief Generates an event that models the 'wasm_event' struct passed in. Any
@@ -58,6 +66,6 @@ make_random_event_record_batch_reader(model::offset, int, int);
 /// contain generated data constrained by name / action / compressed parameters
 /// per record
 model::record_batch_reader
-  make_event_record_batch_reader(std::vector<std::vector<short_event>>);
+  make_event_record_batch_reader(std::vector<std::vector<event>>);
 
 } // namespace coproc::wasm

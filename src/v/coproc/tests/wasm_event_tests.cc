@@ -9,6 +9,7 @@
  */
 
 #include "coproc/errc.h"
+#include "coproc/tests/utils/coprocessor.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 
@@ -52,10 +53,11 @@ BOOST_AUTO_TEST_CASE(verify_make_event_failures) {
     }
     {
         /// Missing 'script' field
-        model::record r = coproc::wasm::make_record(coproc::wasm::event{
-          .id = random_generators::get_int<uint64_t>(53339),
-          .checksum = random_generators::get_bytes(32),
-          .action = coproc::wasm::event_action::deploy});
+        coproc::wasm::event e;
+        e.id = random_generators::get_int<uint64_t>(53339);
+        e.checksum = random_generators::get_bytes(32);
+        e.action = coproc::wasm::event_action::deploy;
+        model::record r = coproc::wasm::make_record(e);
         BOOST_CHECK_EQUAL(
           cp_errc::empty_mandatory_field,
           coproc::wasm::verify_event_checksum(r));
@@ -64,25 +66,25 @@ BOOST_AUTO_TEST_CASE(verify_make_event_failures) {
     }
     {
         /// Erroneous checksum
-        model::record r = coproc::wasm::make_record(coproc::wasm::event{
-          .id = random_generators::get_int<uint64_t>(55555),
-          .desc = random_generators::gen_alphanum_string(15),
-          .script = random_generators::get_bytes(15),
-          .checksum = random_generators::get_bytes(32),
-          .action = coproc::wasm::event_action::deploy});
+        coproc::wasm::event e;
+        e.id = random_generators::get_int<uint64_t>(55555);
+        e.desc = random_generators::gen_alphanum_string(15);
+        e.script = random_generators::get_bytes(15);
+        e.checksum = random_generators::get_bytes(32);
+        e.action = coproc::wasm::event_action::deploy;
+        model::record r = coproc::wasm::make_record(e);
         BOOST_CHECK_EQUAL(
           cp_errc::mismatched_checksum, coproc::wasm::verify_event_checksum(r));
     }
 }
 
 SEASTAR_THREAD_TEST_CASE(verify_event_reconciliation) {
-    using action = coproc::wasm::event_action;
-    std::vector<std::vector<coproc::wasm::short_event>> events{
-      {{123, action::deploy},
-       {456, action::deploy},
-       {123, action::remove},
-       {456, action::deploy}},
-      {{789, action::deploy}, {123, action::remove}}};
+    const auto deploy = coproc::wasm::cpp_enable_payload{
+      .tid = coproc::registry::type_identifier::identity_coprocessor,
+      .topics = {model::topic("ABC")}};
+    std::vector<std::vector<coproc::wasm::event>> events{
+      {{123, deploy}, {456, deploy}, {123}, {456, deploy}},
+      {{789, deploy}, {123}}};
 
     auto rbr = make_event_record_batch_reader(std::move(events));
     auto batches = model::consume_reader_to_memory(
