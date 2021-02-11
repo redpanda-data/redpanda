@@ -55,8 +55,7 @@ id_allocator_stm::allocate_id_and_wait(
     }
 
     if (_processed > _config.id_allocator_log_capacity.value()) {
-        sequence_id seq = sequence_id{
-          _run_id.value(), _c->self(), ++_last_seq_tick};
+        auto seq = sequence_id{_run_id.value(), _c->self(), ++_last_seq_tick};
         prelude = replicate_and_wait(prepare_truncation_cmd{seq}, timeout, seq)
                     .then([this](bool replicated) {
                         if (replicated) {
