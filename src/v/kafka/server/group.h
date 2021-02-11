@@ -412,6 +412,10 @@ public:
     // helper for the kafka api: describe groups
     described_group describe() const;
 
+    // transition group to `dead` state if empty, otherwise an appropriate error
+    // is returned for the current state.
+    ss::future<error_code> remove();
+
 private:
     using member_map = absl::flat_hash_map<kafka::member_id, member_ptr>;
     using protocol_support = absl::flat_hash_map<kafka::protocol_name, int>;

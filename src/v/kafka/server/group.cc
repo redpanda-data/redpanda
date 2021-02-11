@@ -20,6 +20,7 @@
 #include "utils/to_string.h"
 #include "vassert.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/print.hh>
 #include <seastar/core/sstring.hh>
@@ -1372,6 +1373,77 @@ described_group group::describe() const {
     }
 
     return desc;
+}
+
+ss::future<error_code> group::remove() {
+    switch (state()) {
+    case group_state::dead:
+        co_return error_code::group_id_not_found;
+
+    case group_state::empty:
+        set_state(group_state::dead);
+        break;
+
+    default:
+        co_return error_code::non_empty_group;
+    }
+
+    // build offset tombstones
+    storage::record_batch_builder builder(
+      raft::data_batch_type, model::offset(0));
+
+    for (auto& offset : _offsets) {
+        group_log_record_key key{
+          .record_type = group_log_record_key::type::offset_commit,
+          .key = reflection::to_iobuf(group_log_offset_key{
+            _id,
+            offset.first.topic,
+            offset.first.partition,
+          }),
+        };
+
+        builder.add_raw_kv(reflection::to_iobuf(std::move(key)), std::nullopt);
+    }
+
+    // build group tombstone
+    group_log_record_key key{
+      .record_type = group_log_record_key::type::group_metadata,
+      .key = reflection::to_iobuf(_id),
+    };
+
+    builder.add_raw_kv(reflection::to_iobuf(std::move(key)), std::nullopt);
+
+    auto batch = std::move(builder).build();
+    auto reader = model::make_memory_record_batch_reader(std::move(batch));
+
+    try {
+        auto result = co_await _partition->replicate(
+          std::move(reader),
+          raft::replicate_options(raft::consistency_level::quorum_ack));
+        if (result) {
+            vlog(
+              klog.trace,
+              "Replicated group delete record {} at offset {}",
+              _id,
+              result.value().last_offset);
+        } else {
+            vlog(
+              klog.error,
+              "Error occured replicating group {} delete records {}",
+              _id,
+              result.error());
+        }
+    } catch (const std::exception& e) {
+        vlog(
+          klog.error,
+          "Exception occured replicating group {} delete records {}",
+          _id,
+          e);
+    }
+
+    // kafka chooses to report no error even if replication fails. the in-memory
+    // state on this node is still correctly represented.
+    co_return error_code::none;
 }
 
 std::ostream& operator<<(std::ostream& o, const group& g) {

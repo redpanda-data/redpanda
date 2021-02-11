@@ -13,6 +13,7 @@
 #include "cluster/cluster_utils.h"
 #include "cluster/partition_manager.h"
 #include "config/configuration.h"
+#include "kafka/protocol/delete_groups.h"
 #include "kafka/protocol/describe_groups.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/heartbeat.h"
@@ -149,6 +150,9 @@ public:
     std::pair<bool, std::vector<listed_group>> list_groups() const;
 
     described_group describe_group(const model::ntp&, const kafka::group_id&);
+
+    ss::future<std::vector<deletable_group_result>>
+      delete_groups(std::vector<std::pair<model::ntp, group_id>>);
 
 public:
     error_code validate_group_status(

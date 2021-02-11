@@ -17,6 +17,8 @@
 #include "model/record.h"
 #include "resource_mgmt/io_priority.h"
 
+#include <seastar/core/coroutine.hh>
+
 namespace kafka {
 
 ss::future<> group_manager::start() {
@@ -575,10 +577,51 @@ group_manager::describe_group(const model::ntp& ntp, const kafka::group_id& g) {
     return group->describe();
 }
 
+ss::future<std::vector<deletable_group_result>> group_manager::delete_groups(
+  std::vector<std::pair<model::ntp, group_id>> groups) {
+    std::vector<deletable_group_result> results;
+
+    for (auto& group_info : groups) {
+        auto error = validate_group_status(
+          group_info.first, group_info.second, delete_groups_api::key);
+        if (error != error_code::none) {
+            results.push_back(deletable_group_result{
+              .group_id = std::move(group_info.second),
+              .error_code = error_code::not_coordinator,
+            });
+            continue;
+        }
+
+        auto group = get_group(group_info.second);
+        if (!group) {
+            results.push_back(deletable_group_result{
+              .group_id = std::move(group_info.second),
+              .error_code = error_code::group_id_not_found,
+            });
+            continue;
+        }
+
+        // TODO: future optimizations
+        // - handle group deletions in parallel
+        // - batch tombstones same backing partition
+        error = co_await group->remove();
+        if (error == error_code::none) {
+            _groups.erase(group_info.second);
+        }
+        results.push_back(deletable_group_result{
+          .group_id = std::move(group_info.second),
+          .error_code = error,
+        });
+    }
+
+    co_return std::move(results);
+}
+
 bool group_manager::valid_group_id(const group_id& group, api_key api) {
     switch (api) {
     case describe_groups_api::key:
     case offset_commit_api::key:
+    case delete_groups_api::key:
         [[fallthrough]];
     case offset_fetch_api::key:
         // <kafka> For backwards compatibility, we support the offset commit
@@ -586,10 +629,6 @@ bool group_manager::valid_group_id(const group_id& group, api_key api) {
         // DeleteGroups so that users can view and delete state of all
         // groups.</kafka>
         return true;
-
-    // currently unsupported apis
-    case delete_groups_api::key:
-        return false;
 
     // join-group etc... require non-empty group ids
     default:
