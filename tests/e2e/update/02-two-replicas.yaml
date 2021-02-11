@@ -1,6 +1,6 @@
 apiVersion: redpanda.vectorized.io/v1alpha1
 kind: Cluster
 metadata:
-  name: scale-up-cluster
+  name: update-cluster
 spec:
   replicas: 2
