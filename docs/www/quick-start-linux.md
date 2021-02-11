@@ -75,7 +75,7 @@ Here are the basic commands to produce and consume streams:
      rpk topic consume twitch_chat
      ```
 
-     Each message is shown with its metdata, like this:
+     Each message is shown with its metadata, like this:
 
      ```
      {
@@ -92,6 +92,6 @@ You've just installed Redpanda and done streaming in a few easy steps.
 
 - Our [FAQ](faq) page shows all of the clients that you can use to do streaming with Redpanda.
      (Spoiler: Any Kafka-compatible client!)
-- Get a multi-node cluster up and running is by using [`rpk container`](guide-rpk-container).
-- Use the [Quick Start Docker Guide](quick-start-docker) to try out Redpanda on Docker.
+- Get a multi-node cluster up and running using [`rpk container`](guide-rpk-container).
+- Use the [Quick Start Docker Guide](quick-start-docker) to try out Redpanda using Docker.
 - Want to setup a production cluster? Check out our [Production Deployment Guide](production-deployment).
