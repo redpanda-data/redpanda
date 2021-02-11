@@ -3,6 +3,7 @@ module github.com/vectorizedio/redpanda/src/go/k8s
 go 1.15
 
 require (
+	github.com/Shopify/sarama v1.26.1
 	github.com/go-logr/logr v0.3.0
 	github.com/onsi/ginkgo v1.14.1
 	github.com/onsi/gomega v1.10.2

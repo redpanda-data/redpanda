@@ -114,6 +114,9 @@ spec:
                 description: Replicas show how many nodes are working in the cluster
                 format: int32
                 type: integer
+              upgrading:
+                description: Indicates cluster is upgrading
+                type: boolean
             type: object
         type: object
     served: true
