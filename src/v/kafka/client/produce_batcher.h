@@ -72,7 +72,8 @@ public:
 
     ss::future<partition_response> produce(model::record_batch&& batch) {
         batch.for_each_record([this](model::record rec) {
-            _builder.add_raw_kv(rec.release_key(), rec.release_value());
+            _builder.add_raw_kw(
+              rec.release_key(), rec.release_value(), std::move(rec.headers()));
         });
 
         _client_reqs.emplace_back(batch.record_count());
