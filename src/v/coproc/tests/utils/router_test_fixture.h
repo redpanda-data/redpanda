@@ -12,7 +12,6 @@
 #pragma once
 
 #include "coproc/logger.h"
-#include "coproc/script_manager.h"
 #include "coproc/tests/utils/coproc_test_fixture.h"
 #include "coproc/tests/utils/coprocessor.h"
 #include "coproc/tests/utils/supervisor_test_fixture.h"
@@ -43,10 +42,6 @@ public:
     using push_results = absl::flat_hash_map<model::ntp, model::offset>;
     using drain_results
       = absl::flat_hash_map<model::ntp, std::pair<model::offset, std::size_t>>;
-
-    /// \brief Initialize the storage layer, then submit all coprocessors to
-    /// v/coproc/service , this doesn't start the actual test
-    ss::future<> startup(log_layout_map) override;
 
     /// \brief Start the actual test, ensure that startup() has been called, it
     /// initializes the storage layer and registers the coprocessors
@@ -80,15 +75,4 @@ private:
       typename ResultType = results_mapped_t<ActionTag>>
     ss::future<>
     do_action(const model::ntp&, std::size_t, std::size_t, ResultType&);
-
-    /// Sanity checks, throws if the service fails to register a
-    /// coprocessor, helpful when debugging possible issues within the test
-    /// setup process
-    void validate_result(
-      const enable_reqs_data&,
-      result<rpc::client_context<coproc::enable_copros_reply>>);
-
-    ss::future<> enable_coprocessors(enable_reqs_data&);
-
-    void to_ecr_data(enable_reqs_data&, const copro_map&);
 };

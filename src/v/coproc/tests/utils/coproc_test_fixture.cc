@@ -26,29 +26,12 @@
 
 using namespace std::literals;
 
-coproc_test_fixture::~coproc_test_fixture() {
-    if (_client.is_valid()) {
-        _client.stop().get();
-    }
-}
-
-coproc_test_fixture::script_manager_client coproc_test_fixture::make_client() {
-    return rpc::client<coproc::script_manager_client_protocol>(
-      rpc::transport_configuration{
-        .server_addr = ss::socket_address(
-          ss::net::inet_address("127.0.0.1"), 43118),
-        .credentials = nullptr});
-}
-
 ss::future<> coproc_test_fixture::startup(log_layout_map llm) {
-    _llm = llm;
     return ss::do_with(std::move(llm), [this](log_layout_map& llm) {
-        return wait_for_controller_leadership()
-          .then([this] { return _client.connect(model::no_timeout); })
-          .then([this, &llm] {
-              return ss::parallel_for_each(
-                llm, [this](auto& p) { return add_topic(p.first, p.second); });
-          });
+        return wait_for_controller_leadership().then([this, &llm] {
+            return ss::parallel_for_each(
+              llm, [this](auto& p) { return add_topic(p.first, p.second); });
+        });
     });
 }
 

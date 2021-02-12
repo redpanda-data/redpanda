@@ -10,8 +10,6 @@
  */
 
 #pragma once
-#include "coproc/script_manager.h"
-#include "coproc/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
@@ -29,23 +27,6 @@ inline static model::topic_namespace make_ts(ss::sstring&& topic) {
 inline static model::topic_namespace make_ts(const model::topic& topic) {
     return model::topic_namespace(model::kafka_namespace, topic);
 }
-
-/// \brief short way to construct an enable_copros_request::data
-coproc::enable_copros_request::data make_enable_req(
-  uint32_t id,
-  std::vector<std::pair<ss::sstring, coproc::topic_ingestion_policy>>);
-
-/// \brief Register coprocessors with redpanda
-ss::future<result<rpc::client_context<coproc::enable_copros_reply>>>
-register_coprocessors(
-  rpc::client<coproc::script_manager_client_protocol>&,
-  std::vector<coproc::enable_copros_request::data>&&);
-
-/// \brief Deregister coprocessors with redpanda
-ss::future<result<rpc::client_context<coproc::disable_copros_reply>>>
-deregister_coprocessors(
-  rpc::client<coproc::script_manager_client_protocol>&,
-  std::vector<uint32_t>&&);
 
 /// Produces a batch with 1 record_batch which has 1 single record within it
 model::record_batch_reader single_record_record_batch_reader();

@@ -8,20 +8,19 @@
  * https://github.com/vectorizedio/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "config/configuration.h"
-#include "coproc/tests/utils/coproc_test_fixture.h"
 #include "coproc/tests/utils/coprocessor.h"
 #include "coproc/tests/utils/helpers.h"
 #include "coproc/tests/utils/router_test_fixture.h"
 #include "coproc/types.h"
 #include "model/fundamental.h"
-#include "model/timeout_clock.h"
-#include "redpanda/tests/fixture.h"
 #include "storage/tests/utils/random_batch.h"
-#include "test_utils/fixture.h"
 
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test_log.hpp>
+
+static const auto e = coproc::topic_ingestion_policy::earliest;
+static const auto s = coproc::topic_ingestion_policy::stored;
+static const auto l = coproc::topic_ingestion_policy::latest;
 
 ss::future<std::size_t> number_of_logs(redpanda_thread_fixture* rtf) {
     return rtf->app.storage.map_reduce0(
@@ -29,8 +28,6 @@ ss::future<std::size_t> number_of_logs(redpanda_thread_fixture* rtf) {
       std::size_t(0),
       std::plus<>());
 }
-
-using namespace std::literals;
 
 FIXTURE_TEST(test_coproc_router_no_results, router_test_fixture) {
     // Note the original number of logs
