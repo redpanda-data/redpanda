@@ -71,12 +71,10 @@ type ClusterList struct {
 
 // RedpandaConfig is the definition of the main configuration
 type RedpandaConfig struct {
-	RPCServer		SocketAddress	`json:"rpcServer,omitempty"`
-	AdvertisedRPCAPI	SocketAddress	`json:"advertisedRpcApi,omitempty"`
-	KafkaAPI		SocketAddress	`json:"kafkaApi,omitempty"`
-	AdvertisedKafkaAPI	SocketAddress	`json:"advertisedKafkaApi,omitempty"`
-	AdminAPI		SocketAddress	`json:"admin,omitempty"`
-	DeveloperMode		bool		`json:"developerMode,omitempty"`
+	RPCServer	SocketAddress	`json:"rpcServer,omitempty"`
+	KafkaAPI	SocketAddress	`json:"kafkaApi,omitempty"`
+	AdminAPI	SocketAddress	`json:"admin,omitempty"`
+	DeveloperMode	bool		`json:"developerMode,omitempty"`
 }
 
 // SocketAddress provide the way to configure the port

@@ -181,7 +181,7 @@ func (r *ConfigMapResource) createConfiguration() interface{} {
 				},
 				AdvertisedRPCAPI: &config.SocketAddress{
 					Address:	"0.0.0.0",
-					Port:		getPort(c.AdvertisedRPCAPI.Port, cr.RPCServer.Port),
+					Port:		getPort(c.RPCServer.Port, cr.RPCServer.Port),
 				},
 				KafkaAPI: config.SocketAddress{
 					Address:	"0.0.0.0",
@@ -189,7 +189,7 @@ func (r *ConfigMapResource) createConfiguration() interface{} {
 				},
 				AdvertisedKafkaAPI: config.SocketAddress{
 					Address:	"0.0.0.0",
-					Port:		getPort(c.AdvertisedKafkaAPI.Port, defaultKafkaAPIPort),
+					Port:		getPort(c.KafkaAPI.Port, defaultKafkaAPIPort),
 				},
 				AdminAPI: config.SocketAddress{
 					Address:	"0.0.0.0",
@@ -202,7 +202,7 @@ func (r *ConfigMapResource) createConfiguration() interface{} {
 						Host: config.SocketAddress{
 							// Example address: cluster-sample-0.cluster-sample.default.svc.cluster.local
 							Address:	r.pandaCluster.Name + "-0." + serviceAddress,
-							Port:		getPort(c.AdvertisedRPCAPI.Port, cr.RPCServer.Port),
+							Port:		getPort(c.RPCServer.Port, cr.RPCServer.Port),
 						},
 					},
 				},
@@ -212,7 +212,7 @@ func (r *ConfigMapResource) createConfiguration() interface{} {
 	}
 
 	cr.RPCServer.Port = getPort(c.RPCServer.Port, cr.RPCServer.Port)
-	cr.AdvertisedRPCAPI.Port = getPort(c.AdvertisedRPCAPI.Port, cr.AdvertisedRPCAPI.Port)
+	cr.AdvertisedRPCAPI.Port = getPort(c.RPCServer.Port, cr.AdvertisedRPCAPI.Port)
 	cr.AdminApi.Port = getPort(c.AdminAPI.Port, cr.AdminApi.Port)
 	cr.RPCServer.Port = getPort(c.RPCServer.Port, cr.RPCServer.Port)
 	cr.DeveloperMode = c.DeveloperMode
@@ -221,7 +221,7 @@ func (r *ConfigMapResource) createConfiguration() interface{} {
 			Host: config.SocketAddress{
 				// Example address: cluster-sample-0.cluster-sample.default.svc.cluster.local
 				Address:	r.pandaCluster.Name + "-0." + serviceAddress,
-				Port:		getPort(c.AdvertisedRPCAPI.Port, cr.AdvertisedRPCAPI.Port),
+				Port:		getPort(c.RPCServer.Port, cr.AdvertisedRPCAPI.Port),
 			},
 		},
 	}
