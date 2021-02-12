@@ -17,7 +17,6 @@ set(srcs
     partition_allocator_tests.cc
     simple_batch_builder_test.cc
     serialization_rt_test.cc
-    controller_recovery_test.cc
     cluster_utils_tests.cc
     cluster_tests.cc
     metadata_dissemination_test.cc

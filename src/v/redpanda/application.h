@@ -36,11 +36,13 @@ class application {
 public:
     int run(int, char**);
 
-    void initialize();
+    void initialize(std::optional<scheduling_groups> = std::nullopt);
     void check_environment();
     void configure_admin_server();
     void wire_up_services();
     void start();
+
+    explicit application(ss::sstring = "redpanda::main");
 
     void shutdown() {
         while (!_deferred.empty()) {
@@ -97,7 +99,7 @@ private:
     void setup_metrics();
     std::unique_ptr<ss::app_template> _app;
     scheduling_groups _scheduling_groups;
-    ss::logger _log{"redpanda::main"};
+    ss::logger _log;
 
     std::unique_ptr<coproc::wasm_event_listener> _wasm_event_listener;
     ss::sharded<rpc::server> _coproc_rpc;

@@ -36,7 +36,9 @@ wasm_transport_cfg(const ss::socket_address& addr) {
       .server_addr = addr,
       .max_queued_bytes = static_cast<uint32_t>(
         config::shard_local_cfg().coproc_max_inflight_bytes.value()),
-      .credentials = nullptr};
+      .credentials = nullptr,
+      .disable_metrics = rpc::metrics_disabled(
+        config::shard_local_cfg().disable_metrics())};
 }
 
 rpc::backoff_policy wasm_transport_backoff() {

@@ -55,6 +55,11 @@
 #include <exception>
 #include <vector>
 
+application::application(ss::sstring logger_name)
+  : _log(std::move(logger_name)){
+
+  };
+
 int application::run(int ac, char** av) {
     init_env();
     vlog(_log.info, "Redpanda {}", redpanda_version());
@@ -102,16 +107,23 @@ int application::run(int ac, char** av) {
     });
 }
 
-void application::initialize() {
+void application::initialize(std::optional<scheduling_groups> groups) {
     if (config::shard_local_cfg().enable_pid_file()) {
         syschecks::pidfile_create(config::shard_local_cfg().pidfile_path());
     }
-    _scheduling_groups.create_groups().get();
-    _deferred.emplace_back(
-      [this] { _scheduling_groups.destroy_groups().get(); });
+
     smp_service_groups.create_groups().get();
     _deferred.emplace_back(
       [this] { smp_service_groups.destroy_groups().get(); });
+
+    if (groups) {
+        _scheduling_groups = *groups;
+        return;
+    }
+
+    _scheduling_groups.create_groups().get();
+    _deferred.emplace_back(
+      [this] { _scheduling_groups.destroy_groups().get(); });
 }
 
 void application::setup_metrics() {
@@ -445,6 +457,8 @@ void application::wire_up_services() {
     rpc_cfg.load_balancing_algo
       = ss::server_socket::load_balancing_algorithm::port;
     rpc_cfg.max_service_memory_per_core = memory_groups::rpc_total_memory();
+    rpc_cfg.disable_metrics = rpc::metrics_disabled(
+      config::shard_local_cfg().disable_metrics());
     auto rpc_server_addr
       = rpc::resolve_dns(config::shard_local_cfg().rpc_server()).get0();
     rpc_cfg.addrs.emplace_back(rpc_server_addr);
@@ -483,6 +497,8 @@ void application::wire_up_services() {
         cp_rpc_cfg.max_service_memory_per_core
           = memory_groups::rpc_total_memory();
         cp_rpc_cfg.addrs.emplace_back(coproc_script_manager_server_addr);
+        cp_rpc_cfg.disable_metrics = rpc::metrics_disabled(
+          config::shard_local_cfg().disable_metrics());
         syschecks::systemd_message(
           "Starting coprocessor internal RPC {}", cp_rpc_cfg)
           .get();
@@ -523,6 +539,8 @@ void application::wire_up_services() {
                             })
                           .get0()
                       : nullptr;
+    kafka_cfg.disable_metrics = rpc::metrics_disabled(
+      config::shard_local_cfg().disable_metrics());
     syschecks::systemd_message("Starting kafka RPC {}", kafka_cfg).get();
     construct_service(_kafka_server, kafka_cfg).get();
     construct_service(
