@@ -48,6 +48,4 @@ private:
       model::offset,
       std::size_t,
       model::timeout_clock::time_point);
-
-    ss::future<std::optional<ss::shard_id>> shard_for_ntp(const model::ntp&);
 };

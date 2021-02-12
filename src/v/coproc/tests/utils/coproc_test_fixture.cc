@@ -41,9 +41,7 @@ ss::future<coproc_test_fixture::opt_reader_data_t> coproc_test_fixture::drain(
   model::offset offset,
   model::timeout_clock::time_point timeout) {
     const auto m_ntp = model::materialized_ntp(std::move(ntp));
-    return shard_for_ntp(m_ntp.source_ntp())
-      .then(
-        [this, m_ntp, offset, limit, timeout](auto shard_id) {
+    auto shard_id =  app.shard_table.local().shard_for(m_ntp.source_ntp());
             if (!shard_id) {
                 vlog(
                   coproc::coproclog.error,
@@ -86,7 +84,6 @@ ss::future<coproc_test_fixture::opt_reader_data_t> coproc_test_fixture::drain(
                           });
                     });
               });
-        });
 }
 
 storage::log_reader_config log_rdr_cfg(const model::offset& min_offset) {
@@ -143,8 +140,7 @@ ss::future<model::record_batch_reader::data_t> coproc_test_fixture::do_drain(
 
 ss::future<model::offset> coproc_test_fixture::push(
   const model::ntp& ntp, model::record_batch_reader rbr) {
-    return shard_for_ntp(ntp).then([this, ntp, rbr = std::move(rbr)](
-                                     auto shard_id) mutable {
+    auto shard_id = app.shard_table.local().shard_for(ntp);
         if (!shard_id) {
             vlog(
               coproc::coproclog.error,
@@ -172,25 +168,4 @@ ss::future<model::offset> coproc_test_fixture::push(
                       .then([](auto r) { return r.value().last_offset; });
                 });
           });
-    });
-}
-
-ss::future<std::optional<ss::shard_id>>
-coproc_test_fixture::shard_for_ntp(const model::ntp& ntp) {
-    return app.storage
-      .map_reduce0(
-        [ntp](storage::api& api) -> std::optional<ss::shard_id> {
-            if (auto log = api.log_mgr().get(ntp)) {
-                return ss::this_shard_id();
-            }
-            return std::nullopt;
-        },
-        std::vector<ss::shard_id>(),
-        reduce::push_back_opt())
-      .then([ntp](std::vector<ss::shard_id> sids) {
-          vassert(
-            sids.size() <= 1, "ntp {} duplicate detected across shards", ntp);
-          return sids.size() == 1 ? std::optional<ss::shard_id>(sids.front())
-                                  : std::nullopt;
-      });
 }
