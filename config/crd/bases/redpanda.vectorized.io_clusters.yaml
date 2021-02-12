@@ -45,18 +45,6 @@ spec:
                       port:
                         type: integer
                     type: object
-                  advertisedKafkaApi:
-                    description: SocketAddress provide the way to configure the port
-                    properties:
-                      port:
-                        type: integer
-                    type: object
-                  advertisedRpcApi:
-                    description: SocketAddress provide the way to configure the port
-                    properties:
-                      port:
-                        type: integer
-                    type: object
                   developerMode:
                     type: boolean
                   kafkaApi:
