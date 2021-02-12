@@ -72,6 +72,10 @@ set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${BASE_LD_FLAGS} -pie")
 set(CMAKE_SHARED_LINKER_FLAGS "${BASE_LD_FLAGS}")
 set(CMAKE_MODULE_LINKER_FLAGS "${BASE_LD_FLAGS}")
 
+# this needs to be here so that CMAKE_<LANG>_COMPILER_LAUNCHER
+# is accessible in the configure_file call for the third-party dependencies
+include(ccache)
+
 # don't export() the contents to registry
 set(CMAKE_EXPORT_NO_PACKAGE_REGISTRY ON CACHE INTERNAL "" FORCE)
 # disable system level registry /usr/local/share/cmake/*
@@ -139,7 +143,6 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 # add code
-include(ccache)
 include(testing)
 include(set_option)
 include(v_library)
