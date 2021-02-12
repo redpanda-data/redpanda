@@ -93,6 +93,10 @@ public:
         return _pm;
     }
 
+    storage::api& get_local_storage_api() { return _storage.local(); }
+
+    ss::sharded<storage::api>& get_storage_api() { return _storage; }
+
     cluster::shard_table& get_shard_table() { return st.local(); }
 
     ~controller_tests_fixture() {

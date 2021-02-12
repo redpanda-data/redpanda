@@ -106,8 +106,9 @@ void set_routes(ss::httpd::routes& r) {
       },
       "txt");
     auto empty_delete_response = new function_handler(
-      [](const_req req) {
+      [](const_req req, reply& reply) {
           BOOST_REQUIRE(!req.get_header("x-amz-content-sha256").empty());
+          reply.set_status(reply::status_type::no_content);
           return "";
       },
       "txt");
@@ -271,8 +272,6 @@ SEASTAR_TEST_CASE(test_delete_object_success) {
     return ss::async([] {
         auto conf = transport_configuration();
         auto [server, client] = started_client_and_server(conf);
-        iobuf payload;
-        auto payload_stream = make_iobuf_ref_output_stream(payload);
         client
           ->delete_object(
             s3::bucket_name("test-bucket"), s3::object_key("test"))
