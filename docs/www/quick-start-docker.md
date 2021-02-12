@@ -11,7 +11,7 @@ of the Kafka ecosystem.
 This quick start guide to intended to help you get started with Redpanda
 for development and testing purposes. For production deployments or
 performance testing please see our
-[Production Deployment](production-deployment) for more information.
+[Production Deployment](production-deployment.md) for more information.
 
 ## Step 1: Create a bridge network
 
@@ -159,6 +159,6 @@ docker volume rm redpanda1 redpanda2 redpanda3
 
 ## What's Next?
 
-- Check out our [FAQ](faq)
-- Want to setup a production cluster? Check out our [Production Deployment](production-deployment) Guide.
+- Check out our [FAQ](faq.md)
+- Want to setup a production cluster? Check out our [Production Deployment](production-deployment.md) Guide.
   

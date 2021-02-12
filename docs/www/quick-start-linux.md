@@ -9,7 +9,7 @@ is also fully API compatible Kafka allowing you to make full use of the Kafka ec
 
 This quick start guide to intended to help you get started with Redpanda for
 development and testing purposes. For production deployments or performance
-testing please see our [Production Deployment](production-deployment)
+testing please see our [Production Deployment](production-deployment.md)
 for more information.
 
 ## Installation
@@ -58,12 +58,12 @@ You now have a running Redpanda instance!
 
 The simplest way to get a multi node cluster up and running is by using
 `rpk container`. You can follow the
-[rpk Container Guide](guide-rpk-container). If you want a more manual
+[rpk Container Guide](guide-rpk-container.md). If you want a more manual
 approach you can check out the
-[Quick Start Docker Guide](quick-start-docker).
+[Quick Start Docker Guide](quick-start-docker.md).
 
 ## What's Next?
 
-- Check out our [FAQ](faq)
-- Want to setup a production cluster? Check out our [Production Deployment](production-deployment) Guide.
+- Check out our [FAQ](faq.md)
+- Want to setup a production cluster? Check out our [Production Deployment](production-deployment.md) Guide.
   
