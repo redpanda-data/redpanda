@@ -9,6 +9,7 @@
  */
 
 #pragma once
+#include "coproc/script_manager.h"
 #include "coproc/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"

@@ -45,7 +45,6 @@ public:
       model::node_id node_id,
       int32_t kafka_port,
       int32_t rpc_port,
-      int32_t coproc_script_mgr_port,
       int32_t coproc_supervisor_port,
       std::vector<config::seed_server> seed_servers,
       ss::sstring base_dir,
@@ -58,7 +57,6 @@ public:
           node_id,
           kafka_port,
           rpc_port,
-          coproc_script_mgr_port,
           coproc_supervisor_port,
           std::move(seed_servers));
         app.initialize(sch_groups);
@@ -87,7 +85,6 @@ public:
         model::node_id(1),
         9092,
         33145,
-        43118,
         43189,
         {},
         fmt::format("test.dir_{}", time(0)),
@@ -107,14 +104,12 @@ public:
       model::node_id node_id,
       int32_t kafka_port,
       int32_t rpc_port,
-      int32_t coproc_script_mgr_port,
       int32_t coproc_supervisor_port,
       std::vector<config::seed_server> seed_servers) {
         auto base_path = std::filesystem::path(data_dir);
         ss::smp::invoke_on_all([node_id,
                                 kafka_port,
                                 rpc_port,
-                                coproc_script_mgr_port,
                                 coproc_supervisor_port,
                                 seed_servers = std::move(seed_servers),
                                 base_path]() mutable {
@@ -132,9 +127,6 @@ public:
             config.get("developer_mode").set_value(true);
             config.get("enable_admin_api").set_value(false);
             config.get("enable_coproc").set_value(true);
-            config.get("coproc_script_manager_server")
-              .set_value(
-                unresolved_address("127.0.0.1", coproc_script_mgr_port));
             config.get("join_retry_timeout_ms").set_value(100ms);
             config.get("coproc_supervisor_server")
               .set_value(

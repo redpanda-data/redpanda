@@ -482,23 +482,6 @@ void application::wire_up_services() {
                     : nullptr;
     syschecks::systemd_message("Starting internal RPC {}", rpc_cfg).get();
     construct_service(_rpc, rpc_cfg).get();
-    // coproc rpc
-    if (coproc_enabled()) {
-        auto coproc_script_manager_server_addr
-          = rpc::resolve_dns(
-              config::shard_local_cfg().coproc_script_manager_server())
-              .get0();
-        rpc::server_configuration cp_rpc_cfg("coproc_rpc");
-        cp_rpc_cfg.max_service_memory_per_core
-          = memory_groups::rpc_total_memory();
-        cp_rpc_cfg.addrs.emplace_back(coproc_script_manager_server_addr);
-        cp_rpc_cfg.disable_metrics = rpc::metrics_disabled(
-          config::shard_local_cfg().disable_metrics());
-        syschecks::systemd_message(
-          "Starting coprocessor internal RPC {}", cp_rpc_cfg)
-          .get();
-        construct_service(_coproc_rpc, cp_rpc_cfg).get();
-    }
 
     syschecks::systemd_message("Creating id allocator frontend").get();
     construct_service(
@@ -606,25 +589,6 @@ void application::start() {
     auto& conf = config::shard_local_cfg();
     _rpc.invoke_on_all(&rpc::server::start).get();
     vlog(_log.info, "Started RPC server listening at {}", conf.rpc_server());
-
-    if (coproc_enabled()) {
-        syschecks::systemd_message("Starting coproc RPC").get();
-        _coproc_rpc
-          .invoke_on_all([this](rpc::server& s) {
-              auto proto = std::make_unique<rpc::simple_protocol>();
-              proto->register_service<coproc::service>(
-                _scheduling_groups.coproc_sg(),
-                smp_service_groups.coproc_smp_sg(),
-                std::ref(pacemaker));
-              s.set_protocol(std::move(proto));
-          })
-          .get();
-        _coproc_rpc.invoke_on_all(&rpc::server::start).get();
-        vlog(
-          _log.info,
-          "Started coproc RPC server listening at {}",
-          conf.coproc_script_manager_server());
-    }
 
     quota_mgr.invoke_on_all(&kafka::quota_manager::start).get();
 

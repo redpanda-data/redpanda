@@ -19,7 +19,6 @@ v_cc_library(
   SRCS
     types.cc
     logger.cc
-    service.cc
     script_context.cc
     pacemaker.cc
     offset_storage_utils.cc

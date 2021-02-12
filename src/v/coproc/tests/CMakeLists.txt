@@ -15,7 +15,6 @@ rp_test(
   BINARY_NAME coproc_fixture
   SOURCES
     ${fixture_srcs}
-    script_manager_service_test.cc
     router_test.cc
     offset_storage_utils_tests.cc
     wasm_event_tests.cc
