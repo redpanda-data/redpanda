@@ -9,8 +9,16 @@
 
 #include "cluster/id_allocator_frontend.h"
 
+#include "cluster/controller.h"
+#include "cluster/id_allocator_service.h"
 #include "cluster/logger.h"
+#include "cluster/metadata_cache.h"
+#include "cluster/partition_leaders_table.h"
+#include "cluster/partition_manager.h"
+#include "cluster/shard_table.h"
+#include "cluster/topics_frontend.h"
 #include "cluster/types.h"
+#include "config/configuration.h"
 #include "model/namespace.h"
 #include "model/record_batch_reader.h"
 

@@ -7,8 +7,11 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "cluster/metadata_cache.h"
+#include "cluster/shard_table.h"
 #include "cluster/simple_batch_builder.h"
 #include "cluster/tests/cluster_test_fixture.h"
+#include "config/configuration.h"
 #include "test_utils/fixture.h"
 #include "utils/unresolved_address.h"
 using namespace std::chrono_literals; // NOLINT

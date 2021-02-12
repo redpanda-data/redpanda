@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 
 #include "cluster/simple_batch_builder.h"
+#include "cluster/types.h"
 #include "model/record_utils.h"
 #include "random/generators.h"
 #include "reflection/adl.h"

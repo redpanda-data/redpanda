@@ -12,11 +12,7 @@
 #pragma once
 
 #include "cluster/controller.h"
-#include "cluster/id_allocator_frontend.h"
-#include "cluster/metadata_cache.h"
-#include "cluster/metadata_dissemination_service.h"
-#include "cluster/partition_manager.h"
-#include "config/configuration.h"
+#include "cluster/fwd.h"
 #include "coproc/pacemaker.h"
 #include "coproc/service.h"
 #include "coproc/wasm_event_listener.h"

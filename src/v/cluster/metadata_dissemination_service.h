@@ -11,12 +11,8 @@
 
 #pragma once
 
-#include "cluster/members_table.h"
-#include "cluster/metadata_cache.h"
+#include "cluster/fwd.h"
 #include "cluster/metadata_dissemination_types.h"
-#include "cluster/partition_leaders_table.h"
-#include "cluster/partition_manager.h"
-#include "cluster/topic_table.h"
 #include "config/tls_config.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"

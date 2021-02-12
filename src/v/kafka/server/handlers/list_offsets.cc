@@ -11,6 +11,7 @@
 
 #include "cluster/metadata_cache.h"
 #include "cluster/partition_manager.h"
+#include "cluster/shard_table.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"

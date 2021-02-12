@@ -11,14 +11,13 @@
 
 #pragma once
 
-#include "cluster/topic_updates_dispatcher.h"
-#include "raft/mux_state_machine.h"
+namespace kafka {
 
-namespace cluster {
+class coordinator_ntp_mapper;
+class fetch_session_cache;
+class group_manager;
+class group_router;
+class request_context;
+class quota_manager;
 
-// single instance
-using controller_stm = raft::mux_state_machine<topic_updates_dispatcher>;
-
-static constexpr ss::shard_id controller_stm_shard = 0;
-
-} // namespace cluster
+} // namespace kafka

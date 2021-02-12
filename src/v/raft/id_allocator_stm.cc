@@ -9,6 +9,9 @@
 
 #include "raft/id_allocator_stm.h"
 
+#include "cluster/types.h"
+#include "config/configuration.h"
+#include "raft/consensus.h"
 #include "raft/errc.h"
 #include "raft/logger.h"
 #include "raft/types.h"

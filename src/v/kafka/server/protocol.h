@@ -11,15 +11,8 @@
 
 #pragma once
 
-#include "cluster/id_allocator_frontend.h"
-#include "cluster/metadata_cache.h"
-#include "cluster/partition_manager.h"
-#include "cluster/shard_table.h"
-#include "cluster/topics_frontend.h"
-#include "kafka/server/coordinator_ntp_mapper.h"
-#include "kafka/server/fetch_session_cache.h"
-#include "kafka/server/group_router.h"
-#include "kafka/server/quota_manager.h"
+#include "cluster/fwd.h"
+#include "kafka/server/fwd.h"
 #include "rpc/server.h"
 
 #include <seastar/core/future.hh>

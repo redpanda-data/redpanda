@@ -10,6 +10,7 @@
  */
 
 #pragma once
+#include "config/configuration.h"
 #include "model/metadata.h"
 #include "model/record_batch_reader.h"
 #include "raft/consensus.h"

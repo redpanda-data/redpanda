@@ -27,7 +27,7 @@
 
 #include <bitset>
 #include <cstdint>
-#include <iostream>
+#include <iosfwd>
 #include <limits>
 #include <numeric>
 #include <variant>

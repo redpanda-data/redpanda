@@ -9,8 +9,10 @@
 
 #include "raft/group_configuration.h"
 
+#include "config/config_store.h"
 #include "model/adl_serde.h"
 #include "model/metadata.h"
+#include "raft/consensus.h"
 #include "raft/consensus_utils.h"
 
 #include <absl/container/flat_hash_set.h>

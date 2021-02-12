@@ -17,7 +17,6 @@
 #include "vassert.h"
 
 #include <boost/container/flat_map.hpp>
-#include <fmt/ostream.h>
 
 #include <vector>
 

@@ -11,7 +11,6 @@
 #include <seastar/util/later.hh>
 
 #include <absl/container/btree_map.h>
-#include <fmt/ostream.h>
 #include <sys/stat.h>
 
 #include <numeric>

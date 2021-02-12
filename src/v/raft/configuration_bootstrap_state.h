@@ -11,7 +11,8 @@
 
 #pragma once
 
-#include "raft/types.h"
+#include "model/record.h"
+#include "raft/group_configuration.h"
 
 namespace raft {
 

@@ -7,6 +7,9 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "cluster/metadata_cache.h"
+#include "cluster/partition_manager.h"
+#include "cluster/shard_table.h"
 #include "cluster/simple_batch_builder.h"
 #include "cluster/tests/controller_test_fixture.h"
 #include "test_utils/fixture.h"

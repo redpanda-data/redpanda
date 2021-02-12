@@ -9,7 +9,10 @@
 
 #include "kafka/server/group_manager.h"
 
+#include "cluster/cluster_utils.h"
+#include "cluster/partition_manager.h"
 #include "cluster/simple_batch_builder.h"
+#include "config/configuration.h"
 #include "kafka/protocol/delete_groups.h"
 #include "kafka/protocol/describe_groups.h"
 #include "kafka/protocol/offset_commit.h"
@@ -20,6 +23,15 @@
 #include <seastar/core/coroutine.hh>
 
 namespace kafka {
+
+group_manager::group_manager(
+  ss::sharded<raft::group_manager>& gm,
+  ss::sharded<cluster::partition_manager>& pm,
+  config::configuration& conf)
+  : _gm(gm)
+  , _pm(pm)
+  , _conf(conf)
+  , _self(cluster::make_self_broker(config::shard_local_cfg())) {}
 
 ss::future<> group_manager::start() {
     /*

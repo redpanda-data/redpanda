@@ -12,10 +12,10 @@
 #pragma once
 
 #include "outcome.h"
-#include "raft/consensus.h"
 #include "raft/logger.h"
 #include "raft/types.h"
 
+#include <seastar/core/gate.hh>
 #include <seastar/core/semaphore.hh>
 
 #include <absl/container/flat_hash_map.h>

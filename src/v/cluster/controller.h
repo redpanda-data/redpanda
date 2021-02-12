@@ -11,18 +11,9 @@
 
 #pragma once
 
-#include "cluster/controller_backend.h"
-#include "cluster/controller_service.h"
 #include "cluster/controller_stm.h"
-#include "cluster/members_manager.h"
-#include "cluster/metadata_dissemination_service.h"
-#include "cluster/partition_leaders_table.h"
-#include "cluster/partition_manager.h"
-#include "cluster/shard_table.h"
-#include "cluster/topic_table.h"
+#include "cluster/fwd.h"
 #include "cluster/topic_updates_dispatcher.h"
-#include "cluster/topics_frontend.h"
-#include "cluster/types.h"
 #include "rpc/connection_cache.h"
 #include "storage/api.h"
 

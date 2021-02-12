@@ -11,6 +11,7 @@
 
 #include "kafka/protocol/fetch.h"
 
+#include "cluster/partition_leaders_table.h"
 #include "kafka/client/client.h"
 #include "kafka/client/configuration.h"
 #include "kafka/client/test/fixture.h"

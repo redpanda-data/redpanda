@@ -15,7 +15,7 @@
 #include <seastar/core/metrics_registration.hh>
 #include <seastar/net/socket_defs.hh>
 
-#include <iostream>
+#include <iosfwd>
 
 namespace rpc {
 class client_probe {

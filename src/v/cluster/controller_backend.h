@@ -11,15 +11,12 @@
 
 #pragma once
 
-#include "cluster/members_table.h"
-#include "cluster/partition_leaders_table.h"
-#include "cluster/partition_manager.h"
-#include "cluster/shard_table.h"
+#include "cluster/fwd.h"
 #include "cluster/topic_table.h"
-#include "cluster/topics_frontend.h"
 #include "model/fundamental.h"
 #include "outcome.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/sharded.hh>
 

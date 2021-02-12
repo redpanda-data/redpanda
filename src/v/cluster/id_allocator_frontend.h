@@ -10,12 +10,8 @@
  */
 
 #pragma once
-#include "cluster/controller.h"
-#include "cluster/id_allocator_service.h"
-#include "cluster/metadata_cache.h"
-#include "cluster/partition_manager.h"
-#include "cluster/topics_frontend.h"
 #include "cluster/types.h"
+#include "rpc/connection_cache.h"
 
 #include <seastar/core/sharded.hh>
 

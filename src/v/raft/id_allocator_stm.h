@@ -11,10 +11,9 @@
 
 #pragma once
 
-#include "cluster/types.h"
+#include "cluster/fwd.h"
 #include "model/fundamental.h"
 #include "model/record.h"
-#include "raft/consensus.h"
 #include "raft/errc.h"
 #include "raft/logger.h"
 #include "raft/state_machine.h"
@@ -22,6 +21,10 @@
 #include "utils/mutex.h"
 
 #include <absl/container/flat_hash_map.h>
+
+namespace config {
+struct configuration;
+}
 
 namespace raft {
 

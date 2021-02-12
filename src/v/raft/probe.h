@@ -10,8 +10,9 @@
  */
 
 #pragma once
-#include "raft/types.h"
+#include "model/fundamental.h"
 
+#include <seastar/core/metrics.hh>
 #include <seastar/core/metrics_registration.hh>
 
 #include <cstdint>

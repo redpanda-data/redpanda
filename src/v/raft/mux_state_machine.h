@@ -20,6 +20,7 @@
 #include "raft/errc.h"
 #include "raft/state_machine.h"
 #include "utils/expiring_promise.h"
+#include "utils/mutex.h"
 #include "vassert.h"
 
 #include <seastar/core/semaphore.hh>
