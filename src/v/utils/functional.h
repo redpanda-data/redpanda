@@ -68,4 +68,5 @@ struct not_equal_to {
     bool operator()(const T& other) const { return _value != other; }
     T _value;
 };
+
 } // namespace xform

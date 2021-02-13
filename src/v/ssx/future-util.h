@@ -258,24 +258,4 @@ inline auto parallel_transform(Rng rng, Func func) {
       });
 }
 
-/// \brief Specialization of the ssx::async_transform method. Specifically this
-/// method expects a Mapper to return a bool. After calling async_transform and
-/// recieving a std::vector<bool> this method returns true if all futures
-/// resolved to 'true'
-// clang-format off
-template<typename Iterator, typename Func>
-CONCEPT(requires requires(Func f, Iterator i) {
-    { seastar::futurize_invoke(f, *i) } -> std::same_as<ss::future<bool>>;
-})
-// clang-format on
-inline seastar::future<bool> async_all_of(
-  Iterator begin, Iterator end, Func&& func) {
-    return async_transform(
-             std::move(begin), std::move(end), std::forward<Func>(func))
-      .then([](const std::vector<bool>& results) {
-          return std::all_of(
-            results.cbegin(), results.cend(), xform::logical_true());
-      });
-}
-
 } // namespace ssx
