@@ -12,7 +12,7 @@ const useSnapshots = (
   limit: number,
   count: number,
   setCount: (count: number) => void,
-  useTestData: boolean = false, // NOTE 0 - change this to false
+  useTestData: boolean = false // NOTE 0 - change this to false
 ) => {
   // Snapshot data
   const [snapshots, setSnapshots] = useState<any[]>([]);
@@ -37,10 +37,10 @@ const useSnapshots = (
 
   const updateSnapshots = () => {
     fetch(`/metrics`)
-      .then(response => response.text())
-      .then(data => { 
+      .then((response) => response.text())
+      .then((data) => {
         // Parse the data
-        const parsedSnapshot = parsePrometheusTextFormat(data)
+        const parsedSnapshot = parsePrometheusTextFormat(data);
         // Append new snapshot + add timestamp
         const existingSnapshots =
           snapshots.length < limit
@@ -49,7 +49,7 @@ const useSnapshots = (
 
         setSnapshots([...existingSnapshots, addTimestamp(parsedSnapshot)]);
       })
-      .catch(error => console.log(error))
+      .catch((error) => console.log(error));
   };
 
   // Start snapshot fetching

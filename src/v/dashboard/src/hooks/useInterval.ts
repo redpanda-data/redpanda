@@ -1,14 +1,19 @@
 import React, { useState, useEffect } from "react";
 
 // Time Converters
-const intervalFromTimeWindow = (timeWindow: number, limit: number) => timeWindow / limit;
-const timeWindowFromInterval = (interval: number, limit: number) => interval * limit;
+const intervalFromTimeWindow = (timeWindow: number, limit: number) =>
+  timeWindow / limit;
+const timeWindowFromInterval = (interval: number, limit: number) =>
+  interval * limit;
 
 // Initial Values - all time is in Milliseconds (ms)
-const initialCount: number = 0
-const initialLimit: number = 500
-const initialTimeWindow: number = 1000*60*15; // 15 minutes
-const initialInterval: number = intervalFromTimeWindow(initialTimeWindow, initialLimit);
+const initialCount: number = 0;
+const initialLimit: number = 500;
+const initialTimeWindow: number = 1000 * 60 * 15; // 15 minutes
+const initialInterval: number = intervalFromTimeWindow(
+  initialTimeWindow,
+  initialLimit
+);
 
 // User set defaults
 const defaultInterval = localStorage.getItem("defaultInterval");
@@ -57,12 +62,12 @@ const useInterval = () => {
 
     count,
     setCount,
-    
+
     interval,
     setInterval,
     changeInterval,
     resetInterval,
-    
+
     timeWindow,
     changeTimeWindow,
   };
