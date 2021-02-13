@@ -42,7 +42,6 @@ const GraphSelector = ({
         ))}
       </Select>
       <IconButton type="add" />
-      <IconButton type="reset" onClick={reset} />
     </form>
   );
 };
