@@ -19,9 +19,6 @@
 
 FIXTURE_TEST(test_read_from_materialized_topic, router_test_fixture) {
     model::topic input_topic("foo");
-    add_copro<identity_coprocessor>(
-      11211, {{input_topic(), coproc::topic_ingestion_policy::latest}})
-      .get();
     model::topic output_topic = model::to_materialized_topic(
       input_topic, identity_coprocessor::identity_topic);
     setup({{input_topic, 1}}).get();
@@ -30,16 +27,20 @@ FIXTURE_TEST(test_read_from_materialized_topic, router_test_fixture) {
     model::ntp output_ntp(
       model::kafka_namespace, output_topic, model::partition_id(0));
 
+    /// Create coprocessor
+    enable_coprocessors(
+      {{.id = 1234,
+        .data{
+          .tid = coproc::registry::type_identifier::identity_coprocessor,
+          .topics = {input_topic}}}})
+      .get();
+
     /// Deploy some data onto the input topic
     push(
       input_ntp,
       storage::test::make_random_memory_record_batch_reader(
         model::offset(0), 4, 4))
       .get();
-
-    auto data_rbr = storage::test::make_random_memory_record_batch_reader(
-      model::offset(0), 4, 4, false);
-    push(input_ntp, std::move(data_rbr)).get0();
 
     // read the materialized topic from disk
     const auto data = drain(output_ntp, 16).get0();
