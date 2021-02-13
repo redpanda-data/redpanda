@@ -54,6 +54,22 @@ class topic_table {
 public:
     using delta = topic_table_delta;
 
+    using delta_cb_t = ss::noncopyable_function<void(const std::vector<delta>&)>;
+
+    cluster::notification_id_type register_delta_notification(delta_cb_t cb) {
+        auto id = _notification_id++;
+        _notifications.emplace_back(id, std::move(cb));
+        return id;
+    }
+
+    void unregister_delta_notification(cluster::notification_id_type id) {
+        std::erase_if(
+          _notifications,
+          [id](const std::pair<cluster::notification_id_type, delta_cb_t>& n) {
+              return n.first == id;
+          });
+    }
+
     bool is_batch_applicable(const model::record_batch& b) const {
         return b.header().type == topic_batch_type;
     }
@@ -148,6 +164,9 @@ private:
 
     std::vector<delta> _pending_deltas;
     std::vector<std::unique_ptr<waiter>> _waiters;
+    cluster::notification_id_type _notification_id{0};
+    std::vector<std::pair<cluster::notification_id_type, delta_cb_t>>
+      _notifications;
     uint64_t _waiter_id{0};
 };
 } // namespace cluster

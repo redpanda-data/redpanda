@@ -157,6 +157,9 @@ void topic_table::notify_waiters() {
     }
     std::vector<delta> changes;
     changes.swap(_pending_deltas);
+    for (auto& cb : _notifications) {
+        cb.second(changes);
+    }
     std::vector<std::unique_ptr<waiter>> active_waiters;
     active_waiters.swap(_waiters);
     for (auto& w : active_waiters) {
