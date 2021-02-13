@@ -9,7 +9,6 @@
  */
 
 #include "coproc/tests/utils/coprocessor.h"
-#include "coproc/tests/utils/helpers.h"
 #include "coproc/tests/utils/router_test_fixture.h"
 #include "coproc/types.h"
 #include "kafka/client/transport.h"
@@ -25,7 +24,7 @@ FIXTURE_TEST(test_read_from_materialized_topic, router_test_fixture) {
       .get();
     model::topic output_topic = model::to_materialized_topic(
       input_topic, identity_coprocessor::identity_topic);
-    startup({{make_ts(input_topic), 1}}).get();
+    setup({{input_topic, 1}}).get();
     model::ntp input_ntp(
       model::kafka_namespace, input_topic, model::partition_id(0));
     model::ntp output_ntp(

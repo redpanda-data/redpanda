@@ -19,7 +19,7 @@
 #include <optional>
 
 /// Use this to prepare the storage layer with a desired pre-defined state
-using log_layout_map = absl::flat_hash_map<model::topic_namespace, size_t>;
+using log_layout_map = absl::btree_map<model::topic, size_t>;
 
 /// Contains additional utilities for pushing and reading from underlying logs
 /// within the storage api.
@@ -28,7 +28,7 @@ public:
     using opt_reader_data_t = std::optional<model::record_batch_reader::data_t>;
 
     /// \brief Init the storage layer with the desired ntps
-    ss::future<> startup(log_layout_map);
+    ss::future<> setup(log_layout_map);
 
     /// \brief Write records to storage::api
     ss::future<model::offset>

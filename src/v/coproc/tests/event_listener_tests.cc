@@ -10,7 +10,7 @@
 
 #include "coproc/event_listener.h"
 #include "coproc/tests/utils/coproc_test_fixture.h"
-#include "coproc/tests/utils/helpers.h"
+#include "coproc/tests/utils/coprocessor.h"
 #include "coproc/tests/utils/wasm_event_generator.h"
 #include "coproc/wasm_event.h"
 #include "hashing/secure.h"
@@ -41,7 +41,7 @@ private:
 public:
     wasm_event_test_harness()
       : coproc_test_fixture() {
-        startup({{make_ts(copro_topic()), 1}}).get();
+        setup({{_coproc_internal_topic, 1}}).get();
         (void)_event_listener.start();
     }
 
@@ -155,17 +155,20 @@ FIXTURE_TEST(test_copro_internal_topic_read, wasm_event_test_harness) {
 }
 
 FIXTURE_TEST(test_copro_internal_topic_do_undo, wasm_event_test_harness) {
-    using action = coproc::wasm::event_action;
-    std::vector<std::vector<coproc::wasm::short_event>> events{
-      {{444, action::deploy},
-       {444, action::deploy},
-       {444, action::remove},
-       {444, action::deploy},
-       {444, action::remove},
-       {123, action::deploy}},
-      {{444, action::remove, true},
-       {444, action::deploy, true},
-       {123, action::deploy, true}}};
+    coproc::wasm::cpp_enable_payload deploy_a{
+      .tid = coproc::registry::type_identifier::identity_coprocessor,
+      .topics = {model::topic("foo")}};
+    coproc::wasm::cpp_enable_payload deploy_b{
+      .tid = coproc::registry::type_identifier::identity_coprocessor,
+      .topics = {model::topic("bar")}};
+    std::vector<std::vector<coproc::wasm::event>> events{
+      {{444, deploy_a},
+       {444, deploy_a},
+       {444},
+       {444, deploy_a},
+       {444},
+       {123, deploy_a}},
+      {{444}, {444, deploy_b}, {123, deploy_b}}};
 
     auto rbr = make_event_record_batch_reader(std::move(events));
 

@@ -1,5 +1,4 @@
 set(fixture_srcs
-    utils/helpers.cc
     utils/supervisor.cc
     utils/coproc_test_fixture.cc
     utils/router_test_fixture.cc

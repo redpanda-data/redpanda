@@ -11,19 +11,15 @@
 
 #include "coproc/tests/utils/router_test_fixture.h"
 
-#include "config/configuration.h"
-#include "coproc/tests/utils/helpers.h"
-#include "model/metadata.h"
-#include "test_utils/async.h"
-
 router_test_fixture::router_test_plan::all_opts
 router_test_fixture::build_simple_opts(log_layout_map data, std::size_t rate) {
     using rtp = router_test_fixture::router_test_plan;
     rtp::all_opts results;
     rtp::options rate_opts = {.number_of_batches = rate, .number_of_pushes = 1};
-    for (auto& [tns, n_partitions] : data) {
+    for (auto& [topic, n_partitions] : data) {
         for (decltype(n_partitions) i = 0; i < n_partitions; ++i) {
-            model::ntp ntp(tns.ns, tns.tp, model::partition_id(i));
+            model::ntp ntp(
+              model::kafka_namespace, topic, model::partition_id(i));
             results.emplace(std::move(ntp), rate_opts);
         }
     }

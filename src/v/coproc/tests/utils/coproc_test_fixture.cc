@@ -13,7 +13,6 @@
 
 #include "config/configuration.h"
 #include "coproc/logger.h"
-#include "coproc/tests/utils/helpers.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "model/timestamp.h"
@@ -24,13 +23,15 @@
 
 #include <chrono>
 
-using namespace std::literals;
-
-ss::future<> coproc_test_fixture::startup(log_layout_map llm) {
-    return ss::do_with(std::move(llm), [this](log_layout_map& llm) {
+ss::future<> coproc_test_fixture::setup(log_layout_map llm) {
+    return ss::do_with(std::move(llm), [this](const log_layout_map& llm) {
         return wait_for_controller_leadership().then([this, &llm] {
-            return ss::parallel_for_each(
-              llm, [this](auto& p) { return add_topic(p.first, p.second); });
+            return ss::do_for_each(
+              llm, [this](const log_layout_map::value_type& p) {
+                  return add_topic(
+                    model::topic_namespace(model::kafka_namespace, p.first),
+                    p.second);
+              });
         });
     });
 }
