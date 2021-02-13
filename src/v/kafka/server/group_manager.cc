@@ -12,11 +12,14 @@
 #include "cluster/cluster_utils.h"
 #include "cluster/partition_manager.h"
 #include "cluster/simple_batch_builder.h"
+#include "cluster/topic_table.h"
 #include "config/configuration.h"
 #include "kafka/protocol/delete_groups.h"
 #include "kafka/protocol/describe_groups.h"
 #include "kafka/protocol/offset_commit.h"
 #include "kafka/protocol/offset_fetch.h"
+#include "model/fundamental.h"
+#include "model/namespace.h"
 #include "model/record.h"
 #include "resource_mgmt/io_priority.h"
 
@@ -27,12 +30,15 @@ namespace kafka {
 group_manager::group_manager(
   ss::sharded<raft::group_manager>& gm,
   ss::sharded<cluster::partition_manager>& pm,
+  ss::sharded<cluster::topic_table>& topic_table,
   config::configuration& conf)
   : _gm(gm)
   , _pm(pm)
+  , _topic_table(topic_table)
   , _conf(conf)
   , _self(cluster::make_self_broker(config::shard_local_cfg())) {}
 
+// let's control some concurrency
 ss::future<> group_manager::start() {
     /*
      * receive notifications for partition leadership changes. when we become a
@@ -60,6 +66,15 @@ ss::future<> group_manager::start() {
       model::kafka_group_topic,
       [this](ss::lw_shared_ptr<cluster::partition> p) { attach_partition(p); });
 
+    /*
+     *
+     */
+    _topic_table_notify_handle
+      = _topic_table.local().register_delta_notification(
+        [this](const std::vector<cluster::topic_table::delta>& deltas) {
+            handle_topic_delta(deltas);
+        });
+
     return ss::make_ready_future<>();
 }
 
@@ -84,6 +99,57 @@ void group_manager::attach_partition(ss::lw_shared_ptr<cluster::partition> p) {
     vassert(
       res.second, "double registration of ntp in group manager {}", p->ntp());
     _partitions.rehash(0);
+}
+
+ss::future<> group_manager::cleanup_removed_topic_partitions(
+  const std::vector<model::topic_partition>& tps) {
+    using group_info = absl::node_hash_map<group_id, group_ptr>::value_type;
+    return ss::do_for_each(_groups, [this, &tps](group_info& gi) {
+        return gi.second->remove_topic_partitions(tps).then(
+          [this, g = gi.second] {
+              if (!g->in_state(group_state::dead)) {
+                  return ss::now();
+              }
+              auto it = _groups.find(g->id());
+              if (it == _groups.end()) {
+                  return ss::now();
+              }
+              // ensure the group didn't change
+              if (it->second != g) {
+                  return ss::now();
+              }
+              vlog(klog.trace, "Removed group {}", g);
+              _groups.erase(it);
+              _groups.rehash(0);
+              return ss::now();
+          });
+    });
+}
+
+void group_manager::handle_topic_delta(
+  const std::vector<cluster::topic_table_delta>& deltas) {
+    // topic-partition deletions in the kafka namespace are the only deltas that
+    // are relevant to the group manager
+    std::vector<model::topic_partition> tps;
+    for (const auto& delta : deltas) {
+        if (
+          delta.type == cluster::topic_table_delta::op_type::del
+          && delta.ntp.ns == model::kafka_namespace) {
+            tps.emplace_back(delta.ntp.tp);
+        }
+    }
+
+    if (tps.empty()) {
+        return;
+    }
+
+    (void)ss::with_gate(_gate, [this, tps = std::move(tps)]() mutable {
+        return ss::do_with(
+          std::move(tps),
+          [this](const std::vector<model::topic_partition>& tps) {
+              return cleanup_removed_topic_partitions(tps);
+          });
+    });
 }
 
 void group_manager::handle_leader_change(
