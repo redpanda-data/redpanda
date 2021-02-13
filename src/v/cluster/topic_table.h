@@ -31,26 +31,28 @@ namespace cluster {
 /// with topic creation or deletion are executed. Topic table is also
 /// responsible for commiting or removing pending allocations
 ///
+// delta propagated to backend
+struct topic_table_delta {
+    enum class op_type { add, del, update, update_finished };
+
+    topic_table_delta(
+      model::ntp, cluster::partition_assignment, model::offset, op_type);
+    model::ntp ntp;
+    cluster::partition_assignment p_as;
+    model::offset offset;
+    op_type type;
+
+    model::topic_namespace_view tp_ns() const {
+        return model::topic_namespace_view(ntp);
+    }
+
+    friend std::ostream& operator<<(std::ostream&, const topic_table_delta&);
+    friend std::ostream& operator<<(std::ostream&, const op_type&);
+};
+
 class topic_table {
 public:
-    // delta propagated to backend
-    struct delta {
-        enum class op_type { add, del, update, update_finished };
-
-        delta(
-          model::ntp, cluster::partition_assignment, model::offset, op_type);
-        model::ntp ntp;
-        cluster::partition_assignment p_as;
-        model::offset offset;
-        op_type type;
-
-        model::topic_namespace_view tp_ns() const {
-            return model::topic_namespace_view(ntp);
-        }
-
-        friend std::ostream& operator<<(std::ostream&, const delta&);
-        friend std::ostream& operator<<(std::ostream&, const op_type&);
-    };
+    using delta = topic_table_delta;
 
     bool is_batch_applicable(const model::record_batch& b) const {
         return b.header().type == topic_batch_type;

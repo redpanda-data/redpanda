@@ -32,7 +32,7 @@ topic_table::transform_topics(Func&& f) const {
     return ret;
 }
 
-topic_table::delta::delta(
+topic_table_delta::topic_table_delta(
   model::ntp ntp,
   cluster::partition_assignment p_as,
   model::offset o,
