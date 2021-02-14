@@ -53,38 +53,42 @@ You now have a single node cluster running Redpanda!
 
 Here are the basic commands to produce and consume streams:
 
-1. Create a topic, we'll call it "twitch_chat":
+## Do some streaming
 
-     ```
-     rpk topic create twitch_chat
-     ```
+Here are the basic commands to produce and consume streams:
+
+1. Create a topic. We'll call it "twitch_chat":
+
+    ```
+    rpk topic create twitch_chat
+    ```
 
 1. Produce messages to the topic:
 
-     ```
-     rpk topic produce twitch_chat
-     ```
+    ```
+    rpk topic produce twitch_chat
+    ```
 
-     Type text into the topic and press Ctrl + D to seperate between messages.
+    Type text into the topic and press Ctrl + D to seperate between messages.
 
-     Press Ctrl + C to exit the produce command.
+    Press Ctrl + C to exit the produce command.
 
 1. Consume (or read) the messages in the topic:
 
-     ```
-     rpk topic consume twitch_chat
-     ```
-
-     Each message is shown with its metadata, like this:
-
-     ```
-     {
-     "message": "How do you stream with Redpanda?\n",
-     "partition": 0,
-     "offset": 1,
-     "timestamp": "2021-02-10T15:52:35.251+02:00"
-     }
-     ```
+    ```
+    rpk topic consume twitch_chat
+    ```
+    
+    Each message is shown with its metadata, like this:
+    
+    ```
+    {
+    "message": "How do you stream with Redpanda?\n",
+    "partition": 0,
+    "offset": 1,
+    "timestamp": "2021-02-10T15:52:35.251+02:00"
+    }
+    ```
 
 You've just installed Redpanda and done streaming in a few easy steps. 
 
