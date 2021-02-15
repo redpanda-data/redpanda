@@ -131,6 +131,8 @@ public:
       const member_id& m_id,
       std::vector<offset_commit_request_topic> topics);
 
+    ss::future<> update_metadata() { return _wait_or_start_update_metadata(); }
+
 private:
     /// \brief Connect and update metdata.
     ss::future<> do_connect(unresolved_address addr);
