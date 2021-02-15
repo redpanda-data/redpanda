@@ -431,6 +431,7 @@ void application::wire_up_services() {
       _group_manager,
       std::ref(raft_group_manager),
       std::ref(partition_manager),
+      std::ref(controller->get_topics_state()),
       std::ref(config::shard_local_cfg()))
       .get();
     syschecks::systemd_message("Creating kafka group shard mapper").get();

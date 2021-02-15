@@ -31,26 +31,44 @@ namespace cluster {
 /// with topic creation or deletion are executed. Topic table is also
 /// responsible for commiting or removing pending allocations
 ///
+// delta propagated to backend
+struct topic_table_delta {
+    enum class op_type { add, del, update, update_finished };
+
+    topic_table_delta(
+      model::ntp, cluster::partition_assignment, model::offset, op_type);
+    model::ntp ntp;
+    cluster::partition_assignment p_as;
+    model::offset offset;
+    op_type type;
+
+    model::topic_namespace_view tp_ns() const {
+        return model::topic_namespace_view(ntp);
+    }
+
+    friend std::ostream& operator<<(std::ostream&, const topic_table_delta&);
+    friend std::ostream& operator<<(std::ostream&, const op_type&);
+};
+
 class topic_table {
 public:
-    // delta propagated to backend
-    struct delta {
-        enum class op_type { add, del, update, update_finished };
+    using delta = topic_table_delta;
 
-        delta(
-          model::ntp, cluster::partition_assignment, model::offset, op_type);
-        model::ntp ntp;
-        cluster::partition_assignment p_as;
-        model::offset offset;
-        op_type type;
+    using delta_cb_t = ss::noncopyable_function<void(const std::vector<delta>&)>;
 
-        model::topic_namespace_view tp_ns() const {
-            return model::topic_namespace_view(ntp);
-        }
+    cluster::notification_id_type register_delta_notification(delta_cb_t cb) {
+        auto id = _notification_id++;
+        _notifications.emplace_back(id, std::move(cb));
+        return id;
+    }
 
-        friend std::ostream& operator<<(std::ostream&, const delta&);
-        friend std::ostream& operator<<(std::ostream&, const op_type&);
-    };
+    void unregister_delta_notification(cluster::notification_id_type id) {
+        std::erase_if(
+          _notifications,
+          [id](const std::pair<cluster::notification_id_type, delta_cb_t>& n) {
+              return n.first == id;
+          });
+    }
 
     bool is_batch_applicable(const model::record_batch& b) const {
         return b.header().type == topic_batch_type;
@@ -146,6 +164,9 @@ private:
 
     std::vector<delta> _pending_deltas;
     std::vector<std::unique_ptr<waiter>> _waiters;
+    cluster::notification_id_type _notification_id{0};
+    std::vector<std::pair<cluster::notification_id_type, delta_cb_t>>
+      _notifications;
     uint64_t _waiter_id{0};
 };
 } // namespace cluster

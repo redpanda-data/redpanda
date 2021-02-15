@@ -23,6 +23,7 @@ class partition_manager;
 class shard_table;
 class topics_frontend;
 class topic_table;
+struct topic_table_delta;
 class members_manager;
 class members_table;
 class metadata_cache;

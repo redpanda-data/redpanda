@@ -420,6 +420,10 @@ public:
     // is returned for the current state.
     ss::future<error_code> remove();
 
+    // remove offsets associated with topic partitions
+    ss::future<>
+    remove_topic_partitions(const std::vector<model::topic_partition>& tps);
+
 private:
     using member_map = absl::node_hash_map<kafka::member_id, member_ptr>;
     using protocol_support = absl::node_hash_map<kafka::protocol_name, int>;
