@@ -15,15 +15,9 @@ import Repository from "./Repository";
 import { Handle } from "../domain/Handle";
 import LogService from "../utilities/Logging";
 import { getChecksumFromFile } from "../utilities/Checksum";
-import { Coprocessor, PolicyInjection } from "../public/Coprocessor";
-import { Script_ManagerClient as ManagementClient } from "../rpc/serverAndClients/server";
+import { Coprocessor } from "../public/Coprocessor";
 import * as path from "path";
 import { hash64 } from "xxhash";
-import {
-  EnableResponseCode as EnableCode,
-  validateDisableResponseCode,
-  validateEnableResponseCode,
-} from "./HandleError";
 import { closeProcess } from "../rpc/service";
 
 /**
@@ -35,7 +29,6 @@ import { closeProcess } from "../rpc/service";
 class FileManager {
   private submitDirWatcher: FSWatcher;
   private activeDirWatcher: FSWatcher;
-  private managementClient: ManagementClient;
   private logger = LogService.createLogger("FileManager");
   constructor(
     private repository: Repository,
@@ -81,10 +74,7 @@ class FileManager {
             .then(() => this.moveCoprocessorFile(handle, this.activeDir))
             .then((newHandle) => repository.add(newHandle))
             .then((newHandle) =>
-              this.enableCoprocessor(
-                [newHandle.coprocessor],
-                validatePrevCoprocessor
-              )
+              Promise.resolve()
                 .then(() => newHandle)
                 .catch((error) =>
                   this.moveCoprocessorFile(newHandle, this.inactiveDir)
@@ -97,10 +87,7 @@ class FileManager {
         return this.moveCoprocessorFile(handle, this.activeDir)
           .then((newHandle) => repository.add(newHandle))
           .then((newHandle) =>
-            this.enableCoprocessor(
-              [newHandle.coprocessor],
-              validatePrevCoprocessor
-            )
+            Promise.resolve()
               .then(() => newHandle)
               .catch((errors) =>
                 this.moveCoprocessorFile(newHandle, this.inactiveDir)
@@ -159,18 +146,7 @@ class FileManager {
       return Promise.resolve();
     } else {
       this.repository.remove(handle);
-      return this.disableCoprocessors([handle.coprocessor])
-        .then(() => {
-          this.logger.info(
-            `disabled coprocessor: ID ${handle.coprocessor.globalId} ` +
-              `filename: '${name}.js'`
-          );
-        })
-        .catch((err) => {
-          this.logger.error(
-            `disable_coprocessors RPC returned with errors: ${err}`
-          );
-        });
+      return Promise.resolve();
     }
   }
 
@@ -188,7 +164,7 @@ class FileManager {
   deregisterCoprocessor(coprocessor: Coprocessor): Promise<Handle> {
     const handle = this.repository.findByCoprocessor(coprocessor);
     if (handle) {
-      return this.disableCoprocessors([handle.coprocessor])
+      return Promise.resolve()
         .then(() => this.moveCoprocessorFile(handle, this.inactiveDir))
         .then((coprocessor) => {
           this.repository.remove(coprocessor);
@@ -212,113 +188,6 @@ class FileManager {
       .flatMap((error) => error.map(({ message }) => message))
       .join(", ");
     return new Error(message);
-  }
-
-  /**
-   * Receives a coprocessor list, and sends a request to Redpanda for disabling
-   * them. The response has the following structure:
-   * [<topic status>]
-   *
-   * Possible coprocessor statuses:
-   *   0 = success
-   *   1 = internal error
-   *   2 = script doesn't exist
-   * @param coprocessors
-   */
-  disableCoprocessors(coprocessors: Coprocessor[]): Promise<void> {
-    this.logger.info(
-      `Initiating RPC call to redpandas coprocessor service at endpoint - ` +
-        `disable_coprocessors with data: ${coprocessors}`
-    );
-    return this.getClient().then((client) => {
-      return client
-        .disable_copros({
-          inputs: coprocessors.map((coproc) => coproc.globalId),
-        })
-        .then((response) => {
-          const errors = validateDisableResponseCode(response, coprocessors);
-          if (errors.length > 0) {
-            const compactedErrors = this.compactErrors([errors]);
-            this.logger.error(
-              `disable_coprocessors() RPC returned with ` +
-                `errors: ${compactedErrors}`
-            );
-            return Promise.reject(compactedErrors);
-          }
-          return Promise.resolve();
-        })
-        .catch((e) => {
-          return Promise.reject(
-            `disable_coprocessors() RPC failed: ${e.message}`
-          );
-        });
-    });
-  }
-
-  /**
-   * Receives a coprocessor list, and sends a request to Redpanda for enabling
-   * them. The response has the following structure:
-   * [{<coprocessorId>, [<topic status>]}]
-   *
-   * Possible topic statuses:
-   *   0 = success
-   *   1 = internal error
-   *   2 = invalid ingestion policy
-   *   3 = script id already exist
-   *   4 = topic doesn't exist
-   *   5 = invalid topic
-   *   6 = materialized topic
-   * @param coprocessors
-   * @param validatePrevCoprocessor
-   */
-  enableCoprocessor(
-    coprocessors: Coprocessor[],
-    validatePrevCoprocessor = true
-  ): Promise<void> {
-    if (coprocessors.length == 0) {
-      return Promise.resolve();
-    }
-    this.logger.info(
-      `Initiating RPC call to redpandas coprocessor service at endpoint - ` +
-        `enable_coprocessors with data: ${coprocessors}`
-    );
-    return this.getClient().then((client) => {
-      return client
-        .enable_copros({
-          coprocessors: coprocessors.map((coproc) => ({
-            id: coproc.globalId,
-            topics: coproc.inputTopics.map((topic) => ({
-              topic,
-              injectionPolicy: PolicyInjection.LastOffset,
-            })),
-          })),
-        })
-        .then((enableResponse) => {
-          if (!validatePrevCoprocessor) {
-            enableResponse.inputs = enableResponse.inputs.map(
-              ({ response, id }) => ({
-                id,
-                response: response.filter(
-                  (code) => code !== EnableCode.scriptIdAlreadyExist
-                ),
-              })
-            );
-          }
-          const errors = validateEnableResponseCode(
-            enableResponse,
-            coprocessors
-          );
-          if (errors.find((errors) => errors.length > 0)) {
-            const compactedErrors = this.compactErrors(errors);
-            this.logger.error(
-              `enable_coprocessors RPC returned with some error: ` +
-                `${compactedErrors}`
-            );
-            return Promise.reject(compactedErrors);
-          }
-          return Promise.resolve();
-        });
-    });
   }
 
   /**
@@ -416,39 +285,6 @@ class FileManager {
       this.logger.info(`Detected removed file from active dir: ${filePath}`);
       this.removeHandleFromFilePath(filePath, repository);
     });
-  }
-
-  /**
-   * Lazily load the ManagementClient
-   * Retires and sleeps 1s between configurable max number of attempts
-   *
-   * @param retries - Max number of connection attempts
-   * @return Promise with management client on success or error on failure
-   */
-  private getClient(): Promise<ManagementClient> {
-    if (!this.managementClient) {
-      return ManagementClient.create(43118)
-        .then((client) => {
-          this.logger.info(
-            "Succeeded in establishing a connection to redpanda"
-          );
-          this.managementClient = client;
-          return client;
-        })
-        .catch((err) => {
-          this.logger.warn(
-            `Failed to connect to redpanda, retrying again, reason: ${err.message}`
-          );
-          return new Promise((resolve, reject) => {
-            setTimeout(() => {
-              this.getClient()
-                .then((response) => resolve(response))
-                .catch((error) => reject(error));
-            }, 1000);
-          });
-        });
-    }
-    return Promise.resolve(this.managementClient);
   }
 }
 

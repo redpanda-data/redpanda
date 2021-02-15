@@ -12,7 +12,6 @@ import * as assert from "assert";
 import { SinonSandbox, createSandbox } from "sinon";
 import FileManager from "../../modules/supervisors/FileManager";
 import Repository from "../../modules/supervisors/Repository";
-import { Script_ManagerServer as ManagementServer } from "../../modules/rpc/serverAndClients/server";
 import * as fs from "fs";
 import { createHandle } from "../testUtilities";
 import { hash64 } from "xxhash";
@@ -20,7 +19,6 @@ import * as chokidar from "chokidar";
 import LogService from "../../modules/utilities/Logging";
 
 let sinonInstance: SinonSandbox;
-let server: ManagementServer;
 
 const createStubs = (sandbox: SinonSandbox) => {
   const watchMock = sandbox.stub(chokidar, "watch");
@@ -39,13 +37,6 @@ const createStubs = (sandbox: SinonSandbox) => {
   );
   const getCoprocessor = sandbox.stub(FileManager.prototype, "getHandle");
 
-  const enableCoprocessor = sandbox
-    .stub(FileManager.prototype, "enableCoprocessor")
-    .returns(Promise.resolve());
-
-  const disableCoprocessor = sandbox
-    .stub(FileManager.prototype, "disableCoprocessors")
-    .returns(Promise.resolve());
 
   sandbox.stub(LogService, "createLogger").returns({
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
@@ -61,8 +52,6 @@ const createStubs = (sandbox: SinonSandbox) => {
     getCoprocessor,
     readdirFake,
     readFolderStub,
-    enableCoprocessor,
-    disableCoprocessor,
     watchMock,
   };
 };
@@ -70,13 +59,10 @@ const createStubs = (sandbox: SinonSandbox) => {
 describe("FileManager", () => {
   beforeEach(() => {
     sinonInstance = createSandbox();
-    server = new ManagementServer();
-    server.listen(43118);
   });
 
   afterEach(async () => {
     sinonInstance.restore();
-    await server.closeConnection();
   });
 
   it(
@@ -118,17 +104,6 @@ describe("FileManager", () => {
       moveCoprocessor.returns(Promise.resolve(handle));
       getCoprocessor.returns(Promise.resolve(handle));
 
-      // override the enable_copros method in server
-      server.enable_copros = () =>
-        Promise.resolve({
-          inputs: [
-            {
-              response: handle.coprocessor.inputTopics.map(() => 0),
-              id: handle.coprocessor.globalId,
-            },
-          ],
-        });
-
       const file = new FileManager(repo, "submit", "active", "inactive");
       file.addCoprocessor("active/file", repo);
       setTimeout(() => {
@@ -152,9 +127,7 @@ describe("FileManager", () => {
       handle2.checksum = "different";
       const {
         moveCoprocessor,
-        getCoprocessor,
-        enableCoprocessor,
-        disableCoprocessor,
+        getCoprocessor
       } = createStubs(sinonInstance);
       const repo = new Repository();
       moveCoprocessor.returns(Promise.resolve(handle));
@@ -165,22 +138,14 @@ describe("FileManager", () => {
 
       fileManager
         .addCoprocessor(handle.filename, repo)
-        .then(() => {
-          assert(enableCoprocessor.called);
-          assert(!disableCoprocessor.called);
-        })
         .then(() => fileManager.addCoprocessor(handle2.filename, repo))
-        .then(() => {
-          assert.strictEqual(enableCoprocessor.getCalls().length, 2);
-          assert(disableCoprocessor.called);
-        })
         .then(() => done());
     }
   );
 
   it("should remove a coprocessor from file path", (done) => {
     const handle = createHandle();
-    const { moveCoprocessor, getCoprocessor, disableCoprocessor } = createStubs(
+    const { moveCoprocessor, getCoprocessor } = createStubs(
       sinonInstance
     );
     const repo = new Repository();
@@ -191,65 +156,17 @@ describe("FileManager", () => {
     moveCoprocessor.returns(Promise.resolve(handle));
     getCoprocessor.returns(Promise.resolve(handle));
     // override the disable_copros method in server
-    server.disable_copros = () => Promise.resolve({ inputs: [0] });
     // add spy to server
 
     const file = new FileManager(repo, "submit", "active", "inactive");
     file.deregisterCoprocessor(handle.coprocessor).then(() => {
       assert(moveCoprocessor.called);
       assert(moveCoprocessor.calledWith(handle, "inactive"));
-      assert(disableCoprocessor.called);
-      assert(disableCoprocessor.calledWith([handle.coprocessor]));
+
       done();
     });
   });
 
-  it(
-    "should move from active to inactive a remove coprocessor, if it fails " +
-      "on enable request",
-    function (done) {
-      const handle = createHandle();
-      const {
-        moveCoprocessor,
-        getCoprocessor,
-        enableCoprocessor,
-      } = createStubs(sinonInstance);
-      const repo = new Repository();
-      const removeSpy = sinonInstance.spy(repo, "remove");
-      moveCoprocessor.returns(Promise.resolve(handle));
-      getCoprocessor.returns(Promise.resolve(handle));
-      enableCoprocessor.returns(Promise.reject(Error("internal error")));
-      // override the enable_copros method in server
-      server.enable_copros = () =>
-        Promise.resolve({
-          inputs: [
-            {
-              response: handle.coprocessor.inputTopics.map(() => 1),
-              id: handle.coprocessor.globalId,
-            },
-          ],
-        });
-
-      const file = new FileManager(repo, "submit", "active", "inactive");
-      file
-        .addCoprocessor("active/file", repo)
-        .catch(() => console.log("expected fail"));
-
-      setTimeout(() => {
-        // try to add a coprocessor to repository
-        assert(getCoprocessor.called);
-        assert(getCoprocessor.calledWith("active/file"));
-        assert(moveCoprocessor.called);
-        assert(moveCoprocessor.firstCall.calledWith(handle, "active"));
-        // enable fail
-        assert(moveCoprocessor.secondCall.calledWith(handle, "inactive"));
-        assert(removeSpy.called);
-        assert(removeSpy.calledWith(handle));
-        assert(repo.size() === 0);
-        done();
-      }, 150);
-    }
-  );
 
   it("should compress an Error Matrix", function () {
     const errors = [
@@ -266,7 +183,7 @@ describe("FileManager", () => {
     const handle = createHandle({
       globalId: hash64(Buffer.from("file"), 0).readBigUInt64LE(),
     });
-    const { getCoprocessor, moveCoprocessor, disableCoprocessor } = createStubs(
+    const { getCoprocessor, moveCoprocessor } = createStubs(
       sinonInstance
     );
     moveCoprocessor.returns(Promise.resolve(handle));
@@ -280,7 +197,6 @@ describe("FileManager", () => {
 
     file.removeHandleFromFilePath(handle.filename, repo).then(() => {
       assert(removeSpy.called);
-      assert(disableCoprocessor.called);
       assert(removeSpy.withArgs(handle));
       done();
     });
@@ -296,12 +212,9 @@ describe("FileManager", () => {
       const {
         getCoprocessor,
         moveCoprocessor,
-        disableCoprocessor,
       } = createStubs(sinonInstance);
       moveCoprocessor.returns(Promise.resolve(handle));
       getCoprocessor.returns(Promise.resolve(handle));
-      disableCoprocessor.reset();
-      disableCoprocessor.returns(Promise.reject("error"));
 
       const repo = new Repository();
       const removeSpy = sinonInstance.spy(repo, "remove");
@@ -311,10 +224,8 @@ describe("FileManager", () => {
 
       return file.removeHandleFromFilePath(handle.filename, repo).then(() => {
         assert(removeSpy.called);
-        assert(disableCoprocessor.called);
         assert.strictEqual(repo.size(), 0);
         assert(removeSpy.withArgs(handle));
-        assert.rejects(disableCoprocessor.firstCall.returnValue);
       });
     }
   );

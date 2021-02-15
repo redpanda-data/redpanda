@@ -13,7 +13,6 @@ import Repository from "../../modules/supervisors/Repository";
 import { SinonSandbox, createSandbox } from "sinon";
 import { SupervisorClient } from "../../modules/rpc/serverAndClients/processBatch";
 import { createRecordBatch } from "../../modules/public";
-import { Script_ManagerServer as ManagementServer } from "../../modules/rpc/serverAndClients/server";
 import FileManager from "../../modules/supervisors/FileManager";
 import { ProcessBatchRequest } from "../../modules/domain/generatedRpc/generatedClasses";
 import { createHandle } from "../testUtilities";
@@ -26,7 +25,6 @@ const fs = require("fs");
 let sinonInstance: SinonSandbox;
 let server: ProcessBatchServer;
 let client: SupervisorClient;
-let manageServer: ManagementServer;
 
 const createStubs = (sandbox: SinonSandbox) => {
   const watchMock = sandbox.stub(chokidar, "watch");
@@ -105,9 +103,6 @@ describe("Server", function () {
         // @ts-ignore
         error: sinonInstance.stub(),
       });
-      manageServer = new ManagementServer();
-      manageServer.disable_copros = () => Promise.resolve({ inputs: [0] });
-      manageServer.listen(43118);
       server = new ProcessBatchServer("a", "i", "s");
       server.listen(43000);
       return new Promise<void>((resolve, reject) => {
@@ -124,7 +119,6 @@ describe("Server", function () {
       client.close();
       sinonInstance.restore();
       await server.closeConnection();
-      await manageServer.closeConnection();
     });
 
     it(
