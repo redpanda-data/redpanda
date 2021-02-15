@@ -171,8 +171,8 @@ FIXTURE_TEST(test_coproc_router_multi_route, router_test_fixture) {
 
     /// Run the test
     router_test_plan test_plan{
-      .input = build_simple_opts(inputs, 100),
-      .output = build_simple_opts(outputs, 50)};
+      .input = build_simple_opts(inputs, 50),
+      .output = build_simple_opts(outputs, 25)};
     auto result_tuple = start_benchmark(std::move(test_plan)).get0();
     const auto& [push_results, drain_results] = result_tuple;
 
@@ -182,7 +182,7 @@ FIXTURE_TEST(test_coproc_router_multi_route, router_test_fixture) {
     BOOST_REQUIRE_EQUAL(drain_results.size(), 4);
     for (const auto& [_, pair] : drain_results) {
         const auto& [__, n_batches] = pair;
-        BOOST_REQUIRE_EQUAL(n_batches, 50);
+        BOOST_REQUIRE_EQUAL(n_batches, 25);
     }
 }
 
