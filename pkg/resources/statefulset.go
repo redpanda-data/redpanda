@@ -13,8 +13,8 @@ package resources
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"reflect"
+	"strconv"
 
 	"github.com/go-logr/logr"
 	redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
@@ -81,18 +81,18 @@ func (r *StatefulSetResource) Ensure(ctx context.Context) error {
 
 	r.LastObservedState = &sts
 
-	updated := Update(&sts, r.pandaCluster, r.logger)
+	updated := update(&sts, r.pandaCluster, r.logger)
 	if updated {
 		if err := r.Update(ctx, &sts); err != nil {
-			return fmt.Errorf("failed to Update StatefulSet: %w", err)
+			return fmt.Errorf("failed to update StatefulSet: %w", err)
 		}
 	}
 
 	return nil
 }
 
-// Update ensures StatefulSet #replicas and resources equals cluster requirements.
-func Update(
+// update ensures StatefulSet #replicas and resources equals cluster requirements.
+func update(
 	sts *appsv1.StatefulSet,
 	pandaCluster *redpandav1alpha1.Cluster,
 	logger logr.Logger,
@@ -121,7 +121,7 @@ func updateReplicasIfNeeded(
 	logger logr.Logger,
 ) (updated bool) {
 	if sts.Spec.Replicas != nil && pandaCluster.Spec.Replicas != nil && *sts.Spec.Replicas != *pandaCluster.Spec.Replicas {
-		logger.Info(fmt.Sprintf("StatefulSet %s has replicas set to %d but need %d. Going to Update", sts.Name, *sts.Spec.Replicas, *pandaCluster.Spec.Replicas))
+		logger.Info(fmt.Sprintf("StatefulSet %s has replicas set to %d but need %d. Going to update", sts.Name, *sts.Spec.Replicas, *pandaCluster.Spec.Replicas))
 		sts.Spec.Replicas = pandaCluster.Spec.Replicas
 
 		return true
