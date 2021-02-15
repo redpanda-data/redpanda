@@ -9,7 +9,6 @@
  */
 
 import Repository from "../supervisors/Repository";
-import FileManager from "../supervisors/FileManager";
 import { Coprocessor, PolicyError } from "../public/Coprocessor";
 import {
   ProcessBatchReply,
@@ -21,19 +20,12 @@ import { SupervisorServer } from "./serverAndClients/rpcServer";
 
 export class ProcessBatchServer extends SupervisorServer {
   private readonly repository: Repository;
-  private fileManager: FileManager;
 
-  constructor(activeDir: string, inactiveDir: string, submitDir: string) {
+  constructor() {
     super();
     // TODO Can lookup the port redpanda is listening for copros on in the redpanda.yaml file
     this.applyCoprocessor = this.applyCoprocessor.bind(this);
     this.repository = new Repository();
-    this.fileManager = new FileManager(
-      this.repository,
-      submitDir,
-      activeDir,
-      inactiveDir
-    );
   }
 
   fireException(message: string): Promise<never> {
@@ -103,9 +95,7 @@ export class ProcessBatchServer extends SupervisorServer {
     );
     switch (policyError) {
       case PolicyError.Deregister:
-        return this.fileManager
-          .deregisterCoprocessor(coprocessor)
-          .then(() => Promise.reject(errorMessage));
+        return Promise.resolve().then(() => Promise.reject(errorMessage));
       case PolicyError.SkipOnFailure:
         return Promise.reject(errorMessage);
       default:

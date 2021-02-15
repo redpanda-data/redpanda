@@ -13,7 +13,6 @@ import Repository from "../../modules/supervisors/Repository";
 import { SinonSandbox, createSandbox } from "sinon";
 import { SupervisorClient } from "../../modules/rpc/serverAndClients/rpcServer";
 import { createRecordBatch } from "../../modules/public";
-import FileManager from "../../modules/supervisors/FileManager";
 import { ProcessBatchRequest } from "../../modules/domain/generatedRpc/generatedClasses";
 import { createHandle } from "../testUtilities";
 import { PolicyError, RecordBatch } from "../../modules/public/Coprocessor";
@@ -29,11 +28,6 @@ let client: SupervisorClient;
 const createStubs = (sandbox: SinonSandbox) => {
   const watchMock = sandbox.stub(chokidar, "watch");
   watchMock.returns(({ on: sandbox.stub() } as unknown) as chokidar.FSWatcher);
-  const readCoprocessorFolder = sandbox.stub(
-    FileManager.prototype,
-    "readCoprocessorFolder"
-  );
-  readCoprocessorFolder.returns(Promise.resolve());
   const spyFireExceptionServer = sandbox.stub(
     ProcessBatchServer.prototype,
     "fireException"
@@ -46,20 +40,10 @@ const createStubs = (sandbox: SinonSandbox) => {
     Repository.prototype,
     "findByCoprocessor"
   );
-  const spyMoveHandle = sandbox.stub(
-    FileManager.prototype,
-    "moveCoprocessorFile"
-  );
-  const spyDeregister = sandbox.spy(
-    FileManager.prototype,
-    "deregisterCoprocessor"
-  );
   return {
     spyFireExceptionServer,
     spyGetHandles,
     spyFindByCoprocessor,
-    spyMoveHandle,
-    spyDeregister,
     watchMock,
   };
 };
@@ -103,7 +87,7 @@ describe("Server", function () {
         // @ts-ignore
         error: sinonInstance.stub(),
       });
-      server = new ProcessBatchServer("a", "i", "s");
+      server = new ProcessBatchServer();
       server.listen(43000);
       return new Promise<void>((resolve, reject) => {
         return SupervisorClient.create(43000)
@@ -209,7 +193,7 @@ describe("Server", function () {
       "if there is an error, should skip the Request, if ErrorPolicy is " +
         "SkipOnFailure",
       function (done) {
-        const { spyGetHandles, spyDeregister } = createStubs(sinonInstance);
+        const { spyGetHandles } = createStubs(sinonInstance);
         const badApplyCoprocessor = (record: RecordBatch) =>
           // eslint-disable-next-line @typescript-eslint/ban-ts-comment
           // @ts-ignore
@@ -226,7 +210,6 @@ describe("Server", function () {
         client
           .process_batch(createProcessBatchRequest([BigInt(1)]))
           .then((res) => {
-            assert(!spyDeregister.called);
             assert.deepStrictEqual(res.result, []);
             done();
           });
@@ -237,12 +220,7 @@ describe("Server", function () {
       "if there is an error, should deregister the Coprocessor, if " +
         "ErrorPolicy is Deregister",
       function (done) {
-        const {
-          spyGetHandles,
-          spyDeregister,
-          spyMoveHandle,
-          spyFindByCoprocessor,
-        } = createStubs(sinonInstance);
+        const { spyGetHandles } = createStubs(sinonInstance);
         const badApplyCoprocessor = (record: RecordBatch) =>
           // eslint-disable-next-line @typescript-eslint/ban-ts-comment
           // @ts-ignore
@@ -252,18 +230,12 @@ describe("Server", function () {
           policyError: PolicyError.Deregister,
           inputTopics: ["topic"],
         });
-        spyMoveHandle.returns(Promise.resolve(handle));
-        spyFindByCoprocessor.returns(handle);
         spyGetHandles.returns([handle]);
 
         client
           .process_batch(createProcessBatchRequest([BigInt(1)]))
           .then((res) => {
-            assert(spyDeregister.called);
             assert(spyGetHandles.called);
-            assert(spyFindByCoprocessor.called);
-            assert(spyMoveHandle.called);
-            assert(spyMoveHandle.calledWith(handle));
             assert.deepStrictEqual(res.result, []);
             done();
           });
@@ -337,26 +309,6 @@ describe("Server", function () {
           });
         });
       });
-    });
-
-    it("should close logger if there is a fatal exception", (done) => {
-      const fsStub = sinonInstance.stub(fs, "writeFile").returns(null);
-      sinonInstance.stub(LogService, "getPath").returns("a");
-      const close = sinonInstance.stub(LogService, "close");
-      close.returns(Promise.resolve());
-      new ProcessBatchServer("a", "a", "a");
-      // waiting for firing exception
-      setTimeout(() => {
-        assert(close.called);
-        assert(fsStub.called);
-        // validate FileManager exception, this exception happens when it tries
-        // to read unexciting folder
-        assert.strictEqual(
-          fsStub.firstCall.args[1],
-          "Error: ENOENT: no such file or directory, scandir 'a'"
-        );
-        done();
-      }, 10);
     });
 
     it("should server process 100 requests", function () {

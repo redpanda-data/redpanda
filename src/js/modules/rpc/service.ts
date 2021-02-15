@@ -86,11 +86,7 @@ function main() {
       logger.info(`Using root scaffolding path: ${path}`);
       validateOrCreateScaffolding(path)
         .then(() => {
-          const service = new ProcessBatchServer(
-            join(path, "active"),
-            join(path, "inactive"),
-            join(path, "submit")
-          );
+          const service = new ProcessBatchServer();
           process.on("SIGINT", function () {
             service
               .closeConnection()
