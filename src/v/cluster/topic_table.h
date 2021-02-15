@@ -54,7 +54,8 @@ class topic_table {
 public:
     using delta = topic_table_delta;
 
-    using delta_cb_t = ss::noncopyable_function<void(const std::vector<delta>&)>;
+    using delta_cb_t
+      = ss::noncopyable_function<void(const std::vector<delta>&)>;
 
     cluster::notification_id_type register_delta_notification(delta_cb_t cb) {
         auto id = _notification_id++;
