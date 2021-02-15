@@ -33,5 +33,4 @@ export const createHandle = (coprocessor?: Partial<Coprocessor>): Handle => ({
     coprocessor?.apply
   ),
   checksum: "check",
-  filename: "file",
 });
