@@ -65,18 +65,19 @@ transport::transport(
 }
 
 ss::future<ss::connected_socket> connect_with_timeout(
-  ss::socket& sock,
-  const seastar::socket_address& address,
-  rpc::clock_type::time_point timeout) {
-    auto f = sock.connect(
-      address,
-      ss::socket_address(sockaddr_in{AF_INET, INADDR_ANY, {0}}),
-      ss::transport::TCP);
-    return ss::with_timeout(timeout, std::move(f))
-      .handle_exception_type([&sock, &address](const ss::timed_out_error& e) {
-          rpclog.info("connection to: {}, timed out", address);
-          sock.shutdown();
-          return ss::make_exception_future<ss::connected_socket>(e);
+  const seastar::socket_address& address, rpc::clock_type::time_point timeout) {
+    return ss::do_with(
+      ss::engine().net().socket(), [address, timeout](seastar::socket& sock) {
+          auto f = sock.connect(
+            address,
+            ss::socket_address(sockaddr_in{AF_INET, INADDR_ANY, {0}}),
+            ss::transport::TCP);
+          return ss::with_timeout(timeout, std::move(f))
+            .handle_exception([&sock, address](const std::exception_ptr& e) {
+                rpclog.warn("error connecting to {} - {}", address, e);
+                sock.shutdown();
+                return ss::make_exception_future<ss::connected_socket>(e);
+            });
       });
 }
 
@@ -89,10 +90,8 @@ ss::future<> base_transport::do_connect(clock_type::time_point timeout) {
           server_address()));
     }
     try {
-        auto socket = ss::engine().net().socket();
-
         ss::connected_socket fd = co_await connect_with_timeout(
-          socket, server_address(), timeout);
+          server_address(), timeout);
 
         if (_creds) {
             fd = co_await ss::tls::wrap_client(
