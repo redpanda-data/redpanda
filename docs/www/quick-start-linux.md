@@ -4,66 +4,98 @@ order: 0
 ---
 # Linux Quick Start Guide
 
-Redpanda is a modern streaming platform for mission critical workloads. Redpanda
-is also fully API compatible Kafka allowing you to make full use of the Kafka ecosystem.
+Redpanda is a modern [streaming platform](/blog/intelligent-data-api/) for mission critical workloads.
+With Redpanda you can get up and running with streaming quickly
+and be fully compatible with the [Kafka ecosystem](https://cwiki.apache.org/confluence/display/KAFKA/Ecosystem).
 
-This quick start guide to intended to help you get started with Redpanda for
-development and testing purposes. For production deployments or performance
-testing please see our [Production Deployment](production-deployment)
-for more information.
+This quick start guide can help you get started with Redpanda for development and testing purposes.
+For production or benchmarking, setup a [production deployment](production-deployment).
 
-## Installation
+## Install Redpanda:
 
-The first step is to install either the RPM or DEB package of Redpanda.
+We've simplified the installation process down to a few commands:
 
-### On Fedora/RedHat Systems
+- On Fedora/RedHat systems:
 
-```
-curl -1sLf 'https://packages.vectorized.io/nzc4ZYQK3WRGd9sy/redpanda/cfg/setup/bash.rpm.sh' | \
-sudo -E bash && sudo yum install redpanda -y && sudo systemctl start redpanda
-```
+     ```
+     ## Run the setup script to download and install the repo
+     curl -1sLf 'https://packages.vectorized.io/nzc4ZYQK3WRGd9sy/redpanda/cfg/setup/bash.rpm.sh' | sudo -E bash && \
+     ## Use yum to install redpanda
+     sudo yum install redpanda -y && \
+     ## Start redpanda as a service 
+     sudo systemctl start redpanda
+     ```
 
-### On Debian/Ubuntu Systems
+- On Debian/Ubuntu systems:
 
-```
-curl -1sLf 'https://packages.vectorized.io/nzc4ZYQK3WRGd9sy/redpanda/cfg/setup/bash.deb.sh' | \
-sudo -E bash && sudo apt install redpanda -y && sudo systemctl start redpanda
-```
+     ```
+     ## Run the setup script to download and install the repo
+     curl -1sLf 'https://packages.vectorized.io/nzc4ZYQK3WRGd9sy/redpanda/cfg/setup/bash.deb.sh' | sudo -E bash && \
+     ## Use apt to install redpanda
+     sudo apt install redpanda -y && \
+     ## Start redpanda as a service 
+     sudo systemctl start redpanda
+     ```
 
-## Getting Started
+To see that Redpanda is up and running, run: `sudo systemctl status redpanda`
 
-Now that Redpanda is installed and running we can either setup a single
-node cluster of Redpanda or setup a local multi-node cluster using docker.
+The output should look like:
 
-### Single Node Deployment
-
-First we should check the status of the redpanda service as the install step
-above should have started Redpanda.
-
-```
-sudo systemctl status redpanda
-```
-
-The output should look like the following:
-
-```
+```sh
 ● redpanda.service - Redpanda, the fastest queue in the West.
      Loaded: loaded (/lib/systemd/system/redpanda.service; enabled; vendor preset: enabled)
-     Active: active (running) since Wed 2020-12-02 16:01:03 PST; 18s ago
+     Active: active (running)
 ```
 
-You now have a running Redpanda instance!
+You now have a single node cluster running Redpanda!
 
-### Local Multi Node Deployment
+## Do some streaming
 
-The simplest way to get a multi node cluster up and running is by using
-`rpk container`. You can follow the
-[rpk Container Guide](guide-rpk-container). If you want a more manual
-approach you can check out the
-[Quick Start Docker Guide](quick-start-docker).
+Here are the basic commands to produce and consume streams:
+
+## Do some streaming
+
+Here are the basic commands to produce and consume streams:
+
+1. Create a topic. We'll call it "twitch_chat":
+
+    ```
+    rpk topic create twitch_chat
+    ```
+
+1. Produce messages to the topic:
+
+    ```
+    rpk topic produce twitch_chat
+    ```
+
+    Type text into the topic and press Ctrl + D to seperate between messages.
+
+    Press Ctrl + C to exit the produce command.
+
+1. Consume (or read) the messages in the topic:
+
+    ```
+    rpk topic consume twitch_chat
+    ```
+    
+    Each message is shown with its metadata, like this:
+    
+    ```
+    {
+    "message": "How do you stream with Redpanda?\n",
+    "partition": 0,
+    "offset": 1,
+    "timestamp": "2021-02-10T15:52:35.251+02:00"
+    }
+    ```
+
+You've just installed Redpanda and done streaming in a few easy steps. 
 
 ## What's Next?
 
-- Check out our [FAQ](faq)
-- Want to setup a production cluster? Check out our [Production Deployment](production-deployment) Guide.
-  
+- Our [FAQ](faq) page shows all of the clients that you can use to do streaming with Redpanda.
+     (Spoiler: Any Kafka-compatible client!)
+- Get a multi-node cluster up and running using [`rpk container`](guide-rpk-container).
+- Use the [Quick Start Docker Guide](quick-start-docker) to try out Redpanda using Docker.
+- Want to setup a production cluster? Check out our [Production Deployment Guide](production-deployment).
