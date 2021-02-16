@@ -38,7 +38,6 @@ group_manager::group_manager(
   , _conf(conf)
   , _self(cluster::make_self_broker(config::shard_local_cfg())) {}
 
-// let's control some concurrency
 ss::future<> group_manager::start() {
     /*
      * receive notifications for partition leadership changes. when we become a
@@ -69,7 +68,9 @@ ss::future<> group_manager::start() {
       });
 
     /*
-     *
+     * subscribe to topic modification events. In particular, when a topic is
+     * deleted, consumer group metadata associated with the affected partitions
+     * are cleaned-up.
      */
     _topic_table_notify_handle
       = _topic_table.local().register_delta_notification(
