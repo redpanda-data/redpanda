@@ -11,6 +11,9 @@
 import Repository from "../supervisors/Repository";
 import { Coprocessor, PolicyError } from "../public/Coprocessor";
 import {
+  DisableCoprocessorData,
+  DisableCoprosReply,
+  DisableCoprosRequest,
   EnableCoprocessor,
   EnableCoprocessorRequestData,
   EnableCoprosReply,
@@ -60,6 +63,27 @@ export class ProcessBatchServer extends SupervisorServer {
     const responses = input.coprocessors.map((definition) =>
       this.validateEnableCoprocInput(definition, this.logger)
     );
+    return Promise.resolve({ responses });
+  }
+
+  disable_coprocessors(
+    input: DisableCoprosRequest
+  ): Promise<DisableCoprosReply> {
+    const responses = input.ids.map<DisableCoprocessorData>((id) => {
+      try {
+        const [handle] = this.repository.getHandlesByCoprocessorIds([id]);
+        if (handle === undefined) {
+          this.logger.info(`error on disable wasm script doesn't exist: ${id}`);
+          return errors.createDisableDoesNotExist(id);
+        }
+        this.logger.info(`wasm script disabled on nodejs engine: ${id}`);
+        this.repository.remove(handle);
+        return errors.createDisableSuccess(id);
+      } catch (_) {
+        this.logger.info(`error on disable wasm script: ${id}`);
+        return errors.createDisableInternalError(id);
+      }
+    });
     return Promise.resolve({ responses });
   }
 

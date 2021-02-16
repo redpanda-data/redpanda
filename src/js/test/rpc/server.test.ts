@@ -22,7 +22,10 @@ import { PolicyError, RecordBatch } from "../../modules/public/Coprocessor";
 import assert = require("assert");
 import * as chokidar from "chokidar";
 import LogService from "../../modules/utilities/Logging";
-import err, { EnableResponseCodes } from "../../modules/rpc/errors";
+import err, {
+  DisableResponseCode,
+  EnableResponseCodes,
+} from "../../modules/rpc/errors";
 const fs = require("fs");
 
 let sinonInstance: SinonSandbox;
@@ -528,6 +531,67 @@ describe("Server", function () {
                 responseItem.scriptMetadata,
                 metaDataExpected
               );
+            });
+          })
+          .finally(() => {
+            client.close();
+            server.closeConnection();
+          });
+      });
+    });
+
+    it("should disable coprocessor", () => {
+      const server = new ProcessBatchServer();
+      const coprocessor = createHandle().coprocessor;
+      server.loadCoprocFromString = (_, _2) => coprocessor;
+      server.listen(8080);
+      return SupervisorClient.create(8080).then((client) => {
+        client
+          .enable_coprocessors({
+            coprocessors: [{ id: BigInt(1), source_code: Buffer.from("") }],
+          })
+          .then((response) => {
+            response.responses.forEach((responseItem) => {
+              assert.strictEqual(
+                responseItem.enableResponseCode,
+                EnableResponseCodes.success
+              );
+            });
+          })
+          .then(() =>
+            client.disable_coprocessors({ ids: [coprocessor.globalId] })
+          )
+          .then((disableResponse) => {
+            disableResponse.responses.forEach((response) => {
+              assert.strictEqual(
+                response.disableResponseCode,
+                DisableResponseCode.success
+              );
+              assert.strictEqual(response.id, coprocessor.globalId);
+            });
+          })
+          .finally(() => {
+            client.close();
+            server.closeConnection();
+          });
+      });
+    });
+
+    it("shouldn't disable a coprocessor if this given id doesn't exist", () => {
+      const server = new ProcessBatchServer();
+      const coprocessor = createHandle().coprocessor;
+      server.loadCoprocFromString = (_, _2) => coprocessor;
+      server.listen(8080);
+      return SupervisorClient.create(8080).then((client) => {
+        client
+          .disable_coprocessors({ ids: [coprocessor.globalId] })
+          .then((disableResponse) => {
+            disableResponse.responses.forEach((response) => {
+              assert.strictEqual(
+                response.disableResponseCode,
+                DisableResponseCode.scriptDoesNotExist
+              );
+              assert.strictEqual(response.id, coprocessor.globalId);
             });
           })
           .finally(() => {

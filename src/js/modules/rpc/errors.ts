@@ -9,6 +9,7 @@
  */
 
 import {
+  DisableCoprocessorData,
   EnableCoprocessor,
   EnableCoprocessorMetadataItem,
   EnableCoprocessorRequestData,
@@ -25,6 +26,12 @@ export enum EnableResponseCodes {
   scriptContainsInvalidTopic,
   scriptContainsNoTopics,
   scriptContainsSyntaxError,
+}
+
+export enum DisableResponseCode {
+  success,
+  internalError,
+  scriptDoesNotExist,
 }
 
 const maxSizeTopicName = 249;
@@ -45,6 +52,7 @@ const validateKafkaTopicName = (topic: string): boolean => {
 type EnableCoprocResponse<A> = (handle: A) => EnableCoprocessorRequestData;
 type HandleEnableResponse = EnableCoprocResponse<Handle>;
 type SimpleEnableResponse = EnableCoprocResponse<EnableCoprocessor>;
+type DisableCoprocResponse = (id: bigint) => DisableCoprocessorData;
 
 const validateLoadScriptError = (
   e: Error,
@@ -110,6 +118,21 @@ const createResponseScriptSyntaxError: SimpleEnableResponse = (handleDef) => ({
   scriptMetadata: { id: handleDef.id, inputTopic: [] },
 });
 
+const createDisableInternalError: DisableCoprocResponse = (id) => ({
+  id,
+  disableResponseCode: DisableResponseCode.internalError,
+});
+
+const createDisableSuccess: DisableCoprocResponse = (id) => ({
+  id,
+  disableResponseCode: DisableResponseCode.success,
+});
+
+const createDisableDoesNotExist: DisableCoprocResponse = (id) => ({
+  id,
+  disableResponseCode: DisableResponseCode.scriptDoesNotExist,
+});
+
 export default {
   validateLoadScriptError,
   validateKafkaTopicName,
@@ -119,4 +142,7 @@ export default {
   createResponseScriptInvalidTopic,
   createResponseScriptWithoutTopics,
   createResponseScriptSyntaxError,
+  createDisableInternalError,
+  createDisableSuccess,
+  createDisableDoesNotExist,
 };
