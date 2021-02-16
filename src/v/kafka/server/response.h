@@ -13,6 +13,7 @@
 
 #include "bytes/iobuf.h"
 #include "kafka/protocol/response_writer.h"
+#include "kafka/protocol/types.h"
 #include "seastarx.h"
 
 #include <seastar/core/sharded.hh>
