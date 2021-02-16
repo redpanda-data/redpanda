@@ -17,6 +17,7 @@
 #include "s3/logger.h"
 #include "s3/signature.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/iostream.hh>
@@ -41,6 +42,7 @@ struct aws_header_names {
     static constexpr boost::beast::string_view max_keys = "max-keys";
     static constexpr boost::beast::string_view x_amz_content_sha256
       = "x-amz-content-sha256";
+    static constexpr boost::beast::string_view x_amz_tagging = "x-amz-tagging";
 };
 
 struct aws_header_values {
@@ -79,6 +81,14 @@ ss::future<configuration> configuration::make_configuration(
     co_return client_cfg;
 }
 
+std::ostream& operator<<(std::ostream& o, const configuration& c) {
+    o << "{access_key:" << c.access_key << ",region:" << c.region()
+      << ",secret_key:****"
+      << ",access_point_uri:" << c.uri() << ",server_addr:" << c.server_addr
+      << "}";
+    return o;
+}
+
 // request_creator //
 
 request_creator::request_creator(const configuration& conf)
@@ -113,7 +123,10 @@ result<http::client::request_header> request_creator::make_get_object_request(
 
 result<http::client::request_header>
 request_creator::make_unsigned_put_object_request(
-  bucket_name const& name, object_key const& key, size_t payload_size_bytes) {
+  bucket_name const& name,
+  object_key const& key,
+  size_t payload_size_bytes,
+  const std::vector<object_tag>& tags) {
     // PUT /my-image.jpg HTTP/1.1
     // Host: myBucket.s3.<Region>.amazonaws.com
     // Date: Wed, 12 Oct 2009 17:50:00 GMT
@@ -138,6 +151,13 @@ request_creator::make_unsigned_put_object_request(
       boost::beast::http::field::content_length,
       std::to_string(payload_size_bytes));
     header.insert(aws_header_names::x_amz_content_sha256, sig);
+    if (!tags.empty()) {
+        std::stringstream tstr;
+        for (const auto& [key, val] : tags) {
+            tstr << fmt::format("&{}={}", key, val);
+        }
+        header.insert(aws_header_names::x_amz_tagging, tstr.str().substr(1));
+    }
     auto ec = _sign.sign_header(header, sig);
     if (ec) {
         return ec;
@@ -320,6 +340,10 @@ client::client(const configuration& conf)
   : _requestor(conf)
   , _client(conf) {}
 
+client::client(const configuration& conf, const ss::abort_source& as)
+  : _requestor(conf)
+  , _client(conf, as) {}
+
 ss::future<> client::shutdown() { return _client.shutdown(); }
 ss::future<http::client::response_stream_ref>
 client::get_object(bucket_name const& name, object_key const& key) {
@@ -356,9 +380,10 @@ ss::future<> client::put_object(
   bucket_name const& name,
   object_key const& id,
   size_t payload_size,
-  ss::input_stream<char>&& body) {
+  ss::input_stream<char>&& body,
+  const std::vector<object_tag>& tags) {
     auto header = _requestor.make_unsigned_put_object_request(
-      name, id, payload_size);
+      name, id, payload_size, tags);
     if (!header) {
         return ss::make_exception_future<>(std::system_error(header.error()));
     }
@@ -375,7 +400,10 @@ ss::future<> client::put_object(
                     }
                     return ss::now();
                 });
-            });
+            })
+            .handle_exception_type(
+              [](const ss::abort_requested_exception&) { return ss::now(); })
+            .finally([&body]() { return body.close(); });
       });
 }
 

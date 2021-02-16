@@ -64,7 +64,7 @@ ss::future<bool> ntp_archiver::download_manifest() {
         auto resp = co_await client.get_object(_bucket, path);
         co_await _remote.update(resp->as_input_stream());
     } catch (const s3::rest_error_response& err) {
-        if (err.code() == "NoSuchKey") {
+        if (err.code() == s3::s3_error_code::no_such_key) {
             // This can happen when we're dealing with new partition for which
             // manifest wasn't uploaded. But also, this can appen if we uploaded
             // the first segment and crashed before we were able to upload the

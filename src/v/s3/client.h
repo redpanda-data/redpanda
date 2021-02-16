@@ -26,6 +26,11 @@ using access_point_uri = named_type<ss::sstring, struct s3_access_point_uri>;
 using bucket_name = named_type<ss::sstring, struct s3_bucket_name>;
 using object_key = named_type<ss::sstring, struct s3_object_key>;
 
+struct object_tag {
+    ss::sstring key;
+    ss::sstring value;
+};
+
 /// S3 client configuration
 struct configuration : rpc::base_transport::configuration {
     /// URI of the S3 access point
@@ -51,6 +56,8 @@ struct configuration : rpc::base_transport::configuration {
       const aws_region_name& region);
 };
 
+std::ostream& operator<<(std::ostream& o, const configuration& c);
+
 /// Request formatter for AWS S3
 class request_creator {
 public:
@@ -69,7 +76,8 @@ public:
     result<http::client::request_header> make_unsigned_put_object_request(
       bucket_name const& name,
       object_key const& key,
-      size_t payload_size_bytes);
+      size_t payload_size_bytes,
+      const std::vector<object_tag>& tags);
 
     /// \brief Create a 'GetObject' request header
     ///
@@ -109,6 +117,7 @@ private:
 class client {
 public:
     explicit client(const configuration& conf);
+    client(const configuration& conf, const ss::abort_source& as);
 
     /// Stop the client
     ss::future<> shutdown();
@@ -131,7 +140,8 @@ public:
       bucket_name const& name,
       object_key const& key,
       size_t payload_size,
-      ss::input_stream<char>&& body);
+      ss::input_stream<char>&& body,
+      const std::vector<object_tag>& tags = {});
 
     struct list_bucket_item {
         ss::sstring key;

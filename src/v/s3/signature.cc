@@ -146,7 +146,7 @@ static ss::sstring uri_encode(const ss::sstring& input, bool encode_slash) {
 static result<ss::sstring> get_canonical_uri(ss::sstring target) {
     if (target.empty() || target[0] != '/') {
         vlog(s3_log.error, "invalid URI {}", target);
-        return make_error_code(s3_error_codes::invalid_uri);
+        return make_error_code(s3_client_error_code::invalid_uri);
     }
     auto pos = target.find('?');
     if (pos != ss::sstring::npos) {
@@ -172,7 +172,7 @@ static result<ss::sstring> get_canonical_uri(ss::sstring target) {
 static result<ss::sstring> get_canonical_query_string(ss::sstring target) {
     if (target.empty() || target[0] != '/') {
         vlog(s3_log.error, "invalid URI {}", target);
-        return make_error_code(s3_error_codes::invalid_uri);
+        return make_error_code(s3_client_error_code::invalid_uri);
     }
     auto pos = target.find('?');
     if (pos == ss::sstring::npos || pos == target.size() - 1) {
@@ -190,7 +190,8 @@ static result<ss::sstring> get_canonical_query_string(ss::sstring target) {
         } else {
             if (p == 0) {
                 // parameter value can be empty but name can't
-                return make_error_code(s3_error_codes::invalid_uri_params);
+                return make_error_code(
+                  s3_client_error_code::invalid_uri_params);
             }
             ss::sstring pname = param.substr(0, p);
             ss::sstring pvalue = param.substr(p + 1);
