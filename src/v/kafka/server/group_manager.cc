@@ -152,6 +152,8 @@ void group_manager::handle_topic_delta(
           [this](const std::vector<model::topic_partition>& tps) {
               return cleanup_removed_topic_partitions(tps);
           });
+    }).handle_exception([](std::exception_ptr e) {
+        vlog(klog.warn, "Topic clean-up encountered error: {}", e);
     });
 }
 
