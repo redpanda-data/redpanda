@@ -13,12 +13,16 @@ import Repository from "../../modules/supervisors/Repository";
 import { SinonSandbox, createSandbox } from "sinon";
 import { SupervisorClient } from "../../modules/rpc/serverAndClients/rpcServer";
 import { createRecordBatch } from "../../modules/public";
-import { ProcessBatchRequest } from "../../modules/domain/generatedRpc/generatedClasses";
+import {
+  EnableCoprocessorMetadata,
+  ProcessBatchRequest,
+} from "../../modules/domain/generatedRpc/generatedClasses";
 import { createHandle } from "../testUtilities";
 import { PolicyError, RecordBatch } from "../../modules/public/Coprocessor";
 import assert = require("assert");
 import * as chokidar from "chokidar";
 import LogService from "../../modules/utilities/Logging";
+import err, { EnableResponseCodes } from "../../modules/rpc/errors";
 const fs = require("fs");
 
 let sinonInstance: SinonSandbox;
@@ -364,6 +368,172 @@ describe("Server", function () {
           const e = r.resultRecordBatch[0].records[0].value;
           assert.deepStrictEqual(e, Buffer.from("B"));
         });
+      });
+    });
+
+    it("should enable coprocessor", () => {
+      const server = new ProcessBatchServer();
+      server.loadCoprocFromString = (_, _2) => [
+        createHandle().coprocessor,
+        undefined,
+      ];
+      server.listen(8080);
+      return SupervisorClient.create(8080).then((client) => {
+        client
+          .enable_coprocessors({
+            coprocessors: [{ id: BigInt(1), source_code: Buffer.from("") }],
+          })
+          .then((response) => {
+            response.responses.forEach((responseItem) => {
+              assert.strictEqual(
+                responseItem.enableResponseCode,
+                EnableResponseCodes.success
+              );
+              assert.strictEqual(
+                responseItem.scriptMetadata.id,
+                createHandle().coprocessor.globalId
+              );
+              const metaDataExpected: EnableCoprocessorMetadata = {
+                id: createHandle().coprocessor.globalId,
+                inputTopic: createHandle().coprocessor.inputTopics.map(
+                  (topic) => ({
+                    topic,
+                    ingestion_policy: 2,
+                  })
+                ),
+              };
+              assert.deepStrictEqual(
+                responseItem.scriptMetadata,
+                metaDataExpected
+              );
+            });
+          })
+          .finally(() => {
+            client.close();
+            server.closeConnection();
+          });
+      });
+    });
+
+    it(
+      "shouldn't enable coprocessor if the coprocessor doesn't " +
+        "have topics",
+      () => {
+        const server = new ProcessBatchServer();
+        const coprocessor = createHandle().coprocessor;
+        coprocessor.inputTopics = [];
+        server.loadCoprocFromString = (_, _2) => [coprocessor, undefined];
+        server.listen(8080);
+        return SupervisorClient.create(8080).then((client) => {
+          client
+            .enable_coprocessors({
+              coprocessors: [{ id: BigInt(1), source_code: Buffer.from("") }],
+            })
+            .then((response) => {
+              response.responses.forEach((responseItem) => {
+                assert.strictEqual(
+                  responseItem.enableResponseCode,
+                  EnableResponseCodes.scriptContainsNoTopics
+                );
+                assert.strictEqual(
+                  responseItem.scriptMetadata.id,
+                  createHandle().coprocessor.globalId
+                );
+                const metaDataExpected: EnableCoprocessorMetadata = {
+                  id: createHandle().coprocessor.globalId,
+                  inputTopic: [],
+                };
+                assert.deepStrictEqual(
+                  responseItem.scriptMetadata,
+                  metaDataExpected
+                );
+              });
+            })
+            .finally(() => {
+              client.close();
+              server.closeConnection();
+            });
+        });
+      }
+    );
+
+    it("shouldn't enable coprocessor if the coprocessor has invalid topics", () => {
+      const server = new ProcessBatchServer();
+      const coprocessor = createHandle().coprocessor;
+      coprocessor.inputTopics = ["topic."];
+      server.loadCoprocFromString = (_, _2) => [coprocessor, undefined];
+      server.listen(8080);
+      return SupervisorClient.create(8080).then((client) => {
+        client
+          .enable_coprocessors({
+            coprocessors: [{ id: BigInt(1), source_code: Buffer.from("") }],
+          })
+          .then((response) => {
+            response.responses.forEach((responseItem) => {
+              assert.strictEqual(
+                responseItem.enableResponseCode,
+                EnableResponseCodes.scriptContainsInvalidTopic
+              );
+              assert.strictEqual(
+                responseItem.scriptMetadata.id,
+                createHandle().coprocessor.globalId
+              );
+              const metaDataExpected: EnableCoprocessorMetadata = {
+                id: createHandle().coprocessor.globalId,
+                inputTopic: [],
+              };
+              assert.deepStrictEqual(
+                responseItem.scriptMetadata,
+                metaDataExpected
+              );
+            });
+          })
+          .finally(() => {
+            client.close();
+            server.closeConnection();
+          });
+      });
+    });
+
+    it("shouldn't enable coprocessor if the coprocessor has js errors", () => {
+      const server = new ProcessBatchServer();
+      server.loadCoprocFromString = (_, _2) => [
+        undefined,
+        err.createResponseInternalError({
+          id: BigInt(1),
+          source_code: Buffer.from(""),
+        }),
+      ];
+      server.listen(8080);
+      return SupervisorClient.create(8080).then((client) => {
+        client
+          .enable_coprocessors({
+            coprocessors: [{ id: BigInt(1), source_code: Buffer.from("") }],
+          })
+          .then((response) => {
+            response.responses.forEach((responseItem) => {
+              assert.strictEqual(
+                responseItem.enableResponseCode,
+                EnableResponseCodes.internalError
+              );
+              assert.strictEqual(
+                responseItem.scriptMetadata.id,
+                createHandle().coprocessor.globalId
+              );
+              const metaDataExpected: EnableCoprocessorMetadata = {
+                id: createHandle().coprocessor.globalId,
+                inputTopic: [],
+              };
+              assert.deepStrictEqual(
+                responseItem.scriptMetadata,
+                metaDataExpected
+              );
+            });
+          })
+          .finally(() => {
+            client.close();
+            server.closeConnection();
+          });
       });
     });
   });

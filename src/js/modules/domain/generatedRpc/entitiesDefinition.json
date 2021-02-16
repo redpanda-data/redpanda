@@ -284,7 +284,7 @@
       "fields": [
         {
           "name": "id",
-          "type": "string"
+          "type": "uint64"
         },
         {
           "name": "inputTopic",
