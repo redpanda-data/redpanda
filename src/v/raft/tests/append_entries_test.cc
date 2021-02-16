@@ -202,11 +202,10 @@ FIXTURE_TEST(test_empty_node_recovery, raft_test_fixture) {
         if (gr.get_leader_id() != id) {
             disabled_id = id;
             // truncate the node log
-            m.log
-              ->truncate(storage::truncate_config(
-                model::offset(0), ss::default_priority_class()))
-              .get();
+            auto path = m.log->config().work_directory();
+            // remove node directory
             gr.disable_node(id);
+            std::filesystem::remove_all(std::filesystem::path(path));
             break;
         }
     }
@@ -235,12 +234,10 @@ FIXTURE_TEST(test_empty_node_recovery_relaxed_consistency, raft_test_fixture) {
         // disable one of the non leader nodes
         if (gr.get_leader_id() != id) {
             disabled_id = id;
-            // truncate the node log
-            m.log
-              ->truncate(storage::truncate_config(
-                model::offset(0), ss::default_priority_class()))
-              .get();
+            auto path = m.log->config().work_directory();
+            // remove node directory
             gr.disable_node(id);
+            std::filesystem::remove_all(std::filesystem::path(path));
             break;
         }
     }
