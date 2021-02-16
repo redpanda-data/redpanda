@@ -80,7 +80,6 @@ linters:
     - nestif
     - prealloc
     - testpackage
-    - wsl
 
   # don't enable:
   # - gochecknoinits # the kubebuilder and kubernetes library enforce using init functions
