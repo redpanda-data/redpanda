@@ -218,6 +218,12 @@ class Repository {
     }
   }
 
+  removeAll(): Array<bigint> {
+    const ids = [...this.handles.entries()].map(([id]) => id);
+    this.handles.clear();
+    return ids;
+  }
+
   /**
    * Map with coprocessor ID -> Handle
    * @private

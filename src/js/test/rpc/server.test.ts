@@ -376,7 +376,7 @@ describe("Server", function () {
 
     it("should enable coprocessor", () => {
       const server = new ProcessBatchServer();
-      server.loadCoprocFromString = (_, _2) => [
+      server.loadCoprocFromString = () => [
         createHandle().coprocessor,
         undefined,
       ];
@@ -425,7 +425,7 @@ describe("Server", function () {
         const server = new ProcessBatchServer();
         const coprocessor = createHandle().coprocessor;
         coprocessor.inputTopics = [];
-        server.loadCoprocFromString = (_, _2) => [coprocessor, undefined];
+        server.loadCoprocFromString = () => [coprocessor, undefined];
         server.listen(8080);
         return SupervisorClient.create(8080).then((client) => {
           client
@@ -543,7 +543,7 @@ describe("Server", function () {
     it("should disable coprocessor", () => {
       const server = new ProcessBatchServer();
       const coprocessor = createHandle().coprocessor;
-      server.loadCoprocFromString = (_, _2) => coprocessor;
+      server.loadCoprocFromString = () => [coprocessor, undefined];
       server.listen(8080);
       return SupervisorClient.create(8080).then((client) => {
         client
@@ -580,7 +580,7 @@ describe("Server", function () {
     it("shouldn't disable a coprocessor if this given id doesn't exist", () => {
       const server = new ProcessBatchServer();
       const coprocessor = createHandle().coprocessor;
-      server.loadCoprocFromString = (_, _2) => coprocessor;
+      server.loadCoprocFromString = () => [coprocessor, undefined];
       server.listen(8080);
       return SupervisorClient.create(8080).then((client) => {
         client
@@ -600,5 +600,62 @@ describe("Server", function () {
           });
       });
     });
+
+    it("should disable all coprocessor", () => {
+      const server = new ProcessBatchServer();
+      const coprocessor = createHandle().coprocessor;
+      server.loadCoprocFromString = () => [coprocessor, undefined];
+      server.listen(8080);
+      return SupervisorClient.create(8080).then((client) => {
+        client
+          .enable_coprocessors({
+            coprocessors: [{ id: BigInt(1), source_code: Buffer.from("") }],
+          })
+          .then((response) => {
+            response.responses.forEach((responseItem) => {
+              assert.strictEqual(
+                responseItem.enableResponseCode,
+                EnableResponseCodes.success
+              );
+            });
+          })
+          .then(() => client.disable_all_coprocessors({ empty: 0 }))
+          .then((response) => {
+            response.responses.forEach((response) => {
+              assert.strictEqual(response.id, coprocessor.globalId);
+              assert.strictEqual(
+                response.disableResponseCode,
+                DisableResponseCode.success
+              );
+            });
+          })
+          .finally(() => {
+            client.close();
+            server.closeConnection();
+          });
+      });
+    });
+
+    it(
+      "should disable all coprocessor though there aren't " +
+        "registered coprocessor",
+      () => {
+        const server = new ProcessBatchServer();
+        const coprocessor = createHandle().coprocessor;
+        server.loadCoprocFromString = () => [coprocessor, undefined];
+        server.listen(8080);
+        return SupervisorClient.create(8080).then((client) => {
+          client
+            .disable_all_coprocessors({ empty: 0 })
+            .then((response) => {
+              assert.deepStrictEqual(response.responses, []);
+            })
+            .finally(() => {
+              client.close();
+              server.closeConnection();
+            });
+        });
+      }
+    );
   });
 });

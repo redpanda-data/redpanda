@@ -14,6 +14,7 @@ import {
   DisableCoprocessorData,
   DisableCoprosReply,
   DisableCoprosRequest,
+  EmptyRequest,
   EnableCoprocessor,
   EnableCoprocessorRequestData,
   EnableCoprosReply,
@@ -25,7 +26,7 @@ import {
 } from "../domain/generatedRpc/generatedClasses";
 import { SupervisorServer } from "./serverAndClients/rpcServer";
 import { Handle } from "../domain/Handle";
-import errors from "./errors";
+import errors, { DisableResponseCode } from "./errors";
 import { Logger } from "winston";
 import Logging from "../utilities/Logging";
 
@@ -84,6 +85,16 @@ export class ProcessBatchServer extends SupervisorServer {
         return errors.createDisableInternalError(id);
       }
     });
+    return Promise.resolve({ responses });
+  }
+
+  disable_all_coprocessors(input: EmptyRequest): Promise<DisableCoprosReply> {
+    const ids = this.repository.removeAll();
+    const responses = ids.map<DisableCoprocessorData>((id) => ({
+      id,
+      disableResponseCode: DisableResponseCode.success,
+    }));
+    this.logger.info(`Disable all wasm scripts: ${ids}`);
     return Promise.resolve({ responses });
   }
 
