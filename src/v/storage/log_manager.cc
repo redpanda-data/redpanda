@@ -285,6 +285,14 @@ log_manager::get(const model::topic_namespace& tn) {
     return r;
 }
 
+absl::flat_hash_set<model::ntp> log_manager::get_all_ntps() const {
+    absl::flat_hash_set<model::ntp> r;
+    for (const auto& p : _logs) {
+        r.insert(p.first);
+    }
+    return r;
+}
+
 std::ostream& operator<<(std::ostream& o, log_config::storage_type t) {
     switch (t) {
     case log_config::storage_type::memory:
