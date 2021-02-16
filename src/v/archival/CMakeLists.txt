@@ -3,6 +3,7 @@ v_cc_library(
   NAME archival
   SRCS
     archival_policy.cc
+    service.cc
     ntp_archiver_service.cc
     manifest.cc
   DEPS
