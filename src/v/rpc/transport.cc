@@ -65,18 +65,19 @@ transport::transport(
 }
 
 ss::future<ss::connected_socket> connect_with_timeout(
-  ss::socket& sock,
-  const seastar::socket_address& address,
-  rpc::clock_type::time_point timeout) {
-    auto f = sock.connect(
-      address,
-      ss::socket_address(sockaddr_in{AF_INET, INADDR_ANY, {0}}),
-      ss::transport::TCP);
-    return ss::with_timeout(timeout, std::move(f))
-      .handle_exception_type([&sock, &address](const ss::timed_out_error& e) {
-          rpclog.info("connection to: {}, timed out", address);
-          sock.shutdown();
-          return ss::make_exception_future<ss::connected_socket>(e);
+  const seastar::socket_address& address, rpc::clock_type::time_point timeout) {
+    return ss::do_with(
+      ss::engine().net().socket(), [address, timeout](seastar::socket& sock) {
+          auto f = sock.connect(
+            address,
+            ss::socket_address(sockaddr_in{AF_INET, INADDR_ANY, {0}}),
+            ss::transport::TCP);
+          return ss::with_timeout(timeout, std::move(f))
+            .handle_exception([&sock, address](const std::exception_ptr& e) {
+                rpclog.warn("error connecting to {} - {}", address, e);
+                sock.shutdown();
+                return ss::make_exception_future<ss::connected_socket>(e);
+            });
       });
 }
 
@@ -89,10 +90,8 @@ ss::future<> base_transport::do_connect(clock_type::time_point timeout) {
           server_address()));
     }
     try {
-        auto socket = ss::engine().net().socket();
-
         ss::connected_socket fd = co_await connect_with_timeout(
-          socket, server_address(), timeout);
+          server_address(), timeout);
 
         if (_creds) {
             fd = co_await ss::tls::wrap_client(
@@ -228,26 +227,26 @@ transport::do_send(sequence_t seq, netbuf b, rpc::client_opts opts) {
         return ss::make_ready_future<ret_t>(errc::disconnected_endpoint);
     }
     return ss::with_gate(
-             _dispatch_gate,
-             [this, b = std::move(b), opts = std::move(opts), seq]() mutable {
-                 auto f = make_response_handler(b, opts);
+      _dispatch_gate,
+      [this, b = std::move(b), opts = std::move(opts), seq]() mutable {
+          auto f = make_response_handler(b, opts);
 
-                 // send
-                 auto sz = b.buffer().size_bytes();
-                 return get_units(_memory, sz)
-                   .then([this, b = std::move(b), f = std::move(f), seq](
-                           ss::semaphore_units<> units) mutable {
-                       _requests_queue.emplace(
-                         seq, std::make_unique<netbuf>(std::move(b)));
-                       dispatch_send();
-                       return std::move(f).finally([u = std::move(units)] {});
-                   });
-             })
-      .finally([this, seq] {
-          // update last sequence to make progress, for successfull dispatches
-          // this will be noop, as _last_seq was already update before sending
-          // data
-          _last_seq = std::max(_last_seq, seq);
+          // send
+          auto sz = b.buffer().size_bytes();
+          return get_units(_memory, sz)
+            .then([this, b = std::move(b), f = std::move(f), seq](
+                    ss::semaphore_units<> units) mutable {
+                _requests_queue.emplace(
+                  seq, std::make_unique<netbuf>(std::move(b)));
+                dispatch_send();
+                return std::move(f).finally([u = std::move(units)] {});
+            })
+            .finally([this, seq] {
+                // update last sequence to make progress, for successfull
+                // dispatches this will be noop, as _last_seq was already update
+                // before sending data
+                _last_seq = std::max(_last_seq, seq);
+            });
       });
 }
 
