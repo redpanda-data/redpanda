@@ -149,7 +149,7 @@ func (r *StatefulSetResource) Obj() (k8sclient.Object, error) {
 			Labels:		clusterLabels,
 		},
 		Spec: appsv1.StatefulSetSpec{
-			Replicas:		&r.pandaCluster.Status.Replicas,
+			Replicas:		r.pandaCluster.Spec.Replicas,
 			PodManagementPolicy:	appsv1.ParallelPodManagement,
 			Selector:		clusterLabels.AsAPISelector(),
 			UpdateStrategy: appsv1.StatefulSetUpdateStrategy{
