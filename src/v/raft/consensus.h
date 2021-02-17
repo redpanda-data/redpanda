@@ -29,7 +29,7 @@
 #include "raft/types.h"
 #include "rpc/connection_cache.h"
 #include "seastarx.h"
-#include "storage/api.h"
+#include "storage/fwd.h"
 #include "storage/log.h"
 #include "storage/snapshot.h"
 #include "utils/mutex.h"

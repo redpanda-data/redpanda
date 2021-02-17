@@ -20,6 +20,7 @@
 #include "raft/types.h"
 #include "random/generators.h"
 #include "reflection/adl.h"
+#include "storage/api.h"
 
 #include <seastar/core/do_with.hh>
 #include <seastar/core/future-util.hh>

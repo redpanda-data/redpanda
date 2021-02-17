@@ -16,7 +16,7 @@
 #include "model/record.h"
 #include "model/timeout_clock.h"
 #include "model/timestamp.h"
-#include "storage/ntp_config.h"
+#include "storage/fwd.h"
 #include "tristate.h"
 
 #include <seastar/core/abort_source.hh>

@@ -11,8 +11,7 @@
 
 #pragma once
 #include "coproc/ntp_context.h"
-#include "storage/log_manager.h"
-#include "storage/snapshot.h"
+#include "storage/fwd.h"
 
 #include <filesystem>
 

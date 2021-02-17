@@ -22,7 +22,7 @@
 #include "resource_mgmt/smp_groups.h"
 #include "rpc/server.h"
 #include "seastarx.h"
-#include "storage/api.h"
+#include "storage/fwd.h"
 
 #include <seastar/core/app-template.hh>
 #include <seastar/core/metrics_registration.hh>

@@ -23,6 +23,8 @@
 #include "kafka/protocol/sync_group.h"
 #include "kafka/types.h"
 
+#include <seastar/core/sleep.hh>
+
 #include <chrono>
 #include <exception>
 

@@ -26,6 +26,8 @@
 #include "rpc/server.h"
 #include "rpc/simple_protocol.h"
 #include "rpc/types.h"
+#include "storage/api.h"
+#include "storage/kvstore.h"
 #include "storage/log_manager.h"
 #include "storage/ntp_config.h"
 #include "storage/record_batch_builder.h"

@@ -13,9 +13,11 @@
 
 #include "config/configuration.h"
 #include "coproc/types.h"
+#include "random/simple_time_jitter.h"
 #include "rpc/reconnect_transport.h"
-#include "storage/api.h"
+#include "storage/fwd.h"
 #include "storage/log.h"
+#include "utils/mutex.h"
 
 #include <seastar/core/semaphore.hh>
 #include <seastar/core/shared_ptr.hh>

@@ -15,7 +15,7 @@
 #include "cluster/fwd.h"
 #include "cluster/topic_updates_dispatcher.h"
 #include "rpc/connection_cache.h"
-#include "storage/api.h"
+#include "storage/fwd.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/sharded.hh>

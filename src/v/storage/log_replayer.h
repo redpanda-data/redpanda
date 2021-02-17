@@ -13,7 +13,7 @@
 
 #include "model/fundamental.h"
 #include "seastarx.h"
-#include "storage/segment.h"
+#include "storage/fwd.h"
 
 #include <seastar/core/io_queue.hh>
 #include <seastar/util/bool_class.hh>

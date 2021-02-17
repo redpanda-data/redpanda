@@ -14,6 +14,7 @@
 #include "raft/consensus_utils.h"
 #include "raft/types.h"
 #include "reflection/adl.h"
+#include "storage/api.h"
 #include "storage/kvstore.h"
 #include "vlog.h"
 

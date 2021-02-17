@@ -12,6 +12,7 @@
 #include "coproc/ntp_context.h"
 #include "coproc/offset_storage_utils.h"
 #include "model/namespace.h"
+#include "storage/api.h"
 #include "storage/snapshot.h"
 #include "test_utils/fixture.h"
 

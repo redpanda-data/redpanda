@@ -14,11 +14,8 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "s3/client.h"
-#include "storage/api.h"
-#include "storage/log_manager.h"
-#include "storage/ntp_config.h"
+#include "storage/fwd.h"
 #include "storage/segment.h"
-#include "storage/segment_set.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/lowres_clock.hh>

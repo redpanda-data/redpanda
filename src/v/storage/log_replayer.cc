@@ -16,6 +16,7 @@
 #include "model/record_utils.h"
 #include "storage/logger.h"
 #include "storage/parser.h"
+#include "storage/segment.h"
 #include "utils/vint.h"
 #include "vlog.h"
 

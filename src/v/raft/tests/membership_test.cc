@@ -10,6 +10,7 @@
 #include "model/metadata.h"
 #include "raft/errc.h"
 #include "raft/tests/raft_group_fixture.h"
+#include "storage/api.h"
 #include "test_utils/async.h"
 
 FIXTURE_TEST(add_one_node_to_single_node_cluster, raft_test_fixture) {
