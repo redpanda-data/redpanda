@@ -23,31 +23,19 @@ v_cc_library(
     cycling_gen
   )
 
+rp_test(
+  UNIT_TEST
+  BINARY_NAME rpc
+  SOURCES
+    netbuf_tests.cc
+    roundtrip_tests.cc
+    response_handler_tests.cc
+    serialization_test.cc
+  LIBRARIES v::seastar_testing_main v::rpc
+  LABELS rpc
+  ARGS "-- -c 1"
+)
 
-rp_test(
-  UNIT_TEST
-  BINARY_NAME rpc_serialization_tests
-  SOURCES serialization_test.cc
-  DEFINITIONS BOOST_TEST_DYN_LINK
-  LIBRARIES v::seastar_testing_main v::rpc
-  LABELS rpc
-)
-rp_test(
-  UNIT_TEST
-  BINARY_NAME roundtrip_deserialize
-  SOURCES roundtrip_tests.cc
-  LIBRARIES v::seastar_testing_main v::rpc
-  LABELS rpc
-  ARGS "-- -c 1"
-)
-rp_test(
-  UNIT_TEST
-  BINARY_NAME netbuf_tests
-  SOURCES netbuf_tests.cc
-  LIBRARIES v::seastar_testing_main v::rpc
-  LABELS rpc
-  ARGS "-- -c 1"
-)
 rp_test(
   UNIT_TEST
   BINARY_NAME rpcgenerator_cycling
@@ -76,12 +64,5 @@ rp_test(
   SOURCES exponential_backoff.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES Boost::unit_test_framework v::rpc
-  LABELS rpc
-)
-rp_test(
-  UNIT_TEST
-  BINARY_NAME response_handler_tests
-  SOURCES response_handler_tests.cc
-  LIBRARIES v::seastar_testing_main v::raft
   LABELS rpc
 )
