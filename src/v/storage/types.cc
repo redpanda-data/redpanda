@@ -9,6 +9,7 @@
 
 #include "storage/types.h"
 
+#include "storage/ntp_config.h"
 #include "utils/to_string.h"
 
 #include <fmt/core.h>

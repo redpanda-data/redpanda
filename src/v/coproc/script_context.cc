@@ -18,6 +18,7 @@
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "raft/types.h"
+#include "storage/api.h"
 #include "storage/types.h"
 #include "vlog.h"
 

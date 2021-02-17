@@ -16,6 +16,7 @@
 #include "storage/batch_cache.h"
 #include "storage/compacted_index_writer.h"
 #include "storage/fs_utils.h"
+#include "storage/kvstore.h"
 #include "storage/log.h"
 #include "storage/logger.h"
 #include "storage/segment.h"

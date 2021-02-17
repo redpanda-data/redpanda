@@ -13,6 +13,7 @@
 #include "model/record_utils.h"
 #include "storage/disk_log_impl.h"
 #include "storage/logger.h"
+#include "storage/segment.h"
 #include "storage/segment_appender.h"
 #include "vlog.h"
 

@@ -19,6 +19,7 @@
 #include "rpc/reconnect_transport.h"
 #include "rpc/types.h"
 #include "ssx/future-util.h"
+#include "storage/api.h"
 #include "storage/directories.h"
 
 #include <seastar/core/coroutine.hh>

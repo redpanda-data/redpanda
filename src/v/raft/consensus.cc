@@ -24,6 +24,7 @@
 #include "raft/types.h"
 #include "raft/vote_stm.h"
 #include "reflection/adl.h"
+#include "storage/api.h"
 #include "vlog.h"
 
 #include <seastar/core/coroutine.hh>

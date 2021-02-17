@@ -13,6 +13,7 @@
 #include "storage/disk_log_impl.h"
 #include "storage/log.h"
 #include "storage/log_manager.h"
+#include "storage/segment.h"
 #include "storage/tests/storage_test_fixture.h"
 #include "storage/tests/utils/disk_log_builder.h"
 #include "test_utils/fixture.h"

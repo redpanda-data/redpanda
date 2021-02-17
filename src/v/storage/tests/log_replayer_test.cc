@@ -13,6 +13,7 @@
 #include "storage/disk_log_appender.h"
 #include "storage/log_replayer.h"
 #include "storage/logger.h"
+#include "storage/segment.h"
 #include "storage/segment_appender_utils.h"
 #include "storage/segment_index.h"
 #include "storage/segment_reader.h"

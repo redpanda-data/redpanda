@@ -16,7 +16,7 @@
 #include "raft/heartbeat_manager.h"
 #include "raft/rpc_client_protocol.h"
 #include "raft/types.h"
-#include "storage/api.h"
+#include "storage/fwd.h"
 
 #include <seastar/core/metrics_registration.hh>
 

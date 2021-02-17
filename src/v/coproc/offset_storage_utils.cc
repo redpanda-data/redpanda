@@ -16,6 +16,8 @@
 #include "coproc/ntp_context.h"
 #include "model/fundamental.h"
 #include "reflection/adl.h"
+#include "storage/log_manager.h"
+#include "storage/snapshot.h"
 #include "vlog.h"
 
 #include <seastar/core/coroutine.hh>

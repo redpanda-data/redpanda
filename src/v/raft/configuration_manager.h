@@ -15,7 +15,8 @@
 #include "model/metadata.h"
 #include "raft/logger.h"
 #include "raft/types.h"
-#include "storage/api.h"
+#include "storage/fwd.h"
+#include "units.h"
 #include "utils/mutex.h"
 
 #include <seastar/core/abort_source.hh>
