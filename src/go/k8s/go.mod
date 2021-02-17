@@ -6,6 +6,7 @@ require (
 	github.com/go-logr/logr v0.3.0
 	github.com/onsi/ginkgo v1.14.1
 	github.com/onsi/gomega v1.10.2
+	github.com/stretchr/testify v1.6.1
 	github.com/vectorizedio/redpanda/src/go/rpk v0.0.0-00010101000000-000000000000
 	golang.org/x/tools v0.0.0-20210107193943-4ed967dd8eff // indirect
 	google.golang.org/protobuf v1.25.0 // indirect
