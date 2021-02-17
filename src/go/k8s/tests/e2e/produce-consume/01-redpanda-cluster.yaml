@@ -19,11 +19,7 @@ spec:
   configuration:
     rpcServer:
       port: 33145
-    advertisedRpcApi:
-      port: 33145
     kafkaApi:
-      port: 9092
-    advertisedKafkaApi:
       port: 9092
     admin:
       port: 9644

@@ -122,9 +122,7 @@ func (in *ClusterStatus) DeepCopy() *ClusterStatus {
 func (in *RedpandaConfig) DeepCopyInto(out *RedpandaConfig) {
 	*out = *in
 	out.RPCServer = in.RPCServer
-	out.AdvertisedRPCAPI = in.AdvertisedRPCAPI
 	out.KafkaAPI = in.KafkaAPI
-	out.AdvertisedKafkaAPI = in.AdvertisedKafkaAPI
 	out.AdminAPI = in.AdminAPI
 }
 
