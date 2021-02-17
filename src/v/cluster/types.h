@@ -44,6 +44,56 @@ struct allocate_id_reply {
     errc ec;
 };
 
+enum class tx_errc {
+    none = 0,
+    leader_not_found,
+    shard_not_found,
+    partition_not_found,
+    stm_not_found,
+    partition_not_exists,
+    timeout,
+    conflict,
+    fenced,
+    stale,
+};
+struct tx_errc_category final : public std::error_category {
+    const char* name() const noexcept final { return "cluster::tx_errc"; }
+
+    std::string message(int c) const final {
+        switch (static_cast<tx_errc>(c)) {
+        case tx_errc::stale:
+            return "Stale";
+        case tx_errc::fenced:
+            return "Fenced";
+        case tx_errc::conflict:
+            return "Conflict";
+        case tx_errc::none:
+            return "None";
+        case tx_errc::leader_not_found:
+            return "Leader not found";
+        case tx_errc::shard_not_found:
+            return "Shard not found";
+        case tx_errc::partition_not_found:
+            return "Partition not found";
+        case tx_errc::stm_not_found:
+            return "Stm not found";
+        case tx_errc::partition_not_exists:
+            return "Partition not exists";
+        case tx_errc::timeout:
+            return "Timeout";
+        default:
+            return "cluster::tx_errc::unknown";
+        }
+    }
+};
+inline const std::error_category& tx_error_category() noexcept {
+    static tx_errc_category e;
+    return e;
+}
+inline std::error_code make_error_code(tx_errc e) noexcept {
+    return std::error_code(static_cast<int>(e), tx_error_category());
+}
+
 /// Join request sent by node to join raft-0
 struct join_request {
     explicit join_request(model::broker b)
@@ -216,6 +266,10 @@ private:
 };
 
 } // namespace cluster
+namespace std {
+template<>
+struct is_error_code_enum<cluster::tx_errc> : true_type {};
+} // namespace std
 
 namespace reflection {
 
