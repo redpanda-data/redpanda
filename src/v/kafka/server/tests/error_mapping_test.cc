@@ -7,8 +7,6 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#define BOOST_TEST_MODULE utils
-
 #include "kafka/server/errors.h"
 
 #include <boost/test/unit_test.hpp>

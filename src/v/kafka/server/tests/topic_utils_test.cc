@@ -8,7 +8,7 @@
 // by the Apache License, Version 2.0
 
 #include "kafka/protocol/schemata/create_topics_response.h"
-#define BOOST_TEST_MODULE utils
+#define BOOST_TEST_MODULE kafka_server
 #include "kafka/server/handlers/topics/topic_utils.h"
 #include "model/fundamental.h"
 
