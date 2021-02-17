@@ -14,6 +14,11 @@
 
 namespace kafka {
 
-using api_versions_handler = handler<api_versions_api, 0, 2>;
+struct api_versions_handler : public handler<api_versions_api, 0, 2> {
+    static ss::future<response_ptr>
+    handle(request_context&&, ss::smp_service_group);
 
-}
+    static api_versions_response handle_raw(request_context& ctx);
+};
+
+} // namespace kafka

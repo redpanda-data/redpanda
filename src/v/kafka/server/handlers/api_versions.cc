@@ -72,9 +72,7 @@ std::vector<api_versions_response_key> get_supported_apis() {
     return serialize_apis(request_types{});
 }
 
-template<>
-ss::future<response_ptr>
-api_versions_handler::handle(request_context&& ctx, ss::smp_service_group) {
+api_versions_response api_versions_handler::handle_raw(request_context& ctx) {
     // Unlike other request types, we handle ApiVersion requests
     // with higher versions than supported. We treat such a request
     // as if it were v0 and return a response using the v0 response
@@ -101,8 +99,13 @@ api_versions_handler::handle(request_context&& ctx, ss::smp_service_group) {
       || r.data.error_code == error_code::unsupported_version) {
         r.data.api_keys = get_supported_apis();
     }
+    return r;
+}
 
-    return ctx.respond(std::move(r));
+ss::future<response_ptr>
+api_versions_handler::handle(request_context&& ctx, ss::smp_service_group) {
+    auto response = handle_raw(ctx);
+    return ctx.respond(std::move(response));
 }
 
 } // namespace kafka
