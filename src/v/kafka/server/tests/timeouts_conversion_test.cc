@@ -7,7 +7,6 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#define BOOST_TEST_MODULE requests
 #include "kafka/protocol/timeout.h"
 
 #include <boost/test/unit_test.hpp>
