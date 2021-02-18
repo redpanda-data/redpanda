@@ -174,7 +174,7 @@ private:
         ss::abort_source as;
         ss::lw_shared_ptr<cluster::partition> partition;
 
-        attached_partition(ss::lw_shared_ptr<cluster::partition> p)
+        explicit attached_partition(ss::lw_shared_ptr<cluster::partition> p)
           : loading(true)
           , partition(std::move(p)) {}
     };
@@ -249,10 +249,7 @@ struct group_log_offset_key {
     model::topic topic;
     model::partition_id partition;
 
-    bool operator==(const group_log_offset_key& other) const {
-        return group == other.group && topic == other.topic
-               && partition == other.partition;
-    }
+    bool operator==(const group_log_offset_key& other) const = default;
 
     friend std::ostream& operator<<(std::ostream&, const group_log_offset_key&);
 };

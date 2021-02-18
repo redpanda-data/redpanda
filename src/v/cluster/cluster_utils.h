@@ -153,8 +153,8 @@ auto do_with_client_one_shot(
                     .disable_metrics = rpc::metrics_disabled(true)});
             });
       })
-      .then([addr, f = std::forward<Func>(f), connection_timeout](
-              transport_ptr transport) mutable {
+      .then([f = std::forward<Func>(f),
+             connection_timeout](transport_ptr transport) mutable {
           return transport->connect(connection_timeout)
             .then([transport, f = std::forward<Func>(f)]() mutable {
                 return ss::futurize_invoke(

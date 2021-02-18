@@ -38,7 +38,6 @@ group_manager::group_manager(
   , _conf(conf)
   , _self(cluster::make_self_broker(config::shard_local_cfg())) {}
 
-// let's control some concurrency
 ss::future<> group_manager::start() {
     /*
      * receive notifications for partition leadership changes. when we become a
@@ -64,10 +63,14 @@ ss::future<> group_manager::start() {
     _manage_notify_handle = _pm.local().register_manage_notification(
       model::kafka_internal_namespace,
       model::kafka_group_topic,
-      [this](ss::lw_shared_ptr<cluster::partition> p) { attach_partition(p); });
+      [this](ss::lw_shared_ptr<cluster::partition> p) {
+          attach_partition(std::move(p));
+      });
 
     /*
-     *
+     * subscribe to topic modification events. In particular, when a topic is
+     * deleted, consumer group metadata associated with the affected partitions
+     * are cleaned-up.
      */
     _topic_table_notify_handle
       = _topic_table.local().register_delta_notification(
@@ -149,13 +152,15 @@ void group_manager::handle_topic_delta(
           [this](const std::vector<model::topic_partition>& tps) {
               return cleanup_removed_topic_partitions(tps);
           });
+    }).handle_exception([](std::exception_ptr e) {
+        vlog(klog.warn, "Topic clean-up encountered error: {}", e);
     });
 }
 
 void group_manager::handle_leader_change(
   ss::lw_shared_ptr<cluster::partition> part,
   std::optional<model::node_id> leader) {
-    (void)with_gate(_gate, [this, part, leader] {
+    (void)with_gate(_gate, [this, part = std::move(part), leader] {
         if (auto it = _partitions.find(part->ntp()); it != _partitions.end()) {
             return ss::with_semaphore(
               it->second->sem, 1, [this, p = it->second, leader] {
