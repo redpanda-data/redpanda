@@ -12,6 +12,7 @@ package resources
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"strconv"
@@ -21,7 +22,7 @@ import (
 	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/labels"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -32,6 +33,8 @@ import (
 )
 
 var _ Resource = &StatefulSetResource{}
+
+var errNodePortMissing = errors.New("the node port missing from the service")
 
 const (
 	redpandaContainerName		= "redpanda"
@@ -44,9 +47,10 @@ type StatefulSetResource struct {
 	k8sclient.Client
 	scheme		*runtime.Scheme
 	pandaCluster	*redpandav1alpha1.Cluster
-	svc		*HeadlessServiceResource
 	logger		logr.Logger
 
+	headlessSvc		*HeadlessServiceResource
+	nodePortSvc		*NodePortServiceResource
 	LastObservedState	*appsv1.StatefulSet
 }
 
@@ -55,11 +59,18 @@ func NewStatefulSet(
 	client k8sclient.Client,
 	pandaCluster *redpandav1alpha1.Cluster,
 	scheme *runtime.Scheme,
-	svc *HeadlessServiceResource,
+	headlessSvc *HeadlessServiceResource,
+	nodePortSvc *NodePortServiceResource,
 	logger logr.Logger,
 ) *StatefulSetResource {
 	return &StatefulSetResource{
-		client, scheme, pandaCluster, svc, logger.WithValues("Kind", statefulSetKind()), nil,
+		client,
+		scheme,
+		pandaCluster,
+		logger.WithValues("Kind", statefulSetKind()),
+		headlessSvc,
+		nodePortSvc,
+		nil,
 	}
 }
 
@@ -68,11 +79,11 @@ func (r *StatefulSetResource) Ensure(ctx context.Context) error {
 	var sts appsv1.StatefulSet
 
 	err := r.Get(ctx, r.Key(), &sts)
-	if err != nil && !errors.IsNotFound(err) {
+	if err != nil && !k8serrors.IsNotFound(err) {
 		return err
 	}
 
-	if errors.IsNotFound(err) {
+	if k8serrors.IsNotFound(err) {
 		r.logger.Info(fmt.Sprintf("StatefulSet %s does not exist, going to create one", r.Key().Name))
 
 		obj, err := r.Obj()
@@ -144,6 +155,16 @@ func updateReplicasIfNeeded(
 // Obj returns resource managed client.Object
 // nolint:funlen // The complexity of Obj function will be address in the next version TODO
 func (r *StatefulSetResource) Obj() (k8sclient.Object, error) {
+	if r.pandaCluster.Spec.ExternalConnectivity && r.nodePortSvc.LastObservedState != nil {
+		for _, port := range r.nodePortSvc.LastObservedState.Spec.Ports {
+			if port.NodePort != 0 {
+				continue
+			}
+
+			return nil, fmt.Errorf("node port service %s: %w", r.nodePortSvc.Key(), errNodePortMissing)
+		}
+	}
+
 	var configMapDefaultMode int32 = 0754
 
 	memory, exist := r.pandaCluster.Spec.Resources.Limits["memory"]
@@ -270,20 +291,16 @@ func (r *StatefulSetResource) Obj() (k8sclient.Object, error) {
 									},
 								},
 							},
-							Ports: []corev1.ContainerPort{
+							Ports: append([]corev1.ContainerPort{
 								{
 									Name:		"admin",
 									ContainerPort:	int32(r.pandaCluster.Spec.Configuration.AdminAPI.Port),
 								},
 								{
-									Name:		"kafka",
-									ContainerPort:	int32(r.pandaCluster.Spec.Configuration.KafkaAPI.Port),
-								},
-								{
 									Name:		"rpc",
 									ContainerPort:	int32(r.pandaCluster.Spec.Configuration.RPCServer.Port),
 								},
-							},
+							}, r.getPorts()...),
 							Resources: corev1.ResourceRequirements{
 								Limits:		r.pandaCluster.Spec.Resources.Limits,
 								Requests:	r.pandaCluster.Spec.Resources.Requests,
@@ -372,15 +389,62 @@ func (r *StatefulSetResource) Kind() string {
 func (r *StatefulSetResource) portsConfiguration() string {
 	kafkaAPIPort := r.pandaCluster.Spec.Configuration.KafkaAPI.Port
 	rpcAPIPort := r.pandaCluster.Spec.Configuration.RPCServer.Port
-	svcName := r.svc.Key().Name
+	svcName := r.headlessSvc.Key().Name
+	dnsSubdomain := r.pandaCluster.Spec.ExternalDNSSubdomain
+	externalKafkaAPIPort := r.pandaCluster.Spec.Configuration.KafkaAPI.Port + 1
 
+	var externalListener string
+	if r.pandaCluster.Spec.ExternalConnectivity {
+		externalListener = fmt.Sprintf("--advertise-kafka-addr=external://$(POD_NAME).%s.$(POD_NAMESPACE).%s.:%d"+
+			" --kafka-addr=external://$(POD_IP):%d", svcName, dnsSubdomain, r.getNodePort(), externalKafkaAPIPort)
+	}
 	// In every dns name there is trailing dot to query absolute path
 	// For trailing dot explanation please visit http://www.dns-sd.org/trailingdotsindomainnames.html
 	return fmt.Sprintf("--advertise-kafka-addr=internal://$(POD_NAME).%s.$(POD_NAMESPACE).svc.cluster.local.:%d"+
 		" --kafka-addr=internal://$(POD_IP):%d"+
 		" --advertise-rpc-addr=$(POD_NAME).%s.$(POD_NAMESPACE).svc.cluster.local.:%d"+
-		" --rpc-addr=$(POD_IP):%d",
-		svcName, kafkaAPIPort, kafkaAPIPort, svcName, rpcAPIPort, rpcAPIPort)
+		" --rpc-addr=$(POD_IP):%d %s",
+		svcName, kafkaAPIPort, kafkaAPIPort, svcName, rpcAPIPort, rpcAPIPort, externalListener)
+}
+
+func (r *StatefulSetResource) getNodePort() int32 {
+	for _, port := range r.nodePortSvc.LastObservedState.Spec.Ports {
+		if port.NodePort != 0 {
+			return port.NodePort
+		}
+	}
+
+	return -1
+}
+
+func (r *StatefulSetResource) getPorts() []corev1.ContainerPort {
+	if r.pandaCluster.Spec.ExternalConnectivity &&
+		r.nodePortSvc.LastObservedState != nil &&
+		len(r.nodePortSvc.LastObservedState.Spec.Ports) > 0 {
+		return []corev1.ContainerPort{
+			{
+				Name:		"kafka-internal",
+				ContainerPort:	int32(r.pandaCluster.Spec.Configuration.KafkaAPI.Port),
+			},
+			{
+				Name:		"kafka-external",
+				ContainerPort:	int32(r.pandaCluster.Spec.Configuration.KafkaAPI.Port + 1),
+				// The host port is set to the service node port that doesn't have
+				// any endpoints. The external dns will act upon DNSEndpoint custom
+				// resource and create external DNS records. The operator will make
+				// sure that each dns is tight to correct public IP of an node that
+				// pod is assigned to.
+				HostPort:	r.nodePortSvc.LastObservedState.Spec.Ports[0].NodePort,
+			},
+		}
+	}
+
+	return []corev1.ContainerPort{
+		{
+			Name:		"kafka",
+			ContainerPort:	int32(r.pandaCluster.Spec.Configuration.KafkaAPI.Port),
+		},
+	}
 }
 
 func statefulSetKind() string {

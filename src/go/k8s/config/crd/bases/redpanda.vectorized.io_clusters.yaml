@@ -60,6 +60,14 @@ spec:
                         type: integer
                     type: object
                 type: object
+              externalConnectivity:
+                description: ExternalConnectivity add listener that can be reach outside
+                  of a kubernetes cluster
+                type: boolean
+              externalDNSSubdomain:
+                description: ExternalDNSSubdomain gives a way to specify the domain
+                  on which the external dns should register DNS A record
+                type: string
               image:
                 description: Image is the fully qualified name of the Redpanda container
                 type: string

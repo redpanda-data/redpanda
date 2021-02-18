@@ -31,6 +31,14 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - nodes
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
   - pods
   verbs:
   - get
@@ -42,6 +50,18 @@ rules:
   - services
   verbs:
   - create
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - externaldns.vectorized.io
+  resources:
+  - dnsendpoints
+  verbs:
+  - create
+  - delete
   - get
   - list
   - patch

@@ -65,6 +65,9 @@ func TestEnsure(t *testing.T) {
 		err := redpandav1alpha1.AddToScheme(scheme.Scheme)
 		assert.NoError(t, err, tt.name)
 
+		err = res.AddToScheme(scheme.Scheme)
+		assert.NoError(t, err, tt.name)
+
 		if tt.existingObject != nil {
 			tt.existingObject.SetResourceVersion("")
 
@@ -72,9 +75,9 @@ func TestEnsure(t *testing.T) {
 			assert.NoError(t, err, tt.name)
 		}
 
-		svc := res.NewHeadlessService(c, tt.pandaCluster, scheme.Scheme, ctrl.Log.WithName("test"))
-
-		sts := res.NewStatefulSet(c, tt.pandaCluster, scheme.Scheme, svc, ctrl.Log.WithName("test"))
+		headlessSvc := res.NewHeadlessService(c, tt.pandaCluster, scheme.Scheme, ctrl.Log.WithName("test"))
+		nodePortSvc := res.NewNodePortService(c, tt.pandaCluster, scheme.Scheme, ctrl.Log.WithName("test"))
+		sts := res.NewStatefulSet(c, tt.pandaCluster, scheme.Scheme, headlessSvc, nodePortSvc, ctrl.Log.WithName("test"))
 
 		err = sts.Ensure(context.Background())
 		assert.NoError(t, err, tt.name)

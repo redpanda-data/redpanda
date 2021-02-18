@@ -14,6 +14,7 @@ import (
 
 	redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	redpandacontrollers "github.com/vectorizedio/redpanda/src/go/k8s/controllers/redpanda"
+	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/resources"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -35,6 +36,8 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
 	utilruntime.Must(redpandav1alpha1.AddToScheme(scheme))
+
+	utilruntime.Must(resources.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
 

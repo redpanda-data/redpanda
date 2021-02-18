@@ -33,6 +33,14 @@ type ClusterSpec struct {
 	Resources	corev1.ResourceRequirements	`json:"resources"`
 	// Configuration represent redpanda specific configuration
 	Configuration	RedpandaConfig	`json:"configuration,omitempty"`
+
+	// ExternalConnectivity add listener that can be reach outside
+	// of a kubernetes cluster
+	ExternalConnectivity	bool	`json:"externalConnectivity,omitempty"`
+
+	// ExternalDNSSubdomain gives a way to specify the domain on which
+	// the external dns should register DNS A record
+	ExternalDNSSubdomain	string	`json:"externalDNSSubdomain,omitempty"`
 }
 
 // ClusterStatus defines the observed state of Cluster
