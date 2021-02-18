@@ -70,7 +70,7 @@ a set of changes is in good shape when the following properties hold:
 2. Each commit represents a tree that builds without errors
 
 Combined, these two properties tend to produce a history with changes that are
-easier to review (smaller, focused commits), and ensure that tools like `bit
+easier to review (smaller, focused commits), and ensure that tools like `git
 bisect` are able to be applied to the tree.
 
 Here is an example of commits in a hypothetical pull request:
