@@ -44,7 +44,7 @@ type StatefulSetResource struct {
 	k8sclient.Client
 	scheme		*runtime.Scheme
 	pandaCluster	*redpandav1alpha1.Cluster
-	svc		*ServiceResource
+	svc		*HeadlessServiceResource
 	logger		logr.Logger
 
 	LastObservedState	*appsv1.StatefulSet
@@ -55,7 +55,7 @@ func NewStatefulSet(
 	client k8sclient.Client,
 	pandaCluster *redpandav1alpha1.Cluster,
 	scheme *runtime.Scheme,
-	svc *ServiceResource,
+	svc *HeadlessServiceResource,
 	logger logr.Logger,
 ) *StatefulSetResource {
 	return &StatefulSetResource{
