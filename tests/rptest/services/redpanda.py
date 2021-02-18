@@ -7,6 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
+import time
 import os
 import signal
 import tempfile
@@ -271,3 +272,12 @@ class RedpandaService(Service):
             return Partition(index, leader, replicas)
 
         return map(make_partition, topic["partitions"])
+
+
+# a hack to prevent the redpanda service from trying to use a client that
+# doesn't support sasl when the service has sasl enabled. this is a temp fix
+# until we have properly integrated authentication into ducktape clients.
+class NoSaslRedpandaService(RedpandaService):
+    def registered(self, node):
+        time.sleep(3)
+        return True
