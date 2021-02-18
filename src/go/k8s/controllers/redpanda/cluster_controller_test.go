@@ -89,6 +89,18 @@ var _ = Describe("RedPandaCluster controller", func() {
 					validOwner(redpandaCluster, svc.OwnerReferences)
 			}, timeout, interval).Should(BeTrue())
 
+			By("Creating NodePort Service")
+			Eventually(func() bool {
+				err := k8sClient.Get(context.Background(), types.NamespacedName{
+					Name:		key.Name + "-external",
+					Namespace:	key.Namespace,
+				}, &svc)
+				return err == nil &&
+					svc.Spec.Type == corev1.ServiceTypeNodePort &&
+					svc.Spec.Ports[0].Port == kafkaPort &&
+					validOwner(redpandaCluster, svc.OwnerReferences)
+			}, timeout, interval).Should(BeTrue())
+
 			By("Creating Configmap with the redpanda configuration")
 			var cm corev1.ConfigMap
 			Eventually(func() bool {

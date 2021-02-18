@@ -27,37 +27,44 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
-var _ Resource = &ServiceResource{}
+var _ Resource = &HeadlessServiceResource{}
 
-// ServiceResource is part of the reconciliation of redpanda.vectorized.io CRD
-// focusing on the connectivity management of redpanda cluster
-type ServiceResource struct {
+// HeadlessServiceResource is part of the reconciliation of redpanda.vectorized.io CRD
+// focusing on the internal connectivity management of redpanda cluster
+type HeadlessServiceResource struct {
 	k8sclient.Client
 	scheme		*runtime.Scheme
 	pandaCluster	*redpandav1alpha1.Cluster
 	logger		logr.Logger
 }
 
-// NewService creates ServiceResource
-func NewService(
+// NewHeadlessService creates HeadlessServiceResource
+func NewHeadlessService(
 	client k8sclient.Client,
 	pandaCluster *redpandav1alpha1.Cluster,
 	scheme *runtime.Scheme,
 	logger logr.Logger,
-) *ServiceResource {
-	return &ServiceResource{
-		client, scheme, pandaCluster, logger.WithValues("Kind", serviceKind()),
+) *HeadlessServiceResource {
+	return &HeadlessServiceResource{
+		client,
+		scheme,
+		pandaCluster,
+		logger.WithValues(
+			"Kind", serviceKind(),
+			"ServiceType", corev1.ServiceTypeClusterIP,
+			"ClusterIP", corev1.ClusterIPNone,
+		),
 	}
 }
 
 // Ensure will manage kubernetes v1.Service for redpanda.vectorized.io custom resource
 //nolint:dupl // we expect this to not be duplicated when more logic is added
-func (r *ServiceResource) Ensure(ctx context.Context) error {
+func (r *HeadlessServiceResource) Ensure(ctx context.Context) error {
 	var svc corev1.Service
 
 	err := r.Get(ctx, r.Key(), &svc)
 	if err != nil && !errors.IsNotFound(err) {
-		return err
+		return fmt.Errorf("error while fetching service resource: %w", err)
 	}
 
 	if errors.IsNotFound(err) {
@@ -65,17 +72,19 @@ func (r *ServiceResource) Ensure(ctx context.Context) error {
 
 		obj, err := r.Obj()
 		if err != nil {
-			return err
+			return fmt.Errorf("unable to construct service object: %w", err)
 		}
 
-		return r.Create(ctx, obj)
+		if err := r.Create(ctx, obj); err != nil {
+			return fmt.Errorf("unable to create service resource: %w", err)
+		}
 	}
 
 	return nil
 }
 
 // Obj returns resource managed client.Object
-func (r *ServiceResource) Obj() (k8sclient.Object, error) {
+func (r *HeadlessServiceResource) Obj() (k8sclient.Object, error) {
 	objLabels := labels.ForCluster(r.pandaCluster)
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
@@ -84,6 +93,7 @@ func (r *ServiceResource) Obj() (k8sclient.Object, error) {
 			Labels:		objLabels,
 		},
 		Spec: corev1.ServiceSpec{
+			Type:		corev1.ServiceTypeClusterIP,
 			ClusterIP:	corev1.ClusterIPNone,
 			Ports: []corev1.ServicePort{
 				{
@@ -107,12 +117,12 @@ func (r *ServiceResource) Obj() (k8sclient.Object, error) {
 
 // Key returns namespace/name object that is used to identify object.
 // For reference please visit types.NamespacedName docs in k8s.io/apimachinery
-func (r *ServiceResource) Key() types.NamespacedName {
+func (r *HeadlessServiceResource) Key() types.NamespacedName {
 	return types.NamespacedName{Name: r.pandaCluster.Name, Namespace: r.pandaCluster.Namespace}
 }
 
 // Kind returns v1.Service kind
-func (r *ServiceResource) Kind() string {
+func (r *HeadlessServiceResource) Kind() string {
 	return serviceKind()
 }
 
@@ -124,9 +134,9 @@ func serviceKind() string {
 // HeadlessServiceFQDN returns fully qualified domain name for headless service.
 // It can be used to communicate between namespaces if the network policy
 // allows it.
-func (r *ServiceResource) HeadlessServiceFQDN() string {
+func (r *HeadlessServiceResource) HeadlessServiceFQDN() string {
 	// TODO Retrieve cluster domain dynamically and remove hardcoded cluster.local
-	return fmt.Sprintf("%s%c%s.svc.cluster.local",
+	return fmt.Sprintf("%s%c%s.svc.cluster.local.",
 		r.Key().Name,
 		'.',
 		r.Key().Namespace)
