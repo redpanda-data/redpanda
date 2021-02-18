@@ -32,3 +32,9 @@ type Resource interface {
 	// Ensure reconcile only one resource available in Kubernetes API server
 	Ensure(ctx context.Context) error
 }
+
+const (
+	// As per https://github.com/kubernetes/community/blob/master/contributors/devel/sig-instrumentation/logging.md
+	defaultLogLevel	= 2
+	verboseLogLevel	= 3
+)

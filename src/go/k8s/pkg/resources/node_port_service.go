@@ -36,6 +36,8 @@ type NodePortServiceResource struct {
 	scheme		*runtime.Scheme
 	pandaCluster	*redpandav1alpha1.Cluster
 	logger		logr.Logger
+
+	LastObservedState	*corev1.Service
 }
 
 // NewNodePortService creates HeadlessServiceResource
@@ -50,11 +52,11 @@ func NewNodePortService(
 		scheme,
 		pandaCluster,
 		logger.WithValues("Kind", serviceKind(), "ServiceType", "NodePort"),
+		nil,
 	}
 }
 
 // Ensure will manage kubernetes v1.Service for redpanda.vectorized.io custom resource
-//nolint:dupl // we expect this to not be duplicated when more logic is added
 func (r *NodePortServiceResource) Ensure(ctx context.Context) error {
 	var svc corev1.Service
 
@@ -74,7 +76,12 @@ func (r *NodePortServiceResource) Ensure(ctx context.Context) error {
 		if err := r.Create(ctx, obj); err != nil {
 			return fmt.Errorf("unable to create service resource: %w", err)
 		}
+		r.LastObservedState = obj.(*corev1.Service)
+
+		return nil
 	}
+
+	r.LastObservedState = &svc
 
 	return nil
 }
@@ -105,8 +112,8 @@ func (r *NodePortServiceResource) Obj() (k8sclient.Object, error) {
 				{
 					Name:		"kafka-tcp",
 					Protocol:	corev1.ProtocolTCP,
-					Port:		int32(r.pandaCluster.Spec.Configuration.KafkaAPI.Port),
-					TargetPort:	intstr.FromInt(r.pandaCluster.Spec.Configuration.KafkaAPI.Port),
+					Port:		int32(r.pandaCluster.Spec.Configuration.KafkaAPI.Port + 1),
+					TargetPort:	intstr.FromInt(r.pandaCluster.Spec.Configuration.KafkaAPI.Port + 1),
 				},
 			},
 			// The selector is purposely set to nil. Our external connectivity doesn't use

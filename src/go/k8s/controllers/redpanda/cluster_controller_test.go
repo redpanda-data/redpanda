@@ -97,7 +97,7 @@ var _ = Describe("RedPandaCluster controller", func() {
 				}, &svc)
 				return err == nil &&
 					svc.Spec.Type == corev1.ServiceTypeNodePort &&
-					svc.Spec.Ports[0].Port == kafkaPort &&
+					svc.Spec.Ports[0].Port == kafkaPort+1 &&
 					validOwner(redpandaCluster, svc.OwnerReferences)
 			}, timeout, interval).Should(BeTrue())
 

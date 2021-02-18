@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/external-dns/endpoint"
 )
 
 var (
@@ -45,6 +46,8 @@ type ClusterReconciler struct {
 //+kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;
 //+kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch;
 //+kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch;
+//+kubebuilder:rbac:groups=externaldns.vectorized.io,resources=dnsendpoints,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=core,resources=nodes,verbs=get;list;watch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -71,13 +74,15 @@ func (r *ClusterReconciler) Reconcile(
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	svc := resources.NewHeadlessService(r.Client, &redpandaCluster, r.Scheme, log)
-	sts := resources.NewStatefulSet(r.Client, &redpandaCluster, r.Scheme, svc, log)
+	headlessSvc := resources.NewHeadlessService(r.Client, &redpandaCluster, r.Scheme, log)
+	nodePortSvc := resources.NewNodePortService(r.Client, &redpandaCluster, r.Scheme, log)
+	sts := resources.NewStatefulSet(r.Client, &redpandaCluster, r.Scheme, headlessSvc, nodePortSvc, log)
 	toApply := []resources.Resource{
-		svc,
-		resources.NewNodePortService(r.Client, &redpandaCluster, r.Scheme, log),
-		resources.NewConfigMap(r.Client, &redpandaCluster, r.Scheme, svc, log),
+		headlessSvc,
+		nodePortSvc,
+		resources.NewConfigMap(r.Client, &redpandaCluster, r.Scheme, headlessSvc, log),
 		sts,
+		resources.NewExternalDNS(r.Client, &redpandaCluster, r.Scheme, log),
 	}
 
 	for _, res := range toApply {
@@ -109,7 +114,7 @@ func (r *ClusterReconciler) Reconcile(
 	observedNodes := make([]string, 0, len(observedPods.Items))
 	// nolint:gocritic // the copies are necessary for further redpandacluster updates
 	for _, item := range observedPods.Items {
-		observedNodes = append(observedNodes, fmt.Sprintf("%s.%s", item.Name, svc.HeadlessServiceFQDN()))
+		observedNodes = append(observedNodes, fmt.Sprintf("%s.%s", item.Name, headlessSvc.HeadlessServiceFQDN()))
 	}
 
 	if !reflect.DeepEqual(observedNodes, redpandaCluster.Status.Nodes) {
@@ -142,5 +147,7 @@ func (r *ClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&redpandav1alpha1.Cluster{}).
 		Owns(&appsv1.StatefulSet{}).
+		Owns(&corev1.Service{}).
+		Owns(&endpoint.DNSEndpoint{}).
 		Complete(r)
 }
