@@ -44,7 +44,6 @@ func NewDeployCommand(
 			if err != nil {
 				return err
 			}
-
 			return deploy(
 				fullFileName,
 				fileContent,
@@ -100,10 +99,12 @@ func deploy(
 	if err != nil {
 		return err
 	}
+	// create message
+	message := CreateCoprocessorMessage(fileName, fileContent, headers)
 	// publish message
-	error := kafka.PublishMessage(producer, fileContent, fileName, kafka.CoprocessorTopic, headers)
-	if error != nil {
-		return fmt.Errorf("error deploying '%s.js: %v'", fileName, error)
+	err = kafka.PublishMessage(producer, &message)
+	if err != nil {
+		return fmt.Errorf("error deploying '%s.js: %v'", fileName, err)
 	}
 	return nil
 }

@@ -61,16 +61,11 @@ func remove(
 	}
 	// create empty message, the remove command doesn't need
 	// information on message, just a key value
-	var emptyMessage []byte
 	header := createHeader("remove")
+	// create message
+	message := CreateCoprocessorMessage(name, []byte{}, []sarama.RecordHeader{header})
 	//publish message
-	return kafka.PublishMessage(
-		producer,
-		emptyMessage,
-		name,
-		kafka.CoprocessorTopic,
-		[]sarama.RecordHeader{header},
-	)
+	return kafka.PublishMessage(producer, &message)
 }
 
 func createHeader(action string) sarama.RecordHeader {

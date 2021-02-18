@@ -11,28 +11,14 @@ import (
 const CoprocessorTopic = "coprocessor_internal_topic"
 
 func PublishMessage(
-	producer sarama.SyncProducer,
-	message []byte,
-	key string,
-	topic string,
-	header []sarama.RecordHeader,
+	producer sarama.SyncProducer, produceMessage *sarama.ProducerMessage,
 ) error {
-
-	k := sarama.StringEncoder(key)
 	ts := time.Now()
-
-	msg := &sarama.ProducerMessage{
-		Topic:		topic,
-		Key:		k,
-		Timestamp:	ts,
-		Value:		sarama.ByteEncoder(message),
-		Headers:	header,
-	}
-
+	produceMessage.Timestamp = ts
 	retryConf := DefaultConfig().Producer.Retry
 	part, offset, err := RetrySend(
 		producer,
-		msg,
+		produceMessage,
 		uint(retryConf.Max),
 		retryConf.Backoff,
 	)

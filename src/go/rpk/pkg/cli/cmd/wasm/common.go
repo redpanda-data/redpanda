@@ -1,7 +1,10 @@
 package wasm
 
 import (
+	"encoding/binary"
+
 	"github.com/Shopify/sarama"
+	"github.com/cespare/xxhash"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/kafka"
 )
 
@@ -52,5 +55,22 @@ func ExistingTopic(admin sarama.ClusterAdmin, topic string) (bool, error) {
 		return true, err
 	} else {
 		return false, err
+	}
+}
+
+/**
+Create coprocessor message
+*/
+func CreateCoprocessorMessage(
+	name string, message []byte, headers []sarama.RecordHeader,
+) sarama.ProducerMessage {
+	id := xxhash.Sum64([]byte(name))
+	binaryId := make([]byte, 8)
+	binary.LittleEndian.PutUint64(binaryId, id)
+	return sarama.ProducerMessage{
+		Key:		sarama.ByteEncoder(binaryId),
+		Topic:		kafka.CoprocessorTopic,
+		Value:		sarama.ByteEncoder(message),
+		Headers:	headers,
 	}
 }
