@@ -480,14 +480,6 @@ void application::wire_up_services() {
                     : nullptr;
     syschecks::systemd_message("Starting internal RPC {}", rpc_cfg).get();
     construct_service(_rpc, rpc_cfg).get();
-    /**
-     * We schedule shutting down controller input and aborting its operation
-     * right before shutting down an RPC server. (other services are stopeed in
-     * an order reverse to the startup sequence.) This way we terminate all long
-     * running opertions before shutting down the RPC server, preventing it to
-     * wait on background dispatch gate `close` call.
-     */
-    _deferred.emplace_back([this] { controller->shutdown_input().get(); });
     // coproc rpc
     if (coproc_enabled()) {
         auto coproc_script_manager_server_addr
@@ -565,7 +557,16 @@ void application::start() {
 
     syschecks::systemd_message("Starting controller").get();
     controller->start().get0();
-
+    /**
+     * We schedule shutting down controller input and aborting its operation
+     * as a first shutdown step. (other services are stopeed in
+     * an order reverse to the startup sequence.) This way we terminate all long
+     * running opertions before shutting down the RPC server, preventing it to
+     * wait on background dispatch gate `close` call.
+     *
+     * NOTE controller has to be stopped only after it was started
+     */
+    _deferred.emplace_back([this] { controller->shutdown_input().get(); });
     // FIXME: in first patch explain why this is started after the
     // controller so the broker set will be available. Then next patch fix.
     syschecks::systemd_message("Starting metadata dissination service").get();
