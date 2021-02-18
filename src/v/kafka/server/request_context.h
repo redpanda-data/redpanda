@@ -152,6 +152,8 @@ public:
     }
 
     const ss::sstring& listener() const { return _conn->listener(); }
+    sasl_server& sasl() { return _conn->sasl(); }
+    credential_store& credentials() { return _conn->server().credentials(); }
 
 private:
     ss::lw_shared_ptr<connection_context> _conn;

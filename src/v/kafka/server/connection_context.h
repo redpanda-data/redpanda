@@ -48,6 +48,7 @@ public:
 
     protocol& server() { return _proto; }
     const ss::sstring& listener() const { return _rs.conn->name(); }
+    sasl_server& sasl() { return _sasl; }
 
     ss::future<> process_one_request();
     bool is_finished_parsing() const;
