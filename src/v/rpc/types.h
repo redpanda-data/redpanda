@@ -29,7 +29,7 @@
 
 #include <chrono>
 #include <cstdint>
-#include <iostream>
+#include <iosfwd>
 #include <type_traits>
 #include <vector>
 

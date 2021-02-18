@@ -11,7 +11,6 @@
 #include "archival/archival_policy.h"
 #include "archival/ntp_archiver_service.h"
 #include "archival/tests/service_fixture.h"
-#include "cluster/tests/controller_test_fixture.h"
 #include "cluster/tests/utils.h"
 #include "cluster/types.h"
 #include "model/metadata.h"

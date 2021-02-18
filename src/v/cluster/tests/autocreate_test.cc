@@ -8,10 +8,12 @@
 // by the Apache License, Version 2.0
 
 #include "cluster/metadata_cache.h"
+#include "cluster/shard_table.h"
 #include "cluster/simple_batch_builder.h"
 #include "cluster/tests/cluster_test_fixture.h"
-#include "cluster/tests/controller_test_fixture.h"
+#include "cluster/topics_frontend.h"
 #include "cluster/types.h"
+#include "config/configuration.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
@@ -78,16 +80,15 @@ void wait_for_metadata(
     }).get0();
 }
 
-FIXTURE_TEST(
-  create_single_topic_test_at_current_broker, controller_tests_fixture) {
-    auto cntrl = get_controller();
-    cntrl->start().get0();
-    wait_for_leadership(cntrl->get_partition_leaders().local());
+FIXTURE_TEST(create_single_topic_test_at_current_broker, cluster_test_fixture) {
+    model::node_id id{0};
+    auto app = create_node_application(id);
+    wait_for_controller_leadership(id).get();
 
     std::vector<cluster::topic_result> results;
     bool success = false;
     while (!success) {
-        results = cntrl->get_topics_frontend()
+        results = app->controller->get_topics_frontend()
                     .local()
                     .autocreate_topics(
                       test_topics_configuration(), std::chrono::seconds(10))
@@ -99,48 +100,38 @@ FIXTURE_TEST(
     }
 
     BOOST_REQUIRE_EQUAL(results.size(), 3);
-    wait_for_metadata(get_local_cache(), results);
+    wait_for_metadata(app->metadata_cache.local(), results);
     for (auto& r : results) {
         BOOST_REQUIRE_EQUAL(r.ec, cluster::errc::success);
-        auto md = get_local_cache().get_topic_metadata(r.tp_ns);
+        auto md = app->metadata_cache.local().get_topic_metadata(r.tp_ns);
 
         BOOST_REQUIRE_EQUAL(md.has_value(), true);
-        wait_for_leaders(cntrl->get_partition_leaders().local(), *md);
+        wait_for_leaders(app->controller->get_partition_leaders().local(), *md);
         BOOST_REQUIRE_EQUAL(md.value().tp_ns, r.tp_ns);
     }
 }
 
 FIXTURE_TEST(test_autocreate_on_non_leader, cluster_test_fixture) {
     // root cluster node
-    model::node_id n_1(1);
-    model::node_id n_2(2);
-
-    add_controller(n_1, ss::smp::count, 9092, 11000, {});
-    add_controller(
-      n_2,
-      ss::smp::count,
-      9093,
-      11001,
-      {{.addr = unresolved_address("127.0.0.1", 11000)}});
+    model::node_id n_1(0);
+    model::node_id n_2(1);
 
     // first controller
-    auto cntrl_0 = get_controller(n_1);
-    cntrl_0->start().get0();
-    wait_for_leadership(cntrl_0->get_partition_leaders().local());
+    auto app_0 = create_node_application(n_1);
+    auto app_1 = create_node_application(n_2);
 
-    auto cntrl_1 = get_controller(n_2);
-    cntrl_1->start().get0();
+    wait_for_controller_leadership(n_1).get();
 
     // Wait for cluster to reach stable state
     tests::cooperative_spin_wait_with_timeout(10s, [this] {
-        return get_local_cache(model::node_id(1)).all_brokers().size() == 2
-               && get_local_cache(model::node_id(2)).all_brokers().size() == 2;
+        return get_local_cache(model::node_id(0)).all_brokers().size() == 2
+               && get_local_cache(model::node_id(1)).all_brokers().size() == 2;
     }).get();
 
     std::vector<cluster::topic_result> results;
     bool success = false;
     while (!success) {
-        results = cntrl_1->get_topics_frontend()
+        results = app_0->controller->get_topics_frontend()
                     .local()
                     .autocreate_topics(
                       test_topics_configuration(), std::chrono::seconds(10))
@@ -156,7 +147,8 @@ FIXTURE_TEST(test_autocreate_on_non_leader, cluster_test_fixture) {
         BOOST_REQUIRE_EQUAL(r.ec, cluster::errc::success);
         auto md = get_local_cache(n_1).get_topic_metadata(r.tp_ns);
         BOOST_REQUIRE_EQUAL(md.has_value(), true);
-        wait_for_leaders(cntrl_0->get_partition_leaders().local(), *md);
+        wait_for_leaders(
+          app_0->controller->get_partition_leaders().local(), *md);
         BOOST_REQUIRE_EQUAL(md.value().tp_ns, r.tp_ns);
     }
     // Make sure caches are the same

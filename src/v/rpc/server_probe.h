@@ -15,7 +15,7 @@
 
 #include <seastar/core/metrics_registration.hh>
 
-#include <iostream>
+#include <iosfwd>
 
 namespace rpc {
 

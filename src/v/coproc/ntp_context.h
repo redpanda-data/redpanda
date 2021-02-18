@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "config/configuration.h"
 #include "coproc/types.h"
 #include "rpc/reconnect_transport.h"
 #include "storage/api.h"

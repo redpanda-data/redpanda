@@ -10,8 +10,8 @@
  */
 
 #pragma once
+#include "cluster/fwd.h"
 #include "cluster/partition.h"
-#include "config/configuration.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/heartbeat.h"
 #include "kafka/protocol/join_group.h"
@@ -38,6 +38,10 @@
 #include <iosfwd>
 #include <optional>
 #include <vector>
+
+namespace config {
+struct configuration;
+}
 
 namespace kafka {
 
@@ -415,6 +419,10 @@ public:
     // transition group to `dead` state if empty, otherwise an appropriate error
     // is returned for the current state.
     ss::future<error_code> remove();
+
+    // remove offsets associated with topic partitions
+    ss::future<>
+    remove_topic_partitions(const std::vector<model::topic_partition>& tps);
 
 private:
     using member_map = absl::node_hash_map<kafka::member_id, member_ptr>;

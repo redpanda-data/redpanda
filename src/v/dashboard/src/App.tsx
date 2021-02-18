@@ -5,6 +5,7 @@ import "./App.scss";
 import Logo from "components/shared/Logo";
 import TimeseriesChart from "components/shared/TimeseriesChart/TimeseriesChart";
 import IntervalSelector from "components/shared/IntervalSelector";
+import TimeWindowSelector from "components/shared/TimeWindowSelector";
 import GraphSelector from "components/shared/GraphSelector/GraphSelector";
 import IconButton from "components/shared/IconButton/IconButton";
 
@@ -24,13 +25,22 @@ function App() {
   } = useGraphs();
 
   // Snapshot time interval
-  const { count, setCount, interval, changeInterval } = useInterval();
+  const { 
+    limit, 
+    count, 
+    setCount, 
+    interval, 
+    changeInterval, 
+    timeWindow, 
+    changeTimeWindow 
+  } = useInterval();
 
   // Snapshot data
-  const { firstSnapshot, snapshots, resetSnapshots } = useSnapshots(
-    count,
-    setCount
-  );
+  const { 
+    firstSnapshot, 
+    snapshots, 
+    resetSnapshots 
+  } = useSnapshots(limit, count, setCount);
 
   return (
     <div className="App">
@@ -47,20 +57,13 @@ function App() {
         </div>
 
         <div>
-          <dt>Time Interval</dt>
+          <dt>Time Window</dt>
           <dd>
-            <IntervalSelector
-              onChange={changeInterval}
-              defaultValue={interval}
+            <TimeWindowSelector
+              onChange={changeTimeWindow}
+              defaultValue={timeWindow}
+              value={timeWindow}
             />
-          </dd>
-        </div>
-
-        <div>
-          <dt>Snapshots</dt>
-          <dd>
-            <IconButton type="reset" onClick={resetSnapshots} />{" "}
-            {snapshots.length}
           </dd>
         </div>
 
@@ -75,6 +78,21 @@ function App() {
             />
           </dd>
         </div>
+
+        <div>
+          <dt>Reset Graphs</dt>
+          <dd>
+            <IconButton type="reset" onClick={resetGraphs} />
+          </dd>
+        </div>
+        
+        <div>
+          <dt>Clear Data</dt>
+          <dd>
+            <IconButton type="remove" onClick={resetSnapshots} />
+          </dd>
+        </div>
+
       </header>
 
       <main className="container">
@@ -86,6 +104,7 @@ function App() {
             remove={removeGraph}
             update={updateGraph}
             interval={interval}
+            timeWindow={timeWindow}
           />
         ))}
       </main>

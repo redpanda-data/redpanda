@@ -23,35 +23,30 @@ ss::future<> connection_cache::emplace(
   model::node_id n,
   rpc::transport_configuration c,
   backoff_policy backoff_policy) {
-    return with_semaphore(
-      _sem,
-      1,
-      [this,
-       n,
-       c = std::move(c),
-       backoff_policy = std::move(backoff_policy)]() mutable {
-          if (_cache.find(n) != _cache.end()) {
-              return;
-          }
-          _cache.emplace(
-            n,
-            ss::make_lw_shared<rpc::reconnect_transport>(
-              std::move(c), std::move(backoff_policy)));
-      });
+    return _mutex.with([this,
+                        n,
+                        c = std::move(c),
+                        backoff_policy = std::move(backoff_policy)]() mutable {
+        if (_cache.find(n) != _cache.end()) {
+            return;
+        }
+        _cache.emplace(
+          n,
+          ss::make_lw_shared<rpc::reconnect_transport>(
+            std::move(c), std::move(backoff_policy)));
+    });
 }
 ss::future<> connection_cache::remove(model::node_id n) {
-    return ss::with_semaphore(
-             _sem,
-             1,
-             [this, n]() -> transport_ptr {
-                 auto it = _cache.find(n);
-                 if (it == _cache.end()) {
-                     return nullptr;
-                 }
-                 auto ptr = it->second;
-                 _cache.erase(it);
-                 return ptr;
-             })
+    return _mutex
+      .with([this, n]() -> transport_ptr {
+          auto it = _cache.find(n);
+          if (it == _cache.end()) {
+              return nullptr;
+          }
+          auto ptr = it->second;
+          _cache.erase(it);
+          return ptr;
+      })
       .then([](transport_ptr ptr) {
           if (!ptr) {
               return ss::now();
@@ -62,9 +57,15 @@ ss::future<> connection_cache::remove(model::node_id n) {
 
 /// \brief closes all client connections
 ss::future<> connection_cache::stop() {
-    return parallel_for_each(_cache, [](auto& it) {
-        auto& [_, cli] = it;
-        return cli->stop();
+    return _mutex.with([this]() {
+        return parallel_for_each(_cache, [](auto& it) {
+            auto& [_, cli] = it;
+            return cli->stop();
+        });
+        _cache.clear();
+        // mark mutex as broken to prevent new connections from being created
+        // after stop
+        _mutex.broken();
     });
 }
 

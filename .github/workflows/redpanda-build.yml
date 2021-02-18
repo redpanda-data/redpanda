@@ -58,5 +58,5 @@ jobs:
             ccache -p # print the config
             ccache -s # print the stats before reusing
             ccache -z # zero the stats
-            ./build.sh -DCMAKE_UNITY_BUILD=ON
+            ./build.sh
             ccache -s # print the stats after the build

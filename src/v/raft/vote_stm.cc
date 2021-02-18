@@ -10,6 +10,7 @@
 #include "raft/vote_stm.h"
 
 #include "outcome_future_utils.h"
+#include "raft/consensus.h"
 #include "raft/consensus_utils.h"
 #include "raft/errc.h"
 #include "raft/logger.h"

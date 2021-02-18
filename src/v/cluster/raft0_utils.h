@@ -15,7 +15,6 @@
 #include "cluster/logger.h"
 #include "cluster/partition_manager.h"
 #include "cluster/shard_table.h"
-#include "cluster/types.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
 

@@ -11,9 +11,6 @@
 
 #pragma once
 
-#include "cluster/members_table.h"
-#include "cluster/partition_leaders_table.h"
-#include "cluster/topic_table.h"
 #include "cluster/types.h"
 #include "model/metadata.h"
 #include "model/timestamp.h"

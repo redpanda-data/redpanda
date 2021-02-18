@@ -11,6 +11,8 @@
 
 #include "config/config_store.h"
 
+#include <ostream>
+
 namespace config {
 base_property::base_property(
   config_store& conf,

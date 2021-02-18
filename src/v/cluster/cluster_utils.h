@@ -13,8 +13,6 @@
 #include "cluster/controller_service.h"
 #include "cluster/errc.h"
 #include "cluster/logger.h"
-#include "cluster/types.h"
-#include "config/configuration.h"
 #include "config/tls_config.h"
 #include "outcome_future_utils.h"
 #include "rpc/connection_cache.h"
@@ -24,6 +22,10 @@
 #include <seastar/core/sharded.hh>
 
 #include <utility>
+
+namespace config {
+struct configuration;
+}
 
 namespace cluster {
 

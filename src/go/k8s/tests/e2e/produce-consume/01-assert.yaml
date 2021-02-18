@@ -10,5 +10,13 @@ spec:
           env:
             - name: REDPANDA_ENVIRONMENT
               value: kubernetes
+          args:
+          - --check=false
+          - --smp 1
+          - --memory 104857600
+          - start
+          - --
+          - --default-log-level=debug
+          - --reserve-memory 0M
 status:
   readyReplicas: 1

@@ -238,6 +238,26 @@ private:
     const model::ntp& _source_or_input;
 };
 
+/**
+ * Enum describing Kafka's control record types. The Control record key schema
+ * is defined as a tuple of [version: int16_t, type: control_record_type].
+ * Currently Kafka protocol uses version 0 of control record schema.
+ *
+ * Internal redpanda control records are propagated with unknown type.
+ * Unknown control records are expected to be ignored by Kafka clients
+ *
+ */
+enum class control_record_type : int16_t {
+    tx_abort = 0,
+    tx_commit = 1,
+    unknown = -1
+};
+
+using control_record_version
+  = named_type<int16_t, struct control_record_version_tag>;
+
+static constexpr control_record_version current_control_record_version{0};
+
 } // namespace model
 
 namespace std {

@@ -10,8 +10,8 @@
  */
 
 #pragma once
+#include "model/fundamental.h"
 #include "seastarx.h"
-#include "storage/types.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/gate.hh>

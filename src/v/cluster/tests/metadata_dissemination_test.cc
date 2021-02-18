@@ -8,9 +8,12 @@
 // by the Apache License, Version 2.0
 
 #include "cluster/metadata_cache.h"
+#include "cluster/shard_table.h"
 #include "cluster/simple_batch_builder.h"
 #include "cluster/tests/cluster_test_fixture.h"
+#include "cluster/topics_frontend.h"
 #include "cluster/types.h"
+#include "config/configuration.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
@@ -57,16 +60,9 @@ FIXTURE_TEST(
     model::node_id n_1(0);
     model::node_id n_2(1);
     model::node_id n_3(2);
-    auto cntrl_0 = create_controller(n_1);
-
-    cntrl_0->start().get();
-    wait_for_leadership(cntrl_0->get_partition_leaders().local());
-
-    auto cntrl_1 = create_controller(n_2);
-    cntrl_1->start().get0();
-
-    auto cntrl_2 = create_controller(n_3);
-    cntrl_2->start().get0();
+    auto cntrl_0 = create_node_application(n_1);
+    auto cntrl_1 = create_node_application(n_2);
+    auto cntrl_2 = create_node_application(n_3);
 
     auto& cache_0 = get_local_cache(n_1);
     auto& cache_1 = get_local_cache(n_2);
@@ -88,7 +84,7 @@ FIXTURE_TEST(
     // Create topic with replication factor 1
     std::vector<cluster::topic_configuration> topics;
     topics.emplace_back(model::ns("default"), model::topic("test_1"), 3, 1);
-    cntrl_0->get_topics_frontend()
+    cntrl_0->controller->get_topics_frontend()
       .local()
       .create_topics(std::move(topics), model::no_timeout)
       .get0();
@@ -104,12 +100,8 @@ FIXTURE_TEST(
 FIXTURE_TEST(test_metadata_dissemination_joining_node, cluster_test_fixture) {
     model::node_id n_1(0);
     model::node_id n_2(1);
-    auto cntrl_0 = create_controller(n_1);
-    cntrl_0->start().get();
-    wait_for_leadership(cntrl_0->get_partition_leaders().local());
-
-    auto cntrl_1 = create_controller(n_2);
-    cntrl_1->start().get0();
+    auto cntrl_0 = create_node_application(n_1);
+    auto cntrl_1 = create_node_application(n_2);
 
     auto& cache_0 = get_local_cache(n_1);
     auto& cache_1 = get_local_cache(n_2);
@@ -125,14 +117,13 @@ FIXTURE_TEST(test_metadata_dissemination_joining_node, cluster_test_fixture) {
     // Create topic with replication factor 1
     std::vector<cluster::topic_configuration> topics;
     topics.emplace_back(model::ns("default"), model::topic("test_1"), 3, 1);
-    cntrl_0->get_topics_frontend()
+    cntrl_0->controller->get_topics_frontend()
       .local()
       .create_topics(std::move(topics), model::no_timeout)
       .get0();
 
     // Add new now to the cluster
-    auto cntrl_2 = create_controller(model::node_id{2});
-    cntrl_2->start().get0();
+    auto cntrl_2 = create_node_application(model::node_id{2});
     auto& cache_2 = get_local_cache(model::node_id{2});
     // Wait for node to join the cluster
     tests::cooperative_spin_wait_with_timeout(

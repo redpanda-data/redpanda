@@ -11,7 +11,6 @@
 
 #pragma once
 
-#include "config/configuration.h"
 #include "coproc/ntp_context.h"
 #include "coproc/supervisor.h"
 #include "coproc/types.h"

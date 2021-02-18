@@ -10,9 +10,7 @@
  */
 
 #pragma once
-#include "cluster/cluster_utils.h"
-#include "cluster/partition_manager.h"
-#include "config/configuration.h"
+#include "cluster/fwd.h"
 #include "kafka/protocol/delete_groups.h"
 #include "kafka/protocol/describe_groups.h"
 #include "kafka/protocol/errors.h"
@@ -114,11 +112,8 @@ public:
     group_manager(
       ss::sharded<raft::group_manager>& gm,
       ss::sharded<cluster::partition_manager>& pm,
-      config::configuration& conf)
-      : _gm(gm)
-      , _pm(pm)
-      , _conf(conf)
-      , _self(cluster::make_self_broker(config::shard_local_cfg())) {}
+      ss::sharded<cluster::topic_table>&,
+      config::configuration& conf);
 
     ss::future<> start();
     ss::future<> stop();
@@ -188,9 +183,15 @@ private:
       _partitions;
 
     cluster::notification_id_type _leader_notify_handle;
+    cluster::notification_id_type _topic_table_notify_handle;
 
     void handle_leader_change(
       ss::lw_shared_ptr<cluster::partition>, std::optional<model::node_id>);
+
+    void handle_topic_delta(const std::vector<cluster::topic_table_delta>&);
+
+    ss::future<> cleanup_removed_topic_partitions(
+      const std::vector<model::topic_partition>&);
 
     ss::future<> handle_partition_leader_change(
       ss::lw_shared_ptr<attached_partition>,
@@ -205,6 +206,7 @@ private:
 
     ss::sharded<raft::group_manager>& _gm;
     ss::sharded<cluster::partition_manager>& _pm;
+    ss::sharded<cluster::topic_table>& _topic_table;
     config::configuration& _conf;
     absl::node_hash_map<group_id, group_ptr> _groups;
     model::broker _self;

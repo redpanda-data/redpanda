@@ -13,6 +13,8 @@
 
 #include <seastar/core/print.hh>
 
+#include <ostream>
+
 namespace human {
 
 std::ostream& operator<<(std::ostream& o, const ::human::latency& l) {

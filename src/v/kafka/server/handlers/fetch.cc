@@ -10,6 +10,7 @@
 #include "kafka/server/handlers/fetch.h"
 
 #include "cluster/partition_manager.h"
+#include "cluster/shard_table.h"
 #include "config/configuration.h"
 #include "kafka/protocol/batch_consumer.h"
 #include "kafka/protocol/errors.h"
@@ -17,8 +18,10 @@
 #include "likely.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
+#include "model/record_utils.h"
 #include "model/timeout_clock.h"
 #include "resource_mgmt/io_priority.h"
+#include "storage/parser_utils.h"
 #include "utils/to_string.h"
 
 #include <seastar/core/do_with.hh>
@@ -281,6 +284,69 @@ make_partition_response_error(model::partition_id p_id, error_code error) {
     };
 }
 
+int32_t
+control_record_size(int64_t ts_delta, int32_t offset_delta, const iobuf& key) {
+    static constexpr size_t zero_vint_size = vint::vint_size(0);
+    return sizeof(model::record_attributes::type) // attributes
+           + vint::vint_size(ts_delta)            // timestamp delta
+           + vint::vint_size(offset_delta)        // offset_delta
+           + vint::vint_size(key.size_bytes())    // key size
+           + key.size_bytes()                     // key payload
+           + zero_vint_size                       // value size
+           + zero_vint_size;                      // headers size
+}
+
+iobuf make_control_record_batch_key() {
+    iobuf b;
+    response_writer w(b);
+    /**
+     * control record batch schema:
+     *   [version, type]
+     */
+    w.write(model::current_control_record_version);
+    w.write(model::control_record_type::unknown);
+    return b;
+}
+
+/**
+ * here we make sure that our internal control batches are correctly adapted
+ * for Kafka clients
+ */
+model::record_batch adapt_fetch_batch(model::record_batch&& batch) {
+    // pass through data batches
+    if (likely(batch.header().type == raft::data_batch_type)) {
+        return std::move(batch);
+    }
+    /**
+     * We set control type flag and remove payload from internal batch types
+     */
+    batch.header().attrs.set_control_type();
+    iobuf records;
+
+    batch.for_each_record([&records](model::record r) {
+        auto key = make_control_record_batch_key();
+        auto key_size = key.size_bytes();
+        auto r_size = control_record_size(
+          r.timestamp_delta(), r.offset_delta(), key);
+        model::append_record_to_buffer(
+          records,
+          model::record(
+            r_size,
+            r.attributes(),
+            r.timestamp_delta(),
+            r.offset_delta(),
+            key_size,
+            std::move(key),
+            0,
+            iobuf{},
+            std::vector<model::record_header>{}));
+    });
+    auto header = batch.header();
+    storage::internal::reset_size_checksum_metadata(header, records);
+    return model::record_batch(
+      header, std::move(records), model::record_batch::tag_ctor_ng{});
+}
+
 /**
  * Low-level handler for reading from an ntp. Runs on ntp's home core.
  */
@@ -302,27 +368,30 @@ static ss::future<read_result> read_from_partition(
       0,
       config.max_bytes,
       kafka_read_priority(),
-      raft::data_batch_type,
+      std::nullopt,
       std::nullopt,
       std::nullopt);
 
     reader_config.strict_max_bytes = config.strict_max_bytes;
     return pw.make_reader(reader_config)
       .then([hw, lso, foreign_read, deadline](model::record_batch_reader rdr) {
-          // if we are on remote core, we MUST use foreign record batch reader.
-          if (foreign_read) {
-              return model::consume_reader_to_memory(
-                       std::move(rdr), deadline.value_or(model::no_timeout))
-                .then([hw, lso](ss::circular_buffer<model::record_batch> data) {
-                    return read_result(
-                      model::make_foreign_memory_record_batch_reader(
-                        std::move(data)),
-                      hw,
-                      lso);
-                });
-          }
-          return ss::make_ready_future<read_result>(
-            read_result(std::move(rdr), hw, lso));
+          return model::transform_reader_to_memory(
+                   std::move(rdr),
+                   deadline.value_or(model::no_timeout),
+                   adapt_fetch_batch)
+            .then([foreign_read](
+                    ss::circular_buffer<model::record_batch> data) {
+                // if we are on remote core, we MUST use foreign record batch
+                // reader.
+                if (foreign_read) {
+                    return model::make_foreign_memory_record_batch_reader(
+                      std::move(data));
+                }
+                return model::make_memory_record_batch_reader(std::move(data));
+            })
+            .then([hw, lso](model::record_batch_reader rdr) {
+                return read_result(std::move(rdr), hw, lso);
+            });
       });
 }
 
@@ -721,7 +790,8 @@ bool update_fetch_partition(
     if (resp.error != error_code::none) {
         // Partitions with errors are always included in the response.
         // We also set the cached highWatermark to an invalid offset, -1.
-        // This ensures that when the error goes away, we re-send the partition.
+        // This ensures that when the error goes away, we re-send the
+        // partition.
         partition.high_watermark = model::offset{-1};
         include = true;
     }

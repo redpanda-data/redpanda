@@ -12,6 +12,7 @@
 #include "bytes/bytes.h"
 #include "cluster/partition.h"
 #include "cluster/simple_batch_builder.h"
+#include "config/configuration.h"
 #include "kafka/protocol/schemata/describe_groups_response.h"
 #include "kafka/protocol/sync_group.h"
 #include "kafka/server/group_manager.h"
@@ -1444,6 +1445,96 @@ ss::future<error_code> group::remove() {
     // kafka chooses to report no error even if replication fails. the in-memory
     // state on this node is still correctly represented.
     co_return error_code::none;
+}
+
+ss::future<>
+group::remove_topic_partitions(const std::vector<model::topic_partition>& tps) {
+    std::vector<std::pair<model::topic_partition, offset_metadata>> removed;
+    for (const auto& tp : tps) {
+        _pending_offset_commits.erase(tp);
+        if (auto offset = _offsets.extract(tp); offset) {
+            removed.emplace_back(
+              std::move(offset.key()), std::move(offset.mapped()));
+        }
+    }
+
+    // if no members and no offsets
+    if (
+      in_state(group_state::empty) && _pending_offset_commits.empty()
+      && _offsets.empty()) {
+        vlog(
+          klog.debug,
+          "Marking group {} as dead at {} generation",
+          _id,
+          generation());
+
+        set_state(group_state::dead);
+    }
+
+    if (removed.empty()) {
+        co_return;
+    }
+
+    _offsets.rehash(0);
+    _pending_offset_commits.rehash(0);
+
+    // build offset tombstones
+    storage::record_batch_builder builder(
+      raft::data_batch_type, model::offset(0));
+
+    // create deletion records for offsets from deleted partitions
+    for (auto& offset : removed) {
+        vlog(
+          klog.trace, "Removing offset for group {} tp {}", _id, offset.first);
+
+        group_log_record_key key{
+          .record_type = group_log_record_key::type::offset_commit,
+          .key = reflection::to_iobuf(group_log_offset_key{
+            _id,
+            offset.first.topic,
+            offset.first.partition,
+          }),
+        };
+
+        builder.add_raw_kv(reflection::to_iobuf(std::move(key)), std::nullopt);
+    }
+
+    // gc the group?
+    if (in_state(group_state::dead) && generation() > 0) {
+        group_log_record_key key{
+          .record_type = group_log_record_key::type::group_metadata,
+          .key = reflection::to_iobuf(_id),
+        };
+        builder.add_raw_kv(reflection::to_iobuf(std::move(key)), std::nullopt);
+    }
+
+    auto batch = std::move(builder).build();
+    auto reader = model::make_memory_record_batch_reader(std::move(batch));
+
+    try {
+        auto result = co_await _partition->replicate(
+          std::move(reader),
+          raft::replicate_options(raft::consistency_level::quorum_ack));
+        if (result) {
+            vlog(
+              klog.trace,
+              "Replicated group cleanup record {} at offset {}",
+              _id,
+              result.value().last_offset);
+        } else {
+            vlog(
+              klog.error,
+              "Error occured replicating group {} cleanup records {}",
+              _id,
+              result.error());
+        }
+    } catch (const std::exception& e) {
+        vlog(
+          klog.error,
+          "Exception occured replicating group {} cleanup records {}",
+          _id,
+          e);
+    }
 }
 
 std::ostream& operator<<(std::ostream& o, const group& g) {

@@ -10,6 +10,11 @@
  */
 
 #pragma once
+#include "cluster/metadata_cache.h"
+#include "cluster/partition_leaders_table.h"
+#include "cluster/partition_manager.h"
+#include "cluster/shard_table.h"
+#include "cluster/topics_frontend.h"
 #include "cluster/types.h"
 #include "kafka/client/transport.h"
 #include "kafka/server/handlers/topics/topic_utils.h"
@@ -17,6 +22,7 @@
 #include "model/namespace.h"
 #include "model/timeout_clock.h"
 #include "redpanda/application.h"
+#include "resource_mgmt/cpu_scheduling.h"
 #include "rpc/dns.h"
 #include "storage/directories.h"
 #include "storage/tests/utils/disk_log_builder.h"
@@ -35,9 +41,27 @@ class redpanda_thread_fixture {
 public:
     static constexpr const char* rack_name = "i-am-rack";
 
-    redpanda_thread_fixture() {
-        configure();
-        app.initialize();
+    redpanda_thread_fixture(
+      model::node_id node_id,
+      int32_t kafka_port,
+      int32_t rpc_port,
+      int32_t coproc_script_mgr_port,
+      int32_t coproc_supervisor_port,
+      std::vector<config::seed_server> seed_servers,
+      ss::sstring base_dir,
+      std::optional<scheduling_groups> sch_groups,
+      bool remove_on_shutdown)
+      : app(fmt::format("redpanda-{}", node_id()))
+      , data_dir(std::move(base_dir))
+      , remove_on_shutdown(remove_on_shutdown) {
+        configure(
+          node_id,
+          kafka_port,
+          rpc_port,
+          coproc_script_mgr_port,
+          coproc_supervisor_port,
+          std::move(seed_servers));
+        app.initialize(sch_groups);
         app.check_environment();
         app.configure_admin_server();
         app.wire_up_services();
@@ -57,28 +81,68 @@ public:
           app.id_allocator_frontend);
     }
 
+    // creates single node with default configuration
+    redpanda_thread_fixture()
+      : redpanda_thread_fixture(
+        model::node_id(1),
+        9092,
+        33145,
+        43118,
+        43189,
+        {},
+        fmt::format("test.dir_{}", time(0)),
+        std::nullopt,
+        true) {}
+
     ~redpanda_thread_fixture() {
         app.shutdown();
-        std::filesystem::remove_all(data_dir);
+        if (remove_on_shutdown) {
+            std::filesystem::remove_all(data_dir);
+        }
     }
 
     config::configuration& lconf() { return config::shard_local_cfg(); }
 
-    void configure() {
-        data_dir = fmt::format("test.dir_{}", time(0));
-        ss::smp::invoke_on_all([this] {
+    void configure(
+      model::node_id node_id,
+      int32_t kafka_port,
+      int32_t rpc_port,
+      int32_t coproc_script_mgr_port,
+      int32_t coproc_supervisor_port,
+      std::vector<config::seed_server> seed_servers) {
+        auto base_path = std::filesystem::path(data_dir);
+        ss::smp::invoke_on_all([node_id,
+                                kafka_port,
+                                rpc_port,
+                                coproc_script_mgr_port,
+                                coproc_supervisor_port,
+                                seed_servers = std::move(seed_servers),
+                                base_path]() mutable {
             auto& config = config::shard_local_cfg();
+            config.get("node_id").set_value(node_id());
+
+            config.get("rpc_server")
+              .set_value(unresolved_address("127.0.0.1", rpc_port));
+            config.get("kafka_api")
+              .set_value(
+                std::vector<model::broker_endpoint>{model::broker_endpoint(
+                  unresolved_address("127.0.0.1", kafka_port))});
+            config.get("seed_servers").set_value(seed_servers);
             config.get("enable_pid_file").set_value(false);
             config.get("developer_mode").set_value(true);
             config.get("enable_admin_api").set_value(false);
             config.get("enable_coproc").set_value(true);
+            config.get("coproc_script_manager_server")
+              .set_value(
+                unresolved_address("127.0.0.1", coproc_script_mgr_port));
+            config.get("join_retry_timeout_ms").set_value(100ms);
+            config.get("coproc_supervisor_server")
+              .set_value(
+                unresolved_address("127.0.0.1", coproc_supervisor_port));
             config.get("rack").set_value(std::optional<ss::sstring>(rack_name));
             config.get("disable_metrics").set_value(true);
-
             config.get("data_directory")
-              .set_value(config::data_directory_path{.path = data_dir});
-
-            config.get("node_id").set_value(1);
+              .set_value(config::data_directory_path{.path = base_path});
         }).get0();
     }
 
@@ -111,7 +175,7 @@ public:
     storage::log_config make_default_config() {
         return storage::log_config(
           storage::log_config::storage_type::disk,
-          lconf().data_directory().as_sstring(),
+          data_dir.string(),
           1_GiB,
           storage::debug_sanitize_files::yes);
     }
@@ -212,4 +276,5 @@ public:
     application app;
     std::filesystem::path data_dir;
     std::unique_ptr<kafka::protocol> proto;
+    bool remove_on_shutdown;
 };

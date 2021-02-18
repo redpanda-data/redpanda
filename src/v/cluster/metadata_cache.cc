@@ -9,7 +9,9 @@
 
 #include "cluster/metadata_cache.h"
 
+#include "cluster/members_table.h"
 #include "cluster/partition_leaders_table.h"
+#include "cluster/topic_table.h"
 #include "cluster/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"

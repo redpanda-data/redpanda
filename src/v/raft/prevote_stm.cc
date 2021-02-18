@@ -9,8 +9,10 @@
 
 #include "raft/prevote_stm.h"
 
+#include "config/configuration.h"
 #include "model/metadata.h"
 #include "outcome_future_utils.h"
+#include "raft/consensus.h"
 #include "raft/consensus_utils.h"
 #include "raft/errc.h"
 #include "raft/logger.h"

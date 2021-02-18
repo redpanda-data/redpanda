@@ -9,6 +9,7 @@
 
 #include "cluster/simple_batch_builder.h"
 #include "model/record.h"
+#include "raft/types.h"
 #include "storage/batch_cache.h"
 #include "test_utils/fixture.h"
 

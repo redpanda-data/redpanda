@@ -280,6 +280,36 @@ make_memory_record_batch_reader(model::record_batch b) {
     return make_memory_record_batch_reader(std::move(batches));
 }
 
+// clang-format off
+template<typename Func>
+CONCEPT(requires requires(Func f, model::record_batch&& batch) {
+    { f(std::move(batch)) } -> std::same_as<model::record_batch>;
+})
+// clang-format on
+ss::future<record_batch_reader::data_t> transform_reader_to_memory(
+  record_batch_reader reader, timeout_clock::time_point timeout, Func&& f) {
+    using data_t = record_batch_reader::data_t;
+    class consumer {
+    public:
+        explicit consumer(Func f)
+          : _func(std::move(f)) {}
+
+        ss::future<ss::stop_iteration> operator()(model::record_batch b) {
+            _result.push_back(_func(std::move(b)));
+            return ss::make_ready_future<ss::stop_iteration>(
+              ss::stop_iteration::no);
+        }
+        record_batch_reader::data_t end_of_stream() {
+            return std::move(_result);
+        }
+
+    private:
+        data_t _result;
+        Func _func;
+    };
+    return std::move(reader).consume(consumer(std::forward<Func>(f)), timeout);
+}
+
 record_batch_reader make_foreign_memory_record_batch_reader(record_batch);
 
 record_batch_reader

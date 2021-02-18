@@ -17,6 +17,8 @@
 #include <boost/crc.hpp>
 #include <fmt/format.h>
 
+#include <ostream>
+
 namespace rpc {
 template<typename T, typename = std::enable_if_t<std::is_integral_v<T>>>
 void crc_one(crc32& crc, T t) {

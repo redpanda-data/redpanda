@@ -1,5 +1,6 @@
 #include "kafka/server/fetch_session_cache.h"
 
+#include "config/configuration.h"
 #include "kafka/protocol/fetch.h"
 #include "kafka/server/logger.h"
 #include "kafka/types.h"

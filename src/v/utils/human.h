@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include <iostream>
+#include <iosfwd>
 
 /// \brief usage: fmt::format("{}", human::bytes(3234.234));
 //  or fmt::format("{}", human::latency(321.048));

@@ -14,6 +14,8 @@
 #include <seastar/core/metrics.hh>
 #include <seastar/net/inet_address.hh>
 
+#include <ostream>
+
 namespace rpc {
 void server_probe::setup_metrics(
   ss::metrics::metric_groups& mgs, const char* proto) {

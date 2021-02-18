@@ -23,7 +23,7 @@
 #include <seastar/core/iostream.hh>
 #include <seastar/core/sstring.hh>
 
-#include <iostream>
+#include <iosfwd>
 
 namespace storage {
 

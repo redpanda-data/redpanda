@@ -10,6 +10,7 @@
  */
 
 #pragma once
+#include "config/configuration.h"
 #include "model/metadata.h"
 #include "model/record_batch_reader.h"
 #include "raft/consensus.h"
@@ -666,6 +667,12 @@ ss::future<bool> retry_with_leader(
                    .handle_exception([meta](const std::exception_ptr&) {
                        meta->success = false;
                        meta->current_retry++;
+                   })
+                   .then([meta] {
+                       if (!meta->success) {
+                           return ss::sleep(200ms * meta->current_retry);
+                       }
+                       return ss::now();
                    });
              })
       .then([meta] { return meta->success; });

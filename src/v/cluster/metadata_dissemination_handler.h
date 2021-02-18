@@ -11,9 +11,8 @@
 
 #pragma once
 
-#include "cluster/metadata_cache.h"
+#include "cluster/fwd.h"
 #include "cluster/metadata_dissemination_rpc_service.h"
-#include "cluster/partition_leaders_table.h"
 #include "raft/types.h"
 #include "rpc/connection_cache.h"
 

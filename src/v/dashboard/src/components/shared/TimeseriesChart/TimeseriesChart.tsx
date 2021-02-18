@@ -18,12 +18,14 @@ const TimeseriesChart = ({
   remove,
   update,
   interval,
+  timeWindow = 6,
 }: {
   graph: Graph;
   snapshots: Snapshot[];
   remove: (name: string) => void;
   update: (name: string, data: object) => void;
   interval: number;
+  timeWindow: number;
 }) => {
   // Filter out all metrics !== name
   const filteredSnapshots = filterSnapshotsByName(graph.name, snapshots);
@@ -41,6 +43,7 @@ const TimeseriesChart = ({
       x: series.x,
       y: series.y,
       type: "scatter",
+      fill: 'tonexty',
       mode: "lines",
     },
   ];
@@ -48,8 +51,8 @@ const TimeseriesChart = ({
   // Time range for xAxis
   const getTimeRange = () => {
     const time = new Date();
-    const olderTime = time.setMinutes(time.getMinutes() - 3);
-    const futureTime = time.setMinutes(time.getMinutes() + 3);
+    const olderTime = time.setMilliseconds(time.getMilliseconds() - (timeWindow));
+    const futureTime = time.setMilliseconds(time.getMilliseconds() + (timeWindow));
     return [olderTime, futureTime];
   };
 
@@ -121,10 +124,10 @@ const TimeseriesChart = ({
         {createTitleFromName(graph.name)}
       </h2>
 
-      <p style={{ marginTop: 0 }}>
+      <div style={{ marginTop: 0 }}>
         <AxisLabel item="x">Time</AxisLabel>
         <AxisLabel item="y">{info.help}</AxisLabel>
-      </p>
+      </div>
 
       <div style={{ height: "300px" }}>
         <Plot

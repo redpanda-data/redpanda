@@ -17,12 +17,10 @@
 #include <seastar/util/log.hh>
 
 #include <fmt/format.h>
-#include <fmt/ostream.h>
 
 #include <cpuid.h>
 #include <cstdint>
 #include <filesystem>
-#include <sstream>
 
 namespace syschecks {
 
