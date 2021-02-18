@@ -10,6 +10,8 @@
 #include "protocol.h"
 
 #include "cluster/topics_frontend.h"
+#include "config/configuration.h"
+#include "kafka/security/scram_algorithm.h"
 #include "kafka/server/connection_context.h"
 #include "kafka/server/logger.h"
 #include "kafka/server/request_context.h"
@@ -57,7 +59,18 @@ protocol::protocol(
   , _credentials(credentials) {}
 
 ss::future<> protocol::apply(rpc::server::resources rs) {
-    auto ctx = ss::make_lw_shared<connection_context>(*this, std::move(rs));
+    /*
+     * if sasl authentication is not enabled then initialize the sasl state to
+     * complete. this will cause auth to be skipped during request processing.
+     */
+    sasl_server sasl(
+      config::shard_local_cfg().enable_sasl()
+        ? sasl_server::sasl_state::initial
+        : sasl_server::sasl_state::complete);
+
+    auto ctx = ss::make_lw_shared<connection_context>(
+      *this, std::move(rs), std::move(sasl));
+
     return ss::do_until(
              [ctx] { return ctx->is_finished_parsing(); },
              [ctx] { return ctx->process_one_request(); })
