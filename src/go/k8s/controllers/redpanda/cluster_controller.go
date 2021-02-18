@@ -36,6 +36,8 @@ type ClusterReconciler struct {
 	client.Client
 	Log	logr.Logger
 	Scheme	*runtime.Scheme
+
+	NodesLister	resources.NodesLister
 }
 
 //+kubebuilder:rbac:groups=redpanda.vectorized.io,resources=clusters,verbs=get;list;watch;create;update;patch;delete
@@ -45,6 +47,7 @@ type ClusterReconciler struct {
 //+kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;
 //+kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch;
 //+kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch;
+//+kubebuilder:rbac:groups=core,resources=nodes,verbs=get;list;watch
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -54,6 +57,7 @@ type ClusterReconciler struct {
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.7.0/pkg/reconcile
+// nolint:funlen // The cluster resource updates should be moved to pkg/resources
 func (r *ClusterReconciler) Reconcile(
 	ctx context.Context, req ctrl.Request,
 ) (ctrl.Result, error) {
@@ -71,12 +75,21 @@ func (r *ClusterReconciler) Reconcile(
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	svc := resources.NewHeadlessService(r.Client, &redpandaCluster, r.Scheme, log)
-	sts := resources.NewStatefulSet(r.Client, &redpandaCluster, r.Scheme, svc.HeadlessServiceFQDN(), svc.Key().Name, log)
+	headlessSvc := resources.NewHeadlessService(r.Client, &redpandaCluster, r.Scheme, log)
+	nodePortSvc := resources.NewNodePortService(r.Client, &redpandaCluster, r.Scheme, log)
+	sts := resources.NewStatefulSet(
+		r.Client,
+		&redpandaCluster,
+		r.Scheme,
+		headlessSvc.HeadlessServiceFQDN(),
+		headlessSvc.Key().Name,
+		nodePortSvc.Key(),
+		log,
+	)
 	toApply := []resources.Resource{
-		svc,
-		resources.NewNodePortService(r.Client, &redpandaCluster, r.Scheme, log),
-		resources.NewConfigMap(r.Client, &redpandaCluster, r.Scheme, svc.HeadlessServiceFQDN(), log),
+		headlessSvc,
+		nodePortSvc,
+		resources.NewConfigMap(r.Client, &redpandaCluster, r.Scheme, headlessSvc.HeadlessServiceFQDN(), r.NodesLister, log),
 		sts,
 	}
 
@@ -109,7 +122,7 @@ func (r *ClusterReconciler) Reconcile(
 	observedNodes := make([]string, 0, len(observedPods.Items))
 	// nolint:gocritic // the copies are necessary for further redpandacluster updates
 	for _, item := range observedPods.Items {
-		observedNodes = append(observedNodes, fmt.Sprintf("%s.%s", item.Name, svc.HeadlessServiceFQDN()))
+		observedNodes = append(observedNodes, fmt.Sprintf("%s.%s", item.Name, headlessSvc.HeadlessServiceFQDN()))
 	}
 
 	if !reflect.DeepEqual(observedNodes, redpandaCluster.Status.Nodes) {
@@ -142,5 +155,6 @@ func (r *ClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&redpandav1alpha1.Cluster{}).
 		Owns(&appsv1.StatefulSet{}).
+		Owns(&corev1.Service{}).
 		Complete(r)
 }

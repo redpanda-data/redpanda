@@ -12,6 +12,7 @@ package resources
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"strconv"
@@ -21,7 +22,7 @@ import (
 	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/labels"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -32,6 +33,8 @@ import (
 )
 
 var _ Resource = &StatefulSetResource{}
+
+var errNodePortMissing = errors.New("the node port missing from the service")
 
 const (
 	redpandaContainerName		= "redpanda"
@@ -46,6 +49,8 @@ type StatefulSetResource struct {
 	pandaCluster	*redpandav1alpha1.Cluster
 	serviceFQDN	string
 	serviceName	string
+	nodePortName	types.NamespacedName
+	nodePortSvc	corev1.Service
 	logger		logr.Logger
 
 	LastObservedState	*appsv1.StatefulSet
@@ -58,10 +63,19 @@ func NewStatefulSet(
 	scheme *runtime.Scheme,
 	serviceFQDN string,
 	serviceName string,
+	nodePortName types.NamespacedName,
 	logger logr.Logger,
 ) *StatefulSetResource {
 	return &StatefulSetResource{
-		client, scheme, pandaCluster, serviceFQDN, serviceName, logger.WithValues("Kind", statefulSetKind()), nil,
+		client,
+		scheme,
+		pandaCluster,
+		serviceFQDN,
+		serviceName,
+		nodePortName,
+		corev1.Service{},
+		logger.WithValues("Kind", statefulSetKind()),
+		nil,
 	}
 }
 
@@ -69,12 +83,23 @@ func NewStatefulSet(
 func (r *StatefulSetResource) Ensure(ctx context.Context) error {
 	var sts appsv1.StatefulSet
 
-	err := r.Get(ctx, r.Key(), &sts)
-	if err != nil && !errors.IsNotFound(err) {
-		return err
+	if r.pandaCluster.Spec.ExternalConnectivity {
+		err := r.Get(ctx, r.nodePortName, &r.nodePortSvc)
+		if err != nil {
+			return fmt.Errorf("failed to retrieve node port service %s: %w", r.nodePortName, err)
+		}
+
+		if len(r.nodePortSvc.Spec.Ports) != 1 || r.nodePortSvc.Spec.Ports[0].NodePort == 0 {
+			return fmt.Errorf("node port service %s: %w", r.nodePortName, errNodePortMissing)
+		}
 	}
 
-	if errors.IsNotFound(err) {
+	err := r.Get(ctx, r.Key(), &sts)
+	if err != nil && !k8serrors.IsNotFound(err) {
+		return fmt.Errorf("failed to retrieve statefulset: %w", err)
+	}
+
+	if k8serrors.IsNotFound(err) {
 		r.logger.Info(fmt.Sprintf("StatefulSet %s does not exist, going to create one", r.Key().Name))
 
 		obj, err := r.Obj()
@@ -212,6 +237,16 @@ func (r *StatefulSetResource) Obj() (k8sclient.Object, error) {
 							Image:		r.pandaCluster.FullImageName(),
 							Command:	[]string{"/bin/sh", "-c"},
 							Args:		[]string{configuratorPath},
+							Env: []corev1.EnvVar{
+								{
+									Name:	"HOST_IP",
+									ValueFrom: &corev1.EnvVarSource{
+										FieldRef: &corev1.ObjectFieldSelector{
+											FieldPath: "status.hostIP",
+										},
+									},
+								},
+							},
 							VolumeMounts: []corev1.VolumeMount{
 								{
 									Name:		"config-dir",
@@ -272,20 +307,16 @@ func (r *StatefulSetResource) Obj() (k8sclient.Object, error) {
 									},
 								},
 							},
-							Ports: []corev1.ContainerPort{
+							Ports: append([]corev1.ContainerPort{
 								{
 									Name:		"admin",
 									ContainerPort:	int32(r.pandaCluster.Spec.Configuration.AdminAPI.Port),
 								},
 								{
-									Name:		"kafka",
-									ContainerPort:	int32(r.pandaCluster.Spec.Configuration.KafkaAPI.Port),
-								},
-								{
 									Name:		"rpc",
 									ContainerPort:	int32(r.pandaCluster.Spec.Configuration.RPCServer.Port),
 								},
-							},
+							}, r.getPorts()...),
 							Resources: corev1.ResourceRequirements{
 								Limits:		r.pandaCluster.Spec.Resources.Limits,
 								Requests:	r.pandaCluster.Spec.Resources.Requests,
@@ -375,14 +406,57 @@ func (r *StatefulSetResource) portsConfiguration() string {
 	kafkaAPIPort := r.pandaCluster.Spec.Configuration.KafkaAPI.Port
 	rpcAPIPort := r.pandaCluster.Spec.Configuration.RPCServer.Port
 	svcName := r.serviceName
+	externalKafkaAPIPort := r.pandaCluster.Spec.Configuration.KafkaAPI.Port + 1
 
+	if r.pandaCluster.Spec.ExternalConnectivity {
+		return fmt.Sprintf("--kafka-addr=internal://$(POD_IP):%d"+
+			" --advertise-rpc-addr=$(POD_NAME).%s.$(POD_NAMESPACE).svc.cluster.local.:%d"+
+			" --rpc-addr=$(POD_IP):%d"+
+			" --kafka-addr=external://$(POD_IP):%d",
+			kafkaAPIPort,
+			svcName, rpcAPIPort,
+			rpcAPIPort,
+			externalKafkaAPIPort)
+	}
 	// In every dns name there is trailing dot to query absolute path
 	// For trailing dot explanation please visit http://www.dns-sd.org/trailingdotsindomainnames.html
-	return fmt.Sprintf("--advertise-kafka-addr=internal://$(POD_NAME).%s.$(POD_NAMESPACE).svc.cluster.local.:%d"+
-		" --kafka-addr=internal://$(POD_IP):%d"+
+	return fmt.Sprintf("--kafka-addr=internal://$(POD_IP):%d"+
 		" --advertise-rpc-addr=$(POD_NAME).%s.$(POD_NAMESPACE).svc.cluster.local.:%d"+
 		" --rpc-addr=$(POD_IP):%d",
-		svcName, kafkaAPIPort, kafkaAPIPort, svcName, rpcAPIPort, rpcAPIPort)
+		kafkaAPIPort,
+		svcName, rpcAPIPort,
+		rpcAPIPort)
+}
+
+func (r *StatefulSetResource) getPorts() []corev1.ContainerPort {
+	if r.pandaCluster.Spec.ExternalConnectivity &&
+		len(r.nodePortSvc.Spec.Ports) > 0 {
+		return []corev1.ContainerPort{
+			{
+				Name:		"kafka-internal",
+				ContainerPort:	int32(r.pandaCluster.Spec.Configuration.KafkaAPI.Port),
+			},
+			{
+				Name:	"kafka-external",
+				// To distinguish external from internal clients the new listener
+				// and port is exposed for Redpanda clients. The port is chosen
+				// arbitrary to the KafkaAPI + 1, because user can not reach this
+				// port. The routing in the Kubernetes will forward all traffic from
+				// HostPort to the ContainerPort.
+				ContainerPort:	int32(r.pandaCluster.Spec.Configuration.KafkaAPI.Port + 1),
+				// The host port is set to the service node port that doesn't have
+				// any endpoints.
+				HostPort:	r.nodePortSvc.Spec.Ports[0].NodePort,
+			},
+		}
+	}
+
+	return []corev1.ContainerPort{
+		{
+			Name:		"kafka",
+			ContainerPort:	int32(r.pandaCluster.Spec.Configuration.KafkaAPI.Port),
+		},
+	}
 }
 
 func statefulSetKind() string {

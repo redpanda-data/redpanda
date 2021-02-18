@@ -14,6 +14,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strconv"
 
 	"github.com/go-logr/logr"
 	redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
@@ -37,12 +38,23 @@ const (
 	configDir		= "/etc/redpanda"
 	configuratorDir		= "/mnt/operator"
 	configuratorScript	= "configurator.sh"
+	nodeIPsList		= "node-list.txt"
+	confFile		= "redpanda.yaml"
 )
 
 var (
-	configPath		= filepath.Join(configDir, "redpanda.yaml")
+	configPath		= filepath.Join(configDir, confFile)
 	configuratorPath	= filepath.Join(configuratorDir, configuratorScript)
+	nodeListPath		= filepath.Join(configuratorDir, nodeIPsList)
 )
+
+// NodesLister defines necessary function to construct list of nodes
+// internal and external IPs
+type NodesLister interface {
+	// RegisterConfigMap start updating config map nodeIPsList file
+	// based on the changes in nodes
+	RegisterConfigMap(types.NamespacedName) error
+}
 
 var _ Resource = &ConfigMapResource{}
 
@@ -52,9 +64,10 @@ type ConfigMapResource struct {
 	k8sclient.Client
 	scheme		*runtime.Scheme
 	pandaCluster	*redpandav1alpha1.Cluster
-
 	serviceFQDN	string
+	nodesLister	NodesLister
 	logger		logr.Logger
+	nodePort	int32
 }
 
 // NewConfigMap creates ConfigMapResource
@@ -63,35 +76,73 @@ func NewConfigMap(
 	pandaCluster *redpandav1alpha1.Cluster,
 	scheme *runtime.Scheme,
 	serviceFQDN string,
+	nodesLister NodesLister,
 	logger logr.Logger,
 ) *ConfigMapResource {
 	return &ConfigMapResource{
-		client, scheme, pandaCluster, serviceFQDN, logger.WithValues("Kind", configMapKind()),
+		client,
+		scheme,
+		pandaCluster,
+		serviceFQDN,
+		nodesLister,
+		logger.WithValues("Kind", configMapKind()),
+		0,
 	}
 }
 
 // Ensure will manage kubernetes v1.ConfigMap for redpanda.vectorized.io CR
-//nolint:dupl // we expect this to not be duplicated when more logic is added
 func (r *ConfigMapResource) Ensure(ctx context.Context) error {
 	var cfgm corev1.ConfigMap
+
+	if r.pandaCluster.Spec.ExternalConnectivity {
+		svc := corev1.Service{}
+		err := r.Get(ctx, (&NodePortServiceResource{pandaCluster: r.pandaCluster}).Key(), &svc)
+		if err != nil {
+			return fmt.Errorf("unable to find node port service: %w", err)
+		}
+
+		r.nodePort = getNodePort(&svc)
+	}
 
 	err := r.Get(ctx, r.Key(), &cfgm)
 	if err != nil && !errors.IsNotFound(err) {
 		return err
 	}
 
-	if errors.IsNotFound(err) {
-		r.logger.Info(fmt.Sprintf("ConfigMap %s does not exist, going to create one", r.Key().Name))
+	if !errors.IsNotFound(err) {
+		return nil
+	}
 
-		obj, err := r.Obj()
-		if err != nil {
-			return err
+	r.logger.Info(fmt.Sprintf("ConfigMap %s does not exist, going to create one", r.Key().Name))
+
+	obj, err := r.Obj()
+	if err != nil {
+		return err
+	}
+
+	err = r.Create(ctx, obj)
+	if err != nil {
+		return fmt.Errorf("unable to create configmap: %w", err)
+	}
+	if r.pandaCluster.Spec.ExternalConnectivity {
+		if err := r.nodesLister.RegisterConfigMap(r.Key()); err != nil {
+			return fmt.Errorf("unable to register config map in node watcher: %w", err)
 		}
-
-		return r.Create(ctx, obj)
 	}
 
 	return nil
+}
+
+func getNodePort(svc *corev1.Service) int32 {
+	if svc == nil {
+		return -1
+	}
+	for _, port := range svc.Spec.Ports {
+		if port.NodePort != 0 {
+			return port.NodePort
+		}
+	}
+	return 0
 }
 
 // Obj returns resource managed client.Object
@@ -103,17 +154,29 @@ func (r *ConfigMapResource) Obj() (k8sclient.Object, error) {
 		return nil, err
 	}
 
+	kafkaInternalPort, kafkaExternalPort := r.getKafkaAdvertisedPorts()
+
 	script :=
 		`set -xe;
 		CONFIG=` + configPath + `;
 		ORDINAL_INDEX=${HOSTNAME##*-};
 		SERVICE_NAME=${HOSTNAME}.` + serviceAddress + `
-		cp /mnt/operator/redpanda.yaml $CONFIG;
+		cp ` + filepath.Join(configuratorDir, confFile) + ` $CONFIG;
 		rpk --config $CONFIG config set redpanda.node_id $ORDINAL_INDEX;
 		if [ "$ORDINAL_INDEX" = "0" ]; then
 			rpk --config $CONFIG config set redpanda.seed_servers '[]' --format yaml;
-		fi;
-		cat $CONFIG`
+		fi;`
+	var advertisedKafkaAPIScript string
+	if r.pandaCluster.Spec.ExternalConnectivity {
+		advertisedKafkaAPIScript = `
+			EXTERNAL_IP=$(cat ` + nodeListPath + ` | grep $HOST_IP | awk '{print $2}')
+			rpk --config $CONFIG config set redpanda.advertised_kafka_api --format json '[{"name": "external","address":"'$EXTERNAL_IP'","port":` + kafkaExternalPort + `},{"name": "internal","address":"'$SERVICE_NAME'","port":` + kafkaInternalPort + `}]'
+			cat $CONFIG`
+	} else {
+		advertisedKafkaAPIScript = `
+			rpk --config $CONFIG config set redpanda.advertised_kafka_api --format json '[{"name": "internal","address":"'$SERVICE_NAME'","port":` + kafkaInternalPort + `}]'
+			cat $CONFIG`
+	}
 
 	cm := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
@@ -123,7 +186,7 @@ func (r *ConfigMapResource) Obj() (k8sclient.Object, error) {
 		},
 		Data: map[string]string{
 			"redpanda.yaml":	string(cfgBytes),
-			"configurator.sh":	script,
+			"configurator.sh":	script + advertisedKafkaAPIScript,
 		},
 	}
 
@@ -133,6 +196,12 @@ func (r *ConfigMapResource) Obj() (k8sclient.Object, error) {
 	}
 
 	return cm, nil
+}
+
+func (r *ConfigMapResource) getKafkaAdvertisedPorts() (
+	internalPort, externalPort string,
+) {
+	return strconv.Itoa(r.pandaCluster.Spec.Configuration.KafkaAPI.Port), strconv.Itoa(int(r.nodePort))
 }
 
 func (r *ConfigMapResource) createConfiguration() *config.Config {
@@ -148,7 +217,16 @@ func (r *ConfigMapResource) createConfiguration() *config.Config {
 				Address:	"0.0.0.0",
 				Port:		c.KafkaAPI.Port,
 			},
-			Name:	"Internal",
+			Name:	"internal",
+		},
+	}
+	cr.AdvertisedKafkaApi = []config.NamedSocketAddress{
+		{
+			SocketAddress: config.SocketAddress{
+				Address:	"0.0.0.0",
+				Port:		c.KafkaAPI.Port,
+			},
+			Name:	"internal",
 		},
 	}
 

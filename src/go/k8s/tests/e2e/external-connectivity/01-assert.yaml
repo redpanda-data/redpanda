@@ -35,6 +35,7 @@ spec:
             - --kafka-addr=internal://$(POD_IP):9092
               --advertise-rpc-addr=$(POD_NAME).cluster-sample.$(POD_NAMESPACE).svc.cluster.local.:33145
               --rpc-addr=$(POD_IP):33145
+              --kafka-addr=external://$(POD_IP):9093
             - --
             - --default-log-level=debug
 status:
@@ -52,3 +53,15 @@ spec:
       protocol: TCP
       targetPort: 9092
   type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cluster-sample-external
+spec:
+  ports:
+    - name: kafka-tcp
+      port: 9093
+      protocol: TCP
+      targetPort: 9093
+  type: NodePort

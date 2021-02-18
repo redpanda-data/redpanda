@@ -71,6 +71,7 @@ var _ = Describe("RedPandaCluster controller", func() {
 					Configuration: v1alpha1.RedpandaConfig{
 						KafkaAPI: v1alpha1.SocketAddress{Port: kafkaPort},
 					},
+					ExternalConnectivity:	true,
 					Resources: corev1.ResourceRequirements{
 						Limits:		resources,
 						Requests:	resources,
@@ -97,7 +98,7 @@ var _ = Describe("RedPandaCluster controller", func() {
 				}, &svc)
 				return err == nil &&
 					svc.Spec.Type == corev1.ServiceTypeNodePort &&
-					svc.Spec.Ports[0].Port == kafkaPort &&
+					svc.Spec.Ports[0].Port == kafkaPort+1 &&
 					validOwner(redpandaCluster, svc.OwnerReferences)
 			}, timeout, interval).Should(BeTrue())
 

@@ -13,6 +13,7 @@ import (
 	"os"
 
 	redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	"github.com/vectorizedio/redpanda/src/go/k8s/controllers/node"
 	redpandacontrollers "github.com/vectorizedio/redpanda/src/go/k8s/controllers/redpanda"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -35,6 +36,7 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
 	utilruntime.Must(redpandav1alpha1.AddToScheme(scheme))
+
 	//+kubebuilder:scaffold:scheme
 }
 
@@ -76,10 +78,21 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (&redpandacontrollers.ClusterReconciler{
+	nw := &node.NodeWatcher{
 		Client:	mgr.GetClient(),
-		Log:	ctrl.Log.WithName("controllers").WithName("redpanda").WithName("Cluster"),
+		Log:	ctrl.Log.WithName("controllers").WithName("node").WithName("watcher"),
 		Scheme:	mgr.GetScheme(),
+	}
+	if err = nw.SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Unable to create controller", "controller", "NodeWatcher")
+		os.Exit(1)
+	}
+
+	if err = (&redpandacontrollers.ClusterReconciler{
+		Client:		mgr.GetClient(),
+		Log:		ctrl.Log.WithName("controllers").WithName("redpanda").WithName("Cluster"),
+		Scheme:		mgr.GetScheme(),
+		NodesLister:	nw,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "Cluster")
 		os.Exit(1)

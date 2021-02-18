@@ -1,0 +1,7 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redpanda-controller-manager
+  namespace: redpanda-system
+status:
+  availableReplicas: 1

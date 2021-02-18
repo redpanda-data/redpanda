@@ -18,6 +18,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/gexec"
 	redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	"github.com/vectorizedio/redpanda/src/go/k8s/controllers/node"
 	redpandacontrollers "github.com/vectorizedio/redpanda/src/go/k8s/controllers/redpanda"
 	"k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -66,10 +67,19 @@ var _ = BeforeSuite(func(done Done) {
 	})
 	Expect(err).ToNot(HaveOccurred())
 
-	err = (&redpandacontrollers.ClusterReconciler{
+	nw := &node.NodeWatcher{
 		Client:	k8sManager.GetClient(),
-		Log:	ctrl.Log.WithName("controllers").WithName("core").WithName("RedpandaCluster"),
+		Log:	ctrl.Log.WithName("controllers").WithName("node").WithName("watcher"),
 		Scheme:	k8sManager.GetScheme(),
+	}
+	err = nw.SetupWithManager(k8sManager)
+	Expect(err).ToNot(HaveOccurred())
+
+	err = (&redpandacontrollers.ClusterReconciler{
+		Client:		k8sManager.GetClient(),
+		Log:		ctrl.Log.WithName("controllers").WithName("core").WithName("RedpandaCluster"),
+		Scheme:		k8sManager.GetScheme(),
+		NodesLister:	nw,
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
