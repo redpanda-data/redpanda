@@ -53,7 +53,7 @@ type ConfigMapResource struct {
 	scheme		*runtime.Scheme
 	pandaCluster	*redpandav1alpha1.Cluster
 
-	svc	*ServiceResource
+	svc	*HeadlessServiceResource
 	logger	logr.Logger
 }
 
@@ -62,7 +62,7 @@ func NewConfigMap(
 	client k8sclient.Client,
 	pandaCluster *redpandav1alpha1.Cluster,
 	scheme *runtime.Scheme,
-	svc *ServiceResource,
+	svc *HeadlessServiceResource,
 	logger logr.Logger,
 ) *ConfigMapResource {
 	return &ConfigMapResource{
