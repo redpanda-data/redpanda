@@ -2,6 +2,7 @@ package wasm
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"fmt"
 	"testing"
 
@@ -109,6 +110,39 @@ func TestNewDeployCommand(t *testing.T) {
 				MockCreateTopic: func(topic string, detail *sarama.TopicDetail, b bool) error {
 					require.NoError(t, fmt.Errorf("it shouldn't create topic"))
 					return nil
+				},
+			},
+		}, {
+			name:	"it should publish a message with correct format with correct header",
+			args:	[]string{"--description", "coprocessor description"},
+			fileInformation: fileInfo{
+				name:		"fileName.js",
+				content:	"let s = 'text'",
+			},
+			pre: func(fs afero.Fs, fileInformation fileInfo) error {
+				return createMockFile(fs, fileInformation.name, fileInformation.content)
+			},
+			producer: kafkaMocks.MockProducer{
+				MockSendMessage: func(msg *sarama.ProducerMessage) (partition int32, offset int64, err error) {
+					require.Equal(t, msg.Topic, kafka.CoprocessorTopic)
+					hashContent := sha256.Sum256([]byte("let s = 'text'"))
+					expectHeader := []sarama.RecordHeader{
+						{
+							Key:	[]byte("action"),
+							Value:	[]byte("deploy"),
+						}, {
+							Key:	[]byte("description"),
+							Value:	[]byte("coprocessor description"),
+						}, {
+							Key:	[]byte("file_name"),
+							Value:	[]byte("fileName.js"),
+						}, {
+							Key:	[]byte("sha256"),
+							Value:	hashContent[:],
+						},
+					}
+					require.Equal(t, expectHeader, msg.Headers)
+					return 0, 0, nil
 				},
 			},
 		},

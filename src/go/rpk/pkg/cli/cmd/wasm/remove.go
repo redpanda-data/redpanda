@@ -1,6 +1,8 @@
 package wasm
 
 import (
+	"fmt"
+
 	"github.com/Shopify/sarama"
 	"github.com/spf13/cobra"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/kafka"
@@ -14,7 +16,14 @@ func NewRemoveCommand(
 	command := &cobra.Command{
 		Use:	"remove <name>",
 		Short:	"remove inline WASM function",
-		Args:	cobra.ExactArgs(1),
+		Args: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				return fmt.Errorf(
+					"no wasm script name specified",
+				)
+			}
+			return nil
+		},
 		RunE: func(_ *cobra.Command, args []string) error {
 			name := args[0]
 			producer, err := createProduce(false, -1)
