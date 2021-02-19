@@ -33,12 +33,18 @@ import (
 
 var _ Resource = &StatefulSetResource{}
 
+const (
+	redpandaContainerName		= "redpanda"
+	configuratorContainerName	= "redpanda-configurator"
+)
+
 // StatefulSetResource is part of the reconciliation of redpanda.vectorized.io CRD
 // focusing on the management of redpanda cluster
 type StatefulSetResource struct {
 	k8sclient.Client
 	scheme		*runtime.Scheme
 	pandaCluster	*redpandav1alpha1.Cluster
+	svc		*ServiceResource
 	logger		logr.Logger
 
 	LastObservedState	*appsv1.StatefulSet
@@ -49,10 +55,11 @@ func NewStatefulSet(
 	client k8sclient.Client,
 	pandaCluster *redpandav1alpha1.Cluster,
 	scheme *runtime.Scheme,
+	svc *ServiceResource,
 	logger logr.Logger,
 ) *StatefulSetResource {
 	return &StatefulSetResource{
-		client, scheme, pandaCluster, logger.WithValues("Kind", statefulSetKind()), nil,
+		client, scheme, pandaCluster, svc, logger.WithValues("Kind", statefulSetKind()), nil,
 	}
 }
 
@@ -86,6 +93,10 @@ func (r *StatefulSetResource) Ensure(ctx context.Context) error {
 		if err := r.Update(ctx, &sts); err != nil {
 			return fmt.Errorf("failed to update StatefulSet: %w", err)
 		}
+	}
+
+	if err := r.updateStsImage(ctx, &sts); err != nil {
+		return err
 	}
 
 	return nil
@@ -195,7 +206,7 @@ func (r *StatefulSetResource) Obj() (k8sclient.Object, error) {
 					},
 					InitContainers: []corev1.Container{
 						{
-							Name:		"redpanda-configurator",
+							Name:		configuratorContainerName,
 							Image:		r.pandaCluster.Spec.Image + ":" + r.pandaCluster.Spec.Version,
 							Command:	[]string{"/bin/sh", "-c"},
 							Args:		[]string{configuratorPath},
@@ -213,7 +224,7 @@ func (r *StatefulSetResource) Obj() (k8sclient.Object, error) {
 					},
 					Containers: []corev1.Container{
 						{
-							Name:	"redpanda",
+							Name:	redpandaContainerName,
 							Image:	r.pandaCluster.Spec.Image + ":" + r.pandaCluster.Spec.Version,
 							Args: []string{
 								"--check=false",

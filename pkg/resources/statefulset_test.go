@@ -72,7 +72,7 @@ func TestEnsure(t *testing.T) {
 			assert.NoError(t, err, tt.name)
 		}
 
-		sts := res.NewStatefulSet(c, tt.pandaCluster, scheme.Scheme, ctrl.Log.WithName("test"))
+		sts := res.NewStatefulSet(c, tt.pandaCluster, scheme.Scheme, nil, ctrl.Log.WithName("test"))
 
 		err = sts.Ensure(context.Background())
 		assert.NoError(t, err, tt.name)
@@ -104,7 +104,7 @@ func stsFromCluster(pandaCluster *redpandav1alpha1.Cluster) *v1.StatefulSet {
 					Containers: []corev1.Container{
 						{
 							Name:	"redpanda",
-							Image:	"latest",
+							Image:	"image:latest",
 							Resources: corev1.ResourceRequirements{
 								Limits:		pandaCluster.Spec.Resources.Limits,
 								Requests:	pandaCluster.Spec.Resources.Requests,
