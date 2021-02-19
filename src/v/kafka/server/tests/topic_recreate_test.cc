@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 
 #include "kafka/protocol/batch_consumer.h"
+#include "kafka/protocol/create_topics.h"
 #include "kafka/protocol/delete_topics.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/metadata.h"

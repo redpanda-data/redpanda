@@ -8,6 +8,8 @@
 // by the Apache License, Version 2.0
 
 #include "kafka/protocol/fetch.h"
+#include "kafka/protocol/heartbeat.h"
+#include "kafka/protocol/leave_group.h"
 #include "kafka/protocol/metadata.h"
 #include "kafka/protocol/produce.h"
 #include "redpanda/tests/fixture.h"

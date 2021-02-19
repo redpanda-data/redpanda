@@ -11,22 +11,9 @@
 
 #pragma once
 
-#include "kafka/protocol/api_versions.h"
-#include "kafka/protocol/create_topics.h"
-#include "kafka/protocol/describe_groups.h"
-#include "kafka/protocol/fetch.h"
-#include "kafka/protocol/find_coordinator.h"
-#include "kafka/protocol/heartbeat.h"
-#include "kafka/protocol/join_group.h"
-#include "kafka/protocol/leave_group.h"
-#include "kafka/protocol/list_groups.h"
-#include "kafka/protocol/metadata.h"
-#include "kafka/protocol/offset_commit.h"
-#include "kafka/protocol/offset_fetch.h"
-#include "kafka/protocol/produce.h"
-#include "kafka/protocol/sync_group.h"
-#include "kafka/protocol/types.h"
+#include "kafka/protocol/fwd.h"
 #include "kafka/server/protocol_utils.h"
+#include "kafka/types.h"
 #include "rpc/transport.h"
 #include "seastarx.h"
 

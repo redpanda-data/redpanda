@@ -9,6 +9,7 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
+#include "kafka/protocol/fwd.h"
 #include "kafka/types.h"
 #include "utils/concepts-enabled.h"
 

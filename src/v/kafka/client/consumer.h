@@ -14,6 +14,9 @@
 #include "kafka/client/assignment_plans.h"
 #include "kafka/client/broker.h"
 #include "kafka/client/logger.h"
+#include "kafka/protocol/describe_groups.h"
+#include "kafka/protocol/offset_commit.h"
+#include "kafka/protocol/offset_fetch.h"
 #include "kafka/types.h"
 
 #include <seastar/core/shared_ptr.hh>
