@@ -396,7 +396,7 @@ func (r *StatefulSetResource) portsConfiguration() string {
 	var externalListener string
 	if r.pandaCluster.Spec.ExternalConnectivity {
 		externalListener = fmt.Sprintf("--advertise-kafka-addr=external://$(POD_NAME).%s.$(POD_NAMESPACE).%s.:%d"+
-			" --kafka-addr=external://$(POD_IP):%d", svcName, dnsSubdomain, r.getNodePort(), externalKafkaAPIPort)
+			" --kafka-addr=external://$(POD_IP):%d", svcName, dnsSubdomain, GetNodePort(r.nodePortSvc.LastObservedState), externalKafkaAPIPort)
 	}
 	// In every dns name there is trailing dot to query absolute path
 	// For trailing dot explanation please visit http://www.dns-sd.org/trailingdotsindomainnames.html
@@ -405,16 +405,6 @@ func (r *StatefulSetResource) portsConfiguration() string {
 		" --advertise-rpc-addr=$(POD_NAME).%s.$(POD_NAMESPACE).svc.cluster.local.:%d"+
 		" --rpc-addr=$(POD_IP):%d %s",
 		svcName, kafkaAPIPort, kafkaAPIPort, svcName, rpcAPIPort, rpcAPIPort, externalListener)
-}
-
-func (r *StatefulSetResource) getNodePort() int32 {
-	for _, port := range r.nodePortSvc.LastObservedState.Spec.Ports {
-		if port.NodePort != 0 {
-			return port.NodePort
-		}
-	}
-
-	return -1
 }
 
 func (r *StatefulSetResource) getPorts() []corev1.ContainerPort {

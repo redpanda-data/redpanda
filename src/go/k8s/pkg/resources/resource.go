@@ -13,6 +13,7 @@ package resources
 import (
 	"context"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -31,4 +32,17 @@ type Resource interface {
 
 	// Ensure reconcile only one resource available in Kubernetes API server
 	Ensure(ctx context.Context) error
+}
+
+// GetNodePort help to get first node port from the service
+// The redpanda only exposes kafka api at the moment. Admin and RPC
+// interface is hidden from the external user.
+func GetNodePort(svc *corev1.Service) int32 {
+	for _, port := range svc.Spec.Ports {
+		if port.NodePort != 0 {
+			return port.NodePort
+		}
+	}
+
+	return -1
 }
