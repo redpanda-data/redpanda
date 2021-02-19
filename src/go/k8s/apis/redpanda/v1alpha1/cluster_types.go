@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-// Package v1alpha1 represent Custom Resource definition of the vectorized.io redpanda group
+// Package v1alpha1 represent Custom Resource definition of the vectorized.io Redpanda group
 package v1alpha1
 
 import (
@@ -33,7 +33,7 @@ type ClusterSpec struct {
 	// To calculate overall resource consumption one need to
 	// multiply replicas against limits
 	Resources	corev1.ResourceRequirements	`json:"resources"`
-	// Configuration represent redpanda specific configuration
+	// Configuration represent Redpanda specific configuration
 	Configuration	RedpandaConfig	`json:"configuration,omitempty"`
 
 	// ExternalConnectivity adds listener that can be reached outside
@@ -58,12 +58,18 @@ type ClusterStatus struct {
 	// Replicas show how many nodes are working in the cluster
 	// +optional
 	Replicas	int32	`json:"replicas"`
-	// Nodes of the provisioned redpanda nodes
+	// Nodes of the provisioned Redpanda brokers
 	// +optional
-	Nodes	[]string	`json:"nodes,omitempty"`
+	Nodes	NodesList	`json:"nodes,omitempty"`
 	// Indicates cluster is upgrading
 	// +optional
 	Upgrading	bool	`json:"upgrading"`
+}
+
+// NodesList shows where client can find Redpanda brokers
+type NodesList struct {
+	Internal	[]string	`json:"internal,omitempty"`
+	External	[]string	`json:"external,omitempty"`
 }
 
 //+kubebuilder:object:root=true

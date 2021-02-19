@@ -133,18 +133,6 @@ func (r *ConfigMapResource) Ensure(ctx context.Context) error {
 	return nil
 }
 
-func getNodePort(svc *corev1.Service) int32 {
-	if svc == nil {
-		return -1
-	}
-	for _, port := range svc.Spec.Ports {
-		if port.NodePort != 0 {
-			return port.NodePort
-		}
-	}
-	return 0
-}
-
 // Obj returns resource managed client.Object
 func (r *ConfigMapResource) Obj() (k8sclient.Object, error) {
 	serviceAddress := r.serviceFQDN

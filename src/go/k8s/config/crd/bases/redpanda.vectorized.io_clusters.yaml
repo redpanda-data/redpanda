@@ -37,7 +37,7 @@ spec:
             description: ClusterSpec defines the desired state of Cluster
             properties:
               configuration:
-                description: Configuration represent redpanda specific configuration
+                description: Configuration represent Redpanda specific configuration
                 properties:
                   admin:
                     description: SocketAddress provide the way to configure the port
@@ -118,10 +118,17 @@ spec:
             description: ClusterStatus defines the observed state of Cluster
             properties:
               nodes:
-                description: Nodes of the provisioned redpanda nodes
-                items:
-                  type: string
-                type: array
+                description: Nodes of the provisioned Redpanda brokers
+                properties:
+                  external:
+                    items:
+                      type: string
+                    type: array
+                  internal:
+                    items:
+                      type: string
+                    type: array
+                type: object
               replicas:
                 description: Replicas show how many nodes are working in the cluster
                 format: int32

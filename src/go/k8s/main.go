@@ -89,10 +89,11 @@ func main() {
 	}
 
 	if err = (&redpandacontrollers.ClusterReconciler{
-		Client:		mgr.GetClient(),
-		Log:		ctrl.Log.WithName("controllers").WithName("redpanda").WithName("Cluster"),
-		Scheme:		mgr.GetScheme(),
-		NodesLister:	nw,
+		Client:			mgr.GetClient(),
+		Log:			ctrl.Log.WithName("controllers").WithName("redpanda").WithName("Cluster"),
+		Scheme:			mgr.GetScheme(),
+		NodesLister:		nw,
+		NodesExternalIPFetcher:	nw,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "Cluster")
 		os.Exit(1)

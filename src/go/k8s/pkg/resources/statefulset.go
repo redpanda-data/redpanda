@@ -12,7 +12,6 @@ package resources
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"reflect"
 	"strconv"
@@ -33,8 +32,6 @@ import (
 )
 
 var _ Resource = &StatefulSetResource{}
-
-var errNodePortMissing = errors.New("the node port missing from the service")
 
 const (
 	redpandaContainerName		= "redpanda"
@@ -118,12 +115,12 @@ func (r *StatefulSetResource) Ensure(ctx context.Context) error {
 	updated := update(&sts, r.pandaCluster, r.logger)
 	if updated {
 		if err := r.Update(ctx, &sts); err != nil {
-			return fmt.Errorf("failed to update StatefulSet: %w", err)
+			return fmt.Errorf("failed to update StatefulSet replicas or resources: %w", err)
 		}
 	}
 
 	if err := r.updateStsImage(ctx, &sts); err != nil {
-		return err
+		return fmt.Errorf("failed to update StatefulSet image: %w", err)
 	}
 
 	return nil

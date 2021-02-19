@@ -27,6 +27,7 @@ import (
 )
 
 var _ resources.NodesLister = &NodeWatcher{}
+var _ resources.NodeExternalIPFetcher = &NodeWatcher{}
 
 const (
 	nodeIPsList = "node-list.txt"
@@ -41,8 +42,9 @@ type NodeWatcher struct {
 	Log	logr.Logger
 	Scheme	*runtime.Scheme
 
-	nodeExternalIPs	sync.Map
+	nodeListIPs	sync.Map
 	configMapNames	[]types.NamespacedName
+	nodeExternalIP	sync.Map
 }
 
 // Reconcile is the function that watches for node changes and updates
@@ -73,7 +75,8 @@ func (n *NodeWatcher) Reconcile(
 		}
 	}
 
-	n.nodeExternalIPs.Store(internalIP, externalIP)
+	n.nodeListIPs.Store(internalIP, externalIP)
+	n.nodeExternalIP.Store(node.Name, externalIP)
 
 	for _, name := range n.configMapNames {
 		cm := corev1.ConfigMap{}
@@ -119,7 +122,7 @@ func (n *NodeWatcher) RegisterConfigMap(name types.NamespacedName) error {
 // of all nodes.
 func (n *NodeWatcher) getNodeList() string {
 	IPsList := strings.Builder{}
-	n.nodeExternalIPs.Range(func(internalIP, externalIP interface{}) bool {
+	n.nodeListIPs.Range(func(internalIP, externalIP interface{}) bool {
 		intIP, ok := internalIP.(string)
 		if !ok {
 			return true
@@ -135,4 +138,19 @@ func (n *NodeWatcher) getNodeList() string {
 	})
 
 	return IPsList.String()
+}
+
+// GetExternalIP returns cached external IP of an requested node
+func (n *NodeWatcher) GetExternalIP(name string) string {
+	externalIP, exist := n.nodeExternalIP.Load(name)
+	if !exist {
+		return ""
+	}
+
+	extIP, ok := externalIP.(string)
+	if !ok {
+		return ""
+	}
+
+	return extIP
 }

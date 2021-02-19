@@ -12,7 +12,9 @@ package resources
 
 import (
 	"context"
+	"errors"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -31,4 +33,18 @@ type Resource interface {
 
 	// Ensure reconcile only one resource available in Kubernetes API server
 	Ensure(ctx context.Context) error
+}
+
+var errNodePortMissing = errors.New("the node port missing from the service")
+
+func getNodePort(svc *corev1.Service) int32 {
+	if svc == nil {
+		return -1
+	}
+	for _, port := range svc.Spec.Ports {
+		if port.NodePort != 0 {
+			return port.NodePort
+		}
+	}
+	return 0
 }
