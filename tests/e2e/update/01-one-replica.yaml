@@ -8,7 +8,7 @@ spec:
   replicas: 1
   resources:
     requests:
-      cpu: 1
+      cpu: 100m
       memory: 100M
     limits:
       cpu: 1
