@@ -404,7 +404,7 @@ func (r *StatefulSetResource) portsConfiguration() string {
 			kafkaAPIPort,
 			svcName, rpcAPIPort,
 			rpcAPIPort,
-			svcName, dnsSubdomain, r.getNodePort(),
+			svcName, dnsSubdomain, GetNodePort(r.nodePortSvc.LastObservedState),
 			externalKafkaAPIPort)
 	}
 	// In every dns name there is trailing dot to query absolute path
@@ -414,16 +414,6 @@ func (r *StatefulSetResource) portsConfiguration() string {
 		" --advertise-rpc-addr=$(POD_NAME).%s.$(POD_NAMESPACE).svc.cluster.local.:%d"+
 		" --rpc-addr=$(POD_IP):%d",
 		svcName, kafkaAPIPort, kafkaAPIPort, svcName, rpcAPIPort, rpcAPIPort)
-}
-
-func (r *StatefulSetResource) getNodePort() int32 {
-	for _, port := range r.nodePortSvc.LastObservedState.Spec.Ports {
-		if port.NodePort != 0 {
-			return port.NodePort
-		}
-	}
-
-	return -1
 }
 
 func (r *StatefulSetResource) getPorts() []corev1.ContainerPort {

@@ -111,14 +111,32 @@ func (r *ClusterReconciler) Reconcile(
 		return ctrl.Result{}, err
 	}
 
-	observedNodes := make([]string, 0, len(observedPods.Items))
+	observedNodesInternal := make([]string, 0, len(observedPods.Items))
+	observedNodesExternal := make([]string, 0, len(observedPods.Items))
 	// nolint:gocritic // the copies are necessary for further redpandacluster updates
 	for _, item := range observedPods.Items {
-		observedNodes = append(observedNodes, fmt.Sprintf("%s.%s", item.Name, headlessSvc.HeadlessServiceFQDN()))
+		observedNodesInternal = append(observedNodesInternal,
+			fmt.Sprintf("%s.%s", item.Name, headlessSvc.HeadlessServiceFQDN()))
+
+		observedNodesExternal = append(observedNodesExternal,
+			fmt.Sprintf("%s.%s.%s.%s.:%d",
+				item.Name,
+				redpandaCluster.Name,
+				redpandaCluster.Namespace,
+				redpandaCluster.Spec.ExternalDNSSubdomain,
+				resources.GetNodePort(nodePortSvc.LastObservedState),
+			))
 	}
 
-	if !reflect.DeepEqual(observedNodes, redpandaCluster.Status.Nodes) {
-		redpandaCluster.Status.Nodes = observedNodes
+	if !reflect.DeepEqual(observedNodesInternal, redpandaCluster.Status.Nodes) {
+		redpandaCluster.Status.Nodes.Internal = observedNodesInternal
+
+		if !redpandaCluster.Spec.ExternalConnectivity {
+			observedNodesExternal = make([]string, 0, len(observedPods.Items))
+		}
+
+		redpandaCluster.Status.Nodes.External = observedNodesExternal
+
 		if err := r.Status().Update(ctx, &redpandaCluster); err != nil {
 			log.Error(err, "Failed to update RedpandaClusterStatus")
 
