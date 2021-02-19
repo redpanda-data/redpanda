@@ -15,7 +15,6 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "seastarx.h"
-#include "storage/ntp_config.h"
 
 #include <seastar/util/bool_class.hh>
 

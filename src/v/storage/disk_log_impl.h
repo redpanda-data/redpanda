@@ -14,7 +14,6 @@
 #include "model/fundamental.h"
 #include "storage/disk_log_appender.h"
 #include "storage/failure_probes.h"
-#include "storage/kvstore.h"
 #include "storage/lock_manager.h"
 #include "storage/log.h"
 #include "storage/log_reader.h"

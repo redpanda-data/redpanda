@@ -16,6 +16,7 @@
 #include "model/timestamp.h"
 #include "seastarx.h"
 #include "storage/log_appender.h"
+#include "storage/ntp_config.h"
 #include "storage/segment_reader.h"
 #include "storage/types.h"
 

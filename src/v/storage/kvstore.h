@@ -12,6 +12,7 @@
 #pragma once
 #include "bytes/iobuf.h"
 #include "seastarx.h"
+#include "storage/ntp_config.h"
 #include "storage/parser.h"
 #include "storage/segment_set.h"
 #include "storage/snapshot.h"

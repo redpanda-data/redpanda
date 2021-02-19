@@ -16,6 +16,8 @@
 #include "raft/tests/raft_group_fixture.h"
 #include "raft/types.h"
 #include "random/generators.h"
+#include "storage/api.h"
+#include "storage/kvstore.h"
 #include "storage/record_batch_builder.h"
 #include "storage/tests/utils/disk_log_builder.h"
 #include "storage/tests/utils/random_batch.h"

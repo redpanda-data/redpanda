@@ -15,7 +15,6 @@
 #include "model/validation.h"
 #include "rpc/server.h"
 #include "rpc/types.h"
-#include "storage/api.h"
 #include "storage/log.h"
 
 #include <seastar/core/future.hh>

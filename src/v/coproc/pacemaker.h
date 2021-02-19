@@ -17,7 +17,7 @@
 #include "coproc/script_context.h"
 #include "coproc/types.h"
 #include "rpc/reconnect_transport.h"
-#include "storage/api.h"
+#include "storage/fwd.h"
 #include "storage/snapshot.h"
 
 #include <seastar/core/sharded.hh>

@@ -14,6 +14,7 @@
 #include "random/generators.h"
 #include "storage/disk_log_appender.h"
 #include "storage/log_reader.h"
+#include "storage/segment.h"
 #include "storage/segment_appender.h"
 #include "storage/segment_appender_utils.h"
 #include "storage/segment_reader.h"

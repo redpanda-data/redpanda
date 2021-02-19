@@ -11,8 +11,8 @@
 
 #pragma once
 #include "model/fundamental.h"
+#include "storage/fwd.h"
 #include "storage/logger.h"
-#include "storage/segment.h"
 
 #include <seastar/core/metrics_registration.hh>
 #include <seastar/core/shared_ptr.hh>

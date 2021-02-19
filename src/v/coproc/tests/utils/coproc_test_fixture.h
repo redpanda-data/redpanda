@@ -15,7 +15,6 @@
 #include "model/record_batch_reader.h"
 #include "random/generators.h"
 #include "redpanda/tests/fixture.h"
-#include "storage/api.h"
 #include "test_utils/fixture.h"
 
 #include <seastar/core/future.hh>
