@@ -46,6 +46,9 @@ type ClusterStatus struct {
 	// Nodes of the provisioned redpanda nodes
 	// +optional
 	Nodes	[]string	`json:"nodes,omitempty"`
+	// Indicates cluster is upgrading
+	// +optional
+	Upgrading	bool	`json:"upgrading"`
 }
 
 //+kubebuilder:object:root=true

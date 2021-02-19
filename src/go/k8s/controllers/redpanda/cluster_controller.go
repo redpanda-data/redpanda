@@ -72,8 +72,8 @@ func (r *ClusterReconciler) Reconcile(
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	sts := resources.NewStatefulSet(r.Client, &redpandaCluster, r.Scheme, log)
 	svc := resources.NewService(r.Client, &redpandaCluster, r.Scheme, log)
+	sts := resources.NewStatefulSet(r.Client, &redpandaCluster, r.Scheme, svc, log)
 	toApply := []resources.Resource{
 		svc,
 		resources.NewConfigMap(r.Client, &redpandaCluster, r.Scheme, svc, r.polymorphicAdvertisedAPI, log),
@@ -82,6 +82,13 @@ func (r *ClusterReconciler) Reconcile(
 
 	for _, res := range toApply {
 		err := res.Ensure(ctx)
+
+		var e *resources.NeedToReconcileError
+		if errors.As(err, &e) {
+			log.Info(e.Error())
+			return ctrl.Result{RequeueAfter: e.RequeueAfter}, nil
+		}
+
 		if err != nil {
 			log.Error(err, "Failed to reconcile resource")
 		}
