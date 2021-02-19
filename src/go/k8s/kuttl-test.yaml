@@ -11,3 +11,4 @@ commands:
   - command: "kubectl apply -k config/default"
 artifactsDir: tests/e2e/_artifacts
 timeout: 180
+parallel: 1
