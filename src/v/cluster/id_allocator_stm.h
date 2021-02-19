@@ -26,7 +26,7 @@ namespace config {
 struct configuration;
 }
 
-namespace raft {
+namespace cluster {
 
 // id_allocator is a service to generate cluster-wide unique id (int64)
 // It is based on a state machine running on top of a raft log. For each
@@ -165,4 +165,4 @@ private:
     std::vector<cached_allocation_cmd> _cache;
 };
 
-} // namespace raft
+} // namespace cluster

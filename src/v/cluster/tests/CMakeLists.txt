@@ -28,7 +28,8 @@ set(srcs
     topic_updates_dispatcher_test.cc
     controller_backend_test.cc
     configuration_change_test.cc
-    seq_stm_tests.cc)
+    seq_stm_tests.cc
+    id_allocator_stm_test.cc)
 
 rp_test(
   UNIT_TEST

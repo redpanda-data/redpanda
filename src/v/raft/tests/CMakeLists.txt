@@ -31,7 +31,6 @@ set(srcs
     mux_state_machine_test.cc
     mutex_buffer_test.cc
     manual_log_deletion_test.cc
-    id_allocator_stm_test.cc
     state_removal_test.cc
     configuration_manager_test.cc)
 

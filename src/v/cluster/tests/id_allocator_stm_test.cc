@@ -7,12 +7,12 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+#include "cluster/id_allocator_stm.h"
 #include "config/configuration.h"
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/timeout_clock.h"
 #include "outcome.h"
-#include "raft/id_allocator_stm.h"
 #include "raft/tests/mux_state_machine_fixture.h"
 #include "raft/types.h"
 #include "random/generators.h"
@@ -45,7 +45,7 @@ FIXTURE_TEST(stm_monotonicity_test, mux_state_machine_fixture) {
     cfg.id_allocator_batch_size.set_value(int16_t(1));
     cfg.id_allocator_log_capacity.set_value(int16_t(2));
 
-    raft::id_allocator_stm stm(idstmlog, _raft.get(), cfg);
+    cluster::id_allocator_stm stm(idstmlog, _raft.get(), cfg);
 
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
@@ -72,7 +72,7 @@ FIXTURE_TEST(stm_restart_test, mux_state_machine_fixture) {
     cfg.id_allocator_batch_size.set_value(int16_t(1));
     cfg.id_allocator_log_capacity.set_value(int16_t(2));
 
-    raft::id_allocator_stm stm1(idstmlog, _raft.get(), cfg);
+    cluster::id_allocator_stm stm1(idstmlog, _raft.get(), cfg);
     stm1.start().get0();
     wait_for_leader();
 
@@ -89,7 +89,7 @@ FIXTURE_TEST(stm_restart_test, mux_state_machine_fixture) {
     }
     stm1.stop().get0();
 
-    raft::id_allocator_stm stm2(idstmlog, _raft.get(), cfg);
+    cluster::id_allocator_stm stm2(idstmlog, _raft.get(), cfg);
     stm2.start().get0();
     for (int i = 0; i < 5; i++) {
         auto result

@@ -26,7 +26,7 @@ partition::partition(consensus_ptr r)
   , _probe(*this) {
     auto stm_manager = _raft->log().stm_manager();
     if (is_id_allocator_topic(_raft->ntp())) {
-        _id_allocator_stm = ss::make_lw_shared<raft::id_allocator_stm>(
+        _id_allocator_stm = ss::make_lw_shared<cluster::id_allocator_stm>(
           clusterlog, _raft.get(), config::shard_local_cfg());
     } else {
         if (_raft->log_config().is_collectable()) {
