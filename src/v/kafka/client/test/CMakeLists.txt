@@ -2,6 +2,7 @@ rp_test(
   UNIT_TEST
   BINARY_NAME test_kafka_client
   SOURCES
+    fetch_session.cc
     produce_batcher.cc
     produce_partition.cc
     retry_with_mitigation.cc
