@@ -80,7 +80,7 @@ func (r *StatefulSetResource) Ensure(ctx context.Context) error {
 
 	err := r.Get(ctx, r.Key(), &sts)
 	if err != nil && !k8serrors.IsNotFound(err) {
-		return err
+		return fmt.Errorf("unable to featch statefulset resource: %w", err)
 	}
 
 	if k8serrors.IsNotFound(err) {
@@ -88,13 +88,15 @@ func (r *StatefulSetResource) Ensure(ctx context.Context) error {
 
 		obj, err := r.Obj()
 		if err != nil {
-			return err
+			return fmt.Errorf("unable to construct statefulset: %w", err)
 		}
 
-		err = r.Create(ctx, obj)
+		if err := r.Create(ctx, obj); err != nil {
+			return fmt.Errorf("unable to create statefulset resource: %w", err)
+		}
 		r.LastObservedState = obj.(*appsv1.StatefulSet)
 
-		return err
+		return nil
 	}
 
 	r.LastObservedState = &sts
@@ -107,7 +109,7 @@ func (r *StatefulSetResource) Ensure(ctx context.Context) error {
 	}
 
 	if err := r.updateStsImage(ctx, &sts); err != nil {
-		return err
+		return fmt.Errorf("unable to update the containers images: %w", err)
 	}
 
 	return nil

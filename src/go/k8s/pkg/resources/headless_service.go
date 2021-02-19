@@ -54,6 +54,7 @@ func NewHeadlessService(
 }
 
 // Ensure will manage kubernetes v1.Service for redpanda.vectorized.io custom resource
+//nolint:dupl // we expect this to not be duplicated when more logic is added
 func (r *HeadlessServiceResource) Ensure(ctx context.Context) error {
 	var svc corev1.Service
 

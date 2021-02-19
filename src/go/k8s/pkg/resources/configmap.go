@@ -71,12 +71,13 @@ func NewConfigMap(
 }
 
 // Ensure will manage kubernetes v1.ConfigMap for redpanda.vectorized.io CR
+//nolint:dupl // we expect this to not be duplicated when more logic is added
 func (r *ConfigMapResource) Ensure(ctx context.Context) error {
 	var cfgm corev1.ConfigMap
 
 	err := r.Get(ctx, r.Key(), &cfgm)
 	if err != nil && !errors.IsNotFound(err) {
-		return err
+		return fmt.Errorf("unable to featch configmap resource: %w", err)
 	}
 
 	if errors.IsNotFound(err) {
@@ -84,10 +85,12 @@ func (r *ConfigMapResource) Ensure(ctx context.Context) error {
 
 		obj, err := r.Obj()
 		if err != nil {
-			return err
+			return fmt.Errorf("unable to construct config map: %w", err)
 		}
 
-		return r.Create(ctx, obj)
+		if err := r.Create(ctx, obj); err != nil {
+			return fmt.Errorf("unable to create configmap resource: %w", err)
+		}
 	}
 
 	return nil
