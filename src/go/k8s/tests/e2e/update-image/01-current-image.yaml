@@ -4,11 +4,11 @@ metadata:
   name: update-image-cluster
 spec:
   image: "vectorized/redpanda"
-  version: "v21.2.1"
+  version: "v21.2.2"
   replicas: 2
   resources:
     requests:
-      cpu: 1
+      cpu: 100m
       memory: 2Gi
     limits:
       cpu: 1

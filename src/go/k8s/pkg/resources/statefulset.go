@@ -227,18 +227,47 @@ func (r *StatefulSetResource) Obj() (k8sclient.Object, error) {
 							Name:	redpandaContainerName,
 							Image:	r.pandaCluster.Spec.Image + ":" + r.pandaCluster.Spec.Version,
 							Args: []string{
+								"redpanda",
+								"start",
 								"--check=false",
 								"--smp 1",
 								"--memory " + strconv.FormatInt(memory.Value(), 10),
-								"start",
+								"--reserve-memory 0M",
+								r.portsConfiguration(),
 								"--",
 								"--default-log-level=debug",
-								"--reserve-memory 0M",
 							},
 							Env: []corev1.EnvVar{
 								{
 									Name:	"REDPANDA_ENVIRONMENT",
 									Value:	"kubernetes",
+								},
+								{
+									Name:	"POD_NAME",
+									ValueFrom: &corev1.EnvVarSource{
+										FieldRef: &corev1.ObjectFieldSelector{
+											APIVersion:	"v1",
+											FieldPath:	"metadata.name",
+										},
+									},
+								},
+								{
+									Name:	"POD_NAMESPACE",
+									ValueFrom: &corev1.EnvVarSource{
+										FieldRef: &corev1.ObjectFieldSelector{
+											APIVersion:	"v1",
+											FieldPath:	"metadata.namespace",
+										},
+									},
+								},
+								{
+									Name:	"POD_IP",
+									ValueFrom: &corev1.EnvVarSource{
+										FieldRef: &corev1.ObjectFieldSelector{
+											APIVersion:	"v1",
+											FieldPath:	"status.podIP",
+										},
+									},
 								},
 							},
 							Ports: []corev1.ContainerPort{
@@ -338,6 +367,20 @@ func (r *StatefulSetResource) Key() types.NamespacedName {
 // Kind returns v1.StatefulSet kind
 func (r *StatefulSetResource) Kind() string {
 	return statefulSetKind()
+}
+
+func (r *StatefulSetResource) portsConfiguration() string {
+	kafkaAPIPort := r.pandaCluster.Spec.Configuration.KafkaAPI.Port
+	rpcAPIPort := r.pandaCluster.Spec.Configuration.RPCServer.Port
+	svcName := r.svc.Key().Name
+
+	// In every dns name there is trailing dot to query absolute path
+	// For trailing dot explanation please visit http://www.dns-sd.org/trailingdotsindomainnames.html
+	return fmt.Sprintf("--advertise-kafka-addr=internal://$(POD_NAME).%s.$(POD_NAMESPACE).svc.cluster.local.:%d"+
+		" --kafka-addr=internal://$(POD_IP):%d"+
+		" --advertise-rpc-addr=$(POD_NAME).%s.$(POD_NAMESPACE).svc.cluster.local.:%d"+
+		" --rpc-addr=$(POD_IP):%d",
+		svcName, kafkaAPIPort, kafkaAPIPort, svcName, rpcAPIPort, rpcAPIPort)
 }
 
 func statefulSetKind() string {
