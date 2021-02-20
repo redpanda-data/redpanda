@@ -41,11 +41,4 @@ public:
       std::size_t,
       model::offset = model::offset(0),
       model::timeout_clock::time_point = model::timeout_clock::now() + 5s);
-
-private:
-    ss::future<model::record_batch_reader::data_t> do_drain(
-      kafka::partition_wrapper,
-      model::offset,
-      std::size_t,
-      model::timeout_clock::time_point);
 };
