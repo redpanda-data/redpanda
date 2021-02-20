@@ -29,6 +29,12 @@ configuration::configuration()
       "Rest API listen address and port",
       config::required::no,
       unresolved_address("127.0.0.1", 8082))
+  , advertised_pandaproxy_api(
+      *this,
+      "advertised_pandaproxy_api",
+      "Rest API address and port to publish to client",
+      config::required::no,
+      pandaproxy_api)
   , admin_api(
       *this,
       "admin_api",

@@ -1,0 +1,20 @@
+    "/consumers/{group_name}/instances/{instance}/subscription": {
+      "post": {
+        "summary": "Subscribe a consumer group to topics",
+        "operationId": "subscribe_consumer",
+        "parameters": [
+          {
+            "name": "group_name",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "instance",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ]
+      }
+    }
