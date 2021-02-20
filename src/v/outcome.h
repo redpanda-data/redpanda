@@ -24,6 +24,9 @@
 
 namespace outcome = boost::outcome_v2;
 
+template<class S>
+using failure_type = outcome::failure_type<S>;
+
 template<
   class R,
   class S = std::error_code,

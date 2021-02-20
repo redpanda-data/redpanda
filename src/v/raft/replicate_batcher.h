@@ -27,7 +27,6 @@ class replicate_batcher {
 public:
     struct item {
         ss::promise<result<replicate_result>> _promise;
-        replicate_result ret;
         size_t record_count;
         std::vector<model::record_batch> data;
         std::optional<model::term_id> expected_term;

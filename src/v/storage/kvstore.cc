@@ -34,6 +34,7 @@ kvstore::kvstore(kvstore_config kv_conf)
   , _ntpc(model::kvstore_ntp(ss::this_shard_id()), _conf.base_dir)
   , _snap(
       std::filesystem::path(_ntpc.work_directory()),
+      snapshot_manager::default_snapshot_filename,
       ss::default_priority_class())
   , _timer([this] { _sem.signal(); }) {}
 

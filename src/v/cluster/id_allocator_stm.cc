@@ -7,19 +7,19 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "raft/id_allocator_stm.h"
+#include "cluster/id_allocator_stm.h"
 
+#include "cluster/logger.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "raft/consensus.h"
 #include "raft/errc.h"
-#include "raft/logger.h"
 #include "raft/types.h"
 #include "storage/record_batch_builder.h"
 
 #include <seastar/core/future.hh>
 
-namespace raft {
+namespace cluster {
 
 template<typename T>
 model::record_batch serialize_cmd(T t, model::record_batch_type type) {
@@ -260,4 +260,4 @@ id_allocator_stm::replicate(model::record_batch&& batch) {
       raft::replicate_options{raft::consistency_level::quorum_ack});
 }
 
-} // namespace raft
+} // namespace cluster

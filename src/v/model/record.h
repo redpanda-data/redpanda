@@ -407,6 +407,44 @@ struct record_batch_header {
     friend std::ostream& operator<<(std::ostream&, const record_batch_header&);
 };
 
+struct producer_identity {
+    int64_t id{-1};
+    int16_t epoch{0};
+
+    // https://en.cppreference.com/w/cpp/language/default_comparisons
+    bool operator==(const producer_identity&) const = default;
+
+    template<typename H>
+    friend H AbslHashValue(H h, const producer_identity& pid) {
+        return H::combine(std::move(h), pid.id, pid.epoch);
+    }
+};
+
+struct batch_identity {
+    static int32_t increment_sequence(int32_t sequence, int32_t increment) {
+        if (sequence > std::numeric_limits<int32_t>::max() - increment) {
+            return increment - (std::numeric_limits<int32_t>::max() - sequence)
+                   - 1;
+        }
+        return sequence + increment;
+    }
+
+    static batch_identity from(const record_batch_header& hdr) {
+        return batch_identity{
+          .pid = model::
+            producer_identity{.id = hdr.producer_id, .epoch = hdr.producer_epoch},
+          .first_seq = hdr.base_sequence,
+          .last_seq = increment_sequence(
+            hdr.base_sequence, hdr.last_offset_delta)};
+    }
+
+    producer_identity pid;
+    int32_t first_seq{0};
+    int32_t last_seq{0};
+
+    bool has_idempotent() { return pid.id >= 0; }
+};
+
 // 57 bytes
 constexpr uint32_t packed_record_batch_header_size
   = sizeof(model::record_batch_header::header_crc)          // 4

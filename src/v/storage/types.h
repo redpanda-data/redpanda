@@ -38,6 +38,66 @@ constexpr model::record_batch_type ghost_record_batch_type
 using log_clock = ss::lowres_clock;
 using debug_sanitize_files = ss::bool_class<struct debug_sanitize_files_tag>;
 
+class snapshotable_stm {
+public:
+    // create a snapshot at given offset unless a snapshot with given or newer
+    // offset already exists
+    virtual ss::future<> ensure_snapshot_exists(model::offset) = 0;
+    // hints stm_manager that now it's a good time to make a snapshot
+    virtual ss::future<> make_snapshot() = 0;
+};
+
+/**
+ * stm_manager is an interface responsible for the coordination of state
+ * machines  snapshotting and the log operations such as eviction and
+ * compaction. We use  snapshots for two purposes:
+ *
+ *   - To make the start up faster by reading the last snapshot and catching up
+ *     with events written after the snapshot was made instead of reading the
+ *     whole log from the beginning.
+ *
+ *   - To reduce storage consumption by storing only a state and by removing
+ *     the history of the events leading to the state.
+ *
+ * However when the snapshotting and log removal isn't synchronised it may lead
+ * to data loss. Let a log eviction happens before snapshotting then it leads
+ * to a situation when the state exists only in RAM which makes the system
+ * vulnerable to power outages.
+ *
+ * We pass stm_manager to log.h and eviction_stm.h to give them a way to make
+ * sure that a snapshot with given or newer offset exists before removing the
+ * prior events. When a snapshot doesn't exist stm_manager makes the snapshot
+ * and returns control flow.
+ *
+ * make_snapshot lets log to hint when it's good time to make a snapshot e.g.
+ * after a segment roll. It's up to a state machine to decide whether to make
+ * it now or on its own pace.
+ */
+class stm_manager {
+public:
+    void add_stm(ss::shared_ptr<snapshotable_stm> stm) { _stms.push_back(stm); }
+
+    ss::future<> ensure_snapshot_exists(model::offset offset) {
+        auto f = ss::now();
+        for (auto stm : _stms) {
+            f = f.then(
+              [stm, offset]() { return stm->ensure_snapshot_exists(offset); });
+        }
+        return f;
+    }
+
+    ss::future<> make_snapshot() {
+        auto f = ss::now();
+        for (auto stm : _stms) {
+            f = f.then([stm]() { return stm->make_snapshot(); });
+        }
+        return f;
+    }
+
+private:
+    std::vector<ss::shared_ptr<snapshotable_stm>> _stms;
+};
+
 /// returns base_offset's from batches. Not max_offsets
 struct offset_stats {
     model::offset start_offset;

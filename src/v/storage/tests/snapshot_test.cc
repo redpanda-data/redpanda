@@ -14,13 +14,19 @@
 #include <seastar/testing/thread_test_case.hh>
 
 SEASTAR_THREAD_TEST_CASE(missing_snapshot_is_not_error) {
-    storage::snapshot_manager mgr("d/n/e", ss::default_priority_class());
+    storage::snapshot_manager mgr(
+      "d/n/e",
+      storage::snapshot_manager::default_snapshot_filename,
+      ss::default_priority_class());
     auto reader = mgr.open_snapshot().get0();
     BOOST_REQUIRE(!reader);
 }
 
 SEASTAR_THREAD_TEST_CASE(reading_from_empty_snapshot_is_error) {
-    storage::snapshot_manager mgr(".", ss::default_priority_class());
+    storage::snapshot_manager mgr(
+      ".",
+      storage::snapshot_manager::default_snapshot_filename,
+      ss::default_priority_class());
     try {
         ss::remove_file(mgr.snapshot_path().string()).get();
     } catch (...) {
@@ -47,7 +53,10 @@ SEASTAR_THREAD_TEST_CASE(reading_from_empty_snapshot_is_error) {
 }
 
 SEASTAR_THREAD_TEST_CASE(reader_verifies_header_crc) {
-    storage::snapshot_manager mgr(".", ss::default_priority_class());
+    storage::snapshot_manager mgr(
+      ".",
+      storage::snapshot_manager::default_snapshot_filename,
+      ss::default_priority_class());
     try {
         ss::remove_file(mgr.snapshot_path().string()).get();
     } catch (...) {
@@ -81,7 +90,10 @@ SEASTAR_THREAD_TEST_CASE(reader_verifies_header_crc) {
 }
 
 SEASTAR_THREAD_TEST_CASE(reader_verifies_metadata_crc) {
-    storage::snapshot_manager mgr(".", ss::default_priority_class());
+    storage::snapshot_manager mgr(
+      ".",
+      storage::snapshot_manager::default_snapshot_filename,
+      ss::default_priority_class());
     try {
         ss::remove_file(mgr.snapshot_path().string()).get();
     } catch (...) {
@@ -117,7 +129,10 @@ SEASTAR_THREAD_TEST_CASE(reader_verifies_metadata_crc) {
 }
 
 SEASTAR_THREAD_TEST_CASE(read_write) {
-    storage::snapshot_manager mgr(".", ss::default_priority_class());
+    storage::snapshot_manager mgr(
+      ".",
+      storage::snapshot_manager::default_snapshot_filename,
+      ss::default_priority_class());
     try {
         ss::remove_file(mgr.snapshot_path().string()).get();
     } catch (...) {
@@ -144,7 +159,10 @@ SEASTAR_THREAD_TEST_CASE(read_write) {
 }
 
 SEASTAR_THREAD_TEST_CASE(remove_partial_snapshots) {
-    storage::snapshot_manager mgr(".", ss::default_priority_class());
+    storage::snapshot_manager mgr(
+      ".",
+      storage::snapshot_manager::default_snapshot_filename,
+      ss::default_priority_class());
 
     auto mk_partial = [&] {
         auto writer = mgr.start_snapshot().get0();

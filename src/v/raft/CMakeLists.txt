@@ -28,7 +28,6 @@ v_cc_library(
     event_manager.cc
     state_machine.cc
     log_eviction_stm.cc
-    id_allocator_stm.cc
     configuration_manager.cc
     group_configuration.cc
     append_entries_buffer.cc

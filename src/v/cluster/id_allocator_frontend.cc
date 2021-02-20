@@ -152,7 +152,7 @@ id_allocator_frontend::do_allocate_id(model::timeout_clock::duration timeout) {
           }
           return stm
             ->allocate_id_and_wait(model::timeout_clock::now() + timeout)
-            .then([](raft::id_allocator_stm::stm_allocation_result r) {
+            .then([](id_allocator_stm::stm_allocation_result r) {
                 if (r.raft_status == raft::errc::success) {
                     return allocate_id_reply{r.id, errc::success};
                 } else {
