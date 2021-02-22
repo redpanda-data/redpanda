@@ -11,7 +11,11 @@
 package v1alpha1
 
 import (
+	"reflect"
+
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
@@ -45,17 +49,29 @@ var _ webhook.Validator = &Cluster{}
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type
 func (r *Cluster) ValidateCreate() error {
 	log.Info("validate create", "name", r.Name)
-
-	// TODO(user): fill in your validation logic upon object creation.
 	return nil
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
 func (r *Cluster) ValidateUpdate(old runtime.Object) error {
 	log.Info("validate update", "name", r.Name)
+	oldCluster := old.(*Cluster)
+	var allErrs field.ErrorList
 
-	// TODO(user): fill in your validation logic upon object update.
-	return nil
+	if r.Spec.Replicas != nil && oldCluster.Spec.Replicas != nil && *r.Spec.Replicas < *oldCluster.Spec.Replicas {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("replicas"), r.Spec.Replicas, "scaling down is not supported"))
+	}
+	if !reflect.DeepEqual(r.Spec.Configuration, oldCluster.Spec.Configuration) {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("configuration"), r.Spec.Configuration, "updating configuration is not supported"))
+	}
+
+	if len(allErrs) == 0 {
+		return nil
+	}
+
+	return apierrors.NewInvalid(
+		r.GroupVersionKind().GroupKind(),
+		r.Name, allErrs)
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type
