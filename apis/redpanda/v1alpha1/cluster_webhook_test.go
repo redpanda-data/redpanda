@@ -69,7 +69,7 @@ func TestValidateUpdate(t *testing.T) {
 	}
 }
 
-func TestValidateUpdate_NoError_SameObject(t *testing.T) {
+func TestValidateUpdate_NoError(t *testing.T) {
 	var replicas2 int32 = 2
 
 	redpandaCluster := &v1alpha1.Cluster{
@@ -88,6 +88,25 @@ func TestValidateUpdate_NoError_SameObject(t *testing.T) {
 			},
 		},
 	}
-	err := redpandaCluster.ValidateUpdate(redpandaCluster)
-	assert.NoError(t, err)
+
+	t.Run("same object updated", func(t *testing.T) {
+		err := redpandaCluster.ValidateUpdate(redpandaCluster)
+		assert.NoError(t, err)
+	})
+
+	t.Run("scale up", func(t *testing.T) {
+		var scaleUp int32 = *redpandaCluster.Spec.Replicas + 1
+		updatedScaleUp := redpandaCluster.DeepCopy()
+		updatedScaleUp.Spec.Replicas = &scaleUp
+		err := updatedScaleUp.ValidateUpdate(redpandaCluster)
+		assert.NoError(t, err)
+	})
+
+	t.Run("change image and tag", func(t *testing.T) {
+		updatedImage := redpandaCluster.DeepCopy()
+		updatedImage.Spec.Image = "differentimage"
+		updatedImage.Spec.Version = "111"
+		err := updatedImage.ValidateUpdate(redpandaCluster)
+		assert.NoError(t, err)
+	})
 }
