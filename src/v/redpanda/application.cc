@@ -233,18 +233,20 @@ void application::configure_admin_server() {
                 .then([this, &server](
                         std::optional<ss::tls::credentials_builder> builder) {
                     if (!builder) {
-                        return;
+                        return ss::now();
                     }
-                    server.set_tls_credentials(
-                      builder
-                        ->build_reloadable_server_credentials(
-                          [this](
-                            const std::unordered_set<ss::sstring>& updated,
-                            const std::exception_ptr& eptr) {
-                              cluster::log_certificate_reload_event(
-                                _log, "API TLS", updated, eptr);
-                          })
-                        .get0());
+
+                    return builder
+                      ->build_reloadable_server_credentials(
+                        [this](
+                          const std::unordered_set<ss::sstring>& updated,
+                          const std::exception_ptr& eptr) {
+                            cluster::log_certificate_reload_event(
+                              _log, "API TLS", updated, eptr);
+                        })
+                      .then([&server](auto cred) {
+                          server.set_tls_credentials(std::move(cred));
+                      });
                 });
           })
           .get0();

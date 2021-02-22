@@ -24,6 +24,7 @@
 #include "cluster/topics_frontend.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
+#include "likely.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
 
@@ -124,6 +125,10 @@ ss::future<> controller::shutdown_input() {
 
 ss::future<> controller::stop() {
     auto f = ss::now();
+    if (unlikely(!_raft0)) {
+        return f;
+    }
+
     if (!_as.local().abort_requested()) {
         f = shutdown_input();
     }
