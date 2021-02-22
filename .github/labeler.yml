@@ -1,2 +1,18 @@
 area/k8s:
 - src/go/k8s/**/*
+
+area/build:
+- cmake/**/*
+- .github/**/*
+
+area/docs:
+- docs/**/*
+
+area/rpk:
+- src/go/rpk/**/*
+
+area/redpanda:
+- src/v/**/*
+
+area/wasm:
+- src/js/**/*
