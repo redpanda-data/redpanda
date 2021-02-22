@@ -9,7 +9,7 @@ With Redpanda you can get up and running with streaming quickly
 and be fully compatible with the [Kafka ecosystem](https://cwiki.apache.org/confluence/display/KAFKA/Ecosystem).
 
 This quick start guide can help you get started with Redpanda for development and testing purposes.
-For production or benchmarking, setup a [production deployment](production-deployment).
+For production or benchmarking, set up a [production deployment](production-deployment).
 
 ## Install Redpanda:
 
@@ -17,7 +17,7 @@ We've simplified the installation process down to a few commands:
 
 - On Fedora/RedHat systems:
 
-     ```
+     ```bash
      ## Run the setup script to download and install the repo
      curl -1sLf 'https://packages.vectorized.io/nzc4ZYQK3WRGd9sy/redpanda/cfg/setup/bash.rpm.sh' | sudo -E bash && \
      ## Use yum to install redpanda
@@ -28,7 +28,7 @@ We've simplified the installation process down to a few commands:
 
 - On Debian/Ubuntu systems:
 
-     ```
+     ```bash
      ## Run the setup script to download and install the repo
      curl -1sLf 'https://packages.vectorized.io/nzc4ZYQK3WRGd9sy/redpanda/cfg/setup/bash.deb.sh' | sudo -E bash && \
      ## Use apt to install redpanda
@@ -41,7 +41,7 @@ To see that Redpanda is up and running, run: `sudo systemctl status redpanda`
 
 The output should look like:
 
-```sh
+```bash
 ● redpanda.service - Redpanda, the fastest queue in the West.
      Loaded: loaded (/lib/systemd/system/redpanda.service; enabled; vendor preset: enabled)
      Active: active (running)
@@ -53,19 +53,15 @@ You now have a single node cluster running Redpanda!
 
 Here are the basic commands to produce and consume streams:
 
-## Do some streaming
-
-Here are the basic commands to produce and consume streams:
-
 1. Create a topic. We'll call it "twitch_chat":
 
-    ```
+    ```bash
     rpk topic create twitch_chat
     ```
 
 1. Produce messages to the topic:
 
-    ```
+    ```bash
     rpk topic produce twitch_chat
     ```
 
@@ -75,13 +71,13 @@ Here are the basic commands to produce and consume streams:
 
 1. Consume (or read) the messages in the topic:
 
-    ```
+    ```bash
     rpk topic consume twitch_chat
     ```
     
     Each message is shown with its metadata, like this:
     
-    ```
+    ```bash
     {
     "message": "How do you stream with Redpanda?\n",
     "partition": 0,
