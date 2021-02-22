@@ -14,7 +14,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"k8s.io/utils/pointer"
@@ -34,6 +36,11 @@ func TestValidateUpdate(t *testing.T) {
 			Configuration: v1alpha1.RedpandaConfig{
 				KafkaAPI: v1alpha1.SocketAddress{Port: 123},
 			},
+			Resources: corev1.ResourceRequirements{
+				Limits: corev1.ResourceList{
+					corev1.ResourceMemory: resource.MustParse("1G"),
+				},
+			},
 		},
 	}
 
@@ -50,7 +57,7 @@ func TestValidateUpdate(t *testing.T) {
 
 	// verify the error causes contain all expected fields
 	statusError := err.(*apierrors.StatusError)
-	expectedFields := []string{field.NewPath("spec").Child("configuration").String(), field.NewPath("spec").Child("replicas").String()}
+	expectedFields := []string{field.NewPath("spec").Child("configuration").String(), field.NewPath("spec").Child("replicas").String(), field.NewPath("spec").Child("resources").Child("limits").Child("memory").String()}
 	for _, ef := range expectedFields {
 		found := false
 		for _, c := range statusError.Status().Details.Causes {
@@ -79,6 +86,11 @@ func TestValidateUpdate_NoError(t *testing.T) {
 				KafkaAPI:	v1alpha1.SocketAddress{Port: 123},
 				AdminAPI:	v1alpha1.SocketAddress{Port: 125},
 				RPCServer:	v1alpha1.SocketAddress{Port: 126},
+			},
+			Resources: corev1.ResourceRequirements{
+				Limits: corev1.ResourceList{
+					corev1.ResourceMemory: resource.MustParse("2G"),
+				},
 			},
 		},
 	}
@@ -136,6 +148,11 @@ func TestCreation(t *testing.T) {
 				AdminAPI:	v1alpha1.SocketAddress{Port: 125},
 				RPCServer:	v1alpha1.SocketAddress{Port: 126},
 			},
+			Resources: corev1.ResourceRequirements{
+				Limits: corev1.ResourceList{
+					corev1.ResourceMemory: resource.MustParse("2G"),
+				},
+			},
 		},
 	}
 
@@ -154,6 +171,18 @@ func TestCreation(t *testing.T) {
 		updatePort.Spec.Configuration.RPCServer.Port = 200
 
 		err := updatePort.ValidateCreate()
+		assert.Error(t, err)
+	})
+
+	t.Run("incorrect memory", func(t *testing.T) {
+		memory := redpandaCluster.DeepCopy()
+		memory.Spec.Resources = corev1.ResourceRequirements{
+			Limits: corev1.ResourceList{
+				corev1.ResourceMemory: resource.MustParse("1G"),
+			},
+		}
+
+		err := memory.ValidateCreate()
 		assert.Error(t, err)
 	})
 }

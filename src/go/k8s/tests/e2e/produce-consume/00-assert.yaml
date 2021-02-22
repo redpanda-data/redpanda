@@ -30,8 +30,7 @@ spec:
             - start
             - --check=false
             - --smp 1
-            - --memory 104857600
-            - --reserve-memory 0M
+            - --reserve-memory 1M
             - --advertise-kafka-addr=internal://$(POD_NAME).cluster-sample.$(POD_NAMESPACE).svc.cluster.local.:9092
               --kafka-addr=internal://$(POD_IP):9092
               --advertise-rpc-addr=$(POD_NAME).cluster-sample.$(POD_NAMESPACE).svc.cluster.local.:33145
