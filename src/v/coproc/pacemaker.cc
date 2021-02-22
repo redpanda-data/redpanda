@@ -110,7 +110,7 @@ std::vector<errc> pacemaker::add_source(
     }
     auto script_ctx = std::make_unique<script_context>(
       id, _shared_res, std::move(ctxs));
-    const auto& [itr, success] = _scripts.emplace(id, std::move(script_ctx));
+    const auto [itr, success] = _scripts.emplace(id, std::move(script_ctx));
     vassert(success, "Double coproc insert detected");
     (void)itr->second->start();
     return acks;
