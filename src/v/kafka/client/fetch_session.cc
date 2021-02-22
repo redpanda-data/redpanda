@@ -33,12 +33,8 @@ bool fetch_session::apply(fetch_response& res) {
     if (_id == invalid_fetch_session_id) {
         _id = fetch_session_id{res.session_id};
     }
+    vassert(res.session_id == _id, "session mismatch: {}", *this);
 
-    if (res.session_id != _id) {
-        vassert(false, "session mismatch: {}", *this);
-        _id = invalid_fetch_session_id;
-        return false;
-    }
     ++_epoch;
     for (auto& part : res) {
         if (part.partition_response->has_error()) {
