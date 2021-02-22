@@ -215,7 +215,7 @@ subscribe_consumer(server::request_t rq, server::reply_t rp) {
 
     return rq.ctx.client
       .subscribe_consumer(group_id, member_id, std::move(req_data.topics))
-      .then([group_id, rp{std::move(rp)}]() mutable {
+      .then([rp{std::move(rp)}]() mutable {
           // nothing to do!
           return std::move(rp);
       });
