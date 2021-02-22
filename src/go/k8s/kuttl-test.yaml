@@ -9,5 +9,5 @@ testDirs:
 kindConfig: ./kind.yaml
 commands:
   - command: "kubectl apply -k config/default"
-artifactsDir: tests/e2e/_artifacts
+artifactsDir: tests/_e2e_artifacts
 timeout: 300
