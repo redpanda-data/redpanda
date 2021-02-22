@@ -13,11 +13,18 @@ import (
 	"reflect"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+)
+
+const (
+	kb	= 1024
+	mb	= 1024 * kb
+	gb	= 1024 * mb
 )
 
 // log is for logging in this package.
@@ -55,6 +62,10 @@ func (r *Cluster) ValidateCreate() error {
 		allErrs = append(allErrs, err...)
 	}
 
+	if err := r.validateMemory(); err != nil {
+		allErrs = append(allErrs, err...)
+	}
+
 	if len(allErrs) == 0 {
 		return nil
 	}
@@ -87,6 +98,8 @@ func (r *Cluster) ValidateUpdate(old runtime.Object) error {
 		allErrs = append(allErrs, err...)
 	}
 
+	allErrs = append(allErrs, r.validateMemory()...)
+
 	if len(allErrs) == 0 {
 		return nil
 	}
@@ -94,6 +107,21 @@ func (r *Cluster) ValidateUpdate(old runtime.Object) error {
 	return apierrors.NewInvalid(
 		r.GroupVersionKind().GroupKind(),
 		r.Name, allErrs)
+}
+
+// ReserveMemoryString is amount of memory that we reserve for other processes than redpanda in the container
+const ReserveMemoryString = "1M"
+
+// validateMemory verifies that memory limits are aligned with the minimal requirement of redpanda
+// which is 1GB per core
+// to verify this, we need to subtract the 1M we reserve currently for other processes
+func (r *Cluster) validateMemory() field.ErrorList {
+	var allErrs field.ErrorList
+	quantity := resource.MustParse(ReserveMemoryString)
+	if !r.Spec.Configuration.DeveloperMode && (r.Spec.Resources.Limits.Memory().Value()-quantity.Value()) < gb {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("resources").Child("limits").Child("memory"), r.Spec.Resources.Limits.Memory(), "need minimum of 1GB + 1MB of memory per node"))
+	}
+	return allErrs
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type

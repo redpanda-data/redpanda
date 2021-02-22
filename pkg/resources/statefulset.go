@@ -13,7 +13,6 @@ import (
 	"context"
 	"fmt"
 	"reflect"
-	"strconv"
 
 	"github.com/go-logr/logr"
 	redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
@@ -147,11 +146,6 @@ func updateReplicasIfNeeded(
 func (r *StatefulSetResource) Obj() (k8sclient.Object, error) {
 	var configMapDefaultMode int32 = 0754
 
-	memory, exist := r.pandaCluster.Spec.Resources.Limits["memory"]
-	if !exist {
-		memory = resource.MustParse("2Gi")
-	}
-
 	var clusterLabels = labels.ForCluster(r.pandaCluster)
 
 	ss := &appsv1.StatefulSet{
@@ -232,8 +226,8 @@ func (r *StatefulSetResource) Obj() (k8sclient.Object, error) {
 								"start",
 								"--check=false",
 								"--smp 1",
-								"--memory " + strconv.FormatInt(memory.Value(), 10),
-								"--reserve-memory 0M",
+								// sometimes a little bit of memory is consumed by other processes than seastar
+								"--reserve-memory " + redpandav1alpha1.ReserveMemoryString,
 								r.portsConfiguration(),
 								"--",
 								"--default-log-level=debug",
