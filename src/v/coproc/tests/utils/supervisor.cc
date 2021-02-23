@@ -82,6 +82,17 @@ empty_response(script_id id, const model::ntp& ntp) {
 }
 
 ss::future<std::vector<process_batch_reply::data>>
+null_response(script_id id, const model::ntp& ntp) {
+    /// Redpanda will interpret null record batch readers as an indication that
+    /// a fatal error has occurred within the wasm engine and it should not send
+    /// more records to that script id
+    std::vector<process_batch_reply::data> null_resp;
+    null_resp.emplace_back(
+      process_batch_reply::data{.id = id, .ntp = ntp, .reader = std::nullopt});
+    co_return null_resp;
+}
+
+ss::future<std::vector<process_batch_reply::data>>
 supervisor::invoke_coprocessor(
   const model::ntp& ntp,
   const script_id id,
@@ -99,6 +110,13 @@ supervisor::invoke_coprocessor(
               return empty_response(id, ntp);
           }
           return resultmap_to_vector(id, ntp, std::move(rmap));
+      })
+      .handle_exception([id, ntp](std::exception_ptr eptr) {
+          vlog(
+            coproclog.error,
+            "Detected throwing apply function, will deregister: {}",
+            eptr);
+          return null_response(id, ntp);
       });
 }
 
