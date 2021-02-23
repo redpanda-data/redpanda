@@ -55,10 +55,10 @@ public:
 
     ~script_context() noexcept = default;
 
-    /**
-     * Starts up a single managed fiber responsible for maintaining the pace of
-     * the run loop described in the comment above
-     */
+    /// Startups up a single managed fiber responsible for maintaining the pace
+    /// of the run loop.
+    /// Returns a future which returns when the script fiber
+    /// has completed or throws \ref script_failed_exception
     ss::future<> start();
 
     /**

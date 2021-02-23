@@ -23,11 +23,13 @@
 #include "storage/directories.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/core/gate.hh>
 #include <seastar/core/reactor.hh>
 
 #include <absl/container/flat_hash_set.h>
 
 #include <algorithm>
+#include <exception>
 
 namespace coproc {
 
@@ -55,7 +57,7 @@ pacemaker::pacemaker(ss::socket_address addr, ss::sharded<storage::api>& api)
 
 ss::future<> pacemaker::start() {
     _offs.timer.set_callback([this] {
-        (void)ss::with_gate(_offs.gate, [this] {
+        (void)ss::with_gate(_gate, [this] {
             return save_offsets(_offs.snap, _ntps).then([this] {
                 if (!_offs.timer.armed()) {
                     _offs.timer.arm(_offs.duration);
@@ -72,7 +74,6 @@ ss::future<> pacemaker::start() {
 ss::future<> pacemaker::stop() {
     /// First shutdown the offset keepers loop
     _offs.timer.cancel();
-    co_await _offs.gate.close();
     std::vector<script_id> ids;
     ids.reserve(_scripts.size());
     for (const auto& [id, _] : _scripts) {
@@ -86,6 +87,7 @@ ss::future<> pacemaker::stop() {
             break;
         }
     }
+    co_await _gate.close();
     if (!success) {
         vlog(coproclog.error, "Failed to gracefully shutdown all copro fibers");
     }
@@ -110,9 +112,32 @@ std::vector<errc> pacemaker::add_source(
     }
     auto script_ctx = std::make_unique<script_context>(
       id, _shared_res, std::move(ctxs));
-    const auto [itr, success] = _scripts.emplace(id, std::move(script_ctx));
+    const auto [_, success] = _scripts.emplace(id, std::move(script_ctx));
     vassert(success, "Double coproc insert detected");
-    (void)itr->second->start();
+    vlog(coproclog.debug, "Adding source with id: {}", id);
+    (void)ss::with_gate(_gate, [this, id] {
+        auto found = _scripts.find(id);
+        if (found == _scripts.end()) {
+            return ss::now();
+        }
+        return found->second->start().handle_exception_type(
+          [this, id](const script_failed_exception& e) {
+              /// A script must be deregistered due to an internal script error.
+              /// The wasm engine determines the case, most likley the apply()
+              /// method has thrown or there is a syntax error within the script
+              /// itself.
+              vlog(coproclog.info, "Handling script_failed_exception: {}", e);
+              vassert(
+                id == e.get_id(),
+                "script_failed_handler id mismatch detected, observed: {} "
+                "expected: {}",
+                e.get_id(),
+                id);
+              return container().invoke_on_all([id](pacemaker& p) {
+                  return p.remove_source(id).discard_result();
+              });
+          });
+    });
     return acks;
 }
 
@@ -165,6 +190,7 @@ void pacemaker::do_add_source(
 }
 
 ss::future<errc> pacemaker::remove_source(script_id id) {
+    vlog(coproclog.debug, "Removing source with id: {}", id);
     auto handle = _scripts.extract(id);
     if (handle.empty()) {
         co_return errc::script_id_does_not_exist;

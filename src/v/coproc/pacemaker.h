@@ -33,7 +33,7 @@ namespace coproc {
  * reads data from its interested topics, sends to the wasm engine, and
  * processes the response (almost always a write to a materialized log)
  */
-class pacemaker {
+class pacemaker final : public ss::peering_sharded_service<pacemaker> {
 public:
     /**
      * class constructor
@@ -94,7 +94,6 @@ private:
       const std::vector<topic_namespace_policy>&);
 
     struct offset_flush_fiber_state {
-        ss::gate gate;
         ss::timer<ss::lowres_clock> timer;
         model::timeout_clock::duration duration;
         storage::snapshot_manager snap;
@@ -120,6 +119,9 @@ private:
 
     /// Responsible for timed persistence of offsets to disk
     offset_flush_fiber_state _offs;
+
+    /// All async actions pacemaker starts are within the context of this gate
+    ss::gate _gate;
 };
 
 } // namespace coproc

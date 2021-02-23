@@ -73,15 +73,17 @@ ss::future<> async_adl<coproc::process_batch_reply::data>::to(
   iobuf& out, coproc::process_batch_reply::data&& r) {
     reflection::serialize<coproc::script_id>(out, std::move(r.id));
     reflection::serialize<model::ntp>(out, std::move(r.ntp));
-    return async_adl<model::record_batch_reader>{}.to(out, std::move(r.reader));
+    return async_adl<std::optional<model::record_batch_reader>>{}.to(
+      out, std::move(r.reader));
 }
 
 ss::future<coproc::process_batch_reply::data>
 async_adl<coproc::process_batch_reply::data>::from(iobuf_parser& in) {
     auto id = adl<coproc::script_id>{}.from(in);
     auto ntp = adl<model::ntp>{}.from(in);
-    return async_adl<model::record_batch_reader>{}.from(in).then(
-      [id, ntp = std::move(ntp)](model::record_batch_reader rbr) mutable {
+    return async_adl<std::optional<model::record_batch_reader>>{}.from(in).then(
+      [id, ntp = std::move(ntp)](
+        std::optional<model::record_batch_reader> rbr) mutable {
           return coproc::process_batch_reply::data{
             .id = id, .ntp = std::move(ntp), .reader = std::move(rbr)};
       });
