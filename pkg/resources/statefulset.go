@@ -48,6 +48,9 @@ const (
 	configDestinationDir = "/etc/redpanda"
 	configSourceDir      = "/mnt/operator"
 	configFile           = "redpanda.yaml"
+
+	datadirName            = "datadir"
+	defaultDatadirCapacity = "100Gi"
 )
 
 // StatefulSetResource is part of the reconciliation of redpanda.vectorized.io CRD
@@ -165,12 +168,45 @@ func (r *StatefulSetResource) Ensure(ctx context.Context) error {
 	return nil
 }
 
+func preparePVCResource(
+	name, namespace string,
+	storage redpandav1alpha1.StorageSpec,
+	clusterLabels labels.CommonLabels,
+) corev1.PersistentVolumeClaim {
+	pvc := corev1.PersistentVolumeClaim{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      name,
+			Labels:    clusterLabels,
+		},
+		Spec: corev1.PersistentVolumeClaimSpec{
+			AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+			Resources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{
+					corev1.ResourceStorage: resource.MustParse(defaultDatadirCapacity),
+				},
+			},
+		},
+	}
+
+	if storage.Capacity.Value() != 0 {
+		pvc.Spec.Resources.Requests[corev1.ResourceStorage] = storage.Capacity
+	}
+
+	if len(storage.StorageClassName) > 0 {
+		pvc.Spec.StorageClassName = &storage.StorageClassName
+	}
+	return pvc
+}
+
 // Obj returns resource managed client.Object
 // nolint:funlen // The complexity of Obj function will be address in the next version TODO
 func (r *StatefulSetResource) Obj() (k8sclient.Object, error) {
 	var configMapDefaultMode int32 = 0754
 
 	var clusterLabels = labels.ForCluster(r.pandaCluster)
+
+	pvc := preparePVCResource(datadirName, r.pandaCluster.Namespace, r.pandaCluster.Spec.Storage, clusterLabels)
 
 	ss := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
@@ -199,10 +235,10 @@ func (r *StatefulSetResource) Obj() (k8sclient.Object, error) {
 					},
 					Volumes: []corev1.Volume{
 						{
-							Name: "datadir",
+							Name: datadirName,
 							VolumeSource: corev1.VolumeSource{
 								PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-									ClaimName: "datadir",
+									ClaimName: datadirName,
 								},
 							},
 						},
@@ -348,7 +384,7 @@ func (r *StatefulSetResource) Obj() (k8sclient.Object, error) {
 							},
 							VolumeMounts: []corev1.VolumeMount{
 								{
-									Name:      "datadir",
+									Name:      datadirName,
 									MountPath: dataDirectory,
 								},
 								{
@@ -389,21 +425,7 @@ func (r *StatefulSetResource) Obj() (k8sclient.Object, error) {
 				},
 			},
 			VolumeClaimTemplates: []corev1.PersistentVolumeClaim{
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Namespace: r.pandaCluster.Namespace,
-						Name:      "datadir",
-						Labels:    clusterLabels,
-					},
-					Spec: corev1.PersistentVolumeClaimSpec{
-						AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
-						Resources: corev1.ResourceRequirements{
-							Requests: corev1.ResourceList{
-								"storage": resource.MustParse("100Gi"),
-							},
-						},
-					},
-				},
+				pvc,
 			},
 		},
 	}
