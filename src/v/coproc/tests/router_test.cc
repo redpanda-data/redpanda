@@ -14,6 +14,8 @@
 #include "model/fundamental.h"
 #include "storage/tests/utils/random_batch.h"
 
+#include <seastar/core/when_all.hh>
+
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test_log.hpp>
 
@@ -257,4 +259,36 @@ FIXTURE_TEST(test_coproc_router_giant_one_to_many, router_test_fixture) {
       });
     const std::size_t expected_record_batches = 10 * n_copros * n_partitions;
     BOOST_CHECK_EQUAL(n_record_batches, expected_record_batches);
+}
+
+FIXTURE_TEST(test_copro_auto_deregister_function, router_test_fixture) {
+    model::topic foo("foo");
+    setup({{foo, 24}}).get();
+    auto id = coproc::script_id(497563);
+    // Register a coprocessor that throws
+    enable_coprocessors(
+      {{.id = id(),
+        .data{.tid = copro_typeid::throwing_coprocessor, .topics = {foo}}}})
+      .get();
+
+    // Push some data across input topic....
+    std::vector<ss::future<model::offset>> fs;
+    for (auto i = 0; i < 24; ++i) {
+        fs.emplace_back(push(
+          model::ntp(model::kafka_namespace, foo, model::partition_id(i)),
+          storage::test::make_random_memory_record_batch_reader(
+            model::offset(0), 10, 1)));
+    }
+    ss::when_all_succeed(fs.begin(), fs.end()).get();
+
+    /// Assert that the coproc does not exist in memory
+    auto n_registered = app.pacemaker
+                          .map_reduce0(
+                            [id](coproc::pacemaker& p) {
+                                return p.local_script_id_exists(id);
+                            },
+                            false,
+                            std::logical_or<>())
+                          .get();
+    BOOST_CHECK_EQUAL(n_registered, false);
 }
