@@ -29,7 +29,7 @@ spec:
         - /manager
         args:
         - --leader-elect
-        image: controller:latest
+        image: vectorized/redpanda-operator:2021022-e853bf3
         name: manager
         securityContext:
           allowPrivilegeEscalation: false

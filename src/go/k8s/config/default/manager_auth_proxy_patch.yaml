@@ -20,7 +20,7 @@ spec:
         - containerPort: 8443
           name: https
       - name: manager
-        imagePullPolicy: Never # KIND image pull policy necessary for latest tag to be deployed
+        imagePullPolicy: IfNotPresent
         args:
         - "--health-probe-bind-address=:8081"
         - "--metrics-bind-address=127.0.0.1:8080"
