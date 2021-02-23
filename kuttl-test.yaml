@@ -3,7 +3,7 @@ kind: TestSuite
 startKIND: true
 kindNodeCache: true
 kindContainers:
-  - gcr.io/vectorized/redpanda-k8s-operator:latest
+  - vectorized/redpanda-operator:latest
 testDirs:
   - ./tests/e2e
 kindConfig: ./kind.yaml
