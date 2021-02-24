@@ -151,4 +151,24 @@ FIXTURE_TEST(pandaproxy_consumer_group, pandaproxy_test_fixture) {
           res.body,
           R"([{"topic":"t","key":"AAD//w==","value":"","partition":0,"offset":0},{"topic":"t","key":"","value":"dmVjdG9yaXplZA==","partition":0,"offset":1},{"topic":"t","key":"","value":"cGFuZGFwcm94eQ==","partition":0,"offset":2},{"topic":"t","key":"","value":"bXVsdGlicm9rZXI=","partition":0,"offset":3}])");
     }
+
+    {
+        info("Remove consumer (expect no_content)");
+        auto res = http_request(
+          client,
+          fmt::format("/consumers/{}/instances/{}", group_id(), member_id()),
+          boost::beast::http::verb::delete_);
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::no_content);
+    }
+
+    {
+        info("Remove consumer (expect not_found)");
+        auto res = http_request(
+          client,
+          fmt::format("/consumers/{}/instances/{}", group_id(), member_id()),
+          boost::beast::http::verb::delete_);
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::not_found);
+    }
 }
