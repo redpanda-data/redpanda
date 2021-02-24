@@ -53,7 +53,8 @@ private:
     ss::future<ss::stop_iteration>
     poll_topic(model::record_batch_reader::data_t&);
 
-    ss::future<> persist_actions(absl::btree_map<script_id, iobuf>);
+    ss::future<>
+      persist_actions(absl::btree_map<script_id, iobuf>, model::offset);
 
 private:
     /// Kafka client used to poll the internal topic

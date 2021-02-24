@@ -154,16 +154,16 @@ script_dispatcher::add_sources(
     });
 }
 
-ss::future<> script_dispatcher::enable_coprocessors(enable_copros_request req) {
+ss::future<std::error_code>
+script_dispatcher::enable_coprocessors(enable_copros_request req) {
     auto client = co_await get_client();
     if (!client) {
-        co_return;
+        co_return rpc::make_error_code(rpc::errc::disconnected_endpoint);
     }
     auto reply = co_await client->enable_coprocessors(
       std::move(req), rpc::client_opts(model::no_timeout));
     if (!reply) {
-        vlog(coproclog.error, "Could not complete enable_coprocessors request");
-        co_return;
+        co_return reply.error();
     }
     std::vector<script_id> deregisters;
     for (enable_copros_reply::data& r : reply.value().data.acks) {
@@ -227,10 +227,12 @@ ss::future<> script_dispatcher::enable_coprocessors(enable_copros_request req) {
         if (!reply) {
             vlog(
               coproclog.error,
-              "Failed to deregister scripts for which had topics that didn't "
-              "already exist");
+              "Failed to immediately deregister some ids, wasm engine will "
+              "have some scripts which will never recieve data");
+            co_return rpc::make_error_code(rpc::errc::disconnected_endpoint);
         }
     }
+    co_return rpc::make_error_code(rpc::errc::success);
 }
 
 ss::future<std::vector<coproc::errc>>
@@ -238,18 +240,16 @@ script_dispatcher::remove_sources(script_id id) {
     return _pacemaker.map([id](pacemaker& p) { return p.remove_source(id); });
 }
 
-ss::future<>
+ss::future<std::error_code>
 script_dispatcher::disable_coprocessors(disable_copros_request req) {
     auto client = co_await get_client();
     if (!client) {
-        co_return;
+        co_return rpc::make_error_code(rpc::errc::disconnected_endpoint);
     }
     auto reply = co_await client->disable_coprocessors(
       std::move(req), rpc::client_opts(model::no_timeout));
     if (!reply) {
-        vlog(
-          coproclog.error, "Could not complete disable_coprocessors request");
-        co_return;
+        co_return reply.error();
     }
     for (const auto& [id, code] : reply.value().data.acks) {
         if (code != disable_response_code::success) {
@@ -271,6 +271,7 @@ script_dispatcher::disable_coprocessors(disable_copros_request req) {
             vlog(coproclog.info, "Successfully deregistered script: {}", id);
         }
     }
+    co_return rpc::make_error_code(rpc::errc::success);
 }
 
 ss::future<> script_dispatcher::remove_all_sources() {
@@ -278,7 +279,7 @@ ss::future<> script_dispatcher::remove_all_sources() {
       .discard_result();
 }
 
-ss::future<> script_dispatcher::disable_all_coprocessors() {
+ss::future<std::error_code> script_dispatcher::disable_all_coprocessors() {
     struct error_cnt {
         size_t n_success{0};
         size_t n_internal_error{0};
@@ -286,15 +287,12 @@ ss::future<> script_dispatcher::disable_all_coprocessors() {
     };
     auto client = co_await get_client();
     if (!client) {
-        co_return;
+        co_return rpc::make_error_code(rpc::errc::disconnected_endpoint);
     }
     auto reply = co_await client->disable_all_coprocessors(
       empty_request(), rpc::client_opts(model::no_timeout));
     if (!reply) {
-        vlog(
-          coproclog.error,
-          "Could not complete disable_all_coprocessors request");
-        co_return;
+        co_return reply.error();
     }
     error_cnt cnt = std::accumulate(
       reply.value().data.acks.cbegin(),
@@ -319,6 +317,7 @@ ss::future<> script_dispatcher::disable_all_coprocessors() {
       cnt.n_internal_error,
       cnt.n_script_dnes);
     co_await remove_all_sources();
+    co_return rpc::make_error_code(rpc::errc::success);
 }
 
 ss::future<bool> script_dispatcher::heartbeat() {

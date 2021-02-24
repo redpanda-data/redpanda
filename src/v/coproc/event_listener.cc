@@ -58,8 +58,8 @@ ss::future<> event_listener::stop() {
     return _gate.close().then([this] { return _client.stop(); });
 }
 
-ss::future<>
-event_listener::persist_actions(absl::btree_map<script_id, iobuf> wsas) {
+ss::future<> event_listener::persist_actions(
+  absl::btree_map<script_id, iobuf> wsas, model::offset last_offset) {
     std::vector<enable_copros_request::data> enables;
     std::vector<script_id> disables;
     for (auto& [id, source] : wsas) {
@@ -86,11 +86,25 @@ event_listener::persist_actions(absl::btree_map<script_id, iobuf> wsas) {
     }
     if (!enables.empty()) {
         enable_copros_request req{.inputs = std::move(enables)};
-        co_await _dispatcher.enable_coprocessors(std::move(req));
+        auto err = co_await _dispatcher.enable_coprocessors(std::move(req));
+        if (err) {
+            vlog(
+              coproclog.error,
+              "Failed to register coprocessors with the wasm engine: {}",
+              err);
+            _offset = last_offset;
+        }
     }
     if (!disables.empty()) {
         disable_copros_request req{.ids = std::move(disables)};
-        co_await _dispatcher.disable_coprocessors(std::move(req));
+        auto err = co_await _dispatcher.disable_coprocessors(std::move(req));
+        if (err) {
+            vlog(
+              coproclog.error,
+              "Failed to deregister coprocessors with the wasm engine: {}",
+              err);
+            _offset = last_offset;
+        }
     }
 }
 
@@ -143,13 +157,14 @@ ss::future<> event_listener::do_ingest() {
     /// keeping all of this data in memory, however the topic is compacted, we
     /// don't expect the size of unique records to be very big.
     model::record_batch_reader::data_t events;
+    model::offset last_offset = _offset;
     ss::stop_iteration stop{};
     while (stop == ss::stop_iteration::no) {
         stop = co_await poll_topic(events);
     }
     auto decompressed = co_await decompress_wasm_events(std::move(events));
     auto reconciled = wasm::reconcile_events(std::move(decompressed));
-    co_await persist_actions(std::move(reconciled));
+    co_await persist_actions(std::move(reconciled), last_offset);
 }
 
 ss::future<ss::stop_iteration>
