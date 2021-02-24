@@ -46,6 +46,9 @@ public:
     /// state from the wasm engine.
     ss::future<> disable_all_coprocessors();
 
+    /// Invoke this to query weather the wasm engine is up or not
+    ss::future<bool> heartbeat();
+
 private:
     /// The following methods are introduced to sidestep an issue detected when
     /// using .map/invoke_on_all within the context of a coroutine

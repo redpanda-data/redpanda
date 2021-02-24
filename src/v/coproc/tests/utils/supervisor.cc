@@ -64,8 +64,8 @@ ss::future<std::vector<process_batch_reply::data>> resultmap_to_vector(
     });
 }
 
-ss::future<std::vector<process_batch_reply::data>>
-empty_response(script_id id, const model::ntp& ntp) {
+static ss::future<std::vector<process_batch_reply::data>>
+make_empty_response(script_id id, const model::ntp& ntp) {
     /// Redpanda will special case respones with empty readers as an ack.
     /// This has the affect of an implied 'filter' transformation. The
     /// supervisor acks a request with an empty response, so redpanda just moves
@@ -81,8 +81,8 @@ empty_response(script_id id, const model::ntp& ntp) {
       std::move(eresp));
 }
 
-ss::future<std::vector<process_batch_reply::data>>
-null_response(script_id id, const model::ntp& ntp) {
+static ss::future<std::vector<process_batch_reply::data>>
+make_null_response(script_id id, const model::ntp& ntp) {
     /// Redpanda will interpret null record batch readers as an indication that
     /// a fatal error has occurred within the wasm engine and it should not send
     /// more records to that script id
@@ -107,7 +107,7 @@ supervisor::invoke_coprocessor(
     return copro->apply(ntp.tp.topic, std::move(batches))
       .then([id, ntp](coprocessor::result rmap) {
           if (rmap.empty()) {
-              return empty_response(id, ntp);
+              return make_empty_response(id, ntp);
           }
           return resultmap_to_vector(id, ntp, std::move(rmap));
       })
@@ -116,7 +116,7 @@ supervisor::invoke_coprocessor(
             coproclog.error,
             "Detected throwing apply function, will deregister: {}",
             eptr);
-          return null_response(id, ntp);
+          return make_null_response(id, ntp);
       });
 }
 

@@ -321,6 +321,20 @@ ss::future<> script_dispatcher::disable_all_coprocessors() {
     co_await remove_all_sources();
 }
 
+ss::future<bool> script_dispatcher::heartbeat() {
+    auto client = co_await get_client();
+    if (!client) {
+        /// If client isn't obtainable, we must be shutting down, we don't want
+        /// to double trigger shutdown by falsely reporting that the wasm engine
+        /// is not reachable
+        co_return true;
+    }
+    auto timeout = model::timeout_clock::now() + 2s;
+    auto reply = co_await client->heartbeat(
+      empty_request(), rpc::client_opts(timeout));
+    co_return !reply ? false : true;
+}
+
 ss::future<std::optional<coproc::supervisor_client_protocol>>
 script_dispatcher::get_client() {
     model::timeout_clock::duration dur = 1s;

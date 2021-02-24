@@ -62,6 +62,12 @@ public:
     ss::future<process_batch_reply>
     process_batch(process_batch_request&&, rpc::streaming_context&) final;
 
+    /// Called to verify the supervisor is up
+    ss::future<empty_response>
+    heartbeat(empty_request&&, rpc::streaming_context&) final {
+        return ss::make_ready_future<empty_request>();
+    }
+
 private:
     ss::future<disable_copros_reply::ack> disable_coprocessor(script_id);
     ss::future<enable_copros_reply::data> enable_coprocessor(script_id, iobuf);
