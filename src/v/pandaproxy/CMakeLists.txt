@@ -41,6 +41,13 @@ seastar_generate_swagger(
 )
 
 seastar_generate_swagger(
+  TARGET remove_consumer_swagger
+  VAR remove_consumer_swagger_file
+  IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/api/api-doc/remove_consumer.json
+  OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/api/api-doc/remove_consumer.json.h
+)
+
+seastar_generate_swagger(
   TARGET subscribe_consumer_swagger
   VAR subscribe_consumer_swagger_file
   IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/api/api-doc/subscribe_consumer.json
@@ -84,6 +91,7 @@ add_dependencies(v_rest_application
   get_topics_records_swagger
   post_topics_name_swagger
   create_consumer_swagger
+  remove_consumer_swagger
   subscribe_consumer_swagger
   consumer_fetch_swagger
 )
