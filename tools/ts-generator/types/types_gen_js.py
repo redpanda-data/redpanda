@@ -60,7 +60,7 @@ serializableFunctions = """
 {%- endmacro -%}
 
 {%- macro write_varint(field, propertyPath, buffer, assign) %}
-    {{ "writtenBytes = " if assign -}}
+    {{ "writtenBytes += " if assign -}}
     BF.writeVarint({{propertyPath}}, {{buffer}})
 {%- endmacro -%}
 
