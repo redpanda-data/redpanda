@@ -68,8 +68,122 @@ ss::future<response_ptr> do_process(
     return process_dispatch<Request>::process(std::move(ctx), g);
 }
 
+/*
+ * process a handshake request. if it doesn't result in a sasl mechanism being
+ * selected then client negotiation failed. otherwise, move to authentication.
+ */
+static ss::future<response_ptr>
+handle_auth_handshake(request_context&& ctx, ss::smp_service_group g) {
+    auto conn = ctx.connection();
+    return do_process<sasl_handshake_handler>(std::move(ctx), g)
+      .then([conn = std::move(conn)](response_ptr r) {
+          if (conn->sasl().has_mechanism()) {
+              conn->sasl().set_state(sasl_server::sasl_state::authenticate);
+          } else {
+              conn->sasl().set_state(sasl_server::sasl_state::failed);
+          }
+          return r;
+      });
+}
+
+/*
+ * in the initial state the protocol accepts either api version or sasl
+ * handshake requests. any other requests are a protocol violation.
+ */
+static ss::future<response_ptr>
+handle_auth_initial(request_context&& ctx, ss::smp_service_group g) {
+    switch (ctx.header().key) {
+    case api_versions_handler::api::key: {
+        auto r = api_versions_handler::handle_raw(ctx);
+        if (r.data.error_code == error_code::none) {
+            ctx.sasl().set_state(sasl_server::sasl_state::handshake);
+        }
+        return ctx.respond(std::move(r));
+    }
+
+    case sasl_handshake_handler::api::key: {
+        return handle_auth_handshake(std::move(ctx), g);
+    }
+
+    default:
+        return ss::make_exception_future<response_ptr>(
+          std::runtime_error(fmt::format(
+            "Unexpected request during authentication: {}", ctx.header().key)));
+    }
+}
+
+static ss::future<response_ptr>
+handle_auth(request_context&& ctx, ss::smp_service_group g) {
+    switch (ctx.sasl().state()) {
+    case sasl_server::sasl_state::initial:
+        return handle_auth_initial(std::move(ctx), g);
+
+    case sasl_server::sasl_state::handshake:
+        if (unlikely(ctx.header().key != sasl_handshake_handler::api::key)) {
+            return ss::make_exception_future<response_ptr>(
+              std::runtime_error(fmt::format(
+                "Unexpected auth request {} expected handshake",
+                ctx.header().key)));
+        }
+        return handle_auth_handshake(std::move(ctx), g);
+
+    case sasl_server::sasl_state::authenticate: {
+        if (unlikely(ctx.header().key != sasl_authenticate_handler::api::key)) {
+            return ss::make_exception_future<response_ptr>(
+              std::runtime_error(fmt::format(
+                "Unexpected auth request {} expected authenticate",
+                ctx.header().key)));
+        }
+        auto conn = ctx.connection();
+        return do_process<sasl_authenticate_handler>(std::move(ctx), g)
+          .then([conn = std::move(conn)](response_ptr r) {
+              /*
+               * there may be multiple authentication round-trips so it is fine
+               * to return without entering an end state like complete/failed.
+               */
+              if (conn->sasl().mechanism().complete()) {
+                  conn->sasl().set_state(sasl_server::sasl_state::complete);
+              } else if (conn->sasl().mechanism().failed()) {
+                  conn->sasl().set_state(sasl_server::sasl_state::failed);
+              }
+              return ss::make_ready_future<response_ptr>(std::move(r));
+          });
+    }
+
+    /*
+     * TODO: we should shut down the connection when authentication failed for
+     * simplicity. however, to do this we need to build a few mechanisms that
+     * let us build and send a response, and then close the connection. at the
+     * moment it is either send a response or close the connection.
+     */
+    case sasl_server::sasl_state::failed:
+        return ss::make_exception_future<response_ptr>(std::runtime_error(
+          "Authentication failed. Shutting down connection"));
+
+    default:
+        return ss::make_exception_future<response_ptr>(
+          std::runtime_error(fmt::format(
+            "Unexpected request during authentication: {}", ctx.header().key)));
+    }
+}
+
 ss::future<response_ptr>
 process_request(request_context&& ctx, ss::smp_service_group g) {
+    /*
+     * requests are handled as normal when auth is disabled. otherwise no
+     * request is handled until the auth process has completed.
+     */
+    if (unlikely(!ctx.sasl().complete())) {
+        auto conn = ctx.connection();
+        return handle_auth(std::move(ctx), g)
+          .then_wrapped([conn](ss::future<response_ptr> f) {
+              if (f.failed()) {
+                  conn->sasl().set_state(sasl_server::sasl_state::failed);
+              }
+              return f;
+          });
+    }
+
     switch (ctx.header().key) {
     case api_versions_handler::api::key:
         return do_process<api_versions_handler>(std::move(ctx), g);
@@ -108,9 +222,15 @@ process_request(request_context&& ctx, ss::smp_service_group g) {
     case describe_groups_handler::api::key:
         return do_process<describe_groups_handler>(std::move(ctx), g);
     case sasl_handshake_handler::api::key:
-        return do_process<sasl_handshake_handler>(std::move(ctx), g);
-    case sasl_authenticate_handler::api::key:
-        return do_process<sasl_authenticate_handler>(std::move(ctx), g);
+        return ctx.respond(
+          sasl_handshake_response(error_code::illegal_sasl_state, {}));
+    case sasl_authenticate_handler::api::key: {
+        sasl_authenticate_response_data data{
+          .error_code = error_code::illegal_sasl_state,
+          .error_message = "Authentication process already completed",
+        };
+        return ctx.respond(sasl_authenticate_response(std::move(data)));
+    }
     case init_producer_id_handler::api::key:
         return do_process<init_producer_id_handler>(std::move(ctx), g);
     case incremental_alter_configs_handler::api::key:

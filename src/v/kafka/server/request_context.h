@@ -88,6 +88,8 @@ public:
 
     const request_header& header() const { return _header; }
 
+    ss::lw_shared_ptr<connection_context> connection() { return _conn; }
+
     request_reader& reader() { return _reader; }
 
     const cluster::metadata_cache& metadata_cache() const {
@@ -152,6 +154,8 @@ public:
     }
 
     const ss::sstring& listener() const { return _conn->listener(); }
+    sasl_server& sasl() { return _conn->sasl(); }
+    credential_store& credentials() { return _conn->server().credentials(); }
 
 private:
     ss::lw_shared_ptr<connection_context> _conn;
