@@ -31,6 +31,10 @@
         {
           "name": "numberUSigned32",
           "type": "uint32"
+        },
+        {
+          "name": "optional",
+          "type": "Optional<Class2>"
         }
       ]
     },

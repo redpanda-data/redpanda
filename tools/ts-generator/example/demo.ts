@@ -22,6 +22,7 @@ const classUSigned: Class3 = {
   numberUSigned8: 255,
   numberUSigned16: 65535,
   numberUSigned32: 4294967295,
+  optional: undefined
 };
 
 const class1: Class1 = {
