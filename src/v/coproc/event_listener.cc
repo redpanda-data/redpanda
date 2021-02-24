@@ -138,32 +138,19 @@ ss::future<> event_listener::do_start() {
 }
 
 ss::future<> event_listener::do_ingest() {
-    /// This method performs the main polling behavior. Within a repeat loop it
-    /// will poll from data until it cannot poll anymore. Normally we would be
-    /// concerned about keeping all of this data in memory, however the topic is
-    /// compacted, we don't expect the size of unique records to be very big.
-    return ss::do_with(
-      model::record_batch_reader::data_t(),
-      [this](model::record_batch_reader::data_t& events) {
-          /// The stop condition is met when its been detected that the stored
-          /// offset has not moved.
-          return ss::repeat([this, &events] {
-                     model::offset initial_offset = _offset;
-                     return poll_topic(events).then([this, initial_offset] {
-                         return initial_offset == _offset
-                                  ? ss::stop_iteration::yes
-                                  : ss::stop_iteration::no;
-                     });
-                 })
-            .then(
-              [&events] { return decompress_wasm_events(std::move(events)); })
-            .then([](std::vector<model::record_batch> events) {
-                return wasm::reconcile_events(std::move(events));
-            })
-            .then([this](absl::btree_map<script_id, iobuf> wsas) {
-                return persist_actions(std::move(wsas));
-            });
-      });
+    /// This method performs the main polling behavior, looping until theres no
+    /// more data to read from the topic. Normally we would be concerned about
+    /// keeping all of this data in memory, however the topic is compacted, we
+    /// don't expect the size of unique records to be very big.
+    model::record_batch_reader::data_t events;
+    model::offset initial_offset{};
+    while (initial_offset != _offset) {
+        initial_offset = _offset;
+        co_await poll_topic(events);
+    }
+    auto decompressed = co_await decompress_wasm_events(std::move(events));
+    auto reconciled = wasm::reconcile_events(std::move(decompressed));
+    co_await persist_actions(std::move(reconciled));
 }
 
 ss::future<>
