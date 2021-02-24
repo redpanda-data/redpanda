@@ -9,7 +9,10 @@
 
 #include "handlers.h"
 
+#include "kafka/client/exceptions.h"
+#include "kafka/protocol/errors.h"
 #include "kafka/protocol/fetch.h"
+#include "kafka/protocol/leave_group.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "pandaproxy/configuration.h"
@@ -23,7 +26,10 @@
 #include "ssx/future-util.h"
 #include "storage/record_batch_builder.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
+#include <seastar/core/std-coroutine.hh>
+#include <seastar/http/reply.hh>
 
 #include <absl/container/flat_hash_map.h>
 #include <boost/algorithm/string.hpp>
@@ -204,6 +210,16 @@ create_consumer(server::request_t rq, server::reply_t rp) {
           rp.rep->write_body("json", json_rslt);
           return std::move(rp);
       });
+}
+
+ss::future<server::reply_t>
+remove_consumer(server::request_t rq, server::reply_t rp) {
+    auto group_id = kafka::group_id(rq.req->param["group_name"]);
+    auto member_id = kafka::member_id(rq.req->param["instance"]);
+
+    co_await rq.ctx.client.remove_consumer(group_id, member_id);
+    rp.rep->set_status(ss::httpd::reply::status_type::no_content);
+    co_return rp;
 }
 
 ss::future<server::reply_t>
