@@ -88,6 +88,9 @@ public:
      */
     bool ntp_is_registered(const model::ntp&);
 
+    /// returns the number of running / registered fibers
+    size_t n_registered_scripts() const { return _scripts.size(); }
+
     /// returns a handle to the reconnect transport
     shared_script_resources& resources() { return _shared_res; }
 

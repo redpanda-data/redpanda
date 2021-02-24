@@ -70,8 +70,14 @@ private:
     /// Set of known script ids to be active
     absl::btree_set<script_id> _active_ids;
 
+    ss::sharded<coproc::pacemaker>& _pacemaker;
+
     /// Used to make requests to the wasm engine
     script_dispatcher _dispatcher;
+
+    /// Used to determine if wasm engine is recovering from failure. Initialized
+    /// to true to initiate recovery at every startup
+    bool _last_heartbeat_failed{true};
 };
 
 } // namespace coproc::wasm
