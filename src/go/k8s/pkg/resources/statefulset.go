@@ -233,6 +233,7 @@ func (r *StatefulSetResource) Obj() (k8sclient.Object, error) {
 								"--smp 1",
 								"--memory " + strconv.FormatInt(memory.Value(), 10),
 								"--reserve-memory 0M",
+								"--overprovisioned",
 								r.portsConfiguration(),
 								"--",
 								"--default-log-level=debug",
