@@ -14,15 +14,8 @@
 
 namespace kafka {
 
-std::ostream& operator<<(std::ostream& os, const scram_credential& cred) {
-    fmt::print(
-      os,
-      "salt {} server_key {} stored_key {} iterations {}",
-      cred._salt,
-      cred._server_key,
-      cred._stored_key,
-      cred._iterations);
-    return os;
+std::ostream& operator<<(std::ostream& os, const scram_credential&) {
+    return os << "{scram_credential}";
 }
 
 } // namespace kafka
