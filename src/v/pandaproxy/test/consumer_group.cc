@@ -153,6 +153,31 @@ FIXTURE_TEST(pandaproxy_consumer_group, pandaproxy_test_fixture) {
     }
 
     {
+        info("Get consumer offsets (expect -1)");
+        const ss::sstring get_offsets_body(R"({
+   "partitions":[
+      {
+         "topic":"t",
+         "partition":0
+      }
+   ]
+})");
+        auto body = iobuf();
+        body.append(get_offsets_body.data(), get_offsets_body.size());
+        auto res = http_request(
+          client,
+          fmt::format(
+            "/consumers/{}/instances/{}/offsets", group_id(), member_id()),
+          std::move(body),
+          boost::beast::http::verb::get);
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::ok);
+        BOOST_REQUIRE_EQUAL(
+          res.body,
+          R"({"offsets":[{"topic":"t","partition":0,"offset":-1,"metadata":""}]})");
+    }
+
+    {
         info("Remove consumer (expect no_content)");
         auto res = http_request(
           client,
