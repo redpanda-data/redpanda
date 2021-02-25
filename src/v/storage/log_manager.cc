@@ -13,6 +13,7 @@
 #include "likely.h"
 #include "model/fundamental.h"
 #include "model/timestamp.h"
+#include "resource_mgmt/io_priority.h"
 #include "storage/batch_cache.h"
 #include "storage/compacted_index_writer.h"
 #include "storage/fs_utils.h"
@@ -128,8 +129,7 @@ ss::future<> log_manager::housekeeping() {
                    collection_threshold,
                    // TODO: [ch433] - this configuration needs to be updated
                    _config.retention_bytes,
-                   // TODO: change default priority in application.cc
-                   ss::default_priority_class(),
+                   _config.compaction_priority,
                    _abort_source));
              })
       .finally([this] {
