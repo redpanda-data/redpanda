@@ -11,6 +11,8 @@ package resources
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"reflect"
@@ -125,7 +127,7 @@ func (r *StatefulSetResource) partitionUpdateImage(
 
 		// Before continuing to update the ith Pod, verify that the previously updated
 		// Pod (if any) has rejoined its groups after restarting, i.e., is ready for I/O.
-		if err := r.ensureRedpandaGroupsReady(sts, replicas, ordinal+1); err != nil {
+		if err := r.ensureRedpandaGroupsReady(ctx, sts, replicas, ordinal+1); err != nil {
 			return &NeedToReconcileError{RequeueAfter: requeueDuration,
 				Msg: fmt.Sprintf("redpanda on pod (ordinal: %d) not ready", ordinal)}
 		}
@@ -140,7 +142,7 @@ func (r *StatefulSetResource) partitionUpdateImage(
 	}
 
 	// Ensure 0th Pod is ready for I/O before completing the upgrade.
-	if err := r.ensureRedpandaGroupsReady(sts, replicas, 0); err != nil {
+	if err := r.ensureRedpandaGroupsReady(ctx, sts, replicas, 0); err != nil {
 		return &NeedToReconcileError{RequeueAfter: requeueDuration,
 			Msg: fmt.Sprintf("redpanda on pod (ordinal: %d) not ready", 0)}
 	}
@@ -151,7 +153,7 @@ func (r *StatefulSetResource) partitionUpdateImage(
 // Ensures the Redpanda pod has rejoined its groups after restarting,
 // i.e., is ready for I/O.
 func (r *StatefulSetResource) ensureRedpandaGroupsReady(
-	sts *appsv1.StatefulSet, replicas, ordinal int32,
+	ctx context.Context, sts *appsv1.StatefulSet, replicas, ordinal int32,
 ) error {
 	if replicas == 0 || ordinal == replicas {
 		return nil
@@ -162,14 +164,14 @@ func (r *StatefulSetResource) ensureRedpandaGroupsReady(
 
 	addresses := []string{fmt.Sprintf("%s-%d.%s", sts.Name, ordinal, headlessServiceWithPort)}
 
-	return queryRedpandaForTopicMembers(addresses, r.logger)
+	return r.queryRedpandaForTopicMembers(ctx, addresses, r.logger)
 }
 
 // Used as a temporary indicator that Redpanda is ready until a health
 // endpoint is introduced or logic is added here that goes through all topics
 // metadata.
-func queryRedpandaForTopicMembers(
-	addresses []string, logger logr.Logger,
+func (r *StatefulSetResource) queryRedpandaForTopicMembers(
+	ctx context.Context, addresses []string, logger logr.Logger,
 ) error {
 	logger.Info("Connect to Redpanda broker", "broker", addresses)
 
@@ -177,6 +179,31 @@ func queryRedpandaForTopicMembers(
 	conf.Version = sarama.V2_4_0_0
 	conf.ClientID = "operator"
 	conf.Admin.Timeout = time.Second
+
+	tlsConfig := tls.Config{MinVersion: tls.VersionTLS12} // TLS12 is min version allowed by gosec.
+	if r.pandaCluster.Spec.Configuration.TLS.KafkaAPIEnabled {
+		// Retrieve secret containing the certificates
+		var certSecret corev1.Secret
+		err := r.Get(ctx, r.certSecretKey, &certSecret)
+		if err != nil {
+			return err
+		}
+
+		// Add root CA
+		caCertPool := x509.NewCertPool()
+		caCertPool.AppendCertsFromPEM(certSecret.Data[CAKey])
+		tlsConfig.RootCAs = caCertPool
+
+		// Populate crypto/TLS configuration
+		cert, err := tls.X509KeyPair(certSecret.Data[corev1.TLSCertKey], certSecret.Data[corev1.TLSPrivateKeyKey])
+		if err != nil {
+			return err
+		}
+		tlsConfig.Certificates = []tls.Certificate{cert}
+
+		conf.Net.TLS.Enable = true
+		conf.Net.TLS.Config = &tlsConfig
+	}
 
 	consumer, err := sarama.NewConsumer(addresses, conf)
 	if err != nil {

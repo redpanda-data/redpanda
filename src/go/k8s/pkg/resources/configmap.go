@@ -30,6 +30,8 @@ import (
 const (
 	baseSuffix    = "-base"
 	dataDirectory = "/var/lib/redpanda/data"
+
+	tlsDir = "/etc/tls/certs"
 )
 
 var _ Resource = &ConfigMapResource{}
@@ -130,6 +132,14 @@ func (r *ConfigMapResource) createConfiguration() *config.Config {
 	cr.AdminApi.Port = clusterCRPortOrRPKDefault(c.AdminAPI.Port, cr.AdminApi.Port)
 	cr.DeveloperMode = c.DeveloperMode
 	cr.Directory = dataDirectory
+	if r.pandaCluster.Spec.Configuration.TLS.KafkaAPIEnabled {
+		cr.KafkaApiTLS = config.ServerTLS{
+			KeyFile:        fmt.Sprintf("%s/%s", tlsDir, corev1.TLSPrivateKeyKey), // tls.key
+			CertFile:       fmt.Sprintf("%s/%s", tlsDir, corev1.TLSCertKey),       // tls.crt
+			TruststoreFile: fmt.Sprintf("%s/%s", tlsDir, CAKey),
+			Enabled:        true,
+		}
+	}
 
 	return cfgRpk
 }

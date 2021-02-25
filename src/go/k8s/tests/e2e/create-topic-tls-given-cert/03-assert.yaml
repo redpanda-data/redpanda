@@ -1,0 +1,10 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: create-test-topic
+  namespace: tls-test
+status:
+  conditions:
+    - status: "True"
+      type: Complete
+  succeeded: 1

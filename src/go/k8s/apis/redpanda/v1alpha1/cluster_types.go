@@ -79,6 +79,15 @@ type RedpandaConfig struct {
 	KafkaAPI      SocketAddress `json:"kafkaApi,omitempty"`
 	AdminAPI      SocketAddress `json:"admin,omitempty"`
 	DeveloperMode bool          `json:"developerMode,omitempty"`
+	TLS           TLSConfig     `json:"tls,omitempty"`
+}
+
+// TLSConfig configures TLS for redpanda
+// when KafkaAPIEnabled is set to true, Certificate and Secret with same name as cluster
+// this will be created in the cluster namespace
+// secret will contain 'ca.crt' which should be used as trustore when connecting to redpanda
+type TLSConfig struct {
+	KafkaAPIEnabled bool `json:"kafkaApiEnabled,omitempty"`
 }
 
 // SocketAddress provide the way to configure the port
