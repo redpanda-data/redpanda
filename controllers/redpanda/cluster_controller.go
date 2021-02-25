@@ -45,6 +45,8 @@ type ClusterReconciler struct {
 //+kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;
 //+kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch;
 //+kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch;
+//+kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;
+//+kubebuilder:rbac:groups=cert-manager.io,resources=issuers;certificates,verbs=create;get;list;watch;
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -72,11 +74,15 @@ func (r *ClusterReconciler) Reconcile(
 	}
 
 	svc := resources.NewHeadlessService(r.Client, &redpandaCluster, r.Scheme, log)
-	sts := resources.NewStatefulSet(r.Client, &redpandaCluster, r.Scheme, svc.HeadlessServiceFQDN(), svc.Key().Name, log)
+	issuer := resources.NewIssuer(r.Client, &redpandaCluster, r.Scheme, log)
+	cert := resources.NewCertificate(r.Client, &redpandaCluster, r.Scheme, issuer, svc.HeadlessServiceFQDN(), log)
+	sts := resources.NewStatefulSet(r.Client, &redpandaCluster, r.Scheme, svc.HeadlessServiceFQDN(), svc.Key().Name, cert.SecretKey(), log)
 	toApply := []resources.Resource{
 		svc,
 		resources.NewNodePortService(r.Client, &redpandaCluster, r.Scheme, log),
 		resources.NewConfigMap(r.Client, &redpandaCluster, r.Scheme, log),
+		issuer,
+		cert,
 		sts,
 	}
 

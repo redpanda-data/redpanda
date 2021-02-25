@@ -59,6 +59,16 @@ spec:
                       port:
                         type: integer
                     type: object
+                  tls:
+                    description: TLSConfig configures TLS for redpanda when KafkaAPIEnabled
+                      is set to true, Certificate and Secret with same name as cluster
+                      this will be created in the cluster namespace secret will contain
+                      'ca.crt' which should be used as trustore when connecting to
+                      redpanda
+                    properties:
+                      kafkaApiEnabled:
+                        type: boolean
+                    type: object
                 type: object
               image:
                 description: Image is the fully qualified name of the Redpanda container

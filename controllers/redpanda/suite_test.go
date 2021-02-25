@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	cmapiv1 "github.com/jetstack/cert-manager/pkg/apis/certmanager/v1"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/gexec"
@@ -57,6 +58,8 @@ var _ = BeforeSuite(func(done Done) {
 	err = scheme.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 	err = redpandav1alpha1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+	err = cmapiv1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	//+kubebuilder:scaffold:scheme

@@ -6,6 +6,7 @@ require (
 	github.com/Shopify/sarama v1.26.1
 	github.com/go-logr/logr v0.3.0
 	github.com/hashicorp/go-multierror v1.1.0
+	github.com/jetstack/cert-manager v1.2.0
 	github.com/mitchellh/mapstructure v1.1.2
 	github.com/onsi/ginkgo v1.14.1
 	github.com/onsi/gomega v1.10.2

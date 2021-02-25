@@ -38,7 +38,7 @@ func TestValidateUpdate(t *testing.T) {
 			},
 			Resources: corev1.ResourceRequirements{
 				Limits: corev1.ResourceList{
-					corev1.ResourceMemory: resource.MustParse("1G"),
+					corev1.ResourceMemory: resource.MustParse("1Gi"),
 				},
 			},
 		},
@@ -89,7 +89,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 			},
 			Resources: corev1.ResourceRequirements{
 				Limits: corev1.ResourceList{
-					corev1.ResourceMemory: resource.MustParse("2G"),
+					corev1.ResourceMemory: resource.MustParse("2Gi"),
 				},
 			},
 		},
@@ -178,7 +178,7 @@ func TestCreation(t *testing.T) {
 		memory := redpandaCluster.DeepCopy()
 		memory.Spec.Resources = corev1.ResourceRequirements{
 			Limits: corev1.ResourceList{
-				corev1.ResourceMemory: resource.MustParse("1G"),
+				corev1.ResourceMemory: resource.MustParse("1Gi"),
 			},
 		}
 
