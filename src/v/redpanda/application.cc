@@ -30,6 +30,7 @@
 #include "redpanda/admin/api-doc/config.json.h"
 #include "redpanda/admin/api-doc/kafka.json.h"
 #include "redpanda/admin/api-doc/raft.json.h"
+#include "resource_mgmt/io_priority.h"
 #include "rpc/simple_protocol.h"
 #include "storage/chunk_cache.h"
 #include "storage/directories.h"
@@ -339,6 +340,7 @@ static storage::log_config manager_config_from_global_config() {
       config::shard_local_cfg().compacted_log_segment_size(),
       config::shard_local_cfg().max_compacted_log_segment_size(),
       storage::debug_sanitize_files::no,
+      priority_manager::local().compaction_priority(),
       config::shard_local_cfg().retention_bytes(),
       config::shard_local_cfg().log_compaction_interval_ms(),
       config::shard_local_cfg().delete_retention_ms(),
