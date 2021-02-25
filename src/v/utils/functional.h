@@ -49,10 +49,6 @@ struct push_back_opt {
 } // namespace reduce
 
 namespace xform {
-struct logical_true {
-    bool operator()(bool v) const noexcept { return v; }
-};
-
 template<typename T>
 struct equal_to {
     explicit equal_to(T value)
