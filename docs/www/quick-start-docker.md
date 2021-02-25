@@ -17,7 +17,7 @@ First we need to set up a bridge network so that the Redpanda instances can comm
 but still allow for the Kafka API to be available on the localhost.
 We'll also create the persistent volumes that let the Redpanda instances keep state during instance restarts.
 
-```
+```bash
 docker network create -d bridge redpandanet && \
 docker volume create redpanda1 && \
 docker volume create redpanda2 && \
@@ -28,7 +28,10 @@ docker volume create redpanda3
 
 We then need to start the nodes for the Redpanda cluster.
 
-```
+> **_Note:_** To get the latest Redpanda image,
+> make sure you delete any `vectorized/redpanda:latest` images that you downloaded before. 
+
+```bash
 docker run -d \
 --name=redpanda-1 \
 --hostname=redpanda-1 \
@@ -59,7 +62,7 @@ vectorized/redpanda start \
 --reserve-memory 0M \
 --overprovisioned \
 --node-id 1 \
---seeds "redpanda-1:33145+0" \
+--seeds "redpanda-1:33145" \
 --check=false \
 --kafka-addr 0.0.0.0:9093 \
 --advertise-kafka-addr 127.0.0.1:9093 \
@@ -78,7 +81,7 @@ vectorized/redpanda start \
 --reserve-memory 0M \
 --overprovisioned \
 --node-id 2 \
---seeds "redpanda-1:33145+0" \
+--seeds "redpanda-1:33145" \
 --check=false \
 --kafka-addr 0.0.0.0:9094 \
 --advertise-kafka-addr 127.0.0.1:9094 \
@@ -88,13 +91,13 @@ vectorized/redpanda start \
 
 Now you can run `rpk` on one of the containers to interact with the cluster:
 
-```
-docker exec -it redpanda-1 rpk api status
+```bash
+docker exec -it redpanda-1 rpk cluster info
 ```
 
 The output of the status command looks like:
 
-```
+```bash
   Redpanda Cluster Status
 
   0 (127.0.0.1:9092)       (No partitions)
@@ -108,13 +111,13 @@ Here are the basic commands to produce and consume streams:
 
 1. Create a topic. We'll call it "twitch_chat":
 
-    ```
+    ```bash
     rpk topic create twitch_chat
     ```
 
 1. Produce messages to the topic:
 
-    ```
+    ```bash
     rpk topic produce twitch_chat
     ```
 
@@ -124,13 +127,13 @@ Here are the basic commands to produce and consume streams:
 
 1. Consume (or read) the messages in the topic:
 
-    ```
+    ```bash
     rpk topic consume twitch_chat
     ```
     
     Each message is shown with its metadata, like this:
     
-    ```
+    ```bash
     {
     "message": "How do you stream with Redpanda?\n",
     "partition": 0,
@@ -145,20 +148,20 @@ You've just installed Redpanda and done streaming in a few easy steps.
 
 When you are finished with the cluster, you can shutdown and delete the containers with:
 
-```
+```bash
 docker stop redpanda-1 redpanda-2 redpanda-3
 docker rm redpanda-1 redpanda-2 redpanda-3
 ```
 
 You can delete the volumes that hold the data that was stored in the cluster with:
 
-```
+```bash
 docker volume rm redpanda1 redpanda2 redpanda3
 ```
 
 You can delete the network that you created with:
 
-```
+```bash
 docker network rm redpandanet
 ```
 
