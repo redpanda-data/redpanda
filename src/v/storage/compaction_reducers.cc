@@ -94,11 +94,9 @@ index_filtered_copy_reducer::operator()(compacted_index::entry&& e) {
     const bool should_add = _bm.contains(_natural_index);
     ++_natural_index;
     if (should_add) {
-        bytes_view bv = e.key;
-        return _writer->index(bv, e.offset, e.delta)
-          .then([k = std::move(e.key)] {
-              return ss::make_ready_future<stop_t>(stop_t::no);
-          });
+        return _writer->append(std::move(e)).then([] {
+            return ss::make_ready_future<stop_t>(stop_t::no);
+        });
     }
     return ss::make_ready_future<stop_t>(stop_t::no);
 }
