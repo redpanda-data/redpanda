@@ -156,6 +156,11 @@ std::ostream& operator<<(std::ostream& o, const record& r) {
     return o << "]}";
 }
 
+std::ostream& operator<<(std::ostream& o, const producer_identity& pid) {
+    fmt::print(o, "{{producer_identity: id={}, epoch={}}}", pid.id, pid.epoch);
+    return o;
+}
+
 std::ostream&
 operator<<(std::ostream& o, const record_batch_attributes& attrs) {
     o << "{compression:";

@@ -421,6 +421,8 @@ struct producer_identity {
     friend H AbslHashValue(H h, const producer_identity& pid) {
         return H::combine(std::move(h), pid.id, pid.epoch);
     }
+
+    friend std::ostream& operator<<(std::ostream&, const producer_identity&);
 };
 
 struct batch_identity {
