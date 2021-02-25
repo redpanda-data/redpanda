@@ -65,7 +65,7 @@ metadata_dissemination_service::metadata_dissemination_service(
         (void)ss::with_gate(
           _bg, [this] { return dispatch_disseminate_leadership(); });
     });
-    _dispatch_timer.arm_periodic(_dissemination_interval);
+    _dispatch_timer.arm(_dissemination_interval);
 
     for (auto& seed : config::shard_local_cfg().seed_servers()) {
         _seed_servers.push_back(seed.addr);
@@ -303,7 +303,8 @@ ss::future<> metadata_dissemination_service::dispatch_disseminate_leadership() {
              [this](broker_updates_t::value_type& br_update) {
                  return dispatch_one_update(br_update.first, br_update.second);
              })
-      .then([this] { cleanup_finished_updates(); });
+      .then([this] { cleanup_finished_updates(); })
+      .finally([this] { _dispatch_timer.arm(_dissemination_interval); });
 }
 
 ss::future<> metadata_dissemination_service::dispatch_one_update(
