@@ -49,11 +49,6 @@ private:
     ss::future<> resolve_wasm_script(script_id, iobuf);
 
 private:
-    /// This may never change as it is not a configurable value
-    static const inline model::topic_partition _coproc_internal_tp{
-      model::topic_partition(
-        model::topic("coprocessor_internal_topic"), model::partition_id(0))};
-
     /// Kafka client used to poll the internal topic
     kafka::client::client _client;
 

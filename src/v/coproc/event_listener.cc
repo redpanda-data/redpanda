@@ -15,6 +15,7 @@
 #include "coproc/logger.h"
 #include "coproc/types.h"
 #include "coproc/wasm_event.h"
+#include "model/namespace.h"
 #include "ssx/future-util.h"
 #include "storage/parser_utils.h"
 #include "utils/file_io.h"
@@ -30,8 +31,6 @@
 #include <seastar/net/socket_defs.hh>
 
 namespace coproc::wasm {
-
-using namespace std::chrono_literals;
 
 static wasm::event_action query_action(const iobuf& source_code) {
     /// If this came from a remove event, the validator would
@@ -189,7 +188,8 @@ ss::future<> event_listener::do_start() {
 
 ss::future<>
 event_listener::poll_topic(model::record_batch_reader::data_t& events) {
-    return _client.fetch_partition(_coproc_internal_tp, _offset, 64_KiB, 5s)
+    return _client
+      .fetch_partition(model::coprocessor_internal_tp, _offset, 64_KiB, 5s)
       .then([this, &events](kafka::fetch_response response) {
           if (
             (response.error != kafka::error_code::none)
@@ -198,7 +198,9 @@ event_listener::poll_topic(model::record_batch_reader::data_t& events) {
           }
           vassert(response.partitions.size() == 1, "Unexpected partition size");
           auto& p = response.partitions[0];
-          vassert(p.name == _coproc_internal_tp.topic, "Unexpected topic name");
+          vassert(
+            p.name == model::coprocessor_internal_topic,
+            "Unexpected topic name");
           vassert(p.responses.size() == 1, "Unexpected responses size");
           auto& pr = p.responses[0];
           if (!pr.has_error()) {
