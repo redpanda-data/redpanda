@@ -70,6 +70,8 @@ public:
           int32_t offset_delta)
           = 0;
 
+        virtual ss::future<> append(compacted_index::entry) = 0;
+
         virtual ss::future<> truncate(model::offset) = 0;
 
         virtual void set_flag(compacted_index::footer_flags) = 0;
@@ -90,6 +92,9 @@ public:
     ss::future<> index(bytes_view, model::offset, int32_t);
     ss::future<> index(const iobuf& key, model::offset, int32_t);
     ss::future<> index(bytes&&, model::offset, int32_t);
+
+    ss::future<> append(compacted_index::entry);
+
     ss::future<> truncate(model::offset);
     ss::future<> close();
     void set_flag(compacted_index::footer_flags);
@@ -132,6 +137,9 @@ inline ss::future<> compacted_index_writer::index(
 }
 inline ss::future<> compacted_index_writer::truncate(model::offset o) {
     return _impl->truncate(o);
+}
+inline ss::future<> compacted_index_writer::append(compacted_index::entry e) {
+    return _impl->append(std::move(e));
 }
 inline ss::future<> compacted_index_writer::close() { return _impl->close(); }
 
