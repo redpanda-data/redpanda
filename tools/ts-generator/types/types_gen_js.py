@@ -14,7 +14,7 @@ import json
 from shutil import copy
 
 # 3rd party
-from jinja2 import Template
+import jinja2
 
 sys.path.append(os.path.dirname(__file__))
 logger = logging.getLogger('rp')
@@ -255,7 +255,7 @@ deserializableFunctions = """
 
 {%- macro read_optional(type, buffer, offset, func) -%}
     {# Remove ">" and "Optional<" from type, the result is the optional type #}
-    {%-set subtype = type | replace(">","")| replace("Optional<", "") -%}
+    {%-set subtype = type | replace(">","") | replace("Optional<", "") -%}
     (() => {
         const [optional, newOffset] = BF.readOptional({{buffer}}, {{offset}},
         {{- deserialize_by_type({"type": subtype}, "auxBuffer", "auxOffset", True) -}})
@@ -389,7 +389,9 @@ def read_file(name):
 
 
 def create_class(json):
-    tpl = Template(serializableFunctions + deserializableFunctions + template)
+    env = jinja2.Environment(loader=jinja2.BaseLoader)
+    tpl = env.from_string(serializableFunctions + deserializableFunctions +
+                          template)
     return tpl.render(json)
 
 
