@@ -11,7 +11,7 @@ and be fully compatible with the [Kafka ecosystem](https://cwiki.apache.org/conf
 This quick start guide can help you get started with Redpanda for development and testing purposes.
 For production or benchmarking, set up a [production deployment](production-deployment).
 
-## Install Redpanda:
+## Install Redpanda
 
 We've simplified the installation process down to a few commands:
 
