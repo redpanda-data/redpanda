@@ -7,6 +7,7 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
+set -e
 
 echo "installing seastar dependencies"
 
@@ -31,6 +32,8 @@ deb_deps=(
   libxxhash-dev
   python3-venv
   python3-jinja2
+  pkg-config
+  git
 )
 fedora_deps=(
   curl
@@ -45,7 +48,8 @@ fedora_deps=(
 
 case "$ID" in
   ubuntu | debian)
-    apt-get install -y "${deb_deps[@]}"
+    apt-get update
+    DEBIAN_FRONTEND=noninteractive apt-get install -y "${deb_deps[@]}"
     ;;
   fedora)
     dnf install -y "${fedora_deps[@]}"
@@ -56,5 +60,5 @@ case "$ID" in
     ;;
 esac
 # needed for unit tests
-sysctl -w fs.aio-max-nr=10485760
+sysctl -w fs.aio-max-nr=10485760 || true
 curl -1sLf "https://raw.githubusercontent.com/vectorizedio/seastar/master/install-dependencies.sh" | bash
