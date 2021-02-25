@@ -39,4 +39,7 @@ subscribe_consumer(server::request_t rq, server::reply_t rp);
 ss::future<server::reply_t>
 consumer_fetch(server::request_t rq, server::reply_t rp);
 
+ss::future<server::reply_t>
+get_consumer_offsets(server::request_t rq, server::reply_t rp);
+
 } // namespace pandaproxy
