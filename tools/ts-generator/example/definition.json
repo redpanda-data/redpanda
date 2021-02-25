@@ -72,6 +72,10 @@
         {
           "name": "classUSigned",
           "type": "Class3"
+        },
+        {
+          "name": "mixCustomType",
+          "type": "Optional<Array<Optional<Optional<string>>>>"
         }
       ]
     }
