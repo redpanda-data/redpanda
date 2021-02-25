@@ -174,7 +174,8 @@ public:
       : _reclaimer(
         [this](reclaimer::request r) { return reclaim(r); },
         reclaim_scope::sync)
-      , _reclaim_opts(opts) {}
+      , _reclaim_opts(opts)
+      , _reclaim_size(_reclaim_opts.min_size) {}
 
     batch_cache(const batch_cache&) = delete;
     batch_cache& operator=(const batch_cache&) = delete;
@@ -194,7 +195,8 @@ public:
           reclaim_scope::sync)
       , _is_reclaiming(o._is_reclaiming)
       , _size_bytes(o._size_bytes)
-      , _reclaim_opts(o._reclaim_opts) {
+      , _reclaim_opts(o._reclaim_opts)
+      , _reclaim_size(_reclaim_opts.min_size) {
         o._size_bytes = 0;
         o._is_reclaiming = false;
     }
