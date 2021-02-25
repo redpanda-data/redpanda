@@ -217,7 +217,7 @@ export class ProcessBatchServer extends SupervisorServer {
     processBatchRequest: ProcessBatchRequestItem,
     error: Error,
     policyError = coprocessor.policyError
-  ): Promise<never> {
+  ): Promise<ProcessBatchReplyItem> {
     const errorMessage = this.createMessageError(
       coprocessor,
       processBatchRequest,
@@ -225,9 +225,17 @@ export class ProcessBatchServer extends SupervisorServer {
     );
     switch (policyError) {
       case PolicyError.Deregister:
-        return Promise.resolve().then(() => Promise.reject(errorMessage));
+        return Promise.resolve({
+          ntp: processBatchRequest.ntp,
+          coprocessorId: coprocessor.globalId,
+          resultRecordBatch: undefined,
+        });
       case PolicyError.SkipOnFailure:
-        return Promise.reject(errorMessage);
+        return Promise.resolve({
+          ntp: processBatchRequest.ntp,
+          coprocessorId: coprocessor.globalId,
+          resultRecordBatch: [],
+        });
       default:
         return Promise.reject(errorMessage);
     }

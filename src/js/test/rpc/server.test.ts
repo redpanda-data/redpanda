@@ -10,7 +10,7 @@
 
 import { ProcessBatchServer } from "../../modules/rpc/server";
 import Repository from "../../modules/supervisors/Repository";
-import { SinonSandbox, createSandbox } from "sinon";
+import { createSandbox, SinonSandbox } from "sinon";
 import { SupervisorClient } from "../../modules/rpc/serverAndClients/rpcServer";
 import { createRecordBatch } from "../../modules/public";
 import {
@@ -18,14 +18,15 @@ import {
   ProcessBatchRequest,
 } from "../../modules/domain/generatedRpc/generatedClasses";
 import { createHandle } from "../testUtilities";
-import { PolicyError, RecordBatch } from "../../modules/public/Coprocessor";
-import assert = require("assert");
+import { PolicyError } from "../../modules/public";
 import * as chokidar from "chokidar";
 import LogService from "../../modules/utilities/Logging";
 import err, {
   DisableResponseCode,
   EnableResponseCodes,
 } from "../../modules/rpc/errors";
+import assert = require("assert");
+
 const fs = require("fs");
 
 let sinonInstance: SinonSandbox;
@@ -195,59 +196,6 @@ describe("Server", function () {
           done();
         });
     });
-
-    it(
-      "if there is an error, should skip the Request, if ErrorPolicy is " +
-        "SkipOnFailure",
-      function (done) {
-        const { spyGetHandles } = createStubs(sinonInstance);
-        const badApplyCoprocessor = (record: RecordBatch) =>
-          // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-          // @ts-ignore
-          record.bad.attribute;
-
-        spyGetHandles.returns([
-          createHandle({
-            apply: badApplyCoprocessor,
-            policyError: PolicyError.SkipOnFailure,
-            inputTopics: ["topic"],
-          }),
-        ]);
-
-        client
-          .process_batch(createProcessBatchRequest([BigInt(1)]))
-          .then((res) => {
-            assert.deepStrictEqual(res.result, []);
-            done();
-          });
-      }
-    );
-
-    it(
-      "if there is an error, should deregister the Coprocessor, if " +
-        "ErrorPolicy is Deregister",
-      function (done) {
-        const { spyGetHandles } = createStubs(sinonInstance);
-        const badApplyCoprocessor = (record: RecordBatch) =>
-          // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-          // @ts-ignore
-          record.bad.attribute;
-        const handle = createHandle({
-          apply: badApplyCoprocessor,
-          policyError: PolicyError.Deregister,
-          inputTopics: ["topic"],
-        });
-        spyGetHandles.returns([handle]);
-
-        client
-          .process_batch(createProcessBatchRequest([BigInt(1)]))
-          .then((res) => {
-            assert(spyGetHandles.called);
-            assert.deepStrictEqual(res.result, []);
-            done();
-          });
-      }
-    );
 
     it("should apply coprocessors to multiple record batches", function () {
       const { spyGetHandles } = createStubs(sinonInstance);
@@ -655,6 +603,109 @@ describe("Server", function () {
               server.closeConnection();
             });
         });
+      }
+    );
+
+    it(
+      "should response [] in record on request_process_replay if" +
+        "there is a error on coprocessor script, and its policy error is " +
+        "SkipOnFailure",
+      () => {
+        const handle = createHandle();
+        // add unhandle expetion to coprocessor function
+        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+        // @ts-ignore
+        handle.coprocessor.apply = (record) => record.badAtt.ribute;
+        const repositoryMock = sinonInstance.stub(
+          Repository.prototype,
+          "getHandlesByCoprocessorIds"
+        );
+        repositoryMock.returns([handle]);
+
+        const request: ProcessBatchRequest = {
+          requests: [
+            {
+              coprocessorIds: [handle.coprocessor.globalId],
+              ntp: {
+                topic: handle.coprocessor.inputTopics[0],
+                namespace: "",
+                partition: 1,
+              },
+              recordBatch: [
+                createRecordBatch({
+                  records: [{ value: Buffer.from("string") }],
+                }),
+              ],
+            },
+          ],
+        };
+        const server = new ProcessBatchServer();
+        server.listen(8080);
+        return SupervisorClient.create(8080).then((client) =>
+          client
+            .process_batch(request)
+            .then((results) => {
+              const result = results.result[0];
+              assert.deepStrictEqual(result.resultRecordBatch, []);
+              assert.strictEqual(result.coprocessorId, BigInt(1));
+            })
+            .finally(() => {
+              client.close();
+              server.closeConnection();
+            })
+        );
+      }
+    );
+
+    it(
+      "should response undefined in record on request_process_replay if" +
+        "there is a error on coprocessor script, and its policy error is " +
+        "Deregister",
+      () => {
+        const handle = createHandle();
+        // add unhandle expetion to coprocessor function
+        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+        // @ts-ignore
+        handle.coprocessor.apply = (record) => record.badAtt.ribute;
+        handle.coprocessor.policyError = PolicyError.Deregister;
+        const repositoryMock = sinonInstance.stub(
+          Repository.prototype,
+          "getHandlesByCoprocessorIds"
+        );
+        repositoryMock.returns([handle]);
+
+        const request: ProcessBatchRequest = {
+          requests: [
+            {
+              coprocessorIds: [handle.coprocessor.globalId],
+              ntp: {
+                topic: handle.coprocessor.inputTopics[0],
+                namespace: "",
+                partition: 1,
+              },
+              recordBatch: [
+                createRecordBatch({
+                  records: [{ value: Buffer.from("string") }],
+                }),
+              ],
+            },
+          ],
+        };
+        const server = new ProcessBatchServer();
+        server.listen(8080);
+        return SupervisorClient.create(8080).then((client) =>
+          client
+            .process_batch(request)
+            .then((results) => {
+              const result = results.result[0];
+              assert.deepStrictEqual(result.resultRecordBatch, undefined);
+              assert.strictEqual(result.coprocessorId, BigInt(1));
+            })
+            .finally(() => {
+              client.close();
+              server.closeConnection();
+            })
+        );
       }
     );
   });
