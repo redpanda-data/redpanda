@@ -246,24 +246,36 @@ deserializableFunctions = """
 
 {%- macro read_array(type, buffer, offset, func, size) -%}
     {# Remove ">" and "Array<" from type, the result is the array type #}
-    {%-set subtype = type | replace(">","")|replace("Array<", "") -%}
+    {%-set subtype = type | get_value_type -%}
+    {%- if func == False -%}
     (() => {
         const [array, newOffset] = BF.readArray({{size}})({{buffer}}, {{offset}}, 
         {{- deserialize_by_type({"type": subtype}, "auxBuffer", "auxOffset", True) -}})
         offset = newOffset
         return array;
     })()
+    {%- else -%}
+        ({{buffer}}, {{offset}}) => 
+        BF.readArray({{size}})({{buffer}}, {{offset}}, 
+            {{- deserialize_by_type({"type": subtype}, "auxBuffer", "auxOffset", True) -}})
+    {%- endif -%}
 {%- endmacro %}
 
 {%- macro read_optional(type, buffer, offset, func) -%}
     {# Remove ">" and "Optional<" from type, the result is the optional type #}
-    {%-set subtype = type | replace(">","") | replace("Optional<", "") -%}
+    {%-set subtype = type | get_value_type -%}
+    {%- if func == False -%}
     (() => {
         const [optional, newOffset] = BF.readOptional({{buffer}}, {{offset}},
         {{- deserialize_by_type({"type": subtype}, "auxBuffer", "auxOffset", True) -}})
         offset = newOffset
         return optional;
     })()
+    {%- else -%}
+    ({{buffer}}, {{offset}}) => 
+        BF.readOptional({{buffer}}, {{offset}},
+        {{- deserialize_by_type({"type": subtype}, "auxBuffer", "auxOffset", True) -}})
+    {%- endif -%}
 {%- endmacro %}
  
 {%- macro deserialize_by_type(field, inBuffer, inOffset, funcStyle) -%}
