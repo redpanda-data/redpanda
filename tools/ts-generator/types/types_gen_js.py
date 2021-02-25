@@ -6,7 +6,7 @@
 # the License. You may obtain a copy of the License at
 #
 # https://github.com/vectorizedio/redpanda/blob/master/licenses/rcl.md
-
+import re
 import sys
 import os
 import logging
@@ -66,7 +66,7 @@ serializableFunctions = """
 
 {%- macro write_array(field, propertyPath) %}
     {# Remove ">" and "Array<" from type, the result is the array type #}
-    {%-set subtype = field.type | replace(">","")|replace("Array<", "") %}
+    {%-set subtype = field.type | get_value_type %}
     writtenBytes +=
     BF.writeArray({{"false" if field.size else "true"}})({{propertyPath}},
       buffer, (item, auxBuffer) => {{-serialize_by_field
@@ -85,7 +85,7 @@ serializableFunctions = """
 
 {%- macro write_optional(field, propertyPath, buffer, assign) %}
     {# Remove ">" and "Optional<" from type, the result is the optional type #}
-    {%-set subtype = field.type | replace(">","") | replace("Optional<", "") %}
+    {%-set subtype = field.type | get_value_type %}
     {{ "writtenBytes += " if assign -}}
     BF.writeOptional({{buffer}}, {{propertyPath}}, (item, auxBuffer) => 
         {{-serialize_by_field({"name": "", 
@@ -100,25 +100,27 @@ serializableFunctions = """
     {%- set offset = inOffset | default("offset", True) -%}
     {%- set assignOffset = assign | default(False, True) -%}
     {%- set path = pathParameter | default("value." + field.name, True) -%}
-    {%- if 'Optional' in field.type -%}
+    {%- set main_type = field.type | get_type -%}
+
+    {%- if 'Optional' in main_type -%}
     {{ write_optional(field, path, buffer, assignOffset)}}
-    {%- elif 'Array' in field.type -%}
+    {%- elif 'Array' in main_type -%}
     {{ write_array(field, path)}}
-    {%- elif "int8" in field.type -%}
+    {%- elif "int8" in main_type -%}
     {{ write_int8(field, path, buffer, assignOffset) }}
-    {%- elif "int16" in field.type -%}
+    {%- elif "int16" in main_type -%}
     {{ write_int16(field, path, buffer, assignOffset) }}
-    {%- elif "int32" in field.type -%}
+    {%- elif "int32" in main_type -%}
     {{ write_int32(field, path, buffer, assignOffset) }}
-    {%- elif "int64" in field.type -%}
+    {%- elif "int64" in main_type -%}
     {{ write_int64(field, path, buffer, assignOffset) }}
-    {%- elif field.type == "string" -%}
+    {%- elif main_type == "string" -%}
     {{- write_string(field, path, buffer, assignOffset) }}
-    {%- elif field.type == "boolean" -%}
+    {%- elif main_type == "boolean" -%}
     {{ write_boolean(field, path, buffer, assignOffset) }}
-    {%- elif field.type == "varint" -%}
+    {%- elif main_type == "varint" -%}
     {{ write_varint(field, path, buffer, assignOffset) }}
-    {%- elif field.type == "buffer" -%}
+    {%- elif main_type == "buffer" -%}
     {{- write_buffer(field, path, buffer, assignOffset) }}
     {%- else -%}
     {{ write_object(field, path, buffer, assignOffset) }}
@@ -269,25 +271,26 @@ deserializableFunctions = """
     {%- set offset = inOffset | default("offset", True) -%}
     {%- set func = funcStyle | default(False, True) -%}
     {%- set type = field.type -%}
-    {%- if 'Optional' in type %}
+    {%- set main_type = type | get_type -%}
+    {%- if 'Optional' in main_type %}
         {{ read_optional(type, buffer, offset, func)}}
-    {%- elif 'Array' in type %}
+    {%- elif 'Array' in main_type %}
         {{ read_array(type, buffer, offset, func, field.size)}}
-    {%- elif "int8" in type %}
+    {%- elif "int8" in main_type %}
         {{ read_int8(buffer, offset, func, type) }}
-    {%- elif "int16" in type %}
+    {%- elif "int16" in main_type %}
         {{ read_int16(buffer, offset, func, type) }}
-    {%- elif "int32" in type %}
+    {%- elif "int32" in main_type %}
         {{ read_int32(buffer, offset, func, type) }}
-    {%- elif "int64" in type %}
+    {%- elif "int64" in main_type %}
         {{ read_int64(buffer, offset, func, type) }}
-    {%- elif type == "string" %}
+    {%- elif main_type == "string" %}
         {{ read_string(buffer, offset, func) }}
-    {%- elif type == "buffer" %}
+    {%- elif main_type == "buffer" %}
         {{ read_buffer(buffer, offset, func) }}
-    {%- elif type == "boolean" %}
+    {%- elif main_type == "boolean" %}
         {{ read_boolean(buffer, offset, func) }}
-    {%- elif type == "varint" %}
+    {%- elif main_type == "varint" %}
         {{ read_varint(buffer, offset, func) }}
     {%- else %}
         {{ read_object(type, buffer, offset, func) }}
@@ -295,21 +298,22 @@ deserializableFunctions = """
 {%- endmacro %}
 
 {%- macro convert_type(type) -%}
-    {%- if 'Optional<' in type-%}
-    {%-set subtype = type | replace(">","") | replace("Optional<", "") -%}
+    {%- set main_type = type | get_type -%}
+    {%- if 'Optional' in main_type-%}
+    {%-set subtype = type | get_value_type -%}
     Optional<{{convert_type(subtype)}}>
-    {%- elif 'Array<' in type-%}
-    {%-set subtype = type | replace(">","")|replace("Array<", "") -%}
+    {%- elif 'Array' in main_type-%}
+    {%-set subtype = type | get_value_type -%}
     Array<{{convert_type(subtype)}}>
-    {%- elif type == "varint" -%}
+    {%- elif main_type == "varint" -%}
     bigint
-    {%- elif type == "int64" -%}
+    {%- elif main_type == "int64" -%}
     bigint
-    {%- elif type == "uint64" -%}
+    {%- elif main_type == "uint64" -%}
     bigint
-    {%- elif 'int' in type -%}
+    {%- elif 'int' in main_type -%}
     number
-    {%- elif type == "buffer" -%}
+    {%- elif main_type == "buffer" -%}
     Buffer
     {%- else -%}
     {{type}}
@@ -378,6 +382,19 @@ export class {{class.className}} {
 """
 
 
+def get_value_type(type):
+    group = re.match('\w+<(.*)>', type)
+    return group.group(1)
+
+
+def get_type(type):
+    group = re.search('([^<]*)<', type)
+    if group is not None:
+        return group.group(1)
+    else:
+        return type
+
+
 def read_file(name):
     with open(name, 'r') as f:
         try:
@@ -390,6 +407,8 @@ def read_file(name):
 
 def create_class(json):
     env = jinja2.Environment(loader=jinja2.BaseLoader)
+    env.filters['get_value_type'] = get_value_type
+    env.filters['get_type'] = get_type
     tpl = env.from_string(serializableFunctions + deserializableFunctions +
                           template)
     return tpl.render(json)
