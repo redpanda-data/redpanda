@@ -170,7 +170,7 @@ public:
 
     using entry_ptr = ss::weak_ptr<entry>;
 
-    batch_cache(const reclaim_options& opts)
+    explicit batch_cache(const reclaim_options& opts)
       : _reclaimer(
         [this](reclaimer::request r) { return reclaim(r); },
         reclaim_scope::sync)
@@ -301,6 +301,7 @@ private:
     ss::lowres_clock::time_point _last_reclaim;
     size_t _reclaim_size;
 
+    friend std::ostream& operator<<(std::ostream&, const reclaim_options&);
     friend std::ostream& operator<<(std::ostream&, const batch_cache&);
 };
 

@@ -9,7 +9,10 @@
 
 #include "batch_cache.h"
 
+#include "utils/to_string.h"
 #include "vassert.h"
+
+#include <fmt/ostream.h>
 
 namespace storage {
 
@@ -242,6 +245,18 @@ void batch_cache_index::truncate(model::offset offset) {
         });
         _index.erase(it, _index.end());
     }
+}
+
+std::ostream&
+operator<<(std::ostream& os, const batch_cache::reclaim_options& opts) {
+    fmt::print(
+      os,
+      "growth window {} stable window {} min_size {} max_size {}",
+      opts.growth_window,
+      opts.stable_window,
+      opts.min_size,
+      opts.max_size);
+    return os;
 }
 
 std::ostream& operator<<(std::ostream& o, const batch_cache& b) {
