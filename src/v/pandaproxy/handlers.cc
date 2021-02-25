@@ -13,13 +13,17 @@
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/fetch.h"
 #include "kafka/protocol/leave_group.h"
+#include "kafka/protocol/offset_commit.h"
 #include "kafka/protocol/offset_fetch.h"
+#include "kafka/protocol/schemata/offset_commit_request.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "pandaproxy/configuration.h"
 #include "pandaproxy/json/requests/create_consumer.h"
 #include "pandaproxy/json/requests/fetch.h"
+#include "pandaproxy/json/requests/offset_commit.h"
 #include "pandaproxy/json/requests/offset_fetch.h"
+#include "pandaproxy/json/requests/partition_offsets.h"
 #include "pandaproxy/json/requests/partitions.h"
 #include "pandaproxy/json/requests/produce.h"
 #include "pandaproxy/json/requests/subscribe_consumer.h"
@@ -285,6 +289,25 @@ get_consumer_offsets(server::request_t rq, server::reply_t rp) {
     ppj::rjson_serialize(w, res);
     ss::sstring json_rslt = str_buf.GetString();
     rp.rep->write_body("json", json_rslt);
+    co_return rp;
+}
+
+ss::future<server::reply_t>
+post_consumer_offsets(server::request_t rq, server::reply_t rp) {
+    auto group_id = kafka::group_id(rq.req->param["group_name"]);
+    auto member_id = kafka::member_id(rq.req->param["instance"]);
+
+    // If the request is empty, commit all offsets
+    auto req_data = rq.req->content.length() == 0
+                      ? std::vector<kafka::offset_commit_request_topic>()
+                      : ppj::partition_offsets_request_to_offset_commit_request(
+                        ppj::rjson_parse(
+                          rq.req->content.data(),
+                          ppj::partition_offsets_request_handler()));
+
+    auto res = co_await rq.ctx.client.consumer_offset_commit(
+      group_id, member_id, std::move(req_data));
+    rp.rep->set_status(ss::httpd::reply::status_type::no_content);
     co_return rp;
 }
 
