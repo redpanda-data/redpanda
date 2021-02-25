@@ -31,9 +31,11 @@ namespace coproc {
 supervisor::supervisor(
   ss::scheduling_group sc,
   ss::smp_service_group ssg,
-  ss::sharded<script_map_t>& coprocessors)
+  ss::sharded<script_map_t>& coprocessors,
+  ss::sharded<ss::lw_shared_ptr<bool>>& delay_heartbeat)
   : supervisor_service(sc, ssg)
-  , _coprocessors(coprocessors) {}
+  , _coprocessors(coprocessors)
+  , _delay_heartbeat(delay_heartbeat) {}
 
 ss::future<model::record_batch_reader::data_t>
 copy_batch(const model::record_batch_reader::data_t& data) {
@@ -319,6 +321,19 @@ supervisor::process_batch(process_batch_request&& r, rpc::streaming_context&) {
                 });
           });
       });
+}
+
+ss::future<empty_response>
+supervisor::heartbeat(empty_request&&, rpc::streaming_context&) {
+    if (!*_delay_heartbeat.local()) {
+        vlog(coproclog.info, "Replying ping... heartbeat request");
+        return ss::make_ready_future<empty_response>();
+    }
+    vlog(coproclog.warn, "Replying with delayed ping... heartbeat request");
+    /// Delay a response to initiate a failure recovery scenario
+    return ss::sleep(std::chrono::seconds(3)).then([] {
+        return empty_response();
+    });
 }
 
 } // namespace coproc

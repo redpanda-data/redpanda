@@ -21,14 +21,22 @@ public:
     supervisor_test_fixture()
       : rpc_sharded_integration_fixture(43189) {
         configure_server();
+        _delay_heartbeat.start().get();
+        _delay_heartbeat
+          .invoke_on_all([](ss::lw_shared_ptr<bool>& ptr) {
+              ptr = ss::make_lw_shared<bool>(false);
+          })
+          .get();
         _coprocessors.start().get();
-        register_service<coproc::supervisor>(std::ref(_coprocessors));
+        register_service<coproc::supervisor>(
+          std::ref(_coprocessors), std::ref(_delay_heartbeat));
         start_server();
     }
 
     ~supervisor_test_fixture() override {
         stop_server();
         _coprocessors.stop().get();
+        _delay_heartbeat.stop().get();
     }
 
     /// The script_map_t is identical across all shards
@@ -36,6 +44,12 @@ public:
         return _coprocessors.local().size();
     }
 
+    ss::future<> set_delay_heartbeat(bool value) {
+        return _delay_heartbeat.invoke_on_all(
+          [value](ss::lw_shared_ptr<bool>& delay) { *delay = value; });
+    }
+
 private:
+    ss::sharded<ss::lw_shared_ptr<bool>> _delay_heartbeat;
     ss::sharded<coproc::script_map_t> _coprocessors;
 };

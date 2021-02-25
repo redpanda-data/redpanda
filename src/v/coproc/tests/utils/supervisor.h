@@ -36,7 +36,10 @@ public:
     /// Reference to sharded state map is passed so unit tests can query it
     /// poking and proding the internal state of the service for validity
     supervisor(
-      ss::scheduling_group, ss::smp_service_group, ss::sharded<script_map_t>&);
+      ss::scheduling_group,
+      ss::smp_service_group,
+      ss::sharded<script_map_t>&,
+      ss::sharded<ss::lw_shared_ptr<bool>>&);
 
     /// Called when new coprocessor(s) are to be deployed
     ///
@@ -64,9 +67,7 @@ public:
 
     /// Called to verify the supervisor is up
     ss::future<empty_response>
-    heartbeat(empty_request&&, rpc::streaming_context&) final {
-        return ss::make_ready_future<empty_request>();
-    }
+    heartbeat(empty_request&&, rpc::streaming_context&) final;
 
 private:
     ss::future<disable_copros_reply::ack> disable_coprocessor(script_id);
@@ -87,5 +88,9 @@ private:
 private:
     /// Map of coprocessors organized by their global identifiers
     ss::sharded<script_map_t>& _coprocessors;
+
+    /// When set to true, send a return heartbeat > 2s to trigger failure
+    /// mechanism
+    ss::sharded<ss::lw_shared_ptr<bool>>& _delay_heartbeat;
 };
 } // namespace coproc
