@@ -92,7 +92,7 @@ class batch_cache_index;
  */
 class batch_cache {
     /// Minimum size reclaimed in low-memory situations.
-    static constexpr size_t min_reclaim_size = 128 << 10;
+    static constexpr size_t min_reclaim_size = 128U << 10U;
 
     using reclaimer = ss::memory::reclaimer;
     using reclaim_scope = ss::memory::reclaimer_scope;
