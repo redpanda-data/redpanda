@@ -10,7 +10,7 @@
 
 import { Class1, Class2, Class3 } from "./generated";
 import * as assert from "assert";
-import {IOBuf} from "../../../src/js/modules/utilities/IOBuf"
+import { IOBuf } from "../../../src/js/modules/utilities/IOBuf";
 
 const classSigned: Class2 = {
   numberSigned8: 8,
@@ -22,7 +22,7 @@ const classUSigned: Class3 = {
   numberUSigned8: 255,
   numberUSigned16: 65535,
   numberUSigned32: 4294967295,
-  optional: undefined
+  optional: undefined,
 };
 
 const class1: Class1 = {
@@ -34,23 +34,19 @@ const class1: Class1 = {
   varintValue: BigInt(123789),
   classSigned: classSigned,
   classUSigned: classUSigned,
-  mixCustomType: [
-  undefined,
-  "string",
-  undefined,
-  undefined,
-  "other string"
-  ]
+  mixCustomType: [undefined, "string", undefined, undefined, "other string"],
 };
 
 // Create buffer where the binary data is going to be save
-const io = new IOBuf()
+const io = new IOBuf();
 // Write into the buffer
 const size = Class1.toBytes(class1, io);
 // Read data from the buffer
-const bufferResult = io.getIterable().slice(size)
-const [result] = Class1.fromBytes(bufferResult);
+const bufferResult = io.getIterable().slice(size);
+const [result, resultSize] = Class1.fromBytes(bufferResult);
 
+// check result size
+assert.strictEqual(size, resultSize);
 // Check data
 assert.strictEqual(class1.stringValue, result.stringValue);
 assert.strictEqual(class1.booleanValue, result.booleanValue);
@@ -75,9 +71,6 @@ assert.strictEqual(
   result.classUSigned.numberUSigned16
 );
 
-assert.deepStrictEqual(
-  class1.mixCustomType,
-  result.mixCustomType
-);
+assert.deepStrictEqual(class1.mixCustomType, result.mixCustomType);
 
-console.log("All generated code was encoded and decoded as expected")
+console.log("All generated code was encoded and decoded as expected");
