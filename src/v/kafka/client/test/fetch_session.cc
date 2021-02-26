@@ -131,3 +131,27 @@ SEASTAR_THREAD_TEST_CASE(test_fetch_session_empty_record_set) {
     BOOST_REQUIRE_EQUAL(s.epoch(), ctx.expected_epoch);
     BOOST_REQUIRE_EQUAL(s.offset(ctx.tp), ctx.expected_offset);
 }
+
+SEASTAR_THREAD_TEST_CASE(test_fetch_session_make_offset_commit_request_all) {
+    context ctx;
+    kc::fetch_session s;
+
+    BOOST_REQUIRE_EQUAL(s.id(), kafka::invalid_fetch_session_id);
+    BOOST_REQUIRE_EQUAL(s.epoch(), kafka::initial_fetch_session_epoch);
+    BOOST_REQUIRE_EQUAL(s.offset(ctx.tp), model::offset{0});
+
+    // Apply some records
+    BOOST_REQUIRE(ctx.apply_fetch_response(s, 8));
+    BOOST_REQUIRE_EQUAL(s.id(), ctx.fetch_session_id);
+    BOOST_REQUIRE_EQUAL(s.epoch(), ctx.expected_epoch);
+    BOOST_REQUIRE_EQUAL(s.offset(ctx.tp), ctx.expected_offset);
+
+    auto req = s.make_offset_commit_request();
+    BOOST_REQUIRE_EQUAL(req.size(), 1);
+    BOOST_REQUIRE_EQUAL(req[0].name, ctx.tp.topic);
+    BOOST_REQUIRE_EQUAL(req[0].partitions.size(), 1);
+    const auto partition = req[0].partitions[0];
+    BOOST_REQUIRE_EQUAL(partition.partition_index, ctx.tp.partition);
+    BOOST_REQUIRE_EQUAL(partition.committed_leader_epoch, ctx.expected_epoch);
+    BOOST_REQUIRE_EQUAL(partition.committed_offset, ctx.expected_offset - 1);
+}

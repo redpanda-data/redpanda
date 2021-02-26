@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "kafka/protocol/schemata/offset_commit_request.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 
@@ -40,6 +41,8 @@ public:
     kafka::fetch_session_epoch epoch() const { return _epoch; }
     model::offset offset(model::topic_partition_view tpv) const;
     bool apply(fetch_response& res);
+    std::vector<kafka::offset_commit_request_topic>
+    make_offset_commit_request() const;
 
     friend std::ostream& operator<<(std::ostream& os, fetch_session const&);
 
