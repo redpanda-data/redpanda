@@ -52,7 +52,7 @@ namespace xform {
 /// Even though std::identity is in the spec for C++20 seems as though clang
 /// devs haven't gotten around to implementing it yet.
 #ifdef __GLIBCXX__
-using just = std::identity;
+using identity = std::identity;
 #else
 struct identity {
     template<typename T>
