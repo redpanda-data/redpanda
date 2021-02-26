@@ -91,23 +91,6 @@ SEASTAR_THREAD_TEST_CASE(async_transform_noncopyable_test) {
     BOOST_TEST(results[2].value() == 3);
 }
 
-SEASTAR_THREAD_TEST_CASE(async_all_of_test) {
-    std::vector<int> input{5, 4, 2, 1, 8};
-    const bool is_five
-      = ssx::async_all_of(input.begin(), input.end(), [](int n) {
-            return ss::make_ready_future<bool>(n == 5);
-        }).get0();
-
-    BOOST_CHECK(!is_five);
-
-    const bool less_than_ten
-      = ssx::async_all_of(input.begin(), input.end(), [](int n) {
-            return ss::make_ready_future<bool>(n < 10);
-        }).get0();
-
-    BOOST_CHECK(less_than_ten);
-}
-
 SEASTAR_THREAD_TEST_CASE(parallel_transform_iter_test) {
     std::vector<int> input(10);
     std::iota(input.begin(), input.end(), 0);

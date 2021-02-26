@@ -1,20 +1,30 @@
 {
     "namespace": "coproc",
-    "service_name": "script_manager",
+    "service_name": "supervisor",
     "includes": [
         "coproc/types.h"
     ],
-    "js_include": "../../domain/generatedRpc/enableDisableCoprocClasses",
+    "js_include": "../../domain/generatedRpc/generatedClasses",
     "methods": [
         {
-            "name": "enable_copros",
+            "name": "enable_coprocessors",
             "input_type": "enable_copros_request",
             "output_type": "enable_copros_reply"
         },
         {
-            "name": "disable_copros",
+            "name": "disable_coprocessors",
             "input_type": "disable_copros_request",
             "output_type": "disable_copros_reply"
+        },
+        {
+            "name": "disable_all_coprocessors",
+            "input_type": "empty_request",
+            "output_type": "disable_copros_reply"
+        },
+        {
+            "name": "process_batch",
+            "input_type": "process_batch_request",
+            "output_type": "process_batch_reply"
         }
     ]
 }

@@ -11,38 +11,65 @@
 #pragma once
 #include "coproc/supervisor.h"
 #include "coproc/tests/utils/coprocessor.h"
+#include "coproc/tests/utils/wasm_event_generator.h"
 #include "coproc/types.h"
-#include "model/record_batch_reader.h"
+#include "model/record.h"
 
 #include <seastar/core/circular_buffer.hh>
 #include <seastar/core/gate.hh>
+#include <seastar/core/map_reduce.hh>
 
 #include <absl/container/flat_hash_map.h>
-#include <absl/hash/hash.h>
 
 namespace coproc {
+using script_map_t = absl::btree_map<script_id, std::unique_ptr<coprocessor>>;
+
 // A super simplistic form of the javascript supervisor soley used for
-// the purposes of testing
+// the purposes of testing. The sharded instance of script_map_t contains the
+// same coprocessors across all cores. However due to the distribution of NTPs
+// across shards, record_batches from a particular input topic will always
+// arrive on the same shard.
 class supervisor final : public coproc::supervisor_service {
 public:
-    using copro_map
-      = absl::flat_hash_map<coproc::script_id, std::unique_ptr<coprocessor>>;
-
+    /// class constructor
+    ///
+    /// Reference to sharded state map is passed so unit tests can query it
+    /// poking and proding the internal state of the service for validity
     supervisor(
-      ss::scheduling_group sc,
-      ss::smp_service_group ssg,
-      ss::sharded<copro_map>& cp_map)
-      : supervisor_service(sc, ssg)
-      , _coprocessors(cp_map) {}
+      ss::scheduling_group, ss::smp_service_group, ss::sharded<script_map_t>&);
 
-    ~supervisor() override { _gate.close().get(); }
+    /// Called when new coprocessor(s) are to be deployed
+    ///
+    /// Simply instantiate the script and place it in the working set
+    ss::future<enable_copros_reply>
+    enable_coprocessors(enable_copros_request&&, rpc::streaming_context&) final;
 
-    /// Method is hit when a request arrives from redpanda
-    /// Data is transformed by all applicable coprocessors in the copro_map
+    /// Called when coprocessors(s) are to be removed
+    ///
+    /// Removes the script(s) from the map, deallocates their resources
+    ss::future<disable_copros_reply> disable_coprocessors(
+      disable_copros_request&&, rpc::streaming_context&) final;
+
+    /// Called during some failure, or upon restart of redpanda
+    ///
+    /// Removes all state
+    ss::future<disable_copros_reply>
+    disable_all_coprocessors(empty_request&&, rpc::streaming_context&) final;
+
+    /// Called when when new data from registered input topics arrives
+    ///
+    /// Call apply() on matching scripts, returning their transformed results.
     ss::future<process_batch_reply>
-    process_batch(process_batch_request&& r, rpc::streaming_context&) final;
+    process_batch(process_batch_request&&, rpc::streaming_context&) final;
 
 private:
+    ss::future<disable_copros_reply::ack> disable_coprocessor(script_id);
+    ss::future<enable_copros_reply::data> enable_coprocessor(script_id, iobuf);
+    ss::future<enable_copros_reply::data> launch(
+      script_id id,
+      std::vector<enable_copros_reply::topic_policy> enriched_topics,
+      registry::type_identifier tid);
+
     ss::future<std::vector<process_batch_reply::data>> invoke_coprocessor(
       const model::ntp&,
       const script_id,
@@ -51,10 +78,8 @@ private:
     ss::future<std::vector<process_batch_reply::data>>
       invoke_coprocessors(process_batch_request::data);
 
+private:
     /// Map of coprocessors organized by their global identifiers
-    ss::sharded<copro_map>& _coprocessors;
-
-    /// Ensure no outstanding futures are executing before shutdown
-    ss::gate _gate;
+    ss::sharded<script_map_t>& _coprocessors;
 };
 } // namespace coproc

@@ -28,12 +28,6 @@ std::ostream& operator<<(std::ostream& os, const disable_response_code drc) {
     return os;
 }
 
-std::ostream& operator<<(
-  std::ostream& os, const enable_copros_request::data::topic_mode& topic_mode) {
-    os << "<Topic: " << topic_mode.first << " mode: " << (int)topic_mode.second
-       << ">";
-    return os;
-}
 } // namespace coproc
 
 namespace reflection {
