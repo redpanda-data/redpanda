@@ -41,6 +41,7 @@ struct bootstrap_fixture : raft::simple_record_fixture {
           "test.dir",
           1_GiB,
           storage::debug_sanitize_files::yes,
+          ss::default_priority_class(),
           storage::with_cache::no)) {
         _storage.start().get();
         // ignore the get_log()
