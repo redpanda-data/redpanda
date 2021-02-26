@@ -34,6 +34,13 @@ const class1: Class1 = {
   varintValue: BigInt(123789),
   classSigned: classSigned,
   classUSigned: classUSigned,
+  mixCustomType: [
+  undefined,
+  "string",
+  undefined,
+  undefined,
+  "other string"
+  ]
 };
 
 // Create buffer where the binary data is going to be save
@@ -62,9 +69,15 @@ assert.strictEqual(
   class1.classUSigned.numberUSigned8,
   result.classUSigned.numberUSigned8
 );
+
 assert.strictEqual(
   class1.classUSigned.numberUSigned16,
   result.classUSigned.numberUSigned16
+);
+
+assert.deepStrictEqual(
+  class1.mixCustomType,
+  result.mixCustomType
 );
 
 console.log("All generated code was encoded and decoded as expected")

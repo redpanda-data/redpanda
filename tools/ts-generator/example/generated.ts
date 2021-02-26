@@ -156,6 +156,7 @@ export class Class1 {
     public arrayValue: Array<string>;
     public classSigned: Class2;
     public classUSigned: Class3;
+    public mixCustomType: Optional<Array<Optional<Optional<string>>>>;
 
     /**
      * transform bytes into a buffer to Class1
@@ -217,6 +218,19 @@ export class Class1 {
                 offset = newOffset;
                 return value;
             })()
+        const mixCustomType =
+            (() => {
+                const [optional, newOffset] = BF.readOptional(buffer, offset,
+                    (auxBuffer, auxOffset) =>
+                        BF.readArray()(auxBuffer, auxOffset,
+                            (auxBuffer, auxOffset) =>
+                                BF.readOptional(auxBuffer, auxOffset,
+                                    (auxBuffer, auxOffset) =>
+                                        BF.readOptional(auxBuffer, auxOffset,
+                                            (auxBuffer, auxOffset) => BF.readString(auxBuffer, auxOffset)))))
+                offset = newOffset
+                return optional;
+            })()
 
         return [{
             stringValue,
@@ -227,6 +241,7 @@ export class Class1 {
             arrayValue,
             classSigned,
             classUSigned,
+            mixCustomType,
         }, offset]
     }
 
@@ -259,6 +274,16 @@ export class Class1 {
             )
         writtenBytes += BF.writeObject(buffer, Class2, value.classSigned)
         writtenBytes += BF.writeObject(buffer, Class3, value.classUSigned)
+
+        writtenBytes += BF.writeOptional(buffer, value.mixCustomType, (item, auxBuffer) =>
+            writtenBytes +=
+                BF.writeArray(true)(item,
+                    buffer, (item, auxBuffer) =>
+
+                        BF.writeOptional(auxBuffer, item, (item, auxBuffer) =>
+                            BF.writeOptional(auxBuffer, item, (item, auxBuffer) =>
+                                BF.writeString(item, auxBuffer)))
+                ))
 
         return writtenBytes
     }
