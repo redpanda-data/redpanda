@@ -94,9 +94,9 @@ public:
 
     snapshot_manager(
       std::filesystem::path dir,
-      const char* filename,
+      ss::sstring filename,
       ss::io_priority_class io_prio) noexcept
-      : _filename(filename)
+      : _filename(std::move(filename))
       , _dir(std::move(dir))
       , _io_prio(io_prio) {}
 
