@@ -51,25 +51,25 @@ group::group(
   group_state s,
   config::configuration& conf,
   ss::lw_shared_ptr<cluster::partition> partition)
-  : _id(id)
+  : _id(std::move(id))
   , _state(s)
   , _state_timestamp(clock_type::now())
   , _generation(0)
   , _num_members_joining(0)
   , _new_member_added(false)
   , _conf(conf)
-  , _partition(partition) {}
+  , _partition(std::move(partition)) {}
 
 group::group(
   kafka::group_id id,
   group_log_group_metadata& md,
   config::configuration& conf,
   ss::lw_shared_ptr<cluster::partition> partition)
-  : _id(id)
+  : _id(std::move(id))
   , _num_members_joining(0)
   , _new_member_added(false)
   , _conf(conf)
-  , _partition(partition) {
+  , _partition(std::move(partition)) {
     _state = md.members.empty() ? group_state::empty : group_state::stable;
     _generation = md.generation;
     _protocol_type = md.protocol_type;
