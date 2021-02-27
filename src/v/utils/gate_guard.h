@@ -27,7 +27,7 @@
 ///             assert(gate.get_count() == 1);
 ///          }
 ///          assert(gate.get_count() == 0);
-struct gate_guard {
+struct gate_guard final {
     explicit gate_guard(ss::gate& g)
       : _g(&g) {
         _g->enter();
