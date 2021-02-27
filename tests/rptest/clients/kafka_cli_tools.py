@@ -19,7 +19,7 @@ class KafkaCliTools(KafkaClient):
     """
 
     # See tests/docker/Dockerfile to add new versions
-    VERSIONS = ("2.5.0", "2.4.1", "2.3.1")
+    VERSIONS = ("2.7.0", "2.5.0", "2.4.1", "2.3.1")
 
     def __init__(self, redpanda, version=None, user=None, passwd=None):
         self._redpanda = redpanda
