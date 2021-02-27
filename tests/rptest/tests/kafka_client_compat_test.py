@@ -24,3 +24,13 @@ class KafkaClientCompatTest(RedpandaTest):
             for topic in topics:
                 spec = client.describe_topic(topic.name)
                 assert spec == topic
+
+    def test_describe_broker_configs(self):
+        # this uses the latest kafka client. older clients still need some work.
+        # it seems as though at the protocol layer things work fine, but the
+        # interface to cli clients are different. so some work generalizing the
+        # client interface is needed.
+        client_factory = KafkaCliTools.instances()[0]
+        client = client_factory(self.redpanda)
+        res = client.describe_broker_config()
+        assert res.count("All configs for broker") == len(self.redpanda.nodes)
