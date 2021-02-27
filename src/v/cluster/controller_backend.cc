@@ -140,6 +140,8 @@ controller_backend::controller_backend(
   , _topics_frontend(frontend)
   , _self(model::node_id(config::shard_local_cfg().node_id))
   , _data_directory(config::shard_local_cfg().data_directory().as_sstring())
+  , _housekeeping_timer_interval(
+      config::shard_local_cfg().controller_backend_housekeeping_interval_ms())
   , _as(as) {}
 
 ss::future<> controller_backend::stop() {
@@ -151,7 +153,7 @@ ss::future<> controller_backend::start() {
     return bootstrap_controller_backend().then([this] {
         start_topics_reconciliation_loop();
         _housekeeping_timer.set_callback([this] { housekeeping(); });
-        _housekeeping_timer.arm_periodic(std::chrono::seconds(1));
+        _housekeeping_timer.arm(_housekeeping_timer_interval);
     });
 }
 
@@ -268,15 +270,21 @@ void controller_backend::start_topics_reconciliation_loop() {
 }
 
 void controller_backend::housekeeping() {
-    if (!_topic_deltas.empty() && _topics_sem.available_units() > 0) {
-        (void)ss::with_gate(_gate, [this] {
-            return reconcile_topics();
-        }).handle_exception([](const std::exception_ptr& e) {
-            // we ignore the exception as controller backend will retry in next
-            // loop
-            vlog(clusterlog.warn, "error during reconciliation - {}", e);
+    (void)ss::with_gate(_gate, [this] {
+        auto f = ss::now();
+        if (!_topic_deltas.empty() && _topics_sem.available_units() > 0) {
+            f = reconcile_topics();
+        }
+        return f.finally([this] {
+            if (!_gate.is_closed()) {
+                _housekeeping_timer.arm(_housekeeping_timer_interval);
+            }
         });
-    }
+    }).handle_exception([](const std::exception_ptr& e) {
+        // we ignore the exception as controller backend will retry in next
+        // loop
+        vlog(clusterlog.warn, "error during reconciliation - {}", e);
+    });
 }
 
 ss::future<> controller_backend::reconcile_ntp(deltas_t& deltas) {
