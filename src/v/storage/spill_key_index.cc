@@ -61,35 +61,32 @@ spill_key_index::index(bytes_view v, model::offset base_offset, int32_t delta) {
 
 ss::future<> spill_key_index::add_key(bytes b, value_type v) {
     auto f = ss::now();
-    // we use 2 * map usage to prevent the indices map to grow over
-    // the requested memory limit. We keep the load factor of the map
-    // between 0.874 and 0.86 to prevent if from regrowing. We evict
-    // multiple keys at a time to optimize the number of rehashes
+    auto const key_size = b.size();
+    auto const expected_size = idx_mem_usage() + _keys_mem_usage + key_size;
 
-    auto const expected_size = 2 * idx_mem_usage() + _keys_mem_usage + b.size();
-
-    if (expected_size >= _max_mem && _midx.load_factor() > 0.874) {
+    if (expected_size >= _max_mem) {
         f = ss::do_until(
-              [this] {
-                  // stop condition
-                  return _midx.empty() || _midx.load_factor() <= 0.86;
-              },
-              [this] {
-                  // evict random entry
-                  auto n = random_generators::get_int<size_t>(
-                    0, _midx.size() - 1);
-                  auto mit = std::next(_midx.begin(), n);
-                  auto node = _midx.extract(mit);
+          [this, key_size] {
+              // stop condition
+              return _midx.empty()
+                     || idx_mem_usage() + _keys_mem_usage + key_size < _max_mem;
+          },
+          [this] {
+              /**
+               * Evict first entry, we use hash function that guarante good
+               * randomness so evicting first entry is actually evicting a
+               * pseudo random elemnent
+               */
+              auto node = _midx.extract(_midx.begin());
 
-                  return ss::do_with(
-                    node.key(),
-                    node.mapped(),
-                    [this](const bytes& k, value_type o) {
-                        _keys_mem_usage -= k.size();
-                        return spill(compacted_index::entry_type::key, k, o);
-                    });
-              })
-              .then([this] { _midx.rehash(0); });
+              return ss::do_with(
+                node.key(),
+                node.mapped(),
+                [this](const bytes& k, value_type o) {
+                    _keys_mem_usage -= k.size();
+                    return spill(compacted_index::entry_type::key, k, o);
+                });
+          });
     }
 
     return f.then([this, b = std::move(b), v]() mutable {

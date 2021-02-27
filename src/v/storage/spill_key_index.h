@@ -12,6 +12,7 @@
 #pragma once
 #include "bytes/bytes.h"
 #include "hashing/crc32c.h"
+#include "hashing/xx.h"
 #include "model/fundamental.h"
 #include "storage/compacted_index.h"
 #include "storage/compacted_index_writer.h"
@@ -23,7 +24,6 @@
 
 #include <absl/container/node_hash_map.h>
 #include <absl/hash/hash.h>
-
 namespace storage::internal {
 using namespace storage; // NOLINT
 class spill_key_index final : public compacted_index_writer::impl {
@@ -35,8 +35,11 @@ public:
     static constexpr auto value_sz = sizeof(value_type);
     static constexpr size_t max_key_size = compacted_index::max_entry_size
                                            - (2 * vint::max_length);
-    using underlying_t
-      = absl::node_hash_map<bytes, value_type, bytes_type_hash, bytes_type_eq>;
+    using underlying_t = absl::node_hash_map<
+      bytes,
+      value_type,
+      bytes_hasher<uint64_t, xxhash_64>,
+      bytes_type_eq>;
 
     spill_key_index(
       ss::sstring filename,
