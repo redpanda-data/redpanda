@@ -46,7 +46,7 @@ struct gate_guard final {
     }
     gate_guard(const gate_guard&) = delete;
     gate_guard& operator=(const gate_guard&) = delete;
-    ~gate_guard() {
+    ~gate_guard() noexcept {
         if (_g) {
             _g->leave();
         }
