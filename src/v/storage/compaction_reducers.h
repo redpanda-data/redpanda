@@ -11,6 +11,8 @@
 
 #pragma once
 
+#include "bytes/bytes.h"
+#include "hashing/xx.h"
 #include "model/record_batch_reader.h"
 #include "storage/compacted_index.h"
 #include "storage/compacted_index_writer.h"
@@ -39,8 +41,11 @@ public:
         model::offset offset;
         uint32_t natural_index;
     };
-    using underlying_t
-      = absl::node_hash_map<bytes, value_type, bytes_type_hash, bytes_type_eq>;
+    using underlying_t = absl::node_hash_map<
+      bytes,
+      value_type,
+      bytes_hasher<uint64_t, xxhash_64>,
+      bytes_type_eq>;
 
     explicit compaction_key_reducer(size_t max_mem = default_max_memory_usage)
       : _max_mem(max_mem) {}
