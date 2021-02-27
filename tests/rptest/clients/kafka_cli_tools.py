@@ -105,6 +105,13 @@ sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule require
         configs = {kv[0]: maybe_int(kv[0], kv[1]) for kv in configs.items()}
         return TopicSpec(name=topic, **configs)
 
+    def describe_broker_config(self):
+        self._redpanda.logger.debug("Describing brokers")
+        args = ["--describe", "--entity-type", "brokers", "--all"]
+        res = self._run("kafka-configs.sh", args)
+        self._redpanda.logger.debug("Describe brokers config result: %s", res)
+        return res
+
     def produce(self,
                 topic,
                 num_records,
