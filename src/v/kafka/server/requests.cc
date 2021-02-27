@@ -269,6 +269,8 @@ std::ostream& operator<<(std::ostream& os, describe_configs_source s) {
     switch (s) {
     case describe_configs_source::topic:
         return os << "{topic}";
+    case describe_configs_source::static_broker_config:
+        return os << "{static_broker_config}";
     }
     return os << "{unknown type}";
 }
