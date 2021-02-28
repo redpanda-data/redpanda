@@ -13,6 +13,7 @@
 #include "coproc/script_dispatcher.h"
 #include "coproc/types.h"
 #include "kafka/client/client.h"
+#include "kafka/client/transport.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/gate.hh>
@@ -53,9 +54,11 @@ private:
 
     ss::future<> persist_actions(absl::btree_map<script_id, iobuf>);
 
+    ss::future<> do_connect();
+
 private:
     /// Kafka client used to poll the internal topic
-    kafka::client::client _client;
+    std::unique_ptr<kafka::client::transport> _client;
 
     /// Primitives used to manage the poll loop
     ss::gate _gate;

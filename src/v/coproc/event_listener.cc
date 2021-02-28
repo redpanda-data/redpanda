@@ -14,7 +14,11 @@
 #include "coproc/errc.h"
 #include "coproc/logger.h"
 #include "coproc/wasm_event.h"
+#include "kafka/client/exceptions.h"
+#include "kafka/protocol/fetch.h"
+#include "kafka/protocol/metadata.h"
 #include "model/namespace.h"
+#include "rpc/dns.h"
 #include "ssx/future-util.h"
 #include "storage/parser_utils.h"
 #include "utils/unresolved_address.h"
@@ -40,7 +44,12 @@ static wasm::event_action query_action(const iobuf& source_code) {
 
 ss::future<> event_listener::stop() {
     _abort_source.request_abort();
-    return _gate.close().then([this] { return _client.stop(); });
+    return _gate.close().then([this] {
+        if (_client) {
+            return _client->stop().finally([c{std::move(_client)}] {});
+        }
+        return ss::now();
+    });
 }
 
 ss::future<>
@@ -80,17 +89,70 @@ event_listener::persist_actions(absl::btree_map<script_id, iobuf> wsas) {
 }
 
 event_listener::event_listener(ss::sharded<pacemaker>& pacemaker)
-  : _client({config::shard_local_cfg().kafka_api()[0].address})
-  , _dispatcher(pacemaker, _abort_source) {}
+  : _dispatcher(pacemaker, _abort_source) {}
+
+ss::future<> event_listener::do_connect() {
+    vassert(!_client, "do_connect() called when theres already a valid client");
+    /// Invoke metadata request on a new client connected to this broker
+    auto addr = co_await rpc::resolve_dns(
+      config::shard_local_cfg().kafka_api.value()[0].address);
+    auto client = std::make_unique<kafka::client::transport>(
+      rpc::base_transport::configuration{.server_addr = addr});
+    co_await client->connect();
+    /// Parse the response looking for the broker that is the leader for the
+    /// model::coprocessor_internal_topic
+    kafka::metadata_response r = co_await client->dispatch(
+      kafka::metadata_request{.list_all_topics = true});
+    auto found = std::find_if(
+      r.topics.begin(), r.topics.end(), [](kafka::metadata_response::topic& t) {
+          return t.name == model::coprocessor_internal_topic;
+      });
+    if (found == r.topics.end()) {
+        co_await client->stop();
+        throw kafka::client::partition_error(
+          model::coprocessor_internal_tp,
+          kafka::error_code::unknown_topic_or_partition);
+    }
+    vassert(
+      found->partitions.size() == 1, "Copro internal topic misconfigured");
+    model::node_id id = found->partitions[0].leader;
+    auto broker = std::find_if(
+      r.brokers.begin(),
+      r.brokers.end(),
+      [id](const kafka::metadata_response::broker& b) {
+          return b.node_id == id;
+      });
+    /// If the broker is found set _client and connect (if neccessary)
+    vassert(broker != r.brokers.end(), "Erranous kafka metadata response");
+    ss::socket_address broker_addr(
+      ss::net::ipv4_address(broker->host), broker->port);
+    if (broker_addr == client->server_address()) {
+        _client = std::move(client);
+        co_return;
+    }
+    co_await client->stop();
+    _client = std::make_unique<kafka::client::transport>(
+      rpc::base_transport::configuration{.server_addr = broker_addr});
+    co_await _client->connect();
+}
 
 ss::future<> event_listener::start() {
-    return _client.connect().then([this] {
-        (void)ss::with_gate(_gate, [this] {
-            return ss::do_until(
-              [this] { return _abort_source.abort_requested(); },
-              [this] { return do_start(); });
-        });
+    (void)ss::with_gate(_gate, [this] {
+        return ss::do_until(
+          [this] { return _abort_source.abort_requested(); },
+          [this] {
+              if (!_client) {
+                  return do_connect().handle_exception(
+                    [](std::exception_ptr eptr) {
+                        vlog(coproclog.trace, "do_connect() failed: {}", eptr);
+                        return ss::sleep_abortable(1s).handle_exception(
+                          [](std::exception_ptr) {});
+                    });
+              }
+              return do_start();
+          });
     });
+    return ss::now();
 }
 
 static ss::future<std::vector<model::record_batch>>
@@ -137,15 +199,26 @@ ss::future<> event_listener::do_start() {
 
 ss::future<>
 event_listener::poll_topic(model::record_batch_reader::data_t& events) {
-    return _client
-      .fetch_partition(model::coprocessor_internal_tp, _offset, 64_KiB, 5s)
+    std::vector<kafka::fetch_request::partition> partitions;
+    partitions.push_back(kafka::fetch_request::partition{
+      .id = model::partition_id(0), .fetch_offset = _offset});
+    std::vector<kafka::fetch_request::topic> topics;
+    topics.push_back(kafka::fetch_request::topic{
+      .name = model::coprocessor_internal_topic,
+      .partitions = std::move(partitions)});
+    kafka::fetch_request req{
+      .max_wait_time = 5s, .min_bytes = 0, .topics = std::move(topics)};
+    vassert(_client, "Handle to kafka::transport must not be null");
+    return _client->dispatch(std::move(req))
       .then([this, &events](kafka::fetch_response response) {
-          if (
-            (response.error != kafka::error_code::none)
-            || _abort_source.abort_requested()) {
+          if (response.error == kafka::error_code::unknown_topic_or_partition) {
+              return _client->stop().finally([c{std::move(_client)}] {});
+          }
+          if (response.error != kafka::error_code::none) {
               return ss::now();
           }
-          vassert(response.partitions.size() == 1, "Unexpected partition size");
+          vassert(
+            response.partitions.size() == 1, "Unexpected partition size ");
           auto& p = response.partitions[0];
           vassert(
             p.name == model::coprocessor_internal_topic,
