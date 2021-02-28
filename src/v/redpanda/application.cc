@@ -18,6 +18,7 @@
 #include "cluster/service.h"
 #include "config/configuration.h"
 #include "config/seed_server.h"
+#include "kafka/client/configuration.h"
 #include "kafka/security/scram_algorithm.h"
 #include "kafka/server/coordinator_ntp_mapper.h"
 #include "kafka/server/group_manager.h"

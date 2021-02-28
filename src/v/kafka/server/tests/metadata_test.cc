@@ -8,6 +8,7 @@
 // by the Apache License, Version 2.0
 
 #include "kafka/protocol/errors.h"
+#include "kafka/protocol/metadata.h"
 #include "librdkafka/rdkafkacpp.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"

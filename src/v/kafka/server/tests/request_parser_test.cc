@@ -9,9 +9,11 @@
 
 #include "kafka/protocol/fetch.h"
 #include "kafka/protocol/heartbeat.h"
+#include "kafka/protocol/join_group.h"
 #include "kafka/protocol/leave_group.h"
 #include "kafka/protocol/metadata.h"
 #include "kafka/protocol/produce.h"
+#include "kafka/protocol/sync_group.h"
 #include "redpanda/tests/fixture.h"
 #include "test_utils/fixture.h"
 #include "utils/file_io.h"

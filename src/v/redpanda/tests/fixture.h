@@ -17,6 +17,7 @@
 #include "cluster/topics_frontend.h"
 #include "cluster/types.h"
 #include "kafka/client/transport.h"
+#include "kafka/protocol/fetch.h"
 #include "kafka/server/handlers/topics/topic_utils.h"
 #include "model/metadata.h"
 #include "model/namespace.h"

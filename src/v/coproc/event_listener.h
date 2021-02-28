@@ -12,7 +12,6 @@
 
 #include "coproc/script_dispatcher.h"
 #include "coproc/types.h"
-#include "kafka/client/client.h"
 #include "kafka/client/transport.h"
 
 #include <seastar/core/abort_source.hh>
