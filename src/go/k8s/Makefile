@@ -99,7 +99,7 @@ kuttl:
 # Download crlfmt locally if necessary
 CRLFMT = $(shell pwd)/bin/crlfmt
 crlfmt:
-	$(call go-get-tool,$(CRLFMT),github.com/cockroachdb/crlfmt@v0.0.0-20200923085322-b9cb16fe9a33)
+	$(call go-get-tool,$(CRLFMT),github.com/cockroachdb/crlfmt@v0.0.0-20210128092314-b3eff0b87c79)
 
 # Download kustomize locally if necessary
 KUSTOMIZE = $(shell pwd)/bin/kustomize
