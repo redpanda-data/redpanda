@@ -114,28 +114,29 @@ ss::future<> group_manager::cleanup_removed_topic_partitions(
         groups.push_back(group.second);
     }
 
-    return ss::do_with(std::move(groups), [this, &tps](std::vector<group_ptr>& groups) {
-    return ss::do_for_each(groups, [this, &tps](group_ptr& group) {
-        return group->remove_topic_partitions(tps).then(
-          [this, g = group] {
-              if (!g->in_state(group_state::dead)) {
-                  return ss::now();
-              }
-              auto it = _groups.find(g->id());
-              if (it == _groups.end()) {
-                  return ss::now();
-              }
-              // ensure the group didn't change
-              if (it->second != g) {
-                  return ss::now();
-              }
-              vlog(klog.trace, "Removed group {}", g);
-              _groups.erase(it);
-              _groups.rehash(0);
-              return ss::now();
+    return ss::do_with(
+      std::move(groups), [this, &tps](std::vector<group_ptr>& groups) {
+          return ss::do_for_each(groups, [this, &tps](group_ptr& group) {
+              return group->remove_topic_partitions(tps).then(
+                [this, g = group] {
+                    if (!g->in_state(group_state::dead)) {
+                        return ss::now();
+                    }
+                    auto it = _groups.find(g->id());
+                    if (it == _groups.end()) {
+                        return ss::now();
+                    }
+                    // ensure the group didn't change
+                    if (it->second != g) {
+                        return ss::now();
+                    }
+                    vlog(klog.trace, "Removed group {}", g);
+                    _groups.erase(it);
+                    _groups.rehash(0);
+                    return ss::now();
+                });
           });
-    });
-    });
+      });
 }
 
 void group_manager::handle_topic_delta(
