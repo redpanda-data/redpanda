@@ -66,7 +66,7 @@ struct partition_comp {
 void consumer::start() {
     kclog.info("Consumer: {}: start", *this);
     _timer.set_callback([me{shared_from_this()}]() {
-        kclog.info("Consumer: {}: timer cb", *me);
+        kclog.trace("Consumer: {}: timer cb", *me);
         (void)me->heartbeat().handle_exception_type([me](consumer_error e) {
             kclog.error("Consumer: {}: heartbeat failed: {}", *me, e.error);
         });
