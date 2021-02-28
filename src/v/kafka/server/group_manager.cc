@@ -84,6 +84,8 @@ ss::future<> group_manager::start() {
 ss::future<> group_manager::stop() {
     _pm.local().unregister_manage_notification(_manage_notify_handle);
     _gm.local().unregister_leadership_notification(_leader_notify_handle);
+    _topic_table.local().unregister_delta_notification(
+      _topic_table_notify_handle);
 
     for (auto& e : _partitions) {
         e.second->as.request_abort();
