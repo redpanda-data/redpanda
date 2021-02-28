@@ -106,10 +106,18 @@ void group_manager::attach_partition(ss::lw_shared_ptr<cluster::partition> p) {
 
 ss::future<> group_manager::cleanup_removed_topic_partitions(
   const std::vector<model::topic_partition>& tps) {
-    using group_info = absl::node_hash_map<group_id, group_ptr>::value_type;
-    return ss::do_for_each(_groups, [this, &tps](group_info& gi) {
-        return gi.second->remove_topic_partitions(tps).then(
-          [this, g = gi.second] {
+    // operate on a light-weight copy of group pointers to avoid iterating over
+    // the main index which is subject to concurrent modification.
+    std::vector<group_ptr> groups;
+    groups.reserve(_groups.size());
+    for (auto& group : _groups) {
+        groups.push_back(group.second);
+    }
+
+    return ss::do_with(std::move(groups), [this, &tps](std::vector<group_ptr>& groups) {
+    return ss::do_for_each(groups, [this, &tps](group_ptr& group) {
+        return group->remove_topic_partitions(tps).then(
+          [this, g = group] {
               if (!g->in_state(group_state::dead)) {
                   return ss::now();
               }
@@ -126,6 +134,7 @@ ss::future<> group_manager::cleanup_removed_topic_partitions(
               _groups.rehash(0);
               return ss::now();
           });
+    });
     });
 }
 
