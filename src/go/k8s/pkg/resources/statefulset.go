@@ -44,7 +44,8 @@ type StatefulSetResource struct {
 	k8sclient.Client
 	scheme		*runtime.Scheme
 	pandaCluster	*redpandav1alpha1.Cluster
-	svc		*ServiceResource
+	serviceFQDN	string
+	serviceName	string
 	logger		logr.Logger
 
 	LastObservedState	*appsv1.StatefulSet
@@ -55,11 +56,12 @@ func NewStatefulSet(
 	client k8sclient.Client,
 	pandaCluster *redpandav1alpha1.Cluster,
 	scheme *runtime.Scheme,
-	svc *ServiceResource,
+	serviceFQDN string,
+	serviceName string,
 	logger logr.Logger,
 ) *StatefulSetResource {
 	return &StatefulSetResource{
-		client, scheme, pandaCluster, svc, logger.WithValues("Kind", statefulSetKind()), nil,
+		client, scheme, pandaCluster, serviceFQDN, serviceName, logger.WithValues("Kind", statefulSetKind()), nil,
 	}
 }
 
@@ -372,7 +374,7 @@ func (r *StatefulSetResource) Kind() string {
 func (r *StatefulSetResource) portsConfiguration() string {
 	kafkaAPIPort := r.pandaCluster.Spec.Configuration.KafkaAPI.Port
 	rpcAPIPort := r.pandaCluster.Spec.Configuration.RPCServer.Port
-	svcName := r.svc.Key().Name
+	svcName := r.serviceName
 
 	// In every dns name there is trailing dot to query absolute path
 	// For trailing dot explanation please visit http://www.dns-sd.org/trailingdotsindomainnames.html
