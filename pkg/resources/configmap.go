@@ -53,8 +53,8 @@ type ConfigMapResource struct {
 	scheme		*runtime.Scheme
 	pandaCluster	*redpandav1alpha1.Cluster
 
-	svc	*ServiceResource
-	logger	logr.Logger
+	serviceFQDN	string
+	logger		logr.Logger
 }
 
 // NewConfigMap creates ConfigMapResource
@@ -62,11 +62,11 @@ func NewConfigMap(
 	client k8sclient.Client,
 	pandaCluster *redpandav1alpha1.Cluster,
 	scheme *runtime.Scheme,
-	svc *ServiceResource,
+	serviceFQDN string,
 	logger logr.Logger,
 ) *ConfigMapResource {
 	return &ConfigMapResource{
-		client, scheme, pandaCluster, svc, logger.WithValues("Kind", configMapKind()),
+		client, scheme, pandaCluster, serviceFQDN, logger.WithValues("Kind", configMapKind()),
 	}
 }
 
@@ -96,7 +96,7 @@ func (r *ConfigMapResource) Ensure(ctx context.Context) error {
 
 // Obj returns resource managed client.Object
 func (r *ConfigMapResource) Obj() (k8sclient.Object, error) {
-	serviceAddress := r.svc.HeadlessServiceFQDN()
+	serviceAddress := r.serviceFQDN
 
 	cfgBytes, err := yaml.Marshal(r.createConfiguration())
 	if err != nil {
@@ -136,7 +136,7 @@ func (r *ConfigMapResource) Obj() (k8sclient.Object, error) {
 }
 
 func (r *ConfigMapResource) createConfiguration() *config.Config {
-	serviceAddress := r.svc.HeadlessServiceFQDN()
+	serviceAddress := r.serviceFQDN
 	cfgRpk := config.Default()
 
 	c := r.pandaCluster.Spec.Configuration

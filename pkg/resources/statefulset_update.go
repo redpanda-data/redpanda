@@ -158,7 +158,7 @@ func (r *StatefulSetResource) ensureRedpandaGroupsReady(
 		return nil
 	}
 
-	headlessServiceWithPort := fmt.Sprintf("%s:%d", r.svc.HeadlessServiceFQDN(),
+	headlessServiceWithPort := fmt.Sprintf("%s:%d", r.serviceFQDN,
 		r.pandaCluster.Spec.Configuration.KafkaAPI.Port)
 
 	addresses := []string{fmt.Sprintf("%s-%d.%s", sts.Name, ordinal, headlessServiceWithPort)}
