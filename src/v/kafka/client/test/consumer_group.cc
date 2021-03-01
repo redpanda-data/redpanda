@@ -37,6 +37,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "redpanda/tests/fixture.h"
+#include "ssx/future-util.h"
 #include "utils/unresolved_address.h"
 #include "vassert.h"
 
@@ -267,6 +268,26 @@ FIXTURE_TEST(consumer_group, kafka_client_fixture) {
             }
         }
     }
+
+    info("Consuming topic data");
+    auto fetch_responses
+      = ssx::parallel_transform(
+          sorted_members.begin(),
+          sorted_members.end(),
+          [&](kafka::member_id m_id) {
+              auto res
+                = client.consumer_fetch(group_id, m_id, 200ms, 1_MiB).get();
+              BOOST_REQUIRE_EQUAL(res.error, kafka::error_code::none);
+              BOOST_REQUIRE_EQUAL(res.partitions.size(), 3);
+              for (const auto& p : res.partitions) {
+                  BOOST_REQUIRE_EQUAL(p.responses.size(), 1);
+                  const auto& res = p.responses[0];
+                  BOOST_REQUIRE_EQUAL(res.error, kafka::error_code::none);
+                  BOOST_REQUIRE(!!res.record_set);
+              }
+              return res;
+          })
+          .get();
 
     // Commit offsets
     // Each partition is commited with the offset of the index of the sorted
