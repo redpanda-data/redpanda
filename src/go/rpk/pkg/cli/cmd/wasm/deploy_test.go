@@ -2,11 +2,11 @@ package wasm
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"fmt"
 	"testing"
 
 	"github.com/Shopify/sarama"
-	"github.com/Shopify/sarama/mocks"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
@@ -22,13 +22,12 @@ type fileInfo struct {
 func TestNewDeployCommand(t *testing.T) {
 	tests := []struct {
 		name		string
-		producer	func(bool, int32) (sarama.SyncProducer, error)
+		producer	kafkaMocks.MockProducer
 		fileInformation	fileInfo
 		args		[]string
 		expectedOutput	[]string
 		expectedErr	string
 		pre		func(fs afero.Fs, fileInformation fileInfo) error
-		failSendMessage	bool
 		admin		kafkaMocks.MockAdmin
 	}{
 		{
@@ -63,12 +62,16 @@ func TestNewDeployCommand(t *testing.T) {
 			},
 			expectedErr: "Error on deploy fileName.js, message error: kafka mock error," +
 				" please check your redpanda instance ",
-			failSendMessage:	true,
 			admin: kafkaMocks.MockAdmin{
 				MockListTopics: func() (map[string]sarama.TopicDetail, error) {
 					topics := make(map[string]sarama.TopicDetail)
 					topics[kafka.CoprocessorTopic] = sarama.TopicDetail{}
 					return topics, nil
+				},
+			},
+			producer: kafkaMocks.MockProducer{
+				MockSendMessage: func(msg *sarama.ProducerMessage) (partition int32, offset int64, err error) {
+					return 0, 0, fmt.Errorf("kafka mock error ")
 				},
 			},
 		}, {
@@ -109,27 +112,45 @@ func TestNewDeployCommand(t *testing.T) {
 					return nil
 				},
 			},
+		}, {
+			name:	"it should publish a message with correct format with correct header",
+			args:	[]string{"--description", "coprocessor description"},
+			fileInformation: fileInfo{
+				name:		"fileName.js",
+				content:	"let s = 'text'",
+			},
+			pre: func(fs afero.Fs, fileInformation fileInfo) error {
+				return createMockFile(fs, fileInformation.name, fileInformation.content)
+			},
+			producer: kafkaMocks.MockProducer{
+				MockSendMessage: func(msg *sarama.ProducerMessage) (partition int32, offset int64, err error) {
+					require.Equal(t, msg.Topic, kafka.CoprocessorTopic)
+					hashContent := sha256.Sum256([]byte("let s = 'text'"))
+					expectHeader := []sarama.RecordHeader{
+						{
+							Key:	[]byte("action"),
+							Value:	[]byte("deploy"),
+						}, {
+							Key:	[]byte("description"),
+							Value:	[]byte("coprocessor description"),
+						}, {
+							Key:	[]byte("file_name"),
+							Value:	[]byte("fileName.js"),
+						}, {
+							Key:	[]byte("sha256"),
+							Value:	hashContent[:],
+						},
+					}
+					require.Equal(t, expectHeader, msg.Headers)
+					return 0, 0, nil
+				},
+			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			createProduce := func(_ bool, _ int32) (sarama.SyncProducer, error) {
-				produce := mocks.NewSyncProducer(t, nil)
-				if !tt.failSendMessage {
-					produce.ExpectSendMessageWithCheckerFunctionAndSucceed(func(val []byte) error {
-						if tt.fileInformation.content != "" {
-							expectValue := []byte(tt.fileInformation.content)
-							require.Equal(t, expectValue, val)
-						}
-						return nil
-					})
-				} else {
-					// it must fail 3 times for kafka retry policies.
-					produce.ExpectSendMessageAndFail(fmt.Errorf(""))
-					produce.ExpectSendMessageAndFail(fmt.Errorf(""))
-					produce.ExpectSendMessageAndFail(fmt.Errorf("kafka mock error"))
-				}
-				return produce, nil
+				return tt.producer, nil
 			}
 
 			admin := func() (sarama.ClusterAdmin, error) {

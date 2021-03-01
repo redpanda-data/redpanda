@@ -1,7 +1,11 @@
 package wasm
 
 import (
+	"crypto/sha256"
+	"encoding/binary"
+
 	"github.com/Shopify/sarama"
+	"github.com/cespare/xxhash"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/kafka"
 )
 
@@ -52,5 +56,58 @@ func ExistingTopic(admin sarama.ClusterAdmin, topic string) (bool, error) {
 		return true, err
 	} else {
 		return false, err
+	}
+}
+
+func CreateDeployMsg(
+	name string, description string, content []byte,
+) sarama.ProducerMessage {
+	shaValue := sha256.Sum256(content)
+	var headers = []sarama.RecordHeader{
+		{
+			Key:	[]byte("action"),
+			Value:	[]byte("deploy"),
+		}, {
+			Key:	[]byte("description"),
+			Value:	[]byte(description),
+		}, {
+			Key:	[]byte("file_name"),
+			Value:	[]byte(name),
+		}, {
+			Key:	[]byte("sha256"),
+			Value:	shaValue[:],
+		},
+	}
+	id := xxhash.Sum64([]byte(name))
+	binaryId := make([]byte, 8)
+	binary.LittleEndian.PutUint64(binaryId, id)
+	return sarama.ProducerMessage{
+		Key:		sarama.ByteEncoder(binaryId),
+		Topic:		kafka.CoprocessorTopic,
+		Value:		sarama.ByteEncoder(content),
+		Headers:	headers,
+	}
+}
+
+func CreateRemoveMsg(name string) sarama.ProducerMessage {
+	var headers = []sarama.RecordHeader{
+		{
+			Key:	[]byte("action"),
+			Value:	[]byte("remove"),
+		}, {
+			Key:	[]byte("file_name"),
+			Value:	[]byte(name),
+		},
+	}
+	id := xxhash.Sum64([]byte(name))
+	binaryId := make([]byte, 8)
+	binary.LittleEndian.PutUint64(binaryId, id)
+	return sarama.ProducerMessage{
+		Key:	sarama.ByteEncoder(binaryId),
+		Topic:	kafka.CoprocessorTopic,
+		// create empty message, the remove command doesn't need
+		// information on message, just a key value
+		Value:		sarama.ByteEncoder([]byte{}),
+		Headers:	headers,
 	}
 }

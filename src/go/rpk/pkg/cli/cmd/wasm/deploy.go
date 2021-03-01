@@ -1,7 +1,6 @@
 package wasm
 
 import (
-	"crypto/sha256"
 	"fmt"
 	"path/filepath"
 
@@ -44,7 +43,6 @@ func NewDeployCommand(
 			if err != nil {
 				return err
 			}
-
 			return deploy(
 				fullFileName,
 				fileContent,
@@ -95,57 +93,12 @@ func deploy(
 			return err
 		}
 	}
-	// create headers
-	headers, err := createHeaders("deploy", description, fileContent)
-	if err != nil {
-		return err
-	}
+	// create message
+	message := CreateDeployMsg(fileName, description, fileContent)
 	// publish message
-	error := kafka.PublishMessage(producer, fileContent, fileName, kafka.CoprocessorTopic, headers)
-	if error != nil {
-		return fmt.Errorf("error deploying '%s.js: %v'", fileName, error)
+	err = kafka.PublishMessage(producer, &message)
+	if err != nil {
+		return fmt.Errorf("error deploying '%s.js: %v'", fileName, err)
 	}
 	return nil
-}
-
-func createHeaders(
-	action string, description string, content []byte,
-) ([]sarama.RecordHeader, error) {
-	var headersResult []sarama.RecordHeader
-	// create simple struct for key string and value string
-	value := []struct {
-		key	string
-		value	string
-	}{
-		{key: "action", value: action},
-		{key: "description", value: description},
-	}
-	// create RecordHeader and append to headersResult
-	for _, v := range value {
-		keyH := []byte(v.key)
-		valueH := []byte(v.value)
-		headersResult = append(headersResult, struct {
-			Key	[]byte
-			Value	[]byte
-		}{Key: keyH, Value: valueH})
-	}
-	checkSumHeader, err := createCheckSumHeader(content)
-	if err != nil {
-		return nil, err
-	}
-	// append checksum header
-	headersResult = append(headersResult, checkSumHeader)
-
-	return headersResult, nil
-}
-
-func createCheckSumHeader(content []byte) (sarama.RecordHeader, error) {
-	// create key for checksum
-	keySha := []byte("sha256")
-	// create sha256 value for content
-	shaValue := sha256.Sum256(content)
-	return sarama.RecordHeader{
-		Key:	keySha,
-		Value:	shaValue[:],
-	}, nil
 }

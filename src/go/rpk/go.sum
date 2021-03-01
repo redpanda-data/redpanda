@@ -27,6 +27,7 @@ github.com/beorn7/perks v1.0.0 h1:HWo1m869IqiPhD389kmkxeTalrjNbbJTC8LXupb+sl0=
 github.com/beorn7/perks v1.0.0/go.mod h1:KWe93zE9D1o94FZ5RNwFwVgaQK1VOXiVxmqh+CedLV8=
 github.com/burdiyan/kafkautil v0.0.0-20190131162249-eaf83ed22d5b h1:gRFujk0F/KYFDEalhpaAbLIwmeiDH53ZgdllJ7UHxyQ=
 github.com/burdiyan/kafkautil v0.0.0-20190131162249-eaf83ed22d5b/go.mod h1:5hrpM9I1h0fZlTk8JhqaaBaCs76EbCGvFcPtm5SxcCU=
+github.com/cespare/xxhash v1.1.0 h1:a6HrQnmkObjyL+Gs60czilIUGqrzKutQD6XZog3p+ko=
 github.com/cespare/xxhash v1.1.0/go.mod h1:XrSqR1VqqWfGrhpAt58auRo0WTKS1nRRg3ghfAqPWnc=
 github.com/client9/misspell v0.3.4/go.mod h1:qj6jICC3Q7zFZvVWo7KLAzC3yx5G7kyvSDkc90ppPyw=
 github.com/cockroachdb/crlfmt v0.0.0-20200923085322-b9cb16fe9a33 h1:MQXQgcBw3j3gGAaga+YLXEhwCAZkALCNugxX3kuL7v0=

@@ -1,6 +1,8 @@
 package wasm
 
 import (
+	"fmt"
+
 	"github.com/Shopify/sarama"
 	"github.com/spf13/cobra"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/kafka"
@@ -14,7 +16,14 @@ func NewRemoveCommand(
 	command := &cobra.Command{
 		Use:	"remove <name>",
 		Short:	"remove inline WASM function",
-		Args:	cobra.ExactArgs(1),
+		Args: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				return fmt.Errorf(
+					"no wasm script name specified",
+				)
+			}
+			return nil
+		},
 		RunE: func(_ *cobra.Command, args []string) error {
 			name := args[0]
 			producer, err := createProduce(false, -1)
@@ -59,27 +68,8 @@ func remove(
 			return err
 		}
 	}
-	// create empty message, the remove command doesn't need
-	// information on message, just a key value
-	var emptyMessage []byte
-	header := createHeader("remove")
+	// create message
+	message := CreateRemoveMsg(name)
 	//publish message
-	return kafka.PublishMessage(
-		producer,
-		emptyMessage,
-		name,
-		kafka.CoprocessorTopic,
-		[]sarama.RecordHeader{header},
-	)
-}
-
-func createHeader(action string) sarama.RecordHeader {
-	// create key
-	key := []byte("action")
-	// create value
-	value := []byte(action)
-	return sarama.RecordHeader{
-		Key:	key,
-		Value:	value,
-	}
+	return kafka.PublishMessage(producer, &message)
 }
