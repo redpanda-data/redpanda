@@ -174,14 +174,7 @@ ss::future<> event_listener::do_start() {
       [this](model::record_batch_reader::data_t& events) {
           /// The stop condition is met when its been detected that the stored
           /// offset has not moved.
-          return ss::repeat([this, &events] {
-                     model::offset initial_offset = _offset;
-                     return poll_topic(events).then([this, initial_offset] {
-                         return initial_offset == _offset
-                                  ? ss::stop_iteration::yes
-                                  : ss::stop_iteration::no;
-                     });
-                 })
+          return ss::repeat([this, &events] { return poll_topic(events); })
             .then(
               [&events] { return decompress_wasm_events(std::move(events)); })
             .then([](std::vector<model::record_batch> events) {
@@ -197,7 +190,7 @@ ss::future<> event_listener::do_start() {
       });
 }
 
-ss::future<>
+ss::future<ss::stop_iteration>
 event_listener::poll_topic(model::record_batch_reader::data_t& events) {
     std::vector<kafka::fetch_request::partition> partitions;
     partitions.push_back(kafka::fetch_request::partition{
@@ -211,11 +204,10 @@ event_listener::poll_topic(model::record_batch_reader::data_t& events) {
     vassert(_client, "Handle to kafka::transport must not be null");
     return _client->dispatch(std::move(req))
       .then([this, &events](kafka::fetch_response response) {
-          if (response.error == kafka::error_code::unknown_topic_or_partition) {
-              return _client->stop().finally([c{std::move(_client)}] {});
-          }
           if (response.error != kafka::error_code::none) {
-              return ss::now();
+              return _client->stop()
+                .then([] { return ss::stop_iteration::yes; })
+                .finally([c{std::move(_client)}] {});
           }
           vassert(
             response.partitions.size() == 1, "Unexpected partition size ");
@@ -225,6 +217,7 @@ event_listener::poll_topic(model::record_batch_reader::data_t& events) {
             "Unexpected topic name");
           vassert(p.responses.size() == 1, "Unexpected responses size");
           auto& pr = p.responses[0];
+          model::offset last_offset = _offset;
           if (!pr.has_error()) {
               auto crs = kafka::batch_reader(std::move(*pr.record_set));
               while (!crs.empty()) {
@@ -240,7 +233,9 @@ event_listener::poll_topic(model::record_batch_reader::data_t& events) {
                   _offset = events.back().last_offset() + model::offset(1);
               }
           }
-          return ss::now();
+          auto should_stop = (_offset == last_offset) ? ss::stop_iteration::yes
+                                                      : ss::stop_iteration::no;
+          return ss::make_ready_future<ss::stop_iteration>(should_stop);
       });
 };
 

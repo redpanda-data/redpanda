@@ -50,7 +50,8 @@ public:
 private:
     ss::future<> do_start();
 
-    ss::future<> poll_topic(model::record_batch_reader::data_t&);
+    ss::future<ss::stop_iteration>
+    poll_topic(model::record_batch_reader::data_t&);
 
     ss::future<> persist_actions(absl::btree_map<script_id, iobuf>);
 
