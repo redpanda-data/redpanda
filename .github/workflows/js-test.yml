@@ -1,0 +1,26 @@
+name: js/test
+
+on:
+  pull_request:
+    branches:
+      - main
+      - dev
+
+jobs:
+  wasm:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v1
+        with:
+          node-version: '12.16.1'
+          registry-url: 'https://registry.npmjs.org'
+      - name: Check out code
+        uses: actions/checkout@v2
+
+      - name: run test
+        run: |
+          npm install
+          npm run test
+        working-directory: src/js
+
