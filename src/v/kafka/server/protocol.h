@@ -40,7 +40,7 @@ public:
 
     ~protocol() noexcept override = default;
     protocol(const protocol&) = delete;
-    protocol& operator=(const protocol&&) = delete;
+    protocol& operator=(const protocol&) = delete;
     protocol(protocol&&) noexcept = default;
     protocol& operator=(protocol&&) noexcept = delete;
 

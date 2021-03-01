@@ -43,7 +43,7 @@ namespace kafka {
  */
 class coordinator_ntp_mapper {
 public:
-    coordinator_ntp_mapper(ss::sharded<cluster::metadata_cache>& md)
+    explicit coordinator_ntp_mapper(ss::sharded<cluster::metadata_cache>& md)
       : _md(md)
       , _tp_ns(model::kafka_internal_namespace, model::kafka_group_topic) {}
 

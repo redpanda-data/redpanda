@@ -30,7 +30,8 @@ public:
     using reference = const char&;
     using iterator_category = std::forward_iterator_tag;
 
-    io_byte_iterator(io_const_iterator begin, io_const_iterator end) noexcept
+    io_byte_iterator(
+      const io_const_iterator& begin, const io_const_iterator& end) noexcept
       : _frag(begin)
       , _frag_end(end) {
         if (_frag != _frag_end) {
@@ -43,8 +44,8 @@ public:
         }
     }
     io_byte_iterator(
-      io_const_iterator begin,
-      io_const_iterator end,
+      const io_const_iterator& begin,
+      const io_const_iterator& end,
       const char* frag_index,
       const char* frag_index_end) noexcept
       : _frag(begin)
