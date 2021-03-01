@@ -207,7 +207,7 @@ func (r *StatefulSetResource) Obj() (k8sclient.Object, error) {
 					InitContainers: []corev1.Container{
 						{
 							Name:		configuratorContainerName,
-							Image:		r.pandaCluster.Spec.Image + ":" + r.pandaCluster.Spec.Version,
+							Image:		r.pandaCluster.FullImageName(),
 							Command:	[]string{"/bin/sh", "-c"},
 							Args:		[]string{configuratorPath},
 							VolumeMounts: []corev1.VolumeMount{
@@ -225,7 +225,7 @@ func (r *StatefulSetResource) Obj() (k8sclient.Object, error) {
 					Containers: []corev1.Container{
 						{
 							Name:	redpandaContainerName,
-							Image:	r.pandaCluster.Spec.Image + ":" + r.pandaCluster.Spec.Version,
+							Image:	r.pandaCluster.FullImageName(),
 							Args: []string{
 								"redpanda",
 								"start",
