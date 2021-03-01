@@ -9,12 +9,15 @@
 
 #include "kafka/client/consumer.h"
 
+#include "bytes/iobuf_parser.h"
 #include "kafka/client/assignment_plans.h"
+#include "kafka/client/broker.h"
 #include "kafka/client/configuration.h"
 #include "kafka/client/exceptions.h"
 #include "kafka/client/logger.h"
 #include "kafka/protocol/describe_groups.h"
 #include "kafka/protocol/errors.h"
+#include "kafka/protocol/fetch.h"
 #include "kafka/protocol/find_coordinator.h"
 #include "kafka/protocol/heartbeat.h"
 #include "kafka/protocol/join_group.h"
@@ -22,7 +25,12 @@
 #include "kafka/protocol/metadata.h"
 #include "kafka/protocol/sync_group.h"
 #include "kafka/types.h"
+#include "model/fundamental.h"
+#include "model/metadata.h"
+#include "model/record_utils.h"
 
+#include <seastar/core/coroutine.hh>
+#include <seastar/core/loop.hh>
 #include <seastar/core/sleep.hh>
 
 #include <chrono>
@@ -59,6 +67,17 @@ struct partition_comp {
       const metadata_response::partition& rhs) const {
         return lhs.index < rhs.index;
     }
+};
+
+fetch_response
+reduce_fetch_response(fetch_response result, fetch_response val) {
+    result.throttle_time += val.throttle_time;
+    result.partitions.insert(
+      result.partitions.end(),
+      std::make_move_iterator(val.partitions.begin()),
+      std::make_move_iterator(val.partitions.end()));
+
+    return result;
 };
 
 } // namespace detail
@@ -310,10 +329,73 @@ consumer::offset_commit(std::vector<offset_commit_request_topic> topics) {
     return req_res(std::move(req_builder));
 }
 
-ss::future<shared_consumer_t>
-make_consumer(shared_broker_t coordinator, group_id group_id) {
+ss::future<fetch_response>
+consumer::dispatch_fetch(broker_reqs_t::value_type br) {
+    auto& [broker, req] = br;
+    kclog.trace("Consumer: {}, fetch_req: {}", *this, req);
+    auto res = co_await broker->dispatch(std::move(req));
+    kclog.trace("Consumer: {}, fetch_res: {}", *this, res);
+
+    if (res.error != error_code::none) {
+        throw broker_error(broker->id(), res.error);
+    }
+
+    _fetch_sessions[broker].apply(res);
+    co_return res;
+}
+
+ss::future<fetch_response>
+consumer::fetch(std::chrono::milliseconds timeout, int32_t max_bytes) {
+    // Split requests by broker
+    broker_reqs_t broker_reqs;
+    for (auto const& [t, ps] : _assignment) {
+        for (const auto& p : ps) {
+            auto tp = model::topic_partition{t, p};
+            auto broker = co_await _brokers.find(tp);
+            auto& session = _fetch_sessions[broker];
+
+            auto& req = broker_reqs
+                          .try_emplace(
+                            broker,
+                            fetch_request{
+                              .replica_id = consumer_replica_id,
+                              .max_wait_time = timeout,
+                              .min_bytes = 1,
+                              .max_bytes = max_bytes,
+                              .isolation_level = 0, // READ_UNCOMMITTED
+                              .session_id = session.id(),
+                              .session_epoch = session.epoch(),
+                            })
+                          .first->second;
+
+            if (req.topics.empty() || req.topics.back().name != t) {
+                req.topics.push_back(fetch_request::topic{.name{t}});
+            }
+
+            req.topics.back().partitions.push_back(fetch_request::partition{
+              .id = p,
+              .fetch_offset = session.offset(tp),
+              .partition_max_bytes = max_bytes});
+        }
+    }
+
+    co_return co_await ss::map_reduce(
+      std::make_move_iterator(broker_reqs.begin()),
+      std::make_move_iterator(broker_reqs.end()),
+      [this](broker_reqs_t::value_type br) {
+          return dispatch_fetch(std::move(br));
+      },
+      fetch_response{
+        .throttle_time{},
+        .error = error_code::none,
+        .session_id = kafka::invalid_fetch_session_id},
+      detail::reduce_fetch_response);
+}
+
+ss::future<shared_consumer_t> make_consumer(
+  brokers& brokers, shared_broker_t coordinator, group_id group_id) {
     auto c = ss::make_lw_shared<consumer>(
-      std::move(coordinator), std::move(group_id));
+      brokers, std::move(coordinator), std::move(group_id));
     return c->join().then([c]() mutable { return std::move(c); });
 }
 
