@@ -53,7 +53,7 @@ func (r *StatefulSetResource) updateStsImage(
 		return err
 	}
 
-	newImage := fmt.Sprintf("%s:%s", r.pandaCluster.Spec.Image, r.pandaCluster.Spec.Version)
+	newImage := r.pandaCluster.FullImageName()
 	if rpContainer.Image == newImage && !upgrading {
 		return nil
 	}
