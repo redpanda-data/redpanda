@@ -19,6 +19,13 @@
 #include <string_view>
 #include <xxhash.h>
 
+inline uint64_t xxhash_64(const unsigned char* data, size_t length) {
+    return XXH64(data, length, 0);
+}
+inline uint32_t xxhash_32(const unsigned char* data, size_t length) {
+    return XXH32(data, length, 0);
+}
+
 inline uint64_t xxhash_64(const char* data, const size_t& length) {
     return XXH64(data, length, 0);
 }
