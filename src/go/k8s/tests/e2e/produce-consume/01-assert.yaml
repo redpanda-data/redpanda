@@ -1,42 +1,9 @@
-apiVersion: apps/v1
-kind: StatefulSet
+apiVersion: batch/v1
+kind: Job
 metadata:
-  name: cluster-sample
-spec:
-  template:
-    spec:
-      containers:
-        - name: redpanda
-          env:
-            - name: REDPANDA_ENVIRONMENT
-              value: kubernetes
-            - name: POD_NAME
-              valueFrom:
-                fieldRef:
-                  apiVersion: v1
-                  fieldPath: metadata.name
-            - name: POD_NAMESPACE
-              valueFrom:
-                fieldRef:
-                  apiVersion: v1
-                  fieldPath: metadata.namespace
-            - name: POD_IP
-              valueFrom:
-                fieldRef:
-                  apiVersion: v1
-                  fieldPath: status.podIP
-          args:
-            - redpanda
-            - start
-            - --check=false
-            - --smp 1
-            - --memory 104857600
-            - --reserve-memory 0M
-            - --advertise-kafka-addr=internal://$(POD_NAME).cluster-sample.$(POD_NAMESPACE).svc.cluster.local.:9092
-              --kafka-addr=internal://$(POD_IP):9092
-              --advertise-rpc-addr=$(POD_NAME).cluster-sample.$(POD_NAMESPACE).svc.cluster.local.:33145
-              --rpc-addr=$(POD_IP):33145
-            - --
-            - --default-log-level=debug
+  name: create-test-topic
 status:
-  readyReplicas: 1
+  conditions:
+    - status: "True"
+      type: Complete
+  succeeded: 1
