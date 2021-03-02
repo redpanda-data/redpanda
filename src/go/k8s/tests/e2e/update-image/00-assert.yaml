@@ -1,7 +1,6 @@
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
-  name: redpanda-controller-manager
-  namespace: redpanda-system
+  name: update-image-cluster
 status:
-  availableReplicas: 1
+  readyReplicas: 2
