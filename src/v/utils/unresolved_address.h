@@ -37,16 +37,18 @@ public:
     }
 
 private:
+    friend std::ostream& operator<<(std::ostream&, const unresolved_address&);
+
     ss::sstring _host;
     uint16_t _port{0};
 };
 
-namespace std {
-static inline ostream& operator<<(ostream& o, const unresolved_address& s) {
+inline std::ostream& operator<<(std::ostream& o, const unresolved_address& s) {
     fmt::print(o, "{{host: {}, port: {}}}", s.host(), s.port());
     return o;
 }
 
+namespace std {
 template<>
 struct hash<unresolved_address> {
     size_t operator()(const unresolved_address& a) const {
