@@ -143,50 +143,48 @@ ss::future<> event_listener::do_ingest() {
     /// keeping all of this data in memory, however the topic is compacted, we
     /// don't expect the size of unique records to be very big.
     model::record_batch_reader::data_t events;
-    model::offset initial_offset{};
-    while (initial_offset != _offset) {
-        initial_offset = _offset;
-        co_await poll_topic(events);
+    ss::stop_iteration stop{};
+    while (stop == ss::stop_iteration::no) {
+        stop = co_await poll_topic(events);
     }
     auto decompressed = co_await decompress_wasm_events(std::move(events));
     auto reconciled = wasm::reconcile_events(std::move(decompressed));
     co_await persist_actions(std::move(reconciled));
 }
 
-ss::future<>
+ss::future<ss::stop_iteration>
 event_listener::poll_topic(model::record_batch_reader::data_t& events) {
-    return _client
-      .fetch_partition(model::coprocessor_internal_tp, _offset, 64_KiB, 5s)
-      .then([this, &events](kafka::fetch_response response) {
-          if (
-            (response.error != kafka::error_code::none)
-            || _abort_source.abort_requested()) {
-              return ss::now();
-          }
-          vassert(response.partitions.size() == 1, "Unexpected partition size");
-          auto& p = response.partitions[0];
-          vassert(
-            p.name == model::coprocessor_internal_topic,
-            "Unexpected topic name");
-          vassert(p.responses.size() == 1, "Unexpected responses size");
-          auto& pr = p.responses[0];
-          if (!pr.has_error()) {
-              auto crs = kafka::batch_reader(std::move(*pr.record_set));
-              while (!crs.empty()) {
-                  auto kba = crs.consume_batch();
-                  if (!kba.v2_format || !kba.valid_crc || !kba.batch) {
-                      vlog(
-                        coproclog.warn,
-                        "Invalid batch pushed to internal wasm topic");
-                      continue;
-                  }
-                  events.push_back(std::move(*kba.batch));
-                  /// Update so subsequent reads start at the correct offset
-                  _offset = events.back().last_offset() + model::offset(1);
-              }
-          }
-          return ss::now();
-      });
+    auto response = co_await _client.fetch_partition(
+      model::coprocessor_internal_tp, _offset, 64_KiB, 5s);
+    if (
+      response.error != kafka::error_code::none
+      || _abort_source.abort_requested()) {
+        co_return ss::stop_iteration::yes;
+    }
+    vassert(response.partitions.size() == 1, "Unexpected partition size");
+    auto& p = response.partitions[0];
+    vassert(
+      p.name == model::coprocessor_internal_topic, "Unexpected topic name");
+    vassert(p.responses.size() == 1, "Unexpected responses size");
+    auto& pr = p.responses[0];
+    model::offset initial = _offset;
+    if (!pr.has_error()) {
+        auto crs = kafka::batch_reader(std::move(*pr.record_set));
+        while (!crs.empty()) {
+            auto kba = crs.consume_batch();
+            if (!kba.v2_format || !kba.valid_crc || !kba.batch) {
+                vlog(
+                  coproclog.warn,
+                  "Invalid batch pushed to internal wasm topic");
+                continue;
+            }
+            events.push_back(std::move(*kba.batch));
+            /// Update so subsequent reads start at the correct offset
+            _offset = events.back().last_offset() + model::offset(1);
+        }
+    }
+    co_return initial == _offset ? ss::stop_iteration::yes
+                                 : ss::stop_iteration::no;
 };
 
 } // namespace coproc::wasm
