@@ -26,6 +26,32 @@ namespace pp = pandaproxy;
 namespace ppj = pp::json;
 namespace kc = kafka::client;
 
+namespace {
+
+auto get_consumer_offsets(
+  http::client& client,
+  const kafka::group_id& g_id,
+  const kafka::member_id& m_id) {
+    const ss::sstring get_offsets_body(R"({
+   "partitions":[
+      {
+         "topic":"t",
+         "partition":0
+      }
+   ]
+})");
+    auto body = iobuf();
+    body.append(get_offsets_body.data(), get_offsets_body.size());
+    auto res = http_request(
+      client,
+      fmt::format("/consumers/{}/instances/{}/offsets", g_id(), m_id()),
+      std::move(body),
+      boost::beast::http::verb::get);
+    return res;
+};
+
+} // namespace
+
 FIXTURE_TEST(pandaproxy_consumer_group, pandaproxy_test_fixture) {
     using namespace std::chrono_literals;
 
@@ -150,5 +176,89 @@ FIXTURE_TEST(pandaproxy_consumer_group, pandaproxy_test_fixture) {
         BOOST_REQUIRE_EQUAL(
           res.body,
           R"([{"topic":"t","key":"AAD//w==","value":"","partition":0,"offset":0},{"topic":"t","key":"","value":"dmVjdG9yaXplZA==","partition":0,"offset":1},{"topic":"t","key":"","value":"cGFuZGFwcm94eQ==","partition":0,"offset":2},{"topic":"t","key":"","value":"bXVsdGlicm9rZXI=","partition":0,"offset":3}])");
+    }
+
+    {
+        info("Get consumer offsets (expect -1)");
+        auto res = get_consumer_offsets(client, group_id, member_id);
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::ok);
+        BOOST_REQUIRE_EQUAL(
+          res.body,
+          R"({"offsets":[{"topic":"t","partition":0,"offset":-1,"metadata":""}]})");
+    }
+
+    {
+        info("Commit 1 consumer offset");
+        const ss::sstring commit_offsets_body(R"({
+   "partitions":[
+      {
+         "topic":"t",
+         "partition":0,
+         "offset": 1
+      }
+   ]
+})");
+        auto body = iobuf();
+        body.append(commit_offsets_body.data(), commit_offsets_body.size());
+        auto res = http_request(
+          client,
+          fmt::format(
+            "/consumers/{}/instances/{}/offsets", group_id(), member_id()),
+          std::move(body),
+          boost::beast::http::verb::post);
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::no_content);
+    }
+
+    {
+        info("Get consumer offsets (expect 1)");
+        auto res = get_consumer_offsets(client, group_id, member_id);
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::ok);
+        BOOST_REQUIRE_EQUAL(
+          res.body,
+          R"({"offsets":[{"topic":"t","partition":0,"offset":1,"metadata":""}]})");
+    }
+
+    {
+        info("Commit all consumer offsets");
+        auto res = http_request(
+          client,
+          fmt::format(
+            "/consumers/{}/instances/{}/offsets", group_id(), member_id()),
+          boost::beast::http::verb::post);
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::no_content);
+    }
+
+    {
+        info("Get consumer offsets (expect 3)");
+        auto res = get_consumer_offsets(client, group_id, member_id);
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::ok);
+        BOOST_REQUIRE_EQUAL(
+          res.body,
+          R"({"offsets":[{"topic":"t","partition":0,"offset":3,"metadata":""}]})");
+    }
+
+    {
+        info("Remove consumer (expect no_content)");
+        auto res = http_request(
+          client,
+          fmt::format("/consumers/{}/instances/{}", group_id(), member_id()),
+          boost::beast::http::verb::delete_);
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::no_content);
+    }
+
+    {
+        info("Remove consumer (expect not_found)");
+        auto res = http_request(
+          client,
+          fmt::format("/consumers/{}/instances/{}", group_id(), member_id()),
+          boost::beast::http::verb::delete_);
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::not_found);
     }
 }

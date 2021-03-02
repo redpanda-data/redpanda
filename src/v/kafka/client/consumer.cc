@@ -35,6 +35,7 @@
 
 #include <chrono>
 #include <exception>
+#include <iterator>
 
 namespace kafka::client {
 
@@ -318,6 +319,23 @@ consumer::offset_fetch(std::vector<offset_fetch_request_topic> topics) {
 
 ss::future<offset_commit_response>
 consumer::offset_commit(std::vector<offset_commit_request_topic> topics) {
+    if (topics.empty()) { // commit all offsets
+        for (const auto& s : _fetch_sessions) {
+            auto res = s.second.make_offset_commit_request();
+            topics.insert(
+              topics.end(),
+              std::make_move_iterator(res.begin()),
+              std::make_move_iterator(res.end()));
+        }
+    } else { // set epoch for requests tps
+        for (auto& t : topics) {
+            for (auto& p : t.partitions) {
+                auto tp = model::topic_partition{t.name, p.partition_index};
+                auto broker = co_await _brokers.find(tp);
+                p.committed_leader_epoch = _fetch_sessions[broker].epoch();
+            }
+        }
+    }
     auto req_builder = [me{shared_from_this()}, topics{std::move(topics)}]() {
         return offset_commit_request{.data{
           .group_id = me->_group_id,
@@ -326,7 +344,7 @@ consumer::offset_commit(std::vector<offset_commit_request_topic> topics) {
           .topics = topics}};
     };
 
-    return req_res(std::move(req_builder));
+    co_return co_await req_res(std::move(req_builder));
 }
 
 ss::future<fetch_response>

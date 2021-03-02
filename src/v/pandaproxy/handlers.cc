@@ -9,12 +9,22 @@
 
 #include "handlers.h"
 
+#include "kafka/client/exceptions.h"
+#include "kafka/protocol/errors.h"
 #include "kafka/protocol/fetch.h"
+#include "kafka/protocol/leave_group.h"
+#include "kafka/protocol/offset_commit.h"
+#include "kafka/protocol/offset_fetch.h"
+#include "kafka/protocol/schemata/offset_commit_request.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "pandaproxy/configuration.h"
 #include "pandaproxy/json/requests/create_consumer.h"
 #include "pandaproxy/json/requests/fetch.h"
+#include "pandaproxy/json/requests/offset_commit.h"
+#include "pandaproxy/json/requests/offset_fetch.h"
+#include "pandaproxy/json/requests/partition_offsets.h"
+#include "pandaproxy/json/requests/partitions.h"
 #include "pandaproxy/json/requests/produce.h"
 #include "pandaproxy/json/requests/subscribe_consumer.h"
 #include "pandaproxy/json/rjson_util.h"
@@ -23,7 +33,10 @@
 #include "ssx/future-util.h"
 #include "storage/record_batch_builder.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
+#include <seastar/core/std-coroutine.hh>
+#include <seastar/http/reply.hh>
 
 #include <absl/container/flat_hash_map.h>
 #include <boost/algorithm/string.hpp>
@@ -207,6 +220,16 @@ create_consumer(server::request_t rq, server::reply_t rp) {
 }
 
 ss::future<server::reply_t>
+remove_consumer(server::request_t rq, server::reply_t rp) {
+    auto group_id = kafka::group_id(rq.req->param["group_name"]);
+    auto member_id = kafka::member_id(rq.req->param["instance"]);
+
+    co_await rq.ctx.client.remove_consumer(group_id, member_id);
+    rp.rep->set_status(ss::httpd::reply::status_type::no_content);
+    co_return rp;
+}
+
+ss::future<server::reply_t>
 subscribe_consumer(server::request_t rq, server::reply_t rp) {
     auto req_data = ppj::rjson_parse(
       rq.req->content.data(), ppj::subscribe_consumer_request_handler());
@@ -250,4 +273,42 @@ consumer_fetch(server::request_t rq, server::reply_t rp) {
           return std::move(rp);
       });
 }
+
+ss::future<server::reply_t>
+get_consumer_offsets(server::request_t rq, server::reply_t rp) {
+    auto group_id = kafka::group_id(rq.req->param["group_name"]);
+    auto member_id = kafka::member_id(rq.req->param["instance"]);
+
+    auto req_data = ppj::partitions_request_to_offset_request(ppj::rjson_parse(
+      rq.req->content.data(), ppj::partitions_request_handler()));
+
+    auto res = co_await rq.ctx.client.consumer_offset_fetch(
+      group_id, member_id, std::move(req_data));
+    rapidjson::StringBuffer str_buf;
+    rapidjson::Writer<rapidjson::StringBuffer> w(str_buf);
+    ppj::rjson_serialize(w, res);
+    ss::sstring json_rslt = str_buf.GetString();
+    rp.rep->write_body("json", json_rslt);
+    co_return rp;
+}
+
+ss::future<server::reply_t>
+post_consumer_offsets(server::request_t rq, server::reply_t rp) {
+    auto group_id = kafka::group_id(rq.req->param["group_name"]);
+    auto member_id = kafka::member_id(rq.req->param["instance"]);
+
+    // If the request is empty, commit all offsets
+    auto req_data = rq.req->content.length() == 0
+                      ? std::vector<kafka::offset_commit_request_topic>()
+                      : ppj::partition_offsets_request_to_offset_commit_request(
+                        ppj::rjson_parse(
+                          rq.req->content.data(),
+                          ppj::partition_offsets_request_handler()));
+
+    auto res = co_await rq.ctx.client.consumer_offset_commit(
+      group_id, member_id, std::move(req_data));
+    rp.rep->set_status(ss::httpd::reply::status_type::no_content);
+    co_return rp;
+}
+
 } // namespace pandaproxy
