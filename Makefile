@@ -13,6 +13,10 @@ else
 GOBIN=$(shell go env GOBIN)
 endif
 
+ifneq ($(TEST_NAME), )
+TEST_ONLY_FLAG = --test $(TEST_NAME)
+endif
+
 all: manager
 
 # Run tests
@@ -80,7 +84,7 @@ push-to-kind:
 
 # Execute end to end tests
 e2e-tests: kuttl docker-build
-	$(KUTTL) test
+	$(KUTTL) test $(TEST_ONLY_FLAG)
 
 # Download controller-gen locally if necessary
 CONTROLLER_GEN = $(shell pwd)/bin/controller-gen
