@@ -140,6 +140,10 @@ public:
 
     ss::future<> update_metadata() { return _wait_or_start_update_metadata(); }
 
+    ss::future<bool> is_connected() const {
+        return _brokers.empty().then(std::logical_not<>());
+    }
+
 private:
     /// \brief Connect and update metdata.
     ss::future<> do_connect(unresolved_address addr);

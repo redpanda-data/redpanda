@@ -48,6 +48,7 @@ public:
 
 private:
     ss::future<> do_start();
+    ss::future<> do_ingest();
 
     ss::future<> poll_topic(model::record_batch_reader::data_t&);
 
