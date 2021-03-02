@@ -1,6 +1,7 @@
 set(fixture_srcs
     utils/event_publisher.cc
     utils/supervisor.cc
+    utils/coproc_slim_fixture.cc
     utils/coproc_test_fixture.cc
     utils/router_test_fixture.cc
     utils/wasm_event_generator.cc
