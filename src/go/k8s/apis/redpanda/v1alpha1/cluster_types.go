@@ -92,6 +92,6 @@ func init() {
 }
 
 // FullImageName returns image name including version
-func (c *Cluster) FullImageName() string {
-	return fmt.Sprintf("%s:%s", c.Spec.Image, c.Spec.Version)
+func (r *Cluster) FullImageName() string {
+	return fmt.Sprintf("%s:%s", r.Spec.Image, r.Spec.Version)
 }
