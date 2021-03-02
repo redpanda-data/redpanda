@@ -107,4 +107,8 @@ ss::future<> brokers::apply(metadata_response&& res) {
     });
 }
 
+ss::future<bool> brokers::empty() const {
+    return ss::make_ready_future<bool>(_brokers.empty());
+}
+
 } // namespace kafka::client
