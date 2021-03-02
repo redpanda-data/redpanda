@@ -300,11 +300,16 @@ supervisor::disable_all_coprocessors(empty_request&&, rpc::streaming_context&) {
                 return std::move(set);
             })
           .then([this](std::set<script_id> ids) {
-              return ssx::async_transform(
-                       ids,
-                       [this](script_id id) { return disable_coprocessor(id); })
-                .then([](std::vector<disable_copros_reply::ack> acks) {
-                    return disable_copros_reply{.acks = std::move(acks)};
+              return ss::do_with(
+                std::move(ids), [this](std::set<script_id>& ids) {
+                    return ssx::async_transform(
+                             ids,
+                             [this](script_id id) {
+                                 return disable_coprocessor(id);
+                             })
+                      .then([](std::vector<disable_copros_reply::ack> acks) {
+                          return disable_copros_reply{.acks = std::move(acks)};
+                      });
                 });
           });
     });
