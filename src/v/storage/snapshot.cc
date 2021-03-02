@@ -76,7 +76,7 @@ ss::future<> snapshot_manager::finish_snapshot(snapshot_writer& writer) {
 
 ss::future<> snapshot_manager::remove_partial_snapshots() {
     std::regex re(
-      fmt::format("^{}\\.partial\\.(\\d+)\\.([a-zA-Z0-9]{{4}})$", _filename));
+      fmt::format(R"(^{}\.partial\.(\d+)\.([a-zA-Z0-9]{{4}})$)", _filename));
     return directory_walker::walk(
       _dir.string(), [this, re = std::move(re)](ss::directory_entry ent) {
           if (!ent.type || *ent.type != ss::directory_entry_type::regular) {
