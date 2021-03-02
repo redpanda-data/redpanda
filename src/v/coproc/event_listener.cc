@@ -25,6 +25,9 @@
 #include <seastar/core/future.hh>
 #include <seastar/core/loop.hh>
 #include <seastar/core/seastar.hh>
+#include <seastar/core/sleep.hh>
+
+#include <exception>
 
 namespace coproc::wasm {
 
@@ -84,13 +87,17 @@ event_listener::event_listener(ss::sharded<pacemaker>& pacemaker)
   , _dispatcher(pacemaker, _abort_source) {}
 
 ss::future<> event_listener::start() {
-    return _client.connect().then([this] {
-        (void)ss::with_gate(_gate, [this] {
-            return ss::do_until(
-              [this] { return _abort_source.abort_requested(); },
-              [this] { return do_start(); });
-        });
+    (void)ss::with_gate(_gate, [this] {
+        return ss::do_until(
+          [this] { return _abort_source.abort_requested(); },
+          [this] {
+              return do_start().then([this] {
+                  return ss::sleep_abortable(2s, _abort_source)
+                    .handle_exception_type([](const ss::sleep_aborted&) {});
+              });
+          });
     });
+    return ss::now();
 }
 
 static ss::future<std::vector<model::record_batch>>
@@ -103,6 +110,22 @@ decompress_wasm_events(model::record_batch_reader::data_t events) {
 }
 
 ss::future<> event_listener::do_start() {
+    bool connected = co_await _client.is_connected();
+    if (connected) {
+        co_await do_ingest();
+    } else {
+        try {
+            co_await _client.connect();
+        } catch (const kafka::client::broker_error& e) {
+            vlog(
+              coproclog.warn,
+              "Failed to connect to a broker within the retry policy: {}",
+              e);
+        }
+    }
+}
+
+ss::future<> event_listener::do_ingest() {
     /// This method performs the main polling behavior. Within a repeat loop it
     /// will poll from data until it cannot poll anymore. Normally we would be
     /// concerned about keeping all of this data in memory, however the topic is
@@ -127,10 +150,6 @@ ss::future<> event_listener::do_start() {
             })
             .then([this](absl::btree_map<script_id, iobuf> wsas) {
                 return persist_actions(std::move(wsas));
-            })
-            .then([this] { return ss::sleep_abortable(2s, _abort_source); })
-            .handle_exception([](std::exception_ptr eptr) {
-                vlog(coproclog.debug, "Exited sleep early: {}", eptr);
             });
       });
 }
