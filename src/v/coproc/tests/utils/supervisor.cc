@@ -267,12 +267,17 @@ supervisor::disable_coprocessor(script_id id) {
 ss::future<disable_copros_reply> supervisor::disable_coprocessors(
   disable_copros_request&& r, rpc::streaming_context&) {
     return ss::with_scheduling_group(
-      get_scheduling_group(), [this, r = std::move(r)] {
-          return ssx::async_transform(
-                   r.ids,
-                   [this](script_id id) { return disable_coprocessor(id); })
-            .then([](std::vector<disable_copros_reply::ack> acks) {
-                return disable_copros_reply{.acks = std::move(acks)};
+      get_scheduling_group(), [this, r = std::move(r)]() mutable {
+          return ss::do_with(
+            std::move(r.ids), [this](std::vector<script_id>& ids) {
+                return ssx::async_transform(
+                         ids,
+                         [this](script_id id) {
+                             return disable_coprocessor(id);
+                         })
+                  .then([](std::vector<disable_copros_reply::ack> acks) {
+                      return disable_copros_reply{.acks = std::move(acks)};
+                  });
             });
       });
 }
