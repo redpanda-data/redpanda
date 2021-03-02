@@ -32,7 +32,7 @@ ss::future<std::optional<snapshot_reader>> snapshot_manager::open_snapshot() {
               std::nullopt);
         }
         return ss::open_file_dma(path.string(), ss::open_flags::ro)
-          .then([this, path](ss::file file) {
+          .then([this, path](const ss::file& file) {
               // ss::file::~file will automatically close the file. so no
               // worries about leaking an fd if something goes wrong here.
               ss::file_input_stream_options options;
