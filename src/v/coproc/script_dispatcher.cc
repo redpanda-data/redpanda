@@ -273,6 +273,11 @@ script_dispatcher::disable_coprocessors(disable_copros_request req) {
     }
 }
 
+ss::future<> script_dispatcher::remove_all_sources() {
+    return _pacemaker.map([](pacemaker& p) { return p.remove_all_sources(); })
+      .discard_result();
+}
+
 ss::future<> script_dispatcher::disable_all_coprocessors() {
     struct error_cnt {
         size_t n_success{0};
@@ -313,6 +318,7 @@ ss::future<> script_dispatcher::disable_all_coprocessors() {
       cnt.n_success,
       cnt.n_internal_error,
       cnt.n_script_dnes);
+    co_await remove_all_sources();
 }
 
 ss::future<std::optional<coproc::supervisor_client_protocol>>

@@ -52,6 +52,7 @@ private:
     ss::future<std::vector<std::vector<coproc::errc>>>
       add_sources(script_id, std::vector<topic_namespace_policy>);
     ss::future<std::vector<coproc::errc>> remove_sources(script_id);
+    ss::future<> remove_all_sources();
 
     /// Return std::nullopt only when the abort source is triggered,
     /// otherwise will forever loop attempting to re-connect to the wasm

@@ -74,6 +74,11 @@ public:
     ss::future<errc> remove_source(script_id);
 
     /**
+     * Removes all script_ids from the pacemaker.
+     */
+    ss::future<absl::btree_map<script_id, errc>> remove_all_sources();
+
+    /**
      * @returns true if a matching script id exists on 'this' shard
      */
     bool local_script_id_exists(script_id);
