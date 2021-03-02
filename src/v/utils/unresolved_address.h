@@ -32,9 +32,7 @@ public:
     const ss::sstring& host() const { return _host; }
     uint16_t port() const { return _port; }
 
-    bool operator==(const unresolved_address& other) const {
-        return _host == other._host && _port == other._port;
-    }
+    bool operator==(const unresolved_address& other) const = default;
 
 private:
     friend std::ostream& operator<<(std::ostream&, const unresolved_address&);
