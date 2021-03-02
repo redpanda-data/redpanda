@@ -156,7 +156,7 @@ func executeInfo(
 	}
 	if errs := grp.Wait(); errs != nil {
 		for _, err := range errs.Errors {
-			log.Info(err)
+			log.Debug(err)
 		}
 	}
 	for _, rows := range results {
