@@ -15,6 +15,7 @@
 #include "cluster/partition_probe.h"
 #include "cluster/seq_stm.h"
 #include "cluster/types.h"
+#include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record_batch_reader.h"
 #include "raft/consensus.h"
@@ -91,10 +92,12 @@ public:
     }
 
     /**
-     * Greatest offset visible to consumers. Named high_watermark to be
-     * consistent with Kafka nomenclature.
+     * All batches with offets smaller than high watermark are visible to
+     * consumers. Named high_watermark to be consistent with Kafka nomenclature.
      */
-    model::offset high_watermark() const { return _raft->last_visible_index(); }
+    model::offset high_watermark() const {
+        return raft::details::next_offset(_raft->last_visible_index());
+    }
 
     const model::ntp& ntp() const { return _raft->ntp(); }
 
