@@ -13,6 +13,7 @@
 #include "hashing/secure.h"
 #include "random/generators.h"
 #include "security/scram_credential.h"
+#include "ssx/sformat.h"
 
 #include <absl/container/node_hash_map.h>
 
@@ -64,7 +65,7 @@ public:
     const ss::sstring& nonce() const { return _nonce; }
 
     ss::sstring bare_message() const {
-        return fmt::format("n={},r={}", _username, _nonce);
+        return ssx::sformat("n={},r={}", _username, _nonce);
     }
 
     bool token_authenticated() const;
@@ -264,7 +265,7 @@ private:
       const client_first_message& client_first,
       const server_first_message& server_first,
       const client_final_message& client_final) {
-        return fmt::format(
+        return ssx::sformat(
           "{},{},{}",
           client_first.bare_message(),
           server_first.sasl_message(),
