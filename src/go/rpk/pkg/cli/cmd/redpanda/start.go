@@ -60,6 +60,7 @@ type seastarFlags struct {
 }
 
 const (
+	configFlag		= "config"
 	memoryFlag		= "memory"
 	lockMemoryFlag		= "lock-memory"
 	reserveMemoryFlag	= "reserve-memory"
@@ -74,7 +75,26 @@ const (
 	maxIoRequestsFlag	= "max-io-requests"
 	mbindFlag		= "mbind"
 	overprovisionedFlag	= "overprovisioned"
+	nodeIDFlag		= "node-id"
 )
+
+func updateConfigWithFlags(conf *config.Config, flags *pflag.FlagSet) {
+	if flags.Changed(configFlag) {
+		conf.ConfigFile, _ = flags.GetString(configFlag)
+	}
+	if flags.Changed(lockMemoryFlag) {
+		conf.Rpk.EnableMemoryLocking, _ = flags.GetBool(lockMemoryFlag)
+	}
+	if flags.Changed(wellKnownIOFlag) {
+		conf.Rpk.WellKnownIo, _ = flags.GetString(wellKnownIOFlag)
+	}
+	if flags.Changed(overprovisionedFlag) {
+		conf.Rpk.Overprovisioned, _ = flags.GetBool(overprovisionedFlag)
+	}
+	if flags.Changed(nodeIDFlag) {
+		conf.Redpanda.Id, _ = flags.GetInt(nodeIDFlag)
+	}
+}
 
 func NewStartCommand(
 	fs afero.Fs, mgr config.Manager, launcher rp.Launcher,
@@ -82,7 +102,7 @@ func NewStartCommand(
 	prestartCfg := prestartConfig{}
 	var (
 		configFile	string
-		nodeID		uint
+		nodeID		int
 		seeds		[]string
 		kafkaAddr	[]string
 		rpcAddr		string
@@ -102,6 +122,9 @@ func NewStartCommand(
 			if err != nil {
 				return err
 			}
+
+			updateConfigWithFlags(conf, ccmd.Flags())
+
 			env := api.EnvironmentPayload{}
 			if len(seeds) == 0 {
 				// If --seeds wasn't passed, fall back to the
@@ -235,20 +258,18 @@ func NewStartCommand(
 	}
 	command.Flags().StringVar(
 		&configFile,
-		"config",
+		configFlag,
 		"",
 		"Redpanda config file, if not set the file will be searched for"+
 			" in the default locations",
 	)
-	mgr.BindFlag("config_file", command.Flags().Lookup("config"))
-	command.Flags().UintVar(
+	command.Flags().IntVar(
 		&nodeID,
-		"node-id",
+		nodeIDFlag,
 		0,
 		"The node ID. Must be an integer and must be unique"+
 			" within a cluster",
 	)
-	mgr.BindFlag("redpanda.node_id", command.Flags().Lookup("node-id"))
 	command.Flags().StringSliceVarP(
 		&seeds,
 		"seeds",
@@ -286,7 +307,6 @@ func NewStartCommand(
 			"if not specified redpanda will use all available memory")
 	command.Flags().BoolVar(&sFlags.lockMemory,
 		lockMemoryFlag, false, "If set, will prevent redpanda from swapping")
-	mgr.BindFlag("rpk.enable_memory_locking", command.Flags().Lookup(lockMemoryFlag))
 	command.Flags().StringVar(&sFlags.cpuSet, cpuSetFlag, "",
 		"Set of CPUs for redpanda to use in cpuset(7) format, "+
 			"if not specified redpanda will use all available CPUs")
@@ -321,15 +341,13 @@ func NewStartCommand(
 		wellKnownIOFlag,
 		"",
 		"The cloud vendor and VM type, in the format <vendor>:<vm type>:<storage type>")
-	mgr.BindFlag("rpk.well_known_io", command.Flags().Lookup(wellKnownIOFlag))
 	command.Flags().BoolVar(&sFlags.mbind, mbindFlag, true, "enable mbind")
 	command.Flags().BoolVar(
 		&sFlags.overprovisioned,
 		overprovisionedFlag,
-		true,
+		false,
 		"Enable overprovisioning",
 	)
-	mgr.BindFlag("rpk.overprovisioned", command.Flags().Lookup(overprovisionedFlag))
 	command.Flags().DurationVar(
 		&timeout,
 		"timeout",
@@ -394,9 +412,6 @@ func prestart(
 func buildRedpandaFlags(
 	fs afero.Fs, conf *config.Config, sFlags seastarFlags, flags *pflag.FlagSet,
 ) (*rp.RedpandaArgs, error) {
-	if flags.Changed(wellKnownIOFlag) {
-		conf.Rpk.WellKnownIo, _ = flags.GetString(wellKnownIOFlag)
-	}
 	wellKnownIOSet := conf.Rpk.WellKnownIo != ""
 	ioPropsSet := flags.Changed(ioPropertiesFileFlag) || flags.Changed(ioPropertiesFlag)
 	if wellKnownIOSet && ioPropsSet {

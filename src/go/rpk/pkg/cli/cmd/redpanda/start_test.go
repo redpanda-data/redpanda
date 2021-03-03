@@ -181,14 +181,216 @@ func TestStartCommand(t *testing.T) {
 				path,
 			)
 			defaultConf := config.Default()
-			// The default value for --overprovisioned is true in
-			// rpk start
-			defaultConf.Rpk.Overprovisioned = true
+			mgr := config.NewManager(fs)
+			conf, err := mgr.Read(path)
+			require.NoError(st, err)
+			require.Exactly(st, defaultConf, conf)
+		},
+	}, {
+		name:	"it should write the given config file path",
+		args: []string{
+			"--config", "/arbitrary/path/redpanda.yaml",
+			"--install-dir", "/var/lib/redpanda",
+		},
+		before: func(fs afero.Fs) error {
+			return fs.MkdirAll("/arbitrary/path", 0755)
+		},
+		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+			path := "/arbitrary/path/redpanda.yaml"
+			mgr := config.NewManager(fs)
+			conf, err := mgr.Read(path)
+			require.NoError(st, err)
+			require.Exactly(st, path, conf.ConfigFile)
+		},
+	}, {
+		name: "it should write the default config file path if --config" +
+			" isn't passed and the config file doesn't exist",
+		args: []string{
+			"--install-dir", "/var/lib/redpanda",
+		},
+		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+			path := config.Default().ConfigFile
+			mgr := config.NewManager(fs)
+			conf, err := mgr.Read(path)
+			require.NoError(st, err)
+			require.Exactly(st, config.Default().ConfigFile, conf.ConfigFile)
+		},
+	}, {
+		name:	"it should leave config_file untouched if --config wasn't passed",
+		args: []string{
+			"--install-dir", "/var/lib/redpanda",
+		},
+		before: func(fs afero.Fs) error {
+			mgr := config.NewManager(fs)
+			conf := config.Default()
+			return mgr.Write(conf)
+		},
+		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+			mgr := config.NewManager(fs)
+			conf, err := mgr.Read(config.Default().ConfigFile)
+			require.NoError(st, err)
+			require.Exactly(st, config.Default().ConfigFile, conf.ConfigFile)
+		},
+	}, {
+		name:	"it should write the given node ID",
+		args: []string{
+			"--node-id", "34",
+			"--config", config.Default().ConfigFile,
+			"--install-dir", "/var/lib/redpanda",
+		},
+		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+			path := config.Default().ConfigFile
+			mgr := config.NewManager(fs)
+			conf, err := mgr.Read(path)
+			require.NoError(st, err)
+			require.Exactly(st, 34, conf.Redpanda.Id)
+		},
+	}, {
+		name:	"it should write the default node ID if --node-id isn't passed and the config file doesn't exist",
+		args: []string{
+			"--config", config.Default().ConfigFile,
+			"--install-dir", "/var/lib/redpanda",
+		},
+		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+			path := config.Default().ConfigFile
 			mgr := config.NewManager(fs)
 			conf, err := mgr.Read(path)
 			require.NoError(st, err)
 			// Check that the generated config is as expected.
-			require.Exactly(st, defaultConf, conf)
+			require.Exactly(st, config.Default().Redpanda.Id, conf.Redpanda.Id)
+		},
+	}, {
+		name:	"it should leave redpanda.node_id untouched if --node-id wasn't passed",
+		args: []string{
+			"--install-dir", "/var/lib/redpanda",
+		},
+		before: func(fs afero.Fs) error {
+			mgr := config.NewManager(fs)
+			conf := config.Default()
+			conf.Redpanda.Id = 98
+			return mgr.Write(conf)
+		},
+		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+			mgr := config.NewManager(fs)
+			conf, err := mgr.Read(config.Default().ConfigFile)
+			require.NoError(st, err)
+			require.Exactly(
+				st,
+				98,
+				conf.Redpanda.Id,
+			)
+		},
+	}, {
+		name:	"--well-known-io should override rpk.well_known_io",
+		args: []string{
+			"--well-known-io", "aws:i3xlarge:default",
+			"--config", config.Default().ConfigFile,
+			"--install-dir", "/var/lib/redpanda",
+		},
+		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+			path := config.Default().ConfigFile
+			mgr := config.NewManager(fs)
+			conf, err := mgr.Read(path)
+			require.NoError(st, err)
+			require.Exactly(st, "aws:i3xlarge:default", conf.Rpk.WellKnownIo)
+		},
+	}, {
+		name: "it should leave rpk.well_known_io untouched if --well-known-io" +
+			" wasn't passed",
+		args: []string{
+			"--install-dir", "/var/lib/redpanda",
+		},
+		before: func(fs afero.Fs) error {
+			mgr := config.NewManager(fs)
+			conf := config.Default()
+			conf.Rpk.WellKnownIo = "gcp:n2standard:ssd"
+			return mgr.Write(conf)
+		},
+		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+			mgr := config.NewManager(fs)
+			conf, err := mgr.Read(config.Default().ConfigFile)
+			require.NoError(st, err)
+			require.Exactly(
+				st,
+				"gcp:n2standard:ssd",
+				conf.Rpk.WellKnownIo,
+			)
+		},
+	}, {
+		name:	"--overprovisioned should override the default value for rpk.overprovisioned",
+		args: []string{
+			// Bool flags will be true by just being present. Therefore, to
+			// change their value, <flag>=<value> needs to be used
+			"--overprovisioned=false",
+			"--config", config.Default().ConfigFile,
+			"--install-dir", "/var/lib/redpanda",
+		},
+		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+			path := config.Default().ConfigFile
+			mgr := config.NewManager(fs)
+			conf, err := mgr.Read(path)
+			require.NoError(st, err)
+			// Check that the generated config is as expected.
+			require.Exactly(st, false, conf.Rpk.Overprovisioned)
+		},
+	}, {
+		name:	"it should leave rpk.overprovisioned untouched if --overprovisioned wasn't passed",
+		args: []string{
+			"--install-dir", "/var/lib/redpanda",
+		},
+		before: func(fs afero.Fs) error {
+			mgr := config.NewManager(fs)
+			conf := config.Default()
+			return mgr.Write(conf)
+		},
+		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+			mgr := config.NewManager(fs)
+			conf, err := mgr.Read(config.Default().ConfigFile)
+			require.NoError(st, err)
+			// Check that the generated config is as expected.
+			require.Exactly(
+				st,
+				config.Default().Rpk.Overprovisioned,
+				conf.Rpk.Overprovisioned,
+			)
+		},
+	}, {
+		name:	"--lock-memory should override the default value for rpk.enable_memory_locking",
+		args: []string{
+			"--lock-memory",
+			"--config", config.Default().ConfigFile,
+			"--install-dir", "/var/lib/redpanda",
+		},
+		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+			path := config.Default().ConfigFile
+			mgr := config.NewManager(fs)
+			conf, err := mgr.Read(path)
+			require.NoError(st, err)
+			// Check that the generated config is as expected.
+			require.Exactly(st, true, conf.Rpk.EnableMemoryLocking)
+		},
+	}, {
+		name: "it should leave rpk.enable_memory_locking untouched if" +
+			" --lock-memory wasn't passed",
+		args: []string{
+			"--install-dir", "/var/lib/redpanda",
+		},
+		before: func(fs afero.Fs) error {
+			mgr := config.NewManager(fs)
+			conf := config.Default()
+			conf.Rpk.EnableMemoryLocking = true
+			return mgr.Write(conf)
+		},
+		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+			mgr := config.NewManager(fs)
+			conf, err := mgr.Read(config.Default().ConfigFile)
+			require.NoError(st, err)
+			// Check that the generated config is as expected.
+			require.Exactly(
+				st,
+				true,
+				conf.Rpk.EnableMemoryLocking,
+			)
 		},
 	}, {
 		name:	"it should parse the --seeds and persist them",
