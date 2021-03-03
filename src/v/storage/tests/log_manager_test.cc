@@ -68,7 +68,7 @@ SEASTAR_THREAD_TEST_CASE(test_can_load_logs) {
     ntps.reserve(4);
     for (size_t i = 0; i < 4; ++i) {
         ntps.push_back(
-          config_from_ntp(model::ntp(fmt::format("ns{}", i), "topic-1", i)));
+          config_from_ntp(model::ntp(ssx::sformat("ns{}", i), "topic-1", i)));
         directories::initialize(ntps[i].work_directory()).get();
     }
     auto seg = m.make_log_segment(

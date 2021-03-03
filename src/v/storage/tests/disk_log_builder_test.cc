@@ -69,17 +69,17 @@ FIXTURE_TEST(test_valid_segment_name_with_zeroes_data, log_builder_fixture) {
     const ss::sstring dir = ncfg.work_directory();
     // 1. write valid segment names in the namespace with 0 data so crc passes
     recursive_touch_directory(dir).get();
-    do_write_zeroes(fmt::format("{}/270-1850-v1.log", dir));
-    do_write_zeroes(fmt::format("{}/270-1850-v1.base_index", dir));
-    do_write_garbage(fmt::format("{}/271-1850-v1.log", dir));
-    do_write_garbage(fmt::format("{}/271-1850-v1.base_index", dir));
+    do_write_zeroes(ssx::sformat("{}/270-1850-v1.log", dir));
+    do_write_zeroes(ssx::sformat("{}/270-1850-v1.base_index", dir));
+    do_write_garbage(ssx::sformat("{}/271-1850-v1.log", dir));
+    do_write_garbage(ssx::sformat("{}/271-1850-v1.base_index", dir));
 
     b | start(ntp);
     auto stats = get_stats().get0();
     b | stop();
 
     BOOST_REQUIRE(
-      !ss::file_exists(fmt::format("{}/270-1850-v1.log", dir)).get0());
+      !ss::file_exists(ssx::sformat("{}/270-1850-v1.log", dir)).get0());
     BOOST_TEST(stats.seg_count == 0);
     BOOST_TEST(stats.batch_count == 0);
     BOOST_TEST(stats.record_count >= 0);
