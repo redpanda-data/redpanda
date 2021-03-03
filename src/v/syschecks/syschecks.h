@@ -12,11 +12,10 @@
 #pragma once
 
 #include "seastarx.h"
+#include "ssx/sformat.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/util/log.hh>
-
-#include <fmt/format.h>
 
 #include <cpuid.h>
 #include <cstdint>
@@ -53,8 +52,8 @@ ss::future<> systemd_notify_ready();
 
 template<typename... Args>
 ss::future<> systemd_message(const char* fmt, Args&&... args) {
-    ss::sstring s = fmt::format(
-      "STATUS={}\n", fmt::format(fmt, std::forward<Args>(args)...));
+    ss::sstring s = ssx::sformat(
+      "STATUS={}\n", ssx::sformat(fmt, std::forward<Args>(args)...));
     return systemd_raw_message(std::move(s));
 }
 

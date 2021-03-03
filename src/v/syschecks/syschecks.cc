@@ -52,7 +52,7 @@ void memory(bool ignore) {
 }
 
 ss::future<> systemd_notify_ready() {
-    ss::sstring msg = fmt::format(
+    ss::sstring msg = ssx::sformat(
       "READY=1\nSTATUS=redpanda is ready! - {}", redpanda_version());
     return systemd_raw_message(std::move(msg));
 }
