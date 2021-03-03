@@ -11,7 +11,7 @@
 import { ProcessBatchServer } from "../../modules/rpc/server";
 import Repository from "../../modules/supervisors/Repository";
 import { SinonSandbox, createSandbox } from "sinon";
-import { SupervisorClient } from "../../modules/rpc/serverAndClients/processBatch";
+import { SupervisorClient } from "../../modules/rpc/serverAndClients/rpcServer";
 import { createRecordBatch } from "../../modules/public";
 import FileManager from "../../modules/supervisors/FileManager";
 import { ProcessBatchRequest } from "../../modules/domain/generatedRpc/generatedClasses";

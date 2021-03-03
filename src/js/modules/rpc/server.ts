@@ -17,7 +17,7 @@ import {
   ProcessBatchRequest,
   ProcessBatchRequestItem,
 } from "../domain/generatedRpc/generatedClasses";
-import { SupervisorServer } from "./serverAndClients/processBatch";
+import { SupervisorServer } from "./serverAndClients/rpcServer";
 
 export class ProcessBatchServer extends SupervisorServer {
   private readonly repository: Repository;
