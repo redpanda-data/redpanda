@@ -49,7 +49,20 @@ var _ webhook.Validator = &Cluster{}
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type
 func (r *Cluster) ValidateCreate() error {
 	log.Info("validate create", "name", r.Name)
-	return nil
+
+	var allErrs field.ErrorList
+
+	if err := r.checkCollidingPorts(); err != nil {
+		allErrs = append(allErrs, err...)
+	}
+
+	if len(allErrs) == 0 {
+		return nil
+	}
+
+	return apierrors.NewInvalid(
+		r.GroupVersionKind().GroupKind(),
+		r.Name, allErrs)
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
@@ -59,10 +72,20 @@ func (r *Cluster) ValidateUpdate(old runtime.Object) error {
 	var allErrs field.ErrorList
 
 	if r.Spec.Replicas != nil && oldCluster.Spec.Replicas != nil && *r.Spec.Replicas < *oldCluster.Spec.Replicas {
-		allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("replicas"), r.Spec.Replicas, "scaling down is not supported"))
+		allErrs = append(allErrs,
+			field.Invalid(field.NewPath("spec").Child("replicas"),
+				r.Spec.Replicas,
+				"scaling down is not supported"))
 	}
 	if !reflect.DeepEqual(r.Spec.Configuration, oldCluster.Spec.Configuration) {
-		allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("configuration"), r.Spec.Configuration, "updating configuration is not supported"))
+		allErrs = append(allErrs,
+			field.Invalid(field.NewPath("spec").Child("configuration"),
+				r.Spec.Configuration,
+				"updating configuration is not supported"))
+	}
+
+	if err := r.checkCollidingPorts(); err != nil {
+		allErrs = append(allErrs, err...)
 	}
 
 	if len(allErrs) == 0 {
@@ -80,4 +103,31 @@ func (r *Cluster) ValidateDelete() error {
 
 	// TODO(user): fill in your validation logic upon object deletion.
 	return nil
+}
+
+func (r *Cluster) checkCollidingPorts() field.ErrorList {
+	var allErrs field.ErrorList
+
+	if r.Spec.Configuration.AdminAPI.Port == r.Spec.Configuration.KafkaAPI.Port {
+		allErrs = append(allErrs,
+			field.Invalid(field.NewPath("spec").Child("configuration", "admin", "port"),
+				r.Spec.Configuration.AdminAPI.Port,
+				"admin port collide with Spec.Configuration.KafkaAPI.Port"))
+	}
+
+	if r.Spec.Configuration.RPCServer.Port == r.Spec.Configuration.KafkaAPI.Port {
+		allErrs = append(allErrs,
+			field.Invalid(field.NewPath("spec").Child("configuration", "rpcServer", "port"),
+				r.Spec.Configuration.RPCServer.Port,
+				"rpc port collide with Spec.Configuration.KafkaAPI.Port"))
+	}
+
+	if r.Spec.Configuration.AdminAPI.Port == r.Spec.Configuration.RPCServer.Port {
+		allErrs = append(allErrs,
+			field.Invalid(field.NewPath("spec").Child("configuration", "admin", "port"),
+				r.Spec.Configuration.AdminAPI.Port,
+				"admin port collide with Spec.Configuration.RPCServer.Port"))
+	}
+
+	return allErrs
 }
