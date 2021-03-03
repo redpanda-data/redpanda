@@ -629,7 +629,7 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
                           std::move(*a),
                           std::nullopt,
                           seg->has_cache()
-                            ? std::optional(std::move(seg->cache()))
+                            ? std::optional(std::move(seg->cache()->get()))
                             : std::nullopt));
                   });
             });
@@ -655,7 +655,7 @@ ss::future<ss::lw_shared_ptr<segment>> make_segment(
                           std::move(seg->appender()),
                           std::move(compact),
                           seg->has_cache()
-                            ? std::optional(std::move(seg->cache()))
+                            ? std::optional(std::move(seg->cache()->get()))
                             : std::nullopt));
                   });
             });

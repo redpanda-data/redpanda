@@ -427,8 +427,7 @@ ss::future<> do_self_compact_segment(
                 auto& [idx, lock] = h;
                 s->index().swap_index_state(std::move(idx));
                 s->force_set_commit_offset_from_index();
-                // FIXME(noah): crashes if we evic the cache
-                // s->cache().purge();
+                s->release_batch_cache_index();
                 return s->index().flush().finally([l = std::move(lock)] {});
             });
       });
