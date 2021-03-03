@@ -71,10 +71,11 @@ func (r *ClusterReconciler) Reconcile(
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	svc := resources.NewService(r.Client, &redpandaCluster, r.Scheme, log)
+	svc := resources.NewHeadlessService(r.Client, &redpandaCluster, r.Scheme, log)
 	sts := resources.NewStatefulSet(r.Client, &redpandaCluster, r.Scheme, svc.HeadlessServiceFQDN(), svc.Key().Name, log)
 	toApply := []resources.Resource{
 		svc,
+		resources.NewNodePortService(r.Client, &redpandaCluster, r.Scheme, log),
 		resources.NewConfigMap(r.Client, &redpandaCluster, r.Scheme, svc.HeadlessServiceFQDN(), log),
 		sts,
 	}
@@ -141,5 +142,6 @@ func (r *ClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&redpandav1alpha1.Cluster{}).
 		Owns(&appsv1.StatefulSet{}).
+		Owns(&corev1.Service{}).
 		Complete(r)
 }
