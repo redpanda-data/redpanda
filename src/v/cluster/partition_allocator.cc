@@ -182,8 +182,12 @@ void partition_allocator::update_allocation_state(
       [](const model::broker_shard& l, const model::broker_shard& r) {
           return l.node_id > r.node_id;
       });
-
-    auto it = find_node(std::cbegin(shards)->node_id);
+    auto node_id = std::cbegin(shards)->node_id;
+    auto it = find_node(node_id);
+    vassert(
+      it != _machines.end(),
+      "node: {} must exists in partition allocator, it currenlty does not",
+      node_id);
     for (auto const& bs : shards) {
         // Thanks to shards being sorted we need to do only
         //  as many lookups as there are brokers

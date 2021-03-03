@@ -44,7 +44,7 @@ public:
 
     ss::future<> start();
     ss::future<> stop();
-
+    ss::future<> validate_configuration_invariants();
     ss::future<result<join_reply>> handle_join_request(model::broker);
     ss::future<std::error_code> apply_update(model::record_batch);
 
@@ -75,7 +75,7 @@ private:
     // Raft 0 config updates
     ss::future<> handle_raft0_cfg_update(raft::group_configuration);
     ss::future<> update_connections(patch<broker_ptr>);
-    ss::future<> validate_configuration_invariants();
+
     ss::future<> start_config_changes_watcher();
 
     ss::future<> maybe_update_current_node_configuration();
