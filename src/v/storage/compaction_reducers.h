@@ -83,6 +83,18 @@ private:
     compacted_index_writer* _writer;
 };
 
+class index_copy_reducer : public compaction_reducer {
+public:
+    explicit index_copy_reducer(compacted_index_writer& w)
+      : _writer(&w) {}
+
+    ss::future<ss::stop_iteration> operator()(compacted_index::entry&&);
+    void end_of_stream() {}
+
+private:
+    compacted_index_writer* _writer;
+};
+
 class compacted_offset_list_reducer : public compaction_reducer {
 public:
     explicit compacted_offset_list_reducer(model::offset base)

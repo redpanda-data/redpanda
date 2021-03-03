@@ -83,6 +83,14 @@ Roaring compaction_key_reducer::end_of_stream() {
 }
 
 ss::future<ss::stop_iteration>
+index_copy_reducer::operator()(compacted_index::entry&& e) {
+    using stop_t = ss::stop_iteration;
+    return _writer->append(std::move(e)).then([] {
+        return ss::make_ready_future<stop_t>(stop_t::no);
+    });
+}
+
+ss::future<ss::stop_iteration>
 index_filtered_copy_reducer::operator()(compacted_index::entry&& e) {
     using stop_t = ss::stop_iteration;
     const bool should_add = _bm.contains(_natural_index);
