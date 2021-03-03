@@ -40,7 +40,7 @@ uninstall: manifests kustomize
 
 # Deploy controller in the configured Kubernetes cluster in ~/.kube/config
 deploy: manifests kustomize
-	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
+	cd config/manager && $(KUSTOMIZE) edit set image vectorized/redpanda-operator=${IMG}
 	$(KUSTOMIZE) build config/default | kubectl apply -f -
 
 # Deploy pre loaded controller in the configured Kind Kubernetes cluster
