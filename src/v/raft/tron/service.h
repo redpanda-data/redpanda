@@ -18,6 +18,7 @@
 #include "raft/tron/types.h"
 #include "raft/types.h"
 #include "seastarx.h"
+#include "ssx/sformat.h"
 
 namespace raft::tron {
 // clang-format off
@@ -59,7 +60,7 @@ struct service final : trongen_service {
                               f.get();
                               ret.success = true;
                           } catch (...) {
-                              ret.failure_reason = fmt::format(
+                              ret.failure_reason = ssx::sformat(
                                 "{}", std::current_exception());
                               tronlog.error(
                                 "failed to replicate: {}", ret.failure_reason);
