@@ -35,7 +35,7 @@ docker run -d \
 --net=redpandanet \
 -p 9092:9092 \
 -v "redpanda1:/var/lib/redpanda/data" \
-vectorized/redpanda start \
+vectorized/redpanda redpanda start \
 --smp 1  \
 --memory 1G  \
 --reserve-memory 0M \
@@ -53,7 +53,7 @@ docker run -d \
 --net=redpandanet \
 -p 9093:9093 \
 -v "redpanda2:/var/lib/redpanda/data" \
-vectorized/redpanda start \
+vectorized/redpanda redpanda start \
 --smp 1  \
 --memory 1G  \
 --reserve-memory 0M \
@@ -72,7 +72,7 @@ docker run -d \
 --net=redpandanet \
 -p 9094:9094 \
 -v "redpanda3:/var/lib/redpanda/data" \
-vectorized/redpanda start \
+vectorized/redpanda redpanda start \
 --smp 1  \
 --memory 1G  \
 --reserve-memory 0M \
