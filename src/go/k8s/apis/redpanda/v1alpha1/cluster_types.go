@@ -7,7 +7,6 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-// Package v1alpha1 represent Custom Resource definition of the vectorized.io redpanda group
 package v1alpha1
 
 import (
