@@ -55,15 +55,13 @@ members_manager::members_manager(
 
 ss::future<> members_manager::start() {
     vlog(clusterlog.info, "starting cluster::members_manager...");
-    // validate node id change
-    return validate_configuration_invariants().then([this] {
-        // join raft0
-        if (!is_already_member()) {
-            join_raft0();
-        }
 
-        return start_config_changes_watcher();
-    });
+    // join raft0
+    if (!is_already_member()) {
+        join_raft0();
+    }
+
+    return start_config_changes_watcher();
 }
 
 ss::future<> members_manager::start_config_changes_watcher() {

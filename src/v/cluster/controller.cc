@@ -75,6 +75,10 @@ ss::future<> controller::start() {
             std::ref(_as));
       })
       .then([this] {
+          // validate configuration invariants to exit early
+          return _members_manager.local().validate_configuration_invariants();
+      })
+      .then([this] {
           return _stm.start_single(
             std::ref(clusterlog),
             _raft0.get(),
