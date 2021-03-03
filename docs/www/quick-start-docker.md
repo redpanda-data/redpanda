@@ -59,7 +59,7 @@ vectorized/redpanda start \
 --reserve-memory 0M \
 --overprovisioned \
 --node-id 1 \
---seeds "redpanda-1:33145+0" \
+--seeds "redpanda-1:33145" \
 --check=false \
 --kafka-addr 0.0.0.0:9093 \
 --advertise-kafka-addr 127.0.0.1:9093 \
@@ -78,7 +78,7 @@ vectorized/redpanda start \
 --reserve-memory 0M \
 --overprovisioned \
 --node-id 2 \
---seeds "redpanda-1:33145+0" \
+--seeds "redpanda-1:33145" \
 --check=false \
 --kafka-addr 0.0.0.0:9094 \
 --advertise-kafka-addr 127.0.0.1:9094 \
