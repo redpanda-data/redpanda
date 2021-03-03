@@ -23,7 +23,7 @@ log_eviction_stm::log_eviction_stm(
   ss::abort_source& as)
   : _raft(raft)
   , _logger(logger)
-  , _stm_manager(stm_manager)
+  , _stm_manager(std::move(stm_manager))
   , _as(as) {}
 
 ss::future<> log_eviction_stm::start() {

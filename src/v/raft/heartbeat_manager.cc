@@ -116,7 +116,7 @@ static std::vector<heartbeat_manager::node_heartbeat> requests_for_range(
 heartbeat_manager::heartbeat_manager(
   duration_type interval, consensus_client_protocol proto, model::node_id self)
   : _heartbeat_interval(interval)
-  , _client_protocol(proto)
+  , _client_protocol(std::move(proto))
   , _self(self) {
     _heartbeat_timer.set_callback([this] { dispatch_heartbeats(); });
 }
@@ -256,7 +256,7 @@ ss::future<> heartbeat_manager::deregister_group(group_id g) {
 
 ss::future<>
 heartbeat_manager::register_group(ss::lw_shared_ptr<consensus> ptr) {
-    return _lock.with([this, ptr] {
+    return _lock.with([this, ptr = std::move(ptr)] {
         auto ret = _consensus_groups.insert(ptr);
         vassert(
           ret.second,
