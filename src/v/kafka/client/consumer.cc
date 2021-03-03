@@ -92,7 +92,7 @@ void consumer::start() {
         });
     });
     _timer.rearm_periodic(std::chrono::duration_cast<ss::timer<>::duration>(
-      shard_local_cfg().consumer_heartbeat_interval()));
+      _config.consumer_heartbeat_interval()));
 }
 
 ss::future<> consumer::stop() {
@@ -106,7 +106,7 @@ ss::future<> consumer::stop() {
 ss::future<> consumer::join() {
     _timer.cancel();
     auto req_builder = [me{shared_from_this()}]() {
-        const auto& cfg = shard_local_cfg();
+        const auto& cfg = me->_config;
         join_group_request req{};
         req.client_id = "test_client";
         req.data = {
@@ -130,8 +130,7 @@ ss::future<> consumer::join() {
           case error_code::illegal_generation:
               return join();
           case error_code::not_coordinator:
-              return ss::sleep_abortable(
-                       shard_local_cfg().retry_base_backoff(), _as)
+              return ss::sleep_abortable(_config.retry_base_backoff(), _as)
                 .then([this]() { return join(); });
           case error_code::none:
               _generation_id = res.data.generation_id;
@@ -415,9 +414,12 @@ consumer::fetch(std::chrono::milliseconds timeout, int32_t max_bytes) {
 }
 
 ss::future<shared_consumer_t> make_consumer(
-  brokers& brokers, shared_broker_t coordinator, group_id group_id) {
+  const configuration& config,
+  brokers& brokers,
+  shared_broker_t coordinator,
+  group_id group_id) {
     auto c = ss::make_lw_shared<consumer>(
-      brokers, std::move(coordinator), std::move(group_id));
+      config, brokers, std::move(coordinator), std::move(group_id));
     return c->join().then([c]() mutable { return std::move(c); });
 }
 

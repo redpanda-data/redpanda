@@ -34,7 +34,7 @@ public:
         cpp_enable_payload data;
     };
 
-    event_publisher() = default;
+    event_publisher();
     ~event_publisher() { _client.stop().get(); }
 
     /// Starts up the kafka client and sends out a create_topics request to
@@ -63,7 +63,6 @@ private:
     ss::future<> create_coproc_internal_topic();
 
 private:
-    kafka::client::client _client{
-      {config::shard_local_cfg().kafka_api()[0].address}};
+    kafka::client::client _client;
 };
 } // namespace coproc::wasm

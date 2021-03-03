@@ -12,6 +12,9 @@
 #include "config/configuration.h"
 #include "units.h"
 
+#include <rapidjson/stringbuffer.h>
+#include <rapidjson/writer.h>
+
 namespace kafka::client {
 using namespace std::chrono_literals;
 
@@ -78,15 +81,17 @@ configuration::configuration()
       config::required::no,
       500ms) {}
 
-void configuration::read_yaml(const YAML::Node& root_node) {
-    if (!root_node["pandaproxy_client"]) {
-        throw std::invalid_argument("'pandaproxy_client' root is required");
-    }
-    config_store::read_yaml(root_node["pandaproxy_client"]);
+YAML::Node to_yaml(const configuration& cfg) {
+    rapidjson::StringBuffer buf;
+    rapidjson::Writer<rapidjson::StringBuffer> writer(buf);
+    cfg.to_json(writer);
+    return YAML::Load(buf.GetString());
 }
 
-configuration& shard_local_cfg() {
-    static thread_local configuration cfg;
-    return cfg;
+configuration copy_configuration(const configuration& cfg) {
+    configuration res;
+    res.read_yaml(to_yaml(cfg));
+    return res;
 }
+
 } // namespace kafka::client

@@ -50,6 +50,7 @@ public:
     virtual void set_value(YAML::Node) = 0;
     virtual void set_value(std::any) = 0;
     virtual std::optional<validation_error> validate() const = 0;
+    base_property(const base_property&) = default;
     virtual base_property& operator=(const base_property&) = 0;
     virtual ~base_property() noexcept = default;
 

@@ -135,7 +135,7 @@ FIXTURE_TEST(pandaproxy_consumer_group, pandaproxy_test_fixture) {
 
     {
         info("Produce to topic");
-        kc::shard_local_cfg().retries.set_value(size_t(5));
+        set_client_config("retries", size_t(5));
         const ss::sstring produce_body(R"({
    "records":[
       {

@@ -32,13 +32,14 @@
 
 namespace kafka::client {
 
-client::client(std::vector<unresolved_address> broker_addrs)
-  : _seeds{std::move(broker_addrs)}
+client::client(const configuration& cfg)
+  : _config{copy_configuration(cfg)}
+  , _seeds{_config.brokers()}
   , _brokers{}
   , _wait_or_start_update_metadata{[this](wait_or_start::tag tag) {
       return update_metadata(tag);
   }}
-  , _producer{_brokers, [this](std::exception_ptr ex) {
+  , _producer{_config, _brokers, [this](std::exception_ptr ex) {
                   return mitigate_error(std::move(ex));
               }} {}
 
@@ -57,8 +58,8 @@ ss::future<> client::do_connect(unresolved_address addr) {
 ss::future<> client::connect() {
     return ss::do_with(size_t{0}, [this](size_t& retries) {
         return retry_with_mitigation(
-          shard_local_cfg().retries(),
-          shard_local_cfg().retry_base_backoff(),
+          _config.retries(),
+          _config.retry_base_backoff(),
           [this, retries]() {
               return do_connect(_seeds[retries % _seeds.size()]);
           },
@@ -189,7 +190,7 @@ ss::future<member_id> client::create_consumer(const group_id& group_id) {
       })
       .then([this, group_id](shared_broker_t coordinator) mutable {
           return make_consumer(
-            _brokers, std::move(coordinator), std::move(group_id));
+            _config, _brokers, std::move(coordinator), std::move(group_id));
       })
       .then([this](shared_consumer_t c) {
           auto m_id = c->member_id();

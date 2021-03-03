@@ -13,6 +13,7 @@
 
 #include "kafka/client/assignment_plans.h"
 #include "kafka/client/brokers.h"
+#include "kafka/client/configuration.h"
 #include "kafka/client/fetch_session.h"
 #include "kafka/client/logger.h"
 #include "kafka/protocol/describe_groups.h"
@@ -37,8 +38,13 @@ class consumer final : public ss::enable_lw_shared_from_this<consumer> {
     using broker_reqs_t = absl::node_hash_map<shared_broker_t, fetch_request>;
 
 public:
-    consumer(brokers& brokers, shared_broker_t coordinator, group_id group_id)
-      : _brokers(brokers)
+    consumer(
+      const configuration& config,
+      brokers& brokers,
+      shared_broker_t coordinator,
+      group_id group_id)
+      : _config(config)
+      , _brokers(brokers)
       , _coordinator(std::move(coordinator))
       , _group_id(std::move(group_id))
       , _topics() {}
@@ -97,6 +103,7 @@ private:
         });
     }
 
+    const configuration& _config;
     brokers& _brokers;
     shared_broker_t _coordinator;
     ss::abort_source _as;
@@ -126,8 +133,11 @@ private:
 
 using shared_consumer_t = ss::lw_shared_ptr<consumer>;
 
-ss::future<shared_consumer_t>
-make_consumer(brokers& brokers, shared_broker_t coordinator, group_id group_id);
+ss::future<shared_consumer_t> make_consumer(
+  const configuration& config,
+  brokers& brokers,
+  shared_broker_t coordinator,
+  group_id group_id);
 
 namespace detail {
 

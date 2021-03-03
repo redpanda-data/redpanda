@@ -96,8 +96,9 @@ static server::context_t make_context(kafka::client::client& client) {
 }
 
 proxy::proxy(
-  ss::socket_address listen_addr, std::vector<unresolved_address> broker_addrs)
-  : _client(std::move(broker_addrs))
+  ss::socket_address listen_addr,
+  const kafka::client::configuration& client_config)
+  : _client(client_config)
   , _ctx(make_context(_client))
   , _server(
       "pandaproxy",
@@ -117,6 +118,10 @@ ss::future<> proxy::start() {
 
 ss::future<> proxy::stop() {
     return _server.stop().finally([this]() { return _client.stop(); });
+}
+
+kafka::client::configuration& proxy::client_config() {
+    return _client.config();
 }
 
 } // namespace pandaproxy
