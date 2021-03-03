@@ -54,12 +54,12 @@ struct echo_impl final : echo::echo_service {
     ss::future<echo::echo_resp>
     prefix_echo(echo::echo_req&& req, rpc::streaming_context&) final {
         return ss::make_ready_future<echo::echo_resp>(
-          echo::echo_resp{.str = fmt::format("prefix_{}", req.str)});
+          echo::echo_resp{.str = ssx::sformat("prefix_{}", req.str)});
     }
     ss::future<echo::echo_resp>
     suffix_echo(echo::echo_req&& req, rpc::streaming_context&) final {
         return ss::make_ready_future<echo::echo_resp>(
-          echo::echo_resp{.str = fmt::format("{}_suffix", req.str)});
+          echo::echo_resp{.str = ssx::sformat("{}_suffix", req.str)});
     }
 
     ss::future<echo::echo_resp>
