@@ -45,7 +45,7 @@ public:
         for (auto i = 0; i < n; ++i) {
             model::ntp ntp(
               model::kafka_namespace,
-              model::topic(fmt::format("test_topic_{}", i)),
+              model::topic(ssx::sformat("test_topic_{}", i)),
               model::partition_id(0));
             storage::log log = _api.log_mgr()
                                  .manage(
