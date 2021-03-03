@@ -85,11 +85,10 @@ reduce_fetch_response(fetch_response result, fetch_response val) {
 
 void consumer::start() {
     kclog.info("Consumer: {}: start", *this);
-    _as.subscribe([this]() noexcept { _timer.cancel(); });
-    _timer.set_callback([this]() {
-        kclog.info("Consumer: {}: timer cb", *this);
-        (void)heartbeat().handle_exception_type([this](consumer_error e) {
-            kclog.error("Consumer: {}: heartbeat failed: {}", *this, e.error);
+    _timer.set_callback([me{shared_from_this()}]() {
+        kclog.trace("Consumer: {}: timer cb", *me);
+        (void)me->heartbeat().handle_exception_type([me](consumer_error e) {
+            kclog.error("Consumer: {}: heartbeat failed: {}", *me, e.error);
         });
     });
     _timer.rearm_periodic(std::chrono::duration_cast<ss::timer<>::duration>(
@@ -97,8 +96,11 @@ void consumer::start() {
 }
 
 ss::future<> consumer::stop() {
+    { auto t = std::move(_timer); }
     _as.request_abort();
-    return _coordinator->stop().then([this]() { return _gate.close(); });
+    return _coordinator->stop()
+      .then([this]() { return _gate.close(); })
+      .finally([me{shared_from_this()}] {});
 }
 
 ss::future<> consumer::join() {
@@ -194,11 +196,13 @@ void consumer::on_leader_join(const join_group_response& res) {
 }
 
 ss::future<leave_group_response> consumer::leave() {
-    auto req_builder = [me{shared_from_this()}] {
+    auto req_builder = [this] {
         return leave_group_request{
-          .data{.group_id = me->_group_id, .member_id = me->_member_id}};
+          .data{.group_id = _group_id, .member_id = _member_id}};
     };
-    return req_res(std::move(req_builder)).finally([this]() { return stop(); });
+    return req_res(std::move(req_builder)).finally([me{shared_from_this()}]() {
+        return me->stop();
+    });
 }
 
 ss::future<std::vector<metadata_response::topic>>

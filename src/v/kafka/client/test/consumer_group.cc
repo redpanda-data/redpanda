@@ -45,6 +45,7 @@
 #include <seastar/core/sleep.hh>
 #include <seastar/core/timer.hh>
 #include <seastar/core/when_all.hh>
+#include <seastar/util/defer.hh>
 #include <seastar/util/log.hh>
 #include <seastar/util/noncopyable_function.hh>
 
@@ -90,6 +91,7 @@ FIXTURE_TEST(consumer_group, kafka_client_fixture) {
     kc::shard_local_cfg().retries.set_value(size_t(10));
     auto client = make_connected_client();
     client.connect().get();
+    auto stop_client = ss::defer([&client]() { client.stop().get(); });
 
     info("Adding known topic");
     int partition_count = 3;
@@ -178,6 +180,14 @@ FIXTURE_TEST(consumer_group, kafka_client_fixture) {
     info("Joining Consumers: 0,1");
     std::vector<kafka::member_id> members;
     members.reserve(3);
+    auto remove_consumers = ss::defer([&client, &group_id, &members]() {
+        for (const auto& m_id : members) {
+            client.remove_consumer(group_id, m_id)
+              .handle_exception([](std::exception_ptr e) {})
+              .get();
+        }
+    });
+
     {
         auto [mem_0, mem_1] = ss::when_all_succeed(
                                 client.create_consumer(group_id),
@@ -392,12 +402,4 @@ FIXTURE_TEST(consumer_group, kafka_client_fixture) {
             }
         }
     }
-
-    ss::when_all_succeed(
-      client.remove_consumer(group_id, members[0]),
-      client.remove_consumer(group_id, members[1]),
-      client.remove_consumer(group_id, members[2]))
-      .get();
-
-    client.stop().get();
 }

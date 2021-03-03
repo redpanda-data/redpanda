@@ -78,7 +78,7 @@ ss::future<> client::stop() {
                 return c->leave().discard_result();
             });
       })
-      .then([this]() { return _brokers.stop(); });
+      .finally([this]() { return _brokers.stop(); });
 }
 
 ss::future<> client::update_metadata(wait_or_start::tag) {
@@ -210,8 +210,8 @@ client::get_consumer(const group_id& g_id, const member_id& m_id) {
 ss::future<>
 client::remove_consumer(const group_id& g_id, const member_id& m_id) {
     return get_consumer(g_id, m_id).then([this](shared_consumer_t c) {
-        return c->leave().then([this, c](leave_group_response res) {
-            _consumers.erase(c);
+        _consumers.erase(c);
+        return c->leave().then([c{std::move(c)}](leave_group_response res) {
             if (res.data.error_code != error_code::none) {
                 return ss::make_exception_future<>(consumer_error(
                   c->group_id(), c->member_id(), res.data.error_code));
