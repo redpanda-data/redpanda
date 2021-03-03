@@ -19,7 +19,7 @@ class KafkaCliTools(KafkaClient):
     """
 
     # See tests/docker/Dockerfile to add new versions
-    VERSIONS = ("2.5.0", "2.4.1", "2.3.1")
+    VERSIONS = ("2.7.0", "2.5.0", "2.4.1", "2.3.1")
 
     def __init__(self, redpanda, version=None, user=None, passwd=None):
         self._redpanda = redpanda
@@ -104,6 +104,13 @@ sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule require
         configs = {fix_key(kv[0].strip()): kv[1].strip() for kv in configs}
         configs = {kv[0]: maybe_int(kv[0], kv[1]) for kv in configs.items()}
         return TopicSpec(name=topic, **configs)
+
+    def describe_broker_config(self):
+        self._redpanda.logger.debug("Describing brokers")
+        args = ["--describe", "--entity-type", "brokers", "--all"]
+        res = self._run("kafka-configs.sh", args)
+        self._redpanda.logger.debug("Describe brokers config result: %s", res)
+        return res
 
     def produce(self,
                 topic,
