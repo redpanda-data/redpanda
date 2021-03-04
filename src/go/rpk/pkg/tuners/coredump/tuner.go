@@ -21,10 +21,10 @@ import (
 )
 
 const (
-	corePatternFilePath	string	= "/proc/sys/kernel/core_pattern"
-	scriptFilePath		string	= "/var/lib/redpanda/save_coredump"
-	coredumpPattern		string	= "|" + scriptFilePath + " %e %t %p"
-	coredumpScriptTmpl	string	= `#!/bin/bash
+	corePatternFilePath string = "/proc/sys/kernel/core_pattern"
+	scriptFilePath      string = "/var/lib/redpanda/save_coredump"
+	coredumpPattern     string = "|" + scriptFilePath + " %e %t %p"
+	coredumpScriptTmpl  string = `#!/bin/bash
 set -o errexit
 set -o nounset
 set -o pipefail
@@ -40,9 +40,9 @@ cat - > "${COREDUMP_PATH}"
 )
 
 type tuner struct {
-	fs		afero.Fs
-	conf		config.Config
-	executor	executors.Executor
+	fs       afero.Fs
+	conf     config.Config
+	executor executors.Executor
 }
 
 func NewCoredumpTuner(

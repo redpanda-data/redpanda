@@ -24,14 +24,14 @@ func TestMaxAIOEventsCheck(t *testing.T) {
 	const maxAIOEventsFile = "/proc/sys/fs/aio-max-nr"
 	const scriptPath = "/tune.sh"
 	tests := []struct {
-		name		string
-		before		func(fs afero.Fs) error
-		expectChange	bool
-		expected	int
-		expectedErrMsg	string
+		name           string
+		before         func(fs afero.Fs) error
+		expectChange   bool
+		expected       int
+		expectedErrMsg string
 	}{
 		{
-			name:	"it shouldn't do anything if current >= reference",
+			name: "it shouldn't do anything if current >= reference",
 			before: func(fs afero.Fs) error {
 				_, err := utils.WriteBytes(
 					fs,
@@ -42,7 +42,7 @@ func TestMaxAIOEventsCheck(t *testing.T) {
 			},
 		},
 		{
-			name:	"it shouldn't do anything if current == reference",
+			name: "it shouldn't do anything if current == reference",
 			before: func(fs afero.Fs) error {
 				_, err := utils.WriteBytes(
 					fs,
@@ -53,7 +53,7 @@ func TestMaxAIOEventsCheck(t *testing.T) {
 			},
 		},
 		{
-			name:	"it should set the value if current < reference",
+			name: "it should set the value if current < reference",
 			before: func(fs afero.Fs) error {
 				_, err := utils.WriteBytes(
 					fs,
@@ -62,12 +62,12 @@ func TestMaxAIOEventsCheck(t *testing.T) {
 				)
 				return err
 			},
-			expectChange:	true,
-			expected:	1048576,
+			expectChange: true,
+			expected:     1048576,
 		},
 		{
-			name:		"it should fail if the file is missing",
-			expectedErrMsg:	"/proc/sys/fs/aio-max-nr",
+			name:           "it should fail if the file is missing",
+			expectedErrMsg: "/proc/sys/fs/aio-max-nr",
 		},
 	}
 

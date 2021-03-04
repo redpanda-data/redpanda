@@ -19,14 +19,14 @@ import (
 
 type sysctlSetCommand struct {
 	Command
-	key	string
-	value	string
+	key   string
+	value string
 }
 
 func NewSysctlSetCmd(key string, value string) Command {
 	return &sysctlSetCommand{
-		key:	key,
-		value:	value,
+		key:   key,
+		value: value,
 	}
 }
 

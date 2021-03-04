@@ -29,23 +29,23 @@ func TestStopCommand(t *testing.T) {
 	// simulate the redpanda process with an infinite loop.
 	const baseCommand string = "while :; do sleep 1; done"
 	tests := []struct {
-		name		string
-		ignoredSignals	[]string
-		args		[]string
+		name           string
+		ignoredSignals []string
+		args           []string
 	}{
 		{
-			name:	"it should stop redpanda on SIGINT",
-			args:	[]string{"--timeout", "100ms"},
+			name: "it should stop redpanda on SIGINT",
+			args: []string{"--timeout", "100ms"},
 		},
 		{
-			name:		"it should stop redpanda on SIGTERM if SIGINT was ignored",
-			ignoredSignals:	[]string{"INT"},
-			args:		[]string{"--timeout", "100ms"},
+			name:           "it should stop redpanda on SIGTERM if SIGINT was ignored",
+			ignoredSignals: []string{"INT"},
+			args:           []string{"--timeout", "100ms"},
 		},
 		{
-			name:		"it should stop redpanda on SIGKILL if SIGINT and SIGTERM were ignored",
-			ignoredSignals:	[]string{"TERM", "INT"},
-			args:		[]string{"--timeout", "100ms"},
+			name:           "it should stop redpanda on SIGKILL if SIGINT and SIGTERM were ignored",
+			ignoredSignals: []string{"TERM", "INT"},
+			args:           []string{"--timeout", "100ms"},
 		},
 	}
 

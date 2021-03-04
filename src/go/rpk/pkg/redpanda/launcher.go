@@ -29,9 +29,9 @@ type Launcher interface {
 type launcher struct{}
 
 type RedpandaArgs struct {
-	ConfigFilePath	string
-	SeastarFlags	map[string]string
-	ExtraArgs	[]string
+	ConfigFilePath string
+	SeastarFlags   map[string]string
+	ExtraArgs      []string
 }
 
 func NewLauncher() Launcher {

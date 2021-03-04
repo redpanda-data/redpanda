@@ -38,10 +38,10 @@ func generatePartitions(no int) []*sarama.PartitionMetadata {
 		ps = append(
 			ps,
 			&sarama.PartitionMetadata{
-				ID:		int32(i),
-				Leader:		1,
-				Replicas:	[]int32{1},
-				Isr:		[]int32{1},
+				ID:       int32(i),
+				Leader:   1,
+				Replicas: []int32{1},
+				Isr:      []int32{1},
 			},
 		)
 	}
@@ -50,81 +50,81 @@ func generatePartitions(no int) []*sarama.PartitionMetadata {
 
 func TestTopicCmd(t *testing.T) {
 	tests := []struct {
-		name		string
-		admin		*mocks.MockAdmin
-		cmd		func(func() (sarama.ClusterAdmin, error)) *cobra.Command
-		args		[]string
-		expectedOutput	string
-		expectedErr	string
+		name           string
+		admin          *mocks.MockAdmin
+		cmd            func(func() (sarama.ClusterAdmin, error)) *cobra.Command
+		args           []string
+		expectedOutput string
+		expectedErr    string
 	}{
 		{
-			name:		"create should output info about the created topic (custom values)",
-			cmd:		topic.NewCreateCommand,
-			args:		[]string{"Seattle", "--partitions", "2", "--replicas", "3", "--compact"},
-			expectedOutput:	"Created topic 'Seattle'.\\nYou may check its config with\\n\\nrpk topic describe 'Seattle'\\n\"\n",
+			name:           "create should output info about the created topic (custom values)",
+			cmd:            topic.NewCreateCommand,
+			args:           []string{"Seattle", "--partitions", "2", "--replicas", "3", "--compact"},
+			expectedOutput: "Created topic 'Seattle'.\\nYou may check its config with\\n\\nrpk topic describe 'Seattle'\\n\"\n",
 		},
 		{
-			name:		"create should allow passing arbitrary topic config",
-			cmd:		topic.NewCreateCommand,
-			args:		[]string{"San Francisco", "-c", "custom.config:value", "--config", "another.config:anothervalue"},
-			expectedOutput:	"Created topic 'San Francisco'.\\nYou may check its config with\\n\\nrpk topic describe 'San Francisco'\\n\"\n",
+			name:           "create should allow passing arbitrary topic config",
+			cmd:            topic.NewCreateCommand,
+			args:           []string{"San Francisco", "-c", "custom.config:value", "--config", "another.config:anothervalue"},
+			expectedOutput: "Created topic 'San Francisco'.\\nYou may check its config with\\n\\nrpk topic describe 'San Francisco'\\n\"\n",
 		},
 		{
-			name:		"create should allow passing comma-separated config values",
-			cmd:		topic.NewCreateCommand,
-			args:		[]string{"San Francisco", "-c", "custom.config:value", "--config", "cleanup.policy:cleanup,compact"},
-			expectedOutput:	"Created topic 'San Francisco'.\\nYou may check its config with\\n\\nrpk topic describe 'San Francisco'\\n\"\n",
+			name:           "create should allow passing comma-separated config values",
+			cmd:            topic.NewCreateCommand,
+			args:           []string{"San Francisco", "-c", "custom.config:value", "--config", "cleanup.policy:cleanup,compact"},
+			expectedOutput: "Created topic 'San Francisco'.\\nYou may check its config with\\n\\nrpk topic describe 'San Francisco'\\n\"\n",
 		},
 		{
-			name:		"create should fail if no topic is passed",
-			cmd:		topic.NewCreateCommand,
-			args:		[]string{},
-			expectedErr:	"topic's name is missing.",
+			name:        "create should fail if no topic is passed",
+			cmd:         topic.NewCreateCommand,
+			args:        []string{},
+			expectedErr: "topic's name is missing.",
 		},
 		{
-			name:	"create should fail if the topic creation req fails",
-			cmd:	topic.NewCreateCommand,
-			args:	[]string{"Chicago"},
+			name: "create should fail if the topic creation req fails",
+			cmd:  topic.NewCreateCommand,
+			args: []string{"Chicago"},
 			admin: &mocks.MockAdmin{
 				MockCreateTopic: func(string, *sarama.TopicDetail, bool) error {
 					return errors.New("no bueno error")
 				},
 			},
-			expectedErr:	"no bueno error",
+			expectedErr: "no bueno error",
 		},
 		{
-			name:		"delete should output the name of the deleted topic",
-			cmd:		topic.NewDeleteCommand,
-			args:		[]string{"Medellin"},
-			expectedOutput:	"Deleted topic 'Medellin'.",
+			name:           "delete should output the name of the deleted topic",
+			cmd:            topic.NewDeleteCommand,
+			args:           []string{"Medellin"},
+			expectedOutput: "Deleted topic 'Medellin'.",
 		},
 		{
-			name:	"delete should fail if the topic deletion req fails",
-			cmd:	topic.NewDeleteCommand,
-			args:	[]string{"Leticia"},
+			name: "delete should fail if the topic deletion req fails",
+			cmd:  topic.NewDeleteCommand,
+			args: []string{"Leticia"},
 			admin: &mocks.MockAdmin{
 				MockDeleteTopic: func(string) error {
 					return errors.New("that topic don't exist, yo")
 				},
 			},
-			expectedErr:	"that topic don't exist, yo",
+			expectedErr: "that topic don't exist, yo",
 		},
 		{
-			name:		"delete should fail if no topic is passed",
-			cmd:		topic.NewDeleteCommand,
-			args:		[]string{},
-			expectedErr:	"topic's name is missing.",
+			name:        "delete should fail if no topic is passed",
+			cmd:         topic.NewDeleteCommand,
+			args:        []string{},
+			expectedErr: "topic's name is missing.",
 		},
 		{
-			name:		"set-config should output the given config key-value pair",
-			cmd:		topic.NewSetConfigCommand,
-			args:		[]string{"Panama", "somekey", "somevalue"},
-			expectedOutput:	"Added config 'somekey'='somevalue' to topic 'Panama'.",
+			name:           "set-config should output the given config key-value pair",
+			cmd:            topic.NewSetConfigCommand,
+			args:           []string{"Panama", "somekey", "somevalue"},
+			expectedOutput: "Added config 'somekey'='somevalue' to topic 'Panama'.",
 		},
 		{
-			name:	"set-config should fail if the req fails",
-			cmd:	topic.NewSetConfigCommand,
-			args:	[]string{"Chiriqui", "k", "v"},
+			name: "set-config should fail if the req fails",
+			cmd:  topic.NewSetConfigCommand,
+			args: []string{"Chiriqui", "k", "v"},
 			admin: &mocks.MockAdmin{
 				MockAlterConfig: func(
 					sarama.ConfigResourceType,
@@ -135,48 +135,48 @@ func TestTopicCmd(t *testing.T) {
 					return errors.New("can't set the config for some reason")
 				},
 			},
-			expectedErr:	"can't set the config for some reason",
+			expectedErr: "can't set the config for some reason",
 		},
 		{
-			name:		"set-config should fail if no topic is passed",
-			cmd:		topic.NewSetConfigCommand,
-			args:		[]string{},
-			expectedErr:	"topic's name, config key or value are missing.",
+			name:        "set-config should fail if no topic is passed",
+			cmd:         topic.NewSetConfigCommand,
+			args:        []string{},
+			expectedErr: "topic's name, config key or value are missing.",
 		},
 		{
-			name:		"set-config should fail if no key is passed",
-			cmd:		topic.NewSetConfigCommand,
-			args:		[]string{"Chepo"},
-			expectedErr:	"topic's name, config key or value are missing.",
+			name:        "set-config should fail if no key is passed",
+			cmd:         topic.NewSetConfigCommand,
+			args:        []string{"Chepo"},
+			expectedErr: "topic's name, config key or value are missing.",
 		},
 		{
-			name:		"set-config should fail if no value is passed",
-			cmd:		topic.NewSetConfigCommand,
-			args:		[]string{"Chepo", "key"},
-			expectedErr:	"topic's name, config key or value are missing.",
+			name:        "set-config should fail if no value is passed",
+			cmd:         topic.NewSetConfigCommand,
+			args:        []string{"Chepo", "key"},
+			expectedErr: "topic's name, config key or value are missing.",
 		},
 		{
-			name:	"list should output the list of topics",
-			cmd:	topic.NewListCommand,
+			name: "list should output the list of topics",
+			cmd:  topic.NewListCommand,
 			admin: &mocks.MockAdmin{
 				MockListTopics: func() (map[string]sarama.TopicDetail, error) {
 					return map[string]sarama.TopicDetail{
 						"tokyo": {
-							NumPartitions:		2,
-							ReplicationFactor:	3,
+							NumPartitions:     2,
+							ReplicationFactor: 3,
 						},
 						"kyoto": {
-							NumPartitions:		10,
-							ReplicationFactor:	2,
+							NumPartitions:     10,
+							ReplicationFactor: 2,
 						},
 						"fukushima": {
-							NumPartitions:		7,
-							ReplicationFactor:	3,
+							NumPartitions:     7,
+							ReplicationFactor: 3,
 						},
 					}, nil
 				},
 			},
-			args:	[]string{},
+			args: []string{},
 			expectedOutput: `  Name       Partitions  Replicas  
   fukushima  7           3         
   kyoto      10          2         
@@ -184,25 +184,25 @@ func TestTopicCmd(t *testing.T) {
 `,
 		},
 		{
-			name:	"list should fail if the req fails",
-			cmd:	topic.NewListCommand,
-			args:	[]string{},
+			name: "list should fail if the req fails",
+			cmd:  topic.NewListCommand,
+			args: []string{},
 			admin: &mocks.MockAdmin{
 				MockListTopics: func() (map[string]sarama.TopicDetail, error) {
 					return nil, errors.New("an error happened :(")
 				},
 			},
-			expectedErr:	"an error happened :(",
+			expectedErr: "an error happened :(",
 		},
 		{
-			name:	"list should output a message if there are no topics",
-			cmd:	topic.NewListCommand,
+			name: "list should output a message if there are no topics",
+			cmd:  topic.NewListCommand,
 			admin: &mocks.MockAdmin{
 				MockListTopics: func() (map[string]sarama.TopicDetail, error) {
 					return map[string]sarama.TopicDetail{}, nil
 				},
 			},
-			expectedOutput:	"No topics found.",
+			expectedOutput: "No topics found.",
 		},
 	}
 
@@ -231,24 +231,24 @@ func TestTopicCmd(t *testing.T) {
 
 func TestDescribeTopic(t *testing.T) {
 	tests := []struct {
-		name		string
-		admin		*mocks.MockAdmin
-		args		[]string
-		expectedOutput	string
-		expectedErr	string
+		name           string
+		admin          *mocks.MockAdmin
+		args           []string
+		expectedOutput string
+		expectedErr    string
 	}{
 		{
-			name:	"fails if the describe-topics request fails",
+			name: "fails if the describe-topics request fails",
 			admin: &mocks.MockAdmin{
 				MockDescribeTopics: func(topics []string) ([]*sarama.TopicMetadata, error) {
 					return nil, errors.New("it go boom")
 				},
 			},
-			args:		[]string{"Frankfurt"},
-			expectedErr:	"it go boom",
+			args:        []string{"Frankfurt"},
+			expectedErr: "it go boom",
 		},
 		{
-			name:	"fails if the topic doesn't exist",
+			name: "fails if the topic doesn't exist",
 			admin: &mocks.MockAdmin{
 				MockDescribeTopics: func(_ []string) ([]*sarama.TopicMetadata, error) {
 					return []*sarama.TopicMetadata{
@@ -258,11 +258,11 @@ func TestDescribeTopic(t *testing.T) {
 					}, nil
 				},
 			},
-			args:		[]string{"Munich"},
-			expectedErr:	"topic 'Munich' not found",
+			args:        []string{"Munich"},
+			expectedErr: "topic 'Munich' not found",
 		},
 		{
-			name:	"fails if the describe-config request fails",
+			name: "fails if the describe-config request fails",
 			admin: &mocks.MockAdmin{
 				MockDescribeConfig: func(
 					_ sarama.ConfigResource,
@@ -270,22 +270,22 @@ func TestDescribeTopic(t *testing.T) {
 					return nil, errors.New("describe-config failure")
 				},
 			},
-			args:		[]string{"Berlin"},
-			expectedErr:	"describe-config failure",
+			args:        []string{"Berlin"},
+			expectedErr: "describe-config failure",
 		},
 		{
-			name:	"it should show the topic info",
+			name: "it should show the topic info",
 			admin: &mocks.MockAdmin{
 				MockDescribeTopics: func(_ []string) ([]*sarama.TopicMetadata, error) {
 					return []*sarama.TopicMetadata{
 						{
-							Name:		"Hannover",
-							Partitions:	generatePartitions(10),
+							Name:       "Hannover",
+							Partitions: generatePartitions(10),
 						},
 					}, nil
 				},
 			},
-			args:	[]string{"Hannover"},
+			args: []string{"Hannover"},
 			expectedOutput: `  Name            Hannover  
   Internal        false     
   Cleanup policy  compact   
@@ -307,27 +307,27 @@ func TestDescribeTopic(t *testing.T) {
 `,
 		},
 		{
-			name:	"it shouldn't show the 'config' section if there's no non-default config",
+			name: "it shouldn't show the 'config' section if there's no non-default config",
 			admin: &mocks.MockAdmin{
 				MockDescribeTopics: func(_ []string) ([]*sarama.TopicMetadata, error) {
 					return []*sarama.TopicMetadata{
 						{
-							Name:		"Hannover",
-							Partitions:	generatePartitions(1),
+							Name:       "Hannover",
+							Partitions: generatePartitions(1),
 						},
 					}, nil
 				},
 				MockDescribeConfig: func(_ sarama.ConfigResource) ([]sarama.ConfigEntry, error) {
 					return []sarama.ConfigEntry{
 						{
-							Name:		"cleanup.policy",
-							Value:		"delete",
-							Default:	true,
+							Name:    "cleanup.policy",
+							Value:   "delete",
+							Default: true,
 						},
 					}, nil
 				},
 			},
-			args:	[]string{"Hannover"},
+			args: []string{"Hannover"},
 			expectedOutput: `  Name            Hannover  
   Internal        false     
   Cleanup policy  delete    
@@ -337,18 +337,18 @@ func TestDescribeTopic(t *testing.T) {
 `,
 		},
 		{
-			name:	"it should paginate the partitions",
+			name: "it should paginate the partitions",
 			admin: &mocks.MockAdmin{
 				MockDescribeTopics: func(_ []string) ([]*sarama.TopicMetadata, error) {
 					return []*sarama.TopicMetadata{
 						{
-							Name:		"Cologne",
-							Partitions:	generatePartitions(12),
+							Name:       "Cologne",
+							Partitions: generatePartitions(12),
 						},
 					}, nil
 				},
 			},
-			args:	[]string{"Cologne", "--page-size", "6", "--page", "1"},
+			args: []string{"Cologne", "--page-size", "6", "--page", "1"},
 			expectedOutput: `  Name            Cologne  
   Internal        false    
   Cleanup policy  compact  
@@ -366,18 +366,18 @@ func TestDescribeTopic(t *testing.T) {
 `,
 		},
 		{
-			name:	"it should show the last page if the given page exceeds the # of pages",
+			name: "it should show the last page if the given page exceeds the # of pages",
 			admin: &mocks.MockAdmin{
 				MockDescribeTopics: func(_ []string) ([]*sarama.TopicMetadata, error) {
 					return []*sarama.TopicMetadata{
 						{
-							Name:		"Cologne",
-							Partitions:	generatePartitions(12),
+							Name:       "Cologne",
+							Partitions: generatePartitions(12),
 						},
 					}, nil
 				},
 			},
-			args:	[]string{"Cologne", "--page-size", "3", "--page", "5"},
+			args: []string{"Cologne", "--page-size", "3", "--page", "5"},
 			expectedOutput: `  Name            Cologne  
   Internal        false    
   Cleanup policy  compact  
@@ -392,18 +392,18 @@ func TestDescribeTopic(t *testing.T) {
 `,
 		},
 		{
-			name:	"it should show all the partitions if the page size exceeds the # of partitions",
+			name: "it should show all the partitions if the page size exceeds the # of partitions",
 			admin: &mocks.MockAdmin{
 				MockDescribeTopics: func(_ []string) ([]*sarama.TopicMetadata, error) {
 					return []*sarama.TopicMetadata{
 						{
-							Name:		"Cologne",
-							Partitions:	generatePartitions(12),
+							Name:       "Cologne",
+							Partitions: generatePartitions(12),
 						},
 					}, nil
 				},
 			},
-			args:	[]string{"Cologne", "--page-size", "31", "--page", "4"},
+			args: []string{"Cologne", "--page-size", "31", "--page", "4"},
 			expectedOutput: `  Name            Cologne  
   Internal        false    
   Cleanup policy  compact  
@@ -427,18 +427,18 @@ func TestDescribeTopic(t *testing.T) {
 `,
 		},
 		{
-			name:	"it should show all the partitions if the page size is negative",
+			name: "it should show all the partitions if the page size is negative",
 			admin: &mocks.MockAdmin{
 				MockDescribeTopics: func(_ []string) ([]*sarama.TopicMetadata, error) {
 					return []*sarama.TopicMetadata{
 						{
-							Name:		"Cologne",
-							Partitions:	generatePartitions(5),
+							Name:       "Cologne",
+							Partitions: generatePartitions(5),
 						},
 					}, nil
 				},
 			},
-			args:	[]string{"Cologne", "--page", "-1", "--page-size", "4"},
+			args: []string{"Cologne", "--page", "-1", "--page-size", "4"},
 			expectedOutput: `  Name            Cologne  
   Internal        false    
   Cleanup policy  compact  

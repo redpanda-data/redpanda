@@ -18,8 +18,8 @@ import (
 )
 
 type scriptRenderingExecutor struct {
-	deffered	error
-	writer		*bufio.Writer
+	deffered error
+	writer   *bufio.Writer
 }
 
 // FIXME: @david
@@ -28,15 +28,15 @@ func NewScriptRenderingExecutor(fs afero.Fs, filename string) Executor {
 	file, err := fs.Create(filename)
 	if err != nil {
 		return &scriptRenderingExecutor{
-			deffered:	err,
-			writer:		nil,
+			deffered: err,
+			writer:   nil,
 		}
 	}
 	err = fs.Chmod(filename, 0755)
 	if err != nil {
 		return &scriptRenderingExecutor{
-			deffered:	err,
-			writer:		nil,
+			deffered: err,
+			writer:   nil,
 		}
 	}
 	header := `#!/bin/bash
@@ -50,8 +50,8 @@ func NewScriptRenderingExecutor(fs afero.Fs, filename string) Executor {
 	_, _ = fmt.Fprint(w, header)
 	_ = w.Flush()
 	return &scriptRenderingExecutor{
-		deffered:	nil,
-		writer:		w,
+		deffered: nil,
+		writer:   w,
 	}
 }
 

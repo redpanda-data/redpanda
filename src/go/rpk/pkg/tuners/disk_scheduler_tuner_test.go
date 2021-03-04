@@ -20,13 +20,13 @@ import (
 
 type deviceFeaturesMock struct {
 	disk.DeviceFeatures
-	getSupportedSchedulers		func(string) ([]string, error)
-	getNomerges			func(string) (int, error)
-	getNomergesFeatureFile		func(string) (string, error)
-	getSchedulerFeatureFile		func(string) (string, error)
-	getScheduler			func(string) (string, error)
-	getWriteCacheFeatureFile	func(string) (string, error)
-	getWriteCache			func(string) (string, error)
+	getSupportedSchedulers   func(string) ([]string, error)
+	getNomerges              func(string) (int, error)
+	getNomergesFeatureFile   func(string) (string, error)
+	getSchedulerFeatureFile  func(string) (string, error)
+	getScheduler             func(string) (string, error)
+	getWriteCacheFeatureFile func(string) (string, error)
+	getWriteCache            func(string) (string, error)
 }
 
 func (m *deviceFeaturesMock) GetScheduler(device string) (string, error) {

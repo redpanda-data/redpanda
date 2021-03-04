@@ -24,33 +24,33 @@ func TestNewGraphPanel(t *testing.T) {
 	id := uint(0)
 	expected := &graf.GraphPanel{
 		BasePanel: &graf.BasePanel{
-			ID:		id,
-			Title:		title,
-			Editable:	true,
-			Span:		4,
-			Renderer:	"flot",
-			GridPos:	graf.GridPos{H: 6, W: 8},
+			ID:       id,
+			Title:    title,
+			Editable: true,
+			Span:     4,
+			Renderer: "flot",
+			GridPos:  graf.GridPos{H: 6, W: 8},
 		},
-		Legend:		graf.Legend{Show: true},
-		Fill:		1,
-		LineWidth:	2,
-		XAxis:		graf.XAxis{Show: true, Mode: "time"},
+		Legend:    graf.Legend{Show: true},
+		Fill:      1,
+		LineWidth: 2,
+		XAxis:     graf.XAxis{Show: true, Mode: "time"},
 		YAxes: []graf.YAxis{
 			{
-				Format:		unit,
-				LogBase:	1,
-				Show:		true,
-				Min:		&yAxisMin,
+				Format:  unit,
+				LogBase: 1,
+				Show:    true,
+				Min:     &yAxisMin,
 			},
 			{
-				Format:		"short",
-				LogBase:	1,
-				Show:		true,
-				Min:		&yAxisMin,
+				Format:  "short",
+				LogBase: 1,
+				Show:    true,
+				Min:     &yAxisMin,
 			},
 		},
-		Tooltip:	graf.Tooltip{ValueType: "individual"},
-		NullPointMode:	"null",
+		Tooltip:       graf.Tooltip{ValueType: "individual"},
+		NullPointMode: "null",
 	}
 	actual := graf.NewGraphPanel(title, unit)
 	actual.ID = id

@@ -33,12 +33,12 @@ func (mm *MessageMetadata) TotalLatency() time.Duration {
 }
 
 type Stats struct {
-	enqueued	int64
-	produced	int64
-	consumed	int64
+	enqueued int64
+	produced int64
+	consumed int64
 
-	produceLatency	int64
-	consumeLatency	int64
+	produceLatency int64
+	consumeLatency int64
 }
 
 func (s *Stats) LogEnqueued(msg *sarama.ProducerMessage) {

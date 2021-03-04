@@ -27,53 +27,53 @@ import (
 var _ = Describe("RedPandaCluster controller", func() {
 
 	const (
-		timeout		= time.Second * 30
-		interval	= time.Second * 1
+		timeout  = time.Second * 30
+		interval = time.Second * 1
 
-		kafkaPort			= 9092
-		redpandaConfigurationFile	= "redpanda.yaml"
-		replicas			= 1
-		redpandaContainerTag		= "x"
-		redpandaContainerImage		= "vectorized/redpanda"
+		kafkaPort                 = 9092
+		redpandaConfigurationFile = "redpanda.yaml"
+		replicas                  = 1
+		redpandaContainerTag      = "x"
+		redpandaContainerImage    = "vectorized/redpanda"
 	)
 
 	Context("When creating RedpandaCluster", func() {
 		It("Should create Redpanda cluster", func() {
 			resources := corev1.ResourceList{
-				corev1.ResourceCPU:	resource.MustParse("1"),
-				corev1.ResourceMemory:	resource.MustParse("2Gi"),
+				corev1.ResourceCPU:    resource.MustParse("1"),
+				corev1.ResourceMemory: resource.MustParse("2Gi"),
 			}
 
 			key := types.NamespacedName{
-				Name:		"redpanda-test",
-				Namespace:	"default",
+				Name:      "redpanda-test",
+				Namespace: "default",
 			}
 			baseKey := types.NamespacedName{
-				Name:		key.Name + "-base",
-				Namespace:	"default",
+				Name:      key.Name + "-base",
+				Namespace: "default",
 			}
 			redpandaCluster := &v1alpha1.Cluster{
 				TypeMeta: metav1.TypeMeta{
-					Kind:		"RedpandaCluster",
-					APIVersion:	"core.vectorized.io/v1alpha1",
+					Kind:       "RedpandaCluster",
+					APIVersion: "core.vectorized.io/v1alpha1",
 				},
 				ObjectMeta: metav1.ObjectMeta{
-					Name:		key.Name,
-					Namespace:	key.Namespace,
+					Name:      key.Name,
+					Namespace: key.Namespace,
 					Labels: map[string]string{
 						"app": "redpanda",
 					},
 				},
 				Spec: v1alpha1.ClusterSpec{
-					Image:		redpandaContainerImage,
-					Version:	redpandaContainerTag,
-					Replicas:	pointer.Int32Ptr(replicas),
+					Image:    redpandaContainerImage,
+					Version:  redpandaContainerTag,
+					Replicas: pointer.Int32Ptr(replicas),
 					Configuration: v1alpha1.RedpandaConfig{
 						KafkaAPI: v1alpha1.SocketAddress{Port: kafkaPort},
 					},
 					Resources: corev1.ResourceRequirements{
-						Limits:		resources,
-						Requests:	resources,
+						Limits:   resources,
+						Requests: resources,
 					},
 				},
 			}

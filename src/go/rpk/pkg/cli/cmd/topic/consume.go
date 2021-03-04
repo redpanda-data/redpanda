@@ -24,22 +24,22 @@ import (
 )
 
 type header struct {
-	Key	string	`json:"key"`
-	Value	string	`json:"value"`
+	Key   string `json:"key"`
+	Value string `json:"value"`
 }
 
 type message struct {
-	Headers		[]header	`json:"headers,omitempty"`
-	Key		string		`json:"key,omitempty"`
-	Message		string		`json:"message"`
-	Partition	int32		`json:"partition"`
-	Offset		int64		`json:"offset"`
-	Timestamp	time.Time	`json:"timestamp"`
+	Headers   []header  `json:"headers,omitempty"`
+	Key       string    `json:"key,omitempty"`
+	Message   string    `json:"message"`
+	Partition int32     `json:"partition"`
+	Offset    int64     `json:"offset"`
+	Timestamp time.Time `json:"timestamp"`
 }
 
 type consumerGroupHandler struct {
-	commit		bool
-	prettyPrint	bool
+	commit      bool
+	prettyPrint bool
 }
 
 func (g *consumerGroupHandler) Setup(s sarama.ConsumerGroupSession) error {
@@ -53,25 +53,25 @@ func (g *consumerGroupHandler) Cleanup(s sarama.ConsumerGroupSession) error {
 func (g *consumerGroupHandler) ConsumeClaim(
 	s sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim,
 ) error {
-	mu := sync.Mutex{}	// Synchronizes stdout.
+	mu := sync.Mutex{} // Synchronizes stdout.
 	consumeMessages(claim.Messages(), nil, &mu, s.Context(), g.prettyPrint)
 	return nil
 }
 
 func NewConsumeCommand(client func() (sarama.Client, error)) *cobra.Command {
 	var (
-		prettyPrint	bool
-		offset		string
-		group		string
-		groupCommit	bool
-		partitions	[]int32
+		prettyPrint bool
+		offset      string
+		group       string
+		groupCommit bool
+		partitions  []int32
 	)
 	cmd := &cobra.Command{
-		Use:	"consume <topic>",
-		Short:	"Consume records from a topic",
-		Args:	common.ExactArgs(1, "topic's name is missing."),
+		Use:   "consume <topic>",
+		Short: "Consume records from a topic",
+		Args:  common.ExactArgs(1, "topic's name is missing."),
 		// We don't want Cobra printing CLI usage help if the error isn't about CLI usage.
-		SilenceUsage:	true,
+		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cl, err := client()
 			if err != nil {
@@ -186,7 +186,7 @@ func withoutConsumerGroup(
 	}
 
 	grp, ctx := errgroup.WithContext(context.Background())
-	mu := sync.Mutex{}	// Synchronizes stdout.
+	mu := sync.Mutex{} // Synchronizes stdout.
 	for _, partition := range partitions {
 		partition = partition
 		offset = offset
@@ -249,18 +249,18 @@ func handleMessage(
 		return
 	}
 	m := message{
-		Headers:	make([]header, 0, len(msg.Headers)),
-		Message:	string(msg.Value),
-		Partition:	msg.Partition,
-		Offset:		msg.Offset,
-		Timestamp:	msg.Timestamp,
+		Headers:   make([]header, 0, len(msg.Headers)),
+		Message:   string(msg.Value),
+		Partition: msg.Partition,
+		Offset:    msg.Offset,
+		Timestamp: msg.Timestamp,
 	}
 	for _, h := range msg.Headers {
 		m.Headers = append(
 			m.Headers,
 			header{
-				Key:	string(h.Key),
-				Value:	string(h.Value),
+				Key:   string(h.Key),
+				Value: string(h.Value),
 			},
 		)
 	}

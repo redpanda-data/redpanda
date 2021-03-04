@@ -21,8 +21,8 @@ import (
 )
 
 const (
-	File			string	= "/proc/sys/vm/swappiness"
-	ExpectedSwappiness	int	= 1
+	File               string = "/proc/sys/vm/swappiness"
+	ExpectedSwappiness int    = 1
 )
 
 func NewSwappinessChecker(fs afero.Fs) Checker {

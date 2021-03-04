@@ -87,17 +87,17 @@ func TestTuneFstrimDirectExecutorRollback(t *testing.T) {
 
 func TestTuneFstrimScriptExecutor(t *testing.T) {
 	tests := []struct {
-		name		string
-		shutdown	func() error
-		startUnit	func(string) error
-		unitState	func(string) (systemd.LoadState, systemd.ActiveState, error)
-		loadUnit	func(afero.Fs, string, string) error
-		proc		os.Proc
-		expected	string
-		expectedErrMsg	string
+		name           string
+		shutdown       func() error
+		startUnit      func(string) error
+		unitState      func(string) (systemd.LoadState, systemd.ActiveState, error)
+		loadUnit       func(afero.Fs, string, string) error
+		proc           os.Proc
+		expected       string
+		expectedErrMsg string
 	}{
 		{
-			name:	"it should install the timer and the service if missing",
+			name: "it should install the timer and the service if missing",
 			expected: `#!/bin/bash
 
 # Redpanda Tuning Script
@@ -144,7 +144,7 @@ sudo systemctl start redpanda-fstrim.timer
 `,
 		},
 		{
-			name:	"it should just start the default timer if it exists",
+			name: "it should just start the default timer if it exists",
 			unitState: func(_ string) (systemd.LoadState, systemd.ActiveState, error) {
 				// Mock the units' state as Inactive
 				return systemd.LoadStateLoaded, systemd.ActiveStateInactive, nil
@@ -159,7 +159,7 @@ sudo systemctl start fstrim.timer
 `,
 		},
 		{
-			name:	"it should just start the redpanda-fstrim timer if it exists",
+			name: "it should just start the redpanda-fstrim timer if it exists",
 			unitState: func(name string) (systemd.LoadState, systemd.ActiveState, error) {
 				// Mock the default units' state as Unknown and
 				// the redpanda ones as Inactive
@@ -178,7 +178,7 @@ sudo systemctl start redpanda-fstrim.timer
 `,
 		},
 		{
-			name:	"it shouldn't do anything if the default units are started",
+			name: "it shouldn't do anything if the default units are started",
 			unitState: func(name string) (systemd.LoadState, systemd.ActiveState, error) {
 				return systemd.LoadStateLoaded, systemd.ActiveStateActive, nil
 			},
@@ -191,7 +191,7 @@ sudo systemctl start redpanda-fstrim.timer
 `,
 		},
 		{
-			name:	"it shouldn't do anything if the redpanda units are started",
+			name: "it shouldn't do anything if the redpanda units are started",
 			unitState: func(name string) (systemd.LoadState, systemd.ActiveState, error) {
 				// Mock the default units' state as Unknown and
 				// the redpanda ones as Inactive
@@ -209,17 +209,17 @@ sudo systemctl start redpanda-fstrim.timer
 `,
 		},
 		{
-			name:	"it should fail if unitState fails",
+			name: "it should fail if unitState fails",
 			unitState: func(name string) (systemd.LoadState, systemd.ActiveState, error) {
 				err := errors.New("unitState error")
 				return systemd.LoadStateUnknown, systemd.ActiveStateUnknown, err
 			},
-			expectedErrMsg:	"unitState error",
+			expectedErrMsg: "unitState error",
 		},
 		{
-			name:		"it should fail if fstrim isn't installed",
-			proc:		&mockProc{fail: true},
-			expectedErrMsg:	"mayor failure over here",
+			name:           "it should fail if fstrim isn't installed",
+			proc:           &mockProc{fail: true},
+			expectedErrMsg: "mayor failure over here",
 		},
 	}
 

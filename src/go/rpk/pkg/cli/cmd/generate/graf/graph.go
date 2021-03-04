@@ -13,19 +13,19 @@ import "encoding/json"
 
 type GraphPanel struct {
 	*BasePanel
-	Targets		[]Target	`json:"targets"`
-	XAxis		XAxis		`json:"xaxis"`
-	YAxes		[]YAxis		`json:"yaxes"`
-	Legend		Legend		`json:"legend"`
-	Fill		int		`json:"fill"`
-	LineWidth	uint		`json:"linewidth"`
-	NullPointMode	string		`json:"nullPointMode"`
-	Thresholds	[]Threshold	`json:"thresholds"`
-	Lines		bool		`json:"lines"`
-	Bars		bool		`json:"bars"`
-	Tooltip		Tooltip		`json:"tooltip"`
-	AliasColors	AliasColors	`json:"aliasColors"`
-	SteppedLine	bool		`json:"steppedLine"`
+	Targets       []Target    `json:"targets"`
+	XAxis         XAxis       `json:"xaxis"`
+	YAxes         []YAxis     `json:"yaxes"`
+	Legend        Legend      `json:"legend"`
+	Fill          int         `json:"fill"`
+	LineWidth     uint        `json:"linewidth"`
+	NullPointMode string      `json:"nullPointMode"`
+	Thresholds    []Threshold `json:"thresholds"`
+	Lines         bool        `json:"lines"`
+	Bars          bool        `json:"bars"`
+	Tooltip       Tooltip     `json:"tooltip"`
+	AliasColors   AliasColors `json:"aliasColors"`
+	SteppedLine   bool        `json:"steppedLine"`
 }
 
 func (*GraphPanel) Type() string {
@@ -39,7 +39,7 @@ func (p *GraphPanel) GetGridPos() *GridPos {
 func (p GraphPanel) MarshalJSON() ([]byte, error) {
 	type PanelAlias GraphPanel
 	typedPanel := struct {
-		Type	string	`json:"type"`
+		Type string `json:"type"`
 		PanelAlias
 	}{
 		p.Type(),
@@ -52,35 +52,35 @@ func NewGraphPanel(title string, unit string) *GraphPanel {
 	yAxisMin := 0.0
 	return &GraphPanel{
 		BasePanel: &BasePanel{
-			ID:		nextID(),
-			Title:		title,
-			Editable:	true,
-			Span:		4,
-			Renderer:	"flot",
-			GridPos:	GridPos{H: 6, W: 8},
+			ID:       nextID(),
+			Title:    title,
+			Editable: true,
+			Span:     4,
+			Renderer: "flot",
+			GridPos:  GridPos{H: 6, W: 8},
 		},
-		Legend:		Legend{Show: true},
-		Fill:		1,
-		LineWidth:	2,
+		Legend:    Legend{Show: true},
+		Fill:      1,
+		LineWidth: 2,
 		XAxis: XAxis{
-			Show:	true,
-			Mode:	"time",
+			Show: true,
+			Mode: "time",
 		},
 		YAxes: []YAxis{
 			{
-				Format:		unit,
-				LogBase:	1,
-				Show:		true,
-				Min:		&yAxisMin,
+				Format:  unit,
+				LogBase: 1,
+				Show:    true,
+				Min:     &yAxisMin,
 			},
 			{
-				Format:		"short",
-				LogBase:	1,
-				Show:		true,
-				Min:		&yAxisMin,
+				Format:  "short",
+				LogBase: 1,
+				Show:    true,
+				Min:     &yAxisMin,
 			},
 		},
-		Tooltip:	Tooltip{ValueType: "individual"},
-		NullPointMode:	"null",
+		Tooltip:       Tooltip{ValueType: "individual"},
+		NullPointMode: "null",
 	}
 }

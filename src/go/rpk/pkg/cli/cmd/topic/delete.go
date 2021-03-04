@@ -20,11 +20,11 @@ func NewDeleteCommand(
 	admin func() (sarama.ClusterAdmin, error),
 ) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:	"delete <topic name>",
-		Short:	"Delete a topic",
-		Args:	common.ExactArgs(1, "topic's name is missing."),
+		Use:   "delete <topic name>",
+		Short: "Delete a topic",
+		Args:  common.ExactArgs(1, "topic's name is missing."),
 		// We don't want Cobra printing CLI usage help if the error isn't about CLI usage.
-		SilenceUsage:	true,
+		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			adm, err := admin()
 			if err != nil {

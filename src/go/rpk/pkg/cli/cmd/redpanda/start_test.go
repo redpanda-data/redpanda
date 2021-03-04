@@ -33,41 +33,41 @@ func (l *noopLauncher) Start(_ string, rpArgs *rp.RedpandaArgs) error {
 
 func TestMergeFlags(t *testing.T) {
 	tests := []struct {
-		name		string
-		current		map[string]interface{}
-		overrides	[]string
-		expected	map[string]string
+		name      string
+		current   map[string]interface{}
+		overrides []string
+		expected  map[string]string
 	}{
 		{
-			name:		"it should override the existent values",
-			current:	map[string]interface{}{"a": "true", "b": "2", "c": "127.0.0.1"},
-			overrides:	[]string{"--a false", "b 42"},
-			expected:	map[string]string{"a": "false", "b": "42", "c": "127.0.0.1"},
+			name:      "it should override the existent values",
+			current:   map[string]interface{}{"a": "true", "b": "2", "c": "127.0.0.1"},
+			overrides: []string{"--a false", "b 42"},
+			expected:  map[string]string{"a": "false", "b": "42", "c": "127.0.0.1"},
 		}, {
-			name:		"it should override the existent values (2)",
-			current:	map[string]interface{}{"lock-memory": "true", "cpumask": "0-1", "logger-log-level": "'exception=debug'"},
+			name:    "it should override the existent values (2)",
+			current: map[string]interface{}{"lock-memory": "true", "cpumask": "0-1", "logger-log-level": "'exception=debug'"},
 			overrides: []string{"--overprovisioned", "--unsafe-bypass-fsync 1",
 				"--default-log-level=trace", "--logger-log-level='exception=debug'",
 				"--fail-on-abandoned-failed-futures"},
 			expected: map[string]string{
-				"lock-memory":				"true",
-				"cpumask":				"0-1",
-				"logger-log-level":			"'exception=debug'",
-				"overprovisioned":			"",
-				"unsafe-bypass-fsync":			"1",
-				"default-log-level":			"trace",
-				"--fail-on-abandoned-failed-futures":	"",
+				"lock-memory":                        "true",
+				"cpumask":                            "0-1",
+				"logger-log-level":                   "'exception=debug'",
+				"overprovisioned":                    "",
+				"unsafe-bypass-fsync":                "1",
+				"default-log-level":                  "trace",
+				"--fail-on-abandoned-failed-futures": "",
 			},
 		}, {
-			name:		"it should create values not present in the current flags",
-			current:	map[string]interface{}{},
-			overrides:	[]string{"b 42", "c 127.0.0.1"},
-			expected:	map[string]string{"b": "42", "c": "127.0.0.1"},
+			name:      "it should create values not present in the current flags",
+			current:   map[string]interface{}{},
+			overrides: []string{"b 42", "c 127.0.0.1"},
+			expected:  map[string]string{"b": "42", "c": "127.0.0.1"},
 		}, {
-			name:		"it shouldn't change the current flags if no overrides are given",
-			current:	map[string]interface{}{"b": "42", "c": "127.0.0.1"},
-			overrides:	[]string{},
-			expected:	map[string]string{"b": "42", "c": "127.0.0.1"},
+			name:      "it shouldn't change the current flags if no overrides are given",
+			current:   map[string]interface{}{"b": "42", "c": "127.0.0.1"},
+			overrides: []string{},
+			expected:  map[string]string{"b": "42", "c": "127.0.0.1"},
 		},
 	}
 
@@ -88,14 +88,14 @@ func TestMergeFlags(t *testing.T) {
 
 func TestParseSeeds(t *testing.T) {
 	tests := []struct {
-		name		string
-		arg		[]string
-		expected	[]config.SeedServer
-		expectedErrMsg	string
+		name           string
+		arg            []string
+		expected       []config.SeedServer
+		expectedErrMsg string
 	}{
 		{
-			name:	"it should parse well-formed seed addrs",
-			arg:	[]string{"127.0.0.1:1234", "domain.com:9892", "lonely-host", "192.168.34.1"},
+			name: "it should parse well-formed seed addrs",
+			arg:  []string{"127.0.0.1:1234", "domain.com:9892", "lonely-host", "192.168.34.1"},
 			expected: []config.SeedServer{
 				{
 					config.SocketAddress{"127.0.0.1", 1234},
@@ -112,19 +112,19 @@ func TestParseSeeds(t *testing.T) {
 			},
 		},
 		{
-			name:		"it shouldn't do anything for an empty list",
-			arg:		[]string{},
-			expected:	[]config.SeedServer{},
+			name:     "it shouldn't do anything for an empty list",
+			arg:      []string{},
+			expected: []config.SeedServer{},
 		},
 		{
-			name:		"it should fail for empty addresses",
-			arg:		[]string{""},
-			expectedErrMsg:	"Couldn't parse seed '': empty address",
+			name:           "it should fail for empty addresses",
+			arg:            []string{""},
+			expectedErrMsg: "Couldn't parse seed '': empty address",
 		},
 		{
-			name:		"it should fail if the host is empty",
-			arg:		[]string{" :1234"},
-			expectedErrMsg:	"Couldn't parse seed ' :1234': parse // :1234: invalid character \" \" in host name",
+			name:           "it should fail if the host is empty",
+			arg:            []string{" :1234"},
+			expectedErrMsg: "Couldn't parse seed ' :1234': parse // :1234: invalid character \" \" in host name",
 		},
 	}
 
@@ -142,16 +142,16 @@ func TestParseSeeds(t *testing.T) {
 
 func TestStartCommand(t *testing.T) {
 	tests := []struct {
-		name		string
-		launcher	redpanda.Launcher
-		args		[]string
-		before		func(afero.Fs) error
-		after		func()
-		postCheck	func(afero.Fs, *rp.RedpandaArgs, *testing.T)
-		expectedErrMsg	string
+		name           string
+		launcher       redpanda.Launcher
+		args           []string
+		before         func(afero.Fs) error
+		after          func()
+		postCheck      func(afero.Fs, *rp.RedpandaArgs, *testing.T)
+		expectedErrMsg string
 	}{{
-		name:	"should fail if the config at the given path is corrupt",
-		args:	[]string{"--config", config.Default().ConfigFile},
+		name: "should fail if the config at the given path is corrupt",
+		args: []string{"--config", config.Default().ConfigFile},
 		before: func(fs afero.Fs) error {
 			return afero.WriteFile(
 				fs,
@@ -160,9 +160,9 @@ func TestStartCommand(t *testing.T) {
 				0755,
 			)
 		},
-		expectedErrMsg:	"An error happened while trying to read /etc/redpanda/redpanda.yaml: While parsing config: yaml: unmarshal errors:\n  line 1: cannot unmarshal !!str `^&notyaml` into map[string]interface {}",
+		expectedErrMsg: "An error happened while trying to read /etc/redpanda/redpanda.yaml: While parsing config: yaml: unmarshal errors:\n  line 1: cannot unmarshal !!str `^&notyaml` into map[string]interface {}",
 	}, {
-		name:	"should generate the config at the given path if it doesn't exist",
+		name: "should generate the config at the given path if it doesn't exist",
 		args: []string{
 			"--config", config.Default().ConfigFile,
 			"--install-dir", "/var/lib/redpanda",
@@ -187,7 +187,7 @@ func TestStartCommand(t *testing.T) {
 			require.Exactly(st, defaultConf, conf)
 		},
 	}, {
-		name:	"it should write the given config file path",
+		name: "it should write the given config file path",
 		args: []string{
 			"--config", "/arbitrary/path/redpanda.yaml",
 			"--install-dir", "/var/lib/redpanda",
@@ -216,7 +216,7 @@ func TestStartCommand(t *testing.T) {
 			require.Exactly(st, config.Default().ConfigFile, conf.ConfigFile)
 		},
 	}, {
-		name:	"it should leave config_file untouched if --config wasn't passed",
+		name: "it should leave config_file untouched if --config wasn't passed",
 		args: []string{
 			"--install-dir", "/var/lib/redpanda",
 		},
@@ -232,7 +232,7 @@ func TestStartCommand(t *testing.T) {
 			require.Exactly(st, config.Default().ConfigFile, conf.ConfigFile)
 		},
 	}, {
-		name:	"it should write the given node ID",
+		name: "it should write the given node ID",
 		args: []string{
 			"--node-id", "34",
 			"--config", config.Default().ConfigFile,
@@ -246,7 +246,7 @@ func TestStartCommand(t *testing.T) {
 			require.Exactly(st, 34, conf.Redpanda.Id)
 		},
 	}, {
-		name:	"it should write the default node ID if --node-id isn't passed and the config file doesn't exist",
+		name: "it should write the default node ID if --node-id isn't passed and the config file doesn't exist",
 		args: []string{
 			"--config", config.Default().ConfigFile,
 			"--install-dir", "/var/lib/redpanda",
@@ -260,7 +260,7 @@ func TestStartCommand(t *testing.T) {
 			require.Exactly(st, config.Default().Redpanda.Id, conf.Redpanda.Id)
 		},
 	}, {
-		name:	"it should leave redpanda.node_id untouched if --node-id wasn't passed",
+		name: "it should leave redpanda.node_id untouched if --node-id wasn't passed",
 		args: []string{
 			"--install-dir", "/var/lib/redpanda",
 		},
@@ -281,7 +281,7 @@ func TestStartCommand(t *testing.T) {
 			)
 		},
 	}, {
-		name:	"--well-known-io should override rpk.well_known_io",
+		name: "--well-known-io should override rpk.well_known_io",
 		args: []string{
 			"--well-known-io", "aws:i3xlarge:default",
 			"--config", config.Default().ConfigFile,
@@ -317,7 +317,7 @@ func TestStartCommand(t *testing.T) {
 			)
 		},
 	}, {
-		name:	"--overprovisioned should override the default value for rpk.overprovisioned",
+		name: "--overprovisioned should override the default value for rpk.overprovisioned",
 		args: []string{
 			// Bool flags will be true by just being present. Therefore, to
 			// change their value, <flag>=<value> needs to be used
@@ -334,7 +334,7 @@ func TestStartCommand(t *testing.T) {
 			require.Exactly(st, false, conf.Rpk.Overprovisioned)
 		},
 	}, {
-		name:	"it should leave rpk.overprovisioned untouched if --overprovisioned wasn't passed",
+		name: "it should leave rpk.overprovisioned untouched if --overprovisioned wasn't passed",
 		args: []string{
 			"--install-dir", "/var/lib/redpanda",
 		},
@@ -355,7 +355,7 @@ func TestStartCommand(t *testing.T) {
 			)
 		},
 	}, {
-		name:	"--lock-memory should override the default value for rpk.enable_memory_locking",
+		name: "--lock-memory should override the default value for rpk.enable_memory_locking",
 		args: []string{
 			"--lock-memory",
 			"--config", config.Default().ConfigFile,
@@ -393,7 +393,7 @@ func TestStartCommand(t *testing.T) {
 			)
 		},
 	}, {
-		name:	"it should parse the --seeds and persist them",
+		name: "it should parse the --seeds and persist them",
 		args: []string{
 			"--install-dir", "/var/lib/redpanda",
 			"--seeds", "192.168.34.32:33145,somehost:54321,justahostnoport",
@@ -404,18 +404,18 @@ func TestStartCommand(t *testing.T) {
 			require.NoError(st, err)
 			expectedSeeds := []config.SeedServer{{
 				Host: config.SocketAddress{
-					Address:	"192.168.34.32",
-					Port:		33145,
+					Address: "192.168.34.32",
+					Port:    33145,
 				},
 			}, {
 				Host: config.SocketAddress{
-					Address:	"somehost",
-					Port:		54321,
+					Address: "somehost",
+					Port:    54321,
 				},
 			}, {
 				Host: config.SocketAddress{
-					Address:	"justahostnoport",
-					Port:		33145,
+					Address: "justahostnoport",
+					Port:    33145,
 				},
 			}}
 			// Check that the generated config is as expected.
@@ -426,7 +426,7 @@ func TestStartCommand(t *testing.T) {
 			)
 		},
 	}, {
-		name:	"it should parse the --seeds and persist them (shorthand)",
+		name: "it should parse the --seeds and persist them (shorthand)",
 		args: []string{
 			"--install-dir", "/var/lib/redpanda",
 			"-s", "192.168.3.32:33145",
@@ -438,18 +438,18 @@ func TestStartCommand(t *testing.T) {
 			require.NoError(st, err)
 			expectedSeeds := []config.SeedServer{{
 				Host: config.SocketAddress{
-					Address:	"192.168.3.32",
-					Port:		33145,
+					Address: "192.168.3.32",
+					Port:    33145,
 				},
 			}, {
 				Host: config.SocketAddress{
-					Address:	"192.168.123.32",
-					Port:		33146,
+					Address: "192.168.123.32",
+					Port:    33146,
 				},
 			}, {
 				Host: config.SocketAddress{
-					Address:	"host",
-					Port:		33145,
+					Address: "host",
+					Port:    33145,
 				},
 			}}
 			// Check that the generated config is as expected.
@@ -460,7 +460,7 @@ func TestStartCommand(t *testing.T) {
 			)
 		},
 	}, {
-		name:	"if --seeds wasn't passed, it should fall back to REDPANDA_SEEDS and persist it",
+		name: "if --seeds wasn't passed, it should fall back to REDPANDA_SEEDS and persist it",
 		args: []string{
 			"--install-dir", "/var/lib/redpanda",
 		},
@@ -477,13 +477,13 @@ func TestStartCommand(t *testing.T) {
 			require.NoError(st, err)
 			expectedSeeds := []config.SeedServer{{
 				Host: config.SocketAddress{
-					Address:	"10.23.12.5",
-					Port:		33146,
+					Address: "10.23.12.5",
+					Port:    33146,
 				},
 			}, {
 				Host: config.SocketAddress{
-					Address:	"host",
-					Port:		33145,
+					Address: "host",
+					Port:    33145,
 				},
 			}}
 			// Check that the generated config is as expected.
@@ -494,7 +494,7 @@ func TestStartCommand(t *testing.T) {
 			)
 		},
 	}, {
-		name:	"it should leave existing seeds untouched if --seeds or REDPANDA_SEEDS aren't set",
+		name: "it should leave existing seeds untouched if --seeds or REDPANDA_SEEDS aren't set",
 		args: []string{
 			"--install-dir", "/var/lib/redpanda",
 		},
@@ -503,8 +503,8 @@ func TestStartCommand(t *testing.T) {
 			conf := config.Default()
 			conf.Redpanda.SeedServers = []config.SeedServer{{
 				Host: config.SocketAddress{
-					Address:	"10.23.12.5",
-					Port:		33146,
+					Address: "10.23.12.5",
+					Port:    33146,
 				},
 			}}
 			return mgr.Write(conf)
@@ -515,8 +515,8 @@ func TestStartCommand(t *testing.T) {
 			require.NoError(st, err)
 			expectedSeeds := []config.SeedServer{{
 				Host: config.SocketAddress{
-					Address:	"10.23.12.5",
-					Port:		33146,
+					Address: "10.23.12.5",
+					Port:    33146,
 				},
 			}}
 			// Check that the generated config is as expected.
@@ -527,19 +527,19 @@ func TestStartCommand(t *testing.T) {
 			)
 		},
 	}, {
-		name:	"it should fail if the host is missing in the given seed",
+		name: "it should fail if the host is missing in the given seed",
 		args: []string{
 			"-s", "goodhost.com:54897,:33145",
 		},
-		expectedErrMsg:	"Couldn't parse seed ':33145': missing hostname",
+		expectedErrMsg: "Couldn't parse seed ':33145': missing hostname",
 	}, {
-		name:	"it should fail if the port isn't an int",
+		name: "it should fail if the port isn't an int",
 		args: []string{
 			"-s", "host:port",
 		},
-		expectedErrMsg:	"Couldn't parse seed 'host:port': parse //host:port: invalid port \":port\" after host",
+		expectedErrMsg: "Couldn't parse seed 'host:port': parse //host:port: invalid port \":port\" after host",
 	}, {
-		name:	"it should parse the --rpc-addr and persist it",
+		name: "it should parse the --rpc-addr and persist it",
 		args: []string{
 			"--install-dir", "/var/lib/redpanda",
 			"--rpc-addr", "192.168.34.32:33145",
@@ -549,8 +549,8 @@ func TestStartCommand(t *testing.T) {
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
 			expectedAddr := config.SocketAddress{
-				Address:	"192.168.34.32",
-				Port:		33145,
+				Address: "192.168.34.32",
+				Port:    33145,
 			}
 			// Check that the generated config is as expected.
 			require.Exactly(
@@ -560,7 +560,7 @@ func TestStartCommand(t *testing.T) {
 			)
 		},
 	}, {
-		name:	"it should parse the --rpc-addr and persist it (no port)",
+		name: "it should parse the --rpc-addr and persist it (no port)",
 		args: []string{
 			"--install-dir", "/var/lib/redpanda",
 			"--rpc-addr", "192.168.34.32",
@@ -570,8 +570,8 @@ func TestStartCommand(t *testing.T) {
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
 			expectedAddr := config.SocketAddress{
-				Address:	"192.168.34.32",
-				Port:		33145,
+				Address: "192.168.34.32",
+				Port:    33145,
 			}
 			// Check that the generated config is as expected.
 			require.Exactly(
@@ -581,14 +581,14 @@ func TestStartCommand(t *testing.T) {
 			)
 		},
 	}, {
-		name:	"it should fail if --rpc-addr is invalid",
+		name: "it should fail if --rpc-addr is invalid",
 		args: []string{
 			"--install-dir", "/var/lib/redpanda",
 			"--rpc-addr", "host:nonnumericport",
 		},
-		expectedErrMsg:	"parse //host:nonnumericport: invalid port \":nonnumericport\" after host",
+		expectedErrMsg: "parse //host:nonnumericport: invalid port \":nonnumericport\" after host",
 	}, {
-		name:	"if --rpc-addr wasn't passed, it should fall back to REDPANDA_RPC_ADDRESS and persist it",
+		name: "if --rpc-addr wasn't passed, it should fall back to REDPANDA_RPC_ADDRESS and persist it",
 		args: []string{
 			"--install-dir", "/var/lib/redpanda",
 		},
@@ -604,8 +604,8 @@ func TestStartCommand(t *testing.T) {
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
 			expectedAddr := config.SocketAddress{
-				Address:	"host",
-				Port:		3123,
+				Address: "host",
+				Port:    3123,
 			}
 			// Check that the generated config is as expected.
 			require.Exactly(
@@ -615,7 +615,7 @@ func TestStartCommand(t *testing.T) {
 			)
 		},
 	}, {
-		name:	"it should leave the RPC addr untouched if the env var & flag weren't set",
+		name: "it should leave the RPC addr untouched if the env var & flag weren't set",
 		args: []string{
 			"--install-dir", "/var/lib/redpanda",
 		},
@@ -623,8 +623,8 @@ func TestStartCommand(t *testing.T) {
 			mgr := config.NewManager(fs)
 			conf := config.Default()
 			conf.Redpanda.RPCServer = config.SocketAddress{
-				Address:	"192.168.33.33",
-				Port:		9892,
+				Address: "192.168.33.33",
+				Port:    9892,
 			}
 			return mgr.Write(conf)
 		},
@@ -633,8 +633,8 @@ func TestStartCommand(t *testing.T) {
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
 			expectedAddr := config.SocketAddress{
-				Address:	"192.168.33.33",
-				Port:		9892,
+				Address: "192.168.33.33",
+				Port:    9892,
 			}
 			// Check that the generated config is as expected.
 			require.Exactly(
@@ -644,7 +644,7 @@ func TestStartCommand(t *testing.T) {
 			)
 		},
 	}, {
-		name:	"it should parse the --kafka-addr and persist it",
+		name: "it should parse the --kafka-addr and persist it",
 		args: []string{
 			"--install-dir", "/var/lib/redpanda",
 			"--kafka-addr", "192.168.34.32:33145",
@@ -655,8 +655,8 @@ func TestStartCommand(t *testing.T) {
 			require.NoError(st, err)
 			expectedAddr := []config.NamedSocketAddress{{
 				SocketAddress: config.SocketAddress{
-					Address:	"192.168.34.32",
-					Port:		33145,
+					Address: "192.168.34.32",
+					Port:    33145,
 				},
 			}}
 			// Check that the generated config is as expected.
@@ -667,7 +667,7 @@ func TestStartCommand(t *testing.T) {
 			)
 		},
 	}, {
-		name:	"it should parse the --kafka-addr and persist it (no port)",
+		name: "it should parse the --kafka-addr and persist it (no port)",
 		args: []string{
 			"--install-dir", "/var/lib/redpanda",
 			"--kafka-addr", "192.168.34.32",
@@ -678,8 +678,8 @@ func TestStartCommand(t *testing.T) {
 			require.NoError(st, err)
 			expectedAddr := []config.NamedSocketAddress{{
 				SocketAddress: config.SocketAddress{
-					Address:	"192.168.34.32",
-					Port:		9092,
+					Address: "192.168.34.32",
+					Port:    9092,
 				},
 			}}
 			// Check that the generated config is as expected.
@@ -690,7 +690,7 @@ func TestStartCommand(t *testing.T) {
 			)
 		},
 	}, {
-		name:	"it should parse the --kafka-addr and persist it (named)",
+		name: "it should parse the --kafka-addr and persist it (named)",
 		args: []string{
 			"--install-dir", "/var/lib/redpanda",
 			"--kafka-addr", "nondefaultname://192.168.34.32",
@@ -700,10 +700,10 @@ func TestStartCommand(t *testing.T) {
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
 			expectedAddr := []config.NamedSocketAddress{{
-				Name:	"nondefaultname",
+				Name: "nondefaultname",
 				SocketAddress: config.SocketAddress{
-					Address:	"192.168.34.32",
-					Port:		9092,
+					Address: "192.168.34.32",
+					Port:    9092,
 				},
 			}}
 			// Check that the generated config is as expected.
@@ -714,7 +714,7 @@ func TestStartCommand(t *testing.T) {
 			)
 		},
 	}, {
-		name:	"it should parse the --kafka-addr and persist it (list)",
+		name: "it should parse the --kafka-addr and persist it (list)",
 		args: []string{
 			"--install-dir", "/var/lib/redpanda",
 			"--kafka-addr", "nondefaultname://192.168.34.32,host:9092",
@@ -724,15 +724,15 @@ func TestStartCommand(t *testing.T) {
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
 			expectedAddr := []config.NamedSocketAddress{{
-				Name:	"nondefaultname",
+				Name: "nondefaultname",
 				SocketAddress: config.SocketAddress{
-					Address:	"192.168.34.32",
-					Port:		9092,
+					Address: "192.168.34.32",
+					Port:    9092,
 				},
 			}, {
 				SocketAddress: config.SocketAddress{
-					Address:	"host",
-					Port:		9092,
+					Address: "host",
+					Port:    9092,
 				},
 			}}
 			// Check that the generated config is as expected.
@@ -743,14 +743,14 @@ func TestStartCommand(t *testing.T) {
 			)
 		},
 	}, {
-		name:	"it should fail if --kafka-addr is invalid",
+		name: "it should fail if --kafka-addr is invalid",
 		args: []string{
 			"--install-dir", "/var/lib/redpanda",
 			"--kafka-addr", "host:nonnumericport",
 		},
-		expectedErrMsg:	"parse //host:nonnumericport: invalid port \":nonnumericport\" after host",
+		expectedErrMsg: "parse //host:nonnumericport: invalid port \":nonnumericport\" after host",
 	}, {
-		name:	"if --kafka-addr wasn't passed, it should fall back to REDPANDA_KAFKA_ADDRESS and persist it",
+		name: "if --kafka-addr wasn't passed, it should fall back to REDPANDA_KAFKA_ADDRESS and persist it",
 		args: []string{
 			"--install-dir", "/var/lib/redpanda",
 		},
@@ -767,8 +767,8 @@ func TestStartCommand(t *testing.T) {
 			require.NoError(st, err)
 			expectedAddr := []config.NamedSocketAddress{{
 				SocketAddress: config.SocketAddress{
-					Address:	"host",
-					Port:		3123,
+					Address: "host",
+					Port:    3123,
 				},
 			}}
 			// Check that the generated config is as expected.
@@ -779,7 +779,7 @@ func TestStartCommand(t *testing.T) {
 			)
 		},
 	}, {
-		name:	"it should leave the Kafka addr untouched if the env var & flag weren't set",
+		name: "it should leave the Kafka addr untouched if the env var & flag weren't set",
 		args: []string{
 			"--install-dir", "/var/lib/redpanda",
 		},
@@ -788,8 +788,8 @@ func TestStartCommand(t *testing.T) {
 			conf := config.Default()
 			conf.Redpanda.KafkaApi = []config.NamedSocketAddress{{
 				SocketAddress: config.SocketAddress{
-					Address:	"192.168.33.33",
-					Port:		9892,
+					Address: "192.168.33.33",
+					Port:    9892,
 				},
 			}}
 			return mgr.Write(conf)
@@ -800,8 +800,8 @@ func TestStartCommand(t *testing.T) {
 			require.NoError(st, err)
 			expectedAddr := []config.NamedSocketAddress{{
 				SocketAddress: config.SocketAddress{
-					Address:	"192.168.33.33",
-					Port:		9892,
+					Address: "192.168.33.33",
+					Port:    9892,
 				},
 			}}
 			// Check that the generated config is as expected.
@@ -812,7 +812,7 @@ func TestStartCommand(t *testing.T) {
 			)
 		},
 	}, {
-		name:	"it should parse the --advertise-kafka-addr and persist it",
+		name: "it should parse the --advertise-kafka-addr and persist it",
 		args: []string{
 			"--install-dir", "/var/lib/redpanda",
 			"--advertise-kafka-addr", "192.168.34.32:33145",
@@ -823,8 +823,8 @@ func TestStartCommand(t *testing.T) {
 			require.NoError(st, err)
 			expectedAddr := []config.NamedSocketAddress{{
 				SocketAddress: config.SocketAddress{
-					Address:	"192.168.34.32",
-					Port:		33145,
+					Address: "192.168.34.32",
+					Port:    33145,
 				},
 			}}
 			// Check that the generated config is as expected.
@@ -835,7 +835,7 @@ func TestStartCommand(t *testing.T) {
 			)
 		},
 	}, {
-		name:	"it should parse the --advertise-kafka-addr and persist it (no port)",
+		name: "it should parse the --advertise-kafka-addr and persist it (no port)",
 		args: []string{
 			"--install-dir", "/var/lib/redpanda",
 			"--advertise-kafka-addr", "192.168.34.32",
@@ -846,8 +846,8 @@ func TestStartCommand(t *testing.T) {
 			require.NoError(st, err)
 			expectedAddr := []config.NamedSocketAddress{{
 				SocketAddress: config.SocketAddress{
-					Address:	"192.168.34.32",
-					Port:		9092,
+					Address: "192.168.34.32",
+					Port:    9092,
 				},
 			}}
 			// Check that the generated config is as expected.
@@ -858,14 +858,14 @@ func TestStartCommand(t *testing.T) {
 			)
 		},
 	}, {
-		name:	"it should fail if --advertise-kafka-addr is invalid",
+		name: "it should fail if --advertise-kafka-addr is invalid",
 		args: []string{
 			"--install-dir", "/var/lib/redpanda",
 			"--advertise-kafka-addr", "host:nonnumericport",
 		},
-		expectedErrMsg:	"parse //host:nonnumericport: invalid port \":nonnumericport\" after host",
+		expectedErrMsg: "parse //host:nonnumericport: invalid port \":nonnumericport\" after host",
 	}, {
-		name:	"if --advertise-kafka-addr, it should fall back to REDPANDA_ADVERTISE_KAFKA_ADDRESS and persist it",
+		name: "if --advertise-kafka-addr, it should fall back to REDPANDA_ADVERTISE_KAFKA_ADDRESS and persist it",
 		args: []string{
 			"--install-dir", "/var/lib/redpanda",
 		},
@@ -882,8 +882,8 @@ func TestStartCommand(t *testing.T) {
 			require.NoError(st, err)
 			expectedAddr := []config.NamedSocketAddress{{
 				SocketAddress: config.SocketAddress{
-					Address:	"host",
-					Port:		3123,
+					Address: "host",
+					Port:    3123,
 				},
 			}}
 			// Check that the generated config is as expected.
@@ -894,7 +894,7 @@ func TestStartCommand(t *testing.T) {
 			)
 		},
 	}, {
-		name:	"it should leave the adv. Kafka addr untouched if the env var & flag weren't set",
+		name: "it should leave the adv. Kafka addr untouched if the env var & flag weren't set",
 		args: []string{
 			"--install-dir", "/var/lib/redpanda",
 		},
@@ -903,8 +903,8 @@ func TestStartCommand(t *testing.T) {
 			conf := config.Default()
 			conf.Redpanda.AdvertisedKafkaApi = []config.NamedSocketAddress{{
 				SocketAddress: config.SocketAddress{
-					Address:	"192.168.33.33",
-					Port:		9892,
+					Address: "192.168.33.33",
+					Port:    9892,
 				},
 			}}
 			return mgr.Write(conf)
@@ -915,8 +915,8 @@ func TestStartCommand(t *testing.T) {
 			require.NoError(st, err)
 			expectedAddr := []config.NamedSocketAddress{{
 				SocketAddress: config.SocketAddress{
-					Address:	"192.168.33.33",
-					Port:		9892,
+					Address: "192.168.33.33",
+					Port:    9892,
 				},
 			}}
 			// Check that the generated config is as expected.
@@ -927,7 +927,7 @@ func TestStartCommand(t *testing.T) {
 			)
 		},
 	}, {
-		name:	"it should parse the --advertise-rpc-addr and persist it",
+		name: "it should parse the --advertise-rpc-addr and persist it",
 		args: []string{
 			"--install-dir", "/var/lib/redpanda",
 			"--advertise-rpc-addr", "192.168.34.32:33145",
@@ -937,8 +937,8 @@ func TestStartCommand(t *testing.T) {
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
 			expectedAddr := &config.SocketAddress{
-				Address:	"192.168.34.32",
-				Port:		33145,
+				Address: "192.168.34.32",
+				Port:    33145,
 			}
 			// Check that the generated config is as expected.
 			require.Exactly(
@@ -948,7 +948,7 @@ func TestStartCommand(t *testing.T) {
 			)
 		},
 	}, {
-		name:	"it should parse the --advertise-rpc-addr and persist it (no port)",
+		name: "it should parse the --advertise-rpc-addr and persist it (no port)",
 		args: []string{
 			"--install-dir", "/var/lib/redpanda",
 			"--advertise-rpc-addr", "192.168.34.32",
@@ -958,8 +958,8 @@ func TestStartCommand(t *testing.T) {
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
 			expectedAddr := &config.SocketAddress{
-				Address:	"192.168.34.32",
-				Port:		33145,
+				Address: "192.168.34.32",
+				Port:    33145,
 			}
 			// Check that the generated config is as expected.
 			require.Exactly(
@@ -969,14 +969,14 @@ func TestStartCommand(t *testing.T) {
 			)
 		},
 	}, {
-		name:	"it should fail if --advertise-rpc-addr is invalid",
+		name: "it should fail if --advertise-rpc-addr is invalid",
 		args: []string{
 			"--install-dir", "/var/lib/redpanda",
 			"--advertise-rpc-addr", "host:nonnumericport",
 		},
-		expectedErrMsg:	"parse //host:nonnumericport: invalid port \":nonnumericport\" after host",
+		expectedErrMsg: "parse //host:nonnumericport: invalid port \":nonnumericport\" after host",
 	}, {
-		name:	"if --advertise-rpc-addr wasn't passed, it should fall back to REDPANDA_ADVERTISE_RPC_ADDRESS and persist it",
+		name: "if --advertise-rpc-addr wasn't passed, it should fall back to REDPANDA_ADVERTISE_RPC_ADDRESS and persist it",
 		args: []string{
 			"--install-dir", "/var/lib/redpanda",
 		},
@@ -992,8 +992,8 @@ func TestStartCommand(t *testing.T) {
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
 			expectedAddr := &config.SocketAddress{
-				Address:	"host",
-				Port:		3123,
+				Address: "host",
+				Port:    3123,
 			}
 			// Check that the generated config is as expected.
 			require.Exactly(
@@ -1003,7 +1003,7 @@ func TestStartCommand(t *testing.T) {
 			)
 		},
 	}, {
-		name:	"it should leave the adv. RPC addr untouched if the env var & flag weren't set",
+		name: "it should leave the adv. RPC addr untouched if the env var & flag weren't set",
 		args: []string{
 			"--install-dir", "/var/lib/redpanda",
 		},
@@ -1011,8 +1011,8 @@ func TestStartCommand(t *testing.T) {
 			mgr := config.NewManager(fs)
 			conf := config.Default()
 			conf.Redpanda.AdvertisedRPCAPI = &config.SocketAddress{
-				Address:	"192.168.33.33",
-				Port:		9892,
+				Address: "192.168.33.33",
+				Port:    9892,
 			}
 			return mgr.Write(conf)
 		},
@@ -1021,8 +1021,8 @@ func TestStartCommand(t *testing.T) {
 			conf, err := mgr.Read(config.Default().ConfigFile)
 			require.NoError(st, err)
 			expectedAddr := &config.SocketAddress{
-				Address:	"192.168.33.33",
-				Port:		9892,
+				Address: "192.168.33.33",
+				Port:    9892,
 			}
 			// Check that the generated config is as expected.
 			require.Exactly(
@@ -1032,7 +1032,7 @@ func TestStartCommand(t *testing.T) {
 			)
 		},
 	}, {
-		name:	"it should fail if --overprovisioned is set in the config file too",
+		name: "it should fail if --overprovisioned is set in the config file too",
 		args: []string{
 			"--install-dir", "/var/lib/redpanda", "--overprovisioned",
 		},
@@ -1042,9 +1042,9 @@ func TestStartCommand(t *testing.T) {
 			conf.Rpk.AdditionalStartFlags = []string{"--overprovisioned"}
 			return mgr.Write(conf)
 		},
-		expectedErrMsg:	"Configuration conflict. Flag '--overprovisioned' is also present in 'rpk.additional_start_flags' in configuration file '/etc/redpanda/redpanda.yaml'. Please remove it and pass '--overprovisioned' directly to `rpk start`.",
+		expectedErrMsg: "Configuration conflict. Flag '--overprovisioned' is also present in 'rpk.additional_start_flags' in configuration file '/etc/redpanda/redpanda.yaml'. Please remove it and pass '--overprovisioned' directly to `rpk start`.",
 	}, {
-		name:	"it should fail if --smp is set in the config file too",
+		name: "it should fail if --smp is set in the config file too",
 		args: []string{
 			"--install-dir", "/var/lib/redpanda", "--smp", "1",
 		},
@@ -1054,9 +1054,9 @@ func TestStartCommand(t *testing.T) {
 			conf.Rpk.AdditionalStartFlags = []string{"--smp=1"}
 			return mgr.Write(conf)
 		},
-		expectedErrMsg:	"Configuration conflict. Flag '--smp' is also present in 'rpk.additional_start_flags' in configuration file '/etc/redpanda/redpanda.yaml'. Please remove it and pass '--smp' directly to `rpk start`.",
+		expectedErrMsg: "Configuration conflict. Flag '--smp' is also present in 'rpk.additional_start_flags' in configuration file '/etc/redpanda/redpanda.yaml'. Please remove it and pass '--smp' directly to `rpk start`.",
 	}, {
-		name:	"it should fail if --memory is set in the config file too",
+		name: "it should fail if --memory is set in the config file too",
 		args: []string{
 			"--install-dir", "/var/lib/redpanda", "--memory", "2G",
 		},
@@ -1066,9 +1066,9 @@ func TestStartCommand(t *testing.T) {
 			conf.Rpk.AdditionalStartFlags = []string{"--memory=1G"}
 			return mgr.Write(conf)
 		},
-		expectedErrMsg:	"Configuration conflict. Flag '--memory' is also present in 'rpk.additional_start_flags' in configuration file '/etc/redpanda/redpanda.yaml'. Please remove it and pass '--memory' directly to `rpk start`.",
+		expectedErrMsg: "Configuration conflict. Flag '--memory' is also present in 'rpk.additional_start_flags' in configuration file '/etc/redpanda/redpanda.yaml'. Please remove it and pass '--memory' directly to `rpk start`.",
 	}, {
-		name:	"it should pass the last instance of a duplicate flag set in rpk.additional_start_flags",
+		name: "it should pass the last instance of a duplicate flag set in rpk.additional_start_flags",
 		args: []string{
 			"--install-dir", "/var/lib/redpanda",
 		},
@@ -1088,7 +1088,7 @@ func TestStartCommand(t *testing.T) {
 			require.Equal(st, "55", rpArgs.SeastarFlags["smp"])
 		},
 	}, {
-		name:	"it should pass the last instance of a duplicate flag passed to rpk start",
+		name: "it should pass the last instance of a duplicate flag passed to rpk start",
 		args: []string{
 			"--install-dir", "/var/lib/redpanda",
 			"--memory", "1G", "--memory", "4G",

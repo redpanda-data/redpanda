@@ -14,8 +14,8 @@ func NewRemoveCommand(
 ) *cobra.Command {
 
 	command := &cobra.Command{
-		Use:	"remove <name>",
-		Short:	"remove inline WASM function",
+		Use:   "remove <name>",
+		Short: "remove inline WASM function",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) == 0 {
 				return fmt.Errorf(

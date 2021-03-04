@@ -67,9 +67,9 @@ var _ = BeforeSuite(func(done Done) {
 	Expect(err).ToNot(HaveOccurred())
 
 	err = (&redpandacontrollers.ClusterReconciler{
-		Client:	k8sManager.GetClient(),
-		Log:	ctrl.Log.WithName("controllers").WithName("core").WithName("RedpandaCluster"),
-		Scheme:	k8sManager.GetScheme(),
+		Client: k8sManager.GetClient(),
+		Log:    ctrl.Log.WithName("controllers").WithName("core").WithName("RedpandaCluster"),
+		Scheme: k8sManager.GetScheme(),
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 

@@ -24,13 +24,13 @@ import (
 )
 
 type tuner struct {
-	cpuMasks	irq.CpuMasks
-	grub		system.Grub
-	rebootAllowed	bool
-	cores		uint
-	pus		uint
-	fs		afero.Fs
-	executor	executors.Executor
+	cpuMasks      irq.CpuMasks
+	grub          system.Grub
+	rebootAllowed bool
+	cores         uint
+	pus           uint
+	fs            afero.Fs
+	executor      executors.Executor
 }
 
 func NewCpuTuner(
@@ -41,11 +41,11 @@ func NewCpuTuner(
 	executor executors.Executor,
 ) tuners.Tunable {
 	return &tuner{
-		cpuMasks:	cpuMasks,
-		grub:		grub,
-		fs:		fs,
-		rebootAllowed:	rebootAllowed,
-		executor:	executor,
+		cpuMasks:      cpuMasks,
+		grub:          grub,
+		fs:            fs,
+		rebootAllowed: rebootAllowed,
+		executor:      executor,
 	}
 }
 

@@ -19,12 +19,12 @@ import (
 
 func NewApiCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	var (
-		brokers		[]string
-		configFile	string
+		brokers    []string
+		configFile string
 	)
 	command := &cobra.Command{
-		Use:	"api",
-		Short:	"Interact with the Redpanda API",
+		Use:   "api",
+		Short: "Interact with the Redpanda API",
 	}
 
 	command.PersistentFlags().StringSliceVar(

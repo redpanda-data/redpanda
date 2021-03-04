@@ -21,14 +21,14 @@ import (
 )
 
 const (
-	fstrim			= "fstrim"
-	unitPrefix		= "redpanda-"
-	timerName		= fstrim + ".timer"
-	serviceName		= fstrim + ".service"
-	customTimerName		= unitPrefix + timerName
-	customServiceName	= unitPrefix + serviceName
+	fstrim            = "fstrim"
+	unitPrefix        = "redpanda-"
+	timerName         = fstrim + ".timer"
+	serviceName       = fstrim + ".service"
+	customTimerName   = unitPrefix + timerName
+	customServiceName = unitPrefix + serviceName
 
-	fstrimTimer	= `[Unit]
+	fstrimTimer = `[Unit]
 Description=Discard unused blocks once a week
 Documentation=man:fstrim
 
@@ -41,12 +41,12 @@ Persistent=true
 WantedBy=timers.target
 `
 
-	timeout	= 500 * time.Millisecond
+	timeout = 500 * time.Millisecond
 )
 
 type fstrimTuner struct {
-	fs		afero.Fs
-	executor	executors.Executor
+	fs       afero.Fs
+	executor executors.Executor
 }
 
 func NewFstrimTuner(fs afero.Fs, executor executors.Executor) Tunable {

@@ -50,11 +50,11 @@ func tune(
 ) TuneResult {
 	ioTune := iotune.NewIoTune(os.NewProc(), timeout)
 	args := iotune.IoTuneArgs{
-		Dirs:		evalDirectories,
-		Format:		iotune.Seastar,
-		PropertiesFile:	ioConfigFile,
-		Duration:	duration,
-		FsCheck:	false,
+		Dirs:           evalDirectories,
+		Format:         iotune.Seastar,
+		PropertiesFile: ioConfigFile,
+		Duration:       duration,
+		FsCheck:        false,
 	}
 	output, err := ioTune.Run(args)
 	for _, outLine := range output {

@@ -15,45 +15,45 @@ import (
 )
 
 type fileInfo struct {
-	name	string
-	content	string
+	name    string
+	content string
 }
 
 func TestNewDeployCommand(t *testing.T) {
 	tests := []struct {
-		name		string
-		producer	kafkaMocks.MockProducer
-		fileInformation	fileInfo
-		args		[]string
-		expectedOutput	[]string
-		expectedErr	string
-		pre		func(fs afero.Fs, fileInformation fileInfo) error
-		admin		kafkaMocks.MockAdmin
+		name            string
+		producer        kafkaMocks.MockProducer
+		fileInformation fileInfo
+		args            []string
+		expectedOutput  []string
+		expectedErr     string
+		pre             func(fs afero.Fs, fileInformation fileInfo) error
+		admin           kafkaMocks.MockAdmin
 	}{
 		{
-			name:	"it should publish a message with correct format",
-			args:	[]string{"--description", "coprocessor description"},
+			name: "it should publish a message with correct format",
+			args: []string{"--description", "coprocessor description"},
 			fileInformation: fileInfo{
-				name:		"fileName.js",
-				content:	"let s = 'text'",
+				name:    "fileName.js",
+				content: "let s = 'text'",
 			},
 			pre: func(fs afero.Fs, fileInformation fileInfo) error {
 				return createMockFile(fs, fileInformation.name, fileInformation.content)
 			},
 		}, {
-			name:	"it should fail if the file extension isn't js",
+			name: "it should fail if the file extension isn't js",
 			fileInformation: fileInfo{
 				name: "fileName.html",
 			},
-			expectedErr:	"can't deploy 'fileName.html': only .js files are supported.",
+			expectedErr: "can't deploy 'fileName.html': only .js files are supported.",
 		}, {
-			name:	"it should fail if the file doesn't exist",
+			name: "it should fail if the file doesn't exist",
 			fileInformation: fileInfo{
 				name: "fileName.js",
 			},
-			expectedErr:	"open fileName.js: file does not exist",
+			expectedErr: "open fileName.js: file does not exist",
 		}, {
-			name:	"it should show an error if there is a error on send message",
+			name: "it should show an error if there is a error on send message",
 			fileInformation: fileInfo{
 				name: "fileName.js",
 			},
@@ -75,7 +75,7 @@ func TestNewDeployCommand(t *testing.T) {
 				},
 			},
 		}, {
-			name:	"it should create a coprocessor_internal_topic if it doesn't exist",
+			name: "it should create a coprocessor_internal_topic if it doesn't exist",
 			fileInformation: fileInfo{
 				name: "fileName.js",
 			},
@@ -94,7 +94,7 @@ func TestNewDeployCommand(t *testing.T) {
 				},
 			},
 		}, {
-			name:	"it shouldn't create a coprocessor_internal_topic if it exist",
+			name: "it shouldn't create a coprocessor_internal_topic if it exist",
 			fileInformation: fileInfo{
 				name: "fileName.js",
 			},
@@ -113,11 +113,11 @@ func TestNewDeployCommand(t *testing.T) {
 				},
 			},
 		}, {
-			name:	"it should publish a message with correct format with correct header",
-			args:	[]string{"--description", "coprocessor description"},
+			name: "it should publish a message with correct format with correct header",
+			args: []string{"--description", "coprocessor description"},
 			fileInformation: fileInfo{
-				name:		"fileName.js",
-				content:	"let s = 'text'",
+				name:    "fileName.js",
+				content: "let s = 'text'",
 			},
 			pre: func(fs afero.Fs, fileInformation fileInfo) error {
 				return createMockFile(fs, fileInformation.name, fileInformation.content)
@@ -128,17 +128,17 @@ func TestNewDeployCommand(t *testing.T) {
 					hashContent := sha256.Sum256([]byte("let s = 'text'"))
 					expectHeader := []sarama.RecordHeader{
 						{
-							Key:	[]byte("action"),
-							Value:	[]byte("deploy"),
+							Key:   []byte("action"),
+							Value: []byte("deploy"),
 						}, {
-							Key:	[]byte("description"),
-							Value:	[]byte("coprocessor description"),
+							Key:   []byte("description"),
+							Value: []byte("coprocessor description"),
 						}, {
-							Key:	[]byte("file_name"),
-							Value:	[]byte("fileName.js"),
+							Key:   []byte("file_name"),
+							Value: []byte("fileName.js"),
 						}, {
-							Key:	[]byte("sha256"),
-							Value:	hashContent[:],
+							Key:   []byte("sha256"),
+							Value: hashContent[:],
 						},
 					}
 					require.Equal(t, expectHeader, msg.Headers)

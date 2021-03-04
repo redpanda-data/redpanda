@@ -42,16 +42,16 @@ func NewCpuMasks(
 	fs afero.Fs, hwloc hwloc.HwLoc, executor executors.Executor,
 ) CpuMasks {
 	return &cpuMasks{
-		fs:		fs,
-		hwloc:		hwloc,
-		executor:	executor,
+		fs:       fs,
+		hwloc:    hwloc,
+		executor: executor,
 	}
 }
 
 type cpuMasks struct {
-	hwloc		hwloc.HwLoc
-	fs		afero.Fs
-	executor	executors.Executor
+	hwloc    hwloc.HwLoc
+	fs       afero.Fs
+	executor executors.Executor
 }
 
 func (masks *cpuMasks) BaseCpuMask(cpuMask string) (string, error) {

@@ -21,18 +21,18 @@ import (
 type OutputFormat string
 
 const (
-	Envfile	OutputFormat	= "envfile"	// Legacy env file
-	Seastar	OutputFormat	= "seastar"	// YAML properties file
-	Bin	string		= "iotune-redpanda"
+	Envfile OutputFormat = "envfile" // Legacy env file
+	Seastar OutputFormat = "seastar" // YAML properties file
+	Bin     string       = "iotune-redpanda"
 )
 
 type IoTuneArgs struct {
-	Dirs		[]string
-	Format		OutputFormat
-	PropertiesFile	string
-	IoConfFile	string
-	Duration	time.Duration
-	FsCheck		bool
+	Dirs           []string
+	Format         OutputFormat
+	PropertiesFile string
+	IoConfFile     string
+	Duration       time.Duration
+	FsCheck        bool
 }
 
 type IoTune interface {
@@ -41,15 +41,15 @@ type IoTune interface {
 
 func NewIoTune(proc os.Proc, timeout time.Duration) IoTune {
 	return &ioTune{
-		proc:		proc,
-		timeout:	timeout,
+		proc:    proc,
+		timeout: timeout,
 	}
 }
 
 type ioTune struct {
 	IoTune
-	proc	os.Proc
-	timeout	time.Duration
+	proc    os.Proc
+	timeout time.Duration
 }
 
 func (ioTune *ioTune) Run(args IoTuneArgs) ([]string, error) {

@@ -21,8 +21,8 @@ func NewRedpandaCommand(
 	fs afero.Fs, mgr config.Manager, launcher rp.Launcher,
 ) *cobra.Command {
 	command := &cobra.Command{
-		Use:	"redpanda",
-		Short:	"Interact with a local Redpanda process",
+		Use:   "redpanda",
+		Short: "Interact with a local Redpanda process",
 	}
 
 	command.AddCommand(redpanda.NewStartCommand(fs, mgr, launcher))

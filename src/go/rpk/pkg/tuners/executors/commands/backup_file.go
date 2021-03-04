@@ -20,14 +20,14 @@ import (
 
 type backupFileCommand struct {
 	Command
-	fs	afero.Fs
-	path	string
+	fs   afero.Fs
+	path string
 }
 
 func NewBackupFileCmd(fs afero.Fs, path string) Command {
 	return &backupFileCommand{
-		fs:	fs,
-		path:	path,
+		fs:   fs,
+		path: path,
 	}
 }
 

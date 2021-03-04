@@ -26,13 +26,13 @@ type DeviceInfo interface {
 func NewDeviceInfo(fs afero.Fs, procFile ProcFile) DeviceInfo {
 
 	return &deviceInfo{
-		procFile:	procFile,
-		fs:		fs}
+		procFile: procFile,
+		fs:       fs}
 }
 
 type deviceInfo struct {
-	procFile	ProcFile
-	fs		afero.Fs
+	procFile ProcFile
+	fs       afero.Fs
 }
 
 func (deviceInfo *deviceInfo) GetIRQs(

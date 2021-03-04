@@ -46,22 +46,22 @@ var metricGroups = []string{
 }
 
 type RowSet struct {
-	rowTitles	[]string
-	groupPanels	map[string]*graf.RowPanel
+	rowTitles   []string
+	groupPanels map[string]*graf.RowPanel
 }
 
 func newRowSet() *RowSet {
 	return &RowSet{
-		rowTitles:	[]string{},
-		groupPanels:	map[string]*graf.RowPanel{},
+		rowTitles:   []string{},
+		groupPanels: map[string]*graf.RowPanel{},
 	}
 }
 
 func NewGrafanaDashboardCmd() *cobra.Command {
 	var prometheusURL string
 	command := &cobra.Command{
-		Use:	"grafana-dashboard",
-		Short:	"Generate a Grafana dashboard for redpanda metrics.",
+		Use:   "grafana-dashboard",
+		Short: "Generate a Grafana dashboard for redpanda metrics.",
 		RunE: func(ccmd *cobra.Command, args []string) error {
 			if !(strings.HasPrefix(prometheusURL, "http://") ||
 				strings.HasPrefix(prometheusURL, "https://")) {
@@ -123,21 +123,21 @@ func buildGrafanaDashboard(
 	rowSet.addCachePerformancePanels(metricFamilies)
 	rows := rowSet.finalize(lastY)
 	return graf.Dashboard{
-		Title:		"Redpanda",
-		Templating:	buildTemplating(),
+		Title:      "Redpanda",
+		Templating: buildTemplating(),
 		Panels: append(
 			summaryPanels,
 			rows...,
 		),
-		Editable:	true,
-		Refresh:	"10s",
-		Time:		graf.Time{From: "now-1h", To: "now"},
+		Editable: true,
+		Refresh:  "10s",
+		Time:     graf.Time{From: "now-1h", To: "now"},
 		TimePicker: graf.TimePicker{
-			RefreshIntervals:	intervals,
-			TimeOptions:		timeOptions,
+			RefreshIntervals: intervals,
+			TimeOptions:      timeOptions,
 		},
-		Timezone:	"utc",
-		SchemaVersion:	12,
+		Timezone:      "utc",
+		SchemaVersion: 12,
 	}
 }
 
@@ -242,21 +242,21 @@ func buildTemplating() graf.Templating {
 	shard.Type = "query"
 	shard.Query = "label_values(shard)"
 	clusterOpt := graf.Option{
-		Text:		"Cluster",
-		Value:		"",
-		Selected:	false,
+		Text:     "Cluster",
+		Value:    "",
+		Selected: false,
 	}
 	aggregateOpts := []graf.Option{
 		clusterOpt,
 		{
-			Text:		"Instance",
-			Value:		"instance,",
-			Selected:	false,
+			Text:     "Instance",
+			Value:    "instance,",
+			Selected: false,
 		},
 		{
-			Text:		"Instance, Shard",
-			Value:		"instance,shard,",
-			Selected:	false,
+			Text:     "Instance, Shard",
+			Value:    "instance,shard,",
+			Selected: false,
 		},
 	}
 	aggregate := newDefaultTemplateVar(
@@ -267,8 +267,8 @@ func buildTemplating() graf.Templating {
 	)
 	aggregate.Type = "custom"
 	aggregate.Current = graf.Current{
-		Text:	clusterOpt.Text,
-		Value:	clusterOpt.Value,
+		Text:  clusterOpt.Text,
+		Value: clusterOpt.Value,
 	}
 	return graf.Templating{
 		List: []graf.TemplateVar{node, shard, aggregate},
@@ -294,10 +294,10 @@ func buildSummary(metricFamilies map[string]*dto.MetricFamily) []graf.Panel {
 	nodesUp.Datasource = datasource
 	nodesUp.GridPos = graf.GridPos{H: 6, W: singleStatW, X: 0, Y: y}
 	nodesUp.Targets = []graf.Target{{
-		Expr:		`count by (app) (vectorized_application_uptime)`,
-		Step:		40,
-		IntervalFactor:	1,
-		LegendFormat:	"Nodes Up",
+		Expr:           `count by (app) (vectorized_application_uptime)`,
+		Step:           40,
+		IntervalFactor: 1,
+		LegendFormat:   "Nodes Up",
 	}}
 	nodesUp.Transparent = true
 	panels = append(panels, nodesUp)
@@ -306,14 +306,14 @@ func buildSummary(metricFamilies map[string]*dto.MetricFamily) []graf.Panel {
 	partitionCount := graf.NewSingleStatPanel("Partitions")
 	partitionCount.Datasource = datasource
 	partitionCount.GridPos = graf.GridPos{
-		H:	6,
-		W:	singleStatW,
-		X:	nodesUp.GridPos.W,
-		Y:	y,
+		H: 6,
+		W: singleStatW,
+		X: nodesUp.GridPos.W,
+		Y: y,
 	}
 	partitionCount.Targets = []graf.Target{{
-		Expr:		`count(count by (topic,partition) (vectorized_storage_log_partition_size{namespace="kafka"}))`,
-		LegendFormat:	"Partition count",
+		Expr:         `count(count by (topic,partition) (vectorized_storage_log_partition_size{namespace="kafka"}))`,
+		LegendFormat: "Partition count",
 	}}
 	partitionCount.Transparent = true
 	panels = append(panels, partitionCount)
@@ -325,10 +325,10 @@ func buildSummary(metricFamilies map[string]*dto.MetricFamily) []graf.Panel {
 		for i, p := range percentiles {
 			panel := newPercentilePanel(kafkaFamily, p)
 			panel.GridPos = graf.GridPos{
-				H:	panelHeight,
-				W:	width,
-				X:	i*width + (singleStatW * 2),
-				Y:	y,
+				H: panelHeight,
+				W: width,
+				X: i*width + (singleStatW * 2),
+				Y: y,
 			}
 			panels = append(panels, panel)
 		}
@@ -346,10 +346,10 @@ func buildSummary(metricFamilies map[string]*dto.MetricFamily) []graf.Panel {
 		for i, p := range percentiles {
 			panel := newPercentilePanel(rpcFamily, p)
 			panel.GridPos = graf.GridPos{
-				H:	panelHeight,
-				W:	width,
-				X:	i * width,
-				Y:	y,
+				H: panelHeight,
+				W: width,
+				X: i * width,
+				Y: y,
 			}
 			panels = append(panels, panel)
 		}
@@ -358,10 +358,10 @@ func buildSummary(metricFamilies map[string]*dto.MetricFamily) []graf.Panel {
 	throughputText := htmlHeader("Throughput")
 	throughputTitle := graf.NewTextPanel(throughputText, "html")
 	throughputTitle.GridPos = graf.GridPos{
-		H:	2,
-		W:	maxWidth / 2,
-		X:	rpcLatencyTitle.GridPos.W,
-		Y:	rpcLatencyTitle.GridPos.Y,
+		H: 2,
+		W: maxWidth / 2,
+		X: rpcLatencyTitle.GridPos.W,
+		Y: rpcLatencyTitle.GridPos.Y,
 	}
 	throughputTitle.Transparent = true
 	panels = append(panels, throughputTitle)
@@ -371,19 +371,19 @@ func buildSummary(metricFamilies map[string]*dto.MetricFamily) []graf.Panel {
 	if readBytesExist && writtenBytesExist {
 		readPanel := newCounterPanel(readBytesFamily)
 		readPanel.GridPos = graf.GridPos{
-			H:	panelHeight,
-			W:	width,
-			X:	maxWidth / 2,
-			Y:	y,
+			H: panelHeight,
+			W: width,
+			X: maxWidth / 2,
+			Y: y,
 		}
 		panels = append(panels, readPanel)
 
 		writtenPanel := newCounterPanel(writtenBytesFamily)
 		writtenPanel.GridPos = graf.GridPos{
-			H:	panelHeight,
-			W:	width,
-			X:	readPanel.GridPos.X + readPanel.GridPos.W,
-			Y:	y,
+			H: panelHeight,
+			W: width,
+			X: readPanel.GridPos.X + readPanel.GridPos.W,
+			Y: y,
 		}
 		panels = append(panels, writtenPanel)
 	}
@@ -431,12 +431,12 @@ func newPercentilePanel(
 		m.GetName(),
 	)
 	target := graf.Target{
-		Expr:		expr,
-		LegendFormat:	legendFormat(m),
-		Format:		"time_series",
-		Step:		10,
-		IntervalFactor:	2,
-		RefID:		"A",
+		Expr:           expr,
+		LegendFormat:   legendFormat(m),
+		Format:         "time_series",
+		Step:           10,
+		IntervalFactor: 2,
+		RefID:          "A",
 	}
 	title := fmt.Sprintf("%s (p%.0f)", m.GetHelp(), percentile*100)
 	panel := newGraphPanel(title, target, "µs")
@@ -454,11 +454,11 @@ func newCounterPanel(m *dto.MetricFamily) *graf.GraphPanel {
 		m.GetName(),
 	)
 	target := graf.Target{
-		Expr:		expr,
-		LegendFormat:	legendFormat(m),
-		Format:		"time_series",
-		Step:		10,
-		IntervalFactor:	2,
+		Expr:           expr,
+		LegendFormat:   legendFormat(m),
+		Format:         "time_series",
+		Step:           10,
+		IntervalFactor: 2,
 	}
 	format := "ops"
 	if strings.Contains(m.GetName(), "bytes") {
@@ -475,11 +475,11 @@ func newGaugePanel(m *dto.MetricFamily) *graf.GraphPanel {
 		m.GetName(),
 	)
 	target := graf.Target{
-		Expr:		expr,
-		LegendFormat:	legendFormat(m),
-		Format:		"time_series",
-		Step:		10,
-		IntervalFactor:	2,
+		Expr:           expr,
+		LegendFormat:   legendFormat(m),
+		Format:         "time_series",
+		Step:           10,
+		IntervalFactor: 2,
 	}
 	format := "short"
 	if strings.Contains(subtype(m), "bytes") {
@@ -496,11 +496,11 @@ func makeRatioPanel(m0, m1 *dto.MetricFamily, help string) *graf.GraphPanel {
 		`sum(irate(%s{instance=~"[[node]]",shard=~"[[node_shard]]"}[1m])) by ([[aggr_criteria]]) / sum(irate(%s{instance=~"[[node]]",shard=~"[[node_shard]]"}[1m])) by ([[aggr_criteria]])`,
 		m0.GetName(), m1.GetName())
 	target := graf.Target{
-		Expr:		expr,
-		LegendFormat:	legendFormat(m0),
-		Format:		"time_series",
-		Step:		10,
-		IntervalFactor:	2,
+		Expr:           expr,
+		LegendFormat:   legendFormat(m0),
+		Format:         "time_series",
+		Step:           10,
+		IntervalFactor: 2,
 	}
 	format := "short"
 	if strings.Contains(subtype(m0), "bytes") {
@@ -520,9 +520,9 @@ func newGraphPanel(
 	p.Datasource = datasource
 	p.Targets = []graf.Target{target}
 	p.Tooltip = graf.Tooltip{
-		MsResolution:	true,
-		Shared:		true,
-		ValueType:	"cumulative",
+		MsResolution: true,
+		Shared:       true,
+		ValueType:    "cumulative",
 	}
 	return p
 }
@@ -531,13 +531,13 @@ func newDefaultTemplateVar(
 	name, label string, multi bool, opts ...graf.Option,
 ) graf.TemplateVar {
 	return graf.TemplateVar{
-		Name:		name,
-		Datasource:	datasource,
-		Label:		label,
-		Multi:		multi,
-		Refresh:	1,
-		Sort:		1,
-		Options:	opts,
+		Name:       name,
+		Datasource: datasource,
+		Label:      label,
+		Multi:      multi,
+		Refresh:    1,
+		Sort:       1,
+		Options:    opts,
 	}
 }
 

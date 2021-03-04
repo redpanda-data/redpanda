@@ -23,15 +23,15 @@ import (
 
 type node struct {
 	// map[topic-name][]partitions
-	leaderParts	map[string][]int
-	replicaParts	map[string][]int
+	leaderParts  map[string][]int
+	replicaParts map[string][]int
 }
 
 func NewInfoCommand(admin func() (sarama.ClusterAdmin, error)) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:		"info",
-		Aliases:	[]string{"status"},
-		Short:		"Get the cluster's info",
+		Use:     "info",
+		Aliases: []string{"status"},
+		Short:   "Get the cluster's info",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			adm, err := admin()
 			if err != nil {
@@ -145,8 +145,8 @@ func partitionsPerNode(topics []*sarama.TopicMetadata) map[int]*node {
 		n := nodePartitions[ID]
 		if n == nil {
 			n = &node{
-				leaderParts:	map[string][]int{},
-				replicaParts:	map[string][]int{}}
+				leaderParts:  map[string][]int{},
+				replicaParts: map[string][]int{}}
 			nodePartitions[ID] = n
 		}
 		return n

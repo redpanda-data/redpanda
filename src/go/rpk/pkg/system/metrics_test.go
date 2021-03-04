@@ -21,12 +21,12 @@ import (
 
 func TestGatherMetrics(t *testing.T) {
 	tests := []struct {
-		name		string
-		before		func(fs afero.Fs) error
-		conf		func() *config.Config
-		expectedErrMsg	string
+		name           string
+		before         func(fs afero.Fs) error
+		conf           func() *config.Config
+		expectedErrMsg string
 	}{{
-		name:	"it should fail if the process's stat file doesn't exist",
+		name: "it should fail if the process's stat file doesn't exist",
 		before: func(fs afero.Fs) error {
 			return afero.WriteFile(
 				fs,
@@ -36,12 +36,12 @@ func TestGatherMetrics(t *testing.T) {
 				0755,
 			)
 		},
-		expectedErrMsg:	"/proc/4194304/stat",
+		expectedErrMsg: "/proc/4194304/stat",
 	}, {
-		name:		"it should fail if the PID file doesn't exist",
-		expectedErrMsg:	"/var/lib/redpanda/data/pid.lock",
+		name:           "it should fail if the PID file doesn't exist",
+		expectedErrMsg: "/var/lib/redpanda/data/pid.lock",
 	}, {
-		name:	"it should fail if the CPU utime can't be parsed",
+		name: "it should fail if the CPU utime can't be parsed",
 		before: func(fs afero.Fs) error {
 			err := afero.WriteFile(
 				fs,
@@ -61,9 +61,9 @@ func TestGatherMetrics(t *testing.T) {
 				0755,
 			)
 		},
-		expectedErrMsg:	`parsing "invalid-utime": invalid syntax`,
+		expectedErrMsg: `parsing "invalid-utime": invalid syntax`,
 	}, {
-		name:	"it should fail if the CPU stime can't be parsed",
+		name: "it should fail if the CPU stime can't be parsed",
 		before: func(fs afero.Fs) error {
 			err := afero.WriteFile(
 				fs,
@@ -83,7 +83,7 @@ func TestGatherMetrics(t *testing.T) {
 				0755,
 			)
 		},
-		expectedErrMsg:	`parsing "invalid-stime": invalid syntax`,
+		expectedErrMsg: `parsing "invalid-stime": invalid syntax`,
 	}}
 
 	for _, tt := range tests {

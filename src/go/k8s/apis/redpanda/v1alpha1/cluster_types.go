@@ -22,18 +22,18 @@ type ClusterSpec struct {
 	// Important: Run "make" to regenerate code after modifying this file
 
 	// Image is the fully qualified name of the Redpanda container
-	Image	string	`json:"image,omitempty"`
+	Image string `json:"image,omitempty"`
 	// Version is the Redpanda container tag
-	Version	string	`json:"version,omitempty"`
+	Version string `json:"version,omitempty"`
 	// Replicas determine how big the cluster will be.
 	// +kubebuilder:validation:Minimum=0
-	Replicas	*int32	`json:"replicas,omitempty"`
+	Replicas *int32 `json:"replicas,omitempty"`
 	// Resources used by each Redpanda container
 	// To calculate overall resource consumption one need to
 	// multiply replicas against limits
-	Resources	corev1.ResourceRequirements	`json:"resources"`
+	Resources corev1.ResourceRequirements `json:"resources"`
 	// Configuration represent redpanda specific configuration
-	Configuration	RedpandaConfig	`json:"configuration,omitempty"`
+	Configuration RedpandaConfig `json:"configuration,omitempty"`
 }
 
 // ClusterStatus defines the observed state of Cluster
@@ -43,13 +43,13 @@ type ClusterStatus struct {
 
 	// Replicas show how many nodes are working in the cluster
 	// +optional
-	Replicas	int32	`json:"replicas"`
+	Replicas int32 `json:"replicas"`
 	// Nodes of the provisioned redpanda nodes
 	// +optional
-	Nodes	[]string	`json:"nodes,omitempty"`
+	Nodes []string `json:"nodes,omitempty"`
 	// Indicates cluster is upgrading
 	// +optional
-	Upgrading	bool	`json:"upgrading"`
+	Upgrading bool `json:"upgrading"`
 }
 
 //+kubebuilder:object:root=true
@@ -57,28 +57,28 @@ type ClusterStatus struct {
 
 // Cluster is the Schema for the clusters API
 type Cluster struct {
-	metav1.TypeMeta		`json:",inline"`
-	metav1.ObjectMeta	`json:"metadata,omitempty"`
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec	ClusterSpec	`json:"spec,omitempty"`
-	Status	ClusterStatus	`json:"status,omitempty"`
+	Spec   ClusterSpec   `json:"spec,omitempty"`
+	Status ClusterStatus `json:"status,omitempty"`
 }
 
 //+kubebuilder:object:root=true
 
 // ClusterList contains a list of Cluster
 type ClusterList struct {
-	metav1.TypeMeta	`json:",inline"`
-	metav1.ListMeta	`json:"metadata,omitempty"`
-	Items		[]Cluster	`json:"items"`
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []Cluster `json:"items"`
 }
 
 // RedpandaConfig is the definition of the main configuration
 type RedpandaConfig struct {
-	RPCServer	SocketAddress	`json:"rpcServer,omitempty"`
-	KafkaAPI	SocketAddress	`json:"kafkaApi,omitempty"`
-	AdminAPI	SocketAddress	`json:"admin,omitempty"`
-	DeveloperMode	bool		`json:"developerMode,omitempty"`
+	RPCServer     SocketAddress `json:"rpcServer,omitempty"`
+	KafkaAPI      SocketAddress `json:"kafkaApi,omitempty"`
+	AdminAPI      SocketAddress `json:"admin,omitempty"`
+	DeveloperMode bool          `json:"developerMode,omitempty"`
 }
 
 // SocketAddress provide the way to configure the port
