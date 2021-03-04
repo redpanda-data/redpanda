@@ -11,6 +11,8 @@
 package v1alpha1
 
 import (
+	"fmt"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -87,4 +89,9 @@ type SocketAddress struct {
 
 func init() {
 	SchemeBuilder.Register(&Cluster{}, &ClusterList{})
+}
+
+// FullImageName returns image name including version
+func (r *Cluster) FullImageName() string {
+	return fmt.Sprintf("%s:%s", r.Spec.Image, r.Spec.Version)
 }

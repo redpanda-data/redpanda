@@ -83,6 +83,9 @@ public:
      */
     bool ntp_is_registered(const model::ntp&);
 
+    /// returns a handle to the reconnect transport
+    shared_script_resources& resources() { return _shared_res; }
+
 private:
     void do_add_source(
       script_id,

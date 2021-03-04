@@ -24,6 +24,7 @@
 #include "cluster/topics_frontend.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
+#include "likely.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
 
@@ -72,6 +73,10 @@ ss::future<> controller::start() {
             std::ref(_partition_allocator),
             std::ref(_storage),
             std::ref(_as));
+      })
+      .then([this] {
+          // validate configuration invariants to exit early
+          return _members_manager.local().validate_configuration_invariants();
       })
       .then([this] {
           return _stm.start_single(
@@ -124,6 +129,10 @@ ss::future<> controller::shutdown_input() {
 
 ss::future<> controller::stop() {
     auto f = ss::now();
+    if (unlikely(!_raft0)) {
+        return f;
+    }
+
     if (!_as.local().abort_requested()) {
         f = shutdown_input();
     }

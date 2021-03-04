@@ -57,11 +57,8 @@ struct sasl_authenticate_response final {
 
     sasl_authenticate_response_data data;
 
-    explicit sasl_authenticate_response(
-      error_code error, ss::sstring error_msg) {
-        data.error_code = error;
-        data.error_message = std::move(error_msg);
-    }
+    explicit sasl_authenticate_response(sasl_authenticate_response_data data)
+      : data(std::move(data)) {}
 
     void encode(const request_context& ctx, response& resp) {
         data.encode(resp.writer(), ctx.header().version);

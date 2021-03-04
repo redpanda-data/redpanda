@@ -84,6 +84,8 @@ ss::future<> group_manager::start() {
 ss::future<> group_manager::stop() {
     _pm.local().unregister_manage_notification(_manage_notify_handle);
     _gm.local().unregister_leadership_notification(_leader_notify_handle);
+    _topic_table.local().unregister_delta_notification(
+      _topic_table_notify_handle);
 
     for (auto& e : _partitions) {
         e.second->as.request_abort();
@@ -106,27 +108,37 @@ void group_manager::attach_partition(ss::lw_shared_ptr<cluster::partition> p) {
 
 ss::future<> group_manager::cleanup_removed_topic_partitions(
   const std::vector<model::topic_partition>& tps) {
-    using group_info = absl::node_hash_map<group_id, group_ptr>::value_type;
-    return ss::do_for_each(_groups, [this, &tps](group_info& gi) {
-        return gi.second->remove_topic_partitions(tps).then(
-          [this, g = gi.second] {
-              if (!g->in_state(group_state::dead)) {
-                  return ss::now();
-              }
-              auto it = _groups.find(g->id());
-              if (it == _groups.end()) {
-                  return ss::now();
-              }
-              // ensure the group didn't change
-              if (it->second != g) {
-                  return ss::now();
-              }
-              vlog(klog.trace, "Removed group {}", g);
-              _groups.erase(it);
-              _groups.rehash(0);
-              return ss::now();
+    // operate on a light-weight copy of group pointers to avoid iterating over
+    // the main index which is subject to concurrent modification.
+    std::vector<group_ptr> groups;
+    groups.reserve(_groups.size());
+    for (auto& group : _groups) {
+        groups.push_back(group.second);
+    }
+
+    return ss::do_with(
+      std::move(groups), [this, &tps](std::vector<group_ptr>& groups) {
+          return ss::do_for_each(groups, [this, &tps](group_ptr& group) {
+              return group->remove_topic_partitions(tps).then(
+                [this, g = group] {
+                    if (!g->in_state(group_state::dead)) {
+                        return ss::now();
+                    }
+                    auto it = _groups.find(g->id());
+                    if (it == _groups.end()) {
+                        return ss::now();
+                    }
+                    // ensure the group didn't change
+                    if (it->second != g) {
+                        return ss::now();
+                    }
+                    vlog(klog.trace, "Removed group {}", g);
+                    _groups.erase(it);
+                    _groups.rehash(0);
+                    return ss::now();
+                });
           });
-    });
+      });
 }
 
 void group_manager::handle_topic_delta(

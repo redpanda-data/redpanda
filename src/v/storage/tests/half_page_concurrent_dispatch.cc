@@ -12,6 +12,7 @@
 #include "storage/tests/utils/disk_log_builder.h"
 #include "test_utils/fixture.h"
 
+#include <seastar/core/file.hh>
 #include <seastar/core/temporary_buffer.hh>
 
 struct fixture {
@@ -20,6 +21,7 @@ struct fixture {
       storage::random_dir(),
       1_GiB,
       storage::debug_sanitize_files::yes,
+      ss::default_priority_class(),
       storage::with_cache::no)};
     ~fixture() { b.stop().get(); }
 };

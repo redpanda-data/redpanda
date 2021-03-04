@@ -108,8 +108,8 @@ producer::send(model::topic_partition tp, model::record_batch&& batch) {
              std::move(batch),
              [this, tp](model::record_batch& batch) mutable {
                  return retry_with_mitigation(
-                   shard_local_cfg().retries(),
-                   shard_local_cfg().retry_base_backoff(),
+                   _config.retries(),
+                   _config.retry_base_backoff(),
                    [this, tp{std::move(tp)}, &batch]() {
                        return do_send(tp, batch.share());
                    },

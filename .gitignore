@@ -29,6 +29,7 @@
 bin
 _artifacts/
 /src/go/k8s/testbin/*
+/src/go/k8s/cm-verifier
 
 # Test binary, build with `go test -c`
 *.test

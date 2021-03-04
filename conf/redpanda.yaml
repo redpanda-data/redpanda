@@ -33,7 +33,7 @@ redpanda:
   
   # Kafka transport
   kafka_api:
-    address: "0.0.0.0"
+  - address: "0.0.0.0"
     port: 9092
 
   admin:

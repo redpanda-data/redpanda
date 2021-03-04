@@ -3,11 +3,13 @@ kind: TestSuite
 startKIND: true
 kindNodeCache: true
 kindContainers:
-  - gcr.io/vectorized/redpanda-k8s-operator:latest
+  - vectorized/redpanda-operator:latest
 testDirs:
   - ./tests/e2e
 kindConfig: ./kind.yaml
 commands:
-  - command: "kubectl apply -k config/default"
-artifactsDir: tests/e2e/_artifacts
+  - command: "./hack/install-cert-manager.sh"
+  - command: "make deploy"
+  - command: "./hack/wait-for-webhook-ready.sh"
+artifactsDir: tests/_e2e_artifacts
 timeout: 300

@@ -18,6 +18,7 @@
 #include "cluster/service.h"
 #include "config/configuration.h"
 #include "config/seed_server.h"
+#include "kafka/security/scram_algorithm.h"
 #include "kafka/server/coordinator_ntp_mapper.h"
 #include "kafka/server/group_manager.h"
 #include "kafka/server/group_router.h"
@@ -29,6 +30,7 @@
 #include "redpanda/admin/api-doc/config.json.h"
 #include "redpanda/admin/api-doc/kafka.json.h"
 #include "redpanda/admin/api-doc/raft.json.h"
+#include "resource_mgmt/io_priority.h"
 #include "rpc/simple_protocol.h"
 #include "storage/chunk_cache.h"
 #include "storage/directories.h"
@@ -233,18 +235,20 @@ void application::configure_admin_server() {
                 .then([this, &server](
                         std::optional<ss::tls::credentials_builder> builder) {
                     if (!builder) {
-                        return;
+                        return ss::now();
                     }
-                    server.set_tls_credentials(
-                      builder
-                        ->build_reloadable_server_credentials(
-                          [this](
-                            const std::unordered_set<ss::sstring>& updated,
-                            const std::exception_ptr& eptr) {
-                              cluster::log_certificate_reload_event(
-                                _log, "API TLS", updated, eptr);
-                          })
-                        .get0());
+
+                    return builder
+                      ->build_reloadable_server_credentials(
+                        [this](
+                          const std::unordered_set<ss::sstring>& updated,
+                          const std::exception_ptr& eptr) {
+                            cluster::log_certificate_reload_event(
+                              _log, "API TLS", updated, eptr);
+                        })
+                      .then([&server](auto cred) {
+                          server.set_tls_credentials(std::move(cred));
+                      });
                 });
           })
           .get0();
@@ -336,6 +340,7 @@ static storage::log_config manager_config_from_global_config() {
       config::shard_local_cfg().compacted_log_segment_size(),
       config::shard_local_cfg().max_compacted_log_segment_size(),
       storage::debug_sanitize_files::no,
+      priority_manager::local().compaction_priority(),
       config::shard_local_cfg().retention_bytes(),
       config::shard_local_cfg().log_compaction_interval_ms(),
       config::shard_local_cfg().delete_retention_ms(),
@@ -414,6 +419,28 @@ void application::wire_up_services() {
       std::ref(controller->get_partition_leaders()))
       .get();
 
+    syschecks::systemd_message("Creating kafka credential store").get();
+    construct_service(credentials).get();
+
+    /*
+     * Add in the static scram credential for testing.
+     * - sasl and developer mode needs to be enabled
+     */
+    if (
+      unlikely(config::shard_local_cfg().enable_admin_api())
+      && config::shard_local_cfg().developer_mode()
+      && !config::shard_local_cfg().static_scram_user().empty()
+      && !config::shard_local_cfg().static_scram_pass().empty()) {
+        credentials
+          .invoke_on_all([](kafka::credential_store& store) {
+              store.put(
+                config::shard_local_cfg().static_scram_user(),
+                kafka::scram_sha256::make_credentials(
+                  config::shard_local_cfg().static_scram_pass(), 4096));
+          })
+          .get();
+    }
+
     syschecks::systemd_message("Creating metadata dissemination service").get();
     construct_service(
       md_dissemination_service,
@@ -480,23 +507,6 @@ void application::wire_up_services() {
                     : nullptr;
     syschecks::systemd_message("Starting internal RPC {}", rpc_cfg).get();
     construct_service(_rpc, rpc_cfg).get();
-    // coproc rpc
-    if (coproc_enabled()) {
-        auto coproc_script_manager_server_addr
-          = rpc::resolve_dns(
-              config::shard_local_cfg().coproc_script_manager_server())
-              .get0();
-        rpc::server_configuration cp_rpc_cfg("coproc_rpc");
-        cp_rpc_cfg.max_service_memory_per_core
-          = memory_groups::rpc_total_memory();
-        cp_rpc_cfg.addrs.emplace_back(coproc_script_manager_server_addr);
-        cp_rpc_cfg.disable_metrics = rpc::metrics_disabled(
-          config::shard_local_cfg().disable_metrics());
-        syschecks::systemd_message(
-          "Starting coprocessor internal RPC {}", cp_rpc_cfg)
-          .get();
-        construct_service(_coproc_rpc, cp_rpc_cfg).get();
-    }
 
     syschecks::systemd_message("Creating id allocator frontend").get();
     construct_service(
@@ -605,25 +615,6 @@ void application::start() {
     _rpc.invoke_on_all(&rpc::server::start).get();
     vlog(_log.info, "Started RPC server listening at {}", conf.rpc_server());
 
-    if (coproc_enabled()) {
-        syschecks::systemd_message("Starting coproc RPC").get();
-        _coproc_rpc
-          .invoke_on_all([this](rpc::server& s) {
-              auto proto = std::make_unique<rpc::simple_protocol>();
-              proto->register_service<coproc::service>(
-                _scheduling_groups.coproc_sg(),
-                smp_service_groups.coproc_smp_sg(),
-                std::ref(pacemaker));
-              s.set_protocol(std::move(proto));
-          })
-          .get();
-        _coproc_rpc.invoke_on_all(&rpc::server::start).get();
-        vlog(
-          _log.info,
-          "Started coproc RPC server listening at {}",
-          conf.coproc_script_manager_server());
-    }
-
     quota_mgr.invoke_on_all(&kafka::quota_manager::start).get();
 
     // Kafka API
@@ -639,7 +630,8 @@ void application::start() {
             partition_manager,
             coordinator_ntp_mapper,
             fetch_session_cache,
-            std::ref(id_allocator_frontend));
+            std::ref(id_allocator_frontend),
+            credentials);
           s.set_protocol(std::move(proto));
       })
       .get();
@@ -648,14 +640,8 @@ void application::start() {
       _log.info, "Started Kafka API server listening at {}", conf.kafka_api());
 
     if (coproc_enabled()) {
-        /// Temporarily disable retries for the new client until we create a
-        /// more granular way to configure this per client or per request.
-        kafka::client::shard_local_cfg().retries.set_value(size_t(0));
-        construct_single_service(
-          _wasm_event_listener,
-          config::shard_local_cfg().data_directory.value().path);
+        construct_single_service(_wasm_event_listener, std::ref(pacemaker));
         _wasm_event_listener->start().get();
-        /// Start the pacemakers offset keeper
         pacemaker.invoke_on_all(&coproc::pacemaker::start).get();
     }
 

@@ -72,8 +72,7 @@ func TestEnsure(t *testing.T) {
 			assert.NoError(t, err, tt.name)
 		}
 
-		svc := res.NewService(c, tt.pandaCluster, scheme.Scheme, ctrl.Log.WithName("test"))
-		sts := res.NewStatefulSet(c, tt.pandaCluster, scheme.Scheme, svc, ctrl.Log.WithName("test"))
+		sts := res.NewStatefulSet(c, tt.pandaCluster, scheme.Scheme, "cluster.local", "servicename", ctrl.Log.WithName("test"))
 
 		err = sts.Ensure(context.Background())
 		assert.NoError(t, err, tt.name)

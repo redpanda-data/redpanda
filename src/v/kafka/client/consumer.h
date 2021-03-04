@@ -12,15 +12,19 @@
 #pragma once
 
 #include "kafka/client/assignment_plans.h"
-#include "kafka/client/broker.h"
+#include "kafka/client/brokers.h"
+#include "kafka/client/configuration.h"
+#include "kafka/client/fetch_session.h"
 #include "kafka/client/logger.h"
 #include "kafka/protocol/describe_groups.h"
+#include "kafka/protocol/fetch.h"
 #include "kafka/protocol/offset_commit.h"
 #include "kafka/protocol/offset_fetch.h"
 #include "kafka/types.h"
 
 #include <seastar/core/shared_ptr.hh>
 
+#include <absl/container/node_hash_map.h>
 #include <absl/hash/hash.h>
 
 #include <chrono>
@@ -31,10 +35,17 @@ namespace kafka::client {
 // consumer manages the lifetime of a consumer within a group.
 class consumer final : public ss::enable_lw_shared_from_this<consumer> {
     using assignment_t = client::assignment;
+    using broker_reqs_t = absl::node_hash_map<shared_broker_t, fetch_request>;
 
 public:
-    consumer(shared_broker_t coordinator, group_id group_id)
-      : _coordinator(std::move(coordinator))
+    consumer(
+      const configuration& config,
+      brokers& brokers,
+      shared_broker_t coordinator,
+      group_id group_id)
+      : _config(config)
+      , _brokers(brokers)
+      , _coordinator(std::move(coordinator))
       , _group_id(std::move(group_id))
       , _topics() {}
 
@@ -50,6 +61,8 @@ public:
     offset_fetch(std::vector<offset_fetch_request_topic> topics);
     ss::future<offset_commit_response>
     offset_commit(std::vector<offset_commit_request_topic> topics);
+    ss::future<fetch_response>
+    fetch(std::chrono::milliseconds timeout, int32_t max_bytes);
 
 private:
     bool is_leader() const {
@@ -70,6 +83,8 @@ private:
 
     ss::future<describe_groups_response> describe_group();
 
+    ss::future<fetch_response> dispatch_fetch(broker_reqs_t::value_type br);
+
     template<typename RequestFactory>
     ss::future<
       typename std::invoke_result_t<RequestFactory>::api_type::response_type>
@@ -88,6 +103,8 @@ private:
         });
     }
 
+    const configuration& _config;
+    brokers& _brokers;
     shared_broker_t _coordinator;
     ss::abort_source _as;
     ss::gate _gate{};
@@ -102,6 +119,7 @@ private:
     std::vector<model::topic> _subscribed_topics{};
     std::unique_ptr<assignment_plan> _plan{};
     assignment_t _assignment{};
+    absl::node_hash_map<shared_broker_t, fetch_session> _fetch_sessions;
 
     friend std::ostream& operator<<(std::ostream& os, const consumer& c) {
         fmt::print(
@@ -115,8 +133,11 @@ private:
 
 using shared_consumer_t = ss::lw_shared_ptr<consumer>;
 
-ss::future<shared_consumer_t>
-make_consumer(shared_broker_t coordinator, group_id group_id);
+ss::future<shared_consumer_t> make_consumer(
+  const configuration& config,
+  brokers& brokers,
+  shared_broker_t coordinator,
+  group_id group_id);
 
 namespace detail {
 

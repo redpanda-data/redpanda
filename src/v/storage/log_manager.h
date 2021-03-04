@@ -46,21 +46,27 @@ struct log_config {
       ss::sstring directory,
       size_t segment_size,
       debug_sanitize_files should,
+      ss::io_priority_class compaction_priority,
       with_cache with) noexcept
       : stype(type)
       , base_dir(std::move(directory))
       , max_segment_size(segment_size)
       , sanitize_fileops(should)
+      , compaction_priority(compaction_priority)
       , cache(with) {}
+
     log_config(
       storage_type type,
       ss::sstring directory,
       size_t segment_size,
-      debug_sanitize_files should) noexcept
+      debug_sanitize_files should,
+      ss::io_priority_class compaction_priority
+      = ss::default_priority_class()) noexcept
       : stype(type)
       , base_dir(std::move(directory))
       , max_segment_size(segment_size)
-      , sanitize_fileops(should) {}
+      , sanitize_fileops(should)
+      , compaction_priority(compaction_priority) {}
     log_config(
       storage_type type,
       ss::sstring directory,
@@ -68,6 +74,7 @@ struct log_config {
       size_t compacted_segment_size,
       size_t max_compacted_segment_size,
       debug_sanitize_files should,
+      ss::io_priority_class compaction_priority,
       std::optional<size_t> ret_bytes,
       std::chrono::milliseconds compaction_ival,
       std::chrono::milliseconds del_ret,
@@ -79,6 +86,7 @@ struct log_config {
       , compacted_segment_size(compacted_segment_size)
       , max_compacted_segment_size(max_compacted_segment_size)
       , sanitize_fileops(should)
+      , compaction_priority(compaction_priority)
       , retention_bytes(ret_bytes)
       , compaction_interval(compaction_ival)
       , delete_retention(del_ret)
@@ -102,6 +110,7 @@ struct log_config {
     size_t max_compacted_segment_size = 5_GiB;
     // used for testing: keeps a backtrace of operations for debugging
     debug_sanitize_files sanitize_fileops = debug_sanitize_files::no;
+    ss::io_priority_class compaction_priority;
     // same as retention.bytes in kafka
     std::optional<size_t> retention_bytes = std::nullopt;
     std::chrono::milliseconds compaction_interval = std::chrono::minutes(10);

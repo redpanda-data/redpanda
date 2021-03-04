@@ -10,6 +10,7 @@
 #include "kafka/server/handlers/describe_configs.h"
 
 #include "cluster/metadata_cache.h"
+#include "config/configuration.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/server/handlers/topics/topic_utils.h"
 #include "kafka/server/request_context.h"
@@ -23,8 +24,10 @@
 #include <seastar/core/smp.hh>
 #include <seastar/util/log.hh>
 
+#include <boost/algorithm/string/join.hpp>
 #include <fmt/ostream.h>
 
+#include <charconv>
 #include <string_view>
 
 namespace kafka {
@@ -40,6 +43,80 @@ static void add_config(
       .value = fmt::format("{}", value),
       .config_source = source,
     });
+}
+
+static ss::sstring
+kafka_endpoint_format(const std::vector<model::broker_endpoint>& endpoints) {
+    std::vector<ss::sstring> uris;
+    uris.reserve(endpoints.size());
+    std::transform(
+      endpoints.cbegin(),
+      endpoints.cend(),
+      std::back_inserter(uris),
+      [](const model::broker_endpoint& ep) {
+          return fmt::format(
+            "{}://{}:{}",
+            (ep.name.empty() ? "plain" : ep.name),
+            ep.address.host(),
+            ep.address.port());
+      });
+    return boost::algorithm::join(uris, ",");
+}
+
+static void report_broker_config(describe_configs_result& result) {
+    if (!result.resource_name.empty()) {
+        int32_t broker_id = -1;
+        auto res = std::from_chars(
+          result.resource_name.data(),
+          result.resource_name.data() + result.resource_name.size(), // NOLINT
+          broker_id);
+        if (res.ec == std::errc()) {
+            if (broker_id != config::shard_local_cfg().node_id()) {
+                result.error_code = error_code::invalid_request;
+                result.error_message = fmt::format(
+                  "Unexpected broker id {} expected {}",
+                  broker_id,
+                  config::shard_local_cfg().node_id());
+                return;
+            }
+        } else {
+            result.error_code = error_code::invalid_request;
+            result.error_message = fmt::format(
+              "Broker id must be an integer but received {}",
+              result.resource_name);
+            return;
+        }
+    }
+
+    add_config(
+      result,
+      "listeners",
+      kafka_endpoint_format(config::shard_local_cfg().kafka_api()),
+      describe_configs_source::static_broker_config);
+
+    add_config(
+      result,
+      "advertised.listeners",
+      kafka_endpoint_format(config::shard_local_cfg().advertised_kafka_api()),
+      describe_configs_source::static_broker_config);
+
+    add_config(
+      result,
+      "log.segment.bytes",
+      config::shard_local_cfg().log_segment_size(),
+      describe_configs_source::static_broker_config);
+
+    add_config(
+      result,
+      "log.retention.bytes",
+      config::shard_local_cfg().retention_bytes(),
+      describe_configs_source::static_broker_config);
+
+    add_config(
+      result,
+      "log.retention.ms",
+      config::shard_local_cfg().delete_retention_ms(),
+      describe_configs_source::static_broker_config);
 }
 
 template<>
@@ -99,9 +176,11 @@ ss::future<response_ptr> describe_configs_handler::handle(
             break;
         }
 
-        // resource types not yet handled
         case config_resource_type::broker:
-            [[fallthrough]];
+            report_broker_config(result);
+            break;
+
+        // resource types not yet handled
         case config_resource_type::broker_logger:
             result.error_code = error_code::invalid_request;
         }

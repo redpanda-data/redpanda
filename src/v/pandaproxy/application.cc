@@ -67,7 +67,7 @@ int application::run(int ac, char** av) {
                 });
                 // must initialize configuration before services
                 hydrate_config(cfg);
-                initialize();
+                initialize(_client_config);
                 check_environment();
                 configure_admin_server();
                 wire_up_services();
@@ -86,10 +86,13 @@ int application::run(int ac, char** av) {
     });
 }
 
-void application::initialize() {
-    if (kafka::client::shard_local_cfg().brokers.value().empty()) {
+void application::initialize(const kafka::client::configuration& cfg) {
+    if (cfg.brokers.value().empty()) {
         throw std::invalid_argument(
           "Pandaproxy requires at least 1 seed broker");
+    }
+    if (std::addressof(_client_config) != std::addressof(cfg)) {
+        _client_config.read_yaml(to_yaml(cfg));
     }
 }
 
@@ -127,8 +130,8 @@ void application::hydrate_config(
     vlog(_log.info, "Configuration:\n\n{}\n\n", config);
     ss::smp::invoke_on_all([&config] {
         shard_local_cfg().read_yaml(config);
-        kafka::client::shard_local_cfg().read_yaml(config);
     }).get0();
+    _client_config.read_yaml(config["pandaproxy_client"]);
     vlog(
       _log.info,
       "Use `rpk config set pandaproxy-cfg <value>` to change values below:");
@@ -138,7 +141,7 @@ void application::hydrate_config(
         vlog(_log.info, "{}\t- {}", val.str(), item.desc());
     };
     shard_local_cfg().for_each(config_printer);
-    kafka::client::shard_local_cfg().for_each(config_printer);
+    _client_config.for_each(config_printer);
 }
 
 void application::check_environment() {
@@ -205,8 +208,15 @@ void application::wire_up_services() {
     construct_service(
       _proxy,
       rpc::resolve_dns(shard_local_cfg().pandaproxy_api()).get(),
-      kafka::client::shard_local_cfg().brokers())
+      kafka::client::conf_ref(_client_config))
       .get();
+}
+
+ss::future<> application::set_client_config(ss::sstring name, std::any val) {
+    return _proxy.invoke_on_all(
+      [name{std::move(name)}, val{std::move(val)}](proxy& p) {
+          p.client_config().get(name).set_value(val);
+      });
 }
 
 void application::start() {

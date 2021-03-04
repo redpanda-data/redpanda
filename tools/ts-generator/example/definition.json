@@ -31,6 +31,10 @@
         {
           "name": "numberUSigned32",
           "type": "uint32"
+        },
+        {
+          "name": "optional",
+          "type": "Optional<Class2>"
         }
       ]
     },
@@ -68,6 +72,10 @@
         {
           "name": "classUSigned",
           "type": "Class3"
+        },
+        {
+          "name": "mixCustomType",
+          "type": "Optional<Array<Optional<Optional<string>>>>"
         }
       ]
     }

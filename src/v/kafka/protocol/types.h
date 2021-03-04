@@ -11,9 +11,12 @@
 #pragma once
 #include "kafka/protocol/fwd.h"
 #include "kafka/types.h"
+#include "model/metadata.h"
 #include "utils/concepts-enabled.h"
 
 namespace kafka {
+
+static constexpr model::node_id consumer_replica_id{-1};
 
 // clang-format off
 CONCEPT(

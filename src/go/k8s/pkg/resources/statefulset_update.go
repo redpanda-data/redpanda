@@ -53,7 +53,7 @@ func (r *StatefulSetResource) updateStsImage(
 		return err
 	}
 
-	newImage := fmt.Sprintf("%s:%s", r.pandaCluster.Spec.Image, r.pandaCluster.Spec.Version)
+	newImage := r.pandaCluster.FullImageName()
 	if rpContainer.Image == newImage && !upgrading {
 		return nil
 	}
@@ -158,7 +158,7 @@ func (r *StatefulSetResource) ensureRedpandaGroupsReady(
 		return nil
 	}
 
-	headlessServiceWithPort := fmt.Sprintf("%s:%d", r.svc.HeadlessServiceFQDN(),
+	headlessServiceWithPort := fmt.Sprintf("%s:%d", r.serviceFQDN,
 		r.pandaCluster.Spec.Configuration.KafkaAPI.Port)
 
 	addresses := []string{fmt.Sprintf("%s-%d.%s", sts.Name, ordinal, headlessServiceWithPort)}

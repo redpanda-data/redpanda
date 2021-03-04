@@ -8,6 +8,7 @@ require (
 	github.com/avast/retry-go v2.6.0+incompatible
 	github.com/aws/aws-sdk-go v1.25.43
 	github.com/burdiyan/kafkautil v0.0.0-20190131162249-eaf83ed22d5b
+	github.com/cespare/xxhash v1.1.0
 	github.com/cockroachdb/crlfmt v0.0.0-20200923085322-b9cb16fe9a33
 	github.com/containerd/containerd v1.4.1 // indirect
 	github.com/coreos/go-systemd/v22 v22.1.0

@@ -11,6 +11,7 @@
 #pragma once
 #include "bytes/iobuf.h"
 #include "coproc/errc.h"
+#include "coproc/types.h"
 #include "model/record.h"
 
 #include <seastar/core/sstring.hh>
@@ -30,7 +31,7 @@ enum class event_header { action, description, checksum };
 enum class event_action { deploy, remove };
 
 /// \brief returns the id of the event, performs a byte-copy
-std::optional<ss::sstring> get_event_name(const model::record&);
+std::optional<script_id> get_event_id(const model::record&);
 
 /// \brief returns an iterator to the value in the records header keyed by
 /// the 'wasm_event_header' parameter
@@ -50,7 +51,7 @@ wasm::errc validate_event(const model::record&);
 
 /// \brief Returns the newest events and their data blobs if the event has
 /// passed all validators
-absl::btree_map<ss::sstring, iobuf>
+absl::btree_map<script_id, iobuf>
   reconcile_events(std::vector<model::record_batch>);
 
 } // namespace coproc::wasm

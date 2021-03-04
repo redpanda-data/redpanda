@@ -24,6 +24,7 @@
 #include "test_utils/fixture.h"
 #include "units.h"
 
+#include <seastar/core/file.hh>
 #include <seastar/core/reactor.hh>
 
 #include <boost/range/irange.hpp>
@@ -85,6 +86,7 @@ public:
           std::move(test_dir),
           200_MiB,
           storage::debug_sanitize_files::yes,
+          ss::default_priority_class(),
           cache);
     }
 

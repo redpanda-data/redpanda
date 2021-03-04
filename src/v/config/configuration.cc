@@ -55,12 +55,6 @@ configuration::configuration()
       tls_config::validate)
   , enable_coproc(
       *this, "enable_coproc", "Enable coprocessing mode", required::no, false)
-  , coproc_script_manager_server(
-      *this,
-      "coproc_script_manager_server",
-      "IpAddress and port for management service",
-      required::no,
-      unresolved_address("127.0.0.1", 43118))
   , coproc_supervisor_server(
       *this,
       "coproc_supervisor_server",
@@ -454,6 +448,24 @@ configuration::configuration()
       "touching the log until the batch is exhausted.",
       required::no,
       1000)
+  , enable_sasl(
+      *this,
+      "enable_sasl",
+      "Enable SASL authentication for Kafka connections.",
+      required::no,
+      false)
+  , static_scram_user(
+      *this,
+      "static_scram_user",
+      "A SASL SCRAM user for testing",
+      required::no,
+      "")
+  , static_scram_pass(
+      *this,
+      "static_scram_pass",
+      "A SASL SCRAM password for testing",
+      required::no,
+      "")
   , _advertised_kafka_api(
       *this,
       "advertised_kafka_api",

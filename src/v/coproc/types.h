@@ -29,20 +29,19 @@ using script_id = named_type<uint64_t, struct script_id_tag>;
 /// registration status of the topic
 enum class enable_response_code : int8_t {
     success = 0,
-    internal_error = 1,
+    internal_error,
     invalid_ingestion_policy,
     script_id_already_exists,
-    topic_does_not_exist,
-    invalid_topic,
-    materialized_topic
+    script_contains_invalid_topic,
+    script_contains_no_topics
 };
 
 /// \brief per topic a client will recieve a response code on the
 /// deregistration status of the topic
 enum class disable_response_code : int8_t {
     success = 0,
-    internal_error = 1,
-    script_id_does_not_exist = 7,
+    internal_error,
+    script_id_does_not_exist,
 };
 
 enum class topic_ingestion_policy : int8_t { earliest = 0, stored, latest };
@@ -55,9 +54,8 @@ inline bool is_valid_ingestion_policy(topic_ingestion_policy p) {
 /// \brief type to use for registration/deregistration of a topic
 struct enable_copros_request {
     struct data {
-        using topic_mode = std::pair<model::topic, topic_ingestion_policy>;
         script_id id;
-        std::vector<topic_mode> topics;
+        iobuf source_code;
     };
     std::vector<data> inputs;
 };
@@ -65,9 +63,20 @@ struct enable_copros_request {
 /// \brief registration acks per copro, responses are organized in the
 /// same order as the list of topics in the 'topics' array
 struct enable_copros_reply {
-    using ack_id_pair = std::pair<script_id, std::vector<enable_response_code>>;
-    std::vector<ack_id_pair> acks;
+    using topic_policy = std::pair<model::topic, topic_ingestion_policy>;
+    struct script_metadata {
+        script_id id;
+        std::vector<topic_policy> input_topics;
+    };
+    struct data {
+        enable_response_code ack;
+        script_metadata script_meta;
+    };
+    std::vector<data> acks;
 };
+
+/// Stub for what should be 0 parameter method, 'disable_all_coprocessors'
+using empty_request = named_type<int8_t, struct empty_req_tag>;
 
 /// \brief deregistration request, remove all topics registered to a coprocessor
 /// with id 'script_id'.
@@ -78,7 +87,8 @@ struct disable_copros_request {
 /// \brief deregistration acks per topic, responses are organized in the
 /// same order as the list of topics in the 'ids' array
 struct disable_copros_reply {
-    std::vector<disable_response_code> acks;
+    using ack = std::pair<script_id, disable_response_code>;
+    std::vector<ack> acks;
 };
 
 /// \brief Request that co-processors with the given script ids, process batches
@@ -111,9 +121,6 @@ struct topic_namespace_policy {
 std::ostream& operator<<(std::ostream& os, const enable_response_code);
 
 std::ostream& operator<<(std::ostream& os, const disable_response_code);
-
-std::ostream&
-operator<<(std::ostream& os, const enable_copros_request::data::topic_mode&);
 
 } // namespace coproc
 

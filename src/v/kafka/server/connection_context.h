@@ -9,6 +9,7 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
+#include "kafka/security/sasl_authentication.h"
 #include "kafka/server/protocol.h"
 #include "kafka/server/response.h"
 #include "rpc/server.h"
@@ -33,9 +34,12 @@ class request_context;
 class connection_context final
   : public ss::enable_lw_shared_from_this<connection_context> {
 public:
-    connection_context(protocol& p, rpc::server::resources&& r) noexcept
+    connection_context(
+      protocol& p, rpc::server::resources&& r, sasl_server sasl) noexcept
       : _proto(p)
-      , _rs(std::move(r)) {}
+      , _rs(std::move(r))
+      , _sasl(std::move(sasl)) {}
+
     ~connection_context() noexcept = default;
     connection_context(const connection_context&) = delete;
     connection_context(connection_context&&) = delete;
@@ -44,6 +48,7 @@ public:
 
     protocol& server() { return _proto; }
     const ss::sstring& listener() const { return _rs.conn->name(); }
+    sasl_server& sasl() { return _sasl; }
 
     ss::future<> process_one_request();
     bool is_finished_parsing() const;
@@ -76,6 +81,7 @@ private:
     sequence_id _next_response;
     sequence_id _seq_idx;
     map_t _responses;
+    sasl_server _sasl;
 };
 
 } // namespace kafka

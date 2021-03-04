@@ -13,6 +13,7 @@
 
 #include "kafka/client/exceptions.h"
 #include "kafka/client/logger.h"
+#include "kafka/protocol/types.h"
 #include "model/fundamental.h"
 #include "seastar/core/gate.hh"
 
@@ -35,7 +36,7 @@ fetch_request make_fetch_request(
       .name{tp.topic}, .partitions{std::move(partitions)}});
 
     return fetch_request{
-      .replica_id{model::node_id{-1}},
+      .replica_id{consumer_replica_id},
       .max_wait_time{timeout},
       .min_bytes = 0,
       .max_bytes = max_bytes,
