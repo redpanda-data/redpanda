@@ -46,9 +46,6 @@ type Manager interface {
 	// Otherwise, it tries to read the file and load it. If the file doesn't
 	// exist, it tries to create it with the default configuration.
 	FindOrGenerate(path string) (*Config, error)
-	// Tries reading a config file at the given path, or generates a default config
-	// and writes it to the path.
-	ReadOrGenerate(path string) (*Config, error)
 	// Tries reading a config file at the given path, or tries to find it in
 	// the default locations if it doesn't exist.
 	ReadOrFind(path string) (*Config, error)
@@ -91,15 +88,17 @@ func (m *manager) FindOrGenerate(path string) (*Config, error) {
 		}
 
 	}
-	return m.ReadOrGenerate(path)
+	return readOrGenerate(m.v, path)
 }
 
-func (m *manager) ReadOrGenerate(path string) (*Config, error) {
-	m.v.SetConfigFile(path)
-	err := m.v.ReadInConfig()
+// Tries reading a config file at the given path, or generates a default config
+// and writes it to the path.
+func readOrGenerate(v *viper.Viper, path string) (*Config, error) {
+	v.SetConfigFile(path)
+	err := v.ReadInConfig()
 	if err == nil {
 		// The config file's there, there's nothing to do.
-		return unmarshal(m.v)
+		return unmarshal(v)
 	}
 	_, notFound := err.(viper.ConfigFileNotFoundError)
 	notExist := os.IsNotExist(err)
@@ -115,8 +114,8 @@ func (m *manager) ReadOrGenerate(path string) (*Config, error) {
 		"Couldn't find config file at %s. Generating it.",
 		path,
 	)
-	m.v.Set("config_file", path)
-	err = m.v.WriteConfigAs(path)
+	v.Set("config_file", path)
+	err = v.WriteConfigAs(path)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"Couldn't write config to %s: %v",
@@ -124,7 +123,7 @@ func (m *manager) ReadOrGenerate(path string) (*Config, error) {
 			err,
 		)
 	}
-	return unmarshal(m.v)
+	return unmarshal(v)
 }
 
 func (m *manager) ReadOrFind(path string) (*Config, error) {
