@@ -11,13 +11,13 @@ Kafka ecosystem.
 This quick start guide to intended to help you get started with Redpanda
 for development and testing purposes. For production deployments or
 performance testing please see our
-[Production Deployment](production-deployment) for more information.
+[Production Deployment](/docs/production-deployment) for more information.
 
 ## Installation
 
 Redpanda itself cannot run directly on MacOS, so we must make use of
 docker. If you wish to run Redpanda manually using Docker please follow our
-[Docker Quick Start Guide](quick-start-docker). Otherwise you can
+[Docker Quick Start Guide](/docs/quick-start-docker). Otherwise you can
 download our binary, `rpk`, which stands for Redpanda Keeper, to orchestrate
 the running of Redpanda via Docker for you.
 
@@ -39,6 +39,6 @@ The latest RPK binary can be found here: [rpk-darwin-amd64.zip](https://github.c
 
 ## What's Next?
 
-- Setup a local multi node cluster using [RPK Container Guide](guide-rpk-container)
-- Check out our [FAQ](faq)
-- Want to setup a production cluster? Check out our [Production Deployment](production-deployment) Guide.
+- Setup a local multi node cluster using [RPK Container Guide](/docs/guide-rpk-container)
+- Check out our [FAQ](/docs/faq)
+- Want to setup a production cluster? Check out our [Production Deployment](/docs/production-deployment) Guide.
