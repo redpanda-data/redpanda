@@ -19,7 +19,6 @@ import { RecordBatch } from "../../modules/public/Coprocessor";
 import sinon = require("sinon");
 import LogService from "../../modules/utilities/Logging";
 import { createSandbox, SinonSandbox } from "sinon";
-import { Script_ManagerServer as ManagementServer } from "../../modules/rpc/serverAndClients/server";
 
 let sinonInstance: SinonSandbox;
 
