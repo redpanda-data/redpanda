@@ -90,7 +90,7 @@ rpk container purge
 
 ## What's Next?
 
-- Our [FAQ](faq) page shows all of the clients that you can use to do streaming with Redpanda.
+- Our [FAQ](/docs/faq) page shows all of the clients that you can use to do streaming with Redpanda.
     (Spoiler: Any Kafka-compatible client!)
-- Use the [Quick Start Docker Guide](quick-start-docker) to try out Redpanda using Docker.
-- Want to setup a production cluster? Check out our [Production Deployment Guide](production-deployment).
+- Use the [Quick Start Docker Guide](/docs/quick-start-docker) to try out Redpanda using Docker.
+- Want to setup a production cluster? Check out our [Production Deployment Guide](/docs/production-deployment).

@@ -10,7 +10,7 @@ use of the Kafka ecosystem.
 
 This quick start guide to intended to help you get started with Redpanda for
 development and testing purposes. For production deployments or performance
-testing please see our [Production Deployment](production-deployment) for more information.
+testing please see our [Production Deployment](/docs/production-deployment) for more information.
 
 Using [Helm](https://helm.sh/) is the fastest way to get started with Redpanda
 on Kubernetes. First, we need to create a cluster. There are a number of
