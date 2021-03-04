@@ -21,6 +21,7 @@
 #include "kafka/protocol/leave_group.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
+#include "model/timeout_clock.h"
 #include "seastarx.h"
 #include "ssx/future-util.h"
 #include "utils/unresolved_address.h"
@@ -31,13 +32,14 @@
 
 namespace kafka::client {
 
-client::client(std::vector<unresolved_address> broker_addrs)
-  : _seeds{std::move(broker_addrs)}
+client::client(const configuration& cfg)
+  : _config{copy_configuration(cfg)}
+  , _seeds{_config.brokers()}
   , _brokers{}
   , _wait_or_start_update_metadata{[this](wait_or_start::tag tag) {
       return update_metadata(tag);
   }}
-  , _producer{_brokers, [this](std::exception_ptr ex) {
+  , _producer{_config, _brokers, [this](std::exception_ptr ex) {
                   return mitigate_error(std::move(ex));
               }} {}
 
@@ -56,8 +58,8 @@ ss::future<> client::do_connect(unresolved_address addr) {
 ss::future<> client::connect() {
     return ss::do_with(size_t{0}, [this](size_t& retries) {
         return retry_with_mitigation(
-          shard_local_cfg().retries(),
-          shard_local_cfg().retry_base_backoff(),
+          _config.retries(),
+          _config.retry_base_backoff(),
           [this, retries]() {
               return do_connect(_seeds[retries % _seeds.size()]);
           },
@@ -77,7 +79,7 @@ ss::future<> client::stop() {
                 return c->leave().discard_result();
             });
       })
-      .then([this]() { return _brokers.stop(); });
+      .finally([this]() { return _brokers.stop(); });
 }
 
 ss::future<> client::update_metadata(wait_or_start::tag) {
@@ -186,8 +188,9 @@ ss::future<member_id> client::create_consumer(const group_id& group_id) {
           return make_broker(
             res.data.node_id, unresolved_address(res.data.host, res.data.port));
       })
-      .then([group_id](shared_broker_t coordinator) mutable {
-          return make_consumer(std::move(coordinator), std::move(group_id));
+      .then([this, group_id](shared_broker_t coordinator) mutable {
+          return make_consumer(
+            _config, _brokers, std::move(coordinator), std::move(group_id));
       })
       .then([this](shared_consumer_t c) {
           auto m_id = c->member_id();
@@ -208,8 +211,8 @@ client::get_consumer(const group_id& g_id, const member_id& m_id) {
 ss::future<>
 client::remove_consumer(const group_id& g_id, const member_id& m_id) {
     return get_consumer(g_id, m_id).then([this](shared_consumer_t c) {
-        return c->leave().then([this, c](leave_group_response res) {
-            _consumers.erase(c);
+        _consumers.erase(c);
+        return c->leave().then([c{std::move(c)}](leave_group_response res) {
             if (res.data.error_code != error_code::none) {
                 return ss::make_exception_future<>(consumer_error(
                   c->group_id(), c->member_id(), res.data.error_code));
@@ -261,6 +264,23 @@ ss::future<offset_commit_response> client::consumer_offset_commit(
       .then([topics{std::move(topics)}](shared_consumer_t c) mutable {
           return c->offset_commit(std::move(topics));
       });
+}
+
+ss::future<kafka::fetch_response> client::consumer_fetch(
+  const group_id& g_id,
+  const member_id& m_id,
+  std::chrono::milliseconds timeout,
+  int32_t max_bytes) {
+    auto end = model::timeout_clock::now() + timeout;
+    return gated_retry_with_mitigation([this, g_id, m_id, end, max_bytes]() {
+        return get_consumer(g_id, m_id)
+          .then([end, max_bytes](shared_consumer_t c) {
+              auto timeout = std::max(
+                model::timeout_clock::duration{0},
+                end - model::timeout_clock::now());
+              return c->fetch(timeout, max_bytes);
+          });
+    });
 }
 
 } // namespace kafka::client

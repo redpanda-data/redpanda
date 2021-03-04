@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 import subprocess
+import tempfile
 from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_client import KafkaClient
 
@@ -18,13 +19,23 @@ class KafkaCliTools(KafkaClient):
     """
 
     # See tests/docker/Dockerfile to add new versions
-    VERSIONS = ("2.5.0", "2.4.1", "2.3.1")
+    VERSIONS = ("2.7.0", "2.5.0", "2.4.1", "2.3.1")
 
-    def __init__(self, redpanda, version=None):
+    def __init__(self, redpanda, version=None, user=None, passwd=None):
         self._redpanda = redpanda
         self._version = version
         assert self._version is None or \
                 self._version in KafkaCliTools.VERSIONS
+        self._command_config = None
+        if user and passwd:
+            self._command_config = tempfile.NamedTemporaryFile(mode="w")
+            config = f"""
+sasl.mechanism=SCRAM-SHA-256
+security.protocol=SASL_PLAINTEXT
+sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required username="{user}" password="{passwd}";
+"""
+            self._command_config.write(config)
+            self._command_config.flush()
 
     @classmethod
     def instances(cls):
@@ -94,6 +105,13 @@ class KafkaCliTools(KafkaClient):
         configs = {kv[0]: maybe_int(kv[0], kv[1]) for kv in configs.items()}
         return TopicSpec(name=topic, **configs)
 
+    def describe_broker_config(self):
+        self._redpanda.logger.debug("Describing brokers")
+        args = ["--describe", "--entity-type", "brokers", "--all"]
+        res = self._run("kafka-configs.sh", args)
+        self._redpanda.logger.debug("Describe brokers config result: %s", res)
+        return res
+
     def produce(self,
                 topic,
                 num_records,
@@ -118,6 +136,8 @@ class KafkaCliTools(KafkaClient):
     def _run(self, script, args):
         cmd = [self._script(script)]
         cmd += ["--bootstrap-server", self._redpanda.brokers()]
+        if self._command_config:
+            cmd += ["--command-config", self._command_config.name]
         cmd += args
         return self._execute(cmd)
 

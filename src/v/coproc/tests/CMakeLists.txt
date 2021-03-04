@@ -1,5 +1,5 @@
 set(fixture_srcs
-    utils/helpers.cc
+    utils/event_publisher.cc
     utils/supervisor.cc
     utils/coproc_test_fixture.cc
     utils/router_test_fixture.cc
@@ -15,11 +15,10 @@ rp_test(
   BINARY_NAME coproc_fixture
   SOURCES
     ${fixture_srcs}
-    script_manager_service_test.cc
     router_test.cc
     offset_storage_utils_tests.cc
     wasm_event_tests.cc
-    wasm_event_listener_tests.cc
+    event_listener_tests.cc
     read_materialized_topic_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES v::seastar_testing_main ${fixture_deps}

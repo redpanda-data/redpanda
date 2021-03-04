@@ -90,6 +90,7 @@ struct mux_state_machine_fixture {
           _data_dir,
           100_MiB,
           storage::debug_sanitize_files::yes,
+          ss::default_priority_class(),
           storage::with_cache::yes);
     }
 

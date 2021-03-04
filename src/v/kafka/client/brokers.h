@@ -59,6 +59,9 @@ public:
     /// \brief Apply the given metadata response.
     ss::future<> apply(metadata_response&& res);
 
+    /// \brief Returns true if there are no connected brokers
+    ss::future<bool> empty() const;
+
 private:
     /// \brief Brokers map a model::node_id to a client.
     brokers_t _brokers;

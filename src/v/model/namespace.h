@@ -35,6 +35,11 @@ inline const model::ns kafka_namespace("kafka");
 inline const model::ns kafka_internal_namespace("kafka_internal");
 inline const model::topic kafka_group_topic("group");
 inline const model::topic id_allocator_topic("id_allocator");
+inline const model::topic
+  coprocessor_internal_topic("coprocessor_internal_topic");
+
+inline const model::topic_partition coprocessor_internal_tp{
+  coprocessor_internal_topic, model::partition_id(0)};
 
 inline const model::ntp id_allocator_ntp(
   model::kafka_internal_namespace,

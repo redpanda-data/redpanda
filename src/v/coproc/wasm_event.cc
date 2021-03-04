@@ -15,6 +15,8 @@
 #include "hashing/secure.h"
 #include "vlog.h"
 
+#include <type_traits>
+
 namespace coproc::wasm {
 
 std::string_view action_as_string_view(event_action action) {
@@ -39,13 +41,13 @@ std::string_view header_as_string_view(event_header header) {
     __builtin_unreachable();
 }
 
-std::optional<ss::sstring> get_event_name(const model::record& r) {
-    /// Performs a copy
-    auto id = iobuf_const_parser(r.key()).read_string(r.key_size());
-    if (id.empty()) {
+std::optional<script_id> get_event_id(const model::record& r) {
+    if (r.key_size() != sizeof(script_id::type)) {
         return std::nullopt;
     }
-    return id;
+    /// Can be sure the parser won't throw, as we previously checked that the
+    /// at least the correct number of bytes exists in the buffer
+    return script_id(iobuf_const_parser(r.key()).consume_type<uint64_t>());
 }
 
 std::vector<model::record_header>::const_iterator
@@ -81,7 +83,7 @@ wasm::errc verify_event_checksum(const model::record& r) {
     const auto checksum
       = iobuf_const_parser(itr->value()).read_bytes(itr->value_size());
     /// Performs a copy
-    auto script = iobuf_const_parser(r.value()).read_string(r.value_size());
+    auto script = iobuf_const_parser(r.value()).read_bytes(r.value_size());
     if (script.empty()) {
         return wasm::errc::empty_mandatory_field;
     }
@@ -95,7 +97,7 @@ wasm::errc verify_event_checksum(const model::record& r) {
 
 wasm::errc validate_event(const model::record& r) {
     /// A key field is mandatory for all types of expected events
-    if (r.key_size() == 0) {
+    if (!get_event_id(r)) {
         return wasm::errc::empty_mandatory_field;
     }
     /// No copy performed here, optional will be false in the case the 'action'
@@ -123,9 +125,9 @@ wasm::errc validate_event(const model::record& r) {
     return wasm::errc::none;
 }
 
-absl::btree_map<ss::sstring, iobuf>
+absl::btree_map<script_id, iobuf>
 reconcile_events(std::vector<model::record_batch> events) {
-    absl::btree_map<ss::sstring, iobuf> wsas;
+    absl::btree_map<script_id, iobuf> wsas;
     for (auto& record_batch : events) {
         record_batch.for_each_record([&wsas](model::record r) {
             auto mb_error = wasm::validate_event(r);
@@ -136,7 +138,7 @@ reconcile_events(std::vector<model::record_batch> events) {
                   mb_error);
                 return;
             }
-            auto id = wasm::get_event_name(r);
+            auto id = wasm::get_event_id(r);
             /// Update or insert, preferring the newest
             wsas.insert_or_assign(*id, r.share_value());
         });

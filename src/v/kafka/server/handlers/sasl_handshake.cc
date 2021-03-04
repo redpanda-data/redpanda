@@ -10,6 +10,12 @@
 #include "kafka/server/handlers/sasl_handshake.h"
 
 #include "kafka/protocol/errors.h"
+#include "kafka/security/sasl_authentication.h"
+#include "kafka/security/scram_authenticator.h"
+
+static const std::vector<ss::sstring> supported_mechanisms = {
+  kafka::scram_sha256_authenticator::name,
+  kafka::scram_sha512_authenticator::name};
 
 namespace kafka {
 
@@ -18,7 +24,29 @@ ss::future<response_ptr> sasl_handshake_handler::handle(
   request_context&& ctx, [[maybe_unused]] ss::smp_service_group g) {
     sasl_handshake_request request;
     request.decode(ctx.reader(), ctx.header().version);
-    return ctx.respond(sasl_handshake_response(error_code::illegal_sasl_state));
+    vlog(klog.debug, "Received SASL_HANDSHAKE {}", request);
+
+    /*
+     * configure sasl for the current connection context. see the sasl
+     * authenticate request for the next phase of the auth process.
+     */
+    auto error = error_code::none;
+
+    if (request.data.mechanism == scram_sha256_authenticator::name) {
+        ctx.sasl().set_mechanism(
+          std::make_unique<scram_sha256_authenticator::auth>(
+            ctx.credentials()));
+
+    } else if (request.data.mechanism == scram_sha512_authenticator::name) {
+        ctx.sasl().set_mechanism(
+          std::make_unique<scram_sha512_authenticator::auth>(
+            ctx.credentials()));
+
+    } else {
+        error = error_code::unsupported_sasl_mechanism;
+    }
+
+    return ctx.respond(sasl_handshake_response(error, supported_mechanisms));
 }
 
 } // namespace kafka

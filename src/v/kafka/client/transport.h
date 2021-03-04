@@ -137,6 +137,8 @@ public:
             return dispatch(std::move(r), api_version(2));
         } else if constexpr (std::is_same_v<type, list_groups_request>) {
             return dispatch(std::move(r), api_version(2));
+        } else if constexpr (std::is_same_v<type, create_topics_request>) {
+            return dispatch(std::move(r), api_version(4));
         }
     }
 

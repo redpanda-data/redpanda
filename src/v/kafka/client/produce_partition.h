@@ -30,8 +30,9 @@ public:
     using response = produce_batcher::partition_response;
     using consumer = ss::noncopyable_function<void(model::record_batch&&)>;
 
-    explicit produce_partition(consumer&& c)
-      : _batcher{}
+    produce_partition(const configuration& config, consumer&& c)
+      : _config{config}
+      , _batcher{}
       , _timer{[this]() { try_consume(true); }}
       , _consumer{std::move(c)} {}
 
@@ -71,16 +72,15 @@ private:
             return false;
         }
 
-        auto batch_record_count
-          = shard_local_cfg().produce_batch_record_count();
-        auto batch_size_bytes = shard_local_cfg().produce_batch_size_bytes();
+        auto batch_record_count = _config.produce_batch_record_count();
+        auto batch_size_bytes = _config.produce_batch_size_bytes();
 
         auto threshold_met = _record_count >= batch_record_count
                              || _size_bytes >= batch_size_bytes;
 
         if (!timed_out && !threshold_met) {
             _timer.cancel();
-            _timer.arm(shard_local_cfg().produce_batch_delay());
+            _timer.arm(_config.produce_batch_delay());
             return false;
         }
 
@@ -88,6 +88,7 @@ private:
         return true;
     }
 
+    const configuration& _config;
     produce_batcher _batcher{};
     ss::timer<> _timer{};
     consumer _consumer;

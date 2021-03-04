@@ -92,7 +92,7 @@ class batch_cache_index;
  */
 class batch_cache {
     /// Minimum size reclaimed in low-memory situations.
-    static constexpr size_t min_reclaim_size = 128 << 10;
+    static constexpr size_t min_reclaim_size = 128U << 10U;
 
     using reclaimer = ss::memory::reclaimer;
     using reclaim_scope = ss::memory::reclaimer_scope;
@@ -170,11 +170,12 @@ public:
 
     using entry_ptr = ss::weak_ptr<entry>;
 
-    batch_cache(const reclaim_options& opts)
+    explicit batch_cache(const reclaim_options& opts)
       : _reclaimer(
         [this](reclaimer::request r) { return reclaim(r); },
         reclaim_scope::sync)
-      , _reclaim_opts(opts) {}
+      , _reclaim_opts(opts)
+      , _reclaim_size(_reclaim_opts.min_size) {}
 
     batch_cache(const batch_cache&) = delete;
     batch_cache& operator=(const batch_cache&) = delete;
@@ -194,7 +195,8 @@ public:
           reclaim_scope::sync)
       , _is_reclaiming(o._is_reclaiming)
       , _size_bytes(o._size_bytes)
-      , _reclaim_opts(o._reclaim_opts) {
+      , _reclaim_opts(o._reclaim_opts)
+      , _reclaim_size(_reclaim_opts.min_size) {
         o._size_bytes = 0;
         o._is_reclaiming = false;
     }
@@ -299,6 +301,7 @@ private:
     ss::lowres_clock::time_point _last_reclaim;
     size_t _reclaim_size;
 
+    friend std::ostream& operator<<(std::ostream&, const reclaim_options&);
     friend std::ostream& operator<<(std::ostream&, const batch_cache&);
 };
 

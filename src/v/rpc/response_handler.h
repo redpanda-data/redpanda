@@ -18,8 +18,7 @@
 
 #include <seastar/core/future.hh>
 
-namespace rpc {
-namespace internal {
+namespace rpc::internal {
 class response_handler {
 public:
     using response_ptr = result<std::unique_ptr<streaming_context>>;
@@ -75,5 +74,4 @@ private:
     promise_t _promise;
     timer_ptr _timeout_timer;
 };
-} // namespace internal
-} // namespace rpc
+} // namespace rpc::internal

@@ -221,4 +221,24 @@ describe("Buffer functions test", function () {
       asserts.strictEqual(iterable.readInt32LE(), 1343530892);
     }
   );
+
+  it('should write and read an Optional on buffer', function () {
+      const io = new IOBuf();
+      const string = "valid string"
+      const writtenBytes = BF.writeOptional(io, string, (item, auxBuffer) => BF.writeString(item, auxBuffer));
+      const writtenBytesUndefined = BF.writeOptional(io, undefined, (item, auxBuffer) => BF.writeString(item, auxBuffer));
+      const ioIterable = io.getIterable();
+      const [optionalResult,] = BF.readOptional(
+          ioIterable.slice(writtenBytes),
+          0,
+          (auxBuffer, auxOffset ) => BF.readString(auxBuffer, auxOffset)
+      );
+      const [optionalResultUndefined,] = BF.readOptional(
+          ioIterable.slice(writtenBytesUndefined),
+          0,
+          (auxBuffer, auxOffset) => BF.readString(auxBuffer, auxOffset)
+      );
+      asserts.deepStrictEqual(string, optionalResult);
+      asserts.strictEqual(undefined, optionalResultUndefined);
+  });
 });

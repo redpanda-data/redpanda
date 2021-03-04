@@ -184,3 +184,35 @@ private:
     /// should be avoided.
     bool _last_even{true};
 };
+
+namespace coproc::registry {
+
+enum class type_identifier {
+    none = 0,
+    null_coprocessor,
+    identity_coprocessor,
+    unique_identity_coprocessor,
+    two_way_split_copro
+};
+
+inline std::unique_ptr<coprocessor> make_coprocessor(
+  type_identifier tid, script_id id, coprocessor::input_set topics) {
+    switch (tid) {
+    case type_identifier::none:
+        return nullptr;
+    case type_identifier::null_coprocessor:
+        return std::make_unique<null_coprocessor>(id, std::move(topics));
+    case type_identifier::identity_coprocessor:
+        return std::make_unique<identity_coprocessor>(id, std::move(topics));
+    case type_identifier::unique_identity_coprocessor:
+        return std::make_unique<unique_identity_coprocessor>(
+          id, std::move(topics));
+    case type_identifier::two_way_split_copro:
+        return std::make_unique<two_way_split_copro>(id, std::move(topics));
+    default:
+        return nullptr;
+    };
+    __builtin_unreachable();
+}
+
+} // namespace coproc::registry

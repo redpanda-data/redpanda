@@ -44,7 +44,8 @@ type StatefulSetResource struct {
 	k8sclient.Client
 	scheme		*runtime.Scheme
 	pandaCluster	*redpandav1alpha1.Cluster
-	svc		*ServiceResource
+	serviceFQDN	string
+	serviceName	string
 	logger		logr.Logger
 
 	LastObservedState	*appsv1.StatefulSet
@@ -55,11 +56,12 @@ func NewStatefulSet(
 	client k8sclient.Client,
 	pandaCluster *redpandav1alpha1.Cluster,
 	scheme *runtime.Scheme,
-	svc *ServiceResource,
+	serviceFQDN string,
+	serviceName string,
 	logger logr.Logger,
 ) *StatefulSetResource {
 	return &StatefulSetResource{
-		client, scheme, pandaCluster, svc, logger.WithValues("Kind", statefulSetKind()), nil,
+		client, scheme, pandaCluster, serviceFQDN, serviceName, logger.WithValues("Kind", statefulSetKind()), nil,
 	}
 }
 
@@ -207,7 +209,7 @@ func (r *StatefulSetResource) Obj() (k8sclient.Object, error) {
 					InitContainers: []corev1.Container{
 						{
 							Name:		configuratorContainerName,
-							Image:		r.pandaCluster.Spec.Image + ":" + r.pandaCluster.Spec.Version,
+							Image:		r.pandaCluster.FullImageName(),
 							Command:	[]string{"/bin/sh", "-c"},
 							Args:		[]string{configuratorPath},
 							VolumeMounts: []corev1.VolumeMount{
@@ -225,7 +227,7 @@ func (r *StatefulSetResource) Obj() (k8sclient.Object, error) {
 					Containers: []corev1.Container{
 						{
 							Name:	redpandaContainerName,
-							Image:	r.pandaCluster.Spec.Image + ":" + r.pandaCluster.Spec.Version,
+							Image:	r.pandaCluster.FullImageName(),
 							Args: []string{
 								"redpanda",
 								"start",
@@ -372,7 +374,7 @@ func (r *StatefulSetResource) Kind() string {
 func (r *StatefulSetResource) portsConfiguration() string {
 	kafkaAPIPort := r.pandaCluster.Spec.Configuration.KafkaAPI.Port
 	rpcAPIPort := r.pandaCluster.Spec.Configuration.RPCServer.Port
-	svcName := r.svc.Key().Name
+	svcName := r.serviceName
 
 	// In every dns name there is trailing dot to query absolute path
 	// For trailing dot explanation please visit http://www.dns-sd.org/trailingdotsindomainnames.html

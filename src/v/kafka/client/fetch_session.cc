@@ -10,6 +10,7 @@
 #include "kafka/client/fetch_session.h"
 
 #include "kafka/protocol/fetch.h"
+#include "kafka/protocol/schemata/offset_commit_request.h"
 
 #include <fmt/ostream.h>
 
@@ -33,12 +34,8 @@ bool fetch_session::apply(fetch_response& res) {
     if (_id == invalid_fetch_session_id) {
         _id = fetch_session_id{res.session_id};
     }
+    vassert(res.session_id == _id, "session mismatch: {}", *this);
 
-    if (res.session_id != _id) {
-        vassert(false, "session mismatch: {}", *this);
-        _id = invalid_fetch_session_id;
-        return false;
-    }
     ++_epoch;
     for (auto& part : res) {
         if (part.partition_response->has_error()) {
@@ -57,6 +54,29 @@ bool fetch_session::apply(fetch_response& res) {
         topic.second.rehash(topic.second.size());
     }
     return true;
+}
+
+std::vector<offset_commit_request_topic>
+fetch_session::make_offset_commit_request() const {
+    std::vector<offset_commit_request_topic> res;
+    if (_offsets.empty()) {
+        return res;
+    }
+    res.push_back(offset_commit_request_topic{
+      .name{_offsets.begin()->first}, .partitions{}});
+    for (const auto& [t, po] : _offsets) {
+        for (const auto& [p_id, o] : po) {
+            if (res.back().name != t) {
+                res.push_back(
+                  offset_commit_request_topic{.name = t, .partitions{}});
+            }
+            res.back().partitions.push_back(offset_commit_request_partition{
+              .partition_index = p_id,
+              .committed_offset = o - model::offset(1),
+              .committed_leader_epoch = _epoch});
+        }
+    }
+    return res;
 }
 
 std::ostream& operator<<(std::ostream& os, fetch_session const& fs) {

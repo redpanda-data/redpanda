@@ -49,7 +49,7 @@ struct segment_path {
     /// Parse metadata from a segment filename.
     static std::optional<metadata>
     parse_segment_filename(const ss::sstring& name) {
-        const std::regex re("^(\\d+)-(\\d+)-([\\x00-\\x7F]+).log$");
+        const std::regex re(R"(^(\d+)-(\d+)-([\x00-\x7F]+).log$)");
         std::cmatch match;
         if (!std::regex_match(name.c_str(), match, re)) {
             return std::nullopt;

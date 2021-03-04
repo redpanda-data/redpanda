@@ -37,6 +37,7 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "redpanda/tests/fixture.h"
+#include "ssx/future-util.h"
 #include "utils/unresolved_address.h"
 #include "vassert.h"
 
@@ -44,6 +45,7 @@
 #include <seastar/core/sleep.hh>
 #include <seastar/core/timer.hh>
 #include <seastar/core/when_all.hh>
+#include <seastar/util/defer.hh>
 #include <seastar/util/log.hh>
 #include <seastar/util/noncopyable_function.hh>
 
@@ -85,10 +87,11 @@ FIXTURE_TEST(consumer_group, kafka_client_fixture) {
     wait_for_controller_leadership().get();
 
     info("Connecting client");
-    kc::shard_local_cfg().retry_base_backoff.set_value(10ms);
-    kc::shard_local_cfg().retries.set_value(size_t(10));
     auto client = make_connected_client();
+    client.config().retry_base_backoff.set_value(10ms);
+    client.config().retries.set_value(size_t(10));
     client.connect().get();
+    auto stop_client = ss::defer([&client]() { client.stop().get(); });
 
     info("Adding known topic");
     int partition_count = 3;
@@ -177,6 +180,14 @@ FIXTURE_TEST(consumer_group, kafka_client_fixture) {
     info("Joining Consumers: 0,1");
     std::vector<kafka::member_id> members;
     members.reserve(3);
+    auto remove_consumers = ss::defer([&client, &group_id, &members]() {
+        for (const auto& m_id : members) {
+            client.remove_consumer(group_id, m_id)
+              .handle_exception([](std::exception_ptr e) {})
+              .get();
+        }
+    });
+
     {
         auto [mem_0, mem_1] = ss::when_all_succeed(
                                 client.create_consumer(group_id),
@@ -268,9 +279,27 @@ FIXTURE_TEST(consumer_group, kafka_client_fixture) {
         }
     }
 
-    // Commit offsets
-    // Each partition is commited with the offset of the index of the sorted
-    // member, and with metadata of the member id.
+    info("Consuming topic data");
+    auto fetch_responses
+      = ssx::parallel_transform(
+          sorted_members.begin(),
+          sorted_members.end(),
+          [&](kafka::member_id m_id) {
+              auto res
+                = client.consumer_fetch(group_id, m_id, 200ms, 1_MiB).get();
+              BOOST_REQUIRE_EQUAL(res.error, kafka::error_code::none);
+              BOOST_REQUIRE_EQUAL(res.partitions.size(), 3);
+              for (const auto& p : res.partitions) {
+                  BOOST_REQUIRE_EQUAL(p.responses.size(), 1);
+                  const auto& res = p.responses[0];
+                  BOOST_REQUIRE_EQUAL(res.error, kafka::error_code::none);
+                  BOOST_REQUIRE(!!res.record_set);
+              }
+              return res;
+          })
+          .get();
+
+    // Commit 5 offsets, with metadata of the member id.
     for (int i = 0; i < sorted_members.size(); ++i) {
         auto m_id = sorted_members[i];
         auto t = std::vector<kafka::offset_commit_request_topic>{};
@@ -284,7 +313,7 @@ FIXTURE_TEST(consumer_group, kafka_client_fixture) {
                 .name = topic,
                 .partitions = {
                   {.partition_index = model::partition_id{i},
-                   .committed_offset = model::offset{i},
+                   .committed_offset = model::offset{5},
                    .committed_metadata{m_id()}}}};
           });
         auto res
@@ -320,17 +349,57 @@ FIXTURE_TEST(consumer_group, kafka_client_fixture) {
             for (auto const& p : t.partitions) {
                 BOOST_REQUIRE_EQUAL(p.error_code, kafka::error_code::none);
                 BOOST_REQUIRE_EQUAL(p.partition_index(), i);
-                BOOST_REQUIRE_EQUAL(p.committed_offset(), i);
+                BOOST_REQUIRE_EQUAL(p.committed_offset(), 5);
                 BOOST_REQUIRE_EQUAL(p.metadata, m_id());
             }
         }
     }
 
-    ss::when_all_succeed(
-      client.remove_consumer(group_id, members[0]),
-      client.remove_consumer(group_id, members[1]),
-      client.remove_consumer(group_id, members[2]))
-      .get();
+    // Commit all offsets
+    // empty list means commit all offsets
+    for (int i = 0; i < sorted_members.size(); ++i) {
+        auto m_id = sorted_members[i];
+        auto t = std::vector<kafka::offset_commit_request_topic>{};
+        auto res
+          = client.consumer_offset_commit(group_id, m_id, std::move(t)).get();
+        BOOST_REQUIRE_EQUAL(res.data.topics.size(), 3);
+        for (const auto& t : res.data.topics) {
+            BOOST_REQUIRE_EQUAL(t.partitions.size(), 1);
+            auto& p = t.partitions[0];
+            BOOST_REQUIRE_EQUAL(p.error_code, kafka::error_code::none);
+            BOOST_REQUIRE_EQUAL(p.partition_index, i);
+        }
+    }
 
-    client.stop().get();
+    // Check comimtted offsets match the fetched offsets
+    // range_assignment is allocated according to sorted member ids
+    for (int i = 0; i < sorted_members.size(); ++i) {
+        auto m_id = sorted_members[i];
+        auto assignment = client.consumer_assignment(group_id, m_id).get();
+
+        auto topics = offset_request_from_assignment(std::move(assignment));
+        auto offsets
+          = client.consumer_offset_fetch(group_id, m_id, std::move(topics))
+              .get();
+        BOOST_REQUIRE_EQUAL(offsets.data.error_code, kafka::error_code::none);
+        BOOST_REQUIRE_EQUAL(offsets.data.topics.size(), 3);
+        for (auto const& t : offsets.data.topics) {
+            BOOST_REQUIRE_EQUAL(t.partitions.size(), 1);
+            for (auto const& p : t.partitions) {
+                BOOST_REQUIRE_EQUAL(p.error_code, kafka::error_code::none);
+                BOOST_REQUIRE_EQUAL(p.partition_index(), i);
+                auto part_it = std::find_if(
+                  fetch_responses[i].begin(),
+                  fetch_responses[i].end(),
+                  [&](const auto& res) {
+                      return res.partition->name == t.name
+                             && res.partition_response->id == p.partition_index;
+                  });
+                BOOST_REQUIRE(part_it != fetch_responses[i].end());
+                auto expected_offset
+                  = part_it->partition_response->record_set->last_offset();
+                BOOST_REQUIRE_EQUAL(p.committed_offset(), expected_offset);
+            }
+        }
+    }
 }

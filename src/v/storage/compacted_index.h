@@ -76,32 +76,32 @@ struct compacted_index {
         int32_t delta;
     };
 };
-[[gnu::always_inline]] static inline compacted_index::footer_flags
+[[gnu::always_inline]] inline compacted_index::footer_flags
 operator|(compacted_index::footer_flags a, compacted_index::footer_flags b) {
     return compacted_index::footer_flags(
       std::underlying_type_t<compacted_index::footer_flags>(a)
       | std::underlying_type_t<compacted_index::footer_flags>(b));
 }
 
-[[gnu::always_inline]] static inline void
+[[gnu::always_inline]] inline void
 operator|=(compacted_index::footer_flags& a, compacted_index::footer_flags b) {
     a = (a | b);
 }
 
-[[gnu::always_inline]] static inline compacted_index::footer_flags
+[[gnu::always_inline]] inline compacted_index::footer_flags
 operator~(compacted_index::footer_flags a) {
     return compacted_index::footer_flags(
       ~std::underlying_type_t<compacted_index::footer_flags>(a));
 }
 
-[[gnu::always_inline]] static inline compacted_index::footer_flags
+[[gnu::always_inline]] inline compacted_index::footer_flags
 operator&(compacted_index::footer_flags a, compacted_index::footer_flags b) {
     return compacted_index::footer_flags(
       std::underlying_type_t<compacted_index::footer_flags>(a)
       & std::underlying_type_t<compacted_index::footer_flags>(b));
 }
 
-[[gnu::always_inline]] static inline void
+[[gnu::always_inline]] inline void
 operator&=(compacted_index::footer_flags& a, compacted_index::footer_flags b) {
     a = (a & b);
 }

@@ -1,7 +1,11 @@
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
-  name: redpanda-controller-manager
-  namespace: redpanda-system
+  name: update-cluster
+  labels:
+    app.kubernetes.io/name: "redpanda"
+    app.kubernetes.io/instance: "update-cluster"
+    app.kubernetes.io/managed-by: redpanda-operator
+    app.kubernetes.io/part-of: redpanda
 status:
-  availableReplicas: 1
+  readyReplicas: 1

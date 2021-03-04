@@ -40,6 +40,7 @@ const decodeZigzag = (field: bigint): bigint => {
  */
 type WriteFn<T> = (field: T, buffer: IOBuf, object?) => number;
 type ToBytes<T> = (value: T, buffer: IOBuf) => number;
+export type Optional<T> = undefined | T ;
 
 const writeInt8LE: WriteFn<number> = (field, buffer) => {
   return buffer.appendInt8(field);
@@ -158,6 +159,26 @@ const writeArray = (appendSize?: boolean) => <T>(
   }
   return writtenBytes;
 };
+
+const writeOptional = <T>(
+    buffer: IOBuf,
+    item: Optional<T>,
+    fn: WriteFn<T>
+) => {
+
+  let writtenBytes = 1;
+  const noneValue = 0;
+  const someValue = 1;
+
+  if (item == undefined) {
+    buffer.appendInt8(noneValue);
+    return writtenBytes;
+  } else {
+    buffer.appendInt8(someValue);
+    writtenBytes += fn(item, buffer);
+    return writtenBytes;
+  }
+}
 
 const writeObject = <T>(
   buffer: IOBuf,
@@ -301,6 +322,21 @@ const readObject = <T>(
   return obj.fromBytes(buffer, offset);
 };
 
+const readOptional = <T>(
+    buffer: Buffer,
+    offset: number,
+    fn: ReadFunction<T>,
+    obj?: FromBytes<T>
+): [Optional<T>, number] => {
+  const isNull = buffer.readInt8(offset) === 0;
+  offset += 1;
+  if (isNull) {
+    return [undefined, offset]
+  } else {
+    return fn(buffer, offset, obj);
+  }
+};
+
 const extendRecords = (records: Record[], seed = 0): number => {
   const auxBuffer = Buffer.alloc(8);
   return records.reduce((prev, record) => {
@@ -401,6 +437,7 @@ export default {
   writeVarint,
   writeBuffer,
   writeVarintBuffer,
+  writeOptional,
   readInt8LE,
   readInt16LE,
   readInt32LE,
@@ -415,6 +452,7 @@ export default {
   readVarint,
   readArray,
   readBuffer,
+  readOptional,
   recordBatchEncode,
   extendRecords,
 };

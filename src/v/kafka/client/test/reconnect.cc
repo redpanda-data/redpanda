@@ -28,11 +28,10 @@ FIXTURE_TEST(reconnect, kafka_client_fixture) {
     info("Waiting for leadership");
     wait_for_controller_leadership().get();
 
-    kc::shard_local_cfg().retry_base_backoff.set_value(10ms);
-    kc::shard_local_cfg().retries.set_value(size_t(0));
-
     auto tp = model::topic_partition(model::topic("t"), model::partition_id(0));
     auto client = make_connected_client();
+    client.config().retry_base_backoff.set_value(10ms);
+    client.config().retries.set_value(size_t(0));
 
     {
         info("Checking no topics");
@@ -65,7 +64,7 @@ FIXTURE_TEST(reconnect, kafka_client_fixture) {
     }
 
     {
-        kc::shard_local_cfg().retries.set_value(size_t(5));
+        client.config().retries.set_value(size_t(5));
         info("Checking for known topic - controller ready");
         auto res = client.dispatch(make_list_topics_req()).get();
         BOOST_REQUIRE_EQUAL(res.topics.size(), 1);

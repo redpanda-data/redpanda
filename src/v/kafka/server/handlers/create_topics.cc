@@ -30,9 +30,20 @@
 
 namespace kafka {
 
-bool is_not_supported(const ss::sstring& name) {
-    return name == "min.insync.replicas" || name == "flush.messages"
-           || name == "flush.ms";
+static constexpr std::array<std::string_view, 7> supported_configs{
+  {"compression.type",
+   "cleanup.policy",
+   "message.timestamp.type",
+   "segment.bytes",
+   "compaction.strategy",
+   "retention.bytes",
+   "retention.ms"}};
+
+bool is_supported(std::string_view name) {
+    return std::any_of(
+      supported_configs.begin(),
+      supported_configs.end(),
+      [name](std::string_view p) { return name == p; });
 }
 
 using validators = make_validator_types<
@@ -82,7 +93,7 @@ ss::future<response_ptr> create_topics_handler::handle(
           // Print log if not supported configuration options are present
           for (auto& r : boost::make_iterator_range(begin, valid_range_end)) {
               for (auto c : r.configs) {
-                  if (is_not_supported(c.name)) {
+                  if (!is_supported(c.name)) {
                       vlog(
                         klog.info,
                         "topic {} not supported configuration {}={} property "

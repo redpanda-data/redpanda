@@ -21,6 +21,20 @@
 
 namespace coproc::wasm {
 
+event::event(uint64_t id)
+  : id(id)
+  , action(event_action::remove) {}
+
+event::event(uint64_t id, cpp_enable_payload ep)
+  : id(id)
+  , desc(random_generators::gen_alphanum_string(15))
+  , action(event_action::deploy) {
+    iobuf payload;
+    reflection::serialize(payload, ep.tid, std::move(ep.topics));
+    script = iobuf_to_bytes(payload);
+    /// checksum will automatically be computed during serialization
+}
+
 model::record_header
 create_header(const ss::sstring& key, const ss::sstring& value) {
     iobuf hkey, hval;
@@ -45,11 +59,11 @@ model::record_header create_header(const ss::sstring& key, const bytes& value) {
 void serialize_event(storage::record_batch_builder& rbb, const event& e) {
     iobuf key, value;
     std::vector<model::record_header> headers;
-    if (e.name) {
-        key.append(e.name->data(), e.name->length());
+    if (e.id) {
+        reflection::serialize(key, *e.id);
     }
     if (e.script) {
-        value.append(e.script->data(), e.script->length());
+        value = bytes_to_iobuf(*e.script);
     }
     if (e.desc) {
         headers.emplace_back(create_header("description", *e.desc));
@@ -68,7 +82,9 @@ void serialize_event(storage::record_batch_builder& rbb, const event& e) {
 
 bytes calculate_checksum(const event& e) {
     hash_sha256 h;
-    h.update(*e.script);
+    if (e.script) {
+        h.update(*e.script);
+    }
     auto checksum = h.reset();
     return bytes(checksum.begin(), checksum.end());
 }
@@ -92,12 +108,10 @@ model::record_batch_reader make_random_event_record_batch_reader(
     for (auto i = 0; i < n_batches; ++i) {
         storage::record_batch_builder rbb(raft::data_batch_type, o);
         for (int j = 0; j < batch_size; ++j) {
-            event e{
-              .name = random_generators::gen_alphanum_string(15),
-              .action = event_action::remove};
+            event e(random_generators::get_int<uint64_t>(82827));
             if (random_generators::get_int(0, 1) == 0) {
                 e.action = event_action::deploy;
-                e.script = random_generators::gen_alphanum_string(15);
+                e.script = random_generators::get_bytes();
                 e.desc = random_generators::gen_alphanum_string(15);
                 e.checksum = calculate_checksum(e);
             }
@@ -109,19 +123,14 @@ model::record_batch_reader make_random_event_record_batch_reader(
     return model::make_memory_record_batch_reader(std::move(batches));
 }
 
-model::record_batch_reader make_event_record_batch_reader(
-  std::vector<std::vector<short_event>> event_batches) {
+model::record_batch_reader
+make_event_record_batch_reader(std::vector<std::vector<event>> event_batches) {
     model::record_batch_reader::data_t batches;
     model::offset o{0};
-    for (const auto& events : event_batches) {
+    for (auto& events : event_batches) {
         storage::record_batch_builder rbb(raft::data_batch_type, o);
-        for (const short_event& se : events) {
-            coproc::wasm::event e{.name = se.name, .action = se.action};
-            if (e.action == event_action::deploy) {
-                e.desc = random_generators::gen_alphanum_string(15);
-                e.script = random_generators::gen_alphanum_string(15);
-                e.checksum = calculate_checksum(e);
-            }
+        for (event& e : events) {
+            e.checksum = calculate_checksum(e);
             serialize_event(rbb, e);
         }
         batches.push_back(std::move(rbb).build());

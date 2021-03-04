@@ -8,20 +8,20 @@
  * https://github.com/vectorizedio/redpanda/blob/master/licenses/rcl.md
  */
 
-#include "config/configuration.h"
-#include "coproc/tests/utils/coproc_test_fixture.h"
 #include "coproc/tests/utils/coprocessor.h"
-#include "coproc/tests/utils/helpers.h"
 #include "coproc/tests/utils/router_test_fixture.h"
 #include "coproc/types.h"
 #include "model/fundamental.h"
-#include "model/timeout_clock.h"
-#include "redpanda/tests/fixture.h"
 #include "storage/tests/utils/random_batch.h"
-#include "test_utils/fixture.h"
 
 #include <boost/test/tools/old/interface.hpp>
 #include <boost/test/unit_test_log.hpp>
+
+static const auto e = coproc::topic_ingestion_policy::earliest;
+static const auto s = coproc::topic_ingestion_policy::stored;
+static const auto l = coproc::topic_ingestion_policy::latest;
+
+using copro_typeid = coproc::registry::type_identifier;
 
 ss::future<std::size_t> number_of_logs(redpanda_thread_fixture* rtf) {
     return rtf->app.storage.map_reduce0(
@@ -30,21 +30,24 @@ ss::future<std::size_t> number_of_logs(redpanda_thread_fixture* rtf) {
       std::plus<>());
 }
 
-using namespace std::literals;
-
 FIXTURE_TEST(test_coproc_router_no_results, router_test_fixture) {
     // Note the original number of logs
     const std::size_t n_logs = number_of_logs(this).get0();
-    // Router has 2 coprocessors, one subscribed to 'foo' the other 'bar'
-    add_copro<null_coprocessor>(2222, {{"bar", l}}).get();
-    add_copro<null_coprocessor>(7777, {{"foo", l}}).get();
     // Storage has 10 ntps, 8 of topic 'bar' and 2 of 'foo'
-    startup({{make_ts("foo"), 2}, {make_ts("bar"), 8}}).get();
+    model::topic foo("foo");
+    model::topic bar("bar");
+    setup({{foo, 2}, {bar, 8}}).get();
+    // Router has 2 coprocessors, one subscribed to 'foo' the other 'bar'
+    enable_coprocessors(
+      {{.id = 2222,
+        .data{.tid = copro_typeid::null_coprocessor, .topics = {bar}}},
+       {.id = 7777,
+        .data{.tid = copro_typeid::null_coprocessor, .topics = {foo}}}})
+      .get();
 
     // Test -> Start pushing to registered topics and check that NO
     // materialized logs have been created
-    model::ntp input_ntp(
-      model::kafka_namespace, model::topic("foo"), model::partition_id(0));
+    model::ntp input_ntp(model::kafka_namespace, foo, model::partition_id(0));
     push(
       input_ntp,
       storage::test::make_random_memory_record_batch_reader(
@@ -55,15 +58,22 @@ FIXTURE_TEST(test_coproc_router_no_results, router_test_fixture) {
     ss::sleep(1s).get();
     // Expecting 10, because "foo(2)" and "bar(8)" were loaded at startup
     const std::size_t final_n_logs = number_of_logs(this).get0() - n_logs;
-    BOOST_REQUIRE_EQUAL(final_n_logs, 10);
+    /// .. but total should be exactly 11 due to the introducion of the
+    /// coprocessor_internal_topic
+    BOOST_REQUIRE_EQUAL(final_n_logs, 11);
+}
+
+model::record_batch_reader single_record_record_batch_reader() {
+    model::record_batch_reader::data_t batches;
+    batches.push_back(
+      storage::test::make_random_batch(model::offset(0), 1, false));
+    return model::make_memory_record_batch_reader(std::move(batches));
 }
 
 /// Tests an off-by-one error where producing recordbatches of size 1 on the
 /// input log wouldn't produce onto the materialized log
 FIXTURE_TEST(test_coproc_router_off_by_one, router_test_fixture) {
     model::topic src_topic("obo");
-    add_copro<identity_coprocessor>(12345678, {{src_topic(), l}}).get();
-    startup({{make_ts(src_topic), 1}}).get();
     model::ntp input_ntp(
       model::kafka_namespace, src_topic, model::partition_id(0));
     model::ntp output_ntp(
@@ -71,11 +81,17 @@ FIXTURE_TEST(test_coproc_router_off_by_one, router_test_fixture) {
       model::to_materialized_topic(
         src_topic, identity_coprocessor::identity_topic),
       model::partition_id(0));
+    setup({{src_topic, 1}}).get();
+    enable_coprocessors(
+      {{.id = 12345678,
+        .data{
+          .tid = copro_typeid::identity_coprocessor, .topics = {src_topic}}}})
+      .get();
     auto fn = [this, input_ntp, output_ntp]() -> ss::future<size_t> {
         return push(input_ntp, single_record_record_batch_reader())
           .then([this, input_ntp, output_ntp](auto) {
               return drain(output_ntp, 1)
-                .then([this, input_ntp, output_ntp](opt_reader_data_t r) {
+                .then([input_ntp, output_ntp](opt_reader_data_t r) {
                     BOOST_CHECK(r);
                     return r->size();
                 });
@@ -83,7 +99,7 @@ FIXTURE_TEST(test_coproc_router_off_by_one, router_test_fixture) {
     };
     // Perform push/drain twice
     size_t result = fn()
-                      .then([this, &fn](size_t sz) {
+                      .then([&fn](size_t sz) {
                           return fn().then(
                             [sz](size_t sz2) { return sz + sz2; });
                       })
@@ -91,24 +107,23 @@ FIXTURE_TEST(test_coproc_router_off_by_one, router_test_fixture) {
     BOOST_CHECK_EQUAL(result, 2);
 }
 
-/// Tests a simple case of two coprocessors registered to the same output topic
-/// producing onto the same materialized topic. Should not crash and have a
-/// doubling effect on output size
 FIXTURE_TEST(test_coproc_router_double, router_test_fixture) {
-    // Supervisor has 3 registered transforms, of the same type
-    add_copro<identity_coprocessor>(8888, {{"foo", l}}).get();
-    add_copro<identity_coprocessor>(9159, {{"foo", l}}).get();
-    add_copro<identity_coprocessor>(4444, {{"bar", l}}).get();
+    model::topic foo("foo");
+    model::topic bar("bar");
     // Storage has 5 ntps, 4 of topic 'foo' and 1 of 'bar'
-    startup({{make_ts("foo"), 4}, {make_ts("bar"), 1}}).get();
+    setup({{foo, 4}, {bar, 1}}).get();
+    // Supervisor has 3 registered transforms, of the same type
+    enable_coprocessors(
+      {{.id = 8888,
+        .data{.tid = copro_typeid::identity_coprocessor, .topics = {foo}}},
+       {.id = 9159,
+        .data{.tid = copro_typeid::identity_coprocessor, .topics = {foo}}}})
+      .get();
 
-    model::topic src_topic("foo");
-    model::ntp input_ntp(
-      model::kafka_namespace, src_topic, model::partition_id(0));
+    model::ntp input_ntp(model::kafka_namespace, foo, model::partition_id(0));
     model::ntp output_ntp(
       model::kafka_namespace,
-      model::to_materialized_topic(
-        src_topic, identity_coprocessor::identity_topic),
+      model::to_materialized_topic(foo, identity_coprocessor::identity_topic),
       model::partition_id(0));
 
     auto f1 = push(
@@ -119,8 +134,8 @@ FIXTURE_TEST(test_coproc_router_double, router_test_fixture) {
     auto read_batches
       = ss::when_all_succeed(std::move(f1), std::move(f2)).get();
 
-    /// The identity coprocessor should not have modified the number of record
-    /// batches from the source log onto the output log
+    /// The identity coprocessor should not have modified the number of
+    /// record batches from the source log onto the output log
     BOOST_REQUIRE(std::get<1>(read_batches).has_value());
     const model::record_batch_reader::data_t& data = *std::get<1>(read_batches);
     BOOST_CHECK_EQUAL(data.size(), 100);
@@ -141,30 +156,33 @@ FIXTURE_TEST(test_coproc_router_multi_route, router_test_fixture) {
       input_two, two_way_split_copro::odd);
 
     /// Deploy coprocessors and prime v::storage with logs
-    add_copro<two_way_split_copro>(9111, {{"one", l}}).get();
-    add_copro<two_way_split_copro>(4517, {{"two", l}}).get();
-    log_layout_map inputs = {{make_ts(input_one), 1}, {make_ts(input_two), 1}};
+    log_layout_map inputs = {{input_one, 1}, {input_two, 1}};
     log_layout_map outputs = {
-      {make_ts(even_mt_one), 1},
-      {make_ts(odd_mt_one), 1},
-      {make_ts(even_mt_two), 1},
-      {make_ts(odd_mt_two), 1}};
-    startup(inputs).get();
+      {even_mt_one, 1}, {odd_mt_one, 1}, {even_mt_two, 1}, {odd_mt_two, 1}};
+    setup(inputs).get();
+
+    enable_coprocessors(
+      {{.id = 9111,
+        .data{.tid = copro_typeid::two_way_split_copro, .topics = {input_one}}},
+       {.id = 4517,
+        .data{
+          .tid = copro_typeid::two_way_split_copro, .topics = {input_two}}}})
+      .get();
 
     /// Run the test
     router_test_plan test_plan{
-      .input = build_simple_opts(inputs, 100),
-      .output = build_simple_opts(outputs, 50)};
+      .input = build_simple_opts(inputs, 50),
+      .output = build_simple_opts(outputs, 25)};
     auto result_tuple = start_benchmark(std::move(test_plan)).get0();
     const auto& [push_results, drain_results] = result_tuple;
 
-    /// Expect all 4 partitions to exist and verify the exact number of record
-    /// batches accross all
+    /// Expect all 4 partitions to exist and verify the exact number of
+    // record  batches accross all
     BOOST_REQUIRE_EQUAL(push_results.size(), 2);
     BOOST_REQUIRE_EQUAL(drain_results.size(), 4);
     for (const auto& [_, pair] : drain_results) {
         const auto& [__, n_batches] = pair;
-        BOOST_REQUIRE_EQUAL(n_batches, 50);
+        BOOST_REQUIRE_EQUAL(n_batches, 25);
     }
 }
 
@@ -174,13 +192,18 @@ FIXTURE_TEST(test_coproc_router_giant_fanin, router_test_fixture) {
     const model::topic source_topic("sole_input");
     const model::topic output_topic = model::to_materialized_topic(
       source_topic, identity_coprocessor::identity_topic);
-    const auto range = boost::irange<std::size_t>(0, n_copros);
-    ss::do_for_each(range, [this, source_topic](std::size_t i) {
-        return add_copro<identity_coprocessor>(i, {{source_topic(), l}});
-    }).get();
-    log_layout_map inputs = {{make_ts(source_topic), n_partitions}};
-    log_layout_map outputs = {{make_ts(output_topic), n_partitions}};
-    startup(inputs).get();
+    std::vector<coproc::wasm::event_publisher::deploy> deploys;
+    for (uint64_t i = 0; i < n_copros; ++i) {
+        deploys.push_back(
+          {.id = i,
+           .data{
+             .tid = copro_typeid::identity_coprocessor,
+             .topics = {source_topic}}});
+    }
+    log_layout_map inputs = {{source_topic, n_partitions}};
+    log_layout_map outputs = {{output_topic, n_partitions}};
+    setup(inputs).get();
+    enable_coprocessors(std::move(deploys)).get();
 
     router_test_plan test_plan{
       .input = build_simple_opts(inputs, 10),
@@ -202,18 +225,23 @@ FIXTURE_TEST(test_coproc_router_giant_one_to_many, router_test_fixture) {
     const std::size_t n_copros = 25;
     const std::size_t n_partitions = 5;
     const model::topic source_topic("input");
-    const auto range = boost::irange<std::size_t>(0, n_copros);
-    ss::do_for_each(range, [this, source_topic](std::size_t i) {
-        return add_copro<unique_identity_coprocessor>(i, {{source_topic(), l}});
-    }).get();
-    log_layout_map inputs = {{make_ts(source_topic), n_partitions}};
+    std::vector<coproc::wasm::event_publisher::deploy> deploys;
+    for (uint64_t i = 0; i < n_copros; ++i) {
+        deploys.push_back(
+          {.id = i,
+           .data{
+             .tid = copro_typeid::unique_identity_coprocessor,
+             .topics = {source_topic}}});
+    }
+    log_layout_map inputs = {{source_topic, n_partitions}};
     log_layout_map outputs;
-    for (auto i = 0; i < n_copros; ++i) {
+    for (std::size_t i = 0; i < n_copros; ++i) {
         auto materialized_topic = model::to_materialized_topic(
           source_topic, model::topic(fmt::format("identity_topic_{}", i)));
-        outputs.emplace(make_ts(materialized_topic), n_partitions);
+        outputs.emplace(materialized_topic, n_partitions);
     }
-    startup(inputs).get();
+    setup(inputs).get();
+    enable_coprocessors(std::move(deploys)).get();
 
     router_test_plan test_plan{
       .input = build_simple_opts(inputs, 10),

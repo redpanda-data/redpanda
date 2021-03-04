@@ -33,8 +33,10 @@ public:
     }
 
     kc::client make_client() {
-        return kc::client(std::vector<unresolved_address>{
+        kc::configuration cfg;
+        cfg.brokers.set_value(std::vector<unresolved_address>{
           config::shard_local_cfg().kafka_api()[0].address});
+        return kc::client{cfg};
     }
     kc::client make_connected_client() {
         auto client = make_client();

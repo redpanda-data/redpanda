@@ -27,7 +27,7 @@
 ///             assert(gate.get_count() == 1);
 ///          }
 ///          assert(gate.get_count() == 0);
-struct gate_guard {
+struct gate_guard final {
     explicit gate_guard(ss::gate& g)
       : _g(&g) {
         _g->enter();
@@ -46,7 +46,7 @@ struct gate_guard {
     }
     gate_guard(const gate_guard&) = delete;
     gate_guard& operator=(const gate_guard&) = delete;
-    ~gate_guard() {
+    ~gate_guard() noexcept {
         if (_g) {
             _g->leave();
         }
