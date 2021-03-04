@@ -64,10 +64,10 @@ serializableFunctions = """
     BF.writeVarint({{propertyPath}}, {{buffer}})
 {%- endmacro -%}
 
-{%- macro write_array(field, propertyPath) %}
+{%- macro write_array(field, propertyPath, buffer, assign) %}
     {# Remove ">" and "Array<" from type, the result is the array type #}
     {%-set subtype = field.type | get_value_type %}
-    writtenBytes +=
+    {{ "writtenBytes += " if assign -}}
     BF.writeArray({{"false" if field.size else "true"}})({{propertyPath}},
       buffer, (item, auxBuffer) => {{-serialize_by_field
             ({"name": "", 
@@ -105,7 +105,7 @@ serializableFunctions = """
     {%- if 'Optional' in main_type -%}
     {{ write_optional(field, path, buffer, assignOffset)}}
     {%- elif 'Array' in main_type -%}
-    {{ write_array(field, path)}}
+    {{ write_array(field, path, buffer, assignOffset)}}
     {%- elif "int8" in main_type -%}
     {{ write_int8(field, path, buffer, assignOffset) }}
     {%- elif "int16" in main_type -%}
