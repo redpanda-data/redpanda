@@ -22,9 +22,9 @@ import (
 )
 
 const (
-	kb	= 1024
-	mb	= 1024 * kb
-	gb	= 1024 * mb
+	kb = 1024
+	mb = 1024 * kb
+	gb = 1024 * mb
 )
 
 // log is for logging in this package.

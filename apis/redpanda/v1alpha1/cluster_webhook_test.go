@@ -28,11 +28,11 @@ func TestValidateUpdate(t *testing.T) {
 
 	redpandaCluster := &v1alpha1.Cluster{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:		"test",
-			Namespace:	"",
+			Name:      "test",
+			Namespace: "",
 		},
 		Spec: v1alpha1.ClusterSpec{
-			Replicas:	pointer.Int32Ptr(replicas2),
+			Replicas: pointer.Int32Ptr(replicas2),
 			Configuration: v1alpha1.RedpandaConfig{
 				KafkaAPI: v1alpha1.SocketAddress{Port: 123},
 			},
@@ -77,15 +77,15 @@ func TestValidateUpdate_NoError(t *testing.T) {
 
 	redpandaCluster := &v1alpha1.Cluster{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:		"test",
-			Namespace:	"",
+			Name:      "test",
+			Namespace: "",
 		},
 		Spec: v1alpha1.ClusterSpec{
-			Replicas:	pointer.Int32Ptr(replicas2),
+			Replicas: pointer.Int32Ptr(replicas2),
 			Configuration: v1alpha1.RedpandaConfig{
-				KafkaAPI:	v1alpha1.SocketAddress{Port: 123},
-				AdminAPI:	v1alpha1.SocketAddress{Port: 125},
-				RPCServer:	v1alpha1.SocketAddress{Port: 126},
+				KafkaAPI:  v1alpha1.SocketAddress{Port: 123},
+				AdminAPI:  v1alpha1.SocketAddress{Port: 125},
+				RPCServer: v1alpha1.SocketAddress{Port: 126},
 			},
 			Resources: corev1.ResourceRequirements{
 				Limits: corev1.ResourceList{
@@ -139,14 +139,14 @@ func TestValidateUpdate_NoError(t *testing.T) {
 func TestCreation(t *testing.T) {
 	redpandaCluster := &v1alpha1.Cluster{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:		"test",
-			Namespace:	"",
+			Name:      "test",
+			Namespace: "",
 		},
 		Spec: v1alpha1.ClusterSpec{
 			Configuration: v1alpha1.RedpandaConfig{
-				KafkaAPI:	v1alpha1.SocketAddress{Port: 123},
-				AdminAPI:	v1alpha1.SocketAddress{Port: 125},
-				RPCServer:	v1alpha1.SocketAddress{Port: 126},
+				KafkaAPI:  v1alpha1.SocketAddress{Port: 123},
+				AdminAPI:  v1alpha1.SocketAddress{Port: 125},
+				RPCServer: v1alpha1.SocketAddress{Port: 126},
 			},
 			Resources: corev1.ResourceRequirements{
 				Limits: corev1.ResourceList{

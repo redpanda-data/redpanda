@@ -32,9 +32,9 @@ var _ Resource = &ServiceResource{}
 // focusing on the connectivity management of redpanda cluster
 type ServiceResource struct {
 	k8sclient.Client
-	scheme		*runtime.Scheme
-	pandaCluster	*redpandav1alpha1.Cluster
-	logger		logr.Logger
+	scheme       *runtime.Scheme
+	pandaCluster *redpandav1alpha1.Cluster
+	logger       logr.Logger
 }
 
 // NewService creates ServiceResource
@@ -78,21 +78,21 @@ func (r *ServiceResource) Obj() (k8sclient.Object, error) {
 	objLabels := labels.ForCluster(r.pandaCluster)
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace:	r.Key().Namespace,
-			Name:		r.Key().Name,
-			Labels:		objLabels,
+			Namespace: r.Key().Namespace,
+			Name:      r.Key().Name,
+			Labels:    objLabels,
 		},
 		Spec: corev1.ServiceSpec{
-			ClusterIP:	corev1.ClusterIPNone,
+			ClusterIP: corev1.ClusterIPNone,
 			Ports: []corev1.ServicePort{
 				{
-					Name:		"kafka-tcp",
-					Protocol:	corev1.ProtocolTCP,
-					Port:		int32(r.pandaCluster.Spec.Configuration.KafkaAPI.Port),
-					TargetPort:	intstr.FromInt(r.pandaCluster.Spec.Configuration.KafkaAPI.Port),
+					Name:       "kafka-tcp",
+					Protocol:   corev1.ProtocolTCP,
+					Port:       int32(r.pandaCluster.Spec.Configuration.KafkaAPI.Port),
+					TargetPort: intstr.FromInt(r.pandaCluster.Spec.Configuration.KafkaAPI.Port),
 				},
 			},
-			Selector:	objLabels.AsAPISelector().MatchLabels,
+			Selector: objLabels.AsAPISelector().MatchLabels,
 		},
 	}
 
