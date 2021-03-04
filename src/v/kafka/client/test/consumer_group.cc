@@ -87,9 +87,9 @@ FIXTURE_TEST(consumer_group, kafka_client_fixture) {
     wait_for_controller_leadership().get();
 
     info("Connecting client");
-    kc::shard_local_cfg().retry_base_backoff.set_value(10ms);
-    kc::shard_local_cfg().retries.set_value(size_t(10));
     auto client = make_connected_client();
+    client.config().retry_base_backoff.set_value(10ms);
+    client.config().retries.set_value(size_t(10));
     client.connect().get();
     auto stop_client = ss::defer([&client]() { client.stop().get(); });
 

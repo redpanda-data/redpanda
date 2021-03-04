@@ -25,6 +25,18 @@
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/loop.hh>
 
+namespace {
+
+kafka::client::client make_client() {
+    kafka::client::configuration cfg;
+    cfg.brokers.set_value(std::vector<unresolved_address>{
+      config::shard_local_cfg().kafka_api()[0].address});
+    cfg.retries.set_value(size_t(1));
+    return kafka::client::client{cfg};
+}
+
+} // namespace
+
 namespace coproc::wasm {
 
 class batch_verifier {
@@ -87,6 +99,9 @@ private:
     kafka::client::client& _client;
     model::topic_partition _publish_tp;
 };
+
+event_publisher::event_publisher()
+  : _client{make_client()} {}
 
 ss::future<> event_publisher::start() {
     /// Create the internal topic, THEN update the clients internal metadata so

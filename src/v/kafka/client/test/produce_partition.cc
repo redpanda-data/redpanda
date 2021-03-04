@@ -32,12 +32,13 @@ SEASTAR_THREAD_TEST_CASE(test_produce_partition_record_count) {
         consumed_batches.push_back(std::move(batch));
     };
 
+    auto cfg = kc::configuration{};
     // large
-    kc::shard_local_cfg().produce_batch_size_bytes.set_value(1024);
+    cfg.produce_batch_size_bytes.set_value(1024);
     // configuration under test
-    kc::shard_local_cfg().produce_batch_record_count.set_value(3);
+    cfg.produce_batch_record_count.set_value(3);
 
-    kc::produce_partition producer(consumer);
+    kc::produce_partition producer(cfg, consumer);
 
     auto c_res0_fut = producer.produce(make_batch(model::offset(0), 2));
     auto c_res1_fut = producer.produce(make_batch(model::offset(2), 1));

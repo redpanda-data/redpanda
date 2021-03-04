@@ -30,8 +30,12 @@ public:
     using partitions_t
       = absl::flat_hash_map<model::topic_partition, shared_produce_partition>;
 
-    producer(brokers& brokers, error_handler&& error_handler)
-      : _partitions{}
+    producer(
+      const configuration& config,
+      brokers& brokers,
+      error_handler&& error_handler)
+      : _config{config}
+      , _partitions{}
       , _error_handler(std::move(error_handler))
       , _brokers(brokers) {}
 
@@ -61,10 +65,13 @@ private:
             return it->second;
         }
         return _partitions
-          .emplace(tp, ss::make_lw_shared<produce_partition>(make_consumer(tp)))
+          .emplace(
+            tp,
+            ss::make_lw_shared<produce_partition>(_config, make_consumer(tp)))
           .first->second;
     }
 
+    const configuration& _config;
     absl::flat_hash_map<model::topic_partition, shared_produce_partition>
       _partitions;
     error_handler _error_handler;

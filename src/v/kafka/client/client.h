@@ -61,7 +61,7 @@ private:
 
 class client {
 public:
-    explicit client(std::vector<unresolved_address> broker_addrs);
+    explicit client(const configuration& cfg);
 
     /// \brief Connect to all brokers.
     ss::future<> connect();
@@ -73,8 +73,8 @@ public:
     std::invoke_result_t<Func> gated_retry_with_mitigation(Func func) {
         return ss::with_gate(_gate, [this, func{std::move(func)}]() {
             return retry_with_mitigation(
-              shard_local_cfg().retries(),
-              shard_local_cfg().retry_base_backoff(),
+              _config.retries(),
+              _config.retry_base_backoff(),
               [this, func{std::move(func)}]() {
                   _gate.check();
                   return func();
@@ -144,6 +144,8 @@ public:
         return _brokers.empty().then(std::logical_not<>());
     }
 
+    configuration& config() { return _config; }
+
 private:
     /// \brief Connect and update metdata.
     ss::future<> do_connect(unresolved_address addr);
@@ -163,6 +165,8 @@ private:
     ss::future<shared_consumer_t>
     get_consumer(const group_id& g_id, const member_id& m_id);
 
+    /// \brief Client holds a copy of its configuration
+    configuration _config;
     /// \brief Seeds are used when no brokers are connected.
     std::vector<unresolved_address> _seeds;
     /// \brief Broker lookup from topic_partition.

@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "kafka/client/configuration.h"
 #include "pandaproxy/admin/api-doc/config.json.h"
 #include "pandaproxy/proxy.h"
 #include "seastarx.h"
@@ -28,7 +29,7 @@ class application {
 public:
     int run(int, char**);
 
-    void initialize();
+    void initialize(const kafka::client::configuration& cfg);
     void check_environment();
     void configure_admin_server();
     void wire_up_services();
@@ -39,6 +40,8 @@ public:
             _deferred.pop_back();
         }
     }
+
+    ss::future<> set_client_config(ss::sstring name, std::any val);
 
 private:
     using deferred_actions
@@ -64,6 +67,7 @@ private:
     ss::sharded<pandaproxy::proxy> _proxy;
     // run these first on destruction
     deferred_actions _deferred;
+    kafka::client::configuration _client_config;
 };
 
 } // namespace pandaproxy
