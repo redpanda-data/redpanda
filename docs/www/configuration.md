@@ -132,12 +132,6 @@ redpanda:
   rpc_server:
     address: "0.0.0.0"
     port: 33145
-  
-  # IP and port to listen for Kafka API requests.
-  # Default: 127.0.0.1:9092
-  kafka_api:
-    address: "0.0.0.0"
-    port: 33145
    
   # Multiple listeners are also supported as per KIP-103.
   # The names must match those in advertised_kafka_api
@@ -205,12 +199,6 @@ redpanda:
   advertised_rpc_api:
     address: "0.0.0.0"
     port: 33145
-    
-  # Address of Kafka API published to the clients.
-  # Default: 0.0.0.0:9092
-  advertised_kafka_api:
-    address: "0.0.0.0"
-    port: 9092
 
   # Multiple listeners are also supported as per KIP-103.
   # The names must match those in kafka_api
