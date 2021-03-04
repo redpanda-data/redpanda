@@ -227,6 +227,19 @@ configuration::configuration()
       "Interaval for metadata dissemination batching",
       required::no,
       3'000ms)
+  , metadata_dissemination_retry_delay_ms(
+      *this,
+      "metadata_dissemination_retry_delay_ms",
+      "Delay before retry a topic lookup in a shard or other meta tables",
+      required::no,
+      0'100ms)
+  , metadata_dissemination_retries(
+      *this,
+      "metadata_dissemination_retries",
+      "Number of attempts of looking up a topic's meta data like shard before "
+      "failing a request",
+      required::no,
+      10)
   , fetch_reads_debounce_timeout(
       *this,
       "fetch_reads_debounce_timeout",

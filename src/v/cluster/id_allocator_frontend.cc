@@ -22,10 +22,12 @@
 #include "model/namespace.h"
 #include "model/record_batch_reader.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/do_with.hh>
 #include <seastar/core/sharded.hh>
 
 namespace cluster {
+using namespace std::chrono_literals;
 
 cluster::errc map_errc_fixme(std::error_code ec);
 
@@ -121,17 +123,32 @@ ss::future<allocate_id_reply>
 id_allocator_frontend::do_allocate_id(model::timeout_clock::duration timeout) {
     auto shard = _shard_table.local().shard_for(model::id_allocator_ntp);
 
-    if (shard == std::nullopt) {
-        vlog(
-          clusterlog.warn,
-          "can't find a shard for {}",
-          model::id_allocator_ntp);
-        return ss::make_ready_future<allocate_id_reply>(
-          allocate_id_reply{0, errc::no_leader_controller});
+    if (unlikely(!shard)) {
+        auto retries
+          = config::shard_local_cfg().metadata_dissemination_retries.value();
+        auto delay_ms = config::shard_local_cfg()
+                          .metadata_dissemination_retry_delay_ms.value();
+        while (!shard && 0 < retries--) {
+            co_await ss::sleep(delay_ms);
+            shard = _shard_table.local().shard_for(model::id_allocator_ntp);
+        }
+
+        if (!shard) {
+            vlog(
+              clusterlog.warn,
+              "can't find a shard for {}",
+              model::id_allocator_ntp);
+            co_return allocate_id_reply{0, errc::no_leader_controller};
+        }
     }
 
+    co_return co_await do_allocate_id(*shard, timeout);
+}
+
+ss::future<allocate_id_reply> id_allocator_frontend::do_allocate_id(
+  ss::shard_id shard, model::timeout_clock::duration timeout) {
     return _partition_manager.invoke_on(
-      *shard, _ssg, [timeout](cluster::partition_manager& mgr) mutable {
+      shard, _ssg, [timeout](cluster::partition_manager& mgr) mutable {
           auto partition = mgr.get(model::id_allocator_ntp);
           if (!partition) {
               vlog(
