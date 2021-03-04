@@ -18,6 +18,7 @@
 #include "model/metadata.h"
 #include "model/record_batch_reader.h"
 #include "raft/consensus.h"
+#include "raft/consensus_utils.h"
 #include "raft/group_configuration.h"
 #include "raft/log_eviction_stm.h"
 #include "raft/types.h"
@@ -86,7 +87,7 @@ public:
      * kafka clients, simply report the next offset.
      */
     model::offset last_stable_offset() const {
-        return _raft->last_stable_offset() + model::offset(1);
+        return raft::details::next_offset(_raft->last_stable_offset());
     }
 
     /**
