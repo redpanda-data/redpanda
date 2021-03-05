@@ -18,6 +18,7 @@ Official Kubernetes quick start documentation can be found at
 * Kubernetes 1.16 or newer
 * kubectl 1.16 or newer
 * kustomize v3.8.7 or newer
+* cert-manager v1.0.0 or newer
 
 Optionaly to run operator locally:
 
@@ -34,10 +35,26 @@ export KUBECONFIG=your/path/to/kubeconfig.yaml
 kind create cluster --config kind.yaml
 ```
 
-You can simply deploy the Redpanda operator by running the following command
+In order to have validating webhook the cert manager needs to be
+installed. Please follow 
+[the installation guide](https://cert-manager.io/docs/installation/)
+
+The cert manager needs around 1 minute to be ready. The Redpanda
+operator will create Issuer and Certificate custom resource. The
+webhook of cert-manager will prevent from creating mentioned
+resources. To verify that cert manager is ready please follow
+[the verifying the installation](https://cert-manager.io/docs/installation/kubernetes/#verifying-the-installation)
+
+You can simply deploy the Redpanda operator with webhook (recommended) by running the following command
 
 ```
 kubectl apply -k https://github.com/vectorizedio/redpanda/src/go/k8s/config/default
+```
+
+You can deploy the Redpanda operator without webhook by running the following command:
+
+```
+kubectl apply -k https://github.com/vectorizedio/redpanda/src/go/k8s/config/without-webhook
 ```
 
 Install sample RedpandaCluster custom resource
