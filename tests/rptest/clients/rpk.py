@@ -33,14 +33,14 @@ class RpkTool:
         self._redpanda = redpanda
 
     def create_topic(self, topic, partitions=1):
-        cmd = ["topic", "create", topic]
+        cmd = ["create", topic]
         cmd += ["--partitions", str(partitions)]
-        return self._run_api(cmd)
+        return self._run_topic(cmd)
 
     def list_topics(self):
-        cmd = ["topic", "list"]
+        cmd = ["list"]
 
-        output = self._run_api(cmd)
+        output = self._run_topic(cmd)
         if "No topics found." in output:
             return []
 
@@ -65,11 +65,11 @@ class RpkTool:
             cmd += ['-H ' + h for h in headers]
         if partition:
             cmd += ['-p', str(partition)]
-        return self._run_api(cmd, stdin=msg)
+        return self._run_topic(cmd, stdin=msg)
 
     def describe_topic(self, topic):
-        cmd = ['topic', 'describe', topic]
-        output = self._run_api(cmd)
+        cmd = ['describe', topic]
+        output = self._run_topic(cmd)
         if "not found" in output:
             return None
         lines = output.splitlines()
@@ -106,9 +106,9 @@ class RpkTool:
         cmd = [self._rpk_binary(), 'wasm', 'generate', directory]
         return self._execute(cmd)
 
-    def _run_api(self, cmd, stdin=None, timeout=30):
+    def _run_topic(self, cmd, stdin=None, timeout=30):
         cmd = [
-            self._rpk_binary(), "api", "--brokers",
+            self._rpk_binary(), "topic", "--brokers",
             self._redpanda.brokers(1)
         ] + cmd
         return self._execute(cmd, stdin=stdin, timeout=timeout)
