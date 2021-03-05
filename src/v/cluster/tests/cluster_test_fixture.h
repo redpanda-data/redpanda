@@ -72,6 +72,7 @@ public:
       model::node_id node_id,
       int16_t kafka_port,
       int16_t rpc_port,
+      int16_t proxy_port,
       int16_t coproc_supervisor_port,
       std::vector<config::seed_server> seeds) {
         _instances.emplace(
@@ -80,6 +81,7 @@ public:
             node_id,
             kafka_port,
             rpc_port,
+            proxy_port,
             coproc_supervisor_port,
             seeds,
             fmt::format("{}.{}", _base_dir, node_id()),
@@ -108,6 +110,7 @@ public:
       model::node_id node_id,
       int kafka_port = 9092,
       int rpc_port = 11000,
+      int proxy_port = 8082,
       int coproc_supervisor_port = 43189) {
         std::vector<config::seed_server> seeds = {};
         if (node_id != 0) {
@@ -117,6 +120,7 @@ public:
           node_id,
           kafka_port + node_id(),
           rpc_port + node_id(),
+          proxy_port + node_id(),
           coproc_supervisor_port + node_id(),
           std::move(seeds));
         return get_node_application(node_id);

@@ -28,6 +28,7 @@ v_cc_library(
     v::syschecks
     v::kafka
     v::coproc
+    v::rest_application
   )
 
 add_executable(redpanda

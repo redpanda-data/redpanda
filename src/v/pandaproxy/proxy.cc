@@ -21,6 +21,7 @@
 #include "pandaproxy/api/api-doc/subscribe_consumer.json.h"
 #include "pandaproxy/configuration.h"
 #include "pandaproxy/handlers.h"
+#include "pandaproxy/logger.h"
 
 #include <seastar/core/future-util.hh>
 #include <seastar/core/memory.hh>
@@ -111,7 +112,12 @@ ss::future<> proxy::start() {
                  _server.route(get_proxy_routes());
                  return _server.start();
              },
-             [this]() { return _client.connect(); })
+             [this]() {
+                 return _client.connect().handle_exception_type(
+                   [](const kafka::client::broker_error& e) {
+                       vlog(plog.debug, "Failed to connect to broker: {}", e);
+                   });
+             })
       .discard_result();
 }
 

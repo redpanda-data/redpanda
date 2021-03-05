@@ -11,20 +11,9 @@
 
 #pragma once
 
-#include "kafka/client/client.h"
-#include "pandaproxy/fwd.h"
-#include "seastarx.h"
-
-#include <seastar/core/abort_source.hh>
-#include <seastar/core/semaphore.hh>
-
 namespace pandaproxy {
 
-struct context_t {
-    ss::semaphore mem_sem;
-    ss::abort_source as;
-    kafka::client::client& client;
-    const configuration& config;
-};
+struct configuration;
+class proxy;
 
 } // namespace pandaproxy

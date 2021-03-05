@@ -18,6 +18,7 @@
 #include "cluster/service.h"
 #include "config/configuration.h"
 #include "config/seed_server.h"
+#include "kafka/client/configuration.h"
 #include "kafka/security/scram_algorithm.h"
 #include "kafka/server/coordinator_ntp_mapper.h"
 #include "kafka/server/group_manager.h"
@@ -25,6 +26,8 @@
 #include "kafka/server/protocol.h"
 #include "kafka/server/quota_manager.h"
 #include "model/metadata.h"
+#include "pandaproxy/configuration.h"
+#include "pandaproxy/proxy.h"
 #include "platform/stop_signal.h"
 #include "raft/service.h"
 #include "redpanda/admin/api-doc/config.json.h"
@@ -109,7 +112,10 @@ int application::run(int ac, char** av) {
     });
 }
 
-void application::initialize(std::optional<scheduling_groups> groups) {
+void application::initialize(
+  std::optional<YAML::Node> proxy_cfg,
+  std::optional<YAML::Node> proxy_client_cfg,
+  std::optional<scheduling_groups> groups) {
     if (config::shard_local_cfg().enable_pid_file()) {
         syschecks::pidfile_create(config::shard_local_cfg().pidfile_path());
     }
@@ -126,6 +132,14 @@ void application::initialize(std::optional<scheduling_groups> groups) {
     _scheduling_groups.create_groups().get();
     _deferred.emplace_back(
       [this] { _scheduling_groups.destroy_groups().get(); });
+
+    if (proxy_cfg) {
+        _proxy_config.emplace(*proxy_cfg);
+    }
+
+    if (proxy_client_cfg) {
+        _proxy_client_config.emplace(*proxy_client_cfg);
+    }
 }
 
 void application::setup_metrics() {
@@ -179,14 +193,22 @@ void application::hydrate_config(const po::variables_map& cfg) {
     }).get0();
     vlog(
       _log.info,
-      "Use `rpk config set redpanda.<cfg> <value>` to change values "
+      "Use `rpk config set <cfg> <value>` to change values "
       "below:");
-    config::shard_local_cfg().for_each(
-      [this](const config::base_property& item) {
-          std::stringstream val;
-          item.print(val);
-          vlog(_log.debug, "{}\t- {}", val.str(), item.desc());
-      });
+    auto config_printer = [this](std::string_view service) {
+        return [this, service](const config::base_property& item) {
+            std::stringstream val;
+            item.print(val);
+            vlog(_log.info, "{}.{}\t- {}", service, val.str(), item.desc());
+        };
+    };
+    config::shard_local_cfg().for_each(config_printer("redpanda"));
+    if (config["pandaproxy"]) {
+        _proxy_config.emplace(config["pandaproxy"]);
+        _proxy_client_config.emplace(config["pandaproxy_client"]);
+        _proxy_config->for_each(config_printer("pandaproxy"));
+        _proxy_client_config->for_each(config_printer("pandaproxy_client"));
+    }
 }
 
 void application::check_environment() {
@@ -550,6 +572,27 @@ void application::wire_up_services() {
       fetch_session_cache,
       config::shard_local_cfg().fetch_session_eviction_timeout_ms())
       .get();
+
+    if (_proxy_config) {
+        construct_service(
+          _proxy, to_yaml(*_proxy_config), to_yaml(*_proxy_client_config))
+          .get();
+    }
+}
+
+ss::future<> application::set_proxy_config(ss::sstring name, std::any val) {
+    return _proxy.invoke_on_all(
+      [name{std::move(name)}, val{std::move(val)}](pandaproxy::proxy& p) {
+          p.config().get(name).set_value(val);
+      });
+}
+
+ss::future<>
+application::set_proxy_client_config(ss::sstring name, std::any val) {
+    return _proxy.invoke_on_all(
+      [name{std::move(name)}, val{std::move(val)}](pandaproxy::proxy& p) {
+          p.client_config().get(name).set_value(val);
+      });
 }
 
 void application::start() {
@@ -643,6 +686,14 @@ void application::start() {
         construct_single_service(_wasm_event_listener, std::ref(pacemaker));
         _wasm_event_listener->start().get();
         pacemaker.invoke_on_all(&coproc::pacemaker::start).get();
+    }
+
+    if (_proxy_config) {
+        _proxy.invoke_on_all(&pandaproxy::proxy::start).get();
+        vlog(
+          _log.info,
+          "Started Pandaproxy listening at {}",
+          _proxy_config->pandaproxy_api());
     }
 
     vlog(_log.info, "Successfully started Redpanda!");
