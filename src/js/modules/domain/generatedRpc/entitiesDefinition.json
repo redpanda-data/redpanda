@@ -231,7 +231,7 @@
         },
         {
           "name": "resultRecordBatch",
-          "type": "Array<RecordBatch>"
+          "type": "Optional<Array<RecordBatch>>"
         }
       ]
     },
