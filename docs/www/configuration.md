@@ -334,6 +334,90 @@ redpanda:
   # Default: 60s
   fetch_session_eviction_timeout_ms: 60000
 
+# The REST API (alpha)
+# This top-level config node enables the REST Proxy
+pandaproxy:
+  # IP and port to listen for Kafka REST API requests.
+  # Default: 127.0.0.1:8082
+  pandaproxy_api: 
+    address: "0.0.0.0"
+    port: 8082
+
+  # TLS configuration for the Kafka REST API.
+  # Default: null
+  pandaproxy_api_tls:
+    # Whether to enable TLS.
+    enabled: false
+    # Require client authentication
+    require_client_auth: false
+    # The path to the server certificate PEM file.
+    cert_file: ""
+    # The path to the server key PEM file
+    key_file: ""
+    # The path to the truststore PEM file. Only required if client
+    # authentication is enabled.
+    truststore_file: ""
+
+  # REST API address and port to publish to client
+  # Default: from pandaproxy_api
+  advertised_pandaproxy_api:
+    address: "redpanda-rest-0.my.domain.com."
+    port: 8082
+
+# The REST API client
+pandaproxy_client:
+  # List of address and port of the brokers
+  # Default: "127.0.0.1:9092
+  broker:
+   - address: "127.0.0.1"
+     port: 9092
+
+  # TLS configuration for the brokers
+  broker_tls:
+    # Whether to enable TLS.
+    enabled: false
+    # Require client authentication
+    require_client_auth: false
+    # The path to the server certificate PEM file.
+    cert_file: ""
+    # The path to the server key PEM file
+    key_file: ""
+    # The path to the truststore PEM file. Only required if client authentication
+    # is enabled.
+    truststore_file: ""
+
+  # Number of times to retry a request to a broker
+  # Default: 5
+  retries: 5
+
+  # Delay (in milliseconds) for initial retry backoff
+  # Default: 100ms
+  retry_base_backoff_ms: 100
+
+  # Number of records to batch before sending to broker
+  # Default: 1000
+  produce_batch_record_count: 1000
+
+  # Number of bytes to batch before sending to broker
+  # Defautl 1MiB
+  produce_batch_size_bytes: 1048576
+
+  # Delay (in milliseconds) to wait before sending batch
+  # Default: 100ms
+  produce_batch_delay_ms: 100
+
+  # Timeout (in milliseconds) for consumer session
+  # Default: 10s
+  consumer_session_timeout_ms: 10000
+
+  # Timeout (in milliseconds) for consumer rebalance
+  # Default: 2s
+  consumer_rebalance_timeout_ms: 2000
+
+  # Interval (in milliseconds) for consumer heartbeats
+  # Default: 500ms
+  consumer_heartbeat_interval_ms: 500
+
 rpk:
   # TLS configuration to allow rpk to make requests to the redpanda API.
   tls:
