@@ -38,7 +38,7 @@ var _ = Describe("RedPandaCluster controller", func() {
 	)
 
 	Context("When creating RedpandaCluster", func() {
-		It("Should create Redpanda cluster", func() {
+		It("Should create Redpanda cluster with corresponding resources", func() {
 			resources := corev1.ResourceList{
 				corev1.ResourceCPU:    resource.MustParse("1"),
 				corev1.ResourceMemory: resource.MustParse("2Gi"),
@@ -53,10 +53,6 @@ var _ = Describe("RedPandaCluster controller", func() {
 				Namespace: "default",
 			}
 			redpandaCluster := &v1alpha1.Cluster{
-				TypeMeta: metav1.TypeMeta{
-					Kind:       "RedpandaCluster",
-					APIVersion: "core.vectorized.io/v1alpha1",
-				},
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      key.Name,
 					Namespace: key.Namespace,
@@ -85,6 +81,18 @@ var _ = Describe("RedPandaCluster controller", func() {
 				err := k8sClient.Get(context.Background(), key, &svc)
 				return err == nil &&
 					svc.Spec.ClusterIP == corev1.ClusterIPNone &&
+					svc.Spec.Ports[0].Port == kafkaPort &&
+					validOwner(redpandaCluster, svc.OwnerReferences)
+			}, timeout, interval).Should(BeTrue())
+
+			By("Creating NodePort Service")
+			Eventually(func() bool {
+				err := k8sClient.Get(context.Background(), types.NamespacedName{
+					Name:      key.Name + "-external",
+					Namespace: key.Namespace,
+				}, &svc)
+				return err == nil &&
+					svc.Spec.Type == corev1.ServiceTypeNodePort &&
 					svc.Spec.Ports[0].Port == kafkaPort &&
 					validOwner(redpandaCluster, svc.OwnerReferences)
 			}, timeout, interval).Should(BeTrue())

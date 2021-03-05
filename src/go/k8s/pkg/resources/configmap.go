@@ -70,7 +70,6 @@ func NewConfigMap(
 }
 
 // Ensure will manage kubernetes v1.ConfigMap for redpanda.vectorized.io CR
-//nolint:dupl // we expect this to not be duplicated when more logic is added
 func (r *ConfigMapResource) Ensure(ctx context.Context) error {
 	var cfgm corev1.ConfigMap
 

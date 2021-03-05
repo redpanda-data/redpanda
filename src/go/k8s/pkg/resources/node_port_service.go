@@ -7,6 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
+// Package resources contains reconciliation logic for redpanda.vectorized.io CRD
 package resources
 
 import (
@@ -26,37 +27,39 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
-var _ Resource = &ServiceResource{}
+var _ Resource = &NodePortServiceResource{}
 
-// ServiceResource is part of the reconciliation of redpanda.vectorized.io CRD
-// focusing on the connectivity management of redpanda cluster
-type ServiceResource struct {
+// NodePortServiceResource is part of the reconciliation of redpanda.vectorized.io CRD
+// that assigns port on each node to enable external connectivity
+type NodePortServiceResource struct {
 	k8sclient.Client
 	scheme       *runtime.Scheme
 	pandaCluster *redpandav1alpha1.Cluster
 	logger       logr.Logger
 }
 
-// NewService creates ServiceResource
-func NewService(
+// NewNodePortService creates NodePortServiceResource
+func NewNodePortService(
 	client k8sclient.Client,
 	pandaCluster *redpandav1alpha1.Cluster,
 	scheme *runtime.Scheme,
 	logger logr.Logger,
-) *ServiceResource {
-	return &ServiceResource{
-		client, scheme, pandaCluster, logger.WithValues("Kind", serviceKind()),
+) *NodePortServiceResource {
+	return &NodePortServiceResource{
+		client,
+		scheme,
+		pandaCluster,
+		logger.WithValues("Kind", serviceKind(), "ServiceType", "NodePort"),
 	}
 }
 
 // Ensure will manage kubernetes v1.Service for redpanda.vectorized.io custom resource
-//nolint:dupl // we expect this to not be duplicated when more logic is added
-func (r *ServiceResource) Ensure(ctx context.Context) error {
+func (r *NodePortServiceResource) Ensure(ctx context.Context) error {
 	var svc corev1.Service
 
 	err := r.Get(ctx, r.Key(), &svc)
 	if err != nil && !errors.IsNotFound(err) {
-		return err
+		return fmt.Errorf("error while fetching service resource: %w", err)
 	}
 
 	if errors.IsNotFound(err) {
@@ -64,17 +67,21 @@ func (r *ServiceResource) Ensure(ctx context.Context) error {
 
 		obj, err := r.Obj()
 		if err != nil {
-			return err
+			return fmt.Errorf("unable to construct service object: %w", err)
 		}
 
-		return r.Create(ctx, obj)
+		if err := r.Create(ctx, obj); err != nil {
+			return fmt.Errorf("unable to create service resource: %w", err)
+		}
+
+		return nil
 	}
 
 	return nil
 }
 
 // Obj returns resource managed client.Object
-func (r *ServiceResource) Obj() (k8sclient.Object, error) {
+func (r *NodePortServiceResource) Obj() (k8sclient.Object, error) {
 	objLabels := labels.ForCluster(r.pandaCluster)
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
@@ -83,7 +90,18 @@ func (r *ServiceResource) Obj() (k8sclient.Object, error) {
 			Labels:    objLabels,
 		},
 		Spec: corev1.ServiceSpec{
-			ClusterIP: corev1.ClusterIPNone,
+			// The service type node port assigned port to each node in the cluster.
+			// This gives a way for operator to assign unused port to the redpanda cluster.
+			// Reference:
+			// https://kubernetes.io/docs/tutorials/services/source-ip/#source-ip-for-services-with-type-nodeport
+			Type: corev1.ServiceTypeNodePort,
+			// If you set service.spec.externalTrafficPolicy to the value Local,
+			// kube-proxy only proxies proxy requests to local endpoints,
+			// and does not forward traffic to other nodes.
+			// Reference:
+			// https://kubernetes.io/docs/tasks/access-application-cluster/create-external-load-balancer/#preserving-the-client-source-ip
+			// https://blog.getambassador.io/externaltrafficpolicy-local-on-kubernetes-e66e498212f9
+			ExternalTrafficPolicy: corev1.ServiceExternalTrafficPolicyTypeLocal,
 			Ports: []corev1.ServicePort{
 				{
 					Name:       "kafka-tcp",
@@ -92,7 +110,9 @@ func (r *ServiceResource) Obj() (k8sclient.Object, error) {
 					TargetPort: intstr.FromInt(r.pandaCluster.Spec.Configuration.KafkaAPI.Port),
 				},
 			},
-			Selector: objLabels.AsAPISelector().MatchLabels,
+			// The selector is purposely set to nil. Our external connectivity doesn't use
+			// kubernetes service as kafka protocol need to have access to each broker individually.
+			Selector: nil,
 		},
 	}
 
@@ -106,27 +126,11 @@ func (r *ServiceResource) Obj() (k8sclient.Object, error) {
 
 // Key returns namespace/name object that is used to identify object.
 // For reference please visit types.NamespacedName docs in k8s.io/apimachinery
-func (r *ServiceResource) Key() types.NamespacedName {
-	return types.NamespacedName{Name: r.pandaCluster.Name, Namespace: r.pandaCluster.Namespace}
+func (r *NodePortServiceResource) Key() types.NamespacedName {
+	return types.NamespacedName{Name: r.pandaCluster.Name + "-external", Namespace: r.pandaCluster.Namespace}
 }
 
 // Kind returns v1.Service kind
-func (r *ServiceResource) Kind() string {
+func (r *NodePortServiceResource) Kind() string {
 	return serviceKind()
-}
-
-func serviceKind() string {
-	var svc corev1.Service
-	return svc.Kind
-}
-
-// HeadlessServiceFQDN returns fully qualified domain name for headless service.
-// It can be used to communicate between namespaces if the network policy
-// allows it.
-func (r *ServiceResource) HeadlessServiceFQDN() string {
-	// TODO Retrieve cluster domain dynamically and remove hardcoded cluster.local
-	return fmt.Sprintf("%s%c%s.svc.cluster.local.",
-		r.Key().Name,
-		'.',
-		r.Key().Namespace)
 }
