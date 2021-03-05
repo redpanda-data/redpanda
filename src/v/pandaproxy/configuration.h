@@ -24,14 +24,9 @@ namespace pandaproxy {
 /// All application modules depend on configuration. The configuration module
 /// can not depend on any other module to prevent cyclic dependencies.
 struct configuration final : public config::config_store {
-    config::property<bool> developer_mode;
     config::property<unresolved_address> pandaproxy_api;
     config::property<unresolved_address> advertised_pandaproxy_api;
-    config::property<unresolved_address> admin_api;
-    config::property<bool> enable_admin_api;
-    config::property<ss::sstring> admin_api_doc_dir;
     config::property<ss::sstring> api_doc_dir;
-    config::property<bool> disable_metrics;
 
     configuration();
     explicit configuration(const YAML::Node& cfg);

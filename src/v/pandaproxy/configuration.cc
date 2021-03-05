@@ -21,54 +21,23 @@ configuration::configuration(const YAML::Node& cfg)
 }
 
 configuration::configuration()
-  : developer_mode(
+  : pandaproxy_api(
     *this,
-    "developer_mode",
-    "Skips most of the checks performed at startup, not recomended for "
-    "production use",
+    "pandaproxy_api",
+    "Rest API listen address and port",
     config::required::no,
-    false)
-  , pandaproxy_api(
-      *this,
-      "pandaproxy_api",
-      "Rest API listen address and port",
-      config::required::no,
-      unresolved_address("127.0.0.1", 8082))
+    unresolved_address("127.0.0.1", 8082))
   , advertised_pandaproxy_api(
       *this,
       "advertised_pandaproxy_api",
       "Rest API address and port to publish to client",
       config::required::no,
       pandaproxy_api)
-  , admin_api(
-      *this,
-      "admin_api",
-      "Admin server listen address and port",
-      config::required::no,
-      unresolved_address("127.0.0.1", 9644))
-  , enable_admin_api(
-      *this,
-      "enable_admin_api",
-      "Enable the admin API",
-      config::required::no,
-      true)
-  , admin_api_doc_dir(
-      *this,
-      "admin_api_doc_dir",
-      "Admin API doc directory",
-      config::required::no,
-      "/usr/share/pandaproxy/admin-api-doc")
   , api_doc_dir(
       *this,
       "api_doc_dir",
       "API doc directory",
       config::required::no,
-      "/usr/share/pandaproxy/api-doc")
-  , disable_metrics(
-      *this,
-      "disable_metrics",
-      "Disable registering metrics",
-      config::required::no,
-      false) {}
+      "/usr/share/redpanda/proxy-api-doc") {}
 
 } // namespace pandaproxy
