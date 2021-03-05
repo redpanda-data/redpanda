@@ -126,7 +126,7 @@ func serviceKind() string {
 // allows it.
 func (r *ServiceResource) HeadlessServiceFQDN() string {
 	// TODO Retrieve cluster domain dynamically and remove hardcoded cluster.local
-	return fmt.Sprintf("%s%c%s.svc.cluster.local",
+	return fmt.Sprintf("%s%c%s.svc.cluster.local.",
 		r.Key().Name,
 		'.',
 		r.Key().Namespace)
