@@ -62,14 +62,14 @@ type NetTunersFactory interface {
 }
 
 type netTunersFactory struct {
-	fs		afero.Fs
-	irqProcFile	irq.ProcFile
-	irqDeviceInfo	irq.DeviceInfo
-	ethtool		ethtool.EthtoolWrapper
-	balanceService	irq.BalanceService
-	cpuMasks	irq.CpuMasks
-	checkersFactory	NetCheckersFactory
-	executor	executors.Executor
+	fs              afero.Fs
+	irqProcFile     irq.ProcFile
+	irqDeviceInfo   irq.DeviceInfo
+	ethtool         ethtool.EthtoolWrapper
+	balanceService  irq.BalanceService
+	cpuMasks        irq.CpuMasks
+	checkersFactory NetCheckersFactory
+	executor        executors.Executor
 }
 
 func NewNetTunersFactory(
@@ -82,13 +82,13 @@ func NewNetTunersFactory(
 	executor executors.Executor,
 ) NetTunersFactory {
 	return &netTunersFactory{
-		fs:		fs,
-		irqProcFile:	irqProcFile,
-		irqDeviceInfo:	irqDeviceInfo,
-		ethtool:	ethtool,
-		balanceService:	balanceService,
-		cpuMasks:	cpuMasks,
-		executor:	executor,
+		fs:             fs,
+		irqProcFile:    irqProcFile,
+		irqDeviceInfo:  irqDeviceInfo,
+		ethtool:        ethtool,
+		balanceService: balanceService,
+		cpuMasks:       cpuMasks,
+		executor:       executor,
 		checkersFactory: NewNetCheckersFactory(
 			fs, irqProcFile, irqDeviceInfo, ethtool, balanceService, cpuMasks),
 	}

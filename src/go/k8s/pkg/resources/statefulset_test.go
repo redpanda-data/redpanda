@@ -40,8 +40,8 @@ func TestEnsure(t *testing.T) {
 	replicasUpdatedSts.Spec.Replicas = &newReplicas
 
 	newResources := corev1.ResourceList{
-		corev1.ResourceCPU:	resource.MustParse("1111"),
-		corev1.ResourceMemory:	resource.MustParse("2222Gi"),
+		corev1.ResourceCPU:    resource.MustParse("1111"),
+		corev1.ResourceMemory: resource.MustParse("2222Gi"),
 	}
 	resourcesUpdatedCluster := cluster.DeepCopy()
 	resourcesUpdatedCluster.Spec.Resources.Requests = newResources
@@ -49,10 +49,10 @@ func TestEnsure(t *testing.T) {
 	resourcesUpdatedSts.Spec.Template.Spec.Containers[0].Resources.Requests = newResources
 
 	var tests = []struct {
-		name		string
-		existingObject	client.Object
-		pandaCluster	*redpandav1alpha1.Cluster
-		expectedObject	*v1.StatefulSet
+		name           string
+		existingObject client.Object
+		pandaCluster   *redpandav1alpha1.Cluster
+		expectedObject *v1.StatefulSet
 	}{
 		{"none existing", nil, cluster, stsResource},
 		{"update replicas", stsResource, replicasUpdatedCluster, replicasUpdatedSts},
@@ -90,24 +90,24 @@ func TestEnsure(t *testing.T) {
 func stsFromCluster(pandaCluster *redpandav1alpha1.Cluster) *v1.StatefulSet {
 	return &v1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace:	pandaCluster.Namespace,
-			Name:		pandaCluster.Name,
+			Namespace: pandaCluster.Namespace,
+			Name:      pandaCluster.Name,
 		},
 		Spec: v1.StatefulSetSpec{
-			Replicas:	pandaCluster.Spec.Replicas,
+			Replicas: pandaCluster.Spec.Replicas,
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:		pandaCluster.Name,
-					Namespace:	pandaCluster.Namespace,
+					Name:      pandaCluster.Name,
+					Namespace: pandaCluster.Namespace,
 				},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
 						{
-							Name:	"redpanda",
-							Image:	"image:latest",
+							Name:  "redpanda",
+							Image: "image:latest",
 							Resources: corev1.ResourceRequirements{
-								Limits:		pandaCluster.Spec.Resources.Limits,
-								Requests:	pandaCluster.Spec.Resources.Requests,
+								Limits:   pandaCluster.Spec.Resources.Limits,
+								Requests: pandaCluster.Spec.Resources.Requests,
 							},
 						},
 					},
@@ -121,32 +121,32 @@ func pandaCluster() *redpandav1alpha1.Cluster {
 	var replicas int32 = 1
 
 	resources := corev1.ResourceList{
-		corev1.ResourceCPU:	resource.MustParse("1"),
-		corev1.ResourceMemory:	resource.MustParse("2Gi"),
+		corev1.ResourceCPU:    resource.MustParse("1"),
+		corev1.ResourceMemory: resource.MustParse("2Gi"),
 	}
 
 	return &redpandav1alpha1.Cluster{
 		TypeMeta: metav1.TypeMeta{
-			Kind:		"RedpandaCluster",
-			APIVersion:	"core.vectorized.io/v1alpha1",
+			Kind:       "RedpandaCluster",
+			APIVersion: "core.vectorized.io/v1alpha1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:		"cluster",
-			Namespace:	"default",
+			Name:      "cluster",
+			Namespace: "default",
 			Labels: map[string]string{
 				"app": "redpanda",
 			},
 		},
 		Spec: redpandav1alpha1.ClusterSpec{
-			Image:		"image",
-			Version:	"latest",
-			Replicas:	pointer.Int32Ptr(replicas),
+			Image:    "image",
+			Version:  "latest",
+			Replicas: pointer.Int32Ptr(replicas),
 			Configuration: redpandav1alpha1.RedpandaConfig{
 				KafkaAPI: redpandav1alpha1.SocketAddress{Port: 123},
 			},
 			Resources: corev1.ResourceRequirements{
-				Limits:		resources,
-				Requests:	resources,
+				Limits:   resources,
+				Requests: resources,
 			},
 		},
 	}

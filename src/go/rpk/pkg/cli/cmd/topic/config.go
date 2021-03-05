@@ -20,11 +20,11 @@ func NewSetConfigCommand(
 	admin func() (sarama.ClusterAdmin, error),
 ) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:	"set-config <topic> <key> <value>",
-		Short:	"Set the topic's config key/value pairs",
-		Args:	common.ExactArgs(3, "topic's name, config key or value are missing."),
+		Use:   "set-config <topic> <key> <value>",
+		Short: "Set the topic's config key/value pairs",
+		Args:  common.ExactArgs(3, "topic's name, config key or value are missing."),
 		// We don't want Cobra printing CLI usage help if the error isn't about CLI usage.
-		SilenceUsage:	true,
+		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			adm, err := admin()
 			if err != nil {

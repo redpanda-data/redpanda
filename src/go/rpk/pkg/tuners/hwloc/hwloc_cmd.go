@@ -20,20 +20,20 @@ import (
 )
 
 const (
-	CalcBin		= "hwloc-calc-redpanda"
-	DistribBin	= "hwloc-distrib-redpanda"
+	CalcBin    = "hwloc-calc-redpanda"
+	DistribBin = "hwloc-distrib-redpanda"
 )
 
 type hwLocCmd struct {
 	HwLoc
-	proc	os.Proc
-	timeout	time.Duration
+	proc    os.Proc
+	timeout time.Duration
 }
 
 func NewHwLocCmd(proc os.Proc, timeout time.Duration) HwLoc {
 	return &hwLocCmd{
-		proc:		proc,
-		timeout:	timeout,
+		proc:    proc,
+		timeout: timeout,
 	}
 }
 

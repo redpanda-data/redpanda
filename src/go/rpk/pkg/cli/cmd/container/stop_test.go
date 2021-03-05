@@ -25,35 +25,35 @@ import (
 func TestStop(t *testing.T) {
 
 	tests := []struct {
-		name		string
-		client		func() (common.Client, error)
-		expectedErrMsg	string
-		expectedOutput	[]string
+		name           string
+		client         func() (common.Client, error)
+		expectedErrMsg string
+		expectedOutput []string
 	}{
 		{
-			name:	"it should log if the container can't be stopped",
+			name: "it should log if the container can't be stopped",
 			client: func() (common.Client, error) {
 				return &common.MockClient{
-					MockContainerInspect:	common.MockContainerInspect,
+					MockContainerInspect: common.MockContainerInspect,
 					MockContainerList: func(
 						_ context.Context,
 						_ types.ContainerListOptions,
 					) ([]types.Container, error) {
 						return []types.Container{
 							{
-								ID:	"a",
+								ID: "a",
 								Labels: map[string]string{
 									"node-id": "0",
 								},
 							},
 							{
-								ID:	"b",
+								ID: "b",
 								Labels: map[string]string{
 									"node-id": "1",
 								},
 							},
 							{
-								ID:	"c",
+								ID: "c",
 								Labels: map[string]string{
 									"node-id": "2",
 								},
@@ -80,7 +80,7 @@ func TestStop(t *testing.T) {
 			},
 		},
 		{
-			name:	"it should fail if the containers can't be listed",
+			name: "it should fail if the containers can't be listed",
 			client: func() (common.Client, error) {
 				return &common.MockClient{
 					MockContainerList: func(
@@ -91,10 +91,10 @@ func TestStop(t *testing.T) {
 					},
 				}, nil
 			},
-			expectedErrMsg:	"Can't list",
+			expectedErrMsg: "Can't list",
 		},
 		{
-			name:	"it should fail if the containers can't be inspected",
+			name: "it should fail if the containers can't be inspected",
 			client: func() (common.Client, error) {
 				return &common.MockClient{
 					MockContainerInspect: func(
@@ -110,7 +110,7 @@ func TestStop(t *testing.T) {
 					) ([]types.Container, error) {
 						return []types.Container{
 							{
-								ID:	"a",
+								ID: "a",
 								Labels: map[string]string{
 									"node-id": "0",
 								},
@@ -119,10 +119,10 @@ func TestStop(t *testing.T) {
 					},
 				}, nil
 			},
-			expectedErrMsg:	"Can't inspect",
+			expectedErrMsg: "Can't inspect",
 		},
 		{
-			name:	"it should do nothing if there's no cluster",
+			name: "it should do nothing if there's no cluster",
 			client: func() (common.Client, error) {
 				return &common.MockClient{}, nil
 			},
@@ -131,17 +131,17 @@ func TestStop(t *testing.T) {
 			},
 		},
 		{
-			name:	"it should stop the current cluster",
+			name: "it should stop the current cluster",
 			client: func() (common.Client, error) {
 				return &common.MockClient{
-					MockContainerInspect:	common.MockContainerInspect,
+					MockContainerInspect: common.MockContainerInspect,
 					MockContainerList: func(
 						_ context.Context,
 						_ types.ContainerListOptions,
 					) ([]types.Container, error) {
 						return []types.Container{
 							{
-								ID:	"a",
+								ID: "a",
 								Labels: map[string]string{
 									"node-id": "0",
 								},

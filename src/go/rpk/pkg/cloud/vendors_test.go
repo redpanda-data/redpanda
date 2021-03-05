@@ -18,9 +18,9 @@ import (
 )
 
 type mockVendor struct {
-	available	bool
-	name		string
-	vmType		string
+	available bool
+	name      string
+	vmType    string
 }
 
 func (v *mockVendor) Name() string {
@@ -40,9 +40,9 @@ func (v *mockVendor) VmType() (string, error) {
 
 func TestAvailableVendor(t *testing.T) {
 	var (
-		name1	= "vendor1"
-		name2	= "vendor2"
-		name3	= "vendor3"
+		name1 = "vendor1"
+		name2 = "vendor2"
+		name3 = "vendor3"
 	)
 	vendors := make(map[string]vendor.Vendor)
 	vendors[name1] = &mockVendor{false, name1, ""}
@@ -56,9 +56,9 @@ func TestAvailableVendor(t *testing.T) {
 
 func TestUnvailableVendor(t *testing.T) {
 	var (
-		name1	= "vendor1"
-		name2	= "vendor2"
-		name3	= "vendor3"
+		name1 = "vendor1"
+		name2 = "vendor2"
+		name3 = "vendor3"
 	)
 	vendors := make(map[string]vendor.Vendor)
 	vendors[name1] = &mockVendor{false, name1, ""}

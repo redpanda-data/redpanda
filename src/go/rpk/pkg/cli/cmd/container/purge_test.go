@@ -24,35 +24,35 @@ import (
 
 func TestPurge(t *testing.T) {
 	tests := []struct {
-		name		string
-		client		func() (common.Client, error)
-		expectedErrMsg	string
-		expectedOutput	[]string
+		name           string
+		client         func() (common.Client, error)
+		expectedErrMsg string
+		expectedOutput []string
 	}{
 		{
-			name:	"it should log if the containers can't be stopped",
+			name: "it should log if the containers can't be stopped",
 			client: func() (common.Client, error) {
 				return &common.MockClient{
-					MockContainerInspect:	common.MockContainerInspect,
+					MockContainerInspect: common.MockContainerInspect,
 					MockContainerList: func(
 						_ context.Context,
 						_ types.ContainerListOptions,
 					) ([]types.Container, error) {
 						return []types.Container{
 							{
-								ID:	"a",
+								ID: "a",
 								Labels: map[string]string{
 									"node-id": "0",
 								},
 							},
 							{
-								ID:	"b",
+								ID: "b",
 								Labels: map[string]string{
 									"node-id": "1",
 								},
 							},
 							{
-								ID:	"c",
+								ID: "c",
 								Labels: map[string]string{
 									"node-id": "2",
 								},
@@ -79,7 +79,7 @@ func TestPurge(t *testing.T) {
 			},
 		},
 		{
-			name:	"it should do nothing if there's no cluster",
+			name: "it should do nothing if there's no cluster",
 			client: func() (common.Client, error) {
 				return &common.MockClient{}, nil
 			},
@@ -88,29 +88,29 @@ func TestPurge(t *testing.T) {
 			},
 		},
 		{
-			name:	"it should stop the current cluster",
+			name: "it should stop the current cluster",
 			client: func() (common.Client, error) {
 				return &common.MockClient{
-					MockContainerInspect:	common.MockContainerInspect,
+					MockContainerInspect: common.MockContainerInspect,
 					MockContainerList: func(
 						_ context.Context,
 						_ types.ContainerListOptions,
 					) ([]types.Container, error) {
 						return []types.Container{
 							{
-								ID:	"a",
+								ID: "a",
 								Labels: map[string]string{
 									"node-id": "0",
 								},
 							},
 							{
-								ID:	"b",
+								ID: "b",
 								Labels: map[string]string{
 									"node-id": "1",
 								},
 							},
 							{
-								ID:	"c",
+								ID: "c",
 								Labels: map[string]string{
 									"node-id": "2",
 								},
@@ -127,17 +127,17 @@ func TestPurge(t *testing.T) {
 			},
 		},
 		{
-			name:	"it should fail if it fails to remove a container",
+			name: "it should fail if it fails to remove a container",
 			client: func() (common.Client, error) {
 				return &common.MockClient{
-					MockContainerInspect:	common.MockContainerInspect,
+					MockContainerInspect: common.MockContainerInspect,
 					MockContainerList: func(
 						_ context.Context,
 						_ types.ContainerListOptions,
 					) ([]types.Container, error) {
 						return []types.Container{
 							{
-								ID:	"a",
+								ID: "a",
 								Labels: map[string]string{
 									"node-id": "0",
 								},
@@ -153,20 +153,20 @@ func TestPurge(t *testing.T) {
 					},
 				}, nil
 			},
-			expectedErrMsg:	"Not going anywhere!",
+			expectedErrMsg: "Not going anywhere!",
 		},
 		{
-			name:	"it should fail if it fails to delete the network",
+			name: "it should fail if it fails to delete the network",
 			client: func() (common.Client, error) {
 				return &common.MockClient{
-					MockContainerInspect:	common.MockContainerInspect,
+					MockContainerInspect: common.MockContainerInspect,
 					MockContainerList: func(
 						_ context.Context,
 						_ types.ContainerListOptions,
 					) ([]types.Container, error) {
 						return []types.Container{
 							{
-								ID:	"a",
+								ID: "a",
 								Labels: map[string]string{
 									"node-id": "0",
 								},
@@ -181,20 +181,20 @@ func TestPurge(t *testing.T) {
 					},
 				}, nil
 			},
-			expectedErrMsg:	"Can't delete network",
+			expectedErrMsg: "Can't delete network",
 		},
 		{
-			name:	"it should succeed if the network has been removed",
+			name: "it should succeed if the network has been removed",
 			client: func() (common.Client, error) {
 				return &common.MockClient{
-					MockContainerInspect:	common.MockContainerInspect,
+					MockContainerInspect: common.MockContainerInspect,
 					MockContainerList: func(
 						_ context.Context,
 						_ types.ContainerListOptions,
 					) ([]types.Container, error) {
 						return []types.Container{
 							{
-								ID:	"a",
+								ID: "a",
 								Labels: map[string]string{
 									"node-id": "0",
 								},
@@ -212,13 +212,13 @@ func TestPurge(t *testing.T) {
 					},
 				}, nil
 			},
-			expectedOutput:	[]string{"Deleted cluster data."},
+			expectedOutput: []string{"Deleted cluster data."},
 		},
 		{
-			name:	"it should fail if it fails to list the containers",
+			name: "it should fail if it fails to list the containers",
 			client: func() (common.Client, error) {
 				return &common.MockClient{
-					MockContainerInspect:	common.MockContainerInspect,
+					MockContainerInspect: common.MockContainerInspect,
 					MockContainerList: func(
 						_ context.Context,
 						_ types.ContainerListOptions,
@@ -227,10 +227,10 @@ func TestPurge(t *testing.T) {
 					},
 				}, nil
 			},
-			expectedErrMsg:	"Can't list",
+			expectedErrMsg: "Can't list",
 		},
 		{
-			name:	"it should fail if it fails to inspect a container",
+			name: "it should fail if it fails to inspect a container",
 			client: func() (common.Client, error) {
 				return &common.MockClient{
 					MockContainerInspect: func(
@@ -246,7 +246,7 @@ func TestPurge(t *testing.T) {
 					) ([]types.Container, error) {
 						return []types.Container{
 							{
-								ID:	"a",
+								ID: "a",
 								Labels: map[string]string{
 									"node-id": "0",
 								},
@@ -255,7 +255,7 @@ func TestPurge(t *testing.T) {
 					},
 				}, nil
 			},
-			expectedErrMsg:	"Can't inspect",
+			expectedErrMsg: "Can't inspect",
 		},
 	}
 	for _, tt := range tests {

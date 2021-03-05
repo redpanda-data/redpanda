@@ -43,38 +43,38 @@ const validConfig string = `redpanda:
 func TestTimeoutDuration(t *testing.T) {
 	configPath := "/etc/redpanda/redpanda.yaml"
 	tests := []struct {
-		name			string
-		args			[]string
-		expectedDirectories	[]string
-		expectedTimeout		time.Duration
-		expectedDuration	time.Duration
+		name                string
+		args                []string
+		expectedDirectories []string
+		expectedTimeout     time.Duration
+		expectedDuration    time.Duration
 	}{
 		{
-			name:			"the total timeout should equal the duration + the timeout",
-			args:			[]string{"--timeout", "1200ms", "--duration", "3600ms"},
-			expectedDirectories:	[]string{},
-			expectedTimeout:	3600*time.Millisecond + 1200*time.Millisecond,
-			expectedDuration:	3600 * time.Millisecond,
+			name:                "the total timeout should equal the duration + the timeout",
+			args:                []string{"--timeout", "1200ms", "--duration", "3600ms"},
+			expectedDirectories: []string{},
+			expectedTimeout:     3600*time.Millisecond + 1200*time.Millisecond,
+			expectedDuration:    3600 * time.Millisecond,
 		},
 		{
-			name:			"the total timeout should be 1hr by default",
-			args:			[]string{"--duration", "0"},
-			expectedDirectories:	[]string{},
-			expectedTimeout:	1 * time.Hour,
-			expectedDuration:	0,
+			name:                "the total timeout should be 1hr by default",
+			args:                []string{"--duration", "0"},
+			expectedDirectories: []string{},
+			expectedTimeout:     1 * time.Hour,
+			expectedDuration:    0,
 		},
 		{
-			name:			"the default duration should be 10m",
-			expectedDirectories:	[]string{},
-			expectedTimeout:	10*time.Minute + 1*time.Hour,
-			expectedDuration:	10 * time.Minute,
+			name:                "the default duration should be 10m",
+			expectedDirectories: []string{},
+			expectedTimeout:     10*time.Minute + 1*time.Hour,
+			expectedDuration:    10 * time.Minute,
 		},
 		{
-			name:			"it should capture the passed directories",
-			args:			[]string{"--directories", "/mnt/redpanda/data"},
-			expectedDirectories:	[]string{"/mnt/redpanda/data"},
-			expectedTimeout:	10*time.Minute + 1*time.Hour,
-			expectedDuration:	10 * time.Minute,
+			name:                "it should capture the passed directories",
+			args:                []string{"--directories", "/mnt/redpanda/data"},
+			expectedDirectories: []string{"/mnt/redpanda/data"},
+			expectedTimeout:     10*time.Minute + 1*time.Hour,
+			expectedDuration:    10 * time.Minute,
 		},
 	}
 

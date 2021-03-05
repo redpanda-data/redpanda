@@ -41,12 +41,12 @@ func Execute() {
 			// we configure the Sarama logger only for verbose output as sarama
 			// logger use no severities. It is either enabled or disabled.
 			sarama.Logger = &log.Logger{
-				Out:		os.Stderr,
-				Formatter:	cli.NewRpkLogFormatter(),
-				Hooks:		make(log.LevelHooks),
-				Level:		log.DebugLevel,
-				ExitFunc:	os.Exit,
-				ReportCaller:	false,
+				Out:          os.Stderr,
+				Formatter:    cli.NewRpkLogFormatter(),
+				Hooks:        make(log.LevelHooks),
+				Level:        log.DebugLevel,
+				ExitFunc:     os.Exit,
+				ReportCaller: false,
 			}
 		} else {
 			log.SetLevel(log.InfoLevel)
@@ -54,9 +54,9 @@ func Execute() {
 	})
 
 	rootCmd := &cobra.Command{
-		Use:	"rpk",
-		Short:	"rpk is the Redpanda CLI & toolbox",
-		Long:	"",
+		Use:   "rpk",
+		Short: "rpk is the Redpanda CLI & toolbox",
+		Long:  "",
 	}
 	rootCmd.SilenceUsage = true
 	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose",

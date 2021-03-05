@@ -20,16 +20,16 @@ import (
 // TODO support "app.kubernetes.io/version"
 const (
 	// The name of a higher level application this one is part of
-	NameKey	= "app.kubernetes.io/name"
+	NameKey = "app.kubernetes.io/name"
 	// A unique name identifying the instance of an application
-	InstanceKey	= "app.kubernetes.io/instance"
+	InstanceKey = "app.kubernetes.io/instance"
 	// The component within the architecture
-	ComponentKey	= "app.kubernetes.io/component"
+	ComponentKey = "app.kubernetes.io/component"
 	// The name of a higher level application this one is part of
-	PartOfKey	= "app.kubernetes.io/part-of"
+	PartOfKey = "app.kubernetes.io/part-of"
 	// The tool being used to manage the operation of an application
-	ManagedByKey	= "app.kubernetes.io/managed-by"
-	nameKeyVal	= "redpanda"
+	ManagedByKey = "app.kubernetes.io/managed-by"
+	nameKeyVal   = "redpanda"
 )
 
 // CommonLabels holds common labels that belong to all resources owned by this operator
@@ -64,9 +64,9 @@ func (cl CommonLabels) AsSet() k8slabels.Set {
 
 func (cl CommonLabels) selectorLabels() k8slabels.Set {
 	return k8slabels.Set{
-		NameKey:	cl[NameKey],
-		InstanceKey:	cl[InstanceKey],
-		ComponentKey:	cl[ComponentKey],
+		NameKey:      cl[NameKey],
+		InstanceKey:  cl[InstanceKey],
+		ComponentKey: cl[ComponentKey],
 	}
 }
 

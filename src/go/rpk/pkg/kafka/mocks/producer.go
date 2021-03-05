@@ -4,9 +4,9 @@ import "github.com/Shopify/sarama"
 
 type MockProducer struct {
 	// add the specific funcs we'll need
-	MockSendMessage		func(msg *sarama.ProducerMessage) (partition int32, offset int64, err error)
-	MockSendMessages	func(msgs []*sarama.ProducerMessage) error
-	MockClose		func() error
+	MockSendMessage  func(msg *sarama.ProducerMessage) (partition int32, offset int64, err error)
+	MockSendMessages func(msgs []*sarama.ProducerMessage) error
+	MockClose        func() error
 }
 
 func (m MockProducer) SendMessage(

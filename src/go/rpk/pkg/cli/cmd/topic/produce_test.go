@@ -23,7 +23,7 @@ import (
 
 type mockSyncProducer struct {
 	sarama.SyncProducer
-	sendMessage	func(*sarama.ProducerMessage) (int32, int64, error)
+	sendMessage func(*sarama.ProducerMessage) (int32, int64, error)
 }
 
 func (sp *mockSyncProducer) SendMessage(
@@ -37,17 +37,17 @@ func (sp *mockSyncProducer) SendMessage(
 
 func TestProduceCmd(t *testing.T) {
 	tests := []struct {
-		name		string
-		producer	func(bool, int32) (sarama.SyncProducer, error)
-		args		[]string
-		data		string
-		expectedOutput	[]string
-		expectedErr	string
+		name           string
+		producer       func(bool, int32) (sarama.SyncProducer, error)
+		args           []string
+		data           string
+		expectedOutput []string
+		expectedErr    string
 	}{
 		{
-			name:	"it should produce a record from stdin input",
-			args:	[]string{"topic-name", "-k", "key", "-j", "-H", "k:v", "-t", "2020-08-09T22:36:34-05:00"},
-			data:	`{"very":"important", "data": true}`,
+			name: "it should produce a record from stdin input",
+			args: []string{"topic-name", "-k", "key", "-j", "-H", "k:v", "-t", "2020-08-09T22:36:34-05:00"},
+			data: `{"very":"important", "data": true}`,
 			expectedOutput: []string{
 				"Sent record to partition 0 at offset 0 with timestamp 2020-08-09 22:36:34 -0500 -05",
 				`Data: '{\"very\":\"important\", \"data\": true}'`,
@@ -55,9 +55,9 @@ func TestProduceCmd(t *testing.T) {
 			},
 		},
 		{
-			name:	"it should work without -t",
-			args:	[]string{"topic-name", "-k", "key", "-j", "-H", "k:v"},
-			data:	`{"very":"important", "data": true}`,
+			name: "it should work without -t",
+			args: []string{"topic-name", "-k", "key", "-j", "-H", "k:v"},
+			data: `{"very":"important", "data": true}`,
 			expectedOutput: []string{
 				"Sent record to partition 0 at offset 0 with timestamp",
 				`Data: '{\"very\":\"important\", \"data\": true}'`,
@@ -65,9 +65,9 @@ func TestProduceCmd(t *testing.T) {
 			},
 		},
 		{
-			name:	"it should work without -j",
-			args:	[]string{"topic-name", "-k", "key", "-H", "k:v"},
-			data:	`{"very":"important", "data": true}`,
+			name: "it should work without -j",
+			args: []string{"topic-name", "-k", "key", "-H", "k:v"},
+			data: `{"very":"important", "data": true}`,
 			expectedOutput: []string{
 				"Sent record to partition 0 at offset 0 with timestamp",
 				`Data: '{\"very\":\"important\", \"data\": true}'`,
@@ -75,9 +75,9 @@ func TestProduceCmd(t *testing.T) {
 			},
 		},
 		{
-			name:	"it should work without passing headers",
-			args:	[]string{"topic-name", "-k", "key"},
-			data:	`{"very":"important", "data": true}`,
+			name: "it should work without passing headers",
+			args: []string{"topic-name", "-k", "key"},
+			data: `{"very":"important", "data": true}`,
 			expectedOutput: []string{
 				"Sent record to partition 0 at offset 0 with timestamp",
 				`Data: '{\"very\":\"important\", \"data\": true}'`,
@@ -85,9 +85,9 @@ func TestProduceCmd(t *testing.T) {
 			},
 		},
 		{
-			name:	"it should work passing multiple headers",
-			args:	[]string{"topic-name", "-k", "key", "-H", "k1:v1", "-H", "k2:v2"},
-			data:	`{"very":"important", "data": true}`,
+			name: "it should work passing multiple headers",
+			args: []string{"topic-name", "-k", "key", "-H", "k1:v1", "-H", "k2:v2"},
+			data: `{"very":"important", "data": true}`,
 			expectedOutput: []string{
 				"Sent record to partition 0 at offset 0 with timestamp",
 				`Data: '{\"very\":\"important\", \"data\": true}'`,
@@ -95,28 +95,28 @@ func TestProduceCmd(t *testing.T) {
 			},
 		},
 		{
-			name:		"it should omit headers that can't be parsed",
-			args:		[]string{"topic-name", "-k", "key", "-H", "whatisthis", "-H", "k2:v2"},
-			data:		`{"very":"important", "data": true}`,
-			expectedErr:	"'whatisthis' doesn't conform to the <k>:<v> format",
+			name:        "it should omit headers that can't be parsed",
+			args:        []string{"topic-name", "-k", "key", "-H", "whatisthis", "-H", "k2:v2"},
+			data:        `{"very":"important", "data": true}`,
+			expectedErr: "'whatisthis' doesn't conform to the <k>:<v> format",
 		},
 		{
-			name:		"it should fail if no topic is passed",
-			args:		[]string{"-k", "key"},
-			data:		`{"very":"important", "data": true}`,
-			expectedErr:	"topic's name is missing.",
+			name:        "it should fail if no topic is passed",
+			args:        []string{"-k", "key"},
+			data:        `{"very":"important", "data": true}`,
+			expectedErr: "topic's name is missing.",
 		},
 		{
-			name:	"it should fail if the producer creation fails",
+			name: "it should fail if the producer creation fails",
 			producer: func(_ bool, _ int32) (sarama.SyncProducer, error) {
 				return nil, errors.New("boom I ain't joking")
 			},
-			args:		[]string{"topic-name", "-k", "key"},
-			data:		`{"very":"important", "data": true}`,
-			expectedErr:	"boom I ain't joking",
+			args:        []string{"topic-name", "-k", "key"},
+			data:        `{"very":"important", "data": true}`,
+			expectedErr: "boom I ain't joking",
 		},
 		{
-			name:	"it should fail if sending the message fails",
+			name: "it should fail if sending the message fails",
 			producer: func(_ bool, _ int32) (sarama.SyncProducer, error) {
 				sp := &mockSyncProducer{
 					sendMessage: func(_ *sarama.ProducerMessage) (int32, int64, error) {
@@ -125,9 +125,9 @@ func TestProduceCmd(t *testing.T) {
 				}
 				return sp, nil
 			},
-			args:		[]string{"topic-name", "-k", "key"},
-			data:		`{"very":"important", "data": true}`,
-			expectedErr:	"can't send",
+			args:        []string{"topic-name", "-k", "key"},
+			data:        `{"very":"important", "data": true}`,
+			expectedErr: "can't send",
 		},
 	}
 

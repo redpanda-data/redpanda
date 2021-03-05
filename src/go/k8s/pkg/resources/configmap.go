@@ -29,18 +29,18 @@ import (
 )
 
 const (
-	baseSuffix	= "-base"
-	dataDirectory	= "/var/lib/redpanda/data"
-	fsGroup		= 101
+	baseSuffix    = "-base"
+	dataDirectory = "/var/lib/redpanda/data"
+	fsGroup       = 101
 
-	configDir		= "/etc/redpanda"
-	configuratorDir		= "/mnt/operator"
-	configuratorScript	= "configurator.sh"
+	configDir          = "/etc/redpanda"
+	configuratorDir    = "/mnt/operator"
+	configuratorScript = "configurator.sh"
 )
 
 var (
-	configPath		= filepath.Join(configDir, "redpanda.yaml")
-	configuratorPath	= filepath.Join(configuratorDir, configuratorScript)
+	configPath       = filepath.Join(configDir, "redpanda.yaml")
+	configuratorPath = filepath.Join(configuratorDir, configuratorScript)
 )
 
 var _ Resource = &ConfigMapResource{}
@@ -49,11 +49,11 @@ var _ Resource = &ConfigMapResource{}
 // The ConfigMap contains the configuration as well as init script.
 type ConfigMapResource struct {
 	k8sclient.Client
-	scheme		*runtime.Scheme
-	pandaCluster	*redpandav1alpha1.Cluster
+	scheme       *runtime.Scheme
+	pandaCluster *redpandav1alpha1.Cluster
 
-	serviceFQDN	string
-	logger		logr.Logger
+	serviceFQDN string
+	logger      logr.Logger
 }
 
 // NewConfigMap creates ConfigMapResource
@@ -116,13 +116,13 @@ func (r *ConfigMapResource) Obj() (k8sclient.Object, error) {
 
 	cm := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace:	r.Key().Namespace,
-			Name:		r.Key().Name,
-			Labels:		labels.ForCluster(r.pandaCluster),
+			Namespace: r.Key().Namespace,
+			Name:      r.Key().Name,
+			Labels:    labels.ForCluster(r.pandaCluster),
 		},
 		Data: map[string]string{
-			"redpanda.yaml":	string(cfgBytes),
-			"configurator.sh":	script,
+			"redpanda.yaml":   string(cfgBytes),
+			"configurator.sh": script,
 		},
 	}
 
@@ -144,17 +144,17 @@ func (r *ConfigMapResource) createConfiguration() *config.Config {
 	cr.KafkaApi = []config.NamedSocketAddress{
 		{
 			SocketAddress: config.SocketAddress{
-				Address:	"0.0.0.0",
-				Port:		c.KafkaAPI.Port,
+				Address: "0.0.0.0",
+				Port:    c.KafkaAPI.Port,
 			},
-			Name:	"Internal",
+			Name: "Internal",
 		},
 	}
 
 	cr.RPCServer.Port = clusterCRPortOrRPKDefault(c.RPCServer.Port, cr.RPCServer.Port)
 	cr.AdvertisedRPCAPI = &config.SocketAddress{
-		Address:	"0.0.0.0",
-		Port:		clusterCRPortOrRPKDefault(c.RPCServer.Port, cr.RPCServer.Port),
+		Address: "0.0.0.0",
+		Port:    clusterCRPortOrRPKDefault(c.RPCServer.Port, cr.RPCServer.Port),
 	}
 
 	cr.AdminApi.Port = clusterCRPortOrRPKDefault(c.AdminAPI.Port, cr.AdminApi.Port)
@@ -163,8 +163,8 @@ func (r *ConfigMapResource) createConfiguration() *config.Config {
 		{
 			Host: config.SocketAddress{
 				// Example address: cluster-sample-0.cluster-sample.default.svc.cluster.local
-				Address:	r.pandaCluster.Name + "-0." + serviceAddress,
-				Port:		clusterCRPortOrRPKDefault(c.RPCServer.Port, cr.RPCServer.Port),
+				Address: r.pandaCluster.Name + "-0." + serviceAddress,
+				Port:    clusterCRPortOrRPKDefault(c.RPCServer.Port, cr.RPCServer.Port),
 			},
 		},
 	}

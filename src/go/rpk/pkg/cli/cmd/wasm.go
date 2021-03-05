@@ -19,13 +19,13 @@ import (
 
 func NewWasmCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	var (
-		configFile	string
-		brokers		[]string
+		configFile string
+		brokers    []string
 	)
 
 	command := &cobra.Command{
-		Use:	"wasm",
-		Short:	"Deploy and remove inline WASM engine scripts",
+		Use:   "wasm",
+		Short: "Deploy and remove inline WASM engine scripts",
 	}
 	command.AddCommand(wasm.NewGenerateCommand(fs))
 

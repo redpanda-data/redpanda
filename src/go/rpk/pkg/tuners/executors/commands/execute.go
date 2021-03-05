@@ -19,20 +19,20 @@ import (
 
 type executeCommand struct {
 	Command
-	cmd	string
-	args	[]string
-	proc	os.Proc
-	timeout	time.Duration
+	cmd     string
+	args    []string
+	proc    os.Proc
+	timeout time.Duration
 }
 
 func NewLaunchCmd(
 	proc os.Proc, timeout time.Duration, cmd string, args ...string,
 ) Command {
 	return &executeCommand{
-		cmd:		cmd,
-		args:		args,
-		proc:		proc,
-		timeout:	timeout,
+		cmd:     cmd,
+		args:    args,
+		proc:    proc,
+		timeout: timeout,
 	}
 }
 

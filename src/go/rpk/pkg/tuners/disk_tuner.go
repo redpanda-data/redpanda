@@ -24,20 +24,20 @@ func NewDiskTuner(
 	deviceTunerFactory func(string) Tunable,
 ) Tunable {
 	return &diskTuner{
-		fs:			fs,
-		directories:		directories,
-		devices:		devices,
-		blockDevices:		blockDevices,
-		deviceTunerFactory:	deviceTunerFactory,
+		fs:                 fs,
+		directories:        directories,
+		devices:            devices,
+		blockDevices:       blockDevices,
+		deviceTunerFactory: deviceTunerFactory,
 	}
 }
 
 type diskTuner struct {
-	fs			afero.Fs
-	deviceTunerFactory	func(string) Tunable
-	blockDevices		disk.BlockDevices
-	directories		[]string
-	devices			[]string
+	fs                 afero.Fs
+	deviceTunerFactory func(string) Tunable
+	blockDevices       disk.BlockDevices
+	directories        []string
+	devices            []string
 }
 
 func (tuner *diskTuner) Tune() TuneResult {

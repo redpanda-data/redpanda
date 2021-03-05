@@ -26,19 +26,19 @@ func NewProduceCommand(
 	producer func(bool, int32) (sarama.SyncProducer, error),
 ) *cobra.Command {
 	var (
-		key		string
-		headers		[]string
-		numRecords	int
-		jvmPartitioner	bool
-		partition	int32
-		timestamp	string
+		key            string
+		headers        []string
+		numRecords     int
+		jvmPartitioner bool
+		partition      int32
+		timestamp      string
 	)
 	cmd := &cobra.Command{
-		Use:	"produce <topic>",
-		Short:	"Produce a record. Reads data from stdin.",
-		Args:	common.ExactArgs(1, "topic's name is missing."),
+		Use:   "produce <topic>",
+		Short: "Produce a record. Reads data from stdin.",
+		Args:  common.ExactArgs(1, "topic's name is missing."),
 		// We don't want Cobra printing CLI usage help if the error isn't about CLI usage.
-		SilenceUsage:	true,
+		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			prod, err := producer(jvmPartitioner, partition)
 			if err != nil {
@@ -143,11 +143,11 @@ func produce(
 
 	for i := 0; i < numRecords; i++ {
 		msg := &sarama.ProducerMessage{
-			Topic:		topic,
-			Key:		k,
-			Headers:	hs,
-			Timestamp:	ts,
-			Value:		sarama.ByteEncoder(data),
+			Topic:     topic,
+			Key:       k,
+			Headers:   hs,
+			Timestamp: ts,
+			Value:     sarama.ByteEncoder(data),
 		}
 		if partition != -1 {
 			msg.Partition = partition
@@ -186,8 +186,8 @@ func parseHeaders(headers []string) ([]sarama.RecordHeader, error) {
 		hs = append(
 			hs,
 			sarama.RecordHeader{
-				Key:	[]byte(k),
-				Value:	[]byte(*v),
+				Key:   []byte(k),
+				Value: []byte(*v),
 			},
 		)
 	}

@@ -18,8 +18,8 @@ import (
 )
 
 type CPUInfo struct {
-	ModelName	string
-	Cores		int
+	ModelName string
+	Cores     int
 }
 
 func CpuInfo(fs afero.Fs) ([]*CPUInfo, error) {

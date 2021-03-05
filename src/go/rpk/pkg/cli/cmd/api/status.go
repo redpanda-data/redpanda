@@ -18,8 +18,8 @@ import (
 
 type node struct {
 	// map[topic-name][]partitions
-	leaderParts	map[string][]int
-	replicaParts	map[string][]int
+	leaderParts  map[string][]int
+	replicaParts map[string][]int
 }
 
 func NewStatusCommand(

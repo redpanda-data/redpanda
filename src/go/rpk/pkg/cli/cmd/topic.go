@@ -19,12 +19,12 @@ import (
 
 func NewTopicCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	var (
-		brokers		[]string
-		configFile	string
+		brokers    []string
+		configFile string
 	)
 	command := &cobra.Command{
-		Use:	"topic",
-		Short:	"Create, delete, produce to and consume from Redpanda topics.",
+		Use:   "topic",
+		Short: "Create, delete, produce to and consume from Redpanda topics.",
 	}
 
 	command.PersistentFlags().StringSliceVar(

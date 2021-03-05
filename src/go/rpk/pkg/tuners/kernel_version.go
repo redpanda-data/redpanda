@@ -43,10 +43,10 @@ func (c kernelVersionChecker) GetRequiredAsString() string {
 
 func (c kernelVersionChecker) Check() *CheckResult {
 	res := &CheckResult{
-		CheckerId:	c.Id(),
-		Desc:		c.GetDesc(),
-		Severity:	c.GetSeverity(),
-		Required:	c.GetRequiredAsString(),
+		CheckerId: c.Id(),
+		Desc:      c.GetDesc(),
+		Severity:  c.GetSeverity(),
+		Required:  c.GetRequiredAsString(),
 	}
 
 	current, err := c.getCurrent()

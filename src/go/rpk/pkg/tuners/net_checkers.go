@@ -40,12 +40,12 @@ type NetCheckersFactory interface {
 }
 
 type netCheckersFactory struct {
-	fs		afero.Fs
-	irqProcFile	irq.ProcFile
-	irqDeviceInfo	irq.DeviceInfo
-	ethtool		ethtool.EthtoolWrapper
-	balanceService	irq.BalanceService
-	cpuMasks	irq.CpuMasks
+	fs             afero.Fs
+	irqProcFile    irq.ProcFile
+	irqDeviceInfo  irq.DeviceInfo
+	ethtool        ethtool.EthtoolWrapper
+	balanceService irq.BalanceService
+	cpuMasks       irq.CpuMasks
 }
 
 func NewNetCheckersFactory(
@@ -57,12 +57,12 @@ func NewNetCheckersFactory(
 	cpuMasks irq.CpuMasks,
 ) NetCheckersFactory {
 	return &netCheckersFactory{
-		fs:		fs,
-		irqProcFile:	irqProcFile,
-		irqDeviceInfo:	irqDeviceInfo,
-		ethtool:	ethtool,
-		balanceService:	balanceService,
-		cpuMasks:	cpuMasks,
+		fs:             fs,
+		irqProcFile:    irqProcFile,
+		irqDeviceInfo:  irqDeviceInfo,
+		ethtool:        ethtool,
+		balanceService: balanceService,
+		cpuMasks:       cpuMasks,
 	}
 }
 

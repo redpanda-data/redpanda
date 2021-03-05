@@ -18,9 +18,9 @@ func NewDeployCommand(
 	var description string
 
 	command := &cobra.Command{
-		Use:	"deploy <path>",
-		Short:	"deploy inline WASM function",
-		Args:	cobra.ExactArgs(1),
+		Use:   "deploy <path>",
+		Short: "deploy inline WASM function",
+		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			path := args[0]
 			fullFileName := filepath.Base(path)

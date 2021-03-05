@@ -43,9 +43,9 @@ func FindConfigFile(fs afero.Fs) (string, error) {
 	}
 	// os.PathError can be checked with os.IsNotExist.
 	return "", &os.PathError{
-		Op:	"Open",
-		Path:	strings.Join(lookedUpPaths, ", "),
-		Err:	os.ErrNotExist,
+		Op:   "Open",
+		Path: strings.Join(lookedUpPaths, ", "),
+		Err:  os.ErrNotExist,
 	}
 }
 

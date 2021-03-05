@@ -22,13 +22,13 @@ import (
 
 func TestChecker(t *testing.T) {
 	tests := []struct {
-		name		string
-		before		func(fs afero.Fs) error
-		expectOk	bool
-		expectErr	bool
+		name      string
+		before    func(fs afero.Fs) error
+		expectOk  bool
+		expectErr bool
 	}{
 		{
-			name:	"It should return true if the value is correct",
+			name: "It should return true if the value is correct",
 			before: func(fs afero.Fs) error {
 				_, err := utils.WriteBytes(
 					fs,
@@ -37,10 +37,10 @@ func TestChecker(t *testing.T) {
 				)
 				return err
 			},
-			expectOk:	true,
+			expectOk: true,
 		},
 		{
-			name:	"It should return false if the file exists but the value iswrong",
+			name: "It should return false if the file exists but the value iswrong",
 			before: func(fs afero.Fs) error {
 				_, err := utils.WriteBytes(
 					fs,
@@ -49,12 +49,12 @@ func TestChecker(t *testing.T) {
 				)
 				return err
 			},
-			expectOk:	false,
+			expectOk: false,
 		},
 		{
-			name:		"It should fail if the file doesn't exist",
-			expectOk:	false,
-			expectErr:	true,
+			name:      "It should fail if the file doesn't exist",
+			expectOk:  false,
+			expectErr: true,
 		},
 	}
 	for _, tt := range tests {
@@ -78,12 +78,12 @@ func TestChecker(t *testing.T) {
 
 func TestTuner(t *testing.T) {
 	tests := []struct {
-		name		string
-		before		func(fs afero.Fs) error
-		expectErr	bool
+		name      string
+		before    func(fs afero.Fs) error
+		expectErr bool
 	}{
 		{
-			name:	"It should leave the same value if it was correct",
+			name: "It should leave the same value if it was correct",
 			before: func(fs afero.Fs) error {
 				_, err := utils.WriteBytes(
 					fs,
@@ -94,7 +94,7 @@ func TestTuner(t *testing.T) {
 			},
 		},
 		{
-			name:	"It should change the value if it was different",
+			name: "It should change the value if it was different",
 			before: func(fs afero.Fs) error {
 				_, err := utils.WriteBytes(
 					fs,
@@ -105,8 +105,8 @@ func TestTuner(t *testing.T) {
 			},
 		},
 		{
-			name:		"It should fail if the file doesn't exist",
-			expectErr:	true,
+			name:      "It should fail if the file doesn't exist",
+			expectErr: true,
 		},
 	}
 	for _, tt := range tests {

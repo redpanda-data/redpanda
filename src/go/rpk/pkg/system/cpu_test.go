@@ -73,16 +73,16 @@ power management:
 		)
 	}
 	tests := []struct {
-		name		string
-		before		func(fs afero.Fs) error
-		expectedErrMsg	string
-		expected	[]*system.CPUInfo
+		name           string
+		before         func(fs afero.Fs) error
+		expectedErrMsg string
+		expected       []*system.CPUInfo
 	}{{
-		name:		"it should fail if /proc/cpuinfo is missing",
-		expectedErrMsg:	"/proc/cpuinfo",
+		name:           "it should fail if /proc/cpuinfo is missing",
+		expectedErrMsg: "/proc/cpuinfo",
 	}, {
-		name:		"it should fail if /proc/cpuinfo is empty",
-		expectedErrMsg:	"/proc/cpuinfo is empty",
+		name:           "it should fail if /proc/cpuinfo is empty",
+		expectedErrMsg: "/proc/cpuinfo is empty",
 		before: func(fs afero.Fs) error {
 			return afero.WriteFile(
 				fs,
@@ -92,15 +92,15 @@ power management:
 			)
 		},
 	}, {
-		name:	"it should parse the CPU model & # of cores",
+		name: "it should parse the CPU model & # of cores",
 		expected: []*system.CPUInfo{{
-			ModelName:	"Intel(R) Core(TM) i9-9880H CPU @ 2.30GHz",
-			Cores:		8,
+			ModelName: "Intel(R) Core(TM) i9-9880H CPU @ 2.30GHz",
+			Cores:     8,
 		}, {
-			ModelName:	"Intel(R) Core(TM) i9-9880H CPU @ 2.30GHz",
-			Cores:		8,
+			ModelName: "Intel(R) Core(TM) i9-9880H CPU @ 2.30GHz",
+			Cores:     8,
 		}},
-		before:	defaultSetup,
+		before: defaultSetup,
 	}}
 
 	for _, tt := range tests {

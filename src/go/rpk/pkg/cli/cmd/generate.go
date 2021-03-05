@@ -17,8 +17,8 @@ import (
 
 func NewGenerateCommand(mgr config.Manager) *cobra.Command {
 	command := &cobra.Command{
-		Use:	"generate [template]",
-		Short:	"Generate a configuration template for related services.",
+		Use:   "generate [template]",
+		Short: "Generate a configuration template for related services.",
 	}
 	command.AddCommand(generate.NewGrafanaDashboardCmd())
 	command.AddCommand(generate.NewPrometheusConfigCmd(mgr))

@@ -25,20 +25,20 @@ func NewEqualityChecker(
 	getCurrent func() (interface{}, error),
 ) Checker {
 	return &equalityChecker{
-		id:		id,
-		desc:		desc,
-		required:	required,
-		getCurrent:	getCurrent,
-		severity:	severity,
+		id:         id,
+		desc:       desc,
+		required:   required,
+		getCurrent: getCurrent,
+		severity:   severity,
 	}
 }
 
 type equalityChecker struct {
-	id		CheckerID
-	desc		string
-	severity	Severity
-	required	interface{}
-	getCurrent	func() (interface{}, error)
+	id         CheckerID
+	desc       string
+	severity   Severity
+	required   interface{}
+	getCurrent func() (interface{}, error)
 }
 
 func (c *equalityChecker) Id() CheckerID {
@@ -59,10 +59,10 @@ func (c *equalityChecker) GetRequiredAsString() string {
 
 func (c *equalityChecker) Check() *CheckResult {
 	res := &CheckResult{
-		CheckerId:	c.Id(),
-		Desc:		c.GetDesc(),
-		Severity:	c.GetSeverity(),
-		Required:	c.GetRequiredAsString(),
+		CheckerId: c.Id(),
+		Desc:      c.GetDesc(),
+		Severity:  c.GetSeverity(),
+		Required:  c.GetRequiredAsString(),
 	}
 	current, err := c.getCurrent()
 	if err != nil {

@@ -17,8 +17,8 @@ import (
 )
 
 type startSystemdUnitCommand struct {
-	client	systemd.Client
-	name	string
+	client systemd.Client
+	name   string
 }
 
 /*

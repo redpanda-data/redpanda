@@ -19,12 +19,12 @@ import (
 
 func NewClusterCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	var (
-		brokers		[]string
-		configFile	string
+		brokers    []string
+		configFile string
 	)
 	command := &cobra.Command{
-		Use:	"cluster",
-		Short:	"Interact with a Redpanda cluster",
+		Use:   "cluster",
+		Short: "Interact with a Redpanda cluster",
 	}
 
 	command.PersistentFlags().StringSliceVar(

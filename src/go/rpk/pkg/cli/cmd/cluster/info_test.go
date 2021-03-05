@@ -17,39 +17,39 @@ import (
 
 func TestCompress(t *testing.T) {
 	tests := []struct {
-		name		string
-		ints		[]int
-		expected	[]string
+		name     string
+		ints     []int
+		expected []string
 	}{
 		{
-			name:		"test 1",
-			ints:		[]int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20},
-			expected:	[]string{"1-20"},
+			name:     "test 1",
+			ints:     []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20},
+			expected: []string{"1-20"},
 		},
 		{
-			name:		"test 2",
-			ints:		[]int{0, 2, 3, 4, 5, 7, 9, 10, 12, 13, 14, 15, 16, 17, 18, 19, 20},
-			expected:	[]string{"0", "2-5", "7", "9", "10", "12-20"},
+			name:     "test 2",
+			ints:     []int{0, 2, 3, 4, 5, 7, 9, 10, 12, 13, 14, 15, 16, 17, 18, 19, 20},
+			expected: []string{"0", "2-5", "7", "9", "10", "12-20"},
 		},
 		{
-			name:		"test 3",
-			ints:		[]int{0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20},
-			expected:	[]string{"0", "2", "4", "6", "8", "10", "12", "14", "16", "18", "20"},
+			name:     "test 3",
+			ints:     []int{0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20},
+			expected: []string{"0", "2", "4", "6", "8", "10", "12", "14", "16", "18", "20"},
 		},
 		{
-			name:		"test 4",
-			ints:		[]int{},
-			expected:	[]string{},
+			name:     "test 4",
+			ints:     []int{},
+			expected: []string{},
 		},
 		{
-			name:		"test 4",
-			ints:		[]int{1},
-			expected:	[]string{"1"},
+			name:     "test 4",
+			ints:     []int{1},
+			expected: []string{"1"},
 		},
 		{
-			name:		"test 4",
-			ints:		[]int{1, 2},
-			expected:	[]string{"1", "2"},
+			name:     "test 4",
+			ints:     []int{1, 2},
+			expected: []string{"1", "2"},
 		},
 	}
 

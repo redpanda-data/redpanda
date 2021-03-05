@@ -92,8 +92,8 @@ func HighWatermarks(
 	wg.Add(len(leaders))
 
 	type result struct {
-		watermarks	map[int32]int64
-		err		error
+		watermarks map[int32]int64
+		err        error
 	}
 
 	results := make(chan result, len(leaders))

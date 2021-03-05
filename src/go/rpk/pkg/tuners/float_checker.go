@@ -20,22 +20,22 @@ func NewFloatChecker(
 	getCurrent func() (float64, error),
 ) Checker {
 	return &floatChecker{
-		id:		id,
-		desc:		desc,
-		check:		check,
-		renderRequired:	renderRequired,
-		getCurrent:	getCurrent,
-		severity:	severity,
+		id:             id,
+		desc:           desc,
+		check:          check,
+		renderRequired: renderRequired,
+		getCurrent:     getCurrent,
+		severity:       severity,
 	}
 }
 
 type floatChecker struct {
-	id		CheckerID
-	desc		string
-	check		func(float64) bool
-	renderRequired	func() string
-	getCurrent	func() (float64, error)
-	severity	Severity
+	id             CheckerID
+	desc           string
+	check          func(float64) bool
+	renderRequired func() string
+	getCurrent     func() (float64, error)
+	severity       Severity
 }
 
 func (c *floatChecker) Id() CheckerID {
@@ -56,10 +56,10 @@ func (c *floatChecker) GetRequiredAsString() string {
 
 func (c *floatChecker) Check() *CheckResult {
 	res := &CheckResult{
-		CheckerId:	c.Id(),
-		Desc:		c.GetDesc(),
-		Severity:	c.GetSeverity(),
-		Required:	c.GetRequiredAsString(),
+		CheckerId: c.Id(),
+		Desc:      c.GetDesc(),
+		Severity:  c.GetSeverity(),
+		Required:  c.GetRequiredAsString(),
 	}
 	current, err := c.getCurrent()
 	if err != nil {

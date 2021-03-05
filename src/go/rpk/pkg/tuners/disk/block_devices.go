@@ -29,13 +29,13 @@ import (
 type DiskType string
 
 const (
-	NonNvme	DiskType	= "non-nvme"
-	Nvme	DiskType	= "nvme"
+	NonNvme DiskType = "non-nvme"
+	Nvme    DiskType = "nvme"
 )
 
 type DevicesIRQs struct {
-	Devices	[]string
-	Irqs	[]int
+	Devices []string
+	Irqs    []int
 }
 type BlockDevices interface {
 	GetDirectoriesDevices(directories []string) (map[string][]string, error)
@@ -46,11 +46,11 @@ type BlockDevices interface {
 }
 
 type blockDevices struct {
-	proc		os.Proc
-	fs		afero.Fs
-	irqDeviceInfo	irq.DeviceInfo
-	irqProcFile	irq.ProcFile
-	timeout		time.Duration
+	proc          os.Proc
+	fs            afero.Fs
+	irqDeviceInfo irq.DeviceInfo
+	irqProcFile   irq.ProcFile
+	timeout       time.Duration
 }
 
 func NewBlockDevices(
@@ -61,11 +61,11 @@ func NewBlockDevices(
 	timeout time.Duration,
 ) BlockDevices {
 	return &blockDevices{
-		fs:		fs,
-		proc:		proc,
-		irqDeviceInfo:	irqDeviceInfo,
-		irqProcFile:	irqProcFile,
-		timeout:	timeout,
+		fs:            fs,
+		proc:          proc,
+		irqDeviceInfo: irqDeviceInfo,
+		irqProcFile:   irqProcFile,
+		timeout:       timeout,
 	}
 }
 

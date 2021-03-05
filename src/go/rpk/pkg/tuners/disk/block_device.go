@@ -28,9 +28,9 @@ type BlockDevice interface {
 }
 
 type blockDevice struct {
-	syspath	string
-	devnode	string
-	parent	BlockDevice
+	syspath string
+	devnode string
+	parent  BlockDevice
 }
 
 func (d *blockDevice) Syspath() string {
@@ -67,9 +67,9 @@ func deviceFromSystemPath(syspath string, fs afero.Fs) (BlockDevice, error) {
 	}
 
 	return &blockDevice{
-		syspath:	syspath,
-		devnode:	filepath.Join("/dev", deviceAttrs["DEVNAME"]),
-		parent:		parent,
+		syspath: syspath,
+		devnode: filepath.Join("/dev", deviceAttrs["DEVNAME"]),
+		parent:  parent,
 	}, nil
 }
 

@@ -21,20 +21,20 @@ import (
 )
 
 type MockClient struct {
-	MockClose	func() error
+	MockClose func() error
 
-	MockImagePull	func(
+	MockImagePull func(
 		ctx context.Context,
 		ref string,
 		options types.ImagePullOptions,
 	) (io.ReadCloser, error)
 
-	MockImageList	func(
+	MockImageList func(
 		ctx context.Context,
 		options types.ImageListOptions,
 	) ([]types.ImageSummary, error)
 
-	MockContainerCreate	func(
+	MockContainerCreate func(
 		ctx context.Context,
 		config *container.Config,
 		hostConfig *container.HostConfig,
@@ -42,59 +42,59 @@ type MockClient struct {
 		containerName string,
 	) (container.ContainerCreateCreatedBody, error)
 
-	MockContainerStart	func(
+	MockContainerStart func(
 		ctx context.Context,
 		containerID string,
 		options types.ContainerStartOptions,
 	) error
 
-	MockContainerStop	func(
+	MockContainerStop func(
 		ctx context.Context,
 		containerID string,
 		timeout *time.Duration,
 	) error
 
-	MockContainerList	func(
+	MockContainerList func(
 		ctx context.Context,
 		options types.ContainerListOptions,
 	) ([]types.Container, error)
 
-	MockContainerInspect	func(
+	MockContainerInspect func(
 		ctx context.Context,
 		containerID string,
 	) (types.ContainerJSON, error)
 
-	MockContainerRemove	func(
+	MockContainerRemove func(
 		ctx context.Context,
 		containerID string,
 		options types.ContainerRemoveOptions,
 	) error
 
-	MockNetworkCreate	func(
+	MockNetworkCreate func(
 		ctx context.Context,
 		name string,
 		options types.NetworkCreate,
 	) (types.NetworkCreateResponse, error)
 
-	MockNetworkRemove	func(
+	MockNetworkRemove func(
 		ctx context.Context,
 		name string,
 	) error
 
-	MockNetworkList	func(
+	MockNetworkList func(
 		ctx context.Context,
 		options types.NetworkListOptions,
 	) ([]types.NetworkResource, error)
 
-	MockNetworkInspect	func(
+	MockNetworkInspect func(
 		ctx context.Context,
 		networkID string,
 		options types.NetworkInspectOptions,
 	) (types.NetworkResource, error)
 
-	MockIsErrNotFound	func(err error) bool
+	MockIsErrNotFound func(err error) bool
 
-	MockIsErrConnectionFailed	func(err error) bool
+	MockIsErrConnectionFailed func(err error) bool
 }
 
 func (c *MockClient) Close() error {
@@ -244,18 +244,18 @@ func MockContainerInspect(
 	return types.ContainerJSON{
 		ContainerJSONBase: &types.ContainerJSONBase{
 			State: &types.ContainerState{
-				Running:	true,
-				Status:		"Up, I guess?",
+				Running: true,
+				Status:  "Up, I guess?",
 			},
 		},
 		NetworkSettings: &types.NetworkSettings{
 			NetworkSettingsBase: types.NetworkSettingsBase{
 				Ports: map[nat.Port][]nat.PortBinding{
 					kafkaNatPort: {{
-						HostIP:	"192.168.78.9", HostPort: "89080",
+						HostIP: "192.168.78.9", HostPort: "89080",
 					}},
 					rpcNatPort: {{
-						HostIP:	"192.168.78.9", HostPort: "89081",
+						HostIP: "192.168.78.9", HostPort: "89081",
 					}},
 				},
 			},

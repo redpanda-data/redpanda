@@ -24,22 +24,22 @@ import (
 
 func TestDeduceBrokers(t *testing.T) {
 	tests := []struct {
-		name		string
-		client		func() (ccommon.Client, error)
-		config		func() (*config.Config, error)
-		brokers		[]string
-		expected	[]string
+		name     string
+		client   func() (ccommon.Client, error)
+		config   func() (*config.Config, error)
+		brokers  []string
+		expected []string
 	}{{
-		name:	"it should prioritize the flag over the config & containers",
+		name: "it should prioritize the flag over the config & containers",
 		client: func() (ccommon.Client, error) {
 			return &ccommon.MockClient{
-				MockContainerInspect:	ccommon.MockContainerInspect,
+				MockContainerInspect: ccommon.MockContainerInspect,
 				MockContainerList: func(
 					_ context.Context,
 					_ types.ContainerListOptions,
 				) ([]types.Container, error) {
 					return []types.Container{{
-						ID:	"a",
+						ID: "a",
 						Labels: map[string]string{
 							"node-id": "0",
 						},
@@ -47,19 +47,19 @@ func TestDeduceBrokers(t *testing.T) {
 				},
 			}, nil
 		},
-		brokers:	[]string{"192.168.34.12:9093"},
-		expected:	[]string{"192.168.34.12:9093"},
+		brokers:  []string{"192.168.34.12:9093"},
+		expected: []string{"192.168.34.12:9093"},
 	}, {
-		name:	"it should prioritize the local containers over the config",
+		name: "it should prioritize the local containers over the config",
 		client: func() (ccommon.Client, error) {
 			return &ccommon.MockClient{
-				MockContainerInspect:	ccommon.MockContainerInspect,
+				MockContainerInspect: ccommon.MockContainerInspect,
 				MockContainerList: func(
 					_ context.Context,
 					_ types.ContainerListOptions,
 				) ([]types.Container, error) {
 					return []types.Container{{
-						ID:	"a",
+						ID: "a",
 						Labels: map[string]string{
 							"node-id": "0",
 						},
@@ -67,7 +67,7 @@ func TestDeduceBrokers(t *testing.T) {
 				},
 			}, nil
 		},
-		expected:	[]string{"127.0.0.1:89080"},
+		expected: []string{"127.0.0.1:89080"},
 	}, {
 		name: "it should fall back to the config if the docker client" +
 			" can't be init'd",
@@ -78,33 +78,33 @@ func TestDeduceBrokers(t *testing.T) {
 			conf := config.Default()
 			conf.Redpanda.KafkaApi = []config.NamedSocketAddress{{
 				SocketAddress: config.SocketAddress{
-					Address:	"192.168.25.88",
-					Port:		1235,
+					Address: "192.168.25.88",
+					Port:    1235,
 				},
 			}}
 			return conf, nil
 		},
-		expected:	[]string{"192.168.25.88:1235"},
+		expected: []string{"192.168.25.88:1235"},
 	}, {
 		name: "it should fall back to the default addr if there's an" +
 			" error reading the config",
 		config: func() (*config.Config, error) {
 			return nil, errors.New("The config file couldn't be read")
 		},
-		expected:	[]string{"127.0.0.1:9092"},
+		expected: []string{"127.0.0.1:9092"},
 	}, {
-		name:	"it should prioritize the config over the default broker addr",
+		name: "it should prioritize the config over the default broker addr",
 		config: func() (*config.Config, error) {
 			conf := config.Default()
 			conf.Redpanda.KafkaApi = []config.NamedSocketAddress{{
 				SocketAddress: config.SocketAddress{
-					Address:	"192.168.25.87",
-					Port:		1234,
+					Address: "192.168.25.87",
+					Port:    1234,
 				},
 			}}
 			return conf, nil
 		},
-		expected:	[]string{"192.168.25.87:1234"},
+		expected: []string{"192.168.25.87:1234"},
 	}}
 
 	for _, tt := range tests {

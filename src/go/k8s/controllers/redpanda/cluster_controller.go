@@ -34,8 +34,8 @@ var (
 // ClusterReconciler reconciles a Cluster object
 type ClusterReconciler struct {
 	client.Client
-	Log	logr.Logger
-	Scheme	*runtime.Scheme
+	Log    logr.Logger
+	Scheme *runtime.Scheme
 }
 
 //+kubebuilder:rbac:groups=redpanda.vectorized.io,resources=clusters,verbs=get;list;watch;create;update;patch;delete
@@ -96,8 +96,8 @@ func (r *ClusterReconciler) Reconcile(
 	var observedPods corev1.PodList
 
 	err := r.List(ctx, &observedPods, &client.ListOptions{
-		LabelSelector:	labels.ForCluster(&redpandaCluster).AsClientSelector(),
-		Namespace:	redpandaCluster.Namespace,
+		LabelSelector: labels.ForCluster(&redpandaCluster).AsClientSelector(),
+		Namespace:     redpandaCluster.Namespace,
 	})
 	if err != nil {
 		log.Error(err, "Unable to fetch PodList resource")

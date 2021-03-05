@@ -19,18 +19,18 @@ import (
 
 type ethtoolChangeCommand struct {
 	Command
-	intf	string
-	config	map[string]bool
-	ethtool	ethtool.EthtoolWrapper
+	intf    string
+	config  map[string]bool
+	ethtool ethtool.EthtoolWrapper
 }
 
 func NewEthtoolChangeCmd(
 	ethtool ethtool.EthtoolWrapper, intf string, config map[string]bool,
 ) Command {
 	return &ethtoolChangeCommand{
-		intf:		intf,
-		config:		config,
-		ethtool:	ethtool,
+		intf:    intf,
+		config:  config,
+		ethtool: ethtool,
 	}
 }
 

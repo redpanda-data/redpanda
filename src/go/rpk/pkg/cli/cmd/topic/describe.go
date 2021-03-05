@@ -28,17 +28,17 @@ func NewDescribeCommand(
 	admin func() (sarama.ClusterAdmin, error),
 ) *cobra.Command {
 	var (
-		page			int
-		pageSize		int
-		includeWatermarks	bool
+		page              int
+		pageSize          int
+		includeWatermarks bool
 	)
 	cmd := &cobra.Command{
-		Use:	"describe <topic>",
-		Short:	"Describe topic",
-		Long:	"Describe a topic. Default values of the configuration are omitted.",
-		Args:	common.ExactArgs(1, "topic's name is missing."),
+		Use:   "describe <topic>",
+		Short: "Describe topic",
+		Long:  "Describe a topic. Default values of the configuration are omitted.",
+		Args:  common.ExactArgs(1, "topic's name is missing."),
 		// We don't want Cobra printing CLI usage help if the error isn't about CLI usage.
-		SilenceUsage:	true,
+		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cl, err := client()
 			if err != nil {
@@ -67,8 +67,8 @@ func NewDescribeCommand(
 			}
 
 			cfg, err := adm.DescribeConfig(sarama.ConfigResource{
-				Type:	sarama.TopicResource,
-				Name:	topicName,
+				Type: sarama.TopicResource,
+				Name: topicName,
 			})
 			if err != nil {
 				return err

@@ -20,14 +20,14 @@ import (
 
 func Test_deviceFromSystemPath(t *testing.T) {
 	tests := []struct {
-		name	string
-		syspath	string
-		before	func(afero.Fs, string)
-		want	BlockDevice
+		name    string
+		syspath string
+		before  func(afero.Fs, string)
+		want    BlockDevice
 	}{
 		{
-			name:		"shall return simple device",
-			syspath:	"/sys/devices/pci0000:00/0000:00:1d.0/nvme/nvme0",
+			name:    "shall return simple device",
+			syspath: "/sys/devices/pci0000:00/0000:00:1d.0/nvme/nvme0",
 			before: func(fs afero.Fs, syspath string) {
 				ueventFileLines := []string{"DEVNAME=node-name"}
 				fs.MkdirAll(syspath, 0755)
@@ -35,14 +35,14 @@ func Test_deviceFromSystemPath(t *testing.T) {
 					filepath.Join(syspath, "uevent"))
 			},
 			want: &blockDevice{
-				syspath:	"/sys/devices/pci0000:00/0000:00:1d.0/nvme/nvme0",
-				devnode:	"/dev/node-name",
-				parent:		nil,
+				syspath: "/sys/devices/pci0000:00/0000:00:1d.0/nvme/nvme0",
+				devnode: "/dev/node-name",
+				parent:  nil,
 			},
 		},
 		{
-			name:		"shall return device with its parent",
-			syspath:	"/sys/devices/pci0000:00/0000:00:1d.0/nvme/nvme0/nvme0n1",
+			name:    "shall return device with its parent",
+			syspath: "/sys/devices/pci0000:00/0000:00:1d.0/nvme/nvme0/nvme0n1",
 			before: func(fs afero.Fs, syspath string) {
 				ueventFileLines := []string{"DEVNAME=child"}
 				fs.MkdirAll(syspath, 0755)
@@ -54,12 +54,12 @@ func Test_deviceFromSystemPath(t *testing.T) {
 					filepath.Join(parentPath, "uevent"))
 			},
 			want: &blockDevice{
-				syspath:	"/sys/devices/pci0000:00/0000:00:1d.0/nvme/nvme0/nvme0n1",
-				devnode:	"/dev/child",
+				syspath: "/sys/devices/pci0000:00/0000:00:1d.0/nvme/nvme0/nvme0n1",
+				devnode: "/dev/child",
 				parent: &blockDevice{
-					syspath:	"/sys/devices/pci0000:00/0000:00:1d.0/nvme/nvme0",
-					devnode:	"/dev/parent",
-					parent:		nil,
+					syspath: "/sys/devices/pci0000:00/0000:00:1d.0/nvme/nvme0",
+					devnode: "/dev/parent",
+					parent:  nil,
 				},
 			},
 		},

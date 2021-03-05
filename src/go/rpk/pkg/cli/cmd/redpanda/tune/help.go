@@ -20,21 +20,21 @@ import (
 
 func NewHelpCommand() *cobra.Command {
 	tunersHelp := map[string]string{
-		"cpu":				cpuTunerHelp,
-		"disk_irq":			diskIrqTunerHelp,
-		"disk_scheduler":		diskSchedulerTunerHelp,
-		"net":				netTunerHelp,
-		"swappiness":			swappinessTunerHelp,
-		"fstrim":			fstrimTunerHelp,
-		"aio_events":			aioEventsTunerHelp,
-		"transparent_hugepages":	transparentHugepagesTunerHelp,
-		"clocksource":			clocksourceTunerHelp,
-		"nomerges":			nomergesTunerHelp,
+		"cpu":                   cpuTunerHelp,
+		"disk_irq":              diskIrqTunerHelp,
+		"disk_scheduler":        diskSchedulerTunerHelp,
+		"net":                   netTunerHelp,
+		"swappiness":            swappinessTunerHelp,
+		"fstrim":                fstrimTunerHelp,
+		"aio_events":            aioEventsTunerHelp,
+		"transparent_hugepages": transparentHugepagesTunerHelp,
+		"clocksource":           clocksourceTunerHelp,
+		"nomerges":              nomergesTunerHelp,
 	}
 
 	return &cobra.Command{
-		Use:	"help <tuner>",
-		Short:	"Display detailed infromation about the tuner",
+		Use:   "help <tuner>",
+		Short: "Display detailed infromation about the tuner",
 		Args: func(cmd *cobra.Command, args []string) error {
 			if len(args) != 1 {
 				return errors.New("requires the tuner name")
