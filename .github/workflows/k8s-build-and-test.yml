@@ -47,4 +47,4 @@ jobs:
       uses: actions/upload-artifact@v2
       with:
         name: kuttl test artifacts
-        path: src/go/k8s/tests/e2e/_artifacts
+        path: src/go/k8s/tests/_e2e_artifacts
