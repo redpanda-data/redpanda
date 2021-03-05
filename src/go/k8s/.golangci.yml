@@ -17,7 +17,10 @@ linters-settings:
       - performance
       - style
   golint:
-    min-confidence: 0
+    # The package comment is false positive so the min-confidance needs to be
+    # set to at least 0.3
+    # Ref https://github.com/golangci/golangci-lint/issues/1556#issuecomment-744021989
+    min-confidence: 0.3
   gomnd:
     settings:
       mnd:
