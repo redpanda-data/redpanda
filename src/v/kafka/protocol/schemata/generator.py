@@ -263,6 +263,8 @@ STRUCT_TYPES = [
     "CreateableTopicConfig",
     "CreatableTopicConfigs",
     "DeletableGroupResult",
+    "DescribeAclsResource",
+    "AclDescription",
 ]
 
 SCALAR_TYPES = list(basic_type_map.keys())
