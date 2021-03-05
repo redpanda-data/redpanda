@@ -127,6 +127,18 @@ private:
     model::topic _identity_topic;
 };
 
+struct throwing_coprocessor : public coprocessor {
+    throwing_coprocessor(coproc::script_id sid, input_set input)
+      : coprocessor(sid, std::move(input)) {}
+
+    ss::future<coprocessor::result> apply(
+      const model::topic&,
+      ss::circular_buffer<model::record_batch>&& batches) override {
+        return ss::make_exception_future<coprocessor::result>(
+          std::runtime_error("Coprocessor failed"));
+    }
+};
+
 struct two_way_split_copro : public coprocessor {
     static const inline model::topic even{model::topic("even")};
     static const inline model::topic odd{model::topic("odd")};
@@ -192,6 +204,7 @@ enum class type_identifier {
     null_coprocessor,
     identity_coprocessor,
     unique_identity_coprocessor,
+    throwing_coprocessor,
     two_way_split_copro
 };
 
@@ -207,6 +220,8 @@ inline std::unique_ptr<coprocessor> make_coprocessor(
     case type_identifier::unique_identity_coprocessor:
         return std::make_unique<unique_identity_coprocessor>(
           id, std::move(topics));
+    case type_identifier::throwing_coprocessor:
+        return std::make_unique<throwing_coprocessor>(id, std::move(topics));
     case type_identifier::two_way_split_copro:
         return std::make_unique<two_way_split_copro>(id, std::move(topics));
     default:

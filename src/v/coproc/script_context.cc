@@ -22,7 +22,11 @@
 #include "storage/types.h"
 #include "vlog.h"
 
+#include <seastar/core/sleep.hh>
+
 #include <chrono>
+#include <exception>
+
 namespace coproc {
 
 struct batch_info {
@@ -66,28 +70,22 @@ script_context::script_context(
 }
 
 ss::future<> script_context::start() {
-    vassert(
-      !_gate.is_closed() && _gate.get_count() == 0,
-      "Cannot call start() twice");
-    (void)ss::with_gate(_gate, [this] {
+    vassert(_gate.get_count() == 0, "Cannot call start() twice");
+    return ss::with_gate(_gate, [this] {
         return ss::do_until(
           [this] { return _abort_source.abort_requested(); },
           [this] {
-              using namespace std::chrono_literals;
+              /// do_execute is by design expected to throw one type of
+              /// exception, \ref script_failed_exception for which there is a
+              /// handler setup by the invoker of this start() method
               return do_execute().then([this] {
                   return ss::sleep_abortable(
                            _resources.jitter.next_jitter_duration(),
                            _abort_source)
-                    .handle_exception([](std::exception_ptr ep) {
-                        vlog(
-                          coproclog.debug,
-                          "script_context loop exception: {}",
-                          ep);
-                    });
+                    .handle_exception_type([](const ss::sleep_aborted&) {});
               });
           });
     });
-    return ss::now();
 }
 
 ss::future<> script_context::do_execute() {
@@ -121,14 +119,7 @@ ss::future<> script_context::do_execute() {
                     /// Send request to wasm engine
                     process_batch_request req{.reqs = std::move(requests)};
                     return send_request(std::move(client), std::move(req))
-                      .then([] { return ss::stop_iteration::no; })
-                      .handle_exception([](std::exception_ptr eptr) {
-                          vlog(
-                            coproclog.error,
-                            "Exception encountered during send: {}",
-                            eptr);
-                          return ss::stop_iteration::yes;
-                      });
+                      .then([] { return ss::stop_iteration::no; });
                 });
           });
     });
@@ -149,12 +140,11 @@ ss::future<> script_context::send_request(
           if (reply) {
               return process_reply(std::move(reply.value().data));
           }
-          return ss::make_exception_future<>(std::runtime_error(
-            fmt::format("Error on copro request: {}", reply.error())));
-      })
-      .handle_exception([](std::exception_ptr eptr) {
-          return ss::make_exception_future<>(std::runtime_error(
-            fmt::format("Copro request future threw: {}", eptr)));
+          vlog(
+            coproclog.warn,
+            "Error upon attempting to perform RPC to wasm engine, code: {}",
+            reply.error());
+          return ss::now();
       });
 }
 
@@ -251,8 +241,23 @@ ss::future<> script_context::process_reply(process_batch_reply reply) {
 ss::future<> script_context::process_one_reply(process_batch_reply::data e) {
     /// Ensure this 'script_context' instance is handling the correct reply
     if (e.id != _id) {
-        return ss::make_exception_future<>(std::logic_error(fmt::format(
-          "id: {} recieved response from another script_id: {}", _id, e.id)));
+        /// TODO: Maybe in the future errors of these type should mean redpanda
+        /// kill -9's the wasm engine.
+        vlog(
+          coproclog.error,
+          "erranous reply from wasm engine, mismatched id observed, expected: "
+          "{} and observed {}",
+          _id,
+          e.id);
+        return ss::now();
+    }
+    if (!e.reader) {
+        return ss::make_exception_future<>(script_failed_exception(
+          e.id,
+          fmt::format(
+            "script id {} will auto deregister due to an internal syntax "
+            "error",
+            e.id)));
     }
     /// Use the source topic portion of the materialized topic to perform a
     /// lookup for the relevent 'ntp_context'
@@ -267,7 +272,7 @@ ss::future<> script_context::process_one_reply(process_batch_reply::data e) {
         return ss::now();
     }
     auto ntp_ctx = found->second;
-    return write_materialized(materialized_ntp, std::move(e.reader))
+    return write_materialized(materialized_ntp, std::move(*e.reader))
       .then([this, ntp_ctx](bool crc_parse_failure) {
           if (crc_parse_failure) {
               vlog(coproclog.warn, "record_batch failed to pass crc checks");

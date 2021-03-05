@@ -108,7 +108,7 @@ struct process_batch_reply {
     struct data {
         script_id id;
         model::ntp ntp;
-        model::record_batch_reader reader;
+        std::optional<model::record_batch_reader> reader;
     };
     std::vector<data> resps;
 };

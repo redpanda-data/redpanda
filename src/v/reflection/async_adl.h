@@ -14,7 +14,12 @@
 #include "ssx/future-util.h"
 
 #include <boost/range/irange.hpp>
+
+#include <optional>
+#include <vector>
+
 namespace reflection {
+
 template<typename T>
 struct async_adl {
     using type = std::remove_reference_t<std::decay_t<T>>;
@@ -25,6 +30,33 @@ struct async_adl {
     }
     ss::future<type> from(iobuf_parser& p) {
         return ss::make_ready_future<type>(reflection::adl<type>{}.from(p));
+    }
+};
+
+/// Specializations of async_adl for nested types, optional and vector
+template<typename T>
+struct async_adl<std::optional<T>> {
+    using value_type = std::remove_reference_t<std::decay_t<T>>;
+
+    ss::future<> to(iobuf& out, std::optional<value_type> t) {
+        if (t) {
+            adl<int8_t>{}.to(out, 1);
+            return async_adl<value_type>{}.to(out, std::move(t.value()));
+        }
+        adl<int8_t>{}.to(out, 0);
+        return ss::now();
+    }
+
+    ss::future<std::optional<value_type>> from(iobuf_parser& in) {
+        int8_t is_set = adl<int8_t>{}.from(in);
+        if (is_set == 0) {
+            return ss::make_ready_future<std::optional<value_type>>(
+              std::nullopt);
+        }
+        return async_adl<value_type>{}.from(in).then([](value_type vt) {
+            return ss::make_ready_future<std::optional<value_type>>(
+              std::move(vt));
+        });
     }
 };
 
