@@ -29,39 +29,40 @@ using namespace archival;
 inline ss::logger test_log("test"); // NOLINT
 
 static constexpr std::string_view manifest_payload = R"json({
+    "version": 1,
     "namespace": "test-ns",
     "topic": "test-topic",
     "partition": 42,
     "revision": 0,
+    "last_offset": 4,
     "segments": {
         "1-2-v1.log": {
             "is_compacted": false,
             "size_bytes": 100,
             "committed_offset": 2,
-            "base_offset": 1,
-            "deleted": false
+            "base_offset": 1
         },
         "3-4-v1.log": {
             "is_compacted": false,
             "size_bytes": 200,
             "committed_offset": 4,
-            "base_offset": 3,
-            "deleted": false
+            "base_offset": 3
         }
     }
 })json";
 static constexpr std::string_view manifest_with_deleted_segment = R"json({
+    "version": 1,
     "namespace": "test-ns",
     "topic": "test-topic",
     "partition": 42,
     "revision": 0,
+    "last_offset": 4,
     "segments": {
         "3-4-v1.log": {
             "is_compacted": false,
             "size_bytes": 200,
             "committed_offset": 4,
-            "base_offset": 3,
-            "deleted": false
+            "base_offset": 3
         }
     }
 })json";
@@ -75,16 +76,16 @@ static const auto manifest_ntp = model::ntp(                    // NOLINT
   manifest_partition);
 static const auto manifest_revision = model::revision_id(0); // NOLINT
 static const ss::sstring manifest_url = fmt::format(         // NOLINT
-  "/a0000000/meta/{}_{}/manifest.json",
+  "/20000000/meta/{}_{}/manifest.json",
   manifest_ntp.path(),
   manifest_revision());
 
 // NOLINTNEXTLINE
 static const ss::sstring segment1_url
-  = "/3931f368/test-ns/test-topic/42_0/1-2-v1.log";
+  = "/ce4fd1a3/test-ns/test-topic/42_0/1-2-v1.log";
 // NOLINTNEXTLINE
 static const ss::sstring segment2_url
-  = "/47bef4d3/test-ns/test-topic/42_0/3-4-v1.log";
+  = "/dbdfc6c6/test-ns/test-topic/42_0/3-4-v1.log";
 
 static const std::vector<s3_imposter_fixture::expectation>
   default_expectations({
@@ -139,21 +140,19 @@ FIXTURE_TEST(test_upload_manifest, s3_imposter_fixture) { // NOLINT
       &archiver.get_remote_manifest());
     pm->add(
       segment_name("1-2-v1.log"),
-      {.is_compacted = false,
-       .size_bytes = 100, // NOLINT
-       .base_offset = model::offset(1),
-       .committed_offset = model::offset(2),
-       .is_deleted_locally = false
-
+      {
+        .is_compacted = false,
+        .size_bytes = 100, // NOLINT
+        .base_offset = model::offset(1),
+        .committed_offset = model::offset(2),
       });
     pm->add(
       segment_name("3-4-v1.log"),
-      {.is_compacted = false,
-       .size_bytes = 200, // NOLINT
-       .base_offset = model::offset(3),
-       .committed_offset = model::offset(4),
-       .is_deleted_locally = false
-
+      {
+        .is_compacted = false,
+        .size_bytes = 200, // NOLINT
+        .base_offset = model::offset(3),
+        .committed_offset = model::offset(4),
       });
     archiver.upload_manifest().get();
     auto req = get_requests().front();

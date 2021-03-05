@@ -14,15 +14,18 @@
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_istreambuf.h"
 #include "bytes/iobuf_ostreambuf.h"
-#include "hashing/murmur.h"
+#include "cluster/types.h"
+#include "hashing/xx.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "model/timestamp.h"
 #include "storage/ntp_config.h"
 #include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
 
 #include <boost/algorithm/string.hpp>
+#include <boost/lexical_cast.hpp>
 #include <rapidjson/document.h>
 #include <rapidjson/istreamwrapper.h>
 #include <rapidjson/ostreamwrapper.h>
@@ -31,18 +34,32 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 
 namespace archival {
 
 manifest::manifest()
   : _ntp()
-  , _rev() {}
+  , _rev()
+  , _last_offset(0) {}
 
 manifest::manifest(model::ntp ntp, model::revision_id rev)
   : _ntp(std::move(ntp))
-  , _rev(rev) {}
+  , _rev(rev)
+  , _last_offset(0) {}
 
-remote_manifest_path manifest::get_manifest_path() const {
+// NOTE: the methods that generate remote paths use the xxhash function
+// to randomize the prefix. S3 groups the objects into chunks based on
+// these prefixes. It also applies rate limit to chunks so if all segments
+// and manifests will have the same prefix we will be able to do around
+// 3000-5000 req/sec. AWS doc mentions that having only two prefix
+// characters should be enough for most workloads
+// (https://aws.amazon.com/blogs/aws/amazon-s3-performance-tips-tricks-seattle-hiring-event/)
+// We're using eight because it's free and because AWS S3 is not the only
+// backend and other S3 API implementations might benefit from that.
+
+static remote_manifest_path generate_partition_manifest_path(
+  const model::ntp& ntp, model::revision_id rev) {
     // NOTE: the idea here is to split all possible hash values into
     // 16 bins. Every bin should have lowest 28-bits set to 0.
     // As result, for segment names all prefixes are possible, but
@@ -50,20 +67,26 @@ remote_manifest_path manifest::get_manifest_path() const {
     // are used. This will allow us to quickly find all manifests
     // that S3 bucket contains.
     constexpr uint32_t bitmask = 0xF0000000;
-    auto path = fmt::format("{}_{}", _ntp.path(), _rev());
-    uint32_t hash = bitmask & murmurhash3_x86_32(path.data(), path.size());
-    return remote_manifest_path(fmt::format(
-      "{:08x}/meta/{}_{}/manifest.json", hash, _ntp.path(), _rev()));
+    auto path = fmt::format("{}_{}", ntp.path(), rev());
+    uint32_t hash = bitmask & xxhash_32(path.data(), path.size());
+    return remote_manifest_path(
+      fmt::format("{:08x}/meta/{}_{}/manifest.json", hash, ntp.path(), rev()));
+}
+
+remote_manifest_path manifest::get_manifest_path() const {
+    return generate_partition_manifest_path(_ntp, _rev);
 }
 
 remote_segment_path
 manifest::get_remote_segment_path(const segment_name& name) const {
     auto path = fmt::format("{}_{}/{}", _ntp.path(), _rev(), name());
-    uint32_t hash = murmurhash3_x86_32(path.data(), path.size());
+    uint32_t hash = xxhash_32(path.data(), path.size());
     return remote_segment_path(fmt::format("{:08x}/{}", hash, path));
 }
 
 const model::ntp& manifest::get_ntp() const { return _ntp; }
+
+const model::offset manifest::get_last_offset() const { return _last_offset; }
 
 model::revision_id manifest::get_revision_id() const { return _rev; }
 
@@ -79,6 +102,7 @@ bool manifest::contains(const segment_name& obj) const {
 
 bool manifest::add(const segment_name& key, const segment_meta& meta) {
     auto [it, ok] = _segments.insert(std::make_pair(key, meta));
+    _last_offset = std::max(meta.committed_offset, _last_offset);
     return ok;
 }
 
@@ -130,11 +154,16 @@ ss::future<> manifest::update(ss::input_stream<char>&& is) {
 
 void manifest::update(const rapidjson::Document& m) {
     using namespace rapidjson;
+    auto ver = model::partition_id(m["version"].GetInt());
+    if (ver != static_cast<int>(manifest_version::v1)) {
+        throw std::runtime_error("manifest version not supported");
+    }
     auto ns = model::ns(m["namespace"].GetString());
     auto tp = model::topic(m["topic"].GetString());
     auto pt = model::partition_id(m["partition"].GetInt());
     _rev = model::revision_id(m["revision"].GetInt());
     _ntp = model::ntp(ns, tp, pt);
+    _last_offset = model::offset(m["last_offset"].GetInt64());
     segment_map tmp;
     if (m.HasMember("segments")) {
         const auto& s = m["segments"].GetObject();
@@ -148,7 +177,6 @@ void manifest::update(const rapidjson::Document& m) {
               .size_bytes = static_cast<size_t>(size_bytes),
               .base_offset = model::offset(boffs),
               .committed_offset = model::offset(coffs),
-              .is_deleted_locally = it->value["deleted"].GetBool(),
             };
             tmp.insert(std::make_pair(name, meta));
         }
@@ -156,14 +184,15 @@ void manifest::update(const rapidjson::Document& m) {
     std::swap(tmp, _segments);
 }
 
-std::tuple<ss::input_stream<char>, size_t> manifest::serialize() const {
+serialized_json_stream manifest::serialize() const {
     iobuf serialized;
     iobuf_ostreambuf obuf(serialized);
     std::ostream os(&obuf);
     serialize(os);
     size_t size_bytes = serialized.size_bytes();
-    return std::make_tuple(
-      make_iobuf_input_stream(std::move(serialized)), size_bytes);
+    return {
+      .stream = make_iobuf_input_stream(std::move(serialized)),
+      .size_bytes = size_bytes};
 }
 
 void manifest::serialize(std::ostream& out) const {
@@ -171,6 +200,8 @@ void manifest::serialize(std::ostream& out) const {
     OStreamWrapper wrapper(out);
     Writer<OStreamWrapper> w(wrapper);
     w.StartObject();
+    w.Key("version");
+    w.Int(static_cast<int>(manifest_version::v1));
     w.Key("namespace");
     w.String(_ntp.ns().c_str());
     w.Key("topic");
@@ -179,6 +210,8 @@ void manifest::serialize(std::ostream& out) const {
     w.Int64(_ntp.tp.partition());
     w.Key("revision");
     w.Int64(_rev());
+    w.Key("last_offset");
+    w.Int64(_last_offset());
     if (!_segments.empty()) {
         w.Key("segments");
         w.StartObject();
@@ -193,8 +226,6 @@ void manifest::serialize(std::ostream& out) const {
             w.Int64(meta.committed_offset());
             w.Key("base_offset");
             w.Int64(meta.base_offset());
-            w.Key("deleted");
-            w.Bool(meta.is_deleted_locally);
             w.EndObject();
         }
         w.EndObject();
@@ -211,13 +242,198 @@ bool manifest::delete_permanently(const segment_name& name) {
     return false;
 }
 
-bool manifest::mark_as_deleted(const segment_name& name) {
-    auto it = _segments.find(name);
-    if (it != _segments.end() && it->second.is_deleted_locally == false) {
-        it->second.is_deleted_locally = true;
-        return true;
+topic_manifest::topic_manifest(
+  const cluster::topic_configuration& cfg, model::revision_id rev)
+  : _topic_config(cfg)
+  , _rev(rev) {}
+
+topic_manifest::topic_manifest()
+  : _topic_config(std::nullopt) {}
+
+ss::future<> topic_manifest::update(ss::input_stream<char>&& is) {
+    using namespace rapidjson;
+    iobuf result;
+    auto os = make_iobuf_ref_output_stream(result);
+    co_await ss::copy(is, os);
+    iobuf_istreambuf ibuf(result);
+    std::istream stream(&ibuf);
+    Document m;
+    IStreamWrapper wrapper(stream);
+    m.ParseStream(wrapper);
+    update(m);
+    co_return;
+}
+
+void topic_manifest::update(const rapidjson::Document& m) {
+    using namespace rapidjson;
+    auto ver = m["version"].GetInt();
+    if (ver != static_cast<int>(topic_manifest_version::v1)) {
+        throw std::runtime_error("topic manifest version not supported");
     }
-    return false;
+    auto ns = model::ns(m["namespace"].GetString());
+    auto tp = model::topic(m["topic"].GetString());
+    int32_t partitions = m["partition_count"].GetInt();
+    int16_t rf = m["replication_factor"].GetInt();
+    int32_t rev = m["revision_id"].GetInt();
+    cluster::topic_configuration conf(ns, tp, partitions, rf);
+    // optional
+    if (!m["compression"].IsNull()) {
+        conf.compression = boost::lexical_cast<model::compression>(
+          m["compression"].GetString());
+    }
+    if (!m["cleanup_policy_bitflags"].IsNull()) {
+        conf.cleanup_policy_bitflags
+          = boost::lexical_cast<model::cleanup_policy_bitflags>(
+            m["cleanup_policy_bitflags"].GetString());
+    }
+    if (!m["compaction_strategy"].IsNull()) {
+        conf.compaction_strategy
+          = boost::lexical_cast<model::compaction_strategy>(
+            m["compaction_strategy"].GetString());
+    }
+    if (!m["timestamp_type"].IsNull()) {
+        conf.timestamp_type = boost::lexical_cast<model::timestamp_type>(
+          m["timestamp_type"].GetString());
+    }
+    if (!m["segment_size"].IsNull()) {
+        conf.segment_size = m["segment_size"].GetInt64();
+    }
+    // tristate
+    if (m.HasMember("retention_bytes")) {
+        if (!m["retention_bytes"].IsNull()) {
+            conf.retention_bytes = tristate<size_t>(
+              m["retention_bytes"].GetInt64());
+        } else {
+            conf.retention_bytes = tristate<size_t>(std::nullopt);
+        }
+    }
+    if (m.HasMember("retention_duration")) {
+        if (!m["retention_duration"].IsNull()) {
+            conf.retention_duration = tristate<std::chrono::milliseconds>(
+              std::chrono::milliseconds(m["retention_duration"].GetInt64()));
+        } else {
+            conf.retention_duration = tristate<std::chrono::milliseconds>(
+              std::nullopt);
+        }
+    }
+    _topic_config = conf;
+    _rev = model::revision_id(rev);
+}
+
+serialized_json_stream topic_manifest::serialize() const {
+    iobuf serialized;
+    iobuf_ostreambuf obuf(serialized);
+    std::ostream os(&obuf);
+    serialize(os);
+    size_t size_bytes = serialized.size_bytes();
+    return {
+      .stream = make_iobuf_input_stream(std::move(serialized)),
+      .size_bytes = size_bytes};
+}
+
+void topic_manifest::serialize(std::ostream& out) const {
+    using namespace rapidjson;
+    OStreamWrapper wrapper(out);
+    Writer<OStreamWrapper> w(wrapper);
+    w.StartObject();
+    w.Key("version");
+    w.Int(static_cast<int>(manifest_version::v1));
+    w.Key("namespace");
+    w.String(_topic_config->tp_ns.ns());
+    w.Key("topic");
+    w.String(_topic_config->tp_ns.tp());
+    w.Key("partition_count");
+    w.Int(_topic_config->partition_count);
+    w.Key("replication_factor");
+    w.Int(_topic_config->replication_factor);
+    w.Key("revision_id");
+    w.Int(_rev());
+
+    // optional values are encoded in the following manner:
+    // - key set to null - optional is nullopt
+    // - key is not null - optional has value
+    w.Key("compression");
+    if (_topic_config->compression.has_value()) {
+        w.String(boost::lexical_cast<std::string>(*_topic_config->compression));
+    } else {
+        w.Null();
+    }
+    w.Key("cleanup_policy_bitflags");
+    if (_topic_config->cleanup_policy_bitflags.has_value()) {
+        w.String(boost::lexical_cast<std::string>(
+          *_topic_config->cleanup_policy_bitflags));
+    } else {
+        w.Null();
+    }
+    w.Key("compaction_strategy");
+    if (_topic_config->compaction_strategy.has_value()) {
+        w.String(boost::lexical_cast<std::string>(
+          *_topic_config->compaction_strategy));
+    } else {
+        w.Null();
+    }
+    w.Key("timestamp_type");
+    if (_topic_config->timestamp_type.has_value()) {
+        w.String(
+          boost::lexical_cast<std::string>(*_topic_config->timestamp_type));
+    } else {
+        w.Null();
+    }
+    w.Key("segment_size");
+    if (_topic_config->segment_size.has_value()) {
+        w.Int64(*_topic_config->segment_size);
+    } else {
+        w.Null();
+    }
+    // NOTE: manifest_object_name is intentionaly ommitted
+
+    // tristate values are encoded in the following manner:
+    // - key not present - tristate is disabled
+    // - key set to null - tristate is enabled but not set
+    // - key is not null - tristate is enabled and set
+    if (!_topic_config->retention_bytes.is_disabled()) {
+        w.Key("retention_bytes");
+        if (_topic_config->retention_bytes.has_value()) {
+            w.Int64(_topic_config->retention_bytes.value());
+        } else {
+            w.Null();
+        }
+    }
+    if (!_topic_config->retention_duration.is_disabled()) {
+        w.Key("retention_duration");
+        if (_topic_config->retention_duration.has_value()) {
+            w.Int64(_topic_config->retention_duration.value().count());
+        } else {
+            w.Null();
+        }
+    }
+    w.EndObject();
+}
+
+remote_manifest_path topic_manifest::get_manifest_path() const {
+    // The path is <prefix>/meta/<ns>/<topic>/topic_manifest.json
+    vassert(_topic_config, "Topic config is not set");
+    constexpr uint32_t bitmask = 0xF0000000;
+    auto path = fmt::format(
+      "{}/{}", _topic_config->tp_ns.ns(), _topic_config->tp_ns.tp());
+    uint32_t hash = bitmask & xxhash_32(path.data(), path.size());
+    return remote_manifest_path(
+      fmt::format("{:08x}/meta/{}/topic_manifest.json", hash, path));
+}
+
+std::vector<remote_manifest_path>
+topic_manifest::get_partition_manifests() const {
+    std::vector<remote_manifest_path> result;
+    int32_t npart = _topic_config->partition_count;
+    for (int32_t i = 0; i < npart; i++) {
+        model::ntp ntp(
+          _topic_config->tp_ns.ns(),
+          _topic_config->tp_ns.tp(),
+          model::partition_id(i));
+        auto path = generate_partition_manifest_path(ntp, _rev);
+        result.emplace_back(std::move(path));
+    }
+    return result;
 }
 
 } // namespace archival

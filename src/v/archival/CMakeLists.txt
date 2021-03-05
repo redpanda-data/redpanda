@@ -10,5 +10,11 @@ v_cc_library(
     v::bytes
     v::http
     v::s3
+    v::json
+    v::model
+    v::storage
+    v::cluster
+    v::config
+    v::rphashing
 )
 add_subdirectory(tests)

@@ -44,7 +44,6 @@ public:
               .size_bytes = segment->size_bytes(),
               .base_offset = segment->offsets().base_offset,
               .committed_offset = segment->offsets().committed_offset,
-              .is_deleted_locally = false,
             };
             auto path = std::filesystem::path(segment->reader().filename());
             auto seg_name = path.filename().string();

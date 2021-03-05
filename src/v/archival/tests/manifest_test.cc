@@ -31,30 +31,32 @@
 using namespace archival;
 
 static std::string_view empty_manifest_json = R"json({
+    "version": 1,
     "namespace": "test-ns",
     "topic": "test-topic",
     "partition": 42,
-    "revision": 0
+    "revision": 0,
+    "last_offset": 0
 })json";
 static std::string_view complete_manifest_json = R"json({
+    "version": 1,
     "namespace": "test-ns",
     "topic": "test-topic",
     "partition": 42,
     "revision": 1,
+    "last_offset": 29,
     "segments": {
         "10-1-v1.log": { 
             "is_compacted": false,
             "size_bytes": 1024,
             "base_offset": 10,
-            "committed_offset": 19,
-            "deleted": false
+            "committed_offset": 19
         },
         "20-1-v1.log": {
             "is_compacted": false,
             "size_bytes": 2048,
             "base_offset": 20,
-            "committed_offset": 29,
-            "deleted": false
+            "committed_offset": 29
         }
     }
 })json";
@@ -71,14 +73,14 @@ SEASTAR_THREAD_TEST_CASE(test_manifest_path) {
     manifest m(manifest_ntp, model::revision_id(0));
     auto path = m.get_manifest_path();
     BOOST_REQUIRE_EQUAL(
-      path, "a0000000/meta/test-ns/test-topic/42_0/manifest.json");
+      path, "20000000/meta/test-ns/test-topic/42_0/manifest.json");
 }
 
 SEASTAR_THREAD_TEST_CASE(test_segment_path) {
     manifest m(manifest_ntp, model::revision_id(0));
     auto path = m.get_remote_segment_path(segment_name("22-11-v1.log"));
     // use pre-calculated murmur hash value from full ntp path + file name
-    BOOST_REQUIRE_EQUAL(path, "7da10588/test-ns/test-topic/42_0/22-11-v1.log");
+    BOOST_REQUIRE_EQUAL(path, "2bea9275/test-ns/test-topic/42_0/22-11-v1.log");
 }
 
 SEASTAR_THREAD_TEST_CASE(test_empty_manifest_update) {
@@ -86,7 +88,7 @@ SEASTAR_THREAD_TEST_CASE(test_empty_manifest_update) {
     m.update(make_manifest_stream(empty_manifest_json)).get0();
     auto path = m.get_manifest_path();
     BOOST_REQUIRE_EQUAL(
-      path, "a0000000/meta/test-ns/test-topic/42_0/manifest.json");
+      path, "20000000/meta/test-ns/test-topic/42_0/manifest.json");
 }
 
 SEASTAR_THREAD_TEST_CASE(test_complete_manifest_update) {
@@ -94,15 +96,15 @@ SEASTAR_THREAD_TEST_CASE(test_complete_manifest_update) {
     m.update(make_manifest_stream(complete_manifest_json)).get0();
     auto path = m.get_manifest_path();
     BOOST_REQUIRE_EQUAL(
-      path, "50000000/meta/test-ns/test-topic/42_1/manifest.json");
+      path, "60000000/meta/test-ns/test-topic/42_1/manifest.json");
     BOOST_REQUIRE_EQUAL(m.size(), 2);
     std::map<ss::sstring, manifest::segment_meta> expected = {
       {"10-1-v1.log",
        manifest::segment_meta{
-         false, 1024, model::offset(10), model::offset(19), false}},
+         false, 1024, model::offset(10), model::offset(19)}},
       {"20-1-v1.log",
        manifest::segment_meta{
-         false, 2048, model::offset(20), model::offset(29), false}}};
+         false, 2048, model::offset(20), model::offset(29)}}};
     for (const auto& actual : m) {
         auto it = expected.find(actual.first);
         BOOST_REQUIRE(it != expected.end());
@@ -124,7 +126,6 @@ SEASTAR_THREAD_TEST_CASE(test_manifest_serialization) {
         .size_bytes = 1024,
         .base_offset = model::offset(10),
         .committed_offset = model::offset(19),
-        .is_deleted_locally = false,
       });
     m.add(
       segment_name("20-1-v1.log"),
@@ -133,7 +134,6 @@ SEASTAR_THREAD_TEST_CASE(test_manifest_serialization) {
         .size_bytes = 2048,
         .base_offset = model::offset(20),
         .committed_offset = model::offset(29),
-        .is_deleted_locally = false,
       });
     auto [is, size] = m.serialize();
     iobuf buf;
