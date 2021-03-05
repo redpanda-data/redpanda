@@ -25,6 +25,7 @@ namespace pandaproxy {
 /// can not depend on any other module to prevent cyclic dependencies.
 struct configuration final : public config::config_store {
     config::property<unresolved_address> pandaproxy_api;
+    config::property<config::tls_config> pandaproxy_api_tls;
     config::property<unresolved_address> advertised_pandaproxy_api;
     config::property<ss::sstring> api_doc_dir;
 

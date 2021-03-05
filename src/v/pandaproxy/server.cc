@@ -144,6 +144,21 @@ void server::route(std::vector<server::route_t>&& rts) {
 
 ss::future<> server::start() {
     _server._routes.register_exeption_handler(exception_reply);
+
+    auto builder
+      = co_await _ctx.config.pandaproxy_api_tls().get_credentials_builder();
+    if (builder) {
+        auto cred = co_await builder->build_reloadable_server_credentials(
+          [](
+            const std::unordered_set<ss::sstring>& updated,
+            const std::exception_ptr& eptr) {
+              cluster::log_certificate_reload_event(
+                plog, "API TLS", updated, eptr);
+          });
+
+        _server.set_tls_credentials(std::move(cred));
+    }
+
     auto addr = co_await rpc::resolve_dns(_ctx.config.pandaproxy_api);
     co_await _server.listen(addr);
 }

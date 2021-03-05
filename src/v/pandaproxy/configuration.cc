@@ -27,6 +27,13 @@ configuration::configuration()
     "Rest API listen address and port",
     config::required::no,
     unresolved_address("127.0.0.1", 8082))
+  , pandaproxy_api_tls(
+      *this,
+      "pandaproxy_api_tls",
+      "TLS configuration for Pandaproxy api",
+      config::required::no,
+      config::tls_config(),
+      config::tls_config::validate)
   , advertised_pandaproxy_api(
       *this,
       "advertised_pandaproxy_api",
