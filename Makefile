@@ -1,6 +1,7 @@
 
 # Image URL to use all building/pushing image targets
 IMG ?= vectorized/redpanda-operator:latest
+CONFIGURATOR_IMG ?= vectorized/configurator:latest
 # Produce CRDs that work back to Kubernetes 1.11 (no version conversion)
 CRD_OPTIONS ?= "crd:trivialVersions=true,preserveUnknownFields=false"
 
@@ -78,12 +79,21 @@ docker-build: test
 docker-push:
 	docker push ${IMG}
 
+# Build the docker image
+docker-build-configurator:
+	docker build -f cmd/configurator/Dockerfile -t ${CONFIGURATOR_IMG} ../
+
+# Push the docker image
+docker-push-configurator:
+	docker push ${CONFIGURATOR_IMG}
+
 # Preload controller image to kind cluster
 push-to-kind:
 	kind load docker-image ${IMG}
+	kind load docker-image ${CONFIGURATOR_IMG}
 
 # Execute end to end tests
-e2e-tests: kuttl docker-build
+e2e-tests: kuttl docker-build docker-build-configurator
 	$(KUTTL) test $(TEST_ONLY_FLAG)
 
 # Download controller-gen locally if necessary

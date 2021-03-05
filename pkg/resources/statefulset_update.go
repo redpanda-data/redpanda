@@ -208,17 +208,6 @@ func (r *StatefulSetResource) podImageIdenticalToClusterImage(
 		return containerHasWrongImageError(podName, container.Name, container.Image, newImage)
 	}
 
-	container, err = findContainer(pod.Spec.InitContainers, configuratorContainerName)
-	if err != nil {
-		return err
-	}
-
-	if container.Image != newImage {
-		r.logger.Info("Init container image not updated to cluster image", "pod", pod.Name,
-			"container", container.Name, "container image", container.Image, "cluster image", newImage)
-		return containerHasWrongImageError(podName, container.Name, container.Image, newImage)
-	}
-
 	if !podIsReady(&pod) {
 		r.logger.Info("Pod not ready yet", "pod", pod.Name)
 		return podNotReadyError(pod.Name)
@@ -248,15 +237,7 @@ func (r *StatefulSetResource) rollingUpdatePartition(
 func (r *StatefulSetResource) modifyPodImage(
 	stsSpec *corev1.PodSpec, newImage string,
 ) error {
-	if err := modifyContainerImage(stsSpec.InitContainers, configuratorContainerName, newImage); err != nil {
-		return err
-	}
-
-	if err := modifyContainerImage(stsSpec.Containers, redpandaContainerName, newImage); err != nil {
-		return err
-	}
-
-	return nil
+	return modifyContainerImage(stsSpec.Containers, redpandaContainerName, newImage)
 }
 
 func modifyContainerImage(
