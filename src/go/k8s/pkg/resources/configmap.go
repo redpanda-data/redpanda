@@ -12,7 +12,6 @@ package resources
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 
 	"github.com/go-logr/logr"
 	redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
@@ -31,16 +30,6 @@ import (
 const (
 	baseSuffix    = "-base"
 	dataDirectory = "/var/lib/redpanda/data"
-	fsGroup       = 101
-
-	configDir          = "/etc/redpanda"
-	configuratorDir    = "/mnt/operator"
-	configuratorScript = "configurator.sh"
-)
-
-var (
-	configPath       = filepath.Join(configDir, "redpanda.yaml")
-	configuratorPath = filepath.Join(configuratorDir, configuratorScript)
 )
 
 var _ Resource = &ConfigMapResource{}
@@ -52,8 +41,7 @@ type ConfigMapResource struct {
 	scheme       *runtime.Scheme
 	pandaCluster *redpandav1alpha1.Cluster
 
-	serviceFQDN string
-	logger      logr.Logger
+	logger logr.Logger
 }
 
 // NewConfigMap creates ConfigMapResource
@@ -61,11 +49,10 @@ func NewConfigMap(
 	client k8sclient.Client,
 	pandaCluster *redpandav1alpha1.Cluster,
 	scheme *runtime.Scheme,
-	serviceFQDN string,
 	logger logr.Logger,
 ) *ConfigMapResource {
 	return &ConfigMapResource{
-		client, scheme, pandaCluster, serviceFQDN, logger.WithValues("Kind", configMapKind()),
+		client, scheme, pandaCluster, logger.WithValues("Kind", configMapKind()),
 	}
 }
 
@@ -94,24 +81,10 @@ func (r *ConfigMapResource) Ensure(ctx context.Context) error {
 
 // Obj returns resource managed client.Object
 func (r *ConfigMapResource) Obj() (k8sclient.Object, error) {
-	serviceAddress := r.serviceFQDN
-
 	cfgBytes, err := yaml.Marshal(r.createConfiguration())
 	if err != nil {
 		return nil, err
 	}
-
-	script :=
-		`set -xe;
-		CONFIG=` + configPath + `;
-		ORDINAL_INDEX=${HOSTNAME##*-};
-		SERVICE_NAME=${HOSTNAME}.` + serviceAddress + `
-		cp /mnt/operator/redpanda.yaml $CONFIG;
-		rpk --config $CONFIG config set redpanda.node_id $ORDINAL_INDEX;
-		if [ "$ORDINAL_INDEX" = "0" ]; then
-			rpk --config $CONFIG config set redpanda.seed_servers '[]' --format yaml;
-		fi;
-		cat $CONFIG`
 
 	cm := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
@@ -120,8 +93,7 @@ func (r *ConfigMapResource) Obj() (k8sclient.Object, error) {
 			Labels:    labels.ForCluster(r.pandaCluster),
 		},
 		Data: map[string]string{
-			"redpanda.yaml":   string(cfgBytes),
-			"configurator.sh": script,
+			"redpanda.yaml": string(cfgBytes),
 		},
 	}
 
@@ -134,7 +106,6 @@ func (r *ConfigMapResource) Obj() (k8sclient.Object, error) {
 }
 
 func (r *ConfigMapResource) createConfiguration() *config.Config {
-	serviceAddress := r.serviceFQDN
 	cfgRpk := config.Default()
 
 	c := r.pandaCluster.Spec.Configuration
@@ -158,15 +129,6 @@ func (r *ConfigMapResource) createConfiguration() *config.Config {
 
 	cr.AdminApi.Port = clusterCRPortOrRPKDefault(c.AdminAPI.Port, cr.AdminApi.Port)
 	cr.DeveloperMode = c.DeveloperMode
-	cr.SeedServers = []config.SeedServer{
-		{
-			Host: config.SocketAddress{
-				// Example address: cluster-sample-0.cluster-sample.default.svc.cluster.local
-				Address: r.pandaCluster.Name + "-0." + serviceAddress,
-				Port:    clusterCRPortOrRPKDefault(c.RPCServer.Port, cr.RPCServer.Port),
-			},
-		},
-	}
 	cr.Directory = dataDirectory
 
 	return cfgRpk

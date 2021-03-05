@@ -12,7 +12,9 @@ package resources
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"reflect"
+	"strconv"
 
 	"github.com/go-logr/logr"
 	redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
@@ -32,8 +34,17 @@ import (
 var _ Resource = &StatefulSetResource{}
 
 const (
-	redpandaContainerName     = "redpanda"
-	configuratorContainerName = "redpanda-configurator"
+	redpandaContainerName      = "redpanda"
+	configuratorContainerName  = "redpanda-configurator"
+	configuratorContainerImage = "vectorized/configurator:latest"
+
+	userID  = 101
+	groupID = 101
+	fsGroup = 101
+
+	configDestinationDir = "/etc/redpanda"
+	configSourceDir      = "/mnt/operator"
+	configFile           = "redpanda.yaml"
 )
 
 // StatefulSetResource is part of the reconciliation of redpanda.vectorized.io CRD
@@ -201,18 +212,39 @@ func (r *StatefulSetResource) Obj() (k8sclient.Object, error) {
 					},
 					InitContainers: []corev1.Container{
 						{
-							Name:    configuratorContainerName,
-							Image:   r.pandaCluster.FullImageName(),
-							Command: []string{"/bin/sh", "-c"},
-							Args:    []string{configuratorPath},
+							Name:            configuratorContainerName,
+							Image:           configuratorContainerImage,
+							ImagePullPolicy: corev1.PullIfNotPresent,
+							Env: []corev1.EnvVar{
+								{
+									Name:  "SERVICE_FQDN",
+									Value: r.serviceFQDN,
+								},
+								{
+									Name:  "CONFIG_SOURCE_DIR",
+									Value: configSourceDir,
+								},
+								{
+									Name:  "CONFIG_DESTINATION",
+									Value: filepath.Join(configDestinationDir, configFile),
+								},
+								{
+									Name:  "REDPANDA_RPC_PORT",
+									Value: strconv.Itoa(r.pandaCluster.Spec.Configuration.RPCServer.Port),
+								},
+							},
+							SecurityContext: &corev1.SecurityContext{
+								RunAsUser:  pointer.Int64Ptr(userID),
+								RunAsGroup: pointer.Int64Ptr(groupID),
+							},
 							VolumeMounts: []corev1.VolumeMount{
 								{
 									Name:      "config-dir",
-									MountPath: configDir,
+									MountPath: configDestinationDir,
 								},
 								{
 									Name:      "configmap-dir",
-									MountPath: configuratorDir,
+									MountPath: configSourceDir,
 								},
 							},
 						},
@@ -290,7 +322,7 @@ func (r *StatefulSetResource) Obj() (k8sclient.Object, error) {
 								},
 								{
 									Name:      "config-dir",
-									MountPath: configDir,
+									MountPath: configDestinationDir,
 								},
 							},
 						},

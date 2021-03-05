@@ -4,6 +4,7 @@ startKIND: true
 kindNodeCache: true
 kindContainers:
   - vectorized/redpanda-operator:latest
+  - vectorized/configurator:latest
 testDirs:
   - ./tests/e2e
 kindConfig: ./kind.yaml
