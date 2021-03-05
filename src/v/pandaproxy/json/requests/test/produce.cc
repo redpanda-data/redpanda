@@ -203,16 +203,16 @@ SEASTAR_THREAD_TEST_CASE(test_produce_response) {
       .name = model::topic{"topic0"},
       .partitions = {
         kafka::produce_response::partition{
-          .id = model::partition_id{0},
-          .error = kafka::error_code::none,
+          .partition_index = model::partition_id{0},
+          .error_code = kafka::error_code::none,
           .base_offset = model::offset{42},
-          .log_append_time = model::timestamp{},
+          .log_append_time_ms = model::timestamp{},
           .log_start_offset = model::offset{}},
         kafka::produce_response::partition{
-          .id = model::partition_id{1},
-          .error = kafka::error_code::invalid_partitions,
+          .partition_index = model::partition_id{1},
+          .error_code = kafka::error_code::invalid_partitions,
           .base_offset = model::offset{-1},
-          .log_append_time = model::timestamp{},
+          .log_append_time_ms = model::timestamp{},
           .log_start_offset = model::offset{}},
       }};
 
