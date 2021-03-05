@@ -1,84 +1,27 @@
-seastar_generate_swagger(
-  TARGET admin_config_swagger
-  VAR admin_config_swagger_file
-  IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/admin/api-doc/config.json
-  OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/admin/api-doc/config.json.h
+set (swagger_deps
+  get_topics_names
+  get_topics_records
+  post_topics_name
+  create_consumer
+  remove_consumer
+  subscribe_consumer
+  consumer_fetch
+  get_consumer_offsets
+  post_consumer_offsets
 )
 
-seastar_generate_swagger(
-  TARGET api_health_swagger
-  VAR api_health_swagger_file
-  IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/api/api-doc/health.json
-  OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/api/api-doc/health.json.h
-)
-
-seastar_generate_swagger(
-  TARGET get_topics_names_swagger
-  VAR get_topics_names_swagger_file
-  IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/api/api-doc/get_topics_names.json
-  OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/api/api-doc/get_topics_names.json.h
-)
-
-seastar_generate_swagger(
-  TARGET get_topics_records_swagger
-  VAR get_topics_records_swagger_file
-  IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/api/api-doc/get_topics_records.json
-  OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/api/api-doc/get_topics_records.json.h
-)
-
-seastar_generate_swagger(
-  TARGET post_topics_name_swagger
-  VAR post_topics_name_swagger_file
-  IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/api/api-doc/post_topics_name.json
-  OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/api/api-doc/post_topics_name.json.h
-)
-
-seastar_generate_swagger(
-  TARGET create_consumer_swagger
-  VAR create_consumer_swagger_file
-  IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/api/api-doc/create_consumer.json
-  OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/api/api-doc/create_consumer.json.h
-)
-
-seastar_generate_swagger(
-  TARGET remove_consumer_swagger
-  VAR remove_consumer_swagger_file
-  IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/api/api-doc/remove_consumer.json
-  OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/api/api-doc/remove_consumer.json.h
-)
-
-seastar_generate_swagger(
-  TARGET subscribe_consumer_swagger
-  VAR subscribe_consumer_swagger_file
-  IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/api/api-doc/subscribe_consumer.json
-  OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/api/api-doc/subscribe_consumer.json.h
-)
-
-seastar_generate_swagger(
-  TARGET consumer_fetch_swagger
-  VAR consumer_fetch_swagger_file
-  IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/api/api-doc/consumer_fetch.json
-  OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/api/api-doc/consumer_fetch.json.h
-)
-
-seastar_generate_swagger(
-  TARGET get_consumer_offsets_swagger
-  VAR get_consumer_offsets_swagger_file
-  IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/api/api-doc/get_consumer_offsets.json
-  OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/api/api-doc/get_consumer_offsets.json.h
-)
-
-seastar_generate_swagger(
-  TARGET post_consumer_offsets_swagger
-  VAR post_consumer_offsets_swagger_file
-  IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/api/api-doc/post_consumer_offsets.json
-  OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/api/api-doc/post_consumer_offsets.json.h
-)
+foreach(swagger_dep ${swagger_deps})
+  seastar_generate_swagger(
+    TARGET ${swagger_dep}_swagger
+    VAR ${swagger_dep}_file
+    IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/api/api-doc/${swagger_dep}.json
+    OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/api/api-doc/${swagger_dep}.json.h
+  )
+endforeach()
 
 v_cc_library(
-  NAME rest_application
+  NAME pandaproxy
   SRCS
-    application.cc
     configuration.cc
     handlers.cc
     logger.cc
@@ -93,33 +36,9 @@ v_cc_library(
     v::utils
   )
 
-add_executable(pandaproxy
-  main.cc
-)
-target_link_libraries(pandaproxy PUBLIC v::rest_application)
-set_property(TARGET pandaproxy PROPERTY POSITION_INDEPENDENT_CODE ON)
-add_dependencies(v_rest_application
-  admin_config_swagger
-  api_health_swagger
-  get_topics_names_swagger
-  get_topics_records_swagger
-  post_topics_name_swagger
-  create_consumer_swagger
-  remove_consumer_swagger
-  subscribe_consumer_swagger
-  consumer_fetch_swagger
-  get_consumer_offsets_swagger
-  post_consumer_offsets_swagger
-)
-
-if(CMAKE_BUILD_TYPE MATCHES Release)
-  include(CheckIPOSupported)
-  check_ipo_supported(RESULT ltosupported OUTPUT error)
-  if(ltosupported)
-    set_property(TARGET pandaproxy PROPERTY INTERPROCEDURAL_OPTIMIZATION ON)
-  endif()
-endif()
-install(TARGETS pandaproxy DESTINATION bin)
+foreach(swagger_dep ${swagger_deps})
+  add_dependencies(v_pandaproxy ${swagger_dep}_swagger)
+endforeach()
 
 add_subdirectory(json)
 add_subdirectory(test)

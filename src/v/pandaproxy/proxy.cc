@@ -14,7 +14,6 @@
 #include "pandaproxy/api/api-doc/get_consumer_offsets.json.h"
 #include "pandaproxy/api/api-doc/get_topics_names.json.h"
 #include "pandaproxy/api/api-doc/get_topics_records.json.h"
-#include "pandaproxy/api/api-doc/health.json.h"
 #include "pandaproxy/api/api-doc/post_consumer_offsets.json.h"
 #include "pandaproxy/api/api-doc/post_topics_name.json.h"
 #include "pandaproxy/api/api-doc/remove_consumer.json.h"
@@ -31,14 +30,6 @@ namespace pandaproxy {
 
 std::vector<server::route_t> get_proxy_routes() {
     std::vector<server::route_t> routes;
-
-    routes.emplace_back(server::route_t{
-      "health",
-      ss::httpd::health_json::health_check,
-      [](server::request_t, server::reply_t rp) {
-          rp.rep->set_status(ss::httpd::reply::status_type::ok);
-          return ss::make_ready_future<server::reply_t>(std::move(rp));
-      }});
 
     routes.emplace_back(server::route_t{
       ss::httpd::get_topics_names_json::name,
