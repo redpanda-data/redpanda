@@ -25,10 +25,6 @@ func TestValidateUpdate(t *testing.T) {
 	var replicas2 int32 = 2
 
 	redpandaCluster := &v1alpha1.Cluster{
-		TypeMeta: metav1.TypeMeta{
-			Kind:		"RedpandaCluster",
-			APIVersion:	"core.vectorized.io/v1alpha1",
-		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:		"test",
 			Namespace:	"",
@@ -73,10 +69,6 @@ func TestValidateUpdate_NoError(t *testing.T) {
 	var replicas2 int32 = 2
 
 	redpandaCluster := &v1alpha1.Cluster{
-		TypeMeta: metav1.TypeMeta{
-			Kind:		"RedpandaCluster",
-			APIVersion:	"core.vectorized.io/v1alpha1",
-		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:		"test",
 			Namespace:	"",
@@ -84,7 +76,9 @@ func TestValidateUpdate_NoError(t *testing.T) {
 		Spec: v1alpha1.ClusterSpec{
 			Replicas:	pointer.Int32Ptr(replicas2),
 			Configuration: v1alpha1.RedpandaConfig{
-				KafkaAPI: v1alpha1.SocketAddress{Port: 123},
+				KafkaAPI:	v1alpha1.SocketAddress{Port: 123},
+				AdminAPI:	v1alpha1.SocketAddress{Port: 125},
+				RPCServer:	v1alpha1.SocketAddress{Port: 126},
 			},
 		},
 	}
@@ -108,5 +102,58 @@ func TestValidateUpdate_NoError(t *testing.T) {
 		updatedImage.Spec.Version = "111"
 		err := updatedImage.ValidateUpdate(redpandaCluster)
 		assert.NoError(t, err)
+	})
+
+	t.Run("collision in the port", func(t *testing.T) {
+		updatePort := redpandaCluster.DeepCopy()
+		updatePort.Spec.Configuration.KafkaAPI.Port = 200
+		updatePort.Spec.Configuration.AdminAPI.Port = 200
+		updatePort.Spec.Configuration.RPCServer.Port = 200
+
+		err := updatePort.ValidateUpdate(redpandaCluster)
+		assert.Error(t, err)
+	})
+
+	t.Run("collision between external KafkaAPI and other port", func(t *testing.T) {
+		updatePort := redpandaCluster.DeepCopy()
+		updatePort.Spec.Configuration.KafkaAPI.Port = 200
+		updatePort.Spec.Configuration.AdminAPI.Port = 201
+
+		err := updatePort.ValidateUpdate(redpandaCluster)
+		assert.Error(t, err)
+	})
+}
+
+func TestCreation(t *testing.T) {
+	redpandaCluster := &v1alpha1.Cluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:		"test",
+			Namespace:	"",
+		},
+		Spec: v1alpha1.ClusterSpec{
+			Configuration: v1alpha1.RedpandaConfig{
+				KafkaAPI:	v1alpha1.SocketAddress{Port: 123},
+				AdminAPI:	v1alpha1.SocketAddress{Port: 125},
+				RPCServer:	v1alpha1.SocketAddress{Port: 126},
+			},
+		},
+	}
+
+	t.Run("no collision in the port", func(t *testing.T) {
+		updatePort := redpandaCluster.DeepCopy()
+		updatePort.Spec.Configuration.KafkaAPI.Port = 200
+
+		err := updatePort.ValidateCreate()
+		assert.NoError(t, err)
+	})
+
+	t.Run("collision in the port", func(t *testing.T) {
+		updatePort := redpandaCluster.DeepCopy()
+		updatePort.Spec.Configuration.KafkaAPI.Port = 200
+		updatePort.Spec.Configuration.AdminAPI.Port = 200
+		updatePort.Spec.Configuration.RPCServer.Port = 200
+
+		err := updatePort.ValidateCreate()
+		assert.Error(t, err)
 	})
 }
