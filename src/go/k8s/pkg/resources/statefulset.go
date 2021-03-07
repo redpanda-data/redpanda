@@ -56,8 +56,6 @@ type StatefulSetResource struct {
 	serviceFQDN  string
 	serviceName  string
 	logger       logr.Logger
-
-	LastObservedState *appsv1.StatefulSet
 }
 
 // NewStatefulSet creates StatefulSetResource
@@ -70,7 +68,7 @@ func NewStatefulSet(
 	logger logr.Logger,
 ) *StatefulSetResource {
 	return &StatefulSetResource{
-		client, scheme, pandaCluster, serviceFQDN, serviceName, logger.WithValues("Kind", statefulSetKind()), nil,
+		client, scheme, pandaCluster, serviceFQDN, serviceName, logger.WithValues("Kind", statefulSetKind()),
 	}
 }
 
@@ -91,13 +89,8 @@ func (r *StatefulSetResource) Ensure(ctx context.Context) error {
 			return err
 		}
 
-		err = r.Create(ctx, obj)
-		r.LastObservedState = obj.(*appsv1.StatefulSet)
-
-		return err
+		return r.Create(ctx, obj)
 	}
-
-	r.LastObservedState = &sts
 
 	updated := update(&sts, r.pandaCluster, r.logger)
 	if updated {
