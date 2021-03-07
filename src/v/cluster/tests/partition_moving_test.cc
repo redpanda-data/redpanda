@@ -727,7 +727,11 @@ FIXTURE_TEST(
             for (const auto& r : history) {
                 auto current = get_replicas(0, ntp);
                 logger.info(
-                  "update no: {}. started  [{} => {}]", cnt, current, r);
+                  "[{}] update no: {}. started  [{} => {}]",
+                  ntp,
+                  cnt,
+                  current,
+                  r);
                 auto err = std::error_code(raft::errc::not_leader);
                 int retry = 0;
                 while (err) {
@@ -739,11 +743,12 @@ FIXTURE_TEST(
                             .get0();
                     if (err) {
                         logger.info(
-                          "update no: {}.  [{} => {}] - failure: {}",
+                          "[{}] update no: {}.  [{} => {}] - failure: {}",
+                          ntp,
                           cnt,
                           current,
                           r,
-                          err);
+                          err.message());
                         ss::sleep(200ms).get();
                         retry++;
                     }
