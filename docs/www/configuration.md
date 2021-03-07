@@ -19,87 +19,6 @@ Here’s a sample of the config. Only include the sections that you want to cust
 organization: ""
 cluster_id: ""
 
-rpk:
-  # TLS configuration to allow rpk to make requests to the redpanda API.
-  tls:
-    # The path to the root CA certificate (PEM).
-    truststore_file: ""
-    # The path to the client certificate (PEM). Only required if client authentication is
-    # enabled in the broker.
-    cert_file: ""
-    # The path to the client certificate key (PEM). Only required if client authentication is
-    # enabled in the broker.
-    key_file: ""
-
-  # Available tuners. Set to true to enable, false to disable.
-
-  # Setup NIC IRQs affinity, sets up NIC RPS and RFS, sets up NIC XPS, increases socket
-  # listen backlog, increases the number of remembered connection requests, bans the
-  # IRQ Balance service from moving distributed IRQs.
-  # Default: false
-  tune_network: false
-
-  # Sets the preferred I/O scheduler for given block devices.
-  # It can work using both the device name or a directory, in which the device where
-  # directory is stored will be optimized. Sets either 'none' or 'noop' scheduler
-  # if supported.
-  # Default: false
-  tune_disk_scheduler: false
-
-  # Disables IOPS merging.
-  # Default: false
-  tune_disk_nomerges: false
-
-  # Distributes IRQs across cores with the method deemed the most appropriate for the
-  # current device type (i.e. NVMe).
-  # Default: false
-  tune_disk_irq: false
-  
-  # Installs a systemd service to run fstrim weekly, or starts the default fstrim service
-  # which comes with most Linux distributions.
-  # Default: false
-  tune_fstrim: false
-
-  # Disables hyper-threading, sets the ACPI-cpufreq governor to 'performance'. Additionaly
-  # if system reboot is allowed: disables Intel P-States, disables Intel C-States,
-  # disables Turbo Boost.
-  # Default: false
-  tune_cpu: true
-
-  # Increases the number of allowed asynchronous IO events.
-  # Default: false
-  tune_aio_events: false
-
-  # Syncs NTP.
-  # Default: false
-  tune_clocksource: true
-
-  # Tunes the kernel to prefer keeping processes in-memory instead of swapping them out.
-  # Default: false
-  tune_swappiness: false
-  
-  # Enables transparent hugepages (THP) to reduce TLB misses.
-  # Default: false
-  tune_transparent_hugepages: false
-
-  # Enables memory locking.
-  # Default: false
-  enable_memory_locking: false
-
-  # Installs a custom script to process coredumps and save them to the given directory.
-  # Default: false
-  tune_coredump: false
-
-  # The directory where all coredumps will be saved after they're processed.
-  # Default: ''
-  coredump_dir: "/var/lib/redpanda/coredump"
-
-  # (Optional) The vendor, VM type and storage device type that redpanda will run on, in
-  # the format <vendor>:<vm>:<storage>. This hints to rpk which configuration values it
-  # should use for the redpanda IO scheduler.
-  # Default: ''
-  well_known_io: "aws:i3.xlarge:default"
-
 redpanda:
   # Path where redpanda will keep the data.
   # Required.
@@ -127,52 +46,14 @@ redpanda:
   # Default: 5 GiB
   max_compacted_log_segment_size: 5368709120
     
-  # The IP address and port for the internal RPC server.
-  # Default: 127.0.0.0:33145
-  rpc_server:
-    address: "0.0.0.0"
-    port: 33145
-   
-  # Multiple listeners are also supported as per KIP-103.
-  # The names must match those in advertised_kafka_api
-  kafka_api:
-  - address: "0.0.0.0"
-    name: internal
-    port: 9092
-  - address: "0.0.0.0"
-    name: external
-    port: 9093
-
-# TLS configuration for the RPC server.
-  # Default: null
-  rpc_server_tls:
-    # Whether to enable TLS for the RPC server.
-    enabled: false
-    # Require client authentication
-    require_client_auth: false
-    # The path to the server certificate PEM file.
-    cert_file: ""
-    # The path to the server key PEM file
-    key_file: ""
-    # The path to the truststore PEM file. Only required if client authentication
-    # is enabled.
-    truststore_file: ""
+  # Enable the admin API.
+  # Default: true
+  enable_admin_api: true
   
-  # TLS configuration for the Kafka API.
-  # Default: null
-  kafka_api_tls:
-    # Whether to enable TLS for the Kafka API.
-    enabled: false
-    # Require client authentication
-    require_client_auth: false
-    # The path to the server certificate PEM file.
-    cert_file: ""
-    # The path to the server key PEM file
-    key_file: ""
-    # The path to the truststore PEM file. Only required if client authentication
-    # is enabled.
-    truststore_file: ""
-  
+  # Admin API doc directory.
+  # Default: /usr/share/redpanda/admin-api-doc
+  admin_api_doc_dir: "/usr/share/redpanda/admin-api-doc"
+    
   # Address and port of admin server.
   # Default: 127.0.0.1:9644
   admin:
@@ -193,12 +74,58 @@ redpanda:
     # The path to the truststore PEM file. Only required if client authentication
     # is enabled.
     truststore_file: ""
+  
+  # The IP address and port for the internal RPC server.
+  # Default: 127.0.0.0:33145
+  rpc_server:
+    address: "0.0.0.0"
+    port: 33145
+   
+# TLS configuration for the RPC server.
+  # Default: null
+  rpc_server_tls:
+    # Whether to enable TLS for the RPC server.
+    enabled: false
+    # Require client authentication
+    require_client_auth: false
+    # The path to the server certificate PEM file.
+    cert_file: ""
+    # The path to the server key PEM file
+    key_file: ""
+    # The path to the truststore PEM file. Only required if client authentication
+    # is enabled.
+    truststore_file: ""
 
   # Address of RPC endpoint published to other cluster members.
   # Default: 0.0.0.0:33145
   advertised_rpc_api:
     address: "0.0.0.0"
     port: 33145
+  
+  # Multiple listeners are also supported as per KIP-103.
+  # The names must match those in advertised_kafka_api
+  kafka_api:
+  - address: "0.0.0.0"
+    name: internal
+    port: 9092
+  - address: "0.0.0.0"
+    name: external
+    port: 9093
+
+  # TLS configuration for the Kafka API.
+  # Default: null
+  kafka_api_tls:
+    # Whether to enable TLS for the Kafka API.
+    enabled: false
+    # Require client authentication
+    require_client_auth: false
+    # The path to the server certificate PEM file.
+    cert_file: ""
+    # The path to the server key PEM file
+    key_file: ""
+    # The path to the truststore PEM file. Only required if client authentication
+    # is enabled.
+    truststore_file: ""
 
   # Multiple listeners are also supported as per KIP-103.
   # The names must match those in kafka_api
@@ -234,14 +161,6 @@ redpanda:
   # Manage CPU scheduling.
   # Default: false
   use_scheduling_groups: false 
-    
-  # Enable the admin API.
-  # Default: true
-  enable_admin_api: true
-  
-  # Admin API doc directory.
-  # Default: /usr/share/redpanda/admin-api-doc
-  admin_api_doc_dir: "/usr/share/redpanda/admin-api-doc"
   
   # Default number of quota tracking windows.
   # Default: 10
@@ -414,4 +333,85 @@ redpanda:
   # Minimum time before which unused session will get evicted from sessions. Maximum time after which inactive session will be deleted is twice the given configuration value
   # Default: 60s
   fetch_session_eviction_timeout_ms: 60000
+
+rpk:
+  # TLS configuration to allow rpk to make requests to the redpanda API.
+  tls:
+    # The path to the root CA certificate (PEM).
+    truststore_file: ""
+    # The path to the client certificate (PEM). Only required if client authentication is
+    # enabled in the broker.
+    cert_file: ""
+    # The path to the client certificate key (PEM). Only required if client authentication is
+    # enabled in the broker.
+    key_file: ""
+
+  # Available tuners. Set to true to enable, false to disable.
+
+  # Setup NIC IRQs affinity, sets up NIC RPS and RFS, sets up NIC XPS, increases socket
+  # listen backlog, increases the number of remembered connection requests, bans the
+  # IRQ Balance service from moving distributed IRQs.
+  # Default: false
+  tune_network: false
+
+  # Sets the preferred I/O scheduler for given block devices.
+  # It can work using both the device name or a directory, in which the device where
+  # directory is stored will be optimized. Sets either 'none' or 'noop' scheduler
+  # if supported.
+  # Default: false
+  tune_disk_scheduler: false
+
+  # Disables IOPS merging.
+  # Default: false
+  tune_disk_nomerges: false
+
+  # Distributes IRQs across cores with the method deemed the most appropriate for the
+  # current device type (i.e. NVMe).
+  # Default: false
+  tune_disk_irq: false
+  
+  # Installs a systemd service to run fstrim weekly, or starts the default fstrim service
+  # which comes with most Linux distributions.
+  # Default: false
+  tune_fstrim: false
+
+  # Disables hyper-threading, sets the ACPI-cpufreq governor to 'performance'. Additionaly
+  # if system reboot is allowed: disables Intel P-States, disables Intel C-States,
+  # disables Turbo Boost.
+  # Default: false
+  tune_cpu: true
+
+  # Increases the number of allowed asynchronous IO events.
+  # Default: false
+  tune_aio_events: false
+
+  # Syncs NTP.
+  # Default: false
+  tune_clocksource: true
+
+  # Tunes the kernel to prefer keeping processes in-memory instead of swapping them out.
+  # Default: false
+  tune_swappiness: false
+  
+  # Enables transparent hugepages (THP) to reduce TLB misses.
+  # Default: false
+  tune_transparent_hugepages: false
+
+  # Enables memory locking.
+  # Default: false
+  enable_memory_locking: false
+
+  # Installs a custom script to process coredumps and save them to the given directory.
+  # Default: false
+  tune_coredump: false
+
+  # The directory where all coredumps will be saved after they're processed.
+  # Default: ''
+  coredump_dir: "/var/lib/redpanda/coredump"
+
+  # (Optional) The vendor, VM type and storage device type that redpanda will run on, in
+  # the format <vendor>:<vm>:<storage>. This hints to rpk which configuration values it
+  # should use for the redpanda IO scheduler.
+  # Default: ''
+  well_known_io: "aws:i3.xlarge:default"
 ```
