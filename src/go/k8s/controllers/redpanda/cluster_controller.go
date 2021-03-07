@@ -47,6 +47,9 @@ type ClusterReconciler struct {
 //+kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch;
 //+kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;
 //+kubebuilder:rbac:groups=cert-manager.io,resources=issuers;certificates,verbs=create;get;list;watch;
+//+kubebuilder:rbac:groups=core,resources=serviceaccounts,verbs=get;list;watch;create;update;patch;
+//+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles,verbs=get;list;watch;create;update;patch;
+//+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterrolebindings,verbs=get;list;watch;create;update;patch;
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -83,6 +86,9 @@ func (r *ClusterReconciler) Reconcile(
 		resources.NewConfigMap(r.Client, &redpandaCluster, r.Scheme, svc.HeadlessServiceFQDN(), log),
 		issuer,
 		cert,
+		resources.NewServiceAccount(r.Client, &redpandaCluster, r.Scheme, log),
+		resources.NewClusterRole(r.Client, &redpandaCluster, r.Scheme, log),
+		resources.NewClusterRoleBinding(r.Client, &redpandaCluster, r.Scheme, log),
 		sts,
 	}
 

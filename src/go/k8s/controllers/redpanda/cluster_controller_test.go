@@ -18,6 +18,7 @@ import (
 	"github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -52,6 +53,10 @@ var _ = Describe("RedPandaCluster controller", func() {
 				Name:      key.Name + "-base",
 				Namespace: "default",
 			}
+			clusterRoleKey := types.NamespacedName{
+				Name:      "redpanda-init-configurator",
+				Namespace: "",
+			}
 			redpandaCluster := &v1alpha1.Cluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      key.Name,
@@ -71,6 +76,7 @@ var _ = Describe("RedPandaCluster controller", func() {
 						Limits:   resources,
 						Requests: resources,
 					},
+					ExternalConnectivity: true,
 				},
 			}
 			Expect(k8sClient.Create(context.Background(), redpandaCluster)).Should(Succeed())
@@ -93,7 +99,7 @@ var _ = Describe("RedPandaCluster controller", func() {
 				}, &svc)
 				return err == nil &&
 					svc.Spec.Type == corev1.ServiceTypeNodePort &&
-					svc.Spec.Ports[0].Port == kafkaPort &&
+					svc.Spec.Ports[0].Port == kafkaPort+1 &&
 					validOwner(redpandaCluster, svc.OwnerReferences)
 			}, timeout, interval).Should(BeTrue())
 
@@ -107,6 +113,33 @@ var _ = Describe("RedPandaCluster controller", func() {
 				_, exist := cm.Data[redpandaConfigurationFile]
 				return exist &&
 					validOwner(redpandaCluster, cm.OwnerReferences)
+			}, timeout, interval).Should(BeTrue())
+
+			By("Creating ServiceAcount")
+			var sa corev1.ServiceAccount
+			Eventually(func() bool {
+				err := k8sClient.Get(context.Background(), key, &sa)
+				return err == nil
+			}, timeout, interval).Should(BeTrue())
+
+			By("Creating ClusterRole")
+			var cr v1.ClusterRole
+			Eventually(func() bool {
+				err := k8sClient.Get(context.Background(), clusterRoleKey, &cr)
+				return err == nil &&
+					cr.Rules[0].Verbs[0] == "get" &&
+					cr.Rules[0].Resources[0] == "nodes"
+			}, timeout, interval).Should(BeTrue())
+
+			By("Creating ClusterRoleBinding")
+			var crb v1.ClusterRoleBinding
+			Eventually(func() bool {
+				err := k8sClient.Get(context.Background(), clusterRoleKey, &crb)
+				return err == nil &&
+					crb.RoleRef.Name == clusterRoleKey.Name &&
+					crb.RoleRef.Kind == "ClusterRole" &&
+					crb.Subjects[0].Name == key.Name &&
+					crb.Subjects[0].Kind == "ServiceAccount"
 			}, timeout, interval).Should(BeTrue())
 
 			By("Creating StatefulSet")
