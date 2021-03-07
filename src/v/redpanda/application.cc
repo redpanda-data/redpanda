@@ -9,6 +9,8 @@
 
 #include "redpanda/application.h"
 
+#include "archival/ntp_archiver_service.h"
+#include "archival/service.h"
 #include "cluster/cluster_utils.h"
 #include "cluster/id_allocator.h"
 #include "cluster/id_allocator_frontend.h"
@@ -45,6 +47,7 @@
 
 #include <seastar/core/metrics.hh>
 #include <seastar/core/prometheus.hh>
+#include <seastar/core/smp.hh>
 #include <seastar/core/thread.hh>
 #include <seastar/http/api_docs.hh>
 #include <seastar/http/exception.hh>
@@ -404,6 +407,7 @@ void application::wire_up_redpanda_services() {
     construct_service(shard_table).get();
 
     syschecks::systemd_message("Intializing storage services").get();
+
     construct_service(
       storage,
       kvstore_config_from_global_config(),
@@ -490,6 +494,26 @@ void application::wire_up_redpanda_services() {
       std::ref(_raft_connection_cache))
       .get();
 
+    if (archival_storage_enabled()) {
+        syschecks::systemd_message("Starting archival scheduler").get();
+        ss::sharded<archival::configuration> configs;
+        configs.start().get();
+        configs
+          .invoke_on_all([](archival::configuration& c) {
+              return archival::scheduler_service::get_archival_service_config()
+                .then(
+                  [&c](archival::configuration cfg) { c = std::move(cfg); });
+          })
+          .get();
+        construct_service(
+          archival_scheduler,
+          std::ref(storage),
+          std::ref(partition_manager),
+          std::ref(controller->get_topics_state()),
+          std::ref(configs))
+          .get();
+        configs.stop().get();
+    }
     // group membership
     syschecks::systemd_message("Creating partition manager").get();
     construct_service(
@@ -597,6 +621,11 @@ ss::future<> application::set_proxy_config(ss::sstring name, std::any val) {
       });
 }
 
+bool application::archival_storage_enabled() {
+    const auto& cfg = config::shard_local_cfg();
+    return cfg.developer_mode() && cfg.archival_storage_enabled();
+}
+
 ss::future<>
 application::set_proxy_client_config(ss::sstring name, std::any val) {
     return _proxy.invoke_on_all(
@@ -684,6 +713,14 @@ void application::start_redpanda() {
     auto& conf = config::shard_local_cfg();
     _rpc.invoke_on_all(&rpc::server::start).get();
     vlog(_log.info, "Started RPC server listening at {}", conf.rpc_server());
+
+    if (archival_storage_enabled()) {
+        syschecks::systemd_message("Starting archival storage").get();
+        archival_scheduler
+          .invoke_on_all(
+            [](archival::scheduler_service& svc) { return svc.start(); })
+          .get();
+    }
 
     quota_mgr.invoke_on_all(&kafka::quota_manager::start).get();
 
