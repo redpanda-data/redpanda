@@ -43,6 +43,20 @@ type configuratorConfig struct {
 	redpandaRPCPort   int
 }
 
+func (c *configuratorConfig) String() string {
+	return fmt.Sprintf("The configuration:\n"+
+		"hostName: %s\n"+
+		"svcFQDN: %s\n"+
+		"configSourceDir: %s\n"+
+		"configDestination: %s\n"+
+		"redpandaRPCPort: %d\n",
+		c.hostName,
+		c.svcFQDN,
+		c.configSourceDir,
+		c.configDestination,
+		c.redpandaRPCPort)
+}
+
 var errorMissingEnvironmentVariable = errors.New("missing environment variable")
 
 func main() {
@@ -52,6 +66,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("%s", fmt.Errorf("unable to get the environment variables: %w", err))
 	}
+
+	log.Print(c)
 
 	fs := afero.NewOsFs()
 	v := config.InitViper(fs)
@@ -155,18 +171,6 @@ func checkEnvVars() (configuratorConfig, error) {
 	if err != nil {
 		result = multierror.Append(result, fmt.Errorf("unable to convert rpc port from string to int: %w", err))
 	}
-
-	log.Printf("The configuration:\n"+
-		"hostName: %s\n"+
-		"svcFQDN: %s\n"+
-		"configSourceDir: %s\n"+
-		"configDestination: %s\n"+
-		"redpandaRPCPort: %d\n",
-		c.hostName,
-		c.svcFQDN,
-		c.configSourceDir,
-		c.configDestination,
-		c.redpandaRPCPort)
 
 	return c, result
 }
