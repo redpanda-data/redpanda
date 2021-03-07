@@ -22,6 +22,7 @@ import (
 	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/resources"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -68,12 +69,18 @@ func (r *ClusterReconciler) Reconcile(
 	defer log.Info(fmt.Sprintf("Finished reconcile loop for %v", req.NamespacedName))
 
 	var redpandaCluster redpandav1alpha1.Cluster
+	crb := resources.NewClusterRoleBinding(r.Client, &redpandaCluster, r.Scheme, log)
 	if err := r.Get(ctx, req.NamespacedName, &redpandaCluster); err != nil {
-		log.Error(err, "Unable to fetch RedpandaCluster")
 		// we'll ignore not-found errors, since they can't be fixed by an immediate
 		// requeue (we'll need to wait for a new notification), and we can get them
 		// on deleted requests.
-		return ctrl.Result{}, client.IgnoreNotFound(err)
+		if apierrors.IsNotFound(err) {
+			if removeError := crb.RemoveSubject(ctx, req.NamespacedName); removeError != nil {
+				return ctrl.Result{}, fmt.Errorf("unable to remove subject in ClusterroleBinding: %w", removeError)
+			}
+			return ctrl.Result{}, nil
+		}
+		return ctrl.Result{}, fmt.Errorf("unable to retrieve Cluster resource: %w", err)
 	}
 
 	svc := resources.NewHeadlessService(r.Client, &redpandaCluster, r.Scheme, log)
@@ -88,7 +95,7 @@ func (r *ClusterReconciler) Reconcile(
 		cert,
 		resources.NewServiceAccount(r.Client, &redpandaCluster, r.Scheme, log),
 		resources.NewClusterRole(r.Client, &redpandaCluster, r.Scheme, log),
-		resources.NewClusterRoleBinding(r.Client, &redpandaCluster, r.Scheme, log),
+		crb,
 		sts,
 	}
 
