@@ -141,6 +141,44 @@ func (r *ClusterRoleBindingResource) Kind() string {
 	return clusterRoleBindingKind()
 }
 
+// RemoveSubject removes ServiceAccount from the ClusterRoleBinding subject list
+func (r *ClusterRoleBindingResource) RemoveSubject(
+	ctx context.Context, cluster types.NamespacedName,
+) error {
+	var crb v1.ClusterRoleBinding
+
+	err := r.Get(ctx, r.Key(), &crb)
+	if err != nil {
+		return fmt.Errorf("error while fetching ClusterRoleBinding resource: %w", err)
+	}
+
+	sa := &ServiceAccountResource{
+		pandaCluster: &redpandav1alpha1.Cluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      cluster.Name,
+				Namespace: cluster.Namespace,
+			},
+		},
+	}
+
+	k := 0
+	for _, s := range crb.Subjects {
+		if !(sa.Key().Name == s.Name &&
+			sa.Key().Namespace == s.Namespace) {
+			crb.Subjects[k] = s
+			k++
+		}
+	}
+
+	crb.Subjects = crb.Subjects[:k]
+
+	if err := r.Update(ctx, &crb); err != nil {
+		return fmt.Errorf("unable to update ClusterRoleBinding: %w", err)
+	}
+
+	return nil
+}
+
 func clusterRoleBindingKind() string {
 	var r v1.ClusterRoleBinding
 	return r.Kind
