@@ -52,6 +52,10 @@ func NewNodePortService(
 
 // Ensure will manage kubernetes v1.Service for redpanda.vectorized.io custom resource
 func (r *NodePortServiceResource) Ensure(ctx context.Context) error {
+	if !r.pandaCluster.Spec.ExternalConnectivity {
+		return nil
+	}
+
 	return getOrCreate(ctx, r, &corev1.Service{}, "Service NodePort", r.logger)
 }
 
@@ -81,8 +85,8 @@ func (r *NodePortServiceResource) Obj() (k8sclient.Object, error) {
 				{
 					Name:       "kafka-tcp",
 					Protocol:   corev1.ProtocolTCP,
-					Port:       int32(r.pandaCluster.Spec.Configuration.KafkaAPI.Port),
-					TargetPort: intstr.FromInt(r.pandaCluster.Spec.Configuration.KafkaAPI.Port),
+					Port:       int32(r.pandaCluster.Spec.Configuration.KafkaAPI.Port + 1),
+					TargetPort: intstr.FromInt(r.pandaCluster.Spec.Configuration.KafkaAPI.Port + 1),
 				},
 			},
 			// The selector is purposely set to nil. Our external connectivity doesn't use
