@@ -43,7 +43,8 @@ type ConfigMapResource struct {
 	scheme       *runtime.Scheme
 	pandaCluster *redpandav1alpha1.Cluster
 
-	logger logr.Logger
+	serviceFQDN string
+	logger      logr.Logger
 }
 
 // NewConfigMap creates ConfigMapResource
@@ -51,10 +52,15 @@ func NewConfigMap(
 	client k8sclient.Client,
 	pandaCluster *redpandav1alpha1.Cluster,
 	scheme *runtime.Scheme,
+	serviceFQDN string,
 	logger logr.Logger,
 ) *ConfigMapResource {
 	return &ConfigMapResource{
-		client, scheme, pandaCluster, logger.WithValues("Kind", configMapKind()),
+		client,
+		scheme,
+		pandaCluster,
+		serviceFQDN,
+		logger.WithValues("Kind", configMapKind()),
 	}
 }
 
@@ -139,6 +145,17 @@ func (r *ConfigMapResource) createConfiguration() *config.Config {
 			TruststoreFile: fmt.Sprintf("%s/%s", tlsDir, CAKey),
 			Enabled:        true,
 		}
+	}
+
+	replicas := *r.pandaCluster.Spec.Replicas
+	for i := int32(0); i < replicas; i++ {
+		cr.SeedServers = append(cr.SeedServers, config.SeedServer{
+			Host: config.SocketAddress{
+				// Example address: cluster-sample-0.cluster-sample.default.svc.cluster.local
+				Address: fmt.Sprintf("%s-%d.%s", r.pandaCluster.Name, i, r.serviceFQDN),
+				Port:    clusterCRPortOrRPKDefault(c.RPCServer.Port, cr.RPCServer.Port),
+			},
+		})
 	}
 
 	return cfgRpk

@@ -95,16 +95,6 @@ func main() {
 	// to form raft group 0
 	if hostIndex == 0 {
 		cfg.Redpanda.SeedServers = []config.SeedServer{}
-	} else {
-		cfg.Redpanda.SeedServers = []config.SeedServer{
-			{
-				Host: config.SocketAddress{
-					// Example address: cluster-sample-0.cluster-sample.default.svc.cluster.local
-					Address: c.hostName + c.svcFQDN,
-					Port:    c.redpandaRPCPort,
-				},
-			},
-		}
 	}
 
 	cfgBytes, err := yaml.Marshal(cfg)
