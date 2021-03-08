@@ -129,9 +129,16 @@ spec:
             properties:
               nodes:
                 description: Nodes of the provisioned redpanda nodes
-                items:
-                  type: string
-                type: array
+                properties:
+                  external:
+                    items:
+                      type: string
+                    type: array
+                  internal:
+                    items:
+                      type: string
+                    type: array
+                type: object
               replicas:
                 description: Replicas show how many nodes are working in the cluster
                 format: int32

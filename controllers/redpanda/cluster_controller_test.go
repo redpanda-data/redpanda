@@ -81,6 +81,41 @@ var _ = Describe("RedPandaCluster controller", func() {
 			}
 			Expect(k8sClient.Create(context.Background(), redpandaCluster)).Should(Succeed())
 
+			redpandaPod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      key.Name,
+					Namespace: key.Namespace,
+					Labels: map[string]string{
+						"app.kubernetes.io/component": "redpanda",
+						"app.kubernetes.io/instance":  "redpanda-test",
+						"app.kubernetes.io/name":      "redpanda",
+					},
+				},
+				Spec: corev1.PodSpec{
+					NodeName: "test-node",
+					Containers: []corev1.Container{{
+						Name:  "test",
+						Image: "test",
+					}},
+				},
+				Status: corev1.PodStatus{},
+			}
+			Expect(k8sClient.Create(context.Background(), redpandaPod)).Should(Succeed())
+
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-node",
+				},
+				Spec: corev1.NodeSpec{},
+				Status: corev1.NodeStatus{
+					Addresses: []corev1.NodeAddress{{
+						Type:    corev1.NodeExternalIP,
+						Address: "9.8.7.6",
+					}},
+				},
+			}
+			Expect(k8sClient.Create(context.Background(), node)).Should(Succeed())
+
 			By("Creating headless Service")
 			var svc corev1.Service
 			Eventually(func() bool {
@@ -155,6 +190,15 @@ var _ = Describe("RedPandaCluster controller", func() {
 			Expect(sts.Spec.Template.Spec.Containers[0].Resources.Requests).Should(Equal(resources))
 			Expect(sts.Spec.Template.Spec.Containers[0].Resources.Limits).Should(Equal(resources))
 			Expect(sts.Spec.Template.Spec.Containers[0].Env).Should(ContainElement(corev1.EnvVar{Name: "REDPANDA_ENVIRONMENT", Value: "kubernetes"}))
+
+			By("Reporting nodes internal and external")
+			var rc v1alpha1.Cluster
+			Eventually(func() bool {
+				err := k8sClient.Get(context.Background(), key, &rc)
+				return err == nil &&
+					len(rc.Status.Nodes.Internal) == 1 &&
+					len(rc.Status.Nodes.External) == 1
+			}, timeout, interval).Should(BeTrue())
 		})
 	})
 })
