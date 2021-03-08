@@ -15,7 +15,7 @@ fi
 MAX=50
 CURRENT=0
 
-until $(kubectl create -f ./config/samples/redpanda_v1alpha1_cluster.yaml >/dev/null 2>&1); do
+until $(kubectl create -f ./config/samples/one_node_cluster.yaml >/dev/null 2>&1); do
   CURRENT=$((CURRENT + 1))
   printf '.'
   sleep 5
@@ -28,4 +28,4 @@ done
 
 echo "Webhook is ready!"
 
-kubectl delete -f ./config/samples/redpanda_v1alpha1_cluster.yaml
+kubectl delete -f ./config/samples/one_node_cluster.yaml
