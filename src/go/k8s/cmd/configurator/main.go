@@ -43,15 +43,31 @@ type configuratorConfig struct {
 	redpandaRPCPort   int
 }
 
+func (c *configuratorConfig) String() string {
+	return fmt.Sprintf("The configuration:\n"+
+		"hostName: %s\n"+
+		"svcFQDN: %s\n"+
+		"configSourceDir: %s\n"+
+		"configDestination: %s\n"+
+		"redpandaRPCPort: %d\n",
+		c.hostName,
+		c.svcFQDN,
+		c.configSourceDir,
+		c.configDestination,
+		c.redpandaRPCPort)
+}
+
 var errorMissingEnvironmentVariable = errors.New("missing environment variable")
 
 func main() {
-	log.Printf("The redpanda configurator is starting")
+	log.Print("The redpanda configurator is starting")
 
 	c, err := checkEnvVars()
 	if err != nil {
 		log.Fatalf("%s", fmt.Errorf("unable to get the environment variables: %w", err))
 	}
+
+	log.Print(c)
 
 	fs := afero.NewOsFs()
 	v := config.InitViper(fs)
@@ -80,7 +96,7 @@ func main() {
 		log.Fatalf("%s", fmt.Errorf("unable to decode: %w", err))
 	}
 
-	log.Printf("Decode done")
+	log.Print("Decode done")
 
 	hostIndex, err := hostIndex(c.hostName)
 	if err != nil {
@@ -112,32 +128,42 @@ func main() {
 }
 
 func checkEnvVars() (configuratorConfig, error) {
-	var exist bool
+	var rpcPort string
 	var result error
 	c := configuratorConfig{}
-	c.hostName, exist = os.LookupEnv(hostNameEnvVar)
-	if !exist {
-		result = multierror.Append(result, fmt.Errorf("HOSTNAME %w", errorMissingEnvironmentVariable))
+
+	envVarList := []struct {
+		value *string
+		name  string
+	}{
+		{
+			value: &c.hostName,
+			name:  hostNameEnvVar,
+		},
+		{
+			value: &c.svcFQDN,
+			name:  svcFQDNEnvVar,
+		},
+		{
+			value: &c.configSourceDir,
+			name:  configSourceDirEnvVar,
+		},
+		{
+			value: &c.configDestination,
+			name:  configDestinationEnvVar,
+		},
+		{
+			value: &rpcPort,
+			name:  redpandaRPCPortEnvVar,
+		},
 	}
 
-	c.svcFQDN, exist = os.LookupEnv(svcFQDNEnvVar)
-	if !exist {
-		result = multierror.Append(result, fmt.Errorf("SERVICE_FQDN %w", errorMissingEnvironmentVariable))
-	}
-
-	c.configSourceDir, exist = os.LookupEnv(configSourceDirEnvVar)
-	if !exist {
-		result = multierror.Append(result, fmt.Errorf("CONFIG_SOURCE_DIR %w", errorMissingEnvironmentVariable))
-	}
-
-	c.configDestination, exist = os.LookupEnv(configDestinationEnvVar)
-	if !exist {
-		result = multierror.Append(result, fmt.Errorf("CONFIG_DESTINATION %w", errorMissingEnvironmentVariable))
-	}
-
-	rpcPort, exist := os.LookupEnv(redpandaRPCPortEnvVar)
-	if !exist {
-		result = multierror.Append(result, fmt.Errorf("REDPANDA_RPC_PORT %w", errorMissingEnvironmentVariable))
+	for _, envVar := range envVarList {
+		v, exist := os.LookupEnv(envVar.name)
+		if !exist {
+			result = multierror.Append(result, fmt.Errorf("%s %w", envVar.name, errorMissingEnvironmentVariable))
+		}
+		*envVar.value = v
 	}
 
 	var err error
@@ -145,18 +171,6 @@ func checkEnvVars() (configuratorConfig, error) {
 	if err != nil {
 		result = multierror.Append(result, fmt.Errorf("unable to convert rpc port from string to int: %w", err))
 	}
-
-	log.Printf("The configuration:\n"+
-		"hostName: %s\n"+
-		"svcFQDN: %s\n"+
-		"configSourceDir: %s\n"+
-		"configDestination: %s\n"+
-		"redpandaRPCPort: %d\n",
-		c.hostName,
-		c.svcFQDN,
-		c.configSourceDir,
-		c.configDestination,
-		c.redpandaRPCPort)
 
 	return c, result
 }
