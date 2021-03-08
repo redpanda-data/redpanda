@@ -59,10 +59,16 @@ type ClusterStatus struct {
 	Replicas int32 `json:"replicas"`
 	// Nodes of the provisioned redpanda nodes
 	// +optional
-	Nodes []string `json:"nodes,omitempty"`
+	Nodes NodesList `json:"nodes,omitempty"`
 	// Indicates cluster is upgrading
 	// +optional
 	Upgrading bool `json:"upgrading"`
+}
+
+// NodesList shows where client can find Redpanda brokers
+type NodesList struct {
+	Internal []string `json:"internal,omitempty"`
+	External []string `json:"external,omitempty"`
 }
 
 //+kubebuilder:object:root=true
