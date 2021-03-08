@@ -82,6 +82,7 @@ func TestEnsure(t *testing.T) {
 			types.NamespacedName{Name: "test", Namespace: "test"},
 			types.NamespacedName{Name: "secret", Namespace: "default"},
 			"",
+			"latest",
 			ctrl.Log.WithName("test"))
 
 		err = sts.Ensure(context.Background())

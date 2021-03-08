@@ -37,8 +37,9 @@ var (
 // ClusterReconciler reconciles a Cluster object
 type ClusterReconciler struct {
 	client.Client
-	Log    logr.Logger
-	Scheme *runtime.Scheme
+	Log             logr.Logger
+	configuratorTag string
+	Scheme          *runtime.Scheme
 }
 
 //+kubebuilder:rbac:groups=redpanda.vectorized.io,resources=clusters,verbs=get;list;watch;create;update;patch;delete
@@ -101,6 +102,7 @@ func (r *ClusterReconciler) Reconcile(
 		nodeportSvc.Key(),
 		cert.SecretKey(),
 		sa.Key().Name,
+		r.configuratorTag,
 		log)
 	toApply := []resources.Resource{
 		headlessSvc,
@@ -184,6 +186,14 @@ func (r *ClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&appsv1.StatefulSet{}).
 		Owns(&corev1.Service{}).
 		Complete(r)
+}
+
+// WithConfiguratorTag set the configuratorTag
+func (r *ClusterReconciler) WithConfiguratorTag(
+	configuratorTag string,
+) *ClusterReconciler {
+	r.configuratorTag = configuratorTag
+	return r
 }
 
 func (r *ClusterReconciler) createExternalNodesList(

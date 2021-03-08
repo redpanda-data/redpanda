@@ -43,6 +43,7 @@ func main() {
 		enableLeaderElection bool
 		probeAddr            string
 		webhookEnabled       bool
+		configuratorTag      string
 	)
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
@@ -51,6 +52,7 @@ func main() {
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
 	flag.BoolVar(&webhookEnabled, "webhook-enabled", false, "Enable webhook Manager")
+	flag.StringVar(&configuratorTag, "configurator-tag", "latest", "Set the configurator tag")
 
 	opts := zap.Options{
 		Development: true,
@@ -79,7 +81,7 @@ func main() {
 		Client: mgr.GetClient(),
 		Log:    ctrl.Log.WithName("controllers").WithName("redpanda").WithName("Cluster"),
 		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
+	}).WithConfiguratorTag(configuratorTag).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Unable to create controller", "controller", "Cluster")
 		os.Exit(1)
 	}
