@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: cluster-sample
+  name: external-connectivity
 spec:
   template:
     spec:
@@ -31,7 +31,7 @@ spec:
             - --check=false
             - --smp 1
             - --reserve-memory 1M
-            - --advertise-rpc-addr=$(POD_NAME).cluster-sample.$(POD_NAMESPACE).svc.cluster.local.:33145
+            - --advertise-rpc-addr=$(POD_NAME).external-connectivity.$(POD_NAMESPACE).svc.cluster.local.:33145
             - --
             - --default-log-level=debug
 status:
@@ -40,7 +40,7 @@ status:
 apiVersion: v1
 kind: Service
 metadata:
-  name: cluster-sample
+  name: external-connectivity
 spec:
   clusterIP: None
   ports:
@@ -49,3 +49,16 @@ spec:
       protocol: TCP
       targetPort: 9092
   type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: external-connectivity-external
+spec:
+  ports:
+    - name: kafka-tcp
+      port: 9093
+      protocol: TCP
+      targetPort: 9093
+      nodePort: 30950
+  type: NodePort
