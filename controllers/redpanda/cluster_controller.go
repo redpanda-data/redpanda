@@ -60,6 +60,7 @@ type ClusterReconciler struct {
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.7.0/pkg/reconcile
+// nolint:funlen // The https://github.com/vectorizedio/redpanda/pull/779 triest to address it
 func (r *ClusterReconciler) Reconcile(
 	ctx context.Context, req ctrl.Request,
 ) (ctrl.Result, error) {
@@ -83,17 +84,28 @@ func (r *ClusterReconciler) Reconcile(
 		return ctrl.Result{}, fmt.Errorf("unable to retrieve Cluster resource: %w", err)
 	}
 
-	svc := resources.NewHeadlessService(r.Client, &redpandaCluster, r.Scheme, log)
+	headlessSvc := resources.NewHeadlessService(r.Client, &redpandaCluster, r.Scheme, log)
+	nodeportSvc := resources.NewNodePortService(r.Client, &redpandaCluster, r.Scheme, log)
 	issuer := resources.NewIssuer(r.Client, &redpandaCluster, r.Scheme, log)
-	cert := resources.NewCertificate(r.Client, &redpandaCluster, r.Scheme, issuer, svc.HeadlessServiceFQDN(), log)
-	sts := resources.NewStatefulSet(r.Client, &redpandaCluster, r.Scheme, svc.HeadlessServiceFQDN(), svc.Key().Name, cert.SecretKey(), log)
+	cert := resources.NewCertificate(r.Client, &redpandaCluster, r.Scheme, issuer, headlessSvc.HeadlessServiceFQDN(), log)
+	sa := resources.NewServiceAccount(r.Client, &redpandaCluster, r.Scheme, log)
+	sts := resources.NewStatefulSet(
+		r.Client,
+		&redpandaCluster,
+		r.Scheme,
+		headlessSvc.HeadlessServiceFQDN(),
+		headlessSvc.Key().Name,
+		nodeportSvc.Key(),
+		cert.SecretKey(),
+		sa.Key().Name,
+		log)
 	toApply := []resources.Resource{
-		svc,
-		resources.NewNodePortService(r.Client, &redpandaCluster, r.Scheme, log),
-		resources.NewConfigMap(r.Client, &redpandaCluster, r.Scheme, svc.HeadlessServiceFQDN(), log),
+		headlessSvc,
+		nodeportSvc,
+		resources.NewConfigMap(r.Client, &redpandaCluster, r.Scheme, headlessSvc.HeadlessServiceFQDN(), log),
 		issuer,
 		cert,
-		resources.NewServiceAccount(r.Client, &redpandaCluster, r.Scheme, log),
+		sa,
 		resources.NewClusterRole(r.Client, &redpandaCluster, r.Scheme, log),
 		crb,
 		sts,
@@ -128,7 +140,7 @@ func (r *ClusterReconciler) Reconcile(
 	observedNodes := make([]string, 0, len(observedPods.Items))
 	// nolint:gocritic // the copies are necessary for further redpandacluster updates
 	for _, item := range observedPods.Items {
-		observedNodes = append(observedNodes, fmt.Sprintf("%s.%s", item.Name, svc.HeadlessServiceFQDN()))
+		observedNodes = append(observedNodes, fmt.Sprintf("%s.%s", item.Name, headlessSvc.HeadlessServiceFQDN()))
 	}
 
 	if !reflect.DeepEqual(observedNodes, redpandaCluster.Status.Nodes) {
