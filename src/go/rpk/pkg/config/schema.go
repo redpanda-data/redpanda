@@ -55,10 +55,11 @@ type TLS struct {
 }
 
 type ServerTLS struct {
-	KeyFile        string `yaml:"key_file,omitempty" mapstructure:"key_file,omitempty" json:"keyFile"`
-	CertFile       string `yaml:"cert_file,omitempty" mapstructure:"cert_file,omitempty" json:"certFile"`
-	TruststoreFile string `yaml:"truststore_file,omitempty" mapstructure:"truststore_file,omitempty" json:"truststoreFile"`
-	Enabled        bool   `yaml:"enabled,omitempty" mapstructure:"enabled,omitempty" json:"enabled"`
+	KeyFile           string `yaml:"key_file,omitempty" mapstructure:"key_file,omitempty" json:"keyFile"`
+	CertFile          string `yaml:"cert_file,omitempty" mapstructure:"cert_file,omitempty" json:"certFile"`
+	TruststoreFile    string `yaml:"truststore_file,omitempty" mapstructure:"truststore_file,omitempty" json:"truststoreFile"`
+	Enabled           bool   `yaml:"enabled,omitempty" mapstructure:"enabled,omitempty" json:"enabled"`
+	RequireClientAuth bool   `yaml:"require_client_auth,omitempty" mapstructure:"require_client_auth,omitempty" json:"requireClientAuth"`
 }
 
 type RpkConfig struct {
