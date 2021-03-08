@@ -1,14 +1,6 @@
 steps:
-- id: install task
-  name: gcr.io/cloud-builders/curl:latest
-  entrypoint: sh
-  args:
-  - -euc
-  - |
-    sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d
-
 - id: checkout vtools
-  name: bitnami/git:2.30.1
+  name: alpine/git:v2.30.1
   entrypoint: sh
   env:
   args:
@@ -21,6 +13,15 @@ steps:
       --branch=release \
       https://$_GITHUB_API_TOKEN@github.com/vectorizedio/vtools
     mv redpanda vtools/
+
+- id: install task
+  name: gcr.io/cloud-builders/curl:latest
+  entrypoint: sh
+  dir: vtools/
+  args:
+  - -euc
+  - |
+    sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d
 
 - id: run task
   name: gcr.io/cloud-builders/docker
