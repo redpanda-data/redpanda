@@ -1,5 +1,5 @@
-import {IOBuf} from "../../../src/js/modules/utilities/IOBuf";
-import {Class1, Class2, Class3} from "./generated";
+import { IOBuf } from "../../../src/js/modules/utilities/IOBuf";
+import { Class1, Class2, Class3 } from "./generated";
 import * as assert from "assert";
 
 const classSigned: Class2 = {
@@ -28,18 +28,20 @@ const class1: Class1 = {
 };
 
 type GeneratorTest = {
-  test: string,
-  assertFn: (ws: number, classResult: Class1, rs: number) => void
-}
-const tests: GeneratorTest[] = [{
-  test: "the write result size should same to read result size",
-  assertFn: (ws, classResult, rs) => {
-    assert.strictEqual(ws, rs);
-  }
-}]
+  test: string;
+  assertFn: (ws: number, classResult: Class1, rs: number) => void;
+};
+const tests: GeneratorTest[] = [
+  {
+    test: "the write result size should same to read result size",
+    assertFn: (ws, classResult, rs) => {
+      assert.strictEqual(ws, rs);
+    },
+  },
+];
 
 describe("Generator Code", () => {
-  tests.forEach(({test, assertFn}) => {
+  tests.forEach(({ test, assertFn }) => {
     const preTest = (): [number, Class1, number] => {
       // Create buffer where the binary data is going to be save
       const io = new IOBuf();
@@ -48,10 +50,10 @@ describe("Generator Code", () => {
       // Read data from the buffer
       const bufferResult = io.getIterable().slice(writtenByteSize);
       const result = Class1.fromBytes(bufferResult);
-      return [writtenByteSize, ...result]
-    }
+      return [writtenByteSize, ...result];
+    };
     it(test, function () {
-      assertFn(...preTest())
+      assertFn(...preTest());
     });
-  })
-})
+  });
+});

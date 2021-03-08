@@ -40,7 +40,7 @@ const decodeZigzag = (field: bigint): bigint => {
  */
 type WriteFn<T> = (field: T, buffer: IOBuf, object?) => number;
 type ToBytes<T> = (value: T, buffer: IOBuf) => number;
-export type Optional<T> = undefined | T ;
+export type Optional<T> = undefined | T;
 
 const writeInt8LE: WriteFn<number> = (field, buffer) => {
   return buffer.appendInt8(field);
@@ -160,12 +160,7 @@ const writeArray = (appendSize?: boolean) => <T>(
   return writtenBytes;
 };
 
-const writeOptional = <T>(
-    buffer: IOBuf,
-    item: Optional<T>,
-    fn: WriteFn<T>
-) => {
-
+const writeOptional = <T>(buffer: IOBuf, item: Optional<T>, fn: WriteFn<T>) => {
   let writtenBytes = 1;
   const noneValue = 0;
   const someValue = 1;
@@ -178,7 +173,7 @@ const writeOptional = <T>(
     writtenBytes += fn(item, buffer);
     return writtenBytes;
   }
-}
+};
 
 const writeObject = <T>(
   buffer: IOBuf,
@@ -323,15 +318,15 @@ const readObject = <T>(
 };
 
 const readOptional = <T>(
-    buffer: Buffer,
-    offset: number,
-    fn: ReadFunction<T>,
-    obj?: FromBytes<T>
+  buffer: Buffer,
+  offset: number,
+  fn: ReadFunction<T>,
+  obj?: FromBytes<T>
 ): [Optional<T>, number] => {
   const isNull = buffer.readInt8(offset) === 0;
   offset += 1;
   if (isNull) {
-    return [undefined, offset]
+    return [undefined, offset];
   } else {
     return fn(buffer, offset, obj);
   }
