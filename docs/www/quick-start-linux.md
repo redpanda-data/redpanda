@@ -11,7 +11,7 @@ and be fully compatible with the [Kafka ecosystem](https://cwiki.apache.org/conf
 This quick start guide can help you get started with Redpanda for development and testing purposes.
 For production or benchmarking, set up a [production deployment](/docs/production-deployment).
 
-## Install Redpanda
+## Install and run Redpanda
 
 We've simplified the installation process down to a few commands:
 
@@ -47,7 +47,7 @@ The output should look like:
      Active: active (running)
 ```
 
-You now have a single node cluster running Redpanda!
+You now have a single-node cluster running Redpanda!
 
 ## Do some streaming
 
@@ -86,7 +86,7 @@ Here are the basic commands to produce and consume streams:
     }
     ```
 
-You've just installed Redpanda and done streaming in a few easy steps. 
+You've just installed Redpanda and done streaming in a few easy steps.
 
 ## What's Next?
 
