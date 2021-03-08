@@ -39,7 +39,7 @@ var errNodePortMissing = errors.New("the node port is missing from the service")
 const (
 	redpandaContainerName      = "redpanda"
 	configuratorContainerName  = "redpanda-configurator"
-	configuratorContainerImage = "vectorized/configurator:latest"
+	configuratorContainerImage = "vectorized/configurator"
 
 	userID  = 101
 	groupID = 101
@@ -62,6 +62,7 @@ type StatefulSetResource struct {
 	nodePortSvc        corev1.Service
 	certSecretKey      types.NamespacedName
 	serviceAccountName string
+	configuratorTag    string
 	logger             logr.Logger
 
 	LastObservedState *appsv1.StatefulSet
@@ -77,6 +78,7 @@ func NewStatefulSet(
 	nodePortName types.NamespacedName,
 	certSecretKey types.NamespacedName,
 	serviceAccountName string,
+	configuratorTag string,
 	logger logr.Logger,
 ) *StatefulSetResource {
 	return &StatefulSetResource{
@@ -89,6 +91,7 @@ func NewStatefulSet(
 		corev1.Service{},
 		certSecretKey,
 		serviceAccountName,
+		configuratorTag,
 		logger.WithValues("Kind", statefulSetKind()),
 		nil,
 	}
