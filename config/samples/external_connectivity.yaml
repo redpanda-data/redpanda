@@ -1,21 +1,19 @@
 apiVersion: redpanda.vectorized.io/v1alpha1
 kind: Cluster
 metadata:
-  name: cluster-sample
-  labels:
-    app.kubernetes.io/name: "redpanda"
-    app.kubernetes.io/instance: "redpanda-cluster-sample"
+  name: external-connectivity
 spec:
   image: "vectorized/redpanda"
   version: "latest"
-  replicas: 1
+  replicas: 3
+  externalConnectivity: true
   resources:
     requests:
       cpu: 1
-      memory: 1.2Gi
+      memory: 2Gi
     limits:
       cpu: 1
-      memory: 1.2Gi
+      memory: 2Gi
   configuration:
     rpcServer:
       port: 33145
