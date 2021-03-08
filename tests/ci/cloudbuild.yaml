@@ -1,0 +1,48 @@
+steps:
+- id: install task
+  name: gcr.io/cloud-builders/curl:latest
+  entrypoint: sh
+  args:
+  - -euc
+  - |
+    sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d
+
+- id: checkout vtools
+  name: bitnami/git:2.30.1
+  entrypoint: sh
+  env:
+  args:
+  - -euc
+  - |
+    mkdir redpanda/
+    mv * .* redpanda/ || true
+    git clone \
+      --depth=1 \
+      --branch=release \
+      https://$_GITHUB_API_TOKEN@github.com/vectorizedio/vtools
+    mv redpanda vtools/
+
+- id: run task
+  name: gcr.io/cloud-builders/docker
+  entrypoint: sh
+  dir: vtools/
+  env:
+  - 'CI=1'
+  - 'COMMIT_SHA=$COMMIT_SHA'
+  - 'SHORT_SHA=$SHORT_SHA'
+  - 'BRANCH_NAME=$BRANCH_NAME'
+  - 'TAG_NAME=$TAG_NAME'
+  - 'DOCKERHUB_USER=$_DOCKER_USERNAME'
+  - 'DOCKERHUB_TOKEN=$_DOCKER_PASSWORD'
+  - 'CLOUDSMITH_API_KEY=$_CLOUDSMITH_TOKEN'
+  args:
+  - -euc
+  - |
+    cp envs/gcb-$_BUILD_TYPE-$_COMPILER .env
+    mkdir build/
+    bin/task $_TASK_ARGS
+
+timeout: 7200s
+
+options:
+  machineType: 'N1_HIGHCPU_32'
