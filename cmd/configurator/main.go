@@ -60,7 +60,7 @@ func (c *configuratorConfig) String() string {
 var errorMissingEnvironmentVariable = errors.New("missing environment variable")
 
 func main() {
-	log.Printf("The redpanda configurator is starting")
+	log.Print("The redpanda configurator is starting")
 
 	c, err := checkEnvVars()
 	if err != nil {
@@ -96,7 +96,7 @@ func main() {
 		log.Fatalf("%s", fmt.Errorf("unable to decode: %w", err))
 	}
 
-	log.Printf("Decode done")
+	log.Print("Decode done")
 
 	hostIndex, err := hostIndex(c.hostName)
 	if err != nil {
