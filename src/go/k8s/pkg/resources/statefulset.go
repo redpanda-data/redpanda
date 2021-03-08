@@ -51,11 +51,12 @@ const (
 // focusing on the management of redpanda cluster
 type StatefulSetResource struct {
 	k8sclient.Client
-	scheme       *runtime.Scheme
-	pandaCluster *redpandav1alpha1.Cluster
-	serviceFQDN  string
-	serviceName  string
-	logger       logr.Logger
+	scheme        *runtime.Scheme
+	pandaCluster  *redpandav1alpha1.Cluster
+	serviceFQDN   string
+	serviceName   string
+	certSecretKey types.NamespacedName
+	logger        logr.Logger
 
 	LastObservedState *appsv1.StatefulSet
 }
@@ -67,10 +68,11 @@ func NewStatefulSet(
 	scheme *runtime.Scheme,
 	serviceFQDN string,
 	serviceName string,
+	certSecretKey types.NamespacedName,
 	logger logr.Logger,
 ) *StatefulSetResource {
 	return &StatefulSetResource{
-		client, scheme, pandaCluster, serviceFQDN, serviceName, logger.WithValues("Kind", statefulSetKind()), nil,
+		client, scheme, pandaCluster, serviceFQDN, serviceName, certSecretKey, logger.WithValues("Kind", statefulSetKind()), nil,
 	}
 }
 
@@ -375,6 +377,21 @@ func (r *StatefulSetResource) Obj() (k8sclient.Object, error) {
 				},
 			},
 		},
+	}
+
+	if r.pandaCluster.Spec.Configuration.TLS.KafkaAPIEnabled {
+		ss.Spec.Template.Spec.Containers[0].VolumeMounts = append(ss.Spec.Template.Spec.Containers[0].VolumeMounts, corev1.VolumeMount{
+			Name:      "tlscert",
+			MountPath: tlsDir,
+		})
+		ss.Spec.Template.Spec.Volumes = append(ss.Spec.Template.Spec.Volumes, corev1.Volume{
+			Name: "tlscert",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: r.certSecretKey.Name,
+				},
+			},
+		})
 	}
 
 	err := controllerutil.SetControllerReference(r.pandaCluster, ss, r.scheme)

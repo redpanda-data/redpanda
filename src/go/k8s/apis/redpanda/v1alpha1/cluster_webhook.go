@@ -119,7 +119,11 @@ func (r *Cluster) validateMemory() field.ErrorList {
 	var allErrs field.ErrorList
 	quantity := resource.MustParse(ReserveMemoryString)
 	if !r.Spec.Configuration.DeveloperMode && (r.Spec.Resources.Limits.Memory().Value()-quantity.Value()) < gb {
-		allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("resources").Child("limits").Child("memory"), r.Spec.Resources.Limits.Memory(), "need minimum of 1GB + 1MB of memory per node"))
+		allErrs = append(allErrs,
+			field.Invalid(
+				field.NewPath("spec").Child("resources").Child("limits").Child("memory"),
+				r.Spec.Resources.Limits.Memory(),
+				"need minimum of 1GB + 1MB of memory per node"))
 	}
 	return allErrs
 }

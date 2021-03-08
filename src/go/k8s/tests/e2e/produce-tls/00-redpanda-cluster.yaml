@@ -1,11 +1,11 @@
 apiVersion: redpanda.vectorized.io/v1alpha1
 kind: Cluster
 metadata:
-  name: update-image-cluster
+  name: cluster-tls
 spec:
   image: "vectorized/redpanda"
-  version: "v21.2.2"
-  replicas: 2
+  version: "latest"
+  replicas: 1
   resources:
     requests:
       cpu: 100m
@@ -21,3 +21,5 @@ spec:
     admin:
       port: 9644
     developerMode: true
+    tls:
+      kafkaApiEnabled: true
