@@ -25,6 +25,12 @@ class RpkPartition:
             self.id, self.leader, self.replicas, self.high_watermark)
 
 
+class RpkClusterInfoNode:
+    def __init__(self, id, address):
+        self.id = id
+        self.address = address
+
+
 class RpkTool:
     """
     Wrapper around rpk.
@@ -112,6 +118,34 @@ class RpkTool:
             self._redpanda.brokers(1)
         ] + cmd
         return self._execute(cmd, stdin=stdin, timeout=timeout)
+
+    def cluster_info(self, timeout=30):
+        # Matches against `rpk cluster info`'s output & parses the brokers'
+        # ID & address. Example:
+        #
+        #  Redpanda Cluster Info
+        #
+        #  1 (192.168.52.1:9092)  (No partitions)
+        #
+        #  2 (192.168.52.2:9092)  (No partitions)
+        #
+        #  3 (192.168.52.3:9092)  (No partitions)
+        #
+        def _parse_out(line):
+            m = re.match(r" *(?P<id>\d) \((?P<addr>.+\:[0-9]+)\) *", line)
+            if m is None:
+                return None
+
+            return RpkClusterInfoNode(id=int(m.group('id')),
+                                      address=m.group('addr'))
+
+        cmd = [
+            self._rpk_binary(), 'cluster', 'info', '--brokers',
+            self._redpanda.brokers(1)
+        ]
+        output = self._execute(cmd, stdin=None, timeout=timeout)
+        parsed = map(_parse_out, output.splitlines())
+        return [p for p in parsed if p is not None]
 
     def _execute(self, cmd, stdin=None, timeout=30):
         self._redpanda.logger.debug("Executing command: %s", cmd)
