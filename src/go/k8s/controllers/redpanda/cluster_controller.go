@@ -80,7 +80,7 @@ func (r *ClusterReconciler) Reconcile(
 	toApply := []resources.Resource{
 		svc,
 		resources.NewNodePortService(r.Client, &redpandaCluster, r.Scheme, log),
-		resources.NewConfigMap(r.Client, &redpandaCluster, r.Scheme, log),
+		resources.NewConfigMap(r.Client, &redpandaCluster, r.Scheme, svc.HeadlessServiceFQDN(), log),
 		issuer,
 		cert,
 		sts,
