@@ -86,7 +86,10 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
     return octx.rctx.partition_manager().invoke_on(
       *shard,
       octx.ssg,
-      [timestamp, ntp = std::move(ntp)](cluster::partition_manager& mgr) {
+      [timestamp,
+       ntp = std::move(ntp),
+       isolation_lvl = model::isolation_level(
+         octx.request.data.isolation_level)](cluster::partition_manager& mgr) {
           auto partition = mgr.get(ntp);
           if (!partition) {
               return ss::make_ready_future<list_offset_partition_response>(
@@ -112,11 +115,14 @@ static ss::future<list_offset_partition_response> list_offsets_partition(
                   partition->start_offset()));
 
           } else if (timestamp == list_offsets_request::latest_timestamp) {
+              const auto offset = isolation_lvl
+                                      == model::isolation_level::read_committed
+                                    ? partition->last_stable_offset()
+                                    : partition->high_watermark();
+
               return ss::make_ready_future<list_offset_partition_response>(
                 list_offsets_response::make_partition(
-                  ntp.tp.partition,
-                  model::timestamp(-1),
-                  partition->last_stable_offset()));
+                  ntp.tp.partition, model::timestamp(-1), offset));
           }
 
           return partition->timequery(timestamp, kafka_read_priority())

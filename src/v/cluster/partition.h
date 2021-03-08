@@ -15,9 +15,11 @@
 #include "cluster/partition_probe.h"
 #include "cluster/seq_stm.h"
 #include "cluster/types.h"
+#include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record_batch_reader.h"
 #include "raft/consensus.h"
+#include "raft/consensus_utils.h"
 #include "raft/group_configuration.h"
 #include "raft/log_eviction_stm.h"
 #include "raft/types.h"
@@ -86,14 +88,16 @@ public:
      * kafka clients, simply report the next offset.
      */
     model::offset last_stable_offset() const {
-        return _raft->last_stable_offset() + model::offset(1);
+        return raft::details::next_offset(_raft->last_stable_offset());
     }
 
     /**
-     * Greatest offset visible to consumers. Named high_watermark to be
-     * consistent with Kafka nomenclature.
+     * All batches with offets smaller than high watermark are visible to
+     * consumers. Named high_watermark to be consistent with Kafka nomenclature.
      */
-    model::offset high_watermark() const { return _raft->last_visible_index(); }
+    model::offset high_watermark() const {
+        return raft::details::next_offset(_raft->last_visible_index());
+    }
 
     const model::ntp& ntp() const { return _raft->ntp(); }
 
