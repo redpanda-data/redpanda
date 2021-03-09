@@ -20,6 +20,7 @@ import (
 	redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/labels"
 	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/resources"
+	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/resources/certmanager"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -92,8 +93,7 @@ func (r *ClusterReconciler) Reconcile(
 
 	headlessSvc := resources.NewHeadlessService(r.Client, &redpandaCluster, r.Scheme, log)
 	nodeportSvc := resources.NewNodePortService(r.Client, &redpandaCluster, r.Scheme, log)
-	issuer := resources.NewIssuer(r.Client, &redpandaCluster, r.Scheme, log)
-	cert := resources.NewCertificate(r.Client, &redpandaCluster, r.Scheme, issuer, headlessSvc.HeadlessServiceFQDN(), log)
+	pki := certmanager.NewPki(r.Client, &redpandaCluster, headlessSvc.HeadlessServiceFQDN(), r.Scheme, log)
 	sa := resources.NewServiceAccount(r.Client, &redpandaCluster, r.Scheme, log)
 	sts := resources.NewStatefulSet(
 		r.Client,
@@ -102,16 +102,16 @@ func (r *ClusterReconciler) Reconcile(
 		headlessSvc.HeadlessServiceFQDN(),
 		headlessSvc.Key().Name,
 		nodeportSvc.Key(),
-		cert.SecretKey(),
+		pki.NodeCert(),
+		pki.OperatorClientCert(),
 		sa.Key().Name,
 		r.configuratorTag,
 		log)
-	toApply := []resources.Resource{
+	toApply := []resources.Reconciler{
 		headlessSvc,
 		nodeportSvc,
 		resources.NewConfigMap(r.Client, &redpandaCluster, r.Scheme, headlessSvc.HeadlessServiceFQDN(), log),
-		issuer,
-		cert,
+		pki,
 		sa,
 		resources.NewClusterRole(r.Client, &redpandaCluster, r.Scheme, log),
 		crb,

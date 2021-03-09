@@ -14,6 +14,7 @@ import (
 	"fmt"
 
 	"github.com/go-logr/logr"
+	cmetav1 "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
 	redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/labels"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
@@ -65,7 +66,7 @@ func NewConfigMap(
 
 // Ensure will manage kubernetes v1.ConfigMap for redpanda.vectorized.io CR
 func (r *ConfigMapResource) Ensure(ctx context.Context) error {
-	return getOrCreate(ctx, r, &corev1.ConfigMap{}, "ConfigMap", r.logger)
+	return GetOrCreate(ctx, r, &corev1.ConfigMap{}, "ConfigMap", r.logger)
 }
 
 // Obj returns resource managed client.Object
@@ -121,10 +122,11 @@ func (r *ConfigMapResource) createConfiguration() *config.Config {
 	cr.Directory = dataDirectory
 	if r.pandaCluster.Spec.Configuration.TLS.KafkaAPIEnabled {
 		cr.KafkaApiTLS = config.ServerTLS{
-			KeyFile:        fmt.Sprintf("%s/%s", tlsDir, corev1.TLSPrivateKeyKey), // tls.key
-			CertFile:       fmt.Sprintf("%s/%s", tlsDir, corev1.TLSCertKey),       // tls.crt
-			TruststoreFile: fmt.Sprintf("%s/%s", tlsDir, CAKey),
-			Enabled:        true,
+			KeyFile:           fmt.Sprintf("%s/%s", tlsDir, corev1.TLSPrivateKeyKey), // tls.key
+			CertFile:          fmt.Sprintf("%s/%s", tlsDir, corev1.TLSCertKey),       // tls.crt
+			TruststoreFile:    fmt.Sprintf("%s/%s", tlsDir, cmetav1.TLSCAKey),
+			Enabled:           true,
+			RequireClientAuth: r.pandaCluster.Spec.Configuration.TLS.RequireClientAuth,
 		}
 	}
 

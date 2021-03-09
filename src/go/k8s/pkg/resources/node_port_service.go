@@ -56,7 +56,7 @@ func (r *NodePortServiceResource) Ensure(ctx context.Context) error {
 		return nil
 	}
 
-	return getOrCreate(ctx, r, &corev1.Service{}, "Service NodePort", r.logger)
+	return GetOrCreate(ctx, r, &corev1.Service{}, "Service NodePort", r.logger)
 }
 
 // Obj returns resource managed client.Object

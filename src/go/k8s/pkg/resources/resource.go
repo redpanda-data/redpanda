@@ -47,7 +47,8 @@ type internalResource interface {
 	client.Writer
 }
 
-func getOrCreate(
+// GetOrCreate tries to get a kubernetes resource and creates it if does not exist
+func GetOrCreate(
 	ctx context.Context,
 	r internalResource,
 	checkObj client.Object,
