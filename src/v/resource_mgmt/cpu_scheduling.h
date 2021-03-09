@@ -13,6 +13,7 @@
 
 #include "seastarx.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/scheduling.hh>
 
@@ -22,24 +23,20 @@
 class scheduling_groups final {
 public:
     ss::future<> create_groups() {
-        return ss::create_scheduling_group("admin", 100)
-          .then([this](ss::scheduling_group sg) { _admin = sg; })
-          .then([] { return ss::create_scheduling_group("raft", 1000); })
-          .then([this](ss::scheduling_group sg) { _raft = sg; })
-          .then([] { return ss::create_scheduling_group("kafka", 1000); })
-          .then([this](ss::scheduling_group sg) { _kafka = sg; })
-          .then([] { return ss::create_scheduling_group("cluster", 300); })
-          .then([this](ss::scheduling_group sg) { _cluster = sg; })
-          .then([] { return ss::create_scheduling_group("coproc", 100); })
-          .then([this](ss::scheduling_group sg) { _coproc = sg; });
+        _admin = co_await ss::create_scheduling_group("admin", 100);
+        _raft = co_await ss::create_scheduling_group("raft", 1000);
+        _kafka = co_await ss::create_scheduling_group("kafka", 1000);
+        _cluster = co_await ss::create_scheduling_group("cluster", 300);
+        _coproc = co_await ss::create_scheduling_group("coproc", 100);
     }
 
     ss::future<> destroy_groups() {
-        return destroy_scheduling_group(_admin)
-          .then([this] { return destroy_scheduling_group(_raft); })
-          .then([this] { return destroy_scheduling_group(_kafka); })
-          .then([this] { return destroy_scheduling_group(_cluster); })
-          .then([this] { return destroy_scheduling_group(_coproc); });
+        co_await destroy_scheduling_group(_admin);
+        co_await destroy_scheduling_group(_raft);
+        co_await destroy_scheduling_group(_kafka);
+        co_await destroy_scheduling_group(_cluster);
+        co_await destroy_scheduling_group(_coproc);
+        co_return;
     }
 
     ss::scheduling_group admin_sg() { return _admin; }
