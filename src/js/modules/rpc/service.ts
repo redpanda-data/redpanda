@@ -28,7 +28,7 @@ export const closeProcess = (e: Error): Promise<void> => {
     fs.writeFile(
       LogService.getPath(),
       `Error: ${e.message}`,
-      { flag: "+a" },
+      { flag: "a+" },
       (err) => {
         if (err) {
           console.error(
