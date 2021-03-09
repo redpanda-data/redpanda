@@ -1,6 +1,11 @@
-## Checklist
-- [ ] Reference related [issue](https://github.com/vectorizedio/redpanda/issues)
-- [ ] Update [PendingReleaseNotes.md](https://github.com/dotnwat/redpanda/blob/dev/PendingReleaseNotes.md), if relevant
+## Cover letter
 
-When referencing a related issue, remember to migrate duplicate stories from the
-external tracker. This is not relevant for most users.
+Describe in plain language the motivation (bug, feature, etc.) behind the change in this PR and how the included commits address it.
+
+Fixes issues: [#NNN, #NNN, ...]
+
+## Release notes
+
+If the PR changes the user experience, write a short summary of the changes. See the [CONTRIBUTING](https://github.com/vectorizedio/redpanda/blob/dev/CONTRIBUTING.md) guidelines for details.
+
+Release note: [1-2 sentences of what this PR changes]
