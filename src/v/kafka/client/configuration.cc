@@ -18,6 +18,11 @@
 namespace kafka::client {
 using namespace std::chrono_literals;
 
+configuration::configuration(const YAML::Node& cfg)
+  : configuration() {
+    read_yaml(cfg);
+}
+
 configuration::configuration()
   : brokers(
     *this,
@@ -86,12 +91,6 @@ YAML::Node to_yaml(const configuration& cfg) {
     rapidjson::Writer<rapidjson::StringBuffer> writer(buf);
     cfg.to_json(writer);
     return YAML::Load(buf.GetString());
-}
-
-configuration copy_configuration(const configuration& cfg) {
-    configuration res;
-    res.read_yaml(to_yaml(cfg));
-    return res;
 }
 
 } // namespace kafka::client

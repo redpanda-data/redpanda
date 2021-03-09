@@ -208,7 +208,7 @@ void application::wire_up_services() {
     construct_service(
       _proxy,
       rpc::resolve_dns(shard_local_cfg().pandaproxy_api()).get(),
-      kafka::client::conf_ref(_client_config))
+      to_yaml(_client_config))
       .get();
 }
 

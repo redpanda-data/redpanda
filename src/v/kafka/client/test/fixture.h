@@ -36,7 +36,7 @@ public:
         kc::configuration cfg;
         cfg.brokers.set_value(std::vector<unresolved_address>{
           config::shard_local_cfg().kafka_api()[0].address});
-        return kc::client{cfg};
+        return kc::client{to_yaml(cfg)};
     }
     kc::client make_connected_client() {
         auto client = make_client();

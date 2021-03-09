@@ -24,9 +24,7 @@ namespace pandaproxy {
 
 class proxy {
 public:
-    proxy(
-      ss::socket_address listen_addr,
-      const kafka::client::configuration& client_config);
+    proxy(ss::socket_address listen_addr, const YAML::Node& client_config);
 
     ss::future<> start();
     ss::future<> stop();

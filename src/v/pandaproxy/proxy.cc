@@ -95,9 +95,7 @@ static server::context_t make_context(kafka::client::client& client) {
     };
 }
 
-proxy::proxy(
-  ss::socket_address listen_addr,
-  const kafka::client::configuration& client_config)
+proxy::proxy(ss::socket_address listen_addr, const YAML::Node& client_config)
   : _client(client_config)
   , _ctx(make_context(_client))
   , _server(
