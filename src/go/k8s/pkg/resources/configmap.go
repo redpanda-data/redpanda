@@ -11,7 +11,6 @@ package resources
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/go-logr/logr"
 	redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
@@ -19,7 +18,6 @@ import (
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 	"gopkg.in/yaml.v3"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -66,25 +64,7 @@ func NewConfigMap(
 
 // Ensure will manage kubernetes v1.ConfigMap for redpanda.vectorized.io CR
 func (r *ConfigMapResource) Ensure(ctx context.Context) error {
-	var cfgm corev1.ConfigMap
-
-	err := r.Get(ctx, r.Key(), &cfgm)
-	if err != nil && !errors.IsNotFound(err) {
-		return err
-	}
-
-	if errors.IsNotFound(err) {
-		r.logger.Info(fmt.Sprintf("ConfigMap %s does not exist, going to create one", r.Key().Name))
-
-		obj, err := r.Obj()
-		if err != nil {
-			return err
-		}
-
-		return r.Create(ctx, obj)
-	}
-
-	return nil
+	return getOrCreate(ctx, r, &corev1.ConfigMap{}, "ConfigMap", r.logger)
 }
 
 // Obj returns resource managed client.Object
