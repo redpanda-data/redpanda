@@ -60,13 +60,47 @@ spec:
                         type: integer
                     type: object
                   tls:
-                    description: TLSConfig configures TLS for redpanda when KafkaAPIEnabled
-                      is set to true, Certificate and Secret with same name as cluster
-                      this will be created in the cluster namespace secret will contain
-                      'ca.crt' which should be used as trustore when connecting to
-                      redpanda
+                    description: "TLSConfig configures TLS for redpanda \n If KafkaAPIEnabled
+                      is set to true, one-way TLS verification is enabled. In that
+                      case, a key pair ('tls.crt', 'tls.key') and CA certificate 'ca.crt'
+                      are generated and stored in a Secret with the same name and
+                      namespace as the Redpanda cluster. 'ca.crt', must be used by
+                      a client as a trustore when communicating with Redpanda. \n
+                      If RequireClientAuth is set to true, two-way TLS verification
+                      is enabled. In that case, a node and two client certificates
+                      are created. The node certificate is used by redpanda nodes.
+                      One client certificate is used by the operator client to make
+                      KafkaAPI calls. The other client certificate is available for
+                      Redpanda users to call KafkaAPI. The client certificate can
+                      be retrieved from the Secret named '<redpanda-cluster-name>-user-client'.
+                      The secret is stored in the same namespace as Redpanda cluster."
                     properties:
+                      issuerRef:
+                        description: References cert-manager Issuer or ClusterIssuer.
+                          When provided, this issuer will be used to issue node as
+                          well as client certificates. Typically you want to provide
+                          the issuer when a generated self-signed one is not enough
+                          and you need to have a verifiable chain with a proper CA
+                          certificate.
+                        properties:
+                          group:
+                            description: Group of the resource being referred to.
+                            type: string
+                          kind:
+                            description: Kind of the resource being referred to.
+                            type: string
+                          name:
+                            description: Name of the resource being referred to.
+                            type: string
+                        required:
+                        - name
+                        type: object
                       kafkaApiEnabled:
+                        type: boolean
+                      requireClientAuth:
+                        description: Enables two-way verification on the server side.
+                          If enabled, all Kafka API clients are required to have a
+                          valid client certificate.
                         type: boolean
                     type: object
                 type: object
