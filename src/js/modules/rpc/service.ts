@@ -16,11 +16,14 @@ import LogService from "../utilities/Logging";
 
 // read yaml config file
 const readConfigFile = (confPath: string): Promise<Record<string, any>> => {
-  try {
-    return fs.promises.readFile(confPath).then((file) => safeLoadAll(file)[0]);
-  } catch (e) {
-    return Promise.reject(new Error(`Error reading config file: ${e.message}`));
-  }
+  return fs.promises
+    .readFile(confPath)
+    .then((file) => safeLoadAll(file)[0])
+    .catch((e) => {
+      return Promise.reject(
+        new Error(`Error reading config file: ${e.message}`)
+      );
+    });
 };
 
 export const closeProcess = (e: Error): Promise<void> => {
