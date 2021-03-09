@@ -57,7 +57,7 @@ func NewHeadlessService(
 
 // Ensure will manage kubernetes v1.Service for redpanda.vectorized.io custom resource
 func (r *HeadlessServiceResource) Ensure(ctx context.Context) error {
-	return getOrCreate(ctx, r, &corev1.Service{}, "Service Headless", r.logger)
+	return GetOrCreate(ctx, r, &corev1.Service{}, "Service Headless", r.logger)
 }
 
 // Obj returns resource managed client.Object
