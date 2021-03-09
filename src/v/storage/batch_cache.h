@@ -11,6 +11,7 @@
 
 #pragma once
 #include "model/record.h"
+#include "units.h"
 #include "utils/intrusive_list_helpers.h"
 #include "vassert.h"
 
@@ -25,6 +26,7 @@
 #include <limits>
 #include <type_traits>
 
+class batch_cache_test_fixture;
 namespace storage {
 
 class batch_cache_index;
@@ -62,14 +64,14 @@ class batch_cache_index;
  * The synchronous reclaimer creates a challenge for the batch cache which
  * internally causes allocations to occur which may invoke the reclaimer.
  *
- * Batch cache operations that hold a reference to an entry in the cache need to
+ * Batch cache operations that hold a reference to an range in the cache need to
  * be careful that any heap allocation may cause the held reference to be
  * _concurrently_ freed/invalidated.
  *
- * For example, given a live entry in the cache:
+ * For example, given a live range in the cache:
  *
- *    auto e = _index.find(..);
- *    assert(e);
+ *    auto r = _index.find(..);
+ *    assert(r);
  *
  * doing something such as `e->batch.share()` internally causes allocations
  * which may trigger the reclaimer. if the reclaimer selects `e` for reclaiming,
@@ -77,8 +79,8 @@ class batch_cache_index;
  * batch (not technically concurently--but interleaved with share() in ways that
  * are not safe).
  *
- * If an operation may perform an allocation use entry::pin/unpin to guard the
- * reference which will force the reclaimer to skip the entry.
+ * If an operation may perform an allocation use range::pin/unpin to guard the
+ * reference which will force the reclaimer to skip the range.
  *
  * IMPORTANT: this is a viral leaky abstraction solution. it relies on all code
  * paths whose call sites are inside the batch cache to have their allocation
@@ -90,6 +92,7 @@ class batch_cache_index;
  * TODO:
  *  - add probes to track statistics
  */
+
 class batch_cache {
     /// Minimum size reclaimed in low-memory situations.
     static constexpr size_t min_reclaim_size = 128U << 10U;
@@ -107,15 +110,20 @@ public:
     };
 
     /*
-     * An entry manages the lifetime of a cached record batch, and always exists
-     * in either the LRU or the free pool. Any batches stored in the free pool
-     * are in an undefined state.
+     * An range manages the lifetime of a multiple cached record batches.
      */
-    class entry : private ss::weakly_referencable<entry> {
+    class range : private ss::weakly_referencable<range> {
     public:
+        static constexpr size_t range_size = 32_KiB;
+        // max waste is parameter controlling max free space left in range after
+        // it is not longer being appended to
+        static constexpr size_t max_waste_bytes = 1_KiB;
+        static constexpr size_t min_bytes_in_range = range_size
+                                                     - max_waste_bytes;
+
         class lock_guard {
         public:
-            explicit lock_guard(entry& e) noexcept
+            explicit lock_guard(range& e) noexcept
               : _e(e) {
                 _e.pin();
             }
@@ -126,49 +134,89 @@ public:
             ~lock_guard() noexcept { _e.unpin(); }
 
         private:
-            entry& _e;
+            range& _e;
         };
 
-        explicit entry(batch_cache_index& index, model::record_batch&& batch)
-          : _batch(std::move(batch))
-          , _index(index) {}
+        explicit range(batch_cache_index& index);
+        explicit range(
+          batch_cache_index& index, const model::record_batch& batch);
 
-        ~entry() noexcept = default;
-        entry(entry&&) noexcept = delete;
-        entry& operator=(entry&&) noexcept = delete;
-        entry(const entry&) = delete;
-        entry& operator=(const entry&) = delete;
+        ~range() noexcept = default;
+        range(range&&) noexcept = delete;
+        range& operator=(range&&) noexcept = delete;
+        range(const range&) = delete;
+        range& operator=(const range&) = delete;
 
-        // the entry initially contains a valid batch, but it may transition
+        // the range initially contains a valid batches, but it may transition
         // into an invalid state where the batch data cannot be accessed.
         bool valid() const { return _valid; }
         void invalidate() { _valid = false; }
+        static constexpr size_t serialized_header_size
+          = model::packed_record_batch_header_size + sizeof(size_t);
 
-        model::record_batch& batch() {
-            vassert(_valid, "cannot access invalided batch");
-            return _batch;
-        }
+        model::record_batch batch(size_t o);
+        model::record_batch_header header(size_t o);
 
         void pin() { _pinned = true; }
         void unpin() { _pinned = false; }
         bool pinned() const { return _pinned; }
+        size_t memory_size() const;
+        size_t bytes_left() const;
+        double waste() const;
+        bool empty() const;
+        // checks if record batch will fit into current range
+        bool fits(const model::record_batch& b) const;
+        uint32_t add(const model::record_batch&);
 
     private:
         friend class batch_cache;
-        friend ss::weakly_referencable<entry>;
+        friend ss::weakly_referencable<range>;
 
         // invalidation is logical. we still want the cache to be able to look
         // at its memory usage and base offset, but the cache index should never
-        // interact with an invalid entry.
+        // interact with an invalid range.
         bool _valid{true};
-        model::record_batch _batch;
+        // buffer where batches are stored
+        iobuf _arena;
+        // list of offsets to update batch_cache_index
+        std::vector<model::offset> _offsets;
 
         bool _pinned{false};
+        size_t _size = 0;
         intrusive_list_hook _hook;
         batch_cache_index& _index;
     };
 
-    using entry_ptr = ss::weak_ptr<entry>;
+    using range_ptr = ss::weak_ptr<range>;
+    /**
+     * Entry represents single batch in given range, it contains range weak
+     * pointer and batch offset in range _arena buffer.
+     */
+    class entry {
+    public:
+        entry(uint32_t o, range_ptr&& ptr)
+          : _range_offset(o)
+          , _range(std::move(ptr)) {}
+
+        ~entry() noexcept = default;
+        entry(entry&&) noexcept = default;
+        entry& operator=(entry&&) noexcept = default;
+        entry(const entry&) = delete;
+        entry& operator=(const entry&) = delete;
+
+        model::record_batch batch() { return _range->batch(_range_offset); }
+        model::record_batch_header header() const {
+            return _range->header(_range_offset);
+        }
+
+        range_ptr& range() { return _range; }
+        const range_ptr& range() const { return _range; }
+        bool valid() const { return _range->valid(); }
+
+    private:
+        uint32_t _range_offset;
+        range_ptr _range;
+    };
 
     explicit batch_cache(const reclaim_options& opts)
       : _reclaimer(
@@ -206,7 +254,7 @@ public:
     /// Returns true if the cache is empty, and false otherwise.
     bool empty() const { return _lru.empty(); }
 
-    /// Removes all entries from the cache and entry pool.
+    /// Removes all entries from the cache.
     void clear() { reclaim(std::numeric_limits<size_t>::max()); }
 
     /**
@@ -214,30 +262,29 @@ public:
      * Copying is needed to release memory references of underlying tempbufs.
      *
      * The returned weak_ptr will be invalidated if its memory is reclaimed. To
-     * evict the entry, move it into batch_cache::evict().
+     * evict the range, move it into batch_cache::evict().
      */
-    entry_ptr put(batch_cache_index&, const model::record_batch&);
+    entry put(batch_cache_index&, const model::record_batch&);
 
     /**
      * \brief Remove a batch from the cache.
      *
-     * Memory associated with the batch is released and the cache entry is
-     * returned to the free pool.
+     * Memory associated with the whole range is released.
      *
      * It is important that this interface act as a sink. Since we are moving
      * the cache entries into the free pool this means that the weak_ptr
      * invalidation does not trigger. This is still safe because the caching
-     * interface forces an the caller to give up its entry reference, as well as
-     * preventing multiple weak_ptr references to the same entry.  This is not
+     * interface forces an the caller to give up its range reference, as well as
+     * preventing multiple weak_ptr references to the same range.  This is not
      * relevant for the reclaim interface. Reclaim fully deletes cache entries
      * which does invoke weak_ptr invalidation.
      */
-    void evict(entry_ptr&& e);
+    void evict(range_ptr&& e);
 
     /**
-     * Notify the cache that the specified entry was recently used.
+     * Notify the cache that the specified range was recently used.
      */
-    void touch(entry_ptr& e) {
+    void touch(range_ptr& e) {
         if (e) {
             auto p = e.get();
             p->_hook.unlink();
@@ -248,8 +295,8 @@ public:
     /**
      * \brief Evict batches up to the accumulated size specified.
      *
-     * Unlike `evict` which places the cache entry back into the free pool, this
-     * method releases the entire entry because this interface is intended to be
+     * Unlike `evict` which places the cache range back into the free pool, this
+     * method releases the entire range because this interface is intended to be
      * used to deal with low-memory situations.
      */
     size_t reclaim(size_t size);
@@ -260,6 +307,7 @@ public:
     bool is_memory_reclaiming() const { return _is_reclaiming; }
 
 private:
+    friend batch_cache_test_fixture;
     struct batch_reclaiming_lock {
         explicit batch_reclaiming_lock(batch_cache& b) noexcept
           : ref(b)
@@ -292,7 +340,7 @@ private:
                               : reclaim_result::reclaimed_nothing;
     }
 
-    intrusive_list<entry, &entry::_hook> _lru;
+    intrusive_list<range, &range::_hook> _lru;
     reclaimer _reclaimer;
     bool _is_reclaiming{false};
     size_t _size_bytes{0};
@@ -306,7 +354,7 @@ private:
 };
 
 class batch_cache_index {
-    using index_type = absl::btree_map<model::offset, batch_cache::entry_ptr>;
+    using index_type = absl::btree_map<model::offset, batch_cache::entry>;
 
 public:
     struct read_result {
@@ -324,7 +372,7 @@ public:
         lock_guard lk(*this);
         std::for_each(
           _index.begin(), _index.end(), [this](index_type::value_type& e) {
-              _cache->evict(std::move(e.second));
+              _cache->evict(std::move(e.second.range()));
           });
     }
     batch_cache_index(batch_cache_index&&) noexcept = default;
@@ -388,17 +436,17 @@ public:
 
     /*
      * Testing interface used to evict a batch from the cache identified by
-     * the specified offset. The index entry is not removed. The offset must
+     * the specified offset. The index range is not removed. The offset must
      * be specified in terms of the batch's base offset.
      */
     void testing_evict_from_cache(model::offset offset) {
         if (auto it = _index.find(offset); it != _index.end()) {
-            _cache->evict(std::move(it->second));
+            _cache->evict(std::move(it->second.range()));
         }
     }
 
     /*
-     * Testing interface used to check if an index entry exists even if its
+     * Testing interface used to check if an index range exists even if its
      * associated batch has been evicted from the cache.
      */
     bool testing_exists_in_index(model::offset offset) {
@@ -469,8 +517,9 @@ private:
      */
     index_type::iterator find_first_contains(model::offset offset) {
         if (auto it = find_first(offset);
-            it != _index.end() && it->second && it->second->valid()
-            && it->second->batch().contains(offset)) {
+            it != _index.end() && it->second.range()
+            && it->second.range()->valid()
+            && it->second.header().contains(offset)) {
             return it;
         }
         return _index.end();
@@ -479,6 +528,7 @@ private:
     bool _locked{false};
     batch_cache* _cache;
     index_type _index;
+    batch_cache::range_ptr _small_batches_range = nullptr;
 
     friend std::ostream& operator<<(std::ostream&, const batch_cache_index&);
 };
