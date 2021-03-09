@@ -11,8 +11,12 @@
 
 #include "bytes/iobuf_parser.h"
 #include "model/adl_serde.h"
+#include "utils/gate_guard.h"
 #include "utils/to_string.h"
 #include "vassert.h"
+
+#include <seastar/core/coroutine.hh>
+#include <seastar/core/gate.hh>
 
 #include <fmt/ostream.h>
 
@@ -148,6 +152,7 @@ batch_cache::put(batch_cache_index& index, const model::record_batch& input) {
     int64_t diff = (int64_t)index._small_batches_range->memory_size()
                    - initial_sz;
     _size_bytes += diff;
+    _background_reclaimer.notify();
     return entry(offset, index._small_batches_range->weak_from_this());
 }
 
@@ -362,6 +367,40 @@ void batch_cache_index::truncate(model::offset offset) {
         });
         _index.erase(it, _index.end());
     }
+}
+
+void batch_cache::background_reclaimer::start() {
+    (void)ss::with_gate(_gate, [this] {
+        return ss::with_scheduling_group(
+          _sg, [this] { return reclaim_loop(); });
+    });
+}
+ss::future<> batch_cache::background_reclaimer::stop() {
+    _stopped = true;
+    _change.signal();
+    return _gate.close();
+}
+ss::future<> batch_cache::background_reclaimer::reclaim_loop() {
+    while (!_stopped) {
+        auto units = std::max(_change.current(), size_t(1));
+        co_await _change.wait(units);
+
+        if (unlikely(_stopped)) {
+            co_return;
+        }
+
+        if (!have_to_reclaim()) {
+            continue;
+        }
+
+        auto free = ss::memory::stats().free_memory();
+
+        if (free < _min_free_memory) {
+            auto to_reclaim = _min_free_memory - free;
+            _cache.reclaim(to_reclaim);
+        }
+    }
+    co_return;
 }
 
 std::ostream&

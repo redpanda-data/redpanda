@@ -25,7 +25,8 @@ static storage::batch_cache::reclaim_options opts = {
   .growth_window = std::chrono::milliseconds(3000),
   .stable_window = std::chrono::milliseconds(10000),
   .min_size = 128 << 10,
-  .max_size = 4 << 20};
+  .max_size = 4 << 20,
+  .min_free_memory = 1};
 
 model::record_batch make_batch(size_t size) {
     static model::offset base_offset{0};
@@ -119,4 +120,5 @@ FIXTURE_TEST(reclaim, fixture) {
       ss::memory::min_free_memory() / 1024,
       bytes_until_reclaim / 1024,
       stats.reclaims());
+    cache.stop().get();
 }

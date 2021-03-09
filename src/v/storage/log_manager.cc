@@ -77,11 +77,13 @@ void log_manager::trigger_housekeeping() {
 ss::future<> log_manager::stop() {
     _compaction_timer.cancel();
     _abort_source.request_abort();
-    return _open_gate.close().then([this] {
-        return ss::parallel_for_each(_logs, [](logs_type::value_type& entry) {
-            return entry.second.handle.close();
-        });
-    });
+    return _open_gate.close()
+      .then([this] {
+          return ss::parallel_for_each(_logs, [](logs_type::value_type& entry) {
+              return entry.second.handle.close();
+          });
+      })
+      .then([this] { return _batch_cache.stop(); });
 }
 
 static inline logs_type::iterator find_next_non_compacted_log(logs_type& logs) {
