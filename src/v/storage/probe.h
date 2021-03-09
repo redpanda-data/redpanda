@@ -34,7 +34,17 @@ public:
 
     void corrupted_compaction_index() { ++_corrupted_compaction_index; }
 
-    void segment_created() { ++_log_segments_created; }
+    void segment_created() {
+        ++_log_segments_created;
+        ++_log_segments_active;
+    }
+
+    void segment_removed() {
+        ++_log_segments_removed;
+        --_log_segments_active;
+    }
+
+    void initial_segments_count(size_t cnt) { _log_segments_active = cnt; }
 
     void segment_compacted() { ++_segment_compacted; }
 
@@ -71,6 +81,8 @@ private:
     uint32_t _segment_compacted = 0;
     uint32_t _corrupted_compaction_index = 0;
     uint32_t _log_segments_created = 0;
+    uint32_t _log_segments_removed = 0;
+    uint32_t _log_segments_active = 0;
     uint32_t _batch_parse_errors = 0;
     uint32_t _batch_write_errors = 0;
     ss::metrics::metric_groups _metrics;
