@@ -4,8 +4,11 @@ order: 0
 ---
 # Production Deployment
 
-This guide will take you through what is needed to setup a production cluster
-of Redpanda.
+This guide will take you through what is needed to setup a production cluster of Redpanda.
+
+If you just want to try out Redpanda, check out our Getting Started Guides for
+[Linux](/docs/quick-start-linux), [MacOS](/docs/quick-start-macos),
+[Docker](/docs/quick-start-docker), or [Kubernetes](/docs/quick-start-kubernetes).
 
 ## Requirements
 
