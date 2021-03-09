@@ -81,7 +81,7 @@ redpanda:
     address: "0.0.0.0"
     port: 33145
    
-# TLS configuration for the RPC server.
+  # TLS configuration for the RPC server.
   # Default: null
   rpc_server_tls:
     # Whether to enable TLS for the RPC server.
