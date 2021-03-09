@@ -24,25 +24,34 @@ const readConfigFile = (confPath: string): Promise<Record<string, any>> => {
 };
 
 export const closeProcess = (e: Error): Promise<void> => {
-  return LogService.close().then(() => {
-    fs.writeFile(
-      LogService.getPath(),
-      `Error: ${e.message}`,
-      { flag: "a+" },
-      (err) => {
-        if (err) {
-          console.error(
-            "failing on write exception on " +
-              LogService.getPath() +
-              " Error: " +
-              err.message
-          );
-        }
-        console.log("Closing");
-        process.exit(1);
+  return LogService.close()
+    .then(() => {
+      if (LogService.getPath() == undefined) {
+        console.error(
+          `Failed before logger initialized with exception: ${e.message}`
+        );
+      } else {
+        fs.writeFile(
+          LogService.getPath(),
+          `Error: ${e.message}`,
+          { flag: "a+" },
+          (err) => {
+            if (err) {
+              console.error(
+                "failing on write exception on " +
+                  LogService.getPath() +
+                  " Error: " +
+                  err.message
+              );
+            }
+          }
+        );
       }
-    );
-  });
+    })
+    .then(() => {
+      console.log("Closing process");
+      process.exit(1);
+    });
 };
 
 function main() {
