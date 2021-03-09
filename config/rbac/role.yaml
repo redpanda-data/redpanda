@@ -21,11 +21,34 @@ rules:
   - cert-manager.io
   resources:
   - certificates
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - watch
+- apiGroups:
+  - cert-manager.io
+  resources:
+  - clusterissuers
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - watch
+- apiGroups:
+  - cert-manager.io
+  resources:
   - issuers
   verbs:
   - create
+  - delete
   - get
   - list
+  - patch
   - watch
 - apiGroups:
   - ""
