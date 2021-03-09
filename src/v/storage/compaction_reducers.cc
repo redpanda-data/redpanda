@@ -20,6 +20,8 @@
 #include "storage/segment_utils.h"
 #include "vlog.h"
 
+#include <seastar/core/future.hh>
+
 #include <absl/algorithm/container.h>
 #include <absl/container/flat_hash_map.h>
 #include <boost/range/irange.hpp>
@@ -33,7 +35,7 @@ ss::future<ss::stop_iteration>
 compaction_key_reducer::operator()(compacted_index::entry&& e) {
     using stop_t = ss::stop_iteration;
     const model::offset o = e.offset + model::offset(e.delta);
-    auto f = ss::now();
+
     auto it = _indices.find(e.key);
     if (it != _indices.end()) {
         if (o > it->second.offset) {
@@ -43,40 +45,32 @@ compaction_key_reducer::operator()(compacted_index::entry&& e) {
         }
     } else {
         // not found - insert
-        auto const expected_size = 2 * idx_mem_usage() + _keys_mem_usage
-                                   + e.key.size();
-        if (expected_size >= _max_mem && _indices.load_factor() >= 0.874) {
-            // remove multiple entries at a time to optimize number of rehashes
-            f = ss::do_until(
-                  [this] {
-                      return _indices.load_factor() < 0.8 || _indices.empty();
-                  },
-                  [this] {
-                      auto n = random_generators::get_int<size_t>(
-                        0, _indices.size() - 1);
-                      auto mit = std::next(_indices.begin(), n);
+        auto const key_size = e.key.size();
+        auto const expected_size = [this, key_size] {
+            return idx_mem_usage() + _keys_mem_usage + key_size;
+        };
 
-                      _keys_mem_usage -= mit->first.size();
+        // if index allocates to much memory remove some entries.
+        while (expected_size() >= _max_mem && !_indices.empty()) {
+            /**
+             * Evict first entry, we use hash function that guarante good
+             * randomness so evicting first entry is actually evicting a
+             * pseudo random elemnent
+             */
+            auto mit = _indices.begin();
+            _keys_mem_usage -= mit->first.size();
 
-                      // write the entry again - we ran out of scratch space
-                      _inverted.add(mit->second.natural_index);
-                      _indices.erase(mit);
-                      return ss::now();
-                  })
-                  .then([this] { _indices.rehash(0); });
+            // write the entry again - we ran out of scratch space
+            _inverted.add(mit->second.natural_index);
+            _indices.erase(mit);
         }
-
-        f = f.then([this, e = std::move(e), o]() mutable {
-            _keys_mem_usage += e.key.size();
-            // 2. do the insertion
-            _indices.emplace(std::move(e.key), value_type(o, _natural_index));
-        });
+        _keys_mem_usage += e.key.size();
+        // 2. do the insertion
+        _indices.emplace(std::move(e.key), value_type(o, _natural_index));
     }
 
-    return f.then([this] {
-        ++_natural_index; // MOST important
-        return stop_t::no;
-    });
+    ++_natural_index; // MOST important
+    return ss::make_ready_future<stop_t>(stop_t::no);
 }
 Roaring compaction_key_reducer::end_of_stream() {
     // TODO: optimization - detect if the index does not need compaction
