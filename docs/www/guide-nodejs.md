@@ -8,6 +8,7 @@ that although Redpanda is relatively new, you can leverage the countless client
 libraries created for Kafka® (if you find something that is not supported,
 reach out to our team on our [slack](https://vectorized.io/slack)).
 In this case we will use [kafkajs](https://kafka.js.org/).
+
 ```bash
 #create and enter the project folder
 mkdir redpanda-node
