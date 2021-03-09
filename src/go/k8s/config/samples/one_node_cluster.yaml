@@ -1,19 +1,18 @@
 apiVersion: redpanda.vectorized.io/v1alpha1
 kind: Cluster
 metadata:
-  name: cluster-sample
+  name: one-node-cluster
 spec:
   image: "vectorized/redpanda"
   version: "latest"
   replicas: 1
-  externalConnectivity: false
   resources:
     requests:
-      cpu: 100m
-      memory: 100Mi
+      cpu: 1
+      memory: 1.2Gi
     limits:
       cpu: 1
-      memory: 100Mi
+      memory: 1.2Gi
   configuration:
     rpcServer:
       port: 33145

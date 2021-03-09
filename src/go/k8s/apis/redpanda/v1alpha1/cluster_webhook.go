@@ -58,13 +58,9 @@ func (r *Cluster) ValidateCreate() error {
 
 	var allErrs field.ErrorList
 
-	if err := r.checkCollidingPorts(); err != nil {
-		allErrs = append(allErrs, err...)
-	}
+	allErrs = append(allErrs, r.checkCollidingPorts()...)
 
-	if err := r.validateMemory(); err != nil {
-		allErrs = append(allErrs, err...)
-	}
+	allErrs = append(allErrs, r.validateMemory()...)
 
 	if len(allErrs) == 0 {
 		return nil
@@ -94,9 +90,7 @@ func (r *Cluster) ValidateUpdate(old runtime.Object) error {
 				"updating configuration is not supported"))
 	}
 
-	if err := r.checkCollidingPorts(); err != nil {
-		allErrs = append(allErrs, err...)
-	}
+	allErrs = append(allErrs, r.checkCollidingPorts()...)
 
 	allErrs = append(allErrs, r.validateMemory()...)
 
@@ -158,6 +152,20 @@ func (r *Cluster) checkCollidingPorts() field.ErrorList {
 			field.Invalid(field.NewPath("spec").Child("configuration", "admin", "port"),
 				r.Spec.Configuration.AdminAPI.Port,
 				"admin port collide with Spec.Configuration.RPCServer.Port"))
+	}
+
+	if r.Spec.ExternalConnectivity && r.Spec.Configuration.KafkaAPI.Port+1 == r.Spec.Configuration.RPCServer.Port {
+		allErrs = append(allErrs,
+			field.Invalid(field.NewPath("spec").Child("configuration", "rpcServer", "port"),
+				r.Spec.Configuration.RPCServer.Port,
+				"rpc port collide with external Kafka API that is not visible in the Cluster CR"))
+	}
+
+	if r.Spec.ExternalConnectivity && r.Spec.Configuration.KafkaAPI.Port+1 == r.Spec.Configuration.AdminAPI.Port {
+		allErrs = append(allErrs,
+			field.Invalid(field.NewPath("spec").Child("configuration", "admin", "port"),
+				r.Spec.Configuration.AdminAPI.Port,
+				"admin port collide with external Kafka API that is not visible in the Cluster CR"))
 	}
 
 	return allErrs

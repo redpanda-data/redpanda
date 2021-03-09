@@ -52,6 +52,10 @@ func NewNodePortService(
 
 // Ensure will manage kubernetes v1.Service for redpanda.vectorized.io custom resource
 func (r *NodePortServiceResource) Ensure(ctx context.Context) error {
+	if !r.pandaCluster.Spec.ExternalConnectivity {
+		return nil
+	}
+
 	return getOrCreate(ctx, r, &corev1.Service{}, "Service NodePort", r.logger)
 }
 
@@ -81,8 +85,8 @@ func (r *NodePortServiceResource) Obj() (k8sclient.Object, error) {
 				{
 					Name:       "kafka-tcp",
 					Protocol:   corev1.ProtocolTCP,
-					Port:       int32(r.pandaCluster.Spec.Configuration.KafkaAPI.Port),
-					TargetPort: intstr.FromInt(r.pandaCluster.Spec.Configuration.KafkaAPI.Port),
+					Port:       int32(r.pandaCluster.Spec.Configuration.KafkaAPI.Port + 1),
+					TargetPort: intstr.FromInt(r.pandaCluster.Spec.Configuration.KafkaAPI.Port + 1),
 				},
 			},
 			// The selector is purposely set to nil. Our external connectivity doesn't use
@@ -97,6 +101,14 @@ func (r *NodePortServiceResource) Obj() (k8sclient.Object, error) {
 	}
 
 	return svc, nil
+}
+
+// CalculateExternalPort can calculate external Kafka API port based on the internal Kafka API port
+func CalculateExternalPort(kafkaInternalPort int) int {
+	if kafkaInternalPort < 0 || kafkaInternalPort > 65535 {
+		return 0
+	}
+	return kafkaInternalPort + 1
 }
 
 // Key returns namespace/name object that is used to identify object.
