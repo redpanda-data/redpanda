@@ -1,18 +1,17 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: produce-message-tls
+  name: create-test-topic
 spec:
   template:
+    metadata:
+      namespace: tls-test
     spec:
       volumes:
         - name: tlscert
           secret:
             defaultMode: 420
             secretName: cluster-tls-redpanda
-            items: # TODO should we explicitly limit visibility to ca.crt?
-            - key: ca.crt
-              path: ca.crt
         - name: rpkconfig
           configMap:
             name: rpk-config
@@ -28,10 +27,7 @@ spec:
             - /bin/bash
             - -c
           args:
-            - >
-              echo {"test":"message"} |
-              rpk topic produce test --brokers cluster-tls-0.cluster-tls.$POD_NAMESPACE.svc.cluster.local:9092
-              -v -n 1 -k "test-key"
+            - rpk topic create test --brokers cluster-tls-0.cluster-tls.$POD_NAMESPACE.svc.cluster.local:9092 -v
           volumeMounts:
             - mountPath: /etc/tls/certs
               name: tlscert
