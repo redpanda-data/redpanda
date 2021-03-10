@@ -188,9 +188,6 @@ void application::hydrate_config(const po::variables_map& cfg) {
     in.consume_to(buf.size_bytes(), workaround.begin());
     const YAML::Node config = YAML::Load(workaround);
     vlog(_log.info, "Configuration:\n\n{}\n\n", config);
-    ss::smp::invoke_on_all([&config] {
-        config::shard_local_cfg().read_yaml(config);
-    }).get0();
     vlog(
       _log.info,
       "Use `rpk config set <cfg> <value>` to change values "
@@ -202,7 +199,13 @@ void application::hydrate_config(const po::variables_map& cfg) {
             vlog(_log.info, "{}.{}\t- {}", service, val.str(), item.desc());
         };
     };
-    config::shard_local_cfg().for_each(config_printer("redpanda"));
+    _redpanda_enabled = config["redpanda"];
+    if (_redpanda_enabled) {
+        ss::smp::invoke_on_all([&config] {
+            config::shard_local_cfg().read_yaml(config);
+        }).get0();
+        config::shard_local_cfg().for_each(config_printer("redpanda"));
+    }
     if (config["pandaproxy"]) {
         _proxy_config.emplace(config["pandaproxy"]);
         _proxy_client_config.emplace(config["pandaproxy_client"]);
@@ -215,9 +218,11 @@ void application::check_environment() {
     syschecks::systemd_message("checking environment (CPU, Mem)").get();
     syschecks::cpu();
     syschecks::memory(config::shard_local_cfg().developer_mode());
-    storage::directories::initialize(
-      config::shard_local_cfg().data_directory().as_sstring())
-      .get();
+    if (_redpanda_enabled) {
+        storage::directories::initialize(
+          config::shard_local_cfg().data_directory().as_sstring())
+          .get();
+    }
 }
 
 /**
@@ -377,6 +382,17 @@ static storage::log_config manager_config_from_global_config() {
 
 // add additional services in here
 void application::wire_up_services() {
+    if (_redpanda_enabled) {
+        wire_up_redpanda_services();
+    }
+    if (_proxy_config) {
+        construct_service(
+          _proxy, to_yaml(*_proxy_config), to_yaml(*_proxy_client_config))
+          .get();
+    }
+}
+
+void application::wire_up_redpanda_services() {
     ss::smp::invoke_on_all([] {
         return storage::internal::chunks().start();
     }).get();
@@ -572,12 +588,6 @@ void application::wire_up_services() {
       fetch_session_cache,
       config::shard_local_cfg().fetch_session_eviction_timeout_ms())
       .get();
-
-    if (_proxy_config) {
-        construct_service(
-          _proxy, to_yaml(*_proxy_config), to_yaml(*_proxy_client_config))
-          .get();
-    }
 }
 
 ss::future<> application::set_proxy_config(ss::sstring name, std::any val) {
@@ -596,6 +606,23 @@ application::set_proxy_client_config(ss::sstring name, std::any val) {
 }
 
 void application::start() {
+    if (_redpanda_enabled) {
+        start_redpanda();
+    }
+
+    if (_proxy_config) {
+        _proxy.invoke_on_all(&pandaproxy::proxy::start).get();
+        vlog(
+          _log.info,
+          "Started Pandaproxy listening at {}",
+          _proxy_config->pandaproxy_api());
+    }
+
+    vlog(_log.info, "Successfully started Redpanda!");
+    syschecks::systemd_notify_ready().get();
+}
+
+void application::start_redpanda() {
     syschecks::systemd_message("Staring storage services").get();
     storage.invoke_on_all(&storage::api::start).get();
 
@@ -687,17 +714,6 @@ void application::start() {
         _wasm_event_listener->start().get();
         pacemaker.invoke_on_all(&coproc::pacemaker::start).get();
     }
-
-    if (_proxy_config) {
-        _proxy.invoke_on_all(&pandaproxy::proxy::start).get();
-        vlog(
-          _log.info,
-          "Started Pandaproxy listening at {}",
-          _proxy_config->pandaproxy_api());
-    }
-
-    vlog(_log.info, "Successfully started Redpanda!");
-    syschecks::systemd_notify_ready().get();
 }
 
 void application::admin_register_raft_routes(ss::http_server& server) {

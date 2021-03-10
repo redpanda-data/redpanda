@@ -45,7 +45,9 @@ public:
     void check_environment();
     void configure_admin_server();
     void wire_up_services();
+    void wire_up_redpanda_services();
     void start();
+    void start_redpanda();
 
     explicit application(ss::sstring = "redpanda::main");
 
@@ -107,6 +109,7 @@ private:
     }
     void setup_metrics();
     std::unique_ptr<ss::app_template> _app;
+    bool _redpanda_enabled{true};
     std::optional<pandaproxy::configuration> _proxy_config;
     std::optional<kafka::client::configuration> _proxy_client_config;
     scheduling_groups _scheduling_groups;
