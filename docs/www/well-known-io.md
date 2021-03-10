@@ -1,8 +1,8 @@
 ---
-title: Well Known IO
+title: Cloud IO optimization
 order: 3
 ---
-# Well Known IO
+# Cloud IO optimization
 
 Redpanda relies on its own disk IO scheduler, and by default tells the kernel to
 use the `noop` scheduler. To give the users near optimal performance by default,

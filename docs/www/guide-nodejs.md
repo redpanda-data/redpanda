@@ -1,4 +1,4 @@
-# Node.js Setup
+# Using NodeJS with Redpanda
 
 If you haven't already, install Node by following the appropriate steps for
 your OS [here](https://nodejs.org/en/download/package-manager/).

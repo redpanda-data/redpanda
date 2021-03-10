@@ -1,8 +1,8 @@
 ---
-title: Configuration
+title: Custom configuration
 order: 5
 ---
-# Configuration
+# Custom configuration
 
 The redpanda configuration is by default loaded from and persisted to
 `/etc/redpanda/redpanda.yaml`. It is broadly divided into 2 sections, `redpanda`

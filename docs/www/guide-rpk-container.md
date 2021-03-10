@@ -1,8 +1,8 @@
 ---
-title: rpk Container Guide
+title: Starting a local cluster
 order: 0
 ---
-# rpk Container Guide
+# Starting a local cluster
 
 `rpk container` is a simple and quick way to stand up a local multi node cluster
 for testing. `rpk container` leverages Docker. If you haven't done so already,
