@@ -200,6 +200,61 @@ var _ = Describe("RedPandaCluster controller", func() {
 					len(rc.Status.Nodes.External) == 1
 			}, timeout, interval).Should(BeTrue())
 		})
+		It("creates redpanda cluster with tls enabled", func() {
+			resources := corev1.ResourceList{
+				corev1.ResourceCPU:    resource.MustParse("1"),
+				corev1.ResourceMemory: resource.MustParse("2Gi"),
+			}
+
+			key := types.NamespacedName{
+				Name:      "redpanda-test-tls",
+				Namespace: "default",
+			}
+			redpandaCluster := &v1alpha1.Cluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      key.Name,
+					Namespace: key.Namespace,
+				},
+				Spec: v1alpha1.ClusterSpec{
+					Image:    redpandaContainerImage,
+					Version:  redpandaContainerTag,
+					Replicas: pointer.Int32Ptr(replicas),
+					Configuration: v1alpha1.RedpandaConfig{
+						KafkaAPI: v1alpha1.SocketAddress{Port: kafkaPort},
+						TLS: v1alpha1.TLSConfig{
+							KafkaAPIEnabled:   true,
+							RequireClientAuth: true,
+						},
+					},
+					Resources: corev1.ResourceRequirements{
+						Limits:   resources,
+						Requests: resources,
+					},
+				},
+			}
+			Expect(k8sClient.Create(context.Background(), redpandaCluster)).Should(Succeed())
+
+			By("Creating StatefulSet")
+			var sts appsv1.StatefulSet
+			Eventually(func() bool {
+				err := k8sClient.Get(context.Background(), key, &sts)
+				return err == nil &&
+					*sts.Spec.Replicas == replicas
+			}, timeout, interval).Should(BeTrue())
+
+			var defaultMode int32 = 420
+			Expect(sts.Spec.Template.Spec.Containers[0].VolumeMounts).Should(
+				ContainElement(corev1.VolumeMount{Name: "tlscert", MountPath: "/etc/tls/certs"}))
+			Expect(sts.Spec.Template.Spec.Volumes).Should(
+				ContainElement(
+					corev1.Volume{
+						Name: "tlscert",
+						VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{
+							SecretName:  "redpanda-test-tls-redpanda",
+							DefaultMode: &defaultMode,
+						}},
+					}))
+		})
 	})
 })
 
