@@ -14,13 +14,13 @@
 #include "pandaproxy/api/api-doc/get_consumer_offsets.json.h"
 #include "pandaproxy/api/api-doc/get_topics_names.json.h"
 #include "pandaproxy/api/api-doc/get_topics_records.json.h"
-#include "pandaproxy/api/api-doc/health.json.h"
 #include "pandaproxy/api/api-doc/post_consumer_offsets.json.h"
 #include "pandaproxy/api/api-doc/post_topics_name.json.h"
 #include "pandaproxy/api/api-doc/remove_consumer.json.h"
 #include "pandaproxy/api/api-doc/subscribe_consumer.json.h"
 #include "pandaproxy/configuration.h"
 #include "pandaproxy/handlers.h"
+#include "pandaproxy/logger.h"
 
 #include <seastar/core/future-util.hh>
 #include <seastar/core/memory.hh>
@@ -30,14 +30,6 @@ namespace pandaproxy {
 
 std::vector<server::route_t> get_proxy_routes() {
     std::vector<server::route_t> routes;
-
-    routes.emplace_back(server::route_t{
-      "health",
-      ss::httpd::health_json::health_check,
-      [](server::request_t, server::reply_t rp) {
-          rp.rep->set_status(ss::httpd::reply::status_type::ok);
-          return ss::make_ready_future<server::reply_t>(std::move(rp));
-      }});
 
     routes.emplace_back(server::route_t{
       ss::httpd::get_topics_names_json::name,
@@ -87,24 +79,23 @@ std::vector<server::route_t> get_proxy_routes() {
     return routes;
 }
 
-static server::context_t make_context(kafka::client::client& client) {
+static server::context_t
+make_context(const configuration& cfg, kafka::client::client& client) {
     return server::context_t{
       .mem_sem{ss::memory::stats().free_memory()},
       .as{},
       .client{client},
-    };
+      .config{cfg}};
 }
 
-proxy::proxy(
-  ss::socket_address listen_addr,
-  const kafka::client::configuration& client_config)
-  : _client(client_config)
-  , _ctx(make_context(_client))
+proxy::proxy(const YAML::Node& config, const YAML::Node& client_config)
+  : _config(config)
+  , _client(client_config)
+  , _ctx(make_context(_config, _client))
   , _server(
       "pandaproxy",
-      listen_addr,
-      ss::api_registry_builder20(shard_local_cfg().api_doc_dir(), "/v1"),
-      make_context(_client)) {}
+      ss::api_registry_builder20(_config.api_doc_dir(), "/v1"),
+      make_context(_config, _client)) {}
 
 ss::future<> proxy::start() {
     return seastar::when_all_succeed(
@@ -112,13 +103,20 @@ ss::future<> proxy::start() {
                  _server.route(get_proxy_routes());
                  return _server.start();
              },
-             [this]() { return _client.connect(); })
+             [this]() {
+                 return _client.connect().handle_exception_type(
+                   [](const kafka::client::broker_error& e) {
+                       vlog(plog.debug, "Failed to connect to broker: {}", e);
+                   });
+             })
       .discard_result();
 }
 
 ss::future<> proxy::stop() {
     return _server.stop().finally([this]() { return _client.stop(); });
 }
+
+pandaproxy::configuration& proxy::config() { return _config; }
 
 kafka::client::configuration& proxy::client_config() {
     return _client.config();

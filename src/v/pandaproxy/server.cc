@@ -9,10 +9,14 @@
 
 #include "pandaproxy/server.h"
 
+#include "cluster/cluster_utils.h"
+#include "pandaproxy/configuration.h"
 #include "pandaproxy/logger.h"
 #include "pandaproxy/probe.h"
 #include "pandaproxy/reply.h"
 
+#include <seastar/core/coroutine.hh>
+#include <seastar/core/std-coroutine.hh>
 #include <seastar/http/function_handlers.hh>
 
 #include <charconv>
@@ -100,12 +104,10 @@ struct handler_adaptor : ss::httpd::handler_base {
 
 server::server(
   const ss::sstring& server_name,
-  ss::socket_address addr,
   ss::api_registry_builder20&& api20,
   context_t ctx)
   : _server(server_name)
   , _pending_reqs()
-  , _addr(addr)
   , _api20(std::move(api20))
   , _has_routes(false)
   , _ctx(std::move(ctx)) {
@@ -142,7 +144,23 @@ void server::route(std::vector<server::route_t>&& rts) {
 
 ss::future<> server::start() {
     _server._routes.register_exeption_handler(exception_reply);
-    return _server.listen(_addr);
+
+    auto builder
+      = co_await _ctx.config.pandaproxy_api_tls().get_credentials_builder();
+    if (builder) {
+        auto cred = co_await builder->build_reloadable_server_credentials(
+          [](
+            const std::unordered_set<ss::sstring>& updated,
+            const std::exception_ptr& eptr) {
+              cluster::log_certificate_reload_event(
+                plog, "API TLS", updated, eptr);
+          });
+
+        _server.set_tls_credentials(std::move(cred));
+    }
+
+    auto addr = co_await rpc::resolve_dns(_ctx.config.pandaproxy_api);
+    co_await _server.listen(addr);
 }
 
 ss::future<> server::stop() {

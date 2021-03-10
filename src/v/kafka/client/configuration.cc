@@ -18,6 +18,11 @@
 namespace kafka::client {
 using namespace std::chrono_literals;
 
+configuration::configuration(const YAML::Node& cfg)
+  : configuration() {
+    read_yaml(cfg);
+}
+
 configuration::configuration()
   : brokers(
     *this,
@@ -80,18 +85,5 @@ configuration::configuration()
       "Interval (in milliseconds) for consumer heartbeats",
       config::required::no,
       500ms) {}
-
-YAML::Node to_yaml(const configuration& cfg) {
-    rapidjson::StringBuffer buf;
-    rapidjson::Writer<rapidjson::StringBuffer> writer(buf);
-    cfg.to_json(writer);
-    return YAML::Load(buf.GetString());
-}
-
-configuration copy_configuration(const configuration& cfg) {
-    configuration res;
-    res.read_yaml(to_yaml(cfg));
-    return res;
-}
 
 } // namespace kafka::client

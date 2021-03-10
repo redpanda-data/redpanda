@@ -38,10 +38,8 @@ struct configuration final : public config::config_store {
     config::property<std::chrono::milliseconds> consumer_heartbeat_interval;
 
     configuration();
+    explicit configuration(const YAML::Node& cfg);
 };
-
-YAML::Node to_yaml(const configuration& cfg);
-configuration copy_configuration(const configuration& cfg);
 
 using conf_ref = typename std::reference_wrapper<configuration>;
 

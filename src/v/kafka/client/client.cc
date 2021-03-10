@@ -32,8 +32,8 @@
 
 namespace kafka::client {
 
-client::client(const configuration& cfg)
-  : _config{copy_configuration(cfg)}
+client::client(const YAML::Node& cfg)
+  : _config{cfg}
   , _seeds{_config.brokers()}
   , _brokers{}
   , _wait_or_start_update_metadata{[this](wait_or_start::tag tag) {

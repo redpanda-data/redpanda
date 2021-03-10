@@ -16,6 +16,8 @@
 #include "coproc/event_listener.h"
 #include "coproc/pacemaker.h"
 #include "kafka/security/credential_store.h"
+#include "pandaproxy/configuration.h"
+#include "pandaproxy/fwd.h"
 #include "raft/group_manager.h"
 #include "resource_mgmt/cpu_scheduling.h"
 #include "resource_mgmt/memory_groups.h"
@@ -36,11 +38,16 @@ class application {
 public:
     int run(int, char**);
 
-    void initialize(std::optional<scheduling_groups> = std::nullopt);
+    void initialize(
+      std::optional<YAML::Node> proxy_cfg = std::nullopt,
+      std::optional<YAML::Node> proxy_client_cfg = std::nullopt,
+      std::optional<scheduling_groups> = std::nullopt);
     void check_environment();
     void configure_admin_server();
     void wire_up_services();
+    void wire_up_redpanda_services();
     void start();
+    void start_redpanda();
 
     explicit application(ss::sstring = "redpanda::main");
 
@@ -49,6 +56,9 @@ public:
             _deferred.pop_back();
         }
     }
+
+    ss::future<> set_proxy_config(ss::sstring name, std::any val);
+    ss::future<> set_proxy_client_config(ss::sstring name, std::any val);
 
     ss::sharded<cluster::metadata_cache> metadata_cache;
     ss::sharded<kafka::group_router> group_router;
@@ -99,6 +109,9 @@ private:
     }
     void setup_metrics();
     std::unique_ptr<ss::app_template> _app;
+    bool _redpanda_enabled{true};
+    std::optional<pandaproxy::configuration> _proxy_config;
+    std::optional<kafka::client::configuration> _proxy_client_config;
     scheduling_groups _scheduling_groups;
     ss::logger _log;
 
@@ -108,6 +121,7 @@ private:
     ss::sharded<rpc::server> _rpc;
     ss::sharded<ss::http_server> _admin;
     ss::sharded<rpc::server> _kafka_server;
+    ss::sharded<pandaproxy::proxy> _proxy;
     ss::metrics::metric_groups _metrics;
     // run these first on destruction
     deferred_actions _deferred;

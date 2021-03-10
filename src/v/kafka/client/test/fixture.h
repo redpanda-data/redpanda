@@ -25,19 +25,15 @@ public:
             auto& config = config::shard_local_cfg();
             config.get("disable_metrics").set_value(false);
         }).get0();
-        app.initialize();
+        app.initialize(proxy_config(), proxy_client_config());
         app.check_environment();
         app.configure_admin_server();
         app.wire_up_services();
         app.start();
     }
 
-    kc::client make_client() {
-        kc::configuration cfg;
-        cfg.brokers.set_value(std::vector<unresolved_address>{
-          config::shard_local_cfg().kafka_api()[0].address});
-        return kc::client{cfg};
-    }
+    kc::client make_client() { return kc::client{proxy_client_config()}; }
+
     kc::client make_connected_client() {
         auto client = make_client();
         client.connect().get();

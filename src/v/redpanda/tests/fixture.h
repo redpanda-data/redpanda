@@ -21,6 +21,7 @@
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "model/timeout_clock.h"
+#include "pandaproxy/configuration.h"
 #include "redpanda/application.h"
 #include "resource_mgmt/cpu_scheduling.h"
 #include "rpc/dns.h"
@@ -30,6 +31,7 @@
 #include "test_utils/async.h"
 #include "test_utils/fixture.h"
 #include "test_utils/logs.h"
+#include "utils/unresolved_address.h"
 
 #include <seastar/util/log.hh>
 
@@ -45,6 +47,7 @@ public:
       model::node_id node_id,
       int32_t kafka_port,
       int32_t rpc_port,
+      int32_t proxy_port,
       int32_t coproc_supervisor_port,
       std::vector<config::seed_server> seed_servers,
       ss::sstring base_dir,
@@ -59,7 +62,10 @@ public:
           rpc_port,
           coproc_supervisor_port,
           std::move(seed_servers));
-        app.initialize(sch_groups);
+        app.initialize(
+          proxy_config(proxy_port),
+          proxy_client_config(kafka_port),
+          sch_groups);
         app.check_environment();
         app.configure_admin_server();
         app.wire_up_services();
@@ -86,6 +92,7 @@ public:
         model::node_id(1),
         9092,
         33145,
+        8082,
         43189,
         {},
         fmt::format("test.dir_{}", time(0)),
@@ -137,6 +144,24 @@ public:
             config.get("data_directory")
               .set_value(config::data_directory_path{.path = base_path});
         }).get0();
+    }
+
+    YAML::Node proxy_config(uint16_t proxy_port = 8082) {
+        pandaproxy::configuration cfg;
+        cfg.pandaproxy_api.set_value(
+          unresolved_address("127.0.0.1", proxy_port));
+        return to_yaml(cfg);
+    }
+
+    YAML::Node proxy_client_config(
+      uint16_t kafka_api_port
+      = config::shard_local_cfg().kafka_api()[0].address.port()) {
+        kafka::client::configuration cfg;
+        unresolved_address kafka_api{
+          config::shard_local_cfg().kafka_api()[0].address.host(),
+          kafka_api_port};
+        cfg.brokers.set_value(std::vector<unresolved_address>({kafka_api}));
+        return to_yaml(cfg);
     }
 
     ss::future<> wait_for_controller_leadership() {

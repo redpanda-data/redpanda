@@ -61,7 +61,7 @@ private:
 
 class client {
 public:
-    explicit client(const configuration& cfg);
+    explicit client(YAML::Node const& cfg);
 
     /// \brief Connect to all brokers.
     ss::future<> connect();

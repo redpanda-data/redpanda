@@ -9,6 +9,7 @@
 
 #include "pandaproxy/probe.h"
 
+#include "config/configuration.h"
 #include "prometheus/prometheus_sanitize.h"
 
 #include <seastar/core/metrics.hh>
@@ -18,6 +19,9 @@ namespace pandaproxy {
 probe::probe(ss::httpd::path_description& path_desc)
   : _request_hist()
   , _metrics() {
+    if (config::shard_local_cfg().disable_metrics()) {
+        return;
+    }
     namespace sm = ss::metrics;
     std::vector<sm::label_instance> labels{
       sm::label("operation")(path_desc.operations.nickname)};
