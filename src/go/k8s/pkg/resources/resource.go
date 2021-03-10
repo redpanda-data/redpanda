@@ -69,3 +69,16 @@ func getOrCreate(
 
 	return nil
 }
+
+func deleteIfExists(
+	ctx context.Context,
+	r internalResource,
+	checkObj client.Object,
+	resourceName string,
+) error {
+	err := r.Delete(ctx, checkObj)
+	if err != nil && !errors.IsNotFound(err) {
+		return fmt.Errorf("error while deleting %s resource: %w", resourceName, err)
+	}
+	return nil
+}

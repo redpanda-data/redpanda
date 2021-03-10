@@ -54,7 +54,11 @@ func NewClusterRole(
 // nolint:dupl // The refactor is proposed in https://github.com/vectorizedio/redpanda/pull/779
 func (r *ClusterRoleResource) Ensure(ctx context.Context) error {
 	if !r.pandaCluster.Spec.ExternalConnectivity {
-		return nil
+		obj, err := r.Obj()
+		if err != nil {
+			return err
+		}
+		return deleteIfExists(ctx, r, obj, "ClusterRole")
 	}
 
 	var cr v1.ClusterRole

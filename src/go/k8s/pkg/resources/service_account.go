@@ -54,7 +54,11 @@ func NewServiceAccount(
 // nolint:dupl // The refactor is proposed in https://github.com/vectorizedio/redpanda/pull/779
 func (s *ServiceAccountResource) Ensure(ctx context.Context) error {
 	if !s.pandaCluster.Spec.ExternalConnectivity {
-		return nil
+		obj, err := s.Obj()
+		if err != nil {
+			return err
+		}
+		return deleteIfExists(ctx, s, obj, "ServiceAccount")
 	}
 
 	var sa corev1.ServiceAccount

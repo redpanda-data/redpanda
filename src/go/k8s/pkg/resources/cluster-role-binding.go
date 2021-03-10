@@ -52,7 +52,11 @@ func NewClusterRoleBinding(
 // Ensure manages v1.ClusterRoleBinding that is assigned to v1.ServiceAccount used in initContainer
 func (r *ClusterRoleBindingResource) Ensure(ctx context.Context) error {
 	if !r.pandaCluster.Spec.ExternalConnectivity {
-		return nil
+		obj, err := r.Obj()
+		if err != nil {
+			return err
+		}
+		return deleteIfExists(ctx, r, obj, "ClusterRoleBinding")
 	}
 
 	var crb v1.ClusterRoleBinding
