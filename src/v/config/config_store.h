@@ -83,6 +83,14 @@ private:
     friend class base_property;
     std::unordered_map<std::string_view, base_property*> _properties;
 };
+
+inline YAML::Node to_yaml(const config_store& cfg) {
+    rapidjson::StringBuffer buf;
+    rapidjson::Writer<rapidjson::StringBuffer> writer(buf);
+    cfg.to_json(writer);
+    return YAML::Load(buf.GetString());
+}
+
 }; // namespace config
 
 namespace std {

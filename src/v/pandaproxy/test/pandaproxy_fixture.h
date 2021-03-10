@@ -38,10 +38,12 @@ public:
 
     http::client make_client() {
         rpc::base_transport::configuration transport_cfg;
-        transport_cfg.server_addr
-          = rpc::resolve_dns(pandaproxy::shard_local_cfg().pandaproxy_api())
-              .get();
+        transport_cfg.server_addr = rpc::resolve_dns({"localhost", 8082}).get();
         return http::client(transport_cfg);
+    }
+
+    void set_config(ss::sstring name, std::any val) {
+        proxy.set_config(std::move(name), std::move(val)).get();
     }
 
     void set_client_config(ss::sstring name, std::any val) {
@@ -49,9 +51,7 @@ public:
     }
 
 private:
-    void configure_proxy() {
-        pandaproxy::shard_local_cfg().developer_mode.set_value(true);
-    }
+    void configure_proxy() { set_config("developer_mode", true); }
 
     void start_proxy() {
         kafka::client::configuration client_config;

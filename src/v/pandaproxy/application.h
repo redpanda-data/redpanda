@@ -41,6 +41,7 @@ public:
         }
     }
 
+    ss::future<> set_config(ss::sstring name, std::any val);
     ss::future<> set_client_config(ss::sstring name, std::any val);
 
 private:
@@ -67,6 +68,7 @@ private:
     ss::sharded<pandaproxy::proxy> _proxy;
     // run these first on destruction
     deferred_actions _deferred;
+    pandaproxy::configuration _config;
     kafka::client::configuration _client_config;
 };
 

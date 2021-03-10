@@ -34,11 +34,8 @@ struct configuration final : public config::config_store {
     config::property<bool> disable_metrics;
 
     configuration();
-
-    void read_yaml(const YAML::Node& root_node) override;
+    explicit configuration(const YAML::Node& cfg);
 };
-
-configuration& shard_local_cfg();
 
 using conf_ref = typename std::reference_wrapper<configuration>;
 

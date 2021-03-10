@@ -15,6 +15,11 @@
 namespace pandaproxy {
 using namespace std::chrono_literals;
 
+configuration::configuration(const YAML::Node& cfg)
+  : configuration() {
+    read_yaml(cfg);
+}
+
 configuration::configuration()
   : developer_mode(
     *this,
@@ -66,15 +71,4 @@ configuration::configuration()
       config::required::no,
       false) {}
 
-void configuration::read_yaml(const YAML::Node& root_node) {
-    if (!root_node["pandaproxy"]) {
-        throw std::invalid_argument("'pandaproxy' root is required");
-    }
-    config_store::read_yaml(root_node["pandaproxy"]);
-}
-
-configuration& shard_local_cfg() {
-    static thread_local configuration cfg;
-    return cfg;
-}
 } // namespace pandaproxy

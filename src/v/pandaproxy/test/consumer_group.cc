@@ -62,8 +62,7 @@ FIXTURE_TEST(pandaproxy_consumer_group, pandaproxy_test_fixture) {
     auto client = make_client();
 
     auto advertised_address{unresolved_address{"proxy.example.com", 8080}};
-    pp::shard_local_cfg().advertised_pandaproxy_api.set_value(
-      advertised_address);
+    set_config("advertised_pandaproxy_api", advertised_address);
 
     kafka::group_id group_id{"test_group"};
     kafka::member_id member_id{kafka::no_member};

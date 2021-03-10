@@ -41,8 +41,6 @@ struct configuration final : public config::config_store {
     explicit configuration(const YAML::Node& cfg);
 };
 
-YAML::Node to_yaml(const configuration& cfg);
-
 using conf_ref = typename std::reference_wrapper<configuration>;
 
 } // namespace kafka::client

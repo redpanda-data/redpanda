@@ -87,22 +87,23 @@ std::vector<server::route_t> get_proxy_routes() {
     return routes;
 }
 
-static server::context_t make_context(kafka::client::client& client) {
+static server::context_t
+make_context(const configuration& cfg, kafka::client::client& client) {
     return server::context_t{
       .mem_sem{ss::memory::stats().free_memory()},
       .as{},
       .client{client},
-    };
+      .config{cfg}};
 }
 
-proxy::proxy(ss::socket_address listen_addr, const YAML::Node& client_config)
-  : _client(client_config)
-  , _ctx(make_context(_client))
+proxy::proxy(const YAML::Node& config, const YAML::Node& client_config)
+  : _config(config)
+  , _client(client_config)
+  , _ctx(make_context(_config, _client))
   , _server(
       "pandaproxy",
-      listen_addr,
-      ss::api_registry_builder20(shard_local_cfg().api_doc_dir(), "/v1"),
-      make_context(_client)) {}
+      ss::api_registry_builder20(_config.api_doc_dir(), "/v1"),
+      make_context(_config, _client)) {}
 
 ss::future<> proxy::start() {
     return seastar::when_all_succeed(
@@ -117,6 +118,8 @@ ss::future<> proxy::start() {
 ss::future<> proxy::stop() {
     return _server.stop().finally([this]() { return _client.stop(); });
 }
+
+pandaproxy::configuration& proxy::config() { return _config; }
 
 kafka::client::configuration& proxy::client_config() {
     return _client.config();

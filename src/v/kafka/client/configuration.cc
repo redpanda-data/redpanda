@@ -86,11 +86,4 @@ configuration::configuration()
       config::required::no,
       500ms) {}
 
-YAML::Node to_yaml(const configuration& cfg) {
-    rapidjson::StringBuffer buf;
-    rapidjson::Writer<rapidjson::StringBuffer> writer(buf);
-    cfg.to_json(writer);
-    return YAML::Load(buf.GetString());
-}
-
 } // namespace kafka::client

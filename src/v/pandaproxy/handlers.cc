@@ -204,8 +204,9 @@ create_consumer(server::request_t rq, server::reply_t rp) {
     auto group_id = kafka::group_id(rq.req->param["group_name"]);
 
     return rq.ctx.client.create_consumer(group_id).then(
-      [group_id, rp{std::move(rp)}](kafka::member_id m_id) mutable {
-          auto adv_addr = shard_local_cfg().advertised_pandaproxy_api();
+      [group_id, rq{std::move(rq)}, rp{std::move(rp)}](
+        kafka::member_id m_id) mutable {
+          auto adv_addr = rq.ctx.config.advertised_pandaproxy_api();
           json::create_consumer_response res{
             .instance_id = m_id,
             .base_uri = fmt::format(

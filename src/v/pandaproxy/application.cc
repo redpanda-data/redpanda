@@ -128,31 +128,30 @@ void application::hydrate_config(
     in.consume_to(buf.size_bytes(), workaround.begin());
     const YAML::Node config = YAML::Load(workaround);
     vlog(_log.info, "Configuration:\n\n{}\n\n", config);
-    ss::smp::invoke_on_all([&config] {
-        shard_local_cfg().read_yaml(config);
-    }).get0();
+    _config.read_yaml(config["pandaproxy"]);
     _client_config.read_yaml(config["pandaproxy_client"]);
     vlog(
       _log.info,
       "Use `rpk config set pandaproxy-cfg <value>` to change values below:");
-    auto config_printer = [this](const config::base_property& item) {
-        std::stringstream val;
-        item.print(val);
-        vlog(_log.info, "{}\t- {}", val.str(), item.desc());
+    auto config_printer = [this](std::string_view service) {
+        return [this, service](const config::base_property& item) {
+            std::stringstream val;
+            item.print(val);
+            vlog(_log.info, "{}.{}\t- {}", service, val.str(), item.desc());
+        };
     };
-    shard_local_cfg().for_each(config_printer);
-    _client_config.for_each(config_printer);
+    _config.for_each(config_printer("pandaproxy"));
+    _client_config.for_each(config_printer("pandaproxy_client"));
 }
 
 void application::check_environment() {
     syschecks::systemd_message("checking environment (CPU, Mem)").get();
     syschecks::cpu();
-    syschecks::memory(shard_local_cfg().developer_mode());
+    syschecks::memory(_config.developer_mode());
 }
 
 void application::configure_admin_server() {
-    auto& conf = shard_local_cfg();
-    if (!conf.enable_admin_api()) {
+    if (!_config.enable_admin_api()) {
         return;
     }
     syschecks::systemd_message("constructing http server").get();
@@ -161,29 +160,30 @@ void application::configure_admin_server() {
     metrics_conf.metric_help = "pandaproxy metrics";
     metrics_conf.prefix = "vectorized";
     ss::prometheus::add_prometheus_routes(_admin, metrics_conf).get();
-    if (conf.enable_admin_api()) {
+    if (_config.enable_admin_api()) {
         syschecks::systemd_message(
-          "enabling admin HTTP api: {}", shard_local_cfg().admin_api())
+          "enabling admin HTTP api: {}", _config.admin_api())
           .get();
         auto rb = ss::make_shared<ss::api_registry_builder20>(
-          conf.admin_api_doc_dir(), "/v1");
+          _config.admin_api_doc_dir(), "/v1");
+        rapidjson::StringBuffer buf;
+        rapidjson::Writer<rapidjson::StringBuffer> writer(buf);
+        _config.to_json(writer);
+        ss::sstring cfg{buf.GetString(), buf.GetSize()};
         _admin
-          .invoke_on_all([rb](ss::http_server& server) {
+          .invoke_on_all([cfg{std::move(cfg)}, rb](ss::http_server& server) {
               rb->set_api_doc(server._routes);
               rb->register_api_file(server._routes, "header");
               rb->register_api_file(server._routes, "config");
               ss::httpd::config_json::get_config.set(
-                server._routes, [](ss::const_req) {
-                    rapidjson::StringBuffer buf;
-                    rapidjson::Writer<rapidjson::StringBuffer> writer(buf);
-                    shard_local_cfg().to_json(writer);
-                    return ss::json::json_return_type(buf.GetString());
+                server._routes, [cfg](ss::const_req) {
+                    return ss::json::json_return_type(std::move(cfg));
                 });
           })
           .get();
     }
 
-    rpc::resolve_dns(shard_local_cfg().admin_api())
+    rpc::resolve_dns(_config.admin_api())
       .then([this](ss::socket_address addr) mutable {
           return _admin
             .invoke_on_all<ss::future<> (ss::http_server::*)(
@@ -198,18 +198,21 @@ void application::configure_admin_server() {
     vlog(
       _log.info,
       "Started HTTP admin service listening at {}",
-      conf.admin_api());
+      _config.admin_api());
 }
 
 // add additional services in here
 void application::wire_up_services() {
     syschecks::systemd_message("Starting Pandaproxy").get();
 
-    construct_service(
-      _proxy,
-      rpc::resolve_dns(shard_local_cfg().pandaproxy_api()).get(),
-      to_yaml(_client_config))
-      .get();
+    construct_service(_proxy, to_yaml(_config), to_yaml(_client_config)).get();
+}
+
+ss::future<> application::set_config(ss::sstring name, std::any val) {
+    return _proxy.invoke_on_all(
+      [name{std::move(name)}, val{std::move(val)}](proxy& p) {
+          p.config().get(name).set_value(val);
+      });
 }
 
 ss::future<> application::set_client_config(ss::sstring name, std::any val) {
@@ -220,9 +223,9 @@ ss::future<> application::set_client_config(ss::sstring name, std::any val) {
 }
 
 void application::start() {
-    auto& conf = shard_local_cfg();
     _proxy.invoke_on_all(&proxy::start).get();
-    vlog(_log.info, "Started Pandaproxy listening at {}", conf.pandaproxy_api);
+    vlog(
+      _log.info, "Started Pandaproxy listening at {}", _config.pandaproxy_api);
 
     syschecks::systemd_message("Pandaproxy ready!").get();
     pandaproxy_notify_ready();

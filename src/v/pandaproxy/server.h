@@ -67,7 +67,6 @@ public:
 
     server(
       const ss::sstring& server_name,
-      ss::socket_address addr,
       ss::api_registry_builder20&& api20,
       context_t ctx);
 
@@ -80,7 +79,6 @@ public:
 private:
     ss::httpd::http_server _server;
     ss::gate _pending_reqs;
-    ss::socket_address _addr;
     ss::api_registry_builder20 _api20;
     bool _has_routes;
     context_t _ctx;
