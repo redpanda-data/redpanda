@@ -24,7 +24,7 @@ namespace s3 {
 
 using access_point_uri = named_type<ss::sstring, struct s3_access_point_uri>;
 using bucket_name = named_type<ss::sstring, struct s3_bucket_name>;
-using object_key = named_type<ss::sstring, struct s3_object_key>;
+using object_key = named_type<std::filesystem::path, struct s3_object_key>;
 
 struct object_tag {
     ss::sstring key;

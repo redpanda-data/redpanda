@@ -14,6 +14,8 @@
 #include "seastarx.h"
 #include "utils/named_type.h"
 
+#include <filesystem>
+
 namespace archival {
 
 /// Segment file name without working directory,
@@ -22,13 +24,13 @@ using segment_name = named_type<ss::sstring, struct archival_segment_name_t>;
 /// Segment path in S3, expected format:
 /// <prefix>/<ns>/<topic>/<part-id>_<rev>/<base-offset>-<term-id>-<revision>.log
 using remote_segment_path
-  = named_type<ss::sstring, struct archival_remote_segment_path_t>;
+  = named_type<std::filesystem::path, struct archival_remote_segment_path_t>;
 using remote_manifest_path
-  = named_type<ss::sstring, struct archival_remote_manifest_path_t>;
+  = named_type<std::filesystem::path, struct archival_remote_manifest_path_t>;
 /// Local segment path, expected format:
 /// <work-dir>/<ns>/<topic>/<part-id>_<rev>/<base-offset>-<term-id>-<revision>.log
 using local_segment_path
-  = named_type<ss::sstring, struct archival_local_segment_path_t>;
+  = named_type<std::filesystem::path, struct archival_local_segment_path_t>;
 /// Number of simultaneous connections to S3
 using s3_connection_limit
   = named_type<size_t, struct archival_s3_connection_limit_t>;

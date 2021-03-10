@@ -104,7 +104,7 @@ result<http::client::request_header> request_creator::make_get_object_request(
     // Authorization:{signature}
     // x-amz-content-sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
     auto host = fmt::format("{}.{}", name(), _ap());
-    auto target = fmt::format("/{}", key());
+    auto target = fmt::format("/{}", key().string());
     std::string emptysig
       = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
     header.method(boost::beast::http::verb::get);
@@ -138,7 +138,7 @@ request_creator::make_unsigned_put_object_request(
     // [11434 bytes of object data]
     http::client::request_header header{};
     auto host = fmt::format("{}.{}", name(), _ap());
-    auto target = fmt::format("/{}", key());
+    auto target = fmt::format("/{}", key().string());
     std::string sig = "UNSIGNED-PAYLOAD";
     header.method(boost::beast::http::verb::put);
     header.target(target);
@@ -188,15 +188,10 @@ request_creator::make_list_objects_v2_request(
     header.insert(boost::beast::http::field::content_length, "0");
     header.insert(aws_header_names::x_amz_content_sha256, emptysig);
     if (prefix) {
-        header.insert(
-          aws_header_names::prefix,
-          boost::beast::string_view{(*prefix)().data(), (*prefix)().size()});
+        header.insert(aws_header_names::prefix, (*prefix)().string());
     }
     if (start_after) {
-        header.insert(
-          aws_header_names::start_after,
-          boost::beast::string_view{
-            (*start_after)().data(), (*start_after)().size()});
+        header.insert(aws_header_names::start_after, (*start_after)().string());
     }
     if (max_keys) {
         header.insert(aws_header_names::start_after, std::to_string(*max_keys));
@@ -221,7 +216,7 @@ request_creator::make_delete_object_request(
     //
     // NOTE: x-amz-mfa, x-amz-bypass-governance-retention are not used for now
     auto host = fmt::format("{}.{}", name(), _ap());
-    auto target = fmt::format("/{}", key());
+    auto target = fmt::format("/{}", key().string());
     std::string emptysig
       = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
     header.method(boost::beast::http::verb::delete_);

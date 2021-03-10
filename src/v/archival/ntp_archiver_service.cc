@@ -75,7 +75,7 @@ ss::future<download_manifest_result> ntp_archiver::download_manifest() {
     gate_guard guard{_gate};
     auto key = _remote.get_manifest_path();
     vlog(archival_log.debug, "Download manifest {}", key());
-    auto path = s3::object_key(key());
+    auto path = s3::object_key(key().string());
     s3::client client(_client_conf, _as);
     auto result = download_manifest_result::success;
     try {
@@ -111,7 +111,7 @@ ss::future<> ntp_archiver::upload_manifest() {
     int backoff_quota = 8; // max backoff time should be close to 10s
     auto key = _remote.get_manifest_path();
     vlog(archival_log.trace, "Upload manifest {}", key());
-    auto path = s3::object_key(key());
+    auto path = s3::object_key(key().string());
     std::vector<s3::object_tag> tags = {{"rp-type", "partition-manifest"}};
     while (!_gate.is_closed() && backoff_quota-- > 0) {
         bool slowdown = false;
@@ -202,7 +202,7 @@ ss::future<bool> ntp_archiver::upload_segment(
             // Segment upload attempt
             co_await client.put_object(
               _bucket,
-              s3::object_key(s3path()),
+              s3::object_key(s3path().string()),
               candidate.content_length,
               std::move(stream),
               tags);
