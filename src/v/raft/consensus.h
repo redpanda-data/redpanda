@@ -342,7 +342,7 @@ private:
     ss::future<> do_maybe_update_leader_commit_idx(ss::semaphore_units<>);
 
     model::term_id get_term(model::offset);
-
+    clock_type::time_point majority_heartbeat() const;
     /*
      * Start an election. When leadership transfer is requested, the election is
      * started immediately, and the vote request will contain a flag that

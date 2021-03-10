@@ -105,20 +105,7 @@ void consensus::maybe_step_down() {
     (void)ss::with_gate(_bg, [this] {
         return _op_lock.with([this] {
             if (_vstate == vote_state::leader) {
-                auto majority_hbeat = config().quorum_match([this](vnode rni) {
-                    if (rni == _self) {
-                        return clock_type::now();
-                    }
-
-                    if (auto it = _fstats.find(rni); it != _fstats.end()) {
-                        return it->second.last_hbeat_timestamp;
-                    }
-
-                    // if we do not know the follower state yet i.e. we have
-                    // never received its heartbeat
-                    return clock_type::time_point::min();
-                });
-
+                auto majority_hbeat = majority_heartbeat();
                 if (majority_hbeat < _became_leader_at) {
                     majority_hbeat = _became_leader_at;
                 }
@@ -128,6 +115,22 @@ void consensus::maybe_step_down() {
                 }
             }
         });
+    });
+}
+
+clock_type::time_point consensus::majority_heartbeat() const {
+    return config().quorum_match([this](vnode rni) {
+        if (rni == _self) {
+            return clock_type::now();
+        }
+
+        if (auto it = _fstats.find(rni); it != _fstats.end()) {
+            return it->second.last_hbeat_timestamp;
+        }
+
+        // if we do not know the follower state yet i.e. we have
+        // never received its heartbeat
+        return clock_type::time_point::min();
     });
 }
 
