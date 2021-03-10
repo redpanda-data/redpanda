@@ -1,8 +1,8 @@
 ---
-title: Production Deployment
+title: Deploying for production
 order: 0
 ---
-# Production Deployment
+# Deploying for production
 
 This guide will take you through what is needed to setup a production cluster
 of Redpanda.
