@@ -11,7 +11,29 @@ and be fully compatible with the [Kafka ecosystem](https://cwiki.apache.org/conf
 This quick start guide can help you get started with Redpanda for development and testing purposes.
 For production or benchmarking, setup a [production deployment](/docs/production-deployment).
 
-## Set up network and persistent volumes
+## Get your cluster ready
+
+To get a cluster ready for streaming, either run a single docker container with Redpanda running or a cluster of 3 containers.
+
+> **_Note:_** You can also use [`rpk container`](/docs/guide-rpk-container) to run Redpanda in containers
+    without having to interact with Docker at all.
+
+### Single command for a 1-node cluster
+
+With a 1-node cluster you can test out a simple implementation of Redpanda.
+
+```bash
+docker run -ti --name redpanda-1 -p 9092:9092 vectorized/redpanda:latest
+```
+
+You can do some [simple topic actions](#Do-some-streaming) to do some streaming.
+Otherwise, just point your [Kafka-compatible client](/docs/faq/#What-clients-do-you-recommend-to-use-with-Redpanda) to 127.0.0.1:9092.
+
+### Set up a 3-node cluster
+
+To test out the interaction between nodes in a cluster, set up a Docker network with 3 containers in a cluster.
+
+#### Create network and persistent volumes
 
 First we need to set up a bridge network so that the Redpanda instances can communicate with each other
 but still allow for the Kafka API to be available on the localhost.
@@ -24,12 +46,9 @@ docker volume create redpanda2 && \
 docker volume create redpanda3
 ```
 
-## Start Redpanda nodes
+#### Start Redpanda nodes
 
 We then need to start the nodes for the Redpanda cluster.
-
-> **_Note:_** To get the latest Redpanda image,
-> make sure you delete any `vectorized/redpanda:latest` images that you downloaded before. 
 
 ```bash
 docker run -d \
@@ -153,15 +172,10 @@ docker stop redpanda-1 redpanda-2 redpanda-3
 docker rm redpanda-1 redpanda-2 redpanda-3
 ```
 
-You can delete the volumes that hold the data that was stored in the cluster with:
+If you set up volumes and a network, delete them with:
 
 ```bash
 docker volume rm redpanda1 redpanda2 redpanda3
-```
-
-You can delete the network that you created with:
-
-```bash
 docker network rm redpandanet
 ```
 
