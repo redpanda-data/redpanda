@@ -15,6 +15,7 @@ import {
   DisableCoprosReply,
   DisableCoprosRequest,
   EmptyRequest,
+  EmptyResponse,
   EnableCoprocessor,
   EnableCoprocessorRequestData,
   EnableCoprosReply,
@@ -96,6 +97,10 @@ export class ProcessBatchServer extends SupervisorServer {
     }));
     this.logger.info(`Disable all wasm scripts: ${ids}`);
     return Promise.resolve({ responses });
+  }
+
+  heartbeat(input: EmptyRequest): Promise<EmptyResponse> {
+    return Promise.resolve({ empty: 0 });
   }
 
   validateEnableCoprocInput(

@@ -31,9 +31,11 @@ namespace coproc {
 supervisor::supervisor(
   ss::scheduling_group sc,
   ss::smp_service_group ssg,
-  ss::sharded<script_map_t>& coprocessors)
+  ss::sharded<script_map_t>& coprocessors,
+  ss::sharded<ss::lw_shared_ptr<bool>>& delay_heartbeat)
   : supervisor_service(sc, ssg)
-  , _coprocessors(coprocessors) {}
+  , _coprocessors(coprocessors)
+  , _delay_heartbeat(delay_heartbeat) {}
 
 ss::future<model::record_batch_reader::data_t>
 copy_batch(const model::record_batch_reader::data_t& data) {
@@ -64,8 +66,8 @@ ss::future<std::vector<process_batch_reply::data>> resultmap_to_vector(
     });
 }
 
-ss::future<std::vector<process_batch_reply::data>>
-empty_response(script_id id, const model::ntp& ntp) {
+static ss::future<std::vector<process_batch_reply::data>>
+make_empty_response(script_id id, const model::ntp& ntp) {
     /// Redpanda will special case respones with empty readers as an ack.
     /// This has the affect of an implied 'filter' transformation. The
     /// supervisor acks a request with an empty response, so redpanda just moves
@@ -81,8 +83,8 @@ empty_response(script_id id, const model::ntp& ntp) {
       std::move(eresp));
 }
 
-ss::future<std::vector<process_batch_reply::data>>
-null_response(script_id id, const model::ntp& ntp) {
+static ss::future<std::vector<process_batch_reply::data>>
+make_null_response(script_id id, const model::ntp& ntp) {
     /// Redpanda will interpret null record batch readers as an indication that
     /// a fatal error has occurred within the wasm engine and it should not send
     /// more records to that script id
@@ -107,7 +109,7 @@ supervisor::invoke_coprocessor(
     return copro->apply(ntp.tp.topic, std::move(batches))
       .then([id, ntp](coprocessor::result rmap) {
           if (rmap.empty()) {
-              return empty_response(id, ntp);
+              return make_empty_response(id, ntp);
           }
           return resultmap_to_vector(id, ntp, std::move(rmap));
       })
@@ -116,7 +118,7 @@ supervisor::invoke_coprocessor(
             coproclog.error,
             "Detected throwing apply function, will deregister: {}",
             eptr);
-          return null_response(id, ntp);
+          return make_null_response(id, ntp);
       });
 }
 
@@ -265,12 +267,17 @@ supervisor::disable_coprocessor(script_id id) {
 ss::future<disable_copros_reply> supervisor::disable_coprocessors(
   disable_copros_request&& r, rpc::streaming_context&) {
     return ss::with_scheduling_group(
-      get_scheduling_group(), [this, r = std::move(r)] {
-          return ssx::async_transform(
-                   r.ids,
-                   [this](script_id id) { return disable_coprocessor(id); })
-            .then([](std::vector<disable_copros_reply::ack> acks) {
-                return disable_copros_reply{.acks = std::move(acks)};
+      get_scheduling_group(), [this, r = std::move(r)]() mutable {
+          return ss::do_with(
+            std::move(r.ids), [this](std::vector<script_id>& ids) {
+                return ssx::async_transform(
+                         ids,
+                         [this](script_id id) {
+                             return disable_coprocessor(id);
+                         })
+                  .then([](std::vector<disable_copros_reply::ack> acks) {
+                      return disable_copros_reply{.acks = std::move(acks)};
+                  });
             });
       });
 }
@@ -293,11 +300,16 @@ supervisor::disable_all_coprocessors(empty_request&&, rpc::streaming_context&) {
                 return std::move(set);
             })
           .then([this](std::set<script_id> ids) {
-              return ssx::async_transform(
-                       ids,
-                       [this](script_id id) { return disable_coprocessor(id); })
-                .then([](std::vector<disable_copros_reply::ack> acks) {
-                    return disable_copros_reply{.acks = std::move(acks)};
+              return ss::do_with(
+                std::move(ids), [this](std::set<script_id>& ids) {
+                    return ssx::async_transform(
+                             ids,
+                             [this](script_id id) {
+                                 return disable_coprocessor(id);
+                             })
+                      .then([](std::vector<disable_copros_reply::ack> acks) {
+                          return disable_copros_reply{.acks = std::move(acks)};
+                      });
                 });
           });
     });
@@ -319,6 +331,19 @@ supervisor::process_batch(process_batch_request&& r, rpc::streaming_context&) {
                 });
           });
       });
+}
+
+ss::future<empty_response>
+supervisor::heartbeat(empty_request&&, rpc::streaming_context&) {
+    if (!*_delay_heartbeat.local()) {
+        vlog(coproclog.info, "Replying ping... heartbeat request");
+        return ss::make_ready_future<empty_response>();
+    }
+    vlog(coproclog.warn, "Replying with delayed ping... heartbeat request");
+    /// Delay a response to initiate a failure recovery scenario
+    return ss::sleep(std::chrono::seconds(3)).then([] {
+        return empty_response();
+    });
 }
 
 } // namespace coproc

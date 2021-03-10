@@ -72,28 +72,30 @@ ss::future<> pacemaker::start() {
 }
 
 ss::future<> pacemaker::stop() {
-    /// First shutdown the offset keepers loop
+    /// Ensure no more timers are fired
     _offs.timer.cancel();
-    std::vector<script_id> ids;
-    ids.reserve(_scripts.size());
-    for (const auto& [id, _] : _scripts) {
-        ids.push_back(id);
-    }
-    /// Next de-register all coprocessors
-    bool success = true;
-    for (const script_id& id : ids) {
-        success = co_await remove_source(id) == errc::success;
-        if (!success) {
-            break;
-        }
-    }
-    co_await _gate.close();
-    if (!success) {
+    /// Waiting on the gate here will cause a deadlock since the signal to stop
+    /// all fibers hasn't yet been sent out (remove_all_sources). However we
+    /// wish to close the gate before any async actions begin in this method to
+    /// prevent add_sources from adding new scripts.
+    ss::future<> gate_closed = _gate.close();
+    /// Deregister and clean-up resources
+    const size_t n_active_scripts = _scripts.size();
+    const auto results = co_await remove_all_sources();
+    const size_t n_removed = std::accumulate(
+      results.cbegin(),
+      results.cend(),
+      size_t(0),
+      [](size_t acc, const std::pair<script_id, errc>& pair) {
+          return pair.second == errc::success ? acc + 1 : acc;
+      });
+    if (n_removed != n_active_scripts) {
         vlog(coproclog.error, "Failed to gracefully shutdown all copro fibers");
     }
     /// Finally close the connection to the wasm engine
     vlog(coproclog.info, "Closing connection to coproc wasm engine");
     co_await _shared_res.transport.stop();
+    co_await std::move(gate_closed);
 }
 
 std::vector<errc> pacemaker::add_source(
@@ -205,6 +207,20 @@ ss::future<errc> pacemaker::remove_source(script_id id) {
         return p.second.use_count() == 1;
     });
     co_return errc::success;
+}
+
+ss::future<absl::btree_map<script_id, errc>> pacemaker::remove_all_sources() {
+    std::vector<script_id> ids;
+    ids.reserve(_scripts.size());
+    for (const auto& [id, _] : _scripts) {
+        ids.push_back(id);
+    }
+    absl::btree_map<script_id, errc> results_map;
+    for (const script_id& id : ids) {
+        errc result = co_await remove_source(id);
+        results_map.emplace(id, result);
+    }
+    co_return results_map;
 }
 
 bool pacemaker::local_script_id_exists(script_id id) {

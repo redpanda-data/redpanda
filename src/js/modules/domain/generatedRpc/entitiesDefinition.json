@@ -353,6 +353,15 @@
           "type": "int8"
         }
       ]
+    },
+    {
+      "className": "EmptyResponse",
+      "fields": [
+        {
+          "name": "empty",
+          "type": "int8"
+        }
+      ]
     }
   ]
 }

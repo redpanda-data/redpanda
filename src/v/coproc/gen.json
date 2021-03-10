@@ -25,6 +25,11 @@
             "name": "process_batch",
             "input_type": "process_batch_request",
             "output_type": "process_batch_reply"
+        },
+        {
+            "name": "heartbeat",
+            "input_type": "empty_request",
+            "output_type": "empty_response"
         }
     ]
 }

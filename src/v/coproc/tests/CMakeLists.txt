@@ -1,6 +1,7 @@
 set(fixture_srcs
     utils/event_publisher.cc
     utils/supervisor.cc
+    utils/coproc_slim_fixture.cc
     utils/coproc_test_fixture.cc
     utils/router_test_fixture.cc
     utils/wasm_event_generator.cc
@@ -15,6 +16,7 @@ rp_test(
   BINARY_NAME coproc_fixture
   SOURCES
     ${fixture_srcs}
+    failure_recovery_tests.cc
     router_test.cc
     offset_storage_utils_tests.cc
     wasm_event_tests.cc
