@@ -19,6 +19,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -53,10 +54,6 @@ var _ = Describe("RedPandaCluster controller", func() {
 				Name:      key.Name + "-base",
 				Namespace: "default",
 			}
-			clusterRoleKey := types.NamespacedName{
-				Name:      "redpanda-init-configurator",
-				Namespace: "",
-			}
 			redpandaCluster := &v1alpha1.Cluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      key.Name,
@@ -76,45 +73,9 @@ var _ = Describe("RedPandaCluster controller", func() {
 						Limits:   resources,
 						Requests: resources,
 					},
-					ExternalConnectivity: true,
 				},
 			}
 			Expect(k8sClient.Create(context.Background(), redpandaCluster)).Should(Succeed())
-
-			redpandaPod := &corev1.Pod{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      key.Name,
-					Namespace: key.Namespace,
-					Labels: map[string]string{
-						"app.kubernetes.io/component": "redpanda",
-						"app.kubernetes.io/instance":  "redpanda-test",
-						"app.kubernetes.io/name":      "redpanda",
-					},
-				},
-				Spec: corev1.PodSpec{
-					NodeName: "test-node",
-					Containers: []corev1.Container{{
-						Name:  "test",
-						Image: "test",
-					}},
-				},
-				Status: corev1.PodStatus{},
-			}
-			Expect(k8sClient.Create(context.Background(), redpandaPod)).Should(Succeed())
-
-			node := &corev1.Node{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "test-node",
-				},
-				Spec: corev1.NodeSpec{},
-				Status: corev1.NodeStatus{
-					Addresses: []corev1.NodeAddress{{
-						Type:    corev1.NodeExternalIP,
-						Address: "9.8.7.6",
-					}},
-				},
-			}
-			Expect(k8sClient.Create(context.Background(), node)).Should(Succeed())
 
 			By("Creating headless Service")
 			var svc corev1.Service
@@ -123,18 +84,6 @@ var _ = Describe("RedPandaCluster controller", func() {
 				return err == nil &&
 					svc.Spec.ClusterIP == corev1.ClusterIPNone &&
 					svc.Spec.Ports[0].Port == kafkaPort &&
-					validOwner(redpandaCluster, svc.OwnerReferences)
-			}, timeout, interval).Should(BeTrue())
-
-			By("Creating NodePort Service")
-			Eventually(func() bool {
-				err := k8sClient.Get(context.Background(), types.NamespacedName{
-					Name:      key.Name + "-external",
-					Namespace: key.Namespace,
-				}, &svc)
-				return err == nil &&
-					svc.Spec.Type == corev1.ServiceTypeNodePort &&
-					svc.Spec.Ports[0].Port == kafkaPort+1 &&
 					validOwner(redpandaCluster, svc.OwnerReferences)
 			}, timeout, interval).Should(BeTrue())
 
@@ -150,33 +99,6 @@ var _ = Describe("RedPandaCluster controller", func() {
 					validOwner(redpandaCluster, cm.OwnerReferences)
 			}, timeout, interval).Should(BeTrue())
 
-			By("Creating ServiceAcount")
-			var sa corev1.ServiceAccount
-			Eventually(func() bool {
-				err := k8sClient.Get(context.Background(), key, &sa)
-				return err == nil
-			}, timeout, interval).Should(BeTrue())
-
-			By("Creating ClusterRole")
-			var cr v1.ClusterRole
-			Eventually(func() bool {
-				err := k8sClient.Get(context.Background(), clusterRoleKey, &cr)
-				return err == nil &&
-					cr.Rules[0].Verbs[0] == "get" &&
-					cr.Rules[0].Resources[0] == "nodes"
-			}, timeout, interval).Should(BeTrue())
-
-			By("Creating ClusterRoleBinding")
-			var crb v1.ClusterRoleBinding
-			Eventually(func() bool {
-				err := k8sClient.Get(context.Background(), clusterRoleKey, &crb)
-				return err == nil &&
-					crb.RoleRef.Name == clusterRoleKey.Name &&
-					crb.RoleRef.Kind == "ClusterRole" &&
-					crb.Subjects[0].Name == key.Name &&
-					crb.Subjects[0].Kind == "ServiceAccount"
-			}, timeout, interval).Should(BeTrue())
-
 			By("Creating StatefulSet")
 			var sts appsv1.StatefulSet
 			Eventually(func() bool {
@@ -190,16 +112,167 @@ var _ = Describe("RedPandaCluster controller", func() {
 			Expect(sts.Spec.Template.Spec.Containers[0].Resources.Requests).Should(Equal(resources))
 			Expect(sts.Spec.Template.Spec.Containers[0].Resources.Limits).Should(Equal(resources))
 			Expect(sts.Spec.Template.Spec.Containers[0].Env).Should(ContainElement(corev1.EnvVar{Name: "REDPANDA_ENVIRONMENT", Value: "kubernetes"}))
-
-			By("Reporting nodes internal and external")
-			var rc v1alpha1.Cluster
-			Eventually(func() bool {
-				err := k8sClient.Get(context.Background(), key, &rc)
-				return err == nil &&
-					len(rc.Status.Nodes.Internal) == 1 &&
-					len(rc.Status.Nodes.External) == 1
-			}, timeout, interval).Should(BeTrue())
 		})
+	})
+	It("Should create Redpanda cluster with external connectivity", func() {
+		resources := corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse("1"),
+			corev1.ResourceMemory: resource.MustParse("2Gi"),
+		}
+
+		key := types.NamespacedName{
+			Name:      "redpanda-test-external",
+			Namespace: "default",
+		}
+		clusterRoleKey := types.NamespacedName{
+			Name:      "redpanda-init-configurator",
+			Namespace: "",
+		}
+		redpandaCluster := &v1alpha1.Cluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      key.Name,
+				Namespace: key.Namespace,
+				Labels: map[string]string{
+					"app": "redpanda",
+				},
+			},
+			Spec: v1alpha1.ClusterSpec{
+				Image:    redpandaContainerImage,
+				Version:  redpandaContainerTag,
+				Replicas: pointer.Int32Ptr(replicas),
+				Configuration: v1alpha1.RedpandaConfig{
+					KafkaAPI: v1alpha1.SocketAddress{Port: kafkaPort},
+				},
+				Resources: corev1.ResourceRequirements{
+					Limits:   resources,
+					Requests: resources,
+				},
+				ExternalConnectivity: true,
+			},
+		}
+		Expect(k8sClient.Create(context.Background(), redpandaCluster)).Should(Succeed())
+
+		redpandaPod := &corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      key.Name,
+				Namespace: key.Namespace,
+				Labels: map[string]string{
+					"app.kubernetes.io/component": "redpanda",
+					"app.kubernetes.io/instance":  "redpanda-test-external",
+					"app.kubernetes.io/name":      "redpanda",
+				},
+			},
+			Spec: corev1.PodSpec{
+				NodeName: "test-node",
+				Containers: []corev1.Container{{
+					Name:  "test",
+					Image: "test",
+				}},
+			},
+			Status: corev1.PodStatus{},
+		}
+		Expect(k8sClient.Create(context.Background(), redpandaPod)).Should(Succeed())
+
+		node := &corev1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "test-node",
+			},
+			Spec: corev1.NodeSpec{},
+			Status: corev1.NodeStatus{
+				Addresses: []corev1.NodeAddress{{
+					Type:    corev1.NodeExternalIP,
+					Address: "9.8.7.6",
+				}},
+			},
+		}
+		Expect(k8sClient.Create(context.Background(), node)).Should(Succeed())
+
+		By("Creating NodePort Service")
+		var svc corev1.Service
+		Eventually(func() bool {
+			err := k8sClient.Get(context.Background(), types.NamespacedName{
+				Name:      key.Name + "-external",
+				Namespace: key.Namespace,
+			}, &svc)
+			return err == nil &&
+				svc.Spec.Type == corev1.ServiceTypeNodePort &&
+				svc.Spec.Ports[0].Port == kafkaPort+1 &&
+				validOwner(redpandaCluster, svc.OwnerReferences)
+		}, timeout, interval).Should(BeTrue())
+
+		By("Creating ServiceAcount")
+		var sa corev1.ServiceAccount
+		Eventually(func() bool {
+			err := k8sClient.Get(context.Background(), key, &sa)
+			return err == nil
+		}, timeout, interval).Should(BeTrue())
+
+		By("Creating ClusterRole")
+		var cr v1.ClusterRole
+		Eventually(func() bool {
+			err := k8sClient.Get(context.Background(), clusterRoleKey, &cr)
+			return err == nil &&
+				cr.Rules[0].Verbs[0] == "get" &&
+				cr.Rules[0].Resources[0] == "nodes"
+		}, timeout, interval).Should(BeTrue())
+
+		By("Creating ClusterRoleBinding")
+		var crb v1.ClusterRoleBinding
+		Eventually(func() bool {
+			err := k8sClient.Get(context.Background(), clusterRoleKey, &crb)
+			return err == nil &&
+				crb.RoleRef.Name == clusterRoleKey.Name &&
+				crb.RoleRef.Kind == "ClusterRole" &&
+				crb.Subjects[0].Name == key.Name &&
+				crb.Subjects[0].Kind == "ServiceAccount"
+		}, timeout, interval).Should(BeTrue())
+
+		By("Creating StatefulSet")
+		var sts appsv1.StatefulSet
+		Eventually(func() bool {
+			err := k8sClient.Get(context.Background(), key, &sts)
+			return err == nil &&
+				*sts.Spec.Replicas == replicas
+		}, timeout, interval).Should(BeTrue())
+
+		By("Reporting nodes internal and external")
+		var rc v1alpha1.Cluster
+		Eventually(func() bool {
+			err := k8sClient.Get(context.Background(), key, &rc)
+			return err == nil &&
+				len(rc.Status.Nodes.Internal) == 1 &&
+				len(rc.Status.Nodes.External) == 1
+		}, timeout, interval).Should(BeTrue())
+
+		By("Disabling external connectivity")
+		newCluster := redpandaCluster.DeepCopy()
+		Expect(k8sClient.Get(context.Background(), key, newCluster)).Should(Succeed())
+		newCluster.Spec.ExternalConnectivity = false
+		Expect(k8sClient.Update(context.Background(), newCluster)).Should(Succeed())
+
+		By("All related objects should stop existing")
+		Eventually(func() bool {
+			err := k8sClient.Get(context.Background(), types.NamespacedName{
+				Name:      key.Name + "-external",
+				Namespace: key.Namespace,
+			}, &svc)
+			return errors.IsNotFound(err)
+		}, timeout, interval).Should(BeTrue())
+
+		Eventually(func() bool {
+			err := k8sClient.Get(context.Background(), key, &sa)
+			return errors.IsNotFound(err)
+		}, timeout, interval).Should(BeTrue())
+
+		Eventually(func() bool {
+			err := k8sClient.Get(context.Background(), clusterRoleKey, &cr)
+			return errors.IsNotFound(err)
+		}, timeout, interval).Should(BeTrue())
+
+		Eventually(func() bool {
+			err := k8sClient.Get(context.Background(), clusterRoleKey, &crb)
+			return errors.IsNotFound(err)
+		}, timeout, interval).Should(BeTrue())
 	})
 })
 
