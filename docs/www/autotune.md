@@ -1,8 +1,8 @@
 ---
-title: Autotuning
+title: Performance tuning
 order: 1
 ---
-# Autotuning
+# Performance tuning
 
 Thank you for making it this far! Until this point we have not explained how
 anything works or why. Before you go into production we’d like to highlight the
