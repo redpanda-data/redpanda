@@ -34,6 +34,8 @@ class RedpandaService(Service):
     DATA_DIR = os.path.join(PERSISTENT_ROOT, "data")
     CONFIG_FILE = "/etc/redpanda/redpanda.yaml"
     STDOUT_STDERR_CAPTURE = os.path.join(PERSISTENT_ROOT, "redpanda.log")
+    WASM_STDOUT_STDERR_CAPTURE = os.path.join(PERSISTENT_ROOT,
+                                              "wasm_engine.log")
     CLUSTER_NAME = "my_cluster"
     READY_TIMEOUT_SEC = 10
 
@@ -42,6 +44,10 @@ class RedpandaService(Service):
             "path": STDOUT_STDERR_CAPTURE,
             "collect_default": True
         },
+        "wasm_engine_start_stdout_stderr": {
+            "path": WASM_STDOUT_STDERR_CAPTURE,
+            "collect_default": True
+        }
     }
 
     def __init__(self,
@@ -95,6 +101,9 @@ class RedpandaService(Service):
 
         self.write_conf_file(node, override_cfg_params)
 
+        if self.coproc_enabled():
+            self.start_wasm_engine(node)
+
         cmd = (f"nohup {self.find_binary('redpanda')}"
                f" --redpanda-cfg {RedpandaService.CONFIG_FILE}"
                f" --default-log-level {self._log_level}"
@@ -102,7 +111,7 @@ class RedpandaService(Service):
                f" >> {RedpandaService.STDOUT_STDERR_CAPTURE} 2>&1 &")
 
         self.logger.info(
-            "Starting Redpanda service on {node.account} with command: {cmd}")
+            f"Starting Redpanda service on {node.account} with command: {cmd}")
 
         # wait until redpanda has finished booting up
         with node.account.monitor_log(
@@ -113,8 +122,44 @@ class RedpandaService(Service):
                 timeout_sec=RedpandaService.READY_TIMEOUT_SEC,
                 backoff_sec=0.5,
                 err_msg=
-                "Redpanda didn't finish startup in {RedpandaService.READY_TIMEOUT_SEC} seconds",
+                f"Redpanda didn't finish startup in {RedpandaService.READY_TIMEOUT_SEC} seconds",
             )
+
+    def coproc_enabled(self):
+        coproc = self._extra_rp_conf.get('enable_coproc')
+        dev_mode = self._extra_rp_conf.get('developer_mode')
+        return coproc is True and dev_mode is True
+
+    def start_wasm_engine(self, node):
+        wcmd = (f"nohup {self.find_wasm_root()}/bin/node"
+                f" {self.find_wasm_root()}/output/modules/rpc/service.js"
+                f" {RedpandaService.CONFIG_FILE} "
+                f" >> {RedpandaService.WASM_STDOUT_STDERR_CAPTURE} 2>&1 &")
+
+        self.logger.info(
+            f"Starting wasm engine on {node.account} with command: {wcmd}")
+
+        # wait until the wasm engine has finished booting up
+        wasm_port = 43189
+        conf_value = self._extra_rp_conf.get('coproc_supervisor_server')
+        if conf_value is not None:
+            wasm_port = conf_value['port']
+
+        with node.account.monitor_log(
+                RedpandaService.WASM_STDOUT_STDERR_CAPTURE) as mon:
+            node.account.ssh(wcmd)
+            mon.wait_until(
+                f"Starting redpanda wasm service on port: {wasm_port}",
+                timeout_sec=RedpandaService.READY_TIMEOUT_SEC,
+                backoff_sec=0.5,
+                err_msg=
+                f"Wasm engine didn't finish startup in {RedpandaService.READY_TIMEOUT_SEC} seconds",
+            )
+
+    def find_wasm_root(self):
+        rp_install_path_root = self._context.globals.get(
+            "rp_install_path_root", None)
+        return f"{rp_install_path_root}/node"
 
     def find_binary(self, name):
         rp_install_path_root = self._context.globals.get(
@@ -141,7 +186,7 @@ class RedpandaService(Service):
     def pids(self, node):
         """Return process ids associated with running processes on the given node."""
         try:
-            cmd = "ps ax | grep -i redpanda | grep -v grep | awk '{print $1}'"
+            cmd = "ps ax | grep -i 'redpanda\|node' | grep -v grep | awk '{print $1}'"
             pid_arr = [
                 pid for pid in node.account.ssh_capture(
                     cmd, allow_fail=True, callback=int)
