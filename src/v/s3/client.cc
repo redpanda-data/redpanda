@@ -53,13 +53,23 @@ struct aws_header_values {
 
 // configuration //
 
+static ss::sstring make_endpoint_url(
+  const aws_region_name& region,
+  const std::optional<endpoint_url>& url_override) {
+    if (url_override) {
+        return url_override.value();
+    }
+    return fmt::format("s3.{}.amazonaws.com", region());
+}
+
 ss::future<configuration> configuration::make_configuration(
   const public_key_str& pkey,
   const private_key_str& skey,
-  const aws_region_name& region) {
+  const aws_region_name& region,
+  const std::optional<endpoint_url>& url_override) {
     configuration client_cfg;
     ss::tls::credentials_builder cred_builder;
-    const auto endpoint_uri = fmt::format("s3.{}.amazonaws.com", region());
+    const auto endpoint_uri = make_endpoint_url(region, url_override);
     // Setup credentials for TLS
     ss::tls::credentials_builder builder;
     client_cfg.access_key = pkey;

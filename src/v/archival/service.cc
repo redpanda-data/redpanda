@@ -117,8 +117,14 @@ scheduler_service_impl::get_archival_service_config() {
     auto region = s3::aws_region_name(get_value_or_throw(
       config::shard_local_cfg().archival_storage_s3_region,
       "archival_storage_s3_region"));
+    std::optional<s3::endpoint_url> endpoint;
+    if (auto optep
+        = config::shard_local_cfg().archival_storage_api_endpoint.value();
+        optep.has_value()) {
+        endpoint = s3::endpoint_url(*optep);
+    }
     auto s3_conf = co_await s3::configuration::make_configuration(
-      access_key, secret_key, region);
+      access_key, secret_key, region, endpoint);
     archival::configuration cfg{
       .client_config = std::move(s3_conf),
       .bucket_name = s3::bucket_name(get_value_or_throw(

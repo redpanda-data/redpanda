@@ -25,6 +25,7 @@ namespace s3 {
 using access_point_uri = named_type<ss::sstring, struct s3_access_point_uri>;
 using bucket_name = named_type<ss::sstring, struct s3_bucket_name>;
 using object_key = named_type<std::filesystem::path, struct s3_object_key>;
+using endpoint_url = named_type<ss::sstring, struct s3_endpoint_url>;
 
 struct object_tag {
     ss::sstring key;
@@ -49,11 +50,14 @@ struct configuration : rpc::base_transport::configuration {
     /// \param pkey is an AWS access key
     /// \param skey is an AWS secret key
     /// \param region is an AWS region code
+    /// \param url_override is an http endpoint that should be used
+    ///        instead of the AWS endpoint, the 'region' will be ignored
     /// \return future that returns initialized configuration
     static ss::future<configuration> make_configuration(
       const public_key_str& pkey,
       const private_key_str& skey,
-      const aws_region_name& region);
+      const aws_region_name& region,
+      const std::optional<endpoint_url>& url_override = std::nullopt);
 };
 
 std::ostream& operator<<(std::ostream& o, const configuration& c);
