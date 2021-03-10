@@ -22,7 +22,7 @@
 namespace cluster {
 
 template<typename T>
-model::record_batch serialize_cmd(T t, model::record_batch_type type) {
+static model::record_batch serialize_cmd(T t, model::record_batch_type type) {
     storage::record_batch_builder b(type, model::offset(0));
     iobuf key_buf;
     reflection::adl<uint8_t>{}.to(key_buf, T::record_key);
