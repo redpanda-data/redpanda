@@ -14,15 +14,16 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
-	"reflect"
 	"strconv"
 
+	"github.com/banzaicloud/k8s-objectmatcher/patch"
 	"github.com/go-logr/logr"
 	redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/labels"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -128,6 +129,11 @@ func (r *StatefulSetResource) Ensure(ctx context.Context) error {
 			return fmt.Errorf("unable to construct StatefulSet object: %w", err)
 		}
 
+		// this needs to be set when object gets created to be able to generate patches later
+		if err := patch.DefaultAnnotator.SetLastAppliedAnnotation(obj); err != nil {
+			return err
+		}
+
 		if err = r.Create(ctx, obj); err != nil {
 			return fmt.Errorf("unable to create StatefulSet resource: %w", err)
 		}
@@ -137,58 +143,55 @@ func (r *StatefulSetResource) Ensure(ctx context.Context) error {
 	}
 
 	r.LastObservedState = &sts
-
-	updated := update(&sts, r.pandaCluster, r.logger)
-	if updated {
-		if err := r.Update(ctx, &sts); err != nil {
-			return fmt.Errorf("failed to update StatefulSet replicas or resources: %w", err)
-		}
+	partitioned, err := r.shouldUsePartitionedUpdate(&sts)
+	if err != nil {
+		return err
 	}
-
-	if err := r.updateStsImage(ctx, &sts); err != nil {
-		return fmt.Errorf("failed to update StatefulSet image: %w", err)
+	if partitioned {
+		r.logger.Info(fmt.Sprintf("Going to run partitioned update on resource %s", r.Key().Name))
+		if err := r.runPartitionedUpdate(ctx, &sts); err != nil {
+			return fmt.Errorf("failed to run partitioned update: %w", err)
+		}
+	} else {
+		err := r.update(ctx, &sts)
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
 }
 
 // update ensures StatefulSet #replicas and resources equals cluster requirements.
-func update(
-	sts *appsv1.StatefulSet,
-	pandaCluster *redpandav1alpha1.Cluster,
-	logger logr.Logger,
-) (updated bool) {
-	return updateReplicasIfNeeded(sts, pandaCluster, logger) || updateResourcesIfNeeded(sts, pandaCluster, logger)
-}
-
-func updateResourcesIfNeeded(
-	sts *appsv1.StatefulSet,
-	pandaCluster *redpandav1alpha1.Cluster,
-	logger logr.Logger,
-) (updated bool) {
-	if !reflect.DeepEqual(sts.Spec.Template.Spec.Containers[0].Resources, pandaCluster.Spec.Resources) {
-		logger.Info(fmt.Sprintf("StatefulSet %s resources will be updated to %v", sts.Name, pandaCluster.Spec.Resources))
-		sts.Spec.Template.Spec.Containers[0].Resources = pandaCluster.Spec.Resources
-
-		return true
+func (r *StatefulSetResource) update(
+	ctx context.Context, sts *appsv1.StatefulSet,
+) error {
+	modified, err := r.Obj()
+	if err != nil {
+		return err
 	}
 
-	return false
-}
-
-func updateReplicasIfNeeded(
-	sts *appsv1.StatefulSet,
-	pandaCluster *redpandav1alpha1.Cluster,
-	logger logr.Logger,
-) (updated bool) {
-	if sts.Spec.Replicas != nil && pandaCluster.Spec.Replicas != nil && *sts.Spec.Replicas != *pandaCluster.Spec.Replicas {
-		logger.Info(fmt.Sprintf("StatefulSet %s has replicas set to %d but need %d. Going to update", sts.Name, *sts.Spec.Replicas, *pandaCluster.Spec.Replicas))
-		sts.Spec.Replicas = pandaCluster.Spec.Replicas
-
-		return true
+	patchResult, err := patch.DefaultPatchMaker.Calculate(sts, modified)
+	if err != nil {
+		return err
 	}
-
-	return false
+	if !patchResult.IsEmpty() {
+		// need to set current version first otherwise the request would get rejected
+		metaAccessor := meta.NewAccessor()
+		currentVersion, err := metaAccessor.ResourceVersion(current)
+		if err != nil {
+			return err
+		}
+		metaAccessor.SetResourceVersion(modified, currentVersion)
+		r.logger.Info(fmt.Sprintf("StatefulSet changed, updating %s. Diff: %v", r.Key().Name, string(patchResult.Patch)))
+		if err := patch.DefaultAnnotator.SetLastAppliedAnnotation(modified); err != nil {
+			return err
+		}
+		if err := r.Update(ctx, modified); err != nil {
+			return fmt.Errorf("failed to update StatefulSet: %w", err)
+		}
+	}
+	return nil
 }
 
 // Obj returns resource managed client.Object
