@@ -47,7 +47,7 @@ require (
 	golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9
 	golang.org/x/sys v0.0.0-20210112091331-59c308dcf3cc
 	google.golang.org/grpc v1.22.0 // indirect
-	gopkg.in/yaml.v2 v2.2.8
+	gopkg.in/yaml.v2 v2.4.0
 	gotest.tools v2.2.0+incompatible // indirect
 	mvdan.cc/sh/v3 v3.2.1
 )
