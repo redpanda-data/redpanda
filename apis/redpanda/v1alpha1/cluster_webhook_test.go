@@ -58,7 +58,7 @@ func TestValidateUpdate(t *testing.T) {
 
 	// verify the error causes contain all expected fields
 	statusError := err.(*apierrors.StatusError)
-	expectedFields := []string{field.NewPath("spec").Child("configuration").String(), field.NewPath("spec").Child("replicas").String(), field.NewPath("spec").Child("resources").Child("limits").Child("memory").String()}
+	expectedFields := []string{field.NewPath("spec").Child("replicas").String(), field.NewPath("spec").Child("resources").Child("limits").Child("memory").String()}
 	for _, ef := range expectedFields {
 		found := false
 		for _, c := range statusError.Status().Details.Causes {
@@ -118,7 +118,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 		assert.NoError(t, err)
 	})
 
-	t.Run("collision in the port (unable to update configuration)", func(t *testing.T) {
+	t.Run("collision in the port", func(t *testing.T) {
 		updatePort := redpandaCluster.DeepCopy()
 		updatePort.Spec.Configuration.KafkaAPI.Port = 200
 		updatePort.Spec.Configuration.AdminAPI.Port = 200
@@ -128,7 +128,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 		assert.Error(t, err)
 	})
 
-	t.Run("collision in the port when external connectivity is enabled (unable to update configuration)", func(t *testing.T) {
+	t.Run("collision in the port when external connectivity is enabled", func(t *testing.T) {
 		updatePort := redpandaCluster.DeepCopy()
 		updatePort.Spec.ExternalConnectivity = true
 		updatePort.Spec.Configuration.KafkaAPI.Port = 200
@@ -139,7 +139,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 		assert.Error(t, err)
 	})
 
-	t.Run("collision in the port when external connectivity is enabled (unable to update configuration)", func(t *testing.T) {
+	t.Run("collision in the port when external connectivity is enabled", func(t *testing.T) {
 		updatePort := redpandaCluster.DeepCopy()
 		updatePort.Spec.ExternalConnectivity = true
 		updatePort.Spec.Configuration.KafkaAPI.Port = 200
