@@ -305,13 +305,27 @@ scheduler_service_impl::create_archivers(std::vector<model::ntp> to_create) {
                         [ntp](const s3::rest_error_response& err) {
                             vlog(
                               archival_log.error,
-                              "Manifest download for partition {}, failed, "
-                              "error: ",
-                              ntp.path(),
-                              err.what());
+                              "Manifest download for partition {} failed, "
+                              "message: {}, code: {}, request-id: {}, "
+                              "resource: {}",
+                              ntp,
+                              err.message(),
+                              err.code_string(),
+                              err.request_id(),
+                              err.resource());
                             return ss::make_ready_future<ss::stop_iteration>(
                               ss::stop_iteration::yes);
-                        });
+                        })
+                      .handle_exception([ntp](const std::exception_ptr& eptr) {
+                          vlog(
+                            archival_log.error,
+                            "Manifest download for partition {} failed, "
+                            "error: {}",
+                            ntp,
+                            eptr);
+                          return ss::make_ready_future<ss::stop_iteration>(
+                            ss::stop_iteration::yes);
+                      });
                 });
             });
       });
