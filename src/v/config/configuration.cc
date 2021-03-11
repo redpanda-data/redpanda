@@ -240,6 +240,13 @@ configuration::configuration()
       "failing a request",
       required::no,
       10)
+  , stm_snapshot_recovery_policy(
+      *this,
+      "stm_snapshot_recovery_policy",
+      "Describes how to recover from an invariant violation happened "
+      "during reading a stm snapshot",
+      required::no,
+      model::violation_recovery_policy::crash)
   , fetch_reads_debounce_timeout(
       *this,
       "fetch_reads_debounce_timeout",
