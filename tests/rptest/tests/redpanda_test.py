@@ -6,8 +6,7 @@
 # As of the Change Date specified in that file, in accordance with
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
-import random
-import string
+import os
 
 from ducktape.tests.test import Test
 from rptest.services.redpanda import RedpandaService
@@ -51,3 +50,8 @@ class RedpandaTest(Test):
 
     def setUp(self):
         self.redpanda.start()
+
+    def resource_dir(self):
+        dir_path = os.path.dirname(os.path.realpath(__file__))
+        resource_dir_path = os.path.join(dir_path, "..", "resources")
+        return os.path.abspath(resource_dir_path)
