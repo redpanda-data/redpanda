@@ -10,6 +10,7 @@
 organization: "vectorized"
 cluster_id: "{{cluster}}"
 
+{% if enable_rp %}
 redpanda:
   developer_mode: true
   data_directory: "{{data_dir}}"
@@ -34,6 +35,28 @@ redpanda:
         address: {{nodes[1].account.hostname}}
         port: 33145
       node_id: 1
+{% endif %}
+{% endif %}
+
+{% if enable_pp %}
+pandaproxy:
+  # Pandaproxy transport
+  pandaproxy_api:
+    address: "0.0.0.0"
+    port: 8082
+
+  api_doc_dir: {{root}}/usr/share/redpanda/proxy-api-doc
+
+pandaproxy_client:
+  # kafka-api compatible brokers
+  brokers:
+  {% for node in nodes.values() %}
+    - address: "{{node.account.hostname}}"
+      port: 9092
+  {% endfor %}
+
+  retries: 10
+  retry_base_backoff_ms: 10
 {% endif %}
 
 rpk:

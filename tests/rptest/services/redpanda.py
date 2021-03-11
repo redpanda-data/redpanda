@@ -48,13 +48,17 @@ class RedpandaService(Service):
                  context,
                  num_brokers,
                  client_type,
+                 enable_rp=True,
                  extra_rp_conf=None,
+                 enable_pp=False,
                  topics=None,
                  log_level='info'):
         super(RedpandaService, self).__init__(context, num_nodes=num_brokers)
         self._context = context
         self._client_type = client_type
+        self._enable_rp = enable_rp
         self._extra_rp_conf = extra_rp_conf
+        self._enable_pp = enable_pp
         self._log_level = log_level
         self._topics = topics or ()
         self.v_build_dir = self._context.globals.get("v_build_dir", None)
@@ -154,7 +158,9 @@ class RedpandaService(Service):
                            data_dir=RedpandaService.DATA_DIR,
                            cluster=RedpandaService.CLUSTER_NAME,
                            nodes=node_info,
-                           node_id=self.idx(node))
+                           node_id=self.idx(node),
+                           enable_rp=self._enable_rp,
+                           enable_pp=self._enable_pp)
 
         if self._extra_rp_conf:
             doc = yaml.full_load(conf)
