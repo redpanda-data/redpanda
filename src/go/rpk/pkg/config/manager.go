@@ -22,6 +22,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/icza/dyno"
+	"github.com/imdario/mergo"
 	"github.com/mitchellh/mapstructure"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
@@ -273,12 +274,42 @@ func (m *manager) Write(conf *Config) error {
 	if err != nil {
 		return err
 	}
-	// Merge the config into a new viper.Viper instance to prevent
-	// concurrent writes to the underlying config map.
-	v := InitViper(m.fs)
-	v.MergeConfigMap(m.v.AllSettings())
-	v.MergeConfigMap(confMap)
-	return checkAndWrite(m.fs, v, conf.ConfigFile)
+	err = m.merge(confMap)
+	if err != nil {
+		return err
+	}
+	return checkAndWrite(m.fs, m.v, conf.ConfigFile)
+}
+
+// Merge a new config map into the existing config.
+// As a side effect, it "resets" m's viper instance with a new one, initialized
+// through InitViper. This is needed because viper#MergeConfigMap doesn't allow
+// replacing old values with new ones of a different type.
+func (m *manager) merge(src map[string]interface{}) error {
+	dst := m.v.AllSettings()
+	merged, err := mergeMaps(dst, src)
+	if err != nil {
+		return err
+	}
+	m.v = InitViper(m.fs)
+	return m.v.MergeConfigMap(merged)
+}
+
+// Merges src into dst. If the type of a value in src differs from dst's,
+// dst's value's type takes precedence and replaces the value in src
+// altogether. This is in contrast to viper's viper#MergeConfigMap, which
+// doesn't support different types for a given key.
+func mergeMaps(
+	dst, src map[string]interface{},
+) (map[string]interface{}, error) {
+	d := dyno.ConvertMapI2MapS(dst)
+	s := dyno.ConvertMapI2MapS(src)
+	dd := d.(map[string]interface{})
+	err := mergo.Merge(&dd, s, mergo.WithOverride)
+	if err != nil {
+		return nil, err
+	}
+	return dd, nil
 }
 
 func write(v *viper.Viper, path string) error {
@@ -298,7 +329,12 @@ func (m *manager) Set(key, value, format, path string) error {
 	if err != nil {
 		return err
 	}
-	m.v.MergeConfigMap(confMap)
+
+	err = m.merge(confMap)
+	if err != nil {
+		return err
+	}
+
 	var newConfValue interface{}
 	switch strings.ToLower(format) {
 	case "single":
@@ -321,9 +357,21 @@ func (m *manager) Set(key, value, format, path string) error {
 	default:
 		return fmt.Errorf("unsupported format %s", format)
 	}
-	newV := viper.New()
-	newV.Set(key, newConfValue)
-	m.v.MergeConfigMap(newV.AllSettings())
+
+	src := defaultMap()
+	dst := m.v.AllSettings()
+	err = dyno.SSet(src, newConfValue, strings.Split(key, ".")...)
+
+	merged, err := mergeMaps(dst, src)
+	if err != nil {
+		return err
+	}
+
+	err = m.merge(merged)
+	if err != nil {
+		return err
+	}
+
 	err = checkAndWrite(m.fs, m.v, path)
 	if err == nil {
 		checkAndPrintRestartWarning(key)

@@ -53,7 +53,7 @@ func getValidConfig() *Config {
 	return conf
 }
 
-func TestSeto(t *testing.T) {
+func TestSet(t *testing.T) {
 	tests := []struct {
 		name      string
 		key       string
@@ -1216,4 +1216,171 @@ func TestWriteAndGenerateNodeUuid(t *testing.T) {
 	readConf, err := mgr.Read(path)
 	require.NoError(t, err)
 	require.Exactly(t, conf, readConf)
+}
+
+func TestMergeMaps(t *testing.T) {
+	tests := []struct {
+		name string
+		src,
+		dst,
+		expected map[string]interface{}
+	}{{
+		name: "it should merge distinct maps",
+		src: map[string]interface{}{
+			"a": []int{1, 2, 3},
+			"b": "a string",
+			"c": map[string]interface{}{
+				"c.1": []map[string]interface{}{{
+					"key":         "value",
+					"another key": 21,
+				}},
+			},
+		},
+		dst: map[string]interface{}{
+			"d": []map[string]interface{}{{
+				"slice": []string{"1", "2", "3.a"},
+			}},
+			"e": 2,
+			"f": nil,
+		},
+		expected: map[string]interface{}{
+			"a": []int{1, 2, 3},
+			"b": "a string",
+			"c": map[string]interface{}{
+				"c.1": []map[string]interface{}{{
+					"key":         "value",
+					"another key": 21,
+				}},
+			},
+			"d": []map[string]interface{}{{
+				"slice": []string{"1", "2", "3.a"},
+			}},
+			"e": 2,
+			"f": nil,
+		},
+	}, {
+		name: "it should merge distinct keys and overwrite common keys",
+		src: map[string]interface{}{
+			"a": []map[string]interface{}{{
+				"slice": []string{"1", "2", "3.a"},
+			}},
+			"b": "a string",
+			"c": map[string]interface{}{
+				"c.1": []map[string]interface{}{{
+					"key":         "value",
+					"another key": 21,
+				}},
+			},
+			"f": "a string value",
+		},
+		dst: map[string]interface{}{
+			"a": []int{1, 2, 3},
+			"e": 2,
+			"f": nil,
+		},
+		expected: map[string]interface{}{
+			"a": []map[string]interface{}{{
+				"slice": []string{"1", "2", "3.a"},
+			}},
+			"b": "a string",
+			"c": map[string]interface{}{
+				"c.1": []map[string]interface{}{{
+					"key":         "value",
+					"another key": 21,
+				}},
+			},
+			"e": 2,
+			"f": "a string value",
+		},
+	}, {
+		name: "it should merge internal maps",
+		src: map[string]interface{}{
+			"a": []map[string]interface{}{{
+				"slice": []string{"1", "2", "3.a"},
+			}},
+			"b": "a string",
+			"c": map[string]interface{}{
+				"c.1": map[string]interface{}{
+					"key":         "value",
+					"another key": 21,
+				},
+			},
+			"f": "a string value",
+		},
+		dst: map[string]interface{}{
+			"a": []int{1, 2, 3},
+			"e": 2,
+			"f": nil,
+			"c": map[string]interface{}{
+				"c.1": map[string]interface{}{
+					"heyo":            "whatup",
+					"meaning of life": 42,
+				},
+				"c.2": []map[string]interface{}{{
+					"key2": "value2",
+				}},
+			},
+		},
+		expected: map[string]interface{}{
+			"a": []map[string]interface{}{{
+				"slice": []string{"1", "2", "3.a"},
+			}},
+			"b": "a string",
+			"c": map[string]interface{}{
+				"c.1": map[string]interface{}{
+					"key":             "value",
+					"another key":     21,
+					"heyo":            "whatup",
+					"meaning of life": 42,
+				},
+				"c.2": []map[string]interface{}{{
+					"key2": "value2",
+				}},
+			},
+			"e": 2,
+			"f": "a string value",
+		},
+	}, {
+		name: "it should work even if there's an internal map[interface{}]interface{}",
+		src: map[string]interface{}{
+			"a": []map[interface{}]interface{}{{
+				"slice": []string{"1", "2", "3.a"},
+			}},
+			"b": "a string",
+			"c": map[interface{}]interface{}{
+				"c.1": []map[string]interface{}{{
+					"key":         "value",
+					"another key": 21,
+				}},
+			},
+			"f": "a string value",
+		},
+		dst: map[string]interface{}{
+			"a": []int{1, 2, 3},
+			"e": 2,
+			"f": nil,
+		},
+		expected: map[string]interface{}{
+			"a": []map[interface{}]interface{}{{
+				"slice": []string{"1", "2", "3.a"},
+			}},
+			"b": "a string",
+			"c": map[string]interface{}{
+				"c.1": []map[string]interface{}{{
+					"key":         "value",
+					"another key": 21,
+				}},
+			},
+			"e": 2,
+			"f": "a string value",
+		},
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(st *testing.T) {
+			merged, err := mergeMaps(tt.dst, tt.src)
+			require.NoError(st, err)
+			require.Exactly(st, tt.expected, merged)
+		})
+	}
 }
