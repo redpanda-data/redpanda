@@ -20,6 +20,7 @@ require (
 	github.com/google/uuid v1.1.1
 	github.com/hashicorp/go-multierror v1.1.0
 	github.com/icza/dyno v0.0.0-20200205103839-49cb13720835
+	github.com/imdario/mergo v0.3.12
 	github.com/konsorten/go-windows-terminal-sequences v1.0.2 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/lorenzosaino/go-sysctl v0.1.0
@@ -47,7 +48,7 @@ require (
 	golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9
 	golang.org/x/sys v0.0.0-20210112091331-59c308dcf3cc
 	google.golang.org/grpc v1.22.0 // indirect
-	gopkg.in/yaml.v2 v2.2.8
+	gopkg.in/yaml.v2 v2.4.0
 	gotest.tools v2.2.0+incompatible // indirect
 	mvdan.cc/sh/v3 v3.2.1
 )
