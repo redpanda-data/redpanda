@@ -70,6 +70,9 @@ ss::future<configuration> configuration::make_configuration(
     configuration client_cfg;
     ss::tls::credentials_builder cred_builder;
     const auto endpoint_uri = make_endpoint_url(region, url_override);
+    if (url_override.has_value()) {
+        client_cfg.tls_sni_hostname = *url_override;
+    }
     // Setup credentials for TLS
     ss::tls::credentials_builder builder;
     client_cfg.access_key = pkey;
