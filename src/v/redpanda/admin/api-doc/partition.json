@@ -1,0 +1,31 @@
+"/v1/kafka/{topic}/{partition}/move_partition": {
+  "post": {
+    "summary": "Move a partition to a node",
+    "operationId": "kafka_move_partition",
+    "parameters": [
+        {
+            "name": "topic",
+            "in": "path",
+            "required": true,
+            "type": "string"
+        },
+        {
+            "name": "partition",
+            "in": "path",
+            "required": true,
+            "type": "integer"
+        },
+        {
+            "name":"target",
+            "in":"query",
+            "required":false,
+            "type":"string"
+        }
+    ],
+    "responses": {
+      "200": {
+        "description": "Partition movement"
+      }
+    }
+  }
+}
