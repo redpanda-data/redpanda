@@ -16,13 +16,17 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
+	"github.com/vectorizedio/redpanda/src/go/k8s/controllers/redpanda"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/utils/pointer"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 var _ = Describe("RedPandaCluster controller", func() {
@@ -199,6 +203,26 @@ var _ = Describe("RedPandaCluster controller", func() {
 					len(rc.Status.Nodes.Internal) == 1 &&
 					len(rc.Status.Nodes.External) == 1
 			}, timeout, interval).Should(BeTrue())
+		})
+	})
+
+	Context("Calling reconcile", func() {
+		It("Should not throw error on non-existing CRB and cluster", func() {
+			// this test is started with fake client that was not initialized,
+			// so neither redpanda Cluster object or CRB or any other object
+			// exists. This verifies that these situations are handled
+			// gracefully and without error
+			r := &redpanda.ClusterReconciler{
+				Client: fake.NewClientBuilder().Build(),
+				Log:    ctrl.Log,
+				Scheme: scheme.Scheme,
+			}
+			_, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{
+				Namespace: "default",
+				Name:      "nonexisting",
+			}})
+			Expect(err).To(Succeed())
+
 		})
 	})
 })
