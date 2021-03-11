@@ -124,14 +124,14 @@ func (r *StatefulSetResource) Ensure(ctx context.Context) error {
 	if k8serrors.IsNotFound(err) {
 		r.logger.Info(fmt.Sprintf("StatefulSet %s does not exist, going to create one", r.Key().Name))
 
-		obj, err := r.Obj()
-		if err != nil {
+		obj, objErr := r.Obj()
+		if objErr != nil {
 			return fmt.Errorf("unable to construct StatefulSet object: %w", err)
 		}
 
 		// this needs to be set when object gets created to be able to generate patches later
-		if err := patch.DefaultAnnotator.SetLastAppliedAnnotation(obj); err != nil {
-			return err
+		if aErr := patch.DefaultAnnotator.SetLastAppliedAnnotation(obj); aErr != nil {
+			return aErr
 		}
 
 		if err = r.Create(ctx, obj); err != nil {
@@ -153,7 +153,11 @@ func (r *StatefulSetResource) Ensure(ctx context.Context) error {
 			return fmt.Errorf("failed to run partitioned update: %w", err)
 		}
 	} else {
-		err := r.update(ctx, &sts)
+		modified, err := r.Obj()
+		if err != nil {
+			return err
+		}
+		err = r.update(ctx, &sts, modified)
 		if err != nil {
 			return err
 		}
@@ -164,14 +168,9 @@ func (r *StatefulSetResource) Ensure(ctx context.Context) error {
 
 // update ensures StatefulSet #replicas and resources equals cluster requirements.
 func (r *StatefulSetResource) update(
-	ctx context.Context, sts *appsv1.StatefulSet,
+	ctx context.Context, current *appsv1.StatefulSet, modified k8sclient.Object,
 ) error {
-	modified, err := r.Obj()
-	if err != nil {
-		return err
-	}
-
-	patchResult, err := patch.DefaultPatchMaker.Calculate(sts, modified)
+	patchResult, err := patch.DefaultPatchMaker.Calculate(current, modified)
 	if err != nil {
 		return err
 	}
@@ -182,7 +181,10 @@ func (r *StatefulSetResource) update(
 		if err != nil {
 			return err
 		}
-		metaAccessor.SetResourceVersion(modified, currentVersion)
+		err = metaAccessor.SetResourceVersion(modified, currentVersion)
+		if err != nil {
+			return err
+		}
 		r.logger.Info(fmt.Sprintf("StatefulSet changed, updating %s. Diff: %v", r.Key().Name, string(patchResult.Patch)))
 		if err := patch.DefaultAnnotator.SetLastAppliedAnnotation(modified); err != nil {
 			return err
