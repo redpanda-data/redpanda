@@ -9,7 +9,7 @@ spec:
         - name: tlscert
           secret:
             defaultMode: 420
-            secretName: cluster-tls
+            secretName: cluster-tls-redpanda
         - name: rpkconfig
           configMap:
             name: rpk-config

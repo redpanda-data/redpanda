@@ -1,18 +1,15 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: create-test-topic
-  namespace: tls-test
+  name: create-test-topic-tls
 spec:
   template:
-    metadata:
-      namespace: tls-test
     spec:
       volumes:
         - name: tlscert
           secret:
             defaultMode: 420
-            secretName: cluster-tls
+            secretName: cluster-tls-user-client
         - name: rpkconfig
           configMap:
             name: rpk-config

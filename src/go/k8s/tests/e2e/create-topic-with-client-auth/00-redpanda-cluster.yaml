@@ -2,7 +2,6 @@ apiVersion: redpanda.vectorized.io/v1alpha1
 kind: Cluster
 metadata:
   name: cluster-tls
-  namespace: tls-test
 spec:
   image: "vectorized/redpanda"
   version: "latest"
@@ -24,3 +23,4 @@ spec:
     developerMode: true
     tls:
       kafkaApiEnabled: true
+      requireClientAuth: true

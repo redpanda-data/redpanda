@@ -20,6 +20,7 @@ import (
 
 	"github.com/Shopify/sarama"
 	"github.com/go-logr/logr"
+	cmetav1 "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -183,15 +184,14 @@ func (r *StatefulSetResource) queryRedpandaForTopicMembers(
 	tlsConfig := tls.Config{MinVersion: tls.VersionTLS12} // TLS12 is min version allowed by gosec.
 	if r.pandaCluster.Spec.Configuration.TLS.KafkaAPIEnabled {
 		// Retrieve secret containing the certificates
-		var certSecret corev1.Secret
-		err := r.Get(ctx, r.certSecretKey, &certSecret)
+		certSecret, err := r.getCertSecret(ctx)
 		if err != nil {
 			return err
 		}
 
 		// Add root CA
 		caCertPool := x509.NewCertPool()
-		caCertPool.AppendCertsFromPEM(certSecret.Data[CAKey])
+		caCertPool.AppendCertsFromPEM(certSecret.Data[cmetav1.TLSCAKey])
 		tlsConfig.RootCAs = caCertPool
 
 		// Populate crypto/TLS configuration
@@ -212,6 +212,25 @@ func (r *StatefulSetResource) queryRedpandaForTopicMembers(
 	}
 
 	return consumer.Close()
+}
+
+func (r *StatefulSetResource) getCertSecret(
+	ctx context.Context,
+) (*corev1.Secret, error) {
+	var certSecret corev1.Secret
+	if r.pandaCluster.Spec.Configuration.TLS.RequireClientAuth && r.internalClientCertSecretKey != nil {
+		// client auth is required
+		err := r.Get(ctx, *r.internalClientCertSecretKey, &certSecret)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		err := r.Get(ctx, r.redpandaCertSecretKey, &certSecret)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return &certSecret, nil
 }
 
 func (r *StatefulSetResource) podImageIdenticalToClusterImage(

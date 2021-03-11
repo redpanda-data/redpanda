@@ -1,16 +1,8 @@
-apiVersion: apps/v1
-kind: StatefulSet
-metadata:
-  name: cluster-tls
-status:
-  readyReplicas: 1
-
----
-
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
   name: cluster-tls-selfsigned-issuer
+  namespace: cert-manager
 status:
   conditions:
     - reason: IsReady
@@ -20,7 +12,7 @@ status:
 ---
 
 apiVersion: cert-manager.io/v1
-kind: Issuer
+kind: ClusterIssuer
 metadata:
   name: cluster-tls-root-issuer
 status:
@@ -34,18 +26,7 @@ apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   name: cluster-tls-root-certificate
-status:
-  conditions:
-    - reason: Ready
-      status: "True"
-      type: Ready
-
----
-
-apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: cluster-tls-redpanda
+  namespace: cert-manager
 status:
   conditions:
     - reason: Ready

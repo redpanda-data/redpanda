@@ -22,6 +22,8 @@ import (
 
 // Resource decompose the reconciliation loop to specific kubernetes objects
 type Resource interface {
+	Reconciler
+
 	// Obj returns resource managed client.Object
 	Obj() (client.Object, error)
 
@@ -31,8 +33,11 @@ type Resource interface {
 
 	// Kind returns the canonical name of the kubernetes managed resource
 	Kind() string
+}
 
-	// Ensure reconcile only one resource available in Kubernetes API server
+// Reconciler implements reconciliation logic
+type Reconciler interface {
+	// Ensure captures reconciliation logic that can end with error
 	Ensure(ctx context.Context) error
 }
 
@@ -42,7 +47,8 @@ type internalResource interface {
 	client.Writer
 }
 
-func getOrCreate(
+// GetOrCreate tries to get a kubernetes resource and creates it if does not exist
+func GetOrCreate(
 	ctx context.Context,
 	r internalResource,
 	checkObj client.Object,

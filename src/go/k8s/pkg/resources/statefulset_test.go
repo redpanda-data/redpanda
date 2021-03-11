@@ -80,7 +80,8 @@ func TestEnsure(t *testing.T) {
 			"cluster.local",
 			"servicename",
 			types.NamespacedName{Name: "test", Namespace: "test"},
-			types.NamespacedName{Name: "secret", Namespace: "default"},
+			types.NamespacedName{},
+			&types.NamespacedName{},
 			"",
 			"latest",
 			ctrl.Log.WithName("test"))

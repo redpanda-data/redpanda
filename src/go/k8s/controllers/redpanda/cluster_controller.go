@@ -20,6 +20,7 @@ import (
 	redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/labels"
 	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/resources"
+	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/resources/certmanager"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -50,11 +51,13 @@ type ClusterReconciler struct {
 //+kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch;
 //+kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch;
 //+kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;
-//+kubebuilder:rbac:groups=cert-manager.io,resources=issuers;certificates,verbs=create;get;list;watch;
 //+kubebuilder:rbac:groups=core,resources=serviceaccounts,verbs=get;list;watch;create;update;patch;
 //+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles,verbs=get;list;watch;create;update;patch;
 //+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterrolebindings,verbs=get;list;watch;create;update;patch;
 //+kubebuilder:rbac:groups=core,resources=nodes,verbs=get;list;watch
+//+kubebuilder:rbac:groups=cert-manager.io,resources=issuers,verbs=create;get;list;watch;patch;delete;
+//+kubebuilder:rbac:groups=cert-manager.io,resources=certificates,verbs=create;get;list;watch;patch;delete;
+//+kubebuilder:rbac:groups=cert-manager.io,resources=clusterissuers,verbs=create;get;list;watch;patch;delete;
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -90,8 +93,7 @@ func (r *ClusterReconciler) Reconcile(
 
 	headlessSvc := resources.NewHeadlessService(r.Client, &redpandaCluster, r.Scheme, log)
 	nodeportSvc := resources.NewNodePortService(r.Client, &redpandaCluster, r.Scheme, log)
-	issuer := resources.NewIssuer(r.Client, &redpandaCluster, r.Scheme, log)
-	cert := resources.NewCertificate(r.Client, &redpandaCluster, r.Scheme, issuer, headlessSvc.HeadlessServiceFQDN(), log)
+	pki := certmanager.NewPki(r.Client, &redpandaCluster, headlessSvc.HeadlessServiceFQDN(), r.Scheme, log)
 	sa := resources.NewServiceAccount(r.Client, &redpandaCluster, r.Scheme, log)
 	sts := resources.NewStatefulSet(
 		r.Client,
@@ -100,16 +102,16 @@ func (r *ClusterReconciler) Reconcile(
 		headlessSvc.HeadlessServiceFQDN(),
 		headlessSvc.Key().Name,
 		nodeportSvc.Key(),
-		cert.SecretKey(),
+		pki.NodeCert(),
+		pki.OperatorClientCert(),
 		sa.Key().Name,
 		r.configuratorTag,
 		log)
-	toApply := []resources.Resource{
+	toApply := []resources.Reconciler{
 		headlessSvc,
 		nodeportSvc,
 		resources.NewConfigMap(r.Client, &redpandaCluster, r.Scheme, headlessSvc.HeadlessServiceFQDN(), log),
-		issuer,
-		cert,
+		pki,
 		sa,
 		resources.NewClusterRole(r.Client, &redpandaCluster, r.Scheme, log),
 		crb,
