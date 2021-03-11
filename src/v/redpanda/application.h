@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "archival/service.h"
 #include "cluster/controller.h"
 #include "cluster/fwd.h"
 #include "coproc/event_listener.h"
@@ -76,6 +77,7 @@ public:
     ss::sharded<kafka::quota_manager> quota_mgr;
     ss::sharded<cluster::id_allocator_frontend> id_allocator_frontend;
     ss::sharded<kafka::credential_store> credentials;
+    ss::sharded<archival::scheduler_service> archival_scheduler;
 
 private:
     using deferred_actions
@@ -94,6 +96,8 @@ private:
         const auto& cfg = config::shard_local_cfg();
         return cfg.developer_mode() && cfg.enable_coproc();
     }
+
+    bool archival_storage_enabled();
 
     template<typename Service, typename... Args>
     ss::future<> construct_service(ss::sharded<Service>& s, Args&&... args) {

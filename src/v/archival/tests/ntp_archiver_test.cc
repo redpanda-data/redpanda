@@ -11,9 +11,9 @@
 #include "archival/archival_policy.h"
 #include "archival/ntp_archiver_service.h"
 #include "archival/tests/service_fixture.h"
-#include "cluster/tests/utils.h"
 #include "cluster/types.h"
 #include "model/metadata.h"
+#include "storage/disk_log_impl.h"
 #include "test_utils/fixture.h"
 #include "utils/unresolved_address.h"
 
@@ -29,39 +29,40 @@ using namespace archival;
 inline ss::logger test_log("test"); // NOLINT
 
 static constexpr std::string_view manifest_payload = R"json({
+    "version": 1,
     "namespace": "test-ns",
     "topic": "test-topic",
     "partition": 42,
     "revision": 0,
+    "last_offset": 1004,
     "segments": {
         "1-2-v1.log": {
             "is_compacted": false,
             "size_bytes": 100,
             "committed_offset": 2,
-            "base_offset": 1,
-            "deleted": false
+            "base_offset": 1
         },
-        "3-4-v1.log": {
+        "1000-4-v1.log": {
             "is_compacted": false,
             "size_bytes": 200,
-            "committed_offset": 4,
-            "base_offset": 3,
-            "deleted": false
+            "committed_offset": 1004,
+            "base_offset": 3
         }
     }
 })json";
 static constexpr std::string_view manifest_with_deleted_segment = R"json({
+    "version": 1,
     "namespace": "test-ns",
     "topic": "test-topic",
     "partition": 42,
     "revision": 0,
+    "last_offset": 4,
     "segments": {
-        "3-4-v1.log": {
+        "1000-4-v1.log": {
             "is_compacted": false,
             "size_bytes": 200,
-            "committed_offset": 4,
-            "base_offset": 3,
-            "deleted": false
+            "committed_offset": 1004,
+            "base_offset": 3
         }
     }
 })json";
@@ -75,16 +76,16 @@ static const auto manifest_ntp = model::ntp(                    // NOLINT
   manifest_partition);
 static const auto manifest_revision = model::revision_id(0); // NOLINT
 static const ss::sstring manifest_url = fmt::format(         // NOLINT
-  "/a0000000/meta/{}_{}/manifest.json",
+  "/20000000/meta/{}_{}/manifest.json",
   manifest_ntp.path(),
   manifest_revision());
 
 // NOLINTNEXTLINE
 static const ss::sstring segment1_url
-  = "/3931f368/test-ns/test-topic/42_0/1-2-v1.log";
+  = "/ce4fd1a3/test-ns/test-topic/42_0/1-2-v1.log";
 // NOLINTNEXTLINE
 static const ss::sstring segment2_url
-  = "/47bef4d3/test-ns/test-topic/42_0/3-4-v1.log";
+  = "/e622410d/test-ns/test-topic/42_0/1000-4-v1.log";
 
 static const std::vector<s3_imposter_fixture::expectation>
   default_expectations({
@@ -139,49 +140,24 @@ FIXTURE_TEST(test_upload_manifest, s3_imposter_fixture) { // NOLINT
       &archiver.get_remote_manifest());
     pm->add(
       segment_name("1-2-v1.log"),
-      {.is_compacted = false,
-       .size_bytes = 100, // NOLINT
-       .base_offset = model::offset(1),
-       .committed_offset = model::offset(2),
-       .is_deleted_locally = false
-
+      {
+        .is_compacted = false,
+        .size_bytes = 100, // NOLINT
+        .base_offset = model::offset(1),
+        .committed_offset = model::offset(2),
       });
     pm->add(
-      segment_name("3-4-v1.log"),
-      {.is_compacted = false,
-       .size_bytes = 200, // NOLINT
-       .base_offset = model::offset(3),
-       .committed_offset = model::offset(4),
-       .is_deleted_locally = false
-
+      segment_name("1000-4-v1.log"),
+      {
+        .is_compacted = false,
+        .size_bytes = 200, // NOLINT
+        .base_offset = model::offset(3),
+        .committed_offset = model::offset(1004),
       });
     archiver.upload_manifest().get();
     auto req = get_requests().front();
     // NOLINTNEXTLINE
     BOOST_REQUIRE(compare_json_objects(req.content, manifest_payload));
-}
-
-// NOLINTNEXTLINE
-FIXTURE_TEST(test_archival_non_compacted_selection_policy, archiver_fixture) {
-    std::vector<segment_desc> segments = {
-      {manifest_ntp, model::offset(1), model::term_id(2)},
-      {manifest_ntp, model::offset(3), model::term_id(4)},
-    };
-    init_storage_api_local(segments);
-    auto policy = archival::make_archival_policy(
-      archival::upload_policy_selector::archive_non_compacted,
-      archival::delete_policy_selector::do_not_keep,
-      manifest_ntp,
-      manifest_revision);
-    vlog(test_log.trace, "update local manifest");
-    archival::manifest empty(manifest_ntp, manifest_revision);
-    auto m = policy->generate_upload_set(
-      empty, get_local_storage_api().log_mgr());
-    BOOST_REQUIRE(m.has_value());
-    std::stringstream json;
-    m->serialize(json);
-    vlog(test_log.trace, "local manifest: {}", json.str());
-    verify_manifest(*m);
 }
 
 // NOLINTNEXTLINE
@@ -192,16 +168,17 @@ FIXTURE_TEST(test_upload_segments, archiver_fixture) {
 
     std::vector<segment_desc> segments = {
       {manifest_ntp, model::offset(1), model::term_id(2)},
-      {manifest_ntp, model::offset(3), model::term_id(4)},
+      {manifest_ntp, model::offset(1000), model::term_id(4)},
     };
     init_storage_api_local(segments);
 
     ss::semaphore limit(2);
-    auto res
-      = archiver.upload_next_candidate(limit, get_local_storage_api().log_mgr())
-          .get0();
-    BOOST_REQUIRE_EQUAL(res.succeded, 2);
-    BOOST_REQUIRE_EQUAL(res.failed, 0);
+    auto res = archiver
+                 .upload_next_candidates(
+                   limit, get_local_storage_api().log_mgr())
+                 .get0();
+    BOOST_REQUIRE_EQUAL(res.num_succeded, 2);
+    BOOST_REQUIRE_EQUAL(res.num_failed, 0);
 
     for (auto [url, req] : get_targets()) {
         vlog(test_log.error, "{}", url);
@@ -233,41 +210,76 @@ FIXTURE_TEST(test_upload_segments, archiver_fixture) {
 }
 
 // NOLINTNEXTLINE
-FIXTURE_TEST(test_delete_segments, archiver_fixture) {
-    set_expectations_and_listen(default_expectations);
-    archival::ntp_archiver archiver(get_ntp_conf(), get_configuration());
-    auto action = ss::defer([&archiver] { archiver.stop().get(); });
-
+FIXTURE_TEST(test_archiver_policy, archiver_fixture) {
+    const auto offset1 = model::offset(1000);
+    const auto offset2 = model::offset(2000);
+    const auto offset3 = model::offset(3000);
     std::vector<segment_desc> segments = {
-      {manifest_ntp, model::offset(3), model::term_id(4)},
+      {manifest_ntp, offset1, model::term_id(1)},
+      {manifest_ntp, offset2, model::term_id(1)},
+      {manifest_ntp, offset3, model::term_id(1)},
     };
     init_storage_api_local(segments);
+    auto& lm = get_local_storage_api().log_mgr();
+    archival::archival_policy policy(manifest_ntp);
 
-    ss::semaphore limit(2);
-    archiver.download_manifest().get();
-    auto res
-      = archiver.delete_next_candidate(limit, get_local_storage_api().log_mgr())
-          .get0();
-    BOOST_REQUIRE_EQUAL(res.succeded, 2);
-    BOOST_REQUIRE_EQUAL(res.failed, 0);
-
-    BOOST_REQUIRE_EQUAL(get_requests().size(), 3);
-    BOOST_REQUIRE(get_targets().count(manifest_url)); // NOLINT
-    auto erange = get_targets().equal_range(manifest_url);
-    for (auto it = erange.first; it != erange.second; it++) {
-        const auto& [url, req] = *it;
-        if (req._method == "PUT") {
-            // NOLINTNEXTLINE
-            BOOST_REQUIRE(
-              compare_json_objects(req.content, manifest_with_deleted_segment));
-        } else {
-            BOOST_REQUIRE(req._method == "GET"); // NOLINT
+    // Every segment should be returned once as we're calling the
+    // policy to get next candidate.
+    auto log_segment = [](const storage::segment& s) {
+        vlog(
+          test_log.info,
+          "Log segment {}. Offsets: {} {}. Is compacted: {}. Is sealed: {}.",
+          s.reader().filename(),
+          s.offsets().base_offset,
+          s.offsets().committed_offset,
+          s.is_compacted_segment(),
+          !s.has_appender());
+    };
+    auto log_segment_set = [log_segment](storage::log_manager& lm) {
+        auto log = lm.get(manifest_ntp);
+        auto plog = dynamic_cast<const storage::disk_log_impl*>(
+          log->get_impl());
+        BOOST_REQUIRE(plog != nullptr);
+        const auto& sset = plog->segments();
+        for (const auto& s : sset) {
+            log_segment(*s);
         }
-    }
-    BOOST_REQUIRE(get_targets().count(segment1_url)); // NOLINT
-    {
-        auto it = get_targets().find(segment1_url);
-        const auto& [url, req] = *it;
-        BOOST_REQUIRE(req._method == "DELETE"); // NOLINT
-    }
+    };
+    auto log_upload_candidate = [](const archival::upload_candidate& up) {
+        vlog(
+          test_log.info,
+          "Upload candidate, exposed name: {} "
+          "real offsets: {} {}",
+          up.exposed_name,
+          up.source->offsets().base_offset,
+          up.source->offsets().committed_offset);
+    };
+    log_segment_set(lm);
+    // Starting offset is lower than offset1
+    auto upload1 = policy.get_next_candidate(model::offset(0), lm);
+    log_upload_candidate(upload1);
+    BOOST_REQUIRE(upload1.source.get() != nullptr);
+    BOOST_REQUIRE(upload1.starting_offset == offset1);
+
+    auto upload2 = policy.get_next_candidate(
+      upload1.source->offsets().committed_offset + model::offset(1), lm);
+    log_upload_candidate(upload2);
+    BOOST_REQUIRE(upload2.source.get() != nullptr);
+    BOOST_REQUIRE(upload2.starting_offset() == offset2);
+    BOOST_REQUIRE(upload2.exposed_name != upload1.exposed_name);
+    BOOST_REQUIRE(upload2.source != upload1.source);
+    BOOST_REQUIRE(upload2.source->offsets().base_offset == offset2);
+
+    auto upload3 = policy.get_next_candidate(
+      upload2.source->offsets().committed_offset + model::offset(1), lm);
+    log_upload_candidate(upload3);
+    BOOST_REQUIRE(upload3.source.get() != nullptr);
+    BOOST_REQUIRE(upload3.starting_offset() == offset3);
+    BOOST_REQUIRE(upload3.exposed_name != upload2.exposed_name);
+    BOOST_REQUIRE(upload3.source != upload2.source);
+    BOOST_REQUIRE(upload3.source->offsets().base_offset == offset3);
+
+    auto upload4 = policy.get_next_candidate(
+      upload3.source->offsets().committed_offset + model::offset(1), lm);
+    BOOST_REQUIRE(upload4.source.get() == nullptr);
 }

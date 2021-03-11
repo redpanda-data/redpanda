@@ -20,6 +20,7 @@
 #include "rpc/types.h"
 #include "seastarx.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/circular_buffer.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/iostream.hh>
@@ -62,6 +63,9 @@ public:
     using verb = boost::beast::http::verb;
 
     explicit client(const rpc::base_transport::configuration& cfg);
+    client(
+      const rpc::base_transport::configuration& cfg,
+      const ss::abort_source& as);
 
     ss::future<> shutdown();
 
@@ -185,6 +189,11 @@ private:
     template<class BufferSeq>
     static ss::future<>
     forward(rpc::batched_output_stream& stream, BufferSeq&& seq);
+
+    /// Throw exception if _as is aborted
+    void check() const;
+
+    const ss::abort_source* _as;
 };
 
 template<class BufferSeq>
