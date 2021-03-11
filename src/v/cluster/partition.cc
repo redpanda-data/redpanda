@@ -34,8 +34,7 @@ partition::partition(consensus_ptr r)
               _raft.get(), clusterlog, stm_manager, _as);
         }
         if (config::shard_local_cfg().enable_idempotence.value()) {
-            _seq_stm = ss::make_shared<seq_stm>(
-              clusterlog, _raft.get(), config::shard_local_cfg());
+            _seq_stm = ss::make_shared<seq_stm>(clusterlog, _raft.get());
             stm_manager->add_stm(_seq_stm);
         }
     }

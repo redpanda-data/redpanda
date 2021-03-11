@@ -34,17 +34,13 @@ FIXTURE_TEST(
   mux_state_machine_fixture) {
     start_raft();
 
-    config::configuration cfg;
-
-    cluster::seq_stm stm(logger, _raft.get(), cfg);
+    cluster::seq_stm stm(logger, _raft.get());
 
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
 
     wait_for_leader();
     wait_for_meta_initialized();
-
-    stm.catchup().get0();
 
     auto count = 5;
     auto rdr1 = random_batch_reader(storage::test::record_batch_spec{
@@ -89,17 +85,13 @@ FIXTURE_TEST(
   mux_state_machine_fixture) {
     start_raft();
 
-    config::configuration cfg;
-
-    cluster::seq_stm stm(logger, _raft.get(), cfg);
+    cluster::seq_stm stm(logger, _raft.get());
 
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
 
     wait_for_leader();
     wait_for_meta_initialized();
-
-    stm.catchup().get0();
 
     auto count = 5;
     auto rdr1 = random_batch_reader(storage::test::record_batch_spec{
@@ -142,17 +134,13 @@ FIXTURE_TEST(
 FIXTURE_TEST(test_seq_stm_prevents_duplicates, mux_state_machine_fixture) {
     start_raft();
 
-    config::configuration cfg;
-
-    cluster::seq_stm stm(logger, _raft.get(), cfg);
+    cluster::seq_stm stm(logger, _raft.get());
 
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
 
     wait_for_leader();
     wait_for_meta_initialized();
-
-    stm.catchup().get0();
 
     auto count = 5;
     auto rdr1 = random_batch_reader(storage::test::record_batch_spec{
@@ -198,17 +186,13 @@ FIXTURE_TEST(test_seq_stm_prevents_duplicates, mux_state_machine_fixture) {
 FIXTURE_TEST(test_seq_stm_prevents_gaps, mux_state_machine_fixture) {
     start_raft();
 
-    config::configuration cfg;
-
-    cluster::seq_stm stm(logger, _raft.get(), cfg);
+    cluster::seq_stm stm(logger, _raft.get());
 
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
 
     wait_for_leader();
     wait_for_meta_initialized();
-
-    stm.catchup().get0();
 
     auto count = 5;
     auto rdr1 = random_batch_reader(storage::test::record_batch_spec{
@@ -255,9 +239,7 @@ FIXTURE_TEST(
   test_seq_stm_prevents_odd_session_start_off, mux_state_machine_fixture) {
     start_raft();
 
-    config::configuration cfg;
-
-    cluster::seq_stm stm(logger, _raft.get(), cfg);
+    cluster::seq_stm stm(logger, _raft.get());
 
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
@@ -277,8 +259,6 @@ FIXTURE_TEST(
       .pid = model::producer_identity{.id = 0, .epoch = 0},
       .first_seq = 1,
       .last_seq = 1 + (count - 1)};
-
-    stm.catchup().get0();
 
     auto r = stm
                .replicate(
