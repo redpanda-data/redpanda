@@ -468,7 +468,7 @@ struct op_context {
 
 class partition_wrapper {
 public:
-    partition_wrapper(
+    explicit partition_wrapper(
       ss::lw_shared_ptr<cluster::partition> partition,
       std::optional<storage::log> log = std::nullopt)
       : _partition(partition)
