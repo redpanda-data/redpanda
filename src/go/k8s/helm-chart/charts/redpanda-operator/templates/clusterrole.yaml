@@ -1,0 +1,105 @@
+{{/*
+Copyright 2020 Vectorized, Inc.
+
+Use of this software is governed by the Business Source License
+included in the file licenses/BSL.md
+
+As of the Change Date specified in that file, in accordance with
+the Business Source License, use of this software will be governed
+by the Apache License, Version 2.0
+*/}}
+
+{{- if .Values.rbac.create -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "redpanda-operator.fullname" . }}
+  labels:
+{{ include "redpanda-operator.labels" . | indent 4 }}
+rules:
+- apiGroups:
+  - apps
+  resources:
+  - statefulsets
+  verbs:
+  - create
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - cert-manager.io
+  resources:
+  - certificates
+  - issuers
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  verbs:
+  - create
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - services
+  verbs:
+  - create
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - redpanda.vectorized.io
+  resources:
+  - clusters
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - redpanda.vectorized.io
+  resources:
+  - clusters/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - redpanda.vectorized.io
+  resources:
+  - clusters/status
+  verbs:
+  - get
+  - patch
+  - update
+{{- end -}}
