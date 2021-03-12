@@ -55,7 +55,7 @@ handle_ntp(request_context& ctx, std::optional<model::ntp> ntp) {
                    + config::shard_local_cfg().wait_for_leader_timeout_ms();
 
     return ctx.metadata_cache()
-      .get_leader(std::move(*ntp), timeout)
+      .get_leader(*ntp, timeout)
       .then(
         [&ctx](model::node_id leader) { return handle_leader(ctx, leader); })
       .handle_exception([&ctx]([[maybe_unused]] std::exception_ptr e) {
