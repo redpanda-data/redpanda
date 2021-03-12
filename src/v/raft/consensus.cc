@@ -105,20 +105,7 @@ void consensus::maybe_step_down() {
     (void)ss::with_gate(_bg, [this] {
         return _op_lock.with([this] {
             if (_vstate == vote_state::leader) {
-                auto majority_hbeat = config().quorum_match([this](vnode rni) {
-                    if (rni == _self) {
-                        return clock_type::now();
-                    }
-
-                    if (auto it = _fstats.find(rni); it != _fstats.end()) {
-                        return it->second.last_hbeat_timestamp;
-                    }
-
-                    // if we do not know the follower state yet i.e. we have
-                    // never received its heartbeat
-                    return clock_type::time_point::min();
-                });
-
+                auto majority_hbeat = majority_heartbeat();
                 if (majority_hbeat < _became_leader_at) {
                     majority_hbeat = _became_leader_at;
                 }
@@ -128,6 +115,22 @@ void consensus::maybe_step_down() {
                 }
             }
         });
+    });
+}
+
+clock_type::time_point consensus::majority_heartbeat() const {
+    return config().quorum_match([this](vnode rni) {
+        if (rni == _self) {
+            return clock_type::now();
+        }
+
+        if (auto it = _fstats.find(rni); it != _fstats.end()) {
+            return it->second.last_hbeat_timestamp;
+        }
+
+        // if we do not know the follower state yet i.e. we have
+        // never received its heartbeat
+        return clock_type::time_point::min();
     });
 }
 
@@ -362,6 +365,7 @@ void consensus::process_append_entries_reply(
         maybe_promote_to_voter(r.value().node_id);
         maybe_update_majority_replicated_index();
         maybe_update_leader_commit_idx();
+        _follower_reply.broadcast();
     }
 }
 
@@ -415,6 +419,97 @@ void consensus::dispatch_recovery(follower_index_metadata& idx) {
     }).handle_exception([this](const std::exception_ptr& e) {
         vlog(_ctxlog.warn, "Recovery error - {}", e);
     });
+}
+
+ss::future<result<model::offset>> consensus::linearizable_barrier() {
+    using ret_t = result<model::offset>;
+    struct state_snapshot {
+        model::offset linearizable_offset;
+        model::term_id term;
+    };
+
+    std::optional<ss::semaphore_units<>> u = co_await _op_lock.get_units();
+
+    if (_vstate != vote_state::leader) {
+        co_return result<model::offset>(make_error_code(errc::not_leader));
+    }
+    // store current commit index
+    auto cfg = config();
+    auto dirty_offset = _log.offsets().dirty_offset;
+    /**
+     * Dispatch round of heartbeats
+     */
+
+    absl::flat_hash_map<vnode, follower_req_seq> sequences;
+    std::vector<ss::future<>> send_futures;
+    send_futures.reserve(cfg.unique_voter_count());
+    cfg.for_each_voter([this, dirty_offset, &sequences, &send_futures](
+                         vnode target) {
+        // do not send request to self
+        if (target == _self) {
+            return;
+        }
+        // prepare empty request
+        append_entries_request req(
+          _self,
+          target,
+          meta(),
+          model::make_memory_record_batch_reader(
+            ss::circular_buffer<model::record_batch>{}),
+          append_entries_request::flush_after_append::no);
+        auto seq = next_follower_sequence(target);
+        sequences.emplace(target, seq);
+
+        update_node_append_timestamp(target);
+        vlog(
+          _ctxlog.trace, "Sending empty append entries request to {}", target);
+        auto f
+          = _client_protocol
+              .append_entries(
+                target.id(),
+                std::move(req),
+                rpc::client_opts(_replicate_append_timeout + clock_type::now()))
+              .then([this, id = target.id(), seq, dirty_offset](
+                      result<append_entries_reply> reply) {
+                  process_append_entries_reply(id, reply, seq, dirty_offset);
+              });
+
+        send_futures.push_back(std::move(f));
+    });
+    // release semaphore
+    // snapshot taken under the semaphore
+    state_snapshot snapshot{
+      .linearizable_offset = _commit_index, .term = _term};
+    u.reset();
+
+    // wait for responsens in background
+    (void)ss::with_gate(_bg, [futures = std::move(send_futures)]() mutable {
+        return ss::when_all_succeed(futures.begin(), futures.end());
+    });
+
+    auto majority_sequences_updated = [&cfg, &sequences, this] {
+        return cfg.majority([this, &sequences](vnode id) {
+            if (id == _self) {
+                return true;
+            }
+            if (auto it = _fstats.find(id); it != _fstats.end()) {
+                return it->second.last_received_seq >= sequences[id];
+            }
+            return false;
+        });
+    };
+
+    // we do not hold the lock while waiting
+    co_await _follower_reply.wait(
+      [this, snapshot, &majority_sequences_updated] {
+          return majority_sequences_updated() || _term != snapshot.term;
+      });
+
+    // term have changed, not longer a leader
+    if (snapshot.term != _term) {
+        co_return ret_t(make_error_code(errc::not_leader));
+    }
+    co_return ret_t(snapshot.linearizable_offset);
 }
 
 ss::future<result<replicate_result>>
@@ -1200,6 +1295,7 @@ consensus::do_append_entries(append_entries_request&& r) {
     _vstate = vote_state::follower;
     if (unlikely(_leader_id != r.node_id)) {
         _leader_id = r.node_id;
+        _follower_reply.broadcast();
         trigger_leadership_notification();
     }
 

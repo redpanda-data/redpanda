@@ -716,3 +716,48 @@ FIXTURE_TEST(test_mixed_consisteny_levels, raft_test_fixture) {
       [this, &gr] { return are_all_consumable_offsets_are_the_same(gr); },
       "After recovery state is consistent");
 };
+
+FIXTURE_TEST(test_linarizable_barrier, raft_test_fixture) {
+    raft_group gr = raft_group(raft::group_id(0), 3);
+    gr.enable_all();
+    auto leader_id = wait_for_group_leader(gr);
+    auto leader_raft = gr.get_member(leader_id).consensus;
+
+    bool success = replicate_random_batches(gr, 5).get0();
+    BOOST_REQUIRE(success);
+
+    leader_id = wait_for_group_leader(gr);
+    leader_raft = gr.get_member(leader_id).consensus;
+    auto r = leader_raft->linearizable_barrier().get();
+
+    std::vector<size_t> sizes;
+    if (r) {
+        auto logs = gr.read_all_logs();
+        for (auto& l : logs) {
+            sizes.push_back(l.second.size());
+        }
+        std::sort(sizes.begin(), sizes.end());
+        // at least 2 out of 3 nodes MUST have all entries replicated
+        BOOST_REQUIRE_GT(sizes[2], 1);
+        BOOST_REQUIRE_EQUAL(sizes[2], sizes[1]);
+    }
+};
+
+FIXTURE_TEST(test_linarizable_barrier_single_node, raft_test_fixture) {
+    raft_group gr = raft_group(raft::group_id(0), 1);
+    gr.enable_all();
+    auto leader_id = wait_for_group_leader(gr);
+    auto leader_raft = gr.get_member(leader_id).consensus;
+
+    bool success = replicate_random_batches(gr, 5).get0();
+    BOOST_REQUIRE(success);
+
+    leader_id = wait_for_group_leader(gr);
+    leader_raft = gr.get_member(leader_id).consensus;
+    auto r = leader_raft->linearizable_barrier().get();
+
+    if (r) {
+        auto logs = gr.read_all_logs();
+        BOOST_REQUIRE(are_logs_the_same_length(logs));
+    }
+};
