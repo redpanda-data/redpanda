@@ -1,4 +1,7 @@
-###Overview
+---
+title: Archival
+---
+## Overview
 
 Archival subsystem can be used to upload data to S3 (or compatible) storage. This task is performed in the background without interrupting the service. At this point only upload is implemented. This data can be used to restore redpanda cluster from the ground up (this is in progress).
 
@@ -8,7 +11,7 @@ To make sure that every node uploads the right set of partitions, the archival s
 
 Archival subsystem also maintains a set of manifest files on S3 to account for all uploaded data.
 
-###Data Stored in S3
+## Data Stored in S3
 
 There are three types of objects that redpanda uploads to S3 bucket.
 Partition manifests
@@ -30,13 +33,13 @@ Redpanda adds tag `rp-type` to all objects in S3:
 `rp-type=topic-manifest` is added to all topic manifests
 These tags could be used to delete data from S3 selectively. Both partition manifests and log segments can be safely deleted from S3 bucket when they get old (for instance, after one year). But topic manifests should be kept indefinitely, otherwise it won’t be possible to recover the corresponding topic.
 
-###Cloud Storage Configuration
+## Cloud Storage Configuration
 
 On AWS no special configuration is needed for the S3 bucket. You can just create a bucket and optionally specify expiration rules based on tags described above. Next, you may use IAM service to create a user to access S3. You will need to grant this user permission to read and create objects. You will also need to copy access key and secret key to the redpanda configuration options `archival_storage_s3_access_key` and `archival_storage_s3_secret_key`
 
 On Google Cloud Storage you should choose a uniform access control while creating a bucket. Bucket level permissions should be used for all objects. You should also use google managed encryption key. Next, you will need to create a service user with HMAC keys. This HMAC keys should be added to redpanda configuration. 
 
-###Redpanda Configuration
+## Redpanda Configuration
 
 | Config parameter name                       | Type         | Descripion                                              |
 |---------------------------------------------|--------------|---------------------------------------------------------|
