@@ -62,6 +62,25 @@ type Manager interface {
 	WriteNodeUUID(conf *Config) error
 }
 
+func DecoderConfig() mapstructure.DecoderConfig {
+	return mapstructure.DecoderConfig{
+		// Sometimes viper will save int values as strings (i.e.
+		// through BindPFlag) so we have to allow mapstructure
+		// to cast them.
+		WeaklyTypedInput: true,
+		DecodeHook: mapstructure.ComposeDecodeHookFunc(
+			v21_1_4MapToNamedSocketAddressSlice,
+		),
+	}
+}
+
+func DecoderConfigOptions() viper.DecoderConfigOption {
+	return func(c *mapstructure.DecoderConfig) {
+		cfg := DecoderConfig()
+		c.DecodeHook = cfg.DecodeHook
+		c.WeaklyTypedInput = cfg.WeaklyTypedInput
+	}
+}
 type manager struct {
 	fs afero.Fs
 	v  *viper.Viper
@@ -153,9 +172,7 @@ func (m *manager) ReadFlat(path string) (map[string]string, error) {
 		return m.v.UnmarshalKey(
 			key,
 			val,
-			func(c *mapstructure.DecoderConfig) {
-				c.TagName = "mapstructure"
-			},
+			DecoderConfigOptions(),
 		)
 	}
 	for _, k := range keys {
@@ -388,16 +405,8 @@ func recover(fs afero.Fs, backup, path string, err error) error {
 
 func unmarshal(v *viper.Viper) (*Config, error) {
 	result := &Config{}
-	decoderConfig := mapstructure.DecoderConfig{
-		Result: result,
-		// Sometimes viper will save int values as strings (i.e.
-		// through BindPFlag) so we have to allow mapstructure
-		// to cast them.
-		WeaklyTypedInput: true,
-		DecodeHook: mapstructure.ComposeDecodeHookFunc(
-			v21_1_4MapToNamedSocketAddressSlice,
-		),
-	}
+	decoderConfig := DecoderConfig()
+	decoderConfig.Result = result
 	decoder, err := mapstructure.NewDecoder(&decoderConfig)
 	if err != nil {
 		return nil, err

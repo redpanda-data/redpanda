@@ -249,7 +249,7 @@ func checkRedpandaConfig(v *viper.Viper) []error {
 		)
 	} else {
 		socket := &SocketAddress{}
-		err := v.UnmarshalKey(rpcServerKey, socket)
+		err := v.UnmarshalKey(rpcServerKey, socket, DecoderConfigOptions())
 		if err != nil {
 			errs = append(
 				errs,
@@ -272,7 +272,7 @@ func checkRedpandaConfig(v *viper.Viper) []error {
 		)
 	} else {
 		var kafkaListeners []NamedSocketAddress
-		err := v.UnmarshalKey("redpanda.kafka_api", &kafkaListeners)
+		err := v.UnmarshalKey("redpanda.kafka_api", &kafkaListeners, DecoderConfigOptions())
 		if err != nil {
 			log.Error(err)
 			err = fmt.Errorf(
@@ -301,7 +301,7 @@ func checkRedpandaConfig(v *viper.Viper) []error {
 	}
 
 	var seedServersSlice []*SeedServer //map[string]interface{}
-	err := v.UnmarshalKey("redpanda.seed_servers", &seedServersSlice)
+	err := v.UnmarshalKey("redpanda.seed_servers", &seedServersSlice, DecoderConfigOptions())
 	if err != nil {
 		log.Error(err)
 		msg := "redpanda.seed_servers doesn't have the expected structure"
