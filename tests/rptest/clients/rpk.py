@@ -137,11 +137,11 @@ class RpkTool:
             if ret is None:
                 p.terminate()
 
-            if p.returncode:
-                raise Exception('command %s returned %d' %
-                                (' '.join(cmd), p.returncode))
-
             output = p.stderr.read()
+
+            if p.returncode:
+                raise Exception('command %s returned %d, output: %s' %
+                                (' '.join(cmd), p.returncode, output))
 
             self._redpanda.logger.debug(output)
             return output
