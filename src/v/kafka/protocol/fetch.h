@@ -471,8 +471,8 @@ public:
     explicit partition_wrapper(
       ss::lw_shared_ptr<cluster::partition> partition,
       std::optional<storage::log> log = std::nullopt)
-      : _partition(partition)
-      , _log(log) {}
+      : _partition(std::move(partition))
+      , _log(std::move(log)) {}
 
     ss::future<model::record_batch_reader>
     make_reader(storage::log_reader_config config) {
