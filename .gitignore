@@ -229,3 +229,5 @@ tests/docker/build
 vbuild/
 
 vtools/
+/Taskfile.yml
+/.dockerignore
