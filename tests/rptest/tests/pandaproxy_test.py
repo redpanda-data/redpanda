@@ -12,13 +12,11 @@ import uuid
 import requests
 import time
 from ducktape.mark.resource import cluster
-from ducktape.utils.util import wait_until
 
 from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.tests.redpanda_test import RedpandaTest
-from rptest.services.pandaproxy import PandaProxyService
 
 
 class PandaProxyTest(RedpandaTest):
@@ -26,25 +24,22 @@ class PandaProxyTest(RedpandaTest):
     Test pandaproxy against a redpanda cluster.
     """
     def __init__(self, context):
-        super(PandaProxyTest, self).__init__(context, num_brokers=3)
-        self._pandaproxy = PandaProxyService(context, self.redpanda)
-
-    def setup(self):
-        super(PandaProxyTest, self).setup()
-        self._pandaproxy.start()
+        super(PandaProxyTest, self).__init__(context,
+                                             num_brokers=3,
+                                             enable_pp=True)
 
     def _get_topics(self):
-        proxy = self._pandaproxy.nodes[0]
-        url = "http://{}:8082/topics".format(proxy.account.hostname)
+        url = "http://{}:8082/topics".format(
+            self.redpanda.nodes[0].account.hostname)
         return requests.get(url).json()
 
     def _produce_topic(self, topic, data):
-        proxy = self._pandaproxy.nodes[0]
-        url = "http://{}:8082/topics/{}".format(proxy.account.hostname, topic)
+        url = "http://{}:8082/topics/{}".format(
+            self.redpanda.nodes[0].account.hostname, topic)
         self.logger.info(data)
         return requests.post(url, data).json()
 
-    @cluster(num_nodes=4)
+    @cluster(num_nodes=3)
     def test_list_topics(self):
         """
         Create some topics and verify that pandaproxy lists them.
@@ -67,7 +62,7 @@ class PandaProxyTest(RedpandaTest):
         self.logger.debug("Current topics %s", curr)
         assert names <= curr
 
-    @cluster(num_nodes=4)
+    @cluster(num_nodes=3)
     def test_produce_topic(self):
         """
         Create a topic and verify that pandaproxy can produce to it.
