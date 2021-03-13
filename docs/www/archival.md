@@ -1,6 +1,7 @@
 ---
 title: Archival
 ---
+# Archival
 ## Overview
 
 Archival subsystem can be used to upload data to S3 (or compatible) storage. This task is performed in the background without interrupting the service. At this point only upload is implemented. This data can be used to restore redpanda cluster from the ground up (this is in progress).
