@@ -42,14 +42,14 @@ On Google Cloud Storage you should choose a uniform access control while creatin
 
 ## Redpanda Configuration
 
-| Config parameter name                       | Type         | Descripion                                              |
-|---------------------------------------------|--------------|---------------------------------------------------------|
-| archival_storage_enabled                    | boolean      | Enables archival storage feature                        |
-| archival_storage_s3_access_key              | string       | S3 access key                                           |
-| archival_storage_s3_secret_key              | string       | S3 secret key                                           |
-| archival_storage_s3_region                  | string       | AWS region                                              |
-| archival_storage_s3_bucket                  | string       | S3 bucket                                               |
-| archival_storage_reconciliation_interval_ms | milliseconds | Reconciliation period (default - 10s)                   |
-| archival_storage_max_connections            | integer      | Number of simultaneous uploads per shard (default - 20) |
+| Config parameter name                         | Type         | Descripion                                              |
+|-----------------------------------------------|--------------|---------------------------------------------------------|
+| `archival_storage_enabled`                    | boolean      | Enables archival storage feature                        |
+| `archival_storage_s3_access_key`              | string       | S3 access key                                           |
+| `archival_storage_s3_secret_key`              | string       | S3 secret key                                           |
+| `archival_storage_s3_region`                  | string       | AWS region                                              |
+| `archival_storage_s3_bucket`                  | string       | S3 bucket                                               |
+| `archival_storage_reconciliation_interval_ms` | milliseconds | Reconciliation period (default - 10s)                   |
+| `archival_storage_max_connections`            | integer      | Number of simultaneous uploads per shard (default - 20) |
 
 Note that the bucket should be created in advance. Also, please be aware that the secret and access keys are stored in plain text in configuration files. Parameters `reconciliation_interval_ms` and `max_connections` can be omitted since both have reasonable defaults.
