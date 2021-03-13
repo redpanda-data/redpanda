@@ -75,7 +75,7 @@ jobs:
     - name: Set up python
       run: |
         sudo apt-get install -y python3 python3-pip
-        sudo pip install yapf
+        sudo pip install yapf==0.30.0
 
     - name: lint python files
       run: find . -name *.py -type f | xargs -n1 yapf -d
