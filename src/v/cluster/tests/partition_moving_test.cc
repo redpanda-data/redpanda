@@ -394,8 +394,25 @@ public:
         return replicas;
     }
 
+    void update_replica_shards(
+      std::vector<model::broker_shard>& new_replicas,
+      const std::vector<model::broker_shard>& current_replicas) {
+        for (auto& new_bs : new_replicas) {
+            auto it = std::find_if(
+              current_replicas.begin(),
+              current_replicas.end(),
+              [&new_bs](const model::broker_shard& current_bs) {
+                  return current_bs.node_id == new_bs.node_id;
+              });
+
+            if (it != current_replicas.end()) {
+                new_bs.shard = it->shard;
+            }
+        }
+    }
+
     foreign_batches_t execute_and_validate_history_updates(
-      const model::ntp& ntp, const history_t& history) {
+      const model::ntp& ntp, history_t& history) {
         auto reference_batches = replicate_data(ntp, 10);
         int cnt = 0;
         auto current = get_replicas(0, ntp);
@@ -415,8 +432,10 @@ public:
             std::cout << "]";
         }
         std::cout << std::endl;
-        for (const auto& r : history) {
+        for (auto& r : history) {
             auto current = get_replicas(0, ntp);
+            update_replica_shards(r, current);
+
             logger.info("update no: {}. started  [{} => {}]", cnt, current, r);
             print_configuration(ntp).get0();
             auto err = std::error_code(cluster::errc::waiting_for_recovery);
@@ -724,10 +743,15 @@ FIXTURE_TEST(
                 history.push_back(random_replicas(3, broker_shards));
             }
 
-            for (const auto& r : history) {
+            for (auto& r : history) {
                 auto current = get_replicas(0, ntp);
+                update_replica_shards(r, current);
                 logger.info(
-                  "update no: {}. started  [{} => {}]", cnt, current, r);
+                  "[{}] update no: {}. started  [{} => {}]",
+                  ntp,
+                  cnt,
+                  current,
+                  r);
                 auto err = std::error_code(raft::errc::not_leader);
                 int retry = 0;
                 while (err) {
@@ -739,11 +763,12 @@ FIXTURE_TEST(
                             .get0();
                     if (err) {
                         logger.info(
-                          "update no: {}.  [{} => {}] - failure: {}",
+                          "[{}] update no: {}.  [{} => {}] - failure: {}",
+                          ntp,
                           cnt,
                           current,
                           r,
-                          err);
+                          err.message());
                         ss::sleep(200ms).get();
                         retry++;
                     }
