@@ -65,7 +65,7 @@ func (r *ClusterRoleBindingResource) Ensure(ctx context.Context) error {
 	if errors.IsNotFound(err) {
 		r.logger.Info(fmt.Sprintf("ClusterRoleBinding %s does not exist, going to create one", r.Key().Name))
 
-		obj, err := r.Obj()
+		obj, err := r.obj()
 		if err != nil {
 			return fmt.Errorf("unable to construct ClusterRoleBinding object: %w", err)
 		}
@@ -100,10 +100,10 @@ func (r *ClusterRoleBindingResource) Ensure(ctx context.Context) error {
 	return nil
 }
 
-// Obj returns resource managed client.Object
+// obj returns resource managed client.Object
 // The cluster.redpanda.vectorized.io custom resource is namespaced resource, that's
 // why v1.ClusterRoleBinding can not have assigned controller reference.
-func (r *ClusterRoleBindingResource) Obj() (k8sclient.Object, error) {
+func (r *ClusterRoleBindingResource) obj() (k8sclient.Object, error) {
 	role := &ClusterRoleResource{}
 	sa := &ServiceAccountResource{pandaCluster: r.pandaCluster}
 
