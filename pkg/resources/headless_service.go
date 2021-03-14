@@ -57,11 +57,15 @@ func NewHeadlessService(
 
 // Ensure will manage kubernetes v1.Service for redpanda.vectorized.io custom resource
 func (r *HeadlessServiceResource) Ensure(ctx context.Context) error {
-	return GetOrCreate(ctx, r, &corev1.Service{}, "Service Headless", r.logger)
+	obj, err := r.obj()
+	if err != nil {
+		return fmt.Errorf("unable to construct object: %w", err)
+	}
+	return CreateIfNotExists(ctx, r, obj, r.logger)
 }
 
-// Obj returns resource managed client.Object
-func (r *HeadlessServiceResource) Obj() (k8sclient.Object, error) {
+// obj returns resource managed client.Object
+func (r *HeadlessServiceResource) obj() (k8sclient.Object, error) {
 	objLabels := labels.ForCluster(r.pandaCluster)
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{

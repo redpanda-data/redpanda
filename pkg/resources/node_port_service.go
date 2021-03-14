@@ -11,6 +11,7 @@ package resources
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/go-logr/logr"
 	redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
@@ -56,11 +57,16 @@ func (r *NodePortServiceResource) Ensure(ctx context.Context) error {
 		return nil
 	}
 
-	return GetOrCreate(ctx, r, &corev1.Service{}, "Service NodePort", r.logger)
+	obj, err := r.obj()
+	if err != nil {
+		return fmt.Errorf("unable to construct object: %w", err)
+	}
+
+	return CreateIfNotExists(ctx, r, obj, r.logger)
 }
 
-// Obj returns resource managed client.Object
-func (r *NodePortServiceResource) Obj() (k8sclient.Object, error) {
+// obj returns resource managed client.Object
+func (r *NodePortServiceResource) obj() (k8sclient.Object, error) {
 	objLabels := labels.ForCluster(r.pandaCluster)
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{

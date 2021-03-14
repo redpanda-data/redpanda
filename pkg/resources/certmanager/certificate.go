@@ -67,13 +67,19 @@ func (r *CertificateResource) Ensure(ctx context.Context) error {
 	if !r.pandaCluster.Spec.Configuration.TLS.KafkaAPIEnabled {
 		return nil
 	}
-	return resources.GetOrCreate(ctx, r, &cmapiv1.Certificate{}, "Certificate", r.logger)
+
+	obj, err := r.obj()
+	if err != nil {
+		return fmt.Errorf("unable to construct object: %w", err)
+	}
+
+	return resources.CreateIfNotExists(ctx, r, obj, r.logger)
 }
 
 var errorMissingIssuerRef = errors.New("expecting not nil issuerRef")
 
-// Obj returns resource managed client.Object
-func (r *CertificateResource) Obj() (k8sclient.Object, error) {
+// obj returns resource managed client.Object
+func (r *CertificateResource) obj() (k8sclient.Object, error) {
 	if r.issuerRef == nil {
 		return nil, fmt.Errorf("%v %w", r.Key(), errorMissingIssuerRef)
 	}

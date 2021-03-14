@@ -126,9 +126,9 @@ func (r *StatefulSetResource) Ensure(ctx context.Context) error {
 	if k8serrors.IsNotFound(err) {
 		r.logger.Info(fmt.Sprintf("StatefulSet %s does not exist, going to create one", r.Key().Name))
 
-		obj, objErr := r.Obj()
+		obj, objErr := r.obj()
 		if objErr != nil {
-			return fmt.Errorf("unable to construct StatefulSet object: %w", err)
+			return fmt.Errorf("unable to construct StatefulSet object: %w", objErr)
 		}
 
 		// this needs to be set when object gets created to be able to generate patches later
@@ -155,7 +155,7 @@ func (r *StatefulSetResource) Ensure(ctx context.Context) error {
 			return fmt.Errorf("failed to run partitioned update: %w", err)
 		}
 	} else {
-		modified, err := r.Obj()
+		modified, err := r.obj()
 		if err != nil {
 			return err
 		}
@@ -199,9 +199,9 @@ func preparePVCResource(
 	return pvc
 }
 
-// Obj returns resource managed client.Object
-// nolint:funlen // The complexity of Obj function will be address in the next version TODO
-func (r *StatefulSetResource) Obj() (k8sclient.Object, error) {
+// obj returns resource managed client.Object
+// nolint:funlen // The complexity of obj function will be address in the next version TODO
+func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 	var configMapDefaultMode int32 = 0754
 
 	var clusterLabels = labels.ForCluster(r.pandaCluster)

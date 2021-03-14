@@ -270,7 +270,7 @@ func (r *StatefulSetResource) rollingUpdatePartition(
 ) error {
 	r.logger.Info("Call update on statefulset", "ordinal", ordinal)
 
-	modified, err := r.Obj()
+	modified, err := r.obj()
 	if err != nil {
 		return err
 	}
