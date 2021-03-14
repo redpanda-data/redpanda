@@ -58,11 +58,16 @@ func (r *IssuerResource) Ensure(ctx context.Context) error {
 		return nil
 	}
 
-	return resources.GetOrCreate(ctx, r, &cmapiv1.Issuer{}, "Issuer", r.logger)
+	obj, err := r.obj()
+	if err != nil {
+		return err
+	}
+
+	return resources.CreateIfNotExists(ctx, r, obj, r.logger)
 }
 
-// Obj returns resource managed client.Object
-func (r *IssuerResource) Obj() (k8sclient.Object, error) {
+// obj returns resource managed client.Object
+func (r *IssuerResource) obj() (k8sclient.Object, error) {
 	objLabels := labels.ForCluster(r.pandaCluster)
 	objectMeta := metav1.ObjectMeta{
 		Name:      r.Key().Name,

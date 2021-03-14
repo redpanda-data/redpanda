@@ -51,7 +51,6 @@ func NewServiceAccount(
 }
 
 // Ensure manages ServiceAccount that is used in initContainer
-// nolint:dupl // The refactor is proposed in https://github.com/vectorizedio/redpanda/pull/779
 func (s *ServiceAccountResource) Ensure(ctx context.Context) error {
 	if !s.pandaCluster.Spec.ExternalConnectivity {
 		return nil
@@ -67,7 +66,7 @@ func (s *ServiceAccountResource) Ensure(ctx context.Context) error {
 	if errors.IsNotFound(err) {
 		s.logger.Info(fmt.Sprintf("ServiceAccount %s does not exist, going to create one", s.Key().Name))
 
-		obj, err := s.Obj()
+		obj, err := s.obj()
 		if err != nil {
 			return fmt.Errorf("unable to construct ServiceAccount object: %w", err)
 		}
@@ -80,8 +79,8 @@ func (s *ServiceAccountResource) Ensure(ctx context.Context) error {
 	return nil
 }
 
-// Obj returns resource managed client.Object
-func (s *ServiceAccountResource) Obj() (k8sclient.Object, error) {
+// obj returns resource managed client.Object
+func (s *ServiceAccountResource) obj() (k8sclient.Object, error) {
 	sa := &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      s.Key().Name,

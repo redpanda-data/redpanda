@@ -123,7 +123,7 @@ func (r *StatefulSetResource) Ensure(ctx context.Context) error {
 	if k8serrors.IsNotFound(err) {
 		r.logger.Info(fmt.Sprintf("StatefulSet %s does not exist, going to create one", r.Key().Name))
 
-		obj, err := r.Obj()
+		obj, err := r.obj()
 		if err != nil {
 			return fmt.Errorf("unable to construct StatefulSet object: %w", err)
 		}
@@ -191,9 +191,9 @@ func updateReplicasIfNeeded(
 	return false
 }
 
-// Obj returns resource managed client.Object
-// nolint:funlen // The complexity of Obj function will be address in the next version TODO
-func (r *StatefulSetResource) Obj() (k8sclient.Object, error) {
+// obj returns resource managed client.Object
+// nolint:funlen // The complexity of obj function will be address in the next version TODO
+func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 	var configMapDefaultMode int32 = 0754
 
 	var clusterLabels = labels.ForCluster(r.pandaCluster)
