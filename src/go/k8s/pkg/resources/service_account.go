@@ -102,11 +102,6 @@ func (s *ServiceAccountResource) Key() types.NamespacedName {
 	return types.NamespacedName{Name: s.pandaCluster.Name, Namespace: s.pandaCluster.Namespace}
 }
 
-// Kind returns v1.ServiceAccount kind
-func (s *ServiceAccountResource) Kind() string {
-	return serviceAccountKind()
-}
-
 func serviceAccountKind() string {
 	var sa corev1.ServiceAccount
 	return sa.Kind

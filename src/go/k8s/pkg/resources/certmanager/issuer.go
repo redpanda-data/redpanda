@@ -112,11 +112,6 @@ func (r *IssuerResource) Key() types.NamespacedName {
 	return r.key
 }
 
-// Kind returns cert-manager v1.Issuer kind
-func (r *IssuerResource) Kind() string {
-	return issuerKind()
-}
-
 // objRef returns the issuer's object reference
 func (r *IssuerResource) objRef() *cmetav1.ObjectReference {
 	return &cmetav1.ObjectReference{

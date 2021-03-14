@@ -122,8 +122,3 @@ func CalculateExternalPort(kafkaInternalPort int) int {
 func (r *NodePortServiceResource) Key() types.NamespacedName {
 	return types.NamespacedName{Name: r.pandaCluster.Name + "-external", Namespace: r.pandaCluster.Namespace}
 }
-
-// Kind returns v1.Service kind
-func (r *NodePortServiceResource) Kind() string {
-	return serviceKind()
-}
