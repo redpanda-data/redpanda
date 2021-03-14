@@ -30,9 +30,6 @@ type Resource interface {
 	// Key returns namespace/name object that is used to identify object.
 	// For reference please visit types.NamespacedName docs in k8s.io/apimachinery
 	Key() types.NamespacedName
-
-	// Kind returns the canonical name of the kubernetes managed resource
-	Kind() string
 }
 
 // Reconciler implements reconciliation logic

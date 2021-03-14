@@ -102,11 +102,6 @@ func (r *HeadlessServiceResource) Key() types.NamespacedName {
 	return types.NamespacedName{Name: r.pandaCluster.Name, Namespace: r.pandaCluster.Namespace}
 }
 
-// Kind returns v1.Service kind
-func (r *HeadlessServiceResource) Kind() string {
-	return serviceKind()
-}
-
 func serviceKind() string {
 	var svc corev1.Service
 	return svc.Kind

@@ -473,11 +473,6 @@ func (r *StatefulSetResource) Key() types.NamespacedName {
 	return types.NamespacedName{Name: r.pandaCluster.Name, Namespace: r.pandaCluster.Namespace}
 }
 
-// Kind returns v1.StatefulSet kind
-func (r *StatefulSetResource) Kind() string {
-	return statefulSetKind()
-}
-
 func (r *StatefulSetResource) portsConfiguration() string {
 	rpcAPIPort := r.pandaCluster.Spec.Configuration.RPCServer.Port
 	svcName := r.serviceName
