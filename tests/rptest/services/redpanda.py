@@ -256,6 +256,24 @@ class RedpandaService(Service):
         assert resp.status_code == 200
         return text_string_to_metric_families(resp.text)
 
+    def shards(self):
+        """
+        Fetch the max shard id for each node.
+        """
+        shards_per_node = {}
+        for node in self.nodes:
+            num_shards = 0
+            metrics = self.metrics(node)
+            for family in metrics:
+                for sample in family.samples:
+                    if sample.name == "vectorized_reactor_utilization":
+                        num_shards = max(num_shards,
+                                         int(sample.labels["shard"]))
+            assert num_shards > 0
+            shards_per_node[self.idx(node)] = num_shards
+        return shards_per_node
+
+
     def partitions(self, topic):
         """
         Return partition metadata for the topic.
