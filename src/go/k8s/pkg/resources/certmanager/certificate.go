@@ -114,11 +114,6 @@ func (r *CertificateResource) Key() types.NamespacedName {
 	return r.key
 }
 
-// Kind returns cert-manager v1.Certificate kind
-func (r *CertificateResource) Kind() string {
-	return certificateKind()
-}
-
 func certificateKind() string {
 	var obj cmapiv1.Certificate
 	return obj.Kind

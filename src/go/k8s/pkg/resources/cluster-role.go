@@ -104,11 +104,6 @@ func (r *ClusterRoleResource) Key() types.NamespacedName {
 	return types.NamespacedName{Name: "redpanda-init-configurator", Namespace: ""}
 }
 
-// Kind returns v1.ClusterRole kind
-func (r *ClusterRoleResource) Kind() string {
-	return clusterRoleKind()
-}
-
 func clusterRoleKind() string {
 	var r v1.ClusterRole
 	return r.Kind

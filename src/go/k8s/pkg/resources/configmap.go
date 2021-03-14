@@ -167,11 +167,6 @@ func ConfigMapKey(pandaCluster *redpandav1alpha1.Cluster) types.NamespacedName {
 	return types.NamespacedName{Name: pandaCluster.Name + baseSuffix, Namespace: pandaCluster.Namespace}
 }
 
-// Kind returns v1.ConfigMap kind
-func (r *ConfigMapResource) Kind() string {
-	return configMapKind()
-}
-
 func configMapKind() string {
 	var cfg corev1.ConfigMap
 	return cfg.Kind
