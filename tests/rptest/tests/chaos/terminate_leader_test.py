@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 import sys
+
 sys.path.append("/opt/v/src/consistency-testing/gobekli")
 sys.path.append("/opt/v/src/consistency-testing/chaostest")
 from chaostest.faults import TerminateNodeRecoverableFault
