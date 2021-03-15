@@ -53,6 +53,7 @@ func (r *StatefulSetResource) runPartitionedUpdate(
 	if err := r.updateUpgradingStatus(ctx, true); err != nil {
 		return err
 	}
+
 	if r.pandaCluster.Status.Upgrading {
 		r.logger.Info("Continuing cluster partitioned update", "cluster image", newImage)
 	}
@@ -132,7 +133,7 @@ func (r *StatefulSetResource) partitionUpdateImage(
 				Msg: fmt.Sprintf("redpanda on pod (ordinal: %d) not ready", ordinal)}
 		}
 
-		if err := r.rollingUpdatePartition(ctx, ordinal); err != nil {
+		if err := r.rollingUpdatePartition(ctx, ordinal, sts); err != nil {
 			return err
 		}
 
@@ -265,7 +266,7 @@ func (r *StatefulSetResource) podImageIdenticalToClusterImage(
 }
 
 func (r *StatefulSetResource) rollingUpdatePartition(
-	ctx context.Context, ordinal int32,
+	ctx context.Context, ordinal int32, sts *appsv1.StatefulSet,
 ) error {
 	r.logger.Info("Call update on statefulset", "ordinal", ordinal)
 
@@ -277,7 +278,7 @@ func (r *StatefulSetResource) rollingUpdatePartition(
 	modifiedSts.Spec.UpdateStrategy.RollingUpdate = &appsv1.RollingUpdateStatefulSetStrategy{
 		Partition: &ordinal,
 	}
-	if err := r.Update(ctx, modifiedSts); err != nil {
+	if err := Update(ctx, sts, modifiedSts, r.Client, r.logger); err != nil {
 		return fmt.Errorf("failed to update StatefulSet (ordinal %d): %w", ordinal, err)
 	}
 
