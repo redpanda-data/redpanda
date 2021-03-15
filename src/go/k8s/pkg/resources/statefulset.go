@@ -23,7 +23,6 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -157,42 +156,12 @@ func (r *StatefulSetResource) Ensure(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		err = r.update(ctx, &sts, modified)
+		err = Update(ctx, &sts, modified, r.Client, r.logger)
 		if err != nil {
 			return err
 		}
 	}
 
-	return nil
-}
-
-// update ensures StatefulSet #replicas and resources equals cluster requirements.
-func (r *StatefulSetResource) update(
-	ctx context.Context, current *appsv1.StatefulSet, modified k8sclient.Object,
-) error {
-	patchResult, err := patch.DefaultPatchMaker.Calculate(current, modified)
-	if err != nil {
-		return err
-	}
-	if !patchResult.IsEmpty() {
-		// need to set current version first otherwise the request would get rejected
-		metaAccessor := meta.NewAccessor()
-		currentVersion, err := metaAccessor.ResourceVersion(current)
-		if err != nil {
-			return err
-		}
-		err = metaAccessor.SetResourceVersion(modified, currentVersion)
-		if err != nil {
-			return err
-		}
-		r.logger.Info(fmt.Sprintf("StatefulSet changed, updating %s. Diff: %v", r.Key().Name, string(patchResult.Patch)))
-		if err := patch.DefaultAnnotator.SetLastAppliedAnnotation(modified); err != nil {
-			return err
-		}
-		if err := r.Update(ctx, modified); err != nil {
-			return fmt.Errorf("failed to update StatefulSet: %w", err)
-		}
-	}
 	return nil
 }
 

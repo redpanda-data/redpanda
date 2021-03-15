@@ -14,8 +14,11 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/banzaicloud/k8s-objectmatcher/patch"
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -73,5 +76,40 @@ func GetOrCreate(
 		}
 	}
 
+	return nil
+}
+
+// Update ensures resource is updated if necessary. The method calculates patch
+// and applies it if something changed
+func Update(
+	ctx context.Context,
+	current runtime.Object,
+	modified client.Object,
+	c client.Client,
+	logger logr.Logger,
+) error {
+	patchResult, err := patch.DefaultPatchMaker.Calculate(current, modified)
+	if err != nil {
+		return err
+	}
+	if !patchResult.IsEmpty() {
+		// need to set current version first otherwise the request would get rejected
+		metaAccessor := meta.NewAccessor()
+		currentVersion, err := metaAccessor.ResourceVersion(current)
+		if err != nil {
+			return err
+		}
+		err = metaAccessor.SetResourceVersion(modified, currentVersion)
+		if err != nil {
+			return err
+		}
+		logger.Info(fmt.Sprintf("StatefulSet changed, updating %s. Diff: %v", modified.GetName(), string(patchResult.Patch)))
+		if err := patch.DefaultAnnotator.SetLastAppliedAnnotation(modified); err != nil {
+			return err
+		}
+		if err := c.Update(ctx, modified); err != nil {
+			return fmt.Errorf("failed to update StatefulSet: %w", err)
+		}
+	}
 	return nil
 }
