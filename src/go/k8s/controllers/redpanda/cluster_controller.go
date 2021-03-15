@@ -52,12 +52,9 @@ type ClusterReconciler struct {
 //+kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch;
 //+kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;
 //+kubebuilder:rbac:groups=core,resources=serviceaccounts,verbs=get;list;watch;create;update;patch;
-//+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles,verbs=get;list;watch;create;update;patch;
-//+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterrolebindings,verbs=get;list;watch;create;update;patch;
+//+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles;clusterrolebindings,verbs=get;list;watch;create;update;patch;
 //+kubebuilder:rbac:groups=core,resources=nodes,verbs=get;list;watch
-//+kubebuilder:rbac:groups=cert-manager.io,resources=issuers,verbs=create;get;list;watch;patch;delete;
-//+kubebuilder:rbac:groups=cert-manager.io,resources=certificates,verbs=create;get;list;watch;patch;delete;
-//+kubebuilder:rbac:groups=cert-manager.io,resources=clusterissuers,verbs=create;get;list;watch;patch;delete;
+//+kubebuilder:rbac:groups=cert-manager.io,resources=issuers;certificates;clusterissuers,verbs=create;get;list;watch;patch;delete;
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
