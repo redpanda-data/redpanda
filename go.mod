@@ -4,6 +4,7 @@ go 1.15
 
 require (
 	github.com/Shopify/sarama v1.26.1
+	github.com/banzaicloud/k8s-objectmatcher v1.5.1
 	github.com/go-logr/logr v0.3.0
 	github.com/hashicorp/go-multierror v1.1.0
 	github.com/jetstack/cert-manager v1.2.0

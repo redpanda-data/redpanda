@@ -10,8 +10,6 @@
 package v1alpha1
 
 import (
-	"reflect"
-
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -82,12 +80,6 @@ func (r *Cluster) ValidateUpdate(old runtime.Object) error {
 			field.Invalid(field.NewPath("spec").Child("replicas"),
 				r.Spec.Replicas,
 				"scaling down is not supported"))
-	}
-	if !reflect.DeepEqual(r.Spec.Configuration, oldCluster.Spec.Configuration) {
-		allErrs = append(allErrs,
-			field.Invalid(field.NewPath("spec").Child("configuration"),
-				r.Spec.Configuration,
-				"updating configuration is not supported"))
 	}
 
 	allErrs = append(allErrs, r.checkCollidingPorts()...)

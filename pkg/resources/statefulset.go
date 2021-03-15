@@ -14,9 +14,9 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
-	"reflect"
 	"strconv"
 
+	"github.com/banzaicloud/k8s-objectmatcher/patch"
 	"github.com/go-logr/logr"
 	redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/labels"
@@ -123,9 +123,14 @@ func (r *StatefulSetResource) Ensure(ctx context.Context) error {
 	if k8serrors.IsNotFound(err) {
 		r.logger.Info(fmt.Sprintf("StatefulSet %s does not exist, going to create one", r.Key().Name))
 
-		obj, err := r.Obj()
-		if err != nil {
+		obj, objErr := r.Obj()
+		if objErr != nil {
 			return fmt.Errorf("unable to construct StatefulSet object: %w", err)
+		}
+
+		// this needs to be set when object gets created to be able to generate patches later
+		if aErr := patch.DefaultAnnotator.SetLastAppliedAnnotation(obj); aErr != nil {
+			return aErr
 		}
 
 		if err = r.Create(ctx, obj); err != nil {
@@ -137,58 +142,27 @@ func (r *StatefulSetResource) Ensure(ctx context.Context) error {
 	}
 
 	r.LastObservedState = &sts
-
-	updated := update(&sts, r.pandaCluster, r.logger)
-	if updated {
-		if err := r.Update(ctx, &sts); err != nil {
-			return fmt.Errorf("failed to update StatefulSet replicas or resources: %w", err)
+	partitioned, err := r.shouldUsePartitionedUpdate(&sts)
+	if err != nil {
+		return err
+	}
+	if partitioned {
+		r.logger.Info(fmt.Sprintf("Going to run partitioned update on resource %s", r.Key().Name))
+		if err := r.runPartitionedUpdate(ctx, &sts); err != nil {
+			return fmt.Errorf("failed to run partitioned update: %w", err)
+		}
+	} else {
+		modified, err := r.Obj()
+		if err != nil {
+			return err
+		}
+		err = Update(ctx, &sts, modified, r.Client, r.logger)
+		if err != nil {
+			return err
 		}
 	}
 
-	if err := r.updateStsImage(ctx, &sts); err != nil {
-		return fmt.Errorf("failed to update StatefulSet image: %w", err)
-	}
-
 	return nil
-}
-
-// update ensures StatefulSet #replicas and resources equals cluster requirements.
-func update(
-	sts *appsv1.StatefulSet,
-	pandaCluster *redpandav1alpha1.Cluster,
-	logger logr.Logger,
-) (updated bool) {
-	return updateReplicasIfNeeded(sts, pandaCluster, logger) || updateResourcesIfNeeded(sts, pandaCluster, logger)
-}
-
-func updateResourcesIfNeeded(
-	sts *appsv1.StatefulSet,
-	pandaCluster *redpandav1alpha1.Cluster,
-	logger logr.Logger,
-) (updated bool) {
-	if !reflect.DeepEqual(sts.Spec.Template.Spec.Containers[0].Resources, pandaCluster.Spec.Resources) {
-		logger.Info(fmt.Sprintf("StatefulSet %s resources will be updated to %v", sts.Name, pandaCluster.Spec.Resources))
-		sts.Spec.Template.Spec.Containers[0].Resources = pandaCluster.Spec.Resources
-
-		return true
-	}
-
-	return false
-}
-
-func updateReplicasIfNeeded(
-	sts *appsv1.StatefulSet,
-	pandaCluster *redpandav1alpha1.Cluster,
-	logger logr.Logger,
-) (updated bool) {
-	if sts.Spec.Replicas != nil && pandaCluster.Spec.Replicas != nil && *sts.Spec.Replicas != *pandaCluster.Spec.Replicas {
-		logger.Info(fmt.Sprintf("StatefulSet %s has replicas set to %d but need %d. Going to update", sts.Name, *sts.Spec.Replicas, *pandaCluster.Spec.Replicas))
-		sts.Spec.Replicas = pandaCluster.Spec.Replicas
-
-		return true
-	}
-
-	return false
 }
 
 // Obj returns resource managed client.Object
