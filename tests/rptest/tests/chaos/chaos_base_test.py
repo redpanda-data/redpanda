@@ -13,6 +13,7 @@ import os
 
 import traceback
 import sys
+
 sys.path.append("/opt/v/src/consistency-testing/gobekli")
 sys.path.append("/opt/v/src/consistency-testing/chaostest")
 
