@@ -148,6 +148,10 @@ func (r *ClusterRoleBindingResource) RemoveSubject(
 	var crb v1.ClusterRoleBinding
 
 	err := r.Get(ctx, r.Key(), &crb)
+	if errors.IsNotFound(err) {
+		// if CRB does not exist, there is nothing to remove
+		return nil
+	}
 	if err != nil {
 		return fmt.Errorf("error while fetching ClusterRoleBinding resource: %w", err)
 	}
