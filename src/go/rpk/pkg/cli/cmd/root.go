@@ -65,7 +65,6 @@ func Execute() {
 	rootCmd.AddCommand(NewModeCommand(mgr))
 	rootCmd.AddCommand(NewGenerateCommand(mgr))
 	rootCmd.AddCommand(NewVersionCommand())
-	rootCmd.AddCommand(NewApiCommand(fs, mgr))
 	rootCmd.AddCommand(NewWasmCommand(fs, mgr))
 	rootCmd.AddCommand(NewContainerCommand())
 	rootCmd.AddCommand(NewTopicCommand(fs, mgr))

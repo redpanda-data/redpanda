@@ -18,7 +18,7 @@ import (
 	"github.com/Shopify/sarama"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
-	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/api"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/topic"
 )
 
 type mockSyncProducer struct {
@@ -141,7 +141,7 @@ func TestProduceCmd(t *testing.T) {
 			}
 			var out bytes.Buffer
 			in := strings.NewReader(tt.data)
-			cmd := api.NewProduceCommand(producer)
+			cmd := topic.NewProduceCommand(producer)
 			cmd.SetArgs(tt.args)
 			cmd.SetIn(in)
 			logrus.SetOutput(&out)
