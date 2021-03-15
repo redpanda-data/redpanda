@@ -28,7 +28,7 @@ import (
 
 const requeueDuration = time.Second * 10
 
-// updateStsImage handles image changes in the redpanda cluster CR by triggering
+// runPartitionedUpdate handles image changes in the redpanda cluster CR by triggering
 // a rolling update (using partitions) against the statefulset underneath the CR.
 // The partitioned rolling update allows us to verify the ith pod in a custom manner
 // before proceeding to the next pod.
@@ -45,32 +45,17 @@ const requeueDuration = time.Second * 10
 // verify the previously updated pod and requeue as necessary. Currently, the
 // verification checks the pod has started listening in its Kafka API port and may be
 // extended.
-func (r *StatefulSetResource) updateStsImage(
+func (r *StatefulSetResource) runPartitionedUpdate(
 	ctx context.Context, sts *appsv1.StatefulSet,
 ) error {
-	upgrading := r.pandaCluster.Status.Upgrading
+	newImage := r.pandaCluster.FullImageName()
 
-	rpContainer, err := findContainer(sts.Spec.Template.Spec.Containers, redpandaContainerName)
-	if err != nil {
+	if err := r.updateUpgradingStatus(ctx, true); err != nil {
 		return err
 	}
 
-	newImage := r.pandaCluster.FullImageName()
-	if rpContainer.Image == newImage && !upgrading {
-		return nil
-	}
-
-	if rpContainer.Image != newImage {
-		r.logger.Info("Starting cluster image update", "cluster image", newImage, "container image", rpContainer.Image)
-
-		// Mark cluster as being upgraded.
-		if err := r.updateUpgradingStatus(ctx, true); err != nil {
-			return err
-		}
-	}
-
-	if upgrading {
-		r.logger.Info("Continuing cluster image update", "cluster image", newImage)
+	if r.pandaCluster.Status.Upgrading {
+		r.logger.Info("Continuing cluster partitioned update", "cluster image", newImage)
 	}
 
 	podSpec := &sts.Spec.Template.Spec
@@ -88,6 +73,21 @@ func (r *StatefulSetResource) updateStsImage(
 	}
 
 	return nil
+}
+
+// shouldUsePartitionedUpdate returns true if changes on the CR require partitioned update
+func (r *StatefulSetResource) shouldUsePartitionedUpdate(
+	sts *appsv1.StatefulSet,
+) (bool, error) {
+	upgrading := r.pandaCluster.Status.Upgrading
+
+	rpContainer, err := findContainer(sts.Spec.Template.Spec.Containers, redpandaContainerName)
+	if err != nil {
+		return false, err
+	}
+
+	newImage := r.pandaCluster.FullImageName()
+	return rpContainer.Image != newImage || upgrading, nil
 }
 
 func (r *StatefulSetResource) updateUpgradingStatus(
@@ -133,7 +133,7 @@ func (r *StatefulSetResource) partitionUpdateImage(
 				Msg: fmt.Sprintf("redpanda on pod (ordinal: %d) not ready", ordinal)}
 		}
 
-		if err := r.rollingUpdatePartition(ctx, sts, ordinal); err != nil {
+		if err := r.rollingUpdatePartition(ctx, ordinal, sts); err != nil {
 			return err
 		}
 
@@ -266,14 +266,19 @@ func (r *StatefulSetResource) podImageIdenticalToClusterImage(
 }
 
 func (r *StatefulSetResource) rollingUpdatePartition(
-	ctx context.Context, sts *appsv1.StatefulSet, ordinal int32,
+	ctx context.Context, ordinal int32, sts *appsv1.StatefulSet,
 ) error {
 	r.logger.Info("Call update on statefulset", "ordinal", ordinal)
 
-	sts.Spec.UpdateStrategy.RollingUpdate = &appsv1.RollingUpdateStatefulSetStrategy{
+	modified, err := r.Obj()
+	if err != nil {
+		return err
+	}
+	modifiedSts := modified.(*appsv1.StatefulSet)
+	modifiedSts.Spec.UpdateStrategy.RollingUpdate = &appsv1.RollingUpdateStatefulSetStrategy{
 		Partition: &ordinal,
 	}
-	if err := r.Update(ctx, sts); err != nil {
+	if err := Update(ctx, sts, modifiedSts, r.Client, r.logger); err != nil {
 		return fmt.Errorf("failed to update StatefulSet (ordinal %d): %w", ordinal, err)
 	}
 
