@@ -24,6 +24,21 @@ def create_topic_names(count):
     return list(f"pandaproxy-topic-{uuid.uuid4()}" for _ in range(count))
 
 
+class Consumer:
+    def __init__(self, res):
+        self.instance_id = res["instance_id"]
+        self.base_uri = res["base_uri"]
+
+    def subscribe(self, topics):
+        res = requests.post(f"{self.base_uri}/subscription",
+                            json.dumps({"topics": topics}))
+        return res
+
+    def remove(self):
+        res = requests.delete(self.base_uri)
+        return res
+
+
 class PandaProxyTest(RedpandaTest):
     """
     Test pandaproxy against a redpanda cluster.
@@ -62,6 +77,18 @@ class PandaProxyTest(RedpandaTest):
 
     def _produce_topic(self, topic, data):
         return requests.post(f"{self._base_uri()}/topics/{topic}", data).json()
+
+    def _create_consumer(self, group_id):
+        res = requests.post(
+            f"{self._base_uri()}/consumers/{group_id}", '''
+            {
+                "format": "binary",
+                "auto.offset.reset": "earliest",
+                "auto.commit.enable": "false",
+                "fetch.min.bytes": "1",
+                "consumer.request.timeout.ms": "10000"
+            }''')
+        return res
 
     @cluster(num_nodes=3)
     def test_list_topics(self):
@@ -130,3 +157,30 @@ class PandaProxyTest(RedpandaTest):
         assert kc.consume_one(name, 0, 1)["payload"] == "vectorized"
         assert kc.consume_one(name, 1, 1)["payload"] == "pandaproxy"
         assert kc.consume_one(name, 2, 1)["payload"] == "multibroker"
+
+    @cluster(num_nodes=3)
+    def test_consumer_group(self):
+        """
+        Create a consumer group and use it
+        """
+
+        group_id = f"pandaproxy-group-{uuid.uuid4()}"
+
+        # Create 3 topics
+        topics = self._create_topics(create_topic_names(3), 3, 3)
+
+        # Create a consumer
+        self.logger.info("Create a consumer")
+        cc_res = self._create_consumer(group_id)
+        assert cc_res.status_code == requests.codes.ok
+        c0 = Consumer(cc_res.json())
+
+        # Subscribe a consumer
+        self.logger.info(f"Subscribe consumer to topics: {topics}")
+        sc_res = c0.subscribe(topics)
+        assert sc_res.status_code == requests.codes.ok
+
+        # Remove consumer
+        self.logger.info("Remove consumer")
+        rc_res = c0.remove()
+        assert rc_res.status_code == requests.codes.no_content
