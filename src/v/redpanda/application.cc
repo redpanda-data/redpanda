@@ -18,6 +18,7 @@
 #include "cluster/metadata_dissemination_service.h"
 #include "cluster/partition_manager.h"
 #include "cluster/service.h"
+#include "cluster/topics_frontend.h"
 #include "config/configuration.h"
 #include "config/seed_server.h"
 #include "kafka/client/configuration.h"
@@ -34,6 +35,7 @@
 #include "raft/service.h"
 #include "redpanda/admin/api-doc/config.json.h"
 #include "redpanda/admin/api-doc/kafka.json.h"
+#include "redpanda/admin/api-doc/partition.json.h"
 #include "redpanda/admin/api-doc/raft.json.h"
 #include "resource_mgmt/io_priority.h"
 #include "rpc/simple_protocol.h"
@@ -55,6 +57,8 @@
 #include <seastar/json/json_elements.hh>
 #include <seastar/util/defer.hh>
 
+#include <boost/algorithm/string/classification.hpp>
+#include <boost/algorithm/string/split.hpp>
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/writer.h>
 #include <sys/utsname.h>
@@ -315,6 +319,8 @@ void application::configure_admin_server() {
               rb->register_api_file(server._routes, "raft");
               rb->register_function(server._routes, insert_comma);
               rb->register_api_file(server._routes, "kafka");
+              rb->register_function(server._routes, insert_comma);
+              rb->register_api_file(server._routes, "partition");
               ss::httpd::config_json::get_config.set(
                 server._routes, []([[maybe_unused]] ss::const_req req) {
                     rapidjson::StringBuffer buf;
@@ -815,6 +821,40 @@ void application::admin_register_raft_routes(ss::http_server& server) {
       });
 }
 
+/*
+ * Parse integer pairs from: ?target={\d,\d}* where each pair represent a
+ * node-id and a shard-id, repsectively.
+ */
+static std::vector<model::broker_shard>
+parse_target_broker_shards(const ss::sstring& param) {
+    std::vector<ss::sstring> parts;
+    boost::split(parts, param, boost::is_any_of(","));
+
+    if (parts.size() % 2 != 0) {
+        throw ss::httpd::bad_param_exception(
+          fmt::format("Invalid target parameter format: {}", param));
+    }
+
+    std::vector<model::broker_shard> replicas;
+
+    for (auto i = 0u; i < parts.size(); i += 2) {
+        auto node = std::stoi(parts[i]);
+        auto shard = std::stoi(parts[i + 1]);
+
+        if (node < 0 || shard < 0) {
+            throw ss::httpd::bad_param_exception(
+              fmt::format("Invalid target {}:{}", node, shard));
+        }
+
+        replicas.push_back(model::broker_shard{
+          .node_id = model::node_id(node),
+          .shard = static_cast<uint32_t>(shard),
+        });
+    }
+
+    return replicas;
+}
+
 void application::admin_register_kafka_routes(ss::http_server& server) {
     ss::httpd::kafka_json::kafka_transfer_leadership.set(
       server._routes, [this](std::unique_ptr<ss::httpd::request> req) {
@@ -881,6 +921,73 @@ void application::admin_register_kafka_routes(ss::http_server& server) {
                       }
                       return ss::json::json_return_type(ss::json::json_void());
                   });
+            });
+      });
+
+    ss::httpd::partition_json::kafka_move_partition.set(
+      server._routes, [this](std::unique_ptr<ss::httpd::request> req) {
+          auto topic = model::topic(req->param["topic"]);
+
+          model::partition_id partition;
+          try {
+              partition = model::partition_id(
+                std::stoll(req->param["partition"]));
+          } catch (...) {
+              throw ss::httpd::bad_param_exception(fmt::format(
+                "Partition id must be an integer: {}",
+                req->param["partition"]));
+          }
+
+          if (partition() < 0) {
+              throw ss::httpd::bad_param_exception(
+                fmt::format("Invalid partition id {}", partition));
+          }
+
+          std::optional<std::vector<model::broker_shard>> replicas;
+          if (auto node = req->get_query_param("target"); !node.empty()) {
+              try {
+                  replicas = parse_target_broker_shards(node);
+              } catch (...) {
+                  throw ss::httpd::bad_param_exception(fmt::format(
+                    "Invalid target format {}: {}",
+                    node,
+                    std::current_exception()));
+              }
+          }
+
+          // this can be removed when we have more sophisticated machinary in
+          // redpanda itself for automatically selecting target node/shard.
+          if (!replicas || replicas->empty()) {
+              throw ss::httpd::bad_request_exception(
+                "Partition movement requires target replica set");
+          }
+
+          model::ntp ntp(model::kafka_namespace, topic, partition);
+
+          vlog(
+            _log.debug,
+            "Request to change ntp {} replica set to {}",
+            ntp,
+            replicas);
+
+          return controller->get_topics_frontend()
+            .local()
+            .move_partition_replicas(
+              ntp, *replicas, model::timeout_clock::now() + 5s)
+            .then([this, ntp, replicas](std::error_code err) {
+                vlog(
+                  _log.debug,
+                  "Result changing ntp {} replica set to {}: {}:{}",
+                  ntp,
+                  replicas,
+                  err,
+                  err.message());
+                if (err) {
+                    throw ss::httpd::bad_request_exception(
+                      fmt::format("Error moving partition: {}", err.message()));
+                }
+                return ss::make_ready_future<ss::json::json_return_type>(
+                  ss::json::json_return_type(ss::json::json_void()));
             });
       });
 }

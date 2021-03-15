@@ -262,6 +262,24 @@ class RedpandaService(Service):
         assert resp.status_code == 200
         return text_string_to_metric_families(resp.text)
 
+    def shards(self):
+        """
+        Fetch the max shard id for each node.
+        """
+        shards_per_node = {}
+        for node in self.nodes:
+            num_shards = 0
+            metrics = self.metrics(node)
+            for family in metrics:
+                for sample in family.samples:
+                    if sample.name == "vectorized_reactor_utilization":
+                        num_shards = max(num_shards,
+                                         int(sample.labels["shard"]))
+            assert num_shards > 0
+            shards_per_node[self.idx(node)] = num_shards
+        return shards_per_node
+
+
     def partitions(self, topic):
         """
         Return partition metadata for the topic.
@@ -274,11 +292,10 @@ class RedpandaService(Service):
             index = p["partition"]
             leader_id = p["leader"]
             leader = None if leader_id == -1 else self.get_node(leader_id)
-            replicas = map(lambda r: self.get_node(r["id"]), p["replicas"])
+            replicas = [self.get_node(r["id"]) for r in p["replicas"]]
             return Partition(index, leader, replicas)
 
-        return map(make_partition, topic["partitions"])
-
+        return [make_partition(p) for p in topic["partitions"]]
 
 # a hack to prevent the redpanda service from trying to use a client that
 # doesn't support sasl when the service has sasl enabled. this is a temp fix
