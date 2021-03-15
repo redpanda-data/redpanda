@@ -279,7 +279,6 @@ class RedpandaService(Service):
             shards_per_node[self.idx(node)] = num_shards
         return shards_per_node
 
-
     def partitions(self, topic):
         """
         Return partition metadata for the topic.
@@ -296,6 +295,7 @@ class RedpandaService(Service):
             return Partition(index, leader, replicas)
 
         return [make_partition(p) for p in topic["partitions"]]
+
 
 # a hack to prevent the redpanda service from trying to use a client that
 # doesn't support sasl when the service has sasl enabled. this is a temp fix
