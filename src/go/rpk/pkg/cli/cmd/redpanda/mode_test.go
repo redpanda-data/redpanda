@@ -16,7 +16,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/prometheus/common/log"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/require"
@@ -163,9 +162,6 @@ func TestModeCommand(t *testing.T) {
 			require.NoError(t, err)
 			output := out.String()
 			require.Contains(t, strings.TrimSpace(output), tt.expectedOutput)
-			bs, err := afero.ReadFile(fs, configPath)
-			log.Info(string(bs))
-			require.NoError(t, err)
 			conf, err := mgr.Read(path)
 			require.NoError(t, err)
 			require.Exactly(t, tt.expectedConfig, conf)

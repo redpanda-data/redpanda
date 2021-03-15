@@ -745,7 +745,6 @@ func parseNamedAddresses(
 			as = append(as, *a)
 		}
 	}
-	log.Info(as)
 	return as, nil
 }
 
