@@ -5,6 +5,8 @@ order: 0
 
 # Redpanda v21.3.x release notes
 
+(Add upgrade process)
+
 ## [release v21.3.4](https://github.com/vectorizedio/redpanda/releases/tag/v21.3.4)
 
 - Fixed a configuration binding bug in rpk
