@@ -211,18 +211,19 @@ export class ProcessBatchServer extends SupervisorServer {
 
   /**
    * Handle an error using the given Coprocessor's ErrorPolicy
-   * @param coprocessor
+   * @param handle
    * @param processBatchRequest
    * @param error
    * @param policyError, optional, by default this function takes value from
    * coprocessor.
    */
   public handleErrorByPolicy(
-    coprocessor: Coprocessor,
+    handle: Handle,
     processBatchRequest: ProcessBatchRequestItem,
     error: Error,
-    policyError = coprocessor.policyError
+    policyError = handle.coprocessor.policyError
   ): Promise<ProcessBatchReplyItem> {
+    const coprocessor = handle.coprocessor;
     const errorMessage = this.createMessageError(
       coprocessor,
       processBatchRequest,
@@ -230,6 +231,11 @@ export class ProcessBatchServer extends SupervisorServer {
     );
     switch (policyError) {
       case PolicyError.Deregister:
+        this.logger.error(
+          `Deregistering wasm transform ${coprocessor.globalId} due ` +
+            `to active error policy "deregister"`
+        );
+        this.repository.remove(handle);
         return Promise.resolve({
           ntp: processBatchRequest.ntp,
           coprocessorId: coprocessor.globalId,
