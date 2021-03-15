@@ -96,6 +96,10 @@ push-to-kind:
 e2e-tests: kuttl docker-build docker-build-configurator
 	$(KUTTL) test $(TEST_ONLY_FLAG)
 
+# Execute end to end tests using helm as an installation
+helm-e2e-tests: kuttl docker-build docker-build-configurator
+	$(KUTTL) test --config kuttl-helm-test.yaml $(TEST_ONLY_FLAG)
+
 # Download controller-gen locally if necessary
 CONTROLLER_GEN = $(shell pwd)/bin/controller-gen
 controller-gen:

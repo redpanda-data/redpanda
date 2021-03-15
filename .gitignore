@@ -28,6 +28,7 @@
 /dbuild
 bin
 _e2e_artifacts/
+_helm_e2e_artifacts/
 /src/go/k8s/testbin/*
 /src/go/k8s/cm-verifier
 
