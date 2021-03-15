@@ -68,4 +68,4 @@ Other instruction will be visible after installation.
 | serviceAccount.create | bool | `true` | Specifies whether a service account should be created |
 | serviceAccount.name | string | `nil` | The name of the service account to use. If not set name is generated using the fullname template |
 | tolerations | list | `[]` | Allows to schedule Redpanda Operator on tainted nodes |
-| webhook.enabled | bool | `false` |  |
+| webhook.enabled | bool | `true` |  |
