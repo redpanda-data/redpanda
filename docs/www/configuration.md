@@ -1,8 +1,8 @@
 ---
-title: Configuration
+title: Custom configuration
 order: 5
 ---
-# Configuration
+# Custom configuration
 
 The redpanda configuration is by default loaded from and persisted to
 `/etc/redpanda/redpanda.yaml`. It is broadly divided into 2 sections, `redpanda`
@@ -81,7 +81,7 @@ redpanda:
     address: "0.0.0.0"
     port: 33145
    
-# TLS configuration for the RPC server.
+  # TLS configuration for the RPC server.
   # Default: null
   rpc_server_tls:
     # Whether to enable TLS for the RPC server.

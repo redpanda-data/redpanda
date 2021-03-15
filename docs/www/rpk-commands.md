@@ -1,8 +1,8 @@
 ---
-title: rpk Commands
+title: RPK commands
 order: 7
 ---
-# rpk Commands
+# RPK commands
 
 ## redpanda
 
