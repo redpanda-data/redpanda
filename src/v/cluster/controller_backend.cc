@@ -194,7 +194,7 @@ std::vector<topic_table::delta> calculate_bootstrap_deltas(
         // replicas, just stop
         if (
           it->type == op_t::update_finished
-          && !has_local_replicas(self, it->p_as.replicas)) {
+          && !has_local_replicas(self, it->new_assignment.replicas)) {
             break;
         }
         // if next operation doesn't contain local replicas we terminate lookup,
@@ -203,7 +203,7 @@ std::vector<topic_table::delta> calculate_bootstrap_deltas(
         if (auto next = std::next(it); next != deltas.rend()) {
             if (
               next->type == op_t::update_finished
-              && !has_local_replicas(self, next->p_as.replicas)) {
+              && !has_local_replicas(self, next->new_assignment.replicas)) {
                 break;
             }
         }
@@ -377,22 +377,24 @@ controller_backend::execute_partitition_op(const topic_table::delta& delta) {
     // partitions created on current shard at this node
     switch (delta.type) {
     case op_t::add:
-        if (!has_local_replicas(_self, delta.p_as.replicas)) {
+        if (!has_local_replicas(_self, delta.new_assignment.replicas)) {
             return ss::make_ready_future<std::error_code>(errc::success);
         }
         return create_partition(
           delta.ntp,
-          delta.p_as.group,
+          delta.new_assignment.group,
           rev,
-          create_brokers_set(delta.p_as.replicas, _members_table.local()));
+          create_brokers_set(
+            delta.new_assignment.replicas, _members_table.local()));
     case op_t::del:
         return delete_partition(delta.ntp, rev);
     case op_t::update:
-        return process_partition_update(delta.ntp, delta.p_as, rev);
+        return process_partition_update(delta.ntp, delta.new_assignment, rev);
     case op_t::update_finished:
-        return finish_partition_update(delta.ntp, delta.p_as, rev);
+        return finish_partition_update(delta.ntp, delta.new_assignment, rev);
     case op_t::update_properties:
-        return process_partition_properties_update(delta.ntp, delta.p_as);
+        return process_partition_properties_update(
+          delta.ntp, delta.new_assignment);
     }
     __builtin_unreachable();
 }

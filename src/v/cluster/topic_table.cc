@@ -36,13 +36,15 @@ topic_table::transform_topics(Func&& f) const {
 
 topic_table_delta::topic_table_delta(
   model::ntp ntp,
-  cluster::partition_assignment p_as,
+  cluster::partition_assignment new_assignment,
   model::offset o,
-  op_type tp)
+  op_type tp,
+  std::optional<partition_assignment> previous)
   : ntp(std::move(ntp))
-  , p_as(std::move(p_as))
+  , new_assignment(std::move(new_assignment))
   , offset(o)
-  , type(tp) {}
+  , type(tp)
+  , previous_assignment(std::move(previous)) {}
 
 ss::future<std::error_code>
 topic_table::apply(create_topic_cmd cmd, model::offset offset) {
@@ -109,13 +111,18 @@ topic_table::apply(move_partition_replicas_cmd cmd, model::offset o) {
     }
 
     _update_in_progress.insert(cmd.key);
+    auto previous_assignment = *current_assignment_it;
     // replace partition replica set
     current_assignment_it->replicas = cmd.value;
 
     // calculate deleta for backend
     model::ntp ntp(tp->first.ns, tp->first.tp, current_assignment_it->id);
     _pending_deltas.emplace_back(
-      std::move(ntp), *current_assignment_it, o, delta::op_type::update);
+      std::move(ntp),
+      *current_assignment_it,
+      o,
+      delta::op_type::update,
+      previous_assignment);
 
     notify_waiters();
 
@@ -373,11 +380,13 @@ operator<<(std::ostream& o, const topic_table::delta::op_type& tp) {
 std::ostream& operator<<(std::ostream& o, const topic_table::delta& d) {
     fmt::print(
       o,
-      "{{type: {}, ntp: {}, offset: {}, assignment: {}}}",
+      "{{type: {}, ntp: {}, offset: {}, new_assignment: {}, "
+      "previous_assignment: {}}}",
       d.type,
       d.ntp,
       d.offset,
-      d.p_as);
+      d.new_assignment,
+      d.previous_assignment);
 
     return o;
 }
