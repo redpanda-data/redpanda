@@ -1,6 +1,6 @@
 # Redpanda Operator
 
-![Version: 0.1.0](https://img.shields.io/badge/Version-0.1.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.1.0](https://img.shields.io/badge/AppVersion-0.1.0-informational?style=flat-square)
+![Version: 0.1.0](https://img.shields.io/badge/Version-0.1.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: v21.3.4](https://img.shields.io/badge/AppVersion-v21.3.4-informational?style=flat-square)
 
 ## Installation
 
@@ -68,4 +68,4 @@ Other instruction will be visible after installation.
 | serviceAccount.create | bool | `true` | Specifies whether a service account should be created |
 | serviceAccount.name | string | `nil` | The name of the service account to use. If not set name is generated using the fullname template |
 | tolerations | list | `[]` | Allows to schedule Redpanda Operator on tainted nodes |
-| webhook.enabled | bool | `false` |  |
+| webhook.enabled | bool | `true` |  |

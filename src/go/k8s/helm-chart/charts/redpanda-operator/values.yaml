@@ -44,7 +44,7 @@ rbac:
 
 webhook:
   # webhook.create -- Specifies whether the Webhook resources should configured
-  enabled: false
+  enabled: true
 
 serviceAccount:
   # serviceAccount.create -- Specifies whether a service account should be created

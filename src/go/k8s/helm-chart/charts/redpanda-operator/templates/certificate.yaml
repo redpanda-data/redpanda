@@ -18,8 +18,8 @@ metadata:
 {{ include "redpanda-operator.labels" . | indent 4 }}
 spec:
   dnsNames:
-    - "redpanda-webhook-service.{{ .Release.Namespace }}.svc"
-    - "redpanda-webhook-service.{{ .Release.Namespace }}.svc.cluster.local"
+    - {{ include "redpanda-operator.name" . }}-webhook-service.{{ .Release.Namespace }}.svc
+    - {{ include "redpanda-operator.name" . }}-webhook-service.{{ .Release.Namespace }}.svc.cluster.local
   issuerRef:
     kind: Issuer
     name: {{ include "redpanda-operator.fullname" . }}-selfsigned-issuer
