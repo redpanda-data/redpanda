@@ -52,7 +52,8 @@ using request_types = make_request_types<
   init_producer_id_handler,
   delete_groups_handler,
   describe_acls_handler,
-  describe_log_dirs_handler>;
+  describe_log_dirs_handler,
+  create_acls_handler>;
 
 template<typename RequestType>
 static auto make_api() {

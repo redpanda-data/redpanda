@@ -32,6 +32,7 @@ set(handlers_srcs
   server/handlers/delete_groups.cc
   server/handlers/describe_acls.cc
   server/handlers/describe_log_dirs.cc
+  server/handlers/create_acls.cc
   server/handlers/topics/types.cc
   server/handlers/topics/topic_utils.cc
 )
