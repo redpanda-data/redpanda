@@ -41,18 +41,19 @@ type Reconciler interface {
 // CreateIfNotExists tries to get a kubernetes resource and creates it if does not exist
 func CreateIfNotExists(
 	ctx context.Context, c client.Client, obj client.Object, l logr.Logger,
-) error {
+) (bool, error) {
 	if err := patch.DefaultAnnotator.SetLastAppliedAnnotation(obj); err != nil {
-		return fmt.Errorf("unable to add last applied annotation to %s: %w", obj.GetObjectKind().GroupVersionKind().Kind, err)
+		return false, fmt.Errorf("unable to add last applied annotation to %s: %w", obj.GetObjectKind().GroupVersionKind().Kind, err)
 	}
 	err := c.Create(ctx, obj)
 	if err != nil && !errors.IsAlreadyExists(err) {
-		return fmt.Errorf("unable to create %s resource: %w", obj.GetObjectKind().GroupVersionKind().Kind, err)
+		return false, fmt.Errorf("unable to create %s resource: %w", obj.GetObjectKind().GroupVersionKind().Kind, err)
 	}
 	if err == nil {
 		l.Info(fmt.Sprintf("%s %s did not exist, was created", obj.GetObjectKind().GroupVersionKind().Kind, obj.GetName()))
+		return true, nil
 	}
-	return nil
+	return false, nil
 }
 
 // Update ensures resource is updated if necessary. The method calculates patch

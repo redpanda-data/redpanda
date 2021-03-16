@@ -62,7 +62,8 @@ func (r *NodePortServiceResource) Ensure(ctx context.Context) error {
 		return fmt.Errorf("unable to construct object: %w", err)
 	}
 
-	return CreateIfNotExists(ctx, r, obj, r.logger)
+	_, err = CreateIfNotExists(ctx, r, obj, r.logger)
+	return err
 }
 
 // obj returns resource managed client.Object

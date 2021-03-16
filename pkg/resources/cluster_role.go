@@ -53,7 +53,8 @@ func (r *ClusterRoleResource) Ensure(ctx context.Context) error {
 	if !r.pandaCluster.Spec.ExternalConnectivity {
 		return nil
 	}
-	return CreateIfNotExists(ctx, r, r.obj(), r.logger)
+	_, err := CreateIfNotExists(ctx, r, r.obj(), r.logger)
+	return err
 }
 
 // obj returns resource managed client.Object

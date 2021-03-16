@@ -70,7 +70,8 @@ func (r *ConfigMapResource) Ensure(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("unable to construct object: %w", err)
 	}
-	return CreateIfNotExists(ctx, r, obj, r.logger)
+	_, err = CreateIfNotExists(ctx, r, obj, r.logger)
+	return err
 }
 
 // obj returns resource managed client.Object
