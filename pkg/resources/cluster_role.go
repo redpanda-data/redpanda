@@ -11,13 +11,11 @@ package resources
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/go-logr/logr"
 	redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/rbac/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -55,25 +53,7 @@ func (r *ClusterRoleResource) Ensure(ctx context.Context) error {
 	if !r.pandaCluster.Spec.ExternalConnectivity {
 		return nil
 	}
-
-	var cr v1.ClusterRole
-
-	err := r.Get(ctx, r.Key(), &cr)
-	if err != nil && !errors.IsNotFound(err) {
-		return fmt.Errorf("error while fetching ClusterRole resource: %w", err)
-	}
-
-	if errors.IsNotFound(err) {
-		r.logger.Info(fmt.Sprintf("ClusterRole %s does not exist, going to create one", r.Key().Name))
-
-		obj := r.obj()
-
-		if err := r.Create(ctx, obj); err != nil {
-			return fmt.Errorf("unable to create ClusterRole resource: %w", err)
-		}
-	}
-
-	return nil
+	return CreateIfNotExists(ctx, r, r.obj(), r.logger)
 }
 
 // obj returns resource managed client.Object
