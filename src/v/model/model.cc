@@ -96,34 +96,6 @@ std::ostream& operator<<(std::ostream& os, const materialized_ntp& m) {
     return os;
 }
 
-std::ostream& operator<<(std::ostream& os, const compression& c) {
-    os << "{compression: ";
-    switch (c) {
-    case compression::none:
-        os << "none";
-        break;
-    case compression::gzip:
-        os << "gzip";
-        break;
-    case compression::snappy:
-        os << "snappy";
-        break;
-    case compression::lz4:
-        os << "lz4";
-        break;
-    case compression::zstd:
-        os << "zstd";
-        break;
-    case compression::producer:
-        os << "producer";
-        break;
-    default:
-        os << "ERROR";
-        break;
-    }
-    return os << "}";
-}
-
 std::ostream& operator<<(std::ostream& os, timestamp ts) {
     if (ts != timestamp::missing()) {
         return ss::fmt_print(os, "{{timestamp: {}}}", ts.value());

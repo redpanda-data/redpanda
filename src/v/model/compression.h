@@ -48,7 +48,34 @@ enum class compression : uint8_t {
 };
 
 /// operators needed for boost::lexical_cast<compression>
-std::ostream& operator<<(std::ostream&, const compression&);
+/// inline to prevent library depdency with the v::compression module
+inline std::ostream& operator<<(std::ostream& os, const compression& c) {
+    os << "{compression: ";
+    switch (c) {
+    case compression::none:
+        os << "none";
+        break;
+    case compression::gzip:
+        os << "gzip";
+        break;
+    case compression::snappy:
+        os << "snappy";
+        break;
+    case compression::lz4:
+        os << "lz4";
+        break;
+    case compression::zstd:
+        os << "zstd";
+        break;
+    case compression::producer:
+        os << "producer";
+        break;
+    default:
+        os << "ERROR";
+        break;
+    }
+    return os << "}";
+}
 std::istream& operator>>(std::istream&, compression&);
 
 } // namespace model
