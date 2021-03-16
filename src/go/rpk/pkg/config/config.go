@@ -249,7 +249,7 @@ func checkRedpandaConfig(v *viper.Viper) []error {
 		)
 	} else {
 		socket := &SocketAddress{}
-		err := v.UnmarshalKey(rpcServerKey, socket)
+		err := unmarshalKey(v, rpcServerKey, socket)
 		if err != nil {
 			errs = append(
 				errs,
@@ -272,7 +272,7 @@ func checkRedpandaConfig(v *viper.Viper) []error {
 		)
 	} else {
 		var kafkaListeners []NamedSocketAddress
-		err := v.UnmarshalKey("redpanda.kafka_api", &kafkaListeners)
+		err := unmarshalKey(v, "redpanda.kafka_api", &kafkaListeners)
 		if err != nil {
 			log.Error(err)
 			err = fmt.Errorf(
@@ -301,7 +301,7 @@ func checkRedpandaConfig(v *viper.Viper) []error {
 	}
 
 	var seedServersSlice []*SeedServer //map[string]interface{}
-	err := v.UnmarshalKey("redpanda.seed_servers", &seedServersSlice)
+	err := unmarshalKey(v, "redpanda.seed_servers", &seedServersSlice)
 	if err != nil {
 		log.Error(err)
 		msg := "redpanda.seed_servers doesn't have the expected structure"
@@ -381,6 +381,14 @@ func decoderConfigOptions() viper.DecoderConfigOption {
 		c.DecodeHook = cfg.DecodeHook
 		c.WeaklyTypedInput = cfg.WeaklyTypedInput
 	}
+}
+
+func unmarshalKey(v *viper.Viper, key string, val interface{}) error {
+	return v.UnmarshalKey(
+		key,
+		val,
+		decoderConfigOptions(),
+	)
 }
 
 func toMap(conf *Config) (map[string]interface{}, error) {

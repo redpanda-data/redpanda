@@ -149,17 +149,10 @@ func (m *manager) ReadFlat(path string) (map[string]string, error) {
 		"redpanda.rpc_server",
 		"redpanda.admin",
 	}
-	unmarshalKey := func(key string, val interface{}) error {
-		return m.v.UnmarshalKey(
-			key,
-			val,
-			decoderConfigOptions(),
-		)
-	}
 	for _, k := range keys {
 		if k == "redpanda.seed_servers" {
 			seeds := &[]SeedServer{}
-			err := unmarshalKey(k, seeds)
+			err := unmarshalKey(m.v, k, seeds)
 			if err != nil {
 				return nil, err
 			}
@@ -175,7 +168,7 @@ func (m *manager) ReadFlat(path string) (map[string]string, error) {
 		}
 		if k == "redpanda.advertised_kafka_api" || k == "redpanda.kafka_api" {
 			addrs := []NamedSocketAddress{}
-			err := unmarshalKey(k, &addrs)
+			err := unmarshalKey(m.v, k, &addrs)
 			if err != nil {
 				return nil, err
 			}
@@ -206,7 +199,7 @@ func (m *manager) ReadFlat(path string) (map[string]string, error) {
 	}
 	for _, k := range compactAddrFields {
 		sa := &SocketAddress{}
-		err := unmarshalKey(k, sa)
+		err := unmarshalKey(m.v, k, sa)
 		if err != nil {
 			return nil, err
 		}
