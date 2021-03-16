@@ -64,7 +64,8 @@ func (r *IssuerResource) Ensure(ctx context.Context) error {
 		return fmt.Errorf("unable to construct object: %w", err)
 	}
 
-	return resources.CreateIfNotExists(ctx, r, obj, r.logger)
+	_, err = resources.CreateIfNotExists(ctx, r, obj, r.logger)
+	return err
 }
 
 // obj returns resource managed client.Object

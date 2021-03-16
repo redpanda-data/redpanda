@@ -60,7 +60,8 @@ func (s *ServiceAccountResource) Ensure(ctx context.Context) error {
 		return fmt.Errorf("unable to construct ServiceAccount object: %w", err)
 	}
 
-	return CreateIfNotExists(ctx, s, obj, s.logger)
+	_, err = CreateIfNotExists(ctx, s, obj, s.logger)
+	return err
 }
 
 // obj returns resource managed client.Object
