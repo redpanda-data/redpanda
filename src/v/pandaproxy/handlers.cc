@@ -210,9 +210,10 @@ create_consumer(server::request_t rq, server::reply_t rp) {
           json::create_consumer_response res{
             .instance_id = m_id,
             .base_uri = fmt::format(
-              "http://{}:{}/consumers/{}",
+              "http://{}:{}/consumers/{}/instances/{}",
               adv_addr.host(),
               adv_addr.port(),
+              group_id(),
               m_id())};
           auto json_rslt = ppj::rjson_serialize(res);
           rp.rep->write_body("json", json_rslt);

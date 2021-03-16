@@ -45,6 +45,10 @@ pandaproxy:
     address: "0.0.0.0"
     port: 8082
 
+  advertised_pandaproxy_api:
+    address: "{{node.account.hostname}}"
+    port: 8082
+
   api_doc_dir: {{root}}/usr/share/redpanda/proxy-api-doc
 
 pandaproxy_client:
