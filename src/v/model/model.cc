@@ -114,6 +114,9 @@ std::ostream& operator<<(std::ostream& os, const compression& c) {
     case compression::zstd:
         os << "zstd";
         break;
+    case compression::producer:
+        os << "producer";
+        break;
     default:
         os << "ERROR";
         break;
@@ -249,7 +252,8 @@ std::istream& operator>>(std::istream& i, compression& c) {
           .match("gzip", compression::gzip)
           .match("snappy", compression::snappy)
           .match("lz4", compression::lz4)
-          .match("zstd", compression::zstd);
+          .match("zstd", compression::zstd)
+          .match("producer", compression::producer);
     return i;
 }
 
