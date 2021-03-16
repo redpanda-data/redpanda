@@ -42,6 +42,9 @@ type Reconciler interface {
 func CreateIfNotExists(
 	ctx context.Context, c client.Client, obj client.Object, l logr.Logger,
 ) error {
+	if err := patch.DefaultAnnotator.SetLastAppliedAnnotation(obj); err != nil {
+		return fmt.Errorf("unable to add last applied annotation to %s: %w", obj.GetObjectKind().GroupVersionKind().Kind, err)
+	}
 	err := c.Create(ctx, obj)
 	if err != nil && !errors.IsAlreadyExists(err) {
 		return fmt.Errorf("unable to create %s resource: %w", obj.GetObjectKind().GroupVersionKind().Kind, err)
