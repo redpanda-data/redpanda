@@ -81,9 +81,6 @@ var errorMissingIssuerRef = errors.New("expecting not nil issuerRef")
 
 // obj returns resource managed client.Object
 func (r *CertificateResource) obj() (k8sclient.Object, error) {
-	if r.issuerRef == nil {
-		return nil, fmt.Errorf("%v %w", r.Key(), errorMissingIssuerRef)
-	}
 	objLabels := labels.ForCluster(r.pandaCluster)
 	cert := &cmapiv1.Certificate{
 		ObjectMeta: metav1.ObjectMeta{
