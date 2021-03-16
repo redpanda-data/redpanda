@@ -212,6 +212,7 @@ func TestDefault(t *testing.T) {
 			}},
 			AdminApi:      SocketAddress{"0.0.0.0", 9644},
 			Id:            0,
+			SeedServers:   []SeedServer{},
 			DeveloperMode: true,
 		},
 		Rpk: RpkConfig{
