@@ -16,7 +16,6 @@ import (
 	"github.com/go-logr/logr"
 	redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -56,27 +55,12 @@ func (s *ServiceAccountResource) Ensure(ctx context.Context) error {
 		return nil
 	}
 
-	var sa corev1.ServiceAccount
-
-	err := s.Get(ctx, s.Key(), &sa)
-	if err != nil && !errors.IsNotFound(err) {
-		return fmt.Errorf("error while fetching ServiceAccount resource: %w", err)
+	obj, err := s.obj()
+	if err != nil {
+		return fmt.Errorf("unable to construct ServiceAccount object: %w", err)
 	}
 
-	if errors.IsNotFound(err) {
-		s.logger.Info(fmt.Sprintf("ServiceAccount %s does not exist, going to create one", s.Key().Name))
-
-		obj, err := s.obj()
-		if err != nil {
-			return fmt.Errorf("unable to construct ServiceAccount object: %w", err)
-		}
-
-		if err := s.Create(ctx, obj); err != nil {
-			return fmt.Errorf("unable to create ServiceAccount resource: %w", err)
-		}
-	}
-
-	return nil
+	return CreateIfNotExists(ctx, s, obj, s.logger)
 }
 
 // obj returns resource managed client.Object
