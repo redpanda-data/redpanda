@@ -83,56 +83,59 @@ func (r *PkiReconciler) Ensure(ctx context.Context) error {
 
 	toApply := []resources.Resource{}
 
-	issuerRef := r.pandaCluster.Spec.Configuration.TLS.IssuerRef
-	// No cluster issuer is provided.
-	if issuerRef == nil {
-		selfSignedKey := r.issuerNamespacedName("selfsigned-issuer")
-		selfSignedIssuer := NewIssuer(r.Client,
-			r.scheme,
-			r.pandaCluster,
-			selfSignedKey,
-			"",
-			r.logger)
+	externalIssuerRef := r.pandaCluster.Spec.Configuration.TLS.IssuerRef
 
-		rootCertificateKey := r.certNamespacedName("root-certificate")
-		rootCertificate := NewCertificate(r.Client,
-			r.scheme,
-			r.pandaCluster,
-			rootCertificateKey,
-			selfSignedIssuer.objRef(),
-			r.fqdn,
-			true,
-			r.logger)
+	selfSignedKey := r.issuerNamespacedName("selfsigned-issuer")
+	selfSignedIssuer := NewIssuer(r.Client,
+		r.scheme,
+		r.pandaCluster,
+		selfSignedKey,
+		"",
+		r.logger)
 
-		// Kubernetes cluster issuer for Redpanda Operator - key provided in RedpandaCluster CR, else created
-		k8sClusterIssuerKey := r.issuerNamespacedName("root-issuer")
-		k8sClusterIssuer := NewIssuer(r.Client,
-			r.scheme,
-			r.pandaCluster,
-			k8sClusterIssuerKey,
-			rootCertificate.Key().Name,
-			r.logger)
+	rootCertificateKey := r.certNamespacedName("root-certificate")
+	rootCertificate := NewCertificate(r.Client,
+		r.scheme,
+		r.pandaCluster,
+		rootCertificateKey,
+		selfSignedIssuer.objRef(),
+		r.fqdn,
+		true,
+		r.logger)
 
-		issuerRef = k8sClusterIssuer.objRef()
-		toApply = append(toApply, selfSignedIssuer, rootCertificate, k8sClusterIssuer)
-	}
+	// Kubernetes cluster issuer for Redpanda Operator - key provided in RedpandaCluster CR, else created
+	k8sClusterIssuerKey := r.issuerNamespacedName("root-issuer")
+	k8sClusterIssuer := NewIssuer(r.Client,
+		r.scheme,
+		r.pandaCluster,
+		k8sClusterIssuerKey,
+		rootCertificate.Key().Name,
+		r.logger)
+
+	selfSignedIssuerRef := k8sClusterIssuer.objRef()
+	toApply = append(toApply, selfSignedIssuer, rootCertificate, k8sClusterIssuer)
 
 	// TODO: if a cluster issuer was provided, ensure that it comes with a CA (not self-signed). Perhaps create it otherwise.
 
 	// Redpanda cluster certificate for Kafka API - to be provided to each broker
 	certsKey := r.certNamespacedName(RedpandaNodeCert)
-	redpandaCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, issuerRef, r.fqdn, false, r.logger)
+	nodeIssuerRef := selfSignedIssuerRef
+	if externalIssuerRef != nil {
+		// if external issuer is provided, we will use it to generate node certificates
+		nodeIssuerRef = externalIssuerRef
+	}
+	redpandaCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, nodeIssuerRef, r.fqdn, false, r.logger)
 
 	toApply = append(toApply, redpandaCert)
 
 	if r.pandaCluster.Spec.Configuration.TLS.RequireClientAuth {
 		// Certificate for external clients to call the Kafka API on any broker in this Redpanda cluster
 		certsKey = r.certNamespacedName(UserClientCert)
-		externalClientCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, issuerRef, r.fqdn, false, r.logger)
+		externalClientCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, selfSignedIssuerRef, r.fqdn, false, r.logger)
 
 		// Certificate for operator to call the Kafka API on any broker in this Redpanda cluster
 		certsKey = r.certNamespacedName(OperatorClientCert)
-		internalClientCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, issuerRef, r.fqdn, false, r.logger)
+		internalClientCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, selfSignedIssuerRef, r.fqdn, false, r.logger)
 
 		toApply = append(toApply, externalClientCert, internalClientCert)
 	}
