@@ -12,26 +12,28 @@ package config
 import "path"
 
 type Config struct {
-	NodeUuid     string         `yaml:"node_uuid,omitempty" mapstructure:"node_uuid,omitempty" json:"nodeUuid"`
-	Organization string         `yaml:"organization,omitempty" mapstructure:"organization,omitempty" json:"organization"`
-	LicenseKey   string         `yaml:"license_key,omitempty" mapstructure:"license_key,omitempty" json:"licenseKey"`
-	ClusterId    string         `yaml:"cluster_id,omitempty" mapstructure:"cluster_id,omitempty" json:"clusterId"`
-	ConfigFile   string         `yaml:"config_file" mapstructure:"config_file" json:"configFile"`
-	Redpanda     RedpandaConfig `yaml:"redpanda" mapstructure:"redpanda" json:"redpanda"`
-	Rpk          RpkConfig      `yaml:"rpk" mapstructure:"rpk" json:"rpk"`
+	NodeUuid     string                 `yaml:"node_uuid,omitempty" mapstructure:"node_uuid,omitempty" json:"nodeUuid"`
+	Organization string                 `yaml:"organization,omitempty" mapstructure:"organization,omitempty" json:"organization"`
+	LicenseKey   string                 `yaml:"license_key,omitempty" mapstructure:"license_key,omitempty" json:"licenseKey"`
+	ClusterId    string                 `yaml:"cluster_id,omitempty" mapstructure:"cluster_id,omitempty" json:"clusterId"`
+	ConfigFile   string                 `yaml:"config_file" mapstructure:"config_file" json:"configFile"`
+	Redpanda     RedpandaConfig         `yaml:"redpanda" mapstructure:"redpanda" json:"redpanda"`
+	Rpk          RpkConfig              `yaml:"rpk" mapstructure:"rpk" json:"rpk"`
+	Other        map[string]interface{} `yaml:",inline" mapstructure:",remain"`
 }
 
 type RedpandaConfig struct {
-	Directory          string               `yaml:"data_directory" mapstructure:"data_directory" json:"dataDirectory"`
-	RPCServer          SocketAddress        `yaml:"rpc_server" mapstructure:"rpc_server" json:"rpcServer"`
-	AdvertisedRPCAPI   *SocketAddress       `yaml:"advertised_rpc_api,omitempty" mapstructure:"advertised_rpc_api,omitempty" json:"advertisedRpcApi,omitempty"`
-	KafkaApi           []NamedSocketAddress `yaml:"kafka_api" mapstructure:"kafka_api" json:"kafkaApi"`
-	AdvertisedKafkaApi []NamedSocketAddress `yaml:"advertised_kafka_api,omitempty" mapstructure:"advertised_kafka_api,omitempty" json:"advertisedKafkaApi,omitempty"`
-	KafkaApiTLS        ServerTLS            `yaml:"kafka_api_tls,omitempty" mapstructure:"kafka_api_tls,omitempty" json:"kafkaApiTls"`
-	AdminApi           SocketAddress        `yaml:"admin" mapstructure:"admin" json:"admin"`
-	Id                 int                  `yaml:"node_id" mapstructure:"node_id" json:"id"`
-	SeedServers        []SeedServer         `yaml:"seed_servers" mapstructure:"seed_servers" json:"seedServers"`
-	DeveloperMode      bool                 `yaml:"developer_mode" mapstructure:"developer_mode" json:"developerMode"`
+	Directory          string                 `yaml:"data_directory" mapstructure:"data_directory" json:"dataDirectory"`
+	RPCServer          SocketAddress          `yaml:"rpc_server" mapstructure:"rpc_server" json:"rpcServer"`
+	AdvertisedRPCAPI   *SocketAddress         `yaml:"advertised_rpc_api,omitempty" mapstructure:"advertised_rpc_api,omitempty" json:"advertisedRpcApi,omitempty"`
+	KafkaApi           []NamedSocketAddress   `yaml:"kafka_api" mapstructure:"kafka_api" json:"kafkaApi"`
+	AdvertisedKafkaApi []NamedSocketAddress   `yaml:"advertised_kafka_api,omitempty" mapstructure:"advertised_kafka_api,omitempty" json:"advertisedKafkaApi,omitempty"`
+	KafkaApiTLS        ServerTLS              `yaml:"kafka_api_tls,omitempty" mapstructure:"kafka_api_tls,omitempty" json:"kafkaApiTls"`
+	AdminApi           SocketAddress          `yaml:"admin" mapstructure:"admin" json:"admin"`
+	Id                 int                    `yaml:"node_id" mapstructure:"node_id" json:"id"`
+	SeedServers        []SeedServer           `yaml:"seed_servers" mapstructure:"seed_servers" json:"seedServers"`
+	DeveloperMode      bool                   `yaml:"developer_mode" mapstructure:"developer_mode" json:"developerMode"`
+	Other              map[string]interface{} `yaml:",inline" mapstructure:",remain"`
 }
 
 type SeedServer struct {
