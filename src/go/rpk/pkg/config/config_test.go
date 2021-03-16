@@ -788,6 +788,72 @@ rpk:
   well_known_io: vendor:vm:storage
 `,
 		},
+		{
+			name: "should update an existing config with single kafka_api & advertised_kafka_api obj to a list",
+			existingConf: `config_file: /etc/redpanda/redpanda.yaml
+redpanda:
+  admin:
+    address: 0.0.0.0
+    port: 9644
+  admin_api_doc_dir: /usr/share/redpanda/admin-api-doc
+  auto_create_topics_enabled: true
+  data_directory: /var/lib/redpanda/data
+  default_window_sec: 100
+  kafka_api:
+    address: 0.0.0.0
+    port: 9092
+  advertised_kafka_api:
+    address: 1.cluster.redpanda.io
+    port: 9092
+  node_id: 0
+  rpc_server:
+    address: 0.0.0.0
+    port: 33145
+  target_quota_byte_rate: 1000000
+`,
+			conf:    Default,
+			wantErr: false,
+			expected: `config_file: /etc/redpanda/redpanda.yaml
+redpanda:
+  admin:
+    address: 0.0.0.0
+    port: 9644
+  admin_api_doc_dir: /usr/share/redpanda/admin-api-doc
+  advertised_kafka_api:
+    address: 1.cluster.redpanda.io
+    port: 9092
+  auto_create_topics_enabled: true
+  data_directory: /var/lib/redpanda/data
+  default_window_sec: 100
+  developer_mode: true
+  kafka_api:
+  - address: 0.0.0.0
+    port: 9092
+  node_id: 0
+  rpc_server:
+    address: 0.0.0.0
+    port: 33145
+  seed_servers: []
+  target_quota_byte_rate: 1000000
+rpk:
+  coredump_dir: /var/lib/redpanda/coredump
+  enable_memory_locking: false
+  enable_usage_stats: false
+  overprovisioned: false
+  tune_aio_events: false
+  tune_clocksource: false
+  tune_coredump: false
+  tune_cpu: false
+  tune_disk_irq: false
+  tune_disk_nomerges: false
+  tune_disk_scheduler: false
+  tune_disk_write_cache: false
+  tune_fstrim: false
+  tune_network: false
+  tune_swappiness: false
+  tune_transparent_hugepages: false
+`,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
