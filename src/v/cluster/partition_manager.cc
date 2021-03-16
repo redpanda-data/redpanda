@@ -23,6 +23,8 @@
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/smp.hh>
 
+#include <exception>
+
 namespace cluster {
 
 partition_manager::partition_manager(
@@ -74,6 +76,38 @@ ss::future<> partition_manager::remove(const model::ntp& ntp) {
       .remove(partition->raft())
       .then([partition] { return partition->stop(); })
       .then([this, ntp] { return _storage.log_mgr().remove(ntp); })
+      .finally([partition] {}); // in the end remove partition
+}
+
+ss::future<> partition_manager::shutdown(const model::ntp& ntp) {
+    auto partition = get(ntp);
+
+    if (!partition) {
+        return ss::make_exception_future<>(std::invalid_argument(fmt::format(
+          "Can not shutdown partition. NTP {} is not present in partition "
+          "manager",
+          ntp)));
+    }
+    auto group_id = partition->group();
+
+    // remove partition from ntp & raft tables
+    _ntp_table.erase(ntp);
+    _raft_table.erase(group_id);
+
+    return _raft_manager.local()
+      .shutdown(partition->raft())
+      .then([partition] { return partition->stop(); })
+      .then([this, ntp] { return _storage.log_mgr().shutdown(ntp); })
+      .handle_exception([this, ntp, group_id](const std::exception_ptr& e) {
+          vassert(
+            false,
+            "error shutting down partition {{ ntp: {}, raft_group: {}}},  "
+            "partition manager state: {}, error: {} - terminating redpanda",
+            ntp,
+            group_id,
+            *this,
+            e);
+      })
       .finally([partition] {}); // in the end remove partition
 }
 
