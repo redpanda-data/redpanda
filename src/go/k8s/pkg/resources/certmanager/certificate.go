@@ -89,13 +89,18 @@ func (r *CertificateResource) obj() (k8sclient.Object, error) {
 			Labels:    objLabels,
 		},
 		Spec: cmapiv1.CertificateSpec{
-			DNSNames: []string{
-				"*." + strings.TrimSuffix(r.fqdn, "."),
-			},
 			SecretName: r.Key().Name,
 			IssuerRef:  *r.issuerRef,
 			IsCA:       r.isCA,
 		},
+	}
+
+	if r.fqdn != "" {
+		cert.Spec.DNSNames = []string{
+			"*." + strings.TrimSuffix(r.fqdn, "."),
+		}
+	} else {
+		cert.Spec.CommonName = fmt.Sprintf("redpanda-%s-%s", r.pandaCluster.Name, r.key.Name)
 	}
 
 	err := controllerutil.SetControllerReference(r.pandaCluster, cert, r.scheme)

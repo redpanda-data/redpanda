@@ -131,11 +131,11 @@ func (r *PkiReconciler) Ensure(ctx context.Context) error {
 	if r.pandaCluster.Spec.Configuration.TLS.RequireClientAuth {
 		// Certificate for external clients to call the Kafka API on any broker in this Redpanda cluster
 		certsKey = r.certNamespacedName(UserClientCert)
-		externalClientCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, selfSignedIssuerRef, r.fqdn, false, r.logger)
+		externalClientCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, selfSignedIssuerRef, "", false, r.logger)
 
 		// Certificate for operator to call the Kafka API on any broker in this Redpanda cluster
 		certsKey = r.certNamespacedName(OperatorClientCert)
-		internalClientCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, selfSignedIssuerRef, r.fqdn, false, r.logger)
+		internalClientCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, selfSignedIssuerRef, "", false, r.logger)
 
 		toApply = append(toApply, externalClientCert, internalClientCert)
 	}
