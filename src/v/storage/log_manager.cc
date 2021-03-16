@@ -228,6 +228,18 @@ ss::future<log> log_manager::do_manage(ntp_config cfg) {
     });
 }
 
+ss::future<> log_manager::shutdown(model::ntp ntp) {
+    vlog(stlog.debug, "Asked to shutdown: {}", ntp);
+    return ss::with_gate(_open_gate, [this, ntp = std::move(ntp)] {
+        auto handle = _logs.extract(ntp);
+        if (handle.empty()) {
+            return ss::make_ready_future<>();
+        }
+        storage::log lg = handle.mapped().handle;
+        return lg.close().finally([lg] {});
+    });
+}
+
 ss::future<> log_manager::remove(model::ntp ntp) {
     vlog(stlog.info, "Asked to remove: {}", ntp);
     return ss::with_gate(_open_gate, [this, ntp = std::move(ntp)] {
