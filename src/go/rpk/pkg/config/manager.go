@@ -153,9 +153,7 @@ func (m *manager) ReadFlat(path string) (map[string]string, error) {
 		return m.v.UnmarshalKey(
 			key,
 			val,
-			func(c *mapstructure.DecoderConfig) {
-				c.TagName = "mapstructure"
-			},
+			decoderConfigOptions(),
 		)
 	}
 	for _, k := range keys {
@@ -388,16 +386,8 @@ func recover(fs afero.Fs, backup, path string, err error) error {
 
 func unmarshal(v *viper.Viper) (*Config, error) {
 	result := &Config{}
-	decoderConfig := mapstructure.DecoderConfig{
-		Result: result,
-		// Sometimes viper will save int values as strings (i.e.
-		// through BindPFlag) so we have to allow mapstructure
-		// to cast them.
-		WeaklyTypedInput: true,
-		DecodeHook: mapstructure.ComposeDecodeHookFunc(
-			v21_1_4MapToNamedSocketAddressSlice,
-		),
-	}
+	decoderConfig := decoderConfig()
+	decoderConfig.Result = result
 	decoder, err := mapstructure.NewDecoder(&decoderConfig)
 	if err != nil {
 		return nil, err

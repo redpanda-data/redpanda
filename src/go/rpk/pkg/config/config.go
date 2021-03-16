@@ -355,6 +355,34 @@ func checkRpkConfig(v *viper.Viper) []error {
 	return errs
 }
 
+func decoderConfig() mapstructure.DecoderConfig {
+	return mapstructure.DecoderConfig{
+		// Sometimes viper will save int values as strings (i.e.
+		// through BindPFlag) so we have to allow mapstructure
+		// to cast them.
+		WeaklyTypedInput: true,
+		DecodeHook: mapstructure.ComposeDecodeHookFunc(
+			// These 2 hooks are viper's default hooks.
+			// https://github.com/spf13/viper/blob/fb4eafdd9775508c450b90b1b72affeef4a68cf5/viper.go#L1004-L1005
+			// They're set here because when decoderConfigOptions' resulting
+			// viper.DecoderConfigOption is used, viper's hooks are overriden.
+			mapstructure.StringToTimeDurationHookFunc(),
+			mapstructure.StringToSliceHookFunc(","),
+			// This hook translates the pre-2.1.4 configuration format to the
+			// latest one (see schema.go)
+			v21_1_4MapToNamedSocketAddressSlice,
+		),
+	}
+}
+
+func decoderConfigOptions() viper.DecoderConfigOption {
+	return func(c *mapstructure.DecoderConfig) {
+		cfg := decoderConfig()
+		c.DecodeHook = cfg.DecodeHook
+		c.WeaklyTypedInput = cfg.WeaklyTypedInput
+	}
+}
+
 func toMap(conf *Config) (map[string]interface{}, error) {
 	mapConf := make(map[string]interface{})
 	bs, err := yaml.Marshal(conf)
