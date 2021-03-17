@@ -27,6 +27,11 @@ import (
 
 var _ Resource = &HeadlessServiceResource{}
 
+const (
+	externalDNSHostname  = "external-dns.alpha.kubernetes.io/hostname"
+	externalDNSUseHostIP = "external-dns.alpha.kubernetes.io/use-external-host-ip"
+)
+
 // HeadlessServiceResource is part of the reconciliation of redpanda.vectorized.io CRD
 // focusing on the internal connectivity management of redpanda cluster
 type HeadlessServiceResource struct {
@@ -70,9 +75,10 @@ func (r *HeadlessServiceResource) obj() (k8sclient.Object, error) {
 	objLabels := labels.ForCluster(r.pandaCluster)
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: r.Key().Namespace,
-			Name:      r.Key().Name,
-			Labels:    objLabels,
+			Namespace:   r.Key().Namespace,
+			Name:        r.Key().Name,
+			Labels:      objLabels,
+			Annotations: r.getAnnotation(),
 		},
 		Spec: corev1.ServiceSpec{
 			Type:      corev1.ServiceTypeClusterIP,
@@ -117,4 +123,17 @@ func (r *HeadlessServiceResource) HeadlessServiceFQDN() string {
 		r.Key().Name,
 		'.',
 		r.Key().Namespace)
+}
+
+func (r *HeadlessServiceResource) getAnnotation() map[string]string {
+	if !r.pandaCluster.Spec.ExternalConnectivity.Enabled && r.pandaCluster.Spec.ExternalConnectivity.Subdomain == "" {
+		return nil
+	}
+
+	return map[string]string{
+		externalDNSHostname: r.pandaCluster.Spec.ExternalConnectivity.Subdomain,
+		// This annotation comes from the not merged feature
+		// https://github.com/kubernetes-sigs/external-dns/pull/1391
+		externalDNSUseHostIP: "true",
+	}
 }

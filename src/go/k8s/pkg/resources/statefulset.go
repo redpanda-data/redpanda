@@ -292,6 +292,10 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 									Value: strconv.FormatBool(r.pandaCluster.Spec.ExternalConnectivity.Enabled),
 								},
 								{
+									Name:  "EXTERNAL_CONNECTIVITY_SUBDOMAIN",
+									Value: r.pandaCluster.Spec.ExternalConnectivity.Subdomain,
+								},
+								{
 									Name:  "HOST_PORT",
 									Value: r.getNodePort(),
 								},

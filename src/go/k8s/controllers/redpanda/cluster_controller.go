@@ -221,6 +221,16 @@ func (r *ClusterReconciler) createExternalNodesList(
 			return []string{}, fmt.Errorf("failed to retrieve node %s: %w", pods[i].Spec.NodeName, err)
 		}
 
+		if len(pandaCluster.Spec.ExternalConnectivity.Subdomain) > 0 {
+			observedNodesExternal = append(observedNodesExternal,
+				fmt.Sprintf("%s.%s:%d",
+					pods[i].Spec.Hostname,
+					pandaCluster.Spec.ExternalConnectivity.Subdomain,
+					getNodePort(&nodePortSvc),
+				))
+			continue
+		}
+
 		observedNodesExternal = append(observedNodesExternal,
 			fmt.Sprintf("%s:%d",
 				getExternalIP(&node),
