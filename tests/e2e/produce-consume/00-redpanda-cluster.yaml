@@ -6,7 +6,8 @@ spec:
   image: "vectorized/redpanda"
   version: "latest"
   replicas: 1
-  externalConnectivity: false
+  externalConnectivity:
+    enabled: false
   resources:
     requests:
       cpu: 100m

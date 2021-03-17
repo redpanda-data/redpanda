@@ -15,7 +15,9 @@ spec:
     limits:
       cpu: 1
       memory: 1.2Gi
-  externalConnectivity: true
+  externalConnectivity:
+    enabled: true
+    subdomain: "test.subdomain.com"
   configuration:
     rpcServer:
       port: 33145
