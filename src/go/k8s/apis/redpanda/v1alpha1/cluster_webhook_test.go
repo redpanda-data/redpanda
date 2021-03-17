@@ -49,6 +49,10 @@ func TestValidateUpdate(t *testing.T) {
 	updatedCluster.Spec.Replicas = &replicas1
 	updatedCluster.Spec.Configuration = v1alpha1.RedpandaConfig{
 		KafkaAPI: v1alpha1.SocketAddress{Port: 1234},
+		TLS: v1alpha1.TLSConfig{
+			RequireClientAuth: true,
+			KafkaAPIEnabled:   false,
+		},
 	}
 
 	err := updatedCluster.ValidateUpdate(redpandaCluster)
@@ -58,7 +62,11 @@ func TestValidateUpdate(t *testing.T) {
 
 	// verify the error causes contain all expected fields
 	statusError := err.(*apierrors.StatusError)
-	expectedFields := []string{field.NewPath("spec").Child("replicas").String(), field.NewPath("spec").Child("resources").Child("limits").Child("memory").String()}
+	expectedFields := []string{
+		field.NewPath("spec").Child("replicas").String(),
+		field.NewPath("spec").Child("resources").Child("limits").Child("memory").String(),
+		field.NewPath("spec").Child("configuration").Child("tls").Child("requireclientauth").String(),
+	}
 	for _, ef := range expectedFields {
 		found := false
 		for _, c := range statusError.Status().Details.Causes {
@@ -149,6 +157,15 @@ func TestValidateUpdate_NoError(t *testing.T) {
 		err := updatePort.ValidateUpdate(redpandaCluster)
 		assert.Error(t, err)
 	})
+
+	t.Run("requireclientauth true and tls enabled", func(t *testing.T) {
+		tls := redpandaCluster.DeepCopy()
+		tls.Spec.Configuration.TLS.RequireClientAuth = true
+		tls.Spec.Configuration.TLS.KafkaAPIEnabled = true
+
+		err := tls.ValidateUpdate(redpandaCluster)
+		assert.NoError(t, err)
+	})
 }
 
 func TestCreation(t *testing.T) {
@@ -221,6 +238,24 @@ func TestCreation(t *testing.T) {
 		}
 
 		err := memory.ValidateCreate()
+		assert.Error(t, err)
+	})
+
+	t.Run("tls properly configured", func(t *testing.T) {
+		tls := redpandaCluster.DeepCopy()
+		tls.Spec.Configuration.TLS.KafkaAPIEnabled = true
+		tls.Spec.Configuration.TLS.RequireClientAuth = true
+
+		err := tls.ValidateCreate()
+		assert.NoError(t, err)
+	})
+
+	t.Run("require client auth without tls enabled", func(t *testing.T) {
+		tls := redpandaCluster.DeepCopy()
+		tls.Spec.Configuration.TLS.KafkaAPIEnabled = false
+		tls.Spec.Configuration.TLS.RequireClientAuth = true
+
+		err := tls.ValidateCreate()
 		assert.Error(t, err)
 	})
 }
