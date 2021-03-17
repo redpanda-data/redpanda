@@ -102,6 +102,8 @@ public:
      */
     ss::future<> start() override;
 
+    ss::future<bool> sync(model::offset offset, model::timeout_clock::duration);
+
 protected:
     virtual void load_snapshot(stm_snapshot_header, iobuf&&) = 0;
     virtual stm_snapshot take_snapshot() = 0;
