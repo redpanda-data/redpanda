@@ -32,15 +32,16 @@ import (
 )
 
 const (
-	hostNameEnvVar             = "HOSTNAME"
-	svcFQDNEnvVar              = "SERVICE_FQDN"
-	configSourceDirEnvVar      = "CONFIG_SOURCE_DIR"
-	configDestinationEnvVar    = "CONFIG_DESTINATION"
-	redpandaRPCPortEnvVar      = "REDPANDA_RPC_PORT"
-	kafkaAPIEnvVar             = "KAFKA_API_PORT"
-	nodeNameEnvVar             = "NODE_NAME"
-	externalConnectivityEnvVar = "EXTERNAL_CONNECTIVITY"
-	hostPortEnvVar             = "HOST_PORT"
+	hostNameEnvVar                      = "HOSTNAME"
+	svcFQDNEnvVar                       = "SERVICE_FQDN"
+	configSourceDirEnvVar               = "CONFIG_SOURCE_DIR"
+	configDestinationEnvVar             = "CONFIG_DESTINATION"
+	redpandaRPCPortEnvVar               = "REDPANDA_RPC_PORT"
+	kafkaAPIEnvVar                      = "KAFKA_API_PORT"
+	nodeNameEnvVar                      = "NODE_NAME"
+	externalConnectivityEnvVar          = "EXTERNAL_CONNECTIVITY"
+	externalConnectivitySubDomainEnvVar = "EXTERNAL_CONNECTIVITY_SUBDOMAIN"
+	hostPortEnvVar                      = "HOST_PORT"
 )
 
 type configuratorConfig struct {
@@ -49,6 +50,7 @@ type configuratorConfig struct {
 	configSourceDir      string
 	configDestination    string
 	nodeName             string
+	subdomain            string
 	externalConnectivity bool
 	kafkaAPIPort         int
 	redpandaRPCPort      int
@@ -63,6 +65,7 @@ func (c *configuratorConfig) String() string {
 		"configDestination: %s\n"+
 		"nodeName: %s\n"+
 		"externalConnectivity: %t\n"+
+		"externalConnectivitySubdomain: %s\n"+
 		"kafkaAPIPort: %d\n"+
 		"redpandaRPCPort: %d\n"+
 		"hostPort: %d\n",
@@ -72,6 +75,7 @@ func (c *configuratorConfig) String() string {
 		c.configDestination,
 		c.nodeName,
 		c.externalConnectivity,
+		c.subdomain,
 		c.kafkaAPIPort,
 		c.redpandaRPCPort,
 		c.hostPort)
@@ -195,6 +199,17 @@ func registerAdvertisedKafkaAPI(
 		return nil
 	}
 
+	if len(c.subdomain) > 0 {
+		cfg.Redpanda.AdvertisedKafkaApi = append(cfg.Redpanda.AdvertisedKafkaApi, config.NamedSocketAddress{
+			SocketAddress: config.SocketAddress{
+				Address: fmt.Sprintf("%s.%s", c.hostName, c.subdomain),
+				Port:    c.hostPort,
+			},
+			Name: "External",
+		})
+		return nil
+	}
+
 	k8sconfig, err := rest.InClusterConfig()
 	if err != nil {
 		return fmt.Errorf("unable to create in cluster config: %w", err)
@@ -264,6 +279,10 @@ func checkEnvVars() (configuratorConfig, error) {
 		{
 			value: &c.nodeName,
 			name:  nodeNameEnvVar,
+		},
+		{
+			value: &c.subdomain,
+			name:  externalConnectivitySubDomainEnvVar,
 		},
 		{
 			value: &extCon,

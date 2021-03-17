@@ -201,7 +201,7 @@ func (r *ClusterReconciler) createExternalNodesList(
 	pandaCluster *redpandav1alpha1.Cluster,
 	nodePortName types.NamespacedName,
 ) ([]string, error) {
-	if !pandaCluster.Spec.ExternalConnectivity {
+	if !pandaCluster.Spec.ExternalConnectivity.Enabled {
 		return []string{}, nil
 	}
 
@@ -219,6 +219,16 @@ func (r *ClusterReconciler) createExternalNodesList(
 	for i := range pods {
 		if err := r.Get(ctx, types.NamespacedName{Name: pods[i].Spec.NodeName}, &node); err != nil {
 			return []string{}, fmt.Errorf("failed to retrieve node %s: %w", pods[i].Spec.NodeName, err)
+		}
+
+		if len(pandaCluster.Spec.ExternalConnectivity.Subdomain) > 0 {
+			observedNodesExternal = append(observedNodesExternal,
+				fmt.Sprintf("%s.%s:%d",
+					pods[i].Spec.Hostname,
+					pandaCluster.Spec.ExternalConnectivity.Subdomain,
+					getNodePort(&nodePortSvc),
+				))
+			continue
 		}
 
 		observedNodesExternal = append(observedNodesExternal,
