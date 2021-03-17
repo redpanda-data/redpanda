@@ -10,6 +10,7 @@
 #include "cluster/simple_batch_builder.h"
 #include "model/fundamental.h"
 #include "model/record.h"
+#include "random/generators.h"
 #include "storage/batch_cache.h"
 #include "test_utils/fixture.h"
 
@@ -31,9 +32,19 @@ make_batch(size_t size = 10, model::offset offset = model::offset(0)) {
     return std::move(b).build();
 }
 
+static model::record_batch make_random_batch(
+  size_t max_size = 10, model::offset offset = model::offset(0)) {
+    cluster::simple_batch_builder b(model::record_batch_type(1), offset);
+    b.add_kv(iobuf{}, bytes_to_iobuf(random_generators::get_bytes(max_size)));
+
+    return std::move(b).build();
+}
+
 struct batch_cache_test_fixture {
     batch_cache_test_fixture()
       : cache(opts) {}
+
+    auto& get_lru() { return cache._lru; };
 
     storage::batch_cache cache;
 };
@@ -55,9 +66,9 @@ FIXTURE_TEST(evict, batch_cache_test_fixture) {
 FIXTURE_TEST(reclaim_rounds_up, batch_cache_test_fixture) {
     storage::batch_cache_index index(cache);
 
-    auto b = make_batch(100);
+    auto b = make_batch(5);
     auto b_size = b.memory_usage();
-
+    std::cout << b_size << std::endl;
     cache.put(index, std::move(b));
     BOOST_CHECK(!cache.empty());
 
@@ -264,4 +275,31 @@ FIXTURE_TEST(index_truncate_hole_missing_prev, batch_cache_test_fixture) {
     BOOST_CHECK(!index.testing_exists_in_index(model::offset(11)));
     BOOST_CHECK(!index.get(model::offset(11)));
     BOOST_CHECK(!index.get(model::offset(41)));
+}
+
+FIXTURE_TEST(test_random_batch_sizes, batch_cache_test_fixture) {
+    storage::batch_cache_index index(cache);
+    std::vector<model::record_batch> batches;
+    for (int i = 0; i < 1000; ++i) {
+        auto batch = make_random_batch(
+          random_generators::get_int<size_t>(10, 16_KiB), model::offset(i));
+        index.put(batch);
+        batches.push_back(std::move(batch));
+    }
+
+    for (auto& b : batches) {
+        auto from_cache = index.get(b.base_offset());
+        BOOST_REQUIRE(from_cache.has_value());
+        BOOST_REQUIRE_EQUAL(from_cache->header(), b.header());
+        BOOST_REQUIRE_EQUAL(from_cache->data(), b.data());
+    }
+    double max_waste = ((double)storage::batch_cache::range::max_waste_bytes
+                        / storage::batch_cache::range::range_size)
+                       * 100.0;
+
+    // assert waste, we have to skip last range
+    for (auto& r : boost::make_iterator_range(
+           get_lru().begin(), std::prev(get_lru().end()))) {
+        BOOST_REQUIRE_LE(r.waste(), max_waste);
+    }
 }
