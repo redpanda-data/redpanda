@@ -87,7 +87,7 @@ func main() {
 		log.Fatalf("%s", fmt.Errorf("unable to get the environment variables: %w", err))
 	}
 
-	log.Print(c)
+	log.Print(c.String())
 
 	fs := afero.NewOsFs()
 	v := config.InitViper(fs)
