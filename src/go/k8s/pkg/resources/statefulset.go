@@ -17,6 +17,7 @@ import (
 	"strconv"
 
 	"github.com/go-logr/logr"
+	cmetav1 "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
 	redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/labels"
 	appsv1 "k8s.io/api/apps/v1"
@@ -62,7 +63,7 @@ type StatefulSetResource struct {
 	nodePortName                types.NamespacedName
 	nodePortSvc                 corev1.Service
 	redpandaCertSecretKey       types.NamespacedName
-	internalClientCertSecretKey *types.NamespacedName
+	internalClientCertSecretKey types.NamespacedName
 	serviceAccountName          string
 	configuratorTag             string
 	logger                      logr.Logger
@@ -79,7 +80,7 @@ func NewStatefulSet(
 	serviceName string,
 	nodePortName types.NamespacedName,
 	redpandaCertSecretKey types.NamespacedName,
-	internalClientCertSecretKey *types.NamespacedName,
+	internalClientCertSecretKey types.NamespacedName,
 	serviceAccountName string,
 	configuratorTag string,
 	logger logr.Logger,
@@ -224,7 +225,7 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 					SecurityContext: &corev1.PodSecurityContext{
 						FSGroup: pointer.Int64Ptr(fsGroup),
 					},
-					Volumes: []corev1.Volume{
+					Volumes: append([]corev1.Volume{
 						{
 							Name: datadirName,
 							VolumeSource: corev1.VolumeSource{
@@ -250,7 +251,7 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 								EmptyDir: &corev1.EmptyDirVolumeSource{},
 							},
 						},
-					},
+					}, r.secretVolumes()...),
 					InitContainers: []corev1.Container{
 						{
 							Name:            configuratorContainerName,
@@ -373,7 +374,7 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 								Limits:   r.pandaCluster.Spec.Resources.Limits,
 								Requests: r.pandaCluster.Spec.Resources.Requests,
 							},
-							VolumeMounts: []corev1.VolumeMount{
+							VolumeMounts: append([]corev1.VolumeMount{
 								{
 									Name:      datadirName,
 									MountPath: dataDirectory,
@@ -382,7 +383,7 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 									Name:      "config-dir",
 									MountPath: configDestinationDir,
 								},
-							},
+							}, r.secretVolumeMounts()...),
 						},
 					},
 					Affinity: &corev1.Affinity{
@@ -421,27 +422,74 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 		},
 	}
 
-	if r.pandaCluster.Spec.Configuration.TLS.KafkaAPIEnabled {
-		ss.Spec.Template.Spec.Containers[0].VolumeMounts = append(ss.Spec.Template.Spec.Containers[0].VolumeMounts, corev1.VolumeMount{
-			Name:      "tlscert",
-			MountPath: tlsDir,
-		})
-		ss.Spec.Template.Spec.Volumes = append(ss.Spec.Template.Spec.Volumes, corev1.Volume{
-			Name: "tlscert",
-			VolumeSource: corev1.VolumeSource{
-				Secret: &corev1.SecretVolumeSource{
-					SecretName: r.redpandaCertSecretKey.Name,
-				},
-			},
-		})
-	}
-
 	err := controllerutil.SetControllerReference(r.pandaCluster, ss, r.scheme)
 	if err != nil {
 		return nil, err
 	}
 
 	return ss, nil
+}
+
+func (r *StatefulSetResource) secretVolumeMounts() []corev1.VolumeMount {
+	var mounts []corev1.VolumeMount
+	if r.pandaCluster.Spec.Configuration.TLS.KafkaAPIEnabled {
+		mounts = append(mounts, corev1.VolumeMount{
+			Name:      "tlscert",
+			MountPath: tlsDir,
+		})
+	}
+	if r.pandaCluster.Spec.Configuration.TLS.RequireClientAuth {
+		mounts = append(mounts, corev1.VolumeMount{
+			Name:      "tlsca",
+			MountPath: tlsDirCA,
+		})
+	}
+	return mounts
+}
+
+func (r *StatefulSetResource) secretVolumes() []corev1.Volume {
+	var vols []corev1.Volume
+
+	// When TLS is enabled, Redpanda needs a keypair certificate.
+	if r.pandaCluster.Spec.Configuration.TLS.KafkaAPIEnabled {
+		vols = append(vols, corev1.Volume{
+			Name: "tlscert",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: r.redpandaCertSecretKey.Name,
+					Items: []corev1.KeyToPath{
+						{
+							Key:  corev1.TLSPrivateKeyKey,
+							Path: corev1.TLSPrivateKeyKey,
+						},
+						{
+							Key:  corev1.TLSCertKey,
+							Path: corev1.TLSCertKey,
+						},
+					},
+				},
+			},
+		})
+	}
+
+	// When TLS client authentication is enabled, Redpanda needs the client's CA certificate.
+	if r.pandaCluster.Spec.Configuration.TLS.RequireClientAuth {
+		vols = append(vols, corev1.Volume{
+			Name: "tlsca",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: r.internalClientCertSecretKey.Name,
+					Items: []corev1.KeyToPath{
+						{
+							Key:  cmetav1.TLSCAKey,
+							Path: cmetav1.TLSCAKey,
+						},
+					},
+				},
+			},
+		})
+	}
+	return vols
 }
 
 func (r *StatefulSetResource) getNodePort() string {

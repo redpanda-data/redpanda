@@ -131,7 +131,7 @@ type RedpandaConfig struct {
 type TLSConfig struct {
 	KafkaAPIEnabled bool `json:"kafkaApiEnabled,omitempty"`
 	// References cert-manager Issuer or ClusterIssuer. When provided, this
-	// issuer will be used to issue node as well as client certificates.
+	// issuer will be used to issue node certificates.
 	// Typically you want to provide the issuer when a generated self-signed one
 	// is not enough and you need to have a verifiable chain with a proper CA
 	// certificate.

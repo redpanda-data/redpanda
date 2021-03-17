@@ -9,4 +9,4 @@ data:
       tls:
         key_file: /etc/tls/certs/tls.key
         cert_file: /etc/tls/certs/tls.crt 
-        truststore_file: /etc/tls/certs/ca.crt
+        truststore_file: /etc/tls/certs/ca/ca.crt
