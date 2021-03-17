@@ -6,7 +6,9 @@ spec:
   image: "vectorized/redpanda"
   version: "latest"
   replicas: 3
-  externalConnectivity: true
+  externalConnectivity:
+    enabled: true
+    subdomain: "test.subdomain.com"
   resources:
     requests:
       cpu: 1

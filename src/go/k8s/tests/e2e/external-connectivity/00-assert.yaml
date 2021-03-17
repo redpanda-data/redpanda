@@ -35,7 +35,7 @@ spec:
             - --
             - --default-log-level=debug
 status:
-  readyReplicas: 1
+  readyReplicas: 3
 ---
 apiVersion: v1
 kind: Service
