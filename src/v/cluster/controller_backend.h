@@ -89,6 +89,7 @@ private:
     ss::sharded<topics_frontend>& _topics_frontend;
     model::node_id _self;
     ss::sstring _data_directory;
+    std::chrono::milliseconds _housekeeping_timer_interval;
     ss::sharded<ss::abort_source>& _as;
     underlying_t _topic_deltas;
     ss::timer<> _housekeeping_timer;

@@ -466,6 +466,12 @@ configuration::configuration()
       "A SASL SCRAM password for testing",
       required::no,
       "")
+  , controller_backend_housekeeping_interval_ms(
+      *this,
+      "controller_backend_housekeeping_interval_ms",
+      "Interval between iterations of controller backend housekeeping loop",
+      required::no,
+      1s)
   , archival_storage_enabled(
       *this,
       "archival_storage_enabled",

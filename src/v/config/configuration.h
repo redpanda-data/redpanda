@@ -118,6 +118,8 @@ struct configuration final : public config_store {
     property<bool> enable_sasl;
     property<ss::sstring> static_scram_user;
     property<ss::sstring> static_scram_pass;
+    property<std::chrono::milliseconds>
+      controller_backend_housekeeping_interval_ms;
 
     // Archival storage
     property<bool> archival_storage_enabled;
