@@ -61,13 +61,22 @@ func NewHeadlessService(
 }
 
 // Ensure will manage kubernetes v1.Service for redpanda.vectorized.io custom resource
+// nolint:dupl // this is just small duplication that might change in the future
 func (r *HeadlessServiceResource) Ensure(ctx context.Context) error {
 	obj, err := r.obj()
 	if err != nil {
 		return fmt.Errorf("unable to construct object: %w", err)
 	}
-	_, err = CreateIfNotExists(ctx, r, obj, r.logger)
-	return err
+	created, err := CreateIfNotExists(ctx, r, obj, r.logger)
+	if err != nil || created {
+		return err
+	}
+	var svc corev1.Service
+	err = r.Get(ctx, r.Key(), &svc)
+	if err != nil {
+		return fmt.Errorf("error while fetching Service resource: %w", err)
+	}
+	return Update(ctx, &svc, obj, r.Client, r.logger)
 }
 
 // obj returns resource managed client.Object

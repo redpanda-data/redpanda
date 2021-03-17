@@ -93,3 +93,33 @@ func TestEnsure_StatefulSet(t *testing.T) {
 		t.Fatalf("second ensure: expecting version %s but got %s", originalResourceVersion, actual.GetResourceVersion())
 	}
 }
+
+func TestEnsure_HeadlessService(t *testing.T) {
+	cluster := pandaCluster()
+	cluster = cluster.DeepCopy()
+	cluster.Name = "ensure-hs-integration-cluster"
+
+	hs := res.NewHeadlessService(
+		c,
+		cluster,
+		scheme.Scheme,
+		ctrl.Log.WithName("test"))
+
+	err := hs.Ensure(context.Background())
+	assert.NoError(t, err)
+
+	actual := &corev1.Service{}
+	err = c.Get(context.Background(), hs.Key(), actual)
+	assert.NoError(t, err)
+	originalResourceVersion := actual.ResourceVersion
+
+	// calling ensure for second time to see the resource does not get updated
+	err = hs.Ensure(context.Background())
+	assert.NoError(t, err)
+
+	err = c.Get(context.Background(), hs.Key(), actual)
+	assert.NoError(t, err)
+	if actual.ResourceVersion != originalResourceVersion {
+		t.Fatalf("second ensure: expecting version %s but got %s", originalResourceVersion, actual.GetResourceVersion())
+	}
+}
