@@ -411,6 +411,8 @@ struct record_batch_header {
     friend std::ostream& operator<<(std::ostream&, const record_batch_header&);
 };
 
+using tx_seq = named_type<int64_t, struct tm_tx_seq>;
+
 struct producer_identity {
     int64_t id{-1};
     int16_t epoch{0};

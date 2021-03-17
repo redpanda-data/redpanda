@@ -253,6 +253,19 @@ configuration::configuration()
       "Time to wait state catch up before rejecting a request",
       required::no,
       2000ms)
+  , tm_sync_timeout_ms(
+      *this,
+      "tm_sync_timeout_ms",
+      "Time to wait state catch up before rejecting a request",
+      required::no,
+      2000ms)
+  , tm_violation_recovery_policy(
+      *this,
+      "tm_violation_recovery_policy",
+      "Describes how to recover from an invariant violation happened on the "
+      "transaction coordinator level",
+      required::no,
+      model::violation_recovery_policy::crash)
   , fetch_reads_debounce_timeout(
       *this,
       "fetch_reads_debounce_timeout",
