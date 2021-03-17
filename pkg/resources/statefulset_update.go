@@ -12,7 +12,6 @@ package resources
 import (
 	"context"
 	"crypto/tls"
-	"crypto/x509"
 	"errors"
 	"fmt"
 	"reflect"
@@ -20,7 +19,6 @@ import (
 
 	"github.com/Shopify/sarama"
 	"github.com/go-logr/logr"
-	cmetav1 "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -183,23 +181,13 @@ func (r *StatefulSetResource) queryRedpandaForTopicMembers(
 
 	tlsConfig := tls.Config{MinVersion: tls.VersionTLS12} // TLS12 is min version allowed by gosec.
 	if r.pandaCluster.Spec.Configuration.TLS.KafkaAPIEnabled {
-		// Retrieve secret containing the certificates
-		certSecret, err := r.getCertSecret(ctx)
-		if err != nil {
+		// For simplicity, we skip broker verification until per-listener
+		// TLS is available in Redpanda. This client calls the internal listener.
+		tlsConfig.InsecureSkipVerify = true
+
+		if err := r.populateTLSConfigCert(ctx, &tlsConfig); err != nil {
 			return err
 		}
-
-		// Add root CA
-		caCertPool := x509.NewCertPool()
-		caCertPool.AppendCertsFromPEM(certSecret.Data[cmetav1.TLSCAKey])
-		tlsConfig.RootCAs = caCertPool
-
-		// Populate crypto/TLS configuration
-		cert, err := tls.X509KeyPair(certSecret.Data[corev1.TLSCertKey], certSecret.Data[corev1.TLSPrivateKeyKey])
-		if err != nil {
-			return err
-		}
-		tlsConfig.Certificates = []tls.Certificate{cert}
 
 		conf.Net.TLS.Enable = true
 		conf.Net.TLS.Config = &tlsConfig
@@ -214,23 +202,29 @@ func (r *StatefulSetResource) queryRedpandaForTopicMembers(
 	return consumer.Close()
 }
 
-func (r *StatefulSetResource) getCertSecret(
-	ctx context.Context,
-) (*corev1.Secret, error) {
-	var certSecret corev1.Secret
-	if r.pandaCluster.Spec.Configuration.TLS.RequireClientAuth && r.internalClientCertSecretKey != nil {
-		// client auth is required
-		err := r.Get(ctx, *r.internalClientCertSecretKey, &certSecret)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		err := r.Get(ctx, r.redpandaCertSecretKey, &certSecret)
-		if err != nil {
-			return nil, err
-		}
+// Populates crypto/TLS configuration for certificate used by the operator
+// during its client authentication.
+func (r *StatefulSetResource) populateTLSConfigCert(
+	ctx context.Context, tlsConfig *tls.Config,
+) error {
+	if !r.pandaCluster.Spec.Configuration.TLS.RequireClientAuth {
+		return nil
 	}
-	return &certSecret, nil
+
+	var certSecret corev1.Secret
+	err := r.Get(ctx, r.internalClientCertSecretKey, &certSecret)
+	if err != nil {
+		return err
+	}
+
+	cert, err := tls.X509KeyPair(certSecret.Data[corev1.TLSCertKey], certSecret.Data[corev1.TLSPrivateKeyKey])
+	if err != nil {
+		return err
+	}
+
+	tlsConfig.Certificates = []tls.Certificate{cert}
+
+	return nil
 }
 
 func (r *StatefulSetResource) podImageIdenticalToClusterImage(

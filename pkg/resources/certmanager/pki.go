@@ -30,6 +30,8 @@ const (
 	OperatorClientCert = "operator-client"
 	// UserClientCert cert name - used by redpanda clients using KafkaAPI
 	UserClientCert = "user-client"
+	// AdminClientCert cert name - used by redpanda clients using KafkaAPI
+	AdminClientCert = "admin-client"
 	// RedpandaNodeCert cert name - node certificate
 	RedpandaNodeCert = "redpanda"
 )
@@ -68,11 +70,8 @@ func (r *PkiReconciler) NodeCert() types.NamespacedName {
 
 // OperatorClientCert returns the namespaced name for the client certificate
 // used by the Kubernetes operator
-func (r *PkiReconciler) OperatorClientCert() *types.NamespacedName {
-	if !r.pandaCluster.Spec.Configuration.TLS.RequireClientAuth {
-		return nil
-	}
-	return &types.NamespacedName{Name: r.pandaCluster.Name + "-" + OperatorClientCert, Namespace: r.pandaCluster.Namespace}
+func (r *PkiReconciler) OperatorClientCert() types.NamespacedName {
+	return types.NamespacedName{Name: r.pandaCluster.Name + "-" + OperatorClientCert, Namespace: r.pandaCluster.Namespace}
 }
 
 // Ensure will manage PKI for redpanda.vectorized.io custom resource
@@ -83,58 +82,65 @@ func (r *PkiReconciler) Ensure(ctx context.Context) error {
 
 	toApply := []resources.Resource{}
 
-	issuerRef := r.pandaCluster.Spec.Configuration.TLS.IssuerRef
-	// No cluster issuer is provided.
-	if issuerRef == nil {
-		selfSignedKey := r.issuerNamespacedName("selfsigned-issuer")
-		selfSignedIssuer := NewIssuer(r.Client,
-			r.scheme,
-			r.pandaCluster,
-			selfSignedKey,
-			"",
-			r.logger)
+	externalIssuerRef := r.pandaCluster.Spec.Configuration.TLS.IssuerRef
 
-		rootCertificateKey := r.certNamespacedName("root-certificate")
-		rootCertificate := NewCertificate(r.Client,
-			r.scheme,
-			r.pandaCluster,
-			rootCertificateKey,
-			selfSignedIssuer.objRef(),
-			r.fqdn,
-			true,
-			r.logger)
+	selfSignedKey := r.issuerNamespacedName("selfsigned-issuer")
+	selfSignedIssuer := NewIssuer(r.Client,
+		r.scheme,
+		r.pandaCluster,
+		selfSignedKey,
+		"",
+		r.logger)
 
-		// Kubernetes cluster issuer for Redpanda Operator - key provided in RedpandaCluster CR, else created
-		k8sClusterIssuerKey := r.issuerNamespacedName("root-issuer")
-		k8sClusterIssuer := NewIssuer(r.Client,
-			r.scheme,
-			r.pandaCluster,
-			k8sClusterIssuerKey,
-			rootCertificate.Key().Name,
-			r.logger)
+	rootCertificateKey := r.certNamespacedName("root-certificate")
+	rootCertificate := NewCertificate(r.Client,
+		r.scheme,
+		r.pandaCluster,
+		rootCertificateKey,
+		selfSignedIssuer.objRef(),
+		r.fqdn,
+		true,
+		r.logger)
 
-		issuerRef = k8sClusterIssuer.objRef()
-		toApply = append(toApply, selfSignedIssuer, rootCertificate, k8sClusterIssuer)
-	}
+	// Kubernetes cluster issuer for Redpanda Operator - key provided in RedpandaCluster CR, else created
+	k8sClusterIssuerKey := r.issuerNamespacedName("root-issuer")
+	k8sClusterIssuer := NewIssuer(r.Client,
+		r.scheme,
+		r.pandaCluster,
+		k8sClusterIssuerKey,
+		rootCertificate.Key().Name,
+		r.logger)
+
+	selfSignedIssuerRef := k8sClusterIssuer.objRef()
+	toApply = append(toApply, selfSignedIssuer, rootCertificate, k8sClusterIssuer)
 
 	// TODO: if a cluster issuer was provided, ensure that it comes with a CA (not self-signed). Perhaps create it otherwise.
 
 	// Redpanda cluster certificate for Kafka API - to be provided to each broker
 	certsKey := r.certNamespacedName(RedpandaNodeCert)
-	redpandaCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, issuerRef, r.fqdn, false, r.logger)
+	nodeIssuerRef := selfSignedIssuerRef
+	if externalIssuerRef != nil {
+		// if external issuer is provided, we will use it to generate node certificates
+		nodeIssuerRef = externalIssuerRef
+	}
+	redpandaCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, nodeIssuerRef, r.fqdn, false, r.logger)
 
 	toApply = append(toApply, redpandaCert)
 
 	if r.pandaCluster.Spec.Configuration.TLS.RequireClientAuth {
 		// Certificate for external clients to call the Kafka API on any broker in this Redpanda cluster
 		certsKey = r.certNamespacedName(UserClientCert)
-		externalClientCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, issuerRef, r.fqdn, false, r.logger)
+		externalClientCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, selfSignedIssuerRef, "", false, r.logger)
 
 		// Certificate for operator to call the Kafka API on any broker in this Redpanda cluster
 		certsKey = r.certNamespacedName(OperatorClientCert)
-		internalClientCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, issuerRef, r.fqdn, false, r.logger)
+		internalClientCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, selfSignedIssuerRef, "", false, r.logger)
 
-		toApply = append(toApply, externalClientCert, internalClientCert)
+		// Certificate for admin to call the Kafka API on any broker in this Redpanda cluster
+		certsKey = r.certNamespacedName(AdminClientCert)
+		adminClientCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, selfSignedIssuerRef, "", false, r.logger)
+
+		toApply = append(toApply, externalClientCert, internalClientCert, adminClientCert)
 	}
 
 	for _, res := range toApply {

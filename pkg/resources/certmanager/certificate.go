@@ -11,7 +11,6 @@ package certmanager
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -77,13 +76,8 @@ func (r *CertificateResource) Ensure(ctx context.Context) error {
 	return err
 }
 
-var errorMissingIssuerRef = errors.New("expecting not nil issuerRef")
-
 // obj returns resource managed client.Object
 func (r *CertificateResource) obj() (k8sclient.Object, error) {
-	if r.issuerRef == nil {
-		return nil, fmt.Errorf("%v %w", r.Key(), errorMissingIssuerRef)
-	}
 	objLabels := labels.ForCluster(r.pandaCluster)
 	cert := &cmapiv1.Certificate{
 		ObjectMeta: metav1.ObjectMeta{
@@ -92,13 +86,19 @@ func (r *CertificateResource) obj() (k8sclient.Object, error) {
 			Labels:    objLabels,
 		},
 		Spec: cmapiv1.CertificateSpec{
-			DNSNames: []string{
-				"*." + strings.TrimSuffix(r.fqdn, "."),
-			},
 			SecretName: r.Key().Name,
 			IssuerRef:  *r.issuerRef,
 			IsCA:       r.isCA,
 		},
+	}
+
+	if r.fqdn != "" {
+		cert.Spec.DNSNames = []string{
+			"*." + strings.TrimSuffix(r.fqdn, "."),
+		}
+	} else {
+		// Common name cannot exceed 64 bytes (cert-manager validates).
+		cert.Spec.CommonName = fmt.Sprintf("rp-%s", r.key.Name)
 	}
 
 	err := controllerutil.SetControllerReference(r.pandaCluster, cert, r.scheme)
