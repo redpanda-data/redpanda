@@ -61,7 +61,10 @@ private:
       model::node_id, model::timeout_clock::duration);
 
     ss::future<allocate_id_reply>
-    do_allocate_id(model::timeout_clock::duration timeout);
+      do_allocate_id(model::timeout_clock::duration);
+
+    ss::future<allocate_id_reply>
+      do_allocate_id(ss::shard_id, model::timeout_clock::duration);
 
     ss::future<bool> try_create_id_allocator_topic();
 

@@ -29,6 +29,7 @@ set(srcs
     controller_backend_test.cc
     configuration_change_test.cc
     seq_stm_tests.cc
+    tm_stm_tests.cc
     id_allocator_stm_test.cc)
 
 rp_test(

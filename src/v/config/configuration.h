@@ -74,10 +74,17 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> group_initial_rebalance_delay;
     property<std::chrono::milliseconds> group_new_member_join_timeout;
     property<std::chrono::milliseconds> metadata_dissemination_interval_ms;
+    property<std::chrono::milliseconds> metadata_dissemination_retry_delay_ms;
+    property<int16_t> metadata_dissemination_retries;
+    property<model::violation_recovery_policy> stm_snapshot_recovery_policy;
+    property<std::chrono::milliseconds> seq_sync_timeout_ms;
+    property<std::chrono::milliseconds> tm_sync_timeout_ms;
+    property<model::violation_recovery_policy> tm_violation_recovery_policy;
     property<std::chrono::milliseconds> fetch_reads_debounce_timeout;
     // same as transactional.id.expiration.ms in kafka
     property<std::chrono::milliseconds> transactional_id_expiration_ms;
     property<bool> enable_idempotence;
+    property<bool> enable_transactions;
     // same as delete.retention.ms in kafka
     property<std::chrono::milliseconds> delete_retention_ms;
     property<std::chrono::milliseconds> log_compaction_interval_ms;
@@ -187,6 +194,35 @@ struct convert<config::data_directory_path> {
             pstr = fmt::format("{}{}", home, pstr.erase(0, 1));
         }
         rhs.path = pstr;
+        return true;
+    }
+};
+
+template<>
+struct convert<model::violation_recovery_policy> {
+    using type = model::violation_recovery_policy;
+    static Node encode(const type& rhs) {
+        Node node;
+        if (rhs == model::violation_recovery_policy::crash) {
+            node = "crash";
+        } else if (rhs == model::violation_recovery_policy::best_effort) {
+            node = "best_effort";
+        } else {
+            node = "crash";
+        }
+        return node;
+    }
+    static bool decode(const Node& node, type& rhs) {
+        auto value = node.as<std::string>();
+
+        if (value == "crash") {
+            rhs = model::violation_recovery_policy::crash;
+        } else if (value == "best_effort") {
+            rhs = model::violation_recovery_policy::best_effort;
+        } else {
+            return false;
+        }
+
         return true;
     }
 };
