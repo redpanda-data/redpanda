@@ -27,8 +27,9 @@ iobuf compressor::compress(const iobuf& io, type t) {
         return internal::lz4_frame_compressor::compress(io);
     case type::zstd:
         return internal::zstd_compressor::compress(io);
+    default:
+        vassert(false, "Cannot compress type {}", t);
     }
-    __builtin_unreachable();
 }
 iobuf compressor::uncompress(const iobuf& io, type t) {
     if (io.empty()) {
@@ -47,8 +48,9 @@ iobuf compressor::uncompress(const iobuf& io, type t) {
         return internal::lz4_frame_compressor::uncompress(io);
     case type::zstd:
         return internal::zstd_compressor::uncompress(io);
+    default:
+        vassert(false, "Cannot uncompress type {}", t);
     }
-    __builtin_unreachable();
 }
 
 } // namespace compression

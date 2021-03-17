@@ -33,10 +33,10 @@ package irq
 type Mode string
 
 const (
-	SqSplit	Mode	= "sq-split"
-	Sq	Mode	= "sq"
-	Mq	Mode	= "mq"
-	Default	Mode	= "def"
+	SqSplit Mode = "sq-split"
+	Sq      Mode = "sq"
+	Mq      Mode = "mq"
+	Default Mode = "def"
 )
 
 func ModeFromString(modeString string) Mode {

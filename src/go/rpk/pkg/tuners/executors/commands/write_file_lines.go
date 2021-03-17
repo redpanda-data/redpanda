@@ -20,16 +20,16 @@ import (
 
 type writeFileLinesCommand struct {
 	Command
-	fs	afero.Fs
-	path	string
-	lines	[]string
+	fs    afero.Fs
+	path  string
+	lines []string
 }
 
 func NewWriteFileLinesCmd(fs afero.Fs, path string, lines []string) Command {
 	return &writeFileLinesCommand{
-		fs:	fs,
-		path:	path,
-		lines:	lines,
+		fs:    fs,
+		path:  path,
+		lines: lines,
 	}
 }
 

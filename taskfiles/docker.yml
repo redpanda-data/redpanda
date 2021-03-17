@@ -1,0 +1,18 @@
+version: '3'
+
+tasks:
+  task:
+    desc: run Task within a docker image
+    cmds:
+    - printenv > /tmp/.envfile
+    - sed -i 's/PATH.*//' /tmp/.envfile
+    - |
+      docker run --rm -i {{.DOCKER_RUN_FLAGS}} \
+        --env-file /tmp/.envfile \
+        --volume '{{.PWD}}:{{.PWD}}:Z' \
+        --workdir '{{.PWD}}' \
+        --entrypoint=bin/task \
+        {{.DOCKER_IMAGE}} \
+          {{.TASK_ARGS}}
+    preconditions:
+    - test -f bin/task

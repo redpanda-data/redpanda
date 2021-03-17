@@ -32,6 +32,7 @@
 #include <seastar/core/sstring.hh>
 
 #include <absl/container/flat_hash_map.h>
+#include <absl/container/flat_hash_set.h>
 
 #include <array>
 #include <chrono>
@@ -202,6 +203,9 @@ public:
 
     /// Returns the logs that match a model::topic_namespace
     absl::flat_hash_map<model::ntp, log> get(const model::topic_namespace&);
+
+    /// Returns all ntp's managed by this instance
+    absl::flat_hash_set<model::ntp> get_all_ntps() const;
 
 private:
     using logs_type = absl::flat_hash_map<model::ntp, log_housekeeping_meta>;

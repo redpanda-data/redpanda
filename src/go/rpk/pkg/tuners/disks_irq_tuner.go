@@ -18,18 +18,18 @@ import (
 )
 
 type disksIRQsTuner struct {
-	fs			afero.Fs
-	irqDeviceInfo		irq.DeviceInfo
-	cpuMasks		irq.CpuMasks
-	irqBalanceService	irq.BalanceService
-	irqProcFile		irq.ProcFile
-	blockDevices		disk.BlockDevices
-	mode			irq.Mode
-	baseCPUMask		string
-	directories		[]string
-	devices			[]string
-	numberOfCpus		int
-	executor		executors.Executor
+	fs                afero.Fs
+	irqDeviceInfo     irq.DeviceInfo
+	cpuMasks          irq.CpuMasks
+	irqBalanceService irq.BalanceService
+	irqProcFile       irq.ProcFile
+	blockDevices      disk.BlockDevices
+	mode              irq.Mode
+	baseCPUMask       string
+	directories       []string
+	devices           []string
+	numberOfCpus      int
+	executor          executors.Executor
 }
 
 func NewDiskIRQTuner(
@@ -50,18 +50,18 @@ func NewDiskIRQTuner(
 		mode, cpuMask, dirs, devices)
 
 	return &disksIRQsTuner{
-		fs:			fs,
-		irqDeviceInfo:		irqDeviceInfo,
-		cpuMasks:		cpuMasks,
-		irqBalanceService:	irqBalanceService,
-		irqProcFile:		irqProcFile,
-		blockDevices:		blockDevices,
-		mode:			mode,
-		baseCPUMask:		cpuMask,
-		directories:		dirs,
-		devices:		devices,
-		numberOfCpus:		numberOfCpus,
-		executor:		executor,
+		fs:                fs,
+		irqDeviceInfo:     irqDeviceInfo,
+		cpuMasks:          cpuMasks,
+		irqBalanceService: irqBalanceService,
+		irqProcFile:       irqProcFile,
+		blockDevices:      blockDevices,
+		mode:              mode,
+		baseCPUMask:       cpuMask,
+		directories:       dirs,
+		devices:           devices,
+		numberOfCpus:      numberOfCpus,
+		executor:          executor,
 	}
 }
 

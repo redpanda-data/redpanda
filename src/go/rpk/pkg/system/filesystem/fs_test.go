@@ -17,27 +17,27 @@ import (
 
 func TestDirectoryIsWriteable(t *testing.T) {
 	type args struct {
-		fs	afero.Fs
-		path	string
+		fs   afero.Fs
+		path string
 	}
 	tests := []struct {
-		name	string
-		args	args
-		before	func(fs afero.Fs)
-		want	bool
-		wantErr	bool
+		name    string
+		args    args
+		before  func(fs afero.Fs)
+		want    bool
+		wantErr bool
 	}{
 		{
-			name:	"Shall not return an error when directory is writable",
+			name: "Shall not return an error when directory is writable",
 			args: args{
-				fs:	afero.NewMemMapFs(),
-				path:	"/redpanda/data",
+				fs:   afero.NewMemMapFs(),
+				path: "/redpanda/data",
 			},
 			before: func(fs afero.Fs) {
 
 			},
-			wantErr:	false,
-			want:		true,
+			wantErr: false,
+			want:    true,
 		},
 	}
 	for _, tt := range tests {

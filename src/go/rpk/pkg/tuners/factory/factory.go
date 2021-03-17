@@ -32,28 +32,28 @@ import (
 
 var (
 	allTuners = map[string]func(*tunersFactory, *TunerParams) tuners.Tunable{
-		"disk_irq":			(*tunersFactory).newDiskIRQTuner,
-		"disk_scheduler":		(*tunersFactory).newDiskSchedulerTuner,
-		"disk_nomerges":		(*tunersFactory).newDiskNomergesTuner,
-		"disk_write_cache":		(*tunersFactory).newGcpWriteCacheTuner,
-		"fstrim":			(*tunersFactory).newFstrimTuner,
-		"net":				(*tunersFactory).newNetworkTuner,
-		"cpu":				(*tunersFactory).newCpuTuner,
-		"aio_events":			(*tunersFactory).newMaxAIOEventsTuner,
-		"clocksource":			(*tunersFactory).newClockSourceTuner,
-		"swappiness":			(*tunersFactory).newSwappinessTuner,
-		"transparent_hugepages":	(*tunersFactory).newTHPTuner,
-		"coredump":			(*tunersFactory).newCoredumpTuner,
+		"disk_irq":              (*tunersFactory).newDiskIRQTuner,
+		"disk_scheduler":        (*tunersFactory).newDiskSchedulerTuner,
+		"disk_nomerges":         (*tunersFactory).newDiskNomergesTuner,
+		"disk_write_cache":      (*tunersFactory).newGcpWriteCacheTuner,
+		"fstrim":                (*tunersFactory).newFstrimTuner,
+		"net":                   (*tunersFactory).newNetworkTuner,
+		"cpu":                   (*tunersFactory).newCpuTuner,
+		"aio_events":            (*tunersFactory).newMaxAIOEventsTuner,
+		"clocksource":           (*tunersFactory).newClockSourceTuner,
+		"swappiness":            (*tunersFactory).newSwappinessTuner,
+		"transparent_hugepages": (*tunersFactory).newTHPTuner,
+		"coredump":              (*tunersFactory).newCoredumpTuner,
 	}
 )
 
 type TunerParams struct {
-	Mode		string
-	CpuMask		string
-	RebootAllowed	bool
-	Disks		[]string
-	Directories	[]string
-	Nics		[]string
+	Mode          string
+	CpuMask       string
+	RebootAllowed bool
+	Disks         []string
+	Directories   []string
+	Nics          []string
 }
 
 type TunersFactory interface {
@@ -61,16 +61,16 @@ type TunersFactory interface {
 }
 
 type tunersFactory struct {
-	fs			afero.Fs
-	conf			config.Config
-	irqDeviceInfo		irq.DeviceInfo
-	cpuMasks		irq.CpuMasks
-	irqBalanceService	irq.BalanceService
-	irqProcFile		irq.ProcFile
-	blockDevices		disk.BlockDevices
-	proc			os.Proc
-	grub			system.Grub
-	executor		executors.Executor
+	fs                afero.Fs
+	conf              config.Config
+	irqDeviceInfo     irq.DeviceInfo
+	cpuMasks          irq.CpuMasks
+	irqBalanceService irq.BalanceService
+	irqProcFile       irq.ProcFile
+	blockDevices      disk.BlockDevices
+	proc              os.Proc
+	grub              system.Grub
+	executor          executors.Executor
 }
 
 func NewDirectExecutorTunersFactory(
@@ -103,16 +103,16 @@ func newTunersFactory(
 	timeout time.Duration,
 ) TunersFactory {
 	return &tunersFactory{
-		fs:			fs,
-		conf:			conf,
-		irqProcFile:		irqProcFile,
-		irqDeviceInfo:		irqDeviceInfo,
-		cpuMasks:		irq.NewCpuMasks(fs, hwloc.NewHwLocCmd(proc, timeout), executor),
-		irqBalanceService:	irq.NewBalanceService(fs, proc, executor, timeout),
-		blockDevices:		disk.NewBlockDevices(fs, irqDeviceInfo, irqProcFile, proc, timeout),
-		grub:			system.NewGrub(os.NewCommands(proc), proc, fs, executor, timeout),
-		proc:			proc,
-		executor:		executor,
+		fs:                fs,
+		conf:              conf,
+		irqProcFile:       irqProcFile,
+		irqDeviceInfo:     irqDeviceInfo,
+		cpuMasks:          irq.NewCpuMasks(fs, hwloc.NewHwLocCmd(proc, timeout), executor),
+		irqBalanceService: irq.NewBalanceService(fs, proc, executor, timeout),
+		blockDevices:      disk.NewBlockDevices(fs, irqDeviceInfo, irqProcFile, proc, timeout),
+		grub:              system.NewGrub(os.NewCommands(proc), proc, fs, executor, timeout),
+		proc:              proc,
+		executor:          executor,
 	}
 }
 

@@ -21,12 +21,12 @@ import (
 
 func NewListCommand(admin func() (sarama.ClusterAdmin, error)) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:		"list",
-		Aliases:	[]string{"ls"},
-		Short:		"List topics",
-		Args:		cobra.ExactArgs(0),
+		Use:     "list",
+		Aliases: []string{"ls"},
+		Short:   "List topics",
+		Args:    cobra.ExactArgs(0),
 		// We don't want Cobra printing CLI usage help if the error isn't about CLI usage.
-		SilenceUsage:	true,
+		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			adm, err := admin()
 			if err != nil {
@@ -46,7 +46,7 @@ func NewListCommand(admin func() (sarama.ClusterAdmin, error)) *cobra.Command {
 
 			sortedTopics := make(
 				[]struct {
-					name	string
+					name string
 					sarama.TopicDetail
 				}, len(topics))
 

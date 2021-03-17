@@ -77,12 +77,12 @@ func TestGCPCacheTunerSupported(t *testing.T) {
 		vendor vendor.Vendor
 	}
 	tests := []struct {
-		name	string
-		args	args
-		want	bool
+		name string
+		args args
+		want bool
 	}{
 		{
-			name:	"should be supported on GCP",
+			name: "should be supported on GCP",
 			args: args{
 				vendor: &vendorMock{
 					init: func() (vendor.InitializedVendor, error) {
@@ -92,10 +92,10 @@ func TestGCPCacheTunerSupported(t *testing.T) {
 					},
 				},
 			},
-			want:	true,
+			want: true,
 		},
 		{
-			name:	"should not be supported on AWS",
+			name: "should not be supported on AWS",
 			args: args{
 				vendor: &vendorMock{
 					init: func() (vendor.InitializedVendor, error) {
@@ -105,10 +105,10 @@ func TestGCPCacheTunerSupported(t *testing.T) {
 					},
 				},
 			},
-			want:	false,
+			want: false,
 		},
 		{
-			name:	"should not be supported on not cloud deployments",
+			name: "should not be supported on not cloud deployments",
 			args: args{
 				vendor: &vendorMock{
 					init: func() (vendor.InitializedVendor, error) {
@@ -116,7 +116,7 @@ func TestGCPCacheTunerSupported(t *testing.T) {
 					},
 				},
 			},
-			want:	false,
+			want: false,
 		},
 	}
 	for _, tt := range tests {

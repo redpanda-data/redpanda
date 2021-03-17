@@ -32,10 +32,10 @@ func CreateCoprocessorTopic(admin sarama.ClusterAdmin) error {
 	configEntry["cleanup.policy"] = &compact
 	configEntry["compression.type"] = &compressionType
 	detail := sarama.TopicDetail{
-		NumPartitions:		1,
-		ReplicationFactor:	replicationFactor,
-		ReplicaAssignment:	nil,
-		ConfigEntries:		configEntry,
+		NumPartitions:     1,
+		ReplicationFactor: replicationFactor,
+		ReplicaAssignment: nil,
+		ConfigEntries:     configEntry,
 	}
 	err = admin.CreateTopic(kafka.CoprocessorTopic, &detail, false)
 	if err != nil {
@@ -65,49 +65,49 @@ func CreateDeployMsg(
 	shaValue := sha256.Sum256(content)
 	var headers = []sarama.RecordHeader{
 		{
-			Key:	[]byte("action"),
-			Value:	[]byte("deploy"),
+			Key:   []byte("action"),
+			Value: []byte("deploy"),
 		}, {
-			Key:	[]byte("description"),
-			Value:	[]byte(description),
+			Key:   []byte("description"),
+			Value: []byte(description),
 		}, {
-			Key:	[]byte("file_name"),
-			Value:	[]byte(name),
+			Key:   []byte("file_name"),
+			Value: []byte(name),
 		}, {
-			Key:	[]byte("sha256"),
-			Value:	shaValue[:],
+			Key:   []byte("sha256"),
+			Value: shaValue[:],
 		},
 	}
 	id := xxhash.Sum64([]byte(name))
 	binaryId := make([]byte, 8)
 	binary.LittleEndian.PutUint64(binaryId, id)
 	return sarama.ProducerMessage{
-		Key:		sarama.ByteEncoder(binaryId),
-		Topic:		kafka.CoprocessorTopic,
-		Value:		sarama.ByteEncoder(content),
-		Headers:	headers,
+		Key:     sarama.ByteEncoder(binaryId),
+		Topic:   kafka.CoprocessorTopic,
+		Value:   sarama.ByteEncoder(content),
+		Headers: headers,
 	}
 }
 
 func CreateRemoveMsg(name string) sarama.ProducerMessage {
 	var headers = []sarama.RecordHeader{
 		{
-			Key:	[]byte("action"),
-			Value:	[]byte("remove"),
+			Key:   []byte("action"),
+			Value: []byte("remove"),
 		}, {
-			Key:	[]byte("file_name"),
-			Value:	[]byte(name),
+			Key:   []byte("file_name"),
+			Value: []byte(name),
 		},
 	}
 	id := xxhash.Sum64([]byte(name))
 	binaryId := make([]byte, 8)
 	binary.LittleEndian.PutUint64(binaryId, id)
 	return sarama.ProducerMessage{
-		Key:	sarama.ByteEncoder(binaryId),
-		Topic:	kafka.CoprocessorTopic,
+		Key:   sarama.ByteEncoder(binaryId),
+		Topic: kafka.CoprocessorTopic,
 		// create empty message, the remove command doesn't need
 		// information on message, just a key value
-		Value:		sarama.ByteEncoder([]byte{}),
-		Headers:	headers,
+		Value:   sarama.ByteEncoder([]byte{}),
+		Headers: headers,
 	}
 }

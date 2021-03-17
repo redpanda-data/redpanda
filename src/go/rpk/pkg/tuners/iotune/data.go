@@ -18,11 +18,11 @@ import (
 )
 
 type IoProperties struct {
-	MountPoint	string	`yaml:"mountpoint"`
-	ReadIops	int64	`yaml:"read_iops"`
-	ReadBandwidth	int64	`yaml:"read_bandwidth"`
-	WriteIops	int64	`yaml:"write_iops"`
-	WriteBandwidth	int64	`yaml:"write_bandwidth"`
+	MountPoint     string `yaml:"mountpoint"`
+	ReadIops       int64  `yaml:"read_iops"`
+	ReadBandwidth  int64  `yaml:"read_bandwidth"`
+	WriteIops      int64  `yaml:"write_iops"`
+	WriteBandwidth int64  `yaml:"write_bandwidth"`
 }
 
 type io = IoProperties

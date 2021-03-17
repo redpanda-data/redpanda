@@ -41,20 +41,20 @@ func NewGrub(
 	timeout time.Duration,
 ) Grub {
 	return &grub{
-		commands:	commands,
-		proc:		proc,
-		fs:		fs,
-		executor:	executor,
-		timeout:	timeout,
+		commands: commands,
+		proc:     proc,
+		fs:       fs,
+		executor: executor,
+		timeout:  timeout,
 	}
 }
 
 type grub struct {
-	commands	os.Commands
-	proc		os.Proc
-	fs		afero.Fs
-	executor	executors.Executor
-	timeout		time.Duration
+	commands os.Commands
+	proc     os.Proc
+	fs       afero.Fs
+	executor executors.Executor
+	timeout  time.Duration
 }
 
 func (g *grub) CheckVersion() error {

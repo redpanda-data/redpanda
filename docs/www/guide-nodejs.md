@@ -1,4 +1,4 @@
-# Node.js Setup
+# Using NodeJS with Redpanda
 
 If you haven't already, install Node by following the appropriate steps for
 your OS [here](https://nodejs.org/en/download/package-manager/).
@@ -8,6 +8,7 @@ that although Redpanda is relatively new, you can leverage the countless client
 libraries created for Kafka® (if you find something that is not supported,
 reach out to our team on our [slack](https://vectorized.io/slack)).
 In this case we will use [kafkajs](https://kafka.js.org/).
+
 ```bash
 #create and enter the project folder
 mkdir redpanda-node

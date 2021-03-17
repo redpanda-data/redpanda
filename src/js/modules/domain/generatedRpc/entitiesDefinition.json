@@ -231,7 +231,7 @@
         },
         {
           "name": "resultRecordBatch",
-          "type": "Array<RecordBatch>"
+          "type": "Optional<Array<RecordBatch>>"
         }
       ]
     },
@@ -347,6 +347,15 @@
     },
     {
       "className": "EmptyRequest",
+      "fields": [
+        {
+          "name": "empty",
+          "type": "int8"
+        }
+      ]
+    },
+    {
+      "className": "EmptyResponse",
       "fields": [
         {
           "name": "empty",

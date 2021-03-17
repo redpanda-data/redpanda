@@ -18,71 +18,71 @@ import (
 
 func Test_equalityChecker_Check(t *testing.T) {
 	type fields struct {
-		getCurrent	func() (interface{}, error)
-		desc		string
-		severity	Severity
-		required	interface{}
+		getCurrent func() (interface{}, error)
+		desc       string
+		severity   Severity
+		required   interface{}
 	}
 	tests := []struct {
-		name		string
-		getCurrent	func() (interface{}, error)
-		desc		string
-		severity	Severity
-		required	interface{}
-		want		*CheckResult
+		name       string
+		getCurrent func() (interface{}, error)
+		desc       string
+		severity   Severity
+		required   interface{}
+		want       *CheckResult
 	}{
 		{
-			name:		"Shall return valid result when required == current",
-			desc:		"Some desc",
-			getCurrent:	func() (interface{}, error) { return "STR_1", nil },
-			required:	"STR_1",
-			severity:	Warning,
+			name:       "Shall return valid result when required == current",
+			desc:       "Some desc",
+			getCurrent: func() (interface{}, error) { return "STR_1", nil },
+			required:   "STR_1",
+			severity:   Warning,
 			want: &CheckResult{
-				IsOk:		true,
-				Current:	"STR_1",
-				Required:	"STR_1",
-				Severity:	Warning,
-				Desc:		"Some desc",
+				IsOk:     true,
+				Current:  "STR_1",
+				Required: "STR_1",
+				Severity: Warning,
+				Desc:     "Some desc",
 			},
 		},
 		{
-			name:		"Shall return valid result when required == current for bool",
-			desc:		"Some desc",
-			getCurrent:	func() (interface{}, error) { return true, nil },
-			required:	true,
-			severity:	Warning,
+			name:       "Shall return valid result when required == current for bool",
+			desc:       "Some desc",
+			getCurrent: func() (interface{}, error) { return true, nil },
+			required:   true,
+			severity:   Warning,
 			want: &CheckResult{
-				IsOk:		true,
-				Current:	"true",
-				Required:	"true",
-				Severity:	Warning,
-				Desc:		"Some desc",
+				IsOk:     true,
+				Current:  "true",
+				Required: "true",
+				Severity: Warning,
+				Desc:     "Some desc",
 			},
 		},
 		{
-			name:		"Shall return not valid result when required != current",
-			desc:		"Some desc",
-			getCurrent:	func() (interface{}, error) { return "STR_1", nil },
-			required:	"STR_2",
-			severity:	Warning,
+			name:       "Shall return not valid result when required != current",
+			desc:       "Some desc",
+			getCurrent: func() (interface{}, error) { return "STR_1", nil },
+			required:   "STR_2",
+			severity:   Warning,
 			want: &CheckResult{
-				IsOk:		false,
-				Current:	"STR_1",
-				Required:	"STR_2",
-				Severity:	Warning,
-				Desc:		"Some desc",
+				IsOk:     false,
+				Current:  "STR_1",
+				Required: "STR_2",
+				Severity: Warning,
+				Desc:     "Some desc",
 			},
 		},
 		{
-			name:		"Shall return result with an error when getCurrent returns an error",
-			getCurrent:	func() (interface{}, error) { return "", errors.New("e") },
-			required:	"STR_2",
-			severity:	Warning,
+			name:       "Shall return result with an error when getCurrent returns an error",
+			getCurrent: func() (interface{}, error) { return "", errors.New("e") },
+			required:   "STR_2",
+			severity:   Warning,
 			want: &CheckResult{
-				IsOk:		false,
-				Err:		errors.New("e"),
-				Required:	"STR_2",
-				Severity:	Warning,
+				IsOk:     false,
+				Err:      errors.New("e"),
+				Required: "STR_2",
+				Severity: Warning,
 			},
 		},
 	}

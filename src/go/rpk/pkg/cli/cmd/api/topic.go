@@ -23,8 +23,8 @@ func NewTopicCommand(
 	admin func() (sarama.ClusterAdmin, error),
 ) *cobra.Command {
 	root := &cobra.Command{
-		Use:	"topic",
-		Short:	"Create, delete or update topics",
+		Use:   "topic",
+		Short: "Create, delete or update topics",
 	}
 	root.AddCommand(createTopic(admin))
 	root.AddCommand(deleteTopic(admin))

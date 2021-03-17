@@ -62,8 +62,7 @@ FIXTURE_TEST(pandaproxy_consumer_group, pandaproxy_test_fixture) {
     auto client = make_client();
 
     auto advertised_address{unresolved_address{"proxy.example.com", 8080}};
-    pp::shard_local_cfg().advertised_pandaproxy_api.set_value(
-      advertised_address);
+    set_config("advertised_pandaproxy_api", advertised_address);
 
     kafka::group_id group_id{"test_group"};
     kafka::member_id member_id{kafka::no_member};
@@ -80,7 +79,7 @@ FIXTURE_TEST(pandaproxy_consumer_group, pandaproxy_test_fixture) {
         req_body_buf.append(req_body.data(), req_body.size());
         auto res = http_request(
           client,
-          fmt::format("/consumers/{})", group_id()),
+          fmt::format("/consumers/{}", group_id()),
           std::move(req_body_buf));
         BOOST_REQUIRE_EQUAL(
           res.headers.result(), boost::beast::http::status::ok);
@@ -92,9 +91,10 @@ FIXTURE_TEST(pandaproxy_consumer_group, pandaproxy_test_fixture) {
         BOOST_REQUIRE_EQUAL(
           res_data.base_uri,
           fmt::format(
-            "http://{}:{}/consumers/{}",
+            "http://{}:{}/consumers/{}/instances/{}",
             advertised_address.host(),
             advertised_address.port(),
+            group_id(),
             member_id()));
         BOOST_REQUIRE_EQUAL(
           res.headers.at(boost::beast::http::field::content_type),

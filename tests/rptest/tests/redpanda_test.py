@@ -28,6 +28,7 @@ class RedpandaTest(Test):
                  num_brokers=3,
                  extra_rp_conf=dict(),
                  topics=None,
+                 enable_pp=False,
                  log_level='info'):
         super(RedpandaTest, self).__init__(test_context)
 
@@ -35,6 +36,7 @@ class RedpandaTest(Test):
                                         num_brokers,
                                         KafkaCliTools,
                                         extra_rp_conf=extra_rp_conf,
+                                        enable_pp=enable_pp,
                                         topics=self.topics,
                                         log_level=log_level)
 

@@ -20,38 +20,38 @@ func TestDataFor(t *testing.T) {
 	type args struct {
 	}
 	tests := []struct {
-		name		string
-		vendor		string
-		vm		string
-		storage		string
-		expectedErrMsg	string
+		name           string
+		vendor         string
+		vm             string
+		storage        string
+		expectedErrMsg string
 	}{
 		{
-			name:		"it shouldn't fail for supported setups",
-			vendor:		"aws",
-			vm:		"i3.large",
-			storage:	"default",
+			name:    "it shouldn't fail for supported setups",
+			vendor:  "aws",
+			vm:      "i3.large",
+			storage: "default",
 		},
 		{
-			name:		"it should return an error for unsupported vendors",
-			vendor:		"unsupported",
-			vm:		"i3.large",
-			storage:	"default",
-			expectedErrMsg:	"no iotune data found for vendor 'unsupported'",
+			name:           "it should return an error for unsupported vendors",
+			vendor:         "unsupported",
+			vm:             "i3.large",
+			storage:        "default",
+			expectedErrMsg: "no iotune data found for vendor 'unsupported'",
 		},
 		{
-			name:		"it should return an error for unsupported vms",
-			vendor:		"aws",
-			vm:		"unsupported",
-			storage:	"default",
-			expectedErrMsg:	"no iotune data found for VM 'unsupported', of vendor 'aws'",
+			name:           "it should return an error for unsupported vms",
+			vendor:         "aws",
+			vm:             "unsupported",
+			storage:        "default",
+			expectedErrMsg: "no iotune data found for VM 'unsupported', of vendor 'aws'",
 		},
 		{
-			name:		"it should return an error for unsupported storage",
-			vendor:		"aws",
-			vm:		"i3.large",
-			storage:	"unsupported",
-			expectedErrMsg:	"no iotune data found for storage 'unsupported' in VM 'i3.large', of vendor 'aws'",
+			name:           "it should return an error for unsupported storage",
+			vendor:         "aws",
+			vm:             "i3.large",
+			storage:        "unsupported",
+			expectedErrMsg: "no iotune data found for storage 'unsupported' in VM 'i3.large', of vendor 'aws'",
 		},
 	}
 

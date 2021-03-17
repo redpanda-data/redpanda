@@ -24,16 +24,16 @@ import (
 
 func TestGrubAddCommandLineOptions(t *testing.T) {
 	tests := []struct {
-		name	string
-		before	func(afero.Fs, []string)
-		grubCfg	[]string
-		opt	[]string
-		wantErr	bool
-		check	func(afero.Fs, []string)
+		name    string
+		before  func(afero.Fs, []string)
+		grubCfg []string
+		opt     []string
+		wantErr bool
+		check   func(afero.Fs, []string)
 	}{
 		{
-			name:	"Shall add new value only flag to GRUB cfg",
-			before:	persistGrubConfig,
+			name:   "Shall add new value only flag to GRUB cfg",
+			before: persistGrubConfig,
 			grubCfg: []string{
 				"GRUB_TIMEOUT=5",
 				"GRUB_DISTRIBUTOR=\"$(sed 's, release .*$,,g' /etc/system-release)\"",
@@ -42,8 +42,8 @@ func TestGrubAddCommandLineOptions(t *testing.T) {
 				"GRUB_CMDLINE_LINUX=\"resume=/dev/mapper/fedora-swap rd.lvm.lv=fedora/root\"",
 				"GRUB_DISABLE_SUBMENU=true",
 			},
-			opt:		[]string{"noht"},
-			wantErr:	false,
+			opt:     []string{"noht"},
+			wantErr: false,
 			check: func(fs afero.Fs, grubCfg []string) {
 				md5 := calcMd5(grubCfg)
 				backupName := fmt.Sprintf("/etc/default/grub.vectorized.%s.bk", md5)
@@ -58,8 +58,8 @@ func TestGrubAddCommandLineOptions(t *testing.T) {
 			},
 		},
 		{
-			name:	"Shall add new key/value pair flag to GRUB cfg",
-			before:	persistGrubConfig,
+			name:   "Shall add new key/value pair flag to GRUB cfg",
+			before: persistGrubConfig,
 			grubCfg: []string{
 				"GRUB_TIMEOUT=5",
 				"GRUB_DISTRIBUTOR=\"$(sed 's, release .*$,,g' /etc/system-release)\"",
@@ -68,8 +68,8 @@ func TestGrubAddCommandLineOptions(t *testing.T) {
 				"GRUB_CMDLINE_LINUX=\"resume=/dev/mapper/fedora-swap rd.lvm.lv=fedora/root\"",
 				"GRUB_DISABLE_SUBMENU=true",
 			},
-			opt:		[]string{"some_opt=2"},
-			wantErr:	false,
+			opt:     []string{"some_opt=2"},
+			wantErr: false,
 			check: func(fs afero.Fs, grubCfg []string) {
 				md5 := calcMd5(grubCfg)
 				backupName := fmt.Sprintf("/etc/default/grub.vectorized.%s.bk", md5)
@@ -83,8 +83,8 @@ func TestGrubAddCommandLineOptions(t *testing.T) {
 			},
 		},
 		{
-			name:	"Shall not add the same value only flag twice",
-			before:	persistGrubConfig,
+			name:   "Shall not add the same value only flag twice",
+			before: persistGrubConfig,
 			grubCfg: []string{
 				"GRUB_TIMEOUT=5",
 				"GRUB_DISTRIBUTOR=\"$(sed 's, release .*$,,g' /etc/system-release)\"",
@@ -93,8 +93,8 @@ func TestGrubAddCommandLineOptions(t *testing.T) {
 				"GRUB_CMDLINE_LINUX=\"resume=/dev/mapper/fedora-swap noht rd.lvm.lv=fedora/root\"",
 				"GRUB_DISABLE_SUBMENU=true",
 			},
-			opt:		[]string{"noht"},
-			wantErr:	false,
+			opt:     []string{"noht"},
+			wantErr: false,
 			check: func(fs afero.Fs, grubCfg []string) {
 				md5 := calcMd5(grubCfg)
 				backupName := fmt.Sprintf("/etc/default/grub.vectorized.%s.bk", md5)
@@ -107,8 +107,8 @@ func TestGrubAddCommandLineOptions(t *testing.T) {
 			},
 		},
 		{
-			name:	"Shall update the option value if it is already present",
-			before:	persistGrubConfig,
+			name:   "Shall update the option value if it is already present",
+			before: persistGrubConfig,
 			grubCfg: []string{
 				"GRUB_TIMEOUT=5",
 				"GRUB_DISTRIBUTOR=\"$(sed 's, release .*$,,g' /etc/system-release)\"",
@@ -117,8 +117,8 @@ func TestGrubAddCommandLineOptions(t *testing.T) {
 				"GRUB_CMDLINE_LINUX=\"resume=/dev/mapper/fedora-swap some_opt=1 rd.lvm.lv=fedora/root\"",
 				"GRUB_DISABLE_SUBMENU=true",
 			},
-			opt:		[]string{"some_opt=2"},
-			wantErr:	false,
+			opt:     []string{"some_opt=2"},
+			wantErr: false,
 			check: func(fs afero.Fs, grubCfg []string) {
 				md5 := calcMd5(grubCfg)
 				backupName := fmt.Sprintf("/etc/default/grub.vectorized.%s.bk", md5)
@@ -153,28 +153,28 @@ func TestOtionsNeedChange(t *testing.T) {
 	type args struct {
 	}
 	tests := []struct {
-		name		string
-		current		[]string
-		requested	[]string
-		want		bool
+		name      string
+		current   []string
+		requested []string
+		want      bool
 	}{
 		{
-			name:		"shall return false for the same sets of options",
-			current:	[]string{"opt1=val1", "noht", "opt_2=val_2"},
-			requested:	[]string{"opt1=val1", "noht", "opt_2=val_2"},
-			want:		false,
+			name:      "shall return false for the same sets of options",
+			current:   []string{"opt1=val1", "noht", "opt_2=val_2"},
+			requested: []string{"opt1=val1", "noht", "opt_2=val_2"},
+			want:      false,
 		},
 		{
-			name:		"shall return true as flag option differs",
-			current:	[]string{"opt1=val1", "opt_2=val_2"},
-			requested:	[]string{"opt1=val1", "noht", "opt_2=val_2"},
-			want:		true,
+			name:      "shall return true as flag option differs",
+			current:   []string{"opt1=val1", "opt_2=val_2"},
+			requested: []string{"opt1=val1", "noht", "opt_2=val_2"},
+			want:      true,
 		},
 		{
-			name:		"shall return true as key/value option differes",
-			current:	[]string{"opt1=val1", "noht", "opt_2=val_2"},
-			requested:	[]string{"opt1=val1", "noht", "opt_2=val_3"},
-			want:		true,
+			name:      "shall return true as key/value option differes",
+			current:   []string{"opt1=val1", "noht", "opt_2=val_2"},
+			requested: []string{"opt1=val1", "noht", "opt_2=val_3"},
+			want:      true,
 		},
 	}
 	for _, tt := range tests {

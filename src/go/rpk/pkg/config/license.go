@@ -21,11 +21,11 @@ import (
 )
 
 type LicenseKey struct {
-	Organization	string	`json:"o"`
-	ExpirationYear	uint16	`json:"y"`
-	ExpirationMonth	uint8	`json:"m"`
-	ExpirationDay	uint8	`json:"d"`
-	Checksum	uint32	`json:"c"`
+	Organization    string `json:"o"`
+	ExpirationYear  uint16 `json:"y"`
+	ExpirationMonth uint8  `json:"m"`
+	ExpirationDay   uint8  `json:"d"`
+	Checksum        uint32 `json:"c"`
 }
 
 // Checks the key and prints a warning if the key is invalid.

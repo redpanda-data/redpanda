@@ -23,30 +23,30 @@ import (
 
 func TestInteractive(t *testing.T) {
 	tests := []struct {
-		name		string
-		input		string
-		expectedOutput	string
-		expectErr	bool
+		name           string
+		input          string
+		expectedOutput string
+		expectErr      bool
 	}{
 		{
-			name:	"it should return if the user enters 'n'",
-			input:	"n\n",
+			name:  "it should return if the user enters 'n'",
+			input: "n\n",
 		},
 		{
-			name:		"it should exit if the user enters 'q'",
-			input:		"q\n",
-			expectedOutput:	"user exited",
-			expectErr:	true,
+			name:           "it should exit if the user enters 'q'",
+			input:          "q\n",
+			expectedOutput: "user exited",
+			expectErr:      true,
 		},
 		{
-			name:		"it should prompt again if the user enters something else",
-			input:		"what\ny\n",
-			expectedOutput:	"Unrecognized option 'what'",
+			name:           "it should prompt again if the user enters something else",
+			input:          "what\ny\n",
+			expectedOutput: "Unrecognized option 'what'",
 		},
 		{
-			name:		"it should prompt again if the user just hits 'return'",
-			input:		"\ny\n",
-			expectedOutput:	"Please choose an option",
+			name:           "it should prompt again if the user just hits 'return'",
+			input:          "\ny\n",
+			expectedOutput: "Please choose an option",
 		},
 	}
 

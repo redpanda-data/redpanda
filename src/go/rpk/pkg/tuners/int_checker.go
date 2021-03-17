@@ -20,22 +20,22 @@ func NewIntChecker(
 	getCurrent func() (int, error),
 ) Checker {
 	return &intChecker{
-		id:		id,
-		desc:		desc,
-		check:		check,
-		renderRequired:	renderRequired,
-		getCurrent:	getCurrent,
-		severity:	severity,
+		id:             id,
+		desc:           desc,
+		check:          check,
+		renderRequired: renderRequired,
+		getCurrent:     getCurrent,
+		severity:       severity,
 	}
 }
 
 type intChecker struct {
-	id		CheckerID
-	desc		string
-	check		func(int) bool
-	renderRequired	func() string
-	getCurrent	func() (int, error)
-	severity	Severity
+	id             CheckerID
+	desc           string
+	check          func(int) bool
+	renderRequired func() string
+	getCurrent     func() (int, error)
+	severity       Severity
 }
 
 func (c *intChecker) Id() CheckerID {
@@ -56,10 +56,10 @@ func (c *intChecker) GetRequiredAsString() string {
 
 func (c *intChecker) Check() *CheckResult {
 	res := &CheckResult{
-		CheckerId:	c.Id(),
-		Desc:		c.GetDesc(),
-		Severity:	c.GetSeverity(),
-		Required:	c.GetRequiredAsString(),
+		CheckerId: c.Id(),
+		Desc:      c.GetDesc(),
+		Severity:  c.GetSeverity(),
+		Required:  c.GetRequiredAsString(),
 	}
 	current, err := c.getCurrent()
 	if err != nil {

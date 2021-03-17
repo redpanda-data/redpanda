@@ -280,7 +280,8 @@ public:
         return false;
     }
     model::compression compression() const {
-        switch (maskable_value() & compression_mask) {
+        auto value = maskable_value() & compression_mask;
+        switch (value) {
         case 0:
             return compression::none;
         case 1:
@@ -291,8 +292,10 @@ public:
             return compression::lz4;
         case 4:
             return compression::zstd;
+        default:
+            throw std::runtime_error(
+              fmt::format("Unknown compression value: {}", value));
         }
-        throw std::runtime_error("Unknown compression value");
     }
 
     model::timestamp_type timestamp_type() const {

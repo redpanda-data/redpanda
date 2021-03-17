@@ -18,8 +18,8 @@ import (
 
 func NewDebugCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	command := &cobra.Command{
-		Use:	"debug",
-		Short:	"Debug the local Redpanda process",
+		Use:   "debug",
+		Short: "Debug the local Redpanda process",
 	}
 	command.AddCommand(debug.NewInfoCommand(fs, mgr))
 

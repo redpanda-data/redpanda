@@ -437,10 +437,8 @@ ss::future<read_result> read_from_ntp(
     }
 
     auto high_watermark = partition->high_watermark();
-    auto max_offset = high_watermark < model::offset(0)
-                        ? model::offset(0)
-
-                        : high_watermark + model::offset(1);
+    auto max_offset = high_watermark < model::offset(0) ? model::offset(0)
+                                                        : high_watermark;
     if (
       config.start_offset < partition->start_offset()
       || config.start_offset > max_offset) {

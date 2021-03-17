@@ -1,6 +1,7 @@
 
 # Image URL to use all building/pushing image targets
 IMG ?= vectorized/redpanda-operator:latest
+CONFIGURATOR_IMG ?= vectorized/configurator:latest
 # Produce CRDs that work back to Kubernetes 1.11 (no version conversion)
 CRD_OPTIONS ?= "crd:trivialVersions=true,preserveUnknownFields=false"
 
@@ -78,13 +79,26 @@ docker-build: test
 docker-push:
 	docker push ${IMG}
 
+# Build the docker image
+docker-build-configurator:
+	docker build -f cmd/configurator/Dockerfile -t ${CONFIGURATOR_IMG} ../
+
+# Push the docker image
+docker-push-configurator:
+	docker push ${CONFIGURATOR_IMG}
+
 # Preload controller image to kind cluster
 push-to-kind:
 	kind load docker-image ${IMG}
+	kind load docker-image ${CONFIGURATOR_IMG}
 
 # Execute end to end tests
-e2e-tests: kuttl docker-build
+e2e-tests: kuttl docker-build docker-build-configurator
 	$(KUTTL) test $(TEST_ONLY_FLAG)
+
+# Execute end to end tests using helm as an installation
+helm-e2e-tests: kuttl docker-build docker-build-configurator
+	$(KUTTL) test --config kuttl-helm-test.yaml $(TEST_ONLY_FLAG)
 
 # Download controller-gen locally if necessary
 CONTROLLER_GEN = $(shell pwd)/bin/controller-gen
@@ -99,7 +113,7 @@ kuttl:
 # Download crlfmt locally if necessary
 CRLFMT = $(shell pwd)/bin/crlfmt
 crlfmt:
-	$(call go-get-tool,$(CRLFMT),github.com/cockroachdb/crlfmt@v0.0.0-20200923085322-b9cb16fe9a33)
+	$(call go-get-tool,$(CRLFMT),github.com/cockroachdb/crlfmt@v0.0.0-20210128092314-b3eff0b87c79)
 
 # Download kustomize locally if necessary
 KUSTOMIZE = $(shell pwd)/bin/kustomize

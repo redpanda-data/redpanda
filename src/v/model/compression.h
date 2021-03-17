@@ -13,12 +13,25 @@
 
 #include <cstdint>
 #include <iosfwd>
+#include <limits>
+#include <type_traits>
 
 namespace model {
 
-/// https://kafka.apache.org/documentation/#compression.type
-/// we use the same enum as kafka
-///
+/*
+ * This enum serves three purposes:
+ *
+ * 1. It is used represent batch compression types (eg none, lz4)
+ * 2. It is used represent compression policies (eg producer)
+ *
+ * And (3) the enum values for batch compression types must be identical to
+ * those values used in the encoding of kafka batch attributes.
+ *
+ *    https://kafka.apache.org/documentation/#compression.type
+ *
+ * Compression types like `producer` have values outside the range of values
+ * used in any wire encoded representation and are only used internally.
+ */
 enum class compression : uint8_t {
     none = 0,
     gzip = 1,
@@ -27,11 +40,42 @@ enum class compression : uint8_t {
     // google snappy
     snappy = 2,
     lz4 = 3,
-    zstd = 4
+    zstd = 4,
+
+    // values below must not intersect with the value range used to encode
+    // compression codecs in kafka batch attributes.
+    producer = std::numeric_limits<std::underlying_type_t<compression>>::max()
 };
 
 /// operators needed for boost::lexical_cast<compression>
-std::ostream& operator<<(std::ostream&, const compression&);
+/// inline to prevent library depdency with the v::compression module
+inline std::ostream& operator<<(std::ostream& os, const compression& c) {
+    os << "{compression: ";
+    switch (c) {
+    case compression::none:
+        os << "none";
+        break;
+    case compression::gzip:
+        os << "gzip";
+        break;
+    case compression::snappy:
+        os << "snappy";
+        break;
+    case compression::lz4:
+        os << "lz4";
+        break;
+    case compression::zstd:
+        os << "zstd";
+        break;
+    case compression::producer:
+        os << "producer";
+        break;
+    default:
+        os << "ERROR";
+        break;
+    }
+    return os << "}";
+}
 std::istream& operator>>(std::istream&, compression&);
 
 } // namespace model

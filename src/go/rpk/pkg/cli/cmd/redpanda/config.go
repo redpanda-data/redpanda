@@ -23,8 +23,8 @@ const configFileFlag = "config"
 
 func NewConfigCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	root := &cobra.Command{
-		Use:	"config <command>",
-		Short:	"Edit configuration",
+		Use:   "config <command>",
+		Short: "Edit configuration",
 	}
 	root.AddCommand(set(fs, mgr))
 	root.AddCommand(bootstrap(mgr))
@@ -35,13 +35,13 @@ func NewConfigCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 
 func set(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	var (
-		format		string
-		configPath	string
+		format     string
+		configPath string
 	)
 	c := &cobra.Command{
-		Use:	"set <key> <value>",
-		Short:	"Set configuration values, such as the node IDs or the list of seed servers",
-		Args:	cobra.ExactArgs(2),
+		Use:   "set <key> <value>",
+		Short: "Set configuration values, such as the node IDs or the list of seed servers",
+		Args:  cobra.ExactArgs(2),
 		RunE: func(_ *cobra.Command, args []string) error {
 			var err error
 			key := args[0]
@@ -74,14 +74,14 @@ func set(fs afero.Fs, mgr config.Manager) *cobra.Command {
 
 func bootstrap(mgr config.Manager) *cobra.Command {
 	var (
-		ips		[]string
-		self		string
-		id		int
-		configPath	string
+		ips        []string
+		self       string
+		id         int
+		configPath string
 	)
 	c := &cobra.Command{
-		Use:	"bootstrap --id <id> [--self <ip>] [--ips <ip1,ip2,...>]",
-		Short:	"Initialize the configuration to bootstrap a cluster",
+		Use:   "bootstrap --id <id> [--self <ip>] [--ips <ip1,ip2,...>]",
+		Short: "Initialize the configuration to bootstrap a cluster",
 		Long: "Initialize the configuration to bootstrap a cluster." +
 			" --id is mandatory. bootstrap will expect the machine" +
 			" it's running on to have only one private non-" +
@@ -93,7 +93,7 @@ func bootstrap(mgr config.Manager) *cobra.Command {
 			" be separated by a comma, no spaces. If omitted, the" +
 			" node will be configured as a root node, that other" +
 			" ones can join later.",
-		Args:	cobra.OnlyValidArgs,
+		Args: cobra.OnlyValidArgs,
 		RunE: func(c *cobra.Command, args []string) error {
 			defaultRpcPort := config.Default().Redpanda.RPCServer.Port
 			conf, err := mgr.FindOrGenerate(configPath)
@@ -120,8 +120,8 @@ func bootstrap(mgr config.Manager) *cobra.Command {
 			conf.Redpanda.RPCServer.Address = ownIp.String()
 			conf.Redpanda.KafkaApi = []config.NamedSocketAddress{{
 				SocketAddress: config.SocketAddress{
-					Address:	ownIp.String(),
-					Port:		config.DefaultKafkaPort,
+					Address: ownIp.String(),
+					Port:    config.DefaultKafkaPort,
 				},
 			}}
 
@@ -175,9 +175,9 @@ func initNode(mgr config.Manager) *cobra.Command {
 		configPath string
 	)
 	c := &cobra.Command{
-		Use:	"init",
-		Short:	"Init the node after install, by setting the node's UUID.",
-		Args:	cobra.OnlyValidArgs,
+		Use:   "init",
+		Short: "Init the node after install, by setting the node's UUID.",
+		Args:  cobra.OnlyValidArgs,
 		RunE: func(_ *cobra.Command, args []string) error {
 			conf, err := mgr.FindOrGenerate(configPath)
 			if err != nil {

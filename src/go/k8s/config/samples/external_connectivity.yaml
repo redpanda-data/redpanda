@@ -1,0 +1,24 @@
+apiVersion: redpanda.vectorized.io/v1alpha1
+kind: Cluster
+metadata:
+  name: external-connectivity
+spec:
+  image: "vectorized/redpanda"
+  version: "latest"
+  replicas: 3
+  externalConnectivity: true
+  resources:
+    requests:
+      cpu: 1
+      memory: 2Gi
+    limits:
+      cpu: 1
+      memory: 2Gi
+  configuration:
+    rpcServer:
+      port: 33145
+    kafkaApi:
+      port: 9092
+    admin:
+      port: 9644
+    developerMode: true

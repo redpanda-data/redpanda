@@ -4,71 +4,71 @@ import "github.com/Shopify/sarama"
 
 type MockAdmin struct {
 	// add the specific funcs we'll need
-	MockCreateTopic	func(
+	MockCreateTopic func(
 		topic string,
 		detail *sarama.TopicDetail,
 		validateOnly bool,
 	) error
 
-	MockListTopics	func() (map[string]sarama.TopicDetail, error)
+	MockListTopics func() (map[string]sarama.TopicDetail, error)
 
-	MockDescribeTopics	func(
+	MockDescribeTopics func(
 		topics []string,
 	) (metadata []*sarama.TopicMetadata, err error)
 
-	MockDeleteTopic	func(topic string) error
+	MockDeleteTopic func(topic string) error
 
-	MockCreatePartitions	func(topic string,
+	MockCreatePartitions func(topic string,
 		count int32,
 		assignment [][]int32,
 		validateOnly bool,
 	) error
 
-	MockDeleteRecords	func(
+	MockDeleteRecords func(
 		topic string,
 		partitionOffsets map[int32]int64,
 	) error
 
-	MockDescribeConfig	func(
+	MockDescribeConfig func(
 		resource sarama.ConfigResource,
 	) ([]sarama.ConfigEntry, error)
 
-	MockAlterConfig	func(
+	MockAlterConfig func(
 		resourceType sarama.ConfigResourceType,
 		name string,
 		entries map[string]*string,
 		validateOnly bool,
 	) error
 
-	MockCreateACL	func(
+	MockCreateACL func(
 		resource sarama.Resource,
 		acl sarama.Acl,
 	) error
 
-	MockListAcls	func(
+	MockListAcls func(
 		filter sarama.AclFilter,
 	) ([]sarama.ResourceAcls, error)
 
-	MockDeleteACL	func(
+	MockDeleteACL func(
 		filter sarama.AclFilter,
 		validateOnly bool,
 	) ([]sarama.MatchingAcl,
 		error)
-	MockListConsumerGroups	func() (map[string]string, error)
+	MockListConsumerGroups func() (map[string]string, error)
 
-	MockDescribeConsumerGroups	func(groups []string) ([]*sarama.GroupDescription, error)
+	MockDescribeConsumerGroups func(groups []string) ([]*sarama.GroupDescription, error)
 
-	MockListConsumerGroupOffsets	func(
+	MockListConsumerGroupOffsets func(
 		group string,
 		topicPartitions map[string][]int32,
 	) (*sarama.OffsetFetchResponse, error)
-	MockDeleteConsumerGroup	func(group string) error
+	MockDeleteConsumerGroup func(group string) error
 
-	MockDescribeCluster	func() (
+	MockDescribeCluster func() (
 		brokers []*sarama.Broker,
 		controllerID int32,
 		err error)
-	MockClose	func() error
+	MockClose func() error
 }
 
 func (m MockAdmin) CreateTopic(
@@ -129,13 +129,13 @@ func (m MockAdmin) DescribeConfig(
 	}
 	return []sarama.ConfigEntry{
 		{
-			Name:		"cleanup.policy",
-			Value:		"compact",
-			Default:	true,
+			Name:    "cleanup.policy",
+			Value:   "compact",
+			Default: true,
 		},
 		{
-			Name:	"key",
-			Value:	"value",
+			Name:  "key",
+			Value: "value",
 		},
 	}, nil
 }

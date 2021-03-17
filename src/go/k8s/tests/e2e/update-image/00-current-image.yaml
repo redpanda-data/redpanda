@@ -9,18 +9,14 @@ spec:
   resources:
     requests:
       cpu: 100m
-      memory: 2Gi
+      memory: 100Mi
     limits:
       cpu: 1
-      memory: 2Gi
+      memory: 100Mi
   configuration:
     rpcServer:
       port: 33145
-    advertisedRpcApi:
-      port: 33145
     kafkaApi:
-      port: 9092
-    advertisedKafkaApi:
       port: 9092
     admin:
       port: 9644

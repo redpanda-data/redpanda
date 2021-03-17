@@ -1,0 +1,57 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rpk-config
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-weight": "1"
+data:
+  redpanda.yaml: |
+    redpanda:
+    rpk:
+      tls:
+        key_file: /etc/tls/certs/tls.key
+        cert_file: /etc/tls/certs/tls.crt
+        truststore_file: /etc/tls/certs/ca.crt
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: create-test-topic-tls
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": hook-succeeded
+    "helm.sh/hook-weight": "2"
+spec:
+  template:
+    spec:
+      volumes:
+        - name: tlscert
+          secret:
+            defaultMode: 420
+            secretName: cluster-tls-user-client
+        - name: rpkconfig
+          configMap:
+            name: rpk-config
+      containers:
+        - name: rpk
+          image: vectorized/redpanda:latest
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          command:
+            - /bin/bash
+            - -c
+          args:
+            - rpk topic create test --brokers cluster-tls-0.cluster-tls.$POD_NAMESPACE.svc.cluster.local:9092 -v
+          volumeMounts:
+            - mountPath: /etc/tls/certs
+              name: tlscert
+            - mountPath: /etc/redpanda
+              name: rpkconfig
+      restartPolicy: Never
+  backoffLimit: 6
+  parallelism: 1
+  completions: 1

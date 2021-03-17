@@ -31,16 +31,16 @@ type NtpQuery interface {
 
 func NewNtpQuery(timeout time.Duration, fs afero.Fs) NtpQuery {
 	return &ntpQuery{
-		timeout:	timeout,
-		fs:		fs,
-		proc:		os.NewProc(),
+		timeout: timeout,
+		fs:      fs,
+		proc:    os.NewProc(),
 	}
 }
 
 type ntpQuery struct {
-	timeout	time.Duration
-	fs	afero.Fs
-	proc	os.Proc
+	timeout time.Duration
+	fs      afero.Fs
+	proc    os.Proc
 }
 
 func (q *ntpQuery) IsNtpSynced() (bool, error) {

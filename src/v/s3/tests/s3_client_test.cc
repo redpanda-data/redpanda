@@ -48,7 +48,8 @@ static constexpr const char* expected_payload
 static const size_t expected_payload_size = std::strlen(expected_payload);
 static constexpr const char* error_payload
   = "<?xml version=\"1.0\" "
-    "encoding=\"UTF-8\"?><Error><Code>Error.Code</Code><Message>Error.Message</"
+    "encoding=\"UTF-8\"?><Error><Code>InternalError</"
+    "Code><Message>Error.Message</"
     "Message><Resource>Error.Resource</Resource><RequestId>Error.RequestId</"
     "RequestId></Error>";
 static constexpr const char* list_objects_payload = R"xml(
@@ -214,7 +215,7 @@ SEASTAR_TEST_CASE(test_put_object_failure) {
                 std::move(payload_stream))
               .get();
         } catch (const s3::rest_error_response& err) {
-            BOOST_REQUIRE_EQUAL(err.code(), "Error.Code");
+            BOOST_REQUIRE_EQUAL(err.code(), s3::s3_error_code::internal_error);
             BOOST_REQUIRE_EQUAL(err.message(), "Error.Message");
             BOOST_REQUIRE_EQUAL(err.request_id(), "Error.RequestId");
             BOOST_REQUIRE_EQUAL(err.resource(), "Error.Resource");
@@ -257,7 +258,7 @@ SEASTAR_TEST_CASE(test_get_object_failure) {
                                      s3::object_key("test-error"))
                                    .get0();
         } catch (const s3::rest_error_response& err) {
-            BOOST_REQUIRE_EQUAL(err.code(), "Error.Code");
+            BOOST_REQUIRE_EQUAL(err.code(), s3::s3_error_code::internal_error);
             BOOST_REQUIRE_EQUAL(err.message(), "Error.Message");
             BOOST_REQUIRE_EQUAL(err.request_id(), "Error.RequestId");
             BOOST_REQUIRE_EQUAL(err.resource(), "Error.Resource");
@@ -291,7 +292,7 @@ SEASTAR_TEST_CASE(test_delete_object_failure) {
                 s3::bucket_name("test-bucket"), s3::object_key("test-error"))
               .get0();
         } catch (const s3::rest_error_response& err) {
-            BOOST_REQUIRE_EQUAL(err.code(), "Error.Code");
+            BOOST_REQUIRE_EQUAL(err.code(), s3::s3_error_code::internal_error);
             BOOST_REQUIRE_EQUAL(err.message(), "Error.Message");
             BOOST_REQUIRE_EQUAL(err.request_id(), "Error.RequestId");
             BOOST_REQUIRE_EQUAL(err.resource(), "Error.Resource");
@@ -348,7 +349,7 @@ SEASTAR_TEST_CASE(test_list_objects_failure) {
                            s3::object_key("test-error"))
                          .get0();
         } catch (const s3::rest_error_response& err) {
-            BOOST_REQUIRE_EQUAL(err.code(), "Error.Code");
+            BOOST_REQUIRE_EQUAL(err.code(), s3::s3_error_code::internal_error);
             BOOST_REQUIRE_EQUAL(err.message(), "Error.Message");
             BOOST_REQUIRE_EQUAL(err.request_id(), "Error.RequestId");
             BOOST_REQUIRE_EQUAL(err.resource(), "Error.Resource");

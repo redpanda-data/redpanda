@@ -193,7 +193,8 @@ func CreateClient(
 			return nil, err
 		}
 		bs := brokers()
-		return kafka.InitClientWithConf(conf, bs...)
+		client, err := kafka.InitClientWithConf(conf, bs...)
+		return client, wrapConnErr(err, bs)
 	}
 }
 
@@ -211,7 +212,9 @@ func CreateAdmin(
 		if err != nil {
 			return nil, err
 		}
-		return sarama.NewClusterAdmin(brokers(), cfg)
+		bs := brokers()
+		admin, err := sarama.NewClusterAdmin(bs, cfg)
+		return admin, wrapConnErr(err, bs)
 	}
 }
 
@@ -240,4 +243,15 @@ func ContainerBrokers(c common.Client) ([]string, []string) {
 		addrs = append(addrs, addr)
 	}
 	return addrs, stopped
+}
+
+func wrapConnErr(err error, addrs []string) error {
+	if err == nil {
+		return nil
+	}
+	log.Debug(err)
+	return fmt.Errorf("couldn't connect to redpanda at %s."+
+		" Try using --brokers to specify other brokers to connect to.",
+		strings.Join(addrs, ", "),
+	)
 }

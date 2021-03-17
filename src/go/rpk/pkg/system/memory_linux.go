@@ -26,9 +26,9 @@ func getMemInfo(fs afero.Fs) (*MemInfo, error) {
 		return nil, err
 	}
 	return &MemInfo{
-		MemTotal:	si.Totalram * uint64(si.Unit),
-		MemFree:	si.Freeram * uint64(si.Unit),
-		CGroupMemLimit:	cGroupMemLimit,
-		SwapTotal:	si.Totalswap * uint64(si.Unit),
+		MemTotal:       si.Totalram * uint64(si.Unit),
+		MemFree:        si.Freeram * uint64(si.Unit),
+		CGroupMemLimit: cGroupMemLimit,
+		SwapTotal:      si.Totalswap * uint64(si.Unit),
 	}, nil
 }

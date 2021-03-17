@@ -2,13 +2,11 @@ apiVersion: redpanda.vectorized.io/v1alpha1
 kind: Cluster
 metadata:
   name: cluster-sample
-  labels:
-    app.kubernetes.io/name: "redpanda"
-    app.kubernetes.io/instance: "redpanda-cluster-sample"
 spec:
   image: "vectorized/redpanda"
   version: "latest"
   replicas: 1
+  externalConnectivity: false
   resources:
     requests:
       cpu: 100m

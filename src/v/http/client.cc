@@ -19,6 +19,7 @@
 #include <seastar/core/semaphore.hh>
 #include <seastar/core/temporary_buffer.hh>
 #include <seastar/core/timer.hh>
+#include <seastar/net/tls.hh>
 
 #include <boost/beast/core/buffer_traits.hpp>
 
@@ -32,7 +33,19 @@ namespace http {
 // client implementation //
 
 client::client(const rpc::base_transport::configuration& cfg)
-  : rpc::base_transport(cfg) {}
+  : rpc::base_transport(cfg)
+  , _as(nullptr) {}
+
+client::client(
+  const rpc::base_transport::configuration& cfg, const ss::abort_source& as)
+  : rpc::base_transport(cfg)
+  , _as(&as) {}
+
+void client::check() const {
+    if (_as) {
+        _as->check();
+    }
+}
 
 ss::future<client::request_response_t>
 client::make_request(client::request_header&& header) {
@@ -44,10 +57,16 @@ client::make_request(client::request_header&& header) {
         return ss::make_ready_future<request_response_t>(
           std::make_tuple(req, res));
     }
-    return connect().then([req, res] {
-        return ss::make_ready_future<request_response_t>(
-          std::make_tuple(req, res));
-    });
+    return connect()
+      .then([req, res] {
+          return ss::make_ready_future<request_response_t>(
+            std::make_tuple(req, res));
+      })
+      .handle_exception_type([this](const ss::tls::verification_error& err) {
+          return shutdown().then([err] {
+              return ss::make_exception_future<client::request_response_t>(err);
+          });
+      });
 }
 
 ss::future<> client::shutdown() { return stop(); }
@@ -115,13 +134,14 @@ ss::future<> client::response_stream::prefetch_headers() {
 }
 
 ss::future<iobuf> client::response_stream::recv_some() {
+    _client->check();
     if (!_prefetch.empty()) {
         // This code will only be executed if 'prefetch_headers' was called. It
         // can only be called once.
         return ss::make_ready_future<iobuf>(std::move(_prefetch));
     }
-    return _client->_in.read().then(
-      [this](ss::temporary_buffer<char> chunk) mutable {
+    return _client->_in.read()
+      .then([this](ss::temporary_buffer<char> chunk) mutable {
           vlog(http_log.trace, "chunk received, chunk length {}", chunk.size());
           if (chunk.empty()) {
               // NOTE: to make the parser stop we need to use the 'put_eof'
@@ -182,6 +202,10 @@ ss::future<iobuf> client::response_stream::recv_some() {
                 ec);
           }
           return ss::make_ready_future<iobuf>(std::move(out));
+      })
+      .handle_exception_type([this](const ss::tls::verification_error& err) {
+          return _client->shutdown().then(
+            [err] { return ss::make_exception_future<iobuf>(err); });
       });
 }
 
@@ -223,6 +247,7 @@ client::request_stream::send_some(ss::temporary_buffer<char>&& buf) {
 }
 
 ss::future<> client::request_stream::send_some(iobuf&& seq) {
+    _client->check();
     vlog(http_log.trace, "request_stream.send_some {}", seq.size_bytes());
     if (_serializer.is_header_done()) {
         // Fast path
@@ -248,7 +273,12 @@ ss::future<> client::request_stream::send_some(iobuf&& seq) {
           return _client->_out.write(std::move(scattered))
             .then([this, seq = std::move(seq)]() mutable {
                 return forward(_client->_out, _chunk_encode(std::move(seq)));
-            });
+            })
+            .handle_exception_type(
+              [this](const ss::tls::verification_error& err) {
+                  return _client->shutdown().then(
+                    [err] { return ss::make_exception_future<>(err); });
+              });
       });
 }
 

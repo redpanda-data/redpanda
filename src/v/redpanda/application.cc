@@ -9,6 +9,8 @@
 
 #include "redpanda/application.h"
 
+#include "archival/ntp_archiver_service.h"
+#include "archival/service.h"
 #include "cluster/cluster_utils.h"
 #include "cluster/id_allocator.h"
 #include "cluster/id_allocator_frontend.h"
@@ -16,8 +18,10 @@
 #include "cluster/metadata_dissemination_service.h"
 #include "cluster/partition_manager.h"
 #include "cluster/service.h"
+#include "cluster/topics_frontend.h"
 #include "config/configuration.h"
 #include "config/seed_server.h"
+#include "kafka/client/configuration.h"
 #include "kafka/security/scram_algorithm.h"
 #include "kafka/server/coordinator_ntp_mapper.h"
 #include "kafka/server/group_manager.h"
@@ -25,10 +29,13 @@
 #include "kafka/server/protocol.h"
 #include "kafka/server/quota_manager.h"
 #include "model/metadata.h"
+#include "pandaproxy/configuration.h"
+#include "pandaproxy/proxy.h"
 #include "platform/stop_signal.h"
 #include "raft/service.h"
 #include "redpanda/admin/api-doc/config.json.h"
 #include "redpanda/admin/api-doc/kafka.json.h"
+#include "redpanda/admin/api-doc/partition.json.h"
 #include "redpanda/admin/api-doc/raft.json.h"
 #include "resource_mgmt/io_priority.h"
 #include "rpc/simple_protocol.h"
@@ -42,6 +49,7 @@
 
 #include <seastar/core/metrics.hh>
 #include <seastar/core/prometheus.hh>
+#include <seastar/core/smp.hh>
 #include <seastar/core/thread.hh>
 #include <seastar/http/api_docs.hh>
 #include <seastar/http/exception.hh>
@@ -49,6 +57,8 @@
 #include <seastar/json/json_elements.hh>
 #include <seastar/util/defer.hh>
 
+#include <boost/algorithm/string/classification.hpp>
+#include <boost/algorithm/string/split.hpp>
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/writer.h>
 #include <sys/utsname.h>
@@ -109,7 +119,10 @@ int application::run(int ac, char** av) {
     });
 }
 
-void application::initialize(std::optional<scheduling_groups> groups) {
+void application::initialize(
+  std::optional<YAML::Node> proxy_cfg,
+  std::optional<YAML::Node> proxy_client_cfg,
+  std::optional<scheduling_groups> groups) {
     if (config::shard_local_cfg().enable_pid_file()) {
         syschecks::pidfile_create(config::shard_local_cfg().pidfile_path());
     }
@@ -126,6 +139,14 @@ void application::initialize(std::optional<scheduling_groups> groups) {
     _scheduling_groups.create_groups().get();
     _deferred.emplace_back(
       [this] { _scheduling_groups.destroy_groups().get(); });
+
+    if (proxy_cfg) {
+        _proxy_config.emplace(*proxy_cfg);
+    }
+
+    if (proxy_client_cfg) {
+        _proxy_client_config.emplace(*proxy_client_cfg);
+    }
 }
 
 void application::setup_metrics() {
@@ -174,28 +195,41 @@ void application::hydrate_config(const po::variables_map& cfg) {
     in.consume_to(buf.size_bytes(), workaround.begin());
     const YAML::Node config = YAML::Load(workaround);
     vlog(_log.info, "Configuration:\n\n{}\n\n", config);
-    ss::smp::invoke_on_all([&config] {
-        config::shard_local_cfg().read_yaml(config);
-    }).get0();
     vlog(
       _log.info,
-      "Use `rpk config set redpanda.<cfg> <value>` to change values "
+      "Use `rpk config set <cfg> <value>` to change values "
       "below:");
-    config::shard_local_cfg().for_each(
-      [this](const config::base_property& item) {
-          std::stringstream val;
-          item.print(val);
-          vlog(_log.debug, "{}\t- {}", val.str(), item.desc());
-      });
+    auto config_printer = [this](std::string_view service) {
+        return [this, service](const config::base_property& item) {
+            std::stringstream val;
+            item.print(val);
+            vlog(_log.info, "{}.{}\t- {}", service, val.str(), item.desc());
+        };
+    };
+    _redpanda_enabled = config["redpanda"];
+    if (_redpanda_enabled) {
+        ss::smp::invoke_on_all([&config] {
+            config::shard_local_cfg().read_yaml(config);
+        }).get0();
+        config::shard_local_cfg().for_each(config_printer("redpanda"));
+    }
+    if (config["pandaproxy"]) {
+        _proxy_config.emplace(config["pandaproxy"]);
+        _proxy_client_config.emplace(config["pandaproxy_client"]);
+        _proxy_config->for_each(config_printer("pandaproxy"));
+        _proxy_client_config->for_each(config_printer("pandaproxy_client"));
+    }
 }
 
 void application::check_environment() {
     syschecks::systemd_message("checking environment (CPU, Mem)").get();
     syschecks::cpu();
     syschecks::memory(config::shard_local_cfg().developer_mode());
-    storage::directories::initialize(
-      config::shard_local_cfg().data_directory().as_sstring())
-      .get();
+    if (_redpanda_enabled) {
+        storage::directories::initialize(
+          config::shard_local_cfg().data_directory().as_sstring())
+          .get();
+    }
 }
 
 /**
@@ -285,6 +319,8 @@ void application::configure_admin_server() {
               rb->register_api_file(server._routes, "raft");
               rb->register_function(server._routes, insert_comma);
               rb->register_api_file(server._routes, "kafka");
+              rb->register_function(server._routes, insert_comma);
+              rb->register_api_file(server._routes, "partition");
               ss::httpd::config_json::get_config.set(
                 server._routes, []([[maybe_unused]] ss::const_req req) {
                     rapidjson::StringBuffer buf;
@@ -355,6 +391,17 @@ static storage::log_config manager_config_from_global_config() {
 
 // add additional services in here
 void application::wire_up_services() {
+    if (_redpanda_enabled) {
+        wire_up_redpanda_services();
+    }
+    if (_proxy_config) {
+        construct_service(
+          _proxy, to_yaml(*_proxy_config), to_yaml(*_proxy_client_config))
+          .get();
+    }
+}
+
+void application::wire_up_redpanda_services() {
     ss::smp::invoke_on_all([] {
         return storage::internal::chunks().start();
     }).get();
@@ -366,6 +413,7 @@ void application::wire_up_services() {
     construct_service(shard_table).get();
 
     syschecks::systemd_message("Intializing storage services").get();
+
     construct_service(
       storage,
       kvstore_config_from_global_config(),
@@ -452,6 +500,26 @@ void application::wire_up_services() {
       std::ref(_raft_connection_cache))
       .get();
 
+    if (archival_storage_enabled()) {
+        syschecks::systemd_message("Starting archival scheduler").get();
+        ss::sharded<archival::configuration> configs;
+        configs.start().get();
+        configs
+          .invoke_on_all([](archival::configuration& c) {
+              return archival::scheduler_service::get_archival_service_config()
+                .then(
+                  [&c](archival::configuration cfg) { c = std::move(cfg); });
+          })
+          .get();
+        construct_service(
+          archival_scheduler,
+          std::ref(storage),
+          std::ref(partition_manager),
+          std::ref(controller->get_topics_state()),
+          std::ref(configs))
+          .get();
+        configs.stop().get();
+    }
     // group membership
     syschecks::systemd_message("Creating partition manager").get();
     construct_service(
@@ -552,7 +620,44 @@ void application::wire_up_services() {
       .get();
 }
 
+ss::future<> application::set_proxy_config(ss::sstring name, std::any val) {
+    return _proxy.invoke_on_all(
+      [name{std::move(name)}, val{std::move(val)}](pandaproxy::proxy& p) {
+          p.config().get(name).set_value(val);
+      });
+}
+
+bool application::archival_storage_enabled() {
+    const auto& cfg = config::shard_local_cfg();
+    return cfg.developer_mode() && cfg.archival_storage_enabled();
+}
+
+ss::future<>
+application::set_proxy_client_config(ss::sstring name, std::any val) {
+    return _proxy.invoke_on_all(
+      [name{std::move(name)}, val{std::move(val)}](pandaproxy::proxy& p) {
+          p.client_config().get(name).set_value(val);
+      });
+}
+
 void application::start() {
+    if (_redpanda_enabled) {
+        start_redpanda();
+    }
+
+    if (_proxy_config) {
+        _proxy.invoke_on_all(&pandaproxy::proxy::start).get();
+        vlog(
+          _log.info,
+          "Started Pandaproxy listening at {}",
+          _proxy_config->pandaproxy_api());
+    }
+
+    vlog(_log.info, "Successfully started Redpanda!");
+    syschecks::systemd_notify_ready().get();
+}
+
+void application::start_redpanda() {
     syschecks::systemd_message("Staring storage services").get();
     storage.invoke_on_all(&storage::api::start).get();
 
@@ -615,6 +720,14 @@ void application::start() {
     _rpc.invoke_on_all(&rpc::server::start).get();
     vlog(_log.info, "Started RPC server listening at {}", conf.rpc_server());
 
+    if (archival_storage_enabled()) {
+        syschecks::systemd_message("Starting archival storage").get();
+        archival_scheduler
+          .invoke_on_all(
+            [](archival::scheduler_service& svc) { return svc.start(); })
+          .get();
+    }
+
     quota_mgr.invoke_on_all(&kafka::quota_manager::start).get();
 
     // Kafka API
@@ -644,9 +757,6 @@ void application::start() {
         _wasm_event_listener->start().get();
         pacemaker.invoke_on_all(&coproc::pacemaker::start).get();
     }
-
-    vlog(_log.info, "Successfully started Redpanda!");
-    syschecks::systemd_notify_ready().get();
 }
 
 void application::admin_register_raft_routes(ss::http_server& server) {
@@ -709,6 +819,40 @@ void application::admin_register_raft_routes(ss::http_server& server) {
                   });
             });
       });
+}
+
+/*
+ * Parse integer pairs from: ?target={\d,\d}* where each pair represent a
+ * node-id and a shard-id, repsectively.
+ */
+static std::vector<model::broker_shard>
+parse_target_broker_shards(const ss::sstring& param) {
+    std::vector<ss::sstring> parts;
+    boost::split(parts, param, boost::is_any_of(","));
+
+    if (parts.size() % 2 != 0) {
+        throw ss::httpd::bad_param_exception(
+          fmt::format("Invalid target parameter format: {}", param));
+    }
+
+    std::vector<model::broker_shard> replicas;
+
+    for (auto i = 0u; i < parts.size(); i += 2) {
+        auto node = std::stoi(parts[i]);
+        auto shard = std::stoi(parts[i + 1]);
+
+        if (node < 0 || shard < 0) {
+            throw ss::httpd::bad_param_exception(
+              fmt::format("Invalid target {}:{}", node, shard));
+        }
+
+        replicas.push_back(model::broker_shard{
+          .node_id = model::node_id(node),
+          .shard = static_cast<uint32_t>(shard),
+        });
+    }
+
+    return replicas;
 }
 
 void application::admin_register_kafka_routes(ss::http_server& server) {
@@ -777,6 +921,73 @@ void application::admin_register_kafka_routes(ss::http_server& server) {
                       }
                       return ss::json::json_return_type(ss::json::json_void());
                   });
+            });
+      });
+
+    ss::httpd::partition_json::kafka_move_partition.set(
+      server._routes, [this](std::unique_ptr<ss::httpd::request> req) {
+          auto topic = model::topic(req->param["topic"]);
+
+          model::partition_id partition;
+          try {
+              partition = model::partition_id(
+                std::stoll(req->param["partition"]));
+          } catch (...) {
+              throw ss::httpd::bad_param_exception(fmt::format(
+                "Partition id must be an integer: {}",
+                req->param["partition"]));
+          }
+
+          if (partition() < 0) {
+              throw ss::httpd::bad_param_exception(
+                fmt::format("Invalid partition id {}", partition));
+          }
+
+          std::optional<std::vector<model::broker_shard>> replicas;
+          if (auto node = req->get_query_param("target"); !node.empty()) {
+              try {
+                  replicas = parse_target_broker_shards(node);
+              } catch (...) {
+                  throw ss::httpd::bad_param_exception(fmt::format(
+                    "Invalid target format {}: {}",
+                    node,
+                    std::current_exception()));
+              }
+          }
+
+          // this can be removed when we have more sophisticated machinary in
+          // redpanda itself for automatically selecting target node/shard.
+          if (!replicas || replicas->empty()) {
+              throw ss::httpd::bad_request_exception(
+                "Partition movement requires target replica set");
+          }
+
+          model::ntp ntp(model::kafka_namespace, topic, partition);
+
+          vlog(
+            _log.debug,
+            "Request to change ntp {} replica set to {}",
+            ntp,
+            replicas);
+
+          return controller->get_topics_frontend()
+            .local()
+            .move_partition_replicas(
+              ntp, *replicas, model::timeout_clock::now() + 5s)
+            .then([this, ntp, replicas](std::error_code err) {
+                vlog(
+                  _log.debug,
+                  "Result changing ntp {} replica set to {}: {}:{}",
+                  ntp,
+                  replicas,
+                  err,
+                  err.message());
+                if (err) {
+                    throw ss::httpd::bad_request_exception(
+                      fmt::format("Error moving partition: {}", err.message()));
+                }
+                return ss::make_ready_future<ss::json::json_return_type>(
+                  ss::json::json_return_type(ss::json::json_void()));
             });
       });
 }

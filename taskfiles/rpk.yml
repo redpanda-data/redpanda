@@ -1,0 +1,23 @@
+version: '3'
+
+tasks:
+  build:
+    desc: build rpk
+    vars:
+      RPK_VERSION: '{{default "latest" .TAG_NAME}}'
+    env:
+      GOOS: '{{default "linux" .GOOS}}'
+      GOARCH: '{{default "amd64" .GOARCH}}'
+      CGO_ENABLED: "0"
+    dir: "{{.SRC_DIR}}/src/go/rpk"
+    cmds:
+    - mkdir -p "{{.BUILD_ROOT}}/go/$GOOS/bin"
+    - |
+      ver_pkg='github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/version'
+      cont_pkg='github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/container/common'
+      go build \
+        -ldflags \
+          "-X ${ver_pkg}.version={{.RPK_VERSION}} \
+           -X ${ver_pkg}.rev={{.SHORT_SHA}} \
+           -X ${cont_pkg}.tag={{.RPK_VERSION}}" \
+        -o "{{.BUILD_ROOT}}/go/$GOOS/bin" ./...

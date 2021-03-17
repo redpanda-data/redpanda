@@ -25,17 +25,17 @@ import (
 
 func NewStopCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	var (
-		configFile	string
-		timeout		time.Duration
+		configFile string
+		timeout    time.Duration
 	)
 	command := &cobra.Command{
-		Use:	"stop",
-		Short:	"Stop redpanda.",
+		Use:   "stop",
+		Short: "Stop redpanda.",
 		Long: `Stop a local redpanda process. 'rpk stop'
 first sends SIGINT, and waits for the specified timeout. Then, if redpanda
 hasn't stopped, it sends SIGTERM. Lastly, it sends SIGKILL if it's still
 running.`,
-		SilenceUsage:	true,
+		SilenceUsage: true,
 		RunE: func(ccmd *cobra.Command, args []string) error {
 			return executeStop(fs, mgr, configFile, timeout)
 		},

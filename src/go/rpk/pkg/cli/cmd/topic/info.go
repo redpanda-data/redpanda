@@ -24,12 +24,12 @@ import (
 func NewInfoCommand(admin func() (sarama.ClusterAdmin, error)) *cobra.Command {
 	detailed := false
 	cmd := &cobra.Command{
-		Use:		"info <topic name>",
-		Aliases:	[]string{"status", "health"},
-		Short:		"Show a topic's info - leader, replication, etc.",
-		Args:		common.ExactArgs(1, "topic's name is missing."),
+		Use:     "info <topic name>",
+		Aliases: []string{"status", "health"},
+		Short:   "Show a topic's info - leader, replication, etc.",
+		Args:    common.ExactArgs(1, "topic's name is missing."),
 		// We don't want Cobra printing CLI usage help if the error isn't about CLI usage.
-		SilenceUsage:	true,
+		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			containsID := func(ids []int32, id int32) bool {
 				for _, i := range ids {

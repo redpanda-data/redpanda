@@ -63,8 +63,8 @@ type Manager interface {
 }
 
 type manager struct {
-	fs	afero.Fs
-	v	*viper.Viper
+	fs afero.Fs
+	v  *viper.Viper
 }
 
 func NewManager(fs afero.Fs) Manager {
@@ -389,11 +389,11 @@ func recover(fs afero.Fs, backup, path string, err error) error {
 func unmarshal(v *viper.Viper) (*Config, error) {
 	result := &Config{}
 	decoderConfig := mapstructure.DecoderConfig{
-		Result:	result,
+		Result: result,
 		// Sometimes viper will save int values as strings (i.e.
 		// through BindPFlag) so we have to allow mapstructure
 		// to cast them.
-		WeaklyTypedInput:	true,
+		WeaklyTypedInput: true,
 		DecodeHook: mapstructure.ComposeDecodeHookFunc(
 			v21_1_4MapToNamedSocketAddressSlice,
 		),

@@ -110,62 +110,62 @@ func TestNtpCheckTimeout(t *testing.T) {
 
 func TestFreeMemoryChecker(t *testing.T) {
 	tests := []struct {
-		name		string
-		memoryLimit	string
-		effectiveCpus	string
-		expectOk	bool
-		expectedErr	string
-		cgroupsV2	bool
+		name          string
+		memoryLimit   string
+		effectiveCpus string
+		expectOk      bool
+		expectedErr   string
+		cgroupsV2     bool
 	}{
 		{
-			name:		"it should pass if the mem. limit per cpu >= 2GB",
-			memoryLimit:	"8192000000000",
-			effectiveCpus:	"4",
-			expectOk:	true,
+			name:          "it should pass if the mem. limit per cpu >= 2GB",
+			memoryLimit:   "8192000000000",
+			effectiveCpus: "4",
+			expectOk:      true,
 		},
 		{
-			name:		"it should fail if the mem. limit per cpu < 2GB",
-			memoryLimit:	"8192",
-			effectiveCpus:	"8",
+			name:          "it should fail if the mem. limit per cpu < 2GB",
+			memoryLimit:   "8192",
+			effectiveCpus: "8",
 		},
 		{
-			name:		"it should return an err if the mem. limit value is empty",
-			memoryLimit:	"",
-			effectiveCpus:	"8",
-			expectedErr:	"no value found in /sys/fs/cgroup/memory/memory.limit_in_bytes",
+			name:          "it should return an err if the mem. limit value is empty",
+			memoryLimit:   "",
+			effectiveCpus: "8",
+			expectedErr:   "no value found in /sys/fs/cgroup/memory/memory.limit_in_bytes",
 		},
 		{
-			name:		"it should return an err if the eff. cpus value is empty",
-			memoryLimit:	"9800000000",
-			effectiveCpus:	"",
-			expectedErr:	"no value found in /sys/fs/cgroup/cpuset/cpuset.effective_cpus",
+			name:          "it should return an err if the eff. cpus value is empty",
+			memoryLimit:   "9800000000",
+			effectiveCpus: "",
+			expectedErr:   "no value found in /sys/fs/cgroup/cpuset/cpuset.effective_cpus",
 		},
 		{
-			name:		"it should pass if the mem. limit per cpu >= 2GB",
-			memoryLimit:	"8192000000000",
-			effectiveCpus:	"4",
-			expectOk:	true,
-			cgroupsV2:	true,
+			name:          "it should pass if the mem. limit per cpu >= 2GB",
+			memoryLimit:   "8192000000000",
+			effectiveCpus: "4",
+			expectOk:      true,
+			cgroupsV2:     true,
 		},
 		{
-			name:		"it should fail if the mem. limit per cpu < 2GB",
-			memoryLimit:	"8192",
-			effectiveCpus:	"8",
-			cgroupsV2:	true,
+			name:          "it should fail if the mem. limit per cpu < 2GB",
+			memoryLimit:   "8192",
+			effectiveCpus: "8",
+			cgroupsV2:     true,
 		},
 		{
-			name:		"it should return an err if the mem. limit value is empty",
-			memoryLimit:	"",
-			effectiveCpus:	"8",
-			expectedErr:	"no value found in /sys/fs/cgroup/redpanda.slice/redpanda.service/memory.max",
-			cgroupsV2:	true,
+			name:          "it should return an err if the mem. limit value is empty",
+			memoryLimit:   "",
+			effectiveCpus: "8",
+			expectedErr:   "no value found in /sys/fs/cgroup/redpanda.slice/redpanda.service/memory.max",
+			cgroupsV2:     true,
 		},
 		{
-			name:		"it should return an err if the eff. cpus value is empty",
-			memoryLimit:	"9800000000",
-			effectiveCpus:	"",
-			expectedErr:	"no value found in /sys/fs/cgroup/redpanda.slice/redpanda.service/cpuset.cpus.effective",
-			cgroupsV2:	true,
+			name:          "it should return an err if the eff. cpus value is empty",
+			memoryLimit:   "9800000000",
+			effectiveCpus: "",
+			expectedErr:   "no value found in /sys/fs/cgroup/redpanda.slice/redpanda.service/cpuset.cpus.effective",
+			cgroupsV2:     true,
 		},
 	}
 	for _, tt := range tests {

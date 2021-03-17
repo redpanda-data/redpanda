@@ -1,0 +1,23 @@
+# Symlink/copy this as Taskfile.yml on the root of the redpanda repo
+version: '3'
+
+dotenv: [".env"]
+
+output: prefixed
+
+# global (available to all included tasks; can only be overridden via CLI args)
+vars:
+  SRC_DIR:
+    sh: 'realpath {{default "." .SRC_DIR}}'
+  BUILD_ROOT:
+    sh: 'realpath {{default "build" .BUILD_ROOT}}'
+  COMPILER: '{{default "clang" .COMPILER}}'
+  BUILD_TYPE: '{{default "release" .BUILD_TYPE}}'
+  BUILD_DIR: '{{.BUILD_DIR}}'
+
+# These paths are relative to the root of the redpanda repo
+includes:
+  dashboard: taskfiles/dashboard.yml
+  docker: taskfiles/docker.yml
+  rp: taskfiles/rp.yml
+  rpk: taskfiles/rpk.yml

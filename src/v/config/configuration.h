@@ -121,6 +121,16 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds>
       controller_backend_housekeeping_interval_ms;
 
+    // Archival storage
+    property<bool> archival_storage_enabled;
+    property<std::optional<ss::sstring>> archival_storage_s3_access_key;
+    property<std::optional<ss::sstring>> archival_storage_s3_secret_key;
+    property<std::optional<ss::sstring>> archival_storage_s3_region;
+    property<std::optional<ss::sstring>> archival_storage_s3_bucket;
+    property<std::optional<ss::sstring>> archival_storage_api_endpoint;
+    property<std::chrono::milliseconds> archival_storage_reconciliation_ms;
+    property<int16_t> archival_storage_max_connections;
+
     configuration();
 
     void read_yaml(const YAML::Node& root_node) override;

@@ -28,6 +28,8 @@ you from the smallest projects to petabytes of data distributed across the globe
 
 [Code of conduct](./CODE_OF_CONDUCT.md) code of conduct for the community
 
+[Contributing docs](./CONTRIBUTING.md)  
+
 # Getting Started
 
 ## Prebuilt Packages
@@ -75,4 +77,38 @@ For hackers, here is the short and sweet:
 sudo ./install-dependencies.sh && ./build.sh
 ```
 
-See the [contributing docs](./CONTRIBUTING.md)
+# Beta builds
+
+For those of us who like to live on the edge!
+
+We can cut a release at any point from the `/dev` branch if you want to test a particular feature.
+Simply let us know you would like to test a feature from dev and we're happy to cut a beta release.
+
+
+## Beta releases on Debian/Ubuntu
+
+```
+curl -1sLf \
+  'https://packages.vectorized.io/HxYRCzL4xbbaEtPi/redpanda-beta/setup.deb.sh' \
+  | sudo -E bash
+  
+sudo apt-get install redpanda
+```
+
+## Beta releases on Fedora/RedHat/Amazon Linux
+
+```
+curl -1sLf \
+  'https://packages.vectorized.io/HxYRCzL4xbbaEtPi/redpanda-beta/setup.rpm.sh' \
+  | sudo -E bash
+  
+sudo yum install redpanda
+```
+
+## Beta releases on Docker
+
+This is an example with the `v21.3.5-beta3` version prior to the 21.3.5 release.
+
+```
+vectorized/redpanda:v21.3.5-beta3
+```

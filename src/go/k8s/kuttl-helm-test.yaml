@@ -1,0 +1,19 @@
+apiVersion: kuttl.dev/v1beta1
+kind: TestSuite
+startKIND: true
+kindNodeCache: true
+kindContainers:
+  - vectorized/redpanda-operator:latest
+  - vectorized/configurator:latest
+testDirs:
+  - ./tests/e2e
+  - ./tests/e2e-helm
+kindConfig: ./kind.yaml
+commands:
+  - command: "./hack/install-cert-manager.sh"
+  - command: "kubectl apply -k ./config/crd"
+  - command: "helm install --set image.tag=latest --namespace helm-test --create-namespace redpanda-operator ./helm-chart/charts/redpanda-operator"
+  - command: "./hack/wait-for-webhook-ready.sh"
+artifactsDir: tests/_helm_e2e_artifacts
+timeout: 300
+parallel: 1

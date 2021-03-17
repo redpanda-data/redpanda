@@ -20,22 +20,27 @@ import (
 	redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/labels"
 	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/resources"
+	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/resources/certmanager"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 var (
 	errNonexistentLastObservesState = errors.New("expecting to have statefulset LastObservedState set but it's nil")
+	errNodePortMissing              = errors.New("the node port is missing from the service")
 )
 
 // ClusterReconciler reconciles a Cluster object
 type ClusterReconciler struct {
 	client.Client
-	Log	logr.Logger
-	Scheme	*runtime.Scheme
+	Log             logr.Logger
+	configuratorTag string
+	Scheme          *runtime.Scheme
 }
 
 //+kubebuilder:rbac:groups=redpanda.vectorized.io,resources=clusters,verbs=get;list;watch;create;update;patch;delete
@@ -45,6 +50,11 @@ type ClusterReconciler struct {
 //+kubebuilder:rbac:groups=core,resources=services,verbs=get;list;watch;create;update;patch;
 //+kubebuilder:rbac:groups=core,resources=configmaps,verbs=get;list;watch;create;update;patch;
 //+kubebuilder:rbac:groups=core,resources=pods,verbs=get;list;watch;
+//+kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;
+//+kubebuilder:rbac:groups=core,resources=serviceaccounts,verbs=get;list;watch;create;update;patch;
+//+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles;clusterrolebindings,verbs=get;list;watch;create;update;patch;
+//+kubebuilder:rbac:groups=core,resources=nodes,verbs=get;list;watch
+//+kubebuilder:rbac:groups=cert-manager.io,resources=issuers;certificates;clusterissuers,verbs=create;get;list;watch;patch;delete;
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -54,6 +64,7 @@ type ClusterReconciler struct {
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.7.0/pkg/reconcile
+// nolint:funlen // The problem is addressed in https://github.com/vectorizedio/redpanda/pull/779
 func (r *ClusterReconciler) Reconcile(
 	ctx context.Context, req ctrl.Request,
 ) (ctrl.Result, error) {
@@ -63,19 +74,44 @@ func (r *ClusterReconciler) Reconcile(
 	defer log.Info(fmt.Sprintf("Finished reconcile loop for %v", req.NamespacedName))
 
 	var redpandaCluster redpandav1alpha1.Cluster
+	crb := resources.NewClusterRoleBinding(r.Client, &redpandaCluster, r.Scheme, log)
 	if err := r.Get(ctx, req.NamespacedName, &redpandaCluster); err != nil {
-		log.Error(err, "Unable to fetch RedpandaCluster")
 		// we'll ignore not-found errors, since they can't be fixed by an immediate
 		// requeue (we'll need to wait for a new notification), and we can get them
 		// on deleted requests.
-		return ctrl.Result{}, client.IgnoreNotFound(err)
+		if apierrors.IsNotFound(err) {
+			if removeError := crb.RemoveSubject(ctx, req.NamespacedName); removeError != nil {
+				return ctrl.Result{}, fmt.Errorf("unable to remove subject in ClusterroleBinding: %w", removeError)
+			}
+			return ctrl.Result{}, nil
+		}
+		return ctrl.Result{}, fmt.Errorf("unable to retrieve Cluster resource: %w", err)
 	}
 
-	svc := resources.NewService(r.Client, &redpandaCluster, r.Scheme, log)
-	sts := resources.NewStatefulSet(r.Client, &redpandaCluster, r.Scheme, svc.HeadlessServiceFQDN(), svc.Key().Name, log)
-	toApply := []resources.Resource{
-		svc,
-		resources.NewConfigMap(r.Client, &redpandaCluster, r.Scheme, svc.HeadlessServiceFQDN(), log),
+	headlessSvc := resources.NewHeadlessService(r.Client, &redpandaCluster, r.Scheme, log)
+	nodeportSvc := resources.NewNodePortService(r.Client, &redpandaCluster, r.Scheme, log)
+	pki := certmanager.NewPki(r.Client, &redpandaCluster, headlessSvc.HeadlessServiceFQDN(), r.Scheme, log)
+	sa := resources.NewServiceAccount(r.Client, &redpandaCluster, r.Scheme, log)
+	sts := resources.NewStatefulSet(
+		r.Client,
+		&redpandaCluster,
+		r.Scheme,
+		headlessSvc.HeadlessServiceFQDN(),
+		headlessSvc.Key().Name,
+		nodeportSvc.Key(),
+		pki.NodeCert(),
+		pki.OperatorClientCert(),
+		sa.Key().Name,
+		r.configuratorTag,
+		log)
+	toApply := []resources.Reconciler{
+		headlessSvc,
+		nodeportSvc,
+		resources.NewConfigMap(r.Client, &redpandaCluster, r.Scheme, headlessSvc.HeadlessServiceFQDN(), log),
+		pki,
+		sa,
+		resources.NewClusterRole(r.Client, &redpandaCluster, r.Scheme, log),
+		crb,
 		sts,
 	}
 
@@ -96,8 +132,8 @@ func (r *ClusterReconciler) Reconcile(
 	var observedPods corev1.PodList
 
 	err := r.List(ctx, &observedPods, &client.ListOptions{
-		LabelSelector:	labels.ForCluster(&redpandaCluster).AsClientSelector(),
-		Namespace:	redpandaCluster.Namespace,
+		LabelSelector: labels.ForCluster(&redpandaCluster).AsClientSelector(),
+		Namespace:     redpandaCluster.Namespace,
 	})
 	if err != nil {
 		log.Error(err, "Unable to fetch PodList resource")
@@ -105,18 +141,24 @@ func (r *ClusterReconciler) Reconcile(
 		return ctrl.Result{}, err
 	}
 
-	observedNodes := make([]string, 0, len(observedPods.Items))
+	observedNodesInternal := make([]string, 0, len(observedPods.Items))
 	// nolint:gocritic // the copies are necessary for further redpandacluster updates
 	for _, item := range observedPods.Items {
-		observedNodes = append(observedNodes, fmt.Sprintf("%s.%s", item.Name, svc.HeadlessServiceFQDN()))
+		observedNodesInternal = append(observedNodesInternal, fmt.Sprintf("%s.%s", item.Name, headlessSvc.HeadlessServiceFQDN()))
 	}
 
-	if !reflect.DeepEqual(observedNodes, redpandaCluster.Status.Nodes) {
-		redpandaCluster.Status.Nodes = observedNodes
-		if err := r.Status().Update(ctx, &redpandaCluster); err != nil {
-			log.Error(err, "Failed to update RedpandaClusterStatus")
+	observedNodesExternal, err := r.createExternalNodesList(ctx, observedPods.Items, &redpandaCluster, nodeportSvc.Key())
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to construct external node list: %w", err)
+	}
 
-			return ctrl.Result{}, err
+	if !reflect.DeepEqual(observedNodesInternal, redpandaCluster.Status.Nodes.Internal) ||
+		!reflect.DeepEqual(observedNodesExternal, redpandaCluster.Status.Nodes.External) {
+		redpandaCluster.Status.Nodes.Internal = observedNodesInternal
+		redpandaCluster.Status.Nodes.External = observedNodesExternal
+
+		if err := r.Status().Update(ctx, &redpandaCluster); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to update cluster status nodes: %w", err)
 		}
 	}
 
@@ -141,5 +183,73 @@ func (r *ClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&redpandav1alpha1.Cluster{}).
 		Owns(&appsv1.StatefulSet{}).
+		Owns(&corev1.Service{}).
 		Complete(r)
+}
+
+// WithConfiguratorTag set the configuratorTag
+func (r *ClusterReconciler) WithConfiguratorTag(
+	configuratorTag string,
+) *ClusterReconciler {
+	r.configuratorTag = configuratorTag
+	return r
+}
+
+func (r *ClusterReconciler) createExternalNodesList(
+	ctx context.Context,
+	pods []corev1.Pod,
+	pandaCluster *redpandav1alpha1.Cluster,
+	nodePortName types.NamespacedName,
+) ([]string, error) {
+	if !pandaCluster.Spec.ExternalConnectivity {
+		return []string{}, nil
+	}
+
+	var nodePortSvc corev1.Service
+	if err := r.Get(ctx, nodePortName, &nodePortSvc); err != nil {
+		return []string{}, fmt.Errorf("failed to retrieve node port service %s: %w", nodePortName, err)
+	}
+
+	if len(nodePortSvc.Spec.Ports) != 1 || nodePortSvc.Spec.Ports[0].NodePort == 0 {
+		return []string{}, fmt.Errorf("node port service %s: %w", nodePortName, errNodePortMissing)
+	}
+
+	var node corev1.Node
+	observedNodesExternal := make([]string, 0, len(pods))
+	for i := range pods {
+		if err := r.Get(ctx, types.NamespacedName{Name: pods[i].Spec.NodeName}, &node); err != nil {
+			return []string{}, fmt.Errorf("failed to retrieve node %s: %w", pods[i].Spec.NodeName, err)
+		}
+
+		observedNodesExternal = append(observedNodesExternal,
+			fmt.Sprintf("%s:%d",
+				getExternalIP(&node),
+				getNodePort(&nodePortSvc),
+			))
+	}
+	return observedNodesExternal, nil
+}
+
+func getExternalIP(node *corev1.Node) string {
+	if node == nil {
+		return ""
+	}
+	for _, address := range node.Status.Addresses {
+		if address.Type == corev1.NodeExternalIP {
+			return address.Address
+		}
+	}
+	return ""
+}
+
+func getNodePort(svc *corev1.Service) int32 {
+	if svc == nil {
+		return -1
+	}
+	for _, port := range svc.Spec.Ports {
+		if port.NodePort != 0 {
+			return port.NodePort
+		}
+	}
+	return 0
 }

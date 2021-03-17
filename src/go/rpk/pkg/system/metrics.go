@@ -24,9 +24,9 @@ import (
 )
 
 type Metrics struct {
-	CpuPercentage	float64
-	FreeMemoryMB	float64
-	FreeSpaceMB	float64
+	CpuPercentage float64
+	FreeMemoryMB  float64
+	FreeSpaceMB   float64
 }
 
 type stat struct {
@@ -36,12 +36,12 @@ type stat struct {
 	// in user mode, measured in clock ticks (divide by
 	// sysconf(_SC_CLK_TCK)).  This includes guest_time (time
 	// spent running a virtual CPU).
-	utime	uint64
+	utime uint64
 
 	// Amount of time that this process has been scheduled
 	// in kernel mode, measured in clock ticks (divide by
 	// sysconf(_SC_CLK_TCK)).
-	stime	uint64
+	stime uint64
 }
 
 func GatherMetrics(
@@ -133,8 +133,8 @@ func readStat(fs afero.Fs, pid int) (*stat, error) {
 	}
 
 	return &stat{
-		utime:	utime,
-		stime:	stime,
+		utime: utime,
+		stime: stime,
 	}, nil
 }
 

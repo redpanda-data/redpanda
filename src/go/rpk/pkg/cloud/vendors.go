@@ -39,8 +39,8 @@ func availableVendorFrom(
 	vendors map[string]vendor.Vendor,
 ) (vendor.InitializedVendor, error) {
 	type initResult struct {
-		vendor	vendor.InitializedVendor
-		err	error
+		vendor vendor.InitializedVendor
+		err    error
 	}
 	initAsync := func(v vendor.Vendor, c chan<- initResult) {
 		iv, err := v.Init()

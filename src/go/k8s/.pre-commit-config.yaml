@@ -23,3 +23,7 @@ repos:
     rev: master
     hooks:
       - id: go-mod-tidy
+  - repo: https://github.com/norwoodj/helm-docs
+    rev: v1.5.0
+    hooks:
+      - id: helm-docs

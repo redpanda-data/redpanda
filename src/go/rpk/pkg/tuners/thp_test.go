@@ -21,25 +21,25 @@ import (
 
 func TestTHPTunerSupported(t *testing.T) {
 	tests := []struct {
-		name		string
-		thpDir		string
-		expected	bool
-		expectedReason	string
+		name           string
+		thpDir         string
+		expected       bool
+		expectedReason string
 	}{
 		{
-			name:		"should return true if the default dir exists",
-			thpDir:		"/sys/kernel/mm/transparent_hugepage",
-			expected:	true,
+			name:     "should return true if the default dir exists",
+			thpDir:   "/sys/kernel/mm/transparent_hugepage",
+			expected: true,
 		},
 		{
-			name:		"should return true if the RHEL-specific dir exists",
-			thpDir:		"/sys/kernel/mm/redhat_transparent_hugepage",
-			expected:	true,
+			name:     "should return true if the RHEL-specific dir exists",
+			thpDir:   "/sys/kernel/mm/redhat_transparent_hugepage",
+			expected: true,
 		},
 		{
-			name:		"should return false if no dir exists",
-			expected:	false,
-			expectedReason:	"None of /sys/kernel/mm/transparent_hugepage, /sys/kernel/mm/redhat_transparent_hugepage was found",
+			name:           "should return false if no dir exists",
+			expected:       false,
+			expectedReason: "None of /sys/kernel/mm/transparent_hugepage, /sys/kernel/mm/redhat_transparent_hugepage was found",
 		},
 	}
 
@@ -129,24 +129,24 @@ func TestTHPCheckID(t *testing.T) {
 
 func TestTHPCheck(t *testing.T) {
 	tests := []struct {
-		name		string
-		contents	string
-		expected	bool
+		name     string
+		contents string
+		expected bool
 	}{
 		{
-			name:		"should return true if the active value is 'always'",
-			contents:	"[always] madvise never",
-			expected:	true,
+			name:     "should return true if the active value is 'always'",
+			contents: "[always] madvise never",
+			expected: true,
 		},
 		{
-			name:		"should return true if the active value is 'madvise'",
-			contents:	"always [madvise] never",
-			expected:	true,
+			name:     "should return true if the active value is 'madvise'",
+			contents: "always [madvise] never",
+			expected: true,
 		},
 		{
-			name:		"should return false if the active value is 'never'",
-			contents:	"always madvise [never]",
-			expected:	false,
+			name:     "should return false if the active value is 'never'",
+			contents: "always madvise [never]",
+			expected: false,
 		},
 	}
 	for _, tt := range tests {

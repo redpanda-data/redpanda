@@ -10,6 +10,7 @@
 package cmd
 
 import (
+	"github.com/Shopify/sarama"
 	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/cluster"
@@ -19,12 +20,12 @@ import (
 
 func NewClusterCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	var (
-		brokers		[]string
-		configFile	string
+		brokers    []string
+		configFile string
 	)
 	command := &cobra.Command{
-		Use:	"cluster",
-		Short:	"Interact with a Redpanda cluster",
+		Use:   "cluster",
+		Short: "Interact with a Redpanda cluster",
 	}
 
 	command.PersistentFlags().StringSliceVar(
@@ -64,7 +65,14 @@ func NewClusterCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 		&brokers,
 	)
 	adminClosure := common.CreateAdmin(fs, brokersClosure, configClosure)
-
 	command.AddCommand(cluster.NewInfoCommand(adminClosure))
+
+	// NewOffsetsCommand takes client and admin factories so we can mock both
+	clientClosure := common.CreateClient(fs, brokersClosure, configClosure)
+	adminWrapperClosure := func(client sarama.Client) (sarama.ClusterAdmin, error) {
+		return sarama.NewClusterAdminFromClient(client)
+	}
+	command.AddCommand(cluster.NewOffsetsCommand(clientClosure, adminWrapperClosure))
+
 	return command
 }

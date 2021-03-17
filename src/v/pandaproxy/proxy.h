@@ -12,6 +12,7 @@
 #pragma once
 
 #include "kafka/client/client.h"
+#include "pandaproxy/configuration.h"
 #include "pandaproxy/server.h"
 #include "seastarx.h"
 
@@ -24,16 +25,16 @@ namespace pandaproxy {
 
 class proxy {
 public:
-    proxy(
-      ss::socket_address listen_addr,
-      const kafka::client::configuration& client_config);
+    proxy(const YAML::Node& config, const YAML::Node& client_config);
 
     ss::future<> start();
     ss::future<> stop();
 
+    configuration& config();
     kafka::client::configuration& client_config();
 
 private:
+    configuration _config;
     kafka::client::client _client;
     server::context_t _ctx;
     server _server;

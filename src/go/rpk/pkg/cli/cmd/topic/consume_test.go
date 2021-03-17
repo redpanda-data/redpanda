@@ -25,26 +25,26 @@ import (
 
 func TestConsumeMessages(t *testing.T) {
 	tests := []struct {
-		name	string
-		err	*sarama.ConsumerError
-		msg	*sarama.ConsumerMessage
+		name string
+		err  *sarama.ConsumerError
+		msg  *sarama.ConsumerMessage
 	}{
 		{
-			name:	"it should print a message",
+			name: "it should print a message",
 			msg: &sarama.ConsumerMessage{
-				Key:	[]byte("keyo"),
-				Value:	[]byte("Messagio"),
+				Key:   []byte("keyo"),
+				Value: []byte("Messagio"),
 			},
 		},
 		{
 			name: "it shouldn't print a message if it's nil",
 		},
 		{
-			name:	"it should log errors",
+			name: "it should log errors",
 			err: &sarama.ConsumerError{
-				Topic:		"newtopic",
-				Partition:	1,
-				Err:		errors.New("Bad luck, yo"),
+				Topic:     "newtopic",
+				Partition: 1,
+				Err:       errors.New("Bad luck, yo"),
 			},
 		},
 	}

@@ -117,11 +117,13 @@ class Repository {
         `Wasm function (${handle.coprocessor.globalId}) ` +
           `didn't return a Promise<Map<string, RecordBatch>>`
       );
-      return handleError(
-        handle.coprocessor,
-        requestItem,
-        error,
-        PolicyError.Deregister
+      return Promise.reject(
+        handleError(
+          handle.coprocessor,
+          requestItem,
+          error,
+          PolicyError.Deregister
+        )
       );
     }
   }
@@ -208,7 +210,10 @@ class Repository {
                   recordBatch,
                   resultMap
                 )
-              );
+              )
+              .catch((responseError: ProcessBatchReplyItem) => {
+                return responseError;
+              });
           } catch (e) {
             return handleError(handle.coprocessor, requestItem, e);
           }

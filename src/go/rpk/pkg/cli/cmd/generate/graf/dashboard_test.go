@@ -23,16 +23,16 @@ func defaultDashboard() graf.Dashboard {
 	graph.ID = 1
 	graph.Datasource = datasource
 	graph.Targets = []graf.Target{{
-		Expr:		`sum(%s{instance=~"[[node]]",shard=~"[[node_shard]]"}) by ([[aggr_criteria]])`,
-		LegendFormat:	`instance: {{instance}}`,
-		Format:		"time_series",
-		Step:		10,
-		IntervalFactor:	2,
+		Expr:           `sum(%s{instance=~"[[node]]",shard=~"[[node_shard]]"}) by ([[aggr_criteria]])`,
+		LegendFormat:   `instance: {{instance}}`,
+		Format:         "time_series",
+		Step:           10,
+		IntervalFactor: 2,
 	}}
 	graph.Tooltip = graf.Tooltip{
-		MsResolution:	true,
-		Shared:		true,
-		ValueType:	"cumulative",
+		MsResolution: true,
+		Shared:       true,
+		ValueType:    "cumulative",
 	}
 	singlestat := graf.NewGraphPanel("single stat 1", "bytes")
 	singlestat.ID = 2
@@ -43,52 +43,52 @@ func defaultDashboard() graf.Dashboard {
 	}}
 	rows := []graf.Panel{graf.NewRowPanel("row 1", graph, singlestat)}
 	timePicker := graf.TimePicker{
-		RefreshIntervals:	[]string{"10s", "1m", "5m", "15m", "1h"},
-		TimeOptions:		[]string{"5m", "15m", "1h", "1d", "7d"},
+		RefreshIntervals: []string{"10s", "1m", "5m", "15m", "1h"},
+		TimeOptions:      []string{"5m", "15m", "1h", "1d", "7d"},
 	}
 	return graf.Dashboard{
-		Title:	"Redpanda",
+		Title: "Redpanda",
 		Templating: graf.Templating{
 			List: []graf.TemplateVar{{
-				Name:		"var 1",
-				Datasource:	datasource,
-				Label:		"label 1",
-				Multi:		true,
-				Refresh:	1,
-				Sort:		1,
+				Name:       "var 1",
+				Datasource: datasource,
+				Label:      "label 1",
+				Multi:      true,
+				Refresh:    1,
+				Sort:       1,
 				Options: []graf.Option{
 					{
-						Text:	"Cluster",
-						Value:	"",
+						Text:  "Cluster",
+						Value: "",
 					},
 					{
-						Text:	"Instance",
-						Value:	"instance,",
+						Text:  "Instance",
+						Value: "instance,",
 					},
 				},
 			}},
 		},
-		Panels:		rows,
-		Editable:	true,
-		Refresh:	"10s",
-		Time:		graf.Time{From: "now-1h", To: "now"},
-		TimePicker:	timePicker,
-		Timezone:	"utc",
-		SchemaVersion:	12,
+		Panels:        rows,
+		Editable:      true,
+		Refresh:       "10s",
+		Time:          graf.Time{From: "now-1h", To: "now"},
+		TimePicker:    timePicker,
+		Timezone:      "utc",
+		SchemaVersion: 12,
 	}
 }
 
 func TestDashboardMarshalJSON(t *testing.T) {
 
 	tests := []struct {
-		name		string
-		dashboard	func() graf.Dashboard
-		expected	string
+		name      string
+		dashboard func() graf.Dashboard
+		expected  string
 	}{
 		{
-			name:		"should marshal the dashboard correctly",
-			dashboard:	defaultDashboard,
-			expected:	`{"title":"Redpanda","templating":{"list":[{"name":"var 1","datasource":"prometheus","label":"label 1","type":"","refresh":1,"options":[{"text":"Cluster","value":"","selected":false},{"text":"Instance","value":"instance,","selected":false}],"includeAll":false,"allFormat":"","allValue":"","multi":true,"multiFormat":"","query":"","current":{"text":"","value":null},"hide":0,"sort":1}]},"panels":[{"type":"row","collapsed":true,"id":3,"title":"row 1","editable":true,"gridPos":{"h":6,"w":24,"x":0,"y":0},"transparent":false,"links":null,"span":0,"error":false,"panels":[{"type":"graph","id":1,"title":"graph panel 1","datasource":"prometheus","editable":true,"gridPos":{"h":6,"w":8,"x":0,"y":0},"transparent":false,"links":null,"renderer":"flot","span":4,"error":false,"targets":[{"refId":"","expr":"sum(%s{instance=~\"[[node]]\",shard=~\"[[node_shard]]\"}) by ([[aggr_criteria]])","intervalFactor":2,"step":10,"legendFormat":"instance: {{instance}}","format":"time_series"}],"xaxis":{"format":"","logBase":0,"show":true,"mode":"time"},"yaxes":[{"label":null,"show":true,"logBase":1,"min":0,"format":"ops"},{"label":null,"show":true,"logBase":1,"min":0,"format":"short"}],"legend":{"show":true,"max":false,"min":false,"values":false,"avg":false,"current":false,"total":false},"fill":1,"linewidth":2,"nullPointMode":"null","thresholds":null,"lines":false,"bars":false,"tooltip":{"shared":true,"value_type":"cumulative","msResolution":true},"aliasColors":{},"steppedLine":false},{"type":"graph","id":2,"title":"single stat 1","datasource":"prometheus","editable":true,"gridPos":{"h":6,"w":8,"x":0,"y":0},"transparent":false,"links":null,"renderer":"flot","span":4,"error":false,"targets":[{"refId":"","expr":"count(up{job=~\"node\"})","legendFormat":""}],"xaxis":{"format":"","logBase":0,"show":true,"mode":"time"},"yaxes":[{"label":null,"show":true,"logBase":1,"min":0,"format":"bytes"},{"label":null,"show":true,"logBase":1,"min":0,"format":"short"}],"legend":{"show":true,"max":false,"min":false,"values":false,"avg":false,"current":false,"total":false},"fill":1,"linewidth":2,"nullPointMode":"connected","thresholds":null,"lines":false,"bars":false,"tooltip":{"shared":false,"value_type":"individual"},"aliasColors":{},"steppedLine":false}]}],"editable":true,"timezone":"utc","refresh":"10s","time":{"from":"now-1h","to":"now"},"timepicker":{"refresh_intervals":["10s","1m","5m","15m","1h"],"time_options":["5m","15m","1h","1d","7d"]},"annotations":{"list":null},"links":null,"schemaVersion":12}`,
+			name:      "should marshal the dashboard correctly",
+			dashboard: defaultDashboard,
+			expected:  `{"title":"Redpanda","templating":{"list":[{"name":"var 1","datasource":"prometheus","label":"label 1","type":"","refresh":1,"options":[{"text":"Cluster","value":"","selected":false},{"text":"Instance","value":"instance,","selected":false}],"includeAll":false,"allFormat":"","allValue":"","multi":true,"multiFormat":"","query":"","current":{"text":"","value":null},"hide":0,"sort":1}]},"panels":[{"type":"row","collapsed":true,"id":3,"title":"row 1","editable":true,"gridPos":{"h":6,"w":24,"x":0,"y":0},"transparent":false,"links":null,"span":0,"error":false,"panels":[{"type":"graph","id":1,"title":"graph panel 1","datasource":"prometheus","editable":true,"gridPos":{"h":6,"w":8,"x":0,"y":0},"transparent":false,"links":null,"renderer":"flot","span":4,"error":false,"targets":[{"refId":"","expr":"sum(%s{instance=~\"[[node]]\",shard=~\"[[node_shard]]\"}) by ([[aggr_criteria]])","intervalFactor":2,"step":10,"legendFormat":"instance: {{instance}}","format":"time_series"}],"xaxis":{"format":"","logBase":0,"show":true,"mode":"time"},"yaxes":[{"label":null,"show":true,"logBase":1,"min":0,"format":"ops"},{"label":null,"show":true,"logBase":1,"min":0,"format":"short"}],"legend":{"show":true,"max":false,"min":false,"values":false,"avg":false,"current":false,"total":false},"fill":1,"linewidth":2,"nullPointMode":"null","thresholds":null,"lines":false,"bars":false,"tooltip":{"shared":true,"value_type":"cumulative","msResolution":true},"aliasColors":{},"steppedLine":false},{"type":"graph","id":2,"title":"single stat 1","datasource":"prometheus","editable":true,"gridPos":{"h":6,"w":8,"x":0,"y":0},"transparent":false,"links":null,"renderer":"flot","span":4,"error":false,"targets":[{"refId":"","expr":"count(up{job=~\"node\"})","legendFormat":""}],"xaxis":{"format":"","logBase":0,"show":true,"mode":"time"},"yaxes":[{"label":null,"show":true,"logBase":1,"min":0,"format":"bytes"},{"label":null,"show":true,"logBase":1,"min":0,"format":"short"}],"legend":{"show":true,"max":false,"min":false,"values":false,"avg":false,"current":false,"total":false},"fill":1,"linewidth":2,"nullPointMode":"connected","thresholds":null,"lines":false,"bars":false,"tooltip":{"shared":false,"value_type":"individual"},"aliasColors":{},"steppedLine":false}]}],"editable":true,"timezone":"utc","refresh":"10s","time":{"from":"now-1h","to":"now"},"timepicker":{"refresh_intervals":["10s","1m","5m","15m","1h"],"time_options":["5m","15m","1h","1d","7d"]},"annotations":{"list":null},"links":null,"schemaVersion":12}`,
 		},
 	}
 	for _, tt := range tests {

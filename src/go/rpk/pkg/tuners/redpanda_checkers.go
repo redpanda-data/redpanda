@@ -31,7 +31,7 @@ import (
 type CheckerID int
 
 const (
-	ConfigFileChecker	= iota
+	ConfigFileChecker = iota
 	DataDirAccessChecker
 	DiskSpaceChecker
 	FreeMemChecker
@@ -221,32 +221,32 @@ func RedpandaCheckers(
 	netCheckersFactory := NewNetCheckersFactory(
 		fs, irqProcFile, irqDeviceInfo, ethtool, balanceService, cpuMasks)
 	checkers := map[CheckerID][]Checker{
-		ConfigFileChecker:		{NewConfigChecker(config)},
-		IoConfigFileChecker:		{NewIOConfigFileExistanceChecker(fs, ioConfigFile)},
-		FreeMemChecker:			{NewMemoryChecker(fs)},
-		SwapChecker:			{NewSwapChecker(fs)},
-		DataDirAccessChecker:		{NewDataDirWritableChecker(fs, config.Redpanda.Directory)},
-		DiskSpaceChecker:		{NewFreeDiskSpaceChecker(config.Redpanda.Directory)},
-		FsTypeChecker:			{NewFilesystemTypeChecker(config.Redpanda.Directory)},
-		TransparentHugePagesChecker:	{NewTransparentHugePagesChecker(fs)},
-		NtpChecker:			{NewNTPSyncChecker(timeout, fs)},
-		SchedulerChecker:		{schedulerChecker},
-		NomergesChecker:		{nomergesChecker},
-		DiskIRQsAffinityChecker:	{dirIRQAffinityChecker},
-		DiskIRQsAffinityStaticChecker:	{dirIRQAffinityStaticChecker},
-		FstrimChecker:			{NewFstrimChecker()},
-		SynBacklogChecker:		{netCheckersFactory.NewSynBacklogChecker()},
-		ListenBacklogChecker:		{netCheckersFactory.NewListenBacklogChecker()},
-		RfsTableEntriesChecker:		{netCheckersFactory.NewRfsTableSizeChecker()},
-		NicIRQsAffinitStaticChecker:	{netCheckersFactory.NewNicIRQAffinityStaticChecker(interfaces)},
-		NicIRQsAffinitChecker:		netCheckersFactory.NewNicIRQAffinityCheckers(interfaces, irq.Default, "all"),
-		NicRpsChecker:			netCheckersFactory.NewNicRpsSetCheckers(interfaces, irq.Default, "all"),
-		NicRfsChecker:			netCheckersFactory.NewNicRfsCheckers(interfaces),
-		NicXpsChecker:			netCheckersFactory.NewNicXpsCheckers(interfaces),
-		MaxAIOEvents:			{NewMaxAIOEventsChecker(fs)},
-		ClockSource:			{NewClockSourceChecker(fs)},
-		Swappiness:			{NewSwappinessChecker(fs)},
-		KernelVersion:			{NewKernelVersionChecker(GetKernelVersion)},
+		ConfigFileChecker:             {NewConfigChecker(config)},
+		IoConfigFileChecker:           {NewIOConfigFileExistanceChecker(fs, ioConfigFile)},
+		FreeMemChecker:                {NewMemoryChecker(fs)},
+		SwapChecker:                   {NewSwapChecker(fs)},
+		DataDirAccessChecker:          {NewDataDirWritableChecker(fs, config.Redpanda.Directory)},
+		DiskSpaceChecker:              {NewFreeDiskSpaceChecker(config.Redpanda.Directory)},
+		FsTypeChecker:                 {NewFilesystemTypeChecker(config.Redpanda.Directory)},
+		TransparentHugePagesChecker:   {NewTransparentHugePagesChecker(fs)},
+		NtpChecker:                    {NewNTPSyncChecker(timeout, fs)},
+		SchedulerChecker:              {schedulerChecker},
+		NomergesChecker:               {nomergesChecker},
+		DiskIRQsAffinityChecker:       {dirIRQAffinityChecker},
+		DiskIRQsAffinityStaticChecker: {dirIRQAffinityStaticChecker},
+		FstrimChecker:                 {NewFstrimChecker()},
+		SynBacklogChecker:             {netCheckersFactory.NewSynBacklogChecker()},
+		ListenBacklogChecker:          {netCheckersFactory.NewListenBacklogChecker()},
+		RfsTableEntriesChecker:        {netCheckersFactory.NewRfsTableSizeChecker()},
+		NicIRQsAffinitStaticChecker:   {netCheckersFactory.NewNicIRQAffinityStaticChecker(interfaces)},
+		NicIRQsAffinitChecker:         netCheckersFactory.NewNicIRQAffinityCheckers(interfaces, irq.Default, "all"),
+		NicRpsChecker:                 netCheckersFactory.NewNicRpsSetCheckers(interfaces, irq.Default, "all"),
+		NicRfsChecker:                 netCheckersFactory.NewNicRfsCheckers(interfaces),
+		NicXpsChecker:                 netCheckersFactory.NewNicXpsCheckers(interfaces),
+		MaxAIOEvents:                  {NewMaxAIOEventsChecker(fs)},
+		ClockSource:                   {NewClockSourceChecker(fs)},
+		Swappiness:                    {NewSwappinessChecker(fs)},
+		KernelVersion:                 {NewKernelVersionChecker(GetKernelVersion)},
 	}
 
 	v, err := cloud.AvailableVendor()

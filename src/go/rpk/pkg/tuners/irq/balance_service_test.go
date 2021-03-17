@@ -25,8 +25,8 @@ import (
 
 type procMock struct {
 	os.Proc
-	run		func(command string, args ...string) ([]string, error)
-	isRunning	func(processName string) bool
+	run       func(command string, args ...string) ([]string, error)
+	isRunning func(processName string) bool
 }
 
 func (procMock *procMock) RunWithSystemLdPath(
@@ -41,8 +41,8 @@ func (procMock *procMock) IsRunning(_ time.Duration, processName string) bool {
 
 type balanceServiceMock struct {
 	BalanceService
-	getBannedIRQs	func() ([]int, error)
-	isRunning	bool
+	getBannedIRQs func() ([]int, error)
+	isRunning     bool
 }
 
 func (m *balanceServiceMock) BanIRQsAndRestart(bannedIRQs []int) error {
@@ -63,28 +63,28 @@ func Test_BalanceService_BanIRQsAndRestart(t *testing.T) {
 		return true
 	}
 	tests := []struct {
-		name		string
-		proc		os.Proc
-		configFile	[]string
-		bannedIRQs	[]int
-		dir		string
-		before		func(afero.Fs, string, []string)
-		assert		func(afero.Fs, string, []string, []string)
+		name       string
+		proc       os.Proc
+		configFile []string
+		bannedIRQs []int
+		dir        string
+		before     func(afero.Fs, string, []string)
+		assert     func(afero.Fs, string, []string, []string)
 	}{
 		{
 			name: "Shall update the config and then restart IRQ " +
 				"balance service with config in /etc/sysconfig/irqbalance & systemd",
 			proc: &procMock{
-				isRunning:	running,
+				isRunning: running,
 				run: func(command string, args ...string) ([]string, error) {
 					require.Equal(t, "systemctl", command)
 					require.Equal(t, []string{"try-restart", "irqbalance"}, args)
 					return nil, nil
 				},
 			},
-			configFile:	[]string{"ONE_SHOT=true", "#IRQBALANCE_BANNED_CPUS="},
-			bannedIRQs:	[]int{5, 12, 15},
-			dir:		"/etc/sysconfig/",
+			configFile: []string{"ONE_SHOT=true", "#IRQBALANCE_BANNED_CPUS="},
+			bannedIRQs: []int{5, 12, 15},
+			dir:        "/etc/sysconfig/",
 			before: func(fs afero.Fs, dir string, configFile []string) {
 				_ = utils.WriteFileLines(fs,
 					configFile,
@@ -101,9 +101,9 @@ func Test_BalanceService_BanIRQsAndRestart(t *testing.T) {
 			},
 		},
 		{
-			name:	"Shall add  IRQs to banned list leaving those that were already banned intact",
+			name: "Shall add  IRQs to banned list leaving those that were already banned intact",
 			proc: &procMock{
-				isRunning:	running,
+				isRunning: running,
 				run: func(command string, args ...string) ([]string, error) {
 					require.Equal(t, "systemctl", command)
 					require.Equal(t, []string{"try-restart", "irqbalance"}, args)
@@ -113,8 +113,8 @@ func Test_BalanceService_BanIRQsAndRestart(t *testing.T) {
 			configFile: []string{"ONE_SHOT=true",
 				"#IRQBALANCE_BANNED_CPUS=",
 				"IRQBALANCE_ARGS=\" --banirq=5\""},
-			bannedIRQs:	[]int{12, 15},
-			dir:		"/etc/sysconfig",
+			bannedIRQs: []int{12, 15},
+			dir:        "/etc/sysconfig",
 			before: func(fs afero.Fs, dir string, configFile []string) {
 				_ = utils.WriteFileLines(fs, configFile, dir+irqFile)
 			},
@@ -128,9 +128,9 @@ func Test_BalanceService_BanIRQsAndRestart(t *testing.T) {
 			},
 		},
 		{
-			name:	"Shall prevent duplicates in banned IRQs arguments",
+			name: "Shall prevent duplicates in banned IRQs arguments",
 			proc: &procMock{
-				isRunning:	running,
+				isRunning: running,
 				run: func(command string, args ...string) ([]string, error) {
 					require.Equal(t, "systemctl", command)
 					require.Equal(t, []string{"try-restart", "irqbalance"}, args)
@@ -141,8 +141,8 @@ func Test_BalanceService_BanIRQsAndRestart(t *testing.T) {
 				"#IRQBALANCE_BANNED_CPUS=",
 				// IRQ 5 is already banned
 				"IRQBALANCE_ARGS=\" --banirq=5\""},
-			bannedIRQs:	[]int{5, 12, 15},
-			dir:		"/etc/sysconfig",
+			bannedIRQs: []int{5, 12, 15},
+			dir:        "/etc/sysconfig",
 			before: func(fs afero.Fs, dir string, configFile []string) {
 				_ = utils.WriteFileLines(fs,
 					configFile,
@@ -161,16 +161,16 @@ func Test_BalanceService_BanIRQsAndRestart(t *testing.T) {
 			name: "Shall update the config and then restart IRQ " +
 				"balance service with config in /etc/conf.d/irqbalance & systemd",
 			proc: &procMock{
-				isRunning:	running,
+				isRunning: running,
 				run: func(command string, args ...string) ([]string, error) {
 					require.Equal(t, "systemctl", command)
 					require.Equal(t, []string{"try-restart", "irqbalance"}, args)
 					return nil, nil
 				},
 			},
-			configFile:	[]string{"ONE_SHOT=true", "#IRQBALANCE_BANNED_CPUS="},
-			bannedIRQs:	[]int{5, 12, 15},
-			dir:		"/etc/conf.d",
+			configFile: []string{"ONE_SHOT=true", "#IRQBALANCE_BANNED_CPUS="},
+			bannedIRQs: []int{5, 12, 15},
+			dir:        "/etc/conf.d",
 			before: func(fs afero.Fs, dir string, configFile []string) {
 				_ = utils.WriteFileLines(fs,
 					configFile,
@@ -192,16 +192,16 @@ func Test_BalanceService_BanIRQsAndRestart(t *testing.T) {
 			name: "Shall update the config and then restart IRQ " +
 				"balance service with config in /etc/conf.d/irqbalance & init daemon",
 			proc: &procMock{
-				isRunning:	running,
+				isRunning: running,
 				run: func(command string, args ...string) ([]string, error) {
 					require.Equal(t, "/etc/init.d/irqbalance", command)
 					require.Equal(t, []string{"restart"}, args)
 					return nil, nil
 				},
 			},
-			configFile:	[]string{"ONE_SHOT=true", "#IRQBALANCE_BANNED_CPUS="},
-			bannedIRQs:	[]int{5, 12, 15},
-			dir:		"/etc/conf.d",
+			configFile: []string{"ONE_SHOT=true", "#IRQBALANCE_BANNED_CPUS="},
+			bannedIRQs: []int{5, 12, 15},
+			dir:        "/etc/conf.d",
 			before: func(fs afero.Fs, dir string, configFile []string) {
 				_ = utils.WriteFileLines(fs,
 					configFile,
@@ -252,12 +252,12 @@ func Test_balanceService_GetBannedIRQs(t *testing.T) {
 	type fields struct {
 	}
 	tests := []struct {
-		name	string
-		before	func(afero.Fs)
-		want	[]int
+		name   string
+		before func(afero.Fs)
+		want   []int
 	}{
 		{
-			name:	"Shall return all banned irq",
+			name: "Shall return all banned irq",
 			before: func(fs afero.Fs) {
 				_ = utils.WriteFileLines(fs,
 					[]string{"ONE_SHOT=true",
@@ -266,10 +266,10 @@ func Test_balanceService_GetBannedIRQs(t *testing.T) {
 							"--banirq=34 --banirq=48 --banirq=16\""},
 					"/etc/sysconfig/irqbalance")
 			},
-			want:	[]int{123, 34, 48, 16},
+			want: []int{123, 34, 48, 16},
 		},
 		{
-			name:	"Shall return empty list as there are none banned IRQs",
+			name: "Shall return empty list as there are none banned IRQs",
 			before: func(fs afero.Fs) {
 				_ = utils.WriteFileLines(fs,
 					[]string{"ONE_SHOT=true",
@@ -279,7 +279,7 @@ func Test_balanceService_GetBannedIRQs(t *testing.T) {
 			},
 		},
 		{
-			name:	"Shall return empty list as there are no custom options line",
+			name: "Shall return empty list as there are no custom options line",
 			before: func(fs afero.Fs) {
 				_ = utils.WriteFileLines(fs,
 					[]string{"ONE_SHOT=true",
@@ -293,8 +293,8 @@ func Test_balanceService_GetBannedIRQs(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			fs := afero.NewMemMapFs()
 			balanceService := &balanceService{
-				fs:	fs,
-				proc:	&procMock{},
+				fs:   fs,
+				proc: &procMock{},
 			}
 			tt.before(fs)
 			got, err := balanceService.GetBannedIRQs()
@@ -308,40 +308,40 @@ func TestAreIRQsStaticallyAssigned(t *testing.T) {
 	type args struct {
 	}
 	tests := []struct {
-		name		string
-		irqs		[]int
-		balanceService	BalanceService
-		want		bool
+		name           string
+		irqs           []int
+		balanceService BalanceService
+		want           bool
 	}{
 		{
-			name:	"Shall return true as all requested IRQs are banned",
+			name: "Shall return true as all requested IRQs are banned",
 			balanceService: &balanceServiceMock{
 				getBannedIRQs: func() ([]int, error) {
 					return []int{12, 56, 87, 34, 46}, nil
 				},
-				isRunning:	true,
+				isRunning: true,
 			},
-			irqs:	[]int{12, 34},
-			want:	true,
+			irqs: []int{12, 34},
+			want: true,
 		},
 		{
-			name:	"Shall return false when some of the requested IRQs are not banned",
+			name: "Shall return false when some of the requested IRQs are not banned",
 			balanceService: &balanceServiceMock{
 				getBannedIRQs: func() ([]int, error) {
 					return []int{12, 56, 87, 34, 46}, nil
 				},
-				isRunning:	true,
+				isRunning: true,
 			},
-			irqs:	[]int{12, 134},
-			want:	false,
+			irqs: []int{12, 134},
+			want: false,
 		},
 		{
-			name:	"Shall always return true when irqbalance is not running",
+			name: "Shall always return true when irqbalance is not running",
 			balanceService: &balanceServiceMock{
 				isRunning: false,
 			},
-			irqs:	[]int{12, 134},
-			want:	true,
+			irqs: []int{12, 134},
+			want: true,
 		},
 	}
 	for _, tt := range tests {

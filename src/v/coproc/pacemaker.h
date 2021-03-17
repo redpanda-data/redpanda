@@ -74,6 +74,11 @@ public:
     ss::future<errc> remove_source(script_id);
 
     /**
+     * Removes all script_ids from the pacemaker.
+     */
+    ss::future<absl::btree_map<script_id, errc>> remove_all_sources();
+
+    /**
      * @returns true if a matching script id exists on 'this' shard
      */
     bool local_script_id_exists(script_id);
@@ -82,6 +87,9 @@ public:
      * @returns true if a matching ntp exists on 'this' shard
      */
     bool ntp_is_registered(const model::ntp&);
+
+    /// returns the number of running / registered fibers
+    size_t n_registered_scripts() const { return _scripts.size(); }
 
     /// returns a handle to the reconnect transport
     shared_script_resources& resources() { return _shared_res; }

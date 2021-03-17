@@ -32,7 +32,7 @@ kafka::client::client make_client() {
     cfg.brokers.set_value(std::vector<unresolved_address>{
       config::shard_local_cfg().kafka_api()[0].address});
     cfg.retries.set_value(size_t(1));
-    return kafka::client::client{cfg};
+    return kafka::client::client{to_yaml(cfg)};
 }
 
 } // namespace

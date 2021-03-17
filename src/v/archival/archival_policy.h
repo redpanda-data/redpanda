@@ -10,60 +10,55 @@
 
 #pragma once
 
-#include "archival/manifest.h"
+#include "archival/types.h"
 #include "model/fundamental.h"
 #include "storage/log_manager.h"
+#include "storage/ntp_config.h"
+#include "storage/segment_set.h"
 
 namespace archival {
 
-/// Policy that controls how archiver picks upload candidates
-enum class upload_policy_selector {
-    /// Archive only original, non-compacted segments
-    archive_non_compacted,
+struct upload_candidate {
+    ss::lw_shared_ptr<storage::segment> source;
+    segment_name exposed_name;
+    model::offset starting_offset;
+    size_t file_offset;
+    size_t content_length;
 };
 
-/// Policy that controls how archiver picks delete candidates
-enum class delete_policy_selector {
-    /// Don't keep segments in S3 if they're deleted localy
-    do_not_keep,
-};
+std::ostream& operator<<(std::ostream& s, const upload_candidate& c);
 
-class upload_policy_base {
+/// Archival policy is responsible for extracting segments from
+/// log_manager in right order.
+///
+/// \note It doesn't store a reference to log_manager or any segments
+/// but uses ntp as a key to extract the data when needed.
+class archival_policy {
 public:
-    /// \brief Generate list of segments that should be uploaded to S3
+    explicit archival_policy(model::ntp ntp);
+
+    /// \brief regurn next upload candidate
     ///
-    /// \param remote is a remote manifest (cached or downloade)
-    /// \param lm is log manager
-    virtual std::optional<manifest>
-    generate_upload_set(const manifest& remote, storage::log_manager& lm) = 0;
+    /// \param last_offset is a last uploaded offset
+    /// \param lm is a log manager
+    /// \return initializd struct on success, empty struct on failure
+    /// \note returned upload candidate can have offset which is smaller than
+    ///       last_offset because index is sparse and don't have all possible
+    ///       offsets. If index is not materialized we will upload log starting
+    ///       from the begining.
+    upload_candidate
+    get_next_candidate(model::offset last_offset, storage::log_manager& lm);
+
+private:
+    struct lookup_result {
+        ss::lw_shared_ptr<storage::segment> segment;
+        const storage::ntp_config* ntp_conf;
+    };
+
+    lookup_result
+    find_segment(model::offset last_offset, storage::log_manager& lm);
+
+    model::ntp _ntp;
 };
 
-class delete_policy_base {
-public:
-    /// \brief Generate list of segments that should be remove from S3
-    ///
-    /// \param remote is a remote manifest (cached or downloade)
-    /// \param lm is log manager
-    virtual std::optional<manifest>
-    generate_delete_set(const manifest& remote, storage::log_manager& lm) = 0;
-};
-
-/// Archiving policy implementation interface
-class archival_policy_base
-  : public upload_policy_base
-  , public delete_policy_base {
-public:
-    archival_policy_base() = default;
-    virtual ~archival_policy_base() = default;
-    archival_policy_base(const archival_policy_base&) = delete;
-    archival_policy_base(archival_policy_base&&) = delete;
-    archival_policy_base& operator=(const archival_policy_base&) = delete;
-    archival_policy_base& operator=(archival_policy_base&&) = delete;
-};
-
-std::unique_ptr<archival_policy_base> make_archival_policy(
-  upload_policy_selector e,
-  delete_policy_selector d,
-  model::ntp ntp,
-  model::revision_id rev);
 } // namespace archival

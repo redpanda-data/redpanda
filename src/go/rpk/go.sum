@@ -30,8 +30,8 @@ github.com/burdiyan/kafkautil v0.0.0-20190131162249-eaf83ed22d5b/go.mod h1:5hrpM
 github.com/cespare/xxhash v1.1.0 h1:a6HrQnmkObjyL+Gs60czilIUGqrzKutQD6XZog3p+ko=
 github.com/cespare/xxhash v1.1.0/go.mod h1:XrSqR1VqqWfGrhpAt58auRo0WTKS1nRRg3ghfAqPWnc=
 github.com/client9/misspell v0.3.4/go.mod h1:qj6jICC3Q7zFZvVWo7KLAzC3yx5G7kyvSDkc90ppPyw=
-github.com/cockroachdb/crlfmt v0.0.0-20200923085322-b9cb16fe9a33 h1:MQXQgcBw3j3gGAaga+YLXEhwCAZkALCNugxX3kuL7v0=
-github.com/cockroachdb/crlfmt v0.0.0-20200923085322-b9cb16fe9a33/go.mod h1:EOI6rrXIdP+4EXwM8837kmmb6IJesf7k7W6bUu8BDOg=
+github.com/cockroachdb/crlfmt v0.0.0-20210128092314-b3eff0b87c79 h1:4s0GWs4NXFK4JEeUc0Q1pRbL4oMbqh1DK70qeQ+viOA=
+github.com/cockroachdb/crlfmt v0.0.0-20210128092314-b3eff0b87c79/go.mod h1:EOI6rrXIdP+4EXwM8837kmmb6IJesf7k7W6bUu8BDOg=
 github.com/cockroachdb/gostdlib v1.13.0 h1:TzSEPYgkKDNei3gbLc0rrHu4iHyBp7/+NxPOFmcXGaw=
 github.com/cockroachdb/gostdlib v1.13.0/go.mod h1:eXX95p9QDrYwJfJ6AgeN9QnRa/lqqid9LAzWz/l5OgA=
 github.com/cockroachdb/ttycolor v0.0.0-20180709150743-a1d5aaeb377d h1:TNsiMS1Ij2aleP/05UNSPzsOu9eJm9mfUGLm7Ylt7Dg=

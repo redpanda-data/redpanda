@@ -10,11 +10,15 @@
 
 #pragma once
 
+#include "archival/types.h"
 #include "bytes/iobuf.h"
+#include "cluster/types.h"
 #include "json/json.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "s3/client.h"
 #include "seastarx.h"
+#include "tristate.h"
 
 #include <seastar/util/bool_class.hh>
 
@@ -26,19 +30,10 @@
 
 namespace archival {
 
-/// Segment file name without working directory,
-/// expected format: <base-offset>-<term-id>-<revision>.log
-using segment_name = named_type<ss::sstring, struct archival_segment_name_t>;
-/// Segment path in S3, expected format:
-/// <prefix>/<ns>/<topic>/<part-id>_<rev>/<base-offset>-<term-id>-<revision>.log
-using remote_segment_path
-  = named_type<ss::sstring, struct archival_remote_segment_path_t>;
-using remote_manifest_path
-  = named_type<ss::sstring, struct archival_remote_manifest_path_t>;
-/// Local segment path, expected format:
-/// <work-dir>/<ns>/<topic>/<part-id>_<rev>/<base-offset>-<term-id>-<revision>.log
-using local_segment_path
-  = named_type<ss::sstring, struct archival_local_segment_path_t>;
+struct serialized_json_stream {
+    ss::input_stream<char> stream;
+    size_t size_bytes;
+};
 
 /// Manifest file stored in S3
 class manifest final {
@@ -48,14 +43,6 @@ public:
         size_t size_bytes;
         model::offset base_offset;
         model::offset committed_offset;
-        /// Set to true if the file was deleted
-        bool is_deleted_locally;
-        // NOTE: because S3 doesn't delete files
-        // immediately we will still be able to read
-        // the deleted file for a while, to prevent
-        // confusion we mark such file as deleted in
-        // manifest in order for GC alg. to remove the
-        // record eventually
 
         // bool operator==(const segment_meta& other) const = default;
         // bool operator<(const segment_meta& other) const = default;
@@ -80,6 +67,9 @@ public:
 
     /// Get NTP
     const model::ntp& get_ntp() const;
+
+    // Get last offset
+    const model::offset get_last_offset() const;
 
     /// Get revision
     model::revision_id get_revision_id() const;
@@ -114,7 +104,7 @@ public:
     /// Serialize manifest object
     ///
     /// \return asynchronous input_stream with the serialized json
-    std::tuple<ss::input_stream<char>, size_t> serialize() const;
+    serialized_json_stream serialize() const;
 
     /// Serialize manifest object
     ///
@@ -130,13 +120,6 @@ public:
     /// \return true on success, false on failure (no such segment)
     bool delete_permanently(const segment_name& name);
 
-    /// Remove segment as deleted in manifest
-    ///
-    /// \param name is a segment name
-    /// \return true on success, false on failure (no such segment or already
-    /// marked)
-    bool mark_as_deleted(const segment_name& name);
-
 private:
     /// Update manifest content from json document that supposed to be generated
     /// from manifest.json file
@@ -145,6 +128,44 @@ private:
     model::ntp _ntp;
     model::revision_id _rev;
     segment_map _segments;
+    model::offset _last_offset;
+};
+
+class topic_manifest {
+public:
+    /// Create manifest for specific ntp
+    explicit topic_manifest(
+      const cluster::topic_configuration& cfg, model::revision_id rev);
+
+    /// Create empty manifest that supposed to be updated later
+    topic_manifest();
+
+    /// Update manifest file from input_stream (remote set)
+    ss::future<> update(ss::input_stream<char>&& is);
+
+    /// Serialize manifest object
+    ///
+    /// \return asynchronous input_stream with the serialized json
+    serialized_json_stream serialize() const;
+
+    /// Serialize manifest object
+    ///
+    /// \param out output stream that should be used to output the json
+    void serialize(std::ostream& out) const;
+
+    /// Manifest object name in S3
+    remote_manifest_path get_manifest_path() const;
+
+    /// Return all possible manifest locations
+    std::vector<remote_manifest_path> get_partition_manifests() const;
+
+private:
+    /// Update manifest content from json document that supposed to be generated
+    /// from manifest.json file
+    void update(const rapidjson::Document& m);
+
+    std::optional<cluster::topic_configuration> _topic_config;
+    model::revision_id _rev;
 };
 
 } // namespace archival

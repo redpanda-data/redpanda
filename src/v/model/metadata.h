@@ -147,6 +147,11 @@ struct partition_metadata {
     friend std::ostream& operator<<(std::ostream&, const partition_metadata&);
 };
 
+enum class isolation_level : int8_t {
+    read_uncommitted = 0,
+    read_committed = 1,
+};
+
 struct topic_namespace_view {
     topic_namespace_view(const model::ns& n, const model::topic& t)
       : ns(n)

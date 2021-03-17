@@ -5,6 +5,6 @@ rp_test(
     fetch.cc
     produce.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
-  LIBRARIES v::seastar_testing_main v::rest_application
+  LIBRARIES v::seastar_testing_main v::pandaproxy
   LABELS pandaproxy
 )

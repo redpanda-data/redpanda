@@ -32,26 +32,26 @@ import (
 )
 
 type metricsResult struct {
-	rows	[][]string
-	metrics	*system.Metrics
+	rows    [][]string
+	metrics *system.Metrics
 }
 
 type kafkaInfo struct {
-	partitions	*int
-	topics		*int
+	partitions *int
+	topics     *int
 }
 
 func NewInfoCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	var (
-		configFile	string
-		send		bool
-		timeout		time.Duration
+		configFile string
+		send       bool
+		timeout    time.Duration
 	)
 	command := &cobra.Command{
-		Use:		"info",
-		Short:		"Check the resource usage in the system, and optionally send it to Vectorized",
-		Aliases:	[]string{"status"},
-		SilenceUsage:	true,
+		Use:          "info",
+		Short:        "Check the resource usage in the system, and optionally send it to Vectorized",
+		Aliases:      []string{"status"},
+		SilenceUsage: true,
 		RunE: func(ccmd *cobra.Command, args []string) error {
 			return executeInfo(fs, mgr, configFile, timeout, send)
 		},
@@ -319,8 +319,8 @@ func getKafkaInfoRows(
 	spacingRow := []string{"", ""}
 	type node struct {
 		// map[topic-name][]partitions
-		leaderParts	map[string][]int
-		replicaParts	map[string][]int
+		leaderParts  map[string][]int
+		replicaParts map[string][]int
 	}
 	nodePartitions := map[int]*node{}
 	for _, topic := range topics {
@@ -427,11 +427,11 @@ func sendMetrics(
 	conf config.Config, metrics *system.Metrics, kInfo kafkaInfo,
 ) error {
 	payload := api.MetricsPayload{
-		FreeMemoryMB:	metrics.FreeMemoryMB,
-		FreeSpaceMB:	metrics.FreeSpaceMB,
-		CpuPercentage:	metrics.CpuPercentage,
-		Partitions:	kInfo.partitions,
-		Topics:		kInfo.topics,
+		FreeMemoryMB:  metrics.FreeMemoryMB,
+		FreeSpaceMB:   metrics.FreeSpaceMB,
+		CpuPercentage: metrics.CpuPercentage,
+		Partitions:    kInfo.partitions,
+		Topics:        kInfo.topics,
 	}
 	return api.SendMetrics(payload, conf)
 }

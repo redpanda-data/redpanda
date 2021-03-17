@@ -77,6 +77,7 @@ struct enable_copros_reply {
 
 /// Stub for what should be 0 parameter method, 'disable_all_coprocessors'
 using empty_request = named_type<int8_t, struct empty_req_tag>;
+using empty_response = named_type<int8_t, struct empty_resp_tag>;
 
 /// \brief deregistration request, remove all topics registered to a coprocessor
 /// with id 'script_id'.

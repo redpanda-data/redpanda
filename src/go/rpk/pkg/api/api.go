@@ -29,57 +29,57 @@ import (
 const defaultUrl = "https://m.rp.vectorized.io"
 
 type MetricsPayload struct {
-	FreeMemoryMB	float64	`json:"freeMemoryMB"`
-	FreeSpaceMB	float64	`json:"freeSpaceMB"`
-	CpuPercentage	float64	`json:"cpuPercentage"`
-	Partitions	*int	`json:"partitions"`
-	Topics		*int	`json:"topics"`
+	FreeMemoryMB  float64 `json:"freeMemoryMB"`
+	FreeSpaceMB   float64 `json:"freeSpaceMB"`
+	CpuPercentage float64 `json:"cpuPercentage"`
+	Partitions    *int    `json:"partitions"`
+	Topics        *int    `json:"topics"`
 }
 
 type EnvironmentPayload struct {
-	Checks		[]CheckPayload	`json:"checks"`
-	Tuners		[]TunerPayload	`json:"tuners"`
-	ErrorMsg	string		`json:"errorMsg"`
+	Checks   []CheckPayload `json:"checks"`
+	Tuners   []TunerPayload `json:"tuners"`
+	ErrorMsg string         `json:"errorMsg"`
 }
 
 type CheckPayload struct {
-	Name		string	`json:"name"`
-	ErrorMsg	string	`json:"errorMsg"`
-	Current		string	`json:"current"`
-	Required	string	`json:"required"`
+	Name     string `json:"name"`
+	ErrorMsg string `json:"errorMsg"`
+	Current  string `json:"current"`
+	Required string `json:"required"`
 }
 
 type TunerPayload struct {
-	Name		string	`json:"name"`
-	ErrorMsg	string	`json:"errorMsg"`
-	Enabled		bool	`json:"enabled"`
-	Supported	bool	`json:"supported"`
+	Name      string `json:"name"`
+	ErrorMsg  string `json:"errorMsg"`
+	Enabled   bool   `json:"enabled"`
+	Supported bool   `json:"supported"`
 }
 
 type metricsBody struct {
 	MetricsPayload
-	SentAt		time.Time	`json:"sentAt"`
-	NodeUuid	string		`json:"nodeUuid"`
-	Organization	string		`json:"organization"`
-	ClusterId	string		`json:"clusterId"`
-	NodeId		int		`json:"nodeId"`
+	SentAt       time.Time `json:"sentAt"`
+	NodeUuid     string    `json:"nodeUuid"`
+	Organization string    `json:"organization"`
+	ClusterId    string    `json:"clusterId"`
+	NodeId       int       `json:"nodeId"`
 }
 
 type environmentBody struct {
-	Payload		EnvironmentPayload	`json:"payload"`
-	Config		map[string]interface{}	`json:"config"`
-	SentAt		time.Time		`json:"sentAt"`
-	NodeUuid	string			`json:"nodeUuid"`
-	Organization	string			`json:"organization"`
-	ClusterId	string			`json:"clusterId"`
-	NodeId		int			`json:"nodeId"`
-	CloudVendor	string			`json:"cloudVendor"`
-	VMType		string			`json:"vmType"`
-	OSInfo		string			`json:"osInfo"`
-	CPUModel	string			`json:"cpuModel"`
-	CPUCores	int			`json:"cpuCores"`
-	RPVersion	string			`json:"rpVersion"`
-	Environment	string			`json:"environment"`
+	Payload      EnvironmentPayload     `json:"payload"`
+	Config       map[string]interface{} `json:"config"`
+	SentAt       time.Time              `json:"sentAt"`
+	NodeUuid     string                 `json:"nodeUuid"`
+	Organization string                 `json:"organization"`
+	ClusterId    string                 `json:"clusterId"`
+	NodeId       int                    `json:"nodeId"`
+	CloudVendor  string                 `json:"cloudVendor"`
+	VMType       string                 `json:"vmType"`
+	OSInfo       string                 `json:"osInfo"`
+	CPUModel     string                 `json:"cpuModel"`
+	CPUCores     int                    `json:"cpuCores"`
+	RPVersion    string                 `json:"rpVersion"`
+	Environment  string                 `json:"environment"`
 }
 
 func SendMetrics(p MetricsPayload, conf config.Config) error {
@@ -135,19 +135,19 @@ func SendEnvironment(
 	}
 
 	b := environmentBody{
-		Payload:	env,
-		Config:		confMap,
-		SentAt:		time.Now(),
-		NodeUuid:	conf.NodeUuid,
-		Organization:	conf.Organization,
-		ClusterId:	conf.ClusterId,
-		NodeId:		conf.Redpanda.Id,
-		CloudVendor:	cloudVendor,
-		VMType:		vmType,
-		OSInfo:		osInfo,
-		CPUModel:	cpuModel,
-		CPUCores:	cpuCores,
-		RPVersion:	version.Pretty(),
+		Payload:      env,
+		Config:       confMap,
+		SentAt:       time.Now(),
+		NodeUuid:     conf.NodeUuid,
+		Organization: conf.Organization,
+		ClusterId:    conf.ClusterId,
+		NodeId:       conf.Redpanda.Id,
+		CloudVendor:  cloudVendor,
+		VMType:       vmType,
+		OSInfo:       osInfo,
+		CPUModel:     cpuModel,
+		CPUCores:     cpuCores,
+		RPVersion:    version.Pretty(),
 	}
 	return sendEnvironmentToUrl(
 		b,

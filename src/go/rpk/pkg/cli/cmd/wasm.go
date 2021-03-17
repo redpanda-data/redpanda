@@ -19,13 +19,13 @@ import (
 
 func NewWasmCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	var (
-		configFile	string
-		brokers		[]string
+		configFile string
+		brokers    []string
 	)
 
 	command := &cobra.Command{
-		Use:	"wasm",
-		Short:	"Deploy and remove inline WASM engine scripts",
+		Use:   "wasm",
+		Short: "Deploy and remove inline WASM engine scripts",
 	}
 	command.AddCommand(wasm.NewGenerateCommand(fs))
 
@@ -43,16 +43,16 @@ func NewWasmCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	command.AddCommand(
 		addKafkaFlags(
 			wasm.NewDeployCommand(fs, producerClosure, adminClosure),
-			configFile,
-			brokers,
+			&configFile,
+			&brokers,
 		),
 	)
 
 	command.AddCommand(
 		addKafkaFlags(
 			wasm.NewRemoveCommand(producerClosure, adminClosure),
-			configFile,
-			brokers,
+			&configFile,
+			&brokers,
 		),
 	)
 
@@ -60,18 +60,18 @@ func NewWasmCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 }
 
 func addKafkaFlags(
-	command *cobra.Command, configFile string, brokers []string,
+	command *cobra.Command, configFile *string, brokers *[]string,
 ) *cobra.Command {
 
 	command.Flags().StringSliceVar(
-		&brokers,
+		brokers,
 		"brokers",
 		[]string{},
 		"Comma-separated list of broker ip:port pairs",
 	)
 
 	command.Flags().StringVar(
-		&configFile,
+		configFile,
 		"config",
 		"",
 		"Redpanda config file, if not set the file will be searched for"+

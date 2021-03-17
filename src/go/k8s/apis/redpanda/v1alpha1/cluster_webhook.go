@@ -7,18 +7,22 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-// Package v1alpha1 represent Custom Resource definition of the vectorized.io redpanda group
 package v1alpha1
 
 import (
-	"reflect"
-
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+)
+
+const (
+	kb = 1024
+	mb = 1024 * kb
+	gb = 1024 * mb
 )
 
 // log is for logging in this package.
@@ -49,21 +53,12 @@ var _ webhook.Validator = &Cluster{}
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type
 func (r *Cluster) ValidateCreate() error {
 	log.Info("validate create", "name", r.Name)
-	return nil
-}
 
-// ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
-func (r *Cluster) ValidateUpdate(old runtime.Object) error {
-	log.Info("validate update", "name", r.Name)
-	oldCluster := old.(*Cluster)
 	var allErrs field.ErrorList
 
-	if r.Spec.Replicas != nil && oldCluster.Spec.Replicas != nil && *r.Spec.Replicas < *oldCluster.Spec.Replicas {
-		allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("replicas"), r.Spec.Replicas, "scaling down is not supported"))
-	}
-	if !reflect.DeepEqual(r.Spec.Configuration, oldCluster.Spec.Configuration) {
-		allErrs = append(allErrs, field.Invalid(field.NewPath("spec").Child("configuration"), r.Spec.Configuration, "updating configuration is not supported"))
-	}
+	allErrs = append(allErrs, r.checkCollidingPorts()...)
+
+	allErrs = append(allErrs, r.validateMemory()...)
 
 	if len(allErrs) == 0 {
 		return nil
@@ -74,10 +69,96 @@ func (r *Cluster) ValidateUpdate(old runtime.Object) error {
 		r.Name, allErrs)
 }
 
+// ValidateUpdate implements webhook.Validator so a webhook will be registered for the type
+func (r *Cluster) ValidateUpdate(old runtime.Object) error {
+	log.Info("validate update", "name", r.Name)
+	oldCluster := old.(*Cluster)
+	var allErrs field.ErrorList
+
+	if r.Spec.Replicas != nil && oldCluster.Spec.Replicas != nil && *r.Spec.Replicas < *oldCluster.Spec.Replicas {
+		allErrs = append(allErrs,
+			field.Invalid(field.NewPath("spec").Child("replicas"),
+				r.Spec.Replicas,
+				"scaling down is not supported"))
+	}
+
+	allErrs = append(allErrs, r.checkCollidingPorts()...)
+
+	allErrs = append(allErrs, r.validateMemory()...)
+
+	if len(allErrs) == 0 {
+		return nil
+	}
+
+	return apierrors.NewInvalid(
+		r.GroupVersionKind().GroupKind(),
+		r.Name, allErrs)
+}
+
+// ReserveMemoryString is amount of memory that we reserve for other processes than redpanda in the container
+const ReserveMemoryString = "1M"
+
+// validateMemory verifies that memory limits are aligned with the minimal requirement of redpanda
+// which is 1GB per core
+// to verify this, we need to subtract the 1M we reserve currently for other processes
+func (r *Cluster) validateMemory() field.ErrorList {
+	var allErrs field.ErrorList
+	quantity := resource.MustParse(ReserveMemoryString)
+	if !r.Spec.Configuration.DeveloperMode && (r.Spec.Resources.Limits.Memory().Value()-quantity.Value()) < gb {
+		allErrs = append(allErrs,
+			field.Invalid(
+				field.NewPath("spec").Child("resources").Child("limits").Child("memory"),
+				r.Spec.Resources.Limits.Memory(),
+				"need minimum of 1GB + 1MB of memory per node"))
+	}
+	return allErrs
+}
+
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type
 func (r *Cluster) ValidateDelete() error {
 	log.Info("validate delete", "name", r.Name)
 
 	// TODO(user): fill in your validation logic upon object deletion.
 	return nil
+}
+
+func (r *Cluster) checkCollidingPorts() field.ErrorList {
+	var allErrs field.ErrorList
+
+	if r.Spec.Configuration.AdminAPI.Port == r.Spec.Configuration.KafkaAPI.Port {
+		allErrs = append(allErrs,
+			field.Invalid(field.NewPath("spec").Child("configuration", "admin", "port"),
+				r.Spec.Configuration.AdminAPI.Port,
+				"admin port collide with Spec.Configuration.KafkaAPI.Port"))
+	}
+
+	if r.Spec.Configuration.RPCServer.Port == r.Spec.Configuration.KafkaAPI.Port {
+		allErrs = append(allErrs,
+			field.Invalid(field.NewPath("spec").Child("configuration", "rpcServer", "port"),
+				r.Spec.Configuration.RPCServer.Port,
+				"rpc port collide with Spec.Configuration.KafkaAPI.Port"))
+	}
+
+	if r.Spec.Configuration.AdminAPI.Port == r.Spec.Configuration.RPCServer.Port {
+		allErrs = append(allErrs,
+			field.Invalid(field.NewPath("spec").Child("configuration", "admin", "port"),
+				r.Spec.Configuration.AdminAPI.Port,
+				"admin port collide with Spec.Configuration.RPCServer.Port"))
+	}
+
+	if r.Spec.ExternalConnectivity && r.Spec.Configuration.KafkaAPI.Port+1 == r.Spec.Configuration.RPCServer.Port {
+		allErrs = append(allErrs,
+			field.Invalid(field.NewPath("spec").Child("configuration", "rpcServer", "port"),
+				r.Spec.Configuration.RPCServer.Port,
+				"rpc port collide with external Kafka API that is not visible in the Cluster CR"))
+	}
+
+	if r.Spec.ExternalConnectivity && r.Spec.Configuration.KafkaAPI.Port+1 == r.Spec.Configuration.AdminAPI.Port {
+		allErrs = append(allErrs,
+			field.Invalid(field.NewPath("spec").Child("configuration", "admin", "port"),
+				r.Spec.Configuration.AdminAPI.Port,
+				"admin port collide with external Kafka API that is not visible in the Cluster CR"))
+	}
+
+	return allErrs
 }

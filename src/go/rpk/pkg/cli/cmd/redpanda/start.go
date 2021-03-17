@@ -39,43 +39,43 @@ import (
 )
 
 type prestartConfig struct {
-	tuneEnabled	bool
-	checkEnabled	bool
+	tuneEnabled  bool
+	checkEnabled bool
 }
 
 type seastarFlags struct {
-	memory			string
-	lockMemory		bool
-	reserveMemory		string
-	hugepages		string
-	cpuSet			string
-	ioPropertiesFile	string
-	ioProperties		string
-	smp			int
-	threadAffinity		bool
-	numIoQueues		int
-	maxIoRequests		int
-	mbind			bool
-	overprovisioned		bool
+	memory           string
+	lockMemory       bool
+	reserveMemory    string
+	hugepages        string
+	cpuSet           string
+	ioPropertiesFile string
+	ioProperties     string
+	smp              int
+	threadAffinity   bool
+	numIoQueues      int
+	maxIoRequests    int
+	mbind            bool
+	overprovisioned  bool
 }
 
 const (
-	configFlag		= "config"
-	memoryFlag		= "memory"
-	lockMemoryFlag		= "lock-memory"
-	reserveMemoryFlag	= "reserve-memory"
-	hugepagesFlag		= "hugepages"
-	cpuSetFlag		= "cpuset"
-	ioPropertiesFileFlag	= "io-properties-file"
-	ioPropertiesFlag	= "io-properties"
-	wellKnownIOFlag		= "well-known-io"
-	smpFlag			= "smp"
-	threadAffinityFlag	= "thread-affinity"
-	numIoQueuesFlag		= "num-io-queues"
-	maxIoRequestsFlag	= "max-io-requests"
-	mbindFlag		= "mbind"
-	overprovisionedFlag	= "overprovisioned"
-	nodeIDFlag		= "node-id"
+	configFlag           = "config"
+	memoryFlag           = "memory"
+	lockMemoryFlag       = "lock-memory"
+	reserveMemoryFlag    = "reserve-memory"
+	hugepagesFlag        = "hugepages"
+	cpuSetFlag           = "cpuset"
+	ioPropertiesFileFlag = "io-properties-file"
+	ioPropertiesFlag     = "io-properties"
+	wellKnownIOFlag      = "well-known-io"
+	smpFlag              = "smp"
+	threadAffinityFlag   = "thread-affinity"
+	numIoQueuesFlag      = "num-io-queues"
+	maxIoRequestsFlag    = "max-io-requests"
+	mbindFlag            = "mbind"
+	overprovisionedFlag  = "overprovisioned"
+	nodeIDFlag           = "node-id"
 )
 
 func updateConfigWithFlags(conf *config.Config, flags *pflag.FlagSet) {
@@ -101,22 +101,22 @@ func NewStartCommand(
 ) *cobra.Command {
 	prestartCfg := prestartConfig{}
 	var (
-		configFile	string
-		nodeID		int
-		seeds		[]string
-		kafkaAddr	[]string
-		rpcAddr		string
-		advertisedKafka	[]string
-		advertisedRPC	string
-		installDirFlag	string
-		timeout		time.Duration
-		wellKnownIo	string
+		configFile      string
+		nodeID          int
+		seeds           []string
+		kafkaAddr       []string
+		rpcAddr         string
+		advertisedKafka []string
+		advertisedRPC   string
+		installDirFlag  string
+		timeout         time.Duration
+		wellKnownIo     string
 	)
 	sFlags := seastarFlags{}
 
 	command := &cobra.Command{
-		Use:	"start",
-		Short:	"Start redpanda",
+		Use:   "start",
+		Short: "Start redpanda",
 		RunE: func(ccmd *cobra.Command, args []string) error {
 			conf, err := mgr.FindOrGenerate(configFile)
 			if err != nil {
@@ -365,19 +365,19 @@ func NewStartCommand(
 
 func flagsMap(sFlags seastarFlags) map[string]interface{} {
 	return map[string]interface{}{
-		memoryFlag:		sFlags.memory,
-		lockMemoryFlag:		sFlags.lockMemory,
-		reserveMemoryFlag:	sFlags.reserveMemory,
-		ioPropertiesFileFlag:	sFlags.ioPropertiesFile,
-		ioPropertiesFlag:	sFlags.ioProperties,
-		cpuSetFlag:		sFlags.cpuSet,
-		smpFlag:		sFlags.smp,
-		hugepagesFlag:		sFlags.hugepages,
-		threadAffinityFlag:	sFlags.threadAffinity,
-		numIoQueuesFlag:	sFlags.numIoQueues,
-		maxIoRequestsFlag:	sFlags.maxIoRequests,
-		mbindFlag:		sFlags.mbind,
-		overprovisionedFlag:	sFlags.overprovisioned,
+		memoryFlag:           sFlags.memory,
+		lockMemoryFlag:       sFlags.lockMemory,
+		reserveMemoryFlag:    sFlags.reserveMemory,
+		ioPropertiesFileFlag: sFlags.ioPropertiesFile,
+		ioPropertiesFlag:     sFlags.ioProperties,
+		cpuSetFlag:           sFlags.cpuSet,
+		smpFlag:              sFlags.smp,
+		hugepagesFlag:        sFlags.hugepages,
+		threadAffinityFlag:   sFlags.threadAffinity,
+		numIoQueuesFlag:      sFlags.numIoQueues,
+		maxIoRequestsFlag:    sFlags.maxIoRequests,
+		mbindFlag:            sFlags.mbind,
+		overprovisionedFlag:  sFlags.overprovisioned,
 	}
 }
 
@@ -470,8 +470,8 @@ func buildRedpandaFlags(
 		finalFlags[n] = fmt.Sprint(v)
 	}
 	return &rp.RedpandaArgs{
-		ConfigFilePath:	conf.ConfigFile,
-		SeastarFlags:	finalFlags,
+		ConfigFilePath: conf.ConfigFile,
+		SeastarFlags:   finalFlags,
 	}, nil
 }
 
@@ -575,9 +575,9 @@ func tuneAll(
 		tuner := tunerFactory.CreateTuner(tunerName, params)
 		supported, reason := tuner.CheckIfSupported()
 		payload := api.TunerPayload{
-			Name:		tunerName,
-			Enabled:	enabled,
-			Supported:	supported,
+			Name:      tunerName,
+			Enabled:   enabled,
+			Supported: supported,
 		}
 		if !enabled {
 			log.Infof("Skipping disabled tuner %s", tunerName)
@@ -626,9 +626,9 @@ func check(
 	}
 	for _, result := range results {
 		payload := api.CheckPayload{
-			Name:		result.Desc,
-			Current:	result.Current,
-			Required:	result.Required,
+			Name:     result.Desc,
+			Current:  result.Current,
+			Required: result.Required,
 		}
 		if result.Err != nil {
 			payload.ErrorMsg = result.Err.Error()
@@ -745,7 +745,6 @@ func parseNamedAddresses(
 			as = append(as, *a)
 		}
 	}
-	log.Info(as)
 	return as, nil
 }
 
@@ -765,10 +764,10 @@ func parseNamedAddress(
 
 	return &config.NamedSocketAddress{
 		SocketAddress: config.SocketAddress{
-			Address:	hostname,
-			Port:		port,
+			Address: hostname,
+			Port:    port,
 		},
-		Name:	scheme,
+		Name: scheme,
 	}, nil
 }
 

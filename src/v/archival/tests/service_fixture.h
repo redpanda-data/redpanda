@@ -13,7 +13,6 @@
 #include "archival/manifest.h"
 #include "archival/ntp_archiver_service.h"
 #include "cluster/partition_leaders_table.h"
-#include "cluster/tests/utils.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "model/fundamental.h"
