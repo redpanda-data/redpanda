@@ -80,7 +80,10 @@ var _ = Describe("RedPandaCluster controller", func() {
 						Limits:   resources,
 						Requests: resources,
 					},
-					ExternalConnectivity: true,
+					ExternalConnectivity: v1alpha1.ExternalConnectivityConfig{
+						Enabled:   true,
+						Subdomain: "",
+					},
 				},
 			}
 			Expect(k8sClient.Create(context.Background(), redpandaCluster)).Should(Succeed())
