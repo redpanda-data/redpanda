@@ -15,7 +15,8 @@ image:
   # image.repository -- Repository that Redpanda Operator image is available
   repository: vectorized/redpanda-operator
   # image.tag -- Define the Redpanda Operator container tag
-  tag: v21.3.4
+  tag: |-
+    {{ .Chart.AppVersion }}
   # image.pullPolicy -- Define the pullPolicy for Redpanda Operator image
   pullPolicy: IfNotPresent
 

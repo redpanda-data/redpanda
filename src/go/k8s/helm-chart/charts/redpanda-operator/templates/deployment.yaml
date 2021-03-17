@@ -51,7 +51,7 @@ spec:
         - containerPort: 8443
           name: https
       - name: manager
-        image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+        image: "{{ .Values.image.repository }}:{{ tpl .Values.image.tag . }}"
         imagePullPolicy: {{ .Values.image.pullPolicy }}
         args:
         - --health-probe-bind-address=:8081
