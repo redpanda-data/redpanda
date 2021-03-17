@@ -658,9 +658,9 @@ describe("Server", function () {
     );
 
     it(
-      "should response undefined in record on request_process_replay if" +
-        "there is a error on coprocessor script, and its policy error is " +
-        "Deregister",
+      "It should send an undefined record list on request_process_replay " +
+        "and remove the script from the repository if there is an error " +
+        "executing the script and its policy error is 'Deregister'",
       () => {
         const handle = createHandle();
         // add unhandle expetion to coprocessor function
@@ -671,6 +671,10 @@ describe("Server", function () {
         const repositoryMock = sinonInstance.stub(
           Repository.prototype,
           "getHandlesByCoprocessorIds"
+        );
+        const removeRepositoryMock = sinonInstance.stub(
+          Repository.prototype,
+          "remove"
         );
         repositoryMock.returns([handle]);
 
@@ -700,6 +704,8 @@ describe("Server", function () {
               const result = results.result[0];
               assert.deepStrictEqual(result.resultRecordBatch, undefined);
               assert.strictEqual(result.coprocessorId, BigInt(1));
+              assert(removeRepositoryMock.called);
+              assert(removeRepositoryMock.withArgs(handle));
             })
             .finally(() => {
               client.close();
