@@ -16,13 +16,11 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"github.com/banzaicloud/k8s-objectmatcher/patch"
 	"github.com/go-logr/logr"
 	redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/labels"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -118,33 +116,26 @@ func (r *StatefulSetResource) Ensure(ctx context.Context) error {
 		}
 	}
 
-	err := r.Get(ctx, r.Key(), &sts)
-	if err != nil && !k8serrors.IsNotFound(err) {
+	obj, err := r.obj()
+	if err != nil {
+		return fmt.Errorf("unable to construct StatefulSet object: %w", err)
+	}
+	created, err := CreateIfNotExists(ctx, r, obj, r.logger)
+	if err != nil {
+		return err
+	}
+
+	err = r.Get(ctx, r.Key(), &sts)
+	if err != nil {
 		return fmt.Errorf("error while fetching StatefulSet resource: %w", err)
 	}
 
-	if k8serrors.IsNotFound(err) {
-		r.logger.Info(fmt.Sprintf("StatefulSet %s does not exist, going to create one", r.Key().Name))
+	r.LastObservedState = &sts
 
-		obj, objErr := r.Obj()
-		if objErr != nil {
-			return fmt.Errorf("unable to construct StatefulSet object: %w", err)
-		}
-
-		// this needs to be set when object gets created to be able to generate patches later
-		if aErr := patch.DefaultAnnotator.SetLastAppliedAnnotation(obj); aErr != nil {
-			return aErr
-		}
-
-		if err = r.Create(ctx, obj); err != nil {
-			return fmt.Errorf("unable to create StatefulSet resource: %w", err)
-		}
-		r.LastObservedState = obj.(*appsv1.StatefulSet)
-
+	if created {
+		// we don't need to update since we've just created the resource
 		return nil
 	}
-
-	r.LastObservedState = &sts
 	partitioned, err := r.shouldUsePartitionedUpdate(&sts)
 	if err != nil {
 		return err
@@ -155,7 +146,7 @@ func (r *StatefulSetResource) Ensure(ctx context.Context) error {
 			return fmt.Errorf("failed to run partitioned update: %w", err)
 		}
 	} else {
-		modified, err := r.Obj()
+		modified, err := r.obj()
 		if err != nil {
 			return err
 		}
@@ -199,9 +190,9 @@ func preparePVCResource(
 	return pvc
 }
 
-// Obj returns resource managed client.Object
-// nolint:funlen // The complexity of Obj function will be address in the next version TODO
-func (r *StatefulSetResource) Obj() (k8sclient.Object, error) {
+// obj returns resource managed client.Object
+// nolint:funlen // The complexity of obj function will be address in the next version TODO
+func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 	var configMapDefaultMode int32 = 0754
 
 	var clusterLabels = labels.ForCluster(r.pandaCluster)
@@ -471,11 +462,6 @@ func (r *StatefulSetResource) getServiceAccountName() string {
 // For reference please visit types.NamespacedName docs in k8s.io/apimachinery
 func (r *StatefulSetResource) Key() types.NamespacedName {
 	return types.NamespacedName{Name: r.pandaCluster.Name, Namespace: r.pandaCluster.Namespace}
-}
-
-// Kind returns v1.StatefulSet kind
-func (r *StatefulSetResource) Kind() string {
-	return statefulSetKind()
 }
 
 func (r *StatefulSetResource) portsConfiguration() string {

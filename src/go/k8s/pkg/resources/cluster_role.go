@@ -11,13 +11,11 @@ package resources
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/go-logr/logr"
 	redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/rbac/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -51,39 +49,18 @@ func NewClusterRole(
 }
 
 // Ensure manages v1.ClusterRole that is assigned to v1.ServiceAccount used in initContainer
-// nolint:dupl // The refactor is proposed in https://github.com/vectorizedio/redpanda/pull/779
 func (r *ClusterRoleResource) Ensure(ctx context.Context) error {
 	if !r.pandaCluster.Spec.ExternalConnectivity {
 		return nil
 	}
-
-	var cr v1.ClusterRole
-
-	err := r.Get(ctx, r.Key(), &cr)
-	if err != nil && !errors.IsNotFound(err) {
-		return fmt.Errorf("error while fetching ClusterRole resource: %w", err)
-	}
-
-	if errors.IsNotFound(err) {
-		r.logger.Info(fmt.Sprintf("ClusterRole %s does not exist, going to create one", r.Key().Name))
-
-		obj, err := r.Obj()
-		if err != nil {
-			return fmt.Errorf("unable to construct ClusterRole object: %w", err)
-		}
-
-		if err := r.Create(ctx, obj); err != nil {
-			return fmt.Errorf("unable to create ClusterRole resource: %w", err)
-		}
-	}
-
-	return nil
+	_, err := CreateIfNotExists(ctx, r, r.obj(), r.logger)
+	return err
 }
 
-// Obj returns resource managed client.Object
+// obj returns resource managed client.Object
 // The cluster.redpanda.vectorized.io custom resource is namespaced resource, that's
 // why v1.ClusterRole can not have assigned controller reference.
-func (r *ClusterRoleResource) Obj() (k8sclient.Object, error) {
+func (r *ClusterRoleResource) obj() k8sclient.Object {
 	return &v1.ClusterRole{
 		ObjectMeta: metav1.ObjectMeta{
 			// metav1.ObjectMeta can NOT have namespace set as
@@ -98,7 +75,7 @@ func (r *ClusterRoleResource) Obj() (k8sclient.Object, error) {
 				Resources: []string{"nodes"},
 			},
 		},
-	}, nil
+	}
 }
 
 // Key returns namespace/name object that is used to identify object.
@@ -106,11 +83,6 @@ func (r *ClusterRoleResource) Obj() (k8sclient.Object, error) {
 // Note that Namespace can not be set as this is cluster scoped resource
 func (r *ClusterRoleResource) Key() types.NamespacedName {
 	return types.NamespacedName{Name: "redpanda-init-configurator", Namespace: ""}
-}
-
-// Kind returns v1.ClusterRole kind
-func (r *ClusterRoleResource) Kind() string {
-	return clusterRoleKind()
 }
 
 func clusterRoleKind() string {

@@ -11,6 +11,7 @@ package certmanager
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/go-logr/logr"
 	cmapiv1 "github.com/jetstack/cert-manager/pkg/apis/certmanager/v1"
@@ -58,11 +59,17 @@ func (r *IssuerResource) Ensure(ctx context.Context) error {
 		return nil
 	}
 
-	return resources.GetOrCreate(ctx, r, &cmapiv1.Issuer{}, "Issuer", r.logger)
+	obj, err := r.obj()
+	if err != nil {
+		return fmt.Errorf("unable to construct object: %w", err)
+	}
+
+	_, err = resources.CreateIfNotExists(ctx, r, obj, r.logger)
+	return err
 }
 
-// Obj returns resource managed client.Object
-func (r *IssuerResource) Obj() (k8sclient.Object, error) {
+// obj returns resource managed client.Object
+func (r *IssuerResource) obj() (k8sclient.Object, error) {
 	objLabels := labels.ForCluster(r.pandaCluster)
 	objectMeta := metav1.ObjectMeta{
 		Name:      r.Key().Name,
@@ -104,11 +111,6 @@ func (r *IssuerResource) Obj() (k8sclient.Object, error) {
 // For reference please visit types.NamespacedName docs in k8s.io/apimachinery
 func (r *IssuerResource) Key() types.NamespacedName {
 	return r.key
-}
-
-// Kind returns cert-manager v1.Issuer kind
-func (r *IssuerResource) Kind() string {
-	return issuerKind()
 }
 
 // objRef returns the issuer's object reference

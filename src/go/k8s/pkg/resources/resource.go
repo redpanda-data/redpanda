@@ -27,15 +27,9 @@ import (
 type Resource interface {
 	Reconciler
 
-	// Obj returns resource managed client.Object
-	Obj() (client.Object, error)
-
 	// Key returns namespace/name object that is used to identify object.
 	// For reference please visit types.NamespacedName docs in k8s.io/apimachinery
 	Key() types.NamespacedName
-
-	// Kind returns the canonical name of the kubernetes managed resource
-	Kind() string
 }
 
 // Reconciler implements reconciliation logic
@@ -44,39 +38,22 @@ type Reconciler interface {
 	Ensure(ctx context.Context) error
 }
 
-type internalResource interface {
-	Resource
-	client.Reader
-	client.Writer
-}
-
-// GetOrCreate tries to get a kubernetes resource and creates it if does not exist
-func GetOrCreate(
-	ctx context.Context,
-	r internalResource,
-	checkObj client.Object,
-	resourceName string,
-	l logr.Logger,
-) error {
-	err := r.Get(ctx, r.Key(), checkObj)
-	if err != nil && !errors.IsNotFound(err) {
-		return fmt.Errorf("error while fetching %s resource: %w", resourceName, err)
+// CreateIfNotExists tries to get a kubernetes resource and creates it if does not exist
+func CreateIfNotExists(
+	ctx context.Context, c client.Client, obj client.Object, l logr.Logger,
+) (bool, error) {
+	if err := patch.DefaultAnnotator.SetLastAppliedAnnotation(obj); err != nil {
+		return false, fmt.Errorf("unable to add last applied annotation to %s: %w", obj.GetObjectKind().GroupVersionKind().Kind, err)
 	}
-
-	if errors.IsNotFound(err) {
-		l.Info(fmt.Sprintf("%s %s does not exist, going to create one", resourceName, r.Key().Name))
-
-		obj, err := r.Obj()
-		if err != nil {
-			return fmt.Errorf("unable to construct %s object: %w", resourceName, err)
-		}
-
-		if err := r.Create(ctx, obj); err != nil {
-			return fmt.Errorf("unable to create %s resource: %w", resourceName, err)
-		}
+	err := c.Create(ctx, obj)
+	if err != nil && !errors.IsAlreadyExists(err) {
+		return false, fmt.Errorf("unable to create %s resource: %w", obj.GetObjectKind().GroupVersionKind().Kind, err)
 	}
-
-	return nil
+	if err == nil {
+		l.Info(fmt.Sprintf("%s %s did not exist, was created", obj.GetObjectKind().GroupVersionKind().Kind, obj.GetName()))
+		return true, nil
+	}
+	return false, nil
 }
 
 // Update ensures resource is updated if necessary. The method calculates patch

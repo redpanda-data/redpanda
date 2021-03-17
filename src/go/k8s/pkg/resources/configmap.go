@@ -66,11 +66,16 @@ func NewConfigMap(
 
 // Ensure will manage kubernetes v1.ConfigMap for redpanda.vectorized.io CR
 func (r *ConfigMapResource) Ensure(ctx context.Context) error {
-	return GetOrCreate(ctx, r, &corev1.ConfigMap{}, "ConfigMap", r.logger)
+	obj, err := r.obj()
+	if err != nil {
+		return fmt.Errorf("unable to construct object: %w", err)
+	}
+	_, err = CreateIfNotExists(ctx, r, obj, r.logger)
+	return err
 }
 
-// Obj returns resource managed client.Object
-func (r *ConfigMapResource) Obj() (k8sclient.Object, error) {
+// obj returns resource managed client.Object
+func (r *ConfigMapResource) obj() (k8sclient.Object, error) {
 	cfgBytes, err := yaml.Marshal(r.createConfiguration())
 	if err != nil {
 		return nil, err
@@ -161,11 +166,6 @@ func (r *ConfigMapResource) Key() types.NamespacedName {
 // ConfigMapKey provides config map name that derived from redpanda.vectorized.io CR
 func ConfigMapKey(pandaCluster *redpandav1alpha1.Cluster) types.NamespacedName {
 	return types.NamespacedName{Name: pandaCluster.Name + baseSuffix, Namespace: pandaCluster.Namespace}
-}
-
-// Kind returns v1.ConfigMap kind
-func (r *ConfigMapResource) Kind() string {
-	return configMapKind()
 }
 
 func configMapKind() string {
