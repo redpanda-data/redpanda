@@ -68,11 +68,8 @@ func (r *PkiReconciler) NodeCert() types.NamespacedName {
 
 // OperatorClientCert returns the namespaced name for the client certificate
 // used by the Kubernetes operator
-func (r *PkiReconciler) OperatorClientCert() *types.NamespacedName {
-	if !r.pandaCluster.Spec.Configuration.TLS.RequireClientAuth {
-		return nil
-	}
-	return &types.NamespacedName{Name: r.pandaCluster.Name + "-" + OperatorClientCert, Namespace: r.pandaCluster.Namespace}
+func (r *PkiReconciler) OperatorClientCert() types.NamespacedName {
+	return types.NamespacedName{Name: r.pandaCluster.Name + "-" + OperatorClientCert, Namespace: r.pandaCluster.Namespace}
 }
 
 // Ensure will manage PKI for redpanda.vectorized.io custom resource

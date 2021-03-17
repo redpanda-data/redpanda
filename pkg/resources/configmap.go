@@ -31,7 +31,8 @@ const (
 	baseSuffix    = "-base"
 	dataDirectory = "/var/lib/redpanda/data"
 
-	tlsDir = "/etc/tls/certs"
+	tlsDir   = "/etc/tls/certs"
+	tlsDirCA = "/etc/tls/certs/ca"
 )
 
 var _ Resource = &ConfigMapResource{}
@@ -129,9 +130,11 @@ func (r *ConfigMapResource) createConfiguration() *config.Config {
 		cr.KafkaApiTLS = config.ServerTLS{
 			KeyFile:           fmt.Sprintf("%s/%s", tlsDir, corev1.TLSPrivateKeyKey), // tls.key
 			CertFile:          fmt.Sprintf("%s/%s", tlsDir, corev1.TLSCertKey),       // tls.crt
-			TruststoreFile:    fmt.Sprintf("%s/%s", tlsDir, cmetav1.TLSCAKey),
 			Enabled:           true,
 			RequireClientAuth: r.pandaCluster.Spec.Configuration.TLS.RequireClientAuth,
+		}
+		if r.pandaCluster.Spec.Configuration.TLS.RequireClientAuth {
+			cr.KafkaApiTLS.TruststoreFile = fmt.Sprintf("%s/%s", tlsDirCA, cmetav1.TLSCAKey)
 		}
 	}
 
