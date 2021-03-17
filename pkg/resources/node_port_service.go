@@ -53,7 +53,7 @@ func NewNodePortService(
 
 // Ensure will manage kubernetes v1.Service for redpanda.vectorized.io custom resource
 func (r *NodePortServiceResource) Ensure(ctx context.Context) error {
-	if !r.pandaCluster.Spec.ExternalConnectivity {
+	if !r.pandaCluster.Spec.ExternalConnectivity.Enabled {
 		return nil
 	}
 

@@ -201,7 +201,7 @@ func (r *ClusterReconciler) createExternalNodesList(
 	pandaCluster *redpandav1alpha1.Cluster,
 	nodePortName types.NamespacedName,
 ) ([]string, error) {
-	if !pandaCluster.Spec.ExternalConnectivity {
+	if !pandaCluster.Spec.ExternalConnectivity.Enabled {
 		return []string{}, nil
 	}
 

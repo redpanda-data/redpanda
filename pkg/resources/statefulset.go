@@ -106,7 +106,7 @@ func NewStatefulSet(
 func (r *StatefulSetResource) Ensure(ctx context.Context) error {
 	var sts appsv1.StatefulSet
 
-	if r.pandaCluster.Spec.ExternalConnectivity {
+	if r.pandaCluster.Spec.ExternalConnectivity.Enabled {
 		err := r.Get(ctx, r.nodePortName, &r.nodePortSvc)
 		if err != nil {
 			return fmt.Errorf("failed to retrieve node port service %s: %w", r.nodePortName, err)
@@ -289,7 +289,7 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 								},
 								{
 									Name:  "EXTERNAL_CONNECTIVITY",
-									Value: strconv.FormatBool(r.pandaCluster.Spec.ExternalConnectivity),
+									Value: strconv.FormatBool(r.pandaCluster.Spec.ExternalConnectivity.Enabled),
 								},
 								{
 									Name:  "HOST_PORT",
@@ -493,14 +493,14 @@ func (r *StatefulSetResource) secretVolumes() []corev1.Volume {
 }
 
 func (r *StatefulSetResource) getNodePort() string {
-	if r.pandaCluster.Spec.ExternalConnectivity {
+	if r.pandaCluster.Spec.ExternalConnectivity.Enabled {
 		return strconv.FormatInt(int64(r.nodePortSvc.Spec.Ports[0].NodePort), 10)
 	}
 	return ""
 }
 
 func (r *StatefulSetResource) getServiceAccountName() string {
-	if r.pandaCluster.Spec.ExternalConnectivity {
+	if r.pandaCluster.Spec.ExternalConnectivity.Enabled {
 		return r.serviceAccountName
 	}
 	return ""
@@ -522,7 +522,7 @@ func (r *StatefulSetResource) portsConfiguration() string {
 }
 
 func (r *StatefulSetResource) getPorts() []corev1.ContainerPort {
-	if r.pandaCluster.Spec.ExternalConnectivity &&
+	if r.pandaCluster.Spec.ExternalConnectivity.Enabled &&
 		len(r.nodePortSvc.Spec.Ports) > 0 {
 		return []corev1.ContainerPort{
 			{
