@@ -14,6 +14,7 @@ import (
 
 	cmmeta "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -48,6 +49,16 @@ type ClusterSpec struct {
 	// host port. The collision between Kafka external, Kafka internal,
 	// Admin and RPC port is checked in the webhook.
 	ExternalConnectivity bool `json:"externalConnectivity,omitempty"`
+	// Storage spec for cluster
+	Storage StorageSpec `json:"storage,omitempty"`
+}
+
+// StorageSpec defines the storage specification of the Cluster
+type StorageSpec struct {
+	// Storage capacity requested
+	Capacity resource.Quantity `json:"capacity,omitempty"`
+	// Storage class name - https://kubernetes.io/docs/concepts/storage/storage-classes/
+	StorageClassName string `json:"storageClassName,omitempty"`
 }
 
 // ClusterStatus defines the observed state of Cluster

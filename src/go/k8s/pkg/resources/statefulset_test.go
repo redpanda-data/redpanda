@@ -96,6 +96,10 @@ func TestEnsure(t *testing.T) {
 		if *actual.Spec.Replicas != *tt.expectedObject.Spec.Replicas || !reflect.DeepEqual(actual.Spec.Template.Spec.Containers[0].Resources.Requests, tt.expectedObject.Spec.Template.Spec.Containers[0].Resources.Requests) {
 			t.Errorf("%s: expecting replicas %d and resources %v, got replicas %d and resources %v", tt.name, *actual.Spec.Replicas, actual.Spec.Template.Spec.Containers[0].Resources.Requests, *tt.expectedObject.Spec.Replicas, tt.expectedObject.Spec.Template.Spec.Containers[0].Resources.Requests)
 		}
+
+		if len(actual.Spec.VolumeClaimTemplates) == 0 || !reflect.DeepEqual(actual.Spec.VolumeClaimTemplates[0].Spec, tt.expectedObject.Spec.VolumeClaimTemplates[0].Spec) {
+			t.Errorf("%s: expecting volume claim template %v, but got %v", tt.name, tt.expectedObject.Spec.VolumeClaimTemplates[0].Spec, actual.Spec.VolumeClaimTemplates[0].Spec)
+		}
 	}
 }
 
@@ -122,6 +126,23 @@ func stsFromCluster(pandaCluster *redpandav1alpha1.Cluster) *v1.StatefulSet {
 								Requests: pandaCluster.Spec.Resources.Requests,
 							},
 						},
+					},
+				},
+			},
+			VolumeClaimTemplates: []corev1.PersistentVolumeClaim{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: pandaCluster.Namespace,
+						Name:      "dataDir",
+					},
+					Spec: corev1.PersistentVolumeClaimSpec{
+						AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+						Resources: corev1.ResourceRequirements{
+							Requests: corev1.ResourceList{
+								corev1.ResourceStorage: pandaCluster.Spec.Storage.Capacity,
+							},
+						},
+						StorageClassName: &pandaCluster.Spec.Storage.StorageClassName,
 					},
 				},
 			},
@@ -159,6 +180,10 @@ func pandaCluster() *redpandav1alpha1.Cluster {
 			Resources: corev1.ResourceRequirements{
 				Limits:   resources,
 				Requests: resources,
+			},
+			Storage: redpandav1alpha1.StorageSpec{
+				Capacity:         resource.MustParse("10Gi"),
+				StorageClassName: "storage-class",
 			},
 		},
 	}
