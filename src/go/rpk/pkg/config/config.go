@@ -249,7 +249,7 @@ func checkRedpandaConfig(v *viper.Viper) []error {
 		)
 	} else {
 		socket := &SocketAddress{}
-		err := v.UnmarshalKey(rpcServerKey, socket)
+		err := unmarshalKey(v, rpcServerKey, socket)
 		if err != nil {
 			errs = append(
 				errs,
@@ -272,7 +272,7 @@ func checkRedpandaConfig(v *viper.Viper) []error {
 		)
 	} else {
 		var kafkaListeners []NamedSocketAddress
-		err := v.UnmarshalKey("redpanda.kafka_api", &kafkaListeners)
+		err := unmarshalKey(v, "redpanda.kafka_api", &kafkaListeners)
 		if err != nil {
 			log.Error(err)
 			err = fmt.Errorf(
@@ -301,7 +301,7 @@ func checkRedpandaConfig(v *viper.Viper) []error {
 	}
 
 	var seedServersSlice []*SeedServer //map[string]interface{}
-	err := v.UnmarshalKey("redpanda.seed_servers", &seedServersSlice)
+	err := unmarshalKey(v, "redpanda.seed_servers", &seedServersSlice)
 	if err != nil {
 		log.Error(err)
 		msg := "redpanda.seed_servers doesn't have the expected structure"
@@ -353,6 +353,42 @@ func checkRpkConfig(v *viper.Viper) []error {
 		errs = append(errs, errors.New(msg))
 	}
 	return errs
+}
+
+func decoderConfig() mapstructure.DecoderConfig {
+	return mapstructure.DecoderConfig{
+		// Sometimes viper will save int values as strings (i.e.
+		// through BindPFlag) so we have to allow mapstructure
+		// to cast them.
+		WeaklyTypedInput: true,
+		DecodeHook: mapstructure.ComposeDecodeHookFunc(
+			// These 2 hooks are viper's default hooks.
+			// https://github.com/spf13/viper/blob/fb4eafdd9775508c450b90b1b72affeef4a68cf5/viper.go#L1004-L1005
+			// They're set here because when decoderConfigOptions' resulting
+			// viper.DecoderConfigOption is used, viper's hooks are overriden.
+			mapstructure.StringToTimeDurationHookFunc(),
+			mapstructure.StringToSliceHookFunc(","),
+			// This hook translates the pre-2.1.4 configuration format to the
+			// latest one (see schema.go)
+			v21_1_4MapToNamedSocketAddressSlice,
+		),
+	}
+}
+
+func decoderConfigOptions() viper.DecoderConfigOption {
+	return func(c *mapstructure.DecoderConfig) {
+		cfg := decoderConfig()
+		c.DecodeHook = cfg.DecodeHook
+		c.WeaklyTypedInput = cfg.WeaklyTypedInput
+	}
+}
+
+func unmarshalKey(v *viper.Viper, key string, val interface{}) error {
+	return v.UnmarshalKey(
+		key,
+		val,
+		decoderConfigOptions(),
+	)
 }
 
 func toMap(conf *Config) (map[string]interface{}, error) {

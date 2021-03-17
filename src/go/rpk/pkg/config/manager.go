@@ -149,19 +149,10 @@ func (m *manager) ReadFlat(path string) (map[string]string, error) {
 		"redpanda.rpc_server",
 		"redpanda.admin",
 	}
-	unmarshalKey := func(key string, val interface{}) error {
-		return m.v.UnmarshalKey(
-			key,
-			val,
-			func(c *mapstructure.DecoderConfig) {
-				c.TagName = "mapstructure"
-			},
-		)
-	}
 	for _, k := range keys {
 		if k == "redpanda.seed_servers" {
 			seeds := &[]SeedServer{}
-			err := unmarshalKey(k, seeds)
+			err := unmarshalKey(m.v, k, seeds)
 			if err != nil {
 				return nil, err
 			}
@@ -177,7 +168,7 @@ func (m *manager) ReadFlat(path string) (map[string]string, error) {
 		}
 		if k == "redpanda.advertised_kafka_api" || k == "redpanda.kafka_api" {
 			addrs := []NamedSocketAddress{}
-			err := unmarshalKey(k, &addrs)
+			err := unmarshalKey(m.v, k, &addrs)
 			if err != nil {
 				return nil, err
 			}
@@ -208,7 +199,7 @@ func (m *manager) ReadFlat(path string) (map[string]string, error) {
 	}
 	for _, k := range compactAddrFields {
 		sa := &SocketAddress{}
-		err := unmarshalKey(k, sa)
+		err := unmarshalKey(m.v, k, sa)
 		if err != nil {
 			return nil, err
 		}
@@ -276,7 +267,15 @@ func (m *manager) Write(conf *Config) error {
 	// Merge the config into a new viper.Viper instance to prevent
 	// concurrent writes to the underlying config map.
 	v := InitViper(m.fs)
-	v.MergeConfigMap(m.v.AllSettings())
+	current, err := unmarshal(m.v)
+	if err != nil {
+		return err
+	}
+	currentMap, err := toMap(current)
+	if err != nil {
+		return err
+	}
+	v.MergeConfigMap(currentMap)
 	v.MergeConfigMap(confMap)
 	return checkAndWrite(m.fs, v, conf.ConfigFile)
 }
@@ -388,16 +387,8 @@ func recover(fs afero.Fs, backup, path string, err error) error {
 
 func unmarshal(v *viper.Viper) (*Config, error) {
 	result := &Config{}
-	decoderConfig := mapstructure.DecoderConfig{
-		Result: result,
-		// Sometimes viper will save int values as strings (i.e.
-		// through BindPFlag) so we have to allow mapstructure
-		// to cast them.
-		WeaklyTypedInput: true,
-		DecodeHook: mapstructure.ComposeDecodeHookFunc(
-			v21_1_4MapToNamedSocketAddressSlice,
-		),
-	}
+	decoderConfig := decoderConfig()
+	decoderConfig.Result = result
 	decoder, err := mapstructure.NewDecoder(&decoderConfig)
 	if err != nil {
 		return nil, err

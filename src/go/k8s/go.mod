@@ -8,7 +8,7 @@ require (
 	github.com/go-logr/logr v0.3.0
 	github.com/hashicorp/go-multierror v1.1.0
 	github.com/jetstack/cert-manager v1.2.0
-	github.com/mitchellh/mapstructure v1.1.2
+	github.com/mitchellh/mapstructure v1.4.1
 	github.com/onsi/ginkgo v1.14.1
 	github.com/onsi/gomega v1.10.2
 	github.com/spf13/afero v1.2.2
@@ -16,7 +16,6 @@ require (
 	github.com/vectorizedio/redpanda/src/go/rpk v0.0.0-00010101000000-000000000000
 	golang.org/x/tools v0.0.0-20210107193943-4ed967dd8eff // indirect
 	google.golang.org/protobuf v1.25.0 // indirect
-	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.0-20200615113413-eeeca48fe776
 	k8s.io/api v0.19.2
 	k8s.io/apimachinery v0.19.2
