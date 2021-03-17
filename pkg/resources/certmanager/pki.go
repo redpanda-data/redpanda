@@ -30,6 +30,8 @@ const (
 	OperatorClientCert = "operator-client"
 	// UserClientCert cert name - used by redpanda clients using KafkaAPI
 	UserClientCert = "user-client"
+	// AdminClientCert cert name - used by redpanda clients using KafkaAPI
+	AdminClientCert = "admin-client"
 	// RedpandaNodeCert cert name - node certificate
 	RedpandaNodeCert = "redpanda"
 )
@@ -134,7 +136,11 @@ func (r *PkiReconciler) Ensure(ctx context.Context) error {
 		certsKey = r.certNamespacedName(OperatorClientCert)
 		internalClientCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, selfSignedIssuerRef, "", false, r.logger)
 
-		toApply = append(toApply, externalClientCert, internalClientCert)
+		// Certificate for admin to call the Kafka API on any broker in this Redpanda cluster
+		certsKey = r.certNamespacedName(AdminClientCert)
+		adminClientCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, selfSignedIssuerRef, "", false, r.logger)
+
+		toApply = append(toApply, externalClientCert, internalClientCert, adminClientCert)
 	}
 
 	for _, res := range toApply {
