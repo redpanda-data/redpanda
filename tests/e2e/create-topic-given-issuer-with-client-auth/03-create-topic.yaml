@@ -11,6 +11,10 @@ spec:
         - name: tlscert
           secret:
             defaultMode: 420
+            secretName: cluster-tls-user-client
+        - name: tlsca
+          secret:
+            defaultMode: 420
             secretName: cluster-tls-redpanda
         - name: rpkconfig
           configMap:
@@ -31,6 +35,8 @@ spec:
           volumeMounts:
             - mountPath: /etc/tls/certs
               name: tlscert
+            - mountPath: /etc/tls/certs/ca
+              name: tlsca
             - mountPath: /etc/redpanda
               name: rpkconfig
       restartPolicy: Never
