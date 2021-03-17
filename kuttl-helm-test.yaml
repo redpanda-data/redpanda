@@ -6,7 +6,6 @@ kindContainers:
   - vectorized/redpanda-operator:latest
   - vectorized/configurator:latest
 testDirs:
-  - ./tests/e2e
   - ./tests/e2e-helm
 kindConfig: ./kind.yaml
 commands:
@@ -16,4 +15,4 @@ commands:
   - command: "./hack/wait-for-webhook-ready.sh"
 artifactsDir: tests/_helm_e2e_artifacts
 timeout: 300
-parallel: 1
+parallel: 3
