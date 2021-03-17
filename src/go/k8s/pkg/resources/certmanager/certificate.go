@@ -11,7 +11,6 @@ package certmanager
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -77,8 +76,6 @@ func (r *CertificateResource) Ensure(ctx context.Context) error {
 	return err
 }
 
-var errorMissingIssuerRef = errors.New("expecting not nil issuerRef")
-
 // obj returns resource managed client.Object
 func (r *CertificateResource) obj() (k8sclient.Object, error) {
 	objLabels := labels.ForCluster(r.pandaCluster)
@@ -100,7 +97,8 @@ func (r *CertificateResource) obj() (k8sclient.Object, error) {
 			"*." + strings.TrimSuffix(r.fqdn, "."),
 		}
 	} else {
-		cert.Spec.CommonName = fmt.Sprintf("redpanda-%s-%s", r.pandaCluster.Name, r.key.Name)
+		// Common name cannot exceed 64 bytes (cert-manager validates).
+		cert.Spec.CommonName = fmt.Sprintf("rp-%s", r.key.Name)
 	}
 
 	err := controllerutil.SetControllerReference(r.pandaCluster, cert, r.scheme)
