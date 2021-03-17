@@ -6,7 +6,6 @@ kindContainers:
   - vectorized/redpanda-operator:latest
   - vectorized/configurator:latest
 testDirs:
-  - ./tests/e2e
   - ./tests/e2e-helm
 kindConfig: ./kind.yaml
 commands:
