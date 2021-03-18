@@ -42,7 +42,7 @@ type PkiReconciler struct {
 	k8sclient.Client
 	scheme       *runtime.Scheme
 	pandaCluster *redpandav1alpha1.Cluster
-	fqdn         string
+	internalFQDN string
 	logger       logr.Logger
 }
 
@@ -98,7 +98,7 @@ func (r *PkiReconciler) Ensure(ctx context.Context) error {
 		r.pandaCluster,
 		rootCertificateKey,
 		selfSignedIssuer.objRef(),
-		r.fqdn,
+		r.internalFQDN,
 		true,
 		r.logger)
 
@@ -123,7 +123,14 @@ func (r *PkiReconciler) Ensure(ctx context.Context) error {
 		// if external issuer is provided, we will use it to generate node certificates
 		nodeIssuerRef = externalIssuerRef
 	}
-	redpandaCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, nodeIssuerRef, r.fqdn, false, r.logger)
+
+	dnsName := r.internalFQDN
+	externConn := r.pandaCluster.Spec.ExternalConnectivity
+	if externConn.Enabled && externConn.Subdomain != "" {
+		dnsName = externConn.Subdomain
+	}
+
+	redpandaCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, nodeIssuerRef, dnsName, false, r.logger)
 
 	toApply = append(toApply, redpandaCert)
 
