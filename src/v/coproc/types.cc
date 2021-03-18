@@ -14,17 +14,47 @@
 #include <boost/range/irange.hpp>
 
 namespace coproc {
+
 std::ostream& operator<<(std::ostream& os, const enable_response_code erc) {
-    const auto errc = make_error_code(
-      static_cast<coproc::errc>(static_cast<int8_t>(erc)));
-    os << errc.message();
+    switch (erc) {
+    case enable_response_code::success:
+        os << "success";
+        break;
+    case enable_response_code::internal_error:
+        os << "internal_error";
+        break;
+    case enable_response_code::invalid_ingestion_policy:
+        os << "invalid_ingestion_policy";
+        break;
+    case enable_response_code::script_id_already_exists:
+        os << "script_id_already_exists";
+        break;
+    case enable_response_code::script_contains_invalid_topic:
+        os << "script_contains_invalid_topic";
+        break;
+    case enable_response_code::script_contains_no_topics:
+        os << "script_contains_no_topics";
+        break;
+    default:
+        __builtin_unreachable();
+    };
     return os;
 }
 
 std::ostream& operator<<(std::ostream& os, const disable_response_code drc) {
-    const auto errc = make_error_code(
-      static_cast<coproc::errc>(static_cast<int8_t>(drc)));
-    os << errc.message();
+    switch (drc) {
+    case disable_response_code::success:
+        os << "success";
+        break;
+    case disable_response_code::internal_error:
+        os << "internal_error";
+        break;
+    case disable_response_code::script_id_does_not_exist:
+        os << "script_id_does_not_exist";
+        break;
+    default:
+        __builtin_unreachable();
+    };
     return os;
 }
 
