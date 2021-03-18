@@ -21,7 +21,7 @@ namespace kafka {
 
 template<>
 ss::future<response_ptr> sasl_handshake_handler::handle(
-  request_context&& ctx, [[maybe_unused]] ss::smp_service_group g) {
+  request_context ctx, [[maybe_unused]] ss::smp_service_group g) {
     sasl_handshake_request request;
     request.decode(ctx.reader(), ctx.header().version);
     vlog(klog.debug, "Received SASL_HANDSHAKE {}", request);

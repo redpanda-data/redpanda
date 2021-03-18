@@ -56,7 +56,7 @@ struct offset_fetch_ctx {
 
 template<>
 ss::future<response_ptr>
-offset_fetch_handler::handle(request_context&& ctx, ss::smp_service_group ssg) {
+offset_fetch_handler::handle(request_context ctx, ss::smp_service_group ssg) {
     offset_fetch_request request;
     request.decode(ctx.reader(), ctx.header().version);
     klog.trace("Handling request {}", request);

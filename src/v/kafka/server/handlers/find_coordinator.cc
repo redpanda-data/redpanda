@@ -91,7 +91,7 @@ create_topic(request_context& ctx, cluster::topic_configuration topic) {
 
 template<>
 ss::future<response_ptr> find_coordinator_handler::handle(
-  request_context&& ctx, [[maybe_unused]] ss::smp_service_group g) {
+  request_context ctx, [[maybe_unused]] ss::smp_service_group g) {
     find_coordinator_request request;
     request.decode(ctx.reader(), ctx.header().version);
 

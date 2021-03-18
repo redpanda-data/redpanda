@@ -29,7 +29,7 @@ void delete_groups_response::encode(
 
 template<>
 ss::future<response_ptr> delete_groups_handler::handle(
-  request_context&& ctx, [[maybe_unused]] ss::smp_service_group g) {
+  request_context ctx, [[maybe_unused]] ss::smp_service_group g) {
     return ss::do_with(std::move(ctx), [](request_context& ctx) {
         delete_groups_request request;
         request.decode(ctx.reader(), ctx.header().version);

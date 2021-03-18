@@ -444,7 +444,7 @@ produce_topics(produce_ctx& octx) {
 
 template<>
 ss::future<response_ptr>
-produce_handler::handle(request_context&& ctx, ss::smp_service_group ssg) {
+produce_handler::handle(request_context ctx, ss::smp_service_group ssg) {
     produce_request request(ctx);
 
     /*

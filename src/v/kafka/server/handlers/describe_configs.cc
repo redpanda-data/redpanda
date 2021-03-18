@@ -121,7 +121,7 @@ static void report_broker_config(describe_configs_result& result) {
 
 template<>
 ss::future<response_ptr> describe_configs_handler::handle(
-  request_context&& ctx, [[maybe_unused]] ss::smp_service_group ssg) {
+  request_context ctx, [[maybe_unused]] ss::smp_service_group ssg) {
     describe_configs_request request;
     request.decode(ctx.reader(), ctx.header().version);
     klog.trace("Handling request {}", request);

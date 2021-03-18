@@ -72,8 +72,8 @@ delete_topics_response create_response(std::vector<cluster::topic_result> res) {
 }
 
 template<>
-ss::future<response_ptr> delete_topics_handler::handle(
-  request_context&& ctx, ss::smp_service_group ssg) {
+ss::future<response_ptr>
+delete_topics_handler::handle(request_context ctx, ss::smp_service_group ssg) {
     delete_topics_request request;
     request.decode(ctx.reader(), ctx.header().version);
     vlog(klog.trace, "Handling request {}", request);

@@ -36,7 +36,7 @@ void join_group_response::encode(const request_context& ctx, response& resp) {
 
 template<>
 ss::future<response_ptr> join_group_handler::handle(
-  request_context&& ctx, [[maybe_unused]] ss::smp_service_group g) {
+  request_context ctx, [[maybe_unused]] ss::smp_service_group g) {
     join_group_request request(ctx);
 
     if (request.data.group_instance_id) {

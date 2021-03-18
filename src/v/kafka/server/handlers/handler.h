@@ -28,7 +28,7 @@ struct handler {
     static constexpr api_version min_supported = api_version(MinSupported);
     static constexpr api_version max_supported = api_version(MaxSupported);
     static ss::future<response_ptr>
-    handle(request_context&&, ss::smp_service_group);
+      handle(request_context, ss::smp_service_group);
 };
 
 // clang-format off

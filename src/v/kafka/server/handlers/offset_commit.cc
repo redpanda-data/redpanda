@@ -54,8 +54,8 @@ struct offset_commit_ctx {
 };
 
 template<>
-ss::future<response_ptr> offset_commit_handler::handle(
-  request_context&& ctx, ss::smp_service_group ssg) {
+ss::future<response_ptr>
+offset_commit_handler::handle(request_context ctx, ss::smp_service_group ssg) {
     offset_commit_request request;
     request.decode(ctx.reader(), ctx.header().version);
     klog.trace("Handling request {}", request);

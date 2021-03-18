@@ -26,7 +26,7 @@ void leave_group_response::encode(const request_context& ctx, response& resp) {
 
 template<>
 ss::future<response_ptr> leave_group_handler::handle(
-  request_context&& ctx, [[maybe_unused]] ss::smp_service_group g) {
+  request_context ctx, [[maybe_unused]] ss::smp_service_group g) {
     return ss::do_with(
       remote(std::move(ctx)), [](remote<request_context>& remote_ctx) {
           auto& ctx = remote_ctx.get();

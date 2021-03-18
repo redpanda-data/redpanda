@@ -104,7 +104,7 @@ api_versions_response api_versions_handler::handle_raw(request_context& ctx) {
 }
 
 ss::future<response_ptr>
-api_versions_handler::handle(request_context&& ctx, ss::smp_service_group) {
+api_versions_handler::handle(request_context ctx, ss::smp_service_group) {
     auto response = handle_raw(ctx);
     return ctx.respond(std::move(response));
 }
