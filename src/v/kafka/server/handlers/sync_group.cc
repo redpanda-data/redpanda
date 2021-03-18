@@ -16,6 +16,7 @@
 #include "utils/remote.h"
 #include "utils/to_string.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/print.hh>
 
 namespace kafka {
@@ -27,15 +28,10 @@ void sync_group_response::encode(const request_context& ctx, response& resp) {
 template<>
 ss::future<response_ptr> sync_group_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group g) {
-    return ss::do_with(std::move(ctx), [](request_context& ctx) {
-        sync_group_request request;
-        request.decode(ctx.reader(), ctx.header().version);
-        return ctx.groups()
-          .sync_group(std::move(request))
-          .then([&ctx](sync_group_response&& reply) {
-              return ctx.respond(std::move(reply));
-          });
-    });
+    sync_group_request request;
+    request.decode(ctx.reader(), ctx.header().version);
+    auto resp = co_await ctx.groups().sync_group(std::move(request));
+    co_return co_await ctx.respond(std::move(resp));
 }
 
 } // namespace kafka
