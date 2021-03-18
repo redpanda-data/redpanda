@@ -221,9 +221,9 @@ script_dispatcher::enable_coprocessors(enable_copros_request req) {
     /// can register for input topics that don't yet exist
     if (!deregisters.empty()) {
         vlog(coproclog.error, "Immediately deregistering ids {}", deregisters);
+        auto req = disable_copros_request({.ids = std::move(deregisters)});
         auto reply = co_await client->disable_coprocessors(
-          disable_copros_request{.ids = std::move(deregisters)},
-          rpc::client_opts(model::no_timeout));
+          std::move(req), rpc::client_opts(model::no_timeout));
         if (!reply) {
             vlog(
               coproclog.error,
