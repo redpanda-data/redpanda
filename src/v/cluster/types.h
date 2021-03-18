@@ -83,6 +83,24 @@ struct partition_assignment {
     friend std::ostream& operator<<(std::ostream&, const partition_assignment&);
 };
 
+/**
+ * Structure holding topic properties overrides, empty values will be replaced
+ * with defaults
+ */
+struct topic_properties {
+    std::optional<model::compression> compression;
+    std::optional<model::cleanup_policy_bitflags> cleanup_policy_bitflags;
+    std::optional<model::compaction_strategy> compaction_strategy;
+    std::optional<model::timestamp_type> timestamp_type;
+    std::optional<size_t> segment_size;
+    tristate<size_t> retention_bytes;
+    tristate<std::chrono::milliseconds> retention_duration;
+
+    bool is_compacted() const;
+    bool has_overrides() const;
+
+    friend std::ostream& operator<<(std::ostream&, const topic_properties&);
+};
 // Structure holding topic configuration, optionals will be replaced by broker
 // defaults
 struct topic_configuration {
@@ -105,20 +123,7 @@ struct topic_configuration {
     // using signed integer because Kafka protocol defines it as signed int
     int16_t replication_factor;
 
-    std::optional<model::compression> compression;
-    std::optional<model::cleanup_policy_bitflags> cleanup_policy_bitflags;
-    std::optional<model::compaction_strategy> compaction_strategy;
-    std::optional<model::timestamp_type> timestamp_type;
-    std::optional<size_t> segment_size;
-
-    // Tristate fields
-    // Mapped according to the following policy:
-    //
-    // Kafka topic configuration value: -1 -> tristate disabled
-    // Kafka topic configuration value: preset -> tristate with value
-    // Kafka topic configuration value: not set -> tristate with std::nullopt
-    tristate<size_t> retention_bytes;
-    tristate<std::chrono::milliseconds> retention_duration;
+    topic_properties properties;
 
     friend std::ostream& operator<<(std::ostream&, const topic_configuration&);
 };

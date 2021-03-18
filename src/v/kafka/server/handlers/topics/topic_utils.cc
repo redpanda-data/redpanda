@@ -57,13 +57,15 @@ ss::sstring describe_topic_cleanup_policy(
   const std::optional<cluster::topic_configuration>& topic_config) {
     ss::sstring cleanup_policy;
 
-    if (topic_config->cleanup_policy_bitflags) {
-        auto compaction = (topic_config->cleanup_policy_bitflags.value()
-                           & model::cleanup_policy_bitflags::compaction)
-                          == model::cleanup_policy_bitflags::compaction;
-        auto deletion = (topic_config->cleanup_policy_bitflags.value()
-                         & model::cleanup_policy_bitflags::deletion)
-                        == model::cleanup_policy_bitflags::deletion;
+    if (topic_config->properties.cleanup_policy_bitflags) {
+        auto compaction
+          = (topic_config->properties.cleanup_policy_bitflags.value()
+             & model::cleanup_policy_bitflags::compaction)
+            == model::cleanup_policy_bitflags::compaction;
+        auto deletion
+          = (topic_config->properties.cleanup_policy_bitflags.value()
+             & model::cleanup_policy_bitflags::deletion)
+            == model::cleanup_policy_bitflags::deletion;
 
         if (compaction) {
             cleanup_policy = "compact";

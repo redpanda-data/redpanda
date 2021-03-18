@@ -278,42 +278,44 @@ void topic_manifest::update(const rapidjson::Document& m) {
     cluster::topic_configuration conf(ns, tp, partitions, rf);
     // optional
     if (!m["compression"].IsNull()) {
-        conf.compression = boost::lexical_cast<model::compression>(
+        conf.properties.compression = boost::lexical_cast<model::compression>(
           m["compression"].GetString());
     }
     if (!m["cleanup_policy_bitflags"].IsNull()) {
-        conf.cleanup_policy_bitflags
+        conf.properties.cleanup_policy_bitflags
           = boost::lexical_cast<model::cleanup_policy_bitflags>(
             m["cleanup_policy_bitflags"].GetString());
     }
     if (!m["compaction_strategy"].IsNull()) {
-        conf.compaction_strategy
+        conf.properties.compaction_strategy
           = boost::lexical_cast<model::compaction_strategy>(
             m["compaction_strategy"].GetString());
     }
     if (!m["timestamp_type"].IsNull()) {
-        conf.timestamp_type = boost::lexical_cast<model::timestamp_type>(
-          m["timestamp_type"].GetString());
+        conf.properties.timestamp_type
+          = boost::lexical_cast<model::timestamp_type>(
+            m["timestamp_type"].GetString());
     }
     if (!m["segment_size"].IsNull()) {
-        conf.segment_size = m["segment_size"].GetInt64();
+        conf.properties.segment_size = m["segment_size"].GetInt64();
     }
     // tristate
     if (m.HasMember("retention_bytes")) {
         if (!m["retention_bytes"].IsNull()) {
-            conf.retention_bytes = tristate<size_t>(
+            conf.properties.retention_bytes = tristate<size_t>(
               m["retention_bytes"].GetInt64());
         } else {
-            conf.retention_bytes = tristate<size_t>(std::nullopt);
+            conf.properties.retention_bytes = tristate<size_t>(std::nullopt);
         }
     }
     if (m.HasMember("retention_duration")) {
         if (!m["retention_duration"].IsNull()) {
-            conf.retention_duration = tristate<std::chrono::milliseconds>(
-              std::chrono::milliseconds(m["retention_duration"].GetInt64()));
+            conf.properties.retention_duration
+              = tristate<std::chrono::milliseconds>(
+                std::chrono::milliseconds(m["retention_duration"].GetInt64()));
         } else {
-            conf.retention_duration = tristate<std::chrono::milliseconds>(
-              std::nullopt);
+            conf.properties.retention_duration
+              = tristate<std::chrono::milliseconds>(std::nullopt);
         }
     }
     _topic_config = conf;
@@ -353,35 +355,36 @@ void topic_manifest::serialize(std::ostream& out) const {
     // - key set to null - optional is nullopt
     // - key is not null - optional has value
     w.Key("compression");
-    if (_topic_config->compression.has_value()) {
-        w.String(boost::lexical_cast<std::string>(*_topic_config->compression));
+    if (_topic_config->properties.compression.has_value()) {
+        w.String(boost::lexical_cast<std::string>(
+          *_topic_config->properties.compression));
     } else {
         w.Null();
     }
     w.Key("cleanup_policy_bitflags");
-    if (_topic_config->cleanup_policy_bitflags.has_value()) {
+    if (_topic_config->properties.cleanup_policy_bitflags.has_value()) {
         w.String(boost::lexical_cast<std::string>(
-          *_topic_config->cleanup_policy_bitflags));
+          *_topic_config->properties.cleanup_policy_bitflags));
     } else {
         w.Null();
     }
     w.Key("compaction_strategy");
-    if (_topic_config->compaction_strategy.has_value()) {
+    if (_topic_config->properties.compaction_strategy.has_value()) {
         w.String(boost::lexical_cast<std::string>(
-          *_topic_config->compaction_strategy));
+          *_topic_config->properties.compaction_strategy));
     } else {
         w.Null();
     }
     w.Key("timestamp_type");
-    if (_topic_config->timestamp_type.has_value()) {
-        w.String(
-          boost::lexical_cast<std::string>(*_topic_config->timestamp_type));
+    if (_topic_config->properties.timestamp_type.has_value()) {
+        w.String(boost::lexical_cast<std::string>(
+          *_topic_config->properties.timestamp_type));
     } else {
         w.Null();
     }
     w.Key("segment_size");
-    if (_topic_config->segment_size.has_value()) {
-        w.Int64(*_topic_config->segment_size);
+    if (_topic_config->properties.segment_size.has_value()) {
+        w.Int64(*_topic_config->properties.segment_size);
     } else {
         w.Null();
     }
@@ -391,18 +394,19 @@ void topic_manifest::serialize(std::ostream& out) const {
     // - key not present - tristate is disabled
     // - key set to null - tristate is enabled but not set
     // - key is not null - tristate is enabled and set
-    if (!_topic_config->retention_bytes.is_disabled()) {
+    if (!_topic_config->properties.retention_bytes.is_disabled()) {
         w.Key("retention_bytes");
-        if (_topic_config->retention_bytes.has_value()) {
-            w.Int64(_topic_config->retention_bytes.value());
+        if (_topic_config->properties.retention_bytes.has_value()) {
+            w.Int64(_topic_config->properties.retention_bytes.value());
         } else {
             w.Null();
         }
     }
-    if (!_topic_config->retention_duration.is_disabled()) {
+    if (!_topic_config->properties.retention_duration.is_disabled()) {
         w.Key("retention_duration");
-        if (_topic_config->retention_duration.has_value()) {
-            w.Int64(_topic_config->retention_duration.value().count());
+        if (_topic_config->properties.retention_duration.has_value()) {
+            w.Int64(
+              _topic_config->properties.retention_duration.value().count());
         } else {
             w.Null();
         }
