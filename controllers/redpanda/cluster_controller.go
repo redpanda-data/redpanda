@@ -173,27 +173,30 @@ func (r *ClusterReconciler) reportStatus(
 		return fmt.Errorf("failed to construct external node list: %w", err)
 	}
 
-	if !reflect.DeepEqual(observedNodesInternal, redpandaCluster.Status.Nodes.Internal) ||
-		!reflect.DeepEqual(observedNodesExternal, redpandaCluster.Status.Nodes.External) {
-		redpandaCluster.Status.Nodes.Internal = observedNodesInternal
-		redpandaCluster.Status.Nodes.External = observedNodesExternal
-
-		if err := r.Status().Update(ctx, redpandaCluster); err != nil {
-			return fmt.Errorf("failed to update cluster status nodes: %w", err)
-		}
-	}
-
 	if lastObservedSts == nil {
 		return errNonexistentLastObservesState
 	}
 
-	if lastObservedSts != nil && !reflect.DeepEqual(lastObservedSts.Status.ReadyReplicas, redpandaCluster.Status.Replicas) {
+	if statusShouldBeUpdated(redpandaCluster.Status, observedNodesInternal, observedNodesExternal, lastObservedSts.Status.ReadyReplicas) {
+		redpandaCluster.Status.Nodes.Internal = observedNodesInternal
+		redpandaCluster.Status.Nodes.External = observedNodesExternal
 		redpandaCluster.Status.Replicas = lastObservedSts.Status.ReadyReplicas
+
 		if err := r.Status().Update(ctx, redpandaCluster); err != nil {
-			return err
+			return fmt.Errorf("failed to update cluster status: %w", err)
 		}
 	}
 	return nil
+}
+
+func statusShouldBeUpdated(
+	status redpandav1alpha1.ClusterStatus,
+	nodesInternal, nodesExternal []string,
+	readyReplicas int32,
+) bool {
+	return !reflect.DeepEqual(nodesInternal, status.Nodes.Internal) ||
+		!reflect.DeepEqual(nodesExternal, status.Nodes.External) ||
+		status.Replicas == readyReplicas
 }
 
 // WithConfiguratorTag set the configuratorTag
