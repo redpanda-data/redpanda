@@ -13,6 +13,7 @@
 #include "config/configuration.h"
 #include "coproc/errc.h"
 #include "coproc/logger.h"
+#include "coproc/types.h"
 #include "coproc/wasm_event.h"
 #include "model/namespace.h"
 #include "ssx/future-util.h"
@@ -75,7 +76,6 @@ ss::future<> event_listener::persist_actions(
         auto found = _active_ids.find(id);
         if (query_action(source) == event_action::remove) {
             if (found != _active_ids.end()) {
-                _active_ids.erase(found);
                 disables.emplace_back(id);
             }
         } else {
@@ -84,13 +84,20 @@ ss::future<> event_listener::persist_actions(
             /// record batch by the reconcile events function, but not if they
             /// arrived in separate batches.
             if (found == _active_ids.end()) {
-                _active_ids.insert(id);
                 enables.emplace_back(enable_copros_request::data{
                   .id = id, .source_code = std::move(source)});
             }
         }
     }
+    /// TODO: In the future, maybe it would be cleaner to have a add/remove
+    /// endpoint, instead of two seperate RPC endpoints
     if (!enables.empty()) {
+        std::vector<script_id> enable_ids;
+        std::transform(
+          enables.cbegin(),
+          enables.cend(),
+          std::back_inserter(enable_ids),
+          [](const enable_copros_request::data& e) { return e.id; });
         enable_copros_request req{.inputs = std::move(enables)};
         auto err = co_await _dispatcher.enable_coprocessors(std::move(req));
         if (err) {
@@ -99,17 +106,30 @@ ss::future<> event_listener::persist_actions(
               "Failed to register coprocessors with the wasm engine: {}",
               err);
             _offset = last_offset;
+            co_return;
+        }
+        for (script_id id : enable_ids) {
+            _active_ids.insert(id);
         }
     }
     if (!disables.empty()) {
-        disable_copros_request req{.ids = std::move(disables)};
+        disable_copros_request req{.ids = disables};
         auto err = co_await _dispatcher.disable_coprocessors(std::move(req));
         if (err) {
             vlog(
               coproclog.error,
               "Failed to deregister coprocessors with the wasm engine: {}",
               err);
+            /// In this case the code will follow a path that re-enters this
+            /// method with the same inputs, and the call to enable_copros above
+            /// succeeded but the call to disable_coprocessors failed, double
+            /// registrations will be avoided because the ids have entered the
+            /// \ref active_ids cache and will not be queued for re-registration
             _offset = last_offset;
+        } else {
+            for (script_id id : disables) {
+                _active_ids.erase(id);
+            }
         }
     }
 }
