@@ -33,7 +33,7 @@
 
 using namespace std::chrono_literals; // NOLINT
 
-static ss::logger tlog{"test_log"};
+inline ss::logger tlog{"test_log"};
 
 struct random_batches_generator {
     ss::circular_buffer<model::record_batch> operator()() {
