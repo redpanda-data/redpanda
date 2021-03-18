@@ -24,6 +24,14 @@ type MockAdmin struct {
 		validateOnly bool,
 	) error
 
+	MockAlterPartitionReassignments func(
+		topic string, assignment [][]int32,
+	) error
+
+	MockListPartitionReassignments func(
+		topic string, partitions []int32,
+	) (topicStatus map[string]map[int32]*sarama.PartitionReplicaReassignmentsStatus, err error)
+
 	MockDeleteRecords func(
 		topic string,
 		partitionOffsets map[int32]int64,
@@ -68,6 +76,9 @@ type MockAdmin struct {
 		brokers []*sarama.Broker,
 		controllerID int32,
 		err error)
+
+	MockDescribeLogDirs func(brokers []int32) (map[int32][]sarama.DescribeLogDirsResponseDirMetadata, error)
+
 	MockClose func() error
 }
 
@@ -110,6 +121,27 @@ func (m MockAdmin) CreatePartitions(
 		return m.MockCreatePartitions(topic, count, assignment, validateOnly)
 	}
 	return nil
+}
+
+func (m MockAdmin) AlterPartitionReassignments(
+	topic string, assignment [][]int32,
+) error {
+	if m.MockAlterPartitionReassignments != nil {
+		return m.MockAlterPartitionReassignments(topic, assignment)
+	}
+	return nil
+}
+
+func (m MockAdmin) ListPartitionReassignments(
+	topic string, partitions []int32,
+) (
+	topicStatus map[string]map[int32]*sarama.PartitionReplicaReassignmentsStatus,
+	err error,
+) {
+	if m.MockListPartitionReassignments != nil {
+		return m.ListPartitionReassignments(topic, partitions)
+	}
+	return nil, nil
 }
 
 func (m MockAdmin) DeleteRecords(
@@ -218,6 +250,15 @@ func (m MockAdmin) DescribeCluster() (
 		return m.MockDescribeCluster()
 	}
 	return []*sarama.Broker{{}}, 0, nil
+}
+
+func (m MockAdmin) DescribeLogDirs(
+	brokers []int32,
+) (map[int32][]sarama.DescribeLogDirsResponseDirMetadata, error) {
+	if m.MockDescribeLogDirs != nil {
+		return m.MockDescribeLogDirs(brokers)
+	}
+	return nil, nil
 }
 
 func (m MockAdmin) Close() error {

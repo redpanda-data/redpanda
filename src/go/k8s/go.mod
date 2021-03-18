@@ -3,7 +3,7 @@ module github.com/vectorizedio/redpanda/src/go/k8s
 go 1.15
 
 require (
-	github.com/Shopify/sarama v1.26.1
+	github.com/Shopify/sarama v1.28.1-0.20210318150015-41df78df10a9
 	github.com/banzaicloud/k8s-objectmatcher v1.5.1
 	github.com/go-logr/logr v0.3.0
 	github.com/hashicorp/go-multierror v1.1.0
@@ -12,11 +12,10 @@ require (
 	github.com/onsi/ginkgo v1.14.1
 	github.com/onsi/gomega v1.10.2
 	github.com/spf13/afero v1.2.2
-	github.com/stretchr/testify v1.6.1
+	github.com/stretchr/testify v1.7.0
 	github.com/vectorizedio/redpanda/src/go/rpk v0.0.0-00010101000000-000000000000
 	golang.org/x/tools v0.0.0-20210107193943-4ed967dd8eff // indirect
-	google.golang.org/protobuf v1.25.0 // indirect
-	gopkg.in/yaml.v3 v3.0.0-20200615113413-eeeca48fe776
+	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
 	k8s.io/api v0.19.2
 	k8s.io/apimachinery v0.19.2
 	k8s.io/client-go v0.19.2

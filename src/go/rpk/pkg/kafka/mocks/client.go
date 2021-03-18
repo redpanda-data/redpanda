@@ -11,6 +11,7 @@ type MockClient struct {
 	MockController         func() (*sarama.Broker, error)
 	MockRefreshController  func() (*sarama.Broker, error)
 	MockBrokers            func() []*sarama.Broker
+	MockBroker             func(brokerID int32) (*sarama.Broker, error)
 	MockTopics             func() ([]string, error)
 	MockPartitions         func(topic string) ([]int32, error)
 	MockWritablePartitions func(topic string) ([]int32, error)
@@ -19,6 +20,7 @@ type MockClient struct {
 	MockInSyncReplicas     func(topic string, partitionID int32) ([]int32, error)
 	MockOfflineReplicas    func(topic string, partitionID int32) ([]int32, error)
 	MockRefreshMetadata    func(topics ...string) error
+	MockRefreshBrokers     func(addrs []string) error
 	MockGetOffset          func(topic string, partition int32, time int64) (int64, error)
 	MockCoordinator        func(consumerGroup string) (*sarama.Broker, error)
 	MockRefreshCoordinator func(consumerGroup string) error
@@ -53,6 +55,13 @@ func (m MockClient) Brokers() []*sarama.Broker {
 		return m.MockBrokers()
 	}
 	return nil
+}
+
+func (m MockClient) Broker(brokerID int32) (*sarama.Broker, error) {
+	if m.MockBroker != nil {
+		return m.MockBroker(brokerID)
+	}
+	return nil, nil
 }
 
 func (m MockClient) Topics() ([]string, error) {
@@ -115,6 +124,13 @@ func (m MockClient) RefreshMetadata(topics ...string) error {
 		return m.MockRefreshMetadata(topics...)
 	}
 	return errors.New("RefreshMetadata unimplemented")
+}
+
+func (m MockClient) RefreshBrokers(addrs []string) error {
+	if m.MockRefreshBrokers != nil {
+		return m.MockRefreshBrokers(addrs)
+	}
+	return nil
 }
 
 func (m MockClient) GetOffset(
