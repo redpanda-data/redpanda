@@ -65,8 +65,12 @@ static tristate<T> get_tristate_value(
   const absl::flat_hash_map<ss::sstring, ss::sstring>& config,
   const ss::sstring& key) {
     auto v = get_config_value<int64_t>(config, key);
-    // diabled case
-    if (v && *v <= 0) {
+    // no value set
+    if (!v) {
+        return tristate<T>(std::nullopt);
+    }
+    // disabled case
+    if (v <= 0) {
         return tristate<T>{};
     }
     return tristate<T>(std::make_optional<T>(*v));
