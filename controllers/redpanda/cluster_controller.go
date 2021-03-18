@@ -26,6 +26,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -178,11 +179,24 @@ func (r *ClusterReconciler) reportStatus(
 	}
 
 	if statusShouldBeUpdated(redpandaCluster.Status, observedNodesInternal, observedNodesExternal, lastObservedSts.Status.ReadyReplicas) {
-		redpandaCluster.Status.Nodes.Internal = observedNodesInternal
-		redpandaCluster.Status.Nodes.External = observedNodesExternal
-		redpandaCluster.Status.Replicas = lastObservedSts.Status.ReadyReplicas
+		err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+			var cluster redpandav1alpha1.Cluster
+			err := r.Get(ctx, types.NamespacedName{
+				Name:      redpandaCluster.Name,
+				Namespace: redpandaCluster.Namespace,
+			}, &cluster)
+			if err != nil {
+				return err
+			}
 
-		if err := r.Status().Update(ctx, redpandaCluster); err != nil {
+			cluster.Status.Nodes.Internal = observedNodesInternal
+			cluster.Status.Nodes.External = observedNodesExternal
+			cluster.Status.Replicas = lastObservedSts.Status.ReadyReplicas
+
+			return r.Status().Update(ctx, &cluster)
+		})
+
+		if err != nil {
 			return fmt.Errorf("failed to update cluster status: %w", err)
 		}
 	}
