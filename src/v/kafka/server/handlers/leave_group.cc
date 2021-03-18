@@ -35,9 +35,7 @@ ss::future<response_ptr> leave_group_handler::handle(
           return ctx.groups()
             .leave_group(std::move(request))
             .then([&ctx](leave_group_response&& reply) {
-                auto resp = std::make_unique<response>();
-                reply.encode(ctx, *resp.get());
-                return ss::make_ready_future<response_ptr>(std::move(resp));
+                return ctx.respond(std::move(reply));
             });
       });
 }
