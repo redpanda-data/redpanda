@@ -10,9 +10,6 @@
 import os
 import uuid
 import time
-import re
-
-from functools import reduce
 
 from ducktape.mark.resource import cluster
 
@@ -22,90 +19,8 @@ from rptest.clients.rpk import RpkTool
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.kafka_cli_tools import KafkaCliTools
 from rptest.clients.types import TopicSpec
-
-
-class BasicKafkaRecord:
-    def __init__(self, topic=None, partition=None, key=None, value=None):
-        self.topic = topic
-        self.partition = partition
-        self.key = key
-        self.value = value
-
-    def __eq__(self, o):
-        return self.topic == o.topic and self.partition == o.partition \
-            and self.key == o.key and self.value == o.value
-
-
-class TopicsResultSet:
-    def __init__(self, rset={}):
-        # Key: TopicPartition(topic='XYZ', partition=X)
-        # Value: list<BasicKafkaRecord>
-        self.rset = {}
-
-    def num_records(self):
-        return reduce(lambda acc, kv: acc + len(kv[1]), self.rset.items(), 0)
-
-    def append(self, r):
-        def filter_control_record(records):
-            # Unfortunately the kafka-python API abstracts away the notion of a
-            # record batch, leaving us unable to check the control attribute
-            # within the record_batch header.
-            # https://github.com/dpkp/kafka-python/issues/1853
-            if len(records) == 0 or records[0].offset != 0:
-                return records
-            r = records[0]
-            if r.checksum is None and r.value is not None and \
-               r.headers == [] and r.serialized_key_size == 4:
-                return records[1:]
-            return records
-
-        def to_basic_records(records):
-            return list([
-                BasicKafkaRecord(x.topic, x.partition, x.key, x.value)
-                for x in records
-            ])
-
-        # Filter out control records and unwanted data
-        r = dict([(kv[0], filter_control_record(kv[1])) for kv in r.items()])
-        r = dict([(kv[0], to_basic_records(kv[1])) for kv in r.items()])
-        for tp, records in r.items():
-            if tp not in self.rset:
-                self.rset[tp] = records
-            else:
-                self.rset[tp] += records
-
-    def __eq__(self, other):
-        def strip_topic(bkr):
-            bkr.topic = None
-            return bkr
-
-        if self.num_records() != other.num_records():
-            return False
-
-        for tp, records in other.rset.items():
-            src_topic = get_source_topic(tp.topic)
-            src_partition = tp.partition
-            input_data = self.rset.get(
-                TopicPartition(topic=src_topic, partition=src_partition))
-            if input_data is None:
-                return False
-            mat_records = [strip_topic(x) for x in records]
-            src_recs = [strip_topic(x) for x in input_data]
-            if mat_records != src_recs:
-                return False
-        return True
-
-    def __ne__(self, other):
-        return not (self == other)
-
-
-def construct_materialized_topic(source, destination):
-    return f"{source}.${destination}$"
-
-
-def get_source_topic(materialized_topic):
-    val = re.search("(.*)\.\$(.*)\$", materialized_topic)
-    return None if val is None else val[1]
+from rptest.wasm.topics_result_set import TopicsResultSet
+from rptest.wasm.topic import construct_materialized_topic
 
 
 class WasmBasicTest(RedpandaTest):
