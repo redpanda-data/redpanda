@@ -41,7 +41,7 @@ struct describe_groups_ctx {
 
 template<>
 ss::future<response_ptr> describe_groups_handler::handle(
-  request_context&& ctx, ss::smp_service_group ssg) {
+  request_context ctx, ss::smp_service_group ssg) {
     describe_groups_request request;
     request.decode(ctx.reader(), ctx.header().version);
     klog.trace("Handling request {}", request);

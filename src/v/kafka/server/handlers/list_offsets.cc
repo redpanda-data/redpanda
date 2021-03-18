@@ -196,7 +196,7 @@ list_offsets_topics(list_offsets_ctx& octx) {
 
 template<>
 ss::future<response_ptr>
-list_offsets_handler::handle(request_context&& ctx, ss::smp_service_group ssg) {
+list_offsets_handler::handle(request_context ctx, ss::smp_service_group ssg) {
     list_offsets_request request;
     request.decode(ctx.reader(), ctx.header().version);
     request.compute_duplicate_topics();

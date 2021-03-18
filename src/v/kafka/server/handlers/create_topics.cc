@@ -55,7 +55,7 @@ using validators = make_validator_types<
 
 template<>
 ss::future<response_ptr> create_topics_handler::handle(
-  request_context&& ctx, [[maybe_unused]] ss::smp_service_group g) {
+  request_context ctx, [[maybe_unused]] ss::smp_service_group g) {
     kafka::create_topics_request request;
     request.decode(ctx.reader(), ctx.header().version);
     vlog(

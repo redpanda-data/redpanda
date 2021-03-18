@@ -26,7 +26,7 @@ void heartbeat_response::encode(const request_context& ctx, response& resp) {
 
 template<>
 ss::future<response_ptr> heartbeat_handler::handle(
-  request_context&& ctx, [[maybe_unused]] ss::smp_service_group g) {
+  request_context ctx, [[maybe_unused]] ss::smp_service_group g) {
     return ss::do_with(std::move(ctx), [](request_context& ctx) {
         heartbeat_request request;
         request.decode(ctx.reader(), ctx.header().version);

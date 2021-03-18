@@ -26,7 +26,7 @@ namespace kafka {
 
 template<>
 ss::future<response_ptr> alter_configs_handler::handle(
-  request_context&& ctx, [[maybe_unused]] ss::smp_service_group ssg) {
+  request_context ctx, [[maybe_unused]] ss::smp_service_group ssg) {
     alter_configs_request request;
     request.decode(ctx.reader(), ctx.header().version);
     klog.trace("Handling request {}", request);

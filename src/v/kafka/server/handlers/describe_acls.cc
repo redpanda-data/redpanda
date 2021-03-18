@@ -24,7 +24,7 @@ namespace kafka {
 
 template<>
 ss::future<response_ptr> describe_acls_handler::handle(
-  request_context&& ctx, [[maybe_unused]] ss::smp_service_group ssg) {
+  request_context ctx, [[maybe_unused]] ss::smp_service_group ssg) {
     describe_acls_request request;
     request.decode(ctx.reader(), ctx.header().version);
     klog.trace("Handling request {}", request);
