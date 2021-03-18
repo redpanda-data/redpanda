@@ -217,10 +217,6 @@ func (r *ClusterReconciler) createExternalNodesList(
 	var node corev1.Node
 	observedNodesExternal := make([]string, 0, len(pods))
 	for i := range pods {
-		if err := r.Get(ctx, types.NamespacedName{Name: pods[i].Spec.NodeName}, &node); err != nil {
-			return []string{}, fmt.Errorf("failed to retrieve node %s: %w", pods[i].Spec.NodeName, err)
-		}
-
 		if len(pandaCluster.Spec.ExternalConnectivity.Subdomain) > 0 {
 			observedNodesExternal = append(observedNodesExternal,
 				fmt.Sprintf("%s.%s:%d",
@@ -228,14 +224,17 @@ func (r *ClusterReconciler) createExternalNodesList(
 					pandaCluster.Spec.ExternalConnectivity.Subdomain,
 					getNodePort(&nodePortSvc),
 				))
-			continue
-		}
+		} else {
+			if err := r.Get(ctx, types.NamespacedName{Name: pods[i].Spec.NodeName}, &node); err != nil {
+				return []string{}, fmt.Errorf("failed to retrieve node %s: %w", pods[i].Spec.NodeName, err)
+			}
 
-		observedNodesExternal = append(observedNodesExternal,
-			fmt.Sprintf("%s:%d",
-				getExternalIP(&node),
-				getNodePort(&nodePortSvc),
-			))
+			observedNodesExternal = append(observedNodesExternal,
+				fmt.Sprintf("%s:%d",
+					getExternalIP(&node),
+					getNodePort(&nodePortSvc),
+				))
+		}
 	}
 	return observedNodesExternal, nil
 }
