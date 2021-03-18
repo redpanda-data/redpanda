@@ -36,7 +36,7 @@ tasks:
         -GNinja \
         -DREDPANDA_DEPS_INSTALL_DIR="{{.RP_DEPS_INSTALL_DIR}}" \
         -DVECTORIZED_CMAKE_DIR="{{.VECTORIZED_CMAKE_DIR}}" \
-        -DCMAKE_BUILD_TYPE={{.BUILD_TYPE}} \
+        -DCMAKE_BUILD_TYPE={{.BUILD_TYPE | lower | title}} \
         -DCMAKE_C_COMPILER={{.CC}} \
         -DCMAKE_CXX_COMPILER={{.CXX}} \
         -DV_DEPS_SKIP_BUILD={{.RP_DEPS_SKIP_BUILD}} \
