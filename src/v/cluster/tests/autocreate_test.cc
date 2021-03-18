@@ -45,8 +45,10 @@ void validate_topic_metadata(cluster::metadata_cache& cache) {
         BOOST_REQUIRE_EQUAL(cfg->partition_count, t_cfg.partition_count);
         BOOST_REQUIRE_EQUAL(cfg->replication_factor, t_cfg.replication_factor);
         BOOST_REQUIRE_EQUAL(
-          cfg->compaction_strategy, t_cfg.compaction_strategy);
-        BOOST_REQUIRE_EQUAL(cfg->compression, t_cfg.compression);
+          cfg->properties.compaction_strategy,
+          t_cfg.properties.compaction_strategy);
+        BOOST_REQUIRE_EQUAL(
+          cfg->properties.compression, t_cfg.properties.compression);
     }
 }
 

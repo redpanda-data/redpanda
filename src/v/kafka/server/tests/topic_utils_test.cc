@@ -211,23 +211,28 @@ BOOST_AUTO_TEST_CASE(shall_return_errors_for_all_requests) {
 };
 
 BOOST_AUTO_TEST_CASE(describe_topics_cleanup_policy_test) {
-    BOOST_REQUIRE_EQUAL(describe_topic_cleanup_policy({}), "delete");
+    model::cleanup_policy_bitflags def
+      = model::cleanup_policy_bitflags::deletion;
+    BOOST_REQUIRE_EQUAL(describe_topic_cleanup_policy({}, def), "delete");
 
     cluster::topic_configuration config(
       model::ns("ns"), model::topic("topic"), 1, 1);
 
-    config.cleanup_policy_bitflags = model::cleanup_policy_bitflags::none;
-    BOOST_REQUIRE_EQUAL(describe_topic_cleanup_policy(config), "delete");
+    config.properties.cleanup_policy_bitflags
+      = model::cleanup_policy_bitflags::none;
+    BOOST_REQUIRE_EQUAL(describe_topic_cleanup_policy(config, def), "delete");
 
-    config.cleanup_policy_bitflags = model::cleanup_policy_bitflags::compaction;
-    BOOST_REQUIRE_EQUAL(describe_topic_cleanup_policy(config), "compact");
+    config.properties.cleanup_policy_bitflags
+      = model::cleanup_policy_bitflags::compaction;
+    BOOST_REQUIRE_EQUAL(describe_topic_cleanup_policy(config, def), "compact");
 
-    config.cleanup_policy_bitflags = model::cleanup_policy_bitflags::deletion;
-    BOOST_REQUIRE_EQUAL(describe_topic_cleanup_policy(config), "delete");
+    config.properties.cleanup_policy_bitflags
+      = model::cleanup_policy_bitflags::deletion;
+    BOOST_REQUIRE_EQUAL(describe_topic_cleanup_policy(config, def), "delete");
 
-    config.cleanup_policy_bitflags
+    config.properties.cleanup_policy_bitflags
       = model::cleanup_policy_bitflags::deletion
         | model::cleanup_policy_bitflags::compaction;
     BOOST_REQUIRE_EQUAL(
-      describe_topic_cleanup_policy(config), "compact,delete");
+      describe_topic_cleanup_policy(config, def), "compact,delete");
 };

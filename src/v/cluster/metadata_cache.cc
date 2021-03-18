@@ -13,6 +13,7 @@
 #include "cluster/partition_leaders_table.h"
 #include "cluster/topic_table.h"
 #include "cluster/types.h"
+#include "config/configuration.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/namespace.h"
@@ -104,4 +105,38 @@ std::optional<model::node_id> metadata_cache::get_controller_leader_id() {
     return _leaders.local().get_leader(model::controller_ntp);
 }
 
+/**
+ * hard coded defaults
+ */
+model::compression metadata_cache::get_default_compression() const {
+    return model::compression::producer;
+}
+model::cleanup_policy_bitflags
+metadata_cache::get_default_cleanup_policy_bitflags() const {
+    return model::cleanup_policy_bitflags::deletion;
+}
+model::compaction_strategy
+metadata_cache::get_default_compaction_strategy() const {
+    return model::compaction_strategy::offset;
+}
+model::timestamp_type metadata_cache::get_default_timestamp_type() const {
+    return model::timestamp_type::create_time;
+}
+/**
+ * We use configuration directly to access default topic properties, in future
+ * those values are going to be runtime configurable
+ */
+size_t metadata_cache::get_default_segment_size() const {
+    return config::shard_local_cfg().log_segment_size();
+}
+size_t metadata_cache::get_default_compacted_topic_segment_size() const {
+    return config::shard_local_cfg().compacted_log_segment_size();
+}
+std::optional<size_t> metadata_cache::get_default_retention_bytes() const {
+    return config::shard_local_cfg().retention_bytes();
+}
+std::optional<std::chrono::milliseconds>
+metadata_cache::get_default_retention_duration() const {
+    return config::shard_local_cfg().delete_retention_ms();
+}
 } // namespace cluster

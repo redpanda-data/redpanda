@@ -54,17 +54,18 @@ BOOST_AUTO_TEST_CASE(test_all_additional_options) {
     BOOST_REQUIRE_EQUAL(
       cluster_tp_config.replication_factor, all_options.replication_factor);
     BOOST_REQUIRE_EQUAL(
-      cluster_tp_config.compression, model::compression::snappy);
+      cluster_tp_config.properties.compression, model::compression::snappy);
     BOOST_REQUIRE_EQUAL(
-      cluster_tp_config.compaction_strategy,
+      cluster_tp_config.properties.compaction_strategy,
       model::compaction_strategy::header);
-    BOOST_REQUIRE_EQUAL(cluster_tp_config.retention_bytes.is_disabled(), true);
+    BOOST_REQUIRE_EQUAL(
+      cluster_tp_config.properties.retention_bytes.is_disabled(), true);
     using namespace std::chrono_literals;
     BOOST_REQUIRE_EQUAL(
-      cluster_tp_config.retention_duration.value().count(),
+      cluster_tp_config.properties.retention_duration.value().count(),
       (86400000ms).count());
     BOOST_REQUIRE_EQUAL(
-      cluster_tp_config.cleanup_policy_bitflags,
+      cluster_tp_config.properties.cleanup_policy_bitflags,
       model::cleanup_policy_bitflags::compaction
         | model::cleanup_policy_bitflags::deletion);
 }

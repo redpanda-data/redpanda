@@ -224,7 +224,7 @@ topic_table::get_topic_cfg(model::topic_namespace_view tp) const {
 std::optional<model::timestamp_type>
 topic_table::get_topic_timestamp_type(model::topic_namespace_view tp) const {
     if (auto it = _topics.find(tp); it != _topics.end()) {
-        return it->second.cfg.timestamp_type;
+        return it->second.cfg.properties.timestamp_type;
     }
     return {};
 }

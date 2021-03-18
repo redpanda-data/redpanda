@@ -79,13 +79,14 @@ struct topic_table_fixture {
 
     void create_topics() {
         auto cmd_1 = make_create_topic_cmd("test_tp_1", 1, 3);
-        cmd_1.value.cfg.compaction_strategy
+        cmd_1.value.cfg.properties.compaction_strategy
           = model::compaction_strategy::offset;
-        cmd_1.value.cfg.cleanup_policy_bitflags
+        cmd_1.value.cfg.properties.cleanup_policy_bitflags
           = model::cleanup_policy_bitflags::compaction;
-        cmd_1.value.cfg.compression = model::compression::lz4;
-        cmd_1.value.cfg.retention_bytes = tristate(std::make_optional(2_GiB));
-        cmd_1.value.cfg.retention_duration = tristate(
+        cmd_1.value.cfg.properties.compression = model::compression::lz4;
+        cmd_1.value.cfg.properties.retention_bytes = tristate(
+          std::make_optional(2_GiB));
+        cmd_1.value.cfg.properties.retention_duration = tristate(
           std::make_optional(std::chrono::milliseconds(3600000)));
         auto cmd_2 = make_create_topic_cmd("test_tp_2", 12, 3);
         auto cmd_3 = make_create_topic_cmd("test_tp_3", 8, 1);

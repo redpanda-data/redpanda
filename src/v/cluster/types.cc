@@ -22,6 +22,22 @@
 
 namespace cluster {
 
+bool topic_properties::is_compacted() const {
+    if (!cleanup_policy_bitflags) {
+        return false;
+    }
+    return (cleanup_policy_bitflags.value()
+            & model::cleanup_policy_bitflags::compaction)
+           == model::cleanup_policy_bitflags::compaction;
+}
+
+bool topic_properties::has_overrides() const {
+    return cleanup_policy_bitflags || compaction_strategy || segment_size
+           || retention_bytes.has_value() || retention_bytes.is_disabled()
+           || retention_duration.has_value()
+           || retention_duration.is_disabled();
+}
+
 topic_configuration::topic_configuration(
   model::ns n, model::topic t, int32_t count, int16_t rf)
   : tp_ns(std::move(n), std::move(t))
@@ -32,21 +48,17 @@ storage::ntp_config topic_configuration::make_ntp_config(
   const ss::sstring& work_dir,
   model::partition_id p_id,
   model::revision_id rev) const {
-    auto has_overrides = cleanup_policy_bitflags || compaction_strategy
-                         || segment_size || retention_bytes.has_value()
-                         || retention_bytes.is_disabled()
-                         || retention_duration.has_value()
-                         || retention_duration.is_disabled() || is_internal();
+    auto has_overrides = properties.has_overrides() || is_internal();
     std::unique_ptr<storage::ntp_config::default_overrides> overrides = nullptr;
 
     if (has_overrides) {
         overrides = std::make_unique<storage::ntp_config::default_overrides>(
           storage::ntp_config::default_overrides{
-            .cleanup_policy_bitflags = cleanup_policy_bitflags,
-            .compaction_strategy = compaction_strategy,
-            .segment_size = segment_size,
-            .retention_bytes = retention_bytes,
-            .retention_time = retention_duration,
+            .cleanup_policy_bitflags = properties.cleanup_policy_bitflags,
+            .compaction_strategy = properties.compaction_strategy,
+            .segment_size = properties.segment_size,
+            .retention_bytes = properties.retention_bytes,
+            .retention_time = properties.retention_duration,
             // we disable cache for internal topics as they are read only once
             // during bootstrap.
             .cache_enabled = storage::with_cache(!is_internal())});
@@ -81,20 +93,29 @@ model::topic_metadata topic_configuration_assignment::get_metadata() const {
 std::ostream& operator<<(std::ostream& o, const topic_configuration& cfg) {
     fmt::print(
       o,
-      "{{ topic: {}, partition_count: {}, replication_factor: {}, compression: "
-      "{}, cleanup_policy_bitflags: {}, compaction_strategy: {}, "
-      "retention_bytes: {}, "
-      "retention_duration_hours: {}, segment_size: {}, timestamp_type: {} }}",
+      "{{ topic: {}, partition_count: {}, replication_factor: {}, properties: "
+      "{}}}",
       cfg.tp_ns,
       cfg.partition_count,
       cfg.replication_factor,
-      cfg.compression,
-      cfg.cleanup_policy_bitflags,
-      cfg.compaction_strategy,
-      cfg.retention_bytes,
-      cfg.retention_duration,
-      cfg.segment_size,
-      cfg.timestamp_type);
+      cfg.properties);
+
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
+    fmt::print(
+      o,
+      "{compression: {}, cleanup_policy_bitflags: {}, compaction_strategy: {}, "
+      "retention_bytes: {}, retention_duration_ms: {}, segment_size: {}, "
+      "timestamp_type: {} }}",
+      properties.compression,
+      properties.cleanup_policy_bitflags,
+      properties.compaction_strategy,
+      properties.retention_bytes,
+      properties.retention_duration,
+      properties.segment_size,
+      properties.timestamp_type);
 
     return o;
 }
@@ -133,13 +154,13 @@ void adl<cluster::topic_configuration>::to(
       t.tp_ns,
       t.partition_count,
       t.replication_factor,
-      t.compression,
-      t.cleanup_policy_bitflags,
-      t.compaction_strategy,
-      t.timestamp_type,
-      t.segment_size,
-      t.retention_bytes,
-      t.retention_duration);
+      t.properties.compression,
+      t.properties.cleanup_policy_bitflags,
+      t.properties.compaction_strategy,
+      t.properties.timestamp_type,
+      t.properties.segment_size,
+      t.properties.retention_bytes,
+      t.properties.retention_duration);
 }
 
 cluster::topic_configuration
@@ -152,16 +173,18 @@ adl<cluster::topic_configuration>::from(iobuf_parser& in) {
     auto cfg = cluster::topic_configuration(
       std::move(ns), std::move(topic), partition_count, rf);
 
-    cfg.compression = adl<std::optional<model::compression>>{}.from(in);
-    cfg.cleanup_policy_bitflags
-      = adl<std::optional<model::cleanup_policy_bitflags>>{}.from(in);
-    cfg.compaction_strategy
-      = adl<std::optional<model::compaction_strategy>>{}.from(in);
-    cfg.timestamp_type = adl<std::optional<model::timestamp_type>>{}.from(in);
-    cfg.segment_size = adl<std::optional<size_t>>{}.from(in);
-    cfg.retention_bytes = adl<tristate<size_t>>{}.from(in);
-    cfg.retention_duration = adl<tristate<std::chrono::milliseconds>>{}.from(
+    cfg.properties.compression = adl<std::optional<model::compression>>{}.from(
       in);
+    cfg.properties.cleanup_policy_bitflags
+      = adl<std::optional<model::cleanup_policy_bitflags>>{}.from(in);
+    cfg.properties.compaction_strategy
+      = adl<std::optional<model::compaction_strategy>>{}.from(in);
+    cfg.properties.timestamp_type
+      = adl<std::optional<model::timestamp_type>>{}.from(in);
+    cfg.properties.segment_size = adl<std::optional<size_t>>{}.from(in);
+    cfg.properties.retention_bytes = adl<tristate<size_t>>{}.from(in);
+    cfg.properties.retention_duration
+      = adl<tristate<std::chrono::milliseconds>>{}.from(in);
 
     return cfg;
 }

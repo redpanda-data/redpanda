@@ -125,9 +125,9 @@ operator<<(std::ostream& o, const model::topic_namespace_view& tp_ns) {
 std::ostream& operator<<(std::ostream& os, timestamp_type ts) {
     switch (ts) {
     case timestamp_type::append_time:
-        return os << "{append_time}";
+        return os << "append_time";
     case timestamp_type::create_time:
-        return os << "{create_time}";
+        return os << "create_time";
     }
     return os << "{unknown timestamp:" << static_cast<int>(ts) << "}";
 }

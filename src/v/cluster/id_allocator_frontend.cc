@@ -190,7 +190,8 @@ ss::future<bool> id_allocator_frontend::try_create_id_allocator_topic() {
       1,
       config::shard_local_cfg().default_topic_replication()};
 
-    topic.cleanup_policy_bitflags = model::cleanup_policy_bitflags::none;
+    topic.properties.cleanup_policy_bitflags
+      = model::cleanup_policy_bitflags::none;
 
     return _controller->get_topics_frontend()
       .local()

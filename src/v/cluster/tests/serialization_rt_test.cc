@@ -24,13 +24,15 @@ SEASTAR_THREAD_TEST_CASE(topic_config_rt_test) {
     cluster::topic_configuration cfg(
       model::ns("test"), model::topic{"a_topic"}, 3, 1);
 
-    cfg.cleanup_policy_bitflags = model::cleanup_policy_bitflags::deletion
-                                  | model::cleanup_policy_bitflags::compaction;
-    cfg.compaction_strategy = model::compaction_strategy::offset;
-    cfg.compression = model::compression::snappy;
-    cfg.segment_size = std::optional<size_t>(1_GiB);
-    cfg.retention_bytes = tristate<size_t>{};
-    cfg.retention_duration = tristate<std::chrono::milliseconds>(10h);
+    cfg.properties.cleanup_policy_bitflags
+      = model::cleanup_policy_bitflags::deletion
+        | model::cleanup_policy_bitflags::compaction;
+    cfg.properties.compaction_strategy = model::compaction_strategy::offset;
+    cfg.properties.compression = model::compression::snappy;
+    cfg.properties.segment_size = std::optional<size_t>(1_GiB);
+    cfg.properties.retention_bytes = tristate<size_t>{};
+    cfg.properties.retention_duration = tristate<std::chrono::milliseconds>(
+      10h);
 
     auto d = serialize_roundtrip_rpc(std::move(cfg));
 
@@ -38,16 +40,16 @@ SEASTAR_THREAD_TEST_CASE(topic_config_rt_test) {
     BOOST_REQUIRE_EQUAL(model::topic("a_topic"), d.tp_ns.tp);
     BOOST_REQUIRE_EQUAL(3, d.partition_count);
     BOOST_REQUIRE_EQUAL(1, d.replication_factor);
-    BOOST_REQUIRE_EQUAL(model::compression::snappy, d.compression);
+    BOOST_REQUIRE_EQUAL(model::compression::snappy, d.properties.compression);
     BOOST_REQUIRE_EQUAL(
       model::cleanup_policy_bitflags::deletion
         | model::cleanup_policy_bitflags::compaction,
-      d.cleanup_policy_bitflags);
+      d.properties.cleanup_policy_bitflags);
 
     BOOST_REQUIRE_EQUAL(
-      model::compaction_strategy::offset, d.compaction_strategy);
-    BOOST_CHECK(10h == d.retention_duration.value());
-    BOOST_REQUIRE_EQUAL(tristate<size_t>{}, d.retention_bytes);
+      model::compaction_strategy::offset, d.properties.compaction_strategy);
+    BOOST_CHECK(10h == d.properties.retention_duration.value());
+    BOOST_REQUIRE_EQUAL(tristate<size_t>{}, d.properties.retention_bytes);
 }
 
 SEASTAR_THREAD_TEST_CASE(broker_metadata_rt_test) {

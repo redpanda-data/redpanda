@@ -38,10 +38,10 @@ struct cmd_test_fixture {
         cluster::topic_configuration cfg(
           test_ns, model::topic(topic), partitions, replication_factor);
 
-        cfg.segment_size = 100_MiB;
-        cfg.cleanup_policy_bitflags
+        cfg.properties.segment_size = 100_MiB;
+        cfg.properties.cleanup_policy_bitflags
           = model::cleanup_policy_bitflags::compaction;
-        cfg.compression = model::compression::gzip;
+        cfg.properties.compression = model::compression::gzip;
 
         auto pas = allocate(cfg);
 
@@ -91,13 +91,18 @@ FIXTURE_TEST(test_create_topic_cmd_serialization, cmd_test_fixture) {
                    .get0();
     ss::visit(deser, [&cmd](cluster::create_topic_cmd c) {
         BOOST_REQUIRE_EQUAL(c.key.tp, cmd.key.tp);
-        BOOST_REQUIRE_EQUAL(c.value.cfg.compression, cmd.value.cfg.compression);
         BOOST_REQUIRE_EQUAL(
-          c.value.cfg.cleanup_policy_bitflags,
-          cmd.value.cfg.cleanup_policy_bitflags);
+          c.value.cfg.properties.compression,
+          cmd.value.cfg.properties.compression);
         BOOST_REQUIRE_EQUAL(
-          c.value.cfg.segment_size, cmd.value.cfg.segment_size);
-        BOOST_REQUIRE_EQUAL(c.value.cfg.compression, cmd.value.cfg.compression);
+          c.value.cfg.properties.cleanup_policy_bitflags,
+          cmd.value.cfg.properties.cleanup_policy_bitflags);
+        BOOST_REQUIRE_EQUAL(
+          c.value.cfg.properties.segment_size,
+          cmd.value.cfg.properties.segment_size);
+        BOOST_REQUIRE_EQUAL(
+          c.value.cfg.properties.compression,
+          cmd.value.cfg.properties.compression);
         BOOST_REQUIRE_EQUAL(
           c.value.assignments.size(), cmd.value.assignments.size());
     });

@@ -94,14 +94,16 @@ FIXTURE_TEST(get_getting_config, topic_table_fixture) {
     BOOST_REQUIRE(cfg.has_value());
     auto v = cfg.value();
     BOOST_REQUIRE_EQUAL(
-      v.compaction_strategy, model::compaction_strategy::offset);
+      v.properties.compaction_strategy, model::compaction_strategy::offset);
 
     BOOST_REQUIRE_EQUAL(
-      v.cleanup_policy_bitflags, model::cleanup_policy_bitflags::compaction);
-    BOOST_REQUIRE_EQUAL(v.compression, model::compression::lz4);
-    BOOST_REQUIRE_EQUAL(v.retention_bytes, tristate(std::make_optional(2_GiB)));
+      v.properties.cleanup_policy_bitflags,
+      model::cleanup_policy_bitflags::compaction);
+    BOOST_REQUIRE_EQUAL(v.properties.compression, model::compression::lz4);
     BOOST_REQUIRE_EQUAL(
-      v.retention_duration,
+      v.properties.retention_bytes, tristate(std::make_optional(2_GiB)));
+    BOOST_REQUIRE_EQUAL(
+      v.properties.retention_duration,
       tristate(std::make_optional(std::chrono::milliseconds(3600000))));
 }
 
