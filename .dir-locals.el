@@ -19,4 +19,4 @@
   (helm-make-build-dir . "vbuild/debug/clang")
   )
  (c-or-c++-mode
-  (clang-format-executable . vbuild/llvm/llvm-bin/bin/clang-format)))
+  (clang-format-executable . vbuild/llvm/install/bin/clang-format)))
