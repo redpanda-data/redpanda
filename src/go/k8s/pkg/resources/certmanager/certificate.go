@@ -92,11 +92,17 @@ func (r *CertificateResource) obj() (k8sclient.Object, error) {
 		},
 	}
 
-	if r.fqdn != "" {
+	externConn := r.pandaCluster.Spec.ExternalConnectivity
+	switch {
+	case externConn.Enabled && externConn.Subdomain != "":
+		cert.Spec.DNSNames = []string{
+			"*." + externConn.Subdomain,
+		}
+	case r.fqdn != "":
 		cert.Spec.DNSNames = []string{
 			"*." + strings.TrimSuffix(r.fqdn, "."),
 		}
-	} else {
+	default:
 		// Common name cannot exceed 64 bytes (cert-manager validates).
 		cert.Spec.CommonName = fmt.Sprintf("rp-%s", r.key.Name)
 	}
