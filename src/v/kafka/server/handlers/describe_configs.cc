@@ -170,7 +170,11 @@ ss::future<response_ptr> describe_configs_handler::handle(
             add_config(
               result,
               "cleanup.policy",
-              describe_topic_cleanup_policy(topic_config),
+              describe_topic_cleanup_policy(
+                topic_config,
+                ctx.metadata_cache().get_default_cleanup_policy_bitflags()),
+              describe_configs_source::topic);
+
               describe_configs_source::topic);
 
             break;
