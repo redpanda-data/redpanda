@@ -34,9 +34,7 @@ ss::future<response_ptr> list_groups_handler::handle(
     // group listing is still returned even if some partitions are
     // still in the process of loading/recovering.
     list_groups_response resp;
-    resp.data.error_code = groups.first
-                             ? error_code::coordinator_load_in_progress
-                             : error_code::none;
+    resp.data.error_code = groups.first;
     resp.data.groups = std::move(groups.second);
     co_return co_await ctx.respond(std::move(resp));
 }

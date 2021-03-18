@@ -139,10 +139,9 @@ public:
     ss::future<offset_fetch_response>
     offset_fetch(offset_fetch_request&& request);
 
-    // returns the set of registered groups, and a flag indicating if any
-    // partition is actively recovering, which can be used to signal to the
-    // caller that the returned set of groups may be incomplete.
-    std::pair<bool, std::vector<listed_group>> list_groups() const;
+    // returns the set of registered groups, and an error if one occurred while
+    // retrieving the group list (e.g. coordinator_load_in_progress).
+    std::pair<error_code, std::vector<listed_group>> list_groups() const;
 
     described_group describe_group(const model::ntp&, const kafka::group_id&);
 
