@@ -68,6 +68,7 @@ struct fetch_request final {
     int32_t session_epoch = final_fetch_session_epoch;      // >= v7
     std::vector<topic> topics;
     std::vector<forgotten_topic> forgotten_topics; // >= v7
+    ss::sstring rack_id;                           // >= v11 ignored
 
     void encode(response_writer& writer, api_version version);
     void decode(request_context& ctx);
@@ -217,6 +218,7 @@ struct fetch_response final {
         model::offset last_stable_offset;                      // >= v4
         model::offset log_start_offset;                        // >= v5
         std::vector<aborted_transaction> aborted_transactions; // >= v4
+        model::node_id preferred_read_replica{-1};             // >= v11 ignored
         std::optional<batch_reader> record_set;
         /*
          * _not part of kafka protocol

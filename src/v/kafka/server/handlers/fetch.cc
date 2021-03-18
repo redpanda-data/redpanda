@@ -78,6 +78,9 @@ void fetch_request::encode(response_writer& writer, api_version version) {
                 [](int32_t p, response_writer& writer) { writer.write(p); });
           });
     }
+    if (version >= api_version(11)) {
+        writer.write(rack_id);
+    }
 }
 
 void fetch_request::decode(request_context& ctx) {
@@ -124,6 +127,9 @@ void fetch_request::decode(request_context& ctx) {
                 [](request_reader& reader) { return reader.read_int32(); }),
             };
         });
+    }
+    if (version >= api_version(11)) {
+        rack_id = reader.read_string();
     }
 }
 
@@ -195,6 +201,9 @@ void fetch_response::encode(const request_context& ctx, response& resp) {
                       writer.write(t.producer_id);
                       writer.write(int64_t(t.first_offset));
                   });
+                if (version >= api_version(11)) {
+                    writer.write(r.preferred_read_replica);
+                }
                 writer.write(std::move(r.record_set));
             });
       });
@@ -227,6 +236,9 @@ void fetch_response::decode(iobuf buf, api_version version) {
                       .first_offset = model::offset(reader.read_int64()),
                     };
                 }),
+              .preferred_read_replica = version >= api_version(11)
+                                          ? model::node_id{reader.read_int32()}
+                                          : model::node_id{-1},
               .record_set = reader.read_nullable_batch_reader()};
         });
         return p;

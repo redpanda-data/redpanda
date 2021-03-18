@@ -14,6 +14,6 @@
 
 namespace kafka {
 
-using fetch_handler = handler<fetch_api, 4, 10>;
+using fetch_handler = handler<fetch_api, 4, 11>;
 
 }
