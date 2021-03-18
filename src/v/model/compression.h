@@ -50,7 +50,6 @@ enum class compression : uint8_t {
 /// operators needed for boost::lexical_cast<compression>
 /// inline to prevent library depdency with the v::compression module
 inline std::ostream& operator<<(std::ostream& os, const compression& c) {
-    os << "{compression: ";
     switch (c) {
     case compression::none:
         os << "none";
@@ -74,7 +73,7 @@ inline std::ostream& operator<<(std::ostream& os, const compression& c) {
         os << "ERROR";
         break;
     }
-    return os << "}";
+    return os;
 }
 std::istream& operator>>(std::istream&, compression&);
 
