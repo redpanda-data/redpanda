@@ -119,6 +119,30 @@ static void report_broker_config(describe_configs_result& result) {
       describe_configs_source::static_broker_config);
 }
 
+int64_t describe_retention_duration(
+  tristate<std::chrono::milliseconds>& overrides,
+  std::optional<std::chrono::milliseconds> def) {
+    if (overrides.is_disabled()) {
+        return -1;
+    }
+    if (overrides.has_value()) {
+        return overrides.value().count();
+    }
+
+    return def ? def->count() : -1;
+}
+int64_t describe_retention_bytes(
+  tristate<size_t>& overrides, std::optional<size_t> def) {
+    if (overrides.is_disabled()) {
+        return -1;
+    }
+    if (overrides.has_value()) {
+        return overrides.value();
+    }
+
+    return def.value_or(-1);
+}
+
 template<>
 ss::future<response_ptr> describe_configs_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group ssg) {
@@ -175,6 +199,44 @@ ss::future<response_ptr> describe_configs_handler::handle(
                 ctx.metadata_cache().get_default_cleanup_policy_bitflags()),
               describe_configs_source::topic);
 
+            add_config(
+              result,
+              "compression.type",
+              topic_config->properties.compression.value_or(
+                ctx.metadata_cache().get_default_compression()),
+              describe_configs_source::topic);
+
+            add_config(
+              result,
+              "segment.bytes",
+              topic_config->properties.segment_size.value_or(
+                topic_config->properties.is_compacted()
+                  ? ctx.metadata_cache()
+                      .get_default_compacted_topic_segment_size()
+                  : ctx.metadata_cache().get_default_segment_size()),
+              describe_configs_source::topic);
+
+            add_config(
+              result,
+              "retention.ms",
+              describe_retention_duration(
+                topic_config->properties.retention_duration,
+                ctx.metadata_cache().get_default_retention_duration()),
+              describe_configs_source::topic);
+
+            add_config(
+              result,
+              "retention.bytes",
+              describe_retention_bytes(
+                topic_config->properties.retention_bytes,
+                ctx.metadata_cache().get_default_retention_bytes()),
+              describe_configs_source::topic);
+
+            add_config(
+              result,
+              "timestamp.type",
+              topic_config->properties.timestamp_type.value_or(
+                ctx.metadata_cache().get_default_timestamp_type()),
               describe_configs_source::topic);
 
             break;
