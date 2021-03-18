@@ -310,6 +310,8 @@ public:
 
     void set_control_type() { _attributes |= control_mask; }
 
+    void set_transactional_type() { _attributes |= transactional_mask; }
+
     bool operator==(const record_batch_attributes& other) const {
         return _attributes == other._attributes;
     }

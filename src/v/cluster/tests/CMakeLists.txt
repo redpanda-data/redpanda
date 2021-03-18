@@ -30,6 +30,7 @@ set(srcs
     configuration_change_test.cc
     idempotency_tests.cc
     tm_stm_tests.cc
+    rm_stm_tests.cc
     id_allocator_stm_test.cc)
 
 rp_test(

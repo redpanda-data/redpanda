@@ -112,6 +112,10 @@ model::record_batch make_random_batch(record_batch_spec spec) {
       .base_sequence = 0,
       .record_count = spec.count};
 
+    if (spec.is_transactional) {
+        header.attrs.set_transactional_type();
+    }
+
     if (spec.enable_idempotence) {
         header.base_sequence = spec.base_sequence;
     }

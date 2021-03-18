@@ -27,6 +27,7 @@ struct record_batch_spec {
     int64_t producer_id{0};
     int16_t producer_epoch{0};
     int32_t base_sequence{0};
+    bool is_transactional{false};
 };
 
 /**
