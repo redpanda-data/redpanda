@@ -27,7 +27,6 @@ tasks:
       RP_DEPS_INSTALL_DIR: '{{default .RP_DEPS_INSTALL_DIR_DEFAULT .RP_DEPS_INSTALL_DIR}}'
       VECTORIZED_CMAKE_DIR_DEFAULT: "{{.PWD}}/cmake"
       VECTORIZED_CMAKE_DIR: "{{default .VECTORIZED_CMAKE_DIR_DEFAULT .VECTORIZED_CMAKE_DIR}}"
-      COMPILER: '{{default "clang" .COMPILER}}'
       CC: '{{.COMPILER}}'
       CXX: '{{if eq .COMPILER "gcc"}}g++{{else}}clang++{{end}}'
     cmds:
