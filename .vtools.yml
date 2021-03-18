@@ -1,7 +1,0 @@
----
-build:
-  root: ./vbuild
-  src: ./
-  gopath: ./vbuild
-  node_build_dir: ./vbuild
-  default_type: release
