@@ -56,6 +56,8 @@ func CreateIfNotExists(
 	return false, nil
 }
 
+const debugLevel = 10
+
 // Update ensures resource is updated if necessary. The method calculates patch
 // and applies it if something changed
 func Update(
@@ -80,7 +82,7 @@ func Update(
 		if err != nil {
 			return err
 		}
-		logger.Info(fmt.Sprintf("StatefulSet changed, updating %s. Diff: %v", modified.GetName(), string(patchResult.Patch)))
+		logger.V(debugLevel).Info(fmt.Sprintf("StatefulSet changed, updating %s. Diff: %v", modified.GetName(), string(patchResult.Patch)))
 		if err := patch.DefaultAnnotator.SetLastAppliedAnnotation(modified); err != nil {
 			return err
 		}
