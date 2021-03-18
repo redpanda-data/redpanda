@@ -30,6 +30,12 @@ ss::future<response_ptr> sync_group_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group g) {
     sync_group_request request;
     request.decode(ctx.reader(), ctx.header().version);
+
+    if (!ctx.authorized(acl_operation::read, request.data.group_id)) {
+        co_return co_await ctx.respond(
+          sync_group_response(error_code::group_authorization_failed));
+    }
+
     auto resp = co_await ctx.groups().sync_group(std::move(request));
     co_return co_await ctx.respond(std::move(resp));
 }
