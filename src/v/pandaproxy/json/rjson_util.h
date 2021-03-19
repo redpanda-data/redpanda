@@ -11,7 +11,7 @@
 
 #pragma once
 
-#include "json/json.h"
+#include "pandaproxy/json/exceptions.h"
 #include "pandaproxy/json/types.h"
 #include "utils/concepts-enabled.h"
 
@@ -25,16 +25,6 @@
 #include <stdexcept>
 
 namespace pandaproxy::json {
-
-class parse_error final : public std::exception {
-public:
-    explicit parse_error(size_t offset)
-      : _what(fmt::format("parse error at offset {}", offset)) {}
-    const char* what() const noexcept final { return _what.data(); }
-
-private:
-    std::string _what;
-};
 
 template<typename T>
 ss::sstring rjson_serialize(const T& v) {
