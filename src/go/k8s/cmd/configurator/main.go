@@ -144,6 +144,8 @@ func main() {
 		cfg.Redpanda.SeedServers = []config.SeedServer{}
 	}
 
+	cfg.Rpk.TuneCoredump = false
+
 	cfgBytes, err := yaml.Marshal(cfg)
 	if err != nil {
 		log.Fatalf("%s", fmt.Errorf("unable to marshal the configuration: %w", err))
