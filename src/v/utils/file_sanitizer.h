@@ -125,7 +125,7 @@ public:
           get_file_impl(_file)->read_dma(pos, iov, pc));
     }
 
-    ss::future<> flush(void) final {
+    ss::future<> flush() final {
         assert_file_not_closed();
         if (!_pending_ops.empty()) {
             std::cout << "flush() called concurrently with other operations.\n";
@@ -136,7 +136,7 @@ public:
           get_file_impl(_file)->flush());
     }
 
-    ss::future<struct stat> stat(void) final {
+    ss::future<struct stat> stat() final {
         assert_file_not_closed();
         return with_op(
           fmt::format("ss::future<> stat(void)"), get_file_impl(_file)->stat());
@@ -165,7 +165,7 @@ public:
           get_file_impl(_file)->allocate(position, length));
     }
 
-    ss::future<uint64_t> size(void) final {
+    ss::future<uint64_t> size() final {
         assert_file_not_closed();
         return with_op(
           fmt::format("ss::future<uint64_t> size(void)"),

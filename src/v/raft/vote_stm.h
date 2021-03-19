@@ -36,7 +36,7 @@ namespace raft {
 ///
 class vote_stm {
 public:
-    vote_stm(consensus*);
+    explicit vote_stm(consensus*);
     ~vote_stm();
 
     /// sends the vote and mutates consensus pointer internal state
