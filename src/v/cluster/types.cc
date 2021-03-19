@@ -38,6 +38,17 @@ bool topic_properties::has_overrides() const {
            || retention_duration.is_disabled();
 }
 
+storage::ntp_config::default_overrides
+topic_properties::get_ntp_cfg_overrides() const {
+    storage::ntp_config::default_overrides ret;
+    ret.cleanup_policy_bitflags = cleanup_policy_bitflags;
+    ret.compaction_strategy = compaction_strategy;
+    ret.retention_bytes = retention_bytes;
+    ret.retention_time = retention_duration;
+    ret.segment_size = segment_size;
+    return ret;
+}
+
 topic_configuration::topic_configuration(
   model::ns n, model::topic t, int32_t count, int16_t rf)
   : tp_ns(std::move(n), std::move(t))

@@ -99,6 +99,8 @@ struct topic_properties {
     bool is_compacted() const;
     bool has_overrides() const;
 
+    storage::ntp_config::default_overrides get_ntp_cfg_overrides() const;
+
     friend std::ostream& operator<<(std::ostream&, const topic_properties&);
 };
 // Structure holding topic configuration, optionals will be replaced by broker
