@@ -81,22 +81,28 @@ struct adl {
         auto parser = iobuf_parser(std::move(io));
         return adl<type>{}.from(parser);
     }
-    type from(iobuf_parser& in) {
+
+    type from(iobuf_parser& in) { return parse_from(in); }
+
+    type from(iobuf_const_parser& in) { return parse_from(in); }
+
+    template<typename Parser>
+    type parse_from(Parser& in) {
         if constexpr (is_named_type) {
             using value_type = typename type::type;
             return type(adl<value_type>{}.from(in));
         } else if constexpr (is_optional) {
             using value_type = typename type::value_type;
-            int8_t is_set = in.consume_type<int8_t>();
+            int8_t is_set = in.template consume_type<int8_t>();
             if (is_set == 0) {
                 return std::nullopt;
             }
             return adl<value_type>{}.from(in);
         } else if constexpr (is_sstring) {
-            return in.read_string(in.consume_type<int32_t>());
+            return in.read_string(in.template consume_type<int32_t>());
         } else if constexpr (is_vector) {
             using value_type = typename type::value_type;
-            int32_t n = in.consume_type<int32_t>();
+            int32_t n = in.template consume_type<int32_t>();
             std::vector<value_type> ret;
             ret.reserve(n);
             while (n-- > 0) {
@@ -104,17 +110,17 @@ struct adl {
             }
             return ret;
         } else if constexpr (is_iobuf) {
-            return in.share(in.consume_type<int32_t>());
+            return in.share(in.template consume_type<int32_t>());
         } else if constexpr (is_enum) {
             using e_type = std::underlying_type_t<type>;
             return static_cast<type>(adl<e_type>{}.from(in));
         } else if constexpr (std::is_integral_v<type>) {
-            return ss::le_to_cpu(in.consume_type<type>());
+            return ss::le_to_cpu(in.template consume_type<type>());
         } else if constexpr (is_ss_bool) {
             return type(adl<int8_t>{}.from(in));
         } else if constexpr (is_chrono_milliseconds) {
             return std::chrono::milliseconds(
-              ss::le_to_cpu(in.consume_type<int64_t>()));
+              ss::le_to_cpu(in.template consume_type<int64_t>()));
         } else if constexpr (is_standard_layout) {
             T t;
             reflection::for_each_field(t, [&in](auto& field) mutable {
