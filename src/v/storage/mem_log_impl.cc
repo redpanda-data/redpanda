@@ -307,6 +307,11 @@ struct mem_log_impl final : log::impl {
         _max_collectible_offset = o;
     }
 
+    ss::future<> update_configuration(ntp_config::default_overrides o) final {
+        mutable_config().set_overrides(o);
+        return ss::now();
+    }
+
     ss::future<model::record_batch_reader>
     make_reader(log_reader_config cfg) final {
         auto it = std::lower_bound(

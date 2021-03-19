@@ -1003,6 +1003,35 @@ model::offset disk_log_impl::read_start_offset() const {
     return model::offset{};
 }
 
+ss::future<>
+disk_log_impl::update_configuration(ntp_config::default_overrides o) {
+    auto was_compacted = config().is_compacted();
+    mutable_config().set_overrides(o);
+    /**
+     * For most of the settings we always query ntp config, only cleanup_policy
+     * and segment size need special treatment.
+     */
+    if (config().has_overrides()) {
+        if (config().get_overrides().segment_size) {
+            _max_segment_size = *config().get_overrides().segment_size;
+        }
+        // enable compaction
+        if (!was_compacted && config().is_compacted()) {
+            for (auto& s : _segs) {
+                s->mark_as_compacted_segment();
+            }
+        }
+        // disable compaction
+        if (was_compacted && !config().is_compacted()) {
+            for (auto& s : _segs) {
+                s->unmark_as_compacted_segment();
+            }
+        }
+    }
+
+    return ss::now();
+}
+
 std::ostream& disk_log_impl::print(std::ostream& o) const {
     return o << "{offsets:" << offsets()
              << ", max_collectible_offset: " << _max_collectible_offset
