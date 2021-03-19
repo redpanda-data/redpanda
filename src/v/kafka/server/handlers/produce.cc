@@ -380,6 +380,15 @@ produce_topic(produce_ctx& octx, produce_request::topic& topic) {
     partitions.reserve(topic.partitions.size());
 
     for (auto& part : topic.partitions) {
+        if (!octx.rctx.authorized(acl_operation::write, topic.name)) {
+            partitions.push_back(
+              ss::make_ready_future<produce_response::partition>(
+                produce_response::partition{
+                  .id = part.id,
+                  .error = error_code::topic_authorization_failed}));
+            continue;
+        }
+
         if (!octx.rctx.metadata_cache().contains(
               model::topic_namespace_view(model::kafka_namespace, topic.name),
               part.id)) {
@@ -455,14 +464,33 @@ produce_handler::handle(request_context ctx, ss::smp_service_group ssg) {
      * authorization failed.
      */
     if (request.has_transactional) {
+        // will be removed when all of transactions are implemented
         return ctx.respond(request.make_error_response(
           error_code::transactional_id_authorization_failed));
 
+        if (
+          !request.transactional_id
+          || !ctx.authorized(
+            acl_operation::write,
+            transactional_id(*request.transactional_id))) {
+            return ctx.respond(request.make_error_response(
+              error_code::transactional_id_authorization_failed));
+        }
+        // <kafka>Note that authorization to a transactionalId implies
+        // ProducerId authorization</kafka>
+
     } else if (request.has_idempotent) {
+        if (!ctx.authorized(
+              acl_operation::idempotent_write, default_cluster_name)) {
+            return ctx.respond(request.make_error_response(
+              error_code::cluster_authorization_failed));
+        }
+
         if (!ctx.is_idempotence_enabled()) {
             return ctx.respond(request.make_error_response(
               error_code::cluster_authorization_failed));
         }
+
     } else if (request.acks < -1 || request.acks > 1) {
         // from kafka source: "if required.acks is outside accepted
         // range, something is wrong with the client Just return an
