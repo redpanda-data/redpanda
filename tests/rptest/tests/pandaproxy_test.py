@@ -96,6 +96,16 @@ class PandaProxyTest(RedpandaTest):
     def _produce_topic(self, topic, data):
         return requests.post(f"{self._base_uri()}/topics/{topic}", data).json()
 
+    def _fetch_topic(self,
+                     topic,
+                     partition=0,
+                     offset=0,
+                     max_bytes=1024,
+                     timeout_ms=1000):
+        return requests.get(
+            f"{self._base_uri()}/topics/{topic}/partitions/{partition}/records?offset={offset}&max_bytes={max_bytes}&timeout={timeout_ms}"
+        )
+
     def _create_consumer(self, group_id):
         res = requests.post(
             f"{self._base_uri()}/consumers/{group_id}", '''
@@ -160,6 +170,65 @@ class PandaProxyTest(RedpandaTest):
         assert kc.consume_one(name, 0, 1)["payload"] == "vectorized"
         assert kc.consume_one(name, 1, 1)["payload"] == "pandaproxy"
         assert kc.consume_one(name, 2, 1)["payload"] == "multibroker"
+
+    @cluster(num_nodes=3)
+    def test_fetch_topic_unknown(self):
+        """
+        Check error for consuming from unknown topic.
+        """
+        fetch_raw_result = self._fetch_topic("", 0)
+        assert fetch_raw_result.status_code == requests.codes.bad_request
+
+        name = create_topic_names(1)[0]
+
+        self.logger.info(f"Consuming from unknown topic: {name}")
+        fetch_raw_result = self._fetch_topic(name, 0)
+        assert fetch_raw_result.status_code == requests.codes.not_found
+        fetch_result_0 = fetch_raw_result.json()
+        print(fetch_result_0)
+        assert fetch_result_0["error_code"] == 40402
+        assert fetch_result_0["message"] == "unknown_topic_or_partition"
+
+    @cluster(num_nodes=3)
+    def test_fetch_topic(self):
+        """
+        Create a topic, publish to it, and verify that pandaproxy can fetch
+        from it.
+        """
+        name = create_topic_names(1)[0]
+
+        self.logger.info(f"Creating test topic: {name}")
+        self._create_topics([name], partitions=3)
+
+        self.logger.info("Waiting for leaders to settle")
+        self._wait_for_topic(name)
+
+        self.logger.info(f"Producing to topic: {name}")
+        data = '''
+        {
+            "records": [
+                {"value": "dmVjdG9yaXplZA==", "partition": 0},
+                {"value": "cGFuZGFwcm94eQ==", "partition": 1},
+                {"value": "bXVsdGlicm9rZXI=", "partition": 2}
+            ]
+        }'''
+        produce_result = self._produce_topic(name, data)
+
+        for o in produce_result["offsets"]:
+            assert o["offset"] == 1, f'error_code {o["error_code"]}'
+
+        self.logger.info(f"Consuming from topic: {name}")
+        fetch_raw_result_0 = self._fetch_topic(name, 0)
+        assert fetch_raw_result_0.status_code == requests.codes.ok
+        fetch_result_0 = fetch_raw_result_0.json()
+        expected = json.loads(data)
+        # The first batch is a control batch,ignore it.
+        assert fetch_result_0[1]["topic"] == name
+        assert fetch_result_0[1]["key"] == ''
+        assert fetch_result_0[1]["value"] == expected["records"][0]["value"]
+        assert fetch_result_0[1]["partition"] == expected["records"][0][
+            "partition"]
+        assert fetch_result_0[1]["offset"] == 1
 
     @cluster(num_nodes=3)
     def test_consumer_group(self):
