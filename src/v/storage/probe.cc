@@ -70,6 +70,16 @@ void probe::setup_metrics(const model::ntp& ntp) {
           sm::description("Number of created log segments"),
           labels),
         sm::make_derive(
+          "log_segments_removed",
+          [this] { return _log_segments_removed; },
+          sm::description("Number of removed log segments"),
+          labels),
+        sm::make_derive(
+          "log_segments_active",
+          [this] { return _log_segments_active; },
+          sm::description("Number of active log segments"),
+          labels),
+        sm::make_derive(
           "batch_parse_errors",
           [this] { return _batch_parse_errors; },
           sm::description("Number of batch parsing (reading) errors"),

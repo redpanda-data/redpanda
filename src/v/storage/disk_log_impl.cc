@@ -62,6 +62,7 @@ disk_log_impl::disk_log_impl(
             s->mark_as_compacted_segment();
         }
     }
+    _probe.initial_segments_count(_segs.size());
     _probe.setup_metrics(this->config().ntp());
 }
 disk_log_impl::~disk_log_impl() {
@@ -771,7 +772,7 @@ ss::future<> disk_log_impl::remove_segment_permanently(
       .handle_exception([s](std::exception_ptr e) {
           vlog(stlog.error, "Cannot close segment: {} - {}", e, s);
       })
-      .finally([s] {});
+      .finally([this, s] { _probe.segment_removed(); });
 }
 
 ss::future<> disk_log_impl::remove_full_segments(model::offset o) {
