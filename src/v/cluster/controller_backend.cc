@@ -391,6 +391,8 @@ controller_backend::execute_partitition_op(const topic_table::delta& delta) {
         return process_partition_update(delta.ntp, delta.p_as, rev);
     case op_t::update_finished:
         return finish_partition_update(delta.ntp, delta.p_as, rev);
+    case op_t::update_properties:
+        return process_partition_properties_update(delta.ntp, delta.p_as);
     }
     __builtin_unreachable();
 }
@@ -495,6 +497,36 @@ ss::future<std::error_code> controller_backend::process_partition_update(
         co_return std::error_code(errc::waiting_for_recovery);
     }
     co_return ec;
+}
+
+ss::future<std::error_code>
+controller_backend::process_partition_properties_update(
+  model::ntp ntp, partition_assignment assignment) {
+    /**
+     * No core local replicas are expected to exists, do nothing
+     */
+    if (!has_local_replicas(_self, assignment.replicas)) {
+        co_return errc::success;
+    }
+
+    auto partition = _partition_manager.local().get(ntp);
+
+    // partition doesn't exists, it must already have been removed, do nothing
+    if (!partition) {
+        co_return errc::success;
+    }
+    auto cfg = _topics.local().get_topic_cfg(model::topic_namespace_view(ntp));
+    // configuration doesn't exists, topic was removed
+    if (!cfg) {
+        co_return errc::success;
+    }
+    vlog(
+      clusterlog.trace,
+      "updating {} configuration with properties: {}",
+      ntp,
+      cfg->properties);
+    co_await partition->update_configuration(cfg->properties);
+    co_return errc::success;
 }
 
 /**
