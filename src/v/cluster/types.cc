@@ -117,8 +117,8 @@ std::ostream& operator<<(std::ostream& o, const topic_configuration& cfg) {
 std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
     fmt::print(
       o,
-      "{compression: {}, cleanup_policy_bitflags: {}, compaction_strategy: {}, "
-      "retention_bytes: {}, retention_duration_ms: {}, segment_size: {}, "
+      "{{ compression: {}, cleanup_policy_bitflags: {}, compaction_strategy: "
+      "{}, retention_bytes: {}, retention_duration_ms: {}, segment_size: {}, "
       "timestamp_type: {} }}",
       properties.compression,
       properties.cleanup_policy_bitflags,
