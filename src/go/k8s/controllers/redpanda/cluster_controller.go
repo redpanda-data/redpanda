@@ -33,6 +33,7 @@ import (
 var (
 	errNonexistentLastObservesState = errors.New("expecting to have statefulset LastObservedState set but it's nil")
 	errNodePortMissing              = errors.New("the node port is missing from the service")
+	traceLevel                      = 10
 )
 
 // ClusterReconciler reconciles a Cluster object
@@ -70,8 +71,8 @@ func (r *ClusterReconciler) Reconcile(
 ) (ctrl.Result, error) {
 	log := r.Log.WithValues("redpandacluster", req.NamespacedName)
 
-	log.Info(fmt.Sprintf("Starting reconcile loop for %v", req.NamespacedName))
-	defer log.Info(fmt.Sprintf("Finished reconcile loop for %v", req.NamespacedName))
+	log.V(traceLevel).Info(fmt.Sprintf("Starting reconcile loop for %v", req.NamespacedName))
+	defer log.V(traceLevel).Info(fmt.Sprintf("Finished reconcile loop for %v", req.NamespacedName))
 
 	var redpandaCluster redpandav1alpha1.Cluster
 	crb := resources.NewClusterRoleBinding(r.Client, &redpandaCluster, r.Scheme, log)
