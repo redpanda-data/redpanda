@@ -15,7 +15,7 @@ const wasmJs = `const {
 } = require("@vectorizedio/wasm-api");
 const transform = new SimpleTransform();
 /* Topics that fire the transform function */
-transform.subscribe(["produce"]);
+transform.subscribe(["test-topic"]);
 /* The strategy the transform engine will use when handling errors */
 transform.errorHandler(PolicyError.SkipOnFailure);
 /* Auxiliar transform function for records */
