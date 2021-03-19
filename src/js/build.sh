@@ -12,8 +12,7 @@ set -ex
 root=$(git rev-parse --show-toplevel)
 js_root="${root}/src/js/"
 cd "$js_root"
-build_dir="${V_BUILD_DIR:-build}/node/output"
-build_dir_base="${root}/${build_dir}"
+build_dir_base="${root}/build/node/output"
 rm -rf "$build_dir_base"
 mkdir -p "$build_dir_base"
 npm run generate:serialization

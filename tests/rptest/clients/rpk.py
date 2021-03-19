@@ -88,6 +88,20 @@ class RpkTool:
 
         return filter(lambda p: p != None, map(partition_line, lines))
 
+    def wasm_deploy(self, script, description):
+        cmd = [
+            self._rpk_binary(), 'wasm', 'deploy', script, '--brokers',
+            self._redpanda.brokers(), '--description', description
+        ]
+        return self._execute(cmd)
+
+    def wasm_remove(self, unique_id):
+        cmd = [
+            'wasm', 'remove', unique_id, '--brokers',
+            self._redpanda.brokers()
+        ]
+        return self._execute(cmd)
+
     def _run_api(self, cmd, stdin=None, timeout=30):
         cmd = [
             self._rpk_binary(), "api", "--brokers",
@@ -123,11 +137,11 @@ class RpkTool:
             if ret is None:
                 p.terminate()
 
-            if p.returncode:
-                raise Exception('command %s returned %d' %
-                                (' '.join(cmd), p.returncode))
-
             output = p.stderr.read()
+
+            if p.returncode:
+                raise Exception('command %s returned %d, output: %s' %
+                                (' '.join(cmd), p.returncode, output))
 
             self._redpanda.logger.debug(output)
             return output

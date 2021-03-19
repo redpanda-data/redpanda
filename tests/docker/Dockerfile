@@ -49,6 +49,7 @@ RUN mkdir -p "/opt/kafka-2.3.1" && chmod a+rw /opt/kafka-2.3.1 && curl -s "$KAFK
 COPY . /root/tests/
 RUN pip3 install --no-cache-dir --upgrade pip wheel setuptools && \
     pip3 install --no-cache-dir -e /root/tests/ && \
+    pip3 install --no-cache-dir kafka-python && \
     pip3 list && \
     mv /root/tests/docker/ssh /root/.ssh && \
     rm -r /root/tests/ci /root/tests/docker
