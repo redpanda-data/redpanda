@@ -435,8 +435,38 @@ ss::future<> disk_log_impl::compact_adjacent_segments(
           segments.back(), "compact_adjacent_segments");
     }
 }
+compaction_config
+disk_log_impl::apply_overrides(compaction_config defaults) const {
+    if (!config().has_overrides()) {
+        return defaults;
+    }
+    compaction_config ret = defaults;
+    /**
+     * Override retention bytes
+     */
+    auto retention_bytes = config().get_overrides().retention_bytes;
+    if (retention_bytes.is_disabled()) {
+        ret.max_bytes = std::nullopt;
+    }
+    if (retention_bytes.has_value()) {
+        ret.max_bytes = retention_bytes.value();
+    }
+    /**
+     * Override retention time
+     */
+    auto retention_time = config().get_overrides().retention_time;
+    if (retention_time.is_disabled()) {
+        ret.eviction_time = model::timestamp::min();
+    }
+    if (retention_time.has_value()) {
+        ret.eviction_time = model::timestamp(
+          model::timestamp::now().value() - retention_time.value().count());
+    }
+    return ret;
+}
 
 ss::future<> disk_log_impl::compact(compaction_config cfg) {
+    cfg = apply_overrides(cfg);
     ss::future<> f = ss::now();
     if (config().is_collectable()) {
         f = gc(cfg);

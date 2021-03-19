@@ -124,6 +124,8 @@ private:
 
     bool is_front_segment(const segment_set::type&) const;
 
+    compaction_config apply_overrides(compaction_config) const;
+
 private:
     size_t max_segment_size() const;
     struct eviction_monitor {
