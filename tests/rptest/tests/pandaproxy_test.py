@@ -72,6 +72,24 @@ class PandaProxyTest(RedpandaTest):
                           replication_factor=replicas))
         return names
 
+    def _wait_for_topic(self, name):
+        kc = KafkaCat(self.redpanda)
+        has_leaders = False
+        while not has_leaders:
+            topics = kc.metadata()["topics"]
+            maybe_leaders = True
+            for t in topics:
+                if t["topic"] == name:
+                    for p in t["partitions"]:
+                        if p["leader"] == -1:
+                            maybe_leaders = False
+            has_leaders = maybe_leaders
+        # TODO:
+        #  Despite the above test, Pandaproxy can still get back no leaders
+        #  Query Pandaproxy metadata to see when leaders have settled
+        #  The retry logic for produce should have sufficient time for this
+        #  additional settle time.
+
     def _get_topics(self):
         return requests.get(f"{self._base_uri()}/topics").json()
 
@@ -126,27 +144,11 @@ class PandaProxyTest(RedpandaTest):
             assert o["error_code"] == 3
             assert o["offset"] == -1
 
-        kc = KafkaCat(self.redpanda)
-
         self.logger.info(f"Creating test topic: {name}")
         self._create_topics([name], partitions=3)
 
         self.logger.debug("Waiting for leaders to settle")
-        has_leaders = False
-        while not has_leaders:
-            topics = kc.metadata()["topics"]
-            maybe_leaders = True
-            for t in topics:
-                if t["topic"] == name:
-                    for p in t["partitions"]:
-                        if p["leader"] == -1:
-                            maybe_leaders = False
-            has_leaders = maybe_leaders
-        # TODO:
-        #  Despite the above test, Pandaproxy can still get back no leaders
-        #  Query Pandaproxy metadata to see when leaders have settled
-        #  The retry logic for produce should have sufficient time for this
-        #  additional settle time.
+        self._wait_for_topic(name)
 
         self.logger.info(f"Producing to topic: {name}")
         produce_result = self._produce_topic(name, data)
@@ -154,6 +156,7 @@ class PandaProxyTest(RedpandaTest):
             assert o["offset"] == 1, f'error_code {o["error_code"]}'
 
         self.logger.info(f"Consuming from topic: {name}")
+        kc = KafkaCat(self.redpanda)
         assert kc.consume_one(name, 0, 1)["payload"] == "vectorized"
         assert kc.consume_one(name, 1, 1)["payload"] == "pandaproxy"
         assert kc.consume_one(name, 2, 1)["payload"] == "multibroker"
