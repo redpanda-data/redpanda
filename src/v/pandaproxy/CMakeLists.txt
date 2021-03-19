@@ -30,6 +30,8 @@ v_cc_library(
     proxy.cc
     server.cc
   DEPS
+    v::pandaproxy_parsing
+    v::pandaproxy_json
     v::kafka_client
     v::syschecks
     v::kafka

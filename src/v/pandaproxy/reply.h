@@ -12,16 +12,40 @@
 #pragma once
 
 #include "kafka/client/exceptions.h"
-#include "pandaproxy/json/requests/error_reply.h"
+#include "kafka/protocol/exceptions.h"
+#include "pandaproxy/error.h"
+#include "pandaproxy/json/exceptions.h"
 #include "pandaproxy/json/rjson_util.h"
 #include "pandaproxy/logger.h"
+#include "pandaproxy/parsing/exceptions.h"
 #include "seastarx.h"
 
 #include <seastar/core/gate.hh>
 #include <seastar/core/sstring.hh>
+#include <seastar/http/exception.hh>
 #include <seastar/http/reply.hh>
 
+#include <system_error>
+
 namespace pandaproxy {
+
+inline ss::httpd::reply::status_type
+error_code_to_status(std::error_condition ec) {
+    vassert(
+      ec.category() == reply_category(),
+      "unexpected error_category: {}",
+      ec.category().name());
+
+    if (!ec) {
+        return ss::httpd::reply::status_type::ok;
+    }
+
+    vassert(
+      ec.value() >= 40000 && ec.value() < 60000,
+      "unexpected reply_category value: {}",
+      ec.value());
+    return static_cast<ss::httpd::reply::status_type>(ec.value() / 100);
+}
 
 inline ss::httpd::reply& set_reply_unavailable(ss::httpd::reply& rep) {
     return rep.set_status(ss::httpd::reply::status_type::service_unavailable)
@@ -35,38 +59,44 @@ inline std::unique_ptr<ss::httpd::reply> reply_unavailable() {
 }
 
 inline std::unique_ptr<ss::httpd::reply>
-errored_body(ss::httpd::reply::status_type status, ss::sstring msg) {
-    pandaproxy::json::error_body body{
-      .error_code = status, .message = std::move(msg)};
+errored_body(std::error_condition ec, ss::sstring msg) {
+    pandaproxy::json::error_body body{.ec = ec, .message = std::move(msg)};
     auto rep = std::make_unique<ss::httpd::reply>();
-    rep->set_status(body.error_code);
+    rep->set_status(error_code_to_status(ec));
     auto b = json::rjson_serialize(body);
     rep->write_body("json", b);
     return rep;
 }
 
-inline std::unique_ptr<ss::httpd::reply> unprocessable_entity(ss::sstring msg) {
-    return errored_body(ss::httpd::reply::status_type(422), std::move(msg));
+inline std::unique_ptr<ss::httpd::reply>
+errored_body(std::error_code ec, ss::sstring msg) {
+    return errored_body(ec.default_error_condition(), std::move(msg));
 }
 
-inline std::unique_ptr<ss::httpd::reply> not_found(ss::sstring msg) {
+inline std::unique_ptr<ss::httpd::reply> unprocessable_entity(ss::sstring msg) {
     return errored_body(
-      ss::httpd::reply::status_type::not_found, std::move(msg));
+      make_error_condition(reply_error_code::kafka_bad_request),
+      std::move(msg));
 }
 
 inline std::unique_ptr<ss::httpd::reply> exception_reply(std::exception_ptr e) {
     try {
         std::rethrow_exception(e);
     } catch (const ss::gate_closed_exception& e) {
-        return reply_unavailable();
-    } catch (const pandaproxy::json::parse_error& e) {
-        return unprocessable_entity(e.what());
-    } catch (const kafka::client::consumer_error& e) {
-        if (e.error == kafka::error_code::unknown_member_id) {
-            return not_found(e.what());
-        } else {
-            throw;
-        }
+        auto eb = errored_body(
+          reply_error_code::kafka_retriable_error, e.what());
+        set_reply_unavailable(*eb);
+        return eb;
+    } catch (const json::exception_base& e) {
+        return errored_body(e.error, e.what());
+    } catch (const parse::exception_base& e) {
+        return errored_body(e.error, e.what());
+    } catch (const kafka::exception_base& e) {
+        return errored_body(e.error, e.what());
+    } catch (const seastar::httpd::base_exception& e) {
+        return errored_body(
+          reply_error_code::kafka_bad_request,
+          e.what()); // TODO BP: Yarr!!
     } catch (...) {
         vlog(plog.error, "{}", std::current_exception());
         throw;

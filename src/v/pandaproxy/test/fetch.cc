@@ -67,10 +67,10 @@ FIXTURE_TEST(pandaproxy_fetch, pandaproxy_test_fixture) {
           "records?offset=0&max_bytes=1024&timeout=5000");
 
         BOOST_REQUIRE_EQUAL(
-          res.headers.result(), boost::beast::http::status::ok);
+          res.headers.result(), boost::beast::http::status::not_found);
         BOOST_REQUIRE_EQUAL(
           res.body,
-          R"({"error_code":404,"message":"unknown_topic_or_partition"})");
+          R"({"error_code":40402,"message":"unknown_topic_or_partition"})");
     }
 
     info("Adding known topic");
