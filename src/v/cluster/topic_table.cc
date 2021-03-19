@@ -15,6 +15,8 @@
 #include "model/fundamental.h"
 #include "model/metadata.h"
 
+#include <seastar/core/coroutine.hh>
+
 namespace cluster {
 
 template<typename Func>
@@ -157,6 +159,83 @@ topic_table::apply(finish_moving_partition_replicas_cmd cmd, model::offset o) {
     return ss::make_ready_future<std::error_code>(errc::success);
 }
 
+template<typename T>
+void incremental_update(
+  std::optional<T>& property, property_update<std::optional<T>> override) {
+    switch (override.op) {
+    case incremental_update_operation::remove:
+        // remove override, fallback to default
+        property = std::nullopt;
+        return;
+    case incremental_update_operation::set:
+        // set new value
+        property = override.value;
+        return;
+    case incremental_update_operation::none:
+        // do nothing
+        return;
+    }
+}
+
+template<typename T>
+void incremental_update(
+  tristate<T>& property, property_update<tristate<T>> override) {
+    switch (override.op) {
+    case incremental_update_operation::remove:
+        // remove override, fallback to default
+        property = tristate<T>(std::nullopt);
+        return;
+    case incremental_update_operation::set:
+        // set new value
+        property = override.value;
+        return;
+    case incremental_update_operation::none:
+        // do nothing
+        return;
+    }
+}
+
+ss::future<std::error_code>
+topic_table::apply(update_topic_properties_cmd cmd, model::offset o) {
+    auto tp = _topics.find(cmd.key);
+    if (tp == _topics.end()) {
+        co_return make_error_code(errc::topic_not_exists);
+    }
+    auto& properties = tp->second.cfg.properties;
+    auto& overrides = cmd.value;
+    /**
+     * Update topic properties
+     */
+    incremental_update(
+      properties.cleanup_policy_bitflags, overrides.cleanup_policy_bitflags);
+    incremental_update(
+      properties.compaction_strategy, overrides.compaction_strategy);
+    incremental_update(properties.compression, overrides.compression);
+    incremental_update(properties.retention_bytes, overrides.retention_bytes);
+    incremental_update(
+      properties.retention_duration, overrides.retention_duration);
+    incremental_update(properties.segment_size, overrides.segment_size);
+    incremental_update(properties.timestamp_type, overrides.timestamp_type);
+
+    // generate deltas for controller backend
+    std::vector<topic_table_delta> deltas;
+    deltas.reserve(tp->second.assignments.size());
+    for (const auto& p_as : tp->second.assignments) {
+        deltas.emplace_back(
+          model::ntp(cmd.key.ns, cmd.key.tp, p_as.id),
+          p_as,
+          o,
+          delta::op_type::update_properties);
+    }
+
+    std::move(
+      deltas.begin(), deltas.end(), std::back_inserter(_pending_deltas));
+
+    notify_waiters();
+
+    co_return make_error_code(errc::success);
+}
+
 void topic_table::notify_waiters() {
     if (_waiters.empty()) {
         return;
@@ -285,6 +364,8 @@ operator<<(std::ostream& o, const topic_table::delta::op_type& tp) {
         return o << "update";
     case topic_table::delta::op_type::update_finished:
         return o << "update_finished";
+    case topic_table::delta::op_type::update_properties:
+        return o << "update_properties";
     }
     __builtin_unreachable();
 }
