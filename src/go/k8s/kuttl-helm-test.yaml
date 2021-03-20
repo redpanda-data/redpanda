@@ -1,6 +1,6 @@
 apiVersion: kuttl.dev/v1beta1
 kind: TestSuite
-startKIND: true
+startKIND: false
 kindNodeCache: true
 kindContainers:
   - vectorized/redpanda-operator:latest

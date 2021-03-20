@@ -55,6 +55,7 @@ jobs:
         path: src/go/k8s/tests/_e2e_artifacts
 
   helm-test:
+    needs: test
     runs-on: ubuntu-latest
 
     steps:

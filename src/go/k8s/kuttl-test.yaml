@@ -2,6 +2,7 @@ apiVersion: kuttl.dev/v1beta1
 kind: TestSuite
 startKIND: true
 kindNodeCache: true
+skipClusterDelete: true
 kindContainers:
   - vectorized/redpanda-operator:latest
   - vectorized/configurator:latest
@@ -14,4 +15,4 @@ commands:
   - command: "./hack/wait-for-webhook-ready.sh"
 artifactsDir: tests/_e2e_artifacts
 timeout: 300
-parallel: 1
+parallel: 3
