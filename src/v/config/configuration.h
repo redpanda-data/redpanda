@@ -141,6 +141,9 @@ struct configuration final : public config_store {
     property<std::optional<ss::sstring>> archival_storage_api_endpoint;
     property<std::chrono::milliseconds> archival_storage_reconciliation_ms;
     property<int16_t> archival_storage_max_connections;
+    property<bool> archival_storage_disable_tls;
+    property<int16_t> archival_storage_api_endpoint_port;
+    property<std::optional<ss::sstring>> archival_storage_trust_file;
 
     configuration();
 

@@ -117,14 +117,26 @@ scheduler_service_impl::get_archival_service_config() {
     auto region = s3::aws_region_name(get_value_or_throw(
       config::shard_local_cfg().archival_storage_s3_region,
       "archival_storage_s3_region"));
-    std::optional<s3::endpoint_url> endpoint;
+
+    // Set default overrides
+    s3::default_overrides overrides;
     if (auto optep
         = config::shard_local_cfg().archival_storage_api_endpoint.value();
         optep.has_value()) {
-        endpoint = s3::endpoint_url(*optep);
+        overrides.endpoint = s3::endpoint_url(*optep);
     }
+    overrides.disable_tls
+      = config::shard_local_cfg().archival_storage_disable_tls;
+    if (auto cert
+        = config::shard_local_cfg().archival_storage_trust_file.value();
+        cert.has_value()) {
+        overrides.trust_file = s3::ca_trust_file(std::filesystem::path(*cert));
+    }
+    overrides.port
+      = config::shard_local_cfg().archival_storage_api_endpoint_port;
+
     auto s3_conf = co_await s3::configuration::make_configuration(
-      access_key, secret_key, region, endpoint);
+      access_key, secret_key, region, overrides);
     archival::configuration cfg{
       .client_config = std::move(s3_conf),
       .bucket_name = s3::bucket_name(get_value_or_throw(
