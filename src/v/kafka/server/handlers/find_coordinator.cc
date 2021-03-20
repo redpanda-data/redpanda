@@ -10,6 +10,7 @@
 #include "kafka/server/handlers/find_coordinator.h"
 
 #include "cluster/topics_frontend.h"
+#include "cluster/tx_gateway_frontend.h"
 #include "config/configuration.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/server/coordinator_ntp_mapper.h"
@@ -70,6 +71,26 @@ ss::future<response_ptr> find_coordinator_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group g) {
     find_coordinator_request request;
     request.decode(ctx.reader(), ctx.header().version);
+
+    if (request.data.key_type == coordinator_type::transaction) {
+        if (!ctx.are_transactions_enabled()) {
+            return ctx.respond(
+              find_coordinator_response(error_code::unsupported_version));
+        }
+
+        return ss::do_with(
+          std::move(ctx),
+          [request = std::move(request)](request_context& ctx) mutable {
+              return ctx.tx_gateway_frontend().get_tx_broker().then(
+                [&ctx](std::optional<model::node_id> tx_id) {
+                    if (tx_id) {
+                        return handle_leader(ctx, *tx_id);
+                    }
+                    return ctx.respond(find_coordinator_response(
+                      error_code::coordinator_not_available));
+                });
+          });
+    }
 
     // other types include txn coordinators which are unsupported
     if (request.data.key_type != coordinator_type::group) {
