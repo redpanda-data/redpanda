@@ -10,6 +10,7 @@
 #include "kafka/server/handlers/end_txn.h"
 
 #include "cluster/topics_frontend.h"
+#include "cluster/tx_gateway_frontend.h"
 #include "kafka/server/group_manager.h"
 #include "kafka/server/group_router.h"
 #include "kafka/server/logger.h"
@@ -28,8 +29,32 @@ ss::future<response_ptr> end_txn_handler::handle(
     return ss::do_with(std::move(ctx), [](request_context& ctx) {
         end_txn_request request;
         request.decode(ctx.reader(), ctx.header().version);
-        return ss::make_exception_future<response_ptr>(std::runtime_error(
-          fmt::format("Unsupported API {}", ctx.header().key)));
+
+        cluster::end_tx_request tx_request{
+          .transactional_id = request.data.transactional_id,
+          .producer_id = request.data.producer_id,
+          .producer_epoch = request.data.producer_epoch,
+          .committed = request.data.committed};
+        return ctx.tx_gateway_frontend()
+          .end_txn(
+            tx_request, config::shard_local_cfg().create_topic_timeout_ms())
+          .then([&ctx](cluster::end_tx_reply tx_response) {
+              end_txn_response_data data;
+              switch (tx_response.error_code) {
+              case cluster::tx_errc::none:
+                  data.error_code = error_code::none;
+                  break;
+              case cluster::tx_errc::fenced:
+                  data.error_code = error_code::invalid_producer_epoch;
+                  break;
+              default:
+                  data.error_code = error_code::unknown_server_error;
+                  break;
+              }
+              end_txn_response response;
+              response.data = data;
+              return ctx.respond(std::move(response));
+          });
     });
 }
 
