@@ -29,6 +29,12 @@ ss::future<response_ptr> describe_acls_handler::handle(
     request.decode(ctx.reader(), ctx.header().version);
     klog.trace("Handling request {}", request);
 
+    if (!ctx.authorized(acl_operation::describe, default_cluster_name)) {
+        describe_acls_response resp;
+        resp.data.error_code = error_code::cluster_authorization_failed;
+        return ctx.respond(std::move(resp));
+    }
+
     // we do not current implement acls, so we do not have any resources. so
     // instead of returning an error, we'll return success and an empty set.
     describe_acls_response_data data;
