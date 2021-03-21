@@ -14,6 +14,7 @@
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
 #include "reflection/for_each_field.h"
+#include "reflection/type_traits.h"
 #include "seastarx.h"
 #include "utils/named_type.h"
 
@@ -25,33 +26,6 @@
 #include <vector>
 
 namespace reflection {
-template<typename T>
-struct is_std_vector : std::false_type {};
-template<typename... Args>
-struct is_std_vector<std::vector<Args...>> : std::true_type {};
-template<typename T>
-inline constexpr bool is_std_vector_v = is_std_vector<T>::value;
-
-template<typename T>
-struct is_std_optional : std::false_type {};
-template<typename... Args>
-struct is_std_optional<std::optional<Args...>> : std::true_type {};
-template<typename T>
-inline constexpr bool is_std_optional_v = is_std_optional<T>::value;
-
-template<typename T>
-struct is_named_type : std::false_type {};
-template<typename T, typename Tag>
-struct is_named_type<named_type<T, Tag>> : std::true_type {};
-template<typename T>
-inline constexpr bool is_named_type_v = is_named_type<T>::value;
-
-template<typename T>
-struct is_ss_bool : std::false_type {};
-template<typename T>
-struct is_ss_bool<ss::bool_class<T>> : std::true_type {};
-template<typename T>
-inline constexpr bool is_ss_bool_v = is_ss_bool<T>::value;
 
 template<typename T>
 struct adl {
