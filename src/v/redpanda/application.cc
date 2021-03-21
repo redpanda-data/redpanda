@@ -413,11 +413,10 @@ void application::wire_up_redpanda_services() {
     construct_service(shard_table).get();
 
     syschecks::systemd_message("Intializing storage services").get();
-
-    construct_service(
-      storage,
-      kvstore_config_from_global_config(),
-      manager_config_from_global_config())
+    auto log_cfg = manager_config_from_global_config();
+    log_cfg.reclaim_opts.background_reclaimer_sg
+      = _scheduling_groups.cache_background_reclaim_sg();
+    construct_service(storage, kvstore_config_from_global_config(), log_cfg)
       .get();
 
     if (coproc_enabled()) {

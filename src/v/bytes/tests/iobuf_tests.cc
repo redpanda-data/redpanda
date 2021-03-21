@@ -405,6 +405,20 @@ SEASTAR_THREAD_TEST_CASE(test_next_chunk_allocation_append_iobuf) {
     BOOST_REQUIRE_EQUAL(msg.size(), sz);
 }
 
+SEASTAR_THREAD_TEST_CASE(test_appending_frament_takes_ownership) {
+    iobuf target;
+    const auto b = random_generators::gen_alphanum_string(1024);
+    target.append(b.c_str(), b.size());
+    auto target_frags_cnt = std::distance(target.begin(), target.end());
+    iobuf other = bytes_to_iobuf(random_generators::get_bytes(256));
+    auto other_frags_cnt = std::distance(other.begin(), other.end());
+    target.append_fragments(std::move(other));
+
+    BOOST_REQUIRE_EQUAL(
+      std::distance(target.begin(), target.end()),
+      target_frags_cnt + other_frags_cnt);
+}
+
 /*
  * testing various trim_front scenarios
  *

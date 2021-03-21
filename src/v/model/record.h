@@ -383,6 +383,9 @@ struct record_batch_header {
     int32_t base_sequence{0};
     int32_t record_count{0};
 
+    bool contains(model::offset offset) const {
+        return base_offset <= offset && offset <= last_offset();
+    }
     /// context object with opaque environment data
     context ctx;
 
@@ -556,8 +559,7 @@ public:
     record_batch_header& header() { return _header; }
 
     bool contains(model::offset offset) const {
-        return _header.base_offset() <= offset
-               && offset <= _header.last_offset();
+        return _header.contains(offset);
     }
 
     bool operator==(const record_batch& other) const {

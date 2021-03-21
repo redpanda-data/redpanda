@@ -9,14 +9,113 @@
 
 #include "batch_cache.h"
 
+#include "bytes/iobuf_parser.h"
+#include "model/adl_serde.h"
+#include "utils/gate_guard.h"
 #include "utils/to_string.h"
 #include "vassert.h"
+
+#include <seastar/core/coroutine.hh>
+#include <seastar/core/gate.hh>
 
 #include <fmt/ostream.h>
 
 namespace storage {
 
-batch_cache::entry_ptr
+batch_cache::range::range(batch_cache_index& index)
+  : _index(index) {
+    auto f = new details::io_fragment(
+      ss::temporary_buffer<char>(range_size), details::io_fragment::empty{});
+    _arena.append_take_ownership(f);
+}
+
+batch_cache::range::range(
+  batch_cache_index& index, const model::record_batch& batch)
+  : _index(index) {
+    add(batch);
+}
+
+model::record_batch batch_cache::range::batch(size_t o) {
+    vassert(_valid, "cannot access invalided batch");
+    iobuf_const_parser parser(_arena);
+    parser.skip(o);
+    auto hdr = reflection::adl<model::record_batch_header>{}.from(parser);
+    auto buffer = _arena.share(
+      o + serialized_header_size,
+      hdr.size_bytes - model::packed_record_batch_header_size);
+
+    return model::record_batch(
+      hdr, std::move(buffer), model::record_batch::tag_ctor_ng{});
+}
+
+model::record_batch_header batch_cache::range::header(size_t o) {
+    vassert(_valid, "cannot access invalided batch");
+    iobuf_const_parser parser(_arena);
+    parser.skip(o);
+    return reflection::adl<model::record_batch_header>{}.from(parser);
+}
+
+size_t batch_cache::range::memory_size() const {
+    // actual memory allocated by arena iobuf must be calculated
+    // taking capacity into account.
+    return std::accumulate(
+      _arena.begin(),
+      _arena.end(),
+      (size_t)0,
+      [](size_t acc, const details::io_fragment& f) {
+          return acc + f.capacity();
+      });
+}
+
+double batch_cache::range::waste() const {
+    return (1.0 - ((double)_size / memory_size())) * 100.0;
+}
+
+bool batch_cache::range::empty() const { return _size == 0; }
+
+bool batch_cache::range::fits(const model::record_batch& b) const {
+    const size_t to_add = serialized_header_size + b.data().size_bytes();
+    // if there are not enough bytes in current range return true even
+    // though batch doesn't fit into arena. This way we can control maximum
+    // waste
+    if (_size <= min_bytes_in_range) {
+        return true;
+    }
+    // if size is already larger than the max range do not append
+    // batch to current range
+    if (_size >= range_size) {
+        return false;
+    }
+    // check if batch fits in into left space
+    auto space_left = range_size - _size;
+    return space_left >= to_add;
+}
+
+uint32_t batch_cache::range::add(const model::record_batch& b) {
+    auto offset = _arena.size_bytes();
+    reflection::adl<model::record_batch_header>{}.to(_arena, b.header().copy());
+    _size += serialized_header_size;
+    // if there is not enough space left in last arena fragment we
+    // trim it and append existing fragments directly to the arena
+    // iobuf
+    if (_arena.rbegin()->available_bytes() < b.data().size_bytes()) {
+        _size += b.data().size_bytes();
+        _arena.append_fragments(b.data().copy());
+    } else {
+        // if there is enough space in arena just copy data into
+        // existing fragment
+        for (auto& f : b.data()) {
+            _arena.append(f.get(), f.size());
+            _size += f.size();
+        }
+    }
+
+    _offsets.push_back(b.base_offset());
+
+    return offset;
+}
+
+batch_cache::entry
 batch_cache::put(batch_cache_index& index, const model::record_batch& input) {
 #ifdef SEASTAR_DEFAULT_ALLOCATOR
     static const size_t threshold = ss::memory::stats().total_memory() * .2;
@@ -26,15 +125,35 @@ batch_cache::put(batch_cache_index& index, const model::record_batch& input) {
 #endif
     // we must copy memory to prevent holding onto bigger memory from
     // temporary buffers
-    auto batch = input.copy();
-    _size_bytes += batch.memory_usage();
-    auto e = new entry(index, std::move(batch));
 
-    // if weak_from_this were to cause an allocation--which it shouldn't--`e`
-    // wouldn't be visible to the reclaimer since it isn't on a lru/pool list.
-    auto p = e->weak_from_this();
-    _lru.push_back(*e);
-    return p;
+    // if weak_from_this were to cause an allocation--which it
+    // shouldn't--`e` wouldn't be visible to the reclaimer since it
+    // isn't on a lru/pool list.
+
+    if (static_cast<size_t>(input.size_bytes()) > range::range_size) {
+        auto r = new range(index, input);
+        _lru.push_back(*r);
+        _size_bytes += r->memory_size();
+        return entry(0, r->weak_from_this());
+    }
+
+    if (
+      !index._small_batches_range || !index._small_batches_range->valid()
+      || !index._small_batches_range->fits(input)) {
+        auto r = new range(index);
+        _lru.push_back(*r);
+        _size_bytes += r->memory_size();
+        index._small_batches_range = r->weak_from_this();
+    }
+
+    auto initial_sz = index._small_batches_range->memory_size();
+    auto offset = index._small_batches_range->add(input);
+    // calculate size difference to update batch cache size
+    int64_t diff = (int64_t)index._small_batches_range->memory_size()
+                   - initial_sz;
+    _size_bytes += diff;
+    _background_reclaimer.notify();
+    return entry(offset, index._small_batches_range->weak_from_this());
 }
 
 batch_cache::~batch_cache() noexcept {
@@ -45,15 +164,15 @@ batch_cache::~batch_cache() noexcept {
       *this);
 }
 
-void batch_cache::evict(entry_ptr&& e) {
+void batch_cache::evict(range_ptr&& e) {
     if (e) {
         // it's necessary to cause `e` to be sinked so the move constructor
-        // invalidates the caller's entry_ptr. simply interacting with the
+        // invalidates the caller's range_ptr. simply interacting with the
         // r-value reference `e` wouldn't do that.
         auto p = std::exchange(e, {});
-        _size_bytes -= p->_batch.memory_usage();
+        _size_bytes -= p->memory_size();
         _lru.erase_and_dispose(
-          _lru.iterator_to(*p), [](entry* e) { delete e; });
+          _lru.iterator_to(*p), [](range* e) { delete e; });
     }
 }
 
@@ -81,47 +200,49 @@ size_t batch_cache::reclaim(size_t size) {
     _reclaim_size = std::max(size, _reclaim_size);
 
     /*
-     * reclaiming is a two pass process. given that the entry isn't pinned (in
+     * reclaiming is a two pass process. given that the range isn't pinned (in
      * which case it is skipped), the first step is to reclaim the batch's
-     * record data. at this point, if the entry's owning index is not locked the
-     * entry is added to a temporary list of entries which will be removed.
-     * otherwise if the index is locked, removal is deferred but the entry is
+     * record data. at this point, if the range's owning index is not locked the
+     * range is added to a temporary list of entries which will be removed.
+     * otherwise if the index is locked, removal is deferred but the range is
      * invalidated. invalidation is important because the batch reference in the
      * index still exists even though the batch data was removed.
      */
     size_t reclaimed = 0;
-    intrusive_list<entry, &entry::_hook> reclaimed_entries;
+    intrusive_list<range, &range::_hook> reclaimed_ranges;
 
     for (auto it = _lru.begin(); it != _lru.end();) {
         if (reclaimed >= _reclaim_size) {
             break;
         }
 
-        // skip any entry that has a live reference.
+        // skip any range that has a live reference.
         if (unlikely(it->pinned())) {
             ++it;
             continue;
         }
-
+        // if entry is empty it will be disposed by other reclaim caller
+        if (unlikely(it->empty())) {
+            continue;
+        }
         // reclaim the batch's record data
-        reclaimed += it->_batch.memory_usage();
-        it->_batch.clear_data();
+        reclaimed += it->memory_size();
+        it->_arena.clear();
 
         /*
-         * if the owning index is locked invalidate the entry but leave it on
+         * if the owning index is locked invalidate the range but leave it on
          * the lru list for deferred deletion so as to not invalidate any open
          * iterators on the index.
          */
         if (unlikely(it->_index.locked())) {
-            reclaimed -= it->_batch.memory_usage();
             it->invalidate();
             ++it;
             continue;
         }
 
         // collect the entries that will be fully removed
-        it = _lru.erase_and_dispose(it, [&reclaimed_entries](entry* e) {
-            reclaimed_entries.push_back(*e);
+        it = _lru.erase_and_dispose(it, [&reclaimed_ranges](range* e) {
+            reclaimed_ranges.push_back(*e);
         });
     }
 
@@ -130,9 +251,10 @@ size_t batch_cache::reclaim(size_t size) {
      * that removal allocates, so waiting until the bulk of the reclaims have
      * occurred reduces the probability of an allocation failure.
      */
-    reclaimed_entries.clear_and_dispose([](entry* e) {
-        auto offset = e->_batch.base_offset();
+
+    reclaimed_ranges.clear_and_dispose([](range* e) {
         auto* index = &e->_index;
+        auto offsets = std::move(e->_offsets);
         delete e; // NOLINT
 
         /*
@@ -143,7 +265,9 @@ size_t batch_cache::reclaim(size_t size) {
          * but is still generally safe since all batch cache users are prepared
          * to handle a miss.
          */
-        index->remove(offset);
+        for (auto& o : offsets) {
+            index->remove(o);
+        }
     });
 
     _last_reclaim = ss::lowres_clock::now();
@@ -155,10 +279,9 @@ std::optional<model::record_batch>
 batch_cache_index::get(model::offset offset) {
     lock_guard lk(*this);
     if (auto it = find_first_contains(offset); it != _index.end()) {
-        batch_cache::entry::lock_guard g(*it->second);
-        _cache->touch(it->second);
-        auto ret = it->second->batch().share();
-        return ret;
+        batch_cache::range::lock_guard g(*it->second.range());
+        _cache->touch(it->second.range());
+        return it->second.batch();
     }
     return std::nullopt;
 }
@@ -177,21 +300,19 @@ batch_cache_index::read_result batch_cache_index::read(
         return ret;
     }
     for (auto it = find_first_contains(offset); it != _index.end();) {
-        auto& batch = it->second->batch();
+        auto batch = it->second.batch();
 
         auto take = !type_filter || type_filter == batch.header().type;
         take &= !first_ts || batch.header().first_timestamp >= *first_ts;
-
+        offset = batch.last_offset() + model::offset(1);
         if (take) {
-            batch_cache::entry::lock_guard g(*it->second);
-            ret.batches.emplace_back(batch.share());
+            batch_cache::range::lock_guard g(*it->second.range());
             ret.memory_usage += batch.memory_usage();
+            ret.batches.emplace_back(std::move(batch));
             if (!skip_lru_promote) {
-                _cache->touch(it->second);
+                _cache->touch(it->second.range());
             }
         }
-
-        offset = batch.last_offset() + model::offset(1);
 
         /*
          * we're done in any of the following cases:
@@ -206,15 +327,16 @@ batch_cache_index::read_result batch_cache_index::read(
          * 2. cache miss
          * 3. hole in range
          */
-        if (!it->second || !it->second->valid() || it->first != offset) {
+        if (
+          !it->second.range() || !it->second.range()->valid()
+          || it->first != offset) {
             // compute the base offset of the next cached batch
             auto next_batch = std::find_if(
               it, _index.end(), [](const index_type::value_type& e) {
-                  return e.second && e.second->valid();
+                  return e.second.range() && e.second.range()->valid();
               });
             if (next_batch != _index.end()) {
-                ret.next_cached_batch
-                  = next_batch->second->batch().base_offset();
+                ret.next_cached_batch = next_batch->second.header().base_offset;
             }
             break;
         }
@@ -236,15 +358,49 @@ void batch_cache_index::truncate(model::offset offset) {
     if (auto it = find_first(offset); it != _index.end()) {
         // rule out if possible, otherwise always be pessimistic
         if (
-          it->second && it->second->valid()
-          && !it->second->batch().contains(offset)) {
+          it->second.range() && it->second.valid()
+          && !it->second.header().contains(offset)) {
             ++it;
         }
         std::for_each(it, _index.end(), [this](index_type::value_type& e) {
-            _cache->evict(std::move(e.second));
+            _cache->evict(std::move(e.second.range()));
         });
         _index.erase(it, _index.end());
     }
+}
+
+void batch_cache::background_reclaimer::start() {
+    (void)ss::with_gate(_gate, [this] {
+        return ss::with_scheduling_group(
+          _sg, [this] { return reclaim_loop(); });
+    });
+}
+ss::future<> batch_cache::background_reclaimer::stop() {
+    _stopped = true;
+    _change.signal();
+    return _gate.close();
+}
+ss::future<> batch_cache::background_reclaimer::reclaim_loop() {
+    while (!_stopped) {
+        auto units = std::max(_change.current(), size_t(1));
+        co_await _change.wait(units);
+
+        if (unlikely(_stopped)) {
+            co_return;
+        }
+
+        if (!have_to_reclaim()) {
+            continue;
+        }
+
+        auto free = ss::memory::stats().free_memory();
+
+        if (free < _min_free_memory) {
+            auto to_reclaim = _min_free_memory - free;
+            _cache.reclaim(to_reclaim);
+        }
+    }
+    co_return;
 }
 
 std::ostream&

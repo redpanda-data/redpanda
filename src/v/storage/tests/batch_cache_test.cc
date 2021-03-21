@@ -8,8 +8,11 @@
 // by the Apache License, Version 2.0
 
 #include "cluster/simple_batch_builder.h"
+#include "model/fundamental.h"
 #include "model/record.h"
+#include "random/generators.h"
 #include "storage/batch_cache.h"
+#include "test_utils/fixture.h"
 
 #include <seastar/testing/thread_test_case.hh>
 
@@ -29,75 +32,89 @@ make_batch(size_t size = 10, model::offset offset = model::offset(0)) {
     return std::move(b).build();
 }
 
-SEASTAR_THREAD_TEST_CASE(initially_empty) {
-    storage::batch_cache c(opts);
-    BOOST_CHECK(c.empty());
+static model::record_batch make_random_batch(
+  size_t max_size = 10, model::offset offset = model::offset(0)) {
+    cluster::simple_batch_builder b(model::record_batch_type(1), offset);
+    b.add_kv(iobuf{}, bytes_to_iobuf(random_generators::get_bytes(max_size)));
+
+    return std::move(b).build();
 }
 
-SEASTAR_THREAD_TEST_CASE(evict) {
-    storage::batch_cache c(opts);
-    storage::batch_cache_index index(c);
+struct batch_cache_test_fixture {
+    batch_cache_test_fixture()
+      : cache(opts) {}
+
+    auto& get_lru() { return cache._lru; };
+    ~batch_cache_test_fixture() { cache.stop().get(); }
+
+    storage::batch_cache cache;
+};
+
+FIXTURE_TEST(initially_empty, batch_cache_test_fixture) {
+    BOOST_CHECK(cache.empty());
+}
+
+FIXTURE_TEST(evict, batch_cache_test_fixture) {
+    storage::batch_cache_index index(cache);
 
     auto b = make_batch(100);
-    auto w = c.put(index, std::move(b));
-    BOOST_CHECK(!c.empty());
-    c.evict(std::move(w));
-    BOOST_CHECK(c.empty());
+    auto w = cache.put(index, std::move(b));
+    BOOST_CHECK(!cache.empty());
+    cache.evict(std::move(w.range()));
+    BOOST_CHECK(cache.empty());
 }
 
-SEASTAR_THREAD_TEST_CASE(reclaim_rounds_up) {
-    storage::batch_cache c(opts);
-    storage::batch_cache_index index(c);
+FIXTURE_TEST(reclaim_rounds_up, batch_cache_test_fixture) {
+    storage::batch_cache_index index(cache);
+
+    auto b = make_batch(5);
+    auto b_size = b.memory_usage();
+    std::cout << b_size << std::endl;
+    cache.put(index, std::move(b));
+    BOOST_CHECK(!cache.empty());
+
+    auto size = cache.reclaim(1);
+    // reclaims rounds up to the range size for small batches
+    BOOST_REQUIRE_EQUAL(size, storage::batch_cache::range::range_size);
+    BOOST_CHECK(cache.empty());
+}
+
+FIXTURE_TEST(reclaim_removes_multiple, batch_cache_test_fixture) {
+    storage::batch_cache_index index(cache);
 
     auto b = make_batch(100);
     auto b_size = b.memory_usage();
 
-    c.put(index, std::move(b));
-    BOOST_CHECK(!c.empty());
+    cache.put(index, b.share());
+    cache.put(index, b.share());
+    cache.put(index, b.share());
+    cache.put(index, b.share());
+    cache.put(index, b.share());
+    cache.put(index, b.share());
+    BOOST_CHECK(!cache.empty());
 
-    auto size = c.reclaim(1);
-    BOOST_CHECK(size == b_size);
-    BOOST_CHECK(c.empty());
-}
-
-SEASTAR_THREAD_TEST_CASE(reclaim_removes_multiple) {
-    storage::batch_cache c(opts);
-    storage::batch_cache_index index(c);
-
-    auto b = make_batch(100);
-    auto b_size = b.memory_usage();
-
-    c.put(index, b.share());
-    c.put(index, b.share());
-    c.put(index, b.share());
-    c.put(index, b.share());
-    c.put(index, b.share());
-    c.put(index, b.share());
-    BOOST_CHECK(!c.empty());
-
-    auto size = c.reclaim(b_size + 1);
+    auto size = cache.reclaim(b_size + 1);
     BOOST_CHECK(size > (2 * b_size));
-    BOOST_CHECK(c.empty());
+    BOOST_CHECK(cache.empty());
 }
 
-SEASTAR_THREAD_TEST_CASE(weakness) {
-    storage::batch_cache c(opts);
-    storage::batch_cache_index index(c);
+FIXTURE_TEST(weakness, batch_cache_test_fixture) {
+    storage::batch_cache_index index(cache);
 
-    auto b0 = c.put(index, make_batch(10));
-    auto b1 = c.put(index, make_batch(10));
-    auto b2 = c.put(index, make_batch(10));
+    auto b0 = cache.put(index, make_batch(10));
+    auto b1 = cache.put(index, make_batch(10));
+    auto b2 = cache.put(index, make_batch(10));
 
-    BOOST_CHECK(!c.empty());
+    BOOST_CHECK(!cache.empty());
 
-    BOOST_CHECK(b0);
-    BOOST_CHECK(b1);
-    BOOST_CHECK(b2);
+    BOOST_CHECK(b0.range());
+    BOOST_CHECK(b1.range());
+    BOOST_CHECK(b2.range());
 
-    c.reclaim(1);
-    BOOST_CHECK(!b0);
-    BOOST_CHECK(!b1);
-    BOOST_CHECK(!b2);
+    cache.reclaim(1);
+    BOOST_CHECK(!b0.range());
+    BOOST_CHECK(!b1.range());
+    BOOST_CHECK(!b2.range());
 }
 
 SEASTAR_THREAD_TEST_CASE(touch) {
@@ -109,39 +126,44 @@ SEASTAR_THREAD_TEST_CASE(touch) {
     };
 
     {
-        std::unique_ptr<storage::batch_cache_index> index;
+        std::unique_ptr<storage::batch_cache_index> index_1;
+        std::unique_ptr<storage::batch_cache_index> index_2;
 
-        storage::batch_cache c(opts);
-        index = std::make_unique<storage::batch_cache_index>(c);
-        auto b0 = c.put(*index, make_batch(10));
-        auto b1 = c.put(*index, make_batch(10));
+        storage::batch_cache cache(opts);
+        index_1 = std::make_unique<storage::batch_cache_index>(cache);
+        index_2 = std::make_unique<storage::batch_cache_index>(cache);
+        auto b0 = cache.put(*index_1, make_batch(10));
+        auto b1 = cache.put(*index_2, make_batch(10));
 
         // first one is invalid, second one still valid
-        c.reclaim(1);
-        BOOST_CHECK(!b0);
-        BOOST_CHECK(b1);
+        cache.reclaim(1);
+        BOOST_CHECK(!b0.range());
+        BOOST_CHECK(b1.range());
+        cache.stop().get();
     }
 
     {
-        std::unique_ptr<storage::batch_cache_index> index;
+        std::unique_ptr<storage::batch_cache_index> index_1;
+        std::unique_ptr<storage::batch_cache_index> index_2;
 
         // build the cache the same way
-        storage::batch_cache c(opts);
-        index = std::make_unique<storage::batch_cache_index>(c);
-        auto b0 = c.put(*index, make_batch(10));
-        auto b1 = c.put(*index, make_batch(10));
+        storage::batch_cache cache(opts);
+        index_1 = std::make_unique<storage::batch_cache_index>(cache);
+        index_2 = std::make_unique<storage::batch_cache_index>(cache);
+        auto b0 = cache.put(*index_1, make_batch(10));
+        auto b1 = cache.put(*index_2, make_batch(10));
 
         // the first one moves to the head
-        c.touch(b0);
+        cache.touch(b0.range());
         // so reclaiming now frees the second
-        c.reclaim(1);
-        BOOST_CHECK(b0);
-        BOOST_CHECK(!b1);
+        cache.reclaim(1);
+        BOOST_CHECK(b0.range());
+        BOOST_CHECK(!b1.range());
+        cache.stop().get();
     }
 }
 
-SEASTAR_THREAD_TEST_CASE(index_get_empty) {
-    storage::batch_cache cache(opts);
+FIXTURE_TEST(index_get_empty, batch_cache_test_fixture) {
     storage::batch_cache_index index(cache);
 
     BOOST_CHECK(index.empty());
@@ -150,8 +172,7 @@ SEASTAR_THREAD_TEST_CASE(index_get_empty) {
     BOOST_CHECK(index.empty());
 }
 
-SEASTAR_THREAD_TEST_CASE(index_get) {
-    storage::batch_cache cache(opts);
+FIXTURE_TEST(index_get, batch_cache_test_fixture) {
     storage::batch_cache_index index(cache);
     storage::batch_cache_index index2(cache);
 
@@ -202,8 +223,7 @@ SEASTAR_THREAD_TEST_CASE(index_get) {
     BOOST_CHECK(!index2.get(model::offset(40)));
 }
 
-SEASTAR_THREAD_TEST_CASE(index_truncate_smoke) {
-    storage::batch_cache cache(opts);
+FIXTURE_TEST(index_truncate_smoke, batch_cache_test_fixture) {
     storage::batch_cache_index index(cache);
 
     // add batches of increasing size
@@ -226,8 +246,7 @@ SEASTAR_THREAD_TEST_CASE(index_truncate_smoke) {
     }
 }
 
-SEASTAR_THREAD_TEST_CASE(index_truncate_hole) {
-    storage::batch_cache cache(opts);
+FIXTURE_TEST(index_truncate_hole, batch_cache_test_fixture) {
     storage::batch_cache_index index(cache);
 
     // [10][11:20]  [41:50]
@@ -236,13 +255,13 @@ SEASTAR_THREAD_TEST_CASE(index_truncate_hole) {
     index.put(make_batch(10, model::offset(41)));
 
     index.truncate(model::offset(25));
-    BOOST_CHECK(index.get(model::offset(10)));
-    BOOST_CHECK(index.get(model::offset(11)));
+    // all batches belong to the same range, all of them will be evicted
+    BOOST_CHECK(!index.get(model::offset(10)));
+    BOOST_CHECK(!index.get(model::offset(11)));
     BOOST_CHECK(!index.get(model::offset(41)));
 }
 
-SEASTAR_THREAD_TEST_CASE(index_truncate_hole_missing_prev) {
-    storage::batch_cache cache(opts);
+FIXTURE_TEST(index_truncate_hole_missing_prev, batch_cache_test_fixture) {
     storage::batch_cache_index index(cache);
 
     // [10][11:20]  [41:50]
@@ -252,11 +271,38 @@ SEASTAR_THREAD_TEST_CASE(index_truncate_hole_missing_prev) {
 
     index.testing_evict_from_cache(model::offset(11));
     BOOST_CHECK(index.testing_exists_in_index(model::offset(11)));
-    BOOST_CHECK(index.get(model::offset(10)));
+    BOOST_CHECK(!index.get(model::offset(10)));
 
     index.truncate(model::offset(25));
-    BOOST_CHECK(index.get(model::offset(10)));
+    BOOST_CHECK(!index.get(model::offset(10)));
     BOOST_CHECK(!index.testing_exists_in_index(model::offset(11)));
     BOOST_CHECK(!index.get(model::offset(11)));
     BOOST_CHECK(!index.get(model::offset(41)));
+}
+
+FIXTURE_TEST(test_random_batch_sizes, batch_cache_test_fixture) {
+    storage::batch_cache_index index(cache);
+    std::vector<model::record_batch> batches;
+    for (int i = 0; i < 1000; ++i) {
+        auto batch = make_random_batch(
+          random_generators::get_int<size_t>(10, 16_KiB), model::offset(i));
+        index.put(batch);
+        batches.push_back(std::move(batch));
+    }
+
+    for (auto& b : batches) {
+        auto from_cache = index.get(b.base_offset());
+        BOOST_REQUIRE(from_cache.has_value());
+        BOOST_REQUIRE_EQUAL(from_cache->header(), b.header());
+        BOOST_REQUIRE_EQUAL(from_cache->data(), b.data());
+    }
+    double max_waste = ((double)storage::batch_cache::range::max_waste_bytes
+                        / storage::batch_cache::range::range_size)
+                       * 100.0;
+
+    // assert waste, we have to skip last range
+    for (auto& r : boost::make_iterator_range(
+           get_lru().begin(), std::prev(get_lru().end()))) {
+        BOOST_REQUIRE_LE(r.waste(), max_waste);
+    }
 }
