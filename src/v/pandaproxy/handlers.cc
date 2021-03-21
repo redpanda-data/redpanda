@@ -19,6 +19,7 @@
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "pandaproxy/configuration.h"
+#include "pandaproxy/json/exceptions.h"
 #include "pandaproxy/json/requests/create_consumer.h"
 #include "pandaproxy/json/requests/fetch.h"
 #include "pandaproxy/json/requests/offset_commit.h"
@@ -28,6 +29,7 @@
 #include "pandaproxy/json/requests/produce.h"
 #include "pandaproxy/json/requests/subscribe_consumer.h"
 #include "pandaproxy/json/rjson_util.h"
+#include "pandaproxy/parsing/httpd.h"
 #include "pandaproxy/reply.h"
 #include "raft/types.h"
 #include "ssx/future-util.h"
@@ -110,17 +112,13 @@ get_topics_records(server::request_t rq, server::reply_t rp) {
         return ss::make_ready_future<server::reply_t>(std::move(rp));
     }
 
-    model::topic_partition tp{
-      model::topic(rq.req->param["topic_name"]),
-      model::partition_id{boost::lexical_cast<model::partition_id::type>(
-        rq.req->param["partition_id"])}};
-    model::offset offset{boost::lexical_cast<model::offset::type>(
-      rq.req->get_query_param("offset"))};
-    std::chrono::milliseconds timeout{
-      boost::lexical_cast<std::chrono::milliseconds::rep>(
-        rq.req->get_query_param("timeout"))};
-    int32_t max_bytes{
-      boost::lexical_cast<int32_t>(rq.req->get_query_param("max_bytes"))};
+    auto tp{model::topic_partition{
+      parse::request_param<model::topic>(*rq.req, "topic_name"),
+      parse::request_param<model::partition_id>(*rq.req, "partition_id")}};
+    auto offset{parse::query_param<model::offset>(*rq.req, "offset")};
+    auto timeout{
+      parse::query_param<std::chrono::milliseconds>(*rq.req, "timeout")};
+    int32_t max_bytes{parse::query_param<int32_t>(*rq.req, "max_bytes")};
 
     rq.req.reset();
     return rq.ctx.client
