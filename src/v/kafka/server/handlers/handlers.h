@@ -18,6 +18,7 @@
 #include "kafka/server/handlers/describe_acls.h"
 #include "kafka/server/handlers/describe_configs.h"
 #include "kafka/server/handlers/describe_groups.h"
+#include "kafka/server/handlers/describe_log_dirs.h"
 #include "kafka/server/handlers/fetch.h"
 #include "kafka/server/handlers/find_coordinator.h"
 #include "kafka/server/handlers/heartbeat.h"
