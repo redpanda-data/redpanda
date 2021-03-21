@@ -47,13 +47,6 @@ jobs:
       run: make e2e-tests
       shell: bash
 
-    - name: Archive test data
-      if: ${{ failure() }}
-      uses: actions/upload-artifact@v2
-      with:
-        name: kuttl test artifacts
-        path: src/go/k8s/tests/_e2e_artifacts
-
   helm-test:
     needs: test
     runs-on: ubuntu-latest
