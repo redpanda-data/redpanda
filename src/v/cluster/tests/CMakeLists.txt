@@ -28,7 +28,7 @@ set(srcs
     topic_updates_dispatcher_test.cc
     controller_backend_test.cc
     configuration_change_test.cc
-    seq_stm_tests.cc
+    idempotency_tests.cc
     tm_stm_tests.cc
     id_allocator_stm_test.cc)
 

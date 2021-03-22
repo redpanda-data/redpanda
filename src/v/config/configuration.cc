@@ -247,12 +247,6 @@ configuration::configuration()
       "during reading a stm snapshot",
       required::no,
       model::violation_recovery_policy::crash)
-  , seq_sync_timeout_ms(
-      *this,
-      "seq_sync_timeout_ms",
-      "Time to wait state catch up before rejecting a request",
-      required::no,
-      2000ms)
   , tm_sync_timeout_ms(
       *this,
       "tm_sync_timeout_ms",

@@ -14,7 +14,6 @@
 #include "cluster/id_allocator_stm.h"
 #include "cluster/partition_probe.h"
 #include "cluster/rm_stm.h"
-#include "cluster/seq_stm.h"
 #include "cluster/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -147,7 +146,6 @@ private:
     consensus_ptr _raft;
     ss::lw_shared_ptr<raft::log_eviction_stm> _nop_stm;
     ss::lw_shared_ptr<cluster::id_allocator_stm> _id_allocator_stm;
-    ss::shared_ptr<seq_stm> _seq_stm;
     ss::shared_ptr<cluster::rm_stm> _rm_stm;
     ss::abort_source _as;
     partition_probe _probe;

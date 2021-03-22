@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#include "cluster/seq_stm.h"
+#include "cluster/rm_stm.h"
 #include "finjector/hbadger.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -27,14 +27,14 @@
 
 #include <system_error>
 
-ss::logger logger{"append-test"};
+static ss::logger logger{"append-test"};
 
 FIXTURE_TEST(
-  test_seq_stm_doesnt_interfere_with_out_of_session_messages,
+  test_rm_stm_doesnt_interfere_with_out_of_session_messages,
   mux_state_machine_fixture) {
     start_raft();
 
-    cluster::seq_stm stm(logger, _raft.get());
+    cluster::rm_stm stm(logger, _raft.get());
 
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
@@ -81,11 +81,10 @@ FIXTURE_TEST(
 }
 
 FIXTURE_TEST(
-  test_seq_stm_passes_monotonic_in_session_messages,
-  mux_state_machine_fixture) {
+  test_rm_stm_passes_monotonic_in_session_messages, mux_state_machine_fixture) {
     start_raft();
 
-    cluster::seq_stm stm(logger, _raft.get());
+    cluster::rm_stm stm(logger, _raft.get());
 
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
@@ -131,10 +130,10 @@ FIXTURE_TEST(
     BOOST_REQUIRE((bool)r2);
 }
 
-FIXTURE_TEST(test_seq_stm_prevents_duplicates, mux_state_machine_fixture) {
+FIXTURE_TEST(test_rm_stm_prevents_duplicates, mux_state_machine_fixture) {
     start_raft();
 
-    cluster::seq_stm stm(logger, _raft.get());
+    cluster::rm_stm stm(logger, _raft.get());
 
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
@@ -183,10 +182,10 @@ FIXTURE_TEST(test_seq_stm_prevents_duplicates, mux_state_machine_fixture) {
         kafka::error_code::out_of_order_sequence_number));
 }
 
-FIXTURE_TEST(test_seq_stm_prevents_gaps, mux_state_machine_fixture) {
+FIXTURE_TEST(test_rm_stm_prevents_gaps, mux_state_machine_fixture) {
     start_raft();
 
-    cluster::seq_stm stm(logger, _raft.get());
+    cluster::rm_stm stm(logger, _raft.get());
 
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
@@ -236,10 +235,10 @@ FIXTURE_TEST(test_seq_stm_prevents_gaps, mux_state_machine_fixture) {
 }
 
 FIXTURE_TEST(
-  test_seq_stm_prevents_odd_session_start_off, mux_state_machine_fixture) {
+  test_rm_stm_prevents_odd_session_start_off, mux_state_machine_fixture) {
     start_raft();
 
-    cluster::seq_stm stm(logger, _raft.get());
+    cluster::rm_stm stm(logger, _raft.get());
 
     stm.start().get0();
     auto stop = ss::defer([&stm] { stm.stop().get0(); });
