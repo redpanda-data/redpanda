@@ -41,8 +41,11 @@ static ss::future<consensus_ptr> create_raft0(
           // Add raft 0 to shard table
           return st
             .invoke_on_all([gr = p->group()](shard_table& local_st) {
-                local_st.insert(model::controller_ntp, controller_stm_shard);
-                local_st.insert(gr, controller_stm_shard);
+                local_st.update(
+                  model::controller_ntp,
+                  gr,
+                  controller_stm_shard,
+                  model::revision_id(0));
             })
             .then([p] { return p; });
       });

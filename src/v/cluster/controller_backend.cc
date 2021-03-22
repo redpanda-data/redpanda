@@ -588,12 +588,23 @@ ss::future<std::error_code> controller_backend::update_partition_replica_set(
 }
 
 ss::future<> controller_backend::add_to_shard_table(
-  model::ntp ntp, raft::group_id raft_group, uint32_t shard) {
+  model::ntp ntp,
+  raft::group_id raft_group,
+  uint32_t shard,
+  model::revision_id revision) {
     // update shard_table: broadcast
+
     return _shard_table.invoke_on_all(
-      [ntp = std::move(ntp), raft_group, shard](shard_table& s) mutable {
-          s.insert(std::move(ntp), shard);
-          s.insert(raft_group, shard);
+      [self = _self, ntp = std::move(ntp), raft_group, shard, revision](
+        shard_table& s) mutable {
+          vlog(
+            clusterlog.trace,
+            "[n: {}, r: {}] adding {} to shard table at {}",
+            self,
+            revision,
+            ntp,
+            shard);
+          s.update(ntp, raft_group, shard, revision);
       });
 }
 
@@ -631,10 +642,10 @@ ss::future<std::error_code> controller_backend::create_partition(
     }
 
     return f
-      .then([this, ntp = std::move(ntp), group_id]() mutable {
+      .then([this, ntp = std::move(ntp), group_id, rev]() mutable {
           // we create only partitions that belongs to current shard
           return add_to_shard_table(
-            std::move(ntp), group_id, ss::this_shard_id());
+            std::move(ntp), group_id, ss::this_shard_id(), rev);
       })
       .then([] { return make_error_code(errc::success); });
 }
@@ -654,8 +665,9 @@ controller_backend::delete_partition(model::ntp ntp, model::revision_id rev) {
     auto group_id = part->group();
 
     return _shard_table
-      .invoke_on_all(
-        [ntp, group_id](shard_table& st) mutable { st.erase(ntp, group_id); })
+      .invoke_on_all([ntp, group_id, rev](shard_table& st) mutable {
+          st.erase(ntp, group_id, rev);
+      })
       .then([this, ntp] {
           return _partition_leaders_table.invoke_on_all(
             [ntp](partition_leaders_table& leaders) {

@@ -139,10 +139,16 @@ topic_table::apply(finish_moving_partition_replicas_cmd cmd, model::offset o) {
         return ss::make_ready_future<std::error_code>(
           errc::partition_not_exists);
     }
+    partition_assignment delta_assignment{
+      .group = current_assignment_it->group,
+      .id = current_assignment_it->id,
+      .replicas = std::move(cmd.value),
+    };
+
     // notify backend about finished update
     _pending_deltas.emplace_back(
       std::move(cmd.key),
-      *current_assignment_it,
+      std::move(delta_assignment),
       o,
       delta::op_type::update_finished);
 
