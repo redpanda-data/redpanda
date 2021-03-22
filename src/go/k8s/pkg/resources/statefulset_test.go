@@ -104,6 +104,8 @@ func TestEnsure(t *testing.T) {
 }
 
 func stsFromCluster(pandaCluster *redpandav1alpha1.Cluster) *v1.StatefulSet {
+	fileSystemMode := corev1.PersistentVolumeFilesystem
+
 	return &v1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: pandaCluster.Namespace,
@@ -143,6 +145,7 @@ func stsFromCluster(pandaCluster *redpandav1alpha1.Cluster) *v1.StatefulSet {
 							},
 						},
 						StorageClassName: &pandaCluster.Spec.Storage.StorageClassName,
+						VolumeMode:       &fileSystemMode,
 					},
 				},
 			},

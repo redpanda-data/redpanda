@@ -56,8 +56,6 @@ func CreateIfNotExists(
 	return false, nil
 }
 
-const debugLevel = 10
-
 // Update ensures resource is updated if necessary. The method calculates patch
 // and applies it if something changed
 func Update(
@@ -67,22 +65,27 @@ func Update(
 	c client.Client,
 	logger logr.Logger,
 ) error {
-	patchResult, err := patch.DefaultPatchMaker.Calculate(current, modified)
+	metaAccessor := meta.NewAccessor()
+	currentVersion, err := metaAccessor.ResourceVersion(current)
+	if err != nil {
+		return err
+	}
+	err = metaAccessor.SetResourceVersion(modified, currentVersion)
+	if err != nil {
+		return err
+	}
+
+	opts := []patch.CalculateOption{
+		patch.IgnoreStatusFields(),
+		patch.IgnoreVolumeClaimTemplateTypeMetaAndStatus(),
+	}
+	patchResult, err := patch.DefaultPatchMaker.Calculate(current, modified, opts...)
 	if err != nil {
 		return err
 	}
 	if !patchResult.IsEmpty() {
 		// need to set current version first otherwise the request would get rejected
-		metaAccessor := meta.NewAccessor()
-		currentVersion, err := metaAccessor.ResourceVersion(current)
-		if err != nil {
-			return err
-		}
-		err = metaAccessor.SetResourceVersion(modified, currentVersion)
-		if err != nil {
-			return err
-		}
-		logger.V(debugLevel).Info(fmt.Sprintf("StatefulSet changed, updating %s. Diff: %v", modified.GetName(), string(patchResult.Patch)))
+		logger.Info(fmt.Sprintf("StatefulSet changed, updating %s. Diff: %v", modified.GetName(), string(patchResult.Patch)))
 		if err := patch.DefaultAnnotator.SetLastAppliedAnnotation(modified); err != nil {
 			return err
 		}
