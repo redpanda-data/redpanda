@@ -15,8 +15,10 @@
 #include "rpc/transport.h"
 #include "seastarx.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/iostream.hh>
+#include <seastar/core/lowres_clock.hh>
 #include <seastar/core/reactor.hh>
 #include <seastar/core/sleep.hh>
 #include <seastar/core/temporary_buffer.hh>
@@ -28,7 +30,7 @@
 #include <seastar/http/routes.hh>
 #include <seastar/net/api.hh>
 #include <seastar/net/tcp.hh>
-#include <seastar/testing/test_case.hh>
+#include <seastar/testing/thread_test_case.hh>
 #include <seastar/util/defer.hh>
 
 #include <boost/algorithm/string.hpp>
@@ -39,6 +41,8 @@
 #include <exception>
 #include <initializer_list>
 #include <optional>
+
+using namespace std::chrono_literals;
 
 static const uint16_t httpd_port_number = 8128;
 static const char* httpd_host_name = "127.0.0.1";
@@ -147,34 +151,30 @@ void test_http_request(
     server->stop().get();
 }
 
-SEASTAR_TEST_CASE(test_http_POST_roundtrip) {
-    return ss::async([] {
-        auto config = transport_configuration();
-        http::client::request_header header;
-        header.method(boost::beast::http::verb::post);
-        header.target("/echo");
-        header.insert(
-          boost::beast::http::field::content_length,
-          boost::beast::to_static_string(std::strlen(httpd_server_reply)));
-        header_set_host(header, config.server_addr);
-        header.insert(
-          boost::beast::http::field::content_type, "application/json");
-        test_http_request(
-          config,
-          std::move(header),
-          ss::sstring(httpd_server_reply),
-          [](http::client::response_header const& header, iobuf&& body) {
-              BOOST_REQUIRE_EQUAL(
-                header.result(), boost::beast::http::status::ok);
+SEASTAR_THREAD_TEST_CASE(test_http_POST_roundtrip) {
+    auto config = transport_configuration();
+    http::client::request_header header;
+    header.method(boost::beast::http::verb::post);
+    header.target("/echo");
+    header.insert(
+      boost::beast::http::field::content_length,
+      boost::beast::to_static_string(std::strlen(httpd_server_reply)));
+    header_set_host(header, config.server_addr);
+    header.insert(boost::beast::http::field::content_type, "application/json");
+    test_http_request(
+      config,
+      std::move(header),
+      ss::sstring(httpd_server_reply),
+      [](http::client::response_header const& header, iobuf&& body) {
+          BOOST_REQUIRE_EQUAL(header.result(), boost::beast::http::status::ok);
 
-              iobuf_parser parser(std::move(body));
-              std::string actual = parser.read_string(parser.bytes_left());
-              std::string expected
-                = "\"" + std::string(httpd_server_reply)
-                  + "\""; // sestar will return json string containing the
-              BOOST_REQUIRE_EQUAL(expected, actual);
-          });
-    });
+          iobuf_parser parser(std::move(body));
+          std::string actual = parser.read_string(parser.bytes_left());
+          std::string expected
+            = "\"" + std::string(httpd_server_reply)
+              + "\""; // sestar will return json string containing the
+          BOOST_REQUIRE_EQUAL(expected, actual);
+      });
 }
 
 /// Test http streaming requests e2e in ss::async
@@ -215,149 +215,126 @@ void test_http_streaming_request(
 }
 
 /// Check GET streaming request and skip method of the response data source
-SEASTAR_TEST_CASE(test_http_GET_streaming_roundtrip) {
-    return ss::async([] {
-        auto config = transport_configuration();
-        http::client::request_header header;
-        header.method(boost::beast::http::verb::get);
-        header.target("/get");
-        header.insert(
-          boost::beast::http::field::content_length,
-          boost::beast::to_static_string(0));
-        header_set_host(header, config.server_addr);
-        header.insert(
-          boost::beast::http::field::content_type, "application/json");
-        constexpr size_t skip_bytes = 100;
-        test_http_streaming_request(
-          config,
-          std::move(header),
-          std::nullopt,
-          skip_bytes,
-          [skip_bytes](
-            http::client::response_header const& header, iobuf&& body) {
-              BOOST_REQUIRE_EQUAL(
-                header.result(), boost::beast::http::status::ok);
+SEASTAR_THREAD_TEST_CASE(test_http_GET_streaming_roundtrip) {
+    auto config = transport_configuration();
+    http::client::request_header header;
+    header.method(boost::beast::http::verb::get);
+    header.target("/get");
+    header.insert(
+      boost::beast::http::field::content_length,
+      boost::beast::to_static_string(0));
+    header_set_host(header, config.server_addr);
+    header.insert(boost::beast::http::field::content_type, "application/json");
+    constexpr size_t skip_bytes = 100;
+    test_http_streaming_request(
+      config,
+      std::move(header),
+      std::nullopt,
+      skip_bytes,
+      [skip_bytes](http::client::response_header const& header, iobuf&& body) {
+          BOOST_REQUIRE_EQUAL(header.result(), boost::beast::http::status::ok);
 
-              iobuf_parser parser(std::move(body));
-              std::string actual = parser.read_string(parser.bytes_left());
-              std::string expected
-                = "\"" + std::string(httpd_server_reply)
-                  + "\""; // sestar will return json string containing the
-              expected = expected.substr(skip_bytes);
-              BOOST_REQUIRE_EQUAL(expected, actual);
-          });
-    });
+          iobuf_parser parser(std::move(body));
+          std::string actual = parser.read_string(parser.bytes_left());
+          std::string expected
+            = "\"" + std::string(httpd_server_reply)
+              + "\""; // sestar will return json string containing the
+          expected = expected.substr(skip_bytes);
+          BOOST_REQUIRE_EQUAL(expected, actual);
+      });
 }
 
-SEASTAR_TEST_CASE(test_http_POST_streaming_roundtrip) {
-    return ss::async([] {
-        auto config = transport_configuration();
-        http::client::request_header header;
-        header.method(boost::beast::http::verb::post);
-        header.target("/echo");
-        header.insert(
-          boost::beast::http::field::content_length,
-          boost::beast::to_static_string(std::strlen(httpd_server_reply)));
-        header_set_host(header, config.server_addr);
-        header.insert(
-          boost::beast::http::field::content_type, "application/json");
+SEASTAR_THREAD_TEST_CASE(test_http_POST_streaming_roundtrip) {
+    auto config = transport_configuration();
+    http::client::request_header header;
+    header.method(boost::beast::http::verb::post);
+    header.target("/echo");
+    header.insert(
+      boost::beast::http::field::content_length,
+      boost::beast::to_static_string(std::strlen(httpd_server_reply)));
+    header_set_host(header, config.server_addr);
+    header.insert(boost::beast::http::field::content_type, "application/json");
 
-        test_http_streaming_request(
-          config,
-          std::move(header),
-          ss::sstring(httpd_server_reply),
-          0,
-          [](http::client::response_header const& header, iobuf&& body) {
-              BOOST_REQUIRE_EQUAL(
-                header.result(), boost::beast::http::status::ok);
+    test_http_streaming_request(
+      config,
+      std::move(header),
+      ss::sstring(httpd_server_reply),
+      0,
+      [](http::client::response_header const& header, iobuf&& body) {
+          BOOST_REQUIRE_EQUAL(header.result(), boost::beast::http::status::ok);
 
-              iobuf_parser parser(std::move(body));
-              std::string actual = parser.read_string(parser.bytes_left());
-              std::string expected
-                = "\"" + std::string(httpd_server_reply)
-                  + "\""; // sestar will return json string containing the
-              BOOST_REQUIRE_EQUAL(expected, actual);
-          });
-    });
+          iobuf_parser parser(std::move(body));
+          std::string actual = parser.read_string(parser.bytes_left());
+          std::string expected
+            = "\"" + std::string(httpd_server_reply)
+              + "\""; // sestar will return json string containing the
+          BOOST_REQUIRE_EQUAL(expected, actual);
+      });
 }
 
-SEASTAR_TEST_CASE(test_error_500) {
-    return ss::async([] {
-        auto config = transport_configuration();
-        http::client::request_header header;
-        header.method(boost::beast::http::verb::get);
-        header.target("/fail-status-500");
-        header_set_host(header, config.server_addr);
-        header.insert(
-          boost::beast::http::field::content_type, "application/json");
-        test_http_request(
-          config,
-          std::move(header),
-          std::nullopt,
-          [](http::client::response_header const& header, iobuf&& body) {
-              BOOST_REQUIRE_EQUAL(
-                header.result(),
-                boost::beast::http::status::internal_server_error);
-              iobuf_parser parser(std::move(body));
-              std::string actual = parser.read_string(parser.bytes_left());
-              BOOST_REQUIRE(
-                actual.find("/fail-status-500") != std::string::npos);
-          });
-    });
+SEASTAR_THREAD_TEST_CASE(test_error_500) {
+    auto config = transport_configuration();
+    http::client::request_header header;
+    header.method(boost::beast::http::verb::get);
+    header.target("/fail-status-500");
+    header_set_host(header, config.server_addr);
+    header.insert(boost::beast::http::field::content_type, "application/json");
+    test_http_request(
+      config,
+      std::move(header),
+      std::nullopt,
+      [](http::client::response_header const& header, iobuf&& body) {
+          BOOST_REQUIRE_EQUAL(
+            header.result(), boost::beast::http::status::internal_server_error);
+          iobuf_parser parser(std::move(body));
+          std::string actual = parser.read_string(parser.bytes_left());
+          BOOST_REQUIRE(actual.find("/fail-status-500") != std::string::npos);
+      });
 }
 
-SEASTAR_TEST_CASE(test_http_GET_roundtrip) {
+SEASTAR_THREAD_TEST_CASE(test_http_GET_roundtrip) {
     // No request data
-    return ss::async([] {
-        auto config = transport_configuration();
-        http::client::request_header header;
-        header.method(boost::beast::http::verb::get);
-        header.target("/get");
-        header_set_host(header, config.server_addr);
-        header.insert(
-          boost::beast::http::field::content_type, "application/json");
-        test_http_request(
-          config,
-          std::move(header),
-          std::nullopt,
-          [](http::client::response_header const& header, iobuf&& body) {
-              BOOST_REQUIRE_EQUAL(
-                header.result(), boost::beast::http::status::ok);
-              iobuf_parser parser(std::move(body));
-              std::string actual = parser.read_string(parser.bytes_left());
-              std::string expected = "\"" + std::string(httpd_server_reply)
-                                     + "\"";
-              BOOST_REQUIRE_EQUAL(expected, actual);
-          });
-    });
+    auto config = transport_configuration();
+    http::client::request_header header;
+    header.method(boost::beast::http::verb::get);
+    header.target("/get");
+    header_set_host(header, config.server_addr);
+    header.insert(boost::beast::http::field::content_type, "application/json");
+    test_http_request(
+      config,
+      std::move(header),
+      std::nullopt,
+      [](http::client::response_header const& header, iobuf&& body) {
+          BOOST_REQUIRE_EQUAL(header.result(), boost::beast::http::status::ok);
+          iobuf_parser parser(std::move(body));
+          std::string actual = parser.read_string(parser.bytes_left());
+          std::string expected = "\"" + std::string(httpd_server_reply) + "\"";
+          BOOST_REQUIRE_EQUAL(expected, actual);
+      });
 }
 
-SEASTAR_TEST_CASE(test_http_PUT_roundtrip) {
+SEASTAR_THREAD_TEST_CASE(test_http_PUT_roundtrip) {
     // Send data and recv empty response
-    return ss::async([] {
-        auto config = transport_configuration();
-        http::client::request_header header;
-        header.method(boost::beast::http::verb::put);
-        header.target("/put");
-        header.insert(
-          boost::beast::http::field::content_length,
-          boost::beast::to_static_string(std::strlen(httpd_server_reply)));
-        header_set_host(header, config.server_addr);
-        header.insert(
-          boost::beast::http::field::content_type, "application/json");
-        test_http_request(
-          config,
-          std::move(header),
-          ss::sstring(httpd_server_reply),
-          [](http::client::response_header const& header, iobuf&& body) {
-              BOOST_REQUIRE_EQUAL(
-                header.result(), boost::beast::http::status::ok);
-              iobuf_parser parser(std::move(body));
-              std::string actual = parser.read_string(parser.bytes_left());
-              std::string expected = "\"\"";
-              BOOST_REQUIRE_EQUAL(expected, actual);
-          });
-    });
+    auto config = transport_configuration();
+    http::client::request_header header;
+    header.method(boost::beast::http::verb::put);
+    header.target("/put");
+    header.insert(
+      boost::beast::http::field::content_length,
+      boost::beast::to_static_string(std::strlen(httpd_server_reply)));
+    header_set_host(header, config.server_addr);
+    header.insert(boost::beast::http::field::content_type, "application/json");
+    test_http_request(
+      config,
+      std::move(header),
+      ss::sstring(httpd_server_reply),
+      [](http::client::response_header const& header, iobuf&& body) {
+          BOOST_REQUIRE_EQUAL(header.result(), boost::beast::http::status::ok);
+          iobuf_parser parser(std::move(body));
+          std::string actual = parser.read_string(parser.bytes_left());
+          std::string expected = "\"\"";
+          BOOST_REQUIRE_EQUAL(expected, actual);
+      });
 }
 
 /// Simple tcp server that can receive pre-defined request and
@@ -407,10 +384,11 @@ public:
 
 private:
     iobuf do_read_request() {
+        using namespace std::chrono_literals;
         // Read until _expected_data is fetched
         iobuf buffer;
         int it = 0;
-        const int max_iter = 100;
+        const int max_iter = 1000;
         while (it++ < max_iter) {
             auto tmpbuf = _fin.read().get0();
             buffer.append(std::move(tmpbuf));
@@ -422,6 +400,7 @@ private:
                     return std::move(buffer);
                 }
             }
+            ss::sleep(1ms).get();
         }
         throw std::runtime_error("Can't read request body");
     }
@@ -517,137 +496,127 @@ void test_impostor_request(
     server->stop();
 }
 
-SEASTAR_TEST_CASE(test_http_via_impostor) {
+SEASTAR_THREAD_TEST_CASE(test_http_via_impostor) {
     // Send data and recv response
-    return ss::async([] {
-        auto config = transport_configuration();
+    auto config = transport_configuration();
 
-        // Generate client request
-        http::client::request_header request_header;
-        request_header.method(boost::beast::http::verb::post);
-        request_header.target("/");
-        request_header.insert(
-          boost::beast::http::field::content_length,
-          boost::beast::to_static_string(std::strlen(httpd_server_reply)));
-        header_set_host(request_header, config.server_addr);
-        request_header.insert(
-          boost::beast::http::field::content_type, "application/json");
+    // Generate client request
+    http::client::request_header request_header;
+    request_header.method(boost::beast::http::verb::post);
+    request_header.target("/");
+    request_header.insert(
+      boost::beast::http::field::content_length,
+      boost::beast::to_static_string(std::strlen(httpd_server_reply)));
+    header_set_host(request_header, config.server_addr);
+    request_header.insert(
+      boost::beast::http::field::content_type, "application/json");
 
-        // Generate server response
-        ss::sstring response_data = httpd_server_reply;
-        http::client::response_header resp_hdr;
-        resp_hdr.result(boost::beast::http::status::ok);
-        header_set_host(resp_hdr, config.server_addr);
-        resp_hdr.insert(
-          boost::beast::http::field::content_length,
-          boost::beast::to_static_string(response_data.size()));
-        auto full_response = get_response_header(resp_hdr) + response_data;
+    // Generate server response
+    ss::sstring response_data = httpd_server_reply;
+    http::client::response_header resp_hdr;
+    resp_hdr.result(boost::beast::http::status::ok);
+    header_set_host(resp_hdr, config.server_addr);
+    resp_hdr.insert(
+      boost::beast::http::field::content_length,
+      boost::beast::to_static_string(response_data.size()));
+    auto full_response = get_response_header(resp_hdr) + response_data;
 
-        // Run test case
-        test_impostor_request(
-          config,
-          std::move(request_header),
-          ss::sstring(httpd_server_reply),
-          {full_response},
-          false,
-          [](http::client::response_header const& header, iobuf&& body) {
-              BOOST_REQUIRE_EQUAL(
-                header.result(), boost::beast::http::status::ok);
-              iobuf_parser parser(std::move(body));
-              std::string actual = parser.read_string(parser.bytes_left());
-              std::string expected = ss::sstring(httpd_server_reply);
-              BOOST_REQUIRE_EQUAL(expected, actual);
-          });
-    });
+    // Run test case
+    test_impostor_request(
+      config,
+      std::move(request_header),
+      ss::sstring(httpd_server_reply),
+      {full_response},
+      false,
+      [](http::client::response_header const& header, iobuf&& body) {
+          BOOST_REQUIRE_EQUAL(header.result(), boost::beast::http::status::ok);
+          iobuf_parser parser(std::move(body));
+          std::string actual = parser.read_string(parser.bytes_left());
+          std::string expected = ss::sstring(httpd_server_reply);
+          BOOST_REQUIRE_EQUAL(expected, actual);
+      });
 }
 
-SEASTAR_TEST_CASE(test_http_via_impostor_incorrect_reply) {
+SEASTAR_THREAD_TEST_CASE(test_http_via_impostor_incorrect_reply) {
     // Send data and recv error message
-    return ss::async([] {
-        auto config = transport_configuration();
+    auto config = transport_configuration();
 
-        // Client request
-        http::client::request_header request_header;
-        request_header.method(boost::beast::http::verb::post);
-        request_header.target("/");
-        request_header.insert(
-          boost::beast::http::field::content_length,
-          boost::beast::to_static_string(std::strlen(httpd_server_reply)));
-        header_set_host(request_header, config.server_addr);
-        request_header.insert(
-          boost::beast::http::field::content_type, "application/json");
+    // Client request
+    http::client::request_header request_header;
+    request_header.method(boost::beast::http::verb::post);
+    request_header.target("/");
+    request_header.insert(
+      boost::beast::http::field::content_length,
+      boost::beast::to_static_string(std::strlen(httpd_server_reply)));
+    header_set_host(request_header, config.server_addr);
+    request_header.insert(
+      boost::beast::http::field::content_type, "application/json");
 
-        // Generate server response
-        ss::sstring full_response = "not-correct-http-reply";
+    // Generate server response
+    ss::sstring full_response = "not-correct-http-reply";
 
-        test_impostor_request(
-          config,
-          std::move(request_header),
-          ss::sstring(httpd_server_reply),
-          {full_response},
-          false,
-          [](http::client::response_header const&, iobuf&&) {
-              BOOST_FAIL("Exception expected");
-          },
-          [](std::exception_ptr const& eptr) {
-              try {
-                  std::rethrow_exception(eptr);
-              } catch (boost::system::system_error const& e) {
-                  BOOST_REQUIRE(
-                    e.code() == boost::beast::http::error::bad_version);
-              }
-          });
-    });
+    test_impostor_request(
+      config,
+      std::move(request_header),
+      ss::sstring(httpd_server_reply),
+      {full_response},
+      false,
+      [](http::client::response_header const&, iobuf&&) {
+          BOOST_FAIL("Exception expected");
+      },
+      [](std::exception_ptr const& eptr) {
+          try {
+              std::rethrow_exception(eptr);
+          } catch (boost::system::system_error const& e) {
+              BOOST_REQUIRE(e.code() == boost::beast::http::error::bad_version);
+          }
+      });
 }
 
-SEASTAR_TEST_CASE(test_http_via_impostor_chunked_encoding) {
+SEASTAR_THREAD_TEST_CASE(test_http_via_impostor_chunked_encoding) {
     // Send data and recv chunked response
-    return ss::async([] {
-        auto config = transport_configuration();
+    auto config = transport_configuration();
 
-        // Generate request
-        http::client::request_header request_header;
-        request_header.method(boost::beast::http::verb::post);
-        request_header.target("/");
-        request_header.insert(
-          boost::beast::http::field::content_length,
-          boost::beast::to_static_string(std::strlen(httpd_server_reply)));
-        header_set_host(request_header, config.server_addr);
-        request_header.insert(
-          boost::beast::http::field::content_type, "application/json");
+    // Generate request
+    http::client::request_header request_header;
+    request_header.method(boost::beast::http::verb::post);
+    request_header.target("/");
+    request_header.insert(
+      boost::beast::http::field::content_length,
+      boost::beast::to_static_string(std::strlen(httpd_server_reply)));
+    header_set_host(request_header, config.server_addr);
+    request_header.insert(
+      boost::beast::http::field::content_type, "application/json");
 
-        // Generate response
-        http::chunked_encoder encoder{false};
-        ss::sstring response_data = httpd_server_reply;
-        http::client::response_header resp_hdr;
-        resp_hdr.result(boost::beast::http::status::ok);
-        resp_hdr.insert(
-          boost::beast::http::field::transfer_encoding, "chunked");
-        header_set_host(resp_hdr, config.server_addr);
-        auto header_str = get_response_header(resp_hdr);
-        iobuf outbuf;
-        outbuf.append(header_str.data(), header_str.size());
-        iobuf bodybuf;
-        bodybuf.append(response_data.data(), response_data.size());
-        outbuf.append(encoder.encode(std::move(bodybuf)));
-        outbuf.append(encoder.encode_eof());
-        iobuf_parser bufparser(std::move(outbuf));
+    // Generate response
+    http::chunked_encoder encoder{false};
+    ss::sstring response_data = httpd_server_reply;
+    http::client::response_header resp_hdr;
+    resp_hdr.result(boost::beast::http::status::ok);
+    resp_hdr.insert(boost::beast::http::field::transfer_encoding, "chunked");
+    header_set_host(resp_hdr, config.server_addr);
+    auto header_str = get_response_header(resp_hdr);
+    iobuf outbuf;
+    outbuf.append(header_str.data(), header_str.size());
+    iobuf bodybuf;
+    bodybuf.append(response_data.data(), response_data.size());
+    outbuf.append(encoder.encode(std::move(bodybuf)));
+    outbuf.append(encoder.encode_eof());
+    iobuf_parser bufparser(std::move(outbuf));
 
-        test_impostor_request(
-          config,
-          std::move(request_header),
-          ss::sstring(httpd_server_reply),
-          {bufparser.read_string(bufparser.bytes_left())},
-          false,
-          [](http::client::response_header const& header, iobuf&& body) {
-              BOOST_REQUIRE_EQUAL(
-                header.result(), boost::beast::http::status::ok);
-              iobuf_parser parser(std::move(body));
-              std::string actual = parser.read_string(parser.bytes_left());
-              std::string expected = ss::sstring(httpd_server_reply);
-              BOOST_REQUIRE_EQUAL(expected, actual);
-          });
-    });
+    test_impostor_request(
+      config,
+      std::move(request_header),
+      ss::sstring(httpd_server_reply),
+      {bufparser.read_string(bufparser.bytes_left())},
+      false,
+      [](http::client::response_header const& header, iobuf&& body) {
+          BOOST_REQUIRE_EQUAL(header.result(), boost::beast::http::status::ok);
+          iobuf_parser parser(std::move(body));
+          std::string actual = parser.read_string(parser.bytes_left());
+          std::string expected = ss::sstring(httpd_server_reply);
+          BOOST_REQUIRE_EQUAL(expected, actual);
+      });
 }
 
 /// Remove elements from the middle of the vector until it'll have only 'n'
@@ -669,132 +638,70 @@ struct range_t {
     size_t ixend;
 };
 
-ss::future<> run_framing_test_using_impostor(
+void run_framing_test_using_impostor(
   bool chunked, size_t n_iters, bool prefetch_headers) {
     // Send data and recv chunked response
-    return ss::async([chunked, n_iters, prefetch_headers] {
-        auto config = transport_configuration();
-        // Generate request
-        http::client::request_header request_header;
-        request_header.method(boost::beast::http::verb::post);
-        request_header.target("/");
-        request_header.insert(
+    auto config = transport_configuration();
+    // Generate request
+    http::client::request_header request_header;
+    request_header.method(boost::beast::http::verb::post);
+    request_header.target("/");
+    request_header.insert(
+      boost::beast::http::field::content_length,
+      boost::beast::to_static_string(std::strlen(httpd_server_reply)));
+    header_set_host(request_header, config.server_addr);
+    request_header.insert(
+      boost::beast::http::field::content_type, "application/json");
+
+    // Generate response
+    ss::sstring response_data = httpd_server_reply;
+    http::client::response_header resp_hdr;
+    resp_hdr.result(boost::beast::http::status::ok);
+    if (chunked) {
+        resp_hdr.insert(
+          boost::beast::http::field::transfer_encoding, "chunked");
+    } else {
+        resp_hdr.insert(
           boost::beast::http::field::content_length,
-          boost::beast::to_static_string(std::strlen(httpd_server_reply)));
-        header_set_host(request_header, config.server_addr);
-        request_header.insert(
-          boost::beast::http::field::content_type, "application/json");
+          boost::beast::to_static_string(response_data.size()));
+    }
+    header_set_host(resp_hdr, config.server_addr);
+    auto header_str = get_response_header(resp_hdr);
 
-        // Generate response
-        ss::sstring response_data = httpd_server_reply;
-        http::client::response_header resp_hdr;
-        resp_hdr.result(boost::beast::http::status::ok);
-        if (chunked) {
-            resp_hdr.insert(
-              boost::beast::http::field::transfer_encoding, "chunked");
-        } else {
-            resp_hdr.insert(
-              boost::beast::http::field::content_length,
-              boost::beast::to_static_string(response_data.size()));
+    using split_t = std::vector<range_t>;
+    std::vector<split_t> splits;
+    for (size_t ix = 0; ix < response_data.size(); ix++) {
+        split_t sp;
+        if (ix != 0) {
+            sp.push_back({0, ix});
         }
-        header_set_host(resp_hdr, config.server_addr);
-        auto header_str = get_response_header(resp_hdr);
+        sp.push_back({ix, response_data.size()});
+        splits.push_back(std::move(sp));
+    }
+    // remove excessive work
+    remove_middle_elements(splits, n_iters);
 
-        using split_t = std::vector<range_t>;
-        std::vector<split_t> splits;
-        for (size_t ix = 0; ix < response_data.size(); ix++) {
-            split_t sp;
-            if (ix != 0) {
-                sp.push_back({0, ix});
-            }
-            sp.push_back({ix, response_data.size()});
-            splits.push_back(std::move(sp));
+    for (const auto& split : splits) {
+        http::chunked_encoder encoder{!chunked};
+        std::vector<ss::sstring> chunks{header_str};
+        for (auto [begin, end] : split) {
+            BOOST_ASSERT(begin < response_data.size());
+            BOOST_ASSERT(end <= response_data.size());
+            auto sub = response_data.substr(begin, end - begin);
+            ss::temporary_buffer<char> tmp(sub.data(), sub.size());
+            iobuf_parser pbuf(encoder.encode(std::move(tmp)));
+            chunks.push_back(pbuf.read_string(pbuf.bytes_left()));
         }
-        // remove excessive work
-        remove_middle_elements(splits, n_iters);
+        iobuf_parser ptail(encoder.encode_eof());
+        chunks.push_back(ptail.read_string(ptail.bytes_left()));
 
-        for (const auto& split : splits) {
-            http::chunked_encoder encoder{!chunked};
-            std::vector<ss::sstring> chunks{header_str};
-            for (auto [begin, end] : split) {
-                BOOST_ASSERT(begin < response_data.size());
-                BOOST_ASSERT(end <= response_data.size());
-                auto sub = response_data.substr(begin, end - begin);
-                ss::temporary_buffer<char> tmp(sub.data(), sub.size());
-                iobuf_parser pbuf(encoder.encode(std::move(tmp)));
-                chunks.push_back(pbuf.read_string(pbuf.bytes_left()));
-            }
-            iobuf_parser ptail(encoder.encode_eof());
-            chunks.push_back(ptail.read_string(ptail.bytes_left()));
-
-            test_impostor_request(
-              config,
-              request_header,
-              ss::sstring(httpd_server_reply),
-              chunks,
-              prefetch_headers,
-              [](http::client::response_header const& header, iobuf&& body) {
-                  BOOST_REQUIRE_EQUAL(
-                    header.result(), boost::beast::http::status::ok);
-                  iobuf_parser parser(std::move(body));
-                  std::string actual = parser.read_string(parser.bytes_left());
-                  std::string expected = ss::sstring(httpd_server_reply);
-                  BOOST_REQUIRE_EQUAL(expected, actual);
-              });
-        }
-    });
-}
-
-SEASTAR_TEST_CASE(test_http_via_impostor_framing) {
-    return run_framing_test_using_impostor(false, 32, false);
-}
-
-SEASTAR_TEST_CASE(test_http_via_impostor_framing_with_prefetch) {
-    return run_framing_test_using_impostor(false, 32, true);
-}
-
-SEASTAR_TEST_CASE(test_http_via_impostor_chunked_encoding_framing) {
-    return run_framing_test_using_impostor(true, 32, false);
-}
-
-SEASTAR_TEST_CASE(
-  test_http_via_impostor_chunked_encoding_framing_with_prefetch) {
-    return run_framing_test_using_impostor(true, 32, true);
-}
-
-SEASTAR_TEST_CASE(test_http_via_impostor_no_content_length) {
-    // Send data and recv response (no content length header)
-    return ss::async([] {
-        auto config = transport_configuration();
-
-        // Generate client request
-        http::client::request_header request_header;
-        request_header.method(boost::beast::http::verb::post);
-        request_header.target("/");
-        request_header.insert(
-          boost::beast::http::field::content_length,
-          boost::beast::to_static_string(std::strlen(httpd_server_reply)));
-        header_set_host(request_header, config.server_addr);
-        request_header.insert(
-          boost::beast::http::field::content_type, "application/json");
-
-        // Generate server response
-        ss::sstring response_data = httpd_server_reply;
-        http::client::response_header resp_hdr;
-        resp_hdr.result(boost::beast::http::status::ok);
-        header_set_host(resp_hdr, config.server_addr);
-        auto full_response = get_response_header(resp_hdr) + response_data;
-
-        // Run test case
         test_impostor_request(
           config,
-          std::move(request_header),
+          request_header,
           ss::sstring(httpd_server_reply),
-          {full_response},
-          false,
+          chunks,
+          prefetch_headers,
           [](http::client::response_header const& header, iobuf&& body) {
-              // Expect normal reply despite the absence of content-length
-              // header
               BOOST_REQUIRE_EQUAL(
                 header.result(), boost::beast::http::status::ok);
               iobuf_parser parser(std::move(body));
@@ -802,5 +709,87 @@ SEASTAR_TEST_CASE(test_http_via_impostor_no_content_length) {
               std::string expected = ss::sstring(httpd_server_reply);
               BOOST_REQUIRE_EQUAL(expected, actual);
           });
-    });
+    }
+}
+
+SEASTAR_THREAD_TEST_CASE(test_http_via_impostor_framing) {
+    run_framing_test_using_impostor(false, 32, false);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_http_via_impostor_framing_with_prefetch) {
+    run_framing_test_using_impostor(false, 32, true);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_http_via_impostor_chunked_encoding_framing) {
+    run_framing_test_using_impostor(true, 32, false);
+}
+
+SEASTAR_THREAD_TEST_CASE(
+  test_http_via_impostor_chunked_encoding_framing_with_prefetch) {
+    run_framing_test_using_impostor(true, 32, true);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_http_via_impostor_no_content_length) {
+    // Send data and recv response (no content length header)
+    auto config = transport_configuration();
+
+    // Generate client request
+    http::client::request_header request_header;
+    request_header.method(boost::beast::http::verb::post);
+    request_header.target("/");
+    request_header.insert(
+      boost::beast::http::field::content_length,
+      boost::beast::to_static_string(std::strlen(httpd_server_reply)));
+    header_set_host(request_header, config.server_addr);
+    request_header.insert(
+      boost::beast::http::field::content_type, "application/json");
+
+    // Generate server response
+    ss::sstring response_data = httpd_server_reply;
+    http::client::response_header resp_hdr;
+    resp_hdr.result(boost::beast::http::status::ok);
+    header_set_host(resp_hdr, config.server_addr);
+    auto full_response = get_response_header(resp_hdr) + response_data;
+
+    // Run test case
+    test_impostor_request(
+      config,
+      std::move(request_header),
+      ss::sstring(httpd_server_reply),
+      {full_response},
+      false,
+      [](http::client::response_header const& header, iobuf&& body) {
+          // Expect normal reply despite the absence of content-length
+          // header
+          BOOST_REQUIRE_EQUAL(header.result(), boost::beast::http::status::ok);
+          iobuf_parser parser(std::move(body));
+          std::string actual = parser.read_string(parser.bytes_left());
+          std::string expected = ss::sstring(httpd_server_reply);
+          BOOST_REQUIRE_EQUAL(expected, actual);
+      });
+}
+
+SEASTAR_THREAD_TEST_CASE(test_http_cancel_reconnect) {
+    auto config = transport_configuration();
+    ss::abort_source as;
+    http::client client(config, as);
+    auto fut = client.get_connected(10s);
+    ss::sleep(10ms).get();
+    BOOST_REQUIRE(fut.failed() == false);
+    BOOST_REQUIRE(fut.available() == false);
+    as.request_abort();
+    BOOST_REQUIRE_THROW(fut.get(), ss::abort_requested_exception);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_http_reconnect_graceful_shutdown) {
+    auto config = transport_configuration();
+    ss::abort_source as;
+    http::client client(config, as);
+    auto fut = client.get_connected(10s);
+    ss::sleep(10ms).get();
+    BOOST_REQUIRE(fut.failed() == false);
+    BOOST_REQUIRE(fut.available() == false);
+    client.stop().get();
+    ss::sleep(10ms).get();
+    BOOST_REQUIRE(fut.get() == http::reconnect_result_t::timed_out);
 }

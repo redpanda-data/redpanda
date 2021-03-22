@@ -22,13 +22,16 @@
 #include <seastar/core/future.hh>
 #include <seastar/core/iostream.hh>
 #include <seastar/core/shared_ptr.hh>
+#include <seastar/core/sleep.hh>
 #include <seastar/core/temporary_buffer.hh>
 #include <seastar/core/thread.hh>
+#include <seastar/core/when_all.hh>
 #include <seastar/http/function_handlers.hh>
 #include <seastar/http/handlers.hh>
 #include <seastar/http/httpd.hh>
 #include <seastar/http/routes.hh>
 #include <seastar/net/api.hh>
+#include <seastar/net/socket_defs.hh>
 #include <seastar/net/tcp.hh>
 #include <seastar/net/tls.hh>
 #include <seastar/testing/test_case.hh>
@@ -362,6 +365,106 @@ SEASTAR_TEST_CASE(test_list_objects_failure) {
             error_triggered = true;
         }
         BOOST_REQUIRE(error_triggered);
+        server->stop().get();
+    });
+}
+
+/// Http server and client
+struct configured_server_and_client_pool {
+    ss::shared_ptr<ss::httpd::http_server_control> server;
+    ss::shared_ptr<s3::client_pool> pool;
+};
+/// Create server and client connection pool, server is initialized with default
+/// testing paths and listening.
+configured_server_and_client_pool started_pool_and_server(
+  size_t size,
+  s3::client_pool_overdraft_policy policy,
+  const s3::configuration& conf) {
+    auto client = ss::make_shared<s3::client_pool>(size, conf, policy);
+    auto server = ss::make_shared<ss::httpd::http_server_control>();
+    server->start().get();
+    server->set_routes(set_routes).get();
+    auto resolved = rpc::resolve_dns(conf.server_addr).get0();
+    server->listen(resolved).get();
+    return {
+      .server = server,
+      .pool = client,
+    };
+}
+
+void test_client_pool(s3::client_pool_overdraft_policy policy) {
+    auto conf = transport_configuration();
+    auto [server, pool] = started_pool_and_server(2, policy, conf);
+    std::vector<ss::future<>> fut;
+    for (size_t i = 0; i < 20; i++) {
+        auto f = pool->acquire().then(
+          [server = server](
+            s3::client_pool::client_lease lease) -> ss::future<> {
+              auto& [client, _] = lease;
+              iobuf payload;
+              auto payload_stream = make_iobuf_ref_output_stream(payload);
+              auto http_response = co_await client->get_object(
+                s3::bucket_name("test-bucket"), s3::object_key("test"));
+              auto input_stream = http_response->as_input_stream();
+              co_await ss::copy(input_stream, payload_stream);
+              iobuf_parser p(std::move(payload));
+              auto actual_payload = p.read_string(p.bytes_left());
+              BOOST_REQUIRE_EQUAL(actual_payload, expected_payload);
+          });
+        fut.emplace_back(std::move(f));
+    }
+    ss::when_all_succeed(fut.begin(), fut.end()).get0();
+    BOOST_REQUIRE(pool->size() == 2);
+    server->stop().get();
+}
+
+SEASTAR_TEST_CASE(test_client_pool_wait_strategy) {
+    return ss::async([] {
+        test_client_pool(s3::client_pool_overdraft_policy::wait_if_empty);
+    });
+}
+
+SEASTAR_TEST_CASE(test_client_pool_create_new_strategy) {
+    return ss::async([] {
+        test_client_pool(s3::client_pool_overdraft_policy::create_new_if_empty);
+    });
+}
+
+SEASTAR_TEST_CASE(test_client_pool_reconnect) {
+    return ss::async([] {
+        using namespace std::chrono_literals;
+        auto conf = transport_configuration();
+        auto [server, pool] = started_pool_and_server(
+          2, s3::client_pool_overdraft_policy::wait_if_empty, conf);
+
+        std::vector<ss::future<bool>> fut;
+        for (size_t i = 0; i < 20; i++) {
+            auto f = pool->acquire().then(
+              [server = server](
+                s3::client_pool::client_lease lease) -> ss::future<bool> {
+                  co_await ss::sleep(100ms);
+                  auto& [client, _] = lease;
+                  iobuf payload;
+                  auto payload_stream = make_iobuf_ref_output_stream(payload);
+                  try {
+                      auto http_response = co_await client->get_object(
+                        s3::bucket_name("test-bucket"), s3::object_key("test"));
+                      auto input_stream = http_response->as_input_stream();
+                      co_await ss::copy(input_stream, payload_stream);
+                      iobuf_parser p(std::move(payload));
+                      auto actual_payload = p.read_string(p.bytes_left());
+                      BOOST_REQUIRE_EQUAL(actual_payload, expected_payload);
+                      co_await client->shutdown();
+                  } catch (const ss::abort_requested_exception&) {
+                      co_return false;
+                  }
+                  co_return true;
+              });
+            fut.emplace_back(std::move(f));
+        }
+        auto result = ss::when_all_succeed(fut.begin(), fut.end()).get0();
+        auto count = std::count(result.begin(), result.end(), true);
+        BOOST_REQUIRE(count == 20);
         server->stop().get();
     });
 }
