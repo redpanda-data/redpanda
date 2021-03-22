@@ -26,6 +26,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -64,7 +65,6 @@ type ClusterReconciler struct {
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.7.0/pkg/reconcile
-// nolint:funlen // The problem is addressed in https://github.com/vectorizedio/redpanda/pull/779
 func (r *ClusterReconciler) Reconcile(
 	ctx context.Context, req ctrl.Request,
 ) (ctrl.Result, error) {
@@ -129,53 +129,12 @@ func (r *ClusterReconciler) Reconcile(
 		}
 	}
 
-	var observedPods corev1.PodList
-
-	err := r.List(ctx, &observedPods, &client.ListOptions{
-		LabelSelector: labels.ForCluster(&redpandaCluster).AsClientSelector(),
-		Namespace:     redpandaCluster.Namespace,
-	})
+	err := r.reportStatus(ctx, &redpandaCluster, sts.LastObservedState, headlessSvc.HeadlessServiceFQDN(), nodeportSvc.Key())
 	if err != nil {
-		log.Error(err, "Unable to fetch PodList resource")
-
-		return ctrl.Result{}, err
+		log.Error(err, "Unable to report status")
 	}
 
-	observedNodesInternal := make([]string, 0, len(observedPods.Items))
-	// nolint:gocritic // the copies are necessary for further redpandacluster updates
-	for _, item := range observedPods.Items {
-		observedNodesInternal = append(observedNodesInternal, fmt.Sprintf("%s.%s", item.Name, headlessSvc.HeadlessServiceFQDN()))
-	}
-
-	observedNodesExternal, err := r.createExternalNodesList(ctx, observedPods.Items, &redpandaCluster, nodeportSvc.Key())
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to construct external node list: %w", err)
-	}
-
-	if !reflect.DeepEqual(observedNodesInternal, redpandaCluster.Status.Nodes.Internal) ||
-		!reflect.DeepEqual(observedNodesExternal, redpandaCluster.Status.Nodes.External) {
-		redpandaCluster.Status.Nodes.Internal = observedNodesInternal
-		redpandaCluster.Status.Nodes.External = observedNodesExternal
-
-		if err := r.Status().Update(ctx, &redpandaCluster); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to update cluster status nodes: %w", err)
-		}
-	}
-
-	if sts.LastObservedState == nil {
-		return ctrl.Result{}, errNonexistentLastObservesState
-	}
-
-	if sts.LastObservedState != nil && !reflect.DeepEqual(sts.LastObservedState.Status.ReadyReplicas, redpandaCluster.Status.Replicas) {
-		redpandaCluster.Status.Replicas = sts.LastObservedState.Status.ReadyReplicas
-		if err := r.Status().Update(ctx, &redpandaCluster); err != nil {
-			log.Error(err, "Failed to update RedpandaClusterStatus")
-
-			return ctrl.Result{}, err
-		}
-	}
-
-	return ctrl.Result{}, nil
+	return ctrl.Result{}, err
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -185,6 +144,73 @@ func (r *ClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&appsv1.StatefulSet{}).
 		Owns(&corev1.Service{}).
 		Complete(r)
+}
+
+func (r *ClusterReconciler) reportStatus(
+	ctx context.Context,
+	redpandaCluster *redpandav1alpha1.Cluster,
+	lastObservedSts *appsv1.StatefulSet,
+	internalFQDN string,
+	nodeportSvcName types.NamespacedName,
+) error {
+	var observedPods corev1.PodList
+
+	err := r.List(ctx, &observedPods, &client.ListOptions{
+		LabelSelector: labels.ForCluster(redpandaCluster).AsClientSelector(),
+		Namespace:     redpandaCluster.Namespace,
+	})
+	if err != nil {
+		return fmt.Errorf("unable to fetch PodList resource: %w", err)
+	}
+
+	observedNodesInternal := make([]string, 0, len(observedPods.Items))
+	// nolint:gocritic // the copies are necessary for further redpandacluster updates
+	for _, item := range observedPods.Items {
+		observedNodesInternal = append(observedNodesInternal, fmt.Sprintf("%s.%s", item.Name, internalFQDN))
+	}
+
+	observedNodesExternal, err := r.createExternalNodesList(ctx, observedPods.Items, redpandaCluster, nodeportSvcName)
+	if err != nil {
+		return fmt.Errorf("failed to construct external node list: %w", err)
+	}
+
+	if lastObservedSts == nil {
+		return errNonexistentLastObservesState
+	}
+
+	if statusShouldBeUpdated(redpandaCluster.Status, observedNodesInternal, observedNodesExternal, lastObservedSts.Status.ReadyReplicas) {
+		err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+			var cluster redpandav1alpha1.Cluster
+			err := r.Get(ctx, types.NamespacedName{
+				Name:      redpandaCluster.Name,
+				Namespace: redpandaCluster.Namespace,
+			}, &cluster)
+			if err != nil {
+				return err
+			}
+
+			cluster.Status.Nodes.Internal = observedNodesInternal
+			cluster.Status.Nodes.External = observedNodesExternal
+			cluster.Status.Replicas = lastObservedSts.Status.ReadyReplicas
+
+			return r.Status().Update(ctx, &cluster)
+		})
+
+		if err != nil {
+			return fmt.Errorf("failed to update cluster status: %w", err)
+		}
+	}
+	return nil
+}
+
+func statusShouldBeUpdated(
+	status redpandav1alpha1.ClusterStatus,
+	nodesInternal, nodesExternal []string,
+	readyReplicas int32,
+) bool {
+	return !reflect.DeepEqual(nodesInternal, status.Nodes.Internal) ||
+		!reflect.DeepEqual(nodesExternal, status.Nodes.External) ||
+		status.Replicas == readyReplicas
 }
 
 // WithConfiguratorTag set the configuratorTag
