@@ -138,12 +138,19 @@ type RedpandaConfig struct {
 // communicating with Redpanda.
 //
 // If RequireClientAuth is set to true, two-way TLS verification is enabled.
-// In that case, a node and two client certificates are created. The node
-// certificate is used by redpanda nodes. One client certificate is used by the
-// operator client to make KafkaAPI calls. The other client certificate is
+// In that case, a node and three client certificates are created.
+// The node certificate is used by redpanda nodes.
+//
+// The three client certificates are the following: 1. operator client
+// certificate is for internal use of this kubernetes operator 2. admin client
+// certificate is meant to be used by your internal infrastructure, other than
+// operator. It's possible that you might not need this client certificate in
+// your setup. The client certificate can be retrieved from the Secret named
+// '<redpanda-cluster-name>-admin-client'. 3. user client certificate is
 // available for Redpanda users to call KafkaAPI. The client certificate can be
 // retrieved from the Secret named '<redpanda-cluster-name>-user-client'.
-// The secret is stored in the same namespace as Redpanda cluster.
+//
+// All TLS secrets are stored in the same namespace as the Redpanda cluster.
 type TLSConfig struct {
 	KafkaAPIEnabled bool `json:"kafkaApiEnabled,omitempty"`
 	// References cert-manager Issuer or ClusterIssuer. When provided, this
