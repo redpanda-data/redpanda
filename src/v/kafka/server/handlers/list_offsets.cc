@@ -56,14 +56,17 @@ struct list_offsets_ctx {
     list_offsets_request request;
     list_offsets_response response;
     ss::smp_service_group ssg;
+    std::vector<list_offset_topic> unauthorized_topics;
 
     list_offsets_ctx(
       request_context&& rctx,
       list_offsets_request&& request,
-      ss::smp_service_group ssg)
+      ss::smp_service_group ssg,
+      std::vector<list_offset_topic> unauthorized_topics)
       : rctx(std::move(rctx))
       , request(std::move(request))
-      , ssg(ssg) {}
+      , ssg(ssg)
+      , unauthorized_topics(std::move(unauthorized_topics)) {}
 };
 
 static ss::future<list_offset_partition_response> list_offsets_partition(
@@ -194,6 +197,28 @@ list_offsets_topics(list_offsets_ctx& octx) {
     return topics;
 }
 
+/*
+ * Prepare unauthorized error response for each unauthorized topic
+ */
+static void handle_unauthorized(list_offsets_ctx& octx) {
+    octx.response.data.topics.reserve(
+      octx.response.data.topics.size() + octx.unauthorized_topics.size());
+    for (auto& topic : octx.unauthorized_topics) {
+        std::vector<list_offset_partition_response> partitions;
+        partitions.reserve(topic.partitions.size());
+        for (auto& partition : topic.partitions) {
+            partitions.push_back(list_offset_partition_response(
+              list_offsets_response::make_partition(
+                partition.partition_index,
+                error_code::topic_authorization_failed)));
+        }
+        octx.response.data.topics.push_back(list_offset_topic_response{
+          .name = std::move(topic.name),
+          .partitions = std::move(partitions),
+        });
+    }
+}
+
 template<>
 ss::future<response_ptr>
 list_offsets_handler::handle(request_context ctx, ss::smp_service_group ssg) {
@@ -202,16 +227,31 @@ list_offsets_handler::handle(request_context ctx, ss::smp_service_group ssg) {
     request.compute_duplicate_topics();
     klog.trace("Handling request {}", request);
 
-    return ss::do_with(
-      list_offsets_ctx(std::move(ctx), std::move(request), ssg),
-      [](list_offsets_ctx& octx) {
-          auto topics = list_offsets_topics(octx);
-          return when_all_succeed(topics.begin(), topics.end())
-            .then([&octx](std::vector<list_offset_topic_response> topics) {
-                octx.response.data.topics = std::move(topics);
-                return octx.rctx.respond(std::move(octx.response));
-            });
+    auto unauthorized_it = std::partition(
+      request.data.topics.begin(),
+      request.data.topics.end(),
+      [&ctx](const list_offset_topic& topic) {
+          return ctx.authorized(acl_operation::describe, topic.name);
       });
+
+    std::vector<list_offset_topic> unauthorized_topics(
+      std::make_move_iterator(unauthorized_it),
+      std::make_move_iterator(request.data.topics.end()));
+
+    request.data.topics.erase(unauthorized_it, request.data.topics.end());
+
+    list_offsets_ctx octx(
+      std::move(ctx), std::move(request), ssg, std::move(unauthorized_topics));
+
+    return ss::do_with(std::move(octx), [](list_offsets_ctx& octx) {
+        auto topics = list_offsets_topics(octx);
+        return when_all_succeed(topics.begin(), topics.end())
+          .then([&octx](std::vector<list_offset_topic_response> topics) {
+              octx.response.data.topics = std::move(topics);
+              handle_unauthorized(octx);
+              return octx.rctx.respond(std::move(octx.response));
+          });
+    });
 }
 
 } // namespace kafka
