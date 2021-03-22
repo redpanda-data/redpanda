@@ -8,6 +8,7 @@ kindContainers:
 testDirs:
   - ./tests/e2e
 kindConfig: ./kind.yaml
+kindNodeCache: false
 commands:
   - command: docker volume prune
   - command: "./hack/install-cert-manager.sh"
