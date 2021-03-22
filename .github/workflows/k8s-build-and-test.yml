@@ -48,6 +48,7 @@ jobs:
               while true; do 
               df -h
               docker system df
+              docker volume ls
               sleep 15
               done &
               make e2e-tests
