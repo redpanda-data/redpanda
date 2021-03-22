@@ -15,8 +15,8 @@ For production or benchmarking, setup a [production deployment](/docs/production
 
 To get a cluster ready for streaming, either run a single docker container with Redpanda running or a cluster of 3 containers.
 
-> **_Note:_**
-> - You can also use [`rpk container`](/docs/guide-rpk-container) to run Redpanda in containers without having to interact with Docker at all.
+> **_Note:_** You can also use [`rpk container`](/docs/guide-rpk-container) to run Redpanda in containers
+    without having to interact with Docker at all.
 
 ### Single command for a 1-node cluster
 
