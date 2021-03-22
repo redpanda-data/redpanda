@@ -8,8 +8,13 @@
 # by the Apache License, Version 2.0
 
 name: K8S build and test
-on: [push, pull_request]
-
+on: 
+  push:
+    branches:
+      - dev
+  pull_request:
+    branches:
+      - dev
 jobs:
   test:
     runs-on: ubuntu-latest
