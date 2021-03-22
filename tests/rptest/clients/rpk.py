@@ -102,6 +102,10 @@ class RpkTool:
         ]
         return self._execute(cmd)
 
+    def wasm_gen(self, directory):
+        cmd = [self._rpk_binary(), 'wasm', 'generate', directory]
+        return self._execute(cmd)
+
     def _run_api(self, cmd, stdin=None, timeout=30):
         cmd = [
             self._rpk_binary(), "api", "--brokers",
