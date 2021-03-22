@@ -21,6 +21,11 @@ def get_source_topic(materialized_topic):
     return None if val is None else val[1]
 
 
+def get_dest_topic(materialized_topic):
+    val = mt_rgx.match(materialized_topic)
+    return None if val is None else val[2]
+
+
 def construct_materialized_topic(source, destination):
     def is_valid_kafka_topic(topic):
         if topic == "":

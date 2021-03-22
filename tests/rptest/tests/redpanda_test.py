@@ -50,8 +50,3 @@ class RedpandaTest(Test):
 
     def setUp(self):
         self.redpanda.start()
-
-    def resource_dir(self):
-        dir_path = os.path.dirname(os.path.realpath(__file__))
-        resource_dir_path = os.path.join(dir_path, "..", "resources")
-        return os.path.abspath(resource_dir_path)

@@ -26,6 +26,7 @@ RUN apt update && \
       default-jre \
       build-essential \
       curl \
+      npm \
       kafkacat && \
     rm -rf /var/lib/apt/lists/* && \
     echo 'PermitUserEnvironment yes' >> /etc/ssh/sshd_config
