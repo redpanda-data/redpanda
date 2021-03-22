@@ -8,6 +8,7 @@ kindContainers:
 testDirs:
   - ./tests/e2e-helm
 kindConfig: ./kind.yaml
+kindNodeCache: false
 commands:
   - command: "./hack/install-cert-manager.sh"
   - command: "kubectl apply -k ./config/crd"

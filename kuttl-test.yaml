@@ -8,10 +8,11 @@ kindContainers:
 testDirs:
   - ./tests/e2e
 kindConfig: ./kind.yaml
+kindNodeCache: false
 commands:
   - command: "./hack/install-cert-manager.sh"
   - command: "make deploy"
   - command: "./hack/wait-for-webhook-ready.sh"
 artifactsDir: tests/_e2e_artifacts
 timeout: 300
-parallel: 1
+parallel: 3
