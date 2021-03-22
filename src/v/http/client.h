@@ -17,17 +17,23 @@
 #include "http/iobuf_body.h"
 #include "http/logger.h"
 #include "http/probe.h"
+#include "rpc/backoff_policy.h"
 #include "rpc/transport.h"
 #include "rpc/types.h"
 #include "seastarx.h"
 
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/circular_buffer.hh>
+#include <seastar/core/deleter.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/iostream.hh>
+#include <seastar/core/lowres_clock.hh>
+#include <seastar/core/semaphore.hh>
+#include <seastar/core/sharded.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/temporary_buffer.hh>
 #include <seastar/core/timer.hh>
+#include <seastar/core/weak_ptr.hh>
 
 #include <boost/beast/core.hpp>
 #include <boost/beast/core/error.hpp>
@@ -38,11 +44,14 @@
 #include <boost/optional/optional.hpp>
 #include <boost/system/system_error.hpp>
 
+#include <chrono>
 #include <exception>
 #include <stdexcept>
 #include <string>
 
 namespace http {
+
+using namespace std::chrono_literals;
 
 using http_response
   = boost::beast::http::response<boost::beast::http::string_body>;
@@ -50,6 +59,13 @@ using http_request
   = boost::beast::http::request<boost::beast::http::string_body>;
 using http_serializer
   = boost::beast::http::request_serializer<boost::beast::http::string_body>;
+
+constexpr ss::lowres_clock::duration default_connect_timeout = 5s;
+
+enum class reconnect_result_t {
+    connected,
+    aborted,
+};
 
 /// Http client
 class client : protected rpc::base_transport {
@@ -69,7 +85,16 @@ public:
       const rpc::base_transport::configuration& cfg,
       const ss::abort_source& as);
 
-    ss::future<> shutdown();
+    // ss::future<> shutdown();
+    using rpc::base_transport::shutdown;
+    using rpc::base_transport::stop;
+
+    /// Return immediately if connected or make connection attempts
+    /// until success, timeout or error
+    ss::future<reconnect_result_t>
+    get_connected(ss::lowres_clock::duration timeout);
+
+    void fail_outstanding_futures() noexcept override;
 
     // Response state machine
     class response_stream final
@@ -174,7 +199,9 @@ public:
 
     // Make http_request, if the transport is not yet connected it will connect
     // first otherwise the future will resolve immediately.
-    ss::future<request_response_t> make_request(request_header&& header);
+    ss::future<request_response_t> make_request(
+      request_header&& header,
+      ss::lowres_clock::duration timeout = default_connect_timeout);
 
     /// Utility function that executes request with the body and returns
     /// stream. Returned future becomes ready when the body is sent.
@@ -184,9 +211,13 @@ public:
     /// \param input in an input stream that contains request body octets
     /// \param limits is a set of limitation for a query
     /// \returns response stream future
-    ss::future<response_stream_ref>
-    request(request_header&& header, ss::input_stream<char>& input);
-    ss::future<response_stream_ref> request(request_header&& header);
+    ss::future<response_stream_ref> request(
+      request_header&& header,
+      ss::input_stream<char>& input,
+      ss::lowres_clock::duration timeout = default_connect_timeout);
+    ss::future<response_stream_ref> request(
+      request_header&& header,
+      ss::lowres_clock::duration timeout = default_connect_timeout);
 
 private:
     /// Do it all private c-tor

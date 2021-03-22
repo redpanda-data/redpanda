@@ -366,7 +366,13 @@ client::client(const configuration& conf, const ss::abort_source& as)
   , _client(conf, as)
   , _probe(conf._probe) {}
 
-ss::future<> client::shutdown() { return _client.shutdown(); }
+ss::future<> client::stop() { return _client.stop(); }
+
+ss::future<> client::shutdown() {
+    _client.shutdown();
+    return ss::now();
+}
+
 ss::future<http::client::response_stream_ref>
 client::get_object(bucket_name const& name, object_key const& key) {
     auto header = _requestor.make_get_object_request(name, key);
@@ -497,6 +503,58 @@ client::delete_object(const bucket_name& bucket, const object_key& key) {
               return ss::now();
           });
       });
+}
+
+client_pool::client_pool(
+  size_t size, configuration conf, client_pool_overdraft_policy policy)
+  : _size(size)
+  , _config(std::move(conf))
+  , _policy(policy) {
+    init();
+}
+
+ss::future<> client_pool::stop() {
+    _as.request_abort();
+    return _gate.close();
+}
+
+/// \brief Acquire http client from the pool.
+///
+/// \note it's guaranteed that the client can only be acquired once
+///       before it gets released (release happens implicitly, when
+///       the lifetime of the pointer ends).
+/// \return client pointer (via future that can wait if all clients
+///         are in use)
+ss::future<client_pool::client_lease> client_pool::acquire() {
+    gate_guard guard(_gate);
+    if (_pool.empty()) {
+        if (_policy == client_pool_overdraft_policy::wait_if_empty) {
+            co_await _cvar.wait([this] { return !_pool.empty(); });
+        } else {
+            auto cl = ss::make_shared<client>(_config, _as);
+            _pool.emplace_back(std::move(cl));
+        }
+    }
+    auto client = _pool.back();
+    _pool.pop_back();
+    co_return client_lease{
+      .client = client,
+      .deleter = ss::make_deleter(
+        [this, client, g = std::move(guard)] { release(client); })};
+}
+size_t client_pool::size() const noexcept { return _pool.size(); }
+void client_pool::init() {
+    for (size_t i = 0; i < _size; i++) {
+        auto cl = ss::make_shared<client>(_config, _as);
+        _pool.emplace_back(std::move(cl));
+    }
+}
+void client_pool::release(ss::shared_ptr<client> leased) {
+    if (_pool.size() == _size) {
+        return;
+    }
+    _pool.emplace_back(std::move(leased));
+    _cvar.signal();
 }
 
 } // namespace s3
