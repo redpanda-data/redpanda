@@ -7,7 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-name: release
+name: helm release
 on:
   release:
     types: [published]
@@ -49,4 +49,4 @@ jobs:
 
     - name: Update index
       run: |
-        cr index -o $GITHUB_ACTOR -r redpanda -c https://charts.vectorized.io/ -i index.yaml -p src/go/k8s/helm-chart/charts -t ${{ secrets.GITHUB_TOKEN }} --push --release-name-template "{{ .Version }}"
+        cr index -o vectorizedio -r redpanda -c https://charts.vectorized.io/ -i index.yaml -p src/go/k8s/helm-chart/charts -t ${{ secrets.GITHUB_TOKEN }} --push --release-name-template "{{ .Version }}"
