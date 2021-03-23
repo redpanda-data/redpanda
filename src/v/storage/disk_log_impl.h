@@ -76,6 +76,8 @@ public:
     const segment_set& segments() const { return _segs; }
     size_t bytes_left_before_roll() const;
 
+    size_t size_bytes() const override { return _probe.partition_size(); }
+
 private:
     friend class disk_log_appender; // for multi-term appends
     friend class disk_log_builder;  // for tests

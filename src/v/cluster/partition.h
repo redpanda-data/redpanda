@@ -135,6 +135,8 @@ public:
         return _id_allocator_stm;
     }
 
+    size_t size_bytes() const { return _raft->log().size_bytes(); }
+
 private:
     friend partition_manager;
 
