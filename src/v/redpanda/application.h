@@ -16,6 +16,7 @@
 #include "cluster/fwd.h"
 #include "coproc/event_listener.h"
 #include "coproc/pacemaker.h"
+#include "kafka/security/authorizer.h"
 #include "kafka/security/credential_store.h"
 #include "pandaproxy/configuration.h"
 #include "pandaproxy/fwd.h"
@@ -78,6 +79,7 @@ public:
     ss::sharded<cluster::id_allocator_frontend> id_allocator_frontend;
     ss::sharded<kafka::credential_store> credentials;
     ss::sharded<archival::scheduler_service> archival_scheduler;
+    ss::sharded<kafka::authorizer> authorizer;
 
 private:
     using deferred_actions

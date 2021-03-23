@@ -146,6 +146,11 @@ public:
     sasl_server& sasl() { return _conn->sasl(); }
     credential_store& credentials() { return _conn->server().credentials(); }
 
+    template<typename T>
+    bool authorized(acl_operation operation, const T& name) {
+        return _conn->authorized(operation, name);
+    }
+
 private:
     ss::lw_shared_ptr<connection_context> _conn;
     request_header _header;

@@ -469,6 +469,9 @@ void application::wire_up_redpanda_services() {
     syschecks::systemd_message("Creating kafka credential store").get();
     construct_service(credentials).get();
 
+    syschecks::systemd_message("Creating kafka authorizer").get();
+    construct_service(authorizer).get();
+
     /*
      * Add in the static scram credential for testing.
      * - sasl and developer mode needs to be enabled
@@ -743,7 +746,8 @@ void application::start_redpanda() {
             coordinator_ntp_mapper,
             fetch_session_cache,
             std::ref(id_allocator_frontend),
-            credentials);
+            credentials,
+            authorizer);
           s.set_protocol(std::move(proto));
       })
       .get();

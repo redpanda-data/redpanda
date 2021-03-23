@@ -78,7 +78,8 @@ get_request_context(kafka::protocol& proto, ss::input_stream<char>&& input) {
                             = ss::make_lw_shared<kafka::connection_context>(
                               proto,
                               rpc::server::resources(nullptr, nullptr),
-                              std::move(sasl));
+                              std::move(sasl),
+                              false);
 
                           return kafka::request_context(
                             conn,
