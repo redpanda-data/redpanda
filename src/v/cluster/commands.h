@@ -62,6 +62,7 @@ static constexpr int8_t create_topic_cmd_type = 0;
 static constexpr int8_t delete_topic_cmd_type = 1;
 static constexpr int8_t move_partition_replicas_cmd_type = 2;
 static constexpr int8_t finish_moving_partition_replicas_cmd_type = 3;
+static constexpr int8_t update_topic_properties_cmd_type = 4;
 
 using create_topic_cmd = controller_command<
   model::topic_namespace,
@@ -85,6 +86,12 @@ using finish_moving_partition_replicas_cmd = controller_command<
   model::ntp,
   std::vector<model::broker_shard>,
   finish_moving_partition_replicas_cmd_type,
+  topic_batch_type()>;
+
+using update_topic_properties_cmd = controller_command<
+  model::topic_namespace,
+  incremental_topic_updates,
+  update_topic_properties_cmd_type,
   topic_batch_type()>;
 
 // typelist utils

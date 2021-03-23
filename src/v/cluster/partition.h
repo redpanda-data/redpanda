@@ -136,6 +136,7 @@ public:
     }
 
     size_t size_bytes() const { return _raft->log().size_bytes(); }
+    ss::future<> update_configuration(topic_properties);
 
 private:
     friend partition_manager;

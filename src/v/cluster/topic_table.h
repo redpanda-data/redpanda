@@ -33,7 +33,7 @@ namespace cluster {
 ///
 // delta propagated to backend
 struct topic_table_delta {
-    enum class op_type { add, del, update, update_finished };
+    enum class op_type { add, del, update, update_finished, update_properties };
 
     topic_table_delta(
       model::ntp, cluster::partition_assignment, model::offset, op_type);
@@ -81,7 +81,8 @@ public:
       create_topic_cmd,
       delete_topic_cmd,
       move_partition_replicas_cmd,
-      finish_moving_partition_replicas_cmd>{};
+      finish_moving_partition_replicas_cmd,
+      update_topic_properties_cmd>{};
 
     /// State machine applies
     ss::future<std::error_code> apply(create_topic_cmd, model::offset);
@@ -90,7 +91,8 @@ public:
       apply(move_partition_replicas_cmd, model::offset);
     ss::future<std::error_code>
       apply(finish_moving_partition_replicas_cmd, model::offset);
-
+    ss::future<std::error_code>
+      apply(update_topic_properties_cmd, model::offset);
     ss::future<> stop();
 
     /// Delta API

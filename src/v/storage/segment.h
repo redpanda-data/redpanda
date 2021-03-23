@@ -104,6 +104,7 @@ public:
     bool is_closed() const;
     bool has_compaction_index() const;
     void mark_as_compacted_segment();
+    void unmark_as_compacted_segment();
     bool is_compacted_segment() const;
     void mark_as_finished_self_compaction();
     bool finished_self_compaction() const;
@@ -264,6 +265,9 @@ inline bool segment::has_compaction_index() const {
 }
 inline void segment::mark_as_compacted_segment() {
     _flags |= bitflags::is_compacted_segment;
+}
+inline void segment::unmark_as_compacted_segment() {
+    _flags &= ~bitflags::is_compacted_segment;
 }
 inline bool segment::is_compacted_segment() const {
     return (_flags & bitflags::is_compacted_segment)

@@ -81,11 +81,14 @@ public:
         }
 
         virtual size_t size_bytes() const = 0;
+        virtual ss::future<>
+          update_configuration(ntp_config::default_overrides) = 0;
 
     private:
         ntp_config _config;
 
     protected:
+        ntp_config& mutable_config() { return _config; }
         ss::lw_shared_ptr<storage::stm_manager> _stm_manager;
     };
 
@@ -169,6 +172,10 @@ public:
     void set_collectible_offset(model::offset o) {
         return _impl->set_collectible_offset(o);
     };
+
+    ss::future<> update_configuration(ntp_config::default_overrides o) {
+        return _impl->update_configuration(o);
+    }
 
     std::ostream& print(std::ostream& o) const { return _impl->print(o); }
 

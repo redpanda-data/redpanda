@@ -27,6 +27,8 @@
 #include "rpc/errc.h"
 #include "rpc/types.h"
 
+#include <seastar/core/coroutine.hh>
+
 #include <regex>
 
 namespace cluster {
@@ -78,6 +80,23 @@ ss::future<std::vector<topic_result>> topics_frontend::create_topics(
       });
 }
 
+ss::future<std::vector<topic_result>> topics_frontend::update_topic_properties(
+  std::vector<topic_properties_update> updates,
+  model::timeout_clock::time_point timeout) {
+    auto result = co_await _stm.invoke_on(
+      controller_stm_shard, [timeout](controller_stm& stm) {
+          return stm.quorum_write_empty_batch(timeout);
+      });
+
+    if (!result) {
+        co_return create_topic_results(updates, errc::not_leader_controller);
+    }
+    co_return co_await ssx::parallel_transform(
+      std::move(updates), [this, timeout](topic_properties_update update) {
+          return do_update_topic_properties(std::move(update), timeout);
+      });
+}
+
 cluster::errc map_errc(std::error_code ec) {
     if (ec == errc::success) {
         return errc::success;
@@ -109,6 +128,24 @@ cluster::errc map_errc(std::error_code ec) {
     }
 
     return errc::replication_error;
+}
+
+ss::future<topic_result> topics_frontend::do_update_topic_properties(
+  topic_properties_update update, model::timeout_clock::time_point timeout) {
+    update_topic_properties_cmd cmd(update.tp_ns, update.properties);
+    try {
+        auto ec = co_await replicate_and_wait(std::move(cmd), timeout);
+        co_return topic_result(std::move(update.tp_ns), map_errc(ec));
+    } catch (...) {
+        vlog(
+          clusterlog.warn,
+          "unable to update {} configuration properties - {}",
+          update.tp_ns,
+          std::current_exception());
+
+        co_return topic_result(
+          std::move(update.tp_ns), errc::replication_error);
+    }
 }
 
 template<typename Cmd>
