@@ -9,11 +9,29 @@
 
 import re
 
+# Regex for materialized topics
+mt_rgx = re.compile("(.*)\\.\\$(.*)\\$")
 
-def construct_materialized_topic(source, destination):
-    return f"{source}.${destination}$"
+# Regex for normal kafka topics
+topic_rgx = re.compile("^([a-zA-Z0-9\\.\\_\\-])*$")
 
 
 def get_source_topic(materialized_topic):
-    val = re.search("(.*)\.\$(.*)\$", materialized_topic)
+    val = mt_rgx.match(materialized_topic)
     return None if val is None else val[1]
+
+
+def construct_materialized_topic(source, destination):
+    def is_valid_kafka_topic(topic):
+        if topic == "":
+            return False
+        elif topic == "." or topic == "..":
+            return False
+        elif len(topic) > 249:
+            return False
+        elif topic_rgx.match(topic) is None:
+            return False
+        return True
+
+    return f"{source}.${destination}$" if is_valid_kafka_topic(
+        source) and is_valid_kafka_topic(destination) else None
