@@ -120,3 +120,25 @@ tasks:
         --cache-from docker.io/vectorized/redpanda-test-node:cache \
         --file '{{.SRC_DIR}}/tests/docker/Dockerfile' \
         '{{.SRC_DIR}}/tests/'
+
+  start-compose-cluster:
+    desc: deploy a cluster using docker-compose
+    deps:
+    - :dev:install-docker-compose
+    - :dev:start-podman-socket-service
+    - build-test-docker-image
+    dir: '{{.SRC_DIR}}/tests/docker/'
+    env:
+      BUILD_ROOT: '{{.BUILD_ROOT}}'
+    cmds:
+    - |
+      PATH={{.BUILD_ROOT}}/bin/:$PATH
+      docker-compose up --detach
+
+  stop-compose-cluster:
+    desc: stop the compose cluster
+    dir: '{{.SRC_DIR}}/tests/docker/'
+    cmds:
+    - |
+      PATH={{.BUILD_ROOT}}/bin/:$PATH
+      docker-compose down
