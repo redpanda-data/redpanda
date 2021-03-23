@@ -29,13 +29,11 @@ using partition_dir_set
   = absl::flat_hash_map<model::topic, std::vector<describe_log_dirs_partition>>;
 
 static describe_log_dirs_partition describe_partition(cluster::partition& p) {
-    // offset_lag is calculated in kafka as std::max(highwatermark -
-    // log_end_offset, 0) which to me looks like it should always be 0 given
-    // that afaict highwatermark has an upper bound of the end of the log.
     return describe_log_dirs_partition{
       .partition_index = p.ntp().tp.partition(),
       .partition_size = static_cast<int64_t>(p.size_bytes()),
-      .offset_lag = 0,
+      .offset_lag = std::max(
+        p.high_watermark()() - p.dirty_offset()(), int64_t(0)),
       .is_future_key = false,
     };
 }
