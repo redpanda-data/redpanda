@@ -135,6 +135,38 @@ tasks:
       PATH={{.BUILD_ROOT}}/bin/:$PATH
       docker-compose up --detach
 
+  run-ducktape-tests:
+    desc: run ducktape tests
+    deps:
+    - set-aio-max
+    - start-compose-cluster
+    - build-java-test-programs-in-docker
+    vars:
+      DUCKTAPE_ARGS: '{{default "--exit-first tests/rptest/test_suite_quick.yml" .DUCKTAPE_ARGS}}'
+      RP_INSTALL_DIR_DEFAULT: '{{.BUILD_DIR}}'
+      RP_INSTALL_DIR: '{{default .RP_INSTALL_DIR_DEFAULT .RP_INSTALL_DIR}}'
+    env:
+      CI: "1"
+    ignore_error: true
+    cmds:
+    - mkdir -p '{{.BUILD_ROOT}}/ducktape/config/metadata'
+    - docker run --rm --privileged
+        --name ducktape
+        --network redpanda
+        --volume '{{.BUILD_ROOT}}/ducktape/config/:/root/.ducktape/'
+        --volume '{{.BUILD_ROOT}}/ducktape/:/build/tests/'
+        --volume '{{.BUILD_ROOT}}:{{.BUILD_ROOT}}'
+        --volume '{{.SRC_DIR}}/tests/:/root/tests/'
+        --volume '{{.SRC_DIR}}/tests/docker/ducktape_cluster.json:/cluster.json'
+        --entrypoint ducktape
+        --workdir /root
+        vectorized/redpanda-test-node
+          --cluster=ducktape.cluster.json.JsonCluster
+          --cluster-file=/cluster.json
+          --results-root=/build/tests/results
+          --globals='{"rp_install_path_root":"{{.RP_INSTALL_DIR}}","v_build_dir":"{{.BUILD_ROOT}}"}'
+          {{.DUCKTAPE_ARGS}}
+
   stop-compose-cluster:
     desc: stop the compose cluster
     dir: '{{.SRC_DIR}}/tests/docker/'
