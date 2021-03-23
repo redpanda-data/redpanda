@@ -99,6 +99,10 @@ public:
         return raft::details::next_offset(_raft->last_visible_index());
     }
 
+    model::offset dirty_offset() const {
+        return _raft->log().offsets().dirty_offset;
+    }
+
     const model::ntp& ntp() const { return _raft->ntp(); }
 
     ss::future<std::optional<storage::timequery_result>>
