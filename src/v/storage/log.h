@@ -80,6 +80,8 @@ public:
             return _stm_manager;
         }
 
+        virtual size_t size_bytes() const = 0;
+
     private:
         ntp_config _config;
 
@@ -169,6 +171,8 @@ public:
     };
 
     std::ostream& print(std::ostream& o) const { return _impl->print(o); }
+
+    size_t size_bytes() const { return _impl->size_bytes(); }
 
     impl* get_impl() const { return _impl.get(); }
 

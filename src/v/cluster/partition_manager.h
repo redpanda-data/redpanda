@@ -25,6 +25,9 @@
 namespace cluster {
 class partition_manager {
 public:
+    using ntp_table_container
+      = absl::flat_hash_map<model::ntp, ss::lw_shared_ptr<partition>>;
+
     partition_manager(
       ss::sharded<storage::api>&, ss::sharded<raft::group_manager>&);
 
@@ -97,6 +100,15 @@ public:
         _manage_watchers.unregister_notify(id);
     }
 
+    /*
+     * read-only interface to partitions.
+     *
+     * note that users of this interface must take care not to hold iterators
+     * across scheduling events as the underlying table may be modified and
+     * invalidate iterators.
+     */
+    const ntp_table_container& partitions() const { return _ntp_table; }
+
 private:
     storage::api& _storage;
     /// used to wait for concurrent recoveries
@@ -104,7 +116,7 @@ private:
 
     ntp_callbacks<manage_cb_t> _manage_watchers;
     // XXX use intrusive containers here
-    absl::flat_hash_map<model::ntp, ss::lw_shared_ptr<partition>> _ntp_table;
+    ntp_table_container _ntp_table;
     absl::flat_hash_map<raft::group_id, ss::lw_shared_ptr<partition>>
       _raft_table;
 

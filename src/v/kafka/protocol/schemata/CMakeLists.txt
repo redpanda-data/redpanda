@@ -42,7 +42,9 @@ set(schemata
   delete_groups_request.json
   delete_groups_response.json
   describe_acls_request.json
-  describe_acls_response.json)
+  describe_acls_response.json
+  describe_log_dirs_request.json
+  describe_log_dirs_response.json)
 
 set(srcs)
 foreach(schema ${schemata})

@@ -365,6 +365,17 @@ struct mem_log_impl final : log::impl {
           .dirty_offset_term = e.term(),
           .last_term_start_offset = last_term_base_offset};
     }
+
+    size_t size_bytes() const override {
+        return std::accumulate(
+          _data.cbegin(),
+          _data.cend(),
+          size_t(0),
+          [](size_t acc, const model::record_batch& b) {
+              return acc + b.size_bytes();
+          });
+    }
+
     struct eviction_monitor {
         ss::promise<model::offset> promise;
         ss::abort_source::subscription subscription;
