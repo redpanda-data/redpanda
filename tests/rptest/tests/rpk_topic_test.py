@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 from ducktape.utils.util import wait_until
+from ducktape.mark.resource import cluster
 
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.rpk import RpkTool
@@ -24,6 +25,7 @@ class RpkToolTest(RedpandaTest):
         self._ctx = ctx
         self._rpk = RpkTool(self.redpanda)
 
+    @cluster(nodes=3)
     def test_create_topic(self):
         self._rpk.create_topic("topic")
 
@@ -32,6 +34,7 @@ class RpkToolTest(RedpandaTest):
                    backoff_sec=1,
                    err_msg="Topic never appeared.")
 
+    @cluster(nodes=3)
     def test_produce(self):
         topic = 'topic'
         message = 'message'
@@ -47,7 +50,8 @@ class RpkToolTest(RedpandaTest):
         c.start()
 
         def cond():
-            return len(c.messages) == 1 \
+            return c.messages is not None \
+                and len(c.messages) == 1 \
                 and c.messages[0]['message'] == message \
                 and c.messages[0]['key'] == key \
                 and c.messages[0]['headers'] == [
@@ -55,10 +59,11 @@ class RpkToolTest(RedpandaTest):
                 ]
 
         wait_until(cond,
-                   timeout_sec=30,
-                   backoff_sec=2,
+                   timeout_sec=120,
+                   backoff_sec=30,
                    err_msg="Message didn't appear.")
 
+    @cluster(nodes=3)
     def test_consume_as_group(self):
         topic = 'topic_group'
         message = 'message'
@@ -84,22 +89,20 @@ class RpkToolTest(RedpandaTest):
                 ]
 
         wait_until(cond,
-                   timeout_sec=30,
-                   backoff_sec=8,
+                   timeout_sec=120,
+                   backoff_sec=15,
                    err_msg="Message didn't appear.")
 
+    @cluster(nodes=3)
     def test_consume_newest(self):
         topic = 'topic_newest'
-        message = 'message'
+        message = 'newest message'
         key = 'key'
         h_key = 'h_key'
         h_value = 'h_value'
         headers = [h_key + ':' + h_value]
 
         self._rpk.create_topic(topic)
-        # Gotta sleep to make sure the topic is replicated and the
-        # consumer doesn't fail.
-        time.sleep(5)
 
         c = RpkConsumer(self._ctx, self.redpanda, topic, offset='newest')
         c.start()
@@ -116,10 +119,11 @@ class RpkToolTest(RedpandaTest):
                 ]
 
         wait_until(cond,
-                   timeout_sec=30,
-                   backoff_sec=8,
+                   timeout_sec=150,
+                   backoff_sec=30,
                    err_msg="Message didn't appear.")
 
+    @cluster(nodes=3)
     def test_consume_oldest(self):
         topic = 'topic'
 
@@ -127,6 +131,8 @@ class RpkToolTest(RedpandaTest):
         msgs = {}
         for i in range(n):
             msgs['key-' + str(i)] = 'message-' + str(i)
+
+        self._rpk.create_topic(topic)
 
         # Produce messages
         for k in msgs:
@@ -151,10 +157,11 @@ class RpkToolTest(RedpandaTest):
             return True
 
         wait_until(cond,
-                   timeout_sec=30,
-                   backoff_sec=8,
+                   timeout_sec=60,
+                   backoff_sec=20,
                    err_msg="Message didn't appear.")
 
+    @cluster(nodes=3)
     def test_consume_from_partition(self):
         topic = 'topic_partition'
 
@@ -194,6 +201,6 @@ class RpkToolTest(RedpandaTest):
             return True
 
         wait_until(cond,
-                   timeout_sec=10,
-                   backoff_sec=1,
+                   timeout_sec=15,
+                   backoff_sec=5,
                    err_msg="Message didn't appear.")

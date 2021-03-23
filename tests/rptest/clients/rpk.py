@@ -154,6 +154,10 @@ class RpkTool:
             f = subprocess.PIPE
 
             if stdin:
+                if isinstance(stdin, str):
+                    # Convert the string msg to bytes
+                    stdin = stdin.encode()
+
                 f = tempfile.TemporaryFile()
                 f.write(stdin)
                 f.seek(0)
