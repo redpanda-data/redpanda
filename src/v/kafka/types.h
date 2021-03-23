@@ -100,6 +100,15 @@ enum class config_resource_type : int8_t {
 
 std::ostream& operator<<(std::ostream& os, config_resource_type);
 
+enum class config_resource_operation : int8_t {
+    set = 0,
+    remove = 1,
+    append = 2,
+    subtract = 3,
+};
+
+std::ostream& operator<<(std::ostream& os, config_resource_operation);
+
 /*
  * From where config values are sourced. For instance, a value might exist
  * because it is a default or because it was an override at the broker level.
