@@ -115,6 +115,7 @@ func (m *manager) ReadOrGenerate(path string) (*Config, error) {
 		"Couldn't find config file at %s. Generating it.",
 		path,
 	)
+	m.v.Set("config_file", path)
 	err = m.v.WriteConfigAs(path)
 	if err != nil {
 		return nil, fmt.Errorf(
