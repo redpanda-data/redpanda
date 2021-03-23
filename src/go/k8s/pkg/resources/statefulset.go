@@ -202,6 +202,8 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 	var clusterLabels = labels.ForCluster(r.pandaCluster)
 
 	pvc := preparePVCResource(datadirName, r.pandaCluster.Namespace, r.pandaCluster.Spec.Storage, clusterLabels)
+	tolerations := r.pandaCluster.Spec.Tolerations
+	nodeSelector := r.pandaCluster.Spec.NodeSelector
 
 	ss := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
@@ -393,6 +395,8 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 							}, r.secretVolumeMounts()...),
 						},
 					},
+					Tolerations:  tolerations,
+					NodeSelector: nodeSelector,
 					Affinity: &corev1.Affinity{
 						PodAntiAffinity: &corev1.PodAntiAffinity{
 							RequiredDuringSchedulingIgnoredDuringExecution: []corev1.PodAffinityTerm{

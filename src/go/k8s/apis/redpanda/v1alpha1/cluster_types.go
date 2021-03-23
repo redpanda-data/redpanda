@@ -36,6 +36,11 @@ type ClusterSpec struct {
 	Resources corev1.ResourceRequirements `json:"resources"`
 	// Configuration represent redpanda specific configuration
 	Configuration RedpandaConfig `json:"configuration,omitempty"`
+	// If specified, Redpanda Pod tolerations
+	Tolerations []corev1.Toleration `json:"tolerations,omitempty"`
+	// If specified, Redpanda Pod node selectors. For reference please visit
+	// https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node
+	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
 
 	// ExternalConnectivity enables user to expose Redpanda
 	// nodes outside of a Kubernetes cluster. For more
