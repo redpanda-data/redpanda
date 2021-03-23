@@ -21,23 +21,23 @@ class WasmIdentityTest(WasmTest):
                         replication_factor=3,
                         cleanup_policy=TopicSpec.CLEANUP_DELETE), )
 
-    def __init__(self, test_context):
+    def __init__(self, test_context, num_records=1024, record_size=1024):
         super(WasmIdentityTest, self).__init__(test_context, extra_rp_conf={})
+        self._num_records = num_records
+        self._record_size = record_size
+        assert len(self.topics) >= 1
 
     def wasm_test_plan(self):
         input_topic = self.topics[0].name
         mapped_topic = "myoutputtopic"
         output_topic = construct_materialized_topic(input_topic, mapped_topic)
 
-        num_records = 1024
-        record_size = 1024
-
         # The identity transform produces 1 identital record onto a topic for
         # each input record. The result should be a 1 to 1 mapping between a
         # source and destination topic, they should be identical when compared
         basic_script = WasmScript(
-            inputs=[(input_topic, (num_records, record_size))],
-            outputs=[(output_topic, num_records)],
+            inputs=[(input_topic, (self._num_records, self._record_size))],
+            outputs=[(output_topic, self._num_records)],
             script=WasmTemplateRepository.IDENTITY_TRANSFORM)
 
         return [basic_script]
@@ -46,7 +46,22 @@ class WasmIdentityTest(WasmTest):
     def ensure_identical_output_test(self):
         input_results, output_results = self._start(self.topics,
                                                     self.wasm_test_plan())
-        assert input_results.num_records() == 1024
+        assert input_results.num_records() == self._num_records
         if input_results != output_results:
             raise Exception(
                 "Expected all records across topics to be equivalent")
+
+
+class WasmLargeDataSetTest(WasmIdentityTest):
+    topics = (TopicSpec(partition_count=3,
+                        replication_factor=3,
+                        cleanup_policy=TopicSpec.CLEANUP_DELETE), )
+
+    def __init__(self, test_context):
+        # 250,000 * 1024b ~ 1/4GB test
+        super(WasmLargeDataSetTest, self).__init__(test_context,
+                                                   num_records=250000,
+                                                   record_size=1024)
+
+    def wasm_test_timeout(self):
+        return (300, 3)
