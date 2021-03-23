@@ -81,7 +81,8 @@ tm_stm::save_tx(model::term_id term, tm_transaction tx) {
         co_return tm_stm::op_status::unknown;
     }
 
-    if (!co_await sync(model::offset(r.value().last_offset()), _sync_timeout)) {
+    if (!co_await wait_no_throw(
+          model::offset(r.value().last_offset()), _sync_timeout)) {
         co_return tm_stm::op_status::unknown;
     }
 
@@ -245,7 +246,8 @@ ss::future<tm_stm::op_status> tm_stm::register_new_producer(
         co_return tm_stm::op_status::unknown;
     }
 
-    if (!co_await sync(model::offset(r.value().last_offset()), _sync_timeout)) {
+    if (!co_await wait_no_throw(
+          model::offset(r.value().last_offset()), _sync_timeout)) {
         co_return tm_stm::op_status::unknown;
     }
 

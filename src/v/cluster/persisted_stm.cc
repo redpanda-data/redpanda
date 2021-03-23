@@ -201,7 +201,7 @@ ss::future<bool> persisted_stm::sync(model::timeout_clock::duration timeout) {
       });
 }
 
-ss::future<bool> persisted_stm::sync(
+ss::future<bool> persisted_stm::wait_no_throw(
   model::offset offset, model::timeout_clock::duration timeout) {
     auto deadline = model::timeout_clock::now() + timeout;
     return wait(offset, deadline)
