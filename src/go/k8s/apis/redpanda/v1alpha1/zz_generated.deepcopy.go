@@ -14,7 +14,8 @@
 package v1alpha1
 
 import (
-	"github.com/jetstack/cert-manager/pkg/apis/meta/v1"
+	metav1 "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
+	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
@@ -87,6 +88,20 @@ func (in *ClusterSpec) DeepCopyInto(out *ClusterSpec) {
 	}
 	in.Resources.DeepCopyInto(&out.Resources)
 	in.Configuration.DeepCopyInto(&out.Configuration)
+	if in.Tolerations != nil {
+		in, out := &in.Tolerations, &out.Tolerations
+		*out = make([]v1.Toleration, len(*in))
+		for i := range *in {
+			(*in)[i].DeepCopyInto(&(*out)[i])
+		}
+	}
+	if in.NodeSelector != nil {
+		in, out := &in.NodeSelector, &out.NodeSelector
+		*out = make(map[string]string, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val
+		}
+	}
 	out.ExternalConnectivity = in.ExternalConnectivity
 	in.Storage.DeepCopyInto(&out.Storage)
 }
@@ -212,7 +227,7 @@ func (in *TLSConfig) DeepCopyInto(out *TLSConfig) {
 	*out = *in
 	if in.IssuerRef != nil {
 		in, out := &in.IssuerRef, &out.IssuerRef
-		*out = new(v1.ObjectReference)
+		*out = new(metav1.ObjectReference)
 		**out = **in
 	}
 }
