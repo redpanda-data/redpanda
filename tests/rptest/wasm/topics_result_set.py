@@ -7,7 +7,7 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-from rptest.wasm.topic import get_source_topic
+from rptest.wasm.topic import get_source_topic, is_materialized_topic
 
 from functools import reduce
 
@@ -69,26 +69,33 @@ class TopicsResultSet:
             else:
                 rs += records
 
-    def __eq__(self, other):
-        def strip_topic(bkr):
-            bkr.topic = None
-            return bkr
 
-        if self.num_records() != other.num_records():
+def materialized_result_set_compare(oset, materialized_set):
+    """
+    Compares the actual data (keys, values) between two result sets. 'oset'
+    must contain normal topics, while 'materaizlied_set' contains
+    materialized_topics
+    """
+    if len(oset.rset.keys()) != len(materialized_set.rset.keys()):
+        return False
+    if oset.num_records() != materialized_set.num_records():
+        return False
+
+    def strip_topic(bkr):
+        bkr.topic = None
+        return bkr
+
+    for tp, records in materialized_set.rset.items():
+        if not is_materialized_topic(tp.topic):
+            raise Exception(
+                "'materialized_set' must contain only materialized topics")
+        input_data = oset.rset.get(
+            TopicPartition(topic=get_source_topic(tp.topic),
+                           partition=tp.partition))
+        if input_data is None:
             return False
-
-        for tp, records in other.rset.items():
-            src_topic = get_source_topic(tp.topic)
-            src_partition = tp.partition
-            input_data = self.rset.get(
-                TopicPartition(topic=src_topic, partition=src_partition))
-            if input_data is None:
-                return False
-            mat_records = [strip_topic(x) for x in records]
-            src_recs = [strip_topic(x) for x in input_data]
-            if mat_records != src_recs:
-                return False
-        return True
-
-    def __ne__(self, other):
-        return not (self == other)
+        mat_records = [strip_topic(x) for x in records]
+        src_recs = [strip_topic(x) for x in input_data]
+        if mat_records != src_recs:
+            return False
+    return True
