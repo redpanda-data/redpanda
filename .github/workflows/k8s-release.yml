@@ -7,13 +7,43 @@
 # the Business Source License, use of this software will be governed
 # by the Apache License, Version 2.0
 
-name: helm release
+name: k8s operator and helm release
 on:
   release:
     types: [published]
 
 jobs:
-  release:
+  publish-k8s-operator-configurator-images:
+    runs-on: ubuntu-latest
+
+    steps:
+
+    - name: Check out code
+      uses: actions/checkout@v2
+
+    - name: Get tag name (if any)
+      run: echo "TAG_NAME=${{ github.event.release.tag_name }}" >> $GITHUB_ENV
+
+    - name: Build and tag release images
+      working-directory: src/go/k8s/
+      shell: bash
+      run: |
+        make docker-build
+        make docker-build-configurator
+        make docker-tag-release
+
+    - name: Login to dockerhub
+      uses: docker/login-action@v1
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    - name: Push release image to dockerhub
+      working-directory: src/go/k8s/
+      shell: bash
+      run: make docker-push-release
+
+  helm-release:
     runs-on: ubuntu-20.04
     container: quay.io/helmpack/chart-releaser:v1.2.0
     steps:
