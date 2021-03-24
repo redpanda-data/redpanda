@@ -113,6 +113,17 @@ sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule require
         self._redpanda.logger.debug("Describe brokers config result: %s", res)
         return res
 
+    def alter_topic_config(self, topic, configuration_map):
+        self._redpanda.logger.debug("Altering topic %s configuration with %s",
+                                    topic, configuration_map)
+        args = ["--topic", topic, "--alter"]
+        args.append("--add-config")
+        args.append(",".join(
+            map(lambda item: f"{item[0]}={item[1]}",
+                configuration_map.items())))
+
+        return self._run("kafka-configs.sh", args)
+
     def produce(self,
                 topic,
                 num_records,
