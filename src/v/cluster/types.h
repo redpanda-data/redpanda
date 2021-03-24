@@ -208,6 +208,14 @@ struct finish_partition_update_reply {
     cluster::errc result;
 };
 
+struct update_topic_properties_request {
+    std::vector<topic_properties_update> updates;
+};
+
+struct update_topic_properties_reply {
+    std::vector<topic_result> results;
+};
+
 template<typename T>
 struct patch {
     std::vector<T> additions;
@@ -315,6 +323,12 @@ template<>
 struct adl<cluster::configuration_invariants> {
     void to(iobuf&, cluster::configuration_invariants&&);
     cluster::configuration_invariants from(iobuf_parser&);
+};
+
+template<>
+struct adl<cluster::topic_properties_update> {
+    void to(iobuf&, cluster::topic_properties_update&&);
+    cluster::topic_properties_update from(iobuf_parser&);
 };
 
 } // namespace reflection
