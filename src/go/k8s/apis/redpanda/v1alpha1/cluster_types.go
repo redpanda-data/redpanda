@@ -164,6 +164,10 @@ type TLSConfig struct {
 	// is not enough and you need to have a verifiable chain with a proper CA
 	// certificate.
 	IssuerRef *cmmeta.ObjectReference `json:"issuerRef,omitempty"`
+	// If provided, operator uses certificate in this secret instead of
+	// issuing its own node certificate. The secret is expected to provide
+	// the following keys: 'ca.crt', 'tls.key' and 'tls.crt'
+	NodeSecretRef *corev1.ObjectReference `json:"nodeSecretRef,omitempty"`
 	// Enables two-way verification on the server side. If enabled, all Kafka
 	// API clients are required to have a valid client certificate.
 	RequireClientAuth bool `json:"requireClientAuth,omitempty"`
