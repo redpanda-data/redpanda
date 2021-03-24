@@ -62,8 +62,20 @@ func (r *NodePortServiceResource) Ensure(ctx context.Context) error {
 		return fmt.Errorf("unable to construct object: %w", err)
 	}
 
-	_, err = CreateIfNotExists(ctx, r, obj, r.logger)
-	return err
+	created, err := CreateIfNotExists(ctx, r, obj, r.logger)
+	if err != nil || created {
+		return err
+	}
+	var svc corev1.Service
+	err = r.Get(ctx, r.Key(), &svc)
+	if err != nil {
+		return fmt.Errorf("error while fetching Service resource: %w", err)
+	}
+	updatedService := obj.(*corev1.Service)
+	// this needs to be set to the existing otherwise the update will try to
+	// remove this field which is immutable
+	updatedService.Spec.ClusterIP = svc.Spec.ClusterIP
+	return Update(ctx, &svc, obj, r.Client, r.logger)
 }
 
 // obj returns resource managed client.Object

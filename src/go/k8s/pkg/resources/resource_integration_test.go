@@ -173,3 +173,48 @@ func TestEnsure_ConfigMap(t *testing.T) {
 		t.Fatalf("expecting configmap updated but got %v", data)
 	}
 }
+
+func TestEnsure_NodePortService(t *testing.T) {
+	cluster := pandaCluster()
+	cluster = cluster.DeepCopy()
+	cluster.Name = "ensure-npsvc-integration-cluster"
+	cluster.Spec.ExternalConnectivity.Enabled = true
+
+	svc := res.NewNodePortService(
+		c,
+		cluster,
+		scheme.Scheme,
+		ctrl.Log.WithName("test"))
+
+	err := svc.Ensure(context.Background())
+	assert.NoError(t, err)
+
+	actual := &corev1.Service{}
+	err = c.Get(context.Background(), svc.Key(), actual)
+	assert.NoError(t, err)
+	originalResourceVersion := actual.ResourceVersion
+
+	// calling ensure for second time to see the resource does not get updated
+	err = svc.Ensure(context.Background())
+	assert.NoError(t, err)
+
+	err = c.Get(context.Background(), svc.Key(), actual)
+	assert.NoError(t, err)
+	if actual.ResourceVersion != originalResourceVersion {
+		t.Fatalf("second ensure: expecting version %s but got %s", originalResourceVersion, actual.GetResourceVersion())
+	}
+
+	// ensure after updating port
+	cluster.Spec.Configuration.KafkaAPI.Port = 6666
+	err = svc.Ensure(context.Background())
+	assert.NoError(t, err)
+
+	err = c.Get(context.Background(), svc.Key(), actual)
+	assert.NoError(t, err)
+	if actual.ResourceVersion == originalResourceVersion {
+		t.Fatalf("expecting version to get updated after resource changed but is still %s", originalResourceVersion)
+	}
+	if actual.Spec.Ports[0].Port != 6667 {
+		t.Fatalf("expecting port to change to 6667, but got %d", actual.Spec.Ports[0].Port)
+	}
+}
