@@ -12,6 +12,7 @@ package v1alpha1_test
 import (
 	"testing"
 
+	cmmeta "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
@@ -55,6 +56,13 @@ func TestValidateUpdate(t *testing.T) {
 		TLS: v1alpha1.TLSConfig{
 			RequireClientAuth: true,
 			KafkaAPIEnabled:   false,
+			IssuerRef: &cmmeta.ObjectReference{
+				Name: "test",
+			},
+			NodeSecretRef: &corev1.ObjectReference{
+				Name:      "name",
+				Namespace: "default",
+			},
 		},
 	}
 
@@ -69,6 +77,7 @@ func TestValidateUpdate(t *testing.T) {
 		field.NewPath("spec").Child("replicas").String(),
 		field.NewPath("spec").Child("resources").Child("limits").Child("memory").String(),
 		field.NewPath("spec").Child("configuration").Child("tls").Child("requireclientauth").String(),
+		field.NewPath("spec").Child("configuration").Child("tls").Child("nodeSecretRef").String(),
 	}
 	for _, ef := range expectedFields {
 		found := false
