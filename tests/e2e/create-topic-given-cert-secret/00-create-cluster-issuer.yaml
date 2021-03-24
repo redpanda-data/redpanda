@@ -1,0 +1,60 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    control-plane: controller-manager
+  name: given-cert
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: cluster-tls-selfsigned-issuer
+  namespace: given-cert
+spec:
+  selfSigned: {}
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: cluster-tls-root-certificate
+  namespace: given-cert
+spec:
+  isCA: true
+  dnsNames:
+    - "cluster.local"
+  issuerRef:
+    kind: Issuer
+    name: cluster-tls-selfsigned-issuer
+    namespace: given-cert
+  secretName: cluster-tls-root-certificate 
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: cluster-tls-root-issuer
+  namespace: given-cert
+spec:
+  ca:
+    secretName: cluster-tls-root-certificate 
+
+---
+
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: cluster-tls-node-certificate
+  namespace: given-cert
+spec:
+  dnsNames:
+    - "*.cluster-tls.given-cert.svc.cluster.local"
+  issuerRef:
+    kind: Issuer
+    name: cluster-tls-root-issuer
+    namespace: given-cert
+  secretName: cluster-tls-node-certificate 
