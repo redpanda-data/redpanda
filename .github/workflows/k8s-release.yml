@@ -78,5 +78,6 @@ jobs:
         tag: ${{ github.event.release.tag_name }}
 
     - name: Update index
+      if: contains(github.event.release.tag_name, '-beta') == false
       run: |
         cr index -o vectorizedio -r redpanda -c https://charts.vectorized.io/ -i index.yaml -p src/go/k8s/helm-chart/charts -t ${{ secrets.GITHUB_TOKEN }} --push --release-name-template "{{ .Version }}"
