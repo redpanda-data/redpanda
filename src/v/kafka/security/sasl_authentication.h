@@ -23,6 +23,7 @@ public:
     virtual ~sasl_mechanism() = default;
     virtual bool complete() const = 0;
     virtual bool failed() const = 0;
+    virtual const ss::sstring& principal() const = 0;
     virtual result<bytes> authenticate(bytes_view) = 0;
 };
 
@@ -58,6 +59,8 @@ public:
         vassert(!_mechanism, "Cannot change mechanism");
         _mechanism = std::move(m);
     }
+
+    const ss::sstring& principal() const { return _mechanism->principal(); }
 
 private:
     sasl_state _state;
