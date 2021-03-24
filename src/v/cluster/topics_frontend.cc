@@ -80,23 +80,6 @@ ss::future<std::vector<topic_result>> topics_frontend::create_topics(
       });
 }
 
-ss::future<std::vector<topic_result>> topics_frontend::update_topic_properties(
-  std::vector<topic_properties_update> updates,
-  model::timeout_clock::time_point timeout) {
-    auto result = co_await _stm.invoke_on(
-      controller_stm_shard, [timeout](controller_stm& stm) {
-          return stm.quorum_write_empty_batch(timeout);
-      });
-
-    if (!result) {
-        co_return create_topic_results(updates, errc::not_leader_controller);
-    }
-    co_return co_await ssx::parallel_transform(
-      std::move(updates), [this, timeout](topic_properties_update update) {
-          return do_update_topic_properties(std::move(update), timeout);
-      });
-}
-
 cluster::errc map_errc(std::error_code ec) {
     if (ec == errc::success) {
         return errc::success;
@@ -128,6 +111,54 @@ cluster::errc map_errc(std::error_code ec) {
     }
 
     return errc::replication_error;
+}
+
+ss::future<std::vector<topic_result>> topics_frontend::update_topic_properties(
+  std::vector<topic_properties_update> updates,
+  model::timeout_clock::time_point timeout) {
+    auto cluster_leader = _leaders.local().get_leader(model::controller_ntp);
+
+    // no leader available
+    if (!cluster_leader) {
+        co_return create_topic_results(updates, errc::no_leader_controller);
+    }
+
+    // current node is a leader, just replicate
+    if (cluster_leader == _self) {
+        // replicate empty batch to make sure leader local state is up to date.
+        auto result = co_await _stm.invoke_on(
+          controller_stm_shard, [timeout](controller_stm& stm) {
+              return stm.quorum_write_empty_batch(timeout);
+          });
+        if (!result) {
+            co_return create_topic_results(updates, map_errc(result.error()));
+        }
+
+        co_return co_await ssx::parallel_transform(
+          std::move(updates), [this, timeout](topic_properties_update update) {
+              return do_update_topic_properties(std::move(update), timeout);
+          });
+    }
+
+    co_return co_await _connections.local()
+      .with_node_client<controller_client_protocol>(
+        _self,
+        ss::this_shard_id(),
+        *cluster_leader,
+        timeout,
+        [updates, timeout](controller_client_protocol client) mutable {
+            return client
+              .update_topic_properties(
+                update_topic_properties_request{.updates = std::move(updates)},
+                rpc::client_opts(timeout))
+              .then(&rpc::get_ctx_data<update_topic_properties_reply>);
+        })
+      .then([updates](result<update_topic_properties_reply> r) {
+          if (r.has_error()) {
+              return create_topic_results(updates, map_errc(r.error()));
+          }
+          return std::move(r.value().results);
+      });
 }
 
 ss::future<topic_result> topics_frontend::do_update_topic_properties(
