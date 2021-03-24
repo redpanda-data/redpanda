@@ -88,6 +88,16 @@ public:
     ss::future<result<replicate_result>>
       quorum_write_empty_batch(model::timeout_clock::time_point);
 
+    /**
+     * Sends a round of heartbeats to followers, when majority of followers
+     * replied with success to either this of any following request all reads up
+     * to returned offsets are linearizable. (i.e. majority of followers have
+     * updated their commit indices to at least reaturned offset). For more
+     * details see paragraph 6.4 of Raft protocol dissertation.
+     */
+    ss::future<result<model::offset>>
+      instert_linerizable_barrier(model::timeout_clock::time_point);
+
     virtual ~state_machine() {}
 
 protected:

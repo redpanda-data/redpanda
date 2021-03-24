@@ -24,6 +24,11 @@
             "name": "finish_partition_update",
             "input_type": "finish_partition_update_request",
             "output_type": "finish_partition_update_reply"
+        },
+        {
+            "name": "update_topic_properties",
+            "input_type": "update_topic_properties_request",
+            "output_type": "update_topic_properties_reply"
         }
     ]
 }

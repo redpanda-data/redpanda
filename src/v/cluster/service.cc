@@ -129,4 +129,23 @@ service::do_finish_partition_update(finish_partition_update_request&& req) {
     co_return finish_partition_update_reply{.result = e};
 }
 
+ss::future<update_topic_properties_reply> service::update_topic_properties(
+  update_topic_properties_request&& req, rpc::streaming_context&) {
+    return ss::with_scheduling_group(
+      get_scheduling_group(), [this, req = std::move(req)]() mutable {
+          return do_update_topic_properties(std::move(req));
+      });
+}
+
+ss::future<update_topic_properties_reply>
+service::do_update_topic_properties(update_topic_properties_request&& req) {
+    // local topic frontend instance will eventually dispatch request to _raft0
+    // core
+    auto res = co_await _topics_frontend.local().update_topic_properties(
+      req.updates,
+      config::shard_local_cfg().replicate_append_timeout_ms()
+        + model::timeout_clock::now());
+
+    co_return update_topic_properties_reply{.results = std::move(res)};
+}
 } // namespace cluster

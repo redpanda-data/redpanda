@@ -84,6 +84,10 @@ private:
     ss::future<topic_result> do_update_topic_properties(
       topic_properties_update, model::timeout_clock::time_point);
     ss::future<> update_leaders_with_estimates(std::vector<ntp_leader>);
+
+    ss::future<result<model::offset>>
+      stm_linearizable_barrier(model::timeout_clock::time_point);
+
     // returns true if the topic name is valid
     static bool validate_topic_name(const model::topic_namespace&);
 

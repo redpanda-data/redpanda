@@ -118,7 +118,7 @@ ss::future<std::vector<R>> do_alter_topics_configuration(
           + config::shard_local_cfg().alter_topic_cfg_timeout_ms());
     for (auto& res : update_results) {
         responses.push_back(R{
-          .error_code = error_code::none,
+          .error_code = map_topic_error_code(res.ec),
           .resource_type = static_cast<int8_t>(config_resource_type::topic),
           .resource_name = res.tp_ns.tp(),
         });

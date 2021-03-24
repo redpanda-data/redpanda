@@ -322,4 +322,18 @@ adl<cluster::configuration_invariants>::from(iobuf_parser& parser) {
 
     return ret;
 }
+
+void adl<cluster::topic_properties_update>::to(
+  iobuf& out, cluster::topic_properties_update&& r) {
+    reflection::serialize(out, r.tp_ns, r.properties);
+}
+
+cluster::topic_properties_update
+adl<cluster::topic_properties_update>::from(iobuf_parser& parser) {
+    auto tp_ns = adl<model::topic_namespace>{}.from(parser);
+    cluster::topic_properties_update ret(std::move(tp_ns));
+    ret.properties = adl<cluster::incremental_topic_updates>{}.from(parser);
+
+    return ret;
+}
 } // namespace reflection
