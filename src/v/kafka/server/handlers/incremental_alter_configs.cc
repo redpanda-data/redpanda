@@ -31,6 +31,10 @@ namespace kafka {
 using req_resource_t = incremental_alter_configs_resource;
 using resp_resource_t = incremental_alter_configs_resource_response;
 
+/**
+ * We pass returned value as a paramter to allow template to be automatically
+ * resolved.
+ */
 template<typename T>
 void parse_and_set_optional(
   cluster::property_update<std::optional<T>>& property,
@@ -134,43 +138,50 @@ create_topic_properties_update(incremental_alter_configs_resource& resource) {
             // error case
             return *err;
         }
-
-        if (cfg.name == topic_property_cleanup_policy) {
-            parse_and_set_optional(
-              update.properties.cleanup_policy_bitflags, cfg.value, op);
-            continue;
+        try {
+            if (cfg.name == topic_property_cleanup_policy) {
+                parse_and_set_optional(
+                  update.properties.cleanup_policy_bitflags, cfg.value, op);
+                continue;
+            }
+            if (cfg.name == topic_property_compaction_strategy) {
+                parse_and_set_optional(
+                  update.properties.compaction_strategy, cfg.value, op);
+                continue;
+            }
+            if (cfg.name == topic_property_compression) {
+                parse_and_set_optional(
+                  update.properties.compression, cfg.value, op);
+                continue;
+            }
+            if (cfg.name == topic_property_segment_size) {
+                parse_and_set_optional(
+                  update.properties.segment_size, cfg.value, op);
+                continue;
+            }
+            if (cfg.name == topic_property_timestamp_type) {
+                parse_and_set_optional(
+                  update.properties.timestamp_type, cfg.value, op);
+                continue;
+            }
+            if (cfg.name == topic_property_retention_bytes) {
+                parse_and_set_tristate(
+                  update.properties.retention_bytes, cfg.value, op);
+                continue;
+            }
+            if (cfg.name == topic_property_retention_duration) {
+                parse_and_set_tristate(
+                  update.properties.retention_duration, cfg.value, op);
+                continue;
+            }
+        } catch (const boost::bad_lexical_cast& e) {
+            return make_error_alter_config_resource_response<
+              incremental_alter_configs_resource_response>(
+              resource,
+              error_code::invalid_config,
+              fmt::format(
+                "unable to parse property {} value {}", cfg.name, cfg.value));
         }
-        if (cfg.name == topic_property_compaction_strategy) {
-            parse_and_set_optional(
-              update.properties.compaction_strategy, cfg.value, op);
-            continue;
-        }
-        if (cfg.name == topic_property_compression) {
-            parse_and_set_optional(
-              update.properties.compression, cfg.value, op);
-            continue;
-        }
-        if (cfg.name == topic_property_segment_size) {
-            parse_and_set_optional(
-              update.properties.segment_size, cfg.value, op);
-            continue;
-        }
-        if (cfg.name == topic_property_timestamp_type) {
-            parse_and_set_optional(
-              update.properties.timestamp_type, cfg.value, op);
-            continue;
-        }
-        if (cfg.name == topic_property_retention_bytes) {
-            parse_and_set_tristate(
-              update.properties.retention_bytes, cfg.value, op);
-            continue;
-        }
-        if (cfg.name == topic_property_retention_duration) {
-            parse_and_set_tristate(
-              update.properties.retention_duration, cfg.value, op);
-            continue;
-        }
-
         // Unsupported property, return error
         return make_error_alter_config_resource_response<resp_resource_t>(
           resource,
