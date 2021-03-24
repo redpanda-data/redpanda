@@ -23,6 +23,7 @@ v_cc_library(
   NAME pandaproxy
   SRCS
     configuration.cc
+    error.cc
     handlers.cc
     logger.cc
     probe.cc
