@@ -2,7 +2,7 @@ rp_test(
   UNIT_TEST
   BINARY_NAME model
   SOURCES
-    compression_lexical_cast_test.cc
+    lexical_cast_tests.cc
     ntp_path_test.cc
     topic_view_tests.cc
   DEFINITIONS BOOST_TEST_DYN_LINK

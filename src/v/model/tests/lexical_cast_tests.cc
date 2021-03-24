@@ -69,3 +69,19 @@ BOOST_AUTO_TEST_CASE(removing_compression) {
     attr.remove_compression();
     BOOST_CHECK_EQUAL(attr.compression(), model::compression::none);
 };
+
+BOOST_AUTO_TEST_CASE(timestamp_type_cast_from_string) {
+    BOOST_CHECK_EQUAL(
+      boost::lexical_cast<model::timestamp_type>("CreateTime"),
+      model::timestamp_type::create_time);
+    BOOST_CHECK_EQUAL(
+      boost::lexical_cast<model::timestamp_type>("LogAppendTime"),
+      model::timestamp_type::append_time);
+};
+
+BOOST_AUTO_TEST_CASE(timestamp_type_printing) {
+    BOOST_CHECK_EQUAL(
+      "CreateTime", fmt::format("{}", model::timestamp_type::create_time));
+    BOOST_CHECK_EQUAL(
+      "LogAppendTime", fmt::format("{}", model::timestamp_type::append_time));
+};
