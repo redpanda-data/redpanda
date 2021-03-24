@@ -33,7 +33,18 @@ type RedpandaConfig struct {
 	Id                 int                    `yaml:"node_id" mapstructure:"node_id" json:"id"`
 	SeedServers        []SeedServer           `yaml:"seed_servers" mapstructure:"seed_servers" json:"seedServers"`
 	DeveloperMode      bool                   `yaml:"developer_mode" mapstructure:"developer_mode" json:"developerMode"`
+	ArchivalStorage    ArchivalStorage        `yaml:"archival_storage,omitempty" mapstructure:"archival_storage,omitempty" json:"archivalStorage"`
 	Other              map[string]interface{} `yaml:",inline" mapstructure:",remain"`
+}
+
+type ArchivalStorage struct {
+	Enabled                  bool   `yaml:"enabled" mapstructure:"enabled" json:"enabled"`
+	S3AccessKey              string `yaml:"s3_access_key" mapstructure:"s3_access_key" json:"s3AccessKey"`
+	S3SecretKey              string `yaml:"s3_secret_key" mapstructure:"s3_secret_key" json:"s3SecretKey"`
+	S3Region                 string `yaml:"s3_region" mapstructure:"s3_region" json:"s3Region"`
+	S3Bucket                 string `yaml:"s3_bucket" mapstructure:"s3_bucket" json:"s3Bucket"`
+	ReconciliationIntervalMs int    `yaml:"reconciliation_interval_ms,omitempty" mapstructure:"reconciliation_interval_ms,omitempty" json:"reconciliationIntervalMs"`
+	MaxConnections           int    `yaml:"max_connections,omitempty" mapstructure:"max_connections,omitempty" json:"maxConnections"`
 }
 
 type SeedServer struct {
