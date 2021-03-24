@@ -90,14 +90,15 @@ sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule require
                 configs = part[8:]
 
         def maybe_int(key, value):
-            if key in ["partition_count", "replication_factor"]:
+            if key in [
+                    "partition_count", "replication_factor", "retention_ms",
+                    "retention_bytes", 'segment_bytes'
+            ]:
                 value = int(value)
             return value
 
         def fix_key(key):
-            if key == "cleanup.policy":
-                return "cleanup_policy"
-            return key
+            return key.replace(".", "_")
 
         self._redpanda.logger.debug(f"Describe topics configs: {configs}")
         configs = [config.split("=") for config in configs.split(",")]
