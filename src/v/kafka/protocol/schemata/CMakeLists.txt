@@ -60,7 +60,9 @@ set(schemata
   fetch_request.json
   fetch_response.json
   end_txn_request.json
-  end_txn_response.json)
+  end_txn_response.json
+  add_offsets_to_txn_request.json
+  add_offsets_to_txn_response.json)
 
 set(srcs)
 foreach(schema ${schemata})

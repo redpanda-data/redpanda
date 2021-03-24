@@ -10,6 +10,7 @@
  */
 #pragma once
 
+#include "kafka/server/handlers/add_offsets_to_txn.h"
 #include "kafka/server/handlers/add_partitions_to_txn.h"
 #include "kafka/server/handlers/alter_configs.h"
 #include "kafka/server/handlers/api_versions.h"
