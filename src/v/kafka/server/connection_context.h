@@ -38,7 +38,10 @@ public:
       protocol& p, rpc::server::resources&& r, sasl_server sasl) noexcept
       : _proto(p)
       , _rs(std::move(r))
-      , _sasl(std::move(sasl)) {}
+      , _sasl(std::move(sasl))
+      // tests may build a context without a live connection
+      , _client_addr(
+          _rs.conn ? _rs.conn->addr.addr() : ss::net::inet_address{}) {}
 
     ~connection_context() noexcept = default;
     connection_context(const connection_context&) = delete;
@@ -82,6 +85,7 @@ private:
     sequence_id _seq_idx;
     map_t _responses;
     sasl_server _sasl;
+    const ss::net::inet_address _client_addr;
 };
 
 } // namespace kafka
