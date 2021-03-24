@@ -78,15 +78,15 @@ We recommend that you keep topic manifests in order to recover the corresponding
 
 2. Configure these parameters in the Redpanda configuration:
 
-        | Parameter name                                | Type         | Descripion                                              |
-        |-----------------------------------------------|--------------|---------------------------------------------------------|
-        | `archival_storage_enabled`                    | boolean      | Enables archival storage feature                        |
-        | `archival_storage_s3_access_key`              | string       | S3 access key                                           |
-        | `archival_storage_s3_secret_key`              | string       | S3 secret key                                           |
-        | `archival_storage_s3_region`                  | string       | AWS region                                              |
-        | `archival_storage_s3_bucket`                  | string       | S3 bucket                                               |
-        | `archival_storage_reconciliation_interval_ms` | integer | Reconciliation period (default - 10000ms)                   |
-        | `archival_storage_max_connections`            | integer      | Number of simultaneous uploads per shard (default - 20) |
+    | Parameter name                                | Type         | Descripion                                              |
+    |-----------------------------------------------|--------------|---------------------------------------------------------|
+    | `archival_storage_enabled`                    | boolean      | Enables archival storage feature                        |
+    | `archival_storage_s3_access_key`              | string       | S3 access key                                           |
+    | `archival_storage_s3_secret_key`              | string       | S3 secret key                                           |
+    | `archival_storage_s3_region`                  | string       | AWS region                                              |
+    | `archival_storage_s3_bucket`                  | string       | S3 bucket                                               |
+    | `archival_storage_reconciliation_interval_ms` | integer | Reconciliation period (default - 10000ms)                   |
+    | `archival_storage_max_connections`            | integer      | Number of simultaneous uploads per shard (default - 20) |
         
         
         
