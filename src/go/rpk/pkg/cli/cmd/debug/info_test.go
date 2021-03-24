@@ -103,7 +103,7 @@ power management:
 		},
 		{
 			name:        "doesn't print the CPU% if no pid file is found",
-			expectedOut: "open /var/lib/redpanda/data/pid.lock: file does not exist",
+			expectedOut: "Omitting runtime metrics: the local redpanda process isn't running.",
 			before:      defaultSetup,
 		},
 		{
@@ -158,7 +158,7 @@ power management:
 			expectedOut: "Usage stats reporting is disabled, so" +
 				" nothing will be sent. To enable it, run" +
 				" `rpk config set rpk.enable_usage_stats true`.",
-			expectedErr: "open /var/lib/redpanda/data/pid.lock: file does not exist",
+			expectedErr: "Omitting runtime metrics: the local redpanda process isn't running.",
 			args:        []string{"--send"},
 			before: func(fs afero.Fs) error {
 				conf := getConfig()
