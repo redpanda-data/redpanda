@@ -5,12 +5,14 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	res "github.com/vectorizedio/redpanda/src/go/k8s/pkg/resources"
 	v1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/deprecated/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -91,5 +93,53 @@ func TestEnsure_StatefulSet(t *testing.T) {
 	assert.NoError(t, err)
 	if actual.ResourceVersion != originalResourceVersion {
 		t.Fatalf("second ensure: expecting version %s but got %s", originalResourceVersion, actual.GetResourceVersion())
+	}
+}
+
+func TestEnsure_ConfigMap(t *testing.T) {
+	cluster := pandaCluster()
+	cluster = cluster.DeepCopy()
+	cluster.Name = "ensure-integration-cm-cluster"
+
+	cm := res.NewConfigMap(
+		c,
+		cluster,
+		scheme.Scheme,
+		"cluster.local",
+		ctrl.Log.WithName("test"))
+
+	err := cm.Ensure(context.Background())
+	assert.NoError(t, err)
+
+	actual := &corev1.ConfigMap{}
+	err = c.Get(context.Background(), cm.Key(), actual)
+	assert.NoError(t, err)
+	originalResourceVersion := actual.ResourceVersion
+
+	// calling ensure for second time to see the resource does not get updated
+	err = cm.Ensure(context.Background())
+	assert.NoError(t, err)
+
+	err = c.Get(context.Background(), cm.Key(), actual)
+	assert.NoError(t, err)
+	if actual.ResourceVersion != originalResourceVersion {
+		t.Fatalf("second ensure: expecting version %s but got %s", originalResourceVersion, actual.GetResourceVersion())
+	}
+
+	// verify the update patches the config
+	cluster.Spec.Configuration.KafkaAPI.Port = 1111
+	cluster.Spec.Configuration.TLS.KafkaAPI.Enabled = true
+
+	err = cm.Ensure(context.Background())
+	assert.NoError(t, err)
+
+	err = c.Get(context.Background(), cm.Key(), actual)
+	assert.NoError(t, err)
+	if actual.ResourceVersion == originalResourceVersion {
+		t.Fatalf("expecting version to get updated after resource update but is %s", originalResourceVersion)
+	}
+	data := actual.Data["redpanda.yaml"]
+	if !strings.Contains(data, "cert_file") || !strings.Contains(data, "port: 1111") {
+		t.Fatalf("expecting configmap updated but got %v", data)
 	}
 }
