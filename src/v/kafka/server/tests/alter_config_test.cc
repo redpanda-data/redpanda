@@ -12,9 +12,11 @@
 #include "kafka/protocol/create_topics.h"
 #include "kafka/protocol/describe_configs.h"
 #include "kafka/protocol/errors.h"
+#include "kafka/protocol/incremental_alter_configs.h"
 #include "kafka/protocol/schemata/alter_configs_request.h"
 #include "kafka/protocol/schemata/describe_configs_request.h"
 #include "kafka/protocol/schemata/describe_configs_response.h"
+#include "kafka/protocol/schemata/incremental_alter_configs_request.h"
 #include "kafka/server/handlers/topics/types.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
@@ -27,6 +29,8 @@
 #include <seastar/util/defer.hh>
 
 #include <absl/container/flat_hash_map.h>
+
+#include <optional>
 
 using namespace std::chrono_literals; // NOLINT
 
@@ -80,6 +84,32 @@ public:
         };
     }
 
+    kafka::incremental_alter_configs_resource
+    make_incremental_alter_topic_config_resource(
+      const model::topic& topic,
+      const absl::flat_hash_map<
+        ss::sstring,
+        std::
+          pair<std::optional<ss::sstring>, kafka::config_resource_operation>>&
+        operations) {
+        std::vector<kafka::incremental_alterable_config> cfg_list;
+        cfg_list.reserve(operations.size());
+        for (auto& [k, v] : operations) {
+            cfg_list.push_back(kafka::incremental_alterable_config{
+              .name = k,
+              .config_operation = static_cast<int8_t>(v.second),
+              .value = v.first,
+            });
+        }
+
+        return kafka::incremental_alter_configs_resource{
+          .resource_type = static_cast<int8_t>(
+            kafka::config_resource_type::topic),
+          .resource_name = topic,
+          .configs = std::move(cfg_list),
+        };
+    }
+
     kafka::describe_configs_response
     describe_configs(const model::topic& topic) {
         kafka::describe_configs_request req;
@@ -100,6 +130,18 @@ public:
     kafka::alter_configs_response
     alter_configs(std::vector<kafka::alter_configs_resource> resources) {
         kafka::alter_configs_request req;
+        req.data.resources = std::move(resources);
+        return do_with_client([req = std::move(req)](
+                                kafka::client::transport& client) mutable {
+                   return client.dispatch(
+                     std::move(req), kafka::api_version(0));
+               })
+          .get();
+    }
+
+    kafka::incremental_alter_configs_response incremental_alter_configs(
+      std::vector<kafka::incremental_alter_configs_resource> resources) {
+        kafka::incremental_alter_configs_request req;
         req.data.resources = std::move(resources);
         return do_with_client([req = std::move(req)](
                                 kafka::client::transport& client) mutable {
@@ -249,4 +291,98 @@ FIXTURE_TEST(
       new_describe_resp);
     assert_property_value(
       test_tp, "retention.bytes", "4096", new_describe_resp);
+}
+
+FIXTURE_TEST(test_incremental_alter_config, alter_config_test_fixture) {
+    wait_for_controller_leadership().get();
+    model::topic test_tp{"topic-1"};
+    create_topic(test_tp, 6);
+    // set custom retention
+    absl::flat_hash_map<
+      ss::sstring,
+      std::pair<std::optional<ss::sstring>, kafka::config_resource_operation>>
+      properties;
+    properties.emplace(
+      "retention.ms",
+      std::make_pair("1234", kafka::config_resource_operation::set));
+
+    auto resp = incremental_alter_configs(
+      {make_incremental_alter_topic_config_resource(test_tp, properties)});
+
+    BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 1);
+    BOOST_REQUIRE_EQUAL(
+      resp.data.responses[0].error_code, kafka::error_code::none);
+    BOOST_REQUIRE_EQUAL(resp.data.responses[0].resource_name, test_tp);
+
+    auto describe_resp = describe_configs(test_tp);
+    assert_property_value(test_tp, "retention.ms", "1234", describe_resp);
+
+    /**
+     * Set custom retention.bytes, only this property should be updated
+     */
+    absl::flat_hash_map<
+      ss::sstring,
+      std::pair<std::optional<ss::sstring>, kafka::config_resource_operation>>
+      new_properties;
+    new_properties.emplace(
+      "retention.bytes",
+      std::pair{"4096", kafka::config_resource_operation::set});
+
+    incremental_alter_configs(
+      {make_incremental_alter_topic_config_resource(test_tp, new_properties)});
+
+    auto new_describe_resp = describe_configs(test_tp);
+    // retention.ms should stay untouched
+    assert_property_value(
+      test_tp, "retention.ms", fmt::format("1234"), new_describe_resp);
+    assert_property_value(
+      test_tp, "retention.bytes", "4096", new_describe_resp);
+}
+
+FIXTURE_TEST(test_incremental_alter_config_remove, alter_config_test_fixture) {
+    wait_for_controller_leadership().get();
+    model::topic test_tp{"topic-1"};
+    create_topic(test_tp, 6);
+    // set custom retention
+    absl::flat_hash_map<
+      ss::sstring,
+      std::pair<std::optional<ss::sstring>, kafka::config_resource_operation>>
+      properties;
+    properties.emplace(
+      "retention.ms",
+      std::make_pair("1234", kafka::config_resource_operation::set));
+
+    auto resp = incremental_alter_configs(
+      {make_incremental_alter_topic_config_resource(test_tp, properties)});
+
+    BOOST_REQUIRE_EQUAL(resp.data.responses.size(), 1);
+    BOOST_REQUIRE_EQUAL(
+      resp.data.responses[0].error_code, kafka::error_code::none);
+    BOOST_REQUIRE_EQUAL(resp.data.responses[0].resource_name, test_tp);
+
+    auto describe_resp = describe_configs(test_tp);
+    assert_property_value(test_tp, "retention.ms", "1234", describe_resp);
+
+    /**
+     * Remove retention.bytes
+     */
+    absl::flat_hash_map<
+      ss::sstring,
+      std::pair<std::optional<ss::sstring>, kafka::config_resource_operation>>
+      new_properties;
+    new_properties.emplace(
+      "retention.ms",
+      std::pair{std::nullopt, kafka::config_resource_operation::remove});
+
+    incremental_alter_configs(
+      {make_incremental_alter_topic_config_resource(test_tp, new_properties)});
+
+    auto new_describe_resp = describe_configs(test_tp);
+    // retention.ms should be set back to default
+    assert_property_value(
+      test_tp,
+      "retention.ms",
+      fmt::format(
+        "{}", config::shard_local_cfg().delete_retention_ms.value().count()),
+      new_describe_resp);
 }
