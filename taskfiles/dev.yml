@@ -1,0 +1,26 @@
+version: '3'
+
+tasks:
+  install-deps:
+    desc: install system packages
+    cmds:
+    - install-dependencies.sh
+
+  install-docker-compose:
+    desc: install docker-compose
+    cmds:
+    - mkdir -p '{{.BUILD_ROOT}}/bin/'
+    - curl -L "https://github.com/docker/compose/releases/download/1.28.5/docker-compose-$(uname -s)-$(uname -m)" -o '{{.BUILD_ROOT}}/bin/docker-compose'
+    - chmod +x '{{.BUILD_ROOT}}/bin/docker-compose'
+    status:
+    - test -f '{{.BUILD_ROOT}}/bin/docker-compose'
+
+  start-podman-socket-service:
+    desc: start podman socket service (requires sudo)
+    cmds:
+    - |
+      if {{empty .USE_PODMAN_DOCKER}}; then
+        exit 0
+      fi
+      sudo systemctl start podman.socket
+      sudo curl -H "Content-Type: application/json" --unix-socket /var/run/docker.sock http://localhost/_ping | grep OK
