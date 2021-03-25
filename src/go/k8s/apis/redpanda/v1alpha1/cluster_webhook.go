@@ -120,18 +120,18 @@ func (r *Cluster) validateMemory() field.ErrorList {
 
 func (r *Cluster) validateTLS() field.ErrorList {
 	var allErrs field.ErrorList
-	if r.Spec.Configuration.TLS.RequireClientAuth && !r.Spec.Configuration.TLS.KafkaAPIEnabled {
+	if r.Spec.Configuration.TLS.KafkaAPI.RequireClientAuth && !r.Spec.Configuration.TLS.KafkaAPI.KafkaAPIEnabled {
 		allErrs = append(allErrs,
 			field.Invalid(
 				field.NewPath("spec").Child("configuration").Child("tls").Child("requireclientauth"),
-				r.Spec.Configuration.TLS.RequireClientAuth,
+				r.Spec.Configuration.TLS.KafkaAPI.RequireClientAuth,
 				"KafkaAPIEnabled has to be set to true for RequireClientAuth to be allowed to be true"))
 	}
-	if r.Spec.Configuration.TLS.IssuerRef != nil && r.Spec.Configuration.TLS.NodeSecretRef != nil {
+	if r.Spec.Configuration.TLS.KafkaAPI.IssuerRef != nil && r.Spec.Configuration.TLS.KafkaAPI.NodeSecretRef != nil {
 		allErrs = append(allErrs,
 			field.Invalid(
 				field.NewPath("spec").Child("configuration").Child("tls").Child("nodeSecretRef"),
-				r.Spec.Configuration.TLS.NodeSecretRef,
+				r.Spec.Configuration.TLS.KafkaAPI.NodeSecretRef,
 				"Cannot provide both IssuerRef and NodeSecretRef"))
 	}
 	return allErrs
