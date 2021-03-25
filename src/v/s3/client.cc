@@ -66,31 +66,39 @@ ss::future<configuration> configuration::make_configuration(
   const public_key_str& pkey,
   const private_key_str& skey,
   const aws_region_name& region,
-  const std::optional<endpoint_url>& url_override) {
+  const default_overrides overrides) {
     configuration client_cfg;
-    ss::tls::credentials_builder cred_builder;
-    const auto endpoint_uri = make_endpoint_url(region, url_override);
-    if (url_override.has_value()) {
-        client_cfg.tls_sni_hostname = *url_override;
-    }
+    const auto endpoint_uri = make_endpoint_url(region, overrides.endpoint);
+    client_cfg.tls_sni_hostname = endpoint_uri;
     // Setup credentials for TLS
-    ss::tls::credentials_builder builder;
     client_cfg.access_key = pkey;
     client_cfg.secret_key = skey;
     client_cfg.region = region;
     client_cfg.uri = access_point_uri(endpoint_uri);
-    // NOTE: this is a pre-defined gnutls priority string that
-    // picks the the ciphersuites with 128-bit ciphers which
-    // leads to up to 10x improvement in upload speed, compared
-    // to 256-bit ciphers
-    cred_builder.set_priority_string("PERFORMANCE");
-    co_await cred_builder.set_system_trust();
-    client_cfg.credentials
-      = co_await cred_builder.build_reloadable_certificate_credentials();
+    ss::tls::credentials_builder cred_builder;
+    if (overrides.disable_tls == false) {
+        // NOTE: this is a pre-defined gnutls priority string that
+        // picks the the ciphersuites with 128-bit ciphers which
+        // leads to up to 10x improvement in upload speed, compared
+        // to 256-bit ciphers
+        cred_builder.set_priority_string("PERFORMANCE");
+        if (overrides.trust_file.has_value()) {
+            auto file = overrides.trust_file.value();
+            vlog(s3_log.info, "Use non-default trust file {}", file());
+            co_await cred_builder.set_x509_trust_file(
+              file().string(), ss::tls::x509_crt_format::PEM);
+        } else {
+            // Use GnuTLS defaults, might not work on all systems
+            co_await cred_builder.set_system_trust();
+        }
+        client_cfg.credentials
+          = co_await cred_builder.build_reloadable_certificate_credentials();
+    }
     auto addr = co_await ss::net::dns::resolve_name(
       client_cfg.uri(), ss::net::inet_address::family::INET);
-    constexpr uint16_t port = 443;
-    client_cfg.server_addr = ss::socket_address(addr, port);
+    constexpr uint16_t default_port = 443;
+    client_cfg.server_addr = ss::socket_address(
+      addr, overrides.port ? *overrides.port : default_port);
     co_return client_cfg;
 }
 

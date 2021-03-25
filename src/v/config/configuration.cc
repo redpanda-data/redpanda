@@ -575,6 +575,25 @@ configuration::configuration()
       "Max number of simultaneous uploads to S3",
       required::no,
       20)
+  , archival_storage_disable_tls(
+      *this,
+      "archival_storage_disable_tls",
+      "Disable TLS for all S3 connections",
+      required::no,
+      false)
+  , archival_storage_api_endpoint_port(
+      *this,
+      "archival_storage_api_endpoint_port",
+      "TLS port override",
+      required::no,
+      443)
+  , archival_storage_trust_file(
+      *this,
+      "archival_storage_trust_file",
+      "Path to certificate that should be used to validate server certificate "
+      "during TLS handshake",
+      required::no,
+      std::nullopt)
   , _advertised_kafka_api(
       *this,
       "advertised_kafka_api",
