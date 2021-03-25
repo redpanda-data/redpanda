@@ -101,15 +101,6 @@ jobs:
     - name: Get tag name (if any)
       run: echo "TAG_NAME=${GITHUB_REF#refs/*/}" >> $GITHUB_ENV
 
-    - name: Build and tag release images
-      working-directory: src/go/k8s/
-      if: startsWith(github.ref, 'refs/tags/v')
-      shell: bash
-      run: |
-        make docker-build
-        make docker-build-configurator
-        make docker-tag-release
-
     - name: Build and tag dev images
       working-directory: src/go/k8s/
       if: github.ref == 'dev' && github.repository == 'vectorizedio/redpanda'
@@ -131,9 +122,3 @@ jobs:
       if: github.ref == 'dev' && github.repository == 'vectorizedio/redpanda'
       shell: bash
       run: make docker-push-dev
-
-    - name: Push release image to dockerhub
-      working-directory: src/go/k8s/
-      if: startsWith(github.ref, 'refs/tags/v')
-      shell: bash
-      run: make docker-push-release
