@@ -42,6 +42,9 @@ type RedpandaConfig struct {
 	ArchivalStorageS3Bucket                 *string                `yaml:"archival_storage_s3_bucket,omitempty" mapstructure:"archival_storage_s3_bucket,omitempty" json:"archivalStorageS3Bucket,omitempty"`
 	ArchivalStorageReconciliationIntervalMs *int                   `yaml:"archival_storage_reconciliation_interval_ms,omitempty" mapstructure:"archival_storage_reconciliation_interval_ms,omitempty" json:"archivalStorageReconciliationIntervalMs,omitempty"`
 	ArchivalStorageMaxConnections           *int                   `yaml:"archival_storage_max_connections,omitempty" mapstructure:"archival_storage_max_connections,omitempty" json:"archivalStorageMaxConnections,omitempty"`
+	ArchivalStorageDisableTls               *bool                  `yaml:"archival_storage_disable_tls,omitempty" mapstructure:"archival_storage_disable_tls,omitempty" json:"archivalStorageDisableTls,omitempty"`
+	ArchivalStorageApiEndpointPort          *int                   `yaml:"archival_storage_api_endpoint_port,omitempty" mapstructure:"archival_storage_api_endpoint_port,omitempty" json:"archivalStorageApiEndpointPort,omitempty"`
+	ArchivalStorageTrustFile                *string                `yaml:"archival_storage_trust_file,omitempty" mapstructure:"archival_storage_trust_file,omitempty" json:"archivalStorageTrustFile,omitempty"`
 	Other                                   map[string]interface{} `yaml:",inline" mapstructure:",remain"`
 }
 

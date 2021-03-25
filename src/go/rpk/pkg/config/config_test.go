@@ -862,6 +862,9 @@ rpk:
 				interval := 20000
 				conns := 4
 				endpoint := "http"
+				tls := true
+				port := 100
+				trustfile := "trust"
 				c.Redpanda.ArchivalStorageEnabled = &enabled
 				c.Redpanda.ArchivalStorageS3AccessKey = &access
 				c.Redpanda.ArchivalStorageS3Bucket = &bucket
@@ -870,6 +873,9 @@ rpk:
 				c.Redpanda.ArchivalStorageReconciliationIntervalMs = &interval
 				c.Redpanda.ArchivalStorageMaxConnections = &conns
 				c.Redpanda.ArchivalStorageApiEndpoint = &endpoint
+				c.Redpanda.ArchivalStorageDisableTls = &tls
+				c.Redpanda.ArchivalStorageApiEndpointPort = &port
+				c.Redpanda.ArchivalStorageTrustFile = &trustfile
 				return c
 			},
 			wantErr: false,
@@ -879,6 +885,8 @@ redpanda:
     address: 0.0.0.0
     port: 9644
   archival_storage_api_endpoint: http
+  archival_storage_api_endpoint_port: 100
+  archival_storage_disable_tls: true
   archival_storage_enabled: true
   archival_storage_max_connections: 4
   archival_storage_reconciliation_interval_ms: 20000
@@ -886,6 +894,7 @@ redpanda:
   archival_storage_s3_bucket: bucket
   archival_storage_s3_region: region
   archival_storage_s3_secret_key: secret
+  archival_storage_trust_file: trust
   data_directory: /var/lib/redpanda/data
   developer_mode: false
   kafka_api:
