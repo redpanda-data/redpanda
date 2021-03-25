@@ -137,8 +137,16 @@ spec:
                         type: integer
                     type: object
                   tls:
-                    description: TLSConfig configures TLS for redpanda APIs
+                    description: TLSConfig configures TLS for Redpanda APIs
                     properties:
+                      adminApi:
+                        description: Configuration of TLS for Admin API
+                        properties:
+                          enabled:
+                            type: boolean
+                          requireClientAuth:
+                            type: boolean
+                        type: object
                       kafkaApi:
                         description: Configuration of TLS for Kafka API
                         properties:

@@ -55,10 +55,6 @@ func NewIssuer(
 
 // Ensure will manage cert-manager v1.Issuer for redpanda.vectorized.io custom resource
 func (r *IssuerResource) Ensure(ctx context.Context) error {
-	if !r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.Enabled {
-		return nil
-	}
-
 	obj, err := r.obj()
 	if err != nil {
 		return fmt.Errorf("unable to construct object: %w", err)
