@@ -333,6 +333,30 @@ redpanda:
   # Minimum time before which unused session will get evicted from sessions. Maximum time after which inactive session will be deleted is twice the given configuration value
   # Default: 60s
   fetch_session_eviction_timeout_ms: 60000
+  
+  # Enables data archiving to cloud storage
+  # Default: enabled
+  archival_storage_enabled: enabled	
+
+  # Data archiving: Access key for cloud storage
+  archival_storage_s3_access_key: 	
+
+  # Data archiving: Secret key for cloud storage
+  archival_storage_s3_secret_key:
+  
+  # Data archiving: Region for cloud storage
+  archival_storage_s3_region:
+  
+  # Data archiving: Location name for cloud storage
+  archival_storage_s3_bucket: 	
+
+  # Data archiving: Interval between archive tranfers
+  # Default: 10000ms
+  archival_storage_reconciliation_interval_ms	integer: 10000
+  
+  # Data archiving: Number of simultaneous uploads per shard
+  # Default: 20
+  # archival_storage_max_connections: 20
 
 # The REST API (alpha)
 # This top-level config node enables the REST Proxy
