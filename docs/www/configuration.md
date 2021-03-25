@@ -352,7 +352,7 @@ redpanda:
 
   # Data archiving: Interval between archive tranfers
   # Default: 10000ms
-  archival_storage_reconciliation_interval_ms	integer: 10000
+  archival_storage_reconciliation_interval_ms: 10000
   
   # Data archiving: Number of simultaneous uploads per shard
   # Default: 20
