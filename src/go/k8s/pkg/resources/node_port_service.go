@@ -71,10 +71,6 @@ func (r *NodePortServiceResource) Ensure(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("error while fetching Service resource: %w", err)
 	}
-	updatedService := obj.(*corev1.Service)
-	// this needs to be set to the existing otherwise the update will try to
-	// remove this field which is immutable
-	updatedService.Spec.ClusterIP = svc.Spec.ClusterIP
 	return Update(ctx, &svc, obj, r.Client, r.logger)
 }
 
