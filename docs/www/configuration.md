@@ -356,7 +356,7 @@ redpanda:
   
   # Data archiving: Number of simultaneous uploads per shard
   # Default: 20
-  # archival_storage_max_connections: 20
+  archival_storage_max_connections: 20
 
 # The REST API (alpha)
 # This top-level config node enables the REST Proxy
