@@ -56,7 +56,6 @@ func TestValidateUpdate(t *testing.T) {
 		TLS: v1alpha1.TLSConfig{
 			KafkaAPI: v1alpha1.KafkaAPITLS{
 				RequireClientAuth: true,
-				KafkaAPIEnabled:   false,
 				IssuerRef: &cmmeta.ObjectReference{
 					Name: "test",
 				},
@@ -64,6 +63,7 @@ func TestValidateUpdate(t *testing.T) {
 					Name:      "name",
 					Namespace: "default",
 				},
+				Enabled: false,
 			},
 		},
 	}
@@ -178,7 +178,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 	t.Run("requireclientauth true and tls enabled", func(t *testing.T) {
 		tls := redpandaCluster.DeepCopy()
 		tls.Spec.Configuration.TLS.KafkaAPI.RequireClientAuth = true
-		tls.Spec.Configuration.TLS.KafkaAPI.KafkaAPIEnabled = true
+		tls.Spec.Configuration.TLS.KafkaAPI.Enabled = true
 
 		err := tls.ValidateUpdate(redpandaCluster)
 		assert.NoError(t, err)
@@ -263,7 +263,7 @@ func TestCreation(t *testing.T) {
 
 	t.Run("tls properly configured", func(t *testing.T) {
 		tls := redpandaCluster.DeepCopy()
-		tls.Spec.Configuration.TLS.KafkaAPI.KafkaAPIEnabled = true
+		tls.Spec.Configuration.TLS.KafkaAPI.Enabled = true
 		tls.Spec.Configuration.TLS.KafkaAPI.RequireClientAuth = true
 
 		err := tls.ValidateCreate()
@@ -272,7 +272,7 @@ func TestCreation(t *testing.T) {
 
 	t.Run("require client auth without tls enabled", func(t *testing.T) {
 		tls := redpandaCluster.DeepCopy()
-		tls.Spec.Configuration.TLS.KafkaAPI.KafkaAPIEnabled = false
+		tls.Spec.Configuration.TLS.KafkaAPI.Enabled = false
 		tls.Spec.Configuration.TLS.KafkaAPI.RequireClientAuth = true
 
 		err := tls.ValidateCreate()

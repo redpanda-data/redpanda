@@ -25,5 +25,5 @@ spec:
       port: 9644
     TLS:
       kafkaApi:
-        kafkaApiEnabled: true
+        enabled: true
     developerMode: true

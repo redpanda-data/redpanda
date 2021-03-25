@@ -126,7 +126,7 @@ func (r *ConfigMapResource) createConfiguration() *config.Config {
 	cr.AdminApi.Port = clusterCRPortOrRPKDefault(c.AdminAPI.Port, cr.AdminApi.Port)
 	cr.DeveloperMode = c.DeveloperMode
 	cr.Directory = dataDirectory
-	if r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.KafkaAPIEnabled {
+	if r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.Enabled {
 		cr.KafkaApiTLS = config.ServerTLS{
 			KeyFile:           fmt.Sprintf("%s/%s", tlsDir, corev1.TLSPrivateKeyKey), // tls.key
 			CertFile:          fmt.Sprintf("%s/%s", tlsDir, corev1.TLSCertKey),       // tls.crt
