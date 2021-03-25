@@ -65,12 +65,39 @@ delete_topics_handler::handle(request_context ctx, ss::smp_service_group) {
     request.decode(ctx.reader(), ctx.header().version);
     vlog(klog.trace, "Handling request {}", request);
 
-    auto tout = request.data.timeout_ms + model::timeout_clock::now();
-    auto res = co_await ctx.topics_frontend().delete_topics(
-      create_topic_namespaces(std::move(request.data.topic_names)), tout);
+    auto unauthorized_it = std::partition(
+      request.data.topic_names.begin(),
+      request.data.topic_names.end(),
+      [&ctx](const model::topic& topic) {
+          return ctx.authorized(acl_operation::remove, topic);
+      });
+
+    std::vector<model::topic> unauthorized(
+      std::make_move_iterator(unauthorized_it),
+      std::make_move_iterator(request.data.topic_names.end()));
+
+    request.data.topic_names.erase(
+      unauthorized_it, request.data.topic_names.end());
+
+    std::vector<cluster::topic_result> res;
+
+    if (!request.data.topic_names.empty()) {
+        auto tout = request.data.timeout_ms + model::timeout_clock::now();
+        auto res = co_await ctx.topics_frontend().delete_topics(
+          create_topic_namespaces(std::move(request.data.topic_names)), tout);
+    }
+
     auto resp = create_response(std::move(res));
     resp.data.throttle_time_ms = std::chrono::milliseconds(
       ctx.throttle_delay_ms());
+
+    for (auto& topic : unauthorized) {
+        resp.data.responses.push_back(deletable_topic_result{
+          .name = std::move(topic),
+          .error_code = error_code::topic_authorization_failed,
+        });
+    }
+
     co_return co_await ctx.respond(std::move(resp));
 }
 
