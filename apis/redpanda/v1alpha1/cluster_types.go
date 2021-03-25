@@ -134,6 +134,12 @@ type RedpandaConfig struct {
 	TLS           TLSConfig     `json:"tls,omitempty"`
 }
 
+// TLS config for redpanda APIs
+type TLSConfig struct {
+	// Configuration of TLS for Kafka API
+	KafkaAPI KafkaAPITLS `json:"kafkaApi,omitempty"`
+}
+
 // TLSConfig configures TLS for redpanda
 //
 // If KafkaAPIEnabled is set to true, one-way TLS verification is enabled.
@@ -156,7 +162,7 @@ type RedpandaConfig struct {
 // retrieved from the Secret named '<redpanda-cluster-name>-user-client'.
 //
 // All TLS secrets are stored in the same namespace as the Redpanda cluster.
-type TLSConfig struct {
+type KafkaAPITLS struct {
 	KafkaAPIEnabled bool `json:"kafkaApiEnabled,omitempty"`
 	// References cert-manager Issuer or ClusterIssuer. When provided, this
 	// issuer will be used to issue node certificates.
