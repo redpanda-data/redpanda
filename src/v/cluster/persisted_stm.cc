@@ -201,6 +201,21 @@ ss::future<bool> persisted_stm::sync(model::timeout_clock::duration timeout) {
       });
 }
 
+ss::future<bool> persisted_stm::wait_no_throw(
+  model::offset offset, model::timeout_clock::duration timeout) {
+    auto deadline = model::timeout_clock::now() + timeout;
+    return wait(offset, deadline)
+      .then([] { return true; })
+      .handle_exception([offset](std::exception_ptr e) {
+          vlog(
+            clusterlog.error,
+            "An error {} happened during waiting for offset:{}",
+            e,
+            offset);
+          return false;
+      });
+}
+
 ss::future<> persisted_stm::start() {
     return _snapshot_mgr.open_snapshot().then(
       [this](std::optional<storage::snapshot_reader> reader) {

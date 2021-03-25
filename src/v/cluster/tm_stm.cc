@@ -81,8 +81,10 @@ tm_stm::save_tx(model::term_id term, tm_transaction tx) {
         co_return tm_stm::op_status::unknown;
     }
 
-    auto deadline = model::timeout_clock::now() + _sync_timeout;
-    co_await wait(model::offset(r.value().last_offset()), deadline);
+    if (!co_await wait_no_throw(
+          model::offset(r.value().last_offset()), _sync_timeout)) {
+        co_return tm_stm::op_status::unknown;
+    }
 
     ptx = _tx_table.find(tx.id);
     if (ptx == _tx_table.end()) {
@@ -244,9 +246,10 @@ ss::future<tm_stm::op_status> tm_stm::register_new_producer(
         co_return tm_stm::op_status::unknown;
     }
 
-    auto deadline = model::timeout_clock::now()
-                    + config::shard_local_cfg().tm_sync_timeout_ms.value();
-    co_await wait(model::offset(r.value().last_offset()), deadline);
+    if (!co_await wait_no_throw(
+          model::offset(r.value().last_offset()), _sync_timeout)) {
+        co_return tm_stm::op_status::unknown;
+    }
 
     ptx = _tx_table.find(tx_id);
     if (ptx == _tx_table.end()) {

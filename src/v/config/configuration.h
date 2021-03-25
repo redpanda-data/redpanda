@@ -79,9 +79,10 @@ struct configuration final : public config_store {
     property<std::chrono::milliseconds> metadata_dissemination_retry_delay_ms;
     property<int16_t> metadata_dissemination_retries;
     property<model::violation_recovery_policy> stm_snapshot_recovery_policy;
-    property<std::chrono::milliseconds> seq_sync_timeout_ms;
     property<std::chrono::milliseconds> tm_sync_timeout_ms;
     property<model::violation_recovery_policy> tm_violation_recovery_policy;
+    property<std::chrono::milliseconds> rm_sync_timeout_ms;
+    property<model::violation_recovery_policy> rm_violation_recovery_policy;
     property<std::chrono::milliseconds> fetch_reads_debounce_timeout;
     property<std::chrono::milliseconds> alter_topic_cfg_timeout_ms;
     // same as transactional.id.expiration.ms in kafka

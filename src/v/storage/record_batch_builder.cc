@@ -38,12 +38,16 @@ model::record_batch record_batch_builder::build() && {
       .last_offset_delta = static_cast<int32_t>(_records.size() - 1),
       .first_timestamp = now_ts,
       .max_timestamp = now_ts,
-      .producer_id = -1,
-      .producer_epoch = -1,
+      .producer_id = _producer_id,
+      .producer_epoch = _producer_epoch,
       .base_sequence = -1,
       .record_count = static_cast<int32_t>(_records.size()),
       .ctx = model::record_batch_header::context(
         model::term_id(0), ss::this_shard_id())};
+
+    if (_is_control_type) {
+        header.attrs.set_control_type();
+    }
 
     iobuf records;
     for (auto& sr : _records) {

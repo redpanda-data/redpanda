@@ -33,9 +33,13 @@ partition::partition(consensus_ptr r)
             _nop_stm = ss::make_lw_shared<raft::log_eviction_stm>(
               _raft.get(), clusterlog, stm_manager, _as);
         }
-        if (config::shard_local_cfg().enable_idempotence.value()) {
-            _seq_stm = ss::make_shared<seq_stm>(clusterlog, _raft.get());
-            stm_manager->add_stm(_seq_stm);
+
+        auto has_rm_stm
+          = config::shard_local_cfg().enable_idempotence.value()
+            || config::shard_local_cfg().enable_transactions.value();
+        if (has_rm_stm) {
+            _rm_stm = ss::make_shared<cluster::rm_stm>(clusterlog, _raft.get());
+            stm_manager->add_stm(_rm_stm);
         }
     }
 }
@@ -50,8 +54,8 @@ partition::replicate(
   model::batch_identity bid,
   model::record_batch_reader&& r,
   raft::replicate_options opts) {
-    if (bid.has_idempotent()) {
-        return _seq_stm->replicate(bid, std::move(r), std::move(opts));
+    if (bid.is_transactional || bid.has_idempotent()) {
+        return _rm_stm->replicate(bid, std::move(r), std::move(opts));
     } else {
         return _raft->replicate(std::move(r), std::move(opts))
           .then([](result<raft::replicate_result> result) {
@@ -79,8 +83,8 @@ ss::future<> partition::start() {
         f = f.then([this] { return _nop_stm->start(); });
     }
 
-    if (_seq_stm) {
-        f = f.then([this] { return _seq_stm->start(); });
+    if (_rm_stm) {
+        f = f.then([this] { return _rm_stm->start(); });
     }
 
     return f;
@@ -99,8 +103,8 @@ ss::future<> partition::stop() {
         f = _nop_stm->stop();
     }
 
-    if (_seq_stm) {
-        f = f.then([this] { return _seq_stm->stop(); });
+    if (_rm_stm) {
+        f = f.then([this] { return _rm_stm->stop(); });
     }
 
     // no state machine

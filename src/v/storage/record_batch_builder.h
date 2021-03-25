@@ -40,6 +40,13 @@ public:
     virtual model::record_batch build() &&;
     virtual ~record_batch_builder();
 
+    void set_producer_identity(int64_t id, int16_t epoch) {
+        _producer_id = id;
+        _producer_epoch = epoch;
+    }
+
+    void set_control_type() { _is_control_type = true; }
+
 private:
     static constexpr int64_t zero_vint_size = vint::vint_size(0);
     struct serialized_record {
@@ -68,6 +75,9 @@ private:
 
     model::record_batch_type _batch_type;
     model::offset _base_offset;
+    int64_t _producer_id{-1};
+    int16_t _producer_epoch{-1};
+    bool _is_control_type{false};
     std::vector<serialized_record> _records;
 };
 } // namespace storage
