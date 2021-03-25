@@ -16,13 +16,13 @@ from rptest.wasm.topic import construct_materialized_topic
 from rptest.clients.types import TopicSpec
 
 
-class WasmBasicTest(WasmTest):
+class WasmIdentityTest(WasmTest):
     topics = (TopicSpec(partition_count=3,
                         replication_factor=3,
                         cleanup_policy=TopicSpec.CLEANUP_DELETE), )
 
     def __init__(self, test_context):
-        super(WasmBasicTest, self).__init__(test_context, extra_rp_conf={})
+        super(WasmIdentityTest, self).__init__(test_context, extra_rp_conf={})
 
     def wasm_test_plan(self):
         input_topic = self.topics[0].name
@@ -43,7 +43,7 @@ class WasmBasicTest(WasmTest):
         return [basic_script]
 
     @cluster(num_nodes=3)
-    def wasm_identity_script_test(self):
+    def ensure_identical_output_test(self):
         input_results, output_results = self._start(self.topics,
                                                     self.wasm_test_plan())
         assert input_results.num_records() == 1024
