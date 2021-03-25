@@ -36,14 +36,14 @@ export enum DisableResponseCode {
 
 const maxSizeTopicName = 249;
 const validateKafkaTopicName = (topic: string): boolean => {
-  const validAlphaNumeric = /^[0-9a-zA-Z]+$/;
+  const validChars = /^[a-zA-Z0-9\.\_\-]*$/;
   if (topic.length === 0) {
     return false;
   } else if (topic == "." || topic == "..") {
     return false;
   } else if (topic.length > maxSizeTopicName) {
     return false;
-  } else if (!validAlphaNumeric.test(topic)) {
+  } else if (!validChars.test(topic)) {
     return false;
   }
   return true;
