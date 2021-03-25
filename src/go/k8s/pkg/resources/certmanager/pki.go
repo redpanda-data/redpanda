@@ -65,6 +65,12 @@ func (r *PkiReconciler) certNamespacedName(name string) types.NamespacedName {
 
 // NodeCert returns the namespaced name for Redpanda's node certificate
 func (r *PkiReconciler) NodeCert() types.NamespacedName {
+	if r.pandaCluster.Spec.Configuration.TLS.NodeSecretRef != nil {
+		return types.NamespacedName{
+			Name:      r.pandaCluster.Spec.Configuration.TLS.NodeSecretRef.Name,
+			Namespace: r.pandaCluster.Spec.Configuration.TLS.NodeSecretRef.Namespace,
+		}
+	}
 	return types.NamespacedName{Name: r.pandaCluster.Name + "-" + RedpandaNodeCert, Namespace: r.pandaCluster.Namespace}
 }
 
@@ -116,27 +122,29 @@ func (r *PkiReconciler) Ensure(ctx context.Context) error {
 
 	// TODO: if a cluster issuer was provided, ensure that it comes with a CA (not self-signed). Perhaps create it otherwise.
 
-	// Redpanda cluster certificate for Kafka API - to be provided to each broker
-	certsKey := r.certNamespacedName(RedpandaNodeCert)
-	nodeIssuerRef := selfSignedIssuerRef
-	if externalIssuerRef != nil {
-		// if external issuer is provided, we will use it to generate node certificates
-		nodeIssuerRef = externalIssuerRef
+	if r.pandaCluster.Spec.Configuration.TLS.NodeSecretRef == nil {
+		// Redpanda cluster certificate for Kafka API - to be provided to each broker
+		certsKey := r.certNamespacedName(RedpandaNodeCert)
+		nodeIssuerRef := selfSignedIssuerRef
+		if externalIssuerRef != nil {
+			// if external issuer is provided, we will use it to generate node certificates
+			nodeIssuerRef = externalIssuerRef
+		}
+
+		dnsName := r.internalFQDN
+		externConn := r.pandaCluster.Spec.ExternalConnectivity
+		if externConn.Enabled && externConn.Subdomain != "" {
+			dnsName = externConn.Subdomain
+		}
+
+		redpandaCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, nodeIssuerRef, dnsName, false, r.logger)
+
+		toApply = append(toApply, redpandaCert)
 	}
-
-	dnsName := r.internalFQDN
-	externConn := r.pandaCluster.Spec.ExternalConnectivity
-	if externConn.Enabled && externConn.Subdomain != "" {
-		dnsName = externConn.Subdomain
-	}
-
-	redpandaCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, nodeIssuerRef, dnsName, false, r.logger)
-
-	toApply = append(toApply, redpandaCert)
 
 	if r.pandaCluster.Spec.Configuration.TLS.RequireClientAuth {
 		// Certificate for external clients to call the Kafka API on any broker in this Redpanda cluster
-		certsKey = r.certNamespacedName(UserClientCert)
+		certsKey := r.certNamespacedName(UserClientCert)
 		externalClientCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, selfSignedIssuerRef, "", false, r.logger)
 
 		// Certificate for operator to call the Kafka API on any broker in this Redpanda cluster

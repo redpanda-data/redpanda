@@ -127,6 +127,13 @@ func (r *Cluster) validateTLS() field.ErrorList {
 				r.Spec.Configuration.TLS.RequireClientAuth,
 				"KafkaAPIEnabled has to be set to true for RequireClientAuth to be allowed to be true"))
 	}
+	if r.Spec.Configuration.TLS.IssuerRef != nil && r.Spec.Configuration.TLS.NodeSecretRef != nil {
+		allErrs = append(allErrs,
+			field.Invalid(
+				field.NewPath("spec").Child("configuration").Child("tls").Child("nodeSecretRef"),
+				r.Spec.Configuration.TLS.NodeSecretRef,
+				"Cannot provide both IssuerRef and NodeSecretRef"))
+	}
 	return allErrs
 }
 
