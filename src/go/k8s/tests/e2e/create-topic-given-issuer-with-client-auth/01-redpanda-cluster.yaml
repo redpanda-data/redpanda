@@ -25,8 +25,9 @@ spec:
       port: 9644
     developerMode: true
     tls:
-      kafkaApiEnabled: true
-      requireClientAuth: true
-      issuerRef:
-        name: cluster-tls-root-issuer
-        kind: ClusterIssuer
+      kafkaApi:
+        enabled: true
+        requireClientAuth: true
+        issuerRef:
+          name: cluster-tls-root-issuer
+          kind: ClusterIssuer

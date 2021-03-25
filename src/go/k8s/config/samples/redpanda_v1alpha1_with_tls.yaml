@@ -24,5 +24,6 @@ spec:
     admin:
       port: 9644
     TLS:
-      kafkaApiEnabled: true
+      kafkaApi:
+        enabled: true
     developerMode: true

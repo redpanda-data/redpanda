@@ -23,6 +23,7 @@ spec:
       port: 9644
     developerMode: true
     tls:
-      kafkaApiEnabled: true
-      nodeSecretRef:
-        name: cluster-tls-node-certificate
+      kafkaApi:
+        enabled: true
+        nodeSecretRef:
+          name: cluster-tls-node-certificate

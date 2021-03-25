@@ -65,10 +65,10 @@ func (r *PkiReconciler) certNamespacedName(name string) types.NamespacedName {
 
 // NodeCert returns the namespaced name for Redpanda's node certificate
 func (r *PkiReconciler) NodeCert() types.NamespacedName {
-	if r.pandaCluster.Spec.Configuration.TLS.NodeSecretRef != nil {
+	if r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.NodeSecretRef != nil {
 		return types.NamespacedName{
-			Name:      r.pandaCluster.Spec.Configuration.TLS.NodeSecretRef.Name,
-			Namespace: r.pandaCluster.Spec.Configuration.TLS.NodeSecretRef.Namespace,
+			Name:      r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.NodeSecretRef.Name,
+			Namespace: r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.NodeSecretRef.Namespace,
 		}
 	}
 	return types.NamespacedName{Name: r.pandaCluster.Name + "-" + RedpandaNodeCert, Namespace: r.pandaCluster.Namespace}
@@ -82,13 +82,13 @@ func (r *PkiReconciler) OperatorClientCert() types.NamespacedName {
 
 // Ensure will manage PKI for redpanda.vectorized.io custom resource
 func (r *PkiReconciler) Ensure(ctx context.Context) error {
-	if !r.pandaCluster.Spec.Configuration.TLS.KafkaAPIEnabled {
+	if !r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.Enabled {
 		return nil
 	}
 
 	toApply := []resources.Resource{}
 
-	externalIssuerRef := r.pandaCluster.Spec.Configuration.TLS.IssuerRef
+	externalIssuerRef := r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.IssuerRef
 
 	selfSignedKey := r.issuerNamespacedName("selfsigned-issuer")
 	selfSignedIssuer := NewIssuer(r.Client,
@@ -122,7 +122,7 @@ func (r *PkiReconciler) Ensure(ctx context.Context) error {
 
 	// TODO: if a cluster issuer was provided, ensure that it comes with a CA (not self-signed). Perhaps create it otherwise.
 
-	if r.pandaCluster.Spec.Configuration.TLS.NodeSecretRef == nil {
+	if r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.NodeSecretRef == nil {
 		// Redpanda cluster certificate for Kafka API - to be provided to each broker
 		certsKey := r.certNamespacedName(RedpandaNodeCert)
 		nodeIssuerRef := selfSignedIssuerRef
@@ -142,7 +142,7 @@ func (r *PkiReconciler) Ensure(ctx context.Context) error {
 		toApply = append(toApply, redpandaCert)
 	}
 
-	if r.pandaCluster.Spec.Configuration.TLS.RequireClientAuth {
+	if r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.RequireClientAuth {
 		// Certificate for external clients to call the Kafka API on any broker in this Redpanda cluster
 		certsKey := r.certNamespacedName(UserClientCert)
 		externalClientCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, selfSignedIssuerRef, "", false, r.logger)

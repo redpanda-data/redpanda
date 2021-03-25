@@ -180,7 +180,7 @@ func (r *StatefulSetResource) queryRedpandaForTopicMembers(
 	conf.Admin.Timeout = time.Second
 
 	tlsConfig := tls.Config{MinVersion: tls.VersionTLS12} // TLS12 is min version allowed by gosec.
-	if r.pandaCluster.Spec.Configuration.TLS.KafkaAPIEnabled {
+	if r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.Enabled {
 		// For simplicity, we skip broker verification until per-listener
 		// TLS is available in Redpanda. This client calls the internal listener.
 		tlsConfig.InsecureSkipVerify = true
@@ -207,7 +207,7 @@ func (r *StatefulSetResource) queryRedpandaForTopicMembers(
 func (r *StatefulSetResource) populateTLSConfigCert(
 	ctx context.Context, tlsConfig *tls.Config,
 ) error {
-	if !r.pandaCluster.Spec.Configuration.TLS.RequireClientAuth {
+	if !r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.RequireClientAuth {
 		return nil
 	}
 

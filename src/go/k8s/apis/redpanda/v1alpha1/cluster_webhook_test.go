@@ -54,14 +54,16 @@ func TestValidateUpdate(t *testing.T) {
 	updatedCluster.Spec.Configuration = v1alpha1.RedpandaConfig{
 		KafkaAPI: v1alpha1.SocketAddress{Port: 1234},
 		TLS: v1alpha1.TLSConfig{
-			RequireClientAuth: true,
-			KafkaAPIEnabled:   false,
-			IssuerRef: &cmmeta.ObjectReference{
-				Name: "test",
-			},
-			NodeSecretRef: &corev1.ObjectReference{
-				Name:      "name",
-				Namespace: "default",
+			KafkaAPI: v1alpha1.KafkaAPITLS{
+				RequireClientAuth: true,
+				IssuerRef: &cmmeta.ObjectReference{
+					Name: "test",
+				},
+				NodeSecretRef: &corev1.ObjectReference{
+					Name:      "name",
+					Namespace: "default",
+				},
+				Enabled: false,
 			},
 		},
 	}
@@ -175,8 +177,8 @@ func TestValidateUpdate_NoError(t *testing.T) {
 
 	t.Run("requireclientauth true and tls enabled", func(t *testing.T) {
 		tls := redpandaCluster.DeepCopy()
-		tls.Spec.Configuration.TLS.RequireClientAuth = true
-		tls.Spec.Configuration.TLS.KafkaAPIEnabled = true
+		tls.Spec.Configuration.TLS.KafkaAPI.RequireClientAuth = true
+		tls.Spec.Configuration.TLS.KafkaAPI.Enabled = true
 
 		err := tls.ValidateUpdate(redpandaCluster)
 		assert.NoError(t, err)
@@ -261,8 +263,8 @@ func TestCreation(t *testing.T) {
 
 	t.Run("tls properly configured", func(t *testing.T) {
 		tls := redpandaCluster.DeepCopy()
-		tls.Spec.Configuration.TLS.KafkaAPIEnabled = true
-		tls.Spec.Configuration.TLS.RequireClientAuth = true
+		tls.Spec.Configuration.TLS.KafkaAPI.Enabled = true
+		tls.Spec.Configuration.TLS.KafkaAPI.RequireClientAuth = true
 
 		err := tls.ValidateCreate()
 		assert.NoError(t, err)
@@ -270,8 +272,8 @@ func TestCreation(t *testing.T) {
 
 	t.Run("require client auth without tls enabled", func(t *testing.T) {
 		tls := redpandaCluster.DeepCopy()
-		tls.Spec.Configuration.TLS.KafkaAPIEnabled = false
-		tls.Spec.Configuration.TLS.RequireClientAuth = true
+		tls.Spec.Configuration.TLS.KafkaAPI.Enabled = false
+		tls.Spec.Configuration.TLS.KafkaAPI.RequireClientAuth = true
 
 		err := tls.ValidateCreate()
 		assert.Error(t, err)

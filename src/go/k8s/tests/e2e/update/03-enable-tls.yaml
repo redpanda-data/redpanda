@@ -5,4 +5,5 @@ metadata:
 spec:
   configuration:
     tls:
-      kafkaApiEnabled: true
+      kafkaApi:
+        enabled: true
