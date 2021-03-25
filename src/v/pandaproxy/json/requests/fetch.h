@@ -19,8 +19,8 @@
 #include "model/fundamental.h"
 #include "model/record.h"
 #include "model/record_batch_reader.h"
+#include "pandaproxy/json/exceptions.h"
 #include "pandaproxy/json/iobuf.h"
-#include "pandaproxy/json/requests/error_reply.h"
 #include "pandaproxy/json/requests/produce.h"
 #include "pandaproxy/json/rjson_util.h"
 #include "pandaproxy/json/types.h"
@@ -79,12 +79,7 @@ public:
         // Eager check for errors
         for (auto& v : res) {
             if (v.partition_response->has_error()) {
-                error_body e{
-                  .error_code = ss::httpd::reply::status_type::not_found,
-                  .message{ss::sstring{
-                    kafka::error_code_to_str(v.partition_response->error)}}};
-                rjson_serialize(w, e);
-                return;
+                throw serialize_error(v.partition_response->error);
             }
         }
 

@@ -59,6 +59,36 @@ FIXTURE_TEST(pandaproxy_fetch, pandaproxy_test_fixture) {
 })");
 
     {
+        info("Fetch with missing request parameter 'offset'");
+        set_client_config("retries", size_t(0));
+        auto res = http_request(
+          client,
+          "/topics//partitions/0/"
+          "records?max_bytes=1024&timeout=5000");
+
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::bad_request);
+        BOOST_REQUIRE_EQUAL(
+          res.body,
+          R"({"error_code":40002,"message":"Missing mandatory parameter 'offset'"})");
+    }
+
+    {
+        info("Fetch with missing path parameter 'topic_name'");
+        set_client_config("retries", size_t(0));
+        auto res = http_request(
+          client,
+          "/topics//partitions/0/"
+          "records?offset=0&max_bytes=1024&timeout=5000");
+
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::bad_request);
+        BOOST_REQUIRE_EQUAL(
+          res.body,
+          R"({"error_code":40002,"message":"Missing mandatory parameter 'topic_name'"})");
+    }
+
+    {
         info("Fetch from unknown topic");
         set_client_config("retries", size_t(0));
         auto res = http_request(
@@ -67,10 +97,10 @@ FIXTURE_TEST(pandaproxy_fetch, pandaproxy_test_fixture) {
           "records?offset=0&max_bytes=1024&timeout=5000");
 
         BOOST_REQUIRE_EQUAL(
-          res.headers.result(), boost::beast::http::status::ok);
+          res.headers.result(), boost::beast::http::status::not_found);
         BOOST_REQUIRE_EQUAL(
           res.body,
-          R"({"error_code":404,"message":"unknown_topic_or_partition"})");
+          R"({"error_code":40402,"message":"unknown_topic_or_partition"})");
     }
 
     info("Adding known topic");

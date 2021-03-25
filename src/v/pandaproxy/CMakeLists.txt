@@ -23,12 +23,15 @@ v_cc_library(
   NAME pandaproxy
   SRCS
     configuration.cc
+    error.cc
     handlers.cc
     logger.cc
     probe.cc
     proxy.cc
     server.cc
   DEPS
+    v::pandaproxy_parsing
+    v::pandaproxy_json
     v::kafka_client
     v::syschecks
     v::kafka
@@ -41,4 +44,5 @@ foreach(swagger_dep ${swagger_deps})
 endforeach()
 
 add_subdirectory(json)
+add_subdirectory(parsing)
 add_subdirectory(test)

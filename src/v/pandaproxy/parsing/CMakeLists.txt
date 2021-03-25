@@ -1,5 +1,5 @@
 v_cc_library(
-  NAME pandaproxy_json
+  NAME pandaproxy_parsing
   SRCS
     error.cc
   DEPS
@@ -7,4 +7,3 @@ v_cc_library(
 )
 
 add_subdirectory(test)
-add_subdirectory(requests)
