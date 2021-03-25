@@ -854,15 +854,22 @@ rpk:
 			name: "shall write config with archival configuration",
 			conf: func() *Config {
 				c := getValidConfig()
-				c.Redpanda.ArchivalStorage = ArchivalStorage{
-					Enabled:                  true,
-					S3AccessKey:              "access",
-					S3SecretKey:              "secret",
-					S3Region:                 "region",
-					S3Bucket:                 "bucket",
-					ReconciliationIntervalMs: 3,
-					MaxConnections:           4,
-				}
+				enabled := true
+				access := "access"
+				bucket := "bucket"
+				region := "region"
+				secret := "secret"
+				interval := 20000
+				conns := 4
+				endpoint := "http"
+				c.Redpanda.ArchivalStorageEnabled = &enabled
+				c.Redpanda.ArchivalStorageS3AccessKey = &access
+				c.Redpanda.ArchivalStorageS3Bucket = &bucket
+				c.Redpanda.ArchivalStorageS3Region = &region
+				c.Redpanda.ArchivalStorageS3SecretKey = &secret
+				c.Redpanda.ArchivalStorageReconciliationIntervalMs = &interval
+				c.Redpanda.ArchivalStorageMaxConnections = &conns
+				c.Redpanda.ArchivalStorageApiEndpoint = &endpoint
 				return c
 			},
 			wantErr: false,
@@ -871,14 +878,14 @@ redpanda:
   admin:
     address: 0.0.0.0
     port: 9644
-  archival_storage:
-    enabled: true
-    max_connections: 4
-    reconciliation_interval_ms: 3
-    s3_access_key: access
-    s3_bucket: bucket
-    s3_region: region
-    s3_secret_key: secret
+  archival_storage_api_endpoint: http
+  archival_storage_enabled: true
+  archival_storage_max_connections: 4
+  archival_storage_reconciliation_interval_ms: 20000
+  archival_storage_s3_access_key: access
+  archival_storage_s3_bucket: bucket
+  archival_storage_s3_region: region
+  archival_storage_s3_secret_key: secret
   data_directory: /var/lib/redpanda/data
   developer_mode: false
   kafka_api:
