@@ -82,6 +82,8 @@ func TestEnsure(t *testing.T) {
 			types.NamespacedName{Name: "test", Namespace: "test"},
 			types.NamespacedName{},
 			types.NamespacedName{},
+			types.NamespacedName{},
+			types.NamespacedName{},
 			"",
 			"latest",
 			ctrl.Log.WithName("test"))
