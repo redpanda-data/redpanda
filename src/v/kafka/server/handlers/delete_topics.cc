@@ -17,6 +17,7 @@
 #include "model/namespace.h"
 #include "model/timeout_clock.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/do_with.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/smp.hh>
@@ -27,20 +28,6 @@
 #include <string_view>
 
 namespace kafka {
-
-struct delete_topics_ctx {
-    request_context rctx;
-    delete_topics_request request;
-    ss::smp_service_group ssg;
-
-    delete_topics_ctx(
-      request_context&& rctx,
-      delete_topics_request&& request,
-      ss::smp_service_group ssg)
-      : rctx(std::move(rctx))
-      , request(std::move(request))
-      , ssg(ssg) {}
-};
 
 std::vector<model::topic_namespace>
 create_topic_namespaces(std::vector<model::topic> topic_names) {
@@ -73,26 +60,18 @@ delete_topics_response create_response(std::vector<cluster::topic_result> res) {
 
 template<>
 ss::future<response_ptr>
-delete_topics_handler::handle(request_context ctx, ss::smp_service_group ssg) {
+delete_topics_handler::handle(request_context ctx, ss::smp_service_group) {
     delete_topics_request request;
     request.decode(ctx.reader(), ctx.header().version);
     vlog(klog.trace, "Handling request {}", request);
 
-    return ss::do_with(
-      delete_topics_ctx(std::move(ctx), std::move(request), ssg),
-      [](delete_topics_ctx& octx) {
-          auto req = std::move(octx.request.data);
-          auto tout = req.timeout_ms + model::timeout_clock::now();
-          return octx.rctx.topics_frontend()
-            .delete_topics(
-              create_topic_namespaces(std::move(req.topic_names)), tout)
-            .then([&octx](std::vector<cluster::topic_result> res) {
-                auto resp = create_response(std::move(res));
-                resp.data.throttle_time_ms = std::chrono::milliseconds(
-                  octx.rctx.throttle_delay_ms());
-                return octx.rctx.respond(std::move(resp));
-            });
-      });
+    auto tout = request.data.timeout_ms + model::timeout_clock::now();
+    auto res = co_await ctx.topics_frontend().delete_topics(
+      create_topic_namespaces(std::move(request.data.topic_names)), tout);
+    auto resp = create_response(std::move(res));
+    resp.data.throttle_time_ms = std::chrono::milliseconds(
+      ctx.throttle_delay_ms());
+    co_return co_await ctx.respond(std::move(resp));
 }
 
 } // namespace kafka
