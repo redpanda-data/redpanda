@@ -2,11 +2,15 @@ import error from "../../modules/rpc/errors";
 import assert = require("assert");
 describe("handle error", () => {
   it("should validated topic name", function () {
-    const invalid = error.validateKafkaTopicName("invalid.");
-    const invalid2 = error.validateKafkaTopicName("invalid<$");
-    const invalid3 = error.validateKafkaTopicName("ValidTopic");
-    assert.strictEqual(invalid, false);
-    assert.strictEqual(invalid2, false);
-    assert.strictEqual(invalid3, true);
+    const veryLongTopic =
+      "abcdefghij_abcdefghij_abcdefghij_abcdefghij_abcdefghij_abcdefghij_abcdefghij_abcdefghij_abcdefghij_abcdefghij_abcdefghij_abcdefghij_abcdefghij_abcdefghij_abcdefghij_abcdefghij_abcdefghij_abcdefghij_abcdefghij_abcdefghij_abcdefghij_abcdefghij_abcdefghij_abcdefghij_abcdefghij_abcdefghij_";
+    assert.ok(!error.validateKafkaTopicName("invalid<$"));
+    assert.ok(error.validateKafkaTopicName("Valid.Topic"));
+    assert.ok(error.validateKafkaTopicName("ValidTopic"));
+    assert.ok(error.validateKafkaTopicName("Valid-Topic"));
+    assert.ok(error.validateKafkaTopicName("Valid_Topic"));
+    assert.ok(!error.validateKafkaTopicName("."));
+    assert.ok(!error.validateKafkaTopicName(".."));
+    assert.ok(!error.validateKafkaTopicName(veryLongTopic));
   });
 });
