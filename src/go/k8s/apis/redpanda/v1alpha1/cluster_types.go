@@ -134,15 +134,15 @@ type RedpandaConfig struct {
 	TLS           TLSConfig     `json:"tls,omitempty"`
 }
 
-// TLS config for redpanda APIs
+// TLSConfig configures TLS for redpanda APIs
 type TLSConfig struct {
 	// Configuration of TLS for Kafka API
 	KafkaAPI KafkaAPITLS `json:"kafkaApi,omitempty"`
 }
 
-// TLSConfig configures TLS for redpanda
+// KafkaAPITLS configures TLS for redpanda Kafka API
 //
-// If KafkaAPIEnabled is set to true, one-way TLS verification is enabled.
+// If Enabled is set to true, one-way TLS verification is enabled.
 // In that case, a key pair ('tls.crt', 'tls.key') and CA certificate 'ca.crt'
 // are generated and stored in a Secret with the same name and namespace as the
 // Redpanda cluster. 'ca.crt', must be used by a client as a trustore when
@@ -163,7 +163,7 @@ type TLSConfig struct {
 //
 // All TLS secrets are stored in the same namespace as the Redpanda cluster.
 type KafkaAPITLS struct {
-	KafkaAPIEnabled bool `json:"kafkaApiEnabled,omitempty"`
+	Enabled bool `json:"enabled,omitempty"`
 	// References cert-manager Issuer or ClusterIssuer. When provided, this
 	// issuer will be used to issue node certificates.
 	// Typically you want to provide the issuer when a generated self-signed one

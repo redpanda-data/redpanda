@@ -82,7 +82,7 @@ func (r *PkiReconciler) OperatorClientCert() types.NamespacedName {
 
 // Ensure will manage PKI for redpanda.vectorized.io custom resource
 func (r *PkiReconciler) Ensure(ctx context.Context) error {
-	if !r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.KafkaAPIEnabled {
+	if !r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.Enabled {
 		return nil
 	}
 

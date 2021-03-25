@@ -25,5 +25,5 @@ spec:
     developerMode: true
     tls:
       kafkaApi:
-        kafkaApiEnabled: true
+        enabled: true
         requireClientAuth: true

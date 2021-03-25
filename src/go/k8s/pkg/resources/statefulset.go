@@ -443,7 +443,7 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 
 func (r *StatefulSetResource) secretVolumeMounts() []corev1.VolumeMount {
 	var mounts []corev1.VolumeMount
-	if r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.KafkaAPIEnabled {
+	if r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.Enabled {
 		mounts = append(mounts, corev1.VolumeMount{
 			Name:      "tlscert",
 			MountPath: tlsDir,
@@ -462,7 +462,7 @@ func (r *StatefulSetResource) secretVolumes() []corev1.Volume {
 	var vols []corev1.Volume
 
 	// When TLS is enabled, Redpanda needs a keypair certificate.
-	if r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.KafkaAPIEnabled {
+	if r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.Enabled {
 		vols = append(vols, corev1.Volume{
 			Name: "tlscert",
 			VolumeSource: corev1.VolumeSource{

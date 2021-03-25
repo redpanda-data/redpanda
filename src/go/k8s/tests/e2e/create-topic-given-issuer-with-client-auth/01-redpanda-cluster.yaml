@@ -26,7 +26,7 @@ spec:
     developerMode: true
     tls:
       kafkaApi:
-        kafkaApiEnabled: true
+        enabled: true
         requireClientAuth: true
         issuerRef:
           name: cluster-tls-root-issuer
