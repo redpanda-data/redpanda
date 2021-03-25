@@ -35,8 +35,33 @@ ss::future<response_ptr> delete_groups_handler::handle(
     request.decode(ctx.reader(), ctx.header().version);
     vlog(klog.debug, "Handling delete groups: {}", request);
 
-    auto results = co_await ctx.groups().delete_groups(
-      std::move(request.data.groups_names));
+    auto unauthorized_it = std::partition(
+      request.data.groups_names.begin(),
+      request.data.groups_names.end(),
+      [&ctx](const kafka::group_id& group) {
+          return ctx.authorized(acl_operation::remove, group);
+      });
+
+    std::vector<kafka::group_id> unauthorized(
+      std::make_move_iterator(unauthorized_it),
+      std::make_move_iterator(request.data.groups_names.end()));
+
+    request.data.groups_names.erase(
+      unauthorized_it, request.data.groups_names.end());
+
+    std::vector<deletable_group_result> results;
+
+    if (!request.data.groups_names.empty()) {
+        results = co_await ctx.groups().delete_groups(
+          std::move(request.data.groups_names));
+    }
+
+    for (auto& group : unauthorized) {
+        results.push_back(deletable_group_result{
+          .group_id = std::move(group),
+          .error_code = error_code::group_authorization_failed,
+        });
+    }
 
     co_return co_await ctx.respond(delete_groups_response(std::move(results)));
 }
