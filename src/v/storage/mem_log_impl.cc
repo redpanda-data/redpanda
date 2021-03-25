@@ -307,6 +307,11 @@ struct mem_log_impl final : log::impl {
         _max_collectible_offset = o;
     }
 
+    ss::future<> update_configuration(ntp_config::default_overrides o) final {
+        mutable_config().set_overrides(o);
+        return ss::now();
+    }
+
     ss::future<model::record_batch_reader>
     make_reader(log_reader_config cfg) final {
         auto it = std::lower_bound(
@@ -365,6 +370,17 @@ struct mem_log_impl final : log::impl {
           .dirty_offset_term = e.term(),
           .last_term_start_offset = last_term_base_offset};
     }
+
+    size_t size_bytes() const override {
+        return std::accumulate(
+          _data.cbegin(),
+          _data.cend(),
+          size_t(0),
+          [](size_t acc, const model::record_batch& b) {
+              return acc + b.size_bytes();
+          });
+    }
+
     struct eviction_monitor {
         ss::promise<model::offset> promise;
         ss::abort_source::subscription subscription;

@@ -99,6 +99,10 @@ public:
         return raft::details::next_offset(_raft->last_visible_index());
     }
 
+    model::offset dirty_offset() const {
+        return _raft->log().offsets().dirty_offset;
+    }
+
     const model::ntp& ntp() const { return _raft->ntp(); }
 
     ss::future<std::optional<storage::timequery_result>>
@@ -136,6 +140,9 @@ public:
     }
 
     ss::shared_ptr<cluster::rm_stm>& rm_stm() { return _rm_stm; }
+
+    size_t size_bytes() const { return _raft->log().size_bytes(); }
+    ss::future<> update_configuration(topic_properties);
 
 private:
     friend partition_manager;

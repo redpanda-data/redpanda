@@ -117,6 +117,11 @@ partition::timequery(model::timestamp t, ss::io_priority_class p) {
     return _raft->timequery(cfg);
 }
 
+ss::future<> partition::update_configuration(topic_properties properties) {
+    return _raft->log().update_configuration(
+      properties.get_ntp_cfg_overrides());
+}
+
 std::ostream& operator<<(std::ostream& o, const partition& x) {
     return o << x._raft;
 }

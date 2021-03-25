@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "bytes/iobuf_parser.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "model/record.h"
@@ -88,7 +89,13 @@ struct adl<model::record> {
 template<>
 struct adl<model::record_batch_header> {
     void to(iobuf& out, model::record_batch_header&& r);
-    model::record_batch_header from(iobuf_parser& in);
+    template<typename Parser>
+    model::record_batch_header parse_from(Parser& in);
+    model::record_batch_header from(iobuf_const_parser& in) {
+        return parse_from(in);
+    }
+
+    model::record_batch_header from(iobuf_parser& in) { return parse_from(in); }
 };
 
 struct batch_header {
@@ -156,4 +163,40 @@ struct adl<tristate<T>> {
         return tristate<T>(adl<T>{}.from(buf));
     }
 };
+
+template<typename Parser>
+model::record_batch_header
+adl<model::record_batch_header>::parse_from(Parser& in) {
+    auto header_crc = adl<uint32_t>{}.from(in);
+    auto sz = adl<int32_t>{}.from(in);
+    auto off = adl<model::offset>{}.from(in);
+    auto type = adl<model::record_batch_type>{}.from(in);
+    auto crc = adl<int32_t>{}.from(in);
+    using attr_t = model::record_batch_attributes::type;
+    auto attrs = model::record_batch_attributes(adl<attr_t>{}.from(in));
+    auto delta = adl<int32_t>{}.from(in);
+    using tmstmp_t = model::timestamp::type;
+    auto first = model::timestamp(adl<tmstmp_t>{}.from(in));
+    auto max = model::timestamp(adl<tmstmp_t>{}.from(in));
+    auto producer_id = adl<int64_t>{}.from(in);
+    auto producer_epoch = adl<int16_t>{}.from(in);
+    auto base_sequence = adl<int32_t>{}.from(in);
+    auto record_count = adl<int32_t>{}.from(in);
+    auto term_id = adl<model::term_id>{}.from(in);
+    return model::record_batch_header{
+      .header_crc = header_crc,
+      .size_bytes = sz,
+      .base_offset = off,
+      .type = type,
+      .crc = crc,
+      .attrs = attrs,
+      .last_offset_delta = delta,
+      .first_timestamp = first,
+      .max_timestamp = max,
+      .producer_id = producer_id,
+      .producer_epoch = producer_epoch,
+      .base_sequence = base_sequence,
+      .record_count = record_count,
+      .ctx = model::record_batch_header::context(term_id, ss::this_shard_id())};
+}
 } // namespace reflection

@@ -136,6 +136,9 @@ public:
     void append(ss::temporary_buffer<char>);
     /// appends the contents of buffer; might pack values into existing space
     void append(iobuf);
+    /// appends all fragments from given buffer directly to current buffer
+    /// fragments list
+    void append_fragments(iobuf);
     /// \brief trims the back, and appends direct.
     void append_take_ownership(fragment*);
     /// prepends the _the buffer_ as iobuf::details::io_fragment::full{}
@@ -337,6 +340,17 @@ inline void iobuf::append(iobuf o) {
     while (!o._frags.empty()) {
         o._frags.pop_front_and_dispose([this](fragment* f) {
             append(f->share());
+            delete f; // NOLINT
+        });
+    }
+}
+
+inline void iobuf::append_fragments(iobuf o) {
+    oncore_debug_verify(_verify_shard);
+    while (!o._frags.empty()) {
+        o._frags.pop_front_and_dispose([this](fragment* f) {
+            auto frag = new fragment(f->share(), fragment::full{});
+            append_take_ownership(frag);
             delete f; // NOLINT
         });
     }

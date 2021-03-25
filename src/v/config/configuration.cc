@@ -280,6 +280,13 @@ configuration::configuration()
       "wasn't reached",
       required::no,
       1ms)
+  , alter_topic_cfg_timeout_ms(
+      *this,
+      "alter_topic_cfg_timeout_ms",
+      "Time to wait for entries replication in controller log when executing "
+      "alter configuration requst",
+      required::no,
+      5s)
   , transactional_id_expiration_ms(
       *this,
       "transactional_id_expiration_ms",

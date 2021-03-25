@@ -83,6 +83,9 @@ topic_updates_dispatcher::apply_update(model::record_batch b) {
             },
             [this, base_offset](finish_moving_partition_replicas_cmd cmd) {
                 return dispatch_updates_to_cores(std::move(cmd), base_offset);
+            },
+            [this, base_offset](update_topic_properties_cmd cmd) {
+                return dispatch_updates_to_cores(std::move(cmd), base_offset);
             });
       });
 }

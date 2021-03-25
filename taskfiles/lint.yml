@@ -1,0 +1,9 @@
+version: '3'
+
+tasks:
+  cpp:
+    desc: lint cpp code using clang-format
+    cmds:
+    - |
+      PATH="{{.LLVM_INSTALL_PATH}}/bin":$PATH
+      find . -regex '.*\.\(cpp\|h\|hpp\|cc\|proto\|java\)$' | xargs -n1 clang-format -i -style=file -fallback-style=none

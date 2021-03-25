@@ -149,8 +149,47 @@ struct topic_properties {
     bool is_compacted() const;
     bool has_overrides() const;
 
+    storage::ntp_config::default_overrides get_ntp_cfg_overrides() const;
+
     friend std::ostream& operator<<(std::ostream&, const topic_properties&);
 };
+
+enum incremental_update_operation : int8_t { none, set, remove };
+template<typename T>
+struct property_update {
+    T value;
+    incremental_update_operation op = incremental_update_operation::none;
+};
+
+template<typename T>
+struct property_update<tristate<T>> {
+    tristate<T> value = tristate<T>(std::nullopt);
+    incremental_update_operation op = incremental_update_operation::none;
+};
+
+struct incremental_topic_updates {
+    property_update<std::optional<model::compression>> compression;
+    property_update<std::optional<model::cleanup_policy_bitflags>>
+      cleanup_policy_bitflags;
+    property_update<std::optional<model::compaction_strategy>>
+      compaction_strategy;
+    property_update<std::optional<model::timestamp_type>> timestamp_type;
+    property_update<std::optional<size_t>> segment_size;
+    property_update<tristate<size_t>> retention_bytes;
+    property_update<tristate<std::chrono::milliseconds>> retention_duration;
+};
+
+/**
+ * Struct representing single topic properties update
+ */
+struct topic_properties_update {
+    explicit topic_properties_update(model::topic_namespace tp_ns)
+      : tp_ns(std::move(tp_ns)) {}
+
+    model::topic_namespace tp_ns;
+    incremental_topic_updates properties;
+};
+
 // Structure holding topic configuration, optionals will be replaced by broker
 // defaults
 struct topic_configuration {
@@ -217,6 +256,14 @@ struct finish_partition_update_request {
 
 struct finish_partition_update_reply {
     cluster::errc result;
+};
+
+struct update_topic_properties_request {
+    std::vector<topic_properties_update> updates;
+};
+
+struct update_topic_properties_reply {
+    std::vector<topic_result> results;
 };
 
 template<typename T>
@@ -330,6 +377,12 @@ template<>
 struct adl<cluster::configuration_invariants> {
     void to(iobuf&, cluster::configuration_invariants&&);
     cluster::configuration_invariants from(iobuf_parser&);
+};
+
+template<>
+struct adl<cluster::topic_properties_update> {
+    void to(iobuf&, cluster::topic_properties_update&&);
+    cluster::topic_properties_update from(iobuf_parser&);
 };
 
 } // namespace reflection

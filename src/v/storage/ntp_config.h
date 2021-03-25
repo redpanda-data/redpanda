@@ -111,6 +111,10 @@ public:
         return with_cache(!has_overrides() || _overrides->cache_enabled);
     }
 
+    void set_overrides(default_overrides o) {
+        _overrides = std::make_unique<default_overrides>(o);
+    }
+
 private:
     model::ntp _ntp;
     /// \brief currently this is the basedir. In the future

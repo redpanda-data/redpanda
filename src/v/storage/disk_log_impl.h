@@ -76,6 +76,9 @@ public:
     const segment_set& segments() const { return _segs; }
     size_t bytes_left_before_roll() const;
 
+    size_t size_bytes() const override { return _probe.partition_size(); }
+    ss::future<> update_configuration(ntp_config::default_overrides) final;
+
 private:
     friend class disk_log_appender; // for multi-term appends
     friend class disk_log_builder;  // for tests
@@ -121,6 +124,8 @@ private:
     model::offset time_based_gc_max_offset(model::timestamp);
 
     bool is_front_segment(const segment_set::type&) const;
+
+    compaction_config apply_overrides(compaction_config) const;
 
 private:
     size_t max_segment_size() const;

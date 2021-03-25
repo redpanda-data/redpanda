@@ -195,6 +195,9 @@ func getMetrics(
 ) (*metricsResult, error) {
 	res := &metricsResult{[][]string{}, nil}
 	m, err := system.GatherMetrics(fs, timeout, conf)
+	if system.IsErrRedpandaDown(err) {
+		return res, errors.Wrap(err, "Omitting runtime metrics")
+	}
 	if err != nil {
 		return res, errors.Wrap(err, "Error gathering metrics")
 	}

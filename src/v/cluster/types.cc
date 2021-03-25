@@ -38,6 +38,17 @@ bool topic_properties::has_overrides() const {
            || retention_duration.is_disabled();
 }
 
+storage::ntp_config::default_overrides
+topic_properties::get_ntp_cfg_overrides() const {
+    storage::ntp_config::default_overrides ret;
+    ret.cleanup_policy_bitflags = cleanup_policy_bitflags;
+    ret.compaction_strategy = compaction_strategy;
+    ret.retention_bytes = retention_bytes;
+    ret.retention_time = retention_duration;
+    ret.segment_size = segment_size;
+    return ret;
+}
+
 topic_configuration::topic_configuration(
   model::ns n, model::topic t, int32_t count, int16_t rf)
   : tp_ns(std::move(n), std::move(t))
@@ -106,8 +117,8 @@ std::ostream& operator<<(std::ostream& o, const topic_configuration& cfg) {
 std::ostream& operator<<(std::ostream& o, const topic_properties& properties) {
     fmt::print(
       o,
-      "{compression: {}, cleanup_policy_bitflags: {}, compaction_strategy: {}, "
-      "retention_bytes: {}, retention_duration_ms: {}, segment_size: {}, "
+      "{{ compression: {}, cleanup_policy_bitflags: {}, compaction_strategy: "
+      "{}, retention_bytes: {}, retention_duration_ms: {}, segment_size: {}, "
       "timestamp_type: {} }}",
       properties.compression,
       properties.cleanup_policy_bitflags,
@@ -308,6 +319,20 @@ adl<cluster::configuration_invariants>::from(iobuf_parser& parser) {
     auto core_count = adl<uint16_t>{}.from(parser);
 
     cluster::configuration_invariants ret(node_id, core_count);
+
+    return ret;
+}
+
+void adl<cluster::topic_properties_update>::to(
+  iobuf& out, cluster::topic_properties_update&& r) {
+    reflection::serialize(out, r.tp_ns, r.properties);
+}
+
+cluster::topic_properties_update
+adl<cluster::topic_properties_update>::from(iobuf_parser& parser) {
+    auto tp_ns = adl<model::topic_namespace>{}.from(parser);
+    cluster::topic_properties_update ret(std::move(tp_ns));
+    ret.properties = adl<cluster::incremental_topic_updates>{}.from(parser);
 
     return ret;
 }

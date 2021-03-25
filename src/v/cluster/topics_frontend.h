@@ -56,6 +56,9 @@ public:
       std::vector<model::broker_shard>,
       model::timeout_clock::time_point);
 
+    ss::future<std::vector<topic_result>> update_topic_properties(
+      std::vector<topic_properties_update>, model::timeout_clock::time_point);
+
 private:
     using ntp_leader = std::pair<model::ntp, model::node_id>;
 
@@ -78,8 +81,13 @@ private:
       model::node_id,
       std::vector<topic_configuration>,
       model::timeout_clock::duration);
-
+    ss::future<topic_result> do_update_topic_properties(
+      topic_properties_update, model::timeout_clock::time_point);
     ss::future<> update_leaders_with_estimates(std::vector<ntp_leader>);
+
+    ss::future<result<model::offset>>
+      stm_linearizable_barrier(model::timeout_clock::time_point);
+
     // returns true if the topic name is valid
     static bool validate_topic_name(const model::topic_namespace&);
 

@@ -20,7 +20,7 @@ import (
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/generate"
 )
 
-func TestGrafanaHostNoServer(t *testing.T) {
+func TestPrometheusURLFlagDeprecation(t *testing.T) {
 	var out bytes.Buffer
 	logrus.SetOutput(&out)
 	cmd := generate.NewGrafanaDashboardCmd()
@@ -28,6 +28,18 @@ func TestGrafanaHostNoServer(t *testing.T) {
 		"--prometheus-url", "localhost:8888/metrics",
 		"--datasource", "prometheus",
 	})
+	require.Contains(t, cmd.Flag("prometheus-url").Deprecated, "Use --metrics-endpoint instead")
+}
+
+func TestGrafanaHostNoServer(t *testing.T) {
+	var out bytes.Buffer
+	logrus.SetOutput(&out)
+	cmd := generate.NewGrafanaDashboardCmd()
+	cmd.SetArgs([]string{
+		"--metrics-endpoint", "localhost:8888/metrics",
+		"--datasource", "prometheus",
+	})
+
 	err := cmd.Execute()
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "Get http://localhost:8888/metrics: dial tcp")
@@ -66,7 +78,7 @@ vectorized_memory_allocated_memory_bytes{shard="1",type="bytes"} 36986880
 	cmd := generate.NewGrafanaDashboardCmd()
 	cmd.SetOutput(&out)
 	cmd.SetArgs([]string{
-		"--prometheus-url", ts.URL,
+		"--metrics-endpoint", ts.URL,
 		"--datasource", "prometheus",
 	})
 	err := cmd.Execute()
@@ -90,7 +102,7 @@ vectorized_vectorized_in
 	cmd := generate.NewGrafanaDashboardCmd()
 	cmd.SetOutput(&out)
 	cmd.SetArgs([]string{
-		"--prometheus-url", ts.URL,
+		"--metrics-endpoint", ts.URL,
 		"--datasource", "prometheus",
 	})
 	err := cmd.Execute()

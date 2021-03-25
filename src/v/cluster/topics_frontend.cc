@@ -27,6 +27,8 @@
 #include "rpc/errc.h"
 #include "rpc/types.h"
 
+#include <seastar/core/coroutine.hh>
+
 #include <regex>
 
 namespace cluster {
@@ -44,6 +46,14 @@ topics_frontend::topics_frontend(
   , _connections(con)
   , _leaders(l)
   , _as(as) {}
+
+static bool
+needs_linearizable_barrier(const std::vector<topic_result>& results) {
+    return std::any_of(
+      results.cbegin(), results.cend(), [](const topic_result& r) {
+          return r.ec == errc::success;
+      });
+}
 
 ss::future<std::vector<topic_result>> topics_frontend::create_topics(
   std::vector<topic_configuration> topics,
@@ -75,6 +85,16 @@ ss::future<std::vector<topic_result>> topics_frontend::create_topics(
             });
 
           return ss::when_all_succeed(futures.begin(), futures.end());
+      })
+      .then([this, timeout](std::vector<topic_result> results) {
+          if (needs_linearizable_barrier(results)) {
+              return stm_linearizable_barrier(timeout).then(
+                [results = std::move(results)](result<model::offset>) mutable {
+                    return results;
+                });
+          }
+          return ss::make_ready_future<std::vector<topic_result>>(
+            std::move(results));
       });
 }
 
@@ -109,6 +129,82 @@ cluster::errc map_errc(std::error_code ec) {
     }
 
     return errc::replication_error;
+}
+
+ss::future<std::vector<topic_result>> topics_frontend::update_topic_properties(
+  std::vector<topic_properties_update> updates,
+  model::timeout_clock::time_point timeout) {
+    auto cluster_leader = _leaders.local().get_leader(model::controller_ntp);
+
+    // no leader available
+    if (!cluster_leader) {
+        co_return create_topic_results(updates, errc::no_leader_controller);
+    }
+
+    // current node is a leader, just replicate
+    if (cluster_leader == _self) {
+        // replicate empty batch to make sure leader local state is up to date.
+        auto result = co_await _stm.invoke_on(
+          controller_stm_shard, [timeout](controller_stm& stm) {
+              return stm.quorum_write_empty_batch(timeout);
+          });
+        if (!result) {
+            co_return create_topic_results(updates, map_errc(result.error()));
+        }
+
+        auto results = co_await ssx::parallel_transform(
+          std::move(updates), [this, timeout](topic_properties_update update) {
+              return do_update_topic_properties(std::move(update), timeout);
+          });
+
+        // we are not really interested in the result comming from the
+        // linearizable barrier, results comming from the previous steps will be
+        // propagated to clients, this is just an optimization, this doesn't
+        // affect correctness of the protocol
+        if (needs_linearizable_barrier(results)) {
+            co_await stm_linearizable_barrier(timeout).discard_result();
+        }
+
+        co_return results;
+    }
+
+    co_return co_await _connections.local()
+      .with_node_client<controller_client_protocol>(
+        _self,
+        ss::this_shard_id(),
+        *cluster_leader,
+        timeout,
+        [updates, timeout](controller_client_protocol client) mutable {
+            return client
+              .update_topic_properties(
+                update_topic_properties_request{.updates = std::move(updates)},
+                rpc::client_opts(timeout))
+              .then(&rpc::get_ctx_data<update_topic_properties_reply>);
+        })
+      .then([updates](result<update_topic_properties_reply> r) {
+          if (r.has_error()) {
+              return create_topic_results(updates, map_errc(r.error()));
+          }
+          return std::move(r.value().results);
+      });
+}
+
+ss::future<topic_result> topics_frontend::do_update_topic_properties(
+  topic_properties_update update, model::timeout_clock::time_point timeout) {
+    update_topic_properties_cmd cmd(update.tp_ns, update.properties);
+    try {
+        auto ec = co_await replicate_and_wait(std::move(cmd), timeout);
+        co_return topic_result(std::move(update.tp_ns), map_errc(ec));
+    } catch (...) {
+        vlog(
+          clusterlog.warn,
+          "unable to update {} configuration properties - {}",
+          update.tp_ns,
+          std::current_exception());
+
+        co_return topic_result(
+          std::move(update.tp_ns), errc::replication_error);
+    }
 }
 
 template<typename Cmd>
@@ -229,7 +325,17 @@ ss::future<std::vector<topic_result>> topics_frontend::delete_topics(
           return do_delete_topic(std::move(tp_ns), timeout);
       });
 
-    return ss::when_all_succeed(futures.begin(), futures.end());
+    return ss::when_all_succeed(futures.begin(), futures.end())
+      .then([this, timeout](std::vector<topic_result> results) {
+          if (needs_linearizable_barrier(results)) {
+              return stm_linearizable_barrier(timeout).then(
+                [results = std::move(results)](result<model::offset>) mutable {
+                    return results;
+                });
+          }
+          return ss::make_ready_future<std::vector<topic_result>>(
+            std::move(results));
+      });
 }
 
 ss::future<topic_result> topics_frontend::do_delete_topic(
@@ -362,6 +468,13 @@ ss::future<std::error_code> topics_frontend::finish_moving_partition_replicas(
       .then([](result<finish_partition_update_reply> r) {
           return r.has_error() ? r.error() : r.value().result;
       });
+}
+
+ss::future<result<model::offset>> topics_frontend::stm_linearizable_barrier(
+  model::timeout_clock::time_point timeout) {
+    return _stm.invoke_on(controller_stm_shard, [timeout](controller_stm& stm) {
+        return stm.instert_linerizable_barrier(timeout);
+    });
 }
 
 } // namespace cluster

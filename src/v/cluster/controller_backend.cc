@@ -391,6 +391,8 @@ controller_backend::execute_partitition_op(const topic_table::delta& delta) {
         return process_partition_update(delta.ntp, delta.p_as, rev);
     case op_t::update_finished:
         return finish_partition_update(delta.ntp, delta.p_as, rev);
+    case op_t::update_properties:
+        return process_partition_properties_update(delta.ntp, delta.p_as);
     }
     __builtin_unreachable();
 }
@@ -497,6 +499,36 @@ ss::future<std::error_code> controller_backend::process_partition_update(
     co_return ec;
 }
 
+ss::future<std::error_code>
+controller_backend::process_partition_properties_update(
+  model::ntp ntp, partition_assignment assignment) {
+    /**
+     * No core local replicas are expected to exists, do nothing
+     */
+    if (!has_local_replicas(_self, assignment.replicas)) {
+        co_return errc::success;
+    }
+
+    auto partition = _partition_manager.local().get(ntp);
+
+    // partition doesn't exists, it must already have been removed, do nothing
+    if (!partition) {
+        co_return errc::success;
+    }
+    auto cfg = _topics.local().get_topic_cfg(model::topic_namespace_view(ntp));
+    // configuration doesn't exists, topic was removed
+    if (!cfg) {
+        co_return errc::success;
+    }
+    vlog(
+      clusterlog.trace,
+      "updating {} configuration with properties: {}",
+      ntp,
+      cfg->properties);
+    co_await partition->update_configuration(cfg->properties);
+    co_return errc::success;
+}
+
 /**
  * notifies the topics frontend that partition update has been finished, all
  * the interested nodes can now safely remove unnecessary partition replicas.
@@ -588,12 +620,23 @@ ss::future<std::error_code> controller_backend::update_partition_replica_set(
 }
 
 ss::future<> controller_backend::add_to_shard_table(
-  model::ntp ntp, raft::group_id raft_group, uint32_t shard) {
+  model::ntp ntp,
+  raft::group_id raft_group,
+  uint32_t shard,
+  model::revision_id revision) {
     // update shard_table: broadcast
+
     return _shard_table.invoke_on_all(
-      [ntp = std::move(ntp), raft_group, shard](shard_table& s) mutable {
-          s.insert(std::move(ntp), shard);
-          s.insert(raft_group, shard);
+      [self = _self, ntp = std::move(ntp), raft_group, shard, revision](
+        shard_table& s) mutable {
+          vlog(
+            clusterlog.trace,
+            "[n: {}, r: {}] adding {} to shard table at {}",
+            self,
+            revision,
+            ntp,
+            shard);
+          s.update(ntp, raft_group, shard, revision);
       });
 }
 
@@ -631,10 +674,10 @@ ss::future<std::error_code> controller_backend::create_partition(
     }
 
     return f
-      .then([this, ntp = std::move(ntp), group_id]() mutable {
+      .then([this, ntp = std::move(ntp), group_id, rev]() mutable {
           // we create only partitions that belongs to current shard
           return add_to_shard_table(
-            std::move(ntp), group_id, ss::this_shard_id());
+            std::move(ntp), group_id, ss::this_shard_id(), rev);
       })
       .then([] { return make_error_code(errc::success); });
 }
@@ -654,8 +697,9 @@ controller_backend::delete_partition(model::ntp ntp, model::revision_id rev) {
     auto group_id = part->group();
 
     return _shard_table
-      .invoke_on_all(
-        [ntp, group_id](shard_table& st) mutable { st.erase(ntp, group_id); })
+      .invoke_on_all([ntp, group_id, rev](shard_table& st) mutable {
+          st.erase(ntp, group_id, rev);
+      })
       .then([this, ntp] {
           return _partition_leaders_table.invoke_on_all(
             [ntp](partition_leaders_table& leaders) {

@@ -16,12 +16,35 @@
 #include "kafka/server/errors.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
+#include "utils/absl_sstring_hash.h"
 
 #include <absl/container/flat_hash_map.h>
 #include <boost/algorithm/string.hpp>
 #include <boost/lexical_cast.hpp>
 
 namespace kafka {
+
+/**
+ * We use `flat_hash_map` in here since those map are small and short lived.
+ */
+using config_map_t
+  = absl::flat_hash_map<ss::sstring, ss::sstring, sstring_hash, sstring_eq>;
+/**
+ * Topic properties string names
+ */
+static constexpr std::string_view topic_property_compression
+  = "compression.type";
+static constexpr std::string_view topic_property_cleanup_policy
+  = "cleanup.policy";
+static constexpr std::string_view topic_property_compaction_strategy
+  = "compaction.strategy";
+static constexpr std::string_view topic_property_timestamp_type
+  = "message.timestamp.type";
+static constexpr std::string_view topic_property_segment_size = "segment.bytes";
+static constexpr std::string_view topic_property_retention_bytes
+  = "retention.bytes";
+static constexpr std::string_view topic_property_retention_duration
+  = "retention.ms";
 
 /// \brief Type representing Kafka protocol response from
 /// CreateTopics, DeleteTopics and CreatePartitions requests
@@ -37,8 +60,7 @@ from_cluster_topic_result(const cluster::topic_result& err) {
     return {.name = err.tp_ns.tp, .error_code = map_topic_error_code(err.ec)};
 }
 
-absl::flat_hash_map<ss::sstring, ss::sstring>
-config_map(const std::vector<createable_topic_config>& config);
+config_map_t config_map(const std::vector<createable_topic_config>& config);
 
 cluster::topic_configuration to_cluster_type(const creatable_topic& t);
 

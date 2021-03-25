@@ -13,6 +13,7 @@
 
 #include "cluster/fwd.h"
 #include "cluster/topic_table.h"
+#include "cluster/types.h"
 #include "model/fundamental.h"
 #include "outcome.h"
 
@@ -60,12 +61,16 @@ private:
     ss::future<std::error_code> finish_partition_update(
       model::ntp, const partition_assignment&, model::revision_id);
 
+    ss::future<std::error_code>
+      process_partition_properties_update(model::ntp, partition_assignment);
+
     ss::future<std::error_code> create_partition(
       model::ntp,
       raft::group_id,
       model::revision_id,
       std::vector<model::broker>);
-    ss::future<> add_to_shard_table(model::ntp, raft::group_id, ss::shard_id);
+    ss::future<> add_to_shard_table(
+      model::ntp, raft::group_id, ss::shard_id, model::revision_id);
     ss::future<std::error_code>
       delete_partition(model::ntp, model::revision_id);
     ss::future<std::error_code> update_partition_replica_set(

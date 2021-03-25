@@ -165,6 +165,8 @@ func preparePVCResource(
 	storage redpandav1alpha1.StorageSpec,
 	clusterLabels labels.CommonLabels,
 ) corev1.PersistentVolumeClaim {
+	fileSystemMode := corev1.PersistentVolumeFilesystem
+
 	pvc := corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
@@ -178,6 +180,7 @@ func preparePVCResource(
 					corev1.ResourceStorage: resource.MustParse(defaultDatadirCapacity),
 				},
 			},
+			VolumeMode: &fileSystemMode,
 		},
 	}
 
@@ -199,6 +202,8 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 	var clusterLabels = labels.ForCluster(r.pandaCluster)
 
 	pvc := preparePVCResource(datadirName, r.pandaCluster.Namespace, r.pandaCluster.Spec.Storage, clusterLabels)
+	tolerations := r.pandaCluster.Spec.Tolerations
+	nodeSelector := r.pandaCluster.Spec.NodeSelector
 
 	ss := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
@@ -390,6 +395,8 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 							}, r.secretVolumeMounts()...),
 						},
 					},
+					Tolerations:  tolerations,
+					NodeSelector: nodeSelector,
 					Affinity: &corev1.Affinity{
 						PodAntiAffinity: &corev1.PodAntiAffinity{
 							RequiredDuringSchedulingIgnoredDuringExecution: []corev1.PodAffinityTerm{

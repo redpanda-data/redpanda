@@ -20,16 +20,48 @@ class TopicSpec:
     CLEANUP_COMPACT = "compact"
     CLEANUP_DELETE = "delete"
 
-    def __init__(self,
-                 *,
-                 name=None,
-                 partition_count=1,
-                 replication_factor=3,
-                 cleanup_policy=CLEANUP_DELETE):
+    PROPERTY_COMPRESSSION = "compression.type"
+    PROPERTY_CLEANUP_POLICY = "cleanup.policy"
+    PROPERTY_COMPACTION_STRATEGY = "compaction.strategy"
+    PROPERTY_TIMESTAMP_TYPE = "message.timestamp.type"
+    PROPERTY_SEGMENT_SIZE = "segment.bytes"
+    PROPERTY_RETENTION_BYTES = "retention.bytes"
+    PROPERTY_RETENTION_TIME = "retention.ms"
+
+    # compression types
+    COMPRESSION_NONE = "none"
+    COMPRESSION_PRODUCER = "producer"
+    COMPRESSION_GZIP = "gzip"
+    COMPRESSION_LZ4 = "lz4"
+    COMPRESSION_SNAPPY = "snappy"
+    COMPRESSION_ZSTD = "zstd"
+
+    # timestamp types
+    TIMESTAMP_CREATE_TIME = "CreateTime"
+    TIMESTAMP_LOG_APPEND_TIME = "LogAppendTime"
+
+    def __init__(
+            self,
+            *,
+            name=None,
+            partition_count=1,
+            replication_factor=3,
+            cleanup_policy=CLEANUP_DELETE,
+            compression_type=COMPRESSION_PRODUCER,
+            message_timestamp_type=TIMESTAMP_CREATE_TIME,
+            segment_bytes=1 * (2 ^ 30),
+            retention_bytes=-1,
+            retention_ms=(7 * 24 * 3600 * 1000)  # one week
+    ):
         self.name = name or f"topic-{self._random_topic_suffix()}"
         self.partition_count = partition_count
         self.replication_factor = replication_factor
         self.cleanup_policy = cleanup_policy
+        self.compression_type = compression_type
+        self.message_timestamp_type = message_timestamp_type
+        self.segment_bytes = segment_bytes
+        self.retention_bytes = retention_bytes
+        self.retention_ms = retention_ms
 
     def __str__(self):
         return self.name

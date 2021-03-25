@@ -16,12 +16,13 @@ jobs:
   update-homebrew:
     name: Update Homebrew
     runs-on: ubuntu-latest
-    steps: 
+    steps:
     - name: Get the version
       id: get_version
       run: echo ::set-output name=VERSION::${GITHUB_REF/refs\/tags\//}
 
     - name: Update the homebrew tap
+      if: contains(steps.get_version.outputs.VERSION, '-beta') == false
       uses: mislav/bump-homebrew-formula-action@v1.8
       with:
         formula-name: redpanda

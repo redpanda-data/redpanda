@@ -26,7 +26,7 @@ static storage::batch_cache::reclaim_options opts = {
   .stable_window = std::chrono::milliseconds(10000),
   .min_size = 128 << 10,
   .max_size = 4 << 20,
-};
+  .min_free_memory = 1};
 
 model::record_batch make_batch(size_t size) {
     static model::offset base_offset{0};
@@ -46,7 +46,7 @@ FIXTURE_TEST(reclaim, fixture) {
 
     storage::batch_cache cache(opts);
     storage::batch_cache_index index(cache);
-    std::vector<storage::batch_cache::entry_ptr> cache_entries;
+    std::vector<storage::batch_cache::entry> cache_entries;
     cache_entries.reserve(30);
 
     auto stats = ss::memory::stats();
@@ -76,8 +76,7 @@ FIXTURE_TEST(reclaim, fixture) {
     for (auto i = 0; i < (pages_until_reclaim / 2); i++) {
         size_t buf_size = ss::memory::page_size - sizeof(model::record_batch);
         auto batch = make_batch(buf_size);
-        auto e = cache.put(index, std::move(batch));
-        cache_entries.emplace_back(std::move(e));
+        cache_entries.push_back(cache.put(index, batch));
     }
 
     // cache uses an async reclaimer. give it a chance to run
@@ -87,7 +86,7 @@ FIXTURE_TEST(reclaim, fixture) {
     BOOST_CHECK(std::all_of(
       cache_entries.begin(),
       cache_entries.end(),
-      [](storage::batch_cache::entry_ptr& e) { return (bool)e; }));
+      [](storage::batch_cache::entry& e) { return (bool)e.range(); }));
 
     stats = ss::memory::stats();
     BOOST_TEST(stats.reclaims() == 0);
@@ -97,7 +96,7 @@ FIXTURE_TEST(reclaim, fixture) {
         size_t buf_size = ss::memory::page_size - sizeof(model::record_batch);
         auto batch = make_batch(buf_size);
         auto e = cache.put(index, std::move(batch));
-        BOOST_REQUIRE((bool)e);
+        BOOST_REQUIRE((bool)e.range());
         cache_entries.emplace_back(std::move(e));
     }
 
@@ -108,7 +107,7 @@ FIXTURE_TEST(reclaim, fixture) {
     BOOST_CHECK(std::any_of(
       cache_entries.begin(),
       cache_entries.end(),
-      [](storage::batch_cache::entry_ptr& e) { return !e; }));
+      [](storage::batch_cache::entry& e) { return !e.range(); }));
 
     stats = ss::memory::stats();
     BOOST_TEST(stats.reclaims() > 0);
@@ -121,4 +120,5 @@ FIXTURE_TEST(reclaim, fixture) {
       ss::memory::min_free_memory() / 1024,
       bytes_until_reclaim / 1024,
       stats.reclaims());
+    cache.stop().get();
 }

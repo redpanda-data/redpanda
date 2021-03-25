@@ -58,24 +58,31 @@ func newRowSet() *RowSet {
 }
 
 func NewGrafanaDashboardCmd() *cobra.Command {
-	var prometheusURL string
+	var metricsEndpoint string
 	command := &cobra.Command{
 		Use:   "grafana-dashboard",
 		Short: "Generate a Grafana dashboard for redpanda metrics.",
 		RunE: func(ccmd *cobra.Command, args []string) error {
-			if !(strings.HasPrefix(prometheusURL, "http://") ||
-				strings.HasPrefix(prometheusURL, "https://")) {
-				prometheusURL = fmt.Sprintf("http://%s", prometheusURL)
+			if !(strings.HasPrefix(metricsEndpoint, "http://") ||
+				strings.HasPrefix(metricsEndpoint, "https://")) {
+				metricsEndpoint = fmt.Sprintf("http://%s", metricsEndpoint)
 			}
-			return executeGrafanaDashboard(prometheusURL)
+			return executeGrafanaDashboard(metricsEndpoint)
 		},
 	}
-	prometheusURLFlag := "prometheus-url"
-	command.Flags().StringVar(
-		&prometheusURL,
-		prometheusURLFlag,
-		"http://localhost:9644/metrics",
-		"The redpanda Prometheus URL from where to get the metrics metadata")
+	metricsEndpointFlag := "metrics-endpoint"
+	deprecatedPrometheusURLFlag := "prometheus-url"
+
+	for _, flag := range []string{metricsEndpointFlag, deprecatedPrometheusURLFlag} {
+		command.Flags().StringVar(
+			&metricsEndpoint,
+			flag,
+			"http://localhost:9644/metrics",
+			"The redpanda metrics endpoint where to get the metrics metadata. i.e. redpanda_host:9644/metrics")
+	}
+
+	command.Flags().MarkDeprecated(deprecatedPrometheusURLFlag, fmt.Sprintf("Deprecated flag. Use --%v instead", metricsEndpointFlag))
+
 	datasourceFlag := "datasource"
 	command.Flags().StringVar(
 		&datasource,
@@ -91,8 +98,8 @@ func NewGrafanaDashboardCmd() *cobra.Command {
 	return command
 }
 
-func executeGrafanaDashboard(prometheusURL string) error {
-	metricFamilies, err := fetchMetrics(prometheusURL)
+func executeGrafanaDashboard(metricsEndpoint string) error {
+	metricFamilies, err := fetchMetrics(metricsEndpoint)
 	if err != nil {
 		return err
 	}
@@ -400,8 +407,10 @@ func metricGroup(metric string) string {
 	return "others"
 }
 
-func fetchMetrics(prometheusURL string) (map[string]*dto.MetricFamily, error) {
-	res, err := http.Get(prometheusURL)
+func fetchMetrics(
+	metricsEndpoint string,
+) (map[string]*dto.MetricFamily, error) {
+	res, err := http.Get(metricsEndpoint)
 	if err != nil {
 		return nil, err
 	}
@@ -410,7 +419,7 @@ func fetchMetrics(prometheusURL string) (map[string]*dto.MetricFamily, error) {
 	if res.StatusCode != 200 {
 		return nil, fmt.Errorf(
 			"the request to %s failed. Status: %d",
-			prometheusURL,
+			metricsEndpoint,
 			res.StatusCode,
 		)
 	}

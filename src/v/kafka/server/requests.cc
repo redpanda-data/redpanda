@@ -9,6 +9,7 @@
 
 #include "kafka/server/handlers/handlers.h"
 #include "kafka/server/request_context.h"
+#include "kafka/types.h"
 #include "utils/to_string.h"
 #include "vlog.h"
 
@@ -239,6 +240,8 @@ process_request(request_context&& ctx, ss::smp_service_group g) {
         return do_process<delete_groups_handler>(std::move(ctx), g);
     case describe_acls_handler::api::key:
         return do_process<describe_acls_handler>(std::move(ctx), g);
+    case describe_log_dirs_handler::api::key:
+        return do_process<describe_log_dirs_handler>(std::move(ctx), g);
     };
     return ss::make_exception_future<response_ptr>(
       std::runtime_error(fmt::format("Unsupported API {}", ctx.header().key)));
@@ -265,6 +268,20 @@ std::ostream& operator<<(std::ostream& os, config_resource_type t) {
         break;
     }
     return os << "{unknown type}";
+}
+
+std::ostream& operator<<(std::ostream& os, config_resource_operation t) {
+    switch (t) {
+    case config_resource_operation::set:
+        return os << "set";
+    case config_resource_operation::append:
+        return os << "append";
+    case config_resource_operation::remove:
+        return os << "remove";
+    case config_resource_operation::subtract:
+        return os << "subtract";
+    }
+    return os << "unknown type";
 }
 
 std::ostream& operator<<(std::ostream& os, describe_configs_source s) {

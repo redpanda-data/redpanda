@@ -10,7 +10,9 @@
 package system
 
 import (
+	"errors"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"syscall"
@@ -44,6 +46,8 @@ type stat struct {
 	stime uint64
 }
 
+var errRedpandaDown = errors.New("the local redpanda process isn't running.")
+
 func GatherMetrics(
 	fs afero.Fs, timeout time.Duration, conf config.Config,
 ) (*Metrics, error) {
@@ -57,6 +61,9 @@ func GatherMetrics(
 
 	pidStr, err := utils.ReadEnsureSingleLine(fs, conf.PIDFile())
 	if err != nil {
+		if os.IsNotExist(err) {
+			return metrics, errRedpandaDown
+		}
 		errs = multierror.Append(errs, err)
 		return metrics, errs
 	}
@@ -147,4 +154,8 @@ func getFreeDiskSpaceMB(conf config.Config) (float64, error) {
 	// Available blocks * block size (in bytes)
 	freeSpaceBytes := stat.Bavail * uint64(stat.Bsize)
 	return float64(freeSpaceBytes) / 1024.0 / 1024.0, nil
+}
+
+func IsErrRedpandaDown(err error) bool {
+	return err == errRedpandaDown
 }

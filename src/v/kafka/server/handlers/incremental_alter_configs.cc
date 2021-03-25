@@ -9,8 +9,13 @@
 #include "kafka/server/handlers/incremental_alter_configs.h"
 
 #include "kafka/protocol/errors.h"
+#include "kafka/protocol/incremental_alter_configs.h"
+#include "kafka/protocol/schemata/incremental_alter_configs_request.h"
+#include "kafka/protocol/schemata/incremental_alter_configs_response.h"
+#include "kafka/server//handlers/configs/config_utils.h"
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
+#include "kafka/types.h"
 #include "model/metadata.h"
 
 #include <seastar/core/do_with.hh>
@@ -23,6 +28,186 @@
 
 namespace kafka {
 
+using req_resource_t = incremental_alter_configs_resource;
+using resp_resource_t = incremental_alter_configs_resource_response;
+
+/**
+ * We pass returned value as a paramter to allow template to be automatically
+ * resolved.
+ */
+template<typename T>
+void parse_and_set_optional(
+  cluster::property_update<std::optional<T>>& property,
+  const std::optional<ss::sstring>& value,
+  config_resource_operation op) {
+    // remove property value
+    if (op == config_resource_operation::remove) {
+        property.op = cluster::incremental_update_operation::remove;
+        return;
+    }
+    // set property value
+    if (op == config_resource_operation::set) {
+        property.value = boost::lexical_cast<T>(*value);
+        property.op = cluster::incremental_update_operation::set;
+        return;
+    }
+}
+
+template<typename T>
+void parse_and_set_tristate(
+  cluster::property_update<tristate<T>>& property,
+  const std::optional<ss::sstring>& value,
+  config_resource_operation op) {
+    // remove property value
+    if (op == config_resource_operation::remove) {
+        property.op = cluster::incremental_update_operation::remove;
+        return;
+    }
+    // set property value
+    if (op == config_resource_operation::set) {
+        auto parsed = boost::lexical_cast<int64_t>(*value);
+        if (parsed <= 0) {
+            property.value = tristate<T>{};
+        } else {
+            property.value = tristate<T>(std::make_optional<T>(parsed));
+        }
+
+        property.op = cluster::incremental_update_operation::set;
+        return;
+    }
+}
+
+/**
+ * valides the optional config
+ */
+
+std::optional<resp_resource_t> validate_single_value_config_resource(
+  const req_resource_t& resource,
+  const ss::sstring& config_name,
+  const std::optional<ss::sstring>& config_value,
+  config_resource_operation op) {
+    if (
+      op == config_resource_operation::append
+      || op == config_resource_operation::subtract) {
+        return make_error_alter_config_resource_response<resp_resource_t>(
+          resource,
+          kafka::error_code::invalid_config,
+          fmt::format(
+            "{} operation isn't supported for {} configuration",
+            op,
+            config_name));
+    }
+
+    if (op == config_resource_operation::set && !config_value) {
+        return make_error_alter_config_resource_response<resp_resource_t>(
+          resource,
+          kafka::error_code::invalid_config,
+          fmt::format(
+            "{} operation for configuration {} requires a value to be set",
+            op,
+            config_name));
+    }
+
+    if (op == config_resource_operation::remove && config_value) {
+        return make_error_alter_config_resource_response<resp_resource_t>(
+          resource,
+          kafka::error_code::invalid_config,
+          fmt::format(
+            "{} operation for configuration {} requires a value to be empty",
+            op,
+            config_name));
+    }
+
+    // success case
+    return std::nullopt;
+}
+
+checked<cluster::topic_properties_update, resp_resource_t>
+create_topic_properties_update(incremental_alter_configs_resource& resource) {
+    model::topic_namespace tp_ns(
+      model::kafka_namespace, model::topic(resource.resource_name));
+    cluster::topic_properties_update update(tp_ns);
+
+    for (auto& cfg : resource.configs) {
+        auto op = static_cast<config_resource_operation>(cfg.config_operation);
+
+        auto err = validate_single_value_config_resource(
+          resource, cfg.name, cfg.value, op);
+
+        if (err) {
+            // error case
+            return *err;
+        }
+        try {
+            if (cfg.name == topic_property_cleanup_policy) {
+                parse_and_set_optional(
+                  update.properties.cleanup_policy_bitflags, cfg.value, op);
+                continue;
+            }
+            if (cfg.name == topic_property_compaction_strategy) {
+                parse_and_set_optional(
+                  update.properties.compaction_strategy, cfg.value, op);
+                continue;
+            }
+            if (cfg.name == topic_property_compression) {
+                parse_and_set_optional(
+                  update.properties.compression, cfg.value, op);
+                continue;
+            }
+            if (cfg.name == topic_property_segment_size) {
+                parse_and_set_optional(
+                  update.properties.segment_size, cfg.value, op);
+                continue;
+            }
+            if (cfg.name == topic_property_timestamp_type) {
+                parse_and_set_optional(
+                  update.properties.timestamp_type, cfg.value, op);
+                continue;
+            }
+            if (cfg.name == topic_property_retention_bytes) {
+                parse_and_set_tristate(
+                  update.properties.retention_bytes, cfg.value, op);
+                continue;
+            }
+            if (cfg.name == topic_property_retention_duration) {
+                parse_and_set_tristate(
+                  update.properties.retention_duration, cfg.value, op);
+                continue;
+            }
+        } catch (const boost::bad_lexical_cast& e) {
+            return make_error_alter_config_resource_response<
+              incremental_alter_configs_resource_response>(
+              resource,
+              error_code::invalid_config,
+              fmt::format(
+                "unable to parse property {} value {}", cfg.name, cfg.value));
+        }
+        // Unsupported property, return error
+        return make_error_alter_config_resource_response<resp_resource_t>(
+          resource,
+          error_code::invalid_config,
+          fmt::format("invalid topic property: {}", cfg.name));
+    }
+
+    return update;
+}
+
+static ss::future<std::vector<resp_resource_t>> alter_topic_configuration(
+  request_context& ctx,
+  std::vector<req_resource_t> resources,
+  bool validate_only) {
+    return do_alter_topics_configuration<req_resource_t, resp_resource_t>(
+      ctx, std::move(resources), validate_only, [](req_resource_t& r) {
+          return create_topic_properties_update(r);
+      });
+}
+
+static ss::future<std::vector<resp_resource_t>>
+alter_broker_configuartion(std::vector<req_resource_t> resources) {
+    return do_alter_broker_configuartion<req_resource_t, resp_resource_t>(
+      std::move(resources));
+}
+
 template<>
 ss::future<response_ptr> incremental_alter_configs_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group ssg) {
@@ -30,22 +215,21 @@ ss::future<response_ptr> incremental_alter_configs_handler::handle(
     request.decode(ctx.reader(), ctx.header().version);
     klog.trace("Handling request {}", request);
 
-    return ss::do_with(
-      std::move(ctx),
-      std::move(request),
-      [](request_context& ctx, incremental_alter_configs_request& request) {
-          incremental_alter_configs_response response;
-          for (auto& resource : request.data.resources) {
-              response.data.responses.push_back(
-                incremental_alter_configs_resource_response{
-                  .error_code = error_code::invalid_request,
-                  .error_message = "Cannot alter config resource",
-                  .resource_type = resource.resource_type,
-                  .resource_name = std::move(resource.resource_name),
-                });
-          }
-          return ctx.respond(std::move(response));
-      });
+    auto groupped = group_alter_config_resources(
+      std::move(request.data.resources));
+
+    std::vector<ss::future<std::vector<resp_resource_t>>> futures;
+    futures.reserve(2);
+    futures.push_back(alter_topic_configuration(
+      ctx, std::move(groupped.topic_changes), request.data.validate_only));
+    futures.push_back(
+      alter_broker_configuartion(std::move(groupped.broker_changes)));
+
+    auto ret = co_await ss::when_all_succeed(futures.begin(), futures.end());
+
+    co_return co_await ctx.respond(assemble_alter_config_response<
+                                   incremental_alter_configs_response,
+                                   resp_resource_t>(std::move(ret)));
 }
 
 } // namespace kafka
