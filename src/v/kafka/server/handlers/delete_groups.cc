@@ -18,6 +18,7 @@
 #include "utils/remote.h"
 #include "utils/to_string.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/print.hh>
 
 namespace kafka {
@@ -30,17 +31,14 @@ void delete_groups_response::encode(
 template<>
 ss::future<response_ptr> delete_groups_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group g) {
-    return ss::do_with(std::move(ctx), [](request_context& ctx) {
-        delete_groups_request request;
-        request.decode(ctx.reader(), ctx.header().version);
-        vlog(klog.debug, "Handling delete groups: {}", request);
+    delete_groups_request request;
+    request.decode(ctx.reader(), ctx.header().version);
+    vlog(klog.debug, "Handling delete groups: {}", request);
 
-        return ctx.groups()
-          .delete_groups(std::move(request.data.groups_names))
-          .then([&ctx](std::vector<deletable_group_result> results) {
-              return ctx.respond(delete_groups_response(std::move(results)));
-          });
-    });
+    auto results = co_await ctx.groups().delete_groups(
+      std::move(request.data.groups_names));
+
+    co_return co_await ctx.respond(delete_groups_response(std::move(results)));
 }
 
 } // namespace kafka
