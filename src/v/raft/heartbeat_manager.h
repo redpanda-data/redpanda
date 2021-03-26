@@ -155,7 +155,6 @@ private:
     /// this is optimized for traversal + finding
     consensus_set _consensus_groups;
     consensus_client_protocol _client_protocol;
-    ss::semaphore _dispatch_sem{0};
     model::node_id _self;
 };
 } // namespace raft

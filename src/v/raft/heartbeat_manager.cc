@@ -124,27 +124,19 @@ heartbeat_manager::heartbeat_manager(
 ss::future<>
 heartbeat_manager::send_heartbeats(std::vector<node_heartbeat> reqs) {
     return ss::do_with(
-             std::move(reqs),
-             [this](std::vector<node_heartbeat>& reqs) mutable {
-                 std::vector<ss::future<>> futures;
-                 futures.reserve(reqs.size());
-                 for (auto& r : reqs) {
-                     // self heartbeat
-                     if (r.target == _self) {
-                         futures.push_back(do_self_heartbeat(std::move(r)));
-                         continue;
-                     }
-                     futures.push_back(do_heartbeat(std::move(r)));
-                 }
-                 return _dispatch_sem.wait(reqs.size())
-                   .then([f = std::move(futures)]() mutable {
-                       return std::move(f);
-                   });
-                 return ss::make_ready_future<std::vector<ss::future<>>>(
-                   std::move(futures));
-             })
-      .then([](std::vector<ss::future<>> f) {
-          return ss::when_all_succeed(f.begin(), f.end());
+      std::move(reqs), [this](std::vector<node_heartbeat>& reqs) mutable {
+          std::vector<ss::future<>> futures;
+          futures.reserve(reqs.size());
+          for (auto& r : reqs) {
+              // self heartbeat
+              if (r.target == _self) {
+                  futures.push_back(do_self_heartbeat(std::move(r)));
+                  continue;
+              }
+
+              futures.push_back(do_heartbeat(std::move(r)));
+          }
+          return ss::when_all_succeed(futures.begin(), futures.end());
       });
 }
 
@@ -154,7 +146,6 @@ ss::future<> heartbeat_manager::do_dispatch_heartbeats() {
 }
 
 ss::future<> heartbeat_manager::do_self_heartbeat(node_heartbeat&& r) {
-    _dispatch_sem.signal();
     heartbeat_reply reply;
     reply.meta.reserve(r.request.heartbeats.size());
     std::transform(
