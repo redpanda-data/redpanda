@@ -371,6 +371,54 @@ struct delete_acls_reply {
     std::vector<delete_acls_result> results;
 };
 
+struct backend_operation {
+    ss::shard_id source_shard;
+    partition_assignment p_as;
+    topic_table_delta::op_type type;
+    friend std::ostream& operator<<(std::ostream&, const backend_operation&);
+};
+
+enum class reconciliation_status : int8_t {
+    done,
+    in_progress,
+    error,
+};
+std::ostream& operator<<(std::ostream&, const reconciliation_status&);
+
+class ntp_reconciliation_state {
+public:
+    // success case
+    ntp_reconciliation_state(
+      model::ntp, std::vector<backend_operation>, reconciliation_status);
+
+    // error
+    ntp_reconciliation_state(model::ntp, cluster::errc);
+
+    ntp_reconciliation_state(
+      model::ntp,
+      std::vector<backend_operation>,
+      reconciliation_status,
+      cluster::errc);
+
+    const model::ntp& ntp() const { return _ntp; }
+    const std::vector<backend_operation>& pending_operations() const {
+        return _backend_operations;
+    }
+    reconciliation_status status() const { return _status; }
+
+    std::error_code error() const { return make_error_code(_error); }
+    errc cluster_errc() const { return _error; }
+
+    friend std::ostream&
+    operator<<(std::ostream&, const ntp_reconciliation_state&);
+
+private:
+    model::ntp _ntp;
+    std::vector<backend_operation> _backend_operations;
+    reconciliation_status _status;
+    errc _error;
+};
+
 } // namespace cluster
 namespace std {
 template<>
@@ -442,6 +490,11 @@ template<>
 struct adl<cluster::topic_properties_update> {
     void to(iobuf&, cluster::topic_properties_update&&);
     cluster::topic_properties_update from(iobuf_parser&);
+};
+template<>
+struct adl<cluster::ntp_reconciliation_state> {
+    void to(iobuf&, cluster::ntp_reconciliation_state&&);
+    cluster::ntp_reconciliation_state from(iobuf_parser&);
 };
 
 template<>

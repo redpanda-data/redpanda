@@ -115,6 +115,28 @@ topic_table_delta::topic_table_delta(
   , type(tp)
   , previous_assignment(std::move(previous)) {}
 
+ntp_reconciliation_state::ntp_reconciliation_state(
+  model::ntp ntp,
+  std::vector<backend_operation> ops,
+  reconciliation_status status)
+  : ntp_reconciliation_state(
+    std::move(ntp), std::move(ops), status, errc::success) {}
+
+ntp_reconciliation_state::ntp_reconciliation_state(
+  model::ntp ntp,
+  std::vector<backend_operation> ops,
+  reconciliation_status status,
+  errc ec)
+  : _ntp(std::move(ntp))
+  , _backend_operations(std::move(ops))
+  , _status(status)
+  , _error(ec) {}
+
+ntp_reconciliation_state::ntp_reconciliation_state(
+  model::ntp ntp, cluster::errc ec)
+  : ntp_reconciliation_state(
+    std::move(ntp), {}, reconciliation_status::error, ec) {}
+
 std::ostream& operator<<(std::ostream& o, const topic_configuration& cfg) {
     fmt::print(
       o,
@@ -200,6 +222,41 @@ std::ostream& operator<<(std::ostream& o, const topic_table_delta& d) {
 
     return o;
 }
+
+std::ostream& operator<<(std::ostream& o, const backend_operation& op) {
+    fmt::print(
+      o,
+      "{{partition_assignment: {}, shard: {},  type: {}}}",
+      op.p_as,
+      op.source_shard,
+      op.type);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const reconciliation_status& s) {
+    switch (s) {
+    case reconciliation_status::done:
+        return o << "done";
+    case reconciliation_status::error:
+        return o << "error";
+    case reconciliation_status::in_progress:
+        return o << "in_progress";
+    }
+    __builtin_unreachable();
+}
+
+std::ostream&
+operator<<(std::ostream& o, const ntp_reconciliation_state& state) {
+    fmt::print(
+      o,
+      "{{ntp: {}, backend_operations: {}, error: {}, status: {}}}",
+      state._ntp,
+      state._backend_operations,
+      state._error,
+      state._status);
+    return o;
+}
+
 } // namespace cluster
 
 namespace reflection {
@@ -641,4 +698,25 @@ adl<cluster::delete_acls_result>::from(iobuf_parser& in) {
     };
 }
 
+void adl<cluster::ntp_reconciliation_state>::to(
+  iobuf& b, cluster::ntp_reconciliation_state&& state) {
+    auto ntp = state.ntp();
+    reflection::serialize(
+      b,
+      std::move(ntp),
+      state.pending_operations(),
+      state.status(),
+      state.cluster_errc());
+}
+
+cluster::ntp_reconciliation_state
+adl<cluster::ntp_reconciliation_state>::from(iobuf_parser& in) {
+    auto ntp = adl<model::ntp>{}.from(in);
+    auto ops = adl<std::vector<cluster::backend_operation>>{}.from(in);
+    auto status = adl<cluster::reconciliation_status>{}.from(in);
+    auto error = adl<cluster::errc>{}.from(in);
+
+    return cluster::ntp_reconciliation_state(
+      std::move(ntp), std::move(ops), status, error);
+}
 } // namespace reflection
