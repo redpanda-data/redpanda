@@ -34,14 +34,14 @@ class BackgroundTask:
     def _run_protected(self):
         try:
             self._run()
-            with self._lock:
-                self._done = True
         except BaseException:
             with self._lock:
                 tb = traceback.format_exc()
                 self._error = f"{threading.currentThread().name}:  {tb}"
-
             raise
+        finally:
+            with self._lock:
+                self._done = True
 
     def is_finished(self):
         with self._lock:
