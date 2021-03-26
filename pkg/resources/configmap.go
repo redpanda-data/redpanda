@@ -183,32 +183,32 @@ func (r *ConfigMapResource) createConfiguration(
 func (r *ConfigMapResource) prepareCloudStorage(
 	cr *config.RedpandaConfig, secretKeyStr string,
 ) {
-	cr.ArchivalStorageEnabled = pointer.BoolPtr(r.pandaCluster.Spec.CloudStorage.Enabled)
-	cr.ArchivalStorageS3AccessKey = pointer.StringPtr(r.pandaCluster.Spec.CloudStorage.AccessKey)
-	cr.ArchivalStorageS3Region = pointer.StringPtr(r.pandaCluster.Spec.CloudStorage.Region)
-	cr.ArchivalStorageS3Bucket = pointer.StringPtr(r.pandaCluster.Spec.CloudStorage.Bucket)
-	cr.ArchivalStorageS3SecretKey = pointer.StringPtr(secretKeyStr)
-	cr.ArchivalStorageDisableTls = pointer.BoolPtr(r.pandaCluster.Spec.CloudStorage.DisableTLS)
+	cr.CloudStorageEnabled = pointer.BoolPtr(r.pandaCluster.Spec.CloudStorage.Enabled)
+	cr.CloudStorageAccessKey = pointer.StringPtr(r.pandaCluster.Spec.CloudStorage.AccessKey)
+	cr.CloudStorageRegion = pointer.StringPtr(r.pandaCluster.Spec.CloudStorage.Region)
+	cr.CloudStorageBucket = pointer.StringPtr(r.pandaCluster.Spec.CloudStorage.Bucket)
+	cr.CloudStorageSecretKey = pointer.StringPtr(secretKeyStr)
+	cr.CloudStorageDisableTls = pointer.BoolPtr(r.pandaCluster.Spec.CloudStorage.DisableTLS)
 
 	interval := r.pandaCluster.Spec.CloudStorage.ReconcilicationIntervalMs
 	if interval != 0 {
-		cr.ArchivalStorageReconciliationIntervalMs = &interval
+		cr.CloudStorageReconciliationIntervalMs = &interval
 	}
 	maxCon := r.pandaCluster.Spec.CloudStorage.MaxConnections
 	if maxCon != 0 {
-		cr.ArchivalStorageMaxConnections = &maxCon
+		cr.CloudStorageMaxConnections = &maxCon
 	}
 	apiEndpoint := r.pandaCluster.Spec.CloudStorage.APIEndpoint
 	if apiEndpoint != "" {
-		cr.ArchivalStorageApiEndpoint = &apiEndpoint
+		cr.CloudStorageApiEndpoint = &apiEndpoint
 	}
 	endpointPort := r.pandaCluster.Spec.CloudStorage.APIEndpointPort
 	if endpointPort != 0 {
-		cr.ArchivalStorageApiEndpointPort = &endpointPort
+		cr.CloudStorageApiEndpointPort = &endpointPort
 	}
 	trustfile := r.pandaCluster.Spec.CloudStorage.Trustfile
 	if trustfile != "" {
-		cr.ArchivalStorageTrustFile = &trustfile
+		cr.CloudStorageTrustFile = &trustfile
 	}
 }
 
