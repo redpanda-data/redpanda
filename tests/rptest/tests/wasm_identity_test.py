@@ -51,18 +51,3 @@ class WasmIdentityTest(WasmTest):
         if not materialized_result_set_compare(input_results, output_results):
             raise Exception(
                 "Expected all records across topics to be equivalent")
-
-
-class WasmLargeDataSetTest(WasmIdentityTest):
-    topics = (TopicSpec(partition_count=3,
-                        replication_factor=3,
-                        cleanup_policy=TopicSpec.CLEANUP_DELETE), )
-
-    def __init__(self, test_context):
-        # 250,000 * 1024b ~ 1/4GB test
-        super(WasmLargeDataSetTest, self).__init__(test_context,
-                                                   num_records=250000,
-                                                   record_size=1024)
-
-    def wasm_test_timeout(self):
-        return (300, 3)
