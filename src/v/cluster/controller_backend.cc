@@ -841,4 +841,13 @@ controller_backend::delete_partition(model::ntp ntp, model::revision_id rev) {
       .then([] { return make_error_code(errc::success); });
 }
 
+std::vector<topic_table::delta>
+controller_backend::list_ntp_deltas(const model::ntp& ntp) const {
+    if (auto it = _topic_deltas.find(ntp); it != _topic_deltas.end()) {
+        return it->second;
+    }
+
+    return {};
+}
+
 } // namespace cluster

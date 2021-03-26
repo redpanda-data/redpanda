@@ -43,6 +43,8 @@ public:
     ss::future<> stop();
     ss::future<> start();
 
+    std::vector<topic_table::delta> list_ntp_deltas(const model::ntp&) const;
+
 private:
     using deltas_t = std::vector<topic_table::delta>;
     using underlying_t = absl::flat_hash_map<model::ntp, deltas_t>;
