@@ -31,30 +31,6 @@ namespace cluster {
 /// with topic creation or deletion are executed. Topic table is also
 /// responsible for commiting or removing pending allocations
 ///
-// delta propagated to backend
-struct topic_table_delta {
-    enum class op_type { add, del, update, update_finished, update_properties };
-
-    topic_table_delta(
-      model::ntp,
-      partition_assignment,
-      model::offset,
-      op_type,
-      std::optional<partition_assignment> = std::nullopt);
-
-    model::ntp ntp;
-    partition_assignment new_assignment;
-    model::offset offset;
-    op_type type;
-    std::optional<partition_assignment> previous_assignment;
-
-    model::topic_namespace_view tp_ns() const {
-        return model::topic_namespace_view(ntp);
-    }
-
-    friend std::ostream& operator<<(std::ostream&, const topic_table_delta&);
-    friend std::ostream& operator<<(std::ostream&, const op_type&);
-};
 
 class topic_table {
 public:

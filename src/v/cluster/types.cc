@@ -9,6 +9,7 @@
 
 #include "cluster/types.h"
 
+#include "cluster/fwd.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
 #include "security/acl.h"
@@ -102,6 +103,18 @@ model::topic_metadata topic_configuration_assignment::get_metadata() const {
     return ret;
 }
 
+topic_table_delta::topic_table_delta(
+  model::ntp ntp,
+  cluster::partition_assignment new_assignment,
+  model::offset o,
+  op_type tp,
+  std::optional<partition_assignment> previous)
+  : ntp(std::move(ntp))
+  , new_assignment(std::move(new_assignment))
+  , offset(o)
+  , type(tp)
+  , previous_assignment(std::move(previous)) {}
+
 std::ostream& operator<<(std::ostream& o, const topic_configuration& cfg) {
     fmt::print(
       o,
@@ -154,6 +167,37 @@ std::ostream& operator<<(std::ostream& o, const partition_assignment& p_as) {
       p_as.id,
       p_as.group,
       p_as.replicas);
+    return o;
+}
+
+std::ostream&
+operator<<(std::ostream& o, const topic_table_delta::op_type& tp) {
+    switch (tp) {
+    case topic_table_delta::op_type::add:
+        return o << "addition";
+    case topic_table_delta::op_type::del:
+        return o << "deletion";
+    case topic_table_delta::op_type::update:
+        return o << "update";
+    case topic_table_delta::op_type::update_finished:
+        return o << "update_finished";
+    case topic_table_delta::op_type::update_properties:
+        return o << "update_properties";
+    }
+    __builtin_unreachable();
+}
+
+std::ostream& operator<<(std::ostream& o, const topic_table_delta& d) {
+    fmt::print(
+      o,
+      "{{type: {}, ntp: {}, offset: {}, new_assignment: {}, "
+      "previous_assignment: {}}}",
+      d.type,
+      d.ntp,
+      d.offset,
+      d.new_assignment,
+      d.previous_assignment);
+
     return o;
 }
 } // namespace cluster

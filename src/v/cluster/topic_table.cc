@@ -34,18 +34,6 @@ topic_table::transform_topics(Func&& f) const {
     return ret;
 }
 
-topic_table_delta::topic_table_delta(
-  model::ntp ntp,
-  cluster::partition_assignment new_assignment,
-  model::offset o,
-  op_type tp,
-  std::optional<partition_assignment> previous)
-  : ntp(std::move(ntp))
-  , new_assignment(std::move(new_assignment))
-  , offset(o)
-  , type(tp)
-  , previous_assignment(std::move(previous)) {}
-
 ss::future<std::error_code>
 topic_table::apply(create_topic_cmd cmd, model::offset offset) {
     if (_topics.contains(cmd.key)) {
@@ -358,37 +346,6 @@ topic_table::get_partition_assignment(const model::ntp& ntp) const {
     }
 
     return *p_it;
-}
-
-std::ostream&
-operator<<(std::ostream& o, const topic_table::delta::op_type& tp) {
-    switch (tp) {
-    case topic_table::delta::op_type::add:
-        return o << "addition";
-    case topic_table::delta::op_type::del:
-        return o << "deletion";
-    case topic_table::delta::op_type::update:
-        return o << "update";
-    case topic_table::delta::op_type::update_finished:
-        return o << "update_finished";
-    case topic_table::delta::op_type::update_properties:
-        return o << "update_properties";
-    }
-    __builtin_unreachable();
-}
-
-std::ostream& operator<<(std::ostream& o, const topic_table::delta& d) {
-    fmt::print(
-      o,
-      "{{type: {}, ntp: {}, offset: {}, new_assignment: {}, "
-      "previous_assignment: {}}}",
-      d.type,
-      d.ntp,
-      d.offset,
-      d.new_assignment,
-      d.previous_assignment);
-
-    return o;
 }
 
 } // namespace cluster
