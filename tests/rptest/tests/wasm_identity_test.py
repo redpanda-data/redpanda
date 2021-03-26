@@ -9,7 +9,7 @@
 
 from ducktape.mark.resource import cluster
 from rptest.clients.types import TopicSpec
-from rptest.wasm.topic import construct_materialized_topic
+from rptest.wasm.topic import construct_materialized_topic, get_source_topic
 from rptest.wasm.topics_result_set import materialized_result_set_compare
 from rptest.wasm.wasm_build_tool import WasmTemplateRepository
 from rptest.wasm.wasm_test import WasmScript, WasmTest
@@ -174,3 +174,78 @@ class WasmMultiInputTopicIdentityTest(WasmIdentityTest):
         Should exist by tests end and be identical to their respective input logs
         """
         return [["script_a_output"], ["script_b_output"], ["script_c_output"]]
+
+
+class WasmAllInputsToAllOutputsIdentityTest(WasmIdentityTest):
+    """
+    In this test spec there are three input topics and three coprocessors.
+    Each coprocessor consumes from the same input topic and produces
+    to three output topics, making three materialized topic per script.
+    """
+    topics = (
+        TopicSpec(partition_count=3,
+                  replication_factor=3,
+                  cleanup_policy=TopicSpec.CLEANUP_DELETE),
+        TopicSpec(partition_count=3,
+                  replication_factor=3,
+                  cleanup_policy=TopicSpec.CLEANUP_DELETE),
+        TopicSpec(partition_count=3,
+                  replication_factor=3,
+                  cleanup_policy=TopicSpec.CLEANUP_DELETE),
+    )
+
+    def __init__(self, test_context, num_records=1024, record_size=1024):
+        super(WasmAllInputsToAllOutputsIdentityTest,
+              self).__init__(test_context,
+                             num_records=num_records,
+                             record_size=record_size)
+
+    def wasm_test_outputs(self):
+        """
+        The materialized logs:
+        [
+          itopic[0].$script_a_output$,
+          itopic[1].$script_a_output$,
+          itopic[2].$script_a_output$,
+          itopic[0].$script_b_output$,
+          itopic[1].$script_b_output$,
+          itopic[2].$script_b_output$,
+          itopic[0].$script_c_output$,
+          itopic[1].$script_c_output$,
+          itopic[2].$script_c_output$,
+        ]
+        Should exist by tests end and be identical to their respective input logs.
+
+        This differs from the above because every script is writing to non unique
+        output topics. Therefore this tests the output topic mutex within the
+        script context.
+        """
+        otopic_a = "output_topic_a"
+        otopic_b = "output_topic_b"
+        otopic_c = "output_topic_c"
+        return [[otopic_a, otopic_b, otopic_c], [otopic_a, otopic_b, otopic_c],
+                [otopic_a, otopic_b, otopic_c]]
+
+    def wasm_xfactor(self):
+        """
+        Each script writes to 3 output streams for each input stream
+        """
+        return 3
+
+    @cluster(num_nodes=3)
+    def verify_materialized_topics_test(self):
+        # Cannot compare topics to topics, can only verify # of records
+        input_results, output_results = self._start(self.wasm_test_input(),
+                                                    self.wasm_test_plan(),
+                                                    self.wasm_xfactor())
+
+        def compare(topic):
+            iis = input_results.filter(lambda x: x.topic == topic)
+            oos = output_results.filter(
+                lambda x: get_source_topic(x.topic) == topic)
+            return iis.num_records() == (oos.num_records() *
+                                         self.wasm_xfactor())
+
+        if not all(compare(topic) for topic in self.topics):
+            raise Exception(
+                "Incorrect number of records observed across topics")
