@@ -125,7 +125,9 @@ compare_json_objects(const std::string_view& lhs, const std::string_view& rhs) {
 
 FIXTURE_TEST(test_download_manifest, s3_imposter_fixture) { // NOLINT
     set_expectations_and_listen(default_expectations);
-    archival::ntp_archiver archiver(get_ntp_conf(), get_configuration());
+    auto conf = get_configuration();
+    s3::client_pool pool(conf.connection_limit(), conf.client_config);
+    archival::ntp_archiver archiver(get_ntp_conf(), get_configuration(), pool);
     auto action = ss::defer([&archiver] { archiver.stop().get(); });
     archiver.download_manifest().get();
     auto expected = load_manifest(manifest_payload);
@@ -134,7 +136,9 @@ FIXTURE_TEST(test_download_manifest, s3_imposter_fixture) { // NOLINT
 
 FIXTURE_TEST(test_upload_manifest, s3_imposter_fixture) { // NOLINT
     set_expectations_and_listen(default_expectations);
-    archival::ntp_archiver archiver(get_ntp_conf(), get_configuration());
+    auto conf = get_configuration();
+    s3::client_pool pool(conf.connection_limit(), conf.client_config);
+    archival::ntp_archiver archiver(get_ntp_conf(), get_configuration(), pool);
     auto action = ss::defer([&archiver] { archiver.stop().get(); });
     auto pm = const_cast<manifest*>( // NOLINT
       &archiver.get_remote_manifest());
@@ -163,7 +167,9 @@ FIXTURE_TEST(test_upload_manifest, s3_imposter_fixture) { // NOLINT
 // NOLINTNEXTLINE
 FIXTURE_TEST(test_upload_segments, archiver_fixture) {
     set_expectations_and_listen(default_expectations);
-    archival::ntp_archiver archiver(get_ntp_conf(), get_configuration());
+    auto conf = get_configuration();
+    s3::client_pool pool(conf.connection_limit(), conf.client_config);
+    archival::ntp_archiver archiver(get_ntp_conf(), get_configuration(), pool);
     auto action = ss::defer([&archiver] { archiver.stop().get(); });
 
     std::vector<segment_desc> segments = {
@@ -172,10 +178,8 @@ FIXTURE_TEST(test_upload_segments, archiver_fixture) {
     };
     init_storage_api_local(segments);
 
-    ss::semaphore limit(2);
     auto res = archiver
-                 .upload_next_candidates(
-                   limit, get_local_storage_api().log_mgr())
+                 .upload_next_candidates(get_local_storage_api().log_mgr())
                  .get0();
     BOOST_REQUIRE_EQUAL(res.num_succeded, 2);
     BOOST_REQUIRE_EQUAL(res.num_failed, 0);
