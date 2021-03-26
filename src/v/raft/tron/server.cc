@@ -94,7 +94,11 @@ public:
             std::move(directory),
             1_GiB,
             storage::debug_sanitize_files::yes))
-      , _hbeats(raft_heartbeat_interval, _consensus_client_protocol, self) {}
+      , _hbeats(
+          raft_heartbeat_interval,
+          _consensus_client_protocol,
+          self,
+          raft_heartbeat_interval * 20) {}
 
     ss::lw_shared_ptr<raft::consensus> consensus_for(raft::group_id) {
         return _consensus;

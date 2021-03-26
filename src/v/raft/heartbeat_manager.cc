@@ -114,8 +114,12 @@ static std::vector<heartbeat_manager::node_heartbeat> requests_for_range(
 }
 
 heartbeat_manager::heartbeat_manager(
-  duration_type interval, consensus_client_protocol proto, model::node_id self)
+  duration_type interval,
+  consensus_client_protocol proto,
+  model::node_id self,
+  duration_type heartbeat_timeout)
   : _heartbeat_interval(interval)
+  , _heartbeat_timeout(heartbeat_timeout)
   , _client_protocol(std::move(proto))
   , _self(self) {
     _heartbeat_timer.set_callback([this] { dispatch_heartbeats(); });

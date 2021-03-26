@@ -38,6 +38,7 @@ public:
       model::node_id self,
       model::timeout_clock::duration disk_timeout,
       std::chrono::milliseconds heartbeat_interval,
+      std::chrono::milliseconds heartbeat_timeout,
       ss::sharded<rpc::connection_cache>& clients,
       ss::sharded<storage::api>& storage);
 

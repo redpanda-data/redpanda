@@ -436,6 +436,7 @@ void application::wire_up_redpanda_services() {
       model::node_id(config::shard_local_cfg().node_id()),
       config::shard_local_cfg().raft_io_timeout_ms(),
       config::shard_local_cfg().raft_heartbeat_interval_ms(),
+      config::shard_local_cfg().raft_heartbeat_timeout_ms(),
       std::ref(_raft_connection_cache),
       std::ref(storage))
       .get();

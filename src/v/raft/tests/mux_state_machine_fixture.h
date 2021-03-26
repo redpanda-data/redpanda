@@ -54,6 +54,7 @@ struct mux_state_machine_fixture {
             _self,
             30s,
             std::chrono::milliseconds(100),
+            std::chrono::milliseconds(2000),
             std::ref(_connections),
             std::ref(_storage))
           .get0();
