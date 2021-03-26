@@ -28,10 +28,6 @@ from ducktape.utils.util import wait_until
 from functools import reduce
 
 
-def merge_two_tuple(a, b):
-    return (a[0] + b[0], a[1] + b[1])
-
-
 def flat_map(fn, ll):
     return reduce(lambda acc, x: acc + fn(x), ll, [])
 
@@ -69,8 +65,6 @@ class WasmTest(RedpandaTest):
 
     def _build_script(self, script):
         # Produce all data
-        total_input_records = reduce(lambda acc, x: acc + x[1][0],
-                                     script.inputs, 0)
         total_output_expected = reduce(lambda acc, x: acc + x[1],
                                        script.outputs, 0)
 
@@ -81,7 +75,7 @@ class WasmTest(RedpandaTest):
         self._rpk_tool.wasm_deploy(
             script.get_artifact(self._build_tool.work_dir), "ducktape")
 
-        return (total_input_records, total_output_expected)
+        return total_output_expected
 
     def _start(self, topic_spec, scripts):
         all_materialized = all(
@@ -97,7 +91,7 @@ class WasmTest(RedpandaTest):
             Must parse the materialzied topic for the input topic to determine
             the number of partitions.
             """
-            input_lookup = dict([(x.name, x) for x in topic_spec])
+            input_lookup = dict([(x[0].name, x[0]) for x in topic_spec])
             result = []
             for output_topic, _ in output_topics:
                 src = input_lookup.get(get_source_topic(output_topic))
@@ -110,7 +104,7 @@ class WasmTest(RedpandaTest):
                               partition_count=src.partition_count,
                               replication_factor=src.replication_factor,
                               cleanup_policy=src.cleanup_policy))
-                return result
+            return result
 
         def expand_topic_spec(etc):
             """
@@ -123,27 +117,25 @@ class WasmTest(RedpandaTest):
                 ], etc)
 
         # Calcualte expected records on all inputs / outputs
-        total_inputs, total_outputs = reduce(
-            merge_two_tuple, [self._build_script(x) for x in scripts], (0, 0))
-        input_tps = expand_topic_spec(topic_spec)
+        total_inputs = reduce(lambda acc, x: acc + x[1], topic_spec, 0)
+        total_outputs = reduce(lambda acc, x: acc + x,
+                               [self._build_script(x) for x in scripts], 0)
+        input_tps = expand_topic_spec([x[0] for x in topic_spec])
         output_tps = expand_topic_spec(
             to_output_topic_spec(
                 flat_map(lambda script: script.outputs, scripts)))
 
         producers = []
-        for script in scripts:
-            for topic, producer_opts in script.inputs:
-                num_records, records_size = producer_opts
-                try:
-                    producer = NativeKafkaProducer(self.redpanda.brokers(),
-                                                   topic, num_records,
-                                                   records_size)
-                    producer.start()
-                    producers.append(producer)
-                except Exception as e:
-                    self.logger.error(
-                        f"Failed to create NativeKafkaProducer: {e}")
-                    raise
+        for tp_spec, num_records, record_size in topic_spec:
+            try:
+                producer = NativeKafkaProducer(self.redpanda.brokers(),
+                                               tp_spec.name, num_records,
+                                               record_size)
+                producer.start()
+                producers.append(producer)
+            except Exception as e:
+                self.logger.error(f"Failed to create NativeKafkaProducer: {e}")
+                raise
 
         input_consumer = None
         output_consumer = None
@@ -156,6 +148,9 @@ class WasmTest(RedpandaTest):
             self.logger.error(f"Failed to create NativeKafkaConsumer: {e}")
             raise
 
+        self.logger.info(
+            f"Waiting for {total_inputs} input records and {total_outputs}"
+            " result records")
         input_consumer.start()
         output_consumer.start()
 
@@ -178,6 +173,11 @@ class WasmTest(RedpandaTest):
             self.logger.error("Exception occured in background thread: {e}")
             raise e
 
+        self.logger.info(
+            f"Consumed {input_consumer.results.num_records()} input"
+            f" records/expected {total_inputs} and"
+            f" {output_consumer.results.num_records()} result records/expected"
+            f" {total_outputs}")
         return (input_consumer.results, output_consumer.results)
 
     def wasm_test_timeout(self):
