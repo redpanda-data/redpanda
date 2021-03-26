@@ -31,10 +31,10 @@ class TopicsResultSet:
     A high level wrapper around a result set from a read of a set of kafka
     topic partitions.
     """
-    def __init__(self, rset={}):
+    def __init__(self, rset=None):
         # Key: TopicPartition(topic='XYZ', partition=X)
         # Value: list<BasicKafkaRecord>
-        self.rset = {}
+        self.rset = rset or {}
 
     def num_records(self):
         return reduce(lambda acc, kv: acc + len(kv[1]), self.rset.items(), 0)
