@@ -48,6 +48,38 @@ type ClusterSpec struct {
 	ExternalConnectivity ExternalConnectivityConfig `json:"externalConnectivity,omitempty"`
 	// Storage spec for cluster
 	Storage StorageSpec `json:"storage,omitempty"`
+	// Archival storage configuration for cluster
+	ArchivalStorage ArchivalStorageConfig `json:"archivalStorage,omitempty"`
+}
+
+// ArchivalStorageConfig configures the Archival feature in Redpanda
+// https://vectorized.io/docs/data-archiving
+type ArchivalStorageConfig struct {
+	// Enables archival storage feature
+	Enabled bool `json:"enabled"`
+	// S3 access key
+	S3AccessKey string `json:"s3AccessKey,omitempty"`
+	// Reference to (Kubernetes) Secret containing the S3 secret key.
+	// S3SecretKeyRef must contain the name and namespace of the Secret.
+	// The Secret must contain a data entry of the form:
+	// data[<S3SecretKeyRef.Name>] = <S3 secret key>
+	S3SecretKeyRef corev1.ObjectReference `json:"s3SecretKeyRef,omitempty"`
+	// S3 region
+	S3Region string `json:"s3Region,omitempty"`
+	// S3 bucket
+	S3Bucket string `json:"s3Bucket,omitempty"`
+	// Reconciliation period (default - 10s)
+	ReconcilicationIntervalMs int `json:"reconciliationIntervalMs,omitempty"`
+	// Number of simultaneous uploads per shard (default - 20)
+	MaxConnections int `json:"maxConnections,omitempty"`
+	// Disable TLS (can be used in tests)
+	DisableTLS bool `json:"disableTLS,omitempty"`
+	// Path to certificate that should be used to validate server certificate
+	Trustfile string `json:"trustfile,omitempty"`
+	// API endpoint for data storage
+	APIEndpoint string `json:"apiEndpoint,omitempty"`
+	// Used to override TLS port (443)
+	APIEndpointPort int `json:"apiEndpointPort,omitempty"`
 }
 
 // StorageSpec defines the storage specification of the Cluster

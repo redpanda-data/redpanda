@@ -11,6 +11,7 @@ package resources
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/go-logr/logr"
@@ -23,6 +24,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/utils/pointer"
 	k8sclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
@@ -34,6 +36,9 @@ const (
 	tlsDir   = "/etc/tls/certs"
 	tlsDirCA = "/etc/tls/certs/ca"
 )
+
+var errKeyDoesNotExistInSecretData = errors.New("cannot find key in secret data")
+var errS3SecretKeyCannotBeEmpty = errors.New("s3SecretKey string cannot be empty")
 
 var _ Resource = &ConfigMapResource{}
 
@@ -67,7 +72,7 @@ func NewConfigMap(
 
 // Ensure will manage kubernetes v1.ConfigMap for redpanda.vectorized.io CR
 func (r *ConfigMapResource) Ensure(ctx context.Context) error {
-	obj, err := r.obj()
+	obj, err := r.obj(ctx)
 	if err != nil {
 		return fmt.Errorf("unable to construct object: %w", err)
 	}
@@ -76,8 +81,13 @@ func (r *ConfigMapResource) Ensure(ctx context.Context) error {
 }
 
 // obj returns resource managed client.Object
-func (r *ConfigMapResource) obj() (k8sclient.Object, error) {
-	cfgBytes, err := yaml.Marshal(r.createConfiguration())
+func (r *ConfigMapResource) obj(ctx context.Context) (k8sclient.Object, error) {
+	conf, err := r.createConfiguration(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	cfgBytes, err := yaml.Marshal(conf)
 	if err != nil {
 		return nil, err
 	}
@@ -101,7 +111,9 @@ func (r *ConfigMapResource) obj() (k8sclient.Object, error) {
 	return cm, nil
 }
 
-func (r *ConfigMapResource) createConfiguration() *config.Config {
+func (r *ConfigMapResource) createConfiguration(
+	ctx context.Context,
+) (*config.Config, error) {
 	cfgRpk := config.Default()
 
 	c := r.pandaCluster.Spec.Configuration
@@ -138,6 +150,22 @@ func (r *ConfigMapResource) createConfiguration() *config.Config {
 		}
 	}
 
+	if r.pandaCluster.Spec.ArchivalStorage.Enabled {
+		secretName := types.NamespacedName{
+			Name:      r.pandaCluster.Spec.ArchivalStorage.S3SecretKeyRef.Name,
+			Namespace: r.pandaCluster.Spec.ArchivalStorage.S3SecretKeyRef.Namespace,
+		}
+		// We need to retrieve the Secret containing the provided S3 secret key and extract the key itself.
+		s3SecretKeyStr, err := r.getSecretValue(ctx, secretName, r.pandaCluster.Spec.ArchivalStorage.S3SecretKeyRef.Name)
+		if err != nil {
+			return nil, fmt.Errorf("cannot retrieve s3 secret for data archival: %w", err)
+		}
+		if s3SecretKeyStr == "" {
+			return nil, fmt.Errorf("secret name %s, ns %s: %w", secretName.Name, secretName.Namespace, errS3SecretKeyCannotBeEmpty)
+		}
+		r.prepareArchivalStorage(cr, s3SecretKeyStr)
+	}
+
 	replicas := *r.pandaCluster.Spec.Replicas
 	for i := int32(0); i < replicas; i++ {
 		cr.SeedServers = append(cr.SeedServers, config.SeedServer{
@@ -149,7 +177,55 @@ func (r *ConfigMapResource) createConfiguration() *config.Config {
 		})
 	}
 
-	return cfgRpk
+	return cfgRpk, nil
+}
+
+func (r *ConfigMapResource) prepareArchivalStorage(
+	cr *config.RedpandaConfig, s3SecretKeyStr string,
+) {
+	cr.ArchivalStorageEnabled = pointer.BoolPtr(r.pandaCluster.Spec.ArchivalStorage.Enabled)
+	cr.ArchivalStorageS3AccessKey = pointer.StringPtr(r.pandaCluster.Spec.ArchivalStorage.S3AccessKey)
+	cr.ArchivalStorageS3Region = pointer.StringPtr(r.pandaCluster.Spec.ArchivalStorage.S3Region)
+	cr.ArchivalStorageS3Bucket = pointer.StringPtr(r.pandaCluster.Spec.ArchivalStorage.S3Bucket)
+	cr.ArchivalStorageS3SecretKey = pointer.StringPtr(s3SecretKeyStr)
+	cr.ArchivalStorageDisableTls = pointer.BoolPtr(r.pandaCluster.Spec.ArchivalStorage.DisableTLS)
+
+	interval := r.pandaCluster.Spec.ArchivalStorage.ReconcilicationIntervalMs
+	if interval != 0 {
+		cr.ArchivalStorageReconciliationIntervalMs = &interval
+	}
+	maxCon := r.pandaCluster.Spec.ArchivalStorage.MaxConnections
+	if maxCon != 0 {
+		cr.ArchivalStorageMaxConnections = &maxCon
+	}
+	apiEndpoint := r.pandaCluster.Spec.ArchivalStorage.APIEndpoint
+	if apiEndpoint != "" {
+		cr.ArchivalStorageApiEndpoint = &apiEndpoint
+	}
+	endpointPort := r.pandaCluster.Spec.ArchivalStorage.APIEndpointPort
+	if endpointPort != 0 {
+		cr.ArchivalStorageApiEndpointPort = &endpointPort
+	}
+	trustfile := r.pandaCluster.Spec.ArchivalStorage.Trustfile
+	if trustfile != "" {
+		cr.ArchivalStorageTrustFile = &trustfile
+	}
+}
+
+func (r *ConfigMapResource) getSecretValue(
+	ctx context.Context, nsName types.NamespacedName, key string,
+) (string, error) {
+	var secret corev1.Secret
+	err := r.Get(ctx, nsName, &secret)
+	if err != nil {
+		return "", err
+	}
+
+	if v, exists := secret.Data[key]; exists {
+		return string(v), nil
+	}
+
+	return "", fmt.Errorf("secret name %s, ns %s, data key %s: %w", nsName.Name, nsName.Namespace, key, errKeyDoesNotExistInSecretData)
 }
 
 func clusterCRPortOrRPKDefault(clusterPort, defaultPort int) int {
