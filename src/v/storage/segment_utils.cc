@@ -16,6 +16,7 @@
 #include "model/timeout_clock.h"
 #include "random/generators.h"
 #include "reflection/adl.h"
+#include "ssx/future-util.h"
 #include "storage/compacted_index.h"
 #include "storage/compacted_index_writer.h"
 #include "storage/compaction_reducers.h"
@@ -33,6 +34,7 @@
 #include "vlog.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/core/do_with.hh>
 #include <seastar/core/file-types.hh>
 #include <seastar/core/file.hh>
 #include <seastar/core/future.hh>
@@ -42,6 +44,7 @@
 #include <seastar/core/seastar.hh>
 #include <seastar/core/semaphore.hh>
 #include <seastar/core/when_all.hh>
+#include <seastar/util/defer.hh>
 
 #include <absl/container/btree_map.h>
 #include <absl/container/flat_hash_map.h>
@@ -427,8 +430,7 @@ ss::future<> do_self_compact_segment(
                 auto& [idx, lock] = h;
                 s->index().swap_index_state(std::move(idx));
                 s->force_set_commit_offset_from_index();
-                // FIXME(noah): crashes if we evic the cache
-                // s->cache().purge();
+                s->release_batch_cache_index();
                 return s->index().flush().finally([l = std::move(lock)] {});
             });
       });
@@ -527,7 +529,7 @@ ss::future<ss::lw_shared_ptr<segment>> make_concatenated_segment(
               "Aborting compaction of closed segment: {}", *segment));
         }
     }
-
+    co_await write_concatenated_compacted_index(path, segments, cfg);
     // concatenation process
     auto writer = co_await make_writer_handle(path, cfg.sanitize);
     auto output = co_await ss::make_file_output_stream(std::move(writer));
@@ -577,6 +579,114 @@ ss::future<ss::lw_shared_ptr<segment>> make_concatenated_segment(
       std::nullopt,
       std::nullopt,
       std::nullopt);
+}
+
+ss::future<std::vector<compacted_index_reader>> make_indices_readers(
+  std::vector<ss::lw_shared_ptr<segment>>& segments,
+  ss::io_priority_class io_pc,
+  storage::debug_sanitize_files sanitize) {
+    return ssx::async_transform(
+      segments.begin(),
+      segments.end(),
+      [io_pc, sanitize](ss::lw_shared_ptr<segment>& seg) {
+          const auto path = compacted_index_path(
+            seg->reader().filename().c_str());
+          return make_reader_handle(path, sanitize)
+            .then([path, io_pc](auto reader_fd) {
+                return make_file_backed_compacted_reader(
+                  path.string(), reader_fd, io_pc, 64_KiB);
+            });
+      });
+}
+
+ss::future<> rewrite_concatenated_indicies(
+  compacted_index_writer writer, std::vector<compacted_index_reader>& readers) {
+    return ss::do_with(
+      std::move(writer), [&readers](compacted_index_writer& writer) {
+          return ss::do_with(
+            index_copy_reducer{writer},
+            [&readers, &writer](index_copy_reducer& reducer) {
+                return ss::do_for_each(
+                         readers.begin(),
+                         readers.end(),
+                         [&reducer](compacted_index_reader& rdr) {
+                             vlog(
+                               stlog.trace,
+                               "concatenating index: "
+                               "{}",
+                               rdr.filename());
+                             return rdr.consume(reducer, model::no_timeout);
+                         })
+                  .finally([&writer] { return writer.close(); });
+            });
+      });
+}
+
+ss::future<> do_write_concatenated_compacted_index(
+  std::filesystem::path target_path,
+  std::vector<ss::lw_shared_ptr<segment>>& segments,
+  compaction_config cfg) {
+    return make_indices_readers(segments, cfg.iopc, cfg.sanitize)
+      .then([cfg, target_path = std::move(target_path)](
+              std::vector<compacted_index_reader> readers) mutable {
+          vlog(stlog.debug, "concatenating {} indicies", readers.size());
+          return ss::do_with(
+            std::move(readers),
+            [cfg, target_path = std::move(target_path)](
+              std::vector<compacted_index_reader>& readers) mutable {
+                return ss::parallel_for_each(
+                         readers.begin(),
+                         readers.end(),
+                         [](compacted_index_reader& reader) {
+                             return reader.verify_integrity();
+                         })
+                  .then([] { return true; })
+                  .handle_exception([](const std::exception_ptr& e) {
+                      vlog(
+                        stlog.info,
+                        "compacted index is corrupted, skipping concatenation "
+                        "- {}",
+                        e);
+                      return false;
+                  })
+                  .then([cfg, target_path = std::move(target_path), &readers](
+                          bool verified_successfully) {
+                      if (!verified_successfully) {
+                          return ss::now();
+                      }
+
+                      return make_compacted_index_writer(
+                               target_path, cfg.sanitize, cfg.iopc)
+                        .then([&readers](compacted_index_writer writer) {
+                            return rewrite_concatenated_indicies(
+                              std::move(writer), readers);
+                        });
+                  })
+                  .finally([&readers] {
+                      return ss::parallel_for_each(
+                        readers,
+                        [](compacted_index_reader& r) { return r.close(); });
+                  });
+            });
+      });
+}
+
+ss::future<> write_concatenated_compacted_index(
+  std::filesystem::path target_path,
+  std::vector<ss::lw_shared_ptr<segment>> segments,
+  compaction_config cfg) {
+    if (segments.empty()) {
+        return ss::now();
+    }
+    std::vector<compacted_index_reader> readers;
+    readers.reserve(segments.size());
+    return ss::do_with(
+      std::move(segments),
+      [cfg, target_path = std::move(target_path)](
+        std::vector<ss::lw_shared_ptr<segment>>& segments) mutable {
+          return do_write_concatenated_compacted_index(
+            std::move(target_path), segments, cfg);
+      });
 }
 
 ss::future<std::vector<ss::rwlock::holder>> transfer_segment(

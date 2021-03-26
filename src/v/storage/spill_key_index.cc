@@ -168,6 +168,12 @@ ss::future<> spill_key_index::spill(
       std::move(payload), [this](iobuf& buf) { return _appender.append(buf); });
 }
 
+ss::future<> spill_key_index::append(compacted_index::entry e) {
+    return ss::do_with(std::move(e), [this](compacted_index::entry& e) {
+        return spill(e.type, e.key, value_type{e.offset, e.delta});
+    });
+}
+
 ss::future<> spill_key_index::drain_all_keys() {
     return ss::do_until(
       [this] {

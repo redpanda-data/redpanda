@@ -122,9 +122,11 @@ public:
     compacted_index_writer& compaction_index();
     const compacted_index_writer& compaction_index() const;
 
+    void release_batch_cache_index() { _cache.reset(); }
     /** Cache methods */
-    batch_cache_index& cache();
-    const batch_cache_index& cache() const;
+    std::optional<std::reference_wrapper<batch_cache_index>> cache();
+    std::optional<std::reference_wrapper<const batch_cache_index>>
+    cache() const;
     bool has_cache() const;
     batch_cache_index::read_result cache_get(
       model::offset offset,
@@ -280,8 +282,17 @@ inline bool segment::finished_self_compaction() const {
     return (_flags & bitflags::finished_self_compaction)
            == bitflags::finished_self_compaction;
 }
-inline batch_cache_index& segment::cache() { return *_cache; }
-inline const batch_cache_index& segment::cache() const { return *_cache; }
+inline std::optional<std::reference_wrapper<batch_cache_index>>
+segment::cache() {
+    using ret_t = std::optional<std::reference_wrapper<batch_cache_index>>;
+    return _cache.has_value() ? ret_t(std::ref(*_cache)) : ret_t(std::nullopt);
+}
+inline std::optional<std::reference_wrapper<const batch_cache_index>>
+segment::cache() const {
+    using ret_t
+      = std::optional<std::reference_wrapper<const batch_cache_index>>;
+    return _cache.has_value() ? ret_t(std::cref(*_cache)) : ret_t(std::nullopt);
+}
 inline bool segment::has_cache() const { return _cache != std::nullopt; }
 inline batch_cache_index::read_result segment::cache_get(
   model::offset offset,

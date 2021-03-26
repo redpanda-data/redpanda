@@ -58,6 +58,7 @@ public:
     ss::future<> index(bytes_view, model::offset, int32_t) final;
     ss::future<> index(bytes&&, model::offset, int32_t) final;
     ss::future<> truncate(model::offset) final;
+    ss::future<> append(compacted_index::entry) final;
     ss::future<> close() final;
     void print(std::ostream&) const final;
     void set_flag(compacted_index::footer_flags) final;
