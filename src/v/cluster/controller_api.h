@@ -35,6 +35,7 @@ public:
       ss::sharded<controller_backend>&,
       ss::sharded<topic_table>&,
       ss::sharded<shard_table>&,
+      ss::sharded<rpc::connection_cache>&,
       ss::sharded<ss::abort_source>&);
 
     ss::future<result<std::vector<ntp_reconciliation_state>>>
@@ -45,9 +46,25 @@ public:
 
     ss::future<ntp_reconciliation_state> get_reconciliation_state(model::ntp);
 
+    /**
+     * API to access both remote and local state
+     */
+    ss::future<result<std::vector<ntp_reconciliation_state>>>
+      get_reconciliation_state(
+        model::node_id,
+        std::vector<model::ntp>,
+        model::timeout_clock::time_point);
+
+    ss::future<result<ntp_reconciliation_state>> get_reconciliation_state(
+      model::node_id, model::ntp, model::timeout_clock::time_point);
+
+    // high level APIs
+    ss::future<std::error_code> wait_for_topic(
+      model::topic_namespace_view, model::timeout_clock::time_point);
+
 private:
     ss::future<result<bool>> are_ntps_ready(
-      absl::flat_hash_map<model::node_id, std::vector<model::ntp>>,
+      absl::node_hash_map<model::node_id, std::vector<model::ntp>>,
       model::timeout_clock::time_point);
 
     ss::future<std::vector<topic_table_delta>>
@@ -57,6 +74,7 @@ private:
     ss::sharded<controller_backend>& _backend;
     ss::sharded<topic_table>& _topics;
     ss::sharded<shard_table>& _shard_table;
+    ss::sharded<rpc::connection_cache>& _connections;
     ss::sharded<ss::abort_source>& _as;
 };
 } // namespace cluster
