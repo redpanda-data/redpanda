@@ -637,13 +637,13 @@ ss::future<std::vector<rm_stm::tx_range>>
 rm_stm::aborted_transactions(model::offset from, model::offset to) {
     std::vector<rm_stm::tx_range> result;
     for (auto& range : _log_state.aborted) {
-        if (range.second.last < from) {
+        if (range.last < from) {
             continue;
         }
-        if (range.second.first > to) {
+        if (range.first > to) {
             continue;
         }
-        result.push_back(range.second);
+        result.push_back(range);
     }
     co_return result;
 }
@@ -751,10 +751,10 @@ void rm_stm::apply_prepare(rm_stm::prepare_marker prepare) {
         return;
     }
 
-    if (_log_state.aborted.contains(pid)) {
-        // during a data race between replicating a prepare record
-        // and an abort record, the abort record won
-        vlog(clusterlog.warn, "Can't prepare an aborted tx (pid:{})", pid);
+    if (!_log_state.ongoing_map.contains(pid)) {
+        // probably there was a race and the tx is already
+        // aborted since it isn't ongoing
+        vlog(clusterlog.warn, "a tx with pid:{} might be already aborted", pid);
         _mem_state.expected.erase(pid);
         return;
     }
@@ -784,36 +784,17 @@ void rm_stm::apply_control(
     // manager already decided a tx's outcome and acked it to the client
 
     if (crt == model::control_record_type::tx_abort) {
-        if (_log_state.aborted.contains(pid)) {
-            // already aborted; but it's fine - a transaction
-            // coordinator may re(abort) a transaction on recovery
-            // or during concurrent init_tx
-            return;
-        }
-
         _log_state.prepared.erase(pid);
         auto offset_it = _log_state.ongoing_map.find(pid);
         if (offset_it != _log_state.ongoing_map.end()) {
-            _log_state.aborted.emplace(pid, offset_it->second);
+            // make a list
+            _log_state.aborted.push_back(offset_it->second);
             _log_state.ongoing_set.erase(offset_it->second.first);
             _log_state.ongoing_map.erase(pid);
         }
 
         _mem_state.forget(pid);
     } else if (crt == model::control_record_type::tx_commit) {
-        if (_log_state.aborted.contains(pid)) {
-            vlog(
-              clusterlog.error,
-              "Commit request with pid:{} came after tx is already aborted",
-              pid);
-            if (_recovery_policy != best_effort) {
-                vassert(
-                  false,
-                  "Commit request with pid:{} came after tx is already aborted",
-                  pid);
-            }
-        }
-
         if (!_log_state.prepared.contains(pid)) {
             // trying to commit a tx which wasn't prepare
 
@@ -871,20 +852,6 @@ void rm_stm::apply_data(model::batch_identity bid, model::offset last_offset) {
     }
 
     if (bid.is_transactional) {
-        if (_log_state.aborted.contains(bid.pid)) {
-            vlog(
-              clusterlog.error,
-              "Adding a record with pid:{} to a tx after it was aborted",
-              bid.pid);
-            if (_recovery_policy != best_effort) {
-                vassert(
-                  false,
-                  "Adding a record with pid:{} to a tx after it was aborted",
-                  bid.pid);
-            }
-            return;
-        }
-
         if (_log_state.prepared.contains(bid.pid)) {
             vlog(
               clusterlog.error,
@@ -937,9 +904,10 @@ void rm_stm::load_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
     for (auto& entry : data.prepared) {
         _log_state.prepared.emplace(entry.pid, entry);
     }
-    for (auto& entry : data.aborted) {
-        _log_state.aborted.emplace(entry.pid, entry);
-    }
+    _log_state.aborted.insert(
+      _log_state.aborted.end(),
+      std::make_move_iterator(data.aborted.begin()),
+      std::make_move_iterator(data.aborted.end()));
     for (auto& entry : data.seqs) {
         auto [seq_it, _] = _log_state.seq_table.try_emplace(entry.pid, entry);
         if (seq_it->second.seq < entry.seq) {
@@ -965,7 +933,7 @@ stm_snapshot rm_stm::take_snapshot() {
         tx_ss.prepared.push_back(entry.second);
     }
     for (auto& entry : _log_state.aborted) {
-        tx_ss.aborted.push_back(entry.second);
+        tx_ss.aborted.push_back(entry);
     }
     for (auto& entry : _log_state.seq_table) {
         tx_ss.seqs.push_back(entry.second);

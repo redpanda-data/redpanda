@@ -153,7 +153,7 @@ private:
         // a heap of the first offsets of the ongoing transactions
         absl::btree_set<model::offset> ongoing_set;
         absl::flat_hash_map<model::producer_identity, prepare_marker> prepared;
-        absl::flat_hash_map<model::producer_identity, tx_range> aborted;
+        std::vector<tx_range> aborted;
         // the only piece of data which we update on replay and before
         // replicating the command. we use the highest seq number to resolve
         // conflicts. if the replication fails we reject a command but clients
