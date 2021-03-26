@@ -39,6 +39,15 @@ class TopicsResultSet:
     def num_records(self):
         return reduce(lambda acc, kv: acc + len(kv[1]), self.rset.items(), 0)
 
+    def filter(self, predicate):
+        """
+        Returns a set containing the keys & values passing 'predicate'
+        predicate: Lambda returning boolean
+        """
+        new_rset = dict([(k, v) for k, v in self.rset.items()
+                         if predicate(k) is True])
+        return TopicsResultSet(new_rset)
+
     def append(self, r):
         def filter_control_record(records):
             # Unfortunately the kafka-python API abstracts away the notion of a
