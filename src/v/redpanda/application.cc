@@ -628,7 +628,7 @@ ss::future<> application::set_proxy_config(ss::sstring name, std::any val) {
 
 bool application::archival_storage_enabled() {
     const auto& cfg = config::shard_local_cfg();
-    return cfg.developer_mode() && cfg.archival_storage_enabled();
+    return cfg.developer_mode() && cfg.cloud_storage_enabled();
 }
 
 ss::future<>

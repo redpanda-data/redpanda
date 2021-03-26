@@ -34,17 +34,17 @@ type RedpandaConfig struct {
 	Id                                      int                    `yaml:"node_id" mapstructure:"node_id" json:"id"`
 	SeedServers                             []SeedServer           `yaml:"seed_servers" mapstructure:"seed_servers" json:"seedServers"`
 	DeveloperMode                           bool                   `yaml:"developer_mode" mapstructure:"developer_mode" json:"developerMode"`
-	ArchivalStorageApiEndpoint              *string                `yaml:"archival_storage_api_endpoint,omitempty" mapstructure:"archival_storage_api_endpoint,omitempty" json:"archivalStorageApiEndpoint,omitempty"`
-	ArchivalStorageEnabled                  *bool                  `yaml:"archival_storage_enabled,omitempty" mapstructure:"archival_storage_enabled,omitempty" json:"archivalStorageEnabled,omitempty"`
-	ArchivalStorageS3AccessKey              *string                `yaml:"archival_storage_s3_access_key,omitempty" mapstructure:"archival_storage_s3_access_key,omitempty" json:"archivalStorageS3AccessKey,omitempty"`
-	ArchivalStorageS3SecretKey              *string                `yaml:"archival_storage_s3_secret_key,omitempty" mapstructure:"archival_storage_s3_secret_key,omitempty" json:"archivalStorageS3SecretKey,omitempty"`
-	ArchivalStorageS3Region                 *string                `yaml:"archival_storage_s3_region,omitempty" mapstructure:"archival_storage_s3_region,omitempty" json:"archivalStorageS3Region,omitempty"`
-	ArchivalStorageS3Bucket                 *string                `yaml:"archival_storage_s3_bucket,omitempty" mapstructure:"archival_storage_s3_bucket,omitempty" json:"archivalStorageS3Bucket,omitempty"`
-	ArchivalStorageReconciliationIntervalMs *int                   `yaml:"archival_storage_reconciliation_interval_ms,omitempty" mapstructure:"archival_storage_reconciliation_interval_ms,omitempty" json:"archivalStorageReconciliationIntervalMs,omitempty"`
-	ArchivalStorageMaxConnections           *int                   `yaml:"archival_storage_max_connections,omitempty" mapstructure:"archival_storage_max_connections,omitempty" json:"archivalStorageMaxConnections,omitempty"`
-	ArchivalStorageDisableTls               *bool                  `yaml:"archival_storage_disable_tls,omitempty" mapstructure:"archival_storage_disable_tls,omitempty" json:"archivalStorageDisableTls,omitempty"`
-	ArchivalStorageApiEndpointPort          *int                   `yaml:"archival_storage_api_endpoint_port,omitempty" mapstructure:"archival_storage_api_endpoint_port,omitempty" json:"archivalStorageApiEndpointPort,omitempty"`
-	ArchivalStorageTrustFile                *string                `yaml:"archival_storage_trust_file,omitempty" mapstructure:"archival_storage_trust_file,omitempty" json:"archivalStorageTrustFile,omitempty"`
+	ArchivalStorageApiEndpoint              *string                `yaml:"cloud_storage_api_endpoint,omitempty" mapstructure:"cloud_storage_api_endpoint,omitempty" json:"archivalStorageApiEndpoint,omitempty"`
+	ArchivalStorageEnabled                  *bool                  `yaml:"cloud_storage_enabled,omitempty" mapstructure:"cloud_storage_enabled,omitempty" json:"archivalStorageEnabled,omitempty"`
+	ArchivalStorageS3AccessKey              *string                `yaml:"cloud_storage_access_key,omitempty" mapstructure:"cloud_storage_access_key,omitempty" json:"archivalStorageS3AccessKey,omitempty"`
+	ArchivalStorageS3SecretKey              *string                `yaml:"cloud_storage_secret_key,omitempty" mapstructure:"cloud_storage_secret_key,omitempty" json:"archivalStorageS3SecretKey,omitempty"`
+	ArchivalStorageS3Region                 *string                `yaml:"cloud_storage_region,omitempty" mapstructure:"cloud_storage_region,omitempty" json:"archivalStorageS3Region,omitempty"`
+	ArchivalStorageS3Bucket                 *string                `yaml:"cloud_storage_bucket,omitempty" mapstructure:"cloud_storage_bucket,omitempty" json:"archivalStorageS3Bucket,omitempty"`
+	ArchivalStorageReconciliationIntervalMs *int                   `yaml:"cloud_storage_reconciliation_interval_ms,omitempty" mapstructure:"cloud_storage_reconciliation_interval_ms,omitempty" json:"archivalStorageReconciliationIntervalMs,omitempty"`
+	ArchivalStorageMaxConnections           *int                   `yaml:"cloud_storage_max_connections,omitempty" mapstructure:"cloud_storage_max_connections,omitempty" json:"archivalStorageMaxConnections,omitempty"`
+	ArchivalStorageDisableTls               *bool                  `yaml:"cloud_storage_disable_tls,omitempty" mapstructure:"cloud_storage_disable_tls,omitempty" json:"archivalStorageDisableTls,omitempty"`
+	ArchivalStorageApiEndpointPort          *int                   `yaml:"cloud_storage_api_endpoint_port,omitempty" mapstructure:"cloud_storage_api_endpoint_port,omitempty" json:"archivalStorageApiEndpointPort,omitempty"`
+	ArchivalStorageTrustFile                *string                `yaml:"cloud_storage_trust_file,omitempty" mapstructure:"cloud_storage_trust_file,omitempty" json:"archivalStorageTrustFile,omitempty"`
 	Other                                   map[string]interface{} `yaml:",inline" mapstructure:",remain"`
 }
 

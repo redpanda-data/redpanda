@@ -109,43 +109,39 @@ ss::future<archival::configuration>
 scheduler_service_impl::get_archival_service_config() {
     vlog(archival_log.debug, "Generating archival configuration");
     auto secret_key = s3::private_key_str(get_value_or_throw(
-      config::shard_local_cfg().archival_storage_s3_secret_key,
-      "archival_storage_s3_secret_key"));
+      config::shard_local_cfg().cloud_storage_secret_key,
+      "cloud_storage_secret_key"));
     auto access_key = s3::public_key_str(get_value_or_throw(
-      config::shard_local_cfg().archival_storage_s3_access_key,
-      "archival_storage_s3_access_key"));
+      config::shard_local_cfg().cloud_storage_access_key,
+      "cloud_storage_access_key"));
     auto region = s3::aws_region_name(get_value_or_throw(
-      config::shard_local_cfg().archival_storage_s3_region,
-      "archival_storage_s3_region"));
+      config::shard_local_cfg().cloud_storage_region, "cloud_storage_region"));
 
     // Set default overrides
     s3::default_overrides overrides;
     if (auto optep
-        = config::shard_local_cfg().archival_storage_api_endpoint.value();
+        = config::shard_local_cfg().cloud_storage_api_endpoint.value();
         optep.has_value()) {
         overrides.endpoint = s3::endpoint_url(*optep);
     }
-    overrides.disable_tls
-      = config::shard_local_cfg().archival_storage_disable_tls;
-    if (auto cert
-        = config::shard_local_cfg().archival_storage_trust_file.value();
+    overrides.disable_tls = config::shard_local_cfg().cloud_storage_disable_tls;
+    if (auto cert = config::shard_local_cfg().cloud_storage_trust_file.value();
         cert.has_value()) {
         overrides.trust_file = s3::ca_trust_file(std::filesystem::path(*cert));
     }
-    overrides.port
-      = config::shard_local_cfg().archival_storage_api_endpoint_port;
+    overrides.port = config::shard_local_cfg().cloud_storage_api_endpoint_port;
 
     auto s3_conf = co_await s3::configuration::make_configuration(
       access_key, secret_key, region, overrides);
     archival::configuration cfg{
       .client_config = std::move(s3_conf),
       .bucket_name = s3::bucket_name(get_value_or_throw(
-        config::shard_local_cfg().archival_storage_s3_bucket,
-        "archival_storage_s3_bucket")),
+        config::shard_local_cfg().cloud_storage_bucket,
+        "cloud_storage_bucket")),
       .interval
-      = config::shard_local_cfg().archival_storage_reconciliation_ms.value(),
+      = config::shard_local_cfg().cloud_storage_reconciliation_ms.value(),
       .connection_limit = s3_connection_limit(
-        config::shard_local_cfg().archival_storage_max_connections.value())};
+        config::shard_local_cfg().cloud_storage_max_connections.value())};
     vlog(archival_log.debug, "Archival configuration generated: {}", cfg);
     co_return cfg;
 }
