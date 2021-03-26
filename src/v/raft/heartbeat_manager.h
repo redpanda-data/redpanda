@@ -92,6 +92,7 @@ public:
     struct follower_request_meta {
         follower_req_seq seq;
         model::offset dirty_offset;
+        vnode follower_vnode;
     };
     // Heartbeats from all groups for single node
     struct node_heartbeat {

@@ -23,6 +23,8 @@
 #include "vlog.h"
 
 #include <seastar/core/future-util.hh>
+#include <seastar/core/timed_out_error.hh>
+#include <seastar/core/with_timeout.hh>
 
 #include <absl/container/flat_hash_map.h>
 #include <bits/stdint-uintn.h>
@@ -80,6 +82,7 @@ static std::vector<heartbeat_manager::node_heartbeat> requests_for_range(
             }
 
             auto seq_id = ptr->next_follower_sequence(rni);
+            ptr->suppress_heartbeats(rni, seq_id, heartbeats_suppressed::yes);
             pending_beats[rni.id()].emplace_back(
               heartbeat_metadata{ptr->meta(), ptr->self(), rni}, seq_id);
         };
@@ -103,7 +106,7 @@ static std::vector<heartbeat_manager::node_heartbeat> requests_for_range(
             meta_map.emplace(
               hb.meta.group,
               heartbeat_manager::follower_request_meta{
-                seq, hb.meta.prev_log_index});
+                seq, hb.meta.prev_log_index, hb.target_node_id});
             requests.push_back(std::move(hb));
         }
         reqs.emplace_back(
@@ -168,16 +171,26 @@ ss::future<> heartbeat_manager::do_self_heartbeat(node_heartbeat&& r) {
 }
 
 ss::future<> heartbeat_manager::do_heartbeat(node_heartbeat&& r) {
-    auto f = _client_protocol.heartbeat(
-      r.target,
-      std::move(r.request),
-      rpc::client_opts(
-        next_heartbeat_timeout(), rpc::compression_type::zstd, 512));
-    _dispatch_sem.signal();
-    return f
-      .then([node = r.target, groups = std::move(r.meta_map), this](
-              result<heartbeat_reply> ret) mutable {
-          process_reply(node, std::move(groups), std::move(ret));
+    auto f = _client_protocol
+               .heartbeat(
+                 r.target,
+                 std::move(r.request),
+                 rpc::client_opts(
+                   clock_type::now() + _heartbeat_timeout,
+                   rpc::compression_type::zstd,
+                   512))
+               .then([node = r.target, groups = std::move(r.meta_map), this](
+                       result<heartbeat_reply> ret) mutable {
+                   // this will happen after RPC client will return and resume
+                   // sending heartbeats to follower
+                   process_reply(node, std::move(groups), std::move(ret));
+               });
+    // fail fast to make sure that not lagging nodes will be able to receive
+    // hearteats
+    return ss::with_timeout(next_heartbeat_timeout(), std::move(f))
+      .handle_exception_type([](const ss::timed_out_error&) {
+          // we just ignore this exception since it is the timeout so we do not
+          // have to update consensus instances with results
       })
       .handle_exception_type([](const ss::gate_closed_exception&) {});
 }
@@ -199,6 +212,8 @@ void heartbeat_manager::process_reply(
                 vlog(hbeatlog.error, "cannot find consensus group:{}", g);
                 continue;
             }
+            (*it)->suppress_heartbeats(
+              req_meta.follower_vnode, req_meta.seq, heartbeats_suppressed::no);
             // propagate error
             (*it)->process_append_entries_reply(
               n,
@@ -217,6 +232,8 @@ void heartbeat_manager::process_reply(
             continue;
         }
         auto meta = groups.find(m.group)->second;
+        (*it)->suppress_heartbeats(
+          meta.follower_vnode, meta.seq, heartbeats_suppressed::no);
         (*it)->process_append_entries_reply(
           n,
           result<append_entries_reply>(std::move(m)),
