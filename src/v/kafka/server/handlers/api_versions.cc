@@ -49,7 +49,6 @@ using request_types = make_request_types<
   sasl_handshake_handler,
   sasl_authenticate_handler,
   incremental_alter_configs_handler,
-  init_producer_id_handler,
   delete_groups_handler,
   describe_acls_handler,
   describe_log_dirs_handler>;
