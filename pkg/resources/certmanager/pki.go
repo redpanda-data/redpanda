@@ -111,7 +111,7 @@ func (r *PkiReconciler) prepareKafkaAPI(
 			dnsName = externConn.Subdomain
 		}
 
-		redpandaCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, nodeIssuerRef, dnsName, false, r.logger)
+		redpandaCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, nodeIssuerRef, dnsName, false, true, r.logger)
 
 		toApply = append(toApply, redpandaCert)
 	}
@@ -119,15 +119,15 @@ func (r *PkiReconciler) prepareKafkaAPI(
 	if r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.RequireClientAuth {
 		// Certificate for external clients to call the Kafka API on any broker in this Redpanda cluster
 		certsKey := r.certNamespacedName(UserClientCert)
-		externalClientCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, selfSignedIssuerRef, "", false, r.logger)
+		externalClientCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, selfSignedIssuerRef, "", false, false, r.logger)
 
 		// Certificate for operator to call the Kafka API on any broker in this Redpanda cluster
 		certsKey = r.certNamespacedName(OperatorClientCert)
-		internalClientCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, selfSignedIssuerRef, "", false, r.logger)
+		internalClientCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, selfSignedIssuerRef, "", false, false, r.logger)
 
 		// Certificate for admin to call the Kafka API on any broker in this Redpanda cluster
 		certsKey = r.certNamespacedName(AdminClientCert)
-		adminClientCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, selfSignedIssuerRef, "", false, r.logger)
+		adminClientCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, selfSignedIssuerRef, "", false, false, r.logger)
 
 		toApply = append(toApply, externalClientCert, internalClientCert, adminClientCert)
 	}
@@ -155,8 +155,9 @@ func (r *PkiReconciler) prepareRoot() (
 		r.pandaCluster,
 		rootCertificateKey,
 		selfSignedIssuer.objRef(),
-		r.internalFQDN,
+		rootCertificateKey.String(),
 		true,
+		false,
 		r.logger)
 
 	// Kubernetes cluster issuer for Redpanda Operator - key provided in RedpandaCluster CR, else created

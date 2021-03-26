@@ -42,6 +42,7 @@ type CertificateResource struct {
 	issuerRef    *cmetav1.ObjectReference
 	fqdn         string
 	isCA         bool
+	wildcard     bool
 	logger       logr.Logger
 }
 
@@ -54,10 +55,11 @@ func NewCertificate(
 	issuerRef *cmetav1.ObjectReference,
 	fqdn string,
 	isCA bool,
+	wildcard bool,
 	logger logr.Logger,
 ) *CertificateResource {
 	return &CertificateResource{
-		client, scheme, pandaCluster, key, issuerRef, fqdn, isCA, logger.WithValues("Kind", certificateKind()),
+		client, scheme, pandaCluster, key, issuerRef, fqdn, isCA, wildcard, logger.WithValues("Kind", certificateKind()),
 	}
 }
 
@@ -88,13 +90,20 @@ func (r *CertificateResource) obj() (k8sclient.Object, error) {
 		},
 	}
 
+	wildcard := ""
+	if r.wildcard {
+		wildcard = "*."
+	}
+
 	if r.fqdn != "" {
-		cert.Spec.DNSNames = []string{
-			"*." + strings.TrimSuffix(r.fqdn, "."),
-		}
+		name := wildcard + strings.TrimSuffix(r.fqdn, ".")
+		cert.Spec.CommonName = name
+		cert.Spec.DNSNames = []string{name}
 	} else {
 		// Common name cannot exceed 64 bytes (cert-manager validates).
-		cert.Spec.CommonName = fmt.Sprintf("rp-%s", r.key.Name)
+		name := fmt.Sprintf("rp-%s", r.key.Name)
+		cert.Spec.CommonName = name
+		cert.Spec.DNSNames = []string{name}
 	}
 
 	err := controllerutil.SetControllerReference(r.pandaCluster, cert, r.scheme)

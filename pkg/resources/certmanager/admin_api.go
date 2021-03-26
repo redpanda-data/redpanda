@@ -34,14 +34,13 @@ func (r *PkiReconciler) prepareAdminAPI(
 		dnsName = externConn.Subdomain
 	}
 
-	nodeCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, selfSignedIssuerRef, dnsName, false, r.logger)
-
+	nodeCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, selfSignedIssuerRef, dnsName, false, true, r.logger)
 	toApply = append(toApply, nodeCert)
 
 	if r.pandaCluster.Spec.Configuration.TLS.AdminAPI.RequireClientAuth {
 		// Certificate for calling the Admin API on any broker
 		certsKey = r.certNamespacedName(AdminAPIClientCert)
-		adminClientCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, selfSignedIssuerRef, "", false, r.logger)
+		adminClientCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, selfSignedIssuerRef, "", false, false, r.logger)
 
 		toApply = append(toApply, adminClientCert)
 	}
