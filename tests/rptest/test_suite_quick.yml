@@ -16,6 +16,8 @@ quick:
   - tests/librdkafka_test.py
   - tests/rpk_test.py
   - tests/demo_test.py
-  - tests/compaction_recovery_test.py::CompactionRecoveryTest.test_index_recovery
-  - tests/configuration_update_test.py::ConfigurationUpdateTest.test_two_nodes_update
-  - tests/topic_delete_test.py::TopicDeleteTest.topic_delete_test
+  - tests/configuration_update_test.py
+  - tests/compacted_term_rolled_recovery_test.py
+  - tests/compacted_topic_verifier_test.py
+  - tests/compaction_recovery_test.py
+  - tests/wasm_identity_test.py
