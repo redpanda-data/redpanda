@@ -44,7 +44,8 @@ class WasmScript:
         self.dir_name = str(uuid.uuid4())
 
     def get_artifact(self, build_dir):
-        artifact = os.path.join(build_dir, self.dir_name, "dist", "wasm.js")
+        artifact = os.path.join(build_dir, self.dir_name, "dist",
+                                f"{self.dir_name}.js")
         if not os.path.exists(artifact):
             raise Exception(f"Artifact {artifact} was not built")
         return artifact

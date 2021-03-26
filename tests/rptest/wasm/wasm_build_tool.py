@@ -53,7 +53,7 @@ class WasmBuildTool():
         shutil.rmtree(self.work_dir)
 
     def _compile_template(self, script, template):
-        inputs = ",".join([f'"{topic[0]}"' for topic in script.inputs])
+        inputs = ",".join([f'"{topic}"' for topic in script.inputs])
         outputs = [get_dest_topic(topic[0]) for topic in script.outputs]
         t = jinja2.Template(template)
         return t.render(input_topics=inputs, output_topics=outputs)
@@ -70,7 +70,8 @@ class WasmBuildTool():
         if template is None:
             raise Exception(f"Template doesn't exist: {script.script}")
         coprocessor = self._compile_template(script, template)
-        script_path = os.path.join(artifact_dir, "src", "wasm.js")
+        script_path = os.path.join(artifact_dir, "src",
+                                   f"{script.dir_name}.js")
         with open(script_path, "w") as f:
             f.write(coprocessor)
         self._build_source(artifact_dir)
