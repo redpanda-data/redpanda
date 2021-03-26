@@ -36,7 +36,7 @@ These tags could be used to delete data from S3 selectively. Both partition mani
 
 ## Cloud Storage Configuration
 
-On AWS no special configuration is needed for the S3 bucket. You can just create a bucket and optionally specify expiration rules based on tags described above. Next, you may use IAM service to create a user to access S3. You will need to grant this user permission to read and create objects. You will also need to copy access key and secret key to the redpanda configuration options `archival_storage_s3_access_key` and `archival_storage_s3_secret_key`
+On AWS no special configuration is needed for the S3 bucket. You can just create a bucket and optionally specify expiration rules based on tags described above. Next, you may use IAM service to create a user to access S3. You will need to grant this user permission to read and create objects. You will also need to copy access key and secret key to the redpanda configuration options `cloud_storage_access_key` and `cloud_storage_secret_key`
 
 On Google Cloud Storage you should choose a uniform access control while creating a bucket. Bucket level permissions should be used for all objects. You should also use google managed encryption key. Next, you will need to create a service user with HMAC keys. This HMAC keys should be added to redpanda configuration. 
 
@@ -44,12 +44,16 @@ On Google Cloud Storage you should choose a uniform access control while creatin
 
 | Config parameter name                         | Type         | Descripion                                              |
 |-----------------------------------------------|--------------|---------------------------------------------------------|
-| `archival_storage_enabled`                    | boolean      | Enables archival storage feature                        |
-| `archival_storage_s3_access_key`              | string       | S3 access key                                           |
-| `archival_storage_s3_secret_key`              | string       | S3 secret key                                           |
-| `archival_storage_s3_region`                  | string       | AWS region                                              |
-| `archival_storage_s3_bucket`                  | string       | S3 bucket                                               |
-| `archival_storage_reconciliation_interval_ms` | milliseconds | Reconciliation period (default - 10s)                   |
-| `archival_storage_max_connections`            | integer      | Number of simultaneous uploads per shard (default - 20) |
+| `cloud_storage_enabled`                       | boolean      | Enables archival storage feature                        |
+| `cloud_storage_access_key`                    | string       | S3 access key                                           |
+| `cloud_storage_secret_key`                    | string       | S3 secret key                                           |
+| `cloud_storage_region`                        | string       | AWS region                                              |
+| `cloud_storage_bucket`                        | string       | S3 bucket                                               |
+| `cloud_storage_reconciliation_interval_ms`    | milliseconds | Reconciliation period (default - 10s)                   |
+| `cloud_storage_max_connections`               | integer      | Number of simultaneous uploads per shard (default - 20) |
+| `cloud_storage_api_endpoint`                  | string       | Cloud storage api endpoint (the default assumes S3)     |
+| `cloud_storage_api_endpoint_port`             | string       | Cloud storage api endpoint port number (default 443)    |
+| `cloud_storage_trust_file`                    | string       | Alternative location of the CA certificate (default /etc/pki/tls/cert.pem) |
+| `cloud_storage_disable_tls`                   | boolean      | Disable TLS for cloud storage connections               |
 
 Note that the bucket should be created in advance. Also, please be aware that the secret and access keys are stored in plain text in configuration files. Parameters `reconciliation_interval_ms` and `max_connections` can be omitted since both have reasonable defaults.

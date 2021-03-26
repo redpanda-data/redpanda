@@ -884,17 +884,17 @@ redpanda:
   admin:
     address: 0.0.0.0
     port: 9644
-  archival_storage_api_endpoint: http
-  archival_storage_api_endpoint_port: 100
-  archival_storage_disable_tls: true
-  archival_storage_enabled: true
-  archival_storage_max_connections: 4
-  archival_storage_reconciliation_interval_ms: 20000
-  archival_storage_s3_access_key: access
-  archival_storage_s3_bucket: bucket
-  archival_storage_s3_region: region
-  archival_storage_s3_secret_key: secret
-  archival_storage_trust_file: trust
+  cloud_storage_access_key: access
+  cloud_storage_api_endpoint: http
+  cloud_storage_api_endpoint_port: 100
+  cloud_storage_bucket: bucket
+  cloud_storage_disable_tls: true
+  cloud_storage_enabled: true
+  cloud_storage_max_connections: 4
+  cloud_storage_reconciliation_interval_ms: 20000
+  cloud_storage_region: region
+  cloud_storage_secret_key: secret
+  cloud_storage_trust_file: trust
   data_directory: /var/lib/redpanda/data
   developer_mode: false
   kafka_api:

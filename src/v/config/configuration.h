@@ -133,17 +133,17 @@ struct configuration final : public config_store {
       controller_backend_housekeeping_interval_ms;
 
     // Archival storage
-    property<bool> archival_storage_enabled;
-    property<std::optional<ss::sstring>> archival_storage_s3_access_key;
-    property<std::optional<ss::sstring>> archival_storage_s3_secret_key;
-    property<std::optional<ss::sstring>> archival_storage_s3_region;
-    property<std::optional<ss::sstring>> archival_storage_s3_bucket;
-    property<std::optional<ss::sstring>> archival_storage_api_endpoint;
-    property<std::chrono::milliseconds> archival_storage_reconciliation_ms;
-    property<int16_t> archival_storage_max_connections;
-    property<bool> archival_storage_disable_tls;
-    property<int16_t> archival_storage_api_endpoint_port;
-    property<std::optional<ss::sstring>> archival_storage_trust_file;
+    property<bool> cloud_storage_enabled;
+    property<std::optional<ss::sstring>> cloud_storage_access_key;
+    property<std::optional<ss::sstring>> cloud_storage_secret_key;
+    property<std::optional<ss::sstring>> cloud_storage_region;
+    property<std::optional<ss::sstring>> cloud_storage_bucket;
+    property<std::optional<ss::sstring>> cloud_storage_api_endpoint;
+    property<std::chrono::milliseconds> cloud_storage_reconciliation_ms;
+    property<int16_t> cloud_storage_max_connections;
+    property<bool> cloud_storage_disable_tls;
+    property<int16_t> cloud_storage_api_endpoint_port;
+    property<std::optional<ss::sstring>> cloud_storage_trust_file;
 
     configuration();
 

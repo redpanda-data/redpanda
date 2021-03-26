@@ -527,69 +527,69 @@ configuration::configuration()
       "Interval between iterations of controller backend housekeeping loop",
       required::no,
       1s)
-  , archival_storage_enabled(
+  , cloud_storage_enabled(
       *this,
-      "archival_storage_enabled",
+      "cloud_storage_enabled",
       "Enable archival storage",
       required::no,
       false)
-  , archival_storage_s3_access_key(
+  , cloud_storage_access_key(
       *this,
-      "archival_storage_s3_access_key",
+      "cloud_storage_access_key",
       "AWS access key",
       required::no,
       std::nullopt)
-  , archival_storage_s3_secret_key(
+  , cloud_storage_secret_key(
       *this,
-      "archival_storage_s3_secret_key",
+      "cloud_storage_secret_key",
       "AWS secret key",
       required::no,
       std::nullopt)
-  , archival_storage_s3_region(
+  , cloud_storage_region(
       *this,
-      "archival_storage_s3_region",
+      "cloud_storage_region",
       "AWS region that houses the bucket used for storage",
       required::no,
       std::nullopt)
-  , archival_storage_s3_bucket(
+  , cloud_storage_bucket(
       *this,
-      "archival_storage_s3_bucket",
+      "cloud_storage_bucket",
       "AWS bucket that should be used to store data",
       required::no,
       std::nullopt)
-  , archival_storage_api_endpoint(
+  , cloud_storage_api_endpoint(
       *this,
-      "archival_storage_api_endpoint",
+      "cloud_storage_api_endpoint",
       "Optional API endpoint",
       required::no,
       std::nullopt)
-  , archival_storage_reconciliation_ms(
+  , cloud_storage_reconciliation_ms(
       *this,
-      "archival_storage_reconciliation_interval_ms",
+      "cloud_storage_reconciliation_interval_ms",
       "Interval at which the archival service runs reconciliation (ms)",
       required::no,
       10s)
-  , archival_storage_max_connections(
+  , cloud_storage_max_connections(
       *this,
-      "archival_storage_max_connections",
+      "cloud_storage_max_connections",
       "Max number of simultaneous uploads to S3",
       required::no,
       20)
-  , archival_storage_disable_tls(
+  , cloud_storage_disable_tls(
       *this,
-      "archival_storage_disable_tls",
+      "cloud_storage_disable_tls",
       "Disable TLS for all S3 connections",
       required::no,
       false)
-  , archival_storage_api_endpoint_port(
+  , cloud_storage_api_endpoint_port(
       *this,
-      "archival_storage_api_endpoint_port",
+      "cloud_storage_api_endpoint_port",
       "TLS port override",
       required::no,
       443)
-  , archival_storage_trust_file(
+  , cloud_storage_trust_file(
       *this,
-      "archival_storage_trust_file",
+      "cloud_storage_trust_file",
       "Path to certificate that should be used to validate server certificate "
       "during TLS handshake",
       required::no,
