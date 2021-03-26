@@ -9,6 +9,8 @@
 
 #include "cluster/service.h"
 
+#include "cluster/controller_api.h"
+#include "cluster/fwd.h"
 #include "cluster/members_manager.h"
 #include "cluster/metadata_cache.h"
 #include "cluster/security_frontend.h"
@@ -28,12 +30,14 @@ service::service(
   ss::sharded<topics_frontend>& tf,
   ss::sharded<members_manager>& mm,
   ss::sharded<metadata_cache>& cache,
-  ss::sharded<security_frontend>& sf)
+  ss::sharded<security_frontend>& sf,
+  ss::sharded<controller_api>& api)
   : controller_service(sg, ssg)
   , _topics_frontend(tf)
   , _members_manager(mm)
   , _md_cache(cache)
-  , _security_frontend(sf) {}
+  , _security_frontend(sf)
+  , _api(api) {}
 
 ss::future<join_reply>
 service::join(join_request&& req, rpc::streaming_context&) {
@@ -176,6 +180,21 @@ service::delete_acls(delete_acls_request&& request, rpc::streaming_context&) {
       .then([](std::vector<delete_acls_result> results) {
           return delete_acls_reply{.results = std::move(results)};
       });
+}
+
+ss::future<reconciliation_state_reply> service::get_reconciliation_state(
+  reconciliation_state_request&& req, rpc::streaming_context&) {
+    return ss::with_scheduling_group(
+      get_scheduling_group(), [this, req = std::move(req)]() mutable {
+          return do_get_reconciliation_state(std::move(req));
+      });
+}
+
+ss::future<reconciliation_state_reply>
+service::do_get_reconciliation_state(reconciliation_state_request req) {
+    auto result = co_await _api.local().get_reconciliation_state(req.ntps);
+
+    co_return reconciliation_state_reply{.results = std::move(result)};
 }
 
 } // namespace cluster

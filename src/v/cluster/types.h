@@ -419,6 +419,14 @@ private:
     errc _error;
 };
 
+struct reconciliation_state_request {
+    std::vector<model::ntp> ntps;
+};
+
+struct reconciliation_state_reply {
+    std::vector<ntp_reconciliation_state> results;
+};
+
 } // namespace cluster
 namespace std {
 template<>

@@ -12,6 +12,7 @@
 #pragma once
 #include "cluster/controller_service.h"
 #include "cluster/types.h"
+#include "rpc/types.h"
 
 #include <seastar/core/sharded.hh>
 
@@ -30,7 +31,8 @@ public:
       ss::sharded<topics_frontend>&,
       ss::sharded<members_manager>&,
       ss::sharded<metadata_cache>&,
-      ss::sharded<security_frontend>&);
+      ss::sharded<security_frontend>&,
+      ss::sharded<controller_api>&);
 
     virtual ss::future<join_reply>
     join(join_request&&, rpc::streaming_context&) override;
@@ -46,6 +48,8 @@ public:
 
     ss::future<update_topic_properties_reply> update_topic_properties(
       update_topic_properties_request&&, rpc::streaming_context&) final;
+    ss::future<reconciliation_state_reply> get_reconciliation_state(
+      reconciliation_state_request&&, rpc::streaming_context&) final;
 
     ss::future<create_acls_reply>
     create_acls(create_acls_request&&, rpc::streaming_context&) final;
@@ -64,9 +68,13 @@ private:
     ss::future<update_topic_properties_reply>
     do_update_topic_properties(update_topic_properties_request&&);
 
+    ss::future<reconciliation_state_reply>
+      do_get_reconciliation_state(reconciliation_state_request);
+
     ss::sharded<topics_frontend>& _topics_frontend;
     ss::sharded<members_manager>& _members_manager;
     ss::sharded<metadata_cache>& _md_cache;
     ss::sharded<security_frontend>& _security_frontend;
+    ss::sharded<controller_api>& _api;
 };
 } // namespace cluster
