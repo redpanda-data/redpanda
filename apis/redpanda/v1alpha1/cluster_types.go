@@ -48,26 +48,26 @@ type ClusterSpec struct {
 	ExternalConnectivity ExternalConnectivityConfig `json:"externalConnectivity,omitempty"`
 	// Storage spec for cluster
 	Storage StorageSpec `json:"storage,omitempty"`
-	// Archival storage configuration for cluster
-	ArchivalStorage ArchivalStorageConfig `json:"archivalStorage,omitempty"`
+	// Cloud storage configuration for cluster
+	CloudStorage CloudStorageConfig `json:"cloudStorage,omitempty"`
 }
 
-// ArchivalStorageConfig configures the Archival feature in Redpanda
+// CloudStorageConfig configures the Data Archiving feature in Redpanda
 // https://vectorized.io/docs/data-archiving
-type ArchivalStorageConfig struct {
-	// Enables archival storage feature
+type CloudStorageConfig struct {
+	// Enables data archiving feature
 	Enabled bool `json:"enabled"`
-	// S3 access key
-	S3AccessKey string `json:"s3AccessKey,omitempty"`
-	// Reference to (Kubernetes) Secret containing the S3 secret key.
-	// S3SecretKeyRef must contain the name and namespace of the Secret.
+	// Cloud storage access key
+	AccessKey string `json:"accessKey,omitempty"`
+	// Reference to (Kubernetes) Secret containing the cloud storage secret key.
+	// SecretKeyRef must contain the name and namespace of the Secret.
 	// The Secret must contain a data entry of the form:
-	// data[<S3SecretKeyRef.Name>] = <S3 secret key>
-	S3SecretKeyRef corev1.ObjectReference `json:"s3SecretKeyRef,omitempty"`
-	// S3 region
-	S3Region string `json:"s3Region,omitempty"`
-	// S3 bucket
-	S3Bucket string `json:"s3Bucket,omitempty"`
+	// data[<SecretKeyRef.Name>] = <secret key>
+	SecretKeyRef corev1.ObjectReference `json:"secretKeyRef,omitempty"`
+	// Cloud storage region
+	Region string `json:"region,omitempty"`
+	// Cloud storage bucket
+	Bucket string `json:"bucket,omitempty"`
 	// Reconciliation period (default - 10s)
 	ReconcilicationIntervalMs int `json:"reconciliationIntervalMs,omitempty"`
 	// Number of simultaneous uploads per shard (default - 20)

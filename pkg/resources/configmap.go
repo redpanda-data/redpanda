@@ -38,7 +38,7 @@ const (
 )
 
 var errKeyDoesNotExistInSecretData = errors.New("cannot find key in secret data")
-var errS3SecretKeyCannotBeEmpty = errors.New("s3SecretKey string cannot be empty")
+var errCloudStorageSecretKeyCannotBeEmpty = errors.New("cloud storage SecretKey string cannot be empty")
 
 var _ Resource = &ConfigMapResource{}
 
@@ -150,20 +150,20 @@ func (r *ConfigMapResource) createConfiguration(
 		}
 	}
 
-	if r.pandaCluster.Spec.ArchivalStorage.Enabled {
+	if r.pandaCluster.Spec.CloudStorage.Enabled {
 		secretName := types.NamespacedName{
-			Name:      r.pandaCluster.Spec.ArchivalStorage.S3SecretKeyRef.Name,
-			Namespace: r.pandaCluster.Spec.ArchivalStorage.S3SecretKeyRef.Namespace,
+			Name:      r.pandaCluster.Spec.CloudStorage.SecretKeyRef.Name,
+			Namespace: r.pandaCluster.Spec.CloudStorage.SecretKeyRef.Namespace,
 		}
-		// We need to retrieve the Secret containing the provided S3 secret key and extract the key itself.
-		s3SecretKeyStr, err := r.getSecretValue(ctx, secretName, r.pandaCluster.Spec.ArchivalStorage.S3SecretKeyRef.Name)
+		// We need to retrieve the Secret containing the provided cloud storage secret key and extract the key itself.
+		secretKeyStr, err := r.getSecretValue(ctx, secretName, r.pandaCluster.Spec.CloudStorage.SecretKeyRef.Name)
 		if err != nil {
-			return nil, fmt.Errorf("cannot retrieve s3 secret for data archival: %w", err)
+			return nil, fmt.Errorf("cannot retrieve cloud storage secret for data archival: %w", err)
 		}
-		if s3SecretKeyStr == "" {
-			return nil, fmt.Errorf("secret name %s, ns %s: %w", secretName.Name, secretName.Namespace, errS3SecretKeyCannotBeEmpty)
+		if secretKeyStr == "" {
+			return nil, fmt.Errorf("secret name %s, ns %s: %w", secretName.Name, secretName.Namespace, errCloudStorageSecretKeyCannotBeEmpty)
 		}
-		r.prepareArchivalStorage(cr, s3SecretKeyStr)
+		r.prepareCloudStorage(cr, secretKeyStr)
 	}
 
 	replicas := *r.pandaCluster.Spec.Replicas
@@ -180,33 +180,33 @@ func (r *ConfigMapResource) createConfiguration(
 	return cfgRpk, nil
 }
 
-func (r *ConfigMapResource) prepareArchivalStorage(
-	cr *config.RedpandaConfig, s3SecretKeyStr string,
+func (r *ConfigMapResource) prepareCloudStorage(
+	cr *config.RedpandaConfig, secretKeyStr string,
 ) {
-	cr.ArchivalStorageEnabled = pointer.BoolPtr(r.pandaCluster.Spec.ArchivalStorage.Enabled)
-	cr.ArchivalStorageS3AccessKey = pointer.StringPtr(r.pandaCluster.Spec.ArchivalStorage.S3AccessKey)
-	cr.ArchivalStorageS3Region = pointer.StringPtr(r.pandaCluster.Spec.ArchivalStorage.S3Region)
-	cr.ArchivalStorageS3Bucket = pointer.StringPtr(r.pandaCluster.Spec.ArchivalStorage.S3Bucket)
-	cr.ArchivalStorageS3SecretKey = pointer.StringPtr(s3SecretKeyStr)
-	cr.ArchivalStorageDisableTls = pointer.BoolPtr(r.pandaCluster.Spec.ArchivalStorage.DisableTLS)
+	cr.ArchivalStorageEnabled = pointer.BoolPtr(r.pandaCluster.Spec.CloudStorage.Enabled)
+	cr.ArchivalStorageS3AccessKey = pointer.StringPtr(r.pandaCluster.Spec.CloudStorage.AccessKey)
+	cr.ArchivalStorageS3Region = pointer.StringPtr(r.pandaCluster.Spec.CloudStorage.Region)
+	cr.ArchivalStorageS3Bucket = pointer.StringPtr(r.pandaCluster.Spec.CloudStorage.Bucket)
+	cr.ArchivalStorageS3SecretKey = pointer.StringPtr(secretKeyStr)
+	cr.ArchivalStorageDisableTls = pointer.BoolPtr(r.pandaCluster.Spec.CloudStorage.DisableTLS)
 
-	interval := r.pandaCluster.Spec.ArchivalStorage.ReconcilicationIntervalMs
+	interval := r.pandaCluster.Spec.CloudStorage.ReconcilicationIntervalMs
 	if interval != 0 {
 		cr.ArchivalStorageReconciliationIntervalMs = &interval
 	}
-	maxCon := r.pandaCluster.Spec.ArchivalStorage.MaxConnections
+	maxCon := r.pandaCluster.Spec.CloudStorage.MaxConnections
 	if maxCon != 0 {
 		cr.ArchivalStorageMaxConnections = &maxCon
 	}
-	apiEndpoint := r.pandaCluster.Spec.ArchivalStorage.APIEndpoint
+	apiEndpoint := r.pandaCluster.Spec.CloudStorage.APIEndpoint
 	if apiEndpoint != "" {
 		cr.ArchivalStorageApiEndpoint = &apiEndpoint
 	}
-	endpointPort := r.pandaCluster.Spec.ArchivalStorage.APIEndpointPort
+	endpointPort := r.pandaCluster.Spec.CloudStorage.APIEndpointPort
 	if endpointPort != 0 {
 		cr.ArchivalStorageApiEndpointPort = &endpointPort
 	}
-	trustfile := r.pandaCluster.Spec.ArchivalStorage.Trustfile
+	trustfile := r.pandaCluster.Spec.CloudStorage.Trustfile
 	if trustfile != "" {
 		cr.ArchivalStorageTrustFile = &trustfile
 	}
