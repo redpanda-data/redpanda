@@ -8,13 +8,11 @@
 # by the Apache License, Version 2.0
 
 from ducktape.mark.resource import cluster
-
-from rptest.wasm.wasm_test import WasmTest, WasmScript
-from rptest.wasm.wasm_build_tool import WasmTemplateRepository
+from rptest.clients.types import TopicSpec
 from rptest.wasm.topic import construct_materialized_topic
 from rptest.wasm.topics_result_set import materialized_result_set_compare
-
-from rptest.clients.types import TopicSpec
+from rptest.wasm.wasm_build_tool import WasmTemplateRepository
+from rptest.wasm.wasm_test import WasmScript, WasmTest
 
 
 class WasmIdentityTest(WasmTest):
@@ -28,26 +26,78 @@ class WasmIdentityTest(WasmTest):
         self._record_size = record_size
         assert len(self.topics) >= 1
 
+    def input_topics(self):
+        """
+        Default behavior is for all scripts to have all topics as input topics
+        """
+        return [x.name for x in self.topics]
+
+    def wasm_test_outputs(self):
+        raise Exception('Unimplemented method')
+
+    def wasm_xfactor(self):
+        """
+        Multiply with self._num_records to obtain expected record count
+        """
+        return 1
+
+    def wasm_test_input(self):
+        """
+        Topics that will be produced onto, number of records and record_size
+        """
+        return [(x, self._num_records, self._record_size) for x in self.topics]
+
     def wasm_test_plan(self):
-        input_topic = self.topics[0].name
-        mapped_topic = "myoutputtopic"
-        output_topic = construct_materialized_topic(input_topic, mapped_topic)
-
-        # The identity transform produces 1 identital record onto a topic for
-        # each input record. The result should be a 1 to 1 mapping between a
-        # source and destination topic, they should be identical when compared
-        basic_script = WasmScript(
-            inputs=[(input_topic, (self._num_records, self._record_size))],
-            outputs=[(output_topic, self._num_records)],
-            script=WasmTemplateRepository.IDENTITY_TRANSFORM)
-
-        return [basic_script]
+        """
+        List of scripts to deploy, built from the results of wasm_test_outputs().
+        By default inputs to all scripts will be self.input_topics()
+        """
+        itopics = self.input_topics()
+        return [
+            WasmScript(inputs=itopics,
+                       outputs=opts,
+                       script=WasmTemplateRepository.IDENTITY_TRANSFORM)
+            for opts in self.wasm_test_outputs()
+        ]
 
     @cluster(num_nodes=3)
-    def ensure_identical_output_test(self):
-        input_results, output_results = self._start(self.topics,
-                                                    self.wasm_test_plan())
-        assert input_results.num_records() == self._num_records
-        if not materialized_result_set_compare(input_results, output_results):
-            raise Exception(
-                "Expected all records across topics to be equivalent")
+    def verify_materialized_topics_test(self):
+        """
+        Entry point for all tests, asynchronously we perform the following:
+        1. Scripts are built & deployed
+        2. Consumers are set-up listening for expected records on output topics
+        3. Producers set-up and begin producing onto input topics
+        4. When finished, perform assertions in this method
+        """
+        input_results, output_results = self._start(self.wasm_test_input(),
+                                                    self.wasm_test_plan(),
+                                                    self.wasm_xfactor())
+        for script in self.wasm_test_outputs():
+            for dest in script:
+                outputs = set([
+                    construct_materialized_topic(src.name, dest)
+                    for src, _, _ in self.wasm_test_input()
+                ])
+                tresults = output_results.filter(lambda x: x.topic in outputs)
+                if not materialized_result_set_compare(input_results,
+                                                       tresults):
+                    raise Exception(
+                        f"Set {dest} results weren't as expected: {type(self).__name__}"
+                    )
+
+
+class WasmBasicIdentityTest(WasmIdentityTest):
+    def __init__(self, test_context, num_records=1024, record_size=1024):
+        super(WasmBasicIdentityTest, self).__init__(test_context,
+                                                    num_records=num_records,
+                                                    record_size=record_size)
+
+    def wasm_test_outputs(self):
+        """
+        The materialized log:
+        [
+          itopic.$script_a_output$,
+        ]
+        Should exist by tests end and be identical to its respective input log
+        """
+        return [["script_a_output"]]

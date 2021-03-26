@@ -12,7 +12,6 @@ import tempfile
 import shutil
 import subprocess
 import jinja2
-from rptest.wasm.topic import get_dest_topic
 
 
 class WasmTemplateRepository:
@@ -54,7 +53,9 @@ class WasmBuildTool():
 
     def _compile_template(self, script, template):
         inputs = ",".join([f'"{topic}"' for topic in script.inputs])
-        outputs = [get_dest_topic(topic[0]) for topic in script.outputs]
+        outputs = [topic for topic in script.outputs]
+        if any(x is None for x in outputs):
+            raise Exception('Error rendering template, outputs invalid')
         t = jinja2.Template(template)
         return t.render(input_topics=inputs, output_topics=outputs)
 

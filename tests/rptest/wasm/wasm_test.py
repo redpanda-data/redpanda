@@ -15,7 +15,7 @@ from kafka import TopicPartition
 from rptest.wasm.native_kafka_consumer import NativeKafkaConsumer
 from rptest.wasm.native_kafka_producer import NativeKafkaProducer
 
-from rptest.wasm.topic import get_source_topic, is_materialized_topic
+from rptest.wasm.topic import construct_materialized_topic
 from rptest.wasm.wasm_build_tool import WasmBuildTool
 
 from rptest.tests.redpanda_test import RedpandaTest
@@ -64,10 +64,6 @@ class WasmTest(RedpandaTest):
         self._build_tool = WasmBuildTool(self._rpk_tool)
 
     def _build_script(self, script):
-        # Produce all data
-        total_output_expected = reduce(lambda acc, x: acc + x[1],
-                                       script.outputs, 0)
-
         # Build the script itself
         self._build_tool.build_test_artifacts(script)
 
@@ -75,35 +71,24 @@ class WasmTest(RedpandaTest):
         self._rpk_tool.wasm_deploy(
             script.get_artifact(self._build_tool.work_dir), "ducktape")
 
-        return total_output_expected
-
-    def _start(self, topic_spec, scripts):
-        all_materialized = all(
-            flat_map(
-                lambda x: [is_materialized_topic(x[0]) for x in x.outputs],
-                scripts))
-        if not all_materialized:
-            raise Exception("All output topics must be materaizlied topics")
-
+    def _start(self, topic_spec, scripts, xfactor):
         def to_output_topic_spec(output_topics):
             """
             Create a list of TopicPartitions for the set of output topics.
             Must parse the materialzied topic for the input topic to determine
             the number of partitions.
             """
-            input_lookup = dict([(x[0].name, x[0]) for x in topic_spec])
             result = []
-            for output_topic, _ in output_topics:
-                src = input_lookup.get(get_source_topic(output_topic))
-                if src is None:
-                    raise Exception(
-                        "Bad spec, materialized topics source must belong to "
-                        "the input topic spec set")
-                result.append(
-                    TopicSpec(name=output_topic,
+            for src, _, _ in topic_spec:
+                materialized_topics = [
+                    TopicSpec(name=construct_materialized_topic(
+                        src.name, dest),
                               partition_count=src.partition_count,
                               replication_factor=src.replication_factor,
-                              cleanup_policy=src.cleanup_policy))
+                              cleanup_policy=src.cleanup_policy)
+                    for dest in output_topics
+                ]
+                result += materialized_topics
             return result
 
         def expand_topic_spec(etc):
@@ -116,14 +101,27 @@ class WasmTest(RedpandaTest):
                     for x in range(0, spec.partition_count)
                 ], etc)
 
+        for script in scripts:
+            self._build_script(script)
+
         # Calcualte expected records on all inputs / outputs
         total_inputs = reduce(lambda acc, x: acc + x[1], topic_spec, 0)
-        total_outputs = reduce(lambda acc, x: acc + x,
-                               [self._build_script(x) for x in scripts], 0)
+
+        def accrue(num_records):
+            return reduce(
+                lambda acc, script: acc +
+                (num_records * len(script.outputs) * xfactor), scripts, 0)
+
+        total_outputs = reduce(lambda acc, x: acc + accrue(x[1]), topic_spec,
+                               0)
+
         input_tps = expand_topic_spec([x[0] for x in topic_spec])
         output_tps = expand_topic_spec(
             to_output_topic_spec(
                 flat_map(lambda script: script.outputs, scripts)))
+
+        self.logger.info(f"Input consumer assigned: {input_tps}")
+        self.logger.info(f"Output consumer assigned: {output_tps}")
 
         producers = []
         for tp_spec, num_records, record_size in topic_spec:
