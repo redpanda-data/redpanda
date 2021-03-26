@@ -55,6 +55,8 @@ public:
 
     ss::sharded<security::authorizer>& get_authorizer() { return _authorizer; }
 
+    ss::sharded<controller_api>& get_api() { return _api; }
+
     ss::future<> wire_up();
 
     ss::future<> start();
@@ -74,6 +76,7 @@ private:
     ss::sharded<controller_backend> _backend;      // instance per core
     ss::sharded<controller_stm> _stm;              // single instance
     ss::sharded<controller_service> _service;      // instance per core
+    ss::sharded<controller_api> _api;              // instance per core
     ss::sharded<rpc::connection_cache>& _connections;
     ss::sharded<partition_manager>& _partition_manager;
     ss::sharded<shard_table>& _shard_table;

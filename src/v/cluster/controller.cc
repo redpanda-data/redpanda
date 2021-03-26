@@ -10,6 +10,7 @@
 #include "cluster/controller.h"
 
 #include "cluster/cluster_utils.h"
+#include "cluster/controller_api.h"
 #include "cluster/controller_backend.h"
 #include "cluster/controller_service.h"
 #include "cluster/logger.h"
@@ -142,7 +143,16 @@ ss::future<> controller::start() {
           });
       })
       .then(
-        [this] { return _backend.invoke_on_all(&controller_backend::start); });
+        [this] { return _backend.invoke_on_all(&controller_backend::start); })
+      .then([this] {
+          return _api.start(
+            _raft0->self().id(),
+            std::ref(_backend),
+            std::ref(_tp_state),
+            std::ref(_shard_table),
+            std::ref(_connections),
+            std::ref(_as));
+      });
 }
 
 ss::future<> controller::shutdown_input() {
@@ -161,7 +171,8 @@ ss::future<> controller::stop() {
     }
 
     return f.then([this] {
-        return _backend.stop()
+        return _api.stop()
+          .then([this] { return _backend.stop(); })
           .then([this] { return _tp_frontend.stop(); })
           .then([this] { return _security_frontend.stop(); })
           .then([this] { return _stm.stop(); })
