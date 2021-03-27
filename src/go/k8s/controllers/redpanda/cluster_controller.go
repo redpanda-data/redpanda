@@ -126,6 +126,7 @@ func (r *ClusterReconciler) Reconcile(
 
 		if err != nil {
 			log.Error(err, "Failed to reconcile resource")
+			return ctrl.Result{}, err
 		}
 	}
 
