@@ -125,18 +125,17 @@ func (r *StatefulSetResource) Ensure(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if created {
+		r.LastObservedState = obj.(*appsv1.StatefulSet)
+		return nil
+	}
 
 	err = r.Get(ctx, r.Key(), &sts)
 	if err != nil {
 		return fmt.Errorf("error while fetching StatefulSet resource: %w", err)
 	}
-
 	r.LastObservedState = &sts
 
-	if created {
-		// we don't need to update since we've just created the resource
-		return nil
-	}
 	partitioned, err := r.shouldUsePartitionedUpdate(&sts)
 	if err != nil {
 		return err
