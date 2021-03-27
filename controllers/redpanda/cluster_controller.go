@@ -118,7 +118,7 @@ func (r *ClusterReconciler) Reconcile(
 	for _, res := range toApply {
 		err := res.Ensure(ctx)
 
-		var e *resources.NeedToReconcileError
+		var e *resources.RequeueAfterError
 		if errors.As(err, &e) {
 			log.Info(e.Error())
 			return ctrl.Result{RequeueAfter: e.RequeueAfter}, nil

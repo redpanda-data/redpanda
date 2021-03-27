@@ -127,7 +127,7 @@ func (r *StatefulSetResource) partitionUpdateImage(
 		// Before continuing to update the ith Pod, verify that the previously updated
 		// Pod (if any) has rejoined its groups after restarting, i.e., is ready for I/O.
 		if err := r.ensureRedpandaGroupsReady(ctx, sts, replicas, ordinal+1); err != nil {
-			return &NeedToReconcileError{RequeueAfter: requeueDuration,
+			return &RequeueAfterError{RequeueAfter: requeueDuration,
 				Msg: fmt.Sprintf("redpanda on pod (ordinal: %d) not ready", ordinal)}
 		}
 
@@ -136,13 +136,13 @@ func (r *StatefulSetResource) partitionUpdateImage(
 		}
 
 		// Restarting the Pod takes enough time to warrant a requeue.
-		return &NeedToReconcileError{RequeueAfter: requeueDuration,
+		return &RequeueAfterError{RequeueAfter: requeueDuration,
 			Msg: fmt.Sprintf("wait for pod (ordinal: %d) to restart", ordinal)}
 	}
 
 	// Ensure 0th Pod is ready for I/O before completing the upgrade.
 	if err := r.ensureRedpandaGroupsReady(ctx, sts, replicas, 0); err != nil {
-		return &NeedToReconcileError{RequeueAfter: requeueDuration,
+		return &RequeueAfterError{RequeueAfter: requeueDuration,
 			Msg: fmt.Sprintf("redpanda on pod (ordinal: %d) not ready", 0)}
 	}
 
@@ -321,14 +321,14 @@ func podIsReady(pod *corev1.Pod) bool {
 	return false
 }
 
-// NeedToReconcileError error carrying the time after which to requeue.
-type NeedToReconcileError struct {
+// RequeueAfterError error carrying the time after which to requeue.
+type RequeueAfterError struct {
 	RequeueAfter time.Duration
 	Msg          string
 }
 
-func (e *NeedToReconcileError) Error() string {
-	return fmt.Sprintf("NeedToReconcileError %s", e.Msg)
+func (e *RequeueAfterError) Error() string {
+	return fmt.Sprintf("RequeueAfterError %s", e.Msg)
 }
 
 var errContainerHasWrongImage = errors.New("container has wrong image")
