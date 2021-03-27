@@ -36,20 +36,26 @@ spec:
           spec:
             description: ClusterSpec defines the desired state of Cluster
             properties:
-              archivalStorage:
-                description: Archival storage configuration for cluster
+              cloudStorage:
+                description: Cloud storage configuration for cluster
                 properties:
+                  accessKey:
+                    description: Cloud storage access key
+                    type: string
                   apiEndpoint:
                     description: API endpoint for data storage
                     type: string
                   apiEndpointPort:
                     description: Used to override TLS port (443)
                     type: integer
+                  bucket:
+                    description: Cloud storage bucket
+                    type: string
                   disableTLS:
                     description: Disable TLS (can be used in tests)
                     type: boolean
                   enabled:
-                    description: Enables archival storage feature
+                    description: Enables data archiving feature
                     type: boolean
                   maxConnections:
                     description: Number of simultaneous uploads per shard (default
@@ -58,20 +64,14 @@ spec:
                   reconciliationIntervalMs:
                     description: Reconciliation period (default - 10s)
                     type: integer
-                  s3AccessKey:
-                    description: S3 access key
+                  region:
+                    description: Cloud storage region
                     type: string
-                  s3Bucket:
-                    description: S3 bucket
-                    type: string
-                  s3Region:
-                    description: S3 region
-                    type: string
-                  s3SecretKeyRef:
+                  secretKeyRef:
                     description: 'Reference to (Kubernetes) Secret containing the
-                      S3 secret key. S3SecretKeyRef must contain the name and namespace
-                      of the Secret. The Secret must contain a data entry of the form:
-                      data[<S3SecretKeyRef.Name>] = <S3 secret key>'
+                      cloud storage secret key. SecretKeyRef must contain the name
+                      and namespace of the Secret. The Secret must contain a data
+                      entry of the form: data[<SecretKeyRef.Name>] = <secret key>'
                     properties:
                       apiVersion:
                         description: API version of the referent.

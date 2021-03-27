@@ -865,17 +865,17 @@ rpk:
 				tls := true
 				port := 100
 				trustfile := "trust"
-				c.Redpanda.ArchivalStorageEnabled = &enabled
-				c.Redpanda.ArchivalStorageS3AccessKey = &access
-				c.Redpanda.ArchivalStorageS3Bucket = &bucket
-				c.Redpanda.ArchivalStorageS3Region = &region
-				c.Redpanda.ArchivalStorageS3SecretKey = &secret
-				c.Redpanda.ArchivalStorageReconciliationIntervalMs = &interval
-				c.Redpanda.ArchivalStorageMaxConnections = &conns
-				c.Redpanda.ArchivalStorageApiEndpoint = &endpoint
-				c.Redpanda.ArchivalStorageDisableTls = &tls
-				c.Redpanda.ArchivalStorageApiEndpointPort = &port
-				c.Redpanda.ArchivalStorageTrustFile = &trustfile
+				c.Redpanda.CloudStorageEnabled = &enabled
+				c.Redpanda.CloudStorageAccessKey = &access
+				c.Redpanda.CloudStorageBucket = &bucket
+				c.Redpanda.CloudStorageRegion = &region
+				c.Redpanda.CloudStorageSecretKey = &secret
+				c.Redpanda.CloudStorageReconciliationIntervalMs = &interval
+				c.Redpanda.CloudStorageMaxConnections = &conns
+				c.Redpanda.CloudStorageApiEndpoint = &endpoint
+				c.Redpanda.CloudStorageDisableTls = &tls
+				c.Redpanda.CloudStorageApiEndpointPort = &port
+				c.Redpanda.CloudStorageTrustFile = &trustfile
 				return c
 			},
 			wantErr: false,

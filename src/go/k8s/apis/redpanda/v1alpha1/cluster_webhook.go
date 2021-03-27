@@ -143,43 +143,43 @@ func (r *Cluster) validateTLS() field.ErrorList {
 
 func (r *Cluster) validateArchivalStorage() field.ErrorList {
 	var allErrs field.ErrorList
-	if !r.Spec.ArchivalStorage.Enabled {
+	if !r.Spec.CloudStorage.Enabled {
 		return allErrs
 	}
-	if r.Spec.ArchivalStorage.S3AccessKey == "" {
+	if r.Spec.CloudStorage.AccessKey == "" {
 		allErrs = append(allErrs,
 			field.Invalid(
-				field.NewPath("spec").Child("configuration").Child("archivalStorage").Child("s3AccessKey"),
-				r.Spec.ArchivalStorage.S3AccessKey,
-				"S3AccessKey has to be provided for archival storage to be enabled"))
+				field.NewPath("spec").Child("configuration").Child("cloudStorage").Child("accessKey"),
+				r.Spec.CloudStorage.AccessKey,
+				"AccessKey has to be provided for cloud storage to be enabled"))
 	}
-	if r.Spec.ArchivalStorage.S3Bucket == "" {
+	if r.Spec.CloudStorage.Bucket == "" {
 		allErrs = append(allErrs,
 			field.Invalid(
-				field.NewPath("spec").Child("configuration").Child("archivalStorage").Child("s3Bucket"),
-				r.Spec.ArchivalStorage.S3Bucket,
-				"S3Bucket has to be provided for archival storage to be enabled"))
+				field.NewPath("spec").Child("configuration").Child("cloudStorage").Child("bucket"),
+				r.Spec.CloudStorage.Bucket,
+				"Bucket has to be provided for cloud storage to be enabled"))
 	}
-	if r.Spec.ArchivalStorage.S3Region == "" {
+	if r.Spec.CloudStorage.Region == "" {
 		allErrs = append(allErrs,
 			field.Invalid(
-				field.NewPath("spec").Child("configuration").Child("archivalStorage").Child("s3Region"),
-				r.Spec.ArchivalStorage.S3Region,
-				"S3Region has to be provided for archival storage to be enabled"))
+				field.NewPath("spec").Child("configuration").Child("cloudStorage").Child("region"),
+				r.Spec.CloudStorage.Region,
+				"Region has to be provided for cloud storage to be enabled"))
 	}
-	if r.Spec.ArchivalStorage.S3SecretKeyRef.Name == "" {
+	if r.Spec.CloudStorage.SecretKeyRef.Name == "" {
 		allErrs = append(allErrs,
 			field.Invalid(
-				field.NewPath("spec").Child("configuration").Child("archivalStorage").Child("s3SecretKeyRef").Child("name"),
-				r.Spec.ArchivalStorage.S3SecretKeyRef.Name,
-				"S3SecretKeyRef name has to be provided for archival storage to be enabled"))
+				field.NewPath("spec").Child("configuration").Child("cloudStorage").Child("secretKeyRef").Child("name"),
+				r.Spec.CloudStorage.SecretKeyRef.Name,
+				"SecretKeyRef name has to be provided for cloud storage to be enabled"))
 	}
-	if r.Spec.ArchivalStorage.S3SecretKeyRef.Namespace == "" {
+	if r.Spec.CloudStorage.SecretKeyRef.Namespace == "" {
 		allErrs = append(allErrs,
 			field.Invalid(
-				field.NewPath("spec").Child("configuration").Child("archivalStorage").Child("s3SecretKeyRef").Child("namespace"),
-				r.Spec.ArchivalStorage.S3SecretKeyRef.Namespace,
-				"S3SecretKeyRef namespace has to be provided for archival storage to be enabled"))
+				field.NewPath("spec").Child("configuration").Child("cloudStorage").Child("secretKeyRef").Child("namespace"),
+				r.Spec.CloudStorage.SecretKeyRef.Namespace,
+				"SecretKeyRef namespace has to be provided for cloud storage to be enabled"))
 	}
 	return allErrs
 }
