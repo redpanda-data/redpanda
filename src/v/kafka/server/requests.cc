@@ -290,6 +290,8 @@ std::ostream& operator<<(std::ostream& os, describe_configs_source s) {
         return os << "{topic}";
     case describe_configs_source::static_broker_config:
         return os << "{static_broker_config}";
+    case describe_configs_source::default_config:
+        return os << "{default_config}";
     }
     return os << "{unknown type}";
 }
