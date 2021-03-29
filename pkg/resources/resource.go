@@ -65,16 +65,6 @@ func Update(
 	c client.Client,
 	logger logr.Logger,
 ) error {
-	metaAccessor := meta.NewAccessor()
-	currentVersion, err := metaAccessor.ResourceVersion(current)
-	if err != nil {
-		return err
-	}
-	err = metaAccessor.SetResourceVersion(modified, currentVersion)
-	if err != nil {
-		return err
-	}
-
 	opts := []patch.CalculateOption{
 		patch.IgnoreStatusFields(),
 		patch.IgnoreVolumeClaimTemplateTypeMetaAndStatus(),
@@ -87,6 +77,16 @@ func Update(
 		// need to set current version first otherwise the request would get rejected
 		logger.Info(fmt.Sprintf("Resource changed, updating %s. Diff: %v", modified.GetName(), string(patchResult.Patch)))
 		if err := patch.DefaultAnnotator.SetLastAppliedAnnotation(modified); err != nil {
+			return err
+		}
+
+		metaAccessor := meta.NewAccessor()
+		currentVersion, err := metaAccessor.ResourceVersion(current)
+		if err != nil {
+			return err
+		}
+		err = metaAccessor.SetResourceVersion(modified, currentVersion)
+		if err != nil {
 			return err
 		}
 		if err := c.Update(ctx, modified); err != nil {
