@@ -35,6 +35,8 @@ const (
 
 	tlsDir   = "/etc/tls/certs"
 	tlsDirCA = "/etc/tls/certs/ca"
+
+	tlsAdminDir = "/etc/tls/certs/admin"
 )
 
 var errKeyDoesNotExistInSecretData = errors.New("cannot find key in secret data")
@@ -155,6 +157,17 @@ func (r *ConfigMapResource) createConfiguration(
 		}
 		if r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.RequireClientAuth {
 			cr.KafkaApiTLS.TruststoreFile = fmt.Sprintf("%s/%s", tlsDirCA, cmetav1.TLSCAKey)
+		}
+	}
+	if r.pandaCluster.Spec.Configuration.TLS.AdminAPI.Enabled {
+		cr.AdminApiTLS = config.ServerTLS{
+			KeyFile:           fmt.Sprintf("%s/%s", tlsAdminDir, corev1.TLSPrivateKeyKey),
+			CertFile:          fmt.Sprintf("%s/%s", tlsAdminDir, corev1.TLSCertKey),
+			Enabled:           true,
+			RequireClientAuth: r.pandaCluster.Spec.Configuration.TLS.AdminAPI.RequireClientAuth,
+		}
+		if r.pandaCluster.Spec.Configuration.TLS.AdminAPI.RequireClientAuth {
+			cr.AdminApiTLS.TruststoreFile = fmt.Sprintf("%s/%s", tlsAdminDir, cmetav1.TLSCAKey)
 		}
 	}
 

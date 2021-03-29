@@ -41,12 +41,13 @@ type CertificateResource struct {
 	key          types.NamespacedName
 	issuerRef    *cmetav1.ObjectReference
 	fqdn         string
+	commonName   string
 	isCA         bool
 	logger       logr.Logger
 }
 
-// NewCertificate creates CertificateResource
-func NewCertificate(
+// NewNodeCertificate creates certificate with given FQDN that is either internal or external
+func NewNodeCertificate(
 	client k8sclient.Client,
 	scheme *runtime.Scheme,
 	pandaCluster *redpandav1alpha1.Cluster,
@@ -57,16 +58,28 @@ func NewCertificate(
 	logger logr.Logger,
 ) *CertificateResource {
 	return &CertificateResource{
-		client, scheme, pandaCluster, key, issuerRef, fqdn, isCA, logger.WithValues("Kind", certificateKind()),
+		client, scheme, pandaCluster, key, issuerRef, fqdn, "", isCA, logger.WithValues("Kind", certificateKind()),
+	}
+}
+
+// NewCertificate creates certificate with given common name
+func NewCertificate(
+	client k8sclient.Client,
+	scheme *runtime.Scheme,
+	pandaCluster *redpandav1alpha1.Cluster,
+	key types.NamespacedName,
+	issuerRef *cmetav1.ObjectReference,
+	commonName string,
+	isCA bool,
+	logger logr.Logger,
+) *CertificateResource {
+	return &CertificateResource{
+		client, scheme, pandaCluster, key, issuerRef, "", commonName, isCA, logger.WithValues("Kind", certificateKind()),
 	}
 }
 
 // Ensure will manage cert-manager v1.Certificate for redpanda.vectorized.io custom resource
 func (r *CertificateResource) Ensure(ctx context.Context) error {
-	if !r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.Enabled {
-		return nil
-	}
-
 	obj, err := r.obj()
 	if err != nil {
 		return fmt.Errorf("unable to construct object: %w", err)
@@ -93,12 +106,11 @@ func (r *CertificateResource) obj() (k8sclient.Object, error) {
 	}
 
 	if r.fqdn != "" {
-		cert.Spec.DNSNames = []string{
-			"*." + strings.TrimSuffix(r.fqdn, "."),
-		}
+		name := "*." + strings.TrimSuffix(r.fqdn, ".")
+		cert.Spec.DNSNames = []string{name}
 	} else {
 		// Common name cannot exceed 64 bytes (cert-manager validates).
-		cert.Spec.CommonName = fmt.Sprintf("rp-%s", r.key.Name)
+		cert.Spec.CommonName = r.commonName
 	}
 
 	err := controllerutil.SetControllerReference(r.pandaCluster, cert, r.scheme)

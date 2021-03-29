@@ -101,6 +101,8 @@ func (r *ClusterReconciler) Reconcile(
 		nodeportSvc.Key(),
 		pki.NodeCert(),
 		pki.OperatorClientCert(),
+		pki.AdminCert(),
+		pki.AdminAPINodeCert(),
 		sa.Key().Name,
 		r.configuratorTag,
 		log)
