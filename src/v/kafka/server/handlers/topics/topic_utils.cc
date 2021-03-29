@@ -53,41 +53,4 @@ ss::future<std::vector<model::node_id>> wait_for_leaders(
 
     return seastar::when_all_succeed(futures.begin(), futures.end());
 }
-
-ss::sstring describe_topic_cleanup_policy(
-  const std::optional<cluster::topic_configuration>& topic_config,
-  model::cleanup_policy_bitflags default_policy) {
-    auto effective_policy = default_policy;
-    if (topic_config && topic_config->properties.cleanup_policy_bitflags) {
-        effective_policy = *topic_config->properties.cleanup_policy_bitflags;
-    }
-    // there is no `none` policy in Kafka, fallback to default
-    if (effective_policy == model::cleanup_policy_bitflags::none) {
-        effective_policy = default_policy;
-    }
-
-    ss::sstring cleanup_policy;
-
-    auto compaction = (effective_policy
-                       & model::cleanup_policy_bitflags::compaction)
-                      == model::cleanup_policy_bitflags::compaction;
-    auto deletion = (effective_policy
-                     & model::cleanup_policy_bitflags::deletion)
-                    == model::cleanup_policy_bitflags::deletion;
-
-    if (compaction) {
-        cleanup_policy = "compact";
-    }
-
-    if (deletion) {
-        if (cleanup_policy.empty()) {
-            cleanup_policy = "delete";
-        } else {
-            cleanup_policy = fmt::format("{},delete", cleanup_policy);
-        }
-    }
-
-    return cleanup_policy;
-}
-
 } // namespace kafka
