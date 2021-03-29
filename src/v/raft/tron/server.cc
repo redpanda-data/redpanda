@@ -290,13 +290,14 @@ int main(int args, char** argv, char** env) {
               cfg["node-id"].as<int32_t>());
             vlog(tronlog.info, "Work directory:{}", workdir);
 
+            auto hbeat_interval = std::chrono::milliseconds(
+              cfg["heartbeat-timeout-ms"].as<int32_t>());
             // initialize group_manager
             group_manager
               .start(
                 model::node_id(cfg["node-id"].as<int32_t>()),
                 workdir,
-                std::chrono::milliseconds(
-                  cfg["heartbeat-timeout-ms"].as<int32_t>()),
+                hbeat_interval,
                 std::ref(connection_cache))
               .get();
             serv.start(scfg).get();
@@ -304,23 +305,25 @@ int main(int args, char** argv, char** env) {
             vlog(tronlog.info, "registering service on all cores");
             simple_shard_lookup shard_table;
             serv
-              .invoke_on_all([&shard_table, &group_manager](rpc::server& s) {
-                  auto proto = std::make_unique<rpc::simple_protocol>();
-                  proto->register_service<raft::tron::service<
-                    simple_group_manager,
-                    simple_shard_lookup>>(
-                    ss::default_scheduling_group(),
-                    ss::default_smp_service_group(),
-                    group_manager,
-                    shard_table);
-                  proto->register_service<
-                    raft::service<simple_group_manager, simple_shard_lookup>>(
-                    ss::default_scheduling_group(),
-                    ss::default_smp_service_group(),
-                    group_manager,
-                    shard_table);
-                  s.set_protocol(std::move(proto));
-              })
+              .invoke_on_all(
+                [&shard_table, &group_manager, hbeat_interval](rpc::server& s) {
+                    auto proto = std::make_unique<rpc::simple_protocol>();
+                    proto->register_service<raft::tron::service<
+                      simple_group_manager,
+                      simple_shard_lookup>>(
+                      ss::default_scheduling_group(),
+                      ss::default_smp_service_group(),
+                      group_manager,
+                      shard_table);
+                    proto->register_service<
+                      raft::service<simple_group_manager, simple_shard_lookup>>(
+                      ss::default_scheduling_group(),
+                      ss::default_smp_service_group(),
+                      group_manager,
+                      shard_table,
+                      hbeat_interval);
+                    s.set_protocol(std::move(proto));
+                })
               .get();
             vlog(tronlog.info, "Invoking rpc start on all cores");
             serv.invoke_on_all(&rpc::server::start).get();

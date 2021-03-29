@@ -202,6 +202,11 @@ consensus::success_reply consensus::update_follower_index(
     follower_index_metadata& idx = it->second;
     const append_entries_reply& reply = r.value();
     vlog(_ctxlog.trace, "Append entries response: {}", reply);
+    if (unlikely(reply.result == append_entries_reply::status::timeout)) {
+        // ignore this response, timed out on the receiver node
+        vlog(_ctxlog.trace, "Append entries request timedout at node {}", node);
+        return success_reply::no;
+    }
     if (unlikely(
           reply.result == append_entries_reply::status::group_unavailable)) {
         // ignore this response since group is not yet bootstrapped at the

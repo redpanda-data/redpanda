@@ -702,7 +702,8 @@ void application::start_redpanda() {
             _scheduling_groups.raft_sg(),
             smp_service_groups.raft_smp_sg(),
             partition_manager,
-            shard_table.local());
+            shard_table.local(),
+            config::shard_local_cfg().raft_heartbeat_interval_ms());
           proto->register_service<cluster::service>(
             _scheduling_groups.cluster_sg(),
             smp_service_groups.cluster_smp_sg(),

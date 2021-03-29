@@ -166,7 +166,8 @@ struct raft_node {
                   ss::default_scheduling_group(),
                   ss::default_smp_service_group(),
                   raft_manager,
-                  *this);
+                  *this,
+                  heartbeat_interval);
               s.set_protocol(std::move(proto));
           })
           .get0();

@@ -206,7 +206,12 @@ struct append_entries_request {
 };
 
 struct append_entries_reply {
-    enum class status : uint8_t { success, failure, group_unavailable };
+    enum class status : uint8_t {
+        success,
+        failure,
+        group_unavailable,
+        timeout
+    };
     // node id to validate on receiver
     vnode target_node_id;
     /// \brief callee's node_id; work-around for batched heartbeats
