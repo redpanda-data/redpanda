@@ -11,3 +11,4 @@ quick:
   included:
   - tests/rpk_topic_test.py
   - tests/rpk_cluster_test.py
+  - tests/rpk_config_test.py
