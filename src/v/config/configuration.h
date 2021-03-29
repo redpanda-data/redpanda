@@ -14,7 +14,10 @@
 #include "config/data_directory_path.h"
 #include "config/seed_server.h"
 #include "config/tls_config.h"
+#include "model/compression.h"
+#include "model/fundamental.h"
 #include "model/metadata.h"
+#include "model/timestamp.h"
 #include "utils/unresolved_address.h"
 
 #include <seastar/net/inet_address.hh>
@@ -23,6 +26,7 @@
 
 #include <boost/filesystem.hpp>
 
+#include <cctype>
 #include <chrono>
 
 namespace config {
@@ -85,6 +89,9 @@ struct configuration final : public config_store {
     property<model::violation_recovery_policy> rm_violation_recovery_policy;
     property<std::chrono::milliseconds> fetch_reads_debounce_timeout;
     property<std::chrono::milliseconds> alter_topic_cfg_timeout_ms;
+    property<model::cleanup_policy_bitflags> log_cleanup_policy;
+    property<model::timestamp_type> log_message_timestamp_type;
+    property<model::compression> log_compression_type;
     // same as transactional.id.expiration.ms in kafka
     property<std::chrono::milliseconds> transactional_id_expiration_ms;
     property<bool> enable_idempotence;
@@ -480,6 +487,67 @@ struct convert<model::broker_endpoint> {
         auto port = node["port"].as<uint16_t>();
         auto addr = unresolved_address(std::move(address), port);
         rhs = model::broker_endpoint(std::move(name), std::move(addr));
+        return true;
+    }
+};
+
+template<>
+struct convert<model::cleanup_policy_bitflags> {
+    using type = model::cleanup_policy_bitflags;
+    static Node encode(const type& rhs) {
+        Node node;
+
+        auto compaction = (rhs & model::cleanup_policy_bitflags::compaction)
+                          == model::cleanup_policy_bitflags::compaction;
+        auto deletion = (rhs & model::cleanup_policy_bitflags::deletion)
+                        == model::cleanup_policy_bitflags::deletion;
+
+        if (compaction && deletion) {
+            node = "compact,delete";
+
+        } else if (compaction) {
+            node = "compact";
+
+        } else if (deletion) {
+            node = "delete";
+        }
+        return node;
+    }
+    static bool decode(const Node& node, type& rhs) {
+        auto value = node.as<std::string>();
+        // normalize cleanup policy string (remove all whitespaces)
+        std::erase_if(value, isspace);
+        rhs = boost::lexical_cast<type>(value);
+
+        return true;
+    }
+};
+template<>
+struct convert<model::compression> {
+    using type = model::compression;
+    static Node encode(const type& rhs) {
+        Node node;
+        return node = fmt::format("{}", rhs);
+    }
+    static bool decode(const Node& node, type& rhs) {
+        auto value = node.as<std::string>();
+        rhs = boost::lexical_cast<type>(value);
+
+        return true;
+    }
+};
+
+template<>
+struct convert<model::timestamp_type> {
+    using type = model::timestamp_type;
+    static Node encode(const type& rhs) {
+        Node node;
+        return node = fmt::format("{}", rhs);
+    }
+    static bool decode(const Node& node, type& rhs) {
+        auto value = node.as<std::string>();
+        rhs = boost::lexical_cast<type>(value);
+
         return true;
     }
 };
