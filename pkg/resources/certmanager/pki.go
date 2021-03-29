@@ -15,9 +15,11 @@ import (
 	"fmt"
 
 	"github.com/go-logr/logr"
-	cmmeta "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
+	cmmetav1 "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
 	redpandav1alpha1 "github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/resources"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	k8sclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -74,7 +76,7 @@ func (r *PkiReconciler) NodeCert() types.NamespacedName {
 	if r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.NodeSecretRef != nil {
 		return types.NamespacedName{
 			Name:      r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.NodeSecretRef.Name,
-			Namespace: r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.NodeSecretRef.Namespace,
+			Namespace: r.pandaCluster.Namespace,
 		}
 	}
 	return types.NamespacedName{Name: r.pandaCluster.Name + "-" + RedpandaNodeCert, Namespace: r.pandaCluster.Namespace}
@@ -92,12 +94,14 @@ func (r *PkiReconciler) AdminCert() types.NamespacedName {
 }
 
 func (r *PkiReconciler) prepareKafkaAPI(
-	selfSignedIssuerRef *cmmeta.ObjectReference,
-) []resources.Resource {
+	ctx context.Context, selfSignedIssuerRef *cmmetav1.ObjectReference,
+) ([]resources.Resource, error) {
 	toApply := []resources.Resource{}
-	externalIssuerRef := r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.IssuerRef
 
-	if r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.NodeSecretRef == nil {
+	externalIssuerRef := r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.IssuerRef
+	nodeSecretRef := r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.NodeSecretRef
+
+	if nodeSecretRef == nil {
 		// Redpanda cluster certificate for Kafka API - to be provided to each broker
 		certsKey := r.certNamespacedName(RedpandaNodeCert)
 		nodeIssuerRef := selfSignedIssuerRef
@@ -117,6 +121,12 @@ func (r *PkiReconciler) prepareKafkaAPI(
 		toApply = append(toApply, redpandaCert)
 	}
 
+	if nodeSecretRef != nil && nodeSecretRef.Namespace != r.pandaCluster.Namespace {
+		if err := r.copyNodeSecretToLocalNamespace(ctx, nodeSecretRef); err != nil {
+			return nil, err
+		}
+	}
+
 	if r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.RequireClientAuth {
 		// Certificate for external clients to call the Kafka API on any broker in this Redpanda cluster
 		certsKey := r.certNamespacedName(UserClientCert)
@@ -133,12 +143,12 @@ func (r *PkiReconciler) prepareKafkaAPI(
 		toApply = append(toApply, externalClientCert, internalClientCert, adminClientCert)
 	}
 
-	return toApply
+	return toApply, nil
 }
 
 func (r *PkiReconciler) prepareRoot() (
 	[]resources.Resource,
-	*cmmeta.ObjectReference,
+	*cmmetav1.ObjectReference,
 ) {
 	toApply := []resources.Resource{}
 
@@ -185,7 +195,11 @@ func (r *PkiReconciler) Ensure(ctx context.Context) error {
 	toApply, selfSignedIssuerRef := r.prepareRoot()
 
 	if r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.Enabled {
-		toApply = append(toApply, r.prepareKafkaAPI(selfSignedIssuerRef)...)
+		applyKafka, err := r.prepareKafkaAPI(ctx, selfSignedIssuerRef)
+		if err != nil {
+			return err
+		}
+		toApply = append(toApply, applyKafka...)
 	}
 
 	if r.pandaCluster.Spec.Configuration.TLS.AdminAPI.Enabled {
@@ -200,6 +214,37 @@ func (r *PkiReconciler) Ensure(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// Creates copy of secret in Redpanda cluster's namespace
+func (r *PkiReconciler) copyNodeSecretToLocalNamespace(
+	ctx context.Context, secretRef *corev1.ObjectReference,
+) error {
+	var secret corev1.Secret
+	err := r.Get(ctx, types.NamespacedName{Name: secretRef.Name, Namespace: secretRef.Namespace}, &secret)
+	if err != nil {
+		return err
+	}
+
+	tlsKey := secret.Data[corev1.TLSPrivateKeyKey]
+	tlsCrt := secret.Data[corev1.TLSCertKey]
+	caCrt := secret.Data[cmmetav1.TLSCAKey]
+
+	caSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      r.NodeCert().Name,
+			Namespace: r.NodeCert().Namespace,
+			Labels:    secret.Labels,
+		},
+		Type: secret.Type,
+		Data: map[string][]byte{
+			cmmetav1.TLSCAKey:       caCrt,
+			corev1.TLSCertKey:       tlsCrt,
+			corev1.TLSPrivateKeyKey: tlsKey,
+		},
+	}
+	_, err = resources.CreateIfNotExists(ctx, r, caSecret, r.logger)
+	return err
 }
 
 func (r *PkiReconciler) issuerNamespacedName(name string) types.NamespacedName {
