@@ -211,7 +211,7 @@ func statusShouldBeUpdated(
 ) bool {
 	return !reflect.DeepEqual(nodesInternal, status.Nodes.Internal) ||
 		!reflect.DeepEqual(nodesExternal, status.Nodes.External) ||
-		status.Replicas == readyReplicas
+		status.Replicas != readyReplicas
 }
 
 // WithConfiguratorTag set the configuratorTag
