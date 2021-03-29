@@ -327,8 +327,11 @@ static ss::future<produce_response::partition> produce_topic_partition(
      * metadata cache. For append time setting we have to recalculate
      * the CRC.
      */
-    auto timestamp_type = octx.rctx.metadata_cache().get_topic_timestamp_type(
-      model::topic_namespace_view(model::kafka_namespace, topic.name));
+    auto timestamp_type
+      = octx.rctx.metadata_cache()
+          .get_topic_timestamp_type(
+            model::topic_namespace_view(model::kafka_namespace, topic.name))
+          .value_or(octx.rctx.metadata_cache().get_default_timestamp_type());
 
     if (timestamp_type == model::timestamp_type::append_time) {
         batch.set_max_timestamp(
