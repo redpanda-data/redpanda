@@ -69,9 +69,9 @@ class WasmIdentityTest(WasmTest):
         3. Producers set-up and begin producing onto input topics
         4. When finished, perform assertions in this method
         """
-        input_results, output_results = self._start(self.wasm_test_input(),
-                                                    self.wasm_test_plan(),
-                                                    self.wasm_xfactor())
+        self.start(self.wasm_test_input(), self.wasm_test_plan(),
+                   self.wasm_xfactor())
+        input_results, output_results = self.wait_on_results()
         for script in self.wasm_test_outputs():
             for dest in script:
                 outputs = set([
@@ -235,9 +235,9 @@ class WasmAllInputsToAllOutputsIdentityTest(WasmIdentityTest):
     @cluster(num_nodes=3)
     def verify_materialized_topics_test(self):
         # Cannot compare topics to topics, can only verify # of records
-        input_results, output_results = self._start(self.wasm_test_input(),
-                                                    self.wasm_test_plan(),
-                                                    self.wasm_xfactor())
+        self.start(self.wasm_test_input(), self.wasm_test_plan(),
+                   self.wasm_xfactor())
+        input_results, output_results = self.wait_on_results()
 
         def compare(topic):
             iis = input_results.filter(lambda x: x.topic == topic)
