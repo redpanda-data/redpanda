@@ -20,6 +20,7 @@
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "model/validation.h"
+#include "ssx/sformat.h"
 
 #include <seastar/core/do_with.hh>
 #include <seastar/core/smp.hh>
@@ -41,7 +42,7 @@ static void add_config(
   describe_configs_source source) {
     result.configs.push_back(describe_configs_resource_result{
       .name = ss::sstring(name),
-      .value = fmt::format("{}", value),
+      .value = ssx::sformat("{}", value),
       .config_source = source,
     });
 }
@@ -55,7 +56,7 @@ kafka_endpoint_format(const std::vector<model::broker_endpoint>& endpoints) {
       endpoints.cend(),
       std::back_inserter(uris),
       [](const model::broker_endpoint& ep) {
-          return fmt::format(
+          return ssx::sformat(
             "{}://{}:{}",
             (ep.name.empty() ? "plain" : ep.name),
             ep.address.host(),
@@ -74,7 +75,7 @@ static void report_broker_config(describe_configs_result& result) {
         if (res.ec == std::errc()) {
             if (broker_id != config::shard_local_cfg().node_id()) {
                 result.error_code = error_code::invalid_request;
-                result.error_message = fmt::format(
+                result.error_message = ssx::sformat(
                   "Unexpected broker id {} expected {}",
                   broker_id,
                   config::shard_local_cfg().node_id());
@@ -82,7 +83,7 @@ static void report_broker_config(describe_configs_result& result) {
             }
         } else {
             result.error_code = error_code::invalid_request;
-            result.error_message = fmt::format(
+            result.error_message = ssx::sformat(
               "Broker id must be an integer but received {}",
               result.resource_name);
             return;
