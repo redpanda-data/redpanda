@@ -64,6 +64,8 @@ type StatefulSetResource struct {
 	nodePortSvc                 corev1.Service
 	redpandaCertSecretKey       types.NamespacedName
 	internalClientCertSecretKey types.NamespacedName
+	adminCertSecretKey          types.NamespacedName
+	adminAPINodeCertSecretKey   types.NamespacedName
 	serviceAccountName          string
 	configuratorTag             string
 	logger                      logr.Logger
@@ -81,6 +83,8 @@ func NewStatefulSet(
 	nodePortName types.NamespacedName,
 	redpandaCertSecretKey types.NamespacedName,
 	internalClientCertSecretKey types.NamespacedName,
+	adminCertSecretKey types.NamespacedName,
+	adminAPINodeCertSecretKey types.NamespacedName,
 	serviceAccountName string,
 	configuratorTag string,
 	logger logr.Logger,
@@ -95,6 +99,8 @@ func NewStatefulSet(
 		corev1.Service{},
 		redpandaCertSecretKey,
 		internalClientCertSecretKey,
+		adminCertSecretKey,
+		adminAPINodeCertSecretKey,
 		serviceAccountName,
 		configuratorTag,
 		logger.WithValues("Kind", statefulSetKind()),
@@ -454,6 +460,12 @@ func (r *StatefulSetResource) secretVolumeMounts() []corev1.VolumeMount {
 			MountPath: tlsDirCA,
 		})
 	}
+	if r.pandaCluster.Spec.Configuration.TLS.AdminAPI.Enabled {
+		mounts = append(mounts, corev1.VolumeMount{
+			Name:      "tlsadmincert",
+			MountPath: tlsAdminDir,
+		})
+	}
 	return mounts
 }
 
@@ -499,6 +511,33 @@ func (r *StatefulSetResource) secretVolumes() []corev1.Volume {
 			},
 		})
 	}
+
+	// When Admin TLS is enabled, Redpanda needs a keypair certificate.
+	if r.pandaCluster.Spec.Configuration.TLS.AdminAPI.Enabled {
+		vols = append(vols, corev1.Volume{
+			Name: "tlsadmincert",
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
+					SecretName: r.adminAPINodeCertSecretKey.Name,
+					Items: []corev1.KeyToPath{
+						{
+							Key:  corev1.TLSPrivateKeyKey,
+							Path: corev1.TLSPrivateKeyKey,
+						},
+						{
+							Key:  corev1.TLSCertKey,
+							Path: corev1.TLSCertKey,
+						},
+						{
+							Key:  cmetav1.TLSCAKey,
+							Path: cmetav1.TLSCAKey,
+						},
+					},
+				},
+			},
+		})
+	}
+
 	return vols
 }
 
