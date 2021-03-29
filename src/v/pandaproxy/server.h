@@ -12,6 +12,7 @@
 #pragma once
 
 #include "pandaproxy/context.h"
+#include "pandaproxy/json/types.h"
 #include "seastarx.h"
 
 #include <seastar/core/future.hh>
@@ -46,7 +47,8 @@ public:
 
     struct reply_t {
         std::unique_ptr<ss::httpd::reply> rep;
-        // will contains other extensions passed to user specific handler.
+        json::serialization_format mime_type;
+        // will contain other extensions passed to user specific handler.
     };
 
     using function_handler
