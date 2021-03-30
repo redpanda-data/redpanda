@@ -49,6 +49,10 @@ public:
         return std::nullopt;
     }
 
+    bool contains(const credential_user& name) const {
+        return _credentials.contains(name);
+    }
+
 private:
     // when a second type is supported update `credential_store_test` to include
     // a mismatched credential type test for get<type>(name).
