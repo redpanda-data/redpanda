@@ -207,6 +207,9 @@ type KafkaAPITLS struct {
 	// If provided, operator uses certificate in this secret instead of
 	// issuing its own node certificate. The secret is expected to provide
 	// the following keys: 'ca.crt', 'tls.key' and 'tls.crt'
+	// If NodeSecretRef points to secret in different namespace, operator will
+	// duplicate the secret to the same namespace as redpanda CRD to be able to
+	// mount it to the nodes
 	NodeSecretRef *corev1.ObjectReference `json:"nodeSecretRef,omitempty"`
 	// Enables two-way verification on the server side. If enabled, all Kafka
 	// API clients are required to have a valid client certificate.
