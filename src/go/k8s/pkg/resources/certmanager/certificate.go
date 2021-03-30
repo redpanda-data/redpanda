@@ -89,6 +89,13 @@ func (r *CertificateResource) Ensure(ctx context.Context) error {
 	return err
 }
 
+const (
+	maxCommonNameLength   = 64
+	nodeSuffix            = "-node"
+	nodeSuffixLength      = len(nodeSuffix)
+	maxPandaClusterLength = maxCommonNameLength - nodeSuffixLength
+)
+
 // obj returns resource managed client.Object
 func (r *CertificateResource) obj() (k8sclient.Object, error) {
 	objLabels := labels.ForCluster(r.pandaCluster)
@@ -107,6 +114,12 @@ func (r *CertificateResource) obj() (k8sclient.Object, error) {
 
 	if r.fqdn != "" {
 		name := "*." + strings.TrimSuffix(r.fqdn, ".")
+		// common name has a limit of 64 bytes
+		shortName := r.pandaCluster.Name
+		if len(shortName) > maxPandaClusterLength {
+			shortName = shortName[:maxPandaClusterLength+1]
+		}
+		cert.Spec.CommonName = fmt.Sprintf("%s-node", shortName)
 		cert.Spec.DNSNames = []string{name}
 	} else {
 		// Common name cannot exceed 64 bytes (cert-manager validates).

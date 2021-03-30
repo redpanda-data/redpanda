@@ -1,0 +1,10 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: create-test-topic
+  namespace: given-cert-secret
+status:
+  conditions:
+    - status: "True"
+      type: Complete
+  succeeded: 1
