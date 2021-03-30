@@ -180,10 +180,24 @@ using metrics_disabled = ss::bool_class<struct metrics_disabled_tag>;
 struct server_endpoint {
     ss::sstring name;
     ss::socket_address addr;
+    ss::shared_ptr<ss::tls::server_credentials> credentials;
 
     server_endpoint(ss::sstring name, ss::socket_address addr)
       : name(std::move(name))
       , addr(addr) {}
+
+    server_endpoint(
+      ss::sstring name,
+      ss::socket_address addr,
+      ss::shared_ptr<ss::tls::server_credentials> creds)
+      : name(std::move(name))
+      , addr(addr)
+      , credentials(std::move(creds)) {}
+
+    server_endpoint(
+      ss::socket_address addr,
+      ss::shared_ptr<ss::tls::server_credentials> creds)
+      : server_endpoint("", addr, std::move(creds)) {}
 
     explicit server_endpoint(ss::socket_address addr)
       : server_endpoint("", addr) {}
@@ -192,7 +206,6 @@ struct server_endpoint {
 struct server_configuration {
     std::vector<server_endpoint> addrs;
     int64_t max_service_memory_per_core;
-    ss::shared_ptr<ss::tls::server_credentials> credentials;
     metrics_disabled disable_metrics = metrics_disabled::no;
     ss::sstring name;
     // we use the same default as seastar for load balancing algorithm

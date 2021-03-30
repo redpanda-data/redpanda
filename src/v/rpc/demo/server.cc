@@ -18,6 +18,7 @@
 #include <seastar/core/app-template.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/thread.hh>
+#include <seastar/net/tls.hh>
 
 #include <string>
 
@@ -79,21 +80,24 @@ int main(int args, char** argv, char** env) {
         auto& cfg = app.configuration();
         return ss::async([&] {
             rpc::server_configuration scfg("demo_rpc");
-            scfg.addrs.emplace_back(ss::socket_address(ss::ipv4_addr(
-              cfg["ip"].as<std::string>(), cfg["port"].as<uint16_t>())));
-            scfg.max_service_memory_per_core
-              = ss::memory::stats().total_memory() * .9 /*90%*/;
             auto key = cfg["key"].as<std::string>();
             auto cert = cfg["cert"].as<std::string>();
+            ss::shared_ptr<ss::tls::server_credentials> creds;
             if (key != "" && cert != "") {
                 auto builder = ss::tls::credentials_builder();
                 builder.set_dh_level(ss::tls::dh_params::level::MEDIUM);
                 builder
                   .set_x509_key_file(cert, key, ss::tls::x509_crt_format::PEM)
                   .get();
-                scfg.credentials
-                  = builder.build_reloadable_server_credentials().get0();
+                creds = builder.build_reloadable_server_credentials().get0();
             }
+            scfg.addrs.emplace_back(
+              ss::socket_address(ss::ipv4_addr(
+                cfg["ip"].as<std::string>(), cfg["port"].as<uint16_t>())),
+              creds);
+            scfg.max_service_memory_per_core
+              = ss::memory::stats().total_memory() * .9 /*90%*/;
+
             serv.start(scfg).get();
             vlog(lgr.info, "registering service on all cores");
             serv

@@ -55,6 +55,7 @@
 #include <seastar/http/exception.hh>
 #include <seastar/http/file_handler.hh>
 #include <seastar/json/json_elements.hh>
+#include <seastar/net/tls.hh>
 #include <seastar/util/defer.hh>
 
 #include <boost/algorithm/string/classification.hpp>
@@ -557,12 +558,11 @@ void application::wire_up_redpanda_services() {
       config::shard_local_cfg().disable_metrics());
     auto rpc_server_addr
       = rpc::resolve_dns(config::shard_local_cfg().rpc_server()).get0();
-    rpc_cfg.addrs.emplace_back(rpc_server_addr);
     auto rpc_builder = config::shard_local_cfg()
                          .rpc_server_tls()
                          .get_credentials_builder()
                          .get0();
-    rpc_cfg.credentials
+    ss::shared_ptr<ss::tls::server_credentials> credentials
       = rpc_builder ? rpc_builder
                         ->build_reloadable_server_credentials(
                           [this](
@@ -573,6 +573,7 @@ void application::wire_up_redpanda_services() {
                           })
                         .get0()
                     : nullptr;
+    rpc_cfg.addrs.emplace_back(rpc_server_addr, credentials);
     syschecks::systemd_message("Starting internal RPC {}", rpc_cfg).get();
     construct_service(_rpc, rpc_cfg).get();
 
@@ -590,16 +591,11 @@ void application::wire_up_redpanda_services() {
 
     rpc::server_configuration kafka_cfg("kafka_rpc");
     kafka_cfg.max_service_memory_per_core = memory_groups::kafka_total_memory();
-    for (const auto& ep : config::shard_local_cfg().kafka_api()) {
-        kafka_cfg.addrs.emplace_back(
-          ep.name, rpc::resolve_dns(ep.address).get0());
-    }
-    syschecks::systemd_message("Building TLS credentials for kafka").get();
     auto kafka_builder = config::shard_local_cfg()
                            .kafka_api_tls()
                            .get_credentials_builder()
                            .get0();
-    kafka_cfg.credentials
+    ss::shared_ptr<ss::tls::server_credentials> kafka_credentials
       = kafka_builder ? kafka_builder
                           ->build_reloadable_server_credentials(
                             [this](
@@ -610,6 +606,12 @@ void application::wire_up_redpanda_services() {
                             })
                           .get0()
                       : nullptr;
+    for (const auto& ep : config::shard_local_cfg().kafka_api()) {
+        kafka_cfg.addrs.emplace_back(
+          ep.name, rpc::resolve_dns(ep.address).get0(), kafka_credentials);
+    }
+    syschecks::systemd_message("Building TLS credentials for kafka").get();
+
     kafka_cfg.disable_metrics = rpc::metrics_disabled(
       config::shard_local_cfg().disable_metrics());
     syschecks::systemd_message("Starting kafka RPC {}", kafka_cfg).get();

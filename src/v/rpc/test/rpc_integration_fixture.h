@@ -155,14 +155,14 @@ public:
       std::optional<ss::tls::credentials_builder> credentials = std::nullopt,
       ss::tls::reload_callback&& cb = {}) override {
         rpc::server_configuration scfg("unit_test_rpc");
-        scfg.addrs.emplace_back(_listen_address);
+        scfg.addrs.emplace_back(
+          _listen_address,
+          credentials
+            ? credentials->build_reloadable_server_credentials(std::move(cb))
+                .get0()
+            : nullptr);
         scfg.max_service_memory_per_core = static_cast<int64_t>(
           ss::memory::stats().total_memory() / 10);
-        scfg.credentials
-          = credentials
-              ? credentials->build_reloadable_server_credentials(std::move(cb))
-                  .get0()
-              : nullptr;
         _server = std::make_unique<rpc::server>(std::move(scfg));
         _proto = std::make_unique<rpc::simple_protocol>();
     }
@@ -201,14 +201,14 @@ public:
       std::optional<ss::tls::credentials_builder> credentials = std::nullopt,
       ss::tls::reload_callback&& cb = {}) override {
         rpc::server_configuration scfg("unit_test_rpc_sharded");
-        scfg.addrs.emplace_back(_listen_address);
+        scfg.addrs.emplace_back(
+          _listen_address,
+          credentials
+            ? credentials->build_reloadable_server_credentials(std::move(cb))
+                .get0()
+            : nullptr);
         scfg.max_service_memory_per_core = static_cast<int64_t>(
           ss::memory::stats().total_memory() / 10);
-        scfg.credentials
-          = credentials
-              ? credentials->build_reloadable_server_credentials(std::move(cb))
-                  .get0()
-              : nullptr;
         _server.start(std::move(scfg)).get();
     }
 
