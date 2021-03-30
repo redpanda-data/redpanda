@@ -1033,7 +1033,7 @@ rpk:
 	}
 }
 
-func TestInitConfig(t *testing.T) {
+func TestReadOrGenerate(t *testing.T) {
 	tests := []struct {
 		name        string
 		setup       func(afero.Fs) error
@@ -1063,6 +1063,10 @@ func TestInitConfig(t *testing.T) {
 			configFile:  Default().ConfigFile,
 			expectError: true,
 		},
+		{
+			name:       "it should set config_file to the right value",
+			configFile: "/some/arbitrary/path/redpanda.yaml",
+		},
 	}
 
 	for _, tt := range tests {
@@ -1079,8 +1083,9 @@ func TestInitConfig(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
-			_, err = mgr.Read(tt.configFile)
+			conf, err := mgr.Read(tt.configFile)
 			require.NoError(t, err)
+			require.Exactly(t, tt.configFile, conf.ConfigFile)
 		})
 	}
 }
