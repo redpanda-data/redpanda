@@ -102,6 +102,12 @@ configuration::configuration()
       "Milliseconds for raft leader heartbeats",
       required::no,
       std::chrono::milliseconds(150))
+  , raft_heartbeat_timeout_ms(
+      *this,
+      "raft_heartbeat_timeout_ms",
+      "raft heartbeat RPC timeout",
+      required::no,
+      3s)
   , seed_servers(
       *this,
       "seed_servers",

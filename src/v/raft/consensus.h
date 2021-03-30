@@ -286,9 +286,17 @@ public:
 
     storage::log& log() { return _log; }
 
-    bool are_heartbeats_suppressed(vnode) const;
+    /**
+     * In our raft implementation heartbeats are sent outside of the consensus
+     * lock. In order to prevent reordering and do not flood followers with
+     * heartbeats that they will not be able to respond to we suppress sending
+     * heartbeats when other append entries request or heartbeat request is in
+     * flight.
+     */
+    heartbeats_suppressed are_heartbeats_suppressed(vnode) const;
 
-    void suppress_heartbeats(vnode, follower_req_seq, bool);
+    void update_suppress_heartbeats(
+      vnode, follower_req_seq, heartbeats_suppressed);
 
 private:
     friend replicate_entries_stm;

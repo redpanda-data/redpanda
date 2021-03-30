@@ -436,6 +436,7 @@ void application::wire_up_redpanda_services() {
       model::node_id(config::shard_local_cfg().node_id()),
       config::shard_local_cfg().raft_io_timeout_ms(),
       config::shard_local_cfg().raft_heartbeat_interval_ms(),
+      config::shard_local_cfg().raft_heartbeat_timeout_ms(),
       std::ref(_raft_connection_cache),
       std::ref(storage))
       .get();
@@ -701,7 +702,8 @@ void application::start_redpanda() {
             _scheduling_groups.raft_sg(),
             smp_service_groups.raft_smp_sg(),
             partition_manager,
-            shard_table.local());
+            shard_table.local(),
+            config::shard_local_cfg().raft_heartbeat_interval_ms());
           proto->register_service<cluster::service>(
             _scheduling_groups.cluster_sg(),
             smp_service_groups.cluster_smp_sg(),

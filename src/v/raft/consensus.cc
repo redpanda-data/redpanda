@@ -202,6 +202,11 @@ consensus::success_reply consensus::update_follower_index(
     follower_index_metadata& idx = it->second;
     const append_entries_reply& reply = r.value();
     vlog(_ctxlog.trace, "Append entries response: {}", reply);
+    if (unlikely(reply.result == append_entries_reply::status::timeout)) {
+        // ignore this response, timed out on the receiver node
+        vlog(_ctxlog.trace, "Append entries request timedout at node {}", node);
+        return success_reply::no;
+    }
     if (unlikely(
           reply.result == append_entries_reply::status::group_unavailable)) {
         // ignore this response since group is not yet bootstrapped at the
@@ -2302,19 +2307,19 @@ void consensus::maybe_update_majority_replicated_index() {
     _consumable_offset_monitor.notify(last_visible_index());
 }
 
-bool consensus::are_heartbeats_suppressed(vnode id) const {
+heartbeats_suppressed consensus::are_heartbeats_suppressed(vnode id) const {
     if (!_fstats.contains(id)) {
-        return true;
+        return heartbeats_suppressed::yes;
     }
 
     return _fstats.get(id).suppress_heartbeats;
 }
 
-void consensus::suppress_heartbeats(
-  vnode id, follower_req_seq last_seq, bool is_suppressed) {
+void consensus::update_suppress_heartbeats(
+  vnode id, follower_req_seq last_seq, heartbeats_suppressed suppressed) {
     if (auto it = _fstats.find(id); it != _fstats.end()) {
         if (last_seq <= it->second.last_sent_seq) {
-            it->second.suppress_heartbeats = is_suppressed;
+            it->second.suppress_heartbeats = suppressed;
         }
     }
 }

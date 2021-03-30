@@ -92,6 +92,7 @@ public:
     struct follower_request_meta {
         follower_req_seq seq;
         model::offset dirty_offset;
+        vnode follower_vnode;
     };
     // Heartbeats from all groups for single node
     struct node_heartbeat {
@@ -111,7 +112,10 @@ public:
     };
 
     heartbeat_manager(
-      duration_type interval, consensus_client_protocol, model::node_id);
+      duration_type interval,
+      consensus_client_protocol,
+      model::node_id,
+      duration_type);
 
     ss::future<> register_group(ss::lw_shared_ptr<consensus>);
     ss::future<> deregister_group(raft::group_id);
@@ -148,6 +152,7 @@ private:
     mutex _lock;
     clock_type::time_point _hbeat = clock_type::now();
     duration_type _heartbeat_interval;
+    duration_type _heartbeat_timeout;
     timer_type _heartbeat_timer;
     /// \brief used to wait for background ops before shutting down
     ss::gate _bghbeats;
@@ -155,7 +160,6 @@ private:
     /// this is optimized for traversal + finding
     consensus_set _consensus_groups;
     consensus_client_protocol _client_protocol;
-    ss::semaphore _dispatch_sem{0};
     model::node_id _self;
 };
 } // namespace raft

@@ -55,7 +55,7 @@ struct protocol_metadata {
 
 // The sequence used to track the order of follower append entries request
 using follower_req_seq = named_type<uint64_t, struct follower_req_seq_tag>;
-
+using heartbeats_suppressed = ss::bool_class<struct enable_suppression_tag>;
 struct follower_index_metadata {
     explicit follower_index_metadata(vnode node)
       : node_id(node) {}
@@ -152,7 +152,7 @@ struct follower_index_metadata {
      * We prevent race conditions accessing suppress_heartbeats flag using the
      * `last_sent_seq` value for version control.
      */
-    bool suppress_heartbeats = false;
+    heartbeats_suppressed suppress_heartbeats = heartbeats_suppressed::no;
 };
 
 struct append_entries_request {
@@ -206,7 +206,12 @@ struct append_entries_request {
 };
 
 struct append_entries_reply {
-    enum class status : uint8_t { success, failure, group_unavailable };
+    enum class status : uint8_t {
+        success,
+        failure,
+        group_unavailable,
+        timeout
+    };
     // node id to validate on receiver
     vnode target_node_id;
     /// \brief callee's node_id; work-around for batched heartbeats

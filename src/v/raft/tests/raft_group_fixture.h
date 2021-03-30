@@ -166,7 +166,8 @@ struct raft_node {
                   ss::default_scheduling_group(),
                   ss::default_smp_service_group(),
                   raft_manager,
-                  *this);
+                  *this,
+                  heartbeat_interval);
               s.set_protocol(std::move(proto));
           })
           .get0();
@@ -174,7 +175,8 @@ struct raft_node {
         hbeats = std::make_unique<raft::heartbeat_manager>(
           heartbeat_interval,
           raft::make_rpc_client_protocol(broker.id(), cache),
-          broker.id());
+          broker.id(),
+          heartbeat_interval * 20);
         hbeats->start().get0();
         hbeats->register_group(consensus).get();
         started = true;

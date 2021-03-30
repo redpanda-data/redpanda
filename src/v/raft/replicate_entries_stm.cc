@@ -94,8 +94,10 @@ replicate_entries_stm::send_append_entries_request(
                      "append_entries_replicate", std::move(reply));
                });
     _dispatch_sem.signal();
-    return f.finally(
-      [this, n] { _ptr->suppress_heartbeats(n, _followers_seq[n], false); });
+    return f.finally([this, n] {
+        _ptr->update_suppress_heartbeats(
+          n, _followers_seq[n], heartbeats_suppressed::no);
+    });
 }
 
 ss::future<> replicate_entries_stm::dispatch_one(
@@ -185,7 +187,8 @@ replicate_entries_stm::apply(ss::semaphore_units<> u) {
     cfg.for_each_broker_id([this](const vnode& rni) {
         // suppress follower heartbeat, before appending to self log
         if (rni != _ptr->_self) {
-            _ptr->suppress_heartbeats(rni, _followers_seq[rni], true);
+            _ptr->update_suppress_heartbeats(
+              rni, _followers_seq[rni], heartbeats_suppressed::yes);
         }
     });
     return append_to_self()
@@ -211,7 +214,8 @@ replicate_entries_stm::apply(ss::semaphore_units<> u) {
                       _ctxlog.trace,
                       "Skipping sending append request to {}",
                       rni);
-                    _ptr->suppress_heartbeats(rni, _followers_seq[rni], false);
+                    _ptr->update_suppress_heartbeats(
+                      rni, _followers_seq[rni], heartbeats_suppressed::no);
                     return;
                 }
                 ++requests_count;

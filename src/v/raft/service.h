@@ -20,6 +20,8 @@
 
 #include <seastar/core/sharded.hh>
 #include <seastar/core/shared_ptr.hh>
+#include <seastar/core/timed_out_error.hh>
+#include <seastar/core/with_timeout.hh>
 
 #include <absl/container/flat_hash_map.h>
 
@@ -50,10 +52,12 @@ public:
       ss::scheduling_group sc,
       ss::smp_service_group ssg,
       ss::sharded<ConsensusManager>& mngr,
-      ShardLookup& tbl)
+      ShardLookup& tbl,
+      clock_type::duration heartbeat_interval)
       : raftgen_service(sc, ssg)
       , _group_manager(mngr)
-      , _shard_table(tbl) {
+      , _shard_table(tbl)
+      , _heartbeat_interval(heartbeat_interval) {
         finjector::shard_local_badger().register_probe(
           failure_probes::name(), &_probe);
     }
@@ -247,12 +251,20 @@ private:
         std::vector<ss::future<append_entries_reply>> futures;
         futures.reserve(reqs->size());
         // dispatch requests in parallel
+        auto timeout = clock_type::now() + _heartbeat_interval;
         std::transform(
           reqs->begin(),
           reqs->end(),
           std::back_inserter(futures),
-          [this, &m](append_entries_request& req) mutable {
-              return dispatch_append_entries(m, std::move(req));
+          [this, &m, timeout](append_entries_request& req) mutable {
+              auto group = req.target_group();
+              auto f = dispatch_append_entries(m, std::move(req));
+              return ss::with_timeout(timeout, std::move(f))
+                .handle_exception_type([group](const ss::timed_out_error&) {
+                    return append_entries_reply{
+                      .group = group,
+                      .result = append_entries_reply::status::timeout};
+                });
           });
 
         return ss::when_all_succeed(futures.begin(), futures.end());
@@ -294,5 +306,6 @@ private:
     failure_probes _probe;
     ss::sharded<ConsensusManager>& _group_manager;
     ShardLookup& _shard_table;
+    clock_type::duration _heartbeat_interval;
 };
 } // namespace raft

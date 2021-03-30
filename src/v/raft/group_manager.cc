@@ -20,12 +20,13 @@ group_manager::group_manager(
   model::node_id self,
   model::timeout_clock::duration disk_timeout,
   std::chrono::milliseconds heartbeat_interval,
+  std::chrono::milliseconds heartbeat_timeout,
   ss::sharded<rpc::connection_cache>& clients,
   ss::sharded<storage::api>& storage)
   : _self(self)
   , _disk_timeout(disk_timeout)
   , _client(make_rpc_client_protocol(self, clients))
-  , _heartbeats(heartbeat_interval, _client, _self)
+  , _heartbeats(heartbeat_interval, _client, _self, heartbeat_timeout)
   , _storage(storage.local()) {
     setup_metrics();
 }
