@@ -232,22 +232,64 @@ class PandaProxyTest(RedpandaTest):
         assert kc.consume_one(name, 2, 1)["payload"] == "multibroker"
 
     @cluster(num_nodes=3)
-    def test_fetch_topic_unknown(self):
+    def test_fetch_topic_validation(self):
         """
-        Check error for consuming from unknown topic.
+        Acceptable headers:
+        * Accept: "application/vnd.kafka.binary.v2+json"
+        * Content-Type: "application/vnd.kafka.v2+json"
+        Required Params:
+        * Path:
+          * topic
+          * partition
+        * Query:
+          * offset
+          * timeout
+          * max_bytes
         """
+        self.logger.info(f"Consuming with empty topic param")
         fetch_raw_result = self._fetch_topic("", 0)
         assert fetch_raw_result.status_code == requests.codes.bad_request
 
         name = create_topic_names(1)[0]
 
+        self.logger.info(f"Consuming with empty offset param")
+        fetch_raw_result = self._fetch_topic(name, 0, "")
+        assert fetch_raw_result.status_code == requests.codes.bad_request
+
         self.logger.info(f"Consuming from unknown topic: {name}")
         fetch_raw_result = self._fetch_topic(name, 0)
         assert fetch_raw_result.status_code == requests.codes.not_found
-        fetch_result_0 = fetch_raw_result.json()
-        print(fetch_result_0)
-        assert fetch_result_0["error_code"] == 40402
-        assert fetch_result_0["message"] == "unknown_topic_or_partition"
+        fetch_result = fetch_raw_result.json()
+        assert fetch_result["error_code"] == 40402
+
+        self.logger.info(f"Consuming with no content-type header")
+        fetch_raw_result = self._fetch_topic(
+            name,
+            0,
+            headers={"Accept": "application/vnd.kafka.binary.v2+json"})
+        assert fetch_raw_result.status_code == requests.codes.unsupported_media_type
+        fetch_result = fetch_raw_result.json()
+        assert fetch_result[
+            "error_code"] == requests.codes.unsupported_media_type
+
+        self.logger.info(f"Consuming with no accept header")
+        fetch_raw_result = self._fetch_topic(
+            name, 0, headers={"Content-Type": "application/vnd.kafka.v2+json"})
+        assert fetch_raw_result.status_code == requests.codes.not_acceptable
+        fetch_result = fetch_raw_result.json()
+        assert fetch_result["error_code"] == requests.codes.not_acceptable
+
+        self.logger.info(f"Consuming with unsupported accept header")
+        fetch_raw_result = self._fetch_topic(
+            name,
+            0,
+            headers={
+                "Accept": "application/vnd.kafka.v2+json",
+                "Content-Type": "application/vnd.kafka.v2+json"
+            })
+        assert fetch_raw_result.status_code == requests.codes.not_acceptable
+        fetch_result = fetch_raw_result.json()
+        assert fetch_result["error_code"] == requests.codes.not_acceptable
 
     @cluster(num_nodes=3)
     def test_fetch_topic(self):
