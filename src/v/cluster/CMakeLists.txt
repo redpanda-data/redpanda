@@ -51,6 +51,7 @@ v_cc_library(
     persisted_stm.cc
     tm_stm.cc
     rm_stm.cc
+    security_manager.cc
   DEPS
     Seastar::seastar
     controller_rpc

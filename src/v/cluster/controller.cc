@@ -42,7 +42,8 @@ controller::controller(
   , _partition_manager(pm)
   , _shard_table(st)
   , _storage(storage)
-  , _tp_updates_dispatcher(_partition_allocator, _tp_state) {}
+  , _tp_updates_dispatcher(_partition_allocator, _tp_state)
+  , _security_manager(_credentials) {}
 
 ss::future<> controller::wire_up() {
     return _as.start()
@@ -84,7 +85,8 @@ ss::future<> controller::start() {
             std::ref(clusterlog),
             _raft0.get(),
             raft::persistent_last_applied::yes,
-            std::ref(_tp_updates_dispatcher));
+            std::ref(_tp_updates_dispatcher),
+            std::ref(_security_manager));
       })
       .then([this] {
           return _tp_frontend.start(

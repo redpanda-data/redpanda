@@ -73,6 +73,7 @@ private:
     ss::sharded<storage::api>& _storage;
     topic_updates_dispatcher _tp_updates_dispatcher;
     ss::sharded<security::credential_store> _credentials;
+    security_manager _security_manager;
     consensus_ptr _raft0;
 };
 
