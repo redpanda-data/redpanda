@@ -467,9 +467,6 @@ void application::wire_up_redpanda_services() {
       std::ref(controller->get_partition_leaders()))
       .get();
 
-    syschecks::systemd_message("Creating kafka credential store").get();
-    construct_service(credentials).get();
-
     syschecks::systemd_message("Creating kafka authorizer").get();
     construct_service(authorizer).get();
 
@@ -729,7 +726,7 @@ void application::start_redpanda() {
             coordinator_ntp_mapper,
             fetch_session_cache,
             std::ref(id_allocator_frontend),
-            credentials,
+            controller->get_credential_store(),
             authorizer);
           s.set_protocol(std::move(proto));
       })

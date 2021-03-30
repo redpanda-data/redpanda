@@ -77,7 +77,6 @@ public:
     smp_groups smp_service_groups;
     ss::sharded<kafka::quota_manager> quota_mgr;
     ss::sharded<cluster::id_allocator_frontend> id_allocator_frontend;
-    ss::sharded<security::credential_store> credentials;
     ss::sharded<archival::scheduler_service> archival_scheduler;
     ss::sharded<security::authorizer> authorizer;
 
