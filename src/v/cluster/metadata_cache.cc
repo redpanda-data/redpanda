@@ -109,18 +109,18 @@ std::optional<model::node_id> metadata_cache::get_controller_leader_id() {
  * hard coded defaults
  */
 model::compression metadata_cache::get_default_compression() const {
-    return model::compression::producer;
+    return config::shard_local_cfg().log_compression_type();
 }
 model::cleanup_policy_bitflags
 metadata_cache::get_default_cleanup_policy_bitflags() const {
-    return model::cleanup_policy_bitflags::deletion;
+    return config::shard_local_cfg().log_cleanup_policy();
 }
 model::compaction_strategy
 metadata_cache::get_default_compaction_strategy() const {
     return model::compaction_strategy::offset;
 }
 model::timestamp_type metadata_cache::get_default_timestamp_type() const {
-    return model::timestamp_type::create_time;
+    return config::shard_local_cfg().log_message_timestamp_type();
 }
 /**
  * We use configuration directly to access default topic properties, in future

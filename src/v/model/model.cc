@@ -314,22 +314,28 @@ std::istream& operator>>(std::istream& i, timestamp_type& ts_type) {
 };
 
 std::ostream& operator<<(std::ostream& o, cleanup_policy_bitflags c) {
-    o << "{";
-    auto has_prev = false;
-    if (std::underlying_type_t<cleanup_policy_bitflags>(
-          c & cleanup_policy_bitflags::deletion)) {
-        o << "cleanup_policy_bitflags::deletion";
+    if (c == model::cleanup_policy_bitflags::none) {
+        o << "none";
+        return o;
     }
 
-    if (std::underlying_type_t<cleanup_policy_bitflags>(
-          c & cleanup_policy_bitflags::compaction)) {
-        if (has_prev) {
-            o << " | ";
-        }
-        o << "cleanup_policy_bitflags::compaction";
+    auto compaction = (c & model::cleanup_policy_bitflags::compaction)
+                      == model::cleanup_policy_bitflags::compaction;
+    auto deletion = (c & model::cleanup_policy_bitflags::deletion)
+                    == model::cleanup_policy_bitflags::deletion;
+
+    if (compaction && deletion) {
+        o << "compact,delete";
+        return o;
     }
 
-    return o << "}";
+    if (compaction) {
+        o << "compact";
+    } else if (deletion) {
+        o << "delete";
+    }
+
+    return o;
 }
 
 std::istream& operator>>(std::istream& i, cleanup_policy_bitflags& cp) {

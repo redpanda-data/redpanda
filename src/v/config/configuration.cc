@@ -293,6 +293,24 @@ configuration::configuration()
       "alter configuration requst",
       required::no,
       5s)
+  , log_cleanup_policy(
+      *this,
+      "log_cleanup_policy",
+      "Default topic cleanup policy",
+      required::no,
+      model::cleanup_policy_bitflags::deletion)
+  , log_message_timestamp_type(
+      *this,
+      "log_message_timestamp_type",
+      "Default topic messages timestamp type",
+      required::no,
+      model::timestamp_type::create_time)
+  , log_compression_type(
+      *this,
+      "log_compression_type",
+      "Default topic compression type",
+      required::no,
+      model::compression::producer)
   , transactional_id_expiration_ms(
       *this,
       "transactional_id_expiration_ms",

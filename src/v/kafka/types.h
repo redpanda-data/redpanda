@@ -119,9 +119,9 @@ std::ostream& operator<<(std::ostream& os, config_resource_operation);
 enum class describe_configs_source : int8_t {
     topic = 1,
     static_broker_config = 4,
+    default_config = 5,
     // DYNAMIC_BROKER_CONFIG((byte) 2),
     // DYNAMIC_DEFAULT_BROKER_CONFIG((byte) 3),
-    // DEFAULT_CONFIG((byte) 5),
     // DYNAMIC_BROKER_LOGGER_CONFIG((byte) 6);
 };
 
