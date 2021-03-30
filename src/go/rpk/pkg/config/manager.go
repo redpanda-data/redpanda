@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"path/filepath"
 	fp "path/filepath"
 	"reflect"
 	"strconv"
@@ -91,12 +92,12 @@ func (m *manager) FindOrGenerate(path string) (*Config, error) {
 		}
 
 	}
-	return readOrGenerate(m.v, path)
+	return readOrGenerate(m.fs, m.v, path)
 }
 
 // Tries reading a config file at the given path, or generates a default config
 // and writes it to the path.
-func readOrGenerate(v *viper.Viper, path string) (*Config, error) {
+func readOrGenerate(fs afero.Fs, v *viper.Viper, path string) (*Config, error) {
 	v.SetConfigFile(path)
 	err := v.ReadInConfig()
 	if err == nil {
@@ -118,6 +119,10 @@ func readOrGenerate(v *viper.Viper, path string) (*Config, error) {
 		path,
 	)
 	v.Set("config_file", path)
+	err = createConfigDir(fs, path)
+	if err != nil {
+		return nil, err
+	}
 	err = v.WriteConfigAs(path)
 	if err != nil {
 		return nil, fmt.Errorf(
@@ -306,8 +311,12 @@ func (m *manager) WriteLoaded() error {
 	return checkAndWrite(m.fs, m.v, m.v.GetString("config_file"))
 }
 
-func write(v *viper.Viper, path string) error {
-	err := v.WriteConfigAs(path)
+func write(fs afero.Fs, v *viper.Viper, path string) error {
+	err := createConfigDir(fs, path)
+	if err != nil {
+		return err
+	}
+	err = v.WriteConfigAs(path)
 	if err != nil {
 		return err
 	}
@@ -388,7 +397,7 @@ func checkAndWrite(fs afero.Fs, v *viper.Viper, path string) error {
 	}
 	if !exists {
 		// If the config doesn't exist, just write it.
-		return write(v, path)
+		return write(fs, v, path)
 	}
 	// Otherwise, backup the current config file, write the new one, and
 	// try to recover if there's an error.
@@ -406,7 +415,7 @@ func checkAndWrite(fs afero.Fs, v *viper.Viper, path string) error {
 		}
 	}
 	log.Debugf("Writing the new redpanda config to '%s'", path)
-	err = write(v, path)
+	err = write(fs, v, path)
 	if err != nil {
 		return recover(fs, backup, path, err)
 	}
@@ -553,4 +562,17 @@ func absPath(path string) (string, error) {
 		)
 	}
 	return absPath, nil
+}
+
+func createConfigDir(fs afero.Fs, configFile string) error {
+	dir := filepath.Dir(configFile)
+	err := fs.MkdirAll(dir, 0755)
+	if err != nil {
+		return fmt.Errorf(
+			"Couldn't create config dir %s: %v",
+			dir,
+			err,
+		)
+	}
+	return nil
 }
