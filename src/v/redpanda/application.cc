@@ -473,25 +473,6 @@ void application::wire_up_redpanda_services() {
     syschecks::systemd_message("Creating kafka authorizer").get();
     construct_service(authorizer).get();
 
-    /*
-     * Add in the static scram credential for testing.
-     * - sasl and developer mode needs to be enabled
-     */
-    if (
-      unlikely(config::shard_local_cfg().enable_admin_api())
-      && config::shard_local_cfg().developer_mode()
-      && !config::shard_local_cfg().static_scram_user().empty()
-      && !config::shard_local_cfg().static_scram_pass().empty()) {
-        credentials
-          .invoke_on_all([](security::credential_store& store) {
-              store.put(
-                config::shard_local_cfg().static_scram_user(),
-                security::scram_sha256::make_credentials(
-                  config::shard_local_cfg().static_scram_pass(), 4096));
-          })
-          .get();
-    }
-
     syschecks::systemd_message("Creating metadata dissemination service").get();
     construct_service(
       md_dissemination_service,
