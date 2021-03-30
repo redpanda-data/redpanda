@@ -489,6 +489,11 @@ public:
                     : _partition->high_watermark();
     }
 
+    model::offset start_offset() const {
+        // we have to access log directy when dealing with materialized partiton
+        return _log ? _log->offsets().start_offset : _partition->start_offset();
+    }
+
     model::offset last_stable_offset() const {
         return _log ? _log->offsets().dirty_offset
                     : _partition->last_stable_offset();
@@ -513,18 +518,24 @@ struct read_result {
       : error(e) {}
 
     read_result(
-      model::record_batch_reader rdr, model::offset hw, model::offset lso)
+      model::record_batch_reader rdr,
+      model::offset start_offset,
+      model::offset hw,
+      model::offset lso)
       : reader(std::move(rdr))
+      , start_offset(start_offset)
       , high_watermark(hw)
       , last_stable_offset(lso)
       , error(error_code::none) {}
 
-    read_result(model::offset hw, model::offset lso)
-      : high_watermark(hw)
+    read_result(model::offset start_offset, model::offset hw, model::offset lso)
+      : start_offset(start_offset)
+      , high_watermark(hw)
       , last_stable_offset(lso)
       , error(error_code::none) {}
 
     std::optional<model::record_batch_reader> reader;
+    model::offset start_offset;
     model::offset high_watermark;
     model::offset last_stable_offset;
     error_code error;
