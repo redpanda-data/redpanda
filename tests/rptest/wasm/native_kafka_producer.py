@@ -33,7 +33,6 @@ class NativeKafkaProducer(BackgroundTask):
         for i in range(0, self._num_records):
             if self.is_finished():
                 break
-            key = str(hash(str(i) + self._topic))
             value = os.urandom(self._records_size)
-            self._producer.send(self._topic, key=key, value=value)
+            self._producer.send(self._topic, key=str(i), value=value)
         self._producer.flush()
