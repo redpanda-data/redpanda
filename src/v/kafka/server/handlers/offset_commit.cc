@@ -72,7 +72,7 @@ offset_commit_handler::handle(request_context ctx, ss::smp_service_group ssg) {
 
     // check authorization for this group
     const auto group_authorized = ctx.authorized(
-      acl_operation::read, request.data.group_id);
+      security::acl_operation::read, request.data.group_id);
 
     offset_commit_ctx octx(std::move(ctx), std::move(request), ssg);
 
@@ -112,7 +112,7 @@ offset_commit_handler::handle(request_context ctx, ss::smp_service_group ssg) {
         /*
          * check topic authorization
          */
-        if (!octx.rctx.authorized(acl_operation::read, it->name)) {
+        if (!octx.rctx.authorized(security::acl_operation::read, it->name)) {
             auto& parts = octx.unauthorized_tps[it->name];
             parts.reserve(it->partitions.size());
             for (const auto& part : it->partitions) {

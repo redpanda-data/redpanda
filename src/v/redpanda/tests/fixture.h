@@ -271,7 +271,7 @@ public:
     }
 
     kafka::request_context make_request_context() {
-        kafka::sasl_server sasl(kafka::sasl_server::sasl_state::complete);
+        security::sasl_server sasl(security::sasl_server::sasl_state::complete);
         auto conn = ss::make_lw_shared<kafka::connection_context>(
           *proto,
           rpc::server::resources(nullptr, nullptr),

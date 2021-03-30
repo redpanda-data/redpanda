@@ -143,11 +143,11 @@ public:
     }
 
     const ss::sstring& listener() const { return _conn->listener(); }
-    sasl_server& sasl() { return _conn->sasl(); }
-    credential_store& credentials() { return _conn->server().credentials(); }
+    security::sasl_server& sasl() { return _conn->sasl(); }
+    security::credential_store& credentials() { return _conn->server().credentials(); }
 
     template<typename T>
-    bool authorized(acl_operation operation, const T& name) {
+    bool authorized(security::acl_operation operation, const T& name) {
         return _conn->authorized(operation, name);
     }
 

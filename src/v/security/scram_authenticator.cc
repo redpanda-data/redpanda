@@ -8,19 +8,20 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
-#include "kafka/security/scram_authenticator.h"
+#include "security/scram_authenticator.h"
 
-#include "kafka/security/errc.h"
+#include "security/logger.h"
+#include "security/errc.h"
 #include "vlog.h"
 
-namespace kafka {
+namespace security {
 
 template<typename T>
 result<bytes>
 scram_authenticator<T>::handle_client_first(bytes_view auth_bytes) {
     // request from client
     _client_first = std::make_unique<client_first_message>(auth_bytes);
-    vlog(klog.debug, "Received client first message {}", *_client_first);
+    vlog(seclog.debug, "Received client first message {}", *_client_first);
 
     // lookup credentials for this user
     _authid = _client_first->username_normalized();
@@ -33,13 +34,13 @@ scram_authenticator<T>::handle_client_first(bytes_view auth_bytes) {
     if (
       !_client_first->authzid().empty()
       && _client_first->authzid() != _authid) {
-        vlog(klog.info, "Invalid authorization id and username pair");
+        vlog(seclog.info, "Invalid authorization id and username pair");
         return errc::invalid_credentials;
     }
 
     if (_credential->iterations() < scram::min_iterations) {
         vlog(
-          klog.info,
+          seclog.info,
           "Requested iterations {} less than minimum {}",
           _credential->iterations(),
           scram::min_iterations);
@@ -63,7 +64,7 @@ template<typename T>
 result<bytes>
 scram_authenticator<T>::handle_client_final(bytes_view auth_bytes) {
     client_final_message client_final(auth_bytes);
-    vlog(klog.debug, "Received client final message {}", client_final);
+    vlog(seclog.debug, "Received client final message {}", client_final);
 
     auto client_signature = scram::client_signature(
       _credential->stored_key(), *_client_first, *_server_first, client_final);
@@ -74,14 +75,14 @@ scram_authenticator<T>::handle_client_final(bytes_view auth_bytes) {
 
     if (computed_stored_key != _credential->stored_key()) {
         vlog(
-          klog.info,
+          seclog.info,
           "Authentication failed: stored and client submitted credentials do "
           "not match");
         return errc::invalid_credentials;
     }
 
     const auto username = _client_first->username();
-    vlog(klog.debug, "Authentication key match for user {}", username);
+    vlog(seclog.debug, "Authentication key match for user {}", username);
 
     auto server_signature = scram::server_signature(
       _credential->server_key(), *_client_first, *_server_first, client_final);
@@ -129,4 +130,4 @@ result<bytes> scram_authenticator<T>::authenticate(bytes_view auth_bytes) {
 template class scram_authenticator<scram_sha256>;
 template class scram_authenticator<scram_sha512>;
 
-} // namespace kafka
+} // namespace security

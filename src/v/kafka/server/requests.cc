@@ -79,9 +79,9 @@ handle_auth_handshake(request_context&& ctx, ss::smp_service_group g) {
     return do_process<sasl_handshake_handler>(std::move(ctx), g)
       .then([conn = std::move(conn)](response_ptr r) {
           if (conn->sasl().has_mechanism()) {
-              conn->sasl().set_state(sasl_server::sasl_state::authenticate);
+              conn->sasl().set_state(security::sasl_server::sasl_state::authenticate);
           } else {
-              conn->sasl().set_state(sasl_server::sasl_state::failed);
+              conn->sasl().set_state(security::sasl_server::sasl_state::failed);
           }
           return r;
       });
@@ -97,7 +97,7 @@ handle_auth_initial(request_context&& ctx, ss::smp_service_group g) {
     case api_versions_handler::api::key: {
         auto r = api_versions_handler::handle_raw(ctx);
         if (r.data.error_code == error_code::none) {
-            ctx.sasl().set_state(sasl_server::sasl_state::handshake);
+            ctx.sasl().set_state(security::sasl_server::sasl_state::handshake);
         }
         return ctx.respond(std::move(r));
     }
@@ -116,10 +116,10 @@ handle_auth_initial(request_context&& ctx, ss::smp_service_group g) {
 static ss::future<response_ptr>
 handle_auth(request_context&& ctx, ss::smp_service_group g) {
     switch (ctx.sasl().state()) {
-    case sasl_server::sasl_state::initial:
+    case security::sasl_server::sasl_state::initial:
         return handle_auth_initial(std::move(ctx), g);
 
-    case sasl_server::sasl_state::handshake:
+    case security::sasl_server::sasl_state::handshake:
         if (unlikely(ctx.header().key != sasl_handshake_handler::api::key)) {
             return ss::make_exception_future<response_ptr>(
               std::runtime_error(fmt::format(
@@ -128,7 +128,7 @@ handle_auth(request_context&& ctx, ss::smp_service_group g) {
         }
         return handle_auth_handshake(std::move(ctx), g);
 
-    case sasl_server::sasl_state::authenticate: {
+    case security::sasl_server::sasl_state::authenticate: {
         if (unlikely(ctx.header().key != sasl_authenticate_handler::api::key)) {
             return ss::make_exception_future<response_ptr>(
               std::runtime_error(fmt::format(
@@ -143,9 +143,9 @@ handle_auth(request_context&& ctx, ss::smp_service_group g) {
                * to return without entering an end state like complete/failed.
                */
               if (conn->sasl().mechanism().complete()) {
-                  conn->sasl().set_state(sasl_server::sasl_state::complete);
+                  conn->sasl().set_state(security::sasl_server::sasl_state::complete);
               } else if (conn->sasl().mechanism().failed()) {
-                  conn->sasl().set_state(sasl_server::sasl_state::failed);
+                  conn->sasl().set_state(security::sasl_server::sasl_state::failed);
               }
               return ss::make_ready_future<response_ptr>(std::move(r));
           });
@@ -157,7 +157,7 @@ handle_auth(request_context&& ctx, ss::smp_service_group g) {
      * let us build and send a response, and then close the connection. at the
      * moment it is either send a response or close the connection.
      */
-    case sasl_server::sasl_state::failed:
+    case security::sasl_server::sasl_state::failed:
         return ss::make_exception_future<response_ptr>(std::runtime_error(
           "Authentication failed. Shutting down connection"));
 
@@ -179,7 +179,7 @@ process_request(request_context&& ctx, ss::smp_service_group g) {
         return handle_auth(std::move(ctx), g)
           .then_wrapped([conn](ss::future<response_ptr> f) {
               if (f.failed()) {
-                  conn->sasl().set_state(sasl_server::sasl_state::failed);
+                  conn->sasl().set_state(security::sasl_server::sasl_state::failed);
               }
               return f;
           });

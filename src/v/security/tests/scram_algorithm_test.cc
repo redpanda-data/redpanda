@@ -7,7 +7,7 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 #define BOOST_TEST_MODULE kafka_security
-#include "kafka/security/scram_algorithm.h"
+#include "security/scram_algorithm.h"
 #include "random/generators.h"
 #include "utils/base64.h"
 
@@ -17,7 +17,7 @@
 #include <boost/test/unit_test.hpp>
 #include <fmt/ostream.h>
 
-namespace kafka {
+namespace security {
 
 /*
  * Test coverage includes all of the relevant test cases found in upstream
@@ -289,4 +289,4 @@ BOOST_AUTO_TEST_CASE(server_final_message_ctor) {
     }
 }
 
-} // namespace kafka
+} // namespace security

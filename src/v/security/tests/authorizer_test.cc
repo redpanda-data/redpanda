@@ -6,7 +6,7 @@
 // As of the Change Date specified in that file, in accordance with
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
-#include "kafka/security/authorizer.h"
+#include "security/authorizer.h"
 #include "random/generators.h"
 #include "utils/base64.h"
 
@@ -17,7 +17,7 @@
 #include <boost/test/unit_test.hpp>
 #include <fmt/ostream.h>
 
-namespace kafka {
+namespace security {
 
 static const acl_entry allow_read_acl(
   acl_wildcard_user,
@@ -841,4 +841,4 @@ BOOST_AUTO_TEST_CASE(topic_acl) {
       auth.authorized(default_topic, acl_operation::write, user3, host1));
 }
 
-} // namespace kafka
+} // namespace security

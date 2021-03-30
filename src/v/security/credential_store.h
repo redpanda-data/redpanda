@@ -10,12 +10,12 @@
  */
 #pragma once
 #include "bytes/bytes.h"
-#include "kafka/security/scram_credential.h"
+#include "security/scram_credential.h"
 #include "utils/concepts-enabled.h"
 
 #include <absl/container/node_hash_map.h>
 
-namespace kafka {
+namespace security {
 
 /*
  * Store for user credentials.
@@ -55,4 +55,4 @@ private:
     absl::node_hash_map<ss::sstring, credential_types> _credentials;
 };
 
-} // namespace kafka
+} // namespace security

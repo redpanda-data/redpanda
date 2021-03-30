@@ -107,7 +107,7 @@ ss::future<response_ptr> describe_log_dirs_handler::handle(
       .log_dir = config::shard_local_cfg().data_directory().as_sstring(),
     });
 
-    if (!ctx.authorized(acl_operation::describe, default_cluster_name)) {
+    if (!ctx.authorized(security::acl_operation::describe, security::default_cluster_name)) {
         // in this case kafka returns no authorization error
         co_return co_await ctx.respond(std::move(response));
     }

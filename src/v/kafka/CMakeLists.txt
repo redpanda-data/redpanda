@@ -1,11 +1,5 @@
 add_subdirectory(protocol)
 
-set(security_srcs
-    security/scram_algorithm.cc
-    security/scram_credential.cc
-    security/scram_authenticator.cc
-    security/acl_store.cc)
-
 set(handlers_srcs
   server/handlers/api_versions.cc
   server/handlers/metadata.cc
@@ -43,7 +37,6 @@ v_cc_library(
   SRCS
     protocol/batch_reader.cc
     protocol/kafka_batch_adapter.cc
-    ${security_srcs}
     ${handlers_srcs}
     server/requests.cc
     server/member.cc
@@ -62,12 +55,12 @@ v_cc_library(
     v::rpc
     v::cluster
     v::kafka_protocol
+    v::security
     absl::flat_hash_map
     absl::flat_hash_set
 )
 
 add_subdirectory(client)
-add_subdirectory(security)
 add_subdirectory(server/tests)
 
 set_source_files_properties(

@@ -9,8 +9,8 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
-#include "kafka/security/acl.h"
-#include "kafka/security/sasl_authentication.h"
+#include "security/acl.h"
+#include "security/sasl_authentication.h"
 #include "kafka/server/protocol.h"
 #include "kafka/server/response.h"
 #include "rpc/server.h"
@@ -38,7 +38,7 @@ public:
     connection_context(
       protocol& p,
       rpc::server::resources&& r,
-      sasl_server sasl,
+      security::sasl_server sasl,
       bool enable_authorizer) noexcept
       : _proto(p)
       , _rs(std::move(r))
@@ -55,17 +55,17 @@ public:
 
     protocol& server() { return _proto; }
     const ss::sstring& listener() const { return _rs.conn->name(); }
-    sasl_server& sasl() { return _sasl; }
+    security::sasl_server& sasl() { return _sasl; }
 
     template<typename T>
-    bool authorized(acl_operation operation, const T& name) {
+    bool authorized(security::acl_operation operation, const T& name) {
         if (!_enable_authorizer) {
             return true;
         }
         auto user = sasl().principal();
-        acl_principal principal(principal_type::user, std::move(user));
+        security::acl_principal principal(security::principal_type::user, std::move(user));
         return _proto.authorizer().authorized(
-          name, operation, std::move(principal), acl_host(_client_addr));
+          name, operation, std::move(principal), security::acl_host(_client_addr));
     }
 
     ss::future<> process_one_request();
@@ -99,7 +99,7 @@ private:
     sequence_id _next_response;
     sequence_id _seq_idx;
     map_t _responses;
-    sasl_server _sasl;
+    security::sasl_server _sasl;
     const ss::net::inet_address _client_addr;
     const bool _enable_authorizer;
 };

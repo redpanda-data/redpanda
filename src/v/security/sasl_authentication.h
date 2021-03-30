@@ -13,7 +13,7 @@
 
 #include <memory>
 
-namespace kafka {
+namespace security {
 
 /*
  * Generic SASL mechanism interface.
@@ -67,4 +67,4 @@ private:
     std::unique_ptr<sasl_mechanism> _mechanism;
 };
 
-}; // namespace kafka
+}; // namespace security

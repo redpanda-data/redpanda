@@ -39,7 +39,7 @@ ss::future<response_ptr> delete_groups_handler::handle(
       request.data.groups_names.begin(),
       request.data.groups_names.end(),
       [&ctx](const kafka::group_id& group) {
-          return ctx.authorized(acl_operation::remove, group);
+          return ctx.authorized(security::acl_operation::remove, group);
       });
 
     std::vector<kafka::group_id> unauthorized(

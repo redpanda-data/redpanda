@@ -48,7 +48,7 @@ offset_fetch_handler::handle(request_context ctx, ss::smp_service_group) {
     request.decode(ctx.reader(), ctx.header().version);
     klog.trace("Handling request {}", request);
 
-    if (!ctx.authorized(acl_operation::describe, request.data.group_id)) {
+    if (!ctx.authorized(security::acl_operation::describe, request.data.group_id)) {
         co_return co_await ctx.respond(
           offset_fetch_response(error_code::group_authorization_failed));
     }
@@ -67,7 +67,7 @@ offset_fetch_handler::handle(request_context ctx, ss::smp_service_group) {
           resp.data.topics.begin(),
           resp.data.topics.end(),
           [&ctx](const offset_fetch_response_topic& topic) {
-              return ctx.authorized(acl_operation::describe, topic.name);
+              return ctx.authorized(security::acl_operation::describe, topic.name);
           });
         resp.data.topics.erase(unauthorized, resp.data.topics.end());
 
@@ -81,7 +81,7 @@ offset_fetch_handler::handle(request_context ctx, ss::smp_service_group) {
       request.data.topics->begin(),
       request.data.topics->end(),
       [&ctx](const offset_fetch_request_topic& topic) {
-          return ctx.authorized(acl_operation::describe, topic.name);
+          return ctx.authorized(security::acl_operation::describe, topic.name);
       });
 
     std::vector<offset_fetch_request_topic> unauthorized(

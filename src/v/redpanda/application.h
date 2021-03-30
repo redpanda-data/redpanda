@@ -16,8 +16,8 @@
 #include "cluster/fwd.h"
 #include "coproc/event_listener.h"
 #include "coproc/pacemaker.h"
-#include "kafka/security/authorizer.h"
-#include "kafka/security/credential_store.h"
+#include "security/authorizer.h"
+#include "security/credential_store.h"
 #include "pandaproxy/configuration.h"
 #include "pandaproxy/fwd.h"
 #include "raft/group_manager.h"
@@ -77,9 +77,9 @@ public:
     smp_groups smp_service_groups;
     ss::sharded<kafka::quota_manager> quota_mgr;
     ss::sharded<cluster::id_allocator_frontend> id_allocator_frontend;
-    ss::sharded<kafka::credential_store> credentials;
+    ss::sharded<security::credential_store> credentials;
     ss::sharded<archival::scheduler_service> archival_scheduler;
-    ss::sharded<kafka::authorizer> authorizer;
+    ss::sharded<security::authorizer> authorizer;
 
 private:
     using deferred_actions

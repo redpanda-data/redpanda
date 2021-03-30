@@ -22,7 +22,7 @@
 #include "config/configuration.h"
 #include "config/seed_server.h"
 #include "kafka/client/configuration.h"
-#include "kafka/security/scram_algorithm.h"
+#include "security/scram_algorithm.h"
 #include "kafka/server/coordinator_ntp_mapper.h"
 #include "kafka/server/group_manager.h"
 #include "kafka/server/group_router.h"
@@ -483,10 +483,10 @@ void application::wire_up_redpanda_services() {
       && !config::shard_local_cfg().static_scram_user().empty()
       && !config::shard_local_cfg().static_scram_pass().empty()) {
         credentials
-          .invoke_on_all([](kafka::credential_store& store) {
+          .invoke_on_all([](security::credential_store& store) {
               store.put(
                 config::shard_local_cfg().static_scram_user(),
-                kafka::scram_sha256::make_credentials(
+                security::scram_sha256::make_credentials(
                   config::shard_local_cfg().static_scram_pass(), 4096));
           })
           .get();

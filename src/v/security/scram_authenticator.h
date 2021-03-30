@@ -9,11 +9,11 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
-#include "kafka/security/credential_store.h"
-#include "kafka/security/sasl_authentication.h"
-#include "kafka/security/scram_algorithm.h"
+#include "security/credential_store.h"
+#include "security/sasl_authentication.h"
+#include "security/scram_algorithm.h"
 
-namespace kafka {
+namespace security {
 
 template<typename ScramMechanism>
 class scram_authenticator final : public sasl_mechanism {
@@ -75,4 +75,4 @@ struct scram_sha512_authenticator {
     static constexpr const char* name = "SCRAM-SHA-512";
 };
 
-} // namespace kafka
+} // namespace security

@@ -383,7 +383,7 @@ produce_topic(produce_ctx& octx, produce_request::topic& topic) {
     partitions.reserve(topic.partitions.size());
 
     for (auto& part : topic.partitions) {
-        if (!octx.rctx.authorized(acl_operation::write, topic.name)) {
+        if (!octx.rctx.authorized(security::acl_operation::write, topic.name)) {
             partitions.push_back(
               ss::make_ready_future<produce_response::partition>(
                 produce_response::partition{
@@ -474,7 +474,7 @@ produce_handler::handle(request_context ctx, ss::smp_service_group ssg) {
         if (
           !request.transactional_id
           || !ctx.authorized(
-            acl_operation::write,
+            security::acl_operation::write,
             transactional_id(*request.transactional_id))) {
             return ctx.respond(request.make_error_response(
               error_code::transactional_id_authorization_failed));
@@ -484,7 +484,7 @@ produce_handler::handle(request_context ctx, ss::smp_service_group ssg) {
 
     } else if (request.has_idempotent) {
         if (!ctx.authorized(
-              acl_operation::idempotent_write, default_cluster_name)) {
+              security::acl_operation::idempotent_write, security::default_cluster_name)) {
             return ctx.respond(request.make_error_response(
               error_code::cluster_authorization_failed));
         }

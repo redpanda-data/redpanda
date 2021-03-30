@@ -69,7 +69,7 @@ delete_topics_handler::handle(request_context ctx, ss::smp_service_group) {
       request.data.topic_names.begin(),
       request.data.topic_names.end(),
       [&ctx](const model::topic& topic) {
-          return ctx.authorized(acl_operation::remove, topic);
+          return ctx.authorized(security::acl_operation::remove, topic);
       });
 
     std::vector<model::topic> unauthorized(

@@ -616,7 +616,7 @@ static std::vector<shard_fetch> group_requests_by_shard(op_context& octx) {
               }
           }
 
-          if (!octx.rctx.authorized(acl_operation::read, fp.topic)) {
+          if (!octx.rctx.authorized(security::acl_operation::read, fp.topic)) {
               (resp_it).set(make_partition_response_error(
                 fp.partition, error_code::topic_authorization_failed));
               ++resp_it;
