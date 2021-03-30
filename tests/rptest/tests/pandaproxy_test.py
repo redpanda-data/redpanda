@@ -29,6 +29,12 @@ HTTP_GET_TOPICS_HEADERS = {
     "Content-Type": "application/vnd.kafka.v2+json"
 }
 
+HTTP_FETCH_TOPIC_HEADERS = {
+    "Accept": "application/vnd.kafka.binary.v2+json",
+    "Content-Type": "application/vnd.kafka.v2+json"
+}
+
+
 class Consumer:
     def __init__(self, res):
         self.instance_id = res["instance_id"]
@@ -106,10 +112,11 @@ class PandaProxyTest(RedpandaTest):
                      partition=0,
                      offset=0,
                      max_bytes=1024,
-                     timeout_ms=1000):
+                     timeout_ms=1000,
+                     headers=HTTP_FETCH_TOPIC_HEADERS):
         return requests.get(
-            f"{self._base_uri()}/topics/{topic}/partitions/{partition}/records?offset={offset}&max_bytes={max_bytes}&timeout={timeout_ms}"
-        )
+            f"{self._base_uri()}/topics/{topic}/partitions/{partition}/records?offset={offset}&max_bytes={max_bytes}&timeout={timeout_ms}",
+            headers=headers)
 
     def _create_consumer(self, group_id):
         res = requests.post(
