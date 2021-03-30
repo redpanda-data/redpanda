@@ -15,6 +15,8 @@
 #include "kafka/server/request_context.h"
 #include "model/metadata.h"
 
+#include <seastar/core/coroutine.hh>
+
 namespace kafka {
 
 void list_groups_response::encode(const request_context& ctx, response& resp) {
@@ -28,19 +30,27 @@ ss::future<response_ptr> list_groups_handler::handle(
     request.decode(ctx.reader(), ctx.header().version);
     klog.trace("Handling request {}", request);
 
-    return ss::do_with(std::move(ctx), [](request_context& ctx) mutable {
-        return ctx.groups().list_groups().then(
-          [&ctx](std::pair<bool, std::vector<listed_group>> g) {
-              // group listing is still returned even if some partitions are
-              // still in the process of loading/recovering.
-              list_groups_response resp;
-              resp.data.error_code
-                = g.first ? error_code::coordinator_load_in_progress
-                          : error_code::none;
-              resp.data.groups = std::move(g.second);
-              return ctx.respond(std::move(resp));
-          });
-    });
+    auto&& [error, groups] = co_await ctx.groups().list_groups();
+
+    list_groups_response resp;
+    resp.data.error_code = error;
+    resp.data.groups = std::move(groups);
+
+    if (ctx.authorized(acl_operation::describe, default_cluster_name)) {
+        co_return co_await ctx.respond(std::move(resp));
+    }
+
+    // remove groups from response that should not be visible
+    auto non_visible_it = std::partition(
+      resp.data.groups.begin(),
+      resp.data.groups.end(),
+      [&ctx](const listed_group& group) {
+          return ctx.authorized(acl_operation::describe, group.group_id);
+      });
+
+    resp.data.groups.erase(non_visible_it, resp.data.groups.end());
+
+    co_return co_await ctx.respond(std::move(resp));
 }
 
 } // namespace kafka

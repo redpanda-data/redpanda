@@ -643,7 +643,8 @@ group_manager::offset_fetch(offset_fetch_request&& r) {
     return group->handle_offset_fetch(std::move(r));
 }
 
-std::pair<bool, std::vector<listed_group>> group_manager::list_groups() const {
+std::pair<error_code, std::vector<listed_group>>
+group_manager::list_groups() const {
     auto loading = std::any_of(
       _partitions.cbegin(),
       _partitions.cend(),
@@ -659,7 +660,10 @@ std::pair<bool, std::vector<listed_group>> group_manager::list_groups() const {
           {g->id(), g->protocol_type().value_or(protocol_type())});
     }
 
-    return std::make_pair(loading, groups);
+    auto error = loading ? error_code::coordinator_load_in_progress
+                         : error_code::none;
+
+    return std::make_pair(error, groups);
 }
 
 described_group

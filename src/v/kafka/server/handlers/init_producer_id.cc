@@ -33,6 +33,22 @@ ss::future<response_ptr> init_producer_id_handler::handle(
         init_producer_id_request request;
         request.decode(ctx.reader(), ctx.header().version);
 
+        if (request.data.transactional_id) {
+            if (!ctx.authorized(
+                  acl_operation::write,
+                  transactional_id(*request.data.transactional_id))) {
+                init_producer_id_response reply;
+                reply.data.error_code
+                  = error_code::transactional_id_authorization_failed;
+                return ctx.respond(reply);
+            }
+        } else if (!ctx.authorized(
+                     acl_operation::idempotent_write, default_cluster_name)) {
+            init_producer_id_response reply;
+            reply.data.error_code = error_code::cluster_authorization_failed;
+            return ctx.respond(reply);
+        }
+
         return ctx.id_allocator_frontend()
           .allocate_id(config::shard_local_cfg().create_topic_timeout_ms())
           .then([&ctx](cluster::allocate_id_reply r) {

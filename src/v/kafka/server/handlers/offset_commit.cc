@@ -44,6 +44,11 @@ struct offset_commit_ctx {
       flat_hash_map<model::topic, std::vector<offset_commit_response_partition>>
         nonexistent_tps;
 
+    // topic partitions that principal is not authorized to read
+    absl::
+      flat_hash_map<model::topic, std::vector<offset_commit_response_partition>>
+        unauthorized_tps;
+
     offset_commit_ctx(
       request_context&& rctx,
       offset_commit_request&& request,
@@ -65,6 +70,10 @@ offset_commit_handler::handle(request_context ctx, ss::smp_service_group ssg) {
           offset_commit_response(request, error_code::unsupported_version));
     }
 
+    // check authorization for this group
+    const auto group_authorized = ctx.authorized(
+      acl_operation::read, request.data.group_id);
+
     offset_commit_ctx octx(std::move(ctx), std::move(request), ssg);
 
     /*
@@ -83,6 +92,39 @@ offset_commit_handler::handle(request_context ctx, ss::smp_service_group ssg) {
      */
     for (auto it = octx.request.data.topics.begin();
          it != octx.request.data.topics.end();) {
+        /*
+         * not authorized for this group. all topics in the request are
+         * responded to with a group authorization failed error code.
+         */
+        if (!group_authorized) {
+            auto& parts = octx.unauthorized_tps[it->name];
+            parts.reserve(it->partitions.size());
+            for (const auto& part : it->partitions) {
+                parts.push_back(offset_commit_response_partition{
+                  .partition_index = part.partition_index,
+                  .error_code = error_code::group_authorization_failed,
+                });
+            }
+            it = octx.request.data.topics.erase(it);
+            continue;
+        }
+
+        /*
+         * check topic authorization
+         */
+        if (!octx.rctx.authorized(acl_operation::read, it->name)) {
+            auto& parts = octx.unauthorized_tps[it->name];
+            parts.reserve(it->partitions.size());
+            for (const auto& part : it->partitions) {
+                parts.push_back(offset_commit_response_partition{
+                  .partition_index = part.partition_index,
+                  .error_code = error_code::topic_authorization_failed,
+                });
+            }
+            it = octx.request.data.topics.erase(it);
+            continue;
+        }
+
         /*
          * check if topic exists
          */
@@ -134,6 +176,24 @@ offset_commit_handler::handle(request_context ctx, ss::smp_service_group ssg) {
         }
     }
 
+    // all of the topics either don't exist or failed authorization
+    if (unlikely(octx.request.data.topics.empty())) {
+        offset_commit_response resp;
+        for (auto& topic : octx.nonexistent_tps) {
+            resp.data.topics.push_back(offset_commit_response_topic{
+              .name = topic.first,
+              .partitions = std::move(topic.second),
+            });
+        }
+        for (auto& topic : octx.unauthorized_tps) {
+            resp.data.topics.push_back(offset_commit_response_topic{
+              .name = topic.first,
+              .partitions = std::move(topic.second),
+            });
+        }
+        return octx.rctx.respond(std::move(resp));
+    }
+
     return ss::do_with(std::move(octx), [](offset_commit_ctx& octx) {
         return octx.rctx.groups()
           .offset_commit(std::move(octx.request))
@@ -163,6 +223,14 @@ offset_commit_handler::handle(request_context ctx, ss::smp_service_group ssg) {
                         .partitions = std::move(topic.second),
                       });
                   }
+              }
+              // no need to handle partial sets of partitions here because
+              // authorization occurs all or nothing on a level
+              for (auto& topic : octx.unauthorized_tps) {
+                  resp.data.topics.push_back(offset_commit_response_topic{
+                    .name = topic.first,
+                    .partitions = std::move(topic.second),
+                  });
               }
               return octx.rctx.respond(std::move(resp));
           });

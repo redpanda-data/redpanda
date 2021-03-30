@@ -3,7 +3,8 @@ add_subdirectory(protocol)
 set(security_srcs
     security/scram_algorithm.cc
     security/scram_credential.cc
-    security/scram_authenticator.cc)
+    security/scram_authenticator.cc
+    security/acl_store.cc)
 
 set(handlers_srcs
   server/handlers/api_versions.cc
@@ -31,6 +32,8 @@ set(handlers_srcs
   server/handlers/delete_groups.cc
   server/handlers/describe_acls.cc
   server/handlers/describe_log_dirs.cc
+  server/handlers/create_acls.cc
+  server/handlers/delete_acls.cc
   server/handlers/topics/types.cc
   server/handlers/topics/topic_utils.cc
 )
@@ -64,6 +67,7 @@ v_cc_library(
 )
 
 add_subdirectory(client)
+add_subdirectory(security)
 add_subdirectory(server/tests)
 
 set_source_files_properties(

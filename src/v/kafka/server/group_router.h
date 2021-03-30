@@ -107,14 +107,16 @@ public:
     }
 
     // return groups from across all shards, and if any core was still loading
-    ss::future<std::pair<bool, std::vector<listed_group>>> list_groups() {
-        using type = std::pair<bool, std::vector<listed_group>>;
+    ss::future<std::pair<error_code, std::vector<listed_group>>> list_groups() {
+        using type = std::pair<error_code, std::vector<listed_group>>;
         return _group_manager.map_reduce0(
           [](group_manager& mgr) { return mgr.list_groups(); },
           type{},
           [](type a, type b) {
-              // reduce into `a` and retain any affirmitive loading state
-              a.first = a.first || b.first;
+              // reduce errors into `a` and retain the first
+              if (a.first == error_code::none) {
+                  a.first = b.first;
+              }
               a.second.insert(a.second.end(), b.second.begin(), b.second.end());
               return a;
           });

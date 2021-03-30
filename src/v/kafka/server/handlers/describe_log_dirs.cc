@@ -99,8 +99,6 @@ ss::future<response_ptr> describe_log_dirs_handler::handle(
     request.decode(ctx.reader(), ctx.header().version);
     klog.trace("Handling request {}", request);
 
-    auto partitions = co_await collect(ctx, std::move(request.data.topics));
-
     describe_log_dirs_response response;
 
     // redpanda only supports a single data directory right now
@@ -108,6 +106,13 @@ ss::future<response_ptr> describe_log_dirs_handler::handle(
       .error_code = error_code::none,
       .log_dir = config::shard_local_cfg().data_directory().as_sstring(),
     });
+
+    if (!ctx.authorized(acl_operation::describe, default_cluster_name)) {
+        // in this case kafka returns no authorization error
+        co_return co_await ctx.respond(std::move(response));
+    }
+
+    auto partitions = co_await collect(ctx, std::move(request.data.topics));
 
     while (!partitions.empty()) {
         auto node = partitions.extract(partitions.begin());

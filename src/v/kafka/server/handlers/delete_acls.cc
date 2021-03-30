@@ -8,7 +8,7 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
-#include "kafka/server/handlers/describe_acls.h"
+#include "kafka/server/handlers/delete_acls.h"
 
 #include "kafka/protocol/errors.h"
 #include "kafka/server/request_context.h"
@@ -23,27 +23,21 @@
 namespace kafka {
 
 template<>
-ss::future<response_ptr> describe_acls_handler::handle(
+ss::future<response_ptr> delete_acls_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group ssg) {
-    describe_acls_request request;
+    delete_acls_request request;
     request.decode(ctx.reader(), ctx.header().version);
     klog.trace("Handling request {}", request);
 
-    if (!ctx.authorized(acl_operation::describe, default_cluster_name)) {
-        describe_acls_response resp;
-        resp.data.error_code = error_code::cluster_authorization_failed;
+    if (!ctx.authorized(acl_operation::alter, default_cluster_name)) {
+        delete_acls_filter_result result;
+        result.error_code = error_code::cluster_authorization_failed;
+        delete_acls_response resp;
+        resp.data.filter_results.assign(request.data.filters.size(), result);
         return ctx.respond(std::move(resp));
     }
 
-    // we do not current implement acls, so we do not have any resources. so
-    // instead of returning an error, we'll return success and an empty set.
-    describe_acls_response_data data;
-    data.error_code = error_code::none;
-
-    describe_acls_response response{
-      .data = std::move(data),
-    };
-
+    delete_acls_response response;
     return ctx.respond(std::move(response));
 }
 

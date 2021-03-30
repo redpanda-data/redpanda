@@ -101,6 +101,20 @@ ss::future<response_ptr> find_coordinator_handler::handle(
           find_coordinator_response(error_code::unsupported_version));
     }
 
+    if (request.data.key_type == coordinator_type::group) {
+        if (!ctx.authorized(
+              acl_operation::describe, group_id(request.data.key))) {
+            return ctx.respond(find_coordinator_response(
+              error_code::group_authorization_failed));
+        }
+    } else if (request.data.key_type == coordinator_type::transaction) {
+        if (!ctx.authorized(
+              acl_operation::describe, transactional_id(request.data.key))) {
+            return ctx.respond(find_coordinator_response(
+              error_code::transactional_id_authorization_failed));
+        }
+    }
+
     return ss::do_with(
       std::move(ctx),
       [request = std::move(request)](request_context& ctx) mutable {

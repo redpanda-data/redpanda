@@ -43,7 +43,8 @@ protocol::protocol(
   ss::sharded<coordinator_ntp_mapper>& coordinator_mapper,
   ss::sharded<fetch_session_cache>& session_cache,
   ss::sharded<cluster::id_allocator_frontend>& id_allocator_frontend,
-  ss::sharded<credential_store>& credentials) noexcept
+  ss::sharded<credential_store>& credentials,
+  ss::sharded<kafka::authorizer>& authorizer) noexcept
   : _smp_group(smp)
   , _topics_frontend(tf)
   , _metadata_cache(meta)
@@ -56,12 +57,17 @@ protocol::protocol(
   , _id_allocator_frontend(id_allocator_frontend)
   , _is_idempotence_enabled(
       config::shard_local_cfg().enable_idempotence.value())
-  , _credentials(credentials) {}
+  , _credentials(credentials)
+  , _authorizer(authorizer) {}
 
 ss::future<> protocol::apply(rpc::server::resources rs) {
     /*
      * if sasl authentication is not enabled then initialize the sasl state to
      * complete. this will cause auth to be skipped during request processing.
+     *
+     * TODO: temporarily acl authorization is enabled/disabled based on sasl
+     * being enabled/disabled. it may be useful to configure them separately,
+     * but this will come when identity management is introduced.
      */
     sasl_server sasl(
       config::shard_local_cfg().enable_sasl()
@@ -69,7 +75,10 @@ ss::future<> protocol::apply(rpc::server::resources rs) {
         : sasl_server::sasl_state::complete);
 
     auto ctx = ss::make_lw_shared<connection_context>(
-      *this, std::move(rs), std::move(sasl));
+      *this,
+      std::move(rs),
+      std::move(sasl),
+      config::shard_local_cfg().enable_sasl());
 
     return ss::do_until(
              [ctx] { return ctx->is_finished_parsing(); },

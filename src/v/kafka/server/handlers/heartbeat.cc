@@ -16,6 +16,7 @@
 #include "utils/remote.h"
 #include "utils/to_string.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/print.hh>
 
 namespace kafka {
@@ -27,15 +28,16 @@ void heartbeat_response::encode(const request_context& ctx, response& resp) {
 template<>
 ss::future<response_ptr> heartbeat_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group g) {
-    return ss::do_with(std::move(ctx), [](request_context& ctx) {
-        heartbeat_request request;
-        request.decode(ctx.reader(), ctx.header().version);
-        return ctx.groups()
-          .heartbeat(std::move(request))
-          .then([&ctx](heartbeat_response&& reply) {
-              return ctx.respond(std::move(reply));
-          });
-    });
+    heartbeat_request request;
+    request.decode(ctx.reader(), ctx.header().version);
+
+    if (!ctx.authorized(acl_operation::read, request.data.group_id)) {
+        co_return co_await ctx.respond(
+          heartbeat_response(error_code::group_authorization_failed));
+    }
+
+    auto resp = co_await ctx.groups().heartbeat(std::move(request));
+    co_return co_await ctx.respond(resp);
 }
 
 } // namespace kafka

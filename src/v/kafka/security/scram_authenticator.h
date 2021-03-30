@@ -29,6 +29,8 @@ public:
     bool complete() const override { return _state == state::complete; }
     bool failed() const override { return _state == state::failed; }
 
+    const ss::sstring& principal() const override { return authid(); }
+
     const ss::sstring& authid() const {
         vassert(
           _state == state::complete,

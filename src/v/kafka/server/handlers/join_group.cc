@@ -16,6 +16,8 @@
 #include "utils/remote.h"
 #include "utils/to_string.h"
 
+#include <seastar/core/coroutine.hh>
+
 namespace kafka {
 
 std::ostream& operator<<(std::ostream& o, const member_protocol& p) {
@@ -40,20 +42,17 @@ ss::future<response_ptr> join_group_handler::handle(
     join_group_request request(ctx);
 
     if (request.data.group_instance_id) {
-        return ctx.respond(
+        co_return co_await ctx.respond(
           join_group_response(error_code::unsupported_version));
     }
 
-    return ss::do_with(
-      std::move(ctx),
-      std::move(request),
-      [](request_context& ctx, join_group_request& request) {
-          return ctx.groups()
-            .join_group(std::move(request))
-            .then([&ctx](join_group_response&& reply) {
-                return ctx.respond(std::move(reply));
-            });
-      });
+    if (!ctx.authorized(acl_operation::read, request.data.group_id)) {
+        co_return co_await ctx.respond(
+          join_group_response(error_code::group_authorization_failed));
+    }
+
+    auto resp = co_await ctx.groups().join_group(std::move(request));
+    co_return co_await ctx.respond(std::move(resp));
 }
 
 } // namespace kafka
