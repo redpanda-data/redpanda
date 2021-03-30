@@ -19,6 +19,7 @@
 #include "cluster/partition_leaders_table.h"
 #include "cluster/partition_manager.h"
 #include "cluster/raft0_utils.h"
+#include "cluster/security_frontend.h"
 #include "cluster/shard_table.h"
 #include "cluster/topic_table.h"
 #include "cluster/topics_frontend.h"
@@ -89,6 +90,9 @@ ss::future<> controller::start() {
             std::ref(_security_manager));
       })
       .then([this] {
+          return _security_frontend.start(std::ref(_stm), std::ref(_as));
+      })
+      .then([this] {
           return _tp_frontend.start(
             _raft0->self().id(),
             std::ref(_stm),
@@ -143,6 +147,7 @@ ss::future<> controller::stop() {
     return f.then([this] {
         return _backend.stop()
           .then([this] { return _tp_frontend.stop(); })
+          .then([this] { return _security_frontend.stop(); })
           .then([this] { return _stm.stop(); })
           .then([this] { return _credentials.stop(); })
           .then([this] { return _tp_state.stop(); })
