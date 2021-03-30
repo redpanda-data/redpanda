@@ -124,6 +124,52 @@ class PandaProxyTest(RedpandaTest):
         return res
 
     @cluster(num_nodes=3)
+    def test_list_topics_validation(self):
+        """
+        Acceptable headers:
+        * Accept: "", "*.*", "application/vnd.kafka.v2+json"
+        * Content-Type: "", "*.*", "application/vnd.kafka.v2+json"
+
+        """
+        self.logger.debug(f"List topics with no accept header")
+        result_raw = self._get_topics(
+            {"Content-Type": "application/vnd.kafka.v2+json"})
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.headers[
+            "Content-Type"] == "application/vnd.kafka.v2+json"
+
+        self.logger.debug(f"List topics with no content-type header")
+        result_raw = self._get_topics({
+            "Accept":
+            "application/vnd.kafka.v2+json",
+        })
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.headers[
+            "Content-Type"] == "application/vnd.kafka.v2+json"
+
+        self.logger.debug(f"List topics with generic accept header")
+        result_raw = self._get_topics({"Accept": "*/*"})
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.headers[
+            "Content-Type"] == "application/vnd.kafka.v2+json"
+
+        self.logger.debug(f"List topics with generic content-type header")
+        result_raw = self._get_topics({"Content-Type": "*/*"})
+        assert result_raw.status_code == requests.codes.ok
+        assert result_raw.headers[
+            "Content-Type"] == "application/vnd.kafka.v2+json"
+
+        self.logger.debug(f"List topics with invalid accept header")
+        result_raw = self._get_topics({"Accept": "application/json"})
+        assert result_raw.status_code == requests.codes.not_acceptable
+        assert result_raw.headers["Content-Type"] == "application/json"
+
+        self.logger.debug(f"List topics with invalid content-type header")
+        result_raw = self._get_topics({"Content-Type": "application/json"})
+        assert result_raw.status_code == requests.codes.unsupported_media_type
+        assert result_raw.headers["Content-Type"] == "application/json"
+
+    @cluster(num_nodes=3)
     def test_list_topics(self):
         """
         Create some topics and verify that pandaproxy lists them.

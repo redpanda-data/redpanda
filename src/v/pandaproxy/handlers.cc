@@ -80,12 +80,18 @@ ppj::serialization_format parse_serialization_format(std::string_view accept) {
 
 ss::future<server::reply_t>
 get_topics_names(server::request_t rq, server::reply_t rp) {
+    parse::content_type_header(
+      *rq.req,
+      {json::serialization_format::json_v2, json::serialization_format::none});
+    auto res_fmt = parse::accept_header(
+      *rq.req,
+      {json::serialization_format::json_v2, json::serialization_format::none});
     rq.req.reset();
     auto make_list_topics_req = []() {
         return kafka::metadata_request{.list_all_topics = true};
     };
     return rq.ctx.client.dispatch(make_list_topics_req)
-      .then([rp = std::move(rp)](
+      .then([res_fmt, rp = std::move(rp)](
               kafka::metadata_request::api_type::response_type res) mutable {
           std::vector<model::topic_view> names;
           names.reserve(res.topics.size());
@@ -100,6 +106,7 @@ get_topics_names(server::request_t rq, server::reply_t rp) {
 
           auto json_rslt = ppj::rjson_serialize(names);
           rp.rep->write_body("json", json_rslt);
+          rp.mime_type = res_fmt;
           return std::move(rp);
       });
 }
