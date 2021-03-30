@@ -64,7 +64,7 @@ struct configuration final : public config_store {
     property<int16_t> max_version;
     // Kafka
     one_or_many_property<model::broker_endpoint> kafka_api;
-    property<tls_config> kafka_api_tls;
+    one_or_many_property<endpoint_tls_config> kafka_api_tls;
     property<bool> use_scheduling_groups;
     property<unresolved_address> admin;
     property<tls_config> admin_api_tls;

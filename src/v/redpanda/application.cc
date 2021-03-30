@@ -20,6 +20,7 @@
 #include "cluster/service.h"
 #include "cluster/topics_frontend.h"
 #include "config/configuration.h"
+#include "config/endpoint_tls_config.h"
 #include "config/seed_server.h"
 #include "kafka/client/configuration.h"
 #include "kafka/security/scram_algorithm.h"
@@ -591,26 +592,38 @@ void application::wire_up_redpanda_services() {
 
     rpc::server_configuration kafka_cfg("kafka_rpc");
     kafka_cfg.max_service_memory_per_core = memory_groups::kafka_total_memory();
-    auto kafka_builder = config::shard_local_cfg()
-                           .kafka_api_tls()
-                           .get_credentials_builder()
-                           .get0();
-    ss::shared_ptr<ss::tls::server_credentials> kafka_credentials
-      = kafka_builder ? kafka_builder
-                          ->build_reloadable_server_credentials(
-                            [this](
-                              const std::unordered_set<ss::sstring>& updated,
-                              const std::exception_ptr& eptr) {
-                                cluster::log_certificate_reload_event(
-                                  _log, "Kafka RPC TLS", updated, eptr);
-                            })
-                          .get0()
-                      : nullptr;
+    auto& tls_config = config::shard_local_cfg().kafka_api_tls.value();
     for (const auto& ep : config::shard_local_cfg().kafka_api()) {
+        ss::shared_ptr<ss::tls::server_credentials> credentails;
+        // find credentials for this endpoint
+        auto it = find_if(
+          tls_config.begin(),
+          tls_config.end(),
+          [&ep](const config::endpoint_tls_config& cfg) {
+              return cfg.name == ep.name;
+          });
+        // if tls is configured for this endpoint build reloadable credentails
+        if (it != tls_config.end()) {
+            syschecks::systemd_message("Building TLS credentials for kafka")
+              .get();
+            auto kafka_builder = it->config.get_credentials_builder().get0();
+            credentails
+              = kafka_builder
+                  ? kafka_builder
+                      ->build_reloadable_server_credentials(
+                        [this, name = it->name](
+                          const std::unordered_set<ss::sstring>& updated,
+                          const std::exception_ptr& eptr) {
+                            cluster::log_certificate_reload_event(
+                              _log, "Kafka RPC TLS", updated, eptr);
+                        })
+                      .get0()
+                  : nullptr;
+        }
+
         kafka_cfg.addrs.emplace_back(
-          ep.name, rpc::resolve_dns(ep.address).get0(), kafka_credentials);
+          ep.name, rpc::resolve_dns(ep.address).get0(), credentails);
     }
-    syschecks::systemd_message("Building TLS credentials for kafka").get();
 
     kafka_cfg.disable_metrics = rpc::metrics_disabled(
       config::shard_local_cfg().disable_metrics());
