@@ -60,6 +60,10 @@ class WasmIdentityTest(WasmTest):
             for opts in self.wasm_test_outputs()
         ]
 
+    def verify_results(self):
+        """ How to interpret PASS/FAIL between two sets of returned results"""
+        return materialized_result_set_compare
+
     @cluster(num_nodes=3)
     def verify_materialized_topics_test(self):
         """
@@ -79,8 +83,7 @@ class WasmIdentityTest(WasmTest):
                     for src, _, _ in self.wasm_test_input()
                 ])
                 tresults = output_results.filter(lambda x: x.topic in outputs)
-                if not materialized_result_set_compare(input_results,
-                                                       tresults):
+                if not self.verify_results()(input_results, tresults):
                     raise Exception(
                         f"Set {dest} results weren't as expected: {type(self).__name__}"
                     )
