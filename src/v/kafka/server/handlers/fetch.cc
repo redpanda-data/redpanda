@@ -369,9 +369,10 @@ static ss::future<read_result> read_from_partition(
   std::optional<model::timeout_clock::time_point> deadline) {
     auto hw = pw.high_watermark();
     auto lso = pw.last_stable_offset();
+    auto start_o = pw.start_offset();
     // if we have no data read, return fast
     if (hw < config.start_offset) {
-        return ss::make_ready_future<read_result>(hw, lso);
+        return ss::make_ready_future<read_result>(start_o, hw, lso);
     }
 
     storage::log_reader_config reader_config(
@@ -386,7 +387,8 @@ static ss::future<read_result> read_from_partition(
 
     reader_config.strict_max_bytes = config.strict_max_bytes;
     return pw.make_reader(reader_config)
-      .then([hw, lso, foreign_read, deadline](model::record_batch_reader rdr) {
+      .then([start_o, hw, lso, foreign_read, deadline](
+              model::record_batch_reader rdr) {
           return model::transform_reader_to_memory(
                    std::move(rdr),
                    deadline.value_or(model::no_timeout),
@@ -401,8 +403,8 @@ static ss::future<read_result> read_from_partition(
                 }
                 return model::make_memory_record_batch_reader(std::move(data));
             })
-            .then([hw, lso](model::record_batch_reader rdr) {
-                return read_result(std::move(rdr), hw, lso);
+            .then([start_o, hw, lso](model::record_batch_reader rdr) {
+                return read_result(std::move(rdr), start_o, hw, lso);
             });
       });
 }
@@ -473,6 +475,7 @@ static ss::future<> do_fill_fetch_responses(
         if (!res.reader) {
             resp_it.set(
               make_partition_response_error(res.partition, res.error));
+            resp_it->partition_response->log_start_offset = res.start_offset;
             resp_it->partition_response->high_watermark = res.high_watermark;
             resp_it->partition_response->last_stable_offset
               = res.last_stable_offset;
@@ -481,7 +484,8 @@ static ss::future<> do_fill_fetch_responses(
         return std::move(*res.reader)
           .consume(kafka_batch_serializer(), model::no_timeout)
           .then(
-            [hw = res.high_watermark,
+            [so = res.start_offset,
+             hw = res.high_watermark,
              lso = res.last_stable_offset,
              pid = res.partition,
              resp_it = resp_it](kafka_batch_serializer::result res) mutable {
@@ -491,11 +495,13 @@ static ss::future<> do_fill_fetch_responses(
                   .record_set = batch_reader(std::move(res.data)),
                 };
                 resp_it.set(std::move(resp));
+                resp_it->partition_response->log_start_offset = so;
                 resp_it->partition_response->high_watermark = hw;
                 resp_it->partition_response->last_stable_offset = lso;
             })
           .handle_exception(
-            [hw = res.high_watermark,
+            [so = res.start_offset,
+             hw = res.high_watermark,
              lso = res.last_stable_offset,
              pid = res.partition,
              resp_it = resp_it](const std::exception_ptr&) mutable {
@@ -507,6 +513,7 @@ static ss::future<> do_fill_fetch_responses(
                  */
                 resp_it.set(make_partition_response_error(
                   pid, error_code::unknown_server_error));
+                resp_it->partition_response->log_start_offset = so;
                 resp_it->partition_response->high_watermark = hw;
                 resp_it->partition_response->last_stable_offset = lso;
             });
