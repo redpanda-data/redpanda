@@ -24,6 +24,11 @@ def create_topic_names(count):
     return list(f"pandaproxy-topic-{uuid.uuid4()}" for _ in range(count))
 
 
+HTTP_GET_TOPICS_HEADERS = {
+    "Accept": "application/vnd.kafka.v2+json",
+    "Content-Type": "application/vnd.kafka.v2+json"
+}
+
 class Consumer:
     def __init__(self, res):
         self.instance_id = res["instance_id"]
@@ -90,8 +95,8 @@ class PandaProxyTest(RedpandaTest):
         #  The retry logic for produce should have sufficient time for this
         #  additional settle time.
 
-    def _get_topics(self):
-        return requests.get(f"{self._base_uri()}/topics").json()
+    def _get_topics(self, headers=HTTP_GET_TOPICS_HEADERS):
+        return requests.get(f"{self._base_uri()}/topics", headers=headers)
 
     def _produce_topic(self, topic, data):
         return requests.post(f"{self._base_uri()}/topics/{topic}", data).json()
@@ -129,7 +134,9 @@ class PandaProxyTest(RedpandaTest):
         assert prev.isdisjoint(names)
         self.logger.info(f"Creating test topics: {names}")
         names = set(self._create_topics(names))
-        curr = set(self._get_topics())
+        result_raw = self._get_topics()
+        assert result_raw.status_code == requests.codes.ok
+        curr = set(result_raw.json())
         self.logger.debug(f"Current topics: {curr}")
         assert names <= curr
 
