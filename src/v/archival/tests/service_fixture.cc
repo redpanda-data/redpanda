@@ -343,7 +343,7 @@ void segment_matcher<Fixture>::verify_segment(
     auto tmp = stream.read_exactly(size).get0();
     ss::sstring actual = {tmp.get(), tmp.size()};
     vlog(
-      fixt_log.error,
+      fixt_log.info,
       "expected {} bytes, got {}",
       expected.size(),
       actual.size());

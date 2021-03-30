@@ -299,12 +299,15 @@ scheduler_service_impl::create_archivers(std::vector<model::ntp> to_create) {
                                         ss::stop_iteration>(
                                         ss::stop_iteration::no);
                                   })
-                                  .handle_exception_type(
-                                    [](const ss::abort_requested_exception&) {
-                                        return ss::make_ready_future<
-                                          ss::stop_iteration>(
-                                          ss::stop_iteration::yes);
-                                    });
+                                  .handle_exception_type([](const ss::
+                                                              sleep_aborted&) {
+                                      vlog(
+                                        archival_log.debug,
+                                        "Reconciliation loop abroted (sleep)");
+                                      return ss::make_ready_future<
+                                        ss::stop_iteration>(
+                                        ss::stop_iteration::yes);
+                                  });
                             }
                             return ss::make_ready_future<ss::stop_iteration>(
                               ss::stop_iteration::yes);
@@ -472,6 +475,10 @@ ss::future<> scheduler_service_impl::run_uploads() {
         }
     } catch (const ss::sleep_aborted&) {
         vlog(archival_log.debug, "Upload loop aborted");
+    } catch (const ss::gate_closed_exception&) {
+        vlog(archival_log.debug, "Upload loop aborted (gate closed)");
+    } catch (const ss::abort_requested_exception&) {
+        vlog(archival_log.debug, "Upload loop aborted (abort requested)");
     } catch (...) {
         vlog(
           archival_log.error,
