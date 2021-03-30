@@ -92,6 +92,7 @@ private:
 
     void admin_register_raft_routes(ss::http_server& server);
     void admin_register_kafka_routes(ss::http_server& server);
+    void admin_register_security_routes(ss::http_server& server);
 
     bool coproc_enabled() {
         const auto& cfg = config::shard_local_cfg();

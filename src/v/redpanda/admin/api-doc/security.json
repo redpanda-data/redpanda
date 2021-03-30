@@ -1,0 +1,11 @@
+"/v1/security/users": {
+    "post": {
+        "summary": "Create a user",
+        "operationId": "create_user",
+        "responses": {
+            "200": {
+                "description": "Create user"
+            }
+        }
+    }
+}
