@@ -201,6 +201,67 @@ class PandaProxyTest(RedpandaTest):
         assert names <= curr
 
     @cluster(num_nodes=3)
+    def test_produce_topic_validation(self):
+        """
+        Acceptable headers:
+        * Accept: "", "*.*", "application/vnd.kafka.v2+json"
+        * Content-Type: "application/vnd.kafka.binary.v2+json"
+
+        """
+        name = create_topic_names(1)[0]
+        data = '''
+        {
+            "records": [
+                {"value": "dmVjdG9yaXplZA==", "partition": 0},
+                {"value": "cGFuZGFwcm94eQ==", "partition": 1},
+                {"value": "bXVsdGlicm9rZXI=", "partition": 2}
+            ]
+        }'''
+
+        self.logger.info(f"Producing with no accept header")
+        produce_result_raw = self._produce_topic(
+            name,
+            data,
+            headers={"Content-Type": "application/vnd.kafka.binary.v2+json"})
+        assert produce_result_raw.status_code == requests.codes.ok
+        produce_result = produce_result_raw.json()
+        assert produce_result["offsets"][0][
+            "error_code"] == 3  # topic not found
+
+        self.logger.info(f"Producing with unsupported accept header")
+        produce_result_raw = self._produce_topic(
+            name,
+            data,
+            headers={
+                "Accept": "application/vnd.kafka.binary.v2+json",
+                "Content-Type": "application/vnd.kafka.binary.v2+json"
+            })
+        assert produce_result_raw.status_code == requests.codes.not_acceptable
+        produce_result = produce_result_raw.json()
+        assert produce_result["error_code"] == requests.codes.not_acceptable
+
+        self.logger.info(f"Producing with no content-type header")
+        produce_result_raw = self._produce_topic(
+            name, data, headers={"Accept": "application/vnd.kafka.v2+json"})
+        assert produce_result_raw.status_code == requests.codes.unsupported_media_type
+        produce_result = produce_result_raw.json()
+        assert produce_result[
+            "error_code"] == requests.codes.unsupported_media_type
+
+        self.logger.info(f"Producing with unsupported content-type header")
+        produce_result_raw = self._produce_topic(
+            name,
+            data,
+            headers={
+                "Accept": "application/vnd.kafka.v2+json",
+                "Content-Type": "application/vnd.kafka.v2+json"
+            })
+        assert produce_result_raw.status_code == requests.codes.unsupported_media_type
+        produce_result = produce_result_raw.json()
+        assert produce_result[
+            "error_code"] == requests.codes.unsupported_media_type
+
+    @cluster(num_nodes=3)
     def test_produce_topic(self):
         """
         Create a topic and verify that pandaproxy can produce to it.
@@ -232,6 +293,9 @@ class PandaProxyTest(RedpandaTest):
         self.logger.info(f"Producing to topic: {name}")
         produce_result_raw = self._produce_topic(name, data)
         assert produce_result_raw.status_code == requests.codes.ok
+        assert produce_result_raw.headers[
+            "Content-Type"] == "application/vnd.kafka.v2+json"
+
         produce_result = produce_result_raw.json()
         for o in produce_result["offsets"]:
             assert o["offset"] == 1, f'error_code {o["error_code"]}'

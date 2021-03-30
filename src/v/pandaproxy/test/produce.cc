@@ -17,7 +17,7 @@
 #include <boost/beast/http/verb.hpp>
 #include <boost/test/tools/old/interface.hpp>
 
-namespace kc = kafka::client;
+namespace ppj = pandaproxy::json;
 
 FIXTURE_TEST(pandaproxy_produce, pandaproxy_test_fixture) {
     using namespace std::chrono_literals;
@@ -53,13 +53,19 @@ FIXTURE_TEST(pandaproxy_produce, pandaproxy_test_fixture) {
         set_client_config("retries", size_t(0));
         auto body = iobuf();
         body.append(produce_body.data(), produce_body.size());
-        auto res = http_request(client, "/topics/t", std::move(body));
+        auto res = http_request(
+          client,
+          "/topics/t",
+          std::move(body),
+          boost::beast::http::verb::post,
+          ppj::serialization_format::binary_v2,
+          ppj::serialization_format::json_v2);
 
         BOOST_REQUIRE_EQUAL(
           res.headers.result(), boost::beast::http::status::ok);
         BOOST_REQUIRE_EQUAL(
           res.headers.at(boost::beast::http::field::content_type),
-          "application/vnd.kafka.binary.v2+json");
+          to_header_value(serialization_format::json_v2));
         BOOST_REQUIRE_EQUAL(
           res.body,
           R"({"offsets":[{"partition":0,"error_code":3,"offset":-1}]})");
@@ -76,7 +82,13 @@ FIXTURE_TEST(pandaproxy_produce, pandaproxy_test_fixture) {
         set_client_config("retries", size_t(5));
         auto body = iobuf();
         body.append(produce_body.data(), produce_body.size());
-        auto res = http_request(client, "/topics/t", std::move(body));
+        auto res = http_request(
+          client,
+          "/topics/t",
+          std::move(body),
+          boost::beast::http::verb::post,
+          ppj::serialization_format::binary_v2,
+          ppj::serialization_format::json_v2);
 
         BOOST_REQUIRE_EQUAL(
           res.headers.result(), boost::beast::http::status::ok);
@@ -89,7 +101,13 @@ FIXTURE_TEST(pandaproxy_produce, pandaproxy_test_fixture) {
         set_client_config("retries", size_t(0));
         auto body = iobuf();
         body.append(produce_body.data(), produce_body.size());
-        auto res = http_request(client, "/topics/t", std::move(body));
+        auto res = http_request(
+          client,
+          "/topics/t",
+          std::move(body),
+          boost::beast::http::verb::post,
+          ppj::serialization_format::binary_v2,
+          ppj::serialization_format::json_v2);
 
         BOOST_REQUIRE_EQUAL(
           res.headers.result(), boost::beast::http::status::ok);

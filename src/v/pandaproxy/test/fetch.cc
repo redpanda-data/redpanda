@@ -124,7 +124,13 @@ FIXTURE_TEST(pandaproxy_fetch, pandaproxy_test_fixture) {
         set_client_config("retries", size_t(5));
         auto body = iobuf();
         body.append(batch_1_body.data(), batch_1_body.size());
-        auto res = http_request(client, "/topics/t", std::move(body));
+        auto res = http_request(
+          client,
+          "/topics/t",
+          std::move(body),
+          boost::beast::http::verb::post,
+          ppj::serialization_format::binary_v2,
+          ppj::serialization_format::json_v2);
 
         BOOST_REQUIRE_EQUAL(
           res.headers.result(), boost::beast::http::status::ok);
@@ -155,7 +161,13 @@ FIXTURE_TEST(pandaproxy_fetch, pandaproxy_test_fixture) {
         set_client_config("retries", size_t(0));
         auto body = iobuf();
         body.append(batch_2_body.data(), batch_2_body.size());
-        auto res = http_request(client, "/topics/t", std::move(body));
+        auto res = http_request(
+          client,
+          "/topics/t",
+          std::move(body),
+          boost::beast::http::verb::post,
+          ppj::serialization_format::binary_v2,
+          ppj::serialization_format::json_v2);
 
         BOOST_REQUIRE_EQUAL(
           res.headers.result(), boost::beast::http::status::ok);
