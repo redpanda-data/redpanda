@@ -12,6 +12,7 @@
 #pragma once
 
 #include "config/data_directory_path.h"
+#include "config/endpoint_tls_config.h"
 #include "config/seed_server.h"
 #include "config/tests/custom_aggregate.h"
 #include "config/tls_config.h"
@@ -44,5 +45,13 @@ void rjson_serialize(
 
 void rjson_serialize(
   rapidjson::Writer<rapidjson::StringBuffer>& w, const custom_aggregate& v);
+
+void rjson_serialize(
+  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  const config::endpoint_tls_config& v);
+
+void rjson_serialize(
+  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  const std::vector<config::endpoint_tls_config>& v);
 
 } // namespace json

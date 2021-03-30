@@ -86,4 +86,27 @@ void rjson_serialize(
     w.EndObject();
 }
 
+void rjson_serialize(
+  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  const config::endpoint_tls_config& v) {
+    w.StartObject();
+
+    w.Key("name");
+    w.String(v.name.c_str());
+
+    w.Key("config");
+    rjson_serialize(w, v.config);
+
+    w.EndObject();
+}
+
+void rjson_serialize(
+  rapidjson::Writer<rapidjson::StringBuffer>& w,
+  const std::vector<config::endpoint_tls_config>& v) {
+    w.StartArray();
+    for (const auto& e : v) {
+        rjson_serialize(w, e);
+    }
+    w.EndArray();
+}
 } // namespace json
