@@ -1,0 +1,111 @@
+apiVersion: v1
+entries:
+  redpanda:
+  - apiVersion: v2
+    appVersion: latest
+    created: "2021-03-04T18:09:29.388682574Z"
+    description: Redpanda is the real-time engine for modern apps.
+    digest: 61119d946424db0d3b0976e70e00336cf465ee9dc7c94450533053597119ad48
+    maintainers:
+    - email: roko@vectorized.io
+      name: rkruze
+    name: redpanda
+    sources:
+    - https://github.com/vectorizedio/helm-charts
+    type: application
+    urls:
+    - https://charts.vectorized.io/redpanda-1.0.4.tgz
+    version: 1.0.4
+  - apiVersion: v2
+    appVersion: latest
+    created: "2021-03-04T18:09:29.387927176Z"
+    description: Redpanda is the real-time engine for modern apps.
+    digest: 4b711dc089f32f75d7a2f99f43f632a5d94b6acfbbf2275d0140745c08c48b21
+    maintainers:
+    - email: roko@vectorized.io
+      name: rkruze
+    name: redpanda
+    sources:
+    - https://github.com/vectorizedio/helm-charts
+    type: application
+    urls:
+    - https://charts.vectorized.io/redpanda-1.0.3.tgz
+    version: 1.0.3
+  - apiVersion: v2
+    appVersion: latest
+    created: "2021-03-04T18:09:29.387034377Z"
+    description: Redpanda is the real-time engine for modern apps.
+    digest: 2b1f35ea7a453b8f879bd50886ae6c3006f6d6de286a05c8d751669cdbe88833
+    maintainers:
+    - email: roko@vectorized.io
+      name: rkruze
+    name: redpanda
+    sources:
+    - https://github.com/vectorizedio/helm-charts
+    type: application
+    urls:
+    - https://charts.vectorized.io/redpanda-1.0.2.tgz
+    version: 1.0.2
+  - apiVersion: v2
+    appVersion: latest
+    created: "2021-03-04T18:09:29.385974779Z"
+    description: Redpanda is the real-time engine for modern apps.
+    digest: 3efe5afee8e5d951349eb268d6d8ebe02d3f411a9ed6b34948fdb678bb154ddd
+    maintainers:
+    - email: roko@vectorized.io
+      name: rkruze
+    name: redpanda
+    sources:
+    - https://github.com/vectorizedio/helm-charts
+    type: application
+    urls:
+    - https://charts.vectorized.io/redpanda-1.0.1.tgz
+    version: 1.0.1
+  - apiVersion: v2
+    appVersion: latest
+    created: "2021-03-04T18:09:29.384926681Z"
+    description: Redpanda is the real-time engine for modern apps.
+    digest: 5a88fe0cf8256060440a9790e377f6df8f325759d09011cae929ae761f88c8da
+    maintainers:
+    - email: roko@vectorized.io
+      name: Roko Kruze
+    name: redpanda
+    sources:
+    - https://github.com/vectorizedio/helm-charts
+    type: application
+    urls:
+    - https://charts.vectorized.io/redpanda-1.0.0.tgz
+    version: 1.0.0
+  - apiVersion: v2
+    appVersion: latest
+    created: "2021-03-04T18:09:29.383526283Z"
+    description: Redpanda is the real-time engine for modern apps.
+    digest: 9367d83ea1dff5001ce4d7087e8db6789726b3a10af7aaa73ccc07b166fe41c9
+    maintainers:
+    - email: roko@vectorized.io
+      name: Roko Kruze
+    name: redpanda
+    sources:
+    - https://github.com/vectorizedio/helm-charts
+    type: application
+    urls:
+    - https://charts.vectorized.io/redpanda-0.1.0.tgz
+    version: 0.1.0
+  redpanda-operator:
+  - apiVersion: v2
+    appVersion: v21.3.7
+    created: "2021-03-30T19:34:42.276352876Z"
+    description: Redpanda operator helm chart
+    digest: c208f27827280430dcc3c147741237d16716abdcc23674dbc81776b227011bbc
+    home: https://vectorized.io
+    maintainers:
+    - email: support@vectorized.io
+      name: Vectorizedio
+    name: redpanda-operator
+    sources:
+    - https://github.com/vectorizedio/redpanda
+    type: application
+    urls:
+    - https://github.com/vectorizedio/redpanda/releases/download/v21.3.7/redpanda-operator-v21.3.7.tgz
+    version: v21.3.7
+generated: "2021-03-30T19:34:42.276379776Z"
