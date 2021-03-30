@@ -105,7 +105,7 @@ class PandaProxyTest(RedpandaTest):
         return requests.get(f"{self._base_uri()}/topics", headers=headers)
 
     def _produce_topic(self, topic, data):
-        return requests.post(f"{self._base_uri()}/topics/{topic}", data).json()
+        return requests.post(f"{self._base_uri()}/topics/{topic}", data)
 
     def _fetch_topic(self,
                      topic,
@@ -209,7 +209,9 @@ class PandaProxyTest(RedpandaTest):
         }'''
 
         self.logger.info(f"Producing to non-existant topic: {name}")
-        produce_result = self._produce_topic(name, data)
+        produce_result_raw = self._produce_topic(name, data)
+        assert produce_result_raw.status_code == requests.codes.ok
+        produce_result = produce_result_raw.json()
         for o in produce_result["offsets"]:
             assert o["error_code"] == 3
             assert o["offset"] == -1
@@ -221,7 +223,9 @@ class PandaProxyTest(RedpandaTest):
         self._wait_for_topic(name)
 
         self.logger.info(f"Producing to topic: {name}")
-        produce_result = self._produce_topic(name, data)
+        produce_result_raw = self._produce_topic(name, data)
+        assert produce_result_raw.status_code == requests.codes.ok
+        produce_result = produce_result_raw.json()
         for o in produce_result["offsets"]:
             assert o["offset"] == 1, f'error_code {o["error_code"]}'
 
@@ -314,8 +318,9 @@ class PandaProxyTest(RedpandaTest):
                 {"value": "bXVsdGlicm9rZXI=", "partition": 2}
             ]
         }'''
-        produce_result = self._produce_topic(name, data)
-
+        produce_result_raw = self._produce_topic(name, data)
+        assert produce_result_raw.status_code == requests.codes.ok
+        produce_result = produce_result_raw.json()
         for o in produce_result["offsets"]:
             assert o["offset"] == 1, f'error_code {o["error_code"]}'
 
