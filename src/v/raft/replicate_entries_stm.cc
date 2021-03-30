@@ -95,7 +95,7 @@ replicate_entries_stm::send_append_entries_request(
                });
     _dispatch_sem.signal();
     return f.finally([this, n] {
-        _ptr->suppress_heartbeats(
+        _ptr->update_suppress_heartbeats(
           n, _followers_seq[n], heartbeats_suppressed::no);
     });
 }
@@ -187,7 +187,7 @@ replicate_entries_stm::apply(ss::semaphore_units<> u) {
     cfg.for_each_broker_id([this](const vnode& rni) {
         // suppress follower heartbeat, before appending to self log
         if (rni != _ptr->_self) {
-            _ptr->suppress_heartbeats(
+            _ptr->update_suppress_heartbeats(
               rni, _followers_seq[rni], heartbeats_suppressed::yes);
         }
     });
@@ -214,7 +214,7 @@ replicate_entries_stm::apply(ss::semaphore_units<> u) {
                       _ctxlog.trace,
                       "Skipping sending append request to {}",
                       rni);
-                    _ptr->suppress_heartbeats(
+                    _ptr->update_suppress_heartbeats(
                       rni, _followers_seq[rni], heartbeats_suppressed::no);
                     return;
                 }

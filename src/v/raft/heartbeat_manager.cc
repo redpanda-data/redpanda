@@ -82,7 +82,8 @@ static std::vector<heartbeat_manager::node_heartbeat> requests_for_range(
             }
 
             auto seq_id = ptr->next_follower_sequence(rni);
-            ptr->suppress_heartbeats(rni, seq_id, heartbeats_suppressed::yes);
+            ptr->update_suppress_heartbeats(
+              rni, seq_id, heartbeats_suppressed::yes);
             pending_beats[rni.id()].emplace_back(
               heartbeat_metadata{ptr->meta(), ptr->self(), rni}, seq_id);
         };
@@ -212,7 +213,7 @@ void heartbeat_manager::process_reply(
                 vlog(hbeatlog.error, "cannot find consensus group:{}", g);
                 continue;
             }
-            (*it)->suppress_heartbeats(
+            (*it)->update_suppress_heartbeats(
               req_meta.follower_vnode, req_meta.seq, heartbeats_suppressed::no);
             // propagate error
             (*it)->process_append_entries_reply(
@@ -232,7 +233,7 @@ void heartbeat_manager::process_reply(
             continue;
         }
         auto meta = groups.find(m.group)->second;
-        (*it)->suppress_heartbeats(
+        (*it)->update_suppress_heartbeats(
           meta.follower_vnode, meta.seq, heartbeats_suppressed::no);
         (*it)->process_append_entries_reply(
           n,

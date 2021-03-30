@@ -2315,7 +2315,7 @@ heartbeats_suppressed consensus::are_heartbeats_suppressed(vnode id) const {
     return _fstats.get(id).suppress_heartbeats;
 }
 
-void consensus::suppress_heartbeats(
+void consensus::update_suppress_heartbeats(
   vnode id, follower_req_seq last_seq, heartbeats_suppressed suppressed) {
     if (auto it = _fstats.find(id); it != _fstats.end()) {
         if (last_seq <= it->second.last_sent_seq) {

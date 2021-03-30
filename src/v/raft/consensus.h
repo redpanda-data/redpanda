@@ -295,7 +295,8 @@ public:
      */
     heartbeats_suppressed are_heartbeats_suppressed(vnode) const;
 
-    void suppress_heartbeats(vnode, follower_req_seq, heartbeats_suppressed);
+    void update_suppress_heartbeats(
+      vnode, follower_req_seq, heartbeats_suppressed);
 
 private:
     friend replicate_entries_stm;
