@@ -10,6 +10,7 @@
 #include "pandaproxy/server.h"
 
 #include "cluster/cluster_utils.h"
+#include "model/metadata.h"
 #include "pandaproxy/configuration.h"
 #include "pandaproxy/json/types.h"
 #include "pandaproxy/logger.h"
@@ -117,12 +118,16 @@ struct handler_adaptor : ss::httpd::handler_base {
 server::server(
   const ss::sstring& server_name,
   ss::api_registry_builder20&& api20,
-  context_t ctx)
+  pandaproxy::context_t ctx)
   : _server(server_name)
   , _pending_reqs()
   , _api20(std::move(api20))
   , _has_routes(false)
-  , _ctx(std::move(ctx)) {
+  , _ctx{
+      .mem_sem = std::move(ctx.mem_sem),
+      .as = std::move(ctx.as),
+      .client = ctx.client,
+      .config = ctx.config} {
     _api20.set_api_doc(_server._routes);
     _api20.register_api_file(_server._routes, "header");
 }
@@ -156,23 +161,49 @@ void server::route(std::vector<server::route_t>&& rts) {
 
 ss::future<> server::start() {
     _server._routes.register_exeption_handler(exception_reply);
-
-    auto builder
-      = co_await _ctx.config.pandaproxy_api_tls().get_credentials_builder();
-    if (builder) {
-        auto cred = co_await builder->build_reloadable_server_credentials(
-          [](
-            const std::unordered_set<ss::sstring>& updated,
-            const std::exception_ptr& eptr) {
-              cluster::log_certificate_reload_event(
-                plog, "API TLS", updated, eptr);
+    auto& endpoints = _ctx.config.pandaproxy_api();
+    auto& endpoints_tls = _ctx.config.pandaproxy_api_tls.value();
+    auto& advertised = _ctx.config.advertised_pandaproxy_api.value();
+    _ctx.advertised_listeners.reserve(endpoints.size());
+    for (auto& server_endpoint : endpoints) {
+        auto addr = co_await rpc::resolve_dns(server_endpoint.address);
+        auto it = find_if(
+          endpoints_tls.begin(),
+          endpoints_tls.end(),
+          [&server_endpoint](const config::endpoint_tls_config& ep_tls) {
+              return ep_tls.name == server_endpoint.name;
+          });
+        auto advertised_it = find_if(
+          advertised.begin(),
+          advertised.end(),
+          [&server_endpoint](const model::broker_endpoint& e) {
+              return e.name == server_endpoint.name;
           });
 
-        _server.set_tls_credentials(std::move(cred));
-    }
+        // if we have advertised listener use it, otherwise use server
+        // endpoint address
+        if (advertised_it != advertised.end()) {
+            _ctx.advertised_listeners.push_back(advertised_it->address);
+        } else {
+            _ctx.advertised_listeners.push_back(server_endpoint.address);
+        }
 
-    auto addr = co_await rpc::resolve_dns(_ctx.config.pandaproxy_api);
-    co_await _server.listen(addr);
+        ss::shared_ptr<ss::tls::server_credentials> cred;
+        if (it != endpoints_tls.end()) {
+            auto builder = co_await it->config.get_credentials_builder();
+            if (builder) {
+                cred = co_await builder->build_reloadable_server_credentials(
+                  [](
+                    const std::unordered_set<ss::sstring>& updated,
+                    const std::exception_ptr& eptr) {
+                      cluster::log_certificate_reload_event(
+                        plog, "API TLS", updated, eptr);
+                  });
+            }
+        }
+        co_await _server.listen(addr, cred);
+    }
+    co_return;
 }
 
 ss::future<> server::stop() {

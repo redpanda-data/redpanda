@@ -10,6 +10,8 @@
 #include "configuration.h"
 
 #include "config/configuration.h"
+#include "config/endpoint_tls_config.h"
+#include "model/metadata.h"
 #include "units.h"
 
 namespace pandaproxy {
@@ -26,20 +28,20 @@ configuration::configuration()
     "pandaproxy_api",
     "Rest API listen address and port",
     config::required::no,
-    unresolved_address("0.0.0.0", 8082))
+    {model::broker_endpoint(unresolved_address("0.0.0.0", 8082))})
   , pandaproxy_api_tls(
       *this,
       "pandaproxy_api_tls",
       "TLS configuration for Pandaproxy api",
       config::required::no,
-      config::tls_config(),
-      config::tls_config::validate)
+      {},
+      config::endpoint_tls_config::validate_many)
   , advertised_pandaproxy_api(
       *this,
       "advertised_pandaproxy_api",
       "Rest API address and port to publish to client",
       config::required::no,
-      pandaproxy_api)
+      {})
   , api_doc_dir(
       *this,
       "api_doc_dir",

@@ -37,7 +37,13 @@ namespace pandaproxy {
 /// e.g., logging, serialisation, metrics, rate-limiting.
 class server {
 public:
-    using context_t = pandaproxy::context_t;
+    struct context_t {
+        std::vector<unresolved_address> advertised_listeners;
+        ss::semaphore mem_sem;
+        ss::abort_source as;
+        kafka::client::client& client;
+        const configuration& config;
+    };
 
     struct request_t {
         std::unique_ptr<ss::httpd::request> req;
@@ -70,7 +76,7 @@ public:
     server(
       const ss::sstring& server_name,
       ss::api_registry_builder20&& api20,
-      context_t ctx);
+      pandaproxy::context_t ctx);
 
     void route(route_t route);
     void route(std::vector<route_t>&& routes);

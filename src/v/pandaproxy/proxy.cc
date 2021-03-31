@@ -79,9 +79,9 @@ std::vector<server::route_t> get_proxy_routes() {
     return routes;
 }
 
-static server::context_t
+static context_t
 make_context(const configuration& cfg, kafka::client::client& client) {
-    return server::context_t{
+    return context_t{
       .mem_sem{ss::memory::stats().free_memory()},
       .as{},
       .client{client},

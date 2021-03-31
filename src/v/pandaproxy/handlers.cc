@@ -33,6 +33,7 @@
 #include "pandaproxy/reply.h"
 #include "raft/types.h"
 #include "ssx/future-util.h"
+#include "ssx/sformat.h"
 #include "storage/record_batch_builder.h"
 
 #include <seastar/core/coroutine.hh>
@@ -202,6 +203,20 @@ post_topics_name(server::request_t rq, server::reply_t rp) {
       });
 }
 
+static ss::sstring make_consumer_uri(
+  const server::request_t& request,
+  const kafka::member_id& m_id,
+  const kafka::group_id& group_id) {
+    auto& addr = request.ctx.advertised_listeners[request.req->listener_idx];
+    return ssx::sformat(
+      "{}://{}:{}/consumers/{}/instances/{}",
+      request.req->get_protocol_name(),
+      addr.host(),
+      addr.port(),
+      group_id(),
+      m_id());
+}
+
 ss::future<server::reply_t>
 create_consumer(server::request_t rq, server::reply_t rp) {
     parse::content_type_header(*rq.req, {json::serialization_format::json_v2});
@@ -221,12 +236,7 @@ create_consumer(server::request_t rq, server::reply_t rp) {
           auto adv_addr = rq.ctx.config.advertised_pandaproxy_api();
           json::create_consumer_response res{
             .instance_id = m_id,
-            .base_uri = ssx::sformat(
-              "http://{}:{}/consumers/{}/instances/{}",
-              adv_addr.host(),
-              adv_addr.port(),
-              group_id(),
-              m_id())};
+            .base_uri = make_consumer_uri(rq, m_id, group_id)};
           auto json_rslt = ppj::rjson_serialize(res);
           rp.rep->write_body("json", json_rslt);
           rp.mime_type = res_fmt;
