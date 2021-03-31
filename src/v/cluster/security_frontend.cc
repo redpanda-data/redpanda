@@ -48,6 +48,12 @@ ss::future<std::error_code> security_frontend::create_user(
     return replicate_and_wait(std::move(cmd), tout);
 }
 
+ss::future<std::error_code> security_frontend::delete_user(
+  security::credential_user username, model::timeout_clock::time_point tout) {
+    delete_user_cmd cmd(std::move(username), 0 /* unused */);
+    return replicate_and_wait(std::move(cmd), tout);
+}
+
 template<typename Cmd>
 ss::future<std::error_code> security_frontend::replicate_and_wait(
   Cmd&& cmd, model::timeout_clock::time_point timeout) {

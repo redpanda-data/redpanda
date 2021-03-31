@@ -33,6 +33,9 @@ public:
       security::scram_credential,
       model::timeout_clock::time_point);
 
+    ss::future<std::error_code>
+      delete_user(security::credential_user, model::timeout_clock::time_point);
+
     template<typename Cmd>
     ss::future<std::error_code>
     replicate_and_wait(Cmd&&, model::timeout_clock::time_point);
