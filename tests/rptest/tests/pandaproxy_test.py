@@ -40,6 +40,11 @@ HTTP_PRODUCE_TOPIC_HEADERS = {
     "Content-Type": "application/vnd.kafka.binary.v2+json"
 }
 
+HTTP_CREATE_CONSUMER_HEADERS = {
+    "Accept": "application/vnd.kafka.v2+json",
+    "Content-Type": "application/vnd.kafka.v2+json"
+}
+
 
 class Consumer:
     def __init__(self, res):
@@ -112,16 +117,17 @@ class PandaProxyTest(RedpandaTest):
             f"{self._base_uri()}/topics/{topic}/partitions/{partition}/records?offset={offset}&max_bytes={max_bytes}&timeout={timeout_ms}",
             headers=headers)
 
-    def _create_consumer(self, group_id):
-        res = requests.post(
-            f"{self._base_uri()}/consumers/{group_id}", '''
+    def _create_consumer(self, group_id, headers=HTTP_CREATE_CONSUMER_HEADERS):
+        res = requests.post(f"{self._base_uri()}/consumers/{group_id}",
+                            '''
             {
                 "format": "binary",
                 "auto.offset.reset": "earliest",
                 "auto.commit.enable": "false",
                 "fetch.min.bytes": "1",
                 "consumer.request.timeout.ms": "10000"
-            }''')
+            }''',
+                            headers=headers)
         return res
 
     @cluster(num_nodes=3)
