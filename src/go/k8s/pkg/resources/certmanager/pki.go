@@ -56,11 +56,10 @@ func (r *PkiReconciler) prepareRoot() (
 ) {
 	toApply := []resources.Resource{}
 
-	selfSignedKey := r.issuerNamespacedName("selfsigned-issuer")
 	selfSignedIssuer := NewIssuer(r.Client,
 		r.scheme,
 		r.pandaCluster,
-		selfSignedKey,
+		r.issuerNamespacedName("selfsigned-issuer"),
 		"",
 		r.logger)
 
@@ -75,18 +74,17 @@ func (r *PkiReconciler) prepareRoot() (
 		true,
 		r.logger)
 
-	k8sClusterIssuerKey := r.issuerNamespacedName("root-issuer")
-	k8sClusterIssuer := NewIssuer(r.Client,
+	leafIssuer := NewIssuer(r.Client,
 		r.scheme,
 		r.pandaCluster,
-		k8sClusterIssuerKey,
+		r.issuerNamespacedName("root-issuer"),
 		rootCertificate.Key().Name,
 		r.logger)
 
-	selfSignedIssuerRef := k8sClusterIssuer.objRef()
+	leafIssuerRef := leafIssuer.objRef()
 
-	toApply = append(toApply, selfSignedIssuer, rootCertificate, k8sClusterIssuer)
-	return toApply, selfSignedIssuerRef
+	toApply = append(toApply, selfSignedIssuer, rootCertificate, leafIssuer)
+	return toApply, leafIssuerRef
 }
 
 // Ensure will manage PKI for redpanda.vectorized.io custom resource
