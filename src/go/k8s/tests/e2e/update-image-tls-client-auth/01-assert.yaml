@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: update-image-cluster
+  name: up-img
 status:
   readyReplicas: 2
 
@@ -10,7 +10,7 @@ status:
 apiVersion: v1
 kind: Pod
 metadata:
-  name: update-image-cluster-0
+  name: up-img-0
 spec:
   containers:
     - name: redpanda
@@ -23,7 +23,7 @@ status:
 apiVersion: v1
 kind: Pod
 metadata:
-  name: update-image-cluster-1
+  name: up-img-1
 spec:
   containers:
     - name: redpanda

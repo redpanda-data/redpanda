@@ -1,6 +1,6 @@
 apiVersion: redpanda.vectorized.io/v1alpha1
 kind: Cluster
 metadata:
-  name: update-image-cluster
+  name: up-img
 spec:
   version: "latest"
