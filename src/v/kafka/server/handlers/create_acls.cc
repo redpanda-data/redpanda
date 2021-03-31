@@ -39,6 +39,12 @@ ss::future<response_ptr> create_acls_handler::handle(
     }
 
     create_acls_response response;
+
+    // HACK: report success
+    response.data.results.assign(
+      request.data.creations.size(),
+      creatable_acl_result{.error_code = error_code::none});
+
     return ctx.respond(std::move(response));
 }
 
