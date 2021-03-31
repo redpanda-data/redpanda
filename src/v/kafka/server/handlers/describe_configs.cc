@@ -21,6 +21,7 @@
 #include "model/metadata.h"
 #include "model/namespace.h"
 #include "model/validation.h"
+#include "security/acl.h"
 #include "ssx/sformat.h"
 
 #include <seastar/core/do_with.hh>
@@ -303,6 +304,9 @@ ss::future<response_ptr> describe_configs_handler::handle(
 
     describe_configs_response response;
     response.data.results.reserve(request.data.resources.size());
+    bool cluster_authorized = ctx.authorized(
+      security::acl_operation::describe_configs,
+      security::default_cluster_name);
 
     for (auto& resource : request.data.resources) {
         response.data.results.push_back(describe_configs_result{
@@ -327,6 +331,12 @@ ss::future<response_ptr> describe_configs_handler::handle(
             auto topic_config = ctx.metadata_cache().get_topic_cfg(topic);
             if (!topic_config) {
                 result.error_code = error_code::unknown_topic_or_partition;
+                continue;
+            }
+
+            if (!ctx.authorized(
+                  security::acl_operation::describe_configs, topic.tp)) {
+                result.error_code = error_code::topic_authorization_failed;
                 continue;
             }
             /**
@@ -407,6 +417,10 @@ ss::future<response_ptr> describe_configs_handler::handle(
         }
 
         case config_resource_type::broker:
+            if (!cluster_authorized) {
+                result.error_code = error_code::cluster_authorization_failed;
+                continue;
+            }
             report_broker_config(result, request.data.include_synonyms);
             break;
 
