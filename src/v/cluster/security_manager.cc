@@ -29,10 +29,24 @@ security_manager::security_manager(
 ss::future<std::error_code>
 security_manager::apply_update(model::record_batch batch) {
     return deserialize(std::move(batch), commands).then([this](auto cmd) {
-        return ss::visit(std::move(cmd), [this](create_user_cmd cmd) {
-            return dispatch_updates_to_cores(std::move(cmd));
-        });
+        return ss::visit(
+          std::move(cmd),
+          [this](create_user_cmd cmd) {
+              return dispatch_updates_to_cores(std::move(cmd));
+          },
+          [this](delete_user_cmd cmd) {
+              return dispatch_updates_to_cores(std::move(cmd));
+          });
     });
+}
+
+/*
+ * handle: delete user command
+ */
+static std::error_code
+do_apply(delete_user_cmd cmd, security::credential_store& store) {
+    auto removed = store.remove(cmd.key);
+    return removed ? errc::success : errc::user_does_not_exist;
 }
 
 /*

@@ -11,8 +11,8 @@
 
 #pragma once
 #include "cluster/commands.h"
-#include "security/credential_store.h"
 #include "model/record.h"
+#include "security/credential_store.h"
 
 #include <seastar/core/sharded.hh>
 
@@ -22,7 +22,8 @@ class security_manager final {
 public:
     explicit security_manager(ss::sharded<security::credential_store>&);
 
-    static constexpr auto commands = make_commands_list<create_user_cmd>();
+    static constexpr auto commands
+      = make_commands_list<create_user_cmd, delete_user_cmd>();
 
     ss::future<std::error_code> apply_update(model::record_batch);
 
