@@ -53,6 +53,7 @@ ss::future<> controller::wire_up() {
       .then(
         [this] { return _partition_allocator.start_single(raft::group_id(0)); })
       .then([this] { return _credentials.start(); })
+      .then([this] { return _authorizer.start(); })
       .then([this] { return _tp_state.start(); });
 }
 
@@ -149,6 +150,7 @@ ss::future<> controller::stop() {
           .then([this] { return _tp_frontend.stop(); })
           .then([this] { return _security_frontend.stop(); })
           .then([this] { return _stm.stop(); })
+          .then([this] { return _authorizer.stop(); })
           .then([this] { return _credentials.stop(); })
           .then([this] { return _tp_state.stop(); })
           .then([this] { return _members_manager.stop(); })

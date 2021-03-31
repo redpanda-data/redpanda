@@ -24,7 +24,6 @@
 #include "resource_mgmt/smp_groups.h"
 #include "rpc/server.h"
 #include "seastarx.h"
-#include "security/authorizer.h"
 #include "security/credential_store.h"
 #include "storage/fwd.h"
 
@@ -78,7 +77,6 @@ public:
     ss::sharded<kafka::quota_manager> quota_mgr;
     ss::sharded<cluster::id_allocator_frontend> id_allocator_frontend;
     ss::sharded<archival::scheduler_service> archival_scheduler;
-    ss::sharded<security::authorizer> authorizer;
 
 private:
     using deferred_actions
