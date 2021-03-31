@@ -31,7 +31,7 @@ ss::future<response_ptr> heartbeat_handler::handle(
     heartbeat_request request;
     request.decode(ctx.reader(), ctx.header().version);
 
-    if (!ctx.authorized(acl_operation::read, request.data.group_id)) {
+    if (!ctx.authorized(security::acl_operation::read, request.data.group_id)) {
         co_return co_await ctx.respond(
           heartbeat_response(error_code::group_authorization_failed));
     }

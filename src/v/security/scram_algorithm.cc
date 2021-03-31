@@ -1,4 +1,4 @@
-#include "kafka/security/scram_algorithm.h"
+#include "security/scram_algorithm.h"
 
 #include "utils/base64.h"
 #include "utils/to_string.h"
@@ -180,7 +180,7 @@ parse_client_final(std::string_view message) {
 #endif
 }
 
-namespace kafka {
+namespace security {
 
 std::ostream& operator<<(std::ostream& os, const scram_credential& cred) {
     fmt::print(
@@ -317,4 +317,4 @@ std::ostream& operator<<(std::ostream& os, const server_final_message& msg) {
     return os;
 }
 
-} // namespace kafka
+} // namespace security

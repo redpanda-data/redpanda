@@ -10,7 +10,7 @@
  */
 #include "outcome.h"
 
-namespace kafka {
+namespace security {
 
 enum class errc {
     success = 0,
@@ -19,18 +19,18 @@ enum class errc {
 };
 
 struct errc_category final : public std::error_category {
-    const char* name() const noexcept final { return "kafka_security::errc"; }
+    const char* name() const noexcept final { return "security::errc"; }
 
     std::string message(int c) const final {
         switch (static_cast<errc>(c)) {
         case errc::success:
-            return "kafka_security: Success";
+            return "security: Success";
         case errc::invalid_credentials:
-            return "kafka_security: Invalid credentials";
+            return "security: Invalid credentials";
         case errc::invalid_scram_state:
-            return "kafka_security: Invalid SCRAM state";
+            return "security: Invalid SCRAM state";
         default:
-            return "kafka_security: Unknown error";
+            return "security: Unknown error";
         }
     }
 };
@@ -43,9 +43,9 @@ inline const std::error_category& error_category() noexcept {
 inline std::error_code make_error_code(errc e) noexcept {
     return std::error_code(static_cast<int>(e), error_category());
 }
-} // namespace kafka
+} // namespace security
 
 namespace std {
 template<>
-struct is_error_code_enum<kafka::errc> : true_type {};
+struct is_error_code_enum<security::errc> : true_type {};
 } // namespace std

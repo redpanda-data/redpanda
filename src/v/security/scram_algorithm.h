@@ -11,9 +11,8 @@
 #pragma once
 #include "bytes/bytes.h"
 #include "hashing/secure.h"
-#include "kafka/security/scram_credential.h"
-#include "kafka/server/logger.h"
 #include "random/generators.h"
+#include "security/scram_credential.h"
 
 #include <absl/container/node_hash_map.h>
 
@@ -33,7 +32,7 @@
  * needs to be propogated to all other types which need to be templated on the
  * same scram_algorithm template parameters.
  */
-namespace kafka {
+namespace security {
 
 class scram_exception final : public std::exception {
 public:
@@ -286,4 +285,4 @@ using scram_sha512 = scram_algorithm<hmac_sha512, hash_sha512, 130, 4096>;
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers)
 using scram_sha256 = scram_algorithm<hmac_sha256, hash_sha256, 130, 4096>;
 
-} // namespace kafka
+} // namespace security

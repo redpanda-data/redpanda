@@ -9,11 +9,11 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
-#include "kafka/security/acl.h"
-#include "kafka/security/acl_store.h"
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "seastarx.h"
+#include "security/acl.h"
+#include "security/acl_store.h"
 
 #include <seastar/core/sstring.hh>
 #include <seastar/util/bool_class.hh>
@@ -21,7 +21,7 @@
 #include <absl/container/flat_hash_set.h>
 #include <fmt/core.h>
 
-namespace kafka {
+namespace security {
 
 /*
  * Primary interface for request authorization and management of ACLs.
@@ -113,4 +113,4 @@ private:
     allow_empty_matches _allow_empty_matches;
 };
 
-} // namespace kafka
+} // namespace security

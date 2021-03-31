@@ -29,7 +29,8 @@ ss::future<response_ptr> create_acls_handler::handle(
     request.decode(ctx.reader(), ctx.header().version);
     klog.trace("Handling request {}", request);
 
-    if (!ctx.authorized(acl_operation::alter, default_cluster_name)) {
+    if (!ctx.authorized(
+          security::acl_operation::alter, security::default_cluster_name)) {
         creatable_acl_result result;
         result.error_code = error_code::cluster_authorization_failed;
         create_acls_response resp;

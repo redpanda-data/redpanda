@@ -13,7 +13,7 @@
 
 #include <iosfwd>
 
-namespace kafka {
+namespace security {
 
 class scram_credential {
 public:
@@ -42,6 +42,6 @@ private:
     int _iterations{0};
 };
 
-std::ostream& operator<<(std::ostream&, const kafka::scram_credential&);
+std::ostream& operator<<(std::ostream&, const security::scram_credential&);
 
-} // namespace kafka
+} // namespace security

@@ -21,7 +21,7 @@
 #include <absl/container/flat_hash_set.h>
 #include <fmt/core.h>
 
-namespace kafka {
+namespace security {
 
 namespace details {
 template<class T>
@@ -49,7 +49,7 @@ inline resource_type get_resource_type() {
         return resource_type::topic;
     } else if constexpr (std::is_same_v<T, kafka::group_id>) {
         return resource_type::group;
-    } else if constexpr (std::is_same_v<T, kafka::acl_cluster_name>) {
+    } else if constexpr (std::is_same_v<T, security::acl_cluster_name>) {
         return resource_type::cluster;
     } else if constexpr (std::is_same_v<T, kafka::transactional_id>) {
         return resource_type::transactional_id;
@@ -469,4 +469,4 @@ private:
     acl_entry_filter _acl;
 };
 
-} // namespace kafka
+} // namespace security

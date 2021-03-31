@@ -9,12 +9,12 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
-#include "kafka/security/acl.h"
+#include "security/acl.h"
 
 #include <absl/container/btree_map.h>
 #include <absl/container/flat_hash_set.h>
 
-namespace kafka {
+namespace security {
 
 /*
  * A collection of ACL entries.
@@ -147,4 +147,4 @@ private:
       _acls;
 };
 
-} // namespace kafka
+} // namespace security

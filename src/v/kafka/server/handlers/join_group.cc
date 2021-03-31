@@ -46,7 +46,7 @@ ss::future<response_ptr> join_group_handler::handle(
           join_group_response(error_code::unsupported_version));
     }
 
-    if (!ctx.authorized(acl_operation::read, request.data.group_id)) {
+    if (!ctx.authorized(security::acl_operation::read, request.data.group_id)) {
         co_return co_await ctx.respond(
           join_group_response(error_code::group_authorization_failed));
     }

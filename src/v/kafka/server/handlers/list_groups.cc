@@ -36,7 +36,8 @@ ss::future<response_ptr> list_groups_handler::handle(
     resp.data.error_code = error;
     resp.data.groups = std::move(groups);
 
-    if (ctx.authorized(acl_operation::describe, default_cluster_name)) {
+    if (ctx.authorized(
+          security::acl_operation::describe, security::default_cluster_name)) {
         co_return co_await ctx.respond(std::move(resp));
     }
 
@@ -45,7 +46,8 @@ ss::future<response_ptr> list_groups_handler::handle(
       resp.data.groups.begin(),
       resp.data.groups.end(),
       [&ctx](const listed_group& group) {
-          return ctx.authorized(acl_operation::describe, group.group_id);
+          return ctx.authorized(
+            security::acl_operation::describe, group.group_id);
       });
 
     resp.data.groups.erase(non_visible_it, resp.data.groups.end());

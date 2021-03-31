@@ -11,11 +11,11 @@
 
 #include "cluster/topics_frontend.h"
 #include "config/configuration.h"
-#include "kafka/security/scram_algorithm.h"
 #include "kafka/server/connection_context.h"
 #include "kafka/server/logger.h"
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
+#include "security/scram_algorithm.h"
 #include "utils/utf8.h"
 #include "vlog.h"
 
@@ -43,8 +43,8 @@ protocol::protocol(
   ss::sharded<coordinator_ntp_mapper>& coordinator_mapper,
   ss::sharded<fetch_session_cache>& session_cache,
   ss::sharded<cluster::id_allocator_frontend>& id_allocator_frontend,
-  ss::sharded<credential_store>& credentials,
-  ss::sharded<kafka::authorizer>& authorizer) noexcept
+  ss::sharded<security::credential_store>& credentials,
+  ss::sharded<security::authorizer>& authorizer) noexcept
   : _smp_group(smp)
   , _topics_frontend(tf)
   , _metadata_cache(meta)
@@ -69,10 +69,10 @@ ss::future<> protocol::apply(rpc::server::resources rs) {
      * being enabled/disabled. it may be useful to configure them separately,
      * but this will come when identity management is introduced.
      */
-    sasl_server sasl(
+    security::sasl_server sasl(
       config::shard_local_cfg().enable_sasl()
-        ? sasl_server::sasl_state::initial
-        : sasl_server::sasl_state::complete);
+        ? security::sasl_server::sasl_state::initial
+        : security::sasl_server::sasl_state::complete);
 
     auto ctx = ss::make_lw_shared<connection_context>(
       *this,

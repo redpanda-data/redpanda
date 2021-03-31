@@ -31,7 +31,7 @@ ss::future<response_ptr> leave_group_handler::handle(
     leave_group_request request;
     request.decode(ctx.reader(), ctx.header().version);
 
-    if (!ctx.authorized(acl_operation::read, request.data.group_id)) {
+    if (!ctx.authorized(security::acl_operation::read, request.data.group_id)) {
         co_return co_await ctx.respond(
           leave_group_response(error_code::group_authorization_failed));
     }

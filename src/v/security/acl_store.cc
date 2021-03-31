@@ -8,9 +8,9 @@
  * the Business Source License, use of this software will be governed
  * by the Apache License, Version 2.0
  */
-#include "kafka/security/acl_store.h"
+#include "security/acl_store.h"
 
-namespace kafka {
+namespace security {
 
 std::optional<std::reference_wrapper<const acl_entry>> acl_entry_set::find(
   acl_operation operation,
@@ -145,4 +145,4 @@ acl_store::acls(const acl_binding_filter& filter) const {
     return result;
 }
 
-} // namespace kafka
+} // namespace security

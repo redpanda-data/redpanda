@@ -231,7 +231,7 @@ list_offsets_handler::handle(request_context ctx, ss::smp_service_group ssg) {
       request.data.topics.begin(),
       request.data.topics.end(),
       [&ctx](const list_offset_topic& topic) {
-          return ctx.authorized(acl_operation::describe, topic.name);
+          return ctx.authorized(security::acl_operation::describe, topic.name);
       });
 
     std::vector<list_offset_topic> unauthorized_topics(
