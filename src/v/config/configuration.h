@@ -172,6 +172,10 @@ struct configuration final : public config_store {
     std::filesystem::path pidfile_path() const {
         return data_directory().path / "pid.lock";
     }
+    const one_or_many_property<model::broker_endpoint>&
+    advertised_kafka_api_property() {
+        return _advertised_kafka_api;
+    }
 
 private:
     one_or_many_property<model::broker_endpoint> _advertised_kafka_api;
