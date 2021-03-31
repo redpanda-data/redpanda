@@ -9,7 +9,7 @@ spec:
         - name: tlscert
           secret:
             defaultMode: 420
-            secretName: cluster-tls-redpanda
+            secretName: thisisverylongnamethatishittingthemax40c-redpanda
             items: # TODO should we explicitly limit visibility to ca.crt?
             - key: ca.crt
               path: ca.crt
@@ -30,7 +30,7 @@ spec:
           args:
             - >
               echo {"test":"message"} |
-              rpk topic produce test --brokers cluster-tls-0.cluster-tls.$POD_NAMESPACE.svc.cluster.local:9092
+              rpk topic produce test --brokers thisisverylongnamethatishittingthemax40c-0.thisisverylongnamethatishittingthemax40c.$POD_NAMESPACE.svc.cluster.local:9092
               -v -n 1 -k "test-key"
           volumeMounts:
             - mountPath: /etc/tls/certs
