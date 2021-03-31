@@ -851,6 +851,215 @@ rpk:
 `,
 		},
 		{
+			name: "shall write config with full pandaproxy configuration",
+			conf: func() *Config {
+				c := getValidConfig()
+				c.Pandaproxy = &Pandaproxy{
+					PandaproxyAPI: SocketAddress{
+						Address: "1.2.3.4",
+						Port:    1234,
+					},
+					PandaproxyAPITLS: ServerTLS{
+						KeyFile:           "/etc/certs/cert.key",
+						TruststoreFile:    "/etc/certs/ca.crt",
+						CertFile:          "/etc/certs/cert.crt",
+						Enabled:           true,
+						RequireClientAuth: true,
+					},
+					AdvertisedPandaproxyAPI: &SocketAddress{
+						Address: "2.3.4.1",
+						Port:    2341,
+					},
+				}
+				return c
+			},
+			wantErr: false,
+			expected: `config_file: /etc/redpanda/redpanda.yaml
+pandaproxy:
+  advertised_pandaproxy_api:
+    address: 2.3.4.1
+    port: 2341
+  pandaproxy_api:
+    address: 1.2.3.4
+    port: 1234
+  pandaproxy_api_tls:
+    cert_file: /etc/certs/cert.crt
+    enabled: true
+    key_file: /etc/certs/cert.key
+    require_client_auth: true
+    truststore_file: /etc/certs/ca.crt
+redpanda:
+  admin:
+    address: 0.0.0.0
+    port: 9644
+  data_directory: /var/lib/redpanda/data
+  developer_mode: false
+  kafka_api:
+  - address: 0.0.0.0
+    port: 9092
+  node_id: 0
+  rpc_server:
+    address: 0.0.0.0
+    port: 33145
+  seed_servers:
+  - host:
+      address: 127.0.0.1
+      port: 33145
+  - host:
+      address: 127.0.0.1
+      port: 33146
+rpk:
+  coredump_dir: /var/lib/redpanda/coredumps
+  enable_memory_locking: true
+  enable_usage_stats: true
+  overprovisioned: false
+  tune_aio_events: true
+  tune_clocksource: true
+  tune_coredump: true
+  tune_cpu: true
+  tune_disk_irq: true
+  tune_disk_nomerges: true
+  tune_disk_scheduler: true
+  tune_disk_write_cache: true
+  tune_fstrim: true
+  tune_network: true
+  tune_swappiness: true
+  tune_transparent_hugepages: true
+  well_known_io: vendor:vm:storage
+`,
+		},
+		{
+			name: "shall write config with pandaproxy api only configuration",
+			conf: func() *Config {
+				c := getValidConfig()
+				c.Pandaproxy = &Pandaproxy{
+					PandaproxyAPI: SocketAddress{
+						Address: "1.2.3.4",
+						Port:    1234,
+					},
+				}
+				return c
+			},
+			wantErr: false,
+			expected: `config_file: /etc/redpanda/redpanda.yaml
+pandaproxy:
+  pandaproxy_api:
+    address: 1.2.3.4
+    port: 1234
+redpanda:
+  admin:
+    address: 0.0.0.0
+    port: 9644
+  data_directory: /var/lib/redpanda/data
+  developer_mode: false
+  kafka_api:
+  - address: 0.0.0.0
+    port: 9092
+  node_id: 0
+  rpc_server:
+    address: 0.0.0.0
+    port: 33145
+  seed_servers:
+  - host:
+      address: 127.0.0.1
+      port: 33145
+  - host:
+      address: 127.0.0.1
+      port: 33146
+rpk:
+  coredump_dir: /var/lib/redpanda/coredumps
+  enable_memory_locking: true
+  enable_usage_stats: true
+  overprovisioned: false
+  tune_aio_events: true
+  tune_clocksource: true
+  tune_coredump: true
+  tune_cpu: true
+  tune_disk_irq: true
+  tune_disk_nomerges: true
+  tune_disk_scheduler: true
+  tune_disk_write_cache: true
+  tune_fstrim: true
+  tune_network: true
+  tune_swappiness: true
+  tune_transparent_hugepages: true
+  well_known_io: vendor:vm:storage
+`,
+		},
+		{
+			name: "shall write config with pandaproxy client configuration",
+			conf: func() *Config {
+				c := getValidConfig()
+				c.PandaproxyClient = &PandaproxyClient{
+					Broker: []SocketAddress{
+						{
+							Address: "1.2.3.4",
+							Port:    1234,
+						},
+					},
+					BrokerTLS: ServerTLS{
+						KeyFile:           "/etc/certs/cert.key",
+						TruststoreFile:    "/etc/certs/ca.crt",
+						CertFile:          "/etc/certs/cert.crt",
+						Enabled:           true,
+						RequireClientAuth: true,
+					},
+				}
+				return c
+			},
+			wantErr: false,
+			expected: `config_file: /etc/redpanda/redpanda.yaml
+pandaproxy_client:
+  broker:
+  - address: 1.2.3.4
+    port: 1234
+  broker_tls:
+    cert_file: /etc/certs/cert.crt
+    enabled: true
+    key_file: /etc/certs/cert.key
+    require_client_auth: true
+    truststore_file: /etc/certs/ca.crt
+redpanda:
+  admin:
+    address: 0.0.0.0
+    port: 9644
+  data_directory: /var/lib/redpanda/data
+  developer_mode: false
+  kafka_api:
+  - address: 0.0.0.0
+    port: 9092
+  node_id: 0
+  rpc_server:
+    address: 0.0.0.0
+    port: 33145
+  seed_servers:
+  - host:
+      address: 127.0.0.1
+      port: 33145
+  - host:
+      address: 127.0.0.1
+      port: 33146
+rpk:
+  coredump_dir: /var/lib/redpanda/coredumps
+  enable_memory_locking: true
+  enable_usage_stats: true
+  overprovisioned: false
+  tune_aio_events: true
+  tune_clocksource: true
+  tune_coredump: true
+  tune_cpu: true
+  tune_disk_irq: true
+  tune_disk_nomerges: true
+  tune_disk_scheduler: true
+  tune_disk_write_cache: true
+  tune_fstrim: true
+  tune_network: true
+  tune_swappiness: true
+  tune_transparent_hugepages: true
+  well_known_io: vendor:vm:storage
+`,
+		},
+		{
 			name: "shall write config with archival configuration",
 			conf: func() *Config {
 				c := getValidConfig()

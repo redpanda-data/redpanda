@@ -12,14 +12,16 @@ package config
 import "path"
 
 type Config struct {
-	NodeUuid     string                 `yaml:"node_uuid,omitempty" mapstructure:"node_uuid,omitempty" json:"nodeUuid"`
-	Organization string                 `yaml:"organization,omitempty" mapstructure:"organization,omitempty" json:"organization"`
-	LicenseKey   string                 `yaml:"license_key,omitempty" mapstructure:"license_key,omitempty" json:"licenseKey"`
-	ClusterId    string                 `yaml:"cluster_id,omitempty" mapstructure:"cluster_id,omitempty" json:"clusterId"`
-	ConfigFile   string                 `yaml:"config_file" mapstructure:"config_file" json:"configFile"`
-	Redpanda     RedpandaConfig         `yaml:"redpanda" mapstructure:"redpanda" json:"redpanda"`
-	Rpk          RpkConfig              `yaml:"rpk" mapstructure:"rpk" json:"rpk"`
-	Other        map[string]interface{} `yaml:",inline" mapstructure:",remain"`
+	NodeUuid         string                 `yaml:"node_uuid,omitempty" mapstructure:"node_uuid,omitempty" json:"nodeUuid"`
+	Organization     string                 `yaml:"organization,omitempty" mapstructure:"organization,omitempty" json:"organization"`
+	LicenseKey       string                 `yaml:"license_key,omitempty" mapstructure:"license_key,omitempty" json:"licenseKey"`
+	ClusterId        string                 `yaml:"cluster_id,omitempty" mapstructure:"cluster_id,omitempty" json:"clusterId"`
+	ConfigFile       string                 `yaml:"config_file" mapstructure:"config_file" json:"configFile"`
+	Redpanda         RedpandaConfig         `yaml:"redpanda" mapstructure:"redpanda" json:"redpanda"`
+	Rpk              RpkConfig              `yaml:"rpk" mapstructure:"rpk" json:"rpk"`
+	Pandaproxy       *Pandaproxy            `yaml:"pandaproxy,omitempty" mapstructure:"pandaproxy,omitempty" json:"pandaproxy,omitempty"`
+	PandaproxyClient *PandaproxyClient      `yaml:"pandaproxy_client,omitempty" mapstructure:"pandaproxy_client,omitempty" json:"pandaproxyClient,omitempty"`
+	Other            map[string]interface{} `yaml:",inline" mapstructure:",remain"`
 }
 
 type RedpandaConfig struct {
@@ -46,6 +48,17 @@ type RedpandaConfig struct {
 	CloudStorageApiEndpointPort          *int                   `yaml:"cloud_storage_api_endpoint_port,omitempty" mapstructure:"cloud_storage_api_endpoint_port,omitempty" json:"cloudStorageApiEndpointPort,omitempty"`
 	CloudStorageTrustFile                *string                `yaml:"cloud_storage_trust_file,omitempty" mapstructure:"cloud_storage_trust_file,omitempty" json:"cloudStorageTrustFile,omitempty"`
 	Other                                map[string]interface{} `yaml:",inline" mapstructure:",remain"`
+}
+
+type Pandaproxy struct {
+	PandaproxyAPI           SocketAddress  `yaml:"pandaproxy_api,omitempty" mapstructure:"pandaproxy_api,omitempty" json:"pandaproxyApi,omitempty"`
+	PandaproxyAPITLS        ServerTLS      `yaml:"pandaproxy_api_tls,omitempty" mapstructure:"pandaproxy_api_tls,omitempty" json:"pandaproxyApiTls,omitempty"`
+	AdvertisedPandaproxyAPI *SocketAddress `yaml:"advertised_pandaproxy_api,omitempty" mapstructure:"advertised_pandaproxy_api,omitempty" json:"advertisedPandaproxyApi,omitempty"`
+}
+
+type PandaproxyClient struct {
+	Broker    []SocketAddress `yaml:"broker,omitempty" mapstructure:"broker,omitempty" json:"broker,omitempty"`
+	BrokerTLS ServerTLS       `yaml:"broker_tls,omitempty" mapstructure:"broker_tls,omitempty" json:"brokerTls,omitempty"`
 }
 
 type SeedServer struct {
