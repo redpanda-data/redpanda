@@ -25,7 +25,8 @@ scram_authenticator<T>::handle_client_first(bytes_view auth_bytes) {
 
     // lookup credentials for this user
     _authid = _client_first->username_normalized();
-    auto credential = _credentials.get<scram_credential>(_authid);
+    auto credential = _credentials.get<scram_credential>(
+      credential_user(_authid));
     if (!credential) {
         return errc::invalid_credentials;
     }

@@ -38,26 +38,29 @@ BOOST_AUTO_TEST_CASE(credential_store_test) {
     BOOST_REQUIRE_NE(cred0, cred1);
     BOOST_REQUIRE_NE(cred0_copy, cred1_copy);
 
+    const credential_user copied("copied");
+    const credential_user moved("moved");
+
     // put new credentials
     credential_store store;
-    store.put("copied", cred0);
-    store.put("moved", std::move(cred0_copy));
+    store.put(copied, cred0);
+    store.put(moved, std::move(cred0_copy));
 
-    BOOST_REQUIRE(store.get<scram_credential>("moved"));
-    BOOST_REQUIRE_EQUAL(*store.get<scram_credential>("moved"), cred0);
+    BOOST_REQUIRE(store.get<scram_credential>(moved));
+    BOOST_REQUIRE_EQUAL(*store.get<scram_credential>(moved), cred0);
 
-    BOOST_REQUIRE(store.get<scram_credential>("copied"));
-    BOOST_REQUIRE_EQUAL(*store.get<scram_credential>("copied"), cred0);
+    BOOST_REQUIRE(store.get<scram_credential>(copied));
+    BOOST_REQUIRE_EQUAL(*store.get<scram_credential>(copied), cred0);
 
     // update credentials
-    store.put("copied", cred1);
-    store.put("moved", std::move(cred1_copy));
+    store.put(copied, cred1);
+    store.put(moved, std::move(cred1_copy));
 
-    BOOST_REQUIRE(store.get<scram_credential>("moved"));
-    BOOST_REQUIRE_EQUAL(*store.get<scram_credential>("moved"), cred1);
+    BOOST_REQUIRE(store.get<scram_credential>(moved));
+    BOOST_REQUIRE_EQUAL(*store.get<scram_credential>(moved), cred1);
 
-    BOOST_REQUIRE(store.get<scram_credential>("copied"));
-    BOOST_REQUIRE_EQUAL(*store.get<scram_credential>("copied"), cred1);
+    BOOST_REQUIRE(store.get<scram_credential>(copied));
+    BOOST_REQUIRE_EQUAL(*store.get<scram_credential>(copied), cred1);
 }
 
 } // namespace security
