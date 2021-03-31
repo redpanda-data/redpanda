@@ -13,10 +13,10 @@
 
 #include "cluster/fwd.h"
 #include "config/configuration.h"
-#include "security/authorizer.h"
-#include "security/credential_store.h"
 #include "kafka/server/fwd.h"
 #include "rpc/server.h"
+#include "security/authorizer.h"
+#include "security/credential_store.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/sharded.hh>

@@ -43,7 +43,8 @@ ss::future<response_ptr> init_producer_id_handler::handle(
                 return ctx.respond(reply);
             }
         } else if (!ctx.authorized(
-                     security::acl_operation::idempotent_write, security::default_cluster_name)) {
+                     security::acl_operation::idempotent_write,
+                     security::default_cluster_name)) {
             init_producer_id_response reply;
             reply.data.error_code = error_code::cluster_authorization_failed;
             return ctx.respond(reply);

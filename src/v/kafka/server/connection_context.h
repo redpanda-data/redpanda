@@ -9,12 +9,12 @@
  * by the Apache License, Version 2.0
  */
 #pragma once
-#include "security/acl.h"
-#include "security/sasl_authentication.h"
 #include "kafka/server/protocol.h"
 #include "kafka/server/response.h"
 #include "rpc/server.h"
 #include "seastarx.h"
+#include "security/acl.h"
+#include "security/sasl_authentication.h"
 #include "utils/hdr_hist.h"
 #include "utils/named_type.h"
 
@@ -63,9 +63,13 @@ public:
             return true;
         }
         auto user = sasl().principal();
-        security::acl_principal principal(security::principal_type::user, std::move(user));
+        security::acl_principal principal(
+          security::principal_type::user, std::move(user));
         return _proto.authorizer().authorized(
-          name, operation, std::move(principal), security::acl_host(_client_addr));
+          name,
+          operation,
+          std::move(principal),
+          security::acl_host(_client_addr));
     }
 
     ss::future<> process_one_request();

@@ -16,8 +16,6 @@
 #include "cluster/fwd.h"
 #include "coproc/event_listener.h"
 #include "coproc/pacemaker.h"
-#include "security/authorizer.h"
-#include "security/credential_store.h"
 #include "pandaproxy/configuration.h"
 #include "pandaproxy/fwd.h"
 #include "raft/group_manager.h"
@@ -26,6 +24,8 @@
 #include "resource_mgmt/smp_groups.h"
 #include "rpc/server.h"
 #include "seastarx.h"
+#include "security/authorizer.h"
+#include "security/credential_store.h"
 #include "storage/fwd.h"
 
 #include <seastar/core/app-template.hh>

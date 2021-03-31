@@ -484,7 +484,8 @@ produce_handler::handle(request_context ctx, ss::smp_service_group ssg) {
 
     } else if (request.has_idempotent) {
         if (!ctx.authorized(
-              security::acl_operation::idempotent_write, security::default_cluster_name)) {
+              security::acl_operation::idempotent_write,
+              security::default_cluster_name)) {
             return ctx.respond(request.make_error_response(
               error_code::cluster_authorization_failed));
         }

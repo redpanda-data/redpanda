@@ -79,7 +79,8 @@ handle_auth_handshake(request_context&& ctx, ss::smp_service_group g) {
     return do_process<sasl_handshake_handler>(std::move(ctx), g)
       .then([conn = std::move(conn)](response_ptr r) {
           if (conn->sasl().has_mechanism()) {
-              conn->sasl().set_state(security::sasl_server::sasl_state::authenticate);
+              conn->sasl().set_state(
+                security::sasl_server::sasl_state::authenticate);
           } else {
               conn->sasl().set_state(security::sasl_server::sasl_state::failed);
           }
@@ -143,9 +144,11 @@ handle_auth(request_context&& ctx, ss::smp_service_group g) {
                * to return without entering an end state like complete/failed.
                */
               if (conn->sasl().mechanism().complete()) {
-                  conn->sasl().set_state(security::sasl_server::sasl_state::complete);
+                  conn->sasl().set_state(
+                    security::sasl_server::sasl_state::complete);
               } else if (conn->sasl().mechanism().failed()) {
-                  conn->sasl().set_state(security::sasl_server::sasl_state::failed);
+                  conn->sasl().set_state(
+                    security::sasl_server::sasl_state::failed);
               }
               return ss::make_ready_future<response_ptr>(std::move(r));
           });
@@ -179,7 +182,8 @@ process_request(request_context&& ctx, ss::smp_service_group g) {
         return handle_auth(std::move(ctx), g)
           .then_wrapped([conn](ss::future<response_ptr> f) {
               if (f.failed()) {
-                  conn->sasl().set_state(security::sasl_server::sasl_state::failed);
+                  conn->sasl().set_state(
+                    security::sasl_server::sasl_state::failed);
               }
               return f;
           });

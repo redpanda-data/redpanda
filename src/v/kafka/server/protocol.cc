@@ -11,11 +11,11 @@
 
 #include "cluster/topics_frontend.h"
 #include "config/configuration.h"
-#include "security/scram_algorithm.h"
 #include "kafka/server/connection_context.h"
 #include "kafka/server/logger.h"
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
+#include "security/scram_algorithm.h"
 #include "utils/utf8.h"
 #include "vlog.h"
 

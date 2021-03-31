@@ -6,8 +6,8 @@
 // As of the Change Date specified in that file, in accordance with
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
-#include "security/authorizer.h"
 #include "random/generators.h"
+#include "security/authorizer.h"
 #include "utils/base64.h"
 
 #include <seastar/testing/thread_test_case.hh>

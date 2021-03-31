@@ -109,7 +109,8 @@ ss::future<response_ptr> find_coordinator_handler::handle(
         }
     } else if (request.data.key_type == coordinator_type::transaction) {
         if (!ctx.authorized(
-              security::acl_operation::describe, transactional_id(request.data.key))) {
+              security::acl_operation::describe,
+              transactional_id(request.data.key))) {
             return ctx.respond(find_coordinator_response(
               error_code::transactional_id_authorization_failed));
         }

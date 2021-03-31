@@ -7,8 +7,8 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 #define BOOST_TEST_MODULE kafka_security
-#include "security/scram_algorithm.h"
 #include "random/generators.h"
+#include "security/scram_algorithm.h"
 #include "utils/base64.h"
 
 #include <seastar/testing/thread_test_case.hh>
