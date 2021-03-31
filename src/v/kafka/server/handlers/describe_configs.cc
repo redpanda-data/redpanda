@@ -11,6 +11,7 @@
 
 #include "cluster/metadata_cache.h"
 #include "config/configuration.h"
+#include "config/data_directory_path.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/server/handlers/topics/topic_utils.h"
 #include "kafka/server/handlers/topics/types.h"
@@ -50,6 +51,52 @@ static void add_config(
 template<typename T>
 static ss::sstring describe_as_string(const T& t) {
     return ssx::sformat("{}", t);
+}
+
+template<typename T, typename Func>
+static void add_broker_config(
+  describe_configs_result& result,
+  std::string_view name,
+  const config::property<T>& property,
+  bool include_synonyms,
+  Func&& describe_f) {
+    describe_configs_source src
+      = property.is_overriden() ? describe_configs_source::static_broker_config
+                                : describe_configs_source::default_config;
+
+    std::vector<describe_configs_synonym> synonyms;
+    if (include_synonyms) {
+        synonyms.reserve(2);
+        /**
+         * If value was overriden, include override
+         */
+        if (src == describe_configs_source::static_broker_config) {
+            synonyms.push_back(describe_configs_synonym{
+              .name = ss::sstring(property.name()),
+              .value = describe_f(property.value()),
+              .source = static_cast<int8_t>(
+                describe_configs_source::static_broker_config),
+            });
+        }
+        /**
+         * If property is required it has no default
+         */
+        if (!property.is_required()) {
+            synonyms.push_back(describe_configs_synonym{
+              .name = ss::sstring(property.name()),
+              .value = describe_f(property.default_value()),
+              .source = static_cast<int8_t>(
+                describe_configs_source::default_config),
+            });
+        }
+    }
+
+    result.configs.push_back(describe_configs_resource_result{
+      .name = ss::sstring(name),
+      .value = describe_f(property.value()),
+      .config_source = src,
+      .synonyms = std::move(synonyms),
+    });
 }
 
 template<typename T, typename Func>
@@ -134,7 +181,8 @@ kafka_endpoint_format(const std::vector<model::broker_endpoint>& endpoints) {
     return boost::algorithm::join(uris, ",");
 }
 
-static void report_broker_config(describe_configs_result& result) {
+static void
+report_broker_config(describe_configs_result& result, bool include_synonyms) {
     if (!result.resource_name.empty()) {
         int32_t broker_id = -1;
         auto res = std::from_chars(
@@ -159,35 +207,67 @@ static void report_broker_config(describe_configs_result& result) {
         }
     }
 
-    add_config(
+    add_broker_config(
       result,
       "listeners",
-      kafka_endpoint_format(config::shard_local_cfg().kafka_api()),
-      describe_configs_source::static_broker_config);
+      config::shard_local_cfg().kafka_api,
+      include_synonyms,
+      &kafka_endpoint_format);
 
-    add_config(
+    add_broker_config(
       result,
       "advertised.listeners",
-      kafka_endpoint_format(config::shard_local_cfg().advertised_kafka_api()),
-      describe_configs_source::static_broker_config);
+      config::shard_local_cfg().advertised_kafka_api_property(),
+      include_synonyms,
+      &kafka_endpoint_format);
 
-    add_config(
+    add_broker_config(
       result,
       "log.segment.bytes",
-      config::shard_local_cfg().log_segment_size(),
-      describe_configs_source::static_broker_config);
+      config::shard_local_cfg().log_segment_size,
+      include_synonyms,
+      &describe_as_string<size_t>);
 
-    add_config(
+    add_broker_config(
       result,
       "log.retention.bytes",
-      config::shard_local_cfg().retention_bytes(),
-      describe_configs_source::static_broker_config);
+      config::shard_local_cfg().retention_bytes,
+      include_synonyms,
+      [](std::optional<size_t> sz) {
+          return ssx::sformat("{}", sz ? sz.value() : -1);
+      });
 
-    add_config(
+    add_broker_config(
       result,
       "log.retention.ms",
-      config::shard_local_cfg().delete_retention_ms(),
-      describe_configs_source::static_broker_config);
+      config::shard_local_cfg().delete_retention_ms,
+      include_synonyms,
+      [](const std::chrono::milliseconds& ms) {
+          return ssx::sformat("{}", ms.count());
+      });
+
+    add_broker_config(
+      result,
+      "num.partitions",
+      config::shard_local_cfg().default_topic_partitions,
+      include_synonyms,
+      &describe_as_string<int32_t>);
+
+    add_broker_config(
+      result,
+      "default.replication.factor",
+      config::shard_local_cfg().default_topic_replication,
+      include_synonyms,
+      &describe_as_string<int16_t>);
+
+    add_broker_config(
+      result,
+      "log.dirs",
+      config::shard_local_cfg().data_directory,
+      include_synonyms,
+      [](const config::data_directory_path& path) {
+          return path.as_sstring();
+      });
 }
 
 int64_t describe_retention_duration(
@@ -327,7 +407,7 @@ ss::future<response_ptr> describe_configs_handler::handle(
         }
 
         case config_resource_type::broker:
-            report_broker_config(result);
+            report_broker_config(result, request.data.include_synonyms);
             break;
 
         // resource types not yet handled
