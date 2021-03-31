@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: update-image-cluster
+  name: up-img
 status:
   readyReplicas: 2
 
@@ -10,7 +10,7 @@ status:
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
-  name:  update-image-cluster-selfsigned-issuer
+  name:  up-img-selfsigned-issuer
 status:
   conditions:
     - reason: IsReady
@@ -22,7 +22,7 @@ status:
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
-  name:  update-image-cluster-root-issuer
+  name:  up-img-root-issuer
 status:
   conditions:
     - reason: KeyPairVerified
@@ -33,7 +33,7 @@ status:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name:  update-image-cluster-root-certificate
+  name: up-img-root-certificate
 status:
   conditions:
     - reason: Ready
@@ -45,7 +45,7 @@ status:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name:  update-image-cluster-redpanda
+  name: up-img-redpanda
 status:
   conditions:
     - reason: Ready
