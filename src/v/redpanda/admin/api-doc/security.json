@@ -8,4 +8,23 @@
             }
         }
     }
+},
+"/v1/security/users/{user}": {
+    "delete": {
+        "summary": "Delete a user",
+        "operationId": "delete_user",
+        "parameters": [
+            {
+                "name": "user",
+                "in": "path",
+                "required": true,
+                "type": "string"
+            }
+        ],
+        "responses": {
+            "200": {
+                "description": "Delete user"
+            }
+        }
+    }
 }

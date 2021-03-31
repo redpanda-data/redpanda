@@ -912,6 +912,25 @@ void application::admin_register_security_routes(ss::http_server& server) {
                   ss::json::json_return_type(ss::json::json_void()));
             });
       });
+
+    ss::httpd::security_json::delete_user.set(
+      server._routes, [this](std::unique_ptr<ss::httpd::request> req) {
+          auto user = security::credential_user(
+            model::topic(req->param["user"]));
+
+          return controller->get_security_frontend()
+            .local()
+            .delete_user(user, model::timeout_clock::now() + 5s)
+            .then([this](std::error_code err) {
+                vlog(_log.debug, "Deleting user {}:{}", err, err.message());
+                if (err) {
+                    throw ss::httpd::bad_request_exception(
+                      fmt::format("Deleting user: {}", err.message()));
+                }
+                return ss::make_ready_future<ss::json::json_return_type>(
+                  ss::json::json_return_type(ss::json::json_void()));
+            });
+      });
 }
 
 void application::admin_register_kafka_routes(ss::http_server& server) {
