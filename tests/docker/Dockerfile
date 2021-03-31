@@ -12,7 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-FROM ubuntu:focal
+FROM ubuntu:groovy-20210325
 
 ENV TZ="UTC" \
     DEBIAN_FRONTEND=noninteractive
@@ -25,6 +25,7 @@ RUN apt update && \
       openssh-server \
       default-jre \
       build-essential \
+      libatomic1 \
       curl \
       npm \
       kafkacat && \
@@ -32,7 +33,7 @@ RUN apt update && \
     echo 'PermitUserEnvironment yes' >> /etc/ssh/sshd_config
 
 # install kafka binary dependencies, kaf tool and librdkafka dev
-ARG KAFKA_MIRROR="https://s3-us-west-2.amazonaws.com/kafka-packages"
+ENV KAFKA_MIRROR="https://s3-us-west-2.amazonaws.com/kafka-packages"
 RUN mkdir -p "/opt/kafka-2.3.1" && chmod a+rw /opt/kafka-2.3.1 && curl -s "$KAFKA_MIRROR/kafka_2.12-2.3.1.tgz" | tar xz --strip-components=1 -C "/opt/kafka-2.3.1" && \
     mkdir -p "/opt/kafka-2.4.1" && chmod a+rw /opt/kafka-2.4.1 && curl -s "$KAFKA_MIRROR/kafka_2.12-2.4.1.tgz" | tar xz --strip-components=1 -C "/opt/kafka-2.4.1" && \
     mkdir -p "/opt/kafka-2.5.0" && chmod a+rw /opt/kafka-2.5.0 && curl -s "$KAFKA_MIRROR/kafka_2.12-2.5.0.tgz" | tar xz --strip-components=1 -C "/opt/kafka-2.5.0" && \
@@ -46,13 +47,14 @@ RUN mkdir -p "/opt/kafka-2.3.1" && chmod a+rw /opt/kafka-2.3.1 && curl -s "$KAFK
     cd /opt/librdkafka/tests && \
     make build -j$(nproc)
 
-# install python dependencies
-COPY . /root/tests/
-RUN pip3 install --no-cache-dir --upgrade pip wheel setuptools && \
-    pip3 install --no-cache-dir -e /root/tests/ && \
-    pip3 install --no-cache-dir kafka-python && \
-    pip3 list && \
-    mv /root/tests/docker/ssh /root/.ssh && \
-    rm -r /root/tests/ci /root/tests/docker
+# copy ssh keys
+COPY --chown=0:0 docker/ssh /root/.ssh
+
+# install python dependencies and rptest package.
+# rptest package installed in editable mode so it can be overridden.
+# passes --force so system pip packages can be updated
+COPY --chown=0:0 setup.py /root/tests/
+RUN python3 -m pip install --upgrade --force pip && \
+    python3 -m pip install --force --no-cache-dir -e /root/tests/
 
 CMD service ssh start && tail -f /dev/null

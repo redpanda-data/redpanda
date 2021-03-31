@@ -61,17 +61,116 @@ tasks:
       PATH={{.LLVM_INSTALL_PATH}}/bin:$PATH
       ninja -C '{{.BUILD_DIR}}' -j'{{div .TOTAL_PHYSICAL_MEMORY .GB_PER_BUILD_CORE}}'
 
+  set-aio-max:
+    desc: set minimum required value for fs.aio-max-nr sysctl option
+    vars:
+      MIN_REQUIRED_AIO_MAX: 10485760
+    cmds:
+    - sudo sysctl -w fs.aio-max-nr={{.MIN_REQUIRED_AIO_MAX}}
+    status:
+    - test {{.MIN_REQUIRED_AIO_MAX}} -le $(sysctl -nb fs.aio-max-nr)
+
   test:
     desc: run redpanda unit tests
     vars:
       CI: '{{ default "0" .CI}}'
       CTEST_ARGS: '{{default `-R ".*_rp(unit|bench|int)$"` .CTEST_ARGS}}'
-      MIN_REQUIRED_AIO_MAX: 1048576
     dir: '{{.BUILD_DIR}}'
+    deps:
+    - set-aio-max
+    cmds:
+    - ctest {{if eq .CI "1"}}"--output-on-failure"{{end}} {{.CTEST_ARGS}}
+
+  build-java-test-programs:
     cmds:
     - |
-      CURRENT_AIO_MAX=$(sysctl -nb fs.aio-max-nr)
-      if (( $CURRENT_AIO_MAX < {{.MIN_REQUIRED_AIO_MAX}} )); then
-        sysctl -w fs.aio-max-nr={{.MIN_REQUIRED_AIO_MAX}}
+      function build {
+        mvn clean package --batch-mode \
+          --file {{.SRC_DIR}}/tests/java/$1/ \
+          --define maven.repo.local={{.BUILD_ROOT}}/java/maven-repository \
+          --define buildDir={{.BUILD_ROOT}}/java/$1/
+      }
+      build kafka-verifier
+      build compacted-log-verifier
+
+  build-java-test-programs-in-docker:
+    desc: build java programs used in integrations tests
+    cmds:
+    - task: :docker:task
+      vars:
+        DOCKER_IMAGE: docker.io/library/maven:3.6-jdk-11
+        TASK_ARGS: rp:build-java-test-programs
+    status:
+    - test -f '{{.BUILD_ROOT}}/java/kafka-verifier/kafka-verifier.jar'
+    - test -f '{{.BUILD_ROOT}}/java/compacted-log-verifier/kafka-compacted-topics-verifier.jar'
+
+  build-test-docker-image:
+    desc: build image used in integration tests
+    cmds:
+    - |
+      if ! docker images | grep vectorized/redpanda-test-node | grep cache; then
+        # pull only if image doesn't exist
+        docker pull docker.io/vectorized/redpanda-test-node:cache || true
+        # and avoid invalidating docker cache
+        chmod 644 '{{.SRC_DIR}}/tests/docker/ssh/*' '{{.SRC_DIR}}/tests/setup.py'
+        chmod 755 '{{.SRC_DIR}}/tests/docker/ssh'
       fi
-    - ctest {{if eq .CI "1"}}"--output-on-failure"{{end}} {{.CTEST_ARGS}}
+      docker build \
+        --tag vectorized/redpanda-test-node \
+        --cache-from docker.io/vectorized/redpanda-test-node:cache \
+        --file '{{.SRC_DIR}}/tests/docker/Dockerfile' \
+        '{{.SRC_DIR}}/tests/'
+
+  start-compose-cluster:
+    desc: deploy a cluster using docker-compose
+    deps:
+    - :dev:install-docker-compose
+    - :dev:start-podman-socket-service
+    - build-test-docker-image
+    dir: '{{.SRC_DIR}}/tests/docker/'
+    env:
+      BUILD_ROOT: '{{.BUILD_ROOT}}'
+    cmds:
+    - |
+      PATH={{.BUILD_ROOT}}/bin/:$PATH
+      docker-compose up --detach
+
+  run-ducktape-tests:
+    desc: run ducktape tests
+    deps:
+    - set-aio-max
+    - start-compose-cluster
+    - build-java-test-programs-in-docker
+    vars:
+      DUCKTAPE_ARGS: '{{default "--exit-first tests/rptest/test_suite_quick.yml" .DUCKTAPE_ARGS}}'
+      RP_INSTALL_DIR_DEFAULT: '{{.BUILD_DIR}}'
+      RP_INSTALL_DIR: '{{default .RP_INSTALL_DIR_DEFAULT .RP_INSTALL_DIR}}'
+    env:
+      CI: "1"
+    ignore_error: true
+    cmds:
+    - mkdir -p '{{.BUILD_ROOT}}/ducktape/config/metadata'
+    - docker run --rm --privileged
+        --name ducktape
+        --network redpanda
+        --volume '{{.BUILD_ROOT}}/ducktape/config/:/root/.ducktape/'
+        --volume '{{.BUILD_ROOT}}/ducktape/:/build/tests/'
+        --volume '{{.BUILD_ROOT}}:{{.BUILD_ROOT}}'
+        --volume '{{.SRC_DIR}}/tests/:/root/tests/'
+        --volume '{{.SRC_DIR}}/tests/docker/ducktape_cluster.json:/cluster.json'
+        --entrypoint ducktape
+        --workdir /root
+        vectorized/redpanda-test-node
+          --cluster=ducktape.cluster.json.JsonCluster
+          --cluster-file=/cluster.json
+          --results-root=/build/tests/results
+          --globals='{"rp_install_path_root":"{{.RP_INSTALL_DIR}}","v_build_dir":"{{.BUILD_ROOT}}"}'
+          {{.DUCKTAPE_ARGS}}
+
+  stop-compose-cluster:
+    desc: stop the compose cluster
+    dir: '{{.SRC_DIR}}/tests/docker/'
+    cmds:
+    - |
+      PATH={{.BUILD_ROOT}}/bin/:$PATH
+      docker-compose down

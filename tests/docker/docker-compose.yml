@@ -1,0 +1,18 @@
+version: '3'
+
+networks:
+  redpanda:
+    name: redpanda
+    driver: bridge
+
+services:
+  n1: &node
+    image: vectorized/redpanda-test-node
+    privileged: true
+    volumes:
+    - '${BUILD_ROOT}:${BUILD_ROOT}'
+    networks:
+    - redpanda
+  n2: *node
+  n3: *node
+  n4: *node

@@ -8,6 +8,7 @@ tasks:
     env:
       GOOS: '{{default "linux" .GOOS}}'
       GOARCH: '{{default "amd64" .GOARCH}}'
+      GOPATH: '{{.BUILD_ROOT}}/go'
       CGO_ENABLED: "0"
     dir: "{{.SRC_DIR}}/src/go/rpk"
     cmds:

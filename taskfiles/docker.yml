@@ -1,18 +1,25 @@
 version: '3'
 
 tasks:
+
+  download-task:
+    cmds:
+    - sh -c "$(curl --location https://taskfile.dev/install.sh)" --
+    status:
+    - test -f bin/task
+
   task:
     desc: run Task within a docker image
+    deps:
+    - download-task
     cmds:
     - printenv > /tmp/.envfile
     - sed -i 's/PATH.*//' /tmp/.envfile
     - |
-      docker run --rm -i {{.DOCKER_RUN_FLAGS}} \
+      docker run --rm -i --privileged {{.DOCKER_RUN_FLAGS}} \
         --env-file /tmp/.envfile \
-        --volume '{{.PWD}}:{{.PWD}}:Z' \
+        --volume '{{.PWD}}:{{.PWD}}' \
         --workdir '{{.PWD}}' \
         --entrypoint=bin/task \
         {{.DOCKER_IMAGE}} \
           {{.TASK_ARGS}}
-    preconditions:
-    - test -f bin/task

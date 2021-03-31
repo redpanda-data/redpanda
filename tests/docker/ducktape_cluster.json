@@ -1,0 +1,48 @@
+{
+    "nodes": [
+        {
+            "externally_routable_ip": "n1",
+            "ssh_config": {
+                "host": "n1",
+                "hostname": "n1",
+                "identityfile": "/root/.ssh/id_rsa",
+                "password": "UNUSED",
+                "port": 22,
+                "user": "root"
+            }
+        },
+        {
+            "externally_routable_ip": "n2",
+            "ssh_config": {
+                "host": "n2",
+                "hostname": "n2",
+                "identityfile": "/root/.ssh/id_rsa",
+                "password": "UNUSED",
+                "port": 22,
+                "user": "root"
+            }
+        },
+        {
+            "externally_routable_ip": "n3",
+            "ssh_config": {
+                "host": "n3",
+                "hostname": "n3",
+                "identityfile": "/root/.ssh/id_rsa",
+                "password": "UNUSED",
+                "port": 22,
+                "user": "root"
+            }
+        },
+        {
+            "externally_routable_ip": "n4",
+            "ssh_config": {
+                "host": "n4",
+                "hostname": "n4",
+                "identityfile": "/root/.ssh/id_rsa",
+                "password": "UNUSED",
+                "port": 22,
+                "user": "root"
+            }
+        }
+    ]
+}
