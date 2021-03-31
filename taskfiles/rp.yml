@@ -112,7 +112,7 @@ tasks:
         # pull only if image doesn't exist
         docker pull docker.io/vectorized/redpanda-test-node:cache || true
         # and avoid invalidating docker cache
-        chmod 644 '{{.SRC_DIR}}/tests/docker/ssh/*' '{{.SRC_DIR}}/tests/setup.py'
+        chmod -R 644 '{{.SRC_DIR}}/tests/docker/ssh/' '{{.SRC_DIR}}/tests/setup.py'
         chmod 755 '{{.SRC_DIR}}/tests/docker/ssh'
       fi
       docker build \
