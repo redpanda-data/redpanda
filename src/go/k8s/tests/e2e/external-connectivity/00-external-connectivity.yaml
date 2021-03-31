@@ -4,7 +4,12 @@ metadata:
   name: external-connectivity-external
 spec:
   ports:
-    - name: kafka-tcp
+    - name: admin
+      port: 9644
+      protocol: TCP
+      targetPort: 9644
+      nodePort: 30964
+    - name: kafka
       port: 9093
       protocol: TCP
       targetPort: 9093
