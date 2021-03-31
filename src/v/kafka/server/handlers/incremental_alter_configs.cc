@@ -218,6 +218,10 @@ ss::future<response_ptr> incremental_alter_configs_handler::handle(
     auto groupped = group_alter_config_resources(
       std::move(request.data.resources));
 
+    auto unauthorized_responsens = authorize_alter_config_resources<
+      incremental_alter_configs_resource,
+      resp_resource_t>(ctx, groupped);
+
     std::vector<ss::future<std::vector<resp_resource_t>>> futures;
     futures.reserve(2);
     futures.push_back(alter_topic_configuration(
@@ -226,6 +230,8 @@ ss::future<response_ptr> incremental_alter_configs_handler::handle(
       alter_broker_configuartion(std::move(groupped.broker_changes)));
 
     auto ret = co_await ss::when_all_succeed(futures.begin(), futures.end());
+    // include authorization errors
+    ret.push_back(std::move(unauthorized_responsens));
 
     co_return co_await ctx.respond(assemble_alter_config_response<
                                    incremental_alter_configs_response,
