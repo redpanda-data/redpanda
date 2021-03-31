@@ -33,6 +33,7 @@ type NodePortServiceResource struct {
 	k8sclient.Client
 	scheme       *runtime.Scheme
 	pandaCluster *redpandav1alpha1.Cluster
+	svcPorts     map[string]int
 	logger       logr.Logger
 }
 
@@ -41,12 +42,14 @@ func NewNodePortService(
 	client k8sclient.Client,
 	pandaCluster *redpandav1alpha1.Cluster,
 	scheme *runtime.Scheme,
+	svcPorts map[string]int,
 	logger logr.Logger,
 ) *NodePortServiceResource {
 	return &NodePortServiceResource{
 		client,
 		scheme,
 		pandaCluster,
+		svcPorts,
 		logger.WithValues("Kind", serviceKind(), "ServiceType", "NodePort"),
 	}
 }
@@ -68,6 +71,19 @@ func (r *NodePortServiceResource) Ensure(ctx context.Context) error {
 
 // obj returns resource managed client.Object
 func (r *NodePortServiceResource) obj() (k8sclient.Object, error) {
+	ports := make([]corev1.ServicePort, 0, len(r.svcPorts))
+	for name, portNumber := range r.svcPorts {
+		if name == "kafka" {
+			portNumber++
+		}
+		ports = append(ports, corev1.ServicePort{
+			Name:       name,
+			Protocol:   corev1.ProtocolTCP,
+			Port:       int32(portNumber),
+			TargetPort: intstr.FromInt(portNumber),
+		})
+	}
+
 	objLabels := labels.ForCluster(r.pandaCluster)
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
@@ -88,14 +104,7 @@ func (r *NodePortServiceResource) obj() (k8sclient.Object, error) {
 			// https://kubernetes.io/docs/tasks/access-application-cluster/create-external-load-balancer/#preserving-the-client-source-ip
 			// https://blog.getambassador.io/externaltrafficpolicy-local-on-kubernetes-e66e498212f9
 			ExternalTrafficPolicy: corev1.ServiceExternalTrafficPolicyTypeLocal,
-			Ports: []corev1.ServicePort{
-				{
-					Name:       "kafka-tcp",
-					Protocol:   corev1.ProtocolTCP,
-					Port:       int32(r.pandaCluster.Spec.Configuration.KafkaAPI.Port + 1),
-					TargetPort: intstr.FromInt(r.pandaCluster.Spec.Configuration.KafkaAPI.Port + 1),
-				},
-			},
+			Ports:                 ports,
 			// The selector is purposely set to nil. Our external connectivity doesn't use
 			// kubernetes service as kafka protocol need to have access to each broker individually.
 			Selector: nil,
