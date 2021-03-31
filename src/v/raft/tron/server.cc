@@ -261,22 +261,26 @@ int main(int args, char** argv, char** env) {
             auto ccd = ss::defer(
               [&connection_cache] { connection_cache.stop().get(); });
             rpc::server_configuration scfg("tron_rpc");
-            scfg.addrs.emplace_back(ss::socket_address(
-              ss::net::inet_address(cfg["ip"].as<ss::sstring>()),
-              cfg["port"].as<uint16_t>()));
+
             scfg.max_service_memory_per_core
               = ss::memory::stats().total_memory() * .7;
             auto key = cfg["key"].as<ss::sstring>();
             auto cert = cfg["cert"].as<ss::sstring>();
+            ss::shared_ptr<ss::tls::server_credentials> credentials;
             if (key != "" && cert != "") {
                 auto builder = ss::tls::credentials_builder();
                 builder.set_dh_level(ss::tls::dh_params::level::MEDIUM);
                 builder
                   .set_x509_key_file(cert, key, ss::tls::x509_crt_format::PEM)
                   .get();
-                scfg.credentials
+                credentials
                   = builder.build_reloadable_server_credentials().get0();
             }
+            scfg.addrs.emplace_back(
+              ss::socket_address(
+                ss::net::inet_address(cfg["ip"].as<ss::sstring>()),
+                cfg["port"].as<uint16_t>()),
+              credentials);
             auto self_id = cfg["node-id"].as<int32_t>();
             if (cfg.find("peers") != cfg.end()) {
                 initialize_connection_cache_in_thread(

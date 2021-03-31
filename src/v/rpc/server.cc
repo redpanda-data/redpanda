@@ -28,8 +28,7 @@ namespace rpc {
 
 server::server(server_configuration c)
   : cfg(std::move(c))
-  , _memory(cfg.max_service_memory_per_core)
-  , _creds(cfg.credentials) {}
+  , _memory(cfg.max_service_memory_per_core) {}
 
 server::~server() = default;
 
@@ -46,11 +45,11 @@ void server::start() {
             lo.reuse_address = true;
             lo.lba = cfg.load_balancing_algo;
 
-            if (!_creds) {
+            if (!endpoint.credentials) {
                 ss = ss::engine().listen(endpoint.addr, lo);
             } else {
                 ss = ss::tls::listen(
-                  _creds, ss::engine().listen(endpoint.addr, lo));
+                  endpoint.credentials, ss::engine().listen(endpoint.addr, lo));
             }
         } catch (...) {
             throw std::runtime_error(fmt::format(

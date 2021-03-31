@@ -18,6 +18,7 @@
 #include <seastar/core/future.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/sstring.hh>
+#include <seastar/net/ip.hh>
 #include <seastar/net/tls.hh>
 
 #include <optional>

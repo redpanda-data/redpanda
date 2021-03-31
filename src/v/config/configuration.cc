@@ -131,8 +131,8 @@ configuration::configuration()
       "kafka_api_tls",
       "TLS configuration for Kafka API endpoint",
       required::no,
-      tls_config(),
-      tls_config::validate)
+      {},
+      endpoint_tls_config::validate_many)
   , use_scheduling_groups(
       *this,
       "use_scheduling_groups",

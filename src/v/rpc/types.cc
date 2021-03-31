@@ -55,13 +55,22 @@ std::ostream& operator<<(std::ostream& o, const server_configuration& c) {
         o << a;
     }
     o << ", max_service_memory_per_core: " << c.max_service_memory_per_core
-      << ", has_tls_credentials: " << (c.credentials ? "yes" : "no")
       << ", metrics_enabled:" << !c.disable_metrics;
     return o << "}";
 }
 
 std::ostream& operator<<(std::ostream& os, const server_endpoint& ep) {
-    fmt::print(os, "{{{}:{}}}", ep.name, ep.addr);
+    /**
+     * We use simmillar syntax to kafka to indicate if endpoint is secured f.e.:
+     *
+     * SECURED://127.0.0.1:9092
+     */
+    fmt::print(
+      os,
+      "{{{}://{}:{}}}",
+      ep.name,
+      ep.addr,
+      ep.credentials ? "SECURED" : "PLAINTEXT");
     return os;
 }
 
