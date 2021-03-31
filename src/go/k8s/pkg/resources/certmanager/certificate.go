@@ -41,7 +41,7 @@ type CertificateResource struct {
 	key          types.NamespacedName
 	issuerRef    *cmetav1.ObjectReference
 	fqdn         string
-	commonName   string
+	commonName   CommonName
 	isCA         bool
 	logger       logr.Logger
 }
@@ -54,11 +54,12 @@ func NewNodeCertificate(
 	key types.NamespacedName,
 	issuerRef *cmetav1.ObjectReference,
 	fqdn string,
+	commonName CommonName,
 	isCA bool,
 	logger logr.Logger,
 ) *CertificateResource {
 	return &CertificateResource{
-		client, scheme, pandaCluster, key, issuerRef, fqdn, "", isCA, logger.WithValues("Kind", certificateKind()),
+		client, scheme, pandaCluster, key, issuerRef, fqdn, commonName, isCA, logger.WithValues("Kind", certificateKind()),
 	}
 }
 
@@ -69,7 +70,7 @@ func NewCertificate(
 	pandaCluster *redpandav1alpha1.Cluster,
 	key types.NamespacedName,
 	issuerRef *cmetav1.ObjectReference,
-	commonName string,
+	commonName CommonName,
 	isCA bool,
 	logger logr.Logger,
 ) *CertificateResource {
@@ -89,13 +90,6 @@ func (r *CertificateResource) Ensure(ctx context.Context) error {
 	return err
 }
 
-const (
-	maxCommonNameLength   = 64
-	nodeSuffix            = "-node"
-	nodeSuffixLength      = len(nodeSuffix)
-	maxPandaClusterLength = maxCommonNameLength - nodeSuffixLength
-)
-
 // obj returns resource managed client.Object
 func (r *CertificateResource) obj() (k8sclient.Object, error) {
 	objLabels := labels.ForCluster(r.pandaCluster)
@@ -114,16 +108,10 @@ func (r *CertificateResource) obj() (k8sclient.Object, error) {
 
 	if r.fqdn != "" {
 		name := "*." + strings.TrimSuffix(r.fqdn, ".")
-		// common name has a limit of 64 bytes
-		shortName := r.pandaCluster.Name
-		if len(shortName) > maxPandaClusterLength {
-			shortName = shortName[:maxPandaClusterLength+1]
-		}
-		cert.Spec.CommonName = fmt.Sprintf("%s-node", shortName)
+		cert.Spec.CommonName = string(r.commonName)
 		cert.Spec.DNSNames = []string{name}
 	} else {
-		// Common name cannot exceed 64 bytes (cert-manager validates).
-		cert.Spec.CommonName = r.commonName
+		cert.Spec.CommonName = string(r.commonName)
 	}
 
 	err := controllerutil.SetControllerReference(r.pandaCluster, cert, r.scheme)

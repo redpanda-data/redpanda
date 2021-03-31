@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: cluster-tls
+  name: thisisverylongnamethatishittingthemax40c
 status:
   readyReplicas: 1
 
@@ -10,7 +10,7 @@ status:
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
-  name: cluster-tls-selfsigned-issuer
+  name: thisisverylongnamethatishittingthemax40c-selfsigned-issuer
 status:
   conditions:
     - reason: IsReady
@@ -22,7 +22,7 @@ status:
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
-  name: cluster-tls-root-issuer
+  name: thisisverylongnamethatishittingthemax40c-root-issuer
 status:
   conditions:
     - reason: KeyPairVerified
@@ -33,7 +33,7 @@ status:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: cluster-tls-root-certificate
+  name: thisisverylongnamethatishittingthemax40c-root-certificate
 status:
   conditions:
     - reason: Ready
@@ -45,7 +45,7 @@ status:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: cluster-tls-redpanda
+  name: thisisverylongnamethatishittingthemax40c-redpanda
 status:
   conditions:
     - reason: Ready
