@@ -354,6 +354,10 @@ spec:
                     items:
                       type: string
                     type: array
+                  externalAdmin:
+                    items:
+                      type: string
+                    type: array
                   internal:
                     items:
                       type: string
