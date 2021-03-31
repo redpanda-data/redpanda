@@ -1,0 +1,27 @@
+package certmanager_test
+
+import (
+	"fmt"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/resources/certmanager"
+)
+
+func TestCommonName(t *testing.T) {
+	tests := []struct {
+		testName           string
+		clusterName        string
+		suffix             string
+		expectedCommonName string
+	}{
+		{"short name and suffix", "cluster", "suffix", "cluster-suffix"},
+		{"long name and suffix", "thisisverylongnamethatishittingthemaximal64characterlimitofnames", "suffix", "thisisverylongnamethatishittingthemaximal64characterlimit-suffix"},
+		{"long name and long suffix", "thisisverylongnamethatishittingthemaximal64characterlimitofnames", "thisisverylongsuffixthathas40chars123456", "thisisverylongnamethati-thisisverylongsuffixthathas40chars123456"},
+	}
+
+	for _, tt := range tests {
+		cn := certmanager.NewCommonName(tt.clusterName, tt.suffix)
+		assert.Equal(t, tt.expectedCommonName, string(cn), fmt.Sprintf("%s: expecting common name to be equal", tt.testName))
+	}
+}
