@@ -49,6 +49,10 @@ public:
         return std::nullopt;
     }
 
+    bool remove(const credential_user& user) {
+        return _credentials.erase(user) > 0;
+    }
+
     bool contains(const credential_user& name) const {
         return _credentials.contains(name);
     }
