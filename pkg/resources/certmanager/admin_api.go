@@ -15,6 +15,13 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
+const (
+	// AdminAPIClientCert cert name - client certificate for Admin API
+	AdminAPIClientCert = "admin-api-client"
+	// AdminAPINodeCert cert name - node certificate for Admin API
+	AdminAPINodeCert = "admin-api-node"
+)
+
 // AdminAPINodeCert returns the namespaced name for the Admin API certificate used by node
 func (r *PkiReconciler) AdminAPINodeCert() types.NamespacedName {
 	return types.NamespacedName{Name: r.pandaCluster.Name + "-" + AdminAPINodeCert, Namespace: r.pandaCluster.Namespace}
