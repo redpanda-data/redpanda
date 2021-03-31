@@ -48,6 +48,12 @@ class ScramTest(NoSaslRedpandaTest):
         super(ScramTest, self).__init__(test_context=test_context,
                                         extra_rp_conf=extra_rp_conf)
 
+    def delete_user(self, username):
+        controller = self.redpanda.nodes[0]
+        url = f"http://{controller.account.hostname}:9644/v1/security/users/{username}"
+        res = requests.delete(url)
+        assert res.status_code == 200
+
     def create_user(self):
         def gen(length):
             return "".join(
@@ -100,3 +106,18 @@ class ScramTest(NoSaslRedpandaTest):
         topics = client.list_topics()
         print(topics)
         assert topic.name in topics
+
+        self.delete_user(username)
+
+        try:
+            # now listing should fail because the user has been deleted
+            client = KafkaCliTools(self.redpanda,
+                                   user=username,
+                                   passwd=password)
+            client.list_topics()
+            assert False, "Listing topics should fail"
+        except AssertionError as e:
+            raise e
+        except Exception as e:
+            self.redpanda.logger.debug(e)
+            pass
