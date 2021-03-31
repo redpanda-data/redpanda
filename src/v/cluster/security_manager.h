@@ -23,7 +23,7 @@ public:
     explicit security_manager(ss::sharded<security::credential_store>&);
 
     static constexpr auto commands
-      = make_commands_list<create_user_cmd, delete_user_cmd>();
+      = make_commands_list<create_user_cmd, delete_user_cmd, update_user_cmd>();
 
     ss::future<std::error_code> apply_update(model::record_batch);
 

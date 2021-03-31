@@ -36,8 +36,24 @@ security_manager::apply_update(model::record_batch batch) {
           },
           [this](delete_user_cmd cmd) {
               return dispatch_updates_to_cores(std::move(cmd));
+          },
+          [this](update_user_cmd cmd) {
+              return dispatch_updates_to_cores(std::move(cmd));
           });
     });
+}
+
+/*
+ * handle: update user command
+ */
+static std::error_code
+do_apply(update_user_cmd cmd, security::credential_store& store) {
+    auto removed = store.remove(cmd.key);
+    if (!removed) {
+        return errc::user_does_not_exist;
+    }
+    store.put(cmd.key, std::move(cmd.value));
+    return errc::success;
 }
 
 /*

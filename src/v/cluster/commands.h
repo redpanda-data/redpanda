@@ -70,6 +70,7 @@ static constexpr int8_t finish_moving_partition_replicas_cmd_type = 3;
 static constexpr int8_t update_topic_properties_cmd_type = 4;
 static constexpr int8_t create_user_cmd_type = 5;
 static constexpr int8_t delete_user_cmd_type = 6;
+static constexpr int8_t update_user_cmd_type = 7;
 
 using create_topic_cmd = controller_command<
   model::topic_namespace,
@@ -111,6 +112,12 @@ using delete_user_cmd = controller_command<
   security::credential_user,
   int8_t, // unused
   delete_user_cmd_type,
+  user_batch_type()>;
+
+using update_user_cmd = controller_command<
+  security::credential_user,
+  security::scram_credential,
+  update_user_cmd_type,
   user_batch_type()>;
 
 // typelist utils
