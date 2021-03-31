@@ -20,6 +20,7 @@
 #include "kafka/server/request_context.h"
 #include "kafka/types.h"
 #include "outcome.h"
+#include "security/acl.h"
 
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/sstring.hh>
@@ -68,6 +69,61 @@ T make_error_alter_config_resource_response(
       .error_message = std::move(msg),
       .resource_type = resource.resource_type,
       .resource_name = resource.resource_name};
+}
+/**
+ * Authorizes groupped alter configuration resources, it returns not authorized
+ * responsens and modifies passed in group_resources<T>
+ */
+template<typename T, typename R>
+std::vector<R> authorize_alter_config_resources(
+  request_context& ctx, groupped_resources<T>& to_authorize) {
+    std::vector<R> not_authorized;
+    /**
+     * Check broker configuration authorization
+     */
+    if (
+      !to_authorize.broker_changes.empty()
+      && !ctx.authorized(
+        security::acl_operation::alter_configs,
+        security::default_cluster_name)) {
+        // not allowed
+        std::transform(
+          to_authorize.broker_changes.begin(),
+          to_authorize.broker_changes.end(),
+          std::back_inserter(not_authorized),
+          [](T& res) {
+              return make_error_alter_config_resource_response<R>(
+                res, error_code::cluster_authorization_failed);
+          });
+        // all broker changes have to be dropped
+        to_authorize.broker_changes.clear();
+    }
+
+    /**
+     * Check topic configuration authorization
+     */
+    auto unauthorized_it = std::partition(
+      to_authorize.topic_changes.begin(),
+      to_authorize.topic_changes.end(),
+      [&ctx](const T& res) {
+          return ctx.authorized(
+            security::acl_operation::alter_configs,
+            model::topic(res.resource_name));
+      });
+
+    std::transform(
+      unauthorized_it,
+      to_authorize.topic_changes.end(),
+      std::back_inserter(not_authorized),
+      [](T& res) {
+          return make_error_alter_config_resource_response<R>(
+            res, error_code::topic_authorization_failed);
+      });
+
+    to_authorize.topic_changes.erase(
+      unauthorized_it, to_authorize.topic_changes.end());
+
+    return not_authorized;
 }
 
 template<typename T, typename R, typename Func>
