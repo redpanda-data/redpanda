@@ -177,16 +177,21 @@ func (r *ClusterReconciler) reportStatus(
 		observedNodesInternal = append(observedNodesInternal, fmt.Sprintf("%s.%s", item.Name, internalFQDN))
 	}
 
-	observedNodesExternal, err := r.createExternalNodesList(ctx, observedPods.Items, redpandaCluster, nodeportSvcName)
+	observedNodesExternal, err := r.createExternalNodesList(ctx, observedPods.Items, redpandaCluster, nodeportSvcName, "kafka")
 	if err != nil {
 		return fmt.Errorf("failed to construct external node list: %w", err)
+	}
+
+	observedExternalAdmin, err := r.createExternalNodesList(ctx, observedPods.Items, redpandaCluster, nodeportSvcName, "admin")
+	if err != nil {
+		return fmt.Errorf("failed to construct external admin list: %w", err)
 	}
 
 	if lastObservedSts == nil {
 		return errNonexistentLastObservesState
 	}
 
-	if statusShouldBeUpdated(redpandaCluster.Status, observedNodesInternal, observedNodesExternal, lastObservedSts.Status.ReadyReplicas) {
+	if statusShouldBeUpdated(&redpandaCluster.Status, observedNodesInternal, observedNodesExternal, lastObservedSts.Status.ReadyReplicas) {
 		err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 			var cluster redpandav1alpha1.Cluster
 			err := r.Get(ctx, types.NamespacedName{
@@ -199,6 +204,7 @@ func (r *ClusterReconciler) reportStatus(
 
 			cluster.Status.Nodes.Internal = observedNodesInternal
 			cluster.Status.Nodes.External = observedNodesExternal
+			cluster.Status.Nodes.ExternalAdmin = observedExternalAdmin
 			cluster.Status.Replicas = lastObservedSts.Status.ReadyReplicas
 
 			return r.Status().Update(ctx, &cluster)
@@ -212,7 +218,7 @@ func (r *ClusterReconciler) reportStatus(
 }
 
 func statusShouldBeUpdated(
-	status redpandav1alpha1.ClusterStatus,
+	status *redpandav1alpha1.ClusterStatus,
 	nodesInternal, nodesExternal []string,
 	readyReplicas int32,
 ) bool {
@@ -234,6 +240,7 @@ func (r *ClusterReconciler) createExternalNodesList(
 	pods []corev1.Pod,
 	pandaCluster *redpandav1alpha1.Cluster,
 	nodePortName types.NamespacedName,
+	portName string,
 ) ([]string, error) {
 	if !pandaCluster.Spec.ExternalConnectivity.Enabled {
 		return []string{}, nil
@@ -244,7 +251,7 @@ func (r *ClusterReconciler) createExternalNodesList(
 		return []string{}, fmt.Errorf("failed to retrieve node port service %s: %w", nodePortName, err)
 	}
 
-	if len(nodePortSvc.Spec.Ports) != 1 || nodePortSvc.Spec.Ports[0].NodePort == 0 {
+	if len(nodePortSvc.Spec.Ports) != 2 || nodePortSvc.Spec.Ports[0].NodePort == 0 || nodePortSvc.Spec.Ports[1].NodePort == 0 {
 		return []string{}, fmt.Errorf("node port service %s: %w", nodePortName, errNodePortMissing)
 	}
 
@@ -256,7 +263,7 @@ func (r *ClusterReconciler) createExternalNodesList(
 				fmt.Sprintf("%s.%s:%d",
 					pods[i].Spec.Hostname,
 					pandaCluster.Spec.ExternalConnectivity.Subdomain,
-					getNodePort(&nodePortSvc),
+					getNodePort(&nodePortSvc, portName),
 				))
 		} else {
 			if err := r.Get(ctx, types.NamespacedName{Name: pods[i].Spec.NodeName}, &node); err != nil {
@@ -266,7 +273,7 @@ func (r *ClusterReconciler) createExternalNodesList(
 			observedNodesExternal = append(observedNodesExternal,
 				fmt.Sprintf("%s:%d",
 					getExternalIP(&node),
-					getNodePort(&nodePortSvc),
+					getNodePort(&nodePortSvc, portName),
 				))
 		}
 	}
@@ -285,12 +292,12 @@ func getExternalIP(node *corev1.Node) string {
 	return ""
 }
 
-func getNodePort(svc *corev1.Service) int32 {
+func getNodePort(svc *corev1.Service, name string) int32 {
 	if svc == nil {
 		return -1
 	}
 	for _, port := range svc.Spec.Ports {
-		if port.NodePort != 0 {
+		if port.Name == name && port.NodePort != 0 {
 			return port.NodePort
 		}
 	}
