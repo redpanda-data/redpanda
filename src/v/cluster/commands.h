@@ -17,6 +17,8 @@
 #include "model/record.h"
 #include "reflection/adl.h"
 #include "reflection/async_adl.h"
+#include "security/credential_store.h"
+#include "security/scram_credential.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/do_with.hh>
@@ -30,6 +32,9 @@ namespace cluster {
 // filter the batches out
 static constexpr model::record_batch_type topic_batch_type
   = model::record_batch_type(6);
+
+static constexpr model::record_batch_type user_batch_type
+  = model::record_batch_type(12);
 
 using command_type = named_type<int8_t, struct command_type_tag>;
 // Controller state updates are represented in terms of commands. Each
@@ -63,6 +68,9 @@ static constexpr int8_t delete_topic_cmd_type = 1;
 static constexpr int8_t move_partition_replicas_cmd_type = 2;
 static constexpr int8_t finish_moving_partition_replicas_cmd_type = 3;
 static constexpr int8_t update_topic_properties_cmd_type = 4;
+static constexpr int8_t create_user_cmd_type = 5;
+static constexpr int8_t delete_user_cmd_type = 6;
+static constexpr int8_t update_user_cmd_type = 7;
 
 using create_topic_cmd = controller_command<
   model::topic_namespace,
@@ -93,6 +101,24 @@ using update_topic_properties_cmd = controller_command<
   incremental_topic_updates,
   update_topic_properties_cmd_type,
   topic_batch_type()>;
+
+using create_user_cmd = controller_command<
+  security::credential_user,
+  security::scram_credential,
+  create_user_cmd_type,
+  user_batch_type()>;
+
+using delete_user_cmd = controller_command<
+  security::credential_user,
+  int8_t, // unused
+  delete_user_cmd_type,
+  user_batch_type()>;
+
+using update_user_cmd = controller_command<
+  security::credential_user,
+  security::scram_credential,
+  update_user_cmd_type,
+  user_batch_type()>;
 
 // typelist utils
 // clang-format off

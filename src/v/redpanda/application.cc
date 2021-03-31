@@ -17,6 +17,7 @@
 #include "cluster/metadata_dissemination_handler.h"
 #include "cluster/metadata_dissemination_service.h"
 #include "cluster/partition_manager.h"
+#include "cluster/security_frontend.h"
 #include "cluster/service.h"
 #include "cluster/topics_frontend.h"
 #include "config/configuration.h"
@@ -36,9 +37,11 @@
 #include "redpanda/admin/api-doc/kafka.json.h"
 #include "redpanda/admin/api-doc/partition.json.h"
 #include "redpanda/admin/api-doc/raft.json.h"
+#include "redpanda/admin/api-doc/security.json.h"
 #include "resource_mgmt/io_priority.h"
 #include "rpc/simple_protocol.h"
 #include "security/scram_algorithm.h"
+#include "security/scram_authenticator.h"
 #include "storage/chunk_cache.h"
 #include "storage/directories.h"
 #include "syschecks/syschecks.h"
@@ -59,6 +62,7 @@
 
 #include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/split.hpp>
+#include <rapidjson/document.h>
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/writer.h>
 #include <sys/utsname.h>
@@ -321,6 +325,8 @@ void application::configure_admin_server() {
               rb->register_api_file(server._routes, "kafka");
               rb->register_function(server._routes, insert_comma);
               rb->register_api_file(server._routes, "partition");
+              rb->register_function(server._routes, insert_comma);
+              rb->register_api_file(server._routes, "security");
               ss::httpd::config_json::get_config.set(
                 server._routes, []([[maybe_unused]] ss::const_req req) {
                     rapidjson::StringBuffer buf;
@@ -330,6 +336,7 @@ void application::configure_admin_server() {
                 });
               admin_register_raft_routes(server);
               admin_register_kafka_routes(server);
+              admin_register_security_routes(server);
           })
           .get();
     }
@@ -467,30 +474,8 @@ void application::wire_up_redpanda_services() {
       std::ref(controller->get_partition_leaders()))
       .get();
 
-    syschecks::systemd_message("Creating kafka credential store").get();
-    construct_service(credentials).get();
-
     syschecks::systemd_message("Creating kafka authorizer").get();
     construct_service(authorizer).get();
-
-    /*
-     * Add in the static scram credential for testing.
-     * - sasl and developer mode needs to be enabled
-     */
-    if (
-      unlikely(config::shard_local_cfg().enable_admin_api())
-      && config::shard_local_cfg().developer_mode()
-      && !config::shard_local_cfg().static_scram_user().empty()
-      && !config::shard_local_cfg().static_scram_pass().empty()) {
-        credentials
-          .invoke_on_all([](security::credential_store& store) {
-              store.put(
-                config::shard_local_cfg().static_scram_user(),
-                security::scram_sha256::make_credentials(
-                  config::shard_local_cfg().static_scram_pass(), 4096));
-          })
-          .get();
-    }
 
     syschecks::systemd_message("Creating metadata dissemination service").get();
     construct_service(
@@ -748,7 +733,7 @@ void application::start_redpanda() {
             coordinator_ntp_mapper,
             fetch_session_cache,
             std::ref(id_allocator_frontend),
-            credentials,
+            controller->get_credential_store(),
             authorizer);
           s.set_protocol(std::move(proto));
       })
@@ -858,6 +843,118 @@ parse_target_broker_shards(const ss::sstring& param) {
     }
 
     return replicas;
+}
+
+// TODO: factor out generic serialization from seastar http exceptions
+static security::scram_credential
+parse_scram_credential(const rapidjson::Document& doc) {
+    if (!doc.IsObject()) {
+        throw ss::httpd::bad_request_exception(fmt::format("Not an object"));
+    }
+
+    if (!doc.HasMember("algorithm") || !doc["algorithm"].IsString()) {
+        throw ss::httpd::bad_request_exception(
+          fmt::format("String algo missing"));
+    }
+    const auto algorithm = std::string_view(
+      doc["algorithm"].GetString(), doc["algorithm"].GetStringLength());
+
+    if (!doc.HasMember("password") || !doc["password"].IsString()) {
+        throw ss::httpd::bad_request_exception(
+          fmt::format("String password smissing"));
+    }
+    const auto password = doc["password"].GetString();
+
+    security::scram_credential credential;
+
+    if (algorithm == security::scram_sha256_authenticator::name) {
+        credential = security::scram_sha256::make_credentials(
+          password, security::scram_sha256::min_iterations);
+
+    } else if (algorithm == security::scram_sha512_authenticator::name) {
+        credential = security::scram_sha512::make_credentials(
+          password, security::scram_sha512::min_iterations);
+
+    } else {
+        throw ss::httpd::bad_request_exception(
+          fmt::format("Unknown scram algorithm: {}", algorithm));
+    }
+
+    return credential;
+}
+
+void application::admin_register_security_routes(ss::http_server& server) {
+    ss::httpd::security_json::create_user.set(
+      server._routes, [this](std::unique_ptr<ss::httpd::request> req) {
+          rapidjson::Document doc;
+          doc.Parse(req->content.data());
+
+          auto credential = parse_scram_credential(doc);
+
+          if (!doc.HasMember("username") || !doc["username"].IsString()) {
+              throw ss::httpd::bad_request_exception(
+                fmt::format("String username missing"));
+          }
+
+          auto username = security::credential_user(
+            doc["username"].GetString());
+
+          return controller->get_security_frontend()
+            .local()
+            .create_user(username, credential, model::timeout_clock::now() + 5s)
+            .then([this](std::error_code err) {
+                vlog(_log.debug, "Creating user {}:{}", err, err.message());
+                if (err) {
+                    throw ss::httpd::bad_request_exception(
+                      fmt::format("Creating user: {}", err.message()));
+                }
+                return ss::make_ready_future<ss::json::json_return_type>(
+                  ss::json::json_return_type(ss::json::json_void()));
+            });
+      });
+
+    ss::httpd::security_json::delete_user.set(
+      server._routes, [this](std::unique_ptr<ss::httpd::request> req) {
+          auto user = security::credential_user(
+            model::topic(req->param["user"]));
+
+          return controller->get_security_frontend()
+            .local()
+            .delete_user(user, model::timeout_clock::now() + 5s)
+            .then([this](std::error_code err) {
+                vlog(_log.debug, "Deleting user {}:{}", err, err.message());
+                if (err) {
+                    throw ss::httpd::bad_request_exception(
+                      fmt::format("Deleting user: {}", err.message()));
+                }
+                return ss::make_ready_future<ss::json::json_return_type>(
+                  ss::json::json_return_type(ss::json::json_void()));
+            });
+      });
+
+    ss::httpd::security_json::update_user.set(
+      server._routes, [this](std::unique_ptr<ss::httpd::request> req) {
+          auto user = security::credential_user(
+            model::topic(req->param["user"]));
+
+          rapidjson::Document doc;
+          doc.Parse(req->content.data());
+
+          auto credential = parse_scram_credential(doc);
+
+          return controller->get_security_frontend()
+            .local()
+            .update_user(user, credential, model::timeout_clock::now() + 5s)
+            .then([this](std::error_code err) {
+                vlog(_log.debug, "Updating user {}:{}", err, err.message());
+                if (err) {
+                    throw ss::httpd::bad_request_exception(
+                      fmt::format("Updating user: {}", err.message()));
+                }
+                return ss::make_ready_future<ss::json::json_return_type>(
+                  ss::json::json_return_type(ss::json::json_void()));
+            });
+      });
 }
 
 void application::admin_register_kafka_routes(ss::http_server& server) {

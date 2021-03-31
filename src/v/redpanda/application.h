@@ -77,7 +77,6 @@ public:
     smp_groups smp_service_groups;
     ss::sharded<kafka::quota_manager> quota_mgr;
     ss::sharded<cluster::id_allocator_frontend> id_allocator_frontend;
-    ss::sharded<security::credential_store> credentials;
     ss::sharded<archival::scheduler_service> archival_scheduler;
     ss::sharded<security::authorizer> authorizer;
 
@@ -93,6 +92,7 @@ private:
 
     void admin_register_raft_routes(ss::http_server& server);
     void admin_register_kafka_routes(ss::http_server& server);
+    void admin_register_security_routes(ss::http_server& server);
 
     bool coproc_enabled() {
         const auto& cfg = config::shard_local_cfg();

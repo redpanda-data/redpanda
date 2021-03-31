@@ -10,6 +10,7 @@
  */
 #pragma once
 #include "bytes/bytes.h"
+#include "reflection/adl.h"
 
 #include <iosfwd>
 
@@ -45,3 +46,41 @@ private:
 std::ostream& operator<<(std::ostream&, const security::scram_credential&);
 
 } // namespace security
+
+// TODO: avoid bytes-to-iobuf conersion. either add bytes specialization to
+// reflection or wait for reflection-v2 which will have a new interface. in
+// either case, this is only used when managing users not on a hot path.
+namespace reflection {
+template<>
+struct adl<security::scram_credential> {
+    static constexpr int8_t current_version = 1;
+
+    void to(iobuf& out, security::scram_credential&& c) {
+        adl<int8_t>{}.to(out, current_version);
+        serialize(
+          out,
+          bytes_to_iobuf(c.salt()),
+          bytes_to_iobuf(c.server_key()),
+          bytes_to_iobuf(c.stored_key()),
+          static_cast<int32_t>(c.iterations()));
+    }
+
+    security::scram_credential from(iobuf_parser& in) {
+        auto version = adl<int8_t>{}.from(in);
+        vassert(
+          version == current_version,
+          "Unexpected scram credential version {} (expected {})",
+          version,
+          current_version);
+        auto salt = adl<iobuf>{}.from(in);
+        auto server_key = adl<iobuf>{}.from(in);
+        auto stored_key = adl<iobuf>{}.from(in);
+        auto iterations = adl<int32_t>{}.from(in);
+        return security::scram_credential(
+          iobuf_to_bytes(salt),
+          iobuf_to_bytes(server_key),
+          iobuf_to_bytes(stored_key),
+          iterations);
+    }
+};
+} // namespace reflection

@@ -28,5 +28,6 @@ class members_manager;
 class members_table;
 class metadata_cache;
 class metadata_dissemination_service;
+class security_frontend;
 
 } // namespace cluster

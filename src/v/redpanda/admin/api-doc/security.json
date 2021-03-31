@@ -1,0 +1,47 @@
+"/v1/security/users": {
+    "post": {
+        "summary": "Create a user",
+        "operationId": "create_user",
+        "responses": {
+            "200": {
+                "description": "Create user"
+            }
+        }
+    }
+},
+"/v1/security/users/{user}": {
+    "delete": {
+        "summary": "Delete a user",
+        "operationId": "delete_user",
+        "parameters": [
+            {
+                "name": "user",
+                "in": "path",
+                "required": true,
+                "type": "string"
+            }
+        ],
+        "responses": {
+            "200": {
+                "description": "Delete user"
+            }
+        }
+    },
+    "put": {
+        "summary": "Update a user",
+        "operationId": "update_user",
+        "parameters": [
+            {
+                "name": "user",
+                "in": "path",
+                "required": true,
+                "type": "string"
+            }
+        ],
+        "responses": {
+            "200": {
+                "description": "Update user"
+            }
+        }
+    }
+}

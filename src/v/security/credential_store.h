@@ -25,6 +25,8 @@ namespace security {
  * process that often spans multiple network round trips and should remain
  * consistent for the duration of that process.
  */
+using credential_user = named_type<ss::sstring, struct credential_user_type>;
+
 class credential_store {
 public:
     credential_store() noexcept = default;
@@ -35,16 +37,24 @@ public:
     ~credential_store() noexcept = default;
 
     template<typename T>
-    void put(const ss::sstring& name, T&& credential) {
+    void put(const credential_user& name, T&& credential) {
         _credentials.insert_or_assign(name, std::forward<T>(credential));
     }
 
     template<typename T>
-    auto get(const ss::sstring& name) -> std::optional<T> const {
+    auto get(const credential_user& name) -> std::optional<T> const {
         if (auto it = _credentials.find(name); it != _credentials.end()) {
             return std::get<T>(it->second);
         }
         return std::nullopt;
+    }
+
+    bool remove(const credential_user& user) {
+        return _credentials.erase(user) > 0;
+    }
+
+    bool contains(const credential_user& name) const {
+        return _credentials.contains(name);
     }
 
 private:
@@ -52,7 +62,7 @@ private:
     // a mismatched credential type test for get<type>(name).
     using credential_types = std::variant<scram_credential>;
 
-    absl::node_hash_map<ss::sstring, credential_types> _credentials;
+    absl::node_hash_map<credential_user, credential_types> _credentials;
 };
 
 } // namespace security

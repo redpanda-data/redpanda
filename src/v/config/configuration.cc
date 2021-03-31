@@ -533,18 +533,6 @@ configuration::configuration()
       "Enable SASL authentication for Kafka connections.",
       required::no,
       false)
-  , static_scram_user(
-      *this,
-      "static_scram_user",
-      "A SASL SCRAM user for testing",
-      required::no,
-      "")
-  , static_scram_pass(
-      *this,
-      "static_scram_pass",
-      "A SASL SCRAM password for testing",
-      required::no,
-      "")
   , controller_backend_housekeeping_interval_ms(
       *this,
       "controller_backend_housekeeping_interval_ms",

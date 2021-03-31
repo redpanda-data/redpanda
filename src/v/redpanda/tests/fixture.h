@@ -83,7 +83,7 @@ public:
           app.coordinator_ntp_mapper,
           app.fetch_session_cache,
           app.id_allocator_frontend,
-          app.credentials,
+          app.controller->get_credential_store(),
           app.authorizer);
     }
 

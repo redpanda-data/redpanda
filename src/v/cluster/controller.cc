@@ -19,6 +19,7 @@
 #include "cluster/partition_leaders_table.h"
 #include "cluster/partition_manager.h"
 #include "cluster/raft0_utils.h"
+#include "cluster/security_frontend.h"
 #include "cluster/shard_table.h"
 #include "cluster/topic_table.h"
 #include "cluster/topics_frontend.h"
@@ -42,7 +43,8 @@ controller::controller(
   , _partition_manager(pm)
   , _shard_table(st)
   , _storage(storage)
-  , _tp_updates_dispatcher(_partition_allocator, _tp_state) {}
+  , _tp_updates_dispatcher(_partition_allocator, _tp_state)
+  , _security_manager(_credentials) {}
 
 ss::future<> controller::wire_up() {
     return _as.start()
@@ -50,6 +52,7 @@ ss::future<> controller::wire_up() {
       .then([this] { return _partition_leaders.start(); })
       .then(
         [this] { return _partition_allocator.start_single(raft::group_id(0)); })
+      .then([this] { return _credentials.start(); })
       .then([this] { return _tp_state.start(); });
 }
 
@@ -83,7 +86,11 @@ ss::future<> controller::start() {
             std::ref(clusterlog),
             _raft0.get(),
             raft::persistent_last_applied::yes,
-            std::ref(_tp_updates_dispatcher));
+            std::ref(_tp_updates_dispatcher),
+            std::ref(_security_manager));
+      })
+      .then([this] {
+          return _security_frontend.start(std::ref(_stm), std::ref(_as));
       })
       .then([this] {
           return _tp_frontend.start(
@@ -140,7 +147,9 @@ ss::future<> controller::stop() {
     return f.then([this] {
         return _backend.stop()
           .then([this] { return _tp_frontend.stop(); })
+          .then([this] { return _security_frontend.stop(); })
           .then([this] { return _stm.stop(); })
+          .then([this] { return _credentials.stop(); })
           .then([this] { return _tp_state.stop(); })
           .then([this] { return _members_manager.stop(); })
           .then([this] { return _partition_allocator.stop(); })

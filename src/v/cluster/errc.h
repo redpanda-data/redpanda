@@ -36,6 +36,8 @@ enum class errc {
     partition_already_exists,
     waiting_for_recovery,
     update_in_progress,
+    user_exists,
+    user_does_not_exist,
 };
 struct errc_category final : public std::error_category {
     const char* name() const noexcept final { return "cluster::errc"; }
@@ -90,6 +92,10 @@ struct errc_category final : public std::error_category {
             return "Waiting for partition to recover";
         case errc::update_in_progress:
             return "Partition configuration update in progress";
+        case errc::user_exists:
+            return "User already exists";
+        case errc::user_does_not_exist:
+            return "User does not exist";
         default:
             return "cluster::errc::unknown";
         }
