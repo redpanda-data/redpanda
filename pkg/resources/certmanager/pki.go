@@ -12,7 +12,6 @@ package certmanager
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/go-logr/logr"
 	cmmetav1 "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
@@ -67,10 +66,6 @@ func NewPki(
 	}
 }
 
-func (r *PkiReconciler) certNamespacedName(name string) types.NamespacedName {
-	return types.NamespacedName{Name: r.pandaCluster.Name + "-" + name, Namespace: r.pandaCluster.Namespace}
-}
-
 // NodeCert returns the namespaced name for Redpanda's node certificate
 func (r *PkiReconciler) NodeCert() types.NamespacedName {
 	if r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.NodeSecretRef != nil {
@@ -103,7 +98,8 @@ func (r *PkiReconciler) prepareKafkaAPI(
 
 	if nodeSecretRef == nil {
 		// Redpanda cluster certificate for Kafka API - to be provided to each broker
-		certsKey := r.certNamespacedName(RedpandaNodeCert)
+		cn := NewCommonName(r.pandaCluster.Name, RedpandaNodeCert)
+		certsKey := types.NamespacedName{Name: string(cn), Namespace: r.pandaCluster.Namespace}
 		nodeIssuerRef := selfSignedIssuerRef
 		if externalIssuerRef != nil {
 			// if external issuer is provided, we will use it to generate node certificates
@@ -116,7 +112,7 @@ func (r *PkiReconciler) prepareKafkaAPI(
 			dnsName = externConn.Subdomain
 		}
 
-		redpandaCert := NewNodeCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, nodeIssuerRef, dnsName, false, r.logger)
+		redpandaCert := NewNodeCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, nodeIssuerRef, dnsName, cn, false, r.logger)
 
 		toApply = append(toApply, redpandaCert)
 	}
@@ -129,16 +125,19 @@ func (r *PkiReconciler) prepareKafkaAPI(
 
 	if r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.RequireClientAuth {
 		// Certificate for external clients to call the Kafka API on any broker in this Redpanda cluster
-		certsKey := r.certNamespacedName(UserClientCert)
-		externalClientCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, selfSignedIssuerRef, fmt.Sprintf("rp-%s", certsKey.Name), false, r.logger)
+		userClientCn := NewCommonName(r.pandaCluster.Name, UserClientCert)
+		userClientKey := types.NamespacedName{Name: string(userClientCn), Namespace: r.pandaCluster.Namespace}
+		externalClientCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, userClientKey, selfSignedIssuerRef, userClientCn, false, r.logger)
 
 		// Certificate for operator to call the Kafka API on any broker in this Redpanda cluster
-		certsKey = r.certNamespacedName(OperatorClientCert)
-		internalClientCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, selfSignedIssuerRef, fmt.Sprintf("rp-%s", certsKey.Name), false, r.logger)
+		operatorClientCn := NewCommonName(r.pandaCluster.Name, OperatorClientCert)
+		operatorClientKey := types.NamespacedName{Name: string(operatorClientCn), Namespace: r.pandaCluster.Namespace}
+		internalClientCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, operatorClientKey, selfSignedIssuerRef, operatorClientCn, false, r.logger)
 
 		// Certificate for admin to call the Kafka API on any broker in this Redpanda cluster
-		certsKey = r.certNamespacedName(AdminClientCert)
-		adminClientCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, selfSignedIssuerRef, fmt.Sprintf("rp-%s", certsKey.Name), false, r.logger)
+		adminClientCn := NewCommonName(r.pandaCluster.Name, AdminClientCert)
+		adminClientKey := types.NamespacedName{Name: string(adminClientCn), Namespace: r.pandaCluster.Namespace}
+		adminClientCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, adminClientKey, selfSignedIssuerRef, adminClientCn, false, r.logger)
 
 		toApply = append(toApply, externalClientCert, internalClientCert, adminClientCert)
 	}
@@ -160,13 +159,14 @@ func (r *PkiReconciler) prepareRoot() (
 		"",
 		r.logger)
 
-	rootCertificateKey := r.certNamespacedName("root-certificate")
+	rootCn := NewCommonName(r.pandaCluster.Name, "root-certificate")
+	rootKey := types.NamespacedName{Name: string(rootCn), Namespace: r.pandaCluster.Namespace}
 	rootCertificate := NewCertificate(r.Client,
 		r.scheme,
 		r.pandaCluster,
-		rootCertificateKey,
+		rootKey,
 		selfSignedIssuer.objRef(),
-		rootCertificateKey.String(),
+		rootCn,
 		true,
 		r.logger)
 
