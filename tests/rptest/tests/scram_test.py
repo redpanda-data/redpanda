@@ -48,6 +48,25 @@ class ScramTest(NoSaslRedpandaTest):
         super(ScramTest, self).__init__(test_context=test_context,
                                         extra_rp_conf=extra_rp_conf)
 
+    def update_user(self, username):
+        def gen(length):
+            return "".join(
+                random.choice(string.ascii_letters) for _ in range(length))
+
+        password = gen(20)
+
+        controller = self.redpanda.nodes[0]
+        url = f"http://{controller.account.hostname}:9644/v1/security/users/{username}"
+        data = dict(
+            username=username,
+            password=password,
+            algorithm="SCRAM-SHA-256",
+        )
+        res = requests.put(url, json=data)
+
+        assert res.status_code == 200
+        return password
+
     def delete_user(self, username):
         controller = self.redpanda.nodes[0]
         url = f"http://{controller.account.hostname}:9644/v1/security/users/{username}"
@@ -121,3 +140,36 @@ class ScramTest(NoSaslRedpandaTest):
         except Exception as e:
             self.redpanda.logger.debug(e)
             pass
+
+        # recreate user
+        username, password = self.create_user()
+
+        # works ok
+        client = KafkaCliTools(self.redpanda, user=username, passwd=password)
+        topics = client.list_topics()
+        print(topics)
+        assert topic.name in topics
+
+        # update password
+        new_password = self.update_user(username)
+
+        try:
+            # now listing should fail because the password is different
+            client = KafkaCliTools(self.redpanda,
+                                   user=username,
+                                   passwd=password)
+            client.list_topics()
+            assert False, "Listing topics should fail"
+        except AssertionError as e:
+            raise e
+        except Exception as e:
+            self.redpanda.logger.debug(e)
+            pass
+
+        # but works ok with new password
+        client = KafkaCliTools(self.redpanda,
+                               user=username,
+                               passwd=new_password)
+        topics = client.list_topics()
+        print(topics)
+        assert topic.name in topics
