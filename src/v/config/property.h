@@ -35,12 +35,17 @@ public:
       T def = T{},
       property::validator validator = property::noop_validator)
       : base_property(conf, name, desc, req)
-      , _value(std::move(def))
+      , _value(def)
+      , _default(std::move(def))
       , _validator(std::move(validator)) {}
 
     const T& value() { return _value; }
 
     const T& value() const { return _value; }
+
+    const T& default_value() const { return _default; }
+
+    bool is_overriden() const { return is_required() || _value != _default; }
 
     const T& operator()() { return value(); }
 
@@ -82,6 +87,7 @@ public:
 
 protected:
     T _value;
+    const T _default;
 
 private:
     validator _validator;
