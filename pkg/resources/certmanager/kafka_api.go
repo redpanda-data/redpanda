@@ -53,7 +53,7 @@ func (r *PkiReconciler) NodeCert() types.NamespacedName {
 }
 
 func (r *PkiReconciler) prepareKafkaAPI(
-	ctx context.Context, selfSignedIssuerRef *cmmetav1.ObjectReference,
+	ctx context.Context, issuerRef *cmmetav1.ObjectReference,
 ) ([]resources.Resource, error) {
 	toApply := []resources.Resource{}
 
@@ -64,7 +64,7 @@ func (r *PkiReconciler) prepareKafkaAPI(
 		// Redpanda cluster certificate for Kafka API - to be provided to each broker
 		cn := NewCommonName(r.pandaCluster.Name, RedpandaNodeCert)
 		certsKey := types.NamespacedName{Name: string(cn), Namespace: r.pandaCluster.Namespace}
-		nodeIssuerRef := selfSignedIssuerRef
+		nodeIssuerRef := issuerRef
 		if externalIssuerRef != nil {
 			// if external issuer is provided, we will use it to generate node certificates
 			nodeIssuerRef = externalIssuerRef
@@ -91,17 +91,17 @@ func (r *PkiReconciler) prepareKafkaAPI(
 		// Certificate for external clients to call the Kafka API on any broker in this Redpanda cluster
 		userClientCn := NewCommonName(r.pandaCluster.Name, UserClientCert)
 		userClientKey := types.NamespacedName{Name: string(userClientCn), Namespace: r.pandaCluster.Namespace}
-		externalClientCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, userClientKey, selfSignedIssuerRef, userClientCn, false, r.logger)
+		externalClientCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, userClientKey, issuerRef, userClientCn, false, r.logger)
 
 		// Certificate for operator to call the Kafka API on any broker in this Redpanda cluster
 		operatorClientCn := NewCommonName(r.pandaCluster.Name, OperatorClientCert)
 		operatorClientKey := types.NamespacedName{Name: string(operatorClientCn), Namespace: r.pandaCluster.Namespace}
-		internalClientCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, operatorClientKey, selfSignedIssuerRef, operatorClientCn, false, r.logger)
+		internalClientCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, operatorClientKey, issuerRef, operatorClientCn, false, r.logger)
 
 		// Certificate for admin to call the Kafka API on any broker in this Redpanda cluster
 		adminClientCn := NewCommonName(r.pandaCluster.Name, AdminClientCert)
 		adminClientKey := types.NamespacedName{Name: string(adminClientCn), Namespace: r.pandaCluster.Namespace}
-		adminClientCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, adminClientKey, selfSignedIssuerRef, adminClientCn, false, r.logger)
+		adminClientCert := NewCertificate(r.Client, r.scheme, r.pandaCluster, adminClientKey, issuerRef, adminClientCn, false, r.logger)
 
 		toApply = append(toApply, externalClientCert, internalClientCert, adminClientCert)
 	}
