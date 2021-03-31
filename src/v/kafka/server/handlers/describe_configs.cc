@@ -245,6 +245,29 @@ report_broker_config(describe_configs_result& result, bool include_synonyms) {
       [](const std::chrono::milliseconds& ms) {
           return ssx::sformat("{}", ms.count());
       });
+
+    add_broker_config(
+      result,
+      "num.partitions",
+      config::shard_local_cfg().default_topic_partitions,
+      include_synonyms,
+      &describe_as_string<int32_t>);
+
+    add_broker_config(
+      result,
+      "default.replication.factor",
+      config::shard_local_cfg().default_topic_replication,
+      include_synonyms,
+      &describe_as_string<int16_t>);
+
+    add_broker_config(
+      result,
+      "log.dirs",
+      config::shard_local_cfg().data_directory,
+      include_synonyms,
+      [](const config::data_directory_path& path) {
+          return path.as_sstring();
+      });
 }
 
 int64_t describe_retention_duration(
