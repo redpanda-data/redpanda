@@ -931,6 +931,30 @@ void application::admin_register_security_routes(ss::http_server& server) {
                   ss::json::json_return_type(ss::json::json_void()));
             });
       });
+
+    ss::httpd::security_json::update_user.set(
+      server._routes, [this](std::unique_ptr<ss::httpd::request> req) {
+          auto user = security::credential_user(
+            model::topic(req->param["user"]));
+
+          rapidjson::Document doc;
+          doc.Parse(req->content.data());
+
+          auto credential = parse_scram_credential(doc);
+
+          return controller->get_security_frontend()
+            .local()
+            .update_user(user, credential, model::timeout_clock::now() + 5s)
+            .then([this](std::error_code err) {
+                vlog(_log.debug, "Updating user {}:{}", err, err.message());
+                if (err) {
+                    throw ss::httpd::bad_request_exception(
+                      fmt::format("Updating user: {}", err.message()));
+                }
+                return ss::make_ready_future<ss::json::json_return_type>(
+                  ss::json::json_return_type(ss::json::json_void()));
+            });
+      });
 }
 
 void application::admin_register_kafka_routes(ss::http_server& server) {

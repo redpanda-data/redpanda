@@ -26,5 +26,22 @@
                 "description": "Delete user"
             }
         }
+    },
+    "put": {
+        "summary": "Update a user",
+        "operationId": "update_user",
+        "parameters": [
+            {
+                "name": "user",
+                "in": "path",
+                "required": true,
+                "type": "string"
+            }
+        ],
+        "responses": {
+            "200": {
+                "description": "Update user"
+            }
+        }
     }
 }
