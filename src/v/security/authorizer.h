@@ -14,6 +14,8 @@
 #include "seastarx.h"
 #include "security/acl.h"
 #include "security/acl_store.h"
+#include "security/logger.h"
+#include "vlog.h"
 
 #include <seastar/core/sstring.hh>
 #include <seastar/util/bool_class.hh>
@@ -49,6 +51,13 @@ public:
      * Add ACL bindings to the authorizer.
      */
     void add_bindings(const std::vector<acl_binding>& bindings) {
+        if (unlikely(
+              seclog.is_shard_zero()
+              && seclog.is_enabled(ss::log_level::debug))) {
+            for (const auto& binding : bindings) {
+                vlog(seclog.debug, "Adding ACL binding: {}", binding);
+            }
+        }
         _store.add_bindings(bindings);
     }
 
