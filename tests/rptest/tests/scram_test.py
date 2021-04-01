@@ -9,6 +9,7 @@
 import random
 import string
 import requests
+from ducktape.mark import ignore
 from ducktape.mark.resource import cluster
 from ducktape.utils.util import wait_until
 from ducktape.errors import DucktapeError
@@ -94,6 +95,9 @@ class ScramTest(NoSaslRedpandaTest):
         return username, password
 
     @cluster(num_nodes=3)
+    # TODO: this test is ignored until we will have support for creating propert
+    #       set of ACLs
+    @ignore
     def test_scram(self):
         username, password = self.create_user()
 
