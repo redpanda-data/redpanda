@@ -25,13 +25,17 @@ public:
       ss::sharded<security::credential_store>&,
       ss::sharded<security::authorizer>&);
 
-    static constexpr auto commands
-      = make_commands_list<create_user_cmd, delete_user_cmd, update_user_cmd>();
+    static constexpr auto commands = make_commands_list<
+      create_user_cmd,
+      delete_user_cmd,
+      update_user_cmd,
+      create_acls_cmd>();
 
     ss::future<std::error_code> apply_update(model::record_batch);
 
     bool is_batch_applicable(const model::record_batch& batch) const {
-        return batch.header().type == user_batch_type;
+        return batch.header().type == user_batch_type
+               || batch.header().type == acl_batch_type;
     }
 
 private:

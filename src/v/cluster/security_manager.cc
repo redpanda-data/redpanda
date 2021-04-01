@@ -41,8 +41,20 @@ security_manager::apply_update(model::record_batch batch) {
           },
           [this](update_user_cmd cmd) {
               return dispatch_updates_to_cores(std::move(cmd), _credentials);
+          },
+          [this](create_acls_cmd cmd) {
+              return dispatch_updates_to_cores(std::move(cmd), _authorizer);
           });
     });
+}
+
+/*
+ * handle: update user command
+ */
+static std::error_code
+do_apply(create_acls_cmd cmd, security::authorizer& authorizer) {
+    authorizer.add_bindings(cmd.key.bindings);
+    return errc::success;
 }
 
 /*

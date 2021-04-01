@@ -17,7 +17,7 @@ namespace model {
 
 using record_batch_type = named_type<int8_t, struct model_record_batch_type>;
 
-constexpr std::array<record_batch_type, 13> well_known_record_batch_types{
+constexpr std::array<record_batch_type, 14> well_known_record_batch_types{
   record_batch_type(),   // unknown - used for debugging
   record_batch_type(1),  // raft::data
   record_batch_type(2),  // raft::configuration
@@ -31,5 +31,6 @@ constexpr std::array<record_batch_type, 13> well_known_record_batch_types{
   record_batch_type(10), // tx_fence_batch_type
   record_batch_type(11), // tm_update_batch_type
   record_batch_type(12), // controller user management command batch type
+  record_batch_type(13), // controller acl management command batch type
 };
 } // namespace model
