@@ -35,12 +35,14 @@ inline const acl_cluster_name default_cluster_name("redpanda-cluster");
 
 /*
  * An ACL resource type.
+ *
+ * IMPORTANT: on-write value
  */
-enum class resource_type {
-    topic,
-    group,
-    cluster,
-    transactional_id,
+enum class resource_type : int8_t {
+    topic = 0,
+    group = 1,
+    cluster = 2,
+    transactional_id = 3,
 };
 
 template<typename T>
@@ -60,27 +62,31 @@ inline resource_type get_resource_type() {
 
 /*
  * A pattern rule for matching ACL resource names.
+ *
+ * IMPORTANT: on-write value
  */
-enum class pattern_type {
-    literal,
-    prefixed,
+enum class pattern_type : int8_t {
+    literal = 0,
+    prefixed = 1,
 };
 
 /*
- * an operation on a resource.
+ * An operation on a resource.
+ *
+ * IMPORTANT: on-write value
  */
-enum class acl_operation {
-    all,
-    read,
-    write,
-    create,
-    remove,
-    alter,
-    describe,
-    cluster_action,
-    describe_configs,
-    alter_configs,
-    idempotent_write,
+enum class acl_operation : int8_t {
+    all = 0,
+    read = 1,
+    write = 2,
+    create = 3,
+    remove = 4,
+    alter = 5,
+    describe = 6,
+    cluster_action = 7,
+    describe_configs = 8,
+    alter_configs = 9,
+    idempotent_write = 10,
 };
 
 /*
@@ -136,10 +142,12 @@ inline std::ostream& operator<<(std::ostream& os, acl_operation op) {
 
 /*
  * Grant or deny access.
+ *
+ * IMPORTANT: on-write value
  */
-enum class acl_permission {
-    deny,
-    allow,
+enum class acl_permission : int8_t {
+    deny = 0,
+    allow = 1,
 };
 
 inline std::ostream& operator<<(std::ostream& os, acl_permission perm) {
@@ -157,9 +165,11 @@ inline std::ostream& operator<<(std::ostream& os, acl_permission perm) {
  *
  * Only `User` is currently supported, but when integrating with other identity
  * providers it may be useful to introduce a `Group` type.
+ *
+ * IMPORTANT: on-write value
  */
-enum class principal_type {
-    user,
+enum class principal_type : int8_t {
+    user = 0,
 };
 
 inline std::ostream& operator<<(std::ostream& os, resource_type type) {
