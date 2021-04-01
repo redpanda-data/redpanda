@@ -108,6 +108,10 @@ func (r *ConfigMapResource) obj(ctx context.Context) (k8sclient.Object, error) {
 			Name:      r.Key().Name,
 			Labels:    labels.ForCluster(r.pandaCluster),
 		},
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ConfigMap",
+			APIVersion: "v1",
+		},
 		Data: map[string]string{
 			"redpanda.yaml": string(cfgBytes),
 		},

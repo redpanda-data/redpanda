@@ -216,6 +216,10 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 			Name:      r.Key().Name,
 			Labels:    clusterLabels,
 		},
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "StatefulSet",
+			APIVersion: "apps/v1",
+		},
 		Spec: appsv1.StatefulSetSpec{
 			Replicas:            r.pandaCluster.Spec.Replicas,
 			PodManagementPolicy: appsv1.ParallelPodManagement,
