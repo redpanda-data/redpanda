@@ -17,23 +17,30 @@
 
 #include <stdexcept>
 #include <string>
+#include <system_error>
 
 namespace pandaproxy::parse {
 
 struct exception_base : std::exception {
-    exception_base(error_code err, std::string_view msg)
+    explicit exception_base(std::error_condition err)
+      : std::exception{}
+      , error{err}
+      , msg{err.message()} {}
+    exception_base(std::error_condition err, std::string_view msg)
       : std::exception{}
       , error{err}
       , msg{msg} {}
     const char* what() const noexcept final { return msg.c_str(); }
-    error_code error;
+    std::error_condition error;
     std::string msg;
 };
 
 class error final : public exception_base {
 public:
-    explicit error(error_code ec, std::string_view msg)
-      : exception_base(ec, msg) {}
+    explicit error(error_code ec)
+      : exception_base(make_error_code(ec).default_error_condition()) {}
+    error(error_code ec, std::string_view msg)
+      : exception_base(make_error_code(ec).default_error_condition(), msg) {}
 };
 
 } // namespace pandaproxy::parse

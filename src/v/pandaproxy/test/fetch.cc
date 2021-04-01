@@ -9,6 +9,7 @@
 
 #include "http/client.h"
 #include "pandaproxy/configuration.h"
+#include "pandaproxy/json/types.h"
 #include "pandaproxy/test/pandaproxy_fixture.h"
 #include "pandaproxy/test/utils.h"
 
@@ -17,7 +18,7 @@
 #include <boost/beast/http/verb.hpp>
 #include <boost/test/tools/old/interface.hpp>
 
-namespace kc = kafka::client;
+namespace ppj = pandaproxy::json;
 
 FIXTURE_TEST(pandaproxy_fetch, pandaproxy_test_fixture) {
     using namespace std::chrono_literals;
@@ -64,7 +65,10 @@ FIXTURE_TEST(pandaproxy_fetch, pandaproxy_test_fixture) {
         auto res = http_request(
           client,
           "/topics//partitions/0/"
-          "records?max_bytes=1024&timeout=5000");
+          "records?max_bytes=1024&timeout=5000",
+          boost::beast::http::verb::get,
+          ppj::serialization_format::json_v2,
+          ppj::serialization_format::binary_v2);
 
         BOOST_REQUIRE_EQUAL(
           res.headers.result(), boost::beast::http::status::bad_request);
@@ -79,7 +83,10 @@ FIXTURE_TEST(pandaproxy_fetch, pandaproxy_test_fixture) {
         auto res = http_request(
           client,
           "/topics//partitions/0/"
-          "records?offset=0&max_bytes=1024&timeout=5000");
+          "records?offset=0&max_bytes=1024&timeout=5000",
+          boost::beast::http::verb::get,
+          ppj::serialization_format::json_v2,
+          ppj::serialization_format::binary_v2);
 
         BOOST_REQUIRE_EQUAL(
           res.headers.result(), boost::beast::http::status::bad_request);
@@ -94,7 +101,10 @@ FIXTURE_TEST(pandaproxy_fetch, pandaproxy_test_fixture) {
         auto res = http_request(
           client,
           "/topics/t/partitions/0/"
-          "records?offset=0&max_bytes=1024&timeout=5000");
+          "records?offset=0&max_bytes=1024&timeout=5000",
+          boost::beast::http::verb::get,
+          ppj::serialization_format::json_v2,
+          ppj::serialization_format::binary_v2);
 
         BOOST_REQUIRE_EQUAL(
           res.headers.result(), boost::beast::http::status::not_found);
@@ -114,7 +124,13 @@ FIXTURE_TEST(pandaproxy_fetch, pandaproxy_test_fixture) {
         set_client_config("retries", size_t(5));
         auto body = iobuf();
         body.append(batch_1_body.data(), batch_1_body.size());
-        auto res = http_request(client, "/topics/t", std::move(body));
+        auto res = http_request(
+          client,
+          "/topics/t",
+          std::move(body),
+          boost::beast::http::verb::post,
+          ppj::serialization_format::binary_v2,
+          ppj::serialization_format::json_v2);
 
         BOOST_REQUIRE_EQUAL(
           res.headers.result(), boost::beast::http::status::ok);
@@ -128,7 +144,10 @@ FIXTURE_TEST(pandaproxy_fetch, pandaproxy_test_fixture) {
         auto res = http_request(
           client,
           "/topics/t/partitions/0/"
-          "records?offset=0&max_bytes=1024&timeout=5000");
+          "records?offset=0&max_bytes=1024&timeout=5000",
+          boost::beast::http::verb::get,
+          ppj::serialization_format::json_v2,
+          ppj::serialization_format::binary_v2);
 
         BOOST_REQUIRE_EQUAL(
           res.headers.result(), boost::beast::http::status::ok);
@@ -142,7 +161,13 @@ FIXTURE_TEST(pandaproxy_fetch, pandaproxy_test_fixture) {
         set_client_config("retries", size_t(0));
         auto body = iobuf();
         body.append(batch_2_body.data(), batch_2_body.size());
-        auto res = http_request(client, "/topics/t", std::move(body));
+        auto res = http_request(
+          client,
+          "/topics/t",
+          std::move(body),
+          boost::beast::http::verb::post,
+          ppj::serialization_format::binary_v2,
+          ppj::serialization_format::json_v2);
 
         BOOST_REQUIRE_EQUAL(
           res.headers.result(), boost::beast::http::status::ok);
@@ -155,7 +180,10 @@ FIXTURE_TEST(pandaproxy_fetch, pandaproxy_test_fixture) {
         auto res = http_request(
           client,
           "/topics/t/partitions/0/"
-          "records?offset=4&max_bytes=1024&timeout=5000");
+          "records?offset=4&max_bytes=1024&timeout=5000",
+          boost::beast::http::verb::get,
+          ppj::serialization_format::json_v2,
+          ppj::serialization_format::binary_v2);
 
         BOOST_REQUIRE_EQUAL(
           res.headers.result(), boost::beast::http::status::ok);
@@ -169,7 +197,10 @@ FIXTURE_TEST(pandaproxy_fetch, pandaproxy_test_fixture) {
         auto res = http_request(
           client,
           "/topics/t/partitions/0/"
-          "records?offset=2&max_bytes=1024&timeout=5000");
+          "records?offset=2&max_bytes=1024&timeout=5000",
+          boost::beast::http::verb::get,
+          ppj::serialization_format::json_v2,
+          ppj::serialization_format::binary_v2);
 
         BOOST_REQUIRE_EQUAL(
           res.headers.result(), boost::beast::http::status::ok);

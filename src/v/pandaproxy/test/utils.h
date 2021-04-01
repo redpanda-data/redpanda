@@ -11,7 +11,12 @@
 
 #pragma once
 
+#include "pandaproxy/json/types.h"
+
+#include <boost/beast/core/string_type.hpp>
 #include <http/client.h>
+
+using serialization_format = pandaproxy::json::serialization_format;
 
 struct consumed_response {
     http::client::response_header headers;
@@ -29,19 +34,30 @@ inline ss::sstring consume_body(http::client::response_stream& res) {
     return result;
 }
 
+inline boost::beast::string_view to_header_value(serialization_format fmt) {
+    auto sv = name(fmt);
+    return {sv.data(), sv.size()};
+}
+
 inline http::client::request_header make_header(
   boost::beast::http::verb method,
   boost::beast::string_view target,
-  iobuf const& body) {
+  iobuf const& body,
+  serialization_format content,
+  serialization_format accept) {
     http::client::request_header hdr;
     hdr.method(method);
     hdr.target(target);
     hdr.insert(
       boost::beast::http::field::content_length,
       boost::beast::to_static_string(body.size_bytes()));
-    hdr.insert(
-      boost::beast::http::field::content_type,
-      "application/vnd.kafka.binary.v2+json");
+    if (content != serialization_format::none) {
+        hdr.insert(
+          boost::beast::http::field::content_type, to_header_value(content));
+    }
+    if (accept != serialization_format::none) {
+        hdr.insert(boost::beast::http::field::accept, to_header_value(accept));
+    }
     return hdr;
 }
 
@@ -49,8 +65,10 @@ inline consumed_response do_request(
   http::client& client,
   boost::beast::http::verb method,
   boost::beast::string_view target,
-  iobuf&& body) {
-    auto hdr = make_header(method, target, body);
+  iobuf&& body,
+  serialization_format content,
+  serialization_format accept) {
+    auto hdr = make_header(method, target, body, content, accept);
     auto [req, res] = client.make_request(std::move(hdr)).get();
     req->send_some(std::move(body)).get();
     req->send_eof().get();
@@ -62,14 +80,18 @@ inline consumed_response do_request(
 inline consumed_response http_request(
   http::client& client,
   boost::beast::string_view target,
-  boost::beast::http::verb method = boost::beast::http::verb::get) {
-    return do_request(client, method, target, iobuf());
+  boost::beast::http::verb method = boost::beast::http::verb::get,
+  serialization_format content = serialization_format::none,
+  serialization_format accept = serialization_format::none) {
+    return do_request(client, method, target, iobuf(), content, accept);
 }
 
 inline consumed_response http_request(
   http::client& client,
   boost::beast::string_view target,
   iobuf&& body,
-  boost::beast::http::verb method = boost::beast::http::verb::post) {
-    return do_request(client, method, target, std::move(body));
+  boost::beast::http::verb method = boost::beast::http::verb::post,
+  serialization_format content = serialization_format::none,
+  serialization_format accept = serialization_format::none) {
+    return do_request(client, method, target, std::move(body), content, accept);
 }

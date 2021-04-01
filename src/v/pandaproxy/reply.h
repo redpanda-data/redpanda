@@ -16,6 +16,7 @@
 #include "pandaproxy/error.h"
 #include "pandaproxy/json/exceptions.h"
 #include "pandaproxy/json/rjson_util.h"
+#include "pandaproxy/json/types.h"
 #include "pandaproxy/logger.h"
 #include "pandaproxy/parsing/exceptions.h"
 #include "seastarx.h"
@@ -40,11 +41,17 @@ error_code_to_status(std::error_condition ec) {
         return ss::httpd::reply::status_type::ok;
     }
 
+    // Errors are either in the range of
+    // * http status codes: [400,600)
+    // * proxy error codes: [40000,60000)
+    // Proxy error code divided by 100 translates to the http status
+    auto value = ec.value() < 600 ? ec.value() : ec.value() / 100;
+
     vassert(
-      ec.value() >= 40000 && ec.value() < 60000,
+      value >= 400 && value < 600,
       "unexpected reply_category value: {}",
       ec.value());
-    return static_cast<ss::httpd::reply::status_type>(ec.value() / 100);
+    return static_cast<ss::httpd::reply::status_type>(value);
 }
 
 inline ss::httpd::reply& set_reply_unavailable(ss::httpd::reply& rep) {

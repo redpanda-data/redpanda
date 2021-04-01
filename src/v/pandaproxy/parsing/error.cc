@@ -25,6 +25,10 @@ struct error_category final : std::error_category {
             return "empty_param";
         case error_code::invalid_param:
             return "invalid_param";
+        case error_code::not_acceptable:
+            return "not_acceptable";
+        case error_code::unsupported_media_type:
+            return "unsupported_media_type";
         }
         return "(unrecognized error)";
     }
@@ -35,6 +39,10 @@ struct error_category final : std::error_category {
         case error_code::empty_param:
         case error_code::invalid_param:
             return reply_error_code::kafka_bad_request;
+        case error_code::not_acceptable:
+            return reply_error_code::not_acceptable;
+        case error_code::unsupported_media_type:
+            return reply_error_code::unsupported_media_type;
         }
         return {};
     }

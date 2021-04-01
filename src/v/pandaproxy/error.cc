@@ -22,6 +22,10 @@ struct reply_error_category final : std::error_category {
     const char* name() const noexcept override { return "pandaproxy"; }
     std::string message(int ev) const override {
         switch (static_cast<reply_error_code>(ev)) {
+        case reply_error_code::not_acceptable:
+            return "HTTP 406 Not Acceptable";
+        case reply_error_code::unsupported_media_type:
+            return "HTTP 415 Unsupported Media Type";
         case reply_error_code::kafka_bad_request:
             return "kafka_bad_request";
         case reply_error_code::kafka_authentication_error:
