@@ -213,6 +213,8 @@ public:
 
     friend std::ostream& operator<<(std::ostream&, const acl_principal&);
 
+    const ss::sstring& name() const { return _name; }
+    principal_type type() const { return _type; }
     bool wildcard() const { return _name == "*"; }
 
 private:
@@ -296,6 +298,8 @@ public:
     }
 
     friend std::ostream& operator<<(std::ostream&, const acl_host&);
+
+    std::optional<ss::net::inet_address> address() const { return _addr; }
 
 private:
     acl_host() = default;
