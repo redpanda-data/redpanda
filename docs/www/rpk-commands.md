@@ -100,7 +100,10 @@ Flags:
 Interact with the Redpanda API.
 
 ```
-Global flags: --brokers strings   Comma-separated list of broker ip:port pair
+Global flags:
+
+      --brokers strings   Comma-separated list of broker ip:port pair
+      --config  string    Redpanda config file, if not set the file will be searched for in the default location (default "/etc/redpanda/redpanda.yaml")
 ```
 
 ### create
@@ -112,9 +115,11 @@ Usage:
   rpk topic create <topic name> [flags]
 
 Flags:
-      --compact            Enable topic compaction
-  -p, --partitions int32   Number of partitions (default 1)
-  -r, --replicas int16     Number of replicas (default 1)
+      --compact                    Enable topic compaction
+  -h, --help                       help for create
+  -p, --partitions int32           Number of partitions (default 1)
+  -r, --replicas int16             Replication factor. If it's negative or is left unspecified, it will use the cluster's default topic replication factor. (default -1)
+  -c, --topic-config stringArray   Config entries in the format <key>:<value>. May be used multiple times to add more entries.
 ```
 
 ### delete

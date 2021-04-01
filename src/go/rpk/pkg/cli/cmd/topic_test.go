@@ -66,13 +66,13 @@ func TestTopicCmd(t *testing.T) {
 		{
 			name:           "create should allow passing arbitrary topic config",
 			cmd:            topic.NewCreateCommand,
-			args:           []string{"San Francisco", "-c", "custom.config:value", "--config", "another.config:anothervalue"},
+			args:           []string{"San Francisco", "--topic-config", "custom.config:value", "--topic-config", "another.config:anothervalue"},
 			expectedOutput: "Created topic 'San Francisco'.\\nYou may check its config with\\n\\nrpk topic describe 'San Francisco'\\n\"\n",
 		},
 		{
 			name:           "create should allow passing comma-separated config values",
 			cmd:            topic.NewCreateCommand,
-			args:           []string{"San Francisco", "-c", "custom.config:value", "--config", "cleanup.policy:cleanup,compact"},
+			args:           []string{"San Francisco", "-c", "custom.config:value", "-c", "cleanup.policy:cleanup,compact"},
 			expectedOutput: "Created topic 'San Francisco'.\\nYou may check its config with\\n\\nrpk topic describe 'San Francisco'\\n\"\n",
 		},
 		{

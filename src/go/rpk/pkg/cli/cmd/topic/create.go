@@ -23,10 +23,10 @@ func NewCreateCommand(
 	admin func() (sarama.ClusterAdmin, error),
 ) *cobra.Command {
 	var (
-		partitions int32
-		replicas   int16
-		compact    bool
-		config     []string
+		partitions  int32
+		replicas    int16
+		compact     bool
+		topicConfig []string
 	)
 	cmd := &cobra.Command{
 		Use:   "create <topic name>",
@@ -35,7 +35,7 @@ func NewCreateCommand(
 		// We don't want Cobra printing CLI usage help if the error isn't about CLI usage.
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			configEntries, err := parseKVs(config)
+			configEntries, err := parseKVs(topicConfig)
 			if err != nil {
 				return err
 			}
@@ -87,8 +87,8 @@ rpk topic describe '%s'
 		},
 	}
 	cmd.Flags().StringArrayVarP(
-		&config,
-		"config",
+		&topicConfig,
+		"topic-config",
 		"c",
 		[]string{},
 		"Config entries in the format <key>:<value>. May be used multiple times"+
