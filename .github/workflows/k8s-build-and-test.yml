@@ -44,7 +44,14 @@ jobs:
 
     - name: Unit tests & Integration tests & E2E tests
       working-directory: src/go/k8s/
-      run: make e2e-tests
+      run: |
+              while true; do 
+              df -h
+              docker system df
+              docker volume ls
+              sleep 15
+              done &
+              make e2e-tests
       shell: bash
 
     - name: Archive test data
