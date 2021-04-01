@@ -91,7 +91,12 @@ ss::future<> controller::start() {
             std::ref(_security_manager));
       })
       .then([this] {
-          return _security_frontend.start(std::ref(_stm), std::ref(_as));
+          return _security_frontend.start(
+            _raft0->self().id(),
+            std::ref(_stm),
+            std::ref(_connections),
+            std::ref(_partition_leaders),
+            std::ref(_as));
       })
       .then([this] {
           return _tp_frontend.start(
