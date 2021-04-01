@@ -50,20 +50,19 @@ func NewPki(
 	}
 }
 
-func (r *PkiReconciler) prepareRoot() (
-	[]resources.Resource,
-	*cmmetav1.ObjectReference,
-) {
+func (r *PkiReconciler) prepareRoot(
+	prefix string,
+) ([]resources.Resource, *cmmetav1.ObjectReference) {
 	toApply := []resources.Resource{}
 
 	selfSignedIssuer := NewIssuer(r.Client,
 		r.scheme,
 		r.pandaCluster,
-		r.issuerNamespacedName("selfsigned-issuer"),
+		r.issuerNamespacedName(prefix+"-"+"selfsigned-issuer"),
 		"",
 		r.logger)
 
-	rootCn := NewCommonName(r.pandaCluster.Name, "root-certificate")
+	rootCn := NewCommonName(r.pandaCluster.Name, prefix+"-root-certificate")
 	rootKey := types.NamespacedName{Name: string(rootCn), Namespace: r.pandaCluster.Namespace}
 	rootCertificate := NewCertificate(r.Client,
 		r.scheme,
@@ -77,7 +76,7 @@ func (r *PkiReconciler) prepareRoot() (
 	leafIssuer := NewIssuer(r.Client,
 		r.scheme,
 		r.pandaCluster,
-		r.issuerNamespacedName("root-issuer"),
+		r.issuerNamespacedName(prefix+"-"+"root-issuer"),
 		rootCertificate.Key().Name,
 		r.logger)
 
@@ -89,23 +88,22 @@ func (r *PkiReconciler) prepareRoot() (
 
 // Ensure will manage PKI for redpanda.vectorized.io custom resource
 func (r *PkiReconciler) Ensure(ctx context.Context) error {
-	if !r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.Enabled &&
-		!r.pandaCluster.Spec.Configuration.TLS.AdminAPI.Enabled {
-		return nil
-	}
-
-	toApply, selfSignedIssuerRef := r.prepareRoot()
+	toApply := []resources.Resource{}
 
 	if r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.Enabled {
-		applyKafka, err := r.prepareKafkaAPI(ctx, selfSignedIssuerRef)
+		toApplyRootKafka, kafkaIssuerRef := r.prepareRoot(kafkaAPI)
+		toApplyKafka, err := r.prepareKafkaAPI(ctx, kafkaIssuerRef)
 		if err != nil {
 			return err
 		}
-		toApply = append(toApply, applyKafka...)
+		toApply = append(toApply, toApplyRootKafka...)
+		toApply = append(toApply, toApplyKafka...)
 	}
 
 	if r.pandaCluster.Spec.Configuration.TLS.AdminAPI.Enabled {
-		toApply = append(toApply, r.prepareAdminAPI(selfSignedIssuerRef)...)
+		toApplyRootAdmin, adminIssuerRef := r.prepareRoot(adminAPI)
+		toApply = append(toApply, toApplyRootAdmin...)
+		toApply = append(toApply, r.prepareAdminAPI(adminIssuerRef)...)
 	}
 
 	for _, res := range toApply {

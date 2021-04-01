@@ -20,6 +20,7 @@ import (
 )
 
 const (
+	kafkaAPI = "kafka"
 	// OperatorClientCert cert name - used by kubernetes operator to call KafkaAPI
 	OperatorClientCert = "operator-client"
 	// UserClientCert cert name - used by redpanda clients using KafkaAPI
