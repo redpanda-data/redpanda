@@ -29,6 +29,11 @@
             "name": "update_topic_properties",
             "input_type": "update_topic_properties_request",
             "output_type": "update_topic_properties_reply"
+        },
+        {
+            "name": "create_acls",
+            "input_type": "create_acls_request",
+            "output_type": "create_acls_reply"
         }
     ]
 }

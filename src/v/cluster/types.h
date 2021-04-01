@@ -318,6 +318,15 @@ struct create_acls_cmd_data {
     std::vector<security::acl_binding> bindings;
 };
 
+struct create_acls_request {
+    create_acls_cmd_data data;
+    model::timeout_clock::duration timeout;
+};
+
+struct create_acls_reply {
+    std::vector<errc> results;
+};
+
 } // namespace cluster
 namespace std {
 template<>
