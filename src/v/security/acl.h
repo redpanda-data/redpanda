@@ -106,6 +106,34 @@ inline std::vector<acl_operation> acl_implied_ops(acl_operation operation) {
     }
 }
 
+inline std::ostream& operator<<(std::ostream& os, acl_operation op) {
+    switch (op) {
+    case acl_operation::all:
+        return os << "all";
+    case acl_operation::read:
+        return os << "read";
+    case acl_operation::write:
+        return os << "write";
+    case acl_operation::create:
+        return os << "create";
+    case acl_operation::remove:
+        return os << "remove";
+    case acl_operation::alter:
+        return os << "alter";
+    case acl_operation::describe:
+        return os << "describe";
+    case acl_operation::cluster_action:
+        return os << "cluster_action";
+    case acl_operation::describe_configs:
+        return os << "describe_configs";
+    case acl_operation::alter_configs:
+        return os << "alter_configs";
+    case acl_operation::idempotent_write:
+        return os << "idempotent_write";
+    }
+    __builtin_unreachable();
+}
+
 /*
  * Grant or deny access.
  */
@@ -113,6 +141,16 @@ enum class acl_permission {
     deny,
     allow,
 };
+
+inline std::ostream& operator<<(std::ostream& os, acl_permission perm) {
+    switch (perm) {
+    case acl_permission::deny:
+        return os << "deny";
+    case acl_permission::allow:
+        return os << "allow";
+    }
+    __builtin_unreachable();
+}
 
 /*
  * Principal type
@@ -135,6 +173,7 @@ inline std::ostream& operator<<(std::ostream& os, resource_type type) {
     case resource_type::transactional_id:
         return os << "transactional_id";
     }
+    __builtin_unreachable();
 }
 
 inline std::ostream& operator<<(std::ostream& os, pattern_type type) {
@@ -144,6 +183,15 @@ inline std::ostream& operator<<(std::ostream& os, pattern_type type) {
     case pattern_type::prefixed:
         return os << "prefixed";
     }
+    __builtin_unreachable();
+}
+
+inline std::ostream& operator<<(std::ostream& os, principal_type type) {
+    switch (type) {
+    case principal_type::user:
+        return os << "user";
+    }
+    __builtin_unreachable();
 }
 
 /*
@@ -163,12 +211,20 @@ public:
         return H::combine(std::move(h), e._type, e._name);
     }
 
+    friend std::ostream& operator<<(std::ostream&, const acl_principal&);
+
     bool wildcard() const { return _name == "*"; }
 
 private:
     principal_type _type;
     ss::sstring _name;
 };
+
+inline std::ostream&
+operator<<(std::ostream& os, const acl_principal& principal) {
+    fmt::print(os, "{{type {} name {}}}", principal._type, principal._name);
+    return os;
+}
 
 inline const acl_principal acl_wildcard_user(principal_type::user, "*");
 
@@ -239,11 +295,24 @@ public:
         }
     }
 
+    friend std::ostream& operator<<(std::ostream&, const acl_host&);
+
 private:
     acl_host() = default;
 
     std::optional<ss::net::inet_address> _addr;
 };
+
+inline std::ostream& operator<<(std::ostream& os, const acl_host& host) {
+    if (host._addr) {
+        fmt::print(os, "{{{}}}", *host._addr);
+    } else {
+        // we can log whatever representation we want for a wildcard host, but
+        // kafka expects "*" as the wildcard representation.
+        os << "{{any_host}}";
+    }
+    return os;
+}
 
 inline const acl_host acl_wildcard_host = acl_host::wildcard_host();
 
@@ -272,6 +341,8 @@ public:
           std::move(h), e._principal, e._host, e._operation, e._permission);
     }
 
+    friend std::ostream& operator<<(std::ostream&, const acl_entry&);
+
     const acl_principal& principal() const { return _principal; }
     const acl_host& host() const { return _host; }
     acl_operation operation() const { return _operation; }
@@ -283,6 +354,17 @@ private:
     acl_operation _operation;
     acl_permission _permission;
 };
+
+inline std::ostream& operator<<(std::ostream& os, const acl_entry& entry) {
+    fmt::print(
+      os,
+      "{{principal {} host {} op {} perm {}}}",
+      entry._principal,
+      entry._host,
+      entry._operation,
+      entry._permission);
+    return os;
+}
 
 /*
  * An ACL binding is an association of resource(s) and an ACL entry. An ACL
@@ -301,6 +383,8 @@ public:
         return H::combine(std::move(h), e._pattern, e._entry);
     }
 
+    friend std::ostream& operator<<(std::ostream&, const acl_binding&);
+
     const resource_pattern& pattern() const { return _pattern; }
     const acl_entry& entry() const { return _entry; }
 
@@ -308,6 +392,11 @@ private:
     resource_pattern _pattern;
     acl_entry _entry;
 };
+
+inline std::ostream& operator<<(std::ostream& os, const acl_binding& binding) {
+    fmt::print(os, "{{pattern {} entry {}}}", binding._pattern, binding._entry);
+    return os;
+}
 
 /*
  * A filter for matching resources.
