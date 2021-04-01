@@ -44,7 +44,7 @@ controller::controller(
   , _shard_table(st)
   , _storage(storage)
   , _tp_updates_dispatcher(_partition_allocator, _tp_state)
-  , _security_manager(_credentials) {}
+  , _security_manager(_credentials, _authorizer) {}
 
 ss::future<> controller::wire_up() {
     return _as.start()

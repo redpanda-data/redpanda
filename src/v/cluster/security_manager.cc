@@ -23,8 +23,10 @@
 namespace cluster {
 
 security_manager::security_manager(
-  ss::sharded<security::credential_store>& credentials)
-  : _credentials(credentials) {}
+  ss::sharded<security::credential_store>& credentials,
+  ss::sharded<security::authorizer>& authorizer)
+  : _credentials(credentials)
+  , _authorizer(authorizer) {}
 
 ss::future<std::error_code>
 security_manager::apply_update(model::record_batch batch) {

@@ -12,6 +12,7 @@
 #pragma once
 #include "cluster/commands.h"
 #include "model/record.h"
+#include "security/authorizer.h"
 #include "security/credential_store.h"
 
 #include <seastar/core/sharded.hh>
@@ -20,7 +21,9 @@ namespace cluster {
 
 class security_manager final {
 public:
-    explicit security_manager(ss::sharded<security::credential_store>&);
+    explicit security_manager(
+      ss::sharded<security::credential_store>&,
+      ss::sharded<security::authorizer>&);
 
     static constexpr auto commands
       = make_commands_list<create_user_cmd, delete_user_cmd, update_user_cmd>();
@@ -36,6 +39,7 @@ private:
     ss::future<std::error_code> dispatch_updates_to_cores(Cmd);
 
     ss::sharded<security::credential_store>& _credentials;
+    ss::sharded<security::authorizer>& _authorizer;
 };
 
 } // namespace cluster
