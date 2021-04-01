@@ -19,6 +19,7 @@
 #include "model/metadata.h"
 #include "utils/to_string.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/future-util.hh>
 #include <seastar/core/thread.hh>
 
@@ -408,39 +409,34 @@ get_topic_metadata(request_context& ctx, metadata_request& request) {
 template<>
 ss::future<response_ptr> metadata_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group g) {
-    return ss::do_with(
-      std::move(ctx),
-      metadata_response{},
-      [](request_context& ctx, metadata_response& reply) {
-          auto brokers = ctx.metadata_cache().all_brokers();
-          for (const auto& broker : brokers) {
-              for (const auto& listener :
-                   broker->kafka_advertised_listeners()) {
-                  // filter broker listeners by active connection
-                  if (listener.name == ctx.listener()) {
-                      reply.brokers.push_back(metadata_response::broker{
-                        .node_id = broker->id(),
-                        .host = listener.address.host(),
-                        .port = listener.address.port(),
-                        .rack = broker->rack()});
-                  }
-              }
-          }
+    metadata_response reply;
+    auto brokers = ctx.metadata_cache().all_brokers();
 
-          // FIXME:  #95 Cluster Id
-          reply.cluster_id = std::nullopt;
+    for (const auto& broker : brokers) {
+        for (const auto& listener : broker->kafka_advertised_listeners()) {
+            // filter broker listeners by active connection
+            if (listener.name == ctx.listener()) {
+                reply.brokers.push_back(metadata_response::broker{
+                  .node_id = broker->id(),
+                  .host = listener.address.host(),
+                  .port = listener.address.port(),
+                  .rack = broker->rack()});
+            }
+        }
+    }
 
-          auto leader_id = ctx.metadata_cache().get_controller_leader_id();
-          reply.controller_id = leader_id.value_or(model::node_id(-1));
+    // FIXME:  #95 Cluster Id
+    reply.cluster_id = std::nullopt;
 
-          metadata_request request;
-          request.decode(ctx);
-          return get_topic_metadata(ctx, request)
-            .then([&reply](std::vector<metadata_response::topic> topics) {
-                reply.topics = std::move(topics);
-            })
-            .then([&ctx, &reply] { return ctx.respond(std::move(reply)); });
-      });
+    auto leader_id = ctx.metadata_cache().get_controller_leader_id();
+    reply.controller_id = leader_id.value_or(model::node_id(-1));
+
+    metadata_request request;
+    request.decode(ctx);
+
+    reply.topics = co_await get_topic_metadata(ctx, request);
+
+    co_return co_await ctx.respond(std::move(reply));
 }
 
 } // namespace kafka
