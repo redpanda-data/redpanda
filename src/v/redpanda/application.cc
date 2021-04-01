@@ -747,7 +747,8 @@ void application::start_redpanda() {
             fetch_session_cache,
             std::ref(id_allocator_frontend),
             controller->get_credential_store(),
-            controller->get_authorizer());
+            controller->get_authorizer(),
+            controller->get_security_frontend());
           s.set_protocol(std::move(proto));
       })
       .get();
