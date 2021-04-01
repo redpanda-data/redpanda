@@ -10,7 +10,7 @@ status:
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
-  name: thisisverylongnamethatishittingthemax40c-selfsigned-issuer
+  name: thisisverylongnamethatishittingthemax40c-kafka-selfsigned-issuer
 status:
   conditions:
     - reason: IsReady
@@ -22,7 +22,7 @@ status:
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
-  name: thisisverylongnamethatishittingthemax40c-root-issuer
+  name: thisisverylongnamethatishittingthemax40c-kafka-root-issuer
 status:
   conditions:
     - reason: KeyPairVerified
@@ -33,7 +33,7 @@ status:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: thisisverylongnamethatishittingthemax40c-root-certificate
+  name: thisisverylongnamethatishittingthemax40c-kafka-root-certificate
 status:
   conditions:
     - reason: Ready

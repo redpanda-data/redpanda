@@ -10,7 +10,7 @@ status:
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
-  name: cluster-tls-selfsigned-issuer
+  name: cluster-tls-kafka-selfsigned-issuer
 status:
   conditions:
     - reason: IsReady
@@ -22,7 +22,7 @@ status:
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
-  name: cluster-tls-root-issuer
+  name: cluster-tls-kafka-root-issuer
 status:
   conditions:
     - reason: KeyPairVerified
@@ -33,7 +33,7 @@ status:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: cluster-tls-root-certificate
+  name: cluster-tls-kafka-root-certificate
 status:
   conditions:
     - reason: Ready

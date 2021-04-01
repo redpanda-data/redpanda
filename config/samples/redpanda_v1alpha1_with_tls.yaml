@@ -23,7 +23,7 @@ spec:
       port: 9092
     admin:
       port: 9644
-    TLS:
+    tls:
       kafkaApi:
         enabled: true
     developerMode: true
