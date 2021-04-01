@@ -10,7 +10,7 @@ status:
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
-  name:  up-img-selfsigned-issuer
+  name:  up-img-kafka-selfsigned-issuer
 status:
   conditions:
     - reason: IsReady
@@ -22,7 +22,7 @@ status:
 apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
-  name:  up-img-root-issuer
+  name:  up-img-kafka-root-issuer
 status:
   conditions:
     - reason: KeyPairVerified
@@ -33,7 +33,7 @@ status:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name:  up-img-root-certificate
+  name:  up-img-kafka-root-certificate
 status:
   conditions:
     - reason: Ready
