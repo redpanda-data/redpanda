@@ -16,6 +16,7 @@ import (
 )
 
 const (
+	adminAPI = "admin"
 	// AdminAPIClientCert cert name - client certificate for Admin API
 	AdminAPIClientCert = "admin-api-client"
 	// AdminAPINodeCert cert name - node certificate for Admin API
