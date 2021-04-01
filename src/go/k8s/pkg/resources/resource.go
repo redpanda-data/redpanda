@@ -23,6 +23,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+const (
+	// KafkaPortName is name of kafka port in Service definition
+	KafkaPortName = "kafka"
+	// AdminPortName is name of admin port in Service definition
+	AdminPortName = "admin"
+)
+
 // Resource decompose the reconciliation loop to specific kubernetes objects
 type Resource interface {
 	Reconciler

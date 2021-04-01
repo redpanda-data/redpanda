@@ -17,6 +17,7 @@ import (
 	. "github.com/onsi/gomega"
 	"github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	"github.com/vectorizedio/redpanda/src/go/k8s/controllers/redpanda"
+	res "github.com/vectorizedio/redpanda/src/go/k8s/pkg/resources"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/rbac/v1"
@@ -131,8 +132,8 @@ var _ = Describe("RedPandaCluster controller", func() {
 				err := k8sClient.Get(context.Background(), key, &svc)
 				return err == nil &&
 					svc.Spec.ClusterIP == corev1.ClusterIPNone &&
-					findPort(svc.Spec.Ports, "kafka") == kafkaPort &&
-					findPort(svc.Spec.Ports, "admin") == adminPort &&
+					findPort(svc.Spec.Ports, res.KafkaPortName) == kafkaPort &&
+					findPort(svc.Spec.Ports, res.AdminPortName) == adminPort &&
 					validOwner(redpandaCluster, svc.OwnerReferences)
 			}, timeout, interval).Should(BeTrue())
 
@@ -144,8 +145,8 @@ var _ = Describe("RedPandaCluster controller", func() {
 				}, &svc)
 				return err == nil &&
 					svc.Spec.Type == corev1.ServiceTypeNodePort &&
-					findPort(svc.Spec.Ports, "kafka") == kafkaPort+1 &&
-					findPort(svc.Spec.Ports, "admin") == adminPort &&
+					findPort(svc.Spec.Ports, res.KafkaPortName) == kafkaPort+1 &&
+					findPort(svc.Spec.Ports, res.AdminPortName) == adminPort &&
 					validOwner(redpandaCluster, svc.OwnerReferences)
 			}, timeout, interval).Should(BeTrue())
 
