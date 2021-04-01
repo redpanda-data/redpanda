@@ -11,6 +11,7 @@
 
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "security/acl.h"
 #include "tristate.h"
 #include "utils/to_string.h"
 
@@ -336,4 +337,131 @@ adl<cluster::topic_properties_update>::from(iobuf_parser& parser) {
 
     return ret;
 }
+
+/*
+ * Important information about ACL state serialization:
+ *
+ * The following serialization specializations are not part of a public
+ * interface and are used to support the serialization of the public type
+ * `cluster::create_acls_cmd_data` used by create acls api.
+ *
+ * They are private because they all depend on the embedded versioning of
+ * `cluster::create_acls_cmd_data`, instead of their own independent versioning.
+ * Because the same versioning applies to the entire AST rooted at this command
+ * object type it should make transitions to the new serialization v2 much
+ * simpler than having to deal with conversion of all of the constituent types.
+ */
+template<>
+struct adl<security::acl_principal> {
+    void to(iobuf& out, const security::acl_principal& p) {
+        serialize(out, p.type(), p.name());
+    }
+
+    security::acl_principal from(iobuf_parser& in) {
+        return security::acl_principal(
+          adl<security::principal_type>{}.from(in),
+          adl<ss::sstring>{}.from(in));
+    }
+};
+
+template<>
+struct adl<security::acl_host> {
+    void to(iobuf& out, const security::acl_host& host) {
+        bool ipv4 = false;
+        std::optional<iobuf> data;
+        if (host.address()) { // wildcard
+            ipv4 = host.address()->is_ipv4();
+            data = iobuf();
+            data->append( // NOLINTNEXTLINE
+              (const char*)host.address()->data(),
+              host.address()->size());
+        }
+        serialize(out, ipv4, std::move(data));
+    }
+
+    security::acl_host from(iobuf_parser& in) {
+        auto ipv4 = adl<bool>{}.from(in);
+        auto opt_data = adl<std::optional<iobuf>>{}.from(in);
+
+        if (opt_data) {
+            auto data = iobuf_to_bytes(*opt_data);
+            if (ipv4) {
+                ::in_addr addr{};
+                vassert(data.size() == sizeof(addr), "Unexpected ipv4 size");
+                std::memcpy(&addr, data.c_str(), sizeof(addr));
+                return security::acl_host(ss::net::inet_address(addr));
+            } else {
+                ::in6_addr addr{};
+                vassert(data.size() == sizeof(addr), "Unexpected ipv6 size");
+                std::memcpy(&addr, data.c_str(), sizeof(addr));
+                return security::acl_host(ss::net::inet_address(addr));
+            }
+        }
+
+        return security::acl_host::wildcard_host();
+    }
+};
+
+template<>
+struct adl<security::acl_entry> {
+    void to(iobuf& out, const security::acl_entry& e) {
+        serialize(out, e.principal(), e.host(), e.operation(), e.permission());
+    }
+
+    security::acl_entry from(iobuf_parser& in) {
+        return security::acl_entry(
+          adl<security::acl_principal>{}.from(in),
+          adl<security::acl_host>{}.from(in),
+          adl<security::acl_operation>{}.from(in),
+          adl<security::acl_permission>{}.from(in));
+    }
+};
+
+template<>
+struct adl<security::resource_pattern> {
+    void to(iobuf& out, const security::resource_pattern& b) {
+        serialize(out, b.resource(), b.name(), b.pattern());
+    }
+
+    security::resource_pattern from(iobuf_parser& in) {
+        return security::resource_pattern(
+          adl<security::resource_type>{}.from(in),
+          adl<ss::sstring>{}.from(in),
+          adl<security::pattern_type>{}.from(in));
+    }
+};
+
+template<>
+struct adl<security::acl_binding> {
+    void to(iobuf& out, const security::acl_binding& b) {
+        serialize(out, b.pattern(), b.entry());
+    }
+
+    security::acl_binding from(iobuf_parser& in) {
+        return security::acl_binding(
+          adl<security::resource_pattern>{}.from(in),
+          adl<security::acl_entry>{}.from(in));
+    }
+};
+
+void adl<cluster::create_acls_cmd_data>::to(
+  iobuf& out, cluster::create_acls_cmd_data&& data) {
+    adl<int8_t>{}.to(out, cluster::create_acls_cmd_data::current_version);
+    serialize(out, std::move(data.bindings));
+}
+
+cluster::create_acls_cmd_data
+adl<cluster::create_acls_cmd_data>::from(iobuf_parser& in) {
+    auto version = adl<int8_t>{}.from(in);
+    vassert(
+      version == cluster::create_acls_cmd_data::current_version,
+      "Unexpected create acls cmd version {} (expected {})",
+      version,
+      cluster::create_acls_cmd_data::current_version);
+    auto bindings = adl<std::vector<security::acl_binding>>().from(in);
+    return cluster::create_acls_cmd_data{
+      .bindings = std::move(bindings),
+    };
+}
+
 } // namespace reflection
