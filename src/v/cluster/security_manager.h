@@ -35,8 +35,8 @@ public:
     }
 
 private:
-    template<typename Cmd>
-    ss::future<std::error_code> dispatch_updates_to_cores(Cmd);
+    template<typename Cmd, typename T>
+    ss::future<std::error_code> dispatch_updates_to_cores(Cmd, ss::sharded<T>&);
 
     ss::sharded<security::credential_store>& _credentials;
     ss::sharded<security::authorizer>& _authorizer;
