@@ -396,6 +396,54 @@ class PandaProxyTest(RedpandaTest):
         assert fetch_result_0[1]["offset"] == 1
 
     @cluster(num_nodes=3)
+    def test_create_consumer_validation(self):
+        """
+        Acceptable headers:
+        * Accept: "", "*/*", "application/vnd.kafka.binary.v2+json"
+        * Content-Type: "application/vnd.kafka.v2+json"
+        Required Params:
+        * Path:
+          * group
+        """
+        group_id = f"pandaproxy-group-{uuid.uuid4()}"
+
+        self.logger.info("Create a consumer with no accept header")
+        cc_res = self._create_consumer(
+            group_id,
+            headers={
+                "Content-Type": HTTP_CREATE_CONSUMER_HEADERS["Content-Type"]
+            })
+        assert cc_res.status_code == requests.codes.ok
+        assert cc_res.headers["Content-Type"] == HTTP_CREATE_CONSUMER_HEADERS[
+            "Accept"]
+
+        self.logger.info("Create a consumer with invalid accept header")
+        cc_res = self._create_consumer(
+            group_id,
+            headers={
+                "Content-Type": HTTP_CREATE_CONSUMER_HEADERS["Content-Type"],
+                "Accept": "application/vnd.kafka.binary.v2+json"
+            })
+        assert cc_res.status_code == requests.codes.not_acceptable
+        assert cc_res.json()["error_code"] == requests.codes.not_acceptable
+        assert cc_res.headers["Content-Type"] == "application/json"
+
+        self.logger.info("Create a consumer with no content-type header")
+        cc_res = self._create_consumer(
+            group_id,
+            headers={"Accept": HTTP_CREATE_CONSUMER_HEADERS["Accept"]})
+        assert cc_res.status_code == requests.codes.unsupported_media_type
+        assert cc_res.json(
+        )["error_code"] == requests.codes.unsupported_media_type
+
+        self.logger.info("Create a consumer with no group parameter")
+        cc_res = self._create_consumer("",
+                                       headers=HTTP_CREATE_CONSUMER_HEADERS)
+        # It's not possible to return an error body in this case due to the way
+        # ss::httpd::path_description and routing works - path can't be matched
+        assert cc_res.status_code == requests.codes.not_found
+
+    @cluster(num_nodes=3)
     def test_consumer_group(self):
         """
         Create a consumer group and use it

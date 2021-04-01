@@ -204,12 +204,19 @@ post_topics_name(server::request_t rq, server::reply_t rp) {
 
 ss::future<server::reply_t>
 create_consumer(server::request_t rq, server::reply_t rp) {
+    parse::content_type_header(*rq.req, {json::serialization_format::json_v2});
+    auto res_fmt = parse::accept_header(
+      *rq.req,
+      {json::serialization_format::json_v2, json::serialization_format::none});
+
+    auto group_id = parse::request_param<kafka::group_id>(
+      *rq.req, "group_name");
+
     auto req_data = ppj::rjson_parse(
       rq.req->content.data(), ppj::create_consumer_request_handler());
-    auto group_id = kafka::group_id(rq.req->param["group_name"]);
 
     return rq.ctx.client.create_consumer(group_id).then(
-      [group_id, rq{std::move(rq)}, rp{std::move(rp)}](
+      [group_id, res_fmt, rq{std::move(rq)}, rp{std::move(rp)}](
         kafka::member_id m_id) mutable {
           auto adv_addr = rq.ctx.config.advertised_pandaproxy_api();
           json::create_consumer_response res{
@@ -222,6 +229,7 @@ create_consumer(server::request_t rq, server::reply_t rp) {
               m_id())};
           auto json_rslt = ppj::rjson_serialize(res);
           rp.rep->write_body("json", json_rslt);
+          rp.mime_type = res_fmt;
           return std::move(rp);
       });
 }
