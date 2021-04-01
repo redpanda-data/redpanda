@@ -41,6 +41,9 @@ public:
       security::scram_credential,
       model::timeout_clock::time_point);
 
+    ss::future<std::vector<errc>> create_acls(
+      std::vector<security::acl_binding>, model::timeout_clock::time_point);
+
     template<typename Cmd>
     ss::future<std::error_code>
     replicate_and_wait(Cmd&&, model::timeout_clock::time_point);
