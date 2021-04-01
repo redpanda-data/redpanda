@@ -158,6 +158,8 @@ public:
         return _conn->server().security_frontend();
     }
 
+    security::authorizer& authorizer() { return _conn->server().authorizer(); }
+
 private:
     ss::lw_shared_ptr<connection_context> _conn;
     request_header _header;
