@@ -606,6 +606,8 @@ configuration::configuration()
       "during TLS handshake",
       required::no,
       std::nullopt)
+  , superusers(
+      *this, "superusers", "List of superuser usernames", required::no, {})
   , _advertised_kafka_api(
       *this,
       "advertised_kafka_api",
