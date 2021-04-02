@@ -113,6 +113,9 @@ public:
     }
 
     void add_superuser(acl_principal principal) {
+        if (unlikely(seclog.is_shard_zero())) {
+            vlog(seclog.debug, "Adding superuser: {}", principal);
+        }
         _superusers.emplace(std::move(principal));
     }
 

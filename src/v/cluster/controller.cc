@@ -28,6 +28,7 @@
 #include "likely.h"
 #include "model/metadata.h"
 #include "model/timeout_clock.h"
+#include "security/acl.h"
 
 #include <seastar/core/thread.hh>
 #include <seastar/util/later.hh>
@@ -116,6 +117,14 @@ ss::future<> controller::start() {
             std::ref(_partition_leaders),
             std::ref(_tp_frontend),
             std::ref(_as));
+      })
+      .then([this] {
+          return _authorizer.invoke_on_all([](security::authorizer& auth) {
+              for (auto username : config::shard_local_cfg().superusers()) {
+                  auth.add_superuser(security::acl_principal(
+                    security::principal_type::user, std::move(username)));
+              }
+          });
       })
       .then([this] {
           return _stm.invoke_on(controller_stm_shard, &controller_stm::start);
