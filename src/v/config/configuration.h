@@ -151,6 +151,7 @@ struct configuration final : public config_store {
     property<bool> cloud_storage_disable_tls;
     property<int16_t> cloud_storage_api_endpoint_port;
     property<std::optional<ss::sstring>> cloud_storage_trust_file;
+    one_or_many_property<ss::sstring> superusers;
 
     configuration();
 
