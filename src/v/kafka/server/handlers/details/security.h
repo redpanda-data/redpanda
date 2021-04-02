@@ -10,8 +10,8 @@
  */
 #include "kafka/protocol/schemata/create_acls_request.h"
 #include "kafka/protocol/schemata/describe_acls_request.h"
+#include "kafka/server/request_context.h"
 #include "security/acl.h"
-
 namespace kafka::details {
 
 /*
@@ -245,6 +245,7 @@ inline int8_t to_kafka_resource_type(security::resource_type type) {
     case security::resource_type::transactional_id:
         return 5;
     }
+    __builtin_unreachable();
 }
 
 inline int8_t to_kafka_pattern_type(security::pattern_type type) {
@@ -254,6 +255,7 @@ inline int8_t to_kafka_pattern_type(security::pattern_type type) {
     case security::pattern_type::prefixed:
         return 4;
     }
+    __builtin_unreachable();
 }
 
 inline int8_t to_kafka_operation(security::acl_operation op) {
@@ -281,6 +283,7 @@ inline int8_t to_kafka_operation(security::acl_operation op) {
     case security::acl_operation::idempotent_write:
         return 12;
     }
+    __builtin_unreachable();
 }
 
 inline int8_t to_kafka_permission(security::acl_permission perm) {
@@ -290,6 +293,7 @@ inline int8_t to_kafka_permission(security::acl_permission perm) {
     case security::acl_permission::allow:
         return 3;
     }
+    __builtin_unreachable();
 }
 
 inline ss::sstring to_kafka_principal(const security::acl_principal& p) {
@@ -297,6 +301,7 @@ inline ss::sstring to_kafka_principal(const security::acl_principal& p) {
     case security::principal_type::user:
         return fmt::format("User:{}", p.name());
     }
+    __builtin_unreachable();
 }
 
 inline ss::sstring to_kafka_host(security::acl_host host) {
@@ -305,6 +310,105 @@ inline ss::sstring to_kafka_host(security::acl_host host) {
     } else {
         return "*";
     }
+}
+
+/**
+ * In some Kafka APIs, set of allowed operations is encoded as a int32 bit
+ * field. i.e. each allowed operation corresponds to `1` at position defined by
+ * operation underlying value.
+ *
+ * f.e.
+ * allowed read, write and alter would be
+ *
+ *  00000000 00000000 00000000 10001100
+ */
+inline int32_t to_bit_field(const std::vector<security::acl_operation>& ops) {
+    static constexpr int available_bits = std::numeric_limits<int32_t>::digits;
+    std::bitset<available_bits> bitfield;
+
+    for (auto o : ops) {
+        auto kafka_acl_operation = to_kafka_operation(o);
+        vassert(
+          kafka_acl_operation <= available_bits,
+          "can not encode {} as a bit in {} bit integer",
+          o,
+          available_bits);
+
+        bitfield.set(kafka_acl_operation);
+    }
+    // cast to signed, Kafka uses signed integers
+    return static_cast<int32_t>(bitfield.to_ulong());
+}
+
+/**
+ *  list of acl operations for specific resource
+ */
+template<typename T>
+const std::vector<security::acl_operation>& get_allowed_operations() {
+    static const std::vector<security::acl_operation> topic_resource_ops{
+      security::acl_operation::read,
+      security::acl_operation::write,
+      security::acl_operation::create,
+      security::acl_operation::describe,
+      security::acl_operation::remove,
+      security::acl_operation::alter,
+      security::acl_operation::describe_configs,
+      security::acl_operation::alter_configs,
+    };
+
+    static const std::vector<security::acl_operation> group_resource_ops{
+      security::acl_operation::read,
+      security::acl_operation::describe,
+      security::acl_operation::remove,
+    };
+
+    static const std::vector<security::acl_operation>
+      transactional_id_resource_ops{
+        security::acl_operation::write,
+        security::acl_operation::describe,
+      };
+
+    static const std::vector<security::acl_operation> cluster_resource_ops{
+      security::acl_operation::create,
+      security::acl_operation::cluster_action,
+      security::acl_operation::describe_configs,
+      security::acl_operation::alter_configs,
+      security::acl_operation::idempotent_write,
+      security::acl_operation::alter,
+      security::acl_operation::describe,
+    };
+
+    auto resource_type = security::get_resource_type<T>();
+
+    switch (resource_type) {
+    case security::resource_type::cluster:
+        return cluster_resource_ops;
+    case security::resource_type::group:
+        return group_resource_ops;
+    case security::resource_type::topic:
+        return topic_resource_ops;
+    case security::resource_type::transactional_id:
+        return transactional_id_resource_ops;
+    };
+
+    __builtin_unreachable();
+}
+
+template<typename T>
+std::vector<security::acl_operation>
+authorized_operations(request_context& ctx, const T& resource) {
+    std::vector<security::acl_operation> allowed_operations;
+    auto& ops = get_allowed_operations<T>();
+
+    std::copy_if(
+      ops.begin(),
+      ops.end(),
+      std::back_inserter(allowed_operations),
+      [&ctx, &resource](security::acl_operation op) {
+          return ctx.authorized(op, resource);
+      });
+
+    return allowed_operations;
 }
 
 } // namespace kafka::details

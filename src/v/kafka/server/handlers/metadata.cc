@@ -14,11 +14,13 @@
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "kafka/server/errors.h"
+#include "kafka/server/handlers/details/security.h"
 #include "kafka/server/handlers/topics/topic_utils.h"
 #include "likely.h"
 #include "model/metadata.h"
 #include "utils/to_string.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/future-util.hh>
 #include <seastar/core/thread.hh>
 
@@ -345,6 +347,28 @@ create_topic(request_context& ctx, model::topic&& topic) {
       });
 }
 
+metadata_response::topic
+make_error_topic_response(model::topic tp, error_code ec) {
+    return metadata_response::topic{.err_code = ec, .name = std::move(tp)};
+}
+
+static metadata_response::topic make_topic_response(
+  request_context& ctx, metadata_request& rq, model::topic_metadata md) {
+    int32_t auth_operations = 0;
+    /**
+     * if requested include topic authorized operations
+     */
+    if (rq.include_topic_authorized_operations) {
+        auth_operations = details::to_bit_field(
+          details::authorized_operations(ctx, md.tp_ns.tp));
+    }
+
+    auto res = metadata_response::topic::make_from_topic_metadata(
+      std::move(md));
+    res.topic_authorized_operations = auth_operations;
+    return res;
+}
+
 static ss::future<std::vector<metadata_response::topic>>
 get_topic_metadata(request_context& ctx, metadata_request& request) {
     std::vector<metadata_response::topic> res;
@@ -353,17 +377,23 @@ get_topic_metadata(request_context& ctx, metadata_request& request) {
     if (request.list_all_topics) {
         auto topics = ctx.metadata_cache().all_topics_metadata();
         // only serve topics from the kafka namespace
-        auto it = std::remove_if(
-          topics.begin(), topics.end(), [](model::topic_metadata& t_md) {
-              return t_md.tp_ns.ns != model::kafka_namespace;
+        std::erase_if(topics, [](model::topic_metadata& t_md) {
+            return t_md.tp_ns.ns != model::kafka_namespace;
+        });
+
+        auto unauthorized_it = std::partition(
+          topics.begin(),
+          topics.end(),
+          [&ctx](const model::topic_metadata& t_md) {
+              return ctx.authorized(
+                security::acl_operation::describe, t_md.tp_ns.tp);
           });
         std::transform(
           topics.begin(),
-          it,
+          unauthorized_it,
           std::back_inserter(res),
-          [](model::topic_metadata& t_md) {
-              return metadata_response::topic::make_from_topic_metadata(
-                std::move(t_md));
+          [&ctx, &request](model::topic_metadata& t_md) {
+              return make_topic_response(ctx, request, std::move(t_md));
           });
         return ss::make_ready_future<std::vector<metadata_response::topic>>(
           std::move(res));
@@ -373,13 +403,21 @@ get_topic_metadata(request_context& ctx, metadata_request& request) {
 
     for (auto& topic : *request.topics) {
         auto source_topic = model::get_source_topic(topic);
+        /**
+         * Authorize source topic in case if we deal with materialized one
+         */
+        if (!ctx.authorized(security::acl_operation::describe, source_topic)) {
+            // not authorized, return authorization error
+            res.push_back(make_error_topic_response(
+              std::move(topic), error_code::topic_authorization_failed));
+            continue;
+        }
         if (auto md = ctx.metadata_cache().get_topic_metadata(
               model::topic_namespace_view(
                 model::kafka_namespace, source_topic));
             md) {
-            auto src_topic_response
-              = metadata_response::topic::make_from_topic_metadata(
-                std::move(*md), std::move(topic));
+            auto src_topic_response = make_topic_response(
+              ctx, request, std::move(*md));
             res.push_back(std::move(src_topic_response));
             continue;
         }
@@ -387,13 +425,18 @@ get_topic_metadata(request_context& ctx, metadata_request& request) {
         if (
           !config::shard_local_cfg().auto_create_topics_enabled
           || !request.allow_auto_topic_creation) {
-            metadata_response::topic t;
-            t.name = std::move(topic);
-            t.err_code = error_code::unknown_topic_or_partition;
-            res.push_back(std::move(t));
+            res.push_back(make_error_topic_response(
+              std::move(topic), error_code::unknown_topic_or_partition));
             continue;
         }
-
+        /**
+         * check if authorized to create
+         */
+        if (!ctx.authorized(security::acl_operation::create, source_topic)) {
+            res.push_back(make_error_topic_response(
+              std::move(topic), error_code::topic_authorization_failed));
+            continue;
+        }
         new_topics.push_back(create_topic(ctx, std::move(topic)));
     }
 
@@ -408,39 +451,42 @@ get_topic_metadata(request_context& ctx, metadata_request& request) {
 template<>
 ss::future<response_ptr> metadata_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group g) {
-    return ss::do_with(
-      std::move(ctx),
-      metadata_response{},
-      [](request_context& ctx, metadata_response& reply) {
-          auto brokers = ctx.metadata_cache().all_brokers();
-          for (const auto& broker : brokers) {
-              for (const auto& listener :
-                   broker->kafka_advertised_listeners()) {
-                  // filter broker listeners by active connection
-                  if (listener.name == ctx.listener()) {
-                      reply.brokers.push_back(metadata_response::broker{
-                        .node_id = broker->id(),
-                        .host = listener.address.host(),
-                        .port = listener.address.port(),
-                        .rack = broker->rack()});
-                  }
-              }
-          }
+    metadata_response reply;
+    auto brokers = ctx.metadata_cache().all_brokers();
 
-          // FIXME:  #95 Cluster Id
-          reply.cluster_id = std::nullopt;
+    for (const auto& broker : brokers) {
+        for (const auto& listener : broker->kafka_advertised_listeners()) {
+            // filter broker listeners by active connection
+            if (listener.name == ctx.listener()) {
+                reply.brokers.push_back(metadata_response::broker{
+                  .node_id = broker->id(),
+                  .host = listener.address.host(),
+                  .port = listener.address.port(),
+                  .rack = broker->rack()});
+            }
+        }
+    }
 
-          auto leader_id = ctx.metadata_cache().get_controller_leader_id();
-          reply.controller_id = leader_id.value_or(model::node_id(-1));
+    // FIXME:  #95 Cluster Id
+    reply.cluster_id = std::nullopt;
 
-          metadata_request request;
-          request.decode(ctx);
-          return get_topic_metadata(ctx, request)
-            .then([&reply](std::vector<metadata_response::topic> topics) {
-                reply.topics = std::move(topics);
-            })
-            .then([&ctx, &reply] { return ctx.respond(std::move(reply)); });
-      });
+    auto leader_id = ctx.metadata_cache().get_controller_leader_id();
+    reply.controller_id = leader_id.value_or(model::node_id(-1));
+
+    metadata_request request;
+    request.decode(ctx);
+
+    reply.topics = co_await get_topic_metadata(ctx, request);
+
+    if (
+      request.include_cluster_authorized_operations
+      && ctx.authorized(
+        security::acl_operation::describe, security::default_cluster_name)) {
+        reply.cluster_authorized_operations = details::to_bit_field(
+          details::authorized_operations(ctx, security::default_cluster_name));
+    }
+
+    co_return co_await ctx.respond(std::move(reply));
 }
 
 } // namespace kafka
