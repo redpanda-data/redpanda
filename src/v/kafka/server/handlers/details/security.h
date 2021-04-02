@@ -1,0 +1,310 @@
+/*
+ * Copyright 2021 Vectorized, Inc.
+ *
+ * Use of this software is governed by the Business Source License
+ * included in the file licenses/BSL.md
+ *
+ * As of the Change Date specified in that file, in accordance with
+ * the Business Source License, use of this software will be governed
+ * by the Apache License, Version 2.0
+ */
+#include "kafka/protocol/schemata/create_acls_request.h"
+#include "kafka/protocol/schemata/describe_acls_request.h"
+#include "security/acl.h"
+
+namespace kafka::details {
+
+/*
+ * Conversions throw acl_conversion_error and the exception message via (what())
+ * is generally what should be returned as the error message in kafka responses.
+ *
+ * Using an exception here eliminates the need to write c/go-style error
+ * handling for the large number of fields that need to be converted.
+ */
+struct acl_conversion_error : std::exception {
+    explicit acl_conversion_error(ss::sstring msg)
+      : msg{std::move(msg)} {}
+    const char* what() const noexcept final { return msg.c_str(); }
+    ss::sstring msg;
+};
+
+inline security::acl_principal to_acl_principal(const ss::sstring& principal) {
+    std::string_view view(principal);
+    if (unlikely(!view.starts_with("User:"))) {
+        throw acl_conversion_error(
+          fmt::format("Invalid principal name: {{{}}}", principal));
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-avoid-magic-numbers)
+    auto user = principal.substr(5);
+    if (unlikely(user.empty())) {
+        throw acl_conversion_error(
+          fmt::format("Principal name cannot be empty"));
+    }
+    if (user == "*") {
+        return security::acl_wildcard_user;
+    }
+    return security::acl_principal(
+      security::principal_type::user, std::move(user));
+}
+
+inline security::acl_host to_acl_host(const ss::sstring& host) {
+    if (host == "*") {
+        return security::acl_host::wildcard_host();
+    }
+    try {
+        return security::acl_host(host);
+    } catch (const std::invalid_argument& e) {
+        throw acl_conversion_error(
+          fmt::format("Invalid host {}: {}", host, e.what()));
+    }
+}
+
+inline security::resource_type to_resource_type(int8_t type) {
+    switch (type) {
+    case 2:
+        return security::resource_type::topic;
+    case 3:
+        return security::resource_type::group;
+    case 4:
+        return security::resource_type::cluster;
+    case 5: // NOLINT(cppcoreguidelines-avoid-magic-numbers)
+        return security::resource_type::transactional_id;
+    default:
+        throw acl_conversion_error(
+          fmt::format("Invalid resource type: {}", type));
+    }
+}
+
+inline security::pattern_type to_pattern_type(int8_t type) {
+    switch (type) {
+    case 3:
+        return security::pattern_type::literal;
+    case 4:
+        return security::pattern_type::prefixed;
+    default:
+        throw acl_conversion_error(
+          fmt::format("Invalid resource pattern type: {}", type));
+    }
+}
+
+inline security::acl_operation to_acl_operation(int8_t op) {
+    switch (op) {
+    case 2:
+        return security::acl_operation::all;
+    case 3:
+        return security::acl_operation::read;
+    case 4:
+        return security::acl_operation::write;
+    case 5: // NOLINT(cppcoreguidelines-avoid-magic-numbers)
+        return security::acl_operation::create;
+    case 6: // NOLINT(cppcoreguidelines-avoid-magic-numbers)
+        return security::acl_operation::remove;
+    case 7: // NOLINT(cppcoreguidelines-avoid-magic-numbers)
+        return security::acl_operation::alter;
+    case 8: // NOLINT(cppcoreguidelines-avoid-magic-numbers)
+        return security::acl_operation::describe;
+    case 9: // NOLINT(cppcoreguidelines-avoid-magic-numbers)
+        return security::acl_operation::cluster_action;
+    case 10: // NOLINT(cppcoreguidelines-avoid-magic-numbers)
+        return security::acl_operation::describe_configs;
+    case 11: // NOLINT(cppcoreguidelines-avoid-magic-numbers)
+        return security::acl_operation::alter_configs;
+    case 12: // NOLINT(cppcoreguidelines-avoid-magic-numbers)
+        return security::acl_operation::idempotent_write;
+    default:
+        throw acl_conversion_error(fmt::format("Invalid operation: {}", op));
+    }
+}
+
+inline security::acl_permission to_acl_permission(int8_t perm) {
+    switch (perm) {
+    case 2:
+        return security::acl_permission::deny;
+    case 3:
+        return security::acl_permission::allow;
+    default:
+        throw acl_conversion_error(fmt::format("Invalid permission: {}", perm));
+    }
+}
+
+/*
+ * convert kafka acl message into redpanda internal acl representation
+ */
+inline security::acl_binding to_acl_binding(const creatable_acl& acl) {
+    if (acl.resource_name.empty()) {
+        throw acl_conversion_error("Empty resource name");
+    }
+
+    security::resource_pattern pattern(
+      to_resource_type(acl.resource_type),
+      acl.resource_name,
+      to_pattern_type(acl.resource_pattern_type));
+
+    if (
+      pattern.resource() == security::resource_type::cluster
+      && pattern.name() != security::default_cluster_name) {
+        throw acl_conversion_error(
+          fmt::format("Invalid cluster name: {}", pattern.name()));
+    }
+
+    security::acl_entry entry(
+      to_acl_principal(acl.principal),
+      to_acl_host(acl.host),
+      to_acl_operation(acl.operation),
+      to_acl_permission(acl.permission_type));
+
+    return security::acl_binding(std::move(pattern), std::move(entry));
+}
+
+/*
+ * build resource pattern filter bits
+ */
+inline security::resource_pattern_filter
+to_resource_pattern_filter(const describe_acls_request_data& request) {
+    std::optional<security::resource_type> resource_type;
+    switch (request.resource_type) {
+    case 1:
+        // wildcard
+        break;
+    default:
+        resource_type = to_resource_type(request.resource_type);
+    }
+
+    std::optional<security::resource_pattern_filter::pattern_filter_type>
+      pattern_filter;
+    switch (request.resource_pattern_type) {
+    case 1:
+        // wildcard
+        break;
+    case 2:
+        // match
+        pattern_filter = security::resource_pattern_filter::pattern_match{};
+        break;
+    default:
+        pattern_filter = to_pattern_type(request.resource_pattern_type);
+    }
+
+    return security::resource_pattern_filter(
+      resource_type, request.resource_name_filter, pattern_filter);
+}
+
+/*
+ * build acl entry filter bits
+ */
+inline security::acl_entry_filter
+to_acl_entry_filter(const describe_acls_request_data& request) {
+    std::optional<security::acl_principal> principal;
+    if (request.principal_filter) {
+        principal = to_acl_principal(*request.principal_filter);
+    }
+
+    std::optional<security::acl_host> host;
+    if (request.host_filter) {
+        host = to_acl_host(*request.host_filter);
+    }
+
+    std::optional<security::acl_operation> operation;
+    switch (request.operation) {
+    case 1:
+        // wildcard
+        break;
+    default:
+        operation = to_acl_operation(request.operation);
+    }
+
+    std::optional<security::acl_permission> permission;
+    switch (request.permission_type) {
+    case 1:
+        // wildcard
+        break;
+    default:
+        permission = to_acl_permission(request.permission_type);
+    }
+
+    return security::acl_entry_filter(
+      std::move(principal), host, operation, permission);
+}
+
+/*
+ * convert kafka describe acl request into an internal acl filter
+ */
+inline security::acl_binding_filter
+to_acl_binding_filter(const describe_acls_request_data& request) {
+    return security::acl_binding_filter(
+      to_resource_pattern_filter(request), to_acl_entry_filter(request));
+}
+
+inline int8_t to_kafka_resource_type(security::resource_type type) {
+    switch (type) {
+    case security::resource_type::topic:
+        return 2;
+    case security::resource_type::group:
+        return 3;
+    case security::resource_type::cluster:
+        return 4;
+    case security::resource_type::transactional_id:
+        return 5;
+    }
+}
+
+inline int8_t to_kafka_pattern_type(security::pattern_type type) {
+    switch (type) {
+    case security::pattern_type::literal:
+        return 3;
+    case security::pattern_type::prefixed:
+        return 4;
+    }
+}
+
+inline int8_t to_kafka_operation(security::acl_operation op) {
+    switch (op) {
+    case security::acl_operation::all:
+        return 2;
+    case security::acl_operation::read:
+        return 3;
+    case security::acl_operation::write:
+        return 4;
+    case security::acl_operation::create:
+        return 5;
+    case security::acl_operation::remove:
+        return 6;
+    case security::acl_operation::alter:
+        return 7;
+    case security::acl_operation::describe:
+        return 8;
+    case security::acl_operation::cluster_action:
+        return 9;
+    case security::acl_operation::describe_configs:
+        return 10;
+    case security::acl_operation::alter_configs:
+        return 11;
+    case security::acl_operation::idempotent_write:
+        return 12;
+    }
+}
+
+inline int8_t to_kafka_permission(security::acl_permission perm) {
+    switch (perm) {
+    case security::acl_permission::deny:
+        return 2;
+    case security::acl_permission::allow:
+        return 3;
+    }
+}
+
+inline ss::sstring to_kafka_principal(const security::acl_principal& p) {
+    switch (p.type()) {
+    case security::principal_type::user:
+        return fmt::format("User:{}", p.name());
+    }
+}
+
+inline ss::sstring to_kafka_host(security::acl_host host) {
+    if (host.address()) {
+        return fmt::format("{}", *host.address());
+    } else {
+        return "*";
+    }
+}
+
+} // namespace kafka::details

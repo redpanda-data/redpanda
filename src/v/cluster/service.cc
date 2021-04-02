@@ -11,6 +11,7 @@
 
 #include "cluster/members_manager.h"
 #include "cluster/metadata_cache.h"
+#include "cluster/security_frontend.h"
 #include "cluster/topics_frontend.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
@@ -26,11 +27,13 @@ service::service(
   ss::smp_service_group ssg,
   ss::sharded<topics_frontend>& tf,
   ss::sharded<members_manager>& mm,
-  ss::sharded<metadata_cache>& cache)
+  ss::sharded<metadata_cache>& cache,
+  ss::sharded<security_frontend>& sf)
   : controller_service(sg, ssg)
   , _topics_frontend(tf)
   , _members_manager(mm)
-  , _md_cache(cache) {}
+  , _md_cache(cache)
+  , _security_frontend(sf) {}
 
 ss::future<join_reply>
 service::join(join_request&& req, rpc::streaming_context&) {
@@ -148,4 +151,18 @@ service::do_update_topic_properties(update_topic_properties_request&& req) {
 
     co_return update_topic_properties_reply{.results = std::move(res)};
 }
+
+ss::future<create_acls_reply>
+service::create_acls(create_acls_request&& request, rpc::streaming_context&) {
+    return ss::with_scheduling_group(
+             get_scheduling_group(),
+             [this, r = std::move(request)]() mutable {
+                 return _security_frontend.local().create_acls(
+                   std::move(r.data.bindings), r.timeout);
+             })
+      .then([](std::vector<errc> results) {
+          return create_acls_reply{.results = std::move(results)};
+      });
+}
+
 } // namespace cluster

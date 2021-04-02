@@ -36,6 +36,9 @@ static constexpr model::record_batch_type topic_batch_type
 static constexpr model::record_batch_type user_batch_type
   = model::record_batch_type(12);
 
+static constexpr model::record_batch_type acl_batch_type
+  = model::record_batch_type(13);
+
 using command_type = named_type<int8_t, struct command_type_tag>;
 // Controller state updates are represented in terms of commands. Each
 // command represent different type of action that is going to be executed
@@ -71,6 +74,7 @@ static constexpr int8_t update_topic_properties_cmd_type = 4;
 static constexpr int8_t create_user_cmd_type = 5;
 static constexpr int8_t delete_user_cmd_type = 6;
 static constexpr int8_t update_user_cmd_type = 7;
+static constexpr int8_t create_acls_cmd_type = 8;
 
 using create_topic_cmd = controller_command<
   model::topic_namespace,
@@ -119,6 +123,12 @@ using update_user_cmd = controller_command<
   security::scram_credential,
   update_user_cmd_type,
   user_batch_type()>;
+
+using create_acls_cmd = controller_command<
+  create_acls_cmd_data,
+  int8_t, // unused
+  create_acls_cmd_type,
+  acl_batch_type()>;
 
 // typelist utils
 // clang-format off

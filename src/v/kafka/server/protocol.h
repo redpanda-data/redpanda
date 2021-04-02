@@ -38,7 +38,8 @@ public:
       ss::sharded<fetch_session_cache>&,
       ss::sharded<cluster::id_allocator_frontend>&,
       ss::sharded<security::credential_store>&,
-      ss::sharded<security::authorizer>&) noexcept;
+      ss::sharded<security::authorizer>&,
+      ss::sharded<cluster::security_frontend>&) noexcept;
 
     ~protocol() noexcept override = default;
     protocol(const protocol&) = delete;
@@ -79,6 +80,10 @@ public:
 
     security::authorizer& authorizer() { return _authorizer.local(); }
 
+    cluster::security_frontend& security_frontend() {
+        return _security_frontend.local();
+    }
+
 private:
     ss::smp_service_group _smp_group;
     ss::sharded<cluster::topics_frontend>& _topics_frontend;
@@ -93,6 +98,7 @@ private:
     bool _is_idempotence_enabled{false};
     ss::sharded<security::credential_store>& _credentials;
     ss::sharded<security::authorizer>& _authorizer;
+    ss::sharded<cluster::security_frontend>& _security_frontend;
 };
 
 } // namespace kafka

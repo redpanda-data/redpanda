@@ -476,9 +476,6 @@ void application::wire_up_redpanda_services() {
       std::ref(controller->get_partition_leaders()))
       .get();
 
-    syschecks::systemd_message("Creating kafka authorizer").get();
-    construct_service(authorizer).get();
-
     syschecks::systemd_message("Creating metadata dissemination service").get();
     construct_service(
       md_dissemination_service,
@@ -712,7 +709,8 @@ void application::start_redpanda() {
             smp_service_groups.cluster_smp_sg(),
             std::ref(controller->get_topics_frontend()),
             std::ref(controller->get_members_manager()),
-            std::ref(metadata_cache));
+            std::ref(metadata_cache),
+            std::ref(controller->get_security_frontend()));
           proto->register_service<cluster::metadata_dissemination_handler>(
             _scheduling_groups.cluster_sg(),
             smp_service_groups.cluster_smp_sg(),
@@ -749,7 +747,8 @@ void application::start_redpanda() {
             fetch_session_cache,
             std::ref(id_allocator_frontend),
             controller->get_credential_store(),
-            authorizer);
+            controller->get_authorizer(),
+            controller->get_security_frontend());
           s.set_protocol(std::move(proto));
       })
       .get();

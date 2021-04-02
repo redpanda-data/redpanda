@@ -44,7 +44,8 @@ protocol::protocol(
   ss::sharded<fetch_session_cache>& session_cache,
   ss::sharded<cluster::id_allocator_frontend>& id_allocator_frontend,
   ss::sharded<security::credential_store>& credentials,
-  ss::sharded<security::authorizer>& authorizer) noexcept
+  ss::sharded<security::authorizer>& authorizer,
+  ss::sharded<cluster::security_frontend>& sec_fe) noexcept
   : _smp_group(smp)
   , _topics_frontend(tf)
   , _metadata_cache(meta)
@@ -58,7 +59,8 @@ protocol::protocol(
   , _is_idempotence_enabled(
       config::shard_local_cfg().enable_idempotence.value())
   , _credentials(credentials)
-  , _authorizer(authorizer) {}
+  , _authorizer(authorizer)
+  , _security_frontend(sec_fe) {}
 
 ss::future<> protocol::apply(rpc::server::resources rs) {
     /*

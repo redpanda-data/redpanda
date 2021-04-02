@@ -6,6 +6,7 @@ rp_test(
     test_kafka_protocol
   SOURCES
     batch_reader_test.cc
+    security_test.cc
   DEFINITIONS
     BOOST_TEST_DYN_LINK
   LIBRARIES

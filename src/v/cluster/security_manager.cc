@@ -23,8 +23,10 @@
 namespace cluster {
 
 security_manager::security_manager(
-  ss::sharded<security::credential_store>& credentials)
-  : _credentials(credentials) {}
+  ss::sharded<security::credential_store>& credentials,
+  ss::sharded<security::authorizer>& authorizer)
+  : _credentials(credentials)
+  , _authorizer(authorizer) {}
 
 ss::future<std::error_code>
 security_manager::apply_update(model::record_batch batch) {
@@ -32,15 +34,27 @@ security_manager::apply_update(model::record_batch batch) {
         return ss::visit(
           std::move(cmd),
           [this](create_user_cmd cmd) {
-              return dispatch_updates_to_cores(std::move(cmd));
+              return dispatch_updates_to_cores(std::move(cmd), _credentials);
           },
           [this](delete_user_cmd cmd) {
-              return dispatch_updates_to_cores(std::move(cmd));
+              return dispatch_updates_to_cores(std::move(cmd), _credentials);
           },
           [this](update_user_cmd cmd) {
-              return dispatch_updates_to_cores(std::move(cmd));
+              return dispatch_updates_to_cores(std::move(cmd), _credentials);
+          },
+          [this](create_acls_cmd cmd) {
+              return dispatch_updates_to_cores(std::move(cmd), _authorizer);
           });
     });
+}
+
+/*
+ * handle: update user command
+ */
+static std::error_code
+do_apply(create_acls_cmd cmd, security::authorizer& authorizer) {
+    authorizer.add_bindings(cmd.key.bindings);
+    return errc::success;
 }
 
 /*
@@ -77,27 +91,26 @@ do_apply(create_user_cmd cmd, security::credential_store& store) {
     return errc::success;
 }
 
-template<typename Cmd>
-static ss::future<std::error_code> do_apply(
-  ss::shard_id shard, Cmd cmd, ss::sharded<security::credential_store>& store) {
-    return store.invoke_on(
-      shard,
-      [cmd = std::move(cmd)](security::credential_store& local_store) mutable {
-          return do_apply(std::move(cmd), local_store);
+template<typename Cmd, typename Service>
+static ss::future<std::error_code>
+do_apply(ss::shard_id shard, Cmd cmd, ss::sharded<Service>& service) {
+    return service.invoke_on(
+      shard, [cmd = std::move(cmd)](auto& local_service) mutable {
+          return do_apply(std::move(cmd), local_service);
       });
 }
 
-template<typename Cmd>
-ss::future<std::error_code>
-security_manager::dispatch_updates_to_cores(Cmd cmd) {
+template<typename Cmd, typename Service>
+ss::future<std::error_code> security_manager::dispatch_updates_to_cores(
+  Cmd cmd, ss::sharded<Service>& service) {
     using ret_t = std::vector<std::error_code>;
     return ss::do_with(
-      ret_t{}, [this, cmd = std::move(cmd)](ret_t& ret) mutable {
+      ret_t{}, [cmd = std::move(cmd), &service](ret_t& ret) mutable {
           ret.reserve(ss::smp::count);
           return ss::parallel_for_each(
                    boost::irange(0, (int)ss::smp::count),
-                   [this, &ret, cmd = std::move(cmd)](int shard) mutable {
-                       return do_apply(shard, cmd, _credentials)
+                   [&ret, cmd = std::move(cmd), &service](int shard) mutable {
+                       return do_apply(shard, cmd, service)
                          .then([&ret](std::error_code r) { ret.push_back(r); });
                    })
             .then([&ret] { return std::move(ret); })

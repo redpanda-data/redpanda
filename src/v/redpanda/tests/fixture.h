@@ -84,7 +84,8 @@ public:
           app.fetch_session_cache,
           app.id_allocator_frontend,
           app.controller->get_credential_store(),
-          app.authorizer);
+          app.controller->get_authorizer(),
+          app.controller->get_security_frontend());
     }
 
     // creates single node with default configuration

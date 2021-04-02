@@ -19,6 +19,7 @@
 #include "model/record_batch_types.h"
 #include "model/timeout_clock.h"
 #include "raft/types.h"
+#include "security/acl.h"
 #include "storage/ntp_config.h"
 #include "tristate.h"
 #include "utils/to_string.h"
@@ -312,6 +313,20 @@ private:
     ss::sstring _msg;
 };
 
+struct create_acls_cmd_data {
+    static constexpr int8_t current_version = 1;
+    std::vector<security::acl_binding> bindings;
+};
+
+struct create_acls_request {
+    create_acls_cmd_data data;
+    model::timeout_clock::duration timeout;
+};
+
+struct create_acls_reply {
+    std::vector<errc> results;
+};
+
 } // namespace cluster
 namespace std {
 template<>
@@ -383,6 +398,12 @@ template<>
 struct adl<cluster::topic_properties_update> {
     void to(iobuf&, cluster::topic_properties_update&&);
     cluster::topic_properties_update from(iobuf_parser&);
+};
+
+template<>
+struct adl<cluster::create_acls_cmd_data> {
+    void to(iobuf&, cluster::create_acls_cmd_data&&);
+    cluster::create_acls_cmd_data from(iobuf_parser&);
 };
 
 } // namespace reflection

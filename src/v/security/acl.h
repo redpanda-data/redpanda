@@ -35,12 +35,14 @@ inline const acl_cluster_name default_cluster_name("redpanda-cluster");
 
 /*
  * An ACL resource type.
+ *
+ * IMPORTANT: on-write value
  */
-enum class resource_type {
-    topic,
-    group,
-    cluster,
-    transactional_id,
+enum class resource_type : int8_t {
+    topic = 0,
+    group = 1,
+    cluster = 2,
+    transactional_id = 3,
 };
 
 template<typename T>
@@ -60,27 +62,31 @@ inline resource_type get_resource_type() {
 
 /*
  * A pattern rule for matching ACL resource names.
+ *
+ * IMPORTANT: on-write value
  */
-enum class pattern_type {
-    literal,
-    prefixed,
+enum class pattern_type : int8_t {
+    literal = 0,
+    prefixed = 1,
 };
 
 /*
- * an operation on a resource.
+ * An operation on a resource.
+ *
+ * IMPORTANT: on-write value
  */
-enum class acl_operation {
-    all,
-    read,
-    write,
-    create,
-    remove,
-    alter,
-    describe,
-    cluster_action,
-    describe_configs,
-    alter_configs,
-    idempotent_write,
+enum class acl_operation : int8_t {
+    all = 0,
+    read = 1,
+    write = 2,
+    create = 3,
+    remove = 4,
+    alter = 5,
+    describe = 6,
+    cluster_action = 7,
+    describe_configs = 8,
+    alter_configs = 9,
+    idempotent_write = 10,
 };
 
 /*
@@ -106,22 +112,64 @@ inline std::vector<acl_operation> acl_implied_ops(acl_operation operation) {
     }
 }
 
+inline std::ostream& operator<<(std::ostream& os, acl_operation op) {
+    switch (op) {
+    case acl_operation::all:
+        return os << "all";
+    case acl_operation::read:
+        return os << "read";
+    case acl_operation::write:
+        return os << "write";
+    case acl_operation::create:
+        return os << "create";
+    case acl_operation::remove:
+        return os << "remove";
+    case acl_operation::alter:
+        return os << "alter";
+    case acl_operation::describe:
+        return os << "describe";
+    case acl_operation::cluster_action:
+        return os << "cluster_action";
+    case acl_operation::describe_configs:
+        return os << "describe_configs";
+    case acl_operation::alter_configs:
+        return os << "alter_configs";
+    case acl_operation::idempotent_write:
+        return os << "idempotent_write";
+    }
+    __builtin_unreachable();
+}
+
 /*
  * Grant or deny access.
+ *
+ * IMPORTANT: on-write value
  */
-enum class acl_permission {
-    deny,
-    allow,
+enum class acl_permission : int8_t {
+    deny = 0,
+    allow = 1,
 };
+
+inline std::ostream& operator<<(std::ostream& os, acl_permission perm) {
+    switch (perm) {
+    case acl_permission::deny:
+        return os << "deny";
+    case acl_permission::allow:
+        return os << "allow";
+    }
+    __builtin_unreachable();
+}
 
 /*
  * Principal type
  *
  * Only `User` is currently supported, but when integrating with other identity
  * providers it may be useful to introduce a `Group` type.
+ *
+ * IMPORTANT: on-write value
  */
-enum class principal_type {
-    user,
+enum class principal_type : int8_t {
+    user = 0,
 };
 
 inline std::ostream& operator<<(std::ostream& os, resource_type type) {
@@ -135,6 +183,7 @@ inline std::ostream& operator<<(std::ostream& os, resource_type type) {
     case resource_type::transactional_id:
         return os << "transactional_id";
     }
+    __builtin_unreachable();
 }
 
 inline std::ostream& operator<<(std::ostream& os, pattern_type type) {
@@ -144,6 +193,15 @@ inline std::ostream& operator<<(std::ostream& os, pattern_type type) {
     case pattern_type::prefixed:
         return os << "prefixed";
     }
+    __builtin_unreachable();
+}
+
+inline std::ostream& operator<<(std::ostream& os, principal_type type) {
+    switch (type) {
+    case principal_type::user:
+        return os << "user";
+    }
+    __builtin_unreachable();
 }
 
 /*
@@ -163,12 +221,22 @@ public:
         return H::combine(std::move(h), e._type, e._name);
     }
 
+    friend std::ostream& operator<<(std::ostream&, const acl_principal&);
+
+    const ss::sstring& name() const { return _name; }
+    principal_type type() const { return _type; }
     bool wildcard() const { return _name == "*"; }
 
 private:
     principal_type _type;
     ss::sstring _name;
 };
+
+inline std::ostream&
+operator<<(std::ostream& os, const acl_principal& principal) {
+    fmt::print(os, "{{type {} name {}}}", principal._type, principal._name);
+    return os;
+}
 
 inline const acl_principal acl_wildcard_user(principal_type::user, "*");
 
@@ -239,11 +307,26 @@ public:
         }
     }
 
+    friend std::ostream& operator<<(std::ostream&, const acl_host&);
+
+    std::optional<ss::net::inet_address> address() const { return _addr; }
+
 private:
     acl_host() = default;
 
     std::optional<ss::net::inet_address> _addr;
 };
+
+inline std::ostream& operator<<(std::ostream& os, const acl_host& host) {
+    if (host._addr) {
+        fmt::print(os, "{{{}}}", *host._addr);
+    } else {
+        // we can log whatever representation we want for a wildcard host, but
+        // kafka expects "*" as the wildcard representation.
+        os << "{{any_host}}";
+    }
+    return os;
+}
 
 inline const acl_host acl_wildcard_host = acl_host::wildcard_host();
 
@@ -272,6 +355,8 @@ public:
           std::move(h), e._principal, e._host, e._operation, e._permission);
     }
 
+    friend std::ostream& operator<<(std::ostream&, const acl_entry&);
+
     const acl_principal& principal() const { return _principal; }
     const acl_host& host() const { return _host; }
     acl_operation operation() const { return _operation; }
@@ -283,6 +368,17 @@ private:
     acl_operation _operation;
     acl_permission _permission;
 };
+
+inline std::ostream& operator<<(std::ostream& os, const acl_entry& entry) {
+    fmt::print(
+      os,
+      "{{principal {} host {} op {} perm {}}}",
+      entry._principal,
+      entry._host,
+      entry._operation,
+      entry._permission);
+    return os;
+}
 
 /*
  * An ACL binding is an association of resource(s) and an ACL entry. An ACL
@@ -301,6 +397,8 @@ public:
         return H::combine(std::move(h), e._pattern, e._entry);
     }
 
+    friend std::ostream& operator<<(std::ostream&, const acl_binding&);
+
     const resource_pattern& pattern() const { return _pattern; }
     const acl_entry& entry() const { return _entry; }
 
@@ -308,6 +406,11 @@ private:
     resource_pattern _pattern;
     acl_entry _entry;
 };
+
+inline std::ostream& operator<<(std::ostream& os, const acl_binding& binding) {
+    fmt::print(os, "{{pattern {} entry {}}}", binding._pattern, binding._entry);
+    return os;
+}
 
 /*
  * A filter for matching resources.

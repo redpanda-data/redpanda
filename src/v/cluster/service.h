@@ -29,7 +29,8 @@ public:
       ss::smp_service_group,
       ss::sharded<topics_frontend>&,
       ss::sharded<members_manager>&,
-      ss::sharded<metadata_cache>&);
+      ss::sharded<metadata_cache>&,
+      ss::sharded<security_frontend>&);
 
     virtual ss::future<join_reply>
     join(join_request&&, rpc::streaming_context&) override;
@@ -46,6 +47,9 @@ public:
     ss::future<update_topic_properties_reply> update_topic_properties(
       update_topic_properties_request&&, rpc::streaming_context&) final;
 
+    ss::future<create_acls_reply>
+    create_acls(create_acls_request&&, rpc::streaming_context&) final;
+
 private:
     std::
       pair<std::vector<model::topic_metadata>, std::vector<topic_configuration>>
@@ -60,5 +64,6 @@ private:
     ss::sharded<topics_frontend>& _topics_frontend;
     ss::sharded<members_manager>& _members_manager;
     ss::sharded<metadata_cache>& _md_cache;
+    ss::sharded<security_frontend>& _security_frontend;
 };
 } // namespace cluster
