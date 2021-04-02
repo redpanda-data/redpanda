@@ -88,9 +88,9 @@ func (r *ClusterReconciler) Reconcile(
 		return ctrl.Result{}, fmt.Errorf("unable to retrieve Cluster resource: %w", err)
 	}
 
-	ports := map[string]int{
-		resources.KafkaPortName: redpandaCluster.Spec.Configuration.KafkaAPI.Port,
-		resources.AdminPortName: redpandaCluster.Spec.Configuration.AdminAPI.Port,
+	ports := []resources.NamedServicePort{
+		{Name: resources.AdminPortName, Port: redpandaCluster.Spec.Configuration.AdminAPI.Port},
+		{Name: resources.KafkaPortName, Port: redpandaCluster.Spec.Configuration.KafkaAPI.Port},
 	}
 	headlessSvc := resources.NewHeadlessService(r.Client, &redpandaCluster, r.Scheme, ports, log)
 	nodeportSvc := resources.NewNodePortService(r.Client, &redpandaCluster, r.Scheme, ports, log)
