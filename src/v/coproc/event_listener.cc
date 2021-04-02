@@ -192,6 +192,7 @@ ss::future<> event_listener::do_start() {
         if (has_active) {
             vlog(
               coproclog.info, "Shutting down all coprocessor script_contexts");
+            _active_ids.clear();
             co_await remove_copro_state(_pacemaker);
         }
         co_return;
