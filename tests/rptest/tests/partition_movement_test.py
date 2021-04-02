@@ -119,6 +119,14 @@ class PartitionMovementTest(RedpandaTest):
             )
             return to_node_id == node_id and to_shard == shard
 
+        def move_partition(to_node_id, to_shard):
+            url = f"{base_url}?target={to_node_id},{to_shard}"
+            res = requests.post(url)
+            self.logger.debug(
+                f"Requesting partition move {url}: {res.status_code} {res.text}"
+            )
+            return res.status_code == 200
+
         for round in range(rounds):
             partition = self.redpanda.partitions(self.topics[0].name)[0]
             eligible = set(self.redpanda.nodes) - set(partition.replicas)
@@ -132,12 +140,10 @@ class PartitionMovementTest(RedpandaTest):
                 f"Moving partition round {round}: from node {from_node_id} to {to_node_id}:{to_shard}"
             )
 
-            url = f"{base_url}?target={to_node_id},{to_shard}"
-            res = requests.post(url)
-            self.logger.debug(
-                f"Requesting partition move {url}: {res.status_code} {res.text}"
-            )
-            assert res.status_code == 200
+            wait_until(lambda: move_partition(to_node_id, to_shard),
+                       timeout_sec=10,
+                       backoff_sec=2,
+                       err_msg="Previous move haven't finished")
 
             wait_until(lambda: partition_moved(to_node_id, to_shard),
                        timeout_sec=20,
