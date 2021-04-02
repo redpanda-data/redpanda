@@ -108,16 +108,8 @@ tasks:
     desc: build image used in integration tests
     cmds:
     - |
-      if ! docker images | grep vectorized/redpanda-test-node | grep cache; then
-        # pull only if image doesn't exist
-        docker pull docker.io/vectorized/redpanda-test-node:cache || true
-        # and avoid invalidating docker cache
-        chmod -R 644 '{{.SRC_DIR}}/tests/docker/ssh/' '{{.SRC_DIR}}/tests/setup.py'
-        chmod 755 '{{.SRC_DIR}}/tests/docker/ssh'
-      fi
       docker build \
         --tag vectorized/redpanda-test-node \
-        --cache-from docker.io/vectorized/redpanda-test-node:cache \
         --file '{{.SRC_DIR}}/tests/docker/Dockerfile' \
         '{{.SRC_DIR}}/tests/'
 
