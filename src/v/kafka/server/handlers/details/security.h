@@ -245,6 +245,7 @@ inline int8_t to_kafka_resource_type(security::resource_type type) {
     case security::resource_type::transactional_id:
         return 5;
     }
+    __builtin_unreachable();
 }
 
 inline int8_t to_kafka_pattern_type(security::pattern_type type) {
@@ -254,6 +255,7 @@ inline int8_t to_kafka_pattern_type(security::pattern_type type) {
     case security::pattern_type::prefixed:
         return 4;
     }
+    __builtin_unreachable();
 }
 
 inline int8_t to_kafka_operation(security::acl_operation op) {
@@ -281,6 +283,7 @@ inline int8_t to_kafka_operation(security::acl_operation op) {
     case security::acl_operation::idempotent_write:
         return 12;
     }
+    __builtin_unreachable();
 }
 
 inline int8_t to_kafka_permission(security::acl_permission perm) {
@@ -290,6 +293,7 @@ inline int8_t to_kafka_permission(security::acl_permission perm) {
     case security::acl_permission::allow:
         return 3;
     }
+    __builtin_unreachable();
 }
 
 inline ss::sstring to_kafka_principal(const security::acl_principal& p) {
@@ -297,6 +301,7 @@ inline ss::sstring to_kafka_principal(const security::acl_principal& p) {
     case security::principal_type::user:
         return fmt::format("User:{}", p.name());
     }
+    __builtin_unreachable();
 }
 
 inline ss::sstring to_kafka_host(security::acl_host host) {
