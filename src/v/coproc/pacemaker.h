@@ -21,6 +21,7 @@
 #include "storage/snapshot.h"
 
 #include <seastar/core/sharded.hh>
+#include <seastar/core/smp.hh>
 #include <seastar/net/inet_address.hh>
 #include <seastar/net/socket_defs.hh>
 
@@ -46,6 +47,11 @@ public:
      * Begins the offset tracking fiber
      */
     ss::future<> start();
+
+    /**
+     * Stops and removes running scripts but keeps their state (offsets)
+     */
+    ss::future<> reset();
 
     /**
      * Gracefully stops and deregisters all coproc scripts

@@ -55,8 +55,7 @@ static wasm::event_action query_action(const iobuf& source_code) {
 }
 
 static ss::future<> remove_copro_state(ss::sharded<pacemaker>& svc) {
-    return svc.invoke_on_all(
-      [](pacemaker& p) { return p.remove_all_sources().discard_result(); });
+    return svc.invoke_on_all([](pacemaker& p) { return p.reset(); });
 }
 
 ss::future<> event_listener::stop() {
