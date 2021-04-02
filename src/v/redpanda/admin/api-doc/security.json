@@ -7,6 +7,15 @@
                 "description": "Create user"
             }
         }
+    },
+    "get": {
+        "summary": "List users",
+        "operationId": "list_users",
+        "responses": {
+            "200": {
+                "description": "List users"
+            }
+        }
     }
 },
 "/v1/security/users/{user}": {
