@@ -68,6 +68,10 @@ func (r *ClusterRoleResource) obj() k8sclient.Object {
 			Name:      r.Key().Name,
 			Namespace: "",
 		},
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ClusterRole",
+			APIVersion: "rbac.authorization.k8s.io/v1",
+		},
 		Rules: []v1.PolicyRule{
 			{
 				Verbs:     []string{"get"},

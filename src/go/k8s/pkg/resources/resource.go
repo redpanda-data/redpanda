@@ -49,6 +49,10 @@ type Reconciler interface {
 func CreateIfNotExists(
 	ctx context.Context, c client.Client, obj client.Object, l logr.Logger,
 ) (bool, error) {
+	// we need to store the GVK before it enters client methods because client
+	// wipes GVK. That's a bug in apimachinery, but I don't think it will be
+	// fixed any time soon.
+	gvk := obj.GetObjectKind().GroupVersionKind()
 	if err := patch.DefaultAnnotator.SetLastAppliedAnnotation(obj); err != nil {
 		return false, fmt.Errorf("unable to add last applied annotation to %s: %w", obj.GetObjectKind().GroupVersionKind().Kind, err)
 	}
@@ -57,7 +61,7 @@ func CreateIfNotExists(
 		return false, fmt.Errorf("unable to create %s resource: %w", obj.GetObjectKind().GroupVersionKind().Kind, err)
 	}
 	if err == nil {
-		l.Info(fmt.Sprintf("%s %s did not exist, was created", obj.GetObjectKind().GroupVersionKind().Kind, obj.GetName()))
+		l.Info(fmt.Sprintf("%s %s did not exist, was created", gvk.Kind, obj.GetName()))
 		return true, nil
 	}
 	return false, nil
