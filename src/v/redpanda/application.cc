@@ -221,7 +221,15 @@ void application::hydrate_config(const po::variables_map& cfg) {
     }
     if (config["pandaproxy"]) {
         _proxy_config.emplace(config["pandaproxy"]);
-        _proxy_client_config.emplace(config["pandaproxy_client"]);
+        if (config["pandaproxy_client"]) {
+            _proxy_client_config.emplace(config["pandaproxy_client"]);
+        } else {
+            _proxy_client_config.emplace();
+            const auto& kafka_api = config::shard_local_cfg().kafka_api.value();
+            vassert(!kafka_api.empty(), "There are no kafka_api listeners");
+            _proxy_client_config->brokers.set_value(
+              std::vector<unresolved_address>{kafka_api[0].address});
+        }
         _proxy_config->for_each(config_printer("pandaproxy"));
         _proxy_client_config->for_each(config_printer("pandaproxy_client"));
     }

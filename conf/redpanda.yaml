@@ -46,6 +46,9 @@ redpanda:
   # not recomended for production use
   developer_mode: true
 
+# Enable Pandaproxy
+pandaproxy:
+
 rpk:
   # TLS configuration.
   tls:
