@@ -214,7 +214,7 @@ create_consumer(server::request_t rq, server::reply_t rp) {
           auto adv_addr = rq.ctx.config.advertised_pandaproxy_api();
           json::create_consumer_response res{
             .instance_id = m_id,
-            .base_uri = fmt::format(
+            .base_uri = ssx::sformat(
               "http://{}:{}/consumers/{}/instances/{}",
               adv_addr.host(),
               adv_addr.port(),

@@ -34,7 +34,7 @@ ss::future<response_ptr> sasl_authenticate_handler::handle(
 
     sasl_authenticate_response_data data{
       .error_code = error_code::sasl_authentication_failed,
-      .error_message = fmt::format(
+      .error_message = ssx::sformat(
         "SASL authentication failed: {}", result.error().message()),
     };
     return ctx.respond(sasl_authenticate_response(std::move(data)));

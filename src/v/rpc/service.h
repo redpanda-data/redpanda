@@ -16,6 +16,7 @@
 #include "rpc/parse_utils.h"
 #include "rpc/types.h"
 #include "seastarx.h"
+#include "ssx/sformat.h"
 
 #include <seastar/core/reactor.hh>
 #include <seastar/core/scheduling.hh>
@@ -41,7 +42,7 @@ class rpc_internal_body_parsing_exception : public std::exception {
 public:
     explicit rpc_internal_body_parsing_exception(const std::exception_ptr& e)
       : _what(
-        fmt::format("Unable to parse received RPC request payload - {}", e)) {}
+        ssx::sformat("Unable to parse received RPC request payload - {}", e)) {}
 
     const char* what() const noexcept final { return _what.c_str(); }
 

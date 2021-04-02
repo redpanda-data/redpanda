@@ -303,7 +303,7 @@ struct raft_node {
 static model::ntp node_ntp(raft::group_id gr_id, model::node_id n_id) {
     return model::ntp(
       model::ns("test"),
-      model::topic(fmt::format("group_{}", gr_id())),
+      model::topic(ssx::sformat("group_{}", gr_id())),
       model::partition_id(n_id()));
 }
 
@@ -355,7 +355,7 @@ struct raft_group {
           _id,
           raft::group_configuration(_initial_brokers, model::revision_id(0)),
           raft::timeout_jitter(heartbeat_interval * 2),
-          fmt::format("{}/{}", _storage_dir, node_id()),
+          ssx::sformat("{}/{}", _storage_dir, node_id()),
           _storage_type,
           [this, node_id](raft::leadership_status st) {
               election_callback(node_id, st);
@@ -376,7 +376,7 @@ struct raft_group {
           _id,
           raft::group_configuration({}, model::revision_id(0)),
           raft::timeout_jitter(heartbeat_interval * 2),
-          fmt::format("{}/{}", _storage_dir, node_id()),
+          ssx::sformat("{}/{}", _storage_dir, node_id()),
           _storage_type,
           [this, node_id](raft::leadership_status st) {
               election_callback(node_id, st);
@@ -757,8 +757,8 @@ make_compactible_batches(int keys, size_t batches, model::timestamp ts) {
           raft::data_batch_type, model::offset(0));
         iobuf k_buf;
         iobuf v_buf;
-        ss::sstring k_str = fmt::format("key-{}", k);
-        ss::sstring v_str = fmt::format("key-{}-value-{}", k, b);
+        ss::sstring k_str = ssx::sformat("key-{}", k);
+        ss::sstring v_str = ssx::sformat("key-{}-value-{}", k, b);
         reflection::serialize(k_buf, k_str);
         reflection::serialize(v_buf, v_str);
         builder.add_raw_kv(std::move(k_buf), std::move(v_buf));

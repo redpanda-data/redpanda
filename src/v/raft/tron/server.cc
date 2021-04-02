@@ -288,7 +288,7 @@ int main(int args, char** argv, char** env) {
                   connection_cache,
                   cfg["peers"].as<std::vector<ss::sstring>>());
             }
-            const ss::sstring workdir = fmt::format(
+            const ss::sstring workdir = ssx::sformat(
               "{}/greetings-{}",
               cfg["workdir"].as<ss::sstring>(),
               cfg["node-id"].as<int32_t>());

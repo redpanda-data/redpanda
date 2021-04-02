@@ -84,7 +84,7 @@ public:
             proxy_port,
             coproc_supervisor_port,
             seeds,
-            fmt::format("{}.{}", _base_dir, node_id()),
+            ssx::sformat("{}.{}", _base_dir, node_id()),
             get_scheduling_groups(),
             false));
     }

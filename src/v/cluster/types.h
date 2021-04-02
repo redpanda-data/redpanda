@@ -302,7 +302,7 @@ public:
     explicit configuration_invariants_changed(
       const configuration_invariants& expected,
       const configuration_invariants& current)
-      : _msg(fmt::format(
+      : _msg(ssx::sformat(
         "Configuration invariants changed. Expected: {}, current: {}",
         expected,
         current)) {}

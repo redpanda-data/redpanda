@@ -14,6 +14,7 @@
 #include "hashing/secure.h"
 #include "s3/error.h"
 #include "s3/logger.h"
+#include "ssx/sformat.h"
 
 #include <seastar/core/sstring.hh>
 
@@ -207,7 +208,7 @@ static result<ss::sstring> get_canonical_query_string(ss::sstring target) {
         if (cnt++ > 0) {
             result.append("&", 1);
         }
-        result += fmt::format(
+        result += ssx::sformat(
           "{}={}", uri_encode(pname, true), uri_encode(pvalue, true));
     }
     return result;
@@ -259,7 +260,7 @@ get_canonical_headers(const http::client::request_header& request) {
     ss::sstring snames;
     int cnt = 0;
     for (const auto& [name, value] : headers) {
-        cheaders += fmt::format("{}:{}\n", name, value);
+        cheaders += ssx::sformat("{}:{}\n", name, value);
         if (cnt++ > 0) {
             snames.append(";", 1);
         }
@@ -293,7 +294,7 @@ inline result<ss::sstring> create_canonical_request(
     if (!canonical_query) {
         return canonical_query.error();
     }
-    return fmt::format(
+    return ssx::sformat(
       "{}\n{}\n{}\n{}\n{}\n{}",
       method,
       canonical_uri.value(),
@@ -318,7 +319,7 @@ inline ss::sstring get_string_to_sign(
   const ss::sstring& scope,
   const ss::sstring& canonical_req) {
     auto digest = sha_256(canonical_req);
-    return fmt::format("{}\n{}\n{}\n{}", algorithm, timestamp, scope, digest);
+    return ssx::sformat("{}\n{}\n{}\n{}", algorithm, timestamp, scope, digest);
 }
 
 ss::sstring signature_v4::sha256_hexdigest(std::string_view payload) {
@@ -367,7 +368,7 @@ signature_v4::signature_v4(
     ss::sstring date_str = _sig_time.format_date();
     ss::sstring service = "s3";
     _sign_key = gen_sig_key(_private_key(), date_str, _region(), service);
-    _cred_scope = fmt::format(
+    _cred_scope = ssx::sformat(
       "{}/{}/{}/aws4_request", date_str, _region(), service);
     vlog(
       s3_log.trace,

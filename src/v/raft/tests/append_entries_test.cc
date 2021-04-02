@@ -415,7 +415,7 @@ FIXTURE_TEST(test_compacted_log_recovery, raft_test_fixture) {
       10_MiB);
 
     auto cfg = storage::log_builder_config();
-    cfg.base_dir = fmt::format("{}/{}", gr.get_data_dir(), 0);
+    cfg.base_dir = ssx::sformat("{}/{}", gr.get_data_dir(), 0);
 
     // for now, as compaction isn't yet ready we simulate it with log builder
     auto ntp = node_ntp(raft::group_id(0), model::node_id(0));

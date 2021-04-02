@@ -48,7 +48,7 @@ struct partition_allocator_tester {
         std::vector<model::topic_metadata> ret;
         for (int t = 0; t < topics; t++) {
             model::topic_metadata t_md(model::topic_namespace(
-              model::ns("default"), model::topic(fmt::format("topic_{}", t))));
+              model::ns("default"), model::topic(ssx::sformat("topic_{}", t))));
             for (int p = 0; p < partitions; p++) {
                 std::vector<model::broker_shard> replicas;
                 for (int r = 0; r < max_nodes; r++) {

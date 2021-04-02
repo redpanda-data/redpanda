@@ -28,8 +28,7 @@
 #include <seastar/core/smp.hh>
 #include <seastar/util/log.hh>
 
-#include <boost/algorithm/string/join.hpp>
-#include <fmt/ostream.h>
+#include <fmt/ranges.h>
 
 #include <charconv>
 #include <string_view>
@@ -179,7 +178,7 @@ kafka_endpoint_format(const std::vector<model::broker_endpoint>& endpoints) {
             ep.address.host(),
             ep.address.port());
       });
-    return boost::algorithm::join(uris, ",");
+    return ssx::sformat("{}", fmt::join(uris, ","));
 }
 
 static void

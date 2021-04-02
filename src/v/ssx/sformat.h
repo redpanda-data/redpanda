@@ -28,9 +28,9 @@ namespace ssx {
 
 template<typename... Args>
 seastar::sstring sformat(fmt::string_view format_str, Args&&... args) {
-    auto size = fmt::formatted_size(format_str, std::forward<Args>(args)...);
+    auto size = fmt::formatted_size(format_str, args...);
     seastar::sstring buffer(seastar::sstring::initialized_later{}, size);
-    fmt::format_to(buffer.data(), format_str, args...);
+    fmt::format_to(buffer.data(), format_str, std::forward<Args>(args)...);
     return buffer;
 }
 

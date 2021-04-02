@@ -761,7 +761,7 @@ void append_single_record_batch(
     for (int i = 0; i < cnt; ++i) {
         ss::sstring key_str;
         if (rand_key) {
-            key_str = fmt::format(
+            key_str = ssx::sformat(
               "key_{}", random_generators::get_int<uint64_t>());
         } else {
             key_str = "key";
@@ -771,7 +771,7 @@ void append_single_record_batch(
         if (val_size > 0) {
             val_bytes = random_generators::get_bytes(val_size);
         } else {
-            ss::sstring v = fmt::format("v-{}", i);
+            ss::sstring v = ssx::sformat("v-{}", i);
             val_bytes = bytes(v.c_str());
         }
         iobuf value = bytes_to_iobuf(val_bytes);
@@ -1067,7 +1067,7 @@ FIXTURE_TEST(check_segment_size_jitter, storage_test_fixture) {
     auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
     std::vector<storage::log> logs;
     for (int i = 0; i < 5; ++i) {
-        auto ntp = model::ntp("default", fmt::format("test-{}", i), 0);
+        auto ntp = model::ntp("default", ssx::sformat("test-{}", i), 0);
         storage::ntp_config ntp_cfg(ntp, mgr.config().base_dir);
         auto log = mgr.manage(std::move(ntp_cfg)).get0();
         auto result = append_exactly(log, 1000, 100).get0();

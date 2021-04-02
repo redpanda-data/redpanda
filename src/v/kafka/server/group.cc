@@ -1347,7 +1347,7 @@ kafka::member_id group::generate_member_id(const join_group_request& r) {
     auto id = r.data.group_instance_id ? (*r.data.group_instance_id)()
                                        : client_id;
     boost::uuids::uuid uuid = boost::uuids::random_generator()();
-    return kafka::member_id(fmt::format("{}-{}", id, uuid));
+    return kafka::member_id(ssx::sformat("{}-{}", id, uuid));
 }
 
 described_group group::describe() const {

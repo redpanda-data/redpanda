@@ -218,7 +218,7 @@ std::ostream& operator<<(std::ostream& os, const record_batch& batch) {
 }
 
 ss::sstring ntp::path() const {
-    return fmt::format("{}/{}/{}", ns(), tp.topic(), tp.partition());
+    return ssx::sformat("{}/{}/{}", ns(), tp.topic(), tp.partition());
 }
 
 std::filesystem::path ntp::topic_path() const {

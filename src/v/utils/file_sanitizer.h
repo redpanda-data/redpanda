@@ -11,6 +11,7 @@
 
 #pragma once
 
+#include "ssx/sformat.h"
 #include "vassert.h"
 
 #include <seastar/core/file.hh>
@@ -18,7 +19,6 @@
 #include <seastar/util/log.hh>
 
 #include <boost/intrusive/list.hpp>
-#include <fmt/format.h>
 
 #include <optional>
 #include <ostream>
@@ -79,7 +79,7 @@ public:
       const ss::io_priority_class& pc) final {
         assert_file_not_closed();
         return with_op(
-          fmt::format(
+          ssx::sformat(
             "ss::future<size_t>::write_dma(pos:{}, *void, len:{})", pos, len),
           get_file_impl(_file)->write_dma(pos, buffer, len, pc));
     }
@@ -90,7 +90,7 @@ public:
       const ss::io_priority_class& pc) final {
         assert_file_not_closed();
         return with_op(
-          fmt::format(
+          ssx::sformat(
             "ss::future<size_t>::write_dma(pos:{}, vector<iovec>:{})",
             pos,
             iov.size()),
@@ -104,7 +104,7 @@ public:
       const ss::io_priority_class& pc) final {
         assert_file_not_closed();
         return with_op(
-          fmt::format(
+          ssx::sformat(
             "ss::future<size_t> read_dma(pos:{}, void* buffer, len:{})",
             pos,
             len),
@@ -117,7 +117,7 @@ public:
       const ss::io_priority_class& pc) final {
         assert_file_not_closed();
         return with_op(
-          fmt::format(
+          ssx::sformat(
             "ss::future<size_t> read_dma(pos{}, std::vector<iovec>:{} , "
             "const ss::io_priority_class& pc)",
             pos,
@@ -132,27 +132,28 @@ public:
             output_pending_ops();
         }
         return with_op(
-          fmt::format("ss::future<> flush(void)"),
+          ssx::sformat("ss::future<> flush(void)"),
           get_file_impl(_file)->flush());
     }
 
     ss::future<struct stat> stat() final {
         assert_file_not_closed();
         return with_op(
-          fmt::format("ss::future<> stat(void)"), get_file_impl(_file)->stat());
+          ssx::sformat("ss::future<> stat(void)"),
+          get_file_impl(_file)->stat());
     }
 
     ss::future<> truncate(uint64_t length) final {
         assert_file_not_closed();
         return with_op(
-          fmt::format("ss::future<> truncate({})", length),
+          ssx::sformat("ss::future<> truncate({})", length),
           get_file_impl(_file)->truncate(length));
     }
 
     ss::future<> discard(uint64_t offset, uint64_t length) final {
         assert_file_not_closed();
         return with_op(
-          fmt::format(
+          ssx::sformat(
             "ss::future<> discard(offset:{}, length:{})", offset, length),
           get_file_impl(_file)->discard(offset, length));
     }
@@ -160,7 +161,7 @@ public:
     ss::future<> allocate(uint64_t position, uint64_t length) final {
         assert_file_not_closed();
         return with_op(
-          fmt::format(
+          ssx::sformat(
             "ss::future<> allocate(position:{}, length:{})", position, length),
           get_file_impl(_file)->allocate(position, length));
     }
@@ -168,7 +169,7 @@ public:
     ss::future<uint64_t> size() final {
         assert_file_not_closed();
         return with_op(
-          fmt::format("ss::future<uint64_t> size(void)"),
+          ssx::sformat("ss::future<uint64_t> size(void)"),
           get_file_impl(_file)->size());
     }
 
@@ -202,7 +203,7 @@ public:
       const ss::io_priority_class& pc) final {
         assert_file_not_closed();
         return with_op(
-          fmt::format(
+          ssx::sformat(
             "ss::future<ss::temporary_buffer<uint8_t>> "
             "dma_read_bulk(offset:{}, range_size:{}",
             offset,
