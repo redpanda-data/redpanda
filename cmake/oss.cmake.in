@@ -112,7 +112,7 @@ ExternalProject_Add(boost
 
 ExternalProject_Add(seastar
   GIT_REPOSITORY https://github.com/vectorizedio/seastar.git
-  GIT_TAG 58274bbd7e286b178cf954a1293f48bee79aafb8
+  GIT_TAG d7fa70d42dfc5665b7914768e0accaffc365a8ed
   INSTALL_DIR    @REDPANDA_DEPS_INSTALL_DIR@
   CMAKE_COMMAND ${CMAKE_COMMAND} -E env ${cmake_build_env} ${CMAKE_COMMAND}
   CMAKE_ARGS
