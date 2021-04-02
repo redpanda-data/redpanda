@@ -4,3 +4,19 @@ metadata:
   name: update-image-cluster
 status:
   readyReplicas: 2
+
+---
+
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+collectors:
+  - type: pod
+    pod: update-image-cluster-0
+
+---
+
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+collectors:
+  - type: pod
+    pod: update-image-cluster-1
