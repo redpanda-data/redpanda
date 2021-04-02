@@ -29,6 +29,14 @@ using credential_user = named_type<ss::sstring, struct credential_user_type>;
 
 class credential_store {
 public:
+    // when a second type is supported update `credential_store_test` to include
+    // a mismatched credential type test for get<type>(name).
+    using credential_types = std::variant<scram_credential>;
+
+    using container_type
+      = absl::node_hash_map<credential_user, credential_types>;
+    using const_iterator = container_type::const_iterator;
+
     credential_store() noexcept = default;
     credential_store(const credential_store&) = delete;
     credential_store& operator=(const credential_store&) = delete;
@@ -57,12 +65,11 @@ public:
         return _credentials.contains(name);
     }
 
-private:
-    // when a second type is supported update `credential_store_test` to include
-    // a mismatched credential type test for get<type>(name).
-    using credential_types = std::variant<scram_credential>;
+    const_iterator begin() const { return _credentials.cbegin(); }
+    const_iterator end() const { return _credentials.cend(); }
 
-    absl::node_hash_map<credential_user, credential_types> _credentials;
+private:
+    container_type _credentials;
 };
 
 } // namespace security
