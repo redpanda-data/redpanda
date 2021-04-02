@@ -132,8 +132,9 @@ type ClusterStatus struct {
 
 // NodesList shows where client can find Redpanda brokers
 type NodesList struct {
-	Internal []string `json:"internal,omitempty"`
-	External []string `json:"external,omitempty"`
+	Internal      []string `json:"internal,omitempty"`
+	External      []string `json:"external,omitempty"`
+	ExternalAdmin []string `json:"externalAdmin,omitempty"`
 }
 
 //+kubebuilder:object:root=true

@@ -38,6 +38,7 @@ type HeadlessServiceResource struct {
 	k8sclient.Client
 	scheme       *runtime.Scheme
 	pandaCluster *redpandav1alpha1.Cluster
+	svcPorts     map[string]int
 	logger       logr.Logger
 }
 
@@ -46,12 +47,14 @@ func NewHeadlessService(
 	client k8sclient.Client,
 	pandaCluster *redpandav1alpha1.Cluster,
 	scheme *runtime.Scheme,
+	svcPorts map[string]int,
 	logger logr.Logger,
 ) *HeadlessServiceResource {
 	return &HeadlessServiceResource{
 		client,
 		scheme,
 		pandaCluster,
+		svcPorts,
 		logger.WithValues(
 			"Kind", serviceKind(),
 			"ServiceType", corev1.ServiceTypeClusterIP,
@@ -72,6 +75,16 @@ func (r *HeadlessServiceResource) Ensure(ctx context.Context) error {
 
 // obj returns resource managed client.Object
 func (r *HeadlessServiceResource) obj() (k8sclient.Object, error) {
+	ports := make([]corev1.ServicePort, 0, len(r.svcPorts))
+	for name, portNumber := range r.svcPorts {
+		ports = append(ports, corev1.ServicePort{
+			Name:       name,
+			Protocol:   corev1.ProtocolTCP,
+			Port:       int32(portNumber),
+			TargetPort: intstr.FromInt(portNumber),
+		})
+	}
+
 	objLabels := labels.ForCluster(r.pandaCluster)
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
@@ -83,15 +96,8 @@ func (r *HeadlessServiceResource) obj() (k8sclient.Object, error) {
 		Spec: corev1.ServiceSpec{
 			Type:      corev1.ServiceTypeClusterIP,
 			ClusterIP: corev1.ClusterIPNone,
-			Ports: []corev1.ServicePort{
-				{
-					Name:       "kafka-tcp",
-					Protocol:   corev1.ProtocolTCP,
-					Port:       int32(r.pandaCluster.Spec.Configuration.KafkaAPI.Port),
-					TargetPort: intstr.FromInt(r.pandaCluster.Spec.Configuration.KafkaAPI.Port),
-				},
-			},
-			Selector: objLabels.AsAPISelector().MatchLabels,
+			Ports:     ports,
+			Selector:  objLabels.AsAPISelector().MatchLabels,
 		},
 	}
 
