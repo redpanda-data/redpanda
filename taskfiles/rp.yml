@@ -82,8 +82,13 @@ tasks:
     - ctest {{if eq .CI "1"}}"--output-on-failure"{{end}} {{.CTEST_ARGS}}
 
   build-java-test-programs:
+    desc: build java programs used in integrations tests
+    deps:
+    - :dev:install-jdk-and-maven
     cmds:
     - |
+      PATH="{{.BUILD_ROOT}}/java/bin:$PATH"
+      mvn -v
       function build {
         mvn clean package --batch-mode \
           --file {{.SRC_DIR}}/tests/java/$1/ \
@@ -92,14 +97,6 @@ tasks:
       }
       build kafka-verifier
       build compacted-log-verifier
-
-  build-java-test-programs-in-docker:
-    desc: build java programs used in integrations tests
-    cmds:
-    - task: :docker:task
-      vars:
-        DOCKER_IMAGE: docker.io/library/maven:3.6-jdk-11
-        TASK_ARGS: rp:build-java-test-programs
     status:
     - test -f '{{.BUILD_ROOT}}/java/kafka-verifier/kafka-verifier.jar'
     - test -f '{{.BUILD_ROOT}}/java/compacted-log-verifier/kafka-compacted-topics-verifier.jar'
@@ -132,7 +129,7 @@ tasks:
     deps:
     - set-aio-max
     - start-compose-cluster
-    - build-java-test-programs-in-docker
+    - build-java-test-programs
     vars:
       DUCKTAPE_ARGS: '{{default "--exit-first tests/rptest/test_suite_quick.yml" .DUCKTAPE_ARGS}}'
       RP_INSTALL_DIR_DEFAULT: '{{.BUILD_DIR}}'
