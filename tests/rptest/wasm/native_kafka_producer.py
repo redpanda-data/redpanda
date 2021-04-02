@@ -22,7 +22,7 @@ class NativeKafkaProducer(BackgroundTask):
         self._records_size = records_size
         self._producer = KafkaProducer(bootstrap_servers=brokers,
                                        linger_ms=5,
-                                       acks=1,
+                                       acks='all',
                                        retries=10,
                                        key_serializer=str.encode)
 
