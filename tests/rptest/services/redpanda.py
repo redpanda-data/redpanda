@@ -109,6 +109,10 @@ class RedpandaService(Service):
                f" --default-log-level {self._log_level}"
                f" --logger-log-level=exception=debug "
                f" --kernel-page-cache=true "
+               f" --overprovisioned "
+               f" --smp 3 "
+               f" --memory 6G "
+               f" --reserve-memory 0M "
                f" >> {RedpandaService.STDOUT_STDERR_CAPTURE} 2>&1 &")
 
         self.logger.info(
