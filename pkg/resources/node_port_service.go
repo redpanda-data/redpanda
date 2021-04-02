@@ -91,6 +91,10 @@ func (r *NodePortServiceResource) obj() (k8sclient.Object, error) {
 			Name:      r.Key().Name,
 			Labels:    objLabels,
 		},
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Service",
+			APIVersion: "v1",
+		},
 		Spec: corev1.ServiceSpec{
 			// The service type node port assigned port to each node in the cluster.
 			// This gives a way for operator to assign unused port to the redpanda cluster.

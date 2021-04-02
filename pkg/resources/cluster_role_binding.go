@@ -114,6 +114,10 @@ func (r *ClusterRoleBindingResource) Obj() (k8sclient.Object, error) {
 			Name:      r.Key().Name,
 			Namespace: "",
 		},
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ClusterRoleBinding",
+			APIVersion: "rbac.authorization.k8s.io/v1",
+		},
 		Subjects: []v1.Subject{
 			{
 				Kind:      "ServiceAccount",

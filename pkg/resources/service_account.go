@@ -71,6 +71,10 @@ func (s *ServiceAccountResource) obj() (k8sclient.Object, error) {
 			Name:      s.Key().Name,
 			Namespace: s.Key().Namespace,
 		},
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ServiceAccount",
+			APIVersion: "v1",
+		},
 	}
 
 	err := controllerutil.SetControllerReference(s.pandaCluster, sa, s.scheme)

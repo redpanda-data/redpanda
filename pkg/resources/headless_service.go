@@ -93,6 +93,10 @@ func (r *HeadlessServiceResource) obj() (k8sclient.Object, error) {
 			Labels:      objLabels,
 			Annotations: r.getAnnotation(),
 		},
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Service",
+			APIVersion: "v1",
+		},
 		Spec: corev1.ServiceSpec{
 			Type:      corev1.ServiceTypeClusterIP,
 			ClusterIP: corev1.ClusterIPNone,
