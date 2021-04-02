@@ -33,7 +33,7 @@ type NodePortServiceResource struct {
 	k8sclient.Client
 	scheme       *runtime.Scheme
 	pandaCluster *redpandav1alpha1.Cluster
-	svcPorts     map[string]int
+	svcPorts     []NamedServicePort
 	logger       logr.Logger
 }
 
@@ -42,7 +42,7 @@ func NewNodePortService(
 	client k8sclient.Client,
 	pandaCluster *redpandav1alpha1.Cluster,
 	scheme *runtime.Scheme,
-	svcPorts map[string]int,
+	svcPorts []NamedServicePort,
 	logger logr.Logger,
 ) *NodePortServiceResource {
 	return &NodePortServiceResource{
@@ -72,15 +72,15 @@ func (r *NodePortServiceResource) Ensure(ctx context.Context) error {
 // obj returns resource managed client.Object
 func (r *NodePortServiceResource) obj() (k8sclient.Object, error) {
 	ports := make([]corev1.ServicePort, 0, len(r.svcPorts))
-	for name, portNumber := range r.svcPorts {
-		if name == "kafka" {
-			portNumber++
+	for _, svcPort := range r.svcPorts {
+		if svcPort.Name == "kafka" {
+			svcPort.Port++
 		}
 		ports = append(ports, corev1.ServicePort{
-			Name:       name,
+			Name:       svcPort.Name,
 			Protocol:   corev1.ProtocolTCP,
-			Port:       int32(portNumber),
-			TargetPort: intstr.FromInt(portNumber),
+			Port:       int32(svcPort.Port),
+			TargetPort: intstr.FromInt(svcPort.Port),
 		})
 	}
 
