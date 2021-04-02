@@ -38,7 +38,7 @@ type HeadlessServiceResource struct {
 	k8sclient.Client
 	scheme       *runtime.Scheme
 	pandaCluster *redpandav1alpha1.Cluster
-	svcPorts     map[string]int
+	svcPorts     []NamedServicePort
 	logger       logr.Logger
 }
 
@@ -47,7 +47,7 @@ func NewHeadlessService(
 	client k8sclient.Client,
 	pandaCluster *redpandav1alpha1.Cluster,
 	scheme *runtime.Scheme,
-	svcPorts map[string]int,
+	svcPorts []NamedServicePort,
 	logger logr.Logger,
 ) *HeadlessServiceResource {
 	return &HeadlessServiceResource{
@@ -76,12 +76,12 @@ func (r *HeadlessServiceResource) Ensure(ctx context.Context) error {
 // obj returns resource managed client.Object
 func (r *HeadlessServiceResource) obj() (k8sclient.Object, error) {
 	ports := make([]corev1.ServicePort, 0, len(r.svcPorts))
-	for name, portNumber := range r.svcPorts {
+	for _, svcPort := range r.svcPorts {
 		ports = append(ports, corev1.ServicePort{
-			Name:       name,
+			Name:       svcPort.Name,
 			Protocol:   corev1.ProtocolTCP,
-			Port:       int32(portNumber),
-			TargetPort: intstr.FromInt(portNumber),
+			Port:       int32(svcPort.Port),
+			TargetPort: intstr.FromInt(svcPort.Port),
 		})
 	}
 
