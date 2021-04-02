@@ -231,7 +231,7 @@ ss::future<> event_listener::do_ingest() {
 ss::future<ss::stop_iteration>
 event_listener::poll_topic(model::record_batch_reader::data_t& events) {
     auto response = co_await _client.fetch_partition(
-      model::coprocessor_internal_tp, _offset, 64_KiB, 5s);
+      model::coprocessor_internal_tp, _offset, 64_KiB, 100ms);
     if (
       response.error != kafka::error_code::none
       || _abort_source.abort_requested()) {

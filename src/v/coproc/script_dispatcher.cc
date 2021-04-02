@@ -320,16 +320,25 @@ ss::future<std::error_code> script_dispatcher::disable_all_coprocessors() {
     co_return rpc::make_error_code(rpc::errc::success);
 }
 
-ss::future<bool> script_dispatcher::heartbeat() {
-    auto client = co_await get_client();
-    if (!client) {
-        /// If client isn't obtainable, we must be shutting down, we don't want
-        /// to double trigger shutdown by falsely reporting that the wasm engine
-        /// is not reachable
-        co_return true;
+ss::future<bool> script_dispatcher::heartbeat(int8_t connect_attempts) {
+    if (connect_attempts <= 0) {
+        co_return false;
     }
-    auto timeout = model::timeout_clock::now() + 2s;
-    auto reply = co_await client->heartbeat(
+    auto timeout = model::timeout_clock::now() + 1s;
+    auto transport = co_await _transport.get_connected(timeout);
+    if (!transport) {
+        vlog(
+          coproclog.error,
+          "Failed to connect wasm engine, reason {}",
+          transport.error());
+        if (transport.error() == rpc::errc::disconnected_endpoint) {
+            /// The expected 1s timeout didn't occur
+            co_await ss::sleep(1s);
+        }
+        co_return co_await heartbeat(connect_attempts - 1);
+    }
+    supervisor_client_protocol client(*transport.value());
+    auto reply = co_await client.heartbeat(
       empty_request(), rpc::client_opts(timeout));
     co_return !reply ? false : true;
 }
@@ -341,7 +350,8 @@ script_dispatcher::get_client() {
         if (_abort_source.abort_requested()) {
             co_return std::nullopt;
         }
-        auto transport = co_await _transport.get_connected(model::no_timeout);
+        auto timeout = model::timeout_clock::now() + 100ms;
+        auto transport = co_await _transport.get_connected(timeout);
         if (!transport) {
             vlog(
               coproclog.error,
