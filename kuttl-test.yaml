@@ -14,4 +14,4 @@ commands:
   - command: "./hack/wait-for-webhook-ready.sh"
 artifactsDir: tests/_e2e_artifacts
 timeout: 300
-parallel: 3
+parallel: 2
