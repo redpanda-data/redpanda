@@ -74,6 +74,13 @@ class ScramTest(NoSaslRedpandaTest):
         res = requests.delete(url)
         assert res.status_code == 200
 
+    def list_users(self):
+        controller = self.redpanda.nodes[0]
+        url = f"http://{controller.account.hostname}:9644/v1/security/users"
+        res = requests.get(url)
+        assert res.status_code == 200
+        return res.json()
+
     def create_user(self):
         def gen(length):
             return "".join(
@@ -177,3 +184,6 @@ class ScramTest(NoSaslRedpandaTest):
         topics = client.list_topics()
         print(topics)
         assert topic.name in topics
+
+        users = self.list_users()
+        assert username in users

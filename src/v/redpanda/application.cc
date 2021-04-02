@@ -977,6 +977,17 @@ void application::admin_register_security_routes(ss::http_server& server) {
                   ss::json::json_return_type(ss::json::json_void()));
             });
       });
+
+    ss::httpd::security_json::list_users.set(
+      server._routes, [this](std::unique_ptr<ss::httpd::request>) {
+          std::vector<ss::sstring> users;
+          for (const auto& [user, _] :
+               controller->get_credential_store().local()) {
+              users.push_back(user());
+          }
+          return ss::make_ready_future<ss::json::json_return_type>(
+            std::move(users));
+      });
 }
 
 void application::admin_register_kafka_routes(ss::http_server& server) {
