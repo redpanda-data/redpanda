@@ -106,12 +106,19 @@ private:
         model::timeout_clock::duration duration;
         storage::snapshot_manager snap;
 
+        static ss::sstring snapshot_filename() {
+            return fmt::format(
+              "{}-{}",
+              storage::snapshot_manager::default_snapshot_filename,
+              ss::this_shard_id());
+        }
+
         offset_flush_fiber_state()
           : duration(
             config::shard_local_cfg().coproc_offset_flush_interval_ms())
           , snap(
               offsets_snapshot_path(),
-              storage::snapshot_manager::default_snapshot_filename,
+              snapshot_filename(),
               ss::default_priority_class()) {}
     };
 
