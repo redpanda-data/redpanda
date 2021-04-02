@@ -30,6 +30,12 @@ const (
 	AdminPortName = "admin"
 )
 
+// NamedServicePort allows to pass name ports, e.g., to service resources
+type NamedServicePort struct {
+	Name string
+	Port int
+}
+
 // Resource decompose the reconciliation loop to specific kubernetes objects
 type Resource interface {
 	Reconciler
