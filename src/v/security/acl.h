@@ -21,6 +21,8 @@
 #include <absl/container/flat_hash_set.h>
 #include <fmt/core.h>
 
+#include <variant>
+
 namespace security {
 
 namespace details {
@@ -444,6 +446,10 @@ public:
 
     bool matches(const resource_pattern& pattern) const;
 
+    std::optional<resource_type> resource() const { return _resource; }
+    const std::optional<ss::sstring>& name() const { return _name; }
+    std::optional<pattern_filter_type> pattern() const { return _pattern; }
+
 private:
     std::optional<resource_type> _resource;
     std::optional<ss::sstring> _name;
@@ -517,6 +523,11 @@ public:
     }
 
     bool matches(const acl_entry& other) const;
+
+    const std::optional<acl_principal>& principal() const { return _principal; }
+    std::optional<acl_host> host() const { return _host; }
+    std::optional<acl_operation> operation() const { return _operation; }
+    std::optional<acl_permission> permission() const { return _permission; }
 
 private:
     std::optional<acl_principal> _principal;
