@@ -182,4 +182,4 @@ class WasmTest(RedpandaTest):
         """
         2-tuple representing timeout(0) and backoff interval(1)
         """
-        return (30, 1)
+        return (180, 1)
