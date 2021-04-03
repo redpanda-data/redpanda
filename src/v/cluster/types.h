@@ -327,6 +327,11 @@ struct create_acls_reply {
     std::vector<errc> results;
 };
 
+struct delete_acls_cmd_data {
+    static constexpr int8_t current_version = 1;
+    std::vector<security::acl_binding_filter> filters;
+};
+
 } // namespace cluster
 namespace std {
 template<>
@@ -404,6 +409,12 @@ template<>
 struct adl<cluster::create_acls_cmd_data> {
     void to(iobuf&, cluster::create_acls_cmd_data&&);
     cluster::create_acls_cmd_data from(iobuf_parser&);
+};
+
+template<>
+struct adl<cluster::delete_acls_cmd_data> {
+    void to(iobuf&, cluster::delete_acls_cmd_data&&);
+    cluster::delete_acls_cmd_data from(iobuf_parser&);
 };
 
 } // namespace reflection
