@@ -76,8 +76,6 @@ struct metadata_response {
         int32_t topic_authorized_operations; // version >= 8
         void encode(api_version version, response_writer& rw) const;
         static topic make_from_topic_metadata(model::topic_metadata&& tp_md);
-        static metadata_response::topic make_from_topic_metadata(
-          model::topic_metadata&& tp_md, model::topic&& topic);
     };
 
     std::chrono::milliseconds throttle_time = std::chrono::milliseconds(
