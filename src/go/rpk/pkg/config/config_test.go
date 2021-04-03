@@ -1141,6 +1141,61 @@ rpk:
 `,
 		},
 		{
+			name: "shall write a valid config file with two superusers",
+			conf: func() *Config {
+				c := getValidConfig()
+				c.Redpanda.Superusers = []string{
+					"jerry",
+					"garcia",
+				}
+				return c
+			},
+			wantErr: false,
+			expected: `config_file: /etc/redpanda/redpanda.yaml
+redpanda:
+  admin:
+    address: 0.0.0.0
+    port: 9644
+  data_directory: /var/lib/redpanda/data
+  developer_mode: false
+  kafka_api:
+  - address: 0.0.0.0
+    port: 9092
+  node_id: 0
+  rpc_server:
+    address: 0.0.0.0
+    port: 33145
+  seed_servers:
+  - host:
+      address: 127.0.0.1
+      port: 33145
+  - host:
+      address: 127.0.0.1
+      port: 33146
+  superusers:
+  - jerry
+  - garcia
+rpk:
+  coredump_dir: /var/lib/redpanda/coredumps
+  enable_memory_locking: true
+  enable_usage_stats: true
+  overprovisioned: false
+  tune_aio_events: true
+  tune_clocksource: true
+  tune_coredump: true
+  tune_cpu: true
+  tune_disk_irq: true
+  tune_disk_nomerges: true
+  tune_disk_scheduler: true
+  tune_disk_write_cache: true
+  tune_fstrim: true
+  tune_network: true
+  tune_swappiness: true
+  tune_transparent_hugepages: true
+  well_known_io: vendor:vm:storage
+`,
+		},
+		{
 			name: "should update an existing config with single kafka_api & advertised_kafka_api obj to a list",
 			existingConf: `config_file: /etc/redpanda/redpanda.yaml
 redpanda:
