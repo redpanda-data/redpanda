@@ -48,6 +48,7 @@ type RedpandaConfig struct {
 	CloudStorageApiEndpointPort          *int                   `yaml:"cloud_storage_api_endpoint_port,omitempty" mapstructure:"cloud_storage_api_endpoint_port,omitempty" json:"cloudStorageApiEndpointPort,omitempty"`
 	CloudStorageTrustFile                *string                `yaml:"cloud_storage_trust_file,omitempty" mapstructure:"cloud_storage_trust_file,omitempty" json:"cloudStorageTrustFile,omitempty"`
 	Superusers                           []string               `yaml:"superusers,omitempty" mapstructure:"superusers,omitempty" json:"superusers,omitempty"`
+	EnableSASL                           *bool                  `yaml:"enable_sasl,omitempty" mapstructure:"enable_sasl,omitempty" json:"enableSasl,omitempty"`
 	Other                                map[string]interface{} `yaml:",inline" mapstructure:",remain"`
 }
 
