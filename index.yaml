@@ -93,6 +93,22 @@ entries:
     version: 0.1.0
   redpanda-operator:
   - apiVersion: v2
+    appVersion: v21.4.1
+    created: "2021-04-03T02:07:24.215304074Z"
+    description: Redpanda operator helm chart
+    digest: c0e45cba00153eca76f941065616ce79db96ecf26a352c80e7433cfa8535d98b
+    home: https://vectorized.io
+    maintainers:
+    - email: support@vectorized.io
+      name: Vectorizedio
+    name: redpanda-operator
+    sources:
+    - https://github.com/vectorizedio/redpanda
+    type: application
+    urls:
+    - https://github.com/vectorizedio/redpanda/releases/download/v21.4.1/redpanda-operator-v21.4.1.tgz
+    version: v21.4.1
+  - apiVersion: v2
     appVersion: v21.3.7
     created: "2021-03-30T19:34:42.276352876Z"
     description: Redpanda operator helm chart
@@ -108,4 +124,4 @@ entries:
     urls:
     - https://github.com/vectorizedio/redpanda/releases/download/v21.3.7/redpanda-operator-v21.3.7.tgz
     version: v21.3.7
-generated: "2021-03-30T19:34:42.276379776Z"
+generated: "2021-04-03T02:07:24.215348874Z"
