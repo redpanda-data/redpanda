@@ -30,6 +30,7 @@
 #include "model/record_utils.h"
 
 #include <seastar/core/coroutine.hh>
+#include <seastar/core/gate.hh>
 #include <seastar/core/loop.hh>
 #include <seastar/core/sleep.hh>
 
@@ -87,9 +88,13 @@ void consumer::start() {
     kclog.info("Consumer: {}: start", *this);
     _timer.set_callback([me{shared_from_this()}]() {
         kclog.trace("Consumer: {}: timer cb", *me);
-        (void)me->heartbeat().handle_exception_type([me](consumer_error e) {
-            kclog.error("Consumer: {}: heartbeat failed: {}", *me, e.error);
-        });
+        (void)me->heartbeat()
+          .handle_exception_type([me](const consumer_error& e) {
+              kclog.error("Consumer: {}: heartbeat failed: {}", *me, e.error);
+          })
+          .handle_exception_type([me](const ss::gate_closed_exception& e) {
+              kclog.trace("Consumer: {}: heartbeat failed: {}", *me, e);
+          });
     });
     _timer.rearm_periodic(std::chrono::duration_cast<ss::timer<>::duration>(
       _config.consumer_heartbeat_interval()));
