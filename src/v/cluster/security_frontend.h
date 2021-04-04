@@ -30,7 +30,8 @@ public:
       ss::sharded<controller_stm>&,
       ss::sharded<rpc::connection_cache>&,
       ss::sharded<partition_leaders_table>&,
-      ss::sharded<ss::abort_source>&);
+      ss::sharded<ss::abort_source>&,
+      ss::sharded<security::authorizer>&);
 
     ss::future<std::error_code> create_user(
       security::credential_user,
@@ -70,6 +71,7 @@ private:
     ss::sharded<rpc::connection_cache>& _connections;
     ss::sharded<partition_leaders_table>& _leaders;
     ss::sharded<ss::abort_source>& _as;
+    ss::sharded<security::authorizer>& _authorizer;
 };
 
 } // namespace cluster

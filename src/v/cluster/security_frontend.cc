@@ -28,6 +28,7 @@
 #include "random/generators.h"
 #include "rpc/errc.h"
 #include "rpc/types.h"
+#include "security/authorizer.h"
 
 #include <seastar/core/coroutine.hh>
 
@@ -75,12 +76,14 @@ security_frontend::security_frontend(
   ss::sharded<controller_stm>& s,
   ss::sharded<rpc::connection_cache>& connections,
   ss::sharded<partition_leaders_table>& leaders,
-  ss::sharded<ss::abort_source>& as)
+  ss::sharded<ss::abort_source>& as,
+  ss::sharded<security::authorizer>& authorizer)
   : _self(self)
   , _stm(s)
   , _connections(connections)
   , _leaders(leaders)
-  , _as(as) {}
+  , _as(as)
+  , _authorizer(authorizer) {}
 
 ss::future<std::error_code> security_frontend::create_user(
   security::credential_user username,
