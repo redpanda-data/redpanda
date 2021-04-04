@@ -16,15 +16,15 @@
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/sstring.hh>
 
-#include <absl/container/flat_hash_map.h>
+#include <absl/container/node_hash_map.h>
 
 namespace finjector {
 
 struct probe {
     probe() = default;
     virtual ~probe() = default;
-    virtual std::vector<ss::sstring> points() = 0;
-    virtual int8_t method_for_point(std::string_view point) const = 0;
+    virtual std::vector<std::string_view> points() = 0;
+    virtual uint32_t method_for_point(std::string_view point) const = 0;
 
     [[gnu::always_inline]] bool operator()() const {
 #ifndef NDEBUG
@@ -47,16 +47,16 @@ struct probe {
         _termination_methods |= method_for_point(point);
     }
     void unset(std::string_view point) {
-        const int8_t m = method_for_point(point);
+        const uint32_t m = method_for_point(point);
         _exception_methods &= ~m;
         _delay_methods &= ~m;
         _termination_methods &= ~m;
     }
 
 protected:
-    int8_t _exception_methods = 0;
-    int8_t _delay_methods = 0;
-    int8_t _termination_methods = 0;
+    uint32_t _exception_methods = 0;
+    uint32_t _delay_methods = 0;
+    uint32_t _termination_methods = 0;
 };
 
 class honey_badger {
@@ -65,14 +65,15 @@ public:
     void register_probe(std::string_view, probe* p);
     void deregister_probe(std::string_view);
 
-    void set_exception(const ss::sstring& module, const ss::sstring& point);
-    void set_delay(const ss::sstring& module, const ss::sstring& point);
-    void set_termination(const ss::sstring& module, const ss::sstring& point);
-    void unset(const ss::sstring& module, const ss::sstring& point);
-    absl::flat_hash_map<ss::sstring, std::vector<ss::sstring>> points() const;
+    void set_exception(std::string_view module, std::string_view point);
+    void set_delay(std::string_view module, std::string_view point);
+    void set_termination(std::string_view module, std::string_view point);
+    void unset(std::string_view module, std::string_view point);
+    absl::node_hash_map<std::string_view, std::vector<std::string_view>>
+    points() const;
 
 private:
-    absl::flat_hash_map<ss::sstring, probe*> _probes;
+    absl::node_hash_map<std::string_view, probe*> _probes;
 };
 
 honey_badger& shard_local_badger();
