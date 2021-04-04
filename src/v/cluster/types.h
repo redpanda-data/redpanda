@@ -332,6 +332,12 @@ struct delete_acls_cmd_data {
     std::vector<security::acl_binding_filter> filters;
 };
 
+// result for a single filter
+struct delete_acls_result {
+    errc error;
+    std::vector<security::acl_binding> bindings;
+};
+
 } // namespace cluster
 namespace std {
 template<>

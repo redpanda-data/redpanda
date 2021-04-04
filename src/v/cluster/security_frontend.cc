@@ -179,6 +179,33 @@ ss::future<std::vector<errc>> security_frontend::do_create_acls(
     co_return result;
 }
 
+ss::future<std::vector<delete_acls_result>> security_frontend::delete_acls(
+  std::vector<security::acl_binding_filter> filters,
+  model::timeout_clock::duration timeout) {
+    const auto num_filters = filters.size();
+    delete_acls_cmd_data data;
+    data.filters = std::move(filters);
+    delete_acls_cmd cmd(std::move(data), 0 /* unused */);
+
+    errc err;
+    try {
+        auto ec = co_await replicate_and_wait(
+          std::move(cmd), model::timeout_clock::now() + timeout);
+        err = map_errc(ec);
+    } catch (const std::exception& e) {
+        vlog(clusterlog.warn, "Unable to delete ACLs: {}", e);
+        err = errc::replication_error;
+    }
+
+    std::vector<delete_acls_result> result;
+    result.assign(
+      num_filters,
+      delete_acls_result{
+        .error = err,
+      });
+    co_return result;
+}
+
 template<typename Cmd>
 ss::future<std::error_code> security_frontend::replicate_and_wait(
   Cmd&& cmd, model::timeout_clock::time_point timeout) {
