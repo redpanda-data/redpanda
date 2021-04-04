@@ -34,6 +34,12 @@ public:
 
     void insert(acl_entry entry) { _entries.insert(std::move(entry)); }
     void erase(container_type::const_iterator it) { _entries.erase(it); }
+
+    template<typename Predicate>
+    void erase_if(Predicate pred) {
+        absl::erase_if(_entries, pred);
+    }
+
     void rehash() { _entries.rehash(0); }
 
     bool empty() const { return _entries.empty(); }
