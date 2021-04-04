@@ -79,7 +79,7 @@ struct handler_adaptor : ss::httpd::handler_base {
       const ss::sstring&,
       std::unique_ptr<ss::request> req,
       std::unique_ptr<ss::reply> rep) final {
-        return ss::with_gate(
+        return ss::try_with_gate(
           _pending_requests,
           [this,
            req{std::move(req)},

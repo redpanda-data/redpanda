@@ -44,7 +44,7 @@ client::client(const YAML::Node& cfg)
               }} {}
 
 ss::future<> client::do_connect(unresolved_address addr) {
-    return ss::with_gate(_gate, [this, addr]() {
+    return ss::try_with_gate(_gate, [this, addr]() {
         return make_broker(unknown_node_id, addr)
           .then([this](shared_broker_t broker) {
               return broker->dispatch(metadata_request{.list_all_topics = true})
@@ -83,7 +83,7 @@ ss::future<> client::stop() {
 }
 
 ss::future<> client::update_metadata(wait_or_start::tag) {
-    return ss::with_gate(_gate, [this]() {
+    return ss::try_with_gate(_gate, [this]() {
         vlog(kclog.debug, "updating metadata");
         return _brokers.any().then([this](shared_broker_t broker) {
             return broker->dispatch(metadata_request{.list_all_topics = true})
@@ -141,7 +141,7 @@ ss::future<> client::mitigate_error(std::exception_ptr ex) {
 
 ss::future<produce_response::partition> client::produce_record_batch(
   model::topic_partition tp, model::record_batch&& batch) {
-    return ss::with_gate(
+    return ss::try_with_gate(
       _gate, [this, tp{std::move(tp)}, batch{std::move(batch)}]() mutable {
           vlog(
             kclog.debug,
