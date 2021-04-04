@@ -83,7 +83,7 @@ delete_topics_handler::handle(request_context ctx, ss::smp_service_group) {
 
     if (!request.data.topic_names.empty()) {
         auto tout = request.data.timeout_ms + model::timeout_clock::now();
-        auto res = co_await ctx.topics_frontend().delete_topics(
+        res = co_await ctx.topics_frontend().delete_topics(
           create_topic_namespaces(std::move(request.data.topic_names)), tout);
     }
 
