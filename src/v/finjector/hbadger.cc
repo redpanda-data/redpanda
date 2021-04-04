@@ -13,7 +13,6 @@
 
 #include <seastar/util/log.hh>
 
-
 namespace finjector {
 
 ss::logger log{"fault_injector"};
@@ -42,8 +41,7 @@ void honey_badger::set_exception(
         p->set_exception(point);
     }
 }
-void honey_badger::set_delay(
-  std::string_view module, std::string_view point) {
+void honey_badger::set_delay(std::string_view module, std::string_view point) {
     if (auto it = _probes.find(module); it != _probes.end()) {
         auto& [_, p] = *it;
         vlog(log.debug, "Setting delay probe: {}-{}", module, point);

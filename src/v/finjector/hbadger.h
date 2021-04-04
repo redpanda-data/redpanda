@@ -69,7 +69,8 @@ public:
     void set_delay(std::string_view module, std::string_view point);
     void set_termination(std::string_view module, std::string_view point);
     void unset(std::string_view module, std::string_view point);
-    absl::node_hash_map<std::string_view, std::vector<std::string_view>> points() const;
+    absl::node_hash_map<std::string_view, std::vector<std::string_view>>
+    points() const;
 
 private:
     absl::node_hash_map<std::string_view, probe*> _probes;
