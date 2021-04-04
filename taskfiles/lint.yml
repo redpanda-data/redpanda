@@ -6,4 +6,5 @@ tasks:
     cmds:
     - |
       PATH="{{.LLVM_INSTALL_PATH}}/bin":$PATH
-      find . -regex '.*\.\(cpp\|h\|hpp\|cc\|proto\|java\)$' | xargs -n1 clang-format -i -style=file -fallback-style=none
+      cd $(git rev-parse --show-toplevel)
+      git ls-files "*.cc" "*.java" "*.h" | xargs -n1 clang-format -i -style=file -fallback-style=none
