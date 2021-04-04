@@ -29,7 +29,8 @@ public:
       create_user_cmd,
       delete_user_cmd,
       update_user_cmd,
-      create_acls_cmd>();
+      create_acls_cmd,
+      delete_acls_cmd>();
 
     ss::future<std::error_code> apply_update(model::record_batch);
 
