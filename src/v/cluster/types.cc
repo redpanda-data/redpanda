@@ -582,4 +582,19 @@ adl<cluster::delete_acls_cmd_data>::from(iobuf_parser& in) {
     };
 }
 
+void adl<cluster::delete_acls_result>::to(
+  iobuf& out, cluster::delete_acls_result&& result) {
+    serialize(out, result.error, std::move(result.bindings));
+}
+
+cluster::delete_acls_result
+adl<cluster::delete_acls_result>::from(iobuf_parser& in) {
+    auto error = adl<cluster::errc>{}.from(in);
+    auto bindings = adl<std::vector<security::acl_binding>>().from(in);
+    return cluster::delete_acls_result{
+      .error = error,
+      .bindings = std::move(bindings),
+    };
+}
+
 } // namespace reflection

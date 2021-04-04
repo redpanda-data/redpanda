@@ -338,6 +338,15 @@ struct delete_acls_result {
     std::vector<security::acl_binding> bindings;
 };
 
+struct delete_acls_request {
+    delete_acls_cmd_data data;
+    model::timeout_clock::duration timeout;
+};
+
+struct delete_acls_reply {
+    std::vector<delete_acls_result> results;
+};
+
 } // namespace cluster
 namespace std {
 template<>
@@ -421,6 +430,12 @@ template<>
 struct adl<cluster::delete_acls_cmd_data> {
     void to(iobuf&, cluster::delete_acls_cmd_data&&);
     cluster::delete_acls_cmd_data from(iobuf_parser&);
+};
+
+template<>
+struct adl<cluster::delete_acls_result> {
+    void to(iobuf&, cluster::delete_acls_result&&);
+    cluster::delete_acls_result from(iobuf_parser&);
 };
 
 } // namespace reflection
