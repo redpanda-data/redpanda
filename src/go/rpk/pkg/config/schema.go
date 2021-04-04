@@ -51,8 +51,8 @@ type RedpandaConfig struct {
 }
 
 type Pandaproxy struct {
-	PandaproxyAPI           SocketAddress  `yaml:"pandaproxy_api,omitempty" mapstructure:"pandaproxy_api,omitempty" json:"pandaproxyApi,omitempty"`
-	PandaproxyAPITLS        ServerTLS      `yaml:"pandaproxy_api_tls,omitempty" mapstructure:"pandaproxy_api_tls,omitempty" json:"pandaproxyApiTls,omitempty"`
+	PandaproxyAPI           *SocketAddress `yaml:"pandaproxy_api,omitempty" mapstructure:"pandaproxy_api,omitempty" json:"pandaproxyApi,omitempty"`
+	PandaproxyAPITLS        *ServerTLS     `yaml:"pandaproxy_api_tls,omitempty" mapstructure:"pandaproxy_api_tls,omitempty" json:"pandaproxyApiTls,omitempty"`
 	AdvertisedPandaproxyAPI *SocketAddress `yaml:"advertised_pandaproxy_api,omitempty" mapstructure:"advertised_pandaproxy_api,omitempty" json:"advertisedPandaproxyApi,omitempty"`
 }
 
