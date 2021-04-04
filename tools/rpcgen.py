@@ -152,8 +152,8 @@ public:
         {%- endfor %}
           .default_match(0);
     }
-    std::vector<ss::sstring> points() final {
-        std::vector<ss::sstring> retval;
+    std::vector<std::string_view> points() final {
+        std::vector<std::string_view> retval;
         retval.reserve({{methods | length}});
         {%- for method in methods %}
         retval.push_back("{{method.name}}");

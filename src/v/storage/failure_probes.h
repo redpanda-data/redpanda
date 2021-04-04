@@ -45,7 +45,7 @@ public:
           .default_match(0);
     }
 
-    std::vector<ss::sstring> points() final {
+    std::vector<std::string_view> points() final {
         return {"append", "roll", "truncate"};
     }
 
@@ -114,7 +114,7 @@ public:
         return point == "consume" ? static_cast<type>(methods::consume) : 0;
     }
 
-    std::vector<ss::sstring> points() final { return {"consume"}; }
+    std::vector<std::string_view> points() final { return {"consume"}; }
 
     ss::future<> consume() {
         if (is_enabled()) {
