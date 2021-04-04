@@ -16,7 +16,7 @@
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/sstring.hh>
 
-#include <absl/container/flat_hash_map.h>
+#include <absl/container/node_hash_map.h>
 
 namespace finjector {
 
@@ -69,10 +69,10 @@ public:
     void set_delay(std::string_view module, std::string_view point);
     void set_termination(std::string_view module, std::string_view point);
     void unset(std::string_view module, std::string_view point);
-    absl::flat_hash_map<std::string_view, std::vector<std::string_view>> points() const;
+    absl::node_hash_map<std::string_view, std::vector<std::string_view>> points() const;
 
 private:
-    absl::flat_hash_map<std::string_view, probe*> _probes;
+    absl::node_hash_map<std::string_view, probe*> _probes;
 };
 
 honey_badger& shard_local_badger();

@@ -13,7 +13,6 @@
 
 #include <seastar/util/log.hh>
 
-#include <absl/container/flat_hash_map.h>
 
 namespace finjector {
 
@@ -66,9 +65,9 @@ void honey_badger::unset(std::string_view module, std::string_view point) {
         p->unset(point);
     }
 }
-absl::flat_hash_map<std::string_view, std::vector<std::string_view>>
+absl::node_hash_map<std::string_view, std::vector<std::string_view>>
 honey_badger::points() const {
-    absl::flat_hash_map<std::string_view, std::vector<std::string_view>> retval;
+    absl::node_hash_map<std::string_view, std::vector<std::string_view>> retval;
     for (auto& [module, probe] : _probes) {
         retval.insert({module, probe->points()});
     }
