@@ -23,7 +23,7 @@ namespace storage {
 
 class log_failure_probes final : public finjector::probe {
 public:
-    using type = int8_t;
+    using type = uint32_t;
 
     static constexpr std::string_view name() {
         return "storage::log::failure_probes";
@@ -99,7 +99,7 @@ private:
 
 class parser_failure_probes final : public finjector::probe {
 public:
-    using type = int8_t;
+    using type = uint32_t;
     static constexpr std::string_view name() {
         return "storage::parser::failure_probes";
     }

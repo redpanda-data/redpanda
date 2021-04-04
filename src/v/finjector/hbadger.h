@@ -24,7 +24,7 @@ struct probe {
     probe() = default;
     virtual ~probe() = default;
     virtual std::vector<std::string_view> points() = 0;
-    virtual int8_t method_for_point(std::string_view point) const = 0;
+    virtual uint32_t method_for_point(std::string_view point) const = 0;
 
     [[gnu::always_inline]] bool operator()() const {
 #ifndef NDEBUG
@@ -47,16 +47,16 @@ struct probe {
         _termination_methods |= method_for_point(point);
     }
     void unset(std::string_view point) {
-        const int8_t m = method_for_point(point);
+        const uint32_t m = method_for_point(point);
         _exception_methods &= ~m;
         _delay_methods &= ~m;
         _termination_methods &= ~m;
     }
 
 protected:
-    int8_t _exception_methods = 0;
-    int8_t _delay_methods = 0;
-    int8_t _termination_methods = 0;
+    uint32_t _exception_methods = 0;
+    uint32_t _delay_methods = 0;
+    uint32_t _termination_methods = 0;
 };
 
 class honey_badger {

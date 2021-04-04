@@ -136,7 +136,7 @@ private:
 
 class {{service_name}}_service::failure_probes final : public finjector::probe {
 public:
-    using type = int8_t;
+    using type = uint32_t;
 
     static constexpr std::string_view name() { return "{{service_name}}_service::failure_probes"; }
 
