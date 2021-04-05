@@ -105,10 +105,21 @@ tasks:
     desc: build image used in integration tests
     cmds:
     - |
-      docker build \
-        --tag vectorized/redpanda-test-node \
-        --file '{{.SRC_DIR}}/tests/docker/Dockerfile' \
-        '{{.SRC_DIR}}/tests/'
+      if [ '{{.CI}}' == '1' ]; then
+        chmod 644 '{{.SRC_DIR}}/tests/docker/ssh/'* '{{.SRC_DIR}}/tests/setup.py'
+        chmod 755 '{{.SRC_DIR}}/tests/docker/ssh'
+        docker pull docker.io/vectorized/redpanda-test-node:cache || true
+        docker build \
+          --tag vectorized/redpanda-test-node \
+          --file '{{.SRC_DIR}}/tests/docker/Dockerfile' \
+          --cache-from docker.io/vectorized/redpanda-test-node:cache \
+          '{{.SRC_DIR}}/tests/'
+      else
+        docker build \
+          --tag vectorized/redpanda-test-node \
+          --file '{{.SRC_DIR}}/tests/docker/Dockerfile' \
+          '{{.SRC_DIR}}/tests/'
+      fi
 
   start-compose-cluster:
     desc: deploy a cluster using docker-compose
