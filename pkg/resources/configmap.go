@@ -195,6 +195,10 @@ func (r *ConfigMapResource) createConfiguration(
 		cr.Superusers = append(cr.Superusers, user.Username)
 	}
 
+	if r.pandaCluster.Spec.EnableSASL {
+		cr.EnableSASL = pointer.BoolPtr(true)
+	}
+
 	replicas := *r.pandaCluster.Spec.Replicas
 	for i := int32(0); i < replicas; i++ {
 		cr.SeedServers = append(cr.SeedServers, config.SeedServer{
