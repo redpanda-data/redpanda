@@ -369,9 +369,12 @@ func decoderConfig() mapstructure.DecoderConfig {
 			// viper.DecoderConfigOption is used, viper's hooks are overriden.
 			mapstructure.StringToTimeDurationHookFunc(),
 			mapstructure.StringToSliceHookFunc(","),
-			// This hook translates the pre-2.1.4 configuration format to the
+			// This hook translates the pre-21.1.4 configuration format to the
 			// latest one (see schema.go)
 			v21_1_4MapToNamedSocketAddressSlice,
+			// This hook translates the pre-21.4.1 TLS configuration format to the
+			// latest one (see schema.go)
+			v21_4_1TlsMapToNamedTlsSlice,
 		),
 	}
 }

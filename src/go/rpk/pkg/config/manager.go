@@ -426,6 +426,26 @@ func v21_1_4MapToNamedSocketAddressSlice(
 	return data, nil
 }
 
+// Redpanda version <= 21.4.1 only supported a single TLS config. This custom
+// decode function translates a single TLS config-equivalent
+// map[string]interface{} into a []ServerTLS.
+func v21_4_1TlsMapToNamedTlsSlice(
+	from, to reflect.Type, data interface{},
+) (interface{}, error) {
+	if to == reflect.TypeOf([]ServerTLS{}) {
+		switch from.Kind() {
+		case reflect.Map:
+			tls := ServerTLS{}
+			err := mapstructure.Decode(data, &tls)
+			if err != nil {
+				return nil, err
+			}
+			return []ServerTLS{tls}, nil
+		}
+	}
+	return data, nil
+}
+
 func base58Encode(s string) string {
 	b := []byte(s)
 

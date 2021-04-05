@@ -743,13 +743,15 @@ rpk:
 			name: "shall write config with tls configuration",
 			conf: func() *Config {
 				c := getValidConfig()
-				c.Redpanda.KafkaApiTLS = ServerTLS{
+				c.Redpanda.KafkaApi[0].Name = "outside"
+				c.Redpanda.KafkaApiTLS = []ServerTLS{{
+					Name:              "outside",
 					KeyFile:           "/etc/certs/cert.key",
 					TruststoreFile:    "/etc/certs/ca.crt",
 					CertFile:          "/etc/certs/cert.crt",
 					Enabled:           true,
 					RequireClientAuth: true,
-				}
+				}}
 				return c
 			},
 			wantErr: false,
@@ -763,11 +765,13 @@ redpanda:
   developer_mode: false
   kafka_api:
   - address: 0.0.0.0
+    name: outside
     port: 9092
   kafka_api_tls:
-    cert_file: /etc/certs/cert.crt
+  - cert_file: /etc/certs/cert.crt
     enabled: true
     key_file: /etc/certs/cert.key
+    name: outside
     require_client_auth: true
     truststore_file: /etc/certs/ca.crt
   node_id: 0

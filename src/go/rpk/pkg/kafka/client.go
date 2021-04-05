@@ -180,7 +180,6 @@ func configureTLS(
 	var tlsConf *tls.Config
 	var err error
 	rpkTls := rpConf.Rpk.TLS
-	rpTls := rpConf.Redpanda.KafkaApiTLS
 
 	// Try to configure TLS from the available config
 	switch {
@@ -207,33 +206,6 @@ func configureTLS(
 		}
 		tlsConf = &tls.Config{RootCAs: caCertPool}
 		log.Debug("API TLS enabled using rpk.tls")
-
-	// Enable client auth if the cert & key files are set for the redpanda
-	// API
-	case rpTls.Enabled &&
-		rpTls.CertFile != "" &&
-		rpTls.KeyFile != "" &&
-		rpTls.TruststoreFile != "":
-
-		tlsConf, err = loadTLSConfig(
-			rpTls.TruststoreFile,
-			rpTls.CertFile,
-			rpTls.KeyFile,
-		)
-		if err != nil {
-			return nil, err
-		}
-		log.Debug("API TLS auth enabled using redpanda.kafka_api_tls")
-
-	// Enable TLS (no auth) if only the CA cert file is set for the
-	// redpanda API
-	case rpTls.Enabled && rpTls.TruststoreFile != "":
-		caCertPool, err := loadRootCACert(rpTls.TruststoreFile)
-		if err != nil {
-			return nil, err
-		}
-		tlsConf = &tls.Config{RootCAs: caCertPool}
-		log.Debug("API TLS enabled using redpanda.kafka_api_tls")
 
 	default:
 		log.Debug(
