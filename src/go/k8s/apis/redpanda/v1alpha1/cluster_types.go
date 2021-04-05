@@ -50,6 +50,13 @@ type ClusterSpec struct {
 	Storage StorageSpec `json:"storage,omitempty"`
 	// Cloud storage configuration for cluster
 	CloudStorage CloudStorageConfig `json:"cloudStorage,omitempty"`
+	// List of superusers
+	Superusers []Superuser `json:"superUsers,omitempty"`
+}
+
+// Superuser has full access to the Redpanda cluster
+type Superuser struct {
+	Username string `json:"username"`
 }
 
 // CloudStorageConfig configures the Data Archiving feature in Redpanda
