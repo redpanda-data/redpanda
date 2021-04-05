@@ -254,15 +254,16 @@ func (r *ClusterReconciler) createExternalNodesList(
 	observedNodesExternalAdmin := make([]string, 0, len(pods))
 	for i := range pods {
 		if len(pandaCluster.Spec.ExternalConnectivity.Subdomain) > 0 {
+			prefixLen := len(pods[i].GenerateName)
 			observedNodesExternal = append(observedNodesExternal,
 				fmt.Sprintf("%s.%s:%d",
-					pods[i].Spec.Hostname,
+					pods[i].Name[prefixLen:],
 					pandaCluster.Spec.ExternalConnectivity.Subdomain,
 					getNodePort(&nodePortSvc, resources.KafkaPortName),
 				))
 			observedNodesExternalAdmin = append(observedNodesExternalAdmin,
 				fmt.Sprintf("%s.%s:%d",
-					pods[i].Spec.Hostname,
+					pods[i].Name[prefixLen:],
 					pandaCluster.Spec.ExternalConnectivity.Subdomain,
 					getNodePort(&nodePortSvc, resources.AdminPortName),
 				))
