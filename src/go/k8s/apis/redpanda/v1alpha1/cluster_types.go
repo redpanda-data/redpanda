@@ -52,6 +52,8 @@ type ClusterSpec struct {
 	CloudStorage CloudStorageConfig `json:"cloudStorage,omitempty"`
 	// List of superusers
 	Superusers []Superuser `json:"superUsers,omitempty"`
+	// SASL enablement flag
+	EnableSASL bool `json:"enableSasl,omitempty"`
 }
 
 // Superuser has full access to the Redpanda cluster
