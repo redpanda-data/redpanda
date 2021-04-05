@@ -1,9 +1,9 @@
 ---
-title: Intro to events and streaming
+title: How events improve your app: An intro to events and streaming
 order: 0
 ---
 
-# Intro to events and streaming
+# How events improve your app: An intro to events and streaming
 
 Components in distributed systems depend on each other for data and system updates,
 and in time-sensitive applications the updates need to happen as close to wire speed as possible.
