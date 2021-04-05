@@ -358,9 +358,9 @@ struct adl<security::acl_principal> {
     }
 
     security::acl_principal from(iobuf_parser& in) {
-        return security::acl_principal(
-          adl<security::principal_type>{}.from(in),
-          adl<ss::sstring>{}.from(in));
+        auto pt = adl<security::principal_type>{}.from(in);
+        auto name = adl<ss::sstring>{}.from(in);
+        return security::acl_principal(pt, std::move(name));
     }
 };
 
@@ -409,11 +409,11 @@ struct adl<security::acl_entry> {
     }
 
     security::acl_entry from(iobuf_parser& in) {
-        return security::acl_entry(
-          adl<security::acl_principal>{}.from(in),
-          adl<security::acl_host>{}.from(in),
-          adl<security::acl_operation>{}.from(in),
-          adl<security::acl_permission>{}.from(in));
+        auto prin = adl<security::acl_principal>{}.from(in);
+        auto host = adl<security::acl_host>{}.from(in);
+        auto op = adl<security::acl_operation>{}.from(in);
+        auto perm = adl<security::acl_permission>{}.from(in);
+        return security::acl_entry(std::move(prin), host, op, perm);
     }
 };
 
@@ -424,10 +424,10 @@ struct adl<security::resource_pattern> {
     }
 
     security::resource_pattern from(iobuf_parser& in) {
-        return security::resource_pattern(
-          adl<security::resource_type>{}.from(in),
-          adl<ss::sstring>{}.from(in),
-          adl<security::pattern_type>{}.from(in));
+        auto r = adl<security::resource_type>{}.from(in);
+        auto n = adl<ss::sstring>{}.from(in);
+        auto p = adl<security::pattern_type>{}.from(in);
+        return security::resource_pattern(r, std::move(n), p);
     }
 };
 
@@ -438,9 +438,9 @@ struct adl<security::acl_binding> {
     }
 
     security::acl_binding from(iobuf_parser& in) {
-        return security::acl_binding(
-          adl<security::resource_pattern>{}.from(in),
-          adl<security::acl_entry>{}.from(in));
+        auto r = adl<security::resource_pattern>{}.from(in);
+        auto e = adl<security::acl_entry>{}.from(in);
+        return security::acl_binding(std::move(r), std::move(e));
     }
 };
 
