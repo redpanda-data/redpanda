@@ -246,15 +246,23 @@ remove_consumer(server::request_t rq, server::reply_t rp) {
 
 ss::future<server::reply_t>
 subscribe_consumer(server::request_t rq, server::reply_t rp) {
+    parse::content_type_header(*rq.req, {json::serialization_format::json_v2});
+    auto res_fmt = parse::accept_header(
+      *rq.req,
+      {json::serialization_format::json_v2, json::serialization_format::none});
+
+    auto group_id = parse::request_param<kafka::group_id>(
+      *rq.req, "group_name");
+    auto member_id = parse::request_param<kafka::member_id>(
+      *rq.req, "instance");
+
     auto req_data = ppj::rjson_parse(
       rq.req->content.data(), ppj::subscribe_consumer_request_handler());
-    auto group_id = kafka::group_id(rq.req->param["group_name"]);
-    auto member_id = kafka::member_id(rq.req->param["instance"]);
 
     return rq.ctx.client
       .subscribe_consumer(group_id, member_id, std::move(req_data.topics))
-      .then([rp{std::move(rp)}]() mutable {
-          // nothing to do!
+      .then([res_fmt, rp{std::move(rp)}]() mutable {
+          rp.mime_type = res_fmt;
           return std::move(rp);
       });
 }

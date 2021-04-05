@@ -450,6 +450,75 @@ class PandaProxyTest(RedpandaTest):
         assert cc_res.status_code == requests.codes.not_found
 
     @cluster(num_nodes=3)
+    def test_subscribe_consumer_validation(self):
+        """
+        Acceptable headers:
+        * Accept: "", "*/*", "application/vnd.kafka.v2+json"
+        * Content-Type: "application/vnd.kafka.v2+json"
+        Required Params:
+        * Path:
+          * group
+          * instance
+        """
+        group_id = f"pandaproxy-group-{uuid.uuid4()}"
+
+        self.logger.info("Create 3 topics")
+        topics = self._create_topics(create_topic_names(3), 3, 3)
+
+        self.logger.info("Create a consumer group")
+        cc_res = self._create_consumer(group_id)
+        assert cc_res.status_code == requests.codes.ok
+
+        c0 = Consumer(cc_res.json())
+
+        self.logger.info("Subscribe a consumer with no accept header")
+        sc_res = c0.subscribe(
+            topics,
+            headers={
+                "Content-Type": HTTP_SUBSCRIBE_CONSUMER_HEADERS["Content-Type"]
+            })
+        assert sc_res.status_code == requests.codes.ok
+        assert sc_res.headers[
+            "Content-Type"] == HTTP_SUBSCRIBE_CONSUMER_HEADERS["Accept"]
+
+        self.logger.info("Subscribe a consumer with invalid accept header")
+        sc_res = c0.subscribe(
+            topics,
+            headers={
+                "Content-Type":
+                HTTP_SUBSCRIBE_CONSUMER_HEADERS["Content-Type"],
+                "Accept": "application/vnd.kafka.binary.v2+json"
+            })
+        assert sc_res.status_code == requests.codes.not_acceptable
+        assert sc_res.json()["error_code"] == requests.codes.not_acceptable
+        assert sc_res.headers["Content-Type"] == "application/json"
+
+        self.logger.info("Subscribe a consumer with no content-type header")
+        sc_res = c0.subscribe(
+            topics,
+            headers={"Accept": HTTP_SUBSCRIBE_CONSUMER_HEADERS["Accept"]})
+        assert sc_res.status_code == requests.codes.unsupported_media_type
+        assert sc_res.json(
+        )["error_code"] == requests.codes.unsupported_media_type
+
+        self.logger.info("Subscribe a consumer with invalid group parameter")
+        sc_res = requests.post(
+            f"{self._base_uri()}/consumers/{group_id}-invalid/instances/{c0.instance_id}/subscription",
+            json.dumps({"topics": topics}),
+            headers=HTTP_SUBSCRIBE_CONSUMER_HEADERS)
+        assert sc_res.status_code == requests.codes.not_found
+        assert sc_res.json()["error_code"] == 40403
+
+        self.logger.info(
+            "Subscribe a consumer with invalid instance parameter")
+        sc_res = requests.post(
+            f"{self._base_uri()}/consumers/{group_id}/instances/{c0.instance_id}-invalid/subscription",
+            json.dumps({"topics": topics}),
+            headers=HTTP_SUBSCRIBE_CONSUMER_HEADERS)
+        assert sc_res.status_code == requests.codes.not_found
+        assert sc_res.json()["error_code"] == 40403
+
+    @cluster(num_nodes=3)
     def test_consumer_group(self):
         """
         Create a consumer group and use it
