@@ -47,6 +47,7 @@ type RedpandaConfig struct {
 	CloudStorageDisableTls               *bool                  `yaml:"cloud_storage_disable_tls,omitempty" mapstructure:"cloud_storage_disable_tls,omitempty" json:"cloudStorageDisableTls,omitempty"`
 	CloudStorageApiEndpointPort          *int                   `yaml:"cloud_storage_api_endpoint_port,omitempty" mapstructure:"cloud_storage_api_endpoint_port,omitempty" json:"cloudStorageApiEndpointPort,omitempty"`
 	CloudStorageTrustFile                *string                `yaml:"cloud_storage_trust_file,omitempty" mapstructure:"cloud_storage_trust_file,omitempty" json:"cloudStorageTrustFile,omitempty"`
+	Superusers                           []string               `yaml:"superusers,omitempty" mapstructure:"superusers,omitempty" json:"superusers,omitempty"`
 	Other                                map[string]interface{} `yaml:",inline" mapstructure:",remain"`
 }
 
