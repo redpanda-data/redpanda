@@ -7,7 +7,6 @@
 // the Business Source License, use of this software will be governed
 // by the Apache License, Version 2.0
 
-#define BOOST_TEST_MODULE utils
 #include "random/generators.h"
 #include "utils/base64.h"
 

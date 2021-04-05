@@ -13,108 +13,52 @@ v_cc_library(
 
 rp_test(
   UNIT_TEST
-  BINARY_NAME log_segment_appender_test
-  SOURCES log_segment_appender_test.cc
-          segment_size_jitter_test.cc
-  LIBRARIES v::seastar_testing_main v::storage_test_utils
-  LABELS storage
-  ARGS "-- -c 1"
-)
-
-rp_test(
-  UNIT_TEST
-  BINARY_NAME log_segment_reader_test
-  SOURCES log_segment_reader_test.cc
-  LIBRARIES v::seastar_testing_main v::storage_test_utils
-  LABELS storage
-  ARGS "-- -c 1"
-)
-
-rp_test(
-  UNIT_TEST
-  BINARY_NAME log_replayer_test
-  SOURCES log_replayer_test.cc
-  LIBRARIES v::seastar_testing_main v::storage_test_utils
-  LABELS storage
-  ARGS "-- -c 1"
-)
-
-rp_test(
-  UNIT_TEST
-  BINARY_NAME log_manager_test
-  SOURCES log_manager_test.cc
-  LIBRARIES v::seastar_testing_main v::storage_test_utils
-  LABELS storage
-  ARGS "-- -c 1"
-)
-
-rp_test(
-  UNIT_TEST
-  BINARY_NAME offset_assignment_test
-  SOURCES offset_assignment_test.cc
-  LIBRARIES v::seastar_testing_main v::storage_test_utils
-  ARGS "-- -c 1"
-  LABELS storage
-)
-
-rp_test(
-  UNIT_TEST
-  BINARY_NAME storage_e2e_test
-  SOURCES storage_e2e_test.cc
-  LIBRARIES v::seastar_testing_main v::storage_test_utils
-  ARGS "-- -c 1"
-  LABELS storage
-)
-
-rp_test(
-  UNIT_TEST
-  BINARY_NAME log_truncate_test
-  SOURCES log_truncate_test.cc
-  LIBRARIES v::seastar_testing_main v::storage_test_utils
-  ARGS "-- -c 1"
-  LABELS storage
-)
-rp_test(
-  UNIT_TEST
-  BINARY_NAME index_test
+  BINARY_NAME storage_single_thread
   SOURCES
+    log_segment_appender_test.cc
+    segment_size_jitter_test.cc
+    log_segment_reader_test.cc
+    log_manager_test.cc
+    offset_assignment_test
+    storage_e2e_test.cc
+    log_truncate_test.cc
     offset_index_utils_tests.cc
     compaction_index_format_tests.cc
+    appender_chunk_manipulations.cc
+    disk_log_builder_test.cc
+    log_retention_tests.cc
+    produce_consume_test.cc
+    half_page_concurrent_dispatch.cc
+    timequery_test.cc
+    kvstore_test.cc
   LIBRARIES v::seastar_testing_main v::storage_test_utils
-  ARGS "-- -c 1"
   LABELS storage
+  ARGS "-- -c 1"
 )
+
+# Putting this first, last, or in the middle of the other single thread tests
+# results in:
+# runtime error: member access within null pointer of type
+# 'shared_ptr_no_esft<storage::segment>'
 rp_test(
   UNIT_TEST
-  BINARY_NAME appender_chunk_manip
-  SOURCES appender_chunk_manipulations.cc
+  BINARY_NAME storage_log_replayer_single_thread
+  SOURCES
+    log_replayer_test.cc
   LIBRARIES v::seastar_testing_main v::storage_test_utils
-  ARGS "-- -c 1"
   LABELS storage
+  ARGS "-- -c 1"
 )
 
 rp_test(
   UNIT_TEST
-  BINARY_NAME batch_cache_test
-  SOURCES batch_cache_test.cc
+  BINARY_NAME storage_multi_thread
+  SOURCES
+    batch_cache_test.cc
+    record_batch_builder_test.cc
+    snapshot_test.cc
+    index_state_test.cc
   LIBRARIES v::seastar_testing_main v::storage_test_utils
-  LABELS storage
-)
-
-rp_test(
-  UNIT_TEST
-  BINARY_NAME record_batch_builder_test
-  SOURCES record_batch_builder_test.cc
-  LIBRARIES v::seastar_testing_main v::storage_test_utils
-  LABELS storage
-)
-
-rp_test(
-  UNIT_TEST
-  BINARY_NAME disk_log_builder_test
-  SOURCES disk_log_builder_test.cc
-  LIBRARIES v::seastar_testing_main v::storage_test_utils
-  ARGS "-- -c 1"
   LABELS storage
 )
 
@@ -131,68 +75,10 @@ rp_test(
 )
 
 rp_test(
-  UNIT_TEST
-  BINARY_NAME log_retention_test
-  SOURCES log_retention_tests.cc
-  LIBRARIES v::seastar_testing_main v::storage_test_utils
-  ARGS "-- -c 1"
-  LABELS storage
-)
-
-rp_test(
-  UNIT_TEST
-  BINARY_NAME produce_consume_test
-  SOURCES produce_consume_test.cc
-  LIBRARIES v::seastar_testing_main v::storage_test_utils
-  ARGS "-- -c 1"
-  LABELS storage
-)
-rp_test(
-  UNIT_TEST
-  BINARY_NAME half_page_write_test
-  SOURCES half_page_concurrent_dispatch.cc
-  LIBRARIES v::seastar_testing_main v::storage_test_utils
-  ARGS "-- -c 1"
-  LABELS storage
-  )
-
-rp_test(
-  UNIT_TEST
-  BINARY_NAME timequery_test
-  SOURCES timequery_test.cc
-  LIBRARIES v::seastar_testing_main v::storage_test_utils
-  ARGS "-- -c 1"
-  LABELS storage
-  )
-
-rp_test(
-  UNIT_TEST
-  BINARY_NAME snapshot_test
-  SOURCES snapshot_test.cc
-  LIBRARIES v::seastar_testing_main v::storage_test_utils
-  LABELS storage
-)
-
-rp_test(
-  UNIT_TEST
-  BINARY_NAME kvstore_test
-  SOURCES kvstore_test.cc
-  LIBRARIES v::seastar_testing_main v::storage_test_utils
-  ARGS "-- -c 1"
-  LABELS storage)
-
-
-rp_test(
   BENCHMARK_TEST
-  BINARY_NAME compacting_bench
+  BINARY_NAME storage
   SOURCES compaction_idx_bench.cc
   LIBRARIES Seastar::seastar_perf_testing v::storage
   LABELS storage
 )
 
-rp_test(
-  UNIT_TEST
-  BINARY_NAME test_index_state
-  SOURCES index_state_test.cc
-  LIBRARIES v::seastar_testing_main v::storage_test_utils
-  LABELS storage)

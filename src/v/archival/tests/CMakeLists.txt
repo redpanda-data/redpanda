@@ -6,6 +6,7 @@ rp_test(
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES v::seastar_testing_main Boost::unit_test_framework v::archival v::storage_test_utils
   ARGS "-- -c 1"
+  LABELS archival
 )
 
 rp_test(
@@ -15,6 +16,7 @@ rp_test(
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES v::seastar_testing_main v::application Boost::unit_test_framework v::archival v::storage_test_utils
   ARGS "-- -c 1"
+  LABELS archival
 )
 
 
