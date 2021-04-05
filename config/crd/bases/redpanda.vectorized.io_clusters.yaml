@@ -225,6 +225,9 @@ spec:
                         type: object
                     type: object
                 type: object
+              enableSasl:
+                description: SASL enablement flag
+                type: boolean
               externalConnectivity:
                 description: ExternalConnectivity enables user to expose Redpanda
                   nodes outside of a Kubernetes cluster. For more information please
