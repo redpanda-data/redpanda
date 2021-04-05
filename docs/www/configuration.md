@@ -338,7 +338,7 @@ redpanda:
 # This top-level config node enables the REST Proxy
 pandaproxy:
   # IP and port to listen for Kafka REST API requests.
-  # Default: 127.0.0.1:8082
+  # Default: 0.0.0.0:8082
   pandaproxy_api: 
     address: "0.0.0.0"
     port: 8082
