@@ -64,8 +64,9 @@ public:
     /*
      * Remove ACL bindings that match the filter(s).
      */
-    void remove_bindings(const std::vector<acl_binding_filter>& filters) {
-        _store.remove_bindings(filters);
+    std::vector<std::vector<acl_binding>> remove_bindings(
+      const std::vector<acl_binding_filter>& filters, bool dry_run = false) {
+        return _store.remove_bindings(filters, dry_run);
     }
 
     /*
