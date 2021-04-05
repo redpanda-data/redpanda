@@ -1083,6 +1083,7 @@ rpk:
 			},
 			wantErr: false,
 			expected: `config_file: /etc/redpanda/redpanda.yaml
+pandaproxy: {}
 redpanda:
   admin:
     address: 0.0.0.0
