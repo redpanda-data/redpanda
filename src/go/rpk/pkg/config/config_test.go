@@ -201,6 +201,7 @@ func TestDefault(t *testing.T) {
 	defaultConfig := Default()
 	expected := &Config{
 		ConfigFile: "/etc/redpanda/redpanda.yaml",
+		Pandaproxy: &Pandaproxy{},
 		Redpanda: RedpandaConfig{
 			Directory: "/var/lib/redpanda/data",
 			RPCServer: SocketAddress{"0.0.0.0", 33145},
@@ -285,6 +286,7 @@ func TestWrite(t *testing.T) {
 			conf:    getValidConfig,
 			wantErr: false,
 			expected: `config_file: /etc/redpanda/redpanda.yaml
+pandaproxy: {}
 redpanda:
   admin:
     address: 0.0.0.0
@@ -330,6 +332,7 @@ rpk:
 			conf:    getValidConfig,
 			wantErr: false,
 			expected: `config_file: /etc/redpanda/redpanda.yaml
+pandaproxy: {}
 redpanda:
   admin:
     address: 0.0.0.0
@@ -382,6 +385,7 @@ rpk:
 			},
 			wantErr: false,
 			expected: `config_file: /etc/redpanda/redpanda.yaml
+pandaproxy: {}
 redpanda:
   admin:
     address: 0.0.0.0
@@ -439,6 +443,7 @@ rpk:
 			},
 			wantErr: false,
 			expected: `config_file: /etc/redpanda/redpanda.yaml
+pandaproxy: {}
 redpanda:
   admin:
     address: 0.0.0.0
@@ -491,6 +496,7 @@ rpk:
 			},
 			wantErr: false,
 			expected: `config_file: /etc/redpanda/redpanda.yaml
+pandaproxy: {}
 redpanda:
   admin:
     address: 0.0.0.0
@@ -544,6 +550,7 @@ rpk:
 			conf:    getValidConfig,
 			wantErr: false,
 			expected: `config_file: /etc/redpanda/redpanda.yaml
+pandaproxy: {}
 redpanda:
   admin:
     address: 0.0.0.0
@@ -587,6 +594,7 @@ rpk:
 		{
 			name: "shall leave unrecognized fields untouched",
 			existingConf: `config_file: /etc/redpanda/redpanda.yaml
+pandaproxy: {}
 redpanda:
   admin:
     address: 0.0.0.0
@@ -617,6 +625,7 @@ unrecognized_top_field:
 			conf:    getValidConfig,
 			wantErr: false,
 			expected: `config_file: /etc/redpanda/redpanda.yaml
+pandaproxy: {}
 redpanda:
   admin:
     address: 0.0.0.0
@@ -665,6 +674,7 @@ unrecognized_top_field:
 		{
 			name: "should merge the new config onto the current one, not just overwrite it",
 			existingConf: `config_file: /etc/redpanda/redpanda.yaml
+pandaproxy: {}
 redpanda:
   admin:
     address: 0.0.0.0
@@ -690,6 +700,7 @@ redpanda:
 			},
 			wantErr: false,
 			expected: `config_file: /etc/redpanda/redpanda.yaml
+pandaproxy: {}
 redpanda:
   admin:
     address: 0.0.0.0
@@ -743,6 +754,7 @@ rpk:
 			},
 			wantErr: false,
 			expected: `config_file: /etc/redpanda/redpanda.yaml
+pandaproxy: {}
 redpanda:
   admin:
     address: 0.0.0.0
@@ -804,6 +816,7 @@ rpk:
 			},
 			wantErr: false,
 			expected: `config_file: /etc/redpanda/redpanda.yaml
+pandaproxy: {}
 redpanda:
   admin:
     address: 0.0.0.0
@@ -855,11 +868,11 @@ rpk:
 			conf: func() *Config {
 				c := getValidConfig()
 				c.Pandaproxy = &Pandaproxy{
-					PandaproxyAPI: SocketAddress{
+					PandaproxyAPI: &SocketAddress{
 						Address: "1.2.3.4",
 						Port:    1234,
 					},
-					PandaproxyAPITLS: ServerTLS{
+					PandaproxyAPITLS: &ServerTLS{
 						KeyFile:           "/etc/certs/cert.key",
 						TruststoreFile:    "/etc/certs/ca.crt",
 						CertFile:          "/etc/certs/cert.crt",
@@ -933,7 +946,7 @@ rpk:
 			conf: func() *Config {
 				c := getValidConfig()
 				c.Pandaproxy = &Pandaproxy{
-					PandaproxyAPI: SocketAddress{
+					PandaproxyAPI: &SocketAddress{
 						Address: "1.2.3.4",
 						Port:    1234,
 					},
@@ -1009,6 +1022,7 @@ rpk:
 			},
 			wantErr: false,
 			expected: `config_file: /etc/redpanda/redpanda.yaml
+pandaproxy: {}
 pandaproxy_client:
   broker:
   - address: 1.2.3.4
@@ -1089,6 +1103,7 @@ rpk:
 			},
 			wantErr: false,
 			expected: `config_file: /etc/redpanda/redpanda.yaml
+pandaproxy: {}
 redpanda:
   admin:
     address: 0.0.0.0
@@ -1143,6 +1158,7 @@ rpk:
 		{
 			name: "should update an existing config with single kafka_api & advertised_kafka_api obj to a list",
 			existingConf: `config_file: /etc/redpanda/redpanda.yaml
+pandaproxy: {}
 redpanda:
   admin:
     address: 0.0.0.0
@@ -1166,6 +1182,7 @@ redpanda:
 			conf:    Default,
 			wantErr: false,
 			expected: `config_file: /etc/redpanda/redpanda.yaml
+pandaproxy: {}
 redpanda:
   admin:
     address: 0.0.0.0
@@ -1518,7 +1535,7 @@ func TestReadAsJSON(t *testing.T) {
 				return mgr.Write(conf)
 			},
 			path:     Default().ConfigFile,
-			expected: `{"config_file":"/etc/redpanda/redpanda.yaml","redpanda":{"admin":{"address":"0.0.0.0","port":9644},"data_directory":"/var/lib/redpanda/data","developer_mode":true,"kafka_api":[{"address":"0.0.0.0","name":"internal","port":9092}],"node_id":0,"rpc_server":{"address":"0.0.0.0","port":33145},"seed_servers":[]},"rpk":{"coredump_dir":"/var/lib/redpanda/coredump","enable_memory_locking":false,"enable_usage_stats":false,"overprovisioned":false,"tune_aio_events":false,"tune_clocksource":false,"tune_coredump":false,"tune_cpu":false,"tune_disk_irq":false,"tune_disk_nomerges":false,"tune_disk_scheduler":false,"tune_disk_write_cache":false,"tune_fstrim":false,"tune_network":false,"tune_swappiness":false,"tune_transparent_hugepages":false}}`,
+			expected: `{"config_file":"/etc/redpanda/redpanda.yaml","pandaproxy":{},"redpanda":{"admin":{"address":"0.0.0.0","port":9644},"data_directory":"/var/lib/redpanda/data","developer_mode":true,"kafka_api":[{"address":"0.0.0.0","name":"internal","port":9092}],"node_id":0,"rpc_server":{"address":"0.0.0.0","port":33145},"seed_servers":[]},"rpk":{"coredump_dir":"/var/lib/redpanda/coredump","enable_memory_locking":false,"enable_usage_stats":false,"overprovisioned":false,"tune_aio_events":false,"tune_clocksource":false,"tune_coredump":false,"tune_cpu":false,"tune_disk_irq":false,"tune_disk_nomerges":false,"tune_disk_scheduler":false,"tune_disk_write_cache":false,"tune_fstrim":false,"tune_network":false,"tune_swappiness":false,"tune_transparent_hugepages":false}}`,
 		},
 		{
 			name:           "it should fail if the the config isn't found",
@@ -1547,6 +1564,7 @@ func TestReadAsJSON(t *testing.T) {
 func TestReadFlat(t *testing.T) {
 	expected := map[string]string{
 		"config_file":                     "/etc/redpanda/redpanda.yaml",
+		"pandaproxy":                      "",
 		"redpanda.admin":                  "0.0.0.0:9644",
 		"redpanda.advertised_kafka_api.0": "internal://127.0.0.1:9092",
 		"redpanda.advertised_kafka_api.1": "127.0.0.1:9093",
