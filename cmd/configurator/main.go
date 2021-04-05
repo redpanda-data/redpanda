@@ -44,6 +44,8 @@ const (
 	hostPortEnvVar                      = "HOST_PORT"
 )
 
+type brokerID int
+
 type configuratorConfig struct {
 	hostName             string
 	svcFQDN              string
@@ -129,14 +131,14 @@ func main() {
 
 	log.Printf("Host index calculated %d", hostIndex)
 
-	err = registerAdvertisedKafkaAPI(&c, cfg)
+	err = registerAdvertisedKafkaAPI(&c, cfg, hostIndex)
 	if err != nil {
 		log.Fatalf("%s", fmt.Errorf("unable to register advertised kafka API: %w", err))
 	}
 
 	registerKafkaAPI(&c, cfg)
 
-	cfg.Redpanda.Id = hostIndex
+	cfg.Redpanda.Id = int(hostIndex)
 
 	// First Redpanda node need to have cleared seed servers in order
 	// to form raft group 0
@@ -183,7 +185,7 @@ func registerKafkaAPI(c *configuratorConfig, cfg *config.Config) {
 }
 
 func registerAdvertisedKafkaAPI(
-	c *configuratorConfig, cfg *config.Config,
+	c *configuratorConfig, cfg *config.Config, index brokerID,
 ) error {
 	cfg.Redpanda.AdvertisedKafkaApi = []config.NamedSocketAddress{
 		{
@@ -202,7 +204,7 @@ func registerAdvertisedKafkaAPI(
 	if len(c.subdomain) > 0 {
 		cfg.Redpanda.AdvertisedKafkaApi = append(cfg.Redpanda.AdvertisedKafkaApi, config.NamedSocketAddress{
 			SocketAddress: config.SocketAddress{
-				Address: fmt.Sprintf("%s.%s", c.hostName, c.subdomain),
+				Address: fmt.Sprintf("%d.%s", index, c.subdomain),
 				Port:    c.hostPort,
 			},
 			Name: "External",
@@ -341,8 +343,9 @@ func checkEnvVars() (configuratorConfig, error) {
 // hostIndex takes advantage of pod naming convention in Kubernetes StatfulSet
 // the last number is the index of replica. This index is then propagated
 // to redpanda.node_id.
-func hostIndex(hostName string) (int, error) {
+func hostIndex(hostName string) (brokerID, error) {
 	s := strings.Split(hostName, "-")
 	last := len(s) - 1
-	return strconv.Atoi(s[last])
+	i, err := strconv.Atoi(s[last])
+	return brokerID(i), err
 }
