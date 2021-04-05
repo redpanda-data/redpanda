@@ -327,6 +327,26 @@ struct create_acls_reply {
     std::vector<errc> results;
 };
 
+struct delete_acls_cmd_data {
+    static constexpr int8_t current_version = 1;
+    std::vector<security::acl_binding_filter> filters;
+};
+
+// result for a single filter
+struct delete_acls_result {
+    errc error;
+    std::vector<security::acl_binding> bindings;
+};
+
+struct delete_acls_request {
+    delete_acls_cmd_data data;
+    model::timeout_clock::duration timeout;
+};
+
+struct delete_acls_reply {
+    std::vector<delete_acls_result> results;
+};
+
 } // namespace cluster
 namespace std {
 template<>
@@ -404,6 +424,18 @@ template<>
 struct adl<cluster::create_acls_cmd_data> {
     void to(iobuf&, cluster::create_acls_cmd_data&&);
     cluster::create_acls_cmd_data from(iobuf_parser&);
+};
+
+template<>
+struct adl<cluster::delete_acls_cmd_data> {
+    void to(iobuf&, cluster::delete_acls_cmd_data&&);
+    cluster::delete_acls_cmd_data from(iobuf_parser&);
+};
+
+template<>
+struct adl<cluster::delete_acls_result> {
+    void to(iobuf&, cluster::delete_acls_result&&);
+    cluster::delete_acls_result from(iobuf_parser&);
 };
 
 } // namespace reflection

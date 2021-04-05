@@ -165,4 +165,17 @@ service::create_acls(create_acls_request&& request, rpc::streaming_context&) {
       });
 }
 
+ss::future<delete_acls_reply>
+service::delete_acls(delete_acls_request&& request, rpc::streaming_context&) {
+    return ss::with_scheduling_group(
+             get_scheduling_group(),
+             [this, r = std::move(request)]() mutable {
+                 return _security_frontend.local().delete_acls(
+                   std::move(r.data.filters), r.timeout);
+             })
+      .then([](std::vector<delete_acls_result> results) {
+          return delete_acls_reply{.results = std::move(results)};
+      });
+}
+
 } // namespace cluster

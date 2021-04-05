@@ -50,6 +50,9 @@ public:
     ss::future<create_acls_reply>
     create_acls(create_acls_request&&, rpc::streaming_context&) final;
 
+    ss::future<delete_acls_reply>
+    delete_acls(delete_acls_request&&, rpc::streaming_context&) final;
+
 private:
     std::
       pair<std::vector<model::topic_metadata>, std::vector<topic_configuration>>

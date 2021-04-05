@@ -30,7 +30,8 @@ public:
       ss::sharded<controller_stm>&,
       ss::sharded<rpc::connection_cache>&,
       ss::sharded<partition_leaders_table>&,
-      ss::sharded<ss::abort_source>&);
+      ss::sharded<ss::abort_source>&,
+      ss::sharded<security::authorizer>&);
 
     ss::future<std::error_code> create_user(
       security::credential_user,
@@ -48,6 +49,10 @@ public:
     ss::future<std::vector<errc>> create_acls(
       std::vector<security::acl_binding>, model::timeout_clock::duration);
 
+    ss::future<std::vector<delete_acls_result>> delete_acls(
+      std::vector<security::acl_binding_filter>,
+      model::timeout_clock::duration);
+
     template<typename Cmd>
     ss::future<std::error_code>
     replicate_and_wait(Cmd&&, model::timeout_clock::time_point);
@@ -61,11 +66,21 @@ private:
       std::vector<security::acl_binding>,
       model::timeout_clock::duration);
 
+    ss::future<std::vector<delete_acls_result>> do_delete_acls(
+      std::vector<security::acl_binding_filter>,
+      model::timeout_clock::duration);
+
+    ss::future<std::vector<delete_acls_result>> dispatch_delete_acls_to_leader(
+      model::node_id,
+      std::vector<security::acl_binding_filter>,
+      model::timeout_clock::duration);
+
     model::node_id _self;
     ss::sharded<controller_stm>& _stm;
     ss::sharded<rpc::connection_cache>& _connections;
     ss::sharded<partition_leaders_table>& _leaders;
     ss::sharded<ss::abort_source>& _as;
+    ss::sharded<security::authorizer>& _authorizer;
 };
 
 } // namespace cluster

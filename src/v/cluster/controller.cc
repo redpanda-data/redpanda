@@ -97,7 +97,8 @@ ss::future<> controller::start() {
             std::ref(_stm),
             std::ref(_connections),
             std::ref(_partition_leaders),
-            std::ref(_as));
+            std::ref(_as),
+            std::ref(_authorizer));
       })
       .then([this] {
           return _tp_frontend.start(

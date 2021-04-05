@@ -34,6 +34,11 @@
             "name": "create_acls",
             "input_type": "create_acls_request",
             "output_type": "create_acls_reply"
+        },
+        {
+            "name": "delete_acls",
+            "input_type": "delete_acls_request",
+            "output_type": "delete_acls_reply"
         }
     ]
 }
