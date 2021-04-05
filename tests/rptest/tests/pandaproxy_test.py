@@ -13,6 +13,7 @@ import logging
 import uuid
 import requests
 from ducktape.mark.resource import cluster
+from ducktape.utils.util import wait_until
 
 from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_cat import KafkaCat
@@ -86,25 +87,11 @@ class PandaProxyTest(RedpandaTest):
                 TopicSpec(name=name,
                           partition_count=partitions,
                           replication_factor=replicas))
+        wait_until(lambda: set(names).issubset(self._get_topics().json()),
+                   timeout_sec=30,
+                   backoff_sec=1,
+                   err_msg="Topics failed to settle")
         return names
-
-    def _wait_for_topic(self, name):
-        kc = KafkaCat(self.redpanda)
-        has_leaders = False
-        while not has_leaders:
-            topics = kc.metadata()["topics"]
-            maybe_leaders = True
-            for t in topics:
-                if t["topic"] == name:
-                    for p in t["partitions"]:
-                        if p["leader"] == -1:
-                            maybe_leaders = False
-            has_leaders = maybe_leaders
-        # TODO:
-        #  Despite the above test, Pandaproxy can still get back no leaders
-        #  Query Pandaproxy metadata to see when leaders have settled
-        #  The retry logic for produce should have sufficient time for this
-        #  additional settle time.
 
     def _get_topics(self, headers=HTTP_GET_TOPICS_HEADERS):
         return requests.get(f"{self._base_uri()}/topics", headers=headers)
@@ -287,9 +274,6 @@ class PandaProxyTest(RedpandaTest):
         self.logger.info(f"Creating test topic: {name}")
         self._create_topics([name], partitions=3)
 
-        self.logger.debug("Waiting for leaders to settle")
-        self._wait_for_topic(name)
-
         self.logger.info(f"Producing to topic: {name}")
         produce_result_raw = self._produce_topic(name, data)
         assert produce_result_raw.status_code == requests.codes.ok
@@ -376,9 +360,6 @@ class PandaProxyTest(RedpandaTest):
 
         self.logger.info(f"Creating test topic: {name}")
         self._create_topics([name], partitions=3)
-
-        self.logger.info("Waiting for leaders to settle")
-        self._wait_for_topic(name)
 
         self.logger.info(f"Producing to topic: {name}")
         data = '''
