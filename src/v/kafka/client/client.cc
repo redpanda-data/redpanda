@@ -26,7 +26,11 @@
 #include "ssx/future-util.h"
 #include "utils/unresolved_address.h"
 
+#include <seastar/core/coroutine.hh>
+#include <seastar/core/future.hh>
 #include <seastar/core/gate.hh>
+#include <seastar/core/loop.hh>
+#include <seastar/core/std-coroutine.hh>
 
 #include <exception>
 
@@ -70,16 +74,28 @@ ss::future<> client::connect() {
     });
 }
 
-ss::future<> client::stop() {
-    return _gate.close()
-      .then([this]() { return _producer.stop(); })
-      .then([this]() {
-          return ss::do_for_each(
-            _consumers.begin(), _consumers.end(), [](auto c) {
-                return c->leave().discard_result();
-            });
-      })
-      .finally([this]() { return _brokers.stop(); });
+namespace {
+
+template<typename Func>
+ss::future<> catch_and_log(Func&& f) noexcept {
+    return ss::futurize_invoke(std::forward<Func>(f))
+      .discard_result()
+      .handle_exception([](std::exception_ptr e) {
+          vlog(kclog.debug, "exception during stop: {}", e);
+      });
+}
+
+} // namespace
+
+ss::future<> client::stop() noexcept {
+    co_await _gate.close();
+    co_await catch_and_log([this]() { return _producer.stop(); });
+    for (auto& [id, group] : _consumers) {
+        for (auto& consumer : group) {
+            co_await catch_and_log([consumer]() { return consumer->leave(); });
+        }
+    }
+    co_await catch_and_log([this]() { return _brokers.stop(); });
 }
 
 ss::future<> client::update_metadata(wait_or_start::tag) {
@@ -192,17 +208,19 @@ ss::future<member_id> client::create_consumer(const group_id& group_id) {
           return make_consumer(
             _config, _brokers, std::move(coordinator), std::move(group_id));
       })
-      .then([this](shared_consumer_t c) {
+      .then([this, group_id](shared_consumer_t c) {
           auto m_id = c->member_id();
-          _consumers.insert(std::move(c));
+          _consumers[group_id].insert(std::move(c));
           return m_id;
       });
 }
 
 ss::future<shared_consumer_t>
 client::get_consumer(const group_id& g_id, const member_id& m_id) {
-    if (auto c_it = _consumers.find(m_id); c_it != _consumers.end()) {
-        return ss::make_ready_future<shared_consumer_t>(*c_it);
+    if (auto g_it = _consumers.find(g_id); g_it != _consumers.end()) {
+        if (auto c_it = g_it->second.find(m_id); c_it != g_it->second.end()) {
+            return ss::make_ready_future<shared_consumer_t>(*c_it);
+        }
     }
     return ss::make_exception_future<shared_consumer_t>(
       consumer_error(g_id, m_id, error_code::unknown_member_id));
@@ -210,8 +228,13 @@ client::get_consumer(const group_id& g_id, const member_id& m_id) {
 
 ss::future<>
 client::remove_consumer(const group_id& g_id, const member_id& m_id) {
-    return get_consumer(g_id, m_id).then([this](shared_consumer_t c) {
-        _consumers.erase(c);
+    return get_consumer(g_id, m_id).then([this, g_id](shared_consumer_t c) {
+        auto& group = _consumers[g_id];
+        group.erase(c);
+        if (group.empty()) {
+            _consumers.erase(g_id);
+        }
+
         return c->leave().then([c{std::move(c)}](leave_group_response res) {
             if (res.data.error_code != error_code::none) {
                 return ss::make_exception_future<>(consumer_error(
