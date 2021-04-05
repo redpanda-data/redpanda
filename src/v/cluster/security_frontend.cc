@@ -182,10 +182,25 @@ ss::future<std::vector<errc>> security_frontend::do_create_acls(
     co_return result;
 }
 
-ss::future<std::vector<delete_acls_result>> security_frontend::delete_acls(
+ss::future<std::vector<delete_acls_result>> security_frontend::do_delete_acls(
   std::vector<security::acl_binding_filter> filters,
   model::timeout_clock::duration timeout) {
-    const auto num_filters = filters.size();
+    /*
+     * The removal is performed as a dry run to create the set of binding that
+     * are removed. This set will be returned to the caller if the removal is
+     * successful. This is done because there is a current limitation on the
+     * interface between the controller frontend and backend which is based on
+     * a single error code for the result of each command. This is _by design_,
+     * and addressing the limitation is future work.
+     *
+     * For the purpose of this call the limitation results in some overhead (the
+     * dry run) and the removed bindings being calculated in a non-atomic
+     * context with the command execution. This later point should be ok: there
+     * does not seem to be any particular guarantee on the kafka side that this
+     * be atomic.
+     */
+    auto removed_bindings = _authorizer.local().remove_bindings(filters, true);
+
     delete_acls_cmd_data data;
     data.filters = std::move(filters);
     delete_acls_cmd cmd(std::move(data), 0 /* unused */);
@@ -200,13 +215,86 @@ ss::future<std::vector<delete_acls_result>> security_frontend::delete_acls(
         err = errc::replication_error;
     }
 
-    std::vector<delete_acls_result> result;
-    result.assign(
-      num_filters,
+    std::vector<delete_acls_result> res;
+
+    if (err == errc::success) {
+        res.reserve(removed_bindings.size());
+        for (auto& bindings : removed_bindings) {
+            res.push_back(delete_acls_result{
+              .error = errc::success,
+              .bindings = std::move(bindings),
+            });
+        }
+        co_return res;
+    }
+
+    res.assign(
+      removed_bindings.size(),
       delete_acls_result{
         .error = err,
       });
-    co_return result;
+
+    co_return res;
+}
+
+ss::future<std::vector<delete_acls_result>> security_frontend::delete_acls(
+  std::vector<security::acl_binding_filter> filters,
+  model::timeout_clock::duration timeout) {
+    if (unlikely(filters.empty())) {
+        co_return std::vector<delete_acls_result>{};
+    }
+
+    auto leader = _leaders.local().get_leader(model::controller_ntp);
+
+    if (!leader) {
+        std::vector<delete_acls_result> res;
+        res.assign(
+          filters.size(),
+          delete_acls_result{
+            .error = errc::no_leader_controller,
+          });
+        co_return res;
+    }
+
+    if (leader == _self) {
+        co_return co_await do_delete_acls(std::move(filters), timeout);
+    }
+
+    co_return co_await dispatch_delete_acls_to_leader(
+      leader.value(), std::move(filters), timeout);
+}
+
+ss::future<std::vector<delete_acls_result>>
+security_frontend::dispatch_delete_acls_to_leader(
+  model::node_id leader,
+  std::vector<security::acl_binding_filter> filters,
+  model::timeout_clock::duration timeout) {
+    const auto num_filters = filters.size();
+    return _connections.local()
+      .with_node_client<cluster::controller_client_protocol>(
+        _self,
+        ss::this_shard_id(),
+        leader,
+        timeout,
+        [filters = std::move(filters),
+         timeout](controller_client_protocol cp) mutable {
+            delete_acls_cmd_data data{.filters = std::move(filters)};
+            return cp.delete_acls(
+              delete_acls_request{std::move(data), timeout},
+              rpc::client_opts(model::timeout_clock::now() + timeout));
+        })
+      .then(&rpc::get_ctx_data<delete_acls_reply>)
+      .then([num_filters](result<delete_acls_reply> r) {
+          if (r.has_error()) {
+              std::vector<delete_acls_result> res;
+              res.assign(
+                num_filters,
+                delete_acls_result{
+                  .error = map_errc(r.error()),
+                });
+          }
+          return std::move(r.value().results);
+      });
 }
 
 template<typename Cmd>

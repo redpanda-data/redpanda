@@ -66,6 +66,15 @@ private:
       std::vector<security::acl_binding>,
       model::timeout_clock::duration);
 
+    ss::future<std::vector<delete_acls_result>> do_delete_acls(
+      std::vector<security::acl_binding_filter>,
+      model::timeout_clock::duration);
+
+    ss::future<std::vector<delete_acls_result>> dispatch_delete_acls_to_leader(
+      model::node_id,
+      std::vector<security::acl_binding_filter>,
+      model::timeout_clock::duration);
+
     model::node_id _self;
     ss::sharded<controller_stm>& _stm;
     ss::sharded<rpc::connection_cache>& _connections;
