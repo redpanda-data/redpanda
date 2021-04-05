@@ -50,6 +50,11 @@ HTTP_SUBSCRIBE_CONSUMER_HEADERS = {
     "Content-Type": "application/vnd.kafka.v2+json"
 }
 
+HTTP_REMOVE_CONSUMER_HEADERS = {
+    "Accept": "application/vnd.kafka.v2+json",
+    "Content-Type": "application/vnd.kafka.v2+json"
+}
+
 
 class Consumer:
     def __init__(self, res):
@@ -62,8 +67,8 @@ class Consumer:
                             headers=headers)
         return res
 
-    def remove(self):
-        res = requests.delete(self.base_uri)
+    def remove(self, headers=HTTP_REMOVE_CONSUMER_HEADERS):
+        res = requests.delete(self.base_uri, headers=headers)
         return res
 
 
