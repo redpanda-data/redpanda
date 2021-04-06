@@ -117,6 +117,12 @@ func NewStartCommand(
 	command := &cobra.Command{
 		Use:   "start",
 		Short: "Start redpanda",
+		FParseErrWhitelist: cobra.FParseErrWhitelist{
+			// Allow unknown flags so that arbitrary flags can be passed
+			// through to redpanda/seastar without the need to pass '--'
+			// (POSIX standard)
+			UnknownFlags: true,
+		},
 		RunE: func(ccmd *cobra.Command, args []string) error {
 			conf, err := mgr.FindOrGenerate(configFile)
 			if err != nil {
@@ -452,7 +458,10 @@ func buildRedpandaFlags(
 		}
 	}
 	flagsMap = flagsFromConf(conf, flagsMap, flags)
-	finalFlags := parseFlags(conf.Rpk.AdditionalStartFlags)
+	finalFlags := mergeMaps(
+		parseFlags(conf.Rpk.AdditionalStartFlags),
+		extraFlags(flags, os.Args),
+	)
 	for n, v := range flagsMap {
 		if _, alreadyPresent := finalFlags[n]; alreadyPresent {
 			return nil, fmt.Errorf(
@@ -841,4 +850,32 @@ func stringSliceOr(a, b []string) []string {
 		return a
 	}
 	return b
+}
+
+// Returns the set of unknown flags passed.
+func extraFlags(flags *pflag.FlagSet, args []string) map[string]string {
+	allFlagsMap := parseFlags(args)
+	extra := map[string]string{}
+
+	for k, v := range allFlagsMap {
+		var f *pflag.Flag
+		if len(k) == 1 {
+			f = flags.ShorthandLookup(k)
+		} else {
+			f = flags.Lookup(k)
+		}
+		// It isn't a "known" flag, so it must be an extra one.
+		if f == nil {
+			extra[k] = v
+		}
+	}
+	return extra
+}
+
+// Merges b into a.
+func mergeMaps(a, b map[string]string) map[string]string {
+	for kb, vb := range b {
+		a[kb] = vb
+	}
+	return a
 }
