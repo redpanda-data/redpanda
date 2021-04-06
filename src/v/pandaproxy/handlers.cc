@@ -204,12 +204,19 @@ post_topics_name(server::request_t rq, server::reply_t rp) {
 
 ss::future<server::reply_t>
 create_consumer(server::request_t rq, server::reply_t rp) {
+    parse::content_type_header(*rq.req, {json::serialization_format::json_v2});
+    auto res_fmt = parse::accept_header(
+      *rq.req,
+      {json::serialization_format::json_v2, json::serialization_format::none});
+
+    auto group_id = parse::request_param<kafka::group_id>(
+      *rq.req, "group_name");
+
     auto req_data = ppj::rjson_parse(
       rq.req->content.data(), ppj::create_consumer_request_handler());
-    auto group_id = kafka::group_id(rq.req->param["group_name"]);
 
     return rq.ctx.client.create_consumer(group_id).then(
-      [group_id, rq{std::move(rq)}, rp{std::move(rp)}](
+      [group_id, res_fmt, rq{std::move(rq)}, rp{std::move(rp)}](
         kafka::member_id m_id) mutable {
           auto adv_addr = rq.ctx.config.advertised_pandaproxy_api();
           json::create_consumer_response res{
@@ -222,14 +229,22 @@ create_consumer(server::request_t rq, server::reply_t rp) {
               m_id())};
           auto json_rslt = ppj::rjson_serialize(res);
           rp.rep->write_body("json", json_rslt);
+          rp.mime_type = res_fmt;
           return std::move(rp);
       });
 }
 
 ss::future<server::reply_t>
 remove_consumer(server::request_t rq, server::reply_t rp) {
-    auto group_id = kafka::group_id(rq.req->param["group_name"]);
-    auto member_id = kafka::member_id(rq.req->param["instance"]);
+    parse::content_type_header(*rq.req, {json::serialization_format::json_v2});
+    parse::accept_header(
+      *rq.req,
+      {json::serialization_format::json_v2, json::serialization_format::none});
+
+    auto group_id = parse::request_param<kafka::group_id>(
+      *rq.req, "group_name");
+    auto member_id = parse::request_param<kafka::member_id>(
+      *rq.req, "instance");
 
     co_await rq.ctx.client.remove_consumer(group_id, member_id);
     rp.rep->set_status(ss::httpd::reply::status_type::no_content);
@@ -238,15 +253,23 @@ remove_consumer(server::request_t rq, server::reply_t rp) {
 
 ss::future<server::reply_t>
 subscribe_consumer(server::request_t rq, server::reply_t rp) {
+    parse::content_type_header(*rq.req, {json::serialization_format::json_v2});
+    auto res_fmt = parse::accept_header(
+      *rq.req,
+      {json::serialization_format::json_v2, json::serialization_format::none});
+
+    auto group_id = parse::request_param<kafka::group_id>(
+      *rq.req, "group_name");
+    auto member_id = parse::request_param<kafka::member_id>(
+      *rq.req, "instance");
+
     auto req_data = ppj::rjson_parse(
       rq.req->content.data(), ppj::subscribe_consumer_request_handler());
-    auto group_id = kafka::group_id(rq.req->param["group_name"]);
-    auto member_id = kafka::member_id(rq.req->param["instance"]);
 
     return rq.ctx.client
       .subscribe_consumer(group_id, member_id, std::move(req_data.topics))
-      .then([rp{std::move(rp)}]() mutable {
-          // nothing to do!
+      .then([res_fmt, rp{std::move(rp)}]() mutable {
+          rp.mime_type = res_fmt;
           return std::move(rp);
       });
 }

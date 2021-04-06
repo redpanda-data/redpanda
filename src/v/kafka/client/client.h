@@ -30,6 +30,7 @@
 
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/flat_hash_set.h>
+#include <absl/container/node_hash_map.h>
 
 namespace kafka::client {
 
@@ -66,7 +67,7 @@ public:
     /// \brief Connect to all brokers.
     ss::future<> connect();
     /// \brief Disconnect from all brokers.
-    ss::future<> stop();
+    ss::future<> stop() noexcept;
 
     /// \brief Invoke func, on failure, mitigate error and retry.
     template<typename Func>
@@ -176,10 +177,12 @@ private:
     /// \brief Batching producer.
     producer _producer;
     /// \brief Consumers
-    absl::flat_hash_set<
-      shared_consumer_t,
-      detail::consumer_hash,
-      detail::consumer_eq>
+    absl::node_hash_map<
+      kafka::group_id,
+      absl::flat_hash_set<
+        shared_consumer_t,
+        detail::consumer_hash,
+        detail::consumer_eq>>
       _consumers;
     /// \brief Wait for retries.
     ss::gate _gate;

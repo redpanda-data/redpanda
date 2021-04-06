@@ -80,7 +80,10 @@ FIXTURE_TEST(pandaproxy_consumer_group, pandaproxy_test_fixture) {
         auto res = http_request(
           client,
           fmt::format("/consumers/{}", group_id()),
-          std::move(req_body_buf));
+          std::move(req_body_buf),
+          boost::beast::http::verb::post,
+          ppj::serialization_format::json_v2,
+          ppj::serialization_format::json_v2);
         BOOST_REQUIRE_EQUAL(
           res.headers.result(), boost::beast::http::status::ok);
 
@@ -98,7 +101,7 @@ FIXTURE_TEST(pandaproxy_consumer_group, pandaproxy_test_fixture) {
             member_id()));
         BOOST_REQUIRE_EQUAL(
           res.headers.at(boost::beast::http::field::content_type),
-          "application/vnd.kafka.binary.v2+json");
+          to_header_value(ppj::serialization_format::json_v2));
     }
     info("Member id: {}", member_id);
 
@@ -128,7 +131,10 @@ FIXTURE_TEST(pandaproxy_consumer_group, pandaproxy_test_fixture) {
           client,
           fmt::format(
             "/consumers/{}/instances/{}/subscription", group_id(), member_id()),
-          std::move(req_body_buf));
+          std::move(req_body_buf),
+          boost::beast::http::verb::post,
+          ppj::serialization_format::json_v2,
+          ppj::serialization_format::json_v2);
         BOOST_REQUIRE_EQUAL(
           res.headers.result(), boost::beast::http::status::ok);
     }
@@ -253,7 +259,9 @@ FIXTURE_TEST(pandaproxy_consumer_group, pandaproxy_test_fixture) {
         auto res = http_request(
           client,
           fmt::format("/consumers/{}/instances/{}", group_id(), member_id()),
-          boost::beast::http::verb::delete_);
+          boost::beast::http::verb::delete_,
+          ppj::serialization_format::json_v2,
+          ppj::serialization_format::json_v2);
         BOOST_REQUIRE_EQUAL(
           res.headers.result(), boost::beast::http::status::no_content);
     }
@@ -263,7 +271,9 @@ FIXTURE_TEST(pandaproxy_consumer_group, pandaproxy_test_fixture) {
         auto res = http_request(
           client,
           fmt::format("/consumers/{}/instances/{}", group_id(), member_id()),
-          boost::beast::http::verb::delete_);
+          boost::beast::http::verb::delete_,
+          ppj::serialization_format::json_v2,
+          ppj::serialization_format::json_v2);
         BOOST_REQUIRE_EQUAL(
           res.headers.result(), boost::beast::http::status::not_found);
     }
