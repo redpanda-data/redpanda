@@ -29,6 +29,9 @@ server::server(server_configuration c)
   : cfg(std::move(c))
   , _memory(cfg.max_service_memory_per_core) {}
 
+server::server(ss::sharded<server_configuration>* s)
+  : server(s->local()) {}
+
 server::~server() = default;
 
 void server::start() {
