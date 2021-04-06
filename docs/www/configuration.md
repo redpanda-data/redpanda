@@ -112,20 +112,26 @@ redpanda:
     name: external
     port: 9093
 
-  # TLS configuration for the Kafka API.
+  # A list of TLS configurations for the Kafka API listeners.
   # Default: null
   kafka_api_tls:
+    # The name of the specific listener this TLS to which this config
+    # will be applied. The names must match those in kafka_api.
+  - name: "external"
     # Whether to enable TLS for the Kafka API.
-    enabled: false
+    enabled: true
     # Require client authentication
     require_client_auth: false
     # The path to the server certificate PEM file.
-    cert_file: ""
+    cert_file: "certs/tls-cert.pem"
     # The path to the server key PEM file
-    key_file: ""
+    key_file: "certs/tls-key.pem"
     # The path to the truststore PEM file. Only required if client authentication
     # is enabled.
-    truststore_file: ""
+    truststore_file: "certs/tls-ca.pem"
+
+  - name: "internal"
+    enabled: false
 
   # Multiple listeners are also supported as per KIP-103.
   # The names must match those in kafka_api
