@@ -195,18 +195,22 @@ func (r *Cluster) ValidateDelete() error {
 func (r *Cluster) checkCollidingPorts() field.ErrorList {
 	var allErrs field.ErrorList
 
-	if r.Spec.Configuration.AdminAPI.Port == r.Spec.Configuration.KafkaAPI.Port {
-		allErrs = append(allErrs,
-			field.Invalid(field.NewPath("spec").Child("configuration", "admin", "port"),
-				r.Spec.Configuration.AdminAPI.Port,
-				"admin port collide with Spec.Configuration.KafkaAPI.Port"))
+	for _, kafka := range r.Spec.Configuration.KafkaAPI {
+		if r.Spec.Configuration.AdminAPI.Port == kafka.Port {
+			allErrs = append(allErrs,
+				field.Invalid(field.NewPath("spec").Child("configuration", "admin", "port"),
+					r.Spec.Configuration.AdminAPI.Port,
+					"admin port collide with Spec.Configuration.KafkaAPI Port"))
+		}
 	}
 
-	if r.Spec.Configuration.RPCServer.Port == r.Spec.Configuration.KafkaAPI.Port {
-		allErrs = append(allErrs,
-			field.Invalid(field.NewPath("spec").Child("configuration", "rpcServer", "port"),
-				r.Spec.Configuration.RPCServer.Port,
-				"rpc port collide with Spec.Configuration.KafkaAPI.Port"))
+	for _, kafka := range r.Spec.Configuration.KafkaAPI {
+		if r.Spec.Configuration.RPCServer.Port == kafka.Port {
+			allErrs = append(allErrs,
+				field.Invalid(field.NewPath("spec").Child("configuration", "rpcServer", "port"),
+					r.Spec.Configuration.RPCServer.Port,
+					"rpc port collide with Spec.Configuration.KafkaAPI Port"))
+		}
 	}
 
 	if r.Spec.Configuration.AdminAPI.Port == r.Spec.Configuration.RPCServer.Port {
@@ -216,18 +220,22 @@ func (r *Cluster) checkCollidingPorts() field.ErrorList {
 				"admin port collide with Spec.Configuration.RPCServer.Port"))
 	}
 
-	if r.Spec.ExternalConnectivity.Enabled && r.Spec.Configuration.KafkaAPI.Port+1 == r.Spec.Configuration.RPCServer.Port {
-		allErrs = append(allErrs,
-			field.Invalid(field.NewPath("spec").Child("configuration", "rpcServer", "port"),
-				r.Spec.Configuration.RPCServer.Port,
-				"rpc port collide with external Kafka API that is not visible in the Cluster CR"))
+	for _, kafka := range r.Spec.Configuration.KafkaAPI {
+		if r.Spec.ExternalConnectivity.Enabled && kafka.Port+1 == r.Spec.Configuration.RPCServer.Port {
+			allErrs = append(allErrs,
+				field.Invalid(field.NewPath("spec").Child("configuration", "rpcServer", "port"),
+					r.Spec.Configuration.RPCServer.Port,
+					"rpc port collide with external Kafka API that is not visible in the Cluster CR"))
+		}
 	}
 
-	if r.Spec.ExternalConnectivity.Enabled && r.Spec.Configuration.KafkaAPI.Port+1 == r.Spec.Configuration.AdminAPI.Port {
-		allErrs = append(allErrs,
-			field.Invalid(field.NewPath("spec").Child("configuration", "admin", "port"),
-				r.Spec.Configuration.AdminAPI.Port,
-				"admin port collide with external Kafka API that is not visible in the Cluster CR"))
+	for _, kafka := range r.Spec.Configuration.KafkaAPI {
+		if r.Spec.ExternalConnectivity.Enabled && kafka.Port+1 == r.Spec.Configuration.AdminAPI.Port {
+			allErrs = append(allErrs,
+				field.Invalid(field.NewPath("spec").Child("configuration", "admin", "port"),
+					r.Spec.Configuration.AdminAPI.Port,
+					"admin port collide with external Kafka API that is not visible in the Cluster CR"))
+		}
 	}
 
 	if r.Spec.ExternalConnectivity.Enabled && r.Spec.Configuration.AdminAPI.Port+1 == r.Spec.Configuration.RPCServer.Port {
@@ -237,11 +245,13 @@ func (r *Cluster) checkCollidingPorts() field.ErrorList {
 				"rpc port collides with external Admin API port that is not visible in the Cluster CR"))
 	}
 
-	if r.Spec.ExternalConnectivity.Enabled && r.Spec.Configuration.AdminAPI.Port+1 == r.Spec.Configuration.KafkaAPI.Port {
-		allErrs = append(allErrs,
-			field.Invalid(field.NewPath("spec").Child("configuration", "kafka", "port"),
-				r.Spec.Configuration.KafkaAPI.Port,
-				"kafka port collides with external Admin API port that is not visible in the Cluster CR"))
+	for _, kafka := range r.Spec.Configuration.KafkaAPI {
+		if r.Spec.ExternalConnectivity.Enabled && r.Spec.Configuration.AdminAPI.Port+1 == kafka.Port+1 {
+			allErrs = append(allErrs,
+				field.Invalid(field.NewPath("spec").Child("configuration", "kafka", "port"),
+					kafka.Port,
+					"kafka port collides with external Admin API port that is not visible in the Cluster CR"))
+		}
 	}
 
 	return allErrs
