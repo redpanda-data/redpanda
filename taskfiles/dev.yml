@@ -10,7 +10,7 @@ tasks:
     desc: install docker-compose
     cmds:
     - mkdir -p '{{.BUILD_ROOT}}/bin/'
-    - curl -L "https://github.com/docker/compose/releases/download/1.28.5/docker-compose-$(uname -s)-$(uname -m)" -o '{{.BUILD_ROOT}}/bin/docker-compose'
+    - curl -sSLf --retry 3 --retry-connrefused --retry-delay 2 "https://github.com/docker/compose/releases/download/1.28.5/docker-compose-$(uname -s)-$(uname -m)" -o '{{.BUILD_ROOT}}/bin/docker-compose'
     - chmod +x '{{.BUILD_ROOT}}/bin/docker-compose'
     status:
     - test -f '{{.BUILD_ROOT}}/bin/docker-compose'
@@ -23,8 +23,8 @@ tasks:
       JAVA_DIR: '{{.BUILD_ROOT}}/java'
     cmds:
     - mkdir -p '{{.JAVA_DIR}}'
-    - curl -L '{{.JDK_URL}}' | tar --strip-components=1 -C '{{.JAVA_DIR}}' -xz
-    - curl -L '{{.MAVEN_URL}}' | tar --strip-components=1 -C '{{.JAVA_DIR}}' -xz
+    - curl -sSLf --retry 3 --retry-connrefused --retry-delay 2 '{{.JDK_URL}}' | tar --strip-components=1 -C '{{.JAVA_DIR}}' -xz
+    - curl -sSLf --retry 3 --retry-connrefused --retry-delay 2 '{{.MAVEN_URL}}' | tar --strip-components=1 -C '{{.JAVA_DIR}}' -xz
       # delete this (empty) folder; leaving it generates an error
     - rm -r '{{.JAVA_DIR}}/lib/ext'
     status:
