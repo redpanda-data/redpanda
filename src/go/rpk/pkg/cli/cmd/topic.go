@@ -27,19 +27,7 @@ func NewTopicCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 		Short: "Create, delete, produce to and consume from Redpanda topics.",
 	}
 
-	command.PersistentFlags().StringSliceVar(
-		&brokers,
-		"brokers",
-		[]string{},
-		"Comma-separated list of broker ip:port pairs",
-	)
-	command.PersistentFlags().StringVar(
-		&configFile,
-		"config",
-		"",
-		"Redpanda config file, if not set the file will be searched for"+
-			" in the default locations",
-	)
+	common.AddKafkaFlags(command, &configFile, &brokers)
 
 	// The ideal way to pass common (global flags') values would be to
 	// declare PersistentPreRun hooks on each command root (such as rpk
