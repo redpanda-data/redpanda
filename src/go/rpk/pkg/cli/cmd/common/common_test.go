@@ -16,6 +16,7 @@ import (
 
 	"github.com/docker/docker/api/types"
 	"github.com/spf13/afero"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/common"
 	ccommon "github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/container/common"
@@ -132,4 +133,56 @@ func TestDeduceBrokers(t *testing.T) {
 			require.Exactly(st, tt.expected, bs)
 		})
 	}
+}
+
+func TestAddKafkaFlags(t *testing.T) {
+	var (
+		brokers    []string
+		configFile string
+	)
+	command := func() *cobra.Command {
+		parent := &cobra.Command{
+			Use: "parent",
+			RunE: func(_ *cobra.Command, _ []string) error {
+				return nil
+			},
+		}
+		child := &cobra.Command{
+			Use: "child",
+			RunE: func(_ *cobra.Command, _ []string) error {
+				return nil
+			},
+		}
+		parent.AddCommand(child)
+
+		common.AddKafkaFlags(parent, &configFile, &brokers)
+		return parent
+	}
+
+	cmd := command()
+	cmd.SetArgs([]string{
+		"--config", "arbitraryconfig.yaml",
+		"--brokers", "192.168.72.22:9092,localhost:9092",
+	})
+
+	err := cmd.Execute()
+	require.NoError(t, err)
+
+	require.Exactly(t, "arbitraryconfig.yaml", configFile)
+	require.Exactly(t, []string{"192.168.72.22:9092", "localhost:9092"}, brokers)
+
+	// The flags should be available for the children commands too
+	cmd = command() // reset it.
+	cmd.SetArgs([]string{
+		"child", // so that it executes the child command
+		"--config", "justaconfig.yaml",
+		"--brokers", "192.168.72.23:9092",
+		"--brokers", "mykafkahost:9093",
+	})
+
+	err = cmd.Execute()
+	require.NoError(t, err)
+
+	require.Exactly(t, "justaconfig.yaml", configFile)
+	require.Exactly(t, []string{"192.168.72.23:9092", "mykafkahost:9093"}, brokers)
 }

@@ -245,6 +245,26 @@ func ContainerBrokers(c common.Client) ([]string, []string) {
 	return addrs, stopped
 }
 
+func AddKafkaFlags(
+	command *cobra.Command, configFile *string, brokers *[]string,
+) *cobra.Command {
+	command.PersistentFlags().StringSliceVar(
+		brokers,
+		"brokers",
+		[]string{},
+		"Comma-separated list of broker ip:port pairs",
+	)
+	command.PersistentFlags().StringVar(
+		configFile,
+		"config",
+		"",
+		"Redpanda config file, if not set the file will be searched for"+
+			" in the default locations",
+	)
+
+	return command
+}
+
 func wrapConnErr(err error, addrs []string) error {
 	if err == nil {
 		return nil

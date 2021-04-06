@@ -27,6 +27,7 @@ func NewWasmCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 		Use:   "wasm",
 		Short: "Deploy and remove inline WASM engine scripts",
 	}
+	common.AddKafkaFlags(command, &configFile, &brokers)
 	command.AddCommand(wasm.NewGenerateCommand(fs))
 
 	// configure kafka producer
@@ -40,42 +41,9 @@ func NewWasmCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	producerClosure := common.CreateProducer(brokersClosure, configClosure)
 	adminClosure := common.CreateAdmin(fs, brokersClosure, configClosure)
 
-	command.AddCommand(
-		addKafkaFlags(
-			wasm.NewDeployCommand(fs, producerClosure, adminClosure),
-			&configFile,
-			&brokers,
-		),
-	)
+	command.AddCommand(wasm.NewDeployCommand(fs, producerClosure, adminClosure))
 
-	command.AddCommand(
-		addKafkaFlags(
-			wasm.NewRemoveCommand(producerClosure, adminClosure),
-			&configFile,
-			&brokers,
-		),
-	)
+	command.AddCommand(wasm.NewRemoveCommand(producerClosure, adminClosure))
 
-	return command
-}
-
-func addKafkaFlags(
-	command *cobra.Command, configFile *string, brokers *[]string,
-) *cobra.Command {
-
-	command.Flags().StringSliceVar(
-		brokers,
-		"brokers",
-		[]string{},
-		"Comma-separated list of broker ip:port pairs",
-	)
-
-	command.Flags().StringVar(
-		configFile,
-		"config",
-		"",
-		"Redpanda config file, if not set the file will be searched for"+
-			" in the default locations",
-	)
 	return command
 }
