@@ -76,7 +76,9 @@ var _ = Describe("RedPandaCluster controller", func() {
 					Version:  redpandaContainerTag,
 					Replicas: pointer.Int32Ptr(replicas),
 					Configuration: v1alpha1.RedpandaConfig{
-						KafkaAPI: v1alpha1.SocketAddress{Port: kafkaPort},
+						KafkaAPI: []v1alpha1.KafkaAPIListener{
+							{Name: "kafka", Port: kafkaPort},
+						},
 						AdminAPI: v1alpha1.SocketAddress{Port: adminPort},
 					},
 					Resources: corev1.ResourceRequirements{
@@ -132,7 +134,7 @@ var _ = Describe("RedPandaCluster controller", func() {
 				err := k8sClient.Get(context.Background(), key, &svc)
 				return err == nil &&
 					svc.Spec.ClusterIP == corev1.ClusterIPNone &&
-					findPort(svc.Spec.Ports, res.KafkaPortName) == kafkaPort &&
+					findPort(svc.Spec.Ports, "kafka") == kafkaPort &&
 					findPort(svc.Spec.Ports, res.AdminPortName) == adminPort &&
 					validOwner(redpandaCluster, svc.OwnerReferences)
 			}, timeout, interval).Should(BeTrue())
@@ -145,8 +147,8 @@ var _ = Describe("RedPandaCluster controller", func() {
 				}, &svc)
 				return err == nil &&
 					svc.Spec.Type == corev1.ServiceTypeNodePort &&
-					findPort(svc.Spec.Ports, res.KafkaPortName) == kafkaPort+1 &&
 					findPort(svc.Spec.Ports, res.AdminPortName) == adminPort+1 &&
+					findPort(svc.Spec.Ports, "kafka") == kafkaPort+1 &&
 					validOwner(redpandaCluster, svc.OwnerReferences)
 			}, timeout, interval).Should(BeTrue())
 
@@ -233,7 +235,7 @@ var _ = Describe("RedPandaCluster controller", func() {
 					Version:  redpandaContainerTag,
 					Replicas: pointer.Int32Ptr(replicas),
 					Configuration: v1alpha1.RedpandaConfig{
-						KafkaAPI: v1alpha1.SocketAddress{Port: kafkaPort},
+						KafkaAPI: []v1alpha1.KafkaAPIListener{{Name: "kafka", Port: kafkaPort}},
 						AdminAPI: v1alpha1.SocketAddress{Port: adminPort},
 						TLS: v1alpha1.TLSConfig{
 							KafkaAPI: v1alpha1.KafkaAPITLS{

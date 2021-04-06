@@ -140,14 +140,15 @@ func (r *ConfigMapResource) createConfiguration(
 	c := r.pandaCluster.Spec.Configuration
 	cr := &cfgRpk.Redpanda
 
-	cr.KafkaApi = []config.NamedSocketAddress{
-		{
+	// I think this block would only be useful if the configurator didn't run. Should we remove it?
+	for _, listener := range c.KafkaAPI {
+		cr.KafkaApi = append(cr.KafkaApi, config.NamedSocketAddress{
 			SocketAddress: config.SocketAddress{
 				Address: "0.0.0.0",
-				Port:    c.KafkaAPI.Port,
+				Port:    listener.Port,
 			},
-			Name: "Internal",
-		},
+			Name: listener.Name,
+		})
 	}
 
 	if r.pandaCluster.Spec.ExternalConnectivity.Enabled {

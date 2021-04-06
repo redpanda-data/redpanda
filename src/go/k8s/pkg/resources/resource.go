@@ -24,8 +24,6 @@ import (
 )
 
 const (
-	// KafkaPortName is name of kafka port in Service definition
-	KafkaPortName = "kafka"
 	// AdminPortName is name of admin port in Service definition
 	AdminPortName = "admin"
 )

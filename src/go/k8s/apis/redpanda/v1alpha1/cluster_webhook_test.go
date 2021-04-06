@@ -35,7 +35,7 @@ func TestValidateUpdate(t *testing.T) {
 		Spec: v1alpha1.ClusterSpec{
 			Replicas: pointer.Int32Ptr(replicas2),
 			Configuration: v1alpha1.RedpandaConfig{
-				KafkaAPI: v1alpha1.SocketAddress{Port: 123},
+				KafkaAPI: []v1alpha1.KafkaAPIListener{{Port: 123}},
 			},
 			Resources: corev1.ResourceRequirements{
 				Limits: corev1.ResourceList{
@@ -52,7 +52,7 @@ func TestValidateUpdate(t *testing.T) {
 	updatedCluster := redpandaCluster.DeepCopy()
 	updatedCluster.Spec.Replicas = &replicas1
 	updatedCluster.Spec.Configuration = v1alpha1.RedpandaConfig{
-		KafkaAPI: v1alpha1.SocketAddress{Port: 1234},
+		KafkaAPI: []v1alpha1.KafkaAPIListener{{Port: 1234}},
 		TLS: v1alpha1.TLSConfig{
 			KafkaAPI: v1alpha1.KafkaAPITLS{
 				RequireClientAuth: true,
@@ -107,7 +107,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 		Spec: v1alpha1.ClusterSpec{
 			Replicas: pointer.Int32Ptr(replicas2),
 			Configuration: v1alpha1.RedpandaConfig{
-				KafkaAPI:  v1alpha1.SocketAddress{Port: 123},
+				KafkaAPI:  []v1alpha1.KafkaAPIListener{{Port: 123}},
 				AdminAPI:  v1alpha1.SocketAddress{Port: 125},
 				RPCServer: v1alpha1.SocketAddress{Port: 126},
 			},
@@ -146,7 +146,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 
 	t.Run("collision in the port", func(t *testing.T) {
 		updatePort := redpandaCluster.DeepCopy()
-		updatePort.Spec.Configuration.KafkaAPI.Port = 200
+		updatePort.Spec.Configuration.KafkaAPI[0].Port = 200
 		updatePort.Spec.Configuration.AdminAPI.Port = 200
 		updatePort.Spec.Configuration.RPCServer.Port = 200
 
@@ -157,7 +157,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 	t.Run("collision in the port when external connectivity is enabled", func(t *testing.T) {
 		updatePort := redpandaCluster.DeepCopy()
 		updatePort.Spec.ExternalConnectivity.Enabled = true
-		updatePort.Spec.Configuration.KafkaAPI.Port = 200
+		updatePort.Spec.Configuration.KafkaAPI[0].Port = 200
 		updatePort.Spec.Configuration.AdminAPI.Port = 201
 		updatePort.Spec.Configuration.RPCServer.Port = 300
 
@@ -168,7 +168,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 	t.Run("collision in the port when external connectivity is enabled", func(t *testing.T) {
 		updatePort := redpandaCluster.DeepCopy()
 		updatePort.Spec.ExternalConnectivity.Enabled = true
-		updatePort.Spec.Configuration.KafkaAPI.Port = 200
+		updatePort.Spec.Configuration.KafkaAPI[0].Port = 200
 		updatePort.Spec.Configuration.AdminAPI.Port = 300
 		updatePort.Spec.Configuration.RPCServer.Port = 201
 
@@ -179,7 +179,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 	t.Run("collision in the port when external connectivity is enabled", func(t *testing.T) {
 		updatePort := redpandaCluster.DeepCopy()
 		updatePort.Spec.ExternalConnectivity.Enabled = true
-		updatePort.Spec.Configuration.KafkaAPI.Port = 200
+		updatePort.Spec.Configuration.KafkaAPI[0].Port = 200
 		updatePort.Spec.Configuration.AdminAPI.Port = 300
 		updatePort.Spec.Configuration.RPCServer.Port = 301
 
@@ -190,7 +190,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 	t.Run("collision in the port when external connectivity is enabled", func(t *testing.T) {
 		updatePort := redpandaCluster.DeepCopy()
 		updatePort.Spec.ExternalConnectivity.Enabled = true
-		updatePort.Spec.Configuration.KafkaAPI.Port = 201
+		updatePort.Spec.Configuration.KafkaAPI[0].Port = 201
 		updatePort.Spec.Configuration.AdminAPI.Port = 200
 		updatePort.Spec.Configuration.RPCServer.Port = 300
 
@@ -217,7 +217,7 @@ func TestCreation(t *testing.T) {
 		},
 		Spec: v1alpha1.ClusterSpec{
 			Configuration: v1alpha1.RedpandaConfig{
-				KafkaAPI:  v1alpha1.SocketAddress{Port: 123},
+				KafkaAPI:  []v1alpha1.KafkaAPIListener{{Port: 123}},
 				AdminAPI:  v1alpha1.SocketAddress{Port: 125},
 				RPCServer: v1alpha1.SocketAddress{Port: 126},
 			},
@@ -235,7 +235,7 @@ func TestCreation(t *testing.T) {
 
 	t.Run("no collision in the port", func(t *testing.T) {
 		newPort := redpandaCluster.DeepCopy()
-		newPort.Spec.Configuration.KafkaAPI.Port = 200
+		newPort.Spec.Configuration.KafkaAPI[0].Port = 200
 
 		err := newPort.ValidateCreate()
 		assert.NoError(t, err)
@@ -243,7 +243,7 @@ func TestCreation(t *testing.T) {
 
 	t.Run("collision in the port", func(t *testing.T) {
 		newPort := redpandaCluster.DeepCopy()
-		newPort.Spec.Configuration.KafkaAPI.Port = 200
+		newPort.Spec.Configuration.KafkaAPI[0].Port = 200
 		newPort.Spec.Configuration.AdminAPI.Port = 200
 		newPort.Spec.Configuration.RPCServer.Port = 200
 
@@ -254,7 +254,7 @@ func TestCreation(t *testing.T) {
 	t.Run("collision in the port when external connectivity is enabled", func(t *testing.T) {
 		newPort := redpandaCluster.DeepCopy()
 		newPort.Spec.ExternalConnectivity.Enabled = true
-		newPort.Spec.Configuration.KafkaAPI.Port = 200
+		newPort.Spec.Configuration.KafkaAPI[0].Port = 200
 		newPort.Spec.Configuration.AdminAPI.Port = 201
 		newPort.Spec.Configuration.RPCServer.Port = 300
 
@@ -265,7 +265,7 @@ func TestCreation(t *testing.T) {
 	t.Run("collision in the port when external connectivity is enabled", func(t *testing.T) {
 		newPort := redpandaCluster.DeepCopy()
 		newPort.Spec.ExternalConnectivity.Enabled = true
-		newPort.Spec.Configuration.KafkaAPI.Port = 200
+		newPort.Spec.Configuration.KafkaAPI[0].Port = 200
 		newPort.Spec.Configuration.AdminAPI.Port = 300
 		newPort.Spec.Configuration.RPCServer.Port = 201
 
@@ -276,7 +276,7 @@ func TestCreation(t *testing.T) {
 	t.Run("collision in the port when external connectivity is enabled", func(t *testing.T) {
 		newPort := redpandaCluster.DeepCopy()
 		newPort.Spec.ExternalConnectivity.Enabled = true
-		newPort.Spec.Configuration.KafkaAPI.Port = 200
+		newPort.Spec.Configuration.KafkaAPI[0].Port = 200
 		newPort.Spec.Configuration.AdminAPI.Port = 300
 		newPort.Spec.Configuration.RPCServer.Port = 301
 
@@ -287,7 +287,7 @@ func TestCreation(t *testing.T) {
 	t.Run("collision in the port when external connectivity is enabled", func(t *testing.T) {
 		newPort := redpandaCluster.DeepCopy()
 		newPort.Spec.ExternalConnectivity.Enabled = true
-		newPort.Spec.Configuration.KafkaAPI.Port = 201
+		newPort.Spec.Configuration.KafkaAPI[0].Port = 201
 		newPort.Spec.Configuration.AdminAPI.Port = 200
 		newPort.Spec.Configuration.RPCServer.Port = 300
 
