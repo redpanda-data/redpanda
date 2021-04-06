@@ -25,6 +25,7 @@ from prometheus_client.parser import text_string_to_metric_families
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.services.storage import ClusterStorage, NodeStorage
 from rptest.services.admin import Admin
+from rptest.clients.python_librdkafka import PythonLibrdkafka
 
 Partition = collections.namedtuple('Partition',
                                    ['index', 'leader', 'replicas'])
@@ -255,9 +256,8 @@ class RedpandaService(Service):
         idx = self.idx(node)
         self.logger.debug(
             f"Checking if broker {idx} ({node.name} is registered")
-        kc = KafkaCat(self)
-        brokers = kc.metadata()["brokers"]
-        brokers = {b["id"]: b for b in brokers}
+        client = PythonLibrdkafka(self)
+        brokers = client.brokers()
         broker = brokers.get(idx, None)
         self.logger.debug(f"Found broker info: {broker}")
         return broker is not None
