@@ -20,8 +20,14 @@ class WasmIdentityTest(WasmTest):
                         replication_factor=3,
                         cleanup_policy=TopicSpec.CLEANUP_DELETE), )
 
-    def __init__(self, test_context, num_records=1024, record_size=1024):
-        super(WasmIdentityTest, self).__init__(test_context, extra_rp_conf={})
+    def __init__(self,
+                 test_context,
+                 extra_rp_conf=None,
+                 num_records=1024,
+                 record_size=1024):
+        super(WasmIdentityTest, self).__init__(test_context,
+                                               extra_rp_conf=extra_rp_conf
+                                               or {})
         self._num_records = num_records
         self._record_size = record_size
         assert len(self.topics) >= 1
