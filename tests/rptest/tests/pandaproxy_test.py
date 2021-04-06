@@ -45,15 +45,21 @@ HTTP_CREATE_CONSUMER_HEADERS = {
     "Content-Type": "application/vnd.kafka.v2+json"
 }
 
+HTTP_SUBSCRIBE_CONSUMER_HEADERS = {
+    "Accept": "application/vnd.kafka.v2+json",
+    "Content-Type": "application/vnd.kafka.v2+json"
+}
+
 
 class Consumer:
     def __init__(self, res):
         self.instance_id = res["instance_id"]
         self.base_uri = res["base_uri"]
 
-    def subscribe(self, topics):
+    def subscribe(self, topics, headers=HTTP_SUBSCRIBE_CONSUMER_HEADERS):
         res = requests.post(f"{self.base_uri}/subscription",
-                            json.dumps({"topics": topics}))
+                            json.dumps({"topics": topics}),
+                            headers=headers)
         return res
 
     def remove(self):
@@ -399,7 +405,7 @@ class PandaProxyTest(RedpandaTest):
     def test_create_consumer_validation(self):
         """
         Acceptable headers:
-        * Accept: "", "*/*", "application/vnd.kafka.binary.v2+json"
+        * Accept: "", "*/*", "application/vnd.kafka.v2+json"
         * Content-Type: "application/vnd.kafka.v2+json"
         Required Params:
         * Path:
