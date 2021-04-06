@@ -540,24 +540,26 @@ void application::wire_up_redpanda_services() {
     syschecks::systemd_message("Adding kafka quota manager").get();
     construct_service(quota_mgr).get();
     // rpc
-    rpc::server_configuration rpc_cfg("internal_rpc");
-    /**
-     * Use port based load_balancing_algorithm to make connection shard
-     * assignment deterministic.
-     **/
-    rpc_cfg.load_balancing_algo
-      = ss::server_socket::load_balancing_algorithm::port;
-    rpc_cfg.max_service_memory_per_core = memory_groups::rpc_total_memory();
-    rpc_cfg.disable_metrics = rpc::metrics_disabled(
-      config::shard_local_cfg().disable_metrics());
-    auto rpc_server_addr
-      = rpc::resolve_dns(config::shard_local_cfg().rpc_server()).get0();
-    auto rpc_builder = config::shard_local_cfg()
-                         .rpc_server_tls()
-                         .get_credentials_builder()
-                         .get0();
-    ss::shared_ptr<ss::tls::server_credentials> credentials
-      = rpc_builder ? rpc_builder
+    ss::sharded<rpc::server_configuration> rpc_cfg;
+    rpc_cfg.start(ss::sstring("internal_rpc")).get();
+    rpc_cfg
+      .invoke_on_all([this](rpc::server_configuration& c) {
+          return ss::async([this, &c] {
+              auto rpc_server_addr = rpc::resolve_dns(
+                                       config::shard_local_cfg().rpc_server())
+                                       .get0();
+              c.load_balancing_algo
+                = ss::server_socket::load_balancing_algorithm::port;
+              c.max_service_memory_per_core = memory_groups::rpc_total_memory();
+              c.disable_metrics = rpc::metrics_disabled(
+                config::shard_local_cfg().disable_metrics());
+              auto rpc_builder = config::shard_local_cfg()
+                                   .rpc_server_tls()
+                                   .get_credentials_builder()
+                                   .get0();
+              auto credentials
+                = rpc_builder
+                    ? rpc_builder
                         ->build_reloadable_server_credentials(
                           [this](
                             const std::unordered_set<ss::sstring>& updated,
@@ -567,9 +569,18 @@ void application::wire_up_redpanda_services() {
                           })
                         .get0()
                     : nullptr;
-    rpc_cfg.addrs.emplace_back(rpc_server_addr, credentials);
-    syschecks::systemd_message("Starting internal RPC {}", rpc_cfg).get();
-    construct_service(_rpc, rpc_cfg).get();
+              c.addrs.emplace_back(rpc_server_addr, credentials);
+          });
+      })
+      .get();
+    /**
+     * Use port based load_balancing_algorithm to make connection shard
+     * assignment deterministic.
+     **/
+    syschecks::systemd_message("Starting internal RPC {}", rpc_cfg.local())
+      .get();
+    construct_service(_rpc, &rpc_cfg).get();
+    rpc_cfg.stop().get();
 
     syschecks::systemd_message("Creating id allocator frontend").get();
     construct_service(
@@ -583,45 +594,60 @@ void application::wire_up_redpanda_services() {
       std::ref(controller))
       .get();
 
-    rpc::server_configuration kafka_cfg("kafka_rpc");
-    kafka_cfg.max_service_memory_per_core = memory_groups::kafka_total_memory();
-    auto& tls_config = config::shard_local_cfg().kafka_api_tls.value();
-    for (const auto& ep : config::shard_local_cfg().kafka_api()) {
-        ss::shared_ptr<ss::tls::server_credentials> credentails;
-        // find credentials for this endpoint
-        auto it = find_if(
-          tls_config.begin(),
-          tls_config.end(),
-          [&ep](const config::endpoint_tls_config& cfg) {
-              return cfg.name == ep.name;
+    ss::sharded<rpc::server_configuration> kafka_cfg;
+    kafka_cfg.start(ss::sstring("kafka_rpc")).get();
+    kafka_cfg
+      .invoke_on_all([this](rpc::server_configuration& c) {
+          return ss::async([this, &c] {
+              c.max_service_memory_per_core
+                = memory_groups::kafka_total_memory();
+              auto& tls_config
+                = config::shard_local_cfg().kafka_api_tls.value();
+              for (const auto& ep : config::shard_local_cfg().kafka_api()) {
+                  ss::shared_ptr<ss::tls::server_credentials> credentails;
+                  // find credentials for this endpoint
+                  auto it = find_if(
+                    tls_config.begin(),
+                    tls_config.end(),
+                    [&ep](const config::endpoint_tls_config& cfg) {
+                        return cfg.name == ep.name;
+                    });
+                  // if tls is configured for this endpoint build reloadable
+                  // credentails
+                  if (it != tls_config.end()) {
+                      syschecks::systemd_message(
+                        "Building TLS credentials for kafka")
+                        .get();
+                      auto kafka_builder
+                        = it->config.get_credentials_builder().get0();
+                      credentails
+                        = kafka_builder
+                            ? kafka_builder
+                                ->build_reloadable_server_credentials(
+                                  [this, name = it->name](
+                                    const std::unordered_set<ss::sstring>&
+                                      updated,
+                                    const std::exception_ptr& eptr) {
+                                      cluster::log_certificate_reload_event(
+                                        _log, "Kafka RPC TLS", updated, eptr);
+                                  })
+                                .get0()
+                            : nullptr;
+                  }
+
+                  c.addrs.emplace_back(
+                    ep.name, rpc::resolve_dns(ep.address).get0(), credentails);
+              }
+
+              c.disable_metrics = rpc::metrics_disabled(
+                config::shard_local_cfg().disable_metrics());
           });
-        // if tls is configured for this endpoint build reloadable credentails
-        if (it != tls_config.end()) {
-            syschecks::systemd_message("Building TLS credentials for kafka")
-              .get();
-            auto kafka_builder = it->config.get_credentials_builder().get0();
-            credentails
-              = kafka_builder
-                  ? kafka_builder
-                      ->build_reloadable_server_credentials(
-                        [this, name = it->name](
-                          const std::unordered_set<ss::sstring>& updated,
-                          const std::exception_ptr& eptr) {
-                            cluster::log_certificate_reload_event(
-                              _log, "Kafka RPC TLS", updated, eptr);
-                        })
-                      .get0()
-                  : nullptr;
-        }
-
-        kafka_cfg.addrs.emplace_back(
-          ep.name, rpc::resolve_dns(ep.address).get0(), credentails);
-    }
-
-    kafka_cfg.disable_metrics = rpc::metrics_disabled(
-      config::shard_local_cfg().disable_metrics());
-    syschecks::systemd_message("Starting kafka RPC {}", kafka_cfg).get();
-    construct_service(_kafka_server, kafka_cfg).get();
+      })
+      .get();
+    syschecks::systemd_message("Starting kafka RPC {}", kafka_cfg.local())
+      .get();
+    construct_service(_kafka_server, &kafka_cfg).get();
+    kafka_cfg.stop().get();
     construct_service(
       fetch_session_cache,
       config::shard_local_cfg().fetch_session_eviction_timeout_ms())
