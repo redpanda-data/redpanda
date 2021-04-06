@@ -169,13 +169,19 @@ type ClusterList struct {
 
 // RedpandaConfig is the definition of the main configuration
 type RedpandaConfig struct {
-	RPCServer     SocketAddress `json:"rpcServer,omitempty"`
-	KafkaAPI      SocketAddress `json:"kafkaApi,omitempty"`
-	AdminAPI      SocketAddress `json:"admin,omitempty"`
-	DeveloperMode bool          `json:"developerMode,omitempty"`
-	TLS           TLSConfig     `json:"tls,omitempty"`
+	RPCServer     SocketAddress      `json:"rpcServer,omitempty"`
+	KafkaAPI      []KafkaAPIListener `json:"kafkaApi,omitempty"`
+	AdminAPI      SocketAddress      `json:"admin,omitempty"`
+	DeveloperMode bool               `json:"developerMode,omitempty"`
+	TLS           TLSConfig          `json:"tls,omitempty"`
 	// Number of partitions in the internal group membership topic
 	GroupTopicPartitions int `json:"groupTopicPartitions,omitempty"`
+}
+
+// KafkaAPIListener listener information for Kafka API
+type KafkaAPIListener struct {
+	Name string `json:"name,omitempty"`
+	Port int    `json:"port,omitempty"`
 }
 
 // TLSConfig configures TLS for Redpanda APIs
