@@ -11,6 +11,7 @@ package resources
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"reflect"
@@ -165,7 +166,6 @@ func (r *StatefulSetResource) ensureRedpandaGroupsReady(
 	return r.queryRedpandaForTopicMembers(ctx, addresses, r.logger)
 }
 
-//nolint:unparam // ctx; will re-include the TLS call in future.
 // Used as a temporary indicator that Redpanda is ready until a health
 // endpoint is introduced or logic is added here that goes through all topics
 // metadata.
@@ -179,6 +179,23 @@ func (r *StatefulSetResource) queryRedpandaForTopicMembers(
 	conf.ClientID = "operator"
 	conf.Admin.Timeout = time.Second
 
+	// TODO right now we support TLS only on one listener so if external
+	// connectivity is enabled, TLS is enabled only on external listener. This
+	// will be fixed by https://github.com/vectorizedio/redpanda/issues/1084
+	if !r.pandaCluster.Spec.ExternalConnectivity.Enabled && r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.Enabled {
+		tlsConfig := tls.Config{MinVersion: tls.VersionTLS12} // TLS12 is min version allowed by gosec.
+		// For simplicity, we skip broker verification until per-listener
+		// TLS is available in Redpanda. This client calls the internal listener.
+		tlsConfig.InsecureSkipVerify = true
+
+		if err := r.populateTLSConfigCert(ctx, &tlsConfig); err != nil {
+			return err
+		}
+
+		conf.Net.TLS.Enable = true
+		conf.Net.TLS.Config = &tlsConfig
+	}
+
 	consumer, err := sarama.NewConsumer(addresses, conf)
 	if err != nil {
 		logger.Error(err, "Error while creating consumer")
@@ -186,6 +203,31 @@ func (r *StatefulSetResource) queryRedpandaForTopicMembers(
 	}
 
 	return consumer.Close()
+}
+
+// Populates crypto/TLS configuration for certificate used by the operator
+// during its client authentication.
+func (r *StatefulSetResource) populateTLSConfigCert(
+	ctx context.Context, tlsConfig *tls.Config,
+) error {
+	if !r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.RequireClientAuth {
+		return nil
+	}
+
+	var certSecret corev1.Secret
+	err := r.Get(ctx, r.internalClientCertSecretKey, &certSecret)
+	if err != nil {
+		return err
+	}
+
+	cert, err := tls.X509KeyPair(certSecret.Data[corev1.TLSCertKey], certSecret.Data[corev1.TLSPrivateKeyKey])
+	if err != nil {
+		return err
+	}
+
+	tlsConfig.Certificates = []tls.Certificate{cert}
+
+	return nil
 }
 
 func (r *StatefulSetResource) podImageIdenticalToClusterImage(
