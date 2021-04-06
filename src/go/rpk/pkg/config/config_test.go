@@ -743,13 +743,15 @@ rpk:
 			name: "shall write config with tls configuration",
 			conf: func() *Config {
 				c := getValidConfig()
-				c.Redpanda.KafkaApiTLS = ServerTLS{
+				c.Redpanda.KafkaApi[0].Name = "outside"
+				c.Redpanda.KafkaApiTLS = []ServerTLS{{
+					Name:              "outside",
 					KeyFile:           "/etc/certs/cert.key",
 					TruststoreFile:    "/etc/certs/ca.crt",
 					CertFile:          "/etc/certs/cert.crt",
 					Enabled:           true,
 					RequireClientAuth: true,
-				}
+				}}
 				return c
 			},
 			wantErr: false,
@@ -763,11 +765,13 @@ redpanda:
   developer_mode: false
   kafka_api:
   - address: 0.0.0.0
+    name: outside
     port: 9092
   kafka_api_tls:
-    cert_file: /etc/certs/cert.crt
+  - cert_file: /etc/certs/cert.crt
     enabled: true
     key_file: /etc/certs/cert.key
+    name: outside
     require_client_auth: true
     truststore_file: /etc/certs/ca.crt
   node_id: 0
@@ -1671,35 +1675,44 @@ func TestReadAsJSON(t *testing.T) {
 
 func TestReadFlat(t *testing.T) {
 	expected := map[string]string{
-		"config_file":                     "/etc/redpanda/redpanda.yaml",
-		"pandaproxy":                      "",
-		"redpanda.admin":                  "0.0.0.0:9644",
-		"redpanda.advertised_kafka_api.0": "internal://127.0.0.1:9092",
-		"redpanda.advertised_kafka_api.1": "127.0.0.1:9093",
-		"redpanda.data_directory":         "/var/lib/redpanda/data",
-		"redpanda.kafka_api.0":            "internal://192.168.92.34:9092",
-		"redpanda.kafka_api.1":            "127.0.0.1:9093",
-		"redpanda.node_id":                "0",
-		"redpanda.rpc_server":             "0.0.0.0:33145",
-		"redpanda.seed_servers.0":         "192.168.167.0:1337",
-		"redpanda.seed_servers.1":         "192.168.167.1:1337",
-		"redpanda.developer_mode":         "true",
-		"rpk.coredump_dir":                "/var/lib/redpanda/coredump",
-		"rpk.enable_memory_locking":       "false",
-		"rpk.enable_usage_stats":          "false",
-		"rpk.overprovisioned":             "false",
-		"rpk.tune_aio_events":             "false",
-		"rpk.tune_clocksource":            "false",
-		"rpk.tune_coredump":               "false",
-		"rpk.tune_cpu":                    "false",
-		"rpk.tune_disk_irq":               "false",
-		"rpk.tune_disk_nomerges":          "false",
-		"rpk.tune_disk_scheduler":         "false",
-		"rpk.tune_disk_write_cache":       "false",
-		"rpk.tune_fstrim":                 "false",
-		"rpk.tune_network":                "false",
-		"rpk.tune_swappiness":             "false",
-		"rpk.tune_transparent_hugepages":  "false",
+		"config_file":                                  "/etc/redpanda/redpanda.yaml",
+		"pandaproxy":                                   "",
+		"redpanda.admin":                               "0.0.0.0:9644",
+		"redpanda.advertised_kafka_api.0":              "internal://127.0.0.1:9092",
+		"redpanda.advertised_kafka_api.1":              "127.0.0.1:9093",
+		"redpanda.data_directory":                      "/var/lib/redpanda/data",
+		"redpanda.kafka_api.0":                         "internal://192.168.92.34:9092",
+		"redpanda.kafka_api.1":                         "127.0.0.1:9093",
+		"redpanda.kafka_api_tls.0.cert_file":           "some/cert/file.crt",
+		"redpanda.kafka_api_tls.0.key_file":            "/some/key/file.pem",
+		"redpanda.kafka_api_tls.0.name":                "internal",
+		"redpanda.kafka_api_tls.1.cert_file":           "some/other/cert.crt",
+		"redpanda.kafka_api_tls.1.enabled":             "true",
+		"redpanda.kafka_api_tls.1.key_file":            "/some/other/file.pem",
+		"redpanda.kafka_api_tls.1.name":                "external",
+		"redpanda.kafka_api_tls.1.truststore_file":     "/some/other/truststore.pem",
+		"redpanda.kafka_api_tls.1.require_client_auth": "true",
+		"redpanda.node_id":                             "0",
+		"redpanda.rpc_server":                          "0.0.0.0:33145",
+		"redpanda.seed_servers.0":                      "192.168.167.0:1337",
+		"redpanda.seed_servers.1":                      "192.168.167.1:1337",
+		"redpanda.developer_mode":                      "true",
+		"rpk.coredump_dir":                             "/var/lib/redpanda/coredump",
+		"rpk.enable_memory_locking":                    "false",
+		"rpk.enable_usage_stats":                       "false",
+		"rpk.overprovisioned":                          "false",
+		"rpk.tune_aio_events":                          "false",
+		"rpk.tune_clocksource":                         "false",
+		"rpk.tune_coredump":                            "false",
+		"rpk.tune_cpu":                                 "false",
+		"rpk.tune_disk_irq":                            "false",
+		"rpk.tune_disk_nomerges":                       "false",
+		"rpk.tune_disk_scheduler":                      "false",
+		"rpk.tune_disk_write_cache":                    "false",
+		"rpk.tune_fstrim":                              "false",
+		"rpk.tune_network":                             "false",
+		"rpk.tune_swappiness":                          "false",
+		"rpk.tune_transparent_hugepages":               "false",
 	}
 	fs := afero.NewMemMapFs()
 	mgr := NewManager(fs)
@@ -1735,6 +1748,19 @@ func TestReadFlat(t *testing.T) {
 			Address: "127.0.0.1",
 			Port:    9093,
 		},
+	}}
+
+	conf.Redpanda.KafkaApiTLS = []ServerTLS{{
+		Name:     "internal",
+		KeyFile:  "/some/key/file.pem",
+		CertFile: "some/cert/file.crt",
+	}, {
+		Name:              "external",
+		KeyFile:           "/some/other/file.pem",
+		CertFile:          "some/other/cert.crt",
+		TruststoreFile:    "/some/other/truststore.pem",
+		Enabled:           true,
+		RequireClientAuth: true,
 	}}
 
 	err := mgr.Write(conf)

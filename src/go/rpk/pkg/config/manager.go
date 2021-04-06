@@ -186,6 +186,21 @@ func (m *manager) ReadFlat(path string) (map[string]string, error) {
 			}
 			continue
 		}
+		if k == "redpanda.kafka_api_tls" {
+			tlss := []map[string]interface{}{}
+			err := unmarshalKey(m.v, k, &tlss)
+			if err != nil {
+				return nil, err
+			}
+
+			for i, tls := range tlss {
+				for field, val := range tls {
+					key := fmt.Sprintf("%s.%d.%s", k, i, field)
+					flatMap[key] = fmt.Sprint(val)
+				}
+			}
+			continue
+		}
 		// These fields are added later on as <address>:<port>
 		// instead of
 		// field.address <address>
@@ -421,6 +436,26 @@ func v21_1_4MapToNamedSocketAddressSlice(
 			}
 			return []NamedSocketAddress{sa}, nil
 
+		}
+	}
+	return data, nil
+}
+
+// Redpanda version <= 21.4.1 only supported a single TLS config. This custom
+// decode function translates a single TLS config-equivalent
+// map[string]interface{} into a []ServerTLS.
+func v21_4_1TlsMapToNamedTlsSlice(
+	from, to reflect.Type, data interface{},
+) (interface{}, error) {
+	if to == reflect.TypeOf([]ServerTLS{}) {
+		switch from.Kind() {
+		case reflect.Map:
+			tls := ServerTLS{}
+			err := mapstructure.Decode(data, &tls)
+			if err != nil {
+				return nil, err
+			}
+			return []ServerTLS{tls}, nil
 		}
 	}
 	return data, nil
