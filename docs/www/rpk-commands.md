@@ -4,6 +4,13 @@ order: 7
 ---
 # RPK commands
 
+The global flags for the `rpk` command are:
+
+```cmd
+  -v, --verbose   enable verbose logging (default false)
+  -h, --help      help for info
+```
+
 ## redpanda
 
 ### tune
@@ -13,10 +20,14 @@ available on **rpk.**
 
 ```cmd
 Usage:
-  rpk redpanda tune <list_of_elements_to_tune> [flags]
+  rpk redpanda tune <list of elements to tune> [flags]
+  rpk redpanda tune [command]
+
+Available Commands:
+  help        Display detailed infromation about the tuner
 
 Flags:
-      --config string          Redpanda config file, if not set the file will be searched for in the default locations (default "/etc/redpanda/redpanda.yaml")
+      --config string          Redpanda config file, if not set the file will be searched for in the default locations
       --cpu-set string         Set of CPUs for tuner to use in cpuset(7) format if not specified tuner will use all available CPUs (default "all")
   -r, --dirs strings           List of *data* directories. or places to store data. i.e.: '/var/vectorized/redpanda/', usually your XFS filesystem on an NVMe SSD device
   -d, --disks strings          Lists of devices to tune f.e. 'sda1'
@@ -37,9 +48,15 @@ Usage:
   rpk redpanda start [flags]
 
 Flags:
+      --advertise-kafka-addr strings   The list of Kafka addresses to advertise (<host>:<port>)
+      --advertise-rpc-addr string      The advertised RPC address (<host>:<port>)
       --check                  When set to false will disable system checking before starting redpanda (default true)
-      --config string          Redpanda config file, if not set the file will be searched for in the default locations (default "/etc/redpanda/redpanda.yaml")
+      --config string          Redpanda config file, if not set the file will be searched for in the default locations
       --install-dir string     Directory where redpanda has been installed
+      --kafka-addr strings             The list of Kafka listener addresses to bind to (<host>:<port>)
+      --node-id int                    The node ID. Must be an integer and must be unique within a cluster
+      --rpc-addr string                The RPC address to bind to (<host>:<port>)
+  -s, --seeds strings                  A comma-separated list of seed node addresses (<host>[:<port>]) to connect to
       --timeout duration       The maximum time to wait for the checks and tune processes to complete. The value passed is a sequence of decimal numbers, each with optional fraction and a unit suffix, such as '300ms', '1.5s' or '2h45m'. Valid time units are 'ns', 'us' (or 'µs'), 'ms', 's', 'm', 'h' (default 10s)
       --tune                   When present will enable tuning before starting redpanda
       --well-known-io string   The cloud vendor and VM type, in the format <vendor>:<vm type>:<storage type>
@@ -52,10 +69,10 @@ Modes**](https://vectorized.io/docs/rpk-modes/) section.
 
 ```cmd
 Usage:
-  rpk redpanda mode {development, production} [flags]
+  rpk redpanda mode <mode> [flags]
 
 Flags:
-      --config string   Redpanda config file, if not set the file will be searched for in the default locations (default "/etc/redpanda/redpanda.yaml")
+      --config string   Redpanda config file, if not set the file will be searched for in the default locations
 ```
 
 ### config
@@ -71,8 +88,8 @@ Usage:
   rpk redpanda config set <key> <value> [flags]
 
 Flags:
-      --config string   Redpanda config file, if not set the file will be searched for in default location (default "/etc/redpanda/redpanda.yaml")
-      --format string   The value format. Can be 'single', for single values such as '/etc/redpanda' or 100; and 'json', 'toml', 'yaml','yml', 'properties', 'props', 'prop', or 'hcl' when partially or completely setting config objects (default "single")
+      --config string   Redpanda config file, if not set the file will be searched for in the default location
+      --format string   The value format. Can be 'single', for single values such as '/etc/redpanda' or 100; and 'json' and 'yaml' when partially or completely setting config objects (default "single")
 ```
 
 #### config bootstrap
@@ -84,7 +101,7 @@ Usage:
   rpk redpanda config bootstrap --id <id> [--self <ip>] [--ips <ip1,ip2,...>] [flags]
 
 Flags:
-      --config string   Redpanda config file, if not set the file will be searched for in the default location (default "/etc/redpanda/redpanda.yaml")
+      --config string   Redpanda config file, if not set the file will be searched for in the default location
       --id int          This node's ID (required). (default -1)
       --ips strings     The list of known node addresses or hostnames
       --self string     Hint at this node's IP address from within the list passed in --ips
@@ -92,13 +109,13 @@ Flags:
 
 ## topic
 
-Interact with the Redpanda API.
+Interact with the Redpanda API to work with topics.
+
+The global flags for the `rpk topic` command are:
 
 ```cmd
-Global flags:
-
-      --brokers strings   Comma-separated list of broker ip:port pair
-      --config  string    Redpanda config file, if not set the file will be searched for in the default location (default "/etc/redpanda/redpanda.yaml")
+      --brokers strings   Comma-separated list of broker ip:port pairs
+      --config string     Redpanda config file, if not set the file will be searched for in the default locations
 ```
 
 ### create
@@ -110,11 +127,9 @@ Usage:
   rpk topic create <topic name> [flags]
 
 Flags:
-      --compact                    Enable topic compaction
-  -h, --help                       help for create
-  -p, --partitions int32           Number of partitions (default 1)
-  -r, --replicas int16             Replication factor. If it's negative or is left unspecified, it will use the cluster's default topic replication factor. (default -1)
-  -c, --topic-config stringArray   Config entries in the format <key>:<value>. May be used multiple times to add more entries.
+      --compact            Enable topic compaction
+  -p, --partitions int32   Number of partitions (default 1)
+  -r, --replicas int16     Replication factor. If it's negative or is left unspecified, it will use the cluster's default topic replication factor. (default -1)
 ```
 
 ### delete
@@ -135,7 +150,7 @@ Usage:
   rpk topic describe <topic> [flags]
 
 Flags:
-      --page int        The partitions page to display. If negative, all partitions will be shown
+      --page int        The partitions page to display. If negative, all partitions will be shown (default -1)
       --page-size int   The number of partitions displayed per page (default 20)
       --watermarks      If enabled, will display the topic's partitions' high watermarks (default true)
 ```
@@ -158,7 +173,7 @@ Set the topic's config key/value pairs
 
 ```cmd
 Usage:
-  rpk topic set-config <topic> <key> [<value>] [flags]
+  rpk topic set-config <topic> <key> <value> [flags]
 ```
 
 ## cluster
@@ -171,9 +186,8 @@ Get the cluster's info
 Usage:
   rpk cluster info [flags]
 
-Flags:
-  --brokers strings   Comma-separated list of broker ip:port pairs
-  --config string     Redpanda config file, if not set the file will be searched for in the default locations
+Aliases:
+  info, status
 ```
 
 ## container
@@ -189,7 +203,8 @@ Usage:
   rpk container start [flags]
   
 Flags:
-  -n, --nodes uint   The number of nodes to start (default 1)
+  -n, --nodes uint     The number of nodes to start (default 1)
+      --retries uint   The amount of times to check for the cluster before considering it unstable and exiting. (default 10)
 ```
 
 ### container stop
@@ -198,7 +213,7 @@ Stop an existing local container cluster
 
 ```cmd
 Usage:
-  rpk container stop
+  rpk container stop [flags]
 ```
 
 ### container purge
@@ -207,7 +222,7 @@ Stop and remove an existing local container cluster's data
 
 ```cmd
 Usage:
-  rpk container purge
+  rpk container purge [flags]
 ```
 
 ## iotune
@@ -219,10 +234,10 @@ Usage:
   rpk iotune [flags]
 
 Flags:
-      --config string         Redpanda config file, if not set the file will be searched for in the default locations (default "/etc/redpanda/redpanda.yaml")
+      --config string         Redpanda config file, if not set the file will be searched for in the default locations
       --directories strings   List of directories to evaluate
       --duration duration     Duration of tests.The value passed is a sequence of decimal numbers, each with optional fraction and a unit suffix, such as '300ms', '1.5s' or '2h45m'. Valid time units are 'ns', 'us' (or 'µs'), 'ms', 's', 'm', 'h' (default 10m0s)
-      --out string            The file path where the IO config will be written (default "/var/lib/redpanda/data/io-config.yaml")
+      --out string            The file path where the IO config will be written (default "/etc/redpanda/io-config.yaml")
       --timeout duration      The maximum time after --duration to wait for iotune to complete. The value passed is a sequence of decimal numbers, each with optional fraction and a unit suffix, such as '300ms', '1.5s' or '2h45m'. Valid time units are 'ns', 'us' (or 'µs'), 'ms', 's', 'm', 'h' (default 1h0m0s)
 ```
 
@@ -261,7 +276,7 @@ Usage:
   rpk generate prometheus-config [flags]
 
 Flags:
-      --config string        The path to the redpanda config file (default "/etc/redpanda/redpanda.yaml")
+      --config string        The path to the redpanda config file
       --job-name string      The prometheus job name by which to identify the redpanda nodes (default "redpanda")
       --node-addrs strings   A comma-delimited list of the addresses (<host:port>) of all the redpanda nodes
                              in a cluster. The port must be the one configured for the nodes' admin API
@@ -279,8 +294,11 @@ Check the resource usage in the system, and optionally send it to Vectorized.
 Usage:
   rpk debug info [flags]
 
+Aliases:
+  info, status
+
 Flags:
       --config string         Redpanda config file, if not set the file will be searched for in the default locations
-      --send   bool           Tells 'rpk debug info' whether to send the gathered resource usage data to Vectorized
+      --send rpk debug info   Tells `rpk debug info` whether to send the gathered resource usage data to Vectorized
       --timeout duration      The maximum amount of time to wait for the metrics to be gathered. The value passed is a sequence of decimal numbers, each with optional fraction and a unit suffix, such as '300ms', '1.5s' or '2h45m'. Valid time units are 'ns', 'us' (or 'µs'), 'ms', 's', 'm', 'h' (default 2s)
 ```
