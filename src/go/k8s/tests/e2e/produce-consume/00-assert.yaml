@@ -32,7 +32,6 @@ spec:
             - --smp 1
             - --reserve-memory 1M
             - --advertise-rpc-addr=$(POD_NAME).cluster-sample.$(POD_NAMESPACE).svc.cluster.local.:33145
-            - --
             - --default-log-level=debug
 status:
   readyReplicas: 1
