@@ -11,8 +11,7 @@ order: 7
 Run all (`rpk redpanda tune all`) or some (i.e. `rpk redpanda tune cpu network`) of the tuners
 available on **rpk.**
 
-```
-
+```cmd
 Usage:
   rpk redpanda tune <list_of_elements_to_tune> [flags]
 
@@ -33,8 +32,7 @@ Flags:
 
 Start redpanda.
 
-```
-
+```cmd
 Usage:
   rpk redpanda start [flags]
 
@@ -52,8 +50,7 @@ Flags:
 Enable a default configuration mode (development, production). See the [**rpk
 Modes**](https://vectorized.io/docs/rpk-modes/) section.
 
-```
-
+```cmd
 Usage:
   rpk redpanda mode {development, production} [flags]
 
@@ -69,8 +66,7 @@ Edit configuration.
 
 Set configuration values, such as the node IDs or the list of seed servers
 
-```
-
+```cmd
 Usage:
   rpk redpanda config set <key> <value> [flags]
 
@@ -83,8 +79,7 @@ Flags:
 
 Initialize the configuration to bootstrap a cluster. --id is mandatory. `bootstrap` will expect the machine it's running on to have only one non-loopback IP address associated to it, and use it in the configuration as the node's address. If it has multiple IPs, --self must be specified. In that case, the given IP will be used without checking whether it's among the machine's addresses or not. The elements in --ips must be separated by a comma, no spaces. If omitted, the node will be configured as a root node, that otherones can join later.
 
-```
-
+```cmd
 Usage:
   rpk redpanda config bootstrap --id <id> [--self <ip>] [--ips <ip1,ip2,...>] [flags]
 
@@ -99,7 +94,7 @@ Flags:
 
 Interact with the Redpanda API.
 
-```
+```cmd
 Global flags:
 
       --brokers strings   Comma-separated list of broker ip:port pair
@@ -110,7 +105,7 @@ Global flags:
 
 Create a topic.
 
-```
+```cmd
 Usage:
   rpk topic create <topic name> [flags]
 
@@ -126,7 +121,7 @@ Flags:
 
 Delete a topic.
 
-```
+```cmd
 Usage:
   rpk topic delete <topic name> [flags]
 ```
@@ -135,7 +130,7 @@ Usage:
 
 Describe a topic. Default values of the configuration are omitted.
 
-```
+```cmd
 Usage:
   rpk topic describe <topic> [flags]
 
@@ -149,7 +144,7 @@ Flags:
 
 List topics.
 
-```
+```cmd
 Usage:
   rpk topic list [flags]
   
@@ -161,7 +156,7 @@ Aliases:
 
 Set the topic's config key/value pairs
 
-```
+```cmd
 Usage:
   rpk topic set-config <topic> <key> [<value>] [flags]
 ```
@@ -172,7 +167,7 @@ Usage:
 
 Get the cluster's info
 
-```
+```cmd
 Usage:
   rpk cluster info [flags]
 
@@ -189,7 +184,7 @@ Manage a local container cluster
 
 Start a local container cluster
 
-```
+```cmd
 Usage:
   rpk container start [flags]
   
@@ -201,7 +196,7 @@ Flags:
 
 Stop an existing local container cluster
 
-```
+```cmd
 Usage:
   rpk container stop
 ```
@@ -210,7 +205,7 @@ Usage:
 
 Stop and remove an existing local container cluster's data
 
-```
+```cmd
 Usage:
   rpk container purge
 ```
@@ -219,8 +214,7 @@ Usage:
 
 Measure filesystem performance and create IO configuration file.
 
-```
-
+```cmd
 Usage:
   rpk iotune [flags]
 
@@ -240,7 +234,7 @@ Generate a configuration template for related services.
 
 Generate a Grafana dashboard for redpanda metrics.
 
-```
+```cmd
 Usage:
   rpk generate grafana-dashboard [flags]
 
@@ -262,7 +256,7 @@ directly. Otherwise, `rpk generate prometheus-conf` will read the redpanda
 config file and use the node IP configured there. `--config` may be passed to
 especify an arbitrary config file.
 
-```
+```cmd
 Usage:
   rpk generate prometheus-config [flags]
 
@@ -281,7 +275,7 @@ Flags:
 
 Check the resource usage in the system, and optionally send it to Vectorized.
 
-```
+```cmd
 Usage:
   rpk debug info [flags]
 
