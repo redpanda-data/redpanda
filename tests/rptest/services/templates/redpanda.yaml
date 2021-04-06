@@ -29,6 +29,8 @@ redpanda:
   auto_create_topics_enabled: true
   default_topic_partitions: 4
 
+  superusers: {{superuser[0]}}
+
 {% if node_id > 1 %}
   seed_servers:
     - host:
