@@ -153,14 +153,24 @@ func (r *ConfigMapResource) createConfiguration(
 	cr.DeveloperMode = c.DeveloperMode
 	cr.Directory = dataDirectory
 	if r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.Enabled {
-		cr.KafkaApiTLS = config.ServerTLS{
+		// If external connectivity is enabled the TLS config will be applied to the external listener,
+		// otherwise TLS will be applied to the internal listener. // TODO support multiple TLS configs
+		name := "Internal"
+		if r.pandaCluster.Spec.ExternalConnectivity.Enabled {
+			name = "External"
+		}
+		tls := config.ServerTLS{
+			Name:              name,
 			KeyFile:           fmt.Sprintf("%s/%s", tlsDir, corev1.TLSPrivateKeyKey), // tls.key
 			CertFile:          fmt.Sprintf("%s/%s", tlsDir, corev1.TLSCertKey),       // tls.crt
 			Enabled:           true,
 			RequireClientAuth: r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.RequireClientAuth,
 		}
 		if r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.RequireClientAuth {
-			cr.KafkaApiTLS.TruststoreFile = fmt.Sprintf("%s/%s", tlsDirCA, cmetav1.TLSCAKey)
+			tls.TruststoreFile = fmt.Sprintf("%s/%s", tlsDirCA, cmetav1.TLSCAKey)
+		}
+		cr.KafkaApiTLS = []config.ServerTLS{
+			tls,
 		}
 	}
 	if r.pandaCluster.Spec.Configuration.TLS.AdminAPI.Enabled {
