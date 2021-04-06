@@ -342,7 +342,6 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 								// sometimes a little bit of memory is consumed by other processes than seastar
 								"--reserve-memory " + redpandav1alpha1.ReserveMemoryString,
 								r.portsConfiguration(),
-								"--",
 								"--default-log-level=debug",
 							},
 							Env: []corev1.EnvVar{
