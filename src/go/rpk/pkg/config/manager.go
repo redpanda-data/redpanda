@@ -186,6 +186,21 @@ func (m *manager) ReadFlat(path string) (map[string]string, error) {
 			}
 			continue
 		}
+		if k == "redpanda.kafka_api_tls" {
+			tlss := []map[string]interface{}{}
+			err := unmarshalKey(m.v, k, &tlss)
+			if err != nil {
+				return nil, err
+			}
+
+			for i, tls := range tlss {
+				for field, val := range tls {
+					key := fmt.Sprintf("%s.%d.%s", k, i, field)
+					flatMap[key] = fmt.Sprint(val)
+				}
+			}
+			continue
+		}
 		// These fields are added later on as <address>:<port>
 		// instead of
 		// field.address <address>
