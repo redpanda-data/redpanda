@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strconv"
 	"time"
 
 	"github.com/Shopify/sarama"
@@ -158,8 +159,11 @@ func (r *StatefulSetResource) ensureRedpandaGroupsReady(
 		return nil
 	}
 
-	headlessServiceWithPort := fmt.Sprintf("%s:%d", r.serviceFQDN,
-		r.pandaCluster.Spec.Configuration.KafkaAPI.Port)
+	if len(r.pandaCluster.Spec.Configuration.KafkaAPI) == 0 {
+		return nil // TODO
+	}
+	port := strconv.Itoa(r.pandaCluster.Spec.Configuration.KafkaAPI[0].Port) // TODO pick any internal port (need connectivity field)
+	headlessServiceWithPort := fmt.Sprintf("%s:%s", r.serviceFQDN, port)
 
 	addresses := []string{fmt.Sprintf("%s-%d.%s", sts.Name, ordinal, headlessServiceWithPort)}
 
