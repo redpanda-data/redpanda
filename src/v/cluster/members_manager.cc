@@ -469,7 +469,7 @@ members_manager::handle_configuration_update_request(
         return ss::make_ready_future<ret_t>(configuration_update_reply{false});
     }
     vlog(
-      clusterlog.info, "Handling node {} configuration update", req.node.id());
+      clusterlog.trace, "Handling node {} configuration update", req.node.id());
     auto node_ptr = ss::make_lw_shared(std::move(req.node));
     patch<broker_ptr> broker_update_patch{
       .additions = {node_ptr}, .deletions = {}};
