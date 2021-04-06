@@ -14,6 +14,6 @@
 
 namespace kafka {
 
-using sasl_handshake_handler = handler<sasl_handshake_api, 1, 1>;
+using sasl_handshake_handler = handler<sasl_handshake_api, 0, 1>;
 
 }

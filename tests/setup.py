@@ -17,6 +17,7 @@ setup(
         'prometheus-client==0.9.0',
         'pyyaml==5.3.1',
         'kafka-python==2.0.2',
+        'confluent-kafka==1.6.0',
     ],
     scripts=[],
 )
