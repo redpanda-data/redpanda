@@ -131,6 +131,14 @@ func (r *Cluster) validateKafkaPorts() field.ErrorList {
 			external = &p
 		}
 	}
+
+	if len(r.Spec.Configuration.KafkaAPI) != 2 || (external == nil && len(r.Spec.Configuration.KafkaAPI) != 1) {
+		allErrs = append(allErrs,
+			field.Invalid(field.NewPath("spec").Child("configuration").Child("kafkaApi"),
+				r.Spec.Configuration.KafkaAPI,
+				"one internal listener and up to to one external kafka api listener is required"))
+	}
+
 	return allErrs
 }
 
