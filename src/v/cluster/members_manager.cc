@@ -259,7 +259,7 @@ members_manager::dispatch_join_to_seed_server(seed_iterator it) {
     return f.then_wrapped([it, this](ss::future<ret_t> fut) {
         try {
             auto r = fut.get0();
-            if (r) {
+            if (r && r.value().success) {
                 return ss::make_ready_future<ret_t>(r);
             }
         } catch (...) {
