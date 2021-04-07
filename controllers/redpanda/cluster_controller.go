@@ -93,15 +93,14 @@ func (r *ClusterReconciler) Reconcile(
 	}
 	nodeports := []resources.NamedServicePort{
 		{Name: resources.AdminPortName, Port: redpandaCluster.Spec.Configuration.AdminAPI.Port + 1},
-		{Name: resources.KafkaPortName, Port: redpandaCluster.Spec.Configuration.KafkaAPI.Port + 1},
 	}
 	for _, listener := range redpandaCluster.Spec.Configuration.KafkaAPI {
 		if redpandaCluster.Spec.ExternalConnectivity.Enabled {
 			nodeports = append(nodeports, resources.NamedServicePort{Name: listener.Name, Port: listener.Port + 1})
 		}
-		headlessports = append(headlessports, resources.NamedServicePort{Name: listener.Name, Port: listener.Port})
+		headlessPorts = append(headlessPorts, resources.NamedServicePort{Name: listener.Name, Port: listener.Port})
 	}
-	headlessSvc := resources.NewHeadlessService(r.Client, &redpandaCluster, r.Scheme, headlessports, log)
+	headlessSvc := resources.NewHeadlessService(r.Client, &redpandaCluster, r.Scheme, headlessPorts, log)
 	nodeportSvc := resources.NewNodePortService(r.Client, &redpandaCluster, r.Scheme, nodeports, log)
 
 	pki := certmanager.NewPki(r.Client, &redpandaCluster, headlessSvc.HeadlessServiceFQDN(), r.Scheme, log)
