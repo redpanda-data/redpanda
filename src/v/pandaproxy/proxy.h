@@ -36,7 +36,7 @@ public:
 private:
     configuration _config;
     kafka::client::client _client;
-    server::context_t _ctx;
+    context_t _ctx;
     server _server;
 };
 

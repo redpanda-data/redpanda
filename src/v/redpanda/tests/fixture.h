@@ -150,8 +150,9 @@ public:
 
     YAML::Node proxy_config(uint16_t proxy_port = 8082) {
         pandaproxy::configuration cfg;
-        cfg.pandaproxy_api.set_value(
-          unresolved_address("127.0.0.1", proxy_port));
+        cfg.get("pandaproxy_api")
+          .set_value(std::vector<model::broker_endpoint>{model::broker_endpoint(
+            unresolved_address("127.0.0.1", proxy_port))});
         return to_yaml(cfg);
     }
 
