@@ -234,15 +234,7 @@ struct group_log_record_key {
  * deduplicate both group and commit metadata snapshots.
  */
 struct recovery_batch_consumer_state {
-    absl::node_hash_map<kafka::group_id, group_log_group_metadata>
-      loaded_groups;
-
-    absl::flat_hash_set<kafka::group_id> removed_groups;
-
-    absl::node_hash_map<
-      group_log_offset_key,
-      std::pair<model::offset, group_log_offset_metadata>>
-      loaded_offsets;
+    absl::node_hash_map<kafka::group_id, group_stm> groups;
 };
 
 struct recovery_batch_consumer {
