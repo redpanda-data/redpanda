@@ -180,8 +180,9 @@ type RedpandaConfig struct {
 
 // KafkaAPIListener listener information for Kafka API
 type KafkaAPIListener struct {
-	Name string `json:"name,omitempty"`
-	Port int    `json:"port,omitempty"`
+	Name     string                     `json:"name,omitempty"`
+	Port     int                        `json:"port,omitempty"`
+	External ExternalConnectivityConfig `json:"external,omitempty"`
 }
 
 // TLSConfig configures TLS for Redpanda APIs
