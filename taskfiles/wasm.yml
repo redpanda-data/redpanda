@@ -1,24 +1,6 @@
 version: '3'
 
 tasks:
-  js-deps:
-    desc: Install nodejs
-    vars:
-      JS_ROOT: "{{.SRC_DIR}}/src/js"
-      NODE_VERSION: '12.16.1'
-      NODE_ROOT: "{{.BUILD_ROOT}}/node"
-      NODE_PKG: "node-v{{.NODE_VERSION}}-linux-x64"
-      NODE_URL: "https://nodejs.org/dist/v{{.NODE_VERSION}}/{{.NODE_PKG}}.tar.xz"
-    cmds:
-    - mkdir -p "{{.NODE_ROOT}}"
-    - curl "{{.NODE_URL}}" > "{{.NODE_ROOT}}/{{.NODE_PKG}}.tar.xz"
-    - tar -xf "{{.NODE_ROOT}}/{{.NODE_PKG}}.tar.xz" -C "{{.NODE_ROOT}}" --strip 1
-    - rm -rf "{{.NODE_ROOT}}/{{.NODE_PKG}}.tar.xz"
-    - "{{.NODE_ROOT}}/bin/npm --prefix {{.JS_ROOT}} install"
-    status:
-    - test -f "{{.NODE_ROOT}}/bin/node"
-    - test -f "{{.NODE_ROOT}}/bin/npm"
-
   build:
     desc: Build js sources
     vars:
@@ -26,7 +8,7 @@ tasks:
       JS_BUILD_ROOT: "{{.BUILD_ROOT}}/node/output"
       NPM_CMD: "{{.BUILD_ROOT}}/node/bin/npm"
     deps:
-    - js-deps
+    - :dev:install-node
     cmds:
     - rm -rf "{{.JS_BUILD_ROOT}}"
     - mkdir -p "{{.JS_BUILD_ROOT}}"
