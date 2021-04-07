@@ -14,6 +14,7 @@
 #include "kafka/client/consumer.h"
 #include "kafka/client/exceptions.h"
 #include "kafka/client/logger.h"
+#include "kafka/client/partitioners.h"
 #include "kafka/client/retry_with_mitigation.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/fetch.h"
@@ -32,6 +33,9 @@
 #include <seastar/core/loop.hh>
 #include <seastar/core/std-coroutine.hh>
 
+#include <absl/container/node_hash_map.h>
+
+#include <cstdlib>
 #include <exception>
 
 namespace kafka::client {
@@ -172,6 +176,65 @@ ss::future<produce_response::partition> client::produce_record_batch(
             batch.record_count());
           return _producer.produce(std::move(tp), std::move(batch));
       });
+}
+
+ss::future<produce_response> client::produce_records(
+  model::topic topic, std::vector<record_essence> records) {
+    absl::node_hash_map<model::partition_id, storage::record_batch_builder>
+      partition_builders;
+
+    // Assign records to batches per topic_partition
+    for (auto& record : records) {
+        auto p_id = record.partition_id;
+        if (!p_id) {
+            p_id = co_await gated_retry_with_mitigation([&, this]() {
+                       return _topic_cache.partition_for(topic, record);
+                   }).handle_exception_type([](const topic_error&) {
+                // Assume auto topic creation is on and assign to first
+                // partition
+                return model::partition_id{0};
+            });
+        }
+        auto it = partition_builders.find(*p_id);
+        if (it == partition_builders.end()) {
+            it = partition_builders
+                   .emplace(
+                     *p_id,
+                     storage::record_batch_builder(
+                       raft::data_batch_type, model::offset(0)))
+                   .first;
+        }
+        it->second.add_raw_kw(
+          std::move(record.key).value_or(iobuf{}),
+          std::move(record.value),
+          std::move(record.headers));
+    }
+
+    // Convert to request::partition
+    std::vector<kafka::produce_request::partition> partitions;
+    partitions.reserve(partition_builders.size());
+    for (auto& pb : partition_builders) {
+        partitions.emplace_back(kafka::produce_request::partition{
+          .partition_index = pb.first,
+          .records = kafka::produce_request_record_data{
+            std::move(pb.second).build()}});
+    }
+
+    // Produce batch to tp
+    auto responses = co_await ssx::parallel_transform(
+      std::move(partitions),
+      [this, topic](kafka::produce_request::partition p) mutable
+      -> ss::future<produce_response::partition> {
+          co_return co_await produce_record_batch(
+            model::topic_partition(topic, p.partition_index),
+            std::move(*p.records->adapter.batch));
+      });
+
+    co_return produce_response{
+      .data = produce_response_data{
+        .responses{
+          {.name{std::move(topic)}, .partitions{std::move(responses)}}},
+        .throttle_time_ms{{std::chrono::milliseconds{0}}}}};
 }
 
 ss::future<fetch_response> client::fetch_partition(

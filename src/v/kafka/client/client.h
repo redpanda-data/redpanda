@@ -21,6 +21,7 @@
 #include "kafka/client/retry_with_mitigation.h"
 #include "kafka/client/topic_cache.h"
 #include "kafka/client/transport.h"
+#include "kafka/client/types.h"
 #include "kafka/protocol/fetch.h"
 #include "kafka/types.h"
 #include "utils/retry.h"
@@ -102,6 +103,9 @@ public:
 
     ss::future<produce_response::partition> produce_record_batch(
       model::topic_partition tp, model::record_batch&& batch);
+
+    ss::future<produce_response>
+    produce_records(model::topic topic, std::vector<record_essence> batch);
 
     ss::future<fetch_response> fetch_partition(
       model::topic_partition tp,
