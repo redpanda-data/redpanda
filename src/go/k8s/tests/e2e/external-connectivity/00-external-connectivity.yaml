@@ -38,6 +38,7 @@ spec:
     rpcServer:
       port: 33145
     kafkaApi:
+    - name: kafka
       port: 9092
     admin:
       port: 9644
