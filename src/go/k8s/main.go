@@ -86,6 +86,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err = redpandacontrollers.NewClusterMetricsController(mgr.GetClient()).
+		SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Unable to create controller", "controller", "ClustersMetrics")
+		os.Exit(1)
+	}
+
 	if webhookEnabled {
 		setupLog.Info("Setup webhook")
 
