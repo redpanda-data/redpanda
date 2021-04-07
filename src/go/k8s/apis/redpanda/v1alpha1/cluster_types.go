@@ -174,6 +174,8 @@ type RedpandaConfig struct {
 	AdminAPI      SocketAddress `json:"admin,omitempty"`
 	DeveloperMode bool          `json:"developerMode,omitempty"`
 	TLS           TLSConfig     `json:"tls,omitempty"`
+	// Number of partitions in the internal group membership topic
+	GroupTopicPartitions int `json:"groupTopicPartitions,omitempty"`
 }
 
 // TLSConfig configures TLS for Redpanda APIs
