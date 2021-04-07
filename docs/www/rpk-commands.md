@@ -130,6 +130,7 @@ Flags:
       --compact            Enable topic compaction
   -p, --partitions int32   Number of partitions (default: 1)
   -r, --replicas int16     Replication factor. If it's negative or is left unspecified, it will use the cluster's default topic replication factor. (default: -1)
+  -c, --topic-config stringArray   Config entries in the format <key>:<value>. May be used multiple times to add more entries.
 ```
 
 ### topic delete
