@@ -182,6 +182,16 @@ func TestValidateUpdate_NoError(t *testing.T) {
 		err := tls.ValidateUpdate(redpandaCluster)
 		assert.NoError(t, err)
 	})
+
+	t.Run("multiple external listeners", func(t *testing.T) {
+		exPort := redpandaCluster.DeepCopy()
+		exPort.Spec.Configuration.KafkaAPI[0].External.Enabled = true
+		exPort.Spec.Configuration.KafkaAPI = append(exPort.Spec.Configuration.KafkaAPI,
+			v1alpha1.KafkaAPIListener{Port: 123, External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
+		err := exPort.ValidateUpdate(redpandaCluster)
+
+		assert.Error(t, err)
+	})
 }
 
 func TestCreation(t *testing.T) {
@@ -283,6 +293,16 @@ func TestCreation(t *testing.T) {
 		tls.Spec.Configuration.TLS.KafkaAPI.RequireClientAuth = true
 
 		err := tls.ValidateCreate()
+		assert.Error(t, err)
+	})
+
+	t.Run("multiple external listeners", func(t *testing.T) {
+		exPort := redpandaCluster.DeepCopy()
+		exPort.Spec.Configuration.KafkaAPI[0].External.Enabled = true
+		exPort.Spec.Configuration.KafkaAPI = append(exPort.Spec.Configuration.KafkaAPI,
+			v1alpha1.KafkaAPIListener{Port: 123, External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
+		err := exPort.ValidateCreate()
+
 		assert.Error(t, err)
 	})
 }
