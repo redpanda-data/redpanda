@@ -1,0 +1,23 @@
+version: '3'
+
+tasks:
+  build:
+    desc: Build js sources
+    vars:
+      JS_ROOT: "{{.SRC_DIR}}/src/js"
+      JS_BUILD_ROOT: "{{.BUILD_ROOT}}/node/output"
+      NPM_CMD: "{{.BUILD_ROOT}}/node/bin/npm"
+    deps:
+    - :dev:install-node
+    cmds:
+    - rm -rf "{{.JS_BUILD_ROOT}}"
+    - mkdir -p "{{.JS_BUILD_ROOT}}"
+    - "{{.NPM_CMD}} run --prefix {{.JS_ROOT}} generate:serialization"
+    - "{{.NPM_CMD}} run --prefix {{.JS_ROOT}} test"
+    - "{{.NPM_CMD}} run --prefix {{.JS_ROOT}} build:ts -- --project . --outDir {{.JS_BUILD_ROOT}}"
+    - "cp {{.JS_ROOT}}/build-package.json {{.JS_BUILD_ROOT}}/package.json"
+    - "{{.NPM_CMD}} install --prefix {{.JS_BUILD_ROOT}}"
+    status:
+    - test -d "{{.JS_BUILD_ROOT}}"
+
+

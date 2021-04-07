@@ -6,6 +6,25 @@ tasks:
     cmds:
     - install-dependencies.sh
 
+  install-node:
+    desc: Install nodejs
+    vars:
+      JS_ROOT: "{{.SRC_DIR}}/src/js"
+      NODE_VERSION: '12.16.1'
+      NODE_ROOT: "{{.BUILD_ROOT}}/node"
+      NODE_PKG: "node-v{{.NODE_VERSION}}-linux-x64"
+      NODE_URL: "https://nodejs.org/dist/v{{.NODE_VERSION}}/{{.NODE_PKG}}.tar.xz"
+    cmds:
+    - mkdir -p "{{.NODE_ROOT}}"
+    - curl "{{.NODE_URL}}" > "{{.NODE_ROOT}}/{{.NODE_PKG}}.tar.xz"
+    - tar -xf "{{.NODE_ROOT}}/{{.NODE_PKG}}.tar.xz" -C "{{.NODE_ROOT}}" --strip 1
+    - rm -rf "{{.NODE_ROOT}}/{{.NODE_PKG}}.tar.xz"
+    - "{{.NODE_ROOT}}/bin/npm --prefix {{.JS_ROOT}} install"
+    status:
+    - test -f "{{.NODE_ROOT}}/bin/node"
+    - test -f "{{.NODE_ROOT}}/bin/npm"
+
+
   install-docker-compose:
     desc: install docker-compose
     cmds:
