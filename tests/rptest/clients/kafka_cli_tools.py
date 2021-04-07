@@ -13,6 +13,22 @@ from rptest.clients.types import TopicSpec
 from rptest.clients.kafka_client import KafkaClient
 
 
+class AuthenticationError(Exception):
+    def __init__(self, message):
+        self.message = message
+
+    def __str__(self):
+        return repr(self.message)
+
+
+class ClusterAuthorizationError(Exception):
+    def __init__(self, message):
+        self.message = message
+
+    def __str__(self):
+        return repr(self.message)
+
+
 class KafkaCliTools(KafkaClient):
     """
     Wrapper around the Kafka admin command line tools.
@@ -144,6 +160,46 @@ sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule require
             "bootstrap.servers=%s" % self._redpanda.brokers()
         ]
         self._execute(cmd)
+
+    def list_acls(self):
+        args = ["--list"]
+        return self._run_strict("kafka-acls.sh", args)
+
+    def create_cluster_acls(self, username, op):
+        """
+        Add allow+describe+cluster ACL
+        """
+        args = ["--add"]
+        args += ["--allow-principal", f"User:{username}"]
+        args += ["--operation", op, "--cluster"]
+        return self._run_strict("kafka-acls.sh", args)
+
+    def _run_strict(self, script, args):
+        """
+        A sticter version of run. TODO: the two should be merged but will
+        require looking at all the users
+        """
+        cmd = [self._script(script)]
+        cmd += ["--bootstrap-server", self._redpanda.brokers()]
+        if self._command_config:
+            cmd += ["--command-config", self._command_config.name]
+        cmd += args
+        self._redpanda.logger.debug("Executing command: %s", cmd)
+
+        try:
+            res = subprocess.check_output(cmd,
+                                          stderr=subprocess.STDOUT,
+                                          text=True)
+            self._redpanda.logger.debug(res)
+            return res
+        except subprocess.CalledProcessError as e:
+            self._redpanda.logger.debug("Error (%d) executing command: %s",
+                                        e.returncode, e.output)
+            if "SASL authentication failed: security: Invalid credentials" in e.output:
+                raise AuthenticationError(e.output)
+            if "ClusterAuthorizationException: Cluster authorization failed" in e.output:
+                raise ClusterAuthorizationError(e.output)
+            raise
 
     def _run(self, script, args):
         cmd = [self._script(script)]
