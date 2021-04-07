@@ -123,14 +123,6 @@ func (r *NodePortServiceResource) obj() (k8sclient.Object, error) {
 	return svc, nil
 }
 
-// CalculateExternalPort can calculate external Kafka API port based on the internal Kafka API port
-func CalculateExternalPort(kafkaInternalPort int) int {
-	if kafkaInternalPort < 0 || kafkaInternalPort > 65535 {
-		return 0
-	}
-	return kafkaInternalPort + 1
-}
-
 // Key returns namespace/name object that is used to identify object.
 // For reference please visit types.NamespacedName docs in k8s.io/apimachinery
 func (r *NodePortServiceResource) Key() types.NamespacedName {

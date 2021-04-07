@@ -22,7 +22,6 @@ import (
 	"github.com/hashicorp/go-multierror"
 	"github.com/mitchellh/mapstructure"
 	"github.com/spf13/afero"
-	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/resources"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 	"gopkg.in/yaml.v3"
 	corev1 "k8s.io/api/core/v1"
@@ -136,8 +135,6 @@ func main() {
 		log.Fatalf("%s", fmt.Errorf("unable to register advertised kafka API: %w", err))
 	}
 
-	registerKafkaAPI(&c, cfg)
-
 	cfg.Redpanda.Id = int(hostIndex)
 
 	// First Redpanda node need to have cleared seed servers in order
@@ -158,30 +155,6 @@ func main() {
 	}
 
 	log.Printf("Configuration saved to: %s", c.configDestination)
-}
-
-func registerKafkaAPI(c *configuratorConfig, cfg *config.Config) {
-	cfg.Redpanda.KafkaApi = []config.NamedSocketAddress{
-		{
-			SocketAddress: config.SocketAddress{
-				Address: "0.0.0.0",
-				Port:    c.kafkaAPIPort,
-			},
-			Name: "Internal",
-		},
-	}
-
-	if !c.externalConnectivity {
-		return
-	}
-
-	cfg.Redpanda.KafkaApi = append(cfg.Redpanda.KafkaApi, config.NamedSocketAddress{
-		SocketAddress: config.SocketAddress{
-			Address: "0.0.0.0",
-			Port:    resources.CalculateExternalPort(c.kafkaAPIPort),
-		},
-		Name: "External",
-	})
 }
 
 func registerAdvertisedKafkaAPI(
