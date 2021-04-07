@@ -118,6 +118,19 @@ func (r *Cluster) validateKafkaPorts() field.ErrorList {
 				r.Spec.Configuration.KafkaAPI,
 				"need at least one kafka api listener"))
 	}
+
+	var external *KafkaAPIListener
+	for _, p := range r.Spec.Configuration.KafkaAPI {
+		if p.External.Enabled {
+			if external != nil {
+				allErrs = append(allErrs,
+					field.Invalid(field.NewPath("spec").Child("configuration").Child("kafkaApi"),
+						r.Spec.Configuration.KafkaAPI,
+						"only one kafka api listener can be marked as external"))
+			}
+			external = &p
+		}
+	}
 	return allErrs
 }
 
