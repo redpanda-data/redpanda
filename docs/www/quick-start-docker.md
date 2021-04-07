@@ -27,7 +27,7 @@ With a 1-node cluster you can test out a simple implementation of Redpanda.
 # make sure you update the version of v21.4.6 to the latest release https://github.com/vectorizedio/redpanda/releases
 
 
-docker run -ti --rm -p 9092:9092 vectorized/redpanda:v21.4.6 start --overprovisioned --smp 1  --memory 1G  --reserve-memory 0M --overprovisioned --node-id 0 --check=false
+docker run -ti --rm -p 9092:9092 vectorized/redpanda:v21.4.6 start --overprovisioned --smp 1  --memory 1G  --reserve-memory 0M --node-id 0 --check=false
 
 ```
 
