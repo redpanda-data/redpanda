@@ -1078,6 +1078,58 @@ rpk:
 `,
 		},
 		{
+			name: "shall write config with group_topic_partitions value",
+			conf: func() *Config {
+				c := getValidConfig()
+				val := 16
+				c.Redpanda.GroupTopicPartitions = &val
+				return c
+			},
+			wantErr: false,
+			expected: `config_file: /etc/redpanda/redpanda.yaml
+pandaproxy: {}
+redpanda:
+  admin:
+    address: 0.0.0.0
+    port: 9644
+  data_directory: /var/lib/redpanda/data
+  developer_mode: false
+  group_topic_partitions: 16
+  kafka_api:
+  - address: 0.0.0.0
+    port: 9092
+  node_id: 0
+  rpc_server:
+    address: 0.0.0.0
+    port: 33145
+  seed_servers:
+  - host:
+      address: 127.0.0.1
+      port: 33145
+  - host:
+      address: 127.0.0.1
+      port: 33146
+rpk:
+  coredump_dir: /var/lib/redpanda/coredumps
+  enable_memory_locking: true
+  enable_usage_stats: true
+  overprovisioned: false
+  tune_aio_events: true
+  tune_clocksource: true
+  tune_coredump: true
+  tune_cpu: true
+  tune_disk_irq: true
+  tune_disk_nomerges: true
+  tune_disk_scheduler: true
+  tune_disk_write_cache: true
+  tune_fstrim: true
+  tune_network: true
+  tune_swappiness: true
+  tune_transparent_hugepages: true
+  well_known_io: vendor:vm:storage
+`,
+		},
+		{
 			name: "shall write config with SASL enabled",
 			conf: func() *Config {
 				c := getValidConfig()

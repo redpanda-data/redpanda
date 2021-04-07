@@ -49,6 +49,7 @@ type RedpandaConfig struct {
 	CloudStorageTrustFile                *string                `yaml:"cloud_storage_trust_file,omitempty" mapstructure:"cloud_storage_trust_file,omitempty" json:"cloudStorageTrustFile,omitempty"`
 	Superusers                           []string               `yaml:"superusers,omitempty" mapstructure:"superusers,omitempty" json:"superusers,omitempty"`
 	EnableSASL                           *bool                  `yaml:"enable_sasl,omitempty" mapstructure:"enable_sasl,omitempty" json:"enableSasl,omitempty"`
+	GroupTopicPartitions                 *int                   `yaml:"group_topic_partitions,omitempty" mapstructure:"group_topic_partitions,omitempty" json:"groupTopicPartitions,omitempty"`
 	Other                                map[string]interface{} `yaml:",inline" mapstructure:",remain"`
 }
 
