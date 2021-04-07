@@ -102,6 +102,27 @@ redpanda:
     address: "0.0.0.0"
     port: 33145
   
+  # Address, ports, and certificates for the redpanda REST API.
+  # The redpanda REST API allows management of topics and consumer groups.
+  pandaproxy_api: 
+  - name: secured
+    address: 127.0.0.1
+    port: 443
+  - name: plain
+    address: 127.0.0.1
+    port: 9090
+  pandaproxy_api_tls:
+  - name: secured
+    cert_file: cluster/secrets/n1/cert.pem
+    enabled: true
+    key_file: cluster/secrets/n1/key.pem
+    require_client_auth: true
+    truststore_file: cluster/secrets/ca_cert.pem
+  advertised_pandaproxy_api:
+  - name: secured
+    address: secured.panda.proxy.com
+    port: 1234
+
   # Multiple listeners are also supported as per KIP-103.
   # The names must match those in advertised_kafka_api
   kafka_api:
