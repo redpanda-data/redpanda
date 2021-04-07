@@ -215,6 +215,15 @@ func TestValidateUpdate_NoError(t *testing.T) {
 
 		assert.Error(t, err)
 	})
+
+	t.Run("multiple internal listeners", func(t *testing.T) {
+		multiPort := redpandaCluster.DeepCopy()
+		multiPort.Spec.Configuration.KafkaAPI = append(multiPort.Spec.Configuration.KafkaAPI,
+			v1alpha1.KafkaAPIListener{Port: 123})
+		err := multiPort.ValidateUpdate(redpandaCluster)
+
+		assert.Error(t, err)
+	})
 }
 
 // nolint:funlen // consider splitting tests
@@ -326,6 +335,15 @@ func TestCreation(t *testing.T) {
 		exPort.Spec.Configuration.KafkaAPI = append(exPort.Spec.Configuration.KafkaAPI,
 			v1alpha1.KafkaAPIListener{Port: 123, External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
 		err := exPort.ValidateCreate()
+
+		assert.Error(t, err)
+	})
+
+	t.Run("multiple internal listeners", func(t *testing.T) {
+		multiPort := redpandaCluster.DeepCopy()
+		multiPort.Spec.Configuration.KafkaAPI = append(multiPort.Spec.Configuration.KafkaAPI,
+			v1alpha1.KafkaAPIListener{Port: 123})
+		err := multiPort.ValidateCreate()
 
 		assert.Error(t, err)
 	})
