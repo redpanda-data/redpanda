@@ -36,7 +36,6 @@ const (
 	configSourceDirEnvVar               = "CONFIG_SOURCE_DIR"
 	configDestinationEnvVar             = "CONFIG_DESTINATION"
 	redpandaRPCPortEnvVar               = "REDPANDA_RPC_PORT"
-	kafkaAPIEnvVar                      = "KAFKA_API_PORT"
 	nodeNameEnvVar                      = "NODE_NAME"
 	externalConnectivityEnvVar          = "EXTERNAL_CONNECTIVITY"
 	externalConnectivitySubDomainEnvVar = "EXTERNAL_CONNECTIVITY_SUBDOMAIN"
@@ -53,7 +52,6 @@ type configuratorConfig struct {
 	nodeName             string
 	subdomain            string
 	externalConnectivity bool
-	kafkaAPIPort         int
 	redpandaRPCPort      int
 	hostPort             int
 }
@@ -67,7 +65,6 @@ func (c *configuratorConfig) String() string {
 		"nodeName: %s\n"+
 		"externalConnectivity: %t\n"+
 		"externalConnectivitySubdomain: %s\n"+
-		"kafkaAPIPort: %d\n"+
 		"redpandaRPCPort: %d\n"+
 		"hostPort: %d\n",
 		c.hostName,
@@ -77,7 +74,6 @@ func (c *configuratorConfig) String() string {
 		c.nodeName,
 		c.externalConnectivity,
 		c.subdomain,
-		c.kafkaAPIPort,
 		c.redpandaRPCPort,
 		c.hostPort)
 }
@@ -123,6 +119,10 @@ func main() {
 
 	log.Print("Decode done")
 
+	kafkaAPIPort, err := getInternalKafkaAPIPort(cfg)
+	if err != nil {
+		log.Fatal(err)
+	}
 	hostIndex, err := hostIndex(c.hostName)
 	if err != nil {
 		log.Fatalf("%s", fmt.Errorf("unable to extract host index: %w", err))
@@ -130,7 +130,7 @@ func main() {
 
 	log.Printf("Host index calculated %d", hostIndex)
 
-	err = registerAdvertisedKafkaAPI(&c, cfg, hostIndex)
+	err = registerAdvertisedKafkaAPI(&c, cfg, hostIndex, kafkaAPIPort)
 	if err != nil {
 		log.Fatalf("%s", fmt.Errorf("unable to register advertised kafka API: %w", err))
 	}
@@ -157,14 +157,25 @@ func main() {
 	log.Printf("Configuration saved to: %s", c.configDestination)
 }
 
+var errInternalPortMissing = errors.New("port configration is missing internal port")
+
+func getInternalKafkaAPIPort(cfg *config.Config) (int, error) {
+	for _, l := range cfg.Redpanda.KafkaApi {
+		if l.Name == "Internal" {
+			return l.Port, nil
+		}
+	}
+	return 0, fmt.Errorf("%w %v", errInternalPortMissing, cfg.Redpanda.KafkaApi)
+}
+
 func registerAdvertisedKafkaAPI(
-	c *configuratorConfig, cfg *config.Config, index brokerID,
+	c *configuratorConfig, cfg *config.Config, index brokerID, kafkaAPIPort int,
 ) error {
 	cfg.Redpanda.AdvertisedKafkaApi = []config.NamedSocketAddress{
 		{
 			SocketAddress: config.SocketAddress{
 				Address: c.hostName + "." + c.svcFQDN,
-				Port:    c.kafkaAPIPort,
+				Port:    kafkaAPIPort,
 			},
 			Name: "Internal",
 		},
@@ -226,7 +237,6 @@ func checkEnvVars() (configuratorConfig, error) {
 	var result error
 	var extCon string
 	var rpcPort string
-	var kafkaAPIPort string
 	var hostPort string
 
 	c := configuratorConfig{}
@@ -268,10 +278,6 @@ func checkEnvVars() (configuratorConfig, error) {
 			name:  redpandaRPCPortEnvVar,
 		},
 		{
-			value: &kafkaAPIPort,
-			name:  kafkaAPIEnvVar,
-		},
-		{
 			value: &hostPort,
 			name:  hostPortEnvVar,
 		},
@@ -298,11 +304,6 @@ func checkEnvVars() (configuratorConfig, error) {
 	c.redpandaRPCPort, err = strconv.Atoi(rpcPort)
 	if err != nil {
 		result = multierror.Append(result, fmt.Errorf("unable to convert rpc port from string to int: %w", err))
-	}
-
-	c.kafkaAPIPort, err = strconv.Atoi(kafkaAPIPort)
-	if err != nil {
-		result = multierror.Append(result, fmt.Errorf("unable to convert kafka api port from string to int: %w", err))
 	}
 
 	c.hostPort, err = strconv.Atoi(hostPort)
