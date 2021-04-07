@@ -141,6 +141,7 @@ func (r *ConfigMapResource) createConfiguration(
 	cr := &cfgRpk.Redpanda
 
 	// I think this block would only be useful if the configurator didn't run. Should we remove it?
+	cr.KafkaApi = []config.NamedSocketAddress{}
 	for _, listener := range c.KafkaAPI {
 		cr.KafkaApi = append(cr.KafkaApi, config.NamedSocketAddress{
 			SocketAddress: config.SocketAddress{
@@ -155,7 +156,7 @@ func (r *ConfigMapResource) createConfiguration(
 		cr.KafkaApi = append(cr.KafkaApi, config.NamedSocketAddress{
 			SocketAddress: config.SocketAddress{
 				Address: "0.0.0.0",
-				Port:    calculateExternalPort(c.KafkaAPI.Port),
+				Port:    calculateExternalPort(c.KafkaAPI[0].Port),
 			},
 			Name: "External",
 		})
