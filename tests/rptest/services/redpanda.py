@@ -312,6 +312,18 @@ class RedpandaService(Service):
             for fn in os.listdir(data_dir):
                 shutil.move(os.path.join(data_dir, fn), dest)
 
+    def data_checksum(self, node):
+        """Run command that computes MD5 hash of every file in redpanda data 
+        directory. The results of the command are turned into a map from path
+        to hash-size tuples."""
+        cmd = f"find {RedpandaService.DATA_DIR} -type f -exec md5sum '{{}}' \; -exec stat -c %s '{{}}' \;"
+        lines = node.account.ssh_output(cmd)
+        tokens = lines.split()
+        return {
+            tokens[ix + 1].decode(): (tokens[ix].decode(), int(tokens[ix + 2]))
+            for ix in range(0, len(tokens), 3)
+        }
+
     def brokers(self, limit=None):
         brokers = ",".join(
             map(lambda n: "{}:9092".format(n.account.hostname),
