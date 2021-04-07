@@ -289,10 +289,6 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 									Value: strconv.Itoa(r.pandaCluster.Spec.Configuration.RPCServer.Port),
 								},
 								{
-									Name:  "KAFKA_API_PORT",
-									Value: strconv.Itoa(r.pandaCluster.Spec.Configuration.KafkaAPI.Port),
-								},
-								{
 									Name: "NODE_NAME",
 									ValueFrom: &corev1.EnvVarSource{
 										FieldRef: &corev1.ObjectFieldSelector{
