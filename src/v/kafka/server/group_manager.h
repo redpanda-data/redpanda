@@ -173,6 +173,7 @@ private:
         ss::semaphore sem{1};
         ss::abort_source as;
         ss::lw_shared_ptr<cluster::partition> partition;
+        ss::basic_rwlock<> catchup_lock;
 
         explicit attached_partition(ss::lw_shared_ptr<cluster::partition> p)
           : loading(true)
@@ -203,6 +204,15 @@ private:
     ss::future<> inject_noop(
       ss::lw_shared_ptr<cluster::partition> p,
       ss::lowres_clock::time_point timeout);
+
+    [[maybe_unused]] ss::lw_shared_ptr<attached_partition>
+    get_attached_partition(model::ntp ntp) {
+        auto it = _partitions.find(ntp);
+        if (it == _partitions.end()) {
+            return nullptr;
+        }
+        return it->second;
+    }
 
     ss::sharded<raft::group_manager>& _gm;
     ss::sharded<cluster::partition_manager>& _pm;
