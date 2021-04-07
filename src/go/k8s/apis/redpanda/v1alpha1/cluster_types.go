@@ -288,15 +288,3 @@ func (r *Cluster) InternalListener() *KafkaAPIListener {
 	}
 	return nil
 }
-
-// KafkaTLSListener returns kafka listener that has tls enabled. Returns nil if
-// no tls is configured. Until v1alpha1 API is deprecated, we support only
-// single listener with TLS
-func (r *Cluster) KafkaTLSListener() *KafkaAPIListener {
-	for i, el := range r.Spec.Configuration.KafkaAPI {
-		if el.TLS.Enabled {
-			return &r.Spec.Configuration.KafkaAPI[i]
-		}
-	}
-	return nil
-}

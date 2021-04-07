@@ -88,14 +88,13 @@ func (r *ClusterReconciler) Reconcile(
 		return ctrl.Result{}, fmt.Errorf("unable to retrieve Cluster resource: %w", err)
 	}
 
-	nodeports := []resources.NamedServicePort{}
+	nodeports := []resources.NamedServicePort{
+		{Name: resources.AdminPortName, Port: redpandaCluster.Spec.Configuration.AdminAPI.Port + 1},
+	}
 	internalListener := redpandaCluster.InternalListener()
 	externalListener := redpandaCluster.ExternalListener()
 	if externalListener != nil {
 		nodeports = append(nodeports, resources.NamedServicePort{Name: externalListener.Name, Port: internalListener.Port + 1})
-	}
-	if redpandaCluster.Spec.ExternalConnectivity.Enabled {
-		nodeports = append(nodeports, resources.NamedServicePort{Name: resources.AdminPortName, Port: redpandaCluster.Spec.Configuration.AdminAPI.Port + 1})
 	}
 	headlessPorts := []resources.NamedServicePort{
 		{Name: resources.AdminPortName, Port: redpandaCluster.Spec.Configuration.AdminAPI.Port},
