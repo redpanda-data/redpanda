@@ -56,6 +56,8 @@ func (r *Cluster) ValidateCreate() error {
 
 	var allErrs field.ErrorList
 
+	allErrs = append(allErrs, r.validateKafkaPorts()...)
+
 	allErrs = append(allErrs, r.checkCollidingPorts()...)
 
 	allErrs = append(allErrs, r.validateMemory()...)
@@ -86,6 +88,8 @@ func (r *Cluster) ValidateUpdate(old runtime.Object) error {
 				"scaling down is not supported"))
 	}
 
+	allErrs = append(allErrs, r.validateKafkaPorts()...)
+
 	allErrs = append(allErrs, r.checkCollidingPorts()...)
 
 	allErrs = append(allErrs, r.validateMemory()...)
@@ -105,6 +109,17 @@ func (r *Cluster) ValidateUpdate(old runtime.Object) error {
 
 // ReserveMemoryString is amount of memory that we reserve for other processes than redpanda in the container
 const ReserveMemoryString = "1M"
+
+func (r *Cluster) validateKafkaPorts() field.ErrorList {
+	var allErrs field.ErrorList
+	if len(r.Spec.Configuration.KafkaAPI) == 0 {
+		allErrs = append(allErrs,
+			field.Invalid(field.NewPath("spec").Child("configuration").Child("kafkaApi"),
+				r.Spec.Configuration.KafkaAPI,
+				"need at least one kafka api listener"))
+	}
+	return allErrs
+}
 
 // validateMemory verifies that memory limits are aligned with the minimal requirement of redpanda
 // which is 1GB per core

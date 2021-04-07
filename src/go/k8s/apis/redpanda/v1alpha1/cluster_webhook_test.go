@@ -33,10 +33,8 @@ func TestValidateUpdate(t *testing.T) {
 			Namespace: "",
 		},
 		Spec: v1alpha1.ClusterSpec{
-			Replicas: pointer.Int32Ptr(replicas2),
-			Configuration: v1alpha1.RedpandaConfig{
-				KafkaAPI: []v1alpha1.KafkaAPIListener{{Port: 123}},
-			},
+			Replicas:      pointer.Int32Ptr(replicas2),
+			Configuration: v1alpha1.RedpandaConfig{},
 			Resources: corev1.ResourceRequirements{
 				Limits: corev1.ResourceList{
 					corev1.ResourceMemory: resource.MustParse("1Gi"),
@@ -52,7 +50,6 @@ func TestValidateUpdate(t *testing.T) {
 	updatedCluster := redpandaCluster.DeepCopy()
 	updatedCluster.Spec.Replicas = &replicas1
 	updatedCluster.Spec.Configuration = v1alpha1.RedpandaConfig{
-		KafkaAPI: []v1alpha1.KafkaAPIListener{{Port: 1234}},
 		TLS: v1alpha1.TLSConfig{
 			KafkaAPI: v1alpha1.KafkaAPITLS{
 				RequireClientAuth: true,
@@ -80,7 +77,9 @@ func TestValidateUpdate(t *testing.T) {
 		field.NewPath("spec").Child("resources").Child("limits").Child("memory").String(),
 		field.NewPath("spec").Child("configuration").Child("tls").Child("requireclientauth").String(),
 		field.NewPath("spec").Child("configuration").Child("tls").Child("nodeSecretRef").String(),
+		field.NewPath("spec").Child("configuration").Child("kafkaApi").String(),
 	}
+
 	for _, ef := range expectedFields {
 		found := false
 		for _, c := range statusError.Status().Details.Causes {
@@ -246,6 +245,14 @@ func TestCreation(t *testing.T) {
 		newPort.Spec.Configuration.RPCServer.Port = 201
 
 		err := newPort.ValidateCreate()
+		assert.Error(t, err)
+	})
+
+	t.Run("no kafka port", func(t *testing.T) {
+		noPort := redpandaCluster.DeepCopy()
+		noPort.Spec.Configuration.KafkaAPI = []v1alpha1.KafkaAPIListener{}
+
+		err := noPort.ValidateCreate()
 		assert.Error(t, err)
 	})
 
