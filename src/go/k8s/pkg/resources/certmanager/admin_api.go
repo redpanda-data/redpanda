@@ -38,9 +38,9 @@ func (r *PkiReconciler) prepareAdminAPI(
 	certsKey := types.NamespacedName{Name: string(cn), Namespace: r.pandaCluster.Namespace}
 
 	dnsName := r.internalFQDN
-	externConn := r.pandaCluster.Spec.ExternalConnectivity
-	if externConn.Enabled && externConn.Subdomain != "" {
-		dnsName = externConn.Subdomain
+	externalListener := r.pandaCluster.ExternalListener()
+	if externalListener != nil && externalListener.External.Subdomain != "" {
+		dnsName = externalListener.External.Subdomain
 	}
 
 	nodeCert := NewNodeCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, issuerRef, dnsName, cn, false, r.logger)

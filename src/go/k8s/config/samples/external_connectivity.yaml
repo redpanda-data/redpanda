@@ -6,9 +6,6 @@ spec:
   image: "vectorized/redpanda"
   version: "latest"
   replicas: 3
-  externalConnectivity:
-    enabled: true
-    subdomain: "test.subdomain.com"
   resources:
     requests:
       cpu: 1
@@ -22,6 +19,10 @@ spec:
     kafkaApi:
      - name: kafka
        port: 9092
+     - name: external
+       external:
+         enabled: true
+         subdomain: "test.subdomain.com"
     admin:
       port: 9644
     developerMode: true

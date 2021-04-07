@@ -125,7 +125,7 @@ func (r *ConfigMapResource) obj(ctx context.Context) (k8sclient.Object, error) {
 	return cm, nil
 }
 
-// nolint:funlen // it's still ok to fill all config fields in one function
+// nolint:funlen // let's keep the configuration in one function for now and refactor later
 func (r *ConfigMapResource) createConfiguration(
 	ctx context.Context,
 ) (*config.Config, error) {
@@ -136,6 +136,9 @@ func (r *ConfigMapResource) createConfiguration(
 
 	// I think this block would only be useful if the configurator didn't run. Should we remove it?
 	for _, listener := range c.KafkaAPI {
+		if listener.External.Enabled {
+			continue
+		}
 		cr.KafkaApi = append(cr.KafkaApi, config.NamedSocketAddress{
 			SocketAddress: config.SocketAddress{
 				Address: "0.0.0.0",
@@ -145,11 +148,12 @@ func (r *ConfigMapResource) createConfiguration(
 		})
 	}
 
-	if r.pandaCluster.Spec.ExternalConnectivity.Enabled {
+	internalListener := r.pandaCluster.InternalListener()
+	if r.pandaCluster.ExternalListener() != nil {
 		cr.KafkaApi = append(cr.KafkaApi, config.NamedSocketAddress{
 			SocketAddress: config.SocketAddress{
 				Address: "0.0.0.0",
-				Port:    calculateExternalPort(c.KafkaAPI.Port),
+				Port:    calculateExternalPort(internalListener.Port),
 			},
 			Name: "External",
 		})
@@ -168,8 +172,9 @@ func (r *ConfigMapResource) createConfiguration(
 		// If external connectivity is enabled the TLS config will be applied to the external listener,
 		// otherwise TLS will be applied to the internal listener. // TODO support multiple TLS configs
 		name := "Internal"
-		if r.pandaCluster.Spec.ExternalConnectivity.Enabled {
-			name = "External"
+		externalListener := r.pandaCluster.ExternalListener()
+		if externalListener != nil {
+			name = externalListener.Name
 		}
 		tls := config.ServerTLS{
 			Name:              name,
