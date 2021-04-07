@@ -42,6 +42,7 @@ require (
 	github.com/spf13/viper v1.4.0
 	github.com/stretchr/testify v1.7.0
 	github.com/tklauser/go-sysconf v0.1.0
+	github.com/xdg/scram v1.0.3
 	golang.org/x/crypto v0.0.0-20210220033148-5ea612d1eb83
 	golang.org/x/sync v0.0.0-20201020160332-67f06af15bc9
 	golang.org/x/sys v0.0.0-20210112091331-59c308dcf3cc
