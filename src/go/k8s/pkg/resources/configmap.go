@@ -125,6 +125,7 @@ func (r *ConfigMapResource) obj(ctx context.Context) (k8sclient.Object, error) {
 	return cm, nil
 }
 
+// nolint:funlen // it's still ok to fill all config fields in one function
 func (r *ConfigMapResource) createConfiguration(
 	ctx context.Context,
 ) (*config.Config, error) {
@@ -141,6 +142,16 @@ func (r *ConfigMapResource) createConfiguration(
 			},
 			Name: "Internal",
 		},
+	}
+
+	if r.pandaCluster.Spec.ExternalConnectivity.Enabled {
+		cr.KafkaApi = append(cr.KafkaApi, config.NamedSocketAddress{
+			SocketAddress: config.SocketAddress{
+				Address: "0.0.0.0",
+				Port:    calculateExternalPort(c.KafkaAPI.Port),
+			},
+			Name: "External",
+		})
 	}
 
 	cr.RPCServer.Port = clusterCRPortOrRPKDefault(c.RPCServer.Port, cr.RPCServer.Port)
@@ -226,6 +237,14 @@ func (r *ConfigMapResource) createConfiguration(
 	}
 
 	return cfgRpk, nil
+}
+
+// calculateExternalPort can calculate external Kafka API port based on the internal Kafka API port
+func calculateExternalPort(kafkaInternalPort int) int {
+	if kafkaInternalPort < 0 || kafkaInternalPort > 65535 {
+		return 0
+	}
+	return kafkaInternalPort + 1
 }
 
 func (r *ConfigMapResource) prepareCloudStorage(
