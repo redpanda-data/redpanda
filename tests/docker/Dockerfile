@@ -27,6 +27,7 @@ RUN apt update && \
       build-essential \
       libatomic1 \
       curl \
+      iptables \
       kafkacat && \
     rm -rf /var/lib/apt/lists/* && \
     echo 'PermitUserEnvironment yes' >> /etc/ssh/sshd_config
