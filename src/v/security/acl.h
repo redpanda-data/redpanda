@@ -32,8 +32,13 @@ struct dependent_false : std::false_type {};
 
 // cluster is a resource type and the acl data model requires that resources
 // have names, so this is a fixed name for that resource.
+//
+// tools that manage kafka APIs assume a fixed name for the cluster resource:
+// `kafka-cluster` and put this string in requests that operate on cluster ACLs.
+// This means that the name is effectively part of the protocol and we can adopt
+// the same name.
 using acl_cluster_name = named_type<ss::sstring, struct acl_cluster_name_type>;
-inline const acl_cluster_name default_cluster_name("redpanda-cluster");
+inline const acl_cluster_name default_cluster_name("kafka-cluster");
 
 /*
  * An ACL resource type.
