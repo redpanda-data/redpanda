@@ -124,6 +124,10 @@ spec:
                     type: object
                   developerMode:
                     type: boolean
+                  groupTopicPartitions:
+                    description: Number of partitions in the internal group membership
+                      topic
+                    type: integer
                   kafkaApi:
                     description: SocketAddress provide the way to configure the port
                     properties:

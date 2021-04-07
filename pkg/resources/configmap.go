@@ -209,6 +209,11 @@ func (r *ConfigMapResource) createConfiguration(
 		cr.EnableSASL = pointer.BoolPtr(true)
 	}
 
+	partitions := r.pandaCluster.Spec.Configuration.GroupTopicPartitions
+	if partitions != 0 {
+		cr.GroupTopicPartitions = &partitions
+	}
+
 	replicas := *r.pandaCluster.Spec.Replicas
 	for i := int32(0); i < replicas; i++ {
 		cr.SeedServers = append(cr.SeedServers, config.SeedServer{
