@@ -131,7 +131,7 @@ func (r *ConfigMapResource) obj(ctx context.Context) (k8sclient.Object, error) {
 	return cm, nil
 }
 
-// nolint:funlen // it's still ok to fill all config fields in one function
+// nolint:funlen // let's keep the configuration in one function for now and refactor later
 func (r *ConfigMapResource) createConfiguration(
 	ctx context.Context,
 ) (*config.Config, error) {
@@ -140,23 +140,21 @@ func (r *ConfigMapResource) createConfiguration(
 	c := r.pandaCluster.Spec.Configuration
 	cr := &cfgRpk.Redpanda
 
-	// I think this block would only be useful if the configurator didn't run. Should we remove it?
-	cr.KafkaApi = []config.NamedSocketAddress{}
-	for _, listener := range c.KafkaAPI {
-		cr.KafkaApi = append(cr.KafkaApi, config.NamedSocketAddress{
-			SocketAddress: config.SocketAddress{
-				Address: "0.0.0.0",
-				Port:    listener.Port,
-			},
-			Name: listener.Name,
-		})
-	}
+	internalListener := r.pandaCluster.InternalListener()
+	cr.KafkaApi = []config.NamedSocketAddress{} // we don't want to inherit default kafka port
+	cr.KafkaApi = append(cr.KafkaApi, config.NamedSocketAddress{
+		SocketAddress: config.SocketAddress{
+			Address: "0.0.0.0",
+			Port:    internalListener.Port,
+		},
+		Name: "Internal", // TODO preserve the name when we support multiple listeners
+	})
 
-	if r.pandaCluster.Spec.ExternalConnectivity.Enabled {
+	if r.pandaCluster.ExternalListener() != nil {
 		cr.KafkaApi = append(cr.KafkaApi, config.NamedSocketAddress{
 			SocketAddress: config.SocketAddress{
 				Address: "0.0.0.0",
-				Port:    calculateExternalPort(c.KafkaAPI[0].Port),
+				Port:    calculateExternalPort(internalListener.Port),
 			},
 			Name: "External",
 		})
@@ -187,8 +185,9 @@ func (r *ConfigMapResource) createConfiguration(
 		// If external connectivity is enabled the TLS config will be applied to the external listener,
 		// otherwise TLS will be applied to the internal listener. // TODO support multiple TLS configs
 		name := "Internal"
-		if r.pandaCluster.Spec.ExternalConnectivity.Enabled {
-			name = "External"
+		externalListener := r.pandaCluster.ExternalListener()
+		if externalListener != nil {
+			name = externalListener.Name
 		}
 		tls := config.ServerTLS{
 			Name:              name,
@@ -206,9 +205,6 @@ func (r *ConfigMapResource) createConfiguration(
 	}
 	if r.pandaCluster.Spec.Configuration.TLS.AdminAPI.Enabled {
 		name := internal
-		if r.pandaCluster.Spec.ExternalConnectivity.Enabled {
-			name = external
-		}
 		adminTLS := config.ServerTLS{
 			Name:              name,
 			KeyFile:           fmt.Sprintf("%s/%s", tlsAdminDir, corev1.TLSPrivateKeyKey),
