@@ -232,14 +232,14 @@ var _ = Describe("RedPandaCluster controller", func() {
 					Version:  redpandaContainerTag,
 					Replicas: pointer.Int32Ptr(replicas),
 					Configuration: v1alpha1.RedpandaConfig{
-						KafkaAPI: []v1alpha1.KafkaAPIListener{{Name: "kafka", Port: kafkaPort}},
-						AdminAPI: v1alpha1.SocketAddress{Port: adminPort},
-						TLS: v1alpha1.TLSConfig{
-							KafkaAPI: v1alpha1.KafkaAPITLS{
-								Enabled:           true,
-								RequireClientAuth: true,
+						KafkaAPI: []v1alpha1.KafkaAPIListener{
+							{
+								Name: "kafka",
+								Port: kafkaPort,
+								TLS:  v1alpha1.KafkaAPITLS{Enabled: true, RequireClientAuth: true},
 							},
 						},
+						AdminAPI: v1alpha1.SocketAddress{Port: adminPort},
 					},
 					Resources: corev1.ResourceRequirements{
 						Limits:   resources,
