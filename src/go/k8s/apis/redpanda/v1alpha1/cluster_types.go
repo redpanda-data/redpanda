@@ -170,7 +170,6 @@ type RedpandaConfig struct {
 	KafkaAPI      []KafkaAPIListener `json:"kafkaApi,omitempty"`
 	AdminAPI      SocketAddress      `json:"admin,omitempty"`
 	DeveloperMode bool               `json:"developerMode,omitempty"`
-	TLS           TLSConfig          `json:"tls,omitempty"`
 	// Number of partitions in the internal group membership topic
 	GroupTopicPartitions int `json:"groupTopicPartitions,omitempty"`
 }
@@ -185,12 +184,6 @@ type KafkaAPIListener struct {
 	External ExternalConnectivityConfig `json:"external,omitempty"`
 	// Configuration of TLS for Kafka API
 	TLS KafkaAPITLS `json:"tls,omitempty"`
-}
-
-// TLSConfig configures TLS for Redpanda APIs
-type TLSConfig struct {
-	// Configuration of TLS for Admin API
-	AdminAPI AdminAPITLS `json:"adminApi,omitempty"`
 }
 
 // KafkaAPITLS configures TLS for redpanda Kafka API
