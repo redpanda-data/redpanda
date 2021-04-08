@@ -181,6 +181,8 @@ type KafkaAPIListener struct {
 	// nodes outside of a Kubernetes cluster. For more
 	// information please go to ExternalConnectivityConfig
 	External ExternalConnectivityConfig `json:"external,omitempty"`
+	// Configuration of TLS for Kafka API
+	TLS KafkaAPITLS `json:"tls,omitempty"`
 }
 
 // TLSConfig configures TLS for Redpanda APIs
