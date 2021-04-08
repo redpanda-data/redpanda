@@ -6,18 +6,19 @@ tasks:
     vars:
       JS_ROOT: "{{.SRC_DIR}}/src/js"
       JS_BUILD_ROOT: "{{.BUILD_ROOT}}/node/output"
-      NPM_CMD: "{{.BUILD_ROOT}}/node/bin/npm"
+      NPM_CMD: "PATH={{.BUILD_ROOT}}/node/bin/:$PATH {{.BUILD_ROOT}}/node/bin/npm"
     deps:
     - :dev:install-node
     cmds:
     - rm -rf "{{.JS_BUILD_ROOT}}"
     - mkdir -p "{{.JS_BUILD_ROOT}}"
+    - "{{.NPM_CMD}} --prefix {{.JS_ROOT}} install"
     - "{{.NPM_CMD}} run --prefix {{.JS_ROOT}} generate:serialization"
-    - "{{.NPM_CMD}} run --prefix {{.JS_ROOT}} test"
     - "{{.NPM_CMD}} run --prefix {{.JS_ROOT}} build:ts -- --project . --outDir {{.JS_BUILD_ROOT}}"
+    - "{{.NPM_CMD}} run --prefix {{.JS_ROOT}} test"
     - "cp {{.JS_ROOT}}/build-package.json {{.JS_BUILD_ROOT}}/package.json"
-    - "{{.NPM_CMD}} install --prefix {{.JS_BUILD_ROOT}}"
+    - "{{.NPM_CMD}} --prefix {{.JS_BUILD_ROOT}} install"
     status:
-    - test -d "{{.JS_BUILD_ROOT}}"
+    - test -f "{{.JS_BUILD_ROOT}}/modules/rpc/service.js"
 
 
