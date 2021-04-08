@@ -104,7 +104,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 			Replicas: pointer.Int32Ptr(replicas2),
 			Configuration: v1alpha1.RedpandaConfig{
 				KafkaAPI:  []v1alpha1.KafkaAPIListener{{Port: 123}},
-				AdminAPI:  v1alpha1.SocketAddress{Port: 125},
+				AdminAPI:  v1alpha1.AdminAPI{Port: 125},
 				RPCServer: v1alpha1.SocketAddress{Port: 126},
 			},
 			Resources: corev1.ResourceRequirements{
@@ -241,7 +241,7 @@ func TestCreation(t *testing.T) {
 		Spec: v1alpha1.ClusterSpec{
 			Configuration: v1alpha1.RedpandaConfig{
 				KafkaAPI:  []v1alpha1.KafkaAPIListener{{Port: 123}},
-				AdminAPI:  v1alpha1.SocketAddress{Port: 125},
+				AdminAPI:  v1alpha1.AdminAPI{Port: 125},
 				RPCServer: v1alpha1.SocketAddress{Port: 126},
 			},
 			Resources: corev1.ResourceRequirements{
