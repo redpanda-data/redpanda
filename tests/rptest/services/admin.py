@@ -51,7 +51,8 @@ class Admin:
             nodes = [n for n in self.redpanda.nodes]
             random.shuffle(nodes)
             for node in nodes:
-                return handler(node)
+                if handler(node):
+                    return True
 
         wait_until(try_send,
                    timeout_sec=30,

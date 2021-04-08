@@ -10,12 +10,8 @@ import random
 import string
 import requests
 import time
-from ducktape.mark import ignore
 from ducktape.mark.resource import cluster
-from ducktape.utils.util import wait_until
-from ducktape.errors import DucktapeError
 
-from ducktape.tests.test import Test
 from rptest.tests.redpanda_test import RedpandaTest
 from rptest.clients.types import TopicSpec
 from rptest.clients.python_librdkafka import PythonLibrdkafka
