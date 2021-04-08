@@ -484,7 +484,7 @@ func (r *StatefulSetResource) secretVolumeMounts() []corev1.VolumeMount {
 			MountPath: tlsDirCA,
 		})
 	}
-	if r.pandaCluster.Spec.Configuration.TLS.AdminAPI.Enabled {
+	if r.pandaCluster.Spec.Configuration.AdminAPI.TLS.Enabled {
 		mounts = append(mounts, corev1.VolumeMount{
 			Name:      "tlsadmincert",
 			MountPath: tlsAdminDir,
@@ -538,7 +538,7 @@ func (r *StatefulSetResource) secretVolumes() []corev1.Volume {
 	}
 
 	// When Admin TLS is enabled, Redpanda needs a keypair certificate.
-	if r.pandaCluster.Spec.Configuration.TLS.AdminAPI.Enabled {
+	if r.pandaCluster.Spec.Configuration.AdminAPI.TLS.Enabled {
 		vols = append(vols, corev1.Volume{
 			Name: "tlsadmincert",
 			VolumeSource: corev1.VolumeSource{
