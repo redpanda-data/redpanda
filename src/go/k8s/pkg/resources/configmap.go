@@ -204,16 +204,16 @@ func (r *ConfigMapResource) createConfiguration(
 			tls,
 		}
 	}
-	if r.pandaCluster.Spec.Configuration.TLS.AdminAPI.Enabled {
-		name := internal
+	name := internal
+	if r.pandaCluster.Spec.Configuration.AdminAPI.TLS.Enabled {
 		adminTLS := config.ServerTLS{
 			Name:              name,
 			KeyFile:           fmt.Sprintf("%s/%s", tlsAdminDir, corev1.TLSPrivateKeyKey),
 			CertFile:          fmt.Sprintf("%s/%s", tlsAdminDir, corev1.TLSCertKey),
 			Enabled:           true,
-			RequireClientAuth: r.pandaCluster.Spec.Configuration.TLS.AdminAPI.RequireClientAuth,
+			RequireClientAuth: r.pandaCluster.Spec.Configuration.AdminAPI.TLS.RequireClientAuth,
 		}
-		if r.pandaCluster.Spec.Configuration.TLS.AdminAPI.RequireClientAuth {
+		if r.pandaCluster.Spec.Configuration.AdminAPI.TLS.RequireClientAuth {
 			adminTLS.TruststoreFile = fmt.Sprintf("%s/%s", tlsAdminDir, cmetav1.TLSCAKey)
 		}
 		cr.AdminApiTLS = append(cr.AdminApiTLS, adminTLS)
