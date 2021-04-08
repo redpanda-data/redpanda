@@ -27,23 +27,45 @@ void describe_groups_response::encode(
     data.encode(resp.writer(), ctx.header().version);
 }
 
-
 template<>
-ss::future<response_ptr> describe_groups_handler::handle(
-  request_context ctx, ss::smp_service_group ssg) {
+ss::future<response_ptr>
+describe_groups_handler::handle(request_context ctx, ss::smp_service_group) {
     describe_groups_request request;
     request.decode(ctx.reader(), ctx.header().version);
     klog.trace("Handling request {}", request);
 
-    std::vector<ss::future<described_group>> described;
+    auto unauthorized_it = std::partition(
+      request.data.groups.begin(),
+      request.data.groups.end(),
+      [&ctx](const group_id& id) {
+          return ctx.authorized(security::acl_operation::describe, id);
+      });
 
-    for (auto& group_id : request.data.groups) {
-        described.push_back(ctx.groups().describe_group(std::move(group_id)));
-    }
+    std::vector<group_id> unauthorized(
+      std::make_move_iterator(unauthorized_it),
+      std::make_move_iterator(request.data.groups.end()));
+
+    request.data.groups.erase(unauthorized_it, request.data.groups.end());
 
     describe_groups_response response;
-    response.data.groups = co_await ss::when_all_succeed(
-      described.begin(), described.end());
+
+    if (likely(!request.data.groups.empty())) {
+        std::vector<ss::future<described_group>> described;
+        described.reserve(request.data.groups.size());
+        for (auto& group_id : request.data.groups) {
+            described.push_back(
+              ctx.groups().describe_group(std::move(group_id)));
+        }
+        response.data.groups = co_await ss::when_all_succeed(
+          described.begin(), described.end());
+    }
+
+    for (auto& group : unauthorized) {
+        response.data.groups.push_back(described_group{
+          .error_code = error_code::group_authorization_failed,
+          .group_id = std::move(group),
+        });
+    }
 
     co_return co_await ctx.respond(std::move(response));
 }
