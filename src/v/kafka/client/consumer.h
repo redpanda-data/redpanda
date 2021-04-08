@@ -16,6 +16,7 @@
 #include "kafka/client/configuration.h"
 #include "kafka/client/fetch_session.h"
 #include "kafka/client/logger.h"
+#include "kafka/client/topic_cache.h"
 #include "kafka/protocol/describe_groups.h"
 #include "kafka/protocol/fetch.h"
 #include "kafka/protocol/offset_commit.h"
@@ -40,10 +41,12 @@ class consumer final : public ss::enable_lw_shared_from_this<consumer> {
 public:
     consumer(
       const configuration& config,
+      topic_cache& topic_cache,
       brokers& brokers,
       shared_broker_t coordinator,
       group_id group_id)
       : _config(config)
+      , _topic_cache(topic_cache)
       , _brokers(brokers)
       , _coordinator(std::move(coordinator))
       , _group_id(std::move(group_id))
@@ -104,6 +107,7 @@ private:
     }
 
     const configuration& _config;
+    topic_cache& _topic_cache;
     brokers& _brokers;
     shared_broker_t _coordinator;
     ss::abort_source _as;
@@ -135,6 +139,7 @@ using shared_consumer_t = ss::lw_shared_ptr<consumer>;
 
 ss::future<shared_consumer_t> make_consumer(
   const configuration& config,
+  topic_cache& topic_cache,
   brokers& brokers,
   shared_broker_t coordinator,
   group_id group_id);

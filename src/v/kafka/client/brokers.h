@@ -12,6 +12,7 @@
 #pragma once
 
 #include "kafka/client/broker.h"
+#include "kafka/protocol/metadata.h"
 #include "model/fundamental.h"
 #include "seastarx.h"
 
@@ -28,8 +29,6 @@ const model::node_id unknown_node_id{-1};
 class brokers {
     using brokers_t
       = absl::flat_hash_set<shared_broker_t, broker_hash, broker_eq>;
-    using leaders_t
-      = absl::flat_hash_map<model::topic_partition, model::node_id>;
 
 public:
     brokers() = default;
@@ -50,14 +49,11 @@ public:
     /// \brief Retrieve the broker for the given node_id.
     ss::future<shared_broker_t> find(model::node_id id);
 
-    /// \brief Retrieve the broker for the given topic_partition.
-    ss::future<shared_broker_t> find(model::topic_partition tp);
-
     /// \brief Remove a broker.
     ss::future<> erase(model::node_id id);
 
     /// \brief Apply the given metadata response.
-    ss::future<> apply(metadata_response&& res);
+    ss::future<> apply(std::vector<metadata_response::broker>&& brokers);
 
     /// \brief Returns true if there are no connected brokers
     ss::future<bool> empty() const;
@@ -67,8 +63,6 @@ private:
     brokers_t _brokers;
     /// \brief Next broker to select with round-robin
     size_t _next_broker{0};
-    /// \brief Leaders map a partition to a model::node_id.
-    leaders_t _leaders;
 };
 
 } // namespace kafka::client

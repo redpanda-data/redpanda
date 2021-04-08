@@ -10,6 +10,7 @@ v_cc_library(
     fetcher.cc
     fetch_session.cc
     producer.cc
+    topic_cache.cc
   DEPS
     v::kafka
     v::ssx

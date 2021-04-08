@@ -19,6 +19,7 @@
 #include "kafka/client/fetcher.h"
 #include "kafka/client/producer.h"
 #include "kafka/client/retry_with_mitigation.h"
+#include "kafka/client/topic_cache.h"
 #include "kafka/client/transport.h"
 #include "kafka/protocol/fetch.h"
 #include "kafka/types.h"
@@ -166,10 +167,15 @@ private:
     ss::future<shared_consumer_t>
     get_consumer(const group_id& g_id, const member_id& m_id);
 
+    /// \brief Apply metadata update
+    ss::future<> apply(metadata_response res);
+
     /// \brief Client holds a copy of its configuration
     configuration _config;
     /// \brief Seeds are used when no brokers are connected.
     std::vector<unresolved_address> _seeds;
+    /// \brief Cache of topic information.
+    topic_cache _topic_cache;
     /// \brief Broker lookup from topic_partition.
     brokers _brokers;
     /// \brief Update metadata, or wait for an existing one.

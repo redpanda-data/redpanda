@@ -39,11 +39,12 @@ namespace kafka::client {
 client::client(const YAML::Node& cfg)
   : _config{cfg}
   , _seeds{_config.brokers()}
+  , _topic_cache{}
   , _brokers{}
   , _wait_or_start_update_metadata{[this](wait_or_start::tag tag) {
       return update_metadata(tag);
   }}
-  , _producer{_config, _brokers, [this](std::exception_ptr ex) {
+  , _producer{_config, _topic_cache, _brokers, [this](std::exception_ptr ex) {
                   return mitigate_error(std::move(ex));
               }} {}
 
@@ -53,7 +54,7 @@ ss::future<> client::do_connect(unresolved_address addr) {
           .then([this](shared_broker_t broker) {
               return broker->dispatch(metadata_request{.list_all_topics = true})
                 .then([this, broker](metadata_response res) {
-                    return _brokers.apply(std::move(res));
+                    return apply(std::move(res));
                 });
           });
     });
@@ -112,11 +113,16 @@ ss::future<> client::update_metadata(wait_or_start::tag) {
                   }
                   std::swap(_seeds, seeds);
 
-                  return _brokers.apply(std::move(res));
+                  return apply(std::move(res));
               })
               .finally([]() { vlog(kclog.trace, "updated metadata"); });
         });
     });
+}
+
+ss::future<> client::apply(metadata_response res) {
+    co_await _brokers.apply(std::move(res.brokers));
+    co_await _topic_cache.apply(std::move(res.topics));
 }
 
 ss::future<> client::mitigate_error(std::exception_ptr ex) {
@@ -184,8 +190,11 @@ ss::future<fetch_response> client::fetch_partition(
       [this](auto& build_request, model::topic_partition& tp) {
           vlog(kclog.debug, "fetching: {}", tp);
           return gated_retry_with_mitigation([this, &tp, &build_request]() {
-                     return _brokers.find(tp).then(
-                       [&tp, &build_request](shared_broker_t&& b) {
+                     return _topic_cache.leader(tp)
+                       .then([this](model::node_id leader) {
+                           return _brokers.find(leader);
+                       })
+                       .then([&tp, &build_request](shared_broker_t&& b) {
                            return b->dispatch(build_request(tp));
                        });
                  })
@@ -206,7 +215,11 @@ ss::future<member_id> client::create_consumer(const group_id& group_id) {
       })
       .then([this, group_id](shared_broker_t coordinator) mutable {
           return make_consumer(
-            _config, _brokers, std::move(coordinator), std::move(group_id));
+            _config,
+            _topic_cache,
+            _brokers,
+            std::move(coordinator),
+            std::move(group_id));
       })
       .then([this, group_id](shared_consumer_t c) {
           auto m_id = c->member_id();
