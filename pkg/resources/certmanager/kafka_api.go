@@ -13,6 +13,7 @@ import (
 	"context"
 
 	cmmetav1 "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
+	"github.com/vectorizedio/redpanda/src/go/k8s/apis/redpanda/v1alpha1"
 	"github.com/vectorizedio/redpanda/src/go/k8s/pkg/resources"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -44,9 +45,10 @@ func (r *PkiReconciler) AdminCert() types.NamespacedName {
 
 // NodeCert returns the namespaced name for Redpanda's node certificate
 func (r *PkiReconciler) NodeCert() types.NamespacedName {
-	if r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.NodeSecretRef != nil {
+	tlsListener := r.pandaCluster.KafkaTLSListener()
+	if tlsListener != nil && tlsListener.TLS.NodeSecretRef != nil {
 		return types.NamespacedName{
-			Name:      r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.NodeSecretRef.Name,
+			Name:      tlsListener.TLS.NodeSecretRef.Name,
 			Namespace: r.pandaCluster.Namespace,
 		}
 	}
@@ -54,12 +56,14 @@ func (r *PkiReconciler) NodeCert() types.NamespacedName {
 }
 
 func (r *PkiReconciler) prepareKafkaAPI(
-	ctx context.Context, issuerRef *cmmetav1.ObjectReference,
+	ctx context.Context,
+	issuerRef *cmmetav1.ObjectReference,
+	tlsListener *v1alpha1.KafkaAPITLS,
 ) ([]resources.Resource, error) {
 	toApply := []resources.Resource{}
 
-	externalIssuerRef := r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.IssuerRef
-	nodeSecretRef := r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.NodeSecretRef
+	externalIssuerRef := tlsListener.IssuerRef
+	nodeSecretRef := tlsListener.NodeSecretRef
 
 	if nodeSecretRef == nil {
 		// Redpanda cluster certificate for Kafka API - to be provided to each broker
@@ -88,7 +92,7 @@ func (r *PkiReconciler) prepareKafkaAPI(
 		}
 	}
 
-	if r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.RequireClientAuth {
+	if tlsListener.RequireClientAuth {
 		// Certificate for external clients to call the Kafka API on any broker in this Redpanda cluster
 		userClientCn := NewCommonName(r.pandaCluster.Name, UserClientCert)
 		userClientKey := types.NamespacedName{Name: string(userClientCn), Namespace: r.pandaCluster.Namespace}
