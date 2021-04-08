@@ -17,6 +17,9 @@
 #include "model/namespace.h"
 #include "resource_mgmt/io_priority.h"
 
+#include <seastar/core/coroutine.hh>
+#include <seastar/core/when_all.hh>
+
 namespace kafka {
 
 void describe_groups_response::encode(
@@ -24,20 +27,6 @@ void describe_groups_response::encode(
     data.encode(resp.writer(), ctx.header().version);
 }
 
-struct describe_groups_ctx {
-    request_context rctx;
-    describe_groups_request request;
-    describe_groups_response response;
-    ss::smp_service_group ssg;
-
-    describe_groups_ctx(
-      request_context&& rctx,
-      describe_groups_request&& request,
-      ss::smp_service_group ssg)
-      : rctx(std::move(rctx))
-      , request(std::move(request))
-      , ssg(ssg) {}
-};
 
 template<>
 ss::future<response_ptr> describe_groups_handler::handle(
@@ -46,22 +35,17 @@ ss::future<response_ptr> describe_groups_handler::handle(
     request.decode(ctx.reader(), ctx.header().version);
     klog.trace("Handling request {}", request);
 
-    return ss::do_with(
-      describe_groups_ctx(std::move(ctx), std::move(request), ssg),
-      [](describe_groups_ctx& octx) {
-          return ss::parallel_for_each(
-                   octx.request.data.groups.begin(),
-                   octx.request.data.groups.end(),
-                   [&octx](kafka::group_id id) {
-                       return octx.rctx.groups()
-                         .describe_group(std::move(id))
-                         .then([&octx](described_group g) {
-                             octx.response.data.groups.push_back(std::move(g));
-                         });
-                   })
-            .then(
-              [&octx] { return octx.rctx.respond(std::move(octx.response)); });
-      });
+    std::vector<ss::future<described_group>> described;
+
+    for (auto& group_id : request.data.groups) {
+        described.push_back(ctx.groups().describe_group(std::move(group_id)));
+    }
+
+    describe_groups_response response;
+    response.data.groups = co_await ss::when_all_succeed(
+      described.begin(), described.end());
+
+    co_return co_await ctx.respond(std::move(response));
 }
 
 } // namespace kafka
