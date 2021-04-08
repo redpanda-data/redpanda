@@ -15,13 +15,13 @@ import (
 var (
 	redpandaClusters = prometheus.NewGauge(
 		prometheus.GaugeOpts{
-			Name: "redpanda_cluster_total",
-			Help: "Number of Redpanda cluster running",
+			Name: "redpanda_clusters_total",
+			Help: "Number of Redpanda clusters running",
 		},
 	)
 	desireRedpandaNodes = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "desire_redpanda_nodes_total",
+			Name: "desired_redpanda_nodes_total",
 			Help: "Number of desire Redpanda nodes",
 		}, []string{"cluster"},
 	)
