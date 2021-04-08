@@ -11,6 +11,8 @@
 
 #pragma once
 
+#include "kafka/client/partitioners.h"
+#include "kafka/client/types.h"
 #include "kafka/protocol/metadata.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -29,6 +31,7 @@ class topic_cache {
     };
 
     struct topic_data {
+        partitioner partitioner_func;
         absl::flat_hash_map<model::partition_id, partition_data> partitions;
     };
 
@@ -47,6 +50,10 @@ public:
 
     /// \brief Obtain the leader for the given topic-partition
     ss::future<model::node_id> leader(model::topic_partition tp) const;
+
+    /// \brief Obtain the partition_id for the given record
+    ss::future<model::partition_id>
+    partition_for(model::topic_view tv, const record_essence& rec);
 
 private:
     /// \brief Cache of topic information.
