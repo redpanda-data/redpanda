@@ -22,7 +22,10 @@ spec:
       tls:
         enabled: true
         requireClientAuth: true
-    admin:
+    adminApi:
       port: 9644
+      issuerRef:
+        name: cluster-tls-root-issuer
+        kind: ClusterIssuer
     developerMode: true
 
