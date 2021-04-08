@@ -461,13 +461,14 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 
 func (r *StatefulSetResource) secretVolumeMounts() []corev1.VolumeMount {
 	var mounts []corev1.VolumeMount
-	if r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.Enabled {
+	tlsListener := r.pandaCluster.KafkaTLSListener()
+	if tlsListener != nil {
 		mounts = append(mounts, corev1.VolumeMount{
 			Name:      "tlscert",
 			MountPath: tlsDir,
 		})
 	}
-	if r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.RequireClientAuth {
+	if tlsListener != nil && tlsListener.TLS.RequireClientAuth {
 		mounts = append(mounts, corev1.VolumeMount{
 			Name:      "tlsca",
 			MountPath: tlsDirCA,
@@ -486,7 +487,8 @@ func (r *StatefulSetResource) secretVolumes() []corev1.Volume {
 	var vols []corev1.Volume
 
 	// When TLS is enabled, Redpanda needs a keypair certificate.
-	if r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.Enabled {
+	tlsListener := r.pandaCluster.KafkaTLSListener()
+	if tlsListener != nil {
 		vols = append(vols, corev1.Volume{
 			Name: "tlscert",
 			VolumeSource: corev1.VolumeSource{
@@ -508,7 +510,7 @@ func (r *StatefulSetResource) secretVolumes() []corev1.Volume {
 	}
 
 	// When TLS client authentication is enabled, Redpanda needs the client's CA certificate.
-	if r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.RequireClientAuth {
+	if tlsListener != nil && tlsListener.TLS.RequireClientAuth {
 		vols = append(vols, corev1.Volume{
 			Name: "tlsca",
 			VolumeSource: corev1.VolumeSource{

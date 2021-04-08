@@ -187,8 +187,6 @@ type KafkaAPIListener struct {
 
 // TLSConfig configures TLS for Redpanda APIs
 type TLSConfig struct {
-	// Configuration of TLS for Kafka API
-	KafkaAPI KafkaAPITLS `json:"kafkaApi,omitempty"`
 	// Configuration of TLS for Admin API
 	AdminAPI AdminAPITLS `json:"adminApi,omitempty"`
 }
@@ -284,6 +282,18 @@ func (r *Cluster) InternalListener() *KafkaAPIListener {
 	for _, el := range r.Spec.Configuration.KafkaAPI {
 		if !el.External.Enabled {
 			return &el
+		}
+	}
+	return nil
+}
+
+// KafkaTLSListener returns kafka listener that has tls enabled. Returns nil if
+// no tls is configured. Until v1alpha1 API is deprecated, we support only
+// single listener with TLS
+func (r *Cluster) KafkaTLSListener() *KafkaAPIListener {
+	for i, el := range r.Spec.Configuration.KafkaAPI {
+		if el.TLS.Enabled {
+			return &r.Spec.Configuration.KafkaAPI[i]
 		}
 	}
 	return nil

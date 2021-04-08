@@ -62,8 +62,6 @@ func (r *Cluster) ValidateCreate() error {
 
 	allErrs = append(allErrs, r.validateMemory()...)
 
-	allErrs = append(allErrs, r.validateTLS()...)
-
 	allErrs = append(allErrs, r.validateArchivalStorage()...)
 
 	if len(allErrs) == 0 {
@@ -93,8 +91,6 @@ func (r *Cluster) ValidateUpdate(old runtime.Object) error {
 	allErrs = append(allErrs, r.checkCollidingPorts()...)
 
 	allErrs = append(allErrs, r.validateMemory()...)
-
-	allErrs = append(allErrs, r.validateTLS()...)
 
 	allErrs = append(allErrs, r.validateArchivalStorage()...)
 
@@ -138,6 +134,22 @@ func (r *Cluster) validateKafkaListeners() field.ErrorList {
 		}
 	}
 
+	// for now only one listener can have TLS to be backward compatible with v1alpha1 API
+	foundListenerWithTls := false
+	for i, p := range r.Spec.Configuration.KafkaAPI {
+		if p.TLS.Enabled {
+			if foundListenerWithTls {
+				allErrs = append(allErrs,
+					field.Invalid(field.NewPath("spec").Child("configuration").Child("kafkaApi").Index(i).Child("tls"),
+						r.Spec.Configuration.KafkaAPI[i].TLS,
+						"only one listener can have TLS enabled"))
+			}
+			foundListenerWithTls = true
+		}
+		// we need to run the validation on all listeners to also catch errors like !Enabled && RequireClientAuth
+		allErrs = append(allErrs, validateTLS(p.TLS, field.NewPath("spec").Child("configuration").Child("kafkaApi").Index(i).Child("tls"))...)
+	}
+
 	if !((len(r.Spec.Configuration.KafkaAPI) == 2 && external != nil) || (external == nil && len(r.Spec.Configuration.KafkaAPI) == 1)) {
 		allErrs = append(allErrs,
 			field.Invalid(field.NewPath("spec").Child("configuration").Child("kafkaApi"),
@@ -164,20 +176,20 @@ func (r *Cluster) validateMemory() field.ErrorList {
 	return allErrs
 }
 
-func (r *Cluster) validateTLS() field.ErrorList {
+func validateTLS(tlsConfig KafkaAPITLS, path *field.Path) field.ErrorList {
 	var allErrs field.ErrorList
-	if r.Spec.Configuration.TLS.KafkaAPI.RequireClientAuth && !r.Spec.Configuration.TLS.KafkaAPI.Enabled {
+	if tlsConfig.RequireClientAuth && !tlsConfig.Enabled {
 		allErrs = append(allErrs,
 			field.Invalid(
-				field.NewPath("spec").Child("configuration").Child("tls").Child("requireclientauth"),
-				r.Spec.Configuration.TLS.KafkaAPI.RequireClientAuth,
+				path.Child("requireclientauth"),
+				tlsConfig.RequireClientAuth,
 				"Enabled has to be set to true for RequireClientAuth to be allowed to be true"))
 	}
-	if r.Spec.Configuration.TLS.KafkaAPI.IssuerRef != nil && r.Spec.Configuration.TLS.KafkaAPI.NodeSecretRef != nil {
+	if tlsConfig.IssuerRef != nil && tlsConfig.NodeSecretRef != nil {
 		allErrs = append(allErrs,
 			field.Invalid(
-				field.NewPath("spec").Child("configuration").Child("tls").Child("nodeSecretRef"),
-				r.Spec.Configuration.TLS.KafkaAPI.NodeSecretRef,
+				path.Child("nodeSecretRef"),
+				tlsConfig.NodeSecretRef,
 				"Cannot provide both IssuerRef and NodeSecretRef"))
 	}
 	return allErrs

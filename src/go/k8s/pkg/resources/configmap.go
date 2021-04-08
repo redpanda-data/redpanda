@@ -168,7 +168,8 @@ func (r *ConfigMapResource) createConfiguration(
 	cr.AdminApi.Port = clusterCRPortOrRPKDefault(c.AdminAPI.Port, cr.AdminApi.Port)
 	cr.DeveloperMode = c.DeveloperMode
 	cr.Directory = dataDirectory
-	if r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.Enabled {
+	tlsListener := r.pandaCluster.KafkaTLSListener()
+	if tlsListener != nil {
 		// If external connectivity is enabled the TLS config will be applied to the external listener,
 		// otherwise TLS will be applied to the internal listener. // TODO support multiple TLS configs
 		name := "Internal"
@@ -181,9 +182,9 @@ func (r *ConfigMapResource) createConfiguration(
 			KeyFile:           fmt.Sprintf("%s/%s", tlsDir, corev1.TLSPrivateKeyKey), // tls.key
 			CertFile:          fmt.Sprintf("%s/%s", tlsDir, corev1.TLSCertKey),       // tls.crt
 			Enabled:           true,
-			RequireClientAuth: r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.RequireClientAuth,
+			RequireClientAuth: tlsListener.TLS.RequireClientAuth,
 		}
-		if r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.RequireClientAuth {
+		if tlsListener.TLS.RequireClientAuth {
 			tls.TruststoreFile = fmt.Sprintf("%s/%s", tlsDirCA, cmetav1.TLSCAKey)
 		}
 		cr.KafkaApiTLS = []config.ServerTLS{
