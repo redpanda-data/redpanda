@@ -10,6 +10,8 @@
 package kafka
 
 import (
+	"crypto/sha256"
+	"crypto/sha512"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
@@ -48,7 +50,13 @@ func DefaultConfig() *sarama.Config {
 // Overrides the default config with the redpanda config values, such as TLS.
 func LoadConfig(conf *config.Config) (*sarama.Config, error) {
 	c := DefaultConfig()
-	return configureTLS(c, conf)
+
+	c, err := configureTLS(c, conf)
+	if err != nil {
+		return nil, err
+	}
+
+	return configureSASL(c, conf)
 }
 
 func InitClient(brokers ...string) (sarama.Client, error) {
@@ -169,6 +177,38 @@ func RetrySend(
 		}),
 	)
 	return part, offset, err
+}
+
+func configureSASL(
+	saramaConf *sarama.Config, rpConf *config.Config,
+) (*sarama.Config, error) {
+	rpk := rpConf.Rpk
+	if rpk.SCRAM.Password == "" || rpk.SCRAM.User == "" || rpk.SCRAM.Type == "" {
+		return saramaConf, nil
+	}
+
+	saramaConf.Net.SASL.Enable = true
+	saramaConf.Net.SASL.Handshake = true
+	saramaConf.Net.SASL.User = rpk.SCRAM.User
+	saramaConf.Net.SASL.Password = rpk.SCRAM.Password
+	switch rpk.SCRAM.Type {
+	case sarama.SASLTypeSCRAMSHA256:
+		saramaConf.Net.SASL.SCRAMClientGeneratorFunc =
+			func() sarama.SCRAMClient {
+				return &XDGSCRAMClient{HashGeneratorFcn: sha256.New}
+			}
+		saramaConf.Net.SASL.Mechanism = sarama.SASLTypeSCRAMSHA256
+	case sarama.SASLTypeSCRAMSHA512:
+		saramaConf.Net.SASL.SCRAMClientGeneratorFunc =
+			func() sarama.SCRAMClient {
+				return &XDGSCRAMClient{HashGeneratorFcn: sha512.New}
+			}
+		saramaConf.Net.SASL.Mechanism = sarama.SASLTypeSCRAMSHA512
+	default:
+		return nil, fmt.Errorf("unrecongnized Salted Challenge Response "+
+			"Authentication Mechanism (SCRAM) under rpk.scram.type: %s", rpk.SCRAM.Type)
+	}
+	return saramaConf, nil
 }
 
 // Configures TLS for the Redpanda API IF either rpk.tls or

@@ -114,6 +114,13 @@ type RpkConfig struct {
 	WellKnownIo              string   `yaml:"well_known_io,omitempty" mapstructure:"well_known_io,omitempty" json:"wellKnownIo"`
 	Overprovisioned          bool     `yaml:"overprovisioned" mapstructure:"overprovisioned" json:"overprovisioned"`
 	SMP                      *int     `yaml:"smp,omitempty" mapstructure:"smp,omitempty" json:"smp,omitempty"`
+	SCRAM                    SCRAM    `yaml:"scram,omitempty" mapstructure:"scram,omitempty" json:"scram,omitempty"`
+}
+
+type SCRAM struct {
+	User     string `yaml:"user,omitempty" mapstructure:"user,omitempty" json:"user,omitempty"`
+	Password string `yaml:"password,omitempty" mapstructure:"password,omitempty" json:"password,omitempty"`
+	Type     string `yaml:"type,omitempty" mapstructure:"type,omitempty" json:"type,omitempty"`
 }
 
 func (conf *Config) PIDFile() string {
