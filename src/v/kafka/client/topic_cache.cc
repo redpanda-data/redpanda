@@ -18,20 +18,30 @@ namespace kafka::client {
 
 ss::future<>
 topic_cache::apply(std::vector<metadata_response::topic>&& topics) {
-    leaders_t leaders;
+    topics_t cache;
+    cache.reserve(topics.size());
     for (const auto& t : topics) {
+        auto& cache_t = cache.try_emplace(t.name).first->second;
+        cache_t.partitions.reserve(t.partitions.size());
         for (auto const& p : t.partitions) {
-            leaders.emplace(model::topic_partition(t.name, p.index), p.leader);
+            cache_t.partitions.emplace(
+              p.index, partition_data{.leader = p.leader});
         }
+        cache_t.partitions.rehash(0);
     }
-    std::swap(leaders, _leaders);
+    cache.rehash(0);
+    std::exchange(_topics, std::move(cache));
     return ss::now();
 }
 
 ss::future<model::node_id>
 topic_cache::leader(model::topic_partition tp) const {
-    if (auto topic_it = _leaders.find(tp); topic_it != _leaders.end()) {
-        return ss::make_ready_future<model::node_id>(topic_it->second);
+    if (auto topic_it = _topics.find(tp.topic); topic_it != _topics.end()) {
+        const auto& parts = topic_it->second.partitions;
+        if (auto part_it = parts.find(tp.partition); part_it != parts.end()) {
+            const auto& part = part_it->second;
+            return ss::make_ready_future<model::node_id>(part.leader);
+        }
     }
     return ss::make_exception_future<model::node_id>(
       partition_error(std::move(tp), error_code::unknown_topic_or_partition));

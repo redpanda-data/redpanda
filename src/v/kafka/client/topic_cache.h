@@ -24,8 +24,15 @@
 namespace kafka::client {
 
 class topic_cache {
-    using leaders_t
-      = absl::flat_hash_map<model::topic_partition, model::node_id>;
+    struct partition_data {
+        model::node_id leader;
+    };
+
+    struct topic_data {
+        absl::flat_hash_map<model::partition_id, partition_data> partitions;
+    };
+
+    using topics_t = absl::node_hash_map<model::topic, topic_data>;
 
 public:
     topic_cache() = default;
@@ -42,8 +49,8 @@ public:
     ss::future<model::node_id> leader(model::topic_partition tp) const;
 
 private:
-    /// \brief Leaders map a partition to a model::node_id.
-    leaders_t _leaders;
+    /// \brief Cache of topic information.
+    topics_t _topics;
 };
 
 } // namespace kafka::client
