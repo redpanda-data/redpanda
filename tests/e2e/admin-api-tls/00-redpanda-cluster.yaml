@@ -21,7 +21,6 @@ spec:
       port: 9092
     admin:
       port: 9644
-    developerMode: true
-    tls:
-      adminApi:
+      tls:
         enabled: true
+    developerMode: true
