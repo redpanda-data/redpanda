@@ -211,7 +211,12 @@ func TestDefault(t *testing.T) {
 					9092,
 				},
 			}},
-			AdminApi:      SocketAddress{"0.0.0.0", 9644},
+			AdminApi: []NamedSocketAddress{{
+				SocketAddress: SocketAddress{
+					"0.0.0.0",
+					9644,
+				},
+			}},
 			Id:            0,
 			SeedServers:   []SeedServer{},
 			DeveloperMode: true,
@@ -289,7 +294,7 @@ func TestWrite(t *testing.T) {
 pandaproxy: {}
 redpanda:
   admin:
-    address: 0.0.0.0
+  - address: 0.0.0.0
     port: 9644
   data_directory: /var/lib/redpanda/data
   developer_mode: false
@@ -335,7 +340,7 @@ rpk:
 pandaproxy: {}
 redpanda:
   admin:
-    address: 0.0.0.0
+  - address: 0.0.0.0
     port: 9644
   data_directory: /var/lib/redpanda/data
   developer_mode: false
@@ -388,7 +393,7 @@ rpk:
 pandaproxy: {}
 redpanda:
   admin:
-    address: 0.0.0.0
+  - address: 0.0.0.0
     port: 9644
   advertised_rpc_api:
     address: 174.32.64.2
@@ -446,7 +451,7 @@ rpk:
 pandaproxy: {}
 redpanda:
   admin:
-    address: 0.0.0.0
+  - address: 0.0.0.0
     port: 9644
   advertised_kafka_api:
   - address: 174.32.64.2
@@ -499,7 +504,7 @@ rpk:
 pandaproxy: {}
 redpanda:
   admin:
-    address: 0.0.0.0
+  - address: 0.0.0.0
     port: 9644
   data_directory: /var/lib/redpanda/data
   developer_mode: false
@@ -553,7 +558,7 @@ rpk:
 pandaproxy: {}
 redpanda:
   admin:
-    address: 0.0.0.0
+  - address: 0.0.0.0
     port: 9644
   data_directory: /var/lib/redpanda/data
   developer_mode: false
@@ -597,7 +602,7 @@ rpk:
 pandaproxy: {}
 redpanda:
   admin:
-    address: 0.0.0.0
+  - address: 0.0.0.0
     port: 9644
   admin_api_doc_dir: /usr/share/redpanda/admin-api-doc
   data_directory: /var/lib/redpanda/data
@@ -628,7 +633,7 @@ unrecognized_top_field:
 pandaproxy: {}
 redpanda:
   admin:
-    address: 0.0.0.0
+  - address: 0.0.0.0
     port: 9644
   admin_api_doc_dir: /usr/share/redpanda/admin-api-doc
   data_directory: /var/lib/redpanda/data
@@ -677,7 +682,7 @@ unrecognized_top_field:
 pandaproxy: {}
 redpanda:
   admin:
-    address: 0.0.0.0
+  - address: 0.0.0.0
     port: 9644
   admin_api_doc_dir: /usr/share/redpanda/admin-api-doc
   auto_create_topics_enabled: true
@@ -703,7 +708,7 @@ redpanda:
 pandaproxy: {}
 redpanda:
   admin:
-    address: 0.0.0.0
+  - address: 0.0.0.0
     port: 9644
   admin_api_doc_dir: /usr/share/redpanda/admin-api-doc
   auto_create_topics_enabled: true
@@ -759,7 +764,7 @@ rpk:
 pandaproxy: {}
 redpanda:
   admin:
-    address: 0.0.0.0
+  - address: 0.0.0.0
     port: 9644
   data_directory: /var/lib/redpanda/data
   developer_mode: false
@@ -809,13 +814,13 @@ rpk:
 			name: "shall write config with admin tls configuration",
 			conf: func() *Config {
 				c := getValidConfig()
-				c.Redpanda.AdminApiTLS = ServerTLS{
+				c.Redpanda.AdminApiTLS = []ServerTLS{{
 					KeyFile:           "/etc/certs/admin/cert.key",
 					TruststoreFile:    "/etc/certs/admin/ca.crt",
 					CertFile:          "/etc/certs/admin/cert.crt",
 					Enabled:           true,
 					RequireClientAuth: true,
-				}
+				}}
 				return c
 			},
 			wantErr: false,
@@ -823,10 +828,10 @@ rpk:
 pandaproxy: {}
 redpanda:
   admin:
-    address: 0.0.0.0
+  - address: 0.0.0.0
     port: 9644
   admin_api_tls:
-    cert_file: /etc/certs/admin/cert.crt
+  - cert_file: /etc/certs/admin/cert.crt
     enabled: true
     key_file: /etc/certs/admin/cert.key
     require_client_auth: true
@@ -880,7 +885,7 @@ rpk:
 pandaproxy: {}
 redpanda:
   admin:
-    address: 0.0.0.0
+  - address: 0.0.0.0
     port: 9644
   data_directory: /var/lib/redpanda/data
   developer_mode: false
@@ -971,7 +976,7 @@ pandaproxy:
     truststore_file: /etc/certs/ca.crt
 redpanda:
   admin:
-    address: 0.0.0.0
+  - address: 0.0.0.0
     port: 9644
   data_directory: /var/lib/redpanda/data
   developer_mode: false
@@ -1035,7 +1040,7 @@ pandaproxy:
     port: 1234
 redpanda:
   admin:
-    address: 0.0.0.0
+  - address: 0.0.0.0
     port: 9644
   data_directory: /var/lib/redpanda/data
   developer_mode: false
@@ -1109,7 +1114,7 @@ pandaproxy_client:
     port: 1234
 redpanda:
   admin:
-    address: 0.0.0.0
+  - address: 0.0.0.0
     port: 9644
   data_directory: /var/lib/redpanda/data
   developer_mode: false
@@ -1160,7 +1165,7 @@ rpk:
 pandaproxy: {}
 redpanda:
   admin:
-    address: 0.0.0.0
+  - address: 0.0.0.0
     port: 9644
   data_directory: /var/lib/redpanda/data
   developer_mode: false
@@ -1212,7 +1217,7 @@ rpk:
 pandaproxy: {}
 redpanda:
   admin:
-    address: 0.0.0.0
+  - address: 0.0.0.0
     port: 9644
   data_directory: /var/lib/redpanda/data
   developer_mode: false
@@ -1284,7 +1289,7 @@ rpk:
 pandaproxy: {}
 redpanda:
   admin:
-    address: 0.0.0.0
+  - address: 0.0.0.0
     port: 9644
   cloud_storage_access_key: access
   cloud_storage_api_endpoint: http
@@ -1348,7 +1353,7 @@ rpk:
 pandaproxy: {}
 redpanda:
   admin:
-    address: 0.0.0.0
+  - address: 0.0.0.0
     port: 9644
   data_directory: /var/lib/redpanda/data
   developer_mode: false
@@ -1403,7 +1408,7 @@ rpk:
 pandaproxy: {}
 redpanda:
   admin:
-    address: 0.0.0.0
+  - address: 0.0.0.0
     port: 9644
   data_directory: /var/lib/redpanda/data
   developer_mode: false
@@ -1451,7 +1456,7 @@ rpk:
 pandaproxy: {}
 redpanda:
   admin:
-    address: 0.0.0.0
+  - address: 0.0.0.0
     port: 9644
   admin_api_doc_dir: /usr/share/redpanda/admin-api-doc
   auto_create_topics_enabled: true
@@ -1475,7 +1480,7 @@ redpanda:
 pandaproxy: {}
 redpanda:
   admin:
-    address: 0.0.0.0
+  - address: 0.0.0.0
     port: 9644
   admin_api_doc_dir: /usr/share/redpanda/admin-api-doc
   advertised_kafka_api:
@@ -1825,7 +1830,7 @@ func TestReadAsJSON(t *testing.T) {
 				return mgr.Write(conf)
 			},
 			path:     Default().ConfigFile,
-			expected: `{"config_file":"/etc/redpanda/redpanda.yaml","pandaproxy":{},"redpanda":{"admin":{"address":"0.0.0.0","port":9644},"data_directory":"/var/lib/redpanda/data","developer_mode":true,"kafka_api":[{"address":"0.0.0.0","name":"internal","port":9092}],"node_id":0,"rpc_server":{"address":"0.0.0.0","port":33145},"seed_servers":[]},"rpk":{"coredump_dir":"/var/lib/redpanda/coredump","enable_memory_locking":false,"enable_usage_stats":false,"overprovisioned":false,"tune_aio_events":false,"tune_clocksource":false,"tune_coredump":false,"tune_cpu":false,"tune_disk_irq":false,"tune_disk_nomerges":false,"tune_disk_scheduler":false,"tune_disk_write_cache":false,"tune_fstrim":false,"tune_network":false,"tune_swappiness":false,"tune_transparent_hugepages":false}}`,
+			expected: `{"config_file":"/etc/redpanda/redpanda.yaml","pandaproxy":{},"redpanda":{"admin":[{"address":"0.0.0.0","port":9644}],"data_directory":"/var/lib/redpanda/data","developer_mode":true,"kafka_api":[{"address":"0.0.0.0","name":"internal","port":9092}],"node_id":0,"rpc_server":{"address":"0.0.0.0","port":33145},"seed_servers":[]},"rpk":{"coredump_dir":"/var/lib/redpanda/coredump","enable_memory_locking":false,"enable_usage_stats":false,"overprovisioned":false,"tune_aio_events":false,"tune_clocksource":false,"tune_coredump":false,"tune_cpu":false,"tune_disk_irq":false,"tune_disk_nomerges":false,"tune_disk_scheduler":false,"tune_disk_write_cache":false,"tune_fstrim":false,"tune_network":false,"tune_swappiness":false,"tune_transparent_hugepages":false}}`,
 		},
 		{
 			name:           "it should fail if the the config isn't found",
@@ -1855,7 +1860,17 @@ func TestReadFlat(t *testing.T) {
 	expected := map[string]string{
 		"config_file":                                  "/etc/redpanda/redpanda.yaml",
 		"pandaproxy":                                   "",
-		"redpanda.admin":                               "0.0.0.0:9644",
+		"redpanda.admin.0":                             "internal://192.168.92.34:9644",
+		"redpanda.admin.1":                             "127.0.0.1:9645",
+		"redpanda.admin_api_tls.0.cert_file":           "some/cert/file.crt",
+		"redpanda.admin_api_tls.0.key_file":            "/some/key/file.pem",
+		"redpanda.admin_api_tls.0.name":                "internal",
+		"redpanda.admin_api_tls.1.cert_file":           "some/other/cert.crt",
+		"redpanda.admin_api_tls.1.enabled":             "true",
+		"redpanda.admin_api_tls.1.key_file":            "/some/other/file.pem",
+		"redpanda.admin_api_tls.1.name":                "external",
+		"redpanda.admin_api_tls.1.truststore_file":     "/some/other/truststore.pem",
+		"redpanda.admin_api_tls.1.require_client_auth": "true",
 		"redpanda.advertised_kafka_api.0":              "internal://127.0.0.1:9092",
 		"redpanda.advertised_kafka_api.1":              "127.0.0.1:9093",
 		"redpanda.data_directory":                      "/var/lib/redpanda/data",
@@ -1929,6 +1944,32 @@ func TestReadFlat(t *testing.T) {
 	}}
 
 	conf.Redpanda.KafkaApiTLS = []ServerTLS{{
+		Name:     "internal",
+		KeyFile:  "/some/key/file.pem",
+		CertFile: "some/cert/file.crt",
+	}, {
+		Name:              "external",
+		KeyFile:           "/some/other/file.pem",
+		CertFile:          "some/other/cert.crt",
+		TruststoreFile:    "/some/other/truststore.pem",
+		Enabled:           true,
+		RequireClientAuth: true,
+	}}
+
+	conf.Redpanda.AdminApi = []NamedSocketAddress{{
+		SocketAddress: SocketAddress{
+			Address: "192.168.92.34",
+			Port:    9644,
+		},
+		Name: "internal",
+	}, {
+		SocketAddress: SocketAddress{
+			Address: "127.0.0.1",
+			Port:    9645,
+		},
+	}}
+
+	conf.Redpanda.AdminApiTLS = []ServerTLS{{
 		Name:     "internal",
 		KeyFile:  "/some/key/file.pem",
 		CertFile: "some/cert/file.crt",
