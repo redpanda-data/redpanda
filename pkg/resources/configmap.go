@@ -37,6 +37,9 @@ const (
 	tlsDirCA = "/etc/tls/certs/ca"
 
 	tlsAdminDir = "/etc/tls/certs/admin"
+
+	oneMB          = 1024 * 1024
+	logSegmentSize = 512 * oneMB
 )
 
 var errKeyDoesNotExistInSecretData = errors.New("cannot find key in secret data")
@@ -224,6 +227,9 @@ func (r *ConfigMapResource) createConfiguration(
 	if partitions != 0 {
 		cr.GroupTopicPartitions = &partitions
 	}
+
+	segmentSize := logSegmentSize
+	cr.LogSegmentSize = &segmentSize
 
 	replicas := *r.pandaCluster.Spec.Replicas
 	for i := int32(0); i < replicas; i++ {
