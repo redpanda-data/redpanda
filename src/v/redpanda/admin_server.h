@@ -12,10 +12,8 @@
 #pragma once
 #include "cluster/fwd.h"
 #include "config/endpoint_tls_config.h"
-#include "config/tls_config.h"
 #include "model/metadata.h"
 #include "seastarx.h"
-#include "utils/unresolved_address.h"
 
 #include <seastar/core/scheduling.hh>
 #include <seastar/core/sstring.hh>
@@ -24,8 +22,8 @@
 #include <seastar/util/log.hh>
 
 struct admin_server_cfg {
-    unresolved_address endpoint;
-    config::tls_config tls;
+    std::vector<model::broker_endpoint> endpoints;
+    std::vector<config::endpoint_tls_config> endpoints_tls;
     std::optional<ss::sstring> dashboard_dir;
     ss::sstring admin_api_docs_dir;
     bool enable_admin_api;

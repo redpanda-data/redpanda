@@ -70,7 +70,9 @@ ss::future<> admin_server::start() {
     co_await configure_listeners();
 
     vlog(
-      logger.info, "Started HTTP admin service listening at {}", _cfg.endpoint);
+      logger.info,
+      "Started HTTP admin service listening at {}",
+      _cfg.endpoints);
 }
 
 ss::future<> admin_server::stop() { return _server.stop(); }
@@ -124,23 +126,33 @@ void admin_server::configure_metrics_route() {
 }
 
 ss::future<> admin_server::configure_listeners() {
-    ss::shared_ptr<ss::tls::server_credentials> cred;
-
-    auto builder = co_await _cfg.tls.get_credentials_builder();
-    if (builder) {
-        cred = co_await builder->build_reloadable_server_credentials(
-          [](
-            const std::unordered_set<ss::sstring>& updated,
-            const std::exception_ptr& eptr) {
-              cluster::log_certificate_reload_event(
-                logger, "API TLS", updated, eptr);
+    for (auto& ep : _cfg.endpoints) {
+        // look for credentials matching current endpoint
+        auto tls_it = std::find_if(
+          _cfg.endpoints_tls.begin(),
+          _cfg.endpoints_tls.end(),
+          [&ep](const config::endpoint_tls_config& c) {
+              return c.name == ep.name;
           });
-    }
 
-    auto resolved = co_await rpc::resolve_dns(_cfg.endpoint);
-    co_await ss::with_scheduling_group(_cfg.sg, [this, cred, resolved] {
-        return _server.listen(resolved, cred);
-    });
+        ss::shared_ptr<ss::tls::server_credentials> cred;
+        if (tls_it != _cfg.endpoints_tls.end()) {
+            auto builder = co_await tls_it->config.get_credentials_builder();
+            if (builder) {
+                cred = co_await builder->build_reloadable_server_credentials(
+                  [](
+                    const std::unordered_set<ss::sstring>& updated,
+                    const std::exception_ptr& eptr) {
+                      cluster::log_certificate_reload_event(
+                        logger, "API TLS", updated, eptr);
+                  });
+            }
+        }
+        auto resolved = co_await rpc::resolve_dns(ep.address);
+        co_await ss::with_scheduling_group(_cfg.sg, [this, cred, resolved] {
+            return _server.listen(resolved, cred);
+        });
+    }
 }
 
 void admin_server::register_raft_routes() {

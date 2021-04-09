@@ -235,8 +235,8 @@ void application::check_environment() {
 static admin_server_cfg
 admin_server_cfg_from_global_cfg(scheduling_groups& sgs) {
     return admin_server_cfg{
-      .endpoint = config::shard_local_cfg().admin(),
-      .tls = config::shard_local_cfg().admin_api_tls(),
+      .endpoints = config::shard_local_cfg().admin(),
+      .endpoints_tls = config::shard_local_cfg().admin_api_tls(),
       .dashboard_dir = config::shard_local_cfg().dashboard_dir(),
       .admin_api_docs_dir = config::shard_local_cfg().admin_api_doc_dir(),
       .enable_admin_api = config::shard_local_cfg().enable_admin_api(),

@@ -13,6 +13,7 @@
 #include "config/config_store.h"
 #include "config/data_directory_path.h"
 #include "config/endpoint_tls_config.h"
+#include "config/property.h"
 #include "config/seed_server.h"
 #include "config/tls_config.h"
 #include "model/compression.h"
@@ -66,8 +67,8 @@ struct configuration final : public config_store {
     one_or_many_property<model::broker_endpoint> kafka_api;
     one_or_many_property<endpoint_tls_config> kafka_api_tls;
     property<bool> use_scheduling_groups;
-    property<unresolved_address> admin;
-    property<tls_config> admin_api_tls;
+    one_or_many_property<model::broker_endpoint> admin;
+    one_or_many_property<endpoint_tls_config> admin_api_tls;
     property<bool> enable_admin_api;
     property<ss::sstring> admin_api_doc_dir;
     property<int16_t> default_num_windows;

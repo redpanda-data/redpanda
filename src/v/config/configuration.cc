@@ -9,6 +9,7 @@
 
 #include "config/configuration.h"
 
+#include "model/metadata.h"
 #include "units.h"
 
 namespace config {
@@ -144,14 +145,14 @@ configuration::configuration()
       "admin",
       "Address and port of admin server",
       required::no,
-      unresolved_address("127.0.0.1", 9644))
+      {model::broker_endpoint(unresolved_address("127.0.0.1", 9644))})
   , admin_api_tls(
       *this,
       "admin_api_tls",
       "TLS configuration for admin HTTP server",
       required::no,
-      tls_config(),
-      tls_config::validate)
+      {},
+      endpoint_tls_config::validate_many)
   , enable_admin_api(
       *this, "enable_admin_api", "Enable the admin API", required::no, true)
   , admin_api_doc_dir(
