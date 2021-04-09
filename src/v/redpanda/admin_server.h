@@ -69,6 +69,7 @@ private:
     void register_raft_routes();
     void register_kafka_routes();
     void register_security_routes();
+    void register_status_routes();
 
     ss::http_server _server;
     admin_server_cfg _cfg;

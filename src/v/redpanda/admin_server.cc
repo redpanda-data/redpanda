@@ -26,6 +26,7 @@
 #include "redpanda/admin/api-doc/partition.json.h"
 #include "redpanda/admin/api-doc/raft.json.h"
 #include "redpanda/admin/api-doc/security.json.h"
+#include "redpanda/admin/api-doc/status.json.h"
 #include "rpc/dns.h"
 #include "security/scram_algorithm.h"
 #include "security/scram_authenticator.h"
@@ -46,6 +47,8 @@
 #include <rapidjson/document.h>
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/writer.h>
+
+#include <unordered_map>
 
 using namespace std::chrono_literals;
 
@@ -95,6 +98,8 @@ void admin_server::configure_admin_routes() {
     rb->register_api_file(_server._routes, "partition");
     rb->register_function(_server._routes, insert_comma);
     rb->register_api_file(_server._routes, "security");
+    rb->register_function(_server._routes, insert_comma);
+    rb->register_api_file(_server._routes, "status");
     ss::httpd::config_json::get_config.set(
       _server._routes, []([[maybe_unused]] ss::const_req req) {
           rapidjson::StringBuffer buf;
@@ -105,6 +110,7 @@ void admin_server::configure_admin_routes() {
     register_raft_routes();
     register_kafka_routes();
     register_security_routes();
+    register_status_routes();
 }
 
 void admin_server::configure_dashboard() {
@@ -508,5 +514,14 @@ void admin_server::register_kafka_routes() {
                 return ss::make_ready_future<ss::json::json_return_type>(
                   ss::json::json_return_type(ss::json::json_void()));
             });
+      });
+}
+
+void admin_server::register_status_routes() {
+    ss::httpd::status_json::ready.set(
+      _server._routes, [](std::unique_ptr<ss::httpd::request>) {
+          const static std::unordered_map<ss::sstring, ss::sstring> status_map{
+            {"status", "ready"}};
+          return ss::make_ready_future<ss::json::json_return_type>(status_map);
       });
 }
