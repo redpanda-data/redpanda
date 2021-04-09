@@ -298,6 +298,8 @@ public:
     void update_suppress_heartbeats(
       vnode, follower_req_seq, heartbeats_suppressed);
 
+    std::vector<follower_metrics> get_follower_metrics() const;
+
 private:
     friend replicate_entries_stm;
     friend vote_stm;
