@@ -50,6 +50,7 @@ type RedpandaConfig struct {
 	Superusers                           []string               `yaml:"superusers,omitempty" mapstructure:"superusers,omitempty" json:"superusers,omitempty"`
 	EnableSASL                           *bool                  `yaml:"enable_sasl,omitempty" mapstructure:"enable_sasl,omitempty" json:"enableSasl,omitempty"`
 	GroupTopicPartitions                 *int                   `yaml:"group_topic_partitions,omitempty" mapstructure:"group_topic_partitions,omitempty" json:"groupTopicPartitions,omitempty"`
+	LogSegmentSize                       *int                   `yaml:"log_segment_size,omitempty" mapstructure:"log_segment_size,omitempty" json:"log_segment_size,omitempty"`
 	Other                                map[string]interface{} `yaml:",inline" mapstructure:",remain"`
 }
 
