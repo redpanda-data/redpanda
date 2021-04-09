@@ -19,6 +19,7 @@
 #include "pandaproxy/configuration.h"
 #include "pandaproxy/fwd.h"
 #include "raft/group_manager.h"
+#include "redpanda/admin_server.h"
 #include "resource_mgmt/cpu_scheduling.h"
 #include "resource_mgmt/memory_groups.h"
 #include "resource_mgmt/smp_groups.h"
@@ -30,7 +31,6 @@
 #include <seastar/core/app-template.hh>
 #include <seastar/core/metrics_registration.hh>
 #include <seastar/core/sharded.hh>
-#include <seastar/http/httpd.hh>
 #include <seastar/util/defer.hh>
 
 namespace po = boost::program_options; // NOLINT
@@ -88,10 +88,6 @@ private:
     void validate_arguments(const po::variables_map&);
     void hydrate_config(const po::variables_map&);
 
-    void admin_register_raft_routes(ss::http_server& server);
-    void admin_register_kafka_routes(ss::http_server& server);
-    void admin_register_security_routes(ss::http_server& server);
-
     bool coproc_enabled() {
         const auto& cfg = config::shard_local_cfg();
         return cfg.developer_mode() && cfg.enable_coproc();
@@ -123,7 +119,7 @@ private:
     ss::sharded<rpc::connection_cache> _raft_connection_cache;
     ss::sharded<kafka::group_manager> _group_manager;
     ss::sharded<rpc::server> _rpc;
-    ss::sharded<ss::http_server> _admin;
+    ss::sharded<admin_server> _admin;
     ss::sharded<rpc::server> _kafka_server;
     ss::sharded<pandaproxy::proxy> _proxy;
     ss::metrics::metric_groups _metrics;

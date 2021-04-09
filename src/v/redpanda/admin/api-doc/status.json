@@ -1,0 +1,14 @@
+"/v1/status/ready": {
+    "get": {
+      "summary": "redpanda healthcheck",
+      "operationId": "ready",
+      "produces": [
+        "application/json"
+      ],
+      "responses": {
+        "200": {
+          "description": "Redpanda is up and running"
+        }
+      }
+    }
+  }
