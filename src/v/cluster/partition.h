@@ -146,6 +146,7 @@ public:
 
 private:
     friend partition_manager;
+    friend partition_probe;
 
     consensus_ptr raft() { return _raft; }
 
