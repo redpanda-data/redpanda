@@ -35,7 +35,9 @@ seastar_generate_swagger(
 
 v_cc_library(
   NAME application
-  SRCS application.cc
+  SRCS 
+    admin_server.cc
+    application.cc
   DEPS
     Seastar::seastar
     v::cluster
