@@ -60,7 +60,7 @@ type Pandaproxy struct {
 }
 
 type PandaproxyClient struct {
-	Broker    []SocketAddress `yaml:"broker,omitempty" mapstructure:"broker,omitempty" json:"broker,omitempty"`
+	Brokers   []SocketAddress `yaml:"brokers,omitempty" mapstructure:"brokers,omitempty" json:"brokers,omitempty"`
 	BrokerTLS ServerTLS       `yaml:"broker_tls,omitempty" mapstructure:"broker_tls,omitempty" json:"brokerTls,omitempty"`
 }
 
