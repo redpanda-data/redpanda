@@ -74,6 +74,19 @@ void partition_probe::setup_metrics(const model::ntp& ntp) {
           },
           sm::description("Id of current partition leader"),
           labels),
+        sm::make_gauge(
+          "under_replicated_replicas",
+          [this] {
+              auto metrics = _partition._raft->get_follower_metrics();
+              return std::count_if(
+                metrics.cbegin(),
+                metrics.cend(),
+                [](const raft::follower_metrics& fm) {
+                    return fm.under_replicated;
+                });
+          },
+          sm::description("Number of under replicated replicas"),
+          labels),
         sm::make_derive(
           "records_produced",
           [this] { return _records_produced; },
