@@ -248,18 +248,6 @@ metadata_response::topic metadata_response::topic::make_from_topic_metadata(
     return tp;
 }
 
-metadata_response::topic metadata_response::topic::make_from_topic_metadata(
-  model::topic_metadata&& tp_md, model::topic&& topic) {
-    metadata_response::topic tp = make_from_topic_metadata(std::move(tp_md));
-    if (topic != tp.name && model::is_materialized_topic(topic)) {
-        /// In this situation we are responding to a metadata request on
-        /// a materailzied topic, the response must contain the same
-        /// topic as the initial request
-        tp.name = std::move(topic);
-    }
-    return tp;
-}
-
 std::ostream& operator<<(std::ostream& o, const metadata_response::broker& b) {
     return fmt_print(
       o, "id {} hostname {} port {} rack", b.node_id(), b.host, b.port, b.rack);
@@ -418,6 +406,9 @@ get_topic_metadata(request_context& ctx, metadata_request& request) {
             md) {
             auto src_topic_response = make_topic_response(
               ctx, request, std::move(*md));
+            if (model::is_materialized_topic(topic)) {
+                src_topic_response.name = std::move(topic);
+            }
             res.push_back(std::move(src_topic_response));
             continue;
         }

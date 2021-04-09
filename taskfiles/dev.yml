@@ -19,7 +19,6 @@ tasks:
     - curl "{{.NODE_URL}}" > "{{.NODE_ROOT}}/{{.NODE_PKG}}.tar.xz"
     - tar -xf "{{.NODE_ROOT}}/{{.NODE_PKG}}.tar.xz" -C "{{.NODE_ROOT}}" --strip 1
     - rm -rf "{{.NODE_ROOT}}/{{.NODE_PKG}}.tar.xz"
-    - "{{.NODE_ROOT}}/bin/npm --prefix {{.JS_ROOT}} install"
     status:
     - test -f "{{.NODE_ROOT}}/bin/node"
     - test -f "{{.NODE_ROOT}}/bin/npm"

@@ -20,7 +20,6 @@ quick:
   - tests/compacted_topic_verifier_test.py
   - tests/compaction_recovery_test.py
   - tests/partition_movement_test.py::PartitionMovementTest.test_cycle_simple
-  - tests/wasm_identity_test.py
   - tests/pandaproxy_test.py::PandaProxyTest.test_consumer_group
   - tests/pandaproxy_test.py::PandaProxyTest.test_subscribe_consumer_validation
   - tests/pandaproxy_test.py::PandaProxyTest.test_remove_consumer_validation

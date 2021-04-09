@@ -12,7 +12,6 @@ import tempfile
 import shutil
 import subprocess
 import jinja2
-from rptest.wasm.topic import get_dest_topic
 
 
 class WasmTemplateRepository:
@@ -53,15 +52,18 @@ class WasmBuildTool():
         shutil.rmtree(self.work_dir)
 
     def _compile_template(self, script, template):
-        inputs = ",".join([f'"{topic[0]}"' for topic in script.inputs])
-        outputs = [get_dest_topic(topic[0]) for topic in script.outputs]
+        inputs = ",".join([f'"{topic}"' for topic in script.inputs])
+        outputs = [topic for topic in script.outputs]
+        if any(x is None for x in outputs):
+            raise Exception('Error rendering template, outputs invalid')
         t = jinja2.Template(template)
         return t.render(input_topics=inputs, output_topics=outputs)
 
     def _build_source(self, artifact_dir):
+        npm_env = {'PATH': f'/opt/node/bin:{os.getenv("PATH")}'}
         with DirectoryContext(artifact_dir) as _:
-            subprocess.run(["npm", "install"])
-            subprocess.run(["npm", "run", "build"])
+            subprocess.run(["/opt/node/bin/npm", "install"], env=npm_env)
+            subprocess.run(["/opt/node/bin/npm", "run", "build"], env=npm_env)
 
     def build_test_artifacts(self, script):
         artifact_dir = os.path.join(self.work_dir, script.dir_name)
@@ -70,7 +72,8 @@ class WasmBuildTool():
         if template is None:
             raise Exception(f"Template doesn't exist: {script.script}")
         coprocessor = self._compile_template(script, template)
-        script_path = os.path.join(artifact_dir, "src", "wasm.js")
+        script_path = os.path.join(artifact_dir, "src",
+                                   f"{script.dir_name}.js")
         with open(script_path, "w") as f:
             f.write(coprocessor)
         self._build_source(artifact_dir)
