@@ -125,7 +125,12 @@ func bootstrap(mgr config.Manager) *cobra.Command {
 				},
 			}}
 
-			conf.Redpanda.AdminApi.Address = ownIp.String()
+			conf.Redpanda.AdminApi = []config.NamedSocketAddress{{
+				SocketAddress: config.SocketAddress{
+					Address: ownIp.String(),
+					Port:    config.DefaultAdminPort,
+				},
+			}}
 			conf.Redpanda.SeedServers = []config.SeedServer{}
 			seeds := []config.SeedServer{}
 			for _, ip := range ips {
