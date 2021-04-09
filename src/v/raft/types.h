@@ -153,6 +153,20 @@ struct follower_index_metadata {
      */
     heartbeats_suppressed suppress_heartbeats = heartbeats_suppressed::no;
 };
+/**
+ * class containing follower statistics, this may be helpful for debugging,
+ * metrics and querying for follower status
+ */
+struct follower_metrics {
+    model::node_id id;
+    bool is_learner;
+    model::offset committed_log_index;
+    model::offset dirty_log_index;
+    model::offset match_index;
+    clock_type::time_point last_heartbeat;
+    bool is_live;
+    bool under_replicated;
+};
 
 struct append_entries_request {
     using flush_after_append = ss::bool_class<struct flush_after_append_tag>;
