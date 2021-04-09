@@ -872,20 +872,30 @@ rpk:
 			conf: func() *Config {
 				c := getValidConfig()
 				c.Pandaproxy = &Pandaproxy{
-					PandaproxyAPI: &SocketAddress{
-						Address: "1.2.3.4",
-						Port:    1234,
+					PandaproxyAPI: []NamedSocketAddress{
+						{
+							Name: "first",
+							SocketAddress: SocketAddress{
+								Address: "1.2.3.4",
+								Port:    1234,
+							},
+						},
 					},
-					PandaproxyAPITLS: &ServerTLS{
+					PandaproxyAPITLS: []ServerTLS{{
 						KeyFile:           "/etc/certs/cert.key",
 						TruststoreFile:    "/etc/certs/ca.crt",
 						CertFile:          "/etc/certs/cert.crt",
 						Enabled:           true,
 						RequireClientAuth: true,
-					},
-					AdvertisedPandaproxyAPI: &SocketAddress{
-						Address: "2.3.4.1",
-						Port:    2341,
+					}},
+					AdvertisedPandaproxyAPI: []NamedSocketAddress{
+						{
+							Name: "advertised",
+							SocketAddress: SocketAddress{
+								Address: "2.3.4.1",
+								Port:    2341,
+							},
+						},
 					},
 				}
 				return c
@@ -894,13 +904,15 @@ rpk:
 			expected: `config_file: /etc/redpanda/redpanda.yaml
 pandaproxy:
   advertised_pandaproxy_api:
-    address: 2.3.4.1
+  - address: 2.3.4.1
+    name: advertised
     port: 2341
   pandaproxy_api:
-    address: 1.2.3.4
+  - address: 1.2.3.4
+    name: first
     port: 1234
   pandaproxy_api_tls:
-    cert_file: /etc/certs/cert.crt
+  - cert_file: /etc/certs/cert.crt
     enabled: true
     key_file: /etc/certs/cert.key
     require_client_auth: true
@@ -950,9 +962,14 @@ rpk:
 			conf: func() *Config {
 				c := getValidConfig()
 				c.Pandaproxy = &Pandaproxy{
-					PandaproxyAPI: &SocketAddress{
-						Address: "1.2.3.4",
-						Port:    1234,
+					PandaproxyAPI: []NamedSocketAddress{
+						{
+							Name: "first",
+							SocketAddress: SocketAddress{
+								Address: "1.2.3.4",
+								Port:    1234,
+							},
+						},
 					},
 				}
 				return c
@@ -961,7 +978,8 @@ rpk:
 			expected: `config_file: /etc/redpanda/redpanda.yaml
 pandaproxy:
   pandaproxy_api:
-    address: 1.2.3.4
+  - address: 1.2.3.4
+    name: first
     port: 1234
 redpanda:
   admin:
@@ -1008,7 +1026,7 @@ rpk:
 			conf: func() *Config {
 				c := getValidConfig()
 				c.PandaproxyClient = &PandaproxyClient{
-					Broker: []SocketAddress{
+					Brokers: []SocketAddress{
 						{
 							Address: "1.2.3.4",
 							Port:    1234,
@@ -1028,15 +1046,15 @@ rpk:
 			expected: `config_file: /etc/redpanda/redpanda.yaml
 pandaproxy: {}
 pandaproxy_client:
-  broker:
-  - address: 1.2.3.4
-    port: 1234
   broker_tls:
     cert_file: /etc/certs/cert.crt
     enabled: true
     key_file: /etc/certs/cert.key
     require_client_auth: true
     truststore_file: /etc/certs/ca.crt
+  brokers:
+  - address: 1.2.3.4
+    port: 1234
 redpanda:
   admin:
     address: 0.0.0.0

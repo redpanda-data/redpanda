@@ -54,13 +54,13 @@ type RedpandaConfig struct {
 }
 
 type Pandaproxy struct {
-	PandaproxyAPI           *SocketAddress `yaml:"pandaproxy_api,omitempty" mapstructure:"pandaproxy_api,omitempty" json:"pandaproxyApi,omitempty"`
-	PandaproxyAPITLS        *ServerTLS     `yaml:"pandaproxy_api_tls,omitempty" mapstructure:"pandaproxy_api_tls,omitempty" json:"pandaproxyApiTls,omitempty"`
-	AdvertisedPandaproxyAPI *SocketAddress `yaml:"advertised_pandaproxy_api,omitempty" mapstructure:"advertised_pandaproxy_api,omitempty" json:"advertisedPandaproxyApi,omitempty"`
+	PandaproxyAPI           []NamedSocketAddress `yaml:"pandaproxy_api,omitempty" mapstructure:"pandaproxy_api,omitempty" json:"pandaproxyApi,omitempty"`
+	PandaproxyAPITLS        []ServerTLS          `yaml:"pandaproxy_api_tls,omitempty" mapstructure:"pandaproxy_api_tls,omitempty" json:"pandaproxyApiTls,omitempty"`
+	AdvertisedPandaproxyAPI []NamedSocketAddress `yaml:"advertised_pandaproxy_api,omitempty" mapstructure:"advertised_pandaproxy_api,omitempty" json:"advertisedPandaproxyApi,omitempty"`
 }
 
 type PandaproxyClient struct {
-	Broker    []SocketAddress `yaml:"broker,omitempty" mapstructure:"broker,omitempty" json:"broker,omitempty"`
+	Brokers   []SocketAddress `yaml:"brokers,omitempty" mapstructure:"brokers,omitempty" json:"brokers,omitempty"`
 	BrokerTLS ServerTLS       `yaml:"broker_tls,omitempty" mapstructure:"broker_tls,omitempty" json:"brokerTls,omitempty"`
 }
 
