@@ -115,7 +115,7 @@ type ExternalConnectivityConfig struct {
 	Enabled bool `json:"enabled,omitempty"`
 	// Subdomain can be used to change the behavior of an advertised
 	// KafkaAPI. Each broker advertises Kafka API as follows
-	// HOSTNAME_OF_A_POD.SUBDOMAIN:EXTERNAL_KAFKA_API_PORT.
+	// BROKER_ID.SUBDOMAIN:EXTERNAL_KAFKA_API_PORT.
 	// If Subdomain is empty then each broker advertises Kafka
 	// API as PUBLIC_NODE_IP:EXTERNAL_KAFKA_API_PORT.
 	// If TLS is enabled then this subdomain will be requested
