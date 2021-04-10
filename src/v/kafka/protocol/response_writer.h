@@ -216,6 +216,16 @@ public:
         return real_size + sizeof(be_size);
     }
 
+    uint32_t write(std::optional<produce_request_record_data>& data) {
+        if (!data) {
+            return write(int32_t(-1));
+        }
+        auto start_size = uint32_t(_out->size_bytes());
+        write(data->adapter.batch->size_bytes());
+        writer_serialize_batch(*this, std::move(data->adapter.batch.value()));
+        return _out->size_bytes() - start_size;
+    }
+
 private:
     iobuf* _out;
 };
