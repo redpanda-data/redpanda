@@ -163,7 +163,7 @@ func (r *ConfigMapResource) createConfiguration(
 		Port:    clusterCRPortOrRPKDefault(c.RPCServer.Port, cr.RPCServer.Port),
 	}
 
-	cr.AdminApi.Port = clusterCRPortOrRPKDefault(c.AdminAPI.Port, cr.AdminApi.Port)
+	cr.AdminApi[0].Port = clusterCRPortOrRPKDefault(c.AdminAPI.Port, cr.AdminApi[0].Port)
 	cr.DeveloperMode = c.DeveloperMode
 	cr.Directory = dataDirectory
 	if r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.Enabled {
@@ -188,15 +188,16 @@ func (r *ConfigMapResource) createConfiguration(
 		}
 	}
 	if r.pandaCluster.Spec.Configuration.TLS.AdminAPI.Enabled {
-		cr.AdminApiTLS = config.ServerTLS{
+		adminTLS := config.ServerTLS{
 			KeyFile:           fmt.Sprintf("%s/%s", tlsAdminDir, corev1.TLSPrivateKeyKey),
 			CertFile:          fmt.Sprintf("%s/%s", tlsAdminDir, corev1.TLSCertKey),
 			Enabled:           true,
 			RequireClientAuth: r.pandaCluster.Spec.Configuration.TLS.AdminAPI.RequireClientAuth,
 		}
 		if r.pandaCluster.Spec.Configuration.TLS.AdminAPI.RequireClientAuth {
-			cr.AdminApiTLS.TruststoreFile = fmt.Sprintf("%s/%s", tlsAdminDir, cmetav1.TLSCAKey)
+			adminTLS.TruststoreFile = fmt.Sprintf("%s/%s", tlsAdminDir, cmetav1.TLSCAKey)
 		}
+		cr.AdminApiTLS = append(cr.AdminApiTLS, adminTLS)
 	}
 
 	if r.pandaCluster.Spec.CloudStorage.Enabled {
