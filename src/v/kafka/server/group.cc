@@ -1176,6 +1176,8 @@ void group::fail_offset_commit(
     }
 }
 
+void group::reset_tx_state(model::term_id term) { _term = term; }
+
 ss::future<offset_commit_response>
 group::store_offsets(offset_commit_request&& r) {
     cluster::simple_batch_builder builder(

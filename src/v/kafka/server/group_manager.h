@@ -187,7 +187,9 @@ private:
     cluster::notification_id_type _topic_table_notify_handle;
 
     void handle_leader_change(
-      ss::lw_shared_ptr<cluster::partition>, std::optional<model::node_id>);
+      model::term_id,
+      ss::lw_shared_ptr<cluster::partition>,
+      std::optional<model::node_id>);
 
     void handle_topic_delta(const std::vector<cluster::topic_table_delta>&);
 
@@ -195,11 +197,14 @@ private:
       const std::vector<model::topic_partition>&);
 
     ss::future<> handle_partition_leader_change(
+      model::term_id,
       ss::lw_shared_ptr<attached_partition>,
       std::optional<model::node_id> leader_id);
 
     ss::future<> recover_partition(
-      ss ::lw_shared_ptr<cluster::partition>, recovery_batch_consumer_state);
+      model::term_id,
+      ss ::lw_shared_ptr<cluster::partition>,
+      recovery_batch_consumer_state);
 
     ss::future<> inject_noop(
       ss::lw_shared_ptr<cluster::partition> p,

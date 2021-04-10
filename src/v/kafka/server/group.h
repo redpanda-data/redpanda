@@ -394,6 +394,8 @@ public:
     void fail_offset_commit(
       const model::topic_partition& tp, const offset_metadata& md);
 
+    void reset_tx_state(model::term_id);
+
     ss::future<offset_commit_response> store_offsets(offset_commit_request&& r);
 
     ss::future<offset_commit_response>
@@ -426,6 +428,10 @@ public:
     ss::future<>
     remove_topic_partitions(const std::vector<model::topic_partition>& tps);
 
+    const ss::lw_shared_ptr<cluster::partition> partition() const {
+        return _partition;
+    }
+
 private:
     using member_map = absl::node_hash_map<kafka::member_id, member_ptr>;
     using protocol_support = absl::node_hash_map<kafka::protocol_name, int>;
@@ -450,6 +456,8 @@ private:
     config::configuration& _conf;
     ss::lw_shared_ptr<cluster::partition> _partition;
     absl::node_hash_map<model::topic_partition, offset_metadata> _offsets;
+
+    model::term_id _term;
     absl::node_hash_map<model::topic_partition, offset_metadata>
       _pending_offset_commits;
 };
