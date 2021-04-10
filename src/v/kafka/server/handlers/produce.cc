@@ -15,7 +15,6 @@
 #include "cluster/shard_table.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/kafka_batch_adapter.h"
-#include "kafka/protocol/response_writer_utils.h"
 #include "likely.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
