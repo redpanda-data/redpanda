@@ -13,7 +13,6 @@
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/fetch.h"
 #include "kafka/protocol/response_writer.h"
-#include "kafka/protocol/response_writer_utils.h"
 #include "kafka/server/response.h"
 #include "model/fundamental.h"
 #include "model/record.h"

@@ -54,11 +54,11 @@ struct produce_batcher_context {
     auto handle_response(kafka::error_code error = kafka::error_code::none) {
         auto batch = kc::consume_front(broker_batches);
         batcher.handle_response(kafka::produce_response::partition{
-          .id{partition_id},
-          .error = error,
+          .partition_index{partition_id},
+          .error_code = error,
           .base_offset{
             error == kafka::error_code::none ? batch.first : model::offset{-1}},
-          .log_append_time{model::timestamp{0}},
+          .log_append_time_ms{model::timestamp{0}},
           .log_start_offset{model::offset{-1}},
         });
         return batch.second.record_count();
@@ -155,16 +155,16 @@ SEASTAR_THREAD_TEST_CASE(test_partition_producer_error) {
     BOOST_REQUIRE(responses.size() == 4);
     // successes
     BOOST_REQUIRE(responses[0].base_offset == model::offset(42));
-    BOOST_REQUIRE(responses[0].error == kafka::error_code::none);
+    BOOST_REQUIRE(responses[0].error_code == kafka::error_code::none);
     BOOST_REQUIRE(responses[1].base_offset == model::offset(44));
-    BOOST_REQUIRE(responses[1].error == kafka::error_code::none);
+    BOOST_REQUIRE(responses[1].error_code == kafka::error_code::none);
     // failures
     BOOST_REQUIRE(responses[2].base_offset == model::offset(-1));
     BOOST_REQUIRE(
-      responses[2].error == kafka::error_code::not_leader_for_partition);
+      responses[2].error_code == kafka::error_code::not_leader_for_partition);
     BOOST_REQUIRE(responses[3].base_offset == model::offset(-1));
     BOOST_REQUIRE(
-      responses[3].error == kafka::error_code::not_leader_for_partition);
+      responses[3].error_code == kafka::error_code::not_leader_for_partition);
 
     BOOST_REQUIRE(ctx.consume() == 0);
 }

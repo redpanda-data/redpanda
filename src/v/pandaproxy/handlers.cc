@@ -170,12 +170,9 @@ post_topics_name(server::request_t rq, server::reply_t rp) {
     partitions.reserve(partition_builders.size());
     for (auto& pb : partition_builders) {
         partitions.emplace_back(kafka::produce_request::partition{
-          .id = pb.first,
-          .data = {},
-          .adapter = kafka::kafka_batch_adapter{
-            .v2_format = true,
-            .valid_crc = true,
-            .batch = std::move(pb.second).build()}});
+          .partition_index = pb.first,
+          .records = kafka::produce_request_record_data(
+            std::move(pb.second).build())});
     }
 
     auto topic = parse::request_param<model::topic>(*rq.req, "topic_name");
@@ -184,19 +181,23 @@ post_topics_name(server::request_t rq, server::reply_t rp) {
              [topic,
               rq{std::move(rq)}](kafka::produce_request::partition p) mutable {
                  return rq.ctx.client.produce_record_batch(
-                   model::topic_partition(topic, p.id),
-                   std::move(*p.adapter.batch));
+                   model::topic_partition(topic, p.partition_index),
+                   std::move(*p.records->adapter.batch));
              })
       .then([topic, res_fmt, rp{std::move(rp)}](auto responses) mutable {
           std::vector<kafka::produce_response::topic> topics;
           topics.push_back(kafka::produce_response::topic{
             .name{std::move(topic)}, .partitions{std::move(responses)}});
 
-          auto res = kafka::produce_response{
-            .topics{std::move(topics)},
-            .throttle{std::chrono::milliseconds{0}}};
+          auto data = kafka::produce_response_data{
+            .responses{std::move(topics)},
+            .throttle_time_ms{std::chrono::milliseconds{0}}};
 
-          auto json_rslt = ppj::rjson_serialize(res.topics[0]);
+          auto res = kafka::produce_response{
+            .data = std::move(data),
+          };
+
+          auto json_rslt = ppj::rjson_serialize(res.data.responses[0]);
           rp.rep->write_body("json", json_rslt);
           rp.mime_type = res_fmt;
           return std::move(rp);

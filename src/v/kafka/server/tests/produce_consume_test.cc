@@ -58,9 +58,8 @@ struct prod_consume_fixture : public redpanda_thread_fixture {
         std::vector<kafka::produce_request::partition> res;
 
         kafka::produce_request::partition partition;
-        partition.id = model::partition_id(0);
-        partition.adapter = kafka::kafka_batch_adapter();
-        partition.adapter.batch = std::move(std::move(builder).build());
+        partition.partition_index = model::partition_id(0);
+        partition.records.emplace(std::move(std::move(builder).build()));
         res.push_back(std::move(partition));
         return res;
     }
@@ -74,7 +73,7 @@ struct prod_consume_fixture : public redpanda_thread_fixture {
         std::vector<kafka::produce_request::topic> topics;
         topics.push_back(std::move(tp));
         kafka::produce_request req(std::nullopt, 1, std::move(topics));
-        req.timeout = std::chrono::seconds(2);
+        req.data.timeout_ms = std::chrono::seconds(2);
         req.has_idempotent = false;
         req.has_transactional = false;
         return producer->dispatch(std::move(req))

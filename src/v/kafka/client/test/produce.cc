@@ -42,7 +42,7 @@ FIXTURE_TEST(produce_reconnect, kafka_client_fixture) {
         auto bat = make_batch(model::offset(0), 2);
         auto res = client.produce_record_batch(tp, std::move(bat)).get();
         BOOST_REQUIRE_EQUAL(
-          res.error, kafka::error_code::unknown_topic_or_partition);
+          res.error_code, kafka::error_code::unknown_topic_or_partition);
         BOOST_REQUIRE_EQUAL(res.base_offset, model::offset(-1));
     }
 
@@ -77,7 +77,7 @@ FIXTURE_TEST(produce_reconnect, kafka_client_fixture) {
     auto req2 = req2_fut.get();
 
     info("Testing assertions");
-    BOOST_REQUIRE_EQUAL(req0.error, kafka::error_code::none);
+    BOOST_REQUIRE_EQUAL(req0.error_code, kafka::error_code::none);
     BOOST_REQUIRE_EQUAL(req0.base_offset, model::offset(1));
 
     client.stop().get();

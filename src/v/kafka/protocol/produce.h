@@ -13,6 +13,8 @@
 
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/kafka_batch_adapter.h"
+#include "kafka/protocol/schemata/produce_request.h"
+#include "kafka/protocol/schemata/produce_response.h"
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
 #include "kafka/types.h"
@@ -41,40 +43,31 @@ struct produce_response;
 
 struct produce_request final {
     using api_type = produce_api;
+    using partition = partition_produce_data;
+    using topic = topic_produce_data;
 
-    struct partition {
-        model::partition_id id;
-        // the wire format encodes batch data as a nullable byte array. this
-        // data is moved into the batch adapter immediately after its read.
-        std::optional<iobuf> data;
-        kafka_batch_adapter adapter;
-    };
+    produce_request_data data;
 
-    struct topic {
-        model::topic name;
-        std::vector<partition> partitions;
-    };
-
-    std::optional<ss::sstring> transactional_id;
-    int16_t acks;
-    std::chrono::milliseconds timeout;
-    std::vector<topic> topics;
+    produce_request() = default;
 
     produce_request(
-      std::optional<ss::sstring> t_id, int16_t acks, std::vector<topic> topics)
-      : transactional_id(std::move(t_id))
-      , acks(acks)
-      , timeout()
-      , topics(std::move(topics)) {}
+      std::optional<ss::sstring> t_id,
+      int16_t acks,
+      std::vector<produce_request::topic> topics) {
+        if (t_id) {
+            data.transactional_id = transactional_id(std::move(*t_id));
+        }
+        data.acks = acks;
+        data.topics = std::move(topics);
+    }
 
-    produce_request(const produce_request&) = delete;
-    produce_request& operator=(const produce_request&) = delete;
-    produce_request(produce_request&&) = default;
-    produce_request& operator=(produce_request&&) = delete;
-    explicit produce_request(request_context& ctx) { decode(ctx); }
+    void encode(response_writer& writer, api_version version) {
+        data.encode(writer, version);
+    }
 
-    void encode(response_writer& writer, api_version version);
-    void decode(request_context& ctx);
+    void decode(request_reader& reader, api_version version) {
+        data.decode(reader, version);
+    }
 
     /**
      * Build a generic error response for a given request.
@@ -88,31 +81,38 @@ struct produce_request final {
     bool has_idempotent = false;
 };
 
-std::ostream& operator<<(std::ostream&, const produce_request&);
+inline std::ostream& operator<<(std::ostream& os, const produce_request& r) {
+    return os << r.data;
+}
 
 struct produce_response final {
     using api_type = produce_api;
+    using partition = partition_produce_response;
+    using topic = topic_produce_response;
 
-    struct partition {
-        model::partition_id id;
-        error_code error{kafka::error_code::none};
-        model::offset base_offset{-1};
-        model::timestamp log_append_time{-1};
-        model::offset log_start_offset{-1}; // >= v5
-    };
+    produce_response_data data;
 
-    struct topic {
-        model::topic name;
-        std::vector<partition> partitions;
-    };
+    void encode(const request_context& ctx, response& resp) {
+        // normalize errors
+        for (auto& r : data.responses) {
+            for (auto& p : r.partitions) {
+                if (p.error_code != error_code::none) {
+                    p.base_offset = model::offset(-1);
+                    p.log_append_time_ms = model::timestamp(-1);
+                    p.log_start_offset = model::offset(-1);
+                }
+            }
+        }
+        data.encode(resp.writer(), ctx.header().version);
+    }
 
-    std::vector<topic> topics;
-    std::chrono::milliseconds throttle = std::chrono::milliseconds(0);
-
-    void encode(const request_context& ctx, response& resp);
-    void decode(iobuf buf, api_version version);
+    void decode(iobuf buf, api_version version) {
+        data.decode(std::move(buf), version);
+    }
 };
 
-std::ostream& operator<<(std::ostream&, const produce_response&);
+inline std::ostream& operator<<(std::ostream& os, const produce_response& r) {
+    return os << r.data;
+}
 
 } // namespace kafka

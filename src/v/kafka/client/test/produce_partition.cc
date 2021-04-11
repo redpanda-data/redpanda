@@ -43,8 +43,8 @@ SEASTAR_THREAD_TEST_CASE(test_produce_partition_record_count) {
     auto c_res0_fut = producer.produce(make_batch(model::offset(0), 2));
     auto c_res1_fut = producer.produce(make_batch(model::offset(2), 1));
     producer.handle_response(kafka::produce_response::partition{
-      .id{model::partition_id{42}},
-      .error = kafka::error_code::none,
+      .partition_index{model::partition_id{42}},
+      .error_code = kafka::error_code::none,
       .base_offset{model::offset{0}}});
 
     BOOST_REQUIRE_EQUAL(consumed_batches.size(), 1);
@@ -56,8 +56,8 @@ SEASTAR_THREAD_TEST_CASE(test_produce_partition_record_count) {
 
     auto c_res2_fut = producer.produce(make_batch(model::offset(3), 3));
     producer.handle_response(kafka::produce_response::partition{
-      .id{model::partition_id{42}},
-      .error = kafka::error_code::none,
+      .partition_index{model::partition_id{42}},
+      .error_code = kafka::error_code::none,
       .base_offset{model::offset{3}}});
 
     BOOST_REQUIRE_EQUAL(consumed_batches.size(), 2);
