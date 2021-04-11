@@ -76,3 +76,31 @@ To opt out of all metrics reporting, set `rpk.enable_usage_stats` to false via
 ```
 rpk config set rpk.enable_usage_stats false
 ```
+
+## Metrics
+
+Through Prometheus, you can access many metrics about the Redpanda process.
+Most of the metrics are used for debugging, but these metrics can be useful to measure system health:
+
+| Metric | Definition | Diagnostics |
+| --- | --- | --- |
+| vectorized_application_uptime | Redpanda uptime in milliseconds |  |
+| vectorized_cluster_partition_last_stable_offset | Last stable offset | If this is the last record received by the cluster, then the cluster is up-to-date and ready for maintenance |
+| vectorized_io_queue_delay | Total delay time in the queue | Can indicate latency caused by disk operations |
+| vectorized_io_queue_queue_length | Number of requests in the queue | Can indicate latency caused by disk operations |
+| vectorized_kafka_rpc_active_connections | kafka_rpc: Currently active connections | Shows the number of clients actively connected |
+| vectorized_kafka_rpc_connects | kafka_rpc: Number of accepted connections | Compare to the value at a previous time to derive the rate of accepted connections |
+| vectorized_kafka_rpc_received_bytes | kafka_rpc: Number of bytes received from the clients in valid requests | Compare to the value at a previous time to derive the throughput in kafka layer in bytes/sec received |
+| vectorized_kafka_rpc_requests_completed | kafka_rpc: Number of successfull requests | Compare to the value at a previous time to derive the messages per sec per shard |
+| vectorized_kafka_rpc_requests_pending | kafka_rpc: Number of requests being processed by server |  |
+| vectorized_kafka_rpc_sent_bytes | kafka_rpc: Number of bytes sent to clients |  |
+| vectorized_kafka_rpc_service_errors | kafka_rpc: Number of service errors |  |
+| vectorized_raft_leadership_changes | Number of leadership changes | High value can indicate nodes failing and causing leadership changes |
+| vectorized_reactor_utilization | CPU utilization | Shows the true utilization of the CPU by Redpanda process |
+| vectorized_storage_log_compacted_segment | Number of compacted segments |  |
+| vectorized_storage_log_log_segments_created | Number of created log segments |  |
+| vectorized_storage_log_partition_size | Current size of partition in bytes |  |
+| vectorized_storage_log_read_bytes | Total number of bytes read |  |
+| vectorized_storage_log_written_bytes | Total number of bytes written |  |
+
+These categories of metrics are presented specificly by the seastar component of Redpanda: reactor, memory, scheduler, alien, io_queue
