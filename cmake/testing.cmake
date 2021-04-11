@@ -101,15 +101,24 @@ function (rp_test)
   endforeach()
 
   if(NOT skip_test)
-    add_test (
-      NAME ${RP_TEST_BINARY_NAME}
-      COMMAND bash -c "${RUNNER} --binary=$<TARGET_FILE:${RP_TEST_BINARY_NAME}> ${prepare_command} ${post_command} ${files_to_copy} ${RP_TEST_ARGS} "
+    foreach(SOURCE_FILE_NAME ${RP_TEST_SOURCES})
+      file(READ "${SOURCE_FILE_NAME}" SOURCE_FILE_CONTENTS)
+      string(REGEX
+        MATCHALL "((BOOST_AUTO_)|(BOOST_DATA_)|(SEASTAR_(THREAD_)?)|(FIXTURE_))TEST(_CASE)?(_TEMPLATE)?[ \t\r\n]*\\([^\\)]*\\)"
+        FOUND_TESTS ${SOURCE_FILE_CONTENTS}
       )
-    set_tests_properties(${RP_TEST_BINARY_NAME} PROPERTIES LABELS "${RP_TEST_LABELS}")
-    if(RP_TEST_TIMEOUT)
-      set_tests_properties(${RP_TEST_BINARY_NAME}
-        PROPERTIES TIMEOUT ${RP_TEST_TIMEOUT})
-    endif()
+      foreach(HIT ${FOUND_TESTS})
+        string(REGEX REPLACE "[^\\(]*\\([ \t\r\n]*([A-Za-z_0-9]+)[^\\)]*\\)" "\\1" TEST_NAME ${HIT})
+        add_test(NAME "${RP_TEST_BINARY_NAME}.${TEST_NAME}" 
+          COMMAND COMMAND bash -c "${RUNNER} --binary=$<TARGET_FILE:${RP_TEST_BINARY_NAME}> ${prepare_command} ${post_command} ${files_to_copy} -t ${TEST_NAME} ${RP_TEST_ARGS} "
+        )
+        set_tests_properties(${RP_TEST_BINARY_NAME}.${TEST_NAME} PROPERTIES LABELS "${RP_TEST_LABELS}")
+        if(RP_TEST_TIMEOUT)
+          set_tests_properties(${RP_TEST_BINARY_NAME}.${TEST_NAME}
+            PROPERTIES TIMEOUT ${RP_TEST_TIMEOUT})
+        endif()
+      endforeach()
+    endforeach()
   endif()
 endfunction()
 
