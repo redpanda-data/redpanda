@@ -19,7 +19,7 @@ rp_test(
     segment_size_jitter_test.cc
     log_segment_reader_test.cc
     log_manager_test.cc
-    offset_assignment_test
+    offset_assignment_test.cc
     storage_e2e_test.cc
     log_truncate_test.cc
     offset_index_utils_tests.cc

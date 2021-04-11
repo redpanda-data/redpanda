@@ -7,7 +7,7 @@ rp_test(
     directory_walker_test.cc
     outcome_utils_test.cc
     base64_test.cc
-    timed_mutex_test
+    timed_mutex_test.cc
   LIBRARIES v::seastar_testing_main v::utils v::bytes
   ARGS "-- -c 1"
   LABELS utils
