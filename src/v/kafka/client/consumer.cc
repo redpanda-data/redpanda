@@ -371,8 +371,8 @@ consumer::dispatch_fetch(broker_reqs_t::value_type br) {
     co_return res;
 }
 
-ss::future<fetch_response>
-consumer::fetch(std::chrono::milliseconds timeout, int32_t max_bytes) {
+ss::future<fetch_response> consumer::fetch(
+  std::chrono::milliseconds timeout, std::optional<int32_t> max_bytes) {
     // Split requests by broker
     broker_reqs_t broker_reqs;
     for (auto const& [t, ps] : _assignment) {
@@ -389,7 +389,8 @@ consumer::fetch(std::chrono::milliseconds timeout, int32_t max_bytes) {
                               .replica_id = consumer_replica_id,
                               .max_wait_time = timeout,
                               .min_bytes = 1,
-                              .max_bytes = max_bytes,
+                              .max_bytes = max_bytes.value_or(
+                                _config.consumer_request_max_bytes),
                               .isolation_level = 0, // READ_UNCOMMITTED
                               .session_id = session.id(),
                               .session_epoch = session.epoch(),
@@ -403,7 +404,8 @@ consumer::fetch(std::chrono::milliseconds timeout, int32_t max_bytes) {
             req.topics.back().partitions.push_back(fetch_request::partition{
               .id = p,
               .fetch_offset = session.offset(tp),
-              .partition_max_bytes = max_bytes});
+              .partition_max_bytes = max_bytes.value_or(
+                _config.consumer_request_max_bytes)});
         }
     }
 

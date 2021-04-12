@@ -70,7 +70,7 @@ public:
     ss::future<offset_commit_response>
     offset_commit(std::vector<offset_commit_request_topic> topics);
     ss::future<fetch_response>
-    fetch(std::chrono::milliseconds timeout, int32_t max_bytes);
+    fetch(std::chrono::milliseconds timeout, std::optional<int32_t> max_bytes);
 
 private:
     bool is_leader() const {

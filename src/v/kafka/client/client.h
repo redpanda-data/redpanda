@@ -142,8 +142,8 @@ public:
     ss::future<fetch_response> consumer_fetch(
       const group_id& g_id,
       const member_id& m_id,
-      std::chrono::milliseconds timeout,
-      int32_t max_bytes);
+      std::optional<std::chrono::milliseconds> timeout,
+      std::optional<int32_t> max_bytes);
 
     ss::future<> update_metadata() { return _wait_or_start_update_metadata(); }
 
