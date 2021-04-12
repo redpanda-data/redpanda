@@ -73,6 +73,11 @@ We recommend that you keep topic manifests in order to recover the corresponding
             - Use a Google managed encryption key.
         - Create a service user with HMAC keys
             and copy the keys to the Redpanda configuration options `archival_storage_s3_access_key` and `archival_storage_s3_secret_key`, respectively. 
+    - MinIO (for testing locally)
+        - Use environment variables `MINIO_ROOT_PASSWORD` and `MINIO_ROOT_USER` to set access key and secret key (`cloud_storage_access_key` and `cloud_storage_secret_key`).
+        - Use environment variable `MINIO_REGION_NAME` to provide region name (`cloud_storage_region`).
+        - Set environment variable `MINIO_DOMAIN`. Redpanda uses virtual-hosted style endpoints but MinIO only supports them if custom domain name is provided.
+        - You should provide custom api endpoint and port and disable TLS or provide a path to custom certificate (`cloud_storage_api_endpoint`, `cloud_storage_api_endpoint_port`, `cloud_storage_trust_file`).
 
     > **_Note:_** The secret and access keys are stored in plain text in configuration files.
 
@@ -80,13 +85,19 @@ We recommend that you keep topic manifests in order to recover the corresponding
 
     | Parameter name                                | Type         | Descripion                                              |
     |-----------------------------------------------|--------------|---------------------------------------------------------|
-    | `archival_storage_enabled`                    | boolean      | Enables archival storage feature                        |
-    | `archival_storage_s3_access_key`              | string       | S3 access key                                           |
-    | `archival_storage_s3_secret_key`              | string       | S3 secret key                                           |
-    | `archival_storage_s3_region`                  | string       | AWS region                                              |
-    | `archival_storage_s3_bucket`                  | string       | S3 bucket                                               |
-    | `archival_storage_reconciliation_interval_ms` | integer | Reconciliation period (default - 10000ms)                   |
-    | `archival_storage_max_connections`            | integer      | Number of simultaneous uploads per shard (default - 20) |
-        
+    | `cloud_storage_enabled`                       | boolean      | Enables archival storage feature                        |
+    | `cloud_storage_access_key`                    | string       | S3 access key                                           |
+    | `cloud_storage_secret_key`                    | string       | S3 secret key                                           |
+    | `cloud_storage_region`                        | string       | AWS region                                              |
+    | `cloud_storage_bucket`                        | string       | S3 bucket                                               |
+    | `cloud_storage_reconciliation_interval_ms`    | milliseconds | Reconciliation period (default - 10s)                   |
+    | `cloud_storage_max_connections`               | integer      | Number of simultaneous uploads per shard (default - 20) |
+    | `cloud_storage_api_endpoint`                  | string       | Cloud storage api endpoint (the default assumes S3)     |
+    | `cloud_storage_api_endpoint_port`             | string       | Cloud storage api endpoint port number (default 443)    |
+    | `cloud_storage_trust_file`                    | string       | Alternative location of the CA certificate (default /etc/pki/tls/cert.pem) |
+    | `cloud_storage_disable_tls`                   | boolean      | Disable TLS for cloud storage connections               |
+
+Note that the bucket should be created in advance. Also, please be aware that the secret and access keys are stored in plain text in configuration files. Parameters `reconciliation_interval_ms` and `max_connections` can be omitted since both have reasonable defaults.
+
         
         
