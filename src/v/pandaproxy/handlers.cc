@@ -261,30 +261,30 @@ subscribe_consumer(server::request_t rq, server::reply_t rp) {
 
 ss::future<server::reply_t>
 consumer_fetch(server::request_t rq, server::reply_t rp) {
-    auto fmt = parse_serialization_format(rq.req->get_header("Accept"));
-    if (fmt == ppj::serialization_format::unsupported) {
-        rp.rep = unprocessable_entity("Unsupported serialization format");
-        return ss::make_ready_future<server::reply_t>(std::move(rp));
-    }
+    parse::content_type_header(
+      *rq.req,
+      {json::serialization_format::json_v2, json::serialization_format::none});
+    auto res_fmt = parse::accept_header(
+      *rq.req, {json::serialization_format::binary_v2});
 
-    std::chrono::milliseconds timeout{
-      boost::lexical_cast<std::chrono::milliseconds::rep>(
-        rq.req->get_query_param("timeout"))};
-    int32_t max_bytes{
-      boost::lexical_cast<int32_t>(rq.req->get_query_param("max_bytes"))};
-    auto group_id = kafka::group_id(rq.req->param["group_name"]);
-    auto name = kafka::member_id(rq.req->param["instance"]);
+    auto group_id{parse::request_param<kafka::group_id>(*rq.req, "group_name")};
+    auto name{parse::request_param<kafka::member_id>(*rq.req, "instance")};
+    auto timeout{parse::query_param<std::optional<std::chrono::milliseconds>>(
+      *rq.req, "timeout")};
+    auto max_bytes{
+      parse::query_param<std::optional<int32_t>>(*rq.req, "max_bytes")};
 
     return rq.ctx.client.consumer_fetch(group_id, name, timeout, max_bytes)
-      .then([fmt, rp{std::move(rp)}](kafka::fetch_response res) mutable {
+      .then([res_fmt, rp{std::move(rp)}](kafka::fetch_response res) mutable {
           rapidjson::StringBuffer str_buf;
           rapidjson::Writer<rapidjson::StringBuffer> w(str_buf);
 
-          ppj::rjson_serialize_fmt(fmt)(w, std::move(res));
+          ppj::rjson_serialize_fmt(res_fmt)(w, std::move(res));
 
           // TODO Ben: Prevent this linearization
           ss::sstring json_rslt = str_buf.GetString();
           rp.rep->write_body("json", json_rslt);
+          rp.mime_type = res_fmt;
           return std::move(rp);
       });
 }

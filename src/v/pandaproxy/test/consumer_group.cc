@@ -178,7 +178,10 @@ FIXTURE_TEST(pandaproxy_consumer_group, pandaproxy_test_fixture) {
             group_id(),
             member_id(),
             "1000",
-            "1000000"));
+            "1000000"),
+          boost::beast::http::verb::get,
+          ppj::serialization_format::json_v2,
+          ppj::serialization_format::binary_v2);
         BOOST_REQUIRE_EQUAL(
           res.headers.result(), boost::beast::http::status::ok);
         BOOST_REQUIRE_EQUAL(
