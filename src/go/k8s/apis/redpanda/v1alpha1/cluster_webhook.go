@@ -230,5 +230,19 @@ func (r *Cluster) checkCollidingPorts() field.ErrorList {
 				"admin port collide with external Kafka API that is not visible in the Cluster CR"))
 	}
 
+	if r.Spec.ExternalConnectivity.Enabled && r.Spec.Configuration.AdminAPI.Port+1 == r.Spec.Configuration.RPCServer.Port {
+		allErrs = append(allErrs,
+			field.Invalid(field.NewPath("spec").Child("configuration", "rpcServer", "port"),
+				r.Spec.Configuration.RPCServer.Port,
+				"rpc port collides with external Admin API port that is not visible in the Cluster CR"))
+	}
+
+	if r.Spec.ExternalConnectivity.Enabled && r.Spec.Configuration.AdminAPI.Port+1 == r.Spec.Configuration.KafkaAPI.Port {
+		allErrs = append(allErrs,
+			field.Invalid(field.NewPath("spec").Child("configuration", "kafka", "port"),
+				r.Spec.Configuration.KafkaAPI.Port,
+				"kafka port collides with external Admin API port that is not visible in the Cluster CR"))
+	}
+
 	return allErrs
 }
