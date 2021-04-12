@@ -303,6 +303,11 @@ ss::future<iobuf> client::response_stream::recv_some() {
           _client->_probe->register_transport_error();
           return _client->stop().then(
             [err] { return ss::make_exception_future<iobuf>(err); });
+      })
+      .handle_exception_type([this](const std::system_error& ec) {
+          vlog(http_log.error, "receive error {}", ec);
+          _client->shutdown();
+          return ss::make_exception_future<iobuf>(ec);
       });
 }
 
@@ -375,7 +380,12 @@ ss::future<> client::request_stream::send_some(iobuf&& seq) {
               [this](const ss::tls::verification_error& err) {
                   return _client->stop().then(
                     [err] { return ss::make_exception_future<>(err); });
-              });
+              })
+            .handle_exception_type([this](const std::system_error& ec) {
+                vlog(http_log.error, "send error {}", ec);
+                _client->shutdown();
+                return ss::make_exception_future<>(ec);
+            });
       });
 }
 
