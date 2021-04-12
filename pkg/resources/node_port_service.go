@@ -73,9 +73,6 @@ func (r *NodePortServiceResource) Ensure(ctx context.Context) error {
 func (r *NodePortServiceResource) obj() (k8sclient.Object, error) {
 	ports := make([]corev1.ServicePort, 0, len(r.svcPorts))
 	for _, svcPort := range r.svcPorts {
-		if svcPort.Name == "kafka" {
-			svcPort.Port++
-		}
 		ports = append(ports, corev1.ServicePort{
 			Name:       svcPort.Name,
 			Protocol:   corev1.ProtocolTCP,

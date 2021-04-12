@@ -94,7 +94,7 @@ func (r *ClusterReconciler) Reconcile(
 	}
 	nodeports := []resources.NamedServicePort{
 		{Name: resources.AdminPortName, Port: redpandaCluster.Spec.Configuration.AdminAPI.Port + 1},
-		{Name: resources.KafkaPortName, Port: redpandaCluster.Spec.Configuration.KafkaAPI.Port},
+		{Name: resources.KafkaPortName, Port: redpandaCluster.Spec.Configuration.KafkaAPI.Port + 1},
 	}
 	headlessSvc := resources.NewHeadlessService(r.Client, &redpandaCluster, r.Scheme, headlessPorts, log)
 	nodeportSvc := resources.NewNodePortService(r.Client, &redpandaCluster, r.Scheme, nodeports, log)
