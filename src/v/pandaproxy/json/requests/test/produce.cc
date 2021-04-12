@@ -45,12 +45,12 @@ SEASTAR_THREAD_TEST_CASE(test_produce_request) {
     auto parser = iobuf_parser(std::move(*records[0].value));
     auto value = parser.read_string(parser.bytes_left());
     BOOST_TEST(value == "vectorized");
-    BOOST_TEST(records[0].id == model::partition_id(0));
+    BOOST_TEST(records[0].partition_id == model::partition_id(0));
 
     parser = iobuf_parser(std::move(*records[1].value));
     value = parser.read_string(parser.bytes_left());
     BOOST_TEST(value == "pandaproxy");
-    BOOST_TEST(records[1].id == model::partition_id(1));
+    BOOST_TEST(records[1].partition_id == model::partition_id(1));
 }
 
 SEASTAR_THREAD_TEST_CASE(test_produce_request_empty) {
