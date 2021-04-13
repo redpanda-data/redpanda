@@ -10,3 +10,7 @@
 /src/v/pandaproxy/         @benpope @dotnwat
 /src/v/raft/               @senior7515 @dotnwat @mmaslankaprv
 /src/js/                   @0x5d @andresaristizabal
+
+# core
+/cmake        @vectorizedio/core
+/src/v        @vectorizedio/core
