@@ -65,14 +65,7 @@ struct member_state {
         };
     }
 
-    bool operator==(const member_state& other) const {
-        return id == other.id && session_timeout == other.session_timeout
-               && rebalance_timeout == other.rebalance_timeout
-               && instance_id == other.instance_id
-               && protocol_type == other.protocol_type
-               && protocols == other.protocols
-               && assignment == other.assignment;
-    }
+    friend bool operator==(const member_state&, const member_state&) = default;
 };
 
 /// \brief A Kafka group member.
