@@ -20,8 +20,14 @@ class WasmIdentityTest(WasmTest):
                         replication_factor=3,
                         cleanup_policy=TopicSpec.CLEANUP_DELETE), )
 
-    def __init__(self, test_context, num_records=1024, record_size=1024):
-        super(WasmIdentityTest, self).__init__(test_context, extra_rp_conf={})
+    def __init__(self,
+                 test_context,
+                 extra_rp_conf=None,
+                 num_records=1024,
+                 record_size=1024):
+        super(WasmIdentityTest, self).__init__(test_context,
+                                               extra_rp_conf=extra_rp_conf
+                                               or {})
         self._num_records = num_records
         self._record_size = record_size
         assert len(self.topics) >= 1
@@ -60,6 +66,10 @@ class WasmIdentityTest(WasmTest):
             for opts in self.wasm_test_outputs()
         ]
 
+    def verify_results(self):
+        """ How to interpret PASS/FAIL between two sets of returned results"""
+        return materialized_result_set_compare
+
     @cluster(num_nodes=3)
     def verify_materialized_topics_test(self):
         """
@@ -69,9 +79,9 @@ class WasmIdentityTest(WasmTest):
         3. Producers set-up and begin producing onto input topics
         4. When finished, perform assertions in this method
         """
-        input_results, output_results = self._start(self.wasm_test_input(),
-                                                    self.wasm_test_plan(),
-                                                    self.wasm_xfactor())
+        self.start(self.wasm_test_input(), self.wasm_test_plan(),
+                   self.wasm_xfactor())
+        input_results, output_results = self.wait_on_results()
         for script in self.wasm_test_outputs():
             for dest in script:
                 outputs = set([
@@ -79,8 +89,7 @@ class WasmIdentityTest(WasmTest):
                     for src, _, _ in self.wasm_test_input()
                 ])
                 tresults = output_results.filter(lambda x: x.topic in outputs)
-                if not materialized_result_set_compare(input_results,
-                                                       tresults):
+                if not self.verify_results()(input_results, tresults):
                     raise Exception(
                         f"Set {dest} results weren't as expected: {type(self).__name__}"
                     )
@@ -235,9 +244,9 @@ class WasmAllInputsToAllOutputsIdentityTest(WasmIdentityTest):
     @cluster(num_nodes=3)
     def verify_materialized_topics_test(self):
         # Cannot compare topics to topics, can only verify # of records
-        input_results, output_results = self._start(self.wasm_test_input(),
-                                                    self.wasm_test_plan(),
-                                                    self.wasm_xfactor())
+        self.start(self.wasm_test_input(), self.wasm_test_plan(),
+                   self.wasm_xfactor())
+        input_results, output_results = self.wait_on_results()
 
         def compare(topic):
             iis = input_results.filter(lambda x: x.topic == topic)

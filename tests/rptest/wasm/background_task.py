@@ -50,9 +50,11 @@ class BackgroundTask:
     def start(self):
         self._worker.start()
 
-    def join(self):
+    def stop(self):
         with self._lock:
             self._done = True
+
+    def join(self):
         self._worker.join()
         if self._error is not None:
             raise Exception(self._error)

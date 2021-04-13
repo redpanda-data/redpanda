@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 import os
+import time
 import uuid
 
 from kafka import TopicPartition
@@ -62,6 +63,9 @@ class WasmTest(RedpandaTest):
                                        num_brokers=num_brokers)
         self._rpk_tool = RpkTool(self.redpanda)
         self._build_tool = WasmBuildTool(self._rpk_tool)
+        self._input_consumer = None
+        self._output_consumer = None
+        self._producers = None
 
     def _build_script(self, script):
         # Build the script itself
@@ -71,7 +75,25 @@ class WasmTest(RedpandaTest):
         self._rpk_tool.wasm_deploy(
             script.get_artifact(self._build_tool.work_dir), "ducktape")
 
-    def _start(self, topic_spec, scripts, xfactor):
+    def restart_wasm_engine(self, node):
+        self.logger.info(
+            f"Begin manually triggered restart of wasm engine on node {node}")
+        node.account.kill_process("bin/node", clean_shutdown=False)
+        # TODO: This sleep is put here to ensure that redpanda will initiate
+        # a failure recovery mechanism. In the event the wasm engine restarts
+        # too quickly, it will have responded to all heartbeats, and redpanda will
+        # falsely think that the state between the wasm engine and itself are
+        # in-sync when they will not be. Github issue #1140 has been filed to keep
+        # track of this issue.
+        time.sleep(3)
+        self.redpanda.start_wasm_engine(node)
+
+    def restart_redpanda(self, node):
+        self.logger.info(
+            f"Begin manually triggered restart of redpanda on node {node}")
+        self.redpanda.restart_nodes(node)
+
+    def start(self, topic_spec, scripts, xfactor):
         def to_output_topic_spec(output_topics):
             """
             Create a list of TopicPartitions for the set of output topics.
@@ -123,25 +145,24 @@ class WasmTest(RedpandaTest):
         self.logger.info(f"Input consumer assigned: {input_tps}")
         self.logger.info(f"Output consumer assigned: {output_tps}")
 
-        producers = []
+        self._producers = []
+
         for tp_spec, num_records, record_size in topic_spec:
             try:
                 producer = NativeKafkaProducer(self.redpanda.brokers(),
                                                tp_spec.name, num_records,
                                                record_size)
                 producer.start()
-                producers.append(producer)
+                self._producers.append(producer)
             except Exception as e:
                 self.logger.error(f"Failed to create NativeKafkaProducer: {e}")
                 raise
 
-        input_consumer = None
-        output_consumer = None
         try:
-            input_consumer = NativeKafkaConsumer(self.redpanda.brokers(),
-                                                 input_tps, total_inputs)
-            output_consumer = NativeKafkaConsumer(self.redpanda.brokers(),
-                                                  output_tps, total_outputs)
+            self._input_consumer = NativeKafkaConsumer(self.redpanda.brokers(),
+                                                       input_tps, total_inputs)
+            self._output_consumer = NativeKafkaConsumer(
+                self.redpanda.brokers(), output_tps, total_outputs)
         except Exception as e:
             self.logger.error(f"Failed to create NativeKafkaConsumer: {e}")
             raise
@@ -149,34 +170,56 @@ class WasmTest(RedpandaTest):
         self.logger.info(
             f"Waiting for {total_inputs} input records and {total_outputs}"
             " result records")
-        input_consumer.start()
-        output_consumer.start()
+        self._input_consumer.start()
+        self._output_consumer.start()
 
+    def wait_on_results(self):
         def all_done():
             # Uncomment to periodically see the amt of data read
-            # self.logger.info("Input: %d" %
-            #                  input_consumer.results.num_records())
-            # self.logger.info("Output: %d" %
-            #                  output_consumer.results.num_records())
-            return input_consumer.is_finished() and \
-                output_consumer.is_finished()
+            self.logger.info("Input: %d" %
+                             self._input_consumer.results.num_records())
+            self.logger.info("Output: %d" %
+                             self._output_consumer.results.num_records())
+            batch_total = self._input_consumer.results.num_records()
+            if batch_total > 0:
+                self.records_recieved(batch_total)
 
+            return self._input_consumer.is_finished()
+
+        [x.join() for x in self._producers]
         timeout, backoff = self.wasm_test_timeout()
         wait_until(all_done, timeout_sec=timeout, backoff_sec=backoff)
         try:
-            input_consumer.join()
-            output_consumer.join()
-            [x.join() for x in producers]
+            self._input_consumer.join()
+            self._output_consumer.join()
         except Exception as e:
             self.logger.error("Exception occured in background thread: {e}")
             raise e
 
-        self.logger.info(
-            f"Consumed {input_consumer.results.num_records()} input"
-            f" records/expected {total_inputs} and"
-            f" {output_consumer.results.num_records()} result records/expected"
-            f" {total_outputs}")
-        return (input_consumer.results, output_consumer.results)
+        input_consumed = self._input_consumer.results.num_records()
+        output_consumed = self._output_consumer.results.num_records()
+        self.logger.info(f"Consumed {input_consumed} input"
+                         f" records and"
+                         f" {output_consumed} result records")
+
+        input_expected = self._input_consumer._num_records
+        output_expected = self._output_consumer._num_records
+        if input_consumed < input_expected:
+            raise Exception(
+                f"Consumed {input_consumed} expected {input_expected} input records"
+            )
+        if output_consumed < output_expected:
+            raise Exception(
+                f"Consumed {output_consumed} expected {output_expected} output records"
+            )
+
+        return (self._input_consumer.results, self._output_consumer.results)
+
+    def records_recieved(self, output_recieved):
+        """
+        Called when a traunch of records has been returned from consumers
+        """
+        pass
 
     def wasm_test_timeout(self):
         """
