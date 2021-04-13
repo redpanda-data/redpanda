@@ -55,6 +55,11 @@ HTTP_REMOVE_CONSUMER_HEADERS = {
     "Content-Type": "application/vnd.kafka.v2+json"
 }
 
+HTTP_CONSUMER_FETCH_HEADERS = {
+    "Accept": "application/vnd.kafka.binary.v2+json",
+    "Content-Type": "application/vnd.kafka.v2+json"
+}
+
 
 class Consumer:
     def __init__(self, res):
@@ -69,6 +74,10 @@ class Consumer:
 
     def remove(self, headers=HTTP_REMOVE_CONSUMER_HEADERS):
         res = requests.delete(self.base_uri, headers=headers)
+        return res
+
+    def fetch(self, headers=HTTP_CONSUMER_FETCH_HEADERS):
+        res = requests.get(f"{self.base_uri}/records", headers=headers)
         return res
 
 
@@ -610,6 +619,19 @@ class PandaProxyTest(RedpandaTest):
         # Create 3 topics
         topics = self._create_topics(create_topic_names(3), 3, 3)
 
+        for name in topics:
+            self.logger.info(f"Producing to topic: {name}")
+            produce_result_raw = self._produce_topic(
+                name, '''
+            {
+                "records": [
+                    {"value": "dmVjdG9yaXplZA==", "partition": 0},
+                    {"value": "cGFuZGFwcm94eQ==", "partition": 1},
+                    {"value": "bXVsdGlicm9rZXI=", "partition": 2}
+                ]
+            }''')
+            assert produce_result_raw.status_code == requests.codes.ok
+
         # Create a consumer
         self.logger.info("Create a consumer")
         cc_res = self._create_consumer(group_id)
@@ -620,6 +642,14 @@ class PandaProxyTest(RedpandaTest):
         self.logger.info(f"Subscribe consumer to topics: {topics}")
         sc_res = c0.subscribe(topics)
         assert sc_res.status_code == requests.codes.ok
+
+        # Fetch from a consumer
+        self.logger.info(f"Consumer fetch")
+        cf_res = c0.fetch()
+        assert cf_res.status_code == requests.codes.ok
+        fetch_result = cf_res.json()
+        # 3 topics * 3 * (1 ctrl batch + 1 msg)
+        assert len(fetch_result) == 3 * 3 * 2
 
         # Remove consumer
         self.logger.info("Remove consumer")
