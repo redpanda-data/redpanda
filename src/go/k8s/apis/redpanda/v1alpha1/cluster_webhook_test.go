@@ -95,6 +95,7 @@ func TestValidateUpdate(t *testing.T) {
 	}
 }
 
+// nolint:funlen // consider splitting tests
 func TestValidateUpdate_NoError(t *testing.T) {
 	var replicas2 int32 = 2
 
@@ -207,6 +208,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 	})
 }
 
+// nolint:funlen // consider splitting tests
 func TestCreation(t *testing.T) {
 	redpandaCluster := &v1alpha1.Cluster{
 		ObjectMeta: metav1.ObjectMeta{
