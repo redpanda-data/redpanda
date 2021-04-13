@@ -168,6 +168,33 @@ public:
         _config = cfg;
         _iterator.next_seg = _iterator.current_reader_seg;
     };
+
+    /**
+     * Return next read request lower bound. i.e. lowest offset that can be read
+     * using this reader. This way we can match requested offsets with cached
+     * readers.
+     */
+    model::offset next_read_lower_bound() const { return _config.start_offset; }
+
+    /**
+     * Base offset of first locked segment in read lock lease
+     */
+    model::offset lease_range_base_offset() const {
+        if (_lease->range.empty()) {
+            return model::offset{};
+        }
+        return _lease->range.front()->offsets().base_offset;
+    }
+    /**
+     * Last offset of last locked segment in read lock lease
+     */
+    model::offset lease_range_end_offset() const {
+        if (_lease->range.empty()) {
+            return model::offset{};
+        }
+        return _lease->range.back()->offsets().dirty_offset;
+    }
+
     /**
      * Indicates if current reader may be reused for future reads.
      *
