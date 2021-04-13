@@ -12,6 +12,7 @@
 #pragma once
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "ssx/sformat.h"
 #include "tristate.h"
 
 #include <seastar/core/sstring.hh>
@@ -100,7 +101,7 @@ public:
     }
 
     ss::sstring work_directory() const {
-        return fmt::format("{}/{}_{}", _base_dir, _ntp.path(), _revision_id);
+        return ssx::sformat("{}/{}_{}", _base_dir, _ntp.path(), _revision_id);
     }
 
     std::filesystem::path topic_directory() const {

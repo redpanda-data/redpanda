@@ -65,6 +65,7 @@ public:
     };
 
     explicit server(server_configuration);
+    explicit server(ss::sharded<server_configuration>* s);
     server(server&&) noexcept = default;
     server& operator=(server&&) noexcept = delete;
     server(const server&) = delete;

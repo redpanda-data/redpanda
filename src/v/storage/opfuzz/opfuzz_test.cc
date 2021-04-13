@@ -108,7 +108,7 @@ FIXTURE_TEST(test_random_remove, storage_test_fixture) {
         ntps_to_fuzz.emplace_back(ntp);
     }
     for (const auto& ntp : ntps_to_fuzz) {
-        auto directory = fmt::format(
+        auto directory = ssx::sformat(
           "{}/{}", mngr.config().base_dir, ntp.path());
         auto log = mngr.manage(storage::ntp_config(ntp, directory)).get0();
         logs_to_fuzz.emplace_back(

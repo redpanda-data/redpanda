@@ -147,7 +147,6 @@ func (m *manager) ReadFlat(path string) (map[string]string, error) {
 	flatMap := map[string]string{}
 	compactAddrFields := []string{
 		"redpanda.rpc_server",
-		"redpanda.admin",
 	}
 	for _, k := range keys {
 		if k == "redpanda.seed_servers" {
@@ -166,7 +165,7 @@ func (m *manager) ReadFlat(path string) (map[string]string, error) {
 			}
 			continue
 		}
-		if k == "redpanda.advertised_kafka_api" || k == "redpanda.kafka_api" {
+		if k == "redpanda.advertised_kafka_api" || k == "redpanda.kafka_api" || k == "redpanda.admin" {
 			addrs := []NamedSocketAddress{}
 			err := unmarshalKey(m.v, k, &addrs)
 			if err != nil {
@@ -183,6 +182,21 @@ func (m *manager) ReadFlat(path string) (map[string]string, error) {
 					str = fmt.Sprintf("%s://%s", a.Name, str)
 				}
 				flatMap[key] = str
+			}
+			continue
+		}
+		if k == "redpanda.kafka_api_tls" || k == "redpanda.admin_api_tls" {
+			tlss := []map[string]interface{}{}
+			err := unmarshalKey(m.v, k, &tlss)
+			if err != nil {
+				return nil, err
+			}
+
+			for i, tls := range tlss {
+				for field, val := range tls {
+					key := fmt.Sprintf("%s.%d.%s", k, i, field)
+					flatMap[key] = fmt.Sprint(val)
+				}
 			}
 			continue
 		}
@@ -421,6 +435,26 @@ func v21_1_4MapToNamedSocketAddressSlice(
 			}
 			return []NamedSocketAddress{sa}, nil
 
+		}
+	}
+	return data, nil
+}
+
+// Redpanda version <= 21.4.1 only supported a single TLS config. This custom
+// decode function translates a single TLS config-equivalent
+// map[string]interface{} into a []ServerTLS.
+func v21_4_1TlsMapToNamedTlsSlice(
+	from, to reflect.Type, data interface{},
+) (interface{}, error) {
+	if to == reflect.TypeOf([]ServerTLS{}) {
+		switch from.Kind() {
+		case reflect.Map:
+			tls := ServerTLS{}
+			err := mapstructure.Decode(data, &tls)
+			if err != nil {
+				return nil, err
+			}
+			return []ServerTLS{tls}, nil
 		}
 	}
 	return data, nil

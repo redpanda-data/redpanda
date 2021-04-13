@@ -18,6 +18,7 @@
 #include "kafka/server/handlers/topics/types.h"
 #include "kafka/types.h"
 #include "model/metadata.h"
+#include "security/acl.h"
 #include "utils/to_string.h"
 
 #include <seastar/core/future.hh>
@@ -71,6 +72,28 @@ ss::future<response_ptr> create_topics_handler::handle(
             begin,
             request.data.topics.end(),
             std::back_inserter(response.data.topics));
+
+          const auto has_cluster_auth = ctx.authorized(
+            security::acl_operation::create, security::default_cluster_name);
+
+          if (!has_cluster_auth) {
+              auto unauthorized_it = std::partition(
+                begin, valid_range_end, [&ctx](const creatable_topic& t) {
+                    return ctx.authorized(
+                      security::acl_operation::create, t.name);
+                });
+              std::transform(
+                unauthorized_it,
+                valid_range_end,
+                std::back_inserter(response.data.topics),
+                [](const creatable_topic& t) {
+                    return generate_error(
+                      t,
+                      error_code::topic_authorization_failed,
+                      "Unauthorized");
+                });
+              valid_range_end = unauthorized_it;
+          }
 
           // fill in defaults if necessary
           for (auto& r : boost::make_iterator_range(begin, valid_range_end)) {

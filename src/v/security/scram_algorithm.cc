@@ -1,5 +1,6 @@
 #include "security/scram_algorithm.h"
 
+#include "ssx/sformat.h"
 #include "utils/base64.h"
 #include "utils/to_string.h"
 #include "utils/utf8.h"
@@ -201,7 +202,7 @@ client_first_message::client_first_message(bytes_view data) {
     auto match = parse_client_first(view);
     if (unlikely(!match)) {
         throw scram_exception(fmt_with_ctx(
-          fmt::format, "Invalid SCRAM client first message: {}", view));
+          ssx::sformat, "Invalid SCRAM client first message: {}", view));
     }
 
     _authzid = std::move(match->authzid);
@@ -223,7 +224,7 @@ client_first_message::client_first_message(bytes_view data) {
         auto it = std::find(pair.cbegin(), pair.cend(), '=');
         if (unlikely(it == pair.cend())) {
             throw scram_exception(fmt_with_ctx(
-              fmt::format, "Invalid SCRAM client first message: {}", view));
+              ssx::sformat, "Invalid SCRAM client first message: {}", view));
         }
         _extensions.emplace(
           ss::sstring(pair.cbegin(), it), ss::sstring(it + 1, pair.cend()));
@@ -236,7 +237,7 @@ ss::sstring client_first_message::username_normalized() const {
     boost::replace_all(normalized, "=3D", "=");
     if (std::count(normalized.cbegin(), normalized.cend(), '=') != num_eq) {
         throw scram_exception(
-          fmt_with_ctx(fmt::format, "Invalid SCRAM username: {}", _username));
+          fmt_with_ctx(ssx::sformat, "Invalid SCRAM username: {}", _username));
     }
     return normalized;
 }
@@ -259,7 +260,7 @@ std::ostream& operator<<(std::ostream& os, const client_first_message& msg) {
 }
 
 ss::sstring server_first_message::sasl_message() const {
-    return fmt::format(
+    return ssx::sformat(
       "r={},s={},i={}", _nonce, bytes_to_base64(_salt), _iterations);
 }
 
@@ -281,7 +282,7 @@ client_final_message::client_final_message(bytes_view data) {
     auto match = parse_client_final(view);
     if (unlikely(!match)) {
         throw scram_exception(fmt_with_ctx(
-          fmt::format, "Invalid SCRAM client final message: {}", view));
+          ssx::sformat, "Invalid SCRAM client final message: {}", view));
     }
 
     _channel_binding = std::move(match->channel_binding);
@@ -291,7 +292,7 @@ client_final_message::client_final_message(bytes_view data) {
 }
 
 ss::sstring client_final_message::msg_no_proof() const {
-    return fmt::format("c={},r={}", bytes_to_base64(_channel_binding), _nonce);
+    return ssx::sformat("c={},r={}", bytes_to_base64(_channel_binding), _nonce);
 }
 
 std::ostream& operator<<(std::ostream& os, const client_final_message& msg) {
@@ -307,9 +308,9 @@ std::ostream& operator<<(std::ostream& os, const client_final_message& msg) {
 
 ss::sstring server_final_message::sasl_message() const {
     if (_error) {
-        return fmt::format("e={}", *_error);
+        return ssx::sformat("e={}", *_error);
     }
-    return fmt::format("v={}", bytes_to_base64(_signature));
+    return ssx::sformat("v={}", bytes_to_base64(_signature));
 }
 
 std::ostream& operator<<(std::ostream& os, const server_final_message& msg) {

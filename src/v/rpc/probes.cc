@@ -10,6 +10,7 @@
 #include "prometheus/prometheus_sanitize.h"
 #include "rpc/client_probe.h"
 #include "rpc/server_probe.h"
+#include "ssx/sformat.h"
 
 #include <seastar/core/metrics.hh>
 #include <seastar/net/inet_address.hh>
@@ -27,56 +28,56 @@ void server_probe::setup_metrics(
           "active_connections",
           [this] { return _connections; },
           sm::description(
-            fmt::format("{}: Currently active connections", proto))),
+            ssx::sformat("{}: Currently active connections", proto))),
         sm::make_derive(
           "connects",
           [this] { return _connects; },
           sm::description(
-            fmt::format("{}: Number of accepted connections", proto))),
+            ssx::sformat("{}: Number of accepted connections", proto))),
         sm::make_derive(
           "connection_close_errors",
           [this] { return _connection_close_error; },
-          sm::description(fmt::format(
+          sm::description(ssx::sformat(
             "{}: Number of errors when shutting down the connection", proto))),
         sm::make_derive(
           "requests_completed",
           [this] { return _requests_completed; },
           sm::description(
-            fmt::format("{}: Number of successfull requests", proto))),
+            ssx::sformat("{}: Number of successfull requests", proto))),
         sm::make_total_bytes(
           "received_bytes",
           [this] { return _in_bytes; },
-          sm::description(fmt::format(
+          sm::description(ssx::sformat(
             "{}: Number of bytes received from the clients in valid requests",
             proto))),
         sm::make_total_bytes(
           "sent_bytes",
           [this] { return _out_bytes; },
           sm::description(
-            fmt::format("{}: Number of bytes sent to clients", proto))),
+            ssx::sformat("{}: Number of bytes sent to clients", proto))),
         sm::make_derive(
           "method_not_found_errors",
           [this] { return _method_not_found_errors; },
-          sm::description(fmt::format(
+          sm::description(ssx::sformat(
             "{}: Number of requests with not available RPC method", proto))),
         sm::make_derive(
           "corrupted_headers",
           [this] { return _corrupted_headers; },
-          sm::description(fmt::format(
+          sm::description(ssx::sformat(
             "{}: Number of requests with corrupted headers", proto))),
         sm::make_derive(
           "service_errors",
           [this] { return _corrupted_headers; },
-          sm::description(fmt::format("{}: Number of service errors", proto))),
+          sm::description(ssx::sformat("{}: Number of service errors", proto))),
         sm::make_derive(
           "requests_blocked_memory",
           [this] { return _requests_blocked_memory; },
-          sm::description(fmt::format(
+          sm::description(ssx::sformat(
             "{}: Number of requests blocked in memory backpressure", proto))),
         sm::make_gauge(
           "requests_pending",
           [this] { return _requests_received - _requests_completed; },
-          sm::description(fmt::format(
+          sm::description(ssx::sformat(
             "{}: Number of requests being processed by server", proto))),
       });
 }
@@ -102,7 +103,7 @@ void client_probe::setup_metrics(
     namespace sm = ss::metrics;
     auto target = sm::label("target");
     std::vector<sm::label_instance> labels = {
-      target(fmt::format("{}:{}", target_addr.addr(), target_addr.port()))};
+      target(ssx::sformat("{}:{}", target_addr.addr(), target_addr.port()))};
     if (service_name) {
         labels.push_back(sm::label("service_name")(*service_name));
     }

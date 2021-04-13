@@ -259,7 +259,7 @@ members_manager::dispatch_join_to_seed_server(seed_iterator it) {
     return f.then_wrapped([it, this](ss::future<ret_t> fut) {
         try {
             auto r = fut.get0();
-            if (r) {
+            if (r && r.value().success) {
                 return ss::make_ready_future<ret_t>(r);
             }
         } catch (...) {
@@ -314,13 +314,16 @@ members_manager::handle_join_request(model::broker broker) {
         // we do not use revisions in raft0 configuration, it is always revision
         // 0 which is perfectly fine. this will work like revision less raft
         // protocol.
-        return _raft0
-          ->add_group_members({std::move(broker)}, model::revision_id(0))
-          .then([](std::error_code ec) {
+        return _raft0->add_group_members({broker}, model::revision_id(0))
+          .then([broker](std::error_code ec) {
               if (!ec) {
                   return ret_t(join_reply{true});
               }
-
+              vlog(
+                clusterlog.warn,
+                "Error adding node {} to cluster - {}",
+                broker,
+                ec.message());
               return ret_t(ec);
           });
     }
@@ -469,7 +472,7 @@ members_manager::handle_configuration_update_request(
         return ss::make_ready_future<ret_t>(configuration_update_reply{false});
     }
     vlog(
-      clusterlog.info, "Handling node {} configuration update", req.node.id());
+      clusterlog.trace, "Handling node {} configuration update", req.node.id());
     auto node_ptr = ss::make_lw_shared(std::move(req.node));
     patch<broker_ptr> broker_update_patch{
       .additions = {node_ptr}, .deletions = {}};

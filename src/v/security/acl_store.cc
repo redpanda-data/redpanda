@@ -10,6 +10,8 @@
  */
 #include "security/acl_store.h"
 
+#include <absl/container/flat_hash_map.h>
+
 namespace security {
 
 std::optional<std::reference_wrapper<const acl_entry>> acl_entry_set::find(
@@ -114,21 +116,79 @@ acl_store::find(resource_type resource, const ss::sstring& name) const {
     return acl_matches(wildcards, literals, std::move(prefixes));
 }
 
-void acl_store::remove_bindings(
-  const std::vector<acl_binding_filter>& filters) {
+std::vector<std::vector<acl_binding>> acl_store::remove_bindings(
+  const std::vector<acl_binding_filter>& filters, bool dry_run) {
+    // the pair<filter, size_t> is used to record the index of the filter in the
+    // input so that returned set of matching binding is organized in the same
+    // order as the input filters. this is a property needed by the kafka api.
+    absl::flat_hash_map<
+      resource_pattern,
+      std::vector<std::pair<acl_binding_filter, size_t>>>
+      resources;
+
+    // collect binding filters that match resources
     for (auto& [pattern, entries] : _acls) {
-        for (const auto& filter : filters) {
+        for (size_t i = 0U; i < filters.size(); i++) {
+            const auto& filter = filters[i];
             if (filter.pattern().matches(pattern)) {
-                for (auto it = entries.begin(); it != entries.end(); ++it) {
-                    if (filter.entry().matches(*it)) {
-                        entries.erase(it);
-                        entries.rehash();
-                        break;
-                    }
+                resources[pattern].emplace_back(filter, i);
+            }
+        }
+    }
+
+    // do the same collection as above, but instead of the source patterns being
+    // the set of existing acls the source patterns are the resources from
+    // filters with the special property that they are exact matches.
+    for (const auto& filter_as_resource : filters) {
+        auto patterns = filter_as_resource.pattern().to_resource_patterns();
+        for (const auto& pattern : patterns) {
+            for (size_t i = 0U; i < filters.size(); i++) {
+                const auto& filter = filters[i];
+                if (filter.pattern().matches(pattern)) {
+                    resources[pattern].emplace_back(filter, i);
                 }
             }
         }
     }
+
+    // deleted binding index of deleted filter that matched
+    absl::flat_hash_map<acl_binding, size_t> deleted;
+
+    for (const auto& resources_it : resources) {
+        // structured binding in for-range prevents capturing reference to
+        // filters in erase_if below; a limitation in current standard.
+        const auto& resource = resources_it.first;
+        const auto& filters = resources_it.second;
+
+        // existing acl binding for this resource
+        auto it = _acls.find(resource);
+        if (it == _acls.end()) {
+            continue;
+        }
+
+        // remove matching entries and track the deleted binding along with the
+        // index of the filter that matched the entry.
+        it->second.erase_if(
+          [&filters, &resource, &deleted, dry_run](const acl_entry& entry) {
+              for (const auto& filter : filters) {
+                  if (filter.first.entry().matches(entry)) {
+                      auto binding = acl_binding(resource, entry);
+                      deleted.emplace(binding, filter.second);
+                      return !dry_run;
+                  }
+              }
+              return false;
+          });
+    }
+
+    std::vector<std::vector<acl_binding>> res;
+    res.assign(filters.size(), {});
+
+    for (const auto& binding : deleted) {
+        res[binding.second].push_back(binding.first);
+    }
+
+    return res;
 }
 
 std::vector<acl_binding>

@@ -13,7 +13,6 @@
 #include "bytes/iobuf.h"
 #include "kafka/protocol/kafka_batch_adapter.h"
 #include "kafka/protocol/response_writer.h"
-#include "kafka/protocol/response_writer_utils.h"
 #include "model/record.h"
 #include "seastarx.h"
 

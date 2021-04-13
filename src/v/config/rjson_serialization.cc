@@ -47,12 +47,15 @@ void rjson_serialize(
     w.Key("enabled");
     w.Bool(v.is_enabled());
 
-    w.Key("client_auth");
+    w.Key("require_client_auth");
     w.Bool(v.get_require_client_auth());
 
     if (v.get_key_cert_files()) {
-        w.Key("key_cert");
-        rjson_serialize(w, *(v.get_key_cert_files()));
+        w.Key("key_file");
+        w.String(v.get_key_cert_files()->key_file.c_str());
+
+        w.Key("cert_file");
+        w.String(v.get_key_cert_files()->cert_file.c_str());
     }
 
     if (v.get_truststore_file()) {
@@ -93,9 +96,24 @@ void rjson_serialize(
 
     w.Key("name");
     w.String(v.name.c_str());
+    w.Key("enabled");
+    w.Bool(v.config.is_enabled());
 
-    w.Key("config");
-    rjson_serialize(w, v.config);
+    w.Key("require_client_auth");
+    w.Bool(v.config.get_require_client_auth());
+
+    if (v.config.get_key_cert_files()) {
+        w.Key("key_file");
+        w.String(v.config.get_key_cert_files()->key_file.c_str());
+
+        w.Key("cert_file");
+        w.String(v.config.get_key_cert_files()->cert_file.c_str());
+    }
+
+    if (v.config.get_truststore_file()) {
+        w.Key("truststore_file");
+        w.String((*(v.config.get_truststore_file())).c_str());
+    }
 
     w.EndObject();
 }

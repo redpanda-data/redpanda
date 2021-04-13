@@ -3,6 +3,7 @@ rp_test(
   BINARY_NAME partition_allocator_b
   SOURCES allocation_bench.cc
   LIBRARIES Seastar::seastar_perf_testing v::cluster
+  LABELS cluster
 )
 
 rp_test(
@@ -11,6 +12,7 @@ rp_test(
   SOURCES metadata_dissemination_utils_test.cc
   DEFINITIONS BOOST_TEST_DYN_LINK
   LIBRARIES Boost::unit_test_framework v::cluster
+  LABELS cluster
 )
 
 set(srcs
@@ -38,6 +40,7 @@ rp_test(
   BINARY_NAME test_cluster
   SOURCES ${srcs}
   LIBRARIES v::seastar_testing_main v::application v::storage_test_utils
+  LABELS cluster
 )
 
 # These 2 files have a `using namespace cluster;` and removing that
@@ -53,4 +56,5 @@ rp_test(
   SOURCES partition_moving_test.cc
   LIBRARIES v::seastar_testing_main v::application v::storage_test_utils
   DEFINITIONS SEASTAR_TESTING_MAIN
+  LABELS cluster
 )

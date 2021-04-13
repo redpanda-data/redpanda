@@ -13,8 +13,6 @@
 
 #include <seastar/util/log.hh>
 
-#include <absl/container/flat_hash_map.h>
-
 namespace finjector {
 
 ss::logger log{"fault_injector"};
@@ -22,13 +20,13 @@ ss::logger log{"fault_injector"};
 void honey_badger::register_probe(std::string_view view, probe* p) {
     if (p && p->is_enabled()) {
         vlog(log.trace, "Probe registration: {}", view);
-        _probes.insert({ss::sstring(view), p});
+        _probes.insert({std::string_view(view), p});
     } else {
         vlog(log.debug, "Invalid probe: {}", view);
     }
 }
 void honey_badger::deregister_probe(std::string_view view) {
-    ss::sstring module(view);
+    std::string_view module(view);
     auto it = _probes.find(module);
     if (it != _probes.end()) {
         log.trace("Probe deregistration: {}", view);
@@ -36,15 +34,14 @@ void honey_badger::deregister_probe(std::string_view view) {
     }
 }
 void honey_badger::set_exception(
-  const ss::sstring& module, const ss::sstring& point) {
+  std::string_view module, std::string_view point) {
     if (auto it = _probes.find(module); it != _probes.end()) {
         auto& [_, p] = *it;
         vlog(log.debug, "Setting exception probe: {}-{}", module, point);
         p->set_exception(point);
     }
 }
-void honey_badger::set_delay(
-  const ss::sstring& module, const ss::sstring& point) {
+void honey_badger::set_delay(std::string_view module, std::string_view point) {
     if (auto it = _probes.find(module); it != _probes.end()) {
         auto& [_, p] = *it;
         vlog(log.debug, "Setting delay probe: {}-{}", module, point);
@@ -52,23 +49,23 @@ void honey_badger::set_delay(
     }
 }
 void honey_badger::set_termination(
-  const ss::sstring& module, const ss::sstring& point) {
+  std::string_view module, std::string_view point) {
     if (auto it = _probes.find(module); it != _probes.end()) {
         auto& [_, p] = *it;
         vlog(log.debug, "Setting termination probe: {}-{}", module, point);
         p->set_termination(point);
     }
 }
-void honey_badger::unset(const ss::sstring& module, const ss::sstring& point) {
+void honey_badger::unset(std::string_view module, std::string_view point) {
     if (auto it = _probes.find(module); it != _probes.end()) {
         auto& [_, p] = *it;
         vlog(log.debug, "Unsetting probes: {}-{}", module, point);
         p->unset(point);
     }
 }
-absl::flat_hash_map<ss::sstring, std::vector<ss::sstring>>
+absl::node_hash_map<std::string_view, std::vector<std::string_view>>
 honey_badger::points() const {
-    absl::flat_hash_map<ss::sstring, std::vector<ss::sstring>> retval;
+    absl::node_hash_map<std::string_view, std::vector<std::string_view>> retval;
     for (auto& [module, probe] : _probes) {
         retval.insert({module, probe->points()});
     }

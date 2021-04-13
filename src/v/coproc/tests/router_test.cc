@@ -239,7 +239,7 @@ FIXTURE_TEST(test_coproc_router_giant_one_to_many, router_test_fixture) {
     log_layout_map outputs;
     for (std::size_t i = 0; i < n_copros; ++i) {
         auto materialized_topic = model::to_materialized_topic(
-          source_topic, model::topic(fmt::format("identity_topic_{}", i)));
+          source_topic, model::topic(ssx::sformat("identity_topic_{}", i)));
         outputs.emplace(materialized_topic, n_partitions);
     }
     setup(inputs).get();

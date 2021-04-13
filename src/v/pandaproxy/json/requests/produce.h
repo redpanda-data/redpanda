@@ -156,10 +156,10 @@ inline void rjson_serialize(
   const kafka::produce_response::partition& v) {
     w.StartObject();
     w.Key("partition");
-    w.Int(v.id);
-    if (v.error != kafka::error_code::none) {
+    w.Int(v.partition_index);
+    if (v.error_code != kafka::error_code::none) {
         w.Key("error_code");
-        ::json::rjson_serialize(w, v.error);
+        ::json::rjson_serialize(w, v.error_code);
     }
     w.Key("offset");
     w.Int64(v.base_offset);

@@ -55,8 +55,7 @@ static wasm::event_action query_action(const iobuf& source_code) {
 }
 
 static ss::future<> remove_copro_state(ss::sharded<pacemaker>& svc) {
-    return svc.invoke_on_all(
-      [](pacemaker& p) { return p.remove_all_sources().discard_result(); });
+    return svc.invoke_on_all([](pacemaker& p) { return p.reset(); });
 }
 
 ss::future<> event_listener::stop() {
@@ -192,6 +191,7 @@ ss::future<> event_listener::do_start() {
         if (has_active) {
             vlog(
               coproclog.info, "Shutting down all coprocessor script_contexts");
+            _active_ids.clear();
             co_await remove_copro_state(_pacemaker);
         }
         co_return;
@@ -230,7 +230,7 @@ ss::future<> event_listener::do_ingest() {
 ss::future<ss::stop_iteration>
 event_listener::poll_topic(model::record_batch_reader::data_t& events) {
     auto response = co_await _client.fetch_partition(
-      model::coprocessor_internal_tp, _offset, 64_KiB, 5s);
+      model::coprocessor_internal_tp, _offset, 64_KiB, 100ms);
     if (
       response.error != kafka::error_code::none
       || _abort_source.abort_requested()) {

@@ -8,6 +8,9 @@ spec:
   replicas: 3
   externalConnectivity:
     enabled: true
+    # The subdomain need to be managed externally for example by
+    # External-DNS. In AWS provider there is fix to expose public IP
+    # https://github.com/kubernetes-sigs/external-dns/pull/1391
     subdomain: "test.subdomain.com"
   resources:
     requests:

@@ -8,6 +8,7 @@
 # by the Apache License, Version 2.0
 
 import os
+import time
 import uuid
 
 from kafka import TopicPartition
@@ -15,7 +16,7 @@ from kafka import TopicPartition
 from rptest.wasm.native_kafka_consumer import NativeKafkaConsumer
 from rptest.wasm.native_kafka_producer import NativeKafkaProducer
 
-from rptest.wasm.topic import get_source_topic, is_materialized_topic
+from rptest.wasm.topic import construct_materialized_topic
 from rptest.wasm.wasm_build_tool import WasmBuildTool
 
 from rptest.tests.redpanda_test import RedpandaTest
@@ -26,10 +27,6 @@ from rptest.clients.rpk import RpkTool
 from ducktape.utils.util import wait_until
 
 from functools import reduce
-
-
-def merge_two_tuple(a, b):
-    return (a[0] + b[0], a[1] + b[1])
 
 
 def flat_map(fn, ll):
@@ -44,7 +41,8 @@ class WasmScript:
         self.dir_name = str(uuid.uuid4())
 
     def get_artifact(self, build_dir):
-        artifact = os.path.join(build_dir, self.dir_name, "dist", "wasm.js")
+        artifact = os.path.join(build_dir, self.dir_name, "dist",
+                                f"{self.dir_name}.js")
         if not os.path.exists(artifact):
             raise Exception(f"Artifact {artifact} was not built")
         return artifact
@@ -65,14 +63,11 @@ class WasmTest(RedpandaTest):
                                        num_brokers=num_brokers)
         self._rpk_tool = RpkTool(self.redpanda)
         self._build_tool = WasmBuildTool(self._rpk_tool)
+        self._input_consumer = None
+        self._output_consumer = None
+        self._producers = None
 
     def _build_script(self, script):
-        # Produce all data
-        total_input_records = reduce(lambda acc, x: acc + x[1][0],
-                                     script.inputs, 0)
-        total_output_expected = reduce(lambda acc, x: acc + x[1],
-                                       script.outputs, 0)
-
         # Build the script itself
         self._build_tool.build_test_artifacts(script)
 
@@ -80,36 +75,43 @@ class WasmTest(RedpandaTest):
         self._rpk_tool.wasm_deploy(
             script.get_artifact(self._build_tool.work_dir), "ducktape")
 
-        return (total_input_records, total_output_expected)
+    def restart_wasm_engine(self, node):
+        self.logger.info(
+            f"Begin manually triggered restart of wasm engine on node {node}")
+        node.account.kill_process("bin/node", clean_shutdown=False)
+        # TODO: This sleep is put here to ensure that redpanda will initiate
+        # a failure recovery mechanism. In the event the wasm engine restarts
+        # too quickly, it will have responded to all heartbeats, and redpanda will
+        # falsely think that the state between the wasm engine and itself are
+        # in-sync when they will not be. Github issue #1140 has been filed to keep
+        # track of this issue.
+        time.sleep(3)
+        self.redpanda.start_wasm_engine(node)
 
-    def _start(self, topic_spec, scripts):
-        all_materialized = all(
-            flat_map(
-                lambda x: [is_materialized_topic(x[0]) for x in x.outputs],
-                scripts))
-        if not all_materialized:
-            raise Exception("All output topics must be materaizlied topics")
+    def restart_redpanda(self, node):
+        self.logger.info(
+            f"Begin manually triggered restart of redpanda on node {node}")
+        self.redpanda.restart_nodes(node)
 
+    def start(self, topic_spec, scripts, xfactor):
         def to_output_topic_spec(output_topics):
             """
             Create a list of TopicPartitions for the set of output topics.
             Must parse the materialzied topic for the input topic to determine
             the number of partitions.
             """
-            input_lookup = dict([(x.name, x) for x in topic_spec])
             result = []
-            for output_topic, _ in output_topics:
-                src = input_lookup.get(get_source_topic(output_topic))
-                if src is None:
-                    raise Exception(
-                        "Bad spec, materialized topics source must belong to "
-                        "the input topic spec set")
-                result.append(
-                    TopicSpec(name=output_topic,
+            for src, _, _ in topic_spec:
+                materialized_topics = [
+                    TopicSpec(name=construct_materialized_topic(
+                        src.name, dest),
                               partition_count=src.partition_count,
                               replication_factor=src.replication_factor,
-                              cleanup_policy=src.cleanup_policy))
-                return result
+                              cleanup_policy=src.cleanup_policy)
+                    for dest in output_topics
+                ]
+                result += materialized_topics
+            return result
 
         def expand_topic_spec(etc):
             """
@@ -121,66 +123,106 @@ class WasmTest(RedpandaTest):
                     for x in range(0, spec.partition_count)
                 ], etc)
 
+        for script in scripts:
+            self._build_script(script)
+
         # Calcualte expected records on all inputs / outputs
-        total_inputs, total_outputs = reduce(
-            merge_two_tuple, [self._build_script(x) for x in scripts], (0, 0))
-        input_tps = expand_topic_spec(topic_spec)
+        total_inputs = reduce(lambda acc, x: acc + x[1], topic_spec, 0)
+
+        def accrue(num_records):
+            return reduce(
+                lambda acc, script: acc +
+                (num_records * len(script.outputs) * xfactor), scripts, 0)
+
+        total_outputs = reduce(lambda acc, x: acc + accrue(x[1]), topic_spec,
+                               0)
+
+        input_tps = expand_topic_spec([x[0] for x in topic_spec])
         output_tps = expand_topic_spec(
             to_output_topic_spec(
                 flat_map(lambda script: script.outputs, scripts)))
 
-        producers = []
-        for script in scripts:
-            for topic, producer_opts in script.inputs:
-                num_records, records_size = producer_opts
-                try:
-                    producer = NativeKafkaProducer(self.redpanda.brokers(),
-                                                   topic, num_records,
-                                                   records_size)
-                    producer.start()
-                    producers.append(producer)
-                except Exception as e:
-                    self.logger.error(
-                        f"Failed to create NativeKafkaProducer: {e}")
-                    raise
+        self.logger.info(f"Input consumer assigned: {input_tps}")
+        self.logger.info(f"Output consumer assigned: {output_tps}")
 
-        input_consumer = None
-        output_consumer = None
+        self._producers = []
+
+        for tp_spec, num_records, record_size in topic_spec:
+            try:
+                producer = NativeKafkaProducer(self.redpanda.brokers(),
+                                               tp_spec.name, num_records,
+                                               record_size)
+                producer.start()
+                self._producers.append(producer)
+            except Exception as e:
+                self.logger.error(f"Failed to create NativeKafkaProducer: {e}")
+                raise
+
         try:
-            input_consumer = NativeKafkaConsumer(self.redpanda.brokers(),
-                                                 input_tps, total_inputs)
-            output_consumer = NativeKafkaConsumer(self.redpanda.brokers(),
-                                                  output_tps, total_outputs)
+            self._input_consumer = NativeKafkaConsumer(self.redpanda.brokers(),
+                                                       input_tps, total_inputs)
+            self._output_consumer = NativeKafkaConsumer(
+                self.redpanda.brokers(), output_tps, total_outputs)
         except Exception as e:
             self.logger.error(f"Failed to create NativeKafkaConsumer: {e}")
             raise
 
-        input_consumer.start()
-        output_consumer.start()
+        self.logger.info(
+            f"Waiting for {total_inputs} input records and {total_outputs}"
+            " result records")
+        self._input_consumer.start()
+        self._output_consumer.start()
 
+    def wait_on_results(self):
         def all_done():
             # Uncomment to periodically see the amt of data read
-            # self.logger.info("Input: %d" %
-            #                  input_consumer.results.num_records())
-            # self.logger.info("Output: %d" %
-            #                  output_consumer.results.num_records())
-            return input_consumer.is_finished() and \
-                output_consumer.is_finished()
+            self.logger.info("Input: %d" %
+                             self._input_consumer.results.num_records())
+            self.logger.info("Output: %d" %
+                             self._output_consumer.results.num_records())
+            batch_total = self._input_consumer.results.num_records()
+            if batch_total > 0:
+                self.records_recieved(batch_total)
 
+            return self._input_consumer.is_finished()
+
+        [x.join() for x in self._producers]
         timeout, backoff = self.wasm_test_timeout()
         wait_until(all_done, timeout_sec=timeout, backoff_sec=backoff)
         try:
-            input_consumer.join()
-            output_consumer.join()
-            [x.join() for x in producers]
+            self._input_consumer.join()
+            self._output_consumer.join()
         except Exception as e:
             self.logger.error("Exception occured in background thread: {e}")
             raise e
 
-        return (input_consumer.results, output_consumer.results)
+        input_consumed = self._input_consumer.results.num_records()
+        output_consumed = self._output_consumer.results.num_records()
+        self.logger.info(f"Consumed {input_consumed} input"
+                         f" records and"
+                         f" {output_consumed} result records")
+
+        input_expected = self._input_consumer._num_records
+        output_expected = self._output_consumer._num_records
+        if input_consumed < input_expected:
+            raise Exception(
+                f"Consumed {input_consumed} expected {input_expected} input records"
+            )
+        if output_consumed < output_expected:
+            raise Exception(
+                f"Consumed {output_consumed} expected {output_expected} output records"
+            )
+
+        return (self._input_consumer.results, self._output_consumer.results)
+
+    def records_recieved(self, output_recieved):
+        """
+        Called when a traunch of records has been returned from consumers
+        """
+        pass
 
     def wasm_test_timeout(self):
         """
         2-tuple representing timeout(0) and backoff interval(1)
         """
-        return (30, 1)
+        return (180, 1)

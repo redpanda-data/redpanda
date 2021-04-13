@@ -11,7 +11,9 @@
 
 #pragma once
 #include "config/config_store.h"
+#include "config/property.h"
 #include "config/tls_config.h"
+#include "model/metadata.h"
 
 #include <seastar/net/inet_address.hh>
 #include <seastar/net/ip.hh>
@@ -24,9 +26,11 @@ namespace pandaproxy {
 /// All application modules depend on configuration. The configuration module
 /// can not depend on any other module to prevent cyclic dependencies.
 struct configuration final : public config::config_store {
-    config::property<unresolved_address> pandaproxy_api;
-    config::property<config::tls_config> pandaproxy_api_tls;
-    config::property<unresolved_address> advertised_pandaproxy_api;
+    config::one_or_many_property<model::broker_endpoint> pandaproxy_api;
+    config::one_or_many_property<config::endpoint_tls_config>
+      pandaproxy_api_tls;
+    config::one_or_many_property<model::broker_endpoint>
+      advertised_pandaproxy_api;
     config::property<ss::sstring> api_doc_dir;
 
     configuration();

@@ -14,6 +14,7 @@
 #include "rpc/logger.h"
 #include "rpc/parse_utils.h"
 #include "rpc/types.h"
+#include "ssx/sformat.h"
 #include "vassert.h"
 #include "vlog.h"
 
@@ -22,13 +23,14 @@
 #include <seastar/core/reactor.hh>
 #include <seastar/net/api.hh>
 
-#include <fmt/format.h>
-
 namespace rpc {
 
 server::server(server_configuration c)
   : cfg(std::move(c))
   , _memory(cfg.max_service_memory_per_core) {}
+
+server::server(ss::sharded<server_configuration>* s)
+  : server(s->local()) {}
 
 server::~server() = default;
 
@@ -165,15 +167,15 @@ void server::setup_metrics() {
          "max_service_mem_bytes",
          [this] { return cfg.max_service_memory_per_core; },
          sm::description(
-           fmt::format("{}: Maximum memory allowed for RPC", cfg.name))),
+           ssx::sformat("{}: Maximum memory allowed for RPC", cfg.name))),
        sm::make_total_bytes(
          "consumed_mem_bytes",
          [this] { return cfg.max_service_memory_per_core - _memory.current(); },
-         sm::description(
-           fmt::format("{}: Memory consumed by request processing", cfg.name))),
+         sm::description(ssx::sformat(
+           "{}: Memory consumed by request processing", cfg.name))),
        sm::make_histogram(
          "dispatch_handler_latency",
          [this] { return _hist.seastar_histogram_logform(); },
-         sm::description(fmt::format("{}: Latency ", cfg.name)))});
+         sm::description(ssx::sformat("{}: Latency ", cfg.name)))});
 }
 } // namespace rpc

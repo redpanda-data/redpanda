@@ -188,15 +188,10 @@ func withoutConsumerGroup(
 	grp, ctx := errgroup.WithContext(context.Background())
 	mu := sync.Mutex{} // Synchronizes stdout.
 	for _, partition := range partitions {
-		partition = partition
+		p := partition
 		offset = offset
 		grp.Go(func() error {
-			req := &sarama.OffsetRequest{
-				Version: int16(1),
-			}
-			req.AddBlock(topic, partition, int64(-1), int32(0))
-
-			pc, err := consumer.ConsumePartition(topic, partition, offset)
+			pc, err := consumer.ConsumePartition(topic, p, offset)
 			if err != nil {
 				log.Errorf(
 					"Unable to consume topic '%s', partition %d at offset %d",

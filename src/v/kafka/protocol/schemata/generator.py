@@ -177,6 +177,25 @@ path_type_map = {
             },
         },
     },
+    "ProduceRequestData": {
+        "TimeoutMs": ("std::chrono::milliseconds", "int32"),
+        "Topics": {
+            "Partitions": {
+                "PartitionIndex": ("model::partition_id", "int32"),
+                "Records": ("kafka::produce_request_record_data", "iobuf"),
+            },
+        },
+    },
+    "ProduceResponseData": {
+        "Responses": {
+            "Partitions": {
+                "PartitionIndex": ("model::partition_id", "int32"),
+                "BaseOffset": ("model::offset", "int64"),
+                "LogAppendTimeMs": ("model::timestamp", "int64"),
+                "LogStartOffset": ("model::offset", "int64"),
+            },
+        },
+    },
 }
 
 # a few kafka field types specify an entity type
@@ -205,6 +224,7 @@ basic_type_map = dict(
     int16=("int16_t", "read_int16()"),
     int32=("int32_t", "read_int32()"),
     int64=("int64_t", "read_int64()"),
+    iobuf=("iobuf", None, "read_fragmented_nullable_bytes()"),
 )
 
 # apply a rename to a struct. this is useful when there is a type name conflict
@@ -274,6 +294,11 @@ STRUCT_TYPES = [
     "DeleteAclsFilter",
     "DeleteAclsFilterResult",
     "DeleteAclsMatchingAcl",
+    "TopicProduceResponse",
+    "PartitionProduceResponse",
+    "BatchIndexAndErrorMessage",
+    "TopicProduceData",
+    "PartitionProduceData",
 ]
 
 SCALAR_TYPES = list(basic_type_map.keys())
@@ -555,9 +580,12 @@ class Field:
         if self.is_array:
             # array fields never contain nullable types. so if this is an array
             # field then choose the non-nullable decoder for its element type.
+            assert plain_decoder[1]
             return plain_decoder[1], named_type
         if self.nullable():
+            assert plain_decoder[2]
             return plain_decoder[2], named_type
+        assert plain_decoder[1]
         return plain_decoder[1], named_type
 
     @property
@@ -800,9 +828,14 @@ std::ostream& operator<<(std::ostream& o, const {{ struct.name }}&) {
 # in kafka do not seem to have any sort of formalized structure, verification
 # is a check on our assumptions. If verification fails, it should be taken as an
 # indication that the generator may need to be updated.
+#
+# remove scalar type `iobuf` from the set of types used to validate schema. the
+# type is not a native kafka type, but is still represented in the code
+# generator for some scenarios involving overloads / customizing output.
+ALLOWED_SCALAR_TYPES = list(set(SCALAR_TYPES) - set(["iobuf"]))
 ALLOWED_TYPES = \
-    SCALAR_TYPES + \
-    [f"[]{t}" for t in SCALAR_TYPES + STRUCT_TYPES]
+    ALLOWED_SCALAR_TYPES + \
+    [f"[]{t}" for t in ALLOWED_SCALAR_TYPES + STRUCT_TYPES]
 
 # yapf: disable
 SCHEMA = {

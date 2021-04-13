@@ -19,7 +19,7 @@
 #include <vector>
 
 ss::sstring as_dest(const std::string_view& sv) {
-    return fmt::format("${}$", sv);
+    return ssx::sformat("${}$", sv);
 }
 ss::sstring as_dest(ss::sstring&& str) {
     return as_dest(std::string_view(str));

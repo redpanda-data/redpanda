@@ -15,6 +15,7 @@
 #include "model/record_batch_reader.h"
 #include "random/generators.h"
 #include "seastarx.h"
+#include "ssx/sformat.h"
 #include "storage/api.h"
 #include "storage/disk_log_impl.h"
 #include "storage/tests/utils/random_batch.h"
@@ -32,8 +33,8 @@
 namespace storage {
 
 inline static ss::sstring random_dir() {
-    return ss::sstring(
-      fmt::format("test.dir_{}", random_generators::gen_alphanum_string(7)));
+    return ssx::sformat(
+      "test.dir_{}", random_generators::gen_alphanum_string(7));
 }
 
 inline static log_config log_builder_config() {

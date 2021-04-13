@@ -31,13 +31,22 @@ class TopicsResultSet:
     A high level wrapper around a result set from a read of a set of kafka
     topic partitions.
     """
-    def __init__(self, rset={}):
+    def __init__(self, rset=None):
         # Key: TopicPartition(topic='XYZ', partition=X)
         # Value: list<BasicKafkaRecord>
-        self.rset = {}
+        self.rset = rset or {}
 
     def num_records(self):
         return reduce(lambda acc, kv: acc + len(kv[1]), self.rset.items(), 0)
+
+    def filter(self, predicate):
+        """
+        Returns a set containing the keys & values passing 'predicate'
+        predicate: Lambda returning boolean
+        """
+        new_rset = dict([(k, v) for k, v in self.rset.items()
+                         if predicate(k) is True])
+        return TopicsResultSet(new_rset)
 
     def append(self, r):
         def filter_control_record(records):
@@ -70,6 +79,19 @@ class TopicsResultSet:
                 rs += records
 
 
+def _materialized_topic_set_compare(a, b, comparator):
+    for tp, records in b.rset.items():
+        if not is_materialized_topic(tp.topic):
+            raise Exception(
+                "'materialized_set' must contain only materialized topics")
+        input_data = a.rset.get(
+            TopicPartition(topic=get_source_topic(tp.topic),
+                           partition=tp.partition))
+        if input_data is None or not comparator(input_data, records):
+            return False
+    return True
+
+
 def materialized_result_set_compare(oset, materialized_set):
     """
     Compares the actual data (keys, values) between two result sets. 'oset'
@@ -85,17 +107,35 @@ def materialized_result_set_compare(oset, materialized_set):
         bkr.topic = None
         return bkr
 
-    for tp, records in materialized_set.rset.items():
-        if not is_materialized_topic(tp.topic):
-            raise Exception(
-                "'materialized_set' must contain only materialized topics")
-        input_data = oset.rset.get(
-            TopicPartition(topic=get_source_topic(tp.topic),
-                           partition=tp.partition))
-        if input_data is None:
-            return False
+    def strict_cmp(input_data, records):
+        """ 1:1 direct comparison between all records across ntp """
         mat_records = [strip_topic(x) for x in records]
         src_recs = [strip_topic(x) for x in input_data]
-        if mat_records != src_recs:
-            return False
-    return True
+        return mat_records == src_recs
+
+    return _materialized_topic_set_compare(oset, materialized_set, strict_cmp)
+
+
+def materialized_at_least_once_compare(oset, materialized_set):
+    """
+    Within the wasm framework since offsets are periodically written to
+    disk it may be the case that duplicate records are observed within the
+    materialized topics.
+    """
+    def cmp_duplicates_allowed(input_data, records):
+        """ Ensures all keys from input exist in output, and values match,
+        also ensures missing keys from either set in the others set.
+        """
+        input_map = dict((x.key, x.value) for x in records)
+        for record in records:
+            input_value = input_map.get(record.key)
+            if input_value is None or record.value != input_value:
+                return False
+
+        # one last verification, ensure that there are no extra keys in input
+        # space that is missing from the output space of results
+        unique_keys = set(x.key for x in records)
+        return all(x in unique_keys for x in input_map)
+
+    return _materialized_topic_set_compare(oset, materialized_set,
+                                           cmp_duplicates_allowed)

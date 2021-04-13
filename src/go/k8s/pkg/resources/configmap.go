@@ -37,6 +37,12 @@ const (
 	tlsDirCA = "/etc/tls/certs/ca"
 
 	tlsAdminDir = "/etc/tls/certs/admin"
+
+	oneMB          = 1024 * 1024
+	logSegmentSize = 512 * oneMB
+
+	internal = "Internal"
+	external = "External"
 )
 
 var errKeyDoesNotExistInSecretData = errors.New("cannot find key in secret data")
@@ -125,6 +131,7 @@ func (r *ConfigMapResource) obj(ctx context.Context) (k8sclient.Object, error) {
 	return cm, nil
 }
 
+// nolint:funlen // it's still ok to fill all config fields in one function
 func (r *ConfigMapResource) createConfiguration(
 	ctx context.Context,
 ) (*config.Config, error) {
@@ -143,36 +150,74 @@ func (r *ConfigMapResource) createConfiguration(
 		},
 	}
 
+	if r.pandaCluster.Spec.ExternalConnectivity.Enabled {
+		cr.KafkaApi = append(cr.KafkaApi, config.NamedSocketAddress{
+			SocketAddress: config.SocketAddress{
+				Address: "0.0.0.0",
+				Port:    calculateExternalPort(c.KafkaAPI.Port),
+			},
+			Name: "External",
+		})
+	}
+
 	cr.RPCServer.Port = clusterCRPortOrRPKDefault(c.RPCServer.Port, cr.RPCServer.Port)
 	cr.AdvertisedRPCAPI = &config.SocketAddress{
 		Address: "0.0.0.0",
 		Port:    clusterCRPortOrRPKDefault(c.RPCServer.Port, cr.RPCServer.Port),
 	}
 
-	cr.AdminApi.Port = clusterCRPortOrRPKDefault(c.AdminAPI.Port, cr.AdminApi.Port)
+	cr.AdminApi[0].Port = clusterCRPortOrRPKDefault(c.AdminAPI.Port, cr.AdminApi[0].Port)
+	cr.AdminApi[0].Name = internal
+	if r.pandaCluster.Spec.ExternalConnectivity.Enabled {
+		externalAdminAPI := config.NamedSocketAddress{
+			SocketAddress: config.SocketAddress{
+				Address: cr.AdminApi[0].Address,
+				Port:    cr.AdminApi[0].Port + 1,
+			},
+			Name: external,
+		}
+		cr.AdminApi = append(cr.AdminApi, externalAdminAPI)
+	}
+
 	cr.DeveloperMode = c.DeveloperMode
 	cr.Directory = dataDirectory
 	if r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.Enabled {
-		cr.KafkaApiTLS = config.ServerTLS{
+		// If external connectivity is enabled the TLS config will be applied to the external listener,
+		// otherwise TLS will be applied to the internal listener. // TODO support multiple TLS configs
+		name := "Internal"
+		if r.pandaCluster.Spec.ExternalConnectivity.Enabled {
+			name = "External"
+		}
+		tls := config.ServerTLS{
+			Name:              name,
 			KeyFile:           fmt.Sprintf("%s/%s", tlsDir, corev1.TLSPrivateKeyKey), // tls.key
 			CertFile:          fmt.Sprintf("%s/%s", tlsDir, corev1.TLSCertKey),       // tls.crt
 			Enabled:           true,
 			RequireClientAuth: r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.RequireClientAuth,
 		}
 		if r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.RequireClientAuth {
-			cr.KafkaApiTLS.TruststoreFile = fmt.Sprintf("%s/%s", tlsDirCA, cmetav1.TLSCAKey)
+			tls.TruststoreFile = fmt.Sprintf("%s/%s", tlsDirCA, cmetav1.TLSCAKey)
+		}
+		cr.KafkaApiTLS = []config.ServerTLS{
+			tls,
 		}
 	}
 	if r.pandaCluster.Spec.Configuration.TLS.AdminAPI.Enabled {
-		cr.AdminApiTLS = config.ServerTLS{
+		name := internal
+		if r.pandaCluster.Spec.ExternalConnectivity.Enabled {
+			name = external
+		}
+		adminTLS := config.ServerTLS{
+			Name:              name,
 			KeyFile:           fmt.Sprintf("%s/%s", tlsAdminDir, corev1.TLSPrivateKeyKey),
 			CertFile:          fmt.Sprintf("%s/%s", tlsAdminDir, corev1.TLSCertKey),
 			Enabled:           true,
 			RequireClientAuth: r.pandaCluster.Spec.Configuration.TLS.AdminAPI.RequireClientAuth,
 		}
 		if r.pandaCluster.Spec.Configuration.TLS.AdminAPI.RequireClientAuth {
-			cr.AdminApiTLS.TruststoreFile = fmt.Sprintf("%s/%s", tlsAdminDir, cmetav1.TLSCAKey)
+			adminTLS.TruststoreFile = fmt.Sprintf("%s/%s", tlsAdminDir, cmetav1.TLSCAKey)
 		}
+		cr.AdminApiTLS = append(cr.AdminApiTLS, adminTLS)
 	}
 
 	if r.pandaCluster.Spec.CloudStorage.Enabled {
@@ -191,6 +236,22 @@ func (r *ConfigMapResource) createConfiguration(
 		r.prepareCloudStorage(cr, secretKeyStr)
 	}
 
+	for _, user := range r.pandaCluster.Spec.Superusers {
+		cr.Superusers = append(cr.Superusers, user.Username)
+	}
+
+	if r.pandaCluster.Spec.EnableSASL {
+		cr.EnableSASL = pointer.BoolPtr(true)
+	}
+
+	partitions := r.pandaCluster.Spec.Configuration.GroupTopicPartitions
+	if partitions != 0 {
+		cr.GroupTopicPartitions = &partitions
+	}
+
+	segmentSize := logSegmentSize
+	cr.LogSegmentSize = &segmentSize
+
 	replicas := *r.pandaCluster.Spec.Replicas
 	for i := int32(0); i < replicas; i++ {
 		cr.SeedServers = append(cr.SeedServers, config.SeedServer{
@@ -203,6 +264,14 @@ func (r *ConfigMapResource) createConfiguration(
 	}
 
 	return cfgRpk, nil
+}
+
+// calculateExternalPort can calculate external Kafka API port based on the internal Kafka API port
+func calculateExternalPort(kafkaInternalPort int) int {
+	if kafkaInternalPort < 0 || kafkaInternalPort > 65535 {
+		return 0
+	}
+	return kafkaInternalPort + 1
 }
 
 func (r *ConfigMapResource) prepareCloudStorage(

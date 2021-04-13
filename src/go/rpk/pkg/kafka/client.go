@@ -10,6 +10,8 @@
 package kafka
 
 import (
+	"crypto/sha256"
+	"crypto/sha512"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
@@ -48,7 +50,13 @@ func DefaultConfig() *sarama.Config {
 // Overrides the default config with the redpanda config values, such as TLS.
 func LoadConfig(conf *config.Config) (*sarama.Config, error) {
 	c := DefaultConfig()
-	return configureTLS(c, conf)
+
+	c, err := configureTLS(c, conf)
+	if err != nil {
+		return nil, err
+	}
+
+	return configureSASL(c, conf)
 }
 
 func InitClient(brokers ...string) (sarama.Client, error) {
@@ -171,6 +179,38 @@ func RetrySend(
 	return part, offset, err
 }
 
+func configureSASL(
+	saramaConf *sarama.Config, rpConf *config.Config,
+) (*sarama.Config, error) {
+	rpk := rpConf.Rpk
+	if rpk.SCRAM.Password == "" || rpk.SCRAM.User == "" || rpk.SCRAM.Type == "" {
+		return saramaConf, nil
+	}
+
+	saramaConf.Net.SASL.Enable = true
+	saramaConf.Net.SASL.Handshake = true
+	saramaConf.Net.SASL.User = rpk.SCRAM.User
+	saramaConf.Net.SASL.Password = rpk.SCRAM.Password
+	switch rpk.SCRAM.Type {
+	case sarama.SASLTypeSCRAMSHA256:
+		saramaConf.Net.SASL.SCRAMClientGeneratorFunc =
+			func() sarama.SCRAMClient {
+				return &XDGSCRAMClient{HashGeneratorFcn: sha256.New}
+			}
+		saramaConf.Net.SASL.Mechanism = sarama.SASLTypeSCRAMSHA256
+	case sarama.SASLTypeSCRAMSHA512:
+		saramaConf.Net.SASL.SCRAMClientGeneratorFunc =
+			func() sarama.SCRAMClient {
+				return &XDGSCRAMClient{HashGeneratorFcn: sha512.New}
+			}
+		saramaConf.Net.SASL.Mechanism = sarama.SASLTypeSCRAMSHA512
+	default:
+		return nil, fmt.Errorf("unrecongnized Salted Challenge Response "+
+			"Authentication Mechanism (SCRAM) under rpk.scram.type: %s", rpk.SCRAM.Type)
+	}
+	return saramaConf, nil
+}
+
 // Configures TLS for the Redpanda API IF either rpk.tls or
 // redpanda.kafka_api_tls are set in the configuration. Doesn't modify the
 // configuration otherwise.
@@ -180,7 +220,6 @@ func configureTLS(
 	var tlsConf *tls.Config
 	var err error
 	rpkTls := rpConf.Rpk.TLS
-	rpTls := rpConf.Redpanda.KafkaApiTLS
 
 	// Try to configure TLS from the available config
 	switch {
@@ -207,33 +246,6 @@ func configureTLS(
 		}
 		tlsConf = &tls.Config{RootCAs: caCertPool}
 		log.Debug("API TLS enabled using rpk.tls")
-
-	// Enable client auth if the cert & key files are set for the redpanda
-	// API
-	case rpTls.Enabled &&
-		rpTls.CertFile != "" &&
-		rpTls.KeyFile != "" &&
-		rpTls.TruststoreFile != "":
-
-		tlsConf, err = loadTLSConfig(
-			rpTls.TruststoreFile,
-			rpTls.CertFile,
-			rpTls.KeyFile,
-		)
-		if err != nil {
-			return nil, err
-		}
-		log.Debug("API TLS auth enabled using redpanda.kafka_api_tls")
-
-	// Enable TLS (no auth) if only the CA cert file is set for the
-	// redpanda API
-	case rpTls.Enabled && rpTls.TruststoreFile != "":
-		caCertPool, err := loadRootCACert(rpTls.TruststoreFile)
-		if err != nil {
-			return nil, err
-		}
-		tlsConf = &tls.Config{RootCAs: caCertPool}
-		log.Debug("API TLS enabled using redpanda.kafka_api_tls")
 
 	default:
 		log.Debug(

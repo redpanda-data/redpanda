@@ -30,9 +30,9 @@ type RedpandaConfig struct {
 	AdvertisedRPCAPI                     *SocketAddress         `yaml:"advertised_rpc_api,omitempty" mapstructure:"advertised_rpc_api,omitempty" json:"advertisedRpcApi,omitempty"`
 	KafkaApi                             []NamedSocketAddress   `yaml:"kafka_api" mapstructure:"kafka_api" json:"kafkaApi"`
 	AdvertisedKafkaApi                   []NamedSocketAddress   `yaml:"advertised_kafka_api,omitempty" mapstructure:"advertised_kafka_api,omitempty" json:"advertisedKafkaApi,omitempty"`
-	KafkaApiTLS                          ServerTLS              `yaml:"kafka_api_tls,omitempty" mapstructure:"kafka_api_tls,omitempty" json:"kafkaApiTls"`
-	AdminApi                             SocketAddress          `yaml:"admin" mapstructure:"admin" json:"admin"`
-	AdminApiTLS                          ServerTLS              `yaml:"admin_api_tls,omitempty" mapstructure:"admin_api_tls,omitempty" json:"adminApiTls"`
+	KafkaApiTLS                          []ServerTLS            `yaml:"kafka_api_tls,omitempty" mapstructure:"kafka_api_tls,omitempty" json:"kafkaApiTls"`
+	AdminApi                             []NamedSocketAddress   `yaml:"admin" mapstructure:"admin" json:"admin"`
+	AdminApiTLS                          []ServerTLS            `yaml:"admin_api_tls,omitempty" mapstructure:"admin_api_tls,omitempty" json:"adminApiTls"`
 	Id                                   int                    `yaml:"node_id" mapstructure:"node_id" json:"id"`
 	SeedServers                          []SeedServer           `yaml:"seed_servers" mapstructure:"seed_servers" json:"seedServers"`
 	DeveloperMode                        bool                   `yaml:"developer_mode" mapstructure:"developer_mode" json:"developerMode"`
@@ -47,17 +47,21 @@ type RedpandaConfig struct {
 	CloudStorageDisableTls               *bool                  `yaml:"cloud_storage_disable_tls,omitempty" mapstructure:"cloud_storage_disable_tls,omitempty" json:"cloudStorageDisableTls,omitempty"`
 	CloudStorageApiEndpointPort          *int                   `yaml:"cloud_storage_api_endpoint_port,omitempty" mapstructure:"cloud_storage_api_endpoint_port,omitempty" json:"cloudStorageApiEndpointPort,omitempty"`
 	CloudStorageTrustFile                *string                `yaml:"cloud_storage_trust_file,omitempty" mapstructure:"cloud_storage_trust_file,omitempty" json:"cloudStorageTrustFile,omitempty"`
+	Superusers                           []string               `yaml:"superusers,omitempty" mapstructure:"superusers,omitempty" json:"superusers,omitempty"`
+	EnableSASL                           *bool                  `yaml:"enable_sasl,omitempty" mapstructure:"enable_sasl,omitempty" json:"enableSasl,omitempty"`
+	GroupTopicPartitions                 *int                   `yaml:"group_topic_partitions,omitempty" mapstructure:"group_topic_partitions,omitempty" json:"groupTopicPartitions,omitempty"`
+	LogSegmentSize                       *int                   `yaml:"log_segment_size,omitempty" mapstructure:"log_segment_size,omitempty" json:"log_segment_size,omitempty"`
 	Other                                map[string]interface{} `yaml:",inline" mapstructure:",remain"`
 }
 
 type Pandaproxy struct {
-	PandaproxyAPI           SocketAddress  `yaml:"pandaproxy_api,omitempty" mapstructure:"pandaproxy_api,omitempty" json:"pandaproxyApi,omitempty"`
-	PandaproxyAPITLS        ServerTLS      `yaml:"pandaproxy_api_tls,omitempty" mapstructure:"pandaproxy_api_tls,omitempty" json:"pandaproxyApiTls,omitempty"`
-	AdvertisedPandaproxyAPI *SocketAddress `yaml:"advertised_pandaproxy_api,omitempty" mapstructure:"advertised_pandaproxy_api,omitempty" json:"advertisedPandaproxyApi,omitempty"`
+	PandaproxyAPI           []NamedSocketAddress `yaml:"pandaproxy_api,omitempty" mapstructure:"pandaproxy_api,omitempty" json:"pandaproxyApi,omitempty"`
+	PandaproxyAPITLS        []ServerTLS          `yaml:"pandaproxy_api_tls,omitempty" mapstructure:"pandaproxy_api_tls,omitempty" json:"pandaproxyApiTls,omitempty"`
+	AdvertisedPandaproxyAPI []NamedSocketAddress `yaml:"advertised_pandaproxy_api,omitempty" mapstructure:"advertised_pandaproxy_api,omitempty" json:"advertisedPandaproxyApi,omitempty"`
 }
 
 type PandaproxyClient struct {
-	Broker    []SocketAddress `yaml:"broker,omitempty" mapstructure:"broker,omitempty" json:"broker,omitempty"`
+	Brokers   []SocketAddress `yaml:"brokers,omitempty" mapstructure:"brokers,omitempty" json:"brokers,omitempty"`
 	BrokerTLS ServerTLS       `yaml:"broker_tls,omitempty" mapstructure:"broker_tls,omitempty" json:"brokerTls,omitempty"`
 }
 
@@ -82,6 +86,7 @@ type TLS struct {
 }
 
 type ServerTLS struct {
+	Name              string `yaml:"name,omitempty" mapstructure:"name,omitempty" json:"name"`
 	KeyFile           string `yaml:"key_file,omitempty" mapstructure:"key_file,omitempty" json:"keyFile"`
 	CertFile          string `yaml:"cert_file,omitempty" mapstructure:"cert_file,omitempty" json:"certFile"`
 	TruststoreFile    string `yaml:"truststore_file,omitempty" mapstructure:"truststore_file,omitempty" json:"truststoreFile"`
@@ -110,6 +115,13 @@ type RpkConfig struct {
 	WellKnownIo              string   `yaml:"well_known_io,omitempty" mapstructure:"well_known_io,omitempty" json:"wellKnownIo"`
 	Overprovisioned          bool     `yaml:"overprovisioned" mapstructure:"overprovisioned" json:"overprovisioned"`
 	SMP                      *int     `yaml:"smp,omitempty" mapstructure:"smp,omitempty" json:"smp,omitempty"`
+	SCRAM                    SCRAM    `yaml:"scram,omitempty" mapstructure:"scram,omitempty" json:"scram,omitempty"`
+}
+
+type SCRAM struct {
+	User     string `yaml:"user,omitempty" mapstructure:"user,omitempty" json:"user,omitempty"`
+	Password string `yaml:"password,omitempty" mapstructure:"password,omitempty" json:"password,omitempty"`
+	Type     string `yaml:"type,omitempty" mapstructure:"type,omitempty" json:"type,omitempty"`
 }
 
 func (conf *Config) PIDFile() string {

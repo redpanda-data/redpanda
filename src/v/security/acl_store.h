@@ -34,6 +34,12 @@ public:
 
     void insert(acl_entry entry) { _entries.insert(std::move(entry)); }
     void erase(container_type::const_iterator it) { _entries.erase(it); }
+
+    template<typename Predicate>
+    void erase_if(Predicate pred) {
+        absl::erase_if(_entries, pred);
+    }
+
     void rehash() { _entries.rehash(0); }
 
     bool empty() const { return _entries.empty(); }
@@ -117,7 +123,11 @@ public:
         }
     }
 
-    void remove_bindings(const std::vector<acl_binding_filter>&);
+    // remove bindings according the input filters and return the bindings that
+    // matched in the same order. the `dry_run` flag will identify all of the
+    // bindings to be removed but not perform the destructive operation.
+    std::vector<std::vector<acl_binding>> remove_bindings(
+      const std::vector<acl_binding_filter>&, bool dry_run = false);
 
     std::vector<acl_binding> acls(const acl_binding_filter&) const;
     acl_matches find(resource_type, const ss::sstring&) const;

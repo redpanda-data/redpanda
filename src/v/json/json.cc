@@ -98,7 +98,7 @@ void rjson_serialize(
     w.StartObject();
     w.Key("name");
     w.String(ep.name);
-    w.Key("host");
+    w.Key("address");
     w.String(ep.address.host());
     w.Key("port");
     w.Uint(ep.address.port());

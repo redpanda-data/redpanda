@@ -9,4 +9,6 @@ rp_test(
   UNIT_TEST
   BINARY_NAME test_configuration
   SOURCES ${srcs}
-  LIBRARIES v::seastar_testing_main v::config)
+  LIBRARIES v::seastar_testing_main v::config
+  LABELS config
+)

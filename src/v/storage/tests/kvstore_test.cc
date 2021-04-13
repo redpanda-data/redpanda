@@ -32,7 +32,8 @@ static storage::kvstore_config get_conf(ss::sstring dir) {
 SEASTAR_THREAD_TEST_CASE(key_space) {
     set_configuration("disable_metrics", true);
 
-    auto dir = fmt::format("kvstore_test_{}", random_generators::get_int(4000));
+    auto dir = ssx::sformat(
+      "kvstore_test_{}", random_generators::get_int(4000));
 
     auto conf = get_conf(dir);
 
@@ -90,7 +91,8 @@ SEASTAR_THREAD_TEST_CASE(key_space) {
 SEASTAR_THREAD_TEST_CASE(kvstore_empty) {
     set_configuration("disable_metrics", true);
 
-    auto dir = fmt::format("kvstore_test_{}", random_generators::get_int(4000));
+    auto dir = ssx::sformat(
+      "kvstore_test_{}", random_generators::get_int(4000));
 
     auto conf = get_conf(dir);
 
@@ -156,7 +158,8 @@ SEASTAR_THREAD_TEST_CASE(kvstore_empty) {
 SEASTAR_THREAD_TEST_CASE(kvstore) {
     set_configuration("disable_metrics", true);
 
-    auto dir = fmt::format("kvstore_test_{}", random_generators::get_int(4000));
+    auto dir = ssx::sformat(
+      "kvstore_test_{}", random_generators::get_int(4000));
 
     auto conf = get_conf(dir);
 

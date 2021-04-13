@@ -9,6 +9,7 @@
  * by the Apache License, Version 2.0
  */
 #include "kafka/protocol/schemata/create_acls_request.h"
+#include "kafka/protocol/schemata/delete_acls_request.h"
 #include "kafka/protocol/schemata/describe_acls_request.h"
 #include "kafka/server/request_context.h"
 #include "security/acl.h"
@@ -409,6 +410,84 @@ authorized_operations(request_context& ctx, const T& resource) {
       });
 
     return allowed_operations;
+}
+
+/*
+ * build resource pattern filter bits from delete acl request filter
+ */
+inline security::resource_pattern_filter
+to_resource_pattern_filter(const delete_acls_filter& filter) {
+    std::optional<security::resource_type> resource_type;
+    switch (filter.resource_type_filter) {
+    case 1:
+        // wildcard
+        break;
+    default:
+        resource_type = to_resource_type(filter.resource_type_filter);
+    }
+
+    std::optional<security::resource_pattern_filter::pattern_filter_type>
+      pattern_filter;
+    switch (filter.pattern_type_filter) {
+    case 1:
+        // wildcard
+        break;
+    case 2:
+        // match
+        pattern_filter = security::resource_pattern_filter::pattern_match{};
+        break;
+    default:
+        pattern_filter = to_pattern_type(filter.pattern_type_filter);
+    }
+
+    return security::resource_pattern_filter(
+      resource_type, filter.resource_name_filter, pattern_filter);
+}
+
+/*
+ * build acl entry filter bits from delete acls request filter
+ */
+inline security::acl_entry_filter
+to_acl_entry_filter(const delete_acls_filter& filter) {
+    std::optional<security::acl_principal> principal;
+    if (filter.principal_filter) {
+        principal = to_acl_principal(*filter.principal_filter);
+    }
+
+    std::optional<security::acl_host> host;
+    if (filter.host_filter) {
+        host = to_acl_host(*filter.host_filter);
+    }
+
+    std::optional<security::acl_operation> operation;
+    switch (filter.operation) {
+    case 1:
+        // wildcard
+        break;
+    default:
+        operation = to_acl_operation(filter.operation);
+    }
+
+    std::optional<security::acl_permission> permission;
+    switch (filter.permission_type) {
+    case 1:
+        // wildcard
+        break;
+    default:
+        permission = to_acl_permission(filter.permission_type);
+    }
+
+    return security::acl_entry_filter(
+      std::move(principal), host, operation, permission);
+}
+
+/*
+ * convert kafka describe acl request into an internal acl filter
+ */
+inline security::acl_binding_filter
+to_acl_binding_filter(const delete_acls_filter& filter) {
+    return security::acl_binding_filter(
+      to_resource_pattern_filter(filter), to_acl_entry_filter(filter));
 }
 
 } // namespace kafka::details

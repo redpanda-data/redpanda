@@ -23,3 +23,4 @@ includes:
   lint: taskfiles/lint.yml
   rp: taskfiles/rp.yml
   rpk: taskfiles/rpk.yml
+  wasm: taskfiles/wasm.yml

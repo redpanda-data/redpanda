@@ -54,15 +54,10 @@ auto get_consumer_offsets(
 
 FIXTURE_TEST(pandaproxy_consumer_group, pandaproxy_test_fixture) {
     using namespace std::chrono_literals;
-
     info("Waiting for leadership");
     wait_for_controller_leadership().get();
-
     info("Connecting client");
     auto client = make_client();
-
-    auto advertised_address{unresolved_address{"proxy.example.com", 8080}};
-    set_config("advertised_pandaproxy_api", advertised_address);
 
     kafka::group_id group_id{"test_group"};
     kafka::member_id member_id{kafka::no_member};
@@ -80,7 +75,10 @@ FIXTURE_TEST(pandaproxy_consumer_group, pandaproxy_test_fixture) {
         auto res = http_request(
           client,
           fmt::format("/consumers/{}", group_id()),
-          std::move(req_body_buf));
+          std::move(req_body_buf),
+          boost::beast::http::verb::post,
+          ppj::serialization_format::json_v2,
+          ppj::serialization_format::json_v2);
         BOOST_REQUIRE_EQUAL(
           res.headers.result(), boost::beast::http::status::ok);
 
@@ -92,13 +90,13 @@ FIXTURE_TEST(pandaproxy_consumer_group, pandaproxy_test_fixture) {
           res_data.base_uri,
           fmt::format(
             "http://{}:{}/consumers/{}/instances/{}",
-            advertised_address.host(),
-            advertised_address.port(),
+            "127.0.0.1",
+            "8082",
             group_id(),
             member_id()));
         BOOST_REQUIRE_EQUAL(
           res.headers.at(boost::beast::http::field::content_type),
-          "application/vnd.kafka.binary.v2+json");
+          to_header_value(ppj::serialization_format::json_v2));
     }
     info("Member id: {}", member_id);
 
@@ -128,7 +126,10 @@ FIXTURE_TEST(pandaproxy_consumer_group, pandaproxy_test_fixture) {
           client,
           fmt::format(
             "/consumers/{}/instances/{}/subscription", group_id(), member_id()),
-          std::move(req_body_buf));
+          std::move(req_body_buf),
+          boost::beast::http::verb::post,
+          ppj::serialization_format::json_v2,
+          ppj::serialization_format::json_v2);
         BOOST_REQUIRE_EQUAL(
           res.headers.result(), boost::beast::http::status::ok);
     }
@@ -253,7 +254,9 @@ FIXTURE_TEST(pandaproxy_consumer_group, pandaproxy_test_fixture) {
         auto res = http_request(
           client,
           fmt::format("/consumers/{}/instances/{}", group_id(), member_id()),
-          boost::beast::http::verb::delete_);
+          boost::beast::http::verb::delete_,
+          ppj::serialization_format::json_v2,
+          ppj::serialization_format::json_v2);
         BOOST_REQUIRE_EQUAL(
           res.headers.result(), boost::beast::http::status::no_content);
     }
@@ -263,7 +266,9 @@ FIXTURE_TEST(pandaproxy_consumer_group, pandaproxy_test_fixture) {
         auto res = http_request(
           client,
           fmt::format("/consumers/{}/instances/{}", group_id(), member_id()),
-          boost::beast::http::verb::delete_);
+          boost::beast::http::verb::delete_,
+          ppj::serialization_format::json_v2,
+          ppj::serialization_format::json_v2);
         BOOST_REQUIRE_EQUAL(
           res.headers.result(), boost::beast::http::status::not_found);
     }

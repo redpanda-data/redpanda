@@ -28,10 +28,8 @@ produce_request
 make_produce_request(model::topic_partition tp, model::record_batch&& batch) {
     std::vector<produce_request::partition> partitions;
     partitions.emplace_back(produce_request::partition{
-      .id{tp.partition},
-      .data{},
-      .adapter = kafka_batch_adapter{
-        .v2_format = true, .valid_crc = true, .batch{std::move(batch)}}});
+      .partition_index{tp.partition},
+      .records = produce_request_record_data(std::move(batch))});
 
     std::vector<produce_request::topic> topics;
     topics.emplace_back(produce_request::topic{
@@ -44,26 +42,26 @@ make_produce_request(model::topic_partition tp, model::record_batch&& batch) {
 produce_response::partition
 make_produce_response(model::partition_id p_id, std::exception_ptr ex) {
     auto response = produce_response::partition{
-      .id{p_id},
-      .error = error_code::none,
+      .partition_index{p_id},
+      .error_code = error_code::none,
     };
     try {
         std::rethrow_exception(std::move(ex));
     } catch (const partition_error& ex) {
         vlog(kclog.debug, "handling partition_error {}", ex.what());
-        response.error = ex.error;
+        response.error_code = ex.error;
     } catch (const broker_error& ex) {
         vlog(kclog.debug, "handling broker_error {}", ex.what());
-        response.error = ex.error;
+        response.error_code = ex.error;
     } catch (const ss::gate_closed_exception&) {
         vlog(kclog.debug, "gate_closed_exception");
-        response.error = error_code::operation_not_attempted;
+        response.error_code = error_code::operation_not_attempted;
     } catch (const std::exception& ex) {
         vlog(kclog.warn, "std::exception {}", ex.what());
-        response.error = error_code::unknown_server_error;
+        response.error_code = error_code::unknown_server_error;
     } catch (const std::exception_ptr&) {
         vlog(kclog.error, "std::exception_ptr");
-        response.error = error_code::unknown_server_error;
+        response.error_code = error_code::unknown_server_error;
     }
     return response;
 }
@@ -82,13 +80,13 @@ producer::do_send(model::topic_partition tp, model::record_batch&& batch) {
             make_produce_request(std::move(tp), std::move(batch)));
       })
       .then([](produce_response res) mutable {
-          auto topic = std::move(res.topics[0]);
+          auto topic = std::move(res.data.responses[0]);
           auto partition = std::move(topic.partitions[0]);
-          if (partition.error != error_code::none) {
+          if (partition.error_code != error_code::none) {
               return ss::make_exception_future<produce_response::partition>(
                 partition_error(
-                  model::topic_partition(topic.name, partition.id),
-                  partition.error));
+                  model::topic_partition(topic.name, partition.partition_index),
+                  partition.error_code));
           }
           return ss::make_ready_future<produce_response::partition>(
             std::move(partition));
@@ -131,7 +129,7 @@ producer::send(model::topic_partition tp, model::record_batch&& batch) {
             "sent record_batch: {}, {{record_count: {}}}, {}",
             tp,
             record_count,
-            res.error);
+            res.error_code);
           get_context(std::move(tp))->handle_response(std::move(res));
       });
 }

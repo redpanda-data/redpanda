@@ -88,12 +88,16 @@ func (r *ClusterReconciler) Reconcile(
 		return ctrl.Result{}, fmt.Errorf("unable to retrieve Cluster resource: %w", err)
 	}
 
-	ports := map[string]int{
-		resources.KafkaPortName: redpandaCluster.Spec.Configuration.KafkaAPI.Port,
-		resources.AdminPortName: redpandaCluster.Spec.Configuration.AdminAPI.Port,
+	headlessPorts := []resources.NamedServicePort{
+		{Name: resources.AdminPortName, Port: redpandaCluster.Spec.Configuration.AdminAPI.Port},
+		{Name: resources.KafkaPortName, Port: redpandaCluster.Spec.Configuration.KafkaAPI.Port},
 	}
-	headlessSvc := resources.NewHeadlessService(r.Client, &redpandaCluster, r.Scheme, ports, log)
-	nodeportSvc := resources.NewNodePortService(r.Client, &redpandaCluster, r.Scheme, ports, log)
+	nodeports := []resources.NamedServicePort{
+		{Name: resources.AdminPortName, Port: redpandaCluster.Spec.Configuration.AdminAPI.Port + 1},
+		{Name: resources.KafkaPortName, Port: redpandaCluster.Spec.Configuration.KafkaAPI.Port + 1},
+	}
+	headlessSvc := resources.NewHeadlessService(r.Client, &redpandaCluster, r.Scheme, headlessPorts, log)
+	nodeportSvc := resources.NewNodePortService(r.Client, &redpandaCluster, r.Scheme, nodeports, log)
 
 	pki := certmanager.NewPki(r.Client, &redpandaCluster, headlessSvc.HeadlessServiceFQDN(), r.Scheme, log)
 	sa := resources.NewServiceAccount(r.Client, &redpandaCluster, r.Scheme, log)
@@ -254,15 +258,16 @@ func (r *ClusterReconciler) createExternalNodesList(
 	observedNodesExternalAdmin := make([]string, 0, len(pods))
 	for i := range pods {
 		if len(pandaCluster.Spec.ExternalConnectivity.Subdomain) > 0 {
+			prefixLen := len(pods[i].GenerateName)
 			observedNodesExternal = append(observedNodesExternal,
 				fmt.Sprintf("%s.%s:%d",
-					pods[i].Spec.Hostname,
+					pods[i].Name[prefixLen:],
 					pandaCluster.Spec.ExternalConnectivity.Subdomain,
 					getNodePort(&nodePortSvc, resources.KafkaPortName),
 				))
 			observedNodesExternalAdmin = append(observedNodesExternalAdmin,
 				fmt.Sprintf("%s.%s:%d",
-					pods[i].Spec.Hostname,
+					pods[i].Name[prefixLen:],
 					pandaCluster.Spec.ExternalConnectivity.Subdomain,
 					getNodePort(&nodePortSvc, resources.AdminPortName),
 				))

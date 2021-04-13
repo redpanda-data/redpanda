@@ -12,13 +12,13 @@
 #pragma once
 
 #include "seastarx.h"
+#include "ssx/sformat.h"
 #include "utils/named_type.h"
 
 #include <seastar/core/sstring.hh>
 #include <seastar/util/bool_class.hh>
 
 #include <boost/container_hash/hash.hpp>
-#include <fmt/core.h>
 
 #include <cstdint>
 #include <limits>
@@ -117,7 +117,7 @@ inline model::topic get_source_topic(const model::topic& topic) {
 
 inline model::topic
 to_materialized_topic(const model::topic& src, const model::topic& dest) {
-    return model::topic(fmt::format("{}.${}$", src(), dest()));
+    return model::topic(ssx::sformat("{}.${}$", src(), dest()));
 }
 
 /// \brief namespace is reserved in c++;  use ns

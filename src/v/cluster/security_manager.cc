@@ -44,12 +44,24 @@ security_manager::apply_update(model::record_batch batch) {
           },
           [this](create_acls_cmd cmd) {
               return dispatch_updates_to_cores(std::move(cmd), _authorizer);
+          },
+          [this](delete_acls_cmd cmd) {
+              return dispatch_updates_to_cores(std::move(cmd), _authorizer);
           });
     });
 }
 
 /*
- * handle: update user command
+ * handle: delete acls command
+ */
+static std::error_code
+do_apply(delete_acls_cmd cmd, security::authorizer& authorizer) {
+    authorizer.remove_bindings(cmd.key.filters);
+    return errc::success;
+}
+
+/*
+ * handle: create acls command
  */
 static std::error_code
 do_apply(create_acls_cmd cmd, security::authorizer& authorizer) {

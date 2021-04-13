@@ -136,7 +136,7 @@ private:
 
 class {{service_name}}_service::failure_probes final : public finjector::probe {
 public:
-    using type = int8_t;
+    using type = uint32_t;
 
     static constexpr std::string_view name() { return "{{service_name}}_service::failure_probes"; }
 
@@ -152,8 +152,8 @@ public:
         {%- endfor %}
           .default_match(0);
     }
-    std::vector<ss::sstring> points() final {
-        std::vector<ss::sstring> retval;
+    std::vector<std::string_view> points() final {
+        std::vector<std::string_view> retval;
         retval.reserve({{methods | length}});
         {%- for method in methods %}
         retval.push_back("{{method.name}}");

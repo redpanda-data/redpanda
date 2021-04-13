@@ -23,7 +23,7 @@ namespace storage {
 
 class log_failure_probes final : public finjector::probe {
 public:
-    using type = int8_t;
+    using type = uint32_t;
 
     static constexpr std::string_view name() {
         return "storage::log::failure_probes";
@@ -45,7 +45,7 @@ public:
           .default_match(0);
     }
 
-    std::vector<ss::sstring> points() final {
+    std::vector<std::string_view> points() final {
         return {"append", "roll", "truncate"};
     }
 
@@ -99,7 +99,7 @@ private:
 
 class parser_failure_probes final : public finjector::probe {
 public:
-    using type = int8_t;
+    using type = uint32_t;
     static constexpr std::string_view name() {
         return "storage::parser::failure_probes";
     }
@@ -114,7 +114,7 @@ public:
         return point == "consume" ? static_cast<type>(methods::consume) : 0;
     }
 
-    std::vector<ss::sstring> points() final { return {"consume"}; }
+    std::vector<std::string_view> points() final { return {"consume"}; }
 
     ss::future<> consume() {
         if (is_enabled()) {

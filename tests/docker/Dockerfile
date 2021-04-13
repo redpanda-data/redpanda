@@ -27,10 +27,17 @@ RUN apt update && \
       build-essential \
       libatomic1 \
       curl \
-      npm \
       kafkacat && \
     rm -rf /var/lib/apt/lists/* && \
     echo 'PermitUserEnvironment yes' >> /etc/ssh/sshd_config
+
+# install nodejs
+env NODE_VERSION="12.16.1"
+env NODE_TAR=/opt/node/nodejs-${NODE_VERSION}.tar.xz
+RUN mkdir -p /opt/node && \
+		curl https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz > ${NODE_TAR} && \
+		tar -xf ${NODE_TAR} -C /opt/node --strip 1 && \
+		rm -rf ${NODE_TAR}
 
 # install kafka binary dependencies, kaf tool and librdkafka dev
 ENV KAFKA_MIRROR="https://s3-us-west-2.amazonaws.com/kafka-packages"

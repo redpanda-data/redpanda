@@ -75,6 +75,7 @@ static constexpr int8_t create_user_cmd_type = 5;
 static constexpr int8_t delete_user_cmd_type = 6;
 static constexpr int8_t update_user_cmd_type = 7;
 static constexpr int8_t create_acls_cmd_type = 8;
+static constexpr int8_t delete_acls_cmd_type = 9;
 
 using create_topic_cmd = controller_command<
   model::topic_namespace,
@@ -128,6 +129,12 @@ using create_acls_cmd = controller_command<
   create_acls_cmd_data,
   int8_t, // unused
   create_acls_cmd_type,
+  acl_batch_type()>;
+
+using delete_acls_cmd = controller_command<
+  delete_acls_cmd_data,
+  int8_t, // unused
+  delete_acls_cmd_type,
   acl_batch_type()>;
 
 // typelist utils

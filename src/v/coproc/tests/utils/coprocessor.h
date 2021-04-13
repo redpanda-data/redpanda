@@ -12,6 +12,7 @@
 #include "coproc/types.h"
 #include "model/fundamental.h"
 #include "model/record_batch_reader.h"
+#include "ssx/sformat.h"
 #include "vassert.h"
 
 #include <seastar/core/circular_buffer.hh>
@@ -112,8 +113,8 @@ struct identity_coprocessor : public coprocessor {
 struct unique_identity_coprocessor : public coprocessor {
     unique_identity_coprocessor(coproc::script_id sid, input_set input)
       : coprocessor(sid, std::move(input))
-      , _identity_topic(model::topic(fmt::format("identity_topic_{}", sid()))) {
-    }
+      , _identity_topic(
+          model::topic(ssx::sformat("identity_topic_{}", sid()))) {}
 
     ss::future<coprocessor::result> apply(
       const model::topic&,

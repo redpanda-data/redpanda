@@ -28,6 +28,7 @@ const (
 	ModeProd = "prod"
 
 	DefaultKafkaPort = 9092
+	DefaultAdminPort = 9644
 )
 
 func InitViper(fs afero.Fs) *viper.Viper {
@@ -85,19 +86,22 @@ func defaultMap() map[string]interface{} {
 		"port":    9092,
 	}
 	var defaultListeners []interface{} = []interface{}{defaultListener}
+	var defaultAdminListener interface{} = map[string]interface{}{
+		"address": "0.0.0.0",
+		"port":    9644,
+	}
+	var defaultAdminListeners []interface{} = []interface{}{defaultAdminListener}
 	return map[string]interface{}{
 		"config_file": "/etc/redpanda/redpanda.yaml",
+		"pandaproxy":  Pandaproxy{},
 		"redpanda": map[string]interface{}{
 			"data_directory": "/var/lib/redpanda/data",
 			"rpc_server": map[string]interface{}{
 				"address": "0.0.0.0",
 				"port":    33145,
 			},
-			"kafka_api": defaultListeners,
-			"admin": map[string]interface{}{
-				"address": "0.0.0.0",
-				"port":    9644,
-			},
+			"kafka_api":      defaultListeners,
+			"admin":          defaultAdminListeners,
 			"node_id":        0,
 			"seed_servers":   []interface{}{},
 			"developer_mode": true,
@@ -368,9 +372,12 @@ func decoderConfig() mapstructure.DecoderConfig {
 			// viper.DecoderConfigOption is used, viper's hooks are overriden.
 			mapstructure.StringToTimeDurationHookFunc(),
 			mapstructure.StringToSliceHookFunc(","),
-			// This hook translates the pre-2.1.4 configuration format to the
+			// This hook translates the pre-21.1.4 configuration format to the
 			// latest one (see schema.go)
 			v21_1_4MapToNamedSocketAddressSlice,
+			// This hook translates the pre-21.4.1 TLS configuration format to the
+			// latest one (see schema.go)
+			v21_4_1TlsMapToNamedTlsSlice,
 		),
 	}
 }

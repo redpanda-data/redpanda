@@ -32,7 +32,6 @@ spec:
             - --smp 1
             - --reserve-memory 1M
             - --advertise-rpc-addr=$(POD_NAME).external-connectivity.$(POD_NAMESPACE).svc.cluster.local.:33145
-            - --
             - --default-log-level=debug
 status:
   readyReplicas: 3
@@ -44,14 +43,14 @@ metadata:
 spec:
   clusterIP: None
   ports:
-    - name: kafka
-      port: 9092
-      protocol: TCP
-      targetPort: 9092
     - name: admin
       port: 9644
       protocol: TCP
       targetPort: 9644
+    - name: kafka
+      port: 9092
+      protocol: TCP
+      targetPort: 9092
   type: ClusterIP
 ---
 apiVersion: v1

@@ -21,6 +21,8 @@
 #include <absl/container/flat_hash_set.h>
 #include <fmt/core.h>
 
+#include <variant>
+
 namespace security {
 
 namespace details {
@@ -30,8 +32,13 @@ struct dependent_false : std::false_type {};
 
 // cluster is a resource type and the acl data model requires that resources
 // have names, so this is a fixed name for that resource.
+//
+// tools that manage kafka APIs assume a fixed name for the cluster resource:
+// `kafka-cluster` and put this string in requests that operate on cluster ACLs.
+// This means that the name is effectively part of the protocol and we can adopt
+// the same name.
 using acl_cluster_name = named_type<ss::sstring, struct acl_cluster_name_type>;
-inline const acl_cluster_name default_cluster_name("redpanda-cluster");
+inline const acl_cluster_name default_cluster_name("kafka-cluster");
 
 /*
  * An ACL resource type.
@@ -443,6 +450,11 @@ public:
     }
 
     bool matches(const resource_pattern& pattern) const;
+    std::vector<resource_pattern> to_resource_patterns() const;
+
+    std::optional<resource_type> resource() const { return _resource; }
+    const std::optional<ss::sstring>& name() const { return _name; }
+    std::optional<pattern_filter_type> pattern() const { return _pattern; }
 
 private:
     std::optional<resource_type> _resource;
@@ -484,6 +496,36 @@ resource_pattern_filter::matches(const resource_pattern& pattern) const {
     __builtin_unreachable();
 }
 
+inline std::vector<resource_pattern>
+resource_pattern_filter::to_resource_patterns() const {
+    if (!_resource || !_name) {
+        return {};
+    }
+
+    if (
+      _pattern
+      && std::holds_alternative<resource_pattern_filter::pattern_match>(
+        *_pattern)) {
+        return {};
+    }
+
+    if (_pattern) {
+        if (std::holds_alternative<resource_pattern_filter::pattern_match>(
+              *_pattern)) {
+            return {};
+        }
+        return {
+          resource_pattern(
+            *_resource, *_name, std::get<pattern_type>(*_pattern)),
+        };
+    } else {
+        return {
+          resource_pattern(*_resource, *_name, pattern_type::literal),
+          resource_pattern(*_resource, *_name, pattern_type::prefixed),
+        };
+    }
+}
+
 /*
  * A filter for matching ACL entries.
  */
@@ -517,6 +559,11 @@ public:
     }
 
     bool matches(const acl_entry& other) const;
+
+    const std::optional<acl_principal>& principal() const { return _principal; }
+    std::optional<acl_host> host() const { return _host; }
+    std::optional<acl_operation> operation() const { return _operation; }
+    std::optional<acl_permission> permission() const { return _permission; }
 
 private:
     std::optional<acl_principal> _principal;

@@ -30,7 +30,7 @@ struct gated_mutex {
 
     template<typename Func>
     auto with(Func&& func) noexcept {
-        return ss::with_gate(
+        return ss::try_with_gate(
           _gate, [this, func{std::forward<Func>(func)}]() mutable {
               return _mutex.with(
                 [this, func{std::forward<Func>(func)}]() mutable {

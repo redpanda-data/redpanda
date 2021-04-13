@@ -124,6 +124,10 @@ spec:
                     type: object
                   developerMode:
                     type: boolean
+                  groupTopicPartitions:
+                    description: Number of partitions in the internal group membership
+                      topic
+                    type: integer
                   kafkaApi:
                     description: SocketAddress provide the way to configure the port
                     properties:
@@ -225,6 +229,9 @@ spec:
                         type: object
                     type: object
                 type: object
+              enableSasl:
+                description: SASL enablement flag
+                type: boolean
               externalConnectivity:
                 description: ExternalConnectivity enables user to expose Redpanda
                   nodes outside of a Kubernetes cluster. For more information please
@@ -236,8 +243,8 @@ spec:
                   subdomain:
                     description: Subdomain can be used to change the behavior of an
                       advertised KafkaAPI. Each broker advertises Kafka API as follows
-                      HOSTNAME_OF_A_POD.SUBDOMAIN:EXTERNAL_KAFKA_API_PORT. If Subdomain
-                      is empty then each broker advertises Kafka API as PUBLIC_NODE_IP:EXTERNAL_KAFKA_API_PORT.
+                      BROKER_ID.SUBDOMAIN:EXTERNAL_KAFKA_API_PORT. If Subdomain is
+                      empty then each broker advertises Kafka API as PUBLIC_NODE_IP:EXTERNAL_KAFKA_API_PORT.
                       If TLS is enabled then this subdomain will be requested as a
                       subject alternative name.
                     type: string
@@ -298,6 +305,17 @@ spec:
                     description: Storage class name - https://kubernetes.io/docs/concepts/storage/storage-classes/
                     type: string
                 type: object
+              superUsers:
+                description: List of superusers
+                items:
+                  description: Superuser has full access to the Redpanda cluster
+                  properties:
+                    username:
+                      type: string
+                  required:
+                  - username
+                  type: object
+                type: array
               tolerations:
                 description: If specified, Redpanda Pod tolerations
                 items:

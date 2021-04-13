@@ -24,6 +24,8 @@ from prometheus_client.parser import text_string_to_metric_families
 
 from rptest.clients.kafka_cat import KafkaCat
 from rptest.services.storage import ClusterStorage, NodeStorage
+from rptest.services.admin import Admin
+from rptest.clients.python_librdkafka import PythonLibrdkafka
 
 Partition = collections.namedtuple('Partition',
                                    ['index', 'leader', 'replicas'])
@@ -38,6 +40,8 @@ class RedpandaService(Service):
                                               "wasm_engine.log")
     CLUSTER_NAME = "my_cluster"
     READY_TIMEOUT_SEC = 20
+
+    SUPERUSER_CREDENTIALS = ("admin", "admin", "SCRAM-SHA-256")
 
     logs = {
         "redpanda_start_stdout_stderr": {
@@ -68,11 +72,18 @@ class RedpandaService(Service):
         self._log_level = log_level
         self._topics = topics or ()
         self.v_build_dir = self._context.globals.get("v_build_dir", None)
+        self._admin = Admin(self)
+
+    def sasl_enabled(self):
+        return self._extra_rp_conf and self._extra_rp_conf.get(
+            "enable_sasl", False)
 
     def start(self):
         super(RedpandaService, self).start()
-        self.logger.info("Waiting for all brokers to join cluster")
 
+        self._admin.create_user(*self.SUPERUSER_CREDENTIALS)
+
+        self.logger.info("Waiting for all brokers to join cluster")
         expected = set(self.nodes)
         wait_until(lambda: {n
                             for n in self.nodes
@@ -109,6 +120,10 @@ class RedpandaService(Service):
                f" --default-log-level {self._log_level}"
                f" --logger-log-level=exception=debug "
                f" --kernel-page-cache=true "
+               f" --overprovisioned "
+               f" --smp 3 "
+               f" --memory 6G "
+               f" --reserve-memory 0M "
                f" >> {RedpandaService.STDOUT_STDERR_CAPTURE} 2>&1 &")
 
         self.logger.info(
@@ -206,7 +221,8 @@ class RedpandaService(Service):
                            nodes=node_info,
                            node_id=self.idx(node),
                            enable_rp=self._enable_rp,
-                           enable_pp=self._enable_pp)
+                           enable_pp=self._enable_pp,
+                           superuser=self.SUPERUSER_CREDENTIALS)
 
         if self._extra_rp_conf:
             doc = yaml.full_load(conf)
@@ -240,9 +256,8 @@ class RedpandaService(Service):
         idx = self.idx(node)
         self.logger.debug(
             f"Checking if broker {idx} ({node.name} is registered")
-        kc = KafkaCat(self)
-        brokers = kc.metadata()["brokers"]
-        brokers = {b["id"]: b for b in brokers}
+        client = PythonLibrdkafka(self)
+        brokers = client.brokers()
         broker = brokers.get(idx, None)
         self.logger.debug(f"Found broker info: {broker}")
         return broker is not None
@@ -269,6 +284,8 @@ class RedpandaService(Service):
 
         store = NodeStorage(RedpandaService.DATA_DIR)
         for ns in listdir(store.data_dir, True):
+            if ns == '.coprocessor_offset_checkpoints':
+                continue
             ns = store.add_namespace(ns, os.path.join(store.data_dir, ns))
             for topic in listdir(ns.path):
                 topic = ns.add_topic(topic, os.path.join(ns.path, topic))
@@ -341,12 +358,3 @@ class RedpandaService(Service):
             return Partition(index, leader, replicas)
 
         return [make_partition(p) for p in topic["partitions"]]
-
-
-# a hack to prevent the redpanda service from trying to use a client that
-# doesn't support sasl when the service has sasl enabled. this is a temp fix
-# until we have properly integrated authentication into ducktape clients.
-class NoSaslRedpandaService(RedpandaService):
-    def registered(self, node):
-        time.sleep(3)
-        return True

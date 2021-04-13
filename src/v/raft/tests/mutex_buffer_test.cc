@@ -43,7 +43,8 @@ FIXTURE_TEST(test_requests_buffering, fixture) {
     {
         auto u = lock.get_units().get0();
         for (auto i = 0; i < 5; ++i) {
-            enqueued.push_back(buf.enqueue(request{fmt::format("test-{}", i)}));
+            enqueued.push_back(
+              buf.enqueue(request{ssx::sformat("test-{}", i)}));
         }
         BOOST_REQUIRE(enqueued[0].available() == false);
     }
@@ -51,7 +52,7 @@ FIXTURE_TEST(test_requests_buffering, fixture) {
     auto i = 0;
     for (auto& f : enqueued) {
         BOOST_REQUIRE_EQUAL(
-          f.get0().content, fmt::format("test-{}-response", i));
+          f.get0().content, ssx::sformat("test-{}-response", i));
         i++;
     }
 
@@ -84,7 +85,8 @@ FIXTURE_TEST(should_propagate_exception, fixture) {
         auto u = lock.get_units().get0();
 
         for (auto i = 0; i < 5; ++i) {
-            enqueued.push_back(buf.enqueue(request{fmt::format("test-{}", i)}));
+            enqueued.push_back(
+              buf.enqueue(request{ssx::sformat("test-{}", i)}));
         }
     }
     auto i = 0;
@@ -95,7 +97,7 @@ FIXTURE_TEST(should_propagate_exception, fixture) {
             BOOST_REQUIRE_THROW(f.get(), std::runtime_error);
         } else {
             BOOST_REQUIRE_EQUAL(
-              f.get().content, fmt::format("test-{}-response", i - 1));
+              f.get().content, ssx::sformat("test-{}-response", i - 1));
         }
     }
 

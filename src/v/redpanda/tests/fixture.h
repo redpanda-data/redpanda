@@ -53,7 +53,7 @@ public:
       ss::sstring base_dir,
       std::optional<scheduling_groups> sch_groups,
       bool remove_on_shutdown)
-      : app(fmt::format("redpanda-{}", node_id()))
+      : app(ssx::sformat("redpanda-{}", node_id()))
       , data_dir(std::move(base_dir))
       , remove_on_shutdown(remove_on_shutdown) {
         configure(
@@ -97,7 +97,7 @@ public:
         8082,
         43189,
         {},
-        fmt::format("test.dir_{}", time(0)),
+        ssx::sformat("test.dir_{}", time(0)),
         std::nullopt,
         true) {}
 
@@ -150,8 +150,9 @@ public:
 
     YAML::Node proxy_config(uint16_t proxy_port = 8082) {
         pandaproxy::configuration cfg;
-        cfg.pandaproxy_api.set_value(
-          unresolved_address("127.0.0.1", proxy_port));
+        cfg.get("pandaproxy_api")
+          .set_value(std::vector<model::broker_endpoint>{model::broker_endpoint(
+            unresolved_address("127.0.0.1", proxy_port))});
         return to_yaml(cfg);
     }
 
@@ -250,7 +251,7 @@ public:
     }
 
     model::ntp make_data(model::revision_id rev) {
-        auto topic_name = fmt::format("my_topic_{}", 0);
+        auto topic_name = ssx::sformat("my_topic_{}", 0);
         model::ntp ntp(
           model::kafka_namespace,
           model::topic(topic_name),

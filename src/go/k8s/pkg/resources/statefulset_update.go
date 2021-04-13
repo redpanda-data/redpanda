@@ -179,8 +179,11 @@ func (r *StatefulSetResource) queryRedpandaForTopicMembers(
 	conf.ClientID = "operator"
 	conf.Admin.Timeout = time.Second
 
-	tlsConfig := tls.Config{MinVersion: tls.VersionTLS12} // TLS12 is min version allowed by gosec.
-	if r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.Enabled {
+	// TODO right now we support TLS only on one listener so if external
+	// connectivity is enabled, TLS is enabled only on external listener. This
+	// will be fixed by https://github.com/vectorizedio/redpanda/issues/1084
+	if !r.pandaCluster.Spec.ExternalConnectivity.Enabled && r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.Enabled {
+		tlsConfig := tls.Config{MinVersion: tls.VersionTLS12} // TLS12 is min version allowed by gosec.
 		// For simplicity, we skip broker verification until per-listener
 		// TLS is available in Redpanda. This client calls the internal listener.
 		tlsConfig.InsecureSkipVerify = true

@@ -21,6 +21,7 @@
 #include "storage/snapshot.h"
 
 #include <seastar/core/sharded.hh>
+#include <seastar/core/smp.hh>
 #include <seastar/net/inet_address.hh>
 #include <seastar/net/socket_defs.hh>
 
@@ -46,6 +47,11 @@ public:
      * Begins the offset tracking fiber
      */
     ss::future<> start();
+
+    /**
+     * Stops and removes running scripts but keeps their state (offsets)
+     */
+    ss::future<> reset();
 
     /**
      * Gracefully stops and deregisters all coproc scripts
@@ -106,12 +112,19 @@ private:
         model::timeout_clock::duration duration;
         storage::snapshot_manager snap;
 
+        static ss::sstring snapshot_filename() {
+            return fmt::format(
+              "{}-{}",
+              storage::snapshot_manager::default_snapshot_filename,
+              ss::this_shard_id());
+        }
+
         offset_flush_fiber_state()
           : duration(
             config::shard_local_cfg().coproc_offset_flush_interval_ms())
           , snap(
               offsets_snapshot_path(),
-              storage::snapshot_manager::default_snapshot_filename,
+              snapshot_filename(),
               ss::default_priority_class()) {}
     };
 

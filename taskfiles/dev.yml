@@ -6,14 +6,48 @@ tasks:
     cmds:
     - install-dependencies.sh
 
+  install-node:
+    desc: Install nodejs
+    vars:
+      JS_ROOT: "{{.SRC_DIR}}/src/js"
+      NODE_VERSION: '12.16.1'
+      NODE_ROOT: "{{.BUILD_ROOT}}/node"
+      NODE_PKG: "node-v{{.NODE_VERSION}}-linux-x64"
+      NODE_URL: "https://nodejs.org/dist/v{{.NODE_VERSION}}/{{.NODE_PKG}}.tar.xz"
+    cmds:
+    - mkdir -p "{{.NODE_ROOT}}"
+    - curl "{{.NODE_URL}}" > "{{.NODE_ROOT}}/{{.NODE_PKG}}.tar.xz"
+    - tar -xf "{{.NODE_ROOT}}/{{.NODE_PKG}}.tar.xz" -C "{{.NODE_ROOT}}" --strip 1
+    - rm -rf "{{.NODE_ROOT}}/{{.NODE_PKG}}.tar.xz"
+    status:
+    - test -f "{{.NODE_ROOT}}/bin/node"
+    - test -f "{{.NODE_ROOT}}/bin/npm"
+
+
   install-docker-compose:
     desc: install docker-compose
     cmds:
     - mkdir -p '{{.BUILD_ROOT}}/bin/'
-    - curl -L "https://github.com/docker/compose/releases/download/1.28.5/docker-compose-$(uname -s)-$(uname -m)" -o '{{.BUILD_ROOT}}/bin/docker-compose'
+    - curl -sSLf --retry 3 --retry-connrefused --retry-delay 2 "https://github.com/docker/compose/releases/download/1.28.5/docker-compose-$(uname -s)-$(uname -m)" -o '{{.BUILD_ROOT}}/bin/docker-compose'
     - chmod +x '{{.BUILD_ROOT}}/bin/docker-compose'
     status:
     - test -f '{{.BUILD_ROOT}}/bin/docker-compose'
+
+  install-jdk-and-maven:
+    desc: install openjdk and maven
+    vars:
+      JDK_URL: https://github.com/AdoptOpenJDK/openjdk16-binaries/releases/download/jdk-16%2B36/OpenJDK16-jdk_x64_linux_hotspot_16_36.tar.gz
+      MAVEN_URL: https://downloads.apache.org/maven/maven-3/3.6.3/binaries/apache-maven-3.6.3-bin.tar.gz
+      JAVA_DIR: '{{.BUILD_ROOT}}/java'
+    cmds:
+    - mkdir -p '{{.JAVA_DIR}}'
+    - curl -sSLf --retry 3 --retry-connrefused --retry-delay 2 '{{.JDK_URL}}' | tar --strip-components=1 -C '{{.JAVA_DIR}}' -xz
+    - curl -sSLf --retry 3 --retry-connrefused --retry-delay 2 '{{.MAVEN_URL}}' | tar --strip-components=1 -C '{{.JAVA_DIR}}' -xz
+      # delete this (empty) folder; leaving it generates an error
+    - rm -r '{{.JAVA_DIR}}/lib/ext'
+    status:
+    - test -f '{{.JAVA_DIR}}/bin/java'
+    - test -f '{{.JAVA_DIR}}/bin/mvn'
 
   start-podman-socket-service:
     desc: start podman socket service (requires sudo)
@@ -24,3 +58,93 @@ tasks:
       fi
       sudo systemctl start podman.socket
       sudo curl -H "Content-Type: application/json" --unix-socket /var/run/docker.sock http://localhost/_ping | grep OK
+
+  generate-certs:
+    desc: use openssl to generate dev certs
+    cmds:
+    - |
+      TMPDIR="$HOME/redpanda-certs"
+      rm -rf $TMPDIR || true
+      mkdir -p $TMPDIR/certs
+      echo "Generating Certs in $TMPDIR"
+      cd $TMPDIR
+      cat > ca.cnf <<EOF
+      # OpenSSL CA configuration file
+      [ ca ]
+      default_ca = CA_default
+      [ CA_default ]
+      default_days = 365
+      database = index.txt
+      serial = serial.txt
+      default_md = sha256
+      copy_extensions = copy
+      unique_subject = no
+      # Used to create the CA certificate.
+      [ req ]
+      prompt=no
+      distinguished_name = distinguished_name
+      x509_extensions = extensions
+      [ distinguished_name ]
+      organizationName = Vectorized
+      commonName = Vectorized CA
+      [ extensions ]
+      keyUsage = critical,digitalSignature,nonRepudiation,keyEncipherment,keyCertSign
+      basicConstraints = critical,CA:true,pathlen:1
+      # Common policy for nodes and users.
+      [ signing_policy ]
+      organizationName = supplied
+      commonName = optional
+      # Used to sign node certificates.
+      [ signing_node_req ]
+      keyUsage = critical,digitalSignature,keyEncipherment
+      extendedKeyUsage = serverAuth,clientAuth
+      # Used to sign client certificates.
+      [ signing_client_req ]
+      keyUsage = critical,digitalSignature,keyEncipherment
+      extendedKeyUsage = clientAuth
+      EOF
+      openssl genrsa -out $TMPDIR/ca.key 2048
+      chmod 400 $TMPDIR/ca.key
+      openssl req -new -x509 -config ca.cnf -key $TMPDIR/ca.key -out certs/ca.key -days 365 -batch
+      openssl req \
+            -new \
+            -x509 \
+            -config ca.cnf \
+            -key $TMPDIR/ca.key \
+            -out certs/ca.crt \
+            -days 365 \
+            -batch
+      rm -f index.txt serial.txt
+      touch index.txt
+      echo '01' > serial.txt
+      cat > node.cnf <<EOF
+      # OpenSSL node configuration file
+      [ req ]
+      prompt=no
+      distinguished_name = distinguished_name
+      req_extensions = extensions
+      [ distinguished_name ]
+      organizationName = Vectorized
+      [ extensions ]
+      subjectAltName = critical,DNS:localhost,IP:127.0.0.1,IP:0.0.0.0
+      EOF
+      #DNS:<node-domain>,
+      openssl genrsa -out certs/node.key 2048
+      chmod 400 certs/node.key
+      openssl req \
+            -new \
+            -config node.cnf \
+            -key certs/node.key \
+            -out node.csr \
+            -batch
+      openssl ca \
+            -config ca.cnf \
+            -keyfile $TMPDIR/ca.key \
+            -cert certs/ca.crt \
+            -policy signing_policy \
+            -extensions signing_node_req \
+            -out certs/node.crt \
+            -outdir certs/ \
+            -in node.csr \
+            -batch
+      openssl x509 -in certs/node.crt -text | grep "X509v3 Subject Alternative Name" -A 1

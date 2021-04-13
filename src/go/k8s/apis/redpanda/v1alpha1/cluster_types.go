@@ -50,6 +50,15 @@ type ClusterSpec struct {
 	Storage StorageSpec `json:"storage,omitempty"`
 	// Cloud storage configuration for cluster
 	CloudStorage CloudStorageConfig `json:"cloudStorage,omitempty"`
+	// List of superusers
+	Superusers []Superuser `json:"superUsers,omitempty"`
+	// SASL enablement flag
+	EnableSASL bool `json:"enableSasl,omitempty"`
+}
+
+// Superuser has full access to the Redpanda cluster
+type Superuser struct {
+	Username string `json:"username"`
 }
 
 // CloudStorageConfig configures the Data Archiving feature in Redpanda
@@ -106,7 +115,7 @@ type ExternalConnectivityConfig struct {
 	Enabled bool `json:"enabled,omitempty"`
 	// Subdomain can be used to change the behavior of an advertised
 	// KafkaAPI. Each broker advertises Kafka API as follows
-	// HOSTNAME_OF_A_POD.SUBDOMAIN:EXTERNAL_KAFKA_API_PORT.
+	// BROKER_ID.SUBDOMAIN:EXTERNAL_KAFKA_API_PORT.
 	// If Subdomain is empty then each broker advertises Kafka
 	// API as PUBLIC_NODE_IP:EXTERNAL_KAFKA_API_PORT.
 	// If TLS is enabled then this subdomain will be requested
@@ -165,6 +174,8 @@ type RedpandaConfig struct {
 	AdminAPI      SocketAddress `json:"admin,omitempty"`
 	DeveloperMode bool          `json:"developerMode,omitempty"`
 	TLS           TLSConfig     `json:"tls,omitempty"`
+	// Number of partitions in the internal group membership topic
+	GroupTopicPartitions int `json:"groupTopicPartitions,omitempty"`
 }
 
 // TLSConfig configures TLS for Redpanda APIs

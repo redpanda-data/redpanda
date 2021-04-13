@@ -358,9 +358,9 @@ struct adl<security::acl_principal> {
     }
 
     security::acl_principal from(iobuf_parser& in) {
-        return security::acl_principal(
-          adl<security::principal_type>{}.from(in),
-          adl<ss::sstring>{}.from(in));
+        auto pt = adl<security::principal_type>{}.from(in);
+        auto name = adl<ss::sstring>{}.from(in);
+        return security::acl_principal(pt, std::move(name));
     }
 };
 
@@ -409,11 +409,11 @@ struct adl<security::acl_entry> {
     }
 
     security::acl_entry from(iobuf_parser& in) {
-        return security::acl_entry(
-          adl<security::acl_principal>{}.from(in),
-          adl<security::acl_host>{}.from(in),
-          adl<security::acl_operation>{}.from(in),
-          adl<security::acl_permission>{}.from(in));
+        auto prin = adl<security::acl_principal>{}.from(in);
+        auto host = adl<security::acl_host>{}.from(in);
+        auto op = adl<security::acl_operation>{}.from(in);
+        auto perm = adl<security::acl_permission>{}.from(in);
+        return security::acl_entry(std::move(prin), host, op, perm);
     }
 };
 
@@ -424,10 +424,10 @@ struct adl<security::resource_pattern> {
     }
 
     security::resource_pattern from(iobuf_parser& in) {
-        return security::resource_pattern(
-          adl<security::resource_type>{}.from(in),
-          adl<ss::sstring>{}.from(in),
-          adl<security::pattern_type>{}.from(in));
+        auto r = adl<security::resource_type>{}.from(in);
+        auto n = adl<ss::sstring>{}.from(in);
+        auto p = adl<security::pattern_type>{}.from(in);
+        return security::resource_pattern(r, std::move(n), p);
     }
 };
 
@@ -438,9 +438,107 @@ struct adl<security::acl_binding> {
     }
 
     security::acl_binding from(iobuf_parser& in) {
-        return security::acl_binding(
-          adl<security::resource_pattern>{}.from(in),
-          adl<security::acl_entry>{}.from(in));
+        auto r = adl<security::resource_pattern>{}.from(in);
+        auto e = adl<security::acl_entry>{}.from(in);
+        return security::acl_binding(std::move(r), std::move(e));
+    }
+};
+
+/*
+ * A pattern_type_filter contains a normal pattern type in addition to a match
+ * pattern type. However, match type isn't part of the enum for pattern type and
+ * only makes sense in the context of the filter. To accomodate this we use a
+ * variant type on the filter interface with tag dispatch, and as a result, need
+ * special handling in serialization for this type.
+ */
+template<>
+struct adl<security::resource_pattern_filter> {
+    enum class pattern_type : int8_t {
+        literal = 0,
+        prefixed = 1,
+        match = 2,
+    };
+
+    static pattern_type to_pattern(security::pattern_type from) {
+        switch (from) {
+        case security::pattern_type::literal:
+            return pattern_type::literal;
+        case security::pattern_type::prefixed:
+            return pattern_type::prefixed;
+        }
+        __builtin_unreachable();
+    }
+
+    void to(iobuf& out, const security::resource_pattern_filter& b) {
+        std::optional<pattern_type> pattern;
+        if (b.pattern()) {
+            if (std::holds_alternative<
+                  security::resource_pattern_filter::pattern_match>(
+                  *b.pattern())) {
+                pattern = pattern_type::match;
+            } else {
+                auto source_pattern = std::get<security::pattern_type>(
+                  *b.pattern());
+                pattern = to_pattern(source_pattern);
+            }
+        }
+        serialize(out, b.resource(), b.name(), pattern);
+    }
+
+    security::resource_pattern_filter from(iobuf_parser& in) {
+        auto resource = adl<std::optional<security::resource_type>>{}.from(in);
+        auto name = adl<std::optional<ss::sstring>>{}.from(in);
+        auto pattern = adl<std::optional<pattern_type>>{}.from(in);
+
+        if (!pattern) {
+            return security::resource_pattern_filter(
+              resource, std::move(name), std::nullopt);
+        }
+
+        switch (*pattern) {
+        case pattern_type::literal:
+            return security::resource_pattern_filter(
+              resource, std::move(name), security::pattern_type::literal);
+
+        case pattern_type::prefixed:
+            return security::resource_pattern_filter(
+              resource, std::move(name), security::pattern_type::prefixed);
+
+        case pattern_type::match:
+            return security::resource_pattern_filter(
+              resource,
+              std::move(name),
+              security::resource_pattern_filter::pattern_match{});
+        }
+        __builtin_unreachable();
+    }
+};
+
+template<>
+struct adl<security::acl_entry_filter> {
+    void to(iobuf& out, const security::acl_entry_filter& f) {
+        serialize(out, f.principal(), f.host(), f.operation(), f.permission());
+    }
+
+    security::acl_entry_filter from(iobuf_parser& in) {
+        auto prin = adl<std::optional<security::acl_principal>>{}.from(in);
+        auto host = adl<std::optional<security::acl_host>>{}.from(in);
+        auto op = adl<std::optional<security::acl_operation>>{}.from(in);
+        auto perm = adl<std::optional<security::acl_permission>>{}.from(in);
+        return security::acl_entry_filter(std::move(prin), host, op, perm);
+    }
+};
+
+template<>
+struct adl<security::acl_binding_filter> {
+    void to(iobuf& out, const security::acl_binding_filter& b) {
+        serialize(out, b.pattern(), b.entry());
+    }
+
+    security::acl_binding_filter from(iobuf_parser& in) {
+        auto r = adl<security::resource_pattern_filter>{}.from(in);
+        auto e = adl<security::acl_entry_filter>{}.from(in);
+        return security::acl_binding_filter(std::move(r), std::move(e));
     }
 };
 
@@ -460,6 +558,41 @@ adl<cluster::create_acls_cmd_data>::from(iobuf_parser& in) {
       cluster::create_acls_cmd_data::current_version);
     auto bindings = adl<std::vector<security::acl_binding>>().from(in);
     return cluster::create_acls_cmd_data{
+      .bindings = std::move(bindings),
+    };
+}
+
+void adl<cluster::delete_acls_cmd_data>::to(
+  iobuf& out, cluster::delete_acls_cmd_data&& data) {
+    adl<int8_t>{}.to(out, cluster::delete_acls_cmd_data::current_version);
+    serialize(out, std::move(data.filters));
+}
+
+cluster::delete_acls_cmd_data
+adl<cluster::delete_acls_cmd_data>::from(iobuf_parser& in) {
+    auto version = adl<int8_t>{}.from(in);
+    vassert(
+      version == cluster::delete_acls_cmd_data::current_version,
+      "Unexpected delete acls cmd version {} (expected {})",
+      version,
+      cluster::delete_acls_cmd_data::current_version);
+    auto filters = adl<std::vector<security::acl_binding_filter>>().from(in);
+    return cluster::delete_acls_cmd_data{
+      .filters = std::move(filters),
+    };
+}
+
+void adl<cluster::delete_acls_result>::to(
+  iobuf& out, cluster::delete_acls_result&& result) {
+    serialize(out, result.error, std::move(result.bindings));
+}
+
+cluster::delete_acls_result
+adl<cluster::delete_acls_result>::from(iobuf_parser& in) {
+    auto error = adl<cluster::errc>{}.from(in);
+    auto bindings = adl<std::vector<security::acl_binding>>().from(in);
+    return cluster::delete_acls_result{
+      .error = error,
       .bindings = std::move(bindings),
     };
 }

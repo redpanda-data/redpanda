@@ -409,9 +409,26 @@ struct op_context {
     // create placeholder for response topics and partitions
     void create_response_placeholders();
 
+    bool is_empty_request() const {
+        /**
+         * If request doesn't have a session or it is a full fetch request, we
+         * check only request content.
+         */
+        if (session_ctx.is_sessionless() || session_ctx.is_full_fetch()) {
+            return request.empty();
+        }
+
+        /**
+         * If session is present both session and request must be empty to claim
+         * fetch operation as being empty
+         */
+        return session_ctx.session()->empty() && request.empty();
+    }
+
     bool should_stop_fetch() const {
-        return !request.debounce_delay() || over_min_bytes() || request.empty()
-               || response_error || deadline <= model::timeout_clock::now();
+        return !request.debounce_delay() || over_min_bytes()
+               || is_empty_request() || response_error
+               || deadline <= model::timeout_clock::now();
     }
 
     bool over_min_bytes() const {
