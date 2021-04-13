@@ -1343,3 +1343,64 @@ FIXTURE_TEST(many_segment_locking, storage_test_fixture) {
         BOOST_REQUIRE(locks.size() == segments.size());
     }
 }
+FIXTURE_TEST(reader_reusability_test_parser_header, storage_test_fixture) {
+    auto cfg = default_log_config(test_dir);
+    cfg.stype = storage::log_config::storage_type::disk;
+    cfg.cache = storage::with_cache::no;
+    cfg.max_segment_size = 10_MiB;
+    storage::ntp_config::default_overrides overrides;
+    ss::abort_source as;
+    storage::log_manager mgr = make_log_manager(cfg);
+    info("config: {}", mgr.config());
+    auto deferred = ss::defer([&mgr]() mutable { mgr.stop().get0(); });
+    auto ntp = model::ntp("default", "test", 0);
+    auto log = mgr
+                 .manage(storage::ntp_config(
+                   ntp,
+                   mgr.config().base_dir,
+                   std::make_unique<storage::ntp_config::default_overrides>(
+                     overrides)))
+                 .get0();
+    // first small batch
+    append_exactly(log, 1, 128).get0();
+    // then large batches
+    append_exactly(log, 1, 128_KiB).get0();
+    append_exactly(log, 1, 128_KiB).get0();
+
+    storage::log_reader_config reader_cfg(
+      model::offset(0),
+      model::model_limits<model::offset>::max(),
+      0,
+      4096,
+      ss::default_priority_class(),
+      std::nullopt,
+      std::nullopt,
+      std::nullopt);
+
+    /**
+     * Turn on strict max bytes to leave header in parser
+     */
+    reader_cfg.strict_max_bytes = true;
+
+    model::offset next_to_read;
+    {
+        auto reader = log.make_reader(reader_cfg).get();
+
+        auto rec = model::consume_reader_to_memory(
+                     std::move(reader), model::no_timeout)
+                     .get();
+        next_to_read = rec.back().last_offset() + model::offset(1);
+        BOOST_REQUIRE_EQUAL(rec.size(), 1);
+    }
+    {
+        reader_cfg.start_offset = next_to_read;
+        reader_cfg.max_bytes = 150_KiB;
+        auto reader = log.make_reader(reader_cfg).get();
+
+        auto rec = model::consume_reader_to_memory(
+                     std::move(reader), model::no_timeout)
+                     .get();
+
+        BOOST_REQUIRE_EQUAL(rec.size(), 1);
+    }
+}

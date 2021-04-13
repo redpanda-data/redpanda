@@ -19,5 +19,6 @@ class log_manager;
 class ntp_config;
 class segment;
 class snapshot_manager;
+class readers_cache;
 
 } // namespace storage

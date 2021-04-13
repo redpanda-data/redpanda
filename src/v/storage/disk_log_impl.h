@@ -18,6 +18,7 @@
 #include "storage/log.h"
 #include "storage/log_reader.h"
 #include "storage/probe.h"
+#include "storage/readers_cache.h"
 #include "storage/segment_appender.h"
 #include "storage/segment_reader.h"
 #include "storage/types.h"
@@ -87,6 +88,9 @@ private:
     ss::future<model::record_batch_reader>
       make_unchecked_reader(log_reader_config);
 
+    ss::future<model::record_batch_reader>
+      make_cached_reader(log_reader_config);
+
     model::offset read_start_offset() const;
 
     ss::future<> do_compact(compaction_config);
@@ -144,6 +148,7 @@ private:
     std::optional<eviction_monitor> _eviction_monitor;
     model::offset _max_collectible_offset;
     size_t _max_segment_size;
+    std::unique_ptr<readers_cache> _readers_cache;
 };
 
 } // namespace storage

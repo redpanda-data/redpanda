@@ -13,8 +13,10 @@
 #include "config/configuration.h"
 #include "storage/compacted_index_writer.h"
 #include "storage/fs_utils.h"
+#include "storage/fwd.h"
 #include "storage/logger.h"
 #include "storage/parser_utils.h"
+#include "storage/readers_cache.h"
 #include "storage/segment_appender_utils.h"
 #include "storage/segment_set.h"
 #include "storage/segment_utils.h"
@@ -154,7 +156,7 @@ ss::future<> segment::do_release_appender(
       });
 }
 
-ss::future<> segment::release_appender() {
+ss::future<> segment::release_appender(readers_cache* readers_cache) {
     vassert(_appender, "cannot release a null appender");
     /*
      * If we are able to get the write lock then proceed with the normal
@@ -187,35 +189,42 @@ ss::future<> segment::release_appender() {
               .finally([h = std::move(h)] {});
         });
     } else {
-        return read_lock().then([this](ss::rwlock::holder h) {
+        return read_lock().then([this, readers_cache](ss::rwlock::holder h) {
             return do_flush()
-              .then([this] {
-                  auto a = std::exchange(_appender, std::nullopt);
-                  auto c
-                    = config::shard_local_cfg().release_cache_on_segment_roll()
-                        ? std::exchange(_cache, std::nullopt)
-                        : std::nullopt;
-                  auto i = std::exchange(_compaction_index, std::nullopt);
-                  (void)ss::with_gate(
-                    _gate,
-                    [this,
-                     a = std::move(a),
-                     c = std::move(c),
-                     i = std::move(i)]() mutable {
-                        return write_lock().then(
-                          [this,
-                           a = std::move(a),
-                           c = std::move(c),
-                           i = std::move(i)](ss::rwlock::holder h) mutable {
-                              return do_release_appender(
-                                       std::move(a), std::move(c), std::move(i))
-                                .finally([h = std::move(h)] {});
-                          });
-                    });
+              .then([this, readers_cache] {
+                  release_appender_in_background(readers_cache);
               })
               .finally([h = std::move(h)] {});
         });
     }
+}
+
+void segment::release_appender_in_background(readers_cache* readers_cache) {
+    auto a = std::exchange(_appender, std::nullopt);
+    auto c = config::shard_local_cfg().release_cache_on_segment_roll()
+               ? std::exchange(_cache, std::nullopt)
+               : std::nullopt;
+    auto i = std::exchange(_compaction_index, std::nullopt);
+    (void)ss::with_gate(
+      _gate,
+      [this,
+       readers_cache,
+       a = std::move(a),
+       c = std::move(c),
+       i = std::move(i)]() mutable {
+          return readers_cache
+            ->evict_range(_tracker.base_offset, _tracker.dirty_offset)
+            .then([this, a = std::move(a), c = std::move(c), i = std::move(i)](
+                    readers_cache::range_lock_holder) mutable {
+                return write_lock().then(
+                  [this, a = std::move(a), c = std::move(c), i = std::move(i)](
+                    ss::rwlock::holder h) mutable {
+                      return do_release_appender(
+                               std::move(a), std::move(c), std::move(i))
+                        .finally([h = std::move(h)] {});
+                  });
+            });
+      });
 }
 
 ss::future<> segment::flush() {
