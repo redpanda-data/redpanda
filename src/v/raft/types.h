@@ -81,7 +81,6 @@ struct follower_index_metadata {
     // timestamp of last append_entries_rpc call
     clock_type::time_point last_append_timestamp;
     clock_type::time_point last_hbeat_timestamp;
-    uint64_t failed_appends{0};
     // The pair of sequences used to track append entries requests sent and
     // received by the follower. Every time append entries request is created
     // the `last_sent_seq` is incremented before accessing raft protocol state
@@ -153,6 +152,20 @@ struct follower_index_metadata {
      * `last_sent_seq` value for version control.
      */
     heartbeats_suppressed suppress_heartbeats = heartbeats_suppressed::no;
+};
+/**
+ * class containing follower statistics, this may be helpful for debugging,
+ * metrics and querying for follower status
+ */
+struct follower_metrics {
+    model::node_id id;
+    bool is_learner;
+    model::offset committed_log_index;
+    model::offset dirty_log_index;
+    model::offset match_index;
+    clock_type::time_point last_heartbeat;
+    bool is_live;
+    bool under_replicated;
 };
 
 struct append_entries_request {

@@ -11,6 +11,7 @@
 
 #include "cluster/partition.h"
 #include "config/configuration.h"
+#include "model/metadata.h"
 #include "prometheus/prometheus_sanitize.h"
 
 #include <seastar/core/metrics.hh>
@@ -50,7 +51,41 @@ void partition_probe::setup_metrics(const model::ntp& ntp) {
         sm::make_gauge(
           "committed_offset",
           [this] { return _partition.committed_offset(); },
-          sm::description("Committed offset"),
+          sm::description("Partition commited offset. i.e. safely persisted on "
+                          "majority of replicas"),
+          labels),
+        sm::make_gauge(
+          "end_offset",
+          [this] { return _partition.dirty_offset(); },
+          sm::description(
+            "Last offset stored by current partition on this node"),
+          labels),
+        sm::make_gauge(
+          "high_watermark",
+          [this] { return _partition.high_watermark(); },
+          sm::description(
+            "Partion high watermark i.e. highest consumable offset"),
+          labels),
+        sm::make_gauge(
+          "leader_id",
+          [this] {
+              return _partition._raft->get_leader_id().value_or(
+                model::node_id(-1));
+          },
+          sm::description("Id of current partition leader"),
+          labels),
+        sm::make_gauge(
+          "under_replicated_replicas",
+          [this] {
+              auto metrics = _partition._raft->get_follower_metrics();
+              return std::count_if(
+                metrics.cbegin(),
+                metrics.cend(),
+                [](const raft::follower_metrics& fm) {
+                    return fm.under_replicated;
+                });
+          },
+          sm::description("Number of under replicated replicas"),
           labels),
         sm::make_derive(
           "records_produced",

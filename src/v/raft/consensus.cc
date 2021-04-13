@@ -2365,4 +2365,30 @@ voter_priority consensus::get_node_priority(vnode rni) const {
 model::offset consensus::get_latest_configuration_offset() const {
     return _configuration_manager.get_latest_offset();
 }
+
+std::vector<follower_metrics> consensus::get_follower_metrics() const {
+    // if not leader return empty vector, as metrics wouldn't have any sense
+    if (!is_leader()) {
+        return {};
+    }
+    std::vector<follower_metrics> ret;
+    ret.reserve(_fstats.size());
+    auto dirty_offset = _log.offsets().dirty_offset;
+    for (const auto& f : _fstats) {
+        auto last_hbeat = f.second.last_hbeat_timestamp;
+        ret.push_back(follower_metrics{
+          .id = f.first.id(),
+          .is_learner = f.second.is_learner,
+          .committed_log_index = f.second.last_committed_log_index,
+          .dirty_log_index = f.second.last_dirty_log_index,
+          .match_index = f.second.match_index,
+          .last_heartbeat = last_hbeat,
+          .is_live = last_hbeat + _jit.base_duration() > clock_type::now(),
+          .under_replicated = f.second.is_recovering
+                              && f.second.match_index < dirty_offset});
+    }
+
+    return ret;
+}
+
 } // namespace raft
