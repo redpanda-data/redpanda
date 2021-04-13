@@ -31,7 +31,10 @@ spec:
             - --check=false
             - --reserve-memory 1M
             - --advertise-rpc-addr=$(POD_NAME).external-connectivity.$(POD_NAMESPACE).svc.cluster.local.:33145
-            - --default-log-level=info
+            - --overprovisioned
+            - --smp=1
+            - --kernel-page-cache=true
+            - --default-log-level=debug
 status:
   readyReplicas: 1
 ---
