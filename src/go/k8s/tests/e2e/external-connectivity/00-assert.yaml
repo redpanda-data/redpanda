@@ -29,10 +29,9 @@ spec:
             - redpanda
             - start
             - --check=false
-            - --smp 1
             - --reserve-memory 1M
             - --advertise-rpc-addr=$(POD_NAME).external-connectivity.$(POD_NAMESPACE).svc.cluster.local.:33145
-            - --default-log-level=debug
+            - --default-log-level=info
 status:
   readyReplicas: 3
 ---
