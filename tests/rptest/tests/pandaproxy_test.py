@@ -65,6 +65,11 @@ HTTP_CONSUMER_GET_OFFSETS_HEADERS = {
     "Content-Type": "application/vnd.kafka.v2+json"
 }
 
+HTTP_CONSUMER_SET_OFFSETS_HEADERS = {
+    "Accept": "application/vnd.kafka.v2+json",
+    "Content-Type": "application/vnd.kafka.v2+json"
+}
+
 
 class Consumer:
     def __init__(self, res):
@@ -92,6 +97,13 @@ class Consumer:
                                 url=f"{self.base_uri}/offsets",
                                 data=data,
                                 headers=headers)
+
+    def set_offsets(self,
+                    data=None,
+                    headers=HTTP_CONSUMER_SET_OFFSETS_HEADERS):
+        return requests.post(f"{self.base_uri}/offsets",
+                             data=data,
+                             headers=headers)
 
 
 class PandaProxyTest(RedpandaTest):
@@ -684,6 +696,23 @@ class PandaProxyTest(RedpandaTest):
         assert len(co_res["offsets"]) == 9
         for i in range(len(co_res["offsets"])):
             assert co_res["offsets"][i]["offset"] == -1
+
+        # Set consumer offsets
+        sco_req = dict(partitions=[
+            dict(topic=t, partition=p, offset=1) for t in topics
+            for p in [0, 1, 2]
+        ])
+        self.logger.info(f"Set consumer offsets")
+        co_res_raw = c0.set_offsets(data=json.dumps(sco_req))
+        assert co_res_raw.status_code == requests.codes.no_content
+
+        self.logger.info(f"Get consumer offsets")
+        co_res_raw = c0.get_offsets(data=json.dumps(co_req))
+        assert co_res_raw.status_code == requests.codes.ok
+        co_res = co_res_raw.json()
+        assert len(co_res["offsets"]) == 9
+        for i in range(len(co_res["offsets"])):
+            assert co_res["offsets"][i]["offset"] == 1
 
         # Remove consumer
         self.logger.info("Remove consumer")

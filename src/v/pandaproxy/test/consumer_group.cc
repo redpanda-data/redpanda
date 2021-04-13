@@ -219,7 +219,9 @@ FIXTURE_TEST(pandaproxy_consumer_group, pandaproxy_test_fixture) {
           fmt::format(
             "/consumers/{}/instances/{}/offsets", group_id(), member_id()),
           std::move(body),
-          boost::beast::http::verb::post);
+          boost::beast::http::verb::post,
+          ppj::serialization_format::json_v2,
+          ppj::serialization_format::json_v2);
         BOOST_REQUIRE_EQUAL(
           res.headers.result(), boost::beast::http::status::no_content);
     }
@@ -240,7 +242,9 @@ FIXTURE_TEST(pandaproxy_consumer_group, pandaproxy_test_fixture) {
           client,
           fmt::format(
             "/consumers/{}/instances/{}/offsets", group_id(), member_id()),
-          boost::beast::http::verb::post);
+          boost::beast::http::verb::post,
+          ppj::serialization_format::json_v2,
+          ppj::serialization_format::json_v2);
         BOOST_REQUIRE_EQUAL(
           res.headers.result(), boost::beast::http::status::no_content);
     }

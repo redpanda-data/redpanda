@@ -315,8 +315,13 @@ get_consumer_offsets(server::request_t rq, server::reply_t rp) {
 
 ss::future<server::reply_t>
 post_consumer_offsets(server::request_t rq, server::reply_t rp) {
-    auto group_id = kafka::group_id(rq.req->param["group_name"]);
-    auto member_id = kafka::member_id(rq.req->param["instance"]);
+    parse::content_type_header(*rq.req, {json::serialization_format::json_v2});
+    parse::accept_header(
+      *rq.req,
+      {json::serialization_format::json_v2, json::serialization_format::none});
+
+    auto group_id{parse::request_param<kafka::group_id>(*rq.req, "group_name")};
+    auto member_id{parse::request_param<kafka::member_id>(*rq.req, "instance")};
 
     // If the request is empty, commit all offsets
     auto req_data = rq.req->content.length() == 0
