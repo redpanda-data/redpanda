@@ -9,6 +9,7 @@
 
 #include "config/configuration.h"
 
+#include "config/base_property.h"
 #include "model/metadata.h"
 #include "units.h"
 
@@ -41,6 +42,12 @@ configuration::configuration()
       "256MiB)",
       required::no,
       256_MiB)
+  , readers_cache_eviction_timeout_ms(
+      *this,
+      "readers_cache_eviction_timeout_ms",
+      "Duration after which inactive readers will be evicted from cache",
+      required::no,
+      30s)
   , rpc_server(
       *this,
       "rpc_server",
