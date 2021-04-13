@@ -46,7 +46,9 @@ auto get_consumer_offsets(
       client,
       fmt::format("/consumers/{}/instances/{}/offsets", g_id(), m_id()),
       std::move(body),
-      boost::beast::http::verb::get);
+      boost::beast::http::verb::get,
+      ppj::serialization_format::json_v2,
+      ppj::serialization_format::json_v2);
     return res;
 };
 

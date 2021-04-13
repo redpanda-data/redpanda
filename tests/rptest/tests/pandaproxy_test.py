@@ -60,6 +60,11 @@ HTTP_CONSUMER_FETCH_HEADERS = {
     "Content-Type": "application/vnd.kafka.v2+json"
 }
 
+HTTP_CONSUMER_GET_OFFSETS_HEADERS = {
+    "Accept": "application/vnd.kafka.v2+json",
+    "Content-Type": "application/vnd.kafka.v2+json"
+}
+
 
 class Consumer:
     def __init__(self, res):
@@ -79,6 +84,14 @@ class Consumer:
     def fetch(self, headers=HTTP_CONSUMER_FETCH_HEADERS):
         res = requests.get(f"{self.base_uri}/records", headers=headers)
         return res
+
+    def get_offsets(self,
+                    data=None,
+                    headers=HTTP_CONSUMER_GET_OFFSETS_HEADERS):
+        return requests.request(method='get',
+                                url=f"{self.base_uri}/offsets",
+                                data=data,
+                                headers=headers)
 
 
 class PandaProxyTest(RedpandaTest):
@@ -643,6 +656,18 @@ class PandaProxyTest(RedpandaTest):
         sc_res = c0.subscribe(topics)
         assert sc_res.status_code == requests.codes.ok
 
+        # Get consumer offsets
+        co_req = dict(partitions=[
+            dict(topic=t, partition=p) for t in topics for p in [0, 1, 2]
+        ])
+        self.logger.info(f"Get consumer offsets")
+        co_res_raw = c0.get_offsets(data=json.dumps(co_req))
+        assert co_res_raw.status_code == requests.codes.ok
+        co_res = co_res_raw.json()
+        assert len(co_res["offsets"]) == 9
+        for i in range(len(co_res["offsets"])):
+            assert co_res["offsets"][i]["offset"] == -1
+
         # Fetch from a consumer
         self.logger.info(f"Consumer fetch")
         cf_res = c0.fetch()
@@ -650,6 +675,15 @@ class PandaProxyTest(RedpandaTest):
         fetch_result = cf_res.json()
         # 3 topics * 3 * (1 ctrl batch + 1 msg)
         assert len(fetch_result) == 3 * 3 * 2
+        print(fetch_result)
+
+        self.logger.info(f"Get consumer offsets")
+        co_res_raw = c0.get_offsets(data=json.dumps(co_req))
+        assert co_res_raw.status_code == requests.codes.ok
+        co_res = co_res_raw.json()
+        assert len(co_res["offsets"]) == 9
+        for i in range(len(co_res["offsets"])):
+            assert co_res["offsets"][i]["offset"] == -1
 
         # Remove consumer
         self.logger.info("Remove consumer")
