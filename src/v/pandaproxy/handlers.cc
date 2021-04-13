@@ -192,6 +192,19 @@ create_consumer(server::request_t rq, server::reply_t rp) {
     auto req_data = ppj::rjson_parse(
       rq.req->content.data(), ppj::create_consumer_request_handler());
 
+    if (req_data.format != "binary") {
+        throw parse::error(
+          parse::error_code::invalid_param, "format must be binary");
+    }
+    if (req_data.auto_offset_reset != "earliest") {
+        throw parse::error(
+          parse::error_code::invalid_param, "auto.offset must be earliest");
+    }
+    if (req_data.auto_commit_enable != "false") {
+        throw parse::error(
+          parse::error_code::invalid_param, "auto.commit must be false");
+    }
+
     return rq.ctx.client.create_consumer(group_id, req_data.name)
       .then([group_id, res_fmt, rq{std::move(rq)}, rp{std::move(rp)}](
               kafka::member_id name) mutable {
