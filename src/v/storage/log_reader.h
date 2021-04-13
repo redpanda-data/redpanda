@@ -153,6 +153,29 @@ public:
         fmt::print(os, "storage::log_reader. config {}", _config);
     }
 
+    /**
+     * \brief Resets configuration of given reader.
+     *
+     * Resetting reader configuration allow user to reuse reader. When client
+     * request a chunk read it can reuse reader to continue reading given log.
+     *
+     * f.e.
+     * 1. read batches with offsets [0,100]
+     * 2. reset configuration with start_offset = 101
+     * 3. read next chunk of batches
+     */
+    void reset_config(log_reader_config cfg) {
+        _config = cfg;
+        _iterator.next_seg = _iterator.current_reader_seg;
+    };
+    /**
+     * Indicates if current reader may be reused for future reads.
+     *
+     * reader reuse is only possible when we have an active reader and we didn't
+     * read all locked segments already
+     */
+    bool is_reusable() const { return _iterator.reader != nullptr; }
+
 private:
     void set_end_of_stream() { _iterator.next_seg = _lease->range.end(); }
     bool is_done();
@@ -164,9 +187,10 @@ private:
 private:
     struct iterator_pair {
         iterator_pair(segment_set::iterator i)
-          : next_seg(i) {}
-
+          : next_seg(i)
+          , current_reader_seg(i) {}
         segment_set::iterator next_seg;
+        segment_set::iterator current_reader_seg;
         std::unique_ptr<log_segment_batch_reader> reader = nullptr;
 
         explicit operator bool() { return bool(reader); }

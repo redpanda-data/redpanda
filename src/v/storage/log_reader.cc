@@ -254,6 +254,7 @@ ss::future<> log_reader::find_next_valid_iterator() {
     if (_iterator.next_seg != _lease->range.end()) {
         _iterator.reader = std::make_unique<log_segment_batch_reader>(
           **_iterator.next_seg, _config, _probe);
+        _iterator.current_reader_seg = _iterator.next_seg;
     }
     if (tmp_reader) {
         auto raw = tmp_reader.get();
@@ -275,6 +276,17 @@ log_reader::do_load_slice(model::timeout_clock::time_point timeout) {
         set_end_of_stream();
         return _iterator.close().then(
           [] { return ss::make_ready_future<storage_t>(); });
+    }
+    /**
+     * We do not want to close the reader if we stopped because requested range
+     * was read. This way we make it possible to reset configuration and reuse
+     * underlying file input stream.
+     */
+    if (
+      _config.start_offset > _config.max_offset
+      || _config.bytes_consumed > _config.max_bytes || _config.over_budget) {
+        set_end_of_stream();
+        return ss::make_ready_future<storage_t>();
     }
     _last_base = _config.start_offset;
     ss::future<> fut = find_next_valid_iterator();
@@ -329,9 +341,7 @@ static inline bool is_finished_offset(segment_set& s, model::offset o) {
 }
 bool log_reader::is_done() {
     return is_end_of_stream()
-           || is_finished_offset(_lease->range, _config.start_offset)
-           || _config.start_offset > _config.max_offset
-           || _config.bytes_consumed > _config.max_bytes || _config.over_budget;
+           || is_finished_offset(_lease->range, _config.start_offset);
 }
 
 } // namespace storage
