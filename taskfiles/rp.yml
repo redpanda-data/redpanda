@@ -79,7 +79,7 @@ tasks:
     deps:
     - set-aio-max
     cmds:
-    - ctest {{if eq .CI "1"}}"--output-on-failure"{{end}} {{.CTEST_ARGS}}
+    - ctest {{if eq .CI "1"}}"--output-on-failure" -LE "disable_on_ci"{{end}} {{.CTEST_ARGS}}
 
   build-java-test-programs:
     desc: build java programs used in integrations tests
