@@ -42,6 +42,7 @@
 #include "syschecks/syschecks.h"
 #include "test_utils/logs.h"
 #include "utils/file_io.h"
+#include "utils/human.h"
 #include "version.h"
 #include "vlog.h"
 
@@ -51,6 +52,7 @@
 #include <seastar/core/thread.hh>
 #include <seastar/json/json_elements.hh>
 #include <seastar/net/tls.hh>
+#include <seastar/util/conversions.hh>
 #include <seastar/util/defer.hh>
 
 #include <sys/utsname.h>
@@ -63,6 +65,28 @@ application::application(ss::sstring logger_name)
   : _log(std::move(logger_name)){
 
   };
+
+static void log_system_resources(
+  ss::logger& log, const boost::program_options::variables_map& cfg) {
+    const auto shard_mem = ss::memory::stats();
+    auto total_mem = shard_mem.total_memory() * ss::smp::count;
+    /**
+     * IMPORTANT: copied out of seastar `resources.cc`, if logic in seastar will
+     * change we have to change our logic in here.
+     */
+    const size_t default_reserve_memory = std::max<size_t>(
+      1536_MiB, 0.07 * total_mem);
+    auto reserve = cfg.contains("reserve-memory") ? ss::parse_memory_size(
+                     cfg["reserve-memory"].as<std::string>())
+                                                  : default_reserve_memory;
+    vlog(
+      log.info,
+      "System resources: {{ cpus: {}, available memory: {}, reserved memory: "
+      "{}}}",
+      ss::smp::count,
+      human::bytes(total_mem),
+      human::bytes(reserve));
+}
 
 int application::run(int ac, char** av) {
     init_env();
@@ -78,6 +102,7 @@ int application::run(int ac, char** av) {
     ss::app_template app = setup_app_template();
     return app.run(ac, av, [this, &app] {
         auto& cfg = app.configuration();
+        log_system_resources(_log, cfg);
         validate_arguments(cfg);
         return ss::async([this, &cfg] {
             try {
