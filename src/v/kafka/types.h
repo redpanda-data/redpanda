@@ -56,6 +56,9 @@ using protocol_type = named_type<ss::sstring, struct kafka_protocol_type>;
 /// Kafka group protocol name.
 using protocol_name = named_type<ss::sstring, struct kafka_protocol>;
 
+using client_id = named_type<ss::sstring, struct kafka_client_id_type>;
+using client_host = named_type<ss::sstring, struct kafka_client_host_type>;
+
 /// An unknown / missing member id (Kafka protocol specific)
 static inline const member_id unknown_member_id("");
 

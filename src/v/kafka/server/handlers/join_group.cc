@@ -28,8 +28,10 @@ void join_group_request::decode(request_context& ctx) {
     data.decode(ctx.reader(), ctx.header().version);
     version = ctx.header().version;
     if (ctx.header().client_id) {
-        client_id = ss::sstring(*ctx.header().client_id);
+        client_id = kafka::client_id(ss::sstring(*ctx.header().client_id));
     }
+    client_host = kafka::client_host(
+      fmt::format("{}", ctx.connection()->client_host()));
 }
 
 void join_group_response::encode(const request_context& ctx, response& resp) {

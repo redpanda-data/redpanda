@@ -27,6 +27,8 @@ static group_member get_member() {
       kafka::member_id("m"),
       kafka::group_id("g"),
       kafka::group_instance_id("i"),
+      kafka::client_id("client-id"),
+      kafka::client_host("client-host"),
       std::chrono::seconds(1),
       std::chrono::milliseconds(2),
       kafka::protocol_type("p"),

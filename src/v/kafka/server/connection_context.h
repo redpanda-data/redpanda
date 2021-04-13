@@ -74,6 +74,7 @@ public:
 
     ss::future<> process_one_request();
     bool is_finished_parsing() const;
+    ss::net::inet_address client_host() const { return _client_addr; }
 
 private:
     // used to pass around some internal state
