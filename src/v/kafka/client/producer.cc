@@ -73,7 +73,8 @@ producer::produce(model::topic_partition tp, model::record_batch&& batch) {
 
 ss::future<produce_response::partition>
 producer::do_send(model::topic_partition tp, model::record_batch&& batch) {
-    return _brokers.find(tp)
+    return _topic_cache.leader(tp)
+      .then([this](model::node_id leader) { return _brokers.find(leader); })
       .then([tp{std::move(tp)},
              batch{std::move(batch)}](shared_broker_t broker) mutable {
           return broker->dispatch(

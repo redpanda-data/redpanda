@@ -19,7 +19,9 @@
 #include "kafka/client/fetcher.h"
 #include "kafka/client/producer.h"
 #include "kafka/client/retry_with_mitigation.h"
+#include "kafka/client/topic_cache.h"
 #include "kafka/client/transport.h"
+#include "kafka/client/types.h"
 #include "kafka/protocol/fetch.h"
 #include "kafka/types.h"
 #include "utils/retry.h"
@@ -102,13 +104,17 @@ public:
     ss::future<produce_response::partition> produce_record_batch(
       model::topic_partition tp, model::record_batch&& batch);
 
+    ss::future<produce_response>
+    produce_records(model::topic topic, std::vector<record_essence> batch);
+
     ss::future<fetch_response> fetch_partition(
       model::topic_partition tp,
       model::offset offset,
       int32_t max_bytes,
       std::chrono::milliseconds timeout);
 
-    ss::future<member_id> create_consumer(const group_id& g_id);
+    ss::future<member_id>
+    create_consumer(const group_id& g_id, member_id name = kafka::no_member);
 
     ss::future<> remove_consumer(const group_id& g_id, const member_id& m_id);
 
@@ -166,10 +172,15 @@ private:
     ss::future<shared_consumer_t>
     get_consumer(const group_id& g_id, const member_id& m_id);
 
+    /// \brief Apply metadata update
+    ss::future<> apply(metadata_response res);
+
     /// \brief Client holds a copy of its configuration
     configuration _config;
     /// \brief Seeds are used when no brokers are connected.
     std::vector<unresolved_address> _seeds;
+    /// \brief Cache of topic information.
+    topic_cache _topic_cache;
     /// \brief Broker lookup from topic_partition.
     brokers _brokers;
     /// \brief Update metadata, or wait for an existing one.

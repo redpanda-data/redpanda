@@ -13,6 +13,7 @@
 
 #include "bytes/iobuf.h"
 #include "json/json.h"
+#include "kafka/client/types.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/produce.h"
 #include "pandaproxy/json/iobuf.h"
@@ -25,12 +26,6 @@
 #include <rapidjson/writer.h>
 
 namespace pandaproxy::json {
-
-struct record {
-    model::partition_id id;
-    std::optional<iobuf> key;
-    std::optional<iobuf> value;
-};
 
 template<typename Encoding = rapidjson::UTF8<>>
 class produce_request_handler {
@@ -49,7 +44,7 @@ private:
 
 public:
     using Ch = typename Encoding::Ch;
-    using rjson_parse_result = std::vector<pandaproxy::json::record>;
+    using rjson_parse_result = std::vector<kafka::client::record_essence>;
     rjson_parse_result result;
 
     explicit produce_request_handler(serialization_format fmt)
@@ -64,7 +59,7 @@ public:
 
     bool Int(int i) {
         if (state == state::partition) {
-            result.back().id = model::partition_id(i);
+            result.back().partition_id = model::partition_id(i);
             state = state::record;
             return true;
         }
@@ -73,7 +68,7 @@ public:
 
     bool Uint(unsigned u) {
         if (state == state::partition) {
-            result.back().id = model::partition_id(u);
+            result.back().partition_id = model::partition_id(u);
             state = state::record;
             return true;
         }
@@ -127,7 +122,7 @@ public:
             return true;
         }
         if (state == state::records) {
-            result.push_back(pandaproxy::json::record{});
+            result.push_back(kafka::client::record_essence{});
             state = state::record;
             return true;
         }

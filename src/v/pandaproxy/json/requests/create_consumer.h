@@ -31,7 +31,7 @@
 namespace pandaproxy::json {
 
 struct create_consumer_request {
-    std::optional<ss::sstring> name;
+    kafka::member_id name{kafka::no_member};
     ss::sstring format{"binary"};
     ss::sstring auto_offset_reset;
     ss::sstring auto_commit_enable;
@@ -75,7 +75,7 @@ public:
         case state::empty:
             return false;
         case state::name:
-            result.name = {str, len};
+            result.name = kafka::member_id{ss::sstring{str, len}};
             break;
         case state::format:
             result.format = {str, len};

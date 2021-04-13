@@ -1,8 +1,19 @@
 rp_test(
   UNIT_TEST
+  BINARY_NAME test_kafka_client_unit
+  SOURCES
+    partitioners.cc
+  DEFINITIONS BOOST_TEST_DYN_LINK
+  LIBRARIES Boost::unit_test_framework v::kafka_client
+  LABELS kafka
+)
+
+rp_test(
+  UNIT_TEST
   BINARY_NAME test_kafka_client
   SOURCES
     fetch_session.cc
+    partitioners.cc
     produce_batcher.cc
     produce_partition.cc
     retry_with_mitigation.cc

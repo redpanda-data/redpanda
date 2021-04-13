@@ -307,6 +307,22 @@ class PandaProxyTest(RedpandaTest):
         assert kc.consume_one(name, 1, 1)["payload"] == "pandaproxy"
         assert kc.consume_one(name, 2, 1)["payload"] == "multibroker"
 
+        self.logger.info(f"Producing to topic without partition: {name}")
+        produce_result_raw = self._produce_topic(
+            name, '''
+        {
+            "records": [
+                {"value": "dmVjdG9yaXplZA=="},
+                {"value": "cGFuZGFwcm94eQ=="},
+                {"value": "bXVsdGlicm9rZXI="}
+            ]
+        }''')
+
+        assert produce_result_raw.status_code == requests.codes.ok
+        produce_result = produce_result_raw.json()
+        for o in produce_result["offsets"]:
+            assert o["offset"] == 2, f'error_code {o["error_code"]}'
+
     @cluster(num_nodes=3)
     def test_fetch_topic_validation(self):
         """

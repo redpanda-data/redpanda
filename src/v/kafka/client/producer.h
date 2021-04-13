@@ -13,6 +13,7 @@
 
 #include "kafka/client/produce_batcher.h"
 #include "kafka/client/produce_partition.h"
+#include "kafka/client/topic_cache.h"
 #include "model/fundamental.h"
 #include "ssx/future-util.h"
 
@@ -32,11 +33,13 @@ public:
 
     producer(
       const configuration& config,
+      topic_cache& topic_cache,
       brokers& brokers,
       error_handler&& error_handler)
       : _config{config}
       , _partitions{}
       , _error_handler(std::move(error_handler))
+      , _topic_cache(topic_cache)
       , _brokers(brokers) {}
 
     ss::future<produce_response::partition>
@@ -75,6 +78,7 @@ private:
     absl::flat_hash_map<model::topic_partition, shared_produce_partition>
       _partitions;
     error_handler _error_handler;
+    topic_cache& _topic_cache;
     brokers& _brokers;
 };
 

@@ -29,6 +29,13 @@ struct broker_error final : exception_base {
     model::node_id node_id;
 };
 
+struct topic_error final : exception_base {
+    topic_error(model::topic_view tp, error_code e)
+      : exception_base{e, fmt::format("{}, {}", tp, e)}
+      , topic{tp} {}
+    model::topic topic;
+};
+
 struct partition_error final : exception_base {
     partition_error(model::topic_partition tp, error_code e)
       : exception_base{e, fmt::format("{}, {}", tp, e)}

@@ -9,7 +9,9 @@ v_cc_library(
     consumer.cc
     fetcher.cc
     fetch_session.cc
+    partitioners.cc
     producer.cc
+    topic_cache.cc
   DEPS
     v::kafka
     v::ssx

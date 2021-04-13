@@ -339,7 +339,8 @@ consumer::offset_commit(std::vector<offset_commit_request_topic> topics) {
         for (auto& t : topics) {
             for (auto& p : t.partitions) {
                 auto tp = model::topic_partition{t.name, p.partition_index};
-                auto broker = co_await _brokers.find(tp);
+                auto leader = co_await _topic_cache.leader(tp);
+                auto broker = co_await _brokers.find(leader);
                 p.committed_leader_epoch = _fetch_sessions[broker].epoch();
             }
         }
@@ -377,7 +378,8 @@ consumer::fetch(std::chrono::milliseconds timeout, int32_t max_bytes) {
     for (auto const& [t, ps] : _assignment) {
         for (const auto& p : ps) {
             auto tp = model::topic_partition{t, p};
-            auto broker = co_await _brokers.find(tp);
+            auto leader = co_await _topic_cache.leader(tp);
+            auto broker = co_await _brokers.find(leader);
             auto& session = _fetch_sessions[broker];
 
             auto& req = broker_reqs
@@ -420,11 +422,18 @@ consumer::fetch(std::chrono::milliseconds timeout, int32_t max_bytes) {
 
 ss::future<shared_consumer_t> make_consumer(
   const configuration& config,
+  topic_cache& topic_cache,
   brokers& brokers,
   shared_broker_t coordinator,
-  group_id group_id) {
+  group_id group_id,
+  member_id name) {
     auto c = ss::make_lw_shared<consumer>(
-      config, brokers, std::move(coordinator), std::move(group_id));
+      config,
+      topic_cache,
+      brokers,
+      std::move(coordinator),
+      std::move(group_id),
+      std::move(name));
     return c->join().then([c]() mutable { return std::move(c); });
 }
 
