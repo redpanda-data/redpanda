@@ -28,6 +28,7 @@ const (
 	ModeProd = "prod"
 
 	DefaultKafkaPort = 9092
+	DefaultAdminPort = 9644
 )
 
 func InitViper(fs afero.Fs) *viper.Viper {
@@ -85,6 +86,11 @@ func defaultMap() map[string]interface{} {
 		"port":    9092,
 	}
 	var defaultListeners []interface{} = []interface{}{defaultListener}
+	var defaultAdminListener interface{} = map[string]interface{}{
+		"address": "0.0.0.0",
+		"port":    9644,
+	}
+	var defaultAdminListeners []interface{} = []interface{}{defaultAdminListener}
 	return map[string]interface{}{
 		"config_file": "/etc/redpanda/redpanda.yaml",
 		"pandaproxy":  Pandaproxy{},
@@ -94,11 +100,8 @@ func defaultMap() map[string]interface{} {
 				"address": "0.0.0.0",
 				"port":    33145,
 			},
-			"kafka_api": defaultListeners,
-			"admin": map[string]interface{}{
-				"address": "0.0.0.0",
-				"port":    9644,
-			},
+			"kafka_api":      defaultListeners,
+			"admin":          defaultAdminListeners,
 			"node_id":        0,
 			"seed_servers":   []interface{}{},
 			"developer_mode": true,

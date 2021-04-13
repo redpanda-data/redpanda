@@ -219,7 +219,7 @@ func CreateNode(
 	}
 	metPort, err := nat.NewPort(
 		"tcp",
-		strconv.Itoa(config.Default().Redpanda.AdminApi.Port),
+		strconv.Itoa(config.DefaultAdminPort),
 	)
 	if err != nil {
 		return nil, err
