@@ -184,12 +184,13 @@ class WasmTest(RedpandaTest):
             if batch_total > 0:
                 self.records_recieved(batch_total)
 
-            return self._input_consumer.is_finished()
+            return self._input_consumer.is_finished() \
+                and self._output_consumer.is_finished()
 
-        [x.join() for x in self._producers]
         timeout, backoff = self.wasm_test_timeout()
         wait_until(all_done, timeout_sec=timeout, backoff_sec=backoff)
         try:
+            [x.join() for x in self._producers]
             self._input_consumer.join()
             self._output_consumer.join()
         except Exception as e:
