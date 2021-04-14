@@ -140,6 +140,7 @@ tm_stm::mark_tx_finished(kafka::transactional_id tx_id, tm_etag etag) {
     ptx->second.status = tm_transaction::tx_status::finished;
     ptx->second.etag = etag.inc_mem();
     ptx->second.partitions.clear();
+    ptx->second.groups.clear();
     return ptx->second;
 }
 
@@ -156,6 +157,7 @@ tm_stm::mark_tx_ongoing(kafka::transactional_id tx_id, tm_etag etag) {
     ptx->second.etag = etag.inc_mem();
     ptx->second.tx_seq += 1;
     ptx->second.partitions.clear();
+    ptx->second.groups.clear();
     return ptx->second;
 }
 
@@ -186,6 +188,7 @@ ss::future<tm_stm::op_status> tm_stm::re_register_producer(
     tx.pid = pid;
     tx.tx_seq += 1;
     tx.partitions.clear();
+    tx.groups.clear();
 
     // hack: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=95599
     auto func = [this, term, tx]() { return save_tx(term, tx); };
@@ -276,6 +279,24 @@ bool tm_stm::add_partitions(
     for (auto& partition : partitions) {
         ptx->second.partitions.push_back(partition);
     }
+    return true;
+}
+
+bool tm_stm::add_group(
+  kafka::transactional_id tx_id,
+  tm_etag etag,
+  kafka::group_id group_id,
+  model::term_id term) {
+    auto ptx = _tx_table.find(tx_id);
+    if (ptx == _tx_table.end()) {
+        return false;
+    }
+    if (ptx->second.etag != etag) {
+        return false;
+    }
+    ptx->second.etag = etag.inc_mem();
+    ptx->second.groups.push_back(
+      tm_transaction::tx_group{.group_id = group_id, .etag = term});
     return true;
 }
 
