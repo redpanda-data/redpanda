@@ -69,6 +69,37 @@ class group_router final {
           });
     }
 
+    template<typename Request, typename FwdFunc>
+    auto route_tx(Request&& r, FwdFunc func) {
+        // get response type from FwdFunc it has return future<response>.
+        using return_type = std::invoke_result_t<
+          FwdFunc,
+          decltype(std::declval<group_manager>()),
+          Request&&>;
+        using resp_type = typename return_type::value_type;
+
+        auto m = shard_for(r.group_id);
+        if (!m) {
+            resp_type reply;
+            // route_tx routes internal intra cluster so it uses
+            // cluster::tx_errc instead of kafka::error_code
+            // because the latter is part of the kafka protocol
+            // we can't extend it
+            reply.ec = cluster::tx_errc::not_coordinator;
+            return ss::make_ready_future<resp_type>(reply);
+        }
+        r.ntp = std::move(m->first);
+        return with_scheduling_group(
+          _sg, [this, func, shard = m->second, r = std::move(r)]() mutable {
+              return _group_manager.invoke_on(
+                shard,
+                _ssg,
+                [func, r = std::move(r)](group_manager& mgr) mutable {
+                    return std::invoke(func, mgr, std::move(r));
+                });
+          });
+    }
+
 public:
     group_router(
       ss::scheduling_group sched_group,

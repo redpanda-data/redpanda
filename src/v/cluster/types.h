@@ -56,6 +56,7 @@ enum class tx_errc {
     conflict,
     fenced,
     stale,
+    not_coordinator
 };
 struct tx_errc_category final : public std::error_category {
     const char* name() const noexcept final { return "cluster::tx_errc"; }
