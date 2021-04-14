@@ -97,6 +97,7 @@ ss::sstring group_state_to_kafka_name(group_state);
 cluster::begin_group_tx_reply make_begin_tx_reply(cluster::tx_errc);
 cluster::prepare_group_tx_reply make_prepare_tx_reply(cluster::tx_errc);
 cluster::commit_group_tx_reply make_commit_tx_reply(cluster::tx_errc);
+cluster::abort_group_tx_reply make_abort_tx_reply(cluster::tx_errc);
 
 /// \brief A Kafka group.
 ///
@@ -111,6 +112,7 @@ public:
     static constexpr model::control_record_version prepared_tx_record_version{
       0};
     static constexpr model::control_record_version commit_tx_record_version{0};
+    static constexpr model::control_record_version aborted_tx_record_version{0};
 
     struct offset_metadata {
         model::offset log_offset;
@@ -124,6 +126,11 @@ public:
         model::producer_identity pid;
         kafka::group_id group_id;
         absl::node_hash_map<model::topic_partition, offset_metadata> offsets;
+    };
+
+    struct aborted_tx {
+        kafka::group_id group_id;
+        model::tx_seq tx_seq;
     };
 
     group(
@@ -422,6 +429,9 @@ public:
     ss::future<cluster::prepare_group_tx_reply>
       prepare_tx(cluster::prepare_group_tx_request);
 
+    ss::future<cluster::abort_group_tx_reply>
+      abort_tx(cluster::abort_group_tx_request);
+
     ss::future<txn_offset_commit_response>
     store_txn_offsets(txn_offset_commit_request r);
 
@@ -435,6 +445,9 @@ public:
 
     ss::future<cluster::prepare_group_tx_reply>
     handle_prepare_tx(cluster::prepare_group_tx_request r);
+
+    ss::future<cluster::abort_group_tx_reply>
+    handle_abort_tx(cluster::abort_group_tx_request r);
 
     ss::future<offset_commit_response>
     handle_offset_commit(offset_commit_request&& r);

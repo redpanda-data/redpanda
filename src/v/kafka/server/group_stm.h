@@ -109,11 +109,13 @@ public:
         _is_loaded = false;
         _is_removed = true;
     }
+
     void update_offset(
       model::topic_partition, model::offset, group_log_offset_metadata&&);
     void remove_offset(model::topic_partition);
     void update_prepared(model::offset, group_log_prepared_tx);
     void commit(model::producer_identity);
+    void abort(model::producer_identity, model::tx_seq);
     bool has_data() const {
         return !_is_removed && (_is_loaded || _offsets.size() > 0);
     }

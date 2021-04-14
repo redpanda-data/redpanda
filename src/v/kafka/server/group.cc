@@ -1264,6 +1264,12 @@ cluster::commit_group_tx_reply make_commit_tx_reply(cluster::tx_errc ec) {
     return reply;
 }
 
+cluster::abort_group_tx_reply make_abort_tx_reply(cluster::tx_errc ec) {
+    cluster::abort_group_tx_reply reply;
+    reply.ec = ec;
+    return reply;
+}
+
 ss::future<cluster::begin_group_tx_reply>
 group::begin_tx(cluster::begin_group_tx_request r) {
     if (_partition->term() != _term) {
@@ -1350,6 +1356,45 @@ group::prepare_tx(cluster::prepare_group_tx_request r) {
     }
     _prepared_txs.try_emplace(r.pid, ptx);
     co_return cluster::prepare_group_tx_reply();
+}
+
+ss::future<cluster::abort_group_tx_reply>
+group::abort_tx(cluster::abort_group_tx_request r) {
+    // TODO: https://app.clubhouse.io/vectorized/story/2197
+    // (check for tx_seq to prevent old abort requests aborting
+    // new transactions in the same session)
+
+    auto tx = aborted_tx{.group_id = r.group_id, .tx_seq = r.tx_seq};
+
+    iobuf key;
+    kafka::response_writer w(key);
+    // TODO: https://app.clubhouse.io/vectorized/story/2200
+    // include producer_id+type into key to make it unique-ish
+    // to prevent being GCed by the compaction
+    w.write(aborted_tx_record_version());
+    storage::record_batch_builder builder(
+      cluster::group_abort_tx_batch_type, model::offset(0));
+    builder.set_producer_identity(r.pid.id, r.pid.epoch);
+    builder.set_control_type();
+    builder.add_raw_kw(
+      std::move(key),
+      reflection::to_iobuf(std::move(tx)),
+      std::vector<model::record_header>());
+    auto batch = std::move(builder).build();
+    auto reader = model::make_memory_record_batch_reader(std::move(batch));
+
+    auto e = co_await _partition->replicate(
+      std::move(reader),
+      raft::replicate_options(raft::consistency_level::quorum_ack));
+
+    if (!e) {
+        co_return make_abort_tx_reply(cluster::tx_errc::timeout);
+    }
+
+    _volatile_txs.erase(r.pid);
+    _prepared_txs.erase(r.pid);
+
+    co_return cluster::abort_group_tx_reply();
 }
 
 ss::future<txn_offset_commit_response>
@@ -1526,6 +1571,28 @@ group::handle_prepare_tx(cluster::prepare_group_tx_request r) {
     } else {
         vlog(klog.error, "Unexpected group state {} for {}", _state, *this);
         cluster::prepare_group_tx_reply reply;
+        reply.ec = cluster::tx_errc::timeout;
+        co_return reply;
+    }
+}
+
+ss::future<cluster::abort_group_tx_reply>
+group::handle_abort_tx(cluster::abort_group_tx_request r) {
+    if (in_state(group_state::dead)) {
+        cluster::abort_group_tx_reply reply;
+        reply.ec = cluster::tx_errc::coordinator_not_available;
+        co_return reply;
+    } else if (
+      in_state(group_state::stable) || in_state(group_state::empty)
+      || in_state(group_state::preparing_rebalance)) {
+        co_return co_await abort_tx(std::move(r));
+    } else if (in_state(group_state::completing_rebalance)) {
+        cluster::abort_group_tx_reply reply;
+        reply.ec = cluster::tx_errc::rebalance_in_progress;
+        co_return reply;
+    } else {
+        vlog(klog.error, "Unexpected group state {} for {}", _state, *this);
+        cluster::abort_group_tx_reply reply;
         reply.ec = cluster::tx_errc::timeout;
         co_return reply;
     }

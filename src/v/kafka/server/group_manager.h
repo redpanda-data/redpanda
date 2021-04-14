@@ -153,6 +153,9 @@ public:
     ss::future<cluster::prepare_group_tx_reply>
     prepare_tx(cluster::prepare_group_tx_request&&);
 
+    ss::future<cluster::abort_group_tx_reply>
+    abort_tx(cluster::abort_group_tx_request&&);
+
     /// \brief Handle a OffsetFetch request
     ss::future<offset_fetch_response>
     offset_fetch(offset_fetch_request&& request);

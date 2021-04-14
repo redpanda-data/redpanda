@@ -398,14 +398,14 @@ recovery_batch_consumer::operator()(model::record_batch batch) {
         kafka::request_reader buf_reader(std::move(key_buf));
         auto version = model::control_record_version(buf_reader.read_int16());
 
-        const auto& hdr = batch.header();
-        auto bid = model::batch_identity::from(hdr);
-
         vassert(
           version == group::commit_tx_record_version,
           "unknown group inflight tx record version: {} expected: {}",
           version,
           group::commit_tx_record_version);
+
+        const auto& hdr = batch.header();
+        auto bid = model::batch_identity::from(hdr);
 
         auto val_buf = record.release_value();
         auto val = reflection::from_iobuf<group_log_commit_tx>(
@@ -413,6 +413,34 @@ recovery_batch_consumer::operator()(model::record_batch batch) {
 
         auto [group_it, _] = st.groups.try_emplace(val.group_id, group_stm());
         group_it->second.commit(bid.pid);
+
+        return ss::make_ready_future<ss::stop_iteration>(
+          ss::stop_iteration::no);
+    } else if (batch.header().type == cluster::group_abort_tx_batch_type) {
+        vassert(
+          batch.record_count() == 1,
+          "abort batch must contain a single record");
+        auto r = batch.copy_records();
+        auto& record = *r.begin();
+        auto key_buf = record.release_key();
+        kafka::request_reader buf_reader(std::move(key_buf));
+        auto version = model::control_record_version(buf_reader.read_int16());
+
+        vassert(
+          version == group::aborted_tx_record_version,
+          "unknown group abort tx record version: {} expected: {}",
+          version,
+          group::aborted_tx_record_version);
+
+        const auto& hdr = batch.header();
+        auto bid = model::batch_identity::from(hdr);
+
+        auto val_buf = record.release_value();
+        auto val = reflection::from_iobuf<group::aborted_tx>(
+          std::move(val_buf));
+
+        auto [group_it, _] = st.groups.try_emplace(val.group_id, group_stm());
+        group_it->second.abort(bid.pid, val.tx_seq);
 
         return ss::make_ready_future<ss::stop_iteration>(
           ss::stop_iteration::no);
@@ -845,6 +873,41 @@ group_manager::prepare_tx(cluster::prepare_group_tx_request&& r) {
           }
 
           return group->handle_prepare_tx(std::move(r))
+            .finally([unit = std::move(unit)] {});
+      });
+}
+
+ss::future<cluster::abort_group_tx_reply>
+group_manager::abort_tx(cluster::abort_group_tx_request&& r) {
+    auto p = get_attached_partition(r.ntp);
+    if (!p || !p->catchup_lock.try_read_lock()) {
+        // transaction operations can't run in parallel with loading
+        // state from the log (happens once per term change)
+        vlog(klog.trace, "can't process a tx: coordinator_load_in_progress");
+        return ss::make_ready_future<cluster::abort_group_tx_reply>(
+          make_abort_tx_reply(cluster::tx_errc::coordinator_load_in_progress));
+    }
+    p->catchup_lock.read_unlock();
+
+    return p->catchup_lock.hold_read_lock().then(
+      [this, r = std::move(r)](ss::basic_rwlock<>::holder unit) mutable {
+          auto error = validate_group_status(
+            r.ntp, r.group_id, offset_commit_api::key);
+          if (error != error_code::none) {
+              auto ec = error == error_code::not_coordinator
+                          ? cluster::tx_errc::not_coordinator
+                          : cluster::tx_errc::timeout;
+              return ss::make_ready_future<cluster::abort_group_tx_reply>(
+                make_abort_tx_reply(ec));
+          }
+
+          auto group = get_group(r.group_id);
+          if (!group) {
+              return ss::make_ready_future<cluster::abort_group_tx_reply>(
+                make_abort_tx_reply(cluster::tx_errc::timeout));
+          }
+
+          return group->handle_abort_tx(std::move(r))
             .finally([unit = std::move(unit)] {});
       });
 }

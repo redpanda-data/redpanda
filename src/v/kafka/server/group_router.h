@@ -149,6 +149,10 @@ public:
         return route_tx(std::move(request), &group_manager::prepare_tx);
     }
 
+    auto abort_tx(cluster::abort_group_tx_request&& request) {
+        return route_tx(std::move(request), &group_manager::abort_tx);
+    }
+
     auto offset_fetch(offset_fetch_request&& request) {
         return route(std::move(request), &group_manager::offset_fetch);
     }
