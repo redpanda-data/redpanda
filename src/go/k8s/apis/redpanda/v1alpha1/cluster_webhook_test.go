@@ -248,6 +248,14 @@ func TestValidateUpdate_NoError(t *testing.T) {
 
 		assert.Error(t, err)
 	})
+
+	t.Run("external admin listener cannot have port specified", func(t *testing.T) {
+		exPort := redpandaCluster.DeepCopy()
+		exPort.Spec.Configuration.AdminAPI[0].External.Enabled = true
+		err := exPort.ValidateUpdate(redpandaCluster)
+
+		assert.Error(t, err)
+	})
 }
 
 //nolint:funlen // this is ok for a test
@@ -322,6 +330,14 @@ func TestCreation(t *testing.T) {
 		multiPort.Spec.Configuration.AdminAPI = append(multiPort.Spec.Configuration.AdminAPI,
 			v1alpha1.AdminAPI{Port: 123})
 		err := multiPort.ValidateCreate()
+
+		assert.Error(t, err)
+	})
+
+	t.Run("external admin listener cannot have port specified", func(t *testing.T) {
+		exPort := redpandaCluster.DeepCopy()
+		exPort.Spec.Configuration.AdminAPI[0].External.Enabled = true
+		err := exPort.ValidateCreate()
 
 		assert.Error(t, err)
 	})

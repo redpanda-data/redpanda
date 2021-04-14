@@ -123,6 +123,13 @@ func (r *Cluster) validateAdminListeners() field.ErrorList {
 				r.Spec.Configuration.AdminAPI,
 				"need exactly one internal API listener and up to one external"))
 	}
+
+	if externalAdmin != nil && externalAdmin.Port != 0 {
+		allErrs = append(allErrs,
+			field.Invalid(field.NewPath("spec").Child("configuration").Child("adminApi"),
+				r.Spec.Configuration.AdminAPI,
+				"external admin listener cannot have port specified"))
+	}
 	return allErrs
 }
 
