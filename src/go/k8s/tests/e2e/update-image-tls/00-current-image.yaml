@@ -4,7 +4,7 @@ metadata:
   name: up-img
 spec:
   image: "vectorized/redpanda"
-  version: "v21.4.8"
+  version: "v21.4.10"
   replicas: 2
   resources:
     requests:
@@ -19,8 +19,9 @@ spec:
     kafkaApi:
     - name: kafka
       port: 9092
-      tls:
-        enabled: true
     admin:
       port: 9644
     developerMode: true
+    tls:
+      adminApi:
+        enabled: true
