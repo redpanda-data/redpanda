@@ -254,6 +254,7 @@ func (r *Cluster) ValidateDelete() error {
 func (r *Cluster) checkCollidingPorts() field.ErrorList {
 	var allErrs field.ErrorList
 	adminAPIInternal := r.AdminAPIInternal()
+	adminAPIExternal := r.AdminAPIExternal()
 	for _, kafka := range r.Spec.Configuration.KafkaAPI {
 		if adminAPIInternal != nil && adminAPIInternal.Port == kafka.Port {
 			allErrs = append(allErrs,
@@ -303,7 +304,7 @@ func (r *Cluster) checkCollidingPorts() field.ErrorList {
 		}
 	}
 
-	if r.Spec.ExternalConnectivity.Enabled && adminAPIInternal != nil && adminAPIInternal.Port+1 == r.Spec.Configuration.RPCServer.Port {
+	if adminAPIExternal != nil && adminAPIInternal != nil && adminAPIInternal.Port+1 == r.Spec.Configuration.RPCServer.Port {
 		allErrs = append(allErrs,
 			field.Invalid(field.NewPath("spec").Child("configuration", "rpcServer", "port"),
 				r.Spec.Configuration.RPCServer.Port,
@@ -311,7 +312,7 @@ func (r *Cluster) checkCollidingPorts() field.ErrorList {
 	}
 
 	for _, kafka := range r.Spec.Configuration.KafkaAPI {
-		if r.ExternalListener() != nil && r.Spec.ExternalConnectivity.Enabled && adminAPIInternal != nil && adminAPIInternal.Port+1 == kafka.Port+1 {
+		if r.ExternalListener() != nil && adminAPIExternal != nil && adminAPIInternal != nil && adminAPIInternal.Port+1 == kafka.Port+1 {
 			allErrs = append(allErrs,
 				field.Invalid(field.NewPath("spec").Child("configuration", "kafka", "port"),
 					kafka.Port,

@@ -176,7 +176,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 			v1alpha1.KafkaAPIListener{External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
 		updatePort.Spec.Configuration.KafkaAPI[0].Port = 200
 		updatePort.Spec.Configuration.AdminAPI[0].Port = 300
-		updatePort.Spec.ExternalConnectivity.Enabled = true
+		updatePort.Spec.Configuration.AdminAPI[0].External.Enabled = true
 		updatePort.Spec.Configuration.RPCServer.Port = 301
 
 		err := updatePort.ValidateUpdate(redpandaCluster)
@@ -185,7 +185,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 
 	t.Run("collision in admin port when external connectivity is enabled", func(t *testing.T) {
 		updatePort := redpandaCluster.DeepCopy()
-		updatePort.Spec.ExternalConnectivity.Enabled = true
+		updatePort.Spec.Configuration.AdminAPI[0].External.Enabled = true
 		updatePort.Spec.Configuration.KafkaAPI = append(updatePort.Spec.Configuration.KafkaAPI,
 			v1alpha1.KafkaAPIListener{External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
 		updatePort.Spec.Configuration.KafkaAPI[0].Port = 201

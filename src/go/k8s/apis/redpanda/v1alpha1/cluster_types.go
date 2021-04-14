@@ -41,8 +41,6 @@ type ClusterSpec struct {
 	// If specified, Redpanda Pod node selectors. For reference please visit
 	// https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node
 	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
-	// ExternalConnectivity enables user to expose admin api
-	ExternalConnectivity ExternalConnectivityConfig `json:"externalConnectivity,omitempty"`
 	// Storage spec for cluster
 	Storage StorageSpec `json:"storage,omitempty"`
 	// Cloud storage configuration for cluster
