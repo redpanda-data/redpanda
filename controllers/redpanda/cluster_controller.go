@@ -92,10 +92,11 @@ func (r *ClusterReconciler) Reconcile(
 	internalListener := redpandaCluster.InternalListener()
 	externalListener := redpandaCluster.ExternalListener()
 	adminAPIInternal := redpandaCluster.AdminAPIInternal()
+	adminAPIExternal := redpandaCluster.AdminAPIExternal()
 	if externalListener != nil {
 		nodeports = append(nodeports, resources.NamedServicePort{Name: externalListener.Name, Port: internalListener.Port + 1})
 	}
-	if redpandaCluster.Spec.ExternalConnectivity.Enabled {
+	if adminAPIExternal != nil {
 		nodeports = append(nodeports, resources.NamedServicePort{Name: resources.AdminPortName, Port: adminAPIInternal.Port + 1})
 	}
 	headlessPorts := []resources.NamedServicePort{
