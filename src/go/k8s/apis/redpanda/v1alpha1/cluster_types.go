@@ -168,10 +168,17 @@ type ClusterList struct {
 type RedpandaConfig struct {
 	RPCServer     SocketAddress      `json:"rpcServer,omitempty"`
 	KafkaAPI      []KafkaAPIListener `json:"kafkaApi,omitempty"`
-	AdminAPI      SocketAddress      `json:"admin,omitempty"`
+	AdminAPI      []AdminAPI         `json:"adminApi,omitempty"`
 	DeveloperMode bool               `json:"developerMode,omitempty"`
 	// Number of partitions in the internal group membership topic
 	GroupTopicPartitions int `json:"groupTopicPartitions,omitempty"`
+}
+
+// AdminAPI is configuration of the redpanda Admin API
+type AdminAPI struct {
+	Port int `json:"port,omitempty"`
+	// Configuration of TLS for Admin API
+	TLS AdminAPITLS `json:"tls,omitempty"`
 }
 
 // KafkaAPIListener listener information for Kafka API
@@ -290,6 +297,14 @@ func (r *Cluster) KafkaTLSListener() *KafkaAPIListener {
 		if el.TLS.Enabled {
 			return &r.Spec.Configuration.KafkaAPI[i]
 		}
+	}
+	return nil
+}
+
+// AdminAPIInternal returns internal admin listener
+func (r *Cluster) AdminAPIInternal() *AdminAPI {
+	for _, el := range r.Spec.Configuration.AdminAPI {
+		return &el
 	}
 	return nil
 }
