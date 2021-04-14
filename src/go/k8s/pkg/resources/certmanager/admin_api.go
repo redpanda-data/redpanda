@@ -23,9 +23,14 @@ const (
 	AdminAPINodeCert = "admin-api-node"
 )
 
-// AdminAPINodeCert returns the namespaced name for the Admin API certificate used by node
+// AdminAPINodeCert returns the namespaced name for the Admin API certificate used by nodes
 func (r *PkiReconciler) AdminAPINodeCert() types.NamespacedName {
 	return types.NamespacedName{Name: r.pandaCluster.Name + "-" + AdminAPINodeCert, Namespace: r.pandaCluster.Namespace}
+}
+
+// AdminAPIClientCert returns the namespaced name for the Admin API certificate used by clients
+func (r *PkiReconciler) AdminAPIClientCert() types.NamespacedName {
+	return types.NamespacedName{Name: r.pandaCluster.Name + "-" + AdminAPIClientCert, Namespace: r.pandaCluster.Namespace}
 }
 
 func (r *PkiReconciler) prepareAdminAPI(
