@@ -98,10 +98,11 @@ func (r *HeadlessServiceResource) obj() (k8sclient.Object, error) {
 			APIVersion: "v1",
 		},
 		Spec: corev1.ServiceSpec{
-			Type:      corev1.ServiceTypeClusterIP,
-			ClusterIP: corev1.ClusterIPNone,
-			Ports:     ports,
-			Selector:  objLabels.AsAPISelector().MatchLabels,
+			PublishNotReadyAddresses: true,
+			Type:                     corev1.ServiceTypeClusterIP,
+			ClusterIP:                corev1.ClusterIPNone,
+			Ports:                    ports,
+			Selector:                 objLabels.AsAPISelector().MatchLabels,
 		},
 	}
 
