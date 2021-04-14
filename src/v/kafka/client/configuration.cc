@@ -67,6 +67,18 @@ configuration::configuration()
       "Delay (in milliseconds) to wait before sending batch",
       config::required::no,
       100ms)
+  , consumer_request_timeout(
+      *this,
+      "consumer_request_timeout_ms",
+      "Interval (in milliseconds) for consumer request timeout",
+      config::required::no,
+      100ms)
+  , consumer_request_max_bytes(
+      *this,
+      "consumer_request_max_bytes",
+      "Max bytes to fetch per request",
+      config::required::no,
+      1_MiB)
   , consumer_session_timeout(
       *this,
       "consumer_session_timeout_ms",

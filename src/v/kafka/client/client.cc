@@ -370,9 +370,11 @@ ss::future<offset_commit_response> client::consumer_offset_commit(
 ss::future<kafka::fetch_response> client::consumer_fetch(
   const group_id& g_id,
   const member_id& name,
-  std::chrono::milliseconds timeout,
-  int32_t max_bytes) {
-    auto end = model::timeout_clock::now() + timeout;
+  std::optional<std::chrono::milliseconds> timeout,
+  std::optional<int32_t> max_bytes) {
+    const auto config_timout = _config.consumer_request_timeout.value();
+    const auto end = model::timeout_clock::now()
+                     + std::min(config_timout, timeout.value_or(config_timout));
     return gated_retry_with_mitigation([this, g_id, name, end, max_bytes]() {
         return get_consumer(g_id, name)
           .then([end, max_bytes](shared_consumer_t c) {

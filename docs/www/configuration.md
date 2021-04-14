@@ -412,6 +412,14 @@ pandaproxy_client:
   # Default: 100ms
   produce_batch_delay_ms: 100
 
+  # Interval (in milliseconds) for consumer request timeout
+  # Default: 100ms
+  consumer_request_timeout_ms: 100
+
+  # Max bytes to fetch per request
+  # Default: 1MiB
+  consumer_request_max_bytes: 1048576
+      
   # Timeout (in milliseconds) for consumer session
   # Default: 10s
   consumer_session_timeout_ms: 10000
