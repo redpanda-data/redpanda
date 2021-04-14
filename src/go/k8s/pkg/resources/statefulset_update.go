@@ -12,12 +12,14 @@ package resources
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"net/http"
 	"reflect"
 	"time"
 
+	cmetav1 "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -180,9 +182,6 @@ func (r *StatefulSetResource) queryRedpandaStatus(
 	// will be fixed by https://github.com/vectorizedio/redpanda/issues/1084
 	if !r.pandaCluster.Spec.ExternalConnectivity.Enabled && r.pandaCluster.Spec.Configuration.TLS.AdminAPI.Enabled {
 		tlsConfig := tls.Config{MinVersion: tls.VersionTLS12} // TLS12 is min version allowed by gosec.
-		// For simplicity, we skip broker verification until per-listener
-		// TLS is available in Redpanda. This client calls the internal listener.
-		tlsConfig.InsecureSkipVerify = true
 
 		if err := r.populateTLSConfigCert(ctx, &tlsConfig); err != nil {
 			return err
@@ -217,11 +216,16 @@ func (r *StatefulSetResource) queryRedpandaStatus(
 func (r *StatefulSetResource) populateTLSConfigCert(
 	ctx context.Context, tlsConfig *tls.Config,
 ) error {
-	var certSecret corev1.Secret
-	err := r.Get(ctx, r.adminAPIClientCertSecretKey, &certSecret)
+	var nodeCertSecret corev1.Secret
+	err := r.Get(ctx, r.adminAPINodeCertSecretKey, &nodeCertSecret)
 	if err != nil {
 		return err
 	}
+
+	// Add root CA
+	caCertPool := x509.NewCertPool()
+	caCertPool.AppendCertsFromPEM(nodeCertSecret.Data[cmetav1.TLSCAKey])
+	tlsConfig.RootCAs = caCertPool
 
 	if r.pandaCluster.Spec.Configuration.TLS.AdminAPI.RequireClientAuth {
 		var clientCertSecret corev1.Secret
