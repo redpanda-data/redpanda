@@ -179,6 +179,10 @@ type AdminAPI struct {
 	Port int `json:"port,omitempty"`
 	// Configuration of TLS for Admin API
 	TLS AdminAPITLS `json:"tls,omitempty"`
+	// External enables user to expose Redpanda
+	// admin API outside of a Kubernetes cluster. For more
+	// information please go to ExternalConnectivityConfig
+	External ExternalConnectivityConfig `json:"external,omitempty"`
 }
 
 // KafkaAPIListener listener information for Kafka API
