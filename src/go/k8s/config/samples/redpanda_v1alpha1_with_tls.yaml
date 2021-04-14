@@ -22,5 +22,5 @@ spec:
        tls:
          enabled: true
     adminApi:
-      port: 9644
+       - port: 9644
     developerMode: true

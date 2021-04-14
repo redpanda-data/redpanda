@@ -58,6 +58,8 @@ func (r *Cluster) ValidateCreate() error {
 
 	allErrs = append(allErrs, r.validateKafkaListeners()...)
 
+	allErrs = append(allErrs, r.validateAdminListeners()...)
+
 	allErrs = append(allErrs, r.checkCollidingPorts()...)
 
 	allErrs = append(allErrs, r.validateMemory()...)
@@ -88,6 +90,8 @@ func (r *Cluster) ValidateUpdate(old runtime.Object) error {
 
 	allErrs = append(allErrs, r.validateKafkaListeners()...)
 
+	allErrs = append(allErrs, r.validateAdminListeners()...)
+
 	allErrs = append(allErrs, r.checkCollidingPorts()...)
 
 	allErrs = append(allErrs, r.validateMemory()...)
@@ -105,6 +109,17 @@ func (r *Cluster) ValidateUpdate(old runtime.Object) error {
 
 // ReserveMemoryString is amount of memory that we reserve for other processes than redpanda in the container
 const ReserveMemoryString = "1M"
+
+func (r *Cluster) validateAdminListeners() field.ErrorList {
+	var allErrs field.ErrorList
+	if len(r.Spec.Configuration.AdminAPI) != 1 {
+		allErrs = append(allErrs,
+			field.Invalid(field.NewPath("spec").Child("configuration").Child("adminApi"),
+				r.Spec.Configuration.AdminAPI,
+				"need exactly one admin API listener"))
+	}
+	return allErrs
+}
 
 func (r *Cluster) validateKafkaListeners() field.ErrorList {
 	var allErrs field.ErrorList

@@ -25,5 +25,5 @@ spec:
           enabled: true
           requireClientAuth: true
     adminApi:
-      port: 9644
+      - port: 9644
     developerMode: true

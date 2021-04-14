@@ -42,5 +42,5 @@ spec:
         enabled: true
         subdomain: "test.subdomain.com"
     adminApi:
-      port: 9644
+      - port: 9644
     developerMode: true

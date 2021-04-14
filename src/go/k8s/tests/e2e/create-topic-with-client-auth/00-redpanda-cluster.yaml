@@ -23,8 +23,8 @@ spec:
         enabled: true
         requireClientAuth: true
     adminApi:
-      port: 9644
-      issuerRef:
-        name: cluster-tls-root-issuer
-        kind: ClusterIssuer
+      - port: 9644
+        issuerRef:
+          name: cluster-tls-root-issuer
+          kind: ClusterIssuer
     developerMode: true

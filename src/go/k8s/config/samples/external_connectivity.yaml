@@ -27,5 +27,5 @@ spec:
           # https://github.com/kubernetes-sigs/external-dns/pull/1391
          subdomain: "test.subdomain.com"
     adminApi:
-      port: 9644
+      - port: 9644
     developerMode: true

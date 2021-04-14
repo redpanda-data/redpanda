@@ -20,5 +20,5 @@ spec:
      - name: kafka
        port: 9092
     adminApi:
-      port: 9644
+      - port: 9644
     developerMode: true
