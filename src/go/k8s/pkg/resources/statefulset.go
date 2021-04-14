@@ -330,16 +330,14 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 						{
 							Name:  redpandaContainerName,
 							Image: r.pandaCluster.FullImageName(),
-							Args: []string{
+							Args: append([]string{
 								"redpanda",
 								"start",
 								"--check=false",
-								"--smp 1",
 								// sometimes a little bit of memory is consumed by other processes than seastar
 								"--reserve-memory " + redpandav1alpha1.ReserveMemoryString,
 								r.portsConfiguration(),
-								"--default-log-level=debug",
-							},
+							}, overprovisioned(r.pandaCluster.Spec.Configuration.DeveloperMode)...),
 							Env: []corev1.EnvVar{
 								{
 									Name:  "REDPANDA_ENVIRONMENT",
@@ -439,6 +437,18 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 	}
 
 	return ss, nil
+}
+
+func overprovisioned(developerMode bool) []string {
+	if developerMode {
+		return []string{
+			"--overprovisioned",
+			"--smp=1",
+			"--kernel-page-cache=true",
+			"--default-log-level=debug",
+		}
+	}
+	return []string{"--default-log-level=info"}
 }
 
 func (r *StatefulSetResource) secretVolumeMounts() []corev1.VolumeMount {
