@@ -222,17 +222,23 @@ func (r *StatefulSetResource) populateTLSConfigCert(
 	}
 
 	var certSecret corev1.Secret
-	err := r.Get(ctx, r.internalClientCertSecretKey, &certSecret)
+	err := r.Get(ctx, r.adminAPIClientCertSecretKey, &certSecret)
 	if err != nil {
 		return err
 	}
 
-	cert, err := tls.X509KeyPair(certSecret.Data[corev1.TLSCertKey], certSecret.Data[corev1.TLSPrivateKeyKey])
-	if err != nil {
-		return err
+	if r.pandaCluster.Spec.Configuration.TLS.AdminAPI.RequireClientAuth {
+		var clientCertSecret corev1.Secret
+		err := r.Get(ctx, r.adminAPIClientCertSecretKey, &clientCertSecret)
+		if err != nil {
+			return err
+		}
+		cert, err := tls.X509KeyPair(clientCertSecret.Data[corev1.TLSCertKey], clientCertSecret.Data[corev1.TLSPrivateKeyKey])
+		if err != nil {
+			return err
+		}
+		tlsConfig.Certificates = []tls.Certificate{cert}
 	}
-
-	tlsConfig.Certificates = []tls.Certificate{cert}
 
 	return nil
 }
