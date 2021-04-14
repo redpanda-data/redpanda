@@ -12,6 +12,7 @@
 #pragma once
 
 #include "cluster/persisted_stm.h"
+#include "cluster/tx_utils.h"
 #include "cluster/types.h"
 #include "config/configuration.h"
 #include "kafka/protocol/errors.h"
@@ -45,9 +46,6 @@ namespace cluster {
 class rm_stm final : public persisted_stm {
 public:
     static constexpr const int8_t tx_snapshot_version = 0;
-    using producer_id = named_type<int64_t, struct producer_identity_id>;
-    using producer_epoch = named_type<int16_t, struct producer_identity_epoch>;
-
     struct tx_range {
         model::producer_identity pid;
         model::offset first;
@@ -148,7 +146,8 @@ private:
     struct log_state {
         // we enforce monotonicity of epochs related to the same producer_id
         // and fence off out of order requests
-        absl::flat_hash_map<producer_id, producer_epoch> fence_pid_epoch;
+        absl::flat_hash_map<model::producer_id, model::producer_epoch>
+          fence_pid_epoch;
         // a map from session id (aka producer_identity) to its current tx
         absl::flat_hash_map<model::producer_identity, tx_range> ongoing_map;
         // a heap of the first offsets of the ongoing transactions

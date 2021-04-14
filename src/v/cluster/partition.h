@@ -99,6 +99,8 @@ public:
         return raft::details::next_offset(_raft->last_visible_index());
     }
 
+    model::term_id term() { return _raft->term(); }
+
     model::offset dirty_offset() const {
         return _raft->log().offsets().dirty_offset;
     }

@@ -72,21 +72,6 @@ static model::record_batch make_prepare_batch(rm_stm::prepare_marker record) {
     return std::move(builder).build();
 }
 
-static model::record_batch make_fence_batch(model::producer_identity pid) {
-    iobuf key;
-    kafka::response_writer w(key);
-    w.write(rm_stm::fence_control_record_version());
-
-    storage::record_batch_builder builder(
-      tx_fence_batch_type, model::offset(0));
-    builder.set_producer_identity(pid.id, pid.epoch);
-    builder.set_control_type();
-    builder.add_raw_kw(
-      std::move(key), std::nullopt, std::vector<model::record_header>());
-
-    return std::move(builder).build();
-}
-
 static rm_stm::prepare_marker parse_prepare_batch(model::record_batch& b) {
     const auto& hdr = b.header();
 
@@ -137,14 +122,6 @@ static model::control_record_type parse_control_batch(model::record_batch& b) {
     return model::control_record_type(key_reader.read_int16());
 }
 
-static inline rm_stm::producer_id id(model::producer_identity pid) {
-    return rm_stm::producer_id(pid.id);
-}
-
-static inline rm_stm::producer_epoch epoch(model::producer_identity pid) {
-    return rm_stm::producer_epoch(pid.epoch);
-}
-
 rm_stm::rm_stm(ss::logger& logger, raft::consensus* c)
   : persisted_stm("rm", logger, c)
   , _oldest_session(model::timestamp::now())
@@ -169,11 +146,12 @@ rm_stm::begin_tx(model::producer_identity pid) {
     }
 
     // checking / setting pid fencing
-    auto fence_it = _log_state.fence_pid_epoch.find(id(pid));
+    auto fence_it = _log_state.fence_pid_epoch.find(pid.get_id());
     if (
       fence_it == _log_state.fence_pid_epoch.end()
-      || epoch(pid) > fence_it->second) {
-        auto batch = make_fence_batch(pid);
+      || pid.get_epoch() > fence_it->second) {
+        auto batch = make_fence_batch(
+          rm_stm::fence_control_record_version, pid);
         auto reader = model::make_memory_record_batch_reader(std::move(batch));
         auto r = co_await _c->replicate(
           _insync_term,
@@ -191,7 +169,7 @@ rm_stm::begin_tx(model::producer_identity pid) {
               model::offset(r.value().last_offset()), _sync_timeout)) {
             co_return tx_errc::timeout;
         }
-        fence_it = _log_state.fence_pid_epoch.find(id(pid));
+        fence_it = _log_state.fence_pid_epoch.find(pid.get_id());
         if (fence_it == _log_state.fence_pid_epoch.end()) {
             vlog(
               clusterlog.error,
@@ -201,7 +179,7 @@ rm_stm::begin_tx(model::producer_identity pid) {
             co_return tx_errc::timeout;
         }
     }
-    if (epoch(pid) != fence_it->second) {
+    if (pid.get_epoch() != fence_it->second) {
         vlog(
           clusterlog.error,
           "pid {} fenced out by epoch {}",
@@ -246,9 +224,9 @@ ss::future<tx_errc> rm_stm::prepare_tx(
     }
 
     // checking fencing
-    auto fence_it = _log_state.fence_pid_epoch.find(id(pid));
+    auto fence_it = _log_state.fence_pid_epoch.find(pid.get_id());
     if (fence_it != _log_state.fence_pid_epoch.end()) {
-        if (epoch(pid) < fence_it->second) {
+        if (pid.get_epoch() < fence_it->second) {
             vlog(
               clusterlog.error,
               "Can't prepare pid:{} - fenced out by epoch {}",
@@ -528,9 +506,9 @@ rm_stm::replicate_tx(model::batch_identity bid, model::record_batch_reader br) {
     }
 
     // fencing
-    auto fence_it = _log_state.fence_pid_epoch.find(id(bid.pid));
+    auto fence_it = _log_state.fence_pid_epoch.find(bid.pid.get_id());
     if (fence_it != _log_state.fence_pid_epoch.end()) {
-        if (epoch(bid.pid) < fence_it->second) {
+        if (bid.pid.get_epoch() < fence_it->second) {
             co_return kafka::error_code::invalid_producer_epoch;
         }
     }
@@ -696,9 +674,9 @@ ss::future<> rm_stm::apply(model::record_batch b) {
 
     if (hdr.type == tx_fence_batch_type) {
         auto [fence_it, _] = _log_state.fence_pid_epoch.try_emplace(
-          id(bid.pid), epoch(bid.pid));
-        if (fence_it->second < epoch(bid.pid)) {
-            fence_it->second = epoch(bid.pid);
+          bid.pid.get_id(), bid.pid.get_epoch());
+        if (fence_it->second < bid.pid.get_epoch()) {
+            fence_it->second = bid.pid.get_epoch();
         }
     } else if (hdr.type == tx_prepare_batch_type) {
         apply_prepare(parse_prepare_batch(b));
@@ -718,7 +696,7 @@ ss::future<> rm_stm::apply(model::record_batch b) {
 void rm_stm::apply_prepare(rm_stm::prepare_marker prepare) {
     auto pid = prepare.pid;
 
-    auto fence_it = _log_state.fence_pid_epoch.find(id(pid));
+    auto fence_it = _log_state.fence_pid_epoch.find(pid.get_id());
     if (fence_it == _log_state.fence_pid_epoch.end()) {
         // impossible situation, tm_stm invokes prepare strictly
         // after begin which adds a fence (if it's necessary)
@@ -728,14 +706,14 @@ void rm_stm::apply_prepare(rm_stm::prepare_marker prepare) {
           "Can find an expected fence for an observed prepare with pid:{}",
           pid);
         if (_recovery_policy == best_effort) {
-            _log_state.fence_pid_epoch.emplace(id(pid), epoch(pid));
+            _log_state.fence_pid_epoch.emplace(pid.get_id(), pid.get_epoch());
         } else {
             vassert(
               false,
               "Can find an expected fence for an observed prepare with pid:{}",
               pid);
         }
-    } else if (fence_it->second < epoch(pid)) {
+    } else if (fence_it->second < pid.get_epoch()) {
         // impossible situation, tm_stm invokes prepare strictly
         // after begin which adds a fence (if it's necessary)
         // so fence should be at least as prepare's pid
@@ -746,7 +724,7 @@ void rm_stm::apply_prepare(rm_stm::prepare_marker prepare) {
           fence_it->second,
           pid);
         if (_recovery_policy == best_effort) {
-            fence_it->second = epoch(pid);
+            fence_it->second = pid.get_epoch();
         } else {
             vassert(
               false,
@@ -754,7 +732,7 @@ void rm_stm::apply_prepare(rm_stm::prepare_marker prepare) {
               fence_it->second,
               pid);
         }
-    } else if (fence_it->second > epoch(pid)) {
+    } else if (fence_it->second > pid.get_epoch()) {
         // during a data race between replicating
         //  - a prepare record and
         //  - a record wth higher epoch for the same pid.id e.g abort
@@ -791,11 +769,11 @@ void rm_stm::apply_prepare(rm_stm::prepare_marker prepare) {
 
 void rm_stm::apply_control(
   model::producer_identity pid, model::control_record_type crt) {
-    auto fence_it = _log_state.fence_pid_epoch.find(id(pid));
+    auto fence_it = _log_state.fence_pid_epoch.find(pid.get_id());
     if (fence_it == _log_state.fence_pid_epoch.end()) {
-        _log_state.fence_pid_epoch.emplace(id(pid), epoch(pid));
-    } else if (fence_it->second < epoch(pid)) {
-        fence_it->second = epoch(pid);
+        _log_state.fence_pid_epoch.emplace(pid.get_id(), pid.get_epoch());
+    } else if (fence_it->second < pid.get_epoch()) {
+        fence_it->second = pid.get_epoch();
     }
 
     // either epoch is the same as fencing or it's lesser in the latter
@@ -947,7 +925,7 @@ void rm_stm::load_snapshot(stm_snapshot_header hdr, iobuf&& tx_ss_buf) {
     auto data = reflection::adl<tx_snapshot>{}.from(data_parser);
 
     for (auto& entry : data.fenced) {
-        _log_state.fence_pid_epoch.emplace(id(entry), epoch(entry));
+        _log_state.fence_pid_epoch.emplace(entry.get_id(), entry.get_epoch());
     }
     for (auto& entry : data.ongoing) {
         _log_state.ongoing_map.emplace(entry.pid, entry);
