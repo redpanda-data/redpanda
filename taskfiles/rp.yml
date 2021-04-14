@@ -30,6 +30,8 @@ tasks:
       VECTORIZED_CMAKE_DIR: "{{default .VECTORIZED_CMAKE_DIR_DEFAULT .VECTORIZED_CMAKE_DIR}}"
       CC: '{{.COMPILER}}'
       CXX: '{{if eq .COMPILER "gcc"}}g++{{else}}clang++{{end}}'
+    env:
+      CCACHE_DIR: '{{default "/dev/shm/ccache/v" .CCACHE_DIR}}'
     cmds:
     - |
       PATH={{.LLVM_INSTALL_PATH}}/bin:$PATH
