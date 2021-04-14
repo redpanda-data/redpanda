@@ -3,7 +3,6 @@ module github.com/vectorizedio/redpanda/src/go/k8s
 go 1.15
 
 require (
-	github.com/Shopify/sarama v1.28.1-0.20210318150015-41df78df10a9
 	github.com/banzaicloud/k8s-objectmatcher v1.5.1
 	github.com/go-logr/logr v0.3.0
 	github.com/hashicorp/go-multierror v1.1.0
