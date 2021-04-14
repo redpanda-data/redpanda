@@ -14,3 +14,4 @@
 # core
 /cmake        @vectorizedio/core
 /src/v        @vectorizedio/core
+/src/go/k8s   @vectorizedio/k8s
