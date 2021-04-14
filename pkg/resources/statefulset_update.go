@@ -180,9 +180,8 @@ func (r *StatefulSetResource) queryRedpandaStatus(
 	// TODO right now we support TLS only on one listener so if external
 	// connectivity is enabled, TLS is enabled only on external listener. This
 	// will be fixed by https://github.com/vectorizedio/redpanda/issues/1084
-	if r.pandaCluster.AdminAPIExternal() != nil &&
-		!r.pandaCluster.AdminAPIExternal().External.Enabled &&
-		r.pandaCluster.AdminAPIExternal().TLS.Enabled {
+	if r.pandaCluster.AdminAPITLS() != nil &&
+		r.pandaCluster.AdminAPIExternal() == nil {
 		tlsConfig := tls.Config{MinVersion: tls.VersionTLS12} // TLS12 is min version allowed by gosec.
 
 		if err := r.populateTLSConfigCert(ctx, &tlsConfig); err != nil {
@@ -229,7 +228,7 @@ func (r *StatefulSetResource) populateTLSConfigCert(
 	caCertPool.AppendCertsFromPEM(nodeCertSecret.Data[cmetav1.TLSCAKey])
 	tlsConfig.RootCAs = caCertPool
 
-	if r.pandaCluster.AdminAPIInternal().TLS.RequireClientAuth {
+	if r.pandaCluster.AdminAPITLS() != nil && r.pandaCluster.AdminAPITLS().TLS.RequireClientAuth {
 		var clientCertSecret corev1.Secret
 		err := r.Get(ctx, r.adminAPIClientCertSecretKey, &clientCertSecret)
 		if err != nil {
