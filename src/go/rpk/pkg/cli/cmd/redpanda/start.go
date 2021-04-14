@@ -744,7 +744,7 @@ func parseFlags(flags []string) map[string]string {
 		parts := strings.Split(trimmed, "=")
 		if len(parts) >= 2 {
 			name := strings.Trim(parts[0], " ")
-			value := strings.Trim(parts[1], " ")
+			value := strings.Join(parts[1:], "=")
 			parsed[name] = value
 			continue
 		}

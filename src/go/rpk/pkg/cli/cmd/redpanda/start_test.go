@@ -1233,10 +1233,14 @@ func TestExtraFlags(t *testing.T) {
 			"--bool-flag", "false",
 			"--kernel-page-cache", "1",
 			"--another-arbitrary-seastar-flag", "",
+			"--logger-log-level", "exception=debug",
+			"--logger-log-level2=exception=debug",
 		},
 		expected: map[string]string{
 			"kernel-page-cache":              "1",
 			"another-arbitrary-seastar-flag": "",
+			"logger-log-level":               "exception=debug",
+			"logger-log-level2":              "exception=debug",
 		},
 	}, {
 		name: "it should return an empty map if there are no unknown flags",
