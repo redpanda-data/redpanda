@@ -51,7 +51,7 @@ func NewServiceAccount(
 
 // Ensure manages ServiceAccount that is used in initContainer
 func (s *ServiceAccountResource) Ensure(ctx context.Context) error {
-	if !s.pandaCluster.Spec.ExternalConnectivity.Enabled {
+	if s.pandaCluster.ExternalListener() == nil {
 		return nil
 	}
 

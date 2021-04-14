@@ -4,6 +4,8 @@ metadata:
   name: update-cluster
 spec:
   configuration:
-    tls:
-      kafkaApi:
-        enabled: true
+    kafkaApi:
+      - name: kafka
+        port: 9092
+        tls:
+          enabled: true

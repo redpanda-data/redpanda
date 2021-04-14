@@ -17,11 +17,11 @@ spec:
     rpcServer:
       port: 33145
     kafkaApi:
+    - name: kafka
       port: 9092
+      tls:
+        enabled: true
+        requireClientAuth: true
     admin:
       port: 9644
     developerMode: true
-    tls:
-      kafkaApi:
-        enabled: true
-        requireClientAuth: true

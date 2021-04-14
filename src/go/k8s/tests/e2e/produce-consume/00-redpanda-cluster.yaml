@@ -6,8 +6,6 @@ spec:
   image: "vectorized/redpanda"
   version: "latest"
   replicas: 1
-  externalConnectivity:
-    enabled: false
   resources:
     requests:
       cpu: 100m
@@ -19,6 +17,7 @@ spec:
     rpcServer:
       port: 33145
     kafkaApi:
+    - name: kafka
       port: 9092
     admin:
       port: 9644

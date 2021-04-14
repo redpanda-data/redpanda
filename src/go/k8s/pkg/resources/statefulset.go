@@ -112,14 +112,21 @@ func NewStatefulSet(
 func (r *StatefulSetResource) Ensure(ctx context.Context) error {
 	var sts appsv1.StatefulSet
 
-	if r.pandaCluster.Spec.ExternalConnectivity.Enabled {
+	if r.pandaCluster.ExternalListener() != nil {
 		err := r.Get(ctx, r.nodePortName, &r.nodePortSvc)
 		if err != nil {
 			return fmt.Errorf("failed to retrieve node port service %s: %w", r.nodePortName, err)
 		}
 
-		if len(r.nodePortSvc.Spec.Ports) != 2 || r.nodePortSvc.Spec.Ports[0].NodePort == 0 || r.nodePortSvc.Spec.Ports[1].NodePort == 0 {
+		adminAndInternalPortLength := 2
+		if len(r.nodePortSvc.Spec.Ports) != adminAndInternalPortLength {
 			return fmt.Errorf("node port service %s: %w", r.nodePortName, errNodePortMissing)
+		}
+
+		for _, port := range r.nodePortSvc.Spec.Ports {
+			if port.NodePort == 0 {
+				return fmt.Errorf("node port service %s, port %s is 0: %w", r.nodePortName, port.Name, errNodePortMissing)
+			}
 		}
 	}
 
@@ -210,6 +217,17 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 	tolerations := r.pandaCluster.Spec.Tolerations
 	nodeSelector := r.pandaCluster.Spec.NodeSelector
 
+	if len(r.pandaCluster.Spec.Configuration.KafkaAPI) == 0 {
+		// TODO
+		return nil, nil
+	}
+
+	externalListener := r.pandaCluster.ExternalListener()
+	externalSubdomain := ""
+	if externalListener != nil {
+		externalSubdomain = externalListener.External.Subdomain
+	}
+
 	ss := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: r.Key().Namespace,
@@ -299,15 +317,15 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 								},
 								{
 									Name:  "EXTERNAL_CONNECTIVITY",
-									Value: strconv.FormatBool(r.pandaCluster.Spec.ExternalConnectivity.Enabled),
+									Value: strconv.FormatBool(externalListener != nil),
 								},
 								{
 									Name:  "EXTERNAL_CONNECTIVITY_SUBDOMAIN",
-									Value: r.pandaCluster.Spec.ExternalConnectivity.Subdomain,
+									Value: externalSubdomain,
 								},
 								{
 									Name:  "HOST_PORT",
-									Value: r.getNodePort("kafka"),
+									Value: r.getNodePort(r.pandaCluster.Spec.Configuration.KafkaAPI[0].Name),
 								},
 							},
 							SecurityContext: &corev1.SecurityContext{
@@ -453,13 +471,14 @@ func overprovisioned(developerMode bool) []string {
 
 func (r *StatefulSetResource) secretVolumeMounts() []corev1.VolumeMount {
 	var mounts []corev1.VolumeMount
-	if r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.Enabled {
+	tlsListener := r.pandaCluster.KafkaTLSListener()
+	if tlsListener != nil {
 		mounts = append(mounts, corev1.VolumeMount{
 			Name:      "tlscert",
 			MountPath: tlsDir,
 		})
 	}
-	if r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.RequireClientAuth {
+	if tlsListener != nil && tlsListener.TLS.RequireClientAuth {
 		mounts = append(mounts, corev1.VolumeMount{
 			Name:      "tlsca",
 			MountPath: tlsDirCA,
@@ -478,7 +497,8 @@ func (r *StatefulSetResource) secretVolumes() []corev1.Volume {
 	var vols []corev1.Volume
 
 	// When TLS is enabled, Redpanda needs a keypair certificate.
-	if r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.Enabled {
+	tlsListener := r.pandaCluster.KafkaTLSListener()
+	if tlsListener != nil {
 		vols = append(vols, corev1.Volume{
 			Name: "tlscert",
 			VolumeSource: corev1.VolumeSource{
@@ -500,7 +520,7 @@ func (r *StatefulSetResource) secretVolumes() []corev1.Volume {
 	}
 
 	// When TLS client authentication is enabled, Redpanda needs the client's CA certificate.
-	if r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.RequireClientAuth {
+	if tlsListener != nil && tlsListener.TLS.RequireClientAuth {
 		vols = append(vols, corev1.Volume{
 			Name: "tlsca",
 			VolumeSource: corev1.VolumeSource{
@@ -547,7 +567,7 @@ func (r *StatefulSetResource) secretVolumes() []corev1.Volume {
 }
 
 func (r *StatefulSetResource) getNodePort(name string) string {
-	if r.pandaCluster.Spec.ExternalConnectivity.Enabled {
+	if r.pandaCluster.ExternalListener() != nil {
 		for _, port := range r.nodePortSvc.Spec.Ports {
 			if port.Name == name {
 				return strconv.FormatInt(int64(port.NodePort), 10)
@@ -558,7 +578,7 @@ func (r *StatefulSetResource) getNodePort(name string) string {
 }
 
 func (r *StatefulSetResource) getServiceAccountName() string {
-	if r.pandaCluster.Spec.ExternalConnectivity.Enabled {
+	if r.pandaCluster.ExternalListener() != nil {
 		return r.serviceAccountName
 	}
 	return ""
@@ -580,21 +600,22 @@ func (r *StatefulSetResource) portsConfiguration() string {
 }
 
 func (r *StatefulSetResource) getPorts() []corev1.ContainerPort {
-	if r.pandaCluster.Spec.ExternalConnectivity.Enabled &&
+	if r.pandaCluster.ExternalListener() != nil &&
 		len(r.nodePortSvc.Spec.Ports) > 0 {
 		ports := []corev1.ContainerPort{
-			{
-				Name:          "kafka-internal",
-				ContainerPort: int32(r.pandaCluster.Spec.Configuration.KafkaAPI.Port),
-			},
 			{
 				Name:          "admin-internal",
 				ContainerPort: int32(r.pandaCluster.Spec.Configuration.AdminAPI.Port),
 			},
 		}
+		internalListener := r.pandaCluster.InternalListener()
+		ports = append(ports, corev1.ContainerPort{
+			Name:          internalListener.Name,
+			ContainerPort: int32(internalListener.Port),
+		})
 		for _, port := range r.nodePortSvc.Spec.Ports {
 			ports = append(ports, corev1.ContainerPort{
-				Name: port.Name + "-external",
+				Name: port.Name + "-external", // We append "external" because the corresponding listener is autogenerated.
 				// To distinguish external from internal clients the new listener
 				// and port is exposed for Redpanda clients. The port is chosen
 				// arbitrary to the KafkaAPI + 1, because user can not reach this
@@ -609,16 +630,16 @@ func (r *StatefulSetResource) getPorts() []corev1.ContainerPort {
 		return ports
 	}
 
-	return []corev1.ContainerPort{
-		{
-			Name:          "kafka",
-			ContainerPort: int32(r.pandaCluster.Spec.Configuration.KafkaAPI.Port),
-		},
-		{
-			Name:          "admin",
-			ContainerPort: int32(r.pandaCluster.Spec.Configuration.AdminAPI.Port),
-		},
-	}
+	ports := []corev1.ContainerPort{{
+		Name:          "admin",
+		ContainerPort: int32(r.pandaCluster.Spec.Configuration.AdminAPI.Port),
+	}}
+	internalListener := r.pandaCluster.InternalListener()
+	ports = append(ports, corev1.ContainerPort{
+		Name:          internalListener.Name,
+		ContainerPort: int32(internalListener.Port),
+	})
+	return ports
 }
 
 func statefulSetKind() string {

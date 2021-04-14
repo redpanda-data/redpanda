@@ -41,10 +41,7 @@ type ClusterSpec struct {
 	// If specified, Redpanda Pod node selectors. For reference please visit
 	// https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node
 	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
-
-	// ExternalConnectivity enables user to expose Redpanda
-	// nodes outside of a Kubernetes cluster. For more
-	// information please go to ExternalConnectivityConfig
+	// ExternalConnectivity enables user to expose admin api
 	ExternalConnectivity ExternalConnectivityConfig `json:"externalConnectivity,omitempty"`
 	// Storage spec for cluster
 	Storage StorageSpec `json:"storage,omitempty"`
@@ -169,19 +166,29 @@ type ClusterList struct {
 
 // RedpandaConfig is the definition of the main configuration
 type RedpandaConfig struct {
-	RPCServer     SocketAddress `json:"rpcServer,omitempty"`
-	KafkaAPI      SocketAddress `json:"kafkaApi,omitempty"`
-	AdminAPI      SocketAddress `json:"admin,omitempty"`
-	DeveloperMode bool          `json:"developerMode,omitempty"`
-	TLS           TLSConfig     `json:"tls,omitempty"`
+	RPCServer     SocketAddress      `json:"rpcServer,omitempty"`
+	KafkaAPI      []KafkaAPIListener `json:"kafkaApi,omitempty"`
+	AdminAPI      SocketAddress      `json:"admin,omitempty"`
+	DeveloperMode bool               `json:"developerMode,omitempty"`
+	TLS           TLSConfig          `json:"tls,omitempty"`
 	// Number of partitions in the internal group membership topic
 	GroupTopicPartitions int `json:"groupTopicPartitions,omitempty"`
 }
 
+// KafkaAPIListener listener information for Kafka API
+type KafkaAPIListener struct {
+	Name string `json:"name,omitempty"`
+	Port int    `json:"port,omitempty"`
+	// External enables user to expose Redpanda
+	// nodes outside of a Kubernetes cluster. For more
+	// information please go to ExternalConnectivityConfig
+	External ExternalConnectivityConfig `json:"external,omitempty"`
+	// Configuration of TLS for Kafka API
+	TLS KafkaAPITLS `json:"tls,omitempty"`
+}
+
 // TLSConfig configures TLS for Redpanda APIs
 type TLSConfig struct {
-	// Configuration of TLS for Kafka API
-	KafkaAPI KafkaAPITLS `json:"kafkaApi,omitempty"`
 	// Configuration of TLS for Admin API
 	AdminAPI AdminAPITLS `json:"adminApi,omitempty"`
 }
@@ -258,4 +265,38 @@ func init() {
 // FullImageName returns image name including version
 func (r *Cluster) FullImageName() string {
 	return fmt.Sprintf("%s:%s", r.Spec.Image, r.Spec.Version)
+}
+
+// ExternalListener returns external listener if found in configuration. Returns
+// nil if no external listener is configured. Right now we support only one
+// external listener which is enforced by webhook
+func (r *Cluster) ExternalListener() *KafkaAPIListener {
+	for _, el := range r.Spec.Configuration.KafkaAPI {
+		if el.External.Enabled {
+			return &el
+		}
+	}
+	return nil
+}
+
+// InternalListener returns internal listener.
+func (r *Cluster) InternalListener() *KafkaAPIListener {
+	for _, el := range r.Spec.Configuration.KafkaAPI {
+		if !el.External.Enabled {
+			return &el
+		}
+	}
+	return nil
+}
+
+// KafkaTLSListener returns kafka listener that has tls enabled. Returns nil if
+// no tls is configured. Until v1alpha1 API is deprecated, we support only
+// single listener with TLS
+func (r *Cluster) KafkaTLSListener() *KafkaAPIListener {
+	for i, el := range r.Spec.Configuration.KafkaAPI {
+		if el.TLS.Enabled {
+			return &r.Spec.Configuration.KafkaAPI[i]
+		}
+	}
+	return nil
 }

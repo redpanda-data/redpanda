@@ -131,7 +131,7 @@ func (r *ConfigMapResource) obj(ctx context.Context) (k8sclient.Object, error) {
 	return cm, nil
 }
 
-// nolint:funlen // it's still ok to fill all config fields in one function
+// nolint:funlen // let's keep the configuration in one function for now and refactor later
 func (r *ConfigMapResource) createConfiguration(
 	ctx context.Context,
 ) (*config.Config, error) {
@@ -140,21 +140,21 @@ func (r *ConfigMapResource) createConfiguration(
 	c := r.pandaCluster.Spec.Configuration
 	cr := &cfgRpk.Redpanda
 
-	cr.KafkaApi = []config.NamedSocketAddress{
-		{
-			SocketAddress: config.SocketAddress{
-				Address: "0.0.0.0",
-				Port:    c.KafkaAPI.Port,
-			},
-			Name: "Internal",
+	internalListener := r.pandaCluster.InternalListener()
+	cr.KafkaApi = []config.NamedSocketAddress{} // we don't want to inherit default kafka port
+	cr.KafkaApi = append(cr.KafkaApi, config.NamedSocketAddress{
+		SocketAddress: config.SocketAddress{
+			Address: "0.0.0.0",
+			Port:    internalListener.Port,
 		},
-	}
+		Name: "Internal", // TODO preserve the name when we support multiple listeners
+	})
 
-	if r.pandaCluster.Spec.ExternalConnectivity.Enabled {
+	if r.pandaCluster.ExternalListener() != nil {
 		cr.KafkaApi = append(cr.KafkaApi, config.NamedSocketAddress{
 			SocketAddress: config.SocketAddress{
 				Address: "0.0.0.0",
-				Port:    calculateExternalPort(c.KafkaAPI.Port),
+				Port:    calculateExternalPort(internalListener.Port),
 			},
 			Name: "External",
 		})
@@ -181,21 +181,23 @@ func (r *ConfigMapResource) createConfiguration(
 
 	cr.DeveloperMode = c.DeveloperMode
 	cr.Directory = dataDirectory
-	if r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.Enabled {
+	tlsListener := r.pandaCluster.KafkaTLSListener()
+	if tlsListener != nil {
 		// If external connectivity is enabled the TLS config will be applied to the external listener,
 		// otherwise TLS will be applied to the internal listener. // TODO support multiple TLS configs
 		name := "Internal"
-		if r.pandaCluster.Spec.ExternalConnectivity.Enabled {
-			name = "External"
+		externalListener := r.pandaCluster.ExternalListener()
+		if externalListener != nil {
+			name = externalListener.Name
 		}
 		tls := config.ServerTLS{
 			Name:              name,
 			KeyFile:           fmt.Sprintf("%s/%s", tlsDir, corev1.TLSPrivateKeyKey), // tls.key
 			CertFile:          fmt.Sprintf("%s/%s", tlsDir, corev1.TLSCertKey),       // tls.crt
 			Enabled:           true,
-			RequireClientAuth: r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.RequireClientAuth,
+			RequireClientAuth: tlsListener.TLS.RequireClientAuth,
 		}
-		if r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.RequireClientAuth {
+		if tlsListener.TLS.RequireClientAuth {
 			tls.TruststoreFile = fmt.Sprintf("%s/%s", tlsDirCA, cmetav1.TLSCAKey)
 		}
 		cr.KafkaApiTLS = []config.ServerTLS{
@@ -204,9 +206,6 @@ func (r *ConfigMapResource) createConfiguration(
 	}
 	if r.pandaCluster.Spec.Configuration.TLS.AdminAPI.Enabled {
 		name := internal
-		if r.pandaCluster.Spec.ExternalConnectivity.Enabled {
-			name = external
-		}
 		adminTLS := config.ServerTLS{
 			Name:              name,
 			KeyFile:           fmt.Sprintf("%s/%s", tlsAdminDir, corev1.TLSPrivateKeyKey),

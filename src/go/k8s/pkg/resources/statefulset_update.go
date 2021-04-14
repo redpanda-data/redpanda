@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strconv"
 	"time"
 
 	"github.com/Shopify/sarama"
@@ -158,8 +159,12 @@ func (r *StatefulSetResource) ensureRedpandaGroupsReady(
 		return nil
 	}
 
-	headlessServiceWithPort := fmt.Sprintf("%s:%d", r.serviceFQDN,
-		r.pandaCluster.Spec.Configuration.KafkaAPI.Port)
+	if len(r.pandaCluster.Spec.Configuration.KafkaAPI) == 0 {
+		return nil // TODO
+	}
+	internalListener := r.pandaCluster.InternalListener()
+	port := strconv.Itoa(internalListener.Port)
+	headlessServiceWithPort := fmt.Sprintf("%s:%s", r.serviceFQDN, port)
 
 	addresses := []string{fmt.Sprintf("%s-%d.%s", sts.Name, ordinal, headlessServiceWithPort)}
 
@@ -182,7 +187,8 @@ func (r *StatefulSetResource) queryRedpandaForTopicMembers(
 	// TODO right now we support TLS only on one listener so if external
 	// connectivity is enabled, TLS is enabled only on external listener. This
 	// will be fixed by https://github.com/vectorizedio/redpanda/issues/1084
-	if !r.pandaCluster.Spec.ExternalConnectivity.Enabled && r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.Enabled {
+	tlsListener := r.pandaCluster.KafkaTLSListener()
+	if tlsListener != nil && !tlsListener.External.Enabled {
 		tlsConfig := tls.Config{MinVersion: tls.VersionTLS12} // TLS12 is min version allowed by gosec.
 		// For simplicity, we skip broker verification until per-listener
 		// TLS is available in Redpanda. This client calls the internal listener.
@@ -210,7 +216,8 @@ func (r *StatefulSetResource) queryRedpandaForTopicMembers(
 func (r *StatefulSetResource) populateTLSConfigCert(
 	ctx context.Context, tlsConfig *tls.Config,
 ) error {
-	if !r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.RequireClientAuth {
+	tlsListener := r.pandaCluster.KafkaTLSListener()
+	if tlsListener == nil || !tlsListener.TLS.RequireClientAuth {
 		return nil
 	}
 

@@ -88,13 +88,18 @@ func (r *ClusterReconciler) Reconcile(
 		return ctrl.Result{}, fmt.Errorf("unable to retrieve Cluster resource: %w", err)
 	}
 
+	nodeports := []resources.NamedServicePort{}
+	internalListener := redpandaCluster.InternalListener()
+	externalListener := redpandaCluster.ExternalListener()
+	if externalListener != nil {
+		nodeports = append(nodeports, resources.NamedServicePort{Name: externalListener.Name, Port: internalListener.Port + 1})
+	}
+	if redpandaCluster.Spec.ExternalConnectivity.Enabled {
+		nodeports = append(nodeports, resources.NamedServicePort{Name: resources.AdminPortName, Port: redpandaCluster.Spec.Configuration.AdminAPI.Port + 1})
+	}
 	headlessPorts := []resources.NamedServicePort{
 		{Name: resources.AdminPortName, Port: redpandaCluster.Spec.Configuration.AdminAPI.Port},
-		{Name: resources.KafkaPortName, Port: redpandaCluster.Spec.Configuration.KafkaAPI.Port},
-	}
-	nodeports := []resources.NamedServicePort{
-		{Name: resources.AdminPortName, Port: redpandaCluster.Spec.Configuration.AdminAPI.Port + 1},
-		{Name: resources.KafkaPortName, Port: redpandaCluster.Spec.Configuration.KafkaAPI.Port + 1},
+		{Name: internalListener.Name, Port: internalListener.Port},
 	}
 	headlessSvc := resources.NewHeadlessService(r.Client, &redpandaCluster, r.Scheme, headlessPorts, log)
 	nodeportSvc := resources.NewNodePortService(r.Client, &redpandaCluster, r.Scheme, nodeports, log)
@@ -240,7 +245,7 @@ func (r *ClusterReconciler) createExternalNodesList(
 	pandaCluster *redpandav1alpha1.Cluster,
 	nodePortName types.NamespacedName,
 ) (external, externalAdmin []string, err error) {
-	if !pandaCluster.Spec.ExternalConnectivity.Enabled {
+	if pandaCluster.ExternalListener() == nil {
 		return []string{}, []string{}, nil
 	}
 
@@ -249,26 +254,35 @@ func (r *ClusterReconciler) createExternalNodesList(
 		return []string{}, []string{}, fmt.Errorf("failed to retrieve node port service %s: %w", nodePortName, err)
 	}
 
-	if len(nodePortSvc.Spec.Ports) != 2 || nodePortSvc.Spec.Ports[0].NodePort == 0 || nodePortSvc.Spec.Ports[1].NodePort == 0 {
+	// we now support only one external and one internal port
+	adminAndInternalPortLength := 2
+	if len(nodePortSvc.Spec.Ports) != adminAndInternalPortLength {
 		return []string{}, []string{}, fmt.Errorf("node port service %s: %w", nodePortName, errNodePortMissing)
+	}
+
+	for _, port := range nodePortSvc.Spec.Ports {
+		if port.NodePort == 0 {
+			return []string{}, []string{}, fmt.Errorf("node port service %s, port %s is 0: %w", nodePortName, port.Name, errNodePortMissing)
+		}
 	}
 
 	var node corev1.Node
 	observedNodesExternal := make([]string, 0, len(pods))
 	observedNodesExternalAdmin := make([]string, 0, len(pods))
+	externalListener := pandaCluster.ExternalListener()
 	for i := range pods {
-		if len(pandaCluster.Spec.ExternalConnectivity.Subdomain) > 0 {
+		if externalListener != nil && len(externalListener.External.Subdomain) > 0 {
 			prefixLen := len(pods[i].GenerateName)
 			observedNodesExternal = append(observedNodesExternal,
 				fmt.Sprintf("%s.%s:%d",
 					pods[i].Name[prefixLen:],
-					pandaCluster.Spec.ExternalConnectivity.Subdomain,
-					getNodePort(&nodePortSvc, resources.KafkaPortName),
+					externalListener.External.Subdomain,
+					getNodePort(&nodePortSvc, externalListener.Name),
 				))
 			observedNodesExternalAdmin = append(observedNodesExternalAdmin,
 				fmt.Sprintf("%s.%s:%d",
 					pods[i].Name[prefixLen:],
-					pandaCluster.Spec.ExternalConnectivity.Subdomain,
+					externalListener.External.Subdomain,
 					getNodePort(&nodePortSvc, resources.AdminPortName),
 				))
 		} else {
@@ -279,7 +293,7 @@ func (r *ClusterReconciler) createExternalNodesList(
 			observedNodesExternal = append(observedNodesExternal,
 				fmt.Sprintf("%s:%d",
 					getExternalIP(&node),
-					getNodePort(&nodePortSvc, resources.KafkaPortName),
+					getNodePort(&nodePortSvc, externalListener.Name),
 				))
 			observedNodesExternalAdmin = append(observedNodesExternalAdmin,
 				fmt.Sprintf("%s:%d",

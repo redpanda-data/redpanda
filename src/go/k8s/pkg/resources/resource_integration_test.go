@@ -129,8 +129,8 @@ func TestEnsure_ConfigMap(t *testing.T) {
 	}
 
 	// verify the update patches the config
-	cluster.Spec.Configuration.KafkaAPI.Port = 1111
-	cluster.Spec.Configuration.TLS.KafkaAPI.Enabled = true
+	cluster.Spec.Configuration.KafkaAPI[0].Port = 1111
+	cluster.Spec.Configuration.KafkaAPI[0].TLS.Enabled = true
 
 	err = cm.Ensure(context.Background())
 	assert.NoError(t, err)

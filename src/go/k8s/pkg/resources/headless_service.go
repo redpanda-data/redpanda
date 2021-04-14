@@ -137,12 +137,13 @@ func (r *HeadlessServiceResource) HeadlessServiceFQDN() string {
 }
 
 func (r *HeadlessServiceResource) getAnnotation() map[string]string {
-	if !r.pandaCluster.Spec.ExternalConnectivity.Enabled && r.pandaCluster.Spec.ExternalConnectivity.Subdomain == "" {
+	externalListener := r.pandaCluster.ExternalListener()
+	if externalListener == nil || externalListener.External.Subdomain == "" {
 		return nil
 	}
 
 	return map[string]string{
-		externalDNSHostname: r.pandaCluster.Spec.ExternalConnectivity.Subdomain,
+		externalDNSHostname: externalListener.External.Subdomain,
 		// This annotation comes from the not merged feature
 		// https://github.com/kubernetes-sigs/external-dns/pull/1391
 		externalDNSUseHostIP: "true",
