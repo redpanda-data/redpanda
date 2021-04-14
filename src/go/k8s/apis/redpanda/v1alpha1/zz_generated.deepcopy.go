@@ -150,7 +150,6 @@ func (in *ClusterSpec) DeepCopyInto(out *ClusterSpec) {
 			(*out)[key] = val
 		}
 	}
-	out.ExternalConnectivity = in.ExternalConnectivity
 	in.Storage.DeepCopyInto(&out.Storage)
 	out.CloudStorage = in.CloudStorage
 	if in.Superusers != nil {

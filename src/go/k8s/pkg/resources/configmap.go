@@ -168,7 +168,7 @@ func (r *ConfigMapResource) createConfiguration(
 
 	cr.AdminApi[0].Port = clusterCRPortOrRPKDefault(r.pandaCluster.AdminAPIInternal().Port, cr.AdminApi[0].Port)
 	cr.AdminApi[0].Name = internal
-	if r.pandaCluster.Spec.ExternalConnectivity.Enabled {
+	if r.pandaCluster.AdminAPIExternal() != nil {
 		externalAdminAPI := config.NamedSocketAddress{
 			SocketAddress: config.SocketAddress{
 				Address: cr.AdminApi[0].Address,
