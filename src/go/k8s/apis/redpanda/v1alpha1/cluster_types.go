@@ -168,7 +168,7 @@ type ClusterList struct {
 type RedpandaConfig struct {
 	RPCServer     SocketAddress      `json:"rpcServer,omitempty"`
 	KafkaAPI      []KafkaAPIListener `json:"kafkaApi,omitempty"`
-	AdminAPI      AdminAPI           `json:"adminApi,omitempty"`
+	AdminAPI      []AdminAPI         `json:"adminApi,omitempty"`
 	DeveloperMode bool               `json:"developerMode,omitempty"`
 	// Number of partitions in the internal group membership topic
 	GroupTopicPartitions int `json:"groupTopicPartitions,omitempty"`
@@ -285,6 +285,26 @@ func (r *Cluster) InternalListener() *KafkaAPIListener {
 		if !el.External.Enabled {
 			return &el
 		}
+	}
+	return nil
+}
+
+// KafkaTLSListener returns kafka listener that has tls enabled. Returns nil if
+// no tls is configured. Until v1alpha1 API is deprecated, we support only
+// single listener with TLS
+func (r *Cluster) KafkaTLSListener() *KafkaAPIListener {
+	for i, el := range r.Spec.Configuration.KafkaAPI {
+		if el.TLS.Enabled {
+			return &r.Spec.Configuration.KafkaAPI[i]
+		}
+	}
+	return nil
+}
+
+// AdminAPIInternal returns internal admin listener
+func (r *Cluster) AdminAPIInternal() *AdminAPI {
+	for _, el := range r.Spec.Configuration.AdminAPI {
+		return &el
 	}
 	return nil
 }

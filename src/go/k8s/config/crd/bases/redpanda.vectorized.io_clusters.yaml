@@ -117,19 +117,22 @@ spec:
                 description: Configuration represent redpanda specific configuration
                 properties:
                   adminApi:
-                    description: AdminAPI is configuration of the redpanda Admin API
-                    properties:
-                      port:
-                        type: integer
-                      tls:
-                        description: Configuration of TLS for Admin API
-                        properties:
-                          enabled:
-                            type: boolean
-                          requireClientAuth:
-                            type: boolean
-                        type: object
-                    type: object
+                    items:
+                      description: AdminAPI is configuration of the redpanda Admin
+                        API
+                      properties:
+                        port:
+                          type: integer
+                        tls:
+                          description: Configuration of TLS for Admin API
+                          properties:
+                            enabled:
+                              type: boolean
+                            requireClientAuth:
+                              type: boolean
+                          type: object
+                      type: object
+                    type: array
                   developerMode:
                     type: boolean
                   groupTopicPartitions:

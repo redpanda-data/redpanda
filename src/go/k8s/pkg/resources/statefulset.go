@@ -484,7 +484,7 @@ func (r *StatefulSetResource) secretVolumeMounts() []corev1.VolumeMount {
 			MountPath: tlsDirCA,
 		})
 	}
-	if r.pandaCluster.Spec.Configuration.AdminAPI.TLS.Enabled {
+	if r.pandaCluster.AdminAPIInternal().TLS.Enabled {
 		mounts = append(mounts, corev1.VolumeMount{
 			Name:      "tlsadmincert",
 			MountPath: tlsAdminDir,
@@ -538,7 +538,7 @@ func (r *StatefulSetResource) secretVolumes() []corev1.Volume {
 	}
 
 	// When Admin TLS is enabled, Redpanda needs a keypair certificate.
-	if r.pandaCluster.Spec.Configuration.AdminAPI.TLS.Enabled {
+	if r.pandaCluster.AdminAPIInternal().TLS.Enabled {
 		vols = append(vols, corev1.Volume{
 			Name: "tlsadmincert",
 			VolumeSource: corev1.VolumeSource{
@@ -605,7 +605,7 @@ func (r *StatefulSetResource) getPorts() []corev1.ContainerPort {
 		ports := []corev1.ContainerPort{
 			{
 				Name:          "admin-internal",
-				ContainerPort: int32(r.pandaCluster.Spec.Configuration.AdminAPI.Port),
+				ContainerPort: int32(r.pandaCluster.AdminAPIInternal().Port),
 			},
 		}
 		internalListener := r.pandaCluster.InternalListener()
@@ -632,7 +632,7 @@ func (r *StatefulSetResource) getPorts() []corev1.ContainerPort {
 
 	ports := []corev1.ContainerPort{{
 		Name:          "admin",
-		ContainerPort: int32(r.pandaCluster.Spec.Configuration.AdminAPI.Port),
+		ContainerPort: int32(r.pandaCluster.AdminAPIInternal().Port),
 	}}
 	internalListener := r.pandaCluster.InternalListener()
 	ports = append(ports, corev1.ContainerPort{
