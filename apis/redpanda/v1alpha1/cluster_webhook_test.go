@@ -239,6 +239,15 @@ func TestValidateUpdate_NoError(t *testing.T) {
 		err := noPort.ValidateUpdate(redpandaCluster)
 		assert.Error(t, err)
 	})
+
+	t.Run("multiple internal admin listeners", func(t *testing.T) {
+		multiPort := redpandaCluster.DeepCopy()
+		multiPort.Spec.Configuration.AdminAPI = append(multiPort.Spec.Configuration.AdminAPI,
+			v1alpha1.AdminAPI{Port: 123})
+		err := multiPort.ValidateUpdate(redpandaCluster)
+
+		assert.Error(t, err)
+	})
 }
 
 //nolint:funlen // this is ok for a test
@@ -305,6 +314,15 @@ func TestCreation(t *testing.T) {
 		noPort.Spec.Configuration.AdminAPI = []v1alpha1.AdminAPI{}
 
 		err := noPort.ValidateCreate()
+		assert.Error(t, err)
+	})
+
+	t.Run("multiple internal admin listeners", func(t *testing.T) {
+		multiPort := redpandaCluster.DeepCopy()
+		multiPort.Spec.Configuration.AdminAPI = append(multiPort.Spec.Configuration.AdminAPI,
+			v1alpha1.AdminAPI{Port: 123})
+		err := multiPort.ValidateCreate()
+
 		assert.Error(t, err)
 	})
 
