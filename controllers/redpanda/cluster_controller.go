@@ -91,14 +91,15 @@ func (r *ClusterReconciler) Reconcile(
 	nodeports := []resources.NamedServicePort{}
 	internalListener := redpandaCluster.InternalListener()
 	externalListener := redpandaCluster.ExternalListener()
+	adminAPIInternal := redpandaCluster.AdminAPIInternal()
 	if externalListener != nil {
 		nodeports = append(nodeports, resources.NamedServicePort{Name: externalListener.Name, Port: internalListener.Port + 1})
 	}
 	if redpandaCluster.Spec.ExternalConnectivity.Enabled {
-		nodeports = append(nodeports, resources.NamedServicePort{Name: resources.AdminPortName, Port: redpandaCluster.Spec.Configuration.AdminAPI.Port + 1})
+		nodeports = append(nodeports, resources.NamedServicePort{Name: resources.AdminPortName, Port: adminAPIInternal.Port + 1})
 	}
 	headlessPorts := []resources.NamedServicePort{
-		{Name: resources.AdminPortName, Port: redpandaCluster.Spec.Configuration.AdminAPI.Port},
+		{Name: resources.AdminPortName, Port: adminAPIInternal.Port},
 		{Name: internalListener.Name, Port: internalListener.Port},
 	}
 	headlessSvc := resources.NewHeadlessService(r.Client, &redpandaCluster, r.Scheme, headlessPorts, log)
