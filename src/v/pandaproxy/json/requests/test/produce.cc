@@ -12,6 +12,7 @@
 #include "kafka/protocol/produce.h"
 #include "kafka/server/response.h"
 #include "model/timestamp.h"
+#include "pandaproxy/json/exceptions.h"
 #include "pandaproxy/json/rjson_util.h"
 #include "seastarx.h"
 
@@ -23,7 +24,11 @@ auto make_binary_v2_handler() {
     return ppj::produce_request_handler<>(ppj::serialization_format::binary_v2);
 }
 
-SEASTAR_THREAD_TEST_CASE(test_produce_request) {
+auto make_json_v2_handler() {
+    return ppj::produce_request_handler<>(ppj::serialization_format::json_v2);
+}
+
+SEASTAR_THREAD_TEST_CASE(test_produce_binary_request) {
     auto input = R"(
       {
         "records": [
@@ -51,6 +56,60 @@ SEASTAR_THREAD_TEST_CASE(test_produce_request) {
     value = parser.read_string(parser.bytes_left());
     BOOST_TEST(value == "pandaproxy");
     BOOST_TEST(records[1].partition_id == model::partition_id(1));
+}
+
+SEASTAR_THREAD_TEST_CASE(test_produce_json_request) {
+    auto input = R"(
+      {
+        "records": [
+          {
+            "value": 42,
+            "partition": 0
+          },
+          {
+            "key": "json_test",
+            "value": {"integer": -5, "string": "str", "array": ["element"]},
+            "partition": 1
+          }
+        ]
+      })";
+
+    auto records = ppj::rjson_parse(input, make_json_v2_handler());
+    BOOST_REQUIRE_EQUAL(records.size(), 2);
+    BOOST_REQUIRE_EQUAL(records[0].partition_id, model::partition_id(0));
+    BOOST_REQUIRE(!records[0].key);
+    BOOST_REQUIRE(!!records[0].value);
+    auto parser = iobuf_parser(std::move(*records[0].value));
+    auto value = parser.read_string(parser.bytes_left());
+    BOOST_REQUIRE_EQUAL(value, R"(42)");
+
+    BOOST_REQUIRE_EQUAL(records[1].partition_id, model::partition_id(1));
+    BOOST_REQUIRE(!!records[1].key);
+    parser = iobuf_parser(std::move(*records[1].key));
+    value = parser.read_string(parser.bytes_left());
+    BOOST_REQUIRE_EQUAL(value, R"("json_test")");
+
+    BOOST_REQUIRE(!!records[1].value);
+    parser = iobuf_parser(std::move(*records[1].value));
+    value = parser.read_string(parser.bytes_left());
+    BOOST_REQUIRE_EQUAL(
+      value, R"({"integer":-5,"string":"str","array":["element"]})");
+}
+
+SEASTAR_THREAD_TEST_CASE(test_produce_invalid_json_request) {
+    auto input = R"(
+      {
+        "records": [
+          {
+            "value": invalid,
+            "partition": 0
+          }
+        ]
+      })";
+
+    BOOST_CHECK_THROW(
+      ppj::rjson_parse(input, make_json_v2_handler()),
+      pandaproxy::json::parse_error);
 }
 
 SEASTAR_THREAD_TEST_CASE(test_produce_request_empty) {

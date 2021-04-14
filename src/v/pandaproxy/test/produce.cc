@@ -30,7 +30,7 @@ FIXTURE_TEST(pandaproxy_produce, pandaproxy_test_fixture) {
 
     info("Connecting client");
     auto client = make_client();
-    const ss::sstring produce_body(
+    const ss::sstring produce_binary_body(
       R"({
    "records":[
       {
@@ -48,11 +48,29 @@ FIXTURE_TEST(pandaproxy_produce, pandaproxy_test_fixture) {
    ]
 })");
 
+    const ss::sstring produce_json_body(
+      R"({
+   "records":[
+      {
+         "value":{"text":"vectorized"},
+         "partition":0
+      },
+      {
+         "value":{"text":"pandaproxy"},
+         "partition":0
+      },
+      {
+         "value":{"text":"multibroker"},
+         "partition":0
+      }
+   ]
+})");
+
     {
         info("Produce without topic");
         set_client_config("retries", size_t(0));
         auto body = iobuf();
-        body.append(produce_body.data(), produce_body.size());
+        body.append(produce_binary_body.data(), produce_binary_body.size());
         auto res = http_request(
           client,
           "/topics/t",
@@ -77,11 +95,11 @@ FIXTURE_TEST(pandaproxy_produce, pandaproxy_test_fixture) {
     add_topic(model::topic_namespace_view(ntp)).get();
 
     {
-        info("Produce to known topic");
+        info("Produce binary to known topic");
         // Will require a metadata update
         set_client_config("retries", size_t(5));
         auto body = iobuf();
-        body.append(produce_body.data(), produce_body.size());
+        body.append(produce_binary_body.data(), produce_binary_body.size());
         auto res = http_request(
           client,
           "/topics/t",
@@ -97,16 +115,16 @@ FIXTURE_TEST(pandaproxy_produce, pandaproxy_test_fixture) {
     }
 
     {
-        info("Produce to known topic");
+        info("Produce json to known topic");
         set_client_config("retries", size_t(0));
         auto body = iobuf();
-        body.append(produce_body.data(), produce_body.size());
+        body.append(produce_json_body.data(), produce_json_body.size());
         auto res = http_request(
           client,
           "/topics/t",
           std::move(body),
           boost::beast::http::verb::post,
-          ppj::serialization_format::binary_v2,
+          ppj::serialization_format::json_v2,
           ppj::serialization_format::v2);
 
         BOOST_REQUIRE_EQUAL(

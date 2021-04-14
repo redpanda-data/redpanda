@@ -44,6 +44,13 @@ static const std::vector<
     // Prefer first entry
     {name(ppjfmt::json_v2), {ppjfmt::json_v2, ppjfmt::none}, ppjfmt::json_v2},
     {"", {ppjfmt::json_v2, ppjfmt::none}, ppjfmt::json_v2},
+    // Support two types
+    {name(ppjfmt::json_v2),
+     {ppjfmt::json_v2, ppjfmt::binary_v2},
+     ppjfmt::json_v2},
+    {name(ppjfmt::binary_v2),
+     {ppjfmt::json_v2, ppjfmt::binary_v2},
+     ppjfmt::binary_v2},
     // Unsupported
     {name(ppjfmt::json_v2),
      {ppjfmt::binary_v2, ppjfmt::none},

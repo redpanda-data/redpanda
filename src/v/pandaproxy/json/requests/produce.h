@@ -17,7 +17,9 @@
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/produce.h"
 #include "pandaproxy/json/iobuf.h"
+#include "pandaproxy/json/types.h"
 #include "seastarx.h"
+#include "tristate.h"
 
 #include <seastar/core/sstring.hh>
 
@@ -42,6 +44,38 @@ private:
     serialization_format _fmt = serialization_format::none;
     state state = state::empty;
 
+    using json_writer = rapidjson::Writer<rapidjson::StringBuffer>;
+
+    // If we're parsing json_v2, and the field is key or value (implied by
+    // _json_writer being set), then forward calls to json_writer.
+    // Return json parsing success, or no value if the above is not true.
+    template<typename MemFunc, typename... Args>
+    tristate<bool> maybe_json(MemFunc mem_func, Args&&... args) {
+        if (_fmt != serialization_format::json_v2 || !_json_writer) {
+            return tristate<bool>();
+        }
+        auto res = std::invoke(
+          mem_func, *_json_writer, std::forward<Args>(args)...);
+        if (_json_writer->IsComplete()) {
+            iobuf buf;
+            buf.append(_buf.GetString(), _buf.GetSize());
+            switch (state) {
+            case state::key:
+                result.back().key.emplace(std::move(buf));
+                break;
+            case state::value:
+                result.back().value.emplace(std::move(buf));
+                break;
+            default:
+                return tristate<bool>(false);
+            }
+            _buf.Clear();
+            _json_writer.reset();
+            state = state::record;
+        }
+        return tristate<bool>(res);
+    }
+
 public:
     using Ch = typename Encoding::Ch;
     using rjson_parse_result = std::vector<kafka::client::record_essence>;
@@ -50,14 +84,48 @@ public:
     explicit produce_request_handler(serialization_format fmt)
       : _fmt(fmt) {}
 
-    bool Null() { return false; }
-    bool Bool(bool) { return false; }
-    bool Int64(int64_t) { return false; }
-    bool Uint64(uint64_t) { return false; }
-    bool Double(double) { return false; }
-    bool RawNumber(const Ch*, rapidjson::SizeType, bool) { return false; }
+    bool Null() {
+        if (auto res = maybe_json(&json_writer::Null); res.has_value()) {
+            return res.value();
+        }
+        return false;
+    }
+    bool Bool(bool b) {
+        if (auto res = maybe_json(&json_writer::Bool, b); res.has_value()) {
+            return res.value();
+        }
+        return false;
+    }
+    bool Int64(int64_t v) {
+        if (auto res = maybe_json(&json_writer::Int64, v); res.has_value()) {
+            return res.value();
+        }
+        return false;
+    }
+    bool Uint64(uint64_t v) {
+        if (auto res = maybe_json(&json_writer::Uint64, v); res.has_value()) {
+            return res.value();
+        }
+        return false;
+    }
+    bool Double(double v) {
+        if (auto res = maybe_json(&json_writer::Double, v); res.has_value()) {
+            return res.value();
+        }
+        return false;
+    }
+    bool RawNumber(const Ch* str, rapidjson::SizeType len, bool b) {
+        if (auto res = maybe_json(&json_writer::RawNumber, str, len, b);
+            res.has_value()) {
+            return res.value();
+        }
+        return false;
+    }
 
     bool Int(int i) {
+        if (auto res = maybe_json(&json_writer::Int, i); res.has_value()) {
+            return res.value();
+        }
         if (state == state::partition) {
             result.back().partition_id = model::partition_id(i);
             state = state::record;
@@ -67,6 +135,9 @@ public:
     }
 
     bool Uint(unsigned u) {
+        if (auto res = maybe_json(&json_writer::Uint, u); res.has_value()) {
+            return res.value();
+        }
         if (state == state::partition) {
             result.back().partition_id = model::partition_id(u);
             state = state::record;
@@ -75,7 +146,13 @@ public:
         return false;
     }
 
-    bool String(const Ch* str, rapidjson::SizeType len, bool) {
+    bool String(const Ch* str, rapidjson::SizeType len, bool b) {
+        if (auto res = maybe_json<bool (json_writer::*)(
+              const Ch*, rapidjson::SizeType, bool)>(
+              &json_writer::String, str, len, b);
+            res.has_value()) {
+            return res.value();
+        }
         if (state == state::key) {
             auto [res, buf] = rjson_parse_impl<iobuf>(_fmt)(
               std::string_view(str, len));
@@ -96,7 +173,13 @@ public:
         return false;
     }
 
-    bool Key(const char* str, rapidjson::SizeType len, bool) {
+    bool Key(const Ch* str, rapidjson::SizeType len, bool b) {
+        if (auto res = maybe_json<bool (json_writer::*)(
+              const Ch*, rapidjson::SizeType, bool)>(
+              &json_writer::Key, str, len, b);
+            res.has_value()) {
+            return res.value();
+        }
         auto key = std::string_view(str, len);
         if (state == state::empty && key == "records") {
             state = state::records;
@@ -107,8 +190,14 @@ public:
                 state = state::partition;
             } else if (key == "key") {
                 state = state::key;
+                if (_fmt == serialization_format::json_v2) {
+                    _json_writer.emplace(_buf);
+                }
             } else if (key == "value") {
                 state = state::value;
+                if (_fmt == serialization_format::json_v2) {
+                    _json_writer.emplace(_buf);
+                }
             } else {
                 return false;
             }
@@ -118,6 +207,9 @@ public:
     }
 
     bool StartObject() {
+        if (auto res = maybe_json(&json_writer::StartObject); res.has_value()) {
+            return res.value();
+        }
         if (state == state::empty) {
             return true;
         }
@@ -129,7 +221,11 @@ public:
         return false;
     }
 
-    bool EndObject(rapidjson::SizeType) {
+    bool EndObject(rapidjson::SizeType s) {
+        if (auto res = maybe_json(&json_writer::EndObject, s);
+            res.has_value()) {
+            return res.value();
+        }
         if (state == state::record) {
             state = state::records;
             return true;
@@ -141,9 +237,23 @@ public:
         return false;
     }
 
-    bool StartArray() { return state == state::records; }
+    bool StartArray() {
+        if (auto res = maybe_json(&json_writer::StartArray); res.has_value()) {
+            return res.value();
+        }
+        return state == state::records;
+    }
 
-    bool EndArray(rapidjson::SizeType) { return state == state::records; }
+    bool EndArray(rapidjson::SizeType s) {
+        if (auto res = maybe_json(&json_writer::EndArray, s); res.has_value()) {
+            return res.value();
+        }
+        return state == state::records;
+    }
+
+private:
+    rapidjson::StringBuffer _buf;
+    std::optional<json_writer> _json_writer;
 };
 
 inline void rjson_serialize(

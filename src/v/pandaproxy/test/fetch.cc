@@ -209,3 +209,72 @@ FIXTURE_TEST(pandaproxy_fetch, pandaproxy_test_fixture) {
           R"([{"topic":"t","key":null,"value":"dmVjdG9yaXplZA==","partition":0,"offset":1},{"topic":"t","key":null,"value":"cGFuZGFwcm94eQ==","partition":0,"offset":2},{"topic":"t","key":null,"value":"bXVsdGlicm9rZXI=","partition":0,"offset":3},{"topic":"t","key":null,"value":"bXVsdGliYXRjaA==","partition":0,"offset":4}])");
     }
 }
+
+FIXTURE_TEST(pandaproxy_fetch_json_v2, pandaproxy_test_fixture) {
+    using namespace std::chrono_literals;
+
+    set_client_config("retry_base_backoff_ms", 10ms);
+    set_client_config("produce_batch_delay_ms", 0ms);
+
+    info("Waiting for leadership");
+    wait_for_controller_leadership().get();
+
+    info("Connecting client");
+    auto client = make_client();
+    const ss::sstring batch_body(
+      R"({
+   "records":[
+      {
+         "key": null,
+         "value":{"object":["vectorized"]},
+         "partition":0
+      },
+      {
+         "value":{"object":["pandaproxy"]},
+         "partition":0
+      }
+   ]
+})");
+
+    info("Adding known topic");
+    auto tp = model::topic_partition(model::topic("t"), model::partition_id(0));
+    auto ntp = make_default_ntp(tp.topic, tp.partition);
+    add_topic(model::topic_namespace_view(ntp)).get();
+
+    {
+        info("Produce to known topic - offsets 1-3");
+        // Will require a metadata update
+        set_client_config("retries", size_t(5));
+        auto body = iobuf();
+        body.append(batch_body.data(), batch_body.size());
+        auto res = http_request(
+          client,
+          "/topics/t",
+          std::move(body),
+          boost::beast::http::verb::post,
+          ppj::serialization_format::json_v2,
+          ppj::serialization_format::v2);
+
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::ok);
+        BOOST_REQUIRE_EQUAL(
+          res.body, R"({"offsets":[{"partition":0,"offset":1}]})");
+    }
+
+    {
+        info("Fetch offset 2 as json - expect offsets 1-2");
+        auto res = http_request(
+          client,
+          "/topics/t/partitions/0/"
+          "records?offset=2&max_bytes=1024&timeout=5000",
+          boost::beast::http::verb::get,
+          ppj::serialization_format::v2,
+          ppj::serialization_format::json_v2);
+
+        BOOST_REQUIRE_EQUAL(
+          res.headers.result(), boost::beast::http::status::ok);
+        BOOST_REQUIRE_EQUAL(
+          res.body,
+          R"([{"topic":"t","key":null,"value":{"object":["vectorized"]},"partition":0,"offset":1},{"topic":"t","key":null,"value":{"object":["pandaproxy"]},"partition":0,"offset":2}])");
+    }
+}

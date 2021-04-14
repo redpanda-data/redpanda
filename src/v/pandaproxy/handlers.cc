@@ -91,7 +91,9 @@ get_topics_records(server::request_t rq, server::reply_t rp) {
       *rq.req,
       {json::serialization_format::v2, json::serialization_format::none});
     auto res_fmt = parse::accept_header(
-      *rq.req, {json::serialization_format::binary_v2});
+      *rq.req,
+      {json::serialization_format::binary_v2,
+       json::serialization_format::json_v2});
 
     auto tp{model::topic_partition{
       parse::request_param<model::topic>(*rq.req, "topic_name"),
@@ -121,7 +123,9 @@ get_topics_records(server::request_t rq, server::reply_t rp) {
 ss::future<server::reply_t>
 post_topics_name(server::request_t rq, server::reply_t rp) {
     auto req_fmt = parse::content_type_header(
-      *rq.req, {json::serialization_format::binary_v2});
+      *rq.req,
+      {json::serialization_format::binary_v2,
+       json::serialization_format::json_v2});
     auto res_fmt = parse::accept_header(
       *rq.req,
       {json::serialization_format::v2, json::serialization_format::none});
@@ -167,9 +171,10 @@ create_consumer(server::request_t rq, server::reply_t rp) {
     auto req_data = ppj::rjson_parse(
       rq.req->content.data(), ppj::create_consumer_request_handler());
 
-    if (req_data.format != "binary") {
+    if (req_data.format != "binary" && req_data.format != "json") {
         throw parse::error(
-          parse::error_code::invalid_param, "format must be binary");
+          parse::error_code::invalid_param,
+          "format must be 'binary' or 'json'");
     }
     if (req_data.auto_offset_reset != "earliest") {
         throw parse::error(
@@ -240,7 +245,9 @@ consumer_fetch(server::request_t rq, server::reply_t rp) {
       *rq.req,
       {json::serialization_format::v2, json::serialization_format::none});
     auto res_fmt = parse::accept_header(
-      *rq.req, {json::serialization_format::binary_v2});
+      *rq.req,
+      {json::serialization_format::binary_v2,
+       json::serialization_format::json_v2});
 
     auto group_id{parse::request_param<kafka::group_id>(*rq.req, "group_name")};
     auto name{parse::request_param<kafka::member_id>(*rq.req, "instance")};
