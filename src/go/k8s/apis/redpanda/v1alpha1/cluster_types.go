@@ -318,7 +318,7 @@ func (r *Cluster) AdminAPIInternal() *AdminAPI {
 // AdminAPIExternal returns internal admin listener
 func (r *Cluster) AdminAPIExternal() *AdminAPI {
 	for _, el := range r.Spec.Configuration.AdminAPI {
-		if !el.External.Enabled {
+		if el.External.Enabled {
 			return &el
 		}
 	}
