@@ -41,7 +41,7 @@ public:
      * @param address of coprocessor engine
      * @param reference to the storage layer
      */
-    pacemaker(ss::socket_address, ss::sharded<storage::api>&);
+    pacemaker(unresolved_address, ss::sharded<storage::api>&);
 
     /**
      * Begins the offset tracking fiber

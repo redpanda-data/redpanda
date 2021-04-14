@@ -73,8 +73,7 @@ write_random_batches(ss::lw_shared_ptr<storage::segment> seg) { // NOLINT
 }
 
 archival::configuration get_configuration() {
-    ss::ipv4_addr ip_addr = {httpd_host_name, httpd_port_number};
-    ss::socket_address server_addr(ip_addr);
+    unresolved_address server_addr(httpd_host_name, httpd_port_number);
     s3::configuration s3conf{
       .uri = s3::access_point_uri(httpd_host_name),
       .access_key = s3::public_key_str("acess-key"),

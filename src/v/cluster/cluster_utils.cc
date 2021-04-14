@@ -84,41 +84,37 @@ ss::future<> maybe_create_tcp_client(
   model::node_id node,
   unresolved_address rpc_address,
   config::tls_config tls_config) {
-    return rpc::resolve_dns(std::move(rpc_address))
-      .then([node, &cache, tls_config = std::move(tls_config)](
-              ss::socket_address new_addr) mutable {
-          auto f = ss::now();
-          if (cache.contains(node)) {
-              // client is already there, check if configuration changed
-              if (cache.get(node)->server_address() == new_addr) {
-                  // If configuration did not changed, do nothing
-                  return f;
-              }
-              // configuration changed, first remove the client
-              f = cache.remove(node);
-          }
-          // there is no client in cache, create new
-          return f.then([&cache,
-                         node,
-                         new_addr,
-                         tls_config = std::move(tls_config)]() mutable {
-              return maybe_build_reloadable_certificate_credentials(
-                       std::move(tls_config))
-                .then(
-                  [&cache, node, new_addr](
-                    ss::shared_ptr<ss::tls::certificate_credentials>&& cert) {
-                      return cache.emplace(
-                        node,
-                        rpc::transport_configuration{
-                          .server_addr = new_addr,
-                          .credentials = cert,
-                          .disable_metrics = rpc::metrics_disabled(
-                            config::shard_local_cfg().disable_metrics)},
-                        rpc::make_exponential_backoff_policy<rpc::clock_type>(
-                          std::chrono::seconds(1), std::chrono::seconds(60)));
-                  });
-          });
-      });
+    auto f = ss::now();
+    if (cache.contains(node)) {
+        // client is already there, check if configuration changed
+        if (cache.get(node)->server_address() == rpc_address) {
+            // If configuration did not changed, do nothing
+            return f;
+        }
+        // configuration changed, first remove the client
+        f = cache.remove(node);
+    }
+    // there is no client in cache, create new
+    return f.then([&cache,
+                   node,
+                   rpc_address = std::move(rpc_address),
+                   tls_config = std::move(tls_config)]() mutable {
+        return maybe_build_reloadable_certificate_credentials(
+                 std::move(tls_config))
+          .then(
+            [&cache, node, rpc_address = std::move(rpc_address)](
+              ss::shared_ptr<ss::tls::certificate_credentials>&& cert) mutable {
+                return cache.emplace(
+                  node,
+                  rpc::transport_configuration{
+                    .server_addr = std::move(rpc_address),
+                    .credentials = cert,
+                    .disable_metrics = rpc::metrics_disabled(
+                      config::shard_local_cfg().disable_metrics)},
+                  rpc::make_exponential_backoff_policy<rpc::clock_type>(
+                    std::chrono::seconds(1), std::chrono::seconds(60)));
+            });
+    });
 }
 
 ss::future<> add_one_tcp_client(

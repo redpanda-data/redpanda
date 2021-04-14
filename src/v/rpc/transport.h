@@ -45,7 +45,7 @@ struct client_context_impl;
 class base_transport {
 public:
     struct configuration {
-        ss::socket_address server_addr;
+        unresolved_address server_addr;
         ss::shared_ptr<ss::tls::certificate_credentials> credentials;
         rpc::metrics_disabled disable_metrics = rpc::metrics_disabled::no;
         /// Optional server name indication (SNI) for TLS connection
@@ -66,7 +66,7 @@ public:
 
     [[gnu::always_inline]] bool is_valid() const { return _fd && !_in.eof(); }
 
-    const ss::socket_address& server_address() const { return _server_addr; }
+    const unresolved_address& server_address() const { return _server_addr; }
 
 protected:
     virtual void fail_outstanding_futures() {}
@@ -80,7 +80,7 @@ private:
     ss::future<> do_connect(clock_type::time_point);
 
     std::unique_ptr<ss::connected_socket> _fd;
-    ss::socket_address _server_addr;
+    unresolved_address _server_addr;
     ss::shared_ptr<ss::tls::certificate_credentials> _creds;
     std::optional<ss::sstring> _tls_sni_hostname;
 };
@@ -226,7 +226,7 @@ public:
         return _transport.is_valid();
     }
 
-    const ss::socket_address& server_address() const {
+    const unresolved_address& server_address() const {
         return _transport.server_address();
     }
 

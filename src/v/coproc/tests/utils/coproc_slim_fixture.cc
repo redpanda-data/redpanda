@@ -58,8 +58,7 @@ ss::future<> coproc_slim_fixture::start() {
       .then([this] { return _storage.invoke_on_all(&storage::api::start); })
       .then([this] {
           return _pacemaker.start(
-            ss::socket_address(ss::net::inet_address("127.0.0.1"), 43189),
-            std::ref(_storage));
+            unresolved_address("127.0.0.1", 43189), std::ref(_storage));
       })
       .then(
         [this] { return _pacemaker.invoke_on_all(&coproc::pacemaker::start); })

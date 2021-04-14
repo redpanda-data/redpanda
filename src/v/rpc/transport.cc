@@ -10,6 +10,7 @@
 #include "rpc/transport.h"
 
 #include "likely.h"
+#include "rpc/dns.h"
 #include "rpc/logger.h"
 #include "rpc/netbuf.h"
 #include "rpc/parse_utils.h"
@@ -93,8 +94,9 @@ ss::future<> base_transport::do_connect(clock_type::time_point timeout) {
           server_address()));
     }
     try {
+        auto resolved_address = co_await resolve_dns(server_address());
         ss::connected_socket fd = co_await connect_with_timeout(
-          server_address(), timeout);
+          resolved_address, timeout);
 
         if (_creds) {
             fd = co_await ss::tls::wrap_client(

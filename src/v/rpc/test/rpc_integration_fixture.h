@@ -11,6 +11,7 @@
 
 #pragma once
 #include "config/tls_config.h"
+#include "rpc/dns.h"
 #include "rpc/server.h"
 #include "rpc/service.h"
 #include "rpc/simple_protocol.h"
@@ -94,7 +95,7 @@ struct echo_impl final : echo::echo_service {
 class rpc_base_integration_fixture {
 public:
     explicit rpc_base_integration_fixture(uint16_t port)
-      : _listen_address(ss::net::inet_address("127.0.0.1"), port)
+      : _listen_address("127.0.0.1", port)
       , _ssg(ss::create_smp_service_group({5000}).get0()) {
         _sg = ss::create_scheduling_group("rpc scheduling group", 200).get0();
     }
@@ -124,7 +125,7 @@ public:
     }
 
 protected:
-    ss::socket_address _listen_address;
+    unresolved_address _listen_address;
     ss::smp_service_group _ssg;
     ss::scheduling_group _sg;
 
@@ -155,8 +156,9 @@ public:
       std::optional<ss::tls::credentials_builder> credentials = std::nullopt,
       ss::tls::reload_callback&& cb = {}) override {
         rpc::server_configuration scfg("unit_test_rpc");
+        auto resolved = rpc::resolve_dns(_listen_address).get();
         scfg.addrs.emplace_back(
-          _listen_address,
+          resolved,
           credentials
             ? credentials->build_reloadable_server_credentials(std::move(cb))
                 .get0()
@@ -201,8 +203,9 @@ public:
       std::optional<ss::tls::credentials_builder> credentials = std::nullopt,
       ss::tls::reload_callback&& cb = {}) override {
         rpc::server_configuration scfg("unit_test_rpc_sharded");
+        auto resolved = rpc::resolve_dns(_listen_address).get();
         scfg.addrs.emplace_back(
-          _listen_address,
+          resolved,
           credentials
             ? credentials->build_reloadable_server_credentials(std::move(cb))
                 .get0()

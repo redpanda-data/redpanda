@@ -270,17 +270,14 @@ struct raft_node {
                     if (c.contains(broker.id())) {
                         return seastar::make_ready_future<>();
                     }
-                    return rpc::resolve_dns(broker.rpc_address())
-                      .then([this, &broker, &c](ss::socket_address addr) {
-                          return c.emplace(
-                            broker.id(),
-                            {.server_addr = addr,
-                             .disable_metrics = rpc::metrics_disabled::yes},
-                            rpc::make_exponential_backoff_policy<
-                              rpc::clock_type>(
-                              std::chrono::milliseconds(1),
-                              std::chrono::milliseconds(1)));
-                      });
+
+                    return c.emplace(
+                      broker.id(),
+                      {.server_addr = broker.rpc_address(),
+                       .disable_metrics = rpc::metrics_disabled::yes},
+                      rpc::make_exponential_backoff_policy<rpc::clock_type>(
+                        std::chrono::milliseconds(1),
+                        std::chrono::milliseconds(1)));
                 })
               .get0();
         }

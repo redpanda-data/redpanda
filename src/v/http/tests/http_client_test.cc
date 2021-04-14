@@ -11,6 +11,7 @@
 #include "bytes/iobuf_parser.h"
 #include "http/chunk_encoding.h"
 #include "http/client.h"
+#include "rpc/dns.h"
 #include "rpc/transport.h"
 #include "seastarx.h"
 
@@ -87,8 +88,7 @@ struct configured_test_pair {
 };
 
 rpc::base_transport::configuration transport_configuration() {
-    ss::ipv4_addr ip_addr = {httpd_host_name, httpd_port_number};
-    ss::socket_address server_addr(ip_addr);
+    unresolved_address server_addr(httpd_host_name, httpd_port_number);
     rpc::base_transport::configuration conf{.server_addr = server_addr};
     return conf;
 }
@@ -101,7 +101,8 @@ started_client_and_server(const rpc::base_transport::configuration& conf) {
     auto server = ss::make_shared<ss::httpd::http_server_control>();
     server->start().get();
     server->set_routes(set_routes).get();
-    server->listen(conf.server_addr).get();
+    auto resolved = rpc::resolve_dns(conf.server_addr).get();
+    server->listen(resolved).get();
     return {
       .server = server,
       .client = client,
@@ -457,7 +458,8 @@ impostor_test_pair started_client_and_impostor(
     auto client = ss::make_shared<http::client>(conf);
     auto server = ss::make_shared<http_server_impostor>(
       request_data, response_data);
-    server->listen(conf.server_addr);
+    auto resolved = rpc::resolve_dns(conf.server_addr).get();
+    server->listen(resolved);
     return {
       .server = server,
       .client = client,

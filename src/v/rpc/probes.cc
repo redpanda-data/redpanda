@@ -99,11 +99,11 @@ std::ostream& operator<<(std::ostream& o, const server_probe& p) {
 void client_probe::setup_metrics(
   ss::metrics::metric_groups& mgs,
   const std::optional<ss::sstring>& service_name,
-  const ss::socket_address& target_addr) {
+  const unresolved_address& target_addr) {
     namespace sm = ss::metrics;
     auto target = sm::label("target");
     std::vector<sm::label_instance> labels = {
-      target(ssx::sformat("{}:{}", target_addr.addr(), target_addr.port()))};
+      target(ssx::sformat("{}:{}", target_addr.host(), target_addr.port()))};
     if (service_name) {
         labels.push_back(sm::label("service_name")(*service_name));
     }
