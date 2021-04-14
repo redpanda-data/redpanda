@@ -131,7 +131,7 @@ After you set up Redpanda in your Kubernetes cluster, you can use our samples to
     - Cluster with TLS encryption -
         
         ```
-        kubectl apply -n redpanda-test -f https://raw.githubusercontent.com/vectorizedio/redpanda/dev/src/go/k8s/config/samples/redpanda_v1alpha1_with_tls.yaml)
+        kubectl apply -n redpanda-test -f https://raw.githubusercontent.com/vectorizedio/redpanda/dev/src/go/k8s/config/samples/redpanda_v1alpha1_with_tls.yaml
         ```
 
         To allow connections to the cluster with TLS enabled, you have to mount a TLS configuration for rpk.
@@ -190,7 +190,7 @@ After you set up Redpanda in your Kubernetes cluster, you can use our samples to
 - Review the [cluster_types file](https://github.com/vectorizedio/redpanda/blob/dev/src/go/k8s/apis/redpanda/v1alpha1/cluster_types.go) to see the resource configuration options.
 
 - Use `rpk` to work with your Redpanda nodes, for example:
-    
+
     - Create a topic:
 
         ```
