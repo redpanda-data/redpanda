@@ -34,6 +34,7 @@ spec:
             - --reserve-memory 1M
             - --smp=1
             - --kernel-page-cache=true
+            - --logger-log-level=exception=debug
             - --default-log-level=debug
 status:
   readyReplicas: 1

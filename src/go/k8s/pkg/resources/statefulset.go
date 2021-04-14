@@ -481,6 +481,7 @@ func overprovisioned(developerMode bool, limits corev1.ResourceList) []string {
 			"--reserve-memory " + redpandav1alpha1.ReserveMemoryString,
 			"--smp=1",
 			"--kernel-page-cache=true",
+			"--logger-log-level=exception=debug",
 			"--default-log-level=debug",
 		}
 	}
