@@ -129,7 +129,7 @@ func (r *StatefulSetResource) partitionUpdateImage(
 		// Pod (if any) has rejoined its groups after restarting, i.e., is ready for I/O.
 		if err := r.ensureRedpandaGroupsReady(ctx, sts, replicas, ordinal+1); err != nil {
 			return &RequeueAfterError{RequeueAfter: requeueDuration,
-				Msg: fmt.Sprintf("redpanda on pod (ordinal: %d) not ready", ordinal)}
+				Msg: fmt.Sprintf("redpanda on pod (ordinal: %d) not ready: %s", ordinal, err)}
 		}
 
 		if err := r.rollingUpdatePartition(ctx, ordinal, sts); err != nil {
@@ -144,7 +144,7 @@ func (r *StatefulSetResource) partitionUpdateImage(
 	// Ensure 0th Pod is ready for I/O before completing the upgrade.
 	if err := r.ensureRedpandaGroupsReady(ctx, sts, replicas, 0); err != nil {
 		return &RequeueAfterError{RequeueAfter: requeueDuration,
-			Msg: fmt.Sprintf("redpanda on pod (ordinal: %d) not ready", 0)}
+			Msg: fmt.Sprintf("redpanda on pod (ordinal: %d) not ready: %s", 0, err)}
 	}
 
 	return nil
