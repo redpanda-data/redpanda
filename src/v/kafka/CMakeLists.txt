@@ -3,6 +3,7 @@ add_subdirectory(protocol)
 set(handlers_srcs
   server/handlers/api_versions.cc
   server/handlers/metadata.cc
+  server/handlers/txn_offset_commit.cc
   server/handlers/list_groups.cc
   server/handlers/find_coordinator.cc
   server/handlers/describe_configs.cc

@@ -37,3 +37,4 @@
 #include "kafka/server/handlers/sasl_authenticate.h"
 #include "kafka/server/handlers/sasl_handshake.h"
 #include "kafka/server/handlers/sync_group.h"
+#include "kafka/server/handlers/txn_offset_commit.h"

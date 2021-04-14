@@ -250,6 +250,8 @@ process_request(request_context&& ctx, ss::smp_service_group g) {
         return do_process<create_acls_handler>(std::move(ctx), g);
     case delete_acls_handler::api::key:
         return do_process<delete_acls_handler>(std::move(ctx), g);
+    case txn_offset_commit_handler::api::key:
+        return do_process<txn_offset_commit_handler>(std::move(ctx), g);
     };
     return ss::make_exception_future<response_ptr>(
       std::runtime_error(fmt::format("Unsupported API {}", ctx.header().key)));
