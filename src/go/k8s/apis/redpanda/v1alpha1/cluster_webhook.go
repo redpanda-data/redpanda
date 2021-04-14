@@ -112,11 +112,16 @@ const ReserveMemoryString = "1M"
 
 func (r *Cluster) validateAdminListeners() field.ErrorList {
 	var allErrs field.ErrorList
-	if len(r.Spec.Configuration.AdminAPI) != 1 {
+	externalAdmin := r.AdminAPIExternal()
+	targetAdminCount := 1
+	if externalAdmin != nil {
+		targetAdminCount = 2
+	}
+	if len(r.Spec.Configuration.AdminAPI) != targetAdminCount {
 		allErrs = append(allErrs,
 			field.Invalid(field.NewPath("spec").Child("configuration").Child("adminApi"),
 				r.Spec.Configuration.AdminAPI,
-				"need exactly one admin API listener"))
+				"need exactly one internal API listener and up to one external"))
 	}
 	return allErrs
 }

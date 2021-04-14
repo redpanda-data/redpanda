@@ -308,7 +308,19 @@ func (r *Cluster) KafkaTLSListener() *KafkaAPIListener {
 // AdminAPIInternal returns internal admin listener
 func (r *Cluster) AdminAPIInternal() *AdminAPI {
 	for _, el := range r.Spec.Configuration.AdminAPI {
-		return &el
+		if !el.External.Enabled {
+			return &el
+		}
+	}
+	return nil
+}
+
+// AdminAPIExternal returns external admin listener
+func (r *Cluster) AdminAPIExternal() *AdminAPI {
+	for _, el := range r.Spec.Configuration.AdminAPI {
+		if el.External.Enabled {
+			return &el
+		}
 	}
 	return nil
 }
