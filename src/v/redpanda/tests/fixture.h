@@ -178,13 +178,9 @@ public:
     }
 
     ss::future<kafka::client::transport> make_kafka_client() {
-        return rpc::resolve_dns(
-                 config::shard_local_cfg().kafka_api()[0].address)
-          .then([](ss::socket_address addr) {
-              return kafka::client::transport(
-                rpc::base_transport::configuration{
-                  .server_addr = addr,
-                });
+        return ss::make_ready_future<kafka::client::transport>(
+          rpc::base_transport::configuration{
+            .server_addr = config::shard_local_cfg().kafka_api()[0].address,
           });
     }
 

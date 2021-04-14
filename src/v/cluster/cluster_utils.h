@@ -140,31 +140,26 @@ auto do_with_client_one_shot(
   config::tls_config tls_config,
   rpc::clock_type::duration connection_timeout,
   Func&& f) {
-    using transport_ptr = ss::lw_shared_ptr<rpc::transport>;
     return maybe_build_reloadable_certificate_credentials(std::move(tls_config))
-      .then([addr = std::move(addr)](
-              ss::shared_ptr<ss::tls::certificate_credentials>&& cert) mutable {
-          return rpc::resolve_dns(std::move(addr))
-            .then([cert = std::move(cert)](ss::socket_address new_addr) {
-                return ss::make_lw_shared<rpc::transport>(
-                  rpc::transport_configuration{
-                    .server_addr = new_addr,
-                    .credentials = cert,
-                    .disable_metrics = rpc::metrics_disabled(true)});
-            });
-      })
-      .then([f = std::forward<Func>(f),
-             connection_timeout](transport_ptr transport) mutable {
-          return transport->connect(connection_timeout)
-            .then([transport, f = std::forward<Func>(f)]() mutable {
-                return ss::futurize_invoke(
-                  std::forward<Func>(f), Proto(*transport));
-            })
-            .finally([transport] {
-                transport->shutdown();
-                return transport->stop().finally([transport] {});
-            });
-      });
+      .then(
+        [f = std::forward<Func>(f), connection_timeout, addr = std::move(addr)](
+          ss::shared_ptr<ss::tls::certificate_credentials>&& cert) mutable {
+            auto transport = ss::make_lw_shared<rpc::transport>(
+              rpc::transport_configuration{
+                .server_addr = std::move(addr),
+                .credentials = std::move(cert),
+                .disable_metrics = rpc::metrics_disabled(true)});
+
+            return transport->connect(connection_timeout)
+              .then([transport, f = std::forward<Func>(f)]() mutable {
+                  return ss::futurize_invoke(
+                    std::forward<Func>(f), Proto(*transport));
+              })
+              .finally([transport] {
+                  transport->shutdown();
+                  return transport->stop().finally([transport] {});
+              });
+        });
 }
 
 /**

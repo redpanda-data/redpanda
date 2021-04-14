@@ -16,14 +16,10 @@ namespace kafka::client {
 
 ss::future<shared_broker_t>
 make_broker(model::node_id node_id, unresolved_address addr) {
-    return rpc::resolve_dns(std::move(addr))
-      .then([](ss::socket_address addr) {
-          auto client = ss::make_lw_shared<transport>(
-            rpc::base_transport::configuration{.server_addr = addr});
-          return client->connect().then(
-            [client]() mutable { return std::move(client); });
-      })
-      .then([node_id, addr](ss::lw_shared_ptr<transport> client) {
+    auto client = ss::make_lw_shared<transport>(
+      rpc::base_transport::configuration{.server_addr = addr});
+    return client->connect()
+      .then([node_id, addr = std::move(addr), client] {
           vlog(
             kclog.info,
             "connected to broker:{} - {}:{}",

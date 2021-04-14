@@ -34,7 +34,7 @@
 namespace coproc {
 
 rpc::transport_configuration
-wasm_transport_cfg(const ss::socket_address& addr) {
+wasm_transport_cfg(const unresolved_address& addr) {
     return rpc::transport_configuration{
       .server_addr = addr,
       .max_queued_bytes = static_cast<uint32_t>(
@@ -49,7 +49,7 @@ rpc::backoff_policy wasm_transport_backoff() {
     return rpc::make_exponential_backoff_policy<rpc::clock_type>(1s, 10s);
 }
 
-pacemaker::pacemaker(ss::socket_address addr, ss::sharded<storage::api>& api)
+pacemaker::pacemaker(unresolved_address addr, ss::sharded<storage::api>& api)
   : _shared_res(
     rpc::reconnect_transport(
       wasm_transport_cfg(addr), wasm_transport_backoff()),

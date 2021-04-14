@@ -150,8 +150,8 @@ private:
 inline load_gen_cfg cfg_from_opts_in_thread(
   boost::program_options::variables_map& m, ss::sharded<hdr_hist>* h) {
     rpc::transport_configuration client_cfg;
-    client_cfg.server_addr = ss::socket_address(
-      ss::ipv4_addr(m["ip"].as<std::string>(), m["port"].as<uint16_t>()));
+    client_cfg.server_addr = unresolved_address(
+      m["ip"].as<std::string>(), m["port"].as<uint16_t>());
     auto ca_cert = m["ca-cert"].as<std::string>();
     if (ca_cert != "") {
         auto builder = ss::tls::credentials_builder();

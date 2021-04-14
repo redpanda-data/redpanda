@@ -32,7 +32,7 @@ public:
 
     http::client make_client() {
         rpc::base_transport::configuration transport_cfg;
-        transport_cfg.server_addr = rpc::resolve_dns({"localhost", 8082}).get();
+        transport_cfg.server_addr = unresolved_address{"localhost", 8082};
         return http::client(transport_cfg);
     }
 

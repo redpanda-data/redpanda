@@ -354,13 +354,11 @@ void application::wire_up_redpanda_services() {
       .get();
 
     if (coproc_enabled()) {
-        auto coproc_supervisor_server_addr
-          = rpc::resolve_dns(
-              config::shard_local_cfg().coproc_supervisor_server())
-              .get0();
         syschecks::systemd_message("Building coproc pacemaker").get();
         construct_service(
-          pacemaker, coproc_supervisor_server_addr, std::ref(storage))
+          pacemaker,
+          config::shard_local_cfg().coproc_supervisor_server(),
+          std::ref(storage))
           .get();
     }
 
