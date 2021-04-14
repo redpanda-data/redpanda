@@ -2,7 +2,7 @@
 
 Describe in plain language the motivation (bug, feature, etc.) behind the change in this PR and how the included commits address it.
 
-Fixes issues: [#NNN, #NNN, ...]
+Fixes: #NNN, #NNN, ...
 
 ## Release notes
 
