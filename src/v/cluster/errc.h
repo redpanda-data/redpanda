@@ -14,7 +14,7 @@
 
 namespace cluster {
 
-enum class errc {
+enum class errc : int16_t {
     success = 0, // must be 0
     notification_wait_timeout,
     topic_invalid_partitions,
