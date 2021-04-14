@@ -25,6 +25,6 @@ spec:
         nodeSecretRef:
           name: cluster-tls-node-certificate
           namespace: given-cert
-    admin:
-      port: 9644
+    adminApi:
+    - port: 9644
     developerMode: true

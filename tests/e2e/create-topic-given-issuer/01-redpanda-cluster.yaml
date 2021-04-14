@@ -27,6 +27,6 @@ spec:
         issuerRef:
           name: cluster-tls-root-issuer
           kind: ClusterIssuer
-    admin:
-      port: 9644
+    adminApi:
+    - port: 9644
     developerMode: true

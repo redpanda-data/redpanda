@@ -231,6 +231,14 @@ func TestValidateUpdate_NoError(t *testing.T) {
 
 		assert.Error(t, err)
 	})
+
+	t.Run("no admin port", func(t *testing.T) {
+		noPort := redpandaCluster.DeepCopy()
+		noPort.Spec.Configuration.AdminAPI = []v1alpha1.AdminAPI{}
+
+		err := noPort.ValidateUpdate(redpandaCluster)
+		assert.Error(t, err)
+	})
 }
 
 //nolint:funlen // this is ok for a test
@@ -287,6 +295,14 @@ func TestCreation(t *testing.T) {
 	t.Run("no kafka port", func(t *testing.T) {
 		noPort := redpandaCluster.DeepCopy()
 		noPort.Spec.Configuration.KafkaAPI = []v1alpha1.KafkaAPIListener{}
+
+		err := noPort.ValidateCreate()
+		assert.Error(t, err)
+	})
+
+	t.Run("no admin port", func(t *testing.T) {
+		noPort := redpandaCluster.DeepCopy()
+		noPort.Spec.Configuration.AdminAPI = []v1alpha1.AdminAPI{}
 
 		err := noPort.ValidateCreate()
 		assert.Error(t, err)
