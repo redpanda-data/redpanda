@@ -23,8 +23,8 @@ spec:
       external:
         enabled: true
         subdomain: "test.subdomain.com"
-    admin:
-      port: 9644
+    adminApi:
+    - port: 9644
     developerMode: true
   externalConnectivity:
     enabled: true

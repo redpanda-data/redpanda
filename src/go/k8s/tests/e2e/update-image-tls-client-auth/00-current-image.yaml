@@ -19,10 +19,10 @@ spec:
     kafkaApi:
     - name: kafka
       port: 9092
-    admin:
-      port: 9644
-    developerMode: true
-    tls:
-      adminApi:
+    adminApi:
+    - port: 9644
+      tls:
         enabled: true
         requireClientAuth: true
+    developerMode: true
+

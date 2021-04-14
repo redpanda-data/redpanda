@@ -26,6 +26,6 @@ spec:
           # External-DNS. In AWS provider there is fix to expose public IP
           # https://github.com/kubernetes-sigs/external-dns/pull/1391
          subdomain: "test.subdomain.com"
-    admin:
-      port: 9644
+    adminApi:
+    - port: 9644
     developerMode: true
