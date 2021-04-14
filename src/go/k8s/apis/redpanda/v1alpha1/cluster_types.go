@@ -322,3 +322,14 @@ func (r *Cluster) AdminAPIExternal() *AdminAPI {
 	}
 	return nil
 }
+
+// AdminAPITLS returns admin api listener that has tls enabled or nil if there's
+// none
+func (r *Cluster) AdminAPITLS() *AdminAPI {
+	for i, el := range r.Spec.Configuration.AdminAPI {
+		if el.TLS.Enabled {
+			return &r.Spec.Configuration.AdminAPI[i]
+		}
+	}
+	return nil
+}
