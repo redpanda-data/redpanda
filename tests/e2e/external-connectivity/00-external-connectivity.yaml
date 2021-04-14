@@ -23,7 +23,7 @@ metadata:
 spec:
   image: "vectorized/redpanda"
   version: "latest"
-  replicas: 3
+  replicas: 1
   externalConnectivity:
     enabled: true
     subdomain: "test.subdomain.com"
