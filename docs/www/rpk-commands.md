@@ -48,18 +48,20 @@ Usage:
   rpk redpanda start [flags]
 
 Flags:
-      --advertise-kafka-addr strings   The list of Kafka addresses to advertise (<host>:<port>)
+      --advertise-kafka-addr strings   A comma-separated list of Kafka addresses to advertise (<name>://<host>:<port>)
+      --advertise-pandaproxy-addr      A comma-separated list of Pandaproxy addresses to advertise (<name>://<host>:<port>)
       --advertise-rpc-addr string      The advertised RPC address (<host>:<port>)
-      --check                  When set to false will disable system checking before starting redpanda (default: true)
-      --config string          Redpanda config file, if not set the file will be searched for in the default locations
-      --install-dir string     Directory where redpanda has been installed
-      --kafka-addr strings             The list of Kafka listener addresses to bind to (<host>:<port>)
+      --check                          When set to false will disable system checking before starting redpanda (default: true)
+      --config string                  Redpanda config file, if not set the file will be searched for in the default locations
+      --install-dir string             Directory where redpanda has been installed
+      --kafka-addr strings             A comma-separated list of Kafka listener addresses to bind to (<name>://<host>:<port>)
       --node-id int                    The node ID. Must be an integer and must be unique within a cluster
+      --pandaproxy-addr                A comma-separated list of Pandaproxy listener addresses to bind to (<name>://<host>:<port>)
       --rpc-addr string                The RPC address to bind to (<host>:<port>)
   -s, --seeds strings                  A comma-separated list of seed node addresses (<host>[:<port>]) to connect to
-      --timeout duration       The maximum time to wait for the checks and tune processes to complete. The value passed is a sequence of decimal numbers, each with optional fraction and a unit suffix, such as '300ms', '1.5s' or '2h45m'. Valid time units are 'ns', 'us' (or 'µs'), 'ms', 's', 'm', 'h' (default: 10s)
-      --tune                   When present will enable tuning before starting redpanda
-      --well-known-io string   The cloud vendor and VM type, in the format <vendor>:<vm type>:<storage type>
+      --timeout duration               The maximum time to wait for the checks and tune processes to complete. The value passed is a sequence of decimal numbers, each with optional fraction and a unit suffix, such as '300ms', '1.5s' or '2h45m'. Valid time units are 'ns', 'us' (or 'µs'), 'ms', 's', 'm', 'h' (default: 10s)
+      --tune                           When present will enable tuning before starting redpanda
+      --well-known-io string           The cloud vendor and VM type, in the format <vendor>:<vm type>:<storage type>
 ```
 
 ### redpanda mode
