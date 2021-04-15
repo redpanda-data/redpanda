@@ -144,6 +144,9 @@ public:
     ss::future<txn_offset_commit_response>
     txn_offset_commit(txn_offset_commit_request&& request);
 
+    ss::future<cluster::commit_group_tx_reply>
+    commit_tx(cluster::commit_group_tx_request&& request);
+
     ss::future<cluster::begin_group_tx_reply>
     begin_tx(cluster::begin_group_tx_request&&);
 

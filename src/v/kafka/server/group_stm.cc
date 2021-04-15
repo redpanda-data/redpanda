@@ -53,6 +53,32 @@ void group_stm::update_prepared(
     }
 }
 
+void group_stm::commit(model::producer_identity pid) {
+    auto prepared_it = _prepared_txs.find(pid.get_id());
+    if (prepared_it == _prepared_txs.end()) {
+        klog.warn("can't find ongoing tx {}", pid);
+        return;
+    } else if (prepared_it->second.pid.epoch != pid.epoch) {
+        klog.warn(
+          "a comitting tx {} doesn't match ongoing tx {}",
+          pid,
+          prepared_it->second.pid);
+        return;
+    }
+
+    for (const auto& [tp, md] : prepared_it->second.offsets) {
+        group_log_offset_metadata val{
+          .offset = md.offset,
+          .leader_epoch = 0, // we never use leader_epoch down the stack
+          .metadata = md.metadata};
+
+        _offsets[tp] = logged_metadata{
+          .log_offset = md.log_offset, .metadata = std::move(val)};
+    }
+
+    _prepared_txs.erase(prepared_it);
+}
+
 std::ostream& operator<<(std::ostream& os, const group_log_offset_key& key) {
     fmt::print(
       os,

@@ -137,6 +137,10 @@ public:
         return route(std::move(request), &group_manager::txn_offset_commit);
     }
 
+    auto commit_tx(cluster::commit_group_tx_request&& request) {
+        return route_tx(std::move(request), &group_manager::commit_tx);
+    }
+
     auto begin_tx(cluster::begin_group_tx_request&& request) {
         return route_tx(std::move(request), &group_manager::begin_tx);
     }
