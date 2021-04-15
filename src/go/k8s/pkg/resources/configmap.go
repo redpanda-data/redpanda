@@ -40,9 +40,6 @@ const (
 
 	oneMB          = 1024 * 1024
 	logSegmentSize = 512 * oneMB
-
-	internal = "Internal"
-	external = "External"
 )
 
 var errKeyDoesNotExistInSecretData = errors.New("cannot find key in secret data")
@@ -147,7 +144,7 @@ func (r *ConfigMapResource) createConfiguration(
 			Address: "0.0.0.0",
 			Port:    internalListener.Port,
 		},
-		Name: "Internal", // TODO preserve the name when we support multiple listeners
+		Name: InternalListenerName,
 	})
 
 	if r.pandaCluster.ExternalListener() != nil {
@@ -156,7 +153,7 @@ func (r *ConfigMapResource) createConfiguration(
 				Address: "0.0.0.0",
 				Port:    calculateExternalPort(internalListener.Port),
 			},
-			Name: "External",
+			Name: ExternalListenerName,
 		})
 	}
 
@@ -167,14 +164,14 @@ func (r *ConfigMapResource) createConfiguration(
 	}
 
 	cr.AdminApi[0].Port = clusterCRPortOrRPKDefault(r.pandaCluster.AdminAPIInternal().Port, cr.AdminApi[0].Port)
-	cr.AdminApi[0].Name = internal
+	cr.AdminApi[0].Name = InternalListenerName
 	if r.pandaCluster.AdminAPIExternal() != nil {
 		externalAdminAPI := config.NamedSocketAddress{
 			SocketAddress: config.SocketAddress{
 				Address: cr.AdminApi[0].Address,
 				Port:    cr.AdminApi[0].Port + 1,
 			},
-			Name: external,
+			Name: ExternalListenerName,
 		}
 		cr.AdminApi = append(cr.AdminApi, externalAdminAPI)
 	}
@@ -185,10 +182,10 @@ func (r *ConfigMapResource) createConfiguration(
 	if tlsListener != nil {
 		// If external connectivity is enabled the TLS config will be applied to the external listener,
 		// otherwise TLS will be applied to the internal listener. // TODO support multiple TLS configs
-		name := "Internal"
+		name := InternalListenerName
 		externalListener := r.pandaCluster.ExternalListener()
 		if externalListener != nil {
-			name = externalListener.Name
+			name = ExternalListenerName
 		}
 		tls := config.ServerTLS{
 			Name:              name,
@@ -206,9 +203,9 @@ func (r *ConfigMapResource) createConfiguration(
 	}
 	adminAPITLSListener := r.pandaCluster.AdminAPITLS()
 	if adminAPITLSListener != nil {
-		name := internal
+		name := InternalListenerName
 		if adminAPITLSListener.External.Enabled {
-			name = external
+			name = ExternalListenerName
 		}
 		adminTLS := config.ServerTLS{
 			Name:              name,
