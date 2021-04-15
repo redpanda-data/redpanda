@@ -352,10 +352,10 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 								"redpanda",
 								"start",
 								"--check=false",
-								// sometimes a little bit of memory is consumed by other processes than seastar
-								"--reserve-memory " + redpandav1alpha1.ReserveMemoryString,
 								r.portsConfiguration(),
-							}, overprovisioned(r.pandaCluster.Spec.Configuration.DeveloperMode)...),
+							}, overprovisioned(
+								r.pandaCluster.Spec.Configuration.DeveloperMode,
+								r.pandaCluster.Spec.Resources.Limits)...),
 							Env: []corev1.EnvVar{
 								{
 									Name:  "REDPANDA_ENVIRONMENT",
@@ -457,16 +457,27 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 	return ss, nil
 }
 
-func overprovisioned(developerMode bool) []string {
+func overprovisioned(developerMode bool, limits corev1.ResourceList) []string {
+	memory, exist := limits["memory"]
+	if !exist {
+		memory = resource.MustParse("2Gi")
+	}
+
 	if developerMode {
 		return []string{
 			"--overprovisioned",
+			// sometimes a little bit of memory is consumed by other processes than seastar
+			"--reserve-memory " + redpandav1alpha1.ReserveMemoryString,
 			"--smp=1",
 			"--kernel-page-cache=true",
 			"--default-log-level=debug",
 		}
 	}
-	return []string{"--default-log-level=info"}
+	return []string{
+		"--default-log-level=info",
+		"--reserve-memory 0M",
+		"--memory " + strconv.FormatInt(memory.Value(), 10),
+	}
 }
 
 func (r *StatefulSetResource) secretVolumeMounts() []corev1.VolumeMount {
