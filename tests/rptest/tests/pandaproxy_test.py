@@ -448,13 +448,13 @@ class PandaProxyTest(RedpandaTest):
         assert fetch_raw_result_0.status_code == requests.codes.ok
         fetch_result_0 = fetch_raw_result_0.json()
         expected = json.loads(data)
-        # The first batch is a control batch,ignore it.
-        assert fetch_result_0[1]["topic"] == name
-        assert fetch_result_0[1]["key"] == ''
-        assert fetch_result_0[1]["value"] == expected["records"][0]["value"]
-        assert fetch_result_0[1]["partition"] == expected["records"][0][
+        assert len(fetch_result_0) == 1
+        assert fetch_result_0[0]["topic"] == name
+        assert fetch_result_0[0]["key"] == ''
+        assert fetch_result_0[0]["value"] == expected["records"][0]["value"]
+        assert fetch_result_0[0]["partition"] == expected["records"][0][
             "partition"]
-        assert fetch_result_0[1]["offset"] == 1
+        assert fetch_result_0[0]["offset"] == 1
 
     @cluster(num_nodes=3)
     def test_create_consumer_validation(self):
@@ -685,8 +685,8 @@ class PandaProxyTest(RedpandaTest):
         cf_res = c0.fetch()
         assert cf_res.status_code == requests.codes.ok
         fetch_result = cf_res.json()
-        # 3 topics * 3 * (1 ctrl batch + 1 msg)
-        assert len(fetch_result) == 3 * 3 * 2
+        # 3 topics * 3 msg
+        assert len(fetch_result) == 3 * 3
         print(fetch_result)
 
         self.logger.info(f"Get consumer offsets")
