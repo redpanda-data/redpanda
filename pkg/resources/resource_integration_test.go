@@ -146,3 +146,125 @@ func TestEnsure_ConfigMap(t *testing.T) {
 		t.Fatalf("expecting configmap updated but got %v", data)
 	}
 }
+
+func TestEnsure_HeadlessService(t *testing.T) {
+	cluster := pandaCluster()
+	cluster = cluster.DeepCopy()
+	cluster.Name = "ensure-integration-hs-cluster"
+
+	hsvc := res.NewHeadlessService(
+		c,
+		cluster,
+		scheme.Scheme,
+		[]res.NamedServicePort{
+			{Port: 123},
+		},
+		ctrl.Log.WithName("test"))
+
+	err := hsvc.Ensure(context.Background())
+	assert.NoError(t, err)
+
+	actual := &corev1.Service{}
+	err = c.Get(context.Background(), hsvc.Key(), actual)
+	assert.NoError(t, err)
+	originalResourceVersion := actual.ResourceVersion
+
+	// calling ensure for second time to see the resource does not get updated
+	err = hsvc.Ensure(context.Background())
+	assert.NoError(t, err)
+
+	err = c.Get(context.Background(), hsvc.Key(), actual)
+	assert.NoError(t, err)
+	if actual.ResourceVersion != originalResourceVersion {
+		t.Fatalf("second ensure: expecting version %s but got %s", originalResourceVersion, actual.GetResourceVersion())
+	}
+
+	// verify the update patches the config
+
+	// TODO this has to recreate the resource because the ports are passed from
+	// outside. Once we refactor it to a point where ports are derived from CR
+	// as it should, this test should be adjusted
+	hsvc = res.NewHeadlessService(
+		c,
+		cluster,
+		scheme.Scheme,
+		[]res.NamedServicePort{
+			{Port: 1111},
+		},
+		ctrl.Log.WithName("test"))
+
+	err = hsvc.Ensure(context.Background())
+	assert.NoError(t, err)
+
+	err = c.Get(context.Background(), hsvc.Key(), actual)
+	assert.NoError(t, err)
+	if actual.ResourceVersion == originalResourceVersion {
+		t.Fatalf("expecting version to get updated after resource update but is %s", originalResourceVersion)
+	}
+	port := actual.Spec.Ports[0].Port
+	if port != 1111 {
+		t.Fatalf("expecting configmap updated but got %d", port)
+	}
+}
+
+func TestEnsure_NodePortService(t *testing.T) {
+	cluster := pandaCluster()
+	cluster = cluster.DeepCopy()
+	cluster.Spec.Configuration.KafkaAPI = append(cluster.Spec.Configuration.KafkaAPI,
+		redpandav1alpha1.KafkaAPIListener{External: redpandav1alpha1.ExternalConnectivityConfig{Enabled: true}})
+	cluster.Name = "ensure-integration-np-cluster"
+
+	npsvc := res.NewNodePortService(
+		c,
+		cluster,
+		scheme.Scheme,
+		[]res.NamedServicePort{
+			{Port: 123},
+		},
+		ctrl.Log.WithName("test"))
+
+	err := npsvc.Ensure(context.Background())
+	assert.NoError(t, err)
+
+	actual := &corev1.Service{}
+	err = c.Get(context.Background(), npsvc.Key(), actual)
+	assert.NoError(t, err)
+	originalResourceVersion := actual.ResourceVersion
+
+	// calling ensure for second time to see the resource does not get updated
+	err = npsvc.Ensure(context.Background())
+	assert.NoError(t, err)
+
+	err = c.Get(context.Background(), npsvc.Key(), actual)
+	assert.NoError(t, err)
+	if actual.ResourceVersion != originalResourceVersion {
+		t.Fatalf("second ensure: expecting version %s but got %s", originalResourceVersion, actual.GetResourceVersion())
+	}
+
+	// verify the update patches the config
+
+	// TODO this has to recreate the resource because the ports are passed from
+	// outside. Once we refactor it to a point where ports are derived from CR
+	// as it should, this test should be adjusted
+	npsvc = res.NewNodePortService(
+		c,
+		cluster,
+		scheme.Scheme,
+		[]res.NamedServicePort{
+			{Port: 1111},
+		},
+		ctrl.Log.WithName("test"))
+
+	err = npsvc.Ensure(context.Background())
+	assert.NoError(t, err)
+
+	err = c.Get(context.Background(), npsvc.Key(), actual)
+	assert.NoError(t, err)
+	if actual.ResourceVersion == originalResourceVersion {
+		t.Fatalf("expecting version to get updated after resource update but is %s", originalResourceVersion)
+	}
+	port := actual.Spec.Ports[0].Port
+	if port != 1111 {
+		t.Fatalf("expecting configmap updated but got %d", port)
+	}
+}
