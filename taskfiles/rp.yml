@@ -61,7 +61,7 @@ tasks:
     cmds:
     - |
       PATH={{.LLVM_INSTALL_PATH}}/bin:$PATH
-      ninja -C '{{.BUILD_DIR}}' -j'{{div .TOTAL_PHYSICAL_MEMORY .GB_PER_BUILD_CORE}}'
+      ninja {{.TARGETS}} -C '{{.BUILD_DIR}}' -j'{{div .TOTAL_PHYSICAL_MEMORY .GB_PER_BUILD_CORE}}'
 
   set-aio-max:
     desc: set minimum required value for fs.aio-max-nr sysctl option
