@@ -21,14 +21,14 @@ sys.path.append(os.path.dirname(__file__))
 logger = logging.getLogger('rp')
 
 imports_template = """
-import { 
+import {
   createConnection,
   Socket,
   createServer,
   Server as NetServer
 } from "net";
 import { XXHash64 } from "xxhash";
-import { calculate } from "fast-crc32c";
+import { calculate } from  "fast-crc32c/impls/js_crc32c";
 import { IOBuf } from "../../utilities/IOBuf";
 
 import {
@@ -46,7 +46,7 @@ function createCrc32(buffer: Buffer, start, end): number {
 }
 
 function validateRpcHeader(
-  buffer: Buffer, 
+  buffer: Buffer,
   offset = 0): [RpcHeader, boolean, number] {
     const [rpcHeader] = RpcHeader.fromBytes(buffer, offset)
     const crc32 = createCrc32(buffer, 5, 26)
@@ -56,8 +56,8 @@ function validateRpcHeader(
 function generateRpcHeader(
   buffer: IOBuf,
   reserve: IOBuf,
-  size: number, 
-  meta: number, 
+  size: number,
+  meta: number,
   correlationId: number){
     const hasher = new XXHash64(0)
     buffer.forEach((fragment) => {
@@ -167,11 +167,11 @@ export class {{service_name.title()}}Server {
     this.handleNewConnection()
     this.process = this.process.bind(this)
   }
-  
+
   listen(port: number){
     this.server.listen(port)
   }
-  
+
   process(rpcHeader: RpcHeader, payload: Buffer, socket: Socket) {
     switch (rpcHeader.meta) {
       {%- for method in methods %}
@@ -214,17 +214,17 @@ export class {{service_name.title()}}Server {
       }
     }
   }
-  
+
   executeMethod(socket: Socket) {
     startReadRequest(this.process)(socket)
   }
-  
+
   {% for method in methods %}
   {{method.name}}(input: {{method.input_ts}}): Promise<{{method.output_ts}}> {
     return Promise.resolve(null)
   }
   {% endfor %}
-  
+
   handleNewConnection() {
     this.server.on('connection', (conn) => {
       const key = conn.remoteAddress + ':' + conn.remotePort;
@@ -234,7 +234,7 @@ export class {{service_name.title()}}Server {
       });
     });
   }
-  
+
   closeConnection(): Promise<void> {
     return new Promise((resolve, reject) => {
       try {
@@ -248,7 +248,7 @@ export class {{service_name.title()}}Server {
       }
     })
   }
-  
+
   server: NetServer;
   connections: Map<string, Socket> = new Map();
 }
@@ -297,9 +297,9 @@ export class {{service_name.title()}}Client {
         const rpcHeaderReserve = buffer.getReserve(26);
         const size = {{method.input_ts}}.toBytes(input, buffer)
         const correlationId = this.send(
-          buffer, 
-          rpcHeaderReserve, 
-          size, 
+          buffer,
+          rpcHeaderReserve,
+          size,
           {{method.id}}
         );
         this.responseHandlers.set(correlationId, (data: Buffer) => {
@@ -311,12 +311,12 @@ export class {{service_name.title()}}Client {
     })
   }
  {% endfor %}
- 
+
   close() {
     this.client.destroy()
   }
-  
-  // Map for indexing the server response handlers, where the key is the 
+
+  // Map for indexing the server response handlers, where the key is the
   // correlationId, and the value is a function that takes a buffer response,
   // and transform it into the expected output type
   responseHandlers = new Map<number, (buffer) => void>()

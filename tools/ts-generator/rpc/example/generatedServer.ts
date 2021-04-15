@@ -15,7 +15,7 @@ import {
   Server as NetServer,
 } from "net";
 import { XXHash64 } from "xxhash";
-import { calculate } from "fast-crc32c";
+import { calculate } from  "fast-crc32c/impls/js_crc32c";
 import { IOBuf } from "../../../../src/js/modules/utilities/IOBuf";
 
 import {

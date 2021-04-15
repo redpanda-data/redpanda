@@ -14,7 +14,7 @@ import {
   RecordBatch,
   RecordBatchHeader,
 } from "../../domain/generatedRpc/generatedClasses";
-import { calculate } from "fast-crc32c";
+import { calculate } from  "fast-crc32c/impls/js_crc32c";
 
 // receive int64 and return Uint64
 const encodeZigzag = (field: bigint): bigint => {
