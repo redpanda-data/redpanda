@@ -94,14 +94,14 @@ func (r *ClusterReconciler) Reconcile(
 	adminAPIInternal := redpandaCluster.AdminAPIInternal()
 	adminAPIExternal := redpandaCluster.AdminAPIExternal()
 	if externalListener != nil {
-		nodeports = append(nodeports, resources.NamedServicePort{Name: externalListener.Name, Port: internalListener.Port + 1})
+		nodeports = append(nodeports, resources.NamedServicePort{Name: resources.ExternalListenerName, Port: internalListener.Port + 1})
 	}
 	if adminAPIExternal != nil {
 		nodeports = append(nodeports, resources.NamedServicePort{Name: resources.AdminPortName, Port: adminAPIInternal.Port + 1})
 	}
 	headlessPorts := []resources.NamedServicePort{
 		{Name: resources.AdminPortName, Port: adminAPIInternal.Port},
-		{Name: internalListener.Name, Port: internalListener.Port},
+		{Name: resources.InternalListenerName, Port: internalListener.Port},
 	}
 	headlessSvc := resources.NewHeadlessService(r.Client, &redpandaCluster, r.Scheme, headlessPorts, log)
 	nodeportSvc := resources.NewNodePortService(r.Client, &redpandaCluster, r.Scheme, nodeports, log)
@@ -295,7 +295,7 @@ func (r *ClusterReconciler) createExternalNodesList(
 			observedNodesExternal = append(observedNodesExternal,
 				fmt.Sprintf("%s:%d",
 					getExternalIP(&node),
-					getNodePort(&nodePortSvc, externalKafkaListener.Name),
+					getNodePort(&nodePortSvc, resources.ExternalListenerName),
 				))
 		}
 		if externalAdminListener != nil && len(externalKafkaListener.External.Subdomain) > 0 {
