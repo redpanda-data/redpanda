@@ -181,8 +181,6 @@ spec:
                                 as a subject alternative name.
                               type: string
                           type: object
-                        name:
-                          type: string
                         port:
                           type: integer
                         tls:

@@ -18,8 +18,7 @@ spec:
     rpcServer:
       port: 33145
     kafkaApi:
-    - name: kafka
-      port: 9092
+    - port: 9092
       tls:
         enabled: true
         nodeSecretRef:

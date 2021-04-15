@@ -185,8 +185,7 @@ type AdminAPI struct {
 
 // KafkaAPI listener information for Kafka API
 type KafkaAPI struct {
-	Name string `json:"name,omitempty"`
-	Port int    `json:"port,omitempty"`
+	Port int `json:"port,omitempty"`
 	// External enables user to expose Redpanda
 	// nodes outside of a Kubernetes cluster. For more
 	// information please go to ExternalConnectivityConfig
