@@ -12,20 +12,23 @@ package resources
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
+	"net/http"
 	"reflect"
-	"strconv"
 	"time"
 
-	"github.com/Shopify/sarama"
-	"github.com/go-logr/logr"
+	cmetav1 "github.com/jetstack/cert-manager/pkg/apis/meta/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 )
 
 const requeueDuration = time.Second * 10
+const adminAPITimeout = time.Millisecond * 100
+
+var errRedpandaNotReady = errors.New("redpanda not ready")
 
 // runPartitionedUpdate handles image changes in the redpanda cluster CR by triggering
 // a rolling update (using partitions) against the statefulset underneath the CR.
@@ -42,7 +45,7 @@ const requeueDuration = time.Second * 10
 // starting from the last pod to the first; 4) in each iteration apply the update
 // on the pod and requeue until the pod is in ready state; 5) prior to a pod update
 // verify the previously updated pod and requeue as necessary. Currently, the
-// verification checks the pod has started listening in its Kafka API port and may be
+// verification checks the pod has started listening in its http Admin API port and may be
 // extended.
 func (r *StatefulSetResource) runPartitionedUpdate(
 	ctx context.Context, sts *appsv1.StatefulSet,
@@ -129,7 +132,7 @@ func (r *StatefulSetResource) partitionUpdateImage(
 		// Pod (if any) has rejoined its groups after restarting, i.e., is ready for I/O.
 		if err := r.ensureRedpandaGroupsReady(ctx, sts, replicas, ordinal+1); err != nil {
 			return &RequeueAfterError{RequeueAfter: requeueDuration,
-				Msg: fmt.Sprintf("redpanda on pod (ordinal: %d) not ready", ordinal)}
+				Msg: fmt.Sprintf("redpanda on pod (ordinal: %d) not ready: %s", ordinal, err)}
 		}
 
 		if err := r.rollingUpdatePartition(ctx, ordinal, sts); err != nil {
@@ -144,7 +147,7 @@ func (r *StatefulSetResource) partitionUpdateImage(
 	// Ensure 0th Pod is ready for I/O before completing the upgrade.
 	if err := r.ensureRedpandaGroupsReady(ctx, sts, replicas, 0); err != nil {
 		return &RequeueAfterError{RequeueAfter: requeueDuration,
-			Msg: fmt.Sprintf("redpanda on pod (ordinal: %d) not ready", 0)}
+			Msg: fmt.Sprintf("redpanda on pod (ordinal: %d) not ready: %s", 0, err)}
 	}
 
 	return nil
@@ -159,56 +162,53 @@ func (r *StatefulSetResource) ensureRedpandaGroupsReady(
 		return nil
 	}
 
-	if len(r.pandaCluster.Spec.Configuration.KafkaAPI) == 0 {
-		return nil // TODO
-	}
-	internalListener := r.pandaCluster.InternalListener()
-	port := strconv.Itoa(internalListener.Port)
-	headlessServiceWithPort := fmt.Sprintf("%s:%s", r.serviceFQDN, port)
+	headlessServiceWithPort := fmt.Sprintf("%s:%d", r.serviceFQDN,
+		r.pandaCluster.Spec.Configuration.AdminAPI.Port)
 
-	addresses := []string{fmt.Sprintf("%s-%d.%s", sts.Name, ordinal, headlessServiceWithPort)}
+	address := fmt.Sprintf("%s-%d.%s%s", sts.Name, ordinal, headlessServiceWithPort, "/v1/status/ready")
 
-	return r.queryRedpandaForTopicMembers(ctx, addresses, r.logger)
+	return r.queryRedpandaStatus(ctx, address)
 }
 
-// Used as a temporary indicator that Redpanda is ready until a health
-// endpoint is introduced or logic is added here that goes through all topics
-// metadata.
-func (r *StatefulSetResource) queryRedpandaForTopicMembers(
-	ctx context.Context, addresses []string, logger logr.Logger,
+// Temporarily using the status/ready endpoint until we have a specific one for upgrading.
+func (r *StatefulSetResource) queryRedpandaStatus(
+	ctx context.Context, address string,
 ) error {
-	logger.Info("Connect to Redpanda broker", "broker", addresses)
-
-	conf := sarama.NewConfig()
-	conf.Version = sarama.V2_4_0_0
-	conf.ClientID = "operator"
-	conf.Admin.Timeout = time.Second
+	client := &http.Client{Timeout: adminAPITimeout}
+	protocol := "http"
 
 	// TODO right now we support TLS only on one listener so if external
 	// connectivity is enabled, TLS is enabled only on external listener. This
 	// will be fixed by https://github.com/vectorizedio/redpanda/issues/1084
-	tlsListener := r.pandaCluster.KafkaTLSListener()
-	if tlsListener != nil && !tlsListener.External.Enabled {
+	if !r.pandaCluster.Spec.ExternalConnectivity.Enabled && r.pandaCluster.Spec.Configuration.TLS.AdminAPI.Enabled {
 		tlsConfig := tls.Config{MinVersion: tls.VersionTLS12} // TLS12 is min version allowed by gosec.
-		// For simplicity, we skip broker verification until per-listener
-		// TLS is available in Redpanda. This client calls the internal listener.
-		tlsConfig.InsecureSkipVerify = true
 
 		if err := r.populateTLSConfigCert(ctx, &tlsConfig); err != nil {
 			return err
 		}
 
-		conf.Net.TLS.Enable = true
-		conf.Net.TLS.Config = &tlsConfig
+		client.Transport = &http.Transport{
+			TLSClientConfig: &tlsConfig,
+		}
+		protocol = "https"
 	}
+	address = fmt.Sprintf("%s://%s", protocol, address)
 
-	consumer, err := sarama.NewConsumer(addresses, conf)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, address, nil)
 	if err != nil {
-		logger.Error(err, "Error while creating consumer")
 		return err
 	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
 
-	return consumer.Close()
+	if resp.StatusCode != http.StatusOK {
+		return errRedpandaNotReady
+	}
+
+	return nil
 }
 
 // Populates crypto/TLS configuration for certificate used by the operator
@@ -216,23 +216,29 @@ func (r *StatefulSetResource) queryRedpandaForTopicMembers(
 func (r *StatefulSetResource) populateTLSConfigCert(
 	ctx context.Context, tlsConfig *tls.Config,
 ) error {
-	tlsListener := r.pandaCluster.KafkaTLSListener()
-	if tlsListener == nil || !tlsListener.TLS.RequireClientAuth {
-		return nil
-	}
-
-	var certSecret corev1.Secret
-	err := r.Get(ctx, r.internalClientCertSecretKey, &certSecret)
+	var nodeCertSecret corev1.Secret
+	err := r.Get(ctx, r.adminAPINodeCertSecretKey, &nodeCertSecret)
 	if err != nil {
 		return err
 	}
 
-	cert, err := tls.X509KeyPair(certSecret.Data[corev1.TLSCertKey], certSecret.Data[corev1.TLSPrivateKeyKey])
-	if err != nil {
-		return err
-	}
+	// Add root CA
+	caCertPool := x509.NewCertPool()
+	caCertPool.AppendCertsFromPEM(nodeCertSecret.Data[cmetav1.TLSCAKey])
+	tlsConfig.RootCAs = caCertPool
 
-	tlsConfig.Certificates = []tls.Certificate{cert}
+	if r.pandaCluster.Spec.Configuration.TLS.AdminAPI.RequireClientAuth {
+		var clientCertSecret corev1.Secret
+		err := r.Get(ctx, r.adminAPIClientCertSecretKey, &clientCertSecret)
+		if err != nil {
+			return err
+		}
+		cert, err := tls.X509KeyPair(clientCertSecret.Data[corev1.TLSCertKey], clientCertSecret.Data[corev1.TLSPrivateKeyKey])
+		if err != nil {
+			return err
+		}
+		tlsConfig.Certificates = []tls.Certificate{cert}
+	}
 
 	return nil
 }
