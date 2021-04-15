@@ -1179,8 +1179,23 @@ void group::fail_offset_commit(
 
 void group::reset_tx_state(model::term_id term) { _term = term; }
 
+void group::insert_prepared(group_prepared_tx tx) {
+    auto [pending_it, inserted] = _prepared_txs.try_emplace(
+      tx.pid, prepared_tx{.offsets = tx.offsets});
+
+    for (const auto& [tp, md] : tx.offsets) {
+        pending_it->second.offsets[tp] = md;
+    }
+}
+
 cluster::begin_group_tx_reply make_begin_tx_reply(cluster::tx_errc ec) {
     cluster::begin_group_tx_reply reply;
+    reply.ec = ec;
+    return reply;
+}
+
+cluster::prepare_group_tx_reply make_prepare_tx_reply(cluster::tx_errc ec) {
+    cluster::prepare_group_tx_reply reply;
     reply.ec = ec;
     return reply;
 }
@@ -1204,6 +1219,73 @@ group::begin_tx(cluster::begin_group_tx_request r) {
     reply.etag = _term;
     reply.ec = cluster::tx_errc::none;
     co_return reply;
+}
+
+ss::future<cluster::prepare_group_tx_reply>
+group::prepare_tx(cluster::prepare_group_tx_request r) {
+    if (_partition->term() != _term) {
+        co_return make_prepare_tx_reply(cluster::tx_errc::timeout);
+    }
+
+    if (r.etag != _term) {
+        co_return make_prepare_tx_reply(cluster::tx_errc::timeout);
+    }
+
+    auto tx_it = _volatile_txs.find(r.pid);
+    if (tx_it == _volatile_txs.end()) {
+        co_return make_prepare_tx_reply(cluster::tx_errc::timeout);
+    }
+
+    auto tx_entry = group_log_prepared_tx{.group_id = r.group_id, .pid = r.pid};
+
+    for (const auto& [tp, offset] : tx_it->second.offsets) {
+        group_log_prepared_tx_offset tx_offset;
+
+        tx_offset.tp = tp;
+        tx_offset.offset = offset.offset;
+        tx_offset.leader_epoch = offset.leader_epoch;
+        tx_offset.metadata = offset.metadata;
+        tx_entry.offsets.push_back(tx_offset);
+    }
+
+    volatile_tx tx = tx_it->second;
+    _volatile_txs.erase(tx_it);
+
+    iobuf key;
+    kafka::response_writer w(key);
+    // TODO: https://app.clubhouse.io/vectorized/story/2200
+    // include producer_id+type into key to make it unique-ish
+    // to prevent being GCed by the compaction
+    w.write(prepared_tx_record_version());
+    storage::record_batch_builder builder(
+      cluster::group_prepare_tx_batch_type, model::offset(0));
+    builder.set_producer_identity(r.pid.id, r.pid.epoch);
+    builder.set_control_type();
+    builder.add_raw_kw(
+      std::move(key),
+      reflection::to_iobuf(std::move(tx_entry)),
+      std::vector<model::record_header>());
+    auto batch = std::move(builder).build();
+    auto reader = model::make_memory_record_batch_reader(std::move(batch));
+
+    auto e = co_await _partition->replicate(
+      std::move(reader),
+      raft::replicate_options(raft::consistency_level::quorum_ack));
+
+    if (!e) {
+        co_return make_prepare_tx_reply(cluster::tx_errc::timeout);
+    }
+
+    prepared_tx ptx;
+    for (const auto& [tp, offset] : tx.offsets) {
+        offset_metadata md{
+          .log_offset = e.value().last_offset,
+          .offset = offset.offset,
+          .metadata = offset.metadata.value_or("")};
+        ptx.offsets[tp] = md;
+    }
+    _prepared_txs.try_emplace(r.pid, ptx);
+    co_return cluster::prepare_group_tx_reply();
 }
 
 ss::future<txn_offset_commit_response>
@@ -1341,6 +1423,28 @@ group::handle_begin_tx(cluster::begin_group_tx_request r) {
     } else {
         vlog(klog.error, "Unexpected group state {} for {}", _state, *this);
         cluster::begin_group_tx_reply reply;
+        reply.ec = cluster::tx_errc::timeout;
+        co_return reply;
+    }
+}
+
+ss::future<cluster::prepare_group_tx_reply>
+group::handle_prepare_tx(cluster::prepare_group_tx_request r) {
+    if (in_state(group_state::dead)) {
+        cluster::prepare_group_tx_reply reply;
+        reply.ec = cluster::tx_errc::coordinator_not_available;
+        co_return reply;
+    } else if (
+      in_state(group_state::stable) || in_state(group_state::empty)
+      || in_state(group_state::preparing_rebalance)) {
+        co_return co_await prepare_tx(std::move(r));
+    } else if (in_state(group_state::completing_rebalance)) {
+        cluster::prepare_group_tx_reply reply;
+        reply.ec = cluster::tx_errc::rebalance_in_progress;
+        co_return reply;
+    } else {
+        vlog(klog.error, "Unexpected group state {} for {}", _state, *this);
+        cluster::prepare_group_tx_reply reply;
         reply.ec = cluster::tx_errc::timeout;
         co_return reply;
     }

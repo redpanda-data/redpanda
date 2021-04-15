@@ -147,6 +147,9 @@ public:
     ss::future<cluster::begin_group_tx_reply>
     begin_tx(cluster::begin_group_tx_request&&);
 
+    ss::future<cluster::prepare_group_tx_reply>
+    prepare_tx(cluster::prepare_group_tx_request&&);
+
     /// \brief Handle a OffsetFetch request
     ss::future<offset_fetch_response>
     offset_fetch(offset_fetch_request&& request);
