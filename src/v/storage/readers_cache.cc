@@ -29,6 +29,7 @@ readers_cache::readers_cache(
   model::ntp ntp, std::chrono::milliseconds eviction_timeout)
   : _ntp(std::move(ntp))
   , _eviction_timeout(eviction_timeout) {
+    _probe.setup_metrics(_ntp);
     // setup eviction timer
     _eviction_timer.set_callback([this] {
         (void)ss::with_gate(_gate, [this] {
@@ -75,6 +76,7 @@ readers_cache::put(std::unique_ptr<log_reader> reader) {
 
     auto ptr = new entry{.reader = std::move(reader)}; // NOLINT
     _in_use.push_back(*ptr);
+    _probe.reader_added();
     return ptr->make_cached_reader(this);
 }
 
@@ -108,12 +110,14 @@ readers_cache::get_reader(const log_reader_config& cfg) {
      */
     dispose_in_background(std::move(to_evict));
     if (it == _readers.end()) {
+        _probe.cache_miss();
         vlog(stlog.trace, "{} - reader cache miss for: {}", _ntp, cfg);
         return std::nullopt;
     }
     auto& e = *it;
     vlog(stlog.trace, "{} - reader cache hit for: {}", _ntp, cfg);
     it->reader->reset_config(cfg);
+    _probe.cache_hit();
 
     // we use cached_reader wrapper to track reader usage, when cached_reader is
     // destroyed we unlock reader and trigger eviction
@@ -262,6 +266,7 @@ readers_cache::dispose_entries(intrusive_list<entry, &entry::_hook> entries) {
           e->reader->lease_range_base_offset(),
           e->reader->lease_range_end_offset(),
           e->reader->next_read_lower_bound());
+        _probe.reader_evicted();
         delete e; // NOLINT
     });
 }
@@ -289,6 +294,7 @@ void readers_cache::dispose_in_background(entry* e) {
                   e->reader->lease_range_base_offset(),
                   e->reader->lease_range_end_offset(),
                   e->reader->next_read_lower_bound());
+                _probe.reader_evicted();
                 delete e; // NOLINT
             });
         });

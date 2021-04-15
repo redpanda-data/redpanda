@@ -14,6 +14,7 @@
 #include "model/record_batch_reader.h"
 #include "random/generators.h"
 #include "storage/log_reader.h"
+#include "storage/readers_cache_probe.h"
 #include "storage/types.h"
 #include "utils/intrusive_list_helpers.h"
 #include "vlog.h"
@@ -161,6 +162,7 @@ private:
     std::chrono::milliseconds _eviction_timeout;
     ss::gate _gate;
     ss::timer<> _eviction_timer;
+    readers_cache_probe _probe;
     /**
      * when reader is in use we push it to _in_use intrusive list, otherwise it
      * is stored in _readers.
