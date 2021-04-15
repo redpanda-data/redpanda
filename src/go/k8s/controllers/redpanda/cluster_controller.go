@@ -289,7 +289,7 @@ func (r *ClusterReconciler) createExternalNodesList(
 		}
 
 		if externalKafkaListener != nil && len(externalKafkaListener.External.Subdomain) > 0 {
-			address := subdomainAddress(podName, externalKafkaListener.External.Subdomain, getNodePort(&nodePortSvc, externalKafkaListener.Name))
+			address := subdomainAddress(podName, externalKafkaListener.External.Subdomain, getNodePort(&nodePortSvc, resources.ExternalListenerName))
 			observedNodesExternal = append(observedNodesExternal, address)
 		} else if externalKafkaListener != nil {
 			observedNodesExternal = append(observedNodesExternal,

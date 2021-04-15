@@ -233,10 +233,8 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 
 	externalListener := r.pandaCluster.ExternalListener()
 	externalSubdomain := ""
-	externalKafkaPortName := ""
 	if externalListener != nil {
 		externalSubdomain = externalListener.External.Subdomain
-		externalKafkaPortName = externalListener.Name
 	}
 
 	ss := &appsv1.StatefulSet{
@@ -336,7 +334,7 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 								},
 								{
 									Name:  "HOST_PORT",
-									Value: r.getNodePort(externalKafkaPortName),
+									Value: r.getNodePort(),
 								},
 							},
 							SecurityContext: &corev1.SecurityContext{
@@ -588,13 +586,10 @@ func (r *StatefulSetResource) secretVolumes() []corev1.Volume {
 	return vols
 }
 
-func (r *StatefulSetResource) getNodePort(name string) string {
-	if name == "" {
-		return ""
-	}
+func (r *StatefulSetResource) getNodePort() string {
 	if r.pandaCluster.ExternalListener() != nil {
 		for _, port := range r.nodePortSvc.Spec.Ports {
-			if port.Name == name {
+			if port.Name == ExternalListenerName {
 				return strconv.FormatInt(int64(port.NodePort), 10)
 			}
 		}
