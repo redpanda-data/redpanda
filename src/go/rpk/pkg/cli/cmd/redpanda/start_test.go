@@ -928,6 +928,58 @@ func TestStartCommand(t *testing.T) {
 			)
 		},
 	}, {
+		name: "it should parse the --advertise-pandaproxy-addr and persist it",
+		args: []string{
+			"--install-dir", "/var/lib/redpanda",
+			"--advertise-pandaproxy-addr", "192.168.34.32:8083",
+		},
+		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+			mgr := config.NewManager(fs)
+			conf, err := mgr.Read(config.Default().ConfigFile)
+			require.NoError(st, err)
+			expectedAddr := []config.NamedSocketAddress{{
+				SocketAddress: config.SocketAddress{
+					Address: "192.168.34.32",
+					Port:    8083,
+				},
+			}}
+			// Check that the generated config is as expected.
+			require.Exactly(
+				st,
+				expectedAddr,
+				conf.Pandaproxy.AdvertisedPandaproxyAPI,
+			)
+		},
+	}, {
+		name: "if --advertise-pandaproxy-addr, it should fall back to REDPANDA_ADVERTISE_PANDAPROXY_ADDRESS and persist it",
+		args: []string{
+			"--install-dir", "/var/lib/redpanda",
+		},
+		before: func(_ afero.Fs) error {
+			os.Setenv("REDPANDA_ADVERTISE_PANDAPROXY_ADDRESS", "host:3123")
+			return nil
+		},
+		after: func() {
+			os.Unsetenv("REDPANDA_ADVERTISE_PANDAPROXY_ADDRESS")
+		},
+		postCheck: func(fs afero.Fs, _ *rp.RedpandaArgs, st *testing.T) {
+			mgr := config.NewManager(fs)
+			conf, err := mgr.Read(config.Default().ConfigFile)
+			require.NoError(st, err)
+			expectedAddr := []config.NamedSocketAddress{{
+				SocketAddress: config.SocketAddress{
+					Address: "host",
+					Port:    3123,
+				},
+			}}
+			// Check that the generated config is as expected.
+			require.Exactly(
+				st,
+				expectedAddr,
+				conf.Pandaproxy.AdvertisedPandaproxyAPI,
+			)
+		},
+	}, {
 		name: "it should parse the --advertise-rpc-addr and persist it",
 		args: []string{
 			"--install-dir", "/var/lib/redpanda",
