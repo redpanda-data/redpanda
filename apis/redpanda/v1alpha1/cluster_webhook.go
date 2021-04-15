@@ -130,6 +130,22 @@ func (r *Cluster) validateAdminListeners() field.ErrorList {
 				r.Spec.Configuration.AdminAPI,
 				"external admin listener cannot have port specified"))
 	}
+
+	// for now only one listener can have TLS to be backward compatible with v1alpha1 API
+	foundListenerWithTLS := false
+	for i, p := range r.Spec.Configuration.AdminAPI {
+		if p.TLS.Enabled {
+			if foundListenerWithTLS {
+				allErrs = append(allErrs,
+					field.Invalid(field.NewPath("spec").Child("configuration").Child("adminApi").Index(i).Child("tls"),
+						r.Spec.Configuration.AdminAPI[i].TLS,
+						"only one listener can have TLS enabled"))
+			}
+			foundListenerWithTLS = true
+		}
+		// we need to run the validation on all listeners to also catch errors like !Enabled && RequireClientAuth
+		allErrs = append(allErrs, validateAdminTLS(p.TLS, field.NewPath("spec").Child("configuration").Child("adminApi").Index(i).Child("tls"))...)
+	}
 	return allErrs
 }
 
@@ -203,6 +219,17 @@ func (r *Cluster) validateMemory() field.ErrorList {
 	return allErrs
 }
 
+func validateAdminTLS(tlsConfig AdminAPITLS, path *field.Path) field.ErrorList {
+	var allErrs field.ErrorList
+	if tlsConfig.RequireClientAuth && !tlsConfig.Enabled {
+		allErrs = append(allErrs,
+			field.Invalid(
+				path.Child("requireclientauth"),
+				tlsConfig.RequireClientAuth,
+				"Enabled has to be set to true for RequireClientAuth to be allowed to be true"))
+	}
+	return allErrs
+}
 func validateTLS(tlsConfig KafkaAPITLS, path *field.Path) field.ErrorList {
 	var allErrs field.ErrorList
 	if tlsConfig.RequireClientAuth && !tlsConfig.Enabled {
