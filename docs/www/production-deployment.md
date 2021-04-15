@@ -22,6 +22,7 @@ For the best performance the following are strongly recommended:
 - The following ports need to be opened
   - `33145` - Internal RPC Port
   - `9092` - Kafka API Port
+  - `8082` - Pandaproxy Port
   - `9644` - Prometheus & HTTP Admin port
 
 ## Installation
@@ -99,7 +100,7 @@ cd gcp
 #### Step 1: Prerequisites
 
 You will need an existing subnet to deploy the VMs into. The subnet's attached
-firewall should allow inbound traffic on ports 22, 3000, 8888, 8889, 9090,
+firewall should allow inbound traffic on ports 22, 3000, 8082, 8888, 8889, 9090,
 9092, 9644 and 33145. This module adds the `rp-node` tag to the deployed VMs,
 which can be used as the target tag for the firewall rule.
 
