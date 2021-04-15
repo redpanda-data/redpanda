@@ -121,8 +121,14 @@ func (r *StatefulSetResource) Ensure(ctx context.Context) error {
 			return fmt.Errorf("failed to retrieve node port service %s: %w", r.nodePortName, err)
 		}
 
-		adminAndInternalPortLength := 2
-		if len(r.nodePortSvc.Spec.Ports) != adminAndInternalPortLength {
+		// TODO(av) clean this up and unify with the same code in cluster_controller status handling
+		externalKafkaListener := r.pandaCluster.ExternalListener()
+		externalAdminListener := r.pandaCluster.AdminAPIExternal()
+		expectedPortLength := 2
+		if externalAdminListener == nil || externalKafkaListener == nil {
+			expectedPortLength = 1
+		}
+		if len(r.nodePortSvc.Spec.Ports) != expectedPortLength {
 			return fmt.Errorf("node port service %s: %w", r.nodePortName, errNodePortMissing)
 		}
 
