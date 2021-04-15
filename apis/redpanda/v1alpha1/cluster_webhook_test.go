@@ -46,7 +46,7 @@ func TestValidateUpdate(t *testing.T) {
 	updatedCluster := redpandaCluster.DeepCopy()
 	updatedCluster.Spec.Replicas = &replicas1
 	updatedCluster.Spec.Configuration = v1alpha1.RedpandaConfig{
-		KafkaAPI: []v1alpha1.KafkaAPIListener{
+		KafkaAPI: []v1alpha1.KafkaAPI{
 			{Port: 123,
 				TLS: v1alpha1.KafkaAPITLS{
 					RequireClientAuth: true,
@@ -103,7 +103,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 		Spec: v1alpha1.ClusterSpec{
 			Replicas: pointer.Int32Ptr(replicas2),
 			Configuration: v1alpha1.RedpandaConfig{
-				KafkaAPI:  []v1alpha1.KafkaAPIListener{{Port: 123}},
+				KafkaAPI:  []v1alpha1.KafkaAPI{{Port: 123}},
 				AdminAPI:  []v1alpha1.AdminAPI{{Port: 125}},
 				RPCServer: v1alpha1.SocketAddress{Port: 126},
 			},
@@ -150,7 +150,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 		updatePort := redpandaCluster.DeepCopy()
 		updatePort.Spec.Configuration.KafkaAPI[0].Port = 200
 		updatePort.Spec.Configuration.KafkaAPI = append(updatePort.Spec.Configuration.KafkaAPI,
-			v1alpha1.KafkaAPIListener{External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
+			v1alpha1.KafkaAPI{External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
 		updatePort.Spec.Configuration.AdminAPI[0].Port = 201
 		updatePort.Spec.Configuration.RPCServer.Port = 300
 
@@ -161,7 +161,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 	t.Run("collision in the port when external connectivity is enabled", func(t *testing.T) {
 		updatePort := redpandaCluster.DeepCopy()
 		updatePort.Spec.Configuration.KafkaAPI = append(updatePort.Spec.Configuration.KafkaAPI,
-			v1alpha1.KafkaAPIListener{External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
+			v1alpha1.KafkaAPI{External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
 		updatePort.Spec.Configuration.KafkaAPI[0].Port = 200
 		updatePort.Spec.Configuration.AdminAPI[0].Port = 300
 		updatePort.Spec.Configuration.RPCServer.Port = 201
@@ -173,7 +173,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 	t.Run("collision in the port when external connectivity is enabled", func(t *testing.T) {
 		updatePort := redpandaCluster.DeepCopy()
 		updatePort.Spec.Configuration.KafkaAPI = append(updatePort.Spec.Configuration.KafkaAPI,
-			v1alpha1.KafkaAPIListener{External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
+			v1alpha1.KafkaAPI{External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
 		updatePort.Spec.Configuration.KafkaAPI[0].Port = 200
 		updatePort.Spec.Configuration.AdminAPI[0].Port = 300
 		updatePort.Spec.Configuration.AdminAPI[0].External.Enabled = true
@@ -187,7 +187,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 		updatePort := redpandaCluster.DeepCopy()
 		updatePort.Spec.Configuration.AdminAPI[0].External.Enabled = true
 		updatePort.Spec.Configuration.KafkaAPI = append(updatePort.Spec.Configuration.KafkaAPI,
-			v1alpha1.KafkaAPIListener{External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
+			v1alpha1.KafkaAPI{External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
 		updatePort.Spec.Configuration.KafkaAPI[0].Port = 201
 		updatePort.Spec.Configuration.AdminAPI[0].Port = 200
 		updatePort.Spec.Configuration.RPCServer.Port = 300
@@ -209,7 +209,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 		exPort := redpandaCluster.DeepCopy()
 		exPort.Spec.Configuration.KafkaAPI[0].External.Enabled = true
 		exPort.Spec.Configuration.KafkaAPI = append(exPort.Spec.Configuration.KafkaAPI,
-			v1alpha1.KafkaAPIListener{Port: 123, External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
+			v1alpha1.KafkaAPI{Port: 123, External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
 		err := exPort.ValidateUpdate(redpandaCluster)
 
 		assert.Error(t, err)
@@ -218,7 +218,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 	t.Run("multiple internal listeners", func(t *testing.T) {
 		multiPort := redpandaCluster.DeepCopy()
 		multiPort.Spec.Configuration.KafkaAPI = append(multiPort.Spec.Configuration.KafkaAPI,
-			v1alpha1.KafkaAPIListener{Port: 123})
+			v1alpha1.KafkaAPI{Port: 123})
 		err := multiPort.ValidateUpdate(redpandaCluster)
 
 		assert.Error(t, err)
@@ -290,7 +290,7 @@ func TestCreation(t *testing.T) {
 		},
 		Spec: v1alpha1.ClusterSpec{
 			Configuration: v1alpha1.RedpandaConfig{
-				KafkaAPI:  []v1alpha1.KafkaAPIListener{{Port: 123}},
+				KafkaAPI:  []v1alpha1.KafkaAPI{{Port: 123}},
 				AdminAPI:  []v1alpha1.AdminAPI{{Port: 125}},
 				RPCServer: v1alpha1.SocketAddress{Port: 126},
 			},
@@ -323,7 +323,7 @@ func TestCreation(t *testing.T) {
 	t.Run("collision in the port when external connectivity is enabled", func(t *testing.T) {
 		newPort := redpandaCluster.DeepCopy()
 		newPort.Spec.Configuration.KafkaAPI = append(newPort.Spec.Configuration.KafkaAPI,
-			v1alpha1.KafkaAPIListener{External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
+			v1alpha1.KafkaAPI{External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
 		newPort.Spec.Configuration.KafkaAPI[0].Port = 200
 		newPort.Spec.Configuration.AdminAPI[0].Port = 300
 		newPort.Spec.Configuration.RPCServer.Port = 201
@@ -334,7 +334,7 @@ func TestCreation(t *testing.T) {
 
 	t.Run("no kafka port", func(t *testing.T) {
 		noPort := redpandaCluster.DeepCopy()
-		noPort.Spec.Configuration.KafkaAPI = []v1alpha1.KafkaAPIListener{}
+		noPort.Spec.Configuration.KafkaAPI = []v1alpha1.KafkaAPI{}
 
 		err := noPort.ValidateCreate()
 		assert.Error(t, err)
@@ -399,7 +399,7 @@ func TestCreation(t *testing.T) {
 		exPort := redpandaCluster.DeepCopy()
 		exPort.Spec.Configuration.KafkaAPI[0].External.Enabled = true
 		exPort.Spec.Configuration.KafkaAPI = append(exPort.Spec.Configuration.KafkaAPI,
-			v1alpha1.KafkaAPIListener{Port: 123, External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
+			v1alpha1.KafkaAPI{Port: 123, External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
 		err := exPort.ValidateCreate()
 
 		assert.Error(t, err)
@@ -408,7 +408,7 @@ func TestCreation(t *testing.T) {
 	t.Run("multiple internal listeners", func(t *testing.T) {
 		multiPort := redpandaCluster.DeepCopy()
 		multiPort.Spec.Configuration.KafkaAPI = append(multiPort.Spec.Configuration.KafkaAPI,
-			v1alpha1.KafkaAPIListener{Port: 123})
+			v1alpha1.KafkaAPI{Port: 123})
 		err := multiPort.ValidateCreate()
 
 		assert.Error(t, err)

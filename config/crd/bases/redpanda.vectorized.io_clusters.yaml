@@ -160,8 +160,7 @@ spec:
                     type: integer
                   kafkaApi:
                     items:
-                      description: KafkaAPIListener listener information for Kafka
-                        API
+                      description: KafkaAPI listener information for Kafka API
                       properties:
                         external:
                           description: External enables user to expose Redpanda nodes
