@@ -30,6 +30,7 @@ import { Handle } from "../domain/Handle";
 import errors, { DisableResponseCode } from "./errors";
 import { Logger } from "winston";
 import Logging from "../utilities/Logging";
+import requireNative from "./require-native";
 
 export class ProcessBatchServer extends SupervisorServer {
   private readonly repository: Repository;
@@ -158,12 +159,14 @@ export class ProcessBatchServer extends SupervisorServer {
      * We create a 'module' result where our function save the object that
      * coprocessor script exports.
      */
-    const module: ResultFunction = {};
+    const module: ResultFunction = {
+      exports: {},
+    };
     /**
      * pass our module object and nodeJs require function.
      */
     try {
-      loadScript(module, require);
+      loadScript(module, requireNative);
     } catch (e) {
       this.logger.error(`error on load wasm script: ${id}, ${e.message}`);
       return [undefined, errors.validateLoadScriptError(e, id, script)];
