@@ -256,6 +256,29 @@ func TestValidateUpdate_NoError(t *testing.T) {
 
 		assert.Error(t, err)
 	})
+
+	t.Run("multiple admin listeners with tls", func(t *testing.T) {
+		multiPort := redpandaCluster.DeepCopy()
+		multiPort.Spec.Configuration.AdminAPI[0].TLS.Enabled = true
+		multiPort.Spec.Configuration.AdminAPI = append(multiPort.Spec.Configuration.AdminAPI,
+			v1alpha1.AdminAPI{
+				Port:     123,
+				External: v1alpha1.ExternalConnectivityConfig{Enabled: true},
+				TLS:      v1alpha1.AdminAPITLS{Enabled: true},
+			})
+		err := multiPort.ValidateUpdate(redpandaCluster)
+
+		assert.Error(t, err)
+	})
+
+	t.Run("tls admin listener without enabled true", func(t *testing.T) {
+		multiPort := redpandaCluster.DeepCopy()
+		multiPort.Spec.Configuration.AdminAPI[0].TLS.RequireClientAuth = true
+		multiPort.Spec.Configuration.AdminAPI[0].TLS.Enabled = false
+		err := multiPort.ValidateUpdate(redpandaCluster)
+
+		assert.Error(t, err)
+	})
 }
 
 //nolint:funlen // this is ok for a test
@@ -395,6 +418,29 @@ func TestCreation(t *testing.T) {
 		exPort := redpandaCluster.DeepCopy()
 		exPort.Spec.Configuration.KafkaAPI[0].External.Enabled = true
 		err := exPort.ValidateCreate()
+
+		assert.Error(t, err)
+	})
+
+	t.Run("multiple admin listeners with tls", func(t *testing.T) {
+		multiPort := redpandaCluster.DeepCopy()
+		multiPort.Spec.Configuration.AdminAPI[0].TLS.Enabled = true
+		multiPort.Spec.Configuration.AdminAPI = append(multiPort.Spec.Configuration.AdminAPI,
+			v1alpha1.AdminAPI{
+				Port:     123,
+				External: v1alpha1.ExternalConnectivityConfig{Enabled: true},
+				TLS:      v1alpha1.AdminAPITLS{Enabled: true},
+			})
+		err := multiPort.ValidateCreate()
+
+		assert.Error(t, err)
+	})
+
+	t.Run("tls admin listener without enabled true", func(t *testing.T) {
+		multiPort := redpandaCluster.DeepCopy()
+		multiPort.Spec.Configuration.AdminAPI[0].TLS.RequireClientAuth = true
+		multiPort.Spec.Configuration.AdminAPI[0].TLS.Enabled = false
+		err := multiPort.ValidateCreate()
 
 		assert.Error(t, err)
 	})
