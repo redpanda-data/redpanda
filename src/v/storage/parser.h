@@ -92,6 +92,8 @@ private:
     /// \brief consumes _one_ full batch.
     ss::future<result<batch_consumer::stop_parser>> consume_one();
 
+    /// \brief read and parses header from input_file_stream
+    ss::future<result<model::record_batch_header>> read_header();
     /// \brief parses and _stores_ the header into _header variable
     ss::future<result<batch_consumer::stop_parser>> consume_header();
 

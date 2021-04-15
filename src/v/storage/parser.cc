@@ -20,6 +20,7 @@
 #include "storage/parser_utils.h"
 #include "vlog.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/smp.hh>
 #include <seastar/util/variant_utils.hh>
 
@@ -93,88 +94,80 @@ static ss::future<result<iobuf>> verify_read_iobuf(
 }
 
 ss::future<result<stop_parser>> continuous_batch_parser::consume_header() {
-    return read_iobuf_exactly(_input, model::packed_record_batch_header_size)
-      .then([this](iobuf b) -> result<iobuf> {
-          if (b.empty()) {
-              // benign outcome. happens at end of file
-              return parser_errc::end_of_stream;
-          }
-          if (b.size_bytes() != model::packed_record_batch_header_size) {
-              stlog.error(
-                "Could not parse header. Expected:{}, but Got:{}. consumer:{}",
-                model::packed_record_batch_header_size,
-                b.size_bytes(),
-                *_consumer);
-              return parser_errc::input_stream_not_enough_bytes;
-          }
-          return b;
-      })
-      .then([](result<iobuf> b) {
-          if (!b) {
-              return ss::make_ready_future<result<model::record_batch_header>>(
-                b.error());
-          }
-          return ss::make_ready_future<result<model::record_batch_header>>(
-            header_from_iobuf(std::move(b.value())));
-      })
-      .then([this](result<model::record_batch_header> o) {
-          if (!o) {
-              return ss::make_ready_future<result<stop_parser>>(o.error());
-          }
-          if (o.value().header_crc == 0) {
-              // happens when we fallocate the file
-              return ss::make_ready_future<result<stop_parser>>(
-                parser_errc::end_of_stream);
-          }
-          if (auto computed_crc = model::internal_header_only_crc(o.value());
-              unlikely(o.value().header_crc != computed_crc)) {
-              vlog(
-                stlog.error,
-                "detected header corruption. stopping parser. Expected CRC of "
-                "{}, but got header CRC: {} - {}. consumer:{}",
-                computed_crc,
-                o.value().header_crc,
-                o.value(),
-                *_consumer);
-              return ss::make_ready_future<result<stop_parser>>(
-                parser_errc::header_only_crc_missmatch);
-          }
-          if (unlikely(o.value().header_crc == 0)) {
-              return ss::make_ready_future<result<stop_parser>>(
-                parser_errc::fallocated_file_read_zero_bytes_for_header);
-          }
-          _header = o.value();
-          const auto size_on_disk = _header.size_bytes;
-          auto ret = _consumer->consume_batch_start(
-            _header, _physical_base_offset, size_on_disk);
-          _physical_base_offset += size_on_disk;
-          if (std::holds_alternative<skip_batch>(ret)) {
-              auto s = std::get<skip_batch>(ret);
-              if (unlikely(bool(s))) {
-                  auto remaining = _header.size_bytes
-                                   - model::packed_record_batch_header_size;
-                  return verify_read_iobuf(
-                           _input, remaining, "parser::skip_batch")
-                    .then([this](result<iobuf> b) {
-                        if (!b) {
-                            return ss::make_ready_future<result<stop_parser>>(
-                              b.error());
-                        }
-                        // start again
-                        add_bytes_and_reset();
-                        return consume_header();
-                    });
-              }
-              return ss::make_ready_future<result<stop_parser>>(
-                stop_parser::no);
-          }
-          auto s = std::get<stop_parser>(ret);
-          if (unlikely(bool(s))) {
-              return ss::make_ready_future<result<stop_parser>>(
-                stop_parser::yes);
-          }
-          return ss::make_ready_future<result<stop_parser>>(stop_parser::no);
-      });
+    /**
+     * we use a loop to prevent using tail recursion
+     **/
+    for (;;) {
+        auto r = co_await read_header();
+        if (!r) {
+            co_return r.error();
+        }
+        _header = r.value();
+
+        auto ret = _consumer->consume_batch_start(
+          _header, _physical_base_offset, _header.size_bytes);
+        _physical_base_offset += _header.size_bytes;
+        if (std::holds_alternative<skip_batch>(ret)) {
+            auto should_skip = std::get<skip_batch>(ret);
+            // do not skip batch
+            if (likely(should_skip == skip_batch::no)) {
+                co_return stop_parser::no;
+            }
+
+            // skip batch
+            auto remaining = _header.size_bytes
+                             - model::packed_record_batch_header_size;
+            auto b = co_await verify_read_iobuf(
+              _input, remaining, "parser::skip_batch");
+
+            if (!b) {
+                co_return b.error();
+            }
+            // start again
+            add_bytes_and_reset();
+            continue;
+        }
+        co_return std::get<stop_parser>(ret);
+    }
+}
+
+ss::future<result<model::record_batch_header>>
+continuous_batch_parser::read_header() {
+    auto b = co_await read_iobuf_exactly(
+      _input, model::packed_record_batch_header_size);
+
+    if (b.empty()) {
+        // benign outcome. happens at end of file
+        co_return parser_errc::end_of_stream;
+    }
+    if (b.size_bytes() != model::packed_record_batch_header_size) {
+        stlog.error(
+          "Could not parse header. Expected:{}, but Got:{}. consumer:{}",
+          model::packed_record_batch_header_size,
+          b.size_bytes(),
+          *_consumer);
+        co_return parser_errc::input_stream_not_enough_bytes;
+    }
+
+    auto header = header_from_iobuf(std::move(b));
+
+    if (unlikely(header.header_crc == 0)) {
+        // happens when we fallocate the file
+        co_return parser_errc::fallocated_file_read_zero_bytes_for_header;
+    }
+    if (auto computed_crc = model::internal_header_only_crc(header);
+        unlikely(header.header_crc != computed_crc)) {
+        vlog(
+          stlog.error,
+          "detected header corruption. stopping parser. Expected CRC of "
+          "{}, but got header CRC: {} - {}. consumer:{}",
+          computed_crc,
+          header.header_crc,
+          header,
+          *_consumer);
+        co_return parser_errc::header_only_crc_missmatch;
+    }
+    co_return header;
 }
 
 ss::future<result<stop_parser>> continuous_batch_parser::consume_one() {
