@@ -76,7 +76,7 @@ var _ = Describe("RedPandaCluster controller", func() {
 					Version:  redpandaContainerTag,
 					Replicas: pointer.Int32Ptr(replicas),
 					Configuration: v1alpha1.RedpandaConfig{
-						KafkaAPI: []v1alpha1.KafkaAPIListener{
+						KafkaAPI: []v1alpha1.KafkaAPI{
 							{Name: "kafka", Port: kafkaPort},
 							{Name: "external", External: v1alpha1.ExternalConnectivityConfig{Enabled: true}},
 						},
@@ -237,7 +237,7 @@ var _ = Describe("RedPandaCluster controller", func() {
 					Version:  redpandaContainerTag,
 					Replicas: pointer.Int32Ptr(replicas),
 					Configuration: v1alpha1.RedpandaConfig{
-						KafkaAPI: []v1alpha1.KafkaAPIListener{
+						KafkaAPI: []v1alpha1.KafkaAPI{
 							{
 								Name: "kafka",
 								Port: kafkaPort,

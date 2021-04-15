@@ -183,7 +183,7 @@ func pandaCluster() *redpandav1alpha1.Cluster {
 			Replicas: pointer.Int32Ptr(replicas),
 			Configuration: redpandav1alpha1.RedpandaConfig{
 				AdminAPI: []redpandav1alpha1.AdminAPI{{Port: 345}},
-				KafkaAPI: []redpandav1alpha1.KafkaAPIListener{{Port: 123}},
+				KafkaAPI: []redpandav1alpha1.KafkaAPI{{Port: 123}},
 			},
 			Resources: corev1.ResourceRequirements{
 				Limits:   resources,
