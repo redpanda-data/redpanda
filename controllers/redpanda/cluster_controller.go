@@ -97,7 +97,7 @@ func (r *ClusterReconciler) Reconcile(
 		nodeports = append(nodeports, resources.NamedServicePort{Name: resources.ExternalListenerName, Port: internalListener.Port + 1})
 	}
 	if adminAPIExternal != nil {
-		nodeports = append(nodeports, resources.NamedServicePort{Name: resources.AdminPortName, Port: adminAPIInternal.Port + 1})
+		nodeports = append(nodeports, resources.NamedServicePort{Name: resources.AdminPortExternalName, Port: adminAPIInternal.Port + 1})
 	}
 	headlessPorts := []resources.NamedServicePort{
 		{Name: resources.AdminPortName, Port: adminAPIInternal.Port},
@@ -299,13 +299,13 @@ func (r *ClusterReconciler) createExternalNodesList(
 				))
 		}
 		if externalAdminListener != nil && len(externalKafkaListener.External.Subdomain) > 0 {
-			address := subdomainAddress(podName, externalAdminListener.External.Subdomain, getNodePort(&nodePortSvc, resources.AdminPortName))
+			address := subdomainAddress(podName, externalAdminListener.External.Subdomain, getNodePort(&nodePortSvc, resources.AdminPortExternalName))
 			observedNodesExternalAdmin = append(observedNodesExternalAdmin, address)
 		} else if externalAdminListener != nil {
 			observedNodesExternalAdmin = append(observedNodesExternalAdmin,
 				fmt.Sprintf("%s:%d",
 					getExternalIP(&node),
-					getNodePort(&nodePortSvc, resources.AdminPortName),
+					getNodePort(&nodePortSvc, resources.AdminPortExternalName),
 				))
 		}
 	}
