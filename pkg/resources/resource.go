@@ -16,6 +16,7 @@ import (
 
 	"github.com/banzaicloud/k8s-objectmatcher/patch"
 	"github.com/go-logr/logr"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -104,9 +105,23 @@ func Update(
 		if err != nil {
 			return err
 		}
+		prepareResourceForUpdate(current, modified)
 		if err := c.Update(ctx, modified); err != nil {
 			return fmt.Errorf("failed to update resource: %w", err)
 		}
 	}
 	return nil
+}
+
+// reference
+// https://github.com/banzaicloud/istio-operator/blob/8bd406e14079ce43fe1908403bb2892c2549ab1e/pkg/k8sutil/resource.go#L180
+func prepareResourceForUpdate(current runtime.Object, modified client.Object) {
+	switch t := modified.(type) {
+	case *corev1.Service:
+		svc := t
+		svc.Spec.ClusterIP = current.(*corev1.Service).Spec.ClusterIP
+	case *corev1.ServiceAccount:
+		sa := t
+		sa.Secrets = current.(*corev1.ServiceAccount).Secrets
+	}
 }
