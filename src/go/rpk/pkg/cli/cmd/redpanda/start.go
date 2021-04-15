@@ -335,13 +335,13 @@ func NewStartCommand(
 		&kafkaAddr,
 		"kafka-addr",
 		[]string{},
-		"The list of Kafka listener addresses to bind to (<host>:<port>)",
+		"A comma-separated list of Kafka listener addresses to bind to (<name>://<host>:<port>)",
 	)
 	command.Flags().StringSliceVar(
 		&proxyAddr,
 		"pandaproxy-addr",
 		[]string{},
-		"The list of Pandaproxy listener addresses to bind to (<host>:<port>)",
+		"A comma-separated list of Pandaproxy listener addresses to bind to (<name>://<host>:<port>)",
 	)
 	command.Flags().StringVar(
 		&rpcAddr,
@@ -353,13 +353,13 @@ func NewStartCommand(
 		&advertisedKafka,
 		"advertise-kafka-addr",
 		[]string{},
-		"The list of Kafka addresses to advertise (<host>:<port>)",
+		"A comma-separated list of Kafka addresses to advertise (<name>://<host>:<port>)",
 	)
 	command.Flags().StringSliceVar(
 		&advertisedProxy,
 		"advertise-pandaproxy-addr",
 		[]string{},
-		"The list of Pandaproxy addresses to advertise (<host>:<port>)",
+		"A comma-separated list of Pandaproxy addresses to advertise (<name>://<host>:<port>)",
 	)
 	command.Flags().StringVar(
 		&advertisedRPC,
