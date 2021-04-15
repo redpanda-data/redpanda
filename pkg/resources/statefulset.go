@@ -66,6 +66,7 @@ type StatefulSetResource struct {
 	internalClientCertSecretKey types.NamespacedName
 	adminCertSecretKey          types.NamespacedName
 	adminAPINodeCertSecretKey   types.NamespacedName
+	adminAPIClientCertSecretKey types.NamespacedName
 	serviceAccountName          string
 	configuratorTag             string
 	logger                      logr.Logger
@@ -85,6 +86,7 @@ func NewStatefulSet(
 	internalClientCertSecretKey types.NamespacedName,
 	adminCertSecretKey types.NamespacedName,
 	adminAPINodeCertSecretKey types.NamespacedName,
+	adminAPIClientCertSecretKey types.NamespacedName,
 	serviceAccountName string,
 	configuratorTag string,
 	logger logr.Logger,
@@ -101,6 +103,7 @@ func NewStatefulSet(
 		internalClientCertSecretKey,
 		adminCertSecretKey,
 		adminAPINodeCertSecretKey,
+		adminAPIClientCertSecretKey,
 		serviceAccountName,
 		configuratorTag,
 		logger.WithValues("Kind", statefulSetKind()),
