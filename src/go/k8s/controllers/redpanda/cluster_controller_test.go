@@ -150,7 +150,7 @@ var _ = Describe("RedPandaCluster controller", func() {
 				return err == nil &&
 					svc.Spec.Type == corev1.ServiceTypeNodePort &&
 					findPort(svc.Spec.Ports, res.ExternalListenerName) == kafkaPort+1 &&
-					findPort(svc.Spec.Ports, res.AdminPortName) == adminPort+1 &&
+					findPort(svc.Spec.Ports, res.AdminPortExternalName) == adminPort+1 &&
 					validOwner(redpandaCluster, svc.OwnerReferences)
 			}, timeout, interval).Should(BeTrue())
 
