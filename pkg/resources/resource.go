@@ -28,6 +28,10 @@ import (
 const (
 	// AdminPortName is name of admin port in Service definition
 	AdminPortName = "admin"
+	// InternalListenerName is name of internal listener
+	InternalListenerName = "kafka"
+	// ExternalListenerName is name of external listener
+	ExternalListenerName = "kafka-external"
 )
 
 // NamedServicePort allows to pass name ports, e.g., to service resources

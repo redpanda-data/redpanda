@@ -211,7 +211,7 @@ func TestEnsure_NodePortService(t *testing.T) {
 	cluster := pandaCluster()
 	cluster = cluster.DeepCopy()
 	cluster.Spec.Configuration.KafkaAPI = append(cluster.Spec.Configuration.KafkaAPI,
-		redpandav1alpha1.KafkaAPIListener{External: redpandav1alpha1.ExternalConnectivityConfig{Enabled: true}})
+		redpandav1alpha1.KafkaAPI{External: redpandav1alpha1.ExternalConnectivityConfig{Enabled: true}})
 	cluster.Name = "ensure-integration-np-cluster"
 
 	npsvc := res.NewNodePortService(
