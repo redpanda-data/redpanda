@@ -98,16 +98,18 @@ ss::future<result<stop_parser>> continuous_batch_parser::consume_header() {
      * we use a loop to prevent using tail recursion
      **/
     for (;;) {
-        auto r = co_await read_header();
-        if (!r) {
-            co_return r.error();
+        if (!_header) {
+            auto r = co_await read_header();
+            if (!r) {
+                co_return r.error();
+            }
+            _header = r.value();
         }
-        _header = r.value();
 
         auto ret = _consumer->consume_batch_start(
-          _header, _physical_base_offset, _header.size_bytes);
-        _physical_base_offset += _header.size_bytes;
+          *_header, _physical_base_offset, _header->size_bytes);
         if (std::holds_alternative<skip_batch>(ret)) {
+            _physical_base_offset += _header->size_bytes;
             auto should_skip = std::get<skip_batch>(ret);
             // do not skip batch
             if (likely(should_skip == skip_batch::no)) {
@@ -115,7 +117,7 @@ ss::future<result<stop_parser>> continuous_batch_parser::consume_header() {
             }
 
             // skip batch
-            auto remaining = _header.size_bytes
+            auto remaining = _header->size_bytes
                              - model::packed_record_batch_header_size;
             auto b = co_await verify_read_iobuf(
               _input, remaining, "parser::skip_batch");
@@ -127,7 +129,11 @@ ss::future<result<stop_parser>> continuous_batch_parser::consume_header() {
             add_bytes_and_reset();
             continue;
         }
-        co_return std::get<stop_parser>(ret);
+        auto should_stop = std::get<stop_parser>(ret);
+        if (!should_stop) {
+            _physical_base_offset += _header->size_bytes;
+        }
+        co_return should_stop;
     }
 }
 
@@ -178,12 +184,15 @@ ss::future<result<stop_parser>> continuous_batch_parser::consume_one() {
         if (st.value() == stop_parser::yes) {
             return ss::make_ready_future<result<stop_parser>>(st.value());
         }
-        return consume_records();
+        return consume_records().then([this](result<stop_parser> r) {
+            add_bytes_and_reset();
+            return r;
+        });
     });
 }
 
 size_t continuous_batch_parser::consumed_batch_bytes() const {
-    return _header.size_bytes;
+    return _header->size_bytes;
 }
 
 void continuous_batch_parser::add_bytes_and_reset() {
@@ -191,7 +200,7 @@ void continuous_batch_parser::add_bytes_and_reset() {
     _header = {}; // reset
 }
 ss::future<result<stop_parser>> continuous_batch_parser::consume_records() {
-    auto sz = _header.size_bytes - model::packed_record_batch_header_size;
+    auto sz = _header->size_bytes - model::packed_record_batch_header_size;
     return verify_read_iobuf(_input, sz, "parser::consume_records")
       .then([this](result<iobuf> record) -> result<stop_parser> {
           if (!record) {
@@ -208,7 +217,6 @@ ss::future<result<size_t>> continuous_batch_parser::consume() {
     }
     return ss::repeat([this] {
                return consume_one().then([this](result<stop_parser> s) {
-                   add_bytes_and_reset();
                    if (_input.eof()) {
                        return ss::stop_iteration::yes;
                    }

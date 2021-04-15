@@ -106,7 +106,7 @@ private:
 private:
     std::unique_ptr<batch_consumer> _consumer;
     ss::input_stream<char> _input;
-    model::record_batch_header _header;
+    std::optional<model::record_batch_header> _header;
     parser_errc _err = parser_errc::none;
     size_t _bytes_consumed{0};
     size_t _physical_base_offset{0};
