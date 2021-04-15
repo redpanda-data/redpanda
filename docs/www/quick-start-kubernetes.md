@@ -4,91 +4,214 @@ order: 0
 ---
 # Kubernetes Quick Start Guide
 
-Redpanda is a modern streaming platform for mission critical workloads.
-Redpanda is also fully API compatible Kafka allowing you to make full
-use of the Kafka ecosystem.
+Redpanda is a modern [streaming platform](/blog/intelligent-data-api/) for mission critical workloads.
+With Redpanda you can get up and running with streaming quickly
+and be fully compatible with the [Kafka ecosystem](https://cwiki.apache.org/confluence/display/KAFKA/Ecosystem).
 
-This quick start guide to intended to help you get started with Redpanda for
-development and testing purposes. For production deployments or performance
-testing please see our [Production Deployment](/docs/production-deployment) for more information.
+This quick start guide can help you get started with Redpanda for development and testing purposes.
+For production or benchmarking, setup a [production deployment](/docs/production-deployment).
 
-Using [Helm](https://helm.sh/) is the fastest way to get started with Redpanda
-on Kubernetes. First, we need to create a cluster. There are a number of
-different ways to create a cluster, either locally or with a hosting provider.
+Using [Helm](https://helm.sh/) is the fastest way to get started with Redpanda on Kubernetes.
+To get up and running you need to create a cluster and deploy the Redpanda operator on the cluster.
 
-- [Kind](#Kind)
-- [AWS EKS](#AWS-EKS)
-- [Google GKE](#Google-GKE)
+> **_Note_** - Run a container inside the Kubernetes cluster to communicate with the Redpanda cluster.
+> Currently, a load balancer is not automatically created during deployment by default.
+
+## Prerequisites
+
+Before you start installing Redpanda you need to setup your Kubernetes environment.
+
+### Install Kubernetes, Helm, and cert-manager 
+
+You'll need to install:
+
+- Kubernetes v1.16 or above
+- [kubectl](https://kubernetes.io/docs/tasks/tools/) v1.16 or above
+- [helm](https://github.com/helm/helm/releases) v3.0.0 or above
+- [cert-manager](https://cert-manager.io/docs/installation/kubernetes/) v1.3.0 or above
+
+    Follow the instructions to verify that cert-manager is ready to create certificates.
+
+### Create a Kubernetes cluster
+
+You can either create a Kubernetes cluster on your local machine or on a cloud provider.
+
+<tabs>
+
+  <tab id="Kind">
+
+  [Kind](https://kind.sigs.k8s.io) is a tool that lets you create local Kubernetes clusters using Docker.
+    After you install Kind, set up a cluster with:
+
+  ```
+  kind create cluster
+  ```
+
+  </tab>
+
+  <tab id="AWS EKS">
+
+  Use the [EKS Getting Started](https://docs.aws.amazon.com/eks/latest/userguide/getting-started-eksctl.html) guide to set up EKS.
+  When you finish, you'll have `eksctl` installed so that you can create and delete clusters in EKS.
+  Then, create an EKS cluster with:
+
+  ```
+  eksctl create cluster \
+  --name redpanda \
+  --nodegroup-name standard-workers \
+  --node-type m5.xlarge \
+  --nodes 3 \
+  --nodes-min 1 \
+  --nodes-max 4 \
+  --node-ami auto
+  ```
+
+  It will take about 10-15 minutes for the process to finish.
+
+  </tab>
+
+  <tab id="Google GKE">
+
+  First complete the "Before You Begin" steps describe in [Google Kubernetes Engine Quickstart](https://cloud.google.com/kubernetes-engine/docs/quickstart).
+  Then, create a cluster with:
+
+  ```
+  gcloud container clusters create redpanda --machine-type n1-standard-4
+  ```
+
+  </tab>
+</tabs>
 
 ## Using Helm to Install Redpanda
 
-[Helm](https://helm.sh/) provides a quick and easy way to deploy Redpanda on
-Kubernetes. To get started please use the
-[Helm Quickstart Guide](https://helm.sh/docs/intro/quickstart/)
-to install Helm. Once installed you will want to add the Redpanda chart repo.
+1. Using Helm, add the Redpanda chart repository and update it:
 
-```
-helm repo add redpanda https://charts.vectorized.io/
-```
+    ```
+    helm repo add redpanda https://charts.vectorized.io/ && helm repo update
+    ```
 
-After the repo has been added, run the Helm repo update command to retrieve the
-latest version of the Helm chart.
+2. Install the Redpanda operator CRDs:
 
-```
-helm repo update
-```
+    ```
+    kubectl apply -k 'https://github.com/vectorizedio/redpanda/src/go/k8s/config/crd?ref=<latest version>'
+    ```
 
-Now you can install Redpanda on your Kubernetes cluster using Helm.
+    You can find the latest version number of the operator on the [list of operator releases](https://github.com/vectorizedio/redpanda/releases).
 
-```
-helm install --namespace redpanda --create-namespace redpanda redpanda/redpanda
-```
+3. Install Redpanda operator on your Kubernetes cluster with:
 
-> **_Note:_** In order to communicate with the Redpanda cluster you will have to
-> run a container inside the Kubernetes cluster. Currently a Load Balancer is
-> not automatically created during deployment by default.
+    ```
+    helm install --namespace redpanda-system --create-namespace redpanda-operator redpanda/redpanda-operator
+    ```
 
-## Kind
+## Next steps
 
-[Kind](https://kind.sigs.k8s.io) is an easy to use tool for creating local Kubernetes clusters using Docker. Once you have Kind installed, setting up a cluster is a simple as:
+After you set up Redpanda in your Kubernetes cluster, you can use our samples to install resources and see Redpanda in action:
 
-```
-kind create cluster
-```
+- Create a namespace for your resources:
 
-Once the cluster is created please follow the [Helm install instructions](#Using-Helm-to-Install-Redpanda).
+    ```
+    kubectl create ns redpanda-test
+    ```
 
-## AWS EKS
+- Install resources from our sample files:
 
-First complete all the steps describe in [EKS Getting Started](https://docs.aws.amazon.com/eks/latest/userguide/getting-started-eksctl.html)
-guide. This includes installing `eksctl` which is used to create and delete
-clusters in EKS.
+    - One node cluster:
+                
+        ```
+        kubectl apply -n redpanda-test -f https://raw.githubusercontent.com/vectorizedio/redpanda/dev/src/go/k8s/config/samples/one_node_cluster.yaml
+        ```
 
-Once `eksctl` is installed, you can then use it to create an EKS cluster:
+    - Cluster with external connectivity (verified on AWS) -
+        
+        ```
+        kubectl apply -n redpanda-test -f https://raw.githubusercontent.com/vectorizedio/redpanda/dev/src/go/k8s/config/samples/external_connectivity.yaml
+        ```
 
-```
-eksctl create cluster \
---name redpanda \
---nodegroup-name standard-workers \
---node-type m5.xlarge \
---nodes 3 \
---nodes-min 1 \
---nodes-max 4 \
---node-ami auto
-```
+    - Cluster with TLS encryption -
+        
+        ```
+        kubectl apply -n redpanda-test -f https://raw.githubusercontent.com/vectorizedio/redpanda/dev/src/go/k8s/config/samples/redpanda_v1alpha1_with_tls.yaml
+        ```
 
-This command will take 10-15 minutes to complete. Once it is completed then
-follow the [Helm install instructions](#Using-Helm-to-Install-Redpanda).
+        To allow connections to the cluster with TLS enabled, you have to mount a TLS configuration for rpk.
+        The following definition creates a pod that has TLS configured.
+        From that pod, users can list, create, and delete topics, and also produce and consume events.
 
-## Google GKE
+        ```
+        cat <<EOF | kubectl apply -f -
+        apiVersion: v1
+        kind: ConfigMap
+        metadata:
+         name: rpk-config
+         namespace: redpanda-test
+        data:
+         redpanda.yaml: |
+           redpanda:
+           rpk:
+             tls:
+               truststore_file: /etc/tls/certs/ca.crt
+        ---
+        apiVersion: v1
+        kind: Pod
+        metadata:
+         name: produce-msg
+         namespace: redpanda-test
+        spec:
+         volumes:
+         - name: tlscert
+           secret:
+             defaultMode: 420
+             secretName: cluster-sample-tls-redpanda
+         - name: rpkconfig
+           configMap:
+             name: rpk-config
+         containers:
+         - name: rpk
+           image: vectorized/redpanda:latest
+           command:
+           - /bin/bash
+           tty: true
+           stdin: true
+           volumeMounts:
+           - mountPath: /etc/tls/certs
+             name: tlscert
+           - mountPath: /etc/redpanda
+             name: rpkconfig
+        EOF
+        ```
 
-First complete the "Before You Begin" steps describe in
-[Google Kubernetes Engine Quickstart](https://cloud.google.com/kubernetes-engine/docs/quickstart).
-Once complete you can create a cluster using the following command:
+        To connect to the produce pod, run:
+        
+        ```
+        kubectl attach -n redpanda-test -ti produce-msg
+        ```
 
-```
-gcloud container clusters create redpanda --machine-type n1-standard-4
-```
+- Review the [cluster_types file](https://github.com/vectorizedio/redpanda/blob/dev/src/go/k8s/apis/redpanda/v1alpha1/cluster_types.go) to see the resource configuration options.
 
-Once the command completes then follow the
-[Helm install instructions](#Using-Helm-to-Install-Redpanda)
+- Use `rpk` to work with your Redpanda nodes, for example:
+
+    - Create a topic:
+
+        ```
+        rpk topic create test-topic-name --brokers cluster-sample-tls-0.cluster-sample-tls.redpanda-test.svc.cluster.local:9092
+        ```
+
+    - Show the list of topics:
+
+        ```
+        rpk topic list --brokers cluster-sample-tls-0.cluster-sample-tls.redpanda-test.svc.cluster.local:9092
+        ```
+
+    - Produce a message to the topic:
+
+        ```
+        echo {"test":"message"} | rpk topic produce test-topic-name --brokers cluster-sample-tls-0.cluster-sample-tls.redpanda-test.svc.cluster.local:9092
+        ```
+
+    - Consume the message from the topic:
+
+        ```
+        rpk topic consume test-topic-name --brokers cluster-sample-tls-0.cluster-sample-tls.redpanda-test.svc.cluster.local:9092
+        ```
+    

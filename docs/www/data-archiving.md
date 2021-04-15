@@ -59,7 +59,7 @@ We recommend that you keep topic manifests in order to recover the corresponding
 
 ## Configuring data archiving
 
-1. Prepare the cloud storage:
+1. Create the cloud storage bucket and prepare it according to these requirements:
 
     - Amazon AWS S3
         - (Optional) Specify expiration rules for the files that are based on the `rp-type` file tags.
@@ -73,6 +73,12 @@ We recommend that you keep topic manifests in order to recover the corresponding
             - Use a Google managed encryption key.
         - Create a service user with HMAC keys
             and copy the keys to the Redpanda configuration options `archival_storage_s3_access_key` and `archival_storage_s3_secret_key`, respectively. 
+    - MinIO (for local testing)
+        - Use the `MINIO_ROOT_PASSWORD` and `MINIO_ROOT_USER` environment variables for the access key (`cloud_storage_access_key`) and secret key (`cloud_storage_secret_key`), respectively.
+        - Use the `MINIO_REGION_NAME` environment variable for region name (`cloud_storage_region`).
+        - Set the `MINIO_DOMAIN` environment variable. Redpanda uses virtual-hosted style endpoints but MinIO only supports them if the custom domain name is provided.
+        - Set the custom API endpoint (`cloud_storage_api_endpoint`) and port (`cloud_storage_api_endpoint_port`) and either:
+          - Require TLS - Set `cloud_storage_disable_tls` to `disabled` to disable TLS.
 
     > **_Note:_** The secret and access keys are stored in plain text in configuration files.
 
@@ -80,13 +86,19 @@ We recommend that you keep topic manifests in order to recover the corresponding
 
     | Parameter name                                | Type         | Descripion                                              |
     |-----------------------------------------------|--------------|---------------------------------------------------------|
-    | `archival_storage_enabled`                    | boolean      | Enables archival storage feature                        |
-    | `archival_storage_s3_access_key`              | string       | S3 access key                                           |
-    | `archival_storage_s3_secret_key`              | string       | S3 secret key                                           |
-    | `archival_storage_s3_region`                  | string       | AWS region                                              |
-    | `archival_storage_s3_bucket`                  | string       | S3 bucket                                               |
-    | `archival_storage_reconciliation_interval_ms` | integer | Reconciliation period (default - 10000ms)                   |
-    | `archival_storage_max_connections`            | integer      | Number of simultaneous uploads per shard (default - 20) |
-        
-        
-        
+    | `cloud_storage_enabled`                       | boolean      | Enables archival storage feature                        |
+    | `cloud_storage_access_key`                    | string       | S3 access key                                           |
+    | `cloud_storage_secret_key`                    | string       | S3 secret key                                           |
+    | `cloud_storage_region`                        | string       | AWS region                                              |
+    | `cloud_storage_bucket`                        | string       | S3 bucket                                               |
+    | `cloud_storage_api_endpoint`                  | string       | Cloud storage api endpoint (Default: S3)     |
+    | `cloud_storage_api_endpoint_port`             | string       | Cloud storage api endpoint port number (Default: 443)    |
+    | `cloud_storage_trust_file`                    | string       | Alternative location of the CA certificate (Default: /etc/pki/tls/cert.pem) |
+    | `cloud_storage_disable_tls`                   | boolean      | Disable TLS for cloud storage connections               |
+
+3. (Optional) You can tune the data transfer with these parameters:
+
+    | Parameter name                                | Type         | Descripion                                              |
+    |-----------------------------------------------|--------------|---------------------------------------------------------|
+    | `cloud_storage_reconciliation_interval_ms`    | milliseconds | Reconciliation period (Default: 10s)                   |
+    | `cloud_storage_max_connections`               | integer      | Number of simultaneous uploads per shard (Default: 20) |

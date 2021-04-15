@@ -23,7 +23,12 @@ To get a cluster ready for streaming, either run a single docker container with 
 With a 1-node cluster you can test out a simple implementation of Redpanda.
 
 ```bash
-docker run -ti --name redpanda-1 -p 9092:9092 vectorized/redpanda:latest
+# --overprovisioned is used to accomodate docker resource limitations
+# make sure you update the version of v21.4.6 to the latest release https://github.com/vectorizedio/redpanda/releases
+
+
+docker run -ti --rm -p 9092:9092 vectorized/redpanda:v21.4.6 start --overprovisioned --smp 1  --memory 1G  --reserve-memory 0M --node-id 0 --check=false
+
 ```
 
 You can do some [simple topic actions](#Do-some-streaming) to do some streaming.
