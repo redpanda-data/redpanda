@@ -1,11 +1,15 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: update-sample
+  name: update-cluster
 spec:
   clusterIP: None
   ports:
-    - name: kafka-tcp
+    - name: admin
+      port: 9644
+      protocol: TCP
+      targetPort: 9644
+    - name: kafka
       port: 9093
       protocol: TCP
       targetPort: 9093
