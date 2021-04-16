@@ -76,9 +76,9 @@ var _ = Describe("RedPandaCluster controller", func() {
 					Version:  redpandaContainerTag,
 					Replicas: pointer.Int32Ptr(replicas),
 					Configuration: v1alpha1.RedpandaConfig{
-						KafkaAPI: []v1alpha1.KafkaAPIListener{
-							{Name: "kafka", Port: kafkaPort},
-							{Name: "external", External: v1alpha1.ExternalConnectivityConfig{Enabled: true}},
+						KafkaAPI: []v1alpha1.KafkaAPI{
+							{Port: kafkaPort},
+							{External: v1alpha1.ExternalConnectivityConfig{Enabled: true}},
 						},
 						AdminAPI: []v1alpha1.AdminAPI{
 							{Port: adminPort},
@@ -136,7 +136,7 @@ var _ = Describe("RedPandaCluster controller", func() {
 				err := k8sClient.Get(context.Background(), key, &svc)
 				return err == nil &&
 					svc.Spec.ClusterIP == corev1.ClusterIPNone &&
-					findPort(svc.Spec.Ports, "kafka") == kafkaPort &&
+					findPort(svc.Spec.Ports, res.InternalListenerName) == kafkaPort &&
 					findPort(svc.Spec.Ports, res.AdminPortName) == adminPort &&
 					validOwner(redpandaCluster, svc.OwnerReferences)
 			}, timeout, interval).Should(BeTrue())
@@ -149,8 +149,8 @@ var _ = Describe("RedPandaCluster controller", func() {
 				}, &svc)
 				return err == nil &&
 					svc.Spec.Type == corev1.ServiceTypeNodePort &&
-					findPort(svc.Spec.Ports, "external") == kafkaPort+1 &&
-					findPort(svc.Spec.Ports, res.AdminPortName) == adminPort+1 &&
+					findPort(svc.Spec.Ports, res.ExternalListenerName) == kafkaPort+1 &&
+					findPort(svc.Spec.Ports, res.AdminPortExternalName) == adminPort+1 &&
 					validOwner(redpandaCluster, svc.OwnerReferences)
 			}, timeout, interval).Should(BeTrue())
 
@@ -237,9 +237,8 @@ var _ = Describe("RedPandaCluster controller", func() {
 					Version:  redpandaContainerTag,
 					Replicas: pointer.Int32Ptr(replicas),
 					Configuration: v1alpha1.RedpandaConfig{
-						KafkaAPI: []v1alpha1.KafkaAPIListener{
+						KafkaAPI: []v1alpha1.KafkaAPI{
 							{
-								Name: "kafka",
 								Port: kafkaPort,
 								TLS:  v1alpha1.KafkaAPITLS{Enabled: true, RequireClientAuth: true},
 							},

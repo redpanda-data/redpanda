@@ -20,7 +20,6 @@ spec:
       port: 33145
     kafkaApi:
       - port: 9092
-        name: kafka
         tls:
           enabled: true
           requireClientAuth: true

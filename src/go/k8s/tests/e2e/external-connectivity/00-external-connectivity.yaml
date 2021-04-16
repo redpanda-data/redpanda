@@ -17,10 +17,8 @@ spec:
     rpcServer:
       port: 33145
     kafkaApi:
-    - name: kafka
-      port: 9092
-    - name: ext
-      external:
+    - port: 9092
+    - external:
         enabled: true
         subdomain: "test.subdomain.com"
     adminApi:

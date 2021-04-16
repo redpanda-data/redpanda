@@ -158,7 +158,7 @@ func (r *Cluster) validateKafkaListeners() field.ErrorList {
 				"need at least one kafka api listener"))
 	}
 
-	var external *KafkaAPIListener
+	var external *KafkaAPI
 	for i, p := range r.Spec.Configuration.KafkaAPI {
 		if p.External.Enabled {
 			if external != nil {

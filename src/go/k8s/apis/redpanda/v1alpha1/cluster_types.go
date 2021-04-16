@@ -164,10 +164,10 @@ type ClusterList struct {
 
 // RedpandaConfig is the definition of the main configuration
 type RedpandaConfig struct {
-	RPCServer     SocketAddress      `json:"rpcServer,omitempty"`
-	KafkaAPI      []KafkaAPIListener `json:"kafkaApi,omitempty"`
-	AdminAPI      []AdminAPI         `json:"adminApi,omitempty"`
-	DeveloperMode bool               `json:"developerMode,omitempty"`
+	RPCServer     SocketAddress `json:"rpcServer,omitempty"`
+	KafkaAPI      []KafkaAPI    `json:"kafkaApi,omitempty"`
+	AdminAPI      []AdminAPI    `json:"adminApi,omitempty"`
+	DeveloperMode bool          `json:"developerMode,omitempty"`
 	// Number of partitions in the internal group membership topic
 	GroupTopicPartitions int `json:"groupTopicPartitions,omitempty"`
 }
@@ -183,10 +183,9 @@ type AdminAPI struct {
 	External ExternalConnectivityConfig `json:"external,omitempty"`
 }
 
-// KafkaAPIListener listener information for Kafka API
-type KafkaAPIListener struct {
-	Name string `json:"name,omitempty"`
-	Port int    `json:"port,omitempty"`
+// KafkaAPI listener information for Kafka API
+type KafkaAPI struct {
+	Port int `json:"port,omitempty"`
 	// External enables user to expose Redpanda
 	// nodes outside of a Kubernetes cluster. For more
 	// information please go to ExternalConnectivityConfig
@@ -272,7 +271,7 @@ func (r *Cluster) FullImageName() string {
 // ExternalListener returns external listener if found in configuration. Returns
 // nil if no external listener is configured. Right now we support only one
 // external listener which is enforced by webhook
-func (r *Cluster) ExternalListener() *KafkaAPIListener {
+func (r *Cluster) ExternalListener() *KafkaAPI {
 	for _, el := range r.Spec.Configuration.KafkaAPI {
 		if el.External.Enabled {
 			return &el
@@ -282,7 +281,7 @@ func (r *Cluster) ExternalListener() *KafkaAPIListener {
 }
 
 // InternalListener returns internal listener.
-func (r *Cluster) InternalListener() *KafkaAPIListener {
+func (r *Cluster) InternalListener() *KafkaAPI {
 	for _, el := range r.Spec.Configuration.KafkaAPI {
 		if !el.External.Enabled {
 			return &el
@@ -294,7 +293,7 @@ func (r *Cluster) InternalListener() *KafkaAPIListener {
 // KafkaTLSListener returns kafka listener that has tls enabled. Returns nil if
 // no tls is configured. Until v1alpha1 API is deprecated, we support only
 // single listener with TLS
-func (r *Cluster) KafkaTLSListener() *KafkaAPIListener {
+func (r *Cluster) KafkaTLSListener() *KafkaAPI {
 	for i, el := range r.Spec.Configuration.KafkaAPI {
 		if el.TLS.Enabled {
 			return &r.Spec.Configuration.KafkaAPI[i]

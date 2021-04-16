@@ -17,10 +17,8 @@ spec:
     rpcServer:
       port: 33145
     kafkaApi:
-     - name: kafka
-       port: 9092
-     - name: external
-       external:
+     - port: 9092
+     - external:
          enabled: true
           # The subdomain need to be managed externally for example by
           # External-DNS. In AWS provider there is fix to expose public IP
