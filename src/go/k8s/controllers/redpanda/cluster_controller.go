@@ -281,7 +281,8 @@ func (r *ClusterReconciler) createExternalNodesList(
 		prefixLen := len(pods[i].GenerateName)
 		podName := pods[i].Name[prefixLen:]
 
-		if needExternalIP(externalKafkaListener.External) || needExternalIP(externalAdminListener.External) {
+		if externalKafkaListener != nil && needExternalIP(externalKafkaListener.External) ||
+			externalAdminListener != nil && needExternalIP(externalAdminListener.External) {
 			if err := r.Get(ctx, types.NamespacedName{Name: pods[i].Spec.NodeName}, &node); err != nil {
 				return []string{}, []string{}, fmt.Errorf("failed to retrieve node %s: %w", pods[i].Spec.NodeName, err)
 			}
