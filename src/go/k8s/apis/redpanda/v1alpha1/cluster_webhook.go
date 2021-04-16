@@ -58,6 +58,8 @@ func (r *Cluster) ValidateCreate() error {
 
 	allErrs = append(allErrs, r.validateKafkaListeners()...)
 
+	allErrs = append(allErrs, r.validateAdminListeners()...)
+
 	allErrs = append(allErrs, r.checkCollidingPorts()...)
 
 	allErrs = append(allErrs, r.validateMemory()...)
@@ -88,6 +90,8 @@ func (r *Cluster) ValidateUpdate(old runtime.Object) error {
 
 	allErrs = append(allErrs, r.validateKafkaListeners()...)
 
+	allErrs = append(allErrs, r.validateAdminListeners()...)
+
 	allErrs = append(allErrs, r.checkCollidingPorts()...)
 
 	allErrs = append(allErrs, r.validateMemory()...)
@@ -105,6 +109,45 @@ func (r *Cluster) ValidateUpdate(old runtime.Object) error {
 
 // ReserveMemoryString is amount of memory that we reserve for other processes than redpanda in the container
 const ReserveMemoryString = "1M"
+
+func (r *Cluster) validateAdminListeners() field.ErrorList {
+	var allErrs field.ErrorList
+	externalAdmin := r.AdminAPIExternal()
+	targetAdminCount := 1
+	if externalAdmin != nil {
+		targetAdminCount = 2
+	}
+	if len(r.Spec.Configuration.AdminAPI) != targetAdminCount {
+		allErrs = append(allErrs,
+			field.Invalid(field.NewPath("spec").Child("configuration").Child("adminApi"),
+				r.Spec.Configuration.AdminAPI,
+				"need exactly one internal API listener and up to one external"))
+	}
+
+	if externalAdmin != nil && externalAdmin.Port != 0 {
+		allErrs = append(allErrs,
+			field.Invalid(field.NewPath("spec").Child("configuration").Child("adminApi"),
+				r.Spec.Configuration.AdminAPI,
+				"external admin listener cannot have port specified"))
+	}
+
+	// for now only one listener can have TLS to be backward compatible with v1alpha1 API
+	foundListenerWithTLS := false
+	for i, p := range r.Spec.Configuration.AdminAPI {
+		if p.TLS.Enabled {
+			if foundListenerWithTLS {
+				allErrs = append(allErrs,
+					field.Invalid(field.NewPath("spec").Child("configuration").Child("adminApi").Index(i).Child("tls"),
+						r.Spec.Configuration.AdminAPI[i].TLS,
+						"only one listener can have TLS enabled"))
+			}
+			foundListenerWithTLS = true
+		}
+		// we need to run the validation on all listeners to also catch errors like !Enabled && RequireClientAuth
+		allErrs = append(allErrs, validateAdminTLS(p.TLS, field.NewPath("spec").Child("configuration").Child("adminApi").Index(i).Child("tls"))...)
+	}
+	return allErrs
+}
 
 func (r *Cluster) validateKafkaListeners() field.ErrorList {
 	var allErrs field.ErrorList
@@ -176,6 +219,17 @@ func (r *Cluster) validateMemory() field.ErrorList {
 	return allErrs
 }
 
+func validateAdminTLS(tlsConfig AdminAPITLS, path *field.Path) field.ErrorList {
+	var allErrs field.ErrorList
+	if tlsConfig.RequireClientAuth && !tlsConfig.Enabled {
+		allErrs = append(allErrs,
+			field.Invalid(
+				path.Child("requireclientauth"),
+				tlsConfig.RequireClientAuth,
+				"Enabled has to be set to true for RequireClientAuth to be allowed to be true"))
+	}
+	return allErrs
+}
 func validateTLS(tlsConfig KafkaAPITLS, path *field.Path) field.ErrorList {
 	var allErrs field.ErrorList
 	if tlsConfig.RequireClientAuth && !tlsConfig.Enabled {
@@ -248,18 +302,19 @@ func (r *Cluster) ValidateDelete() error {
 
 func (r *Cluster) checkCollidingPorts() field.ErrorList {
 	var allErrs field.ErrorList
-
+	adminAPIInternal := r.AdminAPIInternal()
+	adminAPIExternal := r.AdminAPIExternal()
 	for _, kafka := range r.Spec.Configuration.KafkaAPI {
-		if r.Spec.Configuration.AdminAPI.Port == kafka.Port {
+		if adminAPIInternal != nil && adminAPIInternal.Port == kafka.Port {
 			allErrs = append(allErrs,
 				field.Invalid(field.NewPath("spec").Child("configuration", "admin", "port"),
-					r.Spec.Configuration.AdminAPI.Port,
+					adminAPIInternal.Port,
 					"admin port collide with Spec.Configuration.KafkaAPI Port"))
 		}
-		if r.Spec.ExternalConnectivity.Enabled && r.Spec.Configuration.AdminAPI.Port+1 == kafka.Port {
+		if adminAPIInternal != nil && adminAPIInternal.Port+1 == kafka.Port {
 			allErrs = append(allErrs,
 				field.Invalid(field.NewPath("spec").Child("configuration", "admin", "port"),
-					r.Spec.Configuration.AdminAPI.Port,
+					adminAPIInternal.Port,
 					"external admin port collide with Spec.Configuration.KafkaAPI Port"))
 		}
 	}
@@ -273,10 +328,10 @@ func (r *Cluster) checkCollidingPorts() field.ErrorList {
 		}
 	}
 
-	if r.Spec.Configuration.AdminAPI.Port == r.Spec.Configuration.RPCServer.Port {
+	if adminAPIInternal != nil && adminAPIInternal.Port == r.Spec.Configuration.RPCServer.Port {
 		allErrs = append(allErrs,
 			field.Invalid(field.NewPath("spec").Child("configuration", "admin", "port"),
-				r.Spec.Configuration.AdminAPI.Port,
+				adminAPIInternal.Port,
 				"admin port collide with Spec.Configuration.RPCServer.Port"))
 	}
 
@@ -290,15 +345,15 @@ func (r *Cluster) checkCollidingPorts() field.ErrorList {
 	}
 
 	for _, kafka := range r.Spec.Configuration.KafkaAPI {
-		if r.ExternalListener() != nil && kafka.Port+1 == r.Spec.Configuration.AdminAPI.Port {
+		if r.ExternalListener() != nil && adminAPIInternal != nil && adminAPIInternal.Port == kafka.Port+1 {
 			allErrs = append(allErrs,
 				field.Invalid(field.NewPath("spec").Child("configuration", "admin", "port"),
-					r.Spec.Configuration.AdminAPI.Port,
+					adminAPIInternal.Port,
 					"admin port collide with external Kafka API that is not visible in the Cluster CR"))
 		}
 	}
 
-	if r.Spec.ExternalConnectivity.Enabled && r.Spec.Configuration.AdminAPI.Port+1 == r.Spec.Configuration.RPCServer.Port {
+	if adminAPIExternal != nil && adminAPIInternal != nil && adminAPIInternal.Port+1 == r.Spec.Configuration.RPCServer.Port {
 		allErrs = append(allErrs,
 			field.Invalid(field.NewPath("spec").Child("configuration", "rpcServer", "port"),
 				r.Spec.Configuration.RPCServer.Port,
@@ -306,7 +361,7 @@ func (r *Cluster) checkCollidingPorts() field.ErrorList {
 	}
 
 	for _, kafka := range r.Spec.Configuration.KafkaAPI {
-		if r.ExternalListener() != nil && r.Spec.ExternalConnectivity.Enabled && r.Spec.Configuration.AdminAPI.Port+1 == kafka.Port+1 {
+		if r.ExternalListener() != nil && adminAPIExternal != nil && adminAPIInternal != nil && adminAPIInternal.Port+1 == kafka.Port+1 {
 			allErrs = append(allErrs,
 				field.Invalid(field.NewPath("spec").Child("configuration", "kafka", "port"),
 					kafka.Port,

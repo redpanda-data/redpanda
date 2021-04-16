@@ -51,7 +51,7 @@ func (r *PkiReconciler) prepareAdminAPI(
 	nodeCert := NewNodeCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, issuerRef, dnsName, cn, false, r.logger)
 	toApply = append(toApply, nodeCert)
 
-	if r.pandaCluster.Spec.Configuration.TLS.AdminAPI.RequireClientAuth {
+	if r.pandaCluster.AdminAPITLS() != nil && r.pandaCluster.AdminAPITLS().TLS.RequireClientAuth {
 		// Certificate for calling the Admin API on any broker
 		cn := NewCommonName(r.pandaCluster.Name, AdminAPIClientCert)
 		clientCertsKey := types.NamespacedName{Name: string(cn), Namespace: r.pandaCluster.Namespace}

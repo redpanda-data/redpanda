@@ -166,9 +166,9 @@ func (r *ConfigMapResource) createConfiguration(
 		Port:    clusterCRPortOrRPKDefault(c.RPCServer.Port, cr.RPCServer.Port),
 	}
 
-	cr.AdminApi[0].Port = clusterCRPortOrRPKDefault(c.AdminAPI.Port, cr.AdminApi[0].Port)
+	cr.AdminApi[0].Port = clusterCRPortOrRPKDefault(r.pandaCluster.AdminAPIInternal().Port, cr.AdminApi[0].Port)
 	cr.AdminApi[0].Name = internal
-	if r.pandaCluster.Spec.ExternalConnectivity.Enabled {
+	if r.pandaCluster.AdminAPIExternal() != nil {
 		externalAdminAPI := config.NamedSocketAddress{
 			SocketAddress: config.SocketAddress{
 				Address: cr.AdminApi[0].Address,
@@ -204,16 +204,20 @@ func (r *ConfigMapResource) createConfiguration(
 			tls,
 		}
 	}
-	if r.pandaCluster.Spec.Configuration.TLS.AdminAPI.Enabled {
+	adminAPITLSListener := r.pandaCluster.AdminAPITLS()
+	if adminAPITLSListener != nil {
 		name := internal
+		if adminAPITLSListener.External.Enabled {
+			name = external
+		}
 		adminTLS := config.ServerTLS{
 			Name:              name,
 			KeyFile:           fmt.Sprintf("%s/%s", tlsAdminDir, corev1.TLSPrivateKeyKey),
 			CertFile:          fmt.Sprintf("%s/%s", tlsAdminDir, corev1.TLSCertKey),
 			Enabled:           true,
-			RequireClientAuth: r.pandaCluster.Spec.Configuration.TLS.AdminAPI.RequireClientAuth,
+			RequireClientAuth: adminAPITLSListener.TLS.RequireClientAuth,
 		}
-		if r.pandaCluster.Spec.Configuration.TLS.AdminAPI.RequireClientAuth {
+		if adminAPITLSListener.TLS.RequireClientAuth {
 			adminTLS.TruststoreFile = fmt.Sprintf("%s/%s", tlsAdminDir, cmetav1.TLSCAKey)
 		}
 		cr.AdminApiTLS = append(cr.AdminApiTLS, adminTLS)

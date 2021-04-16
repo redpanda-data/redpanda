@@ -116,12 +116,42 @@ spec:
               configuration:
                 description: Configuration represent redpanda specific configuration
                 properties:
-                  admin:
-                    description: SocketAddress provide the way to configure the port
-                    properties:
-                      port:
-                        type: integer
-                    type: object
+                  adminApi:
+                    items:
+                      description: AdminAPI is configuration of the redpanda Admin
+                        API
+                      properties:
+                        external:
+                          description: External enables user to expose Redpanda admin
+                            API outside of a Kubernetes cluster. For more information
+                            please go to ExternalConnectivityConfig
+                          properties:
+                            enabled:
+                              description: Enabled enables the external connectivity
+                                feature
+                              type: boolean
+                            subdomain:
+                              description: Subdomain can be used to change the behavior
+                                of an advertised KafkaAPI. Each broker advertises
+                                Kafka API as follows BROKER_ID.SUBDOMAIN:EXTERNAL_KAFKA_API_PORT.
+                                If Subdomain is empty then each broker advertises
+                                Kafka API as PUBLIC_NODE_IP:EXTERNAL_KAFKA_API_PORT.
+                                If TLS is enabled then this subdomain will be requested
+                                as a subject alternative name.
+                              type: string
+                          type: object
+                        port:
+                          type: integer
+                        tls:
+                          description: Configuration of TLS for Admin API
+                          properties:
+                            enabled:
+                              type: boolean
+                            requireClientAuth:
+                              type: boolean
+                          type: object
+                      type: object
+                    type: array
                   developerMode:
                     type: boolean
                   groupTopicPartitions:
@@ -244,37 +274,10 @@ spec:
                       port:
                         type: integer
                     type: object
-                  tls:
-                    description: TLSConfig configures TLS for Redpanda APIs
-                    properties:
-                      adminApi:
-                        description: Configuration of TLS for Admin API
-                        properties:
-                          enabled:
-                            type: boolean
-                          requireClientAuth:
-                            type: boolean
-                        type: object
-                    type: object
                 type: object
               enableSasl:
                 description: SASL enablement flag
                 type: boolean
-              externalConnectivity:
-                description: ExternalConnectivity enables user to expose admin api
-                properties:
-                  enabled:
-                    description: Enabled enables the external connectivity feature
-                    type: boolean
-                  subdomain:
-                    description: Subdomain can be used to change the behavior of an
-                      advertised KafkaAPI. Each broker advertises Kafka API as follows
-                      BROKER_ID.SUBDOMAIN:EXTERNAL_KAFKA_API_PORT. If Subdomain is
-                      empty then each broker advertises Kafka API as PUBLIC_NODE_IP:EXTERNAL_KAFKA_API_PORT.
-                      If TLS is enabled then this subdomain will be requested as a
-                      subject alternative name.
-                    type: string
-                type: object
               image:
                 description: Image is the fully qualified name of the Redpanda container
                 type: string

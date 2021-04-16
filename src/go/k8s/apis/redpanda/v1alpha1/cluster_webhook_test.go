@@ -104,7 +104,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 			Replicas: pointer.Int32Ptr(replicas2),
 			Configuration: v1alpha1.RedpandaConfig{
 				KafkaAPI:  []v1alpha1.KafkaAPIListener{{Port: 123}},
-				AdminAPI:  v1alpha1.SocketAddress{Port: 125},
+				AdminAPI:  []v1alpha1.AdminAPI{{Port: 125}},
 				RPCServer: v1alpha1.SocketAddress{Port: 126},
 			},
 			Resources: corev1.ResourceRequirements{
@@ -139,7 +139,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 	t.Run("collision in the port", func(t *testing.T) {
 		updatePort := redpandaCluster.DeepCopy()
 		updatePort.Spec.Configuration.KafkaAPI[0].Port = 200
-		updatePort.Spec.Configuration.AdminAPI.Port = 200
+		updatePort.Spec.Configuration.AdminAPI[0].Port = 200
 		updatePort.Spec.Configuration.RPCServer.Port = 200
 
 		err := updatePort.ValidateUpdate(redpandaCluster)
@@ -151,7 +151,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 		updatePort.Spec.Configuration.KafkaAPI[0].Port = 200
 		updatePort.Spec.Configuration.KafkaAPI = append(updatePort.Spec.Configuration.KafkaAPI,
 			v1alpha1.KafkaAPIListener{External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
-		updatePort.Spec.Configuration.AdminAPI.Port = 201
+		updatePort.Spec.Configuration.AdminAPI[0].Port = 201
 		updatePort.Spec.Configuration.RPCServer.Port = 300
 
 		err := updatePort.ValidateUpdate(redpandaCluster)
@@ -163,7 +163,7 @@ func TestValidateUpdate_NoError(t *testing.T) {
 		updatePort.Spec.Configuration.KafkaAPI = append(updatePort.Spec.Configuration.KafkaAPI,
 			v1alpha1.KafkaAPIListener{External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
 		updatePort.Spec.Configuration.KafkaAPI[0].Port = 200
-		updatePort.Spec.Configuration.AdminAPI.Port = 300
+		updatePort.Spec.Configuration.AdminAPI[0].Port = 300
 		updatePort.Spec.Configuration.RPCServer.Port = 201
 
 		err := updatePort.ValidateUpdate(redpandaCluster)
@@ -175,8 +175,8 @@ func TestValidateUpdate_NoError(t *testing.T) {
 		updatePort.Spec.Configuration.KafkaAPI = append(updatePort.Spec.Configuration.KafkaAPI,
 			v1alpha1.KafkaAPIListener{External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
 		updatePort.Spec.Configuration.KafkaAPI[0].Port = 200
-		updatePort.Spec.Configuration.AdminAPI.Port = 300
-		updatePort.Spec.ExternalConnectivity.Enabled = true
+		updatePort.Spec.Configuration.AdminAPI[0].Port = 300
+		updatePort.Spec.Configuration.AdminAPI[0].External.Enabled = true
 		updatePort.Spec.Configuration.RPCServer.Port = 301
 
 		err := updatePort.ValidateUpdate(redpandaCluster)
@@ -185,11 +185,11 @@ func TestValidateUpdate_NoError(t *testing.T) {
 
 	t.Run("collision in admin port when external connectivity is enabled", func(t *testing.T) {
 		updatePort := redpandaCluster.DeepCopy()
-		updatePort.Spec.ExternalConnectivity.Enabled = true
+		updatePort.Spec.Configuration.AdminAPI[0].External.Enabled = true
 		updatePort.Spec.Configuration.KafkaAPI = append(updatePort.Spec.Configuration.KafkaAPI,
 			v1alpha1.KafkaAPIListener{External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
 		updatePort.Spec.Configuration.KafkaAPI[0].Port = 201
-		updatePort.Spec.Configuration.AdminAPI.Port = 200
+		updatePort.Spec.Configuration.AdminAPI[0].Port = 200
 		updatePort.Spec.Configuration.RPCServer.Port = 300
 
 		err := updatePort.ValidateUpdate(redpandaCluster)
@@ -231,6 +231,54 @@ func TestValidateUpdate_NoError(t *testing.T) {
 
 		assert.Error(t, err)
 	})
+
+	t.Run("no admin port", func(t *testing.T) {
+		noPort := redpandaCluster.DeepCopy()
+		noPort.Spec.Configuration.AdminAPI = []v1alpha1.AdminAPI{}
+
+		err := noPort.ValidateUpdate(redpandaCluster)
+		assert.Error(t, err)
+	})
+
+	t.Run("multiple internal admin listeners", func(t *testing.T) {
+		multiPort := redpandaCluster.DeepCopy()
+		multiPort.Spec.Configuration.AdminAPI = append(multiPort.Spec.Configuration.AdminAPI,
+			v1alpha1.AdminAPI{Port: 123})
+		err := multiPort.ValidateUpdate(redpandaCluster)
+
+		assert.Error(t, err)
+	})
+
+	t.Run("external admin listener cannot have port specified", func(t *testing.T) {
+		exPort := redpandaCluster.DeepCopy()
+		exPort.Spec.Configuration.AdminAPI[0].External.Enabled = true
+		err := exPort.ValidateUpdate(redpandaCluster)
+
+		assert.Error(t, err)
+	})
+
+	t.Run("multiple admin listeners with tls", func(t *testing.T) {
+		multiPort := redpandaCluster.DeepCopy()
+		multiPort.Spec.Configuration.AdminAPI[0].TLS.Enabled = true
+		multiPort.Spec.Configuration.AdminAPI = append(multiPort.Spec.Configuration.AdminAPI,
+			v1alpha1.AdminAPI{
+				Port:     123,
+				External: v1alpha1.ExternalConnectivityConfig{Enabled: true},
+				TLS:      v1alpha1.AdminAPITLS{Enabled: true},
+			})
+		err := multiPort.ValidateUpdate(redpandaCluster)
+
+		assert.Error(t, err)
+	})
+
+	t.Run("tls admin listener without enabled true", func(t *testing.T) {
+		multiPort := redpandaCluster.DeepCopy()
+		multiPort.Spec.Configuration.AdminAPI[0].TLS.RequireClientAuth = true
+		multiPort.Spec.Configuration.AdminAPI[0].TLS.Enabled = false
+		err := multiPort.ValidateUpdate(redpandaCluster)
+
+		assert.Error(t, err)
+	})
 }
 
 //nolint:funlen // this is ok for a test
@@ -243,7 +291,7 @@ func TestCreation(t *testing.T) {
 		Spec: v1alpha1.ClusterSpec{
 			Configuration: v1alpha1.RedpandaConfig{
 				KafkaAPI:  []v1alpha1.KafkaAPIListener{{Port: 123}},
-				AdminAPI:  v1alpha1.SocketAddress{Port: 125},
+				AdminAPI:  []v1alpha1.AdminAPI{{Port: 125}},
 				RPCServer: v1alpha1.SocketAddress{Port: 126},
 			},
 			Resources: corev1.ResourceRequirements{
@@ -265,7 +313,7 @@ func TestCreation(t *testing.T) {
 	t.Run("collision in the port", func(t *testing.T) {
 		newPort := redpandaCluster.DeepCopy()
 		newPort.Spec.Configuration.KafkaAPI[0].Port = 200
-		newPort.Spec.Configuration.AdminAPI.Port = 200
+		newPort.Spec.Configuration.AdminAPI[0].Port = 200
 		newPort.Spec.Configuration.RPCServer.Port = 200
 
 		err := newPort.ValidateCreate()
@@ -277,7 +325,7 @@ func TestCreation(t *testing.T) {
 		newPort.Spec.Configuration.KafkaAPI = append(newPort.Spec.Configuration.KafkaAPI,
 			v1alpha1.KafkaAPIListener{External: v1alpha1.ExternalConnectivityConfig{Enabled: true}})
 		newPort.Spec.Configuration.KafkaAPI[0].Port = 200
-		newPort.Spec.Configuration.AdminAPI.Port = 300
+		newPort.Spec.Configuration.AdminAPI[0].Port = 300
 		newPort.Spec.Configuration.RPCServer.Port = 201
 
 		err := newPort.ValidateCreate()
@@ -289,6 +337,31 @@ func TestCreation(t *testing.T) {
 		noPort.Spec.Configuration.KafkaAPI = []v1alpha1.KafkaAPIListener{}
 
 		err := noPort.ValidateCreate()
+		assert.Error(t, err)
+	})
+
+	t.Run("no admin port", func(t *testing.T) {
+		noPort := redpandaCluster.DeepCopy()
+		noPort.Spec.Configuration.AdminAPI = []v1alpha1.AdminAPI{}
+
+		err := noPort.ValidateCreate()
+		assert.Error(t, err)
+	})
+
+	t.Run("multiple internal admin listeners", func(t *testing.T) {
+		multiPort := redpandaCluster.DeepCopy()
+		multiPort.Spec.Configuration.AdminAPI = append(multiPort.Spec.Configuration.AdminAPI,
+			v1alpha1.AdminAPI{Port: 123})
+		err := multiPort.ValidateCreate()
+
+		assert.Error(t, err)
+	})
+
+	t.Run("external admin listener cannot have port specified", func(t *testing.T) {
+		exPort := redpandaCluster.DeepCopy()
+		exPort.Spec.Configuration.AdminAPI[0].External.Enabled = true
+		err := exPort.ValidateCreate()
+
 		assert.Error(t, err)
 	})
 
@@ -345,6 +418,29 @@ func TestCreation(t *testing.T) {
 		exPort := redpandaCluster.DeepCopy()
 		exPort.Spec.Configuration.KafkaAPI[0].External.Enabled = true
 		err := exPort.ValidateCreate()
+
+		assert.Error(t, err)
+	})
+
+	t.Run("multiple admin listeners with tls", func(t *testing.T) {
+		multiPort := redpandaCluster.DeepCopy()
+		multiPort.Spec.Configuration.AdminAPI[0].TLS.Enabled = true
+		multiPort.Spec.Configuration.AdminAPI = append(multiPort.Spec.Configuration.AdminAPI,
+			v1alpha1.AdminAPI{
+				Port:     123,
+				External: v1alpha1.ExternalConnectivityConfig{Enabled: true},
+				TLS:      v1alpha1.AdminAPITLS{Enabled: true},
+			})
+		err := multiPort.ValidateCreate()
+
+		assert.Error(t, err)
+	})
+
+	t.Run("tls admin listener without enabled true", func(t *testing.T) {
+		multiPort := redpandaCluster.DeepCopy()
+		multiPort.Spec.Configuration.AdminAPI[0].TLS.RequireClientAuth = true
+		multiPort.Spec.Configuration.AdminAPI[0].TLS.Enabled = false
+		err := multiPort.ValidateCreate()
 
 		assert.Error(t, err)
 	})

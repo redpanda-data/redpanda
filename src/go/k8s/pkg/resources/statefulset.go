@@ -121,8 +121,14 @@ func (r *StatefulSetResource) Ensure(ctx context.Context) error {
 			return fmt.Errorf("failed to retrieve node port service %s: %w", r.nodePortName, err)
 		}
 
-		adminAndInternalPortLength := 2
-		if len(r.nodePortSvc.Spec.Ports) != adminAndInternalPortLength {
+		// TODO(av) clean this up and unify with the same code in cluster_controller status handling
+		externalKafkaListener := r.pandaCluster.ExternalListener()
+		externalAdminListener := r.pandaCluster.AdminAPIExternal()
+		expectedPortLength := 2
+		if externalAdminListener == nil || externalKafkaListener == nil {
+			expectedPortLength = 1
+		}
+		if len(r.nodePortSvc.Spec.Ports) != expectedPortLength {
 			return fmt.Errorf("node port service %s: %w", r.nodePortName, errNodePortMissing)
 		}
 
@@ -500,7 +506,7 @@ func (r *StatefulSetResource) secretVolumeMounts() []corev1.VolumeMount {
 			MountPath: tlsDirCA,
 		})
 	}
-	if r.pandaCluster.Spec.Configuration.TLS.AdminAPI.Enabled {
+	if r.pandaCluster.AdminAPITLS() != nil {
 		mounts = append(mounts, corev1.VolumeMount{
 			Name:      "tlsadmincert",
 			MountPath: tlsAdminDir,
@@ -554,7 +560,7 @@ func (r *StatefulSetResource) secretVolumes() []corev1.Volume {
 	}
 
 	// When Admin TLS is enabled, Redpanda needs a keypair certificate.
-	if r.pandaCluster.Spec.Configuration.TLS.AdminAPI.Enabled {
+	if r.pandaCluster.AdminAPITLS() != nil {
 		vols = append(vols, corev1.Volume{
 			Name: "tlsadmincert",
 			VolumeSource: corev1.VolumeSource{
@@ -624,7 +630,7 @@ func (r *StatefulSetResource) getPorts() []corev1.ContainerPort {
 		ports := []corev1.ContainerPort{
 			{
 				Name:          "admin-internal",
-				ContainerPort: int32(r.pandaCluster.Spec.Configuration.AdminAPI.Port),
+				ContainerPort: int32(r.pandaCluster.AdminAPIInternal().Port),
 			},
 		}
 		internalListener := r.pandaCluster.InternalListener()
@@ -651,7 +657,7 @@ func (r *StatefulSetResource) getPorts() []corev1.ContainerPort {
 
 	ports := []corev1.ContainerPort{{
 		Name:          "admin",
-		ContainerPort: int32(r.pandaCluster.Spec.Configuration.AdminAPI.Port),
+		ContainerPort: int32(r.pandaCluster.AdminAPIInternal().Port),
 	}}
 	internalListener := r.pandaCluster.InternalListener()
 	ports = append(ports, corev1.ContainerPort{

@@ -100,7 +100,7 @@ func (r *PkiReconciler) Ensure(ctx context.Context) error {
 		toApply = append(toApply, toApplyKafka...)
 	}
 
-	if r.pandaCluster.Spec.Configuration.TLS.AdminAPI.Enabled {
+	if r.pandaCluster.AdminAPITLS() != nil {
 		toApplyRootAdmin, adminIssuerRef := r.prepareRoot(adminAPI)
 		toApply = append(toApply, toApplyRootAdmin...)
 		toApply = append(toApply, r.prepareAdminAPI(adminIssuerRef)...)

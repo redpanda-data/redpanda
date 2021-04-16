@@ -80,14 +80,16 @@ var _ = Describe("RedPandaCluster controller", func() {
 							{Name: "kafka", Port: kafkaPort},
 							{Name: "external", External: v1alpha1.ExternalConnectivityConfig{Enabled: true}},
 						},
-						AdminAPI: v1alpha1.SocketAddress{Port: adminPort},
+						AdminAPI: []v1alpha1.AdminAPI{
+							{Port: adminPort},
+							{External: v1alpha1.ExternalConnectivityConfig{
+								Enabled: true,
+							}},
+						},
 					},
 					Resources: corev1.ResourceRequirements{
 						Limits:   resources,
 						Requests: resources,
-					},
-					ExternalConnectivity: v1alpha1.ExternalConnectivityConfig{
-						Enabled: true,
 					},
 				},
 			}
@@ -242,7 +244,7 @@ var _ = Describe("RedPandaCluster controller", func() {
 								TLS:  v1alpha1.KafkaAPITLS{Enabled: true, RequireClientAuth: true},
 							},
 						},
-						AdminAPI: v1alpha1.SocketAddress{Port: adminPort},
+						AdminAPI: []v1alpha1.AdminAPI{{Port: adminPort}},
 					},
 					Resources: corev1.ResourceRequirements{
 						Limits:   resources,
