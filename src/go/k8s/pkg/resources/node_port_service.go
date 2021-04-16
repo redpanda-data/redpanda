@@ -64,9 +64,16 @@ func (r *NodePortServiceResource) Ensure(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("unable to construct object: %w", err)
 	}
-
-	_, err = CreateIfNotExists(ctx, r, obj, r.logger)
-	return err
+	created, err := CreateIfNotExists(ctx, r, obj, r.logger)
+	if err != nil || created {
+		return err
+	}
+	var svc corev1.Service
+	err = r.Get(ctx, r.Key(), &svc)
+	if err != nil {
+		return fmt.Errorf("error while fetching Service resource: %w", err)
+	}
+	return Update(ctx, &svc, obj, r.Client, r.logger)
 }
 
 // obj returns resource managed client.Object
