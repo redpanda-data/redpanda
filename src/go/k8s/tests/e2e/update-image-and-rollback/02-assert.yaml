@@ -1,0 +1,17 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: update-image-cluster
+status:
+  readyReplicas: 1
+
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: update-image-cluster-1
+spec:
+  containers:
+    - name: redpanda
+      image: "vectorized/redpanda:v21.3.2"
