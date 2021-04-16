@@ -102,7 +102,11 @@ ss::future<> members_manager::maybe_update_current_node_configuration() {
     if (*active_configuration.value() == _self) {
         return ss::now();
     }
-
+    vlog(
+      clusterlog.debug,
+      "Redpanda broker configuration changed from {} to {}",
+      *active_configuration.value(),
+      _self);
     return dispatch_configuration_update(_self)
       .then([] {
           vlog(clusterlog.info, "Node configuration updated successfully");
@@ -399,7 +403,10 @@ members_manager::do_dispatch_configuration_update(
         return handle_configuration_update_request(
           configuration_update_request(std::move(updated_cfg), _self.id()));
     }
-
+    vlog(
+      clusterlog.trace,
+      "dispatching configuration update request to {}",
+      target);
     return with_client<controller_client_protocol>(
       _self.id(),
       _connection_cache,
@@ -481,6 +488,10 @@ members_manager::handle_configuration_update_request(
     // controller
     std::optional<model::node_id> leader_id = _raft0->get_leader_id();
     if (!leader_id) {
+        vlog(
+          clusterlog.warn,
+          "Unable to handle configuration update, no leader controller",
+          req.node.id());
         return ss::make_ready_future<ret_t>(errc::no_leader_controller);
     }
     // curent node is a leader
@@ -489,6 +500,10 @@ members_manager::handle_configuration_update_request(
         return _raft0->update_group_member(*node_ptr).then(
           [node_ptr](std::error_code ec) {
               if (ec) {
+                  vlog(
+                    clusterlog.warn,
+                    "Unable to handle configuration update - {}",
+                    ec.message());
                   return ss::make_ready_future<ret_t>(ec);
               }
               return ss::make_ready_future<ret_t>(
