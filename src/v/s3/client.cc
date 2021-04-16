@@ -13,6 +13,7 @@
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_istreambuf.h"
 #include "hashing/secure.h"
+#include "rpc/types.h"
 #include "s3/error.h"
 #include "s3/logger.h"
 #include "s3/signature.h"
@@ -22,6 +23,7 @@
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/iostream.hh>
+#include <seastar/core/shared_ptr.hh>
 #include <seastar/core/temporary_buffer.hh>
 #include <seastar/net/dns.hh>
 #include <seastar/net/inet_address.hh>
@@ -66,7 +68,8 @@ ss::future<configuration> configuration::make_configuration(
   const public_key_str& pkey,
   const private_key_str& skey,
   const aws_region_name& region,
-  const default_overrides overrides) {
+  const default_overrides& overrides,
+  rpc::metrics_disabled disable_metrics) {
     configuration client_cfg;
     const auto endpoint_uri = make_endpoint_url(region, overrides.endpoint);
     client_cfg.tls_sni_hostname = endpoint_uri;
@@ -97,6 +100,9 @@ ss::future<configuration> configuration::make_configuration(
     constexpr uint16_t default_port = 443;
     client_cfg.server_addr = unresolved_address(
       client_cfg.uri(), overrides.port ? *overrides.port : default_port);
+    client_cfg.disable_metrics = disable_metrics;
+    client_cfg._probe = ss::make_lw_shared<client_probe>(
+      disable_metrics, region(), endpoint_uri);
     co_return client_cfg;
 }
 
@@ -352,11 +358,13 @@ drain_response_stream(http::client::response_stream_ref resp) {
 
 client::client(const configuration& conf)
   : _requestor(conf)
-  , _client(conf) {}
+  , _client(conf)
+  , _probe(conf._probe) {}
 
 client::client(const configuration& conf, const ss::abort_source& as)
   : _requestor(conf)
-  , _client(conf, as) {}
+  , _client(conf, as)
+  , _probe(conf._probe) {}
 
 ss::future<> client::shutdown() { return _client.shutdown(); }
 ss::future<http::client::response_stream_ref>
@@ -417,6 +425,10 @@ ss::future<> client::put_object(
             })
             .handle_exception_type(
               [](const ss::abort_requested_exception&) { return ss::now(); })
+            .handle_exception_type([this](const rest_error_response& err) {
+                _probe->register_failure(err.code());
+                return ss::make_exception_future<>(err);
+            })
             .finally([&body]() { return body.close(); });
       });
 }

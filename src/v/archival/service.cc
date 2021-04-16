@@ -116,6 +116,8 @@ scheduler_service_impl::get_archival_service_config() {
       "cloud_storage_access_key"));
     auto region = s3::aws_region_name(get_value_or_throw(
       config::shard_local_cfg().cloud_storage_region, "cloud_storage_region"));
+    auto disable_metrics = rpc::metrics_disabled(
+      config::shard_local_cfg().disable_metrics());
 
     // Set default overrides
     s3::default_overrides overrides;
@@ -132,7 +134,7 @@ scheduler_service_impl::get_archival_service_config() {
     overrides.port = config::shard_local_cfg().cloud_storage_api_endpoint_port;
 
     auto s3_conf = co_await s3::configuration::make_configuration(
-      access_key, secret_key, region, overrides);
+      access_key, secret_key, region, overrides, disable_metrics);
     archival::configuration cfg{
       .client_config = std::move(s3_conf),
       .bucket_name = s3::bucket_name(get_value_or_throw(

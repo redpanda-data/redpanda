@@ -12,6 +12,8 @@
 
 #include "http/client.h"
 #include "rpc/transport.h"
+#include "rpc/types.h"
+#include "s3/client_probe.h"
 #include "s3/signature.h"
 #include "tristate.h"
 
@@ -56,6 +58,8 @@ struct configuration : rpc::base_transport::configuration {
     private_key_str secret_key;
     /// AWS region
     aws_region_name region;
+    /// Metrics probe (should be created for every aws account on every shard)
+    ss::lw_shared_ptr<client_probe> _probe;
 
     /// \brief opinionated configuraiton initialization
     /// Generates uri field from region, initializes credentials for the
@@ -72,7 +76,8 @@ struct configuration : rpc::base_transport::configuration {
       const public_key_str& pkey,
       const private_key_str& skey,
       const aws_region_name& region,
-      const default_overrides overrides = {});
+      const default_overrides& overrides = {},
+      rpc::metrics_disabled disable_metrics = rpc::metrics_disabled::yes);
 };
 
 std::ostream& operator<<(std::ostream& o, const configuration& c);
@@ -184,6 +189,7 @@ public:
 private:
     request_creator _requestor;
     http::client _client;
+    ss::lw_shared_ptr<client_probe> _probe;
 };
 
 } // namespace s3
