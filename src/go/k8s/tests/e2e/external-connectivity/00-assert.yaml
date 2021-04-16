@@ -61,7 +61,7 @@ metadata:
   name: external-connectivity-external
 spec:
   ports:
-  - name: ext
+  - name: kafka-external
     port: 9093
     protocol: TCP
     targetPort: 9093
