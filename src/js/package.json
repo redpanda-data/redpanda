@@ -18,7 +18,8 @@
     "publish:wasm-api": "./publish-wasm-dependecy.js",
     "start:dev": "sudo npx ts-node ./modules/rpc/service.ts",
     "start": "sudo node ./modules/rpc/service.js",
-	  "bundle": "./webpack.js"
+    "bundle": "./webpack.js",
+    "clean": "rm -rf ./node_modules"
   },
   "requires": true,
   "dependencies": {
