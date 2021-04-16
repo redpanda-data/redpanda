@@ -105,8 +105,10 @@ func NewStartCommand(
 		nodeID          int
 		seeds           []string
 		kafkaAddr       []string
+		proxyAddr       []string
 		rpcAddr         string
 		advertisedKafka []string
+		advertisedProxy []string
 		advertisedRPC   string
 		installDirFlag  string
 		timeout         time.Duration
@@ -171,6 +173,28 @@ func NewStartCommand(
 				conf.Redpanda.KafkaApi = kafkaApi
 			}
 
+			proxyAddr = stringSliceOr(
+				proxyAddr,
+				strings.Split(
+					os.Getenv("REDPANDA_PANDAPROXY_ADDRESS"),
+					",",
+				),
+			)
+			proxyApi, err := parseNamedAddresses(
+				proxyAddr,
+				config.DefaultProxyPort,
+			)
+			if err != nil {
+				sendEnv(fs, mgr, env, conf, err)
+				return err
+			}
+			if proxyApi != nil && len(proxyApi) > 0 {
+				if conf.Pandaproxy == nil {
+					conf.Pandaproxy = config.Default().Pandaproxy
+				}
+				conf.Pandaproxy.PandaproxyAPI = proxyApi
+			}
+
 			rpcAddr = stringOr(
 				rpcAddr,
 				os.Getenv("REDPANDA_RPC_ADDRESS"),
@@ -205,6 +229,29 @@ func NewStartCommand(
 			if advKafkaApi != nil {
 				conf.Redpanda.AdvertisedKafkaApi = advKafkaApi
 			}
+
+			advertisedProxy = stringSliceOr(
+				advertisedProxy,
+				strings.Split(
+					os.Getenv("REDPANDA_ADVERTISE_PANDAPROXY_ADDRESS"),
+					",",
+				),
+			)
+			advProxyApi, err := parseNamedAddresses(
+				advertisedProxy,
+				config.DefaultProxyPort,
+			)
+			if err != nil {
+				sendEnv(fs, mgr, env, conf, err)
+				return err
+			}
+			if advProxyApi != nil {
+				if conf.Pandaproxy == nil {
+					conf.Pandaproxy = config.Default().Pandaproxy
+				}
+				conf.Pandaproxy.AdvertisedPandaproxyAPI = advProxyApi
+			}
+
 			advertisedRPC = stringOr(
 				advertisedRPC,
 				os.Getenv("REDPANDA_ADVERTISE_RPC_ADDRESS"),
@@ -288,7 +335,13 @@ func NewStartCommand(
 		&kafkaAddr,
 		"kafka-addr",
 		[]string{},
-		"The list of Kafka listener addresses to bind to (<host>:<port>)",
+		"A comma-separated list of Kafka listener addresses to bind to (<name>://<host>:<port>)",
+	)
+	command.Flags().StringSliceVar(
+		&proxyAddr,
+		"pandaproxy-addr",
+		[]string{},
+		"A comma-separated list of Pandaproxy listener addresses to bind to (<name>://<host>:<port>)",
 	)
 	command.Flags().StringVar(
 		&rpcAddr,
@@ -300,7 +353,13 @@ func NewStartCommand(
 		&advertisedKafka,
 		"advertise-kafka-addr",
 		[]string{},
-		"The list of Kafka addresses to advertise (<host>:<port>)",
+		"A comma-separated list of Kafka addresses to advertise (<name>://<host>:<port>)",
+	)
+	command.Flags().StringSliceVar(
+		&advertisedProxy,
+		"advertise-pandaproxy-addr",
+		[]string{},
+		"A comma-separated list of Pandaproxy addresses to advertise (<name>://<host>:<port>)",
 	)
 	command.Flags().StringVar(
 		&advertisedRPC,

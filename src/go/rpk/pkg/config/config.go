@@ -28,6 +28,7 @@ const (
 	ModeProd = "prod"
 
 	DefaultKafkaPort = 9092
+	DefaultProxyPort = 8082
 	DefaultAdminPort = 9644
 )
 

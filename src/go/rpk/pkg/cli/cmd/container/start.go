@@ -137,6 +137,10 @@ func startCluster(
 	if err != nil {
 		return err
 	}
+	seedProxyPort, err := net.GetFreePort()
+	if err != nil {
+		return err
+	}
 	seedRPCPort, err := net.GetFreePort()
 	if err != nil {
 		return err
@@ -149,6 +153,7 @@ func startCluster(
 		c,
 		seedID,
 		seedKafkaPort,
+		seedProxyPort,
 		seedRPCPort,
 		seedMetricsPort,
 		netID,
@@ -184,6 +189,10 @@ func startCluster(
 			if err != nil {
 				return err
 			}
+			proxyPort, err := net.GetFreePort()
+			if err != nil {
+				return err
+			}
 			rpcPort, err := net.GetFreePort()
 			if err != nil {
 				return err
@@ -204,6 +213,7 @@ func startCluster(
 				c,
 				id,
 				kafkaPort,
+				proxyPort,
 				rpcPort,
 				metricsPort,
 				netID,

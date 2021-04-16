@@ -27,7 +27,7 @@ With a 1-node cluster you can test out a simple implementation of Redpanda.
 # make sure you update the version of v21.4.6 to the latest release https://github.com/vectorizedio/redpanda/releases
 
 
-docker run -ti --rm -p 9092:9092 vectorized/redpanda:v21.4.6 start --overprovisioned --smp 1  --memory 1G  --reserve-memory 0M --node-id 0 --check=false
+docker run -ti --rm -p 8082:8082 -p 9092:9092 vectorized/redpanda:v21.4.6 start --overprovisioned --smp 1  --memory 1G  --reserve-memory 0M --node-id 0 --check=false
 
 ```
 
@@ -60,6 +60,7 @@ docker run -d \
 --name=redpanda-1 \
 --hostname=redpanda-1 \
 --net=redpandanet \
+-p 8082:8082 \
 -p 9092:9092 \
 -v "redpanda1:/var/lib/redpanda/data" \
 vectorized/redpanda start \
@@ -69,6 +70,8 @@ vectorized/redpanda start \
 --overprovisioned \
 --node-id 0 \
 --check=false \
+--pandaproxy-addr 0.0.0.0:8082 \
+--advertise-pandaproxy-addr 127.0.0.1:8082 \
 --kafka-addr 0.0.0.0:9092 \
 --advertise-kafka-addr 127.0.0.1:9092 \
 --rpc-addr 0.0.0.0:33145 \
@@ -88,6 +91,8 @@ vectorized/redpanda start \
 --node-id 1 \
 --seeds "redpanda-1:33145" \
 --check=false \
+--pandaproxy-addr 0.0.0.0:8083 \
+--advertise-pandaproxy-addr 127.0.0.1:8083 \
 --kafka-addr 0.0.0.0:9093 \
 --advertise-kafka-addr 127.0.0.1:9093 \
 --rpc-addr 0.0.0.0:33146 \
@@ -107,6 +112,8 @@ vectorized/redpanda start \
 --node-id 2 \
 --seeds "redpanda-1:33145" \
 --check=false \
+--pandaproxy-addr 0.0.0.0:8084 \
+--advertise-pandaproxy-addr 127.0.0.1:8084 \
 --kafka-addr 0.0.0.0:9094 \
 --advertise-kafka-addr 127.0.0.1:9094 \
 --rpc-addr 0.0.0.0:33147 \
