@@ -15,6 +15,7 @@ redpanda:
   developer_mode: true
   data_directory: "{{data_dir}}"
   node_id: {{node_id}}
+  join_retry_timeout_ms: 200
   rpc_server:
     address: "{{node.account.hostname}}"
     port: 33145

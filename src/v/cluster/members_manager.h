@@ -81,7 +81,7 @@ private:
     ss::future<> maybe_update_current_node_configuration();
     ss::future<> dispatch_configuration_update(model::broker);
     ss::future<result<configuration_update_reply>>
-    do_dispatch_configuration_update(const model::broker&, model::broker);
+      do_dispatch_configuration_update(model::broker, model::broker);
 
     model::offset _last_seen_configuration_offset;
     std::vector<config::seed_server> _seed_servers;

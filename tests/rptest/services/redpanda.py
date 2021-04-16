@@ -312,10 +312,14 @@ class RedpandaService(Service):
             for fn in os.listdir(data_dir):
                 shutil.move(os.path.join(data_dir, fn), dest)
 
+    def broker_address(self, node):
+        assert node in self.nodes
+        cfg = self.read_configuration(node)
+        return f"{node.account.hostname}:{cfg['redpanda']['kafka_api']['port']}"
+
     def brokers(self, limit=None):
         brokers = ",".join(
-            map(lambda n: "{}:9092".format(n.account.hostname),
-                self.nodes[:limit]))
+            map(lambda n: self.broker_address(n), self.nodes[:limit]))
         return brokers
 
     def metrics(self, node):
@@ -324,6 +328,12 @@ class RedpandaService(Service):
         resp = requests.get(url)
         assert resp.status_code == 200
         return text_string_to_metric_families(resp.text)
+
+    def read_configuration(self, node):
+        assert node in self.nodes
+        with node.account.open(RedpandaService.CONFIG_FILE) as f:
+            cfg = yaml.full_load(f.read())
+        return cfg
 
     def shards(self):
         """
