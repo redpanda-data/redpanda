@@ -540,7 +540,7 @@ batch_consumer::consume_result kvstore::replay_consumer::consume_batch_start(
   model::record_batch_header header, size_t, size_t) {
     if (_store->_gate.is_closed()) {
         // early out on shutdown
-        return stop_parser::yes;
+        return batch_consumer::consume_result::stop_parser;
     }
     vassert(header.record_count > 0, "Unexpected empty batch");
     vassert(
@@ -549,7 +549,7 @@ batch_consumer::consume_result kvstore::replay_consumer::consume_batch_start(
       header.base_offset,
       _store->_next_offset);
     _header = header;
-    return skip_batch::no;
+    return batch_consumer::consume_result::accept_batch;
 }
 
 void kvstore::replay_consumer::consume_records(iobuf&& records) {

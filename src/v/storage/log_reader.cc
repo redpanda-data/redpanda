@@ -41,22 +41,22 @@ batch_consumer::consume_result skipping_consumer::consume_batch_start(
     _expected_next_batch = header.last_offset() + model::offset(1);
 
     if (header.last_offset() < _reader._config.start_offset) {
-        return skip_batch::yes;
+        return batch_consumer::consume_result::skip_batch;
     }
     if (header.base_offset() > _reader._config.max_offset) {
-        return stop_parser::yes;
+        return batch_consumer::consume_result::stop_parser;
     }
     if (
       _reader._config.type_filter
       && _reader._config.type_filter != header.type) {
         _reader._config.start_offset = header.last_offset() + model::offset(1);
-        return skip_batch::yes;
+        return batch_consumer::consume_result::skip_batch;
     }
     if (_reader._config.first_timestamp > header.first_timestamp) {
         // kakfa needs to guarantee that the returned record is >=
         // first_timestamp
         _reader._config.start_offset = header.last_offset() + model::offset(1);
-        return skip_batch::yes;
+        return batch_consumer::consume_result::skip_batch;
     }
 
     if (
@@ -65,12 +65,12 @@ batch_consumer::consume_result skipping_consumer::consume_batch_start(
            > _reader._config.max_bytes) {
         // signal to log reader to stop (see log_reader::is_done)
         _reader._config.over_budget = true;
-        return stop_parser::yes;
+        return batch_consumer::consume_result::stop_parser;
     }
 
     _header = header;
     _header.ctx.term = _reader._seg.offsets().term;
-    return skip_batch::no;
+    return batch_consumer::consume_result::accept_batch;
 }
 
 void skipping_consumer::consume_records(iobuf&& records) {

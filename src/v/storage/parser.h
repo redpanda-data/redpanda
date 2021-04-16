@@ -30,16 +30,19 @@ namespace storage {
 
 class batch_consumer {
 public:
-    /// \brief this tag is useful for when the user wants to
-    /// find a particular offset - think a scan - and we need to skip
-    /// the current batch to get to it
-    using skip_batch = ss::bool_class<struct skip_batch_tag>;
-
     /// \brief  stopping the parser, may or may not be an error condition
     /// it is a public interface indended to signal the internals of the parser
     /// wether to continue or not.
     using stop_parser = ss::bool_class<struct stop_parser_tag>;
-    using consume_result = std::variant<stop_parser, skip_batch>;
+    /**
+     * Consume results informs parser what it the expected outcome of consume
+     * batch start decision
+     */
+    enum class consume_result : int8_t {
+        accept_batch, // accept batch
+        stop_parser,  // stop parsing and do not consume batch records
+        skip_batch,   // skip given batch without consuming records
+    };
 
     batch_consumer() noexcept = default;
     batch_consumer(const batch_consumer&) = default;

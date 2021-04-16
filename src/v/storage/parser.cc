@@ -31,7 +31,6 @@
 
 namespace storage {
 using stop_parser = batch_consumer::stop_parser;
-using skip_batch = batch_consumer::skip_batch;
 
 model::record_batch_header header_from_iobuf(iobuf b) {
     iobuf_parser parser(std::move(b));
@@ -108,15 +107,15 @@ ss::future<result<stop_parser>> continuous_batch_parser::consume_header() {
 
         auto ret = _consumer->consume_batch_start(
           *_header, _physical_base_offset, _header->size_bytes);
-        if (std::holds_alternative<skip_batch>(ret)) {
-            _physical_base_offset += _header->size_bytes;
-            auto should_skip = std::get<skip_batch>(ret);
-            // do not skip batch
-            if (likely(should_skip == skip_batch::no)) {
-                co_return stop_parser::no;
-            }
 
-            // skip batch
+        switch (ret) {
+        case batch_consumer::consume_result::stop_parser:
+            co_return stop_parser::yes;
+        case batch_consumer::consume_result::accept_batch:
+            _physical_base_offset += _header->size_bytes;
+            co_return stop_parser::no;
+        case batch_consumer::consume_result::skip_batch:
+            _physical_base_offset += _header->size_bytes;
             auto remaining = _header->size_bytes
                              - model::packed_record_batch_header_size;
             auto b = co_await verify_read_iobuf(
@@ -129,11 +128,7 @@ ss::future<result<stop_parser>> continuous_batch_parser::consume_header() {
             add_bytes_and_reset();
             continue;
         }
-        auto should_stop = std::get<stop_parser>(ret);
-        if (!should_stop) {
-            _physical_base_offset += _header->size_bytes;
-        }
-        co_return should_stop;
+        __builtin_unreachable();
     }
 }
 

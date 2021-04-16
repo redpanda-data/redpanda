@@ -48,7 +48,7 @@ public:
         _file_pos_to_end_of_batch = size_on_disk + physical_base_offset;
         _crc = crc32();
         model::crc_record_batch_header(_crc, header);
-        return skip_batch::no;
+        return batch_consumer::consume_result::accept_batch;
     }
 
     void consume_records(iobuf&& records) override {
