@@ -51,7 +51,26 @@ public:
     batch_consumer& operator=(batch_consumer&&) noexcept = default;
     virtual ~batch_consumer() noexcept = default;
 
-    virtual consume_result consume_batch_start(
+    /**
+     * returns consume result, allow consumer to decide if batch header should
+     * be consumed, it may be called more than once with the same header.
+     */
+    virtual consume_result
+    accept_batch_start(const model::record_batch_header&) const = 0;
+
+    /**
+     * unconditionally consumes batch start
+     */
+    virtual void consume_batch_start(
+      model::record_batch_header,
+      size_t physical_base_offset,
+      size_t size_on_disk)
+      = 0;
+
+    /**
+     * unconditionally skip batch
+     */
+    virtual void skip_batch_start(
       model::record_batch_header,
       size_t physical_base_offset,
       size_t size_on_disk)

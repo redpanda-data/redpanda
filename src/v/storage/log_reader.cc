@@ -23,10 +23,8 @@
 namespace storage {
 using records_t = ss::circular_buffer<model::record_batch>;
 
-batch_consumer::consume_result skipping_consumer::consume_batch_start(
-  model::record_batch_header header,
-  size_t /*physical_base_offset*/,
-  size_t /*size_on_disk*/) {
+batch_consumer::consume_result skipping_consumer::accept_batch_start(
+  const model::record_batch_header& header) const {
     // check for holes in the offset range on disk
     // skip check for compacted logs
     if (unlikely(
@@ -38,13 +36,26 @@ batch_consumer::consume_result skipping_consumer::consume_batch_start(
           _expected_next_batch,
           header.base_offset()));
     }
-    _expected_next_batch = header.last_offset() + model::offset(1);
 
-    if (header.last_offset() < _reader._config.start_offset) {
-        return batch_consumer::consume_result::skip_batch;
-    }
+    /**
+     * Check if parser have to be stopped
+     */
     if (header.base_offset() > _reader._config.max_offset) {
         return batch_consumer::consume_result::stop_parser;
+    }
+    if (
+      (_reader._config.strict_max_bytes || _reader._config.bytes_consumed)
+      && (_reader._config.bytes_consumed + header.size_bytes)
+           > _reader._config.max_bytes) {
+        // signal to log reader to stop (see log_reader::is_done)
+        _reader._config.over_budget = true;
+        return batch_consumer::consume_result::stop_parser;
+    }
+    /**
+     * Check if we have to skip the batch
+     */
+    if (header.last_offset() < _reader._config.start_offset) {
+        return batch_consumer::consume_result::skip_batch;
     }
     if (
       _reader._config.type_filter
@@ -58,19 +69,24 @@ batch_consumer::consume_result skipping_consumer::consume_batch_start(
         _reader._config.start_offset = header.last_offset() + model::offset(1);
         return batch_consumer::consume_result::skip_batch;
     }
+    // we want to consume the batch
+    return batch_consumer::consume_result::accept_batch;
+}
 
-    if (
-      (_reader._config.strict_max_bytes || _reader._config.bytes_consumed)
-      && (_reader._config.bytes_consumed + header.size_bytes)
-           > _reader._config.max_bytes) {
-        // signal to log reader to stop (see log_reader::is_done)
-        _reader._config.over_budget = true;
-        return batch_consumer::consume_result::stop_parser;
-    }
+void skipping_consumer::skip_batch_start(
+  model::record_batch_header header,
+  size_t /*physical_base_offset*/,
+  size_t /*size_on_disk*/) {
+    _expected_next_batch = header.last_offset() + model::offset(1);
+}
 
+void skipping_consumer::consume_batch_start(
+  model::record_batch_header header,
+  size_t /*physical_base_offset*/,
+  size_t /*size_on_disk*/) {
+    _expected_next_batch = header.last_offset() + model::offset(1);
     _header = header;
     _header.ctx.term = _reader._seg.offsets().term;
-    return batch_consumer::consume_result::accept_batch;
 }
 
 void skipping_consumer::consume_records(iobuf&& records) {

@@ -105,16 +105,18 @@ ss::future<result<stop_parser>> continuous_batch_parser::consume_header() {
             _header = r.value();
         }
 
-        auto ret = _consumer->consume_batch_start(
-          *_header, _physical_base_offset, _header->size_bytes);
-
+        auto ret = _consumer->accept_batch_start(*_header);
         switch (ret) {
         case batch_consumer::consume_result::stop_parser:
             co_return stop_parser::yes;
         case batch_consumer::consume_result::accept_batch:
+            _consumer->consume_batch_start(
+              *_header, _physical_base_offset, _header->size_bytes);
             _physical_base_offset += _header->size_bytes;
             co_return stop_parser::no;
         case batch_consumer::consume_result::skip_batch:
+            _consumer->skip_batch_start(
+              *_header, _physical_base_offset, _header->size_bytes);
             _physical_base_offset += _header->size_bytes;
             auto remaining = _header->size_bytes
                              - model::packed_record_batch_header_size;

@@ -61,11 +61,18 @@ public:
       , _timeout(timeout)
       , _next_cached_batch(next_cached_batch) {}
 
-    consume_result consume_batch_start(
+    consume_result
+    accept_batch_start(const model::record_batch_header&) const override;
+
+    void consume_batch_start(
       model::record_batch_header,
       size_t physical_base_offset,
       size_t bytes_on_disk) override;
 
+    void skip_batch_start(
+      model::record_batch_header,
+      size_t physical_base_offset,
+      size_t bytes_on_disk) override;
     void consume_records(iobuf&&) override;
     stop_parser consume_batch_end() override;
     void print(std::ostream&) const override;
