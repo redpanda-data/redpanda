@@ -51,7 +51,7 @@ var errRedpandaNotReady = errors.New("redpanda not ready")
 func (r *StatefulSetResource) runPartitionedUpdate(
 	ctx context.Context, sts *appsv1.StatefulSet,
 ) error {
-	newImage := r.pandaCluster.FullImageName()
+	newRedpandaImage := r.pandaCluster.FullImageName()
 	newConfiguratorImage := r.fullConfiguratorImage()
 
 	if err := r.updateUpgradingStatus(ctx, true); err != nil {
@@ -59,10 +59,12 @@ func (r *StatefulSetResource) runPartitionedUpdate(
 	}
 
 	if r.pandaCluster.Status.Upgrading {
-		r.logger.Info("Continuing cluster partitioned update", "cluster image", newImage)
+		r.logger.Info("Continuing cluster partitioned update",
+			"cluster image", newRedpandaImage,
+			"configurator image", newConfiguratorImage)
 	}
 
-	if err := r.partitionUpdateImage(ctx, sts, newImage, newConfiguratorImage); err != nil {
+	if err := r.partitionUpdateImage(ctx, sts, newRedpandaImage, newConfiguratorImage); err != nil {
 		return err
 	}
 
@@ -111,7 +113,7 @@ func (r *StatefulSetResource) updateUpgradingStatus(
 func (r *StatefulSetResource) partitionUpdateImage(
 	ctx context.Context,
 	sts *appsv1.StatefulSet,
-	newImage, newConfiguratorImage string,
+	newRedpandaImage, newConfiguratorImage string,
 ) error {
 	replicas := *sts.Spec.Replicas
 
@@ -121,7 +123,7 @@ func (r *StatefulSetResource) partitionUpdateImage(
 	for ordinal := replicas - 1; ordinal >= 0; ordinal-- {
 		// Update() on statefulset has not been called yet in this run, however,
 		// this could be a retry call in which case we skip the current partition.
-		poderr := r.podImageIdenticalToClusterImage(ctx, sts, newImage, newConfiguratorImage, ordinal)
+		poderr := r.podImageIdenticalToClusterImage(ctx, sts, newRedpandaImage, newConfiguratorImage, ordinal)
 		if poderr == nil {
 			r.logger.Info("Pod already updated, skip", "ordinal", ordinal)
 			continue
@@ -254,7 +256,7 @@ func (r *StatefulSetResource) populateTLSConfigCert(
 func (r *StatefulSetResource) podImageIdenticalToClusterImage(
 	ctx context.Context,
 	sts *appsv1.StatefulSet,
-	newImage string,
+	newRedpandaImage string,
 	newConfiguratorImage string,
 	ordinal int32,
 ) error {
@@ -265,17 +267,17 @@ func (r *StatefulSetResource) podImageIdenticalToClusterImage(
 		return err
 	}
 
-	container, err := findContainer(pod.Spec.Containers, redpandaContainerName)
+	redpandaContainer, err := findContainer(pod.Spec.Containers, redpandaContainerName)
 	if err != nil {
 		return err
 	}
 
-	if container.Image != newImage {
+	if redpandaContainer.Image != newRedpandaImage {
 		r.logger.Info("Redpanda container image not updated to desired image", "pod", pod.Name,
-			"container", container.Name,
-			"container image", container.Image,
-			"cluster image", newImage)
-		return containerHasWrongImageError(podName, container.Name, container.Image, newImage)
+			"container", redpandaContainer.Name,
+			"container image", redpandaContainer.Image,
+			"cluster image", newRedpandaImage)
+		return containerHasWrongImageError(podName, redpandaContainer.Name, redpandaContainer.Image, newRedpandaImage)
 	}
 
 	configuratorContainer, err := findContainer(pod.Spec.InitContainers, configuratorContainerName)
@@ -297,8 +299,8 @@ func (r *StatefulSetResource) podImageIdenticalToClusterImage(
 	}
 
 	r.logger.Info("Pod is ready", "pod", pod.Name,
-		"redpanda image", container.Image,
-		"desired image", newImage,
+		"redpanda image", redpandaContainer.Image,
+		"desired image", newRedpandaImage,
 		"configurator image", configuratorContainer.Image,
 		"desired image", newConfiguratorImage)
 
