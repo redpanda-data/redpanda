@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"reflect"
 	"time"
 
@@ -169,17 +170,20 @@ func (r *StatefulSetResource) ensureRedpandaGroupsReady(
 	headlessServiceWithPort := fmt.Sprintf("%s:%d", r.serviceFQDN,
 		r.pandaCluster.AdminAPIInternal().Port)
 
-	address := fmt.Sprintf("%s-%d.%s%s", sts.Name, ordinal, headlessServiceWithPort, "/v1/status/ready")
+	adminURL := url.URL{
+		Scheme: "http",
+		Host:   fmt.Sprintf("%s-%d.%s", sts.Name, ordinal, headlessServiceWithPort),
+		Path:   "v1/status/ready",
+	}
 
-	return r.queryRedpandaStatus(ctx, address)
+	return r.queryRedpandaStatus(ctx, &adminURL)
 }
 
 // Temporarily using the status/ready endpoint until we have a specific one for upgrading.
 func (r *StatefulSetResource) queryRedpandaStatus(
-	ctx context.Context, address string,
+	ctx context.Context, adminURL *url.URL,
 ) error {
 	client := &http.Client{Timeout: adminAPITimeout}
-	protocol := "http"
 
 	// TODO right now we support TLS only on one listener so if external
 	// connectivity is enabled, TLS is enabled only on external listener. This
@@ -195,11 +199,10 @@ func (r *StatefulSetResource) queryRedpandaStatus(
 		client.Transport = &http.Transport{
 			TLSClientConfig: &tlsConfig,
 		}
-		protocol = "https"
+		adminURL.Scheme = "https"
 	}
-	address = fmt.Sprintf("%s://%s", protocol, address)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, address, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, adminURL.String(), nil)
 	if err != nil {
 		return err
 	}
