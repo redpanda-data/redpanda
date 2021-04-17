@@ -122,6 +122,10 @@ func stsFromCluster(pandaCluster *redpandav1alpha1.Cluster) *v1.StatefulSet {
 					Namespace: pandaCluster.Namespace,
 				},
 				Spec: corev1.PodSpec{
+					InitContainers: []corev1.Container{{
+						Name:  "redpanda-configurator",
+						Image: "vectorized/configurator:latest",
+					}},
 					Containers: []corev1.Container{
 						{
 							Name:  "redpanda",

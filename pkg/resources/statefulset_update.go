@@ -51,6 +51,7 @@ func (r *StatefulSetResource) runPartitionedUpdate(
 	ctx context.Context, sts *appsv1.StatefulSet,
 ) error {
 	newImage := r.pandaCluster.FullImageName()
+	newConfiguratorImage := r.fullConfiguratorImage()
 
 	if err := r.updateUpgradingStatus(ctx, true); err != nil {
 		return err
@@ -60,7 +61,7 @@ func (r *StatefulSetResource) runPartitionedUpdate(
 		r.logger.Info("Continuing cluster partitioned update", "cluster image", newImage)
 	}
 
-	if err := r.partitionUpdateImage(ctx, sts, newImage); err != nil {
+	if err := r.partitionUpdateImage(ctx, sts, newImage, newConfiguratorImage); err != nil {
 		return err
 	}
 
@@ -83,8 +84,14 @@ func (r *StatefulSetResource) shouldUsePartitionedUpdate(
 		return false, err
 	}
 
+	configuratorContainer, err := findContainer(sts.Spec.Template.Spec.InitContainers, configuratorContainerName)
+	if err != nil {
+		return false, err
+	}
+
 	newImage := r.pandaCluster.FullImageName()
-	return rpContainer.Image != newImage || upgrading, nil
+	newConfiguratorImage := r.fullConfiguratorImage()
+	return rpContainer.Image != newImage || configuratorContainer.Image != newConfiguratorImage || upgrading, nil
 }
 
 func (r *StatefulSetResource) updateUpgradingStatus(
@@ -101,7 +108,9 @@ func (r *StatefulSetResource) updateUpgradingStatus(
 }
 
 func (r *StatefulSetResource) partitionUpdateImage(
-	ctx context.Context, sts *appsv1.StatefulSet, newImage string,
+	ctx context.Context,
+	sts *appsv1.StatefulSet,
+	newImage, newConfiguratorImage string,
 ) error {
 	replicas := *sts.Spec.Replicas
 
@@ -111,7 +120,7 @@ func (r *StatefulSetResource) partitionUpdateImage(
 	for ordinal := replicas - 1; ordinal >= 0; ordinal-- {
 		// Update() on statefulset has not been called yet in this run, however,
 		// this could be a retry call in which case we skip the current partition.
-		poderr := r.podImageIdenticalToClusterImage(ctx, sts, newImage, ordinal)
+		poderr := r.podImageIdenticalToClusterImage(ctx, sts, newImage, newConfiguratorImage, ordinal)
 		if poderr == nil {
 			r.logger.Info("Pod already updated, skip", "ordinal", ordinal)
 			continue
@@ -240,7 +249,11 @@ func (r *StatefulSetResource) populateTLSConfigCert(
 }
 
 func (r *StatefulSetResource) podImageIdenticalToClusterImage(
-	ctx context.Context, sts *appsv1.StatefulSet, newImage string, ordinal int32,
+	ctx context.Context,
+	sts *appsv1.StatefulSet,
+	newImage string,
+	newConfiguratorImage string,
+	ordinal int32,
 ) error {
 	podName := fmt.Sprintf("%s-%d", sts.Name, ordinal)
 
@@ -255,9 +268,24 @@ func (r *StatefulSetResource) podImageIdenticalToClusterImage(
 	}
 
 	if container.Image != newImage {
-		r.logger.Info("Container image not updated to cluster image", "pod", pod.Name,
-			"container", container.Name, "container image", container.Image, "cluster image", newImage)
+		r.logger.Info("Redpanda container image not updated to desired image", "pod", pod.Name,
+			"container", container.Name,
+			"container image", container.Image,
+			"cluster image", newImage)
 		return containerHasWrongImageError(podName, container.Name, container.Image, newImage)
+	}
+
+	configuratorContainer, err := findContainer(pod.Spec.InitContainers, configuratorContainerName)
+	if err != nil {
+		return err
+	}
+
+	if configuratorContainer.Image != newConfiguratorImage {
+		r.logger.Info("Configurator container image not updated to desired image", "pod", pod.Name,
+			"container", configuratorContainer.Name,
+			"container image", configuratorContainer.Image,
+			"desired image", newConfiguratorImage)
+		return containerHasWrongImageError(podName, configuratorContainer.Name, configuratorContainer.Image, newConfiguratorImage)
 	}
 
 	if !podIsReady(&pod) {
@@ -265,8 +293,11 @@ func (r *StatefulSetResource) podImageIdenticalToClusterImage(
 		return podNotReadyError(pod.Name)
 	}
 
-	r.logger.Info("Pod is ready", "pod", pod.Name, "container image", container.Image,
-		"cluster image", newImage)
+	r.logger.Info("Pod is ready", "pod", pod.Name,
+		"redpanda image", container.Image,
+		"desired image", newImage,
+		"configurator image", configuratorContainer.Image,
+		"desired image", newConfiguratorImage)
 
 	return nil
 }
