@@ -196,6 +196,14 @@ path_type_map = {
             },
         },
     },
+    "MetadataResponseData": {
+        "Topics": {
+            "Partitions": {
+                "PartitionIndex": ("model::partition_id", "int32"),
+                "IsrNodes": ("model::node_id", "int32"),
+            },
+        },
+    },
 }
 
 # a few kafka field types specify an entity type
@@ -299,6 +307,10 @@ STRUCT_TYPES = [
     "BatchIndexAndErrorMessage",
     "TopicProduceData",
     "PartitionProduceData",
+    "MetadataResponseBroker",
+    "MetadataRequestTopic",
+    "MetadataResponseTopic",
+    "MetadataResponsePartition",
 ]
 
 SCALAR_TYPES = list(basic_type_map.keys())
