@@ -666,3 +666,7 @@ func statefulSetKind() string {
 	var statefulSet appsv1.StatefulSet
 	return statefulSet.Kind
 }
+
+func (r *StatefulSetResource) fullConfiguratorImage() string {
+	return fmt.Sprintf("%s:%s", configuratorContainerImage, r.configuratorTag)
+}
