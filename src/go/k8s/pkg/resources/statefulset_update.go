@@ -60,11 +60,6 @@ func (r *StatefulSetResource) runPartitionedUpdate(
 		r.logger.Info("Continuing cluster partitioned update", "cluster image", newImage)
 	}
 
-	podSpec := &sts.Spec.Template.Spec
-	if err := r.modifyPodImage(podSpec, newImage); err != nil {
-		return err
-	}
-
 	if err := r.partitionUpdateImage(ctx, sts, newImage); err != nil {
 		return err
 	}
@@ -292,25 +287,6 @@ func (r *StatefulSetResource) rollingUpdatePartition(
 	if err := Update(ctx, sts, modifiedSts, r.Client, r.logger); err != nil {
 		return fmt.Errorf("failed to update StatefulSet (ordinal %d): %w", ordinal, err)
 	}
-
-	return nil
-}
-
-func (r *StatefulSetResource) modifyPodImage(
-	stsSpec *corev1.PodSpec, newImage string,
-) error {
-	return modifyContainerImage(stsSpec.Containers, redpandaContainerName, newImage)
-}
-
-func modifyContainerImage(
-	containers []corev1.Container, containerName, newImage string,
-) error {
-	container, err := findContainer(containers, containerName)
-	if err != nil {
-		return err
-	}
-
-	container.Image = newImage
 
 	return nil
 }
