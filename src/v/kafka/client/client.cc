@@ -111,8 +111,8 @@ ss::future<> client::update_metadata(wait_or_start::tag) {
               .then([this](metadata_response res) {
                   // Create new seeds from the returned set of brokers
                   std::vector<unresolved_address> seeds;
-                  seeds.reserve(res.brokers.size());
-                  for (const auto& b : res.brokers) {
+                  seeds.reserve(res.data.brokers.size());
+                  for (const auto& b : res.data.brokers) {
                       seeds.emplace_back(b.host, b.port);
                   }
                   std::swap(_seeds, seeds);
@@ -125,8 +125,8 @@ ss::future<> client::update_metadata(wait_or_start::tag) {
 }
 
 ss::future<> client::apply(metadata_response res) {
-    co_await _brokers.apply(std::move(res.brokers));
-    co_await _topic_cache.apply(std::move(res.topics));
+    co_await _brokers.apply(std::move(res.data.brokers));
+    co_await _topic_cache.apply(std::move(res.data.topics));
 }
 
 ss::future<> client::mitigate_error(std::exception_ptr ex) {

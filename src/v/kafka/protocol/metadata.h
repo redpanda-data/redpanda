@@ -11,6 +11,8 @@
 
 #pragma once
 
+#include "kafka/protocol/schemata/metadata_request.h"
+#include "kafka/protocol/schemata/metadata_response.h"
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
 #include "model/metadata.h"
@@ -34,62 +36,53 @@ struct metadata_api final {
 struct metadata_request {
     using api_type = metadata_api;
 
-    std::optional<std::vector<model::topic>> topics;
-    bool allow_auto_topic_creation = true;              // version >= 4
-    bool include_cluster_authorized_operations = false; // version >= 8
-    bool include_topic_authorized_operations = false;   // version >= 8
+    metadata_request_data data;
 
     bool list_all_topics{false};
 
-    void encode(response_writer& writer, api_version version);
-    void decode(request_context& ctx);
+    void encode(response_writer& writer, api_version version) {
+        data.encode(writer, version);
+    }
+
+    void decode(request_reader& reader, api_version version) {
+        data.decode(reader, version);
+        if (version > api_version(0)) {
+            list_all_topics = !data.topics;
+        } else {
+            if (unlikely(!data.topics)) {
+                // Version 0 of protocol doesn't use nullable topics set
+                throw std::runtime_error(
+                  "Null topics received for version 0 of metadata request");
+            }
+            // For metadata API version 0, empty array requests all topics
+            list_all_topics = data.topics->empty();
+        }
+    }
 };
 
-std::ostream& operator<<(std::ostream&, const metadata_request&);
+inline std::ostream& operator<<(std::ostream& os, const metadata_request& r) {
+    return os << r.data;
+}
 
 struct metadata_response {
     using api_type = metadata_api;
+    using topic = metadata_response_topic;
+    using partition = metadata_response_partition;
+    using broker = metadata_response_broker;
 
-    struct broker {
-        model::node_id node_id;
-        ss::sstring host;
-        int32_t port;
-        std::optional<ss::sstring> rack; // version >= 1
-    };
+    metadata_response_data data;
 
-    struct partition {
-        error_code err_code;
-        model::partition_id index;
-        model::node_id leader;
-        int32_t leader_epoch; // version >= 7
-        std::vector<model::node_id> replica_nodes;
-        std::vector<model::node_id> isr_nodes;
-        std::vector<model::node_id> offline_replicas; // version >= 5
-        void encode(api_version version, response_writer& rw) const;
-    };
+    void encode(const request_context& ctx, response& resp) {
+        data.encode(resp.writer(), ctx.header().version);
+    }
 
-    struct topic {
-        error_code err_code;
-        model::topic name;
-        bool is_internal{false}; // version >= 1
-        std::vector<partition> partitions;
-        int32_t topic_authorized_operations; // version >= 8
-        void encode(api_version version, response_writer& rw) const;
-        static topic make_from_topic_metadata(model::topic_metadata&& tp_md);
-    };
-
-    std::chrono::milliseconds throttle_time = std::chrono::milliseconds(
-      0); // version >= 3
-    std::vector<broker> brokers;
-    std::optional<ss::sstring> cluster_id; // version >= 2
-    model::node_id controller_id;          // version >= 1
-    std::vector<topic> topics;
-    int32_t cluster_authorized_operations = 0; // version >= 8
-
-    void encode(const request_context& ctx, response& resp);
-    void decode(iobuf buf, api_version version);
+    void decode(iobuf buf, api_version version) {
+        data.decode(std::move(buf), version);
+    }
 };
 
-std::ostream& operator<<(std::ostream&, const metadata_response&);
+inline std::ostream& operator<<(std::ostream& os, const metadata_response& r) {
+    return os << r.data;
+}
 
 } // namespace kafka

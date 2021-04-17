@@ -79,11 +79,10 @@ public:
     kafka::metadata_response get_topic_metadata(const model::topic& tp) {
         auto client = make_kafka_client().get0();
         client.connect().get0();
-        std::vector<model::topic> topics;
-        topics.push_back(tp);
+        std::vector<kafka::metadata_request_topic> topics;
+        topics.push_back(kafka::metadata_request_topic{tp});
         kafka::metadata_request md_req{
-          .topics = topics,
-          .allow_auto_topic_creation = false,
+          .data = {.topics = topics, .allow_auto_topic_creation = false},
           .list_all_topics = false};
         return client.dispatch(md_req).get0();
     }
@@ -94,8 +93,9 @@ public:
               std::move(c), [](kafka::client::transport& client) {
                   return client.connect().then([&client] {
                       kafka::metadata_request md_req{
-                        .topics = std::nullopt,
-                        .allow_auto_topic_creation = false};
+                        .data = {
+                          .topics = std::nullopt,
+                          .allow_auto_topic_creation = false}};
                       return client.dispatch(
                         std::move(md_req), kafka::api_version(1));
                   });
@@ -107,13 +107,13 @@ public:
     void validate_topic_is_deleteted(const model::topic& tp) {
         kafka::metadata_response resp = get_topic_metadata(tp);
         auto it = std::find_if(
-          std::cbegin(resp.topics),
-          std::cend(resp.topics),
+          std::cbegin(resp.data.topics),
+          std::cend(resp.data.topics),
           [tp](const kafka::metadata_response::topic& md_tp) {
               return md_tp.name == tp;
           });
-        BOOST_CHECK(it != resp.topics.end());
-        BOOST_REQUIRE_NE(it->err_code, kafka::error_code::none);
+        BOOST_CHECK(it != resp.data.topics.end());
+        BOOST_REQUIRE_NE(it->error_code, kafka::error_code::none);
     }
 
     kafka::delete_topics_request make_delete_topics_request(

@@ -54,14 +54,15 @@ FIXTURE_TEST(get_metadadata, redpanda_thread_fixture) {
 
 static kafka::metadata_request all_topics() {
     kafka::metadata_request req;
-    req.topics = std::nullopt;
+    req.data.topics = std::nullopt;
     return req;
 }
 
 // Valid only for Metadata API versions >= 1
 static kafka::metadata_request no_topics() {
     kafka::metadata_request req;
-    req.topics = std::make_optional<std::vector<model::topic>>();
+    req.data.topics
+      = std::make_optional<std::vector<kafka::metadata_request_topic>>();
     return req;
 }
 
@@ -75,7 +76,7 @@ FIXTURE_TEST(test_no_topics_request, redpanda_thread_fixture) {
     auto resp = client.dispatch(req, kafka::api_version(1)).get0();
     client.stop().then([&client] { client.shutdown(); }).get();
 
-    BOOST_REQUIRE(resp.topics.empty());
+    BOOST_REQUIRE(resp.data.topics.empty());
 }
 
 // https://github.com/apache/kafka/blob/8968cdd/core/src/test/scala/unit/kafka/server/MetadataRequestTest.scala#L52
@@ -87,7 +88,7 @@ FIXTURE_TEST(cluster_id_with_req_v1, redpanda_thread_fixture) {
     auto resp = client.dispatch(req, kafka::api_version(1)).get0();
     client.stop().then([&client] { client.shutdown(); }).get();
 
-    BOOST_REQUIRE(resp.cluster_id == std::nullopt);
+    BOOST_REQUIRE(resp.data.cluster_id == std::nullopt);
 }
 
 // https://github.com/apache/kafka/blob/8968cdd/core/src/test/scala/unit/kafka/server/MetadataRequestTest.scala#L59
@@ -101,7 +102,7 @@ FIXTURE_TEST_EXPECTED_FAILURES(
     auto resp = client.dispatch(req, kafka::api_version(2)).get0();
     client.stop().then([&client] { client.shutdown(); }).get();
 
-    BOOST_TEST((resp.cluster_id && !resp.cluster_id->empty()));
+    BOOST_TEST((resp.data.cluster_id && !resp.data.cluster_id->empty()));
 }
 
 // https://github.com/apache/kafka/blob/8968cdd/core/src/test/scala/unit/kafka/server/MetadataRequestTest.scala#L87
@@ -115,10 +116,11 @@ FIXTURE_TEST(rack, redpanda_thread_fixture) {
     client.stop().then([&client] { client.shutdown(); }).get();
 
     // expected rack name is configured in fixture setup
-    BOOST_REQUIRE(!resp.brokers.empty());
-    BOOST_REQUIRE(resp.brokers.size() == 1);
+    BOOST_REQUIRE(!resp.data.brokers.empty());
+    BOOST_REQUIRE(resp.data.brokers.size() == 1);
     BOOST_TEST(
-      (resp.brokers[0].rack && resp.brokers[0].rack.value() == rack_name));
+      (resp.data.brokers[0].rack
+       && resp.data.brokers[0].rack.value() == rack_name));
 }
 
 FIXTURE_TEST(test_topic_namespaces, redpanda_thread_fixture) {
@@ -151,8 +153,9 @@ FIXTURE_TEST(test_topic_namespaces, redpanda_thread_fixture) {
     auto client = make_kafka_client().get();
     client.connect().get();
     auto resp = client.dispatch(all_topics()).get();
-    BOOST_REQUIRE_EQUAL(resp.topics.size(), 1);
-    BOOST_REQUIRE_EQUAL(resp.topics[0].err_code, kafka::error_code::none);
-    BOOST_REQUIRE_EQUAL(resp.topics[0].name, test_topic.tp);
+    BOOST_REQUIRE_EQUAL(resp.data.topics.size(), 1);
+    BOOST_REQUIRE_EQUAL(
+      resp.data.topics[0].error_code, kafka::error_code::none);
+    BOOST_REQUIRE_EQUAL(resp.data.topics[0].name, test_topic.tp);
     client.stop().then([&client] { client.shutdown(); }).get();
 };

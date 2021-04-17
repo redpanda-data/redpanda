@@ -36,7 +36,7 @@ FIXTURE_TEST(reconnect, kafka_client_fixture) {
     {
         info("Checking no topics");
         auto res = client.dispatch(make_list_topics_req()).get();
-        BOOST_REQUIRE_EQUAL(res.topics.size(), 0);
+        BOOST_REQUIRE_EQUAL(res.data.topics.size(), 0);
     }
 
     {
@@ -48,8 +48,8 @@ FIXTURE_TEST(reconnect, kafka_client_fixture) {
     {
         info("Checking for known topic");
         auto res = client.dispatch(make_list_topics_req()).get();
-        BOOST_REQUIRE_EQUAL(res.topics.size(), 1);
-        BOOST_REQUIRE_EQUAL(res.topics[0].name(), "t");
+        BOOST_REQUIRE_EQUAL(res.data.topics.size(), 1);
+        BOOST_REQUIRE_EQUAL(res.data.topics[0].name(), "t");
     }
 
     {
@@ -67,8 +67,8 @@ FIXTURE_TEST(reconnect, kafka_client_fixture) {
         client.config().retries.set_value(size_t(5));
         info("Checking for known topic - controller ready");
         auto res = client.dispatch(make_list_topics_req()).get();
-        BOOST_REQUIRE_EQUAL(res.topics.size(), 1);
-        BOOST_REQUIRE_EQUAL(res.topics[0].name(), "t");
+        BOOST_REQUIRE_EQUAL(res.data.topics.size(), 1);
+        BOOST_REQUIRE_EQUAL(res.data.topics[0].name(), "t");
     }
 
     info("Stopping client");
