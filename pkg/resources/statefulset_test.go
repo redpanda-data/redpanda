@@ -97,7 +97,9 @@ func TestEnsure(t *testing.T) {
 		assert.NoError(t, err, tt.name)
 
 		if *actual.Spec.Replicas != *tt.expectedObject.Spec.Replicas || !reflect.DeepEqual(actual.Spec.Template.Spec.Containers[0].Resources.Requests, tt.expectedObject.Spec.Template.Spec.Containers[0].Resources.Requests) {
-			t.Errorf("%s: expecting replicas %d and resources %v, got replicas %d and resources %v", tt.name, *actual.Spec.Replicas, actual.Spec.Template.Spec.Containers[0].Resources.Requests, *tt.expectedObject.Spec.Replicas, tt.expectedObject.Spec.Template.Spec.Containers[0].Resources.Requests)
+			t.Errorf("%s: expecting replicas %d and resources %v, got replicas %d and resources %v", tt.name,
+				*tt.expectedObject.Spec.Replicas, tt.expectedObject.Spec.Template.Spec.Containers[0].Resources.Requests,
+				*actual.Spec.Replicas, actual.Spec.Template.Spec.Containers[0].Resources.Requests)
 		}
 
 		if len(actual.Spec.VolumeClaimTemplates) == 0 || !reflect.DeepEqual(actual.Spec.VolumeClaimTemplates[0].Spec, tt.expectedObject.Spec.VolumeClaimTemplates[0].Spec) {
