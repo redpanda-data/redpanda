@@ -296,7 +296,7 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 					InitContainers: []corev1.Container{
 						{
 							Name:            configuratorContainerName,
-							Image:           configuratorContainerImage + ":" + r.configuratorTag,
+							Image:           r.fullConfiguratorImage(),
 							ImagePullPolicy: corev1.PullIfNotPresent,
 							Env: []corev1.EnvVar{
 								{
