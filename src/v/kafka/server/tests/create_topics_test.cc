@@ -109,21 +109,23 @@ public:
       kafka::creatable_topic& request_topic) {
         // query the server for this topic's metadata
         kafka::metadata_request metadata_req;
-        metadata_req.topics = std::make_optional<std::vector<model::topic>>();
-        metadata_req.topics->push_back(request_topic.name);
+        metadata_req.data.topics
+          = std::make_optional<std::vector<kafka::metadata_request_topic>>();
+        metadata_req.data.topics->push_back(
+          kafka::metadata_request_topic{request_topic.name});
         auto metadata_resp
           = client.dispatch(metadata_req, kafka::api_version(1)).get0();
 
         // yank out the metadata for the topic from the response
         auto topic_metadata = std::find_if(
-          metadata_resp.topics.cbegin(),
-          metadata_resp.topics.cend(),
+          metadata_resp.data.topics.cbegin(),
+          metadata_resp.data.topics.cend(),
           [&request_topic](const kafka::metadata_response::topic& topic) {
               return topic.name == request_topic.name;
           });
 
         BOOST_TEST_REQUIRE(
-          (topic_metadata != metadata_resp.topics.cend()),
+          (topic_metadata != metadata_resp.data.topics.cend()),
           "expected topic not returned from metadata query");
 
         int partitions;
@@ -142,16 +144,16 @@ public:
 
         if (create_req.data.validate_only) {
             BOOST_TEST(
-              topic_metadata->err_code != kafka::error_code::none,
+              topic_metadata->error_code != kafka::error_code::none,
               fmt::format(
                 "error {} for topic {}",
-                topic_metadata->err_code,
+                topic_metadata->error_code,
                 request_topic.name));
             BOOST_TEST(
               topic_metadata->partitions.empty(),
               "topic should have no partitions");
         } else {
-            BOOST_TEST(topic_metadata->err_code == kafka::error_code::none);
+            BOOST_TEST(topic_metadata->error_code == kafka::error_code::none);
             if (partitions == -1) {
                 // FIXME: where does the default partition count come from?
                 BOOST_TEST(topic_metadata->partitions.size() == 99999999);

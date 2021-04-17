@@ -151,7 +151,7 @@ static iobuf handle_request(kafka::request_context&& ctx) {
     case kafka::metadata_api::key: {
         vlog(rlog.info, "kafka::metadata_api::key");
         kafka::metadata_request r;
-        r.decode(ctx);
+        r.decode(ctx.reader(), ctx.header().version);
         r.encode(writer, ctx.header().version);
         break;
     }

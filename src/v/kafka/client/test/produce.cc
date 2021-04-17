@@ -52,8 +52,8 @@ FIXTURE_TEST(produce_reconnect, kafka_client_fixture) {
 
     info("Client.dispatch metadata");
     auto res = client.dispatch(make_list_topics_req()).get();
-    BOOST_REQUIRE_EQUAL(res.topics.size(), 1);
-    BOOST_REQUIRE_EQUAL(res.topics[0].name(), "t");
+    BOOST_REQUIRE_EQUAL(res.data.topics.size(), 1);
+    BOOST_REQUIRE_EQUAL(res.data.topics[0].name(), "t");
 
     client.config().produce_batch_record_count.set_value(3);
     client.config().produce_batch_size_bytes.set_value(1024);
