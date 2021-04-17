@@ -54,14 +54,12 @@ func (r *StatefulSetResource) runPartitionedUpdate(
 	newRedpandaImage := r.pandaCluster.FullImageName()
 	newConfiguratorImage := r.fullConfiguratorImage()
 
+	r.logger.Info("Continuing cluster partitioned update",
+		"cluster image", newRedpandaImage,
+		"configurator image", newConfiguratorImage)
+
 	if err := r.updateUpgradingStatus(ctx, true); err != nil {
 		return err
-	}
-
-	if r.pandaCluster.Status.Upgrading {
-		r.logger.Info("Continuing cluster partitioned update",
-			"cluster image", newRedpandaImage,
-			"configurator image", newConfiguratorImage)
 	}
 
 	if err := r.partitionUpdateImage(ctx, sts, newRedpandaImage, newConfiguratorImage); err != nil {
