@@ -113,7 +113,7 @@ ss::future<> consumer::join() {
     auto req_builder = [me{shared_from_this()}]() {
         const auto& cfg = me->_config;
         join_group_request req{};
-        req.client_id = "test_client";
+        req.client_id = kafka::client_id("test_client");
         req.data = {
           .group_id = me->_group_id,
           .session_timeout_ms = cfg.consumer_session_timeout(),

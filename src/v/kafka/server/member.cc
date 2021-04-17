@@ -102,6 +102,8 @@ described_group_member group_member::describe_without_metadata() const {
     described_group_member desc{
       .member_id = id(),
       .group_instance_id = group_instance_id(),
+      .client_id = _state.client_id,
+      .client_host = _state.client_host,
     };
     return desc;
 }

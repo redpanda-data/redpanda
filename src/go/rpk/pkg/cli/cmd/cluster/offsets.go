@@ -53,6 +53,8 @@ type ConsumerLagRow struct {
 	LatestOffset    int64
 	CommittedOffset int64
 	MemberId        string
+	ClientHost      string
+	ClientId        string
 }
 
 // executeOffsetReport calculates consumer lag for all consumer groups and
@@ -101,7 +103,7 @@ func executeOffsetReport(
 	t.SetAutoWrapText(false)
 
 	header := [...]string{"Group", "Topic", "Partition", "Lag", "Lag %",
-		"Committed", "Latest", "Consumer"}
+		"Committed", "Latest", "Consumer", "Client-Host", "Client-Id"}
 	t.SetHeader(header[:])
 
 	for _, consumer := range consumers {
@@ -109,23 +111,33 @@ func executeOffsetReport(
 		if consumer.MemberId != "" {
 			consumerId = consumer.MemberId
 		}
-		lag := consumer.LatestOffset - consumer.CommittedOffset
-		lagPct := 1.0 - (float64(consumer.CommittedOffset)+1)/
-			(float64(consumer.LatestOffset)+1)
-		if lagPct < 0 {
-			lagPct = 0
-		} else if lagPct > 1 {
-			lagPct = 1
+		lagStr := "-"
+		lagPctStr := "-"
+		committedOffset := "-"
+		if consumer.CommittedOffset >= 0 {
+			committedOffset = fmt.Sprintf("%d", consumer.CommittedOffset)
+			lag := consumer.LatestOffset - consumer.CommittedOffset
+			lagPct := 1.0 - (float64(consumer.CommittedOffset)+1)/
+				(float64(consumer.LatestOffset)+1)
+			if lagPct < 0 {
+				lagPct = 0
+			} else if lagPct > 1 {
+				lagPct = 1
+			}
+			lagStr = fmt.Sprintf("%d", lag)
+			lagPctStr = fmt.Sprintf("%f", 100.0*lagPct)
 		}
 		row := [...]string{
 			consumer.Group,
 			consumer.Topic,
 			fmt.Sprintf("%d", consumer.Partition),
-			fmt.Sprintf("%d", lag),
-			fmt.Sprintf("%f", 100.0*lagPct),
-			fmt.Sprintf("%d", consumer.CommittedOffset),
+			lagStr,
+			lagPctStr,
+			committedOffset,
 			fmt.Sprintf("%d", consumer.LatestOffset),
-			consumerId}
+			consumerId,
+			consumer.ClientHost,
+			consumer.ClientId}
 		t.Append(row[:])
 	}
 
@@ -156,6 +168,13 @@ func describeConsumerGroups(
 	return descs, nil
 }
 
+type ConsumerLagRowMemberDesc struct {
+	MemberId   string
+	ClientHost string
+	ClientId   string
+	Matched    bool
+}
+
 // getConsumerLag computes lag for all topic partitions and members associated
 // with the specified group.
 func getConsumerLag(
@@ -173,7 +192,7 @@ func getConsumerLag(
 
 	// build a reverse lookup table so each topic-partition row that is
 	// reported can be annotated with its consumer id if one exists
-	memberAssignments := map[string]map[int32]string{}
+	memberAssignments := map[string]map[int32]ConsumerLagRowMemberDesc{}
 	for memberId, memberDesc := range groupDesc.Members {
 		assignments, err := memberDesc.GetMemberAssignment()
 		if err != nil {
@@ -186,9 +205,13 @@ func getConsumerLag(
 		for topic, partitions := range assignments.Topics {
 			for _, partition := range partitions {
 				if _, ok := memberAssignments[topic]; !ok {
-					memberAssignments[topic] = map[int32]string{}
+					memberAssignments[topic] = map[int32]ConsumerLagRowMemberDesc{}
 				}
-				memberAssignments[topic][partition] = memberId
+				memberAssignments[topic][partition] = ConsumerLagRowMemberDesc{
+					MemberId:   memberId,
+					ClientHost: memberDesc.ClientHost,
+					ClientId:   memberDesc.ClientId,
+				}
 			}
 		}
 	}
@@ -211,9 +234,37 @@ func getConsumerLag(
 				CommittedOffset: partitionInfo.Offset,
 			}
 			if partitions, ok := memberAssignments[topic]; ok {
-				if memberId, ok := partitions[partition]; ok {
-					row.MemberId = memberId
+				if member, ok := partitions[partition]; ok {
+					row.MemberId = member.MemberId
+					row.ClientHost = member.ClientHost
+					row.ClientId = member.ClientId
+					member.Matched = true
 				}
+			}
+			consumers = append(consumers, row)
+		}
+	}
+
+	// Also add in members that didn't have a committed offset
+	for topic := range memberAssignments {
+		for partition := range memberAssignments[topic] {
+			member := memberAssignments[topic][partition]
+			if member.Matched {
+				continue
+			}
+			latestOffset, err := client.GetOffset(topic, partition, sarama.OffsetNewest)
+			if err != nil {
+				return nil, fmt.Errorf("Error fetching partition offset: %v", err)
+			}
+			row := ConsumerLagRow{
+				Group:           groupId,
+				Topic:           topic,
+				Partition:       partition,
+				LatestOffset:    latestOffset,
+				CommittedOffset: -1,
+				MemberId:        member.MemberId,
+				ClientHost:      member.ClientHost,
+				ClientId:        member.ClientId,
 			}
 			consumers = append(consumers, row)
 		}

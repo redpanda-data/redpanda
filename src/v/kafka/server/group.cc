@@ -555,6 +555,8 @@ ss::future<join_group_response> group::add_member_and_rebalance(
       std::move(member_id),
       id(),
       std::move(r.data.group_instance_id),
+      r.client_id.value_or(client_id("")),
+      r.client_host,
       r.data.session_timeout_ms,
       r.data.rebalance_timeout_ms,
       std::move(r.data.protocol_type),
@@ -1343,9 +1345,8 @@ group::handle_offset_fetch(offset_fetch_request&& r) {
 }
 
 kafka::member_id group::generate_member_id(const join_group_request& r) {
-    auto client_id = r.client_id ? *r.client_id : "";
-    auto id = r.data.group_instance_id ? (*r.data.group_instance_id)()
-                                       : client_id;
+    auto cid = r.client_id ? *r.client_id : kafka::client_id("");
+    auto id = r.data.group_instance_id ? (*r.data.group_instance_id)() : cid();
     boost::uuids::uuid uuid = boost::uuids::random_generator()();
     return kafka::member_id(ssx::sformat("{}-{}", id, uuid));
 }
