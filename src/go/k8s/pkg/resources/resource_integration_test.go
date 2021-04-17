@@ -71,10 +71,7 @@ func TestEnsure_StatefulSet(t *testing.T) {
 		"cluster.local",
 		"servicename",
 		types.NamespacedName{Name: "test", Namespace: "test"},
-		types.NamespacedName{},
-		types.NamespacedName{},
-		types.NamespacedName{},
-		types.NamespacedName{},
+		res.NewCertificates(cluster),
 		"",
 		"latest",
 		ctrl.Log.WithName("test"))

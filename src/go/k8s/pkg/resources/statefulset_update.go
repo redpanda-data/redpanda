@@ -218,7 +218,7 @@ func (r *StatefulSetResource) populateTLSConfigCert(
 	ctx context.Context, tlsConfig *tls.Config,
 ) error {
 	var nodeCertSecret corev1.Secret
-	err := r.Get(ctx, r.adminAPINodeCertSecretKey, &nodeCertSecret)
+	err := r.Get(ctx, r.certificates.AdminAPINodeCert, &nodeCertSecret)
 	if err != nil {
 		return err
 	}
@@ -230,7 +230,7 @@ func (r *StatefulSetResource) populateTLSConfigCert(
 
 	if r.pandaCluster.AdminAPITLS() != nil && r.pandaCluster.AdminAPITLS().TLS.RequireClientAuth {
 		var clientCertSecret corev1.Secret
-		err := r.Get(ctx, r.adminAPIClientCertSecretKey, &clientCertSecret)
+		err := r.Get(ctx, r.certificates.AdminAPIClientCert, &clientCertSecret)
 		if err != nil {
 			return err
 		}

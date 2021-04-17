@@ -62,14 +62,13 @@ func (r *PkiReconciler) prepareRoot(
 		"",
 		r.logger)
 
-	rootCn := NewCommonName(r.pandaCluster.Name, prefix+"-root-certificate")
-	rootKey := types.NamespacedName{Name: string(rootCn), Namespace: r.pandaCluster.Namespace}
+	rootKey := resources.CertNameWithSuffix(r.pandaCluster, prefix+"-root-certificate")
 	rootCertificate := NewCertificate(r.Client,
 		r.scheme,
 		r.pandaCluster,
 		rootKey,
 		selfSignedIssuer.objRef(),
-		rootCn,
+		rootKey.Name,
 		true,
 		r.logger)
 
@@ -118,4 +117,9 @@ func (r *PkiReconciler) Ensure(ctx context.Context) error {
 
 func (r *PkiReconciler) issuerNamespacedName(name string) types.NamespacedName {
 	return types.NamespacedName{Name: r.pandaCluster.Name + "-" + name, Namespace: r.pandaCluster.Namespace}
+}
+
+// CertificateNames provides names of all certificates for redpanda listeners
+func (r *PkiReconciler) CertificateNames() *resources.Certificates {
+	return resources.NewCertificates(r.pandaCluster)
 }

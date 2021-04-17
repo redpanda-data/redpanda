@@ -80,10 +80,7 @@ func TestEnsure(t *testing.T) {
 			"cluster.local",
 			"servicename",
 			types.NamespacedName{Name: "test", Namespace: "test"},
-			types.NamespacedName{},
-			types.NamespacedName{},
-			types.NamespacedName{},
-			types.NamespacedName{},
+			res.NewCertificates(tt.pandaCluster),
 			"",
 			"latest",
 			ctrl.Log.WithName("test"))

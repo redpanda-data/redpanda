@@ -41,7 +41,7 @@ type CertificateResource struct {
 	key          types.NamespacedName
 	issuerRef    *cmetav1.ObjectReference
 	fqdn         string
-	commonName   CommonName
+	commonName   string
 	isCA         bool
 	logger       logr.Logger
 }
@@ -54,7 +54,7 @@ func NewNodeCertificate(
 	key types.NamespacedName,
 	issuerRef *cmetav1.ObjectReference,
 	fqdn string,
-	commonName CommonName,
+	commonName string,
 	isCA bool,
 	logger logr.Logger,
 ) *CertificateResource {
@@ -70,7 +70,7 @@ func NewCertificate(
 	pandaCluster *redpandav1alpha1.Cluster,
 	key types.NamespacedName,
 	issuerRef *cmetav1.ObjectReference,
-	commonName CommonName,
+	commonName string,
 	isCA bool,
 	logger logr.Logger,
 ) *CertificateResource {
@@ -108,10 +108,10 @@ func (r *CertificateResource) obj() (k8sclient.Object, error) {
 
 	if r.fqdn != "" {
 		name := "*." + strings.TrimSuffix(r.fqdn, ".")
-		cert.Spec.CommonName = string(r.commonName)
+		cert.Spec.CommonName = r.commonName
 		cert.Spec.DNSNames = []string{name}
 	} else {
-		cert.Spec.CommonName = string(r.commonName)
+		cert.Spec.CommonName = r.commonName
 	}
 
 	err := controllerutil.SetControllerReference(r.pandaCluster, cert, r.scheme)

@@ -115,10 +115,7 @@ func (r *ClusterReconciler) Reconcile(
 		headlessSvc.HeadlessServiceFQDN(),
 		headlessSvc.Key().Name,
 		nodeportSvc.Key(),
-		pki.NodeCert(),
-		pki.OperatorClientCert(),
-		pki.AdminAPINodeCert(),
-		pki.AdminAPIClientCert(),
+		pki.CertificateNames(),
 		sa.Key().Name,
 		r.configuratorTag,
 		log)

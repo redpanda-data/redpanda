@@ -56,19 +56,16 @@ const (
 // focusing on the management of redpanda cluster
 type StatefulSetResource struct {
 	k8sclient.Client
-	scheme                      *runtime.Scheme
-	pandaCluster                *redpandav1alpha1.Cluster
-	serviceFQDN                 string
-	serviceName                 string
-	nodePortName                types.NamespacedName
-	nodePortSvc                 corev1.Service
-	redpandaCertSecretKey       types.NamespacedName
-	internalClientCertSecretKey types.NamespacedName
-	adminAPINodeCertSecretKey   types.NamespacedName
-	adminAPIClientCertSecretKey types.NamespacedName
-	serviceAccountName          string
-	configuratorTag             string
-	logger                      logr.Logger
+	scheme             *runtime.Scheme
+	pandaCluster       *redpandav1alpha1.Cluster
+	serviceFQDN        string
+	serviceName        string
+	nodePortName       types.NamespacedName
+	nodePortSvc        corev1.Service
+	certificates       *Certificates
+	serviceAccountName string
+	configuratorTag    string
+	logger             logr.Logger
 
 	LastObservedState *appsv1.StatefulSet
 }
@@ -81,10 +78,7 @@ func NewStatefulSet(
 	serviceFQDN string,
 	serviceName string,
 	nodePortName types.NamespacedName,
-	redpandaCertSecretKey types.NamespacedName,
-	internalClientCertSecretKey types.NamespacedName,
-	adminAPINodeCertSecretKey types.NamespacedName,
-	adminAPIClientCertSecretKey types.NamespacedName,
+	certificates *Certificates,
 	serviceAccountName string,
 	configuratorTag string,
 	logger logr.Logger,
@@ -97,10 +91,7 @@ func NewStatefulSet(
 		serviceName,
 		nodePortName,
 		corev1.Service{},
-		redpandaCertSecretKey,
-		internalClientCertSecretKey,
-		adminAPINodeCertSecretKey,
-		adminAPIClientCertSecretKey,
+		certificates,
 		serviceAccountName,
 		configuratorTag,
 		logger.WithValues("Kind", statefulSetKind()),
@@ -522,7 +513,7 @@ func (r *StatefulSetResource) secretVolumes() []corev1.Volume {
 			Name: "tlscert",
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
-					SecretName: r.redpandaCertSecretKey.Name,
+					SecretName: r.certificates.NodeCert.Name,
 					Items: []corev1.KeyToPath{
 						{
 							Key:  corev1.TLSPrivateKeyKey,
@@ -544,7 +535,7 @@ func (r *StatefulSetResource) secretVolumes() []corev1.Volume {
 			Name: "tlsca",
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
-					SecretName: r.internalClientCertSecretKey.Name,
+					SecretName: r.certificates.OperatorClientCert.Name,
 					Items: []corev1.KeyToPath{
 						{
 							Key:  cmetav1.TLSCAKey,
@@ -562,7 +553,7 @@ func (r *StatefulSetResource) secretVolumes() []corev1.Volume {
 			Name: "tlsadmincert",
 			VolumeSource: corev1.VolumeSource{
 				Secret: &corev1.SecretVolumeSource{
-					SecretName: r.adminAPINodeCertSecretKey.Name,
+					SecretName: r.certificates.AdminAPINodeCert.Name,
 					Items: []corev1.KeyToPath{
 						{
 							Key:  corev1.TLSPrivateKeyKey,
