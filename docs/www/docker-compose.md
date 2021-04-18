@@ -23,19 +23,12 @@ services:
     - --kafka-addr
     - PLAINTEXT://0.0.0.0:29092,OUTSIDE://0.0.0.0:9092
     - --advertise-kafka-addr
-    - PLAINTEXT://kafka:29092,OUTSIDE://localhost:9092
-    - --
-    - --kernel-page-cache
-    - '1'
+    - PLAINTEXT://redpanda:29092,OUTSIDE://localhost:9092
     # NOTE: Please use the latest version here!
-    image: vectorized/redpanda:v21.4.1
+    image: vectorized/redpanda:v21.4.12
     ports:
     - 9092:9092
     - 29092:29092
-    volumes:
-    - redpanda:/var/lib/redpanda/data
-volumes:
-  redpanda: null
 
 ```
 
