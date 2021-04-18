@@ -148,13 +148,13 @@ Here are the basic commands to produce and consume streams:
 1. Create a topic. We'll call it "twitch_chat":
 
     ```bash
-    rpk topic create twitch_chat
+    docker exec -it redpanda-1 rpk topic create twitch_chat
     ```
 
 1. Produce messages to the topic:
 
     ```bash
-    rpk topic produce twitch_chat
+    docker exec -it redpanda-1 rpk topic produce twitch_chat
     ```
 
     Type text into the topic and press Ctrl + D to seperate between messages.
@@ -164,7 +164,7 @@ Here are the basic commands to produce and consume streams:
 1. Consume (or read) the messages in the topic:
 
     ```bash
-    rpk topic consume twitch_chat
+    docker exec -it redpanda-1 rpk topic consume twitch_chat
     ```
     
     Each message is shown with its metadata, like this:
