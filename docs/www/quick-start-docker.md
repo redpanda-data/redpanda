@@ -22,12 +22,14 @@ To get a cluster ready for streaming, either run a single docker container with 
 
 With a 1-node cluster you can test out a simple implementation of Redpanda.
 
+**_Notes_**:
+
+- `--overprovisioned` is used to accomodate docker resource limitations.
+- `--pull=always` makes sure that you are always working with the latest version.
+
 ```bash
-# --overprovisioned is used to accomodate docker resource limitations
-# make sure you update the version of v21.4.6 to the latest release https://github.com/vectorizedio/redpanda/releases
 
-
-docker run -ti --rm -p 9092:9092 vectorized/redpanda:v21.4.6 start --overprovisioned --smp 1  --memory 1G  --reserve-memory 0M --node-id 0 --check=false
+docker run -d --pull=always --name=redpanda-1 --rm -p 9092:9092 vectorized/redpanda:latest start --overprovisioned --smp 1  --memory 1G  --reserve-memory 0M --node-id 0 --check=false
 
 ```
 
@@ -57,6 +59,7 @@ We then need to start the nodes for the Redpanda cluster.
 
 ```bash
 docker run -d \
+--pull=always \
 --name=redpanda-1 \
 --hostname=redpanda-1 \
 --net=redpandanet \
@@ -72,9 +75,10 @@ vectorized/redpanda start \
 --kafka-addr 0.0.0.0:9092 \
 --advertise-kafka-addr 127.0.0.1:9092 \
 --rpc-addr 0.0.0.0:33145 \
---advertise-rpc-addr redpanda-1:33145
+--advertise-rpc-addr redpanda-1:33145 &&
 
 docker run -d \
+--pull=always \
 --name=redpanda-2 \
 --hostname=redpanda-2 \
 --net=redpandanet \
@@ -91,9 +95,10 @@ vectorized/redpanda start \
 --kafka-addr 0.0.0.0:9093 \
 --advertise-kafka-addr 127.0.0.1:9093 \
 --rpc-addr 0.0.0.0:33146 \
---advertise-rpc-addr redpanda-2:33146
+--advertise-rpc-addr redpanda-2:33146 &&
 
 docker run -d \
+--pull=always \
 --name=redpanda-3 \
 --hostname=redpanda-3 \
 --net=redpandanet \
@@ -136,13 +141,13 @@ Here are the basic commands to produce and consume streams:
 1. Create a topic. We'll call it "twitch_chat":
 
     ```bash
-    rpk topic create twitch_chat
+    docker exec -it redpanda-1 rpk topic create twitch_chat
     ```
 
 1. Produce messages to the topic:
 
     ```bash
-    rpk topic produce twitch_chat
+    docker exec -it redpanda-1 rpk topic produce twitch_chat
     ```
 
     Type text into the topic and press Ctrl + D to seperate between messages.
@@ -152,7 +157,7 @@ Here are the basic commands to produce and consume streams:
 1. Consume (or read) the messages in the topic:
 
     ```bash
-    rpk topic consume twitch_chat
+    docker exec -it redpanda-1 rpk topic consume twitch_chat
     ```
     
     Each message is shown with its metadata, like this:
