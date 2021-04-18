@@ -59,6 +59,7 @@ We then need to start the nodes for the Redpanda cluster.
 
 ```bash
 docker run -d \
+--pull=always \
 --name=redpanda-1 \
 --hostname=redpanda-1 \
 --net=redpandanet \
@@ -77,9 +78,10 @@ vectorized/redpanda start \
 --kafka-addr 0.0.0.0:9092 \
 --advertise-kafka-addr 127.0.0.1:9092 \
 --rpc-addr 0.0.0.0:33145 \
---advertise-rpc-addr redpanda-1:33145
+--advertise-rpc-addr redpanda-1:33145 &&
 
 docker run -d \
+--pull=always \
 --name=redpanda-2 \
 --hostname=redpanda-2 \
 --net=redpandanet \
@@ -98,9 +100,10 @@ vectorized/redpanda start \
 --kafka-addr 0.0.0.0:9093 \
 --advertise-kafka-addr 127.0.0.1:9093 \
 --rpc-addr 0.0.0.0:33146 \
---advertise-rpc-addr redpanda-2:33146
+--advertise-rpc-addr redpanda-2:33146 &&
 
 docker run -d \
+--pull=always \
 --name=redpanda-3 \
 --hostname=redpanda-3 \
 --net=redpandanet \
