@@ -36,11 +36,17 @@ struct topic_table_delta {
     enum class op_type { add, del, update, update_finished, update_properties };
 
     topic_table_delta(
-      model::ntp, cluster::partition_assignment, model::offset, op_type);
+      model::ntp,
+      partition_assignment,
+      model::offset,
+      op_type,
+      std::optional<partition_assignment> = std::nullopt);
+
     model::ntp ntp;
-    cluster::partition_assignment p_as;
+    partition_assignment new_assignment;
     model::offset offset;
     op_type type;
+    std::optional<partition_assignment> previous_assignment;
 
     model::topic_namespace_view tp_ns() const {
         return model::topic_namespace_view(ntp);

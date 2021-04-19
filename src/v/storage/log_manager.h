@@ -167,6 +167,8 @@ public:
 
     ss::future<log> manage(ntp_config);
 
+    ss::future<> shutdown(model::ntp);
+
     /**
      * Remove an ntp and clean-up its storage.
      *

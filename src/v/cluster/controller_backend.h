@@ -21,11 +21,14 @@
 #include <seastar/core/gate.hh>
 #include <seastar/core/sharded.hh>
 
+#include <absl/container/node_hash_map.h>
+
 namespace cluster {
 
 /// on every core, sharded
 
-class controller_backend {
+class controller_backend
+  : public ss::peering_sharded_service<controller_backend> {
 public:
     using results_t = std::vector<std::error_code>;
     controller_backend(
@@ -57,7 +60,10 @@ private:
     execute_partitition_op(const topic_table::delta&);
 
     ss::future<std::error_code> process_partition_update(
-      model::ntp, const partition_assignment&, model::revision_id);
+      model::ntp,
+      const partition_assignment&,
+      const partition_assignment&,
+      model::revision_id);
     ss::future<std::error_code> finish_partition_update(
       model::ntp, const partition_assignment&, model::revision_id);
 
@@ -71,18 +77,25 @@ private:
       std::vector<model::broker>);
     ss::future<> add_to_shard_table(
       model::ntp, raft::group_id, ss::shard_id, model::revision_id);
+    ss::future<>
+      remove_from_shard_table(model::ntp, raft::group_id, model::revision_id);
     ss::future<std::error_code>
       delete_partition(model::ntp, model::revision_id);
     ss::future<std::error_code> update_partition_replica_set(
       const model::ntp&,
       const std::vector<model::broker_shard>&,
       model::revision_id);
-
     ss::future<std::error_code>
       dispatch_update_finished(model::ntp, partition_assignment);
 
     ss::future<> do_bootstrap();
     ss::future<> bootstrap_ntp(const model::ntp&, deltas_t&);
+
+    ss::future<std::error_code>
+      shutdown_on_current_shard(model::ntp, model::revision_id);
+
+    ss::future<std::optional<model::revision_id>>
+      ask_remote_shard_for_initail_rev(model::ntp, ss::shard_id);
 
     void housekeeping();
 
@@ -100,6 +113,14 @@ private:
     ss::timer<> _housekeeping_timer;
     ss::semaphore _topics_sem{1};
     ss::gate _gate;
+    /**
+     * This map is populated by backend instance on shard that given NTP is
+     * moved from. Map is then queried by the controller instance on target
+     * shard. Partition is created on target shard with the same initial
+     * revision as on originating shard, this way identity of node i.e. raft
+     * vnode doesn't change.
+     */
+    absl::node_hash_map<model::ntp, model::revision_id> _cross_shard_requests;
 };
 
 std::vector<topic_table::delta> calculate_bootstrap_deltas(
