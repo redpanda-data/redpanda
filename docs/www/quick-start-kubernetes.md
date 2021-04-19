@@ -114,78 +114,11 @@ After you set up Redpanda in your Kubernetes cluster, you can use our samples to
     kubectl create ns redpanda-test
     ```
 
-- Install resources from our sample files:
-
-    - One node cluster:
+- Install resources from [our sample files](https://github.com/vectorizedio/redpanda/tree/dev/src/go/k8s/config/samples), for example the single-node cluster:
                 
-        ```
-        kubectl apply -n redpanda-test -f https://raw.githubusercontent.com/vectorizedio/redpanda/dev/src/go/k8s/config/samples/one_node_cluster.yaml
-        ```
-
-    - Cluster with external connectivity (verified on AWS) -
-        
-        ```
-        kubectl apply -n redpanda-test -f https://raw.githubusercontent.com/vectorizedio/redpanda/dev/src/go/k8s/config/samples/external_connectivity.yaml
-        ```
-
-    - Cluster with TLS encryption -
-        
-        ```
-        kubectl apply -n redpanda-test -f https://raw.githubusercontent.com/vectorizedio/redpanda/dev/src/go/k8s/config/samples/redpanda_v1alpha1_with_tls.yaml
-        ```
-
-        To allow connections to the cluster with TLS enabled, you have to mount a TLS configuration for rpk.
-        The following definition creates a pod that has TLS configured.
-        From that pod, users can list, create, and delete topics, and also produce and consume events.
-
-        ```
-        cat <<EOF | kubectl apply -f -
-        apiVersion: v1
-        kind: ConfigMap
-        metadata:
-         name: rpk-config
-         namespace: redpanda-test
-        data:
-         redpanda.yaml: |
-           redpanda:
-           rpk:
-             tls:
-               truststore_file: /etc/tls/certs/ca.crt
-        ---
-        apiVersion: v1
-        kind: Pod
-        metadata:
-         name: produce-msg
-         namespace: redpanda-test
-        spec:
-         volumes:
-         - name: tlscert
-           secret:
-             defaultMode: 420
-             secretName: cluster-sample-tls-redpanda
-         - name: rpkconfig
-           configMap:
-             name: rpk-config
-         containers:
-         - name: rpk
-           image: vectorized/redpanda:latest
-           command:
-           - /bin/bash
-           tty: true
-           stdin: true
-           volumeMounts:
-           - mountPath: /etc/tls/certs
-             name: tlscert
-           - mountPath: /etc/redpanda
-             name: rpkconfig
-        EOF
-        ```
-
-        To connect to the produce pod, run:
-        
-        ```
-        kubectl attach -n redpanda-test -ti produce-msg
-        ```
+    ```
+    kubectl apply -n redpanda-test -f https://raw.githubusercontent.com/vectorizedio/redpanda/dev/src/go/k8s/config/samples/one_node_cluster.yaml
+    ```
 
 - Review the [cluster_types file](https://github.com/vectorizedio/redpanda/blob/dev/src/go/k8s/apis/redpanda/v1alpha1/cluster_types.go) to see the resource configuration options.
 
