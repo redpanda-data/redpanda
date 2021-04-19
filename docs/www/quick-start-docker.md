@@ -141,6 +141,47 @@ The output of the status command looks like:
   2 (127.0.0.1:9094)       (No partitions)
 ```
 
+### Bring up a docker-compose file
+
+You can easily try out different docker configuration parameters with a docker-compose file.
+
+1. Save this content as `docker-compose.yml`:
+
+    ```yaml
+    version: '3.7'
+    services:
+    redpanda:
+        entrypoint:
+        - /usr/bin/rpk
+        - redpanda
+        - start
+        - --smp
+        - '1'
+        - --reserve-memory
+        - 0M
+        - --overprovisioned
+        - --node-id
+        - '0'
+        - --kafka-addr
+        - PLAINTEXT://0.0.0.0:29092,OUTSIDE://0.0.0.0:9092
+        - --advertise-kafka-addr
+        - PLAINTEXT://redpanda:29092,OUTSIDE://localhost:9092
+        # NOTE: Please use the latest version here!
+        image: vectorized/redpanda:v21.4.1
+        container_name: redpanda-1
+        ports:
+        - 9092:9092
+        - 29092:29092
+    ```
+
+2. In the directory where the file is saved, run:
+
+    ```bash
+    docker-compose up -d
+    ```
+
+If you want to change the parameters, edit the docker-compose file and run the command again.
+
 ## Do some streaming
 
 Here are some sample commands to produce and consume streams:
