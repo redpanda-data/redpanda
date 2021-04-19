@@ -21,13 +21,23 @@ func NewWasmCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	var (
 		configFile string
 		brokers    []string
+		user       string
+		password   string
+		mechanism  string
 	)
 
 	command := &cobra.Command{
 		Use:   "wasm",
 		Short: "Deploy and remove inline WASM engine scripts",
 	}
-	common.AddKafkaFlags(command, &configFile, &brokers)
+	common.AddKafkaFlags(
+		command,
+		&configFile,
+		&user,
+		&password,
+		&mechanism,
+		&brokers,
+	)
 	command.AddCommand(wasm.NewGenerateCommand(fs))
 
 	// configure kafka producer
@@ -38,8 +48,9 @@ func NewWasmCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 		configClosure,
 		&brokers,
 	)
+	kAuthClosure := common.KafkaAuthConfig(&user, &password, &mechanism)
 	producerClosure := common.CreateProducer(brokersClosure, configClosure)
-	adminClosure := common.CreateAdmin(fs, brokersClosure, configClosure)
+	adminClosure := common.CreateAdmin(fs, brokersClosure, configClosure, kAuthClosure)
 
 	command.AddCommand(wasm.NewDeployCommand(fs, producerClosure, adminClosure))
 

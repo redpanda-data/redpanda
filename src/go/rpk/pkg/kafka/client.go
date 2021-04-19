@@ -10,8 +10,6 @@
 package kafka
 
 import (
-	"crypto/sha256"
-	"crypto/sha512"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
@@ -56,7 +54,7 @@ func LoadConfig(conf *config.Config) (*sarama.Config, error) {
 		return nil, err
 	}
 
-	return configureSASL(c, conf)
+	return ConfigureSASL(c, &conf.Rpk.SCRAM)
 }
 
 func InitClient(brokers ...string) (sarama.Client, error) {
@@ -179,34 +177,33 @@ func RetrySend(
 	return part, offset, err
 }
 
-func configureSASL(
-	saramaConf *sarama.Config, rpConf *config.Config,
+func ConfigureSASL(
+	saramaConf *sarama.Config, scram *config.SCRAM,
 ) (*sarama.Config, error) {
-	rpk := rpConf.Rpk
-	if rpk.SCRAM.Password == "" || rpk.SCRAM.User == "" || rpk.SCRAM.Type == "" {
+	if scram.Password == "" || scram.User == "" || scram.Type == "" {
 		return saramaConf, nil
 	}
 
 	saramaConf.Net.SASL.Enable = true
 	saramaConf.Net.SASL.Handshake = true
-	saramaConf.Net.SASL.User = rpk.SCRAM.User
-	saramaConf.Net.SASL.Password = rpk.SCRAM.Password
-	switch rpk.SCRAM.Type {
+	saramaConf.Net.SASL.User = scram.User
+	saramaConf.Net.SASL.Password = scram.Password
+	switch scram.Type {
 	case sarama.SASLTypeSCRAMSHA256:
 		saramaConf.Net.SASL.SCRAMClientGeneratorFunc =
 			func() sarama.SCRAMClient {
-				return &XDGSCRAMClient{HashGeneratorFcn: sha256.New}
+				return &XDGSCRAMClient{HashGeneratorFcn: SHA256}
 			}
 		saramaConf.Net.SASL.Mechanism = sarama.SASLTypeSCRAMSHA256
 	case sarama.SASLTypeSCRAMSHA512:
 		saramaConf.Net.SASL.SCRAMClientGeneratorFunc =
 			func() sarama.SCRAMClient {
-				return &XDGSCRAMClient{HashGeneratorFcn: sha512.New}
+				return &XDGSCRAMClient{HashGeneratorFcn: SHA512}
 			}
 		saramaConf.Net.SASL.Mechanism = sarama.SASLTypeSCRAMSHA512
 	default:
 		return nil, fmt.Errorf("unrecongnized Salted Challenge Response "+
-			"Authentication Mechanism (SCRAM) under rpk.scram.type: %s", rpk.SCRAM.Type)
+			"Authentication Mechanism (SCRAM): '%s'.", scram.Type)
 	}
 	return saramaConf, nil
 }

@@ -139,6 +139,9 @@ func TestAddKafkaFlags(t *testing.T) {
 	var (
 		brokers    []string
 		configFile string
+		user       string
+		password   string
+		mechanism  string
 	)
 	command := func() *cobra.Command {
 		parent := &cobra.Command{
@@ -155,7 +158,7 @@ func TestAddKafkaFlags(t *testing.T) {
 		}
 		parent.AddCommand(child)
 
-		common.AddKafkaFlags(parent, &configFile, &brokers)
+		common.AddKafkaFlags(parent, &configFile, &user, &password, &mechanism, &brokers)
 		return parent
 	}
 
@@ -163,6 +166,9 @@ func TestAddKafkaFlags(t *testing.T) {
 	cmd.SetArgs([]string{
 		"--config", "arbitraryconfig.yaml",
 		"--brokers", "192.168.72.22:9092,localhost:9092",
+		"--user", "david",
+		"--password", "verysecrethaha",
+		"--sasl-mechanism", "some-mechanism",
 	})
 
 	err := cmd.Execute()
@@ -170,6 +176,9 @@ func TestAddKafkaFlags(t *testing.T) {
 
 	require.Exactly(t, "arbitraryconfig.yaml", configFile)
 	require.Exactly(t, []string{"192.168.72.22:9092", "localhost:9092"}, brokers)
+	require.Exactly(t, "david", user)
+	require.Exactly(t, "verysecrethaha", password)
+	require.Exactly(t, "some-mechanism", mechanism)
 
 	// The flags should be available for the children commands too
 	cmd = command() // reset it.
@@ -178,6 +187,9 @@ func TestAddKafkaFlags(t *testing.T) {
 		"--config", "justaconfig.yaml",
 		"--brokers", "192.168.72.23:9092",
 		"--brokers", "mykafkahost:9093",
+		"--user", "juan",
+		"--password", "sosecure",
+		"--sasl-mechanism", "whatevs",
 	})
 
 	err = cmd.Execute()
@@ -185,4 +197,60 @@ func TestAddKafkaFlags(t *testing.T) {
 
 	require.Exactly(t, "justaconfig.yaml", configFile)
 	require.Exactly(t, []string{"192.168.72.23:9092", "mykafkahost:9093"}, brokers)
+	require.Exactly(t, "juan", user)
+	require.Exactly(t, "sosecure", password)
+	require.Exactly(t, "whatevs", mechanism)
+}
+
+func TestKafkaAuthConfig(t *testing.T) {
+	tests := []struct {
+		name           string
+		user           string
+		password       string
+		mechanism      string
+		expected       *config.SCRAM
+		expectedErrMsg string
+	}{{
+		name:           "it should fail if user is empty",
+		password:       "somethingsecure",
+		expectedErrMsg: "empty user. Pass --user to set a value.",
+	}, {
+		name:           "it should fail if password is empty",
+		user:           "usuario",
+		expectedErrMsg: "empty password. Pass --password to set a value.",
+	}, {
+		name:           "it should fail if both user and password are empty",
+		expectedErrMsg: common.ErrNoCredentials.Error(),
+	}, {
+		name:      "it should fail if the mechanism isn't supported",
+		user:      "usuario",
+		password:  "contraseño",
+		mechanism: "super-crypto-3000",
+		expectedErrMsg: "unsupported mechanism 'super-crypto-3000'. Pass --sasl-mechanism to set a value." +
+			" Supported: SCRAM-SHA-256, SCRAM-SHA-512.",
+	}, {
+		name:      "it should support SCRAM-SHA-256",
+		user:      "usuario",
+		password:  "contraseño",
+		mechanism: "SCRAM-SHA-256",
+		expected:  &config.SCRAM{User: "usuario", Password: "contraseño", Type: "SCRAM-SHA-256"},
+	}, {
+		name:      "it should support SCRAM-SHA-512",
+		user:      "usuario",
+		password:  "contraseño",
+		mechanism: "SCRAM-SHA-512",
+		expected:  &config.SCRAM{User: "usuario", Password: "contraseño", Type: "SCRAM-SHA-512"},
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(st *testing.T) {
+			closure := common.KafkaAuthConfig(&tt.user, &tt.password, &tt.mechanism)
+			res, err := closure()
+			if tt.expectedErrMsg != "" {
+				require.EqualError(st, err, tt.expectedErrMsg)
+				return
+			}
+			require.Exactly(st, tt.expected, res)
+		})
+	}
 }

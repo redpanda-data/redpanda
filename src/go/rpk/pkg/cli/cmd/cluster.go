@@ -22,6 +22,9 @@ func NewClusterCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	var (
 		brokers    []string
 		configFile string
+		user       string
+		password   string
+		mechanism  string
 	)
 	command := &cobra.Command{
 		Use:   "cluster",
@@ -64,7 +67,8 @@ func NewClusterCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 		configClosure,
 		&brokers,
 	)
-	adminClosure := common.CreateAdmin(fs, brokersClosure, configClosure)
+	kAuthClosure := common.KafkaAuthConfig(&user, &password, &mechanism)
+	adminClosure := common.CreateAdmin(fs, brokersClosure, configClosure, kAuthClosure)
 	command.AddCommand(cluster.NewInfoCommand(adminClosure))
 
 	// NewOffsetsCommand takes client and admin factories so we can mock both

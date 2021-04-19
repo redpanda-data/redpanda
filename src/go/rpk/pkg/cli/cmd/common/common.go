@@ -10,6 +10,7 @@
 package common
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -26,6 +27,12 @@ import (
 
 const FeedbackMsg = `We'd love to hear about your experience with redpanda:
 https://vectorized.io/feedback`
+
+const (
+	saslMechanismFlag = "sasl-mechanism"
+)
+
+var ErrNoCredentials = errors.New("empty username and password")
 
 func Deprecated(newCmd *cobra.Command, newUse string) *cobra.Command {
 	newCmd.Deprecated = deprecationMessage(newUse)
@@ -202,8 +209,10 @@ func CreateAdmin(
 	fs afero.Fs,
 	brokers func() []string,
 	configuration func() (*config.Config, error),
+	authConfig func() (*config.SCRAM, error),
 ) func() (sarama.ClusterAdmin, error) {
 	return func() (sarama.ClusterAdmin, error) {
+		var err error
 		conf, err := configuration()
 		if err != nil {
 			return nil, err
@@ -212,9 +221,49 @@ func CreateAdmin(
 		if err != nil {
 			return nil, err
 		}
+		auth, err := authConfig()
+		if err == nil || errors.Is(err, ErrNoCredentials) {
+			cfg, err = kafka.ConfigureSASL(cfg, auth)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			return nil, err
+		}
 		bs := brokers()
 		admin, err := sarama.NewClusterAdmin(bs, cfg)
 		return admin, wrapConnErr(err, bs)
+	}
+}
+
+func KafkaAuthConfig(
+	user, password, mechanism *string,
+) func() (*config.SCRAM, error) {
+	return func() (*config.SCRAM, error) {
+		if *user == "" && *password == "" {
+			return nil, ErrNoCredentials
+		}
+		if *user == "" && *password != "" {
+			return nil, errors.New("empty user. Pass --user to set a value.")
+		}
+		if *user != "" && *password == "" {
+			return nil, errors.New("empty password. Pass --password to set a value.")
+		}
+		if *mechanism != sarama.SASLTypeSCRAMSHA256 && *mechanism != sarama.SASLTypeSCRAMSHA512 {
+			return nil, fmt.Errorf(
+				"unsupported mechanism '%s'. Pass --%s to set a value."+
+					" Supported: %s, %s.",
+				*mechanism,
+				saslMechanismFlag,
+				sarama.SASLTypeSCRAMSHA256,
+				sarama.SASLTypeSCRAMSHA512,
+			)
+		}
+		return &config.SCRAM{
+			User:     *user,
+			Password: *password,
+			Type:     *mechanism,
+		}, nil
 	}
 }
 
@@ -246,7 +295,9 @@ func ContainerBrokers(c common.Client) ([]string, []string) {
 }
 
 func AddKafkaFlags(
-	command *cobra.Command, configFile *string, brokers *[]string,
+	command *cobra.Command,
+	configFile, user, password, saslMechanism *string,
+	brokers *[]string,
 ) *cobra.Command {
 	command.PersistentFlags().StringSliceVar(
 		brokers,
@@ -260,6 +311,28 @@ func AddKafkaFlags(
 		"",
 		"Redpanda config file, if not set the file will be searched for"+
 			" in the default locations",
+	)
+	command.PersistentFlags().StringVar(
+		user,
+		"user",
+		"",
+		"SASL user to be used for authentication.",
+	)
+	command.PersistentFlags().StringVar(
+		password,
+		"password",
+		"",
+		"SASL password to be used for authentication.",
+	)
+	command.PersistentFlags().StringVar(
+		saslMechanism,
+		saslMechanismFlag,
+		"",
+		fmt.Sprintf(
+			"The authentication mechanism to use. Supported values: %s, %s.",
+			sarama.SASLTypeSCRAMSHA256,
+			sarama.SASLTypeSCRAMSHA512,
+		),
 	)
 
 	return command
