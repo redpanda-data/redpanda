@@ -75,7 +75,7 @@ assignments assignment_range::plan(
             rtm.reserve(std::distance(p_begin, p_end));
             std::transform(
               p_begin, p_end, std::back_inserter(rtm), [](auto& p) {
-                  return p.index;
+                  return p.partition_index;
               });
             p_begin = p_end;
             ++mem_it;

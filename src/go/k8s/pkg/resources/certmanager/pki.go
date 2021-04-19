@@ -89,10 +89,10 @@ func (r *PkiReconciler) prepareRoot(
 // Ensure will manage PKI for redpanda.vectorized.io custom resource
 func (r *PkiReconciler) Ensure(ctx context.Context) error {
 	toApply := []resources.Resource{}
-
-	if r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.Enabled {
+	tlsListener := r.pandaCluster.KafkaTLSListener()
+	if tlsListener != nil {
 		toApplyRootKafka, kafkaIssuerRef := r.prepareRoot(kafkaAPI)
-		toApplyKafka, err := r.prepareKafkaAPI(ctx, kafkaIssuerRef)
+		toApplyKafka, err := r.prepareKafkaAPI(ctx, kafkaIssuerRef, &tlsListener.TLS)
 		if err != nil {
 			return err
 		}
@@ -100,7 +100,7 @@ func (r *PkiReconciler) Ensure(ctx context.Context) error {
 		toApply = append(toApply, toApplyKafka...)
 	}
 
-	if r.pandaCluster.Spec.Configuration.TLS.AdminAPI.Enabled {
+	if r.pandaCluster.AdminAPITLS() != nil {
 		toApplyRootAdmin, adminIssuerRef := r.prepareRoot(adminAPI)
 		toApply = append(toApply, toApplyRootAdmin...)
 		toApply = append(toApply, r.prepareAdminAPI(adminIssuerRef)...)

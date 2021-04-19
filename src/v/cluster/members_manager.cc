@@ -22,6 +22,7 @@
 #include "reflection/adl.h"
 #include "storage/api.h"
 
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/do_with.hh>
 #include <seastar/core/future-util.hh>
 #include <seastar/core/future.hh>
@@ -86,7 +87,14 @@ ss::future<> members_manager::start_config_changes_watcher() {
     // handle initial configuration
     return handle_raft0_cfg_update(_raft0->config()).then([this] {
         if (is_already_member()) {
-            return maybe_update_current_node_configuration();
+            (void)ss::with_gate(_gate, [this] {
+                return maybe_update_current_node_configuration();
+            }).handle_exception_type([](const ss::gate_closed_exception& e) {
+                vlog(
+                  clusterlog.debug,
+                  "unable to update node configuration, gate closed - {}",
+                  e);
+            });
         }
         return ss::now();
     });
@@ -102,7 +110,11 @@ ss::future<> members_manager::maybe_update_current_node_configuration() {
     if (*active_configuration.value() == _self) {
         return ss::now();
     }
-
+    vlog(
+      clusterlog.debug,
+      "Redpanda broker configuration changed from {} to {}",
+      *active_configuration.value(),
+      _self);
     return dispatch_configuration_update(_self)
       .then([] {
           vlog(clusterlog.info, "Node configuration updated successfully");
@@ -394,12 +406,15 @@ ss::future<> members_manager::validate_configuration_invariants() {
 
 ss::future<result<configuration_update_reply>>
 members_manager::do_dispatch_configuration_update(
-  const model::broker& target, model::broker updated_cfg) {
+  model::broker target, model::broker updated_cfg) {
     if (target.id() == _self.id()) {
         return handle_configuration_update_request(
           configuration_update_request(std::move(updated_cfg), _self.id()));
     }
-
+    vlog(
+      clusterlog.trace,
+      "dispatching configuration update request to {}",
+      target);
     return with_client<controller_client_protocol>(
       _self.id(),
       _connection_cache,
@@ -418,44 +433,43 @@ members_manager::do_dispatch_configuration_update(
       });
 }
 
+model::broker get_update_request_target(
+  std::optional<model::node_id> current_leader,
+  const std::vector<broker_ptr>& brokers) {
+    if (current_leader) {
+        auto it = std::find_if(
+          brokers.cbegin(),
+          brokers.cend(),
+          [current_leader](const broker_ptr& b) {
+              return b->id() == current_leader;
+          });
+
+        if (it != brokers.cend()) {
+            return **it;
+        }
+    }
+    return *brokers[random_generators::get_int(brokers.size() - 1)];
+}
+
 ss::future<>
 members_manager::dispatch_configuration_update(model::broker broker) {
     // right after start current node has no information about the current
-    // leader (it may never receive one as its addres might have been changed),
-    // dispatch request to any cluster node, it will eventually forward it to
-    // current leader
-
-    return ss::do_with(
-      _members_table.local().all_brokers(),
-      [this, broker](std::vector<broker_ptr>& all_brokers) mutable {
-          return ss::repeat([this, &all_brokers, broker]() mutable {
-              // shuffle brokers
-              std::shuffle(
-                all_brokers.begin(),
-                all_brokers.end(),
-                random_generators::internal::gen);
-              // pick one
-              auto it = std::find_if(
-                std::cbegin(all_brokers),
-                std::cend(all_brokers),
-                [this](const broker_ptr& ptr) {
-                    return ptr->id() != _self.id();
-                });
-
-              // if current node is the only node in the cluster, handle locally
-              auto& target = it != std::cend(all_brokers) ? *it->get() : _self;
-
-              return do_dispatch_configuration_update(target, broker)
-                .then([](result<configuration_update_reply> r) {
-                    if (r.has_error()) {
-                        return ss::make_ready_future<ss::stop_iteration>(
-                          ss::stop_iteration::no);
-                    }
-                    return ss::make_ready_future<ss::stop_iteration>(
-                      ss::stop_iteration::yes);
-                });
-          });
-      });
+    // leader (it may never receive one as its addres might have been
+    // changed), dispatch request to any cluster node, it will eventually
+    // forward it to current leader
+    bool update_success = false;
+    while (!update_success) {
+        auto brokers = _members_table.local().all_brokers();
+        auto target = get_update_request_target(
+          _raft0->get_leader_id(), brokers);
+        auto r = co_await do_dispatch_configuration_update(target, broker);
+        if (r.has_error() || r.value().success == false) {
+            co_await ss::sleep_abortable(
+              _join_retry_jitter.base_duration(), _as.local());
+        } else {
+            update_success = true;
+        }
+    }
 }
 
 ss::future<result<configuration_update_reply>>
@@ -481,6 +495,10 @@ members_manager::handle_configuration_update_request(
     // controller
     std::optional<model::node_id> leader_id = _raft0->get_leader_id();
     if (!leader_id) {
+        vlog(
+          clusterlog.warn,
+          "Unable to handle configuration update, no leader controller",
+          req.node.id());
         return ss::make_ready_future<ret_t>(errc::no_leader_controller);
     }
     // curent node is a leader
@@ -489,6 +507,10 @@ members_manager::handle_configuration_update_request(
         return _raft0->update_group_member(*node_ptr).then(
           [node_ptr](std::error_code ec) {
               if (ec) {
+                  vlog(
+                    clusterlog.warn,
+                    "Unable to handle configuration update - {}",
+                    ec.message());
                   return ss::make_ready_future<ret_t>(ec);
               }
               return ss::make_ready_future<ret_t>(

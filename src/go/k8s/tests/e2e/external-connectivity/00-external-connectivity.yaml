@@ -1,21 +1,3 @@
-apiVersion: v1
-kind: Service
-metadata:
-  name: external-connectivity-external
-spec:
-  ports:
-    - name: admin
-      port: 9644
-      protocol: TCP
-      targetPort: 9644
-      nodePort: 30964
-    - name: kafka
-      port: 9093
-      protocol: TCP
-      targetPort: 9093
-      nodePort: 30950
-  type: NodePort
----
 apiVersion: redpanda.vectorized.io/v1alpha1
 kind: Cluster
 metadata:
@@ -24,9 +6,6 @@ spec:
   image: "vectorized/redpanda"
   version: "latest"
   replicas: 1
-  externalConnectivity:
-    enabled: true
-    subdomain: "test.subdomain.com"
   resources:
     requests:
       cpu: 100m
@@ -38,7 +17,10 @@ spec:
     rpcServer:
       port: 33145
     kafkaApi:
-      port: 9092
-    admin:
-      port: 9644
+    - port: 9092
+    - external:
+        enabled: true
+        subdomain: "test.subdomain.com"
+    adminApi:
+    - port: 9644
     developerMode: true

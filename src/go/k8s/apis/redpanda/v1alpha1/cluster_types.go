@@ -41,11 +41,6 @@ type ClusterSpec struct {
 	// If specified, Redpanda Pod node selectors. For reference please visit
 	// https://kubernetes.io/docs/concepts/scheduling-eviction/assign-pod-node
 	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
-
-	// ExternalConnectivity enables user to expose Redpanda
-	// nodes outside of a Kubernetes cluster. For more
-	// information please go to ExternalConnectivityConfig
-	ExternalConnectivity ExternalConnectivityConfig `json:"externalConnectivity,omitempty"`
 	// Storage spec for cluster
 	Storage StorageSpec `json:"storage,omitempty"`
 	// Cloud storage configuration for cluster
@@ -170,20 +165,33 @@ type ClusterList struct {
 // RedpandaConfig is the definition of the main configuration
 type RedpandaConfig struct {
 	RPCServer     SocketAddress `json:"rpcServer,omitempty"`
-	KafkaAPI      SocketAddress `json:"kafkaApi,omitempty"`
-	AdminAPI      SocketAddress `json:"admin,omitempty"`
+	KafkaAPI      []KafkaAPI    `json:"kafkaApi,omitempty"`
+	AdminAPI      []AdminAPI    `json:"adminApi,omitempty"`
 	DeveloperMode bool          `json:"developerMode,omitempty"`
-	TLS           TLSConfig     `json:"tls,omitempty"`
 	// Number of partitions in the internal group membership topic
 	GroupTopicPartitions int `json:"groupTopicPartitions,omitempty"`
 }
 
-// TLSConfig configures TLS for Redpanda APIs
-type TLSConfig struct {
-	// Configuration of TLS for Kafka API
-	KafkaAPI KafkaAPITLS `json:"kafkaApi,omitempty"`
+// AdminAPI is configuration of the redpanda Admin API
+type AdminAPI struct {
+	Port int `json:"port,omitempty"`
 	// Configuration of TLS for Admin API
-	AdminAPI AdminAPITLS `json:"adminApi,omitempty"`
+	TLS AdminAPITLS `json:"tls,omitempty"`
+	// External enables user to expose Redpanda
+	// admin API outside of a Kubernetes cluster. For more
+	// information please go to ExternalConnectivityConfig
+	External ExternalConnectivityConfig `json:"external,omitempty"`
+}
+
+// KafkaAPI listener information for Kafka API
+type KafkaAPI struct {
+	Port int `json:"port,omitempty"`
+	// External enables user to expose Redpanda
+	// nodes outside of a Kubernetes cluster. For more
+	// information please go to ExternalConnectivityConfig
+	External ExternalConnectivityConfig `json:"external,omitempty"`
+	// Configuration of TLS for Kafka API
+	TLS KafkaAPITLS `json:"tls,omitempty"`
 }
 
 // KafkaAPITLS configures TLS for redpanda Kafka API
@@ -258,4 +266,69 @@ func init() {
 // FullImageName returns image name including version
 func (r *Cluster) FullImageName() string {
 	return fmt.Sprintf("%s:%s", r.Spec.Image, r.Spec.Version)
+}
+
+// ExternalListener returns external listener if found in configuration. Returns
+// nil if no external listener is configured. Right now we support only one
+// external listener which is enforced by webhook
+func (r *Cluster) ExternalListener() *KafkaAPI {
+	for _, el := range r.Spec.Configuration.KafkaAPI {
+		if el.External.Enabled {
+			return &el
+		}
+	}
+	return nil
+}
+
+// InternalListener returns internal listener.
+func (r *Cluster) InternalListener() *KafkaAPI {
+	for _, el := range r.Spec.Configuration.KafkaAPI {
+		if !el.External.Enabled {
+			return &el
+		}
+	}
+	return nil
+}
+
+// KafkaTLSListener returns kafka listener that has tls enabled. Returns nil if
+// no tls is configured. Until v1alpha1 API is deprecated, we support only
+// single listener with TLS
+func (r *Cluster) KafkaTLSListener() *KafkaAPI {
+	for i, el := range r.Spec.Configuration.KafkaAPI {
+		if el.TLS.Enabled {
+			return &r.Spec.Configuration.KafkaAPI[i]
+		}
+	}
+	return nil
+}
+
+// AdminAPIInternal returns internal admin listener
+func (r *Cluster) AdminAPIInternal() *AdminAPI {
+	for _, el := range r.Spec.Configuration.AdminAPI {
+		if !el.External.Enabled {
+			return &el
+		}
+	}
+	return nil
+}
+
+// AdminAPIExternal returns external admin listener
+func (r *Cluster) AdminAPIExternal() *AdminAPI {
+	for _, el := range r.Spec.Configuration.AdminAPI {
+		if el.External.Enabled {
+			return &el
+		}
+	}
+	return nil
+}
+
+// AdminAPITLS returns admin api listener that has tls enabled or nil if there's
+// none
+func (r *Cluster) AdminAPITLS() *AdminAPI {
+	for i, el := range r.Spec.Configuration.AdminAPI {
+		if el.TLS.Enabled {
+			return &r.Spec.Configuration.AdminAPI[i]
+		}
+	}
+	return nil
 }

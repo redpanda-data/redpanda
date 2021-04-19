@@ -84,6 +84,7 @@ func TestEnsure(t *testing.T) {
 			types.NamespacedName{},
 			types.NamespacedName{},
 			types.NamespacedName{},
+			types.NamespacedName{},
 			"",
 			"latest",
 			ctrl.Log.WithName("test"))
@@ -181,7 +182,8 @@ func pandaCluster() *redpandav1alpha1.Cluster {
 			Version:  "latest",
 			Replicas: pointer.Int32Ptr(replicas),
 			Configuration: redpandav1alpha1.RedpandaConfig{
-				KafkaAPI: redpandav1alpha1.SocketAddress{Port: 123},
+				AdminAPI: []redpandav1alpha1.AdminAPI{{Port: 345}},
+				KafkaAPI: []redpandav1alpha1.KafkaAPI{{Port: 123}},
 			},
 			Resources: corev1.ResourceRequirements{
 				Limits:   resources,

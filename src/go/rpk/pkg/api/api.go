@@ -95,7 +95,11 @@ func SendMetrics(p MetricsPayload, conf config.Config) error {
 }
 
 func SendEnvironment(
-	fs afero.Fs, env EnvironmentPayload, conf config.Config, confJSON string,
+	fs afero.Fs,
+	env EnvironmentPayload,
+	conf config.Config,
+	confJSON string,
+	skipCloudCheck bool,
 ) error {
 	confMap := map[string]interface{}{}
 	err := json.Unmarshal([]byte(confJSON), &confMap)
@@ -104,16 +108,18 @@ func SendEnvironment(
 	}
 	cloudVendor := "N/A"
 	vmType := "N/A"
-	v, err := cloud.AvailableVendor()
-	if err != nil {
-		log.Debug(err)
-	} else {
-		cloudVendor = v.Name()
-		vt, err := v.VmType()
+	if !skipCloudCheck {
+		v, err := cloud.AvailableVendor()
 		if err != nil {
-			log.Debug("Error retrieving instance type: ", err)
+			log.Debug(err)
 		} else {
-			vmType = vt
+			cloudVendor = v.Name()
+			vt, err := v.VmType()
+			if err != nil {
+				log.Debug("Error retrieving instance type: ", err)
+			} else {
+				vmType = vt
+			}
 		}
 	}
 

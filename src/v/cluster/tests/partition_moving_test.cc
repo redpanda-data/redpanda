@@ -382,9 +382,8 @@ public:
 
         while (cnt < effective_rf) {
             // either use current shard_id or shard 0
-            ss::shard_id shard = current_placement.contains(*it)
-                                   ? current_placement.find(*it)->second
-                                   : 0;
+            ss::shard_id shard = random_generators::get_int<ss::shard_id>(
+              ss::smp::count - 1);
 
             replicas.push_back(
               model::broker_shard{.node_id = *it, .shard = shard});
@@ -508,8 +507,9 @@ replica(const std::vector<int>& replicas) {
     std::vector<model::broker_shard> bs;
     bs.reserve(replicas.size());
     for (int r : replicas) {
-        bs.push_back(
-          model::broker_shard{.node_id = model::node_id(r), .shard = 0});
+        bs.push_back(model::broker_shard{
+          .node_id = model::node_id(r),
+          .shard = random_generators::get_int(ss::smp::count - 1)});
     }
 
     return bs;
@@ -549,6 +549,38 @@ FIXTURE_TEST(test_moving_back_and_forth, partition_assignment_test_fixture) {
         // migrate between nodes 2 & 3
         history.push_back({model::broker_shard{
           .node_id = model::node_id(i % 2) + 2, .shard = 0}});
+    }
+
+    execute_and_validate_history_updates(ntp, history);
+}
+
+FIXTURE_TEST(test_moving_to_the_same_node, partition_assignment_test_fixture) {
+    model::ntp ntp(test_ns, model::topic("t_1"), model::partition_id(0));
+    create_topic(test_topics_configuration(
+      model::topic_namespace(ntp.ns, ntp.tp.topic), 1));
+
+    size_t history_size = 10;
+    history_t history;
+    history.reserve(history_size);
+    for (int i = 0; i < history_size; ++i) {
+        history.push_back(
+          {model::broker_shard{.node_id = model::node_id(0), .shard = 0}});
+    }
+
+    execute_and_validate_history_updates(ntp, history);
+}
+
+FIXTURE_TEST(test_moving_cross_cores, partition_assignment_test_fixture) {
+    model::ntp ntp(test_ns, model::topic("t_1"), model::partition_id(0));
+    create_topic(test_topics_configuration(
+      model::topic_namespace(ntp.ns, ntp.tp.topic), 1));
+
+    size_t history_size = 10;
+    history_t history;
+    history.reserve(history_size);
+    for (int i = 0; i < history_size; ++i) {
+        history.push_back({model::broker_shard{
+          .node_id = model::node_id(0), .shard = i % ss::smp::count}});
     }
 
     execute_and_validate_history_updates(ntp, history);
@@ -790,7 +822,11 @@ FIXTURE_TEST(
 
                 print_configuration(ntp).get0();
                 logger.info(
-                  "update no: {}. finished  [{} => {}]", cnt++, current, r);
+                  "[{}] update no: {}. finished  [{} => {}]",
+                  ntp,
+                  cnt++,
+                  current,
+                  r);
             }
         });
     };

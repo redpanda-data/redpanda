@@ -57,6 +57,8 @@ static member_ptr get_group_member(
       kafka::member_id(id),
       kafka::group_id("g"),
       kafka::group_instance_id("i"),
+      kafka::client_id("client-id"),
+      kafka::client_host("client-host"),
       std::chrono::seconds(1),
       std::chrono::milliseconds(2),
       kafka::protocol_type("p"),
@@ -150,6 +152,8 @@ SEASTAR_THREAD_TEST_CASE(rebalance_timeout) {
       kafka::member_id("m"),
       kafka::group_id("g"),
       kafka::group_instance_id("i"),
+      kafka::client_id("client-id"),
+      kafka::client_host("client-host"),
       std::chrono::seconds(1),
       std::chrono::milliseconds(2),
       kafka::protocol_type("p"),
@@ -159,6 +163,8 @@ SEASTAR_THREAD_TEST_CASE(rebalance_timeout) {
       kafka::member_id("n"),
       kafka::group_id("g"),
       kafka::group_instance_id("i"),
+      kafka::client_id("client-id"),
+      kafka::client_host("client-host"),
       std::chrono::seconds(1),
       std::chrono::seconds(3),
       kafka::protocol_type("p"),
@@ -361,6 +367,8 @@ SEASTAR_THREAD_TEST_CASE(supports_protocols) {
       kafka::member_id("m"),
       kafka::group_id("g"),
       kafka::group_instance_id("i"),
+      kafka::client_id("client-id"),
+      kafka::client_host("client-host"),
       std::chrono::seconds(1),
       std::chrono::seconds(3),
       kafka::protocol_type("p"),
@@ -389,6 +397,8 @@ SEASTAR_THREAD_TEST_CASE(supports_protocols) {
       kafka::member_id("n"),
       kafka::group_id("g"),
       kafka::group_instance_id("i"),
+      kafka::client_id("client-id"),
+      kafka::client_host("client-host"),
       std::chrono::seconds(1),
       std::chrono::seconds(3),
       kafka::protocol_type("p"),
@@ -431,14 +441,14 @@ SEASTAR_THREAD_TEST_CASE(leader_rejoined) {
 SEASTAR_THREAD_TEST_CASE(generate_member_id) {
     join_group_request r;
 
-    r.client_id = ss::sstring("dog");
+    r.client_id = kafka::client_id(ss::sstring("dog"));
     r.data.group_instance_id = std::nullopt;
     auto m = group::generate_member_id(r);
     auto [id, uuid] = split_member_id(m);
     BOOST_TEST(id == "dog");
     BOOST_TEST(is_uuid(uuid));
 
-    r.client_id = ss::sstring("dog");
+    r.client_id = kafka::client_id(ss::sstring("dog"));
     r.data.group_instance_id = kafka::group_instance_id("cat");
     m = group::generate_member_id(r);
     std::tie(id, uuid) = split_member_id(m);

@@ -99,11 +99,10 @@ public:
     ss::future<kafka::metadata_response>
     get_topic_metadata(const model::topic& tp) {
         return do_with_client([tp](kafka::client::transport& client) {
-            std::vector<model::topic> topics;
-            topics.push_back(tp);
+            std::vector<kafka::metadata_request_topic> topics;
+            topics.push_back(kafka::metadata_request_topic{tp});
             kafka::metadata_request md_req{
-              .topics = topics,
-              .allow_auto_topic_creation = false,
+              .data = {.topics = topics, .allow_auto_topic_creation = false},
               .list_all_topics = false};
             return client.dispatch(md_req);
         });
@@ -114,10 +113,10 @@ public:
         return tests::cooperative_spin_wait_with_timeout(3s, [this, tp, ec] {
             return get_topic_metadata(tp).then(
               [ec](kafka::metadata_response md) {
-                  if (md.topics.empty()) {
+                  if (md.data.topics.empty()) {
                       return false;
                   }
-                  return md.topics.begin()->err_code == ec;
+                  return md.data.topics.begin()->error_code == ec;
               });
         });
     }
@@ -153,10 +152,10 @@ FIXTURE_TEST(test_topic_recreation, recreate_test_fixture) {
     tests::cooperative_spin_wait_with_timeout(3s, [this, test_tp] {
         return ss::async([this, test_tp] {
             auto md = get_topic_metadata(test_tp).get0();
-            if (md.topics.size() != 1) {
+            if (md.data.topics.size() != 1) {
                 return false;
             }
-            auto& partitions = md.topics.begin()->partitions;
+            auto& partitions = md.data.topics.begin()->partitions;
             if (partitions.size() != 6) {
                 return false;
             }
@@ -165,7 +164,7 @@ FIXTURE_TEST(test_topic_recreation, recreate_test_fixture) {
               partitions.begin(),
               partitions.end(),
               [](kafka::metadata_response::partition& p) {
-                  return p.leader == model::node_id{1};
+                  return p.leader_id == model::node_id{1};
               });
         });
     }).get0();
@@ -207,7 +206,7 @@ FIXTURE_TEST(test_topic_recreation_recovery, recreate_test_fixture) {
              [test_tp, this] {
                  return get_topic_metadata(test_tp).then(
                    [](kafka::metadata_response md) {
-                       auto& partitions = md.topics.begin()->partitions;
+                       auto& partitions = md.data.topics.begin()->partitions;
                        if (partitions.size() != 3) {
                            return false;
                        }
@@ -215,7 +214,7 @@ FIXTURE_TEST(test_topic_recreation_recovery, recreate_test_fixture) {
                          partitions.begin(),
                          partitions.end(),
                          [](kafka::metadata_response::partition& p) {
-                             return p.leader == model::node_id{1};
+                             return p.leader_id == model::node_id{1};
                          });
                    });
              })

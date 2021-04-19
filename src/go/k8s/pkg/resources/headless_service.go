@@ -69,8 +69,16 @@ func (r *HeadlessServiceResource) Ensure(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("unable to construct object: %w", err)
 	}
-	_, err = CreateIfNotExists(ctx, r, obj, r.logger)
-	return err
+	created, err := CreateIfNotExists(ctx, r, obj, r.logger)
+	if err != nil || created {
+		return err
+	}
+	var svc corev1.Service
+	err = r.Get(ctx, r.Key(), &svc)
+	if err != nil {
+		return fmt.Errorf("error while fetching Service resource: %w", err)
+	}
+	return Update(ctx, &svc, obj, r.Client, r.logger)
 }
 
 // obj returns resource managed client.Object
@@ -137,12 +145,13 @@ func (r *HeadlessServiceResource) HeadlessServiceFQDN() string {
 }
 
 func (r *HeadlessServiceResource) getAnnotation() map[string]string {
-	if !r.pandaCluster.Spec.ExternalConnectivity.Enabled && r.pandaCluster.Spec.ExternalConnectivity.Subdomain == "" {
+	externalListener := r.pandaCluster.ExternalListener()
+	if externalListener == nil || externalListener.External.Subdomain == "" {
 		return nil
 	}
 
 	return map[string]string{
-		externalDNSHostname: r.pandaCluster.Spec.ExternalConnectivity.Subdomain,
+		externalDNSHostname: externalListener.External.Subdomain,
 		// This annotation comes from the not merged feature
 		// https://github.com/kubernetes-sigs/external-dns/pull/1391
 		externalDNSUseHostIP: "true",

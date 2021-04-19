@@ -161,7 +161,7 @@ var errInternalPortMissing = errors.New("port configration is missing internal p
 
 func getInternalKafkaAPIPort(cfg *config.Config) (int, error) {
 	for _, l := range cfg.Redpanda.KafkaApi {
-		if l.Name == "Internal" {
+		if l.Name == "kafka" {
 			return l.Port, nil
 		}
 	}
@@ -177,7 +177,7 @@ func registerAdvertisedKafkaAPI(
 				Address: c.hostName + "." + c.svcFQDN,
 				Port:    kafkaAPIPort,
 			},
-			Name: "Internal",
+			Name: "kafka",
 		},
 	}
 
@@ -191,7 +191,7 @@ func registerAdvertisedKafkaAPI(
 				Address: fmt.Sprintf("%d.%s", index, c.subdomain),
 				Port:    c.hostPort,
 			},
-			Name: "External",
+			Name: "kafka-external",
 		})
 		return nil
 	}
@@ -216,7 +216,7 @@ func registerAdvertisedKafkaAPI(
 			Address: getExternalIP(node),
 			Port:    c.hostPort,
 		},
-		Name: "External",
+		Name: "kafka-external",
 	})
 	return nil
 }

@@ -67,7 +67,7 @@ struct partition_comp {
     bool operator()(
       const metadata_response::partition& lhs,
       const metadata_response::partition& rhs) const {
-        return lhs.index < rhs.index;
+        return lhs.partition_index < rhs.partition_index;
     }
 };
 
@@ -113,7 +113,7 @@ ss::future<> consumer::join() {
     auto req_builder = [me{shared_from_this()}]() {
         const auto& cfg = me->_config;
         join_group_request req{};
-        req.client_id = "test_client";
+        req.client_id = kafka::client_id("test_client");
         req.data = {
           .group_id = me->_group_id,
           .session_timeout_ms = cfg.consumer_session_timeout(),
@@ -215,12 +215,15 @@ consumer::get_subscribed_topic_metadata() {
       .then([this](metadata_response res) {
           std::vector<sync_group_request_assignment> assignments;
 
-          std::sort(res.topics.begin(), res.topics.end(), detail::topic_comp{});
+          std::sort(
+            res.data.topics.begin(),
+            res.data.topics.end(),
+            detail::topic_comp{});
           std::vector<metadata_response::topic> topics;
           topics.reserve(_subscribed_topics.size());
           std::set_intersection(
-            res.topics.begin(),
-            res.topics.end(),
+            res.data.topics.begin(),
+            res.data.topics.end(),
             _subscribed_topics.begin(),
             _subscribed_topics.end(),
             std::back_inserter(topics),

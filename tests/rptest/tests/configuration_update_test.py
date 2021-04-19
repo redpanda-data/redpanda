@@ -9,6 +9,8 @@
 
 from ducktape.mark.resource import cluster
 from ducktape.utils.util import wait_until
+from rptest.clients.kafka_cli_tools import KafkaCliTools
+from rptest.clients.python_librdkafka import PythonLibrdkafka
 
 from rptest.tests.redpanda_test import RedpandaTest
 
@@ -66,3 +68,55 @@ class ConfigurationUpdateTest(RedpandaTest):
                    timeout_sec=60,
                    backoff_sec=2,
                    err_msg="Controller logs are not the same")
+
+    """
+    Should allow to update port of advertised kafka API on all of the nodes at once
+    """
+
+    @cluster(num_nodes=3)
+    def test_update_advertised_kafka_api_on_all_nodes(self):
+
+        node_1 = self.redpanda.get_node(1)
+        node_2 = self.redpanda.get_node(2)
+        node_3 = self.redpanda.get_node(3)
+
+        # stop all nodes
+        self.redpanda.stop_node(node_1)
+        self.redpanda.stop_node(node_2)
+        self.redpanda.stop_node(node_3)
+
+        def make_new_address(node, port):
+            return dict(address=node.name, port=port)
+
+        # change ports
+        altered_cfg_1 = dict(kafka_api=make_new_address(node_1, 10091),
+                             advertised_kafka_api=make_new_address(
+                                 node_1, 10091))
+        altered_cfg_2 = dict(kafka_api=make_new_address(node_2, 10092),
+                             advertised_kafka_api=make_new_address(
+                                 node_2, 10092))
+        altered_cfg_3 = dict(kafka_api=make_new_address(node_3, 10093),
+                             advertised_kafka_api=make_new_address(
+                                 node_3, 10093))
+
+        # start all
+        self.redpanda.start_node(node_1, override_cfg_params=altered_cfg_1)
+        self.redpanda.start_node(node_2, override_cfg_params=altered_cfg_2)
+        self.redpanda.start_node(node_3, override_cfg_params=altered_cfg_3)
+
+        def metadata_updated():
+            client = PythonLibrdkafka(self.redpanda)
+            brokers = client.brokers()
+            self.logger.debug(f"brokers metadata: {brokers}")
+            if brokers[1].port != 10091:
+                return False
+            if brokers[2].port != 10092:
+                return False
+            if brokers[3].port != 10093:
+                return False
+            return True
+
+        wait_until(lambda: metadata_updated(),
+                   timeout_sec=60,
+                   backoff_sec=2,
+                   err_msg="Broker metadata aren't updated")

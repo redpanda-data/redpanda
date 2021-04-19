@@ -33,7 +33,7 @@ topic_cache::apply(std::vector<metadata_response::topic>&& topics) {
         cache_t.partitions.reserve(t.partitions.size());
         for (auto const& p : t.partitions) {
             cache_t.partitions.emplace(
-              p.index, partition_data{.leader = p.leader});
+              p.partition_index, partition_data{.leader = p.leader_id});
         }
         cache_t.partitions.rehash(0);
     }

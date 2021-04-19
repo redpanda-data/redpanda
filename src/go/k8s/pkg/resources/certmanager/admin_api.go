@@ -23,9 +23,14 @@ const (
 	AdminAPINodeCert = "admin-api-node"
 )
 
-// AdminAPINodeCert returns the namespaced name for the Admin API certificate used by node
+// AdminAPINodeCert returns the namespaced name for the Admin API certificate used by nodes
 func (r *PkiReconciler) AdminAPINodeCert() types.NamespacedName {
 	return types.NamespacedName{Name: r.pandaCluster.Name + "-" + AdminAPINodeCert, Namespace: r.pandaCluster.Namespace}
+}
+
+// AdminAPIClientCert returns the namespaced name for the Admin API certificate used by clients
+func (r *PkiReconciler) AdminAPIClientCert() types.NamespacedName {
+	return types.NamespacedName{Name: r.pandaCluster.Name + "-" + AdminAPIClientCert, Namespace: r.pandaCluster.Namespace}
 }
 
 func (r *PkiReconciler) prepareAdminAPI(
@@ -38,15 +43,15 @@ func (r *PkiReconciler) prepareAdminAPI(
 	certsKey := types.NamespacedName{Name: string(cn), Namespace: r.pandaCluster.Namespace}
 
 	dnsName := r.internalFQDN
-	externConn := r.pandaCluster.Spec.ExternalConnectivity
-	if externConn.Enabled && externConn.Subdomain != "" {
-		dnsName = externConn.Subdomain
+	externalListener := r.pandaCluster.ExternalListener()
+	if externalListener != nil && externalListener.External.Subdomain != "" {
+		dnsName = externalListener.External.Subdomain
 	}
 
 	nodeCert := NewNodeCertificate(r.Client, r.scheme, r.pandaCluster, certsKey, issuerRef, dnsName, cn, false, r.logger)
 	toApply = append(toApply, nodeCert)
 
-	if r.pandaCluster.Spec.Configuration.TLS.AdminAPI.RequireClientAuth {
+	if r.pandaCluster.AdminAPITLS() != nil && r.pandaCluster.AdminAPITLS().TLS.RequireClientAuth {
 		// Certificate for calling the Admin API on any broker
 		cn := NewCommonName(r.pandaCluster.Name, AdminAPIClientCert)
 		clientCertsKey := types.NamespacedName{Name: string(cn), Namespace: r.pandaCluster.Namespace}

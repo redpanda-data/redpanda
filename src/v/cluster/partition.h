@@ -144,6 +144,10 @@ public:
     size_t size_bytes() const { return _raft->log().size_bytes(); }
     ss::future<> update_configuration(topic_properties);
 
+    const storage::ntp_config& get_ntp_config() const {
+        return _raft->log().config();
+    }
+
 private:
     friend partition_manager;
     friend partition_probe;

@@ -5,6 +5,5 @@ metadata:
 spec:
   configuration:
     kafkaApi:
-      - port: 9092
-        tls:
-          enabled: true
+    - port: 9093
+      name: kafka

@@ -200,15 +200,11 @@ FIXTURE_TEST(replace_whole_group, raft_test_fixture) {
     gr.enable_all();
     info("replicating some batches");
     auto res = replicate_random_batches(gr, 5).get0();
-    // all nodes are replaced
+    // all nodes are replaced with new node
     gr.create_new_node(model::node_id(5));
-    gr.create_new_node(model::node_id(6));
-    gr.create_new_node(model::node_id(7));
     std::vector<model::broker> new_members;
-    new_members.reserve(3);
+    new_members.reserve(1);
     new_members.push_back(gr.get_member(model::node_id(5)).broker);
-    new_members.push_back(gr.get_member(model::node_id(6)).broker);
-    new_members.push_back(gr.get_member(model::node_id(7)).broker);
     bool success = false;
     info("replacing configuration");
     res = retry_with_leader(gr, 5, 5s, [new_members](raft_node& leader) {
@@ -270,6 +266,6 @@ FIXTURE_TEST(replace_whole_group, raft_test_fixture) {
     auto new_leader_id = gr.get_leader_id();
     if (new_leader_id) {
         auto& new_leader = gr.get_member(*new_leader_id);
-        BOOST_REQUIRE_EQUAL(new_leader.consensus->config().brokers().size(), 3);
+        BOOST_REQUIRE_EQUAL(new_leader.consensus->config().brokers().size(), 1);
     }
 }

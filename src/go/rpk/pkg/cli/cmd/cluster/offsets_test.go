@@ -64,8 +64,8 @@ func TestOffsetsCmd(t *testing.T) {
 		{
 			name: "create should output info about the created topic (custom values)",
 			cmd:  NewOffsetsCommand,
-			expectedOutput: `  GROUP    TOPIC    PARTITION  LAG  LAG %     COMMITTED  LATEST  CONSUMER  
-  group-0  topic-0  0          -50  0.000000  100        50      -         
+			expectedOutput: `  GROUP    TOPIC    PARTITION  LAG  LAG %     COMMITTED  LATEST  CONSUMER  CLIENT-HOST  CLIENT-ID  
+  group-0  topic-0  0          -50  0.000000  100        50      -                                 
 `,
 		},
 	}

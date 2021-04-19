@@ -46,15 +46,18 @@ FIXTURE_TEST(test_metadata_request, router_test_fixture) {
 
     /// Make a metadata request specifically for the materialized topic
     kafka::metadata_request req{
-      .topics = {{output_topic}}, .list_all_topics = false};
+      .data = {.topics = {{{output_topic}}}},
+      .list_all_topics = false,
+    };
     auto client = make_kafka_client().get0();
     client.connect().get();
     auto resp = client.dispatch(req, kafka::api_version(4)).get0();
     client.stop().get();
-    BOOST_REQUIRE_EQUAL(resp.topics.size(), 1);
-    BOOST_REQUIRE_EQUAL(resp.topics[0].err_code, kafka::error_code::none);
-    BOOST_REQUIRE_EQUAL(resp.topics[0].name, output_topic);
-    BOOST_REQUIRE_EQUAL(resp.topics[0].partitions.size(), 1);
+    BOOST_REQUIRE_EQUAL(resp.data.topics.size(), 1);
+    BOOST_REQUIRE_EQUAL(
+      resp.data.topics[0].error_code, kafka::error_code::none);
+    BOOST_REQUIRE_EQUAL(resp.data.topics[0].name, output_topic);
+    BOOST_REQUIRE_EQUAL(resp.data.topics[0].partitions.size(), 1);
 }
 
 FIXTURE_TEST(test_read_from_materialized_topic, router_test_fixture) {

@@ -105,8 +105,10 @@ func NewStartCommand(
 		nodeID          int
 		seeds           []string
 		kafkaAddr       []string
+		proxyAddr       []string
 		rpcAddr         string
 		advertisedKafka []string
+		advertisedProxy []string
 		advertisedRPC   string
 		installDirFlag  string
 		timeout         time.Duration
@@ -145,7 +147,7 @@ func NewStartCommand(
 			}
 			seedServers, err := parseSeeds(seeds)
 			if err != nil {
-				sendEnv(fs, mgr, env, conf, err)
+				sendEnv(fs, mgr, env, conf, !prestartCfg.checkEnabled, err)
 				return err
 			}
 			if len(seedServers) != 0 {
@@ -164,11 +166,33 @@ func NewStartCommand(
 				config.DefaultKafkaPort,
 			)
 			if err != nil {
-				sendEnv(fs, mgr, env, conf, err)
+				sendEnv(fs, mgr, env, conf, !prestartCfg.checkEnabled, err)
 				return err
 			}
 			if kafkaApi != nil && len(kafkaApi) > 0 {
 				conf.Redpanda.KafkaApi = kafkaApi
+			}
+
+			proxyAddr = stringSliceOr(
+				proxyAddr,
+				strings.Split(
+					os.Getenv("REDPANDA_PANDAPROXY_ADDRESS"),
+					",",
+				),
+			)
+			proxyApi, err := parseNamedAddresses(
+				proxyAddr,
+				config.DefaultProxyPort,
+			)
+			if err != nil {
+				sendEnv(fs, mgr, env, conf, !prestartCfg.checkEnabled, err)
+				return err
+			}
+			if proxyApi != nil && len(proxyApi) > 0 {
+				if conf.Pandaproxy == nil {
+					conf.Pandaproxy = config.Default().Pandaproxy
+				}
+				conf.Pandaproxy.PandaproxyAPI = proxyApi
 			}
 
 			rpcAddr = stringOr(
@@ -180,7 +204,7 @@ func NewStartCommand(
 				config.Default().Redpanda.RPCServer.Port,
 			)
 			if err != nil {
-				sendEnv(fs, mgr, env, conf, err)
+				sendEnv(fs, mgr, env, conf, !prestartCfg.checkEnabled, err)
 				return err
 			}
 			if rpcServer != nil {
@@ -199,12 +223,35 @@ func NewStartCommand(
 				config.DefaultKafkaPort,
 			)
 			if err != nil {
-				sendEnv(fs, mgr, env, conf, err)
+				sendEnv(fs, mgr, env, conf, !prestartCfg.checkEnabled, err)
 				return err
 			}
 			if advKafkaApi != nil {
 				conf.Redpanda.AdvertisedKafkaApi = advKafkaApi
 			}
+
+			advertisedProxy = stringSliceOr(
+				advertisedProxy,
+				strings.Split(
+					os.Getenv("REDPANDA_ADVERTISE_PANDAPROXY_ADDRESS"),
+					",",
+				),
+			)
+			advProxyApi, err := parseNamedAddresses(
+				advertisedProxy,
+				config.DefaultProxyPort,
+			)
+			if err != nil {
+				sendEnv(fs, mgr, env, conf, !prestartCfg.checkEnabled, err)
+				return err
+			}
+			if advProxyApi != nil {
+				if conf.Pandaproxy == nil {
+					conf.Pandaproxy = config.Default().Pandaproxy
+				}
+				conf.Pandaproxy.AdvertisedPandaproxyAPI = advProxyApi
+			}
+
 			advertisedRPC = stringOr(
 				advertisedRPC,
 				os.Getenv("REDPANDA_ADVERTISE_RPC_ADDRESS"),
@@ -214,7 +261,7 @@ func NewStartCommand(
 				config.Default().Redpanda.RPCServer.Port,
 			)
 			if err != nil {
-				sendEnv(fs, mgr, env, conf, err)
+				sendEnv(fs, mgr, env, conf, !prestartCfg.checkEnabled, err)
 				return err
 			}
 			if advRPCApi != nil {
@@ -222,7 +269,7 @@ func NewStartCommand(
 			}
 			installDirectory, err := cli.GetOrFindInstallDir(fs, installDirFlag)
 			if err != nil {
-				sendEnv(fs, mgr, env, conf, err)
+				sendEnv(fs, mgr, env, conf, !prestartCfg.checkEnabled, err)
 				return err
 			}
 			rpArgs, err := buildRedpandaFlags(
@@ -230,9 +277,10 @@ func NewStartCommand(
 				conf,
 				sFlags,
 				ccmd.Flags(),
+				!prestartCfg.checkEnabled,
 			)
 			if err != nil {
-				sendEnv(fs, mgr, env, conf, err)
+				sendEnv(fs, mgr, env, conf, !prestartCfg.checkEnabled, err)
 				return err
 			}
 			checkPayloads, tunerPayloads, err := prestart(
@@ -245,17 +293,17 @@ func NewStartCommand(
 			env.Checks = checkPayloads
 			env.Tuners = tunerPayloads
 			if err != nil {
-				sendEnv(fs, mgr, env, conf, err)
+				sendEnv(fs, mgr, env, conf, !prestartCfg.checkEnabled, err)
 				return err
 			}
 
 			err = mgr.Write(conf)
 			if err != nil {
-				sendEnv(fs, mgr, env, conf, err)
+				sendEnv(fs, mgr, env, conf, !prestartCfg.checkEnabled, err)
 				return err
 			}
 
-			sendEnv(fs, mgr, env, conf, nil)
+			sendEnv(fs, mgr, env, conf, !prestartCfg.checkEnabled, nil)
 			rpArgs.ExtraArgs = args
 			log.Info(common.FeedbackMsg)
 			log.Info("Starting redpanda...")
@@ -288,7 +336,13 @@ func NewStartCommand(
 		&kafkaAddr,
 		"kafka-addr",
 		[]string{},
-		"The list of Kafka listener addresses to bind to (<host>:<port>)",
+		"A comma-separated list of Kafka listener addresses to bind to (<name>://<host>:<port>)",
+	)
+	command.Flags().StringSliceVar(
+		&proxyAddr,
+		"pandaproxy-addr",
+		[]string{},
+		"A comma-separated list of Pandaproxy listener addresses to bind to (<name>://<host>:<port>)",
 	)
 	command.Flags().StringVar(
 		&rpcAddr,
@@ -300,7 +354,13 @@ func NewStartCommand(
 		&advertisedKafka,
 		"advertise-kafka-addr",
 		[]string{},
-		"The list of Kafka addresses to advertise (<host>:<port>)",
+		"A comma-separated list of Kafka addresses to advertise (<name>://<host>:<port>)",
+	)
+	command.Flags().StringSliceVar(
+		&advertisedProxy,
+		"advertise-pandaproxy-addr",
+		[]string{},
+		"A comma-separated list of Pandaproxy addresses to advertise (<name>://<host>:<port>)",
 	)
 	command.Flags().StringVar(
 		&advertisedRPC,
@@ -416,7 +476,11 @@ func prestart(
 }
 
 func buildRedpandaFlags(
-	fs afero.Fs, conf *config.Config, sFlags seastarFlags, flags *pflag.FlagSet,
+	fs afero.Fs,
+	conf *config.Config,
+	sFlags seastarFlags,
+	flags *pflag.FlagSet,
+	skipChecks bool,
 ) (*rp.RedpandaArgs, error) {
 	wellKnownIOSet := conf.Rpk.WellKnownIo != ""
 	ioPropsSet := flags.Changed(ioPropertiesFileFlag) || flags.Changed(ioPropertiesFlag)
@@ -439,15 +503,15 @@ func buildRedpandaFlags(
 		}
 		// Otherwise, try to deduce the IO props.
 		if sFlags.ioPropertiesFile == "" {
-			ioProps, err := resolveWellKnownIo(conf)
-			if err == nil {
+			ioProps, err := resolveWellKnownIo(conf, skipChecks)
+			if err != nil {
+				log.Warn(err)
+			} else if ioProps != nil {
 				yaml, err := iotune.ToYaml(*ioProps)
 				if err != nil {
 					return nil, err
 				}
 				sFlags.ioProperties = fmt.Sprintf("'%s'", yaml)
-			} else {
-				log.Warn(err)
 			}
 		}
 	}
@@ -516,7 +580,9 @@ func mergeFlags(
 	return current
 }
 
-func resolveWellKnownIo(conf *config.Config) (*iotune.IoProperties, error) {
+func resolveWellKnownIo(
+	conf *config.Config, skipChecks bool,
+) (*iotune.IoProperties, error) {
 	var ioProps *iotune.IoProperties
 	if conf.Rpk.WellKnownIo != "" {
 		wellKnownIoTokens := strings.Split(conf.Rpk.WellKnownIo, ":")
@@ -537,6 +603,10 @@ func resolveWellKnownIo(conf *config.Config) (*iotune.IoProperties, error) {
 			return nil, err
 		}
 		return ioProps, nil
+	}
+	// Skip detecting the cloud vendor if skipChecks is true
+	if skipChecks {
+		return nil, nil
 	}
 	log.Info("Detecting the current cloud vendor and VM")
 	vendor, err := cloud.AvailableVendor()
@@ -808,6 +878,7 @@ func sendEnv(
 	mgr config.Manager,
 	env api.EnvironmentPayload,
 	conf *config.Config,
+	skipChecks bool,
 	err error,
 ) {
 	if err != nil {
@@ -832,7 +903,7 @@ func sendEnv(
 		}
 		confJSON = string(confBytes)
 	}
-	err = api.SendEnvironment(fs, env, *conf, confJSON)
+	err = api.SendEnvironment(fs, env, *conf, confJSON, skipChecks)
 	if err != nil {
 		log.Debugf("couldn't send environment data: %v", err)
 	}

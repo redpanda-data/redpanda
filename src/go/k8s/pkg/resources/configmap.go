@@ -40,9 +40,6 @@ const (
 
 	oneMB          = 1024 * 1024
 	logSegmentSize = 512 * oneMB
-
-	internal = "Internal"
-	external = "External"
 )
 
 var errKeyDoesNotExistInSecretData = errors.New("cannot find key in secret data")
@@ -131,7 +128,7 @@ func (r *ConfigMapResource) obj(ctx context.Context) (k8sclient.Object, error) {
 	return cm, nil
 }
 
-// nolint:funlen // it's still ok to fill all config fields in one function
+// nolint:funlen // let's keep the configuration in one function for now and refactor later
 func (r *ConfigMapResource) createConfiguration(
 	ctx context.Context,
 ) (*config.Config, error) {
@@ -140,23 +137,23 @@ func (r *ConfigMapResource) createConfiguration(
 	c := r.pandaCluster.Spec.Configuration
 	cr := &cfgRpk.Redpanda
 
-	cr.KafkaApi = []config.NamedSocketAddress{
-		{
-			SocketAddress: config.SocketAddress{
-				Address: "0.0.0.0",
-				Port:    c.KafkaAPI.Port,
-			},
-			Name: "Internal",
+	internalListener := r.pandaCluster.InternalListener()
+	cr.KafkaApi = []config.NamedSocketAddress{} // we don't want to inherit default kafka port
+	cr.KafkaApi = append(cr.KafkaApi, config.NamedSocketAddress{
+		SocketAddress: config.SocketAddress{
+			Address: "0.0.0.0",
+			Port:    internalListener.Port,
 		},
-	}
+		Name: InternalListenerName,
+	})
 
-	if r.pandaCluster.Spec.ExternalConnectivity.Enabled {
+	if r.pandaCluster.ExternalListener() != nil {
 		cr.KafkaApi = append(cr.KafkaApi, config.NamedSocketAddress{
 			SocketAddress: config.SocketAddress{
 				Address: "0.0.0.0",
-				Port:    calculateExternalPort(c.KafkaAPI.Port),
+				Port:    calculateExternalPort(internalListener.Port),
 			},
-			Name: "External",
+			Name: ExternalListenerName,
 		})
 	}
 
@@ -166,55 +163,58 @@ func (r *ConfigMapResource) createConfiguration(
 		Port:    clusterCRPortOrRPKDefault(c.RPCServer.Port, cr.RPCServer.Port),
 	}
 
-	cr.AdminApi[0].Port = clusterCRPortOrRPKDefault(c.AdminAPI.Port, cr.AdminApi[0].Port)
-	cr.AdminApi[0].Name = internal
-	if r.pandaCluster.Spec.ExternalConnectivity.Enabled {
+	cr.AdminApi[0].Port = clusterCRPortOrRPKDefault(r.pandaCluster.AdminAPIInternal().Port, cr.AdminApi[0].Port)
+	cr.AdminApi[0].Name = InternalListenerName
+	if r.pandaCluster.AdminAPIExternal() != nil {
 		externalAdminAPI := config.NamedSocketAddress{
 			SocketAddress: config.SocketAddress{
 				Address: cr.AdminApi[0].Address,
 				Port:    cr.AdminApi[0].Port + 1,
 			},
-			Name: external,
+			Name: ExternalListenerName,
 		}
 		cr.AdminApi = append(cr.AdminApi, externalAdminAPI)
 	}
 
 	cr.DeveloperMode = c.DeveloperMode
 	cr.Directory = dataDirectory
-	if r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.Enabled {
+	tlsListener := r.pandaCluster.KafkaTLSListener()
+	if tlsListener != nil {
 		// If external connectivity is enabled the TLS config will be applied to the external listener,
 		// otherwise TLS will be applied to the internal listener. // TODO support multiple TLS configs
-		name := "Internal"
-		if r.pandaCluster.Spec.ExternalConnectivity.Enabled {
-			name = "External"
+		name := InternalListenerName
+		externalListener := r.pandaCluster.ExternalListener()
+		if externalListener != nil {
+			name = ExternalListenerName
 		}
 		tls := config.ServerTLS{
 			Name:              name,
 			KeyFile:           fmt.Sprintf("%s/%s", tlsDir, corev1.TLSPrivateKeyKey), // tls.key
 			CertFile:          fmt.Sprintf("%s/%s", tlsDir, corev1.TLSCertKey),       // tls.crt
 			Enabled:           true,
-			RequireClientAuth: r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.RequireClientAuth,
+			RequireClientAuth: tlsListener.TLS.RequireClientAuth,
 		}
-		if r.pandaCluster.Spec.Configuration.TLS.KafkaAPI.RequireClientAuth {
+		if tlsListener.TLS.RequireClientAuth {
 			tls.TruststoreFile = fmt.Sprintf("%s/%s", tlsDirCA, cmetav1.TLSCAKey)
 		}
 		cr.KafkaApiTLS = []config.ServerTLS{
 			tls,
 		}
 	}
-	if r.pandaCluster.Spec.Configuration.TLS.AdminAPI.Enabled {
-		name := internal
-		if r.pandaCluster.Spec.ExternalConnectivity.Enabled {
-			name = external
+	adminAPITLSListener := r.pandaCluster.AdminAPITLS()
+	if adminAPITLSListener != nil {
+		name := InternalListenerName
+		if adminAPITLSListener.External.Enabled {
+			name = ExternalListenerName
 		}
 		adminTLS := config.ServerTLS{
 			Name:              name,
 			KeyFile:           fmt.Sprintf("%s/%s", tlsAdminDir, corev1.TLSPrivateKeyKey),
 			CertFile:          fmt.Sprintf("%s/%s", tlsAdminDir, corev1.TLSCertKey),
 			Enabled:           true,
-			RequireClientAuth: r.pandaCluster.Spec.Configuration.TLS.AdminAPI.RequireClientAuth,
+			RequireClientAuth: adminAPITLSListener.TLS.RequireClientAuth,
 		}
-		if r.pandaCluster.Spec.Configuration.TLS.AdminAPI.RequireClientAuth {
+		if adminAPITLSListener.TLS.RequireClientAuth {
 			adminTLS.TruststoreFile = fmt.Sprintf("%s/%s", tlsAdminDir, cmetav1.TLSCAKey)
 		}
 		cr.AdminApiTLS = append(cr.AdminApiTLS, adminTLS)

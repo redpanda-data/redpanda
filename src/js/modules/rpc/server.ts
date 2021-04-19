@@ -196,17 +196,13 @@ export class ProcessBatchServer extends SupervisorServer {
       this.fireException
     );
 
-    return Promise.allSettled(results).then((coprocessorResults) => {
-      const array: ProcessBatchReplyItem[][] = [];
-      coprocessorResults.forEach((result) => {
-        if (result.status === "rejected") {
-          console.error(result.reason);
-        } else {
-          array.push(result.value);
-        }
-      });
-      return array.flat();
-    });
+    return Promise.all(results).then(
+      (coprocessorResults) => coprocessorResults.flat(),
+      (e) => {
+        this.logger.error(e);
+        return Logging.close().then(() => process.exit(1));
+      }
+    );
   }
 
   /**

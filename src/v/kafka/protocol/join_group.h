@@ -47,7 +47,8 @@ struct join_group_request final {
 
     // extra context from request header set in decode
     api_version version;
-    std::optional<ss::sstring> client_id;
+    std::optional<kafka::client_id> client_id;
+    kafka::client_host client_host;
 
     // set during request processing after mapping group to ntp
     model::ntp ntp;

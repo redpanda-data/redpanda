@@ -143,11 +143,11 @@ redpanda:
     name: external
     port: 9093
   
-  # List of the seed servers used to join current cluster. If the seed_server list is
-  # empty the node will be a cluster root and it will form a new cluster
+  # List of the seed server IP addresses and ports used to join current cluster.
+  # If the seed_server list is empty the node will be a cluster root and it will form a new cluster.
   # Default: []
   seed_servers:
-    - address: "192.167.32.78"
+    - address: "0.0.0.0"
       port: 33145
   
   # Number of partitions for the internal raft metadata topic.

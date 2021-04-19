@@ -95,11 +95,11 @@ get_topics_names(server::request_t rq, server::reply_t rp) {
       .then([res_fmt, rp = std::move(rp)](
               kafka::metadata_request::api_type::response_type res) mutable {
           std::vector<model::topic_view> names;
-          names.reserve(res.topics.size());
+          names.reserve(res.data.topics.size());
 
           std::transform(
-            res.topics.begin(),
-            res.topics.end(),
+            res.data.topics.begin(),
+            res.data.topics.end(),
             std::back_inserter(names),
             [](const kafka::metadata_response::topic& e) {
                 return model::topic_view(e.name);

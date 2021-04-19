@@ -52,6 +52,8 @@ struct member_state {
     kafka::protocol_type protocol_type;
     std::vector<member_protocol> protocols;
     iobuf assignment;
+    kafka::client_id client_id;
+    kafka::client_host client_host;
 
     member_state copy() const {
         return member_state{
@@ -62,17 +64,12 @@ struct member_state {
           .protocol_type = protocol_type,
           .protocols = protocols,
           .assignment = assignment.copy(),
+          .client_id = client_id,
+          .client_host = client_host,
         };
     }
 
-    bool operator==(const member_state& other) const {
-        return id == other.id && session_timeout == other.session_timeout
-               && rebalance_timeout == other.rebalance_timeout
-               && instance_id == other.instance_id
-               && protocol_type == other.protocol_type
-               && protocols == other.protocols
-               && assignment == other.assignment;
-    }
+    friend bool operator==(const member_state&, const member_state&) = default;
 };
 
 /// \brief A Kafka group member.
@@ -85,6 +82,8 @@ public:
       kafka::member_id member_id,
       kafka::group_id group_id,
       std::optional<kafka::group_instance_id> group_instance_id,
+      kafka::client_id client_id,
+      kafka::client_host client_host,
       duration_type session_timeout,
       duration_type rebalance_timeout,
       kafka::protocol_type protocol_type,
@@ -98,6 +97,8 @@ public:
           std::move(protocol_type),
           std::move(protocols),
           iobuf(),
+          std::move(client_id),
+          std::move(client_host),
         }),
         std::move(group_id)) {}
 
