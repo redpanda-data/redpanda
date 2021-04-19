@@ -18,7 +18,6 @@ import (
 	"github.com/Shopify/sarama"
 	"github.com/burdiyan/kafkautil"
 	log "github.com/sirupsen/logrus"
-	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/container/common"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
@@ -85,7 +84,6 @@ func FindConfigFile(
 }
 
 func DeduceBrokers(
-	fs afero.Fs,
 	client func() (common.Client, error),
 	configuration func() (*config.Config, error),
 	brokers *[]string,
@@ -190,7 +188,6 @@ func CreateProducer(
 }
 
 func CreateClient(
-	fs afero.Fs,
 	brokers func() []string,
 	configuration func() (*config.Config, error),
 ) func() (sarama.Client, error) {
@@ -206,7 +203,6 @@ func CreateClient(
 }
 
 func CreateAdmin(
-	fs afero.Fs,
 	brokers func() []string,
 	configuration func() (*config.Config, error),
 	authConfig func() (*config.SCRAM, error),

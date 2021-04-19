@@ -49,14 +49,13 @@ func NewTopicCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	// path, the list of brokers passed through --brokers).
 	configClosure := common.FindConfigFile(mgr, &configFile)
 	brokersClosure := common.DeduceBrokers(
-		fs,
 		common.CreateDockerClient,
 		configClosure,
 		&brokers,
 	)
 	kAuthClosure := common.KafkaAuthConfig(&user, &password, &mechanism)
-	adminClosure := common.CreateAdmin(fs, brokersClosure, configClosure, kAuthClosure)
-	clientClosure := common.CreateClient(fs, brokersClosure, configClosure)
+	adminClosure := common.CreateAdmin(brokersClosure, configClosure, kAuthClosure)
+	clientClosure := common.CreateClient(brokersClosure, configClosure)
 	producerClosure := common.CreateProducer(brokersClosure, configClosure)
 
 	command.AddCommand(topic.NewCreateCommand(adminClosure))

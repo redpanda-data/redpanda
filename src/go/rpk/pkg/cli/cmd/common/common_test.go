@@ -15,7 +15,6 @@ import (
 	"testing"
 
 	"github.com/docker/docker/api/types"
-	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/common"
@@ -110,7 +109,6 @@ func TestDeduceBrokers(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(st *testing.T) {
-			fs := afero.NewMemMapFs()
 			client := func() (ccommon.Client, error) {
 				return &ccommon.MockClient{}, nil
 			}
@@ -129,7 +127,7 @@ func TestDeduceBrokers(t *testing.T) {
 			if tt.brokers != nil {
 				brokers = &tt.brokers
 			}
-			bs := common.DeduceBrokers(fs, client, config, brokers)()
+			bs := common.DeduceBrokers(client, config, brokers)()
 			require.Exactly(st, tt.expected, bs)
 		})
 	}

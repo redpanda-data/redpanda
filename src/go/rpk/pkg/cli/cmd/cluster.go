@@ -62,17 +62,16 @@ func NewClusterCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	// actual brokers list to be used.
 	configClosure := common.FindConfigFile(mgr, &configFile)
 	brokersClosure := common.DeduceBrokers(
-		fs,
 		common.CreateDockerClient,
 		configClosure,
 		&brokers,
 	)
 	kAuthClosure := common.KafkaAuthConfig(&user, &password, &mechanism)
-	adminClosure := common.CreateAdmin(fs, brokersClosure, configClosure, kAuthClosure)
+	adminClosure := common.CreateAdmin(brokersClosure, configClosure, kAuthClosure)
 	command.AddCommand(cluster.NewInfoCommand(adminClosure))
 
 	// NewOffsetsCommand takes client and admin factories so we can mock both
-	clientClosure := common.CreateClient(fs, brokersClosure, configClosure)
+	clientClosure := common.CreateClient(brokersClosure, configClosure)
 	adminWrapperClosure := func(client sarama.Client) (sarama.ClusterAdmin, error) {
 		return sarama.NewClusterAdminFromClient(client)
 	}
