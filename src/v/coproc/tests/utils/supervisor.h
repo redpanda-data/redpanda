@@ -20,6 +20,7 @@
 #include <seastar/core/map_reduce.hh>
 
 #include <absl/container/flat_hash_map.h>
+#include <absl/container/node_hash_set.h>
 
 namespace coproc {
 using script_map_t = absl::btree_map<script_id, std::unique_ptr<coprocessor>>;
@@ -66,10 +67,11 @@ public:
     process_batch(process_batch_request&&, rpc::streaming_context&) final;
 
     /// Called to verify the supervisor is up
-    ss::future<empty_response>
+    ss::future<state_size_t>
     heartbeat(empty_request&&, rpc::streaming_context&) final;
 
 private:
+    ss::future<absl::node_hash_set<script_id>> registered_scripts();
     ss::future<disable_copros_reply::ack> disable_coprocessor(script_id);
     ss::future<enable_copros_reply::data> enable_coprocessor(script_id, iobuf);
     ss::future<enable_copros_reply::data> launch(
