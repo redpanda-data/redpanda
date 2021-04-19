@@ -35,7 +35,7 @@ HTTP_FETCH_TOPIC_HEADERS = {
     "Content-Type": "application/vnd.kafka.v2+json"
 }
 
-HTTP_PRODUCE_TOPIC_HEADERS = {
+HTTP_PRODUCE_BINARY_V2_TOPIC_HEADERS = {
     "Accept": "application/vnd.kafka.v2+json",
     "Content-Type": "application/vnd.kafka.binary.v2+json"
 }
@@ -55,7 +55,7 @@ HTTP_REMOVE_CONSUMER_HEADERS = {
     "Content-Type": "application/vnd.kafka.v2+json"
 }
 
-HTTP_CONSUMER_FETCH_HEADERS = {
+HTTP_CONSUMER_FETCH_BINARY_V2_HEADERS = {
     "Accept": "application/vnd.kafka.binary.v2+json",
     "Content-Type": "application/vnd.kafka.v2+json"
 }
@@ -86,7 +86,7 @@ class Consumer:
         res = requests.delete(self.base_uri, headers=headers)
         return res
 
-    def fetch(self, headers=HTTP_CONSUMER_FETCH_HEADERS):
+    def fetch(self, headers=HTTP_CONSUMER_FETCH_BINARY_V2_HEADERS):
         res = requests.get(f"{self.base_uri}/records", headers=headers)
         return res
 
@@ -146,7 +146,10 @@ class PandaProxyTest(RedpandaTest):
     def _get_topics(self, headers=HTTP_GET_TOPICS_HEADERS):
         return requests.get(f"{self._base_uri()}/topics", headers=headers)
 
-    def _produce_topic(self, topic, data, headers=HTTP_PRODUCE_TOPIC_HEADERS):
+    def _produce_topic(self,
+                       topic,
+                       data,
+                       headers=HTTP_PRODUCE_BINARY_V2_TOPIC_HEADERS):
         return requests.post(f"{self._base_uri()}/topics/{topic}",
                              data,
                              headers=headers)
@@ -633,7 +636,7 @@ class PandaProxyTest(RedpandaTest):
         assert sc_res.status_code == requests.codes.no_content
 
     @cluster(num_nodes=3)
-    def test_consumer_group(self):
+    def test_consumer_group_binary_v2(self):
         """
         Create a consumer group and use it
         """
