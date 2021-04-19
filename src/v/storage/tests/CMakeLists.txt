@@ -52,12 +52,21 @@ rp_test(
 
 rp_test(
   UNIT_TEST
+  BINARY_NAME storage_log_index
+  SOURCES
+    index_state_test.cc
+  DEFINITIONS BOOST_TEST_DYN_LINK
+  LIBRARIES Boost::unit_test_framework v::storage
+  LABELS storage
+)
+
+rp_test(
+  UNIT_TEST
   BINARY_NAME storage_multi_thread
   SOURCES
     batch_cache_test.cc
     record_batch_builder_test.cc
     snapshot_test.cc
-    index_state_test.cc
   LIBRARIES v::seastar_testing_main v::storage_test_utils
   LABELS storage
 )
