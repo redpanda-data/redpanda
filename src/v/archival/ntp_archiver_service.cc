@@ -296,9 +296,7 @@ ss::future<ntp_archiver::batch_result> ntp_archiver::upload_next_candidates(
         flist.emplace_back(upload_segment(req_limit, upload));
         manifest::segment_meta m{
           .is_compacted = upload.source->is_compacted_segment(),
-          .size_bytes
-          = upload.source->size_bytes()
-            - (upload.starting_offset - upload.source->offsets().base_offset),
+          .size_bytes = upload.content_length,
           .base_offset = upload.starting_offset,
           .committed_offset = upload.source->offsets().committed_offset,
         };

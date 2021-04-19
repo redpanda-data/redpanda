@@ -6,9 +6,34 @@ networks:
     driver: bridge
 
 services:
+  minio:
+    command: server /data
+    container_name: minio-s3
+    environment:
+      MINIO_DOMAIN: minio-s3
+      MINIO_REGION_NAME: panda-region
+      MINIO_ROOT_PASSWORD: panda-secret
+      MINIO_ROOT_USER: panda-user
+    expose:
+    - '9000'
+    healthcheck:
+      interval: 30s
+      retries: '3'
+      test:
+      - CMD
+      - curl
+      - -f
+      - http://localhost:9000/minio/health/live
+      timeout: 20s
+    image: minio/minio:RELEASE.2021-03-26T00-00-41Z
+    networks:
+    - redpanda
+
   n1: &node
     image: vectorized/redpanda-test-node
     privileged: true
+    depends_on: 
+    - minio
     volumes:
     - '${BUILD_ROOT}:${BUILD_ROOT}'
     networks:
