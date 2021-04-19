@@ -17,14 +17,17 @@
     "postinstall": "npm run generate:serialization",
     "publish:wasm-api": "./publish-wasm-dependecy.js",
     "start:dev": "sudo npx ts-node ./modules/rpc/service.ts",
-    "start": "sudo node ./modules/rpc/service.js"
+    "start": "sudo node ./modules/rpc/service.js",
+    "bundle": "./webpack.js",
+    "clean": "rm -rf ./node_modules"
   },
   "requires": true,
   "dependencies": {
     "@types/mocha": "7.0.2",
     "@types/node": "14.0.23",
-    "fast-crc32c": "2.0.0",
     "chokidar": "^3.4.3",
+    "fast-crc32c": "2.0.0",
+    "js-yaml": "^3.14.0",
     "mocha": "7.1.1",
     "prettier": "2.0.5",
     "rewire": "5.0.0",
@@ -32,17 +35,18 @@
     "ts-node": "^9.0.0",
     "typescript": "3.9.6",
     "typescript-formatter": "7.2.2",
-    "webpack": "^4.44.2",
-    "xxhash": "0.3.0",
-    "js-yaml": "^3.14.0",
-    "winston": "3.3.3"
+    "webpack": "5.33.2",
+    "winston": "3.3.3",
+    "xxhash": "0.3.0"
   },
   "devDependencies": {
+    "@types/sinon": "^9.0.4",
     "@typescript-eslint/eslint-plugin": "^3.7.0",
     "@typescript-eslint/parser": "^3.7.0",
     "eslint": "^7.5.0",
     "eslint-config-prettier": "^6.11.0",
+    "node-loader": "^2.0.0",
     "sinon": "^9.0.2",
-    "@types/sinon": "^9.0.4"
+    "webpack-node-externals": "^2.5.2"
   }
 }

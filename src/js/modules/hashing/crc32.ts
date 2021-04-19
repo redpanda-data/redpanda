@@ -8,7 +8,7 @@
  * https://github.com/vectorizedio/redpanda/blob/master/licenses/rcl.md
  */
 
-import { calculate } from "fast-crc32c";
+import { calculate } from "fast-crc32c/impls/js_crc32c";
 import { RecordBatchHeader, Record, RecordBatch } from "../rpc/types";
 
 //The byte indexes used by crcRecordbatchheaderinternal function
