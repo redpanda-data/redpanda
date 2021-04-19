@@ -50,5 +50,6 @@ func NewACLCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	adminClosure := common.CreateAdmin(brokersClosure, configClosure, kAuthClosure)
 
 	command.AddCommand(acl.NewCreateACLsCommand(adminClosure))
+	command.AddCommand(acl.NewListACLsCommand(adminClosure))
 	return command
 }
