@@ -47,7 +47,8 @@ public:
     ss::future<std::error_code> disable_all_coprocessors();
 
     /// Invoke this to query weather the wasm engine is up or not
-    ss::future<bool> heartbeat(int8_t connect_attempts = 3);
+    ss::future<result<rpc::client_context<state_size_t>>>
+    heartbeat(int8_t connect_attempts = 3);
 
 private:
     /// The following methods are introduced to sidestep an issue detected when

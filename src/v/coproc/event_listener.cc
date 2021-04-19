@@ -29,6 +29,7 @@
 #include <seastar/core/sleep.hh>
 
 #include <exception>
+#include <system_error>
 
 namespace {
 
@@ -176,37 +177,31 @@ ss::future<> event_listener::do_start() {
             co_return;
         }
     }
-    bool heartbeat = co_await _dispatcher.heartbeat();
-    if (!heartbeat) {
-        vlog(
-          coproclog.error,
-          "Wasm engine failed to reply to heartbeat within the "
-          "expected "
-          "interval");
-        _last_heartbeat_failed = true;
-        bool has_active = co_await _pacemaker.map_reduce0(
-          [](pacemaker& p) { return p.n_registered_scripts(); },
-          bool(false),
-          std::logical_or<>());
-        if (has_active) {
+    auto heartbeat = co_await _dispatcher.heartbeat();
+    if (heartbeat.has_error()) {
+        std::error_code err = heartbeat.error();
+        if (
+          err == rpc::errc::client_request_timeout
+          || err == rpc::errc::disconnected_endpoint) {
             vlog(
-              coproclog.info, "Shutting down all coprocessor script_contexts");
-            _active_ids.clear();
-            co_await remove_copro_state(_pacemaker);
-        }
-        co_return;
-    }
-    /// If the wasm engine has awaken from restart, reset all state
-    /// within the wasm engine, and set the offset to 0 to begin
-    /// reconciling scripts
-    if (heartbeat && _last_heartbeat_failed) {
-        if (co_await _dispatcher.disable_all_coprocessors()) {
-            /// Unlikely to occur but if heartbeat checks pass but a request to
-            /// invalidate the wasm engines state fails, do not proceed
+              coproclog.error,
+              "Wasm engine failed to reply to heartbeat within the "
+              "expected "
+              "interval");
             co_return;
         }
-        _offset = model::offset(0);
-        _last_heartbeat_failed = false;
+    } else if (heartbeat.value().data != _active_ids.size()) {
+        /// There is a discrepency between the number of registered coprocs
+        /// according to redpanda and according to the wasm engine.
+        /// Reconcile all state from offset 0.
+        if (!co_await _dispatcher.disable_all_coprocessors()) {
+            vlog(
+              coproclog.error,
+              "Failed to reset wasm_engine state, will keep retrying...");
+        } else {
+            co_await remove_copro_state(_pacemaker);
+            _offset = model::offset(0);
+        }
     }
     co_await do_ingest();
 }

@@ -27,7 +27,7 @@
     {
       "name": "heartbeat",
       "input_type": "empty_request",
-      "output_type": "empty_response"
+      "output_type": "state_size_t"
     }
   ]
 }

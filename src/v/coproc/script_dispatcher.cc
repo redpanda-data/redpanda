@@ -320,9 +320,11 @@ ss::future<std::error_code> script_dispatcher::disable_all_coprocessors() {
     co_return rpc::make_error_code(rpc::errc::success);
 }
 
-ss::future<bool> script_dispatcher::heartbeat(int8_t connect_attempts) {
+ss::future<result<rpc::client_context<state_size_t>>>
+script_dispatcher::heartbeat(int8_t connect_attempts) {
     if (connect_attempts <= 0) {
-        co_return false;
+        co_return result<rpc::client_context<state_size_t>>(
+          rpc::errc::disconnected_endpoint);
     }
     auto timeout = model::timeout_clock::now() + 1s;
     auto transport = co_await _transport.get_connected(timeout);
@@ -338,9 +340,8 @@ ss::future<bool> script_dispatcher::heartbeat(int8_t connect_attempts) {
         co_return co_await heartbeat(connect_attempts - 1);
     }
     supervisor_client_protocol client(*transport.value());
-    auto reply = co_await client.heartbeat(
+    co_return co_await client.heartbeat(
       empty_request(), rpc::client_opts(timeout));
-    co_return !reply ? false : true;
 }
 
 ss::future<std::optional<coproc::supervisor_client_protocol>>
