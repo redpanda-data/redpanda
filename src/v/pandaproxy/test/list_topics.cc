@@ -35,7 +35,7 @@ FIXTURE_TEST(pandaproxy_list_topics, pandaproxy_test_fixture) {
         BOOST_REQUIRE_EQUAL(res.body, R"([])");
         BOOST_REQUIRE_EQUAL(
           res.headers.at(boost::beast::http::field::content_type),
-          to_header_value(serialization_format::json_v2));
+          to_header_value(serialization_format::v2));
     }
 
     info("Adding known topic");

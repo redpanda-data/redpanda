@@ -59,13 +59,13 @@ FIXTURE_TEST(pandaproxy_produce, pandaproxy_test_fixture) {
           std::move(body),
           boost::beast::http::verb::post,
           ppj::serialization_format::binary_v2,
-          ppj::serialization_format::json_v2);
+          ppj::serialization_format::v2);
 
         BOOST_REQUIRE_EQUAL(
           res.headers.result(), boost::beast::http::status::ok);
         BOOST_REQUIRE_EQUAL(
           res.headers.at(boost::beast::http::field::content_type),
-          to_header_value(serialization_format::json_v2));
+          to_header_value(serialization_format::v2));
         BOOST_REQUIRE_EQUAL(
           res.body,
           R"({"offsets":[{"partition":0,"error_code":3,"offset":-1}]})");
@@ -88,7 +88,7 @@ FIXTURE_TEST(pandaproxy_produce, pandaproxy_test_fixture) {
           std::move(body),
           boost::beast::http::verb::post,
           ppj::serialization_format::binary_v2,
-          ppj::serialization_format::json_v2);
+          ppj::serialization_format::v2);
 
         BOOST_REQUIRE_EQUAL(
           res.headers.result(), boost::beast::http::status::ok);
@@ -107,7 +107,7 @@ FIXTURE_TEST(pandaproxy_produce, pandaproxy_test_fixture) {
           std::move(body),
           boost::beast::http::verb::post,
           ppj::serialization_format::binary_v2,
-          ppj::serialization_format::json_v2);
+          ppj::serialization_format::v2);
 
         BOOST_REQUIRE_EQUAL(
           res.headers.result(), boost::beast::http::status::ok);
