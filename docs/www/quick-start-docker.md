@@ -185,14 +185,14 @@ You've just installed Redpanda and done streaming in a few easy steps.
 When you are finished with the cluster, you can shutdown and delete the containers with:
 
 ```bash
-docker stop redpanda-1 redpanda-2 redpanda-3
+docker stop redpanda-1 redpanda-2 redpanda-3 &&
 docker rm redpanda-1 redpanda-2 redpanda-3
 ```
 
 If you set up volumes and a network, delete them with:
 
 ```bash
-docker volume rm redpanda1 redpanda2 redpanda3
+docker volume rm redpanda1 redpanda2 redpanda3 &&
 docker network rm redpandanet
 ```
 
