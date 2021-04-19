@@ -93,7 +93,7 @@ You can either create a Kubernetes cluster on your local machine or on a cloud p
 2. Install the Redpanda operator CRDs:
 
     ```
-    kubectl apply -k 'https://github.com/vectorizedio/redpanda/src/go/k8s/config/crd?ref=<latest version>'
+    kubectl apply -k https://github.com/vectorizedio/redpanda/src/go/k8s/config/crd?ref=<latest version>
     ```
 
     You can find the latest version number of the operator on the [list of operator releases](https://github.com/vectorizedio/redpanda/releases).
@@ -124,27 +124,24 @@ After you set up Redpanda in your Kubernetes cluster, you can use our samples to
 
 - Use `rpk` to work with your Redpanda nodes, for example:
 
+    - Check the status of the cluster:
+
+        ```
+        kubectl -n redpanda-test run -ti --rm --restart=Never --image vectorized/redpanda:v21.4.12 rpk -- --brokers one-node-cluster-0.one-node-cluster.redpanda-test.svc.cluster.local:9092 cluster info
+        ```
+    
     - Create a topic:
 
         ```
-        rpk topic create test-topic-name --brokers cluster-sample-tls-0.cluster-sample-tls.redpanda-test.svc.cluster.local:9092
+        kubectl -n redpanda-test run -ti --rm --restart=Never --image vectorized/redpanda:v21.4.12 rpk -- --brokers one-node-cluster-0.one-node-cluster.redpanda-test.svc.cluster.local:9092 topic create reddit-thread
         ```
 
     - Show the list of topics:
 
         ```
-        rpk topic list --brokers cluster-sample-tls-0.cluster-sample-tls.redpanda-test.svc.cluster.local:9092
-        ```
+        kubectl -n redpanda-test run -ti --rm --restart=Never --image vectorized/redpanda:v21.4.12 rpk -- --brokers one-node-cluster-0.one-node-cluster.redpanda-test.svc.cluster.local:9092 topic list
+        ```    
 
-    - Produce a message to the topic:
+As you can see, Redpanda responds to the rpk commands from the "rpk" pod.
 
-        ```
-        echo {"test":"message"} | rpk topic produce test-topic-name --brokers cluster-sample-tls-0.cluster-sample-tls.redpanda-test.svc.cluster.local:9092
-        ```
-
-    - Consume the message from the topic:
-
-        ```
-        rpk topic consume test-topic-name --brokers cluster-sample-tls-0.cluster-sample-tls.redpanda-test.svc.cluster.local:9092
-        ```
-    
+Contact us in our [Slack](https://vectorized.io/slack) community so we can work together to implement the Kubernetes use cases for you.
