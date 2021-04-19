@@ -99,7 +99,8 @@ func Update(
 	}
 	if !patchResult.IsEmpty() {
 		// need to set current version first otherwise the request would get rejected
-		logger.Info(fmt.Sprintf("Resource changed, updating %s. Diff: %v", modified.GetName(), string(patchResult.Patch)))
+		logger.Info(fmt.Sprintf("Resource %s (%s) changed, updating. Diff: %v",
+			modified.GetName(), modified.GetObjectKind().GroupVersionKind().Kind, string(patchResult.Patch)))
 		if err := patch.DefaultAnnotator.SetLastAppliedAnnotation(modified); err != nil {
 			return err
 		}
