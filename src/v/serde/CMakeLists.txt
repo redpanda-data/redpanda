@@ -9,3 +9,4 @@ v_cc_library(
     absl::flat_hash_map
     v::compression
   )
+add_subdirectory(test)
