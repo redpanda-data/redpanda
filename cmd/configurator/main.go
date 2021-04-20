@@ -16,11 +16,11 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"path"
 	"strconv"
 	"strings"
 
 	"github.com/hashicorp/go-multierror"
-	"github.com/mitchellh/mapstructure"
 	"github.com/spf13/afero"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 	"gopkg.in/yaml.v3"
@@ -91,33 +91,11 @@ func main() {
 	log.Print(c.String())
 
 	fs := afero.NewOsFs()
-	v := config.InitViper(fs)
-	v.AddConfigPath(c.configSourceDir)
-
-	if err = v.ReadInConfig(); err != nil {
+	mgr := config.NewManager(fs)
+	cfg, err := mgr.Read(path.Join(c.configSourceDir, "redpanda.yaml"))
+	if err != nil {
 		log.Fatalf("%s", fmt.Errorf("unable to read the redpanda configuration file: %w", err))
 	}
-
-	cfg := &config.Config{}
-	decoderConfig := mapstructure.DecoderConfig{
-		Result: cfg,
-		// Sometimes viper will save int values as strings (i.e.
-		// through BindPFlag) so we have to allow mapstructure
-		// to cast them.
-		WeaklyTypedInput: true,
-	}
-
-	decoder, err := mapstructure.NewDecoder(&decoderConfig)
-	if err != nil {
-		log.Fatalf("%s", fmt.Errorf("unable to create decoder config: %w", err))
-	}
-
-	err = decoder.Decode(v.AllSettings())
-	if err != nil {
-		log.Fatalf("%s", fmt.Errorf("unable to decode: %w", err))
-	}
-
-	log.Print("Decode done")
 
 	kafkaAPIPort, err := getInternalKafkaAPIPort(cfg)
 	if err != nil {
