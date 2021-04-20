@@ -223,6 +223,7 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 	var clusterLabels = labels.ForCluster(r.pandaCluster)
 
 	pvc := preparePVCResource(datadirName, r.pandaCluster.Namespace, r.pandaCluster.Spec.Storage, clusterLabels)
+	annotations := r.pandaCluster.Spec.Annotations
 	tolerations := r.pandaCluster.Spec.Tolerations
 	nodeSelector := r.pandaCluster.Spec.NodeSelector
 
@@ -257,9 +258,10 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 			ServiceName: r.pandaCluster.Name,
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      r.pandaCluster.Name,
-					Namespace: r.pandaCluster.Namespace,
-					Labels:    clusterLabels.AsAPISelector().MatchLabels,
+					Name:        r.pandaCluster.Name,
+					Namespace:   r.pandaCluster.Namespace,
+					Labels:      clusterLabels.AsAPISelector().MatchLabels,
+					Annotations: annotations,
 				},
 				Spec: corev1.PodSpec{
 					ServiceAccountName: r.getServiceAccountName(),
