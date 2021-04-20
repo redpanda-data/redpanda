@@ -355,11 +355,11 @@
       ]
     },
     {
-      "className": "EmptyResponse",
+      "className": "StateSizeT",
       "fields": [
         {
-          "name": "empty",
-          "type": "int8"
+          "name": "size",
+          "type": "int64"
         }
       ]
     }

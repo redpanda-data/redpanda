@@ -1,35 +1,33 @@
 {
-    "namespace": "coproc",
-    "service_name": "supervisor",
-    "includes": [
-        "coproc/types.h"
-    ],
-    "js_include": "../../domain/generatedRpc/generatedClasses",
-    "methods": [
-        {
-            "name": "enable_coprocessors",
-            "input_type": "enable_copros_request",
-            "output_type": "enable_copros_reply"
-        },
-        {
-            "name": "disable_coprocessors",
-            "input_type": "disable_copros_request",
-            "output_type": "disable_copros_reply"
-        },
-        {
-            "name": "disable_all_coprocessors",
-            "input_type": "empty_request",
-            "output_type": "disable_copros_reply"
-        },
-        {
-            "name": "process_batch",
-            "input_type": "process_batch_request",
-            "output_type": "process_batch_reply"
-        },
-        {
-            "name": "heartbeat",
-            "input_type": "empty_request",
-            "output_type": "empty_response"
-        }
-    ]
+  "namespace": "coproc",
+  "service_name": "supervisor",
+  "includes": ["coproc/types.h"],
+  "js_include": "../../domain/generatedRpc/generatedClasses",
+  "methods": [
+    {
+      "name": "enable_coprocessors",
+      "input_type": "enable_copros_request",
+      "output_type": "enable_copros_reply"
+    },
+    {
+      "name": "disable_coprocessors",
+      "input_type": "disable_copros_request",
+      "output_type": "disable_copros_reply"
+    },
+    {
+      "name": "disable_all_coprocessors",
+      "input_type": "empty_request",
+      "output_type": "disable_copros_reply"
+    },
+    {
+      "name": "process_batch",
+      "input_type": "process_batch_request",
+      "output_type": "process_batch_reply"
+    },
+    {
+      "name": "heartbeat",
+      "input_type": "empty_request",
+      "output_type": "state_size_t"
+    }
+  ]
 }

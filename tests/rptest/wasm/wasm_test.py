@@ -79,13 +79,6 @@ class WasmTest(RedpandaTest):
         self.logger.info(
             f"Begin manually triggered restart of wasm engine on node {node}")
         node.account.kill_process("bin/node", clean_shutdown=False)
-        # TODO: This sleep is put here to ensure that redpanda will initiate
-        # a failure recovery mechanism. In the event the wasm engine restarts
-        # too quickly, it will have responded to all heartbeats, and redpanda will
-        # falsely think that the state between the wasm engine and itself are
-        # in-sync when they will not be. Github issue #1140 has been filed to keep
-        # track of this issue.
-        time.sleep(3)
         self.redpanda.start_wasm_engine(node)
 
     def restart_redpanda(self, node):

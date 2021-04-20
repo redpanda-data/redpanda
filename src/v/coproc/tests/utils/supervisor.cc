@@ -285,23 +285,10 @@ ss::future<disable_copros_reply> supervisor::disable_coprocessors(
 ss::future<disable_copros_reply>
 supervisor::disable_all_coprocessors(empty_request&&, rpc::streaming_context&) {
     return ss::with_scheduling_group(get_scheduling_group(), [this] {
-        return _coprocessors
-          .map_reduce0(
-            [](const script_map_t& copros) {
-                std::set<script_id> all_keys;
-                for (const auto& p : copros) {
-                    all_keys.insert(p.first);
-                }
-                return all_keys;
-            },
-            std::set<script_id>(),
-            [](std::set<script_id> set, std::set<script_id> x) {
-                set.merge(std::move(x));
-                return std::move(set);
-            })
-          .then([this](std::set<script_id> ids) {
+        return registered_scripts().then(
+          [this](absl::node_hash_set<script_id> ids) {
               return ss::do_with(
-                std::move(ids), [this](std::set<script_id>& ids) {
+                std::move(ids), [this](absl::node_hash_set<script_id>& ids) {
                     return ssx::async_transform(
                              ids,
                              [this](script_id id) {
@@ -333,17 +320,30 @@ supervisor::process_batch(process_batch_request&& r, rpc::streaming_context&) {
       });
 }
 
-ss::future<empty_response>
+ss::future<absl::node_hash_set<script_id>> supervisor::registered_scripts() {
+    return _coprocessors.map_reduce0(
+      [](script_map_t& smt) {
+          absl::node_hash_set<script_id> all_keys;
+          for (const auto& p : smt) {
+              all_keys.insert(p.first);
+          }
+          return all_keys;
+      },
+      absl::node_hash_set<script_id>(),
+      [](absl::node_hash_set<script_id> set, absl::node_hash_set<script_id> x) {
+          set.merge(std::move(x));
+          return std::move(set);
+      });
+}
+
+ss::future<state_size_t>
 supervisor::heartbeat(empty_request&&, rpc::streaming_context&) {
     if (!*_delay_heartbeat.local()) {
-        vlog(coproclog.info, "Replying ping... heartbeat request");
-        return ss::make_ready_future<empty_response>();
+        auto unique_scripts = co_await registered_scripts();
+        co_return state_size_t(unique_scripts.size());
     }
-    vlog(coproclog.warn, "Replying with delayed ping... heartbeat request");
-    /// Delay a response to initiate a failure recovery scenario
-    return ss::sleep(std::chrono::seconds(3)).then([] {
-        return empty_response();
-    });
+    vlog(coproclog.warn, "Simulating node restart... heartbeat request");
+    co_return state_size_t(-1);
 }
 
 } // namespace coproc

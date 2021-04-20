@@ -15,7 +15,6 @@ import {
   DisableCoprosReply,
   DisableCoprosRequest,
   EmptyRequest,
-  EmptyResponse,
   EnableCoprocessor,
   EnableCoprocessorRequestData,
   EnableCoprosReply,
@@ -24,6 +23,7 @@ import {
   ProcessBatchReplyItem,
   ProcessBatchRequest,
   ProcessBatchRequestItem,
+  StateSizeT,
 } from "../domain/generatedRpc/generatedClasses";
 import { SupervisorServer } from "./serverAndClients/rpcServer";
 import { Handle } from "../domain/Handle";
@@ -100,8 +100,8 @@ export class ProcessBatchServer extends SupervisorServer {
     return Promise.resolve({ responses });
   }
 
-  heartbeat(input: EmptyRequest): Promise<EmptyResponse> {
-    return Promise.resolve({ empty: 0 });
+  heartbeat(input: EmptyRequest): Promise<StateSizeT> {
+    return Promise.resolve({ size: BigInt(this.repository.size()) });
   }
 
   validateEnableCoprocInput(
