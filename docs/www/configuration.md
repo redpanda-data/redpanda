@@ -340,18 +340,23 @@ redpanda:
   # Default: 60s
   fetch_session_eviction_timeout_ms: 60000
 
-# The REST API (alpha)
-# This top-level config node enables the REST Proxy
+# The redpanda REST API provides a RESTful interface for producing and consuming messages with redpanda.
+# To disable the REST API, remove this top-level config node
 pandaproxy:
-  # IP and port to listen for Kafka REST API requests.
+  # A list of address and port to listen for Kafka REST API requests.
   # Default: 0.0.0.0:8082
   pandaproxy_api: 
-    address: "0.0.0.0"
+  - address: "0.0.0.0"
+    name: internal
     port: 8082
+  - address: "0.0.0.0"
+    name: external
+    port: 8083
 
-  # TLS configuration for the Kafka REST API.
+  # A list of TLS configurations for the REST API.
   # Default: null
   pandaproxy_api_tls:
+  - name: external
     # Whether to enable TLS.
     enabled: false
     # Require client authentication
@@ -363,12 +368,18 @@ pandaproxy:
     # The path to the truststore PEM file. Only required if client
     # authentication is enabled.
     truststore_file: ""
+  - name: internal
+    enabled: false
 
-  # REST API address and port to publish to client
+  # A list of address and port for the REST API to publish to client
   # Default: from pandaproxy_api
   advertised_pandaproxy_api:
-    address: "redpanda-rest-0.my.domain.com."
-    port: 8082
+    - address: 0.0.0.0
+      name: internal
+      port: 8082
+    - address: "redpanda-rest-0.my.domain.com."
+      name: external
+      port: 8083
 
 # The REST API client
 pandaproxy_client:
