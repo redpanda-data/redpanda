@@ -273,6 +273,7 @@ func buildTemplating() graf.Templating {
 		aggregateOpts...,
 	)
 	aggregate.Type = "custom"
+	aggregate.Query = "Cluster : cluster,Instance : instance,Instance\\,Shard : instance\\,shard"
 	aggregate.Current = graf.Current{
 		Text:  clusterOpt.Text,
 		Value: clusterOpt.Value,
