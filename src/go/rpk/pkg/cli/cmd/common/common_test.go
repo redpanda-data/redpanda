@@ -135,11 +135,14 @@ func TestDeduceBrokers(t *testing.T) {
 
 func TestAddKafkaFlags(t *testing.T) {
 	var (
-		brokers    []string
-		configFile string
-		user       string
-		password   string
-		mechanism  string
+		brokers        []string
+		configFile     string
+		user           string
+		password       string
+		mechanism      string
+		certFile       string
+		keyFile        string
+		truststoreFile string
 	)
 	command := func() *cobra.Command {
 		parent := &cobra.Command{
@@ -156,7 +159,17 @@ func TestAddKafkaFlags(t *testing.T) {
 		}
 		parent.AddCommand(child)
 
-		common.AddKafkaFlags(parent, &configFile, &user, &password, &mechanism, &brokers)
+		common.AddKafkaFlags(
+			parent,
+			&configFile,
+			&user,
+			&password,
+			&mechanism,
+			&certFile,
+			&keyFile,
+			&truststoreFile,
+			&brokers,
+		)
 		return parent
 	}
 
@@ -167,6 +180,9 @@ func TestAddKafkaFlags(t *testing.T) {
 		"--user", "david",
 		"--password", "verysecrethaha",
 		"--sasl-mechanism", "some-mechanism",
+		"--tls-cert", "cert.pem",
+		"--tls-key", "key.pem",
+		"--tls-truststore", "truststore.pem",
 	})
 
 	err := cmd.Execute()
@@ -177,6 +193,9 @@ func TestAddKafkaFlags(t *testing.T) {
 	require.Exactly(t, "david", user)
 	require.Exactly(t, "verysecrethaha", password)
 	require.Exactly(t, "some-mechanism", mechanism)
+	require.Exactly(t, "cert.pem", certFile)
+	require.Exactly(t, "key.pem", keyFile)
+	require.Exactly(t, "truststore.pem", truststoreFile)
 
 	// The flags should be available for the children commands too
 	cmd = command() // reset it.
@@ -188,6 +207,9 @@ func TestAddKafkaFlags(t *testing.T) {
 		"--user", "juan",
 		"--password", "sosecure",
 		"--sasl-mechanism", "whatevs",
+		"--tls-cert", "cert1.pem",
+		"--tls-key", "key1.pem",
+		"--tls-truststore", "truststore1.pem",
 	})
 
 	err = cmd.Execute()
@@ -198,6 +220,9 @@ func TestAddKafkaFlags(t *testing.T) {
 	require.Exactly(t, "juan", user)
 	require.Exactly(t, "sosecure", password)
 	require.Exactly(t, "whatevs", mechanism)
+	require.Exactly(t, "cert1.pem", certFile)
+	require.Exactly(t, "key1.pem", keyFile)
+	require.Exactly(t, "truststore1.pem", truststoreFile)
 }
 
 func TestKafkaAuthConfig(t *testing.T) {

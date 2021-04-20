@@ -167,14 +167,38 @@ func DeduceBrokers(
 }
 
 func CreateProducer(
-	brokers func() []string, configuration func() (*config.Config, error),
+	brokers func() []string,
+	configuration func() (*config.Config, error),
+	tlsConfig func() (*config.TLS, error),
+	authConfig func() (*config.SCRAM, error),
 ) func(bool, int32) (sarama.SyncProducer, error) {
 	return func(jvmPartitioner bool, partition int32) (sarama.SyncProducer, error) {
 		conf, err := configuration()
 		if err != nil {
 			return nil, err
 		}
-		cfg, err := kafka.LoadConfig(&conf.Rpk.TLS, &conf.Rpk.SCRAM)
+
+		tls, err := tlsConfig()
+		if err != nil {
+			return nil, err
+		}
+		// If no TLS config was set, try to look for TLS config in the
+		// config file.
+		if tls == nil {
+			tls = &conf.Rpk.TLS
+		}
+
+		scram, err := authConfig()
+		if err != nil {
+			return nil, err
+		}
+		// If no SCRAM config was set, try to look for it in the
+		// config file.
+		if scram == nil {
+			scram = &conf.Rpk.SCRAM
+		}
+
+		cfg, err := kafka.LoadConfig(tls, scram)
 		if err != nil {
 			return nil, err
 		}
@@ -193,14 +217,36 @@ func CreateProducer(
 func CreateClient(
 	brokers func() []string,
 	configuration func() (*config.Config, error),
+	tlsConfig func() (*config.TLS, error),
+	authConfig func() (*config.SCRAM, error),
 ) func() (sarama.Client, error) {
 	return func() (sarama.Client, error) {
 		conf, err := configuration()
 		if err != nil {
 			return nil, err
 		}
+		tls, err := tlsConfig()
+		if err != nil {
+			return nil, err
+		}
+		// If no TLS config was set, try to look for TLS config in the
+		// config file.
+		if tls == nil {
+			tls = &conf.Rpk.TLS
+		}
+
+		scram, err := authConfig()
+		// If no SCRAM config was set, try to look for it in the
+		// config file.
+		if errors.Is(err, ErrNoCredentials) {
+			scram = &conf.Rpk.SCRAM
+		}
+		if err != nil {
+			return nil, err
+		}
+
 		bs := brokers()
-		client, err := kafka.InitClientWithConf(&conf.Rpk.TLS, &conf.Rpk.SCRAM, bs...)
+		client, err := kafka.InitClientWithConf(tls, scram, bs...)
 		return client, wrapConnErr(err, bs)
 	}
 }
@@ -208,6 +254,7 @@ func CreateClient(
 func CreateAdmin(
 	brokers func() []string,
 	configuration func() (*config.Config, error),
+	tlsConfig func() (*config.TLS, error),
 	authConfig func() (*config.SCRAM, error),
 ) func() (sarama.ClusterAdmin, error) {
 	return func() (sarama.ClusterAdmin, error) {
@@ -216,19 +263,32 @@ func CreateAdmin(
 		if err != nil {
 			return nil, err
 		}
-		cfg, err := kafka.LoadConfig(&conf.Rpk.TLS, &conf.Rpk.SCRAM)
+
+		tls, err := tlsConfig()
 		if err != nil {
 			return nil, err
 		}
-		auth, err := authConfig()
-		if err == nil || errors.Is(err, ErrNoCredentials) {
-			cfg, err = kafka.ConfigureSASL(cfg, auth)
-			if err != nil {
-				return nil, err
-			}
-		} else {
+		// If no TLS config was set, try to look for TLS config in the
+		// config file.
+		if tls == nil {
+			tls = &conf.Rpk.TLS
+		}
+
+		scram, err := authConfig()
+		// If no SCRAM config was set, try to look for it in the
+		// config file.
+		if errors.Is(err, ErrNoCredentials) {
+			scram = &conf.Rpk.SCRAM
+		}
+		if err != nil {
 			return nil, err
 		}
+
+		cfg, err := kafka.LoadConfig(tls, scram)
+		if err != nil {
+			return nil, err
+		}
+
 		bs := brokers()
 		admin, err := sarama.NewClusterAdmin(bs, cfg)
 		return admin, wrapConnErr(err, bs)
@@ -335,7 +395,7 @@ func ContainerBrokers(c common.Client) ([]string, []string) {
 
 func AddKafkaFlags(
 	command *cobra.Command,
-	configFile, user, password, saslMechanism *string,
+	configFile, user, password, saslMechanism, certFile, keyFile, truststoreFile *string,
 	brokers *[]string,
 ) *cobra.Command {
 	command.PersistentFlags().StringSliceVar(
@@ -374,12 +434,13 @@ func AddKafkaFlags(
 		),
 	)
 
+	AddTLSFlags(command, certFile, keyFile, truststoreFile)
+
 	return command
 }
 
 func AddTLSFlags(
-	command *cobra.Command,
-	certFile,
+	command *cobra.Command, certFile,
 	keyFile,
 	truststoreFile *string,
 ) *cobra.Command {

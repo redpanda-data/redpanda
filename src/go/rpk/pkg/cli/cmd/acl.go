@@ -19,11 +19,14 @@ import (
 
 func NewACLCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	var (
-		brokers    []string
-		configFile string
-		user       string
-		password   string
-		mechanism  string
+		brokers        []string
+		configFile     string
+		user           string
+		password       string
+		mechanism      string
+		certFile       string
+		keyFile        string
+		truststoreFile string
 	)
 	command := &cobra.Command{
 		Use:          "acl",
@@ -37,6 +40,9 @@ func NewACLCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 		&user,
 		&password,
 		&mechanism,
+		&certFile,
+		&keyFile,
+		&truststoreFile,
 		&brokers,
 	)
 
@@ -47,7 +53,8 @@ func NewACLCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 		&brokers,
 	)
 	kAuthClosure := common.KafkaAuthConfig(&user, &password, &mechanism)
-	adminClosure := common.CreateAdmin(brokersClosure, configClosure, kAuthClosure)
+	tlsClosure := common.BuildTLSConfig(&certFile, &keyFile, &truststoreFile)
+	adminClosure := common.CreateAdmin(brokersClosure, configClosure, tlsClosure, kAuthClosure)
 
 	command.AddCommand(acl.NewCreateACLsCommand(adminClosure))
 	command.AddCommand(acl.NewListACLsCommand(adminClosure))
