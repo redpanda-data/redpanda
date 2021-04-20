@@ -96,7 +96,7 @@ You can either create a Kubernetes cluster on your local machine or on a cloud p
     kubectl apply -k https://github.com/vectorizedio/redpanda/src/go/k8s/config/crd?ref=<latest version>
     ```
 
-    You can find the latest version number of the operator on the [list of operator releases](https://github.com/vectorizedio/redpanda/releases).
+    **_Note:_** Replace `<latest version>` with the latest version number of the operator from the [list of operator releases](https://github.com/vectorizedio/redpanda/releases).
 
 3. Install Redpanda operator on your Kubernetes cluster with:
 
