@@ -12,6 +12,7 @@ quick:
   - tests/
 
   excluded:
+  - tests/archival_test.py
   - tests/librdkafka_test.py
   - tests/rpk_test.py
   - tests/demo_test.py
