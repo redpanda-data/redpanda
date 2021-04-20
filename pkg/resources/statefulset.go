@@ -298,7 +298,7 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 					InitContainers: []corev1.Container{
 						{
 							Name:            configuratorContainerName,
-							Image:           configuratorContainerImage + ":" + r.configuratorTag,
+							Image:           r.fullConfiguratorImage(),
 							ImagePullPolicy: corev1.PullIfNotPresent,
 							Env: []corev1.EnvVar{
 								{
@@ -667,4 +667,8 @@ func (r *StatefulSetResource) getPorts() []corev1.ContainerPort {
 func statefulSetKind() string {
 	var statefulSet appsv1.StatefulSet
 	return statefulSet.Kind
+}
+
+func (r *StatefulSetResource) fullConfiguratorImage() string {
+	return fmt.Sprintf("%s:%s", configuratorContainerImage, r.configuratorTag)
 }

@@ -1,0 +1,9 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redpanda-controller-manager
+  namespace: redpanda-system
+status:
+  readyReplicas: 1
+  replicas: 1 # Temporarily, the number of replicas becomes 2. We wait until the new version is up and running alone - or set maxSurge=0 in deployment.
+  observedGeneration: 2

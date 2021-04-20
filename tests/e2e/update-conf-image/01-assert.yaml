@@ -1,0 +1,13 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: update-image-cluster
+spec:
+  template:
+    spec:
+      initContainers:
+        - image: "vectorized/configurator:v21.4.11"
+      containers:
+        - image: "vectorized/redpanda:latest"
+status:
+  readyReplicas: 2
