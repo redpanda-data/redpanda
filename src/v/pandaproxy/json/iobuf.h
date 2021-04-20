@@ -78,7 +78,7 @@ public:
     bool
     encode_base64(rapidjson::Writer<rapidjson::StringBuffer>& w, iobuf buf) {
         if (buf.empty()) {
-            return w.String("", 0);
+            return w.Null();
         }
         // TODO Ben: Implement custom OutputStream to prevent this linearization
         return w.String(iobuf_to_base64(buf));

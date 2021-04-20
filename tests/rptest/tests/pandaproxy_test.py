@@ -450,7 +450,7 @@ class PandaProxyTest(RedpandaTest):
         expected = json.loads(data)
         assert len(fetch_result_0) == 1
         assert fetch_result_0[0]["topic"] == name
-        assert fetch_result_0[0]["key"] == ''
+        assert fetch_result_0[0]["key"] is None
         assert fetch_result_0[0]["value"] == expected["records"][0]["value"]
         assert fetch_result_0[0]["partition"] == expected["records"][0][
             "partition"]

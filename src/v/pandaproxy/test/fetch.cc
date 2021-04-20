@@ -153,7 +153,7 @@ FIXTURE_TEST(pandaproxy_fetch, pandaproxy_test_fixture) {
           res.headers.result(), boost::beast::http::status::ok);
         BOOST_REQUIRE_EQUAL(
           res.body,
-          R"([{"topic":"t","key":"","value":"dmVjdG9yaXplZA==","partition":0,"offset":1},{"topic":"t","key":"","value":"cGFuZGFwcm94eQ==","partition":0,"offset":2},{"topic":"t","key":"","value":"bXVsdGlicm9rZXI=","partition":0,"offset":3}])");
+          R"([{"topic":"t","key":null,"value":"dmVjdG9yaXplZA==","partition":0,"offset":1},{"topic":"t","key":null,"value":"cGFuZGFwcm94eQ==","partition":0,"offset":2},{"topic":"t","key":null,"value":"bXVsdGlicm9rZXI=","partition":0,"offset":3}])");
     }
 
     {
@@ -189,7 +189,7 @@ FIXTURE_TEST(pandaproxy_fetch, pandaproxy_test_fixture) {
           res.headers.result(), boost::beast::http::status::ok);
         BOOST_REQUIRE_EQUAL(
           res.body,
-          R"([{"topic":"t","key":"","value":"bXVsdGliYXRjaA==","partition":0,"offset":4}])");
+          R"([{"topic":"t","key":null,"value":"bXVsdGliYXRjaA==","partition":0,"offset":4}])");
     }
 
     {
@@ -206,6 +206,6 @@ FIXTURE_TEST(pandaproxy_fetch, pandaproxy_test_fixture) {
           res.headers.result(), boost::beast::http::status::ok);
         BOOST_REQUIRE_EQUAL(
           res.body,
-          R"([{"topic":"t","key":"","value":"dmVjdG9yaXplZA==","partition":0,"offset":1},{"topic":"t","key":"","value":"cGFuZGFwcm94eQ==","partition":0,"offset":2},{"topic":"t","key":"","value":"bXVsdGlicm9rZXI=","partition":0,"offset":3},{"topic":"t","key":"","value":"bXVsdGliYXRjaA==","partition":0,"offset":4}])");
+          R"([{"topic":"t","key":null,"value":"dmVjdG9yaXplZA==","partition":0,"offset":1},{"topic":"t","key":null,"value":"cGFuZGFwcm94eQ==","partition":0,"offset":2},{"topic":"t","key":null,"value":"bXVsdGlicm9rZXI=","partition":0,"offset":3},{"topic":"t","key":null,"value":"bXVsdGliYXRjaA==","partition":0,"offset":4}])");
     }
 }
