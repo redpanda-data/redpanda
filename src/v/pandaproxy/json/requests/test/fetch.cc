@@ -93,7 +93,7 @@ SEASTAR_THREAD_TEST_CASE(test_produce_fetch_one) {
     ppj::rjson_serialize_fmt(fmt)(w, std::move(res));
 
     auto expected
-      = R"([{"topic":"topic1","key":"KgAAAAAAAAA=","value":"","partition":1,"offset":42},{"topic":"topic2","key":"KgAAAAAAAAA=","value":"","partition":2,"offset":42}])";
+      = R"([{"topic":"topic1","key":"KgAAAAAAAAA=","value":null,"partition":1,"offset":42},{"topic":"topic2","key":"KgAAAAAAAAA=","value":null,"partition":2,"offset":42}])";
 
     BOOST_REQUIRE_EQUAL(str_buf.GetString(), expected);
 }

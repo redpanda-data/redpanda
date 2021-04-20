@@ -52,41 +52,14 @@ namespace ppj = pandaproxy::json;
 
 namespace pandaproxy {
 
-ppj::serialization_format parse_serialization_format(std::string_view accept) {
-    std::vector<std::string_view> none = {
-      "", "*/*", "application/json", "application/vnd.kafka.v2+json"};
-
-    std::vector<ss::sstring> results;
-    boost::split(
-      results, accept, boost::is_any_of(",; "), boost::token_compress_on);
-
-    if (std::any_of(results.begin(), results.end(), [](std::string_view v) {
-            return v == "application/vnd.kafka.binary.v2+json";
-        })) {
-        return ppj::serialization_format::binary_v2;
-    }
-
-    if (std::any_of(
-          results.begin(), results.end(), [&none](std::string_view lhs) {
-              return std::any_of(
-                none.begin(), none.end(), [lhs](std::string_view rhs) {
-                    return lhs == rhs;
-                });
-          })) {
-        return ppj::serialization_format::none;
-    }
-
-    return ppj::serialization_format::unsupported;
-}
-
 ss::future<server::reply_t>
 get_topics_names(server::request_t rq, server::reply_t rp) {
     parse::content_type_header(
       *rq.req,
-      {json::serialization_format::json_v2, json::serialization_format::none});
+      {json::serialization_format::v2, json::serialization_format::none});
     auto res_fmt = parse::accept_header(
       *rq.req,
-      {json::serialization_format::json_v2, json::serialization_format::none});
+      {json::serialization_format::v2, json::serialization_format::none});
     rq.req.reset();
     auto make_list_topics_req = []() {
         return kafka::metadata_request{.list_all_topics = true};
@@ -114,9 +87,13 @@ get_topics_names(server::request_t rq, server::reply_t rp) {
 
 ss::future<server::reply_t>
 get_topics_records(server::request_t rq, server::reply_t rp) {
-    parse::content_type_header(*rq.req, {json::serialization_format::json_v2});
+    parse::content_type_header(
+      *rq.req,
+      {json::serialization_format::v2, json::serialization_format::none});
     auto res_fmt = parse::accept_header(
-      *rq.req, {json::serialization_format::binary_v2});
+      *rq.req,
+      {json::serialization_format::binary_v2,
+       json::serialization_format::json_v2});
 
     auto tp{model::topic_partition{
       parse::request_param<model::topic>(*rq.req, "topic_name"),
@@ -146,10 +123,12 @@ get_topics_records(server::request_t rq, server::reply_t rp) {
 ss::future<server::reply_t>
 post_topics_name(server::request_t rq, server::reply_t rp) {
     auto req_fmt = parse::content_type_header(
-      *rq.req, {json::serialization_format::binary_v2});
+      *rq.req,
+      {json::serialization_format::binary_v2,
+       json::serialization_format::json_v2});
     auto res_fmt = parse::accept_header(
       *rq.req,
-      {json::serialization_format::json_v2, json::serialization_format::none});
+      {json::serialization_format::v2, json::serialization_format::none});
 
     auto topic = parse::request_param<model::topic>(*rq.req, "topic_name");
 
@@ -181,10 +160,10 @@ static ss::sstring make_consumer_uri(
 
 ss::future<server::reply_t>
 create_consumer(server::request_t rq, server::reply_t rp) {
-    parse::content_type_header(*rq.req, {json::serialization_format::json_v2});
+    parse::content_type_header(*rq.req, {json::serialization_format::v2});
     auto res_fmt = parse::accept_header(
       *rq.req,
-      {json::serialization_format::json_v2, json::serialization_format::none});
+      {json::serialization_format::v2, json::serialization_format::none});
 
     auto group_id = parse::request_param<kafka::group_id>(
       *rq.req, "group_name");
@@ -192,9 +171,10 @@ create_consumer(server::request_t rq, server::reply_t rp) {
     auto req_data = ppj::rjson_parse(
       rq.req->content.data(), ppj::create_consumer_request_handler());
 
-    if (req_data.format != "binary") {
+    if (req_data.format != "binary" && req_data.format != "json") {
         throw parse::error(
-          parse::error_code::invalid_param, "format must be binary");
+          parse::error_code::invalid_param,
+          "format must be 'binary' or 'json'");
     }
     if (req_data.auto_offset_reset != "earliest") {
         throw parse::error(
@@ -221,10 +201,10 @@ create_consumer(server::request_t rq, server::reply_t rp) {
 
 ss::future<server::reply_t>
 remove_consumer(server::request_t rq, server::reply_t rp) {
-    parse::content_type_header(*rq.req, {json::serialization_format::json_v2});
+    parse::content_type_header(*rq.req, {json::serialization_format::v2});
     parse::accept_header(
       *rq.req,
-      {json::serialization_format::json_v2, json::serialization_format::none});
+      {json::serialization_format::v2, json::serialization_format::none});
 
     auto group_id = parse::request_param<kafka::group_id>(
       *rq.req, "group_name");
@@ -238,10 +218,10 @@ remove_consumer(server::request_t rq, server::reply_t rp) {
 
 ss::future<server::reply_t>
 subscribe_consumer(server::request_t rq, server::reply_t rp) {
-    parse::content_type_header(*rq.req, {json::serialization_format::json_v2});
+    parse::content_type_header(*rq.req, {json::serialization_format::v2});
     auto res_fmt = parse::accept_header(
       *rq.req,
-      {json::serialization_format::json_v2, json::serialization_format::none});
+      {json::serialization_format::v2, json::serialization_format::none});
 
     auto group_id = parse::request_param<kafka::group_id>(
       *rq.req, "group_name");
@@ -263,9 +243,11 @@ ss::future<server::reply_t>
 consumer_fetch(server::request_t rq, server::reply_t rp) {
     parse::content_type_header(
       *rq.req,
-      {json::serialization_format::json_v2, json::serialization_format::none});
+      {json::serialization_format::v2, json::serialization_format::none});
     auto res_fmt = parse::accept_header(
-      *rq.req, {json::serialization_format::binary_v2});
+      *rq.req,
+      {json::serialization_format::binary_v2,
+       json::serialization_format::json_v2});
 
     auto group_id{parse::request_param<kafka::group_id>(*rq.req, "group_name")};
     auto name{parse::request_param<kafka::member_id>(*rq.req, "instance")};
@@ -291,10 +273,10 @@ consumer_fetch(server::request_t rq, server::reply_t rp) {
 
 ss::future<server::reply_t>
 get_consumer_offsets(server::request_t rq, server::reply_t rp) {
-    parse::content_type_header(*rq.req, {json::serialization_format::json_v2});
+    parse::content_type_header(*rq.req, {json::serialization_format::v2});
     auto res_fmt = parse::accept_header(
       *rq.req,
-      {json::serialization_format::json_v2, json::serialization_format::none});
+      {json::serialization_format::v2, json::serialization_format::none});
 
     auto group_id{parse::request_param<kafka::group_id>(*rq.req, "group_name")};
     auto member_id{parse::request_param<kafka::member_id>(*rq.req, "instance")};
@@ -315,10 +297,10 @@ get_consumer_offsets(server::request_t rq, server::reply_t rp) {
 
 ss::future<server::reply_t>
 post_consumer_offsets(server::request_t rq, server::reply_t rp) {
-    parse::content_type_header(*rq.req, {json::serialization_format::json_v2});
+    parse::content_type_header(*rq.req, {json::serialization_format::v2});
     parse::accept_header(
       *rq.req,
-      {json::serialization_format::json_v2, json::serialization_format::none});
+      {json::serialization_format::v2, json::serialization_format::none});
 
     auto group_id{parse::request_param<kafka::group_id>(*rq.req, "group_name")};
     auto member_id{parse::request_param<kafka::member_id>(*rq.req, "instance")};

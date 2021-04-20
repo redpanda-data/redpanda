@@ -68,6 +68,8 @@ public:
             [[fallthrough]];
         case serialization_format::binary_v2:
             return encode_base64(w, std::move(buf));
+        case serialization_format::json_v2:
+            return encode_json(w, std::move(buf));
         case serialization_format::unsupported:
             [[fallthrough]];
         default:
@@ -78,10 +80,22 @@ public:
     bool
     encode_base64(rapidjson::Writer<rapidjson::StringBuffer>& w, iobuf buf) {
         if (buf.empty()) {
-            return w.String("", 0);
+            return w.Null();
         }
         // TODO Ben: Implement custom OutputStream to prevent this linearization
         return w.String(iobuf_to_base64(buf));
+    };
+
+    bool encode_json(rapidjson::Writer<rapidjson::StringBuffer>& w, iobuf buf) {
+        if (buf.empty()) {
+            return w.Null();
+        }
+        iobuf_parser p{std::move(buf)};
+        auto str = p.read_string(p.bytes_left());
+        static_assert(str.padding(), "StringStream requires null termination");
+        rapidjson::Reader reader;
+        rapidjson::StringStream ss{str.c_str()};
+        return reader.Parse(ss, w);
     };
 
 private:
