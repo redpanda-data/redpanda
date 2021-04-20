@@ -393,10 +393,9 @@ class PandaProxyTest(RedpandaTest):
             name,
             0,
             headers={"Accept": "application/vnd.kafka.binary.v2+json"})
-        assert fetch_raw_result.status_code == requests.codes.unsupported_media_type
+        assert fetch_raw_result.status_code == requests.codes.not_found
         fetch_result = fetch_raw_result.json()
-        assert fetch_result[
-            "error_code"] == requests.codes.unsupported_media_type
+        assert fetch_result["error_code"] == 40402
 
         self.logger.info(f"Consuming with no accept header")
         fetch_raw_result = self._fetch_topic(
