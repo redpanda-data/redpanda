@@ -93,10 +93,10 @@ You can either create a Kubernetes cluster on your local machine or on a cloud p
 2. Install the Redpanda operator CRDs:
 
     ```
-    kubectl apply -k 'https://github.com/vectorizedio/redpanda/src/go/k8s/config/crd?ref=<latest version>'
+    kubectl apply -k https://github.com/vectorizedio/redpanda/src/go/k8s/config/crd?ref=<latest version>
     ```
 
-    You can find the latest version number of the operator on the [list of operator releases](https://github.com/vectorizedio/redpanda/releases).
+    **_Note:_** Replace `<latest version>` with the latest version number of the operator from the [list of operator releases](https://github.com/vectorizedio/redpanda/releases).
 
 3. Install Redpanda operator on your Kubernetes cluster with:
 
@@ -114,104 +114,34 @@ After you set up Redpanda in your Kubernetes cluster, you can use our samples to
     kubectl create ns redpanda-test
     ```
 
-- Install resources from our sample files:
-
-    - One node cluster:
+- Install resources from [our sample files](https://github.com/vectorizedio/redpanda/tree/dev/src/go/k8s/config/samples), for example the single-node cluster:
                 
-        ```
-        kubectl apply -n redpanda-test -f https://raw.githubusercontent.com/vectorizedio/redpanda/dev/src/go/k8s/config/samples/one_node_cluster.yaml
-        ```
-
-    - Cluster with external connectivity (verified on AWS) -
-        
-        ```
-        kubectl apply -n redpanda-test -f https://raw.githubusercontent.com/vectorizedio/redpanda/dev/src/go/k8s/config/samples/external_connectivity.yaml
-        ```
-
-    - Cluster with TLS encryption -
-        
-        ```
-        kubectl apply -n redpanda-test -f https://raw.githubusercontent.com/vectorizedio/redpanda/dev/src/go/k8s/config/samples/redpanda_v1alpha1_with_tls.yaml
-        ```
-
-        To allow connections to the cluster with TLS enabled, you have to mount a TLS configuration for rpk.
-        The following definition creates a pod that has TLS configured.
-        From that pod, users can list, create, and delete topics, and also produce and consume events.
-
-        ```
-        cat <<EOF | kubectl apply -f -
-        apiVersion: v1
-        kind: ConfigMap
-        metadata:
-         name: rpk-config
-         namespace: redpanda-test
-        data:
-         redpanda.yaml: |
-           redpanda:
-           rpk:
-             tls:
-               truststore_file: /etc/tls/certs/ca.crt
-        ---
-        apiVersion: v1
-        kind: Pod
-        metadata:
-         name: produce-msg
-         namespace: redpanda-test
-        spec:
-         volumes:
-         - name: tlscert
-           secret:
-             defaultMode: 420
-             secretName: cluster-sample-tls-redpanda
-         - name: rpkconfig
-           configMap:
-             name: rpk-config
-         containers:
-         - name: rpk
-           image: vectorized/redpanda:latest
-           command:
-           - /bin/bash
-           tty: true
-           stdin: true
-           volumeMounts:
-           - mountPath: /etc/tls/certs
-             name: tlscert
-           - mountPath: /etc/redpanda
-             name: rpkconfig
-        EOF
-        ```
-
-        To connect to the produce pod, run:
-        
-        ```
-        kubectl attach -n redpanda-test -ti produce-msg
-        ```
+    ```
+    kubectl apply -n redpanda-test -f https://raw.githubusercontent.com/vectorizedio/redpanda/dev/src/go/k8s/config/samples/one_node_cluster.yaml
+    ```
 
 - Review the [cluster_types file](https://github.com/vectorizedio/redpanda/blob/dev/src/go/k8s/apis/redpanda/v1alpha1/cluster_types.go) to see the resource configuration options.
 
 - Use `rpk` to work with your Redpanda nodes, for example:
 
+    - Check the status of the cluster:
+
+        ```
+        kubectl -n redpanda-test run -ti --rm --restart=Never --image vectorized/redpanda:v21.4.12 rpk -- --brokers one-node-cluster-0.one-node-cluster.redpanda-test.svc.cluster.local:9092 cluster info
+        ```
+    
     - Create a topic:
 
         ```
-        rpk topic create test-topic-name --brokers cluster-sample-tls-0.cluster-sample-tls.redpanda-test.svc.cluster.local:9092
+        kubectl -n redpanda-test run -ti --rm --restart=Never --image vectorized/redpanda:v21.4.12 rpk -- --brokers one-node-cluster-0.one-node-cluster.redpanda-test.svc.cluster.local:9092 topic create reddit-thread
         ```
 
     - Show the list of topics:
 
         ```
-        rpk topic list --brokers cluster-sample-tls-0.cluster-sample-tls.redpanda-test.svc.cluster.local:9092
-        ```
+        kubectl -n redpanda-test run -ti --rm --restart=Never --image vectorized/redpanda:v21.4.12 rpk -- --brokers one-node-cluster-0.one-node-cluster.redpanda-test.svc.cluster.local:9092 topic list
+        ```    
 
-    - Produce a message to the topic:
+As you can see, Redpanda responds to the rpk commands from the "rpk" pod.
 
-        ```
-        echo {"test":"message"} | rpk topic produce test-topic-name --brokers cluster-sample-tls-0.cluster-sample-tls.redpanda-test.svc.cluster.local:9092
-        ```
-
-    - Consume the message from the topic:
-
-        ```
-        rpk topic consume test-topic-name --brokers cluster-sample-tls-0.cluster-sample-tls.redpanda-test.svc.cluster.local:9092
-        ```
-    
+Contact us in our [Slack](https://vectorized.io/slack) community so we can work together to implement the Kubernetes use cases for you.
