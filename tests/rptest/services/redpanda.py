@@ -147,8 +147,8 @@ class RedpandaService(Service):
         return coproc is True and dev_mode is True
 
     def start_wasm_engine(self, node):
-        wcmd = (f"nohup {self.find_wasm_root()}/bin/node"
-                f" {self.find_wasm_root()}/output/modules/rpc/service.js"
+        wcmd = (f"nohup {self.find_binary('node')}"
+                f" {self.find_wasm_root()}/main.js"
                 f" {RedpandaService.CONFIG_FILE} "
                 f" >> {RedpandaService.WASM_STDOUT_STDERR_CAPTURE} 2>&1 &")
 
@@ -175,7 +175,7 @@ class RedpandaService(Service):
     def find_wasm_root(self):
         rp_install_path_root = self._context.globals.get(
             "rp_install_path_root", None)
-        return f"{rp_install_path_root}/node"
+        return f"{rp_install_path_root}/opt/wasm"
 
     def find_binary(self, name):
         rp_install_path_root = self._context.globals.get(
