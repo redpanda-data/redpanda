@@ -74,7 +74,7 @@ func Test_LoadConfig(t *testing.T) {
 			if tt.conf != nil {
 				conf = tt.conf()
 			}
-			c, err := kafka.LoadConfig(conf)
+			c, err := kafka.LoadConfig(&conf.Rpk.TLS, &conf.Rpk.SCRAM)
 			require.NoError(t, err)
 			tt.check(st, conf, c)
 		})

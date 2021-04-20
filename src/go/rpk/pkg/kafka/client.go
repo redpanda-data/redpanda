@@ -46,15 +46,21 @@ func DefaultConfig() *sarama.Config {
 }
 
 // Overrides the default config with the redpanda config values, such as TLS.
-func LoadConfig(conf *config.Config) (*sarama.Config, error) {
+func LoadConfig(tls *config.TLS, scram *config.SCRAM) (*sarama.Config, error) {
+	var err error
 	c := DefaultConfig()
 
-	c, err := configureTLS(c, conf)
-	if err != nil {
-		return nil, err
+	if tls != nil {
+		c, err = configureTLS(c, tls)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	return ConfigureSASL(c, &conf.Rpk.SCRAM)
+	if scram != nil {
+		return ConfigureSASL(c, scram)
+	}
+	return c, nil
 }
 
 func InitClient(brokers ...string) (sarama.Client, error) {
@@ -64,9 +70,9 @@ func InitClient(brokers ...string) (sarama.Client, error) {
 
 // Initializes a client using values from the configuration when possible.
 func InitClientWithConf(
-	conf *config.Config, brokers ...string,
+	tls *config.TLS, scram *config.SCRAM, brokers ...string,
 ) (sarama.Client, error) {
-	c, err := LoadConfig(conf)
+	c, err := LoadConfig(tls, scram)
 	if err != nil {
 		return nil, err
 	}
@@ -212,23 +218,22 @@ func ConfigureSASL(
 // redpanda.kafka_api_tls are set in the configuration. Doesn't modify the
 // configuration otherwise.
 func configureTLS(
-	saramaConf *sarama.Config, rpConf *config.Config,
+	saramaConf *sarama.Config, tlsConf *config.TLS,
 ) (*sarama.Config, error) {
-	var tlsConf *tls.Config
+	var tlsConfig *tls.Config
 	var err error
-	rpkTls := rpConf.Rpk.TLS
 
 	// Try to configure TLS from the available config
 	switch {
 	// Enable client auth if the cert & key files are set for rpk
-	case rpkTls.CertFile != "" &&
-		rpkTls.KeyFile != "" &&
-		rpkTls.TruststoreFile != "":
+	case tlsConf.CertFile != "" &&
+		tlsConf.KeyFile != "" &&
+		tlsConf.TruststoreFile != "":
 
-		tlsConf, err = loadTLSConfig(
-			rpkTls.TruststoreFile,
-			rpkTls.CertFile,
-			rpkTls.KeyFile,
+		tlsConfig, err = loadTLSConfig(
+			tlsConf.TruststoreFile,
+			tlsConf.CertFile,
+			tlsConf.KeyFile,
 		)
 		if err != nil {
 			return nil, err
@@ -236,12 +241,12 @@ func configureTLS(
 		log.Debug("API TLS auth enabled using rpk.tls")
 
 	// Enable TLS (no auth) if only the CA cert file is set for rpk
-	case rpkTls.TruststoreFile != "":
-		caCertPool, err := loadRootCACert(rpkTls.TruststoreFile)
+	case tlsConf.TruststoreFile != "":
+		caCertPool, err := loadRootCACert(tlsConf.TruststoreFile)
 		if err != nil {
 			return nil, err
 		}
-		tlsConf = &tls.Config{RootCAs: caCertPool}
+		tlsConfig = &tls.Config{RootCAs: caCertPool}
 		log.Debug("API TLS enabled using rpk.tls")
 
 	default:
@@ -251,8 +256,8 @@ func configureTLS(
 				" to enable it",
 		)
 	}
-	if tlsConf != nil {
-		saramaConf.Net.TLS.Config = tlsConf
+	if tlsConfig != nil {
+		saramaConf.Net.TLS.Config = tlsConfig
 		saramaConf.Net.TLS.Enable = true
 	}
 

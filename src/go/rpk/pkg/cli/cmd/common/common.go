@@ -171,7 +171,7 @@ func CreateProducer(
 		if err != nil {
 			return nil, err
 		}
-		cfg, err := kafka.LoadConfig(conf)
+		cfg, err := kafka.LoadConfig(&conf.Rpk.TLS, &conf.Rpk.SCRAM)
 		if err != nil {
 			return nil, err
 		}
@@ -197,7 +197,7 @@ func CreateClient(
 			return nil, err
 		}
 		bs := brokers()
-		client, err := kafka.InitClientWithConf(conf, bs...)
+		client, err := kafka.InitClientWithConf(&conf.Rpk.TLS, &conf.Rpk.SCRAM, bs...)
 		return client, wrapConnErr(err, bs)
 	}
 }
@@ -213,7 +213,7 @@ func CreateAdmin(
 		if err != nil {
 			return nil, err
 		}
-		cfg, err := kafka.LoadConfig(conf)
+		cfg, err := kafka.LoadConfig(&conf.Rpk.TLS, &conf.Rpk.SCRAM)
 		if err != nil {
 			return nil, err
 		}
