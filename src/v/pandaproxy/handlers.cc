@@ -52,33 +52,6 @@ namespace ppj = pandaproxy::json;
 
 namespace pandaproxy {
 
-ppj::serialization_format parse_serialization_format(std::string_view accept) {
-    std::vector<std::string_view> none = {
-      "", "*/*", "application/json", "application/vnd.kafka.v2+json"};
-
-    std::vector<ss::sstring> results;
-    boost::split(
-      results, accept, boost::is_any_of(",; "), boost::token_compress_on);
-
-    if (std::any_of(results.begin(), results.end(), [](std::string_view v) {
-            return v == "application/vnd.kafka.binary.v2+json";
-        })) {
-        return ppj::serialization_format::binary_v2;
-    }
-
-    if (std::any_of(
-          results.begin(), results.end(), [&none](std::string_view lhs) {
-              return std::any_of(
-                none.begin(), none.end(), [lhs](std::string_view rhs) {
-                    return lhs == rhs;
-                });
-          })) {
-        return ppj::serialization_format::none;
-    }
-
-    return ppj::serialization_format::unsupported;
-}
-
 ss::future<server::reply_t>
 get_topics_names(server::request_t rq, server::reply_t rp) {
     parse::content_type_header(
