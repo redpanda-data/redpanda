@@ -194,7 +194,7 @@ ss::future<> event_listener::do_start() {
         /// There is a discrepency between the number of registered coprocs
         /// according to redpanda and according to the wasm engine.
         /// Reconcile all state from offset 0.
-        if (!co_await _dispatcher.disable_all_coprocessors()) {
+        if (co_await _dispatcher.disable_all_coprocessors()) {
             vlog(
               coproclog.error,
               "Failed to reset wasm_engine state, will keep retrying...");
