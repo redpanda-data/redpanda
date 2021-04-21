@@ -79,69 +79,112 @@ You can either create a Kubernetes cluster on your local machine or on a cloud p
   gcloud container clusters create redpanda --machine-type n1-standard-4
   ```
 
+  **_Note_** - You may need to add a `--region` or `--zone` to this command.
+
   </tab>
 </tabs>
 
-## Using Helm to Install Redpanda
+## Install cert-manager
+
+The Redpanda operator requires cert-manager to create certificates for TLS communication.
+You can [install cert-manager with a CRD](https://cert-manager.io/docs/installation/kubernetes/#installing-with-helm),
+but here's the command to install using helm:
+
+```
+kubectl create namespace cert-manager && \
+helm repo add jetstack https://charts.jetstack.io && \
+helm repo update && \
+kubectl apply -f https://github.com/jetstack/cert-manager/releases/download/v1.3.0/cert-manager.yaml
+```
+
+We recommend that you use [the verification procedure](https://cert-manager.io/docs/installation/kubernetes/#verifying-the-installation) in the cert-manager docs
+to verify that cert-manager is working correcly.
+
+## Using Helm to install Redpanda
 
 1. Using Helm, add the Redpanda chart repository and update it:
 
     ```
-    helm repo add redpanda https://charts.vectorized.io/ && helm repo update
+    helm repo add redpanda https://charts.vectorized.io/ && \
+    helm repo update
     ```
 
-2. Install the Redpanda operator CRDs:
+2. Just to simplify the commands, create a variable for the version number:
 
     ```
-    kubectl apply -k https://github.com/vectorizedio/redpanda/src/go/k8s/config/crd?ref=<latest version>
+    export version=v21.4.13
     ```
 
-    **_Note:_** Replace `<latest version>` with the latest version number of the operator from the [list of operator releases](https://github.com/vectorizedio/redpanda/releases).
+    **_Note_** - You can find the latest version number of the operator in the [list of operator releases](https://github.com/vectorizedio/redpanda/releases).
 
-3. Install Redpanda operator on your Kubernetes cluster with:
+3. Install the Redpanda operator CRD:
 
     ```
-    helm install --namespace redpanda-system --create-namespace redpanda-operator redpanda/redpanda-operator
+    kubectl apply \
+    -k https://github.com/vectorizedio/redpanda/src/go/k8s/config/crd?ref=$version
     ```
 
-## Next steps
+4. Install the Redpanda operator on your Kubernetes cluster with:
 
-After you set up Redpanda in your Kubernetes cluster, you can use our samples to install resources and see Redpanda in action:
+    ```
+    helm install \
+    --namespace redpanda-system \
+    --create-namespace redpanda-operator \
+    redpanda/redpanda-operator
+    ```
 
-- Create a namespace for your resources:
+## Connect to the Redpanda cluster
+
+After you set up Redpanda in your Kubernetes cluster, you can use our samples to install a cluster and see Redpanda in action:
+
+- Create a namespace for your cluster:
 
     ```
     kubectl create ns redpanda-test
     ```
 
-- Install resources from [our sample files](https://github.com/vectorizedio/redpanda/tree/dev/src/go/k8s/config/samples), for example the single-node cluster:
+- Install a cluster from [our sample files](https://github.com/vectorizedio/redpanda/tree/dev/src/go/k8s/config/samples), for example the single-node cluster:
                 
     ```
-    kubectl apply -n redpanda-test -f https://raw.githubusercontent.com/vectorizedio/redpanda/dev/src/go/k8s/config/samples/one_node_cluster.yaml
+    kubectl apply \
+    -n redpanda-test \
+    -f https://raw.githubusercontent.com/vectorizedio/redpanda/dev/src/go/k8s/config/samples/one_node_cluster.yaml
     ```
 
-- Review the [cluster_types file](https://github.com/vectorizedio/redpanda/blob/dev/src/go/k8s/apis/redpanda/v1alpha1/cluster_types.go) to see the resource configuration options.
+    You can see the resource configuration options in the [cluster_types file](https://github.com/vectorizedio/redpanda/blob/dev/src/go/k8s/apis/redpanda/v1alpha1/cluster_types.go).
 
 - Use `rpk` to work with your Redpanda nodes, for example:
 
     - Check the status of the cluster:
 
         ```
-        kubectl -n redpanda-test run -ti --rm --restart=Never --image vectorized/redpanda:v21.4.12 rpk -- --brokers one-node-cluster-0.one-node-cluster.redpanda-test.svc.cluster.local:9092 cluster info
+        kubectl -n redpanda-test run -ti --rm \
+        --restart=Never \
+        --image vectorized/redpanda:$version \
+        -- rpk --brokers one-node-cluster-0.one-node-cluster.redpanda-test.svc.cluster.local:9092 \
+        cluster info
         ```
     
     - Create a topic:
 
         ```
-        kubectl -n redpanda-test run -ti --rm --restart=Never --image vectorized/redpanda:v21.4.12 rpk -- --brokers one-node-cluster-0.one-node-cluster.redpanda-test.svc.cluster.local:9092 topic create reddit-thread
+        kubectl -n redpanda-test run -ti --rm \
+        --restart=Never \
+        --image vectorized/redpanda:$version \
+        -- rpk --brokers one-node-cluster-0.one-node-cluster.redpanda-test.svc.cluster.local:9092 \
+        topic create reddit-thread
         ```
 
     - Show the list of topics:
 
         ```
-        kubectl -n redpanda-test run -ti --rm --restart=Never --image vectorized/redpanda:v21.4.12 rpk -- --brokers one-node-cluster-0.one-node-cluster.redpanda-test.svc.cluster.local:9092 topic list
-        ```    
+        kubectl -n redpanda-test run -ti --rm \
+        --restart=Never \
+        --image vectorized/redpanda:$version \
+        -- rpk --brokers one-node-cluster-0.one-node-cluster.redpanda-test.svc.cluster.local:9092 \
+        topic list
+        ```
 
 As you can see, Redpanda responds to the rpk commands from the "rpk" pod.
 
-Contact us in our [Slack](https://vectorized.io/slack) community so we can work together to implement the Kubernetes use cases for you.
+Contact us in our [Slack](https://vectorized.io/slack) community so we can work together to implement your Kubernetes use cases.
