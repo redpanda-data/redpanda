@@ -92,34 +92,33 @@ ss::future<> event_listener::persist_actions(
     /// TODO: In the future, maybe it would be cleaner to have a add/remove
     /// endpoint, instead of two seperate RPC endpoints
     if (!enables.empty()) {
-        std::vector<script_id> enable_ids;
-        std::transform(
-          enables.cbegin(),
-          enables.cend(),
-          std::back_inserter(enable_ids),
-          [](const enable_copros_request::data& e) { return e.id; });
         enable_copros_request req{.inputs = std::move(enables)};
-        auto err = co_await _dispatcher.enable_coprocessors(std::move(req));
-        if (err) {
+        auto resp = co_await _dispatcher.enable_coprocessors(std::move(req));
+        if (resp.has_error()) {
             vlog(
               coproclog.error,
               "Failed to register coprocessors with the wasm engine: {}",
-              err);
+              resp.error());
             _offset = last_offset;
             co_return;
-        }
-        for (script_id id : enable_ids) {
-            _active_ids.insert(id);
+        } else {
+            for (script_id id : resp.value()) {
+                vlog(
+                  coproclog.info,
+                  "Successfully registered script with id: {}",
+                  id);
+                _active_ids.insert(id);
+            }
         }
     }
     if (!disables.empty()) {
-        disable_copros_request req{.ids = disables};
-        auto err = co_await _dispatcher.disable_coprocessors(std::move(req));
-        if (err) {
+        disable_copros_request req{.ids = std::move(disables)};
+        auto resp = co_await _dispatcher.disable_coprocessors(std::move(req));
+        if (resp.has_error()) {
             vlog(
               coproclog.error,
-              "Failed to deregister coprocessors with the wasm engine: {}",
-              err);
+              "Failed to make disable request to the wasm engine: {}",
+              resp.error());
             /// In this case the code will follow a path that re-enters this
             /// method with the same inputs, and the call to enable_copros above
             /// succeeded but the call to disable_coprocessors failed, double
@@ -127,7 +126,7 @@ ss::future<> event_listener::persist_actions(
             /// \ref active_ids cache and will not be queued for re-registration
             _offset = last_offset;
         } else {
-            for (script_id id : disables) {
+            for (script_id id : resp.value()) {
                 _active_ids.erase(id);
             }
         }
