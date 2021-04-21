@@ -252,3 +252,62 @@ func TestKafkaAuthConfig(t *testing.T) {
 		})
 	}
 }
+
+func TestBuildTLSConfig(t *testing.T) {
+	tests := []struct {
+		name           string
+		keyFile        string
+		certFile       string
+		truststoreFile string
+		expected       *config.TLS
+		expectedErrMsg string
+	}{{
+		name:     "it should return a nil config if none are set",
+		expected: nil,
+	}, {
+		name:           "it should fail if truststoreFile is empty",
+		certFile:       "cert.pem",
+		keyFile:        "key.pem",
+		expectedErrMsg: "--tls-truststore is required to enable TLS",
+	}, {
+		name:           "it should fail if certFile is present but keyFile is empty",
+		certFile:       "cert.pem",
+		truststoreFile: "trust.pem",
+		expectedErrMsg: "if --tls-cert is passed, then --tls-key must be passed to enable" +
+			" TLS authentication",
+	}, {
+		name:           "it should fail if keyFile is present but certFile is empty",
+		keyFile:        "key.pem",
+		truststoreFile: "trust.pem",
+		expectedErrMsg: "if --tls-key is passed, then --tls-cert must be passed to enable" +
+			" TLS authentication",
+	}, {
+		name:           "it should build the config with only a truststore",
+		truststoreFile: "trust.pem",
+		expected:       &config.TLS{TruststoreFile: "trust.pem"},
+	}, {
+		name:           "it should build the config with all fields",
+		certFile:       "cert.pem",
+		keyFile:        "key.pem",
+		truststoreFile: "trust.pem",
+		expected: &config.TLS{
+			CertFile:       "cert.pem",
+			KeyFile:        "key.pem",
+			TruststoreFile: "trust.pem",
+		},
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(st *testing.T) {
+			res, err := common.BuildTLSConfig(
+				&tt.certFile,
+				&tt.keyFile,
+				&tt.truststoreFile,
+			)()
+			if tt.expectedErrMsg != "" {
+				require.EqualError(st, err, tt.expectedErrMsg)
+			}
+			require.Exactly(st, tt.expected, res)
+		})
+	}
+}

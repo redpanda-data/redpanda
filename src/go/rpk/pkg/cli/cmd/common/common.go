@@ -28,7 +28,10 @@ const FeedbackMsg = `We'd love to hear about your experience with redpanda:
 https://vectorized.io/feedback`
 
 const (
-	saslMechanismFlag = "sasl-mechanism"
+	saslMechanismFlag  = "sasl-mechanism"
+	certFileFlag       = "tls-cert"
+	keyFileFlag        = "tls-key"
+	truststoreFileFlag = "tls-truststore"
 )
 
 var ErrNoCredentials = errors.New("empty username and password")
@@ -263,6 +266,46 @@ func KafkaAuthConfig(
 	}
 }
 
+func BuildTLSConfig(
+	certFile,
+	keyFile,
+	truststoreFile *string,
+) func() (*config.TLS, error) {
+	return func() (*config.TLS, error) {
+		if *truststoreFile == "" && *certFile == "" && *keyFile == "" {
+			return nil, nil
+		}
+		if *truststoreFile == "" && (*certFile != "" || *keyFile != "") {
+			return nil, fmt.Errorf(
+				"--%s is required to enable TLS",
+				truststoreFileFlag,
+			)
+		}
+		if *certFile != "" && *keyFile == "" {
+			return nil, fmt.Errorf(
+				"if --%s is passed, then --%s must be passed to enable"+
+					" TLS authentication",
+				certFileFlag,
+				keyFileFlag,
+			)
+		}
+		if *keyFile != "" && *certFile == "" {
+			return nil, fmt.Errorf(
+				"if --%s is passed, then --%s must be passed to enable"+
+					" TLS authentication",
+				keyFileFlag,
+				certFileFlag,
+			)
+		}
+		tls := &config.TLS{
+			KeyFile:        *keyFile,
+			CertFile:       *certFile,
+			TruststoreFile: *truststoreFile,
+		}
+		return tls, nil
+	}
+}
+
 func CreateDockerClient() (common.Client, error) {
 	return common.NewDockerClient()
 }
@@ -329,6 +372,34 @@ func AddKafkaFlags(
 			sarama.SASLTypeSCRAMSHA256,
 			sarama.SASLTypeSCRAMSHA512,
 		),
+	)
+
+	return command
+}
+
+func AddTLSFlags(
+	command *cobra.Command,
+	certFile,
+	keyFile,
+	truststoreFile *string,
+) *cobra.Command {
+	command.PersistentFlags().StringVar(
+		certFile,
+		certFileFlag,
+		"",
+		"The certificate to be used for TLS authentication with the broker.",
+	)
+	command.PersistentFlags().StringVar(
+		keyFile,
+		keyFileFlag,
+		"",
+		"The certificate key to be used for TLS authentication with the broker.",
+	)
+	command.PersistentFlags().StringVar(
+		truststoreFile,
+		truststoreFileFlag,
+		"",
+		"The truststore to be used for TLS communication with the broker.",
 	)
 
 	return command
