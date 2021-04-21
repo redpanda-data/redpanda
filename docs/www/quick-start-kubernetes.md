@@ -139,13 +139,13 @@ After you set up Redpanda in your Kubernetes cluster, you can use our samples to
 
 Let's try setting up a Redpanda topic to handle a stream of events from a chat application with 5 chat rooms:
 
-- Create a namespace for your cluster:
+1. Create a namespace for your cluster:
 
     ```
     kubectl create ns chat-with-me
     ```
 
-- Install a cluster from [our sample files](https://github.com/vectorizedio/redpanda/tree/dev/src/go/k8s/config/samples), for example the single-node cluster:
+2. Install a cluster from [our sample files](https://github.com/vectorizedio/redpanda/tree/dev/src/go/k8s/config/samples), for example the single-node cluster:
                 
     ```
     kubectl apply \
@@ -155,9 +155,9 @@ Let's try setting up a Redpanda topic to handle a stream of events from a chat a
 
     You can see the resource configuration options in the [cluster_types file](https://github.com/vectorizedio/redpanda/blob/dev/src/go/k8s/apis/redpanda/v1alpha1/cluster_types.go).
 
-- Use `rpk` to work with your Redpanda nodes, for example:
+3. Use `rpk` to work with your Redpanda nodes, for example:
 
-    - Check the status of the cluster:
+    a. Check the status of the cluster:
 
         ```
         kubectl -n chat-with-me run -ti --rm \
@@ -167,7 +167,7 @@ Let's try setting up a Redpanda topic to handle a stream of events from a chat a
         cluster info
         ```
     
-    - Create a topic:
+    b. Create a topic:
 
         ```
         kubectl -n chat-with-me run -ti --rm \
@@ -177,7 +177,7 @@ Let's try setting up a Redpanda topic to handle a stream of events from a chat a
         topic create chat-rooms -p 5
         ```
 
-    - Show the list of topics:
+    c. Show the list of topics:
 
         ```
         kubectl -n chat-with-me run -ti --rm \
