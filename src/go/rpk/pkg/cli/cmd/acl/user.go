@@ -15,6 +15,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/api/admin"
+	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/ui"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 )
 
@@ -44,6 +45,7 @@ func NewUserCommand(tls func() (*config.TLS, error)) *cobra.Command {
 
 	command.AddCommand(NewCreateUserCommand(adminApi))
 	command.AddCommand(NewDeleteUserCommand(adminApi))
+	command.AddCommand(NewListUsersCommand(adminApi))
 	return command
 }
 
@@ -127,6 +129,46 @@ func NewDeleteUserCommand(
 	command.MarkFlagRequired(deleteUsernameFlag)
 
 	return command
+}
+
+func NewListUsersCommand(
+	adminApi func() (admin.AdminAPI, error),
+) *cobra.Command {
+	command := &cobra.Command{
+		Use:          "list",
+		Aliases:      []string{"ls"},
+		Short:        "List users",
+		SilenceUsage: true,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			adminApi, err := adminApi()
+			if err != nil {
+				return err
+			}
+			usernames, err := adminApi.ListUsers()
+			if err != nil {
+				return err
+			}
+
+			printUsernames(usernames)
+
+			return nil
+		},
+	}
+
+	return command
+}
+
+func printUsernames(usernames []string) {
+	spacer := []string{""}
+	t := ui.NewRpkTable(log.StandardLogger().Out)
+	t.SetColWidth(80)
+	t.SetAutoWrapText(true)
+	t.SetHeader([]string{"Username"})
+	t.Append(spacer)
+	for _, u := range usernames {
+		t.Append([]string{u})
+	}
+	t.Render()
 }
 
 func buildAdminAPI(

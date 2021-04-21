@@ -127,6 +127,50 @@ func TestACLUserCommands(t *testing.T) {
 			"--delete-username", "user",
 		},
 		expectedOut: "Deleted user 'user'",
+	}, {
+		name:    "list should fail if building the admin API client fails",
+		command: acl.NewListUsersCommand,
+		mockAdminAPI: func() (admin.AdminAPI, error) {
+			return nil, errors.New("Woops, sorry")
+		},
+		expectedErrMsg: "Woops, sorry",
+	}, {
+		name:    "list should fail if listing the users fails",
+		command: acl.NewListUsersCommand,
+		mockAdminAPI: func() (admin.AdminAPI, error) {
+			return &admin.MockAdminAPI{
+				MockListUsers: func() ([]string, error) {
+					return nil, errors.New("user list request failed")
+				},
+			}, nil
+		},
+		expectedErrMsg: "user list request failed",
+	}, {
+		name:    "list should print the users",
+		command: acl.NewListUsersCommand,
+		mockAdminAPI: func() (admin.AdminAPI, error) {
+			return &admin.MockAdminAPI{
+				MockListUsers: func() ([]string, error) {
+					return []string{
+						"Michael",
+						"Jim",
+						"Pam",
+						"Dwight",
+						"Kelly",
+						"Bob Vance, Vance Refrigeration",
+					}, nil
+				},
+			}, nil
+		},
+		expectedOut: `  USERNAME                        
+                                  
+  Michael                         
+  Jim                             
+  Pam                             
+  Dwight                          
+  Kelly                           
+  Bob Vance, Vance Refrigeration  
+`,
 	}}
 
 	for _, tt := range tests {
