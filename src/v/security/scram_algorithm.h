@@ -93,6 +93,8 @@ public:
       , _salt(std::move(salt))
       , _iterations(iterations) {}
 
+    explicit server_first_message(bytes_view);
+
     server_first_message(server_first_message&&) = delete;
     server_first_message& operator=(server_first_message&&) = delete;
     server_first_message(const server_first_message&) = delete;

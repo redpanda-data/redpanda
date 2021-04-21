@@ -8,6 +8,8 @@
 
 #include <boost/algorithm/string.hpp>
 
+#include <charconv>
+
 /*
  * Likely an issue with gcc, memory usage is unacceptably high using c++20 with
  * these regular expressions and the ctre library. Since this is not a problem
@@ -65,6 +67,9 @@
     "n,(?:a=(" SASLNAME "))?,(m=" VALUE ",)?n=(" SASLNAME "),"                 \
     "r=(" PRINTABLE ")(," ALPHA "+=" VALUE ")*"
 
+#define SERVER_FIRST_MESSAGE_RE                                                \
+    "(m=" VALUE ",)?r=(" PRINTABLE "),s=(" BASE64 "),i=([0-9]+)" EXTENSIONS
+
 #define CLIENT_FINAL_MESSAGE_RE                                                \
     "c=(" BASE64 "),r=(" PRINTABLE ")" EXTENSIONS ",p=(" BASE64 ")"
 
@@ -81,6 +86,12 @@ struct client_first_match {
     ss::sstring extensions;
 };
 
+struct server_first_match {
+    ss::sstring nonce;
+    bytes salt;
+    int iterations;
+};
+
 struct client_final_match {
     bytes channel_binding;
     ss::sstring nonce;
@@ -91,6 +102,9 @@ struct client_final_match {
 #ifdef USE_CTRE
 static constexpr auto client_first_message_re = ctll::fixed_string{
   CLIENT_FIRST_MESSAGE_RE};
+
+static constexpr auto server_first_message_re = ctll::fixed_string{
+  SERVER_FIRST_MESSAGE_RE};
 
 static constexpr auto client_final_message_re = ctll::fixed_string{
   CLIENT_FINAL_MESSAGE_RE};
@@ -106,6 +120,33 @@ ctre_parse_client_first(std::string_view message) {
       .username = match.get<3>().to_string(),
       .nonce = match.get<4>().to_string(),
       .extensions = match.get<5>().to_string(), // NOLINT
+    };
+}
+
+static inline std::optional<server_first_match>
+ctre_parse_server_first(std::string_view message) {
+    auto match = ctre::match<server_first_message_re>(message);
+    if (unlikely(!match)) {
+        return std::nullopt;
+    }
+
+    int iterations; // NOLINT
+    auto i_str = match.get<4>().to_view();
+    auto res = std::from_chars(
+      i_str.data(), i_str.data() + i_str.size(), iterations);
+
+    // very unlikely since the regex should reject before this
+    if (unlikely(res.ec != std::errc())) {
+        throw std::runtime_error(fmt_with_ctx(
+          fmt::format,
+          "Unexpected SCRAM server first message iterations: {}",
+          i_str));
+    }
+
+    return server_first_match{
+      .nonce{match.get<2>().to_view()},
+      .salt = base64_to_bytes(match.get<3>().to_view()),
+      .iterations = iterations,
     };
 }
 
@@ -125,6 +166,7 @@ ctre_parse_client_final(std::string_view message) {
 
 #else
 static const char* client_first_message_re = CLIENT_FIRST_MESSAGE_RE;
+static const char* server_first_message_re = SERVER_FIRST_MESSAGE_RE;
 static const char* client_final_message_re = CLIENT_FINAL_MESSAGE_RE;
 
 static inline std::optional<client_first_match>
@@ -141,6 +183,36 @@ std_re_parse_client_first(std::string_view message) {
       .username = match[3].str(),
       .nonce = match[4].str(),
       .extensions = match[5].str(), // NOLINT
+    };
+}
+
+static inline std::optional<server_first_match>
+std_re_parse_server_first(std::string_view message) {
+    static const std::regex re(
+      server_first_message_re, std::regex::ECMAScript | std::regex::optimize);
+    std::smatch match;
+    std::string m(message);
+    if (unlikely(!std::regex_match(m, match, re))) {
+        return std::nullopt;
+    }
+
+    int iterations; // NOLINT
+    auto i_str = match[4].str();
+    auto res = std::from_chars(
+      i_str.data(), i_str.data() + i_str.size(), iterations);
+
+    // very unlikely since the regex should reject before this
+    if (unlikely(res.ec != std::errc())) {
+        throw std::runtime_error(fmt_with_ctx(
+          fmt::format,
+          "Unexpected SCRAM server first message iterations: {}",
+          i_str));
+    }
+
+    return server_first_match{
+      .nonce = match[2].str(),
+      .salt = base64_to_bytes(match[3].str()),
+      .iterations = iterations,
     };
 }
 
@@ -169,6 +241,15 @@ parse_client_first(std::string_view message) {
     return details::ctre_parse_client_first(message);
 #else
     return details::std_re_parse_client_first(message);
+#endif
+}
+
+static inline std::optional<details::server_first_match>
+parse_server_first(std::string_view message) {
+#ifdef USE_CTRE
+    return details::ctre_parse_server_first(message);
+#else
+    return details::std_re_parse_server_first(message);
 #endif
 }
 
@@ -316,6 +397,29 @@ ss::sstring server_final_message::sasl_message() const {
 std::ostream& operator<<(std::ostream& os, const server_final_message& msg) {
     fmt::print(os, "error {} signature {}", msg._error, msg._signature);
     return os;
+}
+
+server_first_message::server_first_message(bytes_view data) {
+    auto view = std::string_view(
+      reinterpret_cast<const char*>(data.data()), data.size()); // NOLINT
+    validate_utf8(view);
+
+    auto match = parse_server_first(view);
+    if (unlikely(!match)) {
+        throw scram_exception(fmt_with_ctx(
+          ssx::sformat, "Invalid SCRAM server first message: {}", view));
+    }
+
+    _nonce = std::move(match->nonce);
+    _salt = std::move(match->salt);
+    _iterations = match->iterations;
+
+    if (unlikely(_iterations <= 0)) {
+        throw scram_exception(fmt_with_ctx(
+          ssx::sformat,
+          "Invalid SCRAM server first message iterations: {}",
+          _iterations));
+    }
 }
 
 } // namespace security
