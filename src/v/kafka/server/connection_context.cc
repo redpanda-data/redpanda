@@ -19,6 +19,8 @@
 #include <seastar/core/scattered_message.hh>
 #include <seastar/core/sleep.hh>
 
+#include <chrono>
+
 namespace kafka {
 
 ss::future<> connection_context::process_one_request() {
@@ -74,11 +76,16 @@ connection_context::throttle_request(
       .then(
         [this, request_size] { return reserve_request_units(request_size); })
       .then([this, delay](ss::semaphore_units<> units) {
-          return session_resources{
-            .backpressure_delay = delay.duration,
-            .memlocks = std::move(units),
-            .method_latency = _rs.hist().auto_measure(),
-          };
+          return server().get_request_unit().then(
+            [this, delay, mem_units = std::move(units)](
+              ss::semaphore_units<> qd_units) mutable {
+                return session_resources{
+                  .backpressure_delay = delay.duration,
+                  .memlocks = std::move(mem_units),
+                  .queue_units = std::move(qd_units),
+                  .method_latency = _rs.hist().auto_measure(),
+                };
+            });
       });
 }
 
