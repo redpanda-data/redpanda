@@ -10,10 +10,7 @@
 package kafka
 
 import (
-	"crypto/tls"
-	"crypto/x509"
 	"fmt"
-	"io/ioutil"
 	"sync"
 	"time"
 
@@ -21,6 +18,7 @@ import (
 	"github.com/avast/retry-go"
 	log "github.com/sirupsen/logrus"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
+	vtls "github.com/vectorizedio/redpanda/src/go/rpk/pkg/tls"
 )
 
 func DefaultConfig() *sarama.Config {
@@ -220,81 +218,20 @@ func ConfigureSASL(
 func configureTLS(
 	saramaConf *sarama.Config, tlsConf *config.TLS,
 ) (*sarama.Config, error) {
-	var tlsConfig *tls.Config
-	var err error
+	tlsConfig, err := vtls.BuildTLSConfig(
+		tlsConf.CertFile,
+		tlsConf.KeyFile,
+		tlsConf.TruststoreFile,
+	)
 
-	// Try to configure TLS from the available config
-	switch {
-	// Enable client auth if the cert & key files are set for rpk
-	case tlsConf.CertFile != "" &&
-		tlsConf.KeyFile != "" &&
-		tlsConf.TruststoreFile != "":
-
-		tlsConfig, err = loadTLSConfig(
-			tlsConf.TruststoreFile,
-			tlsConf.CertFile,
-			tlsConf.KeyFile,
-		)
-		if err != nil {
-			return nil, err
-		}
-		log.Debug("API TLS auth enabled using rpk.tls")
-
-	// Enable TLS (no auth) if only the CA cert file is set for rpk
-	case tlsConf.TruststoreFile != "":
-		caCertPool, err := loadRootCACert(tlsConf.TruststoreFile)
-		if err != nil {
-			return nil, err
-		}
-		tlsConfig = &tls.Config{RootCAs: caCertPool}
-		log.Debug("API TLS enabled using rpk.tls")
-
-	default:
-		log.Debug(
-			"Skipping API TLS auth config. Set The cert" +
-				" file, key file and truststore file" +
-				" to enable it",
-		)
+	if err != nil {
+		return nil, err
 	}
+
 	if tlsConfig != nil {
 		saramaConf.Net.TLS.Config = tlsConfig
 		saramaConf.Net.TLS.Enable = true
 	}
 
 	return saramaConf, nil
-}
-
-func loadTLSConfig(
-	truststoreFile, certFile, keyFile string,
-) (*tls.Config, error) {
-	caCertPool, err := loadRootCACert(truststoreFile)
-	if err != nil {
-		return nil, err
-	}
-	certs, err := loadCert(certFile, keyFile)
-	if err != nil {
-		return nil, err
-	}
-	tlsConf := &tls.Config{RootCAs: caCertPool, Certificates: certs}
-
-	tlsConf.BuildNameToCertificate()
-	return tlsConf, nil
-}
-
-func loadRootCACert(truststoreFile string) (*x509.CertPool, error) {
-	caCert, err := ioutil.ReadFile(truststoreFile)
-	if err != nil {
-		return nil, err
-	}
-	caCertPool := x509.NewCertPool()
-	caCertPool.AppendCertsFromPEM(caCert)
-	return caCertPool, nil
-}
-
-func loadCert(certFile, keyFile string) ([]tls.Certificate, error) {
-	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
-	if err != nil {
-		return nil, err
-	}
-	return []tls.Certificate{cert}, nil
 }
