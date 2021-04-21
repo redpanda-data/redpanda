@@ -148,6 +148,8 @@ public:
       : _error(std::move(error))
       , _signature(std::move(signature)) {}
 
+    explicit server_final_message(bytes_view);
+
     server_final_message(server_final_message&&) = delete;
     server_final_message& operator=(server_final_message&&) = delete;
     server_final_message(const server_final_message&) = delete;
