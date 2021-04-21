@@ -154,6 +154,12 @@ public:
      */
     ss::future<> remove_persistent_state();
 
+    const_iterator begin() const { return _configurations.begin(); }
+    const_iterator end() const { return _configurations.end(); }
+    const_iterator lower_bound(model::offset o) const {
+        return _configurations.lower_bound(o);
+    }
+
     friend std::ostream&
     operator<<(std::ostream&, const configuration_manager&);
 
