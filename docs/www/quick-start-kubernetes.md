@@ -135,19 +135,21 @@ to verify that cert-manager is working correcly.
 
 ## Connect to the Redpanda cluster
 
-After you set up Redpanda in your Kubernetes cluster, you can use our samples to install a cluster and see Redpanda in action:
+After you set up Redpanda in your Kubernetes cluster, you can use our samples to install a cluster and see Redpanda in action.
+
+Let's try setting up a Redpanda topic to handle a stream of events from a chat application with 5 chat rooms:
 
 - Create a namespace for your cluster:
 
     ```
-    kubectl create ns redpanda-test
+    kubectl create ns chat-with-me
     ```
 
 - Install a cluster from [our sample files](https://github.com/vectorizedio/redpanda/tree/dev/src/go/k8s/config/samples), for example the single-node cluster:
                 
     ```
     kubectl apply \
-    -n redpanda-test \
+    -n chat-with-me \
     -f https://raw.githubusercontent.com/vectorizedio/redpanda/dev/src/go/k8s/config/samples/one_node_cluster.yaml
     ```
 
@@ -158,33 +160,33 @@ After you set up Redpanda in your Kubernetes cluster, you can use our samples to
     - Check the status of the cluster:
 
         ```
-        kubectl -n redpanda-test run -ti --rm \
+        kubectl -n chat-with-me run -ti --rm \
         --restart=Never \
         --image vectorized/redpanda:$version \
-        -- rpk --brokers one-node-cluster-0.one-node-cluster.redpanda-test.svc.cluster.local:9092 \
+        -- rpk --brokers one-node-cluster-0.one-node-cluster.chat-with-me.svc.cluster.local:9092 \
         cluster info
         ```
     
     - Create a topic:
 
         ```
-        kubectl -n redpanda-test run -ti --rm \
+        kubectl -n chat-with-me run -ti --rm \
         --restart=Never \
         --image vectorized/redpanda:$version \
-        -- rpk --brokers one-node-cluster-0.one-node-cluster.redpanda-test.svc.cluster.local:9092 \
-        topic create reddit-thread
+        -- rpk --brokers one-node-cluster-0.one-node-cluster.chat-with-me.svc.cluster.local:9092 \
+        topic create chat-rooms -p 5
         ```
 
     - Show the list of topics:
 
         ```
-        kubectl -n redpanda-test run -ti --rm \
+        kubectl -n chat-with-me run -ti --rm \
         --restart=Never \
         --image vectorized/redpanda:$version \
-        -- rpk --brokers one-node-cluster-0.one-node-cluster.redpanda-test.svc.cluster.local:9092 \
+        -- rpk --brokers one-node-cluster-0.one-node-cluster.chat-with-me.svc.cluster.local:9092 \
         topic list
         ```
 
-As you can see, Redpanda responds to the rpk commands from the "rpk" pod.
+As you can see, the commands from the "rpk" pod created a 5 partition topic in for the chat rooms.
 
 Contact us in our [Slack](https://vectorized.io/slack) community so we can work together to implement your Kubernetes use cases.
