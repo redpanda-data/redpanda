@@ -48,15 +48,16 @@ will create a template giving us a simple build system and basic example script.
 
 ```bash
 $ rpk wasm generate wasm-elastic
-npm created project in /wasm_example/wasm
-``` 
+npm created project in /home/user/wasm_elastic
+```
+
 That command creates a folder with an example Wasm
 script in `/wasm_example/wasm-elastic`. we move to `wasm-elastic` folder.
 
 ```bash
-$ cd wasm_example/wasm-elastic
+$ cd wasm_elastic
 
-$ tree . 
+$ tree .
   .
   ├── package.json
   ├── src
@@ -65,6 +66,7 @@ $ tree .
   │   └── wasm.test.js
   └── webpack.js
 ```
+
 Now we just to go `src/wasm.js`, and rename to `src/elastic.js`
 
 ```bash
