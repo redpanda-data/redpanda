@@ -52,12 +52,13 @@ func NewACLCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 		configClosure,
 		&brokers,
 	)
-	kAuthClosure := common.KafkaAuthConfig(&user, &password, &mechanism)
 	tlsClosure := common.BuildTLSConfig(&certFile, &keyFile, &truststoreFile)
+	kAuthClosure := common.KafkaAuthConfig(&user, &password, &mechanism)
 	adminClosure := common.CreateAdmin(brokersClosure, configClosure, tlsClosure, kAuthClosure)
 
 	command.AddCommand(acl.NewCreateACLsCommand(adminClosure))
 	command.AddCommand(acl.NewListACLsCommand(adminClosure))
 	command.AddCommand(acl.NewDeleteACLsCommand(adminClosure))
+	command.AddCommand(acl.NewUserCommand(tlsClosure))
 	return command
 }
