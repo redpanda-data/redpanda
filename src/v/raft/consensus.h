@@ -300,6 +300,10 @@ public:
 
     std::vector<follower_metrics> get_follower_metrics() const;
 
+    const configuration_manager& get_configuration_manager() const {
+        return _configuration_manager;
+    }
+
 private:
     friend replicate_entries_stm;
     friend vote_stm;
