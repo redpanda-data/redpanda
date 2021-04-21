@@ -3,3 +3,4 @@ kind: TestStep
 commands:
 # Configurator version will become default (latest) and all redpanda configurators (one here) get updated to latest
 - command: kubectl patch deployment redpanda-controller-manager -n redpanda-system --type='json' -p='[{"op":"remove", "path":"/spec/template/spec/containers/1/args/4"}]'
+- command: kubectl get deployment redpanda-controller-manager -n redpanda-system -o json 
