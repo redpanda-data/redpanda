@@ -26,7 +26,7 @@ replicated_partition::replicated_partition(
       ss::make_lw_shared<offset_translator>(_partition->get_cfg_manager())){
 
     };
-
+// TODO: use previous translation speed up lookup
 ss::future<model::record_batch_reader> replicated_partition::make_reader(
   storage::log_reader_config cfg,
   std::optional<model::timeout_clock::time_point> deadline) {

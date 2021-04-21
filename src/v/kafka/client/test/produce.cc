@@ -78,7 +78,7 @@ FIXTURE_TEST(produce_reconnect, kafka_client_fixture) {
 
     info("Testing assertions");
     BOOST_REQUIRE_EQUAL(req0.error_code, kafka::error_code::none);
-    BOOST_REQUIRE_EQUAL(req0.base_offset, model::offset(1));
+    BOOST_REQUIRE_EQUAL(req0.base_offset, model::offset(0));
 
     client.stop().get();
 }

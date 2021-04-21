@@ -15,6 +15,9 @@
 #include "kafka/protocol/batch_consumer.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/server/fetch_session.h"
+#include "kafka/server/materialized_partition.h"
+#include "kafka/server/partition_proxy.h"
+#include "kafka/server/replicated_partition.h"
 #include "likely.h"
 #include "model/fundamental.h"
 #include "model/namespace.h"
@@ -363,13 +366,13 @@ model::record_batch adapt_fetch_batch(model::record_batch&& batch) {
  * Low-level handler for reading from an ntp. Runs on ntp's home core.
  */
 static ss::future<read_result> read_from_partition(
-  partition_wrapper pw,
+  kafka::partition_proxy part,
   fetch_config config,
   bool foreign_read,
   std::optional<model::timeout_clock::time_point> deadline) {
-    auto hw = pw.high_watermark();
-    auto lso = pw.last_stable_offset();
-    auto start_o = pw.start_offset();
+    auto hw = part.high_watermark();
+    auto lso = part.last_stable_offset();
+    auto start_o = part.start_offset();
     // if we have no data read, return fast
     if (hw < config.start_offset) {
         return ss::make_ready_future<read_result>(start_o, hw, lso);
@@ -386,7 +389,7 @@ static ss::future<read_result> read_from_partition(
       std::nullopt);
 
     reader_config.strict_max_bytes = config.strict_max_bytes;
-    return pw.make_reader(reader_config)
+    return part.make_reader(reader_config)
       .then([start_o, hw, lso, foreign_read, deadline](
               model::record_batch_reader rdr) {
           return model::transform_reader_to_memory(
@@ -409,17 +412,17 @@ static ss::future<read_result> read_from_partition(
       });
 }
 
-std::optional<partition_wrapper> make_partition_wrapper(
+std::optional<partition_proxy> make_partition_proxy(
   const model::materialized_ntp& mntp,
   ss::lw_shared_ptr<cluster::partition> partition,
   cluster::partition_manager& pm) {
-    if (mntp.is_materialized()) {
-        if (auto log = pm.log(mntp.input_ntp()); log) {
-            return partition_wrapper(partition, log);
-        }
-        return std::nullopt;
+    if (!mntp.is_materialized()) {
+        return make_partition_proxy<replicated_partition>(partition);
     }
-    return partition_wrapper(partition);
+    if (auto log = pm.log(mntp.input_ntp()); log) {
+        return make_partition_proxy<materialized_partition>(*log);
+    }
+    return std::nullopt;
 }
 
 /**
@@ -444,8 +447,8 @@ ss::future<read_result> read_from_ntp(
         return ss::make_ready_future<read_result>(
           error_code::not_leader_for_partition);
     }
-    auto partition_wpr = make_partition_wrapper(ntp, partition, mgr);
-    if (!partition_wpr) {
+    auto kafka_partition = make_partition_proxy(ntp, partition, mgr);
+    if (!kafka_partition) {
         return ss::make_ready_future<read_result>(
           error_code::unknown_topic_or_partition);
     }
@@ -460,7 +463,8 @@ ss::future<read_result> read_from_ntp(
           error_code::offset_out_of_range);
     }
 
-    return read_from_partition(*partition_wpr, config, foreign_read, deadline);
+    return read_from_partition(
+      std::move(*kafka_partition), config, foreign_read, deadline);
 }
 
 static ss::future<> do_fill_fetch_responses(

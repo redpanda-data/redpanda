@@ -13,6 +13,7 @@
 
 #include "config/configuration.h"
 #include "coproc/logger.h"
+#include "kafka/server/materialized_partition.h"
 #include "model/record_batch_reader.h"
 #include "model/timeout_clock.h"
 #include "model/timestamp.h"
@@ -50,7 +51,7 @@ static storage::log_reader_config log_rdr_cfg(const model::offset& min_offset) {
 }
 
 static ss::future<model::record_batch_reader::data_t> do_drain(
-  kafka::partition_wrapper pw,
+  ss::lw_shared_ptr<kafka::partition_proxy> partition,
   model::offset offset,
   std::size_t limit,
   model::timeout_clock::time_point timeout) {
@@ -61,32 +62,33 @@ static ss::future<model::record_batch_reader::data_t> do_drain(
         explicit state(model::offset o)
           : next_offset(o) {}
     };
-    return ss::do_with(state(offset), [limit, timeout, pw](state& s) mutable {
-        return ss::do_until(
-                 [&s, limit, timeout] {
-                     const auto now = model::timeout_clock::now();
-                     return (s.batches_read >= limit) || (now > timeout);
-                 },
-                 [&s, pw]() mutable {
-                     return pw.make_reader(log_rdr_cfg(s.next_offset))
-                       .then([](model::record_batch_reader rbr) {
-                           return model::consume_reader_to_memory(
-                             std::move(rbr), model::no_timeout);
-                       })
-                       .then([&s](model::record_batch_reader::data_t b) {
-                           if (b.empty()) {
-                               return ss::sleep(20ms);
-                           }
-                           s.batches_read += b.size();
-                           s.next_offset = ++b.back().last_offset();
-                           for (model::record_batch& rb : b) {
-                               s.batches.push_back(std::move(rb));
-                           }
-                           return ss::now();
-                       });
-                 })
-          .then([&s] { return std::move(s.batches); });
-    });
+    return ss::do_with(
+      state(offset), [limit, timeout, partition](state& s) mutable {
+          return ss::do_until(
+                   [&s, limit, timeout] {
+                       const auto now = model::timeout_clock::now();
+                       return (s.batches_read >= limit) || (now > timeout);
+                   },
+                   [&s, partition]() mutable {
+                       return partition->make_reader(log_rdr_cfg(s.next_offset))
+                         .then([](model::record_batch_reader rbr) {
+                             return model::consume_reader_to_memory(
+                               std::move(rbr), model::no_timeout);
+                         })
+                         .then([&s](model::record_batch_reader::data_t b) {
+                             if (b.empty()) {
+                                 return ss::sleep(20ms);
+                             }
+                             s.batches_read += b.size();
+                             s.next_offset = ++b.back().last_offset();
+                             for (model::record_batch& rb : b) {
+                                 s.batches.push_back(std::move(rb));
+                             }
+                             return ss::now();
+                         });
+                   })
+            .then([&s] { return std::move(s.batches); });
+      });
 }
 
 ss::future<coproc_test_fixture::opt_reader_data_t> coproc_test_fixture::drain(
@@ -127,14 +129,12 @@ ss::future<coproc_test_fixture::opt_reader_data_t> coproc_test_fixture::drain(
                         log = olog;
                     }
                 }
-                return do_drain(
-                         kafka::partition_wrapper(partition, log),
-                         offset,
-                         limit,
-                         timeout)
-                  .then([](auto rval) {
-                      return opt_reader_data_t(std::move(rval));
-                  });
+                auto p = ss::make_lw_shared<kafka::partition_proxy>(
+                  kafka::make_partition_proxy<kafka::materialized_partition>(
+                    *log));
+                return do_drain(p, offset, limit, timeout).then([](auto rval) {
+                    return opt_reader_data_t(std::move(rval));
+                });
             });
       });
 }

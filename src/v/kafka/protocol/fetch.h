@@ -14,6 +14,7 @@
 #include "cluster/partition.h"
 #include "kafka/protocol/batch_reader.h"
 #include "kafka/server/fetch_session.h"
+#include "kafka/server/partition_proxy.h"
 #include "kafka/server/request_context.h"
 #include "kafka/server/response.h"
 #include "kafka/types.h"
@@ -485,42 +486,6 @@ struct op_context {
     fetch_session_ctx session_ctx;
 };
 
-class partition_wrapper {
-public:
-    explicit partition_wrapper(
-      ss::lw_shared_ptr<cluster::partition> partition,
-      std::optional<storage::log> log = std::nullopt)
-      : _partition(std::move(partition))
-      , _log(std::move(log)) {}
-
-    ss::future<model::record_batch_reader>
-    make_reader(storage::log_reader_config config) {
-        return _log ? _log->make_reader(config)
-                    : _partition->make_reader(config);
-    }
-
-    cluster::partition_probe& probe() { return _partition->probe(); }
-
-    model::offset high_watermark() const {
-        return _log ? _log->offsets().dirty_offset
-                    : _partition->high_watermark();
-    }
-
-    model::offset start_offset() const {
-        // we have to access log directy when dealing with materialized partiton
-        return _log ? _log->offsets().start_offset : _partition->start_offset();
-    }
-
-    model::offset last_stable_offset() const {
-        return _log ? _log->offsets().dirty_offset
-                    : _partition->last_stable_offset();
-    }
-
-private:
-    ss::lw_shared_ptr<cluster::partition> _partition;
-    std::optional<storage::log> _log;
-};
-
 struct fetch_config {
     model::offset start_offset;
     size_t max_bytes;
@@ -586,7 +551,7 @@ struct shard_fetch {
     std::vector<op_context::response_iterator> responses;
 };
 
-std::optional<partition_wrapper> make_partition_wrapper(
+std::optional<partition_proxy> make_partition_proxy(
   const model::materialized_ntp&,
   ss::lw_shared_ptr<cluster::partition>,
   cluster::partition_manager& pm);

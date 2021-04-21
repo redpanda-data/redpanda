@@ -12,6 +12,7 @@
 #include "kafka/protocol/fetch.h"
 #include "kafka/protocol/produce.h"
 #include "kafka/protocol/request_reader.h"
+#include "model/fundamental.h"
 #include "random/generators.h"
 #include "redpanda/tests/fixture.h"
 #include "storage/record_batch_builder.h"
@@ -65,7 +66,7 @@ struct prod_consume_fixture : public redpanda_thread_fixture {
     }
 
     template<typename T>
-    ss::future<size_t> produce(T&& batch_factory) {
+    ss::future<model::offset> produce(T&& batch_factory) {
         kafka::produce_request::topic tp;
         size_t count = random_generators::get_int(1, 20);
         tp.partitions = batch_factory(count);
@@ -77,7 +78,10 @@ struct prod_consume_fixture : public redpanda_thread_fixture {
         req.has_idempotent = false;
         req.has_transactional = false;
         return producer->dispatch(std::move(req))
-          .then([count](kafka::produce_response) { return count; });
+          .then([count](kafka::produce_response r) {
+              return r.data.responses.begin()->partitions.begin()->base_offset
+                     + model::offset(count - 1);
+          });
     }
 
     ss::future<kafka::fetch_response> fetch_next() {
@@ -126,17 +130,16 @@ struct prod_consume_fixture : public redpanda_thread_fixture {
  * batches.
  */
 FIXTURE_TEST(test_produce_consume_small_batches, prod_consume_fixture) {
-    const int64_t initial_offset{0};
     wait_for_controller_leadership().get0();
     start();
-    auto cnt_1 = produce([this](size_t cnt) {
-                     return small_batches(cnt);
-                 }).get0();
+    auto offset_1 = produce([this](size_t cnt) {
+                        return small_batches(cnt);
+                    }).get0();
     auto resp_1 = fetch_next().get0();
 
-    auto cnt_2 = produce([this](size_t cnt) {
-                     return small_batches(cnt);
-                 }).get0();
+    auto offset_2 = produce([this](size_t cnt) {
+                        return small_batches(cnt);
+                    }).get0();
     auto resp_2 = fetch_next().get0();
 
     BOOST_REQUIRE_EQUAL(resp_1.partitions.empty(), false);
@@ -146,13 +149,13 @@ FIXTURE_TEST(test_produce_consume_small_batches, prod_consume_fixture) {
       resp_1.partitions.begin()->responses.begin()->error,
       kafka::error_code::none);
     BOOST_REQUIRE_EQUAL(
-      resp_1.partitions.begin()->responses.begin()->record_set->last_offset()(),
-      initial_offset + cnt_1);
+      resp_1.partitions.begin()->responses.begin()->record_set->last_offset(),
+      offset_1);
     BOOST_REQUIRE_EQUAL(resp_2.partitions.begin()->responses.empty(), false);
     BOOST_REQUIRE_EQUAL(
       resp_2.partitions.begin()->responses.begin()->error,
       kafka::error_code::none);
     BOOST_REQUIRE_EQUAL(
-      resp_2.partitions.begin()->responses.begin()->record_set->last_offset()(),
-      initial_offset + cnt_1 + cnt_2);
+      resp_2.partitions.begin()->responses.begin()->record_set->last_offset(),
+      offset_2);
 };

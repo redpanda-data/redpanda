@@ -15,6 +15,7 @@
 #include "cluster/shard_table.h"
 #include "kafka/protocol/errors.h"
 #include "kafka/protocol/kafka_batch_adapter.h"
+#include "kafka/server/replicated_partition.h"
 #include "likely.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -29,6 +30,7 @@
 
 #include <seastar/core/execution_stage.hh>
 #include <seastar/core/future.hh>
+#include <seastar/core/shared_ptr.hh>
 #include <seastar/util/log.hh>
 
 #include <boost/container_hash/extensions.hpp>
@@ -111,38 +113,36 @@ static const failure_type<error_code>
  */
 static ss::future<produce_response::partition> partition_append(
   model::partition_id id,
-  ss::lw_shared_ptr<cluster::partition> partition,
+  ss::lw_shared_ptr<replicated_partition> partition,
   model::batch_identity bid,
   model::record_batch_reader reader,
   int16_t acks,
   int32_t num_records) {
     return partition
       ->replicate(bid, std::move(reader), acks_to_replicate_options(acks))
-      .then_wrapped(
-        [partition, id, num_records = num_records](
-          ss::future<checked<raft::replicate_result, kafka::error_code>> f) {
-            produce_response::partition p{.partition_index = id};
-            try {
-                auto r = f.get0();
-                if (r.has_value()) {
-                    // have to subtract num_of_records - 1 as base_offset
-                    // is inclusive
-                    p.base_offset = model::offset(
-                      r.value().last_offset() - (num_records - 1));
-                    p.error_code = error_code::none;
-                    partition->probe().add_records_produced(num_records);
-                } else if (r == not_leader_for_partition) {
-                    p.error_code = error_code::not_leader_for_partition;
-                } else if (r == out_of_order_sequence_number) {
-                    p.error_code = error_code::out_of_order_sequence_number;
-                } else {
-                    p.error_code = error_code::unknown_server_error;
-                }
-            } catch (...) {
-                p.error_code = error_code::unknown_server_error;
-            }
-            return p;
-        });
+      .then_wrapped([partition, id, num_records = num_records](
+                      ss::future<checked<model::offset, kafka::error_code>> f) {
+          produce_response::partition p{.partition_index = id};
+          try {
+              auto r = f.get0();
+              if (r.has_value()) {
+                  // have to subtract num_of_records - 1 as base_offset
+                  // is inclusive
+                  p.base_offset = model::offset(r.value() - (num_records - 1));
+                  p.error_code = error_code::none;
+                  partition->probe().add_records_produced(num_records);
+              } else if (r == not_leader_for_partition) {
+                  p.error_code = error_code::not_leader_for_partition;
+              } else if (r == out_of_order_sequence_number) {
+                  p.error_code = error_code::out_of_order_sequence_number;
+              } else {
+                  p.error_code = error_code::unknown_server_error;
+              }
+          } catch (...) {
+              p.error_code = error_code::unknown_server_error;
+          }
+          return p;
+      });
 }
 
 /**
@@ -215,7 +215,7 @@ static ss::future<produce_response::partition> produce_topic_partition(
           }
           return partition_append(
             ntp.tp.partition,
-            partition,
+            ss::make_lw_shared<replicated_partition>(std::move(partition)),
             bid,
             std::move(reader),
             acks,

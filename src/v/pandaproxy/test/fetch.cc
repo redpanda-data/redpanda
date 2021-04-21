@@ -135,11 +135,11 @@ FIXTURE_TEST(pandaproxy_fetch, pandaproxy_test_fixture) {
         BOOST_REQUIRE_EQUAL(
           res.headers.result(), boost::beast::http::status::ok);
         BOOST_REQUIRE_EQUAL(
-          res.body, R"({"offsets":[{"partition":0,"offset":1}]})");
+          res.body, R"({"offsets":[{"partition":0,"offset":0}]})");
     }
 
     {
-        info("Fetch offset 0 - expect offsets 0-3");
+        info("Fetch offset 0 - expect offsets 0-2");
         set_client_config("retries", size_t(0));
         auto res = http_request(
           client,
@@ -153,11 +153,11 @@ FIXTURE_TEST(pandaproxy_fetch, pandaproxy_test_fixture) {
           res.headers.result(), boost::beast::http::status::ok);
         BOOST_REQUIRE_EQUAL(
           res.body,
-          R"([{"topic":"t","key":null,"value":"dmVjdG9yaXplZA==","partition":0,"offset":1},{"topic":"t","key":null,"value":"cGFuZGFwcm94eQ==","partition":0,"offset":2},{"topic":"t","key":null,"value":"bXVsdGlicm9rZXI=","partition":0,"offset":3}])");
+          R"([{"topic":"t","key":null,"value":"dmVjdG9yaXplZA==","partition":0,"offset":0},{"topic":"t","key":null,"value":"cGFuZGFwcm94eQ==","partition":0,"offset":1},{"topic":"t","key":null,"value":"bXVsdGlicm9rZXI=","partition":0,"offset":2}])");
     }
 
     {
-        info("Produce to known topic - offset 4");
+        info("Produce to known topic - offset 3");
         set_client_config("retries", size_t(0));
         auto body = iobuf();
         body.append(batch_2_body.data(), batch_2_body.size());
@@ -172,15 +172,15 @@ FIXTURE_TEST(pandaproxy_fetch, pandaproxy_test_fixture) {
         BOOST_REQUIRE_EQUAL(
           res.headers.result(), boost::beast::http::status::ok);
         BOOST_REQUIRE_EQUAL(
-          res.body, R"({"offsets":[{"partition":0,"offset":4}]})");
+          res.body, R"({"offsets":[{"partition":0,"offset":3}]})");
     }
 
     {
-        info("Fetch offset 4 - expect offset 4");
+        info("Fetch offset 3 - expect offset 3");
         auto res = http_request(
           client,
           "/topics/t/partitions/0/"
-          "records?offset=4&max_bytes=1024&timeout=5000",
+          "records?offset=3&max_bytes=1024&timeout=5000",
           boost::beast::http::verb::get,
           ppj::serialization_format::v2,
           ppj::serialization_format::binary_v2);
@@ -189,11 +189,11 @@ FIXTURE_TEST(pandaproxy_fetch, pandaproxy_test_fixture) {
           res.headers.result(), boost::beast::http::status::ok);
         BOOST_REQUIRE_EQUAL(
           res.body,
-          R"([{"topic":"t","key":null,"value":"bXVsdGliYXRjaA==","partition":0,"offset":4}])");
+          R"([{"topic":"t","key":null,"value":"bXVsdGliYXRjaA==","partition":0,"offset":3}])");
     }
 
     {
-        info("Fetch offset 2 - expect offsets 1-4");
+        info("Fetch offset 2 - expect offsets 0-3");
         auto res = http_request(
           client,
           "/topics/t/partitions/0/"
@@ -206,7 +206,7 @@ FIXTURE_TEST(pandaproxy_fetch, pandaproxy_test_fixture) {
           res.headers.result(), boost::beast::http::status::ok);
         BOOST_REQUIRE_EQUAL(
           res.body,
-          R"([{"topic":"t","key":null,"value":"dmVjdG9yaXplZA==","partition":0,"offset":1},{"topic":"t","key":null,"value":"cGFuZGFwcm94eQ==","partition":0,"offset":2},{"topic":"t","key":null,"value":"bXVsdGlicm9rZXI=","partition":0,"offset":3},{"topic":"t","key":null,"value":"bXVsdGliYXRjaA==","partition":0,"offset":4}])");
+          R"([{"topic":"t","key":null,"value":"dmVjdG9yaXplZA==","partition":0,"offset":0},{"topic":"t","key":null,"value":"cGFuZGFwcm94eQ==","partition":0,"offset":1},{"topic":"t","key":null,"value":"bXVsdGlicm9rZXI=","partition":0,"offset":2},{"topic":"t","key":null,"value":"bXVsdGliYXRjaA==","partition":0,"offset":3}])");
     }
 }
 
@@ -258,15 +258,15 @@ FIXTURE_TEST(pandaproxy_fetch_json_v2, pandaproxy_test_fixture) {
         BOOST_REQUIRE_EQUAL(
           res.headers.result(), boost::beast::http::status::ok);
         BOOST_REQUIRE_EQUAL(
-          res.body, R"({"offsets":[{"partition":0,"offset":1}]})");
+          res.body, R"({"offsets":[{"partition":0,"offset":0}]})");
     }
 
     {
-        info("Fetch offset 2 as json - expect offsets 1-2");
+        info("Fetch offset 1 as json - expect offsets 0-1");
         auto res = http_request(
           client,
           "/topics/t/partitions/0/"
-          "records?offset=2&max_bytes=1024&timeout=5000",
+          "records?offset=1&max_bytes=1024&timeout=5000",
           boost::beast::http::verb::get,
           ppj::serialization_format::v2,
           ppj::serialization_format::json_v2);
@@ -275,6 +275,6 @@ FIXTURE_TEST(pandaproxy_fetch_json_v2, pandaproxy_test_fixture) {
           res.headers.result(), boost::beast::http::status::ok);
         BOOST_REQUIRE_EQUAL(
           res.body,
-          R"([{"topic":"t","key":null,"value":{"object":["vectorized"]},"partition":0,"offset":1},{"topic":"t","key":null,"value":{"object":["pandaproxy"]},"partition":0,"offset":2}])");
+          R"([{"topic":"t","key":null,"value":{"object":["vectorized"]},"partition":0,"offset":0},{"topic":"t","key":null,"value":{"object":["pandaproxy"]},"partition":0,"offset":1}])");
     }
 }

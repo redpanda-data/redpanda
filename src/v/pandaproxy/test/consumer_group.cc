@@ -169,7 +169,7 @@ FIXTURE_TEST(pandaproxy_consumer_group, pandaproxy_test_fixture) {
         BOOST_REQUIRE_EQUAL(
           res.headers.result(), boost::beast::http::status::ok);
         BOOST_REQUIRE_EQUAL(
-          res.body, R"({"offsets":[{"partition":0,"offset":1}]})");
+          res.body, R"({"offsets":[{"partition":0,"offset":0}]})");
     }
     {
         info("Consume from topic");
@@ -188,7 +188,7 @@ FIXTURE_TEST(pandaproxy_consumer_group, pandaproxy_test_fixture) {
           res.headers.result(), boost::beast::http::status::ok);
         BOOST_REQUIRE_EQUAL(
           res.body,
-          R"([{"topic":"t","key":null,"value":"dmVjdG9yaXplZA==","partition":0,"offset":1},{"topic":"t","key":null,"value":"cGFuZGFwcm94eQ==","partition":0,"offset":2},{"topic":"t","key":null,"value":"bXVsdGlicm9rZXI=","partition":0,"offset":3}])");
+          R"([{"topic":"t","key":null,"value":"dmVjdG9yaXplZA==","partition":0,"offset":0},{"topic":"t","key":null,"value":"cGFuZGFwcm94eQ==","partition":0,"offset":1},{"topic":"t","key":null,"value":"bXVsdGlicm9rZXI=","partition":0,"offset":2}])");
     }
 
     {
@@ -250,13 +250,13 @@ FIXTURE_TEST(pandaproxy_consumer_group, pandaproxy_test_fixture) {
     }
 
     {
-        info("Get consumer offsets (expect 3)");
+        info("Get consumer offsets (expect 2)");
         auto res = get_consumer_offsets(client, group_id, member_id);
         BOOST_REQUIRE_EQUAL(
           res.headers.result(), boost::beast::http::status::ok);
         BOOST_REQUIRE_EQUAL(
           res.body,
-          R"({"offsets":[{"topic":"t","partition":0,"offset":3,"metadata":""}]})");
+          R"({"offsets":[{"topic":"t","partition":0,"offset":2,"metadata":""}]})");
     }
 
     {
