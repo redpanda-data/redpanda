@@ -609,6 +609,66 @@ configuration::configuration()
       std::nullopt)
   , superusers(
       *this, "superusers", "List of superuser usernames", required::no, {})
+  , kafka_qdc_latency_alpha(
+      *this,
+      "kafka_qdc_latency_alpha",
+      "Smoothing parameter for kafka queue depth control latency tracking.",
+      required::no,
+      0.002)
+  , kafka_qdc_window_size_ms(
+      *this,
+      "kafka_qdc_window_size_ms",
+      "Window size for kafka queue depth control latency tracking.",
+      required::no,
+      1500ms)
+  , kafka_qdc_window_count(
+      *this,
+      "kafka_qdc_window_count",
+      "Number of windows used in kafka queue depth control latency tracking.",
+      required::no,
+      12)
+  , kafka_qdc_enable(
+      *this,
+      "kafka_qdc_enable",
+      "Enable kafka queue depth control.",
+      required::no,
+      false)
+  , kafka_qdc_depth_alpha(
+      *this,
+      "kafka_qdc_depth_alpha",
+      "Smoothing factor for kafka queue depth control depth tracking.",
+      required::no,
+      0.8)
+  , kafka_qdc_max_latency_ms(
+      *this,
+      "kafka_qdc_max_latency_ms",
+      "Max latency threshold for kafka queue depth control depth tracking.",
+      required::no,
+      80ms)
+  , kafka_qdc_idle_depth(
+      *this,
+      "kafka_qdc_idle_depth",
+      "Queue depth when idleness is detected in kafka queue depth control.",
+      required::no,
+      10)
+  , kafka_qdc_min_depth(
+      *this,
+      "kafka_qdc_min_depth",
+      "Minimum queue depth used in kafka queue depth control.",
+      required::no,
+      1)
+  , kafka_qdc_max_depth(
+      *this,
+      "kafka_qdc_max_depth",
+      "Maximum queue depth used in kafka queue depth control.",
+      required::no,
+      100)
+  , kafka_qdc_depth_update_ms(
+      *this,
+      "kafka_qdc_depth_update_ms",
+      "Update frequency for kafka queue depth control.",
+      required::no,
+      7s)
   , _advertised_kafka_api(
       *this,
       "advertised_kafka_api",
