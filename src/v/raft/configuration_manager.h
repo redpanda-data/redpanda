@@ -47,6 +47,22 @@ namespace raft {
  */
 class configuration_manager {
 public:
+    using configuration_idx = named_type<int64_t, struct configuration_idx_tag>;
+    struct indexed_configuration {
+        indexed_configuration(group_configuration c, configuration_idx i)
+          : cfg(std::move(c))
+          , idx(i) {}
+
+        group_configuration cfg;
+        configuration_idx idx;
+    };
+
+    // using ordered map in here to execute truncations and being able to
+    // efficiently search for configurations with offset smaller or equal than
+    // requested
+    using underlying_t = absl::btree_map<model::offset, indexed_configuration>;
+    using const_iterator = underlying_t::const_iterator;
+
     static constexpr size_t offset_update_treshold = 64_MiB;
 
     configuration_manager(
@@ -99,6 +115,10 @@ public:
      * Get latest configuration offset.
      */
     model::offset get_latest_offset() const;
+    /**
+     * Get latest configuration indedx
+     */
+    configuration_idx get_latest_index() const;
 
     /**
      * Persist highest known offset to KV store when stored bytes threshold has
@@ -138,15 +158,11 @@ public:
     operator<<(std::ostream&, const configuration_manager&);
 
 private:
-    // using ordered map in here to execute truncations and being able to
-    // efficiently search for configurations with offset smaller or equal than
-    // requested
-    using underlying_t = absl::btree_map<model::offset, group_configuration>;
-
     ss::future<> store_configurations();
     ss::future<> store_highest_known_offset();
     bytes configurations_map_key();
     bytes highest_known_offset_key();
+    bytes next_configuration_idx_key();
 
     void add_configuration(model::offset, group_configuration);
 
@@ -169,5 +185,6 @@ private:
 
     model::revision_id _initial_revision{};
     ctx_log& _ctxlog;
+    configuration_idx _next_index{0};
 };
 } // namespace raft

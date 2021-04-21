@@ -110,7 +110,8 @@ struct config_manager_fixture {
         BOOST_REQUIRE_EQUAL(
           recovered.get_highest_known_offset(),
           _cfg_mgr.get_highest_known_offset());
-
+        BOOST_REQUIRE_EQUAL(
+          recovered.get_latest_index(), _cfg_mgr.get_latest_index());
         // compare recovered with original manager
         for (int i = 0; i < 2000; ++i) {
             auto expected = _cfg_mgr.get(model::offset(i));
@@ -150,6 +151,7 @@ FIXTURE_TEST(test_getting_configurations, config_manager_fixture) {
     validate_recovery();
     BOOST_REQUIRE_EQUAL(
       _cfg_mgr.get_highest_known_offset(), model::offset(10000));
+    BOOST_REQUIRE_EQUAL(_cfg_mgr.get_latest_index()(), 6);
 }
 
 FIXTURE_TEST(test_prefix_truncation, config_manager_fixture) {
@@ -167,6 +169,7 @@ FIXTURE_TEST(test_prefix_truncation, config_manager_fixture) {
 
     BOOST_REQUIRE_EQUAL(_cfg_mgr.get(model::offset(20)).has_value(), false);
     BOOST_REQUIRE_EQUAL(_cfg_mgr.get(model::offset(33)), configurations[2]);
+    BOOST_REQUIRE_EQUAL(_cfg_mgr.get_latest_index()(), 6);
 
     validate_recovery();
     // try to truncate whole
@@ -190,12 +193,23 @@ FIXTURE_TEST(test_truncation, config_manager_fixture) {
     BOOST_REQUIRE_EQUAL(_cfg_mgr.get(model::offset(60)), configurations[2]);
 
     validate_recovery();
-
+    BOOST_REQUIRE_EQUAL(_cfg_mgr.get_latest_index()(), 3);
     // prefix truncate
     _cfg_mgr.prefix_truncate(model::offset(33)).get0();
     // try to truncate all configurations
     BOOST_CHECK_THROW(
       _cfg_mgr.truncate(model::offset(33)).get0(), std::invalid_argument);
+}
+
+FIXTURE_TEST(test_indexing_after_truncate, config_manager_fixture) {
+    auto configurations = test_configurations();
+
+    _cfg_mgr.truncate(model::offset(34)).get0();
+    BOOST_REQUIRE_EQUAL(_cfg_mgr.get_latest_index()(), 3);
+    _cfg_mgr.add(model::offset(90), configurations[3]).get();
+    BOOST_REQUIRE_EQUAL(_cfg_mgr.get_latest_index()(), 4);
+    validate_recovery();
+    BOOST_REQUIRE_EQUAL(_cfg_mgr.get_latest_index()(), 4);
 }
 
 FIXTURE_TEST(test_waitng_for_change, config_manager_fixture) {
