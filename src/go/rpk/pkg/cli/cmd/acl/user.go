@@ -21,6 +21,8 @@ import (
 const (
 	newUserFlag     = "new-username"
 	newPasswordFlag = "new-password"
+
+	deleteUsernameFlag = "delete-username"
 )
 
 func NewUserCommand(tls func() (*config.TLS, error)) *cobra.Command {
@@ -41,6 +43,7 @@ func NewUserCommand(tls func() (*config.TLS, error)) *cobra.Command {
 	adminApi := buildAdminAPI(&apiUrl, tls)
 
 	command.AddCommand(NewCreateUserCommand(adminApi))
+	command.AddCommand(NewDeleteUserCommand(adminApi))
 	return command
 }
 
@@ -85,6 +88,43 @@ func NewCreateUserCommand(
 		"The new user's password",
 	)
 	command.MarkFlagRequired(newPasswordFlag)
+
+	return command
+}
+
+func NewDeleteUserCommand(
+	adminApi func() (admin.AdminAPI, error),
+) *cobra.Command {
+	var (
+		username string
+	)
+	command := &cobra.Command{
+		Use:          "delete",
+		Short:        "Delete users",
+		SilenceUsage: true,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			adminApi, err := adminApi()
+			if err != nil {
+				return err
+			}
+			err = adminApi.DeleteUser(username)
+			if err != nil {
+				return err
+			}
+
+			log.Infof("Deleted user '%s'", username)
+
+			return nil
+		},
+	}
+
+	command.Flags().StringVar(
+		&username,
+		deleteUsernameFlag,
+		"",
+		"The user to be deleted",
+	)
+	command.MarkFlagRequired(deleteUsernameFlag)
 
 	return command
 }

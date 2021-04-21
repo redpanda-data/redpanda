@@ -86,6 +86,47 @@ func TestACLUserCommands(t *testing.T) {
 			"--new-password", "pass",
 		},
 		expectedOut: "Created user 'user'",
+	}, {
+		name:    "delete should fail if building the admin API client fails",
+		command: acl.NewDeleteUserCommand,
+		mockAdminAPI: func() (admin.AdminAPI, error) {
+			return nil, errors.New("Woops, sorry")
+		},
+		args: []string{
+			"--delete-username", "user",
+		},
+		expectedErrMsg: "Woops, sorry",
+	}, {
+		name:    "delete should fail if --delete-username isn't passed",
+		command: acl.NewDeleteUserCommand,
+		mockAdminAPI: func() (admin.AdminAPI, error) {
+			return nil, nil
+		},
+		expectedErrMsg: `required flag(s) "delete-username" not set`,
+	}, {
+		name:    "delete should fail if deleting the user fails",
+		command: acl.NewDeleteUserCommand,
+		mockAdminAPI: func() (admin.AdminAPI, error) {
+			return &admin.MockAdminAPI{
+				MockDeleteUser: func(_ string) error {
+					return errors.New("user deletion request failed")
+				},
+			}, nil
+		},
+		args: []string{
+			"--delete-username", "user",
+		},
+		expectedErrMsg: "user deletion request failed",
+	}, {
+		name:    "create should print the deleted user",
+		command: acl.NewDeleteUserCommand,
+		mockAdminAPI: func() (admin.AdminAPI, error) {
+			return &admin.MockAdminAPI{}, nil
+		},
+		args: []string{
+			"--delete-username", "user",
+		},
+		expectedOut: "Deleted user 'user'",
 	}}
 
 	for _, tt := range tests {
