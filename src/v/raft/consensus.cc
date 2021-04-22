@@ -2376,6 +2376,7 @@ std::vector<follower_metrics> consensus::get_follower_metrics() const {
     auto dirty_offset = _log.offsets().dirty_offset;
     for (const auto& f : _fstats) {
         auto last_hbeat = f.second.last_hbeat_timestamp;
+        auto is_live = last_hbeat + _jit.base_duration() > clock_type::now();
         ret.push_back(follower_metrics{
           .id = f.first.id(),
           .is_learner = f.second.is_learner,
@@ -2383,8 +2384,8 @@ std::vector<follower_metrics> consensus::get_follower_metrics() const {
           .dirty_log_index = f.second.last_dirty_log_index,
           .match_index = f.second.match_index,
           .last_heartbeat = last_hbeat,
-          .is_live = last_hbeat + _jit.base_duration() > clock_type::now(),
-          .under_replicated = f.second.is_recovering
+          .is_live = is_live,
+          .under_replicated = (f.second.is_recovering || !is_live)
                               && f.second.match_index < dirty_offset});
     }
 
