@@ -12,6 +12,7 @@ v_cc_library(
     partitioners.cc
     producer.cc
     topic_cache.cc
+    sasl_client.cc
   DEPS
     v::kafka
     v::ssx
