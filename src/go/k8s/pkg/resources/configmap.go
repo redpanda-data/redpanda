@@ -249,6 +249,11 @@ func (r *ConfigMapResource) createConfiguration(
 		cr.GroupTopicPartitions = &partitions
 	}
 
+	if cr.Other == nil {
+		cr.Other = make(map[string]interface{})
+	}
+	cr.Other["auto_create_topics_enabled"] = r.pandaCluster.Spec.Configuration.AutoCreateTopics
+
 	segmentSize := logSegmentSize
 	cr.LogSegmentSize = &segmentSize
 
