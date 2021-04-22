@@ -118,7 +118,7 @@ class RedpandaService(Service):
         cmd = (f"nohup {self.find_binary('redpanda')}"
                f" --redpanda-cfg {RedpandaService.CONFIG_FILE}"
                f" --default-log-level {self._log_level}"
-               f" --logger-log-level=exception=debug "
+               f" --logger-log-level=exception=debug:archival=debug "
                f" --kernel-page-cache=true "
                f" --overprovisioned "
                f" --smp 3 "
