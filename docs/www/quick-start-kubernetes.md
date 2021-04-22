@@ -76,7 +76,7 @@ You can either create a Kubernetes cluster on your local machine or on a cloud p
   Then, create a cluster with:
 
   ```
-  gcloud container clusters create redpanda --machine-type n1-standard-4
+  gcloud container clusters create redpanda --machine-type n1-standard-4 --num-nodes=1
   ```
 
   **_Note_** - You may need to add a `--region` or `--zone` to this command.
@@ -94,7 +94,12 @@ but here's the command to install using helm:
 kubectl create namespace cert-manager && \
 helm repo add jetstack https://charts.jetstack.io && \
 helm repo update && \
-kubectl apply -f https://github.com/jetstack/cert-manager/releases/download/v1.3.0/cert-manager.yaml
+helm install \
+  cert-manager jetstack/cert-manager \
+  --namespace cert-manager \
+  --create-namespace \
+  --version v1.3.0 \
+  --set installCRDs=true
 ```
 
 We recommend that you use [the verification procedure](https://cert-manager.io/docs/installation/kubernetes/#verifying-the-installation) in the cert-manager docs
