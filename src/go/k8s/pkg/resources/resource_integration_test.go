@@ -119,6 +119,11 @@ func TestEnsure_ConfigMap(t *testing.T) {
 	assert.NoError(t, err)
 	originalResourceVersion := actual.ResourceVersion
 
+	data := actual.Data["redpanda.yaml"]
+	if !strings.Contains(data, "auto_create_topics_enabled: false") {
+		t.Fatalf("expecting configmap containing 'auto_create_topics_enabled: false' but got %v", data)
+	}
+
 	// calling ensure for second time to see the resource does not get updated
 	err = cm.Ensure(context.Background())
 	assert.NoError(t, err)
@@ -141,7 +146,7 @@ func TestEnsure_ConfigMap(t *testing.T) {
 	if actual.ResourceVersion == originalResourceVersion {
 		t.Fatalf("expecting version to get updated after resource update but is %s", originalResourceVersion)
 	}
-	data := actual.Data["redpanda.yaml"]
+	data = actual.Data["redpanda.yaml"]
 	if !strings.Contains(data, "cert_file") || !strings.Contains(data, "port: 1111") {
 		t.Fatalf("expecting configmap updated but got %v", data)
 	}
