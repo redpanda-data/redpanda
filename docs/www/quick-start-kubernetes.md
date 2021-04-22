@@ -94,7 +94,12 @@ but here's the command to install using helm:
 kubectl create namespace cert-manager && \
 helm repo add jetstack https://charts.jetstack.io && \
 helm repo update && \
-kubectl apply -f https://github.com/jetstack/cert-manager/releases/download/v1.3.0/cert-manager.yaml
+helm install \
+  cert-manager jetstack/cert-manager \
+  --namespace cert-manager \
+  --create-namespace \
+  --version v1.3.0 \
+  --set installCRDs=true
 ```
 
 We recommend that you use [the verification procedure](https://cert-manager.io/docs/installation/kubernetes/#verifying-the-installation) in the cert-manager docs
