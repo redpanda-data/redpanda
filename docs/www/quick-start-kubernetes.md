@@ -28,7 +28,7 @@ You'll need to install:
 - Kubernetes v1.16 or above
 - [kubectl](https://kubernetes.io/docs/tasks/tools/) v1.16 or above
 - [helm](https://github.com/helm/helm/releases) v3.0.0 or above
-- [cert-manager](https://cert-manager.io/docs/installation/kubernetes/) v1.3.0 or above
+- [cert-manager](https://cert-manager.io/docs/installation/kubernetes/) v1.2.0 or above
 
     Follow the instructions to verify that cert-manager is ready to create certificates.
 
@@ -98,7 +98,7 @@ helm install \
   cert-manager jetstack/cert-manager \
   --namespace cert-manager \
   --create-namespace \
-  --version v1.3.0 \
+  --version v1.2.0 \
   --set installCRDs=true
 ```
 
