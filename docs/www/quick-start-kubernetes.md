@@ -76,7 +76,7 @@ You can either create a Kubernetes cluster on your local machine or on a cloud p
   Then, create a cluster with:
 
   ```
-  gcloud container clusters create redpanda --machine-type n1-standard-4
+  gcloud container clusters create redpanda --machine-type n1-standard-4 --num-nodes=1
   ```
 
   **_Note_** - You may need to add a `--region` or `--zone` to this command.
