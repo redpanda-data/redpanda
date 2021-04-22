@@ -6,4 +6,6 @@ metadata:
 status:
   readyReplicas: 1
   replicas: 1
+  availableReplicas: 1
   observedGeneration: 3
+  updatedReplicas: 1
