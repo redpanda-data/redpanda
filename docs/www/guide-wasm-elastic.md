@@ -1,263 +1,285 @@
-# Redpanda Wasm engine + Elasticsearch
+---
+title: Transforming data with WebAssembly (Wasm) - Elasticsearch tutorial
+order: 0
+---
+# Transforming data with WebAssembly (Wasm)
 
-The Wasm engine feature was introduced in version 21.2.1. In this guide, you'll
-learn to how create a wasm script, how publish record from Redpanda
-to Elasticsearch and how deploy a wasm script using `rpk wasm` command.
+When your application components send records to Redpanda,
+sometimes those records need to be transformed in thr process.
+Instead of adding another process to your application that consumes, transforms, and produces the records back to Redpanda,
+you can run Wasm transformations inside Redpanda.
 
-Requirements:
+In general, the steps for transforming data on-the-fly in Redpanda are:
 
-1. Redpanda version 21.2.1 or greater. You can check it by running `rpk version`.
-2. Elasticsearch, in this example we use the official [docker image](https://www.elastic.co/guide/en/elasticsearch/reference/current/docker.html)
+1. Create a Wasm script.
+2. Deploy the script using the `rpk wasm` command.
+3. Publish records to Redpanda.
 
->Note: this guide just work for linux enviroment
+In this tutorial, we'll use Redpanda installed on Linux to transform data and send it to Elasticsearch®.
+
+## Prerequisites
+
+For this tutorial you need:
+
+- Redpanda v21.2.1 or higher on [Linux](https://vectorized.io/docs/quick-start-linux)
+- Elasticsearch 7.10.2 or higher in a [docker image](https://www.elastic.co/guide/en/elasticsearch/reference/current/docker.html)
 
 ## Enable Wasm engine on Redpanda
-Add `coproc_enable: true` in your redpanda.yaml file, under the `redpanda` 
-section. You can do this manually or by running 
 
-```bash
-$ sudo rpk redpanda config set 'redpanda.enable_coproc' true
-If redpanda is running, please restart it for the changes to take effect.
-```
+By default the Wasm engine is disabled, so the first thing we need to do is enable it.
 
-You will also need to set `developer_mode: true`. To do so, you can run
+To enable the Wasm engine:
 
-```bash
-$ sudo rpk redpanda mode dev
-Writing 'dev' mode defaults to '/etc/redpanda/redpanda.yaml'
-```
+1. Set the `redpanda.enable_coproc` value in the Redpanda config to `true`:
 
-Verify that your configuration is OK by checking your configuration 
-file (located in `/etc/redpanda/redpanda.yaml` by default):
+    ```bash
+    sudo rpk redpanda config set 'redpanda.enable_coproc' true
+    ```
 
-```bash
-$ cat /etc/redpanda/redpanda.yaml | grep developer_mode              
-developer_mode: true
+    If redpanda is running, please restart it for the changes to take effect.
 
-$ cat /etc/redpanda/redpanda.yaml | grep enable_coproc
-  coproc_enable: true
-```
+2. Set the `developer_mode` to `true`:
 
+    ```bash
+    sudo rpk redpanda mode dev
+    ```
 
+3. Make sure that those changes are shown in the configuration file in `/etc/redpanda/redpanda.yaml`:
+
+    ```bash
+    cat /etc/redpanda/redpanda.yaml | grep developer_mode
+    cat /etc/redpanda/redpanda.yaml | grep enable_coproc
+    ```
+
+    The result should be:
+
+    ```bash
+    $ cat /etc/redpanda/redpanda.yaml | grep developer_mode              
+    developer_mode: true
+
+    $ cat /etc/redpanda/redpanda.yaml | grep enable_coproc
+    coproc_enable: true
+    ```
 
 ## Create the Wasm script
-In this example we use a folder for save all Wasm scripts, `/wasm_example`
 
-To create a Wasm script we will use `rpk wasm generate wasm-elastic`. It 
-will create a template giving us a simple build system and basic example script.
+To create a Wasm script we'll use the `rpk wasm generate` command.
+This command creates a template that gives us a simple build system and basic example script.
 
-```bash
-$ rpk wasm generate wasm-elastic
-npm created project in /home/user/wasm_elastic
-```
+Let's put all of our work for this tutorial in `/wasm_example` so it's easy to clean up.
 
-That command creates a folder with an example Wasm
-script in `/wasm_example/wasm-elastic`. we move to `wasm-elastic` folder.
+1. Generate the Wasm template:
 
-```bash
-$ cd wasm_elastic
+    ```bash
+    rpk wasm generate /wasm_example/wasm-elastic
+    ```
 
-$ tree .
-  .
-  ├── package.json
-  ├── src
-  │   └── wasm.js
-  ├── test
-  │   └── wasm.test.js
-  └── webpack.js
-```
+    Now we have a directory with an example Wasm script in `/wasm_example/wasm-elastic`.
+    Let's move to the `wasm-elastic` directory and see what's there.
 
-Now we just to go `src/wasm.js`, and rename to `src/elastic.js`
+    ```bash
+    cd wasm_elastic
+    tree .
+    ```
 
-```bash
-$ mv src/wasm.js src/elastic.js
-```
+    You should see these files in the `wasm-elastic` directory.
 
->Note: the file name is very important, since it will be used to uniquely 
-identify the function when we upload it to the cluster. 
+    ```
+      .
+      ├── package.json
+      ├── src
+      │   └── wasm.js
+      ├── test
+      │   └── wasm.test.js
+      └── webpack.js
+    ```
 
-```bash
-$ tree src
- src
-  └── elastic.js
-```
+3. Create a file named `src/elastic.js` to hold the transform script:
 
- Be sure to add Elasticsearch to your install dependencies:
+    ```bash
+    touch src/elastic.js
+    ```
 
-```bash
-$ npm install @elastic/elasticsearch
-```
+4. Add Elasticsearch to your install dependencies:
 
-Open `src/elastic.js` in your editor of choice and paste the 
-following javascript code. We'll walk through each of the 
-sections to better understand what they do and how they fit 
-together.
+    ```bash
+    $ npm install @elastic/elasticsearch
+    ```
 
-```js
-const {
-  SimpleTransform,
-  PolicyError,
-} = require("@vectorizedio/wasm-api");
+5. In your editor of choice, put the javascript code for the transform into the `src/elastic.js` file:
 
-const {Client} = require('@elastic/elasticsearch')
+    ```js
+    const {
+      SimpleTransform,
+      PolicyError,
+    } = require("@vectorizedio/wasm-api");
 
-const client = new Client({ node: 'http://localhost:9200' })
+    const {Client} = require('@elastic/elasticsearch')
 
-const transform = new SimpleTransform();
-/* Topics that fire the transform function */
-transform.subscribe(["origin"]);
-/* The strategy the transform engine will use when handling errors */
-transform.errorHandler(PolicyError.Deregister);
-/* function for validating record has the correct header key and value  */
-const containHeader = (key, value, record) =>
-  record.headers.some( header =>
-    header.headerKey.equals(Buffer.from(key)) &&
-    header.value.equals(Buffer.from(value))
-  )
+    const client = new Client({ node: 'http://localhost:9200' })
 
-/* Transform function */
-transform.processRecord((recordBatch) => {
-  console.log("Applying Wasm process function")
-  return Promise.all(
-    recordBatch.records.map((record) => {
-      if (containHeader("logService", "elastic", record)) {
-        console.log("Index record value to Elasticsearch")
-        return client.index({
-          index: "result_wasm",
-          type: "redpanda_wasm",
-          body: {
-            /*
-             index the record value into Elasticsearch
-            */
-            record_message: record.value.toString()
+    const transform = new SimpleTransform();
+    /* Topics that trigger the transform function */
+    transform.subscribe(["origin"]);
+    /* The strategy the transform engine will use when handling errors */
+    transform.errorHandler(PolicyError.Deregister);
+    /* function for validating record has the correct header key and value  */
+    const containHeader = (key, value, record) =>
+      record.headers.some( header =>
+        header.headerKey.equals(Buffer.from(key)) &&
+        header.value.equals(Buffer.from(value))
+      )
+
+    /* Transform function */
+    transform.processRecord((recordBatch) => {
+      console.log("Applying Wasm process function")
+      return Promise.all(
+        recordBatch.records.map((record) => {
+          if (containHeader("logService", "elastic", record)) {
+            console.log("Index record value to Elasticsearch")
+            return client.index({
+              index: "result_wasm",
+              type: "redpanda_wasm",
+              body: {
+                /*
+                index the record value into Elasticsearch
+                */
+                record_message: record.value.toString()
+              }
+            })
           }
         })
-      }
-    })
-  ).then(() => {
+      ).then(() => {
+          /*
+          return a map with recordBatch indexed to Elasticsearch
+          */
+          const result = new Map();
+          result.set("elasticIndex", recordBatch)
+          /* 
+          Wasm processRecord function has to return a Map always,
+          although that map is empty map
+          */
+          return result
+      })
       /*
-       return a map with recordBatch indexed to Elasticsearch
+        Note: if the previous promise failed, the Wasm errorHandler is
+        going to handle that error. You can use `deregister policy` to 
+        remove this Wasm script from the Wasm engine.    
       */
-      const result = new Map();
-      result.set("elasticIndex", recordBatch)
-      /* 
-       Wasm processRecord function has to return a Map always,
-       although that map is empty map
-      */
-      return result
-  })
-  /*
-    Note: if the previous promise failed, the wasm errorHandler is
-    going to handle that error, in this case, Deregister policy will
-    remove this wasm script from wasm engine.    
-  */
-});
+    });
 
-exports["default"] = transform;
-```
+    exports["default"] = transform;
+    ```
 
-after applying the new logic, we need to bundle everything into a single file.
-For it, we can use 
+6. Bundle the project files into a single file with:
 
-```bash
-#this command install all nodejs dependecies
-$ npm install
-#this command generate `dist/elastic.js` file.
-$ npm run build
-```
+    ```bash
+    #this command install all nodejs dependecies
+    $ npm install
+    #this command generate `dist/elastic.js` file.
+    $ npm run build
+    ```
 
-Before deploying this Wasm script, we need to create the `origin` topic
-The statically defined input topic that this Wasm operator has defined in its metadata
+## Deploy the Wasm function to Redpanda
 
-```bash
-rpk topic create origin
-```
+Now we need to deploy the Wasm script so that it can process the transforms.
 
- ## Deploy the Wasm function to Redpanda
+1. Create a topic to use for the transform:
 
-we use `rpk wasm deploy dist/elastic.js` in this case
+    ```bash
+    rpk topic create origin
+    ```
 
-```bash
-$ rpk wasm deploy dist/elastic.js
+2. Deploy the Wasm transform with:
 
-Sent record to partition 0 at offset 1 with timestamp 2021-02-01 18:18:15.734185538 -0500 -05 m=+0.053943881.
-```
+    ```bash
+    rpk wasm deploy dist/elastic.js
+    ```
 
-To verify that the wasm script has successfully been deployed, 
-you can look through the redpanda logs for a log line that looks like this
-for check it.
+    The results shows:
 
-on `redpanda logs`
+    ```
+    Sent record to partition 0 at offset 1 with timestamp 2021-02-01 18:18:15.734185538 -0500 -05 m=+0.053943881.
+    ```    
 
-```bash
-INFO [shard 0] coproc - service.cc:101 - Request recieved to register coprocessor with id: 14103244480447969041
-```
+    To verify that the Wasm script was successfully deployed, 
+    you can run `redpanda logs` to look through the redpanda logs for a log line that looks like:
 
-The Wasm engine itself also has a log file which is located by default in `/var/lib/redpanda/coprocessor/logs/wasm`. To see the status of your function as reported by the Wasm engine look for log lines like [this]
+    ```bash
+    INFO [shard 0] coproc - service.cc:101 - Request recieved to register coprocessor with id: 14103244480447969041
+    ```
 
-```bash
-   2021-03-09T14:33:42.367Z [server] info: request enable wasm script:  14103244480447969041
-   2021-03-09T14:33:42.380Z [server] info: wasm script loaded on nodejs engine: 14103244480447969041
-```
+    The Wasm engine itself also has a log file that is located by default in `/var/lib/redpanda/coprocessor/logs/wasm`.
+    To see the status of your function as reported by the Wasm engine look for log lines like:
+
+    ```bash
+    2021-03-09T14:33:42.367Z [server] info: request enable wasm script:  14103244480447969041
+    2021-03-09T14:33:42.380Z [server] info: wasm script loaded on nodejs engine: 14103244480447969041
+    ```
 
 ## Run data through the Wasm engine
 
-To transform data, push records onto the `origin` topic using any 
-kafka client. In this example we will use the kafka client 
-within `rpk`.
+Here's the real fun -- seeing the transform work.
 
->Note: we need to publish the records with `logService:elastic` 
->headers in order to those records pass the `containHeader` 
->validation into `processRecord` function on our wasm script.  
+1. To transform data, produce records to the `origin` topic.
 
-```bash
-$ rpk topic produce origin -H logService:elastic -n 5
-```
+    ```bash
+    $ rpk topic produce origin -H logService:elastic -n 5
+    ```
 
-In `/var/lib/redpanda/coprocessor/logs/wasm` you should see log line that look like [this]
+    We publish the records with `logService:elastic`
+    because they are required by our Wasm script to pass the `containHeader` validation
+    and go to the `processRecord` function on our Wasm script.
 
-```
-Applying Wasm process function
-Index record value to Elasticsearch
-```
+    You can see a log line in `/var/lib/redpanda/coprocessor/logs/wasm` that look like:
+
+    ```
+    Applying Wasm process function
+    Index record value to Elasticsearch
+    ```
 
 ## Verify Elasticsearch results
-Now we need to validate that our Wasm script, should take records 
-and publish them to Elasticsearch. To do this, we can use the same 
-Elasticsearch client for making a query to Elasticsearch, which 
-query should take every hist that has a  `result_wasm` index.
 
-Will create `elastic-query.js`.
+Now we need to validate that our Wasm script received the records and published them to Elasticsearch.
+To do this, we'll create a query to Elasticsearch that returns take every hit that has a  `result_wasm` index.
 
-```js
-const { Client } = require("@elastic/elasticsearch")
+1. Save this query in a file names `elastic-query.js`:
 
-const client = new Client({ node: 'http://localhost:9200' })
+    ```js
+    const { Client } = require("@elastic/elasticsearch")
 
-client.search({
-  index: 'result_wasm'
-}).then((elasticResult) => {
-  const results = elasticResult.body.hits.hits.map(record => record._source)
-  console.log(results)
-})
-```
- expected output:
+    const client = new Client({ node: 'http://localhost:9200' })
 
- ```bash
- $ node elastic-query.js
- [
-  { record_message: 'Information from Redpanda + Wasm' },
-  { record_message: 'Information from Redpanda + Wasm' },
-  { record_message: 'Information from Redpanda + Wasm' },
-  { record_message: 'Information from Redpanda + Wasm' },
-  { record_message: 'Information from Redpanda + Wasm' }
-]
- ```
+    client.search({
+      index: 'result_wasm'
+    }).then((elasticResult) => {
+      const results = elasticResult.body.hits.hits.map(record => record._source)
+      console.log(results)
+    })
+    ```
 
-We should see 5 items in the list, because we send 5 records when 
-we use `$ rpk topic produce origin -H logService:elastic -n 5`, `-n` is the
-number of record that we are going to publish on `origin` topic. 
+2. Run the query with:
 
-Now you have a Wasm script with Elasticsearch connection, this is a 
-basic example about how to take advantage of Redpanda and Wasm 
-engine, try it yourself and share your knowledge.
+    ```
+    node elastic-query.js
+    ```
+
+    The output is:
+
+    ```bash
+    $ node elastic-query.js
+    [
+      { record_message: 'Information from Redpanda + Wasm' },
+      { record_message: 'Information from Redpanda + Wasm' },
+      { record_message: 'Information from Redpanda + Wasm' },
+      { record_message: 'Information from Redpanda + Wasm' },
+      { record_message: 'Information from Redpanda + Wasm' }
+    ]
+    ```
+
+The result shows that the 5 records that we produced with `rpk topic produce origin -H logService:elastic -n 5`,
+where `-n` is the number of records that we published to the `origin` topic. 
+
+Now you have a Wasm script with an Elasticsearch connection.
+You can use this tutorial as a base for building Wasm transformations.
+Try it out yourself and tell us what you think in our [Slack](https://vectorized.io/slack) community.
