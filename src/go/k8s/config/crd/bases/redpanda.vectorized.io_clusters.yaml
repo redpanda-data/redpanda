@@ -157,6 +157,9 @@ spec:
                           type: object
                       type: object
                     type: array
+                  autoCreateTopics:
+                    description: Enable auto-creation of topics. Reference https://kafka.apache.org/documentation/#brokerconfigs_auto.create.topics.enable
+                    type: boolean
                   developerMode:
                     type: boolean
                   groupTopicPartitions:

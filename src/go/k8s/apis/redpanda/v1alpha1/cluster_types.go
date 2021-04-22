@@ -172,6 +172,8 @@ type RedpandaConfig struct {
 	DeveloperMode bool          `json:"developerMode,omitempty"`
 	// Number of partitions in the internal group membership topic
 	GroupTopicPartitions int `json:"groupTopicPartitions,omitempty"`
+	// Enable auto-creation of topics. Reference https://kafka.apache.org/documentation/#brokerconfigs_auto.create.topics.enable
+	AutoCreateTopics bool `json:"autoCreateTopics,omitempty"`
 }
 
 // AdminAPI is configuration of the redpanda Admin API
