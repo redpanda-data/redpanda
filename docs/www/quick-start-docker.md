@@ -15,7 +15,7 @@ For production or benchmarking, setup a [production deployment](/docs/production
 
 To get a cluster ready for streaming, either run a single docker container with Redpanda running or a cluster of 3 containers.
 
-> **_Note:_** You can also use [`rpk container`](/docs/guide-rpk-container) to run Redpanda in containers
+> **_Note_** - You can also use [`rpk container`](/docs/guide-rpk-container) to run Redpanda in containers
     without having to interact with Docker at all.
 
 ### Single command for a 1-node cluster
@@ -28,9 +28,16 @@ With a 1-node cluster you can test out a simple implementation of Redpanda.
 - `--pull=always` makes sure that you are always working with the latest version.
 
 ```bash
-
-docker run -d --pull=always --name=redpanda-1 --rm -p 9092:9092 vectorized/redpanda:latest start --overprovisioned --smp 1  --memory 1G  --reserve-memory 0M --node-id 0 --check=false
-
+docker run -d --pull=always --name=redpanda-1 --rm \
+-p 9092:9092 \
+vectorized/redpanda:latest \
+start \
+--overprovisioned \
+--smp 1  \
+--memory 1G \
+--reserve-memory 0M \
+--node-id 0 \
+--check=false
 ```
 
 You can do some [simple topic actions](#Do-some-streaming) to do some streaming.
@@ -167,7 +174,7 @@ You can easily try out different docker configuration parameters with a docker-c
         - --advertise-kafka-addr
         - PLAINTEXT://redpanda:29092,OUTSIDE://localhost:9092
         # NOTE: Please use the latest version here!
-        image: vectorized/redpanda:v21.4.1
+        image: vectorized/redpanda:v21.4.13
         container_name: redpanda-1
         ports:
         - 9092:9092
@@ -189,13 +196,15 @@ Here are some sample commands to produce and consume streams:
 1. Create a topic. We'll call it "twitch_chat":
 
     ```bash
-    docker exec -it redpanda-1 rpk topic create twitch_chat --brokers=localhost:9092
+    docker exec -it redpanda-1 \
+    rpk topic create twitch_chat --brokers=localhost:9092
     ```
 
 1. Produce messages to the topic:
 
     ```bash
-    docker exec -it redpanda-1 rpk topic produce twitch_chat --brokers=localhost:9092
+    docker exec -it redpanda-1 \
+    rpk topic produce twitch_chat --brokers=localhost:9092
     ```
 
     Type text into the topic and press Ctrl + D to seperate between messages.
@@ -205,7 +214,8 @@ Here are some sample commands to produce and consume streams:
 1. Consume (or read) the messages in the topic:
 
     ```bash
-    docker exec -it redpanda-1 rpk topic consume twitch_chat --brokers=localhost:9092
+    docker exec -it redpanda-1 \
+    rpk topic consume twitch_chat --brokers=localhost:9092
     ```
     
     Each message is shown with its metadata, like this:
@@ -226,14 +236,14 @@ You've just installed Redpanda and done streaming in a few easy steps.
 When you are finished with the cluster, you can shutdown and delete the containers with:
 
 ```bash
-docker stop redpanda-1 redpanda-2 redpanda-3 &&
+docker stop redpanda-1 redpanda-2 redpanda-3 && \
 docker rm redpanda-1 redpanda-2 redpanda-3
 ```
 
 If you set up volumes and a network, delete them with:
 
 ```bash
-docker volume rm redpanda1 redpanda2 redpanda3 &&
+docker volume rm redpanda1 redpanda2 redpanda3 && \
 docker network rm redpandanet
 ```
 
