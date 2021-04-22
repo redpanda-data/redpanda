@@ -1,11 +1,4 @@
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: redpanda-controller-manager
-  namespace: redpanda-system
-status:
-  readyReplicas: 1
-  replicas: 1 # Temporarily, the number of replicas becomes 2. We wait until the new version is up and running alone - or set maxSurge=0 in deployment.
-  availableReplicas: 1
-  observedGeneration: 2
-  updatedReplicas: 1
+apiVersion: kuttl.dev/v1beta1
+kind: TestAssert
+commands:
+  - command: ../../hack/wait-for-webhook-ready.sh
