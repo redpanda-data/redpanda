@@ -96,6 +96,24 @@ configuration::configuration()
       "consumer_heartbeat_interval_ms",
       "Interval (in milliseconds) for consumer heartbeats",
       config::required::no,
-      500ms) {}
+      500ms)
+  , sasl_mechanism(
+      *this,
+      "sasl_mechanism",
+      "The SASL mechanism to use when connecting",
+      config::required::no,
+      "")
+  , scram_username(
+      *this,
+      "scram_username",
+      "Username to use for SCRAM authentication mechanisms",
+      config::required::no,
+      "")
+  , scram_password(
+      *this,
+      "scram_password",
+      "Password to use for SCRAM authentication mechanisms",
+      config::required::no,
+      "") {}
 
 } // namespace kafka::client
