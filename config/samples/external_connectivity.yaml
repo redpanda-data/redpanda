@@ -20,10 +20,6 @@ spec:
      - port: 9092
      - external:
          enabled: true
-          # The subdomain need to be managed externally for example by
-          # External-DNS. In AWS provider there is fix to expose public IP
-          # https://github.com/kubernetes-sigs/external-dns/pull/1391
-         subdomain: "test.subdomain.com"
     adminApi:
     - port: 9644
     developerMode: true
