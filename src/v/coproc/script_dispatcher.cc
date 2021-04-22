@@ -140,6 +140,13 @@ fold_disable_codes(const std::vector<coproc::errc>& codes) {
     return disable_response_code::success;
 }
 
+ss::future<bool> script_dispatcher::script_exists(script_id id) {
+    return _pacemaker.map_reduce0(
+      [id](pacemaker& p) { return p.local_script_id_exists(id); },
+      false,
+      std::logical_or<>());
+}
+
 script_dispatcher::script_dispatcher(
   ss::sharded<pacemaker>& p, ss::abort_source& as)
   : _pacemaker(p)
@@ -154,7 +161,7 @@ script_dispatcher::add_sources(
     });
 }
 
-ss::future<std::error_code>
+ss::future<result<std::vector<script_id>>>
 script_dispatcher::enable_coprocessors(enable_copros_request req) {
     auto client = co_await get_client();
     if (!client) {
@@ -165,6 +172,7 @@ script_dispatcher::enable_coprocessors(enable_copros_request req) {
     if (!reply) {
         co_return reply.error();
     }
+    std::vector<script_id> added;
     std::vector<script_id> deregisters;
     for (enable_copros_reply::data& r : reply.value().data.acks) {
         /// 1. Only continue on success
@@ -190,10 +198,7 @@ script_dispatcher::enable_coprocessors(enable_copros_request req) {
         }
 
         /// 3. Ensure script isn't already registered
-        bool is_already_registered = co_await _pacemaker.map_reduce0(
-          [id](pacemaker& p) { return p.local_script_id_exists(id); },
-          false,
-          std::logical_or<>());
+        bool is_already_registered = co_await script_exists(id);
         if (is_already_registered) {
             vlog(coproclog.info, "Script id already registered: {}", id);
             continue;
@@ -215,6 +220,7 @@ script_dispatcher::enable_coprocessors(enable_copros_request req) {
         } else {
             vlog(
               coproclog.info, "Successfully registered script with id: {}", id);
+            added.push_back(id);
         }
     }
     /// This can be removed once we complete the feature to have copros that
@@ -227,12 +233,12 @@ script_dispatcher::enable_coprocessors(enable_copros_request req) {
         if (!reply) {
             vlog(
               coproclog.error,
-              "Failed to immediately deregister some ids, wasm engine will "
-              "have some scripts which will never recieve data");
+              "Failed to immediately deregister some ids, wasm engine may fall "
+              "out of sync with redpanda");
             co_return rpc::make_error_code(rpc::errc::disconnected_endpoint);
         }
     }
-    co_return rpc::make_error_code(rpc::errc::success);
+    co_return added;
 }
 
 ss::future<std::vector<coproc::errc>>
@@ -240,7 +246,7 @@ script_dispatcher::remove_sources(script_id id) {
     return _pacemaker.map([id](pacemaker& p) { return p.remove_source(id); });
 }
 
-ss::future<std::error_code>
+ss::future<result<std::vector<script_id>>>
 script_dispatcher::disable_coprocessors(disable_copros_request req) {
     auto client = co_await get_client();
     if (!client) {
@@ -251,27 +257,23 @@ script_dispatcher::disable_coprocessors(disable_copros_request req) {
     if (!reply) {
         co_return reply.error();
     }
+    std::vector<script_id> removed;
     for (const auto& [id, code] : reply.value().data.acks) {
-        if (code != disable_response_code::success) {
-            vlog(
-              coproclog.info,
-              "wasm engine failed to deregister script {}, continuing "
-              "anyway",
-              id);
+        if (code == disable_response_code::script_id_does_not_exist) {
+            vassert(
+              co_await script_exists(id) == false,
+              "wasm engine and redpanda have desynced in an unexpected way");
+            continue;
         }
         std::vector<coproc::errc> results = co_await remove_sources(id);
         auto final_code = fold_disable_codes(results);
-        if (final_code != disable_response_code::success) {
-            vlog(
-              coproclog.error,
-              "redpanda failed to deregister script id {} with error {}",
-              id,
-              final_code);
-        } else {
-            vlog(coproclog.info, "Successfully deregistered script: {}", id);
-        }
+        vassert(
+          final_code == disable_response_code::success,
+          "Redpanda failed to internally deregister a script");
+        vlog(coproclog.info, "Successfully deregistered script: {}", id);
+        removed.push_back(id);
     }
-    co_return rpc::make_error_code(rpc::errc::success);
+    co_return removed;
 }
 
 ss::future<> script_dispatcher::remove_all_sources() {

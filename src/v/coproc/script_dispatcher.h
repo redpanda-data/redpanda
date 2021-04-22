@@ -33,14 +33,16 @@ public:
     /// The wasm engine will be sent the list of coprocessors to enable
     /// Upon retrival of each successful ack, the script will be registered with
     /// the pacemaker.
-    ss::future<std::error_code> enable_coprocessors(enable_copros_request);
+    ss::future<result<std::vector<script_id>>>
+      enable_coprocessors(enable_copros_request);
 
     /// Called when removal commands arrive on the coproc_internal_topic
     ///
     /// The wasm engine will be send the list of coprocessor ids to remove from
     /// its internal map. Upon retrival of each successful ack, the script will
     /// be deregistered from the pacemaker.
-    ss::future<std::error_code> disable_coprocessors(disable_copros_request);
+    ss::future<result<std::vector<script_id>>>
+      disable_coprocessors(disable_copros_request);
 
     /// Invoke this after fatal error has occurred and its desired to clear all
     /// state from the wasm engine.
@@ -57,6 +59,7 @@ private:
       add_sources(script_id, std::vector<topic_namespace_policy>);
     ss::future<std::vector<coproc::errc>> remove_sources(script_id);
     ss::future<> remove_all_sources();
+    ss::future<bool> script_exists(script_id);
 
     /// Return std::nullopt only when the abort source is triggered,
     /// otherwise will forever loop attempting to re-connect to the wasm
