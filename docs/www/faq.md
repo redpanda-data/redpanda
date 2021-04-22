@@ -17,6 +17,7 @@ which we have tested with:
 | Go | Sarama | https://github.com/Shopify/sarama |
 | Python | kafka-python | https://pypi.org/project/kafka-python |
 | JS | KafkaJS | https://kafka.js.org |
+| PHP | php-simple-kafka-client | https://github.com/php-kafka/php-simple-kafka-client |
 
 ## Is Redpanda Fully Kafka API Compatible?
 
