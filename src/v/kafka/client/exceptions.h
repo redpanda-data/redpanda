@@ -23,6 +23,9 @@
 namespace kafka::client {
 
 struct broker_error final : exception_base {
+    broker_error(model::node_id n_id, error_code e, std::string_view msg)
+      : exception_base{e, fmt::format("{{ node: {} }}, {}: {}", n_id, e, msg)}
+      , node_id{n_id} {}
     broker_error(model::node_id n_id, error_code e)
       : exception_base{e, fmt::format("{{ node: {} }}, {}", n_id, e)}
       , node_id{n_id} {}
