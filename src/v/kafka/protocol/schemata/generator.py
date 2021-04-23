@@ -80,6 +80,18 @@ path_type_map = {
         },
         "MemberId": ("kafka::member_id", "string"),
     },
+    "AddPartitionsToTxnRequestData": {
+        "Topics": {
+            "Partitions": ("model::partition_id", "int32")
+        }
+    },
+    "AddPartitionsToTxnResponseData": {
+        "Results": {
+            "Results": {
+                "PartitionIndex": ("model::partition_id", "int32")
+            }
+        }
+    },
     "TxnOffsetCommitRequestData": {
         "Topics": {
             "Partitions": {
@@ -352,6 +364,9 @@ STRUCT_TYPES = [
     "MetadataRequestTopic",
     "MetadataResponseTopic",
     "MetadataResponsePartition",
+    "AddPartitionsToTxnTopic",
+    "AddPartitionsToTxnTopicResult",
+    "AddPartitionsToTxnPartitionResult",
     "TxnOffsetCommitRequestTopic",
     "TxnOffsetCommitResponseTopic",
     "TxnOffsetCommitResponsePartition",
