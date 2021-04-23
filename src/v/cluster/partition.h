@@ -139,6 +139,10 @@ public:
         return _id_allocator_stm;
     }
 
+    const raft::configuration_manager& get_cfg_manager() const {
+        return _raft->get_configuration_manager();
+    }
+
     ss::shared_ptr<cluster::rm_stm>& rm_stm() { return _rm_stm; }
 
     size_t size_bytes() const { return _raft->log().size_bytes(); }

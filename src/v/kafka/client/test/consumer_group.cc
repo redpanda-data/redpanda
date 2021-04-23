@@ -99,11 +99,10 @@ FIXTURE_TEST(consumer_group, kafka_client_fixture) {
     std::vector<model::topic_namespace> topics_namespaces;
     topics_namespaces.reserve(topic_count);
     for (int i = 0; i < topic_count; ++i) {
-        topics_namespaces.push_back(
-          make_data(model::revision_id(2), partition_count, i));
+        topics_namespaces.push_back(create_topic(partition_count, i));
     }
 
-    info("Waiting for topic data");
+    info("Waiting for topic");
     for (int t = 0; t < topic_count; ++t) {
         for (int p = 0; p < partition_count; ++p) {
             const auto& tp_ns = topics_namespaces[t];
@@ -111,6 +110,16 @@ FIXTURE_TEST(consumer_group, kafka_client_fixture) {
               model::ntp(tp_ns.ns, tp_ns.tp, model::partition_id{p}),
               model::offset{0})
               .get();
+        }
+    }
+    // produce to topics
+    for (int t = 0; t < topic_count; ++t) {
+        for (auto b = 0; b < 10; ++b) {
+            auto bat = make_batch(model::offset(0), 2);
+            auto tp = model::topic_partition(
+              topics_namespaces[t].tp,
+              model::partition_id(b % partition_count));
+            auto res = client.produce_record_batch(tp, std::move(bat)).get();
         }
     }
 

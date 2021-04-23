@@ -111,7 +111,7 @@ FIXTURE_TEST(pandaproxy_produce, pandaproxy_test_fixture) {
         BOOST_REQUIRE_EQUAL(
           res.headers.result(), boost::beast::http::status::ok);
         BOOST_REQUIRE_EQUAL(
-          res.body, R"({"offsets":[{"partition":0,"offset":1}]})");
+          res.body, R"({"offsets":[{"partition":0,"offset":0}]})");
     }
 
     {
@@ -130,6 +130,6 @@ FIXTURE_TEST(pandaproxy_produce, pandaproxy_test_fixture) {
         BOOST_REQUIRE_EQUAL(
           res.headers.result(), boost::beast::http::status::ok);
         BOOST_REQUIRE_EQUAL(
-          res.body, R"({"offsets":[{"partition":0,"offset":4}]})");
+          res.body, R"({"offsets":[{"partition":0,"offset":3}]})");
     }
 }

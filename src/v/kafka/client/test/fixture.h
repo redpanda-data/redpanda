@@ -67,4 +67,12 @@ public:
         add_topic(tp_ns, partitions).get();
         return tp_ns;
     }
+
+    model::topic_namespace create_topic(int partitions = 1, int topic = 0) {
+        auto topic_name = ssx::sformat("my_topic_{}", topic);
+        auto tp_ns = model::topic_namespace(
+          model::kafka_namespace, model::topic{topic_name});
+        add_topic(tp_ns, partitions).get();
+        return tp_ns;
+    }
 };

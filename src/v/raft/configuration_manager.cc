@@ -31,8 +31,14 @@ configuration_manager::configuration_manager(
   : _group(group)
   , _storage(storage)
   , _ctxlog(log) {
-    vlog(_ctxlog.trace, "Initial configuration: {}", initial_cfg);
-    _configurations.emplace(model::offset{}, std::move(initial_cfg));
+    auto [it, _] = _configurations.emplace(
+      model::offset{},
+      indexed_configuration(std::move(initial_cfg), _next_index++));
+    vlog(
+      _ctxlog.trace,
+      "Initial configuration: {}, idx: {}",
+      it->second.cfg,
+      it->second.idx);
 }
 
 ss::future<> configuration_manager::truncate(model::offset offset) {
@@ -46,6 +52,9 @@ ss::future<> configuration_manager::truncate(model::offset offset) {
 
     return _lock.with([this, offset] {
         auto it = _configurations.lower_bound(offset);
+        if (it != _configurations.end()) {
+            _next_index = it->second.idx;
+        }
         _configurations.erase(it, _configurations.end());
 
         _highest_known_offset = std::min(offset, _highest_known_offset);
@@ -69,14 +78,28 @@ ss::future<> configuration_manager::prefix_truncate(model::offset offset) {
         }
         _configurations.erase(_configurations.begin(), it);
         _highest_known_offset = std::max(offset, _highest_known_offset);
-        return store_highest_known_offset().then(
-          [this] { return store_configurations(); });
+        /**
+         * store index of first configuration to recover indexing
+         */
+        configuration_idx next_index{0};
+        if (!_configurations.empty()) {
+            next_index = _configurations.begin()->second.idx;
+        }
+        return store_highest_known_offset()
+          .then([this, next_index] {
+              return _storage.kvs().put(
+                storage::kvstore::key_space::consensus,
+                next_configuration_idx_key(),
+                reflection::to_iobuf(next_index));
+          })
+          .then([this] { return store_configurations(); });
     });
 }
 
 void configuration_manager::add_configuration(
   model::offset offset, group_configuration cfg) {
-    auto [_, success] = _configurations.try_emplace(offset, std::move(cfg));
+    auto [_, success] = _configurations.try_emplace(
+      offset, indexed_configuration(std::move(cfg), _next_index++));
     if (!success) {
         throw std::invalid_argument(fmt::format(
           "Unable to add configuration at offset {} as it "
@@ -116,7 +139,7 @@ configuration_manager::add(model::offset offset, group_configuration cfg) {
         auto it = _configurations.find(offset);
         // we already have this configuration, do nothing
         // this may happen if configuration is the last batch of the snapshot
-        if (it != _configurations.end() && it->second == cfg) {
+        if (it != _configurations.end() && it->second.cfg == cfg) {
             return ss::now();
         }
 
@@ -132,7 +155,7 @@ const group_configuration& configuration_manager::get_latest() const {
     vassert(
       !_configurations.empty(),
       "Configuration manager should always have at least one configuration");
-    return _configurations.rbegin()->second;
+    return _configurations.rbegin()->second.cfg;
 }
 
 model::offset configuration_manager::get_latest_offset() const {
@@ -142,55 +165,68 @@ model::offset configuration_manager::get_latest_offset() const {
     return _configurations.rbegin()->first;
 }
 
+configuration_manager::configuration_idx
+configuration_manager::get_latest_index() const {
+    vassert(
+      !_configurations.empty(),
+      "Configuration manager should always have at least one configuration");
+    return _configurations.rbegin()->second.idx;
+}
 std::optional<group_configuration>
 configuration_manager::get(model::offset offset) const {
     auto it = _configurations.lower_bound(offset);
     if (it != _configurations.end() && it->first == offset) {
-        return it->second;
+        return it->second.cfg;
     }
     // we are returning previous configuration as this is the one that was
     // active for requested offset
     if (it != _configurations.begin()) {
-        return std::prev(it)->second;
+        return std::prev(it)->second.cfg;
     }
 
     return std::nullopt;
 }
 
-ss::future<iobuf> serialize_configurations(
-  const absl::btree_map<model::offset, group_configuration>& cfgs) {
+ss::future<iobuf>
+serialize_configurations(const configuration_manager::underlying_t& cfgs) {
     return ss::do_with(iobuf(), [&cfgs](iobuf& ret) {
         reflection::adl<uint64_t>{}.to(ret, cfgs.size());
         return ss::do_for_each(
                  cfgs.cbegin(),
                  cfgs.cend(),
                  [&ret](const auto& p) mutable {
-                     reflection::serialize(ret, p.first, p.second);
+                     reflection::serialize(ret, p.first, p.second.cfg);
                  })
           .then([&ret] { return std::move(ret); });
     });
 }
 
-ss::future<absl::btree_map<model::offset, group_configuration>>
-deserialize_configurations(iobuf&& buf) {
-    using ret_t = absl::btree_map<model::offset, group_configuration>;
+ss::future<configuration_manager::underlying_t> deserialize_configurations(
+  configuration_manager::configuration_idx initial, iobuf&& buf) {
+    using ret_t = configuration_manager::underlying_t;
     return ss::do_with(
       iobuf_parser(std::move(buf)),
       ret_t{},
-      [](iobuf_parser& parser, ret_t& configs) {
+      [initial](iobuf_parser& parser, ret_t& configs) {
           auto size = reflection::adl<uint64_t>{}.from(parser);
           return ss::do_with(
             boost::irange<uint64_t>(0, size),
-            [&configs, &parser](boost::integer_range<uint64_t>& range) {
+            [&configs, &parser, initial](
+              boost::integer_range<uint64_t>& range) {
                 return ss::do_for_each(
                          range,
-                         [&parser, &configs](uint64_t) mutable {
+                         [&parser, &configs, initial](uint64_t i) mutable {
                              auto key = reflection::adl<model::offset>{}.from(
                                parser);
                              auto value = reflection::adl<group_configuration>{}
                                             .from(parser);
                              auto [_, success] = configs.try_emplace(
-                               key, std::move(value));
+                               key,
+                               configuration_manager::indexed_configuration(
+                                 std::move(value),
+                                 initial
+                                   + configuration_manager::configuration_idx(
+                                     i)));
                              vassert(
                                success,
                                "Duplicated configuration key at offset {}",
@@ -211,6 +247,12 @@ bytes configuration_manager::highest_known_offset_key() {
     iobuf buf;
     reflection::serialize(
       buf, metadata_key::config_latest_known_offset, _group);
+    return iobuf_to_bytes(buf);
+}
+
+bytes configuration_manager::next_configuration_idx_key() {
+    iobuf buf;
+    reflection::serialize(buf, metadata_key::config_next_cfg_idx, _group);
     return iobuf_to_bytes(buf);
 }
 
@@ -251,16 +293,27 @@ configuration_manager::start(bool reset, model::revision_id initial_revision) {
 
     auto map_buf = _storage.kvs().get(
       storage::kvstore::key_space::consensus, configurations_map_key());
-    return _lock.with([this, map_buf = std::move(map_buf)]() mutable {
+    auto idx_buf = _storage.kvs().get(
+      storage::kvstore::key_space::consensus, next_configuration_idx_key());
+    return _lock.with([this,
+                       map_buf = std::move(map_buf),
+                       idx_buf = std::move(idx_buf)]() mutable {
         auto f = ss::now();
 
         if (map_buf) {
-            f = deserialize_configurations(std::move(*map_buf))
+            _next_index = configuration_idx(0);
+            if (idx_buf) {
+                _next_index = reflection::from_iobuf<configuration_idx>(
+                  std::move(*idx_buf));
+            }
+            f = deserialize_configurations(_next_index, std::move(*map_buf))
                   .then([this](underlying_t cfgs) {
                       _configurations = std::move(cfgs);
                       if (!_configurations.empty()) {
                           _highest_known_offset
                             = _configurations.rbegin()->first;
+                          _next_index = _configurations.rbegin()->second.idx
+                                        + configuration_idx(1);
                       }
                   });
         }
@@ -277,8 +330,8 @@ configuration_manager::start(bool reset, model::revision_id initial_revision) {
         }
 
         return f.then([this] {
-            for (auto& [o, cfg] : _configurations) {
-                cfg.maybe_set_initial_revision(_initial_revision);
+            for (auto& [o, icfg] : _configurations) {
+                icfg.cfg.maybe_set_initial_revision(_initial_revision);
             }
         });
     });
@@ -336,6 +389,11 @@ ss::future<> configuration_manager::remove_persistent_state() {
       .then([this] {
           return _storage.kvs().remove(
             storage::kvstore::key_space::consensus, highest_known_offset_key());
+      })
+      .then([this] {
+          return _storage.kvs().remove(
+            storage::kvstore::key_space::consensus,
+            next_configuration_idx_key());
       });
 }
 
@@ -344,13 +402,14 @@ model::revision_id configuration_manager::get_latest_revision() const {
       !_configurations.empty(),
       "Configuration manager should always have at least one "
       "configuration");
-    return _configurations.rbegin()->second.revision_id();
+    return _configurations.rbegin()->second.cfg.revision_id();
 }
 
 std::ostream& operator<<(std::ostream& o, const configuration_manager& m) {
     o << "{configurations: ";
     for (const auto& p : m._configurations) {
-        o << "{ offset: " << p.first << " cfg: " << p.second << " } ";
+        o << "{ offset: " << p.first << ", idx: " << p.second.idx
+          << ",cfg: " << p.second.cfg << " } " << std::endl;
     }
 
     return o << " }";
