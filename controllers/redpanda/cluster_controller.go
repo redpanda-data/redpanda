@@ -88,6 +88,13 @@ func (r *ClusterReconciler) Reconcile(
 		return ctrl.Result{}, fmt.Errorf("unable to retrieve Cluster resource: %w", err)
 	}
 
+	managedAnnotationKey := redpandav1alpha1.GroupVersion.Group + "/managed"
+	if managed, exists := redpandaCluster.Annotations[managedAnnotationKey]; exists && managed == "false" {
+		log.Info(fmt.Sprintf("management of %s is disabled; to enable it, change the '%s' annotation to true or remove it",
+			redpandaCluster.Name, managedAnnotationKey))
+		return ctrl.Result{}, nil
+	}
+
 	nodeports := []resources.NamedServicePort{}
 	internalListener := redpandaCluster.InternalListener()
 	externalListener := redpandaCluster.ExternalListener()
