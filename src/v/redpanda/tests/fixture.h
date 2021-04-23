@@ -85,7 +85,8 @@ public:
           app.id_allocator_frontend,
           app.controller->get_credential_store(),
           app.controller->get_authorizer(),
-          app.controller->get_security_frontend());
+          app.controller->get_security_frontend(),
+          std::nullopt);
     }
 
     // creates single node with default configuration

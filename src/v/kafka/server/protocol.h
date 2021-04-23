@@ -14,9 +14,11 @@
 #include "cluster/fwd.h"
 #include "config/configuration.h"
 #include "kafka/server/fwd.h"
+#include "kafka/server/queue_depth_monitor.h"
 #include "rpc/server.h"
 #include "security/authorizer.h"
 #include "security/credential_store.h"
+#include "utils/ema.h"
 
 #include <seastar/core/future.hh>
 #include <seastar/core/sharded.hh>
@@ -39,7 +41,8 @@ public:
       ss::sharded<cluster::id_allocator_frontend>&,
       ss::sharded<security::credential_store>&,
       ss::sharded<security::authorizer>&,
-      ss::sharded<cluster::security_frontend>&) noexcept;
+      ss::sharded<cluster::security_frontend>&,
+      std::optional<qdc_monitor::config>) noexcept;
 
     ~protocol() noexcept override = default;
     protocol(const protocol&) = delete;
@@ -84,6 +87,20 @@ public:
         return _security_frontend.local();
     }
 
+    void update_produce_latency(std::chrono::steady_clock::duration x) {
+        if (_qdc_mon) {
+            _qdc_mon->ema.update(x);
+        }
+    }
+
+    ss::future<ss::semaphore_units<>> get_request_unit() {
+        if (_qdc_mon) {
+            return _qdc_mon->qdc.get_unit();
+        }
+        return ss::make_ready_future<ss::semaphore_units<>>(
+          ss::semaphore_units<>());
+    }
+
 private:
     ss::smp_service_group _smp_group;
     ss::sharded<cluster::topics_frontend>& _topics_frontend;
@@ -99,6 +116,7 @@ private:
     ss::sharded<security::credential_store>& _credentials;
     ss::sharded<security::authorizer>& _authorizer;
     ss::sharded<cluster::security_frontend>& _security_frontend;
+    std::optional<qdc_monitor> _qdc_mon;
 };
 
 } // namespace kafka
