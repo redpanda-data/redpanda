@@ -538,6 +538,19 @@ void application::wire_up_redpanda_services() {
       std::ref(group_router))
       .get();
 
+    syschecks::systemd_message("Creating partition resource manager frontend")
+      .get();
+    construct_service(
+      rm_partition_frontend,
+      smp_service_groups.raft_smp_sg(),
+      std::ref(partition_manager),
+      std::ref(shard_table),
+      std::ref(metadata_cache),
+      std::ref(_raft_connection_cache),
+      std::ref(controller->get_partition_leaders()),
+      controller.get())
+      .get();
+
     ss::sharded<rpc::server_configuration> kafka_cfg;
     kafka_cfg.start(ss::sstring("kafka_rpc")).get();
     kafka_cfg
