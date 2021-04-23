@@ -150,7 +150,7 @@ class ArchivalTest(RedpandaTest):
     s3_region = "panda-region"
     s3_topic_name = "panda-topic"
     topics = (TopicSpec(name='panda-topic',
-                        partition_count=2,
+                        partition_count=1,
                         replication_factor=3), )
 
     def __init__(self, test_context):
@@ -294,7 +294,7 @@ class ArchivalTest(RedpandaTest):
         validate(self._cross_node_verify, self.logger, 90)
 
     def _check_bucket_is_emtpy(self):
-        allobj = list(self.s3_client.list_objects(ArchivalTest.s3_bucket_name))
+        allobj = self._list_objects()
         for obj in allobj:
             self.logger.debug(
                 f"found object {obj} in bucket {ArchivalTest.s3_bucket_name}")
@@ -331,11 +331,18 @@ class ArchivalTest(RedpandaTest):
         """Find and download individual partition manifest"""
         expected = f"{ntp.ns}/{ntp.topic}/{ntp.partition}_{ntp.revision}/manifest.json"
         id = None
-        for loc in self.s3_client.list_objects(ArchivalTest.s3_bucket_name):
-            if expected in loc.Key:
-                id = loc.Key
+        objects = []
+        for loc in self._list_objects():
+            objects.append(loc)
+            if expected in loc:
+                id = loc
                 break
-        assert not id is None
+        if id is None:
+            objlist = "\n".join(objects)
+            self.logger.debug(
+                f"expected path {expected} is not found in the bucket, bucket content: \n{objlist}"
+            )
+            assert not id is None
         manifest = self.s3_client.get_object_data(ArchivalTest.s3_bucket_name,
                                                   id)
         self.logger.info(f"manifest found: {manifest}")
@@ -481,19 +488,47 @@ class ArchivalTest(RedpandaTest):
             # Verify goal #2, the last segment on a leader node is manifest.last_offset + 1
             ntp_offsets = []
             for node_key, node_segments in nodes.items():
-                max_offset = max([
+                offsets = [
                     segm.base_offset for segm in node_segments
                     if segm.ntp == ntp
-                ])
-                ntp_offsets.append(max_offset)
-                self.logger.debug(
-                    f"NTP {ntp} has the largest offset {max_offset} on node {node_key}"
-                )
+                ]
+                if offsets:
+                    max_offset = max([
+                        segm.base_offset for segm in node_segments
+                        if segm.ntp == ntp
+                    ])
+                    ntp_offsets.append(max_offset)
+                    self.logger.debug(
+                        f"NTP {ntp} has the largest offset {max_offset} on node {node_key}"
+                    )
+                else:
+                    self.logger.debug(
+                        f"NTP {ntp} has no offsets on node {node_key}")
 
             last_offset = int(manifest['last_offset'])
             self.logger.debug(
                 f"last offset: {last_offset}, ntp offsets: {ntp_offsets}")
             assert (last_offset + 1) in ntp_offsets
+
+    def _list_objects(self):
+        """Emulate ListObjects call by fetching the topic manifests and
+        iterating through its content"""
+        try:
+            topic_manifest_id = "d0000000/meta/kafka/panda-topic/topic_manifest.json"
+            partition_manifest_id = "d0000000/meta/kafka/panda-topic/0_9/manifest.json"
+            manifest = self.s3_client.get_object_data(
+                ArchivalTest.s3_bucket_name, partition_manifest_id)
+            results = [topic_manifest_id, partition_manifest_id]
+            for id in manifest['segments'].keys():
+                results.append(id)
+            self.logger.debug(f"ListObjects(source: manifest): {results}")
+        except:
+            results = [
+                loc.Key for loc in self.s3_client.list_objects(
+                    ArchivalTest.s3_bucket_name)
+            ]
+            self.logger.debug(f"ListObjects: {results}")
+        return results
 
     def _quick_verify(self):
         """Verification algorithm that works only if no leadership
@@ -565,8 +600,8 @@ class ArchivalTest(RedpandaTest):
             self._verify_manifest(ntp, manifest, remote)
 
         # Check that all local partition are archived
-        assert len(local_partitions) == 2
-        assert len(remote_partitions) == 2
+        assert len(local_partitions) == 1
+        assert len(remote_partitions) == 1
         missing_partitions = 0
         for key in local_partitions.keys():
             if key not in remote_partitions:
