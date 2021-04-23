@@ -192,7 +192,8 @@ static ss::future<produce_response::partition> produce_topic_partition(
 
     auto num_records = batch.record_count();
     auto reader = reader_from_lcore_batch(std::move(batch));
-    return octx.rctx.partition_manager().invoke_on(
+    auto start = std::chrono::steady_clock::now();
+    auto f = octx.rctx.partition_manager().invoke_on(
       *shard,
       octx.ssg,
       [reader = std::move(reader),
@@ -221,6 +222,13 @@ static ss::future<produce_response::partition> produce_topic_partition(
             acks,
             num_records);
       });
+    return f.then([&octx, start](produce_response::partition p) {
+        if (p.error_code == error_code::none) {
+            auto dur = std::chrono::steady_clock::now() - start;
+            octx.rctx.connection()->server().update_produce_latency(dur);
+        }
+        return p;
+    });
 }
 
 /**

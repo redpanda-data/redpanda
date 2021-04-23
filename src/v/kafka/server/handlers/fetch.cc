@@ -474,7 +474,6 @@ static ss::future<> do_fill_fetch_responses(
     return ss::parallel_for_each(range, [&results, &responses](size_t idx) {
         auto& res = results[idx];
         auto& resp_it = responses[idx];
-        vlog(klog.trace, "fetch reader {}", res.reader);
         // error case
         if (!res.reader) {
             resp_it.set(

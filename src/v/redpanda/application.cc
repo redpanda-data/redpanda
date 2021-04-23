@@ -28,6 +28,7 @@
 #include "kafka/server/group_manager.h"
 #include "kafka/server/group_router.h"
 #include "kafka/server/protocol.h"
+#include "kafka/server/queue_depth_monitor.h"
 #include "kafka/server/quota_manager.h"
 #include "model/metadata.h"
 #include "pandaproxy/configuration.h"
@@ -681,9 +682,25 @@ void application::start_redpanda() {
 
     quota_mgr.invoke_on_all(&kafka::quota_manager::start).get();
 
+    std::optional<kafka::qdc_monitor::config> qdc_config;
+    if (config::shard_local_cfg().kafka_qdc_enable()) {
+        qdc_config = kafka::qdc_monitor::config{
+          .latency_alpha = config::shard_local_cfg().kafka_qdc_latency_alpha(),
+          .max_latency = config::shard_local_cfg().kafka_qdc_max_latency_ms(),
+          .window_count = config::shard_local_cfg().kafka_qdc_window_count(),
+          .window_size = config::shard_local_cfg().kafka_qdc_window_size_ms(),
+          .depth_alpha = config::shard_local_cfg().kafka_qdc_depth_alpha(),
+          .idle_depth = config::shard_local_cfg().kafka_qdc_idle_depth(),
+          .min_depth = config::shard_local_cfg().kafka_qdc_min_depth(),
+          .max_depth = config::shard_local_cfg().kafka_qdc_max_depth(),
+          .depth_update_freq
+          = config::shard_local_cfg().kafka_qdc_depth_update_ms(),
+        };
+    }
+
     // Kafka API
     _kafka_server
-      .invoke_on_all([this](rpc::server& s) {
+      .invoke_on_all([this, qdc_config](rpc::server& s) {
           auto proto = std::make_unique<kafka::protocol>(
             smp_service_groups.kafka_smp_sg(),
             metadata_cache,
@@ -697,7 +714,8 @@ void application::start_redpanda() {
             std::ref(id_allocator_frontend),
             controller->get_credential_store(),
             controller->get_authorizer(),
-            controller->get_security_frontend());
+            controller->get_security_frontend(),
+            qdc_config);
           s.set_protocol(std::move(proto));
       })
       .get();

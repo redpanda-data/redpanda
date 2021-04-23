@@ -81,6 +81,7 @@ private:
     struct session_resources {
         ss::lowres_clock::duration backpressure_delay;
         ss::semaphore_units<> memlocks;
+        ss::semaphore_units<> queue_units;
         std::unique_ptr<hdr_hist::measurement> method_latency;
     };
 

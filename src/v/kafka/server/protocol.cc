@@ -27,6 +27,7 @@
 
 #include <fmt/format.h>
 
+#include <chrono>
 #include <exception>
 #include <limits>
 
@@ -45,7 +46,8 @@ protocol::protocol(
   ss::sharded<cluster::id_allocator_frontend>& id_allocator_frontend,
   ss::sharded<security::credential_store>& credentials,
   ss::sharded<security::authorizer>& authorizer,
-  ss::sharded<cluster::security_frontend>& sec_fe) noexcept
+  ss::sharded<cluster::security_frontend>& sec_fe,
+  std::optional<qdc_monitor::config> qdc_config) noexcept
   : _smp_group(smp)
   , _topics_frontend(tf)
   , _metadata_cache(meta)
@@ -60,7 +62,11 @@ protocol::protocol(
       config::shard_local_cfg().enable_idempotence.value())
   , _credentials(credentials)
   , _authorizer(authorizer)
-  , _security_frontend(sec_fe) {}
+  , _security_frontend(sec_fe) {
+    if (qdc_config) {
+        _qdc_mon.emplace(*qdc_config);
+    }
+}
 
 ss::future<> protocol::apply(rpc::server::resources rs) {
     /*
