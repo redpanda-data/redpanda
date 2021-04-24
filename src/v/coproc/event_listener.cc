@@ -226,19 +226,19 @@ event_listener::poll_topic(model::record_batch_reader::data_t& events) {
     auto response = co_await _client.fetch_partition(
       model::coprocessor_internal_tp, _offset, 64_KiB, 100ms);
     if (
-      response.error != kafka::error_code::none
+      response.data.error_code != kafka::error_code::none
       || _abort_source.abort_requested()) {
         co_return ss::stop_iteration::yes;
     }
-    vassert(response.partitions.size() == 1, "Unexpected partition size");
-    auto& p = response.partitions[0];
+    vassert(response.data.topics.size() == 1, "Unexpected partition size");
+    auto& p = response.data.topics[0];
     vassert(
       p.name == model::coprocessor_internal_topic, "Unexpected topic name");
-    vassert(p.responses.size() == 1, "Unexpected responses size");
-    auto& pr = p.responses[0];
+    vassert(p.partitions.size() == 1, "Unexpected responses size");
+    auto& pr = p.partitions[0];
     model::offset initial = _offset;
-    if (!pr.has_error()) {
-        auto crs = kafka::batch_reader(std::move(*pr.record_set));
+    if (pr.error_code == kafka::error_code::none) {
+        auto crs = kafka::batch_reader(std::move(*pr.records));
         while (!crs.empty()) {
             auto kba = crs.consume_batch();
             if (!kba.v2_format || !kba.valid_crc || !kba.batch) {

@@ -73,11 +73,11 @@ struct partition_comp {
 
 fetch_response
 reduce_fetch_response(fetch_response result, fetch_response val) {
-    result.throttle_time += val.throttle_time;
-    result.partitions.insert(
-      result.partitions.end(),
-      std::make_move_iterator(val.partitions.begin()),
-      std::make_move_iterator(val.partitions.end()));
+    result.data.throttle_time_ms += val.data.throttle_time_ms;
+    result.data.topics.insert(
+      result.data.topics.end(),
+      std::make_move_iterator(val.data.topics.begin()),
+      std::make_move_iterator(val.data.topics.end()));
 
     return result;
 };
@@ -366,8 +366,8 @@ consumer::dispatch_fetch(broker_reqs_t::value_type br) {
     auto res = co_await broker->dispatch(std::move(req));
     kclog.trace("Consumer: {}, fetch_res: {}", *this, res);
 
-    if (res.error != error_code::none) {
-        throw broker_error(broker->id(), res.error);
+    if (res.data.error_code != error_code::none) {
+        throw broker_error(broker->id(), res.data.error_code);
     }
 
     _fetch_sessions[broker].apply(res);
@@ -420,9 +420,10 @@ ss::future<fetch_response> consumer::fetch(
           return dispatch_fetch(std::move(br));
       },
       fetch_response{
-        .throttle_time{},
-        .error = error_code::none,
-        .session_id = kafka::invalid_fetch_session_id},
+        .data = {
+        .throttle_time_ms{},
+        .error_code = error_code::none,
+        .session_id = kafka::invalid_fetch_session_id}},
       detail::reduce_fetch_response);
 }
 

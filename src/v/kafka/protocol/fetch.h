@@ -13,6 +13,7 @@
 
 #include "cluster/partition.h"
 #include "kafka/protocol/schemata/fetch_request.h"
+#include "kafka/protocol/schemata/fetch_response.h"
 #include "kafka/protocol/batch_reader.h"
 #include "kafka/server/fetch_session.h"
 #include "kafka/server/partition_proxy.h"
@@ -188,49 +189,19 @@ inline std::ostream& operator<<(std::ostream& os, const fetch_request& r) {
 
 struct fetch_response final {
     using api_type = fetch_api;
+    using aborted_transaction = kafka::aborted_transaction;
+    using partition_response = fetchable_partition_response;
+    using partition = fetchable_topic_response;
 
-    struct aborted_transaction {
-        int64_t producer_id;
-        model::offset first_offset;
-    };
+    fetch_response_data data;
 
-    struct partition_response {
-        model::partition_id id;
-        error_code error;
-        model::offset high_watermark;
-        model::offset last_stable_offset;                      // >= v4
-        model::offset log_start_offset;                        // >= v5
-        std::vector<aborted_transaction> aborted_transactions; // >= v4
-        model::node_id preferred_read_replica{-1};             // >= v11 ignored
-        std::optional<batch_reader> record_set;
-        /*
-         * _not part of kafka protocol
-         * used to indicate wether we have to
-         * include this partition response into the final response assembly
-         * by default all partition responsens are included
-         */
-        bool has_to_be_included = true;
+    void encode(const request_context& ctx, response& resp) {
+        data.encode(resp.writer(), ctx.header().version);
+    }
 
-        bool has_error() const { return error != error_code::none; }
-    };
-
-    struct partition {
-        model::topic name;
-        std::vector<partition_response> responses;
-
-        partition(model::topic name)
-          : name(std::move(name)) {}
-    };
-
-    std::chrono::milliseconds throttle_time{0}; // >= v1
-    error_code error;                           // >= v7
-    int32_t session_id;                         // >= v7
-    std::vector<partition> partitions;
-
-    void encode(const request_context& ctx, response& resp);
-    void decode(iobuf buf, api_version version);
-
-    friend std::ostream& operator<<(std::ostream&, const fetch_response&);
+    void decode(iobuf buf, api_version version) {
+        data.decode(std::move(buf), version);
+    }
 
     /*
      * iterator over response partitions. this adapter iterator is used because
@@ -271,7 +242,7 @@ struct fetch_response final {
           , t_end_(end)
           , filter_(enable_filtering) {
             if (likely(state_.partition != t_end_)) {
-                state_.partition_response = state_.partition->responses.begin();
+                state_.partition_response = state_.partition->partitions.begin();
                 state_.is_new_topic = true;
                 normalize();
             }
@@ -312,12 +283,12 @@ struct fetch_response final {
     private:
         void normalize() {
             while (state_.partition_response
-                   == state_.partition->responses.end()) {
+                   == state_.partition->partitions.end()) {
                 state_.partition++;
                 if (state_.partition != t_end_) {
                     state_.is_new_topic = true;
                     state_.partition_response
-                      = state_.partition->responses.begin();
+                      = state_.partition->partitions.begin();
                 } else {
                     break;
                 }
@@ -338,13 +309,15 @@ struct fetch_response final {
     };
 
     iterator begin(bool enable_filtering = false) {
-        return iterator(partitions.begin(), partitions.end(), enable_filtering);
+        return iterator(data.topics.begin(), data.topics.end(), enable_filtering);
     }
 
-    iterator end() { return iterator(partitions.end(), partitions.end()); }
+    iterator end() { return iterator(data.topics.end(), data.topics.end()); }
 };
 
-std::ostream& operator<<(std::ostream&, const fetch_response&);
+inline std::ostream& operator<<(std::ostream& os, const fetch_response& r) {
+    return os << r.data;
+}
 
 /*
  * Fetch operation context

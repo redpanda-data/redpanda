@@ -67,24 +67,25 @@ make_fetch_response(const model::topic_partition& tp, std::exception_ptr ex) {
         error = error_code::unknown_server_error;
     }
     fetch_response::partition_response pr{
-      .id{tp.partition},
-      .error = error,
+      .partition_index{tp.partition},
+      .error_code = error,
       .high_watermark{model::offset{-1}},
       .last_stable_offset{model::offset{-1}},
       .log_start_offset{model::offset{-1}},
-      .aborted_transactions{},
-      .record_set{}};
+      .aborted{},
+      .records{}};
 
     std::vector<fetch_response::partition_response> responses;
     responses.push_back(std::move(pr));
-    auto response = fetch_response::partition(tp.topic);
-    response.responses = std::move(responses);
+    auto response = fetch_response::partition{.name=tp.topic};
+    response.partitions = std::move(responses);
     std::vector<fetch_response::partition> parts;
     parts.push_back(std::move(response));
     return fetch_response{
-      .error = error,
-      .partitions = std::move(parts),
-    };
+      .data = {
+      .error_code = error,
+      .topics = std::move(parts),
+    }};
 }
 
 } // namespace kafka::client

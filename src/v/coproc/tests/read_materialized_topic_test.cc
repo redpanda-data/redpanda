@@ -105,13 +105,13 @@ FIXTURE_TEST(test_read_from_materialized_topic, router_test_fixture) {
     auto resp = client.dispatch(req, kafka::api_version(4)).get0();
     client.stop().then([&client] { client.shutdown(); }).get();
 
-    BOOST_REQUIRE_EQUAL(resp.partitions.size(), 1);
-    BOOST_REQUIRE_EQUAL(resp.partitions[0].name, output_topic);
+    BOOST_REQUIRE_EQUAL(resp.data.topics.size(), 1);
+    BOOST_REQUIRE_EQUAL(resp.data.topics[0].name, output_topic);
     BOOST_REQUIRE_EQUAL(
-      resp.partitions[0].responses[0].error, kafka::error_code::none);
+      resp.data.topics[0].partitions[0].error_code, kafka::error_code::none);
     BOOST_REQUIRE_EQUAL(
-      resp.partitions[0].responses[0].id, model::partition_id(0));
-    BOOST_REQUIRE(resp.partitions[0].responses[0].record_set);
+      resp.data.topics[0].partitions[0].partition_index, model::partition_id(0));
+    BOOST_REQUIRE(resp.data.topics[0].partitions[0].records);
     // TODO(rob) fix this assertion
     // BOOST_REQUIRE_EQUAL(
     //   std::move(*resp.partitions[0].responses[0].record_set).release(),

@@ -102,13 +102,13 @@ struct prod_consume_fixture : public redpanda_thread_fixture {
 
         return consumer->dispatch(std::move(req), kafka::api_version(4))
           .then([this](kafka::fetch_response resp) {
-              if (resp.partitions.empty()) {
+              if (resp.data.topics.empty()) {
                   return resp;
               }
-              auto& part = *resp.partitions.begin();
+              auto& part = *resp.data.topics.begin();
 
-              for (auto& r : part.responses) {
-                  const auto& data = part.responses.begin()->record_set;
+              for (auto& r : part.partitions) {
+                  const auto& data = part.partitions.begin()->records;
                   if (data && !data->empty()) {
                       // update next fetch offset the same way as Kafka clients
                       fetch_offset = ++data->last_offset();
@@ -142,20 +142,20 @@ FIXTURE_TEST(test_produce_consume_small_batches, prod_consume_fixture) {
                     }).get0();
     auto resp_2 = fetch_next().get0();
 
-    BOOST_REQUIRE_EQUAL(resp_1.partitions.empty(), false);
-    BOOST_REQUIRE_EQUAL(resp_2.partitions.empty(), false);
-    BOOST_REQUIRE_EQUAL(resp_1.partitions.begin()->responses.empty(), false);
+    BOOST_REQUIRE_EQUAL(resp_1.data.topics.empty(), false);
+    BOOST_REQUIRE_EQUAL(resp_2.data.topics.empty(), false);
+    BOOST_REQUIRE_EQUAL(resp_1.data.topics.begin()->partitions.empty(), false);
     BOOST_REQUIRE_EQUAL(
-      resp_1.partitions.begin()->responses.begin()->error,
+      resp_1.data.topics.begin()->partitions.begin()->error_code,
       kafka::error_code::none);
     BOOST_REQUIRE_EQUAL(
-      resp_1.partitions.begin()->responses.begin()->record_set->last_offset(),
+      resp_1.data.topics.begin()->partitions.begin()->records->last_offset(),
       offset_1);
-    BOOST_REQUIRE_EQUAL(resp_2.partitions.begin()->responses.empty(), false);
+    BOOST_REQUIRE_EQUAL(resp_2.data.topics.begin()->partitions.empty(), false);
     BOOST_REQUIRE_EQUAL(
-      resp_2.partitions.begin()->responses.begin()->error,
+      resp_2.data.topics.begin()->partitions.begin()->error_code,
       kafka::error_code::none);
     BOOST_REQUIRE_EQUAL(
-      resp_2.partitions.begin()->responses.begin()->record_set->last_offset(),
+      resp_2.data.topics.begin()->partitions.begin()->records->last_offset(),
       offset_2);
 };
