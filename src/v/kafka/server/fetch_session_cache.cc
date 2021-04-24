@@ -12,9 +12,9 @@
 
 namespace kafka {
 
-static fetch_partition make_fetch_partition(
+static fetch_session_partition make_fetch_partition(
   const model::topic& tp, const fetch_request::partition& p) {
-    return fetch_partition{
+    return fetch_session_partition{
       .topic = tp,
       .partition = p.id,
       .max_bytes = p.partition_max_bytes,

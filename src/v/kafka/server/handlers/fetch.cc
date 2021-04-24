@@ -605,7 +605,7 @@ static std::vector<shard_fetch> group_requests_by_shard(op_context& octx) {
      * group fetch requests by shard
      */
     octx.for_each_fetch_partition(
-      [&resp_it, &octx, &shard_fetches](const fetch_partition& fp) {
+      [&resp_it, &octx, &shard_fetches](const fetch_session_partition& fp) {
           // if this is not an initial fetch we are allowed to skip
           // partions that aleready have an error or we have enough data
           if (!octx.initial_fetch) {
@@ -786,7 +786,7 @@ void op_context::create_response_placeholders() {
         std::for_each(
           session_ctx.session()->partitions().cbegin_insertion_order(),
           session_ctx.session()->partitions().cend_insertion_order(),
-          [this, &last_topic](const fetch_partition& fp) {
+          [this, &last_topic](const fetch_session_partition& fp) {
               if (last_topic != fp.topic) {
                   response.partitions.emplace_back(fp.topic);
                   last_topic = fp.topic;
@@ -804,7 +804,7 @@ void op_context::create_response_placeholders() {
 }
 
 bool update_fetch_partition(
-  const fetch_response::partition_response& resp, fetch_partition& partition) {
+  const fetch_response::partition_response& resp, fetch_session_partition& partition) {
     bool include = false;
     if (resp.record_set && resp.record_set->size_bytes() > 0) {
         // Partitions with new data are always included in the response.

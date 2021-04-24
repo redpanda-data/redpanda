@@ -453,7 +453,7 @@ struct op_context {
               request.cend(),
               [f = std::forward<Func>(f)](
                 const fetch_request::const_iterator::value_type& p) {
-                  f(fetch_partition{
+                  f(fetch_session_partition{
                     .topic = p.topic->name,
                     .partition = p.partition->id,
                     .max_bytes = p.partition->partition_max_bytes,
