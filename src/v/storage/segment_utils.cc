@@ -513,9 +513,8 @@ ss::future<> self_compact_segment(
                     return self_compact_segment(s, cfg, pb, readers_cache);
                 });
           }
-          default:
-              __builtin_unreachable();
           }
+          __builtin_unreachable();
       })
       .then([s] { s->mark_as_finished_self_compaction(); })
       .finally([&pb] { pb.segment_compacted(); });
