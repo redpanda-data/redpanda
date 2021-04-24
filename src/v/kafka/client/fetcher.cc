@@ -26,22 +26,23 @@ fetch_request make_fetch_request(
   std::chrono::milliseconds timeout) {
     std::vector<fetch_request::partition> partitions;
     partitions.push_back(fetch_request::partition{
-      .id{tp.partition},
+      .partition_index{tp.partition},
       .current_leader_epoch = 0,
       .fetch_offset{offset},
       .log_start_offset{model::offset{-1}},
-      .partition_max_bytes = max_bytes});
+      .max_bytes = max_bytes});
     std::vector<fetch_request::topic> topics;
     topics.push_back(fetch_request::topic{
-      .name{tp.topic}, .partitions{std::move(partitions)}});
+      .name{tp.topic}, .fetch_partitions{std::move(partitions)}});
 
     return fetch_request{
+      .data = {
       .replica_id{consumer_replica_id},
-      .max_wait_time{timeout},
+      .max_wait{timeout},
       .min_bytes = 0,
       .max_bytes = max_bytes,
       .isolation_level = 0,
-      .topics{std::move(topics)}};
+      .topics{std::move(topics)}}};
 }
 
 fetch_response

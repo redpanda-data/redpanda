@@ -16,8 +16,8 @@ static fetch_session_partition make_fetch_partition(
   const model::topic& tp, const fetch_request::partition& p) {
     return fetch_session_partition{
       .topic = tp,
-      .partition = p.id,
-      .max_bytes = p.partition_max_bytes,
+      .partition = p.partition_index,
+      .max_bytes = p.max_bytes,
       .fetch_offset = p.fetch_offset,
       .high_watermark = model::offset(-1),
     };
@@ -27,11 +27,11 @@ void update_fetch_session(fetch_session& session, const fetch_request& req) {
     for (auto it = req.cbegin(); it != req.cend(); ++it) {
         auto& topic = *it->topic;
         auto& partition = *it->partition;
-        model::topic_partition tp(topic.name, partition.id);
+        model::topic_partition tp(topic.name, partition.partition_index);
 
         if (auto s_it = session.partitions().find(tp);
             s_it != session.partitions().end()) {
-            s_it->second->partition.max_bytes = partition.partition_max_bytes;
+            s_it->second->partition.max_bytes = partition.max_bytes;
             s_it->second->partition.fetch_offset = partition.fetch_offset;
         } else {
             session.partitions().emplace(
@@ -39,8 +39,8 @@ void update_fetch_session(fetch_session& session, const fetch_request& req) {
         }
     }
 
-    for (auto& ft : req.forgotten_topics) {
-        for (auto& fp : ft.partitions) {
+    for (auto& ft : req.data.forgotten) {
+        for (auto& fp : ft.forgotten_partition_indexes) {
             model::topic_partition tp(ft.name, model::partition_id(fp));
             session.partitions().erase(
               model::topic_partition_view(ft.name, model::partition_id(fp)));
@@ -67,8 +67,8 @@ fetch_session_cache::fetch_session_cache(
 
 fetch_session_ctx
 fetch_session_cache::maybe_get_session(const fetch_request& req) {
-    fetch_session_id session_id{req.session_id};
-    fetch_session_epoch epoch{req.session_epoch};
+    fetch_session_id session_id{req.data.session_id};
+    fetch_session_epoch epoch{req.data.epoch};
 
     if (req.is_full_fetch_request()) {
         // Any session specified in a FULL fetch request will be closed.
