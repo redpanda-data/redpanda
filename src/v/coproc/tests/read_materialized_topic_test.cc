@@ -91,13 +91,13 @@ FIXTURE_TEST(test_read_from_materialized_topic, router_test_fixture) {
 
     // Connect a kafka client to the expected output topic
     kafka::fetch_request req;
-    req.max_bytes = std::numeric_limits<int32_t>::max();
-    req.min_bytes = 1; // At LEAST 'bytes_written' in src topic
-    req.max_wait_time = 2s;
-    req.topics = {
+    req.data.max_bytes = std::numeric_limits<int32_t>::max();
+    req.data.min_bytes = 1; // At LEAST 'bytes_written' in src topic
+    req.data.max_wait_ms = 2s;
+    req.data.topics = {
       {.name = output_topic,
-       .partitions = {
-         {.id = model::partition_id(0), .fetch_offset = model::offset(0)}}}};
+       .fetch_partitions = {
+         {.partition_index = model::partition_id(0), .fetch_offset = model::offset(0)}}}};
 
     // .. and read the same partition using a kafka client
     auto client = make_kafka_client().get0();

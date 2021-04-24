@@ -389,25 +389,26 @@ ss::future<fetch_response> consumer::fetch(
                           .try_emplace(
                             broker,
                             fetch_request{
+                              .data = {
                               .replica_id = consumer_replica_id,
-                              .max_wait_time = timeout,
+                              .max_wait_ms = timeout,
                               .min_bytes = 1,
                               .max_bytes = max_bytes.value_or(
                                 _config.consumer_request_max_bytes),
                               .isolation_level = 0, // READ_UNCOMMITTED
                               .session_id = session.id(),
                               .session_epoch = session.epoch(),
-                            })
+                            }})
                           .first->second;
 
-            if (req.topics.empty() || req.topics.back().name != t) {
-                req.topics.push_back(fetch_request::topic{.name{t}});
+            if (req.data.topics.empty() || req.data.topics.back().name != t) {
+                req.data.topics.push_back(fetch_request::topic{.name{t}});
             }
 
-            req.topics.back().partitions.push_back(fetch_request::partition{
-              .id = p,
+            req.data.topics.back().fetch_partitions.push_back(fetch_request::partition{
+              .partition_index = p,
               .fetch_offset = session.offset(tp),
-              .partition_max_bytes = max_bytes.value_or(
+              .max_bytes = max_bytes.value_or(
                 _config.consumer_request_max_bytes)});
         }
     }

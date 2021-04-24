@@ -87,18 +87,18 @@ struct prod_consume_fixture : public redpanda_thread_fixture {
     ss::future<kafka::fetch_response> fetch_next() {
         kafka::fetch_request::partition partition;
         partition.fetch_offset = fetch_offset;
-        partition.id = model::partition_id(0);
+        partition.partition_index = model::partition_id(0);
         partition.log_start_offset = model::offset(0);
-        partition.partition_max_bytes = 1_MiB;
+        partition.max_bytes = 1_MiB;
         kafka::fetch_request::topic topic;
         topic.name = test_topic;
-        topic.partitions.push_back(partition);
+        topic.fetch_partitions.push_back(partition);
 
         kafka::fetch_request req;
-        req.min_bytes = 1;
-        req.max_bytes = 10_MiB;
-        req.max_wait_time = 1000ms;
-        req.topics.push_back(std::move(topic));
+        req.data.min_bytes = 1;
+        req.data.max_bytes = 10_MiB;
+        req.data.max_wait_ms = 1000ms;
+        req.data.topics.push_back(std::move(topic));
 
         return consumer->dispatch(std::move(req), kafka::api_version(4))
           .then([this](kafka::fetch_response resp) {

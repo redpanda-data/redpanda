@@ -40,140 +40,6 @@
 
 namespace kafka {
 
-void fetch_request::encode(response_writer& writer, api_version version) {
-    writer.write(replica_id());
-    writer.write(int32_t(max_wait_time.count()));
-    writer.write(min_bytes);
-    if (version >= api_version(3)) {
-        writer.write(max_bytes);
-    }
-    if (version >= api_version(4)) {
-        writer.write(isolation_level);
-    }
-    if (version >= api_version(7)) {
-        writer.write(session_id);
-        writer.write(session_epoch);
-    }
-    writer.write_array(
-      topics, [version](const topic& t, response_writer& writer) {
-          writer.write(t.name());
-          writer.write_array(
-            t.partitions,
-            [version](const partition& p, response_writer& writer) {
-                writer.write(p.id);
-                if (version >= api_version(9)) {
-                    writer.write(p.current_leader_epoch);
-                }
-                writer.write(int64_t(p.fetch_offset));
-                if (version >= api_version(5)) {
-                    writer.write(int64_t(p.log_start_offset));
-                }
-                writer.write(p.partition_max_bytes);
-            });
-      });
-    if (version >= api_version(7)) {
-        writer.write_array(
-          forgotten_topics,
-          [](const forgotten_topic& t, response_writer& writer) {
-              writer.write(t.name);
-              writer.write_array(
-                t.partitions,
-                [](int32_t p, response_writer& writer) { writer.write(p); });
-          });
-    }
-    if (version >= api_version(11)) {
-        writer.write(rack_id);
-    }
-}
-
-void fetch_request::decode(request_context& ctx) {
-    auto& reader = ctx.reader();
-    auto version = ctx.header().version;
-
-    replica_id = model::node_id(reader.read_int32());
-    max_wait_time = std::chrono::milliseconds(reader.read_int32());
-    min_bytes = reader.read_int32();
-    if (version >= api_version(3)) {
-        max_bytes = reader.read_int32();
-    }
-    if (version >= api_version(4)) {
-        isolation_level = reader.read_int8();
-    }
-
-    if (version >= api_version(7)) {
-        session_id = reader.read_int32();
-        session_epoch = reader.read_int32();
-    }
-    topics = reader.read_array([version](request_reader& reader) {
-        return topic{
-          .name = model::topic(reader.read_string()),
-          .partitions = reader.read_array([version](request_reader& reader) {
-              partition p;
-              p.id = model::partition_id(reader.read_int32());
-              if (version >= api_version(9)) {
-                  p.current_leader_epoch = reader.read_int32();
-              }
-              p.fetch_offset = model::offset(reader.read_int64());
-              if (version >= api_version(5)) {
-                  p.log_start_offset = model::offset(reader.read_int64());
-              }
-              p.partition_max_bytes = reader.read_int32();
-              return p;
-          }),
-        };
-    });
-    if (version >= api_version(7)) {
-        forgotten_topics = reader.read_array([](request_reader& reader) {
-            return forgotten_topic{
-              .name = model::topic(reader.read_string()),
-              .partitions = reader.read_array(
-                [](request_reader& reader) { return reader.read_int32(); }),
-            };
-        });
-    }
-    if (version >= api_version(11)) {
-        rack_id = reader.read_string();
-    }
-}
-
-std::ostream&
-operator<<(std::ostream& o, const fetch_request::forgotten_topic& t) {
-    fmt::print(o, "{{topic {} partitions {}}}", t.name, t.partitions);
-    return o;
-}
-
-std::ostream& operator<<(std::ostream& o, const fetch_request::partition& p) {
-    fmt::print(
-      o,
-      "{{id {} off {} max {}}}",
-      p.id,
-      p.fetch_offset,
-      p.partition_max_bytes);
-    return o;
-}
-
-std::ostream& operator<<(std::ostream& o, const fetch_request::topic& t) {
-    fmt::print(o, "{{name {} parts {}}}", t.name, t.partitions);
-    return o;
-}
-
-std::ostream& operator<<(std::ostream& o, const fetch_request& r) {
-    fmt::print(
-      o,
-      "{{replica {} max_wait_time {} session_id {} session_epoch {} min_bytes "
-      "{} max_bytes {} isolation {} topics {} forgotten {}}}",
-      r.replica_id,
-      r.max_wait_time,
-      r.session_id,
-      r.session_epoch,
-      r.min_bytes,
-      r.max_bytes,
-      r.isolation_level,
-      r.topics,
-      r.forgotten_topics);
-    return o;
-}
-
 void fetch_response::encode(const request_context& ctx, response& resp) {
     auto& writer = resp.writer();
     auto version = ctx.header().version;
@@ -697,7 +563,7 @@ static ss::future<> fetch_topic_partitions(op_context& octx) {
                 // debounce next read retry
                 return ss::sleep(std::min(
                   config::shard_local_cfg().fetch_reads_debounce_timeout(),
-                  octx.request.max_wait_time));
+                  octx.request.data.max_wait_ms));
             });
       });
 }
@@ -734,9 +600,9 @@ op_context::op_context(request_context&& ctx, ss::smp_service_group ssg)
     /*
      * decode request and prepare the inital response
      */
-    request.decode(rctx);
-    if (likely(!request.topics.empty())) {
-        response.partitions.reserve(request.topics.size());
+    request.decode(rctx.reader(), rctx.header().version);
+    if (likely(!request.data.topics.empty())) {
+        response.partitions.reserve(request.data.topics.size());
     }
 
     if (auto delay = request.debounce_delay(); delay) {
@@ -749,7 +615,7 @@ op_context::op_context(request_context&& ctx, ss::smp_service_group ssg)
      * kafka server itself.
      */
     static constexpr size_t max_size = 128_KiB;
-    bytes_left = std::min(max_size, size_t(request.max_bytes));
+    bytes_left = std::min(max_size, size_t(request.data.max_bytes));
     session_ctx = rctx.fetch_sessions().maybe_get_session(request);
     create_response_placeholders();
 }
@@ -757,13 +623,13 @@ op_context::op_context(request_context&& ctx, ss::smp_service_group ssg)
 // insert and reserve space for a new topic in the response
 void op_context::start_response_topic(const fetch_request::topic& topic) {
     auto& p = response.partitions.emplace_back(topic.name);
-    p.responses.reserve(topic.partitions.size());
+    p.responses.reserve(topic.fetch_partitions.size());
 }
 
 void op_context::start_response_partition(const fetch_request::partition& p) {
     response.partitions.back().responses.push_back(
       fetch_response::partition_response{
-        .id = p.id,
+        .id = p.partition_index,
         .error = error_code::none,
         .high_watermark = model::offset(-1),
         .last_stable_offset = model::offset(-1),

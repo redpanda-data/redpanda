@@ -12,6 +12,7 @@
 #pragma once
 
 #include "cluster/partition.h"
+#include "kafka/protocol/schemata/fetch_request.h"
 #include "kafka/protocol/batch_reader.h"
 #include "kafka/server/fetch_session.h"
 #include "kafka/server/partition_proxy.h"
@@ -39,50 +40,29 @@ struct fetch_api final {
 
 struct fetch_request final {
     using api_type = fetch_api;
+    using partition = fetch_partition;
+    using topic = fetch_topic;
+    using forgotten_topic = ::kafka::forgotten_topic;
 
-    struct partition {
-        model::partition_id id;
-        int32_t current_leader_epoch{-1}; // >= v9
-        model::offset fetch_offset;
-        // inter-broker data
-        model::offset log_start_offset{-1}; // >= v5
-        int32_t partition_max_bytes;
-    };
+    fetch_request_data data;
 
-    struct topic {
-        model::topic name;
-        std::vector<partition> partitions;
-    };
+    void encode(response_writer& writer, api_version version) {
+        data.encode(writer, version);
+    }
 
-    struct forgotten_topic {
-        model::topic name;
-        std::vector<int32_t> partitions;
-        friend std::ostream& operator<<(std::ostream&, const forgotten_topic&);
-    };
-
-    model::node_id replica_id;
-    std::chrono::milliseconds max_wait_time;
-    int32_t min_bytes;
-    int32_t max_bytes{std::numeric_limits<int32_t>::max()}; // >= v3
-    int8_t isolation_level{0};                              // >= v4
-    int32_t session_id = invalid_fetch_session_id;          // >= v7
-    int32_t session_epoch = final_fetch_session_epoch;      // >= v7
-    std::vector<topic> topics;
-    std::vector<forgotten_topic> forgotten_topics; // >= v7
-    ss::sstring rack_id;                           // >= v11 ignored
-
-    void encode(response_writer& writer, api_version version);
-    void decode(request_context& ctx);
+    void decode(request_reader& reader, api_version version) {
+        data.decode(reader, version);
+    }
 
     /*
      * For max_wait_time > 0 the request may be debounced in order to collect
      * additional data for the response. Otherwise, no such delay is requested.
      */
     std::optional<std::chrono::milliseconds> debounce_delay() const {
-        if (max_wait_time <= std::chrono::milliseconds::zero()) {
+        if (data.max_wait_ms <= std::chrono::milliseconds::zero()) {
             return std::nullopt;
         } else {
-            return max_wait_time;
+            return data.max_wait_ms;
         }
     }
 
@@ -91,10 +71,10 @@ struct fetch_request final {
      * empty
      */
     bool empty() const {
-        return topics.empty()
+        return data.topics.empty()
                || std::all_of(
-                 topics.cbegin(), topics.cend(), [](const topic& t) {
-                     return t.partitions.empty();
+                 data.topics.cbegin(), data.topics.cend(), [](const topic& t) {
+                     return t.fetch_partitions.empty();
                  });
     }
 
@@ -102,8 +82,8 @@ struct fetch_request final {
      * Check if this request is a full fetch request initiating a session
      */
     bool is_full_fetch_request() const {
-        return session_epoch == initial_fetch_session_epoch
-               || session_epoch == final_fetch_session_epoch;
+        return data.session_epoch == initial_fetch_session_epoch
+               || data.session_epoch == final_fetch_session_epoch;
     }
 
     /*
@@ -140,7 +120,7 @@ struct fetch_request final {
           : state_({.new_topic = true, .topic = begin})
           , t_end_(end) {
             if (likely(state_.topic != t_end_)) {
-                state_.partition = state_.topic->partitions.cbegin();
+                state_.partition = state_.topic->fetch_partitions.cbegin();
                 normalize();
             }
         }
@@ -178,11 +158,11 @@ struct fetch_request final {
 
     private:
         void normalize() {
-            while (state_.partition == state_.topic->partitions.cend()) {
+            while (state_.partition == state_.topic->fetch_partitions.cend()) {
                 state_.topic++;
                 state_.new_topic = true;
                 if (state_.topic != t_end_) {
-                    state_.partition = state_.topic->partitions.cbegin();
+                    state_.partition = state_.topic->fetch_partitions.cbegin();
                 } else {
                     break;
                 }
@@ -194,15 +174,17 @@ struct fetch_request final {
     };
 
     const_iterator cbegin() const {
-        return const_iterator(topics.cbegin(), topics.cend());
+        return const_iterator(data.topics.cbegin(), data.topics.cend());
     }
 
     const_iterator cend() const {
-        return const_iterator(topics.cend(), topics.cend());
+        return const_iterator(data.topics.cend(), data.topics.cend());
     }
 };
 
-std::ostream& operator<<(std::ostream&, const fetch_request&);
+inline std::ostream& operator<<(std::ostream& os, const fetch_request& r) {
+    return os << r.data;
+}
 
 struct fetch_response final {
     using api_type = fetch_api;
@@ -433,7 +415,7 @@ struct op_context {
     }
 
     bool over_min_bytes() const {
-        return static_cast<int32_t>(response_size) >= request.min_bytes;
+        return static_cast<int32_t>(response_size) >= request.data.min_bytes;
     }
 
     ss::future<response_ptr> send_response() &&;
@@ -455,8 +437,8 @@ struct op_context {
                 const fetch_request::const_iterator::value_type& p) {
                   f(fetch_session_partition{
                     .topic = p.topic->name,
-                    .partition = p.partition->id,
-                    .max_bytes = p.partition->partition_max_bytes,
+                    .partition = p.partition->partition_index,
+                    .max_bytes = p.partition->max_bytes,
                     .fetch_offset = p.partition->fetch_offset,
                   });
               });
