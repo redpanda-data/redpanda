@@ -20,6 +20,7 @@
 #include "cluster/security_frontend.h"
 #include "cluster/service.h"
 #include "cluster/topics_frontend.h"
+#include "cluster/tx_gateway.h"
 #include "cluster/tx_gateway_frontend.h"
 #include "config/configuration.h"
 #include "config/endpoint_tls_config.h"
@@ -711,6 +712,14 @@ void application::start_redpanda() {
             _scheduling_groups.raft_sg(),
             smp_service_groups.raft_smp_sg(),
             std::ref(id_allocator_frontend));
+          // _rm_group_proxy is wrap around a sharded service with only
+          // `.local()' access so it's ok to share without foreign_ptr
+          proto->register_service<cluster::tx_gateway>(
+            _scheduling_groups.raft_sg(),
+            smp_service_groups.raft_smp_sg(),
+            std::ref(tx_gateway_frontend),
+            &_rm_group_proxy,
+            std::ref(rm_partition_frontend));
           proto->register_service<
             raft::service<cluster::partition_manager, cluster::shard_table>>(
             _scheduling_groups.raft_sg(),

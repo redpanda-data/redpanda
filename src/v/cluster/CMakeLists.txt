@@ -21,6 +21,13 @@ rpcgen(
   INCLUDES ${CMAKE_BINARY_DIR}/src/v
 )
 
+rpcgen(
+  TARGET tx_gateway_rpc
+  IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/tx_gateway.json
+  OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/tx_gateway_service.h
+  INCLUDES ${CMAKE_BINARY_DIR}/src/v
+)
+
 v_cc_library(
   NAME cluster
   SRCS
@@ -33,6 +40,7 @@ v_cc_library(
     id_allocator_frontend.cc
     rm_partition_frontend.cc
     tx_gateway_frontend.cc
+    tx_gateway.cc
     service.cc
     metadata_dissemination_handler.cc
     metadata_dissemination_service.cc
@@ -62,6 +70,7 @@ v_cc_library(
     controller_rpc
     metadata_rpc
     id_allocator_rpc
+    tx_gateway_rpc
     v::raft
     Roaring::roaring
     absl::flat_hash_map
