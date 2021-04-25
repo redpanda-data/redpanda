@@ -57,6 +57,8 @@ struct sasl_handshake_response final {
 
     sasl_handshake_response_data data;
 
+    sasl_handshake_response() = default;
+
     sasl_handshake_response(
       error_code error, std::vector<ss::sstring> mechanisms) {
         data.error_code = error;

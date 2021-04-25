@@ -14,6 +14,7 @@
 #include "random/generators.h"
 #include "security/scram_credential.h"
 #include "ssx/sformat.h"
+#include "utils/base64.h"
 
 #include <absl/container/node_hash_map.h>
 
@@ -51,6 +52,10 @@ private:
  */
 class client_first_message {
 public:
+    client_first_message(ss::sstring username, ss::sstring nonce)
+      : _username(std::move(username))
+      , _nonce(std::move(nonce)) {}
+
     explicit client_first_message(bytes_view data);
 
     client_first_message(client_first_message&&) = delete;
@@ -66,6 +71,10 @@ public:
 
     ss::sstring bare_message() const {
         return ssx::sformat("n={},r={}", _username, _nonce);
+    }
+
+    ss::sstring message() const {
+        return ssx::sformat("n,{},{}", _authzid, bare_message());
     }
 
     bool token_authenticated() const;
@@ -93,13 +102,19 @@ public:
       , _salt(std::move(salt))
       , _iterations(iterations) {}
 
-    server_first_message(server_first_message&&) = delete;
+    explicit server_first_message(bytes_view);
+
+    server_first_message(server_first_message&&) noexcept = default;
     server_first_message& operator=(server_first_message&&) = delete;
     server_first_message(const server_first_message&) = delete;
     server_first_message& operator=(const server_first_message&) = delete;
     ~server_first_message() noexcept = default;
 
     ss::sstring sasl_message() const;
+
+    const ss::sstring& nonce() const { return _nonce; }
+    const bytes& salt() const { return _salt; }
+    int iterations() const { return _iterations; }
 
 private:
     friend std::ostream& operator<<(std::ostream&, const server_first_message&);
@@ -116,6 +131,10 @@ class client_final_message {
 public:
     explicit client_final_message(bytes_view data);
 
+    client_final_message(bytes channel_binding, ss::sstring nonce)
+      : _channel_binding(std::move(channel_binding))
+      , _nonce(std::move(nonce)) {}
+
     client_final_message(client_final_message&&) = delete;
     client_final_message& operator=(client_final_message&&) = delete;
     client_final_message(const client_final_message&) = delete;
@@ -126,6 +145,12 @@ public:
     const bytes& proof() const { return _proof; }
     const bytes& channel_binding() const { return _channel_binding; }
     ss::sstring msg_no_proof() const;
+
+    void set_proof(bytes proof) { _proof = std::move(proof); }
+
+    ss::sstring message() const {
+        return ssx::sformat("{},p={}", msg_no_proof(), bytes_to_base64(_proof));
+    }
 
 private:
     friend std::ostream& operator<<(std::ostream&, const client_final_message&);
@@ -146,13 +171,17 @@ public:
       : _error(std::move(error))
       , _signature(std::move(signature)) {}
 
-    server_final_message(server_final_message&&) = delete;
+    explicit server_final_message(bytes_view);
+
+    server_final_message(server_final_message&&) noexcept = default;
     server_final_message& operator=(server_final_message&&) = delete;
     server_final_message(const server_final_message&) = delete;
     server_final_message& operator=(const server_final_message&) = delete;
     ~server_final_message() noexcept = default;
 
     ss::sstring sasl_message() const;
+    const std::optional<ss::sstring>& error() const { return _error; }
+    const bytes& signature() const { return _signature; }
 
 private:
     friend std::ostream& operator<<(std::ostream&, const server_final_message&);
@@ -224,7 +253,23 @@ public:
           iterations);
     }
 
-private:
+    static bytes client_proof(
+      bytes_view salted_password,
+      const client_first_message& client_first,
+      const server_first_message& server_first,
+      const client_final_message& client_final) {
+        auto c_key = client_key(salted_password);
+        HashType hash;
+        hash.update(c_key);
+        auto stored_key = hash.reset();
+        auto c_signature = client_signature(
+          bytes(stored_key.begin(), stored_key.end()),
+          client_first,
+          server_first,
+          client_final);
+        return c_key ^ c_signature;
+    }
+
     static bytes hi(bytes_view str, bytes_view salt, int iterations) {
         MacType mac(str);
         mac.update(salt);
@@ -241,6 +286,14 @@ private:
         return bytes(result.begin(), result.end());
     }
 
+    static bytes server_key(bytes_view salted_password) {
+        MacType mac(salted_password);
+        mac.update("Server Key");
+        auto result = mac.reset();
+        return bytes(result.begin(), result.end());
+    }
+
+private:
     static bytes salt_password(
       const ss::sstring& password, bytes_view salt, int iterations) {
         bytes password_bytes(password.begin(), password.end());
@@ -270,13 +323,6 @@ private:
           client_first.bare_message(),
           server_first.sasl_message(),
           client_final.msg_no_proof());
-    }
-
-    static bytes server_key(bytes_view salted_password) {
-        MacType mac(salted_password);
-        mac.update("Server Key");
-        auto result = mac.reset();
-        return bytes(result.begin(), result.end());
     }
 };
 

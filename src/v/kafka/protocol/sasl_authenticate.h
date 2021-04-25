@@ -57,6 +57,8 @@ struct sasl_authenticate_response final {
 
     sasl_authenticate_response_data data;
 
+    sasl_authenticate_response() = default;
+
     explicit sasl_authenticate_response(sasl_authenticate_response_data data)
       : data(std::move(data)) {}
 

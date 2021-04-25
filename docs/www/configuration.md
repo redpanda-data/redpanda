@@ -443,6 +443,20 @@ pandaproxy_client:
   # Default: 500ms
   consumer_heartbeat_interval_ms: 500
 
+  # SASL mechanism to use for authentication
+  # Supported: SCRAM-SHA-{256,512}
+  # Default: ""
+  # Support for SASL is disabled when no mechanism is specified.
+  sasl_mechanism: ""
+
+  # Username for SCRAM authentication mechanisms
+  # Default: ""
+  scram_username: ""
+
+  # Password for SCRAM authentication mechanisms
+  # Default: ""
+  scram_password: ""
+
 rpk:
   # TLS configuration to allow rpk to make requests to the redpanda API.
   tls:

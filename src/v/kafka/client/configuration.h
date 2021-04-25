@@ -39,6 +39,10 @@ struct configuration final : public config::config_store {
     config::property<std::chrono::milliseconds> consumer_rebalance_timeout;
     config::property<std::chrono::milliseconds> consumer_heartbeat_interval;
 
+    config::property<ss::sstring> sasl_mechanism;
+    config::property<ss::sstring> scram_username;
+    config::property<ss::sstring> scram_password;
+
     configuration();
     explicit configuration(const YAML::Node& cfg);
 };
