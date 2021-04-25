@@ -254,6 +254,16 @@ struct_renames = {
 }
 # yapf: enable
 
+
+def make_context_field(path):
+    """
+    For a given path return a special field to be added to a generated
+    structure. This structure will not be encoded/decoded on the wire and is
+    used to add some extra context.
+    """
+    return None
+
+
 # a listing of expected struct types
 STRUCT_TYPES = [
     "ApiVersionsRequestKey",
@@ -434,6 +444,7 @@ class StructType(FieldType):
     def __init__(self, name, fields, path=()):
         super().__init__(snake_case(name))
         self.fields = [Field.create(f, path) for f in fields]
+        self.context_field = make_context_field(path)
 
     @property
     def is_struct(self):
@@ -652,6 +663,12 @@ struct {{ struct.name }} {
     {{ info[0] }} {{ field.name }}{ {{- field.default_value() -}} };
     {%- endif %}
 {%- endfor %}
+{%- if struct.context_field %}
+
+    // extra context not part of kafka protocol.
+    // added by redpanda. see generator.py:make_context_field.
+    {{ struct.context_field[0] }} {{ struct.context_field[1] -}};
+{%- endif %}
 {% endmacro %}
 
 namespace kafka {
