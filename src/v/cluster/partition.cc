@@ -21,6 +21,10 @@ static bool is_id_allocator_topic(model::ntp ntp) {
            && ntp.tp.topic == model::id_allocator_topic;
 }
 
+static bool is_tx_manager_topic(const model::ntp& ntp) {
+    return ntp == model::tx_manager_ntp;
+}
+
 partition::partition(consensus_ptr r)
   : _raft(r)
   , _probe(*this) {
@@ -28,6 +32,13 @@ partition::partition(consensus_ptr r)
     if (is_id_allocator_topic(_raft->ntp())) {
         _id_allocator_stm = ss::make_lw_shared<cluster::id_allocator_stm>(
           clusterlog, _raft.get(), config::shard_local_cfg());
+    } else if (is_tx_manager_topic(_raft->ntp())) {
+        if (_raft->log_config().is_collectable()) {
+            _nop_stm = ss::make_lw_shared<raft::log_eviction_stm>(
+              _raft.get(), clusterlog, stm_manager, _as);
+        }
+        _tm_stm = ss::make_shared<cluster::tm_stm>(clusterlog, _raft.get());
+        stm_manager->add_stm(_tm_stm);
     } else {
         if (_raft->log_config().is_collectable()) {
             _nop_stm = ss::make_lw_shared<raft::log_eviction_stm>(
@@ -94,6 +105,10 @@ ss::future<> partition::start() {
         f = f.then([this] { return _rm_stm->start(); });
     }
 
+    if (_tm_stm) {
+        f = f.then([this] { return _tm_stm->start(); });
+    }
+
     return f;
 }
 
@@ -112,6 +127,10 @@ ss::future<> partition::stop() {
 
     if (_rm_stm) {
         f = f.then([this] { return _rm_stm->stop(); });
+    }
+
+    if (_tm_stm) {
+        f = f.then([this] { return _tm_stm->stop(); });
     }
 
     // no state machine

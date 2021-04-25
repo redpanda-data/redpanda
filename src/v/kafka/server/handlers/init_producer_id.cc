@@ -28,8 +28,6 @@ template<>
 ss::future<response_ptr> init_producer_id_handler::handle(
   request_context ctx, [[maybe_unused]] ss::smp_service_group g) {
     return ss::do_with(std::move(ctx), [](request_context& ctx) {
-        vlog(klog.trace, "processing init_producer_id");
-
         init_producer_id_request request;
         request.decode(ctx.reader(), ctx.header().version);
 
