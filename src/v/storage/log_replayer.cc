@@ -40,7 +40,14 @@ public:
     checksumming_consumer& operator=(checksumming_consumer&&) noexcept = delete;
     ~checksumming_consumer() noexcept override = default;
 
-    consume_result consume_batch_start(
+    consume_result
+    accept_batch_start(const model::record_batch_header&) const final {
+        return batch_consumer::consume_result::accept_batch;
+    }
+    void skip_batch_start(model::record_batch_header, size_t, size_t) override {
+    }
+
+    void consume_batch_start(
       model::record_batch_header header,
       size_t physical_base_offset,
       size_t size_on_disk) override {
@@ -48,7 +55,6 @@ public:
         _file_pos_to_end_of_batch = size_on_disk + physical_base_offset;
         _crc = crc32();
         model::crc_record_batch_header(_crc, header);
-        return skip_batch::no;
     }
 
     void consume_records(iobuf&& records) override {

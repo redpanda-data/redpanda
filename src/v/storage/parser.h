@@ -30,16 +30,19 @@ namespace storage {
 
 class batch_consumer {
 public:
-    /// \brief this tag is useful for when the user wants to
-    /// find a particular offset - think a scan - and we need to skip
-    /// the current batch to get to it
-    using skip_batch = ss::bool_class<struct skip_batch_tag>;
-
     /// \brief  stopping the parser, may or may not be an error condition
     /// it is a public interface indended to signal the internals of the parser
     /// wether to continue or not.
     using stop_parser = ss::bool_class<struct stop_parser_tag>;
-    using consume_result = std::variant<stop_parser, skip_batch>;
+    /**
+     * Consume results informs parser what it the expected outcome of consume
+     * batch start decision
+     */
+    enum class consume_result : int8_t {
+        accept_batch, // accept batch
+        stop_parser,  // stop parsing and do not consume batch records
+        skip_batch,   // skip given batch without consuming records
+    };
 
     batch_consumer() noexcept = default;
     batch_consumer(const batch_consumer&) = default;
@@ -48,7 +51,26 @@ public:
     batch_consumer& operator=(batch_consumer&&) noexcept = default;
     virtual ~batch_consumer() noexcept = default;
 
-    virtual consume_result consume_batch_start(
+    /**
+     * returns consume result, allow consumer to decide if batch header should
+     * be consumed, it may be called more than once with the same header.
+     */
+    virtual consume_result
+    accept_batch_start(const model::record_batch_header&) const = 0;
+
+    /**
+     * unconditionally consumes batch start
+     */
+    virtual void consume_batch_start(
+      model::record_batch_header,
+      size_t physical_base_offset,
+      size_t size_on_disk)
+      = 0;
+
+    /**
+     * unconditionally skip batch
+     */
+    virtual void skip_batch_start(
       model::record_batch_header,
       size_t physical_base_offset,
       size_t size_on_disk)
@@ -92,6 +114,8 @@ private:
     /// \brief consumes _one_ full batch.
     ss::future<result<batch_consumer::stop_parser>> consume_one();
 
+    /// \brief read and parses header from input_file_stream
+    ss::future<result<model::record_batch_header>> read_header();
     /// \brief parses and _stores_ the header into _header variable
     ss::future<result<batch_consumer::stop_parser>> consume_header();
 
@@ -104,7 +128,7 @@ private:
 private:
     std::unique_ptr<batch_consumer> _consumer;
     ss::input_stream<char> _input;
-    model::record_batch_header _header;
+    std::optional<model::record_batch_header> _header;
     parser_errc _err = parser_errc::none;
     size_t _bytes_consumed{0};
     size_t _physical_base_offset{0};

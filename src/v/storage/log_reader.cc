@@ -23,10 +23,8 @@
 namespace storage {
 using records_t = ss::circular_buffer<model::record_batch>;
 
-batch_consumer::consume_result skipping_consumer::consume_batch_start(
-  model::record_batch_header header,
-  size_t /*physical_base_offset*/,
-  size_t /*size_on_disk*/) {
+batch_consumer::consume_result skipping_consumer::accept_batch_start(
+  const model::record_batch_header& header) const {
     // check for holes in the offset range on disk
     // skip check for compacted logs
     if (unlikely(
@@ -38,39 +36,57 @@ batch_consumer::consume_result skipping_consumer::consume_batch_start(
           _expected_next_batch,
           header.base_offset()));
     }
-    _expected_next_batch = header.last_offset() + model::offset(1);
 
-    if (header.last_offset() < _reader._config.start_offset) {
-        return skip_batch::yes;
-    }
+    /**
+     * Check if parser have to be stopped
+     */
     if (header.base_offset() > _reader._config.max_offset) {
-        return stop_parser::yes;
+        return batch_consumer::consume_result::stop_parser;
     }
-    if (
-      _reader._config.type_filter
-      && _reader._config.type_filter != header.type) {
-        _reader._config.start_offset = header.last_offset() + model::offset(1);
-        return skip_batch::yes;
-    }
-    if (_reader._config.first_timestamp > header.first_timestamp) {
-        // kakfa needs to guarantee that the returned record is >=
-        // first_timestamp
-        _reader._config.start_offset = header.last_offset() + model::offset(1);
-        return skip_batch::yes;
-    }
-
     if (
       (_reader._config.strict_max_bytes || _reader._config.bytes_consumed)
       && (_reader._config.bytes_consumed + header.size_bytes)
            > _reader._config.max_bytes) {
         // signal to log reader to stop (see log_reader::is_done)
         _reader._config.over_budget = true;
-        return stop_parser::yes;
+        return batch_consumer::consume_result::stop_parser;
     }
+    /**
+     * Check if we have to skip the batch
+     */
+    if (header.last_offset() < _reader._config.start_offset) {
+        return batch_consumer::consume_result::skip_batch;
+    }
+    if (
+      _reader._config.type_filter
+      && _reader._config.type_filter != header.type) {
+        _reader._config.start_offset = header.last_offset() + model::offset(1);
+        return batch_consumer::consume_result::skip_batch;
+    }
+    if (_reader._config.first_timestamp > header.first_timestamp) {
+        // kakfa needs to guarantee that the returned record is >=
+        // first_timestamp
+        _reader._config.start_offset = header.last_offset() + model::offset(1);
+        return batch_consumer::consume_result::skip_batch;
+    }
+    // we want to consume the batch
+    return batch_consumer::consume_result::accept_batch;
+}
 
+void skipping_consumer::skip_batch_start(
+  model::record_batch_header header,
+  size_t /*physical_base_offset*/,
+  size_t /*size_on_disk*/) {
+    _expected_next_batch = header.last_offset() + model::offset(1);
+}
+
+void skipping_consumer::consume_batch_start(
+  model::record_batch_header header,
+  size_t /*physical_base_offset*/,
+  size_t /*size_on_disk*/) {
+    _expected_next_batch = header.last_offset() + model::offset(1);
     _header = header;
     _header.ctx.term = _reader._seg.offsets().term;
-    return skip_batch::no;
 }
 
 void skipping_consumer::consume_records(iobuf&& records) {
@@ -238,6 +254,7 @@ ss::future<> log_reader::find_next_valid_iterator() {
     if (_iterator.next_seg != _lease->range.end()) {
         _iterator.reader = std::make_unique<log_segment_batch_reader>(
           **_iterator.next_seg, _config, _probe);
+        _iterator.current_reader_seg = _iterator.next_seg;
     }
     if (tmp_reader) {
         auto raw = tmp_reader.get();
@@ -259,6 +276,17 @@ log_reader::do_load_slice(model::timeout_clock::time_point timeout) {
         set_end_of_stream();
         return _iterator.close().then(
           [] { return ss::make_ready_future<storage_t>(); });
+    }
+    /**
+     * We do not want to close the reader if we stopped because requested range
+     * was read. This way we make it possible to reset configuration and reuse
+     * underlying file input stream.
+     */
+    if (
+      _config.start_offset > _config.max_offset
+      || _config.bytes_consumed > _config.max_bytes || _config.over_budget) {
+        set_end_of_stream();
+        return ss::make_ready_future<storage_t>();
     }
     _last_base = _config.start_offset;
     ss::future<> fut = find_next_valid_iterator();
@@ -313,9 +341,7 @@ static inline bool is_finished_offset(segment_set& s, model::offset o) {
 }
 bool log_reader::is_done() {
     return is_end_of_stream()
-           || is_finished_offset(_lease->range, _config.start_offset)
-           || _config.start_offset > _config.max_offset
-           || _config.bytes_consumed > _config.max_bytes || _config.over_budget;
+           || is_finished_offset(_lease->range, _config.start_offset);
 }
 
 } // namespace storage

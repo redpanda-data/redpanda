@@ -20,6 +20,7 @@
 #include "storage/compacted_index.h"
 #include "storage/compacted_index_writer.h"
 #include "storage/compaction_reducers.h"
+#include "storage/fwd.h"
 #include "storage/index_state.h"
 #include "storage/lock_manager.h"
 #include "storage/log_reader.h"
@@ -392,7 +393,10 @@ ss::future<> do_swap_data_file_handles(
 }
 
 ss::future<> do_self_compact_segment(
-  ss::lw_shared_ptr<segment> s, compaction_config cfg, storage::probe& pb) {
+  ss::lw_shared_ptr<segment> s,
+  compaction_config cfg,
+  storage::probe& pb,
+  storage::readers_cache& readers_cache) {
     return s->read_lock()
       .then([cfg, s, &pb](ss::rwlock::holder h) {
           if (s->is_closed()) {
@@ -407,16 +411,20 @@ ss::future<> do_self_compact_segment(
                 return do_copy_segment_data(s, cfg, pb, std::move(h));
             });
       })
-      .then([s](storage::index_state idx) {
-          return s->write_lock().then(
-            [s, idx = std::move(idx)](ss::rwlock::holder h) mutable {
-                using type = std::tuple<index_state, ss::rwlock::holder>;
-                if (s->is_closed()) {
-                    return ss::make_exception_future<type>(
-                      segment_closed_exception());
-                }
-                return ss::make_ready_future<type>(
-                  std::make_tuple(std::move(idx), std::move(h)));
+      .then([s, &readers_cache](storage::index_state idx) {
+          return readers_cache.evict_segment_readers(s).then(
+            [s,
+             idx = std::move(idx)](readers_cache::range_lock_holder) mutable {
+                return s->write_lock().then(
+                  [s, idx = std::move(idx)](ss::rwlock::holder h) mutable {
+                      using type = std::tuple<index_state, ss::rwlock::holder>;
+                      if (s->is_closed()) {
+                          return ss::make_exception_future<type>(
+                            segment_closed_exception());
+                      }
+                      return ss::make_ready_future<type>(
+                        std::make_tuple(std::move(idx), std::move(h)));
+                  });
             });
       })
       .then([cfg, s, &pb](std::tuple<index_state, ss::rwlock::holder> h) {
@@ -459,7 +467,10 @@ ss::future<> rebuild_compaction_index(
 }
 
 ss::future<> self_compact_segment(
-  ss::lw_shared_ptr<segment> s, compaction_config cfg, storage::probe& pb) {
+  ss::lw_shared_ptr<segment> s,
+  compaction_config cfg,
+  storage::probe& pb,
+  storage::readers_cache& readers_cache) {
     if (s->has_appender()) {
         return ss::make_exception_future<>(std::runtime_error(fmt::format(
           "Cannot compact an active segment. cfg:{} - segment:{}", cfg, s)));
@@ -470,42 +481,41 @@ ss::future<> self_compact_segment(
     auto idx_path = std::filesystem::path(s->reader().filename());
     idx_path.replace_extension(".compaction_index");
     return detect_compaction_index_state(idx_path, cfg)
-      .then(
-        [idx_path, s, cfg, &pb](compacted_index::recovery_state state) mutable {
-            switch (state) {
-            case compacted_index::recovery_state::recovered: {
-                vlog(stlog.info, "detected {} is already compacted", idx_path);
-                return ss::now();
-            }
-            case compacted_index::recovery_state::nonrecovered:
-                return do_self_compact_segment(s, cfg, pb);
-            case compacted_index::recovery_state::missing:
-                [[fallthrough]];
-            case compacted_index::recovery_state::needsrebuild: {
-                vlog(
-                  stlog.warn,
-                  "Detected corrupt or missing index file:{}, recovering...",
-                  idx_path);
-                pb.corrupted_compaction_index();
-                return s->read_lock()
-                  .then([s, cfg, &pb, idx_path](ss::rwlock::holder h) {
-                      return rebuild_compaction_index(
-                        create_segment_full_reader(s, cfg, pb, std::move(h)),
-                        idx_path,
-                        cfg);
-                  })
-                  .then([s, cfg, &pb, idx_path] {
-                      vlog(
-                        stlog.info,
-                        "recovered index: {}, attempting compaction again",
-                        idx_path);
-                      return self_compact_segment(s, cfg, pb);
-                  });
-            }
-            default:
-                __builtin_unreachable();
-            }
-        })
+      .then([idx_path, s, cfg, &pb, &readers_cache](
+              compacted_index::recovery_state state) mutable {
+          switch (state) {
+          case compacted_index::recovery_state::recovered: {
+              vlog(stlog.info, "detected {} is already compacted", idx_path);
+              return ss::now();
+          }
+          case compacted_index::recovery_state::nonrecovered:
+              return do_self_compact_segment(s, cfg, pb, readers_cache);
+          case compacted_index::recovery_state::missing:
+              [[fallthrough]];
+          case compacted_index::recovery_state::needsrebuild: {
+              vlog(
+                stlog.warn,
+                "Detected corrupt or missing index file:{}, recovering...",
+                idx_path);
+              pb.corrupted_compaction_index();
+              return s->read_lock()
+                .then([s, cfg, &pb, idx_path](ss::rwlock::holder h) {
+                    return rebuild_compaction_index(
+                      create_segment_full_reader(s, cfg, pb, std::move(h)),
+                      idx_path,
+                      cfg);
+                })
+                .then([s, cfg, &pb, idx_path, &readers_cache] {
+                    vlog(
+                      stlog.info,
+                      "recovered index: {}, attempting compaction again",
+                      idx_path);
+                    return self_compact_segment(s, cfg, pb, readers_cache);
+                });
+          }
+          }
+          __builtin_unreachable();
+      })
       .then([s] { s->mark_as_finished_self_compaction(); })
       .finally([&pb] { pb.segment_compacted(); });
 }

@@ -321,7 +321,8 @@ static storage::log_config manager_config_from_global_config() {
         .stable_window = config::shard_local_cfg().reclaim_stable_window(),
         .min_size = config::shard_local_cfg().reclaim_min_size(),
         .max_size = config::shard_local_cfg().reclaim_max_size(),
-      });
+      },
+      config::shard_local_cfg().readers_cache_eviction_timeout_ms());
 }
 
 // add additional services in here

@@ -61,11 +61,18 @@ public:
       , _timeout(timeout)
       , _next_cached_batch(next_cached_batch) {}
 
-    consume_result consume_batch_start(
+    consume_result
+    accept_batch_start(const model::record_batch_header&) const override;
+
+    void consume_batch_start(
       model::record_batch_header,
       size_t physical_base_offset,
       size_t bytes_on_disk) override;
 
+    void skip_batch_start(
+      model::record_batch_header,
+      size_t physical_base_offset,
+      size_t bytes_on_disk) override;
     void consume_records(iobuf&&) override;
     stop_parser consume_batch_end() override;
     void print(std::ostream&) const override;
@@ -146,6 +153,56 @@ public:
         fmt::print(os, "storage::log_reader. config {}", _config);
     }
 
+    /**
+     * \brief Resets configuration of given reader.
+     *
+     * Resetting reader configuration allow user to reuse reader. When client
+     * request a chunk read it can reuse reader to continue reading given log.
+     *
+     * f.e.
+     * 1. read batches with offsets [0,100]
+     * 2. reset configuration with start_offset = 101
+     * 3. read next chunk of batches
+     */
+    void reset_config(log_reader_config cfg) {
+        _config = cfg;
+        _iterator.next_seg = _iterator.current_reader_seg;
+    };
+
+    /**
+     * Return next read request lower bound. i.e. lowest offset that can be read
+     * using this reader. This way we can match requested offsets with cached
+     * readers.
+     */
+    model::offset next_read_lower_bound() const { return _config.start_offset; }
+
+    /**
+     * Base offset of first locked segment in read lock lease
+     */
+    model::offset lease_range_base_offset() const {
+        if (_lease->range.empty()) {
+            return model::offset{};
+        }
+        return _lease->range.front()->offsets().base_offset;
+    }
+    /**
+     * Last offset of last locked segment in read lock lease
+     */
+    model::offset lease_range_end_offset() const {
+        if (_lease->range.empty()) {
+            return model::offset{};
+        }
+        return _lease->range.back()->offsets().dirty_offset;
+    }
+
+    /**
+     * Indicates if current reader may be reused for future reads.
+     *
+     * reader reuse is only possible when we have an active reader and we didn't
+     * read all locked segments already
+     */
+    bool is_reusable() const { return _iterator.reader != nullptr; }
+
 private:
     void set_end_of_stream() { _iterator.next_seg = _lease->range.end(); }
     bool is_done();
@@ -157,9 +214,10 @@ private:
 private:
     struct iterator_pair {
         iterator_pair(segment_set::iterator i)
-          : next_seg(i) {}
-
+          : next_seg(i)
+          , current_reader_seg(i) {}
         segment_set::iterator next_seg;
+        segment_set::iterator current_reader_seg;
         std::unique_ptr<log_segment_batch_reader> reader = nullptr;
 
         explicit operator bool() { return bool(reader); }

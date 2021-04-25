@@ -80,7 +80,8 @@ struct log_config {
       std::chrono::milliseconds compaction_ival,
       std::chrono::milliseconds del_ret,
       with_cache c,
-      batch_cache::reclaim_options recopts) noexcept
+      batch_cache::reclaim_options recopts,
+      std::chrono::milliseconds rdrs_cache_eviction_timeout) noexcept
       : stype(type)
       , base_dir(std::move(directory))
       , max_segment_size(segment_size)
@@ -92,7 +93,8 @@ struct log_config {
       , compaction_interval(compaction_ival)
       , delete_retention(del_ret)
       , cache(c)
-      , reclaim_opts(recopts) {}
+      , reclaim_opts(recopts)
+      , readers_cache_eviction_timeout(rdrs_cache_eviction_timeout) {}
 
     ~log_config() noexcept = default;
     // must be enabled so that we can do ss::sharded<>.start(config);
@@ -124,7 +126,8 @@ struct log_config {
       .min_size = 128_KiB,
       .max_size = 4_MiB,
     };
-
+    std::chrono::milliseconds readers_cache_eviction_timeout
+      = std::chrono::seconds(30);
     friend std::ostream& operator<<(std::ostream& o, const log_config&);
 }; // namespace storage
 

@@ -15,11 +15,13 @@
 #include "model/timeout_clock.h"
 #include "reflection/adl.h"
 #include "storage/disk_log_appender.h"
+#include "storage/fwd.h"
 #include "storage/kvstore.h"
 #include "storage/log_manager.h"
 #include "storage/logger.h"
 #include "storage/offset_assignment.h"
 #include "storage/offset_to_filepos_consumer.h"
+#include "storage/readers_cache.h"
 #include "storage/segment.h"
 #include "storage/segment_set.h"
 #include "storage/segment_utils.h"
@@ -54,7 +56,9 @@ disk_log_impl::disk_log_impl(
   , _kvstore(kvstore)
   , _start_offset(read_start_offset())
   , _lock_mngr(_segs)
-  , _max_segment_size(internal::jitter_segment_size(max_segment_size())) {
+  , _max_segment_size(internal::jitter_segment_size(max_segment_size()))
+  , _readers_cache(std::make_unique<readers_cache>(
+      config().ntp(), _manager.config().readers_cache_eviction_timeout)) {
     const bool is_compacted = config().is_compacted();
     for (auto& s : _segs) {
         _probe.add_initial_segment(*s);
@@ -81,16 +85,20 @@ ss::future<> disk_log_impl::remove() {
         permanent_delete.emplace_back(
           remove_segment_permanently(s, "disk_log_impl::remove()"));
     }
-    // wait for all futures
-    return ss::when_all_succeed(
-             permanent_delete.begin(), permanent_delete.end())
-      .then([this]() {
-          vlog(stlog.info, "Finished removing all segments:{}", config());
-      })
-      .then([this] {
-          return _kvstore.remove(
-            kvstore::key_space::storage,
-            internal::start_offset_key(config().ntp()));
+
+    return _readers_cache->stop().then(
+      [this, permanent_delete = std::move(permanent_delete)]() mutable {
+          // wait for all futures
+          return ss::when_all_succeed(
+                   permanent_delete.begin(), permanent_delete.end())
+            .then([this]() {
+                vlog(stlog.info, "Finished removing all segments:{}", config());
+            })
+            .then([this] {
+                return _kvstore.remove(
+                  kvstore::key_space::storage,
+                  internal::start_offset_key(config().ntp()));
+            });
       });
 }
 ss::future<> disk_log_impl::close() {
@@ -101,9 +109,11 @@ ss::future<> disk_log_impl::close() {
       && !_eviction_monitor->promise.get_future().available()) {
         _eviction_monitor->promise.set_exception(segment_closed_exception());
     }
-    return ss::parallel_for_each(_segs, [](ss::lw_shared_ptr<segment>& h) {
-        return h->close().handle_exception([h](std::exception_ptr e) {
-            vlog(stlog.error, "Error closing segment:{} - {}", e, h);
+    return _readers_cache->stop().then([this] {
+        return ss::parallel_for_each(_segs, [](ss::lw_shared_ptr<segment>& h) {
+            return h->close().handle_exception([h](std::exception_ptr e) {
+                vlog(stlog.error, "Error closing segment:{} - {}", e, h);
+            });
         });
     });
 }
@@ -266,7 +276,8 @@ ss::future<> disk_log_impl::do_compact(compaction_config cfg) {
           seg->offsets().committed_offset);
 
         return f.then([this, seg, cfg]() {
-            return storage::internal::self_compact_segment(seg, cfg, _probe)
+            return storage::internal::self_compact_segment(
+                     seg, cfg, _probe, *_readers_cache)
               .finally([seg] { seg->mark_as_finished_self_compaction(); });
         });
     }
@@ -381,7 +392,8 @@ ss::future<> disk_log_impl::compact_adjacent_segments(
     // size is already contained in the partition size probe
     replacement->mark_as_compacted_segment();
     _probe.add_initial_segment(*replacement.get());
-    co_await storage::internal::self_compact_segment(replacement, cfg, _probe);
+    co_await storage::internal::self_compact_segment(
+      replacement, cfg, _probe, *_readers_cache);
     _probe.delete_segment(*replacement.get());
     vlog(stlog.debug, "Final compacted segment {}", replacement);
 
@@ -675,9 +687,10 @@ ss::future<> disk_log_impl::force_roll(ss::io_priority_class iopc) {
     if (!ptr->has_appender()) {
         return new_segment(next_offset, t, iopc);
     }
-    return ptr->release_appender().then([this, next_offset, t, iopc] {
-        return new_segment(next_offset, t, iopc);
-    });
+    return ptr->release_appender(_readers_cache.get())
+      .then([this, next_offset, t, iopc] {
+          return new_segment(next_offset, t, iopc);
+      });
 }
 
 ss::future<> disk_log_impl::maybe_roll(
@@ -696,9 +709,10 @@ ss::future<> disk_log_impl::maybe_roll(
         size_should_roll = true;
     }
     if (t != term() || size_should_roll) {
-        return ptr->release_appender().then([this, next_offset, t, iopc] {
-            return new_segment(next_offset, t, iopc);
-        });
+        return ptr->release_appender(_readers_cache.get())
+          .then([this, next_offset, t, iopc] {
+              return new_segment(next_offset, t, iopc);
+          });
     }
     return ss::make_ready_future<>();
 }
@@ -714,6 +728,22 @@ disk_log_impl::make_unchecked_reader(log_reader_config config) {
 }
 
 ss::future<model::record_batch_reader>
+disk_log_impl::make_cached_reader(log_reader_config config) {
+    vassert(!_closed, "make_reader on closed log - {}", *this);
+
+    auto rdr = _readers_cache->get_reader(config);
+    if (rdr) {
+        return ss::make_ready_future<model::record_batch_reader>(
+          std::move(*rdr));
+    }
+    return _lock_mngr.range_lock(config)
+      .then([this, cfg = config](std::unique_ptr<lock_manager::lease> lease) {
+          return std::make_unique<log_reader>(std::move(lease), cfg, _probe);
+      })
+      .then([this](auto rdr) { return _readers_cache->put(std::move(rdr)); });
+}
+
+ss::future<model::record_batch_reader>
 disk_log_impl::make_reader(log_reader_config config) {
     vassert(!_closed, "make_reader on closed log - {}", *this);
     if (config.start_offset < _start_offset) {
@@ -723,7 +753,15 @@ disk_log_impl::make_reader(log_reader_config config) {
             config.start_offset,
             _start_offset)));
     }
-    return make_unchecked_reader(config);
+
+    if (config.start_offset > config.max_offset) {
+        auto lease = std::make_unique<lock_manager::lease>(segment_set({}));
+        auto empty = model::make_record_batch_reader<log_reader>(
+          std::move(lease), config, _probe);
+        return ss::make_ready_future<model::record_batch_reader>(
+          std::move(empty));
+    }
+    return make_cached_reader(config);
 }
 
 ss::future<model::record_batch_reader>
@@ -798,7 +836,11 @@ ss::future<> disk_log_impl::remove_segment_permanently(
           "Segment has outstanding locks. Might take a while to close:{}",
           s->reader().filename());
     }
-    return s->close()
+
+    return _readers_cache->evict_segment_readers(s)
+      .then([s](readers_cache::range_lock_holder cache_lock) {
+          return s->close().finally([cache_lock = std::move(cache_lock)] {});
+      })
       .handle_exception([s](std::exception_ptr e) {
           vlog(stlog.error, "Cannot close segment: {} - {}", e, s);
       })
@@ -858,7 +900,11 @@ ss::future<> disk_log_impl::do_truncate_prefix(truncate_prefix_config cfg) {
            * Then delete all segments (potentially including the active segment)
            * whose max offset falls below the new starting offset.
            */
-          return remove_prefix_full_segments(cfg);
+          return _readers_cache->evict_prefix_truncate(cfg.start_offset)
+            .then([this, cfg](readers_cache::range_lock_holder cache_lock) {
+                return remove_prefix_full_segments(cfg).finally(
+                  [cache_lock = std::move(cache_lock)] {});
+            });
       })
       .then([this] {
           /*
@@ -957,40 +1003,49 @@ ss::future<> disk_log_impl::do_truncate(truncate_config cfg) {
                   model::no_timeout);
             });
       })
-      .then([this, cfg, pidx](
-              std::optional<std::pair<model::offset, size_t>> phs) {
-          if (!phs) {
-              return ss::make_exception_future<>(
-                std::runtime_error(fmt_with_ctx(
-                  fmt::format,
-                  "User asked to truncate at:{}, with initial physical "
-                  "position of:{}, but internal::offset_to_filepos_consumer "
-                  "could not translate physical offsets. Log state: {}",
-                  pidx,
-                  cfg,
-                  *this)));
-          }
-          auto [prev_last_offset, file_position] = phs.value();
-          auto last = _segs.back();
-          if (file_position == 0) {
-              _segs.pop_back();
-              return remove_segment_permanently(
-                last, "truncate[post-translation]");
-          }
-          _probe.remove_partition_bytes(last->size_bytes() - file_position);
-          return last->truncate(prev_last_offset, file_position)
-            .handle_exception([last, phs, this](std::exception_ptr e) {
-                vassert(
-                  false,
-                  "Could not truncate:{} logical max:{}, physical offset:{} on "
-                  "segment:{} - log:{}",
-                  e,
-                  phs->first,
-                  phs->second,
-                  last,
-                  *this);
-            });
-      });
+      .then(
+        [this, cfg, pidx](std::optional<std::pair<model::offset, size_t>> phs) {
+            if (!phs) {
+                return ss::make_exception_future<>(
+                  std::runtime_error(fmt_with_ctx(
+                    fmt::format,
+                    "User asked to truncate at:{}, with initial physical "
+                    "position of:{}, but internal::offset_to_filepos_consumer "
+                    "could not translate physical offsets. Log state: {}",
+                    pidx,
+                    cfg,
+                    *this)));
+            }
+            auto [prev_last_offset, file_position] = phs.value();
+            auto last = _segs.back();
+            if (file_position == 0) {
+                _segs.pop_back();
+                return remove_segment_permanently(
+                  last, "truncate[post-translation]");
+            }
+            _probe.remove_partition_bytes(last->size_bytes() - file_position);
+            return _readers_cache->evict_truncate(cfg.base_offset)
+              .then([this,
+                     prev_last_offset = prev_last_offset,
+                     file_position = file_position,
+                     last,
+                     phs](readers_cache::range_lock_holder cache_lock) {
+                  return last->truncate(prev_last_offset, file_position)
+                    .handle_exception([last, phs, this](std::exception_ptr e) {
+                        vassert(
+                          false,
+                          "Could not truncate:{} logical max:{}, physical "
+                          "offset:{} on "
+                          "segment:{} - log:{}",
+                          e,
+                          phs->first,
+                          phs->second,
+                          last,
+                          *this);
+                    })
+                    .finally([cache_lock = std::move(cache_lock)] {});
+              });
+        });
 }
 
 model::offset disk_log_impl::read_start_offset() const {

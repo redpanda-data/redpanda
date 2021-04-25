@@ -13,6 +13,7 @@
 
 #include "storage/batch_cache.h"
 #include "storage/compacted_index_writer.h"
+#include "storage/fwd.h"
 #include "storage/segment_appender.h"
 #include "storage/segment_index.h"
 #include "storage/segment_reader.h"
@@ -80,7 +81,7 @@ public:
 
     ss::future<> close();
     ss::future<> flush();
-    ss::future<> release_appender();
+    ss::future<> release_appender(readers_cache*);
     ss::future<> truncate(model::offset, size_t physical);
 
     /// main write interface
@@ -159,6 +160,7 @@ private:
     ss::future<> remove_tombstones();
     ss::future<> compaction_index_batch(const model::record_batch&);
     ss::future<> do_compaction_index_batch(const model::record_batch&);
+    void release_appender_in_background(readers_cache* readers_cache);
 
     struct appender_callbacks : segment_appender::callbacks {
         explicit appender_callbacks(segment* segment)

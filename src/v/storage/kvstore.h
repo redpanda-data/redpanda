@@ -175,7 +175,11 @@ private:
         explicit replay_consumer(kvstore* store)
           : _store(store) {}
 
-        consume_result consume_batch_start(
+        consume_result
+        accept_batch_start(const model::record_batch_header&) const override;
+        void consume_batch_start(
+          model::record_batch_header header, size_t, size_t) override;
+        void skip_batch_start(
           model::record_batch_header header, size_t, size_t) override;
         void consume_records(iobuf&&) override;
         stop_parser consume_batch_end() override;

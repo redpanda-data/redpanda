@@ -11,6 +11,7 @@
 
 #include "config/configuration.h"
 #include "prometheus/prometheus_sanitize.h"
+#include "storage/readers_cache_probe.h"
 #include "storage/segment.h"
 
 #include <seastar/core/metrics.hh>
@@ -113,5 +114,45 @@ void probe::add_initial_segment(const segment& s) {
 }
 void probe::delete_segment(const segment& s) {
     _partition_bytes -= s.reader().file_size();
+}
+
+void readers_cache_probe::setup_metrics(const model::ntp& ntp) {
+    if (config::shard_local_cfg().disable_metrics()) {
+        return;
+    }
+    namespace sm = ss::metrics;
+    auto ns_label = sm::label("namespace");
+    auto topic_label = sm::label("topic");
+    auto partition_label = sm::label("partition");
+    const std::vector<sm::label_instance> labels = {
+      ns_label(ntp.ns()),
+      topic_label(ntp.tp.topic()),
+      partition_label(ntp.tp.partition()),
+    };
+
+    _metrics.add_group(
+      prometheus_sanitize::metrics_name("storage:log"),
+      {
+        sm::make_derive(
+          "readers_added",
+          [this] { return _readers_added; },
+          sm::description("Number of readers added to cache"),
+          labels),
+        sm::make_derive(
+          "readers_evicted",
+          [this] { return _readers_evicted; },
+          sm::description("Number of readers evicted from cache"),
+          labels),
+        sm::make_derive(
+          "cache_hits",
+          [this] { return _cache_hits; },
+          sm::description("Reader cache hits"),
+          labels),
+        sm::make_derive(
+          "cache_misses",
+          [this] { return _cache_misses; },
+          sm::description("Reader cache misses"),
+          labels),
+      });
 }
 } // namespace storage
