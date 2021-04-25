@@ -77,6 +77,7 @@
         "delete": {
           "summary": "Remove a consumer for the group",
           "operationId": "remove_consumer",
+          "consumes": ["application/vnd.kafka.v2+json"],
           "parameters": [
             {
               "name": "group_name",
@@ -91,12 +92,16 @@
               "type": "string"
             }
           ],
+          "produces": ["application/vnd.kafka.v2+json"],
           "responses": {
             "204": {
               "description": ""
             },
             "404": {
-              "description": "Consumer not found"
+              "description": "Consumer not found",
+              "schema": {
+                "$ref": "#/definitions/error_body"
+              }
             }
           }
         }
