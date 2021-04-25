@@ -189,6 +189,7 @@
         "post": {
           "summary": "Commit offsets for a consumer",
           "operationId": "post_consumer_offsets",
+          "consumes": ["application/vnd.kafka.v2+json"],
           "parameters": [
             {
               "name": "group_name",
@@ -229,12 +230,16 @@
               }
             }
           ],
+          "produces": ["application/vnd.kafka.v2+json"],
           "responses": {
             "204": {
               "description": ""
             },
             "404": {
-              "description": "Consumer not found"
+              "description": "Consumer, topic, or partition not found",
+              "schema": {
+                "$ref": "#/definitions/error_body"
+              }
             }
           }
         }
