@@ -136,6 +136,14 @@ server::server(
  *  the method route register a route handler for the specified endpoint.
  */
 void server::route(server::route_t r) {
+    // NOTE: this pointer will be owned by data member _routes of
+    // ss::httpd:server. seastar didn't use any unique ptr to express that.
+    auto* handler = new handler_adaptor(
+      _pending_reqs, _ctx, std::move(r.handler), r.path_desc);
+    r.path_desc.set(_server._routes, handler);
+}
+
+void server::routes(server::routes_t&& rts) {
     // Insert a comma between routes to make the api docs valid JSON.
     if (_has_routes) {
         _api20.register_function(
@@ -144,17 +152,9 @@ void server::route(server::route_t r) {
     } else {
         _has_routes = true;
     }
-    _api20.register_api_file(_server._routes, r.api);
+    _api20.register_api_file(_server._routes, rts.api);
 
-    // NOTE: this pointer will be owned by data member _routes of
-    // ss::httpd:server. seastar didn't use any unique ptr to express that.
-    auto* handler = new handler_adaptor(
-      _pending_reqs, _ctx, std::move(r.handler), r.path_desc);
-    r.path_desc.set(_server._routes, handler);
-}
-
-void server::route(std::vector<server::route_t>&& rts) {
-    for (auto& e : rts) {
+    for (auto& e : rts.routes) {
         this->route(std::move(e));
     }
 }
