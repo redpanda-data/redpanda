@@ -2,14 +2,75 @@
         "post": {
           "summary": "Create a consumer for the group",
           "operationId": "create_consumer",
+          "consumes": ["application/vnd.kafka.v2+json"],
           "parameters": [
             {
               "name": "group_name",
               "in": "path",
               "required": true,
               "type": "string"
+            },
+            {
+              "name": "properties",
+              "in": "body",
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "format": {
+                    "type": "string",
+                    "description": "oneOf: ['binary','json']"
+                  },
+                  "name": {
+                    "type": "string",
+                    "description": "Name of the consumer"
+                  },
+                  "auto.offset.reset": {
+                    "type": "string",
+                    "description": "oneOf: ['earliest']"
+                  },
+                  "auto.commit.enable": {
+                    "type": "string",
+                    "description": "oneOf: ['false']"
+                  },
+                  "fetch.min.bytes": {
+                    "type": "string"
+                  },
+                  "consumer.request.timeout.ms": {
+                    "type": "string"
+                  }
+                }
+              }
             }
-          ]
+          ],
+          "produces": ["application/vnd.kafka.v2+json"],
+          "responses": {
+            "200": {
+              "description": "OK",
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "instance_id": {
+                    "type": "string"
+                  },
+                  "base_uri": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "409": {
+              "description": "Consumer already exists",
+              "schema": {
+                "$ref": "#/definitions/error_body"
+              }
+            },
+            "422": {
+              "description": "Invalid configuration",
+              "schema": {
+                "$ref": "#/definitions/error_body"
+              }
+            }
+          }
         }
       },
       "/consumers/{group_name}/instances/{instance}": {
