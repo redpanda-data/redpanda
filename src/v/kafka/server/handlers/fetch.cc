@@ -121,7 +121,7 @@ model::record_batch adapt_fetch_batch(model::record_batch&& batch) {
  * Low-level handler for reading from an ntp. Runs on ntp's home core.
  */
 static ss::future<read_result> read_from_partition(
-  kafka::partition_proxy part,
+  kafka::partition_proxy& part,
   fetch_config config,
   bool foreign_read,
   std::optional<model::timeout_clock::time_point> deadline) {
@@ -135,7 +135,7 @@ static ss::future<read_result> read_from_partition(
 
     storage::log_reader_config reader_config(
       config.start_offset,
-      model::model_limits<model::offset>::max(),
+      config.max_offset,
       0,
       config.max_bytes,
       kafka_read_priority(),
@@ -144,25 +144,42 @@ static ss::future<read_result> read_from_partition(
       std::nullopt);
 
     reader_config.strict_max_bytes = config.strict_max_bytes;
-    return part.make_reader(reader_config)
-      .then([start_o, hw, lso, foreign_read, deadline](
-              model::record_batch_reader rdr) {
-          return model::transform_reader_to_memory(
-                   std::move(rdr),
-                   deadline.value_or(model::no_timeout),
-                   adapt_fetch_batch)
-            .then([foreign_read](
-                    ss::circular_buffer<model::record_batch> data) {
-                // if we are on remote core, we MUST use foreign record batch
-                // reader.
-                if (foreign_read) {
-                    return model::make_foreign_memory_record_batch_reader(
-                      std::move(data));
-                }
-                return model::make_memory_record_batch_reader(std::move(data));
-            })
-            .then([start_o, hw, lso](model::record_batch_reader rdr) {
-                return read_result(std::move(rdr), start_o, hw, lso);
+    fetched_offset_range fr{
+      .base_offset = model::model_limits<model::offset>::max(),
+      .last_offset = model::offset(0)};
+
+    return ss::do_with(
+      std::move(fr),
+      [&part, start_o, hw, lso, foreign_read, deadline, reader_config](
+        fetched_offset_range& fr) {
+          return part.make_reader(reader_config)
+            .then([&fr, start_o, hw, lso, foreign_read, deadline](
+                    model::record_batch_reader rdr) {
+                return model::transform_reader_to_memory(
+                         std::move(rdr),
+                         deadline.value_or(model::no_timeout),
+                         [&fr](model::record_batch&& batch) {
+                             fr.base_offset = std::min(
+                               fr.base_offset, batch.base_offset());
+                             fr.last_offset = std::max(
+                               fr.last_offset, batch.last_offset());
+                             return adapt_fetch_batch(std::move(batch));
+                         })
+                  .then([foreign_read](
+                          ss::circular_buffer<model::record_batch> data) {
+                      // if we are on remote core, we MUST use foreign record
+                      // batch reader.
+                      if (foreign_read) {
+                          return model::make_foreign_memory_record_batch_reader(
+                            std::move(data));
+                      }
+                      return model::make_memory_record_batch_reader(
+                        std::move(data));
+                  })
+                  .then([&fr, start_o, hw, lso](
+                          model::record_batch_reader rdr) {
+                      return read_result(std::move(rdr), start_o, hw, lso, fr);
+                  });
             });
       });
 }
@@ -209,8 +226,17 @@ ss::future<read_result> read_from_ntp(
     }
 
     auto high_watermark = partition->high_watermark();
+
     auto max_offset = high_watermark < model::offset(0) ? model::offset(0)
                                                         : high_watermark;
+
+    if (config::shard_local_cfg().enable_transactions.value()) {
+        if (config.isolation_level == model::isolation_level::read_committed) {
+            config.max_offset = partition->last_stable_offset();
+            max_offset = partition->last_stable_offset();
+        }
+    }
+
     if (
       config.start_offset < partition->start_offset()
       || config.start_offset > max_offset) {
@@ -218,8 +244,28 @@ ss::future<read_result> read_from_ntp(
           error_code::offset_out_of_range);
     }
 
-    return read_from_partition(
-      std::move(*kafka_partition), config, foreign_read, deadline);
+    return ss::do_with(
+      std::move(*kafka_partition),
+      [config, foreign_read, deadline](kafka::partition_proxy& part) {
+          return read_from_partition(part, config, foreign_read, deadline)
+            .then([&part](read_result result) {
+                // TODO(rystsov): use kafka_partition
+                auto aborted_f = part.aborted_transactions(
+                  result.fetched_range.base_offset,
+                  result.fetched_range.last_offset);
+                return aborted_f.then(
+                  [result = std::move(result)](
+                    std::vector<cluster::rm_stm::tx_range> txes) mutable {
+                      for (auto& tx : txes) {
+                          result.aborted_transactions.push_back(
+                            fetch_response::aborted_transaction{
+                              .producer_id = kafka::producer_id(tx.pid.id),
+                              .first_offset = tx.first});
+                      }
+                      return std::move(result);
+                  });
+            });
+      });
 }
 
 static ss::future<> do_fill_fetch_responses(
@@ -241,22 +287,24 @@ static ss::future<> do_fill_fetch_responses(
         }
         return std::move(*res.reader)
           .consume(kafka_batch_serializer(), model::no_timeout)
-          .then(
-            [so = res.start_offset,
-             hw = res.high_watermark,
-             lso = res.last_stable_offset,
-             pid = res.partition,
-             resp_it = resp_it](kafka_batch_serializer::result res) mutable {
-                fetch_response::partition_response resp{
-                  .partition_index = pid,
-                  .error_code = error_code::none,
-                  .records = batch_reader(std::move(res.data)),
-                };
-                resp_it.set(std::move(resp));
-                resp_it->partition_response->log_start_offset = so;
-                resp_it->partition_response->high_watermark = hw;
-                resp_it->partition_response->last_stable_offset = lso;
-            })
+          .then([so = res.start_offset,
+                 hw = res.high_watermark,
+                 lso = res.last_stable_offset,
+                 pid = res.partition,
+                 &rres = res,
+                 resp_it = resp_it](
+                  kafka_batch_serializer::result res) mutable {
+              fetch_response::partition_response resp{
+                .partition_index = pid,
+                .error_code = error_code::none,
+                .records = batch_reader(std::move(res.data)),
+              };
+              resp_it.set(std::move(resp));
+              resp_it->partition_response->log_start_offset = so;
+              resp_it->partition_response->high_watermark = hw;
+              resp_it->partition_response->last_stable_offset = lso;
+              resp_it->partition_response->aborted = rres.aborted_transactions;
+          })
           .handle_exception(
             [so = res.start_offset,
              hw = res.high_watermark,
@@ -398,6 +446,8 @@ static std::vector<shard_fetch> group_requests_by_shard(op_context& octx) {
 
           fetch_config config{
             .start_offset = fp.fetch_offset,
+            .max_offset = model::model_limits<model::offset>::max(),
+            .isolation_level = octx.request.data.isolation_level,
             .max_bytes = std::min(octx.bytes_left, size_t(fp.max_bytes)),
             .timeout = octx.deadline.value_or(model::no_timeout),
             .strict_max_bytes = octx.response_size > 0,
@@ -554,7 +604,7 @@ void op_context::create_response_placeholders() {
                 .partition_index = fp.partition,
                 .error_code = error_code::none,
                 .high_watermark = fp.high_watermark,
-                .last_stable_offset = fp.high_watermark,
+                .last_stable_offset = fp.last_stable_offset,
                 .records = batch_reader()};
 
               response.data.topics.back().partitions.push_back(std::move(p));
@@ -571,8 +621,15 @@ bool update_fetch_partition(
         include = true;
     }
     if (partition.high_watermark != resp.high_watermark) {
+        include = true;
         partition.high_watermark = model::offset(resp.high_watermark);
-        return true;
+    }
+    if (partition.last_stable_offset != resp.last_stable_offset) {
+        include = true;
+        partition.last_stable_offset = model::offset(resp.last_stable_offset);
+    }
+    if (include) {
+        return include;
     }
     if (resp.error_code != error_code::none) {
         // Partitions with errors are always included in the response.

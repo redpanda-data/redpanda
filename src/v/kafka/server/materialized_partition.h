@@ -43,6 +43,12 @@ public:
         return _log.timequery(cfg);
     };
 
+    ss::future<std::vector<cluster::rm_stm::tx_range>>
+    aborted_transactions(model::offset, model::offset) final {
+        return ss::make_ready_future<std::vector<cluster::rm_stm::tx_range>>(
+          std::vector<cluster::rm_stm::tx_range>());
+    }
+
 private:
     storage::log _log;
 };

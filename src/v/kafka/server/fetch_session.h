@@ -28,6 +28,7 @@ struct fetch_session_partition {
     int32_t max_bytes;
     model::offset fetch_offset;
     model::offset high_watermark;
+    model::offset last_stable_offset;
 };
 /**
  * Map of partitions that is kept by fetch session. This map is using intrusive
