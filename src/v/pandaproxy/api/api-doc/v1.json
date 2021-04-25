@@ -110,6 +110,7 @@
         "get": {
           "summary": "Get committed group offsets for given partitions",
           "operationId": "get_consumer_offsets",
+          "consumes": ["application/vnd.kafka.v2+json"],
           "parameters": [
             {
               "name": "group_name",
@@ -147,6 +148,7 @@
               }
             }
           ],
+          "produces": ["application/vnd.kafka.v2+json"],
           "responses": {
             "200": {
               "description": "",
@@ -174,6 +176,12 @@
                     }
                   }
                 }
+              }
+            },
+            "404": {
+              "description": "Consumer, topic, or partition not found",
+              "schema": {
+                "$ref": "#/definitions/error_body"
               }
             }
           }
