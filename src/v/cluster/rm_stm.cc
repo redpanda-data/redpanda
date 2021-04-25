@@ -38,7 +38,7 @@ static bool is_sequence(int32_t last_seq, int32_t next_seq) {
            || (next_seq == 0 && last_seq == std::numeric_limits<int32_t>::max());
 }
 
-static model::record_batch make_control_batch(
+static model::record_batch make_tx_control_batch(
   model::producer_identity pid, model::control_record_type crt) {
     iobuf key;
     kafka::response_writer w(key);
@@ -49,6 +49,7 @@ static model::record_batch make_control_batch(
       raft::data_batch_type, model::offset(0));
     builder.set_producer_identity(pid.id, pid.epoch);
     builder.set_control_type();
+    builder.set_transactional_type();
     builder.add_raw_kw(
       std::move(key), std::nullopt, std::vector<model::record_header>());
 
@@ -386,7 +387,8 @@ ss::future<tx_errc> rm_stm::commit_tx(
         }
     }
 
-    auto batch = make_control_batch(pid, model::control_record_type::tx_commit);
+    auto batch = make_tx_control_batch(
+      pid, model::control_record_type::tx_commit);
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
     auto r = co_await _c->replicate(
       _insync_term,
@@ -429,7 +431,8 @@ ss::future<tx_errc> rm_stm::abort_tx(
     // know we're going to abort tx and abandon pid
     _mem_state.expected.erase(pid);
 
-    auto batch = make_control_batch(pid, model::control_record_type::tx_abort);
+    auto batch = make_tx_control_batch(
+      pid, model::control_record_type::tx_abort);
     auto reader = model::make_memory_record_batch_reader(std::move(batch));
     auto r = co_await _c->replicate(
       _insync_term,
