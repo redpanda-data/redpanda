@@ -783,3 +783,55 @@ class PandaProxyTest(RedpandaTest):
         self.logger.info("Remove consumer")
         rc_res = c0.remove()
         assert rc_res.status_code == requests.codes.no_content
+
+
+class PandaProxySASLTest(RedpandaTest):
+    """
+    Test pandaproxy can connect using SASL.
+    """
+    def __init__(self, context):
+        extra_rp_conf = dict(
+            auto_create_topics_enabled=False,
+            enable_sasl=True,
+        )
+
+        super(PandaProxySASLTest, self).__init__(context,
+                                                 num_brokers=3,
+                                                 enable_pp=True,
+                                                 extra_rp_conf=extra_rp_conf)
+
+        http.client.HTTPConnection.debuglevel = 1
+        logging.basicConfig()
+        requests_log = logging.getLogger("requests.packages.urllib3")
+        requests_log.setLevel(logging.getLogger().level)
+        requests_log.propagate = True
+
+    def _get_super_client(self):
+        user, password, _ = self.redpanda.SUPERUSER_CREDENTIALS
+        return KafkaCliTools(self.redpanda, user=user, passwd=password)
+
+    def _base_uri(self):
+        return f"http://{self.redpanda.nodes[0].account.hostname}:8082"
+
+    def _get_topics(self, headers=HTTP_GET_TOPICS_HEADERS):
+        return requests.get(f"{self._base_uri()}/topics", headers=headers)
+
+    @cluster(num_nodes=3)
+    def test_list_topics(self):
+        client = self._get_super_client()
+        topic_specs = [TopicSpec() for _ in range(1)]
+        for spec in topic_specs:
+            client.create_topic(spec)
+
+        expected_topics = set((t.name for t in topic_specs))
+
+        def topics_appeared():
+            listed_topics = set(self._get_topics().json())
+            self.logger.debug(
+                f"Listed {listed_topics} expected {expected_topics}")
+            return listed_topics == expected_topics
+
+        wait_until(lambda: topics_appeared,
+                   timeout_sec=20,
+                   backoff_sec=2,
+                   err_msg="Timeout waiting for topics to appear.")
