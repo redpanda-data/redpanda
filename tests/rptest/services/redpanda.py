@@ -222,7 +222,8 @@ class RedpandaService(Service):
                            node_id=self.idx(node),
                            enable_rp=self._enable_rp,
                            enable_pp=self._enable_pp,
-                           superuser=self.SUPERUSER_CREDENTIALS)
+                           superuser=self.SUPERUSER_CREDENTIALS,
+                           sasl_enabled=self.sasl_enabled())
 
         if self._extra_rp_conf:
             doc = yaml.full_load(conf)
