@@ -82,7 +82,8 @@ public:
         return _fetch_session_cache.local();
     }
     quota_manager& quota_mgr() { return _quota_mgr.local(); }
-    bool is_idempotence_enabled() { return _is_idempotence_enabled; }
+    bool is_idempotence_enabled() const { return _is_idempotence_enabled; }
+    bool are_transactions_enabled() const { return _are_transactions_enabled; }
 
     security::credential_store& credentials() { return _credentials.local(); }
 
@@ -122,6 +123,7 @@ private:
     ss::sharded<kafka::fetch_session_cache>& _fetch_session_cache;
     ss::sharded<cluster::id_allocator_frontend>& _id_allocator_frontend;
     bool _is_idempotence_enabled{false};
+    bool _are_transactions_enabled{false};
     ss::sharded<security::credential_store>& _credentials;
     ss::sharded<security::authorizer>& _authorizer;
     ss::sharded<cluster::security_frontend>& _security_frontend;

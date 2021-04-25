@@ -62,6 +62,8 @@ protocol::protocol(
   , _id_allocator_frontend(id_allocator_frontend)
   , _is_idempotence_enabled(
       config::shard_local_cfg().enable_idempotence.value())
+  , _are_transactions_enabled(
+      config::shard_local_cfg().enable_transactions.value())
   , _credentials(credentials)
   , _authorizer(authorizer)
   , _security_frontend(sec_fe)

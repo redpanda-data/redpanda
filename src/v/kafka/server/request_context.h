@@ -102,6 +102,10 @@ public:
         return _conn->server().is_idempotence_enabled();
     }
 
+    bool are_transactions_enabled() {
+        return _conn->server().are_transactions_enabled();
+    }
+
     cluster::tx_gateway_frontend& tx_gateway_frontend() const {
         return _conn->server().tx_gateway_frontend();
     }
