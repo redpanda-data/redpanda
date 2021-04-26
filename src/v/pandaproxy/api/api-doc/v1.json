@@ -383,6 +383,10 @@
       "post": {
         "summary": "Produce messages to a topic.",
         "operationId": "post_topics_name",
+        "consumes": [
+          "application/vnd.kafka.json.v2+json",
+          "application/vnd.kafka.binary.v2+json"
+        ],
         "parameters": [
           {
             "name": "topic_name",
@@ -406,6 +410,9 @@
                       },
                       "value": {
                         "type": "string"
+                      },
+                      "partition": {
+                        "type": "integer"
                       }
                     }
                   }
@@ -414,6 +421,7 @@
             }
           }
         ],
+        "produces": ["application/vnd.kafka.v2+json"],
         "responses": {
           "200": {
             "description": "",
