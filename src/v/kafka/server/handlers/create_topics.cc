@@ -161,6 +161,11 @@ ss::future<response_ptr> create_topics_handler::handle(
           return ctx.topics_frontend()
             .create_topics(
               std::move(to_create), to_timeout(request.data.timeout_ms))
+            .then([&ctx, tout = to_timeout(request.data.timeout_ms)](
+                    std::vector<cluster::topic_result> c_res) mutable {
+                return wait_for_topics(c_res, ctx.controller_api(), tout)
+                  .then([c_res = std::move(c_res)]() mutable { return c_res; });
+            })
             .then([&ctx,
                    response = std::move(response),
                    tout = to_timeout(request.data.timeout_ms)](
