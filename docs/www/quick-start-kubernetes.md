@@ -28,7 +28,7 @@ You'll need to install:
 - Kubernetes v1.16 or above
 - [kubectl](https://kubernetes.io/docs/tasks/tools/) v1.16 or above
 - [helm](https://github.com/helm/helm/releases) v3.0.0 or above
-- [cert-manager](https://cert-manager.io/docs/installation/kubernetes/) v1.3.0 or above
+- [cert-manager](https://cert-manager.io/docs/installation/kubernetes/) v1.2.0 or above
 
     Follow the instructions to verify that cert-manager is ready to create certificates.
 
@@ -76,142 +76,116 @@ You can either create a Kubernetes cluster on your local machine or on a cloud p
   Then, create a cluster with:
 
   ```
-  gcloud container clusters create redpanda --machine-type n1-standard-4
+  gcloud container clusters create redpanda --machine-type n1-standard-4 --num-nodes=1
   ```
+
+  **_Note_** - You may need to add a `--region` or `--zone` to this command.
 
   </tab>
 </tabs>
 
-## Using Helm to Install Redpanda
+## Install cert-manager
+
+The Redpanda operator requires cert-manager to create certificates for TLS communication.
+You can [install cert-manager with a CRD](https://cert-manager.io/docs/installation/kubernetes/#installing-with-helm),
+but here's the command to install using helm:
+
+```
+kubectl create namespace cert-manager && \
+helm repo add jetstack https://charts.jetstack.io && \
+helm repo update && \
+helm install \
+  cert-manager jetstack/cert-manager \
+  --namespace cert-manager \
+  --create-namespace \
+  --version v1.2.0 \
+  --set installCRDs=true
+```
+
+We recommend that you use [the verification procedure](https://cert-manager.io/docs/installation/kubernetes/#verifying-the-installation) in the cert-manager docs
+to verify that cert-manager is working correcly.
+
+## Using Helm to install Redpanda
 
 1. Using Helm, add the Redpanda chart repository and update it:
 
     ```
-    helm repo add redpanda https://charts.vectorized.io/ && helm repo update
+    helm repo add redpanda https://charts.vectorized.io/ && \
+    helm repo update
     ```
 
-2. Install the Redpanda operator CRDs:
+2. Just to simplify the commands, create a variable for the version number:
 
     ```
-    kubectl apply -k 'https://github.com/vectorizedio/redpanda/src/go/k8s/config/crd?ref=<latest version>'
+    export version=v21.4.13
     ```
 
-    You can find the latest version number of the operator on the [list of operator releases](https://github.com/vectorizedio/redpanda/releases).
+    **_Note_** - You can find the latest version number of the operator in the [list of operator releases](https://github.com/vectorizedio/redpanda/releases).
 
-3. Install Redpanda operator on your Kubernetes cluster with:
-
-    ```
-    helm install --namespace redpanda-system --create-namespace redpanda-operator redpanda/redpanda-operator
-    ```
-
-## Next steps
-
-After you set up Redpanda in your Kubernetes cluster, you can use our samples to install resources and see Redpanda in action:
-
-- Create a namespace for your resources:
+3. Install the Redpanda operator CRD:
 
     ```
-    kubectl create ns redpanda-test
+    kubectl apply \
+    -k https://github.com/vectorizedio/redpanda/src/go/k8s/config/crd?ref=$version
     ```
 
-- Install resources from our sample files:
+4. Install the Redpanda operator on your Kubernetes cluster with:
 
-    - One node cluster:
+    ```
+    helm install \
+    --namespace redpanda-system \
+    --create-namespace redpanda-operator \
+    redpanda/redpanda-operator
+    ```
+
+## Connect to the Redpanda cluster
+
+After you set up Redpanda in your Kubernetes cluster, you can use our samples to install a cluster and see Redpanda in action.
+
+Let's try setting up a Redpanda topic to handle a stream of events from a chat application with 5 chat rooms:
+
+1. Create a namespace for your cluster:
+
+    ```
+    kubectl create ns chat-with-me
+    ```
+
+2. Install a cluster from [our sample files](https://github.com/vectorizedio/redpanda/tree/dev/src/go/k8s/config/samples), for example the single-node cluster:
                 
-        ```
-        kubectl apply -n redpanda-test -f https://raw.githubusercontent.com/vectorizedio/redpanda/dev/src/go/k8s/config/samples/one_node_cluster.yaml
-        ```
+    ```
+    kubectl apply \
+    -n chat-with-me \
+    -f https://raw.githubusercontent.com/vectorizedio/redpanda/dev/src/go/k8s/config/samples/one_node_cluster.yaml
+    ```
 
-    - Cluster with external connectivity (verified on AWS) -
-        
-        ```
-        kubectl apply -n redpanda-test -f https://raw.githubusercontent.com/vectorizedio/redpanda/dev/src/go/k8s/config/samples/external_connectivity.yaml
-        ```
+    You can see the resource configuration options in the [cluster_types file](https://github.com/vectorizedio/redpanda/blob/dev/src/go/k8s/apis/redpanda/v1alpha1/cluster_types.go).
 
-    - Cluster with TLS encryption -
-        
-        ```
-        kubectl apply -n redpanda-test -f https://raw.githubusercontent.com/vectorizedio/redpanda/dev/src/go/k8s/config/samples/redpanda_v1alpha1_with_tls.yaml
-        ```
+3. Use `rpk` to work with your Redpanda nodes, for example:
 
-        To allow connections to the cluster with TLS enabled, you have to mount a TLS configuration for rpk.
-        The following definition creates a pod that has TLS configured.
-        From that pod, users can list, create, and delete topics, and also produce and consume events.
+    a. Check the status of the cluster:
 
-        ```
-        cat <<EOF | kubectl apply -f -
-        apiVersion: v1
-        kind: ConfigMap
-        metadata:
-         name: rpk-config
-         namespace: redpanda-test
-        data:
-         redpanda.yaml: |
-           redpanda:
-           rpk:
-             tls:
-               truststore_file: /etc/tls/certs/ca.crt
-        ---
-        apiVersion: v1
-        kind: Pod
-        metadata:
-         name: produce-msg
-         namespace: redpanda-test
-        spec:
-         volumes:
-         - name: tlscert
-           secret:
-             defaultMode: 420
-             secretName: cluster-sample-tls-redpanda
-         - name: rpkconfig
-           configMap:
-             name: rpk-config
-         containers:
-         - name: rpk
-           image: vectorized/redpanda:latest
-           command:
-           - /bin/bash
-           tty: true
-           stdin: true
-           volumeMounts:
-           - mountPath: /etc/tls/certs
-             name: tlscert
-           - mountPath: /etc/redpanda
-             name: rpkconfig
-        EOF
-        ```
-
-        To connect to the produce pod, run:
-        
-        ```
-        kubectl attach -n redpanda-test -ti produce-msg
-        ```
-
-- Review the [cluster_types file](https://github.com/vectorizedio/redpanda/blob/dev/src/go/k8s/apis/redpanda/v1alpha1/cluster_types.go) to see the resource configuration options.
-
-- Use `rpk` to work with your Redpanda nodes, for example:
-
-    - Create a topic:
-
-        ```
-        rpk topic create test-topic-name --brokers cluster-sample-tls-0.cluster-sample-tls.redpanda-test.svc.cluster.local:9092
-        ```
-
-    - Show the list of topics:
-
-        ```
-        rpk topic list --brokers cluster-sample-tls-0.cluster-sample-tls.redpanda-test.svc.cluster.local:9092
-        ```
-
-    - Produce a message to the topic:
-
-        ```
-        echo {"test":"message"} | rpk topic produce test-topic-name --brokers cluster-sample-tls-0.cluster-sample-tls.redpanda-test.svc.cluster.local:9092
-        ```
-
-    - Consume the message from the topic:
-
-        ```
-        rpk topic consume test-topic-name --brokers cluster-sample-tls-0.cluster-sample-tls.redpanda-test.svc.cluster.local:9092
-        ```
+        kubectl -n chat-with-me run -ti --rm \
+        --restart=Never \
+        --image vectorized/redpanda:$version \
+        -- rpk --brokers one-node-cluster-0.one-node-cluster.chat-with-me.svc.cluster.local:9092 \
+        cluster info
     
+    b. Create a topic:
+
+        kubectl -n chat-with-me run -ti --rm \
+        --restart=Never \
+        --image vectorized/redpanda:$version \
+        -- rpk --brokers one-node-cluster-0.one-node-cluster.chat-with-me.svc.cluster.local:9092 \
+        topic create chat-rooms -p 5
+
+    c. Show the list of topics:
+
+        kubectl -n chat-with-me run -ti --rm \
+        --restart=Never \
+        --image vectorized/redpanda:$version \
+        -- rpk --brokers one-node-cluster-0.one-node-cluster.chat-with-me.svc.cluster.local:9092 \
+        topic list
+
+As you can see, the commands from the "rpk" pod created a 5 partition topic in for the chat rooms.
+
+Contact us in our [Slack](https://vectorized.io/slack) community so we can work together to implement your Kubernetes use cases.

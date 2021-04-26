@@ -1,3 +1,8 @@
+---
+title: Using NodeJS with Redpanda
+order: 1
+---
+
 # Using NodeJS with Redpanda
 
 If you haven't already, install Node by following the appropriate steps for
