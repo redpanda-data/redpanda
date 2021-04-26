@@ -83,13 +83,15 @@ jobs:
   cpp:
     name: Lint files with clang-format
     runs-on: ubuntu-20.04
-    # Use ubuntu:groovy explicitly as it is the first version to have
-    # clang-format 11 available
-    container: ubuntu:groovy
+    # Use ubuntu:hirsute explicitly as it is the first version to have
+    # clang-format 12 available
+    container: ubuntu:hirsute
     steps:
 
     - name: Fetch clang-format
       run: apt-get update && apt-get install -y git clang-format
+      env:
+        DEBIAN_FRONTEND: noninteractive
 
     - name: Check out code
       uses: actions/checkout@v2
