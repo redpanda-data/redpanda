@@ -128,6 +128,13 @@ public:
         return write(std::move(*rdr).release());
     }
 
+    uint32_t write(std::optional<batch_reader>& rdr) {
+        if (!rdr) {
+            return write(std::optional<iobuf>());
+        }
+        return write(std::move(*rdr).release());
+    }
+
     // write bytes directly to output without a length prefix
     uint32_t write_direct(iobuf&& f) {
         auto size = f.size_bytes();
