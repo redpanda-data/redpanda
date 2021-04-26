@@ -116,8 +116,14 @@ Interact with the Redpanda API to work with topics.
 The global flags for the `rpk topic` command are:
 
 ```cmd
-      --brokers strings   Comma-separated list of broker 'ip:port' pairs
-      --config string     Redpanda config file, if not set the file will be searched for in the default locations
+      --brokers strings         Comma-separated list of broker ip:port pairs
+      --config string           Redpanda config file, if not set the file will be searched for in the default locations
+      --user string             SASL user to be used for authentication.
+      --password string         SASL password to be used for authentication.
+      --sasl-mechanism string   The authentication mechanism to use. Supported values: SCRAM-SHA-256, SCRAM-SHA-512.
+      --tls-cert string         The certificate to be used for TLS authentication with the broker.
+      --tls-key string          The certificate key to be used for TLS authentication with the broker.
+      --tls-truststore string   The truststore to be used for TLS communication with the broker.
 ```
 
 ### topic create
@@ -227,6 +233,180 @@ Stop and remove an existing local container cluster's data
 Usage:
   rpk container purge [flags]
 ```
+
+## acl
+
+Manage ACLs
+
+The global flags for `rpk acl` are:
+```cmd
+      --brokers strings         Comma-separated list of broker ip:port pairs
+      --config string           Redpanda config file, if not set the file will be searched for in the default locations
+      --password string         SASL password to be used for authentication.
+      --sasl-mechanism string   The authentication mechanism to use. Supported values: SCRAM-SHA-256, SCRAM-SHA-512.
+      --tls-cert string         The certificate to be used for TLS authentication with the broker.
+      --tls-key string          The certificate key to be used for TLS authentication with the broker.
+      --tls-truststore string   The truststore to be used for TLS communication with the broker.
+      --user string             SASL user to be used for authentication.
+  -v, --verbose                 enable verbose logging (default false)
+```
+
+### acl create
+
+Create ACLs
+
+```cmd
+Usage:
+  rpk acl create [flags]
+
+Flags:
+      --allow-host strings        Host from which access will be granted. Can be passed many times.
+      --allow-principal strings   Principal to which permissions will be granted. Can be passed many times.
+      --deny-host strings         Host from which access will be denied. Can be passed many times.
+      --deny-principal strings    Principal to which permissions will be denied. Can be passed many times.
+      --name-pattern string       The name pattern type to be used when matching the resource names. Supported values: any, match, literal, prefixed. (default "literal")
+      --operation strings         Operation that the principal will be allowed or denied. Can be passed many times. Supported values: any, all, read, write, create, delete, alter, describe, clusteraction, describeconfigs, alterconfigs, idempotentwrite.
+      --resource string           The target resource for the ACL. Supported values: *, cluster, group, topic, transactionalid.
+      --resource-name string      The name of the target resource for the ACL.
+```
+
+### acl delete
+
+Delete ACLs
+
+```cmd
+Usage:
+  rpk acl delete [flags]
+
+Flags:
+      --allow-host strings        Host from which access will be granted. Can be passed many times.
+      --allow-principal strings   Principal to which permissions will be granted. Can be passed many times.
+      --deny-host strings         Host from which access will be denied. Can be passed many times.
+      --deny-principal strings    Principal to which permissions will be denied. Can be passed many times.
+      --name-pattern string       The name pattern type to be used when matching the resource names. Supported values: any, match, literal, prefixed. (default "literal")
+      --operation strings         Operation that the principal will be allowed or denied. Can be passed many times. Supported values: any, all, read, write, create, delete, alter, describe, clusteraction, describeconfigs, alterconfigs, idempotentwrite.
+      --resource string           The target resource for the ACL. Supported values: *, cluster, group, topic, transactionalid.
+      --resource-name string      The name of the target resource for the ACL.
+```
+
+### acl list
+
+List ACLs
+
+```cmd
+Usage:
+  rpk acl list [flags]
+
+Aliases:
+  list, ls
+
+Flags:
+      --host strings           Host to filter by. Can be passed multiple times to filter by many hosts.
+      --name-pattern string    The name pattern type to be used when matching affected resources. Supported values: any, match, literal, prefixed.
+      --operation strings      Operation to filter by. Can be passed multiple times to filter by many operations. Supported values: any, all, read, write, create, delete, alter, describe, clusteraction, describeconfigs, alterconfigs, idempotentwrite.
+      --permission strings     Permission to filter by. Can be passed many times to filter by multiple permission types. Supported values: any, deny, allow.
+      --principal strings      Principal to filter by. Can be passed multiple times to filter by many principals.
+      --resource string        Resource type to filter by. Supported values: *, cluster, group, topic, transactionalid.
+      --resource-name string   The name of the resource of the given type.
+```
+
+### acl user
+
+Manage users
+
+The global flags for `rpk acl user` are:
+
+```cmd
+      --api-url string   The Admin API URL (default "localhost:9644")
+```
+
+#### acl user create
+
+Create users
+
+```cmd
+Usage:
+  rpk acl user create [flags]
+
+Flags:
+      --new-password string   The new user's password
+      --new-username string   The user to be created
+```
+
+#### acl user delete
+
+Delete users
+
+```cmd
+Usage:
+  rpk acl user delete [flags]
+
+Flags:
+      --delete-username string   The user to be deleted
+```
+
+#### acl user list
+
+List users
+
+```cmd
+List users
+
+Usage:
+  rpk acl user list [flags]
+
+Aliases:
+  list, ls
+```
+
+## wasm
+
+Deploy and remove inline WASM engine scripts
+
+The global flags for `rpk wasm` are:
+```cmd
+      --brokers strings         Comma-separated list of broker ip:port pairs
+      --config string           Redpanda config file, if not set the file will be searched for in the default locations
+      --password string         SASL password to be used for authentication.
+      --sasl-mechanism string   The authentication mechanism to use. Supported values: SCRAM-SHA-256, SCRAM-SHA-512.
+      --tls-cert string         The certificate to be used for TLS authentication with the broker.
+      --tls-key string          The certificate key to be used for TLS authentication with the broker.
+      --tls-truststore string   The truststore to be used for TLS communication with the broker.
+      --user string             SASL user to be used for authentication.
+  -v, --verbose                 enable verbose logging (default false)
+```
+
+### wasm generate
+
+Create an npm template project for the inline WASM engine
+
+```cmd
+Usage:
+  rpk wasm generate <project directory> [flags]
+```
+
+
+### wasm deploy
+
+Deploy inline WASM scripts
+
+```cmd
+Usage:
+  rpk wasm deploy <path> [flags]
+
+Flags:
+      --description string   Optional description about what the wasm function does, for reference.
+```
+
+### wasm remove
+
+Remove an inline WASM script
+
+```cmd
+Usage:
+  rpk wasm remove <name> [flags]
+```
+
 
 ## iotune
 
