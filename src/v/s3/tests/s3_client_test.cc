@@ -12,6 +12,7 @@
 #include "bytes/iobuf_parser.h"
 #include "rpc/dns.h"
 #include "rpc/transport.h"
+#include "rpc/types.h"
 #include "s3/client.h"
 #include "s3/error.h"
 #include "s3/signature.h"
@@ -20,6 +21,7 @@
 
 #include <seastar/core/future.hh>
 #include <seastar/core/iostream.hh>
+#include <seastar/core/shared_ptr.hh>
 #include <seastar/core/temporary_buffer.hh>
 #include <seastar/core/thread.hh>
 #include <seastar/http/function_handlers.hh>
@@ -161,6 +163,8 @@ s3::configuration transport_configuration() {
       .region = s3::aws_region_name("us-east-1"),
     };
     conf.server_addr = server_addr;
+    conf._probe = ss::make_lw_shared<s3::client_probe>(
+      rpc::metrics_disabled::yes, "region", "endpoint");
     return conf;
 }
 

@@ -16,6 +16,7 @@
 #include "http/chunk_encoding.h"
 #include "http/iobuf_body.h"
 #include "http/logger.h"
+#include "http/probe.h"
 #include "rpc/transport.h"
 #include "rpc/types.h"
 #include "seastarx.h"
@@ -33,6 +34,7 @@
 #include <boost/beast/http.hpp>
 #include <boost/beast/http/field.hpp>
 #include <boost/beast/http/string_body.hpp>
+#include <boost/beast/http/verb.hpp>
 #include <boost/optional/optional.hpp>
 #include <boost/system/system_error.hpp>
 
@@ -73,14 +75,14 @@ public:
     class response_stream final
       : public ss::enable_shared_from_this<response_stream> {
     public:
+        using verb = boost::beast::http::verb;
         /// C-tor can only be called by http_request
-        explicit response_stream(client* client);
+        explicit response_stream(client* client, verb v);
 
         response_stream(response_stream&&) = delete;
         response_stream(response_stream const&) = delete;
         response_stream& operator=(response_stream const&) = delete;
         response_stream operator=(response_stream&&) = delete;
-        ~response_stream() override = default;
 
         /// \brief Shutdown connection gracefully
         ss::future<> shutdown();
@@ -120,6 +122,7 @@ public:
         response_parser _parser;
         iobuf _buffer; /// store incomplete tail elements
         iobuf _prefetch;
+        client_probe::subprobe _sprobe;
     };
 
     using response_stream_ref = ss::shared_ptr<response_stream>;
@@ -186,20 +189,30 @@ public:
     ss::future<response_stream_ref> request(request_header&& header);
 
 private:
+    /// Do it all private c-tor
+    client(
+      const rpc::base_transport::configuration& cfg,
+      const ss::abort_source* as,
+      ss::lw_shared_ptr<client_probe> probe);
+
     template<class BufferSeq>
-    static ss::future<>
-    forward(rpc::batched_output_stream& stream, BufferSeq&& seq);
+    static ss::future<> forward(client* client, BufferSeq&& seq);
+
+    /// Receive bytes from the remote endpoint
+    ss::future<ss::temporary_buffer<char>> receive();
+    /// Send bytes to the remote endpoint
+    ss::future<> send(ss::scattered_message<char> msg);
 
     /// Throw exception if _as is aborted
     void check() const;
 
     const ss::abort_source* _as;
+    ss::lw_shared_ptr<http::client_probe> _probe;
 };
 
 template<class BufferSeq>
-inline ss::future<>
-client::forward(rpc::batched_output_stream& stream, BufferSeq&& seq) {
+inline ss::future<> client::forward(client* client, BufferSeq&& seq) {
     auto scattered = iobuf_as_scattered(std::forward<BufferSeq>(seq));
-    return stream.write(std::move(scattered));
+    return client->send(std::move(scattered));
 }
 } // namespace http

@@ -17,6 +17,7 @@
 #include <seastar/core/iostream.hh>
 #include <seastar/core/loop.hh>
 #include <seastar/core/semaphore.hh>
+#include <seastar/core/shared_ptr.hh>
 #include <seastar/core/temporary_buffer.hh>
 #include <seastar/core/timer.hh>
 #include <seastar/net/tls.hh>
@@ -33,13 +34,23 @@ namespace http {
 // client implementation //
 
 client::client(const rpc::base_transport::configuration& cfg)
-  : rpc::base_transport(cfg)
-  , _as(nullptr) {}
+  : client(cfg, nullptr, nullptr) {}
 
 client::client(
   const rpc::base_transport::configuration& cfg, const ss::abort_source& as)
+  : client(cfg, &as, nullptr) {}
+
+client::client(
+  const rpc::base_transport::configuration& cfg,
+  const ss::abort_source* as,
+  ss::lw_shared_ptr<client_probe> probe)
   : rpc::base_transport(cfg)
-  , _as(&as) {}
+  , _as(as)
+  , _probe(std::move(probe)) {
+    if (!_probe) {
+        _probe = ss::make_lw_shared<client_probe>();
+    }
+}
 
 void client::check() const {
     if (_as) {
@@ -50,8 +61,9 @@ void client::check() const {
 ss::future<client::request_response_t>
 client::make_request(client::request_header&& header) {
     vlog(http_log.trace, "client.make_request {}", header);
+    auto verb = header.method();
     auto req = ss::make_shared<request_stream>(this, std::move(header));
-    auto res = ss::make_shared<response_stream>(this);
+    auto res = ss::make_shared<response_stream>(this, verb);
     if (is_valid()) {
         // already connected
         return ss::make_ready_future<request_response_t>(
@@ -71,12 +83,47 @@ client::make_request(client::request_header&& header) {
 
 ss::future<> client::shutdown() { return stop(); }
 
+ss::future<ss::temporary_buffer<char>> client::receive() {
+    return _in.read()
+      .then([this](ss::temporary_buffer<char>&& tmpbuf) {
+          _probe->add_inbound_bytes(tmpbuf.size());
+          return std::move(tmpbuf);
+      })
+      .handle_exception([this](std::exception_ptr e) {
+          _probe->register_transport_error();
+          return ss::make_exception_future<ss::temporary_buffer<char>>(e);
+      });
+}
+
+ss::future<> client::send(ss::scattered_message<char> msg) {
+    _probe->add_outbound_bytes(msg.size());
+    return _out.write(std::move(msg))
+      .handle_exception([this](std::exception_ptr e) {
+          _probe->register_transport_error();
+          return ss::make_exception_future<>(e);
+      });
+}
+
 // response_stream implementation //
 
-client::response_stream::response_stream(client* client)
+static client_probe::verb convert_to_pverb(client::response_stream::verb v) {
+    switch (v) {
+    case client::response_stream::verb::get:
+        return client_probe::verb::get;
+    case client::response_stream::verb::put:
+        return client_probe::verb::put;
+    default:
+        break;
+    }
+    return client_probe::verb::other;
+}
+
+client::response_stream::response_stream(
+  client* client, client::response_stream::verb v)
   : _client(client)
   , _parser()
-  , _buffer() {
+  , _buffer()
+  , _sprobe(client->_probe->create_request_subprobe(convert_to_pverb(v))) {
     _parser.body_limit(std::numeric_limits<uint64_t>::max());
     _parser.eager(true);
 }
@@ -140,7 +187,7 @@ ss::future<iobuf> client::response_stream::recv_some() {
         // can only be called once.
         return ss::make_ready_future<iobuf>(std::move(_prefetch));
     }
-    return _client->_in.read()
+    return _client->receive()
       .then([this](ss::temporary_buffer<char> chunk) mutable {
           vlog(http_log.trace, "chunk received, chunk length {}", chunk.size());
           if (chunk.empty()) {
@@ -204,6 +251,7 @@ ss::future<iobuf> client::response_stream::recv_some() {
           return ss::make_ready_future<iobuf>(std::move(out));
       })
       .handle_exception_type([this](const ss::tls::verification_error& err) {
+          _client->_probe->register_transport_error();
           return _client->shutdown().then(
             [err] { return ss::make_exception_future<iobuf>(err); });
       });
@@ -253,7 +301,7 @@ ss::future<> client::request_stream::send_some(iobuf&& seq) {
         // Fast path
         return ss::with_gate(_gate, [this, seq = std::move(seq)]() mutable {
             vlog(http_log.trace, "header is done, bypass protocol serializer");
-            return forward(_client->_out, _chunk_encode(std::move(seq)));
+            return forward(_client, _chunk_encode(std::move(seq)));
         });
     }
     // Deal with the header first
@@ -270,9 +318,9 @@ ss::future<> client::request_stream::send_some(iobuf&& seq) {
     return ss::with_gate(
       _gate,
       [this, seq = std::move(seq), scattered = std::move(scattered)]() mutable {
-          return _client->_out.write(std::move(scattered))
+          return _client->send(std::move(scattered))
             .then([this, seq = std::move(seq)]() mutable {
-                return forward(_client->_out, _chunk_encode(std::move(seq)));
+                return forward(_client, _chunk_encode(std::move(seq)));
             })
             .handle_exception_type(
               [this](const ss::tls::verification_error& err) {

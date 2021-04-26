@@ -5,6 +5,7 @@ v_cc_library(
     client.cc
     signature.cc
     error.cc
+    client_probe.cc
   DEPS
     Seastar::seastar
     v::bytes
