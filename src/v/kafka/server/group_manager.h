@@ -22,6 +22,7 @@
 #include "kafka/protocol/offset_fetch.h"
 #include "kafka/protocol/sync_group.h"
 #include "kafka/server/group.h"
+#include "kafka/server/group_stm.h"
 #include "kafka/server/member.h"
 #include "model/namespace.h"
 #include "raft/group_manager.h"
@@ -227,60 +228,6 @@ struct group_log_record_key {
     type record_type;
     iobuf key;
 };
-
-/**
- * the value type of a group metadata log record.
- */
-struct group_log_group_metadata {
-    kafka::protocol_type protocol_type;
-    kafka::generation_id generation;
-    std::optional<kafka::protocol_name> protocol;
-    std::optional<kafka::member_id> leader;
-    int32_t state_timestamp;
-    std::vector<member_state> members;
-};
-
-/**
- * the key type for offset commit records.
- */
-struct group_log_offset_key {
-    kafka::group_id group;
-    model::topic topic;
-    model::partition_id partition;
-
-    bool operator==(const group_log_offset_key& other) const = default;
-
-    friend std::ostream& operator<<(std::ostream&, const group_log_offset_key&);
-};
-
-/**
- * the value type for offset commit records.
- */
-struct group_log_offset_metadata {
-    model::offset offset;
-    int32_t leader_epoch;
-    std::optional<ss::sstring> metadata;
-
-    friend std::ostream&
-    operator<<(std::ostream&, const group_log_offset_metadata&);
-};
-
-} // namespace kafka
-
-namespace std {
-template<>
-struct hash<kafka::group_log_offset_key> {
-    size_t operator()(const kafka::group_log_offset_key& key) const {
-        size_t h = 0;
-        boost::hash_combine(h, hash<ss::sstring>()(key.group));
-        boost::hash_combine(h, hash<ss::sstring>()(key.topic));
-        boost::hash_combine(h, hash<model::partition_id>()(key.partition));
-        return h;
-    }
-};
-} // namespace std
-
-namespace kafka {
 
 /*
  * This batch consumer is used during partition recovery to read, index, and

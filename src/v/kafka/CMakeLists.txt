@@ -40,6 +40,7 @@ v_cc_library(
     ${handlers_srcs}
     server/requests.cc
     server/member.cc
+    server/group_stm.cc
     server/group.cc
     server/group_router.cc
     server/group_manager.cc

@@ -406,6 +406,15 @@ public:
         _offsets[std::move(tp)] = std::move(md);
     }
 
+    bool try_upsert_offset(model::topic_partition tp, offset_metadata md) {
+        auto [o_it, inserted] = _offsets.try_emplace(tp, std::move(md));
+        if (!inserted && o_it->second.log_offset < md.log_offset) {
+            o_it->second = std::move(md);
+            inserted = true;
+        }
+        return inserted;
+    }
+
     // helper for the kafka api: describe groups
     described_group describe() const;
 

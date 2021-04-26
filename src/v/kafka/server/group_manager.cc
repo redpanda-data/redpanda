@@ -414,17 +414,17 @@ ss::future<> recovery_batch_consumer::handle_group_metadata(
 
     vlog(klog.trace, "Recovering group metadata {}", group_id);
 
-    if (!val_buf) {
-        // tombstone
-        st.loaded_groups.erase(group_id);
-        st.removed_groups.emplace(group_id);
-    } else {
+    if (val_buf) {
         auto metadata = reflection::from_iobuf<group_log_group_metadata>(
           std::move(*val_buf));
         st.removed_groups.erase(group_id);
         // until we switch over to a compacted topic or use raft snapshots,
         // always take the latest entry in the log.
         st.loaded_groups[group_id] = std::move(metadata);
+    } else {
+        // tombstone
+        st.loaded_groups.erase(group_id);
+        st.removed_groups.emplace(group_id);
     }
 
     return ss::make_ready_future<>();
@@ -434,10 +434,7 @@ ss::future<> recovery_batch_consumer::handle_offset_metadata(
   iobuf key_buf, std::optional<iobuf> val_buf) {
     auto key = reflection::from_iobuf<group_log_offset_key>(std::move(key_buf));
 
-    if (!val_buf) {
-        // tombstone
-        st.loaded_offsets.erase(key);
-    } else {
+    if (val_buf) {
         auto metadata = reflection::from_iobuf<group_log_offset_metadata>(
           std::move(*val_buf));
         vlog(
@@ -446,6 +443,9 @@ ss::future<> recovery_batch_consumer::handle_offset_metadata(
         // always take the latest entry in the log.
         st.loaded_offsets[key] = std::make_pair(
           batch_base_offset, std::move(metadata));
+    } else {
+        // tombstone
+        st.loaded_offsets.erase(key);
     }
 
     return ss::make_ready_future<>();
@@ -781,22 +781,6 @@ error_code group_manager::validate_group_status(
 
     klog.trace("group operation misdirected {}/{}", group, ntp);
     return error_code::not_coordinator;
-}
-
-std::ostream& operator<<(std::ostream& os, const group_log_offset_key& key) {
-    fmt::print(
-      os,
-      "group {} topic {} partition {}",
-      key.group(),
-      key.topic(),
-      key.partition());
-    return os;
-}
-
-std::ostream&
-operator<<(std::ostream& os, const group_log_offset_metadata& md) {
-    fmt::print(os, "offset {}", md.offset());
-    return os;
 }
 
 } // namespace kafka
