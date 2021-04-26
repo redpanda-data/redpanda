@@ -544,7 +544,7 @@ class PandaProxyTest(RedpandaTest):
             headers={
                 "Content-Type": HTTP_SUBSCRIBE_CONSUMER_HEADERS["Content-Type"]
             })
-        assert sc_res.status_code == requests.codes.ok
+        assert sc_res.status_code == requests.codes.no_content
         assert sc_res.headers[
             "Content-Type"] == HTTP_SUBSCRIBE_CONSUMER_HEADERS["Accept"]
 
@@ -678,7 +678,7 @@ class PandaProxyTest(RedpandaTest):
         # Subscribe a consumer
         self.logger.info(f"Subscribe consumer to topics: {topics}")
         sc_res = c0.subscribe(topics)
-        assert sc_res.status_code == requests.codes.ok
+        assert sc_res.status_code == requests.codes.no_content
 
         # Get consumer offsets
         co_req = dict(partitions=[
@@ -767,7 +767,7 @@ class PandaProxyTest(RedpandaTest):
         # Subscribe a consumer
         self.logger.info(f"Subscribe consumer to topics: {topics}")
         sc_res = c0.subscribe(topics)
-        assert sc_res.status_code == requests.codes.ok
+        assert sc_res.status_code == requests.codes.no_content
 
         # Fetch from a consumer
         self.logger.info(f"Consumer fetch")

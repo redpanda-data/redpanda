@@ -134,7 +134,7 @@ FIXTURE_TEST(pandaproxy_consumer_group, pandaproxy_test_fixture) {
           ppj::serialization_format::v2,
           ppj::serialization_format::v2);
         BOOST_REQUIRE_EQUAL(
-          res.headers.result(), boost::beast::http::status::ok);
+          res.headers.result(), boost::beast::http::status::no_content);
     }
 
     {

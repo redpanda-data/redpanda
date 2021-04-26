@@ -235,6 +235,7 @@ subscribe_consumer(server::request_t rq, server::reply_t rp) {
       .subscribe_consumer(group_id, member_id, std::move(req_data.topics))
       .then([res_fmt, rp{std::move(rp)}]() mutable {
           rp.mime_type = res_fmt;
+          rp.rep->set_status(ss::httpd::reply::status_type::no_content);
           return std::move(rp);
       });
 }
