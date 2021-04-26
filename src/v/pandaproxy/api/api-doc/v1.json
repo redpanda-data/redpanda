@@ -245,38 +245,76 @@
         }
       },
       "/consumers/{group_name}/instances/{instance}/records": {
-      "get": {
-        "summary": "Fetch data for the consumer assignments",
-        "operationId": "consumer_fetch",
-        "parameters": [
-          {
-            "name": "group_name",
-            "in": "path",
-            "required": true,
-            "type": "string"
-          },
-          {
-            "name": "instance",
-            "in": "path",
-            "required": true,
-            "type": "string"
-          },
-          {
-            "name": "timeout",
-            "in": "query",
-            "required": false,
-            "type": "integer"
-          },
-          {
-            "name": "max_bytes",
-            "in": "query",
-            "required": false,
-            "type": "integer"
+        "get": {
+          "summary": "Fetch data for the consumer assignments",
+          "operationId": "consumer_fetch",
+          "consumes": ["application/vnd.kafka.v2+json"],
+          "parameters": [
+            {
+              "name": "group_name",
+              "in": "path",
+              "required": true,
+              "type": "string"
+            },
+            {
+              "name": "instance",
+              "in": "path",
+              "required": true,
+              "type": "string"
+            },
+            {
+              "name": "timeout",
+              "in": "query",
+              "required": false,
+              "type": "integer"
+            },
+            {
+              "name": "max_bytes",
+              "in": "query",
+              "required": false,
+              "type": "integer"
+            }
+          ],
+          "produces": [
+            "application/vnd.kafka.json.v2+json",
+            "application/vnd.kafka.binary.v2+json"
+          ],
+          "responses": {
+            "200": {
+              "description": "",
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "records": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "topic": {
+                          "type": "string"
+                        },
+                        "key": {
+                          "type": "string"
+                        },
+                        "value": {
+                          "type": "string"
+                        },
+                        "partition": {
+                          "type": "integer"
+                        },
+                        "offset": {
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
-        ]
-      }
-    },
-    "/consumers/{group_name}/instances/{instance}/subscription": {
+        }
+      },
+      "/consumers/{group_name}/instances/{instance}/subscription": {
       "post": {
         "summary": "Subscribe a consumer group to topics",
         "operationId": "subscribe_consumer",
