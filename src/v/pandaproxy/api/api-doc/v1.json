@@ -310,6 +310,12 @@
                   }
                 }
               }
+            },
+            "404": {
+              "description": "Consumer, topic, or partition not found",
+              "schema": {
+                "$ref": "#/definitions/error_body"
+              }
             }
           }
         }
@@ -318,6 +324,7 @@
       "post": {
         "summary": "Subscribe a consumer group to topics",
         "operationId": "subscribe_consumer",
+        "consumes": ["application/vnd.kafka.v2+json"],
         "parameters": [
           {
             "name": "group_name",
@@ -330,8 +337,29 @@
             "in": "path",
             "required": true,
             "type": "string"
+          },
+          {
+            "name": "topics",
+            "in": "body",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
           }
-        ]
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "404": {
+            "description": "Consumer, topic, or partition not found",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          }
+        }
       }
     },
     "/topics": {
