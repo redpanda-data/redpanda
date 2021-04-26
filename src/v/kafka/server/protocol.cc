@@ -47,7 +47,9 @@ protocol::protocol(
   ss::sharded<security::credential_store>& credentials,
   ss::sharded<security::authorizer>& authorizer,
   ss::sharded<cluster::security_frontend>& sec_fe,
-  std::optional<qdc_monitor::config> qdc_config) noexcept
+  std::optional<qdc_monitor::config> qdc_config,
+  ss::sharded<cluster::controller_api>& controller_api) noexcept
+
   : _smp_group(smp)
   , _topics_frontend(tf)
   , _metadata_cache(meta)
@@ -62,7 +64,8 @@ protocol::protocol(
       config::shard_local_cfg().enable_idempotence.value())
   , _credentials(credentials)
   , _authorizer(authorizer)
-  , _security_frontend(sec_fe) {
+  , _security_frontend(sec_fe)
+  , _controller_api(controller_api) {
     if (qdc_config) {
         _qdc_mon.emplace(*qdc_config);
     }

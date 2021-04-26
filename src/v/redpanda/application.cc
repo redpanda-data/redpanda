@@ -717,7 +717,9 @@ void application::start_redpanda() {
             controller->get_credential_store(),
             controller->get_authorizer(),
             controller->get_security_frontend(),
-            qdc_config);
+            qdc_config,
+            controller->get_api());
+
           s.set_protocol(std::move(proto));
       })
       .get();

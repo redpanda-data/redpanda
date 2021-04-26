@@ -42,7 +42,8 @@ public:
       ss::sharded<security::credential_store>&,
       ss::sharded<security::authorizer>&,
       ss::sharded<cluster::security_frontend>&,
-      std::optional<qdc_monitor::config>) noexcept;
+      std::optional<qdc_monitor::config>,
+      ss::sharded<cluster::controller_api>&) noexcept;
 
     ~protocol() noexcept override = default;
     protocol(const protocol&) = delete;
@@ -101,6 +102,10 @@ public:
           ss::semaphore_units<>());
     }
 
+    cluster::controller_api& controller_api() {
+        return _controller_api.local();
+    }
+
 private:
     ss::smp_service_group _smp_group;
     ss::sharded<cluster::topics_frontend>& _topics_frontend;
@@ -117,6 +122,7 @@ private:
     ss::sharded<security::authorizer>& _authorizer;
     ss::sharded<cluster::security_frontend>& _security_frontend;
     std::optional<qdc_monitor> _qdc_mon;
+    ss::sharded<cluster::controller_api>& _controller_api;
 };
 
 } // namespace kafka
