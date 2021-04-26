@@ -160,6 +160,10 @@ public:
 
     security::authorizer& authorizer() { return _conn->server().authorizer(); }
 
+    cluster::controller_api& controller_api() {
+        return _conn->server().controller_api();
+    }
+
 private:
     ss::lw_shared_ptr<connection_context> _conn;
     request_header _header;
