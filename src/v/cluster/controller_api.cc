@@ -45,8 +45,10 @@ controller_api::controller_api(
 
 ss::future<std::vector<ntp_reconciliation_state>>
 controller_api::get_reconciliation_state(std::vector<model::ntp> ntps) {
-    return ssx::async_transform(ntps, [this](const model::ntp& ntp) {
-        return get_reconciliation_state(ntp);
+    return ss::do_with(std::move(ntps), [this](std::vector<model::ntp>& ntps) {
+        return ssx::async_transform(ntps, [this](const model::ntp& ntp) {
+            return get_reconciliation_state(ntp);
+        });
     });
 }
 
