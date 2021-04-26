@@ -64,4 +64,9 @@ private:
     bool _do_load_slice_failed{false};
 };
 
+inline std::ostream& operator<<(std::ostream& os, const batch_reader& reader) {
+    fmt::print(os, "{{size {}}}", reader.size_bytes());
+    return os;
+}
+
 } // namespace kafka
