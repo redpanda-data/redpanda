@@ -444,6 +444,7 @@
       "get": {
         "summary": "Get records from a topic.",
         "operationId": "get_topics_records",
+        "consumes": ["application/vnd.kafka.v2+json"],
         "parameters": [
           {
             "name": "topic_name",
@@ -474,30 +475,11 @@
             "in": "query",
             "required": true,
             "type": "integer"
-          },
-          {
-            "name": "records",
-            "in": "body",
-            "schema": {
-              "type": "object",
-              "properties": {
-                "records": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "properties": {
-                      "key": {
-                        "type": "string"
-                      },
-                      "value": {
-                        "type": "string"
-                      }
-                    }
-                  }
-                }
-              }
-            }
           }
+        ],
+        "produces": [
+          "application/vnd.kafka.json.v2+json",
+          "application/vnd.kafka.binary.v2+json"
         ],
         "responses": {
           "200": {
@@ -529,6 +511,12 @@
                   }
                 }
               }
+            }
+          },
+          "404": {
+            "description": "Topic or partition not found",
+            "schema": {
+              "$ref": "#/definitions/error_body"
             }
           }
         }
