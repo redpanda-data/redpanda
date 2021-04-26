@@ -661,7 +661,8 @@ void application::start_redpanda() {
             std::ref(controller->get_topics_frontend()),
             std::ref(controller->get_members_manager()),
             std::ref(metadata_cache),
-            std::ref(controller->get_security_frontend()));
+            std::ref(controller->get_security_frontend()),
+            std::ref(controller->get_api()));
           proto->register_service<cluster::metadata_dissemination_handler>(
             _scheduling_groups.cluster_sg(),
             smp_service_groups.cluster_smp_sg(),

@@ -39,6 +39,11 @@
             "name": "delete_acls",
             "input_type": "delete_acls_request",
             "output_type": "delete_acls_reply"
+        },
+        {
+            "name": "get_reconciliation_state",
+            "input_type": "reconciliation_state_request",
+            "output_type": "reconciliation_state_reply"
         }
     ]
 }
