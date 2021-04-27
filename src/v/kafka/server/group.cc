@@ -1178,6 +1178,37 @@ void group::fail_offset_commit(
 
 void group::reset_tx_state(model::term_id term) { _term = term; }
 
+ss::future<txn_offset_commit_response>
+group::store_txn_offsets(txn_offset_commit_request r) {
+    if (_partition->term() != _term) {
+        co_return txn_offset_commit_response(
+          r, error_code::unknown_server_error);
+    }
+
+    model::producer_identity pid{
+      .id = r.data.producer_id, .epoch = r.data.producer_epoch};
+
+    auto tx_it = _volatile_txs.find(pid);
+
+    if (tx_it == _volatile_txs.end()) {
+        co_return txn_offset_commit_response(
+          r, error_code::unknown_server_error);
+    }
+
+    for (const auto& t : r.data.topics) {
+        for (const auto& p : t.partitions) {
+            model::topic_partition tp(t.name, p.partition_index);
+            volatile_offset md{
+              .offset = p.committed_offset,
+              .leader_epoch = p.committed_leader_epoch,
+              .metadata = p.committed_metadata};
+            tx_it->second.offsets[tp] = md;
+        }
+    }
+
+    co_return txn_offset_commit_response(r, error_code::none);
+}
+
 ss::future<offset_commit_response>
 group::store_offsets(offset_commit_request&& r) {
     cluster::simple_batch_builder builder(
@@ -1246,6 +1277,25 @@ group::store_offsets(offset_commit_request&& r) {
       });
 }
 
+ss::future<txn_offset_commit_response>
+group::handle_txn_offset_commit(txn_offset_commit_request r) {
+    if (in_state(group_state::dead)) {
+        co_return txn_offset_commit_response(
+          r, error_code::coordinator_not_available);
+    } else if (
+      in_state(group_state::empty) || in_state(group_state::stable)
+      || in_state(group_state::preparing_rebalance)) {
+        co_return co_await store_txn_offsets(std::move(r));
+    } else if (in_state(group_state::completing_rebalance)) {
+        co_return txn_offset_commit_response(
+          r, error_code::rebalance_in_progress);
+    } else {
+        vlog(klog.error, "Unexpected group state {} for {}", _state, *this);
+        co_return txn_offset_commit_response(
+          r, error_code::unknown_server_error);
+    }
+}
+
 ss::future<offset_commit_response>
 group::handle_offset_commit(offset_commit_request&& r) {
     if (in_state(group_state::dead)) {
@@ -1305,6 +1355,8 @@ group::handle_offset_fetch(offset_fetch_request&& r) {
               .metadata = e.second.metadata,
               .error_code = error_code::none,
             };
+            // BUG: support leader_epoch (KIP-320)
+            // https://github.com/vectorizedio/redpanda/issues/1181
             tmp[e.first.topic].push_back(std::move(p));
         }
         for (auto& e : tmp) {

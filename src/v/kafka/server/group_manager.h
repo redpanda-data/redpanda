@@ -21,6 +21,7 @@
 #include "kafka/protocol/offset_commit.h"
 #include "kafka/protocol/offset_fetch.h"
 #include "kafka/protocol/sync_group.h"
+#include "kafka/protocol/txn_offset_commit.h"
 #include "kafka/server/group.h"
 #include "kafka/server/group_stm.h"
 #include "kafka/server/member.h"
@@ -136,6 +137,9 @@ public:
     ss::future<offset_commit_response>
     offset_commit(offset_commit_request&& request);
 
+    ss::future<txn_offset_commit_response>
+    txn_offset_commit(txn_offset_commit_request&& request);
+
     /// \brief Handle a OffsetFetch request
     ss::future<offset_fetch_response>
     offset_fetch(offset_fetch_request&& request);
@@ -210,7 +214,7 @@ private:
       ss::lw_shared_ptr<cluster::partition> p,
       ss::lowres_clock::time_point timeout);
 
-    [[maybe_unused]] ss::lw_shared_ptr<attached_partition>
+    ss::lw_shared_ptr<attached_partition>
     get_attached_partition(model::ntp ntp) {
         auto it = _partitions.find(ntp);
         if (it == _partitions.end()) {

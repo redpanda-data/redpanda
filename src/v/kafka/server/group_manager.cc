@@ -402,6 +402,7 @@ ss::future<> recovery_batch_consumer::handle_group_metadata(
 ss::future<> recovery_batch_consumer::handle_offset_metadata(
   iobuf key_buf, std::optional<iobuf> val_buf) {
     auto key = reflection::from_iobuf<group_log_offset_key>(std::move(key_buf));
+    model::topic_partition tp(key.topic, key.partition);
 
     if (val_buf) {
         auto metadata = reflection::from_iobuf<group_log_offset_metadata>(
@@ -412,12 +413,12 @@ ss::future<> recovery_batch_consumer::handle_offset_metadata(
         // always take the latest entry in the log.
         auto [group_it, _] = st.groups.try_emplace(key.group, group_stm());
         group_it->second.update_offset(
-          key, batch_base_offset, std::move(metadata));
+          tp, batch_base_offset, std::move(metadata));
     } else {
         // tombstone
         auto group_it = st.groups.find(key.group);
         if (group_it != st.groups.end()) {
-            group_it->second.remove_offset(key);
+            group_it->second.remove_offset(tp);
         }
     }
 
@@ -566,6 +567,44 @@ group_manager::leave_group(leave_group_request&& r) {
         klog.trace("group does not exist");
         return make_leave_error(error_code::unknown_member_id);
     }
+}
+
+ss::future<txn_offset_commit_response>
+group_manager::txn_offset_commit(txn_offset_commit_request&& r) {
+    auto p = get_attached_partition(r.ntp);
+    if (!p || !p->catchup_lock.try_read_lock()) {
+        // transaction operations can't run in parallel with loading
+        // state from the log (happens once per term change)
+        vlog(klog.trace, "can't process a tx: coordinator_load_in_progress");
+        return ss::make_ready_future<txn_offset_commit_response>(
+          txn_offset_commit_response(
+            r, error_code::coordinator_load_in_progress));
+    }
+    p->catchup_lock.read_unlock();
+
+    return p->catchup_lock.hold_read_lock().then(
+      [this, p, r = std::move(r)](ss::basic_rwlock<>::holder unit) mutable {
+          auto error = validate_group_status(
+            r.ntp, r.data.group_id, offset_commit_api::key);
+          if (error != error_code::none) {
+              return ss::make_ready_future<txn_offset_commit_response>(
+                txn_offset_commit_response(r, error));
+          }
+
+          auto group = get_group(r.data.group_id);
+          if (!group) {
+              // <kafka>the group is not relying on Kafka for group management,
+              // so allow the commit</kafka>
+
+              group = ss::make_lw_shared<kafka::group>(
+                r.data.group_id, group_state::empty, _conf, p->partition);
+              _groups.emplace(r.data.group_id, group);
+              _groups.rehash(0);
+          }
+
+          return group->handle_txn_offset_commit(std::move(r))
+            .finally([unit = std::move(unit)] {});
+      });
 }
 
 ss::future<offset_commit_response>

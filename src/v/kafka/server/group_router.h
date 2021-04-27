@@ -133,6 +133,10 @@ public:
         return route(std::move(request), &group_manager::offset_commit);
     }
 
+    auto txn_offset_commit(txn_offset_commit_request&& request) {
+        return route(std::move(request), &group_manager::txn_offset_commit);
+    }
+
     auto offset_fetch(offset_fetch_request&& request) {
         return route(std::move(request), &group_manager::offset_fetch);
     }
