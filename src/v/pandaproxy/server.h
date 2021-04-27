@@ -61,9 +61,13 @@ public:
       = ss::noncopyable_function<ss::future<reply_t>(request_t, reply_t)>;
 
     struct route_t {
-        ss::sstring api;
         ss::path_description path_desc;
         function_handler handler;
+    };
+
+    struct routes_t {
+        ss::sstring api;
+        std::vector<route_t> routes;
     };
 
     server() = delete;
@@ -79,7 +83,7 @@ public:
       pandaproxy::context_t ctx);
 
     void route(route_t route);
-    void route(std::vector<route_t>&& routes);
+    void routes(routes_t&& routes);
 
     ss::future<> start();
     ss::future<> stop();

@@ -1,13 +1,5 @@
 set (swagger_deps
-  get_topics_names
-  get_topics_records
-  post_topics_name
-  create_consumer
-  remove_consumer
-  subscribe_consumer
-  consumer_fetch
-  get_consumer_offsets
-  post_consumer_offsets
+  v1
 )
 
 foreach(swagger_dep ${swagger_deps})

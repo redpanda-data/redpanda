@@ -5,15 +5,8 @@
     "version": "0.0.1"
   },
   "host": "{{Host}}",
-  "basePath": "/v1",
+  "basePath": "/",
   "schemes": [
     "http"
   ],
-  "consumes": [
-    "application/vnd.kafka.binary.v2+json"
-  ],
-  "produces": [
-    "application/vnd.kafka.binary.v2+json"
-  ],
   "paths": {
-    

@@ -1,0 +1,532 @@
+"/consumers/{group_name}": {
+        "post": {
+          "summary": "Create a consumer for the group",
+          "operationId": "create_consumer",
+          "consumes": ["application/vnd.kafka.v2+json"],
+          "parameters": [
+            {
+              "name": "group_name",
+              "in": "path",
+              "required": true,
+              "type": "string"
+            },
+            {
+              "name": "properties",
+              "in": "body",
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "format": {
+                    "type": "string",
+                    "description": "oneOf: ['binary','json']"
+                  },
+                  "name": {
+                    "type": "string",
+                    "description": "Name of the consumer"
+                  },
+                  "auto.offset.reset": {
+                    "type": "string",
+                    "description": "oneOf: ['earliest']"
+                  },
+                  "auto.commit.enable": {
+                    "type": "string",
+                    "description": "oneOf: ['false']"
+                  },
+                  "fetch.min.bytes": {
+                    "type": "string"
+                  },
+                  "consumer.request.timeout.ms": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          ],
+          "produces": ["application/vnd.kafka.v2+json"],
+          "responses": {
+            "200": {
+              "description": "OK",
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "instance_id": {
+                    "type": "string"
+                  },
+                  "base_uri": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "409": {
+              "description": "Consumer already exists",
+              "schema": {
+                "$ref": "#/definitions/error_body"
+              }
+            },
+            "422": {
+              "description": "Invalid configuration",
+              "schema": {
+                "$ref": "#/definitions/error_body"
+              }
+            }
+          }
+        }
+      },
+      "/consumers/{group_name}/instances/{instance}": {
+        "delete": {
+          "summary": "Remove a consumer for the group",
+          "operationId": "remove_consumer",
+          "consumes": ["application/vnd.kafka.v2+json"],
+          "parameters": [
+            {
+              "name": "group_name",
+              "in": "path",
+              "required": true,
+              "type": "string"
+            },
+            {
+              "name": "instance",
+              "in": "path",
+              "required": true,
+              "type": "string"
+            }
+          ],
+          "produces": ["application/vnd.kafka.v2+json"],
+          "responses": {
+            "204": {
+              "description": ""
+            },
+            "404": {
+              "description": "Consumer not found",
+              "schema": {
+                "$ref": "#/definitions/error_body"
+              }
+            }
+          }
+        }
+      },
+      "/consumers/{group_name}/instances/{instance}/offsets": {
+        "get": {
+          "summary": "Get committed group offsets for given partitions",
+          "operationId": "get_consumer_offsets",
+          "consumes": ["application/vnd.kafka.v2+json"],
+          "parameters": [
+            {
+              "name": "group_name",
+              "in": "path",
+              "required": true,
+              "type": "string"
+            },
+            {
+              "name": "instance",
+              "in": "path",
+              "required": true,
+              "type": "string"
+            },
+            {
+              "name": "offsets",
+              "in": "body",
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "partitions": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "topic": {
+                          "type": "string"
+                        },
+                        "partition": {
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ],
+          "produces": ["application/vnd.kafka.v2+json"],
+          "responses": {
+            "200": {
+              "description": "",
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "offsets": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "topic": {
+                          "type": "string"
+                        },
+                        "partition": {
+                          "type": "integer"
+                        },
+                        "offset": {
+                          "type": "integer"
+                        },
+                        "metadata": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "404": {
+              "description": "Consumer, topic, or partition not found",
+              "schema": {
+                "$ref": "#/definitions/error_body"
+              }
+            }
+          }
+        },
+        "post": {
+          "summary": "Commit offsets for a consumer",
+          "operationId": "post_consumer_offsets",
+          "consumes": ["application/vnd.kafka.v2+json"],
+          "parameters": [
+            {
+              "name": "group_name",
+              "in": "path",
+              "required": true,
+              "type": "string"
+            },
+            {
+              "name": "instance",
+              "in": "path",
+              "required": true,
+              "type": "string"
+            },
+            {
+              "name": "offsets",
+              "in": "body",
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "partitions": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "topic": {
+                          "type": "string"
+                        },
+                        "partition": {
+                          "type": "integer"
+                        },
+                        "offset": {
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ],
+          "produces": ["application/vnd.kafka.v2+json"],
+          "responses": {
+            "204": {
+              "description": ""
+            },
+            "404": {
+              "description": "Consumer, topic, or partition not found",
+              "schema": {
+                "$ref": "#/definitions/error_body"
+              }
+            }
+          }
+        }
+      },
+      "/consumers/{group_name}/instances/{instance}/records": {
+        "get": {
+          "summary": "Fetch data for the consumer assignments",
+          "operationId": "consumer_fetch",
+          "consumes": ["application/vnd.kafka.v2+json"],
+          "parameters": [
+            {
+              "name": "group_name",
+              "in": "path",
+              "required": true,
+              "type": "string"
+            },
+            {
+              "name": "instance",
+              "in": "path",
+              "required": true,
+              "type": "string"
+            },
+            {
+              "name": "timeout",
+              "in": "query",
+              "required": false,
+              "type": "integer"
+            },
+            {
+              "name": "max_bytes",
+              "in": "query",
+              "required": false,
+              "type": "integer"
+            }
+          ],
+          "produces": [
+            "application/vnd.kafka.json.v2+json",
+            "application/vnd.kafka.binary.v2+json"
+          ],
+          "responses": {
+            "200": {
+              "description": "",
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "records": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "topic": {
+                          "type": "string"
+                        },
+                        "key": {
+                          "type": "string"
+                        },
+                        "value": {
+                          "type": "string"
+                        },
+                        "partition": {
+                          "type": "integer"
+                        },
+                        "offset": {
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "404": {
+              "description": "Consumer, topic, or partition not found",
+              "schema": {
+                "$ref": "#/definitions/error_body"
+              }
+            }
+          }
+        }
+      },
+      "/consumers/{group_name}/instances/{instance}/subscription": {
+      "post": {
+        "summary": "Subscribe a consumer group to topics",
+        "operationId": "subscribe_consumer",
+        "consumes": ["application/vnd.kafka.v2+json"],
+        "parameters": [
+          {
+            "name": "group_name",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "instance",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "topics",
+            "in": "body",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": ""
+          },
+          "404": {
+            "description": "Consumer, topic, or partition not found",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          }
+        }
+      }
+    },
+    "/topics": {
+      "get": {
+        "summary": "Get a list of Kafka topics.",
+        "operationId": "get_topics_names",
+        "responses": {
+          "200": {
+            "description": "Array of topic names",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/topics/{topic_name}": {
+      "post": {
+        "summary": "Produce messages to a topic.",
+        "operationId": "post_topics_name",
+        "consumes": [
+          "application/vnd.kafka.json.v2+json",
+          "application/vnd.kafka.binary.v2+json"
+        ],
+        "parameters": [
+          {
+            "name": "topic_name",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "records",
+            "in": "body",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "records": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "key": {
+                        "type": "string"
+                      },
+                      "value": {
+                        "type": "string"
+                      },
+                      "partition": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "produces": ["application/vnd.kafka.v2+json"],
+        "responses": {
+          "200": {
+            "description": "",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "offsets": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "partition": {
+                        "type": "integer"
+                      },
+                      "offset": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/topics/{topic_name}/partitions/{partition_id}/records": {
+      "get": {
+        "summary": "Get records from a topic.",
+        "operationId": "get_topics_records",
+        "consumes": ["application/vnd.kafka.v2+json"],
+        "parameters": [
+          {
+            "name": "topic_name",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "partition_id",
+            "in": "path",
+            "required": true,
+            "type": "integer"
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": true,
+            "type": "integer"
+          },
+          {
+            "name": "timeout",
+            "in": "query",
+            "required": true,
+            "type": "integer"
+          },
+          {
+            "name": "max_bytes",
+            "in": "query",
+            "required": true,
+            "type": "integer"
+          }
+        ],
+        "produces": [
+          "application/vnd.kafka.json.v2+json",
+          "application/vnd.kafka.binary.v2+json"
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "records": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "topic": {
+                        "type": "string"
+                      },
+                      "key": {
+                        "type": "string"
+                      },
+                      "value": {
+                        "type": "string"
+                      },
+                      "partition": {
+                        "type": "integer"
+                      },
+                      "offset": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Topic or partition not found",
+            "schema": {
+              "$ref": "#/definitions/error_body"
+            }
+          }
+        }
+      }
+    }
