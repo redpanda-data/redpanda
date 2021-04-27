@@ -30,6 +30,7 @@
 #include "seastarx.h"
 
 #include <seastar/core/abort_source.hh>
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/sharded.hh>
 
@@ -111,6 +112,9 @@ struct recovery_batch_consumer_state;
  */
 class group_manager {
 public:
+    static constexpr model::control_record_version fence_control_record_version{
+      0};
+
     group_manager(
       ss::sharded<raft::group_manager>& gm,
       ss::sharded<cluster::partition_manager>& pm,
@@ -139,6 +143,9 @@ public:
 
     ss::future<txn_offset_commit_response>
     txn_offset_commit(txn_offset_commit_request&& request);
+
+    ss::future<cluster::begin_group_tx_reply>
+    begin_tx(cluster::begin_group_tx_request&&);
 
     /// \brief Handle a OffsetFetch request
     ss::future<offset_fetch_response>
@@ -178,17 +185,20 @@ private:
         ss::abort_source as;
         ss::lw_shared_ptr<cluster::partition> partition;
         ss::basic_rwlock<> catchup_lock;
+        model::term_id term{-1};
+        absl::flat_hash_map<model::producer_id, model::producer_epoch>
+          fence_pid_epoch;
 
         explicit attached_partition(ss::lw_shared_ptr<cluster::partition> p)
           : loading(true)
           , partition(std::move(p)) {}
     };
 
-    absl::node_hash_map<model::ntp, ss::lw_shared_ptr<attached_partition>>
-      _partitions;
-
     cluster::notification_id_type _leader_notify_handle;
     cluster::notification_id_type _topic_table_notify_handle;
+
+    ss::future<cluster::begin_group_tx_reply> do_begin_tx(
+      ss::lw_shared_ptr<attached_partition>, cluster::begin_group_tx_request&&);
 
     void handle_leader_change(
       model::term_id,
@@ -207,7 +217,7 @@ private:
 
     ss::future<> recover_partition(
       model::term_id,
-      ss ::lw_shared_ptr<cluster::partition>,
+      ss::lw_shared_ptr<attached_partition>,
       recovery_batch_consumer_state);
 
     ss::future<> inject_noop(
@@ -228,6 +238,10 @@ private:
     ss::sharded<cluster::topic_table>& _topic_table;
     config::configuration& _conf;
     absl::node_hash_map<group_id, group_ptr> _groups;
+    absl::node_hash_map<model::ntp, ss::lw_shared_ptr<attached_partition>>
+      _partitions;
+    //
+
     model::broker _self;
 };
 
@@ -254,6 +268,8 @@ struct group_log_record_key {
  */
 struct recovery_batch_consumer_state {
     absl::node_hash_map<kafka::group_id, group_stm> groups;
+    absl::flat_hash_map<model::producer_id, model::producer_epoch>
+      fence_pid_epoch;
 };
 
 struct recovery_batch_consumer {

@@ -12,6 +12,7 @@
 #include "bytes/bytes.h"
 #include "cluster/partition.h"
 #include "cluster/simple_batch_builder.h"
+#include "cluster/tx_utils.h"
 #include "config/configuration.h"
 #include "kafka/protocol/schemata/describe_groups_response.h"
 #include "kafka/protocol/sync_group.h"
@@ -1178,6 +1179,33 @@ void group::fail_offset_commit(
 
 void group::reset_tx_state(model::term_id term) { _term = term; }
 
+cluster::begin_group_tx_reply make_begin_tx_reply(cluster::tx_errc ec) {
+    cluster::begin_group_tx_reply reply;
+    reply.ec = ec;
+    return reply;
+}
+
+ss::future<cluster::begin_group_tx_reply>
+group::begin_tx(cluster::begin_group_tx_request r) {
+    if (_partition->term() != _term) {
+        co_return make_begin_tx_reply(cluster::tx_errc::timeout);
+    }
+
+    // TODO: https://app.clubhouse.io/vectorized/story/2194
+    // (auto-abort txes with the the same producer_id but older epoch)
+
+    auto [_, inserted] = _volatile_txs.try_emplace(r.pid, volatile_tx());
+
+    if (!inserted) {
+        co_return make_begin_tx_reply(cluster::tx_errc::timeout);
+    }
+
+    cluster::begin_group_tx_reply reply;
+    reply.etag = _term;
+    reply.ec = cluster::tx_errc::none;
+    co_return reply;
+}
+
 ss::future<txn_offset_commit_response>
 group::store_txn_offsets(txn_offset_commit_request r) {
     if (_partition->term() != _term) {
@@ -1293,6 +1321,28 @@ group::handle_txn_offset_commit(txn_offset_commit_request r) {
         vlog(klog.error, "Unexpected group state {} for {}", _state, *this);
         co_return txn_offset_commit_response(
           r, error_code::unknown_server_error);
+    }
+}
+
+ss::future<cluster::begin_group_tx_reply>
+group::handle_begin_tx(cluster::begin_group_tx_request r) {
+    if (in_state(group_state::dead)) {
+        cluster::begin_group_tx_reply reply;
+        reply.ec = cluster::tx_errc::coordinator_not_available;
+        co_return reply;
+    } else if (
+      in_state(group_state::empty) || in_state(group_state::stable)
+      || in_state(group_state::preparing_rebalance)) {
+        co_return co_await begin_tx(std::move(r));
+    } else if (in_state(group_state::completing_rebalance)) {
+        cluster::begin_group_tx_reply reply;
+        reply.ec = cluster::tx_errc::rebalance_in_progress;
+        co_return reply;
+    } else {
+        vlog(klog.error, "Unexpected group state {} for {}", _state, *this);
+        cluster::begin_group_tx_reply reply;
+        reply.ec = cluster::tx_errc::timeout;
+        co_return reply;
     }
 }
 
