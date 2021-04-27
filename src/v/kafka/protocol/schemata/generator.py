@@ -221,6 +221,17 @@ path_type_map = {
             },
         },
     },
+    "FetchResponseData": {
+        "Topics": {
+            "Partitions": {
+                "PartitionIndex": ("model::partition_id", "int32"),
+                "HighWatermark": ("model::offset", "int64"),
+                "LastStableOffset": ("model::offset", "int64"),
+                "LogStartOffset": ("model::offset", "int64"),
+                "Records": ("kafka::batch_reader", "fetch_record_set"),
+            },
+        },
+    },
 }
 
 # a few kafka field types specify an entity type
@@ -250,6 +261,7 @@ basic_type_map = dict(
     int32=("int32_t", "read_int32()"),
     int64=("int64_t", "read_int64()"),
     iobuf=("iobuf", None, "read_fragmented_nullable_bytes()"),
+    fetch_record_set=("batch_reader", None, "read_nullable_batch_reader()"),
 )
 
 # apply a rename to a struct. this is useful when there is a type name conflict
@@ -278,7 +290,8 @@ def make_context_field(path):
     structure. This structure will not be encoded/decoded on the wire and is
     used to add some extra context.
     """
-    return None
+    if path == ("FetchResponseData", "Topics", "Partitions"):
+        return ("bool", "has_to_be_included{true}")
 
 
 # a listing of expected struct types
@@ -345,6 +358,9 @@ STRUCT_TYPES = [
     "FetchTopic",
     "ForgottenTopic",
     "FetchPartition",
+    "FetchableTopicResponse",
+    "FetchablePartitionResponse",
+    "AbortedTransaction",
 ]
 
 SCALAR_TYPES = list(basic_type_map.keys())
@@ -665,6 +681,7 @@ HEADER_TEMPLATE = """
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
+#include "kafka/protocol/batch_reader.h"
 #include "kafka/protocol/errors.h"
 #include "model/timestamp.h"
 #include "seastarx.h"
