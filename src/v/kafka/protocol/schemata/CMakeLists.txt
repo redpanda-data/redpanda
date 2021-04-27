@@ -52,7 +52,8 @@ set(schemata
   produce_request.json
   produce_response.json
   metadata_request.json
-  metadata_response.json)
+  metadata_response.json
+  fetch_request.json)
 
 set(srcs)
 foreach(schema ${schemata})

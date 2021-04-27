@@ -204,6 +204,15 @@ path_type_map = {
             },
         },
     },
+    "FetchRequestData": {
+        "MaxWait": ("std::chrono::milliseconds", "int32"),
+        "Topics": {
+            "FetchPartitions": {
+                "PartitionIndex": ("model::partition_id", "int32"),
+                "FetchOffset": ("model::offset", "int64"),
+            },
+        },
+    },
 }
 
 # a few kafka field types specify an entity type
@@ -321,6 +330,9 @@ STRUCT_TYPES = [
     "MetadataRequestTopic",
     "MetadataResponseTopic",
     "MetadataResponsePartition",
+    "FetchableTopic",
+    "ForgottenTopic",
+    "FetchPartition",
 ]
 
 SCALAR_TYPES = list(basic_type_map.keys())
