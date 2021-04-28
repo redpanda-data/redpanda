@@ -51,4 +51,4 @@ require (
 	mvdan.cc/sh/v3 v3.2.1
 )
 
-go 1.13
+go 1.16
