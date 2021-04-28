@@ -15,6 +15,8 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+
+	"github.com/lestrrat-go/jwx/jwt"
 )
 
 type TokenResponse struct {
@@ -46,6 +48,7 @@ type DeviceCodeResponse struct {
 type AuthClient interface {
 	GetToken(deviceCode string) (*TokenResponse, error)
 	GetDeviceCode(audience string) (*DeviceCodeResponse, error)
+	VerifyToken(token string) (bool, error)
 }
 
 type Auth0Client struct {
@@ -134,4 +137,12 @@ func (ac *Auth0Client) GetDeviceCode(
 		return nil, fmt.Errorf("error unmarshalling the device code response: %w", err)
 	}
 	return &response, nil
+}
+
+func (ac *Auth0Client) VerifyToken(token string) (bool, error) {
+	parsed, err := jwt.Parse([]byte(token))
+	if err != nil {
+		return false, fmt.Errorf("error parsing jwt token. %w", err)
+	}
+	return jwt.Validate(parsed) == nil, nil
 }
