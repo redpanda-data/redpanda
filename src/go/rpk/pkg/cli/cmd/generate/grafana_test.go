@@ -42,7 +42,7 @@ func TestGrafanaHostNoServer(t *testing.T) {
 
 	err := cmd.Execute()
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "Get http://localhost:8888/metrics: dial tcp")
+	require.Contains(t, err.Error(), "Get \"http://localhost:8888/metrics\": dial tcp")
 	require.Contains(t, err.Error(), "connect: connection refused")
 }
 

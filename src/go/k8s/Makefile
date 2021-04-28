@@ -130,7 +130,7 @@ controller-gen:
 # Download kuttl locally if necessary
 KUTTL = $(shell pwd)/bin/kubectl-kuttl
 kuttl:
-	$(call go-get-tool,$(KUTTL),github.com/kudobuilder/kuttl/cmd/kubectl-kuttl@v0.8.0)
+	$(call go-get-tool,$(KUTTL),github.com/kudobuilder/kuttl/cmd/kubectl-kuttl@v0.8.1)
 
 # Download crlfmt locally if necessary
 CRLFMT = $(shell pwd)/bin/crlfmt
