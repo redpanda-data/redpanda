@@ -53,10 +53,13 @@ type Auth0Client struct {
 	auth0Domain string
 }
 
+var (
+	// auth0 clientId
+	// TODO(av) replace default with production clientId
+	clientId string = "yMMbfD6xdKXW9DmIqAZDzTBPHgfI5MyX"
+)
+
 const (
-	// CLI clientId
-	// TODO(av) replace with production clientId
-	clientId = "yMMbfD6xdKXW9DmIqAZDzTBPHgfI5MyX"
 	// TODO(av) should be configurable
 	defaultAuth0Domain = "vectorized-dev.us.auth0.com"
 
@@ -76,7 +79,7 @@ func NewDefaultAuth0Client() AuthClient {
 // getToken queries auth0 token endpoint waiting for token to be issued
 // https://auth0.com/docs/flows/call-your-api-using-the-device-authorization-flow#request-tokens
 func (ac *Auth0Client) GetToken(deviceCode string) (*TokenResponse, error) {
-	requestBody := []byte(fmt.Sprintf("grant_type=urn:ietf:params:oauth:grant-type:device_code&device_code=%s&client_id=%s", deviceCode, clientId))
+	requestBody := []byte(fmt.Sprintf("grant_type=urn:ietf:params:oauth:grant-type:device_code&device_code=%s&client_id=%s", deviceCode, ac.clientId))
 	deviceCodeUrl := fmt.Sprintf("https://%s/%s", defaultAuth0Domain, tokenPath)
 	req, err := http.NewRequest(http.MethodPost, deviceCodeUrl, bytes.NewBuffer(requestBody))
 	if err != nil {
@@ -106,7 +109,7 @@ func (ac *Auth0Client) GetToken(deviceCode string) (*TokenResponse, error) {
 func (ac *Auth0Client) GetDeviceCode(
 	audience string,
 ) (*DeviceCodeResponse, error) {
-	requestBody := []byte(fmt.Sprintf("client_id=%s&audience=%s", clientId, yakAudience))
+	requestBody := []byte(fmt.Sprintf("client_id=%s&audience=%s", ac.clientId, yakAudience))
 	deviceCodeUrl := fmt.Sprintf("https://%s/%s", defaultAuth0Domain, deviceCodePath)
 	req, err := http.NewRequest(http.MethodPost, deviceCodeUrl, bytes.NewBuffer(requestBody))
 	if err != nil {
