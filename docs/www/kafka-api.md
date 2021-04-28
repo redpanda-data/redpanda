@@ -2402,12 +2402,6 @@ The following metrics are available on producer instances.
 
 kafka.producer:type=producer-metrics,client-id="{client-id}"
 
-</div>
-
-</div>
-
-</div>
-
 Attribute name
 
 Description
