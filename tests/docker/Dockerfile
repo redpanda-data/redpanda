@@ -21,14 +21,14 @@ ENV TZ="UTC" \
 # - allow user env variables in ssh sessions
 RUN apt update && \
     apt install -y \
-      python3-pip \
-      openssh-server \
-      default-jre \
       build-essential \
-      libatomic1 \
       curl \
+      default-jre \
       iptables \
-      kafkacat && \
+      kafkacat \
+      libatomic1 \
+      openssh-server \
+      python3-pip && \
     rm -rf /var/lib/apt/lists/* && \
     echo 'PermitUserEnvironment yes' >> /etc/ssh/sshd_config
 
