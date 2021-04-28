@@ -17,8 +17,9 @@ import (
 
 func NewCloudCommand(fs afero.Fs) *cobra.Command {
 	command := &cobra.Command{
-		Use:   "cloud",
-		Short: "Interact with Vectorized Cloud",
+		Use:    "cloud",
+		Short:  "Interact with Vectorized Cloud",
+		Hidden: true,
 	}
 
 	command.AddCommand(cloud.NewLoginCommand(fs))
