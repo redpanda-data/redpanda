@@ -144,7 +144,12 @@ scheduler_service_impl::get_archival_service_config() {
       .interval
       = config::shard_local_cfg().cloud_storage_reconciliation_ms.value(),
       .connection_limit = s3_connection_limit(
-        config::shard_local_cfg().cloud_storage_max_connections.value())};
+        config::shard_local_cfg().cloud_storage_max_connections.value()),
+      .svc_metrics_disabled = service_metrics_disabled(
+        static_cast<bool>(disable_metrics)),
+      .ntp_metrics_disabled = per_ntp_metrics_disabled(
+        static_cast<bool>(disable_metrics)),
+    };
     vlog(archival_log.debug, "Archival configuration generated: {}", cfg);
     co_return cfg;
 }
@@ -161,7 +166,8 @@ scheduler_service_impl::scheduler_service_impl(
   , _storage_api(api)
   , _jitter(conf.interval, 1ms)
   , _gc_jitter(conf.gc_interval, 1ms)
-  , _stop_limit(conf.connection_limit()) {}
+  , _stop_limit(conf.connection_limit())
+  , _probe(conf.svc_metrics_disabled) {}
 
 scheduler_service_impl::scheduler_service_impl(
   ss::sharded<storage::api>& api,
@@ -235,6 +241,7 @@ ss::future<> scheduler_service_impl::upload_topic_manifest(
               size_bytes,
               std::move(istr),
               tags);
+            _probe.topic_manifest_upload();
         } catch (const s3::rest_error_response& err) {
             vlog(
               archival_log.error,
@@ -267,7 +274,7 @@ scheduler_service_impl::create_archivers(std::vector<model::ntp> to_create) {
                     return ss::now();
                 }
                 auto svc = ss::make_lw_shared<ntp_archiver>(
-                  log->config(), _conf, _pool);
+                  log->config(), _conf, _pool, _probe);
                 return ss::repeat([this, svc, ntp] {
                     return svc->download_manifest()
                       .then(
@@ -280,6 +287,7 @@ scheduler_service_impl::create_archivers(std::vector<model::ntp> to_create) {
                                   archival_log.info,
                                   "Found manifest for partition {}",
                                   svc->get_ntp());
+                                _probe.start_archiving_ntp();
                                 return ss::make_ready_future<
                                   ss::stop_iteration>(ss::stop_iteration::yes);
                             case download_manifest_result::notfound:
@@ -291,12 +299,14 @@ scheduler_service_impl::create_archivers(std::vector<model::ntp> to_create) {
                                 (void)upload_topic_manifest(
                                   model::topic_namespace_view(svc->get_ntp()),
                                   svc->get_revision_id());
+                                _probe.start_archiving_ntp();
                                 return ss::make_ready_future<
                                   ss::stop_iteration>(ss::stop_iteration::yes);
                             case download_manifest_result::backoff:
                                 vlog(
                                   archival_log.trace,
                                   "Manifest download exponential backoff");
+                                _probe.manifest_backoff();
                                 return ss::sleep_abortable(
                                          _backoff.next_jitter_duration(), _as)
                                   .then([] {
@@ -358,12 +368,14 @@ scheduler_service_impl::remove_archivers(std::vector<model::ntp> to_remove) {
             .finally([this, ntp] {
                 vlog(archival_log.info, "archiver stopped {}", ntp.path());
                 _queue.erase(ntp);
+                _probe.stop_archiving_ntp();
             });
       });
 }
 
 ss::future<> scheduler_service_impl::reconcile_archivers() {
     gate_guard g(_gate);
+    _probe.reconciliation();
     cluster::partition_manager& pm = _partition_manager.local();
     storage::api& api = _storage_api.local();
     storage::log_manager& lm = api.log_mgr();
@@ -476,7 +488,8 @@ ss::future<> scheduler_service_impl::run_uploads() {
                   "Successfuly upload {} segments",
                   total.num_succeded);
             }
-            // TODO: use probe to report num_succeded and num_failed
+            _probe.successful_upload(total.num_succeded);
+            _probe.failed_upload(total.num_failed);
         }
     } catch (const ss::sleep_aborted&) {
         vlog(archival_log.debug, "Upload loop aborted");

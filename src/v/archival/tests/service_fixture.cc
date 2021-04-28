@@ -10,6 +10,7 @@
 
 #include "archival/tests/service_fixture.h"
 
+#include "archival/types.h"
 #include "bytes/iobuf.h"
 #include "bytes/iobuf_parser.h"
 #include "random/generators.h"
@@ -85,6 +86,8 @@ archival::configuration get_configuration() {
     conf.client_config = s3conf;
     conf.bucket_name = s3::bucket_name("test-bucket");
     conf.connection_limit = archival::s3_connection_limit(2);
+    conf.svc_metrics_disabled = archival::service_metrics_disabled(true);
+    conf.ntp_metrics_disabled = archival::per_ntp_metrics_disabled(true);
     return conf;
 }
 

@@ -50,11 +50,14 @@ std::ostream& operator<<(std::ostream& o, const configuration& cfg) {
 ntp_archiver::ntp_archiver(
   const storage::ntp_config& ntp,
   const configuration& conf,
-  s3::client_pool& pool)
-  : _ntp(ntp.ntp())
+  s3::client_pool& pool,
+  service_probe& svc_probe)
+  : _svc_probe(svc_probe)
+  , _probe(conf.ntp_metrics_disabled, ntp.ntp())
+  , _ntp(ntp.ntp())
   , _rev(ntp.get_revision())
   , _pool(pool)
-  , _policy(_ntp)
+  , _policy(_ntp, svc_probe, std::ref(_probe))
   , _bucket(conf.bucket_name)
   , _remote(_ntp, _rev)
   , _gate() {
@@ -132,6 +135,7 @@ ss::future<> ntp_archiver::upload_manifest() {
             auto [is, size] = _remote.serialize();
             co_await client->put_object(
               _bucket, path, size, std::move(is), tags);
+            _svc_probe.partition_manifest_upload();
         } catch (const s3::rest_error_response& err) {
             vlog(
               archival_log.error,
@@ -161,6 +165,7 @@ ss::future<> ntp_archiver::upload_manifest() {
               "Uploading manifest for {}, {}ms backoff required",
               _ntp,
               backoff.count());
+            _svc_probe.manifest_backoff();
             co_await ss::sleep_abortable(
               backoff + _backoff.next_jitter_duration(), _as);
             backoff *= 2;
@@ -247,6 +252,7 @@ ss::future<bool> ntp_archiver::upload_segment(upload_candidate candidate) {
               "Uploading segment for {}, {}ms backoff required",
               _ntp,
               backoff.count());
+            _svc_probe.upload_backoff();
             co_await ss::sleep_abortable(
               backoff + _backoff.next_jitter_duration(), _as);
             backoff *= 2;
@@ -278,6 +284,7 @@ ntp_archiver::upload_next_candidates(storage::log_manager& lm) {
     std::vector<ss::future<bool>> flist;
     std::vector<manifest::segment_meta> meta;
     std::vector<ss::sstring> names;
+    std::vector<model::offset> deltas;
     for (size_t i = 0; i < _concurrency; i++) {
         vlog(
           archival_log.debug,
@@ -305,7 +312,10 @@ ntp_archiver::upload_next_candidates(storage::log_manager& lm) {
             offset = meta->committed_offset + model::offset(1);
             continue;
         }
-        offset = upload.source->offsets().committed_offset + model::offset(1);
+        auto committed = upload.source->offsets().committed_offset;
+        auto base = upload.source->offsets().base_offset;
+        offset = committed + model::offset(1);
+        deltas.push_back(committed - base);
         flist.emplace_back(upload_segment(upload));
         manifest::segment_meta m{
           .is_compacted = upload.source->is_compacted_segment(),
@@ -331,6 +341,7 @@ ntp_archiver::upload_next_candidates(storage::log_manager& lm) {
             break;
         }
         _remote.add(segment_name(names[i]), meta[i]);
+        _probe.uploaded(deltas[i]);
     }
     if (total.num_succeded != 0) {
         vlog(

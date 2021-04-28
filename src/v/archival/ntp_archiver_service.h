@@ -11,6 +11,7 @@
 #pragma once
 #include "archival/archival_policy.h"
 #include "archival/manifest.h"
+#include "archival/probe.h"
 #include "archival/types.h"
 #include "model/fundamental.h"
 #include "model/metadata.h"
@@ -21,7 +22,9 @@
 #include <seastar/core/abort_source.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/core/semaphore.hh>
+#include <seastar/core/shared_ptr.hh>
 
+#include <functional>
 #include <map>
 
 namespace archival {
@@ -40,6 +43,10 @@ struct configuration {
     ss::lowres_clock::duration gc_interval;
     /// Number of simultaneous S3 uploads
     s3_connection_limit connection_limit;
+    /// Flag that indicates that service level metrics are disabled
+    service_metrics_disabled svc_metrics_disabled;
+    /// Flag that indicates that ntp-archiver level metrics are disabled
+    per_ntp_metrics_disabled ntp_metrics_disabled;
 };
 
 std::ostream& operator<<(std::ostream& o, const configuration& cfg);
@@ -54,19 +61,17 @@ std::ostream& operator<<(std::ostream& o, const configuration& cfg);
 /// handled by 'archiver_service'.
 class ntp_archiver {
 public:
-    /// Iterator type used to retrieve candidates for upload
-    using back_insert_iterator
-      = std::back_insert_iterator<std::vector<segment_name>>;
-
     /// Create new instance
     ///
     /// \param ntp is an ntp that archiver is responsible for
     /// \param conf is an S3 client configuration
     /// \param pool is a connection pool that should be used to send/recv data
+    /// \param svc_probe is a service level probe (optional)
     ntp_archiver(
       const storage::ntp_config& ntp,
       const configuration& conf,
-      s3::client_pool& pool);
+      s3::client_pool& pool,
+      service_probe& svc_probe);
 
     /// Stop archiver.
     ///
@@ -113,6 +118,8 @@ private:
     /// \return true on success and false otherwise
     ss::future<bool> upload_segment(upload_candidate candidate);
 
+    service_probe& _svc_probe;
+    ntp_level_probe _probe;
     model::ntp _ntp;
     model::revision_id _rev;
     s3::client_pool& _pool;
