@@ -1,6 +1,6 @@
 module github.com/vectorizedio/redpanda/src/go/k8s
 
-go 1.15
+go 1.16
 
 require (
 	github.com/banzaicloud/k8s-objectmatcher v1.5.1
