@@ -12,9 +12,11 @@ package admin
 import (
 	"encoding/json"
 	"io/ioutil"
+	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/Shopify/sarama"
 	"github.com/stretchr/testify/require"
@@ -32,17 +34,34 @@ func TestCreateUser(t *testing.T) {
 	bs, err := json.Marshal(body)
 	require.NoError(t, err)
 
-	ts := httptest.NewServer(
-		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			b, err := ioutil.ReadAll(r.Body)
-			require.NoError(t, err)
-			require.Exactly(t, bs, b)
-			w.WriteHeader(http.StatusOK)
-		}),
-	)
-	defer ts.Close()
+	rand.Seed(time.Now().Unix())
 
-	adminClient, err := NewAdminAPI(ts.URL, nil)
+	nNodes := rand.Int31n(6)
+	urls := []string{}
+
+	for i := 0; i < int(nNodes); i++ {
+		n := i
+		ts := httptest.NewServer(
+			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				b, err := ioutil.ReadAll(r.Body)
+				require.NoError(t, err)
+				require.Exactly(t, bs, b)
+				// Have only one server return OK, to simulate a single
+				// node being the leader and being able to respond.
+				if n == 0 {
+					w.WriteHeader(http.StatusOK)
+				} else {
+					w.WriteHeader(http.StatusInternalServerError)
+				}
+			}),
+		)
+		defer ts.Close()
+
+		urls = append(urls, ts.URL)
+	}
+
+	adminClient, err := NewAdminAPI(urls, nil)
+	require.NoError(t, err)
 	err = adminClient.CreateUser(username, password)
 	require.NoError(t, err)
 }
@@ -50,29 +69,61 @@ func TestCreateUser(t *testing.T) {
 func TestDeleteUser(t *testing.T) {
 	username := "Lola"
 
-	ts := httptest.NewServer(
-		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			require.Exactly(t, "/v1/security/users/Lola", r.URL.Path)
-		}),
-	)
-	defer ts.Close()
+	rand.Seed(time.Now().Unix())
+	nNodes := rand.Int31n(6)
+	urls := []string{}
 
-	adminClient, err := NewAdminAPI(ts.URL, nil)
+	for i := 0; i < int(nNodes); i++ {
+		n := i
+		ts := httptest.NewServer(
+			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				require.Exactly(t, "/v1/security/users/Lola", r.URL.Path)
+
+				// Have only one server return OK, to simulate a single
+				// node being the leader and being able to respond.
+				if n == 0 {
+					w.WriteHeader(http.StatusOK)
+				} else {
+					w.WriteHeader(http.StatusInternalServerError)
+				}
+			}),
+		)
+		defer ts.Close()
+
+		urls = append(urls, ts.URL)
+	}
+
+	adminClient, err := NewAdminAPI(urls, nil)
+	require.NoError(t, err)
 	err = adminClient.DeleteUser(username)
 	require.NoError(t, err)
 }
 
 func TestListUsers(t *testing.T) {
-	ts := httptest.NewServer(
-		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Write([]byte(
-				`["Joss", "lola", "jeff", "tobias"]`,
-			))
-		}),
-	)
-	defer ts.Close()
+	rand.Seed(time.Now().Unix())
+	nNodes := rand.Int31n(6)
+	urls := []string{}
 
-	adminClient, err := NewAdminAPI(ts.URL, nil)
+	for i := 0; i < int(nNodes); i++ {
+		n := i
+		ts := httptest.NewServer(
+			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if n == 0 {
+					w.Write([]byte(
+						`["Joss", "lola", "jeff", "tobias"]`,
+					))
+				} else {
+					w.WriteHeader(http.StatusInternalServerError)
+				}
+			}),
+		)
+		defer ts.Close()
+
+		urls = append(urls, ts.URL)
+	}
+
+	adminClient, err := NewAdminAPI(urls, nil)
+	require.NoError(t, err)
 	users, err := adminClient.ListUsers()
 	require.NoError(t, err)
 	require.Exactly(t, []string{"Joss", "lola", "jeff", "tobias"}, users)

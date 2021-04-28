@@ -10,8 +10,6 @@
 package acl
 
 import (
-	"fmt"
-
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/api/admin"
@@ -27,21 +25,22 @@ const (
 )
 
 func NewUserCommand(tls func() (*config.TLS, error)) *cobra.Command {
-	var apiUrl string
+	var apiUrls []string
 
 	command := &cobra.Command{
 		Use:          "user",
 		Short:        "Manage users",
 		SilenceUsage: true,
 	}
-	command.PersistentFlags().StringVar(
-		&apiUrl,
-		"api-url",
-		fmt.Sprintf("localhost:%d", config.DefaultAdminPort),
-		"The Admin API URL",
+	command.PersistentFlags().StringSliceVar(
+		&apiUrls,
+		"api-urls",
+		[]string{},
+		"The comma-separated list of Admin API addresses (<IP>:<port>)."+
+			" You must specify one for each node.",
 	)
 
-	adminApi := buildAdminAPI(&apiUrl, tls)
+	adminApi := buildAdminAPI(&apiUrls, tls)
 
 	command.AddCommand(NewCreateUserCommand(adminApi))
 	command.AddCommand(NewDeleteUserCommand(adminApi))
@@ -172,13 +171,13 @@ func printUsernames(usernames []string) {
 }
 
 func buildAdminAPI(
-	apiUrl *string, tls func() (*config.TLS, error),
+	apiUrls *[]string, tls func() (*config.TLS, error),
 ) func() (admin.AdminAPI, error) {
 	return func() (admin.AdminAPI, error) {
 		tlsConfig, err := tls()
 		if err != nil {
 			return nil, err
 		}
-		return admin.NewAdminAPI(*apiUrl, tlsConfig)
+		return admin.NewAdminAPI(*apiUrls, tlsConfig)
 	}
 }

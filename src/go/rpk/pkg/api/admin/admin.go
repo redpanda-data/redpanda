@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/Shopify/sarama"
+	"github.com/hashicorp/go-multierror"
 	"github.com/prometheus/common/log"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
 	vtls "github.com/vectorizedio/redpanda/src/go/rpk/pkg/tls"
@@ -41,7 +42,7 @@ type AdminAPI interface {
 }
 
 type adminAPI struct {
-	url    string
+	urls   []string
 	client *http.Client
 }
 
@@ -51,22 +52,25 @@ type newUser struct {
 	Algorithm string `json:"algorithm"`
 }
 
-func NewAdminAPI(url string, tlsConf *config.TLS) (AdminAPI, error) {
+func NewAdminAPI(urls []string, tlsConf *config.TLS) (AdminAPI, error) {
 	var err error
 
-	// Go's http library requires that the URL have a protocol.
-	if !(strings.HasPrefix(url, httpPrefix) ||
-		strings.HasPrefix(url, httpsPrefix)) {
+	for i := 0; i < len(urls); i++ {
+		url := urls[i]
+		// Go's http library requires that the URL have a protocol.
+		if !(strings.HasPrefix(url, httpPrefix) ||
+			strings.HasPrefix(url, httpsPrefix)) {
 
-		prefix := httpPrefix
+			prefix := httpPrefix
 
-		if tlsConf != nil {
-			// If TLS will be enabled, use HTTPS as the protocol
-			prefix = httpsPrefix
+			if tlsConf != nil {
+				// If TLS will be enabled, use HTTPS as the protocol
+				prefix = httpsPrefix
+			}
+
+			url = strings.TrimRight(url, "/")
+			urls[i] = fmt.Sprintf("%s%s", prefix, url)
 		}
-
-		url = strings.TrimRight(url, "/")
-		url = fmt.Sprintf("%s%s", prefix, url)
 	}
 
 	var tlsConfig *tls.Config
@@ -86,7 +90,7 @@ func NewAdminAPI(url string, tlsConf *config.TLS) (AdminAPI, error) {
 	}
 
 	client := &http.Client{Transport: tr}
-	return &adminAPI{url: url, client: client}, nil
+	return &adminAPI{urls: urls, client: client}, nil
 }
 
 func (a *adminAPI) CreateUser(username, password string) error {
@@ -101,8 +105,10 @@ func (a *adminAPI) CreateUser(username, password string) error {
 		Password:  password,
 		Algorithm: sarama.SASLTypeSCRAMSHA256,
 	}
-	url := fmt.Sprintf("%s%s", a.url, usersEndpoint)
-	_, err := send(url, http.MethodPost, u, a.client)
+	for i := 0; i < len(a.urls); i++ {
+		a.urls[i] = fmt.Sprintf("%s%s", a.urls[i], usersEndpoint)
+	}
+	_, err := sendToMultiple(a.urls, http.MethodPost, u, a.client)
 	return err
 }
 
@@ -110,14 +116,19 @@ func (a *adminAPI) DeleteUser(username string) error {
 	if username == "" {
 		return errors.New("empty username")
 	}
-	url := fmt.Sprintf("%s%s/%s", a.url, usersEndpoint, username)
-	_, err := send(url, http.MethodDelete, nil, a.client)
+
+	for i := 0; i < len(a.urls); i++ {
+		a.urls[i] = fmt.Sprintf("%s%s/%s", a.urls[i], usersEndpoint, username)
+	}
+	_, err := sendToMultiple(a.urls, http.MethodDelete, nil, a.client)
 	return err
 }
 
 func (a *adminAPI) ListUsers() ([]string, error) {
-	url := fmt.Sprintf("%s%s", a.url, usersEndpoint)
-	res, err := send(url, http.MethodGet, nil, a.client)
+	for i := 0; i < len(a.urls); i++ {
+		a.urls[i] = fmt.Sprintf("%s%s", a.urls[i], usersEndpoint)
+	}
+	res, err := sendToMultiple(a.urls, http.MethodGet, nil, a.client)
 	if err != nil {
 		return nil, err
 	}
@@ -128,6 +139,42 @@ func (a *adminAPI) ListUsers() ([]string, error) {
 	usernames := []string{}
 	err = json.Unmarshal(bs, &usernames)
 	return usernames, err
+}
+
+// As of v21.4.15, the Redpanda admin API doesn't do request forwarding, which
+// means that some requests (such as the ones made to /users) will fail unless
+// the reached node is the leader. Therefore, a request needs to be made to
+// each node, and of those requests at least one should succeed.
+// FIXME (@david): when https://github.com/vectorizedio/redpanda/issues/1265
+// is fixed.
+func sendToMultiple(
+	urls []string, method string, body interface{}, client *http.Client,
+) (*http.Response, error) {
+	sendClosure := func(url string, res chan<- *http.Response) func() error {
+		return func() error {
+			r, err := send(url, method, body, client)
+			res <- r
+			return err
+		}
+	}
+
+	res := make(chan *http.Response, len(urls))
+	grp := multierror.Group{}
+	for _, url := range urls {
+		grp.Go(sendClosure(url, res))
+	}
+
+	err := grp.Wait()
+	close(res)
+
+	if err == nil || len(err.Errors) < len(urls) {
+		for r := range res {
+			if r != nil && r.StatusCode < 400 {
+				return r, nil
+			}
+		}
+	}
+	return nil, err
 }
 
 func send(
