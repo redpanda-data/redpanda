@@ -33,18 +33,12 @@ RUN apt update && \
       libsasl2-dev \
       libssl-dev \
       maven \
+      nodejs \
+      npm \
       openssh-server \
       python3-pip && \
     rm -rf /var/lib/apt/lists/* && \
     echo 'PermitUserEnvironment yes' >> /etc/ssh/sshd_config
-
-# install nodejs
-env NODE_VERSION="12.16.1"
-env NODE_TAR=/opt/node/nodejs-${NODE_VERSION}.tar.xz
-RUN mkdir -p /opt/node && \
-		curl https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz > ${NODE_TAR} && \
-		tar -xf ${NODE_TAR} -C /opt/node --strip 1 && \
-		rm -rf ${NODE_TAR}
 
 # install kafka binary dependencies, librdkafka dev, kafkacat and kaf tools
 ENV KAFKA_MIRROR="https://s3-us-west-2.amazonaws.com/kafka-packages"
