@@ -73,18 +73,8 @@ proxy::proxy(const YAML::Node& config, const YAML::Node& client_config)
       make_context(_config, _client)) {}
 
 ss::future<> proxy::start() {
-    return seastar::when_all_succeed(
-             [this]() {
-                 _server.routes(get_proxy_routes());
-                 return _server.start();
-             },
-             [this]() {
-                 return _client.connect().handle_exception_type(
-                   [](const kafka::client::broker_error& e) {
-                       vlog(plog.debug, "Failed to connect to broker: {}", e);
-                   });
-             })
-      .discard_result();
+    _server.routes(get_proxy_routes());
+    return _server.start();
 }
 
 ss::future<> proxy::stop() {
