@@ -268,6 +268,13 @@ report_broker_config(describe_configs_result& result, bool include_synonyms) {
       [](const config::data_directory_path& path) {
           return path.as_sstring();
       });
+
+    add_broker_config(
+      result,
+      "auto.create.topics.enable",
+      config::shard_local_cfg().auto_create_topics_enabled,
+      include_synonyms,
+      &describe_as_string<bool>);
 }
 
 int64_t describe_retention_duration(
