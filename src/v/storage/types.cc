@@ -10,6 +10,7 @@
 #include "storage/types.h"
 
 #include "storage/ntp_config.h"
+#include "utils/human.h"
 #include "utils/to_string.h"
 
 #include <fmt/core.h>
@@ -107,6 +108,16 @@ std::ostream& operator<<(std::ostream& o, const compaction_config& c) {
       c.eviction_time,
       c.max_bytes.value_or(-1),
       c.sanitize);
+    return o;
+}
+
+std::ostream& operator<<(std::ostream& o, const compaction_result& r) {
+    fmt::print(
+      o,
+      "{{executed_compaction: {}, size_before: {}, size_after: {}}}",
+      r.executed_compaction,
+      r.size_before,
+      r.size_after);
     return o;
 }
 
