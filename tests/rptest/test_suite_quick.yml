@@ -22,5 +22,6 @@ quick:
   - tests/pandaproxy_test.py::PandaProxyTest.test_consumer_group_json_v2
   - tests/pandaproxy_test.py::PandaProxyTest.test_subscribe_consumer_validation
   - tests/pandaproxy_test.py::PandaProxyTest.test_remove_consumer_validation
+  - tests/wasm_identity_test.py
   - tests/wasm_failure_recovery_test.py
   - tests/wasm_redpanda_failure_recovery_test.py
