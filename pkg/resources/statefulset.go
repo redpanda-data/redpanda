@@ -289,7 +289,7 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 							Name:            configuratorContainerName,
 							Image:           r.fullConfiguratorImage(),
 							ImagePullPolicy: corev1.PullIfNotPresent,
-							Env: []corev1.EnvVar{
+							Env: append([]corev1.EnvVar{
 								{
 									Name:  "SERVICE_FQDN",
 									Value: r.serviceFQDN,
@@ -325,9 +325,9 @@ func (r *StatefulSetResource) obj() (k8sclient.Object, error) {
 								},
 								{
 									Name:  "HOST_PORT",
-									Value: r.getNodePort(),
+									Value: r.getNodePort(ExternalListenerName),
 								},
-							},
+							}, r.pandaproxyEnvVars()...),
 							SecurityContext: &corev1.SecurityContext{
 								RunAsUser:  pointer.Int64Ptr(userID),
 								RunAsGroup: pointer.Int64Ptr(groupID),
@@ -480,6 +480,18 @@ func overprovisioned(developerMode bool, limits corev1.ResourceList) []string {
 	}
 }
 
+func (r *StatefulSetResource) pandaproxyEnvVars() []corev1.EnvVar {
+	var envs []corev1.EnvVar
+	listener := r.pandaCluster.PandaproxyAPIExternal()
+	if listener != nil {
+		envs = append(envs, corev1.EnvVar{
+			Name:  "PROXY_HOST_PORT",
+			Value: r.getNodePort(PandaproxyPortExternalName),
+		})
+	}
+	return envs
+}
+
 func (r *StatefulSetResource) secretVolumeMounts() []corev1.VolumeMount {
 	var mounts []corev1.VolumeMount
 	tlsListener := r.pandaCluster.KafkaTLSListener()
@@ -577,12 +589,10 @@ func (r *StatefulSetResource) secretVolumes() []corev1.Volume {
 	return vols
 }
 
-func (r *StatefulSetResource) getNodePort() string {
-	if r.pandaCluster.ExternalListener() != nil {
-		for _, port := range r.nodePortSvc.Spec.Ports {
-			if port.Name == ExternalListenerName {
-				return strconv.FormatInt(int64(port.NodePort), 10)
-			}
+func (r *StatefulSetResource) getNodePort(name string) string {
+	for _, port := range r.nodePortSvc.Spec.Ports {
+		if port.Name == name {
+			return strconv.FormatInt(int64(port.NodePort), 10)
 		}
 	}
 	return ""
