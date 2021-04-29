@@ -620,6 +620,12 @@ func (r *StatefulSetResource) getPorts() []corev1.ContainerPort {
 		Name:          InternalListenerName,
 		ContainerPort: int32(internalListener.Port),
 	})
+	if internalProxy := r.pandaCluster.PandaproxyAPIInternal(); internalProxy != nil {
+		ports = append(ports, corev1.ContainerPort{
+			Name:          PandaproxyPortInternalName,
+			ContainerPort: int32(internalProxy.Port),
+		})
+	}
 
 	if r.pandaCluster.ExternalListener() != nil &&
 		len(r.nodePortSvc.Spec.Ports) > 0 {
