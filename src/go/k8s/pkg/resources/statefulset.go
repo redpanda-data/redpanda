@@ -622,19 +622,18 @@ func (r *StatefulSetResource) portsConfiguration() string {
 }
 
 func (r *StatefulSetResource) getPorts() []corev1.ContainerPort {
+	ports := []corev1.ContainerPort{{
+		Name:          AdminPortName,
+		ContainerPort: int32(r.pandaCluster.AdminAPIInternal().Port),
+	}}
+	internalListener := r.pandaCluster.InternalListener()
+	ports = append(ports, corev1.ContainerPort{
+		Name:          InternalListenerName,
+		ContainerPort: int32(internalListener.Port),
+	})
+
 	if r.pandaCluster.ExternalListener() != nil &&
 		len(r.nodePortSvc.Spec.Ports) > 0 {
-		ports := []corev1.ContainerPort{
-			{
-				Name:          "admin-internal",
-				ContainerPort: int32(r.pandaCluster.AdminAPIInternal().Port),
-			},
-		}
-		internalListener := r.pandaCluster.InternalListener()
-		ports = append(ports, corev1.ContainerPort{
-			Name:          InternalListenerName,
-			ContainerPort: int32(internalListener.Port),
-		})
 		for _, port := range r.nodePortSvc.Spec.Ports {
 			ports = append(ports, corev1.ContainerPort{
 				Name: port.Name,
@@ -652,15 +651,6 @@ func (r *StatefulSetResource) getPorts() []corev1.ContainerPort {
 		return ports
 	}
 
-	ports := []corev1.ContainerPort{{
-		Name:          "admin",
-		ContainerPort: int32(r.pandaCluster.AdminAPIInternal().Port),
-	}}
-	internalListener := r.pandaCluster.InternalListener()
-	ports = append(ports, corev1.ContainerPort{
-		Name:          InternalListenerName,
-		ContainerPort: int32(internalListener.Port),
-	})
 	return ports
 }
 
