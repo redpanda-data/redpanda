@@ -417,10 +417,15 @@ struct record_batch_header {
 };
 
 using tx_seq = named_type<int64_t, struct tm_tx_seq>;
-
+using producer_id = named_type<int64_t, struct producer_identity_id>;
+using producer_epoch = named_type<int16_t, struct producer_identity_epoch>;
 struct producer_identity {
     int64_t id{-1};
     int16_t epoch{0};
+
+    model::producer_id get_id() { return model::producer_id(id); }
+
+    model::producer_epoch get_epoch() { return model::producer_epoch(epoch); }
 
     auto operator<=>(const producer_identity&) const = default;
 

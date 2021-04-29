@@ -12,6 +12,7 @@
 #include "bytes/bytes.h"
 #include "cluster/partition.h"
 #include "cluster/simple_batch_builder.h"
+#include "cluster/tx_utils.h"
 #include "config/configuration.h"
 #include "kafka/protocol/schemata/describe_groups_response.h"
 #include "kafka/protocol/sync_group.h"
@@ -1176,6 +1177,257 @@ void group::fail_offset_commit(
     }
 }
 
+void group::reset_tx_state(model::term_id term) { _term = term; }
+
+void group::insert_prepared(group_prepared_tx tx) {
+    auto [pending_it, inserted] = _prepared_txs.try_emplace(
+      tx.pid, prepared_tx{.offsets = tx.offsets});
+
+    for (const auto& [tp, md] : tx.offsets) {
+        pending_it->second.offsets[tp] = md;
+    }
+}
+
+ss::future<cluster::commit_group_tx_reply>
+group::commit_tx(cluster::commit_group_tx_request r) {
+    // TODO: https://app.clubhouse.io/vectorized/story/2219
+    // (check for tx_seq to prevent old commit requests committing
+    // ongoing transactions in the same session)
+    cluster::commit_group_tx_reply reply;
+
+    auto ongoing_it = _prepared_txs.find(r.pid);
+    if (ongoing_it == _prepared_txs.end()) {
+        vlog(klog.warn, "can't find a tx {}, probably already comitted", r.pid);
+        co_return reply;
+    }
+
+    iobuf key;
+    // TODO: https://app.clubhouse.io/vectorized/story/2200
+    // include producer_id+type into key to make it unique-ish
+    // to prevent being GCed by the compaction
+    kafka::response_writer w(key);
+    w.write(commit_tx_record_version());
+    storage::record_batch_builder builder(
+      cluster::group_commit_tx_batch_type, model::offset(0));
+    builder.set_producer_identity(r.pid.id, r.pid.epoch);
+    builder.set_control_type();
+    group_log_commit_tx commit_tx;
+    commit_tx.group_id = r.group_id;
+    builder.add_raw_kw(
+      std::move(key),
+      reflection::to_iobuf(std::move(commit_tx)),
+      std::vector<model::record_header>());
+    auto batch = std::move(builder).build();
+    auto reader = model::make_memory_record_batch_reader(std::move(batch));
+
+    auto e = co_await _partition->replicate(
+      std::move(reader),
+      raft::replicate_options(raft::consistency_level::quorum_ack));
+
+    if (!e) {
+        reply.ec = cluster::tx_errc::timeout;
+        co_return reply;
+    }
+
+    ongoing_it = _prepared_txs.find(r.pid);
+    if (ongoing_it == _prepared_txs.end()) {
+        co_return reply;
+    }
+
+    for (const auto& [tp, md] : ongoing_it->second.offsets) {
+        auto o_it = _offsets.find(tp);
+        if (o_it == _offsets.end() || o_it->second.log_offset < md.log_offset) {
+            _offsets[tp] = md;
+        }
+    }
+
+    _prepared_txs.erase(ongoing_it);
+
+    co_return reply;
+}
+
+cluster::begin_group_tx_reply make_begin_tx_reply(cluster::tx_errc ec) {
+    cluster::begin_group_tx_reply reply;
+    reply.ec = ec;
+    return reply;
+}
+
+cluster::prepare_group_tx_reply make_prepare_tx_reply(cluster::tx_errc ec) {
+    cluster::prepare_group_tx_reply reply;
+    reply.ec = ec;
+    return reply;
+}
+
+cluster::commit_group_tx_reply make_commit_tx_reply(cluster::tx_errc ec) {
+    cluster::commit_group_tx_reply reply;
+    reply.ec = ec;
+    return reply;
+}
+
+cluster::abort_group_tx_reply make_abort_tx_reply(cluster::tx_errc ec) {
+    cluster::abort_group_tx_reply reply;
+    reply.ec = ec;
+    return reply;
+}
+
+ss::future<cluster::begin_group_tx_reply>
+group::begin_tx(cluster::begin_group_tx_request r) {
+    if (_partition->term() != _term) {
+        co_return make_begin_tx_reply(cluster::tx_errc::timeout);
+    }
+
+    // TODO: https://app.clubhouse.io/vectorized/story/2194
+    // (auto-abort txes with the the same producer_id but older epoch)
+
+    auto [_, inserted] = _volatile_txs.try_emplace(r.pid, volatile_tx());
+
+    if (!inserted) {
+        co_return make_begin_tx_reply(cluster::tx_errc::timeout);
+    }
+
+    cluster::begin_group_tx_reply reply;
+    reply.etag = _term;
+    reply.ec = cluster::tx_errc::none;
+    co_return reply;
+}
+
+ss::future<cluster::prepare_group_tx_reply>
+group::prepare_tx(cluster::prepare_group_tx_request r) {
+    if (_partition->term() != _term) {
+        co_return make_prepare_tx_reply(cluster::tx_errc::timeout);
+    }
+
+    if (r.etag != _term) {
+        co_return make_prepare_tx_reply(cluster::tx_errc::timeout);
+    }
+
+    auto tx_it = _volatile_txs.find(r.pid);
+    if (tx_it == _volatile_txs.end()) {
+        co_return make_prepare_tx_reply(cluster::tx_errc::timeout);
+    }
+
+    auto tx_entry = group_log_prepared_tx{.group_id = r.group_id, .pid = r.pid};
+
+    for (const auto& [tp, offset] : tx_it->second.offsets) {
+        group_log_prepared_tx_offset tx_offset;
+
+        tx_offset.tp = tp;
+        tx_offset.offset = offset.offset;
+        tx_offset.leader_epoch = offset.leader_epoch;
+        tx_offset.metadata = offset.metadata;
+        tx_entry.offsets.push_back(tx_offset);
+    }
+
+    volatile_tx tx = tx_it->second;
+    _volatile_txs.erase(tx_it);
+
+    iobuf key;
+    kafka::response_writer w(key);
+    // TODO: https://app.clubhouse.io/vectorized/story/2200
+    // include producer_id+type into key to make it unique-ish
+    // to prevent being GCed by the compaction
+    w.write(prepared_tx_record_version());
+    storage::record_batch_builder builder(
+      cluster::group_prepare_tx_batch_type, model::offset(0));
+    builder.set_producer_identity(r.pid.id, r.pid.epoch);
+    builder.set_control_type();
+    builder.add_raw_kw(
+      std::move(key),
+      reflection::to_iobuf(std::move(tx_entry)),
+      std::vector<model::record_header>());
+    auto batch = std::move(builder).build();
+    auto reader = model::make_memory_record_batch_reader(std::move(batch));
+
+    auto e = co_await _partition->replicate(
+      std::move(reader),
+      raft::replicate_options(raft::consistency_level::quorum_ack));
+
+    if (!e) {
+        co_return make_prepare_tx_reply(cluster::tx_errc::timeout);
+    }
+
+    prepared_tx ptx;
+    for (const auto& [tp, offset] : tx.offsets) {
+        offset_metadata md{
+          .log_offset = e.value().last_offset,
+          .offset = offset.offset,
+          .metadata = offset.metadata.value_or("")};
+        ptx.offsets[tp] = md;
+    }
+    _prepared_txs.try_emplace(r.pid, ptx);
+    co_return cluster::prepare_group_tx_reply();
+}
+
+ss::future<cluster::abort_group_tx_reply>
+group::abort_tx(cluster::abort_group_tx_request r) {
+    // TODO: https://app.clubhouse.io/vectorized/story/2197
+    // (check for tx_seq to prevent old abort requests aborting
+    // new transactions in the same session)
+
+    auto tx = aborted_tx{.group_id = r.group_id, .tx_seq = r.tx_seq};
+
+    iobuf key;
+    kafka::response_writer w(key);
+    // TODO: https://app.clubhouse.io/vectorized/story/2200
+    // include producer_id+type into key to make it unique-ish
+    // to prevent being GCed by the compaction
+    w.write(aborted_tx_record_version());
+    storage::record_batch_builder builder(
+      cluster::group_abort_tx_batch_type, model::offset(0));
+    builder.set_producer_identity(r.pid.id, r.pid.epoch);
+    builder.set_control_type();
+    builder.add_raw_kw(
+      std::move(key),
+      reflection::to_iobuf(std::move(tx)),
+      std::vector<model::record_header>());
+    auto batch = std::move(builder).build();
+    auto reader = model::make_memory_record_batch_reader(std::move(batch));
+
+    auto e = co_await _partition->replicate(
+      std::move(reader),
+      raft::replicate_options(raft::consistency_level::quorum_ack));
+
+    if (!e) {
+        co_return make_abort_tx_reply(cluster::tx_errc::timeout);
+    }
+
+    _volatile_txs.erase(r.pid);
+    _prepared_txs.erase(r.pid);
+
+    co_return cluster::abort_group_tx_reply();
+}
+
+ss::future<txn_offset_commit_response>
+group::store_txn_offsets(txn_offset_commit_request r) {
+    if (_partition->term() != _term) {
+        co_return txn_offset_commit_response(
+          r, error_code::unknown_server_error);
+    }
+
+    model::producer_identity pid{
+      .id = r.data.producer_id, .epoch = r.data.producer_epoch};
+
+    auto tx_it = _volatile_txs.find(pid);
+
+    if (tx_it == _volatile_txs.end()) {
+        co_return txn_offset_commit_response(
+          r, error_code::unknown_server_error);
+    }
+
+    for (const auto& t : r.data.topics) {
+        for (const auto& p : t.partitions) {
+            model::topic_partition tp(t.name, p.partition_index);
+            volatile_offset md{
+              .offset = p.committed_offset,
+              .leader_epoch = p.committed_leader_epoch,
+              .metadata = p.committed_metadata};
+            tx_it->second.offsets[tp] = md;
+        }
+    }
+
+    co_return txn_offset_commit_response(r, error_code::none);
+}
+
 ss::future<offset_commit_response>
 group::store_offsets(offset_commit_request&& r) {
     cluster::simple_batch_builder builder(
@@ -1244,6 +1496,108 @@ group::store_offsets(offset_commit_request&& r) {
       });
 }
 
+ss::future<cluster::commit_group_tx_reply>
+group::handle_commit_tx(cluster::commit_group_tx_request r) {
+    if (in_state(group_state::dead)) {
+        co_return make_commit_tx_reply(
+          cluster::tx_errc::coordinator_not_available);
+    } else if (
+      in_state(group_state::empty) || in_state(group_state::stable)
+      || in_state(group_state::preparing_rebalance)) {
+        co_return co_await commit_tx(std::move(r));
+    } else if (in_state(group_state::completing_rebalance)) {
+        co_return make_commit_tx_reply(cluster::tx_errc::rebalance_in_progress);
+    } else {
+        vlog(klog.error, "Unexpected group state {} for {}", _state, *this);
+        co_return make_commit_tx_reply(cluster::tx_errc::timeout);
+    }
+}
+
+ss::future<txn_offset_commit_response>
+group::handle_txn_offset_commit(txn_offset_commit_request r) {
+    if (in_state(group_state::dead)) {
+        co_return txn_offset_commit_response(
+          r, error_code::coordinator_not_available);
+    } else if (
+      in_state(group_state::empty) || in_state(group_state::stable)
+      || in_state(group_state::preparing_rebalance)) {
+        co_return co_await store_txn_offsets(std::move(r));
+    } else if (in_state(group_state::completing_rebalance)) {
+        co_return txn_offset_commit_response(
+          r, error_code::rebalance_in_progress);
+    } else {
+        vlog(klog.error, "Unexpected group state {} for {}", _state, *this);
+        co_return txn_offset_commit_response(
+          r, error_code::unknown_server_error);
+    }
+}
+
+ss::future<cluster::begin_group_tx_reply>
+group::handle_begin_tx(cluster::begin_group_tx_request r) {
+    if (in_state(group_state::dead)) {
+        cluster::begin_group_tx_reply reply;
+        reply.ec = cluster::tx_errc::coordinator_not_available;
+        co_return reply;
+    } else if (
+      in_state(group_state::empty) || in_state(group_state::stable)
+      || in_state(group_state::preparing_rebalance)) {
+        co_return co_await begin_tx(std::move(r));
+    } else if (in_state(group_state::completing_rebalance)) {
+        cluster::begin_group_tx_reply reply;
+        reply.ec = cluster::tx_errc::rebalance_in_progress;
+        co_return reply;
+    } else {
+        vlog(klog.error, "Unexpected group state {} for {}", _state, *this);
+        cluster::begin_group_tx_reply reply;
+        reply.ec = cluster::tx_errc::timeout;
+        co_return reply;
+    }
+}
+
+ss::future<cluster::prepare_group_tx_reply>
+group::handle_prepare_tx(cluster::prepare_group_tx_request r) {
+    if (in_state(group_state::dead)) {
+        cluster::prepare_group_tx_reply reply;
+        reply.ec = cluster::tx_errc::coordinator_not_available;
+        co_return reply;
+    } else if (
+      in_state(group_state::stable) || in_state(group_state::empty)
+      || in_state(group_state::preparing_rebalance)) {
+        co_return co_await prepare_tx(std::move(r));
+    } else if (in_state(group_state::completing_rebalance)) {
+        cluster::prepare_group_tx_reply reply;
+        reply.ec = cluster::tx_errc::rebalance_in_progress;
+        co_return reply;
+    } else {
+        vlog(klog.error, "Unexpected group state {} for {}", _state, *this);
+        cluster::prepare_group_tx_reply reply;
+        reply.ec = cluster::tx_errc::timeout;
+        co_return reply;
+    }
+}
+
+ss::future<cluster::abort_group_tx_reply>
+group::handle_abort_tx(cluster::abort_group_tx_request r) {
+    if (in_state(group_state::dead)) {
+        cluster::abort_group_tx_reply reply;
+        reply.ec = cluster::tx_errc::coordinator_not_available;
+        co_return reply;
+    } else if (
+      in_state(group_state::stable) || in_state(group_state::empty)
+      || in_state(group_state::preparing_rebalance)) {
+        co_return co_await abort_tx(std::move(r));
+    } else if (in_state(group_state::completing_rebalance)) {
+        cluster::abort_group_tx_reply reply;
+        reply.ec = cluster::tx_errc::rebalance_in_progress;
+        co_return reply;
+    } else {
+        vlog(klog.error, "Unexpected group state {} for {}", _state, *this);
+        cluster::abort_group_tx_reply reply;
+        reply.ec = cluster::tx_errc::timeout;
+        co_return reply;
+    }
+}
+
 ss::future<offset_commit_response>
 group::handle_offset_commit(offset_commit_request&& r) {
     if (in_state(group_state::dead)) {
@@ -1303,6 +1657,8 @@ group::handle_offset_fetch(offset_fetch_request&& r) {
               .metadata = e.second.metadata,
               .error_code = error_code::none,
             };
+            // BUG: support leader_epoch (KIP-320)
+            // https://github.com/vectorizedio/redpanda/issues/1181
             tmp[e.first.topic].push_back(std::move(p));
         }
         for (auto& e : tmp) {

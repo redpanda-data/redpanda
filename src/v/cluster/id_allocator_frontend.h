@@ -56,6 +56,8 @@ private:
     ss::sharded<rpc::connection_cache>& _connection_cache;
     ss::sharded<partition_leaders_table>& _leaders;
     std::unique_ptr<cluster::controller>& _controller;
+    int16_t _metadata_dissemination_retries{1};
+    std::chrono::milliseconds _metadata_dissemination_retry_delay_ms;
 
     ss::future<allocate_id_reply> dispatch_allocate_id_to_leader(
       model::node_id, model::timeout_clock::duration);

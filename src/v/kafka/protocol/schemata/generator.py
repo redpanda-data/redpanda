@@ -80,6 +80,14 @@ path_type_map = {
         },
         "MemberId": ("kafka::member_id", "string"),
     },
+    "TxnOffsetCommitRequestData": {
+        "Topics": {
+            "Partitions": {
+                "PartitionIndex": ("model::partition_id", "int32"),
+                "CommittedOffset": ("model::offset", "int64"),
+            },
+        }
+    },
     "JoinGroupRequestData": {
         "MemberId": ("kafka::member_id", "string"),
         "GroupInstanceId": ("kafka::group_instance_id", "string"),
@@ -311,6 +319,10 @@ STRUCT_TYPES = [
     "MetadataRequestTopic",
     "MetadataResponseTopic",
     "MetadataResponsePartition",
+    "TxnOffsetCommitRequestTopic",
+    "TxnOffsetCommitResponseTopic",
+    "TxnOffsetCommitResponsePartition",
+    "TxnOffsetCommitRequestPartition",
 ]
 
 SCALAR_TYPES = list(basic_type_map.keys())

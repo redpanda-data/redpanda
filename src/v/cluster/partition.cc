@@ -49,6 +49,13 @@ ss::future<result<raft::replicate_result>> partition::replicate(
     return _raft->replicate(std::move(r), std::move(opts));
 }
 
+ss::future<result<raft::replicate_result>> partition::replicate(
+  model::term_id term,
+  model::record_batch_reader&& r,
+  raft::replicate_options opts) {
+    return _raft->replicate(term, std::move(r), std::move(opts));
+}
+
 ss::future<checked<raft::replicate_result, kafka::error_code>>
 partition::replicate(
   model::batch_identity bid,

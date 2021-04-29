@@ -3,6 +3,7 @@ add_subdirectory(protocol)
 set(handlers_srcs
   server/handlers/api_versions.cc
   server/handlers/metadata.cc
+  server/handlers/txn_offset_commit.cc
   server/handlers/list_groups.cc
   server/handlers/find_coordinator.cc
   server/handlers/describe_configs.cc
@@ -40,6 +41,7 @@ v_cc_library(
     ${handlers_srcs}
     server/requests.cc
     server/member.cc
+    server/group_stm.cc
     server/group.cc
     server/group_router.cc
     server/group_manager.cc

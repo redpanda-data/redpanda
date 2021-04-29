@@ -46,6 +46,8 @@ struct metadata_request;
 struct metadata_response;
 struct offset_commit_request;
 struct offset_commit_response;
+struct txn_offset_commit_request;
+struct txn_offset_commit_response;
 struct offset_fetch_request;
 struct offset_fetch_response;
 struct produce_request;

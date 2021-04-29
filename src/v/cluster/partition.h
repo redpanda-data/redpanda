@@ -41,6 +41,9 @@ public:
     ss::future<result<raft::replicate_result>>
     replicate(model::record_batch_reader&&, raft::replicate_options);
 
+    ss::future<result<raft::replicate_result>> replicate(
+      model::term_id, model::record_batch_reader&&, raft::replicate_options);
+
     ss::future<checked<raft::replicate_result, kafka::error_code>> replicate(
       model::batch_identity,
       model::record_batch_reader&&,
@@ -98,6 +101,8 @@ public:
     model::offset high_watermark() const {
         return raft::details::next_offset(_raft->last_visible_index());
     }
+
+    model::term_id term() { return _raft->term(); }
 
     model::offset dirty_offset() const {
         return _raft->log().offsets().dirty_offset;

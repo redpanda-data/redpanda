@@ -21,13 +21,16 @@
 #include "kafka/protocol/offset_commit.h"
 #include "kafka/protocol/offset_fetch.h"
 #include "kafka/protocol/sync_group.h"
+#include "kafka/protocol/txn_offset_commit.h"
 #include "kafka/server/group.h"
+#include "kafka/server/group_stm.h"
 #include "kafka/server/member.h"
 #include "model/namespace.h"
 #include "raft/group_manager.h"
 #include "seastarx.h"
 
 #include <seastar/core/abort_source.hh>
+#include <seastar/core/coroutine.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/sharded.hh>
 
@@ -109,6 +112,9 @@ struct recovery_batch_consumer_state;
  */
 class group_manager {
 public:
+    static constexpr model::control_record_version fence_control_record_version{
+      0};
+
     group_manager(
       ss::sharded<raft::group_manager>& gm,
       ss::sharded<cluster::partition_manager>& pm,
@@ -134,6 +140,21 @@ public:
     /// \brief Handle a OffsetCommit request
     ss::future<offset_commit_response>
     offset_commit(offset_commit_request&& request);
+
+    ss::future<txn_offset_commit_response>
+    txn_offset_commit(txn_offset_commit_request&& request);
+
+    ss::future<cluster::commit_group_tx_reply>
+    commit_tx(cluster::commit_group_tx_request&& request);
+
+    ss::future<cluster::begin_group_tx_reply>
+    begin_tx(cluster::begin_group_tx_request&&);
+
+    ss::future<cluster::prepare_group_tx_reply>
+    prepare_tx(cluster::prepare_group_tx_request&&);
+
+    ss::future<cluster::abort_group_tx_reply>
+    abort_tx(cluster::abort_group_tx_request&&);
 
     /// \brief Handle a OffsetFetch request
     ss::future<offset_fetch_response>
@@ -172,20 +193,26 @@ private:
         ss::semaphore sem{1};
         ss::abort_source as;
         ss::lw_shared_ptr<cluster::partition> partition;
+        ss::basic_rwlock<> catchup_lock;
+        model::term_id term{-1};
+        absl::flat_hash_map<model::producer_id, model::producer_epoch>
+          fence_pid_epoch;
 
         explicit attached_partition(ss::lw_shared_ptr<cluster::partition> p)
           : loading(true)
           , partition(std::move(p)) {}
     };
 
-    absl::node_hash_map<model::ntp, ss::lw_shared_ptr<attached_partition>>
-      _partitions;
-
     cluster::notification_id_type _leader_notify_handle;
     cluster::notification_id_type _topic_table_notify_handle;
 
+    ss::future<cluster::begin_group_tx_reply> do_begin_tx(
+      ss::lw_shared_ptr<attached_partition>, cluster::begin_group_tx_request&&);
+
     void handle_leader_change(
-      ss::lw_shared_ptr<cluster::partition>, std::optional<model::node_id>);
+      model::term_id,
+      ss::lw_shared_ptr<cluster::partition>,
+      std::optional<model::node_id>);
 
     void handle_topic_delta(const std::vector<cluster::topic_table_delta>&);
 
@@ -193,21 +220,37 @@ private:
       const std::vector<model::topic_partition>&);
 
     ss::future<> handle_partition_leader_change(
+      model::term_id,
       ss::lw_shared_ptr<attached_partition>,
       std::optional<model::node_id> leader_id);
 
     ss::future<> recover_partition(
-      ss ::lw_shared_ptr<cluster::partition>, recovery_batch_consumer_state);
+      model::term_id,
+      ss::lw_shared_ptr<attached_partition>,
+      recovery_batch_consumer_state);
 
     ss::future<> inject_noop(
       ss::lw_shared_ptr<cluster::partition> p,
       ss::lowres_clock::time_point timeout);
+
+    ss::lw_shared_ptr<attached_partition>
+    get_attached_partition(model::ntp ntp) {
+        auto it = _partitions.find(ntp);
+        if (it == _partitions.end()) {
+            return nullptr;
+        }
+        return it->second;
+    }
 
     ss::sharded<raft::group_manager>& _gm;
     ss::sharded<cluster::partition_manager>& _pm;
     ss::sharded<cluster::topic_table>& _topic_table;
     config::configuration& _conf;
     absl::node_hash_map<group_id, group_ptr> _groups;
+    absl::node_hash_map<model::ntp, ss::lw_shared_ptr<attached_partition>>
+      _partitions;
+    //
+
     model::broker _self;
 };
 
@@ -228,74 +271,14 @@ struct group_log_record_key {
     iobuf key;
 };
 
-/**
- * the value type of a group metadata log record.
- */
-struct group_log_group_metadata {
-    kafka::protocol_type protocol_type;
-    kafka::generation_id generation;
-    std::optional<kafka::protocol_name> protocol;
-    std::optional<kafka::member_id> leader;
-    int32_t state_timestamp;
-    std::vector<member_state> members;
-};
-
-/**
- * the key type for offset commit records.
- */
-struct group_log_offset_key {
-    kafka::group_id group;
-    model::topic topic;
-    model::partition_id partition;
-
-    bool operator==(const group_log_offset_key& other) const = default;
-
-    friend std::ostream& operator<<(std::ostream&, const group_log_offset_key&);
-};
-
-/**
- * the value type for offset commit records.
- */
-struct group_log_offset_metadata {
-    model::offset offset;
-    int32_t leader_epoch;
-    std::optional<ss::sstring> metadata;
-
-    friend std::ostream&
-    operator<<(std::ostream&, const group_log_offset_metadata&);
-};
-
-} // namespace kafka
-
-namespace std {
-template<>
-struct hash<kafka::group_log_offset_key> {
-    size_t operator()(const kafka::group_log_offset_key& key) const {
-        size_t h = 0;
-        boost::hash_combine(h, hash<ss::sstring>()(key.group));
-        boost::hash_combine(h, hash<ss::sstring>()(key.topic));
-        boost::hash_combine(h, hash<model::partition_id>()(key.partition));
-        return h;
-    }
-};
-} // namespace std
-
-namespace kafka {
-
 /*
  * This batch consumer is used during partition recovery to read, index, and
  * deduplicate both group and commit metadata snapshots.
  */
 struct recovery_batch_consumer_state {
-    absl::node_hash_map<kafka::group_id, group_log_group_metadata>
-      loaded_groups;
-
-    absl::flat_hash_set<kafka::group_id> removed_groups;
-
-    absl::node_hash_map<
-      group_log_offset_key,
-      std::pair<model::offset, group_log_offset_metadata>>
-      loaded_offsets;
+    absl::node_hash_map<kafka::group_id, group_stm> groups;
+    absl::flat_hash_map<model::producer_id, model::producer_epoch>
+      fence_pid_epoch;
 };
 
 struct recovery_batch_consumer {

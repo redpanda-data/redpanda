@@ -29,6 +29,15 @@
 namespace cluster {
 using namespace std::chrono_literals;
 
+static ss::future<bool> sleep_abortable(std::chrono::milliseconds dur) {
+    try {
+        co_await ss::sleep_abortable(dur);
+        co_return true;
+    } catch (const ss::sleep_aborted&) {
+        co_return false;
+    }
+}
+
 cluster::errc map_errc_fixme(std::error_code ec);
 
 id_allocator_frontend::id_allocator_frontend(
@@ -45,50 +54,72 @@ id_allocator_frontend::id_allocator_frontend(
   , _metadata_cache(metadata_cache)
   , _connection_cache(connection_cache)
   , _leaders(leaders)
-  , _controller(controller) {}
+  , _controller(controller)
+  , _metadata_dissemination_retries(
+      config::shard_local_cfg().metadata_dissemination_retries.value())
+  , _metadata_dissemination_retry_delay_ms(
+      config::shard_local_cfg().metadata_dissemination_retry_delay_ms.value()) {
+}
 
 ss::future<allocate_id_reply>
 id_allocator_frontend::allocate_id(model::timeout_clock::duration timeout) {
     auto nt = model::topic_namespace(
       model::kafka_internal_namespace, model::id_allocator_topic);
 
-    auto has_topic = ss::make_ready_future<bool>(true);
+    auto has_topic = true;
 
     if (!_metadata_cache.local().contains(nt, model::partition_id(0))) {
-        has_topic = try_create_id_allocator_topic();
+        has_topic = co_await try_create_id_allocator_topic();
     }
 
-    return has_topic.then([this, timeout](bool does_topic_exist) {
-        if (!does_topic_exist) {
-            return ss::make_ready_future<allocate_id_reply>(
-              allocate_id_reply{0, errc::topic_not_exists});
-        }
+    if (!has_topic) {
+        vlog(clusterlog.warn, "can't meta cache entry for {}", nt);
+        co_return allocate_id_reply{0, errc::topic_not_exists};
+    }
 
-        auto leader = _leaders.local().get_leader(model::id_allocator_ntp);
+    auto _self = _controller->self();
 
-        if (!leader) {
+    auto r = allocate_id_reply{0, errc::no_leader_controller};
+
+    auto retries = _metadata_dissemination_retries;
+    auto delay_ms = _metadata_dissemination_retry_delay_ms;
+    auto aborted = false;
+    while (!aborted && 0 < retries--) {
+        auto leader_opt = _leaders.local().get_leader(model::id_allocator_ntp);
+        if (unlikely(!leader_opt)) {
             vlog(
-              clusterlog.warn,
+              clusterlog.trace,
               "can't find a leader for {}",
               model::id_allocator_ntp);
-            return ss::make_ready_future<allocate_id_reply>(
-              allocate_id_reply{0, errc::no_leader_controller});
+            aborted = !co_await sleep_abortable(delay_ms);
+            continue;
         }
-
-        auto _self = _controller->self();
+        auto leader = leader_opt.value();
 
         if (leader == _self) {
-            return do_allocate_id(timeout);
+            r = co_await do_allocate_id(timeout);
+        } else {
+            vlog(
+              clusterlog.trace,
+              "dispatching allocate id to {} from {}",
+              leader,
+              _self);
+
+            r = co_await dispatch_allocate_id_to_leader(leader, timeout);
+        }
+
+        if (likely(r.ec != errc::replication_error)) {
+            break;
         }
 
         vlog(
-          clusterlog.trace,
-          "dispatching allocate id to {} from {}",
-          leader,
-          _self);
+          clusterlog.warn,
+          "replication of the id allocation command failed, {} retries left",
+          retries);
+        aborted = !co_await sleep_abortable(delay_ms);
+    }
 
-        return dispatch_allocate_id_to_leader(leader.value(), timeout);
-    });
+    co_return r;
 }
 
 ss::future<allocate_id_reply>
@@ -110,11 +141,10 @@ id_allocator_frontend::dispatch_allocate_id_to_leader(
           if (r.has_error()) {
               vlog(
                 clusterlog.warn,
-                "got error {} on remote allocate id",
+                "got error {} on remote allocate_id",
                 r.error());
               return allocate_id_reply{0, errc::timeout};
           }
-
           return r.value();
       });
 }
@@ -124,12 +154,11 @@ id_allocator_frontend::do_allocate_id(model::timeout_clock::duration timeout) {
     auto shard = _shard_table.local().shard_for(model::id_allocator_ntp);
 
     if (unlikely(!shard)) {
-        auto retries
-          = config::shard_local_cfg().metadata_dissemination_retries.value();
-        auto delay_ms = config::shard_local_cfg()
-                          .metadata_dissemination_retry_delay_ms.value();
-        while (!shard && 0 < retries--) {
-            co_await ss::sleep(delay_ms);
+        auto retries = _metadata_dissemination_retries;
+        auto delay_ms = _metadata_dissemination_retry_delay_ms;
+        auto aborted = false;
+        while (!aborted && !shard && 0 < retries--) {
+            aborted = !co_await sleep_abortable(delay_ms);
             shard = _shard_table.local().shard_for(model::id_allocator_ntp);
         }
 
@@ -141,7 +170,6 @@ id_allocator_frontend::do_allocate_id(model::timeout_clock::duration timeout) {
             co_return allocate_id_reply{0, errc::no_leader_controller};
         }
     }
-
     co_return co_await do_allocate_id(*shard, timeout);
 }
 
@@ -170,15 +198,15 @@ ss::future<allocate_id_reply> id_allocator_frontend::do_allocate_id(
           return stm
             ->allocate_id_and_wait(model::timeout_clock::now() + timeout)
             .then([](id_allocator_stm::stm_allocation_result r) {
-                if (r.raft_status == raft::errc::success) {
-                    return allocate_id_reply{r.id, errc::success};
-                } else {
+                if (r.raft_status != raft::errc::success) {
                     vlog(
-                      clusterlog.trace,
+                      clusterlog.warn,
                       "allocate id stm call failed with {}",
                       r.raft_status);
                     return allocate_id_reply{r.id, errc::replication_error};
                 }
+
+                return allocate_id_reply{r.id, errc::success};
             });
       });
 }

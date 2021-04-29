@@ -94,6 +94,10 @@ enum class group_state {
 std::ostream& operator<<(std::ostream&, group_state gs);
 
 ss::sstring group_state_to_kafka_name(group_state);
+cluster::begin_group_tx_reply make_begin_tx_reply(cluster::tx_errc);
+cluster::prepare_group_tx_reply make_prepare_tx_reply(cluster::tx_errc);
+cluster::commit_group_tx_reply make_commit_tx_reply(cluster::tx_errc);
+cluster::abort_group_tx_reply make_abort_tx_reply(cluster::tx_errc);
 
 /// \brief A Kafka group.
 ///
@@ -103,10 +107,30 @@ public:
     using clock_type = ss::lowres_clock;
     using duration_type = clock_type::duration;
 
+    static constexpr model::control_record_version fence_control_record_version{
+      0};
+    static constexpr model::control_record_version prepared_tx_record_version{
+      0};
+    static constexpr model::control_record_version commit_tx_record_version{0};
+    static constexpr model::control_record_version aborted_tx_record_version{0};
+
     struct offset_metadata {
         model::offset log_offset;
         model::offset offset;
         ss::sstring metadata;
+        // BUG: support leader_epoch (KIP-320)
+        // https://github.com/vectorizedio/redpanda/issues/1181
+    };
+
+    struct group_prepared_tx {
+        model::producer_identity pid;
+        kafka::group_id group_id;
+        absl::node_hash_map<model::topic_partition, offset_metadata> offsets;
+    };
+
+    struct aborted_tx {
+        kafka::group_id group_id;
+        model::tx_seq tx_seq;
     };
 
     group(
@@ -394,10 +418,42 @@ public:
     void fail_offset_commit(
       const model::topic_partition& tp, const offset_metadata& md);
 
+    void reset_tx_state(model::term_id);
+
+    ss::future<cluster::commit_group_tx_reply>
+    commit_tx(cluster::commit_group_tx_request r);
+
+    ss::future<cluster::begin_group_tx_reply>
+      begin_tx(cluster::begin_group_tx_request);
+
+    ss::future<cluster::prepare_group_tx_reply>
+      prepare_tx(cluster::prepare_group_tx_request);
+
+    ss::future<cluster::abort_group_tx_reply>
+      abort_tx(cluster::abort_group_tx_request);
+
+    ss::future<txn_offset_commit_response>
+    store_txn_offsets(txn_offset_commit_request r);
+
     ss::future<offset_commit_response> store_offsets(offset_commit_request&& r);
+
+    ss::future<txn_offset_commit_response>
+    handle_txn_offset_commit(txn_offset_commit_request r);
+
+    ss::future<cluster::begin_group_tx_reply>
+    handle_begin_tx(cluster::begin_group_tx_request r);
+
+    ss::future<cluster::prepare_group_tx_reply>
+    handle_prepare_tx(cluster::prepare_group_tx_request r);
+
+    ss::future<cluster::abort_group_tx_reply>
+    handle_abort_tx(cluster::abort_group_tx_request r);
 
     ss::future<offset_commit_response>
     handle_offset_commit(offset_commit_request&& r);
+
+    ss::future<cluster::commit_group_tx_reply>
+    handle_commit_tx(cluster::commit_group_tx_request r);
 
     ss::future<offset_fetch_response>
     handle_offset_fetch(offset_fetch_request&& r);
@@ -405,6 +461,17 @@ public:
     void insert_offset(model::topic_partition tp, offset_metadata md) {
         _offsets[std::move(tp)] = std::move(md);
     }
+
+    bool try_upsert_offset(model::topic_partition tp, offset_metadata md) {
+        auto [o_it, inserted] = _offsets.try_emplace(tp, std::move(md));
+        if (!inserted && o_it->second.log_offset < md.log_offset) {
+            o_it->second = std::move(md);
+            inserted = true;
+        }
+        return inserted;
+    }
+
+    void insert_prepared(group_prepared_tx);
 
     // helper for the kafka api: describe groups
     described_group describe() const;
@@ -416,6 +483,10 @@ public:
     // remove offsets associated with topic partitions
     ss::future<>
     remove_topic_partitions(const std::vector<model::topic_partition>& tps);
+
+    const ss::lw_shared_ptr<cluster::partition> partition() const {
+        return _partition;
+    }
 
 private:
     using member_map = absl::node_hash_map<kafka::member_id, member_ptr>;
@@ -441,8 +512,27 @@ private:
     config::configuration& _conf;
     ss::lw_shared_ptr<cluster::partition> _partition;
     absl::node_hash_map<model::topic_partition, offset_metadata> _offsets;
+
+    model::term_id _term;
     absl::node_hash_map<model::topic_partition, offset_metadata>
       _pending_offset_commits;
+
+    struct volatile_offset {
+        model::offset offset;
+        int32_t leader_epoch;
+        std::optional<ss::sstring> metadata;
+    };
+
+    struct volatile_tx {
+        absl::node_hash_map<model::topic_partition, volatile_offset> offsets;
+    };
+
+    struct prepared_tx {
+        absl::node_hash_map<model::topic_partition, offset_metadata> offsets;
+    };
+
+    absl::node_hash_map<model::producer_identity, volatile_tx> _volatile_txs;
+    absl::node_hash_map<model::producer_identity, prepared_tx> _prepared_txs;
 };
 
 using group_ptr = ss::lw_shared_ptr<group>;

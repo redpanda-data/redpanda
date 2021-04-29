@@ -33,6 +33,10 @@ static constexpr model::record_batch_type id_allocator_stm_batch_type{8};
 static constexpr model::record_batch_type tx_prepare_batch_type{9};
 static constexpr model::record_batch_type tx_fence_batch_type{10};
 static constexpr model::record_batch_type tm_update_batch_type{11};
+static constexpr model::record_batch_type group_prepare_tx_batch_type{14};
+static constexpr model::record_batch_type group_commit_tx_batch_type{15};
+static constexpr model::record_batch_type group_abort_tx_batch_type{16};
+
 using consensus_ptr = ss::lw_shared_ptr<raft::consensus>;
 using broker_ptr = ss::lw_shared_ptr<model::broker>;
 
@@ -56,6 +60,11 @@ enum class tx_errc {
     conflict,
     fenced,
     stale,
+    not_coordinator,
+    coordinator_not_available,
+    preparing_rebalance,
+    rebalance_in_progress,
+    coordinator_load_in_progress
 };
 struct tx_errc_category final : public std::error_category {
     const char* name() const noexcept final { return "cluster::tx_errc"; }
@@ -94,6 +103,49 @@ inline const std::error_category& tx_error_category() noexcept {
 inline std::error_code make_error_code(tx_errc e) noexcept {
     return std::error_code(static_cast<int>(e), tx_error_category());
 }
+
+struct begin_group_tx_request {
+    model::ntp ntp;
+    kafka::group_id group_id;
+    model::producer_identity pid;
+    model::tx_seq tx_seq;
+    model::timeout_clock::duration timeout;
+};
+struct begin_group_tx_reply {
+    model::term_id etag;
+    tx_errc ec;
+};
+struct prepare_group_tx_request {
+    model::ntp ntp;
+    kafka::group_id group_id;
+    model::term_id etag;
+    model::producer_identity pid;
+    model::tx_seq tx_seq;
+    model::timeout_clock::duration timeout;
+};
+struct prepare_group_tx_reply {
+    tx_errc ec;
+};
+struct commit_group_tx_request {
+    model::ntp ntp;
+    model::producer_identity pid;
+    model::tx_seq tx_seq;
+    kafka::group_id group_id;
+    model::timeout_clock::duration timeout;
+};
+struct commit_group_tx_reply {
+    tx_errc ec;
+};
+struct abort_group_tx_request {
+    model::ntp ntp;
+    kafka::group_id group_id;
+    model::producer_identity pid;
+    model::tx_seq tx_seq;
+    model::timeout_clock::duration timeout;
+};
+struct abort_group_tx_reply {
+    tx_errc ec;
+};
 
 /// Join request sent by node to join raft-0
 struct join_request {
