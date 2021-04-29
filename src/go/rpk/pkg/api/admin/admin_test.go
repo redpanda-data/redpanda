@@ -36,7 +36,7 @@ func TestCreateUser(t *testing.T) {
 
 	rand.Seed(time.Now().Unix())
 
-	nNodes := rand.Int31n(6)
+	nNodes := rand.Int31n(6) + 1
 	urls := []string{}
 
 	for i := 0; i < int(nNodes); i++ {
@@ -70,7 +70,7 @@ func TestDeleteUser(t *testing.T) {
 	username := "Lola"
 
 	rand.Seed(time.Now().Unix())
-	nNodes := rand.Int31n(6)
+	nNodes := rand.Int31n(6) + 1
 	urls := []string{}
 
 	for i := 0; i < int(nNodes); i++ {
@@ -101,7 +101,7 @@ func TestDeleteUser(t *testing.T) {
 
 func TestListUsers(t *testing.T) {
 	rand.Seed(time.Now().Unix())
-	nNodes := rand.Int31n(6)
+	nNodes := rand.Int31n(6) + 1
 	urls := []string{}
 
 	for i := 0; i < int(nNodes); i++ {

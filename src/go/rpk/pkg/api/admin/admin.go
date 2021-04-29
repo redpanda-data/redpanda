@@ -174,7 +174,7 @@ func sendToMultiple(
 			}
 		}
 	}
-	return nil, err
+	return nil, err.ErrorOrNil()
 }
 
 func send(
