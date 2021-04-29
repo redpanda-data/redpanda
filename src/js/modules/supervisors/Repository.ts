@@ -174,7 +174,7 @@ class Repository {
       );
       return [
         createException(
-          "Coprocessors don't register in wasm engine: " + nonExistHandle
+          "Coprocessors not registered in wasm engine: " + nonExistHandle
         ),
       ];
     } else {
@@ -183,7 +183,7 @@ class Repository {
           // Convert int16 to uint16 and check if have an unexpected compression
           if (((recordBatch.header.attrs >>> 0) & 0x7) != 0) {
             throw (
-              "Record Batch has an unexpect compression value: baseOffset" +
+              "Record Batch has an unexpected compression value: baseOffset" +
               recordBatch.header.baseOffset
             );
           }
