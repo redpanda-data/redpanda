@@ -262,31 +262,45 @@ ss::future<> disk_log_impl::garbage_collect_oldest_segments(
 }
 
 ss::future<> disk_log_impl::do_compact(compaction_config cfg) {
-    /*
-     * single segment compaction
-     */
+    // find first not compacted segment
     auto segit = std::find_if(
       _segs.begin(), _segs.end(), [](ss::lw_shared_ptr<segment>& s) {
           return !s->has_appender() && s->is_compacted_segment()
                  && !s->finished_self_compaction();
       });
-    if (segit != _segs.end()) {
+    // loop until we compact segment or reached end of segments set
+    for (; segit != _segs.end(); ++segit) {
         auto seg = *segit;
-        auto f = _stm_manager->ensure_snapshot_exists(
+        if (
+          seg->has_appender() || seg->finished_self_compaction()
+          || !seg->is_compacted_segment()) {
+            continue;
+        }
+
+        co_await _stm_manager->ensure_snapshot_exists(
           seg->offsets().committed_offset);
 
-        return f.then([this, seg, cfg]() {
-            return storage::internal::self_compact_segment(
-                     seg, cfg, _probe, *_readers_cache)
-              .finally([seg] { seg->mark_as_finished_self_compaction(); });
-        });
+        auto result = co_await storage::internal::self_compact_segment(
+          seg, cfg, _probe, *_readers_cache);
+        vlog(
+          stlog.debug,
+          "segment {} compaction result: {}",
+          seg->reader().filename(),
+          result);
+        // if we compacted segment return, otherwise loop
+        if (result.did_compact()) {
+            co_return;
+        }
     }
 
     if (auto range = find_compaction_range(); range) {
-        return compact_adjacent_segments(std::move(*range), cfg);
+        auto r = co_await compact_adjacent_segments(std::move(*range), cfg);
+        vlog(
+          stlog.debug,
+          "adjejcent segments of {}, compaction result: {}",
+          config().ntp(),
+          r);
     }
-
-    return ss::now();
 }
 
 std::optional<std::pair<segment_set::iterator, segment_set::iterator>>
@@ -358,7 +372,7 @@ disk_log_impl::find_compaction_range() {
     return range;
 }
 
-ss::future<> disk_log_impl::compact_adjacent_segments(
+ss::future<compaction_result> disk_log_impl::compact_adjacent_segments(
   std::pair<segment_set::iterator, segment_set::iterator> range,
   storage::compaction_config cfg) {
     // lightweight copy of segments in range. once a scheduling event occurs in
@@ -392,7 +406,7 @@ ss::future<> disk_log_impl::compact_adjacent_segments(
     // size is already contained in the partition size probe
     replacement->mark_as_compacted_segment();
     _probe.add_initial_segment(*replacement.get());
-    co_await storage::internal::self_compact_segment(
+    auto ret = co_await storage::internal::self_compact_segment(
       replacement, cfg, _probe, *_readers_cache);
     _probe.delete_segment(*replacement.get());
     vlog(stlog.debug, "Final compacted segment {}", replacement);
@@ -426,7 +440,6 @@ ss::future<> disk_log_impl::compact_adjacent_segments(
               "Aborting compaction of closed segment: {}", *segment));
         }
     }
-
     // transfer segment state from replacement to target
     locks = co_await internal::transfer_segment(
       target, replacement, cfg, _probe, std::move(locks));
@@ -446,6 +459,8 @@ ss::future<> disk_log_impl::compact_adjacent_segments(
         co_await remove_segment_permanently(
           segments.back(), "compact_adjacent_segments");
     }
+
+    co_return ret;
 }
 compaction_config
 disk_log_impl::apply_overrides(compaction_config defaults) const {

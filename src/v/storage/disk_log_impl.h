@@ -94,7 +94,7 @@ private:
     model::offset read_start_offset() const;
 
     ss::future<> do_compact(compaction_config);
-    ss::future<> compact_adjacent_segments(
+    ss::future<compaction_result> compact_adjacent_segments(
       std::pair<segment_set::iterator, segment_set::iterator>,
       storage::compaction_config cfg);
     std::optional<std::pair<segment_set::iterator, segment_set::iterator>>
