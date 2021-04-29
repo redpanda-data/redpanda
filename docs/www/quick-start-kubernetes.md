@@ -9,10 +9,10 @@ With Redpanda you can get up and running with streaming quickly
 and be fully compatible with the [Kafka ecosystem](https://cwiki.apache.org/confluence/display/KAFKA/Ecosystem).
 
 This quick start guide can help you get started with Redpanda for development and testing purposes.
-For production or benchmarking, setup a [production deployment](/docs/production-deployment).
-
-Using [Helm](https://helm.sh/) is the fastest way to get started with Redpanda on Kubernetes.
 To get up and running you need to create a cluster and deploy the Redpanda operator on the cluster.
+
+- For production or benchmarking, setup a [production deployment](/docs/production-deployment).
+- You can also set up a [Kubernetes cluster with external access](/docs/kubernetes-external-connect)
 
 > **_Note_** - Run a container inside the Kubernetes cluster to communicate with the Redpanda cluster.
 > Currently, a load balancer is not automatically created during deployment by default.
@@ -60,7 +60,7 @@ You can either create a Kubernetes cluster on your local machine or on a cloud p
   --name redpanda \
   --nodegroup-name standard-workers \
   --node-type m5.xlarge \
-  --nodes 3 \
+  --nodes 1 \
   --nodes-min 1 \
   --nodes-max 4 \
   --node-ami auto
@@ -91,7 +91,6 @@ You can [install cert-manager with a CRD](https://cert-manager.io/docs/installat
 but here's the command to install using helm:
 
 ```
-kubectl create namespace cert-manager && \
 helm repo add jetstack https://charts.jetstack.io && \
 helm repo update && \
 helm install \
@@ -105,7 +104,7 @@ helm install \
 We recommend that you use [the verification procedure](https://cert-manager.io/docs/installation/kubernetes/#verifying-the-installation) in the cert-manager docs
 to verify that cert-manager is working correcly.
 
-## Using Helm to install Redpanda
+## Use Helm to install Redpanda
 
 1. Using Helm, add the Redpanda chart repository and update it:
 
@@ -117,7 +116,7 @@ to verify that cert-manager is working correcly.
 2. Just to simplify the commands, create a variable for the version number:
 
     ```
-    export version=v21.4.13
+    export VERSION=v21.4.15
     ```
 
     **_Note_** - You can find the latest version number of the operator in the [list of operator releases](https://github.com/vectorizedio/redpanda/releases).
@@ -126,7 +125,7 @@ to verify that cert-manager is working correcly.
 
     ```
     kubectl apply \
-    -k https://github.com/vectorizedio/redpanda/src/go/k8s/config/crd?ref=$version
+    -k https://github.com/vectorizedio/redpanda/src/go/k8s/config/crd?ref=$VERSION
     ```
 
 4. Install the Redpanda operator on your Kubernetes cluster with:
@@ -135,6 +134,7 @@ to verify that cert-manager is working correcly.
     helm install \
     --namespace redpanda-system \
     --create-namespace redpanda-operator \
+    --version $VERSION \
     redpanda/redpanda-operator
     ```
 
@@ -166,7 +166,7 @@ Let's try setting up a Redpanda topic to handle a stream of events from a chat a
 
         kubectl -n chat-with-me run -ti --rm \
         --restart=Never \
-        --image vectorized/redpanda:$version \
+        --image vectorized/redpanda:$VERSION \
         -- rpk --brokers one-node-cluster-0.one-node-cluster.chat-with-me.svc.cluster.local:9092 \
         cluster info
     
@@ -174,7 +174,7 @@ Let's try setting up a Redpanda topic to handle a stream of events from a chat a
 
         kubectl -n chat-with-me run -ti --rm \
         --restart=Never \
-        --image vectorized/redpanda:$version \
+        --image vectorized/redpanda:$VERSION \
         -- rpk --brokers one-node-cluster-0.one-node-cluster.chat-with-me.svc.cluster.local:9092 \
         topic create chat-rooms -p 5
 
@@ -182,10 +182,13 @@ Let's try setting up a Redpanda topic to handle a stream of events from a chat a
 
         kubectl -n chat-with-me run -ti --rm \
         --restart=Never \
-        --image vectorized/redpanda:$version \
+        --image vectorized/redpanda:$VERSION \
         -- rpk --brokers one-node-cluster-0.one-node-cluster.chat-with-me.svc.cluster.local:9092 \
         topic list
 
 As you can see, the commands from the "rpk" pod created a 5 partition topic in for the chat rooms.
 
-Contact us in our [Slack](https://vectorized.io/slack) community so we can work together to implement your Kubernetes use cases.
+## Next steps
+
+- Contact us in our [Slack](https://vectorized.io/slack) community so we can work together to implement your Kubernetes use cases.
+- Check out how to set up a Kubernetes cluster with [access from an external machine](kubernetes-external-connect.md).
