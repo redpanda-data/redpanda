@@ -121,6 +121,7 @@ private:
     ss::sharded<rpc::server> _rpc;
     ss::sharded<admin_server> _admin;
     ss::sharded<rpc::server> _kafka_server;
+    ss::sharded<kafka::client::client> _proxy_client;
     ss::sharded<pandaproxy::proxy> _proxy;
     ss::metrics::metric_groups _metrics;
     // run these first on destruction

@@ -57,7 +57,7 @@ server::routes_t get_proxy_routes() {
 static context_t make_context(
   const configuration& cfg,
   ss::smp_service_group smp_sg,
-  kafka::client::client& client) {
+  ss::sharded<kafka::client::client>& client) {
     return context_t{
       .mem_sem{ss::memory::stats().free_memory()},
       .as{},
@@ -69,10 +69,10 @@ static context_t make_context(
 proxy::proxy(
   const YAML::Node& config,
   ss::smp_service_group smp_sg,
-  const YAML::Node& client_config)
+  ss::sharded<kafka::client::client>& client)
   : _config(config)
   , _smp_sg(smp_sg)
-  , _client(client_config)
+  , _client(client)
   , _ctx(make_context(_config, _smp_sg, _client))
   , _server(
       "pandaproxy",
@@ -84,14 +84,12 @@ ss::future<> proxy::start() {
     return _server.start();
 }
 
-ss::future<> proxy::stop() {
-    return _server.stop().finally([this]() { return _client.stop(); });
-}
+ss::future<> proxy::stop() { return _server.stop(); }
 
 pandaproxy::configuration& proxy::config() { return _config; }
 
 kafka::client::configuration& proxy::client_config() {
-    return _client.config();
+    return _client.local().config();
 }
 
 } // namespace pandaproxy

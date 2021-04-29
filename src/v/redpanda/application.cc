@@ -331,11 +331,12 @@ void application::wire_up_services() {
         wire_up_redpanda_services();
     }
     if (_proxy_config) {
+        construct_service(_proxy_client, to_yaml(*_proxy_client_config)).get();
         construct_service(
           _proxy,
           to_yaml(*_proxy_config),
           smp_service_groups.proxy_smp_sg(),
-          to_yaml(*_proxy_client_config))
+          std::reference_wrapper(_proxy_client))
           .get();
     }
 }
