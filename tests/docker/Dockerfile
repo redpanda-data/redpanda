@@ -24,9 +24,14 @@ RUN apt update && \
       build-essential \
       curl \
       default-jdk \
+      cmake \
+      git \
+      golang \
       iptables \
-      kafkacat \
       libatomic1 \
+      libyajl-dev \
+      libsasl2-dev \
+      libssl-dev \
       maven \
       openssh-server \
       python3-pip && \
@@ -41,20 +46,29 @@ RUN mkdir -p /opt/node && \
 		tar -xf ${NODE_TAR} -C /opt/node --strip 1 && \
 		rm -rf ${NODE_TAR}
 
-# install kafka binary dependencies, kaf tool and librdkafka dev
+# install kafka binary dependencies, librdkafka dev, kafkacat and kaf tools
 ENV KAFKA_MIRROR="https://s3-us-west-2.amazonaws.com/kafka-packages"
 RUN mkdir -p "/opt/kafka-2.3.1" && chmod a+rw /opt/kafka-2.3.1 && curl -s "$KAFKA_MIRROR/kafka_2.12-2.3.1.tgz" | tar xz --strip-components=1 -C "/opt/kafka-2.3.1" && \
     mkdir -p "/opt/kafka-2.4.1" && chmod a+rw /opt/kafka-2.4.1 && curl -s "$KAFKA_MIRROR/kafka_2.12-2.4.1.tgz" | tar xz --strip-components=1 -C "/opt/kafka-2.4.1" && \
     mkdir -p "/opt/kafka-2.5.0" && chmod a+rw /opt/kafka-2.5.0 && curl -s "$KAFKA_MIRROR/kafka_2.12-2.5.0.tgz" | tar xz --strip-components=1 -C "/opt/kafka-2.5.0" && \
     mkdir -p "/opt/kafka-2.7.0" && chmod a+rw /opt/kafka-2.7.0 && curl -s "$KAFKA_MIRROR/kafka_2.12-2.7.0.tgz" | tar xz --strip-components=1 -C "/opt/kafka-2.7.0" && \
-    curl https://raw.githubusercontent.com/birdayz/kaf/master/godownloader.sh | bash && \
     mkdir /opt/librdkafka && \
-    curl -SL "https://github.com/edenhill/librdkafka/archive/v1.5.0.tar.gz" | tar -xz --strip-components=1 -C /opt/librdkafka && \
+    curl -SL "https://github.com/edenhill/librdkafka/archive/v1.6.1.tar.gz" | tar -xz --strip-components=1 -C /opt/librdkafka && \
     cd /opt/librdkafka && \
     ./configure && \
     make -j$(nproc) && \
+    make install && \
     cd /opt/librdkafka/tests && \
-    make build -j$(nproc)
+    make build -j$(nproc) && \
+    go get -u github.com/birdayz/kaf/cmd/kaf && \
+    mv /root/go/bin/kaf /usr/local/bin/ && \
+    mkdir /tmp/kafkacat && \
+    curl -SL "https://github.com/edenhill/kafkacat/archive/1.6.0.tar.gz" | tar -xz --strip-components=1 -C /tmp/kafkacat && \
+    cd /tmp/kafkacat && \
+    ./configure && \
+    make -j$(nproc) && \
+    make install && \
+    ldconfig
 
 # copy source of test (java) programs
 COPY --chown=0:0 tests/java /tmp/java
