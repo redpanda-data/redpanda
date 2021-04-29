@@ -23,10 +23,11 @@ RUN apt update && \
     apt install -y \
       build-essential \
       curl \
-      default-jre \
+      default-jdk \
       iptables \
       kafkacat \
       libatomic1 \
+      maven \
       openssh-server \
       python3-pip && \
     rm -rf /var/lib/apt/lists/* && \
@@ -55,13 +56,18 @@ RUN mkdir -p "/opt/kafka-2.3.1" && chmod a+rw /opt/kafka-2.3.1 && curl -s "$KAFK
     cd /opt/librdkafka/tests && \
     make build -j$(nproc)
 
+# copy source of test (java) programs
+COPY --chown=0:0 tests/java /tmp/java
+RUN mvn clean package --batch-mode --file /tmp/java/kafka-verifier --define buildDir=/opt/kafka-verifier/ && \
+    mvn clean package --batch-mode --file /tmp/java/compacted-log-verifier --define buildDir=/opt/compacted-log-verifier
+
 # copy ssh keys
-COPY --chown=0:0 docker/ssh /root/.ssh
+COPY --chown=0:0 tests/docker/ssh /root/.ssh
 
 # install python dependencies and rptest package.
 # rptest package installed in editable mode so it can be overridden.
 # passes --force so system pip packages can be updated
-COPY --chown=0:0 setup.py /root/tests/
+COPY --chown=0:0 tests/setup.py /root/tests/
 RUN python3 -m pip install --upgrade --force pip && \
     python3 -m pip install --force --no-cache-dir -e /root/tests/
 
