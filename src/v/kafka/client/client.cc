@@ -156,21 +156,22 @@ ss::future<> client::stop() noexcept {
 ss::future<> client::update_metadata(wait_or_start::tag) {
     return ss::try_with_gate(_gate, [this]() {
         vlog(kclog.debug, "updating metadata");
-        return _brokers.any().then([this](shared_broker_t broker) {
-            return broker->dispatch(metadata_request{.list_all_topics = true})
-              .then([this](metadata_response res) {
-                  // Create new seeds from the returned set of brokers
-                  std::vector<unresolved_address> seeds;
-                  seeds.reserve(res.data.brokers.size());
-                  for (const auto& b : res.data.brokers) {
-                      seeds.emplace_back(b.host, b.port);
-                  }
-                  std::swap(_seeds, seeds);
+        return _brokers.any()
+          .then([this](shared_broker_t broker) {
+              return broker->dispatch(metadata_request{.list_all_topics = true})
+                .then([this](metadata_response res) {
+                    // Create new seeds from the returned set of brokers
+                    std::vector<unresolved_address> seeds;
+                    seeds.reserve(res.data.brokers.size());
+                    for (const auto& b : res.data.brokers) {
+                        seeds.emplace_back(b.host, b.port);
+                    }
+                    std::swap(_seeds, seeds);
 
-                  return apply(std::move(res));
-              })
-              .finally([]() { vlog(kclog.trace, "updated metadata"); });
-        })
+                    return apply(std::move(res));
+                })
+                .finally([]() { vlog(kclog.trace, "updated metadata"); });
+          })
           .handle_exception_type(
             [this](const broker_error&) { return connect(); });
     });
