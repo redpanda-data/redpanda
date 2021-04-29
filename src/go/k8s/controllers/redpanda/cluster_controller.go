@@ -266,15 +266,6 @@ func (r *ClusterReconciler) createExternalNodesList(
 		return []string{}, []string{}, fmt.Errorf("failed to retrieve node port service %s: %w", nodePortName, err)
 	}
 
-	// we now support only one external kafka and admin port
-	expectedPortLength := 2
-	if externalAdminListener == nil || externalKafkaListener == nil {
-		expectedPortLength = 1
-	}
-	if len(nodePortSvc.Spec.Ports) != expectedPortLength {
-		return []string{}, []string{}, fmt.Errorf("node port service %s: %w", nodePortName, errNodePortMissing)
-	}
-
 	for _, port := range nodePortSvc.Spec.Ports {
 		if port.NodePort == 0 {
 			return []string{}, []string{}, fmt.Errorf("node port service %s, port %s is 0: %w", nodePortName, port.Name, errNodePortMissing)
