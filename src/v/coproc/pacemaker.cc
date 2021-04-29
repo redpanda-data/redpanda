@@ -67,8 +67,7 @@ pacemaker::pacemaker(unresolved_address addr, ss::sharded<storage::api>& api)
 
 ss::future<> pacemaker::start() {
     co_await ss::recursive_touch_directory(offsets_snapshot_path().string());
-    auto ncc = co_await recover_offsets(_offs.snap, _shared_res.api.log_mgr());
-    _ntps = std::move(ncc);
+    _ntps = co_await recover_offsets(_offs.snap, _shared_res.api.log_mgr());
     if (!_offs.timer.armed()) {
         _offs.timer.arm(_offs.duration);
     }
@@ -76,9 +75,11 @@ ss::future<> pacemaker::start() {
 
 ss::future<> pacemaker::reset() {
     _offs.timer.cancel();
+    ntp_context_cache ncc = std::exchange(_ntps, {});
     auto removed = co_await remove_all_sources();
     vlog(coproclog.info, "Pacemaker reset {} scripts", removed.size());
-    co_await start();
+    std::swap(_ntps, ncc);
+    _offs.timer.arm(_offs.duration);
 }
 
 ss::future<> pacemaker::stop() {
