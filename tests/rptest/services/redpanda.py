@@ -71,7 +71,6 @@ class RedpandaService(Service):
         self._enable_pp = enable_pp
         self._log_level = log_level
         self._topics = topics or ()
-        self.v_build_dir = self._context.globals.get("v_build_dir", None)
         self._admin = Admin(self)
 
     def sasl_enabled(self):

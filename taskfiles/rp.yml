@@ -147,7 +147,7 @@ tasks:
           --cluster=ducktape.cluster.json.JsonCluster
           --cluster-file=/cluster.json
           --results-root=/build/tests/results
-          --globals='{"rp_install_path_root":"{{.RP_INSTALL_DIR}}","v_build_dir":"{{.BUILD_ROOT}}"}'
+          --globals='{"rp_install_path_root":"{{.RP_INSTALL_DIR}}"}'
           {{.DUCKTAPE_ARGS}}
 
   stop-compose-cluster:
