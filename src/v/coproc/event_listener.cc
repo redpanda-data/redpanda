@@ -193,12 +193,14 @@ ss::future<> event_listener::do_start() {
         /// There is a discrepency between the number of registered coprocs
         /// according to redpanda and according to the wasm engine.
         /// Reconcile all state from offset 0.
+        vlog(coproclog.info, "Replaying coprocessor state...");
         if (co_await _dispatcher.disable_all_coprocessors()) {
             vlog(
               coproclog.error,
               "Failed to reset wasm_engine state, will keep retrying...");
         } else {
             co_await remove_copro_state(_pacemaker);
+            _active_ids.clear();
             _offset = model::offset(0);
         }
     }
