@@ -336,3 +336,154 @@ func TestBuildTLSConfig(t *testing.T) {
 		})
 	}
 }
+
+func TestCreateAdmin(t *testing.T) {
+	tests := []struct {
+		name           string
+		brokers        func() []string
+		configuration  func() (*config.Config, error)
+		tlsConfig      func() (*config.TLS, error)
+		authConfig     func() (*config.SCRAM, error)
+		expectedErrMsg string
+	}{{
+		name: "the returned closure should fail if configuration fails",
+		configuration: func() (*config.Config, error) {
+			return nil, errors.New("No config found here")
+		},
+		expectedErrMsg: "No config found here",
+	}, {
+		name: "the returned closure should fail if tlsConfig fails",
+		tlsConfig: func() (*config.TLS, error) {
+			return nil, errors.New("bad tls conf")
+		},
+		expectedErrMsg: "bad tls conf",
+	}, {
+		name: "the returned closure should fail if authConfig returns an error other than ErrNoCredentials",
+		authConfig: func() (*config.SCRAM, error) {
+			return nil, errors.New("Some bad error")
+		},
+		expectedErrMsg: "Some bad error",
+	}, {
+		name: "the returned closure shouldn't fail due to authConfig returning ErrNoCredentials",
+		authConfig: func() (*config.SCRAM, error) {
+			return nil, common.ErrNoCredentials
+		},
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(st *testing.T) {
+			brokers := func() []string {
+				return []string{}
+			}
+			if tt.brokers != nil {
+				brokers = tt.brokers
+			}
+
+			configuration := func() (*config.Config, error) {
+				return config.Default(), nil
+			}
+			if tt.configuration != nil {
+				configuration = tt.configuration
+			}
+
+			tlsConfig := func() (*config.TLS, error) {
+				return nil, nil
+			}
+			if tt.tlsConfig != nil {
+				tlsConfig = tt.tlsConfig
+			}
+
+			authConfig := func() (*config.SCRAM, error) {
+				return nil, nil
+			}
+			if tt.authConfig != nil {
+				authConfig = tt.authConfig
+			}
+
+			fn := common.CreateAdmin(brokers, configuration, tlsConfig, authConfig)
+			_, err := fn()
+			if tt.expectedErrMsg != "" {
+				require.EqualError(st, err, tt.expectedErrMsg)
+				return
+			}
+			// The admin always fails to initialize because the brokers closure
+			// always returns an empty slice.
+			require.EqualError(st, err, "couldn't connect to redpanda at . Try using --brokers to specify other brokers to connect to.")
+		})
+	}
+}
+func TestCreateClient(t *testing.T) {
+	tests := []struct {
+		name           string
+		brokers        func() []string
+		configuration  func() (*config.Config, error)
+		tlsConfig      func() (*config.TLS, error)
+		authConfig     func() (*config.SCRAM, error)
+		expectedErrMsg string
+	}{{
+		name: "the returned closure should fail if configuration fails",
+		configuration: func() (*config.Config, error) {
+			return nil, errors.New("No config found here")
+		},
+		expectedErrMsg: "No config found here",
+	}, {
+		name: "the returned closure should fail if tlsConfig fails",
+		tlsConfig: func() (*config.TLS, error) {
+			return nil, errors.New("bad tls conf")
+		},
+		expectedErrMsg: "bad tls conf",
+	}, {
+		name: "the returned closure should fail if authConfig returns an error other than ErrNoCredentials",
+		authConfig: func() (*config.SCRAM, error) {
+			return nil, errors.New("Some bad error")
+		},
+		expectedErrMsg: "Some bad error",
+	}, {
+		name: "the returned closure shouldn't fail due to authConfig returning ErrNoCredentials",
+		authConfig: func() (*config.SCRAM, error) {
+			return nil, common.ErrNoCredentials
+		},
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(st *testing.T) {
+			brokers := func() []string {
+				return []string{}
+			}
+			if tt.brokers != nil {
+				brokers = tt.brokers
+			}
+
+			configuration := func() (*config.Config, error) {
+				return config.Default(), nil
+			}
+			if tt.configuration != nil {
+				configuration = tt.configuration
+			}
+
+			tlsConfig := func() (*config.TLS, error) {
+				return nil, nil
+			}
+			if tt.tlsConfig != nil {
+				tlsConfig = tt.tlsConfig
+			}
+
+			authConfig := func() (*config.SCRAM, error) {
+				return nil, nil
+			}
+			if tt.authConfig != nil {
+				authConfig = tt.authConfig
+			}
+
+			fn := common.CreateClient(brokers, configuration, tlsConfig, authConfig)
+			_, err := fn()
+			if tt.expectedErrMsg != "" {
+				require.EqualError(st, err, tt.expectedErrMsg)
+				return
+			}
+			// The client always fails to initialize because the brokers closure
+			// always returns an empty slice.
+			require.EqualError(st, err, "couldn't connect to redpanda at . Try using --brokers to specify other brokers to connect to.")
+		})
+	}
+}

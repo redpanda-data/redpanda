@@ -190,11 +190,13 @@ func CreateProducer(
 
 		scram, err := authConfig()
 		if err != nil {
-			return nil, err
-		}
-		// If no SCRAM config was set, try to look for it in the
-		// config file.
-		if errors.Is(err, ErrNoCredentials) {
+			// If the user passed the credentials and there was still an
+			// error, return it.
+			if !errors.Is(err, ErrNoCredentials) {
+				return nil, err
+			}
+			// If no SCRAM config was set, try to look for it in the
+			// config file.
 			scram = &conf.Rpk.SCRAM
 		}
 
@@ -236,13 +238,15 @@ func CreateClient(
 		}
 
 		scram, err := authConfig()
-		// If no SCRAM config was set, try to look for it in the
-		// config file.
-		if errors.Is(err, ErrNoCredentials) {
-			scram = &conf.Rpk.SCRAM
-		}
 		if err != nil {
-			return nil, err
+			// If the user passed the credentials and there was still an
+			// error, return it.
+			if !errors.Is(err, ErrNoCredentials) {
+				return nil, err
+			}
+			// If no SCRAM config was set, try to look for it in the
+			// config file.
+			scram = &conf.Rpk.SCRAM
 		}
 
 		bs := brokers()
@@ -275,13 +279,15 @@ func CreateAdmin(
 		}
 
 		scram, err := authConfig()
-		// If no SCRAM config was set, try to look for it in the
-		// config file.
-		if errors.Is(err, ErrNoCredentials) {
-			scram = &conf.Rpk.SCRAM
-		}
 		if err != nil {
-			return nil, err
+			// If the user passed the credentials and there was still an
+			// error, return it.
+			if !errors.Is(err, ErrNoCredentials) {
+				return nil, err
+			}
+			// If no SCRAM config was set, try to look for it in the
+			// config file.
+			scram = &conf.Rpk.SCRAM
 		}
 
 		cfg, err := kafka.LoadConfig(tls, scram)
