@@ -385,7 +385,7 @@ pandaproxy:
 pandaproxy_client:
   # List of address and port of the brokers
   # Default: "127.0.0.1:9092
-  broker:
+  brokers:
    - address: "127.0.0.1"
      port: 9092
 
