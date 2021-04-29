@@ -114,7 +114,9 @@ static bool should_immediately_deregister(
         /// acks correspond to what topics
         results.push_back(fold_enable_codes(cross_shard_codes));
     }
-    return std::any_of(results.cbegin(), results.cend(), xform::identity());
+    /// Only if 100% of the subscribtions are invalid should the
+    /// coprocessor be deregistered.
+    return std::all_of(results.cbegin(), results.cend(), xform::identity());
 }
 
 static disable_response_code
