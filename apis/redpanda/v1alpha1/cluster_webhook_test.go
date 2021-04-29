@@ -279,6 +279,47 @@ func TestValidateUpdate_NoError(t *testing.T) {
 
 		assert.Error(t, err)
 	})
+
+	t.Run("proxy subdomain must be the same as kafka subdomain", func(t *testing.T) {
+		withSub := redpandaCluster.DeepCopy()
+		withSub.Spec.Configuration.PandaproxyAPI = []v1alpha1.PandaproxyAPI{
+			{
+				Port:     145,
+				External: v1alpha1.ExternalConnectivityConfig{Enabled: true, Subdomain: "subdomain"},
+			},
+		}
+		err := withSub.ValidateUpdate(redpandaCluster)
+
+		assert.Error(t, err)
+	})
+
+	t.Run("cannot have multiple internal proxy listeners", func(t *testing.T) {
+		multiPort := redpandaCluster.DeepCopy()
+		multiPort.Spec.Configuration.PandaproxyAPI = append(multiPort.Spec.Configuration.PandaproxyAPI,
+			v1alpha1.PandaproxyAPI{Port: 123}, v1alpha1.PandaproxyAPI{Port: 321})
+		err := multiPort.ValidateUpdate(redpandaCluster)
+
+		assert.Error(t, err)
+	})
+
+	t.Run("cannot have external proxy listener without an internal one", func(t *testing.T) {
+		noInternal := redpandaCluster.DeepCopy()
+		noInternal.Spec.Configuration.PandaproxyAPI = append(noInternal.Spec.Configuration.PandaproxyAPI,
+			v1alpha1.PandaproxyAPI{External: v1alpha1.ExternalConnectivityConfig{Enabled: true}, Port: 123})
+		err := noInternal.ValidateUpdate(redpandaCluster)
+
+		assert.Error(t, err)
+	})
+
+	t.Run("external proxy listener cannot have port specified", func(t *testing.T) {
+		multiPort := redpandaCluster.DeepCopy()
+		multiPort.Spec.Configuration.PandaproxyAPI = append(multiPort.Spec.Configuration.PandaproxyAPI,
+			v1alpha1.PandaproxyAPI{External: v1alpha1.ExternalConnectivityConfig{Enabled: true}, Port: 123},
+			v1alpha1.PandaproxyAPI{Port: 321})
+		err := multiPort.ValidateUpdate(redpandaCluster)
+
+		assert.Error(t, err)
+	})
 }
 
 //nolint:funlen // this is ok for a test
@@ -440,6 +481,47 @@ func TestCreation(t *testing.T) {
 		multiPort := redpandaCluster.DeepCopy()
 		multiPort.Spec.Configuration.AdminAPI[0].TLS.RequireClientAuth = true
 		multiPort.Spec.Configuration.AdminAPI[0].TLS.Enabled = false
+		err := multiPort.ValidateCreate()
+
+		assert.Error(t, err)
+	})
+
+	t.Run("proxy subdomain must be the same as kafka subdomain", func(t *testing.T) {
+		withSub := redpandaCluster.DeepCopy()
+		withSub.Spec.Configuration.PandaproxyAPI = []v1alpha1.PandaproxyAPI{
+			{
+				Port:     145,
+				External: v1alpha1.ExternalConnectivityConfig{Enabled: true, Subdomain: "subdomain"},
+			},
+		}
+		err := withSub.ValidateCreate()
+
+		assert.Error(t, err)
+	})
+
+	t.Run("cannot have multiple internal proxy listeners", func(t *testing.T) {
+		multiPort := redpandaCluster.DeepCopy()
+		multiPort.Spec.Configuration.PandaproxyAPI = append(multiPort.Spec.Configuration.PandaproxyAPI,
+			v1alpha1.PandaproxyAPI{Port: 123}, v1alpha1.PandaproxyAPI{Port: 321})
+		err := multiPort.ValidateCreate()
+
+		assert.Error(t, err)
+	})
+
+	t.Run("cannot have external proxy listener without an internal one", func(t *testing.T) {
+		noInternal := redpandaCluster.DeepCopy()
+		noInternal.Spec.Configuration.PandaproxyAPI = append(noInternal.Spec.Configuration.PandaproxyAPI,
+			v1alpha1.PandaproxyAPI{External: v1alpha1.ExternalConnectivityConfig{Enabled: true}, Port: 123})
+		err := noInternal.ValidateCreate()
+
+		assert.Error(t, err)
+	})
+
+	t.Run("external proxy listener cannot have port specified", func(t *testing.T) {
+		multiPort := redpandaCluster.DeepCopy()
+		multiPort.Spec.Configuration.PandaproxyAPI = append(multiPort.Spec.Configuration.PandaproxyAPI,
+			v1alpha1.PandaproxyAPI{External: v1alpha1.ExternalConnectivityConfig{Enabled: true}, Port: 123},
+			v1alpha1.PandaproxyAPI{Port: 321})
 		err := multiPort.ValidateCreate()
 
 		assert.Error(t, err)
