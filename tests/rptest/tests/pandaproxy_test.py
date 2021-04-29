@@ -711,7 +711,7 @@ class PandaProxyTest(RedpandaTest):
 
         # Set consumer offsets
         sco_req = dict(partitions=[
-            dict(topic=t, partition=p, offset=1) for t in topics
+            dict(topic=t, partition=p, offset=0) for t in topics
             for p in [0, 1, 2]
         ])
         self.logger.info(f"Set consumer offsets")
