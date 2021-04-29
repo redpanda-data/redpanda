@@ -24,6 +24,7 @@
 #include "kafka/types.h"
 #include "model/fundamental.h"
 #include "model/timeout_clock.h"
+#include "random/generators.h"
 #include "seastarx.h"
 #include "ssx/future-util.h"
 #include "utils/unresolved_address.h"
@@ -116,6 +117,9 @@ ss::future<> client::do_connect(unresolved_address addr) {
 }
 
 ss::future<> client::connect() {
+    std::shuffle(
+      _seeds.begin(), _seeds.end(), random_generators::internal::gen);
+
     return ss::do_with(size_t{0}, [this](size_t& retries) {
         return retry_with_mitigation(
           _config.retries(),
