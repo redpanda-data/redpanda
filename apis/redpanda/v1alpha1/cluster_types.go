@@ -347,3 +347,23 @@ func (r *Cluster) AdminAPITLS() *AdminAPI {
 	}
 	return nil
 }
+
+// PandaproxyAPIInternal returns internal admin listener
+func (r *Cluster) PandaproxyAPIInternal() *PandaproxyAPI {
+	for _, el := range r.Spec.Configuration.PandaproxyAPI {
+		if !el.External.Enabled {
+			return &el
+		}
+	}
+	return nil
+}
+
+// PandaproxyAPIExternal returns the external pandaproxy listener
+func (r *Cluster) PandaproxyAPIExternal() *PandaproxyAPI {
+	for _, el := range r.Spec.Configuration.PandaproxyAPI {
+		if el.External.Enabled {
+			return &el
+		}
+	}
+	return nil
+}

@@ -34,6 +34,10 @@ const (
 	InternalListenerName = "kafka"
 	// ExternalListenerName is name of external listener
 	ExternalListenerName = "kafka-external"
+	// PandaproxyPortInternalName is the name of the pandaproxy internal port
+	PandaproxyPortInternalName = "proxy"
+	// PandaproxyPortExternalName is the name of the pandaproxy external port
+	PandaproxyPortExternalName = "proxy-external"
 )
 
 // NamedServicePort allows to pass name ports, e.g., to service resources
