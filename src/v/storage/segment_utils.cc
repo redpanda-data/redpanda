@@ -614,11 +614,17 @@ ss::future<std::vector<compacted_index_reader>> make_indices_readers(
       [io_pc, sanitize](ss::lw_shared_ptr<segment>& seg) {
           const auto path = compacted_index_path(
             seg->reader().filename().c_str());
-          return make_reader_handle(path, sanitize)
-            .then([path, io_pc](auto reader_fd) {
-                return make_file_backed_compacted_reader(
-                  path.string(), reader_fd, io_pc, 64_KiB);
-            });
+          auto f = ss::now();
+          if (seg->has_compaction_index()) {
+              f = seg->compaction_index().close();
+          }
+          return f.then([io_pc, sanitize, path]() {
+              return make_reader_handle(path, sanitize)
+                .then([path, io_pc](auto reader_fd) {
+                    return make_file_backed_compacted_reader(
+                      path.string(), reader_fd, io_pc, 64_KiB);
+                });
+          });
       });
 }
 
