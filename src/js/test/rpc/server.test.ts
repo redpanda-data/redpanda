@@ -197,6 +197,62 @@ describe("Server", function () {
         });
     });
 
+    it(
+      "should apply the right Coprocessor for the Request's topic, and " +
+        "join all result with same output ",
+      function (done) {
+        const coprocessorId = BigInt(1);
+        const { spyGetHandles } = createStubs(sinonInstance);
+        spyGetHandles.returns([
+          createHandle({
+            apply: () =>
+              Promise.resolve(
+                new Map([
+                  [
+                    "newTopic",
+                    createRecordBatch({
+                      header: { recordCount: 1 },
+                      records: [{ value: Buffer.from("new VALUE") }],
+                    }),
+                  ],
+                ])
+              ),
+          }),
+        ]);
+        const request = {
+          recordBatch: [
+            createRecordBatch({
+              header: {
+                recordCount: 1,
+              },
+              records: [{ value: Buffer.from("b") }],
+            }),
+            createRecordBatch({
+              header: {
+                recordCount: 1,
+              },
+              records: [{ value: Buffer.from("c") }],
+            }),
+          ],
+          coprocessorIds: [createHandle().coprocessor.globalId],
+          ntp: { partition: 1, namespace: "", topic: "produce" },
+        };
+        client.process_batch({ requests: [request] }).then((res) => {
+          assert(spyGetHandles.called);
+          assert(spyGetHandles.calledWith([coprocessorId]));
+          const resultBatch = res.result[0];
+          assert.strictEqual(resultBatch.ntp.topic, "produce.$newTopic$");
+          assert.deepStrictEqual(
+            resultBatch.resultRecordBatch.flatMap(({ records }) =>
+              records.map((r) => r.value.toString())
+            ),
+            ["new VALUE", "new VALUE"]
+          );
+          done();
+        });
+      }
+    );
+
     it("should apply coprocessors to multiple record batches", function () {
       const { spyGetHandles } = createStubs(sinonInstance);
       // transform coprocessor function
