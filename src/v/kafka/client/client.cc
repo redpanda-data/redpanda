@@ -170,7 +170,9 @@ ss::future<> client::update_metadata(wait_or_start::tag) {
                   return apply(std::move(res));
               })
               .finally([]() { vlog(kclog.trace, "updated metadata"); });
-        });
+        })
+          .handle_exception_type(
+            [this](const broker_error&) { return connect(); });
     });
 }
 
