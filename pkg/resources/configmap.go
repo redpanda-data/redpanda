@@ -164,14 +164,14 @@ func (r *ConfigMapResource) createConfiguration(
 	}
 
 	cr.AdminApi[0].Port = clusterCRPortOrRPKDefault(r.pandaCluster.AdminAPIInternal().Port, cr.AdminApi[0].Port)
-	cr.AdminApi[0].Name = InternalListenerName
+	cr.AdminApi[0].Name = AdminPortName
 	if r.pandaCluster.AdminAPIExternal() != nil {
 		externalAdminAPI := config.NamedSocketAddress{
 			SocketAddress: config.SocketAddress{
 				Address: cr.AdminApi[0].Address,
 				Port:    cr.AdminApi[0].Port + 1,
 			},
-			Name: ExternalListenerName,
+			Name: AdminPortExternalName,
 		}
 		cr.AdminApi = append(cr.AdminApi, externalAdminAPI)
 	}
@@ -203,9 +203,9 @@ func (r *ConfigMapResource) createConfiguration(
 	}
 	adminAPITLSListener := r.pandaCluster.AdminAPITLS()
 	if adminAPITLSListener != nil {
-		name := InternalListenerName
+		name := AdminPortName
 		if adminAPITLSListener.External.Enabled {
-			name = ExternalListenerName
+			name = AdminPortExternalName
 		}
 		adminTLS := config.ServerTLS{
 			Name:              name,
