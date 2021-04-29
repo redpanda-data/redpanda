@@ -96,7 +96,7 @@ class WasmIdentityTest(WasmTest):
 
 
 class WasmBasicIdentityTest(WasmIdentityTest):
-    def __init__(self, test_context, num_records=1024, record_size=1024):
+    def __init__(self, test_context, num_records=10240, record_size=1024):
         super(WasmBasicIdentityTest, self).__init__(test_context,
                                                     num_records=num_records,
                                                     record_size=record_size)
@@ -122,7 +122,7 @@ class WasmMultiScriptIdentityTest(WasmIdentityTest):
                         replication_factor=3,
                         cleanup_policy=TopicSpec.CLEANUP_DELETE), )
 
-    def __init__(self, test_context, num_records=1024, record_size=1024):
+    def __init__(self, test_context, num_records=10240, record_size=1024):
         super(WasmMultiScriptIdentityTest,
               self).__init__(test_context,
                              num_records=num_records,
@@ -160,7 +160,7 @@ class WasmMultiInputTopicIdentityTest(WasmIdentityTest):
                   cleanup_policy=TopicSpec.CLEANUP_DELETE),
     )
 
-    def __init__(self, test_context, num_records=1024, record_size=1024):
+    def __init__(self, test_context, num_records=10240, record_size=1024):
         super(WasmMultiInputTopicIdentityTest,
               self).__init__(test_context,
                              num_records=num_records,
@@ -203,7 +203,7 @@ class WasmAllInputsToAllOutputsIdentityTest(WasmIdentityTest):
                   cleanup_policy=TopicSpec.CLEANUP_DELETE),
     )
 
-    def __init__(self, test_context, num_records=1024, record_size=1024):
+    def __init__(self, test_context, num_records=3024, record_size=1024):
         super(WasmAllInputsToAllOutputsIdentityTest,
               self).__init__(test_context,
                              num_records=num_records,
