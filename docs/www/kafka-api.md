@@ -4,10 +4,14 @@
 ### [1.1 Introduction](#introduction)
 
 <div class="p-introduction">
+We do:
 
+Graceful shutdown
+Leadership
+Geo-replication (Rename mirror-maker2)
 </div>
 
-### [1.2 Use Cases](#uses)
+### [1.2 Use Cases](#uses) [Separate page]
 
 Here is a description of a few of the popular use cases for Apache
 Kafka®. For an overview of a number of these areas in action, see [this
@@ -100,13 +104,7 @@ compaction](/documentation.html#compaction) feature in Kafka helps
 support this usage. In this usage Kafka is similar to [Apache
 BookKeeper](https://bookkeeper.apache.org/) project.
 
-### [1.3 Quick Start](#quickstart)
-
-<div class="p-quickstart">
-
-</div>
-
-### [1.4 Ecosystem](#ecosystem)
+### [1.4 Ecosystem](#ecosystem) [Separate page]
 
 There are a plethora of tools that integrate with Kafka outside the main
 distribution. The [ecosystem
@@ -114,33 +112,11 @@ page](https://cwiki.apache.org/confluence/display/KAFKA/Ecosystem) lists
 many of these, including stream processing systems, Hadoop integration,
 monitoring, and deployment tools.
 
-### [1.5 Upgrading From Previous Versions](#upgrade)
-
-<div class="p-upgrade">
-
-</div>
+### [1.5 Upgrading From Previous Versions](#upgrade) [Future]
 
 ## [2. APIs](#api)
 
 <div class="p-api">
-
-</div>
-
-## [3. Configuration](#configuration)
-
-<div class="p-configuration">
-
-</div>
-
-## [4. Design](#design)
-
-<div class="p-design">
-
-</div>
-
-## [5. Implementation](#implementation)
-
-<div class="p-implementation">
 
 </div>
 
@@ -244,64 +220,7 @@ topic.
 Instructions for changing the replication factor of a topic can be found
 [here](#basic_ops_increase_replication_factor).
 
-#### [Graceful shutdown](#basic_ops_restarting)
-
-The Kafka cluster will automatically detect any broker shutdown or
-failure and elect new leaders for the partitions on that machine. This
-will occur whether a server fails or it is brought down intentionally
-for maintenance or configuration changes. For the latter cases Kafka
-supports a more graceful mechanism for stopping a server than just
-killing it. When a server is stopped gracefully it has two optimizations
-it will take advantage of:
-
-1.  It will sync all its logs to disk to avoid needing to do any log
-    recovery when it restarts (i.e. validating the checksum for all
-    messages in the tail of the log). Log recovery takes time so this
-    speeds up intentional restarts.
-2.  It will migrate any partitions the server is the leader for to other
-    replicas prior to shutting down. This will make the leadership
-    transfer faster and minimize the time each partition is unavailable
-    to a few milliseconds.
-
-Syncing the logs will happen automatically whenever the server is
-stopped other than by a hard kill, but the controlled leadership
-migration requires using a special setting:
-
-``` line-numbers
-      controlled.shutdown.enable=true
-```
-
-Note that controlled shutdown will only succeed if *all* the partitions
-hosted on the broker have replicas (i.e. the replication factor is
-greater than 1 *and* at least one of these replicas is alive). This is
-generally what you want since shutting down the last replica would make
-that topic partition unavailable.
-
-#### [Balancing leadership](#basic_ops_leader_balancing)
-
-Whenever a broker stops or crashes, leadership for that broker's
-partitions transfers to other replicas. When the broker is restarted it
-will only be a follower for all its partitions, meaning it will not be
-used for client reads and writes.
-
-To avoid this imbalance, Kafka has a notion of preferred replicas. If
-the list of replicas for a partition is 1,5,9 then node 1 is preferred
-as the leader to either node 5 or 9 because it is earlier in the replica
-list. By default the Kafka cluster will try to restore leadership to the
-restored replicas. This behaviour is configured with:
-
-``` line-numbers
-      auto.leader.rebalance.enable=true
-```
-
-You can also set this to false, but you will then need to manually
-restore leadership to the restored replicas by running the command:
-
-``` line-numbers
-  > bin/kafka-preferred-replica-election.sh --bootstrap-server broker_host:port
-```
-
-#### [Balancing Replicas Across Racks](#basic_ops_racks)
+#### [Rack Awareness](#basic_ops_racks) [Simplify, Q2]
 
 The rack awareness feature spreads replicas of the same partition across
 different racks. This extends the guarantees Kafka provides for
@@ -339,154 +258,11 @@ individual Kafka clusters, data centers, or geographical regions. Please
 refer to the section on [Geo-Replication](#georeplication) for further
 information.
 
-#### [Checking consumer position](#basic_ops_consumer_lag)
+#### [CHecking consumer lag](#basic_ops_consumer_lag)
 
-Sometimes it's useful to see the position of your consumers. We have a
-tool that will show the position of all consumers in a consumer group as
-well as how far behind the end of the log they are. To run this tool on
-a consumer group named *my-group* consuming a topic named *my-topic*
-would look like this:
+`rpk cluster offsets`
 
-``` line-numbers
-  > bin/kafka-consumer-groups.sh --bootstrap-server localhost:9092 --describe --group my-group
-
-  TOPIC                          PARTITION  CURRENT-OFFSET  LOG-END-OFFSET  LAG        CONSUMER-ID                                       HOST                           CLIENT-ID
-  my-topic                       0          2               4               2          consumer-1-029af89c-873c-4751-a720-cefd41a669d6   /127.0.0.1                     consumer-1
-  my-topic                       1          2               3               1          consumer-1-029af89c-873c-4751-a720-cefd41a669d6   /127.0.0.1                     consumer-1
-  my-topic                       2          2               3               1          consumer-2-42c1abd4-e3b2-425d-a8bb-e1ea49b29bb2   /127.0.0.1                     consumer-2
-```
-
-#### [Managing Consumer Groups](#basic_ops_consumer_group)
-
-With the ConsumerGroupCommand tool, we can list, describe, or delete the
-consumer groups. The consumer group can be deleted manually, or
-automatically when the last committed offset for that group expires.
-Manual deletion works only if the group does not have any active
-members. For example, to list all consumer groups across all topics:
-
-``` line-numbers
-  > bin/kafka-consumer-groups.sh --bootstrap-server localhost:9092 --list
-
-  test-consumer-group
-```
-
-To view offsets, as mentioned earlier, we "describe" the consumer group
-like this:
-
-``` line-numbers
-  > bin/kafka-consumer-groups.sh --bootstrap-server localhost:9092 --describe --group my-group
-
-  TOPIC           PARTITION  CURRENT-OFFSET  LOG-END-OFFSET  LAG             CONSUMER-ID                                    HOST            CLIENT-ID
-  topic3          0          241019          395308          154289          consumer2-e76ea8c3-5d30-4299-9005-47eb41f3d3c4 /127.0.0.1      consumer2
-  topic2          1          520678          803288          282610          consumer2-e76ea8c3-5d30-4299-9005-47eb41f3d3c4 /127.0.0.1      consumer2
-  topic3          1          241018          398817          157799          consumer2-e76ea8c3-5d30-4299-9005-47eb41f3d3c4 /127.0.0.1      consumer2
-  topic1          0          854144          855809          1665            consumer1-3fc8d6f1-581a-4472-bdf3-3515b4aee8c1 /127.0.0.1      consumer1
-  topic2          0          460537          803290          342753          consumer1-3fc8d6f1-581a-4472-bdf3-3515b4aee8c1 /127.0.0.1      consumer1
-  topic3          2          243655          398812          155157          consumer4-117fe4d3-c6c1-4178-8ee9-eb4a3954bee0 /127.0.0.1      consumer4
-```
-
-There are a number of additional "describe" options that can be used to
-provide more detailed information about a consumer group:
-
-  - \--members: This option provides the list of all active members in
-    the consumer group.
-    
-    ``` line-numbers
-          > bin/kafka-consumer-groups.sh --bootstrap-server localhost:9092 --describe --group my-group --members
-    
-          CONSUMER-ID                                    HOST            CLIENT-ID       #PARTITIONS
-          consumer1-3fc8d6f1-581a-4472-bdf3-3515b4aee8c1 /127.0.0.1      consumer1       2
-          consumer4-117fe4d3-c6c1-4178-8ee9-eb4a3954bee0 /127.0.0.1      consumer4       1
-          consumer2-e76ea8c3-5d30-4299-9005-47eb41f3d3c4 /127.0.0.1      consumer2       3
-          consumer3-ecea43e4-1f01-479f-8349-f9130b75d8ee /127.0.0.1      consumer3       0
-    ```
-
-  - \--members --verbose: On top of the information reported by the
-    "--members" options above, this option also provides the partitions
-    assigned to each member.
-    
-    ``` line-numbers
-          > bin/kafka-consumer-groups.sh --bootstrap-server localhost:9092 --describe --group my-group --members --verbose
-    
-          CONSUMER-ID                                    HOST            CLIENT-ID       #PARTITIONS     ASSIGNMENT
-          consumer1-3fc8d6f1-581a-4472-bdf3-3515b4aee8c1 /127.0.0.1      consumer1       2               topic1(0), topic2(0)
-          consumer4-117fe4d3-c6c1-4178-8ee9-eb4a3954bee0 /127.0.0.1      consumer4       1               topic3(2)
-          consumer2-e76ea8c3-5d30-4299-9005-47eb41f3d3c4 /127.0.0.1      consumer2       3               topic2(1), topic3(0,1)
-          consumer3-ecea43e4-1f01-479f-8349-f9130b75d8ee /127.0.0.1      consumer3       0               -
-    ```
-
-  - \--offsets: This is the default describe option and provides the
-    same output as the "--describe" option.
-
-  - \--state: This option provides useful group-level information.
-    
-    ``` line-numbers
-          > bin/kafka-consumer-groups.sh --bootstrap-server localhost:9092 --describe --group my-group --state
-    
-          COORDINATOR (ID)          ASSIGNMENT-STRATEGY       STATE                #MEMBERS
-          localhost:9092 (0)        range                     Stable               4
-    ```
-
-To manually delete one or multiple consumer groups, the "--delete"
-option can be used:
-
-``` line-numbers
-  > bin/kafka-consumer-groups.sh --bootstrap-server localhost:9092 --delete --group my-group --group my-other-group
-
-  Deletion of requested consumer groups ('my-group', 'my-other-group') was successful.
-```
-
-To reset offsets of a consumer group, "--reset-offsets" option can be
-used. This option supports one consumer group at the time. It requires
-defining following scopes: --all-topics or --topic. One scope must be
-selected, unless you use '--from-file' scenario. Also, first make sure
-that the consumer instances are inactive. See
-[KIP-122](https://cwiki.apache.org/confluence/display/KAFKA/KIP-122%3A+Add+Reset+Consumer+Group+Offsets+tooling)
-for more details.
-
-It has 3 execution options:
-
-  - (default) to display which offsets to reset.
-  - \--execute : to execute --reset-offsets process.
-  - \--export : to export the results to a CSV format.
-
-\--reset-offsets also has following scenarios to choose from (at least
-one scenario must be selected):
-
-  - \--to-datetime \<String: datetime\> : Reset offsets to offsets from
-    datetime. Format: 'YYYY-MM-DDTHH:mm:SS.sss'
-  - \--to-earliest : Reset offsets to earliest offset.
-  - \--to-latest : Reset offsets to latest offset.
-  - \--shift-by \<Long: number-of-offsets\> : Reset offsets shifting
-    current offset by 'n', where 'n' can be positive or negative.
-  - \--from-file : Reset offsets to values defined in CSV file.
-  - \--to-current : Resets offsets to current offset.
-  - \--by-duration \<String: duration\> : Reset offsets to offset by
-    duration from current timestamp. Format: 'PnDTnHnMnS'
-  - \--to-offset : Reset offsets to a specific offset.
-
-Please note, that out of range offsets will be adjusted to available
-offset end. For example, if offset end is at 10 and offset shift request
-is of 15, then, offset at 10 will actually be selected.
-
-For example, to reset offsets of a consumer group to the latest offset:
-
-``` line-numbers
-  > bin/kafka-consumer-groups.sh --bootstrap-server localhost:9092 --reset-offsets --group consumergroup1 --topic topic1 --to-latest
-
-  TOPIC                          PARTITION  NEW-OFFSET
-  topic1                         0          0
-```
-
-If you are using the old high-level consumer and storing the group
-metadata in ZooKeeper (i.e. `offsets.storage=zookeeper`), pass
-`--zookeeper` instead of `--bootstrap-server`:
-
-``` line-numbers
-  > bin/kafka-consumer-groups.sh --zookeeper localhost:2181 --list
-```
-
-#### [Expanding your cluster](#basic_ops_cluster_expansion)
+#### [Expanding your cluster](#basic_ops_cluster_expansion) [Noah, Michal for May]
 
 Adding servers to a Kafka cluster is easy, just assign them a unique
 broker id and start up Kafka on your new servers. However these new
@@ -527,7 +303,7 @@ The partition reassignment tool can run in 3 mutually exclusive modes:
     The status can be either of successfully completed, failed or in
     progress
 
-##### [Automatically migrating data to new machines](#basic_ops_automigrate)
+##### [Automatically migrating data to new machines](#basic_ops_automigrate) [Noah, Michal for May]
 
 The partition reassignment tool can be used to move some topics off of
 the current set of brokers to the newly added brokers. This is typically
@@ -634,7 +410,7 @@ be used with the --verify option:
   Reassignment of partition [foo2,2] completed successfully
 ```
 
-##### [Custom partition assignment and migration](#basic_ops_partitionassignment)
+##### [Custom partition assignment and migration](#basic_ops_partitionassignment) [Noah, Michal for May]
 
 The partition reassignment tool can also be used to selectively move
 replicas of a partition to a specific set of brokers. When used in this
@@ -685,7 +461,7 @@ option:
   Reassignment of partition [foo2,1] completed successfully
 ```
 
-#### [Decommissioning brokers](#basic_ops_decommissioning_brokers)
+#### [Decommissioning brokers](#basic_ops_decommissioning_brokers) [Noah, Michal for May]
 
 The partition reassignment tool does not have the ability to
 automatically generate a reassignment plan for decommissioning brokers
@@ -697,7 +473,7 @@ not moved from the decommissioned broker to only one other broker. To
 make this process effortless, we plan to add tooling support for
 decommissioning brokers in the future.
 
-#### [Increasing replication factor](#basic_ops_increase_replication_factor)
+#### [Increasing replication factor](#basic_ops_increase_replication_factor) [Noah, Michal for May]
 
 Increasing the replication factor of an existing partition is easy. Just
 specify the extra replicas in the custom reassignment json file and use
@@ -755,151 +531,7 @@ kafka-topics tool:
     Topic: foo  Partition: 0    Leader: 5   Replicas: 5,6,7 Isr: 5,6,7
 ```
 
-#### [Limiting Bandwidth Usage during Data Migration](#rep-throttle)
-
-Kafka lets you apply a throttle to replication traffic, setting an upper
-bound on the bandwidth used to move replicas from machine to machine.
-This is useful when rebalancing a cluster, bootstrapping a new broker or
-adding or removing brokers, as it limits the impact these data-intensive
-operations will have on users.
-
-There are two interfaces that can be used to engage a throttle. The
-simplest, and safest, is to apply a throttle when invoking the
-kafka-reassign-partitions.sh, but kafka-configs.sh can also be used to
-view and alter the throttle values directly.
-
-So for example, if you were to execute a rebalance, with the below
-command, it would move partitions at no more than 50MB/s.
-
-``` language-bash
-$ bin/kafka-reassign-partitions.sh --bootstrap-server localhost:9092 --execute --reassignment-json-file bigger-cluster.json --throttle 50000000
-```
-
-When you execute this script you will see the throttle engage:
-
-``` line-numbers
-  The throttle limit was set to 50000000 B/s
-  Successfully started reassignment of partitions.
-```
-
-Should you wish to alter the throttle, during a rebalance, say to
-increase the throughput so it completes quicker, you can do this by
-re-running the execute command passing the same reassignment-json-file:
-
-``` language-bash
-$ bin/kafka-reassign-partitions.sh --bootstrap-server localhost:9092  --execute --reassignment-json-file bigger-cluster.json --throttle 700000000
-  There is an existing assignment running.
-  The throttle limit was set to 700000000 B/s
-```
-
-Once the rebalance completes the administrator can check the status of
-the rebalance using the --verify option. If the rebalance has completed,
-the throttle will be removed via the --verify command. It is important
-that administrators remove the throttle in a timely manner once
-rebalancing completes by running the command with the --verify option.
-Failure to do so could cause regular replication traffic to be
-throttled.
-
-When the --verify option is executed, and the reassignment has
-completed, the script will confirm that the throttle was removed:
-
-``` line-numbers
-  > bin/kafka-reassign-partitions.sh --bootstrap-server localhost:9092  --verify --reassignment-json-file bigger-cluster.json
-  Status of partition reassignment:
-  Reassignment of partition [my-topic,1] completed successfully
-  Reassignment of partition [mytopic,0] completed successfully
-  Throttle was removed.
-```
-
-The administrator can also validate the assigned configs using the
-kafka-configs.sh. There are two pairs of throttle configuration used to
-manage the throttling process. First pair refers to the throttle value
-itself. This is configured, at a broker level, using the dynamic
-properties:
-
-``` line-numbers
-    leader.replication.throttled.rate
-    follower.replication.throttled.rate
-```
-
-Then there is the configuration pair of enumerated sets of throttled
-replicas:
-
-``` line-numbers
-    leader.replication.throttled.replicas
-    follower.replication.throttled.replicas
-```
-
-Which are configured per topic.
-
-All four config values are automatically assigned by
-kafka-reassign-partitions.sh (discussed below).
-
-To view the throttle limit configuration:
-
-``` line-numbers
-  > bin/kafka-configs.sh --describe --bootstrap-server localhost:9092 --entity-type brokers
-  Configs for brokers '2' are leader.replication.throttled.rate=700000000,follower.replication.throttled.rate=700000000
-  Configs for brokers '1' are leader.replication.throttled.rate=700000000,follower.replication.throttled.rate=700000000
-```
-
-This shows the throttle applied to both leader and follower side of the
-replication protocol. By default both sides are assigned the same
-throttled throughput value.
-
-To view the list of throttled replicas:
-
-``` line-numbers
-  > bin/kafka-configs.sh --describe --bootstrap-server localhost:9092 --entity-type topics
-  Configs for topic 'my-topic' are leader.replication.throttled.replicas=1:102,0:101,
-      follower.replication.throttled.replicas=1:101,0:102
-```
-
-Here we see the leader throttle is applied to partition 1 on broker 102
-and partition 0 on broker 101. Likewise the follower throttle is applied
-to partition 1 on broker 101 and partition 0 on broker 102.
-
-By default kafka-reassign-partitions.sh will apply the leader throttle
-to all replicas that exist before the rebalance, any one of which might
-be leader. It will apply the follower throttle to all move destinations.
-So if there is a partition with replicas on brokers 101,102, being
-reassigned to 102,103, a leader throttle, for that partition, would be
-applied to 101,102 and a follower throttle would be applied to 103 only.
-
-If required, you can also use the --alter switch on kafka-configs.sh to
-alter the throttle configurations manually.
-
-##### Safe usage of throttled replication
-
-Some care should be taken when using throttled replication. In
-particular:
-
-*(1) Throttle Removal:*
-
-The throttle should be removed in a timely manner once reassignment
-completes (by running kafka-reassign-partitions.sh --verify).
-
-*(2) Ensuring Progress:*
-
-If the throttle is set too low, in comparison to the incoming write
-rate, it is possible for replication to not make progress. This occurs
-when:
-
-    max(BytesInPerSec) > throttle
-
-Where BytesInPerSec is the metric that monitors the write throughput of
-producers into each broker.
-
-The administrator can monitor whether replication is making progress,
-during the rebalance, using the metric:
-
-    kafka.server:type=FetcherLagMetrics,name=ConsumerLag,clientId=([-.\w]+),topic=([-.\w]+),partition=([0-9]+)
-
-The lag should constantly decrease during replication. If the metric
-does not decrease the administrator should increase the throttle
-throughput as described above.
-
-#### [Setting quotas](#quotas)
+#### [Setting quotas](#quotas) [Future]
 
 Quotas overrides and defaults may be configured at (user, client-id),
 user or client-id levels as described [here](#design_quotas). By
