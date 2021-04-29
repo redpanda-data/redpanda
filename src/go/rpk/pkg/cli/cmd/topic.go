@@ -19,27 +19,21 @@ import (
 
 func NewTopicCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	var (
-		brokers    []string
-		configFile string
+		brokers        []string
+		configFile     string
+		user           string
+		password       string
+		mechanism      string
+		certFile       string
+		keyFile        string
+		truststoreFile string
 	)
 	command := &cobra.Command{
 		Use:   "topic",
 		Short: "Create, delete, produce to and consume from Redpanda topics.",
 	}
 
-	command.PersistentFlags().StringSliceVar(
-		&brokers,
-		"brokers",
-		[]string{},
-		"Comma-separated list of broker ip:port pairs",
-	)
-	command.PersistentFlags().StringVar(
-		&configFile,
-		"config",
-		"",
-		"Redpanda config file, if not set the file will be searched for"+
-			" in the default locations",
-	)
+	common.AddKafkaFlags(command, &configFile, &user, &password, &mechanism, &certFile, &keyFile, &truststoreFile, &brokers)
 
 	// The ideal way to pass common (global flags') values would be to
 	// declare PersistentPreRun hooks on each command root (such as rpk
@@ -58,14 +52,15 @@ func NewTopicCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	// path, the list of brokers passed through --brokers).
 	configClosure := common.FindConfigFile(mgr, &configFile)
 	brokersClosure := common.DeduceBrokers(
-		fs,
 		common.CreateDockerClient,
 		configClosure,
 		&brokers,
 	)
-	adminClosure := common.CreateAdmin(fs, brokersClosure, configClosure)
-	clientClosure := common.CreateClient(fs, brokersClosure, configClosure)
-	producerClosure := common.CreateProducer(brokersClosure, configClosure)
+	tlsClosure := common.BuildTLSConfig(&certFile, &keyFile, &truststoreFile)
+	kAuthClosure := common.KafkaAuthConfig(&user, &password, &mechanism)
+	adminClosure := common.CreateAdmin(brokersClosure, configClosure, tlsClosure, kAuthClosure)
+	clientClosure := common.CreateClient(brokersClosure, configClosure, tlsClosure, kAuthClosure)
+	producerClosure := common.CreateProducer(brokersClosure, configClosure, tlsClosure, kAuthClosure)
 
 	command.AddCommand(topic.NewCreateCommand(adminClosure))
 	command.AddCommand(topic.NewDeleteCommand(adminClosure))

@@ -70,6 +70,7 @@ func Execute() {
 	rootCmd.AddCommand(NewTopicCommand(fs, mgr))
 	rootCmd.AddCommand(NewClusterCommand(fs, mgr))
 	rootCmd.AddCommand(NewCloudCommand(fs))
+	rootCmd.AddCommand(NewACLCommand(fs, mgr))
 
 	addPlatformDependentCmds(fs, mgr, rootCmd)
 

@@ -276,7 +276,7 @@ func getKafkaInfo(
 		conf.Redpanda.KafkaApi[0].Address,
 		conf.Redpanda.KafkaApi[0].Port,
 	)
-	client, err := kafka.InitClientWithConf(&conf, addr)
+	client, err := kafka.InitClientWithConf(&conf.Rpk.TLS, &conf.Rpk.SCRAM, addr)
 	if err != nil {
 		out <- [][]string{}
 		kafkaInfoCh <- kInfo

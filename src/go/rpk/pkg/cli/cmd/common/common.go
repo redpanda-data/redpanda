@@ -10,6 +10,7 @@
 package common
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -17,7 +18,6 @@ import (
 	"github.com/Shopify/sarama"
 	"github.com/burdiyan/kafkautil"
 	log "github.com/sirupsen/logrus"
-	"github.com/spf13/afero"
 	"github.com/spf13/cobra"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/container/common"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/config"
@@ -26,6 +26,15 @@ import (
 
 const FeedbackMsg = `We'd love to hear about your experience with redpanda:
 https://vectorized.io/feedback`
+
+const (
+	saslMechanismFlag  = "sasl-mechanism"
+	certFileFlag       = "tls-cert"
+	keyFileFlag        = "tls-key"
+	truststoreFileFlag = "tls-truststore"
+)
+
+var ErrNoCredentials = errors.New("empty username and password")
 
 func Deprecated(newCmd *cobra.Command, newUse string) *cobra.Command {
 	newCmd.Deprecated = deprecationMessage(newUse)
@@ -78,7 +87,6 @@ func FindConfigFile(
 }
 
 func DeduceBrokers(
-	fs afero.Fs,
 	client func() (common.Client, error),
 	configuration func() (*config.Config, error),
 	brokers *[]string,
@@ -159,14 +167,38 @@ func DeduceBrokers(
 }
 
 func CreateProducer(
-	brokers func() []string, configuration func() (*config.Config, error),
+	brokers func() []string,
+	configuration func() (*config.Config, error),
+	tlsConfig func() (*config.TLS, error),
+	authConfig func() (*config.SCRAM, error),
 ) func(bool, int32) (sarama.SyncProducer, error) {
 	return func(jvmPartitioner bool, partition int32) (sarama.SyncProducer, error) {
 		conf, err := configuration()
 		if err != nil {
 			return nil, err
 		}
-		cfg, err := kafka.LoadConfig(conf)
+
+		tls, err := tlsConfig()
+		if err != nil {
+			return nil, err
+		}
+		// If no TLS config was set, try to look for TLS config in the
+		// config file.
+		if tls == nil {
+			tls = &conf.Rpk.TLS
+		}
+
+		scram, err := authConfig()
+		if err != nil {
+			return nil, err
+		}
+		// If no SCRAM config was set, try to look for it in the
+		// config file.
+		if scram == nil {
+			scram = &conf.Rpk.SCRAM
+		}
+
+		cfg, err := kafka.LoadConfig(tls, scram)
 		if err != nil {
 			return nil, err
 		}
@@ -183,38 +215,154 @@ func CreateProducer(
 }
 
 func CreateClient(
-	fs afero.Fs,
 	brokers func() []string,
 	configuration func() (*config.Config, error),
+	tlsConfig func() (*config.TLS, error),
+	authConfig func() (*config.SCRAM, error),
 ) func() (sarama.Client, error) {
 	return func() (sarama.Client, error) {
 		conf, err := configuration()
 		if err != nil {
 			return nil, err
 		}
+		tls, err := tlsConfig()
+		if err != nil {
+			return nil, err
+		}
+		// If no TLS config was set, try to look for TLS config in the
+		// config file.
+		if tls == nil {
+			tls = &conf.Rpk.TLS
+		}
+
+		scram, err := authConfig()
+		// If no SCRAM config was set, try to look for it in the
+		// config file.
+		if errors.Is(err, ErrNoCredentials) {
+			scram = &conf.Rpk.SCRAM
+		}
+		if err != nil {
+			return nil, err
+		}
+
 		bs := brokers()
-		client, err := kafka.InitClientWithConf(conf, bs...)
+		client, err := kafka.InitClientWithConf(tls, scram, bs...)
 		return client, wrapConnErr(err, bs)
 	}
 }
 
 func CreateAdmin(
-	fs afero.Fs,
 	brokers func() []string,
 	configuration func() (*config.Config, error),
+	tlsConfig func() (*config.TLS, error),
+	authConfig func() (*config.SCRAM, error),
 ) func() (sarama.ClusterAdmin, error) {
 	return func() (sarama.ClusterAdmin, error) {
+		var err error
 		conf, err := configuration()
 		if err != nil {
 			return nil, err
 		}
-		cfg, err := kafka.LoadConfig(conf)
+
+		tls, err := tlsConfig()
 		if err != nil {
 			return nil, err
 		}
+		// If no TLS config was set, try to look for TLS config in the
+		// config file.
+		if tls == nil {
+			tls = &conf.Rpk.TLS
+		}
+
+		scram, err := authConfig()
+		// If no SCRAM config was set, try to look for it in the
+		// config file.
+		if errors.Is(err, ErrNoCredentials) {
+			scram = &conf.Rpk.SCRAM
+		}
+		if err != nil {
+			return nil, err
+		}
+
+		cfg, err := kafka.LoadConfig(tls, scram)
+		if err != nil {
+			return nil, err
+		}
+
 		bs := brokers()
 		admin, err := sarama.NewClusterAdmin(bs, cfg)
 		return admin, wrapConnErr(err, bs)
+	}
+}
+
+func KafkaAuthConfig(
+	user, password, mechanism *string,
+) func() (*config.SCRAM, error) {
+	return func() (*config.SCRAM, error) {
+		if *user == "" && *password == "" {
+			return nil, ErrNoCredentials
+		}
+		if *user == "" && *password != "" {
+			return nil, errors.New("empty user. Pass --user to set a value.")
+		}
+		if *user != "" && *password == "" {
+			return nil, errors.New("empty password. Pass --password to set a value.")
+		}
+		if *mechanism != sarama.SASLTypeSCRAMSHA256 && *mechanism != sarama.SASLTypeSCRAMSHA512 {
+			return nil, fmt.Errorf(
+				"unsupported mechanism '%s'. Pass --%s to set a value."+
+					" Supported: %s, %s.",
+				*mechanism,
+				saslMechanismFlag,
+				sarama.SASLTypeSCRAMSHA256,
+				sarama.SASLTypeSCRAMSHA512,
+			)
+		}
+		return &config.SCRAM{
+			User:     *user,
+			Password: *password,
+			Type:     *mechanism,
+		}, nil
+	}
+}
+
+func BuildTLSConfig(
+	certFile,
+	keyFile,
+	truststoreFile *string,
+) func() (*config.TLS, error) {
+	return func() (*config.TLS, error) {
+		if *truststoreFile == "" && *certFile == "" && *keyFile == "" {
+			return nil, nil
+		}
+		if *truststoreFile == "" && (*certFile != "" || *keyFile != "") {
+			return nil, fmt.Errorf(
+				"--%s is required to enable TLS",
+				truststoreFileFlag,
+			)
+		}
+		if *certFile != "" && *keyFile == "" {
+			return nil, fmt.Errorf(
+				"if --%s is passed, then --%s must be passed to enable"+
+					" TLS authentication",
+				certFileFlag,
+				keyFileFlag,
+			)
+		}
+		if *keyFile != "" && *certFile == "" {
+			return nil, fmt.Errorf(
+				"if --%s is passed, then --%s must be passed to enable"+
+					" TLS authentication",
+				keyFileFlag,
+				certFileFlag,
+			)
+		}
+		tls := &config.TLS{
+			KeyFile:        *keyFile,
+			CertFile:       *certFile,
+			TruststoreFile: *truststoreFile,
+		}
+		return tls, nil
 	}
 }
 
@@ -243,6 +391,79 @@ func ContainerBrokers(c common.Client) ([]string, []string) {
 		addrs = append(addrs, addr)
 	}
 	return addrs, stopped
+}
+
+func AddKafkaFlags(
+	command *cobra.Command,
+	configFile, user, password, saslMechanism, certFile, keyFile, truststoreFile *string,
+	brokers *[]string,
+) *cobra.Command {
+	command.PersistentFlags().StringSliceVar(
+		brokers,
+		"brokers",
+		[]string{},
+		"Comma-separated list of broker ip:port pairs",
+	)
+	command.PersistentFlags().StringVar(
+		configFile,
+		"config",
+		"",
+		"Redpanda config file, if not set the file will be searched for"+
+			" in the default locations",
+	)
+	command.PersistentFlags().StringVar(
+		user,
+		"user",
+		"",
+		"SASL user to be used for authentication.",
+	)
+	command.PersistentFlags().StringVar(
+		password,
+		"password",
+		"",
+		"SASL password to be used for authentication.",
+	)
+	command.PersistentFlags().StringVar(
+		saslMechanism,
+		saslMechanismFlag,
+		"",
+		fmt.Sprintf(
+			"The authentication mechanism to use. Supported values: %s, %s.",
+			sarama.SASLTypeSCRAMSHA256,
+			sarama.SASLTypeSCRAMSHA512,
+		),
+	)
+
+	AddTLSFlags(command, certFile, keyFile, truststoreFile)
+
+	return command
+}
+
+func AddTLSFlags(
+	command *cobra.Command, certFile,
+	keyFile,
+	truststoreFile *string,
+) *cobra.Command {
+	command.PersistentFlags().StringVar(
+		certFile,
+		certFileFlag,
+		"",
+		"The certificate to be used for TLS authentication with the broker.",
+	)
+	command.PersistentFlags().StringVar(
+		keyFile,
+		keyFileFlag,
+		"",
+		"The certificate key to be used for TLS authentication with the broker.",
+	)
+	command.PersistentFlags().StringVar(
+		truststoreFile,
+		truststoreFileFlag,
+		"",
+		"The truststore to be used for TLS communication with the broker.",
+	)
+
+	return command
 }
 
 func wrapConnErr(err error, addrs []string) error {

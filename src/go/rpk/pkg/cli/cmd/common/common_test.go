@@ -15,7 +15,7 @@ import (
 	"testing"
 
 	"github.com/docker/docker/api/types"
-	"github.com/spf13/afero"
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 	"github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/common"
 	ccommon "github.com/vectorizedio/redpanda/src/go/rpk/pkg/cli/cmd/container/common"
@@ -109,7 +109,6 @@ func TestDeduceBrokers(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(st *testing.T) {
-			fs := afero.NewMemMapFs()
 			client := func() (ccommon.Client, error) {
 				return &ccommon.MockClient{}, nil
 			}
@@ -128,8 +127,212 @@ func TestDeduceBrokers(t *testing.T) {
 			if tt.brokers != nil {
 				brokers = &tt.brokers
 			}
-			bs := common.DeduceBrokers(fs, client, config, brokers)()
+			bs := common.DeduceBrokers(client, config, brokers)()
 			require.Exactly(st, tt.expected, bs)
+		})
+	}
+}
+
+func TestAddKafkaFlags(t *testing.T) {
+	var (
+		brokers        []string
+		configFile     string
+		user           string
+		password       string
+		mechanism      string
+		certFile       string
+		keyFile        string
+		truststoreFile string
+	)
+	command := func() *cobra.Command {
+		parent := &cobra.Command{
+			Use: "parent",
+			RunE: func(_ *cobra.Command, _ []string) error {
+				return nil
+			},
+		}
+		child := &cobra.Command{
+			Use: "child",
+			RunE: func(_ *cobra.Command, _ []string) error {
+				return nil
+			},
+		}
+		parent.AddCommand(child)
+
+		common.AddKafkaFlags(
+			parent,
+			&configFile,
+			&user,
+			&password,
+			&mechanism,
+			&certFile,
+			&keyFile,
+			&truststoreFile,
+			&brokers,
+		)
+		return parent
+	}
+
+	cmd := command()
+	cmd.SetArgs([]string{
+		"--config", "arbitraryconfig.yaml",
+		"--brokers", "192.168.72.22:9092,localhost:9092",
+		"--user", "david",
+		"--password", "verysecrethaha",
+		"--sasl-mechanism", "some-mechanism",
+		"--tls-cert", "cert.pem",
+		"--tls-key", "key.pem",
+		"--tls-truststore", "truststore.pem",
+	})
+
+	err := cmd.Execute()
+	require.NoError(t, err)
+
+	require.Exactly(t, "arbitraryconfig.yaml", configFile)
+	require.Exactly(t, []string{"192.168.72.22:9092", "localhost:9092"}, brokers)
+	require.Exactly(t, "david", user)
+	require.Exactly(t, "verysecrethaha", password)
+	require.Exactly(t, "some-mechanism", mechanism)
+	require.Exactly(t, "cert.pem", certFile)
+	require.Exactly(t, "key.pem", keyFile)
+	require.Exactly(t, "truststore.pem", truststoreFile)
+
+	// The flags should be available for the children commands too
+	cmd = command() // reset it.
+	cmd.SetArgs([]string{
+		"child", // so that it executes the child command
+		"--config", "justaconfig.yaml",
+		"--brokers", "192.168.72.23:9092",
+		"--brokers", "mykafkahost:9093",
+		"--user", "juan",
+		"--password", "sosecure",
+		"--sasl-mechanism", "whatevs",
+		"--tls-cert", "cert1.pem",
+		"--tls-key", "key1.pem",
+		"--tls-truststore", "truststore1.pem",
+	})
+
+	err = cmd.Execute()
+	require.NoError(t, err)
+
+	require.Exactly(t, "justaconfig.yaml", configFile)
+	require.Exactly(t, []string{"192.168.72.23:9092", "mykafkahost:9093"}, brokers)
+	require.Exactly(t, "juan", user)
+	require.Exactly(t, "sosecure", password)
+	require.Exactly(t, "whatevs", mechanism)
+	require.Exactly(t, "cert1.pem", certFile)
+	require.Exactly(t, "key1.pem", keyFile)
+	require.Exactly(t, "truststore1.pem", truststoreFile)
+}
+
+func TestKafkaAuthConfig(t *testing.T) {
+	tests := []struct {
+		name           string
+		user           string
+		password       string
+		mechanism      string
+		expected       *config.SCRAM
+		expectedErrMsg string
+	}{{
+		name:           "it should fail if user is empty",
+		password:       "somethingsecure",
+		expectedErrMsg: "empty user. Pass --user to set a value.",
+	}, {
+		name:           "it should fail if password is empty",
+		user:           "usuario",
+		expectedErrMsg: "empty password. Pass --password to set a value.",
+	}, {
+		name:           "it should fail if both user and password are empty",
+		expectedErrMsg: common.ErrNoCredentials.Error(),
+	}, {
+		name:      "it should fail if the mechanism isn't supported",
+		user:      "usuario",
+		password:  "contraseño",
+		mechanism: "super-crypto-3000",
+		expectedErrMsg: "unsupported mechanism 'super-crypto-3000'. Pass --sasl-mechanism to set a value." +
+			" Supported: SCRAM-SHA-256, SCRAM-SHA-512.",
+	}, {
+		name:      "it should support SCRAM-SHA-256",
+		user:      "usuario",
+		password:  "contraseño",
+		mechanism: "SCRAM-SHA-256",
+		expected:  &config.SCRAM{User: "usuario", Password: "contraseño", Type: "SCRAM-SHA-256"},
+	}, {
+		name:      "it should support SCRAM-SHA-512",
+		user:      "usuario",
+		password:  "contraseño",
+		mechanism: "SCRAM-SHA-512",
+		expected:  &config.SCRAM{User: "usuario", Password: "contraseño", Type: "SCRAM-SHA-512"},
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(st *testing.T) {
+			closure := common.KafkaAuthConfig(&tt.user, &tt.password, &tt.mechanism)
+			res, err := closure()
+			if tt.expectedErrMsg != "" {
+				require.EqualError(st, err, tt.expectedErrMsg)
+				return
+			}
+			require.Exactly(st, tt.expected, res)
+		})
+	}
+}
+
+func TestBuildTLSConfig(t *testing.T) {
+	tests := []struct {
+		name           string
+		keyFile        string
+		certFile       string
+		truststoreFile string
+		expected       *config.TLS
+		expectedErrMsg string
+	}{{
+		name:     "it should return a nil config if none are set",
+		expected: nil,
+	}, {
+		name:           "it should fail if truststoreFile is empty",
+		certFile:       "cert.pem",
+		keyFile:        "key.pem",
+		expectedErrMsg: "--tls-truststore is required to enable TLS",
+	}, {
+		name:           "it should fail if certFile is present but keyFile is empty",
+		certFile:       "cert.pem",
+		truststoreFile: "trust.pem",
+		expectedErrMsg: "if --tls-cert is passed, then --tls-key must be passed to enable" +
+			" TLS authentication",
+	}, {
+		name:           "it should fail if keyFile is present but certFile is empty",
+		keyFile:        "key.pem",
+		truststoreFile: "trust.pem",
+		expectedErrMsg: "if --tls-key is passed, then --tls-cert must be passed to enable" +
+			" TLS authentication",
+	}, {
+		name:           "it should build the config with only a truststore",
+		truststoreFile: "trust.pem",
+		expected:       &config.TLS{TruststoreFile: "trust.pem"},
+	}, {
+		name:           "it should build the config with all fields",
+		certFile:       "cert.pem",
+		keyFile:        "key.pem",
+		truststoreFile: "trust.pem",
+		expected: &config.TLS{
+			CertFile:       "cert.pem",
+			KeyFile:        "key.pem",
+			TruststoreFile: "trust.pem",
+		},
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(st *testing.T) {
+			res, err := common.BuildTLSConfig(
+				&tt.certFile,
+				&tt.keyFile,
+				&tt.truststoreFile,
+			)()
+			if tt.expectedErrMsg != "" {
+				require.EqualError(st, err, tt.expectedErrMsg)
+			}
+			require.Exactly(st, tt.expected, res)
 		})
 	}
 }

@@ -20,26 +20,29 @@ import (
 
 func NewClusterCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	var (
-		brokers    []string
-		configFile string
+		brokers        []string
+		configFile     string
+		user           string
+		password       string
+		mechanism      string
+		certFile       string
+		keyFile        string
+		truststoreFile string
 	)
 	command := &cobra.Command{
 		Use:   "cluster",
 		Short: "Interact with a Redpanda cluster",
 	}
-
-	command.PersistentFlags().StringSliceVar(
-		&brokers,
-		"brokers",
-		[]string{},
-		"Comma-separated list of broker ip:port pairs",
-	)
-	command.PersistentFlags().StringVar(
+	common.AddKafkaFlags(
+		command,
 		&configFile,
-		"config",
-		"",
-		"Redpanda config file, if not set the file will be searched for"+
-			" in the default locations",
+		&user,
+		&password,
+		&mechanism,
+		&certFile,
+		&keyFile,
+		&truststoreFile,
+		&brokers,
 	)
 	// The ideal way to pass common (global flags') values would be to
 	// declare PersistentPreRun hooks on each command root (such as rpk
@@ -59,16 +62,17 @@ func NewClusterCommand(fs afero.Fs, mgr config.Manager) *cobra.Command {
 	// actual brokers list to be used.
 	configClosure := common.FindConfigFile(mgr, &configFile)
 	brokersClosure := common.DeduceBrokers(
-		fs,
 		common.CreateDockerClient,
 		configClosure,
 		&brokers,
 	)
-	adminClosure := common.CreateAdmin(fs, brokersClosure, configClosure)
+	kAuthClosure := common.KafkaAuthConfig(&user, &password, &mechanism)
+	tlsClosure := common.BuildTLSConfig(&certFile, &keyFile, &truststoreFile)
+	adminClosure := common.CreateAdmin(brokersClosure, configClosure, tlsClosure, kAuthClosure)
 	command.AddCommand(cluster.NewInfoCommand(adminClosure))
 
 	// NewOffsetsCommand takes client and admin factories so we can mock both
-	clientClosure := common.CreateClient(fs, brokersClosure, configClosure)
+	clientClosure := common.CreateClient(brokersClosure, configClosure, tlsClosure, kAuthClosure)
 	adminWrapperClosure := func(client sarama.Client) (sarama.ClusterAdmin, error) {
 		return sarama.NewClusterAdminFromClient(client)
 	}
