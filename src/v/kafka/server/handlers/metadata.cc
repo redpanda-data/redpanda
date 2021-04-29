@@ -18,6 +18,7 @@
 #include "kafka/server/handlers/topics/topic_utils.h"
 #include "likely.h"
 #include "model/metadata.h"
+#include "model/timeout_clock.h"
 #include "utils/to_string.h"
 
 #include <seastar/core/coroutine.hh>
@@ -67,11 +68,10 @@ create_topic(request_context& ctx, model::topic&& topic) {
       topic,
       config::shard_local_cfg().default_topic_partitions(),
       config::shard_local_cfg().default_topic_replication()};
-
+    auto tout = config::shard_local_cfg().create_topic_timeout_ms();
     return ctx.topics_frontend()
-      .autocreate_topics(
-        {std::move(cfg)}, config::shard_local_cfg().create_topic_timeout_ms())
-      .then([&md_cache = ctx.metadata_cache()](
+      .autocreate_topics({std::move(cfg)}, tout)
+      .then([&ctx, &md_cache = ctx.metadata_cache(), tout](
               std::vector<cluster::topic_result> res) {
           vassert(res.size() == 1, "expected single result");
 
@@ -81,7 +81,7 @@ create_topic(request_context& ctx, model::topic&& topic) {
               metadata_response::topic t;
               t.name = std::move(res[0].tp_ns.tp);
               t.error_code = map_topic_error_code(res[0].ec);
-              return t;
+              return ss::make_ready_future<metadata_response::topic>(t);
           }
           auto tp_md = md_cache.get_topic_metadata(res[0].tp_ns);
 
@@ -89,11 +89,17 @@ create_topic(request_context& ctx, model::topic&& topic) {
               metadata_response::topic t;
               t.name = std::move(res[0].tp_ns.tp);
               t.error_code = error_code::invalid_topic_exception;
-              return t;
+              return ss::make_ready_future<metadata_response::topic>(t);
           }
 
-          return make_topic_response_from_topic_metadata(
-            std::move(tp_md.value()));
+          return wait_for_topics(
+                   res,
+                   ctx.controller_api(),
+                   tout + model::timeout_clock::now())
+            .then([tp_md = std::move(tp_md)]() mutable {
+                return make_topic_response_from_topic_metadata(
+                  std::move(tp_md.value()));
+            });
       })
       .handle_exception([topic = std::move(topic)](
                           [[maybe_unused]] std::exception_ptr e) mutable {

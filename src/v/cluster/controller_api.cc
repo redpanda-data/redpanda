@@ -45,8 +45,10 @@ controller_api::controller_api(
 
 ss::future<std::vector<ntp_reconciliation_state>>
 controller_api::get_reconciliation_state(std::vector<model::ntp> ntps) {
-    return ssx::async_transform(ntps, [this](const model::ntp& ntp) {
-        return get_reconciliation_state(ntp);
+    return ss::do_with(std::move(ntps), [this](std::vector<model::ntp>& ntps) {
+        return ssx::async_transform(ntps, [this](const model::ntp& ntp) {
+            return get_reconciliation_state(ntp);
+        });
     });
 }
 
@@ -104,8 +106,7 @@ controller_api::get_reconciliation_state(model::ntp ntp) {
     std::vector<backend_operation> ops;
     const auto shards = boost::irange<ss::shard_id>(0, ss::smp::count);
     for (auto shard : shards) {
-        auto local_deltas = co_await get_remote_core_deltas(
-          std::move(ntp), shard);
+        auto local_deltas = co_await get_remote_core_deltas(ntp, shard);
 
         std::transform(
           local_deltas.begin(),

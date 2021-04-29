@@ -9,10 +9,13 @@
 
 #include "kafka/server/handlers/topics/topic_utils.h"
 
+#include "cluster/controller_api.h"
 #include "cluster/errc.h"
 #include "cluster/metadata_cache.h"
 #include "kafka/protocol/errors.h"
 #include "model/fundamental.h"
+
+#include <seastar/core/do_with.hh>
 
 namespace kafka {
 
@@ -52,5 +55,25 @@ ss::future<std::vector<model::node_id>> wait_for_leaders(
     }
 
     return seastar::when_all_succeed(futures.begin(), futures.end());
+}
+
+ss::future<> wait_for_topics(
+  std::vector<cluster::topic_result> results,
+  cluster::controller_api& api,
+  model::timeout_clock::time_point timeout) {
+    return ss::do_with(
+      std::move(results),
+      [&api, timeout](std::vector<cluster::topic_result>& results) {
+          return ss::parallel_for_each(
+            results, [&api, timeout](cluster::topic_result& r) {
+                if (r.ec != cluster::errc::success) {
+                    return ss::now();
+                }
+                // we discard return here, we do not want to return error even
+                // if waiting for topic wasn't successfull, it was already
+                // created
+                return api.wait_for_topic(r.tp_ns, timeout).discard_result();
+            });
+      });
 }
 } // namespace kafka
