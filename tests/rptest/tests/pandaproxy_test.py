@@ -147,10 +147,7 @@ class PandaProxyTest(RedpandaTest):
                 TopicSpec(name=name,
                           partition_count=partitions,
                           replication_factor=replicas))
-        wait_until(lambda: set(names).issubset(self._get_topics().json()),
-                   timeout_sec=30,
-                   backoff_sec=1,
-                   err_msg="Topics failed to settle")
+        assert set(names).issubset(self._get_topics().json())
         return names
 
     def _get_topics(self, headers=HTTP_GET_TOPICS_HEADERS):
