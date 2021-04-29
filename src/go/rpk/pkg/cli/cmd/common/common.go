@@ -194,7 +194,7 @@ func CreateProducer(
 		}
 		// If no SCRAM config was set, try to look for it in the
 		// config file.
-		if scram == nil {
+		if errors.Is(err, ErrNoCredentials) {
 			scram = &conf.Rpk.SCRAM
 		}
 
