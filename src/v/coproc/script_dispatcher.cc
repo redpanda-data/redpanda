@@ -277,8 +277,7 @@ script_dispatcher::disable_coprocessors(disable_copros_request req) {
 }
 
 ss::future<> script_dispatcher::remove_all_sources() {
-    return _pacemaker.map([](pacemaker& p) { return p.remove_all_sources(); })
-      .discard_result();
+    return _pacemaker.invoke_on_all([](pacemaker& p) { return p.reset(); });
 }
 
 ss::future<std::error_code> script_dispatcher::disable_all_coprocessors() {
