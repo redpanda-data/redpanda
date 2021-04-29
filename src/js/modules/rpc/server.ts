@@ -248,7 +248,7 @@ export class ProcessBatchServer extends SupervisorServer {
       (coprocessorResults) => groupByTopic(coprocessorResults.flat()),
       (e) => {
         this.logger.error(e);
-        return Logging.close().then(() => process.exit(1));
+        return [];
       }
     );
   }

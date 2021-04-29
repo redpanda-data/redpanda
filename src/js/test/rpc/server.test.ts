@@ -132,32 +132,13 @@ describe("Server", function () {
       }
     );
 
-    it("should fail if there isn't coprocessor that processBatch contain", function (done) {
-      const { spyFireExceptionServer, spyGetHandles } =
-        createStubs(sinonInstance);
-      spyGetHandles.returns([]);
-      spyFireExceptionServer.returns(
-        /* FireException should throw an exception but there isn't way to
-             listen that exception, for that reason this stub return a "correct"
-             value in order to check the error, when the server response
-             to client
-           */
-        Promise.resolve([
-          {
-            coprocessorId: "",
-            ntp: { namespace: "", topic: "", partition: 1 },
-            resultRecordBatch: [createRecordBatch()],
-          },
-        ]) as never
-      );
-      client.process_batch(createProcessBatchRequest([BigInt(1)])).then(() => {
-        assert(
-          spyFireExceptionServer.calledWith(
-            "Coprocessors don't register in wasm engine: 1"
-          )
-        );
-        done();
-      });
+    it("should return a null batch if there isn't registered copros for a given id", function (done) {
+      client
+        .process_batch(createProcessBatchRequest([BigInt(1)]))
+        .then((res) => {
+          assert(res.result.length == 0);
+          done();
+        });
     });
 
     it("should apply the right Coprocessor for the Request's topic", function (done) {

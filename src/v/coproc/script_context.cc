@@ -230,6 +230,11 @@ script_context::read_ntp(ss::lw_shared_ptr<ntp_context> ntp_ctx) {
 }
 
 ss::future<> script_context::process_reply(process_batch_reply reply) {
+    if (reply.resps.empty()) {
+        vlog(
+          coproclog.error, "Wasm engine interpreted the request as erraneous");
+        return ss::now();
+    }
     return ss::do_with(std::move(reply), [this](process_batch_reply& reply) {
         return ss::do_for_each(
           reply.resps, [this](process_batch_reply::data& e) {
