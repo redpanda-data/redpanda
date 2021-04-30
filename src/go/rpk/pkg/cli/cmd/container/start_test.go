@@ -60,7 +60,7 @@ func TestStart(t *testing.T) {
 				}, nil
 			},
 			expectedErrMsg: "Couldn't pull image and a local one" +
-				" wasn't found either.",
+				" wasn't found either: Can't pull",
 		},
 		{
 			name: "it should fail if the img couldn't be pulled bc of internet conn issues",
@@ -107,7 +107,7 @@ Please check your internet connection and try again.`,
 				}, nil
 			},
 			expectedErrMsg: "Couldn't pull image and a local one" +
-				" wasn't found either.",
+				" wasn't found either: Can't pull",
 		},
 		{
 			name: "it should fail if creating the network fails",
@@ -495,7 +495,7 @@ Please check your internet connection and try again.`,
 				check = tt.check
 			}
 			retries := uint(10)
-			err = startCluster(c, tt.nodes, check, retries)
+			err = startCluster(c, tt.nodes, check, retries, common.DefaultImage())
 			if tt.expectedErrMsg != "" {
 				require.EqualError(st, err, tt.expectedErrMsg)
 			} else {
