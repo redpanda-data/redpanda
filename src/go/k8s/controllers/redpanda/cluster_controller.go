@@ -65,6 +65,7 @@ type ClusterReconciler struct {
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.7.0/pkg/reconcile
+// nolint:funlen // todo break down
 func (r *ClusterReconciler) Reconcile(
 	ctx context.Context, req ctrl.Request,
 ) (ctrl.Result, error) {
@@ -100,16 +101,25 @@ func (r *ClusterReconciler) Reconcile(
 	externalListener := redpandaCluster.ExternalListener()
 	adminAPIInternal := redpandaCluster.AdminAPIInternal()
 	adminAPIExternal := redpandaCluster.AdminAPIExternal()
+	proxyAPIInternal := redpandaCluster.PandaproxyAPIInternal()
+	proxyAPIExternal := redpandaCluster.PandaproxyAPIExternal()
 	if externalListener != nil {
 		nodeports = append(nodeports, resources.NamedServicePort{Name: resources.ExternalListenerName, Port: internalListener.Port + 1})
 	}
 	if adminAPIExternal != nil {
 		nodeports = append(nodeports, resources.NamedServicePort{Name: resources.AdminPortExternalName, Port: adminAPIInternal.Port + 1})
 	}
+	if proxyAPIExternal != nil {
+		nodeports = append(nodeports, resources.NamedServicePort{Name: resources.PandaproxyPortExternalName, Port: proxyAPIInternal.Port + 1})
+	}
 	headlessPorts := []resources.NamedServicePort{
 		{Name: resources.AdminPortName, Port: adminAPIInternal.Port},
 		{Name: resources.InternalListenerName, Port: internalListener.Port},
 	}
+	if proxyAPIInternal != nil {
+		headlessPorts = append(headlessPorts, resources.NamedServicePort{Name: resources.PandaproxyPortInternalName, Port: proxyAPIInternal.Port})
+	}
+
 	headlessSvc := resources.NewHeadlessService(r.Client, &redpandaCluster, r.Scheme, headlessPorts, log)
 	nodeportSvc := resources.NewNodePortService(r.Client, &redpandaCluster, r.Scheme, nodeports, log)
 
