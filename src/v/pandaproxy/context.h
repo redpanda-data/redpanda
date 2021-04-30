@@ -23,6 +23,7 @@ namespace pandaproxy {
 struct context_t {
     ss::semaphore mem_sem;
     ss::abort_source as;
+    ss::smp_service_group smp_sg;
     kafka::client::client& client;
     const configuration& config;
 };
