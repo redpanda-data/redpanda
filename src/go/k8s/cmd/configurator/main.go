@@ -108,10 +108,12 @@ func main() {
 
 	log.Printf("Host index calculated %d", hostIndex)
 
-	err = registerAdvertisedKafkaAPI(&c, cfg, hostIndex, kafkaAPIPort)
+	node, err := getNode(c.nodeName)
 	if err != nil {
-		log.Fatalf("%s", fmt.Errorf("unable to register advertised kafka API: %w", err))
+		log.Fatalf("%s", fmt.Errorf("unable to retrieve node: %w", err))
 	}
+
+	registerAdvertisedKafkaAPI(&c, cfg, hostIndex, kafkaAPIPort, node)
 
 	cfg.Redpanda.Id = int(hostIndex)
 
@@ -146,9 +148,27 @@ func getInternalKafkaAPIPort(cfg *config.Config) (int, error) {
 	return 0, fmt.Errorf("%w %v", errInternalPortMissing, cfg.Redpanda.KafkaApi)
 }
 
+func getNode(nodeName string) (*corev1.Node, error) {
+	k8sconfig, err := rest.InClusterConfig()
+	if err != nil {
+		return nil, fmt.Errorf("unable to create in cluster config: %w", err)
+	}
+
+	clientset, err := kubernetes.NewForConfig(k8sconfig)
+	if err != nil {
+		return nil, fmt.Errorf("unable to create clientset: %w", err)
+	}
+
+	node, err := clientset.CoreV1().Nodes().Get(context.Background(), nodeName, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("unable to retrieve node: %w", err)
+	}
+	return node, nil
+}
+
 func registerAdvertisedKafkaAPI(
-	c *configuratorConfig, cfg *config.Config, index brokerID, kafkaAPIPort int,
-) error {
+	c *configuratorConfig, cfg *config.Config, index brokerID, kafkaAPIPort int, node *corev1.Node,
+) {
 	cfg.Redpanda.AdvertisedKafkaApi = []config.NamedSocketAddress{
 		{
 			SocketAddress: config.SocketAddress{
@@ -160,7 +180,7 @@ func registerAdvertisedKafkaAPI(
 	}
 
 	if !c.externalConnectivity {
-		return nil
+		return
 	}
 
 	if len(c.subdomain) > 0 {
@@ -171,22 +191,7 @@ func registerAdvertisedKafkaAPI(
 			},
 			Name: "kafka-external",
 		})
-		return nil
-	}
-
-	k8sconfig, err := rest.InClusterConfig()
-	if err != nil {
-		return fmt.Errorf("unable to create in cluster config: %w", err)
-	}
-
-	clientset, err := kubernetes.NewForConfig(k8sconfig)
-	if err != nil {
-		return fmt.Errorf("unable to create clientset: %w", err)
-	}
-
-	node, err := clientset.CoreV1().Nodes().Get(context.Background(), c.nodeName, metav1.GetOptions{})
-	if err != nil {
-		return fmt.Errorf("unable to retrieve node: %w", err)
+		return
 	}
 
 	cfg.Redpanda.AdvertisedKafkaApi = append(cfg.Redpanda.AdvertisedKafkaApi, config.NamedSocketAddress{
@@ -196,7 +201,6 @@ func registerAdvertisedKafkaAPI(
 		},
 		Name: "kafka-external",
 	})
-	return nil
 }
 
 func getExternalIP(node *corev1.Node) string {
@@ -300,4 +304,10 @@ func hostIndex(hostName string) (brokerID, error) {
 	last := len(s) - 1
 	i, err := strconv.Atoi(s[last])
 	return brokerID(i), err
+}
+
+func clusterName(hostName string) string {
+	s := strings.Split(hostName, "-")
+	last := len(s) - 1
+	return strings.Join(s[0:last], "-")
 }
