@@ -41,12 +41,6 @@ class WasmIdentityTest(WasmTest):
     def wasm_test_outputs(self):
         raise Exception('Unimplemented method')
 
-    def wasm_xfactor(self):
-        """
-        Multiply with self._num_records to obtain expected record count
-        """
-        return 1
-
     def wasm_test_input(self):
         """
         Topics that will be produced onto, number of records and record_size
@@ -79,8 +73,7 @@ class WasmIdentityTest(WasmTest):
         3. Producers set-up and begin producing onto input topics
         4. When finished, perform assertions in this method
         """
-        self.start(self.wasm_test_input(), self.wasm_test_plan(),
-                   self.wasm_xfactor())
+        self.start(self.wasm_test_input(), self.wasm_test_plan())
         input_results, output_results = self.wait_on_results()
         for script in self.wasm_test_outputs():
             for dest in script:
@@ -235,25 +228,17 @@ class WasmAllInputsToAllOutputsIdentityTest(WasmIdentityTest):
         return [[otopic_a, otopic_b, otopic_c], [otopic_a, otopic_b, otopic_c],
                 [otopic_a, otopic_b, otopic_c]]
 
-    def wasm_xfactor(self):
-        """
-        Each script writes to 3 output streams for each input stream
-        """
-        return 3
-
     @cluster(num_nodes=3)
     def verify_materialized_topics_test(self):
         # Cannot compare topics to topics, can only verify # of records
-        self.start(self.wasm_test_input(), self.wasm_test_plan(),
-                   self.wasm_xfactor())
+        self.start(self.wasm_test_input(), self.wasm_test_plan())
         input_results, output_results = self.wait_on_results()
 
         def compare(topic):
             iis = input_results.filter(lambda x: x.topic == topic)
             oos = output_results.filter(
                 lambda x: get_source_topic(x.topic) == topic)
-            return iis.num_records() == (oos.num_records() *
-                                         self.wasm_xfactor())
+            return iis.num_records() == oos.num_records()
 
         if not all(compare(topic) for topic in self.topics):
             raise Exception(
