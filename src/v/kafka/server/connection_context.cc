@@ -122,7 +122,7 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                     iobuf buf) mutable {
                 if (_rs.abort_requested()) {
                     // _proto._cntrl etc might not be alive
-                    return;
+                    return ss::now();
                 }
                 auto self = shared_from_this();
                 auto rctx = request_context(
@@ -130,8 +130,41 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                   std::move(hdr),
                   std::move(buf),
                   sres.backpressure_delay);
-                // background process this one full request
-                (void)ss::with_gate(
+                /*
+                 * until authentication is complete, process requests in order
+                 * since all subsequent requests are dependent on authentication
+                 * having completed.
+                 *
+                 * the other important reason for disabling pipeling before
+                 * authentication completes is because when a sasl handshake
+                 * with version=0 is processed, the next data on the wire is
+                 * _not_ another request: it is a size-prefixed authentication
+                 * payload without a request envelope, and requires special
+                 * handling.
+                 *
+                 * a well behaved client should implicitly provide a data stream
+                 * that invokes this behavior in the server: that is, it won't
+                 * send auth data (or any other requests) until handshake or the
+                 * full auth-process completes, etc... but representing these
+                 * nuances of the protocol _explicitly_ in the server makes its
+                 * behavior easier to understand and avoids misbehaving clients
+                 * creating server-side errors that will appear as a corrupted
+                 * stream at best and at worst some odd behavior.
+                 */
+
+                if (unlikely(!sasl().complete())) {
+                    return do_process(std::move(rctx))
+                      .handle_exception([self](std::exception_ptr e) {
+                          vlog(
+                            klog.info,
+                            "Detected error processing request: {}",
+                            e);
+                          self->_rs.conn->shutdown_input();
+                      })
+                      .finally([s = std::move(sres), self] {});
+                }
+
+                (void)ss::try_with_gate(
                   _rs.conn_gate(),
                   [this, rctx = std::move(rctx)]() mutable {
                       return do_process(std::move(rctx));
@@ -142,6 +175,8 @@ connection_context::dispatch_method_once(request_header hdr, size_t size) {
                       self->_rs.conn->shutdown_input();
                   })
                   .finally([s = std::move(sres), self] {});
+
+                return ss::now();
             });
       });
 }
