@@ -64,7 +64,7 @@ constexpr ss::lowres_clock::duration default_connect_timeout = 5s;
 
 enum class reconnect_result_t {
     connected,
-    aborted,
+    timed_out,
 };
 
 /// Http client

@@ -15,6 +15,7 @@
 #include "rpc/transport.h"
 #include "seastarx.h"
 
+#include <seastar/core/abort_source.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/iostream.hh>
 #include <seastar/core/lowres_clock.hh>
@@ -777,8 +778,7 @@ SEASTAR_THREAD_TEST_CASE(test_http_cancel_reconnect) {
     BOOST_REQUIRE(fut.failed() == false);
     BOOST_REQUIRE(fut.available() == false);
     as.request_abort();
-    auto res = fut.get0();
-    BOOST_REQUIRE(res == http::reconnect_result_t::aborted);
+    BOOST_REQUIRE_THROW(fut.get(), ss::abort_requested_exception);
 }
 
 SEASTAR_THREAD_TEST_CASE(test_http_reconnect_graceful_shutdown) {
@@ -791,5 +791,5 @@ SEASTAR_THREAD_TEST_CASE(test_http_reconnect_graceful_shutdown) {
     BOOST_REQUIRE(fut.available() == false);
     client.stop().get();
     ss::sleep(10ms).get();
-    BOOST_REQUIRE(fut.get() == http::reconnect_result_t::aborted);
+    BOOST_REQUIRE(fut.get() == http::reconnect_result_t::timed_out);
 }

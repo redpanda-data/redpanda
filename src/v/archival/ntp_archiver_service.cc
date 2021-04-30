@@ -243,6 +243,11 @@ ss::future<bool> ntp_archiver::upload_segment(upload_candidate candidate) {
         }
         break;
     }
+    vlog(
+      archival_log.debug,
+      "Finished segment upload for {}, path {}",
+      _ntp,
+      s3path);
     co_return true;
 }
 

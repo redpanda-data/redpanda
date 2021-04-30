@@ -11,6 +11,7 @@
 
 #include "bytes/details/io_iterator_consumer.h"
 #include "bytes/iobuf.h"
+#include "http/logger.h"
 #include "rpc/backoff_policy.h"
 #include "rpc/types.h"
 #include "utils/gate_guard.h"
@@ -69,6 +70,7 @@ ss::future<client::request_response_t> client::make_request(
   client::request_header&& header, ss::lowres_clock::duration timeout) {
     vlog(http_log.trace, "client.make_request {}", header);
     auto verb = header.method();
+    auto target = header.target();
     auto req = ss::make_shared<request_stream>(this, std::move(header));
     auto res = ss::make_shared<response_stream>(this, verb);
     if (is_valid()) {
@@ -76,12 +78,14 @@ ss::future<client::request_response_t> client::make_request(
           std::make_tuple(req, res));
     }
     return get_connected(timeout)
-      .then([req, res](reconnect_result_t r) {
-          if (r == reconnect_result_t::aborted) {
-              vlog(http_log.warn, "make_request aborted connection attempt");
-              ss::abort_requested_exception aborted;
-              return ss::make_exception_future<client::request_response_t>(
-                aborted);
+      .then([req, res, target](reconnect_result_t r) {
+          if (r == reconnect_result_t::timed_out) {
+              vlog(
+                http_log.warn,
+                "make_request timed-out connection attempt {}",
+                target);
+              ss::timed_out_error err;
+              return ss::make_exception_future<client::request_response_t>(err);
           }
           return ss::make_ready_future<request_response_t>(
             std::make_tuple(req, res));
@@ -103,9 +107,10 @@ client::get_connected(ss::lowres_clock::duration timeout) {
     auto current = ss::lowres_clock::now();
     const auto deadline = current + timeout;
     const auto interval = 100ms;
-    while (!_dispatch_gate.is_closed()
-           && (_as == nullptr || !_as->abort_requested())
-           && current < deadline) {
+    while (!_dispatch_gate.is_closed() && current < deadline) {
+        if (_as != nullptr) {
+            _as->check();
+        }
         // Reconnect attempts have to stop if:
         // - shutdown method was called
         // - abort was requested
@@ -125,7 +130,7 @@ client::get_connected(ss::lowres_clock::duration timeout) {
     }
     vlog(http_log.debug, "connected, {}", is_valid());
     co_return is_valid() ? reconnect_result_t::connected
-                         : reconnect_result_t::aborted;
+                         : reconnect_result_t::timed_out;
 }
 
 // ss::future<> client::shutdown() { return stop(); }
