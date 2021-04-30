@@ -33,6 +33,60 @@ struct async_adl {
     }
 };
 
+namespace detail {
+
+template<typename Map>
+struct async_adl_map {
+    using K = typename Map::key_type;
+    using V = typename Map::mapped_type;
+
+    /// Keys of the collection are copied rather then moved to their respective
+    /// serializer.
+    ss::future<> to(iobuf& out, Map map) {
+        reflection::serialize(out, static_cast<int32_t>(map.size()));
+        return ss::do_with(std::move(map), [&out](Map& map) {
+            return ss::do_for_each(map, [&out](typename Map::value_type& p) {
+                /// We must copy the key since map keys are all const
+                auto copy = p.first;
+                return reflection::async_adl<K>{}
+                  .to(out, std::move(copy))
+                  .then([&out, data = std::move(p.second)]() mutable {
+                      return reflection::async_adl<V>{}.to(
+                        out, std::move(data));
+                  });
+            });
+        });
+    }
+
+    ss::future<Map> from(iobuf_parser& in) {
+        int32_t size = reflection::adl<int32_t>{}.from(in);
+        auto range = boost::irange<int32_t>(0, size);
+        return ss::do_with(
+          Map(),
+          range,
+          [&in](Map& result, const boost::integer_range<int32_t>& r) {
+              return ss::do_for_each(
+                       r,
+                       [&in, &result](int32_t) {
+                           return reflection::async_adl<K>{}.from(in).then(
+                             [&in, &result](K key) mutable {
+                                 return reflection::async_adl<V>{}
+                                   .from(in)
+                                   .then([key = std::move(key),
+                                          &result](V value) mutable {
+                                       auto [_, r] = result.emplace(
+                                         std::move(key), std::move(value));
+                                       vassert(r, "Item wasn't inserted");
+                                   });
+                             });
+                       })
+                .then([&result] { return std::move(result); });
+          });
+    }
+};
+
+} // namespace detail
+
 /// Specializations of async_adl for nested types, optional and vector
 template<typename T>
 struct async_adl<std::optional<T>> {
@@ -84,4 +138,5 @@ struct async_adl<std::vector<T>> {
           });
     }
 };
+
 } // namespace reflection
