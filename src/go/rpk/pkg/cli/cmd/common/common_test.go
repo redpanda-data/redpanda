@@ -12,6 +12,7 @@ package common_test
 import (
 	"context"
 	"errors"
+	"os"
 	"testing"
 
 	"github.com/docker/docker/api/types"
@@ -231,6 +232,8 @@ func TestKafkaAuthConfig(t *testing.T) {
 		user           string
 		password       string
 		mechanism      string
+		before         func()
+		cleanup        func()
 		expected       *config.SCRAM
 		expectedErrMsg string
 	}{{
@@ -263,10 +266,46 @@ func TestKafkaAuthConfig(t *testing.T) {
 		password:  "contraseño",
 		mechanism: "SCRAM-SHA-512",
 		expected:  &config.SCRAM{User: "usuario", Password: "contraseño", Type: "SCRAM-SHA-512"},
+	}, {
+		name: "it should pick up the values from env vars if the vars' values is empty",
+		before: func() {
+			os.Setenv("REDPANDA_SASL_USERNAME", "ringo")
+			os.Setenv("REDPANDA_SASL_PASSWORD", "octopussgarden66")
+			os.Setenv("REDPANDA_SASL_MECHANISM", "SCRAM-SHA-512")
+		},
+		cleanup: func() {
+			os.Unsetenv("REDPANDA_SASL_USERNAME")
+			os.Unsetenv("REDPANDA_SASL_PASSWORD")
+			os.Unsetenv("REDPANDA_SASL_MECHANISM")
+		},
+		expected: &config.SCRAM{User: "ringo", Password: "octopussgarden66", Type: "SCRAM-SHA-512"},
+	}, {
+		name:      "it should give priority to values set through the flags",
+		user:      "usuario",
+		password:  "contraseño",
+		mechanism: "SCRAM-SHA-512",
+		before: func() {
+			os.Setenv("REDPANDA_SASL_USERNAME", "ringo")
+			os.Setenv("REDPANDA_SASL_PASSWORD", "octopussgarden66")
+			os.Setenv("REDPANDA_SASL_MECHANISM", "SCRAM-SHA-512")
+		},
+		cleanup: func() {
+			os.Unsetenv("REDPANDA_SASL_USERNAME")
+			os.Unsetenv("REDPANDA_SASL_PASSWORD")
+			os.Unsetenv("REDPANDA_SASL_MECHANISM")
+		},
+		// Disregards the env vars' values
+		expected: &config.SCRAM{User: "usuario", Password: "contraseño", Type: "SCRAM-SHA-512"},
 	}}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(st *testing.T) {
+			if tt.before != nil {
+				tt.before()
+			}
+			if tt.cleanup != nil {
+				defer tt.cleanup()
+			}
 			closure := common.KafkaAuthConfig(&tt.user, &tt.password, &tt.mechanism)
 			res, err := closure()
 			if tt.expectedErrMsg != "" {
@@ -284,6 +323,8 @@ func TestBuildTLSConfig(t *testing.T) {
 		keyFile        string
 		certFile       string
 		truststoreFile string
+		before         func()
+		cleanup        func()
 		expected       *config.TLS
 		expectedErrMsg string
 	}{{
@@ -320,10 +361,54 @@ func TestBuildTLSConfig(t *testing.T) {
 			KeyFile:        "key.pem",
 			TruststoreFile: "trust.pem",
 		},
+	}, {
+		name: "it should pick up the values from env vars if the vars' values is empty",
+		before: func() {
+			os.Setenv("REDPANDA_TLS_CERT", "./node.crt")
+			os.Setenv("REDPANDA_TLS_KEY", "./node.key")
+			os.Setenv("REDPANDA_TLS_TRUSTSTORE", "./ca.crt")
+		},
+		cleanup: func() {
+			os.Unsetenv("REDPANDA_TLS_CERT")
+			os.Unsetenv("REDPANDA_TLS_KEY")
+			os.Unsetenv("REDPANDA_TLS_TRUSTSTORE")
+		},
+		expected: &config.TLS{
+			CertFile:       "./node.crt",
+			KeyFile:        "./node.key",
+			TruststoreFile: "./ca.crt",
+		},
+	}, {
+		name:           "it should give priority to values set through the flags",
+		certFile:       "cert.pem",
+		keyFile:        "key.pem",
+		truststoreFile: "trust.pem",
+		before: func() {
+			os.Setenv("REDPANDA_TLS_CERT", "./node.crt")
+			os.Setenv("REDPANDA_TLS_KEY", "./node.key")
+			os.Setenv("REDPANDA_TLS_TRUSTSTORE", "./ca.crt")
+		},
+		cleanup: func() {
+			os.Unsetenv("REDPANDA_TLS_CERT")
+			os.Unsetenv("REDPANDA_TLS_KEY")
+			os.Unsetenv("REDPANDA_TLS_TRUSTSTORE")
+		},
+		// Disregards the env vars' values
+		expected: &config.TLS{
+			CertFile:       "cert.pem",
+			KeyFile:        "key.pem",
+			TruststoreFile: "trust.pem",
+		},
 	}}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(st *testing.T) {
+			if tt.before != nil {
+				tt.before()
+			}
+			if tt.cleanup != nil {
+				defer tt.cleanup()
+			}
 			res, err := common.BuildTLSConfig(
 				&tt.certFile,
 				&tt.keyFile,
