@@ -24,6 +24,7 @@ func NewCloudCommand(fs afero.Fs) *cobra.Command {
 
 	command.AddCommand(cloud.NewLoginCommand(fs))
 	command.AddCommand(cloud.NewLogoutCommand(fs))
+	command.AddCommand(cloud.NewGetCommand(fs))
 
 	return command
 }
