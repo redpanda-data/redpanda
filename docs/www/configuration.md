@@ -12,7 +12,11 @@ The `redpanda` section contains all the runtime configuration, such as the
 cluster member IPs, the node ID, data directory, and so on. The `rpk` section
 contains configuration related to tuning the machine that redpanda will run on.
 
-Here’s a sample of the config. Only include the sections that you want to customize.
+## Sample configuration
+
+Here’s a sample of the config. The [configuration reference](#config-parameter-reference) shows a more complete list of the configuration options.
+
+Only include in your `redpanda.yaml` file the sections that you want to customize.
 
 ```yaml
 # organization and cluster_id help Vectorized identify your system.
@@ -538,3 +542,134 @@ rpk:
   # Default: ''
   well_known_io: "aws:i3.xlarge:default"
 ```
+
+## Config parameter reference
+
+Here is a more comprehensive view of the configration so that you can see all of the available configuration options.
+
+### Required parameters
+
+| Parameter | Description |
+| --- | --- |
+| `node_id` | Unique ID identifying a node in the cluster |
+| `data_directory` | Place where redpanda will keep the data |
+
+### Optional parameters
+
+| Parameter | Description | Default |
+| --- | --- | --- |
+| `_advertised_kafka_api` | Address of Kafka API published to the clients | None |
+| `_advertised_rpc_api` | Address of RPC endpoint published to other cluster members | None |
+| `admin` | Address and port of admin server | 127.0.0.1:9644 |
+| `admin_api_doc_dir` | Admin API doc directory | /usr/share/redpanda/admin-api-doc |
+| `admin_api_tls` | TLS configuration for admin HTTP server | validate_many |
+| `advertised_pandaproxy_api` | Rest API address and port to publish to client | None |
+| `alter_topic_cfg_timeout_ms` | Time to wait for entries replication in controller log when executing alter configuration requst | 5s |
+| `api_doc_dir` | API doc directory | /usr/share/redpanda/proxy-api-doc |
+| `auto_create_topics_enabled` | Allow topic auto creation | false |
+| `cloud_storage_access_key` | AWS access key | None |
+| `cloud_storage_api_endpoint` | Optional API endpoint | None |
+| `cloud_storage_api_endpoint_port` | TLS port override | 443 |
+| `cloud_storage_bucket` | AWS bucket that should be used to store data | None |
+| `cloud_storage_disable_tls` | Disable TLS for all S3 connections | false |
+| `cloud_storage_enabled` | Enable archival storage | false |
+| `cloud_storage_max_connections` | Max number of simultaneous uploads to S3 | 20 |
+| `cloud_storage_reconciliation_ms` | Interval at which the archival service runs reconciliation (ms) | 10s |
+| `cloud_storage_region` | AWS region that houses the bucket used for storage | None |
+| `cloud_storage_secret_key` | AWS secret key | None |
+| `cloud_storage_trust_file` | Path to certificate that should be used to validate server certificate during TLS handshake | None |
+| `compacted_log_segment_size` | How large in bytes should each compacted log segment be (default 256MiB) | 256MB |
+| `controller_backend_housekeeping_interval_ms` | Interval between iterations of controller backend housekeeping loop | 1s |
+| `coproc_max_batch_size` | Maximum amount of bytes to read from one topic read | 32kb |
+| `coproc_max_inflight_bytes` | Maximum amountt of inflight bytes when sending data to wasm engine | 10MB |
+| `coproc_max_ingest_bytes` | Maximum amount of data to hold from input logs in memory | 640kb |
+| `coproc_offset_flush_interval_ms` | Interval for which all coprocessor offsets are flushed to disk | 300000ms (5 min) |
+| `coproc_supervisor_server` | IpAddress and port for supervisor service | 127.0.0.1:43189 |
+| `create_topic_timeout_ms` | Timeout (ms) to wait for new topic creation | 2000ms |
+| `dashboard_dir` | serve http dashboard on / url | None |
+| `default_num_windows` | Default number of quota tracking windows | 10 |
+| `default_topic_partitions` | Default number of partitions per topic | 1 |
+| `default_topic_replication` | Default replication factor for new topics | 1 |
+| `default_window_sec` | Default quota tracking window size in milliseconds | 1000ms |
+| `delete_retention_ms` | delete segments older than this (default 1 week) | 10080min |
+| `developer_mode` | Skips most of the checks performed at startup | Optional |
+| `disable_batch_cache` | Disable batch cache in log manager | false |
+| `disable_metrics` | Disable registering metrics | false |
+| `enable_admin_api` | Enable the admin API | true |
+| `enable_coproc` | Enable coprocessing mode | false |
+| `enable_idempotence` | Enable idempotent producer | false |
+| `enable_pid_file` | Enable pid file; You probably don't want to change this | true |
+| `enable_sasl` | Enable SASL authentication for Kafka connections | false |
+| `enable_transactions` | Enable transactions | false |
+| `fetch_reads_debounce_timeout` | Time to wait for next read in fetch request when requested min bytes wasn't reached | 1ms |
+| `fetch_session_eviction_timeout_ms` | Minimum time before which unused session will get evicted from sessions; Maximum time after which inactive session will be deleted is two time given configuration valuecache | 60s |
+| `group_initial_rebalance_delay` | Extra delay (ms) added to rebalance phase to wait for new members | 300ms |
+| `group_max_session_timeout_ms` | The maximum allowed session timeout for registered consumers; Longer timeouts give consumers more time to process messages in between heartbeats at the cost of a longer time to detect failures; Default quota tracking window size in milliseconds | 300s |
+| `group_min_session_timeout_ms` | The minimum allowed session timeout for registered consumers; Shorter timeouts result in quicker failure detection at the cost of more frequent consumer heartbeating | Optional |
+| `group_new_member_join_timeout` | Timeout for new member joins | 30000ms |
+| `group_topic_partitions` | Number of partitions in the internal group membership topic | 1 |
+| `id_allocator_batch_size` | ID allocator allocates messages in batches (each batch is a one log record) and then serves requests from memory without touching the log until the batch is exhausted | 1000 |
+| `id_allocator_log_capacity` | Capacity of the id_allocator log in number of messages; Once it reached id_allocator_stm should compact the log | 100 |
+| `join_retry_timeout_ms` | Time between cluster join retries in milliseconds | 5s |
+| `kafka_api` | Address and port of an interface to listen for Kafka API requests | 127.0.0.1:9092 |
+| `kafka_api_tls` | TLS configuration for Kafka API endpoint | None |
+| `kafka_group_recovery_timeout_ms` | Kafka group recovery timeout expressed in milliseconds | 30000ms |
+| `kafka_qdc_depth_alpha` | Smoothing factor for kafka queue depth control depth tracking | 0.8 |
+| `kafka_qdc_depth_update_ms` | Update frequency for kafka queue depth control | 7s |
+| `kafka_qdc_enable` | Enable kafka queue depth control | false |
+| `kafka_qdc_idle_depth` | Queue depth when idleness is detected in kafka queue depth control | 10 |
+| `kafka_qdc_latency_alpha` | Smoothing parameter for kafka queue depth control latency tracking | 0.002 |
+| `kafka_qdc_max_depth` | Maximum queue depth used in kafka queue depth control | 100 |
+| `kafka_qdc_max_latency_ms` | Max latency threshold for kafka queue depth control depth tracking | 80ms |
+| `kafka_qdc_min_depth` | Minimum queue depth used in kafka queue depth control | 1 |
+| `kafka_qdc_window_count` | Number of windows used in kafka queue depth control latency tracking | 12 |
+| `kafka_qdc_window_size_ms` | Window size for kafka queue depth control latency tracking | 1500ms |
+| `kvstore_flush_interval` | Key-value store flush interval (ms) | 10ms |
+| `kvstore_max_segment_size` | Key-value maximum segment size (bytes) | 16MB |
+| `log_cleanup_policy` | Default topic cleanup policy | deletion |
+| `log_compaction_interval_ms` | How often do we trigger background compaction | 5min |
+| `log_compression_type` | Default topic compression type | producer |
+| `log_message_timestamp_type` | Default topic messages timestamp type | create_time |
+| `log_segment_size` | How large in bytes should each log segment be (default 1G) | 1GB |
+| `max_compacted_log_segment_size` | Max compacted segment size after consolidation | 5GB |
+| `max_kafka_throttle_delay_ms` | Fail-safe maximum throttle delay on kafka requests | 60000ms |
+| `max_version` | max redpanda compat version | 1 |
+| `metadata_dissemination_interval_ms` | Interaval for metadata dissemination batching | 3000ms |
+| `metadata_dissemination_retries` | Number of attempts of looking up a topic's meta data like shard before failing a request | 10 |
+| `metadata_dissemination_retry_delay_ms` | Delay before retry a topic lookup in a shard or other meta tables | 100ms |
+| `min_version` | minimum redpanda compat version | 0 |
+| `pandaproxy_api` | Rest API listen address and port | 0.0.0.0:8082 |
+| `pandaproxy_api_tls` | TLS configuration for Pandaproxy api | validate_many |
+| `quota_manager_gc_sec` | Quota manager GC frequency in milliseconds | 30000ms |
+| `rack` | Rack identifier | None |
+| `raft_election_timeout_ms` | Election timeout expressed in milliseconds | 1500ms |
+| `raft_heartbeat_interval_ms` | Milliseconds for raft leader heartbeats | 150ms |
+| `raft_heartbeat_timeout_ms` | raft heartbeat RPC timeout | 3s |
+| `raft_io_timeout_ms` | Raft I/O timeout | 10000ms |
+| `raft_replicate_batch_window_size` | Max size of requests cached for replication | 1MB |
+| `raft_timeout_now_timeout_ms` | Timeout for a timeout now request | 1s |
+| `raft_transfer_leader_recovery_timeout_ms` | Timeout waiting for follower recovery when transferring leadership | 10s |
+| `readers_cache_eviction_timeout_ms` | Duration after which inactive readers will be evicted from cache | 30s |
+| `reclaim_growth_window` | Length of time in which reclaim sizes grow | 3000ms |
+| `reclaim_max_size` | Maximum batch cache reclaim size | 4MB |
+| `reclaim_min_size` | Minimum batch cache reclaim size | 128KB |
+| `reclaim_stable_window` | Length of time above which growth is reset | 10000ms |
+| `recovery_append_timeout_ms` | Timeout for append entries requests issued while updating stale follower | 5s |
+| `release_cache_on_segment_roll` | Free cache when segments roll | false |
+| `replicate_append_timeout_ms` | Timeout for append entries requests issued while replicating entries | 3s |
+| `retention_bytes` | max bytes per partition on disk before triggering a compaction | None |
+| `rm_sync_timeout_ms` | Time to wait state catch up before rejecting a request | 2000ms |
+| `rm_violation_recovery_policy` | Describes how to recover from an invariant violation happened on the partition level | crash |
+| `rpc_server` | IP address and port for RPC server | 127.0.0.1:33145 |
+| `rpc_server_tls` | TLS configuration for RPC server | validate |
+| `seed_server_meta_topic_partitions` | Number of partitions in internal raft metadata topic | 7 |
+| `seed_servers` | List of the seed servers used to join current cluster; If the seed_server list is empty the node will be a cluster root and it will form a new cluster | None |
+| `segment_appender_flush_timeout_ms` | Maximum delay until buffered data is written | 1sms |
+| `stm_snapshot_recovery_policy` | Describes how to recover from an invariant violation happened during reading a stm snapshot | crash |
+| `superusers` | List of superuser usernames | None |
+| `target_quota_byte_rate` | Target quota byte rate in bytes per second | 2GB |
+| `tm_sync_timeout_ms` | Time to wait state catch up before rejecting a request | 2000ms |
+| `tm_violation_recovery_policy` | Describes how to recover from an invariant violation happened on the transaction coordinator level | crash |
+| `transactional_id_expiration_ms` | Producer ids are expired once this time has elapsed after the last write with the given producer ID | 10080min |
+| `use_scheduling_groups` | Manage CPU scheduling | false |
+| `wait_for_leader_timeout_ms` | Timeout (ms) to wait for leadership in metadata cache | 5000ms |
