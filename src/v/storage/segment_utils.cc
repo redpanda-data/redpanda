@@ -552,7 +552,9 @@ ss::future<ss::lw_shared_ptr<segment>> make_concatenated_segment(
               "Aborting compaction of closed segment: {}", *segment));
         }
     }
-    co_await write_concatenated_compacted_index(path, segments, cfg);
+    auto compacted_idx_path = compacted_index_path(path);
+    co_await write_concatenated_compacted_index(
+      compacted_idx_path, segments, cfg);
     // concatenation process
     auto writer = co_await make_writer_handle(path, cfg.sanitize);
     auto output = co_await ss::make_file_output_stream(std::move(writer));
