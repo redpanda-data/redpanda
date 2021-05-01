@@ -32,6 +32,14 @@ jobs:
         - name: install dependencies
           run: ./install-dependencies.sh
 
+        - name: install g++-11
+          run: |
+            DEBIAN_FRONTEND=noninteractive apt install -y g++-11
+            sudo update-alternatives \
+              --install /usr/bin/gcc gcc /usr/bin/gcc-11 60 \
+              --slave /usr/bin/g++ g++ /usr/bin/g++-11
+            sudo update-alternatives --auto gcc
+
         # there is no analog to ${{ github.workspace }} for the home directory
         - name: prepare cache variables
           id: prepare_cache_variables
