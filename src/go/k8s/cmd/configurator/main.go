@@ -40,6 +40,7 @@ const (
 	externalConnectivityEnvVar          = "EXTERNAL_CONNECTIVITY"
 	externalConnectivitySubDomainEnvVar = "EXTERNAL_CONNECTIVITY_SUBDOMAIN"
 	hostPortEnvVar                      = "HOST_PORT"
+	proxyHostPortEnvVar                 = "PROXY_HOST_PORT"
 )
 
 type brokerID int
@@ -54,6 +55,7 @@ type configuratorConfig struct {
 	externalConnectivity bool
 	redpandaRPCPort      int
 	hostPort             int
+	proxyHostPort        int
 }
 
 func (c *configuratorConfig) String() string {
@@ -66,7 +68,8 @@ func (c *configuratorConfig) String() string {
 		"externalConnectivity: %t\n"+
 		"externalConnectivitySubdomain: %s\n"+
 		"redpandaRPCPort: %d\n"+
-		"hostPort: %d\n",
+		"hostPort: %d\n"+
+		"proxyHostPort: %d\n",
 		c.hostName,
 		c.svcFQDN,
 		c.configSourceDir,
@@ -75,7 +78,8 @@ func (c *configuratorConfig) String() string {
 		c.externalConnectivity,
 		c.subdomain,
 		c.redpandaRPCPort,
-		c.hostPort)
+		c.hostPort,
+		c.proxyHostPort)
 }
 
 var errorMissingEnvironmentVariable = errors.New("missing environment variable")
@@ -110,7 +114,15 @@ func main() {
 
 	err = registerAdvertisedKafkaAPI(&c, cfg, hostIndex, kafkaAPIPort)
 	if err != nil {
-		log.Fatalf("%s", fmt.Errorf("unable to register advertised kafka API: %w", err))
+		log.Fatalf("%s", fmt.Errorf("unable to register advertised Kafka API: %w", err))
+	}
+
+	if cfg.Pandaproxy != nil && len(cfg.Pandaproxy.PandaproxyAPI) > 0 {
+		proxyAPIPort := getInternalProxyAPIPort(cfg)
+		err = registerAdvertisedPandaproxyAPI(&c, cfg, hostIndex, proxyAPIPort)
+		if err != nil {
+			log.Fatalf("%s", fmt.Errorf("unable to register advertised Pandaproxy API: %w", err))
+		}
 	}
 
 	cfg.Redpanda.Id = int(hostIndex)
@@ -146,6 +158,33 @@ func getInternalKafkaAPIPort(cfg *config.Config) (int, error) {
 	return 0, fmt.Errorf("%w %v", errInternalPortMissing, cfg.Redpanda.KafkaApi)
 }
 
+func getInternalProxyAPIPort(cfg *config.Config) int {
+	for _, l := range cfg.Pandaproxy.PandaproxyAPI {
+		if l.Name == "proxy" {
+			return l.Port
+		}
+	}
+	return 0
+}
+
+func getNode(nodeName string) (*corev1.Node, error) {
+	k8sconfig, err := rest.InClusterConfig()
+	if err != nil {
+		return nil, fmt.Errorf("unable to create in cluster config: %w", err)
+	}
+
+	clientset, err := kubernetes.NewForConfig(k8sconfig)
+	if err != nil {
+		return nil, fmt.Errorf("unable to create clientset: %w", err)
+	}
+
+	node, err := clientset.CoreV1().Nodes().Get(context.Background(), nodeName, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("unable to retrieve node: %w", err)
+	}
+	return node, nil
+}
+
 func registerAdvertisedKafkaAPI(
 	c *configuratorConfig, cfg *config.Config, index brokerID, kafkaAPIPort int,
 ) error {
@@ -174,17 +213,7 @@ func registerAdvertisedKafkaAPI(
 		return nil
 	}
 
-	k8sconfig, err := rest.InClusterConfig()
-	if err != nil {
-		return fmt.Errorf("unable to create in cluster config: %w", err)
-	}
-
-	clientset, err := kubernetes.NewForConfig(k8sconfig)
-	if err != nil {
-		return fmt.Errorf("unable to create clientset: %w", err)
-	}
-
-	node, err := clientset.CoreV1().Nodes().Get(context.Background(), c.nodeName, metav1.GetOptions{})
+	node, err := getNode(c.nodeName)
 	if err != nil {
 		return fmt.Errorf("unable to retrieve node: %w", err)
 	}
@@ -196,6 +225,52 @@ func registerAdvertisedKafkaAPI(
 		},
 		Name: "kafka-external",
 	})
+
+	return nil
+}
+
+func registerAdvertisedPandaproxyAPI(
+	c *configuratorConfig, cfg *config.Config, index brokerID, proxyAPIPort int,
+) error {
+	cfg.Pandaproxy.AdvertisedPandaproxyAPI = []config.NamedSocketAddress{
+		{
+			SocketAddress: config.SocketAddress{
+				Address: c.hostName + "." + c.svcFQDN,
+				Port:    proxyAPIPort,
+			},
+			Name: "proxy",
+		},
+	}
+
+	if c.proxyHostPort == 0 {
+		return nil
+	}
+
+	// Pandaproxy uses the Kafka API subdomain.
+	if len(c.subdomain) > 0 {
+		cfg.Pandaproxy.AdvertisedPandaproxyAPI = append(cfg.Pandaproxy.AdvertisedPandaproxyAPI, config.NamedSocketAddress{
+			SocketAddress: config.SocketAddress{
+				Address: fmt.Sprintf("%d.%s", index, c.subdomain),
+				Port:    c.proxyHostPort,
+			},
+			Name: "proxy-external",
+		})
+		return nil
+	}
+
+	node, err := getNode(c.nodeName)
+	if err != nil {
+		return fmt.Errorf("unable to retrieve node: %w", err)
+	}
+
+	cfg.Pandaproxy.AdvertisedPandaproxyAPI = append(cfg.Pandaproxy.AdvertisedPandaproxyAPI, config.NamedSocketAddress{
+		SocketAddress: config.SocketAddress{
+			Address: getExternalIP(node),
+			Port:    c.proxyHostPort,
+		},
+		Name: "proxy-external",
+	})
+
 	return nil
 }
 
@@ -287,6 +362,15 @@ func checkEnvVars() (configuratorConfig, error) {
 	c.hostPort, err = strconv.Atoi(hostPort)
 	if err != nil && c.externalConnectivity {
 		result = multierror.Append(result, fmt.Errorf("unable to convert host port from string to int: %w", err))
+	}
+
+	// Providing proxy host port is optional
+	proxyHostPort, exist := os.LookupEnv(proxyHostPortEnvVar)
+	if exist && proxyHostPort != "" {
+		c.proxyHostPort, err = strconv.Atoi(proxyHostPort)
+		if err != nil {
+			result = multierror.Append(result, fmt.Errorf("unable to convert proxy host port from string to int: %w", err))
+		}
 	}
 
 	return c, result

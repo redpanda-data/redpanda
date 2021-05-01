@@ -273,6 +273,33 @@ spec:
                           type: object
                       type: object
                     type: array
+                  pandaproxyApi:
+                    items:
+                      description: PandaproxyAPI configures the Pandaproxy API
+                      properties:
+                        external:
+                          description: External enables user to expose Redpanda nodes
+                            outside of a Kubernetes cluster. For more information
+                            please go to ExternalConnectivityConfig
+                          properties:
+                            enabled:
+                              description: Enabled enables the external connectivity
+                                feature
+                              type: boolean
+                            subdomain:
+                              description: Subdomain can be used to change the behavior
+                                of an advertised KafkaAPI. Each broker advertises
+                                Kafka API as follows BROKER_ID.SUBDOMAIN:EXTERNAL_KAFKA_API_PORT.
+                                If Subdomain is empty then each broker advertises
+                                Kafka API as PUBLIC_NODE_IP:EXTERNAL_KAFKA_API_PORT.
+                                If TLS is enabled then this subdomain will be requested
+                                as a subject alternative name.
+                              type: string
+                          type: object
+                        port:
+                          type: integer
+                      type: object
+                    type: array
                   rpcServer:
                     description: SocketAddress provide the way to configure the port
                     properties:
@@ -407,6 +434,10 @@ spec:
                       type: string
                     type: array
                   externalAdmin:
+                    items:
+                      type: string
+                    type: array
+                  externalPandaproxy:
                     items:
                       type: string
                     type: array
