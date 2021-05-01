@@ -186,9 +186,7 @@ private:
 };
 
 inline void iobuf::clear() {
-    _frags.clear_and_dispose([](fragment* f) {
-        delete f; // NOLINT
-    });
+    _frags.clear_and_dispose(&details::dispose_io_fragment);
     _size = 0;
 }
 inline iobuf::~iobuf() noexcept { clear(); }
@@ -276,7 +274,7 @@ inline void iobuf::reserve_memory(size_t reservation) {
     while (!b._frags.empty()) {
         b._frags.pop_back_and_dispose([this](fragment* f) {
             prepend(f->share());
-            delete f; // NOLINT
+            details::dispose_io_fragment(f);
         });
     }
 }
@@ -340,7 +338,7 @@ inline void iobuf::append(iobuf o) {
     while (!o._frags.empty()) {
         o._frags.pop_front_and_dispose([this](fragment* f) {
             append(f->share());
-            delete f; // NOLINT
+            details::dispose_io_fragment(f);
         });
     }
 }
@@ -351,7 +349,7 @@ inline void iobuf::append_fragments(iobuf o) {
         o._frags.pop_front_and_dispose([this](fragment* f) {
             auto frag = new fragment(f->share(), fragment::full{});
             append_take_ownership(frag);
-            delete f; // NOLINT
+            details::dispose_io_fragment(f);
         });
     }
 }
@@ -359,16 +357,12 @@ inline void iobuf::append_fragments(iobuf o) {
 inline void iobuf::pop_front() {
     oncore_debug_verify(_verify_shard);
     _size -= _frags.front().size();
-    _frags.pop_front_and_dispose([](fragment* f) {
-        delete f; // NOLINT
-    });
+    _frags.pop_front_and_dispose(&details::dispose_io_fragment);
 }
 inline void iobuf::pop_back() {
     oncore_debug_verify(_verify_shard);
     _size -= _frags.back().size();
-    _frags.pop_back_and_dispose([](fragment* f) {
-        delete f; // NOLINT
-    });
+    _frags.pop_back_and_dispose(&details::dispose_io_fragment);
 }
 inline void iobuf::trim_front(size_t n) {
     oncore_debug_verify(_verify_shard);
