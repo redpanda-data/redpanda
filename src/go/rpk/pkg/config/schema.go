@@ -61,8 +61,11 @@ type Pandaproxy struct {
 }
 
 type PandaproxyClient struct {
-	Brokers   []SocketAddress `yaml:"brokers,omitempty" mapstructure:"brokers,omitempty" json:"brokers,omitempty"`
-	BrokerTLS ServerTLS       `yaml:"broker_tls,omitempty" mapstructure:"broker_tls,omitempty" json:"brokerTls,omitempty"`
+	Brokers       []SocketAddress `yaml:"brokers,omitempty" mapstructure:"brokers,omitempty" json:"brokers,omitempty"`
+	BrokerTLS     ServerTLS       `yaml:"broker_tls,omitempty" mapstructure:"broker_tls,omitempty" json:"brokerTls,omitempty"`
+	SASLMechanism *string         `yaml:"sasl_mechanism,omitempty" mapstructure:"sasl_mechanism,omitempty" json:"saslMechanism,omitempty"`
+	SCRAMUsername *string         `yaml:"scram_username,omitempty" mapstructure:"scram_username,omitempty" json:"scramUsername,omitempty"`
+	SCRAMPassword *string         `yaml:"scram_password,omitempty" mapstructure:"scram_password,omitempty" json:"scramPassword,omitempty"`
 }
 
 type SeedServer struct {
