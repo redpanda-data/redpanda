@@ -5,7 +5,7 @@ order: 0
 # Transforming data with WebAssembly (Wasm)
 
 When your application components send records to Redpanda,
-sometimes those records need to be transformed in thr process.
+sometimes those records need to be transformed in the process.
 Instead of adding another process to your application that consumes, transforms, and produces the records back to Redpanda,
 you can run Wasm transformations inside Redpanda.
 
@@ -21,7 +21,7 @@ In this tutorial, we'll use Redpanda installed on Linux to transform data and se
 
 For this tutorial you need:
 
-- Redpanda v21.2.1 or higher on [Linux](https://vectorized.io/docs/quick-start-linux)
+- Redpanda v21.4.14 or higher on [Linux](https://vectorized.io/docs/quick-start-linux)
 - Elasticsearch 7.10.2 or higher in a [docker image](https://www.elastic.co/guide/en/elasticsearch/reference/current/docker.html)
 
 ## Enable Wasm engine on Redpanda
@@ -64,25 +64,23 @@ To enable the Wasm engine:
 ## Create the Wasm script
 
 To create a Wasm script we'll use the `rpk wasm generate` command.
-This command creates a template that gives us a simple build system and basic example script.
-
-Let's put all of our work for this tutorial in `/wasm_example` so it's easy to clean up.
+This command creates a directory with a template that gives us a simple build system and basic example script.
 
 1. Generate the Wasm template:
 
     ```bash
-    rpk wasm generate /wasm_example/wasm-elastic
+    rpk wasm generate hello-elastic
     ```
 
-    Now we have a directory with an example Wasm script in `/wasm_example/wasm-elastic`.
-    Let's move to the `wasm-elastic` directory and see what's there.
+    Now we have a directory with an example Wasm script.
+    Let's move to the `hello-elastic` directory and see what's there.
 
     ```bash
-    cd wasm_elastic
+    cd hello-elastic
     tree .
     ```
 
-    You should see these files in the `wasm-elastic` directory.
+    You should see these files in the `hello-elastic` directory.
 
     ```
       .
@@ -174,9 +172,9 @@ Let's put all of our work for this tutorial in `/wasm_example` so it's easy to c
 6. Bundle the project files into a single file with:
 
     ```bash
-    #this command install all nodejs dependecies
+    #this command installs all nodejs dependecies
     $ npm install
-    #this command generate `dist/elastic.js` file.
+    #this command generate the `dist/elastic.js` file.
     $ npm run build
     ```
 
@@ -241,7 +239,7 @@ Here's the real fun -- seeing the transform work.
 ## Verify Elasticsearch results
 
 Now we need to validate that our Wasm script received the records and published them to Elasticsearch.
-To do this, we'll create a query to Elasticsearch that returns take every hit that has a  `result_wasm` index.
+To do this, we'll create a query to Elasticsearch that returns every hit that has a  `result_wasm` index.
 
 1. Save this query in a file names `elastic-query.js`:
 
