@@ -76,6 +76,14 @@ ss::future<response_ptr> do_process(
 static ss::future<response_ptr>
 handle_auth_handshake(request_context&& ctx, ss::smp_service_group g) {
     auto conn = ctx.connection();
+    if (ctx.header().version == api_version(0)) {
+        /*
+         * see connection_context::process_one_request for more info. when this
+         * is set the input connection is assumed to contain raw authentication
+         * tokens not wrapped in a normal kafka request envelope.
+         */
+        conn->sasl().set_handshake_v0();
+    }
     return do_process<sasl_handshake_handler>(std::move(ctx), g)
       .then([conn = std::move(conn)](response_ptr r) {
           if (conn->sasl().has_mechanism()) {

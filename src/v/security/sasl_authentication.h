@@ -62,9 +62,13 @@ public:
 
     const ss::sstring& principal() const { return _mechanism->principal(); }
 
+    bool handshake_v0() const { return _handshake_v0; }
+    void set_handshake_v0() { _handshake_v0 = true; }
+
 private:
     sasl_state _state;
     std::unique_ptr<sasl_mechanism> _mechanism;
+    bool _handshake_v0{false};
 };
 
 }; // namespace security
