@@ -78,3 +78,7 @@ func (mc *MockedAuth0Client) GetDeviceCode(
 ) (*vcloud.DeviceCodeResponse, error) {
 	return mc.deviceResponse, mc.deviceError
 }
+
+func (mc *MockedAuth0Client) VerifyToken(token string) (bool, error) {
+	return true, nil
+}
