@@ -80,11 +80,29 @@ func (yc *mockYakClient) GetNamespaces() ([]*yak.Namespace, error) {
 	}, nil
 }
 
+func (yc *mockYakClient) GetClusters(
+	namespaceName string,
+) ([]*yak.Cluster, error) {
+	return []*yak.Cluster{
+		{
+			Id:    "notready",
+			Name:  "notready",
+			Ready: false,
+		},
+	}, nil
+}
+
 // Yak client returning error provided on creation
 type erroredYakClient struct {
 	err error
 }
 
 func (yc *erroredYakClient) GetNamespaces() ([]*yak.Namespace, error) {
+	return nil, yc.err
+}
+
+func (yc *erroredYakClient) GetClusters(
+	namespaceName string,
+) ([]*yak.Cluster, error) {
 	return nil, yc.err
 }

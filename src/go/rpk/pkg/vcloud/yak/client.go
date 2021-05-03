@@ -26,6 +26,8 @@ type YakClient struct {
 
 const (
 	namespaceRoute = "namespace"
+	// requires namespaceId
+	getClustersRouteTemplate = namespaceRoute + "/%s/cluster"
 
 	// TODO(av) make this configurable and point it to production
 	DefaultYakUrl = "https://backend.dev.vectorized.cloud"
@@ -54,6 +56,31 @@ func (yc *YakClient) GetNamespaces() ([]*Namespace, error) {
 		return nil, fmt.Errorf("error unmarshaling response. %w", err)
 	}
 	return namespaces, nil
+}
+
+func (yc *YakClient) GetClusters(namespaceName string) ([]*Cluster, error) {
+	token, err := yc.conf.ReadToken()
+	if err != nil {
+		return nil, ErrLoginTokenMissing{err}
+	}
+	// map namespace name to namespace id
+	namespaceId, err := yc.getNamespaceId(namespaceName)
+	if err != nil {
+		return nil, err
+	}
+	// retrieve clusters
+	url := fmt.Sprintf("%s/%s", DefaultYakUrl, fmt.Sprintf(getClustersRouteTemplate, namespaceId))
+	_, body, err := yc.get(token, url)
+	if err != nil {
+		return nil, fmt.Errorf("error calling api: %w", err)
+	}
+
+	var clusters []*Cluster
+	err = json.Unmarshal(body, &clusters)
+	if err != nil {
+		return nil, fmt.Errorf("error unmarshaling response. %w", err)
+	}
+	return clusters, nil
 }
 
 func (yc *YakClient) get(token, url string) (*http.Response, []byte, error) {
@@ -92,4 +119,17 @@ func (yc *YakClient) handleErrResponseCodes(
 		return fmt.Errorf("error retrieving resource, http code %d. %s", resp.StatusCode, body)
 	}
 	return nil
+}
+
+func (yc *YakClient) getNamespaceId(namespaceName string) (string, error) {
+	ns, err := yc.GetNamespaces()
+	if err != nil {
+		return "", err
+	}
+	for _, n := range ns {
+		if n.Name == namespaceName {
+			return n.Id, nil
+		}
+	}
+	return "", ErrNamespaceDoesNotExist{namespaceName}
 }
